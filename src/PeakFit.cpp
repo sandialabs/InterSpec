@@ -380,9 +380,12 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
       bool isnear = false;
       for( const PeakConstPtr &orig : fitpeakvec )
       {
-        const double meandiff = orig->mean() - p->mean();
-        const double minsigma = std::min( orig->sigma(), p->sigma() );
-        isnear |= (orig->gausPeak() && fabs(meandiff/minsigma) < 0.75);
+        if( orig->gausPeak() )
+        {
+          const double meandiff = orig->mean() - p->mean();
+          const double minsigma = std::min( orig->sigma(), p->sigma() );
+          isnear |= (fabs(meandiff/minsigma) < 0.75);
+        }
       }//for( const PeakConstPtr &orig : fitpeakvec )
       
       if( !isnear )
@@ -2755,6 +2758,9 @@ void get_candidate_peak_estimates_for_user_click(
     
     for( const shared_ptr<const PeakDef> &p : inpeaks )
     {
+      if( !p->gausPeak() )
+        continue;
+      
       if( (p->mean() <= x) && (!leftpeak || fabs(p->mean() - x) < fabs(leftpeak->mean() - x)) )
         leftpeak = p;
       
@@ -2778,7 +2784,7 @@ void get_candidate_peak_estimates_for_user_click(
   {
     for( const shared_ptr<const PeakDef> &p : inpeaks )
     {
-      if( fabs(p->mean() - x) < (10*p->sigma()) ) //10 is arbitrary.
+      if( p->gausPeak() && (fabs(p->mean() - x) < (10*p->sigma())) ) //10 is arbitrary.
       {
         updatedSigmaFromPrev = true;
         sigma0 = p->sigma();
@@ -4321,18 +4327,41 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   const double no_peak_chi2dof = evaluate_chi2dof_for_range( fitpeaksnoamp,
                                                             dataH, core_start, core_end );
   
-  if( (no_peak_chi2dof - core_chi2dof) < min_core_chi2dof_peak_improvment )
+  // Check to see if having the peak be there is actually any improvement to the fit.
+  //  However, if the Chi/dof is already extremely good, just require there is some improvement
+  //  (this happens on artificially good statistics spectra)
+  // TODO: The "4" below is totally arbitrary - should have some sliding scale or something
+  if( (core_chi2dof > (4*min_core_chi2dof_peak_improvment)) )
   {
+    if( (no_peak_chi2dof - core_chi2dof) < min_core_chi2dof_peak_improvment )
+    {
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
-    if( debug_this_peak )
-      DebugLog(cerr) << "check_highres_single_peak_fit: Failed to fit a peak for the "
-           << "change in chi2 without the peak being to small (chi2dof="
-           << no_peak_chi2dof << " w/ continuum only, " << core_chi2dof
-           << " w/ continuum and peak)" << "\n";
+      if( debug_this_peak )
+        DebugLog(cerr) << "check_highres_single_peak_fit: Failed to fit a peak for the "
+        << "change in chi2 without the peak being to small (chi2dof="
+        << no_peak_chi2dof << " w/ continuum only, " << core_chi2dof
+        << " w/ continuum and peak)" << "\n";
 #endif
-    
-    return false;
-  }//if( (no_peak_chi2dof - core_chi2dof) < 0.5 )
+      
+      return false;
+    }//if( (no_peak_chi2dof - core_chi2dof) < 0.5 )
+  }else
+  {
+    if( (no_peak_chi2dof - core_chi2dof) < 0.0 )
+    {
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
+      if( debug_this_peak )
+        DebugLog(cerr) << "check_highres_single_peak_fit: Failed to fit a peak because "
+        << "the continuum only chi2 (chi2dof="
+        << no_peak_chi2dof << ") was better than with the peak (chi2dof=" << core_chi2dof
+        << " w/ continuum and peak)\n";
+#endif
+      
+      return false;
+    }//if( (no_peak_chi2dof - core_chi2dof) < 0.5 )
+
+  }//if( (core_chi2dof > (4*min_core_chi2dof_peak_improvment)) )
+  
   
   const double gausarea = peak->gauss_integral( mean-2.0*sigma, mean+2.0*sigma );
   const double dataarea = dataH->gamma_integral( mean-2.0*sigma, mean+2.0*sigma );
@@ -5584,7 +5613,7 @@ void set_chi2_dof( std::shared_ptr<const Measurement> data,
       fitpeaks[peakinds[i]].set_uncertainty( 0.0, PeakDef::Chi2DOF );
     }
     
-    cout << "Set chi2dof=" << chi2Dof << endl;
+    // cout << "Set chi2dof=" << chi2Dof << endl;
   }//for( loop over ROIs )
 }//void set_chi2_dof( )
 
