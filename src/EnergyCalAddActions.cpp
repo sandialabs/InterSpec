@@ -381,7 +381,7 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
       btn->setInline( false );
       m_group->addButton( btn, 2 );
       
-      btn = new WRadioButton( "Fit channel energies to quartic equation.", box );
+      btn = new WRadioButton( "Fit channel energies to cubic equation.", box );
       btn->setInline( false );
       m_group->addButton( btn, 3 );
       
@@ -638,7 +638,7 @@ void ConvertCalTypeTool::fromLowerChannelEnergiesOptionChanged()
         return;
         
       case 2: //Fit channel energies to quadratic equation
-      case 3: //Fit channel energies to quartic equation
+      case 3: //Fit channel energies to Cubic equation
         break;
         
       default:

@@ -107,7 +107,7 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
       case 0: label = new WLabel( "Offset" ); break;
       case 1: label = new WLabel( "Linear" ); break;
       case 2: label = new WLabel( "Quadratic" ); break;
-      case 3: label = new WLabel( "Quartic" ); break;
+      case 3: label = new WLabel( "Cubic" ); break;
       default: label = new WLabel( std::to_string(i+1) + "th" ); break;
     }//switch( i )
     
