@@ -3770,15 +3770,15 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightP
   }//
   
 
-//Calculate number of pixels we need to pad, for x axis to be at 40 pixels from
+//Calculate number of pixels we need to pad, for x axis to be at 45 pixels from
 //  the bottom of the chart; if less than 10px, pad at least 10px, or at most
-//  40px.
+//  45px.
   const int topPadding = plotAreaPadding(Top);
   const double fracY = -ymin / (ymax - ymin);
-  double pxToXAxis = (fracY >= 1.0) ? 0.0 : (40.0 - fracY*(yHeightPx - topPadding) ) / (1.0-fracY);
+  double pxToXAxis = (fracY >= 1.0) ? 0.0 : (45.0 - fracY*(yHeightPx - topPadding) ) / (1.0-fracY);
   pxToXAxis = std::floor( pxToXAxis + 0.5 );
   pxToXAxis = std::max( pxToXAxis, 10.0 );
-  pxToXAxis = std::min( pxToXAxis, 40.0 );
+  pxToXAxis = std::min( pxToXAxis, 45.0 );
   const int bottomPadding = static_cast<int>(pxToXAxis);
   
   if( bottomPadding != plotAreaPadding(Bottom) )
@@ -4446,6 +4446,17 @@ if (m_specViewer->isSupportFile())
   m_specViewer->detectorModified().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
 
   
+  m_showChiOnChart = new SwitchCheckbox( "Mult.", "&chi;" );
+  m_showChiOnChart->setChecked();
+  tooltip = "Show the Chi of each peak for the current model on the chart, or"
+  " the relative peak area multiple between current model and observed peak.";
+  m_showChiOnChart->setToolTip( tooltip );
+  m_showChiOnChart->checked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
+  m_showChiOnChart->unChecked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
+  
+  
+  
+  
   m_optionsDiv = new WContainerWidget();
   WGridLayout* optionsLayout = new WGridLayout();
   m_optionsDiv->setLayout(optionsLayout);
@@ -4496,20 +4507,6 @@ if (m_specViewer->isSupportFile())
   m_sameIsotopesAge->unChecked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
   m_sameIsotopesAge->setChecked( isotopesHaveSameAge );
 
-  
-  lineDiv = new WContainerWidget(  );
-  optionsLayout->addWidget( lineDiv, 4, 0 );
-  
-  m_showChiOnChart = new SwitchCheckbox( "Rel.", "&chi;", lineDiv );
-  //m_showChiOnChart->setAttributeValue( "style", "position: absolute; bottom: 10px; left: 10px" );
-  
-  m_showChiOnChart->setChecked();
-  tooltip = "Show the Chi of each peak for the current model on the chart, or"
-            " the relative peak area multiple between current model and observed peak.";
-  lineDiv->setToolTip( tooltip );
-  m_showChiOnChart->checked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
-  m_showChiOnChart->unChecked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
-  
   
   WContainerWidget *detectorDiv = new WContainerWidget();
   detectorDiv->setOverflow(WContainerWidget::OverflowHidden);
@@ -4592,23 +4589,23 @@ if (m_specViewer->isSupportFile())
     tab->addTab(sourceDiv,"Source Isotopes", Wt::WTabWidget::PreLoading);
     tab->addTab(detectorDiv,"Shielding", Wt::WTabWidget::PreLoading);
     
-    WContainerWidget * chartDiv = new WContainerWidget();
+    WContainerWidget *chartDiv = new WContainerWidget();
     chartDiv->setOffsets(0);
     chartDiv->setMargin(0);
     chartDiv->setPadding(5);
-    WGridLayout* chartLayout= new WGridLayout();
+    WGridLayout *chartLayout = new WGridLayout();
     chartDiv->setLayout(chartLayout);
     chartLayout->setContentsMargins(0, 0, 0, 0);
     
-    chartLayout->addWidget( m_detectorDisplay, 0, 0);
-    chartLayout->addWidget( addItemMenubutton, 0, 1);
-    chartLayout->addWidget( m_chi2Graphic, 1, 0,1,2);
-    chartLayout->addWidget( m_fitModelButton, 2, 0, 1 , 2 );
-    chartLayout->addWidget( m_fitProgressTxt, 3, 0, 1, 2 );
-    chartLayout->addWidget( m_cancelfitModelButton, 4, 0, 1, 2 );
+    chartLayout->addWidget( m_detectorDisplay, 0, 0, AlignLeft );
+    chartLayout->addWidget( m_showChiOnChart, 0, 1 );
+    chartLayout->addWidget( addItemMenubutton, 0, 2, AlignRight);
+    chartLayout->addWidget( m_chi2Graphic, 1, 0, 1, 3 );
+    chartLayout->addWidget( m_fitModelButton, 2, 0, 1, 3, AlignCenter );
+    chartLayout->addWidget( m_fitProgressTxt, 3, 0, 1 ,3, AlignCenter );
+    chartLayout->addWidget( m_cancelfitModelButton, 4, 0, 1, 3, AlignCenter );
     
     chartLayout->setRowStretch(1, 1);
-    chartLayout->setColumnStretch(0, 1);
     tab->addTab(chartDiv,"Fit", Wt::WTabWidget::PreLoading);
   }else
   {
@@ -4639,7 +4636,30 @@ if (m_specViewer->isSupportFile())
     bottomMiddleLayout->setContentsMargins( 0, 0, 0, 0 );
     
     WGridLayout *leftLayout = new WGridLayout();
-    leftLayout->addWidget( m_chi2Graphic,      0, 0 );
+    
+    
+    // We will put the chart in a div that will also hold the Rel/Chi switch; its a bit of a hack
+    //  to get the chart type switch near the chart; it would probably be best to have the switch be
+    //  at the top of the chart, but that doesnt work so well because the chart <img> will be over
+    //  the switch if we want the switch to be over the image...  probably something better to do
+    //  here
+    WContainerWidget *chartHolder = new WContainerWidget();
+    WGridLayout *chartLayout = new WGridLayout( chartHolder );
+    chartLayout->setVerticalSpacing( 0 );
+    chartLayout->setHorizontalSpacing( 0 );
+    chartLayout->setContentsMargins( 0, 0, 0, 0 );
+    chartLayout->addWidget( m_chi2Graphic, 0, 0 );
+    
+    //Put the switch in a <div> (which will be 0x0 px), so we can position the switch using absolute
+    WContainerWidget *switchHolder = new WContainerWidget();
+    switchHolder->addWidget( m_showChiOnChart );
+    m_showChiOnChart->setAttributeValue( "style", "position: absolute; bottom: 0px; right: 20px" );
+    switchHolder->setHeight( 0 );
+    chartLayout->addWidget( switchHolder, 1, 0, AlignRight );
+    chartLayout->setRowStretch( 0, 1 );
+    
+    
+    leftLayout->addWidget( chartHolder,      0, 0 );
     leftLayout->addLayout( bottomMiddleLayout,   1, 0 );
     leftLayout->setRowResizable( 0, true, WLength(40.0,WLength::Percentage) );
     leftLayout->setHorizontalSpacing( 5 );
