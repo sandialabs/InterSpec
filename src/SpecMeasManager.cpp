@@ -1547,6 +1547,60 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     }//try / catch get candidate peaks )
   }//if( we could possible care about propagating peaks from a CSV file )
   
+  
+  /*
+  // Check if this is an InterSpec exported DRF CSV
+  if( header_contains( "# Detector Response Function" ) )
+  {
+    auto det = DetectorEdit::checkIfFileIsRelEff( fileLocation );
+    
+    if( det )
+    {
+      // Generate a eff plot, and basic info, and display.
+      // Then ask user if they want to use DRF; if so save to `InterSpec::writableDataDirectory() + "UploadedDrfs"`
+      
+#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+      delete dialog;
+#else
+      delete w;
+#endif
+      
+      return true;
+    }
+  }//if( maybe a drf )
+  */
+  
+  
+  /*
+  // Check if this is TSV/CSV file containing multiple DRFs
+  if( header_contains( "Relative Eff" ) && header_contains( "#credit" ) )
+  {
+    // Try to parse, and see if one or more DRFs.
+    //  Ask user to save in `InterSpec::writableDataDirectory() + "UploadedDrfs"` for later use
+    
+    string line;
+    while( SpecUtils::safe_get_line( input, line, 2048 ) )
+    {
+      SpecUtils::trim( line );
+      
+      if( SpecUtils::istarts_with( line, "#credit:") )
+        credits.push_back( SpecUtils::trim_copy(line.substr(8)) );
+      
+      if( line.empty() || line[0]=='#' )
+        continue;
+      
+      std::shared_ptr<DetectorPeakResponse> det = RelEffFile::parseDetector( line );
+      
+      if( det )
+      {
+        detcoefs.push_back( det->efficiencyExpOfLogsCoeffs() );
+        m_responses.push_back( det );
+      }
+    }//while( SpecUtils::safe_get_line( input, line ) )
+  }//if( header_contains( "Relative Eff" ) && header_contains( "#credit" ) )
+   */
+  
+  
 #if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
   delete dialog;
 #else
@@ -1646,7 +1700,7 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   }
   
   // Its a larger file - display a message letting the user know its being parsed.
-  auto dialog = new SimpleDialog( "Parsing File", "Parsing file - this may take a second." );
+  auto dialog = new SimpleDialog( "Parsing File", "This may take a second." );
   
   wApp->triggerUpdate();
   
