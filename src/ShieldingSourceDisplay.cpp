@@ -3052,7 +3052,6 @@ boost::any SourceFitModel::headerData( int section, Orientation orientation, int
       case kIsotope:
         tooltip = "Nuclides are added or removed according to the photopeaks "
                   "used for this fit, thus may not be edited in this table";
-                  //NAZ add to end: "Select arrow to sort table by parameter." 
         break;
       case kActivity:
         tooltip = "Activity of the nuclide.  Entering a reasonable starting"
@@ -3060,38 +3059,31 @@ boost::any SourceFitModel::headerData( int section, Orientation orientation, int
             " fit for."
             "  Values may be entered in formats similar to '12.4 kBq',"
             " '1.0mCi', '55.3uCi', '15.82Mbq'";
-            //NAZ add to end: "Select arrow to sort table by parameter." 
         break;
       case kAge:
         tooltip = "Age of the nuclide.  Values may be entered in format"
             " similar to: '23.3s' '2 hl' - (hf stands for half lives), '5.23y',"
             " '23:14:21.343', '19min', etc.  Note that nuclides that decay to"
             " stable children can not be aged.";
-            //NAZ add to end: "Select arrow to sort table by parameter." 
         break;
       case kFitActivity:
         tooltip = "Should the fit try to find the nuclide activity as well, or"
                   " assume the entered value is correct?";
-                  //NAZ add to end: "Select arrow to sort table by parameter." 
         break;
       case kFitAge:
         tooltip = "Should the fit try to find the nuclide age as well, or just"
                   " assume the entered value is correct?  This option is not "
                   "available for nuclides which decay to only stable chlidren.";
-                  //NAZ add to end: "Select arrow to sort table by parameter." 
         break;
       case kIsotopeMass:
         tooltip = "This is the mass of the bare nuclide assuming the activity"
                   " listed.";
-                  //NAZ add to end: "Select arrow to sort table by parameter." 
         break;
       case kActivityUncertainty:
-        tooltip = "This is the uncetainty in activity from the fit.";
-        //NAZ add to end: "Select arrow to sort table by parameter." 
+        tooltip = "This is the uncertainty in activity from the fit.";
         break;
       case kAgeUncertainty:
-        tooltip = "This is the uncetainty in age from the fit.";
-        //NAZ add to end: "Select arrow to sort table by parameter." 
+        tooltip = "This is the uncertainty in age from the fit.";
         break;
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -3656,6 +3648,13 @@ ShieldingSourceDisplay::Chi2Graphic::Chi2Graphic( Wt::WContainerWidget *parent )
 {
   setPreferredMethod( WPaintedWidget::HtmlCanvas );
   LOAD_JAVASCRIPT( wApp, "shieldingSourceDisplay.cpp", "Chi2Graphic", wtjsShowChi2Info);
+  
+  // We will use calcAndSetAxisRanges() to set the axis ranges, so turn off auto range.
+  axis(Chart::YAxis).setAutoLimits( 0 );
+  axis(Chart::YAxis).setRange( -1.0, 1.0 );
+  
+  axis(Chart::XAxis).setAutoLimits( 0 );
+  axis(Chart::XAxis).setRange( 0, 3000.0 );
 }
 
 ShieldingSourceDisplay::Chi2Graphic::~Chi2Graphic()
@@ -3726,23 +3725,14 @@ void ShieldingSourceDisplay::Chi2Graphic::setShowChiOnChart( const bool show_chi
   addSeries( series );
 }
 
-void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightPx )
-{
-  //Wt newer than ~3.3.2 has WAbstractChart::setAutoLayoutEnabled(true) that
-  //  may make this function no longer necassarry.
-  
-  WAbstractItemModel *theModel = model();
 
+void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisRanges()
+{
+  WAbstractItemModel *theModel = model();
   if( !theModel )
     return;
-
-  double ymin = DBL_MAX, ymax = -DBL_MAX;
-
-//The below doesnt actually return the minimum/maximum of the axis, presumambly
-//  since we are using auto range.
-//  initLayout();
-//  double ymin = axis(Chart::OrdinateAxis).minimum();
-//  double ymax = axis(Chart::OrdinateAxis).maximum();
+  
+  double ymin = DBL_MAX, ymax = -DBL_MAX, xmin = DBL_MAX, xmax = -DBL_MAX;
   
   const int nrow = theModel->rowCount();
   const int ycol = m_showChi ? 1 : 2;
@@ -3752,10 +3742,16 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightP
     {
 #if( WT_VERSION >= 0x3030800 )
       const double thischi = theModel->data(row,ycol);
+      const double energy = theModel->data(row,0);
 #else
       WModelIndex index = theModel->index(row,ycol);
       const double thischi = boost::any_cast<double>( theModel->data(index) );
+      index = theModel->index(row,0);
+      const double energy = boost::any_cast<double>( theModel->data(index) );
 #endif
+      xmin = std::min( xmin, energy );
+      xmax = std::max( xmax, energy );
+      
       ymin = std::min( ymin, thischi );
       ymax = std::max( ymax, thischi );
     }catch(...)
@@ -3763,12 +3759,84 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightP
     }
   }//for( int row = 0; row < nrow; ++row )
   
-  if( !nrow || ymin==DBL_MAX || ymax==-DBL_MAX )
+  if( !nrow || (ymin == DBL_MAX) || (ymax == -DBL_MAX) || (xmin == DBL_MAX) || (xmax == -DBL_MAX) )
+  {
+    // There are no points to display.
+    xmin = 0.0;
+    xmax = 3000.0;
+    ymin = (m_showChi ? -1.0 : 0.0);
+    ymax = (m_showChi ?  1.0 : 2.0);
+  }else if( (nrow == 1) || (ymin == ymax) )
+  {
+    // There is one point to display.
+    xmin -= 10.0;
+    xmax += 10.0;
+    
+    //  For chi, we should be really close to 0.0, and for multiple should be close to 1.0
+    ymin -= 0.25*ymin;
+    ymax += 0.25*ymax;
+    
+    if( m_showChi )
+    {
+      ymin = std::min( ymin, -1.0 );
+      ymax = std::max( ymax, 1.0 );
+    }else
+    {
+      ymin = std::min( ymin, 0.5 );
+      ymax = std::max( ymax, 1.5 );
+    }
+  }else
+  {
+    // There are many points to display
+    const double xrange = std::max( xmax - xmin, 10.0 );
+    xmin = ((xmin > 0.1*xrange) ? (xmin - 0.1*xrange) : 0.0);
+    xmax += 0.1*xrange;
+    
+    
+    const double yrange = std::max( ymax - ymin, 0.1 );
+    ymin -= 0.25*yrange;
+    ymax += 0.25*yrange;
+    
+    if( m_showChi )
+    {
+      ymin = std::min( ymin, -1.0 );
+      ymax = std::max( ymax, 1.0 );
+    }else
+    {
+      ymin = std::min( ymin, 0.5 );
+      ymax = std::max( ymax, 1.5 );
+    }
+  }//if( no rows ) / else / else
+
+  // Round up/down to the nearest 10 keV
+  xmin = 10.0 * std::floor( 0.1*xmin );
+  xmax = 10.0 * std::ceil( 0.1*xmax );
+  
+  // Round up/down to the nearest 0.1
+  ymin = 0.1 * std::floor( 10.0*ymin );
+  ymax = 0.1 * std::ceil( 10.0*ymax );
+  
+  cout << "Setting xrange=" << xmin << ", " << xmax << "], yrange=[" << ymin << ", " << ymax << "]" << endl;
+  
+  const auto xLocation = m_showChi ? Chart::AxisValue::ZeroValue : Chart::AxisValue::MinimumValue;
+  axis(Chart::XAxis).setLocation( xLocation );
+  
+  axis(Chart::XAxis).setRange( xmin, xmax );
+  axis(Chart::YAxis).setRange( ymin, ymax );
+}//void calcAndSetAxisRanges();
+
+
+
+void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightPx )
+{
+  double ymin = axis(Chart::YAxis).minimum();
+  double ymax = axis(Chart::YAxis).maximum();
+  
+  if( fabs(ymax - ymin) < 0.1 )
   {
     ymin = 0.0;
     ymax = 100.0;
   }//
-  
 
 //Calculate number of pixels we need to pad, for x axis to be at 45 pixels from
 //  the bottom of the chart; if less than 10px, pad at least 10px, or at most
@@ -3776,6 +3844,8 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightP
   const int topPadding = plotAreaPadding(Top);
   const double fracY = -ymin / (ymax - ymin);
   double pxToXAxis = (fracY >= 1.0) ? 0.0 : (45.0 - fracY*(yHeightPx - topPadding) ) / (1.0-fracY);
+  if( IsInf(pxToXAxis) || IsNan(pxToXAxis) ) //JIC, but shouldnt be needed
+    pxToXAxis = 10;
   pxToXAxis = std::floor( pxToXAxis + 0.5 );
   pxToXAxis = std::max( pxToXAxis, 10.0 );
   pxToXAxis = std::min( pxToXAxis, 45.0 );
@@ -3806,7 +3876,7 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightP
       renderinterval = 10*n;
     
     ymin += std::numeric_limits<double>::epsilon();
-    ymax -=  std::numeric_limits<double>::epsilon();
+    ymax -= std::numeric_limits<double>::epsilon();
     ymin = renderinterval * std::floor( ymin / renderinterval);
     ymax = renderinterval * std::ceil( ymax / renderinterval);
   }//End codeblock to determin min/max label values
@@ -3827,8 +3897,9 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightP
 
 void ShieldingSourceDisplay::Chi2Graphic::paintEvent( WPaintDevice *device )
 {
-  calcAndSetAxisPadding( device->height().toPixels() );
-  
+  calcAndSetAxisRanges();
+  if( device )
+    calcAndSetAxisPadding( device->height().toPixels() );
   Wt::Chart::WCartesianChart::paintEvent( device );
 }//void paintEvent( Wt::WPaintDevice *paintDevice )
 
@@ -3838,13 +3909,15 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
 {
   WCartesianChart::paint( painter, rectangle );
 
+  cout << "plot padding: [" << plotAreaPadding(Top) << ", " << plotAreaPadding(Right) << ", " << plotAreaPadding(Bottom) << ", " << plotAreaPadding(Left) << "]" << endl;
+  
   //I think removing of the areas() is already done by
-  //  WCartesuanChart::paintEvent(...), but jic
+  //  WCartesianChart::paintEvent(...), but jic
   while( !areas().empty() )
     delete areas().front();
   
   WStandardItemModel *chi2Model = dynamic_cast<WStandardItemModel *>( model() );
-  if( !chi2Model )  //prob never happen, bust JIC
+  if( !chi2Model )  //prob never happen, but JIC
     return;
   
   const WPointF br = painter.window().bottomRight();
@@ -3959,11 +4032,22 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
     painter.drawText( x, y, twidth, theight, AlignRight, TextSingleLine, text );
     painter.setPen( oldPen );
   }//if( nrow > 0 && !IsNan(sqrt(chi2)) )
+
+  const double yAxisMin = axis(Chart::YAxis).minimum();
+  const double yAxisMax = axis(Chart::YAxis).maximum();
   
-  if( !m_showChi && axis(Chart::YAxis).minimum() < 1.0 && axis(Chart::YAxis).maximum() > 1.0 )
+  if( !m_showChi && (yAxisMin < 1.0) && (yAxisMax > 1.0) )
   {
-    WPointF left = mapToDevice( axis(Chart::XAxis).minimum(), 1.0 );
-    WPointF right = mapToDevice( axis(Chart::XAxis).maximum(), 1.0 );
+    const double xAxisMin = axis(Chart::XAxis).minimum();
+    const double xAxisMax = axis(Chart::XAxis).maximum();
+    
+    WPointF left = mapToDevice( xAxisMin, 1.0 );
+    WPointF right = mapToDevice( xAxisMax, 1.0 );
+    
+    cout << "xAxisMin=" << xAxisMin << ", xAxisMax=" << xAxisMax << ", yAxisMin=" << yAxisMin << ", yAxisMax=" << yAxisMax << endl;
+    cout << "left={" << left.x() << "," << left.y() << "}, right={" << right.x() << "," << right.y() << "}" << endl;
+    
+    
     left.setY( left.y() + 0.5 );
     right.setY( right.y() + 0.5 );
     
@@ -4384,10 +4468,12 @@ if (m_specViewer->isSupportFile())
   m_chi2Graphic = new Chi2Graphic();
   m_chi2Graphic->setModel( m_chi2Model );
 
-  m_chi2Graphic->setPlotAreaPadding( 40, Bottom );
   m_chi2Graphic->setPlotAreaPadding( 12, Right );
   m_chi2Graphic->setPlotAreaPadding(  2, Top );
-  m_chi2Graphic->setPlotAreaPadding( 50, Left );
+  
+  // Left and bottom paddings will be set by Chi2Graphic::calcAndSetAxisPadding(...)
+  //m_chi2Graphic->setPlotAreaPadding( 50, Left );
+  //m_chi2Graphic->setPlotAreaPadding( 40, Bottom );
   //m_chi2Graphic->setAutoLayoutEnabled();
   
   m_chi2Graphic->addSeries( Chart::WDataSeries(1, Chart::PointSeries) );
@@ -4404,8 +4490,8 @@ if (m_specViewer->isSupportFile())
   m_chi2Graphic->axis(Chart::YAxis).setLabelFont(font);
   m_chi2Graphic->axis(Chart::XAxis).setLabelFont(font);
   
-  
-  m_chi2Graphic->axis(Chart::XAxis).setLocation( Chart::ZeroValue );
+  m_chi2Graphic->axis(Chart::XAxis).setLocation( Chart::AxisValue::ZeroValue );
+  m_chi2Graphic->axis(Chart::YAxis).setLocation( Chart::AxisValue::MinimumValue );
 
   m_chi2Graphic->axis(Chart::XAxis).setScale( Chart::LinearScale );
   m_chi2Graphic->axis(Chart::YAxis).setScale( Chart::LinearScale );
@@ -5685,12 +5771,6 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
           && !IsInf(energy) && !IsNan(energy) )
         keeper_points.push_back( DDPair(energy,chi,scale,color,scale_uncert) );
     }//for( size_t row = 0; row < chis.size(); ++row )
-
-    //If we only have one point, then Wt cant find the y-range, and an assert
-    //  statment gets triggered in WAxis.C, so we'll fix this up kinda.
-    //  I should probably submit a bug report to Wt...
-    if( keeper_points.size() == 1 )
-      keeper_points.insert( keeper_points.begin(), DDPair(0.0,0.0,0.0,WColor(),0.0) );
 
     m_chi2Graphic->setNumFitForParams( ndof );
     if( !m_calcLog.empty() )

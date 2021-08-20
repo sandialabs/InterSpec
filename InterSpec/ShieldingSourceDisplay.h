@@ -1046,6 +1046,7 @@ protected:
     void setTextPenColor( const Wt::WColor &color );
     void setColorsFromTheme( std::shared_ptr<const ColorTheme> theme );
   protected:
+    void calcAndSetAxisRanges();
     void calcAndSetAxisPadding( double yHeightPx );
     
     int m_nFitForPar;
