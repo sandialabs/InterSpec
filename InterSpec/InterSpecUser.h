@@ -942,7 +942,9 @@ struct UserState
   int showingWindows;        //(not implemented yet)
   
   std::string userOptionsJson;
-  
+
+  // Note: we are including the whole color theme definition here, and not a link to the theme in
+  //   the database.  
   std::string colorThemeJson;
   
   template<class Action>
