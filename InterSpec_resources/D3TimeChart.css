@@ -102,6 +102,12 @@
   right: 60px;
 }
 
+.ShowD3TimeChartFilters:hover {
+  opacity: 1.0;
+  background-color: rgba(255,255,255,0.75);
+  border-radius: 12px;
+}
+
 .D3TimeChartFilters .closeicon-wtdefault {
   position: absolute;
   right: 5px;
