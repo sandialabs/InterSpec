@@ -2995,10 +2995,25 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       entry.modify()->shownDisplayFeatures |= UserState::kDockedWindows;
     if( m_spectrum->yAxisIsLog() )
       entry.modify()->shownDisplayFeatures |= UserState::kLogSpectrumCounts;
-    if( m_user->preferenceValue<bool>( "ShowVerticalGridlines" ) )
-      entry.modify()->shownDisplayFeatures |= UserState::kVerticalGridLines;
-    if( m_user->preferenceValue<bool>( "ShowHorizontalGridlines" ) )
-      entry.modify()->shownDisplayFeatures |= UserState::kHorizontalGridLines;
+    
+    try
+    {
+      if( m_user->preferenceValue<bool>( "ShowVerticalGridlines" ) )
+        entry.modify()->shownDisplayFeatures |= UserState::kVerticalGridLines;
+    }catch(...)
+    {
+      // We can get here if we loaded from a state that didnt have this preference
+    }
+    
+    try
+    {
+      if( m_user->preferenceValue<bool>( "ShowHorizontalGridlines" ) )
+        entry.modify()->shownDisplayFeatures |= UserState::kHorizontalGridLines;
+    }catch(...)
+    {
+      // We can get here if we loaded from a state that didnt have this preference
+    }
+    
     if( m_spectrum->legendIsEnabled() )
     {
       cerr << "Legend enabled" << endl;
@@ -4073,8 +4088,16 @@ void InterSpec::deleteLicenseAndDisclaimersWindow()
 
 void InterSpec::showWelcomeDialog( bool force )
 {
-  if( !force && !m_user->preferenceValue<bool>( "ShowSplashScreen" ) )
-    return;
+  try
+  {
+    if( !force && !m_user->preferenceValue<bool>( "ShowSplashScreen" ) )
+      return;
+  }catch(...)
+  {
+    //m_user didnt have preference "ShowSplashScreen" for some reason
+    if( !force )
+      return;
+  }
   
   if( m_useInfoWindow )
   {
@@ -5949,7 +5972,9 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   
   PopupDivMenu *chartmenu = m_displayOptionsPopupDiv->addPopupMenuItem( "Chart Options" , "InterSpec_resources/images/spec_settings_small.png");
   
-  const bool logypref = m_user->preferenceValue<bool>( "LogY" );
+  bool logypref = true;
+  try{ logypref = m_user->preferenceValue<bool>( "LogY" ); }catch(...){}
+  
   m_logYItems[0] = chartmenu->addMenuItem( "Log Y Scale" );
   m_logYItems[1] = chartmenu->addMenuItem( "Linear Y Scale" );
   m_logYItems[0]->setHidden( logypref );
@@ -7164,7 +7189,9 @@ Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpecUtils::SpectrumType 
     if( answer && !meas->modified() )
       return answer;
   
-    const bool savePref = m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" /*"SaveSpectraToDb"*/);
+    bool savePref = false;
+    try{ savePref = m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ); }catch(...){}
+    
     if( !savePref )
       return answer;
     
@@ -8799,19 +8826,19 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     closeShieldingSourceFitWindow();
     
 #if( USE_DB_TO_STORE_SPECTRA )
-    if( m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ) )
-    {
-      //We also need to do this in the InterSpec destructor as well.
-      //   Also maybe change size limitations to only apply to auto saving
-      if( m_currentStateID >= 0 )
-      {
-        //Save to (HEAD) of current state
-      }else
-      {
-        //Create a state
-        //Handle case where file is to large to be saved
-      }
-    }
+    //if( m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ) )
+    //{
+    //  //We also need to do this in the InterSpec destructor as well.
+    //  //   Also maybe change size limitations to only apply to auto saving
+    //  if( m_currentStateID >= 0 )
+    //  {
+    //    //Save to (HEAD) of current state
+    //  }else
+    //  {
+    //    //Create a state
+    //    //Handle case where file is to large to be saved
+    //  }
+    //}
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   

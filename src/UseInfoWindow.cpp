@@ -745,7 +745,16 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   {
     WCheckBox *cb = new WCheckBox( "show at start when no spectra", bottom );
     cb->setFloatSide( Left );
-    cb->setChecked(viewer->m_user->preferenceValue<bool>( "ShowSplashScreen" ));
+    
+    try
+    {
+      const bool showAtStartup = viewer->m_user->preferenceValue<bool>( "ShowSplashScreen" );
+      cb->setChecked( showAtStartup );
+    }catch(...)
+    {
+      // probably wont ever get here, but JIC
+    }
+    
 
     cb->checked().connect( boost::bind( showAgainCallback, true ) );
     cb->unChecked().connect( boost::bind( showAgainCallback, false ) );
