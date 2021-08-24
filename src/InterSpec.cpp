@@ -9027,7 +9027,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       
       m_secondDataMeasurement = nullptr;
+#if( USE_SPECTRUM_CHART_D3 )
+      m_spectrum->setSecondData( nullptr );
+#else
       m_spectrum->setSecondData( nullptr, false );
+#endif
       
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::SecondForeground,
                                              nullptr, {}, {} );
@@ -11095,12 +11099,25 @@ vector<string> InterSpec::detectorsToDisplay( const SpecUtils::SpectrumType type
 
 void InterSpec::refreshDisplayedCharts()
 {
-  if( !!m_dataMeasurement )
+  //We want to keep the old display scale factors, but calling displayForegroundData() will
+  //  reset them.
+  const float backSf = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Background);
+  const float secondSf = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::SecondForeground);
+  
+  if( m_dataMeasurement )
     displayForegroundData( true );
-  if( !!m_secondDataMeasurement )
+  
+  if( m_secondDataMeasurement )
+  {
     displaySecondForegroundData();
-  if( !!m_backgroundMeasurement )
+    m_spectrum->setDisplayScaleFactor( secondSf, SpecUtils::SpectrumType::SecondForeground );
+  }//if( m_secondDataMeasurement )
+  
+  if( m_backgroundMeasurement )
+  {
     displayBackgroundData();
+    m_spectrum->setDisplayScaleFactor( backSf, SpecUtils::SpectrumType::Background );
+  }//if( m_backgroundMeasurement )
   
   // Now check if the currently displayed energy range extend past all the ranges of the data.
   //  If so, dont display past where the data is.
@@ -11506,7 +11523,13 @@ void InterSpec::displaySecondForegroundData()
   {
     //sample_nums.clear();
     if( m_spectrum->secondData() )
+    {
+#if( USE_SPECTRUM_CHART_D3 )
+      m_spectrum->setSecondData( nullptr );
+#else
       m_spectrum->setSecondData( nullptr, false );
+#endif
+    }
     
     if( !m_timeSeries->isHidden() )
     {
@@ -11527,7 +11550,11 @@ void InterSpec::displaySecondForegroundData()
   if( histH )
     histH->set_title( "Second Foreground" );
     
+#if( USE_SPECTRUM_CHART_D3 )
+  m_spectrum->setSecondData( histH );
+#else
   m_spectrum->setSecondData( histH, false );
+#endif
   
   if( !m_timeSeries->isHidden() )
   {
