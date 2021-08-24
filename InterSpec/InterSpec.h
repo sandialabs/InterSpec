@@ -739,6 +739,7 @@ public:
 
   /** Hard re-displays the foreground, background, and 2nd datas.
    Displayed energy range will only be changed if the currently displayed range goes past what the data now displays.
+   Will keep current display scale factors for foreground/background
    
    Useful after calibrations.
    */

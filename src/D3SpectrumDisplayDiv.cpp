@@ -1011,9 +1011,9 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> backgroun
 }//void D3SpectrumDisplayDiv::setBackground(...);
 
 
-void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist, const bool ownAxis )
+void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist )
 {
-  m_model->setSecondDataHistogram( hist, ownAxis );
+  m_model->setSecondDataHistogram( hist, false );
   
   scheduleUpdateSecondData();
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> background );
