@@ -98,7 +98,10 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   setNuclide( m_nuclide );
   
   if( !measDate.is_special() )
+  {
     m_drfMeasurementDate->setDate( WDateTime::fromPosixTime(measDate).date() );
+    validateDateFields();
+  }
 }//MakeDrfSrcDef constructor
 
 
@@ -325,6 +328,19 @@ void MakeDrfSrcDef::useAgeInfoUserToggled()
   m_sourceInfoAtMeasurement->setDisabled( !useAge );
   m_sourceAgeAtAssay->setDisabled( !useAge );
   
+  if( useAge )
+  {
+    // If the text fields are empty, the red error background wont show up, so we'll at least put
+    //  a space there
+    if( m_assayDate->text().empty() )
+      m_assayDate->setText( " " );
+    
+    if( m_drfMeasurementDate->text().empty() )
+      m_drfMeasurementDate->setText( " " );
+    
+    validateDateFields();
+  }//if( useAge )
+  
   m_updated.emit();
 }//void useAgeInfoUserToggled()
 
@@ -440,8 +456,19 @@ void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
 }//void handleUserChangedAgeAtAssay()
 
 
-void MakeDrfSrcDef::handleEnteredDatesUpdated()
+void MakeDrfSrcDef::validateDateFields()
 {
+  // Only validate if we are actually using the date fields
+  if( !m_useAgeInfo->isChecked() )
+    return;
+  
+  string txt = m_drfMeasurementDate->text().toUTF8();
+  if( (txt.length() > 1) && std::isspace(txt[0]) )
+    m_drfMeasurementDate->setText( WString::fromUTF8( SpecUtils::trim_copy(txt) ) );
+  
+  txt = m_assayDate->text().toUTF8();
+  if( (txt.length() > 1) && std::isspace(txt[0]) )
+    m_assayDate->setText( WString::fromUTF8( SpecUtils::trim_copy(txt) ) );
   
   if( m_drfMeasurementDate->validate() == Wt::WValidator::Valid )
   {
@@ -462,6 +489,12 @@ void MakeDrfSrcDef::handleEnteredDatesUpdated()
     if( !m_assayDate->hasStyleClass( "SrcInputError" ) )
       m_assayDate->addStyleClass( "SrcInputError" );
   }
+}//void validateDateFields();
+
+
+void MakeDrfSrcDef::handleEnteredDatesUpdated()
+{
+  validateDateFields();
   
   updateAgedText();
   
@@ -629,6 +662,7 @@ void MakeDrfSrcDef::setAssayInfo( const double activity,
     m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(activity, ndecimals, useCi) );
   }
   
+  validateDateFields();
   updateAgedText();
 }//void setAssayInfo(..);
 
@@ -696,6 +730,7 @@ void MakeDrfSrcDef::setAgeAtMeas( const double age )
   
   m_sourceAgeAtAssay->setText( PhysicalUnits::printToBestTimeUnits(age-assayToMeasTime) );
 
+  validateDateFields();
   updateAgedText();
 }//void setAgeAtMeas( const double age );
 

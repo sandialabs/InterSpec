@@ -1031,7 +1031,8 @@ namespace
         m_gammas( false ),
         m_alphas( false ),
         m_betas( false ),
-        m_sessionId( wApp->sessionId() )
+        m_sessionId( wApp->sessionId() ),
+        m_app( wApp )
     {
       if( m_display )
         m_timeSpan = m_display->timeToDisplayTill();
@@ -1065,6 +1066,20 @@ namespace
     virtual void handleRequest( const Wt::Http::Request &request,
                                 Wt::Http::Response &response )
     {
+      WApplication::UpdateLock lock( m_app );
+      
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in DecayCsvResource.";
+        
+        response.out() << "Error grabbing application lock to form DecayCsvResource resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+        
+        return;
+      }//if( !lock )
+      
+      
       const string eol_char = "\r\n"; //for windows - could potentially cosutomize this for the users operating system
       
       try
@@ -1228,6 +1243,7 @@ namespace
     bool m_alphas;
     bool m_betas;
     std::string m_sessionId;
+    Wt::WApplication *m_app; //it looks like WApplication::instance() will be valid in handleRequest, but JIC
     boost::function<void()> m_cleanup;
   };//class DecayCsvResource : public Wt::WResource
 }//namespace

@@ -447,6 +447,42 @@ namespace MassAttenuation
   {
     return sm_xs_tool.massAttenuationCoeficientFracAN( atomic_number, energy );
   }
+
+
+/*
+void print_xs_csv( std::ostream &output )
+{
+  const double units = (PhysicalUnits::cm2 / PhysicalUnits::g);
+  const GammaEmProcces processes[] = {
+    GammaEmProcces::ComptonScatter, GammaEmProcces::RayleighScatter,
+    GammaEmProcces::PhotoElectric, GammaEmProcces::PairProduction
+  };
+  
+  output << "Energy (keV)";
+  for( int an = 1; an <= 100; ++an )
+  output << ",u_" << an << " (cm2)";
+  output << std::endl;
+  
+  for( float energy = 2; energy < 10000; energy += (energy < 200 ? 1.0f : (energy < 3000 ? 10.0f : 100.0f)) )
+  {
+    output << energy;
+    for( int an = 1; an <= 100; ++an )
+    {
+      output << ",";
+      try{ output << (MassAttenuation::massAttenuationCoeficient(an, energy) / units); }catch(...){}
+      
+      // We could print out values for each individual processes, via:
+      //for( const auto process : processes )
+      //{
+      //  output << ",";
+      //  try{ output << (MassAttenuation::massAttenuationCoeficient(an,energy,process) / units); }catch(...){}
+      //}
+    }
+    output << endl;
+  }
+}//void print_xs_csv( std::ostream &output )
+*/
+
 }//namespace MassAttenuation
 
 
