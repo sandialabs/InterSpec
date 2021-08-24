@@ -188,17 +188,21 @@ namespace
   
   
   
-  /** Class to downlaod either a N42-2012, or PCF file. */
+  /** Class to download either a N42-2012, or PCF file. */
   class CalFileDownloadResource : public Wt::WResource
   {
     const bool m_pcf;
     MakeDrf * const m_makedrf;
     string m_filename;
+    Wt::WApplication *m_app;
     
   public:
     CalFileDownloadResource( const bool pcf, MakeDrf *parent )
-     : WResource( parent ), m_pcf(pcf), m_makedrf( parent ), m_filename( "" )
-    {}
+     : WResource( parent ), m_pcf(pcf), m_makedrf( parent ), m_filename( "" ),
+       m_app( WApplication::instance() )
+    {
+      assert( m_app );
+    }
     
     virtual ~CalFileDownloadResource()
     {
@@ -213,6 +217,19 @@ namespace
     virtual void handleRequest( const Wt::Http::Request &request,
                                Wt::Http::Response &response )
     {
+      WApplication::UpdateLock lock( m_app );
+      
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in CalFileDownloadResource.";
+        
+        response.out() << "Error grabbing application lock to form CalFileDownloadResource resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+        
+        return;
+      }//if( !lock )
+      
       if( !m_makedrf )
         return;
       
@@ -291,11 +308,13 @@ namespace
     string m_filename;
     string m_description;
     MakeDrf * const m_makedrf;
+    Wt::WApplication *m_app;
     
   public:
     CsvDrfDownloadResource( MakeDrf *parent )
-    : WResource( parent ), m_filename(""), m_makedrf( parent )
+    : WResource( parent ), m_filename(""), m_makedrf( parent ), m_app( WApplication::instance() )
     {
+      assert( m_app );
       suggestFileName( "drfinfo.csv", WResource::Attachment );
     }
     
@@ -322,7 +341,20 @@ namespace
     virtual void handleRequest( const Wt::Http::Request &request,
                                Wt::Http::Response &response )
     {
-      assert( wApp );
+      
+      WApplication::UpdateLock lock( m_app );
+      
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in CsvDrfDownloadResource.";
+        
+        response.out() << "Error grabbing application lock to form CsvDrfDownloadResource resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+        
+        return;
+      }//if( !lock )
+      
       response.setMimeType( "text/csv" );
       if( m_makedrf )
         m_makedrf->writeCsvSummary( response.out(), m_filename, m_description );
@@ -1907,25 +1939,33 @@ void MakeDrf::handleSourcesUpdates()
         }
       }//for( auto det : meas->detector_names() )
       
-      
+
       const vector<pair<DrfPeak *,MakeDrfSrcDef *>> peaks_to_sources = sample->selected_peak_to_sources();
-      
       map<const SandiaDecay::Nuclide *,vector<SandiaDecay::EnergyRatePair>> mixtures;
-      for( auto pp : peaks_to_sources )
+      
+      // ageAtSpectrumTime() or activityAtSpectrumTime() can through an exception if the entered
+      //  values are invalid; we will skip the entire sample if we encounter this.
+      try
       {
-         const SandiaDecay::Nuclide * const nuc = pp.second->nuclide();
-        if( !pp.first || !nuc || mixtures.count(nuc) )
-          continue;
-        
-        const double activity = pp.second->activityAtSpectrumTime();
-        const double age = pp.second->ageAtSpectrumTime();
-        
-        SandiaDecay::NuclideMixture mix;
-        mix.addAgedNuclideByActivity( nuc, activity, age );
-        
-        mixtures[nuc] = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
-      }//for( auto pp : peaks_to_sources )
-    
+        for( auto pp : peaks_to_sources )
+        {
+          const SandiaDecay::Nuclide * const nuc = pp.second->nuclide();
+          if( !pp.first || !nuc || mixtures.count(nuc) )
+            continue;
+          
+          const double activity = pp.second->activityAtSpectrumTime();
+          const double age = pp.second->ageAtSpectrumTime();
+          
+          SandiaDecay::NuclideMixture mix;
+          mix.addAgedNuclideByActivity( nuc, activity, age );
+          
+          mixtures[nuc] = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+        }//for( auto pp : peaks_to_sources )
+      }catch( std::exception & )
+      {
+        not_all_sources_used = true;
+        continue;
+      }//try / catch
       
       for( auto pp : peaks_to_sources )
       {

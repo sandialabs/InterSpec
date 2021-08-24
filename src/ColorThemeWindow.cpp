@@ -87,10 +87,13 @@ namespace
   class JsonDownloadResource : public Wt::WResource
   {
     ColorThemeWindow *m_display;
+    Wt::WApplication *m_app; //it looks like WApplication::instance() will be valid in handleRequest, but JIC
   public:
     JsonDownloadResource( ColorThemeWindow *parent )
-    : WResource( parent ), m_display( parent )
-    {}
+    : WResource( parent ), m_display( parent ), m_app( WApplication::instance() )
+    {
+      assert( m_app );
+    }
     
     virtual ~JsonDownloadResource()
     {
@@ -100,6 +103,19 @@ namespace
     virtual void handleRequest( const Wt::Http::Request &request,
                                Wt::Http::Response &response )
     {
+      WApplication::UpdateLock lock( m_app );
+      
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in JsonDownloadResource.";
+        
+        response.out() << "Error grabbing application lock to form JsonDownloadResource resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+        
+        return;
+      }//if( !lock )
+      
       if( !m_display )
         return;
       string name = m_display->currentThemeTitle();

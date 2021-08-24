@@ -141,10 +141,14 @@ namespace
   class StringDownloadResource : public Wt::WResource
   {
     ShieldingSourceDisplay *m_display;
+    Wt::WApplication *m_app;
+    
   public:
     StringDownloadResource( ShieldingSourceDisplay *parent )
-      : WResource( parent ), m_display( parent )
-    {}
+      : WResource( parent ), m_display( parent ), m_app( WApplication::instance() )
+    {
+      assert( m_app );
+    }
     
     virtual ~StringDownloadResource()
     {
@@ -154,6 +158,17 @@ namespace
     virtual void handleRequest( const Wt::Http::Request &request,
                                Wt::Http::Response &response )
     {
+      WApplication::UpdateLock lock( m_app );
+      
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in StringDownloadResource.";
+        response.out() << "Error grabbing application lock to form StringDownloadResource resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+        return;
+      }//if( !lock )
+      
       suggestFileName( "shielding_source_fit_model.xml", WResource::Attachment );
       response.setMimeType( "application/xml" );
       if( !m_display )
@@ -4360,11 +4375,9 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_detectorDisplay = new DetectorDisplay( m_specViewer, m_specViewer->fileManager()->model() );
   m_detectorDisplay->setInline( true );
 
-  Wt::WPushButton *addItemMenubutton = new WPushButton( " " );
+  Wt::WPushButton *addItemMenubutton = new WPushButton();
+  addItemMenubutton->setStyleClass( "RoundMenuIcon InvertInDark" );
   m_addItemMenu = new PopupDivMenu( addItemMenubutton, PopupDivMenu::TransientMenu );
-  
-  addItemMenubutton->setStyleClass( "ShiledingSourceOptionsBtn" );
-  addItemMenubutton->addStyleClass( "GearIcon" );
 
   //this validates floating point numbers followed by a distance unit
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );

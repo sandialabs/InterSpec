@@ -385,8 +385,10 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
 
 PeakModel::PeakCsvResource::PeakCsvResource( PeakModel *parent )
   : WResource( parent ),
-    m_model( parent )
+    m_model( parent ),
+    m_app( WApplication::instance() )
 {
+  assert( m_app );
 }
 
 
@@ -399,6 +401,17 @@ PeakModel::PeakCsvResource::~PeakCsvResource()
 void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*request*/,
                                                 Wt::Http::Response& response )
 {
+  WApplication::UpdateLock lock( m_app );
+  
+  if( !lock )
+  {
+    log("error") << "Failed to WApplication::UpdateLock in PeakCsvResource.";
+    response.out() << "Error grabbing application lock to form PeakCsvResource resource; please report to InterSpec@sandia.gov.";
+    response.setStatus(500);
+    assert( 0 );
+    return;
+  }//if( !lock )
+  
   //If you update the fields or headers of this function, you should also update
   //  PeakModel::csv_to_candidate_fit_peaks(...)
   
