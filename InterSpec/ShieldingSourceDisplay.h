@@ -500,7 +500,7 @@ protected:
 public:
   enum Columns
   {
-    kIsotope, kActivity, kFitActivity, kAge, kFitAge, kIsotopeMass,
+    kIsotope, kFitActivity, kFitAge, kActivity, kAge, kIsotopeMass,
     kActivityUncertainty, kAgeUncertainty,
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
     kTruthActivity, kTruthActivityTolerance, kTruthAge, kTruthAgeTolerance,

@@ -153,12 +153,13 @@ class PointSourceShieldingChi2Fcn
 //  be defined via the 'Material' class, or be a generic material defined by
 //  atomic number and areal density which is indicated by a NULL pointer.
 //
-//paramaters:
+//parameters:
 //-Activity (in MBq) nuclide 0, (nuclides are sorted alphebaetically by name)
 //-Age of nuclide 0
 //-Activity (in MBq) nuclide 1
-//-Age of nuclide 1 (if negative, must be negative value of one plue index of
-//                   defining nuclide; e.g., a negative int.  Hacky, but whatever)
+//-Age of nuclide 1 (if negative, must be negative value of one plus index of
+//                   defining nuclide; e.g., a negative int.  Hacky, but whatever.
+//                   To get age for this case, do `age = 1 + 2*((-1*parameter) - 1)` )
 // ...
 //if material 0 normal material (if Material* is non-NULL pointer)
 //    -Material Thickness
@@ -335,6 +336,9 @@ public:
   //  size or invalid nuclide passed in
   double activity( const SandiaDecay::Nuclide *nuclide,
                    const std::vector<double> &params ) const;
+  double activityUncertainty( const SandiaDecay::Nuclide *nuclide,
+                  const std::vector<double> &params,
+                  const std::vector<double> &errors ) const;
   double age( const SandiaDecay::Nuclide *nuclide,
                    const std::vector<double> &params ) const;
   size_t nuclideIndex( const SandiaDecay::Nuclide *nuclide ) const;

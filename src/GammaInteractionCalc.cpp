@@ -817,13 +817,17 @@ std::shared_ptr<Material> PointSourceShieldingChi2Fcn::variedMassFracMaterial(
 {
   if( !material )
     throw runtime_error( "variedMassFracMaterial(): invalid input material" );
+  
   if( !hasVariableMassFraction(material) )
     throw runtime_error( "variedMassFracMaterial(): " + material->name
                          + " does not have a variable mass fraction nuclide" );
   
   std::shared_ptr<Material> answer = std::make_shared<Material>( *material );
-  MaterialToNucsMap::const_iterator iter
-                             = m_nuclidesToFitMassFractionFor.find( material );
+  MaterialToNucsMap::const_iterator iter = m_nuclidesToFitMassFractionFor.find( material );
+  
+  if( iter == end(m_nuclidesToFitMassFractionFor) )
+    throw runtime_error( "variedMassFracMaterial(): material not found in m_nuclidesToFitMassFractionFor" );
+  
   const vector<const SandiaDecay::Nuclide *> &nucs = iter->second;
   
   double prefrac = 0.0, postfrac = 0.0;
@@ -1120,11 +1124,20 @@ double PointSourceShieldingChi2Fcn::activityDefinedFromShielding(
       if( src == nuclide )
       {
         double massFrac = 0.0;
-        for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+        
+#if( ALLOW_MASS_FRACTION_FIT )
+        if( hasVariableMassFraction(mat) )
         {
-          if( nfp.first == src )
-            massFrac += nfp.second;
-        }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+          massFrac = PointSourceShieldingChi2Fcn::massFraction( mat, src, params );
+        }else
+#endif
+        {
+          for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+          {
+            if( nfp.first == src )
+              massFrac += nfp.second;
+          }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+        }//if( hasVariableMassFraction(mat) ) / else
 
 /*
         if( massFrac <= 0.0 )
@@ -1189,6 +1202,121 @@ double PointSourceShieldingChi2Fcn::activity( const SandiaDecay::Nuclide *nuclid
 }//double activity(...)
 
 
+
+double PointSourceShieldingChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *nuclide,
+                                                       const std::vector<double> &params,
+                                                        const std::vector<double> &errors ) const
+{
+  if( params.size() != numExpectedFitParameters() )
+  {
+    cerr << "params.size()=" << params.size()
+    << ", numExpectedFitParameters()=" << numExpectedFitParameters()
+    << endl;
+    throw runtime_error( "PointSourceShieldingChi2Fcn::activityUncertainty(...) invalid params size" );
+  }//if( params.size() != numExpectedFitParameters() )
+  
+  if( params.size() != errors.size() )
+    throw runtime_error( "PointSourceShieldingChi2Fcn::activityUncertainty: size(params) != size(errors)" );
+  
+  // If it is a simple point source, we can get the uncertainty by just passing in the
+  //  parameter uncertainties and calculating activity from those.  However, if its a
+  //  self-attenuating source, we have to do a little more propagation and such.
+  
+  if( !isActivityDefinedFromShielding( nuclide ) )
+    return activity( nuclide, errors );
+    
+  
+  // We will take into account the uncertainties of the inner layers to our current shell, the
+  //  uncertainty of the thickness, and the uncertainty of the mass fractions.
+  double radius = 0.0, radiusUncertSquared = 0.0, activity = 0.0, activityUncertSquared = 0.0;
+  const int nmat = static_cast<int>(numMaterials());
+  for( int matn = 0; matn < nmat; ++matn )
+  {
+    if( isGenericMaterial( matn ) )
+      continue;
+    
+    const double thick = thickness( matn, params );
+    const double thickUncert = thickness( matn, errors );
+    const Material * const mat = m_materials[matn].first;
+    
+    for( const SandiaDecay::Nuclide *src : m_materials[matn].second )
+    {
+      if( src == nuclide )
+      {
+        double massFrac = 0.0, massFracUncert = 0.0;
+        
+#if( ALLOW_MASS_FRACTION_FIT )
+        if( hasVariableMassFraction(mat) )
+        {
+          massFraction( massFrac, massFracUncert, mat, src, params, errors );
+        }else
+#endif
+        {
+          for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+          {
+            if( nfp.first == src )
+              massFrac += nfp.second;
+          }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+        }//if( hasVariableMassFraction(mat) ) / else
+
+        const double outerRad = radius + thick;
+        
+        const double iso_density = massFrac * mat->density / PhysicalUnits::gram;
+        const double activity_per_gram = nuclide->activityPerGram();
+        
+        const double volumeUncertDueToInnerRad = 4.0 * PhysicalUnits::pi * pow(radius,2.0) * sqrt(radiusUncertSquared);
+        
+        // We take the uncertainty in volume due to the thickness uncertainty to be independent of
+        //  the inner-radius uncertainty - which is approximately, probably, about right to kinda
+        //  fairly cover all the uncertainties - maybe
+        const double volumeUncertDueToThickness = 4.0 * PhysicalUnits::pi * pow(outerRad,2.0) * thickUncert;
+        
+        const double vol = (4.0/3.0)*PhysicalUnits::pi*( pow(outerRad,3.0) - pow(radius,3.0));
+        const double volUncertSquared = pow(volumeUncertDueToInnerRad,2.0) + pow(volumeUncertDueToThickness,2.0);
+        const double mass_grams = iso_density * vol;
+        const double massUncertaintySquared_grams = iso_density * volUncertSquared;
+        const double thisActivity = mass_grams * activity_per_gram;
+        const double thisActivityUncertaintySquared = massUncertaintySquared_grams * activity_per_gram;
+        
+        //cout << src->symbol << ": sqrt(thisActivityUncertaintySquared)=" << sqrt(thisActivityUncertaintySquared) << endl
+        //<< "\tvolumeUncertDueToInnerRad=" << volumeUncertDueToInnerRad
+        //<< " (radUncert=" << sqrt(radiusUncertSquared)/PhysicalUnits::cm << " cm)" << endl
+        //<< "\tvolumeUncertDueToThickness=" << volumeUncertDueToThickness
+        //<< " (thickUncert=" << sqrt(thickUncert)/PhysicalUnits::cm << " cm)" << endl
+        //<< "\tmassFrac=" << massFrac << ", massFracUncert=" << massFracUncert
+        //<< endl;
+        
+        activityUncertSquared += thisActivityUncertaintySquared;
+        if( !IsNan(massFrac) && !IsInf(massFrac) && (massFrac > FLT_EPSILON) )
+          activityUncertSquared += std::pow( thisActivity * massFracUncert / massFrac, 2.0 );
+        
+        activity += thisActivity;
+      }//if( src == nuclide )
+    }//for( const SandiaDecay::Nuclide *src : srcs )
+    
+    radius += thick;
+    
+    // For the layer of shielding we are concerned with, we will assume the uncertainty on the
+    //  inner radius is the squared sum of all inner layer uncertainties - this is actually a bit
+    //  over the top - these thickness uncertainties are likely very correlated - so much so we
+    //  could probably use just the thickness uncertainty on just the previous layer, but we'll be
+    //  conservative, or something.
+    const double radiusUncert = thickness( matn, errors );
+    radiusUncertSquared += radiusUncert*radiusUncert;
+  }//for( size_t matn = 0; matn < nmat; ++matn )
+  
+  if( activityUncertSquared < 0.0 || IsNan(activityUncertSquared) || IsInf(activityUncertSquared) )
+    throw runtime_error( "error calculating activity uncertainty for self-attenuating source;"
+                         " squared value calculated is " + std::to_string(activityUncertSquared) );
+  
+  const double normalCalcAct = PointSourceShieldingChi2Fcn::activity( nuclide, params );
+  assert( fabs(normalCalcAct - activity) < 0.001*std::max(normalCalcAct,activity) );
+  
+  return sqrt( activityUncertSquared );
+}//double activityUncertainty(...)
+
+
+
 double PointSourceShieldingChi2Fcn::age( const SandiaDecay::Nuclide *nuclide,
                                       const std::vector<double> &params ) const
 {
@@ -1211,12 +1339,13 @@ double PointSourceShieldingChi2Fcn::age( const SandiaDecay::Nuclide *nuclide,
                          " defining nuclide age: " + std::to_string(params[2*ind+1]) );
   
   const int defining_nuclide_index = nearFIndex - 1;
+  const int defining_nuc_age_index = 2*defining_nuclide_index + 1;
   
-  if( static_cast<size_t>(defining_nuclide_index) >= params.size() )
+  if( static_cast<size_t>(defining_nuc_age_index) >= params.size() )
     throw runtime_error( "Got a negative age value that is larger than could be"
                          " for indicating a defining nuclide age: " + std::to_string(params[2*ind+1]) );
   
-  const double defining_age = params[defining_nuclide_index];
+  const double defining_age = params[defining_nuc_age_index];
   if( defining_age < -0.00001 )
     throw runtime_error( "Defining age is also less than zero (shouldnt happen)" );
   
@@ -1579,7 +1708,7 @@ void PointSourceShieldingChi2Fcn::cluster_peak_activities( std::map<double,doubl
     if( info )
     {
       stringstream msg;
-      msg << "\tPeak attributed to " << energy << " keV recieved "
+      msg << "\tPeak attributed to " << energy << " keV received "
           << contribution*PhysicalUnits::second
           << " cps from " << aep.energy << " keV line, which has I="
           << age_sf * aep.numPerSecond/sm_activityUnits << "";
@@ -1674,7 +1803,7 @@ vector< tuple<double,double,double,Wt::WColor,double> > PointSourceShieldingChi2
     {
       stringstream msg;
       msg << "\tAt " << energy/SandiaDecay::keV << " expected "
-          << expected_counts << " counts, recieved " << observed_counts
+          << expected_counts << " counts, received " << observed_counts
           << " +- " << observed_uncertainty << " counts.";
       if( backCounts > 0.0 )
         msg << " (after correcting for " << backCounts << " +- "

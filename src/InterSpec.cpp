@@ -3604,6 +3604,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       {
         if( m_toolsTabs->tabText( tab ) == title )
         {
+          // Note: this causes handleToolTabChanged(...) to be called
           m_toolsTabs->setCurrentIndex( tab );
           m_currentToolsTab = tab;
           break;
