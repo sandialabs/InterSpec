@@ -70,12 +70,14 @@
 #include <Wt/WJavaScript>
 #include <Wt/WFileUpload>
 #include <Wt/WSplitButton>
+#include <Wt/WEnvironment>
 #include <Wt/Http/Response>
 #include <Wt/WSelectionBox>
 #include <Wt/WStandardItem>
 #include <Wt/WItemDelegate>
 #include <Wt/WDoubleSpinBox>
 #include <Wt/Dbo/QueryModel>
+#include <Wt/WMemoryResource>
 #include <Wt/WSuggestionPopup>
 #include <Wt/WRegExpValidator>
 #include <Wt/WDoubleValidator>
@@ -1016,8 +1018,7 @@ void ShieldingSelect::updateIfMassFractionCanFit()
   assert(0);
 #endif
   
-  if( !m_fitMassFrac
-      || (m_fitMassFrac->isVisible() && !m_fitMassFrac->isChecked()) )
+  if( !m_fitMassFrac )
     return;
   
   int nchecked = 0;
@@ -1030,7 +1031,12 @@ void ShieldingSelect::updateIfMassFractionCanFit()
     }//for( WWidget *widget : isotopeDiv->children() )
   }//for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
   
-  if( nchecked < 2 )
+  const bool shouldHide = (nchecked < 2);
+  
+  if( shouldHide == m_fitMassFrac->isHidden() )
+    return;
+  
+  if( shouldHide )
   {
     m_fitMassFrac->setUnChecked();
     m_fitMassFrac->hide();
@@ -2392,8 +2398,7 @@ void SourceFitModel::makeActivityEditable( const SandiaDecay::Nuclide *nuc )
         continue;
       iso.shieldingIsSource = false;
 
-      dataChanged().emit( createIndex(row,kActivity,(void *)0),
-                          createIndex(row,kFitActivity,(void *)0) );
+      dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,columnCount()-1,nullptr) );
     }//if( this is the nuclide we want )
   }//for( const IsoFitStruct &iso : m_nuclides )
 }//void makeActivityEditable( const std::string &symbol )
@@ -2413,8 +2418,7 @@ void SourceFitModel::makeActivityNonEditable( const SandiaDecay::Nuclide *nuc )
         continue;
       iso.shieldingIsSource = true;
 
-      dataChanged().emit( createIndex(row,kActivity,(void *)0),
-                          createIndex(row,kFitActivity,(void *)0) );
+      dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,columnCount()-1,nullptr) );
     }//if( this is the nuclide we want )
   }//for( const IsoFitStruct &iso : m_nuclides )
 }//void makeActivityNonEditable( const std::string &symbol )
@@ -3187,10 +3191,18 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
   {
     case kIsotope:
       return boost::any( WString(isof.nuclide->symbol) );
+      
     case kActivity:
     {
-      double act = isof.activity * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
-      const string ans = PhysicalUnits::printToBestActivityUnits( act, 2, m_displayCurries );
+      const double act = isof.activity * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+      string ans = PhysicalUnits::printToBestActivityUnits( act, 2, m_displayCurries );
+      
+      // We'll require the uncertainty to be non-zero to show it - 5bq is an arbitrary cutoff to
+      //  consider anything below it zero.
+      const double uncert = isof.activityUncertainty * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+      if( uncert > 5.0*PhysicalUnits::bq )
+        ans += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( uncert, 1, m_displayCurries );
+      
       return boost::any( WString(ans) );
     }//case kActivity:
 
@@ -3205,7 +3217,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
 //      if( isof.shieldingIsSource )
 //        return boost::any();
-      double age;
+      double age = 0.0, uncert = 0.0;
       const SandiaDecay::Nuclide *nuc = nullptr;
       if( isof.ageDefiningNuc && (isof.ageDefiningNuc != isof.nuclide) )
       {
@@ -3214,11 +3226,15 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
         {
           nuc = isof.ageDefiningNuc;
           age = m_nuclides[ind].age;
+          if( m_nuclides[ind].ageIsFittable && m_nuclides[ind].fitAge )
+            uncert = m_nuclides[ind].ageUncertainty;
         }else
         {
           nuc = isof.nuclide;
           age = isof.age;
-          cerr << "SourceFitModel::data: ran into error when retriving"
+          if( isof.ageIsFittable && isof.fitAge )
+            uncert = isof.ageUncertainty;
+          cerr << "SourceFitModel::data: ran into error when retrieving"
                << " age for a nuclide with a defining age isotope that isnt in"
                << " the model; charging on!" << endl;
         }//if( ind >= 0 )
@@ -3226,11 +3242,17 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       {
         nuc = isof.nuclide;
         age = isof.age;
+        if( isof.ageIsFittable && isof.fitAge )
+          uncert = isof.ageUncertainty;
       }//if( isof.ageDefiningNuc && (isof.ageDefiningNuc!=isof.nuclide) )
       
       if( !isof.ageIsFittable )
         return boost::any( WString("NA") );
-      const string ans = PhysicalUnits::printToBestTimeUnits( age, 2 );
+      
+      string ans = PhysicalUnits::printToBestTimeUnits( age, 2 );
+      if( uncert > 0.0 )
+        ans += " \xC2\xB1 " + PhysicalUnits::printToBestTimeUnits( uncert, 1 );
+      
       return boost::any( WString(ans) );
     }//case kAge:
 
@@ -3262,7 +3284,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       if( IsInf(mass_grams) || IsNan(mass_grams) )
         return boost::any();
 
-      return boost::any( WString(PhysicalUnits::printToBestMassUnits(mass_grams,4,1.0)) );
+      return boost::any( WString(PhysicalUnits::printToBestMassUnits(mass_grams,3,1.0)) );
     }//case kIsotopeMass:
 
     case kActivityUncertainty:
@@ -3401,10 +3423,19 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
       return false;
 
     const WString txt_val = asString( value );
+    string utf_str = txt_val.toUTF8();
 
-    if( column!=kFitActivity && column!=kFitAge && txt_val.empty() )
+    if( (column != kFitActivity) && (column != kFitAge) && txt_val.empty() )
       return false;
 
+    // filter out the +- and everything after.
+    if( (column == kActivity) || (column == kIsotopeMass) || (column == kAge) )
+    {
+      const auto pos = utf_str.find( "\xC2\xB1" );
+      if( pos != string::npos )
+        utf_str = utf_str.substr(0, pos);
+    }//if( we might have the +- )
+    
     IsoFitStruct &iso = m_nuclides[row];
 
     //If were here, all is fine
@@ -3412,13 +3443,17 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
     {
       case kIsotope:
         return false;
+        
       case kActivity:
-        iso.activity = PhysicalUnits::stringToActivity( txt_val.toUTF8() );
+      {
+        iso.activity = PhysicalUnits::stringToActivity( utf_str );
         iso.activity /= GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
         
-        if( iso.activityUncertainty >= 0.0 )
+        if( iso.activityUncertainty >= 0.0 ) //For activity we will emit the whole row changed below
           iso.activityUncertainty = -1.0;
-      break;
+      
+        break;
+      }//case kActivity:
 
       case kFitActivity:
         iso.fitActivity = boost::any_cast<bool>( value );
@@ -3431,9 +3466,8 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
           break;
         }else
         {
-          const string str = txt_val.toUTF8();
           const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
-          iso.age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( str, hl );
+          iso.age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
 
           if( iso.ageUncertainty >= 0.0 )
           {
@@ -3491,7 +3525,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         iso.activityUncertainty = -1.0;
         if( !value.empty() )
         {
-          iso.activityUncertainty = PhysicalUnits::stringToActivity( txt_val.toUTF8() );
+          iso.activityUncertainty = PhysicalUnits::stringToActivity( utf_str );
           iso.activityUncertainty /= GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
         }//if( !value.empty() )
       break;
@@ -3501,9 +3535,8 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         iso.ageUncertainty = -1.0;
         if( iso.ageIsFittable && !value.empty() )
         {
-          const string str = txt_val.toUTF8();
           const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
-          iso.ageUncertainty = PhysicalUnits::stringToTimeDurationPossibleHalfLife( str, hl );
+          iso.ageUncertainty = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
         }//if( decays to stable children / else )
         
         if( m_sameAgeForIsotopes )
@@ -3526,35 +3559,33 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         if( value.empty() )
           iso.truthActivity.reset();
         else
-          iso.truthActivity = PhysicalUnits::stringToActivity( txt_val.toUTF8() );
+          iso.truthActivity = PhysicalUnits::stringToActivity( utf_str );
         break;
         
       case kTruthActivityTolerance:
         if( value.empty() )
           iso.truthActivityTolerance.reset();
         else
-          iso.truthActivityTolerance = PhysicalUnits::stringToActivity( txt_val.toUTF8() );
+          iso.truthActivityTolerance = PhysicalUnits::stringToActivity( utf_str );
         break;
         
       case kTruthAge:
       {
-        const string str = txt_val.toUTF8();
         const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
         if( value.empty() )
           iso.truthAge.reset();
         else
-          iso.truthAge = PhysicalUnits::stringToTimeDurationPossibleHalfLife( str, hl );
+          iso.truthAge = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
         break;
       }
          
       case kTruthAgeTolerance:
       {
-        const string str = txt_val.toUTF8();
         const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
         if( value.empty() )
           iso.truthAgeTolerance.reset();
         else
-          iso.truthAgeTolerance = PhysicalUnits::stringToTimeDurationPossibleHalfLife( str, hl );
+          iso.truthAgeTolerance = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
         break;
       }
 #endif
@@ -3563,11 +3594,15 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         return false;
     }//switch( column )
 
-    if( column==kActivity )
-      dataChanged().emit( createIndex(row,0,(void *)0),
-                          createIndex(row,kNumColumns-1,(void *)0) );
-    else
-      dataChanged().emit( index, index );
+    // We will emit that all columns have been updated, since setting activity uncert will mean
+    //  we have to set activity text again (since it might have a +- entry), and similar
+    dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,kNumColumns-1,nullptr) );
+    //
+    // We could be more selective and do something like:
+    //if( column == kActivity )
+    //  dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,kNumColumns-1,nullptr) );
+    //else
+    //  dataChanged().emit( index, index );
   }catch( exception &e )
   {
     cerr << "SourceFitModel::setData(...)\n\tWarning: exception caught; what="
@@ -3831,7 +3866,7 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisRanges()
   ymin = 0.1 * std::floor( 10.0*ymin );
   ymax = 0.1 * std::ceil( 10.0*ymax );
   
-  cout << "Setting xrange=" << xmin << ", " << xmax << "], yrange=[" << ymin << ", " << ymax << "]" << endl;
+  //cout << "Setting xrange=" << xmin << ", " << xmax << "], yrange=[" << ymin << ", " << ymax << "]" << endl;
   
   const auto xLocation = m_showChi ? Chart::AxisValue::ZeroValue : Chart::AxisValue::MinimumValue;
   axis(Chart::XAxis).setLocation( xLocation );
@@ -3924,7 +3959,7 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
 {
   WCartesianChart::paint( painter, rectangle );
 
-  cout << "plot padding: [" << plotAreaPadding(Top) << ", " << plotAreaPadding(Right) << ", " << plotAreaPadding(Bottom) << ", " << plotAreaPadding(Left) << "]" << endl;
+  //cout << "plot padding: [" << plotAreaPadding(Top) << ", " << plotAreaPadding(Right) << ", " << plotAreaPadding(Bottom) << ", " << plotAreaPadding(Left) << "]" << endl;
   
   //I think removing of the areas() is already done by
   //  WCartesianChart::paintEvent(...), but jic
@@ -4340,21 +4375,26 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
         //need to make custom delegate
       break;
 
-      case SourceFitModel::kFitActivity: case SourceFitModel::kFitAge:
-      case SourceFitModel::kIsotope: case SourceFitModel::kNumColumns:
-      case SourceFitModel::kIsotopeMass:
       case SourceFitModel::kActivityUncertainty:
       case SourceFitModel::kAgeUncertainty:
+        m_sourceView->setColumnHidden( static_cast<int>( col ), true );
+        break;
+        
+      case SourceFitModel::kFitActivity:
+      case SourceFitModel::kFitAge:
+      case SourceFitModel::kIsotope:
+      case SourceFitModel::kIsotopeMass:
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
       case SourceFitModel::kTruthActivity: case SourceFitModel::kTruthActivityTolerance:
       case SourceFitModel::kTruthAge: case SourceFitModel::kTruthAgeTolerance:
 #endif
+      case SourceFitModel::kNumColumns:
       break;
     }//case( col )
   }//for( loop over SourceFitModel columns )
 
 
-  m_sourceView->setColumnWidth( SourceFitModel::kActivity, WLength(9,WLength::FontEx) );
+  m_sourceView->setColumnWidth( SourceFitModel::kActivity, WLength(150,WLength::Pixel) );
   m_sourceView->setColumnWidth( SourceFitModel::kAge, WLength(9,WLength::FontEx) );
   m_sourceView->setColumnWidth( SourceFitModel::kFitAge, WLength(10,WLength::FontEx) );
   m_sourceView->setColumnWidth( SourceFitModel::kFitActivity, WLength(10,WLength::FontEx) );
@@ -4898,7 +4938,7 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
   {
     WTable *table = new WTable( contents );
     table->setHeaderCount( 1 );
-    new WLabel( "Quantitiy", table->elementAt(0, 0) );
+    new WLabel( "Quantity", table->elementAt(0, 0) );
     new WLabel( "Value", table->elementAt(0, 1) );
     new WLabel( "Tolerance", table->elementAt(0, 2) );
     
@@ -5244,7 +5284,11 @@ void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
     if( m_sourceModel->fitActivity(i) )
     {
       WModelIndex index = m_sourceModel->index( i, SourceFitModel::kActivity );
-      m_sourceModel->setData( index, "1 mCi" );
+      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
+      if( useCi )
+        m_sourceModel->setData( index, "1 mCi" );
+      else
+        m_sourceModel->setData( index, "37 MBq" );
     }//if( fit activity )
     
     if( m_sourceModel->fitAge(i) )
@@ -5897,14 +5941,49 @@ void ShieldingSourceDisplay::showCalcLog()
   }//if( !m_logDiv )
   
   m_logDiv->contents()->clear();
+  vector<uint8_t> totaldata;
   for( const string &str : m_calcLog )
-    (new WText( str, m_logDiv->contents() ))->setInline( false );
+  {
+    auto line = new WText( str, m_logDiv->contents() );
+    line->setInline( false );
+    totaldata.insert( end(totaldata), begin(str), end(str) );
+    totaldata.push_back( static_cast<uint8_t>('\r') );
+    totaldata.push_back( static_cast<uint8_t>('\n') );
+  }
   
   m_logDiv->show();
   
+  // Add a link to download this log file
+  auto downloadResource = new WMemoryResource( "text/plain", m_logDiv );
+  downloadResource->setData( totaldata );
+  
+  const int offset = wApp->environment().timeZoneOffset();
+  const auto nowTime = WDateTime::currentDateTime().addSecs(60*offset);
+  string filename = "act_shield_fit_" + nowTime.toString("yyyyMMdd_hhmmss").toUTF8() + ".txt";
+  downloadResource->suggestFileName( filename, WResource::DispositionType::Attachment );
+  
+#if( BUILD_AS_OSX_APP )
+  WAnchor *logDownload = new WAnchor( WLink(downloadResource), m_logDiv->footer() );
+  logDownload->setTarget( AnchorTarget::TargetNewWindow );
+#else
+  WPushButton *logDownload = new WPushButton( m_logDiv->footer() );
+  logDownload->setIcon( "InterSpec_resources/images/download_small.png" );
+  logDownload->setLink( WLink(downloadResource) );
+  logDownload->setLinkTarget( Wt::TargetNewWindow );
+#endif
+  
+  logDownload->setText( "TXT file" );
+  logDownload->setStyleClass( "LinkBtn" );
+  logDownload->setFloatSide( Wt::Side::Left );
+    
+  
+  WPushButton *close = m_logDiv->addCloseButtonToFooter();
+  close->clicked().connect( boost::bind( &AuxWindow::hide, m_logDiv ) );
+  
+  
   const int wwidth = m_specViewer->renderedWidth();
   const int wheight = m_specViewer->renderedHeight();
-  m_logDiv->setMaximumSize( 0.9*wwidth, wheight );
+  m_logDiv->setMaximumSize( 0.8*wwidth, 0.8*wheight );
   m_logDiv->resizeToFitOnScreen();
   m_logDiv->centerWindow();
 }//void showCalcLog()
@@ -8006,11 +8085,11 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   }//if( IsNan(p.second) || IsInf(p.second) )
 
   
-  stringstream activitystrm;
-  activitystrm << activity << "ci";
+  char buffer[64];
+  snprintf( buffer, sizeof(buffer), "%1.8E ci", activity );
 
   WModelIndex index = m_sourceModel->index( row, SourceFitModel::kActivity );
-  m_sourceModel->setData( index, activitystrm.str() );
+  m_sourceModel->setData( index, string(buffer) );
 }//void updateActivityOfShieldingIsotope(..)
 
 
@@ -8309,18 +8388,43 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       if( age > 0 )
         ageStep = std::min( 0.1*age, ageStep );
       
-      // cout << "For nuclide " << nuclide->symbol << " adding age=" << age << ", with step " << ageStep << " and max age " << maxAge << endl;
+      //cout << "For nuclide " << nuclide->symbol << " adding age=" << age << ", with step " << ageStep << " and max age " << maxAge << endl;
       
       inputPrams.Add( nuclide->symbol + "Age", age, ageStep, 0, maxAge  );
     }else if( hasOwnAge )
     {
       const double age = m_sourceModel->age( ison );
+      //cout << nuclide->symbol << " has own non-fitting age going in as param " << inputPrams.Parameters().size() << endl;
       inputPrams.Add( nuclide->symbol + "Age", age );
     }else  //see if defining nuclide age is fixed, if so use it, else put in negative integer of index of age...
     {
       assert( ageDefiningNuc );
-      const int age_defining_index = m_sourceModel->nuclideIndex( ageDefiningNuc );
-      inputPrams.Add( nuclide->symbol + "Age", -1.0*(age_defining_index + 1) );
+      
+      // Previous to 20210825, we were doing the next commented-out line, which is not correct; we
+      //  want the relative nuclide index to be for the order nuclides are added into 'inputPrams',
+      //  which may be different m_sourceModel->m_nuclides.
+      //const int age_defining_index = m_sourceModel->nuclideIndex( ageDefiningNuc );
+      
+      int age_defining_index = -1;
+      for( size_t ansnucn = 0; ansnucn < answer->numNuclides(); ++ansnucn )
+      {
+        const SandiaDecay::Nuclide *answnuclide = answer->nuclide( static_cast<int>(ansnucn) );
+        if( answnuclide == ageDefiningNuc )
+        {
+          age_defining_index = static_cast<int>(ansnucn);
+          break;
+        }
+      }//for( size_t ansnucn = 0; ansnucn < answer->numNuclides(); ++ansnucn )
+      
+      assert( age_defining_index >= 0 );
+      if( age_defining_index < 0 )  //shouldnt ever happen, but JIC
+        throw runtime_error( "Error finding age defining nuclide for " + nuclide->symbol
+                             + " (should have been " + ageDefiningNuc->symbol + ")" );
+      
+      const double ageIndexVal = -1.0*(age_defining_index + 1);
+      //cout << nuclide->symbol << ": ageIndexVal=" << ageIndexVal
+      //<< " going in as param " << inputPrams.Parameters().size() << endl;
+      inputPrams.Add( nuclide->symbol + "Age", ageIndexVal );
     }
   }//for( int ison = 0; ison < niso; ++ison )
   
@@ -8663,24 +8767,31 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         
         if( !success )
         {
-          stringstream msg;
-          msg << "An invalid activity was calculated for " << nuc->symbol
-          << ", other results may be invalid to";
-          passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+          const string msg = "An invalid activity was calculated for " + nuc->symbol
+                             + ", other results may be invalid to";
+          passMessage( msg, "", WarningWidget::WarningMsgHigh );
         }//if( IsNan(p.second) || IsInf(p.second) )
         
-        const double activityUncert = m_currentFitFcn->activity( nuc, paramErrors );
-        char actUncertStr[64];
-        snprintf( actUncertStr, sizeof(actUncertStr), "%f bq", (activityUncert/PhysicalUnits::becquerel) );
-        
-        success = m_sourceModel->setData( actUncertIndex, WString(actUncertStr) );
-        if( !success )
+        try
         {
-          stringstream msg;
-          msg << "Calculated activity uncertainty for " << nuc->symbol
-          << " is invalid, other results may be invalid to";
-          passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
-        }//if( IsNan(p.second) || IsInf(p.second) )
+          const double activityUncert = m_currentFitFcn->activityUncertainty( nuc, paramValues, paramErrors );
+          
+          char actUncertStr[64];
+          snprintf( actUncertStr, sizeof(actUncertStr), "%f bq", (activityUncert/PhysicalUnits::becquerel) );
+          
+          success = m_sourceModel->setData( actUncertIndex, WString(actUncertStr) );
+          if( !success )
+          {
+            const string msg = "Calculated activity uncertainty for " + nuc->symbol
+                                + " is invalid, other results may be invalid to.";
+            passMessage( msg, "", WarningWidget::WarningMsgHigh );
+          }//if( IsNan(p.second) || IsInf(p.second) )
+        }catch( std::exception &e )
+        {
+          const string msg = "Unexpected error calculating activity uncertainty for " + nuc->symbol
+                             + ": " + string(e.what());
+          passMessage( msg, "", WarningWidget::WarningMsgHigh );
+        }
       }else if( m_sourceModel->activityUncert(ison) >= 0.0 )
       {
         m_sourceModel->setData( actUncertIndex, boost::any() );
@@ -9207,7 +9318,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       const double act = chi2Fcn->activity( nuc, params );
       const string actStr = PhysicalUnits::printToBestActivityUnits( act, 2, useCi );
       
-      const double actUncert = chi2Fcn->activity( nuc, errors );
+      const double actUncert = chi2Fcn->activityUncertainty( nuc, params, errors );
       const string actUncertStr = PhysicalUnits::printToBestActivityUnits( actUncert, 2, useCi );
       
       const double mass = act / nuc->activityPerGram();
@@ -9223,7 +9334,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       
       stringstream msg;
       msg << nuc->symbol << " fit activity " << actStr << " (mass: " << massStr
-      << ") with uncertanty " << actUncertStr << " ("
+      << ") with uncertainty " << actUncertStr << " ("
       << floor(0.5 + 10000*actUncert/act)/100.0 << "%)";
       
       if( ageUncert <= DBL_EPSILON )
