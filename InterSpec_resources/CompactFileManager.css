@@ -103,8 +103,9 @@ div.SampleSelectRow .NextNextSample{
 
 div.DispType .SpecTitle {
   margin-top: 15px;
-  /* white-space: nowrap; */ /* having the title be a single line with ellipses doesnt seem to work quite right */
   text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 div.DispType .BottomRow {
