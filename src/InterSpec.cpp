@@ -473,8 +473,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   app->domRoot()->addWidget( m_notificationDiv );
   
-  if( !isMobile() )
-    initHotkeySignal();
+  initHotkeySignal();
   
   // Try to grab the username.
   string username = app->getUserNameFromEnvironment();
@@ -1693,8 +1692,6 @@ void InterSpec::initWindowZoomWatcher()
 
 void InterSpec::initHotkeySignal()
 {
-  //TODO: currently integers are used to represent the shortcuts; this should
-  //      be changed to an enum.
   if( !!m_hotkeySignal )
     return;
   
@@ -1704,71 +1701,92 @@ void InterSpec::initHotkeySignal()
   
   //sender.id was undefined in the following js, so had to work around this a bit
   const char *js = INLINE_JAVASCRIPT(
-    function(id,e){
-      if( !e || !e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || (typeof e.keyCode === 'undefined')  )
+  function(id,e){
+    
+    if( !e || !e.key || e.metaKey || e.altKey || e.shiftKey || (typeof e.keyCode === 'undefined') )
+      return;
+    
+    let code = 0;
+    if( e.ctrlKey )
+    {
+      switch( e.key ){
+        case '1': case '2': case '3': case '4': case '5': //Shortcuts to switch to the various tabs
+        case 'h': // Help dialog
+        case 'i': // Info about InterSpec
+        case 'k': // Clear showing reference photopeak lines
+        case 'l': // Log/Linear
+          if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
+            return;
+          code = e.key.charCodeAt(0);
+          break;
+        
+        default:  //Unused - nothing to see here - let the event propagate up
+          return;
+      }//switch( e.key )
+    }else{
+      switch( e.key ){
+        case "Left":  case "ArrowLeft":  code = 37; break;
+        case "Up":    case "ArrowUp":    code = 38; break;
+        case "Right": case "ArrowRight": code = 39; break;
+        case "Down":  case "ArrowDown":  code = 40; break;
+        default:  //Unused - nothing to see here - let the event propagate up
+          return;
+      }//switch( e.key )
+    
+      // No menus are active - dont send the signal
+      if( $(".MenuLabel.PopupMenuParentButton.active").length === 0 )
         return;
-     
-      var v = 0;
-      switch( e.keyCode ){
-        case 83: case 49: v=1;  break; //s
-        case 80: case 50: v=2;  break; //p
-        case 82: case 51: v=3;  break; //r
-        case 69: case 52: v=4;  break; //e
-        case 78: case 53: v=5;  break; //n
-        case 72:          v=6;  break; //h
-        case 73:          v=7;  break; //i
-        case 67:          v=67; break; //c
-        case 76:          v=76; break; //l
-        default:
-          return;  //show
-      }
-      
-      if(v){
-        e.preventDefault();
-        e.stopPropagation();
-        Wt.emit(id,{name:'hotkey'},v);
-      }
-    }
-  );
+    }//if( e.ctrlKey ) / else
+    
+    e.preventDefault();
+    e.stopPropagation();
+    Wt.emit( id, {name:'hotkey'}, code );
+  } );
   
-  const string jsfcn = string("function(s,e){var f=")+js+";f('"+id()+"',e);}";
-  m_hotkeySlot.reset( new JSlot( jsfcn, this ) );
-
-  wApp->domRoot()->keyWentDown().connect( *m_hotkeySlot );
-  m_hotkeySignal->connect( boost::bind( &InterSpec::hotkeyPressed, this, _1 ) );
+  const string jsfcfn = string("function(e){var f=") + js + ";f('" + id() + "',e);}";
+  wApp->declareJavaScriptFunction( "appKeyDown", jsfcfn );
+  
+  const string jsfcn = "document.addEventListener('keydown'," + wApp->javaScriptClass() + ".appKeyDown);";
+  doJavaScript( jsfcn );
+  
+  m_hotkeySignal->connect( boost::bind( &InterSpec::hotKeyPressed, this, _1 ) );
 }//void initHotkeySignal()
 
 
-void InterSpec::hotkeyPressed( const unsigned int value )
+void InterSpec::hotKeyPressed( const unsigned int value )
 {
   if( m_toolsTabs )
   {
     string expectedTxt;
     switch( value )
     {
-      case 1: expectedTxt = FileTabTitle;          break;
-      case 2: expectedTxt = PeakInfoTabTitle;      break;
-      case 3: expectedTxt = GammaLinesTabTitle;    break;
-      case 4: expectedTxt = CalibrationTabTitle;   break;
-      case 5: expectedTxt = NuclideSearchTabTitle; break;
+      case '1': expectedTxt = FileTabTitle;          break;
+      case '2': expectedTxt = PeakInfoTabTitle;      break;
+      case '3': expectedTxt = GammaLinesTabTitle;    break;
+      case '4': expectedTxt = CalibrationTabTitle;   break;
+      case '5': expectedTxt = NuclideSearchTabTitle; break;
       
-      case 6:
+      case 'h': case 'H':
         HelpSystem::createHelpWindow( "getting-started" );
         break;
       
-      case 7:
+      case 'i': case 'I':
         showWelcomeDialog( true );
         break;
       
-      case 67:
+      case 'k': case 'K':
         // TODO: decide how to handle this if the current reference lines are from the
         //       "Nuclide Search" tool
         if( m_referencePhotopeakLines )
           m_referencePhotopeakLines->clearAllLines();
         break;
       
-      case 76:
+      case 'l': case 'L':
         setLogY( !m_spectrum->yAxisIsLog() );
+        break;
+        
+      case 37: case 38: case 39: case 40:
+        arrowKeyPressed( value );
         break;
     }//switch( value )
   
@@ -1788,16 +1806,74 @@ void InterSpec::hotkeyPressed( const unsigned int value )
   {
     switch( value )
     {
-      case 1: showCompactFileManagerWindow(); break;
-      case 2: showPeakInfoWindow();           break;
-      case 3: showGammaLinesWindow();         break;
-      case 4: showEnergyCalWindow();          break;
-      case 5: showNuclideSearchWindow();      break;
-      case 76: setLogY( !m_spectrum->yAxisIsLog() );  break;
+      case '1': showCompactFileManagerWindow(); break;
+      case '2': showPeakInfoWindow();           break;
+      case '3': showGammaLinesWindow();         break;
+      case '4': showEnergyCalWindow();          break;
+      case '5': showNuclideSearchWindow();      break;
+      case 'l':
+        setLogY( !m_spectrum->yAxisIsLog() );
+        break;
+      case 37: case 38: case 39: case 40:
+        arrowKeyPressed( value );
+        break;
     }//switch( value )
   }//if( tool tabs visible ) / else
-}//void hotkeyPressed( const int value )
+}//void hotKeyPressed( const int value )
 
+
+void InterSpec::arrowKeyPressed( const unsigned int value )
+{
+#if( USING_ELECTRON_NATIVE_MENU || USE_OSX_NATIVE_MENU || IOS || ANDROID )
+  return;
+#endif
+  
+  if( m_mobileMenuButton )
+    return;
+  
+  const vector<PopupDivMenu *> menus{
+    m_fileMenuPopup, m_displayOptionsPopupDiv, m_toolsMenuPopup, m_helpMenuPopup
+  };
+  
+  bool foundActive = false;
+  size_t activeIndex = 0;
+  for( size_t i = 0; i < menus.size(); ++i )
+  {
+    if( menus[i] && menus[i]->isVisible() && menus[i]->parentButton() )
+    {
+      foundActive = true;
+      activeIndex = i;
+      break;
+    }
+  }
+  
+  if( !foundActive )
+    return;
+  
+  const bool leftArrow  = (value == 37);
+  const bool upArrow    = (value == 38);
+  const bool rightArrow = (value == 39);
+  const bool downArrow  = (value == 40);
+  
+  if( leftArrow || rightArrow )
+  {
+    size_t nextActiveIndex;
+    if( leftArrow )
+      nextActiveIndex = (activeIndex == 0) ? (menus.size() - 1) : (activeIndex - 1);
+    else
+      nextActiveIndex = ((activeIndex + 1) % menus.size());
+    
+    menus[activeIndex]->hide();
+    menus[nextActiveIndex]->parentClicked();
+  }else if( upArrow || downArrow )
+  {
+    // TODO: Have the up/down arrow keys select different menu items in the menu
+    //   I havent gotten the up/down arrows working to select different menu items - maybe
+    //    it needs to be purely JS.
+    //    And once we do get the up/down arrows working, then need to listen for 'Enter' and
+    //    trigger, again probably all in JS
+  }//if( leftArrow || rightArrow ) / else if( upArrow || downArrow )
+}//void arrowKeyPressed( const unsigned int value )
 
 
 void InterSpec::rightClickMenuClosed()
@@ -6843,12 +6919,6 @@ void InterSpec::dragEventWithFileContentsFinished()
 }
 
 #endif ///#if( defined(WIN32) && BUILD_AS_ELECTRON_APP )
-
-
-Wt::JSlot *InterSpec::hotkeyJsSlot()
-{
-  return m_hotkeySlot.get();
-}//const Wt::JSlot *hotkeyJsSlot() const;
 
 
 void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
