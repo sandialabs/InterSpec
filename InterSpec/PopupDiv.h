@@ -209,6 +209,8 @@ public:
   
   bool isMobile() const;
   
+  Wt::WPushButton *parentButton();
+  
 protected:
   void desktopDoHide();
 

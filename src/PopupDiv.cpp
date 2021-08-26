@@ -70,7 +70,6 @@ WT_DECLARE_WT_MEMBER
      //  sometimes; dont know if its semantics, or timing, but will keep commented out.
      //if( $(v).is(":visible") ){
        const popz = Number( $(v).css('z-index') );
-       console.log( 'v.id', v.id);
        if( (v.id !== id) && !isNaN(popz) )
          z = Math.max( z, popz );
      //}
@@ -959,6 +958,9 @@ void PopupDivMenu::showMobile()
 
 void PopupDivMenu::parentClicked()
 {
+  if( !m_menuParent )
+    return;
+  
   // We need this function to be stateless, so we'll always popup the menu, even if we actually
   //  want to close it, and then we'll use the JS to close the menu if we dont actually want it open
   popup( WPoint(-10000,-10000) );
@@ -1011,6 +1013,13 @@ bool PopupDivMenu::isMobile() const
 {
   return m_mobile;
 }
+
+
+Wt::WPushButton *PopupDivMenu::parentButton()
+{
+  return m_menuParent;
+}
+
 
 void PopupDivMenu::setupDesktopMenuStuff()
 {
