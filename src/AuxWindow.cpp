@@ -91,11 +91,15 @@ WT_DECLARE_WT_MEMBER
  function( id )
 {
   var maxz = 0;
-  $('.Wt-dialog,.MobileMenuButton').each( function(index, value){ maxz = Math.max(maxz,$(value).css('z-index')); } );
+  $('.Wt-dialog,.MobileMenuButton').each( function(index, value){
+    let z = $(value).css('z-index');
+    //if( $(value).is(":visible") ) //seems to not be reliable, so leaving commented out.
+    maxz = Math.max(maxz,z);
+  } );
   if( maxz > $('#'+id).css('z-index') )
     $('#'+id).css('z-index',maxz+1);
     
-  $('.suggestion').css('z-index',maxz+2);
+  $('.suggestion').css('z-index',maxz+2); //This is for InterSpec::m_shieldingSuggestion
 }
 );
 

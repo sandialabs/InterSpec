@@ -4194,6 +4194,9 @@ void InterSpec::showFileQueryDialog()
     return;
   
   m_specFileQueryDialog = new AuxWindow( "Spectrum File Query Tool", AuxWindowProperties::TabletNotFullScreen );
+  //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
+  //  size to be the min-size
+  m_specFileQueryDialog->setMinimumSize( 640, 480 );
   m_specFileQueryDialog->setResizable( true );
   //m_specFileQueryDialog->disableCollapse();
   
@@ -4297,6 +4300,9 @@ void InterSpec::showWarningsWindow()
     m_warningsWindow->rejectWhenEscapePressed();
     m_warningsWindow->stretcher()->addWidget( m_warnings, 0, 0, 1, 1 );
     m_warningsWindow->stretcher()->setContentsMargins(0,0,0,0);
+    //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
+    //  size to be the min-size
+    m_warningsWindow->setMinimumSize( 640, 480 );
     m_warningsWindow->setResizable(true);
     m_warningsWindow->resizeScaledWindow(0.75, 0.75);
     m_warningsWindow->centerWindow();
