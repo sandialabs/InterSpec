@@ -1748,7 +1748,7 @@ void ShieldingSelect::updateMassFractionDisplays( std::shared_ptr<const Material
 
       frac_accounted_for += massFrac;
       
-      if( fabs(cb->massFraction()-massFrac) > 0.00001 )
+      if( fabs(cb->massFraction()-massFrac) > 0.000001 )
         cb->setMassFraction( massFrac );
     }//for( WWidget *child : children )
     
@@ -4157,7 +4157,9 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     
     disp = new ShieldingSourceDisplay( peakModel, viewer, shieldSuggest, matdb );
     window = new AuxWindow( "Activity/Shielding Fit" );
-
+    // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
+    //  will be called first, which will then default to using the initial size as minimum allowable
+    window->setMinimumSize( 800, 480 );
     window->setResizable( true );
     window->contents()->setOffsets(WLength(0,WLength::Pixel));
     window->stretcher()->addWidget( disp, 0, 0 );
@@ -4206,16 +4208,29 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     
   //    m_shieldingSourceFitWindow->resizeScaledWindow( 0.75, 0.75 );
       
-    const double windowWidth = 0.95 * viewer->renderedWidth();
-    const double windowHeight = 0.95 * viewer->renderedHeight();
-      
+    double windowWidth = viewer->renderedWidth();
+    double windowHeight = viewer->renderedHeight();
+    
   //    double footerheight = m_shieldingSourceFitWindow->footer()->height().value();
   //    m_shieldingSourceFitWindow->setMinimumSize( WLength(200), WLength(windowHeight) );
       
-    if( (windowHeight > 100) && (windowWidth > 100) )
+    if( (windowHeight > 110) && (windowWidth > 110) )
     {
       if( !viewer->isPhone() )
-        window->resizeWindow( windowWidth, windowHeight );
+      {
+        // A size of 1050px by 555px is about the smallest that renders everything nicely.
+        if( (windowWidth > (1050.0/0.8)) && (windowHeight > (555.0/0.8)) )
+        {
+          windowWidth = 0.8*windowWidth;
+          windowHeight = 0.8*windowHeight;
+          window->resizeWindow( windowWidth, windowHeight );
+        }else
+        {
+          windowWidth = 0.9*windowWidth;
+          windowHeight = 0.9*windowHeight;
+          window->resizeWindow( windowWidth, windowHeight );
+        }
+      }//if( !viewer->isPhone() )
 
       //Give the m_shieldingSourceFitWindow a hint about what size it will be
       //  rendered at so it can decide what widgets should be rendered - acounting
@@ -4227,7 +4242,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
       //  not know the window size (e.g., windowWidth==windowHeight==0), so
       //  instead skip giving the initial size hint, and instead size things
       //  client side (maybe we should just do this always?)
-      window->resizeScaledWindow( 0.95, 0.95 );
+      window->resizeScaledWindow( 0.90, 0.90 );
     }
         
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -4236,11 +4251,8 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     setTruth->clicked().connect( disp, &ShieldingSourceDisplay::showInputTruthValuesWindow );
 #endif
     
-    
-  //   m_shieldingSourceFitWindow->contents()->  setHeight(WLength(windowHeight));
-
     window->centerWindow();
-
+  //   m_shieldingSourceFitWindow->contents()->  setHeight(WLength(windowHeight));
     window->finished().connect( viewer, &InterSpec::closeShieldingSourceFitWindow );
       
     window->WDialog::setHidden(false);
@@ -4417,6 +4429,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 
   Wt::WPushButton *addItemMenubutton = new WPushButton();
   addItemMenubutton->setStyleClass( "RoundMenuIcon InvertInDark" );
+  addItemMenubutton->clicked().preventPropagation();
   m_addItemMenu = new PopupDivMenu( addItemMenubutton, PopupDivMenu::TransientMenu );
 
   //this validates floating point numbers followed by a distance unit
@@ -5937,6 +5950,9 @@ void ShieldingSourceDisplay::showCalcLog()
     m_logDiv->contents()->addStyleClass( "CalculationLog" );
     m_logDiv->disableCollapse();
     m_logDiv->rejectWhenEscapePressed();
+    //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
+    //  size to be the min-size
+    m_logDiv->setMinimumSize( 640, 480 );
     m_logDiv->setResizable( true );
   }//if( !m_logDiv )
   
@@ -5954,28 +5970,32 @@ void ShieldingSourceDisplay::showCalcLog()
   m_logDiv->show();
   
   // Add a link to download this log file
-  auto downloadResource = new WMemoryResource( "text/plain", m_logDiv );
-  downloadResource->setData( totaldata );
-  
-  const int offset = wApp->environment().timeZoneOffset();
-  const auto nowTime = WDateTime::currentDateTime().addSecs(60*offset);
-  string filename = "act_shield_fit_" + nowTime.toString("yyyyMMdd_hhmmss").toUTF8() + ".txt";
-  downloadResource->suggestFileName( filename, WResource::DispositionType::Attachment );
+  m_logDiv->footer()->clear();
   
 #if( BUILD_AS_OSX_APP )
-  WAnchor *logDownload = new WAnchor( WLink(downloadResource), m_logDiv->footer() );
-  logDownload->setTarget( AnchorTarget::TargetNewWindow );
+  WAnchor *logDownload = new WAnchor( m_logDiv->footer() );
 #else
   WPushButton *logDownload = new WPushButton( m_logDiv->footer() );
   logDownload->setIcon( "InterSpec_resources/images/download_small.png" );
-  logDownload->setLink( WLink(downloadResource) );
-  logDownload->setLinkTarget( Wt::TargetNewWindow );
 #endif
   
   logDownload->setText( "TXT file" );
   logDownload->setStyleClass( "LinkBtn" );
   logDownload->setFloatSide( Wt::Side::Left );
     
+  auto downloadResource = new WMemoryResource( "text/plain", logDownload );
+  downloadResource->setData( totaldata );
+  const int offset = wApp->environment().timeZoneOffset();
+  const auto nowTime = WDateTime::currentDateTime().addSecs(60*offset);
+  string filename = "act_shield_fit_" + nowTime.toString("yyyyMMdd_hhmmss").toUTF8() + ".txt";
+  downloadResource->suggestFileName( filename, WResource::DispositionType::Attachment );
+  
+  logDownload->setLink( WLink(downloadResource) );
+#if( BUILD_AS_OSX_APP )
+  logDownload->setTarget( AnchorTarget::TargetNewWindow );
+#else
+  logDownload->setLinkTarget( Wt::TargetNewWindow );
+#endif
   
   WPushButton *close = m_logDiv->addCloseButtonToFooter();
   close->clicked().connect( boost::bind( &AuxWindow::hide, m_logDiv ) );
