@@ -281,79 +281,107 @@ void ReferenceLineInfo::toJson( string &json ) const
   bool printed = false;
   char intensity_buffer[32] = { '\0' };
   
+  // Round to the nearest 10 eV; probably the extent to which any data useful, or even good to
+  const auto round_energy = []( const double e ) -> double { return std::round(100.0*e)/100.0; };
+  
   for( size_t i = 0; i < energies.size(); ++i )
   {
     if( intensities[i] <= 0.0 )
       continue;
     
+    const double energy = round_energy( energies[i] );
+    
     // There are situations where two lines have either the exact same energies, or super-close
     //  energies, and the spectrum chart is not particularly smart about this, so we effectively
     //  lose some amplitude, so we'll combine them here.
-    //
-    // Note: it was found for all the U, Pu, and a few other heavy elements isotopes, that the
-    //  lines that will get combined are from the same parent->child, and decay mode and such, so
-    //  there isnt a compelling reason to take on the overhead of concatenating strings and such.
-    //  But, if you would like a more correct/proper implementation see code around this area
-    //  of git hash: f2753c554b158c75ff80890cef6990b2ec19565d.
-    //
-    // As of 20210901: For U238, there are 39 pairs of lines that get combined, and 1 triplet of
-    //  lines combined; this could probably safely be reduced with some work to sandia.decay.xml/
-    
-    // Round to the nearest 10 eV; probably the extent to which any data useful, or even good to
-    const auto round_energy = []( double e ) -> double { return std::round(100.0 * e) / 100.0; };
-    
-    const double energy = round_energy( energies[i] );
-    
-    double intensity = intensities[i];
+    // However, this additional munging has a overhead for a rare edge-case, so we'll split
+    //  the code-paths, even though this adds code...
+    // For U238, there are 39 pairs of lines that get combined, and 1 triplet of lines combined.
     
     // We will assume entries are sorted by energy, which is only guaranteed when
     //  ReferencePhotopeakDisplay::updateDisplayChange() sets the data - but also, I think this
     //  is the only place that sets the data!
-    for( size_t index = i + 1; index < energies.size(); ++index )
+    const bool next_gamma_close = (((i+1) < energies.size()) && (round_energy(energies[i+1]) == energy) );
+    
+    if( next_gamma_close )
     {
-      const double this_energy = round_energy( energies[index] );
-      if( this_energy != energy )
-        break;
-      
-#if( PERFORM_DEVELOPER_CHECKS )
-      // A debug check to capture when/if our assumption that collisions between different decays
-      //  is rares
-      if( (particlestrs[i] != particlestrs[index])
-         || (decaystrs[i] != decaystrs[index])
-         || (elementstrs[i] != elementstrs[index]) )
+      double intensity = 0.0;
+      size_t num_combined = 0;
+      // TODO: be a little more efficient than allocating strings in these sets...
+      set<string> particles, decays, elements;
+      for( size_t index = i; index < energies.size(); ++index )
       {
-        char buffer[512] = { '\0' };
-        snprintf( buffer, sizeof(buffer), "Summing gamma lines into the same energy (%f keV) for "
-                 "particlestrs->{'%s','%s'}, decaystrs->{'%s','%s'}, and elementstrs->{'%s','%s'}",
-                 energy, particlestrs[i].c_str(), particlestrs[index].c_str(),
-                 decaystrs[i].c_str(), decaystrs[index].c_str(),
-                 elementstrs[i].c_str(), elementstrs[index].c_str() );
-        log_developer_error( __func__, buffer );
-      }
-#endif
+        const double this_energy = round_energy(energies[index]);
+        if( this_energy != energy )
+          break;
+        
+        intensity += intensities[index];
+        if( !particlestrs[index].empty() )
+          particles.insert( particlestrs[index] );
+        if( !decaystrs[index].empty() )
+          decays.insert( decaystrs[index] );
+        if( !elementstrs[index].empty() )
+          elements.insert( elementstrs[index] );
+        
+        num_combined += 1;
+      }//for( loop over to find all energies to cluster together )
       
-      // Advance 'i' of the
-      ++i;
-      intensity += intensities[index];
-    }//for( size_t index = i + 1; index < energies.size(); ++index )
+//      if( particles.size() > 1 || decays.size() > 1 || elements.size() > 1 )
+//        cout << "Combined " << num_combined << " lines for " << energy << " keV" << endl
+//             << "\tAnd had " << particles.size() << " particles, " << decays.size()
+//             << " decays, and " << elements.size() << " elements" << endl;
+      
+      assert( num_combined != 0 ); //could tighten this up to (num_combined > 1)
+      
+      if( IsNan(intensity) || IsInf(intensity) )
+        snprintf( intensity_buffer, sizeof(intensity_buffer), "0" );
+      else
+        snprintf( intensity_buffer, sizeof(intensity_buffer), "%.3g", intensity );
+      
+      auto combine_strs = []( const set<string> &strs ) -> string {
+        if( strs.empty() )
+          return "";
+        
+        if( strs.size() == 1 )
+          return *begin(strs);
+        
+        string answer;
+        for( const auto &s : strs )
+          answer += (answer.empty() ? "" : ", ") + s;
+        return answer;
+      };//combine_strs lambda
+      
+      jsonstrm << (printed ? "," : "") << "{e:" << energy << ",h:" << intensity_buffer;
+      if( !particles.empty() )
+        jsonstrm << ",particle:'" << combine_strs(particles) << "'";
+      if( !decays.empty() )
+        jsonstrm << ",decay:'" << combine_strs(decays) << "'";
+      if( !elements.empty() )
+        jsonstrm << ",el:'" << combine_strs(elements) << "'";
+      
+      // Now increment 'i' so we'll skip over these lines we've already covered.
+      i += (num_combined >= 1) ? (num_combined - 1) : size_t(0);
+    }else
+    {
+      if( IsNan(intensities[i]) || IsInf(intensities[i]) )
+        snprintf( intensity_buffer, sizeof(intensity_buffer), "0" );
+      else
+        snprintf( intensity_buffer, sizeof(intensity_buffer), "%.3g", intensities[i] );
+      
+      jsonstrm << (printed ? "," : "") << "{e:" << energy << ",h:" << intensity_buffer;
+      if( !particlestrs[i].empty() )
+        jsonstrm << ",particle:'" << particlestrs[i] << "'";
+      if( !decaystrs[i].empty() )
+        jsonstrm << ",decay:'" << decaystrs[i] << "'";
+      if( !elementstrs[i].empty() )
+        jsonstrm << ",el:'" << elementstrs[i] << "'";
+    }//if( next gamma line is close ) / else
     
-    if( IsNan(intensity) || IsInf(intensity) )
-      snprintf( intensity_buffer, sizeof(intensity_buffer), "0" );
-    else
-      snprintf( intensity_buffer, sizeof(intensity_buffer), "%.3g", intensity );
-    
-    jsonstrm << (printed ? "," : "") << "{e:" << energy << ",h:" << intensity_buffer;
-    if( !particlestrs[i].empty() )
-      jsonstrm << ",particle:'" << particlestrs[i] << "'";
-    if( !decaystrs[i].empty() )
-      jsonstrm << ",decay:'" << decaystrs[i] << "'";
-    if( !elementstrs[i].empty() )
-      jsonstrm << ",el:'" << elementstrs[i] << "'";
     jsonstrm << "}";
     
     printed = true;
   }//for( size_t i = 0; i < energies.size(); ++i )
-
+  
   jsonstrm <<"]}";
   
   json += jsonstrm.str();
