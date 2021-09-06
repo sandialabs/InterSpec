@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RadInstrumentData n42DocUUID="18081420-5732-4009-a616-388428202762" xmlns="http://physics.nist.gov/N42/2011/N42" n42DocDateTime="2020-09-10T22:22:34Z">
+	<RadInstrumentDataCreatorName>InterSpec</RadInstrumentDataCreatorName>
+	<RadInstrumentInformation id="InstInfo1">
+		<RadInstrumentManufacturerName>unknown</RadInstrumentManufacturerName>
+		<RadInstrumentModelName>unknown</RadInstrumentModelName>
+		<RadInstrumentClassCode>Other</RadInstrumentClassCode>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>Software</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>InterSpec</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>InterSpecN42Serialization</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>4</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+	</RadInstrumentInformation>
+	<RadDetectorInformation id="unamed">
+		<RadDetectorCategoryCode>Gamma</RadDetectorCategoryCode>
+		<RadDetectorKindCode>Other</RadDetectorKindCode>
+	</RadDetectorInformation>
+	<EnergyCalibration id="EnergyCal0">
+		<Remark>Energy calibration was originally specified as full-range-fraction.</Remark>
+		<CoefficientValues>4.40999985 6.24673843 0</CoefficientValues>
+	</EnergyCalibration>
+	<RadMeasurement id="Sample1">
+		<MeasurementClassCode>Background</MeasurementClassCode>
+		<StartDateTime>2018-08-14T20:57:32Z</StartDateTime>
+		<RealTimeDuration>PT900.000000S</RealTimeDuration>
+		<Spectrum energyCalibrationReference="EnergyCal0" radDetectorInformationReference="unamed" id="Sample1Det0Spectrum">
+			<Remark>Title: Background</Remark>
+			<LiveTimeDuration>PT898.258545S</LiveTimeDuration>
+			<ChannelData>0 0 0 0 130 2942 3164 3471 4010 4182 4589 4930 4550 4503 4312 3933 3804 3813 3598 3577 3492 3240 3167 3009 2864 2835 2833 2564 2697 2507 2444 2331 2200 2159 2069 2195 2265 2357 2067 1790 1535 1446 1444 1438 1347 1373 1294 1218 1151 1082 1008 1052 1027 1144 1071 991 923 853 764 689 653 636 660 596 625 582 564 564 472 496 541 500 483 473 454 441 442 447 471 478 455 448 463 387 383 357 368 354 360 360 412 422 456 449 418 453 397 386 372 330 271 261 211 198 230 214 209 187 208 205 194 190 203 191 187 178 216 195 190 181 159 192 193 202 176 167 147 161 144 141 146 156 156 141 135 131 143 156 152 155 163 154 167 182 182 205 200 162 191 165 145 170 179 174 169 170 145 149 123 111 119 112 102 119 94 110 112 90 82 89 85 86 97 117 109 122 110 117 118 122 112 109 103 110 117 96 100 94 82 99 96 96 69 84 74 86 88 87 65 74 57 68 57 58 63 50 51 65 47 40 36 37 47 47 39 40 45 47 48 44 62 52 71 84 101 100 123 167 145 214 228 252 231 278 242 206 212 152 142 126 86 82 46 45 44 34 29 32 32 33 27 30 39 28 34 33 37 32 24 21 20 23 28 22 18 22 20 19 20 15 30 22 10 21 36 24 29 26 34 29 28 25 35 35 28 33 22 28 27 25 19 18 12 30 19 16 17 19 24 20 23 15 20 19 16 23 12 14 14 15 12 12 14 9 13 11 12 22 8 13 10 18 9 17 12 17 10 15 15 20 17 20 13 17 17 17 20 21 27 29 20 21 24 21 28 20 24 15 17 20 12 16 27 13 20 21 15 17 29 21 8 19 13 13 15 13 10 16 16 6 9 10 21 10 18 13 9 8 8 12 12 12 11 6 13 8 4 8 8 4 6 9 8 5 4 2 5 2 5 5 7 5 8 8 6 7 4 27 14 23 23 30 19 30 27 39 41 40 44 37 53 28 30 21 29 20 11 15 12 16 6 6 7 5 3 3 2 0 5 1 1 2 2 0 0 3 1 1 1 1 1 3 3 3 0 0 2 2 5 0 1 1 2 1 2 1 2 6 1 1 0 2 3 0 1 0 3 4 1 1 1 1 2 3 0 4 1 0 2 0 2 1 2 1 2 3 3 5 2 2 1 4 2 4 2 0 3 1 2 1 0 2</ChannelData>
+		</Spectrum>
+		<RadDetectorState radDetectorInformationReference="unamed">
+			<Remark>InterSpec could not determine detector state.</Remark>
+		</RadDetectorState>
+	</RadMeasurement>
+	<RadMeasurement id="Sample2">
+		<MeasurementClassCode>Foreground</MeasurementClassCode>
+		<StartDateTime>2018-08-14T20:57:32Z</StartDateTime>
+		<RealTimeDuration>PT300.000000S</RealTimeDuration>
+		<Spectrum energyCalibrationReference="EnergyCal0" radDetectorInformationReference="unamed" id="Sample2Det0Spectrum">
+			<LiveTimeDuration>PT298.019531S</LiveTimeDuration>
+			<ChannelData>1 0 2 2 209 1739 1968 2121 2547 2766 3245 3359 3514 3597 3697 3843 3816 4043 4024 4182 4027 4049 3961 3945 4075 3986 4065 4288 4508 4050 3289 2949 2763 2624 2454 2340 2424 2346 2221 2058 1994 1896 2001 2091 2089 1812 1605 1402 1253 1246 1159 1050 1063 1074 1092 1005 1021 989 909 893 934 911 921 928 1020 978 922 916 899 840 807 813 829 832 755 760 700 745 724 670 766 789 736 725 742 692 699 658 615 628 658 580 625 555 550 519 462 448 415 407 410 351 418 408 389 417 406 460 589 650 729 847 897 917 862 685 635 526 442 435 374 333 395 367 460 547 645 697 753 730 686 607 466 359 291 186 148 126 89 88 82 52 73 62 79 87 80 79 81 70 73 82 75 66 76 64 59 59 47 45 42 42 35 41 40 47 30 33 42 39 30 31 39 40 27 51 41 35 51 37 43 41 36 38 37 25 34 40 47 32 25 39 28 26 30 31 32 39 23 27 35 27 25 20 33 22 18 18 18 14 22 18 14 21 17 17 20 19 21 18 16 22 30 31 37 36 43 60 62 78 80 99 95 93 73 82 75 59 36 36 25 23 17 22 6 11 10 12 9 7 8 6 5 9 10 12 8 6 10 7 8 8 7 5 4 6 8 4 5 9 9 10 10 14 9 14 12 11 9 15 8 10 11 9 8 10 6 13 10 4 8 6 5 4 12 4 5 3 3 6 1 5 6 2 4 3 5 2 1 1 5 3 2 5 6 2 2 6 3 9 4 8 3 3 4 7 4 3 4 5 5 5 5 5 5 6 6 5 10 5 8 5 5 3 4 4 8 3 12 4 7 6 4 7 8 6 6 9 4 6 4 4 4 5 4 2 3 7 5 2 6 5 0 3 4 5 3 5 4 2 3 1 3 1 0 4 1 2 0 0 3 1 1 1 1 2 1 2 1 0 1 1 1 1 3 4 3 4 3 6 9 7 11 12 18 8 10 14 10 15 9 8 9 8 10 7 2 4 0 3 2 0 0 3 1 0 2 0 0 0 1 0 0 1 1 1 0 1 1 1 0 0 0 1 1 1 1 0 2 1 2 1 2 0 0 0 1 1 1 1 1 2 0 0 0 0 0 0 0 0 0 0 1 0 0 0 2 0 1 0 0 1 1 0 0 1 1 0 2 0 2 2 0 0 2 0 1 0 0 2 1 0</ChannelData>
+		</Spectrum>
+		<RadDetectorState radDetectorInformationReference="unamed">
+			<Remark>InterSpec could not determine detector state.</Remark>
+		</RadDetectorState>
+	</RadMeasurement>
+</RadInstrumentData>
+
