@@ -3557,6 +3557,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       setSpectrum( second, secondNums, SpecUtils::SpectrumType::SecondForeground, 0 );
     }
     
+    
     //Load the other spectra the user had opened.  Note that they were not
     //  write protected so they may have been changed or removed
     //...should check to make sure that they are lazily loaded, so as to not
@@ -3634,32 +3635,48 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 //    bool logY = (entry->shownDisplayFeatures & UserState::kLogSpectrumCounts);
 //    m_spectrum->setYAxisLog( logY );
     
-    const bool vertGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
-    const bool horizontalGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
-    m_spectrum->showVerticalLines( vertGridLines );
-    m_spectrum->showHorizontalLines( horizontalGridLines );
-    m_timeSeries->showVerticalLines( vertGridLines );
-    m_timeSeries->showHorizontalLines( horizontalGridLines );
     
-    if( (entry->shownDisplayFeatures & UserState::kSpectrumLegend) )
+    if( foreground )
     {
-#if( USE_SPECTRUM_CHART_D3 )
-      m_spectrum->enableLegend();
+      // If we have a state without a foreground, then for the spectrum chart, changing the legend
+      //  enabled status, or setting the horizontal/vertical lines causes the client-side javascript
+      //  to crash - I spent some hours trying to figure it out, but no luck.  So for the moment,
+      //  we'll just do this work-around.
+      //  One hint was for the crashing case D3SpectrumDisplayDiv::defineJavaScript() seems to be
+      //  called multiple times, and maybe the id of the parent div changes???
+      //  Its really bizarre.
+#ifdef _MSC_VER
+#pragma message("Not setting show legend or grid lines on charts when loading states that do not have a foreground; should figure out why this causes a client-side error")
 #else
-      m_spectrum->enableLegend( false );
+#warning "Not setting show legend or grid lines on charts when loading states that do not have a foreground; should figure out why this causes a client-side error"
 #endif
-    }else
-    {
-      m_spectrum->disableLegend();
-    }
-    
+      
+      const bool vertGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
+      const bool horizontalGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
+      m_spectrum->showVerticalLines( vertGridLines );
+      m_spectrum->showHorizontalLines( horizontalGridLines );
+      m_timeSeries->showVerticalLines( vertGridLines );
+      m_timeSeries->showHorizontalLines( horizontalGridLines );
+      
+      if( (entry->shownDisplayFeatures & UserState::kSpectrumLegend) )
+      {
+#if( USE_SPECTRUM_CHART_D3 )
+        m_spectrum->enableLegend();
+#else
+        m_spectrum->enableLegend( false );
+#endif
+      }else
+      {
+        m_spectrum->disableLegend();
+      }
+      
 #if( !USE_SPECTRUM_CHART_D3 )
-    if( (entry->shownDisplayFeatures & UserState::kTimeSeriesLegend) )
-      m_timeSeries->enableLegend( false );
-    else
-      m_timeSeries->disableLegend();
+      if( (entry->shownDisplayFeatures & UserState::kTimeSeriesLegend) )
+        m_timeSeries->enableLegend( false );
+      else
+        m_timeSeries->disableLegend();
 #endif
-    
+    }//if( foreground )
     
 //  SpectrumSubtractMode backgroundSubMode;
     
