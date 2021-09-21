@@ -203,51 +203,41 @@ public:
   
   /** Information tracked during test evaluation of the Chi2.  Set this object
    using #setGuiProgressUpdater so you can properly bind things to the GUI.
-   
-   Right now PointSourceShieldingChi2Fcn::DoEval() (I believe) is only called
-   from a single thread, and the m_guiUpdater function is called from that
-   thread, so I believe the atomic and mutex semantics are not needed, but being
-   implemented now so we wont screw up future upgrades to multi-threaded
-   minimizers (note: a multithreaded minimizer may not be that helpful since the
-   chi2 uses multiple threads to caclulate each chi2).
    */
   struct GuiProgressUpdateInfo
   {
-    /** A mutex to make sure only one call to m_guiUpdater can happen at a time.
-        Note that the m_guiUpdater variable itself is not protected by a mutex.
+    GuiProgressUpdateInfo( const size_t updateFreqMs,
+                          std::function<void(size_t ncalls, double elapsed_time, double chi2, std::vector<double> pars)> updater );
+    
+    void fitting_starting();
+    void completed_eval( const double chi2, const std::vector<double> &pars );
+    
+  private:
+    /** A mutex that protects all member variables.
+     Lock is taken in #fitting_starting and #completed_eval functions, and while m_gui_updater is being called.
      */
-    std::mutex m_guiUpdaterMutex;
+    std::mutex m_mutex;
     
-    /** The function called periodically to update the best chi2 found.
-        A lock on m_guiUpdaterMutex is taken while this function is being
-        evaluated in PointSourceShieldingChi2Fcn::DoEval(), so do not take a
-        lock on that in your function.  This currently isnt strictly necassary
-        as I believe Minuit2 only executes in a single thread, but may be
-        necassary in the future if we upgrade Minuit2 or change minimizers.
-     */
-    boost::function<void()> m_guiUpdater;
+    /** The function called periodically to update the best chi2 found. */
+    const std::function<void(size_t, double, double, std::vector<double>)> m_gui_updater;
     
-    std::atomic<size_t> m_num_fcn_calls;
+    const size_t m_update_frequency_ms;
     
-    std::atomic<double> m_fitStartTime;
-    std::atomic<double> m_currentTime;
-    std::atomic<double> m_lastGuiUpdateTime;
+    size_t m_num_fcn_calls;
     
-    std::atomic<double> m_bestChi2;
-    std::mutex m_bestParsMutex;
+    double m_fitStartTime;
+    double m_currentTime;
+    double m_lastGuiUpdateTime;
+    
+    double m_bestChi2;
     std::vector<double> m_bestParameters;
   };//struct GuiProgressUpdateInfo
   
-  /** Warning: the setup for this in ShieldingSourceDisplay::doModelFittingWork()
-      is not thread safe and poorly designed right now - this need to be fixed
-      before use
-   
-      Call this function to have the Chi2 call the specified callback with the
+  /** Call this function to have the Chi2 call the specified callback with the
       best solution found so far, at the specified intervals.  The callback will
       be posted to be executed in the specified Wt session using WServer.
    */
-  void setGuiProgressUpdater( const size_t updateFrequencyMs,
-                      std::shared_ptr<GuiProgressUpdateInfo> updateInfo );
+  void setGuiProgressUpdater( std::shared_ptr<GuiProgressUpdateInfo> updateInfo );
   
   /** Call this function *just* before starting to fit; it will set the zombie
       timer for the specified delay.  The zombie timer is how long the fit can
@@ -260,7 +250,16 @@ public:
   /** Call this function as soon as fitting is done - it cancels the zombie
       timer.
    */
-  void fittindIsFinished();
+  void fittingIsFinished();
+  
+  /** Sets whether to use a SpecUtilsAsync::ThreadPool when calculating contributions for each peak from self-attenuating sources.
+   If you are doing multiple parallel fits, you may want to disable multithread to better use the cpu.
+   
+   Default is true.
+   
+   \sa m_self_att_multithread
+   */
+  void setSelfAttMultiThread( const bool do_multithread );
   
 #if( ALLOW_MASS_FRACTION_FIT )
 /*
@@ -438,9 +437,6 @@ protected:
   //Used to determine if m_guiUpdateInfo related stuff should be checked on
   std::atomic<bool> m_isFitting;
   
-  //Callback to occasionally update the gui during computation
-  std::atomic<size_t> m_guiUpdateFrequencyMs;
-  
   std::shared_ptr<GuiProgressUpdateInfo> m_guiUpdateInfo;
   
   //Sometimes self attenuating fits can run-away and never end - protect against it
@@ -471,6 +467,17 @@ protected:
 #endif
   
   bool m_allowMultipleNucsContribToPeaks;
+  
+  /** Wether to use SpecUtilsAsync::ThreadPool to calculate self-attenuation peak values.
+   
+   TODO: Figure out if this should be an std::atomic
+   
+   Default is true.
+   
+   \sa setSelfAttMultiThread
+   */
+  bool m_self_att_multithread;
+  
   
   //A cache of nuclide mixtures to
   mutable NucMixtureCache m_mixtureCache;
