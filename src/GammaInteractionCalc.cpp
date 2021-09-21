@@ -2375,7 +2375,7 @@ void PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo::completed_eval( const d
   }
   
   m_currentTime = SpecUtils::get_wall_time();
-  const double elapsed_time = m_currentTime - m_lastGuiUpdateTime;
+  const double elapsed_time = m_currentTime - m_fitStartTime;
   if( elapsed_time > 0.001*m_update_frequency_ms )
   {
     m_lastGuiUpdateTime = m_currentTime;
