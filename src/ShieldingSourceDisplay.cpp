@@ -103,6 +103,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
+#include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -122,6 +123,10 @@ typedef std::shared_ptr<const PeakDef> PeakShrdPtr;
 
 const int ShieldingSelect::sm_xmlSerializationVersion = 0;
 const int ShieldingSourceDisplay::sm_xmlSerializationVersion = 0;
+
+const size_t ShieldingSourceDisplay::sm_max_model_fit_time_ms = 120*1000;
+const size_t ShieldingSourceDisplay::sm_model_update_frequency_ms = 2000;
+
 
 namespace
 {
@@ -5765,6 +5770,24 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
 }//void checkDistanceAndThicknessConsistent()
 
 
+void ShieldingSourceDisplay::checkForMultipleGenericMaterials()
+{
+  int num_fit_for_ad = 0;
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *thisSelect = dynamic_cast<ShieldingSelect *>(widget);
+    if( thisSelect && thisSelect->isGenericMaterial()
+       && thisSelect->fitAtomicNumber() )
+    {
+      num_fit_for_ad += 1;
+    }
+  }//for( WWidget *widget : m_shieldingSelects->children() )
+  
+  if( num_fit_for_ad > 1 )
+    throw runtime_error( "You can only fit for the atomic number of one generic shielding at a time." );
+}//void checkForMultipleGenericMaterials()
+
+
 void ShieldingSourceDisplay::checkAndWarnZeroMassFraction()
 {
   //ToDo: will needs to implement, the point of this function will be to allow
@@ -8473,7 +8496,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
         inputPrams.Add( name + "_AN_FIXED", an );
 
       if( fitAD )
-        inputPrams.Add( name + "_AD", ad, std::max(10.0*adUnits, 0.25*ad), 0.0, 400.0*adUnits );
+        inputPrams.Add( name + "_AD", ad, std::max(5.0*adUnits, 0.1*ad), 0.0, 400.0*adUnits );  //400g/cm2 is about 35cm Pb
       else
         inputPrams.Add( name + "_AD", ad );
     }else
@@ -8968,43 +8991,14 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
   
   if( progress_fcn && progress ) //if we are wanted to post updates to the GUI periodically.
   {
-    //Create a object that wil be shared by the Chi2 function, and its callback
-    //  which will in turn update the variable shared with the function that
-    //  gets posted to the GUI thread.  Its a little convoluted, but I think
-    //  this lets us better make a consistent handoff of information (e.g., we
-    //  can be sure all the member variables of ModelFitProgress are not-changed
-    //  by the time the GUI update function gets executed in the Wt event loop).
-    auto progressUpdatInfo = std::make_shared<GammaInteractionCalc::PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo>();
-  
-    //We need to pass in a refernce to progressUpdatInfo to the lamda function
-    //  we will assign to progressUpdatInfo->m_guiUpdater, but we need to avoid
-    //  creating a circular reference that keeps progressUpdatInfo from ever
-    //  getting deleted, so we will pass in a week pointer to m_guiUpdater.
-    std::weak_ptr<GammaInteractionCalc::PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo> progress_weak = progressUpdatInfo;
-    
-    progressUpdatInfo->m_guiUpdater = [progress_fcn,progress_weak,wtsession,progress](){
-      auto infoFromChiFcn = progress_weak.lock();
-      if( !infoFromChiFcn )
-        return;
-    
-      vector<double> pars;
-      
-      {
-        //As it stands the thread we are currently in is the only thread to access
-        // the object pointed to by infoFromChiFcn, so there is no need to bother
-        // with the atomic or mutexs, but because Minuit2 I think has a
-        // multithreaded mode we might look into later, I'll keep this stuff
-        // thread safe for now.
-        std::lock_guard<std::mutex> scoped_lock( infoFromChiFcn->m_bestParsMutex );
-        pars = infoFromChiFcn->m_bestParameters;
-      }
-      
+    auto updatefcn = [progress_fcn,wtsession,progress]( size_t ncalls, double elapsed_time,
+                                                        double chi2, std::vector<double> pars){
       {
         std::lock_guard<std::mutex> scoped_lock( progress->m );
-        progress->chi2 = infoFromChiFcn->m_bestChi2;
-        progress->elapsedTime = (infoFromChiFcn->m_currentTime - infoFromChiFcn->m_fitStartTime);
+        progress->chi2 = chi2;
+        progress->elapsedTime = elapsed_time;
         progress->parameters = pars;
-        progress->numFcnCalls = infoFromChiFcn->m_num_fcn_calls;
+        progress->numFcnCalls = ncalls;
       }
       
       WApplication *app = WApplication::instance();
@@ -9014,7 +9008,15 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
         WServer::instance()->post( wtsession, progress_fcn );
     };//define progressUpdatInfo->m_guiUpdater
   
-    chi2Fcn->setGuiProgressUpdater( sm_model_update_frequency_ms, progressUpdatInfo );
+    //Create a object that will be shared by the Chi2 function, and its callback
+    //  which will in turn update the variable shared with the function that
+    //  gets posted to the GUI thread.  Its a little convoluted, but I think
+    //  this lets us better make a consistent handoff of information (e.g., we
+    //  can be sure all the member variables of ModelFitProgress are not-changed
+    //  by the time the GUI update function gets executed in the Wt event loop).
+    auto progressUpdater = std::make_shared<GammaInteractionCalc::PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo>( sm_model_update_frequency_ms, updatefcn );
+    
+    chi2Fcn->setGuiProgressUpdater( progressUpdater );
   }//if( progress_fcn && progress )
   
   
@@ -9048,15 +9050,23 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     //cout << endl;
     
     const double tolerance = 2.0*inputPrams->VariableParameters();
-    unsigned int maxFcnCall = 50000;  //default minuit2: 200 + 100 * npar + 5 * npar**2
+    const unsigned int maxFcnCall = 50000;  //default minuit2: 200 + 100 * npar + 5 * npar**2
     
     ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
     
+    
+    //Try two more times to get a valid fit... a stupid hack
+    for( int i = 0; !minimum.IsValid() && i < 2; ++i )
+      minimum = fitter( maxFcnCall, tolerance );
+    
+    ROOT::Minuit2::MnUserParameters fitParams = minimum.UserParameters();
+    
     //For some reason the fit to atomic number of generic shielding is horrible!
     //  I'm probably screwing something up in the setup for Minuit, but as a
-    //  work around, lets manually coursely scan AN, and then use the best found
+    //  work around, lets manually coarsely scan AN, and then use the best found
     //  AN to then perform another fit to fine tune it.
     //Not a lot of validation went into this, but it does seem to work better.
+    //  For the life of me, I cant get Minuit to fit for AN and AD simultaneously well
     vector<string> fit_generic_an;
     for( auto &par : inputPrams->Parameters() )
     {
@@ -9065,72 +9075,180 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
          && (name.find("_AN")!=string::npos)
          && (name.find("_FIXED")==string::npos)
          && !par.IsFixed() )  //Looks to be bug in Minuit, so we need the above "_FIXED"
+      {
         fit_generic_an.push_back( name );
+      }
     }//for( auto &par : inputPrams->Parameters() )
+    
+    
+    // If we have a self-attenuating source, computation time becomes pretty large, so we wont do
+    //  the detailed AN scan in this case
+    //  TODO: check if we are fitting anything related to self-attenuating materials dimensions, and
+    //        if not, dont reject doing the AN scan.
+    if( !fit_generic_an.empty() )
+    {
+      for( size_t i = 0; i < chi2Fcn->numNuclides(); ++i )
+      {
+        const SandiaDecay::Nuclide * const nuc = chi2Fcn->nuclide( static_cast<int>(i) );
+        if( chi2Fcn->isActivityDefinedFromShielding( nuc ) )
+          fit_generic_an.clear();
+      }
+    }//if( check if we also have a self-attenuating source )
+    
     
     if( !fit_generic_an.empty() )  //should add in a check that we arnt doing self attenuating sources.
     {
       //Re-perform the fit scanning in atomic number to find best.
-      const double orig_chi2 = chi2Fcn->DoEval( fitter.Params() );
-      
+      // TODO: Fix all other AN for the scan, and update inputPrams, so subsequent generic materials will use new AN
       for( const auto &parname : fit_generic_an )
       {
-        vector<double> best_pars = fitter.Params();
-        double best_an = inputPrams->Value( parname );
-        double best_chi2 = chi2Fcn->DoEval( fitter.Params() );
+        std::mutex best_an_mutex;
+        int best_an = static_cast<int>( std::round(minimum.UserParameters().Value(parname)) );
+        double best_chi2 = minimum.Fval();
+        ROOT::Minuit2::FunctionMinimum best_min = minimum;
+                                                     
+        vector<double> an_chi2s( MassAttenuation::sm_max_xs_atomic_number + 1, std::numeric_limits<double>::max() );
         
-        for( double an = 1.0; an < 101.0; an += 5.0 )
-        {
-          auto testpar = *inputPrams;
-          testpar.SetValue(parname, an);
-          testpar.Fix(parname);
+        auto calc_for_an = [&an_chi2s,&best_an_mutex,&best_an,&best_chi2,&best_min,inputPrams,&parname,chi2Fcn]( const int an ){
+          ROOT::Minuit2::MnUserParameters testpar;
           
-          ROOT::Minuit2::MnUserParameterState anInputParam( testpar );
-          ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
-          ROOT::Minuit2::MnMinimize anfitter( *chi2Fcn, anInputParam, strategy );
-          
-          ROOT::Minuit2::FunctionMinimum anminimum = anfitter( maxFcnCall, tolerance );
-          if( !anminimum.IsValid() )
-            anminimum = anfitter( maxFcnCall, tolerance );
-          
-          const double this_chi2 = chi2Fcn->DoEval( anfitter.Params() );
-          if( this_chi2 < best_chi2 )
+          for( const auto &p : inputPrams->Parameters() )
           {
-            best_pars = anfitter.Params();
-            best_chi2 = this_chi2;
-            best_an = an;
-          }
-        }//for( double an = 1.0; an < 101.0; an += 2.5 )
+            const string name = p.Name();
+            if( name == parname )
+            {
+              testpar.Add( name, static_cast<double>(an) );
+            }else if( p.IsConst() || p.IsFixed() || (name.find("_FIXED") != string::npos) )
+            {
+              testpar.Add( name, p.Value() );
+            }else
+            {
+              testpar.Add( name, p.Value(), p.Error() );
+              if( p.HasLowerLimit() )
+                testpar.SetLowerLimit( name, p.LowerLimit() );
+              if( p.HasUpperLimit() )
+                testpar.SetUpperLimit( name, p.UpperLimit() );
+            }
+          }//for( const auto &p : inputPrams->Parameters() )
+          
+          try
+          {
+            ROOT::Minuit2::MnUserParameterState anInputParam( testpar );
+            ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
+            ROOT::Minuit2::MnMinimize anfitter( *chi2Fcn, anInputParam, strategy );
+            
+            const double tolerance = 2.0*inputPrams->VariableParameters();
+            const unsigned int maxFcnCall = 50000;  //default minuit2: 200 + 100 * npar + 5 * npar**2
+            
+            ROOT::Minuit2::FunctionMinimum anminimum = anfitter( maxFcnCall, tolerance );
+            for( int i = 0; !anminimum.IsValid() && i < 2; ++i )
+              anminimum = anfitter( maxFcnCall, tolerance );
+            
+            {// begin lock on best_an_mutex
+              std::lock_guard<std::mutex> lock( best_an_mutex );
+              
+              an_chi2s[an] = anminimum.Fval();
+              if( an_chi2s[an] < best_chi2 )
+              {
+                best_an = an;
+                best_chi2 = an_chi2s[an];
+                best_min = anminimum;
+              }
+            }// end lock on best_an_mutex
+          }catch( std::exception &e )
+          {
+            cerr << "Unexpected exception scanning in AN for shielding/src fit!" << endl;
+          }//try / catch
+        };//calc_for_an lambda
         
-        fitter.SetValue( parname.c_str(), best_an );
-        fitter.Fix( parname.c_str() );
+        
+        chi2Fcn->setSelfAttMultiThread( false ); //shouldnt affect anything, but JIC
+        
+        
+        SpecUtilsAsync::ThreadPool pool;
+        
+        const int initial_sn_skip = 5;
+        for( int an = MassAttenuation::sm_min_xs_atomic_number;
+            an < MassAttenuation::sm_max_xs_atomic_number;
+            an += initial_sn_skip )
+        {
+          pool.post( [&calc_for_an,an](){ calc_for_an(an); } );
+        }//for( loop over AN )
+        
+        pool.join();
+        
+        int detail_scan_start, detail_scan_end, best_coarse_an;
+        {// begin lock on best_an_mutex
+          std::lock_guard<std::mutex> lock( best_an_mutex );
+          
+          const auto min_coarse_chi2_iter = std::min_element( begin(an_chi2s), end(an_chi2s) );
+          best_coarse_an = static_cast<int>( min_coarse_chi2_iter - begin(an_chi2s) );
+          
+          //Now scan best_coarse_an +- (initial_sn_skip - 1),
+          // (clamp to MassAttenuation::sm_min_xs_atomic_number, MassAttenuation::sm_max_xs_atomic_number)
+          detail_scan_start = static_cast<int>( best_coarse_an - (initial_sn_skip - 1) );
+          detail_scan_end = static_cast<int>( best_coarse_an + initial_sn_skip );
+          detail_scan_start = std::max( detail_scan_start, MassAttenuation::sm_min_xs_atomic_number );
+          detail_scan_end = std::min( detail_scan_end, MassAttenuation::sm_max_xs_atomic_number );
+          
+          assert( detail_scan_start >= 1 );
+          assert( detail_scan_end <= MassAttenuation::sm_max_xs_atomic_number );
+          
+          if( (best_coarse_an < MassAttenuation::sm_min_xs_atomic_number)
+             || (best_coarse_an > MassAttenuation::sm_max_xs_atomic_number) )
+          {
+            detail_scan_start = detail_scan_end;
+          }
+        }// end lock on best_an_mutex
+        
+        
+        for( int an = detail_scan_start; an <= detail_scan_end; an += 1 )
+        {
+          if( an != best_coarse_an )
+            pool.post( [&calc_for_an,an](){ calc_for_an(an); } );
+        }//for( loop over AN )
+        
+        pool.join();
+        
+        {// begin lock on best_an_mutex
+          std::lock_guard<std::mutex> lock( best_an_mutex );
+          
+          best_an = std::min( best_an, MassAttenuation::sm_max_xs_atomic_number );
+          best_an = std::max( best_an, MassAttenuation::sm_min_xs_atomic_number );
+          
+          minimum = best_min;
+          fitParams = minimum.UserParameters();
+          
+          // TODO: explore updating inputPrams incase we are fitting multiple generic materials
+          //inputPrams->SetValue( parname, best_an );
+          
+          // We'll approximate errors on AN.  Extraordinarily rough right now.
+          // TODO: better estimate the actual lower_and upper AN; for now overestimating error,
+          //       sometimes horribly.
+          const double up = chi2Fcn->Up();
+          double lower_an = best_an, upper_an = best_an;
+          for( ; lower_an > MassAttenuation::sm_min_xs_atomic_number; --lower_an )
+          {
+            if( (an_chi2s[lower_an] != std::numeric_limits<double>::max())
+               && ((an_chi2s[lower_an] - best_chi2) >= up) )
+              break;
+          }
+          
+          for( ; upper_an < MassAttenuation::sm_max_xs_atomic_number; ++upper_an )
+          {
+            if( (an_chi2s[upper_an] != std::numeric_limits<double>::max())
+               && ((an_chi2s[upper_an] - best_chi2) >= up) )
+              break;
+          }
+          
+          fitParams.SetError( parname, std::max( 1.0, 0.5*(upper_an - lower_an) ) );
+        }// end lock on best_an_mutex
+        
+        chi2Fcn->setSelfAttMultiThread( true ); //shouldnt affect anything, but JIC
       }//for( const auto &parname : fit_generic_an )
-      
-      for( const auto &parname : fit_generic_an )
-        fitter.Release( parname.c_str() );
-      
-      ROOT::Minuit2::FunctionMinimum postnminimum = fitter( maxFcnCall, tolerance );
-      const double post_best_chi2 = chi2Fcn->DoEval( fitter.Params() );
-      
-      if( post_best_chi2 < orig_chi2 )
-      {
-        minimum = postnminimum;
-        cout << "Found a new minumum of post_best_chi2=" << post_best_chi2 << ", vs old orig_chi2=" << orig_chi2 << endl;
-      }//if( post_best_chi2 < orig_chi2 )
-      else
-      {
-        cout << "Old minumum was better: post_best_chi2=" << post_best_chi2 << ", vs old orig_chi2=" << orig_chi2 << endl;
-      }
-    }else if( !minimum.IsValid() )
-    {
-      //Try two more times to get a valid fit... a stupid hack
-      for( int i = 0; !minimum.IsValid() && i < 2; ++i )
-        minimum = fitter( maxFcnCall, tolerance );
-    }//if( !fit_generic_an.empty() ) / else
+       
+    }//if( !fit_generic_an.empty() )
     
-    
-    
-    const ROOT::Minuit2::MnUserParameters &fitParams = minimum.UserParameters();
     
     std::lock_guard<std::mutex> lock( results->m_mutex );
     
@@ -9167,7 +9285,7 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     results->errormsgs.push_back( "Fit not performed: " + string(e.what()) );
   }// try / catch
   
-  chi2Fcn->fittindIsFinished();
+  chi2Fcn->fittingIsFinished();
   
   if( update_fcn )
   {
@@ -9187,12 +9305,18 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
     checkAndWarnZeroMassFraction();
   }catch( std::exception &e )
   {
-    passMessage( e.what() + string("<br />Fit not performed."),
-                "", WarningWidget::WarningMsgHigh );
+    passMessage( e.what() + string("<br />Fit not performed."), "", WarningWidget::WarningMsgHigh );
     return nullptr;
   }
-  
-  //Should make a progress dialog
+    
+  try
+  {
+    checkForMultipleGenericMaterials();
+  }catch( exception &e )
+  {
+    passMessage( e.what() + string("<br />Fit not performed."), "", WarningWidget::WarningMsgHigh );
+    return nullptr;
+  }//try / catch
   
   m_modifiedThisForeground = true;
   
@@ -9201,8 +9325,7 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
     checkDistanceAndThicknessConsistent();
   }catch( exception &e )
   {
-    passMessage( e.what() + string("<br />Fit not performed."),
-                 "", WarningWidget::WarningMsgHigh );
+    passMessage( e.what() + string("<br />Fit not performed."), "", WarningWidget::WarningMsgHigh );
     return nullptr;
   }//try / catch
   
@@ -9224,11 +9347,6 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
     return nullptr;
   }//try / catch
   
-  //To Do:
-  //  -Add a timer so that after a max amount of time, the calc is canceled (Wt::WTimer or asio deadline_timer)
-  //   -see void #include <boost/asio/deadline_timer.hpp> from WIOService
-  //  -Maybe, have a progress bar or update function
-  //    -See WTimer
   m_fitModelButton->hide();
   m_fitProgressTxt->show();
   m_fitProgressTxt->setText("");
