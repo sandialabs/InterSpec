@@ -443,6 +443,8 @@ D3TimeChart.prototype.WtEmit = function (elem, event) {
  */
 D3TimeChart.prototype.setData = function (rawData) {
   try {
+    // TODO: if rawData is null, clear the contents
+    
     //See the c++ function D3TimeChart::setData()
     if (!this.isValidRawData(rawData)) {
       throw new ValidationError("Structure of raw data is not valid.");
