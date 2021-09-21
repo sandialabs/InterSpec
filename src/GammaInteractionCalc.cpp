@@ -637,7 +637,6 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
   : ROOT::Minuit2::FCNBase(),
     m_cancel( 0 ),
     m_isFitting( false ),
-    m_guiUpdateFrequencyMs( 0 ),
     m_distance( distance ),
     m_liveTime( liveTime ),
     m_photopeakClusterSigma( 1.25 ),
@@ -645,7 +644,8 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
     m_detector( detector ),
     m_materials( materials ),
     m_nuclides( 0, (const SandiaDecay::Nuclide *)NULL ),
-    m_allowMultipleNucsContribToPeaks( allowMultipleNucsContribToPeaks )
+    m_allowMultipleNucsContribToPeaks( allowMultipleNucsContribToPeaks ),
+    m_self_att_multithread( true )
 {
   set<const SandiaDecay::Nuclide *> nucs;
   for( const PeakDef &p : m_peaks )
@@ -673,7 +673,7 @@ PointSourceShieldingChi2Fcn::~PointSourceShieldingChi2Fcn()
       boost::system::error_code ec;
       m_zombieCheckTimer->cancel( ec );
       if( ec )
-        cerr << "PointSourceShieldingChi2Fcn::fittindIsFinished(): Got error cancelling m_zombieCheckTimer: "
+        cerr << "PointSourceShieldingChi2Fcn::fittingIsFinished(): Got error cancelling m_zombieCheckTimer: "
         << ec.message() << endl;
       m_zombieCheckTimer.reset();
     }//if( m_zombieCheckTimer )
@@ -686,11 +686,8 @@ void PointSourceShieldingChi2Fcn::cancelFit()
 }
 
 
-void PointSourceShieldingChi2Fcn::setGuiProgressUpdater( const size_t updateFrequencyMs,
-                                                  std::shared_ptr<GuiProgressUpdateInfo> updateInfo )
-
+void PointSourceShieldingChi2Fcn::setGuiProgressUpdater( std::shared_ptr<GuiProgressUpdateInfo> updateInfo )
 {
-  m_guiUpdateFrequencyMs = updateFrequencyMs;
   m_guiUpdateInfo = updateInfo;
 }//void setGuiUpdater(...)
   
@@ -719,19 +716,11 @@ void PointSourceShieldingChi2Fcn::fittingIsStarting( const size_t deadlineMs )
   }//if( deadlineMs )
 
   if( m_guiUpdateInfo )
-  {
-    std::lock_guard<std::mutex> scoped_lock( m_guiUpdateInfo->m_bestParsMutex );
-    m_guiUpdateInfo->m_bestChi2 = std::numeric_limits<double>::max();
-    m_guiUpdateInfo->m_num_fcn_calls = 0;
-    m_guiUpdateInfo->m_bestParameters.clear();
-    m_guiUpdateInfo->m_lastGuiUpdateTime = SpecUtils::get_wall_time();
-    m_guiUpdateInfo->m_fitStartTime = m_guiUpdateInfo->m_lastGuiUpdateTime.load();
-    m_guiUpdateInfo->m_currentTime = m_guiUpdateInfo->m_lastGuiUpdateTime.load();
-  }
+    m_guiUpdateInfo->fitting_starting();
 }//void fittingIsStarting()
 
   
-void PointSourceShieldingChi2Fcn::fittindIsFinished()
+void PointSourceShieldingChi2Fcn::fittingIsFinished()
 {
   {//begin lock on m_zombieCheckTimerMutex
     std::lock_guard<std::mutex> scoped_lock( m_zombieCheckTimerMutex );
@@ -741,15 +730,20 @@ void PointSourceShieldingChi2Fcn::fittindIsFinished()
       boost::system::error_code ec;
       m_zombieCheckTimer->cancel( ec );
       if( ec )
-        cerr << "PointSourceShieldingChi2Fcn::fittindIsFinished(): Got error cancelling m_zombieCheckTimer: "
+        cerr << "PointSourceShieldingChi2Fcn::fittingIsFinished(): Got error cancelling m_zombieCheckTimer: "
              << ec.message() << endl;
       m_zombieCheckTimer.reset();
     }//if( m_zombieCheckTimer )
   }//end lock on m_zombieCheckTimerMutex
   
   m_isFitting = false;
-}//void fittindIsFinished()
+}//void fittingIsFinished()
   
+
+void PointSourceShieldingChi2Fcn::setSelfAttMultiThread( const bool do_multithread )
+{
+  m_self_att_multithread = do_multithread;
+}
   
 const SandiaDecay::Nuclide *PointSourceShieldingChi2Fcn::nuclide( const int nuc ) const
 {
@@ -777,6 +771,11 @@ PointSourceShieldingChi2Fcn &PointSourceShieldingChi2Fcn::operator=( const Point
   m_nuclides = rhs.m_nuclides;
   m_allowMultipleNucsContribToPeaks = rhs.m_allowMultipleNucsContribToPeaks;
   m_nuclidesToFitMassFractionFor    = rhs.m_nuclidesToFitMassFractionFor;
+  m_self_att_multithread = rhs.m_self_att_multithread;
+  
+  //m_isFitting
+  //m_guiUpdateInfo
+  //m_zombieCheckTimer
   
   return *this;
 }//operator=
@@ -804,8 +803,7 @@ bool PointSourceShieldingChi2Fcn::isVariableMassFraction( const Material *mat,
 bool PointSourceShieldingChi2Fcn::hasVariableMassFraction(
                                                 const Material *mat ) const
 {
-  MaterialToNucsMap::const_iterator pos
-                                   = m_nuclidesToFitMassFractionFor.find( mat );
+  const auto pos = m_nuclidesToFitMassFractionFor.find( mat );
   return (pos != m_nuclidesToFitMassFractionFor.end());
 }//bool hasVariableMassFraction( const Material *material ) const
 
@@ -1515,32 +1513,10 @@ double PointSourceShieldingChi2Fcn::DoEval( const std::vector<double> &x ) const
     
     const size_t npoints = chi2s.size();
     for( size_t i = 0; i < npoints; ++i )
-    chi2 += pow( std::get<1>(chi2s[i]), 2.0 );
+      chi2 += pow( std::get<1>(chi2s[i]), 2.0 );
     
-    if( m_isFitting && m_guiUpdateFrequencyMs.load() && m_guiUpdateInfo )
-    {
-      //Need best chi2, and its cooresponding errors and
-      m_guiUpdateInfo->m_num_fcn_calls++;
-      const double prevBestChi2 = m_guiUpdateInfo->m_bestChi2.load();
-      
-      if( chi2 < prevBestChi2 )
-      {
-        std::lock_guard<std::mutex> scoped_lock( m_guiUpdateInfo->m_bestParsMutex );
-        m_guiUpdateInfo->m_bestChi2 = chi2;
-        m_guiUpdateInfo->m_bestParameters = x;
-      }
-      
-      std::lock_guard<std::mutex> scoped_lock( m_guiUpdateInfo->m_guiUpdaterMutex );
-      const double lastUpdateTime = m_guiUpdateInfo->m_lastGuiUpdateTime;
-      const double currentTime = SpecUtils::get_wall_time();
-      if( (currentTime - lastUpdateTime) > 0.001*m_guiUpdateFrequencyMs.load() )
-      {
-        m_guiUpdateInfo->m_lastGuiUpdateTime = currentTime;
-        m_guiUpdateInfo->m_currentTime = currentTime;
-        
-        m_guiUpdateInfo->m_guiUpdater();
-      }
-    }//if( m_guiUpdateFrequencyMs.load() && m_guiUpdateInfo )
+    if( m_isFitting && m_guiUpdateInfo )
+      m_guiUpdateInfo->completed_eval( chi2, x );
     
     //cout << "Returning chi2=" << chi2 << " for {" ;
     //for( size_t i = 0; i < x.size(); ++i )
@@ -2011,8 +1987,19 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 
     if( isGenericMaterial( materialN ) )
     {
-      const float atomic_number = static_cast<float>(atomicNumber( materialN, x ));
-      const float areal_density = static_cast<float>(arealDensity( materialN, x ));
+      float atomic_number = static_cast<float>(atomicNumber( materialN, x ));
+      float areal_density = static_cast<float>(arealDensity( materialN, x ));
+      
+      // Even though we always set AD and AN limits on the parameters when creating them in
+      //  ShieldingSourceDisplay::shieldingFitnessFcn(...), sometimes Minuit will go (way!) outside
+      //  those bounds, and then everything becomes wack - so we'll clamp the values of AN/AD.
+      if( atomic_number < MassAttenuation::sm_min_xs_atomic_number )
+        atomic_number = MassAttenuation::sm_min_xs_atomic_number;
+      if( atomic_number > MassAttenuation::sm_max_xs_atomic_number )
+        atomic_number = MassAttenuation::sm_max_xs_atomic_number;
+      if( areal_density > (400.0*PhysicalUnits::g/PhysicalUnits::cm2) )
+        areal_density = static_cast<float>(400*PhysicalUnits::g/PhysicalUnits::cm2);
+      
       
       att_coef_fcn = boost::bind( &transmition_coefficient_generic,
                                   atomic_number, areal_density, _1 );
@@ -2274,10 +2261,17 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 
   if( calculators.size() )
   {
-    SpecUtilsAsync::ThreadPool pool;
-    for( SelfAttCalc &calculator : calculators )
-      pool.post( boost::bind( &PointSourceShieldingChi2Fcn::selfShieldingIntegration, boost::ref(calculator) ) );
-    pool.join();
+    if( m_self_att_multithread )
+    {
+      SpecUtilsAsync::ThreadPool pool;
+      for( SelfAttCalc &calculator : calculators )
+        pool.post( boost::bind( &PointSourceShieldingChi2Fcn::selfShieldingIntegration, boost::ref(calculator) ) );
+      pool.join();
+    }else
+    {
+      for( SelfAttCalc &calculator : calculators )
+        selfShieldingIntegration(calculator);
+    }
     
 //    vector<boost::function<void()> > workers;
 //    for( SelfAttCalc &calculator : calculators )
@@ -2289,7 +2283,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 
     if( info )
       info->push_back( "Self Attenuating Source Info (after accounting for "
-                       "shielding, distanec, detector and live time):" );
+                       "shielding, distance, detector and live time):" );
     
     for( const SelfAttCalc &calculator : calculators )
     {
@@ -2340,5 +2334,53 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 
   return expected_observed_chis( m_peaks, m_backgroundPeaks, energy_count_map, info );
 }//vector<tuple<double,double,double> > energy_chi_contributions(...) const
+
+
+PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo::GuiProgressUpdateInfo( const size_t updateFreqMs,
+                        std::function<void(size_t, double, double, std::vector<double>)> updater )
+  : m_gui_updater( updater ),
+  m_update_frequency_ms( updateFreqMs ),
+  m_num_fcn_calls( 0 ),
+  m_fitStartTime( 0.0 ),
+  m_currentTime( 0.0 ),
+  m_lastGuiUpdateTime( 0.0 ),
+  m_bestChi2( std::numeric_limits<double>::infinity() )
+{
+}
+
+
+void PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo::fitting_starting()
+{
+  std::lock_guard<std::mutex> scoped_lock( m_mutex );
+
+  m_bestChi2 = std::numeric_limits<double>::max();
+  m_num_fcn_calls = 0;
+  m_bestParameters.clear();
+  m_lastGuiUpdateTime = SpecUtils::get_wall_time();
+  m_fitStartTime = m_lastGuiUpdateTime;
+  m_currentTime = m_lastGuiUpdateTime;
+}// void GuiProgressUpdateInfo::fitting_starting()
+
+
+void PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo::completed_eval( const double chi2, const std::vector<double> &pars )
+{
+  std::lock_guard<std::mutex> scoped_lock( m_mutex );
+  
+  m_num_fcn_calls += 1;
+  const double prevBestChi2 = m_bestChi2;
+  if( chi2 < prevBestChi2 )
+  {
+    m_bestChi2 = chi2;
+    m_bestParameters = pars;
+  }
+  
+  m_currentTime = SpecUtils::get_wall_time();
+  const double elapsed_time = m_currentTime - m_lastGuiUpdateTime;
+  if( elapsed_time > 0.001*m_update_frequency_ms )
+  {
+    m_lastGuiUpdateTime = m_currentTime;
+    m_gui_updater( m_num_fcn_calls, elapsed_time, m_bestChi2, m_bestParameters );
+  }
+}//completed_eval(...)
 
 }//namespace GammaInteractionCalc
