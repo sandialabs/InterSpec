@@ -116,12 +116,15 @@ public:
   void refreshData();
   
 protected:
-  typedef std::tuple< std::shared_ptr<const SpecUtils::EnergyCalibration>, \
-                      bool, \
-                      std::shared_ptr<const PeakDef>, \
-                      std::shared_ptr<SpectraFileHeader> > PeakInfo_t;
+  typedef std::tuple< bool, std::shared_ptr<const PeakDef> > UsePeakInfo_t;
   
-  std::vector< std::vector<PeakInfo_t> > m_peaks;
+  typedef std::tuple<std::shared_ptr<SpectraFileHeader>, \
+                     std::set<int>, \
+                     std::shared_ptr<const SpecUtils::EnergyCalibration>, \
+                     std::vector<UsePeakInfo_t> > SamplesPeakInfo_t;
+  
+  std::vector<std::vector<SamplesPeakInfo_t>> m_data;
+  
   EnergyCalTool *m_calibrator;
   SpectraFileModel *m_fileModel;
   
