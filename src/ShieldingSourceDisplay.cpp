@@ -9241,7 +9241,21 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
               break;
           }
           
-          fitParams.SetError( parname, std::max( 1.0, 0.5*(upper_an - lower_an) ) );
+          float error = 0.5*(upper_an - lower_an);
+          
+          // If we are near the limits of atomic number, be a little more conservative since our
+          //  naive estimation may not have been able to fully go to the atomic number.
+          if( ((best_an + error) >= MassAttenuation::sm_max_xs_atomic_number)
+             || ((best_an - error) <= MassAttenuation::sm_min_xs_atomic_number) )
+          {
+            error = std::max( error, static_cast<float>(upper_an - best_an) );
+            error = std::max( error, static_cast<float>(best_an - lower_an) );
+          }
+          
+          
+          error = std::max( 1.0f, error );
+          
+          fitParams.SetError( parname, error );
         }// end lock on best_an_mutex
         
         chi2Fcn->setSelfAttMultiThread( true ); //shouldnt affect anything, but JIC
