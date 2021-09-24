@@ -220,6 +220,16 @@ public:
   //   on deplandcies)
   static std::shared_ptr<DetectorPeakResponse> initARelEffDetector( const SpecUtils::DetectorType type, InterSpec *interspec );
   
+  
+  /** Checks if file at passed in path is a TSV/CSV file that contains
+   coefficients for the exp( c0 + c1*logx + c2*logx^2 + ...) equation.
+   If so, returns detector.  If not, returns nullptr.
+   
+   ToDo: Currently reads in most of the information exported in the CSV from MakeDrf tool, but maybe not all.
+   */
+  static std::shared_ptr<DetectorPeakResponse> parseRelEffCsvFile( const std::string filePath );
+  
+  
   //Callbacks for when detector is changed or modified
   void gadrasDetectorSelectCallback();
   void relEffDetectorSelectCallback();
@@ -259,23 +269,13 @@ public:
   //a row is selected, so update det and charts
   void dbTableSelectionChanged();
 
+  
 protected:
   void setAcceptButtonEnabled( const bool enable );
   
   /** Called when user changes value in m_uploadedDetName; sets m_detector name. */
   void handleUserChangedUploadedDrfName();
   
-  /** Checks if file at passed in path is a TSV/CSV file that contains
-      coeffeicents for the exp( c0 + c1*logx + c2*logx^2 + ...) equation.
-      If so, returns detector.  If not, returns nullptr.
-   
-   ToDo: Currently reads in most of the information exported in the CSV from
-     MakeDrf tool, except the uncertainities - should add this in.  Also, need
-     to cleanup the GUI during loading of this one CSV that has all the info
-     (def not correct, should hide detector diameter and option to upload
-      Detector.dat).
-   */
-  static std::shared_ptr<DetectorPeakResponse> checkIfFileIsRelEff( const std::string tsvfilepath );
   
 protected:
   WContainerWidget *m_footer;

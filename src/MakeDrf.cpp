@@ -2864,11 +2864,20 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     out << "," << ( (i==0 ? log(solidAngleAt25cm) : 0.0) + effEqnCoefs[i]);  //todo: make sure its not
   for( size_t i = effEqnCoefs.size(); i < 12; ++i )
     out << ",";
-  out << "25," << (0.5*diam/PhysicalUnits::cm) << "," << solidAngleAt25cm << endline
-  << endline
-  << endline;
+  out << "25," << (0.5*diam/PhysicalUnits::cm) << "," << solidAngleAt25cm << endline;
+  out << "# 1 sigma Uncertainties,";
+  if( releffuncert >= 0.0 )
+    out << 100*(releffuncert / NaI3x3IntrinsicEff) << "%";
+  out << ",";
+  for( size_t i = 0; i < effEqnCoefsUncerts.size(); ++i )
+    out << "," << effEqnCoefsUncerts[i];
+  if( effChi2 > 0 )
+    out << endline << "# Chi2 / DOF = " << effChi2 << " / " << (effDof-1)
+        << " = " << (effDof >= 1 ? (effChi2/(effDof-1.0)) : 0.0);
+  out << endline << endline;
   
-  //Then need to give FWHM equation form and coefficienct, if avaialble.
+  
+  //Then need to give FWHM equation form and coefficient, if available.
   if( fwhmCoefs.size() )
   {
     out << "# Full width half maximum (FWHM) follows equation: ";
