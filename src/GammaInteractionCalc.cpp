@@ -956,24 +956,24 @@ void PointSourceShieldingChi2Fcn::massFraction( double &massFrac,
                                         const std::vector<double> &errors ) const
 {
   massFrac = uncert = 0.0;
-  typedef MaterialToNucsMap::const_iterator MaterialToNucsMapIter;
-  if( !material || !nuc )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction(): invalid "
-                         "input" );
-  MaterialToNucsMapIter matpos = m_nuclidesToFitMassFractionFor.find(material);
   
-  if( matpos == m_nuclidesToFitMassFractionFor.end() )
+  if( !material || !nuc )
+    throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction(): invalid input" );
+  
+  const auto matpos = m_nuclidesToFitMassFractionFor.find(material);
+  
+  if( matpos == end(m_nuclidesToFitMassFractionFor) )
     throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction(): "
                          + material->name + " is not a material with a variable"
                          " mass fraction" );
-  const std::vector<const SandiaDecay::Nuclide *> &nucs
-                        = m_nuclidesToFitMassFractionFor.find(material)->second;
-  vector<const SandiaDecay::Nuclide *>::const_iterator pos;
+  
+  const std::vector<const SandiaDecay::Nuclide *> &nucs = matpos->second;
+  
   //nucs is actually sorted by symbol name, could do better than linear search
-  pos = std::find( nucs.begin(), nucs.end(), nuc );
-  if( pos == nucs.end() )
+  const auto pos = std::find( begin(nucs), end(nucs), nuc );
+  if( pos == end(nucs) )
     throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction(): "
-                         +nuc->symbol + " was not a nuc fit for mass fraction"
+                         + nuc->symbol + " was not a nuc fit for mass fraction"
                          " in " + material->name );
   
   double totalfrac = 0.0;
@@ -989,8 +989,7 @@ void PointSourceShieldingChi2Fcn::massFraction( double &massFrac,
   }//for( const SandiaDecay::Nuclide *n : nucs )
   
   size_t matmassfracstart = 0;
-  for( MaterialToNucsMapIter iter = m_nuclidesToFitMassFractionFor.begin();
-      iter != matpos; ++iter )
+  for( auto iter = begin(m_nuclidesToFitMassFractionFor); iter != matpos; ++iter )
   {
     if( iter->second.size() )
       matmassfracstart += (iter->second.size()-1);

@@ -1452,7 +1452,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     }//case kUseForShieldingSourceFit:
 
     case kUseForCalibration:
-      return peak->useForCalibration();
+      return peak->useForEnergyCalibration();
       
     case kPeakLineColor:
     {
@@ -2129,9 +2129,9 @@ bool PeakModel::setData( const WModelIndex &index,
                          " the peak before using it for calibrarion" ,
                          "", WarningWidget::WarningMsgHigh );
           
-          if( use == new_peak.useForCalibration() )
+          if( use == new_peak.useForEnergyCalibration() )
             return false;
-          new_peak.useForCalibration( use );
+          new_peak.useForEnergyCalibration( use );
         }catch(...)
         {
           cerr << "\n\tFailed in casting checkbox" << endl;
@@ -2528,7 +2528,7 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
 
     case kUseForCalibration:
     {
-      const bool thisorder = lhs->useForCalibration() < rhs->useForCalibration();
+      const bool thisorder = lhs->useForEnergyCalibration() < rhs->useForEnergyCalibration();
       return (asscend ? thisorder : (!thisorder));
     }//case kUseForCalibration:
 
