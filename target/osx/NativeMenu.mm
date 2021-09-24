@@ -24,6 +24,20 @@
 #include "InterSpec/InterSpecApp.h"
 
 
+void do_in_main_sync( std::function<void()> work )
+{
+  if( [NSThread isMainThread] )
+  {
+    work();
+  }else
+  {
+    dispatch_sync(dispatch_get_main_queue(), ^{
+      work();
+    } );
+  }
+}//void do_in_main_sync(...)
+
+
 void doemit( PopupDivMenuItem *item )
 {
   item->triggered().emit( (Wt::WMenuItem *)item );
@@ -177,16 +191,7 @@ void *addOsxMenu( PopupDivMenu *menu, const char *name  )
     [[NSApp mainMenu] addItem:newItem];
   };//doWork
   
-  if( [NSThread isMainThread] )
-  {
-    doWork();
-  }else
-  {
-    dispatch_sync(dispatch_get_main_queue(), ^{
-      doWork();
-    } );
-  }//if( in main thread ) / else
-  
+  do_in_main_sync( doWork );
   
   return newMenu;
 }//void *addOsxMenu( PopupDivMenu *menu, const char *name  )
@@ -200,7 +205,7 @@ void *addOsxSubMenu( void *parent, PopupDivMenu *item, const char *text )
   NSMenuItem *newItem = [[NSMenuItem alloc] initWithTitle:nsname action:NULL keyEquivalent:@""];
   NSMenu *newMenu = [[NSMenu alloc] initWithTitle:nsname];
 
-//  dispatch_async(dispatch_get_main_queue(), ^{
+  do_in_main_sync( [=](){
     NSInteger ind = [parentmenu indexOfItemWithTitle:@"Quit InterSpec"];
     if (ind!=-1)
     {
@@ -214,7 +219,7 @@ void *addOsxSubMenu( void *parent, PopupDivMenu *item, const char *text )
     }
 
     [parentmenu setSubmenu:newMenu forItem:newItem];
-//  });
+  } );
   
   return newMenu;
 }//void *addOsxSubMenu( void *parent, PopupDivMenu *item )
@@ -257,7 +262,7 @@ void *insertOsxMenuItem( void *voidmenu, PopupDivMenuItem *item, int position )
   
   item->setData( (void *)itemnow );
 
-//  dispatch_async(dispatch_get_main_queue(), ^{
+  do_in_main_sync( [=](){
     NSInteger ind = [menu indexOfItemWithTitle:@"Quit InterSpec"];
     if( position >= 0 )
     {
@@ -276,7 +281,7 @@ void *insertOsxMenuItem( void *voidmenu, PopupDivMenuItem *item, int position )
       NSImage *image = [[NSImage alloc] initByReferencingFile:nsiconpath];
       [itemnow setImage:image];
     }
-//  } );
+  } );
   
   return itemnow;
 }//void *addOsxMenuItem( void *voidmenu, PopupDivMenuItem *item )
@@ -290,7 +295,13 @@ void removeOsxSeparator( void *voidmenu, void *voiditem )
   if( !menu || !item )
     return;
 
-  [menu removeItem:item];
+  // We will do this async, because if we are quitting the app, we actually dont care if it doesnt
+  //  get removed, and in this case the async call to main thread wont ever happen (I dont think)
+  dispatch_async(dispatch_get_main_queue(), ^{
+    const NSInteger index = [menu indexOfItem: item];
+    if( index >= 0 )
+      [menu removeItem:item];
+  } );
 }//void removeOsxSeparator( ( void *voidmenu, void *voiditem )
 
 
@@ -317,9 +328,9 @@ void *addOsxCheckableMenuItem( void *voidmenu, Wt::WCheckBox *cb,
   [itemnow setEnabled:YES];
   [itemnow setState:cb->isChecked()];
   
-//  dispatch_async(dispatch_get_main_queue(), ^{
+  do_in_main_sync( [=](){
     [menu addItem:itemnow];
-//  } );
+  } );
   
   return itemnow;
 }//void *addOsxCheckableMenuItem( void *menu, Wt::WCheckBox *cb );
@@ -333,12 +344,12 @@ void *addOsxSeparatorAt( int index, void *voidmenu )
   NSMenu *menu = (NSMenu *)voidmenu;
   NSMenuItem *item = [NSMenuItem separatorItem];
 
-  //dispatch_async(dispatch_get_main_queue(), ^{
-  if( index >= 0 )
-    [menu insertItem:item atIndex:(index)];
-  else 
-    [menu addItem:item];
-  //} );
+  do_in_main_sync( [=](){
+    if( index >= 0 )
+      [menu insertItem:item atIndex:(index)];
+    else
+      [menu addItem:item];
+  } );
 
   return item;
 }//void *addOsxSeparatorAt( int index, void *voidmenu )
@@ -352,7 +363,7 @@ void *addOsxSeparator(void *voidmenu)
   NSMenu *menu = (NSMenu *)voidmenu;
   NSMenuItem *item = [NSMenuItem separatorItem];
 
-//  dispatch_async(dispatch_get_main_queue(), ^{
+  do_in_main_sync( [=](){
     NSInteger ind = [menu indexOfItemWithTitle:@"Quit InterSpec"];  
     if( ind != -1 )
     {
@@ -362,7 +373,7 @@ void *addOsxSeparator(void *voidmenu)
     {
       [menu addItem:item]; // Add seperator the normal way - a thin grey line
     }
-//  } );
+  } );
   
   return item;
 } //void *addOsxSeparator(void *voidmenu)
@@ -371,8 +382,10 @@ void *addOsxSeparator(void *voidmenu)
 //void removeOsxMenu( void *menu )
 //{
 //  NSMenu *m = (NSMenu *)menu;
-//  dispatch_async(dispatch_get_main_queue(), ^{
-//    [[NSApp mainMenu] removeItem:m];
+//  do_in_main_sync( [=](){
+//    const NSInteger index = [[NSApp mainMenu] indexOfItem: m];
+//    if( index >= 0 )
+//      [[NSApp mainMenu] removeItem:m];
 //  } );
 //}//void removeOsxMenu( void *menu )
 
@@ -385,9 +398,13 @@ void removeOsxMenuItem( void *item, void *menu )
   NSMenu *m = (NSMenu *)menu;
   NSMenuItem *i = (NSMenuItem *)item;
   
-//  dispatch_async(dispatch_get_main_queue(), ^{
-    [m removeItem:i];
-//  } );
+  // We will do this async, because if we are quitting the app, we actually dont care if it doesnt
+  //  get removed, and in this case the async call to main thread wont ever happen (I dont think)
+  dispatch_async(dispatch_get_main_queue(), ^{
+    const NSInteger index = [m indexOfItem: i];
+    if( index >= 0 )
+      [m removeItem:i];
+  } );
 }//void removeOsxMenuItem( void *item )
 
 
@@ -398,9 +415,9 @@ void setOsxMenuItemHidden( void *item, bool hidden )
   
   NSMenuItem *i = (NSMenuItem *)item;
   
-//  dispatch_async(dispatch_get_main_queue(), ^{
+  do_in_main_sync( [=](){
     [i setHidden:hidden];
-//  } );
+  } );
 }//void setOsxMenuItemHidden( void *item, bool hidden )
 
 
@@ -413,8 +430,8 @@ void addOsxMenuItemToolTip( void *item, const char *tooltip )
   NSMenuItem *i = (NSMenuItem *)item;
   NSString *tip = [NSString stringWithFormat:@"%s", tooltip];
   
-//  dispatch_async(dispatch_get_main_queue(), ^{
+  do_in_main_sync( [=](){
     [i setToolTip:tip];
-//  } );
+  } );
 }//void addOsxMenuItemToolTip( void *item, const char *tooltip )
 

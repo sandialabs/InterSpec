@@ -31,7 +31,6 @@
 
 #include <Wt/WColor>
 #include <Wt/WBorder>
-#include <Wt/WResource>
 #include <Wt/WJavaScript>
 #include <Wt/WApplication>
 #include <Wt/WPaintDevice>
