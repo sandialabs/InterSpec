@@ -368,7 +368,7 @@ namespace
   public:
     const std::shared_ptr<const PeakDef> m_peak;
     const double m_livetime;
-    Wt::WCheckBox *m_useCb;
+    Wt::WCheckBox *m_useForEffCb;
     WText *m_descTxt;
     WText *m_backSubTxt;
     WDoubleSpinBox *m_userBr;
@@ -385,7 +385,7 @@ namespace
     : WContainerWidget( parent ),
       m_peak( peak ),
       m_livetime( livetime ),
-      m_useCb( nullptr ),
+      m_useForEffCb( nullptr ),
       m_descTxt( nullptr ),
       m_backSubTxt( nullptr ),
       m_userBr( nullptr ),
@@ -395,13 +395,13 @@ namespace
       m_isBackground( false )
     {
       addStyleClass( "DrfPeak" );
-      m_useCb = new WCheckBox( "Use", this );
-      m_useCb->addStyleClass( "DrfPeakUseCb" );
+      m_useForEffCb = new WCheckBox( "Use", this );
+      m_useForEffCb->addStyleClass( "DrfPeakUseCb" );
       
       char buffer[512];
       if( peak && peak->parentNuclide() && peak->nuclearTransition() )
       {
-        const bool use = peak->useForDrfFit();
+        const bool use = peak->useForDrfIntrinsicEffFit();
         
         const char *gammatype = "";
         switch( peak->sourceGammaType() )
@@ -422,7 +422,7 @@ namespace
             break;
         }//switch( peak->sourceGammaType() )
         
-        m_useCb->setChecked( use );
+        m_useForEffCb->setChecked( use );
         snprintf( buffer, sizeof(buffer), "%s: %.2f keV peak with %.1f cps for %.2f keV gamma%s.",
                   peak->parentNuclide()->symbol.c_str(),
                   peak->mean(),
@@ -440,10 +440,10 @@ namespace
         m_userBr->setMargin( 5, Wt::Left );
         m_userBr->setTextSize( 8 );
         
-        m_useCb->setUnChecked();
+        m_useForEffCb->setUnChecked();
         m_userBr->hide();
-        m_useCb->changed().connect( std::bind( [this](){
-          m_userBr->setHidden( !m_useCb->isChecked() || m_isBackground );
+        m_useForEffCb->changed().connect( std::bind( [this](){
+          m_userBr->setHidden( !m_useForEffCb->isChecked() || m_isBackground );
         } ) );
       }
       
@@ -469,16 +469,20 @@ namespace
       m_previewBtn->clicked().connect( this, &DrfPeak::togglePeakPreview );
     }//DrfPeak constructor;
     
-    bool use() const
+    bool useForEffFit() const
     {
-      return m_useCb->isChecked();
+      return m_useForEffCb->isChecked();
     }
     
     void setUse( const bool use )
     {
-      m_useCb->setChecked( use );
+      m_useForEffCb->setChecked( use );
       if( m_userBr )
         m_userBr->setHidden( !use || m_isBackground );
+      
+#warning "Use peak model (after modding it) to set whether to use intrinsic eff or not"
+      //m_peakModel->setUseForDrfIntrinsicEffFit( use );
+      //m_peakModel->setData( )
     }
     
     void setIsBackground( const bool back )
@@ -489,7 +493,7 @@ namespace
       //  m_userBr->setValue( 1.0 );
       
       if( m_userBr )
-        m_userBr->setHidden( !m_useCb->isChecked() || m_isBackground );
+        m_userBr->setHidden( !m_useForEffCb->isChecked() || m_isBackground );
     }//void setIsBackground( const bool back )
     
     void setBackgroundBeingSubtractedInfo( const bool beingsubtracted, const float background_cps )
@@ -586,7 +590,7 @@ namespace
   
   class DrfSpecFileSample : public WPanel
   {
-    std::shared_ptr<const SpecMeas> m_meas;
+    std::shared_ptr<SpecMeas> m_meas;
     set<int> m_samples;
     MaterialDB *m_materialDB;
     WSuggestionPopup *m_materialSuggest;
@@ -648,7 +652,7 @@ namespace
       {
         auto p = dynamic_cast<DrfPeak *>( w );
         npeaks += (p ? 1 : 0);
-        npeaksused += ((p && p->use()) ? 1 : 0);
+        npeaksused += ((p && p->useForEffFit()) ? 1 : 0);
       }
       
       title += " (using " + std::to_string(npeaksused) + " of " + std::to_string(npeaks) + " peaks)";
@@ -686,7 +690,7 @@ namespace
     
     
   public:
-    DrfSpecFileSample( std::shared_ptr<const SpecMeas> meas, set<int> samples,
+    DrfSpecFileSample( std::shared_ptr<SpecMeas> meas, set<int> samples,
                       MaterialDB *materialDB,
                       Wt::WSuggestionPopup *materialSuggest,
                       WContainerWidget *parent = nullptr )
@@ -760,7 +764,7 @@ namespace
       {
         DrfPeak *p = new DrfPeak( peak, livetime, summed_meas, m_peaks );
         ++npeaks;
-        p->m_useCb->changed().connect( this, &DrfSpecFileSample::refreshSourcesVisible );
+        p->m_useForEffCb->changed().connect( this, &DrfSpecFileSample::refreshSourcesVisible );
         if( p->m_userBr )
         {
           p->m_userBr->changed().connect( this, &DrfSpecFileSample::refreshSourcesVisible );
@@ -1053,7 +1057,7 @@ namespace
       for( auto w : m_peaks->children() )
       {
         auto p = dynamic_cast<DrfPeak *>( w );
-        if( p && p->use() )
+        if( p && p->useForEffFit() )
           selectedNucs.insert( p->m_peak->parentNuclide() );
       }
       
@@ -1140,7 +1144,7 @@ namespace
       
       for( auto peakw : peakWidgets )
       {
-        if( !peakw->use() )
+        if( !peakw->useForEffFit() )
           continue;
         
         const auto nuc = peakw->m_peak->parentNuclide();
@@ -1173,12 +1177,12 @@ namespace
   
   class DrfSpecFile : public WPanel
   {
-    std::shared_ptr<const SpecMeas> m_meas;
+    std::shared_ptr<SpecMeas> m_meas;
     WContainerWidget *m_sampleWidgets;
     Wt::Signal<> m_updated;
     
   public:
-    DrfSpecFile( std::shared_ptr<const SpecMeas> meas,
+    DrfSpecFile( std::shared_ptr<SpecMeas> meas,
                 MaterialDB *materialDB,
                 Wt::WSuggestionPopup *materialSuggest,
                 WContainerWidget *parent = nullptr )
@@ -1597,7 +1601,7 @@ void MakeDrf::startSaveAs()
     for( auto sample : f->fileSamples() )
     {
       for( auto peak : sample->peaks() )
-        npeaks += peak->use();
+        npeaks += peak->useForEffFit();
     }
     
     if( npeaks )
@@ -1759,7 +1763,8 @@ void MakeDrf::startSaveAs()
       upperEnergy = data.back().energy;
     }
     
-    drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, 0.0f, diameter, eqnEnergyUnits, lowerEnergy, upperEnergy );
+    drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, m_effEqnCoefUncerts,
+                                        0.0f, diameter, eqnEnergyUnits, lowerEnergy, upperEnergy );
     drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
     
     if( !m_fwhmCoefs.empty() )
@@ -1901,7 +1906,7 @@ void MakeDrf::handleSourcesUpdates()
       for( auto peak : sample->peaks() )
       {
         peak->setBackgroundBeingSubtractedInfo( false, 0.0 );
-        if( peak->use() )
+        if( peak->useForEffFit() )
           backgroundpeaks.push_back( peak );
       }
     }//for( DrfSpecFileSample *sample : sampleWidgets )
@@ -2624,9 +2629,11 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
         for( auto peak : sample->peaks() )
         {
           shared_ptr<PeakDef> newpeak = make_shared<PeakDef>( *peak->m_peak );
-          newpeak->useForDrfFit( peak->use() );
+#warning "newpeak->setUseForDrfIntrinsicEffFit not needed anymore"
+          newpeak->setUseForDrfIntrinsicEffFit( peak->useForEffFit() );
+          //blah blah blah I dont think this will be needed after we add UseForDrfIntrinsicEffFit as a peak model, assuming m_peak is same as the peak model has...
           newpeaks.push_back( newpeak );
-          beingUsed = (beingUsed || peak->use());
+          beingUsed = (beingUsed || peak->useForEffFit());
         }
         
         if( !beingUsed )

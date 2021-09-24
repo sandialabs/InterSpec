@@ -332,13 +332,15 @@ public:
    
    \param coefs The coefficients for the exp(A0 + A1*log(x) + A2*log(x)^2...)
           equation.  If coefficients are not for intrinsic efficiency (e.g.,
-          characterizationDist is not 0.0), they coeffcients will be converted
+          characterizationDist is not 0.0), they coefficients will be converted
           to intrinsic for internal use
-   \param characterizationDist Distance used when fitting coefficents.  If
+   \param uncerts The uncertainties of the coefficients; must either be empty,
+          or the same size as \p coefs.
+   \param characterizationDist Distance used when fitting coefficients.  If
           coefficients are for intrinsic efficiency, then this value will be
           0.0f.
-   \param equationEnergyUnits The energy units equation should be evalueated
-          in. If equn is in MeV, this will be 1000.  If in keV, will be 1.0.
+   \param equationEnergyUnits The energy units equation should be evaluated
+          in. If eqn is in MeV, this will be 1000.  If in keV, will be 1.0.
    \param lowerEnergy Lower energy, in keV, the equation is good for; if
           unknown pass a value of 0.0f for this parameter and upperEnergy.
    \param upperEnergy Upper energy, in keV, the equation is good for; if
@@ -347,6 +349,7 @@ public:
    Recomputes hash value.
   */
   void fromExpOfLogPowerSeriesAbsEff( const std::vector<float> &coefs,
+                                      const std::vector<float> &uncerts,
                                       const float characterizationDist,
                                       const float detector_diameter,
                                       const float equationEnergyUnits,
