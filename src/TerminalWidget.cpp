@@ -304,7 +304,7 @@ void TerminalWidget::handleEnterKey()
 //Example function called whenever you emit the 'lineentered' signal client side
 void TerminalWidget::handleButtonClickedSignal( std::string argument )
 {
-  cout << "Recieved signal txt of: " << argument << endl;
+  cout << "Received signal txt of: " << argument << endl;
     
     // If m_enteredtxt is a WContainerWidget
     const std::string& input = m_edit->text().narrow();

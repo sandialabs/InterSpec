@@ -108,6 +108,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "InterSpec/DetectorEdit.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -1273,34 +1274,15 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return (pos != char_end);
   };//header_contains lambda
   
-#define USE_SIMPLE_DIALOG_FOR_NOT_SPEC 1
   
-#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
   SimpleDialog *dialog = new SimpleDialog();
-  dialog->addButton( "Close" );
+  WPushButton *closeButton = dialog->addButton( "Close" );
   WGridLayout *stretcher = new WGridLayout();
   stretcher->setContentsMargins( 0, 0, 0, 0 );
   dialog->contents()->setLayout( stretcher );
   WText *title = new WText( "Not a spectrum file" );
   title->addStyleClass( "title" );
   stretcher->addWidget( title, 0, 0 );
-  
-#else
-  
-  AuxWindow *w = new AuxWindow( "Not a spectrum file",
-                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                 | AuxWindowProperties::TabletNotFullScreen
-                 | AuxWindowProperties::SetCloseable
-                 | AuxWindowProperties::DisableCollapse) );
-  w->centerWindow();
-  w->rejectWhenEscapePressed( true );
-  WPushButton *b = w->addCloseButtonToFooter();
-  b->clicked().connect( w, &AuxWindow::hide );
-  w->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, w ) );
-  WGridLayout *stretcher = w->stretcher();
-  if( !m_viewer->isMobile() && m_viewer->renderedWidth() > 400 && m_viewer->renderedHeight() > 250 )
-    w->resize( 400, 250 );
-#endif
   
   // const string filename = SpecUtils::filename(displayName);
   
@@ -1322,11 +1304,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                             "If you believe this to be a legitimate spectrum file, please email it to <a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a> to support this file type." );
       stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
       t->setTextAlignment( Wt::AlignCenter );
-#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
       dialog->show();
-#else
-      w->show();
-#endif
+      
       return true;
     }
   }//if( might be ICD2 )
@@ -1396,9 +1375,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     WText *t = new WText( msg );
     stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
-#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
-    w->show();
-#endif
     
     return true;
   }//if( iszip )
@@ -1413,9 +1389,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     WText *t = new WText( msg );
     stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
-#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
-    w->show();
-#endif
     
     return true;
   }//if( israr || istar || iszip7 || isgz )
@@ -1427,9 +1400,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     WText *t = new WText( msg );
     stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
-#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
-    w->show();
-#endif
     
     return true;
   }//if( ispdf | isps | istif )
@@ -1458,24 +1428,15 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       vector<uint8_t> totaldata( filesize );
       const bool success = infile.read( (char *)&(totaldata[0]), filesize ).good();
       
-      if( !m_viewer->isMobile() )
-      {
-#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
-        w->resize( WLength::Auto, WLength::Auto );
-        w->setMaximumSize( 0.6*m_viewer->renderedWidth(), 0.8*m_viewer->renderedHeight() );
-#endif
-      }
       
       if( success )
       {
         resource->setData( totaldata );
         image->setImageLink( WLink(resource) );
-#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
         const int ww = m_viewer->renderedWidth();
         const int wh = m_viewer->renderedHeight();
         if( (ww > 120) && (wh > 120) )
           image->setMaximumSize( WLength(0.45*ww,WLength::Unit::Pixel), WLength(wh - 120, WLength::Unit::Pixel) );
-#endif
         stretcher->addWidget( image.release(), stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
       }else
       {
@@ -1489,13 +1450,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       errort->setTextAlignment( Wt::AlignCenter );
       stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     }//if( filesize < max_disp_size ) / else
-    
-#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
-    w->show();
-    w->resizeToFitOnScreen();
-    w->centerWindowHeavyHanded();
-#endif
-    
+        
     return true;
   }//if( isgif || isjpg || ispng || isbmp )
 
@@ -1520,11 +1475,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                   orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
       } ) );
       
-#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
       delete dialog;
-#else
-      delete w;
-#endif
+
       return true;
     }catch( exception &e )
     {
@@ -1537,21 +1489,87 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       errort->setTextAlignment( Wt::AlignCenter );
       stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
       
-#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
-      w->show();
-      w->resizeToFitOnScreen();
-      w->centerWindowHeavyHanded();
-#endif
-      
       return true;
     }//try / catch get candidate peaks )
   }//if( we could possible care about propagating peaks from a CSV file )
   
-#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+  
+  // Check if this is an InterSpec exported DRF CSV
+  if( header_contains( "# Detector Response Function" ) )
+  {
+    shared_ptr<DetectorPeakResponse> det = DetectorEdit::parseRelEffCsvFile( fileLocation );
+    
+    if( det && det->isValid() )
+    {
+      // TODO: generate a eff plot, and basic info, and display; probably by refactoring DetectorEdit::updateChart()
+      // TODO: Ask user if they want to use DRF; if so save to `InterSpec::writableDataDirectory() + "UploadedDrfs"`
+      // TODO: handle CSV/TSV files that have multiple DRFs
+      // TODO: handle GADRAS style Efficiency.csv files
+      // TODO: allow users to rename the DRF.
+      
+      const string name = Wt::Utils::htmlEncode( det->name() );
+      
+      string msg = "<p style=\"white-space: nowrap;\">"
+        "This file looks to be a Detector Response Function."
+      "</p>"
+      "<p style=\"text-align: left; white-space: nowrap;\">"
+      "Name: " + name +
+      "</p>"
+      "<p>Would you like to use this DRF?</p>"
+      ;
+      
+      WText *t = new WText( WString::fromUTF8(msg) );
+      stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+      t->setTextAlignment( Wt::AlignCenter );
+
+      dialog->addButton( "No" ); //no further action necessary if user clicks no; dialog will close
+      closeButton->setText( "Yes" );
+      closeButton->clicked().connect( std::bind( [det](){
+        InterSpec *interspec = InterSpec::instance();
+        if( interspec )
+        {
+          auto sql = interspec->sql();
+          auto user = interspec->m_user;
+          DetectorEdit::updateLastUsedTimeOrAddToDb( det, user.id(), sql );
+          interspec->detectorChanged().emit( det ); //This loads it to the foreground spectrum file
+        }
+      } ) );
+      
+      return true;
+    }
+  }//if( maybe a drf )
+  
+  
+  /*
+  // Check if this is TSV/CSV file containing multiple DRFs
+  if( header_contains( "Relative Eff" ) && header_contains( "#credit" ) )
+  {
+    // Try to parse, and see if one or more DRFs.
+    //  Ask user to save in `InterSpec::writableDataDirectory() + "UploadedDrfs"` for later use
+    
+    string line;
+    while( SpecUtils::safe_get_line( input, line, 2048 ) )
+    {
+      SpecUtils::trim( line );
+      
+      if( SpecUtils::istarts_with( line, "#credit:") )
+        credits.push_back( SpecUtils::trim_copy(line.substr(8)) );
+      
+      if( line.empty() || line[0]=='#' )
+        continue;
+      
+      std::shared_ptr<DetectorPeakResponse> det = RelEffFile::parseDetector( line );
+      
+      if( det )
+      {
+        detcoefs.push_back( det->efficiencyExpOfLogsCoeffs() );
+        m_responses.push_back( det );
+      }
+    }//while( SpecUtils::safe_get_line( input, line ) )
+  }//if( header_contains( "Relative Eff" ) && header_contains( "#credit" ) )
+   */
+  
   delete dialog;
-#else
-  delete w;
-#endif
   
   return false;
 }//void handleNonSpectrumFile(...)
@@ -1646,7 +1664,7 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   }
   
   // Its a larger file - display a message letting the user know its being parsed.
-  auto dialog = new SimpleDialog( "Parsing File", "Parsing file - this may take a second." );
+  auto dialog = new SimpleDialog( "Parsing File", "This may take a second." );
   
   wApp->triggerUpdate();
   

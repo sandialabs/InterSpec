@@ -61,6 +61,15 @@ public:
   
   virtual void setPlaceholderText( const Wt::WString &placeholder );
           
+  /** Sets the numeric format to use to convert value into text.
+   Primarily used in #setValue( const float value ).
+   
+   Default format is "%.6G"
+   
+   Will throw exception if format flag is invalid.
+   */
+  void setFormatString( const std::string &format );
+  
   /** Hides the up and down step arrows in the spin box.
    
    \TODO: determine if we should remove "step" attribute, or how that affects things when spinners
@@ -86,6 +95,11 @@ protected:
   Wt::Signal<float> m_valueChanged;
   
   std::string m_txt;
+  
+  /** The printf-style format string to use for formatting numbers.
+   Defaults to "%.6G"
+   */
+  std::string m_format;
 };//NativeFloatSpinBox
 
 #endif //NativeFloatSpinBox_h

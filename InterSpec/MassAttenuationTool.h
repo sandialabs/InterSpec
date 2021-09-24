@@ -154,6 +154,9 @@ namespace MassAttenuation
     {}
   };//class ErrorLoadingDataException
   
+
+/** A debug function to printout cross-sections to a CSV for plotting. */
+  //void print_xs_csv( std::ostream &output )
 }//namespace MassAttenuation
 
 

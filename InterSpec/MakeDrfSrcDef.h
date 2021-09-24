@@ -192,6 +192,8 @@ protected:
   
   void handleEnteredDatesUpdated();
   
+  void validateDateFields();
+  
   /** Returns user entered activity.  Throws exception if invalid. */
   double enteredActivity() const;
   

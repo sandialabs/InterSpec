@@ -426,7 +426,7 @@ public:
       case 0:  m_label = new WLabel( "Offset", this );    break;
       case 1:  m_label = new WLabel( "Linear", this );    break;
       case 2:  m_label = new WLabel( "Quadratic", this ); break;
-      case 3:  m_label = new WLabel( "Quartic", this );   break;
+      case 3:  m_label = new WLabel( "Cubic", this );   break;
       default: m_label = new WLabel( std::to_string(order) + "'th order", this ); break;
     }//switch( order )
     
@@ -1464,6 +1464,7 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
       dbgmsg += (iter==begin(change.sample_numbers) ? "" : ",") + std::to_string(*iter);
     dbgmsg += "}";
     cout << dbgmsg << endl;
+    //wApp->log("app:debug") << dbgmsg;
     
     try
     {
@@ -2383,7 +2384,7 @@ bool EnergyCalTool::canDoEnergyFit()
   
   size_t nPeaksToUse = 0;
   for( const PeakModel::PeakShrdPtr &p : *peaks )
-    nPeaksToUse += (p && p->useForCalibration());
+    nPeaksToUse += (p && p->useForEnergyCalibration());
   
   if( nPeaksToUse < 1 )
     return false;
@@ -2516,7 +2517,7 @@ void EnergyCalTool::fitCoefficients()
         continue;
       const PeakDef &peak = *peakptr;
       
-      if( !peak.useForCalibration() )
+      if( !peak.useForEnergyCalibration() )
         continue;
       
       const double wantedEnergy = peak.gammaParticleEnergy();

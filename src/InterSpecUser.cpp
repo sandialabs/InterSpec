@@ -417,7 +417,7 @@ void InterSpecUser::pushPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
                                          Wt::WApplication *app )
 {
   if( !app || !viewer || !user )
-    throw runtime_error( "pushPreferenceValue(): Invlaid input" );
+    throw runtime_error( "pushPreferenceValue(): Invalid input" );
   
   const boost::any oldValueAny = user->preferenceValueAny( name );
   

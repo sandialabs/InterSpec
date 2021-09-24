@@ -506,12 +506,15 @@ namespace FluxToolImp
   {
   protected:
     FluxToolWidget *m_fluxtool;
+    Wt::WApplication *m_app;
     
   public:
     FluxCsvResource( FluxToolWidget *parent )
     : WResource( parent ),
-      m_fluxtool( parent )
+      m_fluxtool( parent ),
+      m_app( WApplication::instance() )
     {
+      assert( m_app );
     }
     
     virtual ~FluxCsvResource()
@@ -677,6 +680,19 @@ namespace FluxToolImp
   private:
     virtual void handleRequest( const Wt::Http::Request &, Wt::Http::Response &response )
     {
+      WApplication::UpdateLock lock( m_app );
+      
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in FluxRenderDelegate.";
+        
+        response.out() << "Error grabbing application lock to form FluxRenderDelegate resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+        
+        return;
+      }//if( !lock )
+      
       const string eol_char = "\r\n"; //for windows - could potentially cosutomize this for the users operating system
       
       if( !m_fluxtool )

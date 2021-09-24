@@ -41,7 +41,8 @@ NativeFloatSpinBox::NativeFloatSpinBox( Wt::WContainerWidget *parent )
     : WLineEdit( parent ),
       m_value( 0.0f ),
       m_min( -std::numeric_limits<float>::max() ),
-      m_max( std::numeric_limits<float>::max() )
+      m_max( std::numeric_limits<float>::max() ),
+      m_format( "%.6G" )
 {
   setAutoComplete( false );
   setAttributeValue( "type", "number" );
@@ -71,7 +72,7 @@ void NativeFloatSpinBox::setValue( const float value )
 {
   m_value = value;
   char buffer[64];
-  snprintf( buffer, sizeof(buffer), "%.6G", value );
+  snprintf( buffer, sizeof(buffer), m_format.c_str(), value );
   m_txt = buffer;
   setValueText( WString::fromUTF8(m_txt) );
 }
@@ -80,7 +81,7 @@ void NativeFloatSpinBox::setValue( const float value )
 void NativeFloatSpinBox::setSingleStep( const float step )
 {
   char buffer[64];
-  snprintf( buffer, sizeof(buffer), "%.6G", step );
+  snprintf( buffer, sizeof(buffer), m_format.c_str(), step );
   setAttributeValue( "step", buffer );
 }
   
@@ -88,7 +89,7 @@ void NativeFloatSpinBox::setSingleStep( const float step )
 void NativeFloatSpinBox::setMinimum( const float minval )
 {
   char buffer[64];
-  snprintf( buffer, sizeof(buffer), "%.6G", minval );
+  snprintf( buffer, sizeof(buffer), m_format.c_str(), minval );
   setAttributeValue( "min", buffer );
 }
   
@@ -96,7 +97,7 @@ void NativeFloatSpinBox::setMinimum( const float minval )
 void NativeFloatSpinBox::setMaximum( const float maxval )
 {
   char buffer[64];
-  snprintf( buffer, sizeof(buffer), "%.6G", maxval );
+  snprintf( buffer, sizeof(buffer), m_format.c_str(), maxval );
   setAttributeValue( "max", buffer );
 }
 
@@ -124,6 +125,20 @@ void NativeFloatSpinBox::setPlaceholderText(const WString& placeholder)
   Wt::WLineEdit::setPlaceholderText( placeholder );
 }
           
+
+void NativeFloatSpinBox::setFormatString( const std::string &format )
+{
+  // Do a check that the format flag is actually valid.
+  char buffer[64];
+  const int nchars = snprintf( buffer, sizeof(buffer), format.c_str(), 1.23f );
+  
+  if( nchars <= 0 )
+    throw runtime_error( "NativeFloatSpinBox::setFormatString(\"" + format
+                          + "\"): invalid format flag." );
+  
+  m_format = format;
+}
+
 
 void NativeFloatSpinBox::setSpinnerHidden( const bool hidden )
 {

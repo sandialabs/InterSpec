@@ -41,6 +41,7 @@
 #include <boost/functional/hash.hpp>
 
 #include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_utils.hpp"
 
 #include "mpParser.h"
 
@@ -52,6 +53,7 @@
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
 #include "InterSpec/DetectorPeakResponse.h"
 
 
@@ -436,6 +438,9 @@ void DetectorPeakResponse::computeHash()
   for( const float val : m_expOfLogPowerSeriesCoeffs )
     boost::hash_combine( seed, val );
   
+  for( const float val : m_expOfLogPowerSeriesUncerts )
+    boost::hash_combine( seed, val );
+  
   //For legacy DRFs (pre 1.0.4 / 20190527) that dont have DRF source info,
   //  lower/upper energies, and m_flags, dont change the hash.
   if( m_lowerEnergy != 0.0 || m_upperEnergy != 0.0 )
@@ -737,38 +742,102 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   m_resolutionForm = kGadrasResolutionFcn;
   m_resolutionCoeffs.resize( 3, 0.0 );
 
+  
+  // First decide if old style Detector.dat, or the newer XML Detector.dat
+  const istream::pos_type orig_pos = detDatFile.tellg();
+  
   string line;
-  while( SpecUtils::safe_get_line( detDatFile, line ) )
+  if( !SpecUtils::safe_get_line( detDatFile, line ) )
+    throw std::runtime_error( "Couldnt read first line of Detector.dat" );
+  
+  const bool is_xml = (line.find("xml") != string::npos);
+  
+  if( is_xml )
   {
-    vector<string> parts;
-    SpecUtils::trim( line );
-    if( line.empty() || !isdigit(line[0]) )
-      continue;
-
-    SpecUtils::split( parts, line, " \t" );
-    
     try
     {
-      const int parnum = std::stoi( parts.at(0) );
-      const float value = static_cast<float>( std::stod( parts.at(1) ) );
-//      const int value2 = std::stoi( parts.at(2) );
-//      const string descrip = parts.at(3);
-      switch( parnum )
-      {
-        case 6:  m_resolutionCoeffs[0] = value; break;
-        case 7:  m_resolutionCoeffs[1] = value; break;
-        case 8:  m_resolutionCoeffs[2] = value; break;
-        case 11: detWidth = value;              break;
-        case 12: heightToWidth = value;         break;
-        case 62: lowerEnergy = value;           break;  //template error / min energy, keV
-        case 63: upperEnergy = value;           break;  //chi-square / max energy, keV
-      }//switch( parnum )
-    }catch(...)
+      // A helper function to grab float values from Detector.dat xml.
+      auto get_float_value = []( const rapidxml::xml_node<char> * const parent, const string &name ) -> float {
+        const auto target = parent->first_node( name.c_str(), name.size() );
+        const auto value = SpecUtils::xml_first_node( target, "value" );
+        const string val_str = SpecUtils::xml_value_str( value );
+        
+        float val;
+        //will fail if val_str empty (which we want), but will parse strings like " 19.2 as", which
+        //  maybe its debatable if we want this behavior, but I dont think this matters much.
+        if( !(stringstream(val_str) >> val) )
+          throw runtime_error( "Missing <" + name + "> node." );
+        return val;
+      };//get_float_value lambda
+      
+      
+      detDatFile.seekg(orig_pos); //probably not really needed
+      rapidxml::file<char> input_file( detDatFile );
+      
+      rapidxml::xml_document<char> doc;
+      doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
+      
+      const auto gamma_detector = doc.first_node( "gamma_detector" );
+      if( !gamma_detector )
+        throw runtime_error( "Missing <gamma_detector> node." );
+      
+      lowerEnergy = get_float_value( gamma_detector, "weight_range_lower" );  //template error / min energy, keV
+      upperEnergy = get_float_value( gamma_detector, "weight_range_upper" );  //chi-square / max energy, keV
+      
+      const auto dimensions = XML_FIRST_NODE( gamma_detector, "dimensions" );
+      if( !dimensions )
+        throw runtime_error( "Missing <dimensions> node." );
+      
+      detWidth = get_float_value( dimensions, "width" );
+      heightToWidth = get_float_value( dimensions, "height_to_width_ratio" );
+      
+      const auto peak_shape = XML_FIRST_NODE( gamma_detector, "peak_shape" );
+      if( !peak_shape )
+        throw runtime_error( "Missing <peak_shape> node." );
+      
+      m_resolutionCoeffs[0] = get_float_value( peak_shape, "fwhm_offset" );
+      m_resolutionCoeffs[1] = get_float_value( peak_shape, "fwhm_at_661keV" );
+      m_resolutionCoeffs[2] = get_float_value( peak_shape, "fwhm_power" );
+    }catch( std::exception &e )
     {
-      cerr << "\nError reading line \"" << line << "\"" << endl;
-      continue;
-    }
-  }//while( SpecUtils::safe_get_line( detDatFile, line ) )
+      throw std::runtime_error( "Failed to read XML Detector.dat: " + std::string(e.what()) );
+    }//try / catch
+  }else
+  {
+    
+    do  //We've already got the first line
+    {
+      vector<string> parts;
+      SpecUtils::trim( line );
+      if( line.empty() || !isdigit(line[0]) )
+        continue;
+      
+      SpecUtils::split( parts, line, " \t" );
+      
+      try
+      {
+        const int parnum = std::stoi( parts.at(0) );
+        const float value = static_cast<float>( std::stod( parts.at(1) ) );
+        //      const int value2 = std::stoi( parts.at(2) );
+        //      const string descrip = parts.at(3);
+        switch( parnum )
+        {
+          case 6:  m_resolutionCoeffs[0] = value; break;
+          case 7:  m_resolutionCoeffs[1] = value; break;
+          case 8:  m_resolutionCoeffs[2] = value; break;
+          case 11: detWidth = value;              break;
+          case 12: heightToWidth = value;         break;
+          case 62: lowerEnergy = value;           break;  //template error / min energy, keV
+          case 63: upperEnergy = value;           break;  //chi-square / max energy, keV
+        }//switch( parnum )
+      }catch(...)
+      {
+        cerr << "\nError reading line \"" << line << "\"" << endl;
+        continue;
+      }
+    }while( SpecUtils::safe_get_line( detDatFile, line ) );
+  }//if( is_xml ) / else
+  
   
   if( detWidth<=0.0 || heightToWidth<=0.0 )
     throw runtime_error( "Couldnt find detector dimensions in the Detector.dat file" );
@@ -838,6 +907,7 @@ void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir )
 
 void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
                                    const std::vector<float> &coefs,
+                                   const std::vector<float> &uncerts,
                                    const float charactDist,
                                    const float det_diam,
                                    const float equationEnergyUnits,
@@ -847,8 +917,14 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   if( coefs.empty() )
     throw runtime_error( "fromExpOfLogPowerSeriesAbsEff(...): invalid input" );
   
+  if( !uncerts.empty() && (uncerts.size() != coefs.size()) )
+    throw runtime_error( "DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff: uncertainties"
+                        " must either be empty, or same size as coefficients." );
+  
   m_energyEfficiencies.clear();
   m_expOfLogPowerSeriesCoeffs.clear();
+  m_expOfLogPowerSeriesUncerts.clear();
+  
   m_efficiencyFcn = std::function<float(float)>();
   m_efficiencyFormula.clear();
   
@@ -856,6 +932,7 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   m_efficiencyEnergyUnits = equationEnergyUnits;
   m_detectorDiameter = det_diam;
   m_expOfLogPowerSeriesCoeffs = coefs;
+  m_expOfLogPowerSeriesUncerts = uncerts;
   
   //now we need to account for characterizationDist
   if( charactDist > 0.0f )
@@ -1016,6 +1093,18 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     node = doc->allocate_node( node_element, "ExpOfLogPowerSeriesCoeffs", val );
     base_node->append_node( node );
   }//if( m_expOfLogPowerSeriesCoeffs.size() )
+  
+  
+  if( m_expOfLogPowerSeriesUncerts.size() )
+  {
+    stringstream valstrm;
+    for( size_t i = 0; i < m_expOfLogPowerSeriesUncerts.size(); ++i )
+      valstrm << (i?" ":"") << m_expOfLogPowerSeriesUncerts[i];
+    val = doc->allocate_string( valstrm.str().c_str() );
+    node = doc->allocate_node( node_element, "ExpOfLogPowerSeriesUncerts", val );
+    base_node->append_node( node );
+  }//if( m_expOfLogPowerSeriesUncerts.size() )
+  
   
   stringstream hashstrm, parenthashstrm, flagsstrm;
   hashstrm << m_hash;
@@ -1220,9 +1309,20 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   }//if( node && node->value() )
   
   m_expOfLogPowerSeriesCoeffs.clear();
-  node = parent->first_node( "ExpOfLogPowerSeriesCoeffs", 25 );
+  m_expOfLogPowerSeriesUncerts.clear();
+  
+  node = XML_FIRST_NODE(parent, "ExpOfLogPowerSeriesCoeffs");
   if( node && node->value() )
     SpecUtils::split_to_floats( node->value(), node->value_size(), m_expOfLogPowerSeriesCoeffs );
+  
+  
+  node = XML_FIRST_NODE(parent, "ExpOfLogPowerSeriesUncerts");
+  if( node && node->value() )
+    SpecUtils::split_to_floats( node->value(), node->value_size(), m_expOfLogPowerSeriesUncerts );
+  
+  if( !m_expOfLogPowerSeriesUncerts.empty()
+     && (m_expOfLogPowerSeriesUncerts.size() != m_expOfLogPowerSeriesCoeffs.size()) )
+    throw runtime_error( "DetectorPeakResponse number eff coeffs doesnt match number of uncerts" );
   
   
   node = parent->first_node( "Hash", 4 );
@@ -1432,6 +1532,16 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
     throw runtime_error(buffer);
   }
   
+  if( lhs.m_expOfLogPowerSeriesUncerts.size() != rhs.m_expOfLogPowerSeriesUncerts.size() )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: size of"
+             " exponential of log power series uncertainties of LHS (%i) doesnt"
+             " match RHS (%i)",
+             int(lhs.m_expOfLogPowerSeriesUncerts.size()),
+             int(rhs.m_expOfLogPowerSeriesUncerts.size()) );
+    throw runtime_error(buffer);
+  }
+  
   for( size_t i = 0; i < lhs.m_expOfLogPowerSeriesCoeffs.size(); ++i )
   {
     const float a = lhs.m_expOfLogPowerSeriesCoeffs[i];
@@ -1441,6 +1551,20 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
       snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: exponential of"
                 " log power series coefficient %i of LHS (%1.8E)"
                 " doesnt match RHS (%1.8E)", int(i), a, b );
+      throw runtime_error( buffer );
+    }
+  }
+  
+  for( size_t i = 0; i < lhs.m_expOfLogPowerSeriesUncerts.size(); ++i )
+  {
+    const float a = lhs.m_expOfLogPowerSeriesUncerts[i];
+    const float b = rhs.m_expOfLogPowerSeriesUncerts[i];
+    const float diff = fabs(a-b);
+    if( fabs(a-b) > (1.0E-5 * std::max(fabs(a),fabs(b))) && (diff > 1.0E-8) )
+    {
+      snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: exponential of"
+               " log power series uncertainty %i of LHS (%1.8E)"
+               " doesnt match RHS (%1.8E)", int(i), a, b );
       throw runtime_error( buffer );
     }
   }

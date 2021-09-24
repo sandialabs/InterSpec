@@ -87,10 +87,13 @@ namespace
   class JsonDownloadResource : public Wt::WResource
   {
     ColorThemeWindow *m_display;
+    Wt::WApplication *m_app; //it looks like WApplication::instance() will be valid in handleRequest, but JIC
   public:
     JsonDownloadResource( ColorThemeWindow *parent )
-    : WResource( parent ), m_display( parent )
-    {}
+    : WResource( parent ), m_display( parent ), m_app( WApplication::instance() )
+    {
+      assert( m_app );
+    }
     
     virtual ~JsonDownloadResource()
     {
@@ -100,6 +103,19 @@ namespace
     virtual void handleRequest( const Wt::Http::Request &request,
                                Wt::Http::Response &response )
     {
+      WApplication::UpdateLock lock( m_app );
+      
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in JsonDownloadResource.";
+        
+        response.out() << "Error grabbing application lock to form JsonDownloadResource resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+        
+        return;
+      }//if( !lock )
+      
       if( !m_display )
         return;
       string name = m_display->currentThemeTitle();
@@ -237,39 +253,63 @@ m_apply( nullptr )
   //Now grab from the
   vector<unique_ptr<ColorTheme>> dbThemes = userDbThemes();
   
+  ThemeMenuItem *currentItem = nullptr;
+  const shared_ptr<const ColorTheme> currentColorTheme = m_interspec->getColorTheme();
+  long long colorThemeIndex = -1;
+  if( currentColorTheme )
+    colorThemeIndex = currentColorTheme->dbIndex;
+  else
+    colorThemeIndex = InterSpecUser::preferenceValue<int>("ColorThemeIndex", m_interspec);
+  
   for( unique_ptr<ColorTheme> &p : defaultThemes )
   {
-    WString name = p->theme_name;
+    const WString name = p->theme_name;
+    
     ThemeMenuItem *item = new ThemeMenuItem(name, std::move(p), false );
     m_menu->addItem(item);
     item->clicked().connect( boost::bind(&ColorThemeWindow::selectItem, this, item) );
-  }
+    
+    if( currentColorTheme && (currentColorTheme->theme_name == name) )
+      currentItem = item;
+  }//for( size_t i = 0; i < defaultThemes.size(); ++i )
+  
   
   m_menu->addSeparator();
   
+  
   for( unique_ptr<ColorTheme> &p : dbThemes )
   {
-    WString name = p->theme_name;
+    const auto dbindex = p->dbIndex;
+    const WString name = p->theme_name;
+    
     ThemeMenuItem *item = new ThemeMenuItem(name, std::move(p), true );
     m_menu->addItem(item);
     item->clicked().connect( boost::bind(&ColorThemeWindow::selectItem, this, item) );
-  }
+    
+    // Note: we cant just check the database for a matching index because app-states save the
+    //   color theme JSON to a field in the database, not a link to the database entry.
+    //   So we just have to match by name - not perfect, but close enough.
+    if( !currentItem && currentColorTheme && (currentColorTheme->theme_name == name) )
+      currentItem = item;
+  }//for( unique_ptr<ColorTheme> &p : dbThemes )
+  
+  
+  bool currentThemeSelected = true;
+  if( !currentItem )
+  {
+    currentThemeSelected = false;
+    currentItem = dynamic_cast<ThemeMenuItem *>( m_menu->itemAt(0) );
+  }//if( !currentItem )
+  
+  if( currentItem )
+  {
+    m_menu->select( currentItem );
+    m_edit->setTheme( currentItem->theme(), currentItem->editable() );
+    if( currentThemeSelected )
+      m_apply->hide();
+  }//if( currentItem )
   
   m_menu->itemSelected().connect(boost::bind(&ColorThemeWindow::themeSelected, this, _1));
-  
-  //Check for the current theme, and set.
-  const int colorThemIndex = InterSpecUser::preferenceValue<int>("ColorThemeIndex", m_interspec);
-  for( auto i : m_menu->items() )
-  {
-    auto m = dynamic_cast<ThemeMenuItem *>(i);
-    if( m && m->theme() && m->theme()->dbIndex == colorThemIndex)
-    {
-      m_menu->select(i);
-      m_edit->setTheme( m->theme(), m->editable() );
-      m_apply->hide();
-      break;
-    }
-  }//for (auto i : m_menu->items())
   
   finished().connect(boost::bind(&ColorThemeWindow::checkForSavesAndCleanUp, this));
   

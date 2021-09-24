@@ -468,6 +468,7 @@ public:
 private:
   SpecUtils::SaveSpectrumAsType m_type;
   SpecMeasManager *m_display;
+  Wt::WApplication *m_app;
 
   virtual void handleRequest( const Wt::Http::Request& request,
                                Wt::Http::Response& response);
@@ -512,6 +513,7 @@ private:
   std::vector<std::string> m_detnames;
   SpecUtils::SaveSpectrumAsType m_type;
   std::shared_ptr<const SpecMeas> m_spectrum;
+  Wt::WApplication *m_app;
 
   virtual void handleRequest( const Wt::Http::Request& request,
                                Wt::Http::Response& response);
@@ -536,6 +538,7 @@ private:
   SpecUtils::SpectrumType m_spectrum;
   SpecUtils::SaveSpectrumAsType m_format;
   InterSpec *m_viewer;
+  Wt::WApplication *m_app;
   
   virtual void handleRequest( const Wt::Http::Request& request,
                              Wt::Http::Response& response);
