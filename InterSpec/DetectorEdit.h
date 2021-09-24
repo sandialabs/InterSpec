@@ -262,6 +262,9 @@ public:
 protected:
   void setAcceptButtonEnabled( const bool enable );
   
+  /** Called when user changes value in m_uploadedDetName; sets m_detector name. */
+  void handleUserChangedUploadedDrfName();
+  
   /** Checks if file at passed in path is a TSV/CSV file that contains
       coeffeicents for the exp( c0 + c1*logx + c2*logx^2 + ...) equation.
       If so, returns detector.  If not, returns nullptr.
@@ -315,6 +318,8 @@ protected:
   Wt::WTabWidget *m_tabs;
 
   Wt::WLineEdit *m_detectorDiameter;
+  Wt::WContainerWidget *m_uploadedDetNameDiv;
+  Wt::WLineEdit *m_uploadedDetName;
   Wt::WContainerWidget *m_detectrDiameterDiv;
   Wt::WFileUpload *m_efficiencyCsvUpload;
   Wt::WContainerWidget *m_detectrDotDatDiv;
