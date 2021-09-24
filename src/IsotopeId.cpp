@@ -1289,7 +1289,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
     
     if( fabs(2.0*rpeak->mean() - mean) < 2.0*sigma && (peakAmp < rpeakAmp) )
     {
-      cerr << "Have sum for peak " << rpeak.get() << endl;
+      //cerr << "Have sum for peak " << rpeak.get() << endl;
       snprintf( buffer, sizeof(buffer), "(Sum from %.2f keV peak)", rpeak->mean() );
       summs.push_back( buffer );
     }
@@ -1306,7 +1306,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
       if( fabs(lpeak->mean() + rpeak->mean() - mean) < 2.0*sigma
           && ((rpeakAmp+lpeakAmp) > peakAmp) )
       {
-        cerr << "Have double sum for peak " << rpeak.get() << " and " << lpeak.get() << endl;
+        //cerr << "Have double sum for peak " << rpeak.get() << " and " << lpeak.get() << endl;
         snprintf( buffer, sizeof(buffer), "(Sum %.2f and %.2f peaks)",
                   lpeak->mean(), rpeak->mean() );
         summs.push_back( buffer );

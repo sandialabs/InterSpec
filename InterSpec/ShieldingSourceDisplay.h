@@ -51,6 +51,7 @@ class PeakModel;
 class AuxWindow;
 class MaterialDB;
 class PopupDivMenu;
+class SwitchCheckbox;
 class DetectorDisplay;
 class PopupDivMenuItem;
 class DetectorPeakResponse;
@@ -499,7 +500,7 @@ protected:
 public:
   enum Columns
   {
-    kIsotope, kActivity, kFitActivity, kAge, kFitAge, kIsotopeMass,
+    kIsotope, kFitActivity, kFitAge, kActivity, kAge, kIsotopeMass,
     kActivityUncertainty, kAgeUncertainty,
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
     kTruthActivity, kTruthActivityTolerance, kTruthAge, kTruthAgeTolerance,
@@ -655,13 +656,17 @@ public:
       aborted.  This generally will only ever be applicable to fits with
       self-attenuators, where there is a ton of peaks, or things go really
       haywire.
+   
+      Initialized to 120 seconds (e.g., 120*1000)
    */
-  const static size_t sm_max_model_fit_time_ms = 120*1000;
+  const static size_t sm_max_model_fit_time_ms;
   
   /** How often (in milliseconds) to update the GUI during a model fit.
       This generally will only ever be applicable to fits with self-attenuators.
+      
+      Initialized to 2000 (e.g., every two seconds)
    */
-  const static size_t sm_model_update_frequency_ms = 2000;
+  const static size_t sm_model_update_frequency_ms;
   
 public:
   ShieldingSourceDisplay( PeakModel *peakModel,
@@ -831,6 +836,11 @@ public:
   //  and updates chi2 chart
   void checkDistanceAndThicknessConsistent();
 
+  /** Checks to see if fitting for more than one atomic number of generic shielding.
+   TODO: Could probably tighten things up a bit to avoid degeneracies
+   */
+  void checkForMultipleGenericMaterials();
+  
   void updateChi2Chart();
   
   void showCalcLog();
@@ -1009,7 +1019,7 @@ protected:
   Wt::WCheckBox *m_multiIsoPerPeak;
   Wt::WCheckBox *m_backgroundPeakSub;
   Wt::WCheckBox *m_sameIsotopesAge;
-  Wt::WCheckBox *m_showChiOnChart;
+  SwitchCheckbox *m_showChiOnChart;
   Wt::WContainerWidget *m_optionsDiv;
   
   PopupDivMenuItem *m_showLog;
@@ -1045,6 +1055,7 @@ protected:
     void setTextPenColor( const Wt::WColor &color );
     void setColorsFromTheme( std::shared_ptr<const ColorTheme> theme );
   protected:
+    void calcAndSetAxisRanges();
     void calcAndSetAxisPadding( double yHeightPx );
     
     int m_nFitForPar;

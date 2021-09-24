@@ -531,6 +531,10 @@ void SpecFileSummary::init()
   holder->setHeight( WLength(100.0,WLength::Percentage) );
   WDialog::contents()->setOverflow( WContainerWidget::OverflowAuto );
   
+  //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
+  //  size to be the min-size
+  setMinimumSize( 640, 480 );
+  
 //  setMinimumSize( 780, 500 );
   resizeScaledWindow(0.85,0.85);
   refresh();

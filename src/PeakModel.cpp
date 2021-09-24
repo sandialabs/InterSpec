@@ -385,8 +385,10 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
 
 PeakModel::PeakCsvResource::PeakCsvResource( PeakModel *parent )
   : WResource( parent ),
-    m_model( parent )
+    m_model( parent ),
+    m_app( WApplication::instance() )
 {
+  assert( m_app );
 }
 
 
@@ -399,6 +401,17 @@ PeakModel::PeakCsvResource::~PeakCsvResource()
 void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*request*/,
                                                 Wt::Http::Response& response )
 {
+  WApplication::UpdateLock lock( m_app );
+  
+  if( !lock )
+  {
+    log("error") << "Failed to WApplication::UpdateLock in PeakCsvResource.";
+    response.out() << "Error grabbing application lock to form PeakCsvResource resource; please report to InterSpec@sandia.gov.";
+    response.setStatus(500);
+    assert( 0 );
+    return;
+  }//if( !lock )
+  
   //If you update the fields or headers of this function, you should also update
   //  PeakModel::csv_to_candidate_fit_peaks(...)
   
@@ -1439,7 +1452,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     }//case kUseForShieldingSourceFit:
 
     case kUseForCalibration:
-      return peak->useForCalibration();
+      return peak->useForEnergyCalibration();
       
     case kPeakLineColor:
     {
@@ -2116,9 +2129,9 @@ bool PeakModel::setData( const WModelIndex &index,
                          " the peak before using it for calibrarion" ,
                          "", WarningWidget::WarningMsgHigh );
           
-          if( use == new_peak.useForCalibration() )
+          if( use == new_peak.useForEnergyCalibration() )
             return false;
-          new_peak.useForCalibration( use );
+          new_peak.useForEnergyCalibration( use );
         }catch(...)
         {
           cerr << "\n\tFailed in casting checkbox" << endl;
@@ -2515,7 +2528,7 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
 
     case kUseForCalibration:
     {
-      const bool thisorder = lhs->useForCalibration() < rhs->useForCalibration();
+      const bool thisorder = lhs->useForEnergyCalibration() < rhs->useForEnergyCalibration();
       return (asscend ? thisorder : (!thisorder));
     }//case kUseForCalibration:
 

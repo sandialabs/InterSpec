@@ -9,6 +9,7 @@
 #include <boost/optional.hpp>
 
 #include <Wt/WServer>
+#include <Wt/WCheckBox>
 #include <Wt/WPushButton>
 #include <Wt/WJavaScript>
 #include <Wt/WApplication>
@@ -69,6 +70,8 @@ class D3TimeChartFilters : public WContainerWidget
   NativeFloatSpinBox *m_lowerEnergy;
   NativeFloatSpinBox *m_upperEnergy;
   WPushButton *m_clearEnergyFilterBtn;
+  WCheckBox *m_dontRebin;
+  WCheckBox *m_hideNeutrons;
   
 public:
   D3TimeChartFilters( D3TimeChart *parent )
@@ -79,7 +82,9 @@ public:
       m_specTypeSelect( nullptr ),
       m_lowerEnergy( nullptr ),
       m_upperEnergy( nullptr ),
-      m_clearEnergyFilterBtn( nullptr )
+      m_clearEnergyFilterBtn( nullptr ),
+      m_dontRebin( nullptr ),
+      m_hideNeutrons( nullptr )
   {
     assert( parent );
     
@@ -227,6 +232,22 @@ public:
     m_clearEnergyFilterBtn->addStyleClass( "D3TimeFilterClear" );
     m_clearEnergyFilterBtn->clicked().connect( this, &D3TimeChartFilters::clearFilterEnergiesCallback );
     m_clearEnergyFilterBtn->hide();
+    m_clearEnergyFilterBtn->setHiddenKeepsGeometry( true );
+    
+    
+    m_dontRebin = new WCheckBox( "Don't rebin", filterContents );
+    m_dontRebin->addStyleClass( "D3TimeDontRebin" );
+    m_dontRebin->setToolTip( "Disable combining time samples on the chart when there are more time samples than pixels." );
+    m_dontRebin->checked().connect( this, &D3TimeChartFilters::dontRebinChanged );
+    m_dontRebin->unChecked().connect( this, &D3TimeChartFilters::dontRebinChanged );
+    
+    
+    m_hideNeutrons = new WCheckBox( "Hide neutrons", filterContents );
+    m_hideNeutrons->addStyleClass( "D3TimeHideNuetrons" );
+    m_hideNeutrons->setToolTip( "Do not show neutrons on chart" );
+    m_hideNeutrons->checked().connect( this, &D3TimeChartFilters::hideNeutronsChanged );
+    m_hideNeutrons->unChecked().connect( this, &D3TimeChartFilters::hideNeutronsChanged );
+    
   }//D3TimeChartFilters
   
   
@@ -395,6 +416,33 @@ public:
     
     return answer;
   }//energyRangeFilters()
+  
+  
+  void dontRebinChanged()
+  {
+    const bool dontRebin = m_dontRebin->isChecked();
+    m_parentChart->setDontRebin( dontRebin );
+  }
+  
+  void hideNeutronsChanged()
+  {
+    m_parentChart->setNeutronsHidden( m_hideNeutrons->isChecked() );
+  }
+  
+  void setDontRebin( const bool dontRebin )
+  {
+    m_dontRebin->setChecked( dontRebin );
+  }
+  
+  void setNeutronsHidden( const bool hide )
+  {
+    m_hideNeutrons->setChecked( hide );
+  }
+  
+  void setHideNeutronsOptionVisible( const bool visible )
+  {
+    m_hideNeutrons->setHidden( !visible );
+  }
 };//class D3TimeChartOptions
 
 
@@ -404,6 +452,7 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_compactXAxis( false ),
   m_showVerticalLines( false ),
   m_showHorizontalLines( false ),
+  m_dontRebin( false ),
   m_spec( nullptr ),
   m_highlights(),
   m_xAxisTitle( "Time of Measurement (seconds)"),
@@ -476,7 +525,8 @@ void D3TimeChart::defineJavaScript()
   options += ", compactXAxis: " + jsbool(m_compactXAxis);
   options += ", gridx: " + jsbool(m_showVerticalLines);
   options += ", gridy: " + jsbool(m_showHorizontalLines);
-  options += ", chartLineWidth: 1.0";  //ToDo: Let this be specified in C+
+  options += ", chartLineWidth: 1.0";  //ToDo: Let this be specified in C++
+  options += ", dontRebin: false"; 
   options += "}";
   
   setJavaScriptMember( "chart", "new D3TimeChart(" + m_chart->jsRef() + "," + options + ");");
@@ -540,6 +590,10 @@ void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
     // Reset energy range summed whenever we load a new file.
     if( m_options )
       m_options->resetFilterEnergies();
+    
+    // Dont hide neutrons until
+    if( m_hideNeutrons )
+      setNeutronsHidden( false );
     
     // Schedule updating data to client
     scheduleRenderAll();
@@ -661,7 +715,8 @@ void D3TimeChart::setDataToClient()
   vector<std::tuple<double,double,boost::posix_time::ptime>> gpsCoordinates;
   int64_t startTimesOffset = 0;
   vector<int64_t> startTimes;
-  bool allUnknownSourceType = true, anyStartTimeKnown = false, haveAnyGps = false;
+  bool allUnknownSourceType = true, anyStartTimeKnown = false;
+  bool haveAnyGps = false, plottingNeutrons = false;
   
   map<string,bool> hasGamma, hasNuetron;
   map<string,vector<double>> gammaCounts, neutronCounts, liveTimes;  //maps from detector name to counts
@@ -943,6 +998,8 @@ void D3TimeChart::setDataToClient()
       if( !hasNuetron[detName] )
         continue;
     
+      plottingNeutrons = true;
+      
       //For now we'll just make all detector lines the same color (if we are even doing multiple lines)
       js << string(nwrote++ ? "," : ",\n\t\"neutronCounts\": [" ) << "\n\t\t{\"detName\": \""
          << detName << "\", \"color\": \""
@@ -1033,6 +1090,8 @@ void D3TimeChart::setDataToClient()
     
     if( haveAnyNeutron )
     {
+      plottingNeutrons = true;
+      
       js << ",\n\t\"neutronCounts\": [{\"detName\": \"\", \"color\": \""
          << (m_neutronLineColor.isDefault() ? string("#cfced2") :  m_neutronLineColor.cssText())
          << "\", \"counts\": [";
@@ -1090,6 +1149,23 @@ void D3TimeChart::setDataToClient()
   // cout << "\n\nWill set time data with JSON=" + js.str() + "\n\n" << endl;
 
   doJavaScript( js.str() );
+  
+  
+  
+  // If neutrons will be displayed, we need to update the location of the filter icon so it
+  //  doesnt overlap with the neutron y-axis (the y-axis on right of chart) too bad.
+  const WString neutOpSc( "HasNeutrons" );
+  const bool showNeutron = plottingNeutrons && !m_hideNeutrons;
+  if( m_showOptionsIcon && (showNeutron != m_showOptionsIcon->hasStyleClass(neutOpSc)) )
+  {
+    if( showNeutron )
+      m_showOptionsIcon->addStyleClass(neutOpSc);
+    else
+      m_showOptionsIcon->removeStyleClass(neutOpSc);
+  }
+  
+  if( m_options )
+    m_options->setHideNeutronsOptionVisible( plottingNeutrons );
 }//void setDataToClient()
 
 
@@ -1582,6 +1658,35 @@ bool D3TimeChart::horizontalLinesShowing() const
   return m_showHorizontalLines;
 }
 
+
+void D3TimeChart::setDontRebin( const bool dontRebin )
+{
+  m_dontRebin = dontRebin;
+  if( m_options )
+    m_options->setDontRebin( dontRebin );
+  doJavaScript( m_jsgraph + ".setDontRebin(" + jsbool(dontRebin) +  ");" );
+}
+
+
+bool D3TimeChart::dontRebin() const
+{
+  return m_dontRebin;
+}
+
+
+void D3TimeChart::setNeutronsHidden( const bool hide )
+{
+  m_hideNeutrons = hide;
+  if( m_options )
+    m_options->setNeutronsHidden( hide );
+  doJavaScript( m_jsgraph + ".setNeutronsHidden(" + jsbool(hide) +  ");" );
+}
+
+
+bool D3TimeChart::neutronsHidden() const
+{
+  return m_hideNeutrons;
+}
 
 void D3TimeChart::setXAxisRangeSamples( const int min_sample_num, const int max_sample_num )
 {

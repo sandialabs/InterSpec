@@ -2242,8 +2242,10 @@ DownloadCurrentSpectrumResource::DownloadCurrentSpectrumResource(
   : WResource( parent ),
     m_spectrum( spectrum ),
     m_format( format ),
-    m_viewer( viewer )
+    m_viewer( viewer ),
+    m_app( WApplication::instance() )
 {
+  assert( m_app );
 }//DownloadCurrentSpectrumResource constructor
 
 
@@ -2256,6 +2258,18 @@ void DownloadCurrentSpectrumResource::handleRequest(
                              const Wt::Http::Request& request,
                              Wt::Http::Response& response )
 {
+  WApplication::UpdateLock lock( m_app );
+  
+  if( !lock )
+  {
+    log("error") << "Failed to WApplication::UpdateLock in DownloadCurrentSpectrumResource.";
+    response.out() << "Error grabbing application lock to form DownloadCurrentSpectrumResource resource; please report to InterSpec@sandia.gov.";
+    response.setStatus(500);
+    assert( 0 );
+    return;
+  }//if( !lock )
+  
+  
   if( m_format == SpecUtils::SaveSpectrumAsType::N42_2012
      || m_format == SpecUtils::SaveSpectrumAsType::N42_2006 )
     m_viewer->saveShieldingSourceModelToForegroundSpecMeas();
@@ -2305,8 +2319,10 @@ DownloadSpectrumResource::DownloadSpectrumResource( SpecUtils::SaveSpectrumAsTyp
                                                     Wt::WObject *parent )
   : WResource( parent ),
     m_type( type ),
-    m_display( display )
+    m_display( display ),
+    m_app( WApplication::instance() )
 {
+  assert( m_app );
 }
 
 
@@ -2319,6 +2335,17 @@ DownloadSpectrumResource::~DownloadSpectrumResource()
 void DownloadSpectrumResource::handleRequest( const Wt::Http::Request& request,
                                               Wt::Http::Response& response)
 {
+  WApplication::UpdateLock lock( m_app );
+  
+  if( !lock )
+  {
+    log("error") << "Failed to WApplication::UpdateLock in DownloadSpectrumResource.";
+    response.out() << "Error grabbing application lock to form DownloadSpectrumResource resource; please report to InterSpec@sandia.gov.";
+    response.setStatus(500);
+    assert( 0 );
+    return;
+  }//if( !lock )
+  
   if( !m_display )
     return;
   if( !m_display->treeView() )
@@ -2569,8 +2596,10 @@ SpecificSpectrumResource::SpecificSpectrumResource( SpecUtils::SaveSpectrumAsTyp
                                                     Wt::WObject *parent )
   : WResource( parent ),
     m_type( type ),
-    m_spectrum()
+    m_spectrum(),
+    m_app( WApplication::instance() )
 {
+  assert( m_app );
 }
 
 
@@ -2615,6 +2644,17 @@ void SpecificSpectrumResource::setSpectrum( std::shared_ptr<const SpecMeas> spec
 void SpecificSpectrumResource::handleRequest( const Wt::Http::Request& request,
                                Wt::Http::Response& response)
 {
+  WApplication::UpdateLock lock( m_app );
+  
+  if( !lock )
+  {
+    log("error") << "Failed to WApplication::UpdateLock in SpecificSpectrumResource.";
+    response.out() << "Error grabbing application lock to form SpecificSpectrumResource resource; please report to InterSpec@sandia.gov.";
+    response.setStatus(500);
+    assert( 0 );
+    return;
+  }//if( !lock )
+  
   DownloadSpectrumResource::handle_resource_request( m_type, m_spectrum,
                                                      m_samplenums, m_detnames,
                                                     (const InterSpec *) 0 /* Christian: Since we don't require outputting the D3 HTML from here, we set it to 0 */,

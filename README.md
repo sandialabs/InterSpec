@@ -114,6 +114,8 @@ cmake --generator "Visual Studio 15 2017 Win64" \
 And then make:
 ```
 make -j8
+# or
+cmake --build . --config Release
 ```
 
 If all goes well, InterSpec default to building an executable that when ran from the command line, starts a local web server, you can access then access from your browser.  To run InterSpec, use a command like:

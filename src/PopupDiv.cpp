@@ -56,25 +56,31 @@ WT_DECLARE_WT_MEMBER
 (BringAboveDialogs, Wt::JavaScriptFunction, "BringAboveDialogs",
  function( id )
  {
+   let target = $('#'+id);
+   //if( target.length === 0 || !target.is(":visible") )
+   //  return;
+  
    /* bring above all dialogs and popup menus
      $('#id').css('z-index') looks to return either a number _as a string_, or the string "auto"
     */
   
    let z = 0;
    $('.Wt-dialog, .Wt-popup').each( function(i,v){
-     if( $(v).is(":visible") ){
+     //This next commented-out jQuery check to see if it is visible seems to erroneously fail
+     //  sometimes; dont know if its semantics, or timing, but will keep commented out.
+     //if( $(v).is(":visible") ){
        const popz = Number( $(v).css('z-index') );
-       if( !isNaN(popz) )
+       if( (v.id !== id) && !isNaN(popz) )
          z = Math.max( z, popz );
-     }
+     //}
    });
   
    if( z === 0 )
      return;
   
-   const dialz = Number( $('#'+id).css('z-index') );
-   if( isNaN(dialz) || (z > dialz) ){
-     $('#'+id).css('z-index',z+1);
+   const dialz = Number( target.css('z-index') );
+   if( isNaN(dialz) || (z >= dialz) ){
+     target.css('z-index',z+1);
    }
 });
 
@@ -725,8 +731,15 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
     {
       menuParent->setMenu( this );
         
-      const string js = "function(){Wt.WT.BringAboveDialogs('" + id() + "');"
-                            "Wt.WT.AdjustTopPos('" + menuParent->id() + "');}";
+      const string js = "function(){"
+        //"let fcn = function(){"
+          "Wt.WT.BringAboveDialogs('" + id() + "');"
+          "Wt.WT.AdjustTopPos('" + menuParent->id() + "');"
+        //"};"
+        //"fcn();"
+        //"setTimeout(fcn,10);"
+      "}";
+      
       menuParent->clicked().connect( js );
     }
   }else //if( m_mobile) / else if( menuParent )
@@ -945,6 +958,9 @@ void PopupDivMenu::showMobile()
 
 void PopupDivMenu::parentClicked()
 {
+  if( !m_menuParent )
+    return;
+  
   // We need this function to be stateless, so we'll always popup the menu, even if we actually
   //  want to close it, and then we'll use the JS to close the menu if we dont actually want it open
   popup( WPoint(-10000,-10000) );
@@ -997,6 +1013,13 @@ bool PopupDivMenu::isMobile() const
 {
   return m_mobile;
 }
+
+
+Wt::WPushButton *PopupDivMenu::parentButton()
+{
+  return m_menuParent;
+}
+
 
 void PopupDivMenu::setupDesktopMenuStuff()
 {

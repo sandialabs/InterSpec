@@ -637,7 +637,6 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
   : ROOT::Minuit2::FCNBase(),
     m_cancel( 0 ),
     m_isFitting( false ),
-    m_guiUpdateFrequencyMs( 0 ),
     m_distance( distance ),
     m_liveTime( liveTime ),
     m_photopeakClusterSigma( 1.25 ),
@@ -645,7 +644,8 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
     m_detector( detector ),
     m_materials( materials ),
     m_nuclides( 0, (const SandiaDecay::Nuclide *)NULL ),
-    m_allowMultipleNucsContribToPeaks( allowMultipleNucsContribToPeaks )
+    m_allowMultipleNucsContribToPeaks( allowMultipleNucsContribToPeaks ),
+    m_self_att_multithread( true )
 {
   set<const SandiaDecay::Nuclide *> nucs;
   for( const PeakDef &p : m_peaks )
@@ -673,7 +673,7 @@ PointSourceShieldingChi2Fcn::~PointSourceShieldingChi2Fcn()
       boost::system::error_code ec;
       m_zombieCheckTimer->cancel( ec );
       if( ec )
-        cerr << "PointSourceShieldingChi2Fcn::fittindIsFinished(): Got error cancelling m_zombieCheckTimer: "
+        cerr << "PointSourceShieldingChi2Fcn::fittingIsFinished(): Got error cancelling m_zombieCheckTimer: "
         << ec.message() << endl;
       m_zombieCheckTimer.reset();
     }//if( m_zombieCheckTimer )
@@ -686,11 +686,8 @@ void PointSourceShieldingChi2Fcn::cancelFit()
 }
 
 
-void PointSourceShieldingChi2Fcn::setGuiProgressUpdater( const size_t updateFrequencyMs,
-                                                  std::shared_ptr<GuiProgressUpdateInfo> updateInfo )
-
+void PointSourceShieldingChi2Fcn::setGuiProgressUpdater( std::shared_ptr<GuiProgressUpdateInfo> updateInfo )
 {
-  m_guiUpdateFrequencyMs = updateFrequencyMs;
   m_guiUpdateInfo = updateInfo;
 }//void setGuiUpdater(...)
   
@@ -719,19 +716,11 @@ void PointSourceShieldingChi2Fcn::fittingIsStarting( const size_t deadlineMs )
   }//if( deadlineMs )
 
   if( m_guiUpdateInfo )
-  {
-    std::lock_guard<std::mutex> scoped_lock( m_guiUpdateInfo->m_bestParsMutex );
-    m_guiUpdateInfo->m_bestChi2 = std::numeric_limits<double>::max();
-    m_guiUpdateInfo->m_num_fcn_calls = 0;
-    m_guiUpdateInfo->m_bestParameters.clear();
-    m_guiUpdateInfo->m_lastGuiUpdateTime = SpecUtils::get_wall_time();
-    m_guiUpdateInfo->m_fitStartTime = m_guiUpdateInfo->m_lastGuiUpdateTime.load();
-    m_guiUpdateInfo->m_currentTime = m_guiUpdateInfo->m_lastGuiUpdateTime.load();
-  }
+    m_guiUpdateInfo->fitting_starting();
 }//void fittingIsStarting()
 
   
-void PointSourceShieldingChi2Fcn::fittindIsFinished()
+void PointSourceShieldingChi2Fcn::fittingIsFinished()
 {
   {//begin lock on m_zombieCheckTimerMutex
     std::lock_guard<std::mutex> scoped_lock( m_zombieCheckTimerMutex );
@@ -741,15 +730,20 @@ void PointSourceShieldingChi2Fcn::fittindIsFinished()
       boost::system::error_code ec;
       m_zombieCheckTimer->cancel( ec );
       if( ec )
-        cerr << "PointSourceShieldingChi2Fcn::fittindIsFinished(): Got error cancelling m_zombieCheckTimer: "
+        cerr << "PointSourceShieldingChi2Fcn::fittingIsFinished(): Got error cancelling m_zombieCheckTimer: "
              << ec.message() << endl;
       m_zombieCheckTimer.reset();
     }//if( m_zombieCheckTimer )
   }//end lock on m_zombieCheckTimerMutex
   
   m_isFitting = false;
-}//void fittindIsFinished()
+}//void fittingIsFinished()
   
+
+void PointSourceShieldingChi2Fcn::setSelfAttMultiThread( const bool do_multithread )
+{
+  m_self_att_multithread = do_multithread;
+}
   
 const SandiaDecay::Nuclide *PointSourceShieldingChi2Fcn::nuclide( const int nuc ) const
 {
@@ -777,6 +771,11 @@ PointSourceShieldingChi2Fcn &PointSourceShieldingChi2Fcn::operator=( const Point
   m_nuclides = rhs.m_nuclides;
   m_allowMultipleNucsContribToPeaks = rhs.m_allowMultipleNucsContribToPeaks;
   m_nuclidesToFitMassFractionFor    = rhs.m_nuclidesToFitMassFractionFor;
+  m_self_att_multithread = rhs.m_self_att_multithread;
+  
+  //m_isFitting
+  //m_guiUpdateInfo
+  //m_zombieCheckTimer
   
   return *this;
 }//operator=
@@ -804,8 +803,7 @@ bool PointSourceShieldingChi2Fcn::isVariableMassFraction( const Material *mat,
 bool PointSourceShieldingChi2Fcn::hasVariableMassFraction(
                                                 const Material *mat ) const
 {
-  MaterialToNucsMap::const_iterator pos
-                                   = m_nuclidesToFitMassFractionFor.find( mat );
+  const auto pos = m_nuclidesToFitMassFractionFor.find( mat );
   return (pos != m_nuclidesToFitMassFractionFor.end());
 }//bool hasVariableMassFraction( const Material *material ) const
 
@@ -817,13 +815,17 @@ std::shared_ptr<Material> PointSourceShieldingChi2Fcn::variedMassFracMaterial(
 {
   if( !material )
     throw runtime_error( "variedMassFracMaterial(): invalid input material" );
+  
   if( !hasVariableMassFraction(material) )
     throw runtime_error( "variedMassFracMaterial(): " + material->name
                          + " does not have a variable mass fraction nuclide" );
   
   std::shared_ptr<Material> answer = std::make_shared<Material>( *material );
-  MaterialToNucsMap::const_iterator iter
-                             = m_nuclidesToFitMassFractionFor.find( material );
+  MaterialToNucsMap::const_iterator iter = m_nuclidesToFitMassFractionFor.find( material );
+  
+  if( iter == end(m_nuclidesToFitMassFractionFor) )
+    throw runtime_error( "variedMassFracMaterial(): material not found in m_nuclidesToFitMassFractionFor" );
+  
   const vector<const SandiaDecay::Nuclide *> &nucs = iter->second;
   
   double prefrac = 0.0, postfrac = 0.0;
@@ -954,24 +956,24 @@ void PointSourceShieldingChi2Fcn::massFraction( double &massFrac,
                                         const std::vector<double> &errors ) const
 {
   massFrac = uncert = 0.0;
-  typedef MaterialToNucsMap::const_iterator MaterialToNucsMapIter;
-  if( !material || !nuc )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction(): invalid "
-                         "input" );
-  MaterialToNucsMapIter matpos = m_nuclidesToFitMassFractionFor.find(material);
   
-  if( matpos == m_nuclidesToFitMassFractionFor.end() )
+  if( !material || !nuc )
+    throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction(): invalid input" );
+  
+  const auto matpos = m_nuclidesToFitMassFractionFor.find(material);
+  
+  if( matpos == end(m_nuclidesToFitMassFractionFor) )
     throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction(): "
                          + material->name + " is not a material with a variable"
                          " mass fraction" );
-  const std::vector<const SandiaDecay::Nuclide *> &nucs
-                        = m_nuclidesToFitMassFractionFor.find(material)->second;
-  vector<const SandiaDecay::Nuclide *>::const_iterator pos;
+  
+  const std::vector<const SandiaDecay::Nuclide *> &nucs = matpos->second;
+  
   //nucs is actually sorted by symbol name, could do better than linear search
-  pos = std::find( nucs.begin(), nucs.end(), nuc );
-  if( pos == nucs.end() )
+  const auto pos = std::find( begin(nucs), end(nucs), nuc );
+  if( pos == end(nucs) )
     throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction(): "
-                         +nuc->symbol + " was not a nuc fit for mass fraction"
+                         + nuc->symbol + " was not a nuc fit for mass fraction"
                          " in " + material->name );
   
   double totalfrac = 0.0;
@@ -987,8 +989,7 @@ void PointSourceShieldingChi2Fcn::massFraction( double &massFrac,
   }//for( const SandiaDecay::Nuclide *n : nucs )
   
   size_t matmassfracstart = 0;
-  for( MaterialToNucsMapIter iter = m_nuclidesToFitMassFractionFor.begin();
-      iter != matpos; ++iter )
+  for( auto iter = begin(m_nuclidesToFitMassFractionFor); iter != matpos; ++iter )
   {
     if( iter->second.size() )
       matmassfracstart += (iter->second.size()-1);
@@ -1120,11 +1121,20 @@ double PointSourceShieldingChi2Fcn::activityDefinedFromShielding(
       if( src == nuclide )
       {
         double massFrac = 0.0;
-        for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+        
+#if( ALLOW_MASS_FRACTION_FIT )
+        if( hasVariableMassFraction(mat) )
         {
-          if( nfp.first == src )
-            massFrac += nfp.second;
-        }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+          massFrac = PointSourceShieldingChi2Fcn::massFraction( mat, src, params );
+        }else
+#endif
+        {
+          for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+          {
+            if( nfp.first == src )
+              massFrac += nfp.second;
+          }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+        }//if( hasVariableMassFraction(mat) ) / else
 
 /*
         if( massFrac <= 0.0 )
@@ -1189,6 +1199,121 @@ double PointSourceShieldingChi2Fcn::activity( const SandiaDecay::Nuclide *nuclid
 }//double activity(...)
 
 
+
+double PointSourceShieldingChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *nuclide,
+                                                       const std::vector<double> &params,
+                                                        const std::vector<double> &errors ) const
+{
+  if( params.size() != numExpectedFitParameters() )
+  {
+    cerr << "params.size()=" << params.size()
+    << ", numExpectedFitParameters()=" << numExpectedFitParameters()
+    << endl;
+    throw runtime_error( "PointSourceShieldingChi2Fcn::activityUncertainty(...) invalid params size" );
+  }//if( params.size() != numExpectedFitParameters() )
+  
+  if( params.size() != errors.size() )
+    throw runtime_error( "PointSourceShieldingChi2Fcn::activityUncertainty: size(params) != size(errors)" );
+  
+  // If it is a simple point source, we can get the uncertainty by just passing in the
+  //  parameter uncertainties and calculating activity from those.  However, if its a
+  //  self-attenuating source, we have to do a little more propagation and such.
+  
+  if( !isActivityDefinedFromShielding( nuclide ) )
+    return activity( nuclide, errors );
+    
+  
+  // We will take into account the uncertainties of the inner layers to our current shell, the
+  //  uncertainty of the thickness, and the uncertainty of the mass fractions.
+  double radius = 0.0, radiusUncertSquared = 0.0, activity = 0.0, activityUncertSquared = 0.0;
+  const int nmat = static_cast<int>(numMaterials());
+  for( int matn = 0; matn < nmat; ++matn )
+  {
+    if( isGenericMaterial( matn ) )
+      continue;
+    
+    const double thick = thickness( matn, params );
+    const double thickUncert = thickness( matn, errors );
+    const Material * const mat = m_materials[matn].first;
+    
+    for( const SandiaDecay::Nuclide *src : m_materials[matn].second )
+    {
+      if( src == nuclide )
+      {
+        double massFrac = 0.0, massFracUncert = 0.0;
+        
+#if( ALLOW_MASS_FRACTION_FIT )
+        if( hasVariableMassFraction(mat) )
+        {
+          massFraction( massFrac, massFracUncert, mat, src, params, errors );
+        }else
+#endif
+        {
+          for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+          {
+            if( nfp.first == src )
+              massFrac += nfp.second;
+          }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+        }//if( hasVariableMassFraction(mat) ) / else
+
+        const double outerRad = radius + thick;
+        
+        const double iso_density = massFrac * mat->density / PhysicalUnits::gram;
+        const double activity_per_gram = nuclide->activityPerGram();
+        
+        const double volumeUncertDueToInnerRad = 4.0 * PhysicalUnits::pi * pow(radius,2.0) * sqrt(radiusUncertSquared);
+        
+        // We take the uncertainty in volume due to the thickness uncertainty to be independent of
+        //  the inner-radius uncertainty - which is approximately, probably, about right to kinda
+        //  fairly cover all the uncertainties - maybe
+        const double volumeUncertDueToThickness = 4.0 * PhysicalUnits::pi * pow(outerRad,2.0) * thickUncert;
+        
+        const double vol = (4.0/3.0)*PhysicalUnits::pi*( pow(outerRad,3.0) - pow(radius,3.0));
+        const double volUncertSquared = pow(volumeUncertDueToInnerRad,2.0) + pow(volumeUncertDueToThickness,2.0);
+        const double mass_grams = iso_density * vol;
+        const double massUncertaintySquared_grams = iso_density * volUncertSquared;
+        const double thisActivity = mass_grams * activity_per_gram;
+        const double thisActivityUncertaintySquared = massUncertaintySquared_grams * activity_per_gram;
+        
+        //cout << src->symbol << ": sqrt(thisActivityUncertaintySquared)=" << sqrt(thisActivityUncertaintySquared) << endl
+        //<< "\tvolumeUncertDueToInnerRad=" << volumeUncertDueToInnerRad
+        //<< " (radUncert=" << sqrt(radiusUncertSquared)/PhysicalUnits::cm << " cm)" << endl
+        //<< "\tvolumeUncertDueToThickness=" << volumeUncertDueToThickness
+        //<< " (thickUncert=" << sqrt(thickUncert)/PhysicalUnits::cm << " cm)" << endl
+        //<< "\tmassFrac=" << massFrac << ", massFracUncert=" << massFracUncert
+        //<< endl;
+        
+        activityUncertSquared += thisActivityUncertaintySquared;
+        if( !IsNan(massFrac) && !IsInf(massFrac) && (massFrac > FLT_EPSILON) )
+          activityUncertSquared += std::pow( thisActivity * massFracUncert / massFrac, 2.0 );
+        
+        activity += thisActivity;
+      }//if( src == nuclide )
+    }//for( const SandiaDecay::Nuclide *src : srcs )
+    
+    radius += thick;
+    
+    // For the layer of shielding we are concerned with, we will assume the uncertainty on the
+    //  inner radius is the squared sum of all inner layer uncertainties - this is actually a bit
+    //  over the top - these thickness uncertainties are likely very correlated - so much so we
+    //  could probably use just the thickness uncertainty on just the previous layer, but we'll be
+    //  conservative, or something.
+    const double radiusUncert = thickness( matn, errors );
+    radiusUncertSquared += radiusUncert*radiusUncert;
+  }//for( size_t matn = 0; matn < nmat; ++matn )
+  
+  if( activityUncertSquared < 0.0 || IsNan(activityUncertSquared) || IsInf(activityUncertSquared) )
+    throw runtime_error( "error calculating activity uncertainty for self-attenuating source;"
+                         " squared value calculated is " + std::to_string(activityUncertSquared) );
+  
+  const double normalCalcAct = PointSourceShieldingChi2Fcn::activity( nuclide, params );
+  assert( fabs(normalCalcAct - activity) < 0.001*std::max(normalCalcAct,activity) );
+  
+  return sqrt( activityUncertSquared );
+}//double activityUncertainty(...)
+
+
+
 double PointSourceShieldingChi2Fcn::age( const SandiaDecay::Nuclide *nuclide,
                                       const std::vector<double> &params ) const
 {
@@ -1211,12 +1336,13 @@ double PointSourceShieldingChi2Fcn::age( const SandiaDecay::Nuclide *nuclide,
                          " defining nuclide age: " + std::to_string(params[2*ind+1]) );
   
   const int defining_nuclide_index = nearFIndex - 1;
+  const int defining_nuc_age_index = 2*defining_nuclide_index + 1;
   
-  if( static_cast<size_t>(defining_nuclide_index) >= params.size() )
+  if( static_cast<size_t>(defining_nuc_age_index) >= params.size() )
     throw runtime_error( "Got a negative age value that is larger than could be"
                          " for indicating a defining nuclide age: " + std::to_string(params[2*ind+1]) );
   
-  const double defining_age = params[defining_nuclide_index];
+  const double defining_age = params[defining_nuc_age_index];
   if( defining_age < -0.00001 )
     throw runtime_error( "Defining age is also less than zero (shouldnt happen)" );
   
@@ -1386,32 +1512,10 @@ double PointSourceShieldingChi2Fcn::DoEval( const std::vector<double> &x ) const
     
     const size_t npoints = chi2s.size();
     for( size_t i = 0; i < npoints; ++i )
-    chi2 += pow( std::get<1>(chi2s[i]), 2.0 );
+      chi2 += pow( std::get<1>(chi2s[i]), 2.0 );
     
-    if( m_isFitting && m_guiUpdateFrequencyMs.load() && m_guiUpdateInfo )
-    {
-      //Need best chi2, and its cooresponding errors and
-      m_guiUpdateInfo->m_num_fcn_calls++;
-      const double prevBestChi2 = m_guiUpdateInfo->m_bestChi2.load();
-      
-      if( chi2 < prevBestChi2 )
-      {
-        std::lock_guard<std::mutex> scoped_lock( m_guiUpdateInfo->m_bestParsMutex );
-        m_guiUpdateInfo->m_bestChi2 = chi2;
-        m_guiUpdateInfo->m_bestParameters = x;
-      }
-      
-      std::lock_guard<std::mutex> scoped_lock( m_guiUpdateInfo->m_guiUpdaterMutex );
-      const double lastUpdateTime = m_guiUpdateInfo->m_lastGuiUpdateTime;
-      const double currentTime = SpecUtils::get_wall_time();
-      if( (currentTime - lastUpdateTime) > 0.001*m_guiUpdateFrequencyMs.load() )
-      {
-        m_guiUpdateInfo->m_lastGuiUpdateTime = currentTime;
-        m_guiUpdateInfo->m_currentTime = currentTime;
-        
-        m_guiUpdateInfo->m_guiUpdater();
-      }
-    }//if( m_guiUpdateFrequencyMs.load() && m_guiUpdateInfo )
+    if( m_isFitting && m_guiUpdateInfo )
+      m_guiUpdateInfo->completed_eval( chi2, x );
     
     //cout << "Returning chi2=" << chi2 << " for {" ;
     //for( size_t i = 0; i < x.size(); ++i )
@@ -1579,7 +1683,7 @@ void PointSourceShieldingChi2Fcn::cluster_peak_activities( std::map<double,doubl
     if( info )
     {
       stringstream msg;
-      msg << "\tPeak attributed to " << energy << " keV recieved "
+      msg << "\tPeak attributed to " << energy << " keV received "
           << contribution*PhysicalUnits::second
           << " cps from " << aep.energy << " keV line, which has I="
           << age_sf * aep.numPerSecond/sm_activityUnits << "";
@@ -1674,7 +1778,7 @@ vector< tuple<double,double,double,Wt::WColor,double> > PointSourceShieldingChi2
     {
       stringstream msg;
       msg << "\tAt " << energy/SandiaDecay::keV << " expected "
-          << expected_counts << " counts, recieved " << observed_counts
+          << expected_counts << " counts, received " << observed_counts
           << " +- " << observed_uncertainty << " counts.";
       if( backCounts > 0.0 )
         msg << " (after correcting for " << backCounts << " +- "
@@ -1882,8 +1986,19 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 
     if( isGenericMaterial( materialN ) )
     {
-      const float atomic_number = static_cast<float>(atomicNumber( materialN, x ));
-      const float areal_density = static_cast<float>(arealDensity( materialN, x ));
+      float atomic_number = static_cast<float>(atomicNumber( materialN, x ));
+      float areal_density = static_cast<float>(arealDensity( materialN, x ));
+      
+      // Even though we always set AD and AN limits on the parameters when creating them in
+      //  ShieldingSourceDisplay::shieldingFitnessFcn(...), sometimes Minuit will go (way!) outside
+      //  those bounds, and then everything becomes wack - so we'll clamp the values of AN/AD.
+      if( atomic_number < MassAttenuation::sm_min_xs_atomic_number )
+        atomic_number = MassAttenuation::sm_min_xs_atomic_number;
+      if( atomic_number > MassAttenuation::sm_max_xs_atomic_number )
+        atomic_number = MassAttenuation::sm_max_xs_atomic_number;
+      if( areal_density > (400.0*PhysicalUnits::g/PhysicalUnits::cm2) )
+        areal_density = static_cast<float>(400*PhysicalUnits::g/PhysicalUnits::cm2);
+      
       
       att_coef_fcn = boost::bind( &transmition_coefficient_generic,
                                   atomic_number, areal_density, _1 );
@@ -2145,10 +2260,17 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 
   if( calculators.size() )
   {
-    SpecUtilsAsync::ThreadPool pool;
-    for( SelfAttCalc &calculator : calculators )
-      pool.post( boost::bind( &PointSourceShieldingChi2Fcn::selfShieldingIntegration, boost::ref(calculator) ) );
-    pool.join();
+    if( m_self_att_multithread )
+    {
+      SpecUtilsAsync::ThreadPool pool;
+      for( SelfAttCalc &calculator : calculators )
+        pool.post( boost::bind( &PointSourceShieldingChi2Fcn::selfShieldingIntegration, boost::ref(calculator) ) );
+      pool.join();
+    }else
+    {
+      for( SelfAttCalc &calculator : calculators )
+        selfShieldingIntegration(calculator);
+    }
     
 //    vector<boost::function<void()> > workers;
 //    for( SelfAttCalc &calculator : calculators )
@@ -2160,7 +2282,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 
     if( info )
       info->push_back( "Self Attenuating Source Info (after accounting for "
-                       "shielding, distanec, detector and live time):" );
+                       "shielding, distance, detector and live time):" );
     
     for( const SelfAttCalc &calculator : calculators )
     {
@@ -2211,5 +2333,53 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 
   return expected_observed_chis( m_peaks, m_backgroundPeaks, energy_count_map, info );
 }//vector<tuple<double,double,double> > energy_chi_contributions(...) const
+
+
+PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo::GuiProgressUpdateInfo( const size_t updateFreqMs,
+                        std::function<void(size_t, double, double, std::vector<double>)> updater )
+  : m_gui_updater( updater ),
+  m_update_frequency_ms( updateFreqMs ),
+  m_num_fcn_calls( 0 ),
+  m_fitStartTime( 0.0 ),
+  m_currentTime( 0.0 ),
+  m_lastGuiUpdateTime( 0.0 ),
+  m_bestChi2( std::numeric_limits<double>::infinity() )
+{
+}
+
+
+void PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo::fitting_starting()
+{
+  std::lock_guard<std::mutex> scoped_lock( m_mutex );
+
+  m_bestChi2 = std::numeric_limits<double>::max();
+  m_num_fcn_calls = 0;
+  m_bestParameters.clear();
+  m_lastGuiUpdateTime = SpecUtils::get_wall_time();
+  m_fitStartTime = m_lastGuiUpdateTime;
+  m_currentTime = m_lastGuiUpdateTime;
+}// void GuiProgressUpdateInfo::fitting_starting()
+
+
+void PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo::completed_eval( const double chi2, const std::vector<double> &pars )
+{
+  std::lock_guard<std::mutex> scoped_lock( m_mutex );
+  
+  m_num_fcn_calls += 1;
+  const double prevBestChi2 = m_bestChi2;
+  if( chi2 < prevBestChi2 )
+  {
+    m_bestChi2 = chi2;
+    m_bestParameters = pars;
+  }
+  
+  m_currentTime = SpecUtils::get_wall_time();
+  const double elapsed_time = m_currentTime - m_fitStartTime;
+  if( elapsed_time > 0.001*m_update_frequency_ms )
+  {
+    m_lastGuiUpdateTime = m_currentTime;
+    m_gui_updater( m_num_fcn_calls, elapsed_time, m_bestChi2, m_bestParameters );
+  }
+}//completed_eval(...)
 
 }//namespace GammaInteractionCalc
