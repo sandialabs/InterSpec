@@ -438,6 +438,9 @@ void DetectorPeakResponse::computeHash()
   for( const float val : m_expOfLogPowerSeriesCoeffs )
     boost::hash_combine( seed, val );
   
+  for( const float val : m_expOfLogPowerSeriesUncerts )
+    boost::hash_combine( seed, val );
+  
   //For legacy DRFs (pre 1.0.4 / 20190527) that dont have DRF source info,
   //  lower/upper energies, and m_flags, dont change the hash.
   if( m_lowerEnergy != 0.0 || m_upperEnergy != 0.0 )
@@ -904,6 +907,7 @@ void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir )
 
 void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
                                    const std::vector<float> &coefs,
+                                   const std::vector<float> &uncerts,
                                    const float charactDist,
                                    const float det_diam,
                                    const float equationEnergyUnits,
@@ -913,8 +917,14 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   if( coefs.empty() )
     throw runtime_error( "fromExpOfLogPowerSeriesAbsEff(...): invalid input" );
   
+  if( !uncerts.empty() && (uncerts.size() != coefs.size()) )
+    throw runtime_error( "DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff: uncertainties"
+                        " must either be empty, or same size as coefficients." );
+  
   m_energyEfficiencies.clear();
   m_expOfLogPowerSeriesCoeffs.clear();
+  m_expOfLogPowerSeriesUncerts.clear();
+  
   m_efficiencyFcn = std::function<float(float)>();
   m_efficiencyFormula.clear();
   
@@ -922,6 +932,7 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   m_efficiencyEnergyUnits = equationEnergyUnits;
   m_detectorDiameter = det_diam;
   m_expOfLogPowerSeriesCoeffs = coefs;
+  m_expOfLogPowerSeriesUncerts = uncerts;
   
   //now we need to account for characterizationDist
   if( charactDist > 0.0f )
@@ -1082,6 +1093,18 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     node = doc->allocate_node( node_element, "ExpOfLogPowerSeriesCoeffs", val );
     base_node->append_node( node );
   }//if( m_expOfLogPowerSeriesCoeffs.size() )
+  
+  
+  if( m_expOfLogPowerSeriesUncerts.size() )
+  {
+    stringstream valstrm;
+    for( size_t i = 0; i < m_expOfLogPowerSeriesUncerts.size(); ++i )
+      valstrm << (i?" ":"") << m_expOfLogPowerSeriesUncerts[i];
+    val = doc->allocate_string( valstrm.str().c_str() );
+    node = doc->allocate_node( node_element, "ExpOfLogPowerSeriesUncerts", val );
+    base_node->append_node( node );
+  }//if( m_expOfLogPowerSeriesUncerts.size() )
+  
   
   stringstream hashstrm, parenthashstrm, flagsstrm;
   hashstrm << m_hash;
@@ -1286,9 +1309,20 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   }//if( node && node->value() )
   
   m_expOfLogPowerSeriesCoeffs.clear();
-  node = parent->first_node( "ExpOfLogPowerSeriesCoeffs", 25 );
+  m_expOfLogPowerSeriesUncerts.clear();
+  
+  node = XML_FIRST_NODE(parent, "ExpOfLogPowerSeriesCoeffs");
   if( node && node->value() )
     SpecUtils::split_to_floats( node->value(), node->value_size(), m_expOfLogPowerSeriesCoeffs );
+  
+  
+  node = XML_FIRST_NODE(parent, "ExpOfLogPowerSeriesUncerts");
+  if( node && node->value() )
+    SpecUtils::split_to_floats( node->value(), node->value_size(), m_expOfLogPowerSeriesUncerts );
+  
+  if( !m_expOfLogPowerSeriesUncerts.empty()
+     && (m_expOfLogPowerSeriesUncerts.size() != m_expOfLogPowerSeriesCoeffs.size()) )
+    throw runtime_error( "DetectorPeakResponse number eff coeffs doesnt match number of uncerts" );
   
   
   node = parent->first_node( "Hash", 4 );
@@ -1498,6 +1532,16 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
     throw runtime_error(buffer);
   }
   
+  if( lhs.m_expOfLogPowerSeriesUncerts.size() != rhs.m_expOfLogPowerSeriesUncerts.size() )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: size of"
+             " exponential of log power series uncertainties of LHS (%i) doesnt"
+             " match RHS (%i)",
+             int(lhs.m_expOfLogPowerSeriesUncerts.size()),
+             int(rhs.m_expOfLogPowerSeriesUncerts.size()) );
+    throw runtime_error(buffer);
+  }
+  
   for( size_t i = 0; i < lhs.m_expOfLogPowerSeriesCoeffs.size(); ++i )
   {
     const float a = lhs.m_expOfLogPowerSeriesCoeffs[i];
@@ -1507,6 +1551,20 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
       snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: exponential of"
                 " log power series coefficient %i of LHS (%1.8E)"
                 " doesnt match RHS (%1.8E)", int(i), a, b );
+      throw runtime_error( buffer );
+    }
+  }
+  
+  for( size_t i = 0; i < lhs.m_expOfLogPowerSeriesUncerts.size(); ++i )
+  {
+    const float a = lhs.m_expOfLogPowerSeriesUncerts[i];
+    const float b = rhs.m_expOfLogPowerSeriesUncerts[i];
+    const float diff = fabs(a-b);
+    if( fabs(a-b) > (1.0E-5 * std::max(fabs(a),fabs(b))) && (diff > 1.0E-8) )
+    {
+      snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: exponential of"
+               " log power series uncertainty %i of LHS (%1.8E)"
+               " doesnt match RHS (%1.8E)", int(i), a, b );
       throw runtime_error( buffer );
     }
   }
