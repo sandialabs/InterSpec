@@ -2384,7 +2384,7 @@ bool EnergyCalTool::canDoEnergyFit()
   
   size_t nPeaksToUse = 0;
   for( const PeakModel::PeakShrdPtr &p : *peaks )
-    nPeaksToUse += (p && p->useForCalibration());
+    nPeaksToUse += (p && p->useForEnergyCalibration());
   
   if( nPeaksToUse < 1 )
     return false;
@@ -2517,7 +2517,7 @@ void EnergyCalTool::fitCoefficients()
         continue;
       const PeakDef &peak = *peakptr;
       
-      if( !peak.useForCalibration() )
+      if( !peak.useForEnergyCalibration() )
         continue;
       
       const double wantedEnergy = peak.gammaParticleEnergy();

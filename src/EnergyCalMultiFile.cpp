@@ -1176,7 +1176,7 @@ WFlags<ItemFlag> EnergyCalMultiFileModel::flags( const WModelIndex &index ) cons
 
 boost::any EnergyCalMultiFileModel::headerData( int section, Wt::Orientation orientation,
                                                 int role ) const
-{  
+{
 //  if( role == DisplayRole )
 //  {
 //    switch( section )
@@ -1249,10 +1249,14 @@ void EnergyCalMultiFileModel::refreshData()
       if( cal && measpeaks )
       {
         for( const PeakPtr &peak : *measpeaks )
-          samplespeaks.emplace_back( peak->useForEnergyCalibration(), peak );
+        {
+          if( peak && peak->hasSourceGammaAssigned() )
+            samplespeaks.emplace_back( peak->useForEnergyCalibration(), peak );
+        }
       }
       
-      peaks.push_back( samplesinfo );
+      if( !samplespeaks.empty() )
+        peaks.push_back( samplesinfo );
     }//for( const IntSet &samplnums : peaksamplenums )
     
     newdata.push_back( peaks );

@@ -51,7 +51,12 @@
 using namespace std;
 using SpecUtils::Measurement;
 
-const int PeakDef::sm_xmlSerializationVersion = 0;
+const int PeakDef::sm_xmlSerializationMajorVersion = 0;
+const int PeakDef::sm_xmlSerializationMinorVersion = 1;
+
+const bool PeakDef::sm_defaultUseForDrfIntrinsicEffFit = true;
+const bool PeakDef::sm_defaultUseForDrfFwhmFit = true;
+const bool PeakDef::sm_defaultUseForDrfDepthOfInteractionFit = false;
 
 /** Version 1 adds "FlatStep", "LinearStep", and "BiLinearStep" continuum types
  
@@ -1163,7 +1168,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   if( !!lhs.m_continuum != !!rhs.m_continuum )
   {
     snprintf(buffer, sizeof(buffer),
-             "PeakDef availablity of continuum of LHS (%i) vs RHS (%i) continuums doent match.",
+             "PeakDef availablity of continuum of LHS (%i) vs RHS (%i) continuums doesnt match.",
              int(!!lhs.m_continuum), int(!!rhs.m_continuum) );
     throw runtime_error( buffer );
   }
@@ -1174,7 +1179,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   if( lhs.m_parentNuclide != rhs.m_parentNuclide )
   {
     snprintf(buffer, sizeof(buffer),
-             "PeakDef parent nuclide of LHS (%s) vs RHS (%s) doent match.",
+             "PeakDef parent nuclide of LHS (%s) vs RHS (%s) doesnt match.",
         (lhs.m_parentNuclide ? lhs.m_parentNuclide->symbol.c_str() : "none"),
         (rhs.m_parentNuclide ? rhs.m_parentNuclide->symbol.c_str() : "none") );
     throw runtime_error( buffer );
@@ -1183,7 +1188,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   if( lhs.m_transition != rhs.m_transition )
   {
     snprintf(buffer, sizeof(buffer),
-             "PeakDef nuclide transition of LHS (%s -> %s) vs RHS (%s -> %s) doent match.",
+             "PeakDef nuclide transition of LHS (%s -> %s) vs RHS (%s -> %s) doesnt match.",
              (lhs.m_transition->parent ? lhs.m_transition->parent->symbol.c_str() : "none"),
              (lhs.m_transition->child ? lhs.m_transition->child->symbol.c_str() : "none"),
              (rhs.m_transition->parent ? rhs.m_transition->parent->symbol.c_str() : "none"),
@@ -1194,7 +1199,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   if( lhs.m_radparticleIndex != rhs.m_radparticleIndex )
   {
     snprintf(buffer, sizeof(buffer),
-             "PeakDef particle index of LHS (%i) vs RHS (%i) doent match.",
+             "PeakDef particle index of LHS (%i) vs RHS (%i) doesnt match.",
              lhs.m_radparticleIndex, rhs.m_radparticleIndex );
     throw runtime_error( buffer );
   }
@@ -1202,7 +1207,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   if( lhs.m_sourceGammaType != rhs.m_sourceGammaType )
   {
     snprintf(buffer, sizeof(buffer),
-             "PeakDef is annihilation of LHS (%i) vs RHS (%i) doent match.",
+             "PeakDef is annihilation of LHS (%i) vs RHS (%i) doesnt match.",
              int(lhs.m_sourceGammaType), int(rhs.m_sourceGammaType) );
     throw runtime_error( buffer );
   }
@@ -1212,7 +1217,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   if( lhs.m_xrayElement != rhs.m_xrayElement )
   {
     snprintf(buffer, sizeof(buffer),
-             "PeakDef xray of LHS (%s) vs RHS (%s) doent match.",
+             "PeakDef xray of LHS (%s) vs RHS (%s) doesnt match.",
              (lhs.m_xrayElement ? lhs.m_xrayElement->symbol.c_str() : "none"),
              (rhs.m_xrayElement ? rhs.m_xrayElement->symbol.c_str() : "none") );
     throw runtime_error( buffer );
@@ -1221,7 +1226,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   if( fabs(lhs.m_xrayEnergy - rhs.m_xrayEnergy) > 0.001 )
   {
     snprintf(buffer, sizeof(buffer),
-             "PeakDef xray energy of LHS (%1.8E keV) vs RHS (%1.8E keV) doent match.",
+             "PeakDef xray energy of LHS (%1.8E keV) vs RHS (%1.8E keV) doesnt match.",
              lhs.m_xrayEnergy, rhs.m_xrayEnergy );
     throw runtime_error( buffer );
   }
@@ -1229,7 +1234,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   if( lhs.m_reaction != rhs.m_reaction )
   {
     snprintf(buffer, sizeof(buffer),
-             "PeakDef reaction of LHS (%s) vs RHS (%s) doent match.",
+             "PeakDef reaction of LHS (%s) vs RHS (%s) doenst match.",
              (lhs.m_reaction ? lhs.m_reaction->name().c_str() : "none"),
              (rhs.m_reaction ? rhs.m_reaction->name().c_str() : "none") );
     throw runtime_error( buffer );
@@ -1238,32 +1243,49 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   if( fabs(lhs.m_reactionEnergy - rhs.m_reactionEnergy) > 0.001 )
   {
     snprintf(buffer, sizeof(buffer),
-             "PeakDef reaction energy energy of LHS (%1.8E keV) vs RHS (%1.8E keV) doent match.",
+             "PeakDef reaction energy energy of LHS (%1.8E keV) vs RHS (%1.8E keV) doesnt match.",
              lhs.m_reactionEnergy, rhs.m_reactionEnergy );
     throw runtime_error( buffer );
   }
   
-  if( lhs.m_useForCalibration != rhs.m_useForCalibration )
+  if( lhs.m_useForEnergyCal != rhs.m_useForEnergyCal )
   {
     snprintf(buffer, sizeof(buffer),
-             "PeakDef use for calibration of LHS (%i) vs RHS (%i) doent match.",
-             int(lhs.m_useForCalibration), int(rhs.m_useForCalibration) );
+             "PeakDef use for calibration of LHS (%i) vs RHS (%i) doesnt match.",
+             int(lhs.m_useForEnergyCal), int(rhs.m_useForEnergyCal) );
     throw runtime_error( buffer );
   }
   
   if( lhs.m_useForShieldingSourceFit != rhs.m_useForShieldingSourceFit )
   {
     snprintf(buffer, sizeof(buffer),
-             "PeakDef use for shielding source fit of LHS (%i) vs RHS (%i) doent match.",
+             "PeakDef use for shielding source fit of LHS (%i) vs RHS (%i) doesnt match.",
              int(lhs.m_useForShieldingSourceFit), int(rhs.m_useForShieldingSourceFit) );
     throw runtime_error( buffer );
   }
   
-  if( lhs.m_useForDetectorResponseFit != rhs.m_useForDetectorResponseFit )
+  
+  if( lhs.m_useForDrfIntrinsicEffFit != rhs.m_useForDrfIntrinsicEffFit )
   {
     snprintf(buffer, sizeof(buffer),
-             "PeakDef use for DRF fit of LHS (%i) vs RHS (%i) doent match.",
-             int(lhs.m_useForDetectorResponseFit), int(rhs.m_useForDetectorResponseFit) );
+             "PeakDef use for DRF Abs Eff fit of LHS (%i) vs RHS (%i) doesnt match.",
+             int(lhs.m_useForDrfIntrinsicEffFit), int(rhs.m_useForDrfIntrinsicEffFit) );
+    throw runtime_error( buffer );
+  }
+  
+  if( lhs.m_useForDrfFwhmFit != rhs.m_useForDrfFwhmFit )
+  {
+    snprintf(buffer, sizeof(buffer),
+             "PeakDef use for DRF FWHM fit of LHS (%i) vs RHS (%i) doesnt match.",
+             int(lhs.m_useForDrfFwhmFit), int(rhs.m_useForDrfFwhmFit) );
+    throw runtime_error( buffer );
+  }
+  
+  if( lhs.m_useForDrfDepthOfInteractionFit != rhs.m_useForDrfDepthOfInteractionFit )
+  {
+    snprintf(buffer, sizeof(buffer),
+             "PeakDef use for DRF Depth of interaction fit of LHS (%i) vs RHS (%i) doesnt match.",
+             int(lhs.m_useForDrfDepthOfInteractionFit), int(rhs.m_useForDrfDepthOfInteractionFit) );
     throw runtime_error( buffer );
   }
 }//void equalEnough( const PeakDef &lhs, const PeakDef &rhs )
@@ -1394,24 +1416,27 @@ PeakDef::PeakDef()
 
 void PeakDef::reset()
 {
-  m_userLabel                = "";
-  m_type                     = GaussianDefined;
-  m_skewType                 = PeakDef::NoSkew;
+  m_userLabel                 = "";
+  m_type                      = GaussianDefined;
+  m_skewType                  = PeakDef::NoSkew;
 
-  m_parentNuclide            = NULL;
-  m_transition               = NULL;
-  m_radparticleIndex         = -1;
-  m_sourceGammaType          = NormalGamma;
-  m_useForCalibration        = true;
-  m_useForShieldingSourceFit = false;
-  m_useForDetectorResponseFit = -1;
+  m_parentNuclide             = NULL;
+  m_transition                = NULL;
+  m_radparticleIndex          = -1;
+  m_sourceGammaType           = NormalGamma;
+  m_useForEnergyCal           = true;
+  m_useForShieldingSourceFit  = false;
   
-  m_xrayElement              = NULL;
-  m_xrayEnergy               = 0.0;
-  m_reaction                 = NULL;
-  m_reactionEnergy           = 0.0;
+  m_useForDrfIntrinsicEffFit       = PeakDef::sm_defaultUseForDrfIntrinsicEffFit;
+  m_useForDrfFwhmFit               = PeakDef::sm_defaultUseForDrfFwhmFit;
+  m_useForDrfDepthOfInteractionFit = PeakDef::sm_defaultUseForDrfDepthOfInteractionFit;
+  
+  m_xrayElement               = NULL;
+  m_xrayEnergy                = 0.0;
+  m_reaction                  = NULL;
+  m_reactionEnergy            = 0.0;
 
-  m_lineColor                = Wt::WColor();
+  m_lineColor                 = Wt::WColor();
   
   std::shared_ptr<PeakContinuum> newcont = std::make_shared<PeakContinuum>();
   m_continuum = newcont;
@@ -1835,7 +1860,9 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   xml_node<char> *node = 0;
   xml_node<char> *peak_node = doc->allocate_node( node_element, "Peak" );
   
-  snprintf( buffer, sizeof(buffer), "%i", PeakDef::sm_xmlSerializationVersion );
+  snprintf( buffer, sizeof(buffer), "%i.%i",
+            PeakDef::sm_xmlSerializationMajorVersion,
+            PeakDef::sm_xmlSerializationMinorVersion );
   const char *val = doc->allocate_string( buffer );
   xml_attribute<char> *att = doc->allocate_attribute( "version", val );
   peak_node->append_attribute( att );
@@ -1889,15 +1916,35 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
     peak_node->append_node( node );
   }//for(...)
   
-  att = doc->allocate_attribute( "forCalibration", (m_useForCalibration ? "true" : "false") );
+  /// TODO: Need to deprecate 'forCalibration' in favor of 'useForEnergyCalibration' the next
+  ///       increment of PeakDef::sm_xmlSerializationMajorVersion
+  att = doc->allocate_attribute( "forCalibration", (m_useForEnergyCal ? "true" : "false") );
+  peak_node->append_attribute( att );
+  
+  att = doc->allocate_attribute( "useForEnergyCalibration", (m_useForEnergyCal ? "true" : "false") );
   peak_node->append_attribute( att );
   
   att = doc->allocate_attribute( "source", (m_useForShieldingSourceFit ? "true" : "false") );
   peak_node->append_attribute( att );
   
-  if( m_useForDetectorResponseFit==0 || m_useForDetectorResponseFit==1 )
+  // Dont bother writing useForDrfIntrinsicEffFit, useForDrfFwhmFit, useForDrfDepthOfInteractionFit,
+  //  unless their values have been set to true (when de-serializing them we will set to false
+  //  if the attributes arent found)
+  if( m_useForDrfIntrinsicEffFit != PeakDef::sm_defaultUseForDrfIntrinsicEffFit )
   {
-    att = doc->allocate_attribute( "useForDrfFit", (m_useForDetectorResponseFit ? "true" : "false") );
+    att = doc->allocate_attribute( "useForDrfIntrinsicEffFit", (m_useForDrfIntrinsicEffFit ? "true" : "false") );
+    peak_node->append_attribute( att );
+  }
+  
+  if( m_useForDrfFwhmFit != PeakDef::sm_defaultUseForDrfFwhmFit )
+  {
+    att = doc->allocate_attribute( "useForDrfFwhmFit", (m_useForDrfFwhmFit ? "true" : "false") );
+    peak_node->append_attribute( att );
+  }
+  
+  if( m_useForDrfDepthOfInteractionFit != PeakDef::sm_defaultUseForDrfDepthOfInteractionFit )
+  {
+    att = doc->allocate_attribute( "useForDrfDepthOfInteractionFit", (m_useForDrfDepthOfInteractionFit ? "true" : "false") );
     peak_node->append_attribute( att );
   }
   
@@ -2025,12 +2072,18 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
   
   m_continuum = contpos->second;
   
+  /// TODO: Need to deprecate 'forCalibration' in favor of 'useForEnergyCalibration' next
+  ///       PeakDef::sm_xmlSerializationMajorVersion version increment.
   att = peak_node->first_attribute( "forCalibration", 14 );
+  //if( !att )
+  //  att = peak_node->first_attribute( "useForEnergyCalibration", 23 );
+  
   if( !att )
     throw runtime_error( "missing forCalibration attribute" );
-  m_useForCalibration = compare(att->value(),att->value_size(),"true",4,false);
-  if( !m_useForCalibration && !compare(att->value(),att->value_size(),"false",5,false) )
-    throw runtime_error( "invalis forCalibration value" );
+  
+  m_useForEnergyCal = compare(att->value(),att->value_size(),"true",4,false);
+  if( !m_useForEnergyCal && !compare(att->value(),att->value_size(),"false",5,false) )
+    throw runtime_error( "invalid forCalibration value" );
   
   att = peak_node->first_attribute( "source", 6 );
   if( !att )
@@ -2039,25 +2092,45 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
   if( !m_useForShieldingSourceFit && !compare(att->value(),att->value_size(),"false",5,false) )
     throw runtime_error( "invalid source value" );
   
-  att = peak_node->first_attribute( "useForDrfFit", 12 );
+  m_useForDrfIntrinsicEffFit = PeakDef::sm_defaultUseForDrfIntrinsicEffFit;
+  att = peak_node->first_attribute( "useForDrfIntrinsicEffFit", 24 );
+  if( !att )
+    att = peak_node->first_attribute( "useForDrfFit", 12 );
   if( att )
-    m_useForDetectorResponseFit = compare(att->value(),att->value_size(),"true",4,false);
-  else
-    m_useForDetectorResponseFit = -1;
+    m_useForDrfIntrinsicEffFit = compare(att->value(),att->value_size(),"true",4,false);
   
-  if( att && !m_useForDetectorResponseFit && !compare(att->value(),att->value_size(),"false",5,false) )
-    throw runtime_error( "invalid use for DRF fit value" );
+  m_useForDrfFwhmFit = PeakDef::sm_defaultUseForDrfFwhmFit;
+  att = peak_node->first_attribute( "useForDrfFwhmFit", 16 );
+  if( att )
+    m_useForDrfFwhmFit = compare(att->value(),att->value_size(),"true",4,false);
+  
+  m_useForDrfDepthOfInteractionFit = PeakDef::sm_defaultUseForDrfDepthOfInteractionFit;
+  att = peak_node->first_attribute( "useForDrfDepthOfInteractionFit", 30 );
+  if( att )
+    m_useForDrfDepthOfInteractionFit = compare(att->value(),att->value_size(),"true",4,false);
   
   att = peak_node->first_attribute( "version", 7 );
-  if( !att )
+  if( !att || !att->value_size() )
     throw runtime_error( "missing version attribute" );
   
-  int version;
-  if( sscanf( att->value(), "%i", &version ) != 1 )
+  int majorVersion = 0, minorVersion = 0;
+  const char * const version_begin = att->value();
+  const char * const version_end = version_begin + att->value_size();
+  
+  if( sscanf( version_begin, "%i", &majorVersion ) != 1 )
     throw runtime_error( "Non integer version number" );
   
-  if( version != PeakDef::sm_xmlSerializationVersion )
+  if( majorVersion != PeakDef::sm_xmlSerializationMajorVersion )
     throw runtime_error( "Invalid peak version" );
+  
+  const char *version_period = std::find( version_begin, version_end, '.' );
+  if( (version_period != version_end) && ((version_period+1) != version_end) )
+  {
+    if( sscanf( (version_period + 1), "%i", &minorVersion ) != 1 )
+      throw runtime_error( "Non integer minor version number" );
+  }
+  
+  // In the future we could use majorVersion and minorVersion to adjust parsing behaviour
   
   xml_node<char> *node = peak_node->first_node("UserLabel",9);
   if( node && node->value() )
@@ -2596,9 +2669,19 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       answer << q << "cpsTxt" << q << ":" << q << uncertstr << q << ",";
     }//if( we can give peak CPS )
     
-		answer << q << "forCalibration" << q << ":" << (p.useForCalibration() ? "true" : "false")
-			<< "," << q << "forSourceFit" << q << ":" << (p.useForShieldingSourceFit() ? "true" : "false");
+    answer << q << "useForEnergyCalibration" << q << ":" << (p.useForEnergyCalibration() ? "true" : "false")
+           << "," << q << "forSourceFit" << q << ":" << (p.useForShieldingSourceFit() ? "true" : "false");
 
+    if( p.useForDrfIntrinsicEffFit() != PeakDef::sm_defaultUseForDrfIntrinsicEffFit )
+      answer << "," << q << "useForDrfIntrinsicEffFit" << q << ":" << (p.useForDrfIntrinsicEffFit() ? "true" : "false");
+    
+    if( p.useForDrfFwhmFit() != PeakDef::sm_defaultUseForDrfFwhmFit )
+      answer << "," << q << "useForDrfFwhmFit" << q << ":" << (p.useForDrfFwhmFit() ? "true" : "false");
+    
+    if( p.useForDrfDepthOfInteractionFit() != PeakDef::sm_defaultUseForDrfDepthOfInteractionFit)
+      answer << "," << q << "useForDrfDepthOfInteractionFit" << q << ":" << (p.useForDrfDepthOfInteractionFit() ? "true" : "false");
+    
+    
     /*
 		const char *gammaTypeVal = 0;
 		switch( p.sourceGammaType() )
@@ -3266,10 +3349,13 @@ const PeakDef &PeakDef::operator=( const PeakDef &rhs )
   m_parentNuclide            = rhs.m_parentNuclide;
   m_transition               = rhs.m_transition;
   m_radparticleIndex         = rhs.m_radparticleIndex;
-  m_useForCalibration        = rhs.m_useForCalibration;
+  m_useForEnergyCal        = rhs.m_useForEnergyCal;
   m_useForShieldingSourceFit = rhs.m_useForShieldingSourceFit;
-  m_useForDetectorResponseFit = rhs.m_useForDetectorResponseFit;
 
+  m_useForDrfIntrinsicEffFit = rhs.m_useForDrfIntrinsicEffFit;
+  m_useForDrfFwhmFit = rhs.m_useForDrfFwhmFit;
+  m_useForDrfDepthOfInteractionFit = rhs.m_useForDrfDepthOfInteractionFit;
+ 
   const size_t nbytes = sizeof(m_coefficients[0])*NumCoefficientTypes;
   memcpy( &(m_coefficients[0]), &(rhs.m_coefficients[0]), nbytes );
   memcpy( &(m_uncertainties[0]), &(rhs.m_uncertainties[0]), nbytes );
@@ -3291,9 +3377,11 @@ bool PeakDef::operator==( const PeakDef &rhs ) const
       && m_transition==rhs.m_transition
       && m_sourceGammaType==rhs.m_sourceGammaType
       && m_radparticleIndex==rhs.m_radparticleIndex
-      && m_useForCalibration==rhs.m_useForCalibration
+      && m_useForEnergyCal==rhs.m_useForEnergyCal
       && m_useForShieldingSourceFit==rhs.m_useForShieldingSourceFit
-      && m_useForDetectorResponseFit==rhs.m_useForDetectorResponseFit
+      && m_useForDrfIntrinsicEffFit == rhs.m_useForDrfIntrinsicEffFit
+      && m_useForDrfFwhmFit == rhs.m_useForDrfFwhmFit
+      && m_useForDrfDepthOfInteractionFit == rhs.m_useForDrfDepthOfInteractionFit
       && m_lineColor==rhs.m_lineColor
       ;
 }//PeakDef::operator==
@@ -3547,10 +3635,11 @@ void PeakDef::inheritUserSelectedOptions( const PeakDef &parent,
   m_lineColor = parent.lineColor();
   
   m_userLabel = parent.m_userLabel;
-  m_useForCalibration = parent.m_useForCalibration;
+  m_useForEnergyCal = parent.m_useForEnergyCal;
   m_useForShieldingSourceFit = parent.m_useForShieldingSourceFit;
-  m_useForDetectorResponseFit = parent.m_useForDetectorResponseFit;
-  
+  m_useForDrfIntrinsicEffFit = parent.m_useForDrfIntrinsicEffFit;
+  m_useForDrfFwhmFit = parent.m_useForDrfFwhmFit;
+  m_useForDrfDepthOfInteractionFit = parent.m_useForDrfDepthOfInteractionFit;
   
   
   for( CoefficientType t = CoefficientType(0);
