@@ -2663,7 +2663,7 @@ void DetectorEdit::updateChart()
 } //DetectorEdit::updateChart()
 
 
-std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const std::string filename )
+std::shared_ptr<DetectorPeakResponse> DetectorEdit::parseRelEffCsvFile( const std::string filename )
 {
 #ifdef _WIN32
   const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
@@ -2716,7 +2716,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
     
     try
     {
-      vector<float> coefs( 8, 0.0f );
+      vector<float> coefs( 8, 0.0f ), coef_uncerts;
       for( int i = 0; i < 8; ++i )
       {
         string field = fields.at(3+i);
@@ -2740,9 +2740,36 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
       const string name = (fields[0].empty() ? drfname : fields[0]);
       const float energUnits = ((foundKeV && !foundMeV) ? 1.0f : 1000.0f);
       float lowerEnergy = 0.0f, upperEnergy = 0.0f;
+      
+      // Lets try to get coefs uncertainties
+      if( !SpecUtils::safe_get_line(csvfile, line, 2048) )
+      {
+        try
+        {
+          vector<string> uncert_strs;
+          split_escaped_csv( uncert_strs, line );
+          if( !uncert_strs.empty()
+             && SpecUtils::istarts_with(uncert_strs[0], "# 1 sigma Uncert")
+             && (uncert_strs.size() >= (3 + coefs.size())) )
+          {
+            coef_uncerts.resize( coefs.size(), 0.0f );
+            for( int i = 0; i < coefs.size(); ++i )
+            {
+              string field = uncert_strs.at(3+i);
+              coef_uncerts[i] = (field.empty() ? 0.0f : std::stof(field));
+            }
+          }//if( it looks like we found the uncertainty line )
+        }catch( std::exception &e )
+        {
+          cerr << "Error caught parsing DRF eff uncertainties: " << e.what() << endl;
+          coef_uncerts.clear();
+        }
+      }//if( we got another line we'll check if its the uncertainties )
+      
+      
       auto det = std::make_shared<DetectorPeakResponse>( fields[0], drfdescrip );
       
-      det->fromExpOfLogPowerSeriesAbsEff( coefs, {}, dist, 2.0f*radius, energUnits,
+      det->fromExpOfLogPowerSeriesAbsEff( coefs, coef_uncerts, dist, 2.0f*radius, energUnits,
                                           lowerEnergy, upperEnergy );
       
       //Look for the line that gives the appropriate energy range.
@@ -2801,7 +2828,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
   }//while( more lines )
   
   return nullptr;
-}//checkIfFileIsRelEff(...)
+}//parseRelEffCsvFile(...)
 
 
 
@@ -2855,7 +2882,7 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
       if( !m_efficiencyCsvUpload->empty() )
       {
         const string filename = m_efficiencyCsvUpload->spoolFileName();
-        auto det = DetectorEdit::checkIfFileIsRelEff( filename );
+        auto det = DetectorEdit::parseRelEffCsvFile( filename );
         
         if( det )
         {
