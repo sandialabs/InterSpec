@@ -41,7 +41,7 @@ ninja -C build_dir install
 # 'app' sub-directory of your build dir
 cmake-js build --out=build_dir --target install
 # Or
-cmake --build build_dir --target install --config Release
+cmake --build build_dir --target install --config Release --clean-first
 # Or
 ninja -C build_dir install
 
@@ -86,5 +86,5 @@ The `InterSpec` module is really a shared library that node.js loads, therefore 
 
 ## Future Work
 - In the future the build process may be improved to do the final packaging through CMake.  
-- launch_options.json is intended to allow users to customize behaviours (like allow multiple windows, or not), but is not actually implemented.
+- launch_options.json is intended to allow users to customize behaviors (like allow multiple windows, or not), but is not actually implemented.
 - Need to look into having only a single instance of the application running when user wants multiple windows open.
