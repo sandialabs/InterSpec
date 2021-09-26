@@ -479,8 +479,10 @@ namespace
       m_useForEffCb->setChecked( use );
       if( m_userBr )
         m_userBr->setHidden( !use || m_isBackground );
-      
+   
+#ifndef _WIN32
 #warning "Use peak model (after modding it) to set whether to use intrinsic eff or not"
+#endif
       //m_peakModel->setUseForDrfIntrinsicEffFit( use );
       //m_peakModel->setData( )
     }
@@ -2629,7 +2631,9 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
         for( auto peak : sample->peaks() )
         {
           shared_ptr<PeakDef> newpeak = make_shared<PeakDef>( *peak->m_peak );
+#ifndef _WIN32
 #warning "newpeak->setUseForDrfIntrinsicEffFit not needed anymore"
+#endif
           newpeak->setUseForDrfIntrinsicEffFit( peak->useForEffFit() );
           //blah blah blah I dont think this will be needed after we add UseForDrfIntrinsicEffFit as a peak model, assuming m_peak is same as the peak model has...
           newpeaks.push_back( newpeak );

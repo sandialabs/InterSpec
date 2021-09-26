@@ -9392,7 +9392,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     switch( spec_type )
     {
       case SpecUtils::SpectrumType::Foreground:
-        worthShowing = ana->is_empty();
+        worthShowing = !ana->is_empty();
         break;
         
       case SpecUtils::SpectrumType::SecondForeground:
