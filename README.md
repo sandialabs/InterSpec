@@ -81,11 +81,13 @@ the [js](https://github.com/sandialabs/interspec/tree/master/js) directory conta
 [qTip2](http://qtip2.com), and
 [D3](https://d3js.org).
 
+You can use your package manager or a downloaded installer to install cmake, but you must build
+Wt and boost from source on your computer.  There are some detailed instructions in the
+[patches](/target/patches/) directory for building the dependancies (namely boost and Wt)
 
-### Installing
+### Building
 
-After installing boost, Wt, and cmake using either your package manager, or building from source, clone the 
-InterSpec repository, and from the terminal, run cmake:
+After compiling boost and Wt from source, clone the InterSpec repository, and from the terminal, run cmake:
 
 ```
 git clone --recursive https://github.com/sandialabs/interspec/
@@ -125,9 +127,9 @@ If all goes well, InterSpec default to building an executable that when ran from
 and then point your browser to [http://localhost:8080](http://localhost:8080).
 
 
-If you would like build as a native-ish app, see the *BUILD_AS_OSX_APP*, or *BUILD_AS_ELECTRON_APP* CMake options. 
-For building as a WebApp behind something like nginx or apache, see *BUILD_FOR_WEB_DEPLOYMENT*.
-There are also a number of CMake options available to set to control which features get included in InterSpec.
+If you would like build as a native-ish app, see the *BUILD_AS_OSX_APP*, or *BUILD_AS_ELECTRON_APP* CMake options, as well as the [electron](/target/electron/) directory for the latter.
+For building as a WebApp behind something like nginx or apache, see *BUILD_FOR_WEB_DEPLOYMENT*, but please note that InterSpec is *not* developed for general internet deployments, so there is likely many issues you would need to consider or address before exposing to untrusted users.
+There are also a number of CMake options available to control which features get included in InterSpec.
 
 
 Building for iOS and Android are both possible (see the [target](https://github.com/sandialabs/interspec/tree/master/target) directory), and these instructions will be updated in the future.
