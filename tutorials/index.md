@@ -1,10 +1,9 @@
 # Tutorials
 
 ## Introduction To Spectroscopy with InterSpec
-See:
 * [20210315_spectroscopy_intro_InterSpec.pptx](spec_intro_March2021/20210315_spectroscopy_intro_InterSpec.pptx).
 * [spectrum_files.zip](spec_intro_March2021/spectrum_files.zip).
-
+* For a video of this presentation, see the [Nuclear Science and Security Consortium website](https://nssc.berkeley.edu/events/nssc-virtual-learning-series/) or on [YouTube](https://www.youtube.com/watch?v=xrwRYhVTC7Y).
 
 ## Overview Course Sep 2020
 See:
