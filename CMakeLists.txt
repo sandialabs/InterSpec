@@ -1040,7 +1040,7 @@ elseif(BUILD_AS_OSX_APP)
 
     #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate cooresponding value in Xcode
     #math(EXPR MACOS_BUNDLE_VERSION_NUMBER "100*(${PROJECT_VERSION_MAJOR}-1) + 10*${PROJECT_VERSION_MINOR} + ${PROJECT_VERSION_PATCH}" )
-    set(MACOS_BUNDLE_VERSION_NUMBER 10)
+    set(MACOS_BUNDLE_VERSION_NUMBER 13)
 
     set_target_properties(
         InterSpecExe
