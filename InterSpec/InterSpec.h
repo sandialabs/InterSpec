@@ -739,6 +739,7 @@ public:
 
   /** Hard re-displays the foreground, background, and 2nd datas.
    Displayed energy range will only be changed if the currently displayed range goes past what the data now displays.
+   Will keep current display scale factors for foreground/background
    
    Useful after calibrations.
    */
@@ -1046,9 +1047,6 @@ public:
   void dragEventWithFileContentsFinished();
 #endif
   
-  //hotkeyJsSlot(): the JS slot that can be called when a
-  Wt::JSlot *hotkeyJsSlot();
-  
 
   /** Returns the current color theme.
    Returned ptr may not be in the database yet.
@@ -1143,7 +1141,8 @@ protected:
 #endif
   
   void initHotkeySignal();
-  void hotkeyPressed( const unsigned int value );
+  void hotKeyPressed( const unsigned int value );
+  void arrowKeyPressed( const unsigned int value );
   
   //detectClientDeviceType(): goes through and sets the various bits of
   //  m_clientDeviceType, according to the user agent string, as well as
@@ -1254,8 +1253,6 @@ protected:
   
   //This menu implementation uses somethng that visually looks like a WPopupMenuItem.
   PopupDivMenu         *m_fileMenuPopup;
-  PopupDivMenu         *m_spectrumMenuPopup;
-  
   PopupDivMenu         *m_toolsMenuPopup;
   PopupDivMenu         *m_helpMenuPopup;
   PopupDivMenu         *m_displayOptionsPopupDiv;
@@ -1468,7 +1465,6 @@ protected:
   std::vector< std::shared_ptr<Wt::JSlot> > m_unNamedJSlots;
 
   std::unique_ptr< Wt::JSignal<unsigned int> > m_hotkeySignal;
-  std::unique_ptr< Wt::JSlot > m_hotkeySlot;
   
 #if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS )
   /** Signal emitted from JS when the operating systems color theme changes, or

@@ -70,12 +70,14 @@
 #include <Wt/WJavaScript>
 #include <Wt/WFileUpload>
 #include <Wt/WSplitButton>
+#include <Wt/WEnvironment>
 #include <Wt/Http/Response>
 #include <Wt/WSelectionBox>
 #include <Wt/WStandardItem>
 #include <Wt/WItemDelegate>
 #include <Wt/WDoubleSpinBox>
 #include <Wt/Dbo/QueryModel>
+#include <Wt/WMemoryResource>
 #include <Wt/WSuggestionPopup>
 #include <Wt/WRegExpValidator>
 #include <Wt/WDoubleValidator>
@@ -101,6 +103,8 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+#include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -119,6 +123,10 @@ typedef std::shared_ptr<const PeakDef> PeakShrdPtr;
 
 const int ShieldingSelect::sm_xmlSerializationVersion = 0;
 const int ShieldingSourceDisplay::sm_xmlSerializationVersion = 0;
+
+const size_t ShieldingSourceDisplay::sm_max_model_fit_time_ms = 120*1000;
+const size_t ShieldingSourceDisplay::sm_model_update_frequency_ms = 2000;
+
 
 namespace
 {
@@ -140,10 +148,14 @@ namespace
   class StringDownloadResource : public Wt::WResource
   {
     ShieldingSourceDisplay *m_display;
+    Wt::WApplication *m_app;
+    
   public:
     StringDownloadResource( ShieldingSourceDisplay *parent )
-      : WResource( parent ), m_display( parent )
-    {}
+      : WResource( parent ), m_display( parent ), m_app( WApplication::instance() )
+    {
+      assert( m_app );
+    }
     
     virtual ~StringDownloadResource()
     {
@@ -153,6 +165,17 @@ namespace
     virtual void handleRequest( const Wt::Http::Request &request,
                                Wt::Http::Response &response )
     {
+      WApplication::UpdateLock lock( m_app );
+      
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in StringDownloadResource.";
+        response.out() << "Error grabbing application lock to form StringDownloadResource resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+        return;
+      }//if( !lock )
+      
       suggestFileName( "shielding_source_fit_model.xml", WResource::Attachment );
       response.setMimeType( "application/xml" );
       if( !m_display )
@@ -1011,8 +1034,7 @@ void ShieldingSelect::updateIfMassFractionCanFit()
   assert(0);
 #endif
   
-  if( !m_fitMassFrac
-      || (m_fitMassFrac->isVisible() && !m_fitMassFrac->isChecked()) )
+  if( !m_fitMassFrac )
     return;
   
   int nchecked = 0;
@@ -1025,7 +1047,12 @@ void ShieldingSelect::updateIfMassFractionCanFit()
     }//for( WWidget *widget : isotopeDiv->children() )
   }//for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
   
-  if( nchecked < 2 )
+  const bool shouldHide = (nchecked < 2);
+  
+  if( shouldHide == m_fitMassFrac->isHidden() )
+    return;
+  
+  if( shouldHide )
   {
     m_fitMassFrac->setUnChecked();
     m_fitMassFrac->hide();
@@ -1737,7 +1764,7 @@ void ShieldingSelect::updateMassFractionDisplays( std::shared_ptr<const Material
 
       frac_accounted_for += massFrac;
       
-      if( fabs(cb->massFraction()-massFrac) > 0.00001 )
+      if( fabs(cb->massFraction()-massFrac) > 0.000001 )
         cb->setMassFraction( massFrac );
     }//for( WWidget *child : children )
     
@@ -2387,8 +2414,7 @@ void SourceFitModel::makeActivityEditable( const SandiaDecay::Nuclide *nuc )
         continue;
       iso.shieldingIsSource = false;
 
-      dataChanged().emit( createIndex(row,kActivity,(void *)0),
-                          createIndex(row,kFitActivity,(void *)0) );
+      dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,columnCount()-1,nullptr) );
     }//if( this is the nuclide we want )
   }//for( const IsoFitStruct &iso : m_nuclides )
 }//void makeActivityEditable( const std::string &symbol )
@@ -2408,8 +2434,7 @@ void SourceFitModel::makeActivityNonEditable( const SandiaDecay::Nuclide *nuc )
         continue;
       iso.shieldingIsSource = true;
 
-      dataChanged().emit( createIndex(row,kActivity,(void *)0),
-                          createIndex(row,kFitActivity,(void *)0) );
+      dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,columnCount()-1,nullptr) );
     }//if( this is the nuclide we want )
   }//for( const IsoFitStruct &iso : m_nuclides )
 }//void makeActivityNonEditable( const std::string &symbol )
@@ -3062,7 +3087,6 @@ boost::any SourceFitModel::headerData( int section, Orientation orientation, int
       case kIsotope:
         tooltip = "Nuclides are added or removed according to the photopeaks "
                   "used for this fit, thus may not be edited in this table";
-                  //NAZ add to end: "Select arrow to sort table by parameter." 
         break;
       case kActivity:
         tooltip = "Activity of the nuclide.  Entering a reasonable starting"
@@ -3070,38 +3094,31 @@ boost::any SourceFitModel::headerData( int section, Orientation orientation, int
             " fit for."
             "  Values may be entered in formats similar to '12.4 kBq',"
             " '1.0mCi', '55.3uCi', '15.82Mbq'";
-            //NAZ add to end: "Select arrow to sort table by parameter." 
         break;
       case kAge:
         tooltip = "Age of the nuclide.  Values may be entered in format"
             " similar to: '23.3s' '2 hl' - (hf stands for half lives), '5.23y',"
             " '23:14:21.343', '19min', etc.  Note that nuclides that decay to"
             " stable children can not be aged.";
-            //NAZ add to end: "Select arrow to sort table by parameter." 
         break;
       case kFitActivity:
         tooltip = "Should the fit try to find the nuclide activity as well, or"
                   " assume the entered value is correct?";
-                  //NAZ add to end: "Select arrow to sort table by parameter." 
         break;
       case kFitAge:
         tooltip = "Should the fit try to find the nuclide age as well, or just"
                   " assume the entered value is correct?  This option is not "
                   "available for nuclides which decay to only stable chlidren.";
-                  //NAZ add to end: "Select arrow to sort table by parameter." 
         break;
       case kIsotopeMass:
         tooltip = "This is the mass of the bare nuclide assuming the activity"
                   " listed.";
-                  //NAZ add to end: "Select arrow to sort table by parameter." 
         break;
       case kActivityUncertainty:
-        tooltip = "This is the uncetainty in activity from the fit.";
-        //NAZ add to end: "Select arrow to sort table by parameter." 
+        tooltip = "This is the uncertainty in activity from the fit.";
         break;
       case kAgeUncertainty:
-        tooltip = "This is the uncetainty in age from the fit.";
-        //NAZ add to end: "Select arrow to sort table by parameter." 
+        tooltip = "This is the uncertainty in age from the fit.";
         break;
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -3190,10 +3207,18 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
   {
     case kIsotope:
       return boost::any( WString(isof.nuclide->symbol) );
+      
     case kActivity:
     {
-      double act = isof.activity * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
-      const string ans = PhysicalUnits::printToBestActivityUnits( act, 2, m_displayCurries );
+      const double act = isof.activity * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+      string ans = PhysicalUnits::printToBestActivityUnits( act, 2, m_displayCurries );
+      
+      // We'll require the uncertainty to be non-zero to show it - 5bq is an arbitrary cutoff to
+      //  consider anything below it zero.
+      const double uncert = isof.activityUncertainty * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+      if( uncert > 5.0*PhysicalUnits::bq )
+        ans += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( uncert, 1, m_displayCurries );
+      
       return boost::any( WString(ans) );
     }//case kActivity:
 
@@ -3208,7 +3233,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
 //      if( isof.shieldingIsSource )
 //        return boost::any();
-      double age;
+      double age = 0.0, uncert = 0.0;
       const SandiaDecay::Nuclide *nuc = nullptr;
       if( isof.ageDefiningNuc && (isof.ageDefiningNuc != isof.nuclide) )
       {
@@ -3217,11 +3242,15 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
         {
           nuc = isof.ageDefiningNuc;
           age = m_nuclides[ind].age;
+          if( m_nuclides[ind].ageIsFittable && m_nuclides[ind].fitAge )
+            uncert = m_nuclides[ind].ageUncertainty;
         }else
         {
           nuc = isof.nuclide;
           age = isof.age;
-          cerr << "SourceFitModel::data: ran into error when retriving"
+          if( isof.ageIsFittable && isof.fitAge )
+            uncert = isof.ageUncertainty;
+          cerr << "SourceFitModel::data: ran into error when retrieving"
                << " age for a nuclide with a defining age isotope that isnt in"
                << " the model; charging on!" << endl;
         }//if( ind >= 0 )
@@ -3229,11 +3258,17 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       {
         nuc = isof.nuclide;
         age = isof.age;
+        if( isof.ageIsFittable && isof.fitAge )
+          uncert = isof.ageUncertainty;
       }//if( isof.ageDefiningNuc && (isof.ageDefiningNuc!=isof.nuclide) )
       
       if( !isof.ageIsFittable )
         return boost::any( WString("NA") );
-      const string ans = PhysicalUnits::printToBestTimeUnits( age, 2 );
+      
+      string ans = PhysicalUnits::printToBestTimeUnits( age, 2 );
+      if( uncert > 0.0 )
+        ans += " \xC2\xB1 " + PhysicalUnits::printToBestTimeUnits( uncert, 1 );
+      
       return boost::any( WString(ans) );
     }//case kAge:
 
@@ -3265,7 +3300,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       if( IsInf(mass_grams) || IsNan(mass_grams) )
         return boost::any();
 
-      return boost::any( WString(PhysicalUnits::printToBestMassUnits(mass_grams,4,1.0)) );
+      return boost::any( WString(PhysicalUnits::printToBestMassUnits(mass_grams,3,1.0)) );
     }//case kIsotopeMass:
 
     case kActivityUncertainty:
@@ -3404,10 +3439,19 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
       return false;
 
     const WString txt_val = asString( value );
+    string utf_str = txt_val.toUTF8();
 
-    if( column!=kFitActivity && column!=kFitAge && txt_val.empty() )
+    if( (column != kFitActivity) && (column != kFitAge) && txt_val.empty() )
       return false;
 
+    // filter out the +- and everything after.
+    if( (column == kActivity) || (column == kIsotopeMass) || (column == kAge) )
+    {
+      const auto pos = utf_str.find( "\xC2\xB1" );
+      if( pos != string::npos )
+        utf_str = utf_str.substr(0, pos);
+    }//if( we might have the +- )
+    
     IsoFitStruct &iso = m_nuclides[row];
 
     //If were here, all is fine
@@ -3415,13 +3459,17 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
     {
       case kIsotope:
         return false;
+        
       case kActivity:
-        iso.activity = PhysicalUnits::stringToActivity( txt_val.toUTF8() );
+      {
+        iso.activity = PhysicalUnits::stringToActivity( utf_str );
         iso.activity /= GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
         
-        if( iso.activityUncertainty >= 0.0 )
+        if( iso.activityUncertainty >= 0.0 ) //For activity we will emit the whole row changed below
           iso.activityUncertainty = -1.0;
-      break;
+      
+        break;
+      }//case kActivity:
 
       case kFitActivity:
         iso.fitActivity = boost::any_cast<bool>( value );
@@ -3434,9 +3482,8 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
           break;
         }else
         {
-          const string str = txt_val.toUTF8();
           const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
-          iso.age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( str, hl );
+          iso.age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
 
           if( iso.ageUncertainty >= 0.0 )
           {
@@ -3494,7 +3541,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         iso.activityUncertainty = -1.0;
         if( !value.empty() )
         {
-          iso.activityUncertainty = PhysicalUnits::stringToActivity( txt_val.toUTF8() );
+          iso.activityUncertainty = PhysicalUnits::stringToActivity( utf_str );
           iso.activityUncertainty /= GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
         }//if( !value.empty() )
       break;
@@ -3504,9 +3551,8 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         iso.ageUncertainty = -1.0;
         if( iso.ageIsFittable && !value.empty() )
         {
-          const string str = txt_val.toUTF8();
           const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
-          iso.ageUncertainty = PhysicalUnits::stringToTimeDurationPossibleHalfLife( str, hl );
+          iso.ageUncertainty = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
         }//if( decays to stable children / else )
         
         if( m_sameAgeForIsotopes )
@@ -3529,35 +3575,33 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         if( value.empty() )
           iso.truthActivity.reset();
         else
-          iso.truthActivity = PhysicalUnits::stringToActivity( txt_val.toUTF8() );
+          iso.truthActivity = PhysicalUnits::stringToActivity( utf_str );
         break;
         
       case kTruthActivityTolerance:
         if( value.empty() )
           iso.truthActivityTolerance.reset();
         else
-          iso.truthActivityTolerance = PhysicalUnits::stringToActivity( txt_val.toUTF8() );
+          iso.truthActivityTolerance = PhysicalUnits::stringToActivity( utf_str );
         break;
         
       case kTruthAge:
       {
-        const string str = txt_val.toUTF8();
         const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
         if( value.empty() )
           iso.truthAge.reset();
         else
-          iso.truthAge = PhysicalUnits::stringToTimeDurationPossibleHalfLife( str, hl );
+          iso.truthAge = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
         break;
       }
          
       case kTruthAgeTolerance:
       {
-        const string str = txt_val.toUTF8();
         const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
         if( value.empty() )
           iso.truthAgeTolerance.reset();
         else
-          iso.truthAgeTolerance = PhysicalUnits::stringToTimeDurationPossibleHalfLife( str, hl );
+          iso.truthAgeTolerance = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
         break;
       }
 #endif
@@ -3566,11 +3610,15 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         return false;
     }//switch( column )
 
-    if( column==kActivity )
-      dataChanged().emit( createIndex(row,0,(void *)0),
-                          createIndex(row,kNumColumns-1,(void *)0) );
-    else
-      dataChanged().emit( index, index );
+    // We will emit that all columns have been updated, since setting activity uncert will mean
+    //  we have to set activity text again (since it might have a +- entry), and similar
+    dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,kNumColumns-1,nullptr) );
+    //
+    // We could be more selective and do something like:
+    //if( column == kActivity )
+    //  dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,kNumColumns-1,nullptr) );
+    //else
+    //  dataChanged().emit( index, index );
   }catch( exception &e )
   {
     cerr << "SourceFitModel::setData(...)\n\tWarning: exception caught; what="
@@ -3666,6 +3714,13 @@ ShieldingSourceDisplay::Chi2Graphic::Chi2Graphic( Wt::WContainerWidget *parent )
 {
   setPreferredMethod( WPaintedWidget::HtmlCanvas );
   LOAD_JAVASCRIPT( wApp, "shieldingSourceDisplay.cpp", "Chi2Graphic", wtjsShowChi2Info);
+  
+  // We will use calcAndSetAxisRanges() to set the axis ranges, so turn off auto range.
+  axis(Chart::YAxis).setAutoLimits( 0 );
+  axis(Chart::YAxis).setRange( -1.0, 1.0 );
+  
+  axis(Chart::XAxis).setAutoLimits( 0 );
+  axis(Chart::XAxis).setRange( 0, 3000.0 );
 }
 
 ShieldingSourceDisplay::Chi2Graphic::~Chi2Graphic()
@@ -3736,23 +3791,14 @@ void ShieldingSourceDisplay::Chi2Graphic::setShowChiOnChart( const bool show_chi
   addSeries( series );
 }
 
-void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightPx )
-{
-  //Wt newer than ~3.3.2 has WAbstractChart::setAutoLayoutEnabled(true) that
-  //  may make this function no longer necassarry.
-  
-  WAbstractItemModel *theModel = model();
 
+void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisRanges()
+{
+  WAbstractItemModel *theModel = model();
   if( !theModel )
     return;
-
-  double ymin = DBL_MAX, ymax = -DBL_MAX;
-
-//The below doesnt actually return the minimum/maximum of the axis, presumambly
-//  since we are using auto range.
-//  initLayout();
-//  double ymin = axis(Chart::OrdinateAxis).minimum();
-//  double ymax = axis(Chart::OrdinateAxis).maximum();
+  
+  double ymin = DBL_MAX, ymax = -DBL_MAX, xmin = DBL_MAX, xmax = -DBL_MAX;
   
   const int nrow = theModel->rowCount();
   const int ycol = m_showChi ? 1 : 2;
@@ -3762,10 +3808,16 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightP
     {
 #if( WT_VERSION >= 0x3030800 )
       const double thischi = theModel->data(row,ycol);
+      const double energy = theModel->data(row,0);
 #else
       WModelIndex index = theModel->index(row,ycol);
       const double thischi = boost::any_cast<double>( theModel->data(index) );
+      index = theModel->index(row,0);
+      const double energy = boost::any_cast<double>( theModel->data(index) );
 #endif
+      xmin = std::min( xmin, energy );
+      xmax = std::max( xmax, energy );
+      
       ymin = std::min( ymin, thischi );
       ymax = std::max( ymax, thischi );
     }catch(...)
@@ -3773,22 +3825,96 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightP
     }
   }//for( int row = 0; row < nrow; ++row )
   
-  if( !nrow || ymin==DBL_MAX || ymax==-DBL_MAX )
+  if( !nrow || (ymin == DBL_MAX) || (ymax == -DBL_MAX) || (xmin == DBL_MAX) || (xmax == -DBL_MAX) )
+  {
+    // There are no points to display.
+    xmin = 0.0;
+    xmax = 3000.0;
+    ymin = (m_showChi ? -1.0 : 0.0);
+    ymax = (m_showChi ?  1.0 : 2.0);
+  }else if( (nrow == 1) || (ymin == ymax) )
+  {
+    // There is one point to display.
+    xmin -= 10.0;
+    xmax += 10.0;
+    
+    //  For chi, we should be really close to 0.0, and for multiple should be close to 1.0
+    ymin -= 0.25*ymin;
+    ymax += 0.25*ymax;
+    
+    if( m_showChi )
+    {
+      ymin = std::min( ymin, -1.0 );
+      ymax = std::max( ymax, 1.0 );
+    }else
+    {
+      ymin = std::min( ymin, 0.5 );
+      ymax = std::max( ymax, 1.5 );
+    }
+  }else
+  {
+    // There are many points to display
+    const double xrange = std::max( xmax - xmin, 10.0 );
+    xmin = ((xmin > 0.1*xrange) ? (xmin - 0.1*xrange) : 0.0);
+    xmax += 0.1*xrange;
+    
+    
+    const double yrange = std::max( ymax - ymin, 0.1 );
+    ymin -= 0.25*yrange;
+    ymax += 0.25*yrange;
+    
+    if( m_showChi )
+    {
+      ymin = std::min( ymin, -1.0 );
+      ymax = std::max( ymax, 1.0 );
+    }else
+    {
+      ymin = std::min( ymin, 0.5 );
+      ymax = std::max( ymax, 1.5 );
+    }
+  }//if( no rows ) / else / else
+
+  // Round up/down to the nearest 10 keV
+  xmin = 10.0 * std::floor( 0.1*xmin );
+  xmax = 10.0 * std::ceil( 0.1*xmax );
+  
+  // Round up/down to the nearest 0.1
+  ymin = 0.1 * std::floor( 10.0*ymin );
+  ymax = 0.1 * std::ceil( 10.0*ymax );
+  
+  //cout << "Setting xrange=" << xmin << ", " << xmax << "], yrange=[" << ymin << ", " << ymax << "]" << endl;
+  
+  const auto xLocation = m_showChi ? Chart::AxisValue::ZeroValue : Chart::AxisValue::MinimumValue;
+  axis(Chart::XAxis).setLocation( xLocation );
+  
+  axis(Chart::XAxis).setRange( xmin, xmax );
+  axis(Chart::YAxis).setRange( ymin, ymax );
+}//void calcAndSetAxisRanges();
+
+
+
+void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightPx )
+{
+  double ymin = axis(Chart::YAxis).minimum();
+  double ymax = axis(Chart::YAxis).maximum();
+  
+  if( fabs(ymax - ymin) < 0.1 )
   {
     ymin = 0.0;
     ymax = 100.0;
   }//
-  
 
-//Calculate number of pixels we need to pad, for x axis to be at 40 pixels from
+//Calculate number of pixels we need to pad, for x axis to be at 45 pixels from
 //  the bottom of the chart; if less than 10px, pad at least 10px, or at most
-//  40px.
+//  45px.
   const int topPadding = plotAreaPadding(Top);
   const double fracY = -ymin / (ymax - ymin);
-  double pxToXAxis = (fracY >= 1.0) ? 0.0 : (40.0 - fracY*(yHeightPx - topPadding) ) / (1.0-fracY);
+  double pxToXAxis = (fracY >= 1.0) ? 0.0 : (45.0 - fracY*(yHeightPx - topPadding) ) / (1.0-fracY);
+  if( IsInf(pxToXAxis) || IsNan(pxToXAxis) ) //JIC, but shouldnt be needed
+    pxToXAxis = 10;
   pxToXAxis = std::floor( pxToXAxis + 0.5 );
   pxToXAxis = std::max( pxToXAxis, 10.0 );
-  pxToXAxis = std::min( pxToXAxis, 40.0 );
+  pxToXAxis = std::min( pxToXAxis, 45.0 );
   const int bottomPadding = static_cast<int>(pxToXAxis);
   
   if( bottomPadding != plotAreaPadding(Bottom) )
@@ -3816,7 +3942,7 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightP
       renderinterval = 10*n;
     
     ymin += std::numeric_limits<double>::epsilon();
-    ymax -=  std::numeric_limits<double>::epsilon();
+    ymax -= std::numeric_limits<double>::epsilon();
     ymin = renderinterval * std::floor( ymin / renderinterval);
     ymax = renderinterval * std::ceil( ymax / renderinterval);
   }//End codeblock to determin min/max label values
@@ -3837,8 +3963,9 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightP
 
 void ShieldingSourceDisplay::Chi2Graphic::paintEvent( WPaintDevice *device )
 {
-  calcAndSetAxisPadding( device->height().toPixels() );
-  
+  calcAndSetAxisRanges();
+  if( device )
+    calcAndSetAxisPadding( device->height().toPixels() );
   Wt::Chart::WCartesianChart::paintEvent( device );
 }//void paintEvent( Wt::WPaintDevice *paintDevice )
 
@@ -3848,13 +3975,15 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
 {
   WCartesianChart::paint( painter, rectangle );
 
+  //cout << "plot padding: [" << plotAreaPadding(Top) << ", " << plotAreaPadding(Right) << ", " << plotAreaPadding(Bottom) << ", " << plotAreaPadding(Left) << "]" << endl;
+  
   //I think removing of the areas() is already done by
-  //  WCartesuanChart::paintEvent(...), but jic
+  //  WCartesianChart::paintEvent(...), but jic
   while( !areas().empty() )
     delete areas().front();
   
   WStandardItemModel *chi2Model = dynamic_cast<WStandardItemModel *>( model() );
-  if( !chi2Model )  //prob never happen, bust JIC
+  if( !chi2Model )  //prob never happen, but JIC
     return;
   
   const WPointF br = painter.window().bottomRight();
@@ -3969,11 +4098,22 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
     painter.drawText( x, y, twidth, theight, AlignRight, TextSingleLine, text );
     painter.setPen( oldPen );
   }//if( nrow > 0 && !IsNan(sqrt(chi2)) )
+
+  const double yAxisMin = axis(Chart::YAxis).minimum();
+  const double yAxisMax = axis(Chart::YAxis).maximum();
   
-  if( !m_showChi && axis(Chart::YAxis).minimum() < 1.0 && axis(Chart::YAxis).maximum() > 1.0 )
+  if( !m_showChi && (yAxisMin < 1.0) && (yAxisMax > 1.0) )
   {
-    WPointF left = mapToDevice( axis(Chart::XAxis).minimum(), 1.0 );
-    WPointF right = mapToDevice( axis(Chart::XAxis).maximum(), 1.0 );
+    const double xAxisMin = axis(Chart::XAxis).minimum();
+    const double xAxisMax = axis(Chart::XAxis).maximum();
+    
+    WPointF left = mapToDevice( xAxisMin, 1.0 );
+    WPointF right = mapToDevice( xAxisMax, 1.0 );
+    
+    cout << "xAxisMin=" << xAxisMin << ", xAxisMax=" << xAxisMax << ", yAxisMin=" << yAxisMin << ", yAxisMax=" << yAxisMax << endl;
+    cout << "left={" << left.x() << "," << left.y() << "}, right={" << right.x() << "," << right.y() << "}" << endl;
+    
+    
     left.setY( left.y() + 0.5 );
     right.setY( right.y() + 0.5 );
     
@@ -4033,7 +4173,9 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     
     disp = new ShieldingSourceDisplay( peakModel, viewer, shieldSuggest, matdb );
     window = new AuxWindow( "Activity/Shielding Fit" );
-
+    // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
+    //  will be called first, which will then default to using the initial size as minimum allowable
+    window->setMinimumSize( 800, 480 );
     window->setResizable( true );
     window->contents()->setOffsets(WLength(0,WLength::Pixel));
     window->stretcher()->addWidget( disp, 0, 0 );
@@ -4082,16 +4224,29 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     
   //    m_shieldingSourceFitWindow->resizeScaledWindow( 0.75, 0.75 );
       
-    const double windowWidth = 0.95 * viewer->renderedWidth();
-    const double windowHeight = 0.95 * viewer->renderedHeight();
-      
+    double windowWidth = viewer->renderedWidth();
+    double windowHeight = viewer->renderedHeight();
+    
   //    double footerheight = m_shieldingSourceFitWindow->footer()->height().value();
   //    m_shieldingSourceFitWindow->setMinimumSize( WLength(200), WLength(windowHeight) );
       
-    if( (windowHeight > 100) && (windowWidth > 100) )
+    if( (windowHeight > 110) && (windowWidth > 110) )
     {
       if( !viewer->isPhone() )
-        window->resizeWindow( windowWidth, windowHeight );
+      {
+        // A size of 1050px by 555px is about the smallest that renders everything nicely.
+        if( (windowWidth > (1050.0/0.8)) && (windowHeight > (555.0/0.8)) )
+        {
+          windowWidth = 0.8*windowWidth;
+          windowHeight = 0.8*windowHeight;
+          window->resizeWindow( windowWidth, windowHeight );
+        }else
+        {
+          windowWidth = 0.9*windowWidth;
+          windowHeight = 0.9*windowHeight;
+          window->resizeWindow( windowWidth, windowHeight );
+        }
+      }//if( !viewer->isPhone() )
 
       //Give the m_shieldingSourceFitWindow a hint about what size it will be
       //  rendered at so it can decide what widgets should be rendered - acounting
@@ -4103,7 +4258,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
       //  not know the window size (e.g., windowWidth==windowHeight==0), so
       //  instead skip giving the initial size hint, and instead size things
       //  client side (maybe we should just do this always?)
-      window->resizeScaledWindow( 0.95, 0.95 );
+      window->resizeScaledWindow( 0.90, 0.90 );
     }
         
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -4112,11 +4267,8 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     setTruth->clicked().connect( disp, &ShieldingSourceDisplay::showInputTruthValuesWindow );
 #endif
     
-    
-  //   m_shieldingSourceFitWindow->contents()->  setHeight(WLength(windowHeight));
-
     window->centerWindow();
-
+  //   m_shieldingSourceFitWindow->contents()->  setHeight(WLength(windowHeight));
     window->finished().connect( viewer, &InterSpec::closeShieldingSourceFitWindow );
       
     window->WDialog::setHidden(false);
@@ -4251,21 +4403,26 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
         //need to make custom delegate
       break;
 
-      case SourceFitModel::kFitActivity: case SourceFitModel::kFitAge:
-      case SourceFitModel::kIsotope: case SourceFitModel::kNumColumns:
-      case SourceFitModel::kIsotopeMass:
       case SourceFitModel::kActivityUncertainty:
       case SourceFitModel::kAgeUncertainty:
+        m_sourceView->setColumnHidden( static_cast<int>( col ), true );
+        break;
+        
+      case SourceFitModel::kFitActivity:
+      case SourceFitModel::kFitAge:
+      case SourceFitModel::kIsotope:
+      case SourceFitModel::kIsotopeMass:
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
       case SourceFitModel::kTruthActivity: case SourceFitModel::kTruthActivityTolerance:
       case SourceFitModel::kTruthAge: case SourceFitModel::kTruthAgeTolerance:
 #endif
+      case SourceFitModel::kNumColumns:
       break;
     }//case( col )
   }//for( loop over SourceFitModel columns )
 
 
-  m_sourceView->setColumnWidth( SourceFitModel::kActivity, WLength(9,WLength::FontEx) );
+  m_sourceView->setColumnWidth( SourceFitModel::kActivity, WLength(150,WLength::Pixel) );
   m_sourceView->setColumnWidth( SourceFitModel::kAge, WLength(9,WLength::FontEx) );
   m_sourceView->setColumnWidth( SourceFitModel::kFitAge, WLength(10,WLength::FontEx) );
   m_sourceView->setColumnWidth( SourceFitModel::kFitActivity, WLength(10,WLength::FontEx) );
@@ -4286,19 +4443,10 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_detectorDisplay = new DetectorDisplay( m_specViewer, m_specViewer->fileManager()->model() );
   m_detectorDisplay->setInline( true );
 
-  Wt::WPushButton *addItemMenubutton = new WPushButton( " " );
+  Wt::WPushButton *addItemMenubutton = new WPushButton();
+  addItemMenubutton->setStyleClass( "RoundMenuIcon InvertInDark" );
+  addItemMenubutton->clicked().preventPropagation();
   m_addItemMenu = new PopupDivMenu( addItemMenubutton, PopupDivMenu::TransientMenu );
-  if( m_specViewer->isMobile() )
-  {
-     m_addItemMenu->addPhoneBackItem( NULL );
-     addItemMenubutton->clicked().connect( m_addItemMenu, &PopupDivMenu::showMobile );
-  } //mobile
-  else
-  {
-      m_addItemMenu->setButton( addItemMenubutton );
-  } //not mobile
-  addItemMenubutton->setStyleClass( "ShiledingSourceOptionsBtn" );
-  addItemMenubutton->addStyleClass( "GearIcon" );
 
   //this validates floating point numbers followed by a distance unit
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
@@ -4402,10 +4550,12 @@ if (m_specViewer->isSupportFile())
   m_chi2Graphic = new Chi2Graphic();
   m_chi2Graphic->setModel( m_chi2Model );
 
-  m_chi2Graphic->setPlotAreaPadding( 40, Bottom );
   m_chi2Graphic->setPlotAreaPadding( 12, Right );
   m_chi2Graphic->setPlotAreaPadding(  2, Top );
-  m_chi2Graphic->setPlotAreaPadding( 50, Left );
+  
+  // Left and bottom paddings will be set by Chi2Graphic::calcAndSetAxisPadding(...)
+  //m_chi2Graphic->setPlotAreaPadding( 50, Left );
+  //m_chi2Graphic->setPlotAreaPadding( 40, Bottom );
   //m_chi2Graphic->setAutoLayoutEnabled();
   
   m_chi2Graphic->addSeries( Chart::WDataSeries(1, Chart::PointSeries) );
@@ -4422,8 +4572,8 @@ if (m_specViewer->isSupportFile())
   m_chi2Graphic->axis(Chart::YAxis).setLabelFont(font);
   m_chi2Graphic->axis(Chart::XAxis).setLabelFont(font);
   
-  
-  m_chi2Graphic->axis(Chart::XAxis).setLocation( Chart::ZeroValue );
+  m_chi2Graphic->axis(Chart::XAxis).setLocation( Chart::AxisValue::ZeroValue );
+  m_chi2Graphic->axis(Chart::YAxis).setLocation( Chart::AxisValue::MinimumValue );
 
   m_chi2Graphic->axis(Chart::XAxis).setScale( Chart::LinearScale );
   m_chi2Graphic->axis(Chart::YAxis).setScale( Chart::LinearScale );
@@ -4463,6 +4613,17 @@ if (m_specViewer->isSupportFile())
   m_specViewer->detectorChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
   m_specViewer->detectorModified().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
 
+  
+  m_showChiOnChart = new SwitchCheckbox( "Mult.", "&chi;" );
+  m_showChiOnChart->setChecked();
+  tooltip = "Show the Chi of each peak for the current model on the chart, or"
+  " the relative peak area multiple between current model and observed peak.";
+  m_showChiOnChart->setToolTip( tooltip );
+  m_showChiOnChart->checked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
+  m_showChiOnChart->unChecked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
+  
+  
+  
   
   m_optionsDiv = new WContainerWidget();
   WGridLayout* optionsLayout = new WGridLayout();
@@ -4514,17 +4675,6 @@ if (m_specViewer->isSupportFile())
   m_sameIsotopesAge->unChecked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
   m_sameIsotopesAge->setChecked( isotopesHaveSameAge );
 
-  
-  lineDiv = new WContainerWidget(  );
-  optionsLayout->addWidget( lineDiv, 4, 0 );
-  m_showChiOnChart = new WCheckBox( "Show Chi Graphic", lineDiv );
-  m_showChiOnChart->setChecked();
-  tooltip = "Show the Chi of each peak for the current model on the chart, or"
-            " the relative peak area multiple between current model and observed peak.";
-  lineDiv->setToolTip( tooltip );
-  m_showChiOnChart->checked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
-  m_showChiOnChart->unChecked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
-  
   
   WContainerWidget *detectorDiv = new WContainerWidget();
   detectorDiv->setOverflow(WContainerWidget::OverflowHidden);
@@ -4607,23 +4757,23 @@ if (m_specViewer->isSupportFile())
     tab->addTab(sourceDiv,"Source Isotopes", Wt::WTabWidget::PreLoading);
     tab->addTab(detectorDiv,"Shielding", Wt::WTabWidget::PreLoading);
     
-    WContainerWidget * chartDiv = new WContainerWidget();
+    WContainerWidget *chartDiv = new WContainerWidget();
     chartDiv->setOffsets(0);
     chartDiv->setMargin(0);
     chartDiv->setPadding(5);
-    WGridLayout* chartLayout= new WGridLayout();
+    WGridLayout *chartLayout = new WGridLayout();
     chartDiv->setLayout(chartLayout);
     chartLayout->setContentsMargins(0, 0, 0, 0);
     
-    chartLayout->addWidget( m_detectorDisplay, 0, 0);
-    chartLayout->addWidget( addItemMenubutton, 0, 1);
-    chartLayout->addWidget( m_chi2Graphic, 1, 0,1,2);
-    chartLayout->addWidget( m_fitModelButton, 2, 0, 1 , 2 );
-    chartLayout->addWidget( m_fitProgressTxt, 3, 0, 1, 2 );
-    chartLayout->addWidget( m_cancelfitModelButton, 4, 0, 1, 2 );
+    chartLayout->addWidget( m_detectorDisplay, 0, 0, AlignLeft );
+    chartLayout->addWidget( m_showChiOnChart, 0, 1 );
+    chartLayout->addWidget( addItemMenubutton, 0, 2, AlignRight);
+    chartLayout->addWidget( m_chi2Graphic, 1, 0, 1, 3 );
+    chartLayout->addWidget( m_fitModelButton, 2, 0, 1, 3, AlignCenter );
+    chartLayout->addWidget( m_fitProgressTxt, 3, 0, 1 ,3, AlignCenter );
+    chartLayout->addWidget( m_cancelfitModelButton, 4, 0, 1, 3, AlignCenter );
     
     chartLayout->setRowStretch(1, 1);
-    chartLayout->setColumnStretch(0, 1);
     tab->addTab(chartDiv,"Fit", Wt::WTabWidget::PreLoading);
   }else
   {
@@ -4654,7 +4804,30 @@ if (m_specViewer->isSupportFile())
     bottomMiddleLayout->setContentsMargins( 0, 0, 0, 0 );
     
     WGridLayout *leftLayout = new WGridLayout();
-    leftLayout->addWidget( m_chi2Graphic,      0, 0 );
+    
+    
+    // We will put the chart in a div that will also hold the Rel/Chi switch; its a bit of a hack
+    //  to get the chart type switch near the chart; it would probably be best to have the switch be
+    //  at the top of the chart, but that doesnt work so well because the chart <img> will be over
+    //  the switch if we want the switch to be over the image...  probably something better to do
+    //  here
+    WContainerWidget *chartHolder = new WContainerWidget();
+    WGridLayout *chartLayout = new WGridLayout( chartHolder );
+    chartLayout->setVerticalSpacing( 0 );
+    chartLayout->setHorizontalSpacing( 0 );
+    chartLayout->setContentsMargins( 0, 0, 0, 0 );
+    chartLayout->addWidget( m_chi2Graphic, 0, 0 );
+    
+    //Put the switch in a <div> (which will be 0x0 px), so we can position the switch using absolute
+    WContainerWidget *switchHolder = new WContainerWidget();
+    switchHolder->addWidget( m_showChiOnChart );
+    m_showChiOnChart->setAttributeValue( "style", "position: absolute; bottom: 0px; right: 20px" );
+    switchHolder->setHeight( 0 );
+    chartLayout->addWidget( switchHolder, 1, 0, AlignRight );
+    chartLayout->setRowStretch( 0, 1 );
+    
+    
+    leftLayout->addWidget( chartHolder,      0, 0 );
     leftLayout->addLayout( bottomMiddleLayout,   1, 0 );
     leftLayout->setRowResizable( 0, true, WLength(40.0,WLength::Percentage) );
     leftLayout->setHorizontalSpacing( 5 );
@@ -4794,7 +4967,7 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
   {
     WTable *table = new WTable( contents );
     table->setHeaderCount( 1 );
-    new WLabel( "Quantitiy", table->elementAt(0, 0) );
+    new WLabel( "Quantity", table->elementAt(0, 0) );
     new WLabel( "Value", table->elementAt(0, 1) );
     new WLabel( "Tolerance", table->elementAt(0, 2) );
     
@@ -5140,7 +5313,11 @@ void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
     if( m_sourceModel->fitActivity(i) )
     {
       WModelIndex index = m_sourceModel->index( i, SourceFitModel::kActivity );
-      m_sourceModel->setData( index, "1 mCi" );
+      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
+      if( useCi )
+        m_sourceModel->setData( index, "1 mCi" );
+      else
+        m_sourceModel->setData( index, "37 MBq" );
     }//if( fit activity )
     
     if( m_sourceModel->fitAge(i) )
@@ -5604,6 +5781,24 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
 }//void checkDistanceAndThicknessConsistent()
 
 
+void ShieldingSourceDisplay::checkForMultipleGenericMaterials()
+{
+  int num_fit_for_ad = 0;
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *thisSelect = dynamic_cast<ShieldingSelect *>(widget);
+    if( thisSelect && thisSelect->isGenericMaterial()
+       && thisSelect->fitAtomicNumber() )
+    {
+      num_fit_for_ad += 1;
+    }
+  }//for( WWidget *widget : m_shieldingSelects->children() )
+  
+  if( num_fit_for_ad > 1 )
+    throw runtime_error( "You can only fit for the atomic number of one generic shielding at a time." );
+}//void checkForMultipleGenericMaterials()
+
+
 void ShieldingSourceDisplay::checkAndWarnZeroMassFraction()
 {
   //ToDo: will needs to implement, the point of this function will be to allow
@@ -5680,12 +5875,6 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
           && !IsInf(energy) && !IsNan(energy) )
         keeper_points.push_back( DDPair(energy,chi,scale,color,scale_uncert) );
     }//for( size_t row = 0; row < chis.size(); ++row )
-
-    //If we only have one point, then Wt cant find the y-range, and an assert
-    //  statment gets triggered in WAxis.C, so we'll fix this up kinda.
-    //  I should probably submit a bug report to Wt...
-    if( keeper_points.size() == 1 )
-      keeper_points.insert( keeper_points.begin(), DDPair(0.0,0.0,0.0,WColor(),0.0) );
 
     m_chi2Graphic->setNumFitForParams( ndof );
     if( !m_calcLog.empty() )
@@ -5795,18 +5984,60 @@ void ShieldingSourceDisplay::showCalcLog()
     m_logDiv->contents()->addStyleClass( "CalculationLog" );
     m_logDiv->disableCollapse();
     m_logDiv->rejectWhenEscapePressed();
+    //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
+    //  size to be the min-size
+    m_logDiv->setMinimumSize( 640, 480 );
     m_logDiv->setResizable( true );
   }//if( !m_logDiv )
   
   m_logDiv->contents()->clear();
+  vector<uint8_t> totaldata;
   for( const string &str : m_calcLog )
-    (new WText( str, m_logDiv->contents() ))->setInline( false );
+  {
+    auto line = new WText( str, m_logDiv->contents() );
+    line->setInline( false );
+    totaldata.insert( end(totaldata), begin(str), end(str) );
+    totaldata.push_back( static_cast<uint8_t>('\r') );
+    totaldata.push_back( static_cast<uint8_t>('\n') );
+  }
   
   m_logDiv->show();
   
+  // Add a link to download this log file
+  m_logDiv->footer()->clear();
+  
+#if( BUILD_AS_OSX_APP )
+  WAnchor *logDownload = new WAnchor( m_logDiv->footer() );
+#else
+  WPushButton *logDownload = new WPushButton( m_logDiv->footer() );
+  logDownload->setIcon( "InterSpec_resources/images/download_small.png" );
+#endif
+  
+  logDownload->setText( "TXT file" );
+  logDownload->setStyleClass( "LinkBtn" );
+  logDownload->setFloatSide( Wt::Side::Left );
+    
+  auto downloadResource = new WMemoryResource( "text/plain", logDownload );
+  downloadResource->setData( totaldata );
+  const int offset = wApp->environment().timeZoneOffset();
+  const auto nowTime = WDateTime::currentDateTime().addSecs(60*offset);
+  string filename = "act_shield_fit_" + nowTime.toString("yyyyMMdd_hhmmss").toUTF8() + ".txt";
+  downloadResource->suggestFileName( filename, WResource::DispositionType::Attachment );
+  
+  logDownload->setLink( WLink(downloadResource) );
+#if( BUILD_AS_OSX_APP )
+  logDownload->setTarget( AnchorTarget::TargetNewWindow );
+#else
+  logDownload->setLinkTarget( Wt::TargetNewWindow );
+#endif
+  
+  WPushButton *close = m_logDiv->addCloseButtonToFooter();
+  close->clicked().connect( boost::bind( &AuxWindow::hide, m_logDiv ) );
+  
+  
   const int wwidth = m_specViewer->renderedWidth();
   const int wheight = m_specViewer->renderedHeight();
-  m_logDiv->setMaximumSize( 0.9*wwidth, wheight );
+  m_logDiv->setMaximumSize( 0.8*wwidth, 0.8*wheight );
   m_logDiv->resizeToFitOnScreen();
   m_logDiv->centerWindow();
 }//void showCalcLog()
@@ -7908,11 +8139,11 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   }//if( IsNan(p.second) || IsInf(p.second) )
 
   
-  stringstream activitystrm;
-  activitystrm << activity << "ci";
+  char buffer[64];
+  snprintf( buffer, sizeof(buffer), "%1.8E ci", activity );
 
   WModelIndex index = m_sourceModel->index( row, SourceFitModel::kActivity );
-  m_sourceModel->setData( index, activitystrm.str() );
+  m_sourceModel->setData( index, string(buffer) );
 }//void updateActivityOfShieldingIsotope(..)
 
 
@@ -8211,18 +8442,43 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       if( age > 0 )
         ageStep = std::min( 0.1*age, ageStep );
       
-      // cout << "For nuclide " << nuclide->symbol << " adding age=" << age << ", with step " << ageStep << " and max age " << maxAge << endl;
+      //cout << "For nuclide " << nuclide->symbol << " adding age=" << age << ", with step " << ageStep << " and max age " << maxAge << endl;
       
       inputPrams.Add( nuclide->symbol + "Age", age, ageStep, 0, maxAge  );
     }else if( hasOwnAge )
     {
       const double age = m_sourceModel->age( ison );
+      //cout << nuclide->symbol << " has own non-fitting age going in as param " << inputPrams.Parameters().size() << endl;
       inputPrams.Add( nuclide->symbol + "Age", age );
     }else  //see if defining nuclide age is fixed, if so use it, else put in negative integer of index of age...
     {
       assert( ageDefiningNuc );
-      const int age_defining_index = m_sourceModel->nuclideIndex( ageDefiningNuc );
-      inputPrams.Add( nuclide->symbol + "Age", -1.0*(age_defining_index + 1) );
+      
+      // Previous to 20210825, we were doing the next commented-out line, which is not correct; we
+      //  want the relative nuclide index to be for the order nuclides are added into 'inputPrams',
+      //  which may be different m_sourceModel->m_nuclides.
+      //const int age_defining_index = m_sourceModel->nuclideIndex( ageDefiningNuc );
+      
+      int age_defining_index = -1;
+      for( size_t ansnucn = 0; ansnucn < answer->numNuclides(); ++ansnucn )
+      {
+        const SandiaDecay::Nuclide *answnuclide = answer->nuclide( static_cast<int>(ansnucn) );
+        if( answnuclide == ageDefiningNuc )
+        {
+          age_defining_index = static_cast<int>(ansnucn);
+          break;
+        }
+      }//for( size_t ansnucn = 0; ansnucn < answer->numNuclides(); ++ansnucn )
+      
+      assert( age_defining_index >= 0 );
+      if( age_defining_index < 0 )  //shouldnt ever happen, but JIC
+        throw runtime_error( "Error finding age defining nuclide for " + nuclide->symbol
+                             + " (should have been " + ageDefiningNuc->symbol + ")" );
+      
+      const double ageIndexVal = -1.0*(age_defining_index + 1);
+      //cout << nuclide->symbol << ": ageIndexVal=" << ageIndexVal
+      //<< " going in as param " << inputPrams.Parameters().size() << endl;
+      inputPrams.Add( nuclide->symbol + "Age", ageIndexVal );
     }
   }//for( int ison = 0; ison < niso; ++ison )
   
@@ -8251,7 +8507,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
         inputPrams.Add( name + "_AN_FIXED", an );
 
       if( fitAD )
-        inputPrams.Add( name + "_AD", ad, std::max(10.0*adUnits, 0.25*ad), 0.0, 400.0*adUnits );
+        inputPrams.Add( name + "_AD", ad, std::max(5.0*adUnits, 0.1*ad), 0.0, 400.0*adUnits );  //400g/cm2 is about 35cm Pb
       else
         inputPrams.Add( name + "_AD", ad );
     }else
@@ -8565,24 +8821,31 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         
         if( !success )
         {
-          stringstream msg;
-          msg << "An invalid activity was calculated for " << nuc->symbol
-          << ", other results may be invalid to";
-          passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+          const string msg = "An invalid activity was calculated for " + nuc->symbol
+                             + ", other results may be invalid to";
+          passMessage( msg, "", WarningWidget::WarningMsgHigh );
         }//if( IsNan(p.second) || IsInf(p.second) )
         
-        const double activityUncert = m_currentFitFcn->activity( nuc, paramErrors );
-        char actUncertStr[64];
-        snprintf( actUncertStr, sizeof(actUncertStr), "%f bq", (activityUncert/PhysicalUnits::becquerel) );
-        
-        success = m_sourceModel->setData( actUncertIndex, WString(actUncertStr) );
-        if( !success )
+        try
         {
-          stringstream msg;
-          msg << "Calculated activity uncertainty for " << nuc->symbol
-          << " is invalid, other results may be invalid to";
-          passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
-        }//if( IsNan(p.second) || IsInf(p.second) )
+          const double activityUncert = m_currentFitFcn->activityUncertainty( nuc, paramValues, paramErrors );
+          
+          char actUncertStr[64];
+          snprintf( actUncertStr, sizeof(actUncertStr), "%f bq", (activityUncert/PhysicalUnits::becquerel) );
+          
+          success = m_sourceModel->setData( actUncertIndex, WString(actUncertStr) );
+          if( !success )
+          {
+            const string msg = "Calculated activity uncertainty for " + nuc->symbol
+                                + " is invalid, other results may be invalid to.";
+            passMessage( msg, "", WarningWidget::WarningMsgHigh );
+          }//if( IsNan(p.second) || IsInf(p.second) )
+        }catch( std::exception &e )
+        {
+          const string msg = "Unexpected error calculating activity uncertainty for " + nuc->symbol
+                             + ": " + string(e.what());
+          passMessage( msg, "", WarningWidget::WarningMsgHigh );
+        }
       }else if( m_sourceModel->activityUncert(ison) >= 0.0 )
       {
         m_sourceModel->setData( actUncertIndex, boost::any() );
@@ -8739,43 +9002,14 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
   
   if( progress_fcn && progress ) //if we are wanted to post updates to the GUI periodically.
   {
-    //Create a object that wil be shared by the Chi2 function, and its callback
-    //  which will in turn update the variable shared with the function that
-    //  gets posted to the GUI thread.  Its a little convoluted, but I think
-    //  this lets us better make a consistent handoff of information (e.g., we
-    //  can be sure all the member variables of ModelFitProgress are not-changed
-    //  by the time the GUI update function gets executed in the Wt event loop).
-    auto progressUpdatInfo = std::make_shared<GammaInteractionCalc::PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo>();
-  
-    //We need to pass in a refernce to progressUpdatInfo to the lamda function
-    //  we will assign to progressUpdatInfo->m_guiUpdater, but we need to avoid
-    //  creating a circular reference that keeps progressUpdatInfo from ever
-    //  getting deleted, so we will pass in a week pointer to m_guiUpdater.
-    std::weak_ptr<GammaInteractionCalc::PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo> progress_weak = progressUpdatInfo;
-    
-    progressUpdatInfo->m_guiUpdater = [progress_fcn,progress_weak,wtsession,progress](){
-      auto infoFromChiFcn = progress_weak.lock();
-      if( !infoFromChiFcn )
-        return;
-    
-      vector<double> pars;
-      
-      {
-        //As it stands the thread we are currently in is the only thread to access
-        // the object pointed to by infoFromChiFcn, so there is no need to bother
-        // with the atomic or mutexs, but because Minuit2 I think has a
-        // multithreaded mode we might look into later, I'll keep this stuff
-        // thread safe for now.
-        std::lock_guard<std::mutex> scoped_lock( infoFromChiFcn->m_bestParsMutex );
-        pars = infoFromChiFcn->m_bestParameters;
-      }
-      
+    auto updatefcn = [progress_fcn,wtsession,progress]( size_t ncalls, double elapsed_time,
+                                                        double chi2, std::vector<double> pars){
       {
         std::lock_guard<std::mutex> scoped_lock( progress->m );
-        progress->chi2 = infoFromChiFcn->m_bestChi2;
-        progress->elapsedTime = (infoFromChiFcn->m_currentTime - infoFromChiFcn->m_fitStartTime);
+        progress->chi2 = chi2;
+        progress->elapsedTime = elapsed_time;
         progress->parameters = pars;
-        progress->numFcnCalls = infoFromChiFcn->m_num_fcn_calls;
+        progress->numFcnCalls = ncalls;
       }
       
       WApplication *app = WApplication::instance();
@@ -8785,7 +9019,15 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
         WServer::instance()->post( wtsession, progress_fcn );
     };//define progressUpdatInfo->m_guiUpdater
   
-    chi2Fcn->setGuiProgressUpdater( sm_model_update_frequency_ms, progressUpdatInfo );
+    //Create a object that will be shared by the Chi2 function, and its callback
+    //  which will in turn update the variable shared with the function that
+    //  gets posted to the GUI thread.  Its a little convoluted, but I think
+    //  this lets us better make a consistent handoff of information (e.g., we
+    //  can be sure all the member variables of ModelFitProgress are not-changed
+    //  by the time the GUI update function gets executed in the Wt event loop).
+    auto progressUpdater = std::make_shared<GammaInteractionCalc::PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo>( sm_model_update_frequency_ms, updatefcn );
+    
+    chi2Fcn->setGuiProgressUpdater( progressUpdater );
   }//if( progress_fcn && progress )
   
   
@@ -8819,15 +9061,23 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     //cout << endl;
     
     const double tolerance = 2.0*inputPrams->VariableParameters();
-    unsigned int maxFcnCall = 50000;  //default minuit2: 200 + 100 * npar + 5 * npar**2
+    const unsigned int maxFcnCall = 50000;  //default minuit2: 200 + 100 * npar + 5 * npar**2
     
     ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
     
+    
+    //Try two more times to get a valid fit... a stupid hack
+    for( int i = 0; !minimum.IsValid() && i < 2; ++i )
+      minimum = fitter( maxFcnCall, tolerance );
+    
+    ROOT::Minuit2::MnUserParameters fitParams = minimum.UserParameters();
+    
     //For some reason the fit to atomic number of generic shielding is horrible!
     //  I'm probably screwing something up in the setup for Minuit, but as a
-    //  work around, lets manually coursely scan AN, and then use the best found
+    //  work around, lets manually coarsely scan AN, and then use the best found
     //  AN to then perform another fit to fine tune it.
     //Not a lot of validation went into this, but it does seem to work better.
+    //  For the life of me, I cant get Minuit to fit for AN and AD simultaneously well
     vector<string> fit_generic_an;
     for( auto &par : inputPrams->Parameters() )
     {
@@ -8836,72 +9086,194 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
          && (name.find("_AN")!=string::npos)
          && (name.find("_FIXED")==string::npos)
          && !par.IsFixed() )  //Looks to be bug in Minuit, so we need the above "_FIXED"
+      {
         fit_generic_an.push_back( name );
+      }
     }//for( auto &par : inputPrams->Parameters() )
+    
+    
+    // If we have a self-attenuating source, computation time becomes pretty large, so we wont do
+    //  the detailed AN scan in this case
+    //  TODO: check if we are fitting anything related to self-attenuating materials dimensions, and
+    //        if not, dont reject doing the AN scan.
+    if( !fit_generic_an.empty() )
+    {
+      for( size_t i = 0; i < chi2Fcn->numNuclides(); ++i )
+      {
+        const SandiaDecay::Nuclide * const nuc = chi2Fcn->nuclide( static_cast<int>(i) );
+        if( chi2Fcn->isActivityDefinedFromShielding( nuc ) )
+          fit_generic_an.clear();
+      }
+    }//if( check if we also have a self-attenuating source )
+    
     
     if( !fit_generic_an.empty() )  //should add in a check that we arnt doing self attenuating sources.
     {
       //Re-perform the fit scanning in atomic number to find best.
-      const double orig_chi2 = chi2Fcn->DoEval( fitter.Params() );
-      
+      // TODO: Fix all other AN for the scan, and update inputPrams, so subsequent generic materials will use new AN
       for( const auto &parname : fit_generic_an )
       {
-        vector<double> best_pars = fitter.Params();
-        double best_an = inputPrams->Value( parname );
-        double best_chi2 = chi2Fcn->DoEval( fitter.Params() );
+        std::mutex best_an_mutex;
+        int best_an = static_cast<int>( std::round(minimum.UserParameters().Value(parname)) );
+        double best_chi2 = minimum.Fval();
+        ROOT::Minuit2::FunctionMinimum best_min = minimum;
+                                                     
+        vector<double> an_chi2s( MassAttenuation::sm_max_xs_atomic_number + 1, std::numeric_limits<double>::max() );
         
-        for( double an = 1.0; an < 101.0; an += 5.0 )
-        {
-          auto testpar = *inputPrams;
-          testpar.SetValue(parname, an);
-          testpar.Fix(parname);
+        auto calc_for_an = [&an_chi2s,&best_an_mutex,&best_an,&best_chi2,&best_min,inputPrams,&parname,chi2Fcn]( const int an ){
+          ROOT::Minuit2::MnUserParameters testpar;
           
-          ROOT::Minuit2::MnUserParameterState anInputParam( testpar );
-          ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
-          ROOT::Minuit2::MnMinimize anfitter( *chi2Fcn, anInputParam, strategy );
-          
-          ROOT::Minuit2::FunctionMinimum anminimum = anfitter( maxFcnCall, tolerance );
-          if( !anminimum.IsValid() )
-            anminimum = anfitter( maxFcnCall, tolerance );
-          
-          const double this_chi2 = chi2Fcn->DoEval( anfitter.Params() );
-          if( this_chi2 < best_chi2 )
+          for( const auto &p : inputPrams->Parameters() )
           {
-            best_pars = anfitter.Params();
-            best_chi2 = this_chi2;
-            best_an = an;
-          }
-        }//for( double an = 1.0; an < 101.0; an += 2.5 )
+            const string name = p.Name();
+            if( name == parname )
+            {
+              testpar.Add( name, static_cast<double>(an) );
+            }else if( p.IsConst() || p.IsFixed() || (name.find("_FIXED") != string::npos) )
+            {
+              testpar.Add( name, p.Value() );
+            }else
+            {
+              testpar.Add( name, p.Value(), p.Error() );
+              if( p.HasLowerLimit() )
+                testpar.SetLowerLimit( name, p.LowerLimit() );
+              if( p.HasUpperLimit() )
+                testpar.SetUpperLimit( name, p.UpperLimit() );
+            }
+          }//for( const auto &p : inputPrams->Parameters() )
+          
+          try
+          {
+            ROOT::Minuit2::MnUserParameterState anInputParam( testpar );
+            ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
+            ROOT::Minuit2::MnMinimize anfitter( *chi2Fcn, anInputParam, strategy );
+            
+            const double tolerance = 2.0*inputPrams->VariableParameters();
+            const unsigned int maxFcnCall = 50000;  //default minuit2: 200 + 100 * npar + 5 * npar**2
+            
+            ROOT::Minuit2::FunctionMinimum anminimum = anfitter( maxFcnCall, tolerance );
+            for( int i = 0; !anminimum.IsValid() && i < 2; ++i )
+              anminimum = anfitter( maxFcnCall, tolerance );
+            
+            {// begin lock on best_an_mutex
+              std::lock_guard<std::mutex> lock( best_an_mutex );
+              
+              an_chi2s[an] = anminimum.Fval();
+              if( an_chi2s[an] < best_chi2 )
+              {
+                best_an = an;
+                best_chi2 = an_chi2s[an];
+                best_min = anminimum;
+              }
+            }// end lock on best_an_mutex
+          }catch( std::exception &e )
+          {
+            cerr << "Unexpected exception scanning in AN for shielding/src fit!" << endl;
+          }//try / catch
+        };//calc_for_an lambda
         
-        fitter.SetValue( parname.c_str(), best_an );
-        fitter.Fix( parname.c_str() );
+        
+        chi2Fcn->setSelfAttMultiThread( false ); //shouldnt affect anything, but JIC
+        
+        
+        SpecUtilsAsync::ThreadPool pool;
+        
+        const int initial_sn_skip = 5;
+        for( int an = MassAttenuation::sm_min_xs_atomic_number;
+            an < MassAttenuation::sm_max_xs_atomic_number;
+            an += initial_sn_skip )
+        {
+          pool.post( [&calc_for_an,an](){ calc_for_an(an); } );
+        }//for( loop over AN )
+        
+        pool.join();
+        
+        int detail_scan_start, detail_scan_end, best_coarse_an;
+        {// begin lock on best_an_mutex
+          std::lock_guard<std::mutex> lock( best_an_mutex );
+          
+          const auto min_coarse_chi2_iter = std::min_element( begin(an_chi2s), end(an_chi2s) );
+          best_coarse_an = static_cast<int>( min_coarse_chi2_iter - begin(an_chi2s) );
+          
+          //Now scan best_coarse_an +- (initial_sn_skip - 1),
+          // (clamp to MassAttenuation::sm_min_xs_atomic_number, MassAttenuation::sm_max_xs_atomic_number)
+          detail_scan_start = static_cast<int>( best_coarse_an - (initial_sn_skip - 1) );
+          detail_scan_end = static_cast<int>( best_coarse_an + initial_sn_skip );
+          detail_scan_start = std::max( detail_scan_start, MassAttenuation::sm_min_xs_atomic_number );
+          detail_scan_end = std::min( detail_scan_end, MassAttenuation::sm_max_xs_atomic_number );
+          
+          assert( detail_scan_start >= 1 );
+          assert( detail_scan_end <= MassAttenuation::sm_max_xs_atomic_number );
+          
+          if( (best_coarse_an < MassAttenuation::sm_min_xs_atomic_number)
+             || (best_coarse_an > MassAttenuation::sm_max_xs_atomic_number) )
+          {
+            detail_scan_start = detail_scan_end;
+          }
+        }// end lock on best_an_mutex
+        
+        
+        for( int an = detail_scan_start; an <= detail_scan_end; an += 1 )
+        {
+          if( an != best_coarse_an )
+            pool.post( [&calc_for_an,an](){ calc_for_an(an); } );
+        }//for( loop over AN )
+        
+        pool.join();
+        
+        {// begin lock on best_an_mutex
+          std::lock_guard<std::mutex> lock( best_an_mutex );
+          
+          best_an = std::min( best_an, MassAttenuation::sm_max_xs_atomic_number );
+          best_an = std::max( best_an, MassAttenuation::sm_min_xs_atomic_number );
+          
+          minimum = best_min;
+          fitParams = minimum.UserParameters();
+          
+          // TODO: explore updating inputPrams incase we are fitting multiple generic materials
+          //inputPrams->SetValue( parname, best_an );
+          
+          // We'll approximate errors on AN.  Extraordinarily rough right now.
+          // TODO: better estimate the actual lower_and upper AN; for now overestimating error,
+          //       sometimes horribly.
+          const double up = chi2Fcn->Up();
+          double lower_an = best_an, upper_an = best_an;
+          for( ; lower_an > MassAttenuation::sm_min_xs_atomic_number; --lower_an )
+          {
+            if( (an_chi2s[lower_an] != std::numeric_limits<double>::max())
+               && ((an_chi2s[lower_an] - best_chi2) >= up) )
+              break;
+          }
+          
+          for( ; upper_an < MassAttenuation::sm_max_xs_atomic_number; ++upper_an )
+          {
+            if( (an_chi2s[upper_an] != std::numeric_limits<double>::max())
+               && ((an_chi2s[upper_an] - best_chi2) >= up) )
+              break;
+          }
+          
+          float error = 0.5*(upper_an - lower_an);
+          
+          // If we are near the limits of atomic number, be a little more conservative since our
+          //  naive estimation may not have been able to fully go to the atomic number.
+          if( ((best_an + error) >= MassAttenuation::sm_max_xs_atomic_number)
+             || ((best_an - error) <= MassAttenuation::sm_min_xs_atomic_number) )
+          {
+            error = std::max( error, static_cast<float>(upper_an - best_an) );
+            error = std::max( error, static_cast<float>(best_an - lower_an) );
+          }
+          
+          
+          error = std::max( 1.0f, error );
+          
+          fitParams.SetError( parname, error );
+        }// end lock on best_an_mutex
+        
+        chi2Fcn->setSelfAttMultiThread( true ); //shouldnt affect anything, but JIC
       }//for( const auto &parname : fit_generic_an )
-      
-      for( const auto &parname : fit_generic_an )
-        fitter.Release( parname.c_str() );
-      
-      ROOT::Minuit2::FunctionMinimum postnminimum = fitter( maxFcnCall, tolerance );
-      const double post_best_chi2 = chi2Fcn->DoEval( fitter.Params() );
-      
-      if( post_best_chi2 < orig_chi2 )
-      {
-        minimum = postnminimum;
-        cout << "Found a new minumum of post_best_chi2=" << post_best_chi2 << ", vs old orig_chi2=" << orig_chi2 << endl;
-      }//if( post_best_chi2 < orig_chi2 )
-      else
-      {
-        cout << "Old minumum was better: post_best_chi2=" << post_best_chi2 << ", vs old orig_chi2=" << orig_chi2 << endl;
-      }
-    }else if( !minimum.IsValid() )
-    {
-      //Try two more times to get a valid fit... a stupid hack
-      for( int i = 0; !minimum.IsValid() && i < 2; ++i )
-        minimum = fitter( maxFcnCall, tolerance );
-    }//if( !fit_generic_an.empty() ) / else
+       
+    }//if( !fit_generic_an.empty() )
     
-    
-    
-    const ROOT::Minuit2::MnUserParameters &fitParams = minimum.UserParameters();
     
     std::lock_guard<std::mutex> lock( results->m_mutex );
     
@@ -8938,7 +9310,7 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     results->errormsgs.push_back( "Fit not performed: " + string(e.what()) );
   }// try / catch
   
-  chi2Fcn->fittindIsFinished();
+  chi2Fcn->fittingIsFinished();
   
   if( update_fcn )
   {
@@ -8958,12 +9330,18 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
     checkAndWarnZeroMassFraction();
   }catch( std::exception &e )
   {
-    passMessage( e.what() + string("<br />Fit not performed."),
-                "", WarningWidget::WarningMsgHigh );
+    passMessage( e.what() + string("<br />Fit not performed."), "", WarningWidget::WarningMsgHigh );
     return nullptr;
   }
-  
-  //Should make a progress dialog
+    
+  try
+  {
+    checkForMultipleGenericMaterials();
+  }catch( exception &e )
+  {
+    passMessage( e.what() + string("<br />Fit not performed."), "", WarningWidget::WarningMsgHigh );
+    return nullptr;
+  }//try / catch
   
   m_modifiedThisForeground = true;
   
@@ -8972,8 +9350,7 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
     checkDistanceAndThicknessConsistent();
   }catch( exception &e )
   {
-    passMessage( e.what() + string("<br />Fit not performed."),
-                 "", WarningWidget::WarningMsgHigh );
+    passMessage( e.what() + string("<br />Fit not performed."), "", WarningWidget::WarningMsgHigh );
     return nullptr;
   }//try / catch
   
@@ -8995,11 +9372,6 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
     return nullptr;
   }//try / catch
   
-  //To Do:
-  //  -Add a timer so that after a max amount of time, the calc is canceled (Wt::WTimer or asio deadline_timer)
-  //   -see void #include <boost/asio/deadline_timer.hpp> from WIOService
-  //  -Maybe, have a progress bar or update function
-  //    -See WTimer
   m_fitModelButton->hide();
   m_fitProgressTxt->show();
   m_fitProgressTxt->setText("");
@@ -9109,7 +9481,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       const double act = chi2Fcn->activity( nuc, params );
       const string actStr = PhysicalUnits::printToBestActivityUnits( act, 2, useCi );
       
-      const double actUncert = chi2Fcn->activity( nuc, errors );
+      const double actUncert = chi2Fcn->activityUncertainty( nuc, params, errors );
       const string actUncertStr = PhysicalUnits::printToBestActivityUnits( actUncert, 2, useCi );
       
       const double mass = act / nuc->activityPerGram();
@@ -9125,7 +9497,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       
       stringstream msg;
       msg << nuc->symbol << " fit activity " << actStr << " (mass: " << massStr
-      << ") with uncertanty " << actUncertStr << " ("
+      << ") with uncertainty " << actUncertStr << " ("
       << floor(0.5 + 10000*actUncert/act)/100.0 << "%)";
       
       if( ageUncert <= DBL_EPSILON )

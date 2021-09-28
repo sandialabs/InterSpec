@@ -46,7 +46,6 @@
 #include <Wt/WRandom>
 #include <Wt/WDateTime>
 #include <Wt/WTextArea>
-#include <Wt/WTreeView>
 #include <Wt/WLineEdit>
 #include <Wt/WComboBox>
 #include <Wt/WIOService>
@@ -83,6 +82,7 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
+#include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 
@@ -550,7 +550,7 @@ std::shared_ptr<DetectorPeakResponse> RelEffFile::parseDetector( string &line )
     
     string description = fields[2] + " - from Relative Eff. File";
     det.reset( new DetectorPeakResponse( name, description ) );
-    det->fromExpOfLogPowerSeriesAbsEff( coefs, dist, diam, eunits, 0.0f, 0.0f );
+    det->fromExpOfLogPowerSeriesAbsEff( coefs, {}, dist, diam, eunits, 0.0f, 0.0f );
     det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
   }catch( std::exception &e )
   {
@@ -1481,6 +1481,15 @@ void GadrasDirectory::initDetectors()
       m_detectorSelect->enable();
     }
     
+    std::sort( begin(m_responses), end(m_responses),
+               []( const shared_ptr<DetectorPeakResponse> &lhs,
+                   const shared_ptr<DetectorPeakResponse> &rhs ) -> bool {
+     if( !lhs || !rhs )
+       return false;
+      return lhs->name() < rhs->name();
+    } );
+    
+    
     for( const auto drf : m_responses )
       m_detectorSelect->addItem( drf->name() );
     m_detectorSelect->setCurrentIndex( 0 );
@@ -1627,6 +1636,8 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_detector( currentDet ),
     m_tabs( nullptr ),
     m_detectorDiameter( nullptr ),
+    m_uploadedDetNameDiv( nullptr ),
+    m_uploadedDetName( nullptr ),
     m_detectrDiameterDiv( nullptr ),
     m_efficiencyCsvUpload( nullptr ),
     m_detectrDotDatDiv( nullptr ),
@@ -1661,7 +1672,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   setLayout( mainLayout );
   mainLayout->setContentsMargins(0, 0, 0, 0);
-  mainLayout->setVerticalSpacing( 0 );
+  mainLayout->setVerticalSpacing( 5 ); //so the chart resizer handle will show up
   mainLayout->setHorizontalSpacing( 0 );
   
   specViewer->detectorChanged().connect( this, &DetectorEdit::setDetector );
@@ -1797,7 +1808,10 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   lowerLayout->addWidget( defaultOptions, 1, 1 );
   
   mainLayout->setRowStretch( 0, 1 );
+  mainLayout->setRowResizable( 0 );
+  
   lowerLayout->setColumnStretch( 1, 1 );
+  
   
   //-------------------------------------
   //--- 1)  GADRAS
@@ -1854,6 +1868,13 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorDiameter->enterPressed().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
   m_detectorDiameter->blurred().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
 
+  
+  m_uploadedDetNameDiv = new WContainerWidget( m_detectrDiameterDiv );
+  new WLabel( "Name:", m_uploadedDetNameDiv );
+  m_uploadedDetName = new WLineEdit( m_uploadedDetNameDiv );
+  m_uploadedDetName->textInput().connect( this, &DetectorEdit::handleUserChangedUploadedDrfName );
+  m_uploadedDetName->setTextSize( 30 );
+  
   m_detectrDotDatDiv = new WContainerWidget( m_detectrDiameterDiv );
   m_detectrDotDatDiv->addStyleClass( "DetectorDotDatDiv" );
 
@@ -1983,7 +2004,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   Dbo::ptr<InterSpecUser> user = m_interspec->m_user;
   
-  m_DBtable = new Wt::WTreeView();
+  m_DBtable = new RowStretchTreeView();
   m_DBtable->setRootIsDecorated	(	false ); //makes the tree look like a table! :)
   
   m_DBtable->addStyleClass( "DbSpecFileSelectTable" );
@@ -2213,6 +2234,24 @@ void DetectorEdit::setAcceptButtonEnabled( const bool enable )
   if( m_defaultForDetectorModel )
     m_defaultForDetectorModel->setEnabled( enable );
 }
+
+
+void DetectorEdit::handleUserChangedUploadedDrfName()
+{
+  if( !m_uploadedDetName || !m_detector )
+    return;
+  
+  string value = m_uploadedDetName->text().toUTF8();
+  if( value.empty() )
+  {
+    const int offset = wApp->environment().timeZoneOffset();
+    const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
+    value = SpecUtils::to_vax_string(now);
+    m_uploadedDetName->setText( WString::fromUTF8(value) );
+  }//if( value.empty() )
+  
+  m_detector->setName( value );
+}//handleUserChangedUploadedDrfName()
 
 
 void DetectorEdit::deleteDBTableSelected()
@@ -2624,7 +2663,7 @@ void DetectorEdit::updateChart()
 } //DetectorEdit::updateChart()
 
 
-std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const std::string filename )
+std::shared_ptr<DetectorPeakResponse> DetectorEdit::parseRelEffCsvFile( const std::string filename )
 {
 #ifdef _WIN32
   const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
@@ -2677,7 +2716,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
     
     try
     {
-      vector<float> coefs( 8, 0.0f );
+      vector<float> coefs( 8, 0.0f ), coef_uncerts;
       for( int i = 0; i < 8; ++i )
       {
         string field = fields.at(3+i);
@@ -2701,9 +2740,36 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
       const string name = (fields[0].empty() ? drfname : fields[0]);
       const float energUnits = ((foundKeV && !foundMeV) ? 1.0f : 1000.0f);
       float lowerEnergy = 0.0f, upperEnergy = 0.0f;
+      
+      // Lets try to get coefs uncertainties
+      if( !SpecUtils::safe_get_line(csvfile, line, 2048) )
+      {
+        try
+        {
+          vector<string> uncert_strs;
+          split_escaped_csv( uncert_strs, line );
+          if( !uncert_strs.empty()
+             && SpecUtils::istarts_with(uncert_strs[0], "# 1 sigma Uncert")
+             && (uncert_strs.size() >= (3 + coefs.size())) )
+          {
+            coef_uncerts.resize( coefs.size(), 0.0f );
+            for( int i = 0; i < coefs.size(); ++i )
+            {
+              string field = uncert_strs.at(3+i);
+              coef_uncerts[i] = (field.empty() ? 0.0f : std::stof(field));
+            }
+          }//if( it looks like we found the uncertainty line )
+        }catch( std::exception &e )
+        {
+          cerr << "Error caught parsing DRF eff uncertainties: " << e.what() << endl;
+          coef_uncerts.clear();
+        }
+      }//if( we got another line we'll check if its the uncertainties )
+      
+      
       auto det = std::make_shared<DetectorPeakResponse>( fields[0], drfdescrip );
       
-      det->fromExpOfLogPowerSeriesAbsEff( coefs, dist, 2.0f*radius, energUnits,
+      det->fromExpOfLogPowerSeriesAbsEff( coefs, coef_uncerts, dist, 2.0f*radius, energUnits,
                                           lowerEnergy, upperEnergy );
       
       //Look for the line that gives the appropriate energy range.
@@ -2762,12 +2828,39 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
   }//while( more lines )
   
   return nullptr;
-}//checkIfFileIsRelEff(...)
+}//parseRelEffCsvFile(...)
 
 
 
 void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
 {
+  auto updateUserName = [this](){
+    
+    string userDrfFilename = m_efficiencyCsvUpload->clientFileName().toUTF8();
+    if( SpecUtils::iends_with( userDrfFilename, ".csv" ) )
+      userDrfFilename = userDrfFilename.substr(0, userDrfFilename.size()-4);
+    if( userDrfFilename.empty() )
+      userDrfFilename = "Uploaded";
+    
+    // Efficiency.csv is a really common name, as is a few other short names; lets
+    //  add current date/time to these short names as *some* type of differentiator.
+    //  Its something.
+    if( userDrfFilename.size() < 15 )
+    {
+      const int offset = wApp->environment().timeZoneOffset();
+      const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
+      userDrfFilename += " " + SpecUtils::to_vax_string(now);
+    }
+    
+    if( m_detector && m_uploadedDetName )
+    {
+      m_detector->setName( userDrfFilename );
+      m_uploadedDetName->setText( WString::fromUTF8(userDrfFilename) );
+    }
+  };//updateUserName(...)
+  
+  
+  m_uploadedDetName->setValueText( "" );
   if( !m_efficiencyCsvUpload->empty() )
   {
     m_detectrDiameterDiv->show();
@@ -2789,7 +2882,7 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
       if( !m_efficiencyCsvUpload->empty() )
       {
         const string filename = m_efficiencyCsvUpload->spoolFileName();
-        auto det = DetectorEdit::checkIfFileIsRelEff( filename );
+        auto det = DetectorEdit::parseRelEffCsvFile( filename );
         
         if( det )
         {
@@ -2799,6 +2892,7 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
           m_detectorDiameter->disable();
           m_detector = det;
           setAcceptButtonEnabled( true );
+          updateUserName();
           emitChangedSignal();
           return;
         }else
@@ -2825,7 +2919,7 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
   {
     m_detectorDiameter->setText( "" );
   }
-
+  
   const bool isDiamDet = (!m_efficiencyCsvUpload->empty()
                           && diameter>0.0
                           && m_efficiencyCsvUpload->spoolFileName().size() );
@@ -2879,15 +2973,9 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
     return;
   }//try / catch
   
-  string csvOrigName = m_efficiencyCsvUpload->clientFileName().toUTF8();
-  if( SpecUtils::iends_with( csvOrigName, ".csv" ) )
-    csvOrigName = csvOrigName.substr(0, csvOrigName.size()-4);
-  if( det )
-    det->setName( csvOrigName );
-  
   m_detector = det;
   setAcceptButtonEnabled( true );
-  
+  updateUserName();
   emitChangedSignal();
 }//void fileUploadedCallback();
 

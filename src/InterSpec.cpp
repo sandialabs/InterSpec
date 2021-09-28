@@ -474,8 +474,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   app->domRoot()->addWidget( m_notificationDiv );
   
-  if( !isMobile() )
-    initHotkeySignal();
+  initHotkeySignal();
   
   // Try to grab the username.
   string username = app->getUserNameFromEnvironment();
@@ -653,8 +652,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
    
     //hamburger
     PopupDivMenu *popup = new PopupDivMenu( m_mobileMenuButton, PopupDivMenu::AppLevelMenu );
-    popup->addPhoneBackItem( nullptr );
-    
     m_mobileMenuButton->removeStyleClass( "Wt-btn" );
     menuWidget = popup;
     
@@ -986,16 +983,17 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->shiftAltKeyDragged().connect( this, &InterSpec::handleShiftAltDrag );
 
 //  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::createPeakEdit, this, _1) );
-  m_rightClickMenu = new PopupDivMenu( m_mobileMenuButton, PopupDivMenu::TransientMenu );
-  m_rightClickMenu->setPositionScheme( Wt::Absolute );
-  m_rightClickMenu->addStyleClass( " Wt-popupmenu Wt-outset" );
+  m_rightClickMenu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
   m_rightClickMenu->aboutToHide().connect( this, &InterSpec::rightClickMenuClosed );
   
-  if( isMobile() )
+  if( m_rightClickMenu->isMobile() )
   {
-    PopupDivMenuItem *item = m_rightClickMenu->addPhoneBackItem( NULL );
-    item->triggered().connect( boost::bind(&PopupDivMenu::setHidden, m_rightClickMenu, true, WAnimation()) );
-  }//if( isPhone() || isTablet() )
+    m_rightClickMenu->addPhoneBackItem( nullptr );
+  }else
+  {
+    m_rightClickMenu->setPositionScheme( Wt::Absolute );
+    m_rightClickMenu->addStyleClass( " Wt-popupmenu Wt-outset" );
+  }
   
   for( RightClickItems i = RightClickItems(0);
        i < kNumRightClickItems; i = RightClickItems(i+1) )
@@ -1692,8 +1690,6 @@ void InterSpec::initWindowZoomWatcher()
 
 void InterSpec::initHotkeySignal()
 {
-  //TODO: currently integers are used to represent the shortcuts; this should
-  //      be changed to an enum.
   if( !!m_hotkeySignal )
     return;
   
@@ -1703,71 +1699,92 @@ void InterSpec::initHotkeySignal()
   
   //sender.id was undefined in the following js, so had to work around this a bit
   const char *js = INLINE_JAVASCRIPT(
-    function(id,e){
-      if( !e || !e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || (typeof e.keyCode === 'undefined')  )
+  function(id,e){
+    
+    if( !e || !e.key || e.metaKey || e.altKey || e.shiftKey || (typeof e.keyCode === 'undefined') )
+      return;
+    
+    let code = 0;
+    if( e.ctrlKey )
+    {
+      switch( e.key ){
+        case '1': case '2': case '3': case '4': case '5': //Shortcuts to switch to the various tabs
+        case 'h': // Help dialog
+        case 'i': // Info about InterSpec
+        case 'k': // Clear showing reference photopeak lines
+        case 'l': // Log/Linear
+          if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
+            return;
+          code = e.key.charCodeAt(0);
+          break;
+        
+        default:  //Unused - nothing to see here - let the event propagate up
+          return;
+      }//switch( e.key )
+    }else{
+      switch( e.key ){
+        case "Left":  case "ArrowLeft":  code = 37; break;
+        case "Up":    case "ArrowUp":    code = 38; break;
+        case "Right": case "ArrowRight": code = 39; break;
+        case "Down":  case "ArrowDown":  code = 40; break;
+        default:  //Unused - nothing to see here - let the event propagate up
+          return;
+      }//switch( e.key )
+    
+      // No menus are active - dont send the signal
+      if( $(".MenuLabel.PopupMenuParentButton.active").length === 0 )
         return;
-     
-      var v = 0;
-      switch( e.keyCode ){
-        case 83: case 49: v=1;  break; //s
-        case 80: case 50: v=2;  break; //p
-        case 82: case 51: v=3;  break; //r
-        case 69: case 52: v=4;  break; //e
-        case 78: case 53: v=5;  break; //n
-        case 72:          v=6;  break; //h
-        case 73:          v=7;  break; //i
-        case 67:          v=67; break; //c
-        case 76:          v=76; break; //l
-        default:
-          return;  //show
-      }
-      
-      if(v){
-        e.preventDefault();
-        e.stopPropagation();
-        Wt.emit(id,{name:'hotkey'},v);
-      }
-    }
-  );
+    }//if( e.ctrlKey ) / else
+    
+    e.preventDefault();
+    e.stopPropagation();
+    Wt.emit( id, {name:'hotkey'}, code );
+  } );
   
-  const string jsfcn = string("function(s,e){var f=")+js+";f('"+id()+"',e);}";
-  m_hotkeySlot.reset( new JSlot( jsfcn, this ) );
-
-  wApp->domRoot()->keyWentDown().connect( *m_hotkeySlot );
-  m_hotkeySignal->connect( boost::bind( &InterSpec::hotkeyPressed, this, _1 ) );
+  const string jsfcfn = string("function(e){var f=") + js + ";f('" + id() + "',e);}";
+  wApp->declareJavaScriptFunction( "appKeyDown", jsfcfn );
+  
+  const string jsfcn = "document.addEventListener('keydown'," + wApp->javaScriptClass() + ".appKeyDown);";
+  doJavaScript( jsfcn );
+  
+  m_hotkeySignal->connect( boost::bind( &InterSpec::hotKeyPressed, this, _1 ) );
 }//void initHotkeySignal()
 
 
-void InterSpec::hotkeyPressed( const unsigned int value )
+void InterSpec::hotKeyPressed( const unsigned int value )
 {
   if( m_toolsTabs )
   {
     string expectedTxt;
     switch( value )
     {
-      case 1: expectedTxt = FileTabTitle;          break;
-      case 2: expectedTxt = PeakInfoTabTitle;      break;
-      case 3: expectedTxt = GammaLinesTabTitle;    break;
-      case 4: expectedTxt = CalibrationTabTitle;   break;
-      case 5: expectedTxt = NuclideSearchTabTitle; break;
+      case '1': expectedTxt = FileTabTitle;          break;
+      case '2': expectedTxt = PeakInfoTabTitle;      break;
+      case '3': expectedTxt = GammaLinesTabTitle;    break;
+      case '4': expectedTxt = CalibrationTabTitle;   break;
+      case '5': expectedTxt = NuclideSearchTabTitle; break;
       
-      case 6:
+      case 'h': case 'H':
         HelpSystem::createHelpWindow( "getting-started" );
         break;
       
-      case 7:
+      case 'i': case 'I':
         showWelcomeDialog( true );
         break;
       
-      case 67:
+      case 'k': case 'K':
         // TODO: decide how to handle this if the current reference lines are from the
         //       "Nuclide Search" tool
         if( m_referencePhotopeakLines )
           m_referencePhotopeakLines->clearAllLines();
         break;
       
-      case 76:
+      case 'l': case 'L':
         setLogY( !m_spectrum->yAxisIsLog() );
+        break;
+        
+      case 37: case 38: case 39: case 40:
+        arrowKeyPressed( value );
         break;
     }//switch( value )
   
@@ -1787,16 +1804,74 @@ void InterSpec::hotkeyPressed( const unsigned int value )
   {
     switch( value )
     {
-      case 1: showCompactFileManagerWindow(); break;
-      case 2: showPeakInfoWindow();           break;
-      case 3: showGammaLinesWindow();         break;
-      case 4: showEnergyCalWindow();          break;
-      case 5: showNuclideSearchWindow();      break;
-      case 76: setLogY( !m_spectrum->yAxisIsLog() );  break;
+      case '1': showCompactFileManagerWindow(); break;
+      case '2': showPeakInfoWindow();           break;
+      case '3': showGammaLinesWindow();         break;
+      case '4': showEnergyCalWindow();          break;
+      case '5': showNuclideSearchWindow();      break;
+      case 'l':
+        setLogY( !m_spectrum->yAxisIsLog() );
+        break;
+      case 37: case 38: case 39: case 40:
+        arrowKeyPressed( value );
+        break;
     }//switch( value )
   }//if( tool tabs visible ) / else
-}//void hotkeyPressed( const int value )
+}//void hotKeyPressed( const int value )
 
+
+void InterSpec::arrowKeyPressed( const unsigned int value )
+{
+#if( USING_ELECTRON_NATIVE_MENU || USE_OSX_NATIVE_MENU || IOS || ANDROID )
+  return;
+#endif
+  
+  if( m_mobileMenuButton )
+    return;
+  
+  const vector<PopupDivMenu *> menus{
+    m_fileMenuPopup, m_displayOptionsPopupDiv, m_toolsMenuPopup, m_helpMenuPopup
+  };
+  
+  bool foundActive = false;
+  size_t activeIndex = 0;
+  for( size_t i = 0; i < menus.size(); ++i )
+  {
+    if( menus[i] && menus[i]->isVisible() && menus[i]->parentButton() )
+    {
+      foundActive = true;
+      activeIndex = i;
+      break;
+    }
+  }
+  
+  if( !foundActive )
+    return;
+  
+  const bool leftArrow  = (value == 37);
+  const bool upArrow    = (value == 38);
+  const bool rightArrow = (value == 39);
+  const bool downArrow  = (value == 40);
+  
+  if( leftArrow || rightArrow )
+  {
+    size_t nextActiveIndex;
+    if( leftArrow )
+      nextActiveIndex = (activeIndex == 0) ? (menus.size() - 1) : (activeIndex - 1);
+    else
+      nextActiveIndex = ((activeIndex + 1) % menus.size());
+    
+    menus[activeIndex]->hide();
+    menus[nextActiveIndex]->parentClicked();
+  }else if( upArrow || downArrow )
+  {
+    // TODO: Have the up/down arrow keys select different menu items in the menu
+    //   I havent gotten the up/down arrows working to select different menu items - maybe
+    //    it needs to be purely JS.
+    //    And once we do get the up/down arrows working, then need to listen for 'Enter' and
+    //    trigger, again probably all in JS
+  }//if( leftArrow || rightArrow ) / else if( upArrow || downArrow )
+}//void arrowKeyPressed( const unsigned int value )
 
 
 void InterSpec::rightClickMenuClosed()
@@ -2611,7 +2686,7 @@ void InterSpec::handleRightClick( double energy, double counts,
     }//switch( i )
   }//for( loop over right click menu items )
   
-  if( isMobile() )
+  if( m_rightClickMenu->isMobile() )
     m_rightClickMenu->showMobile();
   else
     m_rightClickMenu->popup( WPoint(pageX,pageY) );
@@ -2994,10 +3069,25 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       entry.modify()->shownDisplayFeatures |= UserState::kDockedWindows;
     if( m_spectrum->yAxisIsLog() )
       entry.modify()->shownDisplayFeatures |= UserState::kLogSpectrumCounts;
-    if( m_user->preferenceValue<bool>( "ShowVerticalGridlines" ) )
-      entry.modify()->shownDisplayFeatures |= UserState::kVerticalGridLines;
-    if( m_user->preferenceValue<bool>( "ShowHorizontalGridlines" ) )
-      entry.modify()->shownDisplayFeatures |= UserState::kHorizontalGridLines;
+    
+    try
+    {
+      if( m_user->preferenceValue<bool>( "ShowVerticalGridlines" ) )
+        entry.modify()->shownDisplayFeatures |= UserState::kVerticalGridLines;
+    }catch(...)
+    {
+      // We can get here if we loaded from a state that didnt have this preference
+    }
+    
+    try
+    {
+      if( m_user->preferenceValue<bool>( "ShowHorizontalGridlines" ) )
+        entry.modify()->shownDisplayFeatures |= UserState::kHorizontalGridLines;
+    }catch(...)
+    {
+      // We can get here if we loaded from a state that didnt have this preference
+    }
+    
     if( m_spectrum->legendIsEnabled() )
     {
       cerr << "Legend enabled" << endl;
@@ -3465,6 +3555,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       setSpectrum( second, secondNums, SpecUtils::SpectrumType::SecondForeground, 0 );
     }
     
+    
     //Load the other spectra the user had opened.  Note that they were not
     //  write protected so they may have been changed or removed
     //...should check to make sure that they are lazily loaded, so as to not
@@ -3542,32 +3633,48 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 //    bool logY = (entry->shownDisplayFeatures & UserState::kLogSpectrumCounts);
 //    m_spectrum->setYAxisLog( logY );
     
-    const bool vertGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
-    const bool horizontalGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
-    m_spectrum->showVerticalLines( vertGridLines );
-    m_spectrum->showHorizontalLines( horizontalGridLines );
-    m_timeSeries->showVerticalLines( vertGridLines );
-    m_timeSeries->showHorizontalLines( horizontalGridLines );
     
-    if( (entry->shownDisplayFeatures & UserState::kSpectrumLegend) )
+    if( foreground )
     {
-#if( USE_SPECTRUM_CHART_D3 )
-      m_spectrum->enableLegend();
+      // If we have a state without a foreground, then for the spectrum chart, changing the legend
+      //  enabled status, or setting the horizontal/vertical lines causes the client-side javascript
+      //  to crash - I spent some hours trying to figure it out, but no luck.  So for the moment,
+      //  we'll just do this work-around.
+      //  One hint was for the crashing case D3SpectrumDisplayDiv::defineJavaScript() seems to be
+      //  called multiple times, and maybe the id of the parent div changes???
+      //  Its really bizarre.
+#ifdef _MSC_VER
+#pragma message("Not setting show legend or grid lines on charts when loading states that do not have a foreground; should figure out why this causes a client-side error")
 #else
-      m_spectrum->enableLegend( false );
+#warning "Not setting show legend or grid lines on charts when loading states that do not have a foreground; should figure out why this causes a client-side error"
 #endif
-    }else
-    {
-      m_spectrum->disableLegend();
-    }
-    
+      
+      const bool vertGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
+      const bool horizontalGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
+      m_spectrum->showVerticalLines( vertGridLines );
+      m_spectrum->showHorizontalLines( horizontalGridLines );
+      m_timeSeries->showVerticalLines( vertGridLines );
+      m_timeSeries->showHorizontalLines( horizontalGridLines );
+      
+      if( (entry->shownDisplayFeatures & UserState::kSpectrumLegend) )
+      {
+#if( USE_SPECTRUM_CHART_D3 )
+        m_spectrum->enableLegend();
+#else
+        m_spectrum->enableLegend( false );
+#endif
+      }else
+      {
+        m_spectrum->disableLegend();
+      }
+      
 #if( !USE_SPECTRUM_CHART_D3 )
-    if( (entry->shownDisplayFeatures & UserState::kTimeSeriesLegend) )
-      m_timeSeries->enableLegend( false );
-    else
-      m_timeSeries->disableLegend();
+      if( (entry->shownDisplayFeatures & UserState::kTimeSeriesLegend) )
+        m_timeSeries->enableLegend( false );
+      else
+        m_timeSeries->disableLegend();
 #endif
-    
+    }//if( foreground )
     
 //  SpectrumSubtractMode backgroundSubMode;
     
@@ -3588,6 +3695,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       {
         if( m_toolsTabs->tabText( tab ) == title )
         {
+          // Note: this causes handleToolTabChanged(...) to be called
           m_toolsTabs->setCurrentIndex( tab );
           m_currentToolsTab = tab;
           break;
@@ -4072,8 +4180,16 @@ void InterSpec::deleteLicenseAndDisclaimersWindow()
 
 void InterSpec::showWelcomeDialog( bool force )
 {
-  if( !force && !m_user->preferenceValue<bool>( "ShowSplashScreen" ) )
-    return;
+  try
+  {
+    if( !force && !m_user->preferenceValue<bool>( "ShowSplashScreen" ) )
+      return;
+  }catch(...)
+  {
+    //m_user didnt have preference "ShowSplashScreen" for some reason
+    if( !force )
+      return;
+  }
   
   if( m_useInfoWindow )
   {
@@ -4169,6 +4285,9 @@ void InterSpec::showFileQueryDialog()
     return;
   
   m_specFileQueryDialog = new AuxWindow( "Spectrum File Query Tool", AuxWindowProperties::TabletNotFullScreen );
+  //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
+  //  size to be the min-size
+  m_specFileQueryDialog->setMinimumSize( 640, 480 );
   m_specFileQueryDialog->setResizable( true );
   //m_specFileQueryDialog->disableCollapse();
   
@@ -4272,6 +4391,9 @@ void InterSpec::showWarningsWindow()
     m_warningsWindow->rejectWhenEscapePressed();
     m_warningsWindow->stretcher()->addWidget( m_warnings, 0, 0, 1, 1 );
     m_warningsWindow->stretcher()->setContentsMargins(0,0,0,0);
+    //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
+    //  size to be the min-size
+    m_warningsWindow->setMinimumSize( 640, 480 );
     m_warningsWindow->setResizable(true);
     m_warningsWindow->resizeScaledWindow(0.75, 0.75);
     m_warningsWindow->centerWindow();
@@ -5948,7 +6070,9 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   
   PopupDivMenu *chartmenu = m_displayOptionsPopupDiv->addPopupMenuItem( "Chart Options" , "InterSpec_resources/images/spec_settings_small.png");
   
-  const bool logypref = m_user->preferenceValue<bool>( "LogY" );
+  bool logypref = true;
+  try{ logypref = m_user->preferenceValue<bool>( "LogY" ); }catch(...){}
+  
   m_logYItems[0] = chartmenu->addMenuItem( "Log Y Scale" );
   m_logYItems[1] = chartmenu->addMenuItem( "Linear Y Scale" );
   m_logYItems[0]->setHidden( logypref );
@@ -6812,12 +6936,6 @@ void InterSpec::dragEventWithFileContentsFinished()
 #endif ///#if( defined(WIN32) && BUILD_AS_ELECTRON_APP )
 
 
-Wt::JSlot *InterSpec::hotkeyJsSlot()
-{
-  return m_hotkeySlot.get();
-}//const Wt::JSlot *hotkeyJsSlot() const;
-
-
 void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
 {
   PopupDivMenu *menu = parentWidget->addPopupMenuItem( "Peak Labels",  "InterSpec_resources/images/tag.svg" );
@@ -7163,7 +7281,9 @@ Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpecUtils::SpectrumType 
     if( answer && !meas->modified() )
       return answer;
   
-    const bool savePref = m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" /*"SaveSpectraToDb"*/);
+    bool savePref = false;
+    try{ savePref = m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ); }catch(...){}
+    
     if( !savePref )
       return answer;
     
@@ -8807,19 +8927,19 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     closeShieldingSourceFitWindow();
     
 #if( USE_DB_TO_STORE_SPECTRA )
-    if( m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ) )
-    {
-      //We also need to do this in the InterSpec destructor as well.
-      //   Also maybe change size limitations to only apply to auto saving
-      if( m_currentStateID >= 0 )
-      {
-        //Save to (HEAD) of current state
-      }else
-      {
-        //Create a state
-        //Handle case where file is to large to be saved
-      }
-    }
+    //if( m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ) )
+    //{
+    //  //We also need to do this in the InterSpec destructor as well.
+    //  //   Also maybe change size limitations to only apply to auto saving
+    //  if( m_currentStateID >= 0 )
+    //  {
+    //    //Save to (HEAD) of current state
+    //  }else
+    //  {
+    //    //Create a state
+    //    //Handle case where file is to large to be saved
+    //  }
+    //}
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
@@ -9008,7 +9128,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       
       m_secondDataMeasurement = nullptr;
+#if( USE_SPECTRUM_CHART_D3 )
+      m_spectrum->setSecondData( nullptr );
+#else
       m_spectrum->setSecondData( nullptr, false );
+#endif
       
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::SecondForeground,
                                              nullptr, {}, {} );
@@ -9275,7 +9399,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     switch( spec_type )
     {
       case SpecUtils::SpectrumType::Foreground:
-        worthShowing = ana->is_empty();
+        worthShowing = !ana->is_empty();
         break;
         
       case SpecUtils::SpectrumType::SecondForeground:
@@ -10277,10 +10401,7 @@ void InterSpec::userAskedToFitPeaksInRange( double x0, double x1,
   menu->aboutToHide().connect( menu, &DeleteOnClosePopupMenu::markForDelete );
   menu->setPositionScheme( Wt::Absolute );
   
-  PopupDivMenuItem *item = 0;
-  if( isMobile() )
-    item = menu->addPhoneBackItem( NULL );
-//  item->triggered().connect( boost::bind( &deleteMenu, menu ) );
+  PopupDivMenuItem *item = nullptr;
   
   item = menu->addMenuItem( "Single Peak" );
 //  item->triggered().connect( boost::bind( &InterSpec::findPeakFromUserRange, this, x0, x1 ) );
@@ -11079,12 +11200,25 @@ vector<string> InterSpec::detectorsToDisplay( const SpecUtils::SpectrumType type
 
 void InterSpec::refreshDisplayedCharts()
 {
-  if( !!m_dataMeasurement )
+  //We want to keep the old display scale factors, but calling displayForegroundData() will
+  //  reset them.
+  const float backSf = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Background);
+  const float secondSf = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::SecondForeground);
+  
+  if( m_dataMeasurement )
     displayForegroundData( true );
-  if( !!m_secondDataMeasurement )
+  
+  if( m_secondDataMeasurement )
+  {
     displaySecondForegroundData();
-  if( !!m_backgroundMeasurement )
+    m_spectrum->setDisplayScaleFactor( secondSf, SpecUtils::SpectrumType::SecondForeground );
+  }//if( m_secondDataMeasurement )
+  
+  if( m_backgroundMeasurement )
+  {
     displayBackgroundData();
+    m_spectrum->setDisplayScaleFactor( backSf, SpecUtils::SpectrumType::Background );
+  }//if( m_backgroundMeasurement )
   
   // Now check if the currently displayed energy range extend past all the ranges of the data.
   //  If so, dont display past where the data is.
@@ -11488,7 +11622,13 @@ void InterSpec::displaySecondForegroundData()
   {
     //sample_nums.clear();
     if( m_spectrum->secondData() )
+    {
+#if( USE_SPECTRUM_CHART_D3 )
+      m_spectrum->setSecondData( nullptr );
+#else
       m_spectrum->setSecondData( nullptr, false );
+#endif
+    }
     
     if( !m_timeSeries->isHidden() )
     {
@@ -11509,7 +11649,11 @@ void InterSpec::displaySecondForegroundData()
   if( histH )
     histH->set_title( "Second Foreground" );
     
+#if( USE_SPECTRUM_CHART_D3 )
+  m_spectrum->setSecondData( histH );
+#else
   m_spectrum->setSecondData( histH, false );
+#endif
   
   if( !m_timeSeries->isHidden() )
   {

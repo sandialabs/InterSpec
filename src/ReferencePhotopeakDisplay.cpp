@@ -475,9 +475,14 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   inputLayout->addWidget( m_persistLines, 0, 2 );
   
   
-  Wt::JSlot *hotKeySlot = m_spectrumViewer->hotkeyJsSlot();
-  if( hotKeySlot )
-    m_nuclideEdit->keyWentDown().connect( "function(s1,e1)"+ hotKeySlot->execJs( "s1", "e1" ) );
+  // If we are typing in this box, we want to let app-hotkeys propogate up, but not arrow keys and
+  //  stuff
+  const string jsAppKeyDownFcn = wApp->javaScriptClass() + ".appKeyDown";
+  const string keyDownJs = "function(s1,e1){"
+  "if(e1 && e1.ctrlKey && e1.key && " + jsAppKeyDownFcn + ")"
+    + jsAppKeyDownFcn + "(e1);"
+  "}";
+  m_nuclideEdit->keyWentDown().connect( keyDownJs );
   
   tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (x-rays only)"
             ", <b>Uranium</b> (x-rays), <b>U-235m</b> (meta stable state)"

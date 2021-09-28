@@ -413,7 +413,7 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
     {
       static int ncalls = 0;
       if( ncalls++ < 10 )
-        cerr << "\nPeakFitChi2Fcn::chi2(...): recieved invalid "
+        cerr << "\nPeakFitChi2Fcn::chi2(...): received invalid "
              << "input parameter " << i << endl;
       return DBL_MAX;
     }//if( IsInf(p) || IsNan(p) )

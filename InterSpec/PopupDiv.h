@@ -207,6 +207,10 @@ public:
   void parentMouseWentOver();
   void undoParentHoveredOver();
   
+  bool isMobile() const;
+  
+  Wt::WPushButton *parentButton();
+  
 protected:
   void desktopDoHide();
 

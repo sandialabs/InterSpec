@@ -351,6 +351,8 @@ protected:
 
   private:
     PeakModel *m_model;
+    Wt::WApplication *m_app;
+    
     virtual void handleRequest( const Wt::Http::Request &request,
                                 Wt::Http::Response &response );
   };//class PeakCsvResource : public Wt::WResource

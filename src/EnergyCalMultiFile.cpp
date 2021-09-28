@@ -65,6 +65,109 @@ namespace
   const size_t ns_min_num_coef = 4;
 }
 
+
+/** For the EnergyCalMultiFileModel class, we will create a unique WModelIndex internal ID ptr by multiplying each level if information
+ by some multiples, and using the bottom three bits to indicate what type of index this is.
+ 
+ Maybe not super-solid, but whatever.
+ */
+namespace
+{
+const uint64_t ns_file_level_multiple   = 0x0001000000000000;
+const uint64_t ns_sample_level_multiple = 0x0000000010000000;
+const uint64_t ns_peak_level_multiple   = 0x0000000000000010;
+
+const uint64_t ns_is_file_bit           = 0x0000000000000004;
+const uint64_t ns_is_sample_bit         = 0x0000000000000002;
+const uint64_t ns_is_peak_bit           = 0x0000000000000001;
+
+enum class ModelLevel
+{
+  File, SampleSet, Peak, Invalid
+};
+
+uint64_t to_internal_id( ModelLevel level, int filenum, int samplesnum, int peaknum )
+{
+  uint64_t file_ptr_part = filenum;
+  file_ptr_part *= ns_file_level_multiple;
+  
+  uint64_t sample_ptr_part = samplesnum;
+  sample_ptr_part *= ns_sample_level_multiple;
+  
+  uint64_t peak_ptr_part = peaknum;
+  peak_ptr_part *= ns_peak_level_multiple;
+  
+  uint64_t internalptr = file_ptr_part + sample_ptr_part + peak_ptr_part;
+  
+  switch( level )
+  {
+    case ModelLevel::File:       internalptr |= ns_is_file_bit;   break;
+    case ModelLevel::SampleSet:  internalptr |= ns_is_sample_bit; break;
+    case ModelLevel::Peak:       internalptr |= ns_is_peak_bit;   break;
+    case ModelLevel::Invalid:                                     break;
+  }//switch( level )
+  
+  return internalptr;
+}//to_internal_id(...)
+
+
+void from_internal_id( const uint64_t internal_id, ModelLevel &level, int &filenum, int &samplesnum, int &peaknum )
+{
+  filenum = samplesnum = peaknum = 0;
+  
+  const bool is_filelevel   = (internal_id & ns_is_file_bit);
+  const bool is_samplelevel = (internal_id & ns_is_sample_bit);
+  const bool is_peaklevel   = (internal_id & ns_is_peak_bit);
+  
+  const int nlevels = is_filelevel + is_samplelevel + is_peaklevel;
+  assert( nlevels <= 1 );
+  
+  if( nlevels > 1 )
+  {
+    level = ModelLevel::Invalid;
+    return;
+  }
+  
+  if( is_filelevel )
+    level = ModelLevel::File;
+  else if( is_samplelevel )
+    level = ModelLevel::SampleSet;
+  else if( is_peaklevel )
+    level = ModelLevel::Peak;
+  else
+    level = ModelLevel::Invalid;
+  
+  uint64_t file_part   = internal_id / ns_file_level_multiple;
+  uint64_t sample_part = ((internal_id % ns_file_level_multiple)   / ns_sample_level_multiple);
+  uint64_t peak_part   = ((internal_id % ns_sample_level_multiple) / ns_peak_level_multiple);
+  
+  switch( level )
+  {
+    case ModelLevel::Invalid:
+      assert( file_part == 0 );
+      // fall-through intentional
+      
+    case ModelLevel::File:
+      assert( sample_part == 0 );
+      // fall-through intentional
+      
+    case ModelLevel::SampleSet:
+      assert( peak_part == 0 );
+      break;
+      
+    case ModelLevel::Peak:
+      break;
+  }//switch( level )
+  
+  filenum = static_cast<int>(file_part);
+  samplesnum = static_cast<int>(sample_part);
+  peaknum = static_cast<int>(peak_part);
+}//void from_internal_id(...)
+
+
+}//namespace
+
+
 EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
 : WContainerWidget(),
   m_calibrator( cal ),
@@ -90,12 +193,13 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
   tree->setSortingEnabled(false);
   tree->setModel( m_model );
   tree->setColumn1Fixed( false );
-  tree->setHeaderHeight( 2 );
+  tree->setHeaderHeight( 20 );
   tree->setColumnWidth( 0, 200 );
   tree->setColumnWidth( 1, 150 );
   tree->setColumnWidth( 2, 150 );
+  tree->expandToDepth( 2 );
   
-  WGroupBox *fitFor = new WGroupBox( "Coefficents to fit for" );
+  WGroupBox *fitFor = new WGroupBox( "Coefficients to fit for" );
   WGridLayout *fitForLayout = new WGridLayout( fitFor );
   
   
@@ -107,7 +211,7 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
       case 0: label = new WLabel( "Offset" ); break;
       case 1: label = new WLabel( "Linear" ); break;
       case 2: label = new WLabel( "Quadratic" ); break;
-      case 3: label = new WLabel( "Quartic" ); break;
+      case 3: label = new WLabel( "Cubic" ); break;
       default: label = new WLabel( std::to_string(i+1) + "th" ); break;
     }//switch( i )
     
@@ -222,32 +326,42 @@ void EnergyCalMultiFile::doFit()
   {
     vector<EnergyCal::RecalPeakInfo> peakInfos;
     
-    for( size_t filenum = 0; filenum < m_model->m_peaks.size(); ++filenum )
+    for( const auto &samplesinfos : m_model->m_data )
     {
-      const vector<EnergyCalMultiFileModel::PeakInfo_t> &peaks = m_model->m_peaks[filenum];
-      for( size_t j = 0; j < peaks.size(); ++j )
+      for( const EnergyCalMultiFileModel::SamplesPeakInfo_t &samplesinfo : samplesinfos )
       {
-        if( get<0>(peaks[j]) && get<1>(peaks[j]) && get<2>(peaks[j]) )
+        const shared_ptr<const SpecUtils::EnergyCalibration> &peakcal = get<2>(samplesinfo);
+        const vector<EnergyCalMultiFileModel::UsePeakInfo_t> &peakinfos = get<3>(samplesinfo);
+        
+        if( !peakcal || !peakcal->valid() )
+          continue;
+        
+        for( const EnergyCalMultiFileModel::UsePeakInfo_t &info : peakinfos )
         {
-          const PeakDef &peak = *get<2>(peaks[j]);
-          const shared_ptr<const EnergyCalibration> &peakcal = get<0>(peaks[j]);
-          const double wantedEnergy = peak.gammaParticleEnergy();
+          const bool use = get<0>(info);
+          const shared_ptr<const PeakDef> &peakptr = get<1>(info);
           
-          EnergyCal::RecalPeakInfo peakInfo;
-          peakInfo.peakMean = peak.mean();
-          peakInfo.peakMeanUncert = max( peak.meanUncert(), 0.25 );
-          if( IsInf(peakInfo.peakMeanUncert) || IsNan(peakInfo.peakMeanUncert) )
-            peakInfo.peakMeanUncert = 0.5;
-          peakInfo.photopeakEnergy = wantedEnergy;
-          peakInfo.peakMeanBinNumber = peakcal->channel_for_energy( peak.mean() );
-          
-          if( IsNan(peakInfo.peakMeanBinNumber) || IsInf(peakInfo.peakMeanBinNumber) )
-            throw runtime_error( "Invalid result from EnergyCalibration::channel_for_energy(...)" );
-          peakInfos.push_back( peakInfo );
-        }//if( energy cal and peak ptrs are valid, and we should use this peak for fitting )
-      }//for( loop over peaks for a file )
-    }//for( int col = 0; col < numModelCol; ++col )
-    
+          if( use && peakptr )
+          {
+            const PeakDef &peak = *peakptr;
+            const double wantedEnergy = peak.gammaParticleEnergy();
+            
+            EnergyCal::RecalPeakInfo peakInfo;
+            peakInfo.peakMean = peak.mean();
+            peakInfo.peakMeanUncert = max( peak.meanUncert(), 0.25 );
+            if( IsInf(peakInfo.peakMeanUncert) || IsNan(peakInfo.peakMeanUncert) )
+              peakInfo.peakMeanUncert = 0.5;
+            peakInfo.photopeakEnergy = wantedEnergy;
+            peakInfo.peakMeanBinNumber = peakcal->channel_for_energy( peak.mean() );
+            
+            if( IsNan(peakInfo.peakMeanBinNumber) || IsInf(peakInfo.peakMeanBinNumber) )
+              throw runtime_error( "Invalid result from EnergyCalibration::channel_for_energy(...)" );
+            
+            peakInfos.push_back( peakInfo );
+          }//if( energy cal and peak ptrs are valid, and we should use this peak for fitting )
+        }//for( loop over peaks for a file )
+      }//for( int col = 0; col < numModelCol; ++col )
+    }//for( const EnergyCalMultiFileModel::SamplesPeakInfo_t &samplesinfo : samplesinfos )
     
     const size_t npeaks = peakInfos.size();
     const size_t ncoeffs = m_fitFor.size();
@@ -415,18 +529,48 @@ void EnergyCalMultiFile::applyCurrentFit()
   const auto foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
   const auto dispsamples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
   
-  for( size_t filenum = 0; filenum < m_model->m_peaks.size(); ++filenum )
+  for( size_t filenum = 0; filenum < m_model->m_data.size(); ++filenum )
   {
-    shared_ptr<SpectraFileHeader> header;
-    const vector<EnergyCalMultiFileModel::PeakInfo_t> &peaks = m_model->m_peaks[filenum];
-    for( size_t j = 0; !header && (j < peaks.size()); ++j )
-    {
-      if( get<0>(peaks[j]) && get<1>(peaks[j]) && get<2>(peaks[j]) && get<3>(peaks[j]) )
-        header = get<3>(peaks[j]);
-    }
+    const vector<EnergyCalMultiFileModel::SamplesPeakInfo_t> &samplesinfos = m_model->m_data[filenum];
     
+    if( samplesinfos.empty() )
+      continue;
+    
+    const shared_ptr<SpectraFileHeader> header = get<0>(samplesinfos[0]);
     if( !header )
       continue;
+    
+    shared_ptr<SpecMeas> spec;
+    try
+    {
+      spec = header->parseFile();
+    }catch( std::exception &e )
+    {
+      const string filename = header ? header->displayName().toUTF8() : std::string("unknown");
+      error_msgs.emplace_back( SpecUtils::filename(filename), e.what() );
+    }
+    
+    if( !spec ) //shouldnt happen, but JIC
+      continue;
+    
+    //  TODO: decide if we should apply changes only for samples that have a peak participating in the fit...
+    int num_samples_used = 0;
+    
+    for( const EnergyCalMultiFileModel::SamplesPeakInfo_t &samplesinfo : samplesinfos )
+    {
+      for( const EnergyCalMultiFileModel::UsePeakInfo_t &peakInfo : get<3>(samplesinfo) )
+      {
+        const bool use = get<0>(peakInfo);
+        const shared_ptr<const PeakDef> &peak = get<1>(peakInfo);
+        
+        if( use && peak && peak->hasSourceGammaAssigned() )
+          num_samples_used += 1;
+      }
+    }//for( const EnergyCalMultiFileModel::SamplesPeakInfo_t &samplesinfo : samplesinfos )
+    
+    if( !num_samples_used )
+      continue;
+    
     
     // We will apply the calibrations on a file-by-file level; this has the side-effect that if we
     //  do run into an issue, that one file wont pick up the change, but all other files will...
@@ -442,7 +586,7 @@ void EnergyCalMultiFile::applyCurrentFit()
       map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks;
       
       // We will first update the energy calibration for Measurements associated with peaks, since
-      //  this is kinda un-ambigous for how to do it for multi-deector systems.
+      //  this is kinda un-ambiguous for how to do it for multi-detector systems.
       const auto &detnames = spec->gamma_detector_names();
       const auto peaksets = spec->sampleNumsWithPeaks();
       for( const set<int> &samples : peaksets )
@@ -507,7 +651,7 @@ void EnergyCalMultiFile::applyCurrentFit()
         auto pos = updated_cals.find( oldcal );
         if( pos != end(updated_cals) )
           continue;
-
+        
         // Uhg, for multi-detector systems, I dont really know what to do, so heres something...
         //  \TODO: figure out a better way to apply the correct calibration; maybe match up detect
         //         names or somethign?
@@ -625,7 +769,7 @@ EnergyCalMultiFileModel::EnergyCalMultiFileModel( EnergyCalTool *calibrator, Wt:
   m_fileModel->rowsRemoved().connect( boost::bind(&EnergyCalMultiFileModel::refreshData, this) );
 
   //Should add in a listener here to the PeakModel to see if peaks are
-  //  added/removed; this might neccesitate tracking
+  //  added/removed; this might necessitate tracking
 }//EnergyCalMultiFileModel constructor
 
 
@@ -634,25 +778,50 @@ EnergyCalMultiFileModel::~EnergyCalMultiFileModel()
 }//~EnergyCalMultiFileModel()
 
 
+
+
+
 WModelIndex EnergyCalMultiFileModel::index( int row, int column, const WModelIndex &parent ) const
 {
-  if( parent.isValid() )
+  // Make sure we dont create anything below the peak info level
+  
+  ModelLevel parent_level, index_level = ModelLevel::Invalid;
+  int filenum, samplesnum, peaknum;
+  from_internal_id( parent.internalId(), parent_level, filenum, samplesnum, peaknum );
+  
+  switch( parent_level )
   {
-    if( column < 0 || column >= 3 )
+    case ModelLevel::Invalid:
+      filenum = row;
+      index_level = ModelLevel::File;
+      if( column != 0 )
+        return WModelIndex();
+      break;
+      
+    case ModelLevel::File:
+      samplesnum = row;
+      index_level = ModelLevel::SampleSet;
+      if( column != 0 )
+        return WModelIndex();
+      break;
+      
+    case ModelLevel::SampleSet:
+      peaknum = row;
+      index_level = ModelLevel::Peak;
+      if( (column < 0) || (column >= 3) )
+        return WModelIndex();
+      break;
+      
+    case ModelLevel::Peak:
       return WModelIndex();
-    
-    if( parent.row() < 0 || parent.row() >= static_cast<int>(m_peaks.size()) )
-      return WModelIndex();
-    
-    return createIndex( row, column, ::uint64_t(parent.row()) );
-  }//if( parent.isValid() )
+  }//switch( parent_level )
   
-  if( row < 0 || row >= static_cast<int>(m_peaks.size()) )
-    return WModelIndex();
+  const uint64_t internal_index = to_internal_id( index_level, filenum, samplesnum, peaknum );
   
-  if( column != 0 )
-    return WModelIndex();
-  return createIndex( row, column, numeric_limits<unsigned int>::max() );
+  // We could check valid filenum, samplesnum, and peaknum, but we'll just rely on the rest of
+  //  the code actually working correctly...
+  
+  return createIndex( row, column, internal_index );
 }//index(...)
 
 
@@ -661,12 +830,47 @@ WModelIndex EnergyCalMultiFileModel::parent( const WModelIndex &index ) const
   if( !index.isValid() )
     return WModelIndex();
   
-  const ::uint64_t filenum = index.internalId();
-  if( filenum == numeric_limits<unsigned int>::max() )
-    return WModelIndex();
+  const uint64_t internal_id = index.internalId();
   
-  if( filenum < m_peaks.size() )
-    return createIndex( filenum, 0, numeric_limits<unsigned int>::max() );
+  ModelLevel parent_level = ModelLevel::Invalid, index_level;
+  int filenum, samplesnum, peaknum;
+  from_internal_id( internal_id, index_level, filenum, samplesnum, peaknum );
+  
+  switch( index_level )
+  {
+    case ModelLevel::Invalid:
+    case ModelLevel::File:
+      parent_level = ModelLevel::Invalid;
+      return WModelIndex();
+      
+    case ModelLevel::SampleSet:
+      samplesnum = peaknum = 0;
+      parent_level = ModelLevel::File;
+      break;
+      
+    case ModelLevel::Peak:
+      peaknum = 0;
+      parent_level = ModelLevel::SampleSet;
+      break;
+  }//switch( index_level )
+  
+  const uint64_t parent_index = to_internal_id( parent_level, filenum, samplesnum, peaknum );
+  
+  switch( parent_level )
+  {
+    case ModelLevel::File:
+      return createIndex( filenum, 0, parent_index );
+      
+    case ModelLevel::SampleSet:
+      return createIndex( samplesnum, 0, parent_index );
+      
+    case ModelLevel::Peak:
+    case ModelLevel::Invalid:
+      assert( 0 );
+      return WModelIndex();
+  }//switch( parent_level )
+  
+  // We could validate filenum and samplesnum are valid...
   
   return WModelIndex();
 }//parent(...)
@@ -674,15 +878,40 @@ WModelIndex EnergyCalMultiFileModel::parent( const WModelIndex &index ) const
 
 int EnergyCalMultiFileModel::rowCount( const WModelIndex &parent ) const
 {
-  if( !parent.isValid() )
-    return static_cast<int>( m_peaks.size() );
+  if( !parent.isValid() ) // Number of files.
+    return static_cast<int>( m_data.size() );
   
-  if( parent.parent().isValid() )
-    return 0;
+  const uint64_t parent_id = parent.internalId();
   
-  const int filenum = parent.row();
-  if( filenum >= 0 && filenum < static_cast<int>(m_peaks.size()) )
-    return static_cast<int>( m_peaks[filenum].size() );
+  ModelLevel parent_level;
+  int filenum, samplesnum, peaknum;
+  from_internal_id( parent_id, parent_level, filenum, samplesnum, peaknum );
+  
+  const int row = parent.row();
+  const int col = parent.column();
+  
+  switch( parent_level )
+  {
+    case ModelLevel::Invalid:
+      assert( 0 );
+      return static_cast<int>( m_data.size() );
+      
+    case ModelLevel::File:
+      assert( row == filenum );
+      if( (col != 0) || (row < 0) || (row >= static_cast<int>(m_data.size())) )
+        return 0;
+      return static_cast<int>( m_data[row].size() );
+      
+    case ModelLevel::SampleSet:
+      if( (col != 0) || (filenum < 0) || (filenum >= static_cast<int>(m_data.size()))
+         || (samplesnum < 0) || (samplesnum >= m_data[filenum].size() ) )
+        return 0;
+      
+      return static_cast<int>( get<3>(m_data[filenum][samplesnum]).size() );
+      
+    case ModelLevel::Peak:
+      return 0;
+  }//switch( parent_level )
   
   return 0;
 }//rowCount(...)
@@ -690,9 +919,24 @@ int EnergyCalMultiFileModel::rowCount( const WModelIndex &parent ) const
 
 int EnergyCalMultiFileModel::columnCount( const WModelIndex &parent ) const
 {
-  if( parent.isValid() )
-    return 3;
-  return 1;
+  ModelLevel level;
+  int filenum, samplesnum, peaknum;
+  from_internal_id( parent.internalId(), level, filenum, samplesnum, peaknum );
+  
+  switch( level )
+  {
+    case ModelLevel::Invalid:
+    case ModelLevel::File:
+      return 1;
+      
+    case ModelLevel::SampleSet:
+      return 3;
+      
+    case ModelLevel::Peak:
+      return 0;
+  }//switch( level )
+  
+  return 0;
 }//columnCount(...)
 
   
@@ -704,105 +948,207 @@ boost::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, int role
   if( !index.isValid() )
     return boost::any();
   
-  if( !index.parent().isValid() && index.column() != 0 )
-    return boost::any();
+  
+  ModelLevel level;
+  int filenum, samplesnum, peaknum;
+  from_internal_id( index.internalId(), level, filenum, samplesnum, peaknum );
   
   const int row = index.row();
   const int col = index.column();
   
-  if( index.parent().isValid() )
+  if( (filenum < 0) || (filenum >= static_cast<int>(m_data.size())) )
+    return boost::any();
+  
+  const vector<SamplesPeakInfo_t> &fileinfos = m_data[filenum];
+  
+  
+  switch( level )
   {
-    const int filenum = index.parent().row();
-    if( filenum < 0 || filenum >= static_cast<int>(m_peaks.size()) )
+    case ModelLevel::Invalid:
       return boost::any();
-    if( row < 0 || row >= static_cast<int>(m_peaks[filenum].size()) )
-      return boost::any();
-    
-    const PeakInfo_t &info = m_peaks[filenum][row];
-    
-    const bool checked = get<1>(info);
-    shared_ptr<const PeakDef> peak = get<2>(info);
-    
-    if( !peak )
-      return boost::any();
-    
-    if( !peak->parentNuclide() && !peak->xrayElement() && !peak->reaction() )
-      return boost::any();
-    
-    if( role == Wt::CheckStateRole )
+
+    case ModelLevel::File:
     {
-      if( col == 0 )
-        return boost::any( checked );
-      return boost::any();
-    }
-    
-    if( col == 0 )
+      // Return filename here
+      if( (col != 0) || (role != Wt::DisplayRole) )
+        return boost::any();
+        
+      assert( filenum == row );
+      
+      if( fileinfos.empty() )
+        return boost::any();
+      
+      shared_ptr<SpectraFileHeader> header = get<0>( fileinfos[0] );
+      if( !header )
+        return boost::any();
+      
+      Wt::WString value = header->displayName();
+      if( value.empty() )
+        value = WString::fromUTF8( "File " + std::to_string(filenum) );
+      
+      return boost::any( value );
+    }//case ModelLevel::File:
+      
+      
+    case ModelLevel::SampleSet:
     {
-      if( peak->parentNuclide() )
-        return boost::any( WString::fromUTF8(peak->parentNuclide()->symbol) );
-      if( peak->xrayElement() )
-        return boost::any( WString::fromUTF8(peak->xrayElement()->symbol) );
-      if( peak->reaction() )
-        return boost::any( WString::fromUTF8(peak->reaction()->name()) );
-      return boost::any( WString("--") );
-    }//if( col == 0 )
-    
-    char msg[128];
-    msg[0] = '\0';
-    
-    if( col == 1 )
-      snprintf(msg, sizeof(msg), "%.2f keV Detected", peak->mean() );
-    
-    if( col == 2 )
-    {
-      try
+      // Return sample numbers + title here
+      assert( row == samplesnum );
+      if( (col != 0) || (role != Wt::DisplayRole) )
+        return boost::any();
+      
+      if( (samplesnum < 0) || (samplesnum >= static_cast<int>(fileinfos.size())) )
+        return boost::any();
+      
+      const SamplesPeakInfo_t &setinfo = fileinfos[samplesnum];
+      
+      const shared_ptr<SpectraFileHeader> &header = get<0>(setinfo);
+      const set<int> &samplenums = get<1>(setinfo);
+      
+      string title;
+      
+      if( header && (samplenums.size() == 1) )
       {
-        const float wantedEnergy = peak->gammaParticleEnergy();
-        snprintf(msg, sizeof(msg), "%.2f keV Expected", wantedEnergy );
-      }catch(...)
+        shared_ptr<SpecMeas> meas = header ? header->measurementIfInMemory() : nullptr;
+        if( meas )
+        {
+          const int sample = *begin(samplenums);
+          for( shared_ptr<const SpecUtils::Measurement> &m : meas->sample_measurements(sample) )
+          {
+            if( m && !m->title().empty() )
+            {
+              title = m->title();
+              break;
+            }
+          }//for( loop over measurements of this sample number )
+          
+          if( title.empty() && (meas->sample_numbers().size() > 1) )
+            title = "Sample " + std::to_string(sample);
+        }//if( we have the measurement )
+        
+        if( title.empty() )
+          title = "Peaks in File";
+      }else
       {
-        snprintf(msg, sizeof(msg), "%s", "--" );
+        title = "Samples " + SpecUtils::sequencesToBriefString(samplenums);
       }
-    }//if( col == 2 )
+      
+      //if( title.size() > 80 )
+      //  title = title.substr(0,77) + "...";
+      
+      return boost::any( WString::fromUTF8(title) );
+    }//case ModelLevel::SampleSet:
+      
+      
+    case ModelLevel::Peak:
+    {
+      assert( row == peaknum );
+      if( col < 0 || col > 2 )
+        return boost::any();
+      
+      if( (samplesnum < 0) || (samplesnum >= static_cast<int>(fileinfos.size())) )
+        return boost::any();
+      
+      const vector<UsePeakInfo_t> &peakinfos = get<3>(fileinfos[samplesnum]);
+      if( (peaknum < 0) || (peaknum >= static_cast<int>(peakinfos.size())) )
+        return boost::any();
+      
+      const bool checked = get<0>(peakinfos[peaknum]);
+      shared_ptr<const PeakDef> peak = get<1>(peakinfos[peaknum]);
+      
+      if( role == Wt::CheckStateRole )
+      {
+        if( col == 0 )
+          return boost::any( checked );
+        return boost::any();
+      }
+      
+      if( !peak )
+        return boost::any();
+      
+      if( !peak->parentNuclide() && !peak->xrayElement() && !peak->reaction() )
+        return boost::any();
+      
+      if( role == Wt::CheckStateRole )
+      {
+        if( index.column() == 0 )
+          return boost::any( checked );
+        return boost::any();
+      }
+      
+      if( col == 0 )
+      {
+        if( peak->parentNuclide() )
+          return boost::any( WString::fromUTF8(peak->parentNuclide()->symbol) );
+        
+        if( peak->xrayElement() )
+          return boost::any( WString::fromUTF8(peak->xrayElement()->symbol) );
+        
+        if( peak->reaction() )
+          return boost::any( WString::fromUTF8(peak->reaction()->name()) );
+        
+        return boost::any( WString::fromUTF8("--") );
+      }//if( col == 0 )
+      
+      char msg[128] = { '\0' };
+      
+      if( col == 1 )
+      {
+        snprintf(msg, sizeof(msg), "%.2f keV Detected", peak->mean() );
+      }else if( col == 2 )
+      {
+        try
+        {
+          const float wantedEnergy = peak->gammaParticleEnergy();
+          snprintf(msg, sizeof(msg), "%.2f keV Expected", wantedEnergy );
+        }catch(...)
+        {
+          snprintf(msg, sizeof(msg), "%s", "--" );
+        }
+      }else
+      {
+        return boost::any();
+      } //if( col == 1 ) / else ...
+      
+      return boost::any( WString::fromUTF8(msg) );
+      
+      break;
+    }//case ModelLevel::Peak:
+  }//switch( level )
+  
     
-    if( !strlen(msg) )
-      return boost::any();
-    return boost::any( WString(msg) );
-  }//if( index.parent().isValid() )
-  
-  if( role != Wt::DisplayRole )
-    return boost::any();
-  
-  if( row < 0 || row >= static_cast<int>(m_peaks.size()) )
-    return boost::any();
-  
-  std::shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( row );
-  if( header )
-    return boost::any( header->displayName() );
   return boost::any();
 }//data(...)
 
 
 bool EnergyCalMultiFileModel::setData( const WModelIndex &index, const boost::any &value, int role )
 {
-  if( role != Wt::CheckStateRole
-      || !index.isValid() || !index.parent().isValid() )
+  if( (role != Wt::CheckStateRole) || (index.column() != 0) )
     return false;
   
-  const int filenum = index.parent().row();
-  const int row = index.row();
-  const int col = index.column();
+  ModelLevel level;
+  int filenum, samplesnum, peaknum;
+  from_internal_id( index.internalId(), level, filenum, samplesnum, peaknum );
   
-  if( col != 0 )
+  if( level != ModelLevel::Peak )
     return false;
-  if( filenum >= static_cast<int>(m_peaks.size()) )
+  
+  if( (filenum < 0) || filenum >= static_cast<int>(m_data.size()) )
     return false;
-  if( row >= static_cast<int>(m_peaks[filenum].size()) )
+  
+  vector<SamplesPeakInfo_t> &filedata = m_data[filenum];
+
+  if( (samplesnum < 0) || (samplesnum >= static_cast<int>(filedata.size())) )
+    return false;
+  
+  vector<UsePeakInfo_t> &peakinfos = get<3>(filedata[samplesnum]);
+  
+  if( (peaknum < 0) || (peaknum >= static_cast<int>(peakinfos.size())) )
     return false;
   
   try
   {
-    get<1>(m_peaks[filenum][row]) = boost::any_cast<bool>( value );
+    get<0>(peakinfos[peaknum]) = boost::any_cast<bool>( value );
   }catch(...)
   {
     cerr << "Got bad boost::any_cast<bool>( value )" << endl;
@@ -816,45 +1162,50 @@ bool EnergyCalMultiFileModel::setData( const WModelIndex &index, const boost::an
 
 WFlags<ItemFlag> EnergyCalMultiFileModel::flags( const WModelIndex &index ) const
 {
-  if( index.isValid() && index.parent().isValid() && index.column()==0 )
+  ModelLevel level;
+  int filenum, samplesnum, peaknum;
+  from_internal_id( index.internalId(), level, filenum, samplesnum, peaknum );
+  
+  if( (level == ModelLevel::Peak) && (index.column() == 0) )
     return WFlags<ItemFlag>(ItemIsUserCheckable);
-  return WFlags<ItemFlag>(ItemIsXHTMLText);
+  
+  //return WFlags<ItemFlag>(ItemIsXHTMLText);
+  return WFlags<ItemFlag>();
 }//flags(...)
 
 
 boost::any EnergyCalMultiFileModel::headerData( int section, Wt::Orientation orientation,
                                                 int role ) const
 {
-  if( orientation != Wt::Horizontal )
-    return boost::any();
-  if( role != DisplayRole )
-    return boost::any();
+//  if( role == DisplayRole )
+//  {
+//    switch( section )
+//    {
+//      case 0: return boost::any( WString("Nuclide") );
+//      case 1: return boost::any( WString("Obs. Energy") );
+//      case 2: return boost::any( WString("Photopeak Energy") );
+//    }
+//  }//if( role == DisplayRole )
   
-  if( section == 0 )
-    boost::any( WString("Nuclide") );
-  if( section == 1 )
-    boost::any( WString("Obs. Energy") );
-  if( section == 2 )
-    boost::any( WString("Photopeak Energy") );
   return boost::any();
 }//headerData(...);
 
 
 void EnergyCalMultiFileModel::refreshData()
 {
-  if(!m_peaks.empty())
+  if( !m_data.empty() )
   {
-    beginRemoveRows( WModelIndex(), 0, static_cast<int>(m_peaks.size())-1 );
-    m_peaks.clear();
+    beginRemoveRows( WModelIndex(), 0, static_cast<int>(m_data.size()) - 1 );
+    m_data.clear();
     endRemoveRows();
   }//if( m_peaks.size() )
   
-  vector<vector<PeakInfo_t>> newdata;
+  vector<vector<SamplesPeakInfo_t>> newdata;
   
   const int nfile = m_fileModel->rowCount();
   for( int filenum = 0; filenum < nfile; ++filenum )
   {
-    vector<PeakInfo_t> peaks;
+    vector<SamplesPeakInfo_t> peaks;
     shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( filenum );
     
     if( !header )
@@ -877,7 +1228,13 @@ void EnergyCalMultiFileModel::refreshData()
     const set<set<int>> peaksamplenums = spec->sampleNumsWithPeaks();
     for( const set<int> &samplnums : peaksamplenums )
     {
-      shared_ptr<const EnergyCalibration> cal;
+      SamplesPeakInfo_t samplesinfo;
+      
+      get<0>(samplesinfo) = header;
+      get<1>(samplesinfo) = samplnums;
+      shared_ptr<const SpecUtils::EnergyCalibration> &cal = get<2>(samplesinfo);
+      vector<UsePeakInfo_t> &samplespeaks = get<3>(samplesinfo);
+      
       try
       {
         cal = spec->suggested_sum_energy_calibration( samplnums, gammaDetNames );
@@ -886,24 +1243,32 @@ void EnergyCalMultiFileModel::refreshData()
 #if( PERFORM_DEVELOPER_CHECKS )
         log_developer_error( __func__, "Unexpected failure of suggested_sum_energy_calibration" );
 #endif
-        continue;
       }//try / catch
       
       auto measpeaks = spec->peaks( samplnums );
-      if( !measpeaks )
-        continue;
+      if( cal && measpeaks )
+      {
+        for( const PeakPtr &peak : *measpeaks )
+        {
+          if( peak && peak->hasSourceGammaAssigned() )
+            samplespeaks.emplace_back( peak->useForEnergyCalibration(), peak );
+        }
+      }
       
-      for( const PeakPtr &peak : *measpeaks )
-        peaks.emplace_back( cal, peak->useForCalibration(), peak, header );
-      
-      newdata.push_back( peaks );
+      if( !samplespeaks.empty() )
+        peaks.push_back( samplesinfo );
     }//for( const IntSet &samplnums : peaksamplenums )
+    
+    newdata.push_back( peaks );
   }//for( int filenum = 0; filenum < nfile; ++filenum )
 
-  if(!newdata.empty())
-  {
-    beginInsertRows( WModelIndex(), 0, static_cast<int>(newdata.size()) -1 );
-    m_peaks.swap( newdata );
-    endInsertRows();
-  }//if( newdata.size() )
+  m_data.swap( newdata );
+  reset();
+  
+  //if( !newdata.empty() )
+  //{
+  //  beginInsertRows( WModelIndex(), 0, static_cast<int>(newdata.size()) -1 );
+  //  m_data.swap( newdata );
+  //  endInsertRows();
+  //}//if( newdata.size() )
 }//refreshData()

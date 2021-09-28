@@ -188,17 +188,21 @@ namespace
   
   
   
-  /** Class to downlaod either a N42-2012, or PCF file. */
+  /** Class to download either a N42-2012, or PCF file. */
   class CalFileDownloadResource : public Wt::WResource
   {
     const bool m_pcf;
     MakeDrf * const m_makedrf;
     string m_filename;
+    Wt::WApplication *m_app;
     
   public:
     CalFileDownloadResource( const bool pcf, MakeDrf *parent )
-     : WResource( parent ), m_pcf(pcf), m_makedrf( parent ), m_filename( "" )
-    {}
+     : WResource( parent ), m_pcf(pcf), m_makedrf( parent ), m_filename( "" ),
+       m_app( WApplication::instance() )
+    {
+      assert( m_app );
+    }
     
     virtual ~CalFileDownloadResource()
     {
@@ -213,6 +217,19 @@ namespace
     virtual void handleRequest( const Wt::Http::Request &request,
                                Wt::Http::Response &response )
     {
+      WApplication::UpdateLock lock( m_app );
+      
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in CalFileDownloadResource.";
+        
+        response.out() << "Error grabbing application lock to form CalFileDownloadResource resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+        
+        return;
+      }//if( !lock )
+      
       if( !m_makedrf )
         return;
       
@@ -291,11 +308,13 @@ namespace
     string m_filename;
     string m_description;
     MakeDrf * const m_makedrf;
+    Wt::WApplication *m_app;
     
   public:
     CsvDrfDownloadResource( MakeDrf *parent )
-    : WResource( parent ), m_filename(""), m_makedrf( parent )
+    : WResource( parent ), m_filename(""), m_makedrf( parent ), m_app( WApplication::instance() )
     {
+      assert( m_app );
       suggestFileName( "drfinfo.csv", WResource::Attachment );
     }
     
@@ -322,7 +341,20 @@ namespace
     virtual void handleRequest( const Wt::Http::Request &request,
                                Wt::Http::Response &response )
     {
-      assert( wApp );
+      
+      WApplication::UpdateLock lock( m_app );
+      
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in CsvDrfDownloadResource.";
+        
+        response.out() << "Error grabbing application lock to form CsvDrfDownloadResource resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+        
+        return;
+      }//if( !lock )
+      
       response.setMimeType( "text/csv" );
       if( m_makedrf )
         m_makedrf->writeCsvSummary( response.out(), m_filename, m_description );
@@ -336,7 +368,7 @@ namespace
   public:
     const std::shared_ptr<const PeakDef> m_peak;
     const double m_livetime;
-    Wt::WCheckBox *m_useCb;
+    Wt::WCheckBox *m_useForEffCb;
     WText *m_descTxt;
     WText *m_backSubTxt;
     WDoubleSpinBox *m_userBr;
@@ -353,7 +385,7 @@ namespace
     : WContainerWidget( parent ),
       m_peak( peak ),
       m_livetime( livetime ),
-      m_useCb( nullptr ),
+      m_useForEffCb( nullptr ),
       m_descTxt( nullptr ),
       m_backSubTxt( nullptr ),
       m_userBr( nullptr ),
@@ -363,13 +395,13 @@ namespace
       m_isBackground( false )
     {
       addStyleClass( "DrfPeak" );
-      m_useCb = new WCheckBox( "Use", this );
-      m_useCb->addStyleClass( "DrfPeakUseCb" );
+      m_useForEffCb = new WCheckBox( "Use", this );
+      m_useForEffCb->addStyleClass( "DrfPeakUseCb" );
       
       char buffer[512];
       if( peak && peak->parentNuclide() && peak->nuclearTransition() )
       {
-        const bool use = peak->useForDrfFit();
+        const bool use = peak->useForDrfIntrinsicEffFit();
         
         const char *gammatype = "";
         switch( peak->sourceGammaType() )
@@ -390,7 +422,7 @@ namespace
             break;
         }//switch( peak->sourceGammaType() )
         
-        m_useCb->setChecked( use );
+        m_useForEffCb->setChecked( use );
         snprintf( buffer, sizeof(buffer), "%s: %.2f keV peak with %.1f cps for %.2f keV gamma%s.",
                   peak->parentNuclide()->symbol.c_str(),
                   peak->mean(),
@@ -408,10 +440,10 @@ namespace
         m_userBr->setMargin( 5, Wt::Left );
         m_userBr->setTextSize( 8 );
         
-        m_useCb->setUnChecked();
+        m_useForEffCb->setUnChecked();
         m_userBr->hide();
-        m_useCb->changed().connect( std::bind( [this](){
-          m_userBr->setHidden( !m_useCb->isChecked() || m_isBackground );
+        m_useForEffCb->changed().connect( std::bind( [this](){
+          m_userBr->setHidden( !m_useForEffCb->isChecked() || m_isBackground );
         } ) );
       }
       
@@ -437,16 +469,22 @@ namespace
       m_previewBtn->clicked().connect( this, &DrfPeak::togglePeakPreview );
     }//DrfPeak constructor;
     
-    bool use() const
+    bool useForEffFit() const
     {
-      return m_useCb->isChecked();
+      return m_useForEffCb->isChecked();
     }
     
     void setUse( const bool use )
     {
-      m_useCb->setChecked( use );
+      m_useForEffCb->setChecked( use );
       if( m_userBr )
         m_userBr->setHidden( !use || m_isBackground );
+   
+#ifndef _WIN32
+#warning "Use peak model (after modding it) to set whether to use intrinsic eff or not"
+#endif
+      //m_peakModel->setUseForDrfIntrinsicEffFit( use );
+      //m_peakModel->setData( )
     }
     
     void setIsBackground( const bool back )
@@ -457,7 +495,7 @@ namespace
       //  m_userBr->setValue( 1.0 );
       
       if( m_userBr )
-        m_userBr->setHidden( !m_useCb->isChecked() || m_isBackground );
+        m_userBr->setHidden( !m_useForEffCb->isChecked() || m_isBackground );
     }//void setIsBackground( const bool back )
     
     void setBackgroundBeingSubtractedInfo( const bool beingsubtracted, const float background_cps )
@@ -554,7 +592,7 @@ namespace
   
   class DrfSpecFileSample : public WPanel
   {
-    std::shared_ptr<const SpecMeas> m_meas;
+    std::shared_ptr<SpecMeas> m_meas;
     set<int> m_samples;
     MaterialDB *m_materialDB;
     WSuggestionPopup *m_materialSuggest;
@@ -616,7 +654,7 @@ namespace
       {
         auto p = dynamic_cast<DrfPeak *>( w );
         npeaks += (p ? 1 : 0);
-        npeaksused += ((p && p->use()) ? 1 : 0);
+        npeaksused += ((p && p->useForEffFit()) ? 1 : 0);
       }
       
       title += " (using " + std::to_string(npeaksused) + " of " + std::to_string(npeaks) + " peaks)";
@@ -654,7 +692,7 @@ namespace
     
     
   public:
-    DrfSpecFileSample( std::shared_ptr<const SpecMeas> meas, set<int> samples,
+    DrfSpecFileSample( std::shared_ptr<SpecMeas> meas, set<int> samples,
                       MaterialDB *materialDB,
                       Wt::WSuggestionPopup *materialSuggest,
                       WContainerWidget *parent = nullptr )
@@ -728,7 +766,7 @@ namespace
       {
         DrfPeak *p = new DrfPeak( peak, livetime, summed_meas, m_peaks );
         ++npeaks;
-        p->m_useCb->changed().connect( this, &DrfSpecFileSample::refreshSourcesVisible );
+        p->m_useForEffCb->changed().connect( this, &DrfSpecFileSample::refreshSourcesVisible );
         if( p->m_userBr )
         {
           p->m_userBr->changed().connect( this, &DrfSpecFileSample::refreshSourcesVisible );
@@ -1021,7 +1059,7 @@ namespace
       for( auto w : m_peaks->children() )
       {
         auto p = dynamic_cast<DrfPeak *>( w );
-        if( p && p->use() )
+        if( p && p->useForEffFit() )
           selectedNucs.insert( p->m_peak->parentNuclide() );
       }
       
@@ -1108,7 +1146,7 @@ namespace
       
       for( auto peakw : peakWidgets )
       {
-        if( !peakw->use() )
+        if( !peakw->useForEffFit() )
           continue;
         
         const auto nuc = peakw->m_peak->parentNuclide();
@@ -1141,12 +1179,12 @@ namespace
   
   class DrfSpecFile : public WPanel
   {
-    std::shared_ptr<const SpecMeas> m_meas;
+    std::shared_ptr<SpecMeas> m_meas;
     WContainerWidget *m_sampleWidgets;
     Wt::Signal<> m_updated;
     
   public:
-    DrfSpecFile( std::shared_ptr<const SpecMeas> meas,
+    DrfSpecFile( std::shared_ptr<SpecMeas> meas,
                 MaterialDB *materialDB,
                 Wt::WSuggestionPopup *materialSuggest,
                 WContainerWidget *parent = nullptr )
@@ -1565,7 +1603,7 @@ void MakeDrf::startSaveAs()
     for( auto sample : f->fileSamples() )
     {
       for( auto peak : sample->peaks() )
-        npeaks += peak->use();
+        npeaks += peak->useForEffFit();
     }
     
     if( npeaks )
@@ -1727,7 +1765,8 @@ void MakeDrf::startSaveAs()
       upperEnergy = data.back().energy;
     }
     
-    drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, 0.0f, diameter, eqnEnergyUnits, lowerEnergy, upperEnergy );
+    drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, m_effEqnCoefUncerts,
+                                        0.0f, diameter, eqnEnergyUnits, lowerEnergy, upperEnergy );
     drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
     
     if( !m_fwhmCoefs.empty() )
@@ -1869,7 +1908,7 @@ void MakeDrf::handleSourcesUpdates()
       for( auto peak : sample->peaks() )
       {
         peak->setBackgroundBeingSubtractedInfo( false, 0.0 );
-        if( peak->use() )
+        if( peak->useForEffFit() )
           backgroundpeaks.push_back( peak );
       }
     }//for( DrfSpecFileSample *sample : sampleWidgets )
@@ -1907,25 +1946,33 @@ void MakeDrf::handleSourcesUpdates()
         }
       }//for( auto det : meas->detector_names() )
       
-      
+
       const vector<pair<DrfPeak *,MakeDrfSrcDef *>> peaks_to_sources = sample->selected_peak_to_sources();
-      
       map<const SandiaDecay::Nuclide *,vector<SandiaDecay::EnergyRatePair>> mixtures;
-      for( auto pp : peaks_to_sources )
+      
+      // ageAtSpectrumTime() or activityAtSpectrumTime() can through an exception if the entered
+      //  values are invalid; we will skip the entire sample if we encounter this.
+      try
       {
-         const SandiaDecay::Nuclide * const nuc = pp.second->nuclide();
-        if( !pp.first || !nuc || mixtures.count(nuc) )
-          continue;
-        
-        const double activity = pp.second->activityAtSpectrumTime();
-        const double age = pp.second->ageAtSpectrumTime();
-        
-        SandiaDecay::NuclideMixture mix;
-        mix.addAgedNuclideByActivity( nuc, activity, age );
-        
-        mixtures[nuc] = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
-      }//for( auto pp : peaks_to_sources )
-    
+        for( auto pp : peaks_to_sources )
+        {
+          const SandiaDecay::Nuclide * const nuc = pp.second->nuclide();
+          if( !pp.first || !nuc || mixtures.count(nuc) )
+            continue;
+          
+          const double activity = pp.second->activityAtSpectrumTime();
+          const double age = pp.second->ageAtSpectrumTime();
+          
+          SandiaDecay::NuclideMixture mix;
+          mix.addAgedNuclideByActivity( nuc, activity, age );
+          
+          mixtures[nuc] = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+        }//for( auto pp : peaks_to_sources )
+      }catch( std::exception & )
+      {
+        not_all_sources_used = true;
+        continue;
+      }//try / catch
       
       for( auto pp : peaks_to_sources )
       {
@@ -2584,9 +2631,13 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
         for( auto peak : sample->peaks() )
         {
           shared_ptr<PeakDef> newpeak = make_shared<PeakDef>( *peak->m_peak );
-          newpeak->useForDrfFit( peak->use() );
+#ifndef _WIN32
+#warning "newpeak->setUseForDrfIntrinsicEffFit not needed anymore"
+#endif
+          newpeak->setUseForDrfIntrinsicEffFit( peak->useForEffFit() );
+          //blah blah blah I dont think this will be needed after we add UseForDrfIntrinsicEffFit as a peak model, assuming m_peak is same as the peak model has...
           newpeaks.push_back( newpeak );
-          beingUsed = (beingUsed || peak->use());
+          beingUsed = (beingUsed || peak->useForEffFit());
         }
         
         if( !beingUsed )
@@ -2817,11 +2868,20 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     out << "," << ( (i==0 ? log(solidAngleAt25cm) : 0.0) + effEqnCoefs[i]);  //todo: make sure its not
   for( size_t i = effEqnCoefs.size(); i < 12; ++i )
     out << ",";
-  out << "25," << (0.5*diam/PhysicalUnits::cm) << "," << solidAngleAt25cm << endline
-  << endline
-  << endline;
+  out << "25," << (0.5*diam/PhysicalUnits::cm) << "," << solidAngleAt25cm << endline;
+  out << "# 1 sigma Uncertainties,";
+  if( releffuncert >= 0.0 )
+    out << 100*(releffuncert / NaI3x3IntrinsicEff) << "%";
+  out << ",";
+  for( size_t i = 0; i < effEqnCoefsUncerts.size(); ++i )
+    out << "," << effEqnCoefsUncerts[i];
+  if( effChi2 > 0 )
+    out << endline << "# Chi2 / DOF = " << effChi2 << " / " << (effDof-1)
+        << " = " << (effDof >= 1 ? (effChi2/(effDof-1.0)) : 0.0);
+  out << endline << endline;
   
-  //Then need to give FWHM equation form and coefficienct, if avaialble.
+  
+  //Then need to give FWHM equation form and coefficient, if available.
   if( fwhmCoefs.size() )
   {
     out << "# Full width half maximum (FWHM) follows equation: ";

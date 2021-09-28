@@ -1474,7 +1474,7 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
       case IsotopeSearchByEnergyModel::Column::Distance:
         return WString("Difference between selected nuclide's energy level and searched energy level");
       case IsotopeSearchByEnergyModel::Column::Energy:
-        return WString("Nuclide energy");
+        return WString("True gamma/x-ray energy");
       case IsotopeSearchByEnergyModel::Column::BranchRatio:
         return WString("Branching ratio, relative to the nuclides largest yield gamma"
                         " (i.e., 1.0 indicates the most abundant gamma, not one gamma per decay)");

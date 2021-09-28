@@ -380,9 +380,12 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
       bool isnear = false;
       for( const PeakConstPtr &orig : fitpeakvec )
       {
-        const double meandiff = orig->mean() - p->mean();
-        const double minsigma = std::min( orig->sigma(), p->sigma() );
-        isnear |= (orig->gausPeak() && fabs(meandiff/minsigma) < 0.75);
+        if( orig->gausPeak() )
+        {
+          const double meandiff = orig->mean() - p->mean();
+          const double minsigma = std::min( orig->sigma(), p->sigma() );
+          isnear |= (fabs(meandiff/minsigma) < 0.75);
+        }
       }//for( const PeakConstPtr &orig : fitpeakvec )
       
       if( !isnear )
@@ -2755,6 +2758,9 @@ void get_candidate_peak_estimates_for_user_click(
     
     for( const shared_ptr<const PeakDef> &p : inpeaks )
     {
+      if( !p->gausPeak() )
+        continue;
+      
       if( (p->mean() <= x) && (!leftpeak || fabs(p->mean() - x) < fabs(leftpeak->mean() - x)) )
         leftpeak = p;
       
@@ -2778,7 +2784,7 @@ void get_candidate_peak_estimates_for_user_click(
   {
     for( const shared_ptr<const PeakDef> &p : inpeaks )
     {
-      if( fabs(p->mean() - x) < (10*p->sigma()) ) //10 is arbitrary.
+      if( p->gausPeak() && (fabs(p->mean() - x) < (10*p->sigma())) ) //10 is arbitrary.
       {
         updatedSigmaFromPrev = true;
         sigma0 = p->sigma();
@@ -4321,18 +4327,41 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   const double no_peak_chi2dof = evaluate_chi2dof_for_range( fitpeaksnoamp,
                                                             dataH, core_start, core_end );
   
-  if( (no_peak_chi2dof - core_chi2dof) < min_core_chi2dof_peak_improvment )
+  // Check to see if having the peak be there is actually any improvement to the fit.
+  //  However, if the Chi/dof is already extremely good, just require there is some improvement
+  //  (this happens on artificially good statistics spectra)
+  // TODO: The "4" below is totally arbitrary - should have some sliding scale or something
+  if( (core_chi2dof > (4*min_core_chi2dof_peak_improvment)) )
   {
+    if( (no_peak_chi2dof - core_chi2dof) < min_core_chi2dof_peak_improvment )
+    {
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
-    if( debug_this_peak )
-      DebugLog(cerr) << "check_highres_single_peak_fit: Failed to fit a peak for the "
-           << "change in chi2 without the peak being to small (chi2dof="
-           << no_peak_chi2dof << " w/ continuum only, " << core_chi2dof
-           << " w/ continuum and peak)" << "\n";
+      if( debug_this_peak )
+        DebugLog(cerr) << "check_highres_single_peak_fit: Failed to fit a peak for the "
+        << "change in chi2 without the peak being to small (chi2dof="
+        << no_peak_chi2dof << " w/ continuum only, " << core_chi2dof
+        << " w/ continuum and peak)" << "\n";
 #endif
-    
-    return false;
-  }//if( (no_peak_chi2dof - core_chi2dof) < 0.5 )
+      
+      return false;
+    }//if( (no_peak_chi2dof - core_chi2dof) < 0.5 )
+  }else
+  {
+    if( (no_peak_chi2dof - core_chi2dof) < 0.0 )
+    {
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
+      if( debug_this_peak )
+        DebugLog(cerr) << "check_highres_single_peak_fit: Failed to fit a peak because "
+        << "the continuum only chi2 (chi2dof="
+        << no_peak_chi2dof << ") was better than with the peak (chi2dof=" << core_chi2dof
+        << " w/ continuum and peak)\n";
+#endif
+      
+      return false;
+    }//if( (no_peak_chi2dof - core_chi2dof) < 0.5 )
+
+  }//if( (core_chi2dof > (4*min_core_chi2dof_peak_improvment)) )
+  
   
   const double gausarea = peak->gauss_integral( mean-2.0*sigma, mean+2.0*sigma );
   const double dataarea = dataH->gamma_integral( mean-2.0*sigma, mean+2.0*sigma );
@@ -5818,8 +5847,7 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     for( size_t i = 1; i <= fitpeaks.size(); ++i ) //Note weird convntion of index
     {
       const PeakDef *peak = &(fitpeaks[i-1]);
-      const bool significant = chi2_significance_test(
-                                                          *peak, stat_threshold, hypothesis_threshold,
+      const bool significant = chi2_significance_test( *peak, stat_threshold, hypothesis_threshold,
                                                           *all_peaks, data );
       if( !significant )
       {
@@ -6453,14 +6481,40 @@ bool chi2_significance_test( PeakDef peak,
   //need to edit paramsForPeak and zeroPeakParams to evaluate the chi2 to a max
   //  of 2.5 sigma from the mean
   peak.makeUniqueNewContinuum();
-  double ux = peak.upperX();
-  double lx = peak.lowerX();
-  ux = std::min( ux, peak.mean()+2.5*peak.sigma() );
-  lx = std::max( lx, peak.mean()-2.5*peak.sigma() );
-  peak.continuum()->setRange( lx, ux );
-  cerr << "Limiting energy range of chi2_significance_test" << endl;
-          
-          
+  
+  // We will limit the test range to +-2.5 FWHM of the peak mean to do the Chi2 test so we capture,
+  //  only the relevant part of the peak.  But the step-continuum peaks we need to keep the original
+  //  energy range, or else it will alter each channels continuum values (and we will fail peak fits
+  //  we shouldnt).
+  //
+  //TODO 20210726: I dont really remember why I limited this check to +-2.5 FWHM from peak mean, but
+  //  I'm guessing its to avoid failing long continuums where the tails are badly matched to the
+  //  data, but user wants in order to force things.  Should investigate/document more thoroughly.
+  bool isStepContinuum = false;
+  switch( peak.continuum()->type() )
+  {
+    case PeakContinuum::NoOffset: case PeakContinuum::Constant:
+    case PeakContinuum::Linear:   case PeakContinuum::Quadratic:
+    case PeakContinuum::Cubic:    case PeakContinuum::External:
+      isStepContinuum = false;
+      break;
+    
+    case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep:
+      isStepContinuum = true;
+      break;
+  }//switch( peak.continuum()->type() )
+  
+  
+  if( !isStepContinuum )
+  {
+    double ux = peak.upperX();
+    double lx = peak.lowerX();
+    ux = std::min( ux, peak.mean() + 2.5*peak.sigma() );
+    lx = std::max( lx, peak.mean() - 2.5*peak.sigma() );
+    peak.continuum()->setRange( lx, ux );
+  }//if( !isStepContinuum )
+  
   //For section of code below here, please see notes in searchForPeaks()
   std::vector<PeakDef>::iterator pos = other_peaks.end();
   for( size_t i = 0; i < other_peaks.size(); ++i )
@@ -6482,13 +6536,21 @@ bool chi2_significance_test( PeakDef peak,
   //Some basic quality checks
   if( IsNan(peak.mean()) || IsInf(peak.mean()) )
     return false;
-  if( peak.gausPeak() && (IsNan(peak.sigma()) || IsInf(peak.sigma())) )
-    return false;
-  if( peak.gausPeak() && (IsNan(peak.amplitude()) || IsInf(peak.amplitude())) )
-    return false;
-          
-  if( peak.amplitude() <= 0.0 || peak.sigma() <= 0.0 )
-    return false;
+  
+  if( peak.gausPeak() )
+  {
+    if( IsNan(peak.sigma()) || IsInf(peak.sigma()) )
+      return false;
+    
+    if( IsNan(peak.amplitude()) || IsInf(peak.amplitude()) )
+      return false;
+    
+    if( peak.fitFor(PeakDef::CoefficientType::GaussAmplitude) && ((peak.amplitude() <= 0.0)) )
+      return false;
+    
+    if( peak.fitFor(PeakDef::CoefficientType::Sigma) && ((peak.sigma() <= 0.0)) )
+      return false;
+  }//if( peak.gausPeak() )
           
   vector<double> paramsForOtherPeaks, zeroPeakParams, paramsForPeak;
           
@@ -6508,7 +6570,7 @@ bool chi2_significance_test( PeakDef peak,
                                       data, PeakFitChi2Fcn::kFixPeakParameters );
     zeroPeakParams = mnparams.Params();
             
-    //I dont think this next little bit is necassarry, but I left in to be sure
+    //I dont think this next little bit is necessary, but I left in to be sure
     //  to be compatible w/ legacy code pre 20131230
     if( !zeropeak.continuum()->energyRangeDefined() )
     {
@@ -6568,9 +6630,10 @@ bool chi2_significance_test( PeakDef peak,
   std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
   for( const PeakDef &p : other_peaks )
     noRatioRequired |= (continuum == p.continuum());
-          
+
   const double deltaChi2 = withoutGausChi2 - withGausChi2;
           
+  /*
   static std::mutex s_mutex;
   {
     std::lock_guard<std::mutex> lock( s_mutex );
@@ -6585,7 +6648,8 @@ bool chi2_significance_test( PeakDef peak,
          << " peak.amplitude()=" << peak.amplitude()
          << endl << endl;
   }
-          
+  */
+  
   return ((noRatioRequired || chi2Ratio>=chi2ratioRequired) && (deltaChi2>withoutPeakDSigma));
 }//bool chi2_significance_test( ... 0
         

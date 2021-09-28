@@ -245,6 +245,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       m_scaleValueTxt[typeindex]->setSpinnerHidden( true );
       m_scaleValueTxt[typeindex]->setRange( 0.0, 1000000.0 );
       m_scaleValueTxt[typeindex]->addStyleClass( "SpecNormTxt" );
+      m_scaleValueTxt[typeindex]->setFormatString( "%.4G" );
       m_scaleValueTxt[typeindex]->valueChanged().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactor, this, type) );
       m_scaleValueTxt[typeindex]->mouseWheel().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactorWheel, this, type, _1) );
       
@@ -856,9 +857,7 @@ void CompactFileManager::updateDisplayedScaleFactorNumbers( const double sf,
   if( !m_scaleValueTxt[typeindex] )
     return;
   
-  char buffer[32];
-  snprintf( buffer, sizeof(buffer), "%.4f", sf );
-  m_scaleValueTxt[typeindex]->setText( buffer );
+  m_scaleValueTxt[typeindex]->setValue( static_cast<float>(sf) );
 }//void updateDisplayedScaleFactorNumbers(...)
 
 

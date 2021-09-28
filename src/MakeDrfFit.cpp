@@ -542,10 +542,13 @@ double fit_fwhm_least_linear_squares( const std::deque< std::shared_ptr<const Pe
   widths_uncert.resize( peaks.size() );
   for( size_t i = 0; i < peaks.size(); ++i )
   {
-    x[i] = peaks[i]->mean() / 1000.0f;
-    widths[i] = peaks[i]->fwhm();
-    widths_uncert[i] = 2.35482*((peaks[i]->sigmaUncert() > 0.0) ? std::max( peaks[i]->sigmaUncert(), 0.01*widths[i]) : 0.05*widths[i]);
-  }
+    if( peaks[i]->gausPeak() )
+    {
+      x[i] = peaks[i]->mean() / 1000.0f;
+      widths[i] = peaks[i]->fwhm();
+      widths_uncert[i] = 2.35482*((peaks[i]->sigmaUncert() > 0.0) ? std::max( peaks[i]->sigmaUncert(), 0.01*widths[i]) : 0.05*widths[i]);
+    }
+  }//for( size_t i = 0; i < peaks.size(); ++i )
   
   //General Linear Least Squares fit
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition

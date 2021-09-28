@@ -353,7 +353,7 @@ void InterSpecApp::setupDomEnvironment()
     if( nargscanned == 5 )
     {
       const DeviceOrientation orient = DeviceOrientation(orientation);
-      cout << "Recieved initial orientation: " << orientation
+      cout << "Received initial orientation: " << orientation
            << " and SafeAreas={" << vals[0] << ", " << vals[1] << ", " << vals[2] << ", " << vals[3] << "}" << endl;
       if( (orient!=DeviceOrientation::LandscapeLeft && orient!=DeviceOrientation::LandscapeRight)
          || vals[0] < 0 || vals[0] > 50 || vals[1] < 0 || vals[1] > 75 || vals[2] < 0 || vals[2] > 50 || vals[3] < 0 || vals[3] > 75 )
@@ -1099,7 +1099,7 @@ void InterSpecApp::notify( const Wt::WEvent& event )
 
 void InterSpecApp::unload()
 {
-  cerr << "\n\nRecieved unload from " << sessionId() << endl;
+  cerr << "\n\nReceived unload from " << sessionId() << endl;
   WApplication::unload();
 }//void unload()
 

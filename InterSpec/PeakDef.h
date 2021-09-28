@@ -384,17 +384,10 @@ public:
     Mean,
     Sigma,
     GaussAmplitude,
-    LandauAmplitude,   //multiplies peak ampliture (so is between 0.0 and ~0.2)
+    LandauAmplitude,   //multiplies peak amplitude (so is between 0.0 and ~0.2)
     LandauMode,
     LandauSigma,
-//    OffsetPolynomial0,
-//    OffsetPolynomial1,
-//    OffsetPolynomial2,
-//    OffsetPolynomial3,
-//    OffsetPolynomial4,
-//    RangeStartEnergy,
-//    RangeEndEnergy,
-    Chi2DOF,  //for peaks that share a ROI/Continuum, this values is for entire ROI/Continuum
+    Chi2DOF,           //for peaks that share a ROI/Continuum, this values is for entire ROI/Continuum
     NumCoefficientTypes
   };//enum CoefficientType
 
@@ -485,28 +478,22 @@ public:
   inline void setAmplitudeUncert( const double a );
 
 
-  inline bool useForCalibration() const;
-  inline void useForCalibration( const bool use );
+  inline bool useForEnergyCalibration() const;
+  inline void useForEnergyCalibration( const bool use );
 
   inline bool useForShieldingSourceFit() const;
   inline void useForShieldingSourceFit( const bool use );
-
-  /** Returns if should use for DRF fit.  If has not been explicitly set, will
-   return true if their is a nuclide and transition defined, and the source
-   gamma type is SourceGammaType::NormalGamma.
-   \sa MakeDrf
-   */
-  inline bool useForDrfFit() const;
   
-  /** Sets if the peak should be used or not for DRF fit.
-   \sa MakeDrf
+  /** Returns if should use for DRF intrinsic efficiency fit.  Note that this does not check that the nuclide and transition has actually
+   been defined.
    */
-  inline void useForDrfFit( const bool use );
+  inline bool useForDrfIntrinsicEffFit() const;
+  inline void setUseForDrfIntrinsicEffFit( const bool use );
+  inline bool useForDrfFwhmFit() const;
+  inline void setUseForDrfFwhmFit( const bool use );
+  inline bool useForDrfDepthOfInteractionFit() const;
+  inline void setUseForDrfDepthOfInteractionFit( const bool use );
   
-  /** Resets if the peak should be used for DRF fit.
-   \sa MakeDrf
-   */
-  inline void resetUseForDrfFit();
   
   inline double chi2dof() const;
   inline bool chi2Defined() const;
@@ -824,7 +811,13 @@ public:
   
   std::shared_ptr<PeakContinuum> m_continuum;
   
-  static const int sm_xmlSerializationVersion;
+  /** For versioning the XML we will use a major.minor notation.
+   Changes made to the XML that are backward compatible (e.g., will read into older version of InterSpec just fine - so this is like if you
+   just add a field), increment the minor version.  Breaking changes (e.x., a change to the name of a XML tag) increment the major version
+   and will cause older versions of InterSpec to not read in the peak.
+   */
+  static const int sm_xmlSerializationMajorVersion;
+  static const int sm_xmlSerializationMinorVersion;
   
   //A maximum of one of the following will be valid: m_parentNuclide,
   //  m_xrayElement, or m_reaction
@@ -843,23 +836,18 @@ public:
   const ReactionGamma::Reaction *m_reaction;
   float m_reactionEnergy;
   
-  bool m_useForCalibration;
+  bool m_useForEnergyCal;
   bool m_useForShieldingSourceFit;
+
   
-  /** Variable to tell if this peak should be used in the detector response
-   model fit; currently the MakeDRF widget only sets this when saving a N42
-   fit.
-   Can only take on the values {-1,0,1}.
-    -1 means it has not been set and so some simple heuristics will be used to
-       determine if it should be set
-     0 means do not use
-     1 means do use
-   
-   ///ToDo: Implement logic similar to #PeakModel::kUseForShieldingSourceFit
-            for this variable, and maybe make it a bool.  Also have MakeDrf
-            widget update it as the user changes it in the widget.
-   */
-  int m_useForDetectorResponseFit;
+  /** Fif this peak should be used in the detector response function model fit for intrinsic efficiency */
+  bool m_useForDrfIntrinsicEffFit;
+  bool m_useForDrfFwhmFit;
+  bool m_useForDrfDepthOfInteractionFit;
+  
+  static const bool sm_defaultUseForDrfIntrinsicEffFit;
+  static const bool sm_defaultUseForDrfFwhmFit;
+  static const bool sm_defaultUseForDrfDepthOfInteractionFit;
   
   /** Line color of the peak.  Will also (currently) be used to set the fill of
       the peak, just with the alpha channel lowered.
@@ -1042,21 +1030,21 @@ void PeakDef::setAmplitudeUncert( const double a )
 }
 
 
-bool PeakDef::useForCalibration() const
+bool PeakDef::useForEnergyCalibration() const
 {
-  return ( m_useForCalibration &&
+  return ( m_useForEnergyCal &&
            ( (m_radparticleIndex>=0 && m_transition && m_parentNuclide)
             || (m_parentNuclide && (m_sourceGammaType==PeakDef::AnnihilationGamma))
             || (m_xrayElement && m_xrayEnergy>0.0)
             || (m_reaction && m_reactionEnergy>0.0)
            ) );
-}//void useForCalibration() const
+}//void useForEnergyCalibration() const
 
 
-void PeakDef::useForCalibration( const bool use )
+void PeakDef::useForEnergyCalibration( const bool use )
 {
-  m_useForCalibration = use;
-}//void useForCalibration( const bool use )
+  m_useForEnergyCal = use;
+}//void useForEnergyCalibration( const bool use )
 
 
 bool PeakDef::useForShieldingSourceFit() const
@@ -1086,27 +1074,42 @@ void PeakDef::useForShieldingSourceFit( const bool use )
 }//void useForShieldingSourceFit( const bool use )
 
 
-bool PeakDef::useForDrfFit() const
+bool PeakDef::useForDrfIntrinsicEffFit() const
 {
-  if( m_useForDetectorResponseFit == 1 )
-    return true;
-  if( m_useForDetectorResponseFit == 0 )
-    return false;
+  //if( !m_parentNuclide || !m_transition || (m_sourceGammaType != SourceGammaType::NormalGamma) )
+  //  return false;
   
-  if( m_parentNuclide && m_transition && m_sourceGammaType==SourceGammaType::NormalGamma )
-    return true;
-  
-  return false;
+  return m_useForDrfIntrinsicEffFit;
 }
 
-void PeakDef::useForDrfFit( const bool use )
+
+void PeakDef::setUseForDrfIntrinsicEffFit( const bool use )
 {
-  m_useForDetectorResponseFit = (use ? 1 : 0);
+  m_useForDrfIntrinsicEffFit = use;
 }
 
-void PeakDef::resetUseForDrfFit()
+
+bool PeakDef::useForDrfFwhmFit() const
 {
-  m_useForDetectorResponseFit = -1;
+  return m_useForDrfFwhmFit;
+}
+
+
+void PeakDef::setUseForDrfFwhmFit( const bool use )
+{
+  m_useForDrfFwhmFit = use;
+}
+
+
+bool PeakDef::useForDrfDepthOfInteractionFit() const
+{
+  return m_useForDrfDepthOfInteractionFit;
+}
+
+
+void PeakDef::setUseForDrfDepthOfInteractionFit( const bool use )
+{
+  m_useForDrfDepthOfInteractionFit = use;
 }
 
 #endif

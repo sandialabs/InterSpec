@@ -289,8 +289,12 @@ std::string printToBestActivityUnits( double activity,
     snprintf(buffer, sizeof(buffer), formatflag, activity, "" );
   else if( activity < 1.0E6 )
     snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E-3), "k" );
-  else
+  else if( activity < 1.0E9 )
     snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E-6), "M" );
+  else if( activity < 1.0E12 )
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E-9), "G" );
+  else
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E-12), "T" );
   
   return buffer;
 }//std::string printToBestActivityUnits(...)

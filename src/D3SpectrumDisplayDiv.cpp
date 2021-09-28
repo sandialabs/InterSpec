@@ -999,9 +999,9 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> backgroun
 }//void D3SpectrumDisplayDiv::setBackground(...);
 
 
-void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist, const bool ownAxis )
+void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist )
 {
-  m_model->setSecondDataHistogram( hist, ownAxis );
+  m_model->setSecondDataHistogram( hist, false );
   
   scheduleUpdateSecondData();
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> background );
@@ -1080,7 +1080,6 @@ void D3SpectrumDisplayDiv::setSearchEnergies( const vector<pair<double,double>> 
 
 bool D3SpectrumDisplayDiv::removeDecorativeHighlightRegion( size_t uniqueid )
 {
-  cerr << "D3SpectrumDisplayDiv::removeDecorativeHighlightRegion: uniqueid=" << uniqueid << endl;
   if( uniqueid < 3 )
     return false;
   
@@ -1091,11 +1090,15 @@ bool D3SpectrumDisplayDiv::removeDecorativeHighlightRegion( size_t uniqueid )
     {
       m_highlights.erase( m_highlights.begin() + i );
       setHighlightRegionsToClient();
-      cout << "Found it" << endl;
       return true;
     }
   }
-  cout << "Didnt find it" << endl;
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  log_developer_error( __func__, ("D3SpectrumDisplayDiv::removeDecorativeHighlightRegion:"
+                                  " Didnt find uniqueid=" + std::to_string(uniqueid)).c_str() );
+#endif
+  
   return false;
 }//void removeDecorativeHighlightRegions()
 

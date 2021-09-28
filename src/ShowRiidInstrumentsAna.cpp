@@ -35,6 +35,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/InterSpecUser.h"
@@ -232,15 +233,36 @@ public:
     m_algorithm_result_description->setText( ana->algorithm_result_description_ );
     m_table->rowAt(AlgorithmResultDescription)->setHidden( m_algorithm_result_description->text().empty() );
     
-    string remarktxt;
-    for( const string &r : ana->remarks_ )
-      remarktxt += (remarktxt.size() ? "\n" : "") + r;
-    
 #if( ENABLE_EDIT_RESULTS )
+    string remarktxt;
+    for( string r : ana->remarks_ )
+    {
+      SpecUtils::ireplace_all( r, "&#009;", "  " );
+      remarktxt += (remarktxt.size() ? "\n" : "") + r;
+    }
     m_algorithm_remarks->setText( remarktxt );
 #else
-    const WString remarks = Wt::Utils::htmlEncode( WString::fromUTF8(remarktxt), Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
-    m_algorithm_remarks->setText( remarks );
+    string remarktxt;
+    for( string r : ana->remarks_ )
+    {
+      if( r.empty() )
+        continue;
+      
+      // Lets make lines line "Top Line 1: Am241&#009;662.45&#009;400.81" semi-reasonable, and have
+      //  displayed all on the same line.
+      //  TODO: there are probably a lot better ways to do this, like first check if there are any
+      //    lines like this, and if so, make a html table.
+      //  TODO: there are probably a lot of other special cases we can handle.
+      SpecUtils::ireplace_all( r, "&#009;", "---mytab---" );
+      r = Wt::Utils::htmlEncode( r, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
+      SpecUtils::ireplace_all( r, "---mytab---", "&nbsp;&nbsp;&nbsp;" );
+      SpecUtils::ireplace_all( r, ": ", ":&nbsp;" );
+      SpecUtils::ireplace_all( r, "Top Line ", "Top&nbsp;Line&nbsp;" );
+      
+      remarktxt += "<div>" + r + "</div>";
+    }//for( string r : ana->remarks_ )
+    
+    m_algorithm_remarks->setText( WString::fromUTF8(remarktxt) );
 #endif
     
     m_table->rowAt(AlgorithmRemarks)->setHidden( m_algorithm_remarks->text().empty() );
