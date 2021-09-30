@@ -128,7 +128,7 @@ public:
   
   /** Returns the current data points. */
   const std::vector<DataPoint> &currentDataPoints() const;
-  
+  float currentDiameter() const;
   
   /** Sets whther the FWHM data points and equation should be shown. */
   void showFwhmPoints( const bool show );
