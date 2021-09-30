@@ -794,7 +794,27 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   
   
   if( properties.testFlag(AuxWindowProperties::EnableResize) )
+  {
+    // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
+    //  will be called first, which will then default to using the initial size as minimum
+    //  allowable.
+    // So we will set a min size of 200x50 px, which is about the smallest that is useable with
+    //  a footer.
+    // Client code can set this min width/height to whatever they want later, and it should be fine.
+    const WLength mw = minimumWidth();
+    const WLength mh = minimumWidth();
+    double mw_px = mw.isAuto() ? 0.0 : mw.toPixels();
+    double mh_px = mh.isAuto() ? 0.0 : mh.toPixels();
+    
+    if( (mw_px < 1.0) || (mh_px < 1.0) )
+    {
+      mw_px = (mw_px < 1.0) ? 200.0 : mw_px;
+      mh_px = (mh_px < 1.0) ? 50.0 : mh_px;
+      setMinimumSize( mw_px, mh_px );
+    }//if( either min height or width is not defined )
+    
     setResizable( true );
+  }
 
   if( (isPhone && isPhoneNotFullScreen)
       || (isTablet && isTabletNotFullScreen) )

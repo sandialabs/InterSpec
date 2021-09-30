@@ -70,7 +70,15 @@ enum AuxWindowProperties
   
   SetCloseable = 0x20,
   
-  /** Enables resize. */
+  /** Enables resize.
+   
+   Note: currently there is a bug in Wt 3.3.4 that results in the window not
+   being allowed to be resized smaller than the initial size, unless minimum
+   width is explicitly specified before setting window resizable.
+   Thus, if this flag is used, a minimum size of 200px by 50px will be set on
+   the window.
+   This can be overridden by you later.
+   */
   EnableResize = 0x40
 };//enum AuxWindowProperties
 

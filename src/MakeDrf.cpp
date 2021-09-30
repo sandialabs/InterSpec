@@ -40,12 +40,14 @@
 #include <Wt/WCheckBox>
 #include <Wt/WSvgImage>
 #include <Wt/WGroupBox>
+#include <Wt/WTemplate>
 #include <Wt/WTextArea>
 #include <Wt/WTableCell>
 #include <Wt/WTabWidget>
 #include <Wt/WIOService>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
+#include <Wt/WEnvironment>
 #include <Wt/WApplication>
 #include <Wt/WPopupWidget>
 #include <Wt/Http/Response>
@@ -109,6 +111,8 @@ using namespace Wt;
 
 namespace
 {
+  const float ns_NaI3x3IntrinsicEff = 0.47096f; //linear interpolation based on Efficiency.csv for generic 3x3. So could be improved...
+
   bool source_info_from_lib_file( string srcname, const string &filename,
                                   double &activity, boost::posix_time::ptime &activityDate, string &comments )
   {
@@ -303,22 +307,22 @@ namespace
   
   
   /** Class to downlaod CSV that contains info fit for. */
-  class CsvDrfDownloadResource : public Wt::WResource
+  class DrfSummaryBase : public Wt::WResource
   {
+  protected:
     string m_filename;
     string m_description;
     MakeDrf * const m_makedrf;
     Wt::WApplication *m_app;
     
   public:
-    CsvDrfDownloadResource( MakeDrf *parent )
+    DrfSummaryBase( MakeDrf *parent )
     : WResource( parent ), m_filename(""), m_makedrf( parent ), m_app( WApplication::instance() )
     {
       assert( m_app );
-      suggestFileName( "drfinfo.csv", WResource::Attachment );
     }
     
-    virtual ~CsvDrfDownloadResource()
+    virtual ~DrfSummaryBase()
     {
       beingDeleted();
     }
@@ -329,7 +333,8 @@ namespace
       
       if( filename.empty() )
         filename = "drf";
-      filename += "_drfinfo.csv";
+      filename += "_";
+      filename += fileEnding();
       suggestFileName( filename, WResource::Attachment );
     }
     
@@ -338,10 +343,26 @@ namespace
       m_description = desc;
     }
     
+    virtual const char *fileEnding() const = 0; //"drfinfo.csv"
+    
+    virtual void handleRequest( const Wt::Http::Request &request, Wt::Http::Response &response ) = 0;
+  };//class DrfSummaryBase
+
+
+  class CsvDrfDownloadResource : public DrfSummaryBase
+  {
+  public:
+    CsvDrfDownloadResource( MakeDrf *parent )
+    : DrfSummaryBase( parent )
+    {
+      suggestFileName( fileEnding(), WResource::Attachment );
+    }
+    
+    virtual const char *fileEnding() const { return "drfinfo.csv"; };
+    
     virtual void handleRequest( const Wt::Http::Request &request,
                                Wt::Http::Response &response )
     {
-      
       WApplication::UpdateLock lock( m_app );
       
       if( !lock )
@@ -362,7 +383,43 @@ namespace
   };//class CsvDrfDownloadResource
   
   
+
+  /** Class to download CSV that contains info fit for. */
+  class RefSheetDownloadResource : public DrfSummaryBase
+  {
   
+  public:
+    RefSheetDownloadResource( MakeDrf *parent )
+     : DrfSummaryBase( parent )
+    {
+      suggestFileName( fileEnding(), WResource::Attachment );
+    }
+  
+    virtual const char *fileEnding() const { return "ref_sheet.html"; };
+  
+    virtual void handleRequest( const Wt::Http::Request &request,
+                               Wt::Http::Response &response )
+    {
+      WApplication::UpdateLock lock( m_app );
+    
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in RefSheetDownloadResource.";
+      
+        response.out() << "Error grabbing application lock to form RefSheetDownloadResource resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+      
+        return;
+      }//if( !lock )
+    
+      response.setMimeType( "text/csv" );
+      if( m_makedrf )
+        m_makedrf->writeRefSheet( response.out(), m_filename, m_description );
+    }//void handleRequest(...)
+  };//class RefSheetDownloadResource
+  
+
   class DrfPeak : public WContainerWidget
   {
   public:
@@ -824,7 +881,7 @@ namespace
               try
               {
                 SpecUtils::trim( dist );
-                pos = dist.find( ',' ); //ToDo: make finding the end of the distnace more robust - like with a regex
+                pos = dist.find_first_of( ",@" ); //ToDo: make finding the end of the distance more robust - like with a regex
                 if( pos != string::npos )
                   dist = dist.substr(0, pos);
                 distance = PhysicalUnits::stringToDistance( dist );
@@ -1293,7 +1350,9 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_fwhmFitId( 0 ),
   m_effEqnFitId( 0 ),
   m_fwhmEqnChi2( -999.9 ),
-  m_effEqnChi2( -999.9 )
+  m_effEqnChi2( -999.9 ),
+  m_effLowerEnergy( 0.0f ),
+  m_effUpperEnergy( 0.0f )
 {
   assert( m_interspec );
   assert( m_materialDB );
@@ -1488,10 +1547,11 @@ AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt
   const int wh = viewer->renderedHeight();
   if( ww > 100 && wh > 100 )
   {
-    const int width = std::min( 3*ww/4, 800 );
-    const int height = ((wh < 420) ? wh : (5*wh)/6 );
+    const int width = std::min( 3*ww/4, 900 );
+    const int height = ((wh < 420) ? wh : (19*wh)/20 );
     
     window->resizeWindow( width, height );
+    window->setMinimumSize( std::min(width,640), std::min(height,480) );
   }//if( ww > 100 && wh > 100 )
     
   MakeDrf *makeDrfWidget = new MakeDrf( viewer, materialDB, materialSuggest );
@@ -1682,15 +1742,40 @@ void MakeDrf::startSaveAs()
   WAnchor *csvanchor = new WAnchor( csvResource, "Export DRF as CSV.", cell );
   csvanchor->setTarget( AnchorTarget::TargetNewWindow );
   
-  auto updateName = [name,csvResource,n42Resource](){
+
+  cell = table->elementAt(currentRow, 2);
+  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  help->addStyleClass( "MakeDrfSaveHelp" );
+  tooltip = "Exports the DRF into a CSV file that contains all of the information of the DRF."
+  " Especially useful for using with other tools.";
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
+  
+  
+  currentRow = table->rowCount();
+  cell = table->elementAt(currentRow, 0);
+  cell->setColumnSpan( 2 );
+  RefSheetDownloadResource *refSheetResource = new RefSheetDownloadResource( this );
+  WAnchor *refSheetAnchor = new WAnchor( refSheetResource, "Export quick ref card", cell );
+  refSheetAnchor->setTarget( AnchorTarget::TargetNewWindow );
+  
+  cell = table->elementAt(currentRow, 2);
+  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  help->addStyleClass( "MakeDrfSaveHelp" );
+  tooltip = "Exports a 3x5 style card that has a brief summary of detector performance.";
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
+  
+  
+  auto updateName = [name,csvResource,n42Resource,refSheetResource](){
     if( name->validate() == Wt::WValidator::Valid )
     {
       n42Resource->setSuggestFileName( name->text().toUTF8() );
       csvResource->setSuggestFileName( name->text().toUTF8() );
+      refSheetResource->setSuggestFileName( name->text().toUTF8() );
     }else
     {
       n42Resource->setSuggestFileName( "" );
       csvResource->setSuggestFileName( "" );
+      refSheetResource->setSuggestFileName( "" );
     }
   };
   
@@ -1699,21 +1784,15 @@ void MakeDrf::startSaveAs()
   name->blurred().connect( std::bind(updateName) );
   
   
-  auto updateDesc = [description,csvResource](){
+  auto updateDesc = [description,csvResource,refSheetResource](){
     csvResource->setDescription( description->text().toUTF8() );
+    refSheetResource->setDescription( description->text().toUTF8() );
   };
   
   description->changed().connect( std::bind(updateDesc) );
   description->enterPressed().connect( std::bind(updateDesc) );
   description->blurred().connect( std::bind(updateDesc) );
-  
-  
-  cell = table->elementAt(currentRow, 2);
-  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
-  help->addStyleClass( "MakeDrfSaveHelp" );
-  tooltip = "Exports the DRF into a CSV file that contains all of the information of the DRF."
-            " Especially useful for using with other tools.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
+
   
   
   WPushButton *b = w->addCloseButtonToFooter( "Cancel" );
@@ -2496,11 +2575,11 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
   
   //ToDo: I'm not entirely sure the next line protects against updateEffEqn()
   //  not being called if this widget is deleted before fit is done. (it doesnt!)
-  auto updater = boost::bind( &MakeDrf::updateEffEqn, this, _1, _2, _3, fitid, _4 );
+  auto updater = boost::bind( &MakeDrf::updateEffEqn, this, _1, _2, _3, _4, _5, fitid, _6 );
   const string thisid = id();
   
   
-  auto worker = [sessionId,thisid,data,nfitpars,updater]() {
+  auto worker = [sessionId,thisid,data,nfitpars,updater,inMeV]() {
     try
     {
       //Takes between 5 and 500ms for a HPGe detector
@@ -2516,10 +2595,17 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
         cout << result[i] << "+-" << uncerts[i] << ", ";
       cout << "}; took " << (end_time-start_time) << " seconds" << endl;
       
-      WServer::instance()->post( sessionId, std::bind( [updater,thisid,result,uncerts,chi2](){
+      float lowestEnergy = 99999.0f, highestEnergy = -99999.0f;
+      for( const MakeDrfFit::DetEffDataPoint &p : data )
+      {
+        lowestEnergy = std::min( lowestEnergy, (inMeV ? 1000.0f : 1.0f) * p.energy );
+        highestEnergy = std::max( highestEnergy, (inMeV ? 1000.0f : 1.0f) * p.energy );
+      }
+      
+      WServer::instance()->post( sessionId, std::bind( [updater,thisid,result,uncerts,chi2,lowestEnergy,highestEnergy](){
         //Make sure *this is still in the widget tree (incase user closed window while computation was being done)
         if( wApp->domRoot() && dynamic_cast<MakeDrf *>(wApp->domRoot()->findById(thisid) ) )
-          updater( result, uncerts, chi2, string("") );
+          updater( result, uncerts, chi2, lowestEnergy, highestEnergy, string("") );
         else
           cerr << "MakeDrf widget was deleted while efficiency was being calculated" << endl;
       } ) );
@@ -2529,7 +2615,7 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
       cout << "Failed to fit intrinsic eff coefs: " << errmsg << endl;
       WServer::instance()->post( sessionId, std::bind( [updater,errmsg,thisid](){
         if( wApp->domRoot() && dynamic_cast<MakeDrf *>(wApp->domRoot()->findById(thisid) ) )
-          updater( vector<float>(), vector<float>(), -999.9, errmsg );
+          updater( vector<float>(), vector<float>(), -999.9, 0.0f, 0.0f, errmsg );
         else
           cerr << "MakeDrf widget was deleted while efficiency was being calculated" << endl;
       } ) );
@@ -2541,12 +2627,16 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
 
 
 void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts,
-                            const double chi2, const int fitid, const string errmsg )
+                            const double chi2,
+                            const float lowestEnergy, const float highestEnergy,
+                            const int fitid, const string errmsg )
 {
   const bool isMeV = isEffEqnInMeV();
   const auto units = (isMeV ? MakeDrfChart::EqnEnergyUnits::MeV : MakeDrfChart::EqnEnergyUnits::keV);
 
   m_effEqnChi2 = chi2;
+  m_effLowerEnergy = lowestEnergy;
+  m_effUpperEnergy = highestEnergy;
   m_effEqnCoefs = coefs;
   m_effEqnCoefUncerts = uncerts;
   m_intrinsicEfficiencyIsValid.emit( !m_effEqnCoefs.empty() );
@@ -2723,9 +2813,11 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
                     + " @ " + PhysicalUnits::printToBestLengthUnits(distance)
                     + " " + SpecUtils::trim_copy( title.substr(distpos+mtch[1].str().size()) );
             //the last space we added is sometimes a waste, and results in something like 'U232 @ 33.33 cm , H=100 cm'
-          }else
+          }else if( title.find('@') == string::npos )
           {
-            //Todo, should check if there is a '@' sybmol in the string anywhere
+            //maybe the regex isnt complete; we'll just skip distance if there is a '@' symbol
+            //  anywhere in the title
+            
             title = SpecUtils::trim_copy(title)
                     + " @ " + PhysicalUnits::printToBestLengthUnits(distance);
           }
@@ -2814,7 +2906,6 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   //Okay, we've got all the variables we need for this function I think, lets
   //  write stuff
   
-  const float NaI3x3IntrinsicEff = 0.47096f; //linear interpolation based on Efficiency.csv for generic 3x3. So could be improved...
   const float cs137Energy = (effInMeV ? 0.661657f : 661.657f);
   const float intrinsicEffAt661 = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( cs137Energy, effEqnCoefs );
   
@@ -2839,7 +2930,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   << (effInMeV ? "MeV" : "keV") << endline
   << "#  i.e. equation for probability of gamma that hits the face of the detector being detected in the full energy photopeak." << endline
   << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
-  << drfname << " Intrinsic," << (100.0*intrinsicEffAt661/NaI3x3IntrinsicEff) << "%,";
+  << drfname << " Intrinsic," << (100.0*intrinsicEffAt661/ns_NaI3x3IntrinsicEff) << "%,";
   for( size_t i = 0; i < effEqnCoefs.size(); ++i )
     out << "," << effEqnCoefs[i];
   for( size_t i = effEqnCoefs.size(); i < 12; ++i )
@@ -2847,7 +2938,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   out << "0.0," << (0.5*diam/PhysicalUnits::cm) << ",0.5" << endline;
   out << "# 1 sigma Uncertainties,";
   if( releffuncert >= 0.0 )
-    out << 100*(releffuncert / NaI3x3IntrinsicEff) << "%";
+    out << 100*(releffuncert / ns_NaI3x3IntrinsicEff) << "%";
   out << ",";
   for( size_t i = 0; i < effEqnCoefsUncerts.size(); ++i )
     out << "," << effEqnCoefsUncerts[i];
@@ -2863,7 +2954,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   << (effInMeV ? "MeV" : "keV") << " and at distance of 25 cm" << endline
   << "#  i.e. equation for probability of gamma emitted from source at 25cm being detected in the full energy photopeak." << endline
   << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
-  << drfname << " Absolute," << (100.0*intrinsicEffAt661/NaI3x3IntrinsicEff) << "%,";
+  << drfname << " Absolute," << (100.0*intrinsicEffAt661/ns_NaI3x3IntrinsicEff) << "%,";
   for( size_t i = 0; i < effEqnCoefs.size(); ++i )
     out << "," << ( (i==0 ? log(solidAngleAt25cm) : 0.0) + effEqnCoefs[i]);  //todo: make sure its not
   for( size_t i = effEqnCoefs.size(); i < 12; ++i )
@@ -2871,7 +2962,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   out << "25," << (0.5*diam/PhysicalUnits::cm) << "," << solidAngleAt25cm << endline;
   out << "# 1 sigma Uncertainties,";
   if( releffuncert >= 0.0 )
-    out << 100*(releffuncert / NaI3x3IntrinsicEff) << "%";
+    out << 100*(releffuncert / ns_NaI3x3IntrinsicEff) << "%";
   out << ",";
   for( size_t i = 0; i < effEqnCoefsUncerts.size(); ++i )
     out << "," << effEqnCoefsUncerts[i];
@@ -2992,6 +3083,238 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   }//for( int i = 25; i <= 3000; i += 25 )
   
 }//void MakeDrf::writeCsvSummary( std::ostream & )
+
+
+
+
+void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::string drfdescrip )
+{
+  // Use a lambda to read in the template XML, mostly just to control scope and have result be const
+  auto get_tmplt_txt = []() -> string {
+    const string docroot = wApp->docRoot();
+    const string tmpltpath = SpecUtils::append_path(docroot,"InterSpec_resources/static_text/drf_ref_card.xml");
+    
+    std::ifstream tmpltfile( tmpltpath.c_str(), ios::in | ios::binary );
+    if( !tmpltfile )
+      return "Error opening reference card template text '" + tmpltpath + "'\n";
+    
+    std::stringstream tmplttxtstrm;
+    tmplttxtstrm << tmpltfile.rdbuf();
+    
+    return tmplttxtstrm.str();
+  };//get_tmplt_txt lamda
+  
+  // Lets gather all our general information
+  const string tmplttxt = get_tmplt_txt();
+  
+  const double diam = [this]() -> double {try{return detectorDiameter();}catch(...){return 0.0;}}();
+  const WString diameter = m_detDiameter->text();
+  
+  const int offset = wApp->environment().timeZoneOffset();
+  const WDateTime now = WDateTime::currentDateTime().addSecs(60*offset);
+  const string date = now.date().toString("MMM d yyyy").toUTF8();
+  
+  // Energy range, m_chartLowerE, m_chartUpperE
+  string eff_eqn = m_intrinsicEffAnswer->text().toUTF8();
+  //SpecUtils::ireplace_all( eff_eqn, "*", "&times;" );
+  
+  // Lets keep the equation from spilling over to the next line without some proper formatting
+  if( eff_eqn.size() > 110 )
+  {
+    const string::size_type plus_pos = eff_eqn.find( " + ", 100 );
+    const string::size_type minus_pos = eff_eqn.find( " - ", 100 );
+    const string::size_type break_pos = (plus_pos < minus_pos) ? plus_pos : minus_pos;
+    if( break_pos != string::npos )
+    {
+      eff_eqn = "<div>" + eff_eqn.substr( 0, break_pos ) + "</div>"
+                "<div style=\"padding-left: 7em\">" + eff_eqn.substr( break_pos ) + "</div>";
+    }
+  }//if( eff_eqn.size() > 110 )
+  
+  
+
+  const bool effInMeV = isEffEqnInMeV();
+  const float cs137Energy = (effInMeV ? 0.661657f : 661.657f);
+  const float intrinsicEffAt661 = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( cs137Energy, m_effEqnCoefs );
+  const float relEffPercent = 100.0 * intrinsicEffAt661 / ns_NaI3x3IntrinsicEff;
+  char rel_eff_txt[256] = { '\0' };
+  
+  if( m_fwhmCoefs.empty() )
+  {
+    snprintf( rel_eff_txt, sizeof(rel_eff_txt), "%.1f%% eff. (rel. to 3x3 NaI) @661 keV", relEffPercent );
+  }else
+  {
+    const auto form = isGadrasFwhmEqnType() ? DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn
+                                            : DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+    const float fwhm661 = DetectorPeakResponse::peakResolutionSigma( 661.7, form, m_fwhmCoefs );
+    const float relResolution = 100 * fwhm661 / 661.7;
+    
+    snprintf( rel_eff_txt, sizeof(rel_eff_txt),
+              "@661 keV: %.1f%% eff (rel. to 3x3 NaI), and FWHM=%.2g%%",
+             relEffPercent, relResolution );
+  }//if( we have FWHM ) / else.
+  
+  string fwhm_eqn;
+  if( m_fwhmCoefs.size() )
+  {
+    if( isGadrasFwhmEqnType() )
+    {
+      const float P6 = m_fwhmCoefs[0];
+      const float P7 = (m_fwhmCoefs.size() > 1) ? m_fwhmCoefs[1] : 0.0f;
+      const float P8 = (m_fwhmCoefs.size() > 2) ? m_fwhmCoefs[2] : 0.0f;
+      
+      char case1_buffer[256] = { '\0' }, case2_buffer[256] = { '\0' };
+      char case3_buffer[256] = { '\0' }, case4_buffer[512] = { '\0' };
+      snprintf( case1_buffer, sizeof(case1_buffer), "FWHM(keV) = 6.61 * %.5g * (x/661)<sup>%.5g</sup>", P7, P8 );
+      snprintf( case2_buffer, sizeof(case2_buffer), "FWHM(keV) = 6.61 * %.5g * (x/661)^(%.5g^(1.0/log(1.0-%.5g))", P7, P8, P6 );
+      snprintf( case3_buffer, sizeof(case3_buffer), "FWHM(keV) = %.5g", P6 );
+      snprintf( case4_buffer, sizeof(case4_buffer), "FWHM(keV) = sqrt(%.5g<sup>2</sup>"
+               " + (6.61 *"
+               " (sqrt((6.61 * %.5g)<sup>2</sup> - %.5g<sup>2</sup>)/6.61)"
+               " * (x/661)<sup>%.5g</sup>)<sup>2</sup>)", P6, P7, P6, P8 );
+      
+      if( fabs(P6) < 1.0E-8 )
+      {
+        fwhm_eqn = case1_buffer;
+      }else if( P6 < 0.0 )
+      {
+        fwhm_eqn = case2_buffer;
+      }else if( P6 > 6.61*P7 )
+      {
+        fwhm_eqn = case3_buffer;
+      }else
+      {
+        fwhm_eqn = "<div class=\"gadras-fcn\">E &lt; 661: " + string(case1_buffer) +  "</div>"
+                   "<div class=\"gadras-fcn\">E &gt; 661: " + string(case4_buffer) +  "</div>";
+      }
+    }else
+    {
+      fwhm_eqn = "FWHM(keV) = sqrt(";
+      for( size_t i = 0; i < m_fwhmCoefs.size(); ++i )
+      {
+        if( i == 0 )
+          fwhm_eqn += ((m_fwhmCoefs[i] < 0.0) ? " -" : "");
+        else
+          fwhm_eqn += ((m_fwhmCoefs[i] < 0.0) ? " - " : " + ");
+        
+        char buffer[64] = { '\0' };
+        snprintf( buffer, sizeof(buffer), "%.4g", 0.001*fabs(m_fwhmCoefs[i]) );
+        fwhm_eqn += buffer;
+        
+        if( i == 1 )
+          fwhm_eqn += "*x";
+        else if( i > 1 )
+          fwhm_eqn += "*x<sup>" + std::to_string(i) + "</sup>";
+      }
+      fwhm_eqn += ")";
+    }//if( isGadrasFwhmEqnType() ) / else
+  }//if( m_fwhmCoefs.size() )
+  
+  stringstream efftable;
+  const double eff_energies[] = { 59.5, 185.7, 413.7, 661.7, 1001.0, 1460.8, 2614.5 };
+  const int eff_dist_cm[] = { 25, 50, 75, 100, 250 };
+  
+  efftable << "<table class=\"eff-table\">\n"
+              "\t\t<caption>Full-Energy Detection Efficiency (% total gammas)</caption>\n"
+              "\t<thead>\n"
+              "\t\t<tr><th></th>";
+  char buffer[128] = { '\0' };
+  for( const double energy : eff_energies )
+  {
+    if( (energy < (m_effLowerEnergy - 10)) || (energy > (m_effUpperEnergy + 10)) )
+      continue;
+    
+    snprintf( buffer, sizeof(buffer), "<th>%.0f&nbsp;keV</th>", std::round(energy) );
+    efftable << buffer;
+  }
+  efftable << "</tr>\n\t</thead>\n"
+              "\t<tbody>\n";
+  
+  efftable << "\t<tr><th>Intrinsic</th>";
+  for( double raw_energy : eff_energies )
+  {
+    if( (raw_energy < (m_effLowerEnergy - 10)) || (raw_energy > (m_effUpperEnergy + 10)) )
+      continue;
+    
+    const float energy = raw_energy / (effInMeV ? 1000.0f : 1.0f);
+    const float intrinsic_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs );
+    snprintf( buffer, sizeof(buffer), "<td>%.3G</td>", 100.0*intrinsic_eff );
+    efftable << buffer;
+  }
+  efftable << "\t</tr>\n";
+  
+  for( const int dist_cm : eff_dist_cm )
+  {
+    efftable << "\t<tr><th>" << dist_cm << " cm</th>";
+    for( double raw_energy : eff_energies )
+    {
+      if( (raw_energy < (m_effLowerEnergy - 10)) || (raw_energy > (m_effUpperEnergy + 10)) )
+        continue;
+      
+      const float energy = raw_energy / (effInMeV ? 1000.0f : 1.0f);
+      const float intrinsic_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs );
+      const double frac_solid_angle = DetectorPeakResponse::fractionalSolidAngle( diam, dist_cm*PhysicalUnits::cm );
+    
+      snprintf( buffer, sizeof(buffer), "<td>%.2G</td>", 100.0*frac_solid_angle*intrinsic_eff );
+      efftable << buffer;
+    }
+    efftable << "\t</tr>\n";
+  }//for( const auto dist : eff_dist )
+  
+  efftable << "\t</tbody>\n"
+              "</table>\n";
+  
+  WLength chart_width(5*96,WLength::Unit::Pixel), chart_height(3*96,WLength::Unit::Pixel);
+  
+  Wt::WSvgImage eff_chart( chart_width, chart_height, nullptr, false );
+
+  {// begin make DRF chart
+    MakeDrfChart chart;
+    chart.resize( chart_width, chart_height );
+    const std::vector<MakeDrfChart::DataPoint> &data = m_chart->currentDataPoints();
+    const float detDiam = m_chart->currentDiameter();
+    const float chartLower = 10.0f * std::round( 0.1f*(m_effLowerEnergy - 6.0f) );
+    const float chartUpper = 10.0f * std::round( 0.1f*(m_effUpperEnergy + 6.0f) );
+    
+    chart.setDataPoints( data, detDiam, chartLower, chartUpper );
+    
+    const auto units = effInMeV ? MakeDrfChart::EqnEnergyUnits::MeV
+                                : MakeDrfChart::EqnEnergyUnits::keV;
+    
+    MakeDrfChart::FwhmCoefType fwhmEqnType = MakeDrfChart::FwhmCoefType::Gadras;
+    switch( m_fwhmEqnType->currentIndex() )
+    {
+      case 0: fwhmEqnType = MakeDrfChart::FwhmCoefType::Gadras; break;
+      case 1: fwhmEqnType = MakeDrfChart::FwhmCoefType::SqrtEqn; break;
+    }//switch( m_fwhmEqnType->currentIndex() )
+    
+    chart.setFwhmCoefficients( m_fwhmCoefs, m_fwhmCoefUncerts, fwhmEqnType, units );
+    chart.setEfficiencyCoefficients( m_effEqnCoefs, m_effEqnCoefUncerts, units );
+    
+    WPainter p( &eff_chart );
+    chart.paint( p );
+    p.end();
+  }// end make DRF chart
+  
+  stringstream eff_chart_svg;
+  eff_chart.write( eff_chart_svg );
+  
+  
+  WTemplate tmplt;
+  // tmplttxt is unsafe HTML because of <head> tag and stuff, so we dont want Wt to filter it
+  tmplt.setTemplateText( WString::fromUTF8(tmplttxt), TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("drf-name", drfname, TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("drf-desc", drfdescrip, TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("diameter", diameter, TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("date", date, TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("rel-eff", rel_eff_txt, TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("eff-eqn", eff_eqn, TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("fwhm-eqn", fwhm_eqn, TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("eff-table", efftable.str(), TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("eff-svg", eff_chart_svg.str(), TextFormat::XHTMLUnsafeText );
+  
+  tmplt.renderTemplate( output );
+}//void writeRefSheet(...)
 
 
 bool MakeDrf::isEffEqnInMeV() const
