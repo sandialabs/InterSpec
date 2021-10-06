@@ -301,6 +301,14 @@ public:
                                                          std::istream &csv );
   
   
+  /** Writes the peaks to a CSV file output - e.g., what the user gets when they click on the CSV download on the "Peak Manager" tab.
+   */
+  static void write_peak_csv( std::ostream &outstrm,
+                             std::string specfilename,
+                             const std::deque<std::shared_ptr<const PeakDef>> &peaks,
+                             const std::shared_ptr<const SpecUtils::Measurement> &data );
+  
+  
 protected:
   
   /** Adds a new peak to the model, returning the inserted peak and its index.
@@ -353,10 +361,12 @@ protected:
     PeakModel *m_model;
     Wt::WApplication *m_app;
     
+    
     virtual void handleRequest( const Wt::Http::Request &request,
                                 Wt::Http::Response &response );
   };//class PeakCsvResource : public Wt::WResource
 
+  
   friend class PeakCsvResource;
 };//class PeakModel
 
