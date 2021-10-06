@@ -73,7 +73,7 @@ int main( int argc, char **argv )
 
   //  You need to supply exactly three arguments to this program
   cerr << "Commenting out using command line arguments for development" << endl;
-  /*
+  
   if( argc != 4 )
   {
     cout << "Program usage: " << argv[0]
@@ -97,11 +97,7 @@ int main( int argc, char **argv )
   // The output will be a CSV of the peaks fit, as well as a N42-2012 spectrum file with the peaks
   //  fit as well, so you can load it into InterSpec easily to check things.
   const string output_filename = argv[3];
-  */
   
-  const string exemplar_n42_filename = "/Users/wcjohns/Downloads/ara/cal_spectrum_with_fit_peaks.n42";
-  const string raw_spec_filename = "/Users/wcjohns/Downloads/ara/test_spectrum.spe";
-  const string output_filename = "/Users/wcjohns/Downloads/ara/output";
   
   try
   {
