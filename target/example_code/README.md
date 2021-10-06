@@ -1,0 +1,2 @@
+This directory contains examples of using the InterSpec code to create utilities that would otherwise be repetitive in the GUI.
+In the future a CMakeLists.txt will be added for this directory, but for the moment you can just replace main.cpp with one of the source files in this directory to then compile an executable.
