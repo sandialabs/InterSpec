@@ -15,7 +15,6 @@
 }
 
 .DoseEnterEl {
-  /* border: 1px solid #d1d1d1; */
   width: 250px;
 }
 
@@ -30,6 +29,8 @@
 .DoseAnswerDiv {
   border: 1px solid #d1d1d1;
   overflow-y: auto;
+  overflow-x: hidden;
+  margin-right: 10px; /* to be about symetric with white-space on left side of dose tool*/
 }
 
 .DoseEnterTxt {
@@ -88,9 +89,10 @@
 
 .DoseHLTxt {
   font-size: 75%;
-  width: 5em;
+  width: 6em;
   overflow: hidden;
   margin-left: 2px;
+  white-space: nowrap;
 }
 
 .DoseColLabel {

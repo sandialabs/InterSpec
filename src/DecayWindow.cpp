@@ -48,11 +48,10 @@ using namespace std;
 DecayWindow::DecayWindow( InterSpec *viewer )
 : AuxWindow( "Nuclide Decay Information",
              //(Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::DisableCollapse) ),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)) ),
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse) | AuxWindowProperties::EnableResize) ),
   m_activityDiv( 0 )
 {
   WContainerWidget *contentDiv = WDialog::contents();
-  contentDiv->addStyleClass( "Decay" );
   m_activityDiv = new DecayActivityDiv( viewer );
   
   WGridLayout *layout = new WGridLayout();
@@ -76,18 +75,11 @@ DecayWindow::DecayWindow( InterSpec *viewer )
   if( !viewer || !viewer->isPhone() )
     m_activityDiv->setMinimumSize( 450, 500 );
   
-  //m_activityDiv->setOverflow( WContainerWidget::OverflowHidden );
-  //contentDiv->setOverflow( WContainerWidget::OverflowHidden );
-  //WDialog::contents()->setOverflow( WContainerWidget::OverflowAuto );
-  
   show();
+  setMinimumSize( 460, 580 );
   resizeWindow( 800, 600 );
   resizeToFitOnScreen();
   centerWindow();
-  
-  //XXX - resizing so the contents can get bigger doesnt actually make the
-  //      contents taller if there had to be scroll bars to begin with
-  setResizable( true );
 }//Decay constructor
 
 
@@ -115,11 +107,3 @@ void DecayWindow::addNuclide( const int z, const int a, const int iso,
       m_activityDiv->setDecayChartTimeRange( maxtime );
   }//if( m_activityDiv )
 }//void addNuclide(...)
-
-
-void DecayWindow::colorThemeChanged()
-{
-  if( m_activityDiv )
-    m_activityDiv->colorThemeChanged();
-}//void colorThemeChanged()
-

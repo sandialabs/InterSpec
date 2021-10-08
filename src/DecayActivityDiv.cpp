@@ -1456,24 +1456,15 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *par
   m_currentTimeUnits( -1.0 ),
   m_currentTimeRange( -1.0 ),
   m_currentNumXPoints( 250 ),
-  m_width( -1 ),
-  m_height( -1 ),
   m_currentMixture( new SandiaDecay::NuclideMixture() )
 {
   addStyleClass( "DecayActivityDiv" );
-  setLayoutSizeAware( true );
   
   wApp->useStyleSheet( "InterSpec_resources/NuclideDecayInfo.css");
   
   init();
 }//DecayActivityDiv constructor
 
-
-void DecayActivityDiv::layoutSizeChanged( int width, int height )
-{
-  m_width = width;
-  m_height = height;
-}
 
 void DecayActivityDiv::globalKeyPressed( const Wt::WKeyEvent &e )
 {
@@ -1485,6 +1476,7 @@ void DecayActivityDiv::globalKeyPressed( const Wt::WKeyEvent &e )
      )
   {
     m_nuclideSelectDialog->show();
+    m_nuclideSelectDialog->centerWindow();
     m_nuclideSelect->setNuclideSearchToFocus();
   }else if( (e.key() == Wt::Key_Left) || (e.key() == Wt::Key_Right) )
   {
@@ -1602,35 +1594,23 @@ void DecayActivityDiv::init()
 
   m_nuclidesAddedDiv->setInline( true );
   m_nuclideSelectDialog->contents()->addWidget( m_nuclideSelect );
+  if( m_viewer && (m_viewer->renderedHeight() > 100) )
+    m_nuclideSelectDialog->setMaximumSize( WLength::Auto, 0.9*m_viewer->renderedHeight() );
+  
   m_nuclideSelectDialog->rejectWhenEscapePressed();
-
-//  m_nuclideSelectDialog->setClosable( true );
-  if( m_height > 0 )
-    m_nuclideSelectDialog->setMaximumSize( WLength::Auto, int(1.25*m_height) );
   m_createNewNuclideButton->clicked().connect( boost::bind( &WDialog::show,
                                                       m_nuclideSelectDialog ) );
   m_createNewNuclideButton->clicked().connect( m_nuclideSelect,
                                    &DecaySelectNuclide::setNuclideSearchToFocus );
   
   m_nuclideSelect->done().connect( m_nuclideSelectDialog, &AuxWindow::hide );
-//  m_nuclideSelect->done().connect( this, &DecayActivityDiv::nuclideSelectDialogDone );
-  m_nuclideSelectDialog->finished().connect( this,
-                                    &DecayActivityDiv::nuclideSelectDialogDone );
+  m_nuclideSelectDialog->finished().connect( this, &DecayActivityDiv::nuclideSelectDialogDone );
   m_nuclideSelectDialog->centerWindow();
   
   m_nuclideSelectDialog->hide();
   
-//  m_nuclideSelect->selected().connect(
-//                      boost::bind( &DecayActivityDiv::addNuclide,
-//                                   this, _1, _2, _3, _4, _5, _6 ) );
-  m_nuclideSelect->selected().connect(
-                                   boost::bind( &DecayActivityDiv::addTheNuclide,
-                                                this, _1 ) );
-  
-  m_clearNuclidesButton->clicked().connect( this,
-                                            &DecayActivityDiv::clearAllNuclides );
-
-
+  m_nuclideSelect->selected().connect( boost::bind( &DecayActivityDiv::addTheNuclide, this, _1 ) );
+  m_clearNuclidesButton->clicked().connect( this, &DecayActivityDiv::clearAllNuclides );
   m_decayChart->clicked().connect( this, &DecayActivityDiv::decayChartClicked );
 
   WGridLayout *decayLayout = new WGridLayout();
@@ -1642,10 +1622,7 @@ void DecayActivityDiv::init()
   ChartAndLegendHolder *chartHolder
                      = new ChartAndLegendHolder( m_decayChart, m_decayLegend, isPhone );
   
-
   decayLayout->addWidget( chartHolder, 0, 0, 1, 1 );
-  
-  
   decayLayout->addWidget( displayOptionsDiv, 1, 0, 1, 1 );
   decayLayout->setRowStretch( 0, 5 );
 
@@ -1691,6 +1668,9 @@ void DecayActivityDiv::init()
   layout->addWidget(  m_chartTabWidget,    1, 0, 1, 1 );
   layout->setRowStretch( 1, 5 );
   WContainerWidget::setLayout( layout );
+  
+  if( m_viewer )
+    m_viewer->colorThemeChanged().connect( this, &DecayActivityDiv::colorThemeChanged );
 }//void DecayActivityDiv::init()
 
 
@@ -1996,6 +1976,8 @@ void DecayActivityDiv::sourceNuclideDoubleClicked( Wt::WContainerWidget *w )
     m_nuclideSelect->setCurrentInfo( nuc.a, nuc.z, nuc.iso,
                                      nuc.age, nuc.activity, nuc.useCurrie );
     m_nuclideSelect->setAddButtonToAccept();
+    m_nuclideSelectDialog->centerWindow();
+    m_nuclideSelectDialog->resizeToFitOnScreen();
     break;
   }//for( Nuclide &nuc : m_nuclides )
 }//void sourceNuclideDoubleClicked( Wt::WContainerWidget *w );

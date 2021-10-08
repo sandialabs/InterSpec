@@ -398,6 +398,8 @@ PeakModel::PeakCsvResource::~PeakCsvResource()
 }
 
 
+
+
 void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*request*/,
                                                 Wt::Http::Response& response )
 {
@@ -431,165 +433,12 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
 
   response.setMimeType( "text/csv" );
 
-  if( !m_model )
+  if( !m_model || !m_model->m_peaks )
     return;
 
-  const size_t npeaks = m_model->npeaks();
-  const string eol_char = "\r\n"; //for windows - could potentially cosutomize this for the users operating system
+  std::shared_ptr<const SpecUtils::Measurement> data = m_model->m_dataModel->getData();
   
-  response.out() << "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
-                    "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy"
-                 << eol_char
-                 << "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
-                    "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV"
-                 << eol_char;
-  
-  
-  for( size_t peakn = 0; peakn < npeaks; ++peakn )
-  {
-    const PeakDef &peak = m_model->peak( peakn );
-
-    std::shared_ptr<const SpecUtils::Measurement> data = m_model->m_dataModel->getData();
-    float live_time = 0.0;
-    boost::posix_time::ptime meastime;
-    double region_area = 0.0, xlow = 0.0, xhigh = 0.0;
-    if( data )
-    {
-      live_time = data->live_time();
-      meastime = data->start_time();
-      findROIEnergyLimits( xlow, xhigh, peak, data );
-      region_area = gamma_integral( data, xlow, xhigh );
-    }//if( data )
-
-    string nuclide;
-    char energy[32];
-    energy[0] = '\0';
-    
-    if( peak.hasSourceGammaAssigned() )
-    {
-      try
-      {
-        const float gammaEnergy = peak.gammaParticleEnergy();
-        snprintf( energy, sizeof(energy), "%.2f", gammaEnergy );
-        
-        if( peak.parentNuclide()
-           && (peak.decayParticle() || peak.sourceGammaType()==PeakDef::AnnihilationGamma) )
-        {
-          nuclide = peak.parentNuclide()->symbol;
-        }else if( peak.reaction() )
-        {
-          nuclide = peak.reaction()->name();
-          SpecUtils::ireplace_all( nuclide, ",", " " );
-        }else if( peak.xrayElement() )
-        {
-          nuclide = peak.xrayElement()->symbol + "-xray";
-        }
-      }catch( std::exception & )
-      {
-      }//try / catch
-    }//if( peak.hasSourceGammaAssigned() )
-    
-    char buffer[32];
-    snprintf( buffer, sizeof(buffer), "%.2f", peak.mean() );
-    string meanstr = buffer;
-    while( meanstr.size() < 8 )
-      meanstr = " " + meanstr;
-    
-    snprintf( buffer, sizeof(buffer), "%.1f", peak.peakArea() );
-    string areastr = buffer;
-    while( areastr.size() < 10 )
-      areastr = " " + areastr;
-    
-    snprintf( buffer, sizeof(buffer), "  %.1f", peak.peakAreaUncert() );
-    string areauncertstr = buffer;
-    while( areauncertstr.size() < 11 )
-      areauncertstr = areauncertstr + " ";
-    
-    string cpststr;
-    if( live_time > 0.0f )
-    {
-      snprintf( buffer, sizeof(buffer), "%1.4e", (peak.peakArea()/data->live_time()) );
-      cpststr = buffer;
-      size_t epos = cpststr.find( "e" );
-      if( epos != string::npos )
-      {
-        if( cpststr[epos+1]!='-' && cpststr[epos+1]!='+' )
-          cpststr.insert( cpststr.begin() + epos + 1, '+' );
-        while( (cpststr.size()-epos) < 5 )
-          cpststr.insert( cpststr.begin() + epos + 2, '0' );
-      }
-    }//if( data && data->live_time() > 0.0f )
-    
-    
-    const double width = peak.gausPeak() ? (2.35482*peak.sigma()) : 0.5*peak.roiWidth();
-    snprintf( buffer, sizeof(buffer), "%.2f", width );
-    string widthstr = buffer;
-    while( widthstr.size() < 5 )
-      widthstr = " " + widthstr;
-    
-    snprintf( buffer, sizeof(buffer), "%.2f", (100.0*width/peak.mean()) );
-    string widthprecentstr = buffer;
-    widthprecentstr += "%";
-    while( widthprecentstr.size() < 7 )
-      widthprecentstr = " " + widthprecentstr;
-    
-    snprintf( buffer, sizeof(buffer), "  %.2f", peak.chi2dof() );
-    string chi2str = buffer;
-    while( chi2str.size() < 7 )
-      chi2str = " " + chi2str;
-    
-    snprintf( buffer, sizeof(buffer), "  %.1f", region_area );
-    string roiareastr = buffer;
-    while( roiareastr.size() < 10 )
-      roiareastr = " " + roiareastr;
-    
-    snprintf( buffer, sizeof(buffer), "  %i", int(peakn+1) );
-    string numstr = buffer;
-    while( numstr.size() < 3 )
-      numstr = " " + numstr;
-    
-    specfilename = "  ";
-    SpecUtils::ireplace_all( specfilename, ",", "-" );
-    
-    string live_time_str;
-    if( live_time > 0.0f )
-    {
-      snprintf( buffer, sizeof(buffer), "%.3f", live_time );
-      live_time_str = buffer;
-    }
-    
-    string datestr, timestr;
-    if( !meastime.is_special() )
-    {
-      const string tstr = SpecUtils::to_common_string( meastime, true );
-      const auto pos = tstr.find(' ');
-      if( pos != string::npos )
-      {
-        datestr = tstr.substr(0,pos);
-        timestr = tstr.substr(pos+1);
-      }
-    }//if( !meastime.is_special() )
-    
-    
-    response.out() << meanstr
-            << ',' << areastr
-            << ',' << areauncertstr
-            << ',' << cpststr
-            << ',' << widthstr
-            << ',' << widthprecentstr
-            << ',' << chi2str
-            << ',' << roiareastr
-            << ',' << numstr
-            << ',' << specfilename
-            << ',' << live_time_str
-            << ',' << datestr
-            << ',' << timestr
-            << ',' << nuclide
-            << ',' << energy
-            << ',' << xlow
-            << ',' << xhigh
-            << eol_char;
-  }//for( loop over peaks, peakn )
+  PeakModel::write_peak_csv( response.out(), specfilename, *m_model->m_peaks, data );
 }//void handleRequest(...)
 
 
@@ -2543,4 +2392,165 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
 }//bool compare(...)
 
 
+void PeakModel::write_peak_csv( std::ostream &outstrm,
+                               std::string specfilename,
+                               const std::deque<std::shared_ptr<const PeakDef>> &peaks,
+                               const std::shared_ptr<const SpecUtils::Measurement> &data )
+{
+  const size_t npeaks = peaks.size();
+  const string eol_char = "\r\n"; //for windows - could potentially customize this for the users operating system
+  
+  outstrm << "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
+  "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy"
+  << eol_char
+  << "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
+  "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV"
+  << eol_char;
+  
+  
+  for( size_t peakn = 0; peakn < npeaks; ++peakn )
+  {
+    const PeakDef &peak = *peaks[peakn];
+    
+    float live_time = 0.0;
+    boost::posix_time::ptime meastime;
+    double region_area = 0.0, xlow = 0.0, xhigh = 0.0;
+    if( data )
+    {
+      live_time = data->live_time();
+      meastime = data->start_time();
+      findROIEnergyLimits( xlow, xhigh, peak, data );
+      region_area = gamma_integral( data, xlow, xhigh );
+    }//if( data )
+    
+    string nuclide;
+    char energy[32];
+    energy[0] = '\0';
+    
+    if( peak.hasSourceGammaAssigned() )
+    {
+      try
+      {
+        const float gammaEnergy = peak.gammaParticleEnergy();
+        snprintf( energy, sizeof(energy), "%.2f", gammaEnergy );
+        
+        if( peak.parentNuclide()
+           && (peak.decayParticle() || peak.sourceGammaType()==PeakDef::AnnihilationGamma) )
+        {
+          nuclide = peak.parentNuclide()->symbol;
+        }else if( peak.reaction() )
+        {
+          nuclide = peak.reaction()->name();
+          SpecUtils::ireplace_all( nuclide, ",", " " );
+        }else if( peak.xrayElement() )
+        {
+          nuclide = peak.xrayElement()->symbol + "-xray";
+        }
+      }catch( std::exception & )
+      {
+      }//try / catch
+    }//if( peak.hasSourceGammaAssigned() )
+    
+    char buffer[32];
+    snprintf( buffer, sizeof(buffer), "%.2f", peak.mean() );
+    string meanstr = buffer;
+    while( meanstr.size() < 8 )
+      meanstr = " " + meanstr;
+    
+    snprintf( buffer, sizeof(buffer), "%.1f", peak.peakArea() );
+    string areastr = buffer;
+    while( areastr.size() < 10 )
+      areastr = " " + areastr;
+    
+    snprintf( buffer, sizeof(buffer), "  %.1f", peak.peakAreaUncert() );
+    string areauncertstr = buffer;
+    while( areauncertstr.size() < 11 )
+      areauncertstr = areauncertstr + " ";
+    
+    string cpststr;
+    if( live_time > 0.0f )
+    {
+      snprintf( buffer, sizeof(buffer), "%1.4e", (peak.peakArea()/data->live_time()) );
+      cpststr = buffer;
+      size_t epos = cpststr.find( "e" );
+      if( epos != string::npos )
+      {
+        if( cpststr[epos+1]!='-' && cpststr[epos+1]!='+' )
+          cpststr.insert( cpststr.begin() + epos + 1, '+' );
+        while( (cpststr.size()-epos) < 5 )
+          cpststr.insert( cpststr.begin() + epos + 2, '0' );
+      }
+    }//if( data && data->live_time() > 0.0f )
+    
+    
+    const double width = peak.gausPeak() ? (2.35482*peak.sigma()) : 0.5*peak.roiWidth();
+    snprintf( buffer, sizeof(buffer), "%.2f", width );
+    string widthstr = buffer;
+    while( widthstr.size() < 5 )
+      widthstr = " " + widthstr;
+    
+    snprintf( buffer, sizeof(buffer), "%.2f", (100.0*width/peak.mean()) );
+    string widthprecentstr = buffer;
+    widthprecentstr += "%";
+    while( widthprecentstr.size() < 7 )
+      widthprecentstr = " " + widthprecentstr;
+    
+    snprintf( buffer, sizeof(buffer), "  %.2f", peak.chi2dof() );
+    string chi2str = buffer;
+    while( chi2str.size() < 7 )
+      chi2str = " " + chi2str;
+    
+    snprintf( buffer, sizeof(buffer), "  %.1f", region_area );
+    string roiareastr = buffer;
+    while( roiareastr.size() < 10 )
+      roiareastr = " " + roiareastr;
+    
+    snprintf( buffer, sizeof(buffer), "  %i", int(peakn+1) );
+    string numstr = buffer;
+    while( numstr.size() < 3 )
+      numstr = " " + numstr;
+    
+    specfilename = "  ";
+    SpecUtils::ireplace_all( specfilename, ",", "-" );
+    
+    string live_time_str;
+    if( live_time > 0.0f )
+    {
+      snprintf( buffer, sizeof(buffer), "%.3f", live_time );
+      live_time_str = buffer;
+    }
+    
+    string datestr, timestr;
+    if( !meastime.is_special() )
+    {
+      const string tstr = SpecUtils::to_common_string( meastime, true );
+      const auto pos = tstr.find(' ');
+      if( pos != string::npos )
+      {
+        datestr = tstr.substr(0,pos);
+        timestr = tstr.substr(pos+1);
+      }
+    }//if( !meastime.is_special() )
+    
+    
+    outstrm << meanstr
+    << ',' << areastr
+    << ',' << areauncertstr
+    << ',' << cpststr
+    << ',' << widthstr
+    << ',' << widthprecentstr
+    << ',' << chi2str
+    << ',' << roiareastr
+    << ',' << numstr
+    << ',' << specfilename
+    << ',' << live_time_str
+    << ',' << datestr
+    << ',' << timestr
+    << ',' << nuclide
+    << ',' << energy
+    << ',' << xlow
+    << ',' << xhigh
+    << eol_char;
+  }//for( loop over peaks, peakn )
+}//void PeakModel::write_peak_csv(...)
 

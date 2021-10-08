@@ -422,6 +422,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   WSuggestionPopup *nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
   nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
   nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
+  nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
 
   //See ReferencePhotopeakDisplay.cpp for note on this next hack section of code
   string js = INLINE_JAVASCRIPT(
