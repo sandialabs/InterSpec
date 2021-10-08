@@ -497,6 +497,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
   m_nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
+  m_nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
 
   IsotopeNameFilterModel::setQuickTypeFixHackjs( m_nuclideSuggest );
   

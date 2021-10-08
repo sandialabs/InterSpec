@@ -188,6 +188,7 @@ void MakeDrfSrcDef::create()
   filterModel->filter( "" );
   nucSuggest->setFilterLength( -1 );
   nucSuggest->setModel( filterModel );
+  nucSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
   nucSuggest->filterModel().connect( filterModel, &IsotopeNameFilterModel::filter );
 */
   

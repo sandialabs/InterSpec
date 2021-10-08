@@ -279,6 +279,7 @@ public:
     suggestions->setJavaScriptMember("wtNoReparent", "true");
     
     suggestions->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
+    suggestions->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
     suggestions->forEdit( m_nuclideEdit,
                          WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
     
