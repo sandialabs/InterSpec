@@ -3991,9 +3991,6 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
 #endif //if( USE_SPECTRUM_CHART_D3 ) / else
   
   setReferenceLineColors( theme );
-
-  if( m_decayInfoWindow )
-    m_decayInfoWindow->colorThemeChanged();
   
   string cssfile;
   if( !theme->nonChartAreaTheme.empty() )

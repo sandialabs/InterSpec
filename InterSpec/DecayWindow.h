@@ -41,8 +41,6 @@ public:
                   const double activity, const bool useCurries,
                   const double age, const double maxtime = -1.0 );
   
-  void colorThemeChanged();
-  
  protected:
   DecayActivityDiv *m_activityDiv;
 };//class DecayWindow
