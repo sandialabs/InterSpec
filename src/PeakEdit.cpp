@@ -339,6 +339,7 @@ void PeakEdit::init()
   m_filterModel->filter( "" );
   m_suggestions->setFilterLength( -1 );
   m_suggestions->setModel( m_filterModel );
+  m_suggestions->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
 //  m_suggestions->filterModel().connect( m_filterModel, &PeakIsotopeNameFilterModel::filter );
   m_suggestions->filterModel().connect( m_filterModel, &IsotopeNameFilterModel::filter );
   
