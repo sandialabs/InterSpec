@@ -214,8 +214,8 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
   
   const int screenW = viewer->renderedWidth();
   const int screenH = viewer->renderedHeight();
-  const int width = ((screenW < 600) ? screenW : 600);
-  const int height = ((screenH < 420) ? screenH : 420);
+  const int width = ((screenW < 625) ? screenW : 625);
+  const int height = ((screenH < 435) ? screenH : 435);
   resizeWindow( width, height );
   
   centerWindow();
@@ -279,6 +279,7 @@ public:
     suggestions->setJavaScriptMember("wtNoReparent", "true");
     
     suggestions->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
+    suggestions->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
     suggestions->forEdit( m_nuclideEdit,
                          WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
     
@@ -1984,7 +1985,7 @@ void DoseCalcWidget::updateStayTime()
     //Chest xray 10 mrem
     ref_doses[0.620*rem]  = make_pair( "620 mrem", "Typ. Yearly Background" );
   
-    //National Council on Radiation Protection (NCRP) dose guidlines for civilian radiation workers  (wcjohns did not verify)
+    //National Council on Radiation Protection (NCRP) dose guidelines for civilian radiation workers  (wcjohns did not verify)
     ref_doses[5.0*rem]    = make_pair( "5 rem",    "Annual Occ. Limit" );
     ref_doses[10.0*rem]   = make_pair( "10 rem",   "Save Valuable Property" );
     ref_doses[25.0*rem]   = make_pair( "25 rem",   "Life Saving" );

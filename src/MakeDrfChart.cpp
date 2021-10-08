@@ -697,6 +697,11 @@ const std::vector<MakeDrfChart::DataPoint> &MakeDrfChart::currentDataPoints() co
 }
 
 
+float MakeDrfChart::currentDiameter() const
+{
+  return m_det_diameter;
+}
+
 void MakeDrfChart::showFwhmPoints( const bool show )
 {
   series(sm_data_fwhm_col).setHidden( !show );

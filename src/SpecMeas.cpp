@@ -1452,6 +1452,7 @@ bool SpecMeas::load_N42_from_data( char *data, char *data_end )
   data_end = SpecUtils::convert_n42_utf16_xml_to_utf8( data, data_end );
   
   if( !SpecUtils::is_candidate_n42_file(data,data_end) )
+  {
     return false;
   
   rapidxml::xml_document<char> doc;

@@ -244,10 +244,6 @@ ul.HeavyNavMenu > li.item:hover  {
   color: white;
 }
 
-
-/* .AuxWindow-content.Decay { background: rgb(230,230,230) !important; } */
-
-
 /* When using a HTML app menu-bar, fix up close button background color on hover */
 .app-titlebar .window-controls-container .window-icon-bg .window-icon.window-close:hover {
   background-color: rgb(57,207,207) !important;
