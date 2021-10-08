@@ -121,6 +121,11 @@ namespace PhysicalUnits
   static const double amu_c2 = 931.494028 * MeV;
   static const double amu = amu_c2/c_squared;
 
+
+  // TODO: consider making user literals, for example to write somethign like 25.0_cm, define:
+  // long double operator"" _cm ( long double dist ){ return dist * PhysicalUnits::cm; }
+
+
   //sm_distanceRegex: a javascript regex string to validate user input distances
   //  stringToDistance.  Allows only positive values.
   extern const char * const sm_distanceRegex;

@@ -1354,9 +1354,9 @@ bool SpecMeas::load_N42_file( const std::string &filename )
       throw runtime_error( "!loaded" );
     
     filename_ = filename;
-  }catch( std::exception &e )
+  }catch( std::exception & /*e*/ )
   {
-    cout << endl << e.what() << endl;
+    //cout << endl << e.what() << endl;
     reset();
     return false;
   }//try/catch
@@ -1454,7 +1454,6 @@ bool SpecMeas::load_N42_from_data( char *data, char *data_end )
   
   if( !SpecUtils::is_candidate_n42_file(data,data_end) )
   {
-    cout << "is_candidate_n42_file" << endl;
     return false;
   }
   

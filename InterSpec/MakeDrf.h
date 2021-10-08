@@ -102,6 +102,12 @@ public:
                         std::string drfname,
                         std::string drfdescription );
   
+  /** Writes a 3x5 style reference card in HTML to print on detectors. */
+  void writeRefSheet( std::ostream &output,
+                       std::string drfname,
+                       std::string drfdescription );
+  
+  
   /** Access the user input widget to check if equation is in MeV or keV. */
   bool isEffEqnInMeV() const;
   
@@ -133,7 +139,9 @@ protected:
   
   /** Error message is not empty, only when there is an error. */
   void updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts,
-                     const double chi2, const int fitid, const std::string errormsg );
+                     const double chi2,
+                    const float lowestEnergy, const float highestEnergy,
+                    const int fitid, const std::string errormsg );
 
   
   InterSpec *m_interspec;
@@ -142,7 +150,7 @@ protected:
   
   Wt::Signal<bool> m_intrinsicEfficiencyIsValid;
   
-  /** Signal emmitted when the user saves the DRF (or in the future otherwise
+  /** Signal emitted when the user saves the DRF (or in the future otherwise
    indicates they are done with the tool) and the widget should now be deleted.
    */
   Wt::Signal<> m_finished;
@@ -176,7 +184,7 @@ protected:
   Wt::WText *m_errorMsg;
   Wt::WText *m_intrinsicEffAnswer;
   
-  /** Identifies current fit for FWHM.  Fits are done in an auxilary thread,
+  /** Identifies current fit for FWHM.  Fits are done in an auxiliary thread,
    and the user may change things before the fit is done, and some fits take a
    lot longer than others, so to make sure the the correct one is displayed,
    we will use this variable (which is only touched from main Wt thread).
@@ -188,6 +196,8 @@ protected:
   std::vector<float> m_fwhmCoefs, m_fwhmCoefUncerts;
   
   double m_effEqnChi2;
+  float m_effLowerEnergy; ///< The lowest energy peak used for eff calculation
+  float m_effUpperEnergy; ///< The highest energy peak used for eff calculation
   std::vector<float> m_effEqnCoefs, m_effEqnCoefUncerts;
   
   friend class MakeDrfWindow;

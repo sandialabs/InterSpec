@@ -177,8 +177,6 @@ public:
   double           m_currentTimeRange;
   
   int m_currentNumXPoints;
-
-  int m_width, m_height;
   
   SandiaDecay::NuclideMixture            *m_currentMixture;
 
@@ -255,7 +253,6 @@ public:
 #endif
   
   void updateInitialMixture() const;
-  virtual void layoutSizeChanged( int width, int height );
   
   static double findTimeForActivityFrac( const SandiaDecay::NuclideMixture *mixture,
                                          const double fracT0ActivityWanted,
