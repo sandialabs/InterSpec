@@ -163,7 +163,9 @@ void local_eqn_from_offsets( size_t lowchannel,
   }
 }//eqn_from_offsets(...)
 
+}//namespace
 
+// We cant have MdaPeakRow in a private namespace since we forward declare it in the header.
 class MdaPeakRow : public WContainerWidget
 {
 public:
@@ -347,7 +349,27 @@ public:
   }
 };//class MdaPeakRow
 
-}//namespace
+
+DetectionLimitTool::PreviousRoiValue::PreviousRoiValue()
+{
+  use_for_likelihood = false;
+  energy = roi_start = roi_end = 0.0f;
+}
+
+DetectionLimitTool::PreviousRoiValue::PreviousRoiValue( const MdaPeakRow * const row )
+{
+  if( row )
+  {
+    energy = row->m_energy;
+    use_for_likelihood = row->m_use->isChecked();
+    roi_start = row->m_roi_start->value();
+    roi_end = row->m_roi_end->value();
+  }else
+  {
+    use_for_likelihood = false;
+    energy = roi_start = roi_end = 0.0f;
+  }
+}//PreviousRoiValue( constructor )
 
 
 
@@ -407,13 +429,16 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_chart( nullptr ),
     m_peakModel( nullptr ),
     m_nuclideEdit( nullptr ),
+    m_ageEdit( nullptr ),
     m_currentNuclide( nullptr ),
+    m_currentAge( -1.0 ),
     m_nuclideSuggest( nullptr ),
     m_detectorDisplay( nullptr ),
     m_distanceEdit( nullptr ),
     m_materialDB( materialDB ),
     m_materialSuggest( materialSuggest ),
     m_shieldingSelect( nullptr ),
+    m_minRelIntensity( nullptr ),
     m_displayActivity( nullptr ),
     m_results( nullptr ),
     m_chi2Chart( nullptr ),
@@ -422,33 +447,35 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_errorMsg( nullptr )
 {
   /** TODO:
-   - [ ] Make test cases that will quickly iterate through, to test things
+   - [ ] Switch to using  a CSS grid layout for the options section
    - [ ] Allow user to choose activity limit, or distance limit
-   - [ ] Make a "by eye" equivalent CL
    - [ ] All adding in a scale factor, so if spectrum is of 30 minutes, allow making limit for 30 second spectra
-   - [x] Make the Chi2 plot a D3 based plot
-   - [x] Put the Chi2 chart to the right of the spectrum, when it should exist
-   - [ ] Give the user a choice about using continuum fixed at null hypothesis
-   - [ ] Allow combining ROI with neghboring peaks
-   - [x] Make it so when user change ROI on chart, it updates the text input
-   - [ ] Allow minor gamma-lines overlapping with primary gamma lines to contribute to peak area
-   - [ ] Allow user to pick Currie limit ranges, and improve clarity of this stuff, like maybe have each peak be a WPanel or something
-   - [ ] For each row show plot of current peak in that row
-   - [ ] Have the energy rows fold down to show more information, similar to Steves tool, for each energy
+   - [ ] put in BR (after DRF and shield) to limit total number of peaks; have it be zero by default if less than 10 peaks, or 0.1 or something otherwise
+    - probably also filter lines that have essentually a zero efficiency per bq
    - [ ] Allow users to select CL, not just 95%
-   - [ ] Add in allowing to age nuclide (didnt I generalize inputting a nuclide somewhere?  Hopefully just re-use that)
-   - [ ] Allow users to double click on the spectrum to add a peak to the limit, or similarly for erasing a peak
-   - [ ] If user clicks on a result row, have chart zoom to that general region
-   - [x] Default fill in reference lines/shielding/age as user has in Reference PhotoPeak tool
+   - [ ] Make a "by eye" equivalent CL
+   - [ ] Allow user to select number of side channels to define continuum
    - [ ] Have an explicit option for including attenuation in air
    
-  
+   - [ ] Make test cases that will quickly iterate through, to test things
+   - [ ] Give the user a choice about using continuum fixed at null hypothesis
+   - [ ] For each row show plot of current peak in that row
+   - [ ] Allow combining ROI with neghboring peaks
+   - [ ] Allow user to pick Currie limit ranges, and improve clarity of this stuff, like maybe have each peak be a WPanel or something
+   - [ ] Have the energy rows fold down to show more information, similar to Steves tool, for each energy
+   - [ ] If user clicks on a result row, have chart zoom to that general region
+   
+   - [ ] Allow minor gamma-lines overlapping with primary gamma lines to contribute to peak area
+   - [ ] Allow users to double click on the spectrum to add a peak to the limit, or similarly for erasing a peak
+   - [ ] Remember ROI properties for all user changed ROIs, for full use, not just if nuclide changes
+   
+   - [x] Make the Chi2 plot a D3 based plot
+   - [x] Put the Chi2 chart to the right of the spectrum, when it should exist
+   - [x] Make it so when user change ROI on chart, it updates the text input
+   - [x] Add in allowing to age nuclide (didnt I generalize inputting a nuclide somewhere?  Hopefully just re-use that)
+   - [x] Default fill in reference lines/shielding/age as user has in Reference PhotoPeak tool
+   
    Add in options for "limit live time", Distance/Activity, Confidence Limit to use, nuclide age
-   
-   
-   To calculate the Currie
-   For each Peak, fit the most likely area, and and its limits.
-   If lower confidence is above zero, assume there is a peak
    */
   WApplication * const app = wApp;
   assert( app );
@@ -461,7 +488,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   //new WLabel( "DetectionLimitTool", this );
-  const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
+  const WLength fieldWidth(4,WLength::FontEm);
   const WLength optionWidth(5.25,WLength::FontEm), buttonWidth(5.25,WLength::FontEm);
   
   // Container to hold and m_chart and m_results (which itself holds m_chi2Chart,  m_bestChi2Act,
@@ -497,95 +524,125 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_chart->disableLegend();
   m_chart->showHistogramIntegralsInLegend( true );
   
-  auto theme = m_interspec->getColorTheme();
-  if( theme )
-  {
-    m_chart->setForegroundSpectrumColor( theme->foregroundLine );
-    m_chart->setBackgroundSpectrumColor( theme->backgroundLine );
-    m_chart->setSecondarySpectrumColor( theme->secondaryLine );
-    m_chart->setDefaultPeakColor( theme->defaultPeakLine );
-  
-    m_chart->setAxisLineColor( theme->spectrumAxisLines );
-    m_chart->setChartMarginColor( theme->spectrumChartMargins );
-    m_chart->setChartBackgroundColor( theme->spectrumChartBackground );
-    m_chart->setTextColor( theme->spectrumChartText );
-  }//if( theme )
+  m_chart->applyColorTheme( m_interspec->getColorTheme() );
+  m_interspec->colorThemeChanged().connect( m_chart, &D3SpectrumDisplayDiv::applyColorTheme );
   
   
   m_peakModel = new PeakModel( this );
   m_chart->setPeakModel( m_peakModel );
-  
-  
-  WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
-  distValidator->setFlags( Wt::MatchCaseInsensitive );
-  
-  
-  WTable *inputTable = new WTable( this );
-  inputTable->addStyleClass( "UserInputTable" );
-  
-  
-  WTableCell *cell = inputTable->elementAt(0, 0);
-  WLabel *label = new WLabel( "Distance:", cell );
-  label->setMinimumSize( labelWidth, WLength::Auto );
-  
-  cell = inputTable->elementAt(0, 1);
-  m_distanceEdit = new WLineEdit( "100 cm", cell );
-  //m_distanceEdit->setTextSize( 5 );
-  m_distanceEdit->setValidator( distValidator );
-  m_distanceEdit->setMinimumSize( fieldWidth, WLength::Auto );
-  label->setBuddy( m_distanceEdit );
-  m_distanceEdit->changed().connect( this, &DetectionLimitTool::handleInputChange );
-  m_distanceEdit->enterPressed().connect( this, &DetectionLimitTool::handleInputChange );
-  
-  cell = inputTable->elementAt(1, 0);
-  label = new WLabel( "Nuclide:", cell );
-  label->setMinimumSize( labelWidth, WLength::Auto );
-  
-  cell = inputTable->elementAt(1, 1);
-  m_nuclideEdit = new WLineEdit( "", cell );
-  m_nuclideEdit->setMargin( 1 );
-  m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
-  m_nuclideEdit->setAutoComplete( false );
-  m_nuclideEdit->changed().connect( boost::bind( &DetectionLimitTool::handleNuclideChange, this ) );
-  label->setBuddy( m_nuclideEdit );
 
   
+  
+  // Create the user-input area under the spectrum and liklihood chart
+  WContainerWidget *inputTable = new WContainerWidget( this );
+  inputTable->addStyleClass( "Inputs" );
+  
+  
+  // Create nuclide label and input
+  WLabel *label = new WLabel( "Nuclide:", inputTable );
+  label->addStyleClass( "FirstCol FirstRow" );
+  
+  
+  m_nuclideEdit = new WLineEdit( "", inputTable );
+  m_nuclideEdit->setMargin( 1 );
+  m_nuclideEdit->addStyleClass( "SecondCol FirstRow" );
+  m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
+  m_nuclideEdit->setAutoComplete( false );
+  m_nuclideEdit->changed().connect( this, &DetectionLimitTool::handleUserNuclideChange );
+  label->setBuddy( m_nuclideEdit );
+  
+  // Create nuclide suggestions
   string replacerJs, matcherJs;
   IsotopeNameFilterModel::replacerJs( replacerJs );
   IsotopeNameFilterModel::nuclideNameMatcherJs( matcherJs );
-  IsotopeNameFilterModel *isoSuggestModel = new IsotopeNameFilterModel( this );
+  IsotopeNameFilterModel *isoSuggestModel = new IsotopeNameFilterModel( m_nuclideEdit );
   isoSuggestModel->excludeReactions( true );
   isoSuggestModel->excludeEscapes( true );
   isoSuggestModel->excludeXrays( true );
   m_nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
   m_nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-
+  m_nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
+  
   IsotopeNameFilterModel::setQuickTypeFixHackjs( m_nuclideSuggest );
-  
-  // \TODO: allow entering age, and see ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
-  
   
   isoSuggestModel->filter( "" );
   m_nuclideSuggest->setFilterLength( -1 );
+  
   m_nuclideSuggest->setModel( isoSuggestModel );
   m_nuclideSuggest->filterModel().connect( isoSuggestModel, &IsotopeNameFilterModel::filter );
   m_nuclideSuggest->forEdit( m_nuclideEdit, WSuggestionPopup::Editing );  // | WSuggestionPopup::DropDownIcon
   
+  
+  // Create age input and time input validator
+  label = new WLabel( "Age:", inputTable );
+  label->addStyleClass( "FirstCol SecondRow" );
+  
+  m_ageEdit = new WLineEdit( "", inputTable );
+  m_ageEdit->addStyleClass( "SecondCol SecondRow" );
+  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_ageEdit );
+  validator->setFlags(Wt::MatchCaseInsensitive);
+  m_ageEdit->setValidator(validator);
+  m_ageEdit->setAutoComplete( false );
+  label->setBuddy( m_ageEdit );
+  
+  m_ageEdit->changed().connect( this, &DetectionLimitTool::handleUserAgeChange );
+  m_ageEdit->blurred().connect( this, &DetectionLimitTool::handleUserAgeChange );
+  m_ageEdit->enterPressed().connect( this, &DetectionLimitTool::handleUserAgeChange );
+  
+  
+  
+  // Create distance input
+  label = new WLabel( "Distance:", inputTable );
+  label->addStyleClass( "FirstCol ThirdRow" );
+
+
+  m_distanceEdit = new WLineEdit( "100 cm", inputTable );
+  m_distanceEdit->addStyleClass( "SecondCol ThirdRow" );
+  label->setBuddy( m_distanceEdit );
+  m_distanceEdit->changed().connect( this, &DetectionLimitTool::handleInputChange );
+  m_distanceEdit->enterPressed().connect( this, &DetectionLimitTool::handleInputChange );
+  
+  WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, m_distanceEdit );
+  distValidator->setFlags( Wt::MatchCaseInsensitive );
+  m_distanceEdit->setValidator( distValidator );
+  
+  
+  
   SpectraFileModel *specFileModel = viewer->fileManager()->model();
-  m_detectorDisplay = new DetectorDisplay( viewer, specFileModel );
+  m_detectorDisplay = new DetectorDisplay( viewer, specFileModel, inputTable );
+  m_detectorDisplay->addStyleClass( "ThirdCol FirstRow" );
   viewer->detectorChanged().connect( boost::bind( &DetectionLimitTool::handleInputChange, this ) );
   viewer->detectorModified().connect( boost::bind( &DetectionLimitTool::handleInputChange, this ) );
   
-  cell = inputTable->elementAt(0, 3);
-  cell->setRowSpan( 2 );
-  cell->addWidget( m_detectorDisplay );
-
   
-  cell = inputTable->elementAt(0, 4);
-  label = new WLabel( "Peaks disp. act.:", cell );
-  cell = inputTable->elementAt(0, 5);
-  m_displayActivity = new WLineEdit( cell );
+  m_shieldingSelect = new ShieldingSelect( m_materialDB, NULL, m_materialSuggest, false, inputTable );
+  m_shieldingSelect->addStyleClass( "ThirdCol SecondRow SpanTwoRows" );
+  m_shieldingSelect->materialEdit()->setEmptyText( "<shielding material>" );
+  m_shieldingSelect->materialChanged().connect( this, &DetectionLimitTool::handleInputChange );
+  m_shieldingSelect->materialModified().connect( this, &DetectionLimitTool::handleInputChange );
+  m_shieldingSelect->setMinimumSize( WLength(250), WLength::Auto );
+  
+  
+  label = new WLabel( "Min rel. inten:", inputTable );
+  label->addStyleClass( "FourthCol FirstRow" );
+  m_minRelIntensity = new NativeFloatSpinBox( inputTable );
+  m_minRelIntensity->addStyleClass( "FifthCol FirstRow" );
+  m_minRelIntensity->setMinimum( 0.0f );
+  m_minRelIntensity->setMaximum( 0.999f );
+  m_minRelIntensity->setSpinnerHidden( true );
+  //m_minRelIntensity->setFormatString( "" );
+  label->setBuddy( m_minRelIntensity );
+  m_minRelIntensity->valueChanged().connect(this, &DetectionLimitTool::handleUserMinRelativeIntensityChange );
+  
+  
+  label = new WLabel( "Peaks disp. act.:", inputTable );
+  label->addStyleClass( "SixthCol FirstRow" );
+  
+  m_displayActivity = new WLineEdit( inputTable );
+  m_displayActivity->addStyleClass( "SeventhCol FirstRow" );
+  label->setBuddy( m_displayActivity );
+  
   WRegExpValidator *actvalidator = new WRegExpValidator( PhysicalUnits::sm_activityRegex, m_displayActivity );
   actvalidator->setFlags(Wt::MatchCaseInsensitive);
   m_displayActivity->setValidator( actvalidator );
@@ -595,16 +652,6 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_displayActivity->changed().connect( this, &DetectionLimitTool::updateShownPeaks );
   
   
-  
-  m_shieldingSelect = new ShieldingSelect( m_materialDB, NULL, m_materialSuggest, false );
-  m_shieldingSelect->materialEdit()->setEmptyText( "<shielding material>" );
-  m_shieldingSelect->materialChanged().connect( this, &DetectionLimitTool::handleInputChange );
-  m_shieldingSelect->materialModified().connect( this, &DetectionLimitTool::handleInputChange );
-  m_shieldingSelect->setMinimumSize( WLength(250), WLength::Auto );
-  
-  cell = inputTable->elementAt(0,2);
-  cell->addWidget( m_shieldingSelect );
-  cell->setRowSpan( 2 );
   
   const auto primaryMeas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   auto spec = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
@@ -653,7 +700,10 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     if( current.nuclide )
       m_nuclideEdit->setText( current.nuclide->symbol );
     
-    // \TODO: age
+    if( current.age <= 0.0 )
+      m_ageEdit->setText( "0y" );
+    else
+      m_ageEdit->setText( PhysicalUnits::printToBestTimeUnits(current.age) );
     
     const ShieldingSelect *shielding = reflines->shieldingSelect();
     if( shielding )
@@ -678,8 +728,9 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   }//if( reflines )
   
   initChi2Chart();
-  handleNuclideChange();  //JIC we picked up the one from RefLines
-  handleInputChange();
+  
+  // Incase we do have an initial nuclide set, treat as if user entered new info.
+  handleUserNuclideChange();
 }//DetectionLimitTool constructor
   
 
@@ -767,31 +818,227 @@ void DetectionLimitTool::roiDraggedCallback( double new_roi_lower_energy,
   cerr << "Failed to find a ROI that started at " << new_roi_lower_energy <<  " keV" << endl;
 }//void roiDraggedCallback(...)
 
-void DetectionLimitTool::handleNuclideChange()
+
+void DetectionLimitTool::handleUserAgeChange()
 {
+  handleNuclideChange( false );
+}//void handleUserAgeChange();
+
+
+
+void DetectionLimitTool::handleUserNuclideChange()
+{
+  handleNuclideChange( true );
+}//void handleUserNuclideChange()
+
+
+void DetectionLimitTool::handleNuclideChange( const bool update_to_default_age )
+{
+  double age = -1.0;
   const string isotxt = m_nuclideEdit->text().toUTF8();
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   const SandiaDecay::Nuclide *nuc = db->nuclide( isotxt );
 
-  if( nuc == m_currentNuclide )
+  if( !nuc || nuc->isStable() || nuc->decaysToChildren.empty() || nuc->decaysToStableChildren() )
+  {
+    age = 0.0;
+    m_ageEdit->setText( "0y" );
+    m_ageEdit->disable();
+    
+    if( nuc->isStable() )
+    {
+      nuc = nullptr;
+      m_ageEdit->setText( "" );
+      m_nuclideEdit->setText( "" );
+      passMessage( isotxt + " is stable", "", WarningWidget::WarningMsgHigh );
+    }
+  }else if( update_to_default_age )
+  {
+    m_ageEdit->enable();
+    
+    string agestr;
+    age = PeakDef::defaultDecayTime( nuc, &agestr );
+    m_ageEdit->setText( agestr );
+  }else
+  {
+    // We will check that the input age is reasonable, and if not, modify it; this isnt 100%,
+    //  but good enough for now.
+    m_ageEdit->enable();
+    const string agestr = m_ageEdit->text().toUTF8();
+    
+    try
+    {
+      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
+      if( age > 100.0*nuc->halfLife || age < 0.0 )
+        throw std::runtime_error( "" );
+    }catch(...)
+    {
+      string def_age_str;
+      age = PeakDef::defaultDecayTime( nuc, &def_age_str );
+      passMessage( "Changed age to a more reasonable value for " + nuc->symbol
+            + " from '" + agestr + "' to '" + def_age_str + "'", "", WarningWidget::WarningMsgLow );
+      
+      m_ageEdit->setText( def_age_str );
+    }//try / catch
+  }//if( !nuc ... ) / else else
+  
+  const bool newNuclide = (nuc != m_currentNuclide);
+  const bool newAge = (age != m_currentAge);
+  if( !newNuclide && !newAge )
     return;
   
   m_currentNuclide = nuc;
+  m_currentAge = age;
+  
+  if( newNuclide )
+    calcAndSetDefaultMinRelativeIntensity();
+  
   handleInputChange();
 }//void handleNuclideChange()
 
 
+void DetectionLimitTool::handleUserMinRelativeIntensityChange()
+{
+  if( m_minRelIntensity->valueText().empty() )
+    calcAndSetDefaultMinRelativeIntensity();
+  
+  float value = m_minRelIntensity->value();
+  if( value < 0 || value >= 1.0 )
+  {
+    calcAndSetDefaultMinRelativeIntensity();
+    value = m_minRelIntensity->value();
+  }
+  
+  handleInputChange();
+}//void handleUserMinRelativeIntensityChange()
+
+
+void DetectionLimitTool::calcAndSetDefaultMinRelativeIntensity()
+{
+  vector<tuple<double,double>> lines;
+  
+  try
+  {
+    lines = gammaLines();
+  }catch( std::exception & )
+  {
+    // leave lines blank so value of 0.0 will be used
+  }
+  
+  if( lines.size() <= 20 )
+  {
+    m_minRelIntensity->setValue( 0.0f );
+    return;
+  }
+  
+  // Sort 'lines' so the largest intensities come first
+  std::sort( begin(lines), end(lines),
+    []( const tuple<double,double> &lhs, const tuple<double,double> &rhs ) -> bool {
+    return get<1>(lhs) > get<1>(rhs);
+  } );
+  
+  const double maxLineIntensity = get<1>( lines.front() );
+  const double minWantedIntensity = get<1>( lines[19] );
+  
+  // maxLineIntensity should always be valid, but jic
+  if( IsInf(maxLineIntensity) || IsNan(maxLineIntensity)
+     || (maxLineIntensity <= 0.0)
+     || IsInf(minWantedIntensity) || IsNan(minWantedIntensity) )
+  {
+    m_minRelIntensity->setValue( 0.0f );
+    return;
+  }
+  
+  const double minRelIntensity = minWantedIntensity / maxLineIntensity;
+   
+  m_minRelIntensity->setValue( static_cast<float>(minRelIntensity) );
+}//void calcAndSetDefaultMinRelativeIntensity()
+
+
+void DetectionLimitTool::updateShownGammaLinesFromMinIntensity()
+{
+  handleInputChange();
+}//void updateShownGammaLinesFromMinIntensity()
+
+
+vector<tuple<double,double>> DetectionLimitTool::gammaLines() const
+{
+  if( !m_currentNuclide )
+    throw runtime_error( "No nuclide specified" );
+  
+  const string disttxt = m_distanceEdit->text().toUTF8();
+  const double distance = PhysicalUnits::stringToDistance(disttxt);
+    
+  if( (distance <= 0.0) || IsInf(distance) || IsNan(distance) )
+    throw runtime_error( "Distance cant be zero or negative" );
+  
+  const shared_ptr<const DetectorPeakResponse> drf = m_our_meas->detector();
+  
+  if( !drf || !drf->isValid() )
+    throw runtime_error( "DetectionLimitTool::gammaLines(): no DRF" );
+  
+  float shielding_an = 0.0f, shielding_ad = 0.0f, shielding_thickness = 0.0f;
+  shared_ptr<const Material> shielding_material;
+  const bool generic_shielding = m_shieldingSelect->isGenericMaterial();
+  if( generic_shielding )
+  {
+    shielding_an = m_shieldingSelect->atomicNumber();
+    shielding_ad = m_shieldingSelect->arealDensity();
+  }else
+  {
+    shielding_material = m_shieldingSelect->material();
+    shielding_thickness = m_shieldingSelect->thickness();
+  }//if( generic shielding ) / else
+  
+  
+  SandiaDecay::NuclideMixture mixture;
+  mixture.addNuclideByActivity( m_currentNuclide, 1.0E-3 * SandiaDecay::curie );
+  
+  const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity( m_currentAge );
+  const double parent_activity = mixture.activity( m_currentAge, m_currentNuclide );
+  
+  vector<SandiaDecay::EnergyRatePair> gammas = mixture.gammas( m_currentAge, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
+  
+  boost::function<double(float)> att_coef_fcn;
+    
+  if( generic_shielding )
+  {
+    att_coef_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_generic,
+                                 shielding_an, shielding_ad, _1 );
+  }else if( shielding_material && shielding_thickness > 0.0 )
+  {
+    att_coef_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_material,
+                                 shielding_material.get(), _1, shielding_thickness );
+  }
+    
+  std::vector<std::tuple<double,double>> lines;
+  for( const auto &erp : gammas )
+  {
+    const double energy = erp.energy;
+    double br = erp.numPerSecond / parent_activity;
+    br *= drf->efficiency( static_cast<float>(energy), static_cast<float>(distance) );
+    if( !att_coef_fcn.empty() )
+      br *= exp( -1.0 * att_coef_fcn( energy ) );
+      
+    lines.push_back( {energy, br} );
+  }//for( const auto &erp : gammas )
+  
+  return lines;
+}//vector<tuple<double,double>> gammaLines() const
+
+
 void DetectionLimitTool::handleInputChange()
 {
-  vector<tuple<float,bool,float,float>> oldvalues;
+  // Grab currently displayed values incase its the same nuclide as before, and we are just updating
+  //  things.
   for( auto w : m_peaks->children() )
   {
     auto rw = dynamic_cast<MdaPeakRow *>( w );
     assert( rw );
-    oldvalues.push_back( {rw->m_energy, rw->m_use->isChecked(), rw->m_roi_start->value(), rw->m_roi_end->value()} );
+    m_previousRoiValues[rw->m_energy] = PreviousRoiValue( rw );
   }
   
-  
+  // Clear out all the old results - we will replace all the widgets
   m_peaks->clear();
   m_results->hide();
   m_errorMsg->setText( "&nbsp;" );
@@ -844,65 +1091,38 @@ void DetectionLimitTool::handleInputChange()
   }//try / catch
   
   
+  // We should have value min rel intensity value if we're here, but JIC, we'll check
+  const float minDisplayIntensity = m_minRelIntensity->value();
+  if( IsNan(minDisplayIntensity) || IsInf(minDisplayIntensity)
+     || (minDisplayIntensity < 0.0f) || (minDisplayIntensity > 1.0f) )
+  {
+    m_errorMsg->setText( "Min relative intensity to show is invalid." );
+    m_errorMsg->show();
+    return;
+  }
+
+  
   setRefLinesAndGetLineInfo();
   
-  string agestr;
-  double age = PeakDef::defaultDecayTime( m_currentNuclide, &agestr );
-  
-  float shielding_an = 0.0f, shielding_ad = 0.0f, shielding_thickness = 0.0f;
-  std::shared_ptr<Material> shielding_material;
-  const bool generic_shielding = m_shieldingSelect->isGenericMaterial();
-  if( generic_shielding )
-  {
-    shielding_an = m_shieldingSelect->atomicNumber();
-    shielding_ad = m_shieldingSelect->arealDensity();
-  }else
-  {
-    shielding_material = m_shieldingSelect->material();
-    shielding_thickness = m_shieldingSelect->thickness();
-  }//if( generic shielding ) / else
-  
-  
-  
   std::vector<std::tuple<double,double>> lines;
-  
-  SandiaDecay::NuclideMixture mixture;
-  mixture.addNuclideByActivity( m_currentNuclide, 1.0E-3 * SandiaDecay::curie );
 
-  const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity( age );
-  const double parent_activity = mixture.activity( age, m_currentNuclide );
-  
-  vector<SandiaDecay::EnergyRatePair> gammas = mixture.gammas( age, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
-  
-  
   try
   {
-    boost::function<double(float)> att_coef_fcn;
-    
-    if( generic_shielding )
-    {
-      att_coef_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_generic,
-                                 shielding_an, shielding_ad, _1 );
-    }else if( shielding_material && shielding_thickness > 0.0 )
-    {
-      att_coef_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_material,
-                                 shielding_material.get(), _1, shielding_thickness );
-    }
-    
-    
-    for( const auto &erp : gammas )
-    {
-      const double energy = erp.energy;
-      double br = erp.numPerSecond / parent_activity;
-      br *= drf->efficiency( static_cast<float>(energy), static_cast<float>(distance) );
-      if( !att_coef_fcn.empty() )
-        br *= exp( -1.0 * att_coef_fcn( energy ) );
-      
-      lines.push_back( {energy, br} );
-    }//for( const auto &erp : gammas )
+    lines = gammaLines();
   }catch(...)
   {
-    m_errorMsg->setText( "Error Calculating effects of shieldign" );
+    m_errorMsg->setText( "Error Calculating effects of shielding" );
+    m_errorMsg->show();
+    return;
+  }// try / catch
+  
+  double maxLineIntensity = 0.0;
+  for( const auto &line : lines )
+    maxLineIntensity = std::max( maxLineIntensity, get<1>(line) );
+  
+  if( maxLineIntensity <= 0.0 || IsInf(maxLineIntensity) || IsNan(maxLineIntensity) )
+  {
+    m_errorMsg->setText( "Error gamma yields - all intensities are zero." );
     m_errorMsg->show();
     return;
   }
@@ -911,23 +1131,30 @@ void DetectionLimitTool::handleInputChange()
   for( const auto &line : lines )
   {
     const float energy = get<0>(line);
+    const float intensity = get<1>(line);
+    
+    const double relIntensity = intensity / maxLineIntensity;
+    
+    if( (relIntensity < minDisplayIntensity) || (relIntensity <= 0.0) )
+    {
+      cout << "Skipping " << energy << " keV line since its relative intensity is only " << relIntensity << endl;
+      continue;
+    }
+    
     const double countsPerBq = get<1>(line)*spec->live_time();
     const float fwhm = drf->peakResolutionFWHM(energy);
     float roi_start = energy - 1.125*fwhm;
     float roi_end = energy + 1.125*fwhm;
     bool use = false;
     
-    for( const auto &oldval : oldvalues )
+    const auto oldValPos = m_previousRoiValues.find( energy );
+    if( oldValPos != end(m_previousRoiValues) )
     {
-      const float old_energy = get<0>(oldval);
-      if( old_energy != energy )
-        continue;
-      
-      use = get<1>(oldval);
-      roi_start = get<2>(oldval);
-      roi_end = get<3>(oldval);
-    }//for( const auto &oldval : oldvalues )
-    
+      const PreviousRoiValue &oldval = oldValPos->second;
+      use = oldval.use_for_likelihood;
+      roi_start = oldval.roi_start;
+      roi_end = oldval.roi_end;
+    }
     
     auto row = new MdaPeakRow( energy, countsPerBq, distance, roi_start, roi_end, spec, drf, m_peaks );
     row->m_use->setChecked(use);
@@ -1431,7 +1658,7 @@ void DetectionLimitTool::computeForAcivity( const double activity,
 
 void DetectionLimitTool::setRefLinesAndGetLineInfo()
 {
-  // \TODO: this function is essentually the same as #ReferencePhotopeakDisplay::updateDisplayChange
+  // \TODO: this function is essentially the same as #ReferencePhotopeakDisplay::updateDisplayChange
   //        and given its un-cleaness, it may be worth refactoring.
   
   if( !m_currentNuclide )
@@ -1455,8 +1682,14 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
       throw runtime_error( "Distance cant be zero or negative" );
   }catch( std::exception & )
   {
+    //m_chart->setReferncePhotoPeakLines( {} );
     return;
   }//try / catch
+  
+  
+  if( m_currentAge < 0.0 )
+    return;
+  
   
   
   const double brCutoff = 0.0;
@@ -1472,9 +1705,6 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
     shielding_material = m_shieldingSelect->material();
     shielding_thickness = m_shieldingSelect->thickness();
   }//if( generic shielding ) / else
-  
-  string agestr;
-  double age = PeakDef::defaultDecayTime( m_currentNuclide, &agestr );
   
   auto theme = m_interspec->getColorTheme();
   
@@ -1492,7 +1722,7 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   reflines.isBackground = false;
   reflines.isReaction = false;
   reflines.displayLines = true;
-  reflines.age = age;
+  reflines.age = m_currentAge;
   reflines.lowerBrCuttoff = 0.0;
   
   reflines.labelTxt = m_currentNuclide->symbol;
@@ -1514,8 +1744,8 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   SandiaDecay::NuclideMixture mixture;
   mixture.addNuclideByActivity( m_currentNuclide, 1.0E-3 * SandiaDecay::curie );
   
-  const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity( age );
-  const double parent_activity = m_currentNuclide ? mixture.activity( age, m_currentNuclide ) : 0.0;
+  const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity( m_currentAge );
+  const double parent_activity = mixture.activity( m_currentAge, m_currentNuclide );
   
   vector<double> energies, branchratios;
   vector<SandiaDecay::ProductType> particle_type;

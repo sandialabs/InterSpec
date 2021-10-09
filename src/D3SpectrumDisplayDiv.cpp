@@ -23,6 +23,7 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
+#include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SpectrumChart.h"
@@ -1320,6 +1321,34 @@ void D3SpectrumDisplayDiv::renderSecondDataToClient()
   else
     m_pendingJs.push_back( js );
 }//void D3SpectrumDisplayDiv::updateSecondData()
+
+
+void D3SpectrumDisplayDiv::applyColorTheme( std::shared_ptr<const ColorTheme> theme )
+{
+  if( theme )
+  {
+    setForegroundSpectrumColor( theme->foregroundLine );
+    setBackgroundSpectrumColor( theme->backgroundLine );
+    setSecondarySpectrumColor( theme->secondaryLine );
+    setDefaultPeakColor( theme->defaultPeakLine );
+    
+    setAxisLineColor( theme->spectrumAxisLines );
+    setChartMarginColor( theme->spectrumChartMargins );
+    setChartBackgroundColor( theme->spectrumChartBackground );
+    setTextColor( theme->spectrumChartText );
+  }else
+  {
+    setForegroundSpectrumColor( {} );
+    setBackgroundSpectrumColor( {} );
+    setSecondarySpectrumColor( {} );
+    setDefaultPeakColor( {} );
+    
+    setAxisLineColor( {} );
+    setChartMarginColor( {} );
+    setChartBackgroundColor( {} );
+    setTextColor( {} );
+  }
+}//void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
 
 
 void D3SpectrumDisplayDiv::setForegroundSpectrumColor( const Wt::WColor &color )

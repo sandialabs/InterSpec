@@ -27,6 +27,7 @@ static_assert( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE, "RENDER_REFERENCE_PHOTOPE
 class SpecMeas;
 class PeakModel;
 class InterSpec;
+struct ColorTheme;
 class SpectrumDataModel;
 namespace Wt
 {
@@ -107,6 +108,11 @@ public:
    next call to #render (which Wt takes care of calling).
    */
   void scheduleForegroundPeakRedraw();
+  
+  /** Applies the current color theme.
+   if nullptr, then sets to default colors.
+   */
+  void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
   
   void setForegroundSpectrumColor( const Wt::WColor &color );
   void setBackgroundSpectrumColor( const Wt::WColor &color );

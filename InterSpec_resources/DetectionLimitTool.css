@@ -31,9 +31,74 @@
 }
 
 
-.DetectionLimitTool .UserInputTable
+.DetectionLimitTool .Inputs
 {
+  display: grid;
 }
+
+
+.DetectionLimitTool .Inputs .FirstCol
+{
+  grid-column-start: 1;
+  width: 3.5em;
+}
+
+.DetectionLimitTool .Inputs .SecondCol
+{
+  grid-column-start: 2;
+}
+
+.DetectionLimitTool .Inputs .ThirdCol
+{
+  grid-column-start: 3;
+}
+
+.DetectionLimitTool .Inputs .FourthCol
+{
+  grid-column-start: 4;
+}
+
+.DetectionLimitTool .Inputs .FifthCol
+{
+  grid-column-start: 5;
+}
+
+.DetectionLimitTool .Inputs .SixthCol
+{
+  grid-column-start: 6;
+}
+
+.DetectionLimitTool .Inputs .SeventhCol
+{
+  grid-column-start: 7;
+}
+
+
+.DetectionLimitTool .Inputs .FirstRow
+{
+  grid-row-start: 1;
+}
+
+.DetectionLimitTool .Inputs .SecondRow
+{
+  grid-row-start: 2;
+}
+
+.DetectionLimitTool .Inputs .ThirdRow
+{
+  grid-row-start: 3;
+}
+
+.DetectionLimitTool .Inputs .FourthRow
+{
+  grid-row-start: 4;
+}
+
+.DetectionLimitTool .Inputs .SpanTwoRows
+{
+  grid-row-end: span 2;
+}
+
 
 .DetectionLimitTool .MdaResults
 {

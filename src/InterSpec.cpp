@@ -3959,7 +3959,12 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
   m_colorTheme = theme;
 
   m_colorPeaksBasedOnReferenceLines = theme->peaksTakeOnReferenceLineColor;
+
   
+#if( USE_SPECTRUM_CHART_D3 )
+  m_spectrum->applyColorTheme( theme );
+  m_timeSeries->applyColorTheme( theme );
+#else
   m_spectrum->setForegroundSpectrumColor( theme->foregroundLine );
   m_spectrum->setBackgroundSpectrumColor( theme->backgroundLine );
   m_spectrum->setSecondarySpectrumColor( theme->secondaryLine );
@@ -3970,9 +3975,6 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
   m_spectrum->setChartBackgroundColor( theme->spectrumChartBackground );
   m_spectrum->setTextColor( theme->spectrumChartText );
   
-#if( USE_SPECTRUM_CHART_D3 )
-  m_timeSeries->applyColorTheme( theme );
-#else
   m_timeSeries->setForegroundSpectrumColor( theme->timeChartGammaLine );
   m_timeSeries->setSecondarySpectrumColor( theme->timeChartNeutronLine );
   

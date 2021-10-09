@@ -50,8 +50,10 @@ class PeakDef;
 class PeakModel;
 class InterSpec;
 class MaterialDB;
+class MdaPeakRow;
 class ShieldingSelect;
 class DetectorDisplay;
+class NativeFloatSpinBox;
 class D3SpectrumDisplayDiv;
 class DetectionLimitTool;
 
@@ -118,8 +120,32 @@ protected:
   void computeForAcivity( const double activity,
                           std::vector<PeakDef> &peaks,
                           double &chi2, int &numDOF );
+  
+  void handleUserAgeChange();
+  void handleUserNuclideChange();
+  void handleNuclideChange( const bool update_to_default_age );
+  
+  /** Looks at the current nuclide/DRF/shielding, and finds the minimum relative intensity for there to be 20 or less gamma line entries.
+   
+   Does not hide GUI widgets, or schedule calculation update or anything.
+   */
+  void calcAndSetDefaultMinRelativeIntensity();
+  
+  void handleUserMinRelativeIntensityChange();
+  void updateShownGammaLinesFromMinIntensity();
+  
+  
   void handleInputChange();
-  void handleNuclideChange();
+  
+  
+  /** Returns the current {energy, observed_br}.
+   Where observed_br accounts for B.R. after aging and attenuation through shielding, and detection efficiency at the given distance; e.g.
+   how many counts per second you would expect to detect per Bq of activity.
+   
+   May throw exception if error calculating attenuation, or there is no DRF, or no current valid nuclide.
+   */
+  std::vector<std::tuple<double,double>> gammaLines() const;
+  
   
   InterSpec *m_interspec;
   
@@ -132,7 +158,10 @@ protected:
   PeakModel *m_peakModel;
   
   Wt::WLineEdit *m_nuclideEdit;
+  Wt::WLineEdit *m_ageEdit;
+  
   const SandiaDecay::Nuclide *m_currentNuclide;
+  double m_currentAge;
   Wt::WSuggestionPopup *m_nuclideSuggest;
   DetectorDisplay *m_detectorDisplay;
   
@@ -141,6 +170,9 @@ protected:
   MaterialDB *m_materialDB;                 //not owned by this object
   Wt::WSuggestionPopup *m_materialSuggest;  //not owned by this object
   ShieldingSelect *m_shieldingSelect;
+  
+  NativeFloatSpinBox *m_minRelIntensity;
+  
   
   Wt::WLineEdit *m_displayActivity;
   
@@ -156,6 +188,22 @@ protected:
   
   std::shared_ptr<SpecMeas> m_our_meas;
   Wt::WContainerWidget *m_peaks;
+  
+  
+  // We want to preserve user changes to ROIs across nuclide changes, so we'll cache all
+  //  previous values every time we update.
+  struct PreviousRoiValue
+  {
+    float energy;
+    bool use_for_likelihood;
+    float roi_start;
+    float roi_end;
+    
+    PreviousRoiValue();
+    PreviousRoiValue( const MdaPeakRow * const row );
+  };//struct PreviousRoiValue
+  
+  std::map<float,PreviousRoiValue> m_previousRoiValues;
 };//class DetectionLimitTool
 
 
