@@ -66,6 +66,7 @@ namespace SandiaDecay
 namespace Wt
 {
   class WText;
+  class WCheckBox;
   class WLineEdit;
   class WComboBox;
   class WSuggestionPopup;
@@ -139,6 +140,8 @@ protected:
   
   void handleUserChangedConfidenceLevel();
   
+  void handleUserChangedUseAirAttenuate();
+  
   void handleInputChange();
   
   float currentConfidenceLevel();
@@ -178,6 +181,7 @@ protected:
   
   NativeFloatSpinBox *m_minRelIntensity;
   
+  Wt::WCheckBox *m_attenuateForAir;
   
   Wt::WLineEdit *m_displayActivity;
   

@@ -257,6 +257,12 @@ public:
         const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries );
         
         m_poisonLimit->setText( "Observed " + nomstr + " with range [" + lowerstr + ", " + upperstr + "]" );
+      }else if( result.upper_limit < 0 )
+      {
+        // This can happen when there are a lot fewer counts in the peak region than predicted
+        //  from the sides - since this is non-sensical, we'll just say zero.
+        const string unitstr = useCuries ? "Ci" : "Bq";
+        m_poisonLimit->setText( "Currie MDA: < 0" + unitstr );
       }else
       {
         // We will provide the upper bound on activity.
@@ -503,6 +509,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_materialSuggest( materialSuggest ),
     m_shieldingSelect( nullptr ),
     m_minRelIntensity( nullptr ),
+    m_attenuateForAir( nullptr ),
     m_displayActivity( nullptr ),
     m_confidenceLevel( nullptr ),
     m_results( nullptr ),
@@ -699,6 +706,13 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   //m_minRelIntensity->setFormatString( "" );
   label->setBuddy( m_minRelIntensity );
   m_minRelIntensity->valueChanged().connect(this, &DetectionLimitTool::handleUserMinRelativeIntensityChange );
+  
+  
+  m_attenuateForAir = new WCheckBox( "Attenuate for air", inputTable );
+  m_attenuateForAir->addStyleClass( "FourthCol SecondRow SpanTwoCol" );
+  m_attenuateForAir->setChecked( true );
+  m_attenuateForAir->checked().connect(this, &DetectionLimitTool::handleUserChangedUseAirAttenuate );
+  m_attenuateForAir->unChecked().connect(this, &DetectionLimitTool::handleUserChangedUseAirAttenuate );
   
   
   label = new WLabel( "Peaks disp. act.:", inputTable );
@@ -1003,7 +1017,14 @@ void DetectionLimitTool::handleUserMinRelativeIntensityChange()
 }//void handleUserMinRelativeIntensityChange()
 
 
+
 void DetectionLimitTool::handleUserChangedConfidenceLevel()
+{
+  handleInputChange();
+}
+
+
+void DetectionLimitTool::handleUserChangedUseAirAttenuate()
 {
   handleInputChange();
 }
@@ -1073,6 +1094,8 @@ vector<tuple<double,double>> DetectionLimitTool::gammaLines() const
   if( !drf || !drf->isValid() )
     throw runtime_error( "DetectionLimitTool::gammaLines(): no DRF" );
   
+  const bool doAirAtten = m_attenuateForAir->isChecked();
+  
   float shielding_an = 0.0f, shielding_ad = 0.0f, shielding_thickness = 0.0f;
   shared_ptr<const Material> shielding_material;
   const bool generic_shielding = m_shieldingSelect->isGenericMaterial();
@@ -1095,7 +1118,7 @@ vector<tuple<double,double>> DetectionLimitTool::gammaLines() const
   
   vector<SandiaDecay::EnergyRatePair> gammas = mixture.gammas( m_currentAge, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
   
-  boost::function<double(float)> att_coef_fcn;
+  boost::function<double(float)> att_coef_fcn, air_atten_fcn;
     
   if( generic_shielding )
   {
@@ -1107,6 +1130,21 @@ vector<tuple<double,double>> DetectionLimitTool::gammaLines() const
                                  shielding_material.get(), _1, shielding_thickness );
   }
     
+  if( doAirAtten )
+  {
+    MaterialDB *materialDB = InterSpec::instance()->materialDataBase();
+    if( !materialDB )
+      throw std::runtime_error( "DetectionLimitTool::gammaLines(): no material DB" );
+
+    const Material *air = materialDB->material( "Air" );
+    
+    if( !air )
+      throw std::runtime_error( "DetectionLimitTool::gammaLines(): unable to retrieve 'Air' from material database." );
+    
+    air_atten_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_material, air, _1, distance );
+  }//if( doAirAtten )
+  
+  
   std::vector<std::tuple<double,double>> lines;
   for( const auto &erp : gammas )
   {
@@ -1116,6 +1154,9 @@ vector<tuple<double,double>> DetectionLimitTool::gammaLines() const
     if( !att_coef_fcn.empty() )
       br *= exp( -1.0 * att_coef_fcn( energy ) );
       
+    if( !air_atten_fcn.empty() )
+      br *= exp( -1.0 * air_atten_fcn( energy ) );
+    
     lines.push_back( {energy, br} );
   }//for( const auto &erp : gammas )
   
