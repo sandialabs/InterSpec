@@ -43,6 +43,7 @@
  - Allow asserting you know there isnt a peak in the spectrum, and affix the peak continuums to the observed spectrum
  - Allow adjusting the simple MDA side-widths
  - Check numerical accuracies of calculations
+ - Report mass as well as activity
  */
 
 
@@ -66,6 +67,7 @@ namespace Wt
 {
   class WText;
   class WLineEdit;
+  class WComboBox;
   class WSuggestionPopup;
   class WStandardItemModel;
   namespace Chart
@@ -103,6 +105,7 @@ public:
   
   void scheduleCalcUpdate();
   
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -134,9 +137,11 @@ protected:
   void handleUserMinRelativeIntensityChange();
   void updateShownGammaLinesFromMinIntensity();
   
+  void handleUserChangedConfidenceLevel();
   
   void handleInputChange();
   
+  float currentConfidenceLevel();
   
   /** Returns the current {energy, observed_br}.
    Where observed_br accounts for B.R. after aging and attenuation through shielding, and detection efficiency at the given distance; e.g.
@@ -175,6 +180,9 @@ protected:
   
   
   Wt::WLineEdit *m_displayActivity;
+  
+  enum ConfidenceLevel { OneSigma, TwoSigma, ThreeSigma, FourSigma, FiveSigma, NumConfidenceLevel };
+  Wt::WComboBox *m_confidenceLevel;
   
   /** Holds m_chi2Chart, m_bestChi2Act, and m_upperLimit. */
   Wt::WContainerWidget *m_results;

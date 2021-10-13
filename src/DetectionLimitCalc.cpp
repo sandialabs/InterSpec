@@ -41,8 +41,10 @@ namespace DetectionLimitCalc
 {
 
 CurieMdaInput::CurieMdaInput()
-  : gamma_energy(0.0f), peak_region_nchannel(0.0f), num_lower_side_channels(0),
-    num_upper_side_channels(0), detection_probability(0.0f), additional_uncertainty(0.0f)
+  : spectrum(nullptr),
+    gamma_energy(0.0f), roi_lower_energy(0.0f), roi_upper_energy(0.0f),
+    num_lower_side_channels(0), num_upper_side_channels(0),
+    detection_probability(0.0f), additional_uncertainty(0.0f)
 {
 }
 
@@ -59,6 +61,191 @@ CurieMdaResult::CurieMdaResult()
 }
 
 
+#if( PERFORM_DEVELOPER_CHECKS )
+
+template<class T>
+bool floats_equiv_enough( const T a, const T b )
+{
+  // This function checks the arguments are EITHER within 'abs_epsilon' of each other,
+  //  OR 'rel_epsilon * max(a,b)' of each other.
+  const T abs_epsilon = 1.0E-10f; //arbitrary, could pick like std::numeric_limits<float>::epsilon();
+  const T rel_epsilon = 1.0E-5f;
+  
+  const auto diff = fabs(a - b);
+  const auto maxval = std::max(fabs(a),fabs(b));
+  
+  return (diff < (rel_epsilon*maxval) || (diff < abs_epsilon));
+};
+
+
+void CurieMdaResult::equal_enough( const CurieMdaResult &test, const CurieMdaResult &expected )
+{
+  //CurieMdaInput::equal_enough( test.input, expected.input );
+  
+  vector<string> errors;
+  char buffer[512];
+  
+  if( test.first_lower_continuum_channel != expected.first_lower_continuum_channel )
+    errors.push_back( "Test first_lower_continuum_channel ("
+                     + std::to_string(test.first_lower_continuum_channel)
+                     + ") does not equal expected ("
+                     + std::to_string(expected.first_lower_continuum_channel) );
+  
+  if( test.last_lower_continuum_channel != expected.last_lower_continuum_channel )
+    errors.push_back( "Test last_lower_continuum_channel ("
+                     + std::to_string(test.last_lower_continuum_channel)
+                     + ") does not equal expected ("
+                     + std::to_string(expected.last_lower_continuum_channel) );
+  
+  if( !floats_equiv_enough(test.lower_continuum_counts_sum, expected.lower_continuum_counts_sum) )
+  {
+    snprintf( buffer, sizeof(buffer),
+              "Test lower_continuum_counts_sum (%.6G) does not equal expected (%.6G)",
+             test.lower_continuum_counts_sum, expected.lower_continuum_counts_sum );
+    errors.push_back( buffer );
+  }
+  
+  if( test.first_upper_continuum_channel != expected.first_upper_continuum_channel )
+    errors.push_back( "Test first_upper_continuum_channel ("
+                     + std::to_string(test.first_upper_continuum_channel)
+                     + ") does not equal expected ("
+                     + std::to_string(expected.first_upper_continuum_channel) );
+  
+  
+  if( test.last_upper_continuum_channel != expected.last_upper_continuum_channel )
+    errors.push_back( "Test last_upper_continuum_channel ("
+                     + std::to_string(test.last_upper_continuum_channel)
+                     + ") does not equal expected ("
+                     + std::to_string(expected.last_upper_continuum_channel) );
+  
+  if( !floats_equiv_enough(test.upper_continuum_counts_sum, expected.upper_continuum_counts_sum) )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "Test lower_continuum_counts_sum (%.6G) does not equal expected (%.6G)",
+             test.upper_continuum_counts_sum, expected.upper_continuum_counts_sum );
+    errors.push_back( buffer );
+  }
+  
+  
+  if( test.first_peak_region_channel != expected.first_peak_region_channel )
+    errors.push_back( "Test first_peak_region_channel ("
+                     + std::to_string(test.first_peak_region_channel)
+                     + ") does not equal expected ("
+                     + std::to_string(expected.first_peak_region_channel) );
+  
+  if( test.last_peak_region_channel != expected.last_peak_region_channel )
+    errors.push_back( "Test last_peak_region_channel ("
+                     + std::to_string(test.last_peak_region_channel)
+                     + ") does not equal expected ("
+                     + std::to_string(expected.last_peak_region_channel) );
+
+
+  if( !floats_equiv_enough(test.peak_region_counts_sum, expected.peak_region_counts_sum) )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "Test peak_region_counts_sum (%.6G) does not equal expected (%.6G)",
+             test.peak_region_counts_sum, expected.peak_region_counts_sum );
+    errors.push_back( buffer );
+  }
+  
+  
+  if( !floats_equiv_enough(test.peak_region_counts_sum, expected.peak_region_counts_sum) )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "Test peak_region_counts_sum (%.6G) does not equal expected (%.6G)",
+             test.peak_region_counts_sum, expected.peak_region_counts_sum );
+    errors.push_back( buffer );
+  }
+  
+  /*
+  for( int i = 0; i < 2; ++i )
+  {
+    if( !floats_equiv_enough(test.continuum_eqn[i], expected.continuum_eqn[i]) )
+    {
+      snprintf( buffer, sizeof(buffer),
+               "Test continuum_eqn[%i] (%.6G) does not equal expected (%.6G)",
+               i, test.continuum_eqn[i], expected.continuum_eqn[i] );
+      errors.push_back( buffer );
+    }
+  }//for( int i = 0; i < 2; ++i )
+  */
+  
+  if( !floats_equiv_enough(test.estimated_peak_continuum_counts, expected.estimated_peak_continuum_counts) )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "Test estimated_peak_continuum_counts (%.6G) does not equal expected (%.6G)",
+             test.estimated_peak_continuum_counts, expected.estimated_peak_continuum_counts );
+    errors.push_back( buffer );
+  }
+  
+  
+  if( !floats_equiv_enough(test.estimated_peak_continuum_uncert, expected.estimated_peak_continuum_uncert) )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "Test estimated_peak_continuum_uncert (%.6G) does not equal expected (%.6G)",
+             test.estimated_peak_continuum_uncert, expected.estimated_peak_continuum_uncert );
+    errors.push_back( buffer );
+  }
+  
+  
+
+  if( !floats_equiv_enough(test.decision_threshold, expected.decision_threshold) )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "Test decision_threshold (%.6G) does not equal expected (%.6G)",
+             test.decision_threshold, expected.decision_threshold );
+    errors.push_back( buffer );
+  }
+  
+  
+  if( !floats_equiv_enough(test.detection_limit, expected.detection_limit) )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "Test detection_limit (%.6G) does not equal expected (%.6G)",
+             test.detection_limit, expected.detection_limit );
+    errors.push_back( buffer );
+  }
+  
+
+  if( !floats_equiv_enough(test.source_counts, expected.source_counts) )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "Test source_counts (%.6G) does not equal expected (%.6G)",
+             test.source_counts, expected.source_counts );
+    errors.push_back( buffer );
+  }
+  
+  
+  if( !floats_equiv_enough(test.lower_limit, expected.lower_limit) )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "Test lower_limit (%.6G) does not equal expected (%.6G)",
+             test.lower_limit, expected.lower_limit );
+    errors.push_back( buffer );
+  }
+  
+  
+  if( !floats_equiv_enough(test.upper_limit, expected.upper_limit) )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "Test upper_limit (%.6G) does not equal expected (%.6G)",
+             test.upper_limit, expected.upper_limit );
+    errors.push_back( buffer );
+  }
+  
+  if( errors.empty() )
+    return;
+  
+  string err_msg = "CurieMdaResult::equal_enough: test and expected values are not equal\n";
+  for( size_t i = 0; i < errors.size(); ++i )
+    err_msg += (i ? "\n\t" : "\t") + errors[i];
+    
+  throw runtime_error( err_msg );
+}//CurieMdaResult::equal_enough(...)
+#endif //PERFORM_DEVELOPER_CHECKS
+
+
+
 std::ostream &print_summary( std::ostream &strm, const CurieMdaResult &result, const float w )
 {
   /*
@@ -68,10 +255,10 @@ std::ostream &print_summary( std::ostream &strm, const CurieMdaResult &result, c
    const float fwhm = detector->peakResolutionFWHM(result.input.gamma_energy);
    const shared_ptr<const SpecUtils::EnergyCalibration> cal = result.input.spectrum->energy_calibration();
    const float peak_channel = cal->channel_for_energy(result.input.gamma_energy);
-   const float lower_energy = cal->energy_for_channel( peak_channel - 0.5*result.input.peak_region_nchannel );
-   const float upper_energy = cal->energy_for_channel( peak_channel + 0.5*result.input.peak_region_nchannel );
+   const float lower_energy = result.input.roi_lower_energy;
+   const float upper_energy = result.input.roi_upper_energy;
    
-   strm << "Hacky estimate of width is " << (upper_energy - lower_energy)/fwhm << " FWHMs" << endl;
+   strm << "Width is " << (upper_energy - lower_energy)/fwhm << " FWHMs" << endl;
    }
    */
   
@@ -138,45 +325,59 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
   const size_t nchannel = cal ? cal->num_channels() : size_t(0);
   
   if( !nchannel || !cal->valid() || !spec->gamma_counts() || !cal->channel_energies() )
-    throw std::runtime_error( "mda_counts_calc: invalid spectrum passed in." );
+    throw runtime_error( "mda_counts_calc: invalid spectrum passed in." );
   
-  if( input.gamma_energy <= 0.0f )
-    throw std::runtime_error( "mda_counts_calc: invalid gamma_energy." );
+  if( IsInf(input.roi_lower_energy) || IsNan(input.roi_lower_energy)
+     ||  IsInf(input.roi_upper_energy) || IsNan(input.roi_upper_energy) )
+    throw runtime_error( "mda_counts_calc: invalid ROI specified." );
   
-  if( (input.peak_region_nchannel) <= 2.0f || (input.peak_region_nchannel >= nchannel) )
-    throw std::runtime_error( "mda_counts_calc: invalid peak_region_nchannel." );
+  if( input.roi_lower_energy >= input.roi_upper_energy )
+    throw runtime_error( "mda_counts_calc: upper ROI energy must be greater than lower energy." );
+  
+  if( (input.gamma_energy < input.roi_lower_energy)
+      || (input.gamma_energy > input.roi_upper_energy) )
+    throw runtime_error( "mda_counts_calc: gamma energy must be between lower and upper ROI." );
   
   if( input.num_lower_side_channels < 1 || (input.num_lower_side_channels >= nchannel)  )
-    throw std::runtime_error( "mda_counts_calc: invalid num_lower_side_channels." );
+    throw runtime_error( "mda_counts_calc: invalid num_lower_side_channels." );
   
   if( input.num_upper_side_channels < 1 || (input.num_upper_side_channels >= nchannel) )
-    throw std::runtime_error( "mda_counts_calc: invalid num_upper_side_channels." );
+    throw runtime_error( "mda_counts_calc: invalid num_upper_side_channels." );
   
   if( input.detection_probability <= 0.05f || input.detection_probability >= 1.0f )
-    throw std::runtime_error( "mda_counts_calc: invalid detection_probability." );
+    throw runtime_error( "mda_counts_calc: invalid detection_probability." );
   
   if( input.additional_uncertainty < 0.0f || input.additional_uncertainty >= 1.0f )
-    throw std::runtime_error( "mda_counts_calc: invalid additional_uncertainty." );
+    throw runtime_error( "mda_counts_calc: invalid additional_uncertainty." );
   
   const vector<float> &gamma_counts = *spec->gamma_counts();
   const vector<float> &gamma_energies = *cal->channel_energies();
   
   assert( gamma_energies.size() == (gamma_counts.size() + 1) );
   
-  const float mean_channel = cal->channel_for_energy( input.gamma_energy );
-  const float peak_region_lower_ch = mean_channel - 0.5f*input.peak_region_nchannel;
-  const float peak_region_upper_ch = mean_channel + 0.5f*input.peak_region_nchannel;
+  const float peak_region_lower_ch = cal->channel_for_energy( input.roi_lower_energy );
+  const float peak_region_upper_ch = cal->channel_for_energy( input.roi_upper_energy );
+  
+  if( (peak_region_lower_ch - input.num_lower_side_channels) < 0.0 )
+    throw runtime_error( "mda_counts_calc: lower energy goes off spectrum" );
+  
+  if( (peak_region_upper_ch + input.num_upper_side_channels) > cal->num_channels() )
+    throw runtime_error( "mda_counts_calc: upper energy goes off spectrum" );
   
   CurieMdaResult result;
   result.input = input;
   
+  
   result.first_peak_region_channel = static_cast<size_t>( std::round(peak_region_lower_ch) );
   
-  // We need to makeup for the channel number defining the left side of each channel, so we will
-  //  subtract off 0.5 from the channel we are supposed to go up through.
-  result.last_peak_region_channel = static_cast<size_t>( std::round(peak_region_upper_ch - 0.5) );
+  // If we pass in exactly the channel boundary, or really close to it, we want to round in the
+  //  reasonable way, otherwise we need to makeup for the channel number defining the left side of
+  //  each channel, so we will subtract off 0.5 from the channel we are supposed to go up through.
+  if( fabs(peak_region_upper_ch - std::floor(peak_region_upper_ch)) < 0.01 )
+    result.last_peak_region_channel = static_cast<size_t>( std::floor(peak_region_upper_ch) - 1 );
+  else
+    result.last_peak_region_channel = static_cast<size_t>( std::round(peak_region_upper_ch - 0.5) );
   
-  // TODO: need to verify the peak region is actually the correct number of channels, and do a better job of centering the requested number of channels around the input.gamma_energy
   
   if( result.first_peak_region_channel < (input.num_lower_side_channels + 1) )
     throw std::runtime_error( "mda_counts_calc: lower peak region is outside spectrum energy range" );
@@ -220,15 +421,15 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
   - spec->gamma_channel_lower(result.first_upper_continuum_channel);
   
   const double lower_cont_density = lower_cont_counts / lower_cont_width;
-  const double lower_cont_density_uncert = lower_cont_density / sqrt(lower_cont_counts);
+  const double lower_cont_density_uncert = ((lower_cont_counts <= 0.0) ? 0.0 : (lower_cont_density / sqrt(lower_cont_counts)));
   
   const double upper_cont_density = upper_cont_counts / upper_cont_width;
-  const double upper_cont_density_uncert = upper_cont_density / sqrt(upper_cont_counts);
+  const double upper_cont_density_uncert = ((upper_cont_counts <= 0.0) ? 0.0 : (upper_cont_density / sqrt(upper_cont_counts)));
   
   const double peak_cont_density = 0.5*(lower_cont_density + upper_cont_density);
   const double peak_cont_density_uncert = 0.5*sqrt( upper_cont_density_uncert*upper_cont_density_uncert
                                                    + lower_cont_density_uncert*lower_cont_density_uncert );
-  const double peak_cont_frac_uncert = peak_cont_density_uncert / peak_cont_density;
+  const double peak_cont_frac_uncert = ((peak_cont_density > 0.0) ? (peak_cont_density_uncert / peak_cont_density) : 1.0);
   
   
   const double peak_area_width = spec->gamma_channel_upper(result.last_peak_region_channel)
@@ -250,19 +451,19 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
   result.continuum_eqn[1] = (upper_cont_density - lower_cont_density) / (upper_cont_mid_energy - lower_cont_mid_energy);
   result.continuum_eqn[0] = lower_cont_density - result.continuum_eqn[1]*(lower_cont_mid_energy - input.gamma_energy);
   
-  
+#if( PERFORM_DEVELOPER_CHECKS )
   {// begin sanity check on continuum eqn
     const double peak_start_eq = spec->gamma_channel_lower(result.first_peak_region_channel) - input.gamma_energy;
     const double peak_end_eq = spec->gamma_channel_upper(result.last_peak_region_channel) - input.gamma_energy;
     
     const double peak_cont_eq_integral = result.continuum_eqn[0] * (peak_end_eq - peak_start_eq)
-    + result.continuum_eqn[1] * 0.5 * (peak_end_eq*peak_end_eq - peak_start_eq*peak_start_eq);
+          + result.continuum_eqn[1] * 0.5 * (peak_end_eq*peak_end_eq - peak_start_eq*peak_start_eq);
     const double upper_cont_eq = result.continuum_eqn[0] + (upper_cont_mid_energy - input.gamma_energy)*result.continuum_eqn[1];
     
     assert( fabs(upper_cont_eq - upper_cont_density) < 0.1 ); //arbitrary precision test, for development
     assert( fabs(peak_cont_eq_integral - peak_cont_sum) < 0.1 ); //arbitrary precision test, for development
   }// end sanity check on continuum eqn
-  
+#endif //PERFORM_DEVELOPER_CHECKS
   
   typedef boost::math::policies::policy<boost::math::policies::digits10<6> > my_pol_6;
   const boost::math::normal_distribution<float,my_pol_6> gaus_dist( 0.0f, 1.0f );
@@ -306,6 +507,12 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
   result.lower_limit = source_counts - k*region_sigma;
   result.upper_limit = source_counts + k*region_sigma;
   
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  assert( !IsInf(result.lower_limit) && !IsNan(result.lower_limit) );
+  assert( !IsInf(result.upper_limit) && !IsNan(result.upper_limit) );
+#endif
+  
   /*
    cout << "lower_cont_counts=" << lower_cont_counts << endl;
    cout << "upper_cont_counts=" << upper_cont_counts << endl;
@@ -323,6 +530,7 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
   
   return result;
 };//mda_counts_calc
+
 
 
 

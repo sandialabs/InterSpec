@@ -78,12 +78,35 @@ struct CurieMdaInput
   /** The spectrum the calculations will be performed on.  */
   std::shared_ptr<const SpecUtils::Measurement> spectrum;
   
+  /** The energy (in keV) of the photopeak limit is being derived for.
+   
+   This value doesnt enter into the calculation, other than it is the reference energy used for the continuum equation
+   (see #CurieMdaResult::continuum_eqn), and also its assumed this is the energy #detection_probability is derived from.
+   
+   Required to be between #roi_lower_energy and #roi_upper_energy, or else exception will be thrown.
+   */
   float gamma_energy;
   
-  /** Total number of channels to use for the peak region (split symmetrically above and below #gamma_energy, before rounding */
-  float peak_region_nchannel;
+  /** The lower energy (in keV) of region to check for excess in.
+   
+   Must be within range of #spectrum.
+   
+   The actual energy used will be rounded to the nearest channel boundary; see #CurieMdaResult::first_peak_region_channel.
+   */
+  float roi_lower_energy;
   
+  /** The upper energy (in keV) of region to check for excess in.
+   
+   Must be greater than #roi_lower_energy and within range of #spectrum.
+   
+   The actual energy used will be rounded to the nearest channel boundary; see #CurieMdaResult::last_peak_region_channel.
+   */
+  float roi_upper_energy;
+  
+  /** The number of channels below #roi_lower_energy to use to estimate the continuum. */
   size_t num_lower_side_channels;
+  
+  /** The number of channels above #roi_upper_energy to use to estimate the continuum. */
   size_t num_upper_side_channels;
   
   /** A value less than 1.0.  Currently used for k_alpha and k_beta.  Typically will be 0.95.
@@ -187,6 +210,14 @@ struct CurieMdaResult
   CurieMdaResult();
   
   
+#if( PERFORM_DEVELOPER_CHECKS )
+  /** Checks that the \p test and \p expected results are the same.
+   
+   Code for checking the continuum equation is currently commented out (if there is something wrong with the continuum computation
+   it will be caught by one of the other values anyway).
+   */
+  static void equal_enough( const CurieMdaResult &test, const CurieMdaResult &expected );
+#endif
   
   //std::ostream &operator<<( std::ostream &strm )
   //{

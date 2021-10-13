@@ -163,6 +163,16 @@ void local_eqn_from_offsets( size_t lowchannel,
   }
 }//eqn_from_offsets(...)
 
+
+bool use_curie_units()
+{
+  InterSpec *interspec = InterSpec::instance();
+  if( !interspec )
+    return true;
+  
+  return !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
+}//bool use_curie_units()
+
 }//namespace
 
 // We cant have MdaPeakRow in a private namespace since we forward declare it in the header.
@@ -173,13 +183,30 @@ public:
   const double m_distance;
   const double m_gammas_per_bq;
   const float m_fwhm;
+  const float m_confidence_level;
+  
   std::shared_ptr<DetectorPeakResponse> m_drf;
-  WCheckBox *m_use;
+  
+  
+  WCheckBox *m_use_for_likelihood;
+  
+  /** The energy, in keV that the ROI starts at.
+   When the user enters a value, it will be rounded to cover a whole channel; however, even if this wasnt done, I *think* things would
+   work out okay (e.g., uncertainties should be calculated correctly, I think).
+   */
   NativeFloatSpinBox *m_roi_start;
+  
+  /** Upper range of the ROI - again rounded when users change the value. */
   NativeFloatSpinBox *m_roi_end;
+  
+  /** These are the number of channels outside the ROI to use to compute the ROI line for Curie-style limits.  */
+  NativeFloatSpinBox *m_num_side_channels;
+  
+  
   WComboBox *m_continuum;
   WText *m_poisonLimit;
-  double m_simpleMda;
+  double m_simple_mda;
+  double m_simple_excess_counts;
   shared_ptr<const SpecUtils::Measurement> m_meas;
   
   Wt::Signal<> m_changed;
@@ -187,104 +214,61 @@ public:
   
   void setSimplePoisonTxt()
   {
-    if( !m_meas || (m_meas->num_gamma_channels() < 16) )
-      return;
-    
-    const float roi_lower_energy = m_roi_start->value();
-    const float roi_upper_energy = m_roi_end->value();
-    
-    const size_t nsidebin = 5;
-    const size_t nchannels = m_meas->num_gamma_channels();
-    
-    // \TODO: check that we are getting the right channels, and not off by one or something.
-    size_t lower_bin = m_meas->find_gamma_channel(roi_lower_energy);
-    //lower_bin = ((lower_bin > (2*nsidebin+1)) ? (lower_bin - nsidebin) : (nsidebin + 1));
-    
-    size_t upper_bin = m_meas->find_gamma_channel(roi_upper_energy);
-    //upper_bin = ((upper_bin < (nchannels - 2*nsidebin - 1)) ? (upper_bin + nsidebin) : (nchannels - nsidebin - 1));
-    
-    lower_bin = std::min( lower_bin, nchannels - nsidebin - 1 );
-    upper_bin = std::max( upper_bin, nsidebin + 1 );
-    
-    double coefs[2];
-    local_eqn_from_offsets( lower_bin, upper_bin, m_energy, m_meas, nsidebin, coefs[1], coefs[0] );
-    
-    //double continuum = PeakContinuum::offset_eqn_integral( coefs,
-    //                                   PeakContinuum::OffsetType::Linear,
-    //                                   roi_lower_energy, roi_upper_energy, m_energy );
-    //const double data_area = m_meas->gamma_integral(roi_lower_energy, roi_upper_energy);
-    
-    double continuum = PeakContinuum::offset_eqn_integral( coefs,
-                                           PeakContinuum::OffsetType::Linear,
-                                           m_meas->gamma_channel_lower(lower_bin),
-                                           m_meas->gamma_channel_upper(upper_bin),
-                                           m_energy );
-    const double data_area = m_meas->gamma_channels_sum(lower_bin, upper_bin);
-    
-    /*
-    auto energy_cal = m_meas->energy_calibration();
-    const double meanchannel = energy_cal->channel_for_energy(m_energy);
-    const double gad_peak_region = 10.39;
-    const double gad_lower_channel = meanchannel - 0.5*gad_peak_region;
-    const double gad_upper_channel = meanchannel + 0.5*gad_peak_region;
-    const double gad_lower_energy = energy_cal->energy_for_channel(gad_lower_channel);
-    const double gad_upper_energy = energy_cal->energy_for_channel(gad_upper_channel);
-    
-    cout << "(gad_upper_energy - gad_lower_energy)/fwhm(" << m_energy << " keV)=" << (gad_upper_energy - gad_lower_energy)/m_drf->peakResolutionFWHM(m_energy) << endl;
-    
-    cout << "For " << m_energy << " keV, ROI is " << (1 + upper_bin - lower_bin)
-    << " channels centered around channel " << meanchannel
-    << ". Gadras region would be from " << gad_lower_energy << " to " << gad_upper_energy << " keV"
-    << " (channels " << gad_lower_channel << " to " << gad_upper_channel << ")"
-    << endl;
-    
-    cout << "Predicted continuum area=" << continuum << " vs data " << data_area << endl;
-    */
-    //continuum = data_area;
-    
-    m_simpleMda = (2.71 + 4.65*sqrt(continuum))/m_gammas_per_bq;
-    if( IsInf(m_simpleMda) || IsInf(m_simpleMda) )
-      m_simpleMda = -1.0;
-    const string mdastr = PhysicalUnits::printToBestActivityUnits(m_simpleMda);
-    cout << "mda(" << m_energy << ") = " << mdastr << endl;
-    
-    m_poisonLimit->setText( "Simple MDA=" + mdastr );
-    
-    cout << endl << endl;
-    cout << "Gross Counts in Peak Foreground: " << data_area << endl;
-    //cout << "Gross Counts in Peak Background: 0
-    cout << "Gross Counts in Continuum Foreground: " << continuum << endl;
-    //Gross Counts in Continuum Background: 0
-    //Variance in Peak Region: 9.062885
-    //Variance in Continuum Region: 8.400412
-    cout << "Detector Efficiency at Energy: " << m_drf->intrinsicEfficiency(m_energy) << endl;
-    //Range of Gammas Entering Detector: (0, 0.4153258)
-    cout << "Solid Angle: " << m_drf->fractionalSolidAngle(m_drf->detectorDiameter(), m_distance) << endl;
-    //Range of Gammas from Source: (0, 1607.631)
-    cout << "Gamma Emission Rate per Ci of Source: " << (PhysicalUnits::curie * m_gammas_per_bq / m_meas->live_time())/m_drf->efficiency(m_energy, m_distance) << endl;
-    //Transmission through Shielding: 1
-    cout << "Number of counts limit: " << m_simpleMda*m_gammas_per_bq << endl;
-    
-    // Need to propagate continuum uncertainty to get variance in peak region.
-    // Make a single-peak limit section that gives some of the information above, and maybe draws the limiting peak.
-    // Also need to make limit used settable.
-    // Need to add in if it passes the critical limit what it is.
-    
-    /*
-    boost::uintmax_t max_iter = 1000;
-    const double mda = m_simpleMda;
-    const double givenActivity_ci = 10; //10 Ci
-    const double origdist = 1.0;
-    auto distMinForActivity = [mda,givenActivity_ci,origdist]( double const &x ) -> double {
-      return fabs( ((1.0/(x*x)) * exp(-0.0094276*x)) - (mda/PhysicalUnits::curie)/givenActivity_ci/origdist );
-    };
+    try
+    {
+      const bool useCuries = use_curie_units();
       
-    const pair<double, double> r = boost::math::tools::brent_find_minima( distMinForActivity, 1.0, 100000.0, 10, max_iter );
-    
-    cout << "For energy(" << m_energy << "), detection " << givenActivity_ci << " Ci, dist=" << r.first
-         << "m with error " << r.second << endl;
-     */
+      if( !m_meas || (m_meas->num_gamma_channels() < 16) )
+        return;
+      
+      const float roi_lower_energy = m_roi_start->value();
+      const float roi_upper_energy = m_roi_end->value();
+      
+      const size_t nsidebin = static_cast<size_t>( std::round( std::max( 1.0f, m_num_side_channels->value() ) ) );
+      const size_t nchannels = m_meas->num_gamma_channels();
+      
+      DetectionLimitCalc::CurieMdaInput input;
+      input.spectrum = m_meas;
+      input.gamma_energy = m_energy;
+      input.roi_lower_energy = m_roi_start->value();
+      input.roi_upper_energy = m_roi_end->value();
+      input.num_lower_side_channels = nsidebin;
+      input.num_upper_side_channels = nsidebin;
+      input.detection_probability = m_confidence_level;
+      input.additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
+      
+      
+      
+      const DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
+      
+      m_simple_excess_counts = result.source_counts;
+      m_simple_mda = result.upper_limit / m_gammas_per_bq;
+      
+      if( result.source_counts > result.decision_threshold )
+      {
+        // There is enough excess counts that we would reliably detect this activity, so we will
+        //  give the activity range.
+        const float lower_act = result.lower_limit / m_gammas_per_bq;
+        const float upper_act = result.upper_limit / m_gammas_per_bq;
+        const float nominal_act = result.source_counts / m_gammas_per_bq;
+        
+        const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries );
+        const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries );
+        const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries );
+        
+        m_poisonLimit->setText( "Observed " + nomstr + " with range [" + lowerstr + ", " + upperstr + "]" );
+      }else
+      {
+        // We will provide the upper bound on activity.
+        const string mdastr = PhysicalUnits::printToBestActivityUnits( m_simple_mda, 2, useCuries );
+        m_poisonLimit->setText( "Currie MDA: " + mdastr );
+      }
+    }catch( std::exception &e )
+    {
+      m_poisonLimit->setText( "Error calculating limit: " + string(e.what()) );
+    }
   }//void setSimplePoisonTxt()
+  
   
   void emitChanged()
   {
@@ -292,10 +276,60 @@ public:
     m_changed.emit();
   }
   
+  
+  void roiChanged()
+  {
+    // We'll validate/check user quantities here, even though this should have already all been done
+    setRoiStart( m_roi_start->value() );
+    setRoiEnd( m_roi_end->value() );
+    
+    const float numSideChannel = m_num_side_channels->value();
+    if( numSideChannel < 1.0f )
+      m_num_side_channels->setValue(1.0f);
+    else if( std::round(numSideChannel) != numSideChannel )
+      m_num_side_channels->setValue(numSideChannel);
+    
+    emitChanged();
+  }//void roiChanged()
+  
+  
+  float roundToNearestChannelEdge( const float energy ) const
+  {
+    if( !m_meas )
+      return energy;
+    
+    auto cal = m_meas->energy_calibration();
+    
+    if( !cal || !cal->valid() )
+      return energy;
+    
+    const double channel = std::max( 0.0, cal->channel_for_energy(energy) ); //std::max isnt necessary, but JIC
+    const double whole = std::floor(channel);
+    const double frac = channel - whole;
+    
+    if( (frac >= 0.5) && ((whole+1) < cal->num_channels()) )
+      return static_cast<float>( cal->energy_for_channel(whole + 1.0) );
+    
+    return static_cast<float>( cal->energy_for_channel(whole) );
+  }//float roundToNearestChannelEdge( float energy )
+  
+  
+  void setRoiStart( const float energy )
+  {
+    m_roi_start->setValue( roundToNearestChannelEdge(energy) );
+  }//void setRoiStart( float energy )
+  
+  
+  void setRoiEnd( const float energy )
+  {
+    m_roi_end->setValue( roundToNearestChannelEdge(energy) );
+  }//void setRoiEnd( float energy )
+  
 public:
   MdaPeakRow( const float energy, const double gammasPerBq,
              const double distance,
               float roi_start, float roi_end,
+             const float confidence_level,
               shared_ptr<const SpecUtils::Measurement> meas,
               std::shared_ptr<DetectorPeakResponse> drf,
              Wt::WContainerWidget *parent = nullptr )
@@ -304,14 +338,18 @@ public:
   m_distance( distance ),
   m_gammas_per_bq( gammasPerBq ),
   m_fwhm( drf->peakResolutionFWHM(energy) ),
+  m_confidence_level( confidence_level ),
   m_drf( drf ),
-  m_simpleMda( -1.0 ),
+  m_simple_mda( -1.0 ),
+  m_simple_excess_counts( -1.0 ),
   m_meas( meas ),
   m_changed( this )
   {
     addStyleClass( "MdaPeakRow" );
     
-    m_use = new WCheckBox( "", this );
+    assert( confidence_level > 0.5 && confidence_level < 1.0 );
+    
+    m_use_for_likelihood = new WCheckBox( "", this );
     char buffer[64];
     snprintf( buffer, sizeof(buffer), "&nbsp;%.2f keV, FWHM=%.2f, Eff=%.2g/bq&nbsp;",
               m_energy, m_fwhm, m_gammas_per_bq );
@@ -320,33 +358,59 @@ public:
     
     label = new WLabel( "&nbsp;ROI Start:", this );
     m_roi_start = new NativeFloatSpinBox( this );
+    m_roi_start->setSpinnerHidden( true );
+    m_roi_start->setFormatString( "%.2f" );
     m_roi_start->setValue( roi_start );
-    //m_roi_start->setTextSize(7); //doesnt seem to work
     m_roi_start->setWidth(75);
+    label->setBuddy( m_roi_start );
     
     label = new WLabel( "keV, &nbsp;ROI End:", this );
     m_roi_end = new NativeFloatSpinBox( this );
+    m_roi_end->setSpinnerHidden( true );
+    m_roi_end->setFormatString( "%.2f" );
     m_roi_end->setValue( roi_end );
     //m_roi_end->setTextSize(7); //doesnt seem to work
     m_roi_end->setWidth(75);
+    label->setBuddy( m_roi_end );
+    
     
     label = new WLabel( "keV,&nbsp;Continuum", this );
     m_continuum = new WComboBox( this );
     m_continuum->addItem( "Linear" );
     m_continuum->addItem( "Quadratic" );
     m_continuum->setCurrentIndex( 0 );
+    label->setBuddy( m_continuum );
     
-    m_use->checked().connect( this, &MdaPeakRow::emitChanged );
-    m_use->unChecked().connect( this, &MdaPeakRow::emitChanged );
-    m_roi_start->valueChanged().connect( this, &MdaPeakRow::emitChanged );
-    m_roi_end->valueChanged().connect( this, &MdaPeakRow::emitChanged );
+    label = new WLabel( "keV,&nbsp;Num Side Channels", this );
+    m_num_side_channels = new NativeFloatSpinBox( this );
+    m_num_side_channels->setFormatString( "%.0f" );
+    m_num_side_channels->setSingleStep( 1.0 );
+    m_num_side_channels->setRange( 1.0f, 50.0f );
+    m_num_side_channels->setValue( 4.0f );
+    label->setBuddy( m_continuum );
+    
+
+    
+    m_use_for_likelihood->checked().connect( this, &MdaPeakRow::emitChanged );
+    m_use_for_likelihood->unChecked().connect( this, &MdaPeakRow::emitChanged );
+    m_roi_start->valueChanged().connect( this, &MdaPeakRow::roiChanged );
+    m_roi_end->valueChanged().connect( this, &MdaPeakRow::roiChanged );
+    m_num_side_channels->valueChanged().connect( this, &MdaPeakRow::roiChanged );
     m_continuum->activated().connect( this, &MdaPeakRow::emitChanged );
     m_continuum->changed().connect( this, &MdaPeakRow::emitChanged );
     
+    
     m_poisonLimit = new WText( "&nbsp;", this );
     m_poisonLimit->addStyleClass( "Poisson");
+    
+    setRoiStart( roi_start );
+    setRoiEnd( roi_end );
+    
     setSimplePoisonTxt();
   }
+  
+  
+  
 };//class MdaPeakRow
 
 
@@ -361,7 +425,7 @@ DetectionLimitTool::PreviousRoiValue::PreviousRoiValue( const MdaPeakRow * const
   if( row )
   {
     energy = row->m_energy;
-    use_for_likelihood = row->m_use->isChecked();
+    use_for_likelihood = row->m_use_for_likelihood->isChecked();
     roi_start = row->m_roi_start->value();
     roi_end = row->m_roi_end->value();
   }else
@@ -440,6 +504,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_shieldingSelect( nullptr ),
     m_minRelIntensity( nullptr ),
     m_displayActivity( nullptr ),
+    m_confidenceLevel( nullptr ),
     m_results( nullptr ),
     m_chi2Chart( nullptr ),
     m_bestChi2Act( nullptr ),
@@ -651,6 +716,31 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_displayActivity->enterPressed().connect( this, &DetectionLimitTool::updateShownPeaks );
   m_displayActivity->changed().connect( this, &DetectionLimitTool::updateShownPeaks );
   
+  label = new WLabel( "Confidence Level:", inputTable );
+  label->addStyleClass( "SixthCol SecondRow" );
+  m_confidenceLevel = new WComboBox( inputTable );
+  m_confidenceLevel->addStyleClass( "SeventhCol SecondRow" );
+  
+  for( auto cl = ConfidenceLevel(0); cl < NumConfidenceLevel; cl = ConfidenceLevel(cl+1) )
+  {
+    const char *txt = "";
+    
+    switch( cl )
+    {
+      case ConfidenceLevel::OneSigma:   txt = "68%";     break;
+      case ConfidenceLevel::TwoSigma:   txt = "95%";     break;
+      case ConfidenceLevel::ThreeSigma: txt = "99%";     break;
+      case ConfidenceLevel::FourSigma:  txt = "4-sigma"; break;
+      case ConfidenceLevel::FiveSigma:  txt = "5-sigma"; break;
+      case ConfidenceLevel::NumConfidenceLevel:          break;
+    }//switch( cl )
+    
+    m_confidenceLevel->addItem( txt );
+  }//for( loop over confidence levels )
+  
+  m_confidenceLevel->setCurrentIndex( ConfidenceLevel::TwoSigma );
+  
+  m_confidenceLevel->activated().connect(this, &DetectionLimitTool::handleUserChangedConfidenceLevel );
   
   
   const auto primaryMeas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
@@ -913,6 +1003,12 @@ void DetectionLimitTool::handleUserMinRelativeIntensityChange()
 }//void handleUserMinRelativeIntensityChange()
 
 
+void DetectionLimitTool::handleUserChangedConfidenceLevel()
+{
+  handleInputChange();
+}
+
+
 void DetectionLimitTool::calcAndSetDefaultMinRelativeIntensity()
 {
   vector<tuple<double,double>> lines;
@@ -1127,6 +1223,7 @@ void DetectionLimitTool::handleInputChange()
     return;
   }
   
+  const float confLevel = currentConfidenceLevel();
   
   for( const auto &line : lines )
   {
@@ -1137,7 +1234,6 @@ void DetectionLimitTool::handleInputChange()
     
     if( (relIntensity < minDisplayIntensity) || (relIntensity <= 0.0) )
     {
-      cout << "Skipping " << energy << " keV line since its relative intensity is only " << relIntensity << endl;
       continue;
     }
     
@@ -1156,13 +1252,31 @@ void DetectionLimitTool::handleInputChange()
       roi_end = oldval.roi_end;
     }
     
-    auto row = new MdaPeakRow( energy, countsPerBq, distance, roi_start, roi_end, spec, drf, m_peaks );
-    row->m_use->setChecked(use);
+    auto row = new MdaPeakRow( energy, countsPerBq, distance, roi_start, roi_end, confLevel, spec, drf, m_peaks );
+    row->m_use_for_likelihood->setChecked(use);
     row->m_changed.connect( this, &DetectionLimitTool::scheduleCalcUpdate );
   }//for( const auto &line : lines )
   
   scheduleCalcUpdate();
 }//void handleInputChange()
+
+
+float DetectionLimitTool::currentConfidenceLevel()
+{
+  const auto cl = ConfidenceLevel( m_confidenceLevel->currentIndex() );
+  switch( cl )
+  {
+    case OneSigma:   return 0.682689492137086f;
+    case TwoSigma:   return 0.954499736103642f;
+    case ThreeSigma: return 0.997300203936740f;
+    case FourSigma:  return 0.999936657516334f;
+    case FiveSigma:  return 0.999999426696856f;
+    case NumConfidenceLevel: break;
+  }//switch( cl )
+  
+  assert( 0 );
+  return 0.95f;
+}//float DetectionLimitTool::currentConfidenceLevel()
 
 
 void DetectionLimitTool::scheduleCalcUpdate()
@@ -1174,7 +1288,8 @@ void DetectionLimitTool::scheduleCalcUpdate()
 
 void DetectionLimitTool::doCalc()
 {
-  //m_simpleMda
+  const bool useCurie = use_curie_units();
+  
   double minSearchActivity = std::numeric_limits<double>::infinity(), maxSearchActivity = 0.0;
   
   int nused = 0;
@@ -1182,14 +1297,21 @@ void DetectionLimitTool::doCalc()
   {
     auto rw = dynamic_cast<MdaPeakRow *>( w );
     assert( rw );
-    if( !rw->m_use->isChecked() )
+    if( !rw->m_use_for_likelihood->isChecked() )
       continue;
     
     ++nused;
-    if( (rw->m_simpleMda > 0.0) && !IsInf(rw->m_simpleMda) && !IsNan(rw->m_simpleMda)  )
+    if( (rw->m_simple_mda > 0.0) && !IsInf(rw->m_simple_mda) && !IsNan(rw->m_simple_mda)  )
     {
-      minSearchActivity = std::min( minSearchActivity, rw->m_simpleMda );
-      maxSearchActivity = std::max( maxSearchActivity, rw->m_simpleMda );
+      minSearchActivity = std::min( minSearchActivity, rw->m_simple_mda );
+      maxSearchActivity = std::max( maxSearchActivity, rw->m_simple_mda );
+      
+      if( rw->m_simple_excess_counts > 0.0 )
+      {
+        const double nominalActivity = rw->m_simple_excess_counts / rw->m_gammas_per_bq;
+        minSearchActivity = std::min( minSearchActivity, nominalActivity );
+        maxSearchActivity = std::max( maxSearchActivity, nominalActivity );
+      }
     }
   }//for( auto w : m_peaks->children() )
   
@@ -1219,14 +1341,26 @@ void DetectionLimitTool::doCalc()
   m_errorMsg->hide();
   
   const double yrange = 15;
-  const double cl_chi2_delta = 4.0; //95.45% CL, or something
+  
+  // TODO: we are scanning activity, which is a single degree of freedom - but does it matter that
+  //       we are marginalizing over (i.e., fitting for) the nuisance parameters of the peaks and
+  //       stuff?  I dont *think* so.
+  const boost::math::chi_squared chi_squared_dist( 1.0 );
+  
+  const float wantedCl = currentConfidenceLevel();
+  
+  // We want interval corresponding to 95%, where the quantile will give us CDF up to that
+  //  point, so we actually want the quantile that covers 97.5% of cases.
+  const float twoSidedCl = 0.5 + 0.5*wantedCl;
+  
+  const double cl_chi2_delta = boost::math::quantile( chi_squared_dist, twoSidedCl );
   
   const size_t nchi2 = 25;  //approx num chi2 to compute
   vector<pair<double,double>> chi2s;
   double overallBestChi2 = 0.0, overallBestActivity = 0.0, upperLimit = 0.0, lowerLimit = 0.0, activityRangeMin = 0.0, activityRangeMax = 0.0;
   bool foundUpperCl = false, foundUpperDisplay = false, foundLowerCl = false, foundLowerDisplay = false;
   
-  /// \TODO: currently all this stuff assumes a smooth continuosly increasing Chi2 with increasing
+  /// \TODO: currently all this stuff assumes a smooth continuously increasing Chi2 with increasing
   ///        activity, but this doesnt have to be the case, especially with quadratic continuums.
   
   try
@@ -1397,13 +1531,13 @@ void DetectionLimitTool::doCalc()
   char buffer[128];
   snprintf( buffer, sizeof(buffer), "Best &chi;<sup>2</sup> of %.1f at activity %s, %i DOF",
             overallBestChi2,
-            PhysicalUnits::printToBestActivityUnits(overallBestActivity).c_str(),
+            PhysicalUnits::printToBestActivityUnits(overallBestActivity,3,useCurie).c_str(),
             numDOF );
   m_bestChi2Act->setText( buffer );
   
-  string upperLimitActStr = PhysicalUnits::printToBestActivityUnits(upperLimit,3,true);
-  snprintf( buffer, sizeof(buffer), "95%% coverage at %s with &chi;<sup>2</sup> of %.1f",
-            upperLimitActStr.c_str(), upperActivtyChi2 );
+  string upperLimitActStr = PhysicalUnits::printToBestActivityUnits(upperLimit,3,useCurie);
+  snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup> of %.1f",
+            0.1*std::round(10.0*wantedCl), upperLimitActStr.c_str(), upperActivtyChi2 );
   
   if( foundUpperCl )
     m_upperLimit->setText( buffer );
@@ -1415,11 +1549,8 @@ void DetectionLimitTool::doCalc()
     //display lower limit to user...
   }
 
-
-  
-  const bool useCurries = true;
   const double avrgAct = 0.5*(chi2s.front().first + chi2s.back().first);
-  const auto &units = PhysicalUnits::bestActivityUnitHtml( avrgAct, useCurries );
+  const auto &units = PhysicalUnits::bestActivityUnitHtml( avrgAct, useCurie );
   
   string datajson = "{\n\t\"data\": [";
 
@@ -1536,7 +1667,7 @@ void DetectionLimitTool::computeForAcivity( const double activity,
   {
     auto rw = dynamic_cast<MdaPeakRow *>( w );
     assert( rw );
-    if( !rw->m_use->isChecked() )
+    if( !rw->m_use_for_likelihood->isChecked() )
       continue;
     
     const float mean = rw->m_energy;
