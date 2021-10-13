@@ -66,6 +66,9 @@ public:
    
    Default format is "%.6G"
    
+   Note: if you set the format flag to "%.0f", and then call #setSingleStep(1.0f), and #setValue, and potentially #setRange, then only
+   integer value will be validated.
+   
    Will throw exception if format flag is invalid.
    */
   void setFormatString( const std::string &format );

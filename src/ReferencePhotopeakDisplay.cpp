@@ -888,12 +888,11 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
   {
     if( nuc )
     {
-      string agestr;
-      PeakDef::defaultDecayTime( nuc, &agestr );
-      passMessage( "Changed age to a more reasonable value for " + nuc->symbol,
-                   " from '" + agestr + "' to '" + agestr + "'",
-                   WarningWidget::WarningMsgLow );
-      m_ageEdit->setText( agestr );
+      string defAgeStr;
+      PeakDef::defaultDecayTime( nuc, &defAgeStr );
+      passMessage( "Changed age to a more reasonable value for " + nuc->symbol
+              + " from '" + agestr + "' to '" + defAgeStr + "'", "", WarningWidget::WarningMsgLow );
+      m_ageEdit->setText( defAgeStr );
     }else
     {
       m_ageEdit->setText( "0y" );
