@@ -33,17 +33,41 @@
 #include "InterSpec/AuxWindow.h"
 
 /** TODO:
- - Every update seems to trigger a layout resize that causes the chart to grow.
- - Could allow entering a scale factor for spectrum; this is like you have a 5 minute background, but are interested in a 60s dwell
- - The likelihood based estimate does not seem to be reliable yet
- - Add in checkbox to allow accounting for attenuation in the air (or just always do this)
- - Add in option to scale time period results are for.  Like if the spectrum is a five-minute spectrum, but you want a 1 second detection limit.
- - Add in allowing to calculate the maximum detection distance; not sure if this should be individual peaks, or all peaks; maybe a toggle for the whole screen
- - Add a drop-box to allow selecting confidence for limit (e.g., 80%, 90%, 95%, 99%, etc)
- - Allow asserting you know there isnt a peak in the spectrum, and affix the peak continuums to the observed spectrum
- - Allow adjusting the simple MDA side-widths
- - Check numerical accuracies of calculations
- - Report mass as well as activity
+ - [x] Every update seems to trigger a layout resize that causes the chart to grow.
+ - [ ] Could allow entering a scale factor for spectrum; this is like you have a 5 minute background, but are interested in a 60s dwell
+ - [ ]The likelihood based estimate does not seem to be reliable yet
+ - [x] Add in checkbox to allow accounting for attenuation in the air (or just always do this)
+ - [ ] Add in allowing to calculate the maximum detection distance; not sure if this should be individual peaks, or all peaks; maybe a toggle for the whole screen
+ - [x] Add a drop-box to allow selecting confidence for limit (e.g., 80%, 90%, 95%, 99%, etc)
+ - [ ] Allow asserting you know there isnt a peak in the spectrum, and affix the peak continuums to the observed spectrum
+ - [x] Allow adjusting the simple MDA side-widths
+ - [ ] Check numerical accuracies of calculations
+ - [ ] Report mass as well as activity
+ - [ ] Make sure when presence is reported on Currie style limit (e.g., both lower and upper limits given), the coverage is actually correct; e.g. 95% of tims in given interval, and not 97.5% or 90% or something.
+ 
+ - [x] Switch to using  a CSS grid layout for the options section
+ - [x] put in BR (after DRF and shield) to limit total number of peaks; have it be zero by default if less than 10 peaks, or 0.1 or something otherwise
+ - probably also filter lines that have essentually a zero efficiency per bq
+ - [ ] Make a "by eye" equivalent CL
+ 
+ - [ ] Make test cases that will quickly iterate through, to test things
+ - [ ] Give the user a choice about using continuum fixed at null hypothesis
+ - [ ] For each row show plot of current peak in that row
+ - [ ] Allow combining ROI with neghboring peaks
+ - [ ] In addition to error messages, have an area for warning messages (like if scaling spectrum more than 1.0, etc)
+ - [ ] Allow user to pick Currie limit ranges, and improve clarity of this stuff, like maybe have each peak be a WPanel or something
+ - [ ] Have the energy rows fold down to show more information, similar to Steves tool, for each energy
+ - [ ] If user clicks on a result row, have chart zoom to that general region
+ 
+ - [ ] Allow minor gamma-lines overlapping with primary gamma lines to contribute to peak area
+ - [ ] Allow users to double click on the spectrum to add a peak to the limit, or similarly for erasing a peak
+ - [ ] Remember ROI properties for all user changed ROIs, for full use, not just if nuclide changes
+ 
+ - [x] Make the Chi2 plot a D3 based plot
+ - [x] Put the Chi2 chart to the right of the spectrum, when it should exist
+ - [x] Make it so when user change ROI on chart, it updates the text input
+ - [x] Add in allowing to age nuclide (didnt I generalize inputting a nuclide somewhere?  Hopefully just re-use that)
+ - [x] Default fill in reference lines/shielding/age as user has in Reference PhotoPeak tool
  */
 
 
@@ -52,11 +76,18 @@ class PeakModel;
 class InterSpec;
 class MaterialDB;
 class MdaPeakRow;
+class SwitchCheckbox;
 class ShieldingSelect;
 class DetectorDisplay;
 class NativeFloatSpinBox;
-class D3SpectrumDisplayDiv;
 class DetectionLimitTool;
+class D3SpectrumDisplayDiv;
+class DetectorPeakResponse;
+
+namespace SpecUtils
+{
+  class Measurement;
+};//namespace SpecUtils
 
 namespace SandiaDecay
 {
@@ -66,6 +97,7 @@ namespace SandiaDecay
 namespace Wt
 {
   class WText;
+  class WLabel;
   class WCheckBox;
   class WLineEdit;
   class WComboBox;
@@ -92,6 +124,14 @@ protected:
 
 class DetectionLimitTool : public Wt::WContainerWidget
 {
+public:
+  /** The limits type the user can select to determine. */
+  enum class LimitType
+  {
+    Activity,
+    Distance
+  };
+  
 public:
   DetectionLimitTool( InterSpec *viewer,
                           MaterialDB *materialDB,
@@ -142,17 +182,32 @@ protected:
   
   void handleUserChangedUseAirAttenuate();
   
+  void handleUserChangedToComputeActOrDist();
+  
   void handleInputChange();
   
   float currentConfidenceLevel();
   
-  /** Returns the current {energy, observed_br}.
-   Where observed_br accounts for B.R. after aging and attenuation through shielding, and detection efficiency at the given distance; e.g.
-   how many counts per second you would expect to detect per Bq of activity.
+  /** Returns either the current user entered distance (if determining activity limit), or the current display distance (if determining
+   distance limit).
    
-   May throw exception if error calculating attenuation, or there is no DRF, or no current valid nuclide.
+   Throws exception if invalid or zero distance.
    */
-  std::vector<std::tuple<double,double>> gammaLines() const;
+  double currentDisplayDistance() const;
+  
+  
+  
+  /** Returns the type of limit, either activity or distance, the user currently has selected t determine. */
+  LimitType limitType() const;
+  
+  /** Returns the current {energy, gammas_into_4pi, gammas_4pi_after_air_attenuation}.
+   Where gammas_into_4pi accounts for B.R. after aging and attenuation through shielding, but not attenuation in the air.
+   gammas_4pi_after_air_attenuation adds in attenuation in the air, at the currently specified distance (if distance input is invalid, will
+   use 1m).
+   
+   May throw exception if error calculating attenuation, or no current valid nuclide.
+   */
+  std::vector<std::tuple<double,double,double>> gammaLines() const;
   
   
   InterSpec *m_interspec;
@@ -173,7 +228,16 @@ protected:
   Wt::WSuggestionPopup *m_nuclideSuggest;
   DetectorDisplay *m_detectorDisplay;
   
-  Wt::WLineEdit *m_distanceEdit;
+  /** The switch to toggle if the user wants to compute activity limit, or distance limit.
+   m_distOrActivity->isChecked() indicates compute distance.
+   */
+  SwitchCheckbox *m_distOrActivity;
+  Wt::WLabel *m_activityLabel;
+  Wt::WLabel *m_distanceLabel;
+  
+  Wt::WLineEdit *m_distanceForActivityLimit;
+  
+  Wt::WLineEdit *m_activityForDistanceLimit;
   
   MaterialDB *m_materialDB;                 //not owned by this object
   Wt::WSuggestionPopup *m_materialSuggest;  //not owned by this object
@@ -183,7 +247,10 @@ protected:
   
   Wt::WCheckBox *m_attenuateForAir;
   
-  Wt::WLineEdit *m_displayActivity;
+  Wt::WLabel *m_displayActivityLabel;
+  Wt::WLabel *m_displayDistanceLabel;
+  Wt::WLineEdit *m_displayActivity; //!< Used for peak plotting when activity limit is being determined
+  Wt::WLineEdit *m_displayDistance; //!< Used for peak plotting when distance limit is being determined
   
   enum ConfidenceLevel { OneSigma, TwoSigma, ThreeSigma, FourSigma, FiveSigma, NumConfidenceLevel };
   Wt::WComboBox *m_confidenceLevel;
@@ -201,21 +268,37 @@ protected:
   std::shared_ptr<SpecMeas> m_our_meas;
   Wt::WContainerWidget *m_peaks;
   
+public:
   
   // We want to preserve user changes to ROIs across nuclide changes, so we'll cache all
   //  previous values every time we update.
-  struct PreviousRoiValue
+  //
+  // This struct could/should maybe be composed into parts that can be changed by the MdaPeakRow
+  //  widget, vs outside of it, vs data, but for the development (and the moment), we'll just
+  //  cram it into one struct until it becomes clear the best way to organize things, or even if
+  //  it matters.
+  struct MdaPeakRowInput
   {
-    float energy;
     bool use_for_likelihood;
+    LimitType limit_type;
+    bool do_air_attenuation;
+    
+    float energy;
+    double counts_per_bq_into_4pi; //!< This includes spectrum live time, shielding, and gamma BR.  This will need to be turned into some vector to cover multiple gamma lines
+    double counts_per_bq_into_4pi_with_air;
+    double distance;
+    double activity;
     float roi_start;
     float roi_end;
+    size_t num_side_channels;
+    float confidence_level;
     
-    PreviousRoiValue();
-    PreviousRoiValue( const MdaPeakRow * const row );
-  };//struct PreviousRoiValue
+    std::shared_ptr<const DetectorPeakResponse> drf;
+    std::shared_ptr<const SpecUtils::Measurement> measurement;
+  };//struct MdaPeakRowInput
   
-  std::map<float,PreviousRoiValue> m_previousRoiValues;
+protected:
+  std::map<float,MdaPeakRowInput> m_previousRoiValues;
 };//class DetectionLimitTool
 
 

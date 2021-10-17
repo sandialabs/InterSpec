@@ -76,6 +76,7 @@
 #include "InterSpec/DetectorEdit.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
+#include "InterSpec/SwitchCheckbox.h"
 #include "SpecUtils/D3SpectrumExport.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/ReferenceLineInfo.h"
@@ -179,14 +180,9 @@ bool use_curie_units()
 class MdaPeakRow : public WContainerWidget
 {
 public:
-  const float m_energy;
-  const double m_distance;
-  const double m_gammas_per_bq;
-  const float m_fwhm;
-  const float m_confidence_level;
+  DetectionLimitTool::MdaPeakRowInput m_input;
   
-  std::shared_ptr<DetectorPeakResponse> m_drf;
-  
+  const Material *m_air;
   
   WCheckBox *m_use_for_likelihood;
   
@@ -207,68 +203,284 @@ public:
   WText *m_poisonLimit;
   double m_simple_mda;
   double m_simple_excess_counts;
-  shared_ptr<const SpecUtils::Measurement> m_meas;
   
   Wt::Signal<> m_changed;
   
+  const DetectionLimitTool::MdaPeakRowInput &input() const
+  {
+    return m_input;
+  }
+  
+  void handleUseForLikelihoodChanged()
+  {
+    m_input.use_for_likelihood = m_use_for_likelihood->isChecked();
+    emitChanged();
+  }
   
   void setSimplePoisonTxt()
   {
     try
     {
       const bool useCuries = use_curie_units();
-      
-      if( !m_meas || (m_meas->num_gamma_channels() < 16) )
+      auto m = m_input.measurement;
+      if( !m || (m->num_gamma_channels() < 16) )
         return;
+     
       
       const float roi_lower_energy = m_roi_start->value();
       const float roi_upper_energy = m_roi_end->value();
       
       const size_t nsidebin = static_cast<size_t>( std::round( std::max( 1.0f, m_num_side_channels->value() ) ) );
-      const size_t nchannels = m_meas->num_gamma_channels();
+      const size_t nchannels = m->num_gamma_channels();
       
       DetectionLimitCalc::CurieMdaInput input;
-      input.spectrum = m_meas;
-      input.gamma_energy = m_energy;
+      input.spectrum = m;
+      input.gamma_energy = m_input.energy;
       input.roi_lower_energy = m_roi_start->value();
       input.roi_upper_energy = m_roi_end->value();
       input.num_lower_side_channels = nsidebin;
       input.num_upper_side_channels = nsidebin;
-      input.detection_probability = m_confidence_level;
+      input.detection_probability = m_input.confidence_level;
       input.additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
       
-      
+      const double det_eff = m_input.drf->efficiency(m_input.energy, m_input.distance);
+      const double counts_4pi = (m_input.do_air_attenuation ? m_input.counts_per_bq_into_4pi_with_air
+                                 : m_input.counts_per_bq_into_4pi);
+      const double gammas_per_bq = counts_4pi * det_eff;
       
       const DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
       
       m_simple_excess_counts = result.source_counts;
-      m_simple_mda = result.upper_limit / m_gammas_per_bq;
+      m_simple_mda = result.upper_limit / gammas_per_bq;
       
-      if( result.source_counts > result.decision_threshold )
+      switch( m_input.limit_type )
       {
-        // There is enough excess counts that we would reliably detect this activity, so we will
-        //  give the activity range.
-        const float lower_act = result.lower_limit / m_gammas_per_bq;
-        const float upper_act = result.upper_limit / m_gammas_per_bq;
-        const float nominal_act = result.source_counts / m_gammas_per_bq;
-        
-        const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries );
-        const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries );
-        const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries );
-        
-        m_poisonLimit->setText( "Observed " + nomstr + " with range [" + lowerstr + ", " + upperstr + "]" );
-      }else if( result.upper_limit < 0 )
-      {
-        // This can happen when there are a lot fewer counts in the peak region than predicted
-        //  from the sides - since this is non-sensical, we'll just say zero.
-        const string unitstr = useCuries ? "Ci" : "Bq";
-        m_poisonLimit->setText( "Currie MDA: < 0" + unitstr );
-      }else
-      {
-        // We will provide the upper bound on activity.
-        const string mdastr = PhysicalUnits::printToBestActivityUnits( m_simple_mda, 2, useCuries );
-        m_poisonLimit->setText( "Currie MDA: " + mdastr );
-      }
+        case DetectionLimitTool::LimitType::Activity:
+        {
+          if( result.source_counts > result.decision_threshold )
+          {
+            // There is enough excess counts that we would reliably detect this activity, so we will
+            //  give the activity range.
+            const float lower_act = result.lower_limit / gammas_per_bq;
+            const float upper_act = result.upper_limit / gammas_per_bq;
+            const float nominal_act = result.source_counts / gammas_per_bq;
+            
+            const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries );
+            const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries );
+            const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries );
+            
+            cout << "At " << m_input.energy << "keV observed " << result.source_counts
+                 << " counts, at distance " << PhysicalUnits::printToBestLengthUnits(m_input.distance)
+                 << ", leading to nominal activity " << nomstr
+                 << endl;
+            
+            m_poisonLimit->setText( "Observed " + nomstr + " with range [" + lowerstr + ", " + upperstr + "]" );
+          }else if( result.upper_limit < 0 )
+          {
+            // This can happen when there are a lot fewer counts in the peak region than predicted
+            //  from the sides - since this is non-sensical, we'll just say zero.
+            const string unitstr = useCuries ? "Ci" : "Bq";
+            m_poisonLimit->setText( "Currie MDA: < 0" + unitstr );
+          }else
+          {
+            // We will provide the upper bound on activity.
+            const string mdastr = PhysicalUnits::printToBestActivityUnits( m_simple_mda, 2, useCuries );
+            m_poisonLimit->setText( "Currie MDA: " + mdastr );
+          }
+          
+          break;
+        }//case DetectionLimitTool::LimitType::Activity:
+          
+        case DetectionLimitTool::LimitType::Distance:
+        {
+          // We will iterate to find the distance in the below.
+          //  If we arent taking into account attenuation in the air, its easy to solve for the
+          //  distance.
+          //  But, even if taking into account the air attenuation, the distance is still solvable
+          //  in something like Mathemeatica, but the equation is like
+          //   x^{-2}*exp(-0.000942*x) = A_{lim}  (where exp(-0.000942*x) is attenuation in air
+          //    for 661 keV, and A_{lim} is for at one meter, and x is meters)
+          //  so, for the moment its easier to just be consistent and use an iterative approach
+          //  always.
+          shared_ptr<const DetectorPeakResponse> drf = m_input.drf;
+          if( !drf || !drf->isValid() )
+            throw runtime_error( "DRF invalid" );
+          
+          if( m_input.do_air_attenuation && !m_air )
+            throw runtime_error( "Invalid 'Air' material pointer" );
+          
+          // Round detection probability to nearest 1 decimal place.
+          const double rnd_cl_percent = std::round(1000.0*input.detection_probability) / 10.0;
+          
+          const double activity = m_input.activity;
+          if( activity <= 0.0 )
+            throw runtime_error( "No activity specified" );
+          
+          // Make a convenience lambda that returns the efficiency taking into account both the
+          //  geometric factor, and attenuation in the air.
+          const double intrinsic_eff = m_input.drf->intrinsicEfficiency(m_input.energy);
+          
+          
+          auto counts_at_distance = [this,intrinsic_eff,activity]( const double dist ) -> double {
+            const double counts_4pi_no_air = m_input.counts_per_bq_into_4pi;
+            const double geom_eff = m_input.drf->fractionalSolidAngle(m_input.drf->detectorDiameter(), dist);
+            double air_eff = 1.0;
+            if( m_input.do_air_attenuation )
+            {
+              const double coef = GammaInteractionCalc::transmition_coefficient_material( m_air, m_input.energy, dist );
+              air_eff = exp( -1.0 * coef );
+            }
+            
+            return activity * counts_4pi_no_air * geom_eff * intrinsic_eff * air_eff;
+          };//counts_at_distance(...)
+          
+          if( result.source_counts > counts_at_distance(0.0) )
+          {
+            cout << "For " << input.gamma_energy << ", observe " << result.source_counts
+                 << ", but expect " << counts_at_distance(0.0) << " at R=0" << endl;
+            throw runtime_error( "More counts observed than would be on contact." );
+          }
+          
+          if( result.source_counts > result.decision_threshold )
+          {
+            // There is enough excess counts that we would reliably detect this activity, at the
+            //  measured distance, so we will calculate the range of distances the measurement
+            //  may have happened at (e.x., when you take a measurement, and dont know how far
+            //  away the source is; e.g., source behind wall).
+            
+            
+            // We need to find the distance corresponding to the amount of counts given by both
+            //  result.lower_limit and result.upper_limit
+            // We will provide: "To the 95% CL, the measurement was taken between X and Y meters"
+            
+            if( result.lower_limit < 0.0 )
+              throw runtime_error( "Lower limit of counts is less than zero, but counts observed is greater than L_d." );
+            
+            double max_distance = 1.0*PhysicalUnits::meter;
+            
+            while( max_distance < 100000.0*PhysicalUnits::meter ) //100 km is getting towards limits of numerical accuracy for DRF efficiency
+            {
+              const double n_expected_counts = counts_at_distance(max_distance);
+              if( n_expected_counts < result.lower_limit )
+                break;
+              
+              max_distance *= 2.0;
+            }
+            
+            if( counts_at_distance(max_distance) >= result.upper_limit )
+              throw runtime_error( "Maximum distance to large (>100km)" );
+            
+            auto lower_limit_dist = [&]( double dist ) -> double {
+              return fabs( counts_at_distance(dist) - result.lower_limit );
+            };
+            
+            auto upper_limit_dist = [&]( double dist ) -> double {
+              return fabs( counts_at_distance(dist) - result.upper_limit );
+            };
+            
+            auto nominal_dist = [&]( double dist ) -> double {
+              cout << "brent_find_minima: " << m_input.energy << "keV: dist="
+                   << PhysicalUnits::printToBestLengthUnits(dist)
+                   << " give " << counts_at_distance(dist) << " counts where result.source_counts="
+                   << result.source_counts << endl;
+              return fabs( counts_at_distance(dist) - result.source_counts );
+            };
+            
+            using boost::math::tools::brent_find_minima;
+            const int bits = 10; //Float has 24 bits of mantisa, so 12 would be its max precision; 8 should get us accurate to almost three significant figures
+            boost::uintmax_t max_iter = 100;  //this variable gets changed each use, so you need to reset it afterwards
+            const pair<double, double> lower_crossing
+                         = brent_find_minima( lower_limit_dist, 0.0, max_distance, bits, max_iter );
+            
+            max_iter = 100;  //this variable gets changed each use, so you need to reset it afterwards
+            const pair<double, double> upper_crossing
+                         = brent_find_minima( upper_limit_dist, 0.0, max_distance, bits, max_iter );
+            
+            max_iter = 100;  //this variable gets changed each use, so you need to reset it afterwards
+            const pair<double, double> nominal_crossing
+                             = brent_find_minima( nominal_dist, 0.0, max_distance, bits, max_iter );
+            
+            cout << "Energy " << m_input.energy << "keV: nominal_dist={"
+                 << PhysicalUnits::printToBestLengthUnits(nominal_crossing.first)
+                 << ", " << nominal_crossing.second << "}, searched between 0 and "
+                 << PhysicalUnits::printToBestLengthUnits(max_distance)
+                 << " with " << max_iter << " iterations, and source activity "
+                 << PhysicalUnits::printToBestActivityUnits(activity, 2, useCuries)
+                 << "; source counts were " << result.source_counts
+            << endl;
+            
+            const double lower_distance = lower_crossing.first;
+            const double upper_distance = upper_crossing.first;
+            const double nominal_distance = nominal_crossing.first;
+            
+            
+            const string lowerstr = PhysicalUnits::printToBestLengthUnits( lower_distance, 2 );
+            const string upperstr = PhysicalUnits::printToBestLengthUnits( upper_distance, 2 );
+            const string nomstr = PhysicalUnits::printToBestLengthUnits( nominal_distance, 2 );
+            
+            // TODO: double check that this double-sided limit is correct, and we dont need to
+            //  convert to a single sided or something
+            
+            char buffer[256];
+            snprintf( buffer, sizeof(buffer),
+                      "Distance to source is nominally %s, with %.1f%% CL range [%s, %s]",
+                      nomstr.c_str(), rnd_cl_percent, upperstr.c_str(), lowerstr.c_str() );
+            
+            m_poisonLimit->setText( buffer );
+          }else if( result.upper_limit < 0 )
+          {
+            // This can happen when there are a lot fewer counts in the peak region than predicted
+            //  from the sides - since this is non-sensical ...
+            m_poisonLimit->setText( "TODO: handle case where observed deficit of counts is really large" );
+          }else
+          {
+            // We will provide a "At the 95% CL you would detect this source at X meters" answer
+
+#warning "go back through this logic when I am less tired to make sure result.upper_limit is really what we want to use here"
+            // TODO: go back through this logic when I am less tired to make sure result.upper_limit is really what we want to use here
+            
+            if( result.upper_limit < 0.0 )
+              throw runtime_error( "Upper limit of counts is less than zero, but counts observed is greater than L_d." );
+            
+            double max_distance = 1.0*PhysicalUnits::meter;
+            
+            while( max_distance < 100000.0*PhysicalUnits::meter )
+            {
+              if( counts_at_distance(max_distance) < result.upper_limit )
+                break;
+              max_distance *= 2.0;
+            }
+            
+            if( counts_at_distance(max_distance) >= result.upper_limit )
+              throw runtime_error( "Maximum distance to large (>100km)" );
+            
+            auto upper_limit_dist = [&]( double dist ) -> double {
+              return fabs( counts_at_distance(dist) - result.upper_limit );
+            };
+            
+            using boost::math::tools::brent_find_minima;
+            const int bits = 10; //Float has 24 bits of mantisa, so 12 would be its max precision; 8 should get us accurate to almost three significant figures
+            boost::uintmax_t max_iter = 100;  //this variable gets changed each use, so you need to reset it afterwards
+            const pair<double, double> upper_crossing
+                         = brent_find_minima( upper_limit_dist, 0.0, max_distance, bits, max_iter );
+            
+            const bool upper_distance = upper_crossing.second;
+            const string upperstr = PhysicalUnits::printToBestLengthUnits( upper_distance, 2 );
+            
+            char buffer[256];
+            snprintf( buffer, sizeof(buffer),
+                     "At %.1f%% CL you would detect source at %s",
+                     rnd_cl_percent, upperstr.c_str() );
+            
+            m_poisonLimit->setText( buffer );
+          }
+          
+          break;
+        }//case DetectionLimitTool::LimitType::Distance:
+      }//switch( m_input.limit_type )
+      
+      
+      
     }catch( std::exception &e )
     {
       m_poisonLimit->setText( "Error calculating limit: " + string(e.what()) );
@@ -289,11 +501,21 @@ public:
     setRoiStart( m_roi_start->value() );
     setRoiEnd( m_roi_end->value() );
     
-    const float numSideChannel = m_num_side_channels->value();
+    float numSideChannel = m_num_side_channels->value();
     if( numSideChannel < 1.0f )
+    {
       m_num_side_channels->setValue(1.0f);
-    else if( std::round(numSideChannel) != numSideChannel )
+      numSideChannel = 1.0;
+    }else if( std::round(numSideChannel) != numSideChannel )
+    {
+      numSideChannel = std::round(numSideChannel);
       m_num_side_channels->setValue(numSideChannel);
+    }
+    
+    m_input.roi_start = m_roi_start->value();
+    m_input.roi_end = m_roi_end->value();
+    assert( numSideChannel > 0.0 );
+    m_input.num_side_channels = static_cast<size_t>( std::round(numSideChannel) );
     
     emitChanged();
   }//void roiChanged()
@@ -301,10 +523,10 @@ public:
   
   float roundToNearestChannelEdge( const float energy ) const
   {
-    if( !m_meas )
+    if( !m_input.measurement )
       return energy;
     
-    auto cal = m_meas->energy_calibration();
+    auto cal = m_input.measurement->energy_calibration();
     
     if( !cal || !cal->valid() )
       return energy;
@@ -332,41 +554,46 @@ public:
   }//void setRoiEnd( float energy )
   
 public:
-  MdaPeakRow( const float energy, const double gammasPerBq,
-             const double distance,
-              float roi_start, float roi_end,
-             const float confidence_level,
-              shared_ptr<const SpecUtils::Measurement> meas,
-              std::shared_ptr<DetectorPeakResponse> drf,
-             Wt::WContainerWidget *parent = nullptr )
+  MdaPeakRow( const DetectionLimitTool::MdaPeakRowInput &input, const Material *air, WContainerWidget *parent = nullptr )
   : WContainerWidget( parent ),
-  m_energy( energy ),
-  m_distance( distance ),
-  m_gammas_per_bq( gammasPerBq ),
-  m_fwhm( drf->peakResolutionFWHM(energy) ),
-  m_confidence_level( confidence_level ),
-  m_drf( drf ),
+  m_input( input ),
+  m_air( air ),
+  m_use_for_likelihood( nullptr ),
+  m_roi_start( nullptr ),
+  m_roi_end( nullptr ),
+  m_num_side_channels( nullptr ),
+  m_continuum( nullptr ),
+  m_poisonLimit( nullptr ),
   m_simple_mda( -1.0 ),
   m_simple_excess_counts( -1.0 ),
-  m_meas( meas ),
   m_changed( this )
   {
     addStyleClass( "MdaPeakRow" );
     
-    assert( confidence_level > 0.5 && confidence_level < 1.0 );
+    assert( input.measurement );
+    assert( input.drf && input.drf->isValid() && input.drf->hasResolutionInfo() );
+    assert( input.confidence_level > 0.5 && input.confidence_level < 1.0 );
+    assert( input.roi_start < input.roi_end );
+    
+    
+    const double fwhm = input.drf->peakResolutionFWHM( input.energy );
+    const double det_eff = input.drf->efficiency( input.energy, input.distance );
+    const double counts_4pi = (input.do_air_attenuation ? input.counts_per_bq_into_4pi_with_air
+                               : input.counts_per_bq_into_4pi);
     
     m_use_for_likelihood = new WCheckBox( "", this );
+    m_use_for_likelihood->setChecked( input.use_for_likelihood );
     char buffer[64];
     snprintf( buffer, sizeof(buffer), "&nbsp;%.2f keV, FWHM=%.2f, Eff=%.2g/bq&nbsp;",
-              m_energy, m_fwhm, m_gammas_per_bq );
+              input.energy, fwhm, input.counts_per_bq_into_4pi*counts_4pi );
     auto label = new WLabel( buffer, this );
     label->addStyleClass( "FixedInfo" );
+    
     
     label = new WLabel( "&nbsp;ROI Start:", this );
     m_roi_start = new NativeFloatSpinBox( this );
     m_roi_start->setSpinnerHidden( true );
     m_roi_start->setFormatString( "%.2f" );
-    m_roi_start->setValue( roi_start );
     m_roi_start->setWidth(75);
     label->setBuddy( m_roi_start );
     
@@ -374,8 +601,6 @@ public:
     m_roi_end = new NativeFloatSpinBox( this );
     m_roi_end->setSpinnerHidden( true );
     m_roi_end->setFormatString( "%.2f" );
-    m_roi_end->setValue( roi_end );
-    //m_roi_end->setTextSize(7); //doesnt seem to work
     m_roi_end->setWidth(75);
     label->setBuddy( m_roi_end );
     
@@ -392,13 +617,13 @@ public:
     m_num_side_channels->setFormatString( "%.0f" );
     m_num_side_channels->setSingleStep( 1.0 );
     m_num_side_channels->setRange( 1.0f, 50.0f );
-    m_num_side_channels->setValue( 4.0f );
+    m_num_side_channels->setValue( input.num_side_channels );
     label->setBuddy( m_continuum );
     
 
     
-    m_use_for_likelihood->checked().connect( this, &MdaPeakRow::emitChanged );
-    m_use_for_likelihood->unChecked().connect( this, &MdaPeakRow::emitChanged );
+    m_use_for_likelihood->checked().connect( this, &MdaPeakRow::handleUseForLikelihoodChanged );
+    m_use_for_likelihood->unChecked().connect( this, &MdaPeakRow::handleUseForLikelihoodChanged );
     m_roi_start->valueChanged().connect( this, &MdaPeakRow::roiChanged );
     m_roi_end->valueChanged().connect( this, &MdaPeakRow::roiChanged );
     m_num_side_channels->valueChanged().connect( this, &MdaPeakRow::roiChanged );
@@ -409,8 +634,8 @@ public:
     m_poisonLimit = new WText( "&nbsp;", this );
     m_poisonLimit->addStyleClass( "Poisson");
     
-    setRoiStart( roi_start );
-    setRoiEnd( roi_end );
+    setRoiStart( input.roi_start );
+    setRoiEnd( input.roi_end );
     
     setSimplePoisonTxt();
   }
@@ -419,27 +644,6 @@ public:
   
 };//class MdaPeakRow
 
-
-DetectionLimitTool::PreviousRoiValue::PreviousRoiValue()
-{
-  use_for_likelihood = false;
-  energy = roi_start = roi_end = 0.0f;
-}
-
-DetectionLimitTool::PreviousRoiValue::PreviousRoiValue( const MdaPeakRow * const row )
-{
-  if( row )
-  {
-    energy = row->m_energy;
-    use_for_likelihood = row->m_use_for_likelihood->isChecked();
-    roi_start = row->m_roi_start->value();
-    roi_end = row->m_roi_end->value();
-  }else
-  {
-    use_for_likelihood = false;
-    energy = roi_start = roi_end = 0.0f;
-  }
-}//PreviousRoiValue( constructor )
 
 
 
@@ -504,13 +708,20 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_currentAge( -1.0 ),
     m_nuclideSuggest( nullptr ),
     m_detectorDisplay( nullptr ),
-    m_distanceEdit( nullptr ),
+    m_distOrActivity( nullptr ),
+    m_activityLabel( nullptr ),
+    m_distanceLabel( nullptr ),
+    m_distanceForActivityLimit( nullptr ),
+    m_activityForDistanceLimit( nullptr ),
     m_materialDB( materialDB ),
     m_materialSuggest( materialSuggest ),
     m_shieldingSelect( nullptr ),
     m_minRelIntensity( nullptr ),
     m_attenuateForAir( nullptr ),
+    m_displayActivityLabel( nullptr ),
+    m_displayDistanceLabel( nullptr ),
     m_displayActivity( nullptr ),
+    m_displayDistance( nullptr ),
     m_confidenceLevel( nullptr ),
     m_results( nullptr ),
     m_chi2Chart( nullptr ),
@@ -518,37 +729,6 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_upperLimit( nullptr ),
     m_errorMsg( nullptr )
 {
-  /** TODO:
-   - [ ] Switch to using  a CSS grid layout for the options section
-   - [ ] Allow user to choose activity limit, or distance limit
-   - [ ] All adding in a scale factor, so if spectrum is of 30 minutes, allow making limit for 30 second spectra
-   - [ ] put in BR (after DRF and shield) to limit total number of peaks; have it be zero by default if less than 10 peaks, or 0.1 or something otherwise
-    - probably also filter lines that have essentually a zero efficiency per bq
-   - [ ] Allow users to select CL, not just 95%
-   - [ ] Make a "by eye" equivalent CL
-   - [ ] Allow user to select number of side channels to define continuum
-   - [ ] Have an explicit option for including attenuation in air
-   
-   - [ ] Make test cases that will quickly iterate through, to test things
-   - [ ] Give the user a choice about using continuum fixed at null hypothesis
-   - [ ] For each row show plot of current peak in that row
-   - [ ] Allow combining ROI with neghboring peaks
-   - [ ] Allow user to pick Currie limit ranges, and improve clarity of this stuff, like maybe have each peak be a WPanel or something
-   - [ ] Have the energy rows fold down to show more information, similar to Steves tool, for each energy
-   - [ ] If user clicks on a result row, have chart zoom to that general region
-   
-   - [ ] Allow minor gamma-lines overlapping with primary gamma lines to contribute to peak area
-   - [ ] Allow users to double click on the spectrum to add a peak to the limit, or similarly for erasing a peak
-   - [ ] Remember ROI properties for all user changed ROIs, for full use, not just if nuclide changes
-   
-   - [x] Make the Chi2 plot a D3 based plot
-   - [x] Put the Chi2 chart to the right of the spectrum, when it should exist
-   - [x] Make it so when user change ROI on chart, it updates the text input
-   - [x] Add in allowing to age nuclide (didnt I generalize inputting a nuclide somewhere?  Hopefully just re-use that)
-   - [x] Default fill in reference lines/shielding/age as user has in Reference PhotoPeak tool
-   
-   Add in options for "limit live time", Distance/Activity, Confidence Limit to use, nuclide age
-   */
   WApplication * const app = wApp;
   assert( app );
   
@@ -667,17 +847,36 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   // Create distance input
   label = new WLabel( "Distance:", inputTable );
   label->addStyleClass( "FirstCol ThirdRow" );
+  m_distanceLabel = label;
 
-
-  m_distanceEdit = new WLineEdit( "100 cm", inputTable );
-  m_distanceEdit->addStyleClass( "SecondCol ThirdRow" );
-  label->setBuddy( m_distanceEdit );
-  m_distanceEdit->changed().connect( this, &DetectionLimitTool::handleInputChange );
-  m_distanceEdit->enterPressed().connect( this, &DetectionLimitTool::handleInputChange );
+  m_distanceForActivityLimit = new WLineEdit( "100 cm", inputTable );
+  m_distanceForActivityLimit->addStyleClass( "SecondCol ThirdRow" );
+  label->setBuddy( m_distanceForActivityLimit );
+  m_distanceForActivityLimit->changed().connect( this, &DetectionLimitTool::handleInputChange );
+  m_distanceForActivityLimit->enterPressed().connect( this, &DetectionLimitTool::handleInputChange );
   
-  WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, m_distanceEdit );
+  WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, m_distanceForActivityLimit );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
-  m_distanceEdit->setValidator( distValidator );
+  m_distanceForActivityLimit->setValidator( distValidator );
+  
+  
+  // We will but the activity label/input right next to the distance stuff, but since we default to
+  //  calculating activity limit, we'll hide the activity stuff.
+  label = new WLabel( "Activity:", inputTable );
+  label->addStyleClass( "FirstCol ThirdRow" );
+  m_activityLabel = label;
+  label->hide();
+  
+  m_activityForDistanceLimit = new WLineEdit( "0 uCi", inputTable );
+  m_activityForDistanceLimit->addStyleClass( "SecondCol ThirdRow" );
+  label->setBuddy( m_activityForDistanceLimit );
+  m_activityForDistanceLimit->changed().connect( this, &DetectionLimitTool::handleInputChange );
+  m_activityForDistanceLimit->enterPressed().connect( this, &DetectionLimitTool::handleInputChange );
+  
+  WRegExpValidator *actvalidator = new WRegExpValidator( PhysicalUnits::sm_activityRegex, this );
+  actvalidator->setFlags(Wt::MatchCaseInsensitive);
+  m_activityForDistanceLimit->setValidator( actvalidator );
+  m_activityForDistanceLimit->hide();
   
   
   
@@ -696,10 +895,17 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_shieldingSelect->setMinimumSize( WLength(250), WLength::Auto );
   
   
+  m_distOrActivity = new SwitchCheckbox( "Activity Limit", "Distance Limit", inputTable );
+  m_distOrActivity->addStyleClass( "FourthCol FirstRow SpanTwoCol" );
+
+  m_distOrActivity->checked().connect( this, &DetectionLimitTool::handleUserChangedToComputeActOrDist );
+  m_distOrActivity->unChecked().connect( this, &DetectionLimitTool::handleUserChangedToComputeActOrDist );
+  
+  
   label = new WLabel( "Min rel. inten:", inputTable );
-  label->addStyleClass( "FourthCol FirstRow" );
+  label->addStyleClass( "FourthCol SecondRow" );
   m_minRelIntensity = new NativeFloatSpinBox( inputTable );
-  m_minRelIntensity->addStyleClass( "FifthCol FirstRow" );
+  m_minRelIntensity->addStyleClass( "FifthCol SecondRow" );
   m_minRelIntensity->setMinimum( 0.0f );
   m_minRelIntensity->setMaximum( 0.999f );
   m_minRelIntensity->setSpinnerHidden( true );
@@ -709,7 +915,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   m_attenuateForAir = new WCheckBox( "Attenuate for air", inputTable );
-  m_attenuateForAir->addStyleClass( "FourthCol SecondRow SpanTwoCol" );
+  m_attenuateForAir->addStyleClass( "FourthCol ThirdRow SpanTwoCol" );
   m_attenuateForAir->setChecked( true );
   m_attenuateForAir->checked().connect(this, &DetectionLimitTool::handleUserChangedUseAirAttenuate );
   m_attenuateForAir->unChecked().connect(this, &DetectionLimitTool::handleUserChangedUseAirAttenuate );
@@ -717,18 +923,40 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   label = new WLabel( "Peaks disp. act.:", inputTable );
   label->addStyleClass( "SixthCol FirstRow" );
+  m_displayActivityLabel = label;
   
   m_displayActivity = new WLineEdit( inputTable );
   m_displayActivity->addStyleClass( "SeventhCol FirstRow" );
   label->setBuddy( m_displayActivity );
   
-  WRegExpValidator *actvalidator = new WRegExpValidator( PhysicalUnits::sm_activityRegex, m_displayActivity );
-  actvalidator->setFlags(Wt::MatchCaseInsensitive);
   m_displayActivity->setValidator( actvalidator );
   m_displayActivity->setTextSize( 10 );
   m_displayActivity->setText( "0 uCi" );
   m_displayActivity->enterPressed().connect( this, &DetectionLimitTool::updateShownPeaks );
   m_displayActivity->changed().connect( this, &DetectionLimitTool::updateShownPeaks );
+  
+  
+  // Like with user input, we will put the put the display distance stuff right next to activity,
+  //  and hide the display distance stuff
+  label = new WLabel( "Peaks disp. dist.:", inputTable );
+  label->addStyleClass( "SixthCol FirstRow" );
+  m_displayDistanceLabel = label;
+  
+  m_displayDistance = new WLineEdit( inputTable );
+  m_displayDistance->addStyleClass( "SeventhCol FirstRow" );
+  label->setBuddy( m_displayDistance );
+  
+  m_displayDistance->setValidator( distValidator );
+  m_displayDistance->setTextSize( 10 );
+  m_displayDistance->setText( "1m" );
+  m_displayDistance->enterPressed().connect( this, &DetectionLimitTool::updateShownPeaks );
+  m_displayDistance->changed().connect( this, &DetectionLimitTool::updateShownPeaks );
+  
+  m_displayDistanceLabel->hide();
+  m_displayDistance->hide();
+  
+  
+  
   
   label = new WLabel( "Confidence Level:", inputTable );
   label->addStyleClass( "SixthCol SecondRow" );
@@ -907,7 +1135,7 @@ void DetectionLimitTool::roiDraggedCallback( double new_roi_lower_energy,
       rw->m_roi_end->setValue( new_roi_upper_energy );
       rw->emitChanged();
       
-      cout << "Updated ROI of peak at " << rw->m_energy << " keV to go from "
+      cout << "Updated ROI of peak at " << rw->m_input.energy << " keV to go from "
            << new_roi_lower_energy << " to " << new_roi_upper_energy << " keV" << endl;
       return;
     }
@@ -1030,9 +1258,81 @@ void DetectionLimitTool::handleUserChangedUseAirAttenuate()
 }
 
 
+void DetectionLimitTool::handleUserChangedToComputeActOrDist()
+{
+  const bool distanceLimit = m_distOrActivity->isChecked();
+  
+  m_activityLabel->setHidden( !distanceLimit );
+  m_activityForDistanceLimit->setHidden( !distanceLimit );
+  
+  m_displayActivityLabel->setHidden( distanceLimit );
+  m_displayActivity->setHidden( distanceLimit );
+  
+  m_distanceLabel->setHidden( distanceLimit );
+  m_distanceForActivityLimit->setHidden( distanceLimit );
+  
+  m_displayDistanceLabel->setHidden( !distanceLimit );
+  m_displayDistance->setHidden( !distanceLimit );
+  
+  const bool useCurie = use_curie_units();
+  
+  // A lamda to set the distance from one WLineEdit, to another, defaulting to "1m" if the
+  //  input edit is invalid
+  auto updateDistance = []( WLineEdit *fromEdit, WLineEdit *toEdit ){
+    string diststr = fromEdit->text().toUTF8();
+    
+    try
+    {
+      if( PhysicalUnits::stringToDistance(diststr) <= PhysicalUnits::mm )
+        throw std::exception();
+    }catch( std::exception & )
+    {
+      diststr = "1 m";
+    }
+    
+    toEdit->setText( diststr );
+  };//updateDistance( from, to );
+  
+  
+  // Similar to updateDistance, but for activity
+  auto updateActivity = [useCurie]( WLineEdit *fromEdit, WLineEdit *toEdit ){
+    string actstr = fromEdit->text().toUTF8();
+    
+    try
+    {
+      if( PhysicalUnits::stringToActivity(actstr) <= PhysicalUnits::bq )
+        throw std::exception();
+    }catch( std::exception & )
+    {
+      actstr = useCurie ? "1 uCi" : "37.0 kBq";
+    }
+    
+    toEdit->setText( actstr );
+  };//updateActivity( from, to );
+  
+  
+  
+  if( distanceLimit )
+  {
+    // Since we are switching from distance limit, lets start with the activity peaks are
+    //  currently displayed for, if available, or 1 uCi otherwise.  Similarly for distance.
+    updateActivity( m_displayActivity, m_activityForDistanceLimit );
+    updateDistance( m_distanceForActivityLimit, m_displayDistance );
+  }else //if( distanceLimit )
+  {
+    updateActivity( m_activityForDistanceLimit, m_displayActivity );
+    updateDistance( m_displayDistance, m_distanceForActivityLimit );
+  }// if( distanceLimit ) / else
+  
+  
+  handleInputChange();
+}//void handleUserChangedToComputeActOrDist()
+
+
+
 void DetectionLimitTool::calcAndSetDefaultMinRelativeIntensity()
 {
-  vector<tuple<double,double>> lines;
+  vector<tuple<double,double,double>> lines;
   
   try
   {
@@ -1042,25 +1342,58 @@ void DetectionLimitTool::calcAndSetDefaultMinRelativeIntensity()
     // leave lines blank so value of 0.0 will be used
   }
   
-  if( lines.size() <= 20 )
+  const size_t max_wanted_lines = 20;
+  
+  if( lines.size() <= max_wanted_lines )
   {
     m_minRelIntensity->setValue( 0.0f );
     return;
   }
   
+  
+  const shared_ptr<const DetectorPeakResponse> drf = m_our_meas->detector();
+  
+  if( !drf || !drf->isValid() )
+  {
+    m_minRelIntensity->setValue( 0.0f );
+    return;
+  }
+  
+  double distance = -1.0;
+  try
+  {
+    distance = currentDisplayDistance();
+  }catch(...)
+  {
+  }
+  
+  const bool air_atten = m_attenuateForAir->isChecked();
+  
+  if( distance > 0.0 )
+  {
+    for( tuple<double,double,double> &line : lines )
+    {
+      if( air_atten )
+        get<1>(line) = get<2>(line);
+      get<1>(line) *= drf->efficiency( get<0>(line), distance );
+    }
+  }//if( distance > 0.0 )
+  
   // Sort 'lines' so the largest intensities come first
   std::sort( begin(lines), end(lines),
-    []( const tuple<double,double> &lhs, const tuple<double,double> &rhs ) -> bool {
+    []( const tuple<double,double,double> &lhs, const tuple<double,double,double> &rhs ) -> bool {
     return get<1>(lhs) > get<1>(rhs);
   } );
   
   const double maxLineIntensity = get<1>( lines.front() );
-  const double minWantedIntensity = get<1>( lines[19] );
+  const double minWantedIntensity = get<1>( lines[max_wanted_lines-1] );
   
   // maxLineIntensity should always be valid, but jic
-  if( IsInf(maxLineIntensity) || IsNan(maxLineIntensity)
+  if( IsInf(maxLineIntensity)
+     || IsNan(maxLineIntensity)
      || (maxLineIntensity <= 0.0)
-     || IsInf(minWantedIntensity) || IsNan(minWantedIntensity) )
+     || IsInf(minWantedIntensity)
+     || IsNan(minWantedIntensity) )
   {
     m_minRelIntensity->setValue( 0.0f );
     return;
@@ -1078,23 +1411,24 @@ void DetectionLimitTool::updateShownGammaLinesFromMinIntensity()
 }//void updateShownGammaLinesFromMinIntensity()
 
 
-vector<tuple<double,double>> DetectionLimitTool::gammaLines() const
+vector<tuple<double,double,double>> DetectionLimitTool::gammaLines() const
 {
   if( !m_currentNuclide )
     throw runtime_error( "No nuclide specified" );
   
-  const string disttxt = m_distanceEdit->text().toUTF8();
-  const double distance = PhysicalUnits::stringToDistance(disttxt);
-    
-  if( (distance <= 0.0) || IsInf(distance) || IsNan(distance) )
-    throw runtime_error( "Distance cant be zero or negative" );
+  double distance = 1.0 * PhysicalUnits::m;
+  try
+  {
+    distance = currentDisplayDistance();
+  }catch(...)
+  {
+  }
   
-  const shared_ptr<const DetectorPeakResponse> drf = m_our_meas->detector();
+  //const shared_ptr<const DetectorPeakResponse> drf = m_our_meas->detector();
+  //if( !drf || !drf->isValid() )
+    //throw runtime_error( "DetectionLimitTool::gammaLines(): no DRF" );
   
-  if( !drf || !drf->isValid() )
-    throw runtime_error( "DetectionLimitTool::gammaLines(): no DRF" );
-  
-  const bool doAirAtten = m_attenuateForAir->isChecked();
+  double air_distance = distance; //!< will potentially get corrected for shielding thickness
   
   float shielding_an = 0.0f, shielding_ad = 0.0f, shielding_thickness = 0.0f;
   shared_ptr<const Material> shielding_material;
@@ -1107,6 +1441,7 @@ vector<tuple<double,double>> DetectionLimitTool::gammaLines() const
   {
     shielding_material = m_shieldingSelect->material();
     shielding_thickness = m_shieldingSelect->thickness();
+    air_distance -= shielding_thickness;
   }//if( generic shielding ) / else
   
   
@@ -1130,38 +1465,40 @@ vector<tuple<double,double>> DetectionLimitTool::gammaLines() const
                                  shielding_material.get(), _1, shielding_thickness );
   }
     
-  if( doAirAtten )
+  if( air_distance > 0.0 )
   {
-    MaterialDB *materialDB = InterSpec::instance()->materialDataBase();
-    if( !materialDB )
+    if( !m_materialDB )
       throw std::runtime_error( "DetectionLimitTool::gammaLines(): no material DB" );
 
-    const Material *air = materialDB->material( "Air" );
+    const Material *air = m_materialDB->material( "Air" );
     
     if( !air )
       throw std::runtime_error( "DetectionLimitTool::gammaLines(): unable to retrieve 'Air' from material database." );
     
-    air_atten_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_material, air, _1, distance );
-  }//if( doAirAtten )
+    air_atten_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_material, air, _1, air_distance );
+  }//if( air_distance > 0.0 )
   
   
-  std::vector<std::tuple<double,double>> lines;
+  std::vector<std::tuple<double,double,double>> lines;
   for( const auto &erp : gammas )
   {
     const double energy = erp.energy;
     double br = erp.numPerSecond / parent_activity;
-    br *= drf->efficiency( static_cast<float>(energy), static_cast<float>(distance) );
+    
+    //br *= drf->efficiency( static_cast<float>(energy), static_cast<float>(distance) );
+    
     if( !att_coef_fcn.empty() )
       br *= exp( -1.0 * att_coef_fcn( energy ) );
-      
+     
+    double br_air = br;
     if( !air_atten_fcn.empty() )
-      br *= exp( -1.0 * air_atten_fcn( energy ) );
+      br_air *= exp( -1.0 * air_atten_fcn( energy ) );
     
-    lines.push_back( {energy, br} );
+    lines.push_back( {energy, br, br_air} );
   }//for( const auto &erp : gammas )
   
   return lines;
-}//vector<tuple<double,double>> gammaLines() const
+}//vector<tuple<double,double,double>> gammaLines() const
 
 
 void DetectionLimitTool::handleInputChange()
@@ -1172,10 +1509,10 @@ void DetectionLimitTool::handleInputChange()
   {
     auto rw = dynamic_cast<MdaPeakRow *>( w );
     assert( rw );
-    m_previousRoiValues[rw->m_energy] = PreviousRoiValue( rw );
+    m_previousRoiValues[rw->input().energy] = rw->input();
   }
   
-  // Clear out all the old results - we will replace all the widgets
+  // Clear out all the old results - we will replace all the widgets at the moment
   m_peaks->clear();
   m_results->hide();
   m_errorMsg->setText( "&nbsp;" );
@@ -1212,20 +1549,56 @@ void DetectionLimitTool::handleInputChange()
     return;
   }
   
-  const string disttxt = m_distanceEdit->text().toUTF8();
-  double distance = 0.0;
-  try
+  const LimitType type = limitType();
+  const bool do_air_atten = m_attenuateForAir->isChecked();
+  
+  const Material *air = (m_materialDB ? m_materialDB->material( "Air" ) : nullptr);
+  
+  double distance = 0.0, activity = 0.0;
+  
+  switch( type )
   {
-    distance = PhysicalUnits::stringToDistance(disttxt);
-    
-    if( distance <= 0.0 )
-      throw runtime_error( "Distance cant be zero or negative" );
-  }catch( std::exception & )
-  {
-    m_errorMsg->setText( "Distance not valid" );
-    m_errorMsg->show();
-    return;
-  }//try / catch
+    case LimitType::Distance:
+    {
+      distance = 1.0*PhysicalUnits::meter;  //currentDisplayDistance();
+      
+      try
+      {
+        const string acttxt = m_activityForDistanceLimit->text().toUTF8();
+        activity = PhysicalUnits::stringToActivity(acttxt);
+        
+        if( activity <= 0.0 )
+          throw runtime_error( "Activity cant be zero or negative" );
+      }catch( std::exception & )
+      {
+        m_errorMsg->setText( "Activity not valid" );
+        m_errorMsg->show();
+        return;
+      }//try / catch
+      
+      break;
+    }//case LimitType::Activity:
+      
+      
+    case LimitType::Activity:
+    {
+      try
+      {
+        const string disttxt = m_distanceForActivityLimit->text().toUTF8();
+        distance = PhysicalUnits::stringToDistance(disttxt);
+        
+        if( distance <= 0.0 )
+          throw runtime_error( "Distance cant be zero or negative" );
+      }catch( std::exception & )
+      {
+        m_errorMsg->setText( "Distance not valid" );
+        m_errorMsg->show();
+        return;
+      }//try / catch
+      
+      break;
+    }//case LimitType::Distance:
+  }//switch( type )
   
   
   // We should have value min rel intensity value if we're here, but JIC, we'll check
@@ -1241,7 +1614,7 @@ void DetectionLimitTool::handleInputChange()
   
   setRefLinesAndGetLineInfo();
   
-  std::vector<std::tuple<double,double>> lines;
+  std::vector<std::tuple<double,double,double>> lines;
 
   try
   {
@@ -1255,7 +1628,13 @@ void DetectionLimitTool::handleInputChange()
   
   double maxLineIntensity = 0.0;
   for( const auto &line : lines )
-    maxLineIntensity = std::max( maxLineIntensity, get<1>(line) );
+  {
+    const double energy = get<0>(line);
+    const double det_eff = drf->efficiency( energy, distance);
+    const double intensity = det_eff * (do_air_atten ? get<2>(line) : get<1>(line));
+    
+    maxLineIntensity = std::max( maxLineIntensity, intensity );
+  }
   
   if( maxLineIntensity <= 0.0 || IsInf(maxLineIntensity) || IsNan(maxLineIntensity) )
   {
@@ -1269,7 +1648,8 @@ void DetectionLimitTool::handleInputChange()
   for( const auto &line : lines )
   {
     const float energy = get<0>(line);
-    const float intensity = get<1>(line);
+    const double det_eff = drf->efficiency( energy, distance);
+    const double intensity = det_eff * (do_air_atten ? get<2>(line) : get<1>(line));
     
     const double relIntensity = intensity / maxLineIntensity;
     
@@ -1278,23 +1658,41 @@ void DetectionLimitTool::handleInputChange()
       continue;
     }
     
-    const double countsPerBq = get<1>(line)*spec->live_time();
     const float fwhm = drf->peakResolutionFWHM(energy);
-    float roi_start = energy - 1.125*fwhm;
-    float roi_end = energy + 1.125*fwhm;
-    bool use = false;
+    
+    MdaPeakRowInput input;
+    input.use_for_likelihood = false;
+    input.limit_type = type;
+    input.do_air_attenuation = do_air_atten;
+    input.measurement = spec;
+    input.drf = drf;
+    
+    input.energy = energy;
+    input.counts_per_bq_into_4pi = get<1>(line)*spec->live_time();
+    input.counts_per_bq_into_4pi_with_air = get<2>(line)*spec->live_time();
+    input.distance = distance;
+    input.activity = activity;
+    input.roi_start = energy - 1.19*fwhm; //Could alternatively use 1.125;
+    input.roi_end = energy + 1.19*fwhm;
+    input.num_side_channels = 4;
+    input.confidence_level = confLevel;
+    
     
     const auto oldValPos = m_previousRoiValues.find( energy );
     if( oldValPos != end(m_previousRoiValues) )
     {
-      const PreviousRoiValue &oldval = oldValPos->second;
-      use = oldval.use_for_likelihood;
-      roi_start = oldval.roi_start;
-      roi_end = oldval.roi_end;
-    }
+      // We will re-use the old user-selectable quantities from the MdaPeakRow widget, but we do not
+      //  want to use re-use the options/values set outside of the MdaPeakRow widget.
+      const MdaPeakRowInput &oldval = oldValPos->second;
+      
+      input.use_for_likelihood = oldval.use_for_likelihood;
+      input.roi_start = oldval.roi_start;
+      input.roi_end = oldval.roi_end;
+      input.num_side_channels = oldval.num_side_channels;
+    }//if( we have seen this energy before )
     
-    auto row = new MdaPeakRow( energy, countsPerBq, distance, roi_start, roi_end, confLevel, spec, drf, m_peaks );
-    row->m_use_for_likelihood->setChecked(use);
+    auto row = new MdaPeakRow( input, air, m_peaks );
+    
     row->m_changed.connect( this, &DetectionLimitTool::scheduleCalcUpdate );
   }//for( const auto &line : lines )
   
@@ -1320,6 +1718,35 @@ float DetectionLimitTool::currentConfidenceLevel()
 }//float DetectionLimitTool::currentConfidenceLevel()
 
 
+double DetectionLimitTool::currentDisplayDistance() const
+{
+  string diststr;
+  
+  switch( limitType() )
+  {
+    case LimitType::Activity:
+      diststr = m_distanceForActivityLimit->text().toUTF8();
+      break;
+   
+    case LimitType::Distance:
+      diststr = m_displayDistance->text().toUTF8();
+      break;
+  }//switch( limitType() )
+  
+  const double dist = PhysicalUnits::stringToDistance(diststr);
+  if( dist <= 0.0 || IsNan(dist) || IsInf(dist) )
+    throw runtime_error( "invalid distance" );
+  
+  return dist;
+}//double currentDisplayDistance() const
+
+
+DetectionLimitTool::LimitType DetectionLimitTool::limitType() const
+{
+  return m_distOrActivity->isChecked() ? LimitType::Distance : LimitType::Activity;
+}
+
+
 void DetectionLimitTool::scheduleCalcUpdate()
 {
   m_needsUpdate = true;
@@ -1341,6 +1768,8 @@ void DetectionLimitTool::doCalc()
     if( !rw->m_use_for_likelihood->isChecked() )
       continue;
     
+    const MdaPeakRowInput &input = rw->input();
+    
     ++nused;
     if( (rw->m_simple_mda > 0.0) && !IsInf(rw->m_simple_mda) && !IsNan(rw->m_simple_mda)  )
     {
@@ -1349,7 +1778,12 @@ void DetectionLimitTool::doCalc()
       
       if( rw->m_simple_excess_counts > 0.0 )
       {
-        const double nominalActivity = rw->m_simple_excess_counts / rw->m_gammas_per_bq;
+        const double det_eff = input.drf->efficiency(input.energy, input.distance);
+        const double counts_4pi = (input.do_air_attenuation ? input.counts_per_bq_into_4pi_with_air
+                                                            : input.counts_per_bq_into_4pi);
+        const double gammas_per_bq = det_eff * counts_4pi;
+        
+        const double nominalActivity = rw->m_simple_excess_counts / gammas_per_bq;
         minSearchActivity = std::min( minSearchActivity, nominalActivity );
         maxSearchActivity = std::max( maxSearchActivity, nominalActivity );
       }
@@ -1711,10 +2145,15 @@ void DetectionLimitTool::computeForAcivity( const double activity,
     if( !rw->m_use_for_likelihood->isChecked() )
       continue;
     
-    const float mean = rw->m_energy;
-    const float fwhm = rw->m_fwhm;
+    const MdaPeakRowInput &input = rw->input();
+    
+    const float mean = input.energy;
+    const float fwhm = input.drf->peakResolutionFWHM(input.energy);
     const float sigma = fwhm / 2.634;
-    const float amplitude = activity * rw->m_gammas_per_bq;
+    const double det_eff = input.drf->efficiency( input.energy, input.distance );
+    const double counts_4pi = (input.do_air_attenuation ? input.counts_per_bq_into_4pi_with_air
+                               : input.counts_per_bq_into_4pi);
+    const float amplitude = activity * counts_4pi;
     const float roi_start = rw->m_roi_start->value();
     const float roi_end = rw->m_roi_end->value();
     
@@ -1844,25 +2283,22 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   if( !drf || !drf->hasResolutionInfo() || !drf->isValid() )
     return;
     
-  const string disttxt = m_distanceEdit->text().toUTF8();
-  double distance = 0.0;
+  
+  
+  double distance = 0.0, air_distance = 0.0;
   try
   {
-    distance = PhysicalUnits::stringToDistance(disttxt);
-    
-    if( distance <= 0.0 )
-      throw runtime_error( "Distance cant be zero or negative" );
+    air_distance = distance = currentDisplayDistance();
   }catch( std::exception & )
   {
-    //m_chart->setReferncePhotoPeakLines( {} );
-    return;
+    // For the sake of displaying *something*, we'll just use a meter if the user hasnt entered a
+    //  valid distance
+    air_distance = distance = 1.0*PhysicalUnits::meter;
   }//try / catch
   
   
   if( m_currentAge < 0.0 )
     return;
-  
-  
   
   const double brCutoff = 0.0;
   double shielding_an = 0.0, shielding_ad = 0.0, shielding_thickness = 0.0;
@@ -1876,6 +2312,8 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   {
     shielding_material = m_shieldingSelect->material();
     shielding_thickness = m_shieldingSelect->thickness();
+    
+    air_distance -= shielding_thickness;
   }//if( generic shielding ) / else
   
   auto theme = m_interspec->getColorTheme();
@@ -2035,7 +2473,7 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   try
   {
     std::shared_ptr<const Material> material;
-    boost::function<double(float)> att_coef_fcn;
+    boost::function<double(float)> att_coef_fcn, air_atten_fcn;
     
     if( m_shieldingSelect->isGenericMaterial() )
     {
@@ -2061,6 +2499,27 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
         if( (particle_type[i] == SandiaDecay::GammaParticle) || (particle_type[i] == SandiaDecay::XrayParticle) )
           branchratios[i] *= exp( -1.0 * att_coef_fcn( energies[i] ) );
     }//if( att_coef_fcn )
+    
+    
+    if( m_attenuateForAir->isChecked() && (air_distance > 0.0) )
+    {
+      if( !m_materialDB )
+        throw std::runtime_error( "DetectionLimitTool::setRefLinesAndGetLineInfo(): no material DB" );
+        
+      const Material *air = m_materialDB->material( "Air" );
+        
+      if( !air )
+        throw std::runtime_error( "DetectionLimitTool::setRefLinesAndGetLineInfo(): unable to retrieve 'Air' from material database." );
+        
+      air_atten_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_material, air, _1, air_distance );
+    }
+    
+    if( !air_atten_fcn )
+    {
+      for( size_t i = 0; i < branchratios.size(); ++i )
+        if( (particle_type[i] == SandiaDecay::GammaParticle) || (particle_type[i] == SandiaDecay::XrayParticle) )
+          branchratios[i] *= exp( -1.0 * air_atten_fcn( energies[i] ) );
+    }//
   }catch( MassAttenuation::ErrorLoadingDataException & )
   {
     throw runtime_error( "Failed to open gamma XS data file" );

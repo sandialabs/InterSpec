@@ -101,7 +101,7 @@
 
 .DetectionLimitTool .Inputs .SpanTwoCol
 {
-  grid-col-end: span 2;
+  grid-column-end: span 2;
 }
 
 .DetectionLimitTool .MdaResults
