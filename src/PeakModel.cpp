@@ -329,14 +329,14 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
           throw runtime_error( "ROI range invalid." );
         
         peak.continuum()->setRange( roi_lower, roi_upper );
-        peak.continuum()->calc_linear_continuum_eqn( meas, roi_lower, roi_upper, 1 );
+        peak.continuum()->calc_linear_continuum_eqn( meas, centroid, roi_lower, roi_upper, 3, 3 );
       }else
       {
         double lowerEnengy, upperEnergy;
         findROIEnergyLimits( lowerEnengy, upperEnergy, peak, meas );
         
         peak.continuum()->setRange( lowerEnengy, upperEnergy );
-        peak.continuum()->calc_linear_continuum_eqn( meas, lowerEnengy, upperEnergy, 1 );
+        peak.continuum()->calc_linear_continuum_eqn( meas, centroid, lowerEnengy, upperEnergy, 3, 3 );
       }//if( CSV five ROI extent ) / else( find from data )
       
       

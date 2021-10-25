@@ -2069,7 +2069,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
       
       PeakDef tmppeak(midenergy, 0.5*erange, 0);
       std::shared_ptr<PeakContinuum> cont = tmppeak.continuum();
-      cont->calc_linear_continuum_eqn( foreground, lower_energy, upper_energy, 0 );
+      cont->calc_linear_continuum_eqn( foreground, midenergy, lower_energy, upper_energy, 2, 2 );
       
       std::vector<std::shared_ptr<const PeakDef> > peaks{ make_shared<const PeakDef>(tmppeak) };
       const string roiJson = PeakDef::gaus_peaks_to_json( peaks, foreground );
