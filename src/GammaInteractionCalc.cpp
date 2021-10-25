@@ -87,7 +87,7 @@ const double PointSourceShieldingChi2Fcn::sm_activityUnits = SandiaDecay::MBq;
 double transmition_length_coefficient( const Material *material, float energy )
 {
   double mu = 0.0;
-
+  
   for( const Material::ElementFractionPair &p : material->elements )
   {
     const SandiaDecay::Element *el = p.first;
@@ -122,6 +122,29 @@ double transmition_coefficient_material( const Material *material, float energy,
                                 float length )
 {
   return length * transmition_length_coefficient( material, energy );
+}
+
+
+double transmission_coefficient_air( float energy, float length )
+{
+  double mu = 0.0;
+  
+  //Air (taken from definition used in InterSpec v1.0.8 20211017):
+  //  AN=7, Density=6.08133411407 (0.000974337052716 g/cm3)
+  //  AN=8, density=1.86634886265 (0.000299022026427 g/cm3)
+  //  AN=18, density=0.103864975274 (1.66410021206e-05 g/cm3)
+  const pair<int,double> air_def[] = {{7,6.08133411407}, {8,1.86634886265}, {18,0.103864975274}};
+  
+  for( const auto &i : air_def )
+  {
+    const int atomicNumber = i.first;
+    const double density = i.second;
+    const double xs_per_mass = MassAttenuation::massAttenuationCoeficient( atomicNumber, energy );
+    
+    mu += (density*xs_per_mass);
+  }//for( const Material::ElementFractionPair &p : material->elements )
+  
+  return length * mu;
 }
 
 //Returned in units of [Length]^2/[mass], so that

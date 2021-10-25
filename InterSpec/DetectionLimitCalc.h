@@ -28,8 +28,16 @@
 #include <memory>
 #include <ostream>
 
+#include "InterSpec/PeakDef.h"
 
 // Forward declarations
+struct DetectorPeakResponse;
+
+namespace SpecUtils
+{
+class Measurement;
+}
+
 namespace SpecUtils
 {
 class Measurement;
@@ -243,6 +251,136 @@ std::ostream &print_summary( std::ostream &strm, const CurieMdaResult &result, c
  Will throw exception if input is invalid, or runs into any errors.
  */
 CurieMdaResult currie_mda_calc( const CurieMdaInput &input );
+
+
+/** Information about a single Region Of Interest (ROI) that is input to the deconvolution method of estimating peaks and chi2 for a
+ given activity and distance.
+ 
+ */
+struct DeconRoiInfo
+{
+  /** The energy of the ROI start.
+   
+   Must be less than #roi_end, and less than #PeakInfo::energy of all #peak_infos.
+   
+   Will be rounded to nearest channel edge.
+   */
+  float roi_start;
+  
+  /** The energy of the ROI end.
+ 
+   Must be greater than #roi_start, and greater than #PeakInfo::energy of all #peak_infos.
+   
+   Will be rounded to nearest channel edge.
+   */
+  float roi_end;
+ 
+  /** The continuum type to use.
+   
+   Must be Linear or quadratic, for the moment...
+   */
+  PeakContinuum::OffsetType continuum_type;
+  
+  /** Whether to allow the continuum to float in the fit, or to fix the continuum using the peaks bordering the ROI.
+   
+   If this parameter is false, a large activity will cause the continuum to clearly be below the data, and above data fo too small of activity;
+   e.g., the continuum will help make up for the incorrectness of the Gaussian area.
+   If this parameter is true, then the continuum offset+linear coefficients will be fixed by the channels above and below the ROI, as
+   specified by #num_lower_side_channels and #num_upper_side_channels.  Currently when this is done, the statistical uncertainty of
+   the above/below regions are not accounted for, and the continuum is just fixed - I need to put in more thought around properly
+   handling this.
+   
+   \sa num_lower_side_channels
+   \sa num_upper_side_channels
+   */
+  bool fix_continuum_to_edges;
+  
+  /** The number of channels below #roi_lower_energy to use to estimate the continuum.
+   
+   Only used if #fix_continuum_to_edges is true.
+   */
+  size_t num_lower_side_channels;
+  
+  /** The number of channels above #roi_upper_energy to use to estimate the continuum.
+   
+   Only used if #fix_continuum_to_edges is true.
+   */
+  size_t num_upper_side_channels;
+  
+  
+  /** Information about a photopeak-peak, for a given gamma line. */
+  struct PeakInfo
+  {
+    /** Energy of the peak (gamma-line), in keV. */
+    float energy;
+    
+    /** Full-width at half maximum, as given by the Detector Response Function, for the peak. */
+    float fwhm;
+    
+    /** Counts from the source, per Bq, into 4 pi.
+     
+     If applicable, must have effects of shielding already accounted for.
+     This number must not have effects of attenuation in air, or detector intrinsic efficiency accounted for; these will be applied during
+     call to #decon_compute_peaks.
+     */
+    double counts_per_bq_into_4pi;
+    
+    /** Default zero constructor. */
+    PeakInfo();
+  };//struct PeakInfo
+  
+  /** There must be at least one peak information given, but there may be multiple.
+   
+   The peak means must all be between #roi_start and #roi_end, after those energies are rounded to the nearest channel edges.
+   All returned fit peaks corresponding to this ROI will share a #PeakContinuum.
+   */
+  std::vector<DeconRoiInfo::PeakInfo> peak_infos;
+  
+  /** Default constructor that just zeros things out. */
+  DeconRoiInfo();
+};//struct DeconRoiInfo
+
+
+struct DeconComputeInput
+{
+  double distance;
+  double activity;
+  
+  /** Wether or not to include attenuation in air of #distance - #shielding_thickness */
+  bool include_air_attenuation;
+  
+  /** The thickness of the shielding; zero if generic shielding or no shielding.  Subtracted from #distance if #include_air_attenuation
+   is true in order to calculate attenuation in air.
+   
+   Must not be negative, inf, or NaN.
+   */
+  double shielding_thickness;
+  
+  std::shared_ptr<const DetectorPeakResponse> drf;
+  std::shared_ptr<const SpecUtils::Measurement> measurement;
+  
+  std::vector<DeconRoiInfo> roi_info;
+  
+  /** Default constructor just zeros things out. */
+  DeconComputeInput();
+};//struct DeconComputeInput
+
+
+struct DeconComputeResults
+{
+  DeconComputeInput input;
+  
+  double chi2;
+  int num_degree_of_freedom;
+  
+  std::vector<PeakDef> fit_peaks;
+};//struct DeconComputeResults
+
+/** Computes the most consistent peaks, and their chi2, for a given input activity and distance.
+ 
+ Throws exception if input is invalid, or error during calculation.
+ */
+DeconComputeResults decon_compute_peaks( const DeconComputeInput &input );
 
 }//namespace DetectionLimitCalc
 

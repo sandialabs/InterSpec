@@ -32,8 +32,11 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/EnergyCalibration.h"
 
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectionLimitCalc.h"
+#include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
 
@@ -532,6 +535,261 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
 };//mda_counts_calc
 
 
+DeconRoiInfo::DeconRoiInfo()
+: roi_start( 0.0f ),
+  roi_end( 0.0f ),
+  continuum_type( PeakContinuum::OffsetType::NoOffset ),
+  fix_continuum_to_edges( false ),
+  num_lower_side_channels( 0 ),
+  num_upper_side_channels( 0 ),
+  peak_infos()
+{
+}
+
+
+DeconRoiInfo::PeakInfo::PeakInfo()
+ : energy( 0.0f ),
+   fwhm( 0.0f ),
+   counts_per_bq_into_4pi( 0.0 )
+{
+}
+
+
+
+DeconComputeInput::DeconComputeInput()
+ : distance( 0.0 ),
+   activity( 0.0 ),
+   include_air_attenuation( false ),
+   shielding_thickness( 0.0 ),
+   drf( nullptr ),
+   measurement( nullptr ),
+   roi_info()
+{
+}
+
+
+DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
+{
+  DeconComputeResults result;
+  result.input = input;
+  result.chi2 = 0.0;
+  result.num_degree_of_freedom = 0;
+  
+  // Lets sanity check input
+  if( (input.distance <= 0.0) || IsNan(input.distance) || IsInf(input.distance) )
+    throw runtime_error( "decon_compute_peaks: invalid input distance" );
+  
+  // Lets sanity check input
+  if( (input.activity <= 0.0) || IsNan(input.activity) || IsInf(input.activity) )
+    throw runtime_error( "decon_compute_peaks: invalid input activity" );
+  
+  if( input.include_air_attenuation
+      && ((input.shielding_thickness < 0.0)
+          || IsNan(input.shielding_thickness)
+          || IsInf(input.shielding_thickness)
+          || (input.shielding_thickness >= input.distance)) )
+    throw runtime_error( "decon_compute_peaks: invalid input shielding thickness" );
+  
+  if( !input.drf || !input.drf->isValid() || !input.drf->hasResolutionInfo() )
+    throw runtime_error( "decon_compute_peaks: invalid DRF input" );
+  
+  
+  if( !input.measurement || (input.measurement->num_gamma_channels() < 2)
+     || !input.measurement->energy_calibration() //ptr should always be valid anyway
+     || !input.measurement->energy_calibration()->valid() )
+    throw runtime_error( "decon_compute_peaks: invalid spectrum input" );
+  
+  // Check if there is anything to do
+  if( input.roi_info.empty() )
+    return result;
+    
+  // We should be good to go,
+  vector<PeakDef> inputPeaks, fitPeaks;
+  
+  for( const DeconRoiInfo &roi : input.roi_info )
+  {
+    const float  &roi_start = roi.roi_start; //This _should_ already be rounded to nearest bin edge; TODO: check that this is rounded
+    const float  &roi_end = roi.roi_end; //This _should_ already be rounded to nearest bin edge; TODO: check that this is rounded
+    const bool   &fix_continuum = roi.fix_continuum_to_edges;
+    const PeakContinuum::OffsetType &continuum_type = roi.continuum_type;
+    const size_t &num_lower_side_channels = roi.num_lower_side_channels;
+    const size_t &num_upper_side_channels = roi.num_upper_side_channels;
+    
+    
+    shared_ptr<PeakContinuum> peak_continuum;
+    std::shared_ptr<const SpecUtils::Measurement> computed_global_cont;
+    
+    // Find the largest peak in the ROIs, energy to use as the continuum "reference energy"
+    float reference_energy = 0.0f;
+    for( const DeconRoiInfo::PeakInfo &peak_info : roi.peak_infos )
+      reference_energy = std::max( reference_energy, peak_info.energy );
+    
+    assert( reference_energy != 0.0f );
+    
+    for( const DeconRoiInfo::PeakInfo &peak_info : roi.peak_infos )
+    {
+      const float &energy = peak_info.energy;
+      const float fwhm = input.drf->peakResolutionFWHM( energy );
+      const float sigma = fwhm / 2.634;
+      const double det_eff = input.drf->efficiency( energy, input.distance );
+      const double counts_4pi = peak_info.counts_per_bq_into_4pi;
+      double air_atten = 1.0;
+      
+      if( input.include_air_attenuation )
+      {
+        const double air_len = input.distance - input.shielding_thickness;
+        const double mu_air = GammaInteractionCalc::transmission_coefficient_air( energy, air_len );
+        air_atten = exp( -1.0 * mu_air );
+      }
+      
+      const float amplitude = input.activity * counts_4pi * det_eff * air_atten;
+    
+      PeakDef peak( energy, sigma, amplitude );
+      peak.setFitFor( PeakDef::CoefficientType::Mean, false );
+      peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
+      peak.setFitFor( PeakDef::CoefficientType::GaussAmplitude, false );
+      
+      
+      if( peak_continuum )
+      {
+        peak.setContinuum( peak_continuum );
+      }else
+      {
+        peak_continuum = peak.continuum();
+        peak_continuum->setType( continuum_type );
+        peak_continuum->setRange( roi_start, roi_end );
+        
+        // First, we'll find a linear continuum as the starting point, and then go through
+        //  and modify it how we need
+        peak_continuum->calc_linear_continuum_eqn( input.measurement, reference_energy,
+                                                  roi_start, roi_end,
+                                                  num_lower_side_channels,
+                                                  num_upper_side_channels );
+        
+        for( size_t order = 0; order < 2; ++order )  //peak_continuum->parameters().size()
+          peak_continuum->setPolynomialCoefFitFor( order, !fix_continuum );
+        
+        switch( continuum_type )
+        {
+          case PeakContinuum::NoOffset:
+            break;
+            
+          case PeakContinuum::Constant:
+          
+            
+            break;
+            
+          case PeakContinuum::Linear:
+          case PeakContinuum::FlatStep:
+          {
+            
+            
+            
+            
+            
+            
+            break;
+          }//
+            
+          case PeakContinuum::Quadratic:
+          case PeakContinuum::Cubic:
+          case PeakContinuum::LinearStep:
+          case PeakContinuum::BiLinearStep:
+            break;
+            
+            
+          case PeakContinuum::External:
+            if( !computed_global_cont )
+              computed_global_cont = estimateContinuum( input.measurement );
+            peak_continuum->setExternalContinuum( computed_global_cont );
+            break;
+        }//switch( assign continuum )
+      }//if( peak_continuum ) / else
+      
+      inputPeaks.push_back( std::move(peak) );
+    }//for( const DeconRoiInfo::PeakInfo &peak_info : roi.peak_infos )
+  }//for( size_t i = 0; i < energies.size(); ++i )
+  
+  if( inputPeaks.empty() )
+    throw runtime_error( "decon_compute_peaks: No peaks given in ROI(s)" );
+    
+#warning "TOtally not computing things yet"
+  /*
+  ROOT::Minuit2::MnUserParameters inputFitPars;
+  PeakFitChi2Fcn::addPeaksToFitter( inputFitPars, inputPeaks, spec, PeakFitChi2Fcn::kFitForPeakParameters );
+  
+  const int npeaks = static_cast<int>( inputPeaks.size() );
+  PeakFitChi2Fcn chi2Fcn( npeaks, spec, nullptr );
+  chi2Fcn.useReducedChi2( false );
+  
+  assert( inputFitPars.VariableParameters() != 0 );
+  
+  ROOT::Minuit2::MnUserParameterState inputParamState( inputFitPars );
+  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
+  ROOT::Minuit2::MnMinimize fitter( chi2Fcn, inputParamState, strategy );
+  
+  unsigned int maxFcnCall = 5000;
+  double tolerance = 2.5;
+  tolerance = 0.5;
+  ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
+  const ROOT::Minuit2::MnUserParameters &fitParams = fitter.Parameters();
+  //  minimum.IsValid()
+  //      ROOT::Minuit2::MinimumState minState = minimum.State();
+  //      ROOT::Minuit2::MinimumParameters minParams = minState.Parameters();
+  
+  //    cerr << endl << endl << "EDM=" << minimum.Edm() << endl;
+  //    cerr << "MinValue=" <<  minimum.Fval() << endl << endl;
+  
+  if( !minimum.IsValid() )
+    minimum = fitter( maxFcnCall, tolerance );
+  
+  if( !minimum.IsValid() )
+  {
+    //XXX - should we try to re-fit here? Or do something to handle the
+    //      faliure in some reasonable way?
+    cerr << endl << endl << "status is not valid"
+    << "\n\tHasMadePosDefCovar: " << minimum.HasMadePosDefCovar()
+    << "\n\tHasAccurateCovar: " << minimum.HasAccurateCovar()
+    << "\n\tHasReachedCallLimit: " << minimum.HasReachedCallLimit()
+    << "\n\tHasValidCovariance: " << minimum.HasValidCovariance()
+    << "\n\tHasValidParameters: " << minimum.HasValidParameters()
+    << "\n\tIsAboveMaxEdm: " << minimum.IsAboveMaxEdm()
+    << endl;
+    if( minimum.IsAboveMaxEdm() )
+      cout << "\t\tEDM=" << minimum.Edm() << endl;
+  }//if( !minimum.IsValid() )
+  
+  
+  vector<double> fitpars = fitParams.Params();
+  vector<double> fiterrors = fitParams.Errors();
+  chi2Fcn.parametersToPeaks( fitPeaks, &fitpars[0], &fiterrors[0] );
+  
+  double initialChi2 = chi2Fcn.chi2( &fitpars[0] );
+  
+  //Lets try to keep whether or not to fit parameters should be the same for
+  //  the output peaks as the input peaks.
+  //Note that this doesnt account for peaks swapping with eachother in the fit
+  assert( fitPeaks.size() == inputPeaks.size() );
+  
+  //for( size_t i = 0; i < near_peaks.size(); ++i )
+  //  fitpeaks[i].inheritUserSelectedOptions( near_peaks[i], true );
+  //for( size_t i = 0; i < fixedpeaks.size(); ++i )
+  //  fitpeaks[i+near_peaks.size()].inheritUserSelectedOptions( fixedpeaks[i], true );
+  
+  const double totalNDF = set_chi2_dof( spec, fitPeaks, 0, fitPeaks.size() );
+  
+  chi2 = initialChi2;
+  numDOF = static_cast<int>( std::round(totalNDF) );
+  
+  for( auto &peak : fitPeaks )
+  {
+    peak.setFitFor( PeakDef::CoefficientType::Mean, false );
+    peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
+  }
+  
+  peaks.swap( fitPeaks );
+   */
+}//DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
 
 
 }//namespace DetectionLimitCalc

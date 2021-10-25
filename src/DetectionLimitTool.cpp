@@ -100,71 +100,6 @@ using namespace Wt;
 namespace
 {
 
-void local_eqn_from_offsets( size_t lowchannel,
-                                     size_t highchannel,
-                                     const double peakMean,
-                                     const std::shared_ptr<const SpecUtils::Measurement> &data,
-                                     const size_t num_side_channel,
-                                     double &m, double &b )
-{
-  double x1  = data->gamma_channel_lower( lowchannel ) - peakMean;
-  const double dx1 = data->gamma_channel_width( lowchannel );
-  
-  //XXX - hack! below 'c' will be inf if the following check would fail; I
-  //      really should work out how to fix this properly with math, but for
-  //      right now I'll fudge it, which will toss the answer off a bit, but
-  //      whatever.
-  if( fabs(2.0*x1*dx1 + dx1*dx1) < DBL_EPSILON )
-  {
-    static int ntimes = 0;
-    if( ntimes++ < 4 )
-      cerr << "Should fix math in local_eqn_from_offsets" << endl;
-    x1 = data->gamma_channel_lower( lowchannel+1 ) - peakMean;
-  }
-  
-  const double x2  = data->gamma_channel_lower( highchannel ) - peakMean;
-  
-  const double dx2 = data->gamma_channel_width( highchannel );
-  
-  if( (2*num_side_channel + 1) > data->num_gamma_channels() )
-    throw std::runtime_error( "Too many side channels specified" );
-  
-  if( lowchannel <= num_side_channel )
-    lowchannel = num_side_channel + 1;
-  highchannel = std::min( highchannel, data->num_gamma_channels() - 1 - num_side_channel );
-  
-  if( lowchannel >= highchannel )
-    throw runtime_error( "Lower channel is above upper channel" );
-  
-  const double nbinInv = 1.0 / num_side_channel;
-  const double lower_region_sum = data->gamma_channels_sum( lowchannel - num_side_channel, lowchannel - 1 );
-  const double upper_region_sum = data->gamma_channels_sum( highchannel + 1, highchannel + num_side_channel);
-  const double y1 = nbinInv * lower_region_sum;
-  const double y2 = nbinInv * upper_region_sum;
-  
-  cout << "lowchannel=" << lowchannel << ", highchannel=" << highchannel << ", num_side_channel=" << num_side_channel << endl;
-  cout << "Pre lower ROI: ";
-  for( auto i = lowchannel - num_side_channel; i <= (lowchannel - 1); ++i )
-    cout << i << ", ";
-  cout << "  --> " << lower_region_sum << endl;
-  cout << "Post upper ROI: ";
-  for( auto i = highchannel + 1; i <= (highchannel + num_side_channel); ++i )
-    cout << i << ", ";
-  cout << "  --> " << upper_region_sum << endl;
-  
-  
-  const double c = (2.0*x2*dx2 + dx2*dx2)/(2.0*x1*dx1 + dx1*dx1);
-  b = (y2-y1*c)/(dx2-dx1*c);
-  m = 2.0*(y1-b*dx1)/(2.0*x1*dx1+dx1*dx1);
-  
-  if( IsNan(m) || IsInf(m) || IsNan(b) || IsInf(b) )
-  {
-    cerr << "local_eqn_from_offsets(...): Invalid results" << endl;
-    m = b = 0.0;
-  }
-}//eqn_from_offsets(...)
-
-
 bool use_curie_units()
 {
   InterSpec *interspec = InterSpec::instance();
@@ -181,8 +116,6 @@ class MdaPeakRow : public WContainerWidget
 {
 public:
   DetectionLimitTool::MdaPeakRowInput m_input;
-  
-  const Material *m_air;
   
   WCheckBox *m_use_for_likelihood;
   
@@ -203,6 +136,9 @@ public:
   WText *m_poisonLimit;
   double m_simple_mda;
   double m_simple_excess_counts;
+  
+  /** Wether of not to fix the continuum for the likelihood based limit to the bins on either side of the ROI. */
+  WCheckBox *m_fix_decon_continuum;
   
   Wt::Signal<> m_changed;
   
@@ -269,10 +205,10 @@ public:
             const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries );
             const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries );
             
-            cout << "At " << m_input.energy << "keV observed " << result.source_counts
-                 << " counts, at distance " << PhysicalUnits::printToBestLengthUnits(m_input.distance)
-                 << ", leading to nominal activity " << nomstr
-                 << endl;
+            //cout << "At " << m_input.energy << "keV observed " << result.source_counts
+            //     << " counts, at distance " << PhysicalUnits::printToBestLengthUnits(m_input.distance)
+            //     << ", leading to nominal activity " << nomstr
+            //     << endl;
             
             m_poisonLimit->setText( "Observed " + nomstr + " with range [" + lowerstr + ", " + upperstr + "]" );
           }else if( result.upper_limit < 0 )
@@ -280,7 +216,7 @@ public:
             // This can happen when there are a lot fewer counts in the peak region than predicted
             //  from the sides - since this is non-sensical, we'll just say zero.
             const string unitstr = useCuries ? "Ci" : "Bq";
-            m_poisonLimit->setText( "Currie MDA: < 0" + unitstr );
+            m_poisonLimit->setText( "Currie MDA: < 0" + unitstr + " (sig. fewer counts in ROI than predicted)" );
           }else
           {
             // We will provide the upper bound on activity.
@@ -306,9 +242,6 @@ public:
           if( !drf || !drf->isValid() )
             throw runtime_error( "DRF invalid" );
           
-          if( m_input.do_air_attenuation && !m_air )
-            throw runtime_error( "Invalid 'Air' material pointer" );
-          
           // Round detection probability to nearest 1 decimal place.
           const double rnd_cl_percent = std::round(1000.0*input.detection_probability) / 10.0;
           
@@ -327,7 +260,7 @@ public:
             double air_eff = 1.0;
             if( m_input.do_air_attenuation )
             {
-              const double coef = GammaInteractionCalc::transmition_coefficient_material( m_air, m_input.energy, dist );
+              const double coef = GammaInteractionCalc::transmission_coefficient_air( m_input.energy, dist );
               air_eff = exp( -1.0 * coef );
             }
             
@@ -379,15 +312,29 @@ public:
             };
             
             auto nominal_dist = [&]( double dist ) -> double {
-              cout << "brent_find_minima: " << m_input.energy << "keV: dist="
-                   << PhysicalUnits::printToBestLengthUnits(dist)
-                   << " give " << counts_at_distance(dist) << " counts where result.source_counts="
-                   << result.source_counts << endl;
               return fabs( counts_at_distance(dist) - result.source_counts );
             };
             
             using boost::math::tools::brent_find_minima;
-            const int bits = 10; //Float has 24 bits of mantisa, so 12 would be its max precision; 8 should get us accurate to almost three significant figures
+            
+            /* brent_find_minima will use the following tolerances for the given bits:
+             
+             bits | Tolerance   | Remark
+             _____|_____________|_________
+             8    | 0.0078125   |
+             10   | 0.00195312  |
+             12   | 0.000488281 | Max for float (e.g., half std::numeric_limits<float>::digits)
+             16   | 3.05176e-05 |
+             20   | 1.90735e-06 |
+             26   | 2.98023e-08 | Max for double (e.g., half std::numeric_limits<double>::digits)
+             
+             There might be a factor of 1/2 or something in brent_find_minima, I didnt follow its
+             code super close.
+             
+             With 12 bits it looks like we are still almost always below 20 iterations.
+             */
+            const int bits = 12;
+            
             boost::uintmax_t max_iter = 100;  //this variable gets changed each use, so you need to reset it afterwards
             const pair<double, double> lower_crossing
                          = brent_find_minima( lower_limit_dist, 0.0, max_distance, bits, max_iter );
@@ -400,14 +347,14 @@ public:
             const pair<double, double> nominal_crossing
                              = brent_find_minima( nominal_dist, 0.0, max_distance, bits, max_iter );
             
-            cout << "Energy " << m_input.energy << "keV: nominal_dist={"
-                 << PhysicalUnits::printToBestLengthUnits(nominal_crossing.first)
-                 << ", " << nominal_crossing.second << "}, searched between 0 and "
-                 << PhysicalUnits::printToBestLengthUnits(max_distance)
-                 << " with " << max_iter << " iterations, and source activity "
-                 << PhysicalUnits::printToBestActivityUnits(activity, 2, useCuries)
-                 << "; source counts were " << result.source_counts
-            << endl;
+            //cout << "Energy " << m_input.energy << "keV: nominal_dist={"
+            //     << PhysicalUnits::printToBestLengthUnits(nominal_crossing.first)
+            //     << ", " << nominal_crossing.second << "}, searched between 0 and "
+            //     << PhysicalUnits::printToBestLengthUnits(max_distance)
+            //     << " with " << max_iter << " iterations, and source activity "
+            //     << PhysicalUnits::printToBestActivityUnits(activity, 2, useCuries)
+            //     << "; source counts were " << result.source_counts
+            //<< endl;
             
             const double lower_distance = lower_crossing.first;
             const double upper_distance = upper_crossing.first;
@@ -459,7 +406,7 @@ public:
             };
             
             using boost::math::tools::brent_find_minima;
-            const int bits = 10; //Float has 24 bits of mantisa, so 12 would be its max precision; 8 should get us accurate to almost three significant figures
+            const int bits = 12; //Float has 24 bits of mantisa, so 12 would be its max precision
             boost::uintmax_t max_iter = 100;  //this variable gets changed each use, so you need to reset it afterwards
             const pair<double, double> upper_crossing
                          = brent_find_minima( upper_limit_dist, 0.0, max_distance, bits, max_iter );
@@ -554,10 +501,9 @@ public:
   }//void setRoiEnd( float energy )
   
 public:
-  MdaPeakRow( const DetectionLimitTool::MdaPeakRowInput &input, const Material *air, WContainerWidget *parent = nullptr )
+  MdaPeakRow( const DetectionLimitTool::MdaPeakRowInput &input, WContainerWidget *parent = nullptr )
   : WContainerWidget( parent ),
   m_input( input ),
-  m_air( air ),
   m_use_for_likelihood( nullptr ),
   m_roi_start( nullptr ),
   m_roi_end( nullptr ),
@@ -566,6 +512,7 @@ public:
   m_poisonLimit( nullptr ),
   m_simple_mda( -1.0 ),
   m_simple_excess_counts( -1.0 ),
+  m_fix_decon_continuum( nullptr ),
   m_changed( this )
   {
     addStyleClass( "MdaPeakRow" );
@@ -636,6 +583,9 @@ public:
     
     setRoiStart( input.roi_start );
     setRoiEnd( input.roi_end );
+    
+    
+    m_fix_decon_continuum = new WCheckBox( "Fix continuum", this );
     
     setSimplePoisonTxt();
   }
@@ -1063,6 +1013,41 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   // Incase we do have an initial nuclide set, treat as if user entered new info.
   handleUserNuclideChange();
+  
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  // A quick sanity check to make sure looked-up definition of "Air" matches the statically compiled
+  //  one
+  const Material *air = (m_materialDB ? m_materialDB->material( "Air" ) : nullptr);
+  assert( air );
+  
+  /*
+   Expected coefs:{
+     {25.0keV,0.0545}, {37.5keV,0.0301}, {56.3keV,0.0230}, {84.4keV,0.0201}, {126.5keV,0.0180},
+     {189.8keV,0.0160}, {284.8keV,0.0139}, {427.2keV,0.0119}, {640.7keV,0.0101}, {961.1keV,0.00834},
+     {1441.6keV,0.00680}, {2162.4keV,0.00549}, {3243.7keV,0.00442}, {4865.5keV,0.00359},
+     {7298.2keV,0.00297}
+   }
+   */
+  
+  
+  for( float energy = 25; energy < 10000; energy *= 1.5 )
+  {
+    const double air_coef = GammaInteractionCalc::transmission_coefficient_air( energy, 1.0*PhysicalUnits::m );
+    const double mat_coef = GammaInteractionCalc::transmition_coefficient_material( air, energy, 1.0*PhysicalUnits::m );
+    
+    const double diff = fabs(air_coef - mat_coef);
+    if( diff > 0.00001*(std::max)(air_coef,mat_coef) )
+    {
+      char msg[512];
+      snprintf( msg, sizeof(msg),
+               "Static 'Air' definition differed from database: static=%f, database=%f, diff=%f",
+               air_coef, mat_coef, diff );
+      log_developer_error( BOOST_CURRENT_FUNCTION, msg );
+      assert( 0 );
+    }
+  }
+#endif  //PERFORM_DEVELOPER_CHECKS
 }//DetectionLimitTool constructor
   
 
@@ -1441,7 +1426,9 @@ vector<tuple<double,double,double>> DetectionLimitTool::gammaLines() const
   {
     shielding_material = m_shieldingSelect->material();
     shielding_thickness = m_shieldingSelect->thickness();
-    air_distance -= shielding_thickness;
+    
+    if( shielding_material )
+      air_distance -= shielding_thickness;
   }//if( generic shielding ) / else
   
   
@@ -1466,17 +1453,7 @@ vector<tuple<double,double,double>> DetectionLimitTool::gammaLines() const
   }
     
   if( air_distance > 0.0 )
-  {
-    if( !m_materialDB )
-      throw std::runtime_error( "DetectionLimitTool::gammaLines(): no material DB" );
-
-    const Material *air = m_materialDB->material( "Air" );
-    
-    if( !air )
-      throw std::runtime_error( "DetectionLimitTool::gammaLines(): unable to retrieve 'Air' from material database." );
-    
-    air_atten_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_material, air, _1, air_distance );
-  }//if( air_distance > 0.0 )
+    air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, air_distance );
   
   
   std::vector<std::tuple<double,double,double>> lines;
@@ -1551,8 +1528,6 @@ void DetectionLimitTool::handleInputChange()
   
   const LimitType type = limitType();
   const bool do_air_atten = m_attenuateForAir->isChecked();
-  
-  const Material *air = (m_materialDB ? m_materialDB->material( "Air" ) : nullptr);
   
   double distance = 0.0, activity = 0.0;
   
@@ -1691,7 +1666,7 @@ void DetectionLimitTool::handleInputChange()
       input.num_side_channels = oldval.num_side_channels;
     }//if( we have seen this energy before )
     
-    auto row = new MdaPeakRow( input, air, m_peaks );
+    auto row = new MdaPeakRow( input, m_peaks );
     
     row->m_changed.connect( this, &DetectionLimitTool::scheduleCalcUpdate );
   }//for( const auto &line : lines )
@@ -1838,14 +1813,21 @@ void DetectionLimitTool::doCalc()
   /// \TODO: currently all this stuff assumes a smooth continuously increasing Chi2 with increasing
   ///        activity, but this doesnt have to be the case, especially with quadratic continuums.
   
+  double distance = 0.0, air_distance = 0.0;
+  
   try
   {
+    distance = air_distance = currentDisplayDistance();
+   
+    if( !m_shieldingSelect->isGenericMaterial() && m_shieldingSelect->material() )
+      air_distance -= m_shieldingSelect->thickness();
+    
     size_t num_iterations = 0;
     
     //The boost::math::tools::bisect(...) function will make calls using the same value of activity,
     //  so we will cache those values to save some time.
     map<double,double> chi2cache;
-    auto chi2ForAct = [this,&num_iterations,&chi2cache]( double const &activity ) -> double {
+    auto chi2ForAct = [this,&num_iterations,&chi2cache,distance]( double const &activity ) -> double {
       
       const auto pos = chi2cache.find(activity);
       if( pos != end(chi2cache) )
@@ -1854,7 +1836,7 @@ void DetectionLimitTool::doCalc()
       int numDOF = 0;
       double chi2;
       vector<PeakDef> peaks;
-      computeForAcivity( activity, peaks, chi2, numDOF );
+      computeForActivity( activity, distance, peaks, chi2, numDOF );
       
       ++num_iterations;
       
@@ -1869,7 +1851,7 @@ void DetectionLimitTool::doCalc()
     
     //\TODO: if best activity is at minSearchActivity, it takes 50 iterations inside brent_find_minima
     //      to confirm; we could save this time by using just a little bit of intelligence...
-    const int bits = 8; //Float has 24 bits of mantisa, so 12 would be its max precision; 8 should get us accurate to almost three significant figures
+    const int bits = 12; //Float has 24 bits of mantisa; should get us accurate to three significant figures
     boost::uintmax_t max_iter = 100;  //this variable gets changed each use, so you need to reset it afterwards
     const pair<double, double> r = boost::math::tools::brent_find_minima( chi2ForAct, minSearchActivity, maxSearchActivity, bits, max_iter );
   
@@ -1895,9 +1877,9 @@ void DetectionLimitTool::doCalc()
       const double chi2_2 = chi2ForCL(act2);
       
       // \TODO: make sure tolerance is being used correctly - when pringting info out for every call I'm not sure it is being used right... (but answers seem reasonable, so...)
-      cout << "Tolerance called with act1=" << PhysicalUnits::printToBestActivityUnits(act1)
-           << ", act2=" << PhysicalUnits::printToBestActivityUnits(act2)
-           << " ---> chi2_1=" << chi2_1 << ", chi2_2=" << chi2_2 << endl;
+      //cout << "Tolerance called with act1=" << PhysicalUnits::printToBestActivityUnits(act1)
+      //     << ", act2=" << PhysicalUnits::printToBestActivityUnits(act2)
+      //     << " ---> chi2_1=" << chi2_1 << ", chi2_2=" << chi2_2 << endl;
       
       return fabs(chi2_1 - chi2_2) < 0.025;
     };//tolerance(...)
@@ -2000,7 +1982,7 @@ void DetectionLimitTool::doCalc()
   int numDOF = 0;
   double upperActivtyChi2 = -999.9; //upperActivtyChi2=overallBestChi2 + cl_chi2_delta
   std::vector<PeakDef> peaks;
-  computeForAcivity( upperLimit, peaks, upperActivtyChi2, numDOF );
+  computeForActivity( upperLimit, distance, peaks, upperActivtyChi2, numDOF );
   
   
   char buffer[128];
@@ -2012,7 +1994,7 @@ void DetectionLimitTool::doCalc()
   
   string upperLimitActStr = PhysicalUnits::printToBestActivityUnits(upperLimit,3,useCurie);
   snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup> of %.1f",
-            0.1*std::round(10.0*wantedCl), upperLimitActStr.c_str(), upperActivtyChi2 );
+            0.1*std::round(1000.0*wantedCl), upperLimitActStr.c_str(), upperActivtyChi2 );
   
   if( foundUpperCl )
     m_upperLimit->setText( buffer );
@@ -2099,6 +2081,8 @@ void DetectionLimitTool::doCalc()
 
 void DetectionLimitTool::updateShownPeaks()
 {
+  cout << "Need to upgrade DetectionLimitTool::updateShownPeaks() for toggle between activity and distance" << endl;
+#warning "Need to upgrade DetectionLimitTool::updateShownPeaks() for toggle between activity and distance"
   m_peakModel->removeAllPeaks();
   
   string actStr = m_displayActivity->text().toUTF8();
@@ -2111,17 +2095,33 @@ void DetectionLimitTool::updateShownPeaks()
     return;
   }//try / catch
   
+  
+  double distance = 0.0, air_distance = 0.0;
+  
+  try
+  {
+    distance = air_distance = currentDisplayDistance();
+    
+    if( !m_shieldingSelect->isGenericMaterial() && m_shieldingSelect->material() )
+      air_distance -= m_shieldingSelect->thickness();
+  }catch(...)
+  {
+    return;
+  }
+  
+  
   int numDOF;
   double chi2;
   std::vector<PeakDef> peaks;
-  computeForAcivity( activity, peaks, chi2, numDOF );
+  computeForActivity( activity, distance, peaks, chi2, numDOF );
   m_peakModel->setPeaks( peaks );
     
   cout << "Done in updateShownPeaks()" << endl;
 }//void DetectionLimitTool::updateShownPeaks()
 
 
-void DetectionLimitTool::computeForAcivity( const double activity,
+void DetectionLimitTool::computeForActivity( const double activity,
+                                            const double distance,
                                                  std::vector<PeakDef> &peaks,
                                                  double &chi2, int &numDOF )
 {
@@ -2136,135 +2136,86 @@ void DetectionLimitTool::computeForAcivity( const double activity,
     return;
   }
   
-  vector<PeakDef> inputPeaks, fitPeaks;
+  
+  DetectionLimitCalc::DeconComputeInput input;
+  input.measurement = spec;
+  input.drf = m_detectorDisplay->detector();
+  input.include_air_attenuation = m_attenuateForAir->isChecked();
+  input.distance = distance;
+  input.activity = activity;
+  if( !m_shieldingSelect->isGenericMaterial() && m_shieldingSelect->material() )
+    input.shielding_thickness = m_shieldingSelect->thickness();
   
   for( auto w : m_peaks->children() )
   {
     auto rw = dynamic_cast<MdaPeakRow *>( w );
     assert( rw );
+    
     if( !rw->m_use_for_likelihood->isChecked() )
       continue;
     
-    const MdaPeakRowInput &input = rw->input();
-    
-    const float mean = input.energy;
-    const float fwhm = input.drf->peakResolutionFWHM(input.energy);
-    const float sigma = fwhm / 2.634;
-    const double det_eff = input.drf->efficiency( input.energy, input.distance );
-    const double counts_4pi = (input.do_air_attenuation ? input.counts_per_bq_into_4pi_with_air
-                               : input.counts_per_bq_into_4pi);
-    const float amplitude = activity * counts_4pi;
+    // TODO: roi_start/roi_end should already be rounded to nearest bin edge, but should add check for this
     const float roi_start = rw->m_roi_start->value();
     const float roi_end = rw->m_roi_end->value();
+    const size_t nsidebin = static_cast<size_t>( std::round( std::max( 1.0f, rw->m_num_side_channels->value() ) ) );
     
-    PeakDef peak( mean, sigma, amplitude );
-    peak.setFitFor( PeakDef::CoefficientType::Mean, false );
-    peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
-    peak.setFitFor( PeakDef::CoefficientType::GaussAmplitude, false );
-    shared_ptr<PeakContinuum> cont = peak.continuum();
+    shared_ptr<PeakContinuum> peak_continuum;
     
-    cont->setRange( roi_start, roi_end );
-    cont->calc_linear_continuum_eqn( spec, roi_start, roi_end, 2 );  //sets to linear continuum type
+    const bool fix_continuum = rw->m_fix_decon_continuum->isChecked();
     
+    PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::NoOffset;
     const int continuumSelected = rw->m_continuum->currentIndex();
     switch( continuumSelected )
     {
       case 0:
-        cont->setType( PeakContinuum::OffsetType::Linear );
-        for( size_t order = 0; order < 2; ++order )
-          cont->setPolynomialCoefFitFor( order, true );
+        continuum_type = PeakContinuum::OffsetType::Linear;
         break;
         
       case 1:
-        cont->setType( PeakContinuum::OffsetType::Quadratic );
-        for( size_t order = 0; order < 3; ++order )
-          cont->setPolynomialCoefFitFor( order, true );
+        continuum_type = PeakContinuum::OffsetType::Quadratic;
         break;
+        
+      default:
+        throw logic_error( "DetectionLimitTool::computeForActivity: Unexpected continuum type" );
     }//switch( assign continuum )
     
-    inputPeaks.push_back( std::move(peak) );
+
+    DetectionLimitCalc::DeconRoiInfo roi_info;
+    
+    roi_info.roi_start = roi_start;
+    roi_info.roi_end = roi_end;
+    roi_info.continuum_type = continuum_type;
+    roi_info.fix_continuum_to_edges = fix_continuum;
+    roi_info.num_lower_side_channels = nsidebin;
+    roi_info.num_upper_side_channels = nsidebin;
+    
+    const MdaPeakRowInput &widget_info = rw->input();
+    
+    // TODO: have all this peak-specific stuff go inside a loop
+    DetectionLimitCalc::DeconRoiInfo::PeakInfo peak_info;
+    
+    peak_info.energy = widget_info.energy;
+    peak_info.fwhm = input.drf->peakResolutionFWHM(widget_info.energy);
+    peak_info.counts_per_bq_into_4pi = widget_info.counts_per_bq_into_4pi;
+    
+    roi_info.peak_infos.push_back( peak_info );
+    
+    input.roi_info.push_back( roi_info );
   }//for( size_t i = 0; i < energies.size(); ++i )
   
-  if( inputPeaks.empty() )
+  if( input.roi_info.empty() )
   {
     cerr << "No peaks to do calc for!" << endl;
     return;
   }
   
-  ROOT::Minuit2::MnUserParameters inputFitPars;
-  PeakFitChi2Fcn::addPeaksToFitter( inputFitPars, inputPeaks, spec, PeakFitChi2Fcn::kFitForPeakParameters );
-      
-  const int npeaks = static_cast<int>( inputPeaks.size() );
-  PeakFitChi2Fcn chi2Fcn( npeaks, spec, nullptr );
-  chi2Fcn.useReducedChi2( false );
-      
-  assert( inputFitPars.VariableParameters() != 0 );
-          
-  ROOT::Minuit2::MnUserParameterState inputParamState( inputFitPars );
-  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
-  ROOT::Minuit2::MnMinimize fitter( chi2Fcn, inputParamState, strategy );
-      
-  unsigned int maxFcnCall = 5000;
-  double tolerance = 2.5;
-  tolerance = 0.5;
-  ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
-  const ROOT::Minuit2::MnUserParameters &fitParams = fitter.Parameters();
-  //  minimum.IsValid()
-  //      ROOT::Minuit2::MinimumState minState = minimum.State();
-  //      ROOT::Minuit2::MinimumParameters minParams = minState.Parameters();
-    
-  //    cerr << endl << endl << "EDM=" << minimum.Edm() << endl;
-  //    cerr << "MinValue=" <<  minimum.Fval() << endl << endl;
-      
-  if( !minimum.IsValid() )
-    minimum = fitter( maxFcnCall, tolerance );
-        
-  if( !minimum.IsValid() )
-  {
-      //XXX - should we try to re-fit here? Or do something to handle the
-      //      faliure in some reasonable way?
-      cerr << endl << endl << "status is not valid"
-            << "\n\tHasMadePosDefCovar: " << minimum.HasMadePosDefCovar()
-            << "\n\tHasAccurateCovar: " << minimum.HasAccurateCovar()
-            << "\n\tHasReachedCallLimit: " << minimum.HasReachedCallLimit()
-            << "\n\tHasValidCovariance: " << minimum.HasValidCovariance()
-            << "\n\tHasValidParameters: " << minimum.HasValidParameters()
-            << "\n\tIsAboveMaxEdm: " << minimum.IsAboveMaxEdm()
-            << endl;
-      if( minimum.IsAboveMaxEdm() )
-        cout << "\t\tEDM=" << minimum.Edm() << endl;
-  }//if( !minimum.IsValid() )
-      
+  const DetectionLimitCalc::DeconComputeResults results
+                                        = DetectionLimitCalc::decon_compute_peaks( input );
   
-  vector<double> fitpars = fitParams.Params();
-  vector<double> fiterrors = fitParams.Errors();
-  chi2Fcn.parametersToPeaks( fitPeaks, &fitpars[0], &fiterrors[0] );
-      
-  double initialChi2 = chi2Fcn.chi2( &fitpars[0] );
-  
-  //Lets try to keep whether or not to fit parameters should be the same for
-  //  the output peaks as the input peaks.
-  //Note that this doesnt account for peaks swapping with eachother in the fit
-  assert( fitPeaks.size() == inputPeaks.size() );
-  
-  //for( size_t i = 0; i < near_peaks.size(); ++i )
-  //  fitpeaks[i].inheritUserSelectedOptions( near_peaks[i], true );
-  //for( size_t i = 0; i < fixedpeaks.size(); ++i )
-  //  fitpeaks[i+near_peaks.size()].inheritUserSelectedOptions( fixedpeaks[i], true );
-        
-  const double totalNDF = set_chi2_dof( spec, fitPeaks, 0, fitPeaks.size() );
-  
-  chi2 = initialChi2;
-  numDOF = static_cast<int>( std::round(totalNDF) );
-  
-  for( auto &peak : fitPeaks )
-  {
-    peak.setFitFor( PeakDef::CoefficientType::Mean, false );
-    peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
-  }
-  
-  peaks.swap( fitPeaks );
-}//void DetectionLimitTool::computeForAcivity(...)
+  peaks = results.fit_peaks;
+  chi2 = results.chi2;
+  numDOF = results.num_degree_of_freedom;
+}//void DetectionLimitTool::computeForActivity(...)
 
 
 void DetectionLimitTool::setRefLinesAndGetLineInfo()
@@ -2313,7 +2264,8 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
     shielding_material = m_shieldingSelect->material();
     shielding_thickness = m_shieldingSelect->thickness();
     
-    air_distance -= shielding_thickness;
+    if( shielding_material )
+      air_distance -= shielding_thickness;
   }//if( generic shielding ) / else
   
   auto theme = m_interspec->getColorTheme();
@@ -2505,13 +2457,8 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
     {
       if( !m_materialDB )
         throw std::runtime_error( "DetectionLimitTool::setRefLinesAndGetLineInfo(): no material DB" );
-        
-      const Material *air = m_materialDB->material( "Air" );
-        
-      if( !air )
-        throw std::runtime_error( "DetectionLimitTool::setRefLinesAndGetLineInfo(): unable to retrieve 'Air' from material database." );
-        
-      air_atten_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_material, air, _1, air_distance );
+      
+      air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, air_distance );
     }
     
     if( !air_atten_fcn )
@@ -2706,7 +2653,7 @@ void DetectionLimitTool::do_development()
     double lowerEnengy, upperEnergy;
     findROIEnergyLimits( lowerEnengy, upperEnergy, peak, spec );
     cont->setRange( lowerEnengy, upperEnergy );
-    cont->calc_linear_continuum_eqn( spec, lowerEnengy, upperEnergy, 2 );
+    cont->calc_linear_continuum_eqn( spec, mean, lowerEnengy, upperEnergy, 4, 4 );
     cont->setPolynomialCoefFitFor( 0, true );
     cont->setPolynomialCoefFitFor( 1, true );
     

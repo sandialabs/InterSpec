@@ -41,6 +41,8 @@
  - [x] Add a drop-box to allow selecting confidence for limit (e.g., 80%, 90%, 95%, 99%, etc)
  - [ ] Allow asserting you know there isnt a peak in the spectrum, and affix the peak continuums to the observed spectrum
  - [x] Allow adjusting the simple MDA side-widths
+ - [ ] If spectrum already has a peak defined for a gamma, re-use its definition of roi lower and upper energies
+ - [ ] When deconvolution method is used along with continuum determined from channels above/below the ROI, need to probably take into account the stat uncertainty of the channels...
  - [ ] Check numerical accuracies of calculations
  - [ ] Report mass as well as activity
  - [ ] Make sure when presence is reported on Currie style limit (e.g., both lower and upper limits given), the coverage is actually correct; e.g. 95% of tims in given interval, and not 97.5% or 90% or something.
@@ -161,7 +163,8 @@ protected:
   
   void doCalc();
   void updateShownPeaks();
-  void computeForAcivity( const double activity,
+  void computeForActivity( const double activity,
+                          const double distance,
                           std::vector<PeakDef> &peaks,
                           double &chi2, int &numDOF );
   

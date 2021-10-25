@@ -64,6 +64,10 @@ double transmition_length_coefficient( const Material *material, float energy );
 double transmition_coefficient_material( const Material *material, float energy,
                                 float length );
 
+/** A convenience call to #transmition_coefficient_material that uses a static (compile-time defined) definition of air. */
+double transmission_coefficient_air( float energy, float length );
+
+
 //Returned in units of [Length]^2/[mass], so that
 //  exp( -mass_attenuation_coef * areal_density )
 //  gives you the probability a gamma of given energy will go through the
