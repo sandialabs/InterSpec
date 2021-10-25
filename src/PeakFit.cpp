@@ -884,7 +884,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     intputSharesContinuum &= (answer[i]->continuum()==answer[0]->continuum());
   
   double p0, p1;
-  const int nSideBinsToAverage = 1;
+  const size_t nSideBinsToAverage = 3;
   PeakContinuum::OffsetType offsetType = PeakContinuum::Linear;
   if( intputSharesContinuum )
     offsetType = answer[0]->continuum()->type();
@@ -892,7 +892,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     offsetType = PeakContinuum::Quadratic;
   
   PeakContinuum::eqn_from_offsets( start_channel, end_channel, start_range,
-                                  dataH, nSideBinsToAverage, p1, p0 );
+                                  dataH, nSideBinsToAverage, nSideBinsToAverage, p1, p0 );
   
   MultiPeakFitChi2Fcn chi2fcn( nPeaks, dataH, offsetType, start_channel, end_channel );
   
@@ -5364,7 +5364,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
       upperEnergy = std::min( upperEnergy, mean+5.0*sigma );
       
       std::shared_ptr<PeakContinuum> continuum = peak->continuum();
-      continuum->calc_linear_continuum_eqn( dataH, lowerEnengy, upperEnergy, 1 );
+      continuum->calc_linear_continuum_eqn( dataH, mean, lowerEnengy, upperEnergy, 2, 2 );
       
       const size_t lowchannel = dataH->find_gamma_channel( lowerEnengy );
       const size_t highchannel = dataH->find_gamma_channel( upperEnergy );

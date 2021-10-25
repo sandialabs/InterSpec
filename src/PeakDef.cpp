@@ -456,9 +456,9 @@ size_t findROILimitHighRes( const PeakDef &peak, const std::shared_ptr<const Mea
   double nominal_data_area = dataH->gamma_channels_sum( nominal_low_channel, nominal_up_channel );
   
   double coefficients[2];
-  const size_t nSideChanel = 1;
+  const size_t nSideChanel = 3;
   PeakContinuum::eqn_from_offsets( nominal_low_channel, nominal_up_channel,
-                                   mean, dataH, nSideChanel, coefficients[1], coefficients[0] );
+                                   mean, dataH, nSideChanel, nSideChanel, coefficients[1], coefficients[0] );
   
   // cout << "coefficients[0]=" << coefficients[0] << ", coefficients[1]=" << coefficients[1]
   //  << "\n\tdataH->gamma_channel_lower(nominal_low_channel)=" << dataH->gamma_channel_lower(nominal_low_channel)
@@ -4220,22 +4220,71 @@ void PeakContinuum::setType( PeakContinuum::OffsetType type )
   
 }//void setType( PeakContinuum::OffsetType type )
 
-void PeakContinuum::calc_linear_continuum_eqn( const std::shared_ptr<const Measurement> &data,
-                                        const double x0, const double x1,
-                                        const int nbin )
+
+void PeakContinuum::calc_linear_continuum_eqn( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                              const double reference_energy,
+                                              const double roi_start, const double roi_end,
+                               const size_t num_lower_channels,
+                               const size_t num_upper_channels )
 {
-  m_referenceEnergy = x0;
-  m_lowerEnergy = x0;
-  m_upperEnergy = x1;
+  assert( data );
+  assert( reference_energy >= roi_start );
+  assert( reference_energy <= roi_end );
+  assert( roi_end > roi_start );
+  assert( num_lower_channels > 0 );
+  assert( num_upper_channels > 0 );
+  
+  if( !data || !data->energy_calibration() || !data->energy_calibration()->valid() )
+    throw runtime_error( "PeakContinuum::calc_linear_continuum_eqn: invalid input data" );
+  
+  if( (reference_energy < roi_start) || (reference_energy > roi_end) )
+    throw runtime_error( "PeakContinuum::calc_linear_continuum_eqn: reference energy must be within ROI" );
+  
+  if( roi_end < roi_start )
+    throw runtime_error( "PeakContinuum::calc_linear_continuum_eqn: lower energy greater than upper energy" );
+  
+  if( !num_lower_channels || !num_upper_channels )
+    throw runtime_error( "PeakContinuum::calc_linear_continuum_eqn: number of above/below channels must not be zero" );
+  
+  m_referenceEnergy = reference_energy;
+  m_lowerEnergy = roi_start;
+  m_upperEnergy = roi_end;
   m_type = PeakContinuum::Linear;
   m_values.resize( 2 );
   m_fitForValue.resize( 2, true );
   
-  const size_t xlowchannel = data->find_gamma_channel( (float)x0 );
-  const size_t xhighchannel = data->find_gamma_channel( (float)x1 );
+  const shared_ptr<const SpecUtils::EnergyCalibration> cal = data->energy_calibration();
+  assert( cal && cal->valid() );
   
-  eqn_from_offsets( xlowchannel, xhighchannel, m_referenceEnergy, data, nbin, m_values[1], m_values[0] );
-}//void calc_continuum_eqn(...)
+  // We'll try to make the side channels be completely independent from the channels in the ROI, but
+  //  we'll let there be up 10% of a channel overlap.
+  double lower_cont_bound = cal->channel_for_energy( roi_start );
+  double upper_cont_bound = cal->channel_for_energy( roi_end );
+  
+  double frac_part = lower_cont_bound - std::floor(lower_cont_bound);
+  if( frac_part > 0.9 )
+    lower_cont_bound = std::round( lower_cont_bound );
+  else
+    lower_cont_bound = std::floor( lower_cont_bound );
+  
+  frac_part = upper_cont_bound - std::floor(upper_cont_bound);
+  if( frac_part < 0.1 )
+    upper_cont_bound = std::round( upper_cont_bound );
+  else
+    upper_cont_bound = std::floor( upper_cont_bound );
+  upper_cont_bound = std::max( upper_cont_bound, 1.0 );
+  
+  const size_t roi_first_channel = static_cast<size_t>( lower_cont_bound );
+  // Upper cont bound give the channel number whos lower edge defines the upper bound on ROI, so we
+  //  will to subtract 1 from it to find the last channel _in_ the ROI
+  const size_t roi_last_channel = static_cast<size_t>( upper_cont_bound - 1.0 );
+  
+  double &m = m_values[1];
+  double &b = m_values[0];
+  
+  PeakContinuum::eqn_from_offsets( roi_first_channel, roi_last_channel, reference_energy, data,
+                                   num_lower_channels, num_upper_channels, m, b );
+}//PeakContinuum::calc_linear_continuum_eqn
 
 
 double PeakContinuum::offset_integral( const double x0, const double x1,
@@ -4352,50 +4401,168 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
 }//double offset_integral( const double x0, const double x1 ) const
 
 
+
 void PeakContinuum::eqn_from_offsets( size_t lowchannel,
-                                      size_t highchannel,
-                               const double peakMean,
-                               const std::shared_ptr<const Measurement> &data,
-                               const size_t nbin,
-                               double &m, double &b )
+                             size_t highchannel,
+                             const double reference_energy,
+                             const std::shared_ptr<const SpecUtils::Measurement> &data,
+                             const size_t num_lower_channels,
+                             const size_t num_upper_channels,
+                             double &m, double &b )
 {
-  double x1  = data->gamma_channel_lower( lowchannel ) - peakMean;
-  const double dx1 = data->gamma_channel_width( lowchannel );
+  // y = m*x + b, where y is density of continuum counts, per keV, at energy x
   
-  //XXX - hack! below 'c' will be inf if the following check would fail; I
-  //      really should work out how to fix this properly with math, but for
-  //      right now I'll fudge it, which will toss the answer off a bit, but
-  //      whatever.
-  if( fabs(2.0*x1*dx1 + dx1*dx1) < DBL_EPSILON )
+  
+  if( !data || !data->energy_calibration() || !data->energy_calibration()->valid() )
+    throw runtime_error( "PeakContinuum::calc_linear_continuum_eqn: invalid input data" );
+  
+  if( lowchannel >= highchannel )
+    throw runtime_error( "PeakContinuum::eqn_from_offsets: lower channel greater than upper channel" );
+  
+  if( !num_lower_channels || !num_upper_channels )
+    throw runtime_error( "PeakContinuum::eqn_from_offsets: number of above/below channels must not be zero" );
+  
+  const shared_ptr<const SpecUtils::EnergyCalibration> cal = data->energy_calibration();
+  assert( cal && cal->valid() );
+  const size_t nchannel = cal->num_channels();
+  
+  if( (num_upper_channels >= nchannel) || (num_lower_channels >= nchannel) )
+    throw runtime_error( "PeakContinuum::eqn_from_offsets: number of above/below channels is to large" );
+  
+  lowchannel = std::max( lowchannel, num_lower_channels );
+  if( (highchannel + num_upper_channels) >= nchannel )
+    highchannel = nchannel - num_upper_channels - 1;
+    
+  
+  // Now get the first and last channels for regions above/below ROI - note that these will be
+  //  inclusive; e.g., if num_lower_channels==1, then first and last channel will be equal.
+  //  We will also make sure to not go below zero, but if we go above last channel in spectrum,
+  //  we'll just be lazy and assume they have zero values anyway.
+  
+  const size_t lower_cont_first_channel = lowchannel - num_lower_channels;
+  const size_t lower_cont_last_channel =  lowchannel - 1;
+  
+  const size_t upper_cont_first_channel = highchannel + 1;
+  const size_t upper_cont_last_channel = upper_cont_first_channel + num_upper_channels - 1;
+  
+  const double lower_count_sum = data->gamma_channels_sum( lower_cont_first_channel, lower_cont_last_channel );
+  const double upper_count_sum = data->gamma_channels_sum( upper_cont_first_channel, upper_cont_last_channel );
+  
+  const double lower_low_energy = cal->energy_for_channel( lower_cont_first_channel );
+  const double lower_up_energy = cal->energy_for_channel( lower_cont_last_channel + 1 );
+  
+  const double upper_low_energy = cal->energy_for_channel( upper_cont_first_channel );
+  const double upper_up_energy = cal->energy_for_channel( upper_cont_last_channel + 1 );
+  
+  
+  const double lower_dx = lower_up_energy - lower_low_energy;
+  const double upper_dx = upper_up_energy - upper_low_energy;
+  
+  const double y1 = lower_count_sum / (1.0 + lower_cont_last_channel - lower_cont_first_channel);
+  const double y2 = upper_count_sum / (1.0 + upper_cont_last_channel - upper_cont_first_channel);
+  
+  const double lower_x1_rel   = lower_low_energy - reference_energy;
+  const double lower_x2_rel   = lower_up_energy - reference_energy;
+  const double upper_x1_rel   = upper_low_energy - reference_energy;
+  const double upper_x2_rel   = upper_up_energy - reference_energy;
+  const double lower_sqr_diff = lower_x2_rel*lower_x2_rel - lower_x1_rel*lower_x1_rel;
+  const double upper_sqr_diff = upper_x2_rel*upper_x2_rel - upper_x1_rel*upper_x1_rel;
+  
+  // The equation "mx + b" gives us the density of continuum counts at energy = x, so we will
+  //  integrate this equation over the region below the ROI, and above the ROI, and do a little
+  //  algebra so that we solve for m and b, such that we get the exact amount of counts from the
+  //  equation, as is in data
+  //
+  //lower_count_sum = lower_dx * b + 0.5*m*lower_sqr_diff
+  //upper_count_sum = upper_dx * b + 0.5*m*upper_sqr_diff
+  //  ==> b = (lower_count_sum - 0.5*m*lower_sqr_diff)/lower_dx
+  //  ==> upper_count_sum = upper_dx * ((lower_count_sum - 0.5*m*lower_sqr_diff)/lower_dx) + 0.5*m*upper_sqr_diff
+  //      upper_count_sum = upper_dx*lower_count_sum/lower_dx - upper_dx*0.5*m*lower_sqr_diff/lower_dx + 0.5*m*upper_sqr_diff
+  //      upper_count_sum = upper_dx*lower_count_sum/lower_dx + 0.5*m*(upper_sqr_diff - upper_dx*lower_sqr_diff/lower_dx)
+  //      upper_count_sum - upper_dx*lower_count_sum/lower_dx = 0.5*m*(upper_sqr_diff - upper_dx*lower_sqr_diff/lower_dx)
+  //  ==> m = 2*(upper_count_sum - upper_dx*lower_count_sum/lower_dx) / (upper_sqr_diff - upper_dx*lower_sqr_diff/lower_dx)
+  
+  if( fabs( (upper_sqr_diff - (upper_dx*lower_sqr_diff/lower_dx)) ) < FLT_EPSILON )
   {
-    static int ntimes = 0;
-    if( ntimes++ < 4 )
-      cerr << "Should fix math in PeakContinuum::eqn_from_offsets" << endl;
-    x1 = data->gamma_channel_lower( lowchannel+1 ) - peakMean;
+    // Extraordinarily unlikely to happen; just assign the continuum to be flat, and average density
+    //  of below and above ROI
+    m = 0.0;
+    b = (0.5 * lower_count_sum / lower_dx) + (0.5 * upper_count_sum / upper_dx);
+  }else
+  {
+    const double ratio_dx = upper_dx / lower_dx;
+    const double mult_m = 2.0 / (upper_sqr_diff - ratio_dx*lower_sqr_diff);
+    
+    // Calc m first, since b is dependent on m.
+    m = mult_m * (upper_count_sum - (upper_dx*lower_count_sum/lower_dx));
+    b = (lower_count_sum - 0.5*m*lower_sqr_diff) / lower_dx;
+    
+    // TODO: also give uncertainty of parameters, dont think its to hard, e.g. (but needs to be
+    //       double checked, I did the differentiation/summing correctly in my head):
+    //  const double uncert_m = mult_m * sqrt( upper_count_sum + ratio_dx*ratio_dx*lower_count_sum );
+    //  const double uncert_b = (1.0 / lower_dx) * sqrt( lower_count_sum + 0.5*0.5*lower_sqr_diff*lower_sqr_diff*uncert_m*uncert_m )
   }
   
-  const double x2  = data->gamma_channel_lower( highchannel ) - peakMean;
+#if( PERFORM_DEVELOPER_CHECKS )
+  const double coefs[2] = { b, m };
+  const double eqn_lower_counts = PeakContinuum::offset_eqn_integral( coefs,
+                                                                     PeakContinuum::OffsetType::Linear,
+                                                                     lower_low_energy, lower_up_energy,
+                                                                     reference_energy );
   
-  const double dx2 = data->gamma_channel_width( highchannel );
+  const double eqn_upper_counts = PeakContinuum::offset_eqn_integral( coefs,
+                                                                     PeakContinuum::OffsetType::Linear,
+                                                                     upper_low_energy, upper_up_energy,
+                                                                     reference_energy );
   
-  if( lowchannel < nbin )
-    lowchannel = nbin;
-  highchannel = std::min( highchannel, data->num_gamma_channels()-1 );
+  if( fabs(eqn_lower_counts - lower_count_sum) > 1.0E-4*std::max(eqn_lower_counts,lower_count_sum)
+     && (lower_count_sum > 1.0E-3)  )
+  {
+    char buffer[512] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "Region below ROI data integral not equal to equation integral."
+             "\n\tReference energy: %f"
+             "\n\tlower_low_energy: %f"
+             "\n\tlower_up_energy: %f"
+             "\n\teqn_lower_counts: %f, data lower_count_sum: %f"
+             "\n\tcoefficients: %f, %f\n",
+             reference_energy, lower_low_energy, lower_up_energy,
+             eqn_lower_counts, lower_count_sum, b, m );
+    log_developer_error( __func__, buffer );
+    assert( 0 );
+  }
   
-  const double nbinInv = 1.0 / (1.0+2.0*nbin);
-  const double y1 = nbinInv*data->gamma_channels_sum( lowchannel-nbin, lowchannel+nbin );
-  const double y2 = nbinInv*data->gamma_channels_sum( highchannel-nbin, highchannel+nbin);
-
-  const double c = (2.0*x2*dx2 + dx2*dx2)/(2.0*x1*dx1 + dx1*dx1);
-  b = (y2-y1*c)/(dx2-dx1*c);
-  m = 2.0*(y1-b*dx1)/(2.0*x1*dx1+dx1*dx1);
+  if( (fabs(eqn_upper_counts - upper_count_sum) > 1.0E-4*std::max(eqn_upper_counts,upper_count_sum))
+     && (upper_count_sum > 1.0E-3) )
+  {
+    char buffer[512] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "Region Above ROI data integral not equal to equation integral."
+             "\n\tReference energy: %f"
+             "\n\tupper_low_energy: %f"
+             "\n\tupper_up_energy: %f"
+             "\n\teqn_upper_counts: %f, data upper_count_sum: %f"
+             "\n\tcoefficients: %f, %f\n",
+             reference_energy, upper_low_energy, upper_up_energy,
+             eqn_upper_counts, upper_count_sum, b, m );
+    log_developer_error( __func__, buffer );
+    assert( 0 );
+  }
+#endif
   
   if( IsNan(m) || IsInf(m) || IsNan(b) || IsInf(b) )
   {
+    // Shouldnt ever get here.
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, "PeakContinuum::eqn_from_offsets(...): Invalid results" );
+#else
     cerr << "PeakContinuum::eqn_from_offsets(...): Invalid results" << endl;
+#endif
     m = b = 0.0;
-  }
-}//eqn_from_offsets(...)
+  }//if( an invalid value of m or b )
+  
+  cout << "For reference energy " << reference_energy << " fit ceofs {" << b << ", " << m << "}" << endl;
+  
+}//void PeakContinuum::eqn_from_offsets(...)
+
 
 double PeakContinuum::offset_eqn_integral( const double *coefs,
                                           PeakContinuum::OffsetType type,
