@@ -2743,7 +2743,7 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
       continue;
     
     const PeakContinuum::OffsetType type = peak.continuum()->type();
-    peak.continuum()->calc_linear_continuum_eqn( data, peak.lowerX(), peak.upperX(), 1 );
+    peak.continuum()->calc_linear_continuum_eqn( data, centroid, peak.lowerX(), peak.upperX(), 2, 2 );
     peak.continuum()->setType( type );
     
     const double lowerx = std::max( peak.lowerX(), peak.mean() - 3*peak.sigma() );

@@ -625,6 +625,10 @@ void PeakInfoDisplay::createNewPeak()
   };//updateCandidatePeak lambda
 
   auto roiTypeChanged = [=](){
+    const double roi_lower = candidatePeak->lowerX();
+    const double roi_upper = candidatePeak->upperX();
+    const double ref_energy = 0.5*(roi_upper + roi_lower);
+    
     switch( contType->currentIndex() )
     {
       case 0: //None
@@ -632,17 +636,17 @@ void PeakInfoDisplay::createNewPeak()
         break;
         
       case 1:  //constant
-        candidatePeak->continuum()->calc_linear_continuum_eqn( meas, candidatePeak->lowerX(), candidatePeak->upperX(), 2 );
+        candidatePeak->continuum()->calc_linear_continuum_eqn( meas, ref_energy, roi_lower, roi_upper, 5, 5 );
         candidatePeak->continuum()->setType( PeakContinuum::OffsetType::Constant );
         break;
         
       case 2: //linear
-        candidatePeak->continuum()->calc_linear_continuum_eqn( meas, candidatePeak->lowerX(), candidatePeak->upperX(), 2 );
+        candidatePeak->continuum()->calc_linear_continuum_eqn( meas, ref_energy, roi_lower, roi_upper, 5, 5 );
         candidatePeak->continuum()->setType( PeakContinuum::OffsetType::Linear );
         break;
         
       case 3: //quadratic
-        candidatePeak->continuum()->calc_linear_continuum_eqn( meas, candidatePeak->lowerX(), candidatePeak->upperX(), 2 );
+        candidatePeak->continuum()->calc_linear_continuum_eqn( meas, ref_energy, roi_lower, roi_upper, 5, 5 );
         candidatePeak->continuum()->setType( PeakContinuum::OffsetType::Quadratic );
         break;
         

@@ -169,16 +169,29 @@ struct PeakContinuum
   //setRange: sets the energy range this continuum is applicable for
   void setRange( const double lowerenergy, const double upperenergy );
   
-  //calc_linear_continuum_eqn: sets this to be a Linear OffsetType continuum,
-  //  and the range to be from x0 to x1, with the resulting linear polynomial
-  //  relative to m_referenceEnergy == x0
-  //  nSideBinToAverage is the number of bins on each side of x0_bin and x1_bin
-  //  that should be used to find data y-hieght for that respective side of
-  //  continuum
-  void calc_linear_continuum_eqn( const std::shared_ptr<const SpecUtils::Measurement> &data,
-                                  const double x0, const double x1,
-                                  const int nSideBinToAverage );
 
+  /** Sets this to be a Linear OffsetType continuum, and the range to be from x0 to x1, with the resulting linear polynomial
+     relative to m_referenceEnergy == x0.
+   
+   \param data The spectrum to use
+   \param reference_energy The reference energy the equation will be based on.  Must be equal to, or between \p roi_lower
+                           and \p roi_upper.
+   \param roi_lower The lower energy of the ROI
+   \param roi_upper The upper energy of the ROI.  Must be greater than \p roi_lower.
+   \param num_lower_channels The number of channels below the ROI to use for calculating the equation; must be 1 or larger
+   \param num_upper_channels The number of channels above the ROI to use for calculating the equation; must be 1 or larger
+   
+   Note that if \p roi_lower and/or \p roi_upper dont correspond to a bin edge, then the bordering bin will be skipped if the
+   ROI extends more than 10% of the way into that bin.
+   
+   Will throw exception on input error, such as
+   */
+  void calc_linear_continuum_eqn( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                 const double reference_energy,
+                                 const double roi_lower, const double roi_upper,
+                                 const size_t num_lower_channels,
+                                 const size_t num_upper_channels );
+  
   //offset_integral: returns the area of the continuum from x0 to x1.  If m_type
   //  is NoOffset, then will return 0.  If a polynomial, then the integral of
   //  the contonuum density will be returned.  If globally defined continuum,
@@ -212,8 +225,9 @@ struct PeakContinuum
                                 size_t highchannel,
                                 const double referenceEnergy,
                                 const std::shared_ptr<const SpecUtils::Measurement> &data,
-                                const size_t nbinEachSide,
-                                double &m, double &y0 );
+                                const size_t num_lower_channels,
+                                const size_t num_upper_channels,
+                                double &m, double &b );
   
   //offset_eqn_integral: integrates the continuum density, specified by coefs,
   //  to return the continuum area.
