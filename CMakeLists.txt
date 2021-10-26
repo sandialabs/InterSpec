@@ -473,6 +473,7 @@ set(sources
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
     src/ShieldingSourceDisplay.cpp
+    src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
     src/ReferenceLineInfo.cpp
     src/ReferencePhotopeakDisplay.cpp
@@ -558,6 +559,7 @@ set(headers
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h
     InterSpec/ShieldingSourceDisplay.h
+    InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
     InterSpec/ReferenceLineInfo.h
     InterSpec/ReferencePhotopeakDisplay.h

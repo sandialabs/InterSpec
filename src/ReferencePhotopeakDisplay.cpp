@@ -58,6 +58,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpectrumChart.h"
 #include "SandiaDecay/SandiaDecay.h"
+#include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/CanvasForDragging.h"
@@ -67,7 +68,6 @@
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
-#include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 

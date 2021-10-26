@@ -46,8 +46,8 @@
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/IsotopeSelectionAids.h"
-#include "InterSpec/ShieldingSourceDisplay.h"
 //#include "InterSpec/IsotopeNameFilterModel.h"
 
 using namespace std;
