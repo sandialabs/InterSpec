@@ -74,13 +74,13 @@
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
-#include "InterSpec/ShieldingSourceDisplay.h"
 
 
 // The regex in GCC 4.8.x does not have working regex...., so we will detect this via

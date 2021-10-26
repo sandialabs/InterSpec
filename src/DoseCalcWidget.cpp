@@ -75,11 +75,11 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/GadrasSpecFunc.h"
+#include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/IsotopeSelectionAids.h"
-#include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
 
 using namespace Wt;
