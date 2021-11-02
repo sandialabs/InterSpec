@@ -49,8 +49,8 @@ namespace SandiaDecay
   class NuclideMixture;
 }
 
+enum class TraceActivityType : int;
 
-#define ALLOW_MASS_FRACTION_FIT 1
 #define USE_CONSISTEN_NUM_SHIELDING_PARS 1
 
 namespace GammaInteractionCalc
@@ -174,12 +174,10 @@ class PointSourceShieldingChi2Fcn
 //    -Material Thinckness
 // ...
 //
-//#if( ALLOW_MASS_FRACTION_FIT )
 //could add another member variable that holds pointer to source isotopes to
 //  fit for mass fractions of.  Then there would be M-1 additional parameters,
 //  where M is the number of isotopes to fit for in a material.
 //  Mass fraction is then ...
-//#endif
   
 public:
   //Inorder to keep numbers roughly where Minuit2 can handle them, we
@@ -187,14 +185,35 @@ public:
   static const double sm_activityUnits;  //SandiaDecay::MBq
 
 
-  typedef std::pair<const Material *,\
-                 std::vector<const SandiaDecay::Nuclide *> > MaterialAndSources;
-
+  /** A struct to hold information about the material shieldings are made out of, and their respective self-attenuating and trace sources.
+   
+   Thicknesses and activitiy levels are specified by the fitting parameters, so not tracked in this struct.
+   */
+  struct ShieldingInfo
+  {
+    /** The material this struct holds info for.
+     If nullptr it represents generic shielding (e.g., AN/AD), and niether #self_atten_sources or #trace_sources may have entries.
+     */
+    const Material *material;
+    
+    /** The nuclides which act as self-attenuating sources within the material.  The Material object must contain these nuclides
+     as components, as well as at least one peak being used have this nuclide as its assigned nuclide.
+     */
+    std::vector<const SandiaDecay::Nuclide *> self_atten_sources;
+    
+    /** The trace sources within this shielding.
+     
+     At least one peak being used have this nuclide as its assigned nuclide.
+     */
+    std::vector<std::pair<const SandiaDecay::Nuclide *,TraceActivityType>> trace_sources;
+  };//struct ShieldingInfo
+  
+  
   PointSourceShieldingChi2Fcn(
                       double distance, double liveTime,
                       const std::vector<PeakDef> &peaks,
                       std::shared_ptr<const DetectorPeakResponse> detector,
-                      const std::vector<MaterialAndSources> &materials,
+                      const std::vector<ShieldingInfo> &materials,
                       bool allowMultipleNucsContribToPeaks );
   virtual ~PointSourceShieldingChi2Fcn();
 
@@ -252,7 +271,8 @@ public:
    */
   void fittingIsFinished();
   
-  /** Sets whether to use a SpecUtilsAsync::ThreadPool when calculating contributions for each peak from self-attenuating sources.
+  /** Sets whether to use a SpecUtilsAsync::ThreadPool when calculating contributions for each peak from self-attenuating and/or
+   trace sources.
    If you are doing multiple parallel fits, you may want to disable multithread to better use the cpu.
    
    Default is true.
@@ -261,7 +281,7 @@ public:
    */
   void setSelfAttMultiThread( const bool do_multithread );
   
-#if( ALLOW_MASS_FRACTION_FIT )
+
 /*
    Need to add method to extract mass fraction for isotopes fitting for the mass
    fraction
@@ -294,7 +314,7 @@ public:
   const std::vector<const SandiaDecay::Nuclide *> &nuclideFittingMassFracFor(
                                               const Material *material ) const;
   
-#endif
+
   
   //setBackgroundPeaks(...): if you wish to correct for background counts, you
   //  can set that here.  The peaks you pass in should be the original
@@ -310,8 +330,7 @@ public:
   //Does not take into account self attenuation.
   //'mixturecache' is to speed up multiple computations, and may be empty at
   //  first.
-  typedef std::map< const SandiaDecay::Nuclide *,\
-                    SandiaDecay::NuclideMixture> NucMixtureCache;
+  typedef std::map< const SandiaDecay::Nuclide *, SandiaDecay::NuclideMixture> NucMixtureCache;
   
   //If 'info' is non-null then it will be filled with information about how much
   //  each nuclide/peak was attributed to each detected peak (currently not
@@ -457,14 +476,12 @@ protected:
   std::vector<PeakDef> m_peaks;
   std::vector<PeakDef> m_backgroundPeaks;
   std::shared_ptr<const DetectorPeakResponse> m_detector;
-  std::vector<MaterialAndSources> m_materials;
+  std::vector<ShieldingInfo> m_materials;
   std::vector<const SandiaDecay::Nuclide *> m_nuclides; //sorted alphebetically and unique
   
-#if(ALLOW_MASS_FRACTION_FIT)
   typedef std::map<const Material *,std::vector<const SandiaDecay::Nuclide *> > MaterialToNucsMap;
   //Nuclides will stored sorted alphebetically
   MaterialToNucsMap m_nuclidesToFitMassFractionFor;
-#endif
   
   bool m_allowMultipleNucsContribToPeaks;
   

@@ -48,3 +48,75 @@
   border-style: solid;
   border:2px solid #e1e1e1;
 }
+
+
+.TraceSrcContainer
+{
+  
+}
+
+.TraceSrcDisplay
+{
+  display: grid;
+  row-gap: 5px;
+  column-gap: 5px;
+  padding-bottom: 3px;
+  padding-top: 0px;
+  margin-bottom: 2px;
+}
+
+.TraceSrcDisplay .closeicon-wtdefault
+{
+  justify-self: end;
+  align-self: start;
+  margin-top: -4px;
+  margin-right: -7px;
+  margin-bottom: -2px;
+}
+
+.TraceSrcDisplay .FirstCol
+{
+  grid-column-start: 1;
+  width: 4em;
+}
+
+.TraceSrcDisplay .SecondCol
+{
+  grid-column-start: 2;
+  justify-self: stretch;
+}
+
+.TraceSrcDisplay .ThirdCol
+{
+  grid-column-start: 3;
+}
+
+.TraceSrcDisplay .FirstRow
+{
+  grid-row-start: 1;
+}
+
+.TraceSrcDisplay .SecondRow
+{
+  grid-row-start: 2;
+}
+
+.TraceSrcDisplay .ThirdRow
+{
+  grid-row-start: 3;
+}
+
+.TraceSrcDisplay .FourthRow
+{
+  grid-row-start: 4;
+}
+
+.TraceSrcDisplay .SpanTwoCol
+{
+  grid-column-end: span 2;
+}
+
+.TraceSrcDisplay .SpanThreeCol
+{
+  grid-column-end: span 3;
+}

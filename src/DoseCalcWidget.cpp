@@ -1115,8 +1115,8 @@ void DoseCalcWidget::init()
           m_enterWidgets[i]->addWidget( txt );
         }
         
-        m_enterShieldingSelect = new ShieldingSelect( m_materialDB, NULL, m_materialSuggest, false );
-        m_answerShieldingSelect = new ShieldingSelect( m_materialDB, NULL, m_materialSuggest, false );
+        m_enterShieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest );
+        m_answerShieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest );
         m_answerShieldingSelect->thicknessEdit()->disable();
         m_answerShieldingSelect->arealDensityEdit()->disable();
         m_enterWidgets[i]->addWidget( m_enterShieldingSelect );

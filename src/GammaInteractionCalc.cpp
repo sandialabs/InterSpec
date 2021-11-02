@@ -632,7 +632,7 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
                                  double distance, double liveTime,
                                  const std::vector<PeakDef> &peaks,
                                  std::shared_ptr<const DetectorPeakResponse> detector,
-                                 const std::vector<PointSourceShieldingChi2Fcn::MaterialAndSources> &materials,
+                                 const std::vector<PointSourceShieldingChi2Fcn::ShieldingInfo> &materials,
                                  bool allowMultipleNucsContribToPeaks )
   : ROOT::Minuit2::FCNBase(),
     m_cancel( 0 ),
@@ -649,8 +649,11 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
 {
   set<const SandiaDecay::Nuclide *> nucs;
   for( const PeakDef &p : m_peaks )
+  {
     if( p.parentNuclide() )
-    nucs.insert( p.parentNuclide() );
+      nucs.insert( p.parentNuclide() );
+  }
+  
   for( const SandiaDecay::Nuclide *n : nucs )
     m_nuclides.push_back( n );
 
@@ -660,6 +663,50 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
               if( !rhs ) return true;
               return (lhs->symbol < rhs->symbol);
             }  );
+  
+  // Go through and sanity-check traceSources
+  for( const PointSourceShieldingChi2Fcn::ShieldingInfo &info : materials )
+  {
+    const Material *material = info.material;
+    
+    if( !material )
+    {
+      if( !info.self_atten_sources.empty() || !info.trace_sources.empty() )
+        throw runtime_error( "PointSourceShieldingChi2Fcn: Self attenuating and trace sources must"
+                             " be empty for generic shieldings" );
+      continue;
+    }//if( !material )
+    
+    for( const SandiaDecay::Nuclide *nuc : info.self_atten_sources )
+    {
+      if( !nucs.count(nuc) )
+        throw runtime_error( "PointSourceShieldingChi2Fcn: self attenuating nuclide "
+                            + nuc->symbol + " doesnt have a peak with that as an assigned nuclide" );
+      
+      int hasElement = 0;
+      for( const auto &p : material->elements )
+        hasElement += (p.first->atomicNumber == nuc->atomicNumber);
+      
+      if( !hasElement )
+        throw runtime_error( "PointSourceShieldingChi2Fcn: self attenuating nuclide "
+                            + nuc->symbol + " not in shielding " + material->name );
+    }//for( const SandiaDecay::Nuclide *nuc : info.self_atten_sources )
+    
+    
+    for( const pair<const SandiaDecay::Nuclide *,TraceActivityType> &trace : info.trace_sources )
+    {
+      if( !trace.first )
+        throw runtime_error( "PointSourceShieldingChi2Fcn: null trace source" );
+      
+      if( !nucs.count(trace.first) )
+        throw runtime_error( "PointSourceShieldingChi2Fcn: self attenuating nuclide "
+                  + trace.first->symbol + " doesnt have a peak with that as an assigned nuclide" );
+    }//for( loop over trace sources )
+    
+    // Not checking if trace and self-atten sources share the same nuclide, because although the
+    //  gui doesnt currently allow this, I *think* the computation will work out fine, maybe.
+    
+  }//for( const TraceSourceInfo &info : traceSources )
 }//PointSourceShieldingChi2Fcn
 
 
@@ -786,7 +833,6 @@ double PointSourceShieldingChi2Fcn::Up() const
   return 1.0;
 }//double Up();
 
-#if( ALLOW_MASS_FRACTION_FIT )
   
 bool PointSourceShieldingChi2Fcn::isVariableMassFraction( const Material *mat,
                                         const SandiaDecay::Nuclide *nuc ) const 
@@ -866,8 +912,8 @@ void PointSourceShieldingChi2Fcn::setNuclidesToFitMassFractionFor(
     throw runtime_error( "setNuclidesToFitMassFractionFor(...): "
                          "invalid material" );
   bool validMaterial = false;
-  for( const MaterialAndSources &ms : m_materials )
-    validMaterial |= (ms.first == material);
+  for( const ShieldingInfo &ms : m_materials )
+    validMaterial |= (ms.material == material);
   
   if( !validMaterial )
     throw runtime_error( "setNuclidesToFitMassFractionFor(...): "
@@ -999,8 +1045,8 @@ void PointSourceShieldingChi2Fcn::massFraction( double &massFrac,
 #if(USE_CONSISTEN_NUM_SHIELDING_PARS)
   matmassfracstart += 2*m_materials.size();
 #else
-  for( const MaterialAndSources &material : m_materials )
-    matmassfracstart += (material.first ? size_t(1) : size_t(2));
+  for( const ShieldingInfo &material : m_materials )
+    matmassfracstart += (material.material ? size_t(1) : size_t(2));
 #endif
   
   const size_t numfraccoefs = size_t(nucs.size() - 1);
@@ -1055,7 +1101,6 @@ double PointSourceShieldingChi2Fcn::massFractionUncert( const Material *material
   massFraction( massfrac, uncert, material, nuc, pars, error );
   return uncert;
 }//massFractionUncert(...)(
-#endif
   
   
 
@@ -1066,14 +1111,12 @@ size_t PointSourceShieldingChi2Fcn::numExpectedFitParameters() const
 #if(USE_CONSISTEN_NUM_SHIELDING_PARS)
   npar += 2*m_materials.size();
 #else
-  for( const MaterialAndSources &material : m_materials )
-    npar += (material.first ? size_t(1) : size_t(2));
+  for( const ShieldingInfo &material : m_materials )
+    npar += (material.material ? size_t(1) : size_t(2));
 #endif
   
-#if( ALLOW_MASS_FRACTION_FIT )
   for( const MaterialToNucsMap::value_type &vt : m_nuclidesToFitMassFractionFor )
     npar += ( vt.second.empty() ? size_t(0) : size_t(vt.second.size()-1) );
-#endif
   
   return npar;
 }//int numExpectedFitParameters() const
@@ -1081,18 +1124,18 @@ size_t PointSourceShieldingChi2Fcn::numExpectedFitParameters() const
 
 bool PointSourceShieldingChi2Fcn::isActivityDefinedFromShielding( const SandiaDecay::Nuclide *nuclide ) const
 {
-  //XXX - this is fairly comutationally ineficienct
+  //TODO: this could probably be made a little more efficient
   if( !nuclide )
     return false;
 
-  for( const MaterialAndSources &material : m_materials )
+  for( const ShieldingInfo &shield : m_materials )
   {
-    for( const SandiaDecay::Nuclide *nuc : material.second )
+    for( const SandiaDecay::Nuclide *nuc : shield.self_atten_sources )
     {
       if( nuc == nuclide )
         return true;
     }
-  }//for( const MaterialAndSources &material : m_materials )
+  }//for( const ShieldingInfo &material : m_materials )
 
   return false;
 }//bool isActivityDefinedFromShielding(...) const;
@@ -1122,12 +1165,10 @@ double PointSourceShieldingChi2Fcn::activityDefinedFromShielding(
       {
         double massFrac = 0.0;
         
-#if( ALLOW_MASS_FRACTION_FIT )
         if( hasVariableMassFraction(mat) )
         {
           massFrac = PointSourceShieldingChi2Fcn::massFraction( mat, src, params );
         }else
-#endif
         {
           for( const Material::NuclideFractionPair &nfp : mat->nuclides )
           {
@@ -1242,12 +1283,10 @@ double PointSourceShieldingChi2Fcn::activityUncertainty( const SandiaDecay::Nucl
       {
         double massFrac = 0.0, massFracUncert = 0.0;
         
-#if( ALLOW_MASS_FRACTION_FIT )
         if( hasVariableMassFraction(mat) )
         {
           massFraction( massFrac, massFracUncert, mat, src, params, errors );
         }else
-#endif
         {
           for( const Material::NuclideFractionPair &nfp : mat->nuclides )
           {
@@ -1980,7 +2019,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   for( int materialN = 0; materialN < nMaterials; ++materialN )
   {
     boost::function<double(float)> att_coef_fcn;
-    const Material * const material = m_materials[materialN].first;
+    const Material * const material = m_materials[materialN].material;
 //    const vector<const SandiaDecay::Nuclide *> &srcs
 //                                                = m_materials[materialN].second;
 
@@ -2129,19 +2168,14 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 
   //This is where contributions from sources defined from the shielding should
   //  be calculated
-#if( ALLOW_MASS_FRACTION_FIT )
-  vector<MaterialAndSources> materials = m_materials;
+  vector<ShieldingInfo> materials = m_materials;
   vector<std::shared_ptr<Material> > customMaterials;
-#else
-  const std::vector<MaterialAndSources> &materials = m_materials;
-#endif
   
   if( info )
   {
     for( int materialN = 0; materialN < nMaterials; ++materialN )
     {
-      const vector<const SandiaDecay::Nuclide *> &srcs
-                                         = materials[materialN].second;
+      const vector<const SandiaDecay::Nuclide *> &srcs = materials[materialN].self_atten_sources;
       if( !isGenericMaterial(materialN) && !srcs.empty() )
       {
         info->push_back( "Self Attenuating Source Info (shielding, detector,"
@@ -2156,21 +2190,18 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   vector<SelfAttCalc> calculators;
   for( int materialN = 0; materialN < nMaterials; ++materialN )
   {
-    const Material *material = materials[materialN].first;
-    const vector<const SandiaDecay::Nuclide *> &srcs
-                                                = materials[materialN].second;
+    const Material *material = materials[materialN].material;
+    const vector<const SandiaDecay::Nuclide *> &self_atten_srcs = materials[materialN].self_atten_sources;
 
-    if( isGenericMaterial( materialN ) || srcs.empty() )
+    if( isGenericMaterial( materialN ) || self_atten_srcs.empty() )
       continue;
 
-#if( ALLOW_MASS_FRACTION_FIT )
     if( hasVariableMassFraction( material ) )
     {
       std::shared_ptr<Material> mat = variedMassFracMaterial( material, x );
       customMaterials.push_back( mat );
-      materials[materialN].first = material = mat.get();
+      materials[materialN].material = material = mat.get();
     }//if( hasVariableMassFraction( material ) )
-#endif
     
     SelfAttCalc baseCalculator;
     if( m_detector )
@@ -2181,8 +2212,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     baseCalculator.m_observationDist = m_distance;
     baseCalculator.m_sourceIndex = materialN;
 
+    Need to add in trace source computations here.
     
-    for( const SandiaDecay::Nuclide *src : srcs )
+    for( const SandiaDecay::Nuclide *src : self_atten_srcs )
     {
       EnergyCountMap local_energy_count_map;
       const double actPerMass = src->activityPerGram() / PhysicalUnits::gram;
@@ -2238,7 +2270,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
           if( isGenericMaterial( subMat ) )
             continue;
 
-          const Material *const material = materials[subMat].first;
+          const Material *const material = materials[subMat].material;
           radius += thickness( subMat, x );
           if( radius > m_distance )
             throw runtime_error( "PointSourceShieldingChi2Fcn::"
@@ -2255,7 +2287,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         
         calculators.push_back( calculator );
       }//for( const EnergyCountMap::value_type &energy_count : local_energy_count_map )
-    }//for( const SandiaDecay::Nuclide *src : srcs )
+    }//for( const SandiaDecay::Nuclide *src : self_atten_srcs )
   }//for( int materialN = 0; materialN < nMaterials; ++materialN )
 
   if( calculators.size() )

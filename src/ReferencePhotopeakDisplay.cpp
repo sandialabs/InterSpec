@@ -634,7 +634,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   lowerInputLayout->addWidget( m_detectorDisplay, 1, 0 );
 
-  m_shieldingSelect = new ShieldingSelect( m_materialDB, NULL, m_materialSuggest, false );
+  m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest );
   m_shieldingSelect->materialEdit()->setEmptyText( "<shielding material>" );
   m_shieldingSelect->materialChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_shieldingSelect->materialModified().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );

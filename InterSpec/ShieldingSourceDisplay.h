@@ -133,6 +133,32 @@ protected:
 */
 
 
+enum class ModelSourceType : int
+{
+  /** A point source at the center of the shielding. */
+  Point,
+  
+  /** A nuclide in the material itself is the source; e.g., a self-attenuating source like U, Pu, Th, etc. */
+  Intrinsic,
+  
+  /** A trace source in a shielding.  Does not effect transport of gammas through the material, but is just a source term. */
+  Trace
+};//enum class ModelSourceType
+
+
+enum class TraceActivityType : int
+{
+  TotalActivity,
+  ActivityPerCm3,
+  ActivityPerGram, //Needs to come last as wont be availble if
+  //ActivityPPM,
+  NumTraceActivityType
+};//enum class TraceActivityType
+
+const char *to_str( TraceActivityType type );
+
+
+
 
 class SourceFitModel: public Wt::WAbstractItemModel
 {
@@ -163,7 +189,7 @@ protected:
     //ageDefiningNuc: specifies if the age of nuclide should be tied to the age
     //  a different nuclide instead.  Will be NULL if this is not the case.
     const SandiaDecay::Nuclide *ageDefiningNuc;
-    bool shieldingIsSource;
+    ModelSourceType sourceType;
     double activityUncertainty;
     double ageUncertainty;
 
@@ -175,7 +201,7 @@ protected:
     IsoFitStruct()
       : nuclide(NULL), numProgenyPeaksSelected(0), activity(0.0), fitActivity(false),
         age(0.0), fitAge(false), ageIsFittable(true), ageDefiningNuc(NULL),
-        shieldingIsSource(false),
+        sourceType(ModelSourceType::Point),
         activityUncertainty(-1.0), ageUncertainty(-1.0)
     #if( INCLUDE_ANALYSIS_TEST_SUITE )
         , truthActivity(), truthActivityTolerance(),
@@ -239,8 +265,12 @@ public:
   //  ageDefiningNuclide(...) for this case
   bool fitAge( int nuc ) const;
   
-  bool shieldingDeterminedActivity( int nuc ) const;
-
+  
+  ModelSourceType sourceType( int nuc ) const;
+  
+  /** Returns true if a shielding determined source, or a trace source. */
+  bool isVolumetricSource( int nuc ) const;
+  
   int nuclideIndex( const SandiaDecay::Nuclide *nuc ) const;
  
   //setSharredAgeNuclide(): in order to make it so all isotopes of an element
@@ -260,7 +290,14 @@ public:
   const SandiaDecay::Nuclide *ageDefiningNuclide( const SandiaDecay::Nuclide *dependantNuc ) const;
   
   
-  void makeActivityEditable( const SandiaDecay::Nuclide *nuc );
+  /** Sets the source type for a nuclide.
+   Sources default to ModelSourceType::Point, which lets the user edit the activity and whether or not to fit the activity in the table.
+   
+   For ModelSourceType::Intrinsic or ModelSourceType::Trace the activity field in the table will become non-editable, and the option to
+   fit this quantity will become non-visible, as the ShieldingSelect controls this option via fitting for thickness and/or trace activity.
+   */
+  void setSourceType( const SandiaDecay::Nuclide *nuc, ModelSourceType type );
+  
   void makeActivityNonEditable( const SandiaDecay::Nuclide *nuc );
 
   void peakModelRowsInsertedCallback( Wt::WModelIndex index,
@@ -418,9 +455,13 @@ public:
   void updateActivityOfShieldingIsotope( ShieldingSelect *select,
                                          const SandiaDecay::Nuclide *nuc );
   void isotopeSelectedAsShieldingCallback( ShieldingSelect *select,
-                                           const SandiaDecay::Nuclide *nuc );
+                                           const SandiaDecay::Nuclide *nuc,
+                                           const ModelSourceType type );
   void isotopeDeSelectedAsShieldingCallback( ShieldingSelect *select,
-                                             const SandiaDecay::Nuclide *nuc );
+                                             const SandiaDecay::Nuclide *nuc,
+                                             const ModelSourceType type );
+  
+  
   
   struct ModelFitProgress
   {
@@ -533,6 +574,12 @@ public:
   void updateChi2Chart();
   
   void showCalcLog();
+  
+  /** Returns the inner radius of a ShieldingSelect.
+   
+   Will throw exception if the ShieldingSelect is not a valid pointer owned by this ShieldingSourceDisplay.
+   */
+  double innerRadiusOfShielding( const ShieldingSelect * const select ) const;
   
   //testSerialization(): simply tries to round-trip this ShieldingSourceDisplay
   //  to and then back from XML.  Does not actually check it was correctly done
@@ -752,7 +799,8 @@ protected:
     Wt::WColor m_textPenColor;
   };//class WCartesianChart
 
-  static const int sm_xmlSerializationVersion;
+  static const int sm_xmlSerializationMajorVersion;
+  static const int sm_xmlSerializationMinorVersion;
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   // So the tester can call updateChi2ChartActual
