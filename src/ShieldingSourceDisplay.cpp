@@ -122,8 +122,12 @@ using namespace std;
 
 typedef std::shared_ptr<const PeakDef> PeakShrdPtr;
 
-const int ShieldingSelect::sm_xmlSerializationVersion = 0;
-const int ShieldingSourceDisplay::sm_xmlSerializationVersion = 0;
+const int ShieldingSourceDisplay::sm_xmlSerializationMajorVersion = 0;
+
+/** Change log:
+ - 20211031, Version 1: added "SourceType" node under the <Nuclide> to say whterther its a point, intrinsic, or trace source.
+ */
+const int ShieldingSourceDisplay::sm_xmlSerializationMinorVersion = 1;
 
 const size_t ShieldingSourceDisplay::sm_max_model_fit_time_ms = 120*1000;
 const size_t ShieldingSourceDisplay::sm_model_update_frequency_ms = 2000;
@@ -188,6 +192,29 @@ namespace
   };//class PeakCsvResource : public Wt::WResource
   
 }//namespace
+
+
+const char *to_str( TraceActivityType type )
+{
+  switch( type )
+  {
+    case TraceActivityType::TotalActivity:
+      return "TotalActivity";
+      
+    case TraceActivityType::ActivityPerCm3:
+      return "ActivityPerCm3";
+      
+    case TraceActivityType::ActivityPerGram:
+      return "ActivityPerGram";
+      
+    case TraceActivityType::NumTraceActivityType:
+      return "NumTraceActivityType";
+  }//switch( type )
+  
+  return "InvalidTraceActivityType";
+}//to_str( TraceActivityType )
+
+
 
 
 SourceFitModel::SourceFitModel( PeakModel *peakModel,
@@ -380,12 +407,34 @@ const SandiaDecay::Nuclide *SourceFitModel::ageDefiningNuclide(
 }//bool ageDefiningNuclide( int nuc ) const
 
 
-bool SourceFitModel::shieldingDeterminedActivity( int nuc ) const
+ModelSourceType SourceFitModel::sourceType( int nuc ) const
 {
   if( nuc<0 || nuc>=static_cast<int>(m_nuclides.size()) )
     throw std::runtime_error( "SourceFitModel: called with invalid index" );
-  return m_nuclides[nuc].shieldingIsSource;
-}//bool shieldingDeterminedActivity( int nuc ) const
+  
+  return m_nuclides[nuc].sourceType;
+}//ModelSourceType sourceType( int nuc ) const
+
+
+
+bool SourceFitModel::isVolumetricSource( int nuc ) const
+{
+  if( nuc<0 || nuc>=static_cast<int>(m_nuclides.size()) )
+    throw std::runtime_error( "SourceFitModel: called with invalid index" );
+  
+  switch( m_nuclides[nuc].sourceType )
+  {
+    case ModelSourceType::Point:
+      return false;
+      
+    case ModelSourceType::Intrinsic:
+    case ModelSourceType::Trace:
+      return true;
+  }//switch( m_nuclides[nuc].sourceType )
+  
+  assert( 0 );
+  return false;
+}//bool isVolumetricSource(...)
 
 
 void SourceFitModel::setSharredAgeNuclide( const SandiaDecay::Nuclide *dependantNuc,
@@ -423,7 +472,7 @@ void SourceFitModel::setSharredAgeNuclide( const SandiaDecay::Nuclide *dependant
 }//void makeAgeFitable( const SandiaDecay::Nuclide *nuc, bool fit )
 
 
-void SourceFitModel::makeActivityEditable( const SandiaDecay::Nuclide *nuc )
+void SourceFitModel::setSourceType( const SandiaDecay::Nuclide *nuc, ModelSourceType type )
 {
   const int nrows = static_cast<int>( m_nuclides.size() );
 
@@ -433,34 +482,15 @@ void SourceFitModel::makeActivityEditable( const SandiaDecay::Nuclide *nuc )
 
     if( iso.nuclide && (iso.nuclide==nuc) )
     {
-      if( !iso.shieldingIsSource )
-        continue;
-      iso.shieldingIsSource = false;
-
-      dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,columnCount()-1,nullptr) );
+      if( iso.sourceType != type )
+      {
+        iso.sourceType = type;
+        dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,columnCount()-1,nullptr) );
+        return;
+      }
     }//if( this is the nuclide we want )
   }//for( const IsoFitStruct &iso : m_nuclides )
-}//void makeActivityEditable( const std::string &symbol )
-
-
-void SourceFitModel::makeActivityNonEditable( const SandiaDecay::Nuclide *nuc )
-{
-  const int nrows = static_cast<int>( m_nuclides.size() );
-
-  for( int row = 0; row < nrows; ++row )
-  {
-    IsoFitStruct &iso = m_nuclides[row];
-
-    if( iso.nuclide && (iso.nuclide==nuc) )
-    {
-      if( iso.shieldingIsSource )
-        continue;
-      iso.shieldingIsSource = true;
-
-      dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,columnCount()-1,nullptr) );
-    }//if( this is the nuclide we want )
-  }//for( const IsoFitStruct &iso : m_nuclides )
-}//void makeActivityNonEditable( const std::string &symbol )
+}//void setSourceType( const SandiaDecay::Nuclide *nuc, ModelSourceType type )
 
 
 void SourceFitModel::setUseSameAgeForIsotopes( bool useSame )
@@ -3001,7 +3031,7 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
       assert( nuc );
       
       const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuc );
-      const bool selfAttNuc = m_sourceModel->shieldingDeterminedActivity( i );
+      const bool selfAttNuc = m_sourceModel->isShieldingDeterminedActivity( i );
       
 //      if( selfAttNuc )
 //        throw runtime_error( "Model is not candidate for truth-level info<br />"
@@ -3326,7 +3356,7 @@ void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
     assert( nuc );
     
     const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuc );
-    const bool selfAttNuc = m_sourceModel->shieldingDeterminedActivity( i );
+    const bool selfAttNuc = m_sourceModel->isShieldingDeterminedActivity( i );
     
     // For self-attenuating shieldings, we'll just test the shielding thickness
     // For nuclides whose age is controlled by another nuclide, we dont need to test age.
@@ -3390,7 +3420,7 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
     assert( nuc );
     
     const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuc );
-    const bool selfAttNuc = m_sourceModel->shieldingDeterminedActivity( i );
+    const bool selfAttNuc = m_sourceModel->isShieldingDeterminedActivity( i );
     
     // For self-attenuating shieldings, we'll just test the shielding thickness
     // For nuclides whose age is controlled by another nuclide, we dont need to test age.
@@ -3512,7 +3542,7 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
       assert( nuc );
       
       const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuc );
-      const bool selfAttNuc = m_sourceModel->shieldingDeterminedActivity( i );
+      const bool selfAttNuc = m_sourceModel->isShieldingDeterminedActivity( i );
       
       // For self-attenuating shieldings, we'll just test the shielding thickness
       // For nuclides whose age is controlled by another nuclide, we dont need to test age.
@@ -4064,6 +4094,28 @@ void ShieldingSourceDisplay::showCalcLog()
   m_logDiv->resizeToFitOnScreen();
   m_logDiv->centerWindow();
 }//void showCalcLog()
+
+
+
+double ShieldingSourceDisplay::innerRadiusOfShielding( const ShieldingSelect * const select ) const
+{
+  double inner_rad = 0.0;
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *thisSelect = dynamic_cast<ShieldingSelect *>(widget);
+    if( !thisSelect || thisSelect->isGenericMaterial() )
+      continue;
+
+    if( thisSelect == select )
+      return inner_rad;
+
+    inner_rad += thisSelect->thickness();
+  }//for( WWidget *widget : m_shieldingSelects->children() )
+
+  throw runtime_error( "innerRadiusOfShielding(ShieldingSelect *): invalid select passed in" );
+  
+  return inner_rad;
+}//double innerRadiusOfShielding( const ShieldingSelect * const select ) const
 
 
 void ShieldingSourceDisplay::finishModelUpload( AuxWindow *window,
@@ -4834,359 +4886,6 @@ void ShieldingSourceDisplay::testSerialization()
 }//testSerialization()
 
 
-void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
-{
-  rapidxml::xml_document<char> *doc = parent_node->document();
-  
-  const char *name, *value;
-  rapidxml::xml_node<char> *base_node, *node;
-  rapidxml::xml_attribute<char> *attr;
-  
-  name = "Shielding";
-  base_node = doc->allocate_node( rapidxml::node_element, name );
-  parent_node->append_node( base_node );
-  
-  //If you change the available options or formatting or whatever, increment the
-  //  version field of the XML!
-  value = doc->allocate_string( std::to_string(sm_xmlSerializationVersion).c_str() );
-  attr = doc->allocate_attribute( "version", value );
-  base_node->append_attribute( attr );
-
-  name = "ForFitting";
-  value = m_forFitting ? "1" : "0";
-  node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( node );
-
-  if( m_isGenericMaterial )
-  {
-    rapidxml::xml_node<> *generic_node;
-    
-    name = "Generic";
-    generic_node = doc->allocate_node( rapidxml::node_element, name );
-    base_node->append_node( generic_node );
-    
-    name = "ArealDensity";
-    value = doc->allocate_string( m_arealDensityEdit->valueText().toUTF8().c_str() );
-    node = doc->allocate_node( rapidxml::node_element, name, value );
-    generic_node->append_node( node );
-    if( m_forFitting )
-    {
-      value = m_fitArealDensityCB->isChecked() ? "1" : "0";
-      attr = doc->allocate_attribute( "Fit", value );
-      node->append_attribute( attr );
-    }//if( m_fitArealDensityCB )
-    
-    name = "AtomicNumber";
-    value = doc->allocate_string( m_atomicNumberEdit->valueText().toUTF8().c_str() );
-    node = doc->allocate_node( rapidxml::node_element, name, value );
-    generic_node->append_node( node );
-    if( m_forFitting )
-    {
-      value = m_fitAtomicNumberCB->isChecked() ? "1" : "0";
-      attr = doc->allocate_attribute( "Fit", value );
-      node->append_attribute( attr );
-    }//if( m_fitAtomicNumberCB )
-    
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-    auto addTruth = [doc,generic_node]( const char *truthName, const boost::optional<double> &value ){
-      if( value )
-      {
-        const string strval = std::to_string(*value);
-        const char *value = doc->allocate_string( strval.c_str() );
-        rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, truthName, value );
-        generic_node->append_node( node );
-      }
-    };//addTruth(...)
-    addTruth( "TruthAD", truthAD );
-    addTruth( "TruthADTolerance", truthADTolerance );
-    addTruth( "TruthAN", truthAN );
-    addTruth( "TruthANTolerance", truthANTolerance );
-#endif
-  }else
-  {
-    rapidxml::xml_node<> *material_node, *mass_frac_node, *iso_node;
-    
-    name = "Material";
-    material_node = doc->allocate_node( rapidxml::node_element, name );
-    base_node->append_node( material_node );
-    
-    name = "Name";
-    value = doc->allocate_string( m_materialEdit->valueText().toUTF8().c_str() );
-    node = doc->allocate_node( rapidxml::node_element, name, value );
-    material_node->append_node( node );
-    
-    name = "Thickness";
-    value = doc->allocate_string( m_thicknessEdit->valueText().toUTF8().c_str() );
-    node = doc->allocate_node( rapidxml::node_element, name, value );
-    material_node->append_node( node );
-    if( m_forFitting )
-    {
-      value = m_fitThicknessCB->isChecked() ? "1" : "0";
-      attr = doc->allocate_attribute( "Fit", value );
-      node->append_attribute( attr );
-    }//if( m_forFitting )
-    
-    if( m_forFitting )
-    {
-      name = "FitMassFraction";
-      value = (m_fitMassFrac && m_fitMassFrac->isChecked()) ? "1" : "0";
-      mass_frac_node = doc->allocate_node( rapidxml::node_element, name, value );
-      material_node->append_node( mass_frac_node );
-    }//if( m_forFitting )
-    
-    for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
-    {
-      for( WWidget *widget : etnm.second->children() )
-      {
-        SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
-        
-        if( src && src->useAsSource() && src->isotope() )
-        {
-          iso_node = doc->allocate_node( rapidxml::node_element, "Nuclide" );
-          material_node->append_node( iso_node );
-          
-          value = doc->allocate_string( src->isotope()->symbol.c_str() );
-          node = doc->allocate_node( rapidxml::node_element, "Name", value );
-          iso_node->append_node( node );
-          
-          value = doc->allocate_string( std::to_string(src->massFraction()).c_str() );
-          node = doc->allocate_node( rapidxml::node_element, "MassFrac", value );
-          iso_node->append_node( node );
-        }//if( src && src->useAsSource() )
-      }//for( WWidget *widget : isotopeDiv->children() )
-    }//for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
-    
-    #if( INCLUDE_ANALYSIS_TEST_SUITE )
-        auto addTruth = [doc,material_node]( const char *truthName, const boost::optional<double> &value ){
-          if( value )
-          {
-            const string strval = PhysicalUnits::printToBestLengthUnits(*value,6);
-            const char *value = doc->allocate_string( strval.c_str() );
-            rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, truthName, value );
-            material_node->append_node( node );
-          }
-        };//addTruth(...)
-    
-        addTruth( "TruthThickness", truthThickness );
-        addTruth( "TruthThicknessTolerance", truthThicknessTolerance );
-    #endif
-  }//if( m_isGenericMaterial ) / else
-}//void serialize( rapidxml::xml_document<> &doc ) const;
-
-
-void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
-{
-  rapidxml::xml_attribute<char> *attr;
-  rapidxml::xml_node<char> *node, *generic_node, *material_node;
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
- 
-  if( shield_node->name() != string("Shielding") )
-    throw runtime_error( "ShieldingSelects XML node should be 'Shielding'" );
-  
-  attr = shield_node->first_attribute( "version", 7 );
-  int version;
-  if( !attr || !attr->value() || !(stringstream(attr->value())>>version) )
-    throw runtime_error( "ShieldingSelects should be versioned" );
-  
-  if( version != sm_xmlSerializationVersion )
-    throw runtime_error( "Invalid XML version for ShieldingSelect" );
-  
-  bool forFitting;
-  node = shield_node->first_node( "ForFitting", 10 );
-  if( !node || !node->value() || !(stringstream(node->value())>>forFitting) )
-    throw runtime_error( "Missing/invalid for fitting node" );
-
-  if( m_forFitting != forFitting )
-    throw runtime_error( "ShieldingSelect m_forFitting must be same as "
-                         "XML being deserialized" );
-  
-  generic_node = shield_node->first_node( "Generic", 7 );
-  material_node = shield_node->first_node( "Material", 8 );
-  
-  if( generic_node )
-  {
-    const rapidxml::xml_node<char> *ad_node, *an_node;
-    ad_node = generic_node->first_node( "ArealDensity", 12 );
-    an_node = generic_node->first_node( "AtomicNumber", 12 );
-    
-    if( !ad_node || !ad_node->value() || !ad_node || !ad_node->value() )
-      throw runtime_error( "Generic material must have ArealDensity and"
-                           " AtomicNumber nodes" );
-    
-    
-    
-    if( !m_isGenericMaterial )
-      handleToggleGeneric();
-    
-    cout << "AD=" << ad_node->value() << endl;
-    cout << "AN=" << an_node->value() << endl;
-    m_arealDensityEdit->setValueText( WString::fromUTF8(ad_node->value()) );
-    m_atomicNumberEdit->setValueText( WString::fromUTF8(an_node->value()) );
-    
-    if( m_forFitting && m_fitArealDensityCB && m_fitAtomicNumberCB )
-    {
-      bool fit;
-      attr = ad_node->first_attribute( "Fit", 3 );
-      if( attr && attr->value() && (stringstream(attr->value())>>fit) )
-        m_fitArealDensityCB->setChecked( fit );
-      
-      attr = an_node->first_attribute( "Fit", 3 );
-      if( attr && attr->value() && (stringstream(attr->value())>>fit) )
-        m_fitAtomicNumberCB->setChecked( fit );
-    }//if( m_fitArealDensityCB )
-    
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-    auto getTruth = [generic_node]( const char *truthName, boost::optional<double> &value ){
-      value.reset();
-      auto node = generic_node->first_node( truthName );
-      if( !node || !node->value() )
-        return;
-      
-      double dblvalue;
-      if( (stringstream(node->value()) >> dblvalue) )
-        value = dblvalue;
-      else
-        cerr << "\n\nFailed to deserialize shielding " << truthName << " from " << node->value()
-        << "\n\n" << endl;
-    };//getTruth(...)
-    
-    getTruth( "TruthAD", truthAD );
-    getTruth( "TruthADTolerance", truthADTolerance );
-    getTruth( "TruthAN", truthAN );
-    getTruth( "TruthANTolerance", truthANTolerance );
-#endif
-  }//if( generic_node )
-  
-  if( material_node )
-  {
-    bool fitMassFrac = false;
-    vector<const SandiaDecay::Nuclide *> srcnuclides;
-    const rapidxml::xml_node<> *frac_node, *iso_node, *name_node, *thick_node;
-
-    name_node = material_node->first_node( "Name", 4 );
-    thick_node = material_node->first_node( "Thickness", 9 );
-    if( !name_node || !name_node->value()
-        || !thick_node || !thick_node->value() )
-      throw runtime_error( "Material node didnt have name or thickness child" );
-    
-    if( m_isGenericMaterial )
-      handleToggleGeneric();
-    
-    m_materialEdit->setValueText( WString::fromUTF8(name_node->value()) );
-    m_thicknessEdit->setValueText( WString::fromUTF8(thick_node->value()) );
-    
-    handleMaterialChange();
-    
-    if( m_forFitting )
-    {
-      bool fit;
-      attr = thick_node->first_attribute( "Fit", 3 );
-      if( !attr || !attr->value() || !(stringstream(attr->value())>>fit) )
-        throw runtime_error( "Material node expected thickness Fit attribute" );
-      m_fitThicknessCB->setChecked( fit );
-      
-      
-      const rapidxml::xml_node<> *fitmassfrac_node = material_node->first_node( "FitMassFraction", 15 );
-      if( fitmassfrac_node && fitmassfrac_node->value() )
-      {
-        stringstream(fitmassfrac_node->value()) >> fitMassFrac;
-      }//if( m_forFitting )
-
-      
-    }//if( m_forFitting )
-
-    double last_frac = 0.0;
-    const SandiaDecay::Nuclide *last_nuc = NULL;
-    
-    for( iso_node = material_node->first_node( "Nuclide", 7 );
-        iso_node; iso_node = iso_node->next_sibling( "Nuclide", 7 ) )
-    {
-      name_node = iso_node->first_node( "Name", 4 );
-      frac_node = iso_node->first_node( "MassFrac", 8 );
-      
-      if( !name_node || !name_node->value()
-          || !frac_node || !frac_node->value() )
-        throw runtime_error( "Missing invalid name/mass frac node form iso" );
-      
-      const SandiaDecay::Nuclide *nuc = db->nuclide( name_node->value() );
-      if( !nuc )
-        throw runtime_error( string(name_node->value()) + " is not a "
-                             "valid isotope" );
-      
-      srcnuclides.push_back( nuc );
-      
-      double fraction;
-      if( !(stringstream(frac_node->value()) >> fraction) )
-        throw runtime_error( "Invalid mass fraction: "
-                             + string(frac_node->value()) );
-      
-//      addSourceIsotopeCheckBox( nuc );
-//      const SandiaDecay::Element *el = db->element( nuc->atomicNumber );
-//      if( m_sourceIsotopes.find( el ) == m_sourceIsotopes.end() )
-//      {
-//      }//if(...)
-      try
-      {
-        setMassFraction( nuc, fraction );
-        
-        last_nuc = nuc;
-        last_frac = fraction;
-      }catch( std::exception &e )
-      {
-        cerr << "ShieldingSelect::deSerialize(...)\n\tCaught: " << e.what()
-             << " but continuuing anyway" << endl;
-      }//try / catch
-    }//for( loop over isotope nodes )
-    
-    //Now set the check boxes to make all the source nuclides called out in the
-    //  XML as actual src nuclides, since we only saved nuclides we actually
-    //  wanted to use as source nuclides.
-    if( m_currentMaterial )
-    {
-      for( const SandiaDecay::Nuclide *nuc : srcnuclides )
-      {
-        for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
-        {
-          for( WWidget *widget : etnm.second->children() )
-          {
-            SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
-            if( src && (nuc == src->isotope()) )
-              src->setUseAsSource( true );
-          }
-        }
-      }//for( const SandiaDecay::Nuclide *nuc : srcnuclides )
-    }//if( m_currentMaterial )
-    
-    if( m_fitMassFrac )
-      m_fitMassFrac->setChecked( fitMassFrac );
-    
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-    auto getTruth = [material_node]( const char *truthName, boost::optional<double> &value ){
-      value.reset();
-      auto node = material_node->first_node( truthName );
-      if( !node || !node->value() )
-        return;
-      
-      try
-      {
-        value = PhysicalUnits::stringToDistance( node->value() );
-      }catch( std::exception &e )
-      {
-        cerr << "\n\nFailed to deserialize a shielding " << truthName << ": " << e.what() << "\n\n";
-      }
-    };//getTruth(...)
-    
-    getTruth( "TruthThickness", truthThickness );
-    getTruth( "TruthThicknessTolerance", truthThicknessTolerance );
-#endif
-    
-    
-    //Calling handleIsotopicChange(...) will perform some normailizations
-    //  and stuff (I think), that setMassFraction(...) doesnt do
-    if( last_nuc )
-      handleIsotopicChange( static_cast<float>(last_frac), last_nuc );
-  }//if( material_node )
-}//void deSerialize( const rapidxml::xml_node<char> *shielding_node ) const
 
 
 
@@ -5259,10 +4958,14 @@ void ShieldingSourceDisplay::deSerializeSourcesToFitFor( const rapidxml::xml_nod
   {
     const rapidxml::xml_node<> *name_node = src_node->first_node( "Name", 4 );
     const rapidxml::xml_node<> *activity_node = src_node->first_node( "Activity", 8 );
-    const rapidxml::xml_node<> *determined_note = src_node->first_node( "ShieldingDeterminedActivity", 27 );
+    const rapidxml::xml_node<> *self_atten_node = src_node->first_node( "ShieldingDeterminedActivity", 27 ); //XML version 1.0
+    const rapidxml::xml_node<> *src_type_node = src_node->first_node( "SourceType", 10 ); //XML version 1.1
+    
+    const char *self_atten_value = self_atten_node ? self_atten_node->value() : nullptr;
+    const char *src_type_value = src_type_node ? src_type_node->value() : nullptr;
     
     if( !name_node || !name_node->value() || !activity_node
-        || !determined_note || !determined_note->value() )
+       || (!self_atten_value && !src_type_value)  )
       throw runtime_error( "Missing necessary element for sources XML" );
     
     const rapidxml::xml_node<> *activity_value_node = activity_node->first_node( "Value", 5 );
@@ -5309,8 +5012,28 @@ void ShieldingSourceDisplay::deSerializeSourcesToFitFor( const rapidxml::xml_nod
       throw runtime_error( "Failed to read fit_act" );
     if( !(stringstream(fit_age_attr->value()) >> row.fitAge) )
       throw runtime_error( "Failed to read fit_age" );
-    if( !(stringstream(determined_note->value()) >> row.shieldingIsSource) )
-      throw runtime_error( "Failed to read shieldingIsSource" );
+    
+    if( self_atten_value )
+    {
+      // Depreciated as of XML version 0.1
+      bool selfAtten = false;
+      if( !(stringstream(self_atten_value) >> selfAtten) )
+        throw runtime_error( "Failed to read shieldingIsSource" );
+      row.sourceType = selfAtten ? ModelSourceType::Intrinsic : ModelSourceType::Point;
+    }//if( self_atten_value )
+    
+    if( src_type_value )
+    {
+      // XML version >= 0.1
+      if( SpecUtils::iequals_ascii(src_type_value, "Point") )
+        row.sourceType = ModelSourceType::Point;
+      else if( SpecUtils::iequals_ascii(src_type_value, "Intrinsic") )
+        row.sourceType = ModelSourceType::Intrinsic;
+      else if( SpecUtils::iequals_ascii(src_type_value, "Trace") )
+        row.sourceType = ModelSourceType::Trace;
+      else
+        throw runtime_error( "Invalid value of 'SourceType'" );
+    }//if( src_type_value )
 
     row.ageIsFittable = !PeakDef::ageFitNotAllowed( row.nuclide );
     
@@ -5474,8 +5197,12 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   if( !attr || !attr->value() || !(stringstream(attr->value())>>version) )
     throw runtime_error( "Deserializing requires a version" );
   
-  if( version != sm_xmlSerializationVersion )
+  if( version != sm_xmlSerializationMajorVersion )
     throw runtime_error( "Invalid version of ShieldingSourceDisplay XML" );
+  
+  // Note that version is either "0" (implied minor version 0), or "0.1" or something; we could read
+  //  in the minor version to sm_xmlSerializationMinorVersion and use it, but theres really no need.
+  
   
   if( !muti_iso_node || !muti_iso_node->value()
       || !(stringstream(muti_iso_node->value()) >> muti_iso) )
@@ -5539,9 +5266,12 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   
   //If you change the available options or formatting or whatever, increment the
   //  version field of the XML!
-  value = doc->allocate_string( std::to_string(sm_xmlSerializationVersion).c_str() );
+  const string versionstr = std::to_string(ShieldingSelect::sm_xmlSerializationMajorVersion)
+                          + "." + std::to_string(ShieldingSelect::sm_xmlSerializationMinorVersion);
+  value = doc->allocate_string( versionstr.c_str() );
   attr = doc->allocate_attribute( "version", value );
   base_node->append_attribute( attr );
+  
   
   name = "MultipleIsotopesPerPeak";
   value = m_multiIsoPerPeak->isChecked() ? "1" : "0";
@@ -5630,9 +5360,6 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     const bool fitAge = m_sourceModel->fitAge( nuc );
     const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuclide );
     
-    const bool shieldingDeterminedActivity
-                           = m_sourceModel->shieldingDeterminedActivity( nuc );
-    
     nuclide_node = doc->allocate_node( rapidxml::node_element, "Nuclide" );
     isotope_nodes->append_node( nuclide_node );
 
@@ -5640,8 +5367,37 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     name_node = doc->allocate_node( rapidxml::node_element, "Name", value );
     nuclide_node->append_node( name_node );
     
-    value = shieldingDeterminedActivity ? "1" : "0";
+    
+    const char *srctype = "";
+    switch( m_sourceModel->sourceType(nuc) )
+    {
+      case ModelSourceType::Point:
+        srctype = "Point";
+        value = "0";
+        break;
+        
+      case ModelSourceType::Intrinsic:
+        srctype = "Intrinsic";
+        value = "1";
+        break;
+        
+      case ModelSourceType::Trace:
+        srctype = "Trace";
+        value = "0";
+        break;
+    }//switch( m_sourceModel->sourceType(nuc) )
+    
+    // <ShieldingDeterminedActivity> is depreciated as of XML version 0.1, but leaving in to be
+    //   backward compatible with version 0.0 (trace sources will be treated as point sources)
     determined_note = doc->allocate_node( rapidxml::node_element, "ShieldingDeterminedActivity", value );
+    nuclide_node->append_node( determined_note );
+    
+    // I dont think we actually need to note the source type here, because the ShieldingSelects
+    //  already have this info, but when we deSerialize, we'll note
+    //  SourceFitModel::IsoFitStruct::sourceType - which is maybe not the best because it creates
+    //  a condition for the XML to become inconsistent with itself
+    value = srctype;
+    determined_note = doc->allocate_node( rapidxml::node_element, "SourceType", value );
     nuclide_node->append_node( determined_note );
     
     activity_node = doc->allocate_node( rapidxml::node_element, "Activity" );
@@ -5674,7 +5430,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     {
       value = ageNuc->symbol.c_str();
       
-      if( ShieldingSourceDisplay::sm_xmlSerializationVersion == 0 )
+      if( ShieldingSourceDisplay::sm_xmlSerializationMajorVersion == 0 )
       {
         //Depreciating tag 20201201, will remove when XML serialization is updated
         attr = doc->allocate_attribute( "AgeMaster", value );
@@ -5929,10 +5685,7 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
 {
   m_modifiedThisForeground = true;
   
-  ShieldingSelect *select = NULL;
-
-  select = new ShieldingSelect( m_materialDB, m_sourceModel,
-                                m_materialSuggest, true );
+  ShieldingSelect *select = new ShieldingSelect( m_materialDB, m_sourceModel, m_materialSuggest, this );
 
   if( before && m_shieldingSelects->indexOf(before) >= 0 )
     m_shieldingSelects->insertBefore( select, before );
@@ -5958,9 +5711,11 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   select->materialModified().connect( this, &ShieldingSourceDisplay::materialModifiedCallback );
   select->materialChanged().connect( this, &ShieldingSourceDisplay::materialChangedCallback );
 
-  select->addingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeSelectedAsShieldingCallback, this, select, _1 ) );
-  select->removingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeDeSelectedAsShieldingCallback, this, select, _1 ) );
+  select->addingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeSelectedAsShieldingCallback, this, select, _1, _2 ) );
+  select->removingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeDeSelectedAsShieldingCallback, this, select, _1, _2 ) );
   select->activityFromThicknessNeedUpdating().connect( boost::bind( &ShieldingSourceDisplay::updateActivityOfShieldingIsotope, this, _1, _2 ) );
+  
+  
 
   if( doUpdateChiChart )
     updateChi2Chart();
@@ -5995,7 +5750,7 @@ void ShieldingSourceDisplay::addSourceIsotopesToShieldings( Wt::WModelIndex, int
       continue;
     
     for( const SandiaDecay::Nuclide *iso : isotopes )
-      thisSelect->addSourceIsotopeCheckBox( iso );
+      thisSelect->modelNuclideAdded( iso );
   }//for( WWidget *widget : m_shieldingSelects->children() )
 }//void addSourceIsotopesToShieldings( Wt::WModelIndex, int firstRow, int lastRow )
 
@@ -6029,7 +5784,7 @@ void ShieldingSourceDisplay::removeSourceIsotopesFromShieldings( Wt::WModelIndex
       continue;
 
     for( const SandiaDecay::Nuclide *iso : isotopes )
-      thisSelect->removeSourceIsotopeCheckBox( iso );
+      thisSelect->sourceRemovedFromModel( iso );
   }//for( WWidget *widget : m_shieldingSelects->children() )
 }//void removeSourceIsotopesFromShieldings( Wt::WModelIndex, int firstRow, int lastRow )
 
@@ -6069,7 +5824,7 @@ void ShieldingSourceDisplay::materialChangedCallback( ShieldingSelect *select )
   {
     const SandiaDecay::Nuclide *nuc = m_sourceModel->nuclide( row );
     if( nuc )
-      select->addSourceIsotopeCheckBox( nuc );
+      select->modelNuclideAdded( nuc );
   }//for( int row = 0; row < nrow; ++row )
 
 }//void materialChangedCallback( ShieldingSelect *select )
@@ -6079,28 +5834,32 @@ void ShieldingSourceDisplay::materialChangedCallback( ShieldingSelect *select )
 void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *select,
                                        const SandiaDecay::Nuclide *nuc )
 {
+  // This function gets called when shielding changes for either self-attenuating or trace sources.
   typedef pair<const SandiaDecay::Nuclide *,float> NuclideFrac;
 
-  if( !select || select->isGenericMaterial() || !select->material() )
+  if( !select || select->isGenericMaterial() || !select->material() || !nuc )
   {
     stringstream msg;
     msg << "ShieldingSourceDisplay::updateActivityOfShieldingIsotope(...)\n\tShould not be here!";
     throw std::runtime_error( msg.str() );
   }//if( !select || select->isGenericMaterial() )
 
-  double inner_rad = 0.0;
-  for( WWidget *widget : m_shieldingSelects->children() )
+  
+  char buffer[64] = { '\0' };
+  const int row = m_sourceModel->row( nuc );
+  const WModelIndex index = m_sourceModel->index( row, SourceFitModel::kActivity );
+  
+  if( select->isTraceSourceForNuclide(nuc) )
   {
-    ShieldingSelect *thisSelect = dynamic_cast<ShieldingSelect *>(widget);
-    if( !thisSelect || thisSelect->isGenericMaterial() )
-      continue;
-
-    if( thisSelect == select )
-      break;
-
-    inner_rad += thisSelect->thickness();
-  }//for( WWidget *widget : m_shieldingSelects->children() )
-
+    // The only time we get here, the ShieldingSelect should have already updated itself so its
+    //  total activity is current and taking into account all changes - I think
+    const double activity = select->traceSourceTotalActivity(nuc) / PhysicalUnits::curie;
+    snprintf( buffer, sizeof(buffer), "%1.8E ci", activity );
+    m_sourceModel->setData( index, string(buffer) );
+  }//if( select->isTraceSourceForNuclide(nuc) )
+  
+  
+  const double inner_rad = innerRadiusOfShielding(select);
   const double outer_rad = inner_rad + select->thickness();
 
   const double pi = 3.14159265359;
@@ -6122,10 +5881,7 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
     }
   }//for( const NuclideFrac &ef : material->nuclides )
 
-  /*
-   *XXXHere
-   */
-
+  
   if( !nuclide )
   {
     stringstream msg;
@@ -6142,8 +5898,6 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
 //  << ", activity_per_gram=" << activity_per_gram
 //  << ", activity=" << activity << " ci" << endl;
   
-  const int row = m_sourceModel->row( nuclide );
-
   if( row < 0 )
   {
     stringstream msg;
@@ -6160,19 +5914,19 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
     passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
     return;
   }//if( IsNan(p.second) || IsInf(p.second) )
-
   
-  char buffer[64];
+  
   snprintf( buffer, sizeof(buffer), "%1.8E ci", activity );
-
-  WModelIndex index = m_sourceModel->index( row, SourceFitModel::kActivity );
   m_sourceModel->setData( index, string(buffer) );
 }//void updateActivityOfShieldingIsotope(..)
 
 
 void ShieldingSourceDisplay::isotopeSelectedAsShieldingCallback(
-                            ShieldingSelect *caller, const SandiaDecay::Nuclide *nuc )
+                                                ShieldingSelect *caller,
+                                                const SandiaDecay::Nuclide *nuc,
+                                                const ModelSourceType type )
 {
+
   //Make sure no other selects have this isotope selected
   const vector<WWidget *> &children = m_shieldingSelects->children();
   for( WWidget *widget : children )
@@ -6185,7 +5939,7 @@ void ShieldingSourceDisplay::isotopeSelectedAsShieldingCallback(
   }//for( WWidget *widget : children )
 
   //Set appropriate flags in the SourceFitModel so activity wont be editiable
-  m_sourceModel->makeActivityNonEditable( nuc );
+  m_sourceModel->setSourceType( nuc, type );
 
   //Change the age to something more reasonable for uranium, plutonium etc,
   //  XXX - this age change should definetly be improved, on a nuclide by
@@ -6216,10 +5970,12 @@ void ShieldingSourceDisplay::isotopeSelectedAsShieldingCallback(
 
 
 void ShieldingSourceDisplay::isotopeDeSelectedAsShieldingCallback(
-                            ShieldingSelect *select, const SandiaDecay::Nuclide *nuc )
+                                            ShieldingSelect *select,
+                                            const SandiaDecay::Nuclide *nuc,
+                                            const ModelSourceType type )
 {
   //Set appropriate flags in the SourceFitModel so activity will be editiable
-  m_sourceModel->makeActivityEditable( nuc );
+  m_sourceModel->setSourceType( nuc, type );
 
   //Update the Chi2
   updateChi2Chart();
@@ -6312,6 +6068,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     }//if( select )
   }//for( WWidget *widget : m_shieldingSelects->children() )
 
+  We need to identify trace sources here
   
   std::shared_ptr<const DetectorPeakResponse> detector;
   if( m_specViewer->measurment(SpecUtils::SpectrumType::Foreground) )
@@ -6339,6 +6096,8 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   for( size_t nucn = 0; nucn < answer->numNuclides(); ++nucn )
   {
     const SandiaDecay::Nuclide *nuclide = answer->nuclide( int(nucn) );
+    assert( nuclide );
+    
     const int ison = m_sourceModel->nuclideIndex( nuclide );
     double activity = m_sourceModel->activity( ison )
                             / PointSourceShieldingChi2Fcn::sm_activityUnits;
@@ -6352,12 +6111,54 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
 //         << " which is a minuit value of " << activity << endl;
 //    activity = 10.0*PhysicalUnits::curie*(1.0E-6) / PointSourceShieldingChi2Fcn::sm_activityUnits;
     
-    const bool fitAct = m_sourceModel->fitActivity( ison )
-                        && !m_sourceModel->shieldingDeterminedActivity( ison );
+    bool fitAct = false;
     const bool fitAge = m_sourceModel->fitAge( ison );
     
     const SandiaDecay::Nuclide *ageDefiningNuc = m_sourceModel->ageDefiningNuclide( nuclide );
     const bool hasOwnAge = (!ageDefiningNuc || (ageDefiningNuc == nuclide));
+    
+    
+    switch( m_sourceModel->sourceType(ison) )
+    {
+      case ModelSourceType::Point:
+        fitAct = m_sourceModel->fitActivity( ison );
+        break;
+        
+      case ModelSourceType::Intrinsic:
+        fitAct = false;
+        break;
+        
+      case ModelSourceType::Trace:
+      {
+        // Go through shieldings and get display activity, so we can fit for that.
+        int numShieldingsTraceSrcFor = 0;
+        for( WWidget *w : m_shieldingSelects->children() )
+        {
+          ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( w );
+          assert( select );
+          
+          if( !select ) //JIC
+            continue;
+          
+          if( select->isTraceSourceForNuclide(nuclide) )
+          {
+            // TODO: add an assert here
+            activity = select->traceSourceDisplayActivity(nuclide)
+                                          / PointSourceShieldingChi2Fcn::sm_activityUnits;
+            numShieldingsTraceSrcFor += 1;
+            
+            fitAct = select->fitTraceSourceActivity(nuclide);
+          }
+        }//for( WWidget *w : m_shieldingSelects->children() )
+        
+        assert( numShieldingsTraceSrcFor == 1 );
+        
+        if( numShieldingsTraceSrcFor != 1 )
+          throw runtime_error( "Unexpected inconsistent state - couldnt find trace source widget for " + nuclide->symbol );
+        
+        break;
+      }//case ModelSourceType::Trace:
+    }//switch( m_sourceModel->sourceType(ison) )
     
     //cout << "For nuc=" << nuclide->symbol << " age=" << PhysicalUnits::printToBestTimeUnits(age)
     //     << ", fitage=" << PhysicalUnits::printToBestTimeUnits(fitAge)
@@ -6367,14 +6168,15 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     
     num_fit_params += fitAct + (fitAge && hasOwnAge);
 
+    
     if( fitAct )
     {
       //We cant have both a specified lower and upper limit on activity, or
       //  such a large range will make Minuit2 choke and give a completely
       //  in-accurate answer (returns not even the best chi2 it found), if only
       //  one fit parameter.
-//      inputPrams.Add( nuclide->symbol + "Strength", activity, activityStep, 0.0,
-//                     10000.0*PhysicalUnits::curie/PointSourceShieldingChi2Fcn::sm_activityUnits );
+      //      inputPrams.Add( nuclide->symbol + "Strength", activity, activityStep, 0.0,
+      //                     10000.0*PhysicalUnits::curie/PointSourceShieldingChi2Fcn::sm_activityUnits );
       const string name = nuclide->symbol + "Strength";
       const double activityStep = (activity < 0.0001 ? 0.0001 : 0.1*activity);
       inputPrams.Add( name, activity, activityStep );
@@ -6591,7 +6393,6 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   }//if( m_backgroundPeakSub->isChecked() )
   
   
-#if( ALLOW_MASS_FRACTION_FIT )  
   for( size_t i = 0; i < shieldings.size(); ++i )
   {
     ShieldingSelect *select = shieldings[i];
@@ -6656,7 +6457,6 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       }//for( size_t j = 0; i < nmassfrac; ++j )
     }//if( fit for mass fractions to )
   }//for( WWidget *widget : m_shieldingSelects->children() )
-#endif
   
   
   if( num_fit_params != inputPrams.VariableParameters() )
@@ -6912,7 +6712,6 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
     }//for( size_t i = 0; i < shieldings.size(); ++i )
     
     
-#if( ALLOW_MASS_FRACTION_FIT )
     const vector<const Material *> massfracFitMaterials
     = m_currentFitFcn->materialsFittingMassFracsFor();
     for( int i = 0; i < nshieldings; ++i )
@@ -6983,7 +6782,6 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         << endl << endl;
       }//if( select->fitForMassFractions() )
     }//for( int i = 0; i < nshieldings; ++i )
-#endif
     
     updateChi2ChartActual();
     m_chi2ChartNeedsUpdating = false;
@@ -7464,8 +7262,6 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
   try
   {
     
-  
-#if(ALLOW_MASS_FRACTION_FIT)
   for( const Material *mat : chi2Fcn->materialsFittingMassFracsFor() )
   {
     stringstream msg;
@@ -7483,7 +7279,6 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     
     m_calcLog.push_back( msg.str() );
   }//for( const Material *mat : chi2Fcn->materialsFittingMassFracsFor() )
-#endif
     
   {//begin add chi2 line
     stringstream msg;

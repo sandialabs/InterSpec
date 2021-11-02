@@ -32,8 +32,10 @@
 #include <Wt/WText>
 #include <Wt/WLabel>
 #include <Wt/WImage>
+#include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WCheckBox>
+#include <Wt/WGroupBox>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
@@ -58,6 +60,7 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -68,6 +71,804 @@ using namespace Wt;
 using namespace std;
 
 
+const int ShieldingSelect::sm_xmlSerializationMajorVersion = 0;
+const int ShieldingSelect::sm_xmlSerializationMinorVersion = 1;
+
+
+
+/**
+ 
+ */
+class TraceSrcDisplay : public WGroupBox
+{
+  const SandiaDecay::Nuclide *m_currentNuclide;
+  
+  /** The activity the user has entered.  E.g., maybe total, but maybe activity per cm3 or per gram. */
+  double m_currentDisplayActivity;
+  
+  /** The current total activity of the shielding. */
+  double m_currentTotalActivity;
+  
+  ShieldingSelect *m_parent;
+  Wt::WComboBox *m_isoSelect;
+  Wt::WLineEdit *m_activityInput;
+  Wt::WComboBox *m_activityType;
+  Wt::WCheckBox *m_allowFitting;
+  Wt::Signal<const SandiaDecay::Nuclide *,double> m_activityUpdated;
+  Wt::Signal<TraceSrcDisplay *, const SandiaDecay::Nuclide * /* old nuclide */> m_nucChangedSignal;
+  
+  
+public:
+  TraceSrcDisplay( ShieldingSelect *parent )
+  : WGroupBox( "Trace Source", parent->m_traceSources ),
+    m_currentNuclide( nullptr ),
+    m_currentDisplayActivity( 0.0 ),
+    m_currentTotalActivity( 0.0 ),
+    m_parent( parent ),
+    m_isoSelect( nullptr ),
+    m_activityInput( nullptr ),
+    m_activityType( nullptr ),
+    m_allowFitting( nullptr ),
+    m_activityUpdated( this ),
+    m_nucChangedSignal( this )
+  {
+    const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    
+    assert( !parent->isGenericMaterial() );
+    addStyleClass( "TraceSrcDisplay" );
+    
+    WPushButton *closeIcon = new WPushButton( this );
+    closeIcon->addStyleClass( "closeicon-wtdefault ThirdCol FirstRow" );
+    closeIcon->clicked().connect( boost::bind( &ShieldingSelect::removeTraceSourceWidget, m_parent, this) );
+    closeIcon->setToolTip( "Remove this trace source." );
+    
+    
+    WLabel *label = new WLabel( "Nuclide", this );
+    label->addStyleClass( "FirstCol SecondRow" );
+    
+    m_isoSelect = new WComboBox( this );
+    m_isoSelect->addItem( "Select" );
+    m_isoSelect->activated().connect( this, &TraceSrcDisplay::handleUserNuclideChange );
+    m_isoSelect->addStyleClass( "SecondCol SecondRow SpanTwoCol" );
+    label->setBuddy( m_isoSelect );
+    
+    
+    label = new WLabel( "Activity", this );
+    label->addStyleClass( "FirstCol ThirdRow" );
+    
+    
+    m_activityInput = new WLineEdit( this );
+    m_activityInput->addStyleClass( "SecondCol ThirdRow" );
+    m_activityInput->setAutoComplete( false );
+    
+    WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, m_activityInput );
+    val->setFlags( Wt::MatchCaseInsensitive );
+    m_activityInput->setValidator( val );
+    m_activityInput->changed().connect( this, &TraceSrcDisplay::handleUserActivityChange );
+    m_activityInput->enterPressed().connect( this, &TraceSrcDisplay::handleUserActivityChange );
+    m_activityInput->setText( (useBq ? "37 MBq" : "1 mCi") );
+    m_currentTotalActivity = m_currentDisplayActivity = 0.001*PhysicalUnits::ci;
+    label->setBuddy( m_activityInput );
+    
+    m_activityType = new WComboBox( this );
+    m_activityType->activated().connect( this, &TraceSrcDisplay::handleUserChangeActivityType );
+    m_activityType->addStyleClass( "ThirdCol ThirdRow" );
+    
+    m_allowFitting = new WCheckBox( "Fit activity value", this );
+    m_allowFitting->addStyleClass( "SecondCol FourthRow SpanTwoCol" );
+    m_allowFitting->checked().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
+    m_allowFitting->unChecked().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
+    
+    // Try to keep in sync with the model...
+    SourceFitModel *srcmodel = m_parent->m_sourceModel;
+    if( srcmodel )
+    {
+      // Signals to hook into
+      //srcmodel->dataChanged().connect(<#WObject *target#>, <#WObject::Method method#>) <-- Need to sync activity and if should fit for, at a minimum
+      //srcmodel->rowsInserted() // I think this should be covered by modelNuclideAdded()
+      //srcmodel->rowsRemoved()  // I think this should be covered by sourceRemovedFromModel()
+      
+      //m_parent->activityFromThicknessNeedUpdating.emit( m_parent, nuclide );
+      //  I think this gets covered in ShieldingSelect::handleMaterialChange(), which needs to have trace sources added in
+      //m_parent->addingIsotopeAsSource().emit( nuclide, ModelSourceType::Intrinsic );  <-- Add source type argument maybe, or have the model figure it out
+      //m_parent->removingIsotopeAsSource().emit( nuclide, ModelSourceType:: ); <-- Add source type argument maybe, or have the model figure it out
+      
+      // Functions to re-implement, or make equivalents of
+      //m_parent->nuclidesToUseAsSources()  <-- rename, and make an equivalent for trace sources
+      //
+      // And need to modify PointSourceShieldingChi2Fcn to know about trace sources.
+    }
+    
+      
+    updateAvailableActivityTypes();
+    updateAvailableIsotopes();
+  }//TraceSrcDisplay constructor
+  
+  void serialize( rapidxml::xml_node<char> * const parent_node ) const
+  {
+    rapidxml::xml_document<char> *doc = parent_node->document();
+    
+    rapidxml::xml_node<char> * const base_node
+                                      = doc->allocate_node( rapidxml::node_element, "TraceSource" );
+    parent_node->append_node( base_node );
+    
+    const char *value = m_currentNuclide ? m_currentNuclide->symbol.c_str() : "None";
+    rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, "Nuclide", value );
+    base_node->append_node( node );
+    
+    
+    value = doc->allocate_string( m_activityInput->text().toUTF8().c_str() );
+    node = doc->allocate_node( rapidxml::node_element, "DisplayActivity", value );
+    base_node->append_node( node );
+    
+    // Put the total activity as an attribute, just to make a little more human readable/checkable
+    const string total_act = PhysicalUnits::printToBestActivityUnits( m_currentTotalActivity );
+    value = doc->allocate_string( total_act.c_str() );
+    rapidxml::xml_attribute<char> *attr = doc->allocate_attribute( "TotalActivity", value );
+    node->append_attribute( attr );
+    
+    const TraceActivityType type = TraceActivityType( m_activityType->currentIndex() );
+    value = to_str( type );
+    
+    node = doc->allocate_node( rapidxml::node_element, "TraceActivityType", value );
+    base_node->append_node( node );
+      
+    value = m_allowFitting->isChecked() ? "1" : "0";
+    node = doc->allocate_node( rapidxml::node_element, "AllowFitting", value );
+    base_node->append_node( node );
+  }//void serialize( rapidxml::xml_node<> *parent )
+  
+  
+  void deSerialize( const rapidxml::xml_node<char> * const trace_node )
+  {
+    //Should check that the model has the nuclide, otherwise dont select a nuclide
+    //For development builds should check nuclide is already marked as a trace source in the source fitting model.activityUpdated()
+    
+    if( !trace_node || !trace_node->value()
+       || rapidxml::internal::compare(trace_node->value(), trace_node->value_size(),"TraceSource", 11, true) )
+      throw runtime_error( "TraceSrcDisplay::deSerialize: called with invalid node" );
+      
+    const rapidxml::xml_node<char> *nuc_node = trace_node->first_node( "Nuclide" );
+    const rapidxml::xml_node<char> *disp_act_node = trace_node->first_node( "DisplayActivity" );
+    const rapidxml::xml_node<char> *act_type_node = trace_node->first_node( "TraceActivityType" );
+    const rapidxml::xml_node<char> *allow_fit_node = trace_node->first_node( "AllowFitting" );
+    
+    if( !nuc_node || !disp_act_node || !act_type_node || !allow_fit_node )
+      throw runtime_error( "TraceSrcDisplay::deSerialize: missing node" );
+
+    updateAvailableIsotopes();
+    updateAvailableActivityTypes();
+    
+    const string nuclide = SpecUtils::xml_value_str(nuc_node);
+    
+    int nucSelectIndex = -1;
+    for( int i = 0; i < m_isoSelect->count(); ++i )
+    {
+      const string nuctxt = m_isoSelect->itemText(i).toUTF8();
+      if( nuctxt == nuclide )
+      {
+        nucSelectIndex = i;
+        break;
+      }
+    }//for( int i = 0; i < m_isoSelect->count(); ++i )
+    
+    if( nucSelectIndex < 0 )
+    {
+      m_isoSelect->setCurrentIndex(0); //"Select"
+      cerr << "TraceSrcDisplay::deSerialize: Failed to match the expected nuclide ('"
+           << nuclide << "') to avaiable ones."
+           << endl;
+      // Should we throw an error here or something???
+    }else
+    {
+      m_isoSelect->setCurrentIndex(nucSelectIndex);
+    }
+    
+    handleUserNuclideChange();
+    
+    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    string acttxt = SpecUtils::xml_value_str(disp_act_node);
+    
+    // Check activity text is actually valid, and convert to users current prefered units
+    try
+    {
+      const double activity = PhysicalUnits::stringToActivity(acttxt);
+      const bool isInBq = SpecUtils::icontains(acttxt, "bq");
+      if( isInBq == useCi )
+        acttxt = PhysicalUnits::printToBestActivityUnits( activity, 6, useCi );
+    }catch(...)
+    {
+      cerr << "TraceSrcDisplay::deSerialize: Activity from XML ('" << acttxt << "') is invalid.\n";
+      acttxt = (useCi ? "0 uCi" : "0 bq");
+      // Should we throw an error here or something???
+    }
+    
+    m_activityInput->setText( WString::fromUTF8(acttxt) );
+    
+    const string act_type = SpecUtils::xml_value_str(act_type_node);
+    
+    TraceActivityType type = TraceActivityType::NumTraceActivityType;
+    for( TraceActivityType t = TraceActivityType(0);
+        t != TraceActivityType::NumTraceActivityType;
+        t = TraceActivityType(static_cast<int>(t) + 1) )
+    {
+      if( act_type == to_str(t) )
+      {
+        type = t;
+        break;
+      }
+    }//for( loop over TraceActivityTypes )
+    
+    if( type == TraceActivityType::NumTraceActivityType )
+    {
+      cerr << "TraceSrcDisplay::deSerialize: Trace activity type in XML ('" << act_type << "'),"
+           << " is invalid, setting to toal activity." << endl;
+      type = TraceActivityType::TotalActivity;
+    }
+    
+    m_activityType->setCurrentIndex( static_cast<int>(type) );
+    
+    const string do_fit_xml = SpecUtils::xml_value_str(allow_fit_node);
+    const bool allow_fit = ((do_fit_xml == "1") || SpecUtils::iequals_ascii(do_fit_xml,"true"));
+    m_allowFitting->setChecked( allow_fit );
+    
+    updateTotalActivityFromDisplayActivity();
+    handleUserActivityChange();
+    handleUserChangeAllowFit();
+  }//void deSerialize( rapidxml::xml_node<> *trace_src_node )
+  
+  
+  bool allowFittingActivity() const
+  {
+    return m_allowFitting->isChecked();
+  }
+  
+  void modelSourceAdded( const SandiaDecay::Nuclide * const nuc )
+  {
+    if( !nuc )
+      return;
+    
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    assert( db );
+    if( !db )
+      return;
+    
+    bool hasNuc = false;
+    for( int index = 1; !hasNuc && (index < m_isoSelect->count()); ++index )
+    {
+      const string label = m_isoSelect->itemText(index).toUTF8();
+      const SandiaDecay::Nuclide * const thisNuc = db->nuclide( label );
+      
+      hasNuc = (hasNuc ||(thisNuc == nuc));
+    }//for( loop over current nuclides )
+    
+    if( hasNuc )
+      return;
+    
+    m_isoSelect->addItem( nuc->symbol );
+  }//void modelSourceAdded( const SandiaDecay::Nuclide * )
+  
+  
+  void modelSourceRemoved( const SandiaDecay::Nuclide * const nuc )
+  {
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    assert( db );
+    if( !db )
+      return;
+    
+    if( nuc == m_currentNuclide )
+    {
+      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      
+      m_isoSelect->removeItem( m_isoSelect->currentIndex() );
+      m_isoSelect->setCurrentIndex( 0 );
+      m_currentNuclide = nullptr;
+      m_currentTotalActivity = m_currentDisplayActivity = 0.0;
+      m_activityInput->setText( (useCi ? "0 uCi" : "0 bq") );
+      
+      // TODO: do we need to emit that we are removing this trace source? If we're here, the model
+      //       already knows about this
+    }else
+    {
+      const int nucIndex = m_isoSelect->findText( nuc->symbol );
+      if( nucIndex >= 1 )
+      {
+        // zeroth entry should always be "Select"
+        const WString currentText = m_isoSelect->currentText();
+        m_isoSelect->removeItem( nucIndex );
+        m_isoSelect->setCurrentIndex( m_isoSelect->findText( currentText ) );
+      }//if( nucIndex >= 1 )
+    }// if( nuc == m_currentNuclide ) / else
+  }//void modelSourceRemoved( const SandiaDecay::Nuclide * )
+  
+  
+  void handleUserActivityChange()
+  {
+    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    
+    if( m_parent->isGenericMaterial() )
+    {
+      assert( 0 );
+      cerr << "handleUserActivityChange() called for a generic material - shouldnt happen" << endl;
+      return;
+    }
+    
+    assert( m_parent->m_shieldSrcDisp );
+    
+    const double shieldVolume = m_parent->shieldingVolume();
+    const double shieldMass = m_parent->shieldingMass();
+    
+    const double shieldVolumeCm3 = shieldVolume / PhysicalUnits::cm3;
+    const double shieldMassGram = shieldMass / PhysicalUnits::gram;
+    
+    const string userActTxt = m_activityInput->text().toUTF8();
+    const TraceActivityType type = TraceActivityType( m_activityType->currentIndex() );
+    
+    try
+    {
+      m_currentDisplayActivity = PhysicalUnits::stringToActivity( userActTxt );
+      
+      switch( type )
+      {
+        case TraceActivityType::TotalActivity:
+          m_currentTotalActivity = m_currentDisplayActivity;
+          break;
+          
+        case TraceActivityType::ActivityPerCm3:
+          m_currentTotalActivity = m_currentDisplayActivity * shieldVolumeCm3;
+          break;
+          
+        case TraceActivityType::ActivityPerGram:
+          m_currentTotalActivity = m_currentDisplayActivity * shieldMassGram;
+          break;
+        
+        case TraceActivityType::NumTraceActivityType:
+          assert( 0 );
+          m_activityInput->setText( useCi ? "0 uCi" : "0 bq");
+          m_currentTotalActivity = m_currentDisplayActivity = 0.0;
+          break;
+      }//switch( type )
+    }catch( std::exception & )
+    {
+      cerr << "User enetred activity '" << userActTxt << "' is invalid - reverting" << endl;
+      
+      string txt;
+      switch( type )
+      {
+        case TraceActivityType::TotalActivity:
+          txt = PhysicalUnits::printToBestActivityUnits( m_currentTotalActivity, 3, useCi );
+          break;
+          
+        case TraceActivityType::ActivityPerCm3:
+          if( shieldVolumeCm3 <= FLT_EPSILON )
+          {
+            m_currentTotalActivity = m_currentDisplayActivity = 0.0;
+            txt = (useCi ? "0 uCi" : "0 bq");
+          }else
+          {
+            txt = PhysicalUnits::printToBestActivityUnits( m_currentTotalActivity/shieldVolumeCm3, 3, useCi );
+          }
+          break;
+          
+        case TraceActivityType::ActivityPerGram:
+          if( shieldMassGram <= FLT_EPSILON )
+          {
+            m_currentTotalActivity = m_currentDisplayActivity = 0.0;
+            txt = (useCi ? "0 uCi" : "0 bq");
+          }else
+          {
+            txt = PhysicalUnits::printToBestActivityUnits( m_currentTotalActivity/shieldMassGram, 3, useCi );
+          }
+          break;
+        
+        case TraceActivityType::NumTraceActivityType:
+          assert( 0 );
+          txt = (useCi ? "0 uCi" : "0 bq");
+          break;
+      }//switch( type )
+      
+      m_activityInput->setText( txt );
+    }// try / catch
+    
+    m_activityUpdated.emit( nuclide(), m_currentTotalActivity );
+  }//void handleUserActivityChange()
+  
+  /** Returns total activity, or activity per gram, or activity per cm3, based on user input*/
+  double displayActivity()
+  {
+    return m_currentDisplayActivity;
+  }//double displayActivity()
+  
+  
+  TraceActivityType activityType() const
+  {
+    const int currentIndex = m_activityType->currentIndex();
+    if( (currentIndex < 0)
+       || (currentIndex >= static_cast<int>(TraceActivityType::NumTraceActivityType)) )
+      return TraceActivityType::NumTraceActivityType;
+  
+    return static_cast<TraceActivityType>( currentIndex );
+  }
+  
+  
+  void updateAvailableActivityTypes()
+  {
+    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    
+    const int previous = m_activityType->currentIndex();
+    assert( previous < static_cast<int>(TraceActivityType::NumTraceActivityType) );
+    
+    m_activityType->clear();
+    
+    if( m_parent->isGenericMaterial() )
+      return; //Probably wont ever get here
+    
+    std::shared_ptr<Material> material = m_parent->material();
+    if( !material )
+      return;
+    
+    // If less dense than 1% of nominal air, then dont allow activity per gram
+    const double minDensity = 0.000013*PhysicalUnits::g/PhysicalUnits::cm3;
+    const bool allowActPerGram = (material->density > minDensity);
+    
+    for( TraceActivityType type = TraceActivityType(0);
+        type < TraceActivityType::NumTraceActivityType;
+        type = TraceActivityType(static_cast<int>(type) + 1) )
+    {
+      switch( type )
+      {
+        case TraceActivityType::TotalActivity:
+          m_activityType->addItem( "Total" );
+          break;
+          
+        case TraceActivityType::ActivityPerCm3:
+          m_activityType->addItem( "per cm^3" );
+          break;
+          
+        case TraceActivityType::ActivityPerGram:
+          if( allowActPerGram )
+            m_activityType->addItem( "per gram" );
+          break;
+          
+        case TraceActivityType::NumTraceActivityType:
+          break;
+      }//switch( type )
+    }//for( loop over TraceActivityTypes )
+    
+    bool changedIndex = false;
+    int currentIndex = 0;
+    if( (previous >= 0)
+        && (allowActPerGram
+            || (previous != static_cast<int>(TraceActivityType::ActivityPerGram))) )
+    {
+      changedIndex = true;
+      currentIndex = previous;
+    }
+    
+    m_activityType->setCurrentIndex( currentIndex );
+    
+
+    if( changedIndex )
+    {
+      // If we are fitting for shielding thickness, then we probably dont also want to fit
+      //  for activity per cm3 or per gram
+      //  TODO: investigate how well fitting activity per gram or cm3 works when fitting thickness
+      if( m_parent->fitThickness()
+         && ((currentIndex == static_cast<int>(TraceActivityType::ActivityPerCm3))
+           || (currentIndex == static_cast<int>(TraceActivityType::ActivityPerGram))) )
+      {
+        m_allowFitting->setChecked( false );
+      }
+      
+      // We will keep total activity the same, but update the display
+      updateDispActivityFromTotalActivity();
+    }//if( changedIndex )
+    
+  }//void updateAvailableActivityTypes()
+  
+  
+  /** We will keep total activity the same, but update the display activity based on current value of m_activityType. */
+  void updateDispActivityFromTotalActivity()
+  {
+    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const int currentIndex = m_activityType->currentIndex();
+    
+    const double shieldVolume = m_parent->shieldingVolume();
+    const double shieldMass = m_parent->shieldingMass();
+    
+    const double shieldVolumeCm3 = shieldVolume / PhysicalUnits::cm3;
+    const double shieldMassGram = shieldMass / PhysicalUnits::gram;
+  
+    m_currentDisplayActivity = 0.0;
+    
+    switch( TraceActivityType(currentIndex) )
+    {
+      case TraceActivityType::TotalActivity:
+        m_currentDisplayActivity = m_currentTotalActivity;
+        break;
+        
+      case TraceActivityType::ActivityPerCm3:
+        if( shieldVolumeCm3 <= FLT_EPSILON )
+          m_currentDisplayActivity = m_currentTotalActivity = 0.0;
+        else
+          m_currentDisplayActivity = m_currentTotalActivity / shieldVolumeCm3;
+        break;
+        
+      case TraceActivityType::ActivityPerGram:
+        if( shieldMassGram <= FLT_EPSILON )
+          m_currentDisplayActivity = m_currentTotalActivity = 0.0;
+        else
+          m_currentDisplayActivity = m_currentTotalActivity / shieldMassGram;
+        break;
+      
+      case TraceActivityType::NumTraceActivityType:
+        assert( 0 );
+        m_currentDisplayActivity = m_currentTotalActivity = 0.0;
+        break;
+    }//switch( type )
+    
+    const string actTxt = PhysicalUnits::printToBestActivityUnits( m_currentDisplayActivity, 3, useCi );
+    m_activityInput->setText( actTxt );
+  }//void updateDispActivityFromTotalActivity()
+  
+  
+  void updateTotalActivityFromDisplayActivity()
+  {
+    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    
+    
+    if( !m_currentNuclide )
+    {
+      m_currentTotalActivity = m_currentDisplayActivity = 0.0;
+      m_activityInput->setText( (useCi ? "0 uCi" : "0 bq") );
+      return;
+    }//if( !m_currentNuclide )
+    
+    
+    const int currentIndex = m_activityType->currentIndex();
+    
+    const double shieldVolume = m_parent->shieldingVolume();
+    const double shieldMass = m_parent->shieldingMass();
+    
+    const double shieldVolumeCm3 = shieldVolume / PhysicalUnits::cm3;
+    const double shieldMassGram = shieldMass / PhysicalUnits::gram;
+  
+    
+    m_currentTotalActivity = 0.0;
+    
+    switch( TraceActivityType(currentIndex) )
+    {
+      case TraceActivityType::TotalActivity:
+        m_currentTotalActivity = m_currentDisplayActivity;
+        break;
+        
+      case TraceActivityType::ActivityPerCm3:
+        if( shieldVolumeCm3 <= FLT_EPSILON )
+          m_currentDisplayActivity = m_currentTotalActivity = 0.0;
+        else
+          m_currentTotalActivity = m_currentDisplayActivity * shieldVolumeCm3;
+        break;
+        
+      case TraceActivityType::ActivityPerGram:
+        if( shieldMassGram <= FLT_EPSILON )
+          m_currentDisplayActivity = m_currentTotalActivity = 0.0;
+        else
+          m_currentTotalActivity = m_currentDisplayActivity * shieldMassGram;
+        break;
+      
+      case TraceActivityType::NumTraceActivityType:
+        assert( 0 );
+        m_currentDisplayActivity = m_currentTotalActivity = 0.0;
+        break;
+    }//switch( type )
+  }//void updateTotalActivityFromDisplayActivity()
+  
+  
+  void updateForMaterialChange()
+  {
+    shared_ptr<Material> mat = m_parent->material();
+    if( !mat )
+    {
+      const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      
+      m_currentDisplayActivity = m_currentTotalActivity = 0.0;
+      m_activityInput->setText( (useBq ? "0 Bq" : "0 uCi") );
+      m_isoSelect->setCurrentIndex( 0 );
+      m_allowFitting->setChecked( false );
+      
+      if( m_currentNuclide )
+      {
+        const SandiaDecay::Nuclide * const oldNuc = m_currentNuclide;
+        m_currentNuclide = nullptr;
+        m_nucChangedSignal.emit( this, oldNuc );
+      }
+    }//if( !mat )
+    
+    updateAvailableActivityTypes();
+    updateAvailableIsotopes();
+    updateTotalActivityFromDisplayActivity();
+  }//void updateForMaterialChange()
+  
+  
+  Wt::Signal<const SandiaDecay::Nuclide *,double> &activityUpdated()
+  {
+    return m_activityUpdated;
+  }
+  
+  Wt::Signal<TraceSrcDisplay *, const SandiaDecay::Nuclide *> &nucChangedSignal()
+  {
+    return m_nucChangedSignal;
+  }
+  
+  const SandiaDecay::Nuclide *nuclide() const
+  {
+    return m_currentNuclide;
+  }//nuclide()
+  
+  double totalActivity() const
+  {
+    return m_currentTotalActivity;
+  }
+  
+  double displayActivity() const
+  {
+    return m_currentDisplayActivity;
+  }
+  
+  void handleUserNuclideChange()
+  {
+    const SandiaDecay::Nuclide * const oldNuc = m_currentNuclide;
+    
+    const string nuctxt = m_isoSelect->currentText().toUTF8();
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    assert( db );
+    if( !db )
+      m_currentNuclide = nullptr;
+    else
+      m_currentNuclide = db->nuclide( nuctxt );
+    
+    // If we wanted to keep in sync with the SourceFitModel, we could use this next code.
+    /*
+    SourceFitModel *srcmodel = m_parent->m_sourceModel;
+    if( m_currentNuclide && srcmodel )
+    {
+      // This next line will throw exception if invalid nuclide ...
+      //  but that should never happen, right?
+      const int nucnum = srcmodel->nuclideIndex(m_currentNuclide);
+      const bool fit = srcmodel->fitActivity(nucnum);
+      m_allowFitting->setChecked( fit );
+    }//if( srcmodel )
+    */
+    
+    if( m_currentNuclide != oldNuc )
+      m_nucChangedSignal.emit( this, oldNuc );
+  }//void handleUserNuclideChange()
+  
+  
+  void handleUserChangeActivityType()
+  {
+    updateDispActivityFromTotalActivity();
+  }//handleUserChangeActivityType()
+  
+  void handleUserChangeAllowFit()
+  {
+    //We arent actually updating the model for trace sources, but if we were, we could use:
+    /*
+    if( !m_currentNuclide )
+      return;
+    
+    SourceFitModel *srcmodel = m_parent->m_sourceModel;
+    assert( srcmodel );
+    if( !srcmodel )
+      return;
+    
+    try
+    {
+      WModelIndex index = srcmodel->index( m_currentNuclide, SourceFitModel::Columns::kFitActivity );
+      const bool doFit = m_allowFitting->isChecked();
+      srcmodel->setData( index, doFit );
+    }catch( std::exception &e )
+    {
+      assert( 0 ); // shouldnt ever happen, right???
+      cerr << "handleUserChangeAllowFit(): Unexpected exception getting nuclide index from"
+           << " SourceFitModel" << endl;
+      return;
+    }//try / catch
+     */
+  }//void handleUserChangeAllowFit()
+  
+  /** Doesn not cause change signals to be emitted */
+  void unselectNuclide( const SandiaDecay::Nuclide *nuc )
+  {
+    if( !nuc )
+      return;
+    
+    if( nuc == m_currentNuclide )
+    {
+      m_isoSelect->setCurrentIndex( 0 );
+      m_currentNuclide = nullptr;
+    }
+  }//void unselectNuclide( const SandiaDecay::Nuclide *nuc )
+  
+  /** Updates which nuclides the user can choose.
+   Still hashing out the behaviour I want, but currently, if calling this
+   
+   */
+  void updateAvailableIsotopes()
+  {
+    assert( m_parent );
+    
+    SourceFitModel *model = m_parent->m_sourceModel;
+    assert( model );
+    
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    assert( db );
+    
+    const WString currentNucTxt = m_isoSelect->currentText();
+    
+    const SandiaDecay::Nuclide *currentNuc = nullptr;
+    vector<const SandiaDecay::Nuclide *> currentNuclides;
+    for( int index = 1; index < m_isoSelect->count(); ++index )
+    {
+      const string nucName = m_isoSelect->itemText(index).toUTF8();
+      const SandiaDecay::Nuclide *nuc = db->nuclide( nucName );
+      if( !nuc )
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        const string msg = "Unexpected non-nuclide entry in m_isoSelect: " + nucName;
+        log_developer_error( __func__, msg.c_str() );
+#endif
+        continue;
+      }//if( !nuc )
+      
+      if( index == m_isoSelect->currentIndex() )
+        currentNuc = nuc;
+      
+      currentNuclides.push_back( nuc );
+    }//for( int index = 1; index < m_isoSelect->count(); ++index )
+    
+    
+    const int numNucs = model->numNuclides();
+
+    m_isoSelect->clear();
+    m_isoSelect->addItem( "Select" );
+    
+    int indexToSelect = -1, numNucAdded = 0;
+    for( int index = 0; index < numNucs; ++index )
+    {
+      const SandiaDecay::Nuclide *nuc = model->nuclide( index );
+      if( !nuc )
+      {
+        cerr << "Unexpected null nuclide!!!" << endl;
+        continue;
+      }
+      
+      const double activity = model->activity( index );
+      //const bool fitActivity = model->fitActivity( index );
+      
+      if( nuc == currentNuc )
+      {
+        indexToSelect = index + 1;
+      }else
+      {
+        // Next line checks for self-attenuating source - should we extend to trace sources? If we
+        //  do we need to modify our serialization logic a bit.
+        if( model->sourceType(index) == ModelSourceType::Intrinsic )
+          continue;
+      }
+      
+      numNucAdded += 1;
+      m_isoSelect->addItem( nuc->symbol );
+    }//for( int index = 0; index < numNucs; ++index )
+    
+    if( indexToSelect > 0 )
+      m_isoSelect->setCurrentIndex( indexToSelect );
+    // else emit signal saying nuclide changed.
+  }//updateAvailableIsotopes()
+};//class TraceSrcDisplay
+
+
+
 SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
                                double massFrac, Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
@@ -75,7 +876,6 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
     m_massFraction( NULL ),
     m_nuclide( nuclide )
 {
-//  WLabel *label = NULL;
   wApp->useStyleSheet( "InterSpec_resources/ShieldingSelect.css" );
   
   new WText( "&nbsp;&nbsp;&nbsp;", Wt::XHTMLText, this );
@@ -165,14 +965,47 @@ Wt::Signal<float> &SourceCheckbox::massFractionChanged()
 }
 
 
+ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
+                 Wt::WSuggestionPopup *materialSuggest,
+                 Wt::WContainerWidget *parent )
+: WContainerWidget( parent ),
+  m_toggleImage( nullptr ),
+  m_shieldSrcDisp( nullptr ),
+  m_forFitting( false ),
+  m_materialDB( materialDB ),
+  m_sourceModel( nullptr ),
+  m_materialSuggest( materialSuggest ),
+  m_materialEdit( nullptr ),
+  m_isGenericMaterial( false ),
+  m_materialSummarry( nullptr ),
+  m_closeIcon( nullptr ),
+  m_addIcon( nullptr ),
+  m_addTraceSourceItem( nullptr ),
+  m_thicknessEdit( nullptr ),
+  m_fitThicknessCB( nullptr ),
+  m_thicknessDiv( nullptr ),
+  m_arealDensityEdit( nullptr ),
+  m_fitArealDensityCB( nullptr ),
+  m_atomicNumberEdit( nullptr ),
+  m_fitAtomicNumberCB( nullptr ),
+  m_fitMassFrac( nullptr ),
+  m_genericMaterialDiv( nullptr ),
+  m_asSourceCBs( nullptr ),
+  m_traceSources( nullptr )
+{
+  init();
+}
+
 
 ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
                                   SourceFitModel *sourceModel,
                                   Wt::WSuggestionPopup *materialSuggest,
-                                  bool forFitting,
+                                  ShieldingSourceDisplay *shieldSource,
                                   Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
-    m_forFitting( forFitting ),
+    m_toggleImage( nullptr ),
+    m_shieldSrcDisp( shieldSource ),
+    m_forFitting( (shieldSource != nullptr) ),
     m_materialDB( materialDB ),
     m_sourceModel( sourceModel ),
     m_materialSuggest( materialSuggest ),
@@ -181,6 +1014,7 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
     m_materialSummarry( NULL ),
     m_closeIcon( NULL ),
     m_addIcon( NULL ),
+    m_addTraceSourceItem( nullptr ),
     m_thicknessEdit( NULL ),
     m_fitThicknessCB( NULL ),
     m_thicknessDiv( NULL ),
@@ -190,7 +1024,8 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
     m_fitAtomicNumberCB( NULL ),
     m_fitMassFrac( NULL ),
     m_genericMaterialDiv( NULL ),
-    m_asSourceCBs( NULL )
+    m_asSourceCBs( NULL ),
+    m_traceSources( nullptr )
 {
   init();
 }
@@ -220,10 +1055,13 @@ void ShieldingSelect::setClosableAndAddable( bool closeable , WGridLayout* layou
 //    m_addIcon->setMenu( popup );
     
     PopupDivMenu *popup = new PopupDivMenu( NULL, PopupDivMenu::TransientMenu );
-    PopupDivMenuItem *item = popup->addMenuItem( "Before this shielding" );
+    PopupDivMenuItem *item = popup->addMenuItem( "Add shielding before" );
     item->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal );
-    item = popup->addMenuItem( "After this shielding" );
+    item = popup->addMenuItem( "Add Shielding after" );
     item->triggered().connect( this, &ShieldingSelect::emitAddAfterSignal );
+    m_addTraceSourceItem = popup->addMenuItem( "Add Trace Source" );
+    m_addTraceSourceItem->triggered().connect( this, &ShieldingSelect::addTraceSource );
+    
     m_addIcon->setMenu( popup );
     
     layout->addWidget( m_closeIcon, 0, 2, AlignMiddle | AlignRight );
@@ -363,6 +1201,72 @@ Wt::WLineEdit *ShieldingSelect::atomicNumberEdit()
   return m_atomicNumberEdit;
 }
 
+
+
+bool ShieldingSelect::isTraceSourceForNuclide( const SandiaDecay::Nuclide *nuc ) const
+{
+  const TraceSrcDisplay *w = traceSourceWidgetForNuclide( nuc );
+  
+  return (w != nullptr);
+}
+
+
+double ShieldingSelect::traceSourceTotalActivity( const SandiaDecay::Nuclide *nuc ) const
+{
+  const TraceSrcDisplay *w = traceSourceWidgetForNuclide( nuc );
+  if( !w )
+    throw runtime_error( "traceSourceTotalActivity: called with invalid nuclide" );
+  
+  return w->totalActivity();
+}
+
+
+double ShieldingSelect::traceSourceDisplayActivity( const SandiaDecay::Nuclide *nuc ) const
+{
+  const TraceSrcDisplay *w = traceSourceWidgetForNuclide( nuc );
+  if( !w )
+    throw runtime_error( "traceSourceDisplayActivity: called with invalid nuclide" );
+  
+  return w->displayActivity();
+}
+
+
+TraceActivityType ShieldingSelect::traceSourceType( const SandiaDecay::Nuclide *nuc ) const
+{
+  const TraceSrcDisplay *w = traceSourceWidgetForNuclide( nuc );
+  if( !w )
+    throw runtime_error( "traceSourceType: called with invalid nuclide" );
+  
+  return w->activityType();
+}//TraceActivityType traceSourceType( const SandiaDecay::Nuclide *nuc ) const
+
+
+bool ShieldingSelect::fitTraceSourceActivity( const SandiaDecay::Nuclide *nuc ) const
+{
+  const TraceSrcDisplay *w = traceSourceWidgetForNuclide( nuc );
+  if( !w )
+    throw runtime_error( "traceSourceType: called with invalid nuclide" );
+  
+  return w->allowFittingActivity();
+}//TraceActivityType traceSourceType( const SandiaDecay::Nuclide *nuc ) const
+
+
+const TraceSrcDisplay *ShieldingSelect::traceSourceWidgetForNuclide( const SandiaDecay::Nuclide *nuc ) const
+{
+  if( !m_traceSources || !nuc )
+    return nullptr;
+  
+  for( WWidget *w : m_traceSources->children() )
+  {
+    const TraceSrcDisplay *src = dynamic_cast<const TraceSrcDisplay *>( w );
+    assert( src );
+
+    if( src && (src->nuclide() == nuc) )
+      return src;
+  }//for( WWidget *w : m_traceSources->children() )
+  
+  return nullptr;
+}//traceSourceWidgetForNuclide(...)
 
 
 void ShieldingSelect::init()
@@ -681,7 +1585,7 @@ void ShieldingSelect::emitRemoveSignal()
         if( cb->useAsSource() && cb->isotope() )
         {
           cb->setUseAsSource( false );
-          removingIsotopeAsSource().emit( cb->isotope() );
+          removingIsotopeAsSource().emit( cb->isotope(), ModelSourceType::Intrinsic );
         }//if( cb->useAsSource() )
       }//for( WWidget *child : children )
     }//for(...)
@@ -701,6 +1605,175 @@ void ShieldingSelect::emitAddAfterSignal()
 {
   m_addShieldingAfter.emit( this );
 }
+
+
+
+
+
+
+
+
+void ShieldingSelect::addTraceSource()
+{
+  if( !m_traceSources )
+  {
+    m_traceSources = new WContainerWidget( this );
+    m_traceSources->addStyleClass( "TraceSrcContainer" );
+  }
+  
+  TraceSrcDisplay *src = new TraceSrcDisplay( this );
+  src->nucChangedSignal().connect( this, &ShieldingSelect::handleTraceSourceNuclideChange );
+  src->activityUpdated().connect( this, &ShieldingSelect::handleTraceSourceActivityChange );
+}//void addTraceSource()
+
+
+void ShieldingSelect::removeTraceSourceWidget( TraceSrcDisplay *toRemove )
+{
+  if( !toRemove )
+    return;
+  
+  for( WWidget *w : m_traceSources->children() )
+  {
+    TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
+    assert( src );
+    if( !src ) // JIC
+      continue;
+    
+    if( src == toRemove )
+    {
+      handleTraceSourceWidgetAboutToBeRemoved( src );
+      delete src;
+      
+      return;
+    }//if( src == toRemove )
+  }//for( WWidget *w : m_traceSources->children() )
+  
+  
+  throw runtime_error( "ShieldingSelect::removeTraceSourceWidget(TraceSrcDisplay *): called with invalid display." );
+}//void removeTraceSourceWidget( TraceSrcDisplay *src )
+
+
+
+void ShieldingSelect::setTraceSourceMenuItemStatus()
+{
+  if( !m_addTraceSourceItem )
+    return;
+  
+  if( m_isGenericMaterial || !m_sourceModel )
+  {
+    m_addTraceSourceItem->setDisabled( true );
+    return;
+  }//if( m_isGenericMaterial )
+  
+  int numAvailableNuclides = 0;
+  const int numNuclides = m_sourceModel->numNuclides();
+  for( int nucIndex = 0; nucIndex < numNuclides; ++nucIndex )
+  {
+    const bool selfAttenSrc = m_sourceModel->isVolumetricSource( nucIndex );
+    if( !selfAttenSrc )
+      numAvailableNuclides += 1;
+  }
+  
+  m_addTraceSourceItem->setDisabled( !numAvailableNuclides );
+}//void setTraceSourceMenuItemStatus()
+
+
+void ShieldingSelect::handleTraceSourceNuclideChange( TraceSrcDisplay *changedSrc, const SandiaDecay::Nuclide *oldNuc )
+{
+  assert( changedSrc );
+  const SandiaDecay::Nuclide *nuc = changedSrc->nuclide();
+  
+  if( oldNuc )
+    removingIsotopeAsSource().emit( oldNuc, ModelSourceType::Trace );
+  
+  if( changedSrc && changedSrc->nuclide() )
+    addingIsotopeAsSource().emit( changedSrc->nuclide(), ModelSourceType::Trace );
+  
+  vector<pair<const SandiaDecay::Nuclide *,double>> traceNucs;
+  
+  const vector<WWidget *> &traceSources = m_traceSources->children();
+  for( WWidget *w : traceSources )
+  {
+    TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
+    assert( src );
+    if( !src ) // JIC
+      continue;
+      
+    if( src == changedSrc )
+      continue;
+    
+    src->unselectNuclide( nuc );
+    src->updateAvailableIsotopes();
+    
+    const SandiaDecay::Nuclide *srcNuc = src->nuclide();
+    if( srcNuc )
+    {
+      traceNucs.push_back( { srcNuc, src->totalActivity() } );
+    }
+  }//for( WWidget *w : traceSources )
+  
+  // blah blah blah
+  //  We need to emit something so the model can remove previous source as trace source, and add new one as a trace source
+  //  really, just get the GUI for trace sources looking right, and then hook up to the model
+  //  Maybe just have the Model update itself totally about trace sources whenever there is any change...
+}//void handleTraceSourceNuclideChange( TraceSrcDisplay *src );
+
+
+void ShieldingSelect::handleTraceSourceActivityChange( const SandiaDecay::Nuclide *nuc, const double activity )
+{
+  // blah blah blah - anything else to do here???
+  m_activityFromThicknessNeedUpdating.emit( this, nuc );
+}
+
+void ShieldingSelect::handleTraceSourceWidgetAboutToBeRemoved( TraceSrcDisplay *src )
+{
+  if( !src || !src->nuclide() )
+    return;
+    
+  removingIsotopeAsSource().emit( src->nuclide(), ModelSourceType::Trace );
+}//handleTraceSourceWidgetAboutToBeRemoved(...)
+
+
+double ShieldingSelect::shieldingVolume() const
+{
+  if( isGenericMaterial() )
+    throw runtime_error( "ShieldingSelect::shieldingVolume(): You should not call this function"
+                         " for generic materials" );
+  
+  const double innerRad = m_shieldSrcDisp ? m_shieldSrcDisp->innerRadiusOfShielding(this) : 0.0;
+  const double outerRad = innerRad + thickness();
+
+  if( innerRad >= (outerRad - (PhysicalUnits::cm * 1.0E-9) ) )
+  {
+    return 0.0;
+  }//if( if this shielding thickness is zero )
+
+  const double innerVolume = (4.0/3.0) * PhysicalUnits::pi * innerRad * innerRad * innerRad;
+  const double outerVolume = (4.0/3.0) * PhysicalUnits::pi * outerRad * outerRad * outerRad;
+  assert( outerVolume > innerVolume );
+
+  return outerVolume - innerVolume;
+}//double ShieldingSelect::shieldingVolume()
+
+
+double ShieldingSelect::shieldingMass() const
+{
+  if( isGenericMaterial() )
+    throw runtime_error( "ShieldingSelect::shieldingMass(): You should not call this function"
+                         " for generic materials" );
+
+  if( !m_currentMaterial )
+    return 0.0;
+  
+  const double volume = shieldingVolume();
+  
+  return m_currentMaterial->density * volume;
+}//double ShieldingSelect::shieldingMass()
+
+
+
+
+
 
 
 Wt::Signal<ShieldingSelect *> &ShieldingSelect::remove()
@@ -738,13 +1811,13 @@ Wt::Signal<ShieldingSelect *,const SandiaDecay::Nuclide *> &ShieldingSelect::act
 }
 
 
-Wt::Signal<const SandiaDecay::Nuclide *> &ShieldingSelect::addingIsotopeAsSource()
+Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &ShieldingSelect::addingIsotopeAsSource()
 {
   return m_addingIsotopeAsSource;
 }
 
 
-Wt::Signal<const SandiaDecay::Nuclide *> &ShieldingSelect::removingIsotopeAsSource()
+Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &ShieldingSelect::removingIsotopeAsSource()
 {
   return m_removingIsotopeAsSource;
 }
@@ -861,9 +1934,12 @@ const Material *ShieldingSelect::material( const std::string &text )
     const Material *mat = m_materialDB->parseChemicalFormula( text, db );
     m_materialSuggest->addSuggestion( mat->name, mat->name );
     return mat;
-  }catch(...){}
+  }catch(...)
+  {
+    // No luck
+  }
 
-  return 0;
+  return nullptr;
 }//std::shared_ptr<Material> material( const std::string &text )
 
 
@@ -901,10 +1977,6 @@ std::shared_ptr<Material> ShieldingSelect::material()
 
 void ShieldingSelect::updateIfMassFractionCanFit()
 {
-#if( !ALLOW_MASS_FRACTION_FIT )
-  assert(0);
-#endif
-  
   if( !m_fitMassFrac )
     return;
   
@@ -936,20 +2008,16 @@ void ShieldingSelect::updateIfMassFractionCanFit()
 
 void ShieldingSelect::isotopeCheckedCallback( const SandiaDecay::Nuclide *nuc )
 {
-#if( ALLOW_MASS_FRACTION_FIT )
   updateIfMassFractionCanFit();
-#endif
-  m_addingIsotopeAsSource.emit( nuc );
+  m_addingIsotopeAsSource.emit( nuc, ModelSourceType::Intrinsic );
 }//void isotopeCheckedCallback( const std::string symbol )
 
 
 
 void ShieldingSelect::isotopeUnCheckedCallback( const SandiaDecay::Nuclide *iso )
 {
-#if( ALLOW_MASS_FRACTION_FIT )
   updateIfMassFractionCanFit();
-#endif
-  m_removingIsotopeAsSource.emit( iso );
+  m_removingIsotopeAsSource.emit( iso, ModelSourceType::Intrinsic );
 }//void isotopeUnCheckedCallback( const std::string symbol )
 
 
@@ -958,6 +2026,18 @@ void ShieldingSelect::uncheckSourceIsotopeCheckBox( const SandiaDecay::Nuclide *
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
 
+  
+  if( m_traceSources )
+  {
+    for( WWidget *w : m_traceSources->children() )
+    {
+      TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
+      assert( src );
+      if( src ) // JIC
+        src->unselectNuclide( iso );
+    }//for( WWidget *w : traceSources )
+  }//if( m_traceSources )
+  
   if( !m_asSourceCBs || !iso || !db )
     return;
 
@@ -978,19 +2058,44 @@ void ShieldingSelect::uncheckSourceIsotopeCheckBox( const SandiaDecay::Nuclide *
 
     if( cb->useAsSource() )
     {
-//      removingIsotopeAsSource().emit( symbol );
+//      removingIsotopeAsSource().emit( symbol, ModelSourceType::Intrinsic );
       cb->setUseAsSource( false );
     }//if( cb->isChecked() )
   }//for( WWidget *child : children )
   
-#if( !ALLOW_MASS_FRACTION_FIT )
   updateIfMassFractionCanFit();
-#endif
 }//void uncheckSourceIsotopeCheckBox( const std::string &symol )
 
 
-void ShieldingSelect::removeSourceIsotopeCheckBox( const SandiaDecay::Nuclide *nuc )
+void ShieldingSelect::sourceRemovedFromModel( const SandiaDecay::Nuclide *nuc )
 {
+  
+  // Make sure no trace sources are using nuc, and if they are, remove that trace source
+  if( m_traceSources )
+  {
+    vector<TraceSrcDisplay *> todel;
+    for( WWidget *w : m_traceSources->children() )
+    {
+      TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
+      assert( src );
+      if( !src ) // JIC
+        continue;
+      
+      const SandiaDecay::Nuclide *srcNuc = src->nuclide();
+      if( srcNuc && (nuc == srcNuc) )
+        todel.push_back( src );
+      else
+        src->modelSourceRemoved( nuc );
+    }//for( WWidget *w : traceSources )
+    
+    for( TraceSrcDisplay *w : todel )
+    {
+      handleTraceSourceWidgetAboutToBeRemoved( w );
+      delete w;
+    }
+  }//if( m_traceSources )
+  
+  // Now deal with self-attenuating sources.
   if( !m_asSourceCBs )
     return;
 
@@ -1032,13 +2137,11 @@ void ShieldingSelect::removeSourceIsotopeCheckBox( const SandiaDecay::Nuclide *n
   if( m_sourceIsotopes.empty() )
     m_asSourceCBs->hide();
   
-#if( !ALLOW_MASS_FRACTION_FIT )
   updateIfMassFractionCanFit();
-#endif
   
   //call updateMassFractionDisplays() to update the "Assuming XX% other U isos"
   updateMassFractionDisplays( m_currentMaterial );
-}//void removeSourceIsotopeCheckBox( const std::string &symbol )
+}//void sourceRemovedFromModel( const std::string &symbol )
 
 
 vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFractions()
@@ -1185,8 +2288,22 @@ double ShieldingSelect::massFractionOfElement( const SandiaDecay::Nuclide *iso,
 
 
 
-void ShieldingSelect::addSourceIsotopeCheckBox( const SandiaDecay::Nuclide *iso )
+void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
 {
+  // Deal with trace sources
+  // Make sure no trace sources are using nuc, and if they are, remove that trace source
+  if( m_traceSources )
+  {
+    for( WWidget *w : m_traceSources->children() )
+    {
+      TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
+      assert( src );
+      if( src ) // JIC
+        src->modelSourceAdded( iso );
+    }//for( WWidget *w : traceSources )
+  }//if( m_traceSources )
+  
+  
   if( !m_asSourceCBs )
     return;
 
@@ -1264,7 +2381,7 @@ void ShieldingSelect::addSourceIsotopeCheckBox( const SandiaDecay::Nuclide *iso 
 
   if( m_asSourceCBs->isHidden() )
     m_asSourceCBs->show();
-}//void addSourceIsotopeCheckBox( const std::string &symol )
+}//void modelNuclideAdded( const std::string &symol )
 
 
 void ShieldingSelect::handleIsotopicChange( float fraction, const SandiaDecay::Nuclide *nuc )
@@ -1676,9 +2793,7 @@ void ShieldingSelect::updateMassFractionDisplays( std::shared_ptr<const Material
     }//if( otherfractxt )
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
   
-#if( ALLOW_MASS_FRACTION_FIT )
   updateIfMassFractionCanFit();
-#endif
 }//void updateMassFractionDisplays()
 
 
@@ -1826,6 +2941,7 @@ void ShieldingSelect::handleToggleGeneric()
         m_materialEdit->setText( "" );
         m_thicknessEdit->setText( "1 cm" );
       }
+      
     }//if( input is empty ) / else
   }//if( m_isGenericMaterial ) / else
   
@@ -1842,6 +2958,8 @@ void ShieldingSelect::handleMaterialChange()
   std::shared_ptr<Material> newMaterial;
   std::shared_ptr<Material> previousMaterial = m_currentMaterial;
   
+  setTraceSourceMenuItemStatus();
+  
   if( m_isGenericMaterial )
   {
     m_thicknessDiv->hide();
@@ -1850,6 +2968,19 @@ void ShieldingSelect::handleMaterialChange()
     m_materialEdit->setText( "Generic" );
     m_materialEdit->disable();
     m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/atom_black.png") );
+    
+    
+    if( m_traceSources )
+    {
+      for( WWidget *w : m_traceSources->children() )
+      {
+        TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
+        assert( src );
+        handleTraceSourceWidgetAboutToBeRemoved( src );
+      }//for( WWidget *w : traceSources )
+      
+      m_traceSources->clear();
+    }//if( m_traceSources )
   }else
   {
     m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/shield.png") );
@@ -1937,6 +3068,38 @@ void ShieldingSelect::handleMaterialChange()
 //    HelpSystem::attachToolTipOn( this,tooltip, showToolTips );
     
     m_materialSummarry->setText( summary );
+    
+    if( m_traceSources )
+    {
+      const vector<WWidget *> &traceSources = m_traceSources->children();
+      for( WWidget *w : traceSources )
+      {
+        TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
+        assert( src );
+        if( !src || !src->nuclide() )
+          continue;
+        
+#if( PERFORM_DEVELOPER_CHECKS )
+        // Make sure we havent messed the logic up and let the same nuclide be both a
+        //  self-attenuating source, and a trace source.
+        for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
+        {
+          const vector<WWidget *> children = vt.second->children();
+          for( WWidget *child : children )
+          {
+            SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+            if( cb && cb->useAsSource() )
+            {
+              assert( cb->isotope() != src->nuclide() );
+            }
+          }//for( WWidget *child : children )
+        }//for(...)
+#endif
+        
+        src->updateForMaterialChange();
+        m_activityFromThicknessNeedUpdating.emit( this, src->nuclide() );
+      }//for( WWidget *w : traceSources )
+    }//if( m_traceSources )
   }//if( generic material ) / else
   
   
@@ -1967,7 +3130,7 @@ void ShieldingSelect::handleMaterialChange()
       {
         SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
         if( cb && cb->useAsSource() )
-          removingIsotopeAsSource().emit( cb->isotope() );
+          removingIsotopeAsSource().emit( cb->isotope(), ModelSourceType::Intrinsic );
       }//for( WWidget *child : children )
 
       delete vt.second;
@@ -1981,7 +3144,7 @@ void ShieldingSelect::handleMaterialChange()
       for( int row = 0; row < nrow; ++row )
       {
         const SandiaDecay::Nuclide *nuc = m_sourceModel->nuclide( row );
-        addSourceIsotopeCheckBox( nuc );
+        modelNuclideAdded( nuc );
       }//for( int row = 0; row < nrow; ++row )
     }//if( newMaterial )
 
@@ -2037,5 +3200,395 @@ void ShieldingSelect::handleMaterialChange()
     m_materialChangedSignal.emit( this );
 }//void handleMaterialChange()
 
+
+
+void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
+{
+  rapidxml::xml_document<char> *doc = parent_node->document();
+  
+  const char *name, *value;
+  rapidxml::xml_node<char> *base_node, *node;
+  rapidxml::xml_attribute<char> *attr;
+  
+  name = "Shielding";
+  base_node = doc->allocate_node( rapidxml::node_element, name );
+  parent_node->append_node( base_node );
+  
+  //If you change the available options or formatting or whatever, increment the
+  //  version field of the XML!
+  string versionstr = std::to_string(ShieldingSelect::sm_xmlSerializationMajorVersion)
+                      + "." + std::to_string(ShieldingSelect::sm_xmlSerializationMinorVersion);
+  value = doc->allocate_string( versionstr.c_str() );
+  attr = doc->allocate_attribute( "version", value );
+  base_node->append_attribute( attr );
+
+
+  name = "ForFitting";
+  value = m_forFitting ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  base_node->append_node( node );
+
+  if( m_isGenericMaterial )
+  {
+    rapidxml::xml_node<> *generic_node;
+    
+    name = "Generic";
+    generic_node = doc->allocate_node( rapidxml::node_element, name );
+    base_node->append_node( generic_node );
+    
+    name = "ArealDensity";
+    value = doc->allocate_string( m_arealDensityEdit->valueText().toUTF8().c_str() );
+    node = doc->allocate_node( rapidxml::node_element, name, value );
+    generic_node->append_node( node );
+    if( m_forFitting )
+    {
+      value = m_fitArealDensityCB->isChecked() ? "1" : "0";
+      attr = doc->allocate_attribute( "Fit", value );
+      node->append_attribute( attr );
+    }//if( m_fitArealDensityCB )
+    
+    name = "AtomicNumber";
+    value = doc->allocate_string( m_atomicNumberEdit->valueText().toUTF8().c_str() );
+    node = doc->allocate_node( rapidxml::node_element, name, value );
+    generic_node->append_node( node );
+    if( m_forFitting )
+    {
+      value = m_fitAtomicNumberCB->isChecked() ? "1" : "0";
+      attr = doc->allocate_attribute( "Fit", value );
+      node->append_attribute( attr );
+    }//if( m_fitAtomicNumberCB )
+    
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    auto addTruth = [doc,generic_node]( const char *truthName, const boost::optional<double> &value ){
+      if( value )
+      {
+        const string strval = std::to_string(*value);
+        const char *value = doc->allocate_string( strval.c_str() );
+        rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, truthName, value );
+        generic_node->append_node( node );
+      }
+    };//addTruth(...)
+    addTruth( "TruthAD", truthAD );
+    addTruth( "TruthADTolerance", truthADTolerance );
+    addTruth( "TruthAN", truthAN );
+    addTruth( "TruthANTolerance", truthANTolerance );
+#endif
+  }else
+  {
+    rapidxml::xml_node<> *material_node, *mass_frac_node, *iso_node;
+    
+    name = "Material";
+    material_node = doc->allocate_node( rapidxml::node_element, name );
+    base_node->append_node( material_node );
+    
+    name = "Name";
+    value = doc->allocate_string( m_materialEdit->valueText().toUTF8().c_str() );
+    node = doc->allocate_node( rapidxml::node_element, name, value );
+    material_node->append_node( node );
+    
+    name = "Thickness";
+    value = doc->allocate_string( m_thicknessEdit->valueText().toUTF8().c_str() );
+    node = doc->allocate_node( rapidxml::node_element, name, value );
+    material_node->append_node( node );
+    if( m_forFitting )
+    {
+      value = m_fitThicknessCB->isChecked() ? "1" : "0";
+      attr = doc->allocate_attribute( "Fit", value );
+      node->append_attribute( attr );
+    }//if( m_forFitting )
+    
+    if( m_forFitting )
+    {
+      name = "FitMassFraction";
+      value = (m_fitMassFrac && m_fitMassFrac->isChecked()) ? "1" : "0";
+      mass_frac_node = doc->allocate_node( rapidxml::node_element, name, value );
+      material_node->append_node( mass_frac_node );
+    }//if( m_forFitting )
+    
+    for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
+    {
+      for( WWidget *widget : etnm.second->children() )
+      {
+        SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
+        
+        if( src && src->useAsSource() && src->isotope() )
+        {
+          iso_node = doc->allocate_node( rapidxml::node_element, "Nuclide" );
+          material_node->append_node( iso_node );
+          
+          value = doc->allocate_string( src->isotope()->symbol.c_str() );
+          node = doc->allocate_node( rapidxml::node_element, "Name", value );
+          iso_node->append_node( node );
+          
+          value = doc->allocate_string( std::to_string(src->massFraction()).c_str() );
+          node = doc->allocate_node( rapidxml::node_element, "MassFrac", value );
+          iso_node->append_node( node );
+        }//if( src && src->useAsSource() )
+      }//for( WWidget *widget : isotopeDiv->children() )
+    }//for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
+    
+    
+    if( m_traceSources )
+    {
+      for( WWidget *w : m_traceSources->children() )
+      {
+        const TraceSrcDisplay *src = dynamic_cast<const TraceSrcDisplay *>( w );
+        assert( src );
+        if( src && src->nuclide() )
+          src->serialize( material_node );
+      }//for( WWidget *w : m_traceSources->children() )
+    }//if( m_traceSources )
+    
+    
+    #if( INCLUDE_ANALYSIS_TEST_SUITE )
+        auto addTruth = [doc,material_node]( const char *truthName, const boost::optional<double> &value ){
+          if( value )
+          {
+            const string strval = PhysicalUnits::printToBestLengthUnits(*value,6);
+            const char *value = doc->allocate_string( strval.c_str() );
+            rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, truthName, value );
+            material_node->append_node( node );
+          }
+        };//addTruth(...)
+    
+        addTruth( "TruthThickness", truthThickness );
+        addTruth( "TruthThicknessTolerance", truthThicknessTolerance );
+    #endif
+  }//if( m_isGenericMaterial ) / else
+}//void serialize( rapidxml::xml_document<> &doc ) const;
+
+
+void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
+{
+  rapidxml::xml_attribute<char> *attr;
+  rapidxml::xml_node<char> *node, *generic_node, *material_node;
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+ 
+  if( shield_node->name() != string("Shielding") )
+    throw runtime_error( "ShieldingSelects XML node should be 'Shielding'" );
+  
+  attr = shield_node->first_attribute( "version", 7 );
+  int version;
+  if( !attr || !attr->value() || !(stringstream(attr->value())>>version) )
+    throw runtime_error( "ShieldingSelects should be versioned" );
+  
+  if( version != sm_xmlSerializationMajorVersion )
+    throw runtime_error( "Invalid XML version for ShieldingSelect" );
+  
+  // Note that version is either "0" (implied minor version 0), or "0.1" or something; we could read
+  //  in the minor version to sm_xmlSerializationMinorVersion and use it, but theres really no need.
+  
+  
+  bool forFitting;
+  node = shield_node->first_node( "ForFitting", 10 );
+  if( !node || !node->value() || !(stringstream(node->value())>>forFitting) )
+    throw runtime_error( "Missing/invalid for fitting node" );
+
+  if( m_forFitting != forFitting )
+    throw runtime_error( "ShieldingSelect m_forFitting must be same as "
+                         "XML being deserialized" );
+  
+  generic_node = shield_node->first_node( "Generic", 7 );
+  material_node = shield_node->first_node( "Material", 8 );
+  
+  if( generic_node )
+  {
+    const rapidxml::xml_node<char> *ad_node, *an_node;
+    ad_node = generic_node->first_node( "ArealDensity", 12 );
+    an_node = generic_node->first_node( "AtomicNumber", 12 );
+    
+    if( !ad_node || !ad_node->value() || !ad_node || !ad_node->value() )
+      throw runtime_error( "Generic material must have ArealDensity and"
+                           " AtomicNumber nodes" );
+    
+    
+    
+    if( !m_isGenericMaterial )
+      handleToggleGeneric();
+    
+    cout << "AD=" << ad_node->value() << endl;
+    cout << "AN=" << an_node->value() << endl;
+    m_arealDensityEdit->setValueText( WString::fromUTF8(ad_node->value()) );
+    m_atomicNumberEdit->setValueText( WString::fromUTF8(an_node->value()) );
+    
+    if( m_forFitting && m_fitArealDensityCB && m_fitAtomicNumberCB )
+    {
+      bool fit;
+      attr = ad_node->first_attribute( "Fit", 3 );
+      if( attr && attr->value() && (stringstream(attr->value())>>fit) )
+        m_fitArealDensityCB->setChecked( fit );
+      
+      attr = an_node->first_attribute( "Fit", 3 );
+      if( attr && attr->value() && (stringstream(attr->value())>>fit) )
+        m_fitAtomicNumberCB->setChecked( fit );
+    }//if( m_fitArealDensityCB )
+    
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    auto getTruth = [generic_node]( const char *truthName, boost::optional<double> &value ){
+      value.reset();
+      auto node = generic_node->first_node( truthName );
+      if( !node || !node->value() )
+        return;
+      
+      double dblvalue;
+      if( (stringstream(node->value()) >> dblvalue) )
+        value = dblvalue;
+      else
+        cerr << "\n\nFailed to deserialize shielding " << truthName << " from " << node->value()
+        << "\n\n" << endl;
+    };//getTruth(...)
+    
+    getTruth( "TruthAD", truthAD );
+    getTruth( "TruthADTolerance", truthADTolerance );
+    getTruth( "TruthAN", truthAN );
+    getTruth( "TruthANTolerance", truthANTolerance );
+#endif
+  }//if( generic_node )
+  
+  if( material_node )
+  {
+    bool fitMassFrac = false;
+    vector<const SandiaDecay::Nuclide *> srcnuclides;
+    const rapidxml::xml_node<> *frac_node, *iso_node, *name_node, *thick_node;
+
+    name_node = material_node->first_node( "Name", 4 );
+    thick_node = material_node->first_node( "Thickness", 9 );
+    if( !name_node || !name_node->value()
+        || !thick_node || !thick_node->value() )
+      throw runtime_error( "Material node didnt have name or thickness child" );
+    
+    if( m_isGenericMaterial )
+      handleToggleGeneric();
+    
+    m_materialEdit->setValueText( WString::fromUTF8(name_node->value()) );
+    m_thicknessEdit->setValueText( WString::fromUTF8(thick_node->value()) );
+    
+    handleMaterialChange();
+    
+    if( m_forFitting )
+    {
+      bool fit;
+      attr = thick_node->first_attribute( "Fit", 3 );
+      if( !attr || !attr->value() || !(stringstream(attr->value())>>fit) )
+        throw runtime_error( "Material node expected thickness Fit attribute" );
+      m_fitThicknessCB->setChecked( fit );
+      
+      const rapidxml::xml_node<> *fitmassfrac_node = material_node->first_node( "FitMassFraction", 15 );
+      if( fitmassfrac_node && fitmassfrac_node->value() )
+      {
+        stringstream(fitmassfrac_node->value()) >> fitMassFrac;
+      }//if( m_forFitting )
+    }//if( m_forFitting )
+
+    double last_frac = 0.0;
+    const SandiaDecay::Nuclide *last_nuc = NULL;
+    
+    for( iso_node = material_node->first_node( "Nuclide", 7 );
+        iso_node; iso_node = iso_node->next_sibling( "Nuclide", 7 ) )
+    {
+      name_node = iso_node->first_node( "Name", 4 );
+      frac_node = iso_node->first_node( "MassFrac", 8 );
+      
+      if( !name_node || !name_node->value()
+          || !frac_node || !frac_node->value() )
+        throw runtime_error( "Missing invalid name/mass frac node form iso" );
+      
+      const SandiaDecay::Nuclide *nuc = db->nuclide( name_node->value() );
+      if( !nuc )
+        throw runtime_error( string(name_node->value()) + " is not a valid isotope" );
+      
+      srcnuclides.push_back( nuc );
+      
+      double fraction;
+      if( !(stringstream(frac_node->value()) >> fraction) )
+        throw runtime_error( "Invalid mass fraction: " + string(frac_node->value()) );
+      
+//      modelNuclideAdded( nuc );
+//      const SandiaDecay::Element *el = db->element( nuc->atomicNumber );
+//      if( m_sourceIsotopes.find( el ) == m_sourceIsotopes.end() )
+//      {
+//      }//if(...)
+      try
+      {
+        setMassFraction( nuc, fraction );
+        
+        last_nuc = nuc;
+        last_frac = fraction;
+      }catch( std::exception &e )
+      {
+        cerr << "ShieldingSelect::deSerialize(...)\n\tCaught: " << e.what()
+             << " but continuuing anyway" << endl;
+      }//try / catch
+    }//for( loop over isotope nodes )
+    
+    //Now set the check boxes to make all the source nuclides called out in the
+    //  XML as actual src nuclides, since we only saved nuclides we actually
+    //  wanted to use as source nuclides.
+    if( m_currentMaterial )
+    {
+      for( const SandiaDecay::Nuclide *nuc : srcnuclides )
+      {
+        for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
+        {
+          for( WWidget *widget : etnm.second->children() )
+          {
+            SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
+            if( src && (nuc == src->isotope()) )
+              src->setUseAsSource( true );
+          }
+        }
+      }//for( const SandiaDecay::Nuclide *nuc : srcnuclides )
+      
+      
+      // Get rid of all the trace sources - I dont *think* we need to emit signals and all that since
+      if( m_traceSources )
+        m_traceSources->clear();
+      
+      for( auto trace_node = material_node->first_node( "TraceSource", 11 );
+          trace_node; trace_node = iso_node->next_sibling( "TraceSource", 11 ) )
+      {
+        addTraceSource();
+        assert( m_traceSources );
+        
+        TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( m_traceSources->children().back() );
+        assert( src );
+        
+        // When we de-serialize we assume the source fitting model already has the nuclides
+        //  available to become trace sources
+        if( src )  //JIC
+          src->deSerialize( trace_node );
+      }//for( loop over trace nodes )
+    }//if( m_currentMaterial )
+    
+    if( m_fitMassFrac )
+      m_fitMassFrac->setChecked( fitMassFrac );
+    
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    auto getTruth = [material_node]( const char *truthName, boost::optional<double> &value ){
+      value.reset();
+      auto node = material_node->first_node( truthName );
+      if( !node || !node->value() )
+        return;
+      
+      try
+      {
+        value = PhysicalUnits::stringToDistance( node->value() );
+      }catch( std::exception &e )
+      {
+        cerr << "\n\nFailed to deserialize a shielding " << truthName << ": " << e.what() << "\n\n";
+      }
+    };//getTruth(...)
+    
+    getTruth( "TruthThickness", truthThickness );
+    getTruth( "TruthThicknessTolerance", truthThicknessTolerance );
+#endif
+    
+    
+    //Calling handleIsotopicChange(...) will perform some normailizations
+    //  and stuff (I think), that setMassFraction(...) doesnt do
+    if( last_nuc )
+      handleIsotopicChange( static_cast<float>(last_frac), last_nuc );
+  }//if( material_node )
+}//void deSerialize( const rapidxml::xml_node<char> *shielding_node ) const
 
 

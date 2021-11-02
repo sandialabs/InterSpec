@@ -300,7 +300,7 @@ void MakeDrfSrcDef::create()
   cell = m_table->elementAt(sm_shield_material_row,0);
   cell->setColumnSpan( 2 );
   
-  m_shieldingSelect = new ShieldingSelect( m_materialDB, nullptr, m_materialSuggest, false, cell );
+  m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest, cell );
   m_shieldingSelect->materialModified().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
   m_shieldingSelect->materialChanged().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
   m_shieldingSelect->addingIsotopeAsSource().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );

@@ -87,9 +87,12 @@ namespace Wt
 
 class InterSpec;
 class SourceFitModel;
+class TraceSrcDisplay;
 class NativeFloatSpinBox;
 class ShieldingSourceDisplay;
 
+enum class ModelSourceType : int;
+enum class TraceActivityType : int;
 
 class SourceCheckbox : public Wt::WContainerWidget
 {
@@ -118,6 +121,13 @@ protected:
 class ShieldingSelect : public Wt::WContainerWidget
 {
 public:
+  /** ShieldingSelect constructor for use when you arent fitting material thickness or AN/AD - e.g., everywhere except in
+   ShieldingSourceDisplay.
+   */
+  ShieldingSelect( MaterialDB *materialDB,
+                   Wt::WSuggestionPopup *materialSuggest,
+                   Wt::WContainerWidget *parent = 0 );
+  
   //ShieldingSelect constructor: if forFitting==true, then the checkboxes
   //  that tell if a quantity should be fit for, are constructed.  if
   //  forFitting==false, then any calls; also if true then cursor focus will
@@ -128,8 +138,13 @@ public:
   ShieldingSelect( MaterialDB *materialDB,
                    SourceFitModel *sourceModel,
                    Wt::WSuggestionPopup *materialSuggest,
-                   bool forFitting,
+                   ShieldingSourceDisplay *shieldSource,
                    Wt::WContainerWidget *parent = 0 );
+  
+  
+  
+  
+  
   virtual ~ShieldingSelect();
 
   //isGenericMaterial(): tells you if the material is defined by areal density
@@ -205,19 +220,19 @@ public:
                                            &activityFromThicknessNeedUpdating();
 
   //addingIsotopeAsSource(): Signal emitted when isotope is checked
-  Wt::Signal<const SandiaDecay::Nuclide *> &addingIsotopeAsSource();
+  Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &addingIsotopeAsSource();
 
   //removingIsotopeAsSource(): Signal emitted when isotope is unchecked
-  Wt::Signal<const SandiaDecay::Nuclide *> &removingIsotopeAsSource();
+  Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &removingIsotopeAsSource();
 
-  //Will check the checkbox for a source with label=="symbol",
-  //  does nothing if there is no isotope cb with that symbol.
+  //Will un-check the checkbox for the nuclide to be a self-attenuating source, or a trace source.
+  //  Does nothing if there is no isotope cb, or trace source with the nuclide.
   //Note: does not emit the removingIsotopeAsSource() signal
   void uncheckSourceIsotopeCheckBox( const SandiaDecay::Nuclide *nuc );
 
-  //removeSourceIsotopeCheckBox(...): removes the checkbox option for
-  //  given isotope
-  void removeSourceIsotopeCheckBox( const SandiaDecay::Nuclide *nuc );
+  //sourceRemovedFromModel(...): removes the checkbox option for
+  //  given isotope, and updates possible trace source options.
+  void sourceRemovedFromModel( const SandiaDecay::Nuclide *nuc );
 
   //updateMassFractionDisplays(): updates displayed mass fractions to that of
   //  the Material passed in.
@@ -269,6 +284,35 @@ public:
   Wt::WLineEdit *arealDensityEdit();
   Wt::WLineEdit *atomicNumberEdit();
   
+  /** Returns if this shielding is a trace source for the specified nuclide. */
+  bool isTraceSourceForNuclide( const SandiaDecay::Nuclide *nuc ) const;
+  
+  /** Returns the current total activity for the specified trace source nuclide.
+   
+   Throws exception if not a trace source for the nuclide.
+   */
+  double traceSourceTotalActivity( const SandiaDecay::Nuclide *nuc ) const;
+  
+  /** Returns the current display activity for the specified trace source nuclide; e.g., might be total activity, or activity per cm^3, or
+   per gram.
+   
+   Throws exception if not a trace source for the nuclide.
+   
+   \sa traceSourceType
+   */
+  double traceSourceDisplayActivity( const SandiaDecay::Nuclide *nuc ) const;
+  
+  
+  /** Returns if the activity for this source should be fit for; this returns the same value as the model should return for this quantity. */
+  bool fitTraceSourceActivity( const SandiaDecay::Nuclide *nuc ) const;
+  
+  /** Returns the current total activity for the specified trace source nuclide.
+   
+   Throws exception if not a trace source for the nuclide.
+   */
+  TraceActivityType traceSourceType( const SandiaDecay::Nuclide *nuc ) const;
+  
+  
   //serialize(...): saves state as a <Shielding />  node.
   void serialize( rapidxml::xml_node<char> *parent_node ) const;
   
@@ -304,6 +348,17 @@ protected:
   void emitAddAfterSignal();
   
   
+  void addTraceSource();
+  void removeTraceSourceWidget( TraceSrcDisplay *src );
+  void setTraceSourceMenuItemStatus();
+  void handleTraceSourceNuclideChange( TraceSrcDisplay *src, const SandiaDecay::Nuclide *oldNuc );
+  void handleTraceSourceWidgetAboutToBeRemoved( TraceSrcDisplay *nuc );
+  void handleTraceSourceActivityChange( const SandiaDecay::Nuclide *nuc, const double activity );
+  
+  
+  double shieldingVolume() const;
+  double shieldingMass() const;
+  
   //This simply toggles the generic, and calls handleMaterialChange()
   void handleToggleGeneric();
   
@@ -326,10 +381,11 @@ protected:
   //  the same.
   void handleIsotopicChange( float fraction, const SandiaDecay::Nuclide *nuc );
 
-  //addSourceIsotopeCheckBox(...): adds a checkbox for Nuclide and connects
-  //  appropriate signals
-  void addSourceIsotopeCheckBox( const SandiaDecay::Nuclide *iso );
+  //modelNuclideAdded(...): adds a checkbox for Nuclide and connects
+  //  appropriate signals, and updates trace sources
+  void modelNuclideAdded( const SandiaDecay::Nuclide *iso );
 
+  
   //massFractionOfElement(...): returns the fraction, by mass, that the isotope
   //  takes up for the element it belongs to
   static double massFractionOfElement( const SandiaDecay::Nuclide *iso,
@@ -345,8 +401,14 @@ protected:
   //  isotopes being used as sources, and if so, updates m_fitMassFrac
   void updateIfMassFractionCanFit();
 
+  /** Returns the trace source widget for the specfied nuclide, or nullptr if nuclide is not a trace source. */
+  const TraceSrcDisplay *traceSourceWidgetForNuclide( const SandiaDecay::Nuclide *nuc ) const;
   
 protected:
+  /** Pointer to the ShieldingSourceDisplay this ShieldingSelect belongs to - if it belongs to this tool, otherwise will be nullptr. */
+  const ShieldingSourceDisplay *m_shieldSrcDisp;
+  
+  
   Wt::WImage* m_toggleImage;
   const bool m_forFitting;
   MaterialDB *m_materialDB;
@@ -363,7 +425,8 @@ protected:
   Wt::WText *m_materialSummarry;
   Wt::WPushButton *m_closeIcon;
   Wt::WPushButton *m_addIcon;
-
+  PopupDivMenuItem *m_addTraceSourceItem;
+  
   Wt::WLineEdit *m_thicknessEdit;
 
   Wt::WCheckBox *m_fitThicknessCB;
@@ -380,10 +443,13 @@ protected:
   Wt::WContainerWidget *m_genericMaterialDiv;
 
   Wt::WContainerWidget *m_asSourceCBs;
-  typedef std::map<const SandiaDecay::Element *,Wt::WContainerWidget *> \
-                                                            ElementToNuclideMap;
+  
+  typedef std::map<const SandiaDecay::Element *,Wt::WContainerWidget *> ElementToNuclideMap;
   ElementToNuclideMap m_sourceIsotopes;
 
+  Wt::WContainerWidget *m_traceSources;
+  
+  
   std::string m_currentMaterialDescrip;
   std::shared_ptr<Material> m_currentMaterial;
 
@@ -392,13 +458,15 @@ protected:
   Wt::Signal<ShieldingSelect *> m_addShieldingAfter;
   Wt::Signal<ShieldingSelect *> m_materialModifiedSignal;
   Wt::Signal<ShieldingSelect *> m_materialChangedSignal;
-  Wt::Signal<const SandiaDecay::Nuclide *> m_addingIsotopeAsSource;
-  Wt::Signal<const SandiaDecay::Nuclide *> m_removingIsotopeAsSource;
+  Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> m_addingIsotopeAsSource;
+  Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> m_removingIsotopeAsSource;
   Wt::Signal<ShieldingSelect *,const SandiaDecay::Nuclide *>
                                             m_activityFromThicknessNeedUpdating;
   
-  static const int sm_xmlSerializationVersion;
+  static const int sm_xmlSerializationMajorVersion;
+  static const int sm_xmlSerializationMinorVersion;
 
+  friend class TraceSrcDisplay;
   friend class ShieldingSourceDisplay;
 };//struct ShieldingSelect
 
