@@ -64,12 +64,14 @@
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
 
 using namespace Wt;
 using namespace std;
 
+using GammaInteractionCalc::TraceActivityType;
 
 const int ShieldingSelect::sm_xmlSerializationMajorVersion = 0;
 const int ShieldingSelect::sm_xmlSerializationMinorVersion = 1;
@@ -208,7 +210,7 @@ public:
     node->append_attribute( attr );
     
     const TraceActivityType type = TraceActivityType( m_activityType->currentIndex() );
-    value = to_str( type );
+    value = GammaInteractionCalc::to_str( type );
     
     node = doc->allocate_node( rapidxml::node_element, "TraceActivityType", value );
     base_node->append_node( node );
@@ -292,7 +294,7 @@ public:
         t != TraceActivityType::NumTraceActivityType;
         t = TraceActivityType(static_cast<int>(t) + 1) )
     {
-      if( act_type == to_str(t) )
+      if( act_type == GammaInteractionCalc::to_str(t) )
       {
         type = t;
         break;
@@ -470,7 +472,7 @@ public:
       m_activityInput->setText( txt );
     }// try / catch
     
-    m_activityUpdated.emit( nuclide(), m_currentTotalActivity );
+    m_activityUpdated.emit( m_currentNuclide, m_currentTotalActivity );
   }//void handleUserActivityChange()
   
   /** Returns total activity, or activity per gram, or activity per cm3, based on user input*/
@@ -607,7 +609,7 @@ public:
         break;
     }//switch( type )
     
-    const string actTxt = PhysicalUnits::printToBestActivityUnits( m_currentDisplayActivity, 3, useCi );
+    const string actTxt = PhysicalUnits::printToBestActivityUnits( m_currentDisplayActivity, 4, useCi );
     m_activityInput->setText( actTxt );
   }//void updateDispActivityFromTotalActivity()
   
@@ -715,6 +717,19 @@ public:
     return m_currentDisplayActivity;
   }
   
+  void setTraceSourceTotalActivity( const double total_activity )
+  {
+    assert( m_currentNuclide );
+    if( !m_currentNuclide )
+      throw runtime_error( "setTraceSourceTotalActivity: no current nuclide" );
+    
+    m_currentTotalActivity = total_activity;
+    updateDispActivityFromTotalActivity();
+    
+    m_activityUpdated.emit( m_currentNuclide, m_currentTotalActivity );
+  }//void setTraceSourceTotalActivity(...)
+  
+  
   void handleUserNuclideChange()
   {
     const SandiaDecay::Nuclide * const oldNuc = m_currentNuclide;
@@ -727,18 +742,44 @@ public:
     else
       m_currentNuclide = db->nuclide( nuctxt );
     
-    // If we wanted to keep in sync with the SourceFitModel, we could use this next code.
-    /*
+    // Start with the models activity.
     SourceFitModel *srcmodel = m_parent->m_sourceModel;
     if( m_currentNuclide && srcmodel )
     {
       // This next line will throw exception if invalid nuclide ...
       //  but that should never happen, right?
       const int nucnum = srcmodel->nuclideIndex(m_currentNuclide);
-      const bool fit = srcmodel->fitActivity(nucnum);
-      m_allowFitting->setChecked( fit );
+      double act = srcmodel->activity(nucnum);
+      const TraceActivityType type = TraceActivityType( m_activityType->currentIndex() );
+      
+      switch( type )
+      {
+        case GammaInteractionCalc::TraceActivityType::TotalActivity:
+          break;
+          
+        case GammaInteractionCalc::TraceActivityType::ActivityPerCm3:
+          act /= (m_parent->shieldingVolume() / PhysicalUnits::cm3);
+          break;
+          
+        case GammaInteractionCalc::TraceActivityType::ActivityPerGram:
+          act /= (m_parent->shieldingMass() / PhysicalUnits::gram);
+          break;
+          
+        case GammaInteractionCalc::TraceActivityType::NumTraceActivityType:
+          assert( 0 );
+          break;
+      }//switch( type )
+      
+      m_currentDisplayActivity = act;
+      
+      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const string actstr = PhysicalUnits::printToBestActivityUnits(act,4,useCi);
+      m_activityInput->setValueText( WString::fromUTF8(actstr) );
+      
+      updateTotalActivityFromDisplayActivity();
     }//if( srcmodel )
-    */
+    
+    handleUserChangeAllowFit();
     
     if( m_currentNuclide != oldNuc )
       m_nucChangedSignal.emit( this, oldNuc );
@@ -750,10 +791,13 @@ public:
     updateDispActivityFromTotalActivity();
   }//handleUserChangeActivityType()
   
+  
   void handleUserChangeAllowFit()
   {
-    //We arent actually updating the model for trace sources, but if we were, we could use:
-    /*
+    //We dont actually display the fit checkbox in the model table for trace sources, and we only
+    //  consult this widget if we are fitting for it, but lets still keep the model in sync, for
+    //  the moment (although this "in sync" only goes one direction; if you change the model value
+    //  it wont change this widgets value, atm).
     if( !m_currentNuclide )
       return;
     
@@ -766,7 +810,7 @@ public:
     {
       WModelIndex index = srcmodel->index( m_currentNuclide, SourceFitModel::Columns::kFitActivity );
       const bool doFit = m_allowFitting->isChecked();
-      srcmodel->setData( index, doFit );
+      srcmodel->setData( index, doFit, Wt::CheckStateRole );
     }catch( std::exception &e )
     {
       assert( 0 ); // shouldnt ever happen, right???
@@ -774,7 +818,6 @@ public:
            << " SourceFitModel" << endl;
       return;
     }//try / catch
-     */
   }//void handleUserChangeAllowFit()
   
   /** Doesn not cause change signals to be emitted */
@@ -1202,6 +1245,24 @@ Wt::WLineEdit *ShieldingSelect::atomicNumberEdit()
 }
 
 
+vector<const SandiaDecay::Nuclide *> ShieldingSelect::traceSourceNuclides() const
+{
+  vector<const SandiaDecay::Nuclide *> answer;
+  
+  if( m_traceSources )
+  {
+    for( WWidget *w : m_traceSources->children() )
+    {
+      const TraceSrcDisplay *src = dynamic_cast<const TraceSrcDisplay *>( w );
+      assert( src );
+      
+      if( src && src->nuclide() )
+        answer.push_back( src->nuclide() );
+    }//for( WWidget *w : m_traceSources->children() )
+  }//if( m_traceSources )
+  return answer;
+}//std::vector<const SandiaDecay::Nuclide *> traceSourceNuclides() const;
+
 
 bool ShieldingSelect::isTraceSourceForNuclide( const SandiaDecay::Nuclide *nuc ) const
 {
@@ -1219,6 +1280,16 @@ double ShieldingSelect::traceSourceTotalActivity( const SandiaDecay::Nuclide *nu
   
   return w->totalActivity();
 }
+
+void ShieldingSelect::setTraceSourceTotalActivity( const SandiaDecay::Nuclide *nuc,
+                                                  const double activity )
+{
+  TraceSrcDisplay *w = traceSourceWidgetForNuclide( nuc );
+  if( !w )
+    throw runtime_error( "setTraceSourceTotalActivity: called with invalid nuclide" );
+  
+  w->setTraceSourceTotalActivity( activity );
+}//void setTraceSourceTotalActivity( nuclide, activity );
 
 
 double ShieldingSelect::traceSourceDisplayActivity( const SandiaDecay::Nuclide *nuc ) const
@@ -1266,7 +1337,25 @@ const TraceSrcDisplay *ShieldingSelect::traceSourceWidgetForNuclide( const Sandi
   }//for( WWidget *w : m_traceSources->children() )
   
   return nullptr;
-}//traceSourceWidgetForNuclide(...)
+}//traceSourceWidgetForNuclide(...) const
+
+
+TraceSrcDisplay *ShieldingSelect::traceSourceWidgetForNuclide( const SandiaDecay::Nuclide *nuc )
+{
+  if( !m_traceSources || !nuc )
+    return nullptr;
+  
+  for( WWidget *w : m_traceSources->children() )
+  {
+    TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
+    assert( src );
+    
+    if( src && (src->nuclide() == nuc) )
+      return src;
+  }//for( WWidget *w : m_traceSources->children() )
+  
+  return nullptr;
+}//traceSourceWidgetForNuclide(...) non-const
 
 
 void ShieldingSelect::init()
@@ -1711,11 +1800,6 @@ void ShieldingSelect::handleTraceSourceNuclideChange( TraceSrcDisplay *changedSr
       traceNucs.push_back( { srcNuc, src->totalActivity() } );
     }
   }//for( WWidget *w : traceSources )
-  
-  // blah blah blah
-  //  We need to emit something so the model can remove previous source as trace source, and add new one as a trace source
-  //  really, just get the GUI for trace sources looking right, and then hook up to the model
-  //  Maybe just have the Model update itself totally about trace sources whenever there is any change...
 }//void handleTraceSourceNuclideChange( TraceSrcDisplay *src );
 
 
@@ -3544,8 +3628,8 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
       if( m_traceSources )
         m_traceSources->clear();
       
-      for( auto trace_node = material_node->first_node( "TraceSource", 11 );
-          trace_node; trace_node = iso_node->next_sibling( "TraceSource", 11 ) )
+      for( auto trace_node = XML_FIRST_NODE(material_node, "TraceSource");
+          trace_node; trace_node = XML_NEXT_TWIN(trace_node) )
       {
         addTraceSource();
         assert( m_traceSources );
