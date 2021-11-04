@@ -101,7 +101,7 @@ const char *to_str( TraceActivityType type )
 
 
 
-const double PointSourceShieldingChi2Fcn::sm_activityUnits = SandiaDecay::MBq;
+const double ShieldingSourceChi2Fcn::sm_activityUnits = SandiaDecay::MBq;
 
 //Returned in units of 1.0/[Length], so that
 //  exp( -transmition_length_coefficient(...) * thickness)
@@ -700,11 +700,11 @@ void DistributedSrcCalc::eval( const double xx[], const int *ndimptr,
 //    -areal density
 // ...
 
-PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
+ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
                                  double distance, double liveTime,
                                  const std::vector<PeakDef> &peaks,
                                  std::shared_ptr<const DetectorPeakResponse> detector,
-                                 const std::vector<PointSourceShieldingChi2Fcn::ShieldingInfo> &materials,
+                                 const std::vector<ShieldingSourceChi2Fcn::ShieldingInfo> &materials,
                                  const bool allowMultipleNucsContribToPeaks,
                                  const bool attenuateForAir )
   : ROOT::Minuit2::FCNBase(),
@@ -739,14 +739,14 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
             }  );
   
   // Go through and sanity-check traceSources
-  for( const PointSourceShieldingChi2Fcn::ShieldingInfo &info : materials )
+  for( const ShieldingSourceChi2Fcn::ShieldingInfo &info : materials )
   {
     const Material *material = info.material;
     
     if( !material )
     {
       if( !info.self_atten_sources.empty() || !info.trace_sources.empty() )
-        throw runtime_error( "PointSourceShieldingChi2Fcn: Self attenuating and trace sources must"
+        throw runtime_error( "ShieldingSourceChi2Fcn: Self attenuating and trace sources must"
                              " be empty for generic shieldings" );
       continue;
     }//if( !material )
@@ -754,7 +754,7 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
     for( const SandiaDecay::Nuclide *nuc : info.self_atten_sources )
     {
       if( !nucs.count(nuc) )
-        throw runtime_error( "PointSourceShieldingChi2Fcn: self attenuating nuclide "
+        throw runtime_error( "ShieldingSourceChi2Fcn: self attenuating nuclide "
                             + nuc->symbol + " doesnt have a peak with that as an assigned nuclide" );
       
       int hasElement = 0;
@@ -762,7 +762,7 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
         hasElement += (p.first->atomicNumber == nuc->atomicNumber);
       
       if( !hasElement )
-        throw runtime_error( "PointSourceShieldingChi2Fcn: self attenuating nuclide "
+        throw runtime_error( "ShieldingSourceChi2Fcn: self attenuating nuclide "
                             + nuc->symbol + " not in shielding " + material->name );
     }//for( const SandiaDecay::Nuclide *nuc : info.self_atten_sources )
     
@@ -770,10 +770,10 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
     for( const pair<const SandiaDecay::Nuclide *,TraceActivityType> &trace : info.trace_sources )
     {
       if( !trace.first )
-        throw runtime_error( "PointSourceShieldingChi2Fcn: null trace source" );
+        throw runtime_error( "ShieldingSourceChi2Fcn: null trace source" );
       
       if( !nucs.count(trace.first) )
-        throw runtime_error( "PointSourceShieldingChi2Fcn: self attenuating nuclide "
+        throw runtime_error( "ShieldingSourceChi2Fcn: self attenuating nuclide "
                   + trace.first->symbol + " doesnt have a peak with that as an assigned nuclide" );
     }//for( loop over trace sources )
     
@@ -781,10 +781,10 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
     //  gui doesnt currently allow this, I *think* the computation will work out fine, maybe.
     
   }//for( const TraceSourceInfo &info : traceSources )
-}//PointSourceShieldingChi2Fcn
+}//ShieldingSourceChi2Fcn
 
 
-PointSourceShieldingChi2Fcn::~PointSourceShieldingChi2Fcn()
+ShieldingSourceChi2Fcn::~ShieldingSourceChi2Fcn()
 {
   {//begin lock on m_zombieCheckTimerMutex
     std::lock_guard<std::mutex> scoped_lock( m_zombieCheckTimerMutex );
@@ -794,26 +794,26 @@ PointSourceShieldingChi2Fcn::~PointSourceShieldingChi2Fcn()
       boost::system::error_code ec;
       m_zombieCheckTimer->cancel( ec );
       if( ec )
-        cerr << "PointSourceShieldingChi2Fcn::fittingIsFinished(): Got error cancelling m_zombieCheckTimer: "
+        cerr << "ShieldingSourceChi2Fcn::fittingIsFinished(): Got error cancelling m_zombieCheckTimer: "
         << ec.message() << endl;
       m_zombieCheckTimer.reset();
     }//if( m_zombieCheckTimer )
   }//end lock on m_zombieCheckTimerMutex
 }
 
-void PointSourceShieldingChi2Fcn::cancelFit()
+void ShieldingSourceChi2Fcn::cancelFit()
 {
   m_cancel = 1;
 }
 
 
-void PointSourceShieldingChi2Fcn::setGuiProgressUpdater( std::shared_ptr<GuiProgressUpdateInfo> updateInfo )
+void ShieldingSourceChi2Fcn::setGuiProgressUpdater( std::shared_ptr<GuiProgressUpdateInfo> updateInfo )
 {
   m_guiUpdateInfo = updateInfo;
 }//void setGuiUpdater(...)
   
   
-void PointSourceShieldingChi2Fcn::zombieCallback( const boost::system::error_code &ec )
+void ShieldingSourceChi2Fcn::zombieCallback( const boost::system::error_code &ec )
 {
   if( ec )  //timer was cancelled
     return;
@@ -824,7 +824,7 @@ void PointSourceShieldingChi2Fcn::zombieCallback( const boost::system::error_cod
 }//void zombieCallback( const boost::system::error_code &ec )
   
   
-void PointSourceShieldingChi2Fcn::fittingIsStarting( const size_t deadlineMs )
+void ShieldingSourceChi2Fcn::fittingIsStarting( const size_t deadlineMs )
 {
   m_isFitting = true;
   
@@ -841,7 +841,7 @@ void PointSourceShieldingChi2Fcn::fittingIsStarting( const size_t deadlineMs )
 }//void fittingIsStarting()
 
   
-void PointSourceShieldingChi2Fcn::fittingIsFinished()
+void ShieldingSourceChi2Fcn::fittingIsFinished()
 {
   {//begin lock on m_zombieCheckTimerMutex
     std::lock_guard<std::mutex> scoped_lock( m_zombieCheckTimerMutex );
@@ -851,7 +851,7 @@ void PointSourceShieldingChi2Fcn::fittingIsFinished()
       boost::system::error_code ec;
       m_zombieCheckTimer->cancel( ec );
       if( ec )
-        cerr << "PointSourceShieldingChi2Fcn::fittingIsFinished(): Got error cancelling m_zombieCheckTimer: "
+        cerr << "ShieldingSourceChi2Fcn::fittingIsFinished(): Got error cancelling m_zombieCheckTimer: "
              << ec.message() << endl;
       m_zombieCheckTimer.reset();
     }//if( m_zombieCheckTimer )
@@ -861,26 +861,26 @@ void PointSourceShieldingChi2Fcn::fittingIsFinished()
 }//void fittingIsFinished()
   
 
-void PointSourceShieldingChi2Fcn::setSelfAttMultiThread( const bool do_multithread )
+void ShieldingSourceChi2Fcn::setSelfAttMultiThread( const bool do_multithread )
 {
   m_self_att_multithread = do_multithread;
 }
   
-const SandiaDecay::Nuclide *PointSourceShieldingChi2Fcn::nuclide( const int nuc ) const
+const SandiaDecay::Nuclide *ShieldingSourceChi2Fcn::nuclide( const int nuc ) const
 {
   if( nuc < 0 || nuc > static_cast<int>(m_nuclides.size()) )
-    throw std::runtime_error( "PointSourceShieldingChi2Fcn::nuclide(int): invalid index" );
+    throw std::runtime_error( "ShieldingSourceChi2Fcn::nuclide(int): invalid index" );
   return m_nuclides[nuc];
 }//const Nuclide *nuclide( const int nucN ) const
 
 
-double PointSourceShieldingChi2Fcn::operator()( const std::vector<double> &x ) const
+double ShieldingSourceChi2Fcn::operator()( const std::vector<double> &x ) const
 {
   return DoEval( x );
 }//double operator()(...)
 
 
-PointSourceShieldingChi2Fcn &PointSourceShieldingChi2Fcn::operator=( const PointSourceShieldingChi2Fcn &rhs )
+ShieldingSourceChi2Fcn &ShieldingSourceChi2Fcn::operator=( const ShieldingSourceChi2Fcn &rhs )
 {
   m_cancel = rhs.m_cancel.load();
   m_distance = rhs.m_distance;
@@ -902,13 +902,13 @@ PointSourceShieldingChi2Fcn &PointSourceShieldingChi2Fcn::operator=( const Point
 }//operator=
 
 
-double PointSourceShieldingChi2Fcn::Up() const
+double ShieldingSourceChi2Fcn::Up() const
 {
   return 1.0;
 }//double Up();
 
   
-bool PointSourceShieldingChi2Fcn::isVariableMassFraction( const Material *mat,
+bool ShieldingSourceChi2Fcn::isVariableMassFraction( const Material *mat,
                                         const SandiaDecay::Nuclide *nuc ) const 
 {
   MaterialToNucsMap::const_iterator pos
@@ -920,7 +920,7 @@ bool PointSourceShieldingChi2Fcn::isVariableMassFraction( const Material *mat,
 }//isVariableMassFraction(...)
   
   
-bool PointSourceShieldingChi2Fcn::hasVariableMassFraction(
+bool ShieldingSourceChi2Fcn::hasVariableMassFraction(
                                                 const Material *mat ) const
 {
   const auto pos = m_nuclidesToFitMassFractionFor.find( mat );
@@ -929,7 +929,7 @@ bool PointSourceShieldingChi2Fcn::hasVariableMassFraction(
 
 
 
-std::shared_ptr<Material> PointSourceShieldingChi2Fcn::variedMassFracMaterial(
+std::shared_ptr<Material> ShieldingSourceChi2Fcn::variedMassFracMaterial(
                                           const Material *material,
                                           const std::vector<double> &x ) const
 {
@@ -967,10 +967,10 @@ std::shared_ptr<Material> PointSourceShieldingChi2Fcn::variedMassFracMaterial(
   if( IsNan(postfrac) || IsInf(postfrac)
       || ((fabs(prefrac-postfrac)/max(prefrac,postfrac)) > 0.01) )
   {
-    cerr << "PointSourceShieldingChi2Fcn::variedMassFracMaterial: prefrac="
+    cerr << "ShieldingSourceChi2Fcn::variedMassFracMaterial: prefrac="
           << prefrac << ", postfrac=" << postfrac << endl;
 
-    throw runtime_error( "PointSourceShieldingChi2Fcn::variedMassFracMaterial(...)"
+    throw runtime_error( "ShieldingSourceChi2Fcn::variedMassFracMaterial(...)"
                          " prefrac did not match postfrac" );
   }//if( invalid results )
   
@@ -978,7 +978,7 @@ std::shared_ptr<Material> PointSourceShieldingChi2Fcn::variedMassFracMaterial(
 }//variedMassFracMaterial(...)
 
 
-void PointSourceShieldingChi2Fcn::setNuclidesToFitMassFractionFor(
+void ShieldingSourceChi2Fcn::setNuclidesToFitMassFractionFor(
                           const Material *material,
                           const vector<const SandiaDecay::Nuclide *> &nuclides )
 {
@@ -1030,7 +1030,7 @@ void PointSourceShieldingChi2Fcn::setNuclidesToFitMassFractionFor(
 }//setNuclidesToFitMassFractionFor(...)
   
 vector<const Material *>
-               PointSourceShieldingChi2Fcn::materialsFittingMassFracsFor() const
+               ShieldingSourceChi2Fcn::materialsFittingMassFracsFor() const
 {
   vector<const Material *> answer;
   for( const MaterialToNucsMap::value_type &n : m_nuclidesToFitMassFractionFor )
@@ -1043,23 +1043,23 @@ vector<const Material *>
   
   
 const std::vector<const SandiaDecay::Nuclide *> &
-PointSourceShieldingChi2Fcn::nuclideFittingMassFracFor( const Material *material ) const
+ShieldingSourceChi2Fcn::nuclideFittingMassFracFor( const Material *material ) const
 {
   if( !material )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::nuclideFittingMassFracFor():"
+    throw runtime_error( "ShieldingSourceChi2Fcn::nuclideFittingMassFracFor():"
                         " invalid input" );
 
   typedef MaterialToNucsMap::const_iterator MaterialToNucsMapIter;
   MaterialToNucsMapIter matpos = m_nuclidesToFitMassFractionFor.find(material);
     
   if( matpos == m_nuclidesToFitMassFractionFor.end() )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::nuclideFittingMassFracFor(): "
+    throw runtime_error( "ShieldingSourceChi2Fcn::nuclideFittingMassFracFor(): "
                         + material->name + " is not a material with a variable"
                         " mass fraction" );
   return matpos->second;
 }//nuclideFittingMassFracFor(...)
 
-double PointSourceShieldingChi2Fcn::massFraction( const Material *material,
+double ShieldingSourceChi2Fcn::massFraction( const Material *material,
                       const SandiaDecay::Nuclide *nuc,
                       const std::vector<double> &pars ) const
 {
@@ -1068,7 +1068,7 @@ double PointSourceShieldingChi2Fcn::massFraction( const Material *material,
   return massfrac;
 }
   
-void PointSourceShieldingChi2Fcn::massFraction( double &massFrac,
+void ShieldingSourceChi2Fcn::massFraction( double &massFrac,
                                                    double &uncert,
                                                   const Material *material,
                                         const SandiaDecay::Nuclide *nuc,
@@ -1078,12 +1078,12 @@ void PointSourceShieldingChi2Fcn::massFraction( double &massFrac,
   massFrac = uncert = 0.0;
   
   if( !material || !nuc )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction(): invalid input" );
+    throw runtime_error( "ShieldingSourceChi2Fcn::massFraction(): invalid input" );
   
   const auto matpos = m_nuclidesToFitMassFractionFor.find(material);
   
   if( matpos == end(m_nuclidesToFitMassFractionFor) )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction(): "
+    throw runtime_error( "ShieldingSourceChi2Fcn::massFraction(): "
                          + material->name + " is not a material with a variable"
                          " mass fraction" );
   
@@ -1092,7 +1092,7 @@ void PointSourceShieldingChi2Fcn::massFraction( double &massFrac,
   //nucs is actually sorted by symbol name, could do better than linear search
   const auto pos = std::find( begin(nucs), end(nucs), nuc );
   if( pos == end(nucs) )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction(): "
+    throw runtime_error( "ShieldingSourceChi2Fcn::massFraction(): "
                          + nuc->symbol + " was not a nuc fit for mass fraction"
                          " in " + material->name );
   
@@ -1143,13 +1143,13 @@ void PointSourceShieldingChi2Fcn::massFraction( double &massFrac,
 //    for( size_t index = matmassfracstart; index < thismatmassfrac; ++index )
 //      cerr << "{" << index << "," << pars.at(index) << "},";
 //    cerr << endl;
-    throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction(...): invalid parameters" );
+    throw runtime_error( "ShieldingSourceChi2Fcn::massFraction(...): invalid parameters" );
   }
   
   if( !errors.empty() )
   {
     if( errors.size() != pars.size() )
-      throw runtime_error( "PointSourceShieldingChi2Fcn::massFraction():"
+      throw runtime_error( "ShieldingSourceChi2Fcn::massFraction():"
                            " invalid error parameter vector size" );
     double fracuncert = 0.0;
     if( massfracnum != numfraccoefs )
@@ -1161,7 +1161,7 @@ void PointSourceShieldingChi2Fcn::massFraction( double &massFrac,
 }//double massFraction(...) const
 
   
-double PointSourceShieldingChi2Fcn::massFractionUncert( const Material *material,
+double ShieldingSourceChi2Fcn::massFractionUncert( const Material *material,
                             const SandiaDecay::Nuclide *nuc,
                             const std::vector<double> &pars,
                             const std::vector<double> &error ) const
@@ -1173,7 +1173,7 @@ double PointSourceShieldingChi2Fcn::massFractionUncert( const Material *material
   
   
 
-size_t PointSourceShieldingChi2Fcn::numExpectedFitParameters() const
+size_t ShieldingSourceChi2Fcn::numExpectedFitParameters() const
 {
   size_t npar = 2 * m_nuclides.size();
   
@@ -1186,13 +1186,13 @@ size_t PointSourceShieldingChi2Fcn::numExpectedFitParameters() const
 }//int numExpectedFitParameters() const
 
 
-bool PointSourceShieldingChi2Fcn::isVolumetricSource( const SandiaDecay::Nuclide *nuc ) const
+bool ShieldingSourceChi2Fcn::isVolumetricSource( const SandiaDecay::Nuclide *nuc ) const
 {
   return isSelfAttenSource(nuc) || isTraceSource(nuc);
 }
 
 
-bool PointSourceShieldingChi2Fcn::isSelfAttenSource( const SandiaDecay::Nuclide *nuclide ) const
+bool ShieldingSourceChi2Fcn::isSelfAttenSource( const SandiaDecay::Nuclide *nuclide ) const
 {
   //TODO: this could probably be made a little more efficient
   if( !nuclide )
@@ -1211,7 +1211,7 @@ bool PointSourceShieldingChi2Fcn::isSelfAttenSource( const SandiaDecay::Nuclide 
 }//bool isSelfAttenSource(...) const;
 
 
-bool PointSourceShieldingChi2Fcn::isTraceSource( const SandiaDecay::Nuclide *nuclide ) const
+bool ShieldingSourceChi2Fcn::isTraceSource( const SandiaDecay::Nuclide *nuclide ) const
 {
   //TODO: this could probably be made a little more efficient
   if( !nuclide )
@@ -1230,12 +1230,12 @@ bool PointSourceShieldingChi2Fcn::isTraceSource( const SandiaDecay::Nuclide *nuc
 }//bool isSelfAttenSource(...) const;
 
 
-TraceActivityType PointSourceShieldingChi2Fcn::traceSourceActivityType(
+TraceActivityType ShieldingSourceChi2Fcn::traceSourceActivityType(
                                                           const SandiaDecay::Nuclide *nuc ) const
 {
   //TODO: this could probably be made a little more efficient
   if( !nuc )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::traceSourceActivityType: null nuclide" );
+    throw runtime_error( "ShieldingSourceChi2Fcn::traceSourceActivityType: null nuclide" );
   
   for( const ShieldingInfo &shield : m_materials )
   {
@@ -1246,20 +1246,20 @@ TraceActivityType PointSourceShieldingChi2Fcn::traceSourceActivityType(
     }
   }//for( const ShieldingInfo &material : m_materials )
   
-  throw runtime_error( "PointSourceShieldingChi2Fcn::traceSourceActivityType: " + nuc->symbol
+  throw runtime_error( "ShieldingSourceChi2Fcn::traceSourceActivityType: " + nuc->symbol
                        + " not a trace source" );
   
   return TraceActivityType::NumTraceActivityType;
 }//traceSourceActivityType(...)
 
 
-double PointSourceShieldingChi2Fcn::activityOfSelfAttenSource(
+double ShieldingSourceChi2Fcn::activityOfSelfAttenSource(
                                        const SandiaDecay::Nuclide *nuclide,
                                        const std::vector<double> &params ) const
 {
   assert( nuclide );
   if( !nuclide )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::activityOfSelfAttenSource: called with null nuclide" );
+    throw runtime_error( "ShieldingSourceChi2Fcn::activityOfSelfAttenSource: called with null nuclide" );
   
   assert( isSelfAttenSource(nuclide) );
   
@@ -1294,7 +1294,7 @@ double PointSourceShieldingChi2Fcn::activityOfSelfAttenSource(
     
     if( hasVariableMassFraction(mat) )
     {
-      massFrac = PointSourceShieldingChi2Fcn::massFraction( mat, nuclide, params );
+      massFrac = ShieldingSourceChi2Fcn::massFraction( mat, nuclide, params );
     }else
     {
       for( const Material::NuclideFractionPair &nfp : mat->nuclides )
@@ -1339,7 +1339,7 @@ double PointSourceShieldingChi2Fcn::activityOfSelfAttenSource(
   }//for( int matn = 0; matn < nmat; ++matn )
   
   if( !foundSrc )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::activityOfSelfAttenSource: "
+    throw runtime_error( "ShieldingSourceChi2Fcn::activityOfSelfAttenSource: "
                         + nuclide->symbol + " is not a self-attenuating source" );
   
 //  cerr << "activityOfSelfAttenSource: " << nuclide->symbol << " activity=" << activity/PhysicalUnits::ci << endl;
@@ -1348,12 +1348,12 @@ double PointSourceShieldingChi2Fcn::activityOfSelfAttenSource(
 }//double activityOfSelfAttenSource(...) const;
 
 
-double PointSourceShieldingChi2Fcn::totalActivity( const SandiaDecay::Nuclide *nuclide,
+double ShieldingSourceChi2Fcn::totalActivity( const SandiaDecay::Nuclide *nuclide,
                                   const std::vector<double> &params ) const
 {
   assert( nuclide );
   if( !nuclide )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::totalActivity: called with null nuclide" );
+    throw runtime_error( "ShieldingSourceChi2Fcn::totalActivity: called with null nuclide" );
   
   const bool isTrace = isTraceSource(nuclide);
   const bool isSelfAtten = !isTrace && isSelfAttenSource(nuclide);
@@ -1421,7 +1421,7 @@ double PointSourceShieldingChi2Fcn::totalActivity( const SandiaDecay::Nuclide *n
     }//switch( type )
   }//for( int matn = 0; matn < nmat; ++matn )
   
-  throw runtime_error( "PointSourceShieldingChi2Fcn::totalActivity: "
+  throw runtime_error( "ShieldingSourceChi2Fcn::totalActivity: "
                         + nuclide->symbol + " is not a self-attenuating source" );
   
   return activity;
@@ -1429,13 +1429,13 @@ double PointSourceShieldingChi2Fcn::totalActivity( const SandiaDecay::Nuclide *n
 
 
 
-double PointSourceShieldingChi2Fcn::totalActivityUncertainty( const SandiaDecay::Nuclide *nuclide,
+double ShieldingSourceChi2Fcn::totalActivityUncertainty( const SandiaDecay::Nuclide *nuclide,
                                 const std::vector<double> &params,
                                 const std::vector<double> &errors ) const
 {
   assert( nuclide );
   if( !nuclide )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::totalActivityUncertainty: called with null nuclide" );
+    throw runtime_error( "ShieldingSourceChi2Fcn::totalActivityUncertainty: called with null nuclide" );
   
   assert( params.size() == errors.size() );
   
@@ -1457,7 +1457,7 @@ double PointSourceShieldingChi2Fcn::totalActivityUncertainty( const SandiaDecay:
 
 
 
-double PointSourceShieldingChi2Fcn::activity( const SandiaDecay::Nuclide *nuclide,
+double ShieldingSourceChi2Fcn::activity( const SandiaDecay::Nuclide *nuclide,
                                       const std::vector<double> &params ) const
 {
   if( params.size() != numExpectedFitParameters() )
@@ -1465,7 +1465,7 @@ double PointSourceShieldingChi2Fcn::activity( const SandiaDecay::Nuclide *nuclid
     cerr << "params.size()=" << params.size()
          << ", numExpectedFitParameters()=" << numExpectedFitParameters()
          << endl;
-    throw runtime_error( "PointSourceShieldingChi2Fcn::activity(...) invalid params size" );
+    throw runtime_error( "ShieldingSourceChi2Fcn::activity(...) invalid params size" );
   }//if( params.size() != numExpectedFitParameters() )
 
   if( isSelfAttenSource(nuclide) )
@@ -1477,7 +1477,7 @@ double PointSourceShieldingChi2Fcn::activity( const SandiaDecay::Nuclide *nuclid
 
 
 
-double PointSourceShieldingChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *nuclide,
+double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *nuclide,
                                                        const std::vector<double> &params,
                                                         const std::vector<double> &errors ) const
 {
@@ -1486,11 +1486,11 @@ double PointSourceShieldingChi2Fcn::activityUncertainty( const SandiaDecay::Nucl
     cerr << "params.size()=" << params.size()
     << ", numExpectedFitParameters()=" << numExpectedFitParameters()
     << endl;
-    throw runtime_error( "PointSourceShieldingChi2Fcn::activityUncertainty(...) invalid params size" );
+    throw runtime_error( "ShieldingSourceChi2Fcn::activityUncertainty(...) invalid params size" );
   }//if( params.size() != numExpectedFitParameters() )
   
   if( params.size() != errors.size() )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::activityUncertainty: size(params) != size(errors)" );
+    throw runtime_error( "ShieldingSourceChi2Fcn::activityUncertainty: size(params) != size(errors)" );
   
   // If it is a simple point source, we can get the uncertainty by just passing in the
   //  parameter uncertainties and calculating activity from those.  However, if its a
@@ -1581,8 +1581,8 @@ double PointSourceShieldingChi2Fcn::activityUncertainty( const SandiaDecay::Nucl
       //  all uncertainties, event if we are returning an uncertainty per cc or gram, this way when
       //  the the per cc or per gram gets multiplied by the volume, the expected uncertainty will
       //  be given.
-      const double thisActivity = PointSourceShieldingChi2Fcn::activity( nuclide, params );
-      const double simpleUncert = PointSourceShieldingChi2Fcn::activity( nuclide, errors );
+      const double thisActivity = ShieldingSourceChi2Fcn::activity( nuclide, params );
+      const double simpleUncert = ShieldingSourceChi2Fcn::activity( nuclide, errors );
       
       double thisActUncertSquared = simpleUncert * simpleUncert;
       switch( trace.second )
@@ -1609,7 +1609,7 @@ double PointSourceShieldingChi2Fcn::activityUncertainty( const SandiaDecay::Nucl
           
         case TraceActivityType::NumTraceActivityType:
           assert( 0 );
-          throw runtime_error( "PointSourceShieldingChi2Fcn::activityUncertainty: unexpected TraceActivityType" );
+          throw runtime_error( "ShieldingSourceChi2Fcn::activityUncertainty: unexpected TraceActivityType" );
           break;
       }//switch( trace.second )
       
@@ -1633,7 +1633,7 @@ double PointSourceShieldingChi2Fcn::activityUncertainty( const SandiaDecay::Nucl
     throw runtime_error( "error calculating activity uncertainty for self-attenuating source;"
                          " squared value calculated is " + std::to_string(activityUncertSquared) );
   
-  const double normalCalcAct = PointSourceShieldingChi2Fcn::activity( nuclide, params );
+  const double normalCalcAct = ShieldingSourceChi2Fcn::activity( nuclide, params );
   assert( fabs(normalCalcAct - activity) < 0.001*std::max(normalCalcAct,activity) );
   
   return sqrt( activityUncertSquared );
@@ -1641,11 +1641,11 @@ double PointSourceShieldingChi2Fcn::activityUncertainty( const SandiaDecay::Nucl
 
 
 
-double PointSourceShieldingChi2Fcn::age( const SandiaDecay::Nuclide *nuclide,
+double ShieldingSourceChi2Fcn::age( const SandiaDecay::Nuclide *nuclide,
                                       const std::vector<double> &params ) const
 {
   if( params.size() != numExpectedFitParameters() )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::age(...) invalid params size" );
+    throw runtime_error( "ShieldingSourceChi2Fcn::age(...) invalid params size" );
 
   const size_t ind = nuclideIndex( nuclide );
 
@@ -1677,49 +1677,49 @@ double PointSourceShieldingChi2Fcn::age( const SandiaDecay::Nuclide *nuclide,
 }//double age(...)
 
 
-size_t PointSourceShieldingChi2Fcn::nuclideIndex( const SandiaDecay::Nuclide *nuclide ) const
+size_t ShieldingSourceChi2Fcn::nuclideIndex( const SandiaDecay::Nuclide *nuclide ) const
 {
   vector<const SandiaDecay::Nuclide *>::const_iterator pos;
   pos = find( m_nuclides.begin(), m_nuclides.end(), nuclide );
   if( pos == m_nuclides.end() )
-    throw std::runtime_error( "PointSourceShieldingChi2Fcn::nuclideIndex(...): invalid nuclide" );
+    throw std::runtime_error( "ShieldingSourceChi2Fcn::nuclideIndex(...): invalid nuclide" );
 
   return (pos - m_nuclides.begin());
 }//size_t index( const SandiaDecay::Nuclide *nuclide ) const
 
   
-size_t PointSourceShieldingChi2Fcn::numNuclides() const
+size_t ShieldingSourceChi2Fcn::numNuclides() const
 {
   return m_nuclides.size();
 }
   
-size_t PointSourceShieldingChi2Fcn::numMaterials() const
+size_t ShieldingSourceChi2Fcn::numMaterials() const
 {
   return m_materials.size();
 }//int numMaterials() const
 
 
-const Material *PointSourceShieldingChi2Fcn::material( int materialNum ) const
+const Material *ShieldingSourceChi2Fcn::material( int materialNum ) const
 {
   return m_materials.at(materialNum).material;
 }
 
-bool PointSourceShieldingChi2Fcn::isSpecificMaterial( int materialNum ) const
+bool ShieldingSourceChi2Fcn::isSpecificMaterial( int materialNum ) const
 {
   return (m_materials.at(materialNum).material != nullptr );
 }//bool isSpecificMaterial( int materialNum ) const
 
 
-bool PointSourceShieldingChi2Fcn::isGenericMaterial( int materialNum ) const
+bool ShieldingSourceChi2Fcn::isGenericMaterial( int materialNum ) const
 {
   return (m_materials.at(materialNum).material == nullptr );
 }//bool isGenericMaterial( int materialNum ) const
   
 
-double PointSourceShieldingChi2Fcn::thickness( int materialNum, const vector<double> &params ) const
+double ShieldingSourceChi2Fcn::thickness( int materialNum, const vector<double> &params ) const
 {
   if( isGenericMaterial( materialNum ) )
-    throw std::runtime_error( "PointSourceShieldingChi2Fcn::thickness(...): "
+    throw std::runtime_error( "ShieldingSourceChi2Fcn::thickness(...): "
                               "You should not call this function for generic "
                               "materials" );
 
@@ -1729,11 +1729,11 @@ double PointSourceShieldingChi2Fcn::thickness( int materialNum, const vector<dou
 
 //arealDensity(...): will throw std::runtime_exception if material is a
 //  specific material
-double PointSourceShieldingChi2Fcn::arealDensity( int materialNum,
+double ShieldingSourceChi2Fcn::arealDensity( int materialNum,
                        const std::vector<double> &params ) const
 {
   if( !isGenericMaterial( materialNum ) )
-    throw std::runtime_error( "PointSourceShieldingChi2Fcn::arealDensity(...): "
+    throw std::runtime_error( "ShieldingSourceChi2Fcn::arealDensity(...): "
                               "You can only call this function for generic materials" );
   
   return params.at( 2*m_nuclides.size() + 2*materialNum + 1 );
@@ -1742,24 +1742,24 @@ double PointSourceShieldingChi2Fcn::arealDensity( int materialNum,
 
 //atomicNumber(...): will throw std::runtime_exception if material is a
 //  specific material
-double PointSourceShieldingChi2Fcn::atomicNumber( int materialNum,
+double ShieldingSourceChi2Fcn::atomicNumber( int materialNum,
                        const std::vector<double> &params ) const
 {
   if( !isGenericMaterial( materialNum ) )
-    throw std::runtime_error( "PointSourceShieldingChi2Fcn::atomicNumber(...): "
+    throw std::runtime_error( "ShieldingSourceChi2Fcn::atomicNumber(...): "
                               "You can only call this function for generic materials" );
   
   return params.at( 2*m_nuclides.size() + 2*materialNum );
 }//double atomicNumber(...)
 
 
-const std::vector<PeakDef> &PointSourceShieldingChi2Fcn::peaks() const
+const std::vector<PeakDef> &ShieldingSourceChi2Fcn::peaks() const
 {
   return m_peaks;
 }
 
 
-double PointSourceShieldingChi2Fcn::DoEval( const std::vector<double> &x ) const
+double ShieldingSourceChi2Fcn::DoEval( const std::vector<double> &x ) const
 {
   const int cancelCode = m_cancel.load();
   switch( cancelCode )
@@ -1821,7 +1821,7 @@ bool first_lessthan( const pair<double,double> &lhs, const pair<double,double> &
 }
 
 //ToDo: add ability to give summarry about 
-void PointSourceShieldingChi2Fcn::cluster_peak_activities( std::map<double,double> &energy_count_map,
+void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &energy_count_map,
                                                            const std::vector< pair<double,double> > &energie_widths,
                                                            SandiaDecay::NuclideMixture &mixture,
                                                            const double act,
@@ -1859,7 +1859,7 @@ void PointSourceShieldingChi2Fcn::cluster_peak_activities( std::map<double,doubl
   //  parent to have 'sm_activityUnits' activity at 'age', so we we'll add a
   //  correction factor.
   if( mixture.numInitialNuclides() != 1 )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::cluster_peak_activities():"
+    throw runtime_error( "ShieldingSourceChi2Fcn::cluster_peak_activities():"
                          " passed in mixture must have exactly one parent nuclide" );
   const SandiaDecay::Nuclide *nuclide = mixture.initialNuclide(0);
   
@@ -1945,11 +1945,11 @@ void PointSourceShieldingChi2Fcn::cluster_peak_activities( std::map<double,doubl
     {
       stringstream msg;
       msg << "There is a programming logic error in "
-             "PointSourceShieldingChi2Fcn::cluster_peak_activities(...)"
+             "ShieldingSourceChi2Fcn::cluster_peak_activities(...)"
              " which is keeping this activity/shielding fit from happening "
              "(place a) - please complain to Will Johnson about this";
       passMessage( msg.str(),
-                "PointSourceShieldingChi2Fcn", WarningWidget::WarningMsgHigh );
+                "ShieldingSourceChi2Fcn", WarningWidget::WarningMsgHigh );
       throw std::runtime_error( msg.str() );
     }//if( energy_count_map.count( energy ) == 0 )
 
@@ -1981,7 +1981,7 @@ void PointSourceShieldingChi2Fcn::cluster_peak_activities( std::map<double,doubl
 }//cluster_peak_activities(...)
 
 
-vector< tuple<double,double,double,Wt::WColor,double> > PointSourceShieldingChi2Fcn::expected_observed_chis(
+vector< tuple<double,double,double,Wt::WColor,double> > ShieldingSourceChi2Fcn::expected_observed_chis(
                                            const std::vector<PeakDef> &peaks,
                                            const std::vector<PeakDef> &backPeaks,
                                            const std::map<double,double> &energy_count_map,
@@ -2027,11 +2027,11 @@ vector< tuple<double,double,double,Wt::WColor,double> > PointSourceShieldingChi2
     {
       stringstream msg;
       msg << "There is a programming logic error in "
-             "PointSourceShieldingChi2Fcn::expected_observed_chis(...)"
+             "ShieldingSourceChi2Fcn::expected_observed_chis(...)"
              " which is keeping this activity/shielding fit from happening "
              "(place b) - please complain to Will Johnson about this";
       passMessage( msg.str(),
-                   "PointSourceShieldingChi2Fcn", WarningWidget::WarningMsgHigh );
+                   "ShieldingSourceChi2Fcn", WarningWidget::WarningMsgHigh );
       throw std::runtime_error( msg.str() );
     }//if( energy_count_map.count( energy ) == 0 )
 
@@ -2072,7 +2072,7 @@ vector< tuple<double,double,double,Wt::WColor,double> > PointSourceShieldingChi2
 }//expected_observed_chis(...)
 
 
-vector< pair<double,double> > PointSourceShieldingChi2Fcn::observedPeakEnergyWidths( const std::vector<PeakDef> &peaks )
+vector< pair<double,double> > ShieldingSourceChi2Fcn::observedPeakEnergyWidths( const std::vector<PeakDef> &peaks )
 {
   //Populate energy_count_map keys for the energies of interest (so we dont have
   //  to compute quantites for all photopeak energies, which would be really
@@ -2087,7 +2087,7 @@ vector< pair<double,double> > PointSourceShieldingChi2Fcn::observedPeakEnergyWid
       energie_widths.push_back( make_pair( energy, sigma ) );
     }catch( std::exception & )
     {
-      cerr << "PointSourceShieldingChi2Fcn::observedPeakEnergyWidths(...)\n\tIssue here" << endl;
+      cerr << "ShieldingSourceChi2Fcn::observedPeakEnergyWidths(...)\n\tIssue here" << endl;
     }
   }//for( const PeakDef &peak : peaks )
 
@@ -2097,7 +2097,7 @@ vector< pair<double,double> > PointSourceShieldingChi2Fcn::observedPeakEnergyWid
 }//observedPeakEnergyWidths()
 
 
-void PointSourceShieldingChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calculator )
+void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calculator )
 {
   const int ndim = 2;  //the number of dimensions of the integral.
   void *userdata = (void *)&calculator;
@@ -2134,7 +2134,7 @@ void PointSourceShieldingChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &
 }//void selfShieldingIntegration(...)
 
   
-void PointSourceShieldingChi2Fcn::setBackgroundPeaks(
+void ShieldingSourceChi2Fcn::setBackgroundPeaks(
                                               const std::vector<PeakDef> &peaks,
                                               double liveTime )
 {
@@ -2161,8 +2161,8 @@ void PointSourceShieldingChi2Fcn::setBackgroundPeaks(
   
   
 vector< tuple<double,double,double,Wt::WColor,double> >
-       PointSourceShieldingChi2Fcn::energy_chi_contributions( const std::vector<double> &x,
-                                         PointSourceShieldingChi2Fcn::NucMixtureCache &mixturecache,
+       ShieldingSourceChi2Fcn::energy_chi_contributions( const std::vector<double> &x,
+                                         ShieldingSourceChi2Fcn::NucMixtureCache &mixturecache,
                                          std::vector<std::string> *info ) const
 {
   //XXX - this function compares a lot of doubles, and this always makes me
@@ -2593,7 +2593,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
           const Material *const material = materials[subMat].material;
           radius += thickness( subMat, x );
           if( radius > m_distance )
-            throw runtime_error( "PointSourceShieldingChi2Fcn::"
+            throw runtime_error( "ShieldingSourceChi2Fcn::"
                                 "energy_chi_contributions: radius > distance" );
 
           
@@ -2616,7 +2616,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     {
       SpecUtilsAsync::ThreadPool pool;
       for( DistributedSrcCalc &calculator : calculators )
-        pool.post( boost::bind( &PointSourceShieldingChi2Fcn::selfShieldingIntegration, boost::ref(calculator) ) );
+        pool.post( boost::bind( &ShieldingSourceChi2Fcn::selfShieldingIntegration, boost::ref(calculator) ) );
       pool.join();
     }else
     {
@@ -2627,7 +2627,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 //    vector<boost::function<void()> > workers;
 //    for( DistributedSrcCalc &calculator : calculators )
 //    {
-//      boost::function<void()> worker = boost::bind( &PointSourceShieldingChi2Fcn::selfShieldingIntegration, boost::ref(calculator) );
+//      boost::function<void()> worker = boost::bind( &ShieldingSourceChi2Fcn::selfShieldingIntegration, boost::ref(calculator) );
 //      workers.push_back( worker );
 //    }//for( size_t i = 0; i < calculators.size(); ++i )
 //    SpecUtils::do_asyncronous_work( workers, false );
@@ -2699,7 +2699,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 }//vector<tuple<double,double,double> > energy_chi_contributions(...) const
 
 
-PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo::GuiProgressUpdateInfo( const size_t updateFreqMs,
+ShieldingSourceChi2Fcn::GuiProgressUpdateInfo::GuiProgressUpdateInfo( const size_t updateFreqMs,
                         std::function<void(size_t, double, double, std::vector<double>)> updater )
   : m_gui_updater( updater ),
   m_update_frequency_ms( updateFreqMs ),
@@ -2712,7 +2712,7 @@ PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo::GuiProgressUpdateInfo( const
 }
 
 
-void PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo::fitting_starting()
+void ShieldingSourceChi2Fcn::GuiProgressUpdateInfo::fitting_starting()
 {
   std::lock_guard<std::mutex> scoped_lock( m_mutex );
 
@@ -2725,7 +2725,7 @@ void PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo::fitting_starting()
 }// void GuiProgressUpdateInfo::fitting_starting()
 
 
-void PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo::completed_eval( const double chi2, const std::vector<double> &pars )
+void ShieldingSourceChi2Fcn::GuiProgressUpdateInfo::completed_eval( const double chi2, const std::vector<double> &pars )
 {
   std::lock_guard<std::mutex> scoped_lock( m_mutex );
   

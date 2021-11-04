@@ -105,7 +105,7 @@ namespace Wt
 
 namespace GammaInteractionCalc
 {
-  class PointSourceShieldingChi2Fcn;
+  class ShieldingSourceChi2Fcn;
 }//namespace GammaInteractionCalc
 
 class InterSpec;
@@ -160,7 +160,7 @@ protected:
     //  through all the peaks with the parent nuclide as assigned.
     size_t numProgenyPeaksSelected;
     
-    //activity: in units of PointSourceShieldingChi2Fcn::sm_activityUnits
+    //activity: in units of ShieldingSourceChi2Fcn::sm_activityUnits
     double activity;
     bool fitActivity;
     
@@ -369,7 +369,7 @@ protected:
 class ShieldingSourceDisplay : public Wt::WContainerWidget
 {
 public:
-  typedef std::shared_ptr<GammaInteractionCalc::PointSourceShieldingChi2Fcn> Chi2FcnShrdPtr;
+  typedef std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> Chi2FcnShrdPtr;
 
   /** The maximum time (in milliseconds) a model fit can take before the fit is
       aborted.  This generally will only ever be applicable to fits with
@@ -769,7 +769,7 @@ protected:
   Wt::WPushButton *m_cancelfitModelButton;
   
   std::mutex m_currentFitFcnMutex;  //protects the shared_ptr only, not the object it points to
-  std::shared_ptr<GammaInteractionCalc::PointSourceShieldingChi2Fcn> m_currentFitFcn;
+  std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> m_currentFitFcn;
   
   //A class to draw the chi2 distribution of the fit to activity/shielding.
   //  We have to overide the Paint(...) method to draw some text on chart

@@ -411,7 +411,7 @@ public:
       }//switch( type )
     }catch( std::exception & )
     {
-      cerr << "User enetred activity '" << userActTxt << "' is invalid - reverting" << endl;
+      cerr << "User entered activity '" << userActTxt << "' is invalid - reverting" << endl;
       
       string txt;
       switch( type )

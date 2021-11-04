@@ -178,7 +178,7 @@ struct DistributedSrcCalc
 
 
 
-class PointSourceShieldingChi2Fcn
+class ShieldingSourceChi2Fcn
     : public ROOT::Minuit2::FCNBase
 {
 //This class evaluated the chi2 of a given hypothesis, where it is assumed the
@@ -241,14 +241,14 @@ public:
   };//struct ShieldingInfo
   
   
-  PointSourceShieldingChi2Fcn(
+  ShieldingSourceChi2Fcn(
                       double distance, double liveTime,
                       const std::vector<PeakDef> &peaks,
                       std::shared_ptr<const DetectorPeakResponse> detector,
                       const std::vector<ShieldingInfo> &materials,
                       const bool allowMultipleNucsContribToPeaks,
                       const bool attenuateForAir );
-  virtual ~PointSourceShieldingChi2Fcn();
+  virtual ~ShieldingSourceChi2Fcn();
 
   /** Causes exception to be thrown if DoEval() is called afterwards. */
   void cancelFit();
@@ -374,7 +374,7 @@ public:
                                   NucMixtureCache &mixturecache,
                                   std::vector<std::string> *info = 0 ) const;
 
-  PointSourceShieldingChi2Fcn&	operator=( const PointSourceShieldingChi2Fcn & );
+  ShieldingSourceChi2Fcn&	operator=( const ShieldingSourceChi2Fcn & );
   virtual double Up() const;
 
   size_t numExpectedFitParameters() const;
@@ -557,7 +557,7 @@ protected:
   //A cache of nuclide mixtures to
   mutable NucMixtureCache m_mixtureCache;
   static const size_t sm_maxMixtureCacheSize = 10000;
-};//class PointSourceShieldingChi2Fcn
+};//class ShieldingSourceChi2Fcn
 
 }//namespace GammaInteractionCalc
 
