@@ -3268,7 +3268,7 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         if( select->fitForMassFractions() )
           throw runtime_error( "A shielding fits for mass-fractions is not implemented yet" );
         
-//        vector<const SandiaDecay::Nuclide *> srcnucs = select->nuclidesToUseAsSources();
+//        vector<const SandiaDecay::Nuclide *> srcnucs = select->selfAttenNuclides();
 //        if( !srcnucs.empty() )
 //          throw runtime_error( "A shieldings used as sources is not yet implemented" );
         
@@ -3880,6 +3880,31 @@ void ShieldingSourceDisplay::checkAndWarnZeroMassFraction()
   
   
 }//void checkAndWarnZeroMassFraction()
+
+
+void ShieldingSourceDisplay::handleShieldingChange()
+{
+  // A radius inside a trace or self-attenuating source could have changed, potentially changing
+  //  the trace/intrinsic activity, so we'll go through and update every shielding widget, on every
+  //  change to any of them
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
+    if( !select || select->isGenericMaterial() )
+      continue;
+    
+    const vector<const SandiaDecay::Nuclide *> trace_srcs = select->traceSourceNuclides();
+    const vector<const SandiaDecay::Nuclide *> self_atten_srcs = select->selfAttenNuclides();
+    
+    for( const SandiaDecay::Nuclide *nuc : trace_srcs )
+      updateActivityOfShieldingIsotope( select, nuc );
+    
+    for( const SandiaDecay::Nuclide *nuc : self_atten_srcs )
+      updateActivityOfShieldingIsotope( select, nuc );
+  }//for( WWidget *widget : m_shieldingSelects->children() )
+  
+  updateChi2Chart();
+}//void handleShieldingChange()
 
 
 void ShieldingSourceDisplay::updateChi2Chart()
@@ -5715,8 +5740,8 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   select->m_arealDensityEdit->changed().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
   select->m_atomicNumberEdit->changed().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
 
-  select->materialChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
-  select->materialModified().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
+  select->materialChanged().connect( this, &ShieldingSourceDisplay::handleShieldingChange );
+  select->materialModified().connect( this, &ShieldingSourceDisplay::handleShieldingChange );
   
 //  select->m_thicknessEdit->changed().connect( this, &ShieldingSourceDisplay::checkDistanceAndThicknessConsistent );
 //  select->m_thicknessEdit->enterPressed().connect( this, &ShieldingSourceDisplay::checkDistanceAndThicknessConsistent );
@@ -5726,11 +5751,11 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   select->materialModified().connect( this, &ShieldingSourceDisplay::materialModifiedCallback );
   select->materialChanged().connect( this, &ShieldingSourceDisplay::materialChangedCallback );
 
-  select->addingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeSelectedAsShieldingCallback, this, select, _1, _2 ) );
-  select->removingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeDeSelectedAsShieldingCallback, this, select, _1, _2 ) );
+  select->addingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback, this, select, _1, _2 ) );
+  select->removingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback, this, select, _1, _2 ) );
   select->activityFromThicknessNeedUpdating().connect( boost::bind( &ShieldingSourceDisplay::updateActivityOfShieldingIsotope, this, _1, _2 ) );
-  
-  
+
+  handleShieldingChange();
 
   if( doUpdateChiChart )
     updateChi2Chart();
@@ -5854,9 +5879,9 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
 
   if( !select || select->isGenericMaterial() || !select->material() || !nuc )
   {
-    stringstream msg;
-    msg << "ShieldingSourceDisplay::updateActivityOfShieldingIsotope(...)\n\tShould not be here!";
-    throw std::runtime_error( msg.str() );
+    const char *msg = "ShieldingSourceDisplay::updateActivityOfShieldingIsotope(...)\n\tShould not be here!";
+    assert(0);
+    throw std::runtime_error( msg );
   }//if( !select || select->isGenericMaterial() )
 
   
@@ -5866,10 +5891,10 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   
   if( select->isTraceSourceForNuclide(nuc) )
   {
-    // The only time we get here, the ShieldingSelect should have already updated itself so its
-    //  total activity is current and taking into account all changes - I think
-    const double activity = select->traceSourceTotalActivity(nuc) / PhysicalUnits::curie;
-    snprintf( buffer, sizeof(buffer), "%1.8E ci", activity );
+    // JIC there were any geometry changes, force the ShieldingSelect to update its total activity
+    const double activity = select->updateTotalTraceSourceActivityForGeometryChange(nuc);
+    
+    snprintf( buffer, sizeof(buffer), "%1.8E ci", activity/PhysicalUnits::curie );
     m_sourceModel->setData( index, string(buffer) );
     
     return;
@@ -5901,10 +5926,10 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   
   if( !nuclide )
   {
-    stringstream msg;
-    msg << "ShieldingSourceDisplay::updateActivityOfShieldingIsotope(...)\n\tShould not be here! "
-        << "nuc=" << nuc << " and material=" << material->name;
-    throw std::runtime_error( msg.str() );
+    const string msg = "ShieldingSourceDisplay::updateActivityOfShieldingIsotope(...)\n"
+                       "\tShould not be here! nuc=" + nuc->symbol
+                       + " and material=" + material->name;
+    throw std::runtime_error( msg );
   }//if( !nuclide )
 
   const double weight_in_grams = weight / PhysicalUnits::gram;
@@ -5917,9 +5942,8 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   
   if( row < 0 )
   {
-    stringstream msg;
-    msg << "ShieldingSourceDisplay::updateActivityOfShieldingIsotope(...)\n\tShould not be here!";
-    throw std::runtime_error( msg.str() );
+    const char *msg = "ShieldingSourceDisplay::updateActivityOfShieldingIsotope(...)\n\tShould not be here!";
+    throw std::runtime_error( msg );
   }//if( row < 0 )
 
   
@@ -5937,7 +5961,7 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
 }//void updateActivityOfShieldingIsotope(..)
 
 
-void ShieldingSourceDisplay::isotopeSelectedAsShieldingCallback(
+void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
                                                 ShieldingSelect *caller,
                                                 const SandiaDecay::Nuclide *nuc,
                                                 const ModelSourceType type )
@@ -5982,20 +6006,23 @@ void ShieldingSourceDisplay::isotopeSelectedAsShieldingCallback(
 
   //Update the Chi2
   updateChi2Chart();
-}//isotopeSelectedAsShieldingCallback(...)
+}//isotopeIsBecomingVolumetricSourceCallback(...)
 
 
-void ShieldingSourceDisplay::isotopeDeSelectedAsShieldingCallback(
+void ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback(
                                             ShieldingSelect *select,
                                             const SandiaDecay::Nuclide *nuc,
                                             const ModelSourceType type )
 {
   //Set appropriate flags in the SourceFitModel so activity will be editiable
-  m_sourceModel->setSourceType( nuc, type );
+  
+  assert( m_sourceModel->sourceType(m_sourceModel->nuclideIndex(nuc)) == type );
 
+  m_sourceModel->setSourceType( nuc, ModelSourceType::Point );
+  
   //Update the Chi2
   updateChi2Chart();
-}//isotopeDeSelectedAsShieldingCallback(...)
+}//isotopeRemovedAsVolumetricSourceCallback(...)
 
 
 void ShieldingSourceDisplay::removeShielding( ShieldingSelect *select )
@@ -6013,11 +6040,14 @@ void ShieldingSourceDisplay::removeShielding( ShieldingSelect *select )
     if( shielding == select )
     {
       delete shielding;
+      
+      handleShieldingChange();
       return;
     }//if( shielding == select )
   }//for( int i = 0; i < nwidget; ++i )
 
-  cerr << "\n\nCouldnt finding select to detelet" << endl;
+  assert( 0 );
+  cerr << "\n\nCouldnt finding select to delete" << endl;
 }//void removeShielding( ShieldingSelect *select )
 
 
@@ -6079,7 +6109,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       
       PointSourceShieldingChi2Fcn::ShieldingInfo materialAndSrc;
       materialAndSrc.material = mat;
-      materialAndSrc.self_atten_sources = select->nuclidesToUseAsSources();
+      materialAndSrc.self_atten_sources = select->selfAttenNuclides();
       
       for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
       {
@@ -6120,8 +6150,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     assert( nuclide );
     
     const int ison = m_sourceModel->nuclideIndex( nuclide );
-    double activity = m_sourceModel->activity( ison )
-                            / PointSourceShieldingChi2Fcn::sm_activityUnits;
+    double activity = m_sourceModel->activity( ison );
     
     //We could do a lot better here by estimating the activity of the sources
     //  the first time they are fit for
@@ -6163,8 +6192,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
           
           if( select->isTraceSourceForNuclide(nuclide) )
           {
-            activity = select->traceSourceDisplayActivity(nuclide)
-                                          / PointSourceShieldingChi2Fcn::sm_activityUnits;
+            activity = select->traceSourceDisplayActivity(nuclide);
             numShieldingsTraceSrcFor += 1;
             
             fitAct = select->fitTraceSourceActivity(nuclide);
@@ -6192,6 +6220,8 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     
     num_fit_params += fitAct + (fitAge && hasOwnAge);
 
+    // Put activity into units of PointSourceShieldingChi2Fcn
+    activity /= PointSourceShieldingChi2Fcn::sm_activityUnits;
     
     if( fitAct )
     {
@@ -6423,8 +6453,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       //Get the isotopes to fit mass fractions of
       const vector<ShieldingSelect::NucMasFrac> massfracs
                                          = select->sourceNuclideMassFractions();
-      vector<const SandiaDecay::Nuclide *> nucstofit
-                                         = select->nuclidesToUseAsSources();
+      vector<const SandiaDecay::Nuclide *> nucstofit = select->selfAttenNuclides();
       
       std::shared_ptr<Material> mat = select->material();
       if( !mat )
@@ -6615,45 +6644,13 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
   
   try
   {
-    // We'll update shielding thicknesses first, as this could affect setting trace source values
     const int nshieldings = static_cast<int>(shieldings.size());
-    for( int i = 0; i < nshieldings; ++i )
-    {
-      ShieldingSelect *select = shieldings[i];
-      if( select->isGenericMaterial() )
-      {
-        const double adUnits = PhysicalUnits::gram / PhysicalUnits::cm2;
-        const double an = m_currentFitFcn->atomicNumber( i, paramValues );
-        const double ad = m_currentFitFcn->arealDensity( i, paramValues ) / adUnits;
-        
-        char buffer[32];
-        snprintf( buffer, sizeof(buffer), "%.2f", an );
-        select->m_atomicNumberEdit->setText( buffer );
-        snprintf( buffer, sizeof(buffer), "%.2g", ad );
-        select->m_arealDensityEdit->setText( buffer );
-      }else
-      {
-        WString txt;
-        const double thickness = m_currentFitFcn->thickness( i, paramValues );
-#ifndef WT_NO_STD_WSTRING
-        const double thicknessErr = m_currentFitFcn->thickness( i, paramErrors );
-        if( thicknessErr > 0.0 )
-          txt = PhysicalUnits::printToBestLengthUnits( thickness, thicknessErr );
-        else
-#endif
-          txt = PhysicalUnits::printToBestLengthUnits( thickness );
-        select->m_thicknessEdit->setText( txt );
-        //        const double volume = (3.14159265359*4.0/3.0) * ( pow(radius + thickness,3) - pow(radius,3) );
-        //        const double density = select->material()->density;
-        //        cerr << "From Geometry, material " << select->material()->name << " has "
-        //             << "mass " << (volume*density)/PhysicalUnits::gram << " g" << endl;
-        //        radius += thickness;
-      }//if( genericMaterial ) / else
-    }//for( size_t i = 0; i < shieldings.size(); ++i )
     
     
+    // First we'll update mass-fractions of self-attenuating sources, if we were fitting any of them
     const vector<const Material *> massfracFitMaterials
-    = m_currentFitFcn->materialsFittingMassFracsFor();
+                                           = m_currentFitFcn->materialsFittingMassFracsFor();
+    
     for( int i = 0; i < nshieldings; ++i )
     {
       ShieldingSelect *select = shieldings[i];
@@ -6724,8 +6721,44 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
     }//for( int i = 0; i < nshieldings; ++i )
     
     
+    // Next we'll update shielding thicknesses, as this could affect setting trace source values
+    for( int i = 0; i < nshieldings; ++i )
+    {
+      ShieldingSelect *select = shieldings[i];
+      if( select->isGenericMaterial() )
+      {
+        const double adUnits = PhysicalUnits::gram / PhysicalUnits::cm2;
+        const double an = m_currentFitFcn->atomicNumber( i, paramValues );
+        const double ad = m_currentFitFcn->arealDensity( i, paramValues ) / adUnits;
+        
+        char buffer[32];
+        snprintf( buffer, sizeof(buffer), "%.2f", an );
+        select->m_atomicNumberEdit->setText( buffer );
+        snprintf( buffer, sizeof(buffer), "%.2g", ad );
+        select->m_arealDensityEdit->setText( buffer );
+      }else
+      {
+        WString txt;
+        const double thickness = m_currentFitFcn->thickness( i, paramValues );
+#ifndef WT_NO_STD_WSTRING
+        const double thicknessErr = m_currentFitFcn->thickness( i, paramErrors );
+        if( thicknessErr > 0.0 )
+          txt = PhysicalUnits::printToBestLengthUnits( thickness, thicknessErr );
+        else
+#endif
+          txt = PhysicalUnits::printToBestLengthUnits( thickness );
+        select->m_thicknessEdit->setText( txt );
+        //        const double volume = (3.14159265359*4.0/3.0) * ( pow(radius + thickness,3) - pow(radius,3) );
+        //        const double density = select->material()->density;
+        //        cerr << "From Geometry, material " << select->material()->name << " has "
+        //             << "mass " << (volume*density)/PhysicalUnits::gram << " g" << endl;
+        //        radius += thickness;
+      }//if( genericMaterial ) / else
+    }//for( size_t i = 0; i < shieldings.size(); ++i )
     
-    // Now set activities and ages
+
+    
+    // Finally we'll set activities and ages
     const size_t nnucs = m_currentFitFcn->numNuclides();
     
     //Go through and set the ages and activities fit for
@@ -6734,13 +6767,13 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
       const SandiaDecay::Nuclide *nuc = m_currentFitFcn->nuclide( int(nucn) );
       
       const double age = m_currentFitFcn->age( nuc, paramValues );
-      const double activity = m_currentFitFcn->activity( nuc, paramValues );
+      const double total_activity = m_currentFitFcn->totalActivity( nuc, paramValues );
       
       char actStr[64], ageStr[64];
-      snprintf( actStr, sizeof(actStr), "%f bq", (activity/PhysicalUnits::becquerel) );
+      snprintf( actStr, sizeof(actStr), "%f bq", (total_activity/PhysicalUnits::becquerel) );
       snprintf( ageStr, sizeof(ageStr), "%f s", (age/PhysicalUnits::second) );
       
-      //      cerr << "activity=" << activity << "-->" << actStr << "-->" << PhysicalUnits::stringToActivity(actStr) << endl;
+      //      cerr << "activity=" << total_activity << "-->" << actStr << "-->" << PhysicalUnits::stringToActivity(actStr) << endl;
       
       const int ison = m_sourceModel->row( nuc );
       WModelIndex ageIndex = m_sourceModel->index( ison, SourceFitModel::kAge );
@@ -6753,10 +6786,9 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         bool success = m_sourceModel->setData( ageIndex, WString(ageStr) );
         if( !success )
         {
-          stringstream msg;
-          msg << "An invalid age was calculated for " << nuc->symbol
-          << ", other results may be invalid to";
-          passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+          const string msg = "An invalid age was calculated for " + nuc->symbol
+                             + ", other results may be invalid to";
+          passMessage( msg, "", WarningWidget::WarningMsgHigh );
         }//if( IsNan(p.second) || IsInf(p.second) )
         
         const double ageUncert = m_currentFitFcn->age( nuc, paramErrors );
@@ -6769,34 +6801,47 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         m_sourceModel->setData( ageUncerIndex, boost::any() );
       }//fit( age ) / else
       
-      if( m_sourceModel->fitActivity(ison) )
+      
+      const ModelSourceType sourceType = m_sourceModel->sourceType(ison);
+      
+      //Even if we didnt explicitly fit for the activity parameter, we may still have effectively
+      //  fit for the activity if we fit for any shielding dimensions, so rather than trying to
+      //  detect when we may have effectively fit for activity, we'll just set for anything more
+      //  then the most obvios "we didnt fit for it" sceneriou.
+      bool effectivelyFitActivity = true;
+      switch( sourceType )
       {
-        bool success = false;
+        case ModelSourceType::Point:
+          effectivelyFitActivity = m_sourceModel->fitActivity(ison);
+          break;
+          
+        case ModelSourceType::Intrinsic:
+        case ModelSourceType::Trace:
+          break;
+      }//switch( sourceType )
+          
+      if( effectivelyFitActivity )
+      {
+        bool success = m_sourceModel->setData( actIndex, WString(actStr) );
         
-        switch( m_sourceModel->sourceType(ison) )
+        switch( sourceType )
         {
           case ModelSourceType::Point:
-            success = m_sourceModel->setData( actIndex, WString(actStr) );
-            break;
-            
           case ModelSourceType::Intrinsic:
-            assert( 0 );
-            success = false;
             break;
             
           case ModelSourceType::Trace:
           {
+            success = false;
             for( WWidget *widget : m_shieldingSelects->children() )
             {
               ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
               
-              if( !select || !select->isTraceSourceForNuclide(nuc) )
-                continue;
-                
-              const double total_activity = m_currentFitFcn->totalActivityOfTraceSource(nuc,paramValues);
-              
-              select->setTraceSourceTotalActivity( nuc, total_activity );
-              success = true;
+              if( select && select->isTraceSourceForNuclide(nuc) )
+              {
+                success = true;
+                select->setTraceSourceTotalActivity( nuc, total_activity );
+              }
             }//for( WWidget *widget : m_shieldingSelects->children() )
             break;
           }//case ModelSourceType::Trace:
@@ -6805,34 +6850,41 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         if( !success )
         {
           const string msg = "An invalid activity was calculated for " + nuc->symbol
-                             + ", other results may be invalid to";
+          + ", other results may be invalid to";
           passMessage( msg, "", WarningWidget::WarningMsgHigh );
         }//if( we failed to set activity value. )
         
+        
         try
         {
-          const double activityUncert = m_currentFitFcn->activityUncertainty( nuc, paramValues, paramErrors );
+          const double activityUncert = m_currentFitFcn->totalActivityUncertainty( nuc, paramValues, paramErrors );
           
-          char actUncertStr[64];
-          snprintf( actUncertStr, sizeof(actUncertStr), "%f bq", (activityUncert/PhysicalUnits::becquerel) );
-          
-          success = m_sourceModel->setData( actUncertIndex, WString(actUncertStr) );
-          if( !success )
+          if( activityUncert < FLT_EPSILON )
           {
-            const string msg = "Calculated activity uncertainty for " + nuc->symbol
-                                + " is invalid, other results may be invalid to.";
-            passMessage( msg, "", WarningWidget::WarningMsgHigh );
-          }//if( IsNan(p.second) || IsInf(p.second) )
+            m_sourceModel->setData( actUncertIndex, boost::any() );
+          }else
+          {
+            char actUncertStr[64] = { '\0' };
+            snprintf( actUncertStr, sizeof(actUncertStr), "%f bq", (activityUncert/PhysicalUnits::becquerel) );
+            
+            success = m_sourceModel->setData( actUncertIndex, WString(actUncertStr) );
+            if( !success )
+            {
+              const string msg = "Calculated activity uncertainty for " + nuc->symbol
+              + " is invalid, other results may be invalid to.";
+              passMessage( msg, "", WarningWidget::WarningMsgHigh );
+            }//if( IsNan(p.second) || IsInf(p.second) )
+          }//if( activity uncert < 0 ) / else
         }catch( std::exception &e )
         {
           const string msg = "Unexpected error calculating activity uncertainty for " + nuc->symbol
-                             + ": " + string(e.what());
+          + ": " + string(e.what());
           passMessage( msg, "", WarningWidget::WarningMsgHigh );
         }
       }else if( m_sourceModel->activityUncert(ison) >= 0.0 )
       {
         m_sourceModel->setData( actUncertIndex, boost::any() );
-      }
+      }//if( effectivelyFitActivity )
     }//for( int ison = 0; ison < niso; ++ison )
     
     
@@ -7366,7 +7418,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       string act_postfix = "", trace_total = "";
       if( chi2Fcn->isTraceSource(nuc) )
       {
-        const double total_act = chi2Fcn->totalActivityOfTraceSource(nuc,params);
+        const double total_act = chi2Fcn->totalActivity(nuc,params);
         trace_total = "Total activity " + PhysicalUnits::printToBestActivityUnits( total_act, 2, useCi ) + ", ";
         
         switch( chi2Fcn->traceSourceActivityType(nuc) )

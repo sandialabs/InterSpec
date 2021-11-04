@@ -160,27 +160,6 @@ public:
     m_allowFitting->addStyleClass( "SecondCol FourthRow SpanTwoCol" );
     m_allowFitting->checked().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
     m_allowFitting->unChecked().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
-    
-    // Try to keep in sync with the model...
-    SourceFitModel *srcmodel = m_parent->m_sourceModel;
-    if( srcmodel )
-    {
-      // Signals to hook into
-      //srcmodel->dataChanged().connect(<#WObject *target#>, <#WObject::Method method#>) <-- Need to sync activity and if should fit for, at a minimum
-      //srcmodel->rowsInserted() // I think this should be covered by modelNuclideAdded()
-      //srcmodel->rowsRemoved()  // I think this should be covered by sourceRemovedFromModel()
-      
-      //m_parent->activityFromThicknessNeedUpdating.emit( m_parent, nuclide );
-      //  I think this gets covered in ShieldingSelect::handleMaterialChange(), which needs to have trace sources added in
-      //m_parent->addingIsotopeAsSource().emit( nuclide, ModelSourceType::Intrinsic );  <-- Add source type argument maybe, or have the model figure it out
-      //m_parent->removingIsotopeAsSource().emit( nuclide, ModelSourceType:: ); <-- Add source type argument maybe, or have the model figure it out
-      
-      // Functions to re-implement, or make equivalents of
-      //m_parent->nuclidesToUseAsSources()  <-- rename, and make an equivalent for trace sources
-      //
-      // And need to modify PointSourceShieldingChi2Fcn to know about trace sources.
-    }
-    
       
     updateAvailableActivityTypes();
     updateAvailableIsotopes();
@@ -1322,6 +1301,19 @@ bool ShieldingSelect::fitTraceSourceActivity( const SandiaDecay::Nuclide *nuc ) 
 }//TraceActivityType traceSourceType( const SandiaDecay::Nuclide *nuc ) const
 
 
+
+double ShieldingSelect::updateTotalTraceSourceActivityForGeometryChange( const SandiaDecay::Nuclide *nuc )
+{
+  TraceSrcDisplay *w = traceSourceWidgetForNuclide( nuc );
+  if( !w )
+    throw runtime_error( "updateTotalTraceSourceActivityForGeometryChange: called with invalid nuclide" );
+  
+  w->updateTotalActivityFromDisplayActivity();
+  
+  return w->totalActivity();
+}//double updateTotalTraceSourceActivityForGeometryChange( const SandiaDecay::Nuclide *nuc )
+
+
 const TraceSrcDisplay *ShieldingSelect::traceSourceWidgetForNuclide( const SandiaDecay::Nuclide *nuc ) const
 {
   if( !m_traceSources || !nuc )
@@ -2232,7 +2224,7 @@ vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFraction
 {
   vector< ShieldingSelect::NucMasFrac > answer;
   
-  const vector<const SandiaDecay::Nuclide *> nucs = nuclidesToUseAsSources();
+  const vector<const SandiaDecay::Nuclide *> nucs = selfAttenNuclides();
   std::shared_ptr<const Material> mat = material();
   
   if( !mat || nucs.empty() )
@@ -2248,7 +2240,7 @@ vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFraction
 }//std::vector< NucMasFrac > sourceNuclideMassFractions()
 
 
-vector<const SandiaDecay::Nuclide *> ShieldingSelect::nuclidesToUseAsSources()
+vector<const SandiaDecay::Nuclide *> ShieldingSelect::selfAttenNuclides()
 {
   set<const SandiaDecay::Nuclide *> answer;
 
@@ -2292,7 +2284,7 @@ vector<const SandiaDecay::Nuclide *> ShieldingSelect::nuclidesToUseAsSources()
     nucs.push_back( n );
 
   return nucs;
-}//std::vector<const SandiaDecay::Nuclide *> nuclidesToUseAsSources() const
+}//std::vector<const SandiaDecay::Nuclide *> selfAttenNuclides() const
 
 
 double ShieldingSelect::massFractionOfElement( const SandiaDecay::Nuclide *iso,
