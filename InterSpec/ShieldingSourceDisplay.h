@@ -447,10 +447,10 @@ public:
   void materialChangedCallback( ShieldingSelect *select );
   void updateActivityOfShieldingIsotope( ShieldingSelect *select,
                                          const SandiaDecay::Nuclide *nuc );
-  void isotopeSelectedAsShieldingCallback( ShieldingSelect *select,
+  void isotopeIsBecomingVolumetricSourceCallback( ShieldingSelect *select,
                                            const SandiaDecay::Nuclide *nuc,
                                            const ModelSourceType type );
-  void isotopeDeSelectedAsShieldingCallback( ShieldingSelect *select,
+  void isotopeRemovedAsVolumetricSourceCallback( ShieldingSelect *select,
                                              const SandiaDecay::Nuclide *nuc,
                                              const ModelSourceType type );
   
@@ -563,6 +563,8 @@ public:
    TODO: Could probably tighten things up a bit to avoid degeneracies
    */
   void checkForMultipleGenericMaterials();
+  
+  void handleShieldingChange();
   
   void updateChi2Chart();
   

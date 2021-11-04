@@ -1297,21 +1297,27 @@ double PointSourceShieldingChi2Fcn::activityOfSelfAttenSource(
 }//double activityOfSelfAttenSource(...) const;
 
 
-double PointSourceShieldingChi2Fcn::totalActivityOfTraceSource( const SandiaDecay::Nuclide *nuclide,
+double PointSourceShieldingChi2Fcn::totalActivity( const SandiaDecay::Nuclide *nuclide,
                                   const std::vector<double> &params ) const
 {
   assert( nuclide );
   if( !nuclide )
-    throw runtime_error( "PointSourceShieldingChi2Fcn::totalActivityOfTraceSource: called with null nuclide" );
+    throw runtime_error( "PointSourceShieldingChi2Fcn::totalActivity: called with null nuclide" );
   
-  assert( isTraceSource(nuclide) );
+  const bool isTrace = isTraceSource(nuclide);
+  const bool isSelfAtten = !isTrace && isSelfAttenSource(nuclide);
   
-  bool foundSrc = false;
-  double radius = 0.0;
+  if( isSelfAtten )
+    return activityOfSelfAttenSource( nuclide, params );
   
   const size_t ind = nuclideIndex( nuclide );
   const double activity = params[2*ind] * sm_activityUnits;
+
+  if( !isTrace )
+    return activity;
   
+  bool foundSrc = false;
+  double radius = 0.0;
   
   const int nmat = static_cast<int>( numMaterials() );
   for( int matn = 0; matn < nmat; ++matn )
@@ -1322,10 +1328,11 @@ double PointSourceShieldingChi2Fcn::totalActivityOfTraceSource( const SandiaDeca
     if( !mat )  //if a generic shielding
       continue;
     
+    const double inner_rad = radius;
     const double thick = thickness( matn, params );
-    const double vol = (4.0/3.0)*PhysicalUnits::pi*( pow(radius+thick,3.0) - pow(radius,3.0));
-    
     radius += thick;
+    
+    const double vol = (4.0/3.0)*PhysicalUnits::pi*( pow(radius,3.0) - pow(inner_rad,3.0));
     
     // Determine if nuclide is a trace source of this shielding
     TraceActivityType type = TraceActivityType::NumTraceActivityType;
@@ -1350,11 +1357,11 @@ double PointSourceShieldingChi2Fcn::totalActivityOfTraceSource( const SandiaDeca
         return activity;
         
       case TraceActivityType::ActivityPerCm3:
-        return activity * PhysicalUnits::cm3 * vol;
+        return activity * vol / PhysicalUnits::cm3;
         break;
         
       case TraceActivityType::ActivityPerGram:
-        return activity * PhysicalUnits::gram * mat->density * vol;
+        return activity * mat->density * vol / PhysicalUnits::gram;
         break;
         
       case TraceActivityType::NumTraceActivityType:
@@ -1363,11 +1370,40 @@ double PointSourceShieldingChi2Fcn::totalActivityOfTraceSource( const SandiaDeca
     }//switch( type )
   }//for( int matn = 0; matn < nmat; ++matn )
   
-  throw runtime_error( "PointSourceShieldingChi2Fcn::totalActivityOfTraceSource: "
+  throw runtime_error( "PointSourceShieldingChi2Fcn::totalActivity: "
                         + nuclide->symbol + " is not a self-attenuating source" );
   
   return activity;
-}//double totalActivityOfTraceSource(...)
+}//double totalActivity(...)
+
+
+
+double PointSourceShieldingChi2Fcn::totalActivityUncertainty( const SandiaDecay::Nuclide *nuclide,
+                                const std::vector<double> &params,
+                                const std::vector<double> &errors ) const
+{
+  assert( nuclide );
+  if( !nuclide )
+    throw runtime_error( "PointSourceShieldingChi2Fcn::totalActivityUncertainty: called with null nuclide" );
+  
+  assert( params.size() == errors.size() );
+  
+  const bool isTrace = isTraceSource(nuclide);
+  
+  double uncert = activityUncertainty( nuclide, params, errors );
+  
+  if( !isTrace )
+    return uncert;
+  
+  const double display_activity = activity( nuclide, params );
+  const double total_activity = totalActivity( nuclide, params );
+  
+  if( (display_activity > FLT_EPSILON) && (total_activity > FLT_EPSILON) )
+    uncert *= (total_activity / display_activity);
+  
+  return uncert;
+}//double totalActivityUncertainty(...)
+
 
 
 double PointSourceShieldingChi2Fcn::activity( const SandiaDecay::Nuclide *nuclide,
@@ -1409,7 +1445,7 @@ double PointSourceShieldingChi2Fcn::activityUncertainty( const SandiaDecay::Nucl
   //  parameter uncertainties and calculating activity from those.  However, if its a
   //  self-attenuating source, or trace source we have to do a little more propagation and such.
   const bool isTrace = isTraceSource(nuclide);
-  const bool isSelfAtten = isSelfAttenSource(nuclide);
+  const bool isSelfAtten = !isTrace && isSelfAttenSource(nuclide);
   
   if( !isTrace && !isSelfAtten )
   {
@@ -2415,11 +2451,11 @@ vector< tuple<double,double,double,Wt::WColor,double> >
           }
             
           case TraceActivityType::ActivityPerCm3:
-            actPerVol = act * PhysicalUnits::cm3;
+            actPerVol = act / PhysicalUnits::cm3;
             break;
             
           case TraceActivityType::ActivityPerGram:
-            actPerVol = act * PhysicalUnits::g * material->density;
+            actPerVol = act * material->density / PhysicalUnits::g;
             break;
             
           case TraceActivityType::NumTraceActivityType:

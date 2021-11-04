@@ -243,9 +243,8 @@ public:
   //  the Material passed in.
   void updateMassFractionDisplays( std::shared_ptr<const Material> mat );
 
-  //nuclidesToUseAsSources(): returns the isotopes currently checked for use as
-  //  sources
-  std::vector<const SandiaDecay::Nuclide *> nuclidesToUseAsSources();
+  /** Returns the isotopes currently checked for use as self-attenuating sources. */
+  std::vector<const SandiaDecay::Nuclide *> selfAttenNuclides();
   
   //sourceNuclideMassFractions(): returns both the nuclides and their respective
   //  mass fractions in the current material
@@ -268,7 +267,7 @@ public:
   void setMassFraction( const SandiaDecay::Nuclide *nuc, double fraction );
   
   //setMaterialNameAndThickness(...): sets the current material name and
-  //  thickness to the specified strings.  If necassary will make it so this is
+  //  thickness to the specified strings.  If necessary will make it so this is
   //  not a GenericMaterial.  Throws exception if the material cant be found
   //  in the database, or the thickness is an invalid thickness (gui wont be
   //  changed in that case).  Also calls handle material change.
@@ -278,7 +277,7 @@ public:
   /** Toggles the widget to be a generic widget (if it wasnt already) and sets
      the atomic number and areal density.
      AN sould be between 1 and 100 (inclusive), and AD in PhysicalUnits g/cm2,
-     and a positive value.  If ewrrors, exception will be thrown.
+     and a positive value.  If errors, exception will be thrown.
    */
   void setAtomicNumberAndArealDensity( const double an, const double ad );
   
@@ -319,8 +318,19 @@ public:
    */
   double traceSourceDisplayActivity( const SandiaDecay::Nuclide *nuc ) const;
   
+  
   /** Returns if the activity for this source should be fit for; this returns the same value as the model should return for this quantity. */
   bool fitTraceSourceActivity( const SandiaDecay::Nuclide *nuc ) const;
+  
+  
+  /** Recalculates total activity, based on currently displayed activity and current geometry size.
+   
+   @returns the updated activity value.
+   
+   Throws exception if not a trace source for the nuclide.
+   */
+  double updateTotalTraceSourceActivityForGeometryChange( const SandiaDecay::Nuclide *nuc );
+  
   
   /** Returns the current total activity for the specified trace source nuclide.
    

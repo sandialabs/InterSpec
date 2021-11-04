@@ -398,14 +398,19 @@ public:
   double activityOfSelfAttenSource( const SandiaDecay::Nuclide *nuclide,
                                       const std::vector<double> &params ) const;
   
-  /** Returns the total activity of the specified nuclide that is a trace source.
+  /** Returns the total activity of the specified nuclide.
    
-   Note: the #activity function returns the display activity (so either total, per cc, or per g) for the trace sources.
+   Note: for trace sources, the #activity function returns the display activity (so either total, per cc, or per g) for the trace sources.
    
-   Throws exception if nuclide is nullptr, or not a trace source.
+   Throws exception if nuclide is nullptr.
    */
-  double totalActivityOfTraceSource( const SandiaDecay::Nuclide *nuclide,
-                                   const std::vector<double> &params ) const;
+  double totalActivity( const SandiaDecay::Nuclide *nuc, const std::vector<double> &params ) const;
+  
+  /** Similar to totalActivity, but returns its uncertainty. */
+  double totalActivityUncertainty( const SandiaDecay::Nuclide *nuc,
+                                   const std::vector<double> &params,
+                                   const std::vector<double> &paramErrors ) const;
+  
   
   size_t numNuclides() const;
   size_t numMaterials() const;
