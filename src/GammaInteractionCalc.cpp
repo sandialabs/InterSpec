@@ -147,6 +147,35 @@ double transmition_coefficient_material( const Material *material, float energy,
   return length * transmition_length_coefficient( material, energy );
 }
 
+double transmission_length_coefficient_air( float energy )
+{
+  double mu = 0.0;
+  
+  //Air (taken from definition used in InterSpec v1.0.8 20211017):
+  //  AN=7, Density=6.08133411407 (0.000974337052716 g/cm3)
+  //  AN=8, density=1.86634886265 (0.000299022026427 g/cm3)
+  //  AN=18, density=0.103864975274 (1.66410021206e-05 g/cm3)
+  const pair<int,double> air_def[] = {{7,6.08133411407}, {8,1.86634886265}, {18,0.103864975274}};
+  
+  for( const auto &i : air_def )
+  {
+    const int atomicNumber = i.first;
+    const double density = i.second;
+    const double xs_per_mass = MassAttenuation::massAttenuationCoeficient( atomicNumber, energy );
+    
+    mu += (density*xs_per_mass);
+  }//for( const Material::ElementFractionPair &p : material->elements )
+  
+  return mu;
+}//transmission_length_coefficient_air(...)
+
+
+double transmission_coefficient_air( float energy, float length )
+{
+  return length * transmission_length_coefficient_air( energy );
+}
+
+
 //Returned in units of [Length]^2/[mass], so that
 //  exp( -mass_attenuation_coef * areal_density )
 //  gives you the probability a gamma of given energy will go through the
@@ -312,6 +341,8 @@ void example_integration()
   
     const double energy = 185.0*PhysicalUnits::keV;
     ObjectToIntegrate.m_sourceIndex = 0;
+    ObjectToIntegrate.m_attenuateForAir = false;
+    ObjectToIntegrate.m_airTransLenCoef = 0.0;
     ObjectToIntegrate.m_detectorRadius  = 2.0 * PhysicalUnits::cm;
     ObjectToIntegrate.m_observationDist = 400.0 * PhysicalUnits::cm;
 
@@ -419,6 +450,8 @@ DistributedSrcCalc::DistributedSrcCalc()
   m_sourceIndex = 0;
   m_detectorRadius = -1.0;
   m_observationDist = -1.0;
+  m_attenuateForAir = false;
+  m_airTransLenCoef = 0.0;
   nuclide = NULL;
 }//DistributedSrcCalc()
 
@@ -620,6 +653,22 @@ void DistributedSrcCalc::eval( const double xx[], const int *ndimptr,
   }//for( size_t i = 0; i < m_sphereRadAndTransLenCoef.size(); ++i )
 
   trans = exp( -trans );
+  
+  
+  if( m_attenuateForAir )
+  {
+    // source_point is the exit point on the last of the shielding, and the detector is at
+    //  [0,0,m_observationDist]
+    const double dx = -source_point[0];
+    const double dy = -source_point[1];
+    const double dz = source_point[2] - m_observationDist;
+    
+    const double air_dist = sqrt( dx*dx + dy*dy + dz*dz );
+    
+    trans *= exp( -m_airTransLenCoef * air_dist );
+  }//if( m_attenuateForAir )
+  
+  
   trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius,
                                                        m_observationDist );
 
@@ -656,7 +705,8 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
                                  const std::vector<PeakDef> &peaks,
                                  std::shared_ptr<const DetectorPeakResponse> detector,
                                  const std::vector<PointSourceShieldingChi2Fcn::ShieldingInfo> &materials,
-                                 bool allowMultipleNucsContribToPeaks )
+                                 const bool allowMultipleNucsContribToPeaks,
+                                 const bool attenuateForAir )
   : ROOT::Minuit2::FCNBase(),
     m_cancel( 0 ),
     m_isFitting( false ),
@@ -668,6 +718,7 @@ PointSourceShieldingChi2Fcn::PointSourceShieldingChi2Fcn(
     m_materials( materials ),
     m_nuclides( 0, (const SandiaDecay::Nuclide *)NULL ),
     m_allowMultipleNucsContribToPeaks( allowMultipleNucsContribToPeaks ),
+    m_attenuateForAir( attenuateForAir ),
     m_self_att_multithread( true )
 {
   set<const SandiaDecay::Nuclide *> nucs;
@@ -1736,8 +1787,7 @@ double PointSourceShieldingChi2Fcn::DoEval( const std::vector<double> &x ) const
       m_mixtureCache.clear();
     
     const vector< tuple<double,double,double,Wt::WColor,double> > chi2s
-      = energy_chi_contributions( x, m_mixtureCache,
-                               m_allowMultipleNucsContribToPeaks );
+                                           = energy_chi_contributions( x, m_mixtureCache, nullptr );
     double chi2 = 0.0;
     
     const size_t npoints = chi2s.size();
@@ -2111,12 +2161,9 @@ void PointSourceShieldingChi2Fcn::setBackgroundPeaks(
   
   
 vector< tuple<double,double,double,Wt::WColor,double> >
-       PointSourceShieldingChi2Fcn::energy_chi_contributions(
-           const std::vector<double> &x,
-           PointSourceShieldingChi2Fcn::NucMixtureCache &mixturecache,
-                                        const bool allow_multiple_iso_contri,
-                                        std::vector<std::string> *info                     
-                                                             ) const
+       PointSourceShieldingChi2Fcn::energy_chi_contributions( const std::vector<double> &x,
+                                         PointSourceShieldingChi2Fcn::NucMixtureCache &mixturecache,
+                                         std::vector<std::string> *info ) const
 {
   //XXX - this function compares a lot of doubles, and this always makes me
   //      queezy - this should be checked on!
@@ -2140,7 +2187,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
                         + m_detector->name() + " radius "
                         + std::to_string( 0.5*m_detector->detectorDiameter()/PhysicalUnits::cm )
                       + " cm" );
-    if( allow_multiple_iso_contri )
+    if( m_allowMultipleNucsContribToPeaks )
       info->push_back( "Allowing multiple nuclides being fit for to potentially contribute to the same photopeak" );
     else
       info->push_back( "Not allowing multiple nuclides being fit for to contribute to the same photopeak" );
@@ -2152,7 +2199,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   EnergyCountMap energy_count_map;
   const vector<pair<double,double> > energie_widths = observedPeakEnergyWidths( m_peaks );
   
-  if( allow_multiple_iso_contri )
+  if( m_allowMultipleNucsContribToPeaks )
   {
     //Get the number of source gammas from each nuclide
     for( const SandiaDecay::Nuclide *nuclide : m_nuclides )
@@ -2202,10 +2249,11 @@ vector< tuple<double,double,double,Wt::WColor,double> >
                                mixturecache[nuclide], act, thisage,
                                m_photopeakClusterSigma, energy, info);
     }//for( const PeakDef &peak : m_peaks )
-  }//if( allow_multiple_iso_contri )
+  }//if( m_allowMultipleNucsContribToPeaks )
 
   //Propagate the gammas through each material - note we are using the fit peak
   //  mean here, and not the (pre-cluster) photopeak energy
+  double shield_outer_rad = 0.0;
   const int nMaterials = static_cast<int>( m_materials.size() );
   for( int materialN = 0; materialN < nMaterials; ++materialN )
   {
@@ -2236,6 +2284,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     }else
     {
       const float thick = static_cast<float>( thickness( materialN, x ) );
+      shield_outer_rad += thick;
       att_coef_fcn = boost::bind( &transmition_coefficient_material, material, _1, thick );
     }//if( generic material ) / else
 
@@ -2297,7 +2346,19 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       energy_count.second *= exp( -1.0 * att_coef_fcn( energy_count.first ) );
   }//for( int materialN = 0; materialN < nMaterials; ++materialN )
 
-
+  
+  if( m_attenuateForAir )
+  {
+    const double air_dist = std::max( 0.0, m_distance - shield_outer_rad );
+    
+    for( EnergyCountMap::value_type &energy_count : energy_count_map )
+    {
+      const double coef = transmission_length_coefficient_air( energy_count.first );
+      energy_count.second *= exp( -1.0 * coef * air_dist );
+    }
+  }//if( m_attenuateForAir )
+  
+  
   //Fold in the detector response
   if( m_detector && m_detector->isValid() )
   {
@@ -2414,6 +2475,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       baseCalculator.m_detectorRadius = 0.5 * PhysicalUnits::cm;
 
     baseCalculator.m_observationDist = m_distance;
+    baseCalculator.m_attenuateForAir = m_attenuateForAir;
     baseCalculator.m_sourceIndex = materialN;
     
     for( size_t src_index = 0; src_index < srcs.size(); ++src_index )
@@ -2491,7 +2553,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       if( mixturecache.find(src) == mixturecache.end() )
         mixturecache[src].addNuclideByActivity( src, sm_activityUnits );
       
-      if( allow_multiple_iso_contri )
+      if( m_allowMultipleNucsContribToPeaks )
       {
         cluster_peak_activities( local_energy_count_map, energie_widths,
                                  mixturecache[src], actPerVol, thisage,
@@ -2507,7 +2569,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
                                       m_photopeakClusterSigma,
                                      peak.gammaParticleEnergy(), info );
         }//for( const PeakDef &peak : m_peaks )
-      }//if( allow_multiple_iso_contri ) / else
+      }//if( m_allowMultipleNucsContribToPeaks ) / else
 
       for( const EnergyCountMap::value_type &energy_count : local_energy_count_map )
       {
@@ -2517,7 +2579,12 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         calculator.nuclide = src;
         calculator.energy = energy_count.first;
         calculator.srcVolumumetricActivity = energy_count.second;
-
+        
+        if( m_attenuateForAir )
+          calculator.m_airTransLenCoef = transmission_length_coefficient_air( energy_count.first );
+        else
+          calculator.m_airTransLenCoef = 0.0;
+        
         for( int subMat = 0; subMat < nMaterials; ++subMat )
         {
           if( isGenericMaterial( subMat ) )
