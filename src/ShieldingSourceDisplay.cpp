@@ -299,14 +299,14 @@ double SourceFitModel::activity( int nuc ) const
 {
   if( nuc<0 || nuc>=static_cast<int>(m_nuclides.size()) )
     throw std::runtime_error( "SourceFitModel: called with invalid index" );
-  return m_nuclides[nuc].activity * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+  return m_nuclides[nuc].activity * GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
 }//double activity( int nuc ) const
 
 double SourceFitModel::activityUncert( int nuc ) const
 {
   if( nuc<0 || nuc>=static_cast<int>(m_nuclides.size()) )
     throw std::runtime_error( "SourceFitModel: called with invalid index" );
-  return m_nuclides[nuc].activityUncertainty * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+  return m_nuclides[nuc].activityUncertainty * GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
 }//double activityUncert( int nuc ) const
 
 
@@ -591,7 +591,7 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
       return;
 
   IsoFitStruct newIso;
-  newIso.activity = 0.001*PhysicalUnits::curie / GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+  newIso.activity = 0.001*PhysicalUnits::curie / GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
   newIso.fitActivity = true;
   newIso.nuclide = peak->parentNuclide();
   newIso.age = PeakDef::defaultDecayTime( newIso.nuclide );
@@ -1272,12 +1272,12 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       
     case kActivity:
     {
-      const double act = isof.activity * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+      const double act = isof.activity * GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
       string ans = PhysicalUnits::printToBestActivityUnits( act, 2, m_displayCurries );
       
       // We'll require the uncertainty to be non-zero to show it - 5bq is an arbitrary cutoff to
       //  consider anything below it zero.
-      const double uncert = isof.activityUncertainty * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+      const double uncert = isof.activityUncertainty * GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
       if( uncert > 5.0*PhysicalUnits::bq )
         ans += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( uncert, 1, m_displayCurries );
       
@@ -1362,7 +1362,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
 
     case kIsotopeMass:
     {
-      const double act = isof.activity * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+      const double act = isof.activity * GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
       const double mass_grams = act / isof.nuclide->activityPerGram();
 
       if( IsInf(mass_grams) || IsNan(mass_grams) )
@@ -1376,7 +1376,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       if( isof.activityUncertainty < 0.0 )
         return boost::any();
       
-      double act = isof.activityUncertainty * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+      double act = isof.activityUncertainty * GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
       const string ans = PhysicalUnits::printToBestActivityUnits( act, 2, m_displayCurries );
       return boost::any( WString(ans) );
     }//case kActivityUncertainty:
@@ -1531,7 +1531,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
       case kActivity:
       {
         iso.activity = PhysicalUnits::stringToActivity( utf_str );
-        iso.activity /= GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+        iso.activity /= GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
         
         if( iso.activityUncertainty >= 0.0 ) //For activity we will emit the whole row changed below
           iso.activityUncertainty = -1.0;
@@ -1610,7 +1610,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         if( !value.empty() )
         {
           iso.activityUncertainty = PhysicalUnits::stringToActivity( utf_str );
-          iso.activityUncertainty /= GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+          iso.activityUncertainty /= GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
         }//if( !value.empty() )
       break;
 
@@ -3956,7 +3956,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
     
     const vector<double> params = inputPrams.Params();
     const vector<double> errors = inputPrams.Errors();
-    GammaInteractionCalc::PointSourceShieldingChi2Fcn::NucMixtureCache mixcache;
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
     
     
     m_calcLog.clear();
@@ -5100,8 +5100,8 @@ void ShieldingSourceDisplay::deSerializeSourcesToFitFor( const rapidxml::xml_nod
     else
       row.ageDefiningNuc = db->nuclide( age_defining_attr->value() );
     
-    row.activity /= GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
-    row.activityUncertainty /= GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
+    row.activity /= GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
+    row.activityUncertainty /= GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
     
     
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -5549,7 +5549,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     const unsigned int ndof = inputPrams.VariableParameters();
     const vector<double> params = inputPrams.Params();
     const vector<double> errors = inputPrams.Errors();
-    GammaInteractionCalc::PointSourceShieldingChi2Fcn::NucMixtureCache mixcache;
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
     const vector< tuple<double,double,double,WColor,double> > chis
                                    = chi2Fcn->energy_chi_contributions( params, mixcache, nullptr );
     
@@ -6103,7 +6103,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     throw runtime_error( "There are not peaks selected for the fit" );
   
 
-  using GammaInteractionCalc::PointSourceShieldingChi2Fcn;
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
   double liveTime = m_specViewer->liveTime(SpecUtils::SpectrumType::Foreground) * PhysicalUnits::second;
 
   if( liveTime <= 0.0 )
@@ -6121,7 +6121,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
 
   //Get the shieldings and materials
   shieldings.clear();
-  vector<PointSourceShieldingChi2Fcn::ShieldingInfo> materials;
+  vector<ShieldingSourceChi2Fcn::ShieldingInfo> materials;
 
   for( WWidget *widget : m_shieldingSelects->children() )
   {
@@ -6136,7 +6136,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
         mat = m_materialDB->material( "void" );
 
       
-      PointSourceShieldingChi2Fcn::ShieldingInfo materialAndSrc;
+      ShieldingSourceChi2Fcn::ShieldingInfo materialAndSrc;
       materialAndSrc.material = mat;
       materialAndSrc.self_atten_sources = select->selfAttenNuclides();
       
@@ -6157,7 +6157,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   const bool multiIsoPerPeak = m_multiIsoPerPeak->isChecked();
   const bool attenForAir = m_attenForAir->isChecked();
   
-  auto answer = std::make_shared<GammaInteractionCalc::PointSourceShieldingChi2Fcn>( distance,
+  auto answer = std::make_shared<GammaInteractionCalc::ShieldingSourceChi2Fcn>( distance,
                               liveTime, peaks, detector, materials, multiIsoPerPeak, attenForAir );
 
   //I think num_fit_params will end up same as inputPrams.VariableParameters()
@@ -6189,7 +6189,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     
 //    cerr << "Initial activity is " << m_sourceModel->activity( ison )/PhysicalUnits::curie
 //         << " which is a minuit value of " << activity << endl;
-//    activity = 10.0*PhysicalUnits::curie*(1.0E-6) / PointSourceShieldingChi2Fcn::sm_activityUnits;
+//    activity = 10.0*PhysicalUnits::curie*(1.0E-6) / ShieldingSourceChi2Fcn::sm_activityUnits;
     
     bool fitAct = false;
     const bool fitAge = m_sourceModel->fitAge( ison );
@@ -6250,8 +6250,8 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     
     num_fit_params += fitAct + (fitAge && hasOwnAge);
 
-    // Put activity into units of PointSourceShieldingChi2Fcn
-    activity /= PointSourceShieldingChi2Fcn::sm_activityUnits;
+    // Put activity into units of ShieldingSourceChi2Fcn
+    activity /= ShieldingSourceChi2Fcn::sm_activityUnits;
     
     if( fitAct )
     {
@@ -6260,7 +6260,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       //  in-accurate answer (returns not even the best chi2 it found), if only
       //  one fit parameter.
       //      inputPrams.Add( nuclide->symbol + "Strength", activity, activityStep, 0.0,
-      //                     10000.0*PhysicalUnits::curie/PointSourceShieldingChi2Fcn::sm_activityUnits );
+      //                     10000.0*PhysicalUnits::curie/ShieldingSourceChi2Fcn::sm_activityUnits );
       const string name = nuclide->symbol + "Strength";
       const double activityStep = (activity < 0.0001 ? 0.0001 : 0.1*activity);
       inputPrams.Add( name, activity, activityStep );
@@ -6547,7 +6547,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   
 
   return answer;
-}//shared_ptr<PointSourceShieldingChi2Fcn> shieldingFitnessFcn()
+}//shared_ptr<ShieldingSourceChi2Fcn> shieldingFitnessFcn()
 
 
 void ShieldingSourceDisplay::cancelModelFit()
@@ -6981,7 +6981,7 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     //  this lets us better make a consistent handoff of information (e.g., we
     //  can be sure all the member variables of ModelFitProgress are not-changed
     //  by the time the GUI update function gets executed in the Wt event loop).
-    auto progressUpdater = std::make_shared<GammaInteractionCalc::PointSourceShieldingChi2Fcn::GuiProgressUpdateInfo>( sm_model_update_frequency_ms, updatefcn );
+    auto progressUpdater = std::make_shared<GammaInteractionCalc::ShieldingSourceChi2Fcn::GuiProgressUpdateInfo>( sm_model_update_frequency_ms, updatefcn );
     
     chi2Fcn->setGuiProgressUpdater( progressUpdater );
   }//if( progress_fcn && progress )
