@@ -92,7 +92,12 @@ class NativeFloatSpinBox;
 class ShieldingSourceDisplay;
 
 enum class ModelSourceType : int;
-enum class TraceActivityType : int;
+
+namespace GammaInteractionCalc
+{
+  enum class TraceActivityType : int;
+}//namespace GammaInteractionCalc
+
 
 class SourceCheckbox : public Wt::WContainerWidget
 {
@@ -284,6 +289,9 @@ public:
   Wt::WLineEdit *arealDensityEdit();
   Wt::WLineEdit *atomicNumberEdit();
   
+  /** Returns all the nuclides this shielding is a trace source for. */
+  std::vector<const SandiaDecay::Nuclide *> traceSourceNuclides() const;
+  
   /** Returns if this shielding is a trace source for the specified nuclide. */
   bool isTraceSourceForNuclide( const SandiaDecay::Nuclide *nuc ) const;
   
@@ -292,6 +300,15 @@ public:
    Throws exception if not a trace source for the nuclide.
    */
   double traceSourceTotalActivity( const SandiaDecay::Nuclide *nuc ) const;
+  
+  /** Sets the specified nuclides activity, and causes correct signals to be emitted so SourceFitMode
+   
+   You always pass in total activity of trace source, which will then be converted to the appropriate display activity.
+   
+   Throws exception if not a trace source for the nuclide.
+   */
+  void setTraceSourceTotalActivity( const SandiaDecay::Nuclide *nuc, const double activity );
+  
   
   /** Returns the current display activity for the specified trace source nuclide; e.g., might be total activity, or activity per cm^3, or
    per gram.
@@ -302,7 +319,6 @@ public:
    */
   double traceSourceDisplayActivity( const SandiaDecay::Nuclide *nuc ) const;
   
-  
   /** Returns if the activity for this source should be fit for; this returns the same value as the model should return for this quantity. */
   bool fitTraceSourceActivity( const SandiaDecay::Nuclide *nuc ) const;
   
@@ -310,7 +326,7 @@ public:
    
    Throws exception if not a trace source for the nuclide.
    */
-  TraceActivityType traceSourceType( const SandiaDecay::Nuclide *nuc ) const;
+  GammaInteractionCalc::TraceActivityType traceSourceType( const SandiaDecay::Nuclide *nuc ) const;
   
   
   //serialize(...): saves state as a <Shielding />  node.
@@ -403,6 +419,9 @@ protected:
 
   /** Returns the trace source widget for the specfied nuclide, or nullptr if nuclide is not a trace source. */
   const TraceSrcDisplay *traceSourceWidgetForNuclide( const SandiaDecay::Nuclide *nuc ) const;
+  
+  /** Non-const version of #traceSourceWidgetForNuclide */
+  TraceSrcDisplay *traceSourceWidgetForNuclide( const SandiaDecay::Nuclide *nuc );
   
 protected:
   /** Pointer to the ShieldingSourceDisplay this ShieldingSelect belongs to - if it belongs to this tool, otherwise will be nullptr. */

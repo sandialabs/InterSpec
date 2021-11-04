@@ -49,12 +49,27 @@ namespace SandiaDecay
   class NuclideMixture;
 }
 
-enum class TraceActivityType : int;
-
-#define USE_CONSISTEN_NUM_SHIELDING_PARS 1
-
 namespace GammaInteractionCalc
 {
+
+/** We will let trace source activities be specified in a few different ways, since it makes sense from a users-perspective, and because
+ we may want total activity to vary independently from physical volume and then this just makes things a little easier to track in the Minuit
+ variables.
+ */
+enum class TraceActivityType : int
+{
+  TotalActivity,
+  ActivityPerCm3,
+  ActivityPerGram, //Needs to come last as wont be available if a "void" material
+  //ActivityPPM,
+  NumTraceActivityType
+};//enum class TraceActivityType
+
+/** Gives string representation to a TraceActivityType value. */
+const char *to_str( TraceActivityType type );
+
+
+
 //Returned in units of 1.0/[Length], so that
 //  exp( -transmition_length_coefficient(...) * thickness)
 //  gives you the probability a gamma of given energy will go through the
@@ -122,11 +137,11 @@ double len_in_sphere_x( double r, double theta,
                         double phi, double sphere_rad, double observation_dist );
 */
 
-struct SelfAttCalc
+struct DistributedSrcCalc
 {
   //Right now this struct assumes sources are solid, in terms of the attenuation
   //  calculation
-  SelfAttCalc();
+  DistributedSrcCalc();
   void eval( const double xx[], const int *ndimptr,
              double ff[], const int *ncompptr ) const;
 
@@ -140,7 +155,7 @@ struct SelfAttCalc
   double srcVolumumetricActivity;
 
   const SandiaDecay::Nuclide *nuclide;
-};//struct SelfAttCalc
+};//struct DistributedSrcCalc
 
 
 
@@ -163,9 +178,7 @@ class PointSourceShieldingChi2Fcn
 // ...
 //if material 0 normal material (if Material* is non-NULL pointer)
 //    -Material Thickness
-//#if( USE_CONSISTEN_NUM_SHIELDING_PARS )
-//  -ignored parameter here
-//#endif
+//    -ignored parameter here
 //else if generic material (if Material* is NULL)
 //    -atomic number
 //    -areal density  (in units of PhysicalUnits,
@@ -361,25 +374,44 @@ public:
                    const std::vector<double> &params ) const;
   size_t nuclideIndex( const SandiaDecay::Nuclide *nuclide ) const;
 
-  //isActivityDefinedFromShielding(....): returns whether or not one of the
-  //  shieldings has 'nuclide' as a source.
-  bool isActivityDefinedFromShielding( const SandiaDecay::Nuclide *nuc ) const;
-
-  //activityDefinedFromShielding(): returns activity of nuclide for the
-  //  thicknesses of shieldings specified by params.  If none of the shieldings
-  //  contain this nuclide as a source, then 0.0 will be returned.
-  double activityDefinedFromShielding( const SandiaDecay::Nuclide *nuclide,
+  /** Returns whether or not the nuclide is a self-attenuating source. */
+  bool isSelfAttenSource( const SandiaDecay::Nuclide *nuc ) const;
+  
+  /** Returns whether or not the nuclide is a trace source. */
+  bool isTraceSource( const SandiaDecay::Nuclide *nuc ) const;
+  
+  /** Returns the trace source activity type for a nuc.
+   
+   Throws exception if nuc is not a trace source.
+   */
+  GammaInteractionCalc::TraceActivityType traceSourceActivityType(
+                                                          const SandiaDecay::Nuclide *nuc ) const;
+  
+  /** Returns whether or not the nuclide is a self-attenuating OR trace source. */
+  bool isVolumetricSource( const SandiaDecay::Nuclide *nuc ) const;
+  
+  
+  /** Returns the activity of the specified nuclide that is a self-attenuating source.
+   
+   Throws exception if nuclide is nullptr, or not a self-attenuating source.
+   */
+  double activityOfSelfAttenSource( const SandiaDecay::Nuclide *nuclide,
                                       const std::vector<double> &params ) const;
+  
+  /** Returns the total activity of the specified nuclide that is a trace source.
+   
+   Note: the #activity function returns the display activity (so either total, per cc, or per g) for the trace sources.
+   
+   Throws exception if nuclide is nullptr, or not a trace source.
+   */
+  double totalActivityOfTraceSource( const SandiaDecay::Nuclide *nuclide,
+                                   const std::vector<double> &params ) const;
   
   size_t numNuclides() const;
   size_t numMaterials() const;
   
   bool isSpecificMaterial( int materialNum ) const;
   bool isGenericMaterial( int materialNum ) const;
-
-  bool hasSelfAttenuatingSource() const;
-  bool materialIsSelfAttenuatingSource( int materialNum ) const;
-  std::vector<const SandiaDecay::Nuclide *> sourceNulcidesForShielding( int materialNum ) const;
   
   //material(): will throw exception if invalid materialNum, and will return
   //  NULL if a generic material.
@@ -402,7 +434,7 @@ public:
 
   const std::vector<PeakDef> &peaks() const;
 
-  static void selfShieldingIntegration( SelfAttCalc &calculator );
+  static void selfShieldingIntegration( DistributedSrcCalc &calculator );
 
 protected:
   

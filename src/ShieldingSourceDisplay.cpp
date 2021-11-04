@@ -133,6 +133,9 @@ const size_t ShieldingSourceDisplay::sm_max_model_fit_time_ms = 120*1000;
 const size_t ShieldingSourceDisplay::sm_model_update_frequency_ms = 2000;
 
 
+using GammaInteractionCalc::TraceActivityType;
+
+
 namespace
 {
   const std::string ns_no_uncert_info_txt = "Perform model fit to update and get uncertainties.";
@@ -192,28 +195,6 @@ namespace
   };//class PeakCsvResource : public Wt::WResource
   
 }//namespace
-
-
-const char *to_str( TraceActivityType type )
-{
-  switch( type )
-  {
-    case TraceActivityType::TotalActivity:
-      return "TotalActivity";
-      
-    case TraceActivityType::ActivityPerCm3:
-      return "ActivityPerCm3";
-      
-    case TraceActivityType::ActivityPerGram:
-      return "ActivityPerGram";
-      
-    case TraceActivityType::NumTraceActivityType:
-      return "NumTraceActivityType";
-  }//switch( type )
-  
-  return "InvalidTraceActivityType";
-}//to_str( TraceActivityType )
-
 
 
 
@@ -331,9 +312,21 @@ double SourceFitModel::activityUncert( int nuc ) const
 
 bool SourceFitModel::fitActivity( int nuc ) const
 {
-  if( nuc<0 || nuc>=static_cast<int>(m_nuclides.size()) )
+  if( (nuc < 0) || (nuc >= static_cast<int>(m_nuclides.size())) )
     throw std::runtime_error( "SourceFitModel: called with invalid index" );
-  return m_nuclides[nuc].fitActivity;
+  
+  switch( m_nuclides[nuc].sourceType )
+  {
+    case ModelSourceType::Point:
+    case ModelSourceType::Trace:
+      return m_nuclides[nuc].fitActivity;
+      
+    case ModelSourceType::Intrinsic:
+      return false;
+  }//switch( m_nuclides[nuc].sourceType )
+  
+  assert( 0 );
+  return false;
 }//bool fitActivity( int nuc ) const
 
 
@@ -1078,13 +1071,29 @@ Wt::WFlags<Wt::ItemFlag> SourceFitModel::flags( const Wt::WModelIndex &index ) c
     case kIsotope:
       break;
     case kActivity:
-      if( iso.shieldingIsSource )
-        return WFlags<ItemFlag>();
-      return WFlags<ItemFlag>(Wt::ItemIsEditable);
+      switch( iso.sourceType )
+      {
+        case ModelSourceType::Point:
+          return WFlags<ItemFlag>(Wt::ItemIsEditable);
+          
+        case ModelSourceType::Intrinsic:
+        case ModelSourceType::Trace:
+          return WFlags<ItemFlag>();
+      }//switch( iso.sourceType )
+      break;
+      
     case kFitActivity:
-      if( iso.shieldingIsSource )
-        return WFlags<ItemFlag>();
-      return WFlags<ItemFlag>(ItemIsUserCheckable);
+      switch( iso.sourceType )
+      {
+        case ModelSourceType::Point:
+          return WFlags<ItemFlag>(ItemIsUserCheckable);
+          
+        case ModelSourceType::Intrinsic:
+        case ModelSourceType::Trace:
+          return WFlags<ItemFlag>();
+      }//switch( iso.sourceType )
+      break;
+      
     case kAge:
 //      if( iso.shieldingIsSource )
 //        return WFlags<ItemFlag>();
@@ -1277,9 +1286,15 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
 
     case kFitActivity:
     {
-      if( isof.shieldingIsSource )
-        return boost::any();
-      return boost::any( isof.fitActivity );
+      switch( isof.sourceType )
+      {
+        case ModelSourceType::Point:
+          return boost::any( isof.fitActivity );
+          
+        case ModelSourceType::Intrinsic:
+        case ModelSourceType::Trace:
+          return boost::any();
+      }//switch( iso.sourceType )
     }//case kFitActivity:
 
     case kAge:
@@ -1453,7 +1468,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
     if( !index.isValid() )
       return false;
 
-    if( role!=Wt::EditRole && role!=Wt::CheckStateRole )
+    if( (role != Wt::EditRole) && (role != Wt::CheckStateRole) )
       return false;
 
     const int row = index.row();
@@ -1477,18 +1492,18 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
       }//switch( column )
     }//if( value.empty() )
 #else
-    if( value.empty() && column!=kAgeUncertainty && column!=kActivityUncertainty )
+    if( value.empty() && (column != kAgeUncertainty) && (column != kActivityUncertainty) )
       return false;
 #endif  //#if( INCLUDE_ANALYSIS_TEST_SUITE )
     
     
-    if( row<0 || column<0 || column>=kNumColumns || row>=nrows )
+    if( (row < 0) || (column < 0) || (column >= kNumColumns) || (row >= nrows) )
       return false;
     
-    if( role==Wt::CheckStateRole && column!=kFitActivity && column!=kFitAge )
+    if( (role == Wt::CheckStateRole) && (column != kFitActivity) && (column != kFitAge) )
       return false;
     
-    if( role==Wt::EditRole && (column==kFitActivity || column==kFitAge) )
+    if( (role == Wt::EditRole) && ((column==kFitActivity) || (column==kFitAge)) )
       return false;
 
     const WString txt_val = asString( value );
@@ -5856,6 +5871,8 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
     const double activity = select->traceSourceTotalActivity(nuc) / PhysicalUnits::curie;
     snprintf( buffer, sizeof(buffer), "%1.8E ci", activity );
     m_sourceModel->setData( index, string(buffer) );
+    
+    return;
   }//if( select->isTraceSourceForNuclide(nuc) )
   
   
@@ -5908,10 +5925,9 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   
   if( IsNan(activity) || IsInf(activity) )
   {
-    stringstream msg;
-    msg << "An invalid activity was calculated for " << nuclide->symbol
-        << ", other results may be invalid";
-    passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+    string msg = "An invalid activity was calculated for " + nuclide->symbol
+                 + ", other results may be invalid";
+    passMessage( msg, "", WarningWidget::WarningMsgHigh );
     return;
   }//if( IsNan(p.second) || IsInf(p.second) )
   
@@ -6046,7 +6062,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
 
   //Get the shieldings and materials
   shieldings.clear();
-  vector<PointSourceShieldingChi2Fcn::MaterialAndSources> materials;
+  vector<PointSourceShieldingChi2Fcn::ShieldingInfo> materials;
 
   for( WWidget *widget : m_shieldingSelects->children() )
   {
@@ -6060,16 +6076,21 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       if( !mat && !select->isGenericMaterial() )
         mat = m_materialDB->material( "void" );
 
-      PointSourceShieldingChi2Fcn::MaterialAndSources materialAndSrc;
-      materialAndSrc.first = mat;
-      materialAndSrc.second = select->nuclidesToUseAsSources();
+      
+      PointSourceShieldingChi2Fcn::ShieldingInfo materialAndSrc;
+      materialAndSrc.material = mat;
+      materialAndSrc.self_atten_sources = select->nuclidesToUseAsSources();
+      
+      for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
+      {
+        materialAndSrc.trace_sources.push_back( {nuc, select->traceSourceType(nuc)} );
+      }//for( loop over trace source nuclides )
 
       materials.push_back( materialAndSrc );
     }//if( select )
   }//for( WWidget *widget : m_shieldingSelects->children() )
-
-  We need to identify trace sources here
   
+
   std::shared_ptr<const DetectorPeakResponse> detector;
   if( m_specViewer->measurment(SpecUtils::SpectrumType::Foreground) )
     detector = m_specViewer->measurment(SpecUtils::SpectrumType::Foreground)->detector();
@@ -6142,13 +6163,16 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
           
           if( select->isTraceSourceForNuclide(nuclide) )
           {
-            // TODO: add an assert here
             activity = select->traceSourceDisplayActivity(nuclide)
                                           / PointSourceShieldingChi2Fcn::sm_activityUnits;
             numShieldingsTraceSrcFor += 1;
             
             fitAct = select->fitTraceSourceActivity(nuclide);
-          }
+            
+            // Even though it doesnt really matter, lets try to keep the model in sync with trace
+            //  widget
+            assert( fitAct == m_sourceModel->fitActivity(nucn) );
+          }//if( this shielding has the nuclide as a trace source )
         }//for( WWidget *w : m_shieldingSelects->children() )
         
         assert( numShieldingsTraceSrcFor == 1 );
@@ -6356,9 +6380,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
         inputPrams.Add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), 0, 1000.0*PhysicalUnits::m );
       else
         inputPrams.Add( name + "_thickness", thickness );
-#if( USE_CONSISTEN_NUM_SHIELDING_PARS )
       inputPrams.Add( name + "_dummyshielding", 0.0 );
-#endif
     }//if( generic material ) / else
   }//for( size_t i = 0; i < shieldings.size(); ++i )
 
@@ -6593,89 +6615,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
   
   try
   {
-    const size_t nnucs = m_currentFitFcn->numNuclides();
-    
-    //Go through and set the ages and activities fit for
-    for( size_t nucn = 0; nucn < nnucs; ++nucn )
-    {
-      const SandiaDecay::Nuclide *nuc = m_currentFitFcn->nuclide( int(nucn) );
-      
-      const double age = m_currentFitFcn->age( nuc, paramValues );
-      //XXX - if multiple shieldings or point sources have this isotope, then
-      //      this activity below will be the sum of them
-      const double activity = m_currentFitFcn->activity( nuc, paramValues );
-      
-      char actStr[64], ageStr[64];
-      snprintf( actStr, sizeof(actStr), "%f bq", (activity/PhysicalUnits::becquerel) );
-      snprintf( ageStr, sizeof(ageStr), "%f s", (age/PhysicalUnits::second) );
-      
-      //      cerr << "activity=" << activity << "-->" << actStr << "-->" << PhysicalUnits::stringToActivity(actStr) << endl;
-      
-      const int ison = m_sourceModel->row( nuc );
-      WModelIndex ageIndex = m_sourceModel->index( ison, SourceFitModel::kAge );
-      WModelIndex ageUncerIndex = m_sourceModel->index( ison, SourceFitModel::kAgeUncertainty );
-      WModelIndex actIndex = m_sourceModel->index( ison, SourceFitModel::kActivity );
-      WModelIndex actUncertIndex = m_sourceModel->index( ison, SourceFitModel::kActivityUncertainty );
-      
-      if( m_sourceModel->fitAge(ison) )
-      {
-        bool success = m_sourceModel->setData( ageIndex, WString(ageStr) );
-        if( !success )
-        {
-          stringstream msg;
-          msg << "An invalid age was calculated for " << nuc->symbol
-          << ", other results may be invalid to";
-          passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
-        }//if( IsNan(p.second) || IsInf(p.second) )
-        
-        const double ageUncert = m_currentFitFcn->age( nuc, paramErrors );
-        
-        char ageUncertStr[64];
-        snprintf( ageUncertStr, sizeof(ageUncertStr), "%f s", (ageUncert/PhysicalUnits::second) );
-        m_sourceModel->setData( ageUncerIndex, WString(ageUncertStr) );
-      }else if( m_sourceModel->ageUncert(ison) >= 0.0 )
-      {
-        m_sourceModel->setData( ageUncerIndex, boost::any() );
-      }//fit( age ) / else
-      
-      if( m_sourceModel->fitActivity(ison) )
-      {
-        bool success = m_sourceModel->setData( actIndex, WString(actStr) );
-        
-        if( !success )
-        {
-          const string msg = "An invalid activity was calculated for " + nuc->symbol
-                             + ", other results may be invalid to";
-          passMessage( msg, "", WarningWidget::WarningMsgHigh );
-        }//if( IsNan(p.second) || IsInf(p.second) )
-        
-        try
-        {
-          const double activityUncert = m_currentFitFcn->activityUncertainty( nuc, paramValues, paramErrors );
-          
-          char actUncertStr[64];
-          snprintf( actUncertStr, sizeof(actUncertStr), "%f bq", (activityUncert/PhysicalUnits::becquerel) );
-          
-          success = m_sourceModel->setData( actUncertIndex, WString(actUncertStr) );
-          if( !success )
-          {
-            const string msg = "Calculated activity uncertainty for " + nuc->symbol
-                                + " is invalid, other results may be invalid to.";
-            passMessage( msg, "", WarningWidget::WarningMsgHigh );
-          }//if( IsNan(p.second) || IsInf(p.second) )
-        }catch( std::exception &e )
-        {
-          const string msg = "Unexpected error calculating activity uncertainty for " + nuc->symbol
-                             + ": " + string(e.what());
-          passMessage( msg, "", WarningWidget::WarningMsgHigh );
-        }
-      }else if( m_sourceModel->activityUncert(ison) >= 0.0 )
-      {
-        m_sourceModel->setData( actUncertIndex, boost::any() );
-      }
-    }//for( int ison = 0; ison < niso; ++ison )
-    
-    //    double radius = 0.0;
+    // We'll update shielding thicknesses first, as this could affect setting trace source values
     const int nshieldings = static_cast<int>(shieldings.size());
     for( int i = 0; i < nshieldings; ++i )
     {
@@ -6782,6 +6722,119 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         << endl << endl;
       }//if( select->fitForMassFractions() )
     }//for( int i = 0; i < nshieldings; ++i )
+    
+    
+    
+    // Now set activities and ages
+    const size_t nnucs = m_currentFitFcn->numNuclides();
+    
+    //Go through and set the ages and activities fit for
+    for( size_t nucn = 0; nucn < nnucs; ++nucn )
+    {
+      const SandiaDecay::Nuclide *nuc = m_currentFitFcn->nuclide( int(nucn) );
+      
+      const double age = m_currentFitFcn->age( nuc, paramValues );
+      const double activity = m_currentFitFcn->activity( nuc, paramValues );
+      
+      char actStr[64], ageStr[64];
+      snprintf( actStr, sizeof(actStr), "%f bq", (activity/PhysicalUnits::becquerel) );
+      snprintf( ageStr, sizeof(ageStr), "%f s", (age/PhysicalUnits::second) );
+      
+      //      cerr << "activity=" << activity << "-->" << actStr << "-->" << PhysicalUnits::stringToActivity(actStr) << endl;
+      
+      const int ison = m_sourceModel->row( nuc );
+      WModelIndex ageIndex = m_sourceModel->index( ison, SourceFitModel::kAge );
+      WModelIndex ageUncerIndex = m_sourceModel->index( ison, SourceFitModel::kAgeUncertainty );
+      WModelIndex actIndex = m_sourceModel->index( ison, SourceFitModel::kActivity );
+      WModelIndex actUncertIndex = m_sourceModel->index( ison, SourceFitModel::kActivityUncertainty );
+      
+      if( m_sourceModel->fitAge(ison) )
+      {
+        bool success = m_sourceModel->setData( ageIndex, WString(ageStr) );
+        if( !success )
+        {
+          stringstream msg;
+          msg << "An invalid age was calculated for " << nuc->symbol
+          << ", other results may be invalid to";
+          passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+        }//if( IsNan(p.second) || IsInf(p.second) )
+        
+        const double ageUncert = m_currentFitFcn->age( nuc, paramErrors );
+        
+        char ageUncertStr[64];
+        snprintf( ageUncertStr, sizeof(ageUncertStr), "%f s", (ageUncert/PhysicalUnits::second) );
+        m_sourceModel->setData( ageUncerIndex, WString(ageUncertStr) );
+      }else if( m_sourceModel->ageUncert(ison) >= 0.0 )
+      {
+        m_sourceModel->setData( ageUncerIndex, boost::any() );
+      }//fit( age ) / else
+      
+      if( m_sourceModel->fitActivity(ison) )
+      {
+        bool success = false;
+        
+        switch( m_sourceModel->sourceType(ison) )
+        {
+          case ModelSourceType::Point:
+            success = m_sourceModel->setData( actIndex, WString(actStr) );
+            break;
+            
+          case ModelSourceType::Intrinsic:
+            assert( 0 );
+            success = false;
+            break;
+            
+          case ModelSourceType::Trace:
+          {
+            for( WWidget *widget : m_shieldingSelects->children() )
+            {
+              ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
+              
+              if( !select || !select->isTraceSourceForNuclide(nuc) )
+                continue;
+                
+              const double total_activity = m_currentFitFcn->totalActivityOfTraceSource(nuc,paramValues);
+              
+              select->setTraceSourceTotalActivity( nuc, total_activity );
+              success = true;
+            }//for( WWidget *widget : m_shieldingSelects->children() )
+            break;
+          }//case ModelSourceType::Trace:
+        }//switch( m_sourceModel->sourceType(ison) )
+        
+        if( !success )
+        {
+          const string msg = "An invalid activity was calculated for " + nuc->symbol
+                             + ", other results may be invalid to";
+          passMessage( msg, "", WarningWidget::WarningMsgHigh );
+        }//if( we failed to set activity value. )
+        
+        try
+        {
+          const double activityUncert = m_currentFitFcn->activityUncertainty( nuc, paramValues, paramErrors );
+          
+          char actUncertStr[64];
+          snprintf( actUncertStr, sizeof(actUncertStr), "%f bq", (activityUncert/PhysicalUnits::becquerel) );
+          
+          success = m_sourceModel->setData( actUncertIndex, WString(actUncertStr) );
+          if( !success )
+          {
+            const string msg = "Calculated activity uncertainty for " + nuc->symbol
+                                + " is invalid, other results may be invalid to.";
+            passMessage( msg, "", WarningWidget::WarningMsgHigh );
+          }//if( IsNan(p.second) || IsInf(p.second) )
+        }catch( std::exception &e )
+        {
+          const string msg = "Unexpected error calculating activity uncertainty for " + nuc->symbol
+                             + ": " + string(e.what());
+          passMessage( msg, "", WarningWidget::WarningMsgHigh );
+        }
+      }else if( m_sourceModel->activityUncert(ison) >= 0.0 )
+      {
+        m_sourceModel->setData( actUncertIndex, boost::any() );
+      }
+    }//for( int ison = 0; ison < niso; ++ison )
+    
     
     updateChi2ChartActual();
     m_chi2ChartNeedsUpdating = false;
@@ -6913,8 +6966,8 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     }//for( auto &par : inputPrams->Parameters() )
     
     
-    // If we have a self-attenuating source, computation time becomes pretty large, so we wont do
-    //  the detailed AN scan in this case
+    // If we have a self-attenuating or trace source, computation time becomes pretty large, so we
+    //  wont do the detailed AN scan in this case
     //  TODO: check if we are fitting anything related to self-attenuating materials dimensions, and
     //        if not, dont reject doing the AN scan.
     if( !fit_generic_an.empty() )
@@ -6922,7 +6975,7 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
       for( size_t i = 0; i < chi2Fcn->numNuclides(); ++i )
       {
         const SandiaDecay::Nuclide * const nuc = chi2Fcn->nuclide( static_cast<int>(i) );
-        if( chi2Fcn->isActivityDefinedFromShielding( nuc ) )
+        if( chi2Fcn->isVolumetricSource(nuc) )
           fit_generic_an.clear();
       }
     }//if( check if we also have a self-attenuating source )
@@ -7309,21 +7362,50 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       const double ageUncert = chi2Fcn->age( nuc, errors );
       const string ageStr = PhysicalUnits::printToBestTimeUnits( age, 2 );
       const string ageUncertStr = PhysicalUnits::printToBestTimeUnits( ageUncert, 2 );
-      
-      
-      const bool isShielding = chi2Fcn->isActivityDefinedFromShielding(nuc);
+  
+      string act_postfix = "", trace_total = "";
+      if( chi2Fcn->isTraceSource(nuc) )
+      {
+        const double total_act = chi2Fcn->totalActivityOfTraceSource(nuc,params);
+        trace_total = "Total activity " + PhysicalUnits::printToBestActivityUnits( total_act, 2, useCi ) + ", ";
+        
+        switch( chi2Fcn->traceSourceActivityType(nuc) )
+        {
+          case TraceActivityType::TotalActivity:
+            trace_total = "";
+            break;
+            
+          case TraceActivityType::ActivityPerCm3:
+            act_postfix = " per cm3";
+            break;
+            
+          case GammaInteractionCalc::TraceActivityType::ActivityPerGram:
+            act_postfix = " per gram shielding";
+            break;
+            
+          case GammaInteractionCalc::TraceActivityType::NumTraceActivityType:
+            assert(0);
+            break;
+        }//switch( chi2Fcn->traceSourceActivityType(nuc) )
+      }//if( chi2Fcn->isTraceSource(nuc) )
       
       stringstream msg;
-      msg << nuc->symbol << " fit activity " << actStr << " (mass: " << massStr
-      << ") with uncertainty " << actUncertStr << " ("
-      << floor(0.5 + 10000*actUncert/act)/100.0 << "%)";
+      msg << nuc->symbol << " fit activity " << actStr << act_postfix
+          << " (" << trace_total << nuc->symbol << " mass: " << massStr
+          << ") with uncertainty " << actUncertStr << " ("
+          << floor(0.5 + 10000*actUncert/act)/100.0 << "%)";
       
       if( ageUncert <= DBL_EPSILON )
         msg << " at assumed age " << ageStr;
       else
         msg << " with age " << ageStr << "+- " << ageUncertStr;
       
-      msg << (isShielding ? ", a self attenuating source." : ".");
+      if( chi2Fcn->isSelfAttenSource(nuc) )
+        msg << ", a self attenuating source";
+      else if( chi2Fcn->isTraceSource(nuc) )
+        msg << ", a trace source";
+  
+      msg << ".";
       
       m_calcLog.push_back( msg.str() );
     }//if( nuc )

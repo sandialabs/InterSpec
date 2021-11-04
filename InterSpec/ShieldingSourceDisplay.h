@@ -146,17 +146,6 @@ enum class ModelSourceType : int
 };//enum class ModelSourceType
 
 
-enum class TraceActivityType : int
-{
-  TotalActivity,
-  ActivityPerCm3,
-  ActivityPerGram, //Needs to come last as wont be availble if
-  //ActivityPPM,
-  NumTraceActivityType
-};//enum class TraceActivityType
-
-const char *to_str( TraceActivityType type );
-
 
 
 
@@ -244,6 +233,10 @@ public:
   const SandiaDecay::Nuclide *nuclide( int nuc ) const;
   double activity( int nuc ) const;
   double activityUncert( int nuc ) const;
+  
+  /** Returns m_nuclides[nuc].fitActivity for point and trace sources, and always false for self-atten sources; note that
+   this is different than data( {row,kFitActivity} ) which only returns a non-empty value for point sources.
+   */
   bool fitActivity( int nuc ) const;
   
   //age(): returns IsoFitStruct::age, which is marked age for this nuclide,
