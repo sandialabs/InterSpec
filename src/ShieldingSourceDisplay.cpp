@@ -2393,6 +2393,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_chi2Model( nullptr ),
     m_chi2Graphic( nullptr ),
     m_multiIsoPerPeak( nullptr ),
+    m_attenForAir( nullptr ),
     m_backgroundPeakSub( nullptr ),
     m_sameIsotopesAge( nullptr ),
     m_showChiOnChart( nullptr ),
@@ -2723,25 +2724,38 @@ if (m_specViewer->isSupportFile())
   lineDiv->setToolTip( tooltip );
   m_multiIsoPerPeak->setChecked();
   m_multiIsoPerPeak->checked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
+  m_multiIsoPerPeak->unChecked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   
-  lineDiv = new WContainerWidget(  );
+  lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, 2, 0 );
+  m_attenForAir = new WCheckBox( "Attenuate for air", lineDiv );
+  tooltip = "When checked attenuation due to air between the source, or outer shielding, and"
+            " detector will be accounted for in the calculations.";
+  lineDiv->setToolTip( tooltip );
+  m_attenForAir->setChecked();
+  m_attenForAir->checked().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
+  m_attenForAir->unChecked().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
+  
+  
+  lineDiv = new WContainerWidget();
+  optionsLayout->addWidget( lineDiv, 3, 0 );
   m_backgroundPeakSub = new WCheckBox( "Subtract Background Peaks", lineDiv );
   tooltip = "This forces the isotopes of a element to all be the same age in"
             " the fit.";
   lineDiv->setToolTip( tooltip );
   m_backgroundPeakSub->checked().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
+  m_backgroundPeakSub->unChecked().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
   
   
-  lineDiv = new WContainerWidget(  );
-  optionsLayout->addWidget( lineDiv, 3, 0 );
+  lineDiv = new WContainerWidget();
+  optionsLayout->addWidget( lineDiv, 4, 0 );
   m_sameIsotopesAge = new WCheckBox( "Isotopes of same element same age", lineDiv );
   tooltip = "Enforce isotopes for the same element should all have the same "
             "age.";
   lineDiv->setToolTip( tooltip );
+  m_sameIsotopesAge->setChecked( isotopesHaveSameAge );
   m_sameIsotopesAge->checked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
   m_sameIsotopesAge->unChecked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
-  m_sameIsotopesAge->setChecked( isotopesHaveSameAge );
 
   
   WContainerWidget *detectorDiv = new WContainerWidget();
@@ -3739,6 +3753,12 @@ void ShieldingSourceDisplay::multiNucsPerPeakChanged()
 }//void multiNucsPerPeakChanged()
 
 
+void ShieldingSourceDisplay::attenuateForAirChanged()
+{
+  updateChi2Chart();
+}
+
+
 void ShieldingSourceDisplay::backgroundPeakSubChanged()
 {
   if( m_backgroundPeakSub->isChecked() )
@@ -3947,9 +3967,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
     }//if( m_logDiv )
     
     const vector< tuple<double,double,double,Wt::WColor,double> > chis
-                      = chi2Fcn->energy_chi_contributions( params, mixcache,
-                                                m_multiIsoPerPeak->isChecked(),
-                                                &m_calcLog );
+                               = chi2Fcn->energy_chi_contributions( params, mixcache, &m_calcLog );
     
     m_showLog->setDisabled( m_calcLog.empty() );
 
@@ -5206,7 +5224,7 @@ bool ShieldingSourceDisplay::userChangedDuringCurrentForeground() const
 
 void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
-  const rapidxml::xml_node<char> *muti_iso_node, *back_sub_node,
+  const rapidxml::xml_node<char> *muti_iso_node, *atten_air_node, *back_sub_node,
                                  *peaks_node, *isotope_nodes, *shieldings_node,
                                  *dist_node, *same_age_node, *chart_disp_node;
   const rapidxml::xml_attribute<char> *attr;
@@ -5219,6 +5237,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
                         + std::string(base_node->name(),base_node->name()+base_node->name_size()) + "'" );
   
   muti_iso_node   = base_node->first_node( "MultipleIsotopesPerPeak", 23 );
+  atten_air_node  = base_node->first_node( "AttenuateForAir", 15 );
   back_sub_node   = base_node->first_node( "BackgroundPeakSubtraction", 25 );
   same_age_node   = base_node->first_node( "SameAgeIsotopes", 15 );
   chart_disp_node = base_node->first_node( "ShowChiOnChart", 14 );
@@ -5231,7 +5250,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     throw runtime_error( "Missing necessary XML node" );
   
   int version;
-  bool muti_iso, back_sub, same_age = false, show_chi_on_chart = true;
+  bool muti_iso, back_sub, air_atten = true, same_age = false, show_chi_on_chart = true;
   
   attr = base_node->first_attribute( "version", 7 );
   if( !attr || !attr->value() || !(stringstream(attr->value())>>version) )
@@ -5248,16 +5267,21 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
       || !(stringstream(muti_iso_node->value()) >> muti_iso) )
     throw runtime_error( "Invalid or missing MultipleIsotopesPerPeak node" );
   
+  if( atten_air_node && atten_air_node->value() ) //not a mandatory element
+  {
+    if( !(stringstream(atten_air_node->value()) >> air_atten) )
+      throw runtime_error( "Invalid AttenuateForAir node" );
+  }//if( atten_air_node && atten_air_node->value() )
   
   if( same_age_node && same_age_node->value() ) //not a mandatory element
   {
-    if( !(stringstream(muti_iso_node->value()) >> same_age) )
+    if( !(stringstream(same_age_node->value()) >> same_age) )
       throw runtime_error( "Invalid SameAgeIsotopes node" );
   }//if( same_age_node && same_age_node->value() )
 
   if( chart_disp_node && chart_disp_node->value() )
   {
-    if( !(stringstream(muti_iso_node->value()) >> show_chi_on_chart) )
+    if( !(stringstream(chart_disp_node->value()) >> show_chi_on_chart) )
       throw runtime_error( "Invalid ShowChiOnChart node" );
   }
   
@@ -5273,6 +5297,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   reset();
   
   m_multiIsoPerPeak->setChecked( muti_iso );
+  m_attenForAir->setChecked( air_atten );
   m_backgroundPeakSub->setChecked( back_sub );
   m_sameIsotopesAge->setChecked( same_age );
   m_showChiOnChart->setChecked( show_chi_on_chart );
@@ -5318,6 +5343,11 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   dist_node = doc->allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( dist_node );
 
+  name = "AttenuateForAir";
+  value = m_attenForAir->isChecked() ? "1" : "0";
+  dist_node = doc->allocate_node( rapidxml::node_element, name, value );
+  base_node->append_node( dist_node );
+  
   name = "BackgroundPeakSubtraction";
   value = m_backgroundPeakSub->isChecked() ? "1" : "0";
   dist_node = doc->allocate_node( rapidxml::node_element, name, value );
@@ -5520,9 +5550,8 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     const vector<double> params = inputPrams.Params();
     const vector<double> errors = inputPrams.Errors();
     GammaInteractionCalc::PointSourceShieldingChi2Fcn::NucMixtureCache mixcache;
-    const bool multy_iso = m_multiIsoPerPeak->isChecked();
     const vector< tuple<double,double,double,WColor,double> > chis
-     = chi2Fcn->energy_chi_contributions( params, mixcache, multy_iso, nullptr );
+                                   = chi2Fcn->energy_chi_contributions( params, mixcache, nullptr );
     
     if( chis.size() )
     {
@@ -6125,10 +6154,11 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   if( m_specViewer->measurment(SpecUtils::SpectrumType::Foreground) )
     detector = m_specViewer->measurment(SpecUtils::SpectrumType::Foreground)->detector();
   
-  std::shared_ptr<GammaInteractionCalc::PointSourceShieldingChi2Fcn> answer
-    = std::make_shared<GammaInteractionCalc::PointSourceShieldingChi2Fcn>(
-                       distance, liveTime, peaks, detector, materials,
-                       m_multiIsoPerPeak->isChecked() );
+  const bool multiIsoPerPeak = m_multiIsoPerPeak->isChecked();
+  const bool attenForAir = m_attenForAir->isChecked();
+  
+  auto answer = std::make_shared<GammaInteractionCalc::PointSourceShieldingChi2Fcn>( distance,
+                              liveTime, peaks, detector, materials, multiIsoPerPeak, attenForAir );
 
   //I think num_fit_params will end up same as inputPrams.VariableParameters()
   size_t num_fit_params = 0;

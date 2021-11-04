@@ -670,6 +670,7 @@ public:
                                            int firstRow, int lastRow );
 
   void multiNucsPerPeakChanged();
+  void attenuateForAirChanged();
   void backgroundPeakSubChanged();
   void sameIsotopesAgeChanged();
   void showGraphicTypeChanged();
@@ -748,6 +749,7 @@ protected:
   
 
   Wt::WCheckBox *m_multiIsoPerPeak;
+  Wt::WCheckBox *m_attenForAir;
   Wt::WCheckBox *m_backgroundPeakSub;
   Wt::WCheckBox *m_sameIsotopesAge;
   SwitchCheckbox *m_showChiOnChart;

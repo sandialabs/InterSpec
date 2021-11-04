@@ -451,7 +451,8 @@ public:
       m_activityInput->setText( txt );
     }// try / catch
     
-    m_activityUpdated.emit( m_currentNuclide, m_currentTotalActivity );
+    if( m_currentNuclide )
+      m_activityUpdated.emit( m_currentNuclide, m_currentTotalActivity );
   }//void handleUserActivityChange()
   
   /** Returns total activity, or activity per gram, or activity per cm3, based on user input*/
@@ -1797,7 +1798,6 @@ void ShieldingSelect::handleTraceSourceNuclideChange( TraceSrcDisplay *changedSr
 
 void ShieldingSelect::handleTraceSourceActivityChange( const SandiaDecay::Nuclide *nuc, const double activity )
 {
-  // blah blah blah - anything else to do here???
   m_activityFromThicknessNeedUpdating.emit( this, nuc );
 }
 

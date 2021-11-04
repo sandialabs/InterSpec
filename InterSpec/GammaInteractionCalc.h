@@ -79,6 +79,13 @@ double transmition_length_coefficient( const Material *material, float energy );
 double transmition_coefficient_material( const Material *material, float energy,
                                 float length );
 
+/** A convenience call to #transmition_coefficient_material that uses a static (compile-time defined) definition of air. */
+double transmission_coefficient_air( float energy, float length );
+
+/** Similar to #transmission_coefficient_air, but not including length. */
+double transmission_length_coefficient_air( float energy );
+
+
 //Returned in units of [Length]^2/[mass], so that
 //  exp( -mass_attenuation_coef * areal_density )
 //  gives you the probability a gamma of given energy will go through the
@@ -148,6 +155,18 @@ struct DistributedSrcCalc
   size_t m_sourceIndex;
   double m_detectorRadius;
   double m_observationDist;
+  
+  /** Whether to account for attenuation in air.  If you want this, you must also set m_airTransLenCoef to the appropriate value. */
+  bool m_attenuateForAir;
+  
+  /** The length attenuation factor for air at the energy of this object.
+   
+   If you want attenuation in air you must set this value when you set m_attenuateForAir to true.
+   
+   To get the attenuation from air using this factor you would do: exp( -m_airTransLenCoef * air_dist );
+   */
+  double m_airTransLenCoef;
+  
   std::vector<std::pair<double,double> > m_sphereRadAndTransLenCoef;
 
   double energy;
@@ -227,7 +246,8 @@ public:
                       const std::vector<PeakDef> &peaks,
                       std::shared_ptr<const DetectorPeakResponse> detector,
                       const std::vector<ShieldingInfo> &materials,
-                      bool allowMultipleNucsContribToPeaks );
+                      const bool allowMultipleNucsContribToPeaks,
+                      const bool attenuateForAir );
   virtual ~PointSourceShieldingChi2Fcn();
 
   /** Causes exception to be thrown if DoEval() is called afterwards. */
@@ -352,7 +372,6 @@ public:
   std::vector< std::tuple<double,double,double,Wt::WColor,double> > energy_chi_contributions(
                                   const std::vector<double> &x,
                                   NucMixtureCache &mixturecache,
-                                  const bool allow_multiple_iso_contri,
                                   std::vector<std::string> *info = 0 ) const;
 
   PointSourceShieldingChi2Fcn&	operator=( const PointSourceShieldingChi2Fcn & );
@@ -521,6 +540,8 @@ protected:
   MaterialToNucsMap m_nuclidesToFitMassFractionFor;
   
   bool m_allowMultipleNucsContribToPeaks;
+  
+  bool m_attenuateForAir;
   
   /** Wether to use SpecUtilsAsync::ThreadPool to calculate self-attenuation peak values.
    
