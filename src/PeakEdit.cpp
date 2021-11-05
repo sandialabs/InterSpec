@@ -372,8 +372,7 @@ void PeakEdit::init()
   m_applyColorForAllNuc = new WCheckBox( "dummy", row->elementAt(2) ); //"dummy" is needed or else later custom labels wont render; Wt bug?
   m_applyColorForAllNuc->setHidden( true );
   m_applyColorForAllNuc->setUnChecked();
-  m_applyColorForAllNuc->checked().connect( boost::bind( &PeakEdit::checkIfColorDirty, this ) );
-  m_applyColorForAllNuc->unChecked().connect( boost::bind( &PeakEdit::checkIfColorDirty, this ) );
+  m_applyColorForAllNuc->changed().connect( boost::bind( &PeakEdit::checkIfColorDirty, this ) );
   
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+5 );

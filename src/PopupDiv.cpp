@@ -1473,6 +1473,7 @@ void PopupDivMenuItem::toggleFromElectronMenu(bool checked)
   
   //For some reason the below doesnt seem to have an effect... not sure why yet
   cb->setChecked(checked);
+  cb->changed().emit();
   if( checked )
     cb->checked().emit();
   else

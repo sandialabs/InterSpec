@@ -158,8 +158,7 @@ public:
     
     m_allowFitting = new WCheckBox( "Fit activity value", this );
     m_allowFitting->addStyleClass( "SecondCol FourthRow SpanTwoCol" );
-    m_allowFitting->checked().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
-    m_allowFitting->unChecked().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
+    m_allowFitting->changed().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
       
     updateAvailableActivityTypes();
     updateAvailableIsotopes();
@@ -975,6 +974,11 @@ const SandiaDecay::Nuclide *SourceCheckbox::isotope() const
 Wt::EventSignal<> &SourceCheckbox::checked()
 {
   return m_useAsSourceCb->checked();
+}
+
+Wt::EventSignal<> &SourceCheckbox::changed()
+{
+  return m_useAsSourceCb->changed();
 }
 
 Wt::EventSignal<> &SourceCheckbox::unChecked()

@@ -60,6 +60,7 @@ public:
   virtual void setUnChecked();
   virtual void setChecked();
   
+  Wt::EventSignal<> &changed();
   Wt::EventSignal<> &checked();
   Wt::EventSignal<> &unChecked();
   

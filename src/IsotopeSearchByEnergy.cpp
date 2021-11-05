@@ -277,18 +277,15 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   WContainerWidget *sourceTypes = new WContainerWidget( searchConditions );
   sourceTypes->setStyleClass( "IsotopeSourceTypes" );
   m_gammas = new WCheckBox( "Gammas", sourceTypes );
-  m_gammas->checked().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
-  m_gammas->unChecked().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
+  m_gammas->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_gammas->setChecked();
 
   m_xrays = new WCheckBox( "X-rays", sourceTypes );
-  m_xrays->checked().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
-  m_xrays->unChecked().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
+  m_xrays->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_xrays->setChecked();
   
   m_reactions = new WCheckBox( "Reactions", sourceTypes );
-  m_reactions->checked().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
-  m_reactions->unChecked().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
+  m_reactions->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
 //  m_reactions->setChecked();
 
   
