@@ -107,6 +107,11 @@ void SwitchCheckbox::setChecked()
   m_cb->setChecked();
 }
 
+Wt::EventSignal<> &SwitchCheckbox::changed()
+{
+  return m_cb->changed();
+}
+
 Wt::EventSignal<> &SwitchCheckbox::checked()
 {
   return m_cb->checked();

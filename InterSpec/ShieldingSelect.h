@@ -112,6 +112,7 @@ public:
   bool useAsSource() const;
   void setUseAsSource( bool use );
 
+  Wt::EventSignal<> &changed();
   Wt::EventSignal<> &checked();
   Wt::EventSignal<> &unChecked();
   Wt::Signal<float> &massFractionChanged();

@@ -542,6 +542,7 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
     
     if( w )
     {
+      cb->changed().emit();
       if( value )
         cb->checked().emit();
       else

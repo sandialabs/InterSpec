@@ -577,8 +577,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
             " decay chain is in equilirium till that point.";
   HelpSystem::attachToolTipOn( m_promptLinesOnly, tooltip, showToolTips );
 //m_promptLinesOnly->setHiddenKeepsGeometry( true );  // causes display to function badly; why?
-  m_promptLinesOnly->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_promptLinesOnly->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+  m_promptLinesOnly->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_promptLinesOnly->hide();
   
   //m_layout->addWidget( m_promptLinesOnly, 3, 2, AlignMiddle );
@@ -681,14 +680,10 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   m_showGammas->setChecked();
   m_showXrays->setChecked();
-  m_showGammas->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_showGammas->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_showXrays->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_showXrays->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_showAlphas->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_showAlphas->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_showBetas->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_showBetas->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+  m_showGammas->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+  m_showXrays->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+  m_showAlphas->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+  m_showBetas->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   
   lowerInputLayout->addWidget( whatToShow, 3, 0 );
 

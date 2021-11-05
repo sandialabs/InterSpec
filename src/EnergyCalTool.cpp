@@ -756,8 +756,7 @@ public:
       disp->m_value->setValue( value );
       disp->m_fit->setChecked( (coefnum < 2) );
       
-      disp->m_fit->checked().connect( m_tool, &EnergyCalTool::updateFitButtonStatus );
-      disp->m_fit->unChecked().connect( m_tool, &EnergyCalTool::updateFitButtonStatus );
+      disp->m_fit->changed().connect( m_tool, &EnergyCalTool::updateFitButtonStatus );
       
       /* Note: if the user uses the up.down arrows in a NativeFloatSpinBox to change values, things
                get all messed up (new values get set via c++ messing  up current values, or the
