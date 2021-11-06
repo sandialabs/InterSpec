@@ -95,6 +95,7 @@ enum class ModelSourceType : int;
 
 namespace GammaInteractionCalc
 {
+  enum class GeometryType : int;
   enum class TraceActivityType : int;
 }//namespace GammaInteractionCalc
 
@@ -147,21 +148,34 @@ public:
                    ShieldingSourceDisplay *shieldSource,
                    Wt::WContainerWidget *parent = 0 );
   
-  
-  
-  
-  
   virtual ~ShieldingSelect();
 
+  /** Sets the current geometry.
+   If a generic material will have no visual effect.
+   */
+  void setGeometry( GammaInteractionCalc::GeometryType type );
+  
+  /** @returns the current geometry. */
+  GammaInteractionCalc::GeometryType geometry() const;
+  
   //isGenericMaterial(): tells you if the material is defined by areal density
   //  and atomic number, or if a pre-defined material
   bool isGenericMaterial() const;
 
-  //thickness(): returns dimension of [Length] in SandiaDecay/PhysicalUnits
-  //  units
-  //  throws std::runtime_error if a GenericMaterial
+  /** @returns sphere thickness in SandiaDecay/PhysicalUnits units.  Note that this is the thickness, and not the radius (which is the
+               sum of all thicknesses of ShieldingSelects before this one.
+  
+   Throws std::runtime_error if a GenericMaterial, non-spherical, or invalid text entered.
+   */
   double thickness() const;
 
+  
+  double cylindricalRadiusThickness() const;
+  double cylindricalLengthThickness() const;
+  double rectangularWidthThickness() const;
+  double rectangularHeightThickness() const;
+  double rectangularDepthThickness() const;
+  
   //atomicNumber(): returns values of 1.0 through 100.0
   //  throws std::runtime_error if not a GenericMaterial or unable to convert
   //  text into a number.  If text is blank returns 26.0.
@@ -173,20 +187,28 @@ public:
   //  text into a number.  If text is blank, returns 0.
   double arealDensity() const;
 
-  //fitThickness():
-  //  throws std::runtime_error if a GenericMaterial, or if m_forFitting==false
-  bool fitThickness() const;
-
   //fitAtomicNumber():
   //  throws std::runtime_error if not a GenericMaterial or unable to convert
   //  text into a number, or if m_forFitting==false
   bool fitAtomicNumber() const;
-
+  
   //fitArealDensity():
   //  throws std::runtime_error if not a GenericMaterial or unable to convert
   //  text into a number, or if m_forFitting==false
   bool fitArealDensity() const;
 
+  
+  //fitThickness():
+  //  throws std::runtime_error if a GenericMaterial, m_forFitting==false, or not spherical
+  bool fitThickness() const;
+
+  bool fitCylindricalRadiusThickness() const;
+  bool fitCylindricalLengthThickness() const;
+  
+  bool fitRectangularWidthThickness() const;
+  bool fitRectangularHeightThickness() const;
+  bool fitRectangularDepthThickness() const;
+  
   //material(): returns the currently selected Material.  Note that if the
   //  GenericMaterial is selected, will return NULL.
   //  If the material description has been changed, then a new Material will
@@ -223,7 +245,7 @@ public:
   //  of the isotope (with symbol given by second argument) needs updating
   //  to to a change in thickness or something
   Wt::Signal<ShieldingSelect *,const SandiaDecay::Nuclide *>
-                                           &activityFromThicknessNeedUpdating();
+                                           &activityFromVolumeNeedUpdating();
 
   //addingIsotopeAsSource(): Signal emitted when isotope is checked
   Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &addingIsotopeAsSource();
@@ -284,7 +306,26 @@ public:
   
   //Simple accessors
   Wt::WLineEdit *materialEdit();
-  Wt::WLineEdit *thicknessEdit();
+
+  /** Sets the spherical thickness value.
+   
+   If a negative value is passed in, then thickness input text is set to blank.
+   
+   Note the thickness is rounded to have at most three places after the decimal point.
+   
+   The #handleMaterialChange function will also be called, which will emit appropriate signals to update activities.
+   
+   Will throw exception if non-spherical geometry.
+   */
+  void setSphericalThickness( const double thickness );
+  
+  void setCylindricalRadiusThickness( const double radius );
+  void setCylindricalLengthThickness( const double length );
+  void setRectangularWidthThickness( const double width );
+  void setRectangularHeightThickness( const double height );
+  void setRectangularDepthThickness( const double depth );
+  
+  void setSphericalThicknessEditEnabled( const bool enabled );
   
   Wt::WLineEdit *arealDensityEdit();
   Wt::WLineEdit *atomicNumberEdit();
@@ -374,6 +415,13 @@ protected:
   //emitAddAfterSignal(): emits the m_emitAddAfterSignal signal
   void emitAddAfterSignal();
   
+  /** Checks #m_geometry is compatible with the desired geometry, and that it is not a generic material, and throws an exception if
+   not compatible.
+   GeometryType::CylinderEndOn and GeometryType::CylinderSideOn are treated as the same.
+   GeometryType::NumGeometryType checks that this is a generic material
+   */
+  void checkIsCorrectCurrentGeometry( const GammaInteractionCalc::GeometryType wanted,
+                                      const char *fcn_name ) const;
   
   void addTraceSource();
   void removeTraceSourceWidget( TraceSrcDisplay *src );
@@ -382,12 +430,16 @@ protected:
   void handleTraceSourceWidgetAboutToBeRemoved( TraceSrcDisplay *nuc );
   void handleTraceSourceActivityChange( const SandiaDecay::Nuclide *nuc, const double activity );
   
-  
+  /** Returns the volume (in PhysicalUnits units) of this shielding.  This value does not include the volumes of sub-shieldings. */
   double shieldingVolume() const;
+  
+  /** Returns the mass (in PhysicalUnits units) of this shielding.  This value does not include the mass of sub-shieldings. */
   double shieldingMass() const;
   
   //This simply toggles the generic, and calls handleMaterialChange()
   void handleToggleGeneric();
+  
+  void displayInputsForCurrentGeometry();
   
   //handleMaterialChange(): handles when the user changes or modifies the
   //  current material.  If the material is changed, then possible source
@@ -396,9 +448,10 @@ protected:
   //  on what has been done.
   void handleMaterialChange();
 
-  //removeUncertFromThickness(): removes uncertainty number from thickness edit
-  //  when the user changes the thickness value.
-  void removeUncertFromThickness();
+  /** Removes uncertainty number from a distance edit text; useful when user changes text of a WLineEdit that is also fit for, so may
+   have an uncertainty value in it
+   */
+  void removeUncertFromDistanceEdit( Wt::WLineEdit *edit );
   
   //handleIsotopicChange(...): changes the mass fraction of 'nuc'. The fraction
   //  should be between 0.0 and 1.0, and is the mass-fraction of 'nuc' for its
@@ -438,11 +491,12 @@ protected:
   /** Pointer to the ShieldingSourceDisplay this ShieldingSelect belongs to - if it belongs to this tool, otherwise will be nullptr. */
   const ShieldingSourceDisplay *m_shieldSrcDisp;
   
-  
   Wt::WImage* m_toggleImage;
   const bool m_forFitting;
   MaterialDB *m_materialDB;
   SourceFitModel *m_sourceModel;
+  
+  GammaInteractionCalc::GeometryType m_geometry;
 
   //To help safely remove m_materialSuggest from m_materialEdit when this
   // ShieldingSelect is in a WDialog, and hence getting destroyed after the DOM,
@@ -452,25 +506,45 @@ protected:
   
   Wt::WLineEdit *m_materialEdit;
   bool m_isGenericMaterial;
-  Wt::WText *m_materialSummarry;
+  Wt::WText *m_materialSummary;
   Wt::WPushButton *m_closeIcon;
   Wt::WPushButton *m_addIcon;
   PopupDivMenuItem *m_addTraceSourceItem;
   
-  Wt::WLineEdit *m_thicknessEdit;
-
-  Wt::WCheckBox *m_fitThicknessCB;
-  Wt::WContainerWidget *m_thicknessDiv;
-
+  /** Stack to hold the dimension edits for spherical, cylindrical, and rectangular geometries, as well as m_genericMaterialDiv.
+   First entry is m_genericMaterialDiv, then spherical, then cylindrical, then rectangular
+   */
+  Wt::WStackedWidget *m_dimensionsStack;
+  
+  Wt::WContainerWidget *m_genericDiv;
   Wt::WLineEdit *m_arealDensityEdit;
   Wt::WCheckBox *m_fitArealDensityCB;
-
   Wt::WLineEdit *m_atomicNumberEdit;
   Wt::WCheckBox *m_fitAtomicNumberCB;
   
-  Wt::WCheckBox *m_fitMassFrac;  //is NULL if !m_forFitting
-
-  Wt::WContainerWidget *m_genericMaterialDiv;
+  
+  Wt::WContainerWidget *m_sphericalDiv;
+  Wt::WLineEdit *m_thicknessEdit;
+  Wt::WCheckBox *m_fitThicknessCB;
+  
+  
+  Wt::WContainerWidget *m_cylindricalDiv;
+  Wt::WLineEdit *m_cylRadiusEdit;
+  Wt::WCheckBox *m_fitCylRadiusCB;
+  Wt::WLineEdit *m_cylLengthEdit;
+  Wt::WCheckBox *m_fitCylLengthCB;
+  
+  
+  Wt::WContainerWidget *m_rectangularDiv;
+  Wt::WLineEdit *m_rectWidthEdit;
+  Wt::WCheckBox *m_fitRectWidthCB;
+  Wt::WLineEdit *m_rectHeightEdit;
+  Wt::WCheckBox *m_fitRectHeightCB;
+  Wt::WLineEdit *m_rectDepthEdit;
+  Wt::WCheckBox *m_fitRectDepthCB;
+  
+  
+  Wt::WCheckBox *m_fitMassFrac;  //is nullptr if !m_forFitting
 
   Wt::WContainerWidget *m_asSourceCBs;
   
@@ -491,7 +565,7 @@ protected:
   Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> m_addingIsotopeAsSource;
   Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> m_removingIsotopeAsSource;
   Wt::Signal<ShieldingSelect *,const SandiaDecay::Nuclide *>
-                                            m_activityFromThicknessNeedUpdating;
+                                            m_activityFromVolumeNeedUpdating;
   
   static const int sm_xmlSerializationMajorVersion;
   static const int sm_xmlSerializationMinorVersion;

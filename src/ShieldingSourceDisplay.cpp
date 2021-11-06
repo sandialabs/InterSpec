@@ -133,8 +133,8 @@ const size_t ShieldingSourceDisplay::sm_max_model_fit_time_ms = 120*1000;
 const size_t ShieldingSourceDisplay::sm_model_update_frequency_ms = 2000;
 
 
+using GammaInteractionCalc::GeometryType;
 using GammaInteractionCalc::TraceActivityType;
-
 
 namespace
 {
@@ -2389,6 +2389,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 #endif
     m_materialSuggest( matSuggest ),
     m_shieldingSelects( nullptr ),
+    m_geometrySelect( nullptr ),
     m_showChi2Text( nullptr ),
     m_chi2Model( nullptr ),
     m_chi2Graphic( nullptr ),
@@ -2535,8 +2536,32 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 
   HelpSystem::attachToolTipOn( m_distanceEdit,tooltip, showToolTips );
 
+  WLabel *geometryLabel = new WLabel( "Geometry:" );
+  m_geometrySelect = new WComboBox();
+  
+  // We want the current index of m_geometrySelect to correspond to the GeometryType enum value
+  for( GeometryType type = GeometryType(0);
+      type != GeometryType::NumGeometryType;
+      type = GeometryType( static_cast<int>(type) + 1) )
+  {
+    const char *lbl = "";
+    switch( GeometryType(type) )
+    {
+      case GeometryType::Spherical:      lbl = "Spherical";            break;
+      case GeometryType::CylinderEndOn:  lbl = "Cylindrical: end-on";  break;
+      case GeometryType::CylinderSideOn: lbl = "Cylindrical: side-on"; break;
+      case GeometryType::Rectangular:    lbl = "Rectangular";          break;
+      case GeometryType::NumGeometryType: assert( 0 ); break;
+      default: assert( 0 ); throw runtime_error(""); break;
+    }//switch( GeometryType(type) )
+    
+    m_geometrySelect->addItem( lbl );
+  }//for( int type = 0; type < 10; ++type )
+  
+  m_geometrySelect->setCurrentIndex( static_cast<int>(GeometryType::Spherical) );
+  m_geometrySelect->changed().connect( this, &ShieldingSourceDisplay::handleGeometryTypeChange );
 
-//  WContainerWidget *shieldingDiv = new WContainerWidget();
+
   m_shieldingSelects = new WContainerWidget();
   m_shieldingSelects->setStyleClass( "ShieldingSelectContainer" );
 
@@ -2688,10 +2713,7 @@ if (m_specViewer->isSupportFile())
   tooltip = "Show the Chi of each peak for the current model on the chart, or"
   " the relative peak area multiple between current model and observed peak.";
   m_showChiOnChart->setToolTip( tooltip );
-  m_showChiOnChart->checked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
-  m_showChiOnChart->unChecked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
-  
-  
+  m_showChiOnChart->changed().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
   
   
   m_optionsDiv = new WContainerWidget();
@@ -2723,8 +2745,7 @@ if (m_specViewer->isSupportFile())
   " peak near 185 keV." ;
   lineDiv->setToolTip( tooltip );
   m_multiIsoPerPeak->setChecked();
-  m_multiIsoPerPeak->checked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
-  m_multiIsoPerPeak->unChecked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
+  m_multiIsoPerPeak->changed().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   
   lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, 2, 0 );
@@ -2733,8 +2754,7 @@ if (m_specViewer->isSupportFile())
             " detector will be accounted for in the calculations.";
   lineDiv->setToolTip( tooltip );
   m_attenForAir->setChecked();
-  m_attenForAir->checked().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
-  m_attenForAir->unChecked().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
+  m_attenForAir->changed().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
   
   
   lineDiv = new WContainerWidget();
@@ -2743,8 +2763,7 @@ if (m_specViewer->isSupportFile())
   tooltip = "This forces the isotopes of a element to all be the same age in"
             " the fit.";
   lineDiv->setToolTip( tooltip );
-  m_backgroundPeakSub->checked().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
-  m_backgroundPeakSub->unChecked().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
+  m_backgroundPeakSub->changed().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
   
   
   lineDiv = new WContainerWidget();
@@ -2754,8 +2773,7 @@ if (m_specViewer->isSupportFile())
             "age.";
   lineDiv->setToolTip( tooltip );
   m_sameIsotopesAge->setChecked( isotopesHaveSameAge );
-  m_sameIsotopesAge->checked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
-  m_sameIsotopesAge->unChecked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
+  m_sameIsotopesAge->changed().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
 
   
   WContainerWidget *detectorDiv = new WContainerWidget();
@@ -2768,21 +2786,14 @@ if (m_specViewer->isSupportFile())
   WGridLayout *smallLayout = new WGridLayout();
   smallerContainer->setLayout(smallLayout);
   
-  
-#if( SPLIT_BUTTON_SHIELDING_ADD )
-  distanceLabel->setMargin( 40, Wt::Left );
-  smallLayout->addWidget( distanceLabel,           0, 0, AlignRight | AlignMiddle);
-  smallLayout->addWidget( m_distanceEdit,          0, 1, 1, 1 );
-  smallLayout->addWidget( addShielding,            1, 1, AlignCenter );
-  smallLayout->setColumnStretch( 1, 10 );
-#else
-  smallLayout->addWidget( distanceLabel,           0, 0, AlignRight | AlignMiddle);
+  smallLayout->addWidget( distanceLabel,           0, 0, AlignRight | AlignMiddle );
   smallLayout->addWidget( m_distanceEdit,          0, 1, 1, 2);
-  smallLayout->addWidget( addShieldingLabel,       1, 0, AlignRight | AlignMiddle);
-  smallLayout->addWidget( m_addMaterialShielding,  1, 1);
-  smallLayout->addWidget( m_addGenericShielding,   1, 2);
+  smallLayout->addWidget( geometryLabel,           1, 0, AlignRight | AlignMiddle );
+  smallLayout->addWidget( m_geometrySelect,        1, 1, 1, 2);
+  smallLayout->addWidget( addShieldingLabel,       2, 0, AlignRight | AlignMiddle );
+  smallLayout->addWidget( m_addMaterialShielding,  2, 1);
+  smallLayout->addWidget( m_addGenericShielding,   2, 2);
   smallLayout->setColumnStretch( 0, 0 );
-#endif
 
   smallLayout->setContentsMargins(0,5,0,5);
   smallerContainer->setPadding(0);
@@ -2862,12 +2873,11 @@ if (m_specViewer->isSupportFile())
     //regular layout
     detectorLayout->addWidget( m_detectorDisplay,          0, 0 );
     detectorLayout->addWidget( addItemMenubutton,          0, 1 );
+    detectorLayout->addWidget( smallerContainer,           1, 0, 1, 2);
+    detectorLayout->addWidget( m_shieldingSelects,         2, 0, 1, 2 );
     detectorLayout->addWidget( m_fitModelButton,           3, 0, 1, 2, AlignCenter );
     detectorLayout->addWidget( m_fitProgressTxt,           4, 0, 1, 2 );
     detectorLayout->addWidget( m_cancelfitModelButton,     5, 0, 1, 2, AlignCenter );
-    
-    detectorLayout->addWidget( smallerContainer,           1, 0, 1, 2);
-    detectorLayout->addWidget( m_shieldingSelects,         2, 0, 1, 2 );
     detectorLayout->addWidget( m_showChi2Text,             6, 0, 1, 2 );
     
     detectorLayout->setRowStretch( 2, 1 );
@@ -3430,7 +3440,7 @@ void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
       if( !mat || select->fitForMassFractions() )
         continue;
       if( select->fitThickness() )
-        select->thicknessEdit()->setText( "1 cm" );
+        select->setSphericalThickness( 1.0*PhysicalUnits::cm );
     }//if( generic material ) / else
   }//for( WWidget *widget : m_shieldingSelects->children() )
 }//void setFitQuantitiesToDefaultValues()
@@ -3837,14 +3847,164 @@ void ShieldingSourceDisplay::handleUserDistanceChange()
 }//void ShieldingSourceDisplay::handleUserDistanceChange()
 
 
-void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
+GeometryType ShieldingSourceDisplay::geometry() const
 {
-  double shieldrad = 0.0, distance = 0.0;
+  int currentIndex = m_geometrySelect->currentIndex();
+  if( currentIndex < 0 || currentIndex >= static_cast<int>(GeometryType::NumGeometryType) )
+    currentIndex = static_cast<int>(GeometryType::Spherical);
+  
+  return GeometryType(currentIndex);
+}//GeometryType geometry() const;
+
+
+void ShieldingSourceDisplay::handleGeometryTypeChange()
+{
+  const GeometryType type = geometry();
+  
+  cout << "ShieldingSourceDisplay::handleGeometryTypeChange(): Changing to "
+       << GammaInteractionCalc::to_str(type) << endl;
+  
+  
   for( WWidget *widget : m_shieldingSelects->children() )
   {
-    ShieldingSelect *thisSelect = dynamic_cast<ShieldingSelect *>(widget);
-    if( thisSelect && !thisSelect->isGenericMaterial() )
-      shieldrad += thisSelect->thickness();
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
+    assert( select );
+    
+    if( select )
+      select->setGeometry( type );
+  }//for( WWidget *widget : m_shieldingSelects->children() )
+  
+  try
+  {
+    checkDistanceAndThicknessConsistent();
+  }catch( std::exception &e )
+  {
+    passMessage( e.what(), "", WarningWidget::WarningMsgMedium );
+  }//try / catch
+  
+  handleShieldingChange();
+  
+  updateChi2Chart(); //I think this should have already been called, but JIC since its a cheap call
+}//void handleGeometryTypeChange()
+
+
+void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
+{
+  const char * const contained_err_msg = "Updated shielding dimensions so inner shieldings"
+                                         " will be contained by outer shieldings.";
+  const char * const scaled_err_msg = "Shielding thicknesses have been scaled to be less"
+                                      " then detector distance.";
+  
+  const GeometryType type = geometry();
+  
+  const double tolerance = PhysicalUnits::um;
+  
+  double shieldrad = 0.0, distance = 0.0;
+  
+  bool updated_a_dim = false;
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
+    assert( select );
+    if( !select || select->isGenericMaterial() )
+      continue;
+    
+    assert( type == select->geometry() );
+    
+    // Check to make sure this shielding is larger than all shielding it contains
+    switch( type )
+    {
+      case GeometryType::Spherical:
+      {
+        double thick = select->thickness();
+        if( thick < tolerance )
+        {
+          updated_a_dim = true;
+          thick = tolerance;
+          select->setSphericalThickness( thick );
+        }
+        
+        break;
+      }//case GeometryType::Spherical:
+      
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+      {
+        const double rad = select->cylindricalRadiusThickness();
+        const double len = select->cylindricalLengthThickness();
+        
+        if( rad < tolerance )
+        {
+          updated_a_dim = true;
+          select->setCylindricalRadiusThickness( tolerance );
+        }
+        
+        if( len < tolerance )
+        {
+          updated_a_dim = true;
+          select->setCylindricalLengthThickness( tolerance );
+        }
+        
+        break;
+      }//case GeometryType::CylinderSideOn:
+        
+      case GeometryType::Rectangular:
+      {
+        const double width = select->rectangularWidthThickness();
+        const double height = select->rectangularHeightThickness();
+        const double depth = select->rectangularDepthThickness();
+        
+        if( width < tolerance )
+        {
+          updated_a_dim = true;
+          select->setRectangularWidthThickness( tolerance );
+        }
+        
+        if( height < tolerance )
+        {
+          updated_a_dim = true;
+          select->setRectangularHeightThickness( tolerance );
+        }
+        
+        if( depth < tolerance )
+        {
+          updated_a_dim = true;
+          select->setRectangularDepthThickness( tolerance );
+        }
+        
+        break;
+      }//case GeometryType::CylinderSideOn:
+        
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( type )
+    
+    
+    // Get the extent of the shielding, in the direction of the detector
+    switch( type )
+    {
+      case GeometryType::Spherical:
+        shieldrad += select->thickness();
+        break;
+        
+      case GeometryType::CylinderEndOn:
+        shieldrad += select->cylindricalLengthThickness();
+        break;
+        
+      case GeometryType::CylinderSideOn:
+        shieldrad += select->cylindricalRadiusThickness();
+        break;
+        
+      case GeometryType::Rectangular:
+        shieldrad += select->rectangularDepthThickness();
+        break;
+        
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( type )
+    
   }//for( WWidget *widget : m_shieldingSelects->children() )
   
   const string distanceStr = m_distanceEdit->text().toUTF8();
@@ -3852,19 +4012,58 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
   if( distance <= 0.0 )
     throw runtime_error( "Distance must be greater than zero" );
   
-  if( shieldrad > distance )
+  if( shieldrad <= distance )
+  {
+    if( updated_a_dim )
+    {
+      handleShieldingChange();
+      
+      throw runtime_error( contained_err_msg );
+    }
+  }else
   {
     const double scale = 0.95*distance/shieldrad;
     for( WWidget *widget : m_shieldingSelects->children() )
     {
-      ShieldingSelect *thisSelect = dynamic_cast<ShieldingSelect *>(widget);
-      if( thisSelect && !thisSelect->isGenericMaterial() )
-        thisSelect->thicknessEdit()->setText(
-         PhysicalUnits::printToBestLengthUnits(scale*thisSelect->thickness()) );
+      ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
+      assert( select );
+      
+      if( !select || select->isGenericMaterial() )
+        continue;
+      
+      switch( type )
+      {
+        case GeometryType::Spherical:
+          select->setSphericalThickness( scale * select->thickness() );
+          break;
+          
+        case GeometryType::CylinderEndOn:
+          select->setCylindricalLengthThickness( scale * select->cylindricalLengthThickness() );
+          break;
+          
+        case GeometryType::CylinderSideOn:
+          select->setCylindricalRadiusThickness( scale * select->cylindricalRadiusThickness() );
+          break;
+          
+        case GeometryType::Rectangular:
+          select->setRectangularDepthThickness( scale * select->rectangularDepthThickness() );
+          break;
+          
+        case GeometryType::NumGeometryType:
+          assert( 0 );
+          break;
+      }//switch( type )
     }//for( WWidget *widget : m_shieldingSelects->children() )
     
-    throw runtime_error( "Shielding thicknesses have been scaled to be less "
-                         " than detector distance.");
+    string msg;
+    if( updated_a_dim )
+      msg = string(contained_err_msg) + "<br />" + string(scaled_err_msg);
+    else
+      msg = scaled_err_msg;
+    
+    handleShieldingChange();
+    
+    throw runtime_error( msg );
   }//if( shieldrad < distance )
 }//void checkDistanceAndThicknessConsistent()
 
@@ -3941,9 +4140,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
     checkDistanceAndThicknessConsistent();
   }catch( exception &e )
   {
-    passMessage( e.what() + string("<br />Chi2 chart not updated."),
-                 "", WarningWidget::WarningMsgHigh );
-    return;
+    passMessage( e.what() , "", WarningWidget::WarningMsgHigh );
   }//try / catch
   
   try
@@ -4154,10 +4351,9 @@ void ShieldingSourceDisplay::showCalcLog()
 }//void showCalcLog()
 
 
-
-double ShieldingSourceDisplay::innerRadiusOfShielding( const ShieldingSelect * const select ) const
+const ShieldingSelect *ShieldingSourceDisplay::innerShielding( const ShieldingSelect * const select ) const
 {
-  double inner_rad = 0.0;
+  const ShieldingSelect *previous = nullptr;
   for( WWidget *widget : m_shieldingSelects->children() )
   {
     ShieldingSelect *thisSelect = dynamic_cast<ShieldingSelect *>(widget);
@@ -4165,15 +4361,15 @@ double ShieldingSourceDisplay::innerRadiusOfShielding( const ShieldingSelect * c
       continue;
 
     if( thisSelect == select )
-      return inner_rad;
+      return previous;
 
-    inner_rad += thisSelect->thickness();
+    previous = thisSelect;
   }//for( WWidget *widget : m_shieldingSelects->children() )
 
-  throw runtime_error( "innerRadiusOfShielding(ShieldingSelect *): invalid select passed in" );
+  throw runtime_error( "innerShielding(ShieldingSelect *): invalid select passed in" );
   
-  return inner_rad;
-}//double innerRadiusOfShielding( const ShieldingSelect * const select ) const
+  return nullptr;
+}//const ShieldingSelect *innerShielding( const ShieldingSelect * const select ) const
 
 
 void ShieldingSourceDisplay::finishModelUpload( AuxWindow *window,
@@ -5637,30 +5833,6 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
 }//::rapidxml::xml_node<char> * serialize()
 
 
-/*
-void ShieldingSourceDisplay::guessDetectorType( SpecUtils::SpectrumType type,
-                                                std::shared_ptr<SpecMeas> measurment,
-                                                std::set<int> sample_numbers )
-{
-  if( type != SpecUtils::SpectrumType::Foreground )
-    return;
-
-  if( !measurment )
-    return;
-
-  const string &manufacturer = measurment->manufacturer();
-  const string &instrument_id = measurment->instrument_id();
-  const string &instrument_model = measurment->instrument_model();
-
-
-  cerr << "manufacturer=" << manufacturer << ", instrument_id=" << instrument_id << ", instrument_model=" << instrument_model << endl;
-
-  //manufacturer=ORTEC, instrument_id=Serial #10000033, instrument_model=OSASP
-
-
-}//void ShieldingSourceDisplay::guessDetectorType()
-*/
-
 
 void ShieldingSourceDisplay::layoutSizeChanged( int width, int height )
 {
@@ -5772,18 +5944,23 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   select->materialChanged().connect( this, &ShieldingSourceDisplay::handleShieldingChange );
   select->materialModified().connect( this, &ShieldingSourceDisplay::handleShieldingChange );
   
-//  select->m_thicknessEdit->changed().connect( this, &ShieldingSourceDisplay::checkDistanceAndThicknessConsistent );
-//  select->m_thicknessEdit->enterPressed().connect( this, &ShieldingSourceDisplay::checkDistanceAndThicknessConsistent );
-//  select->m_thicknessEdit->blurred().connect( this, &ShieldingSourceDisplay::checkDistanceAndThicknessConsistent );
-  
   select->remove().connect( this, &ShieldingSourceDisplay::removeShielding );
   select->materialModified().connect( this, &ShieldingSourceDisplay::materialModifiedCallback );
   select->materialChanged().connect( this, &ShieldingSourceDisplay::materialChangedCallback );
 
   select->addingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback, this, select, _1, _2 ) );
   select->removingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback, this, select, _1, _2 ) );
-  select->activityFromThicknessNeedUpdating().connect( boost::bind( &ShieldingSourceDisplay::updateActivityOfShieldingIsotope, this, _1, _2 ) );
+  select->activityFromVolumeNeedUpdating().connect( boost::bind( &ShieldingSourceDisplay::updateActivityOfShieldingIsotope, this, _1, _2 ) );
 
+  try
+  {
+    checkDistanceAndThicknessConsistent();
+  }catch( std::exception &e )
+  {
+    passMessage( e.what(), "", WarningWidget::WarningMsgMedium );
+  }//try / catch
+  
+  
   handleShieldingChange();
 
   if( doUpdateChiChart )
@@ -5866,6 +6043,15 @@ void ShieldingSourceDisplay::materialModifiedCallback( ShieldingSelect *select )
     return;
   }//if( !select )
 
+  try
+  {
+    checkDistanceAndThicknessConsistent();
+  }catch( std::exception &e )
+  {
+    passMessage( e.what(), "", WarningWidget::WarningMsgMedium );
+  }//try / catch
+  
+  
   m_modifiedThisForeground = true;
   
   cerr << "In ShieldingSourceDisplay::materialModifiedCallback(...)" << endl;
@@ -5883,7 +6069,16 @@ void ShieldingSourceDisplay::materialChangedCallback( ShieldingSelect *select )
     return;
   }//if( !select )
 
-  //The select has alread removed any isotopes as sources which arent in the
+  try
+  {
+    checkDistanceAndThicknessConsistent();
+  }catch( std::exception &e )
+  {
+    passMessage( e.what(), "", WarningWidget::WarningMsgMedium );
+  }//try / catch
+  
+  
+  //The select has already removed any isotopes as sources which arent in the
   //  current material, however, we have to add in all other candidate isotopes
 
   m_modifiedThisForeground = true;
@@ -5908,9 +6103,8 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
 
   if( !select || select->isGenericMaterial() || !select->material() || !nuc )
   {
-    const char *msg = "ShieldingSourceDisplay::updateActivityOfShieldingIsotope(...)\n\tShould not be here!";
     assert(0);
-    throw std::runtime_error( msg );
+    throw std::runtime_error( "updateActivityOfShieldingIsotope()\n\tShould not be here!" );
   }//if( !select || select->isGenericMaterial() )
 
   
@@ -5929,16 +6123,11 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
     return;
   }//if( select->isTraceSourceForNuclide(nuc) )
   
-  
-  const double inner_rad = innerRadiusOfShielding(select);
-  const double outer_rad = inner_rad + select->thickness();
 
-  const double pi = 3.14159265359;
-  const double volume = pi* (4.0/3.0) * ( pow(outer_rad,3) - pow(inner_rad,3) );
+  const double volume = select->shieldingVolume();
 
   std::shared_ptr<const Material> material = select->material();
   const double density = material->density;
-
 
   double weight = density * volume;
   const SandiaDecay::Nuclide *nuclide = NULL;
@@ -5951,7 +6140,6 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
       weight *= ef.second;
     }
   }//for( const NuclideFrac &ef : material->nuclides )
-
   
   if( !nuclide )
   {
@@ -6075,6 +6263,14 @@ void ShieldingSourceDisplay::removeShielding( ShieldingSelect *select )
     }//if( shielding == select )
   }//for( int i = 0; i < nwidget; ++i )
 
+  try
+  {
+    checkDistanceAndThicknessConsistent();
+  }catch( std::exception &e )
+  {
+    passMessage( e.what(), "", WarningWidget::WarningMsgMedium );
+  }//try / catch
+  
   assert( 0 );
   cerr << "\n\nCouldnt finding select to delete" << endl;
 }//void removeShielding( ShieldingSelect *select )
@@ -6419,28 +6615,99 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
         inputPrams.Add( name + "_AD", ad, std::max(5.0*adUnits, 0.1*ad), 0.0, 400.0*adUnits );  //400g/cm2 is about 35cm Pb
       else
         inputPrams.Add( name + "_AD", ad );
+      
+      inputPrams.Add( name + "_dummyshielding2", 0.0 );
     }else
     {
-      const double thickness = select->thickness();
-      bool fitThickness = select->fitThickness();
-
       std::shared_ptr<Material> mat = select->material();
       string name;
       if( mat )
         name = mat->name + std::to_string(i);
       else
         name = "unspecifiedmat_" + std::to_string(i);
-
-      if( !mat /*|| SpecUtils::iequals_ascii(mat->name, "void")*/ )
-        fitThickness = false;
-
-      num_fit_params += fitThickness;
-
-      if( fitThickness )
-        inputPrams.Add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), 0, 1000.0*PhysicalUnits::m );
-      else
-        inputPrams.Add( name + "_thickness", thickness );
-      inputPrams.Add( name + "_dummyshielding", 0.0 );
+      
+      switch( geometry() )
+      {
+        case GeometryType::Spherical:
+        {
+          const double thickness = select->thickness();
+          const bool fitThickness = mat ? select->fitThickness() : false;
+          
+          num_fit_params += fitThickness;
+          
+          if( fitThickness )
+            inputPrams.Add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), 0, 1000.0*PhysicalUnits::m );
+          else
+            inputPrams.Add( name + "_thickness", thickness );
+          
+          inputPrams.Add( name + "_dummyshielding1", 0.0 );
+          inputPrams.Add( name + "_dummyshielding2", 0.0 );
+          
+          break;
+        }//case GeometryType::Spherical:
+          
+        case GeometryType::CylinderEndOn:
+        case GeometryType::CylinderSideOn:
+        {
+          const double rad = select->cylindricalRadiusThickness();
+          const double len = select->cylindricalLengthThickness();
+          
+          const bool fitRad = mat ? select->fitCylindricalRadiusThickness() : false;
+          const bool fitLen = mat ? select->fitCylindricalLengthThickness() : false;
+          
+          num_fit_params += fitRad;
+          num_fit_params += fitLen;
+          
+          if( fitRad )
+            inputPrams.Add( name + "_dr", rad, std::max(2.5*PhysicalUnits::mm,0.25*rad), 0, 1000.0*PhysicalUnits::m );
+          else
+            inputPrams.Add( name + "_dr", rad );
+          
+          if( fitLen )
+            inputPrams.Add( name + "_dz", len, std::max(2.5*PhysicalUnits::mm,0.25*len), 0, 1000.0*PhysicalUnits::m );
+          else
+            inputPrams.Add( name + "_dz", len );
+          
+          inputPrams.Add( name + "_dummyshielding2", 0.0 );
+          
+          break;
+        }//case GeometryType::CylinderEndOn and CylinderSideOn:
+          
+          
+        case GeometryType::Rectangular:
+        {
+          const double width = select->rectangularWidthThickness();
+          const double height = select->rectangularHeightThickness();
+          const double depth = select->rectangularDepthThickness();
+         
+          const bool fitWidth = mat ? select->fitRectangularWidthThickness() : false;
+          const bool fitHeight = mat ? select->fitRectangularHeightThickness() : false;
+          const bool fitDepth = mat ? select->fitRectangularDepthThickness() : false;
+          
+          if( fitWidth )
+            inputPrams.Add( name + "_dx", width, std::max(2.5*PhysicalUnits::mm,0.25*width), 0, 1000.0*PhysicalUnits::m );
+          else
+            inputPrams.Add( name + "_dx", width );
+          
+          if( fitHeight )
+            inputPrams.Add( name + "_dy", height, std::max(2.5*PhysicalUnits::mm,0.25*height), 0, 1000.0*PhysicalUnits::m );
+          else
+            inputPrams.Add( name + "_dy", height );
+          
+          if( fitDepth )
+            inputPrams.Add( name + "_dz", depth, std::max(2.5*PhysicalUnits::mm,0.25*depth), 0, 1000.0*PhysicalUnits::m );
+          else
+            inputPrams.Add( name + "_dz", depth );
+          
+          break;
+        }//case GeometryType::Rectangular:
+          
+        case GeometryType::NumGeometryType:
+        {
+          assert( 0 );
+          break;
+        }//case GeometryType::NumGeometryType:
+      }//switch( geometry() )
     }//if( generic material ) / else
   }//for( size_t i = 0; i < shieldings.size(); ++i )
 
@@ -6768,17 +7035,72 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         select->m_arealDensityEdit->setText( buffer );
       }else
       {
-        WString txt;
-        const double thickness = m_currentFitFcn->thickness( i, paramValues );
-#ifndef WT_NO_STD_WSTRING
-        const double thicknessErr = m_currentFitFcn->thickness( i, paramErrors );
-        if( thicknessErr > 0.0 )
-          txt = PhysicalUnits::printToBestLengthUnits( thickness, thicknessErr );
-        else
-#endif
-          txt = PhysicalUnits::printToBestLengthUnits( thickness );
-        select->m_thicknessEdit->setText( txt );
-        //        const double volume = (3.14159265359*4.0/3.0) * ( pow(radius + thickness,3) - pow(radius,3) );
+        
+        assert( geometry() == m_currentFitFcn->geometry() );
+        if( geometry() != m_currentFitFcn->geometry() )
+          throw runtime_error( "Geometry somehow changed during fitting process" );
+        
+        auto setEditTxt = []( WLineEdit *edit, const double val, const double err ){
+          WString txt;
+          if( err > 0.0 )
+            txt = PhysicalUnits::printToBestLengthUnits( val, err );
+          else
+            txt = PhysicalUnits::printToBestLengthUnits( val );
+          
+          edit->setText( txt );
+        };//setEditTxt lambda
+        
+        
+        switch( geometry() )
+        {
+          case GeometryType::Spherical:
+          {
+            const double thickness = m_currentFitFcn->sphericalThickness( i, paramValues );
+            const double thicknessErr = m_currentFitFcn->sphericalThickness( i, paramErrors );
+            setEditTxt( select->m_thicknessEdit, thickness, thicknessErr );
+            
+            break;
+          }//case GeometryType::Spherical:
+            
+          case GeometryType::CylinderEndOn:
+          case GeometryType::CylinderSideOn:
+          {
+            const double dr = m_currentFitFcn->cylindricalRadiusThickness( i, paramValues );
+            const double drErr = m_currentFitFcn->cylindricalRadiusThickness( i, paramErrors );
+            setEditTxt( select->m_cylRadiusEdit, dr, drErr );
+            
+            const double dz = m_currentFitFcn->cylindricalLengthThickness( i, paramValues );
+            const double dzErr = m_currentFitFcn->cylindricalLengthThickness( i, paramErrors );
+            setEditTxt( select->m_cylLengthEdit, dz, dzErr );
+            
+            break;
+          }//case GeometryType::CylinderEndOn or CylinderSideOn:
+            
+            
+          case GeometryType::Rectangular:
+          {
+            const double dw = m_currentFitFcn->rectangularWidthThickness( i, paramValues );
+            const double dwErr = m_currentFitFcn->rectangularWidthThickness( i, paramErrors );
+            setEditTxt( select->m_rectWidthEdit, dw, dwErr );
+            
+            const double dh = m_currentFitFcn->rectangularHeightThickness( i, paramValues );
+            const double dhErr = m_currentFitFcn->rectangularHeightThickness( i, paramErrors );
+            setEditTxt( select->m_rectHeightEdit, dh, dhErr );
+            
+            const double dd = m_currentFitFcn->rectangularDepthThickness( i, paramValues );
+            const double ddErr = m_currentFitFcn->rectangularDepthThickness( i, paramErrors );
+            setEditTxt( select->m_rectDepthEdit, dd, ddErr );
+            
+            break;
+          }//case GeometryType::Rectangular:
+            
+          case GeometryType::NumGeometryType:
+            assert( 0 );
+            break;
+        }//switch( geometry() )
+        
+        
+        //        const double volume = (PhysicalUnits::pi*4.0/3.0) * ( pow(radius + thickness,3) - pow(radius,3) );
         //        const double density = select->material()->density;
         //        cerr << "From Geometry, material " << select->material()->name << " has "
         //             << "mass " << (volume*density)/PhysicalUnits::gram << " g" << endl;
@@ -7306,8 +7628,7 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
     checkDistanceAndThicknessConsistent();
   }catch( exception &e )
   {
-    passMessage( e.what() + string("<br />Fit not performed."), "", WarningWidget::WarningMsgHigh );
-    return nullptr;
+    passMessage( e.what() + string("<br />Before the fit."), "", WarningWidget::WarningMsgHigh );
   }//try / catch
   
   Chi2FcnShrdPtr chi2Fcn;
@@ -7493,42 +7814,14 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     }//if( nuc )
   }//for( size_t nucn = 0; nucn < nnuc; ++nucn )
   
+  m_calcLog.push_back( "Geometry: " + string(GammaInteractionCalc::to_str(chi2Fcn->geometry())) );
+    
   const int nmat = static_cast<int>( chi2Fcn->numMaterials() );
   for( int matn = 0; matn < nmat; ++matn )
   {
     stringstream msg;
-    if( chi2Fcn->isSpecificMaterial(matn) )
-    {
-      const double thickness = chi2Fcn->thickness( matn, params );
-      const double thicknessUncert = chi2Fcn->thickness( matn, errors );
-      
-      const Material *mat = chi2Fcn->material( matn );
-      if( mat )
-      {
-        const double density = mat->density * PhysicalUnits::cm3 / PhysicalUnits::gram;
-        msg << mat->name << " has density " << std::setprecision(3) << density
-            << "g/cm3 ";
-        
-        if( thicknessUncert > DBL_EPSILON )
-        {
-#ifndef WT_NO_STD_WSTRING
-           msg << "and fit thickness "
-              << WString(PhysicalUnits::printToBestLengthUnits( thickness, thicknessUncert )).toUTF8()
-              << "." << endl;
-#else
-          msg << "and fit thickness "
-          << PhysicalUnits::printToBestLengthUnits( thickness ) << " (+-"
-          << PhysicalUnits::printToBestLengthUnits( thicknessUncert ) << ")."
-          << endl;
-#endif
-        }else
-        {
-          msg << "and has fixed thickness "
-              << PhysicalUnits::printToBestLengthUnits( thickness )
-              << "." << endl;
-        }
-      }//if( mat )
-    }else
+    const Material *mat = chi2Fcn->material( matn );
+    if( !mat )
     {
       const double adUnits = PhysicalUnits::gram / PhysicalUnits::cm2;
       const double ad = chi2Fcn->arealDensity( matn, params ) / adUnits;
@@ -7545,7 +7838,100 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       if( adUncert > DBL_EPSILON )
         msg << " (+-" << adUncert << ")";
       msg << " g/cm2";
-    }//if( specific ) / else( generic material )
+      
+    }else //if( !mat )
+    {
+      assert( geometry() == chi2Fcn->geometry() );
+      
+      const double density = mat->density * PhysicalUnits::cm3 / PhysicalUnits::gram;
+      msg << mat->name << " has density " << std::setprecision(3) << density << "g/cm3 ";
+      
+      switch( chi2Fcn->geometry() )
+      {
+        case GeometryType::Spherical:
+        {
+          const double thickness = chi2Fcn->sphericalThickness( matn, params );
+          const double thicknessUncert = chi2Fcn->sphericalThickness( matn, errors );
+          
+          if( thicknessUncert > DBL_EPSILON )
+          {
+            msg << "and fit thickness "
+                << PhysicalUnits::printToBestLengthUnits(thickness,thicknessUncert) << ".";
+          }else
+          {
+            msg << "and has fixed thickness " << PhysicalUnits::printToBestLengthUnits(thickness)
+                 << ".";
+          }
+          
+          break;
+        }//case GeometryType::Spherical:
+          
+        case GeometryType::CylinderEndOn:
+        case GeometryType::CylinderSideOn:
+        {
+          msg << "and dimensions [";
+          const double radThickness = chi2Fcn->cylindricalRadiusThickness( matn, params );
+          const double radThicknessUncert = chi2Fcn->cylindricalRadiusThickness( matn, errors );
+          const double lenThickness = chi2Fcn->cylindricalLengthThickness( matn, errors );
+          const double halfLenUncert = chi2Fcn->cylindricalLengthThickness( matn, errors );
+          
+          const char *radLabel = matn ? "radial-thickness=" : "radius=";
+          const char *lengthLabel = matn ? "length-thickness=" : "half-length=";
+          
+          if( radThicknessUncert > DBL_EPSILON )
+            msg << radLabel << PhysicalUnits::printToBestLengthUnits(radThickness,radThicknessUncert);
+          else
+            msg << radLabel << PhysicalUnits::printToBestLengthUnits(radThickness) << " (fixed)";
+          
+          if( lenThickness > DBL_EPSILON )
+            msg << lengthLabel << PhysicalUnits::printToBestLengthUnits(radThickness,radThicknessUncert);
+          else
+            msg << lengthLabel << PhysicalUnits::printToBestLengthUnits(radThickness) << " (fixed)";
+          
+          msg << "]";
+          
+          break;
+        }//case GeometryType::CylinderEndOn and CylinderSideOn:
+                    
+        case GeometryType::Rectangular:
+        {
+          const double widthThickness = chi2Fcn->rectangularWidthThickness( matn, params );
+          const double widthThicknessUncert = chi2Fcn->rectangularWidthThickness( matn, errors );
+          const double heightThickness = chi2Fcn->rectangularHeightThickness( matn, params );
+          const double heightThicknessUncert = chi2Fcn->rectangularHeightThickness( matn, errors );
+          const double depthThickness = chi2Fcn->rectangularDepthThickness( matn, params );
+          const double depthThicknessUncert = chi2Fcn->rectangularDepthThickness( matn, errors );
+          
+          const char *widthLabel  = matn ? "radial-thickness=" : "radius=";
+          const char *heightLabel = matn ? "length-thickness=" : "half-length=";
+          const char *depthLabel  = matn ? "length-thickness=" : "half-length=";
+          
+          msg << widthLabel;
+          if( widthThicknessUncert > DBL_EPSILON )
+            msg << PhysicalUnits::printToBestLengthUnits(widthThickness,widthThicknessUncert);
+          else
+            msg << PhysicalUnits::printToBestLengthUnits(widthThickness) << " (fixed)";
+          
+          msg << heightLabel;
+          if( heightThicknessUncert > DBL_EPSILON )
+            msg << PhysicalUnits::printToBestLengthUnits(heightThickness,heightThicknessUncert);
+          else
+            msg << PhysicalUnits::printToBestLengthUnits(heightThickness) << " (fixed)";
+          
+          msg << depthLabel;
+          if( depthThicknessUncert > DBL_EPSILON )
+            msg << PhysicalUnits::printToBestLengthUnits(depthThickness,depthThicknessUncert);
+          else
+            msg << PhysicalUnits::printToBestLengthUnits(depthThickness) << " (fixed)";
+          
+          break;
+        }//case GeometryType::Rectangular:
+          
+        case GammaInteractionCalc::GeometryType::NumGeometryType:
+          assert( 0 );
+          break;
+      }//switch( geometry() )
+    }//if( !mat ) / else
     
     m_calcLog.push_back( msg.str() );
   }//for( size_t matn = 0; matn < nmat; ++matn )
