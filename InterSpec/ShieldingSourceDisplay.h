@@ -91,6 +91,7 @@ namespace Wt
   class WCheckBox;
   class WLineEdit;
   class WTreeView;
+  class WComboBox;
   class WGridLayout;
   class WFileUpload;
   class WSelectionBox;
@@ -105,6 +106,7 @@ namespace Wt
 
 namespace GammaInteractionCalc
 {
+  enum class GeometryType : int;
   class ShieldingSourceChi2Fcn;
 }//namespace GammaInteractionCalc
 
@@ -549,6 +551,9 @@ public:
   
   void handleUserDistanceChange();
   
+  GammaInteractionCalc::GeometryType geometry() const;
+  void handleGeometryTypeChange();
+  
   //checkAndWarnZeroMassFraction(): makes sure the user hasnt asked to use
   //  a shielding as a source, but specified a zero mass fraction.  Throws
   //  std::exception on error, with a message approprtiate for output to user.
@@ -570,11 +575,14 @@ public:
   
   void showCalcLog();
   
-  /** Returns the inner radius of a ShieldingSelect.
+  /** Returns the inner ShieldingSelect of the one passed in; e.g., returns the ShieldingSelect that is contained by the one passed in.
+   
+   Returns nullptr if the inner-most shielding.
    
    Will throw exception if the ShieldingSelect is not a valid pointer owned by this ShieldingSourceDisplay.
    */
-  double innerRadiusOfShielding( const ShieldingSelect * const select ) const;
+  const ShieldingSelect *innerShielding( const ShieldingSelect * const select ) const;
+  
   
   //testSerialization(): simply tries to round-trip this ShieldingSourceDisplay
   //  to and then back from XML.  Does not actually check it was correctly done
@@ -675,13 +683,6 @@ public:
   void sameIsotopesAgeChanged();
   void showGraphicTypeChanged();
   
-/*
-  //guessDetectorType(...) not implemented yet
-  void guessDetectorType( SpecUtils::SpectrumType type,
-                          std::shared_ptr<SpecMeas> measurment,
-                          std::set<int> sample_numbers );
-*/
-
 
   
   Chi2FcnShrdPtr shieldingFitnessFcn( std::vector<ShieldingSelect *> &shieldngs,
@@ -742,6 +743,7 @@ protected:
   //m_shieldingSelects: contains objects of class ShieldingSelect
   Wt::WContainerWidget *m_shieldingSelects;
 
+  Wt::WComboBox *m_geometrySelect;
 
   Wt::WText *m_showChi2Text;
   Wt::WStandardItemModel *m_chi2Model;

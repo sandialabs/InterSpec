@@ -79,7 +79,7 @@ using namespace std;
 namespace GammaInteractionCalc
 {
 
-const char *to_str( TraceActivityType type )
+const char *to_str( const TraceActivityType type )
 {
   switch( type )
   {
@@ -98,6 +98,21 @@ const char *to_str( TraceActivityType type )
   
   return "InvalidTraceActivityType";
 }//to_str( TraceActivityType )
+
+
+const char *to_str( const GeometryType type )
+{
+  switch( type )
+  {
+    case GeometryType::Spherical:       return "Spherical";
+    case GeometryType::CylinderEndOn:   return "CylinderEndOn";
+    case GeometryType::CylinderSideOn:  return "CylinderSideOn";
+    case GeometryType::Rectangular:     return "Rectangular";
+    case GeometryType::NumGeometryType: return "NumGeometryType";
+  }//switch( type )
+  
+  return "InvalidGeometryType";
+}//to_str( GeometryType )
 
 
 
@@ -278,9 +293,123 @@ double distance( const double a[3], const double b[3] )
 }//double distance( const double a[3], b[3] )
 
   
+/** Always centered at zero.
+ 
+ May have other tubes entirely contained within this one, all also centered at zero.
+ 
+ E.g. extends 0.5*length along both the positive and negative z-axis.
+ */
+struct Tube
+{
+  double radius;
+  double length;
+  const Material *material;
+  const Tube *inner_tube;
+  
+  Tube()
+  : radius(0.0), length(0.0), material(nullptr), inner_tube(nullptr)
+  {}
+  
+  /** Starting from a 'source_point' within the volume of the tube, or a surface, and heading towards the 'detector_point' (think center
+   of the detector face), returns the total attenuation coefficient along the path, including recursing into any sub-tubes.
+   
+   @param[in] source_point The {x, y, z} source location; must be within Tube volume.
+   @param[in] detector_point The {x, y, z} point on the detector face we care about (so center of detector, unless you are integrating over
+   the detector face).
+   @param[out] exit_point The final exit point from the cylinder, where the path will no longer go through the volume.
+   @returns the attenuation coefficient from the path through the cylinder and its sub-cylinders. E.g.,
+   \code{.cpp}
+   double exit_point[3];
+   const double trans_coef = tube->exit_position( {0,1,2}, {0,0,10}, exit_point );
+   const double trans_fraction = exp( -trans_coef ); //trans_fraction will be between 0 and 1.
+   \endcode
+   */
+  double exit_position( const double source_point[3],
+                      const double detector_point[3],
+                      double exit_point[3] ) const
+  {
+    // blah blah blah
+    assert( 0 );
+  }//bool exit_position(...)
+  
+};//struct Tube
+
+
+
+
+int RCC_dev_Integrand( const int *ndimptr, const double xx[],
+                                 const int *ncompptr, double ff[], void *userdata )
+{
+  // This just integrates a right circular cylindar
+
+  
+  const int ndim = (ndimptr ? (*ndimptr) : 3);
+  assert( ndim == 3 );
+  
+  const double source_inner_rad = 1.0 * PhysicalUnits::cm;
+  const double source_outer_rad = 5.0 * PhysicalUnits::cm;
+  const double total_height = 5.0 * PhysicalUnits::cm;
+  
+  //cuba goes from 0 to one for each dimension, so we have to scale the variables
+  //  r:     goes from cylindrical inner radius, to outer radius
+  //  theta: goes from 0 to 2pi
+  //  z:     goes from the negative half-height to positive half-height
+  
+  double max_theta = 2.0 * PhysicalUnits::pi;
+  
+  const double x_r = xx[0];
+  const double x_theta = xx[1];
+  const double x_z = xx[2];
+  
+  const double r = source_inner_rad + x_r * (source_outer_rad - source_inner_rad);
+  const double theta = x_theta * max_theta;
+  const double z = total_height * (x_z - 0.5);
+  
+  const double j = (source_outer_rad - source_inner_rad) * max_theta * total_height;
+  const double dV = j * r;
+  
+  const double contribution = 1.0;
+  
+  ff[0] = contribution * dV;
+  
+  return 0;
+}//int DistributedSrcCalc_Integrand(...)
+
+
+
+
 void example_integration()
 {
-    using namespace std;
+  
+  {// begin right-circular-cylinder dev
+    int ndim = 3;
+    void *userdata = nullptr;
+    const double epsrel = 1e-5;  //the requested relative accuracy
+    const double epsabs = -1.0;//1e-12; //the requested absolute accuracy
+    const int mineval = 0; //the minimum number of integrand evaluations required.
+    const int maxeval = 5000000; //the (approximate) maximum number of integrand evaluations allowed.
+    
+    int nregions, neval, fail;
+    double integral, error, prob;
+    
+    Integrate::CuhreIntegrate( ndim, RCC_dev_Integrand, userdata, epsrel, epsabs,
+                              Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
+                              fail, integral, error, prob );
+  
+    integral /= PhysicalUnits::cm3;
+    error /= PhysicalUnits::cm3;
+    prob /= PhysicalUnits::cm3;
+  
+    printf("right-circular-cylinder dev:\n\tndim=%d CUHRE RESULT:\tnregions %d\tneval %d\tfail %d\n",
+           ndim, nregions, neval, fail);
+    printf("\tCUHRE RESULT:\t%.8f +- %.8f\tp = %.3f (all cm^3)\n", integral, error, prob);
+    printf("\n\n" );
+  }// begin right-circular-cylinder dev
+  
+  cout << "Done in example_integration()" << endl;
+  return;
+  
+  
   /*
    //  double point[3], x1[3], x2[3];
    //  point[0] = point[1] = point[2] = 0.0;
@@ -385,7 +514,7 @@ void example_integration()
     double integral, error, prob;
 
     ndim = 2;
-  Integrate::CuhreIntegrate( ndim, Integrand, userdata, epsrel, epsabs,
+  Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_Integrand, userdata, epsrel, epsabs,
                             Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
                             fail, integral, error, prob );
 
@@ -395,7 +524,7 @@ void example_integration()
   printf("\n\n" );
   
   ndim = 3;
-  Integrate::CuhreIntegrate( ndim, Integrand, userdata, epsrel, epsabs,
+  Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_Integrand, userdata, epsrel, epsabs,
                              Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
                             fail, integral, error, prob );
   
@@ -409,7 +538,7 @@ void example_integration()
   #define SEED 0
   #define NNEW 1000
   #define FLATNESS 25.
-    Suave(ndim, ncomp, Integrand, userdata,
+    Suave(ndim, ncomp, DistributedSrcCalc_Integrand, userdata,
       epsrel, epsabs, verbose | last, SEED,
       mineval, maxeval, NNEW, FLATNESS,
       &nregions, &neval, &fail, integral, error, prob);
@@ -423,7 +552,7 @@ void example_integration()
 }//void example_integration()
   
 
-int Integrand( const int *ndim, const double xx[],
+int DistributedSrcCalc_Integrand( const int *ndim, const double xx[],
                       const int *ncomp, double ff[], void *userdata )
 {
   const DistributedSrcCalc *objToIntegrate = (DistributedSrcCalc *)userdata;
@@ -442,7 +571,7 @@ int Integrand( const int *ndim, const double xx[],
   }
 
   return 0;
-}//int Integrand(...)
+}//int DistributedSrcCalc_Integrand(...)
 
 
 DistributedSrcCalc::DistributedSrcCalc()
@@ -486,16 +615,9 @@ double point_to_line_dist( const double point[3],
 void DistributedSrcCalc::eval( const double xx[], const int *ndimptr,
                         double ff[], const int *ncompptr ) const
 {
-  using namespace std;
-  const double pi = 3.14159265358979;
+  const double pi = PhysicalUnits::pi;
 
   const int ndim = (ndimptr ? (*ndimptr) : 3);
-
-//  assert( ndim == 2 || ndim == 3 );
-//  const int ncomp = (ncompptr ? *ncompptr : 1);
-//  assert( ncomp==1 );
-//  assert( m_sourceIndex == 0 );  //Right now the source must be the inner most material!
-//  assert( m_sourceIndex >= 0 && m_sourceIndex < m_sphereRadAndTransLenCoef.size() );
 
   double source_inner_rad = ((m_sourceIndex>0)
                             ? m_sphereRadAndTransLenCoef[m_sourceIndex-1].first
@@ -508,31 +630,6 @@ void DistributedSrcCalc::eval( const double xx[], const int *ndimptr,
   //phi:   goes from 0 to 2pi
 
   double max_theta = pi;
-
-  /*
-   // XXX - 20180416 - It was found the efficiency saver in this comment block
-   //       was actually making the answer for a 1 kg DU ball significantly
-   //       wrong!  Revisit at some point or just delete it.
-  //Lets not waste time integrating over area in the source which wont
-  //  contribute to radiation making it outside the ball
-  const double MAX_ATT_LEN = 7.5;
-  const double srcTransLenCoef = m_sphereRadAndTransLenCoef[m_sourceIndex].second;
-  if( (MAX_ATT_LEN*srcTransLenCoef) < surce_outer_rad )
-  {
-    source_inner_rad = std::max( source_inner_rad,
-                                 surce_outer_rad-MAX_ATT_LEN*srcTransLenCoef );
-
-    //Well use a kinda course approximation to limit theta so we dont bother
-    //  integrating over the "back side" of the sphere when radiation from this
-    //  area wont actually make it through the sphere
-    //For a 10cm sphere of Uranium and a 2D integral, reduces neval from
-    //  6435 to 6045; for 3D integral, reduce neval from 16383 to 15621.
-    const double opposite = 0.5*MAX_ATT_LEN*srcTransLenCoef;
-    const double hypotenuse = surce_outer_rad;
-    const double angle = asin( opposite/hypotenuse );
-    max_theta = 0.5*pi + angle;
-  }//if( not the whole source voluyme will contribute )
-  */
   
   const double x_r = xx[0];
   const double x_theta = xx[1];
@@ -542,7 +639,7 @@ void DistributedSrcCalc::eval( const double xx[], const int *ndimptr,
   const double theta =  x_theta * max_theta;
   
   //phi should go from zero to two pi, but we could reduce this to just 0 to
-  //  pi, due to symetrty, but not doing right now (cause I'm to lazy to test it)
+  //  pi, due to symmetry, but not doing right now (cause I'm to lazy to test it)
   const double max_phi = 2.0 * pi;
   const double phi = x_phi * max_phi;
   const double j = (surce_outer_rad - source_inner_rad) * max_theta * max_phi;
@@ -553,10 +650,13 @@ void DistributedSrcCalc::eval( const double xx[], const int *ndimptr,
   source_point[1] = r * sin( theta ) * sin( phi );
   source_point[2] = r * cos( theta );
 
+  // We'll the source location since 'source_point' will get modified.
+  const double x = source_point[0], y = source_point[1], z = source_point[2];
+
   double trans = 0.0;
   
-  {//begin codeblock to compute distance through source
-    // - this could probably be cleaned up and made more effieicent
+  {//begin code-block to compute distance through source
+    // - this could probably be cleaned up and made more efficient
     double exit_point[3];
     const double srcRad = m_sphereRadAndTransLenCoef[m_sourceIndex].first;
     const double srcTransCoef = m_sphereRadAndTransLenCoef[m_sourceIndex].second;
@@ -575,7 +675,7 @@ void DistributedSrcCalc::eval( const double xx[], const int *ndimptr,
       //Take advantage of symmetry, move the position to half way between the
       //  positive and negative exit points, and then check if the radius of
       //  this point is both in a sub shell, and that its closer to the detector
-      //  than the source point.
+      //  then the source point.
       //We will then use this same point to calc distances through the shells
       //  to the detectors, and then double that distance for all but the source
       //  shell (of which we will acount for dist from originating pos to first
@@ -669,8 +769,12 @@ void DistributedSrcCalc::eval( const double xx[], const int *ndimptr,
   }//if( m_attenuateForAir )
   
   
-  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius,
-                                                       m_observationDist );
+  const double z_dist = (z - m_observationDist);
+  const double dist_to_det = sqrt( x*x + y*y + z_dist*z_dist );
+  
+  // Note: previous to 20211104 m_observationDist was used instead of dist_to_det; I believe this
+  //       change is an appropriate correction, but still needs to be validated/ensured.
+  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, dist_to_det );
 
   ff[0] = trans * dV;
 }//eval(...)
@@ -705,6 +809,7 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
                                  const std::vector<PeakDef> &peaks,
                                  std::shared_ptr<const DetectorPeakResponse> detector,
                                  const std::vector<ShieldingSourceChi2Fcn::ShieldingInfo> &materials,
+                                 const GeometryType geometry,
                                  const bool allowMultipleNucsContribToPeaks,
                                  const bool attenuateForAir )
   : ROOT::Minuit2::FCNBase(),
@@ -717,6 +822,7 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
     m_detector( detector ),
     m_materials( materials ),
     m_nuclides( 0, (const SandiaDecay::Nuclide *)NULL ),
+    m_geometry( geometry ),
     m_allowMultipleNucsContribToPeaks( allowMultipleNucsContribToPeaks ),
     m_attenuateForAir( attenuateForAir ),
     m_self_att_multithread( true )
@@ -800,6 +906,13 @@ ShieldingSourceChi2Fcn::~ShieldingSourceChi2Fcn()
     }//if( m_zombieCheckTimer )
   }//end lock on m_zombieCheckTimerMutex
 }
+
+
+const GeometryType ShieldingSourceChi2Fcn::geometry() const
+{
+  return m_geometry;
+}
+
 
 void ShieldingSourceChi2Fcn::cancelFit()
 {
@@ -1116,7 +1229,7 @@ void ShieldingSourceChi2Fcn::massFraction( double &massFrac,
   }
   
   matmassfracstart += 2 * m_nuclides.size();
-  matmassfracstart += 2*m_materials.size();
+  matmassfracstart += 3 * m_materials.size();
   
   const size_t numfraccoefs = size_t(nucs.size() - 1);
   const size_t massfracnum = (pos - nucs.begin());
@@ -1177,7 +1290,7 @@ size_t ShieldingSourceChi2Fcn::numExpectedFitParameters() const
 {
   size_t npar = 2 * m_nuclides.size();
   
-  npar += 2*m_materials.size();
+  npar += 3 * m_materials.size();
   
   for( const MaterialToNucsMap::value_type &vt : m_nuclidesToFitMassFractionFor )
     npar += ( vt.second.empty() ? size_t(0) : size_t(vt.second.size()-1) );
@@ -1227,7 +1340,7 @@ bool ShieldingSourceChi2Fcn::isTraceSource( const SandiaDecay::Nuclide *nuclide 
   }//for( const ShieldingInfo &material : m_materials )
   
   return false;
-}//bool isSelfAttenSource(...) const;
+}//bool isTraceSource(...) const;
 
 
 TraceActivityType ShieldingSourceChi2Fcn::traceSourceActivityType(
@@ -1253,6 +1366,231 @@ TraceActivityType ShieldingSourceChi2Fcn::traceSourceActivityType(
 }//traceSourceActivityType(...)
 
 
+double ShieldingSourceChi2Fcn::volumeOfMaterial( const int matn, const vector<double> &params ) const
+{
+  if( (matn < 0) || (matn >= m_materials.size()) )
+    throw runtime_error( "volumeOfMaterial: invalid material index" );
+  
+  if( !m_materials[matn].material )
+    throw runtime_error( "volumeOfMaterial: cant be called for generic material" );
+  
+  double inner_dim_1 = 0.0, inner_dim_2 = 0.0, inner_dim_3 = 0.0;
+  double outer_dim_1 = 0.0, outer_dim_2 = 0.0, outer_dim_3 = 0.0;
+  
+  for( int index = 0; index <= matn; ++index )
+  {
+    if( !m_materials[index].material )  //if a generic shielding
+      continue;
+    
+    inner_dim_1 = outer_dim_1;
+    inner_dim_2 = outer_dim_2;
+    inner_dim_3 = outer_dim_3;
+    
+    switch( m_geometry )
+    {
+      case GeometryType::Spherical:
+        outer_dim_1 += sphericalThickness( index, params );
+        break;
+        
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+        outer_dim_1 += cylindricalRadiusThickness( index, params );
+        outer_dim_2 += cylindricalLengthThickness( index, params );
+        break;
+        
+      case GeometryType::Rectangular:
+        outer_dim_1 += rectangularWidthThickness( index, params );
+        outer_dim_2 += rectangularHeightThickness( index, params );
+        outer_dim_3 += rectangularDepthThickness( index, params );
+        break;
+        
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+  }//for( int index = 0; index < matn; ++index )
+  
+  switch( m_geometry )
+  {
+    case GeometryType::Spherical:
+    {
+      return (4.0/3.0)*PhysicalUnits::pi*( pow(outer_dim_1,3.0) - pow(inner_dim_1,3.0));
+    }
+      
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+    {
+      const double inner_vol = PhysicalUnits::pi * inner_dim_1 * inner_dim_1 * 2.0 * inner_dim_2;
+      const double outer_vol = PhysicalUnits::pi * outer_dim_1 * outer_dim_1 * 2.0 * outer_dim_2;
+      
+      return outer_vol - inner_vol;
+    }
+      
+    case GeometryType::Rectangular:
+    {
+      const double outer_vol = 8.0 * inner_dim_1 * inner_dim_2 * inner_dim_3;
+      const double inner_vol = 8.0 * outer_dim_1 * outer_dim_2 * outer_dim_3;
+      
+      return outer_vol - inner_vol;
+    }
+      
+    case GeometryType::NumGeometryType:
+      assert( 0 );
+      break;
+  }//switch( m_geometry )
+  
+  assert( 0 );
+  return 0.0;
+}//double volumeOfMaterial(...)
+
+
+double ShieldingSourceChi2Fcn::volumeUncertaintyOfMaterial( const int matn,
+                                  const vector<double> &params, const vector<double> &errors ) const
+{
+  // We will take into account the uncertainties of the inner layers to our current shell, the
+  //  uncertainty of the thickness, and the uncertainty of the mass fractions.
+  if( (matn < 0) || (matn >= m_materials.size()) )
+    throw runtime_error( "volumeUncertaintyOfMaterial: invalid material index" );
+  
+  if( !m_materials[matn].material )
+    throw runtime_error( "volumeUncertaintyOfMaterial: cant be called for generic material" );
+  
+  // TODO: clean this up to be a little neater/shorter, after testing
+  double dim_1 = 0.0, dim_2 = 0.0, dim_3 = 0.0;
+  double dim_1_uncert_sq = 0.0, dim_2_uncert_sq = 0.0, dim_3_uncert_sq = 0.0;
+  
+  for( int mat_index = 0; mat_index <= matn; ++mat_index )
+  {
+    if( !m_materials[mat_index].material )  //if a generic shielding
+      continue;
+    
+    switch( m_geometry )
+    {
+      case GeometryType::Spherical:
+      {
+        const double thick = sphericalThickness( mat_index, params );
+        const double thickUncert = sphericalThickness( mat_index, errors );
+        
+        if( mat_index == matn )
+        {
+          const double outerRad = dim_1 + thick;
+          
+          const double volumeUncertDueToInnerRad = 4.0 * PhysicalUnits::pi * pow(dim_1,2.0) * sqrt(dim_1_uncert_sq);
+          // We take the uncertainty in volume due to the thickness uncertainty to be independent of
+          //  the inner-radius uncertainty - which is approximately, probably, about right to kinda
+          //  fairly cover all the uncertainties - maybe
+          const double volumeUncertDueToThickness = 4.0 * PhysicalUnits::pi * pow(outerRad,2.0) * thickUncert;
+          
+          // Take the volume uncert to be the sqrt of sum of inner and outer volumes
+          const double volUncertSquared = pow(volumeUncertDueToInnerRad,2.0) + pow(volumeUncertDueToThickness,2.0);
+          
+          return sqrt( volUncertSquared );
+        }//if( mat_index == matn )
+        
+        // For the layer of shielding we are concerned with, we will assume the uncertainty on the
+        //  inner radius is the squared sum of all inner layer uncertainties - this is actually a bit
+        //  over the top - these thickness uncertainties are likely very correlated - so much so we
+        //  could probably use just the thickness uncertainty on just the previous layer, but we'll be
+        //  conservative, or something.
+        dim_1_uncert_sq += thickUncert*thickUncert;
+        dim_1 += thick;
+        
+        break;
+      }//case GeometryType::Spherical:
+        
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+      {
+        const double dr = cylindricalRadiusThickness( mat_index, params );
+        const double dr_uncert = cylindricalRadiusThickness( mat_index, errors );
+        
+        const double dz = cylindricalLengthThickness( mat_index, params );
+        const double dz_uncert = cylindricalLengthThickness( mat_index, errors );
+        
+        if( mat_index == matn )
+        {
+          const double outerRad = dim_1 + dr;
+          const double outerZ = dim_2 + dz;
+          
+          const double volUncertInnerRad = 2.0 * PhysicalUnits::pi * dim_1 * 2.0 * dim_2 * sqrt(dim_1_uncert_sq);
+          const double volUncertOuterRad = 2.0 * PhysicalUnits::pi * outerRad *  2.0 * outerZ * dr_uncert;
+          
+          const double volUncertInnerZ = PhysicalUnits::pi * dim_1 * dim_1 * 2.0 * sqrt(dim_2_uncert_sq);
+          const double volUncertOuterZ = PhysicalUnits::pi * dim_1 * dim_1 * 2.0 * dz_uncert;
+        
+          const double volUncertSquared = pow(volUncertInnerRad,2.0) + pow(volUncertOuterRad,2.0)
+                                          + pow(volUncertInnerZ,2.0) + pow(volUncertOuterZ,2.0);
+          
+          return sqrt( volUncertSquared );
+        }//if( mat_index == matn )
+        
+        dim_1_uncert_sq += dr_uncert * dr_uncert;
+        dim_2_uncert_sq += dz_uncert * dz_uncert;
+        
+        dim_1 += dr;
+        dim_2 += dz;
+        
+        break;
+      }//case GeometryType::CylinderEndOn or CylinderSideOn
+        
+      case GeometryType::Rectangular:
+      {
+        const double dw = rectangularWidthThickness( mat_index, params );
+        const double dw_uncert = 2.0 * rectangularWidthThickness( mat_index, errors );
+        
+        const double dh = rectangularHeightThickness( mat_index, params );
+        const double dh_uncert = 2.0 * rectangularHeightThickness( mat_index, errors );
+        
+        const double dd = rectangularDepthThickness( mat_index, params );
+        const double dd_uncert = 2.0 * rectangularDepthThickness( mat_index, errors );
+        
+        if( mat_index == matn )
+        {
+          const double inner_w = 2.0 * dim_1;
+          const double inner_h = 2.0 * dim_2;
+          const double inner_d = 2.0 * dim_3;
+          
+          const double outer_w = 2.0 * (dim_1 + dw);
+          const double outer_h = 2.0 * (dim_2 + dh);
+          const double outer_d = 2.0 * (dim_3 + dd);
+          
+          
+          const double vol_uncert_inner_1 = inner_h * inner_d * sqrt(dim_1_uncert_sq);
+          const double vol_uncert_inner_2 = inner_w * inner_d * sqrt(dim_2_uncert_sq);
+          const double vol_uncert_inner_3 = inner_w * inner_h * sqrt(dim_3_uncert_sq);
+          
+          const double vol_uncert_outer_1 = outer_h * outer_d * dw_uncert;
+          const double vol_uncert_outer_2 = outer_w * outer_d * dh_uncert;
+          const double vol_uncert_outer_3 = outer_w * outer_h * dd_uncert;
+          
+          const double inner_vol_uncert_sq = vol_uncert_inner_1*vol_uncert_inner_1 + vol_uncert_inner_2*vol_uncert_inner_2 + vol_uncert_inner_3*vol_uncert_inner_3;
+          const double outer_vol_uncert_sq = vol_uncert_outer_1*vol_uncert_outer_1 + vol_uncert_outer_2*vol_uncert_outer_2 + vol_uncert_outer_3*vol_uncert_outer_3;
+          
+          return sqrt( inner_vol_uncert_sq + outer_vol_uncert_sq);
+        }//if( mat_index == matn )
+        
+        dim_1_uncert_sq += dw_uncert * dw_uncert;
+        dim_2_uncert_sq += dh_uncert * dh_uncert;
+        dim_3_uncert_sq += dd_uncert * dd_uncert;
+        
+        dim_1 += dw;
+        dim_2 += dh;
+        dim_3 += dd;
+        
+        break;
+      }
+        
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+  }//for( int index = 0; index < matn; ++index )
+  
+  assert( 0 );
+  return 0.0;
+}//volumeUncertaintyOfMaterial(...)
+
+
 double ShieldingSourceChi2Fcn::activityOfSelfAttenSource(
                                        const SandiaDecay::Nuclide *nuclide,
                                        const std::vector<double> &params ) const
@@ -1264,7 +1602,7 @@ double ShieldingSourceChi2Fcn::activityOfSelfAttenSource(
   assert( isSelfAttenSource(nuclide) );
   
   bool foundSrc = false;
-  double radius = 0.0, activity = 0.0;
+  double activity = 0.0;
 
   const int nmat = static_cast<int>( numMaterials() );
   for( int matn = 0; matn < nmat; ++matn )
@@ -1274,11 +1612,6 @@ double ShieldingSourceChi2Fcn::activityOfSelfAttenSource(
     const Material *mat = shield.material;
     if( !mat )  //if a generic shielding
       continue;
-
-    const double thick = thickness( matn, params );
-    const double vol = (4.0/3.0)*PhysicalUnits::pi*( pow(radius+thick,3.0) - pow(radius,3.0));
-    
-    radius += thick;
     
     // Determine if nuclide is a self-attenuating source of this shielding
     const auto &self_atten_srcs = shield.self_atten_sources;
@@ -1304,23 +1637,7 @@ double ShieldingSourceChi2Fcn::activityOfSelfAttenSource(
       }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
     }//if( hasVariableMassFraction(mat) ) / else
     
-    /*
-     if( massFrac <= 0.0 )
-     {
-     //This condition can happen during fitting if the fit goes down to
-     //  a mass fraction of zero, so its not an absolute error, just not
-     //  ever practically expected.
-     stringstream msg;
-     msg << "Potential serious error in activityOfSelfAttenSource for "
-     << src->symbol << ", massFrac=" << massFrac;
-     cerr << msg.str() << endl;
-     #if( PERFORM_DEVELOPER_CHECKS )
-     log_developer_error( __func__, msg.str().c_str() );
-     #endif
-     }//if( massFrac <= 0.0 )
-     */
-    
-    
+    const double vol = volumeOfMaterial( matn, params );
     const double mass_grams = massFrac * mat->density * vol / PhysicalUnits::gram;
     const double activity_per_gram = nuclide->activityPerGram();
     activity += mass_grams * activity_per_gram;
@@ -1368,7 +1685,6 @@ double ShieldingSourceChi2Fcn::totalActivity( const SandiaDecay::Nuclide *nuclid
     return activity;
   
   bool foundSrc = false;
-  double radius = 0.0;
   
   const int nmat = static_cast<int>( numMaterials() );
   for( int matn = 0; matn < nmat; ++matn )
@@ -1379,11 +1695,7 @@ double ShieldingSourceChi2Fcn::totalActivity( const SandiaDecay::Nuclide *nuclid
     if( !mat )  //if a generic shielding
       continue;
     
-    const double inner_rad = radius;
-    const double thick = thickness( matn, params );
-    radius += thick;
-    
-    const double vol = (4.0/3.0)*PhysicalUnits::pi*( pow(radius,3.0) - pow(inner_rad,3.0));
+    const double vol = volumeOfMaterial( matn, params );
     
     // Determine if nuclide is a trace source of this shielding
     TraceActivityType type = TraceActivityType::NumTraceActivityType;
@@ -1513,22 +1825,19 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
     if( isGenericMaterial( matn ) )
       continue;
     
-    const double thick = thickness( matn, params );
-    const double thickUncert = thickness( matn, errors );
-    
     const ShieldingInfo &shield = m_materials[matn];
     const Material * const mat = shield.material;
     
-    const double outerRad = radius + thick;
-    const double vol = (4.0/3.0)*PhysicalUnits::pi*( pow(outerRad,3.0) - pow(radius,3.0));
+    if( shield.self_atten_sources.empty() && shield.trace_sources.empty() )
+      continue;
     
-    const double volumeUncertDueToInnerRad = 4.0 * PhysicalUnits::pi * pow(radius,2.0) * sqrt(radiusUncertSquared);
-    // We take the uncertainty in volume due to the thickness uncertainty to be independent of
-    //  the inner-radius uncertainty - which is approximately, probably, about right to kinda
-    //  fairly cover all the uncertainties - maybe
-    const double volumeUncertDueToThickness = 4.0 * PhysicalUnits::pi * pow(outerRad,2.0) * thickUncert;
-    const double volUncertSquared = pow(volumeUncertDueToInnerRad,2.0) + pow(volumeUncertDueToThickness,2.0);
+    //const auto &self_attens = shield.self_atten_sources;
+    //const auto &traces = shield.trace_sources;
+    //const bool is_self_atten = (std::find(begin(self_attens), end(self_attens), nuclide) != end(self_attens));
     
+    const double vol = volumeOfMaterial(matn, params);
+    const double volUncert = volumeUncertaintyOfMaterial(matn, params, errors);
+  
     // Add in uncertainty contributions if this is a self attenuating source
     for( const SandiaDecay::Nuclide *src : shield.self_atten_sources )
     {
@@ -1552,7 +1861,7 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
         const double iso_density = massFrac * mat->density / PhysicalUnits::gram;
         const double activity_per_gram = nuclide->activityPerGram();
         const double mass_grams = iso_density * vol;
-        const double massUncertaintySquared_grams = iso_density * volUncertSquared;
+        const double massUncertaintySquared_grams = iso_density * volUncert * volUncert;
         const double thisActivity = mass_grams * activity_per_gram;
         const double thisActivityUncertaintySquared = massUncertaintySquared_grams * activity_per_gram;
         
@@ -1581,8 +1890,8 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
       //  all uncertainties, event if we are returning an uncertainty per cc or gram, this way when
       //  the the per cc or per gram gets multiplied by the volume, the expected uncertainty will
       //  be given.
-      const double thisActivity = ShieldingSourceChi2Fcn::activity( nuclide, params );
-      const double simpleUncert = ShieldingSourceChi2Fcn::activity( nuclide, errors );
+      const double thisActivity = ShieldingSourceChi2Fcn::totalActivity( nuclide, params );
+      const double simpleUncert = ShieldingSourceChi2Fcn::totalActivity( nuclide, errors );
       
       double thisActUncertSquared = simpleUncert * simpleUncert;
       switch( trace.second )
@@ -1600,7 +1909,6 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
           //  statistical errors probably always pale in comparison to systematic, I dont think this
           //  is an issue (or usually would people would just say this is being conservative, which
           //  no one ever questions).
-          const double volUncert = sqrt( volUncertSquared );
           const double volFracUncert = volUncert / vol;
           
           thisActUncertSquared += volFracUncert*volFracUncert*thisActivity*thisActivity;
@@ -1616,24 +1924,13 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
       activity += thisActivity;
       activityUncertSquared += thisActUncertSquared;
     }//for( loop over trace sources )
-    
-    
-    radius += thick;
-    
-    // For the layer of shielding we are concerned with, we will assume the uncertainty on the
-    //  inner radius is the squared sum of all inner layer uncertainties - this is actually a bit
-    //  over the top - these thickness uncertainties are likely very correlated - so much so we
-    //  could probably use just the thickness uncertainty on just the previous layer, but we'll be
-    //  conservative, or something.
-    const double radiusUncert = thickness( matn, errors );
-    radiusUncertSquared += radiusUncert*radiusUncert;
   }//for( size_t matn = 0; matn < nmat; ++matn )
   
   if( activityUncertSquared < 0.0 || IsNan(activityUncertSquared) || IsInf(activityUncertSquared) )
     throw runtime_error( "error calculating activity uncertainty for self-attenuating source;"
                          " squared value calculated is " + std::to_string(activityUncertSquared) );
   
-  const double normalCalcAct = ShieldingSourceChi2Fcn::activity( nuclide, params );
+  const double normalCalcAct = ShieldingSourceChi2Fcn::totalActivity( nuclide, params );
   assert( fabs(normalCalcAct - activity) < 0.001*std::max(normalCalcAct,activity) );
   
   return sqrt( activityUncertSquared );
@@ -1716,15 +2013,55 @@ bool ShieldingSourceChi2Fcn::isGenericMaterial( int materialNum ) const
 }//bool isGenericMaterial( int materialNum ) const
   
 
-double ShieldingSourceChi2Fcn::thickness( int materialNum, const vector<double> &params ) const
+double ShieldingSourceChi2Fcn::sphericalThickness( int materialNum, const vector<double> &params ) const
 {
   if( isGenericMaterial( materialNum ) )
-    throw std::runtime_error( "ShieldingSourceChi2Fcn::thickness(...): "
+    throw std::runtime_error( "ShieldingSourceChi2Fcn::sphericalThickness(...): "
                               "You should not call this function for generic "
                               "materials" );
 
-  return params.at( 2*m_nuclides.size() + 2*materialNum );
-}//double thickness(...)
+  return params.at( 2*m_nuclides.size() + 3*materialNum );
+}//double sphericalThickness(...)
+
+
+double ShieldingSourceChi2Fcn::cylindricalRadiusThickness( int materialNum, const std::vector<double> &params ) const
+{
+  assert( !isGenericMaterial( materialNum ) );
+  
+  return params.at( 2*m_nuclides.size() + 3*materialNum );
+}//double cylindricalRadiusThickness(...)
+
+
+double ShieldingSourceChi2Fcn::cylindricalLengthThickness( int materialNum, const std::vector<double> &params ) const
+{
+  assert( !isGenericMaterial( materialNum ) );
+  
+  return params.at( 2*m_nuclides.size() + 3*materialNum + 1 );
+}//double cylindricalLengthThickness(...)
+
+
+double ShieldingSourceChi2Fcn::rectangularWidthThickness( int materialNum, const std::vector<double> &params ) const
+{
+  assert( !isGenericMaterial( materialNum ) );
+  
+  return params.at( 2*m_nuclides.size() + 3*materialNum );
+}//double rectangularWidthThickness(...)
+
+
+double ShieldingSourceChi2Fcn::rectangularHeightThickness( int materialNum, const std::vector<double> &params ) const
+{
+  assert( !isGenericMaterial( materialNum ) );
+  
+  return params.at( 2*m_nuclides.size() + 3*materialNum + 1 );
+}//double rectangularHeightThickness(...)
+
+
+double ShieldingSourceChi2Fcn::rectangularDepthThickness( int materialNum, const std::vector<double> &params ) const
+{
+  assert( !isGenericMaterial( materialNum ) );
+  
+  return params.at( 2*m_nuclides.size() + 3*materialNum + 2 );
+}//double rectangularDepthThickness(...)
 
 
 //arealDensity(...): will throw std::runtime_exception if material is a
@@ -1736,7 +2073,7 @@ double ShieldingSourceChi2Fcn::arealDensity( int materialNum,
     throw std::runtime_error( "ShieldingSourceChi2Fcn::arealDensity(...): "
                               "You can only call this function for generic materials" );
   
-  return params.at( 2*m_nuclides.size() + 2*materialNum + 1 );
+  return params.at( 2*m_nuclides.size() + 3*materialNum + 1 );
 }//double arealDensity(...)
 
 
@@ -1749,7 +2086,7 @@ double ShieldingSourceChi2Fcn::atomicNumber( int materialNum,
     throw std::runtime_error( "ShieldingSourceChi2Fcn::atomicNumber(...): "
                               "You can only call this function for generic materials" );
   
-  return params.at( 2*m_nuclides.size() + 2*materialNum );
+  return params.at( 2*m_nuclides.size() + 3*materialNum );
 }//double atomicNumber(...)
 
 
@@ -1820,7 +2157,7 @@ bool first_lessthan( const pair<double,double> &lhs, const pair<double,double> &
 }
 }
 
-//ToDo: add ability to give summarry about 
+//ToDo: add ability to give summary about 
 void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &energy_count_map,
                                                            const std::vector< pair<double,double> > &energie_widths,
                                                            SandiaDecay::NuclideMixture &mixture,
@@ -2113,7 +2450,7 @@ void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calcu
 
   calculator.integral = 0.0;
 
-  Integrate::CuhreIntegrate( ndim, Integrand, userdata, epsrel, epsabs,
+  Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_Integrand, userdata, epsrel, epsabs,
                              Integrate::LastImportanceFcnt,
                              mineval, maxeval, nregions, neval,
                              fail, calculator.integral, error, prob );
@@ -2283,9 +2620,32 @@ vector< tuple<double,double,double,Wt::WColor,double> >
                                   atomic_number, areal_density, _1 );
     }else
     {
-      const float thick = static_cast<float>( thickness( materialN, x ) );
-      shield_outer_rad += thick;
-      att_coef_fcn = boost::bind( &transmition_coefficient_material, material, _1, thick );
+      double thickness = 0.0;
+      switch( m_geometry )
+      {
+        case GeometryType::Spherical:
+          thickness = sphericalThickness(materialN,x);
+          break;
+          
+        case GeometryType::CylinderEndOn:
+          thickness = cylindricalLengthThickness(materialN,x);
+          break;
+          
+        case GeometryType::CylinderSideOn:
+          thickness = cylindricalRadiusThickness(materialN,x);
+          break;
+          
+        case GeometryType::Rectangular:
+          thickness = rectangularDepthThickness(materialN,x);
+          break;
+          
+        case GeometryType::NumGeometryType:
+          assert( 0 );
+          break;
+      }//switch( m_geometry )
+      
+      shield_outer_rad += thickness;
+      att_coef_fcn = boost::bind( &transmition_coefficient_material, material, _1, static_cast<float>(thickness) );
     }//if( generic material ) / else
 
 /*
@@ -2318,12 +2678,52 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         info->push_back( buffer );
       }else
       {
-        const double thick = thickness( materialN, x );
         stringstream title;
         title << "Shielding: " << material->name << ", "
               << material->chemicalFormula() << ", density="
               << material->density *PhysicalUnits::cm3/PhysicalUnits::gram
-              << " g/cm3, thickness=" << (thick/PhysicalUnits::cm) << " cm";
+              << " g/cm3, ";
+        
+        title << to_str(m_geometry) << ": {";
+        switch( m_geometry )
+        {
+          case GeometryType::Spherical:
+          {
+            const double thickness = sphericalThickness(materialN,x);
+            title << "rad_thickness=" << PhysicalUnits::printToBestLengthUnits(thickness);
+            break;
+          }
+          
+          case GeometryType::CylinderSideOn:
+          case GeometryType::CylinderEndOn:
+          {
+            const double r = cylindricalRadiusThickness(materialN,x);
+            const double z = cylindricalLengthThickness(materialN,x);
+            
+            title << "rad_thickness=" << PhysicalUnits::printToBestLengthUnits(r)
+                  << ", len_thickness=" << PhysicalUnits::printToBestLengthUnits(z);
+            break;
+          }
+            
+          case GeometryType::Rectangular:
+          {
+            const double w = rectangularWidthThickness(materialN,x);
+            const double h = rectangularHeightThickness(materialN,x);
+            const double d = rectangularDepthThickness(materialN,x);
+            
+            title << "width_thickness=" << PhysicalUnits::printToBestLengthUnits(w)
+                  << ", height_thickness=" << PhysicalUnits::printToBestLengthUnits(h)
+                  << ", depth_thickness=" << PhysicalUnits::printToBestLengthUnits(d);
+            break;
+          }
+            
+          case GeometryType::NumGeometryType:
+            assert( 0 );
+            break;
+        }//switch( m_geometry )
+        
+        title << "}";
+        
         info->push_back( title.str() );
       }//if( isGenericMaterial(materialN) ) / else
       

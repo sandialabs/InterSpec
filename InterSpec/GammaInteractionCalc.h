@@ -66,8 +66,21 @@ enum class TraceActivityType : int
 };//enum class TraceActivityType
 
 /** Gives string representation to a TraceActivityType value. */
-const char *to_str( TraceActivityType type );
+const char *to_str( const TraceActivityType type );
 
+
+/** Enum that lists the geometry types we can compute volumetric sources for. */
+enum class GeometryType : int
+{
+  Spherical,
+  CylinderEndOn,
+  CylinderSideOn,
+  Rectangular,
+  NumGeometryType
+};//enum class GeometryType
+
+/** Gives string representation to a GeometryType value. */
+const char *to_str( const GeometryType type );
 
 
 //Returned in units of 1.0/[Length], so that
@@ -99,7 +112,7 @@ double transmition_coefficient_generic( float atomic_number, float areal_density
 
 void example_integration();
   
-int Integrand( const int *ndim, const double xx[],
+int DistributedSrcCalc_Integrand( const int *ndim, const double xx[],
                       const int *ncomp, double ff[], void *userdata );
 
 
@@ -196,14 +209,16 @@ class ShieldingSourceChi2Fcn
 //                   To get age for this case, do `age = 1 + 2*((-1*parameter) - 1)` )
 // ...
 //if material 0 normal material (if Material* is non-NULL pointer)
-//    -Material Thickness
-//    -ignored parameter here
+//    -Material { spherical thickness | cylindrical radius thickness | rectangular width thickness }
+//    -Material { ignored | cylindrical length thickness | rectangular height thickness }
+//    -Material { ignored | ignored | rectangular depth thickness }
 //else if generic material (if Material* is NULL)
 //    -atomic number
 //    -areal density  (in units of PhysicalUnits,
 //                     e.g. to print out to user divide by g/cm2)
+//    - ignored
 //if material 1 normal material (if Material* is non-NULL pointer)
-//    -Material Thinckness
+  //    -Material { spherical thickness | cylindrical radius thickness | rectangular width thickness }
 // ...
 //
 //could add another member variable that holds pointer to source isotopes to
@@ -246,10 +261,14 @@ public:
                       const std::vector<PeakDef> &peaks,
                       std::shared_ptr<const DetectorPeakResponse> detector,
                       const std::vector<ShieldingInfo> &materials,
+                      const GeometryType geometry,
                       const bool allowMultipleNucsContribToPeaks,
                       const bool attenuateForAir );
   virtual ~ShieldingSourceChi2Fcn();
 
+  /** Returns the geometry of this ShieldingSourceChi2Fcn */
+  const GeometryType geometry() const;
+  
   /** Causes exception to be thrown if DoEval() is called afterwards. */
   void cancelFit();
   
@@ -409,6 +428,12 @@ public:
   /** Returns whether or not the nuclide is a self-attenuating OR trace source. */
   bool isVolumetricSource( const SandiaDecay::Nuclide *nuc ) const;
   
+  /** Returns the volume of a material; note does not include the volume of inner shieldings. */
+  double volumeOfMaterial( const int materialN, const std::vector<double> &params ) const;
+  
+  /** Returns the uncertainty on the volume, taking inner dimensions, outer dimensions, and all dimensions to be independent.  */
+  double volumeUncertaintyOfMaterial( const int materialN, const std::vector<double> &params,
+                                      const std::vector<double> &errors ) const;
   
   /** Returns the activity of the specified nuclide that is a self-attenuating source.
    
@@ -441,11 +466,23 @@ public:
   //  NULL if a generic material.
   const Material *material( int materialNum ) const;
   
-  //thickness(...): will throw std::runtime_exception if material is a generic
+  //sphericalThickness(...): will throw std::runtime_exception if material is a generic
   //  material
-  double thickness( int materialNum,
+  double sphericalThickness( int materialNum,
                     const std::vector<double> &params ) const;
 
+  double cylindricalRadiusThickness( int materialNum,
+                            const std::vector<double> &params ) const;
+  double cylindricalLengthThickness( int materialNum,
+                                    const std::vector<double> &params ) const;
+  double rectangularWidthThickness( int materialNum,
+                                    const std::vector<double> &params ) const;
+  double rectangularHeightThickness( int materialNum,
+                                   const std::vector<double> &params ) const;
+  double rectangularDepthThickness( int materialNum,
+                                    const std::vector<double> &params ) const;
+  
+  
   //arealDensity(...): will throw std::runtime_exception if material is a
   //  specific material
   double arealDensity( int materialNum,
@@ -538,6 +575,8 @@ protected:
   typedef std::map<const Material *,std::vector<const SandiaDecay::Nuclide *> > MaterialToNucsMap;
   //Nuclides will stored sorted alphebetically
   MaterialToNucsMap m_nuclidesToFitMassFractionFor;
+  
+  const GeometryType m_geometry;
   
   bool m_allowMultipleNucsContribToPeaks;
   

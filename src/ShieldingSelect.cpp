@@ -39,6 +39,7 @@
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
+#include <Wt/WStackedWidget>
 #include <Wt/WDoubleValidator>
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
@@ -71,11 +72,32 @@
 using namespace Wt;
 using namespace std;
 
+using GammaInteractionCalc::GeometryType;
 using GammaInteractionCalc::TraceActivityType;
 
 const int ShieldingSelect::sm_xmlSerializationMajorVersion = 0;
 const int ShieldingSelect::sm_xmlSerializationMinorVersion = 1;
 
+
+namespace
+{
+double distance_of_input_text( const WLineEdit *edit )
+{
+  const string text = edit->text().toUTF8();
+  
+  try
+  {
+    return PhysicalUnits::stringToDistance( text );
+  }catch( std::exception & )
+  {
+  }
+  
+  throw runtime_error( "Error converting '" + text + "' to a distance" );
+  
+  return 0.0;
+}//distance_of_input_text(...)
+
+}//namespace
 
 
 /**
@@ -1001,22 +1023,36 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
   m_forFitting( false ),
   m_materialDB( materialDB ),
   m_sourceModel( nullptr ),
+  m_geometry( GeometryType::Spherical ),
   m_materialSuggest( materialSuggest ),
   m_materialEdit( nullptr ),
   m_isGenericMaterial( false ),
-  m_materialSummarry( nullptr ),
+  m_materialSummary( nullptr ),
   m_closeIcon( nullptr ),
   m_addIcon( nullptr ),
   m_addTraceSourceItem( nullptr ),
-  m_thicknessEdit( nullptr ),
-  m_fitThicknessCB( nullptr ),
-  m_thicknessDiv( nullptr ),
+  m_dimensionsStack( nullptr ),
+  m_genericDiv( nullptr ),
   m_arealDensityEdit( nullptr ),
   m_fitArealDensityCB( nullptr ),
   m_atomicNumberEdit( nullptr ),
   m_fitAtomicNumberCB( nullptr ),
+  m_sphericalDiv( nullptr ),
+  m_thicknessEdit( nullptr ),
+  m_fitThicknessCB( nullptr ),
+  m_cylindricalDiv( nullptr ),
+  m_cylRadiusEdit( nullptr ),
+  m_fitCylRadiusCB( nullptr ),
+  m_cylLengthEdit( nullptr ),
+  m_fitCylLengthCB( nullptr ),
+  m_rectangularDiv( nullptr ),
+  m_rectWidthEdit( nullptr ),
+  m_fitRectWidthCB( nullptr ),
+  m_rectHeightEdit( nullptr ),
+  m_fitRectHeightCB( nullptr ),
+  m_rectDepthEdit( nullptr ),
+  m_fitRectDepthCB( nullptr ),
   m_fitMassFrac( nullptr ),
-  m_genericMaterialDiv( nullptr ),
   m_asSourceCBs( nullptr ),
   m_traceSources( nullptr )
 {
@@ -1035,22 +1071,30 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
     m_forFitting( (shieldSource != nullptr) ),
     m_materialDB( materialDB ),
     m_sourceModel( sourceModel ),
+    m_geometry( GeometryType::Spherical ),
     m_materialSuggest( materialSuggest ),
     m_materialEdit( NULL ),
     m_isGenericMaterial( false ),
-    m_materialSummarry( NULL ),
+    m_materialSummary( NULL ),
     m_closeIcon( NULL ),
     m_addIcon( NULL ),
     m_addTraceSourceItem( nullptr ),
+    m_dimensionsStack( nullptr ),
+    m_genericDiv( nullptr ),
+    m_arealDensityEdit( nullptr ),
+    m_fitArealDensityCB( nullptr ),
+    m_atomicNumberEdit( nullptr ),
+    m_fitAtomicNumberCB( nullptr ),
+    m_sphericalDiv( nullptr ),
+    m_cylindricalDiv( nullptr ),
+    m_cylRadiusEdit( nullptr ),
+    m_fitCylRadiusCB( nullptr ),
+    m_cylLengthEdit( nullptr ),
+    m_fitCylLengthCB( nullptr ),
+    m_rectangularDiv( nullptr ),
     m_thicknessEdit( NULL ),
     m_fitThicknessCB( NULL ),
-    m_thicknessDiv( NULL ),
-    m_arealDensityEdit( NULL ),
-    m_fitArealDensityCB( NULL ),
-    m_atomicNumberEdit( NULL ),
-    m_fitAtomicNumberCB( NULL ),
     m_fitMassFrac( NULL ),
-    m_genericMaterialDiv( NULL ),
     m_asSourceCBs( NULL ),
     m_traceSources( nullptr )
 {
@@ -1211,9 +1255,91 @@ WLineEdit *ShieldingSelect::materialEdit()
 }
 
 
-Wt::WLineEdit *ShieldingSelect::thicknessEdit()
+
+void ShieldingSelect::setSphericalThickness( const double thickness )
 {
-  return m_thicknessEdit;
+  checkIsCorrectCurrentGeometry( GeometryType::Spherical, __func__ );
+  
+  if( thickness < 0.0 )
+    m_thicknessEdit->setText( "" );
+  else
+    m_thicknessEdit->setText( PhysicalUnits::printToBestLengthUnits(thickness,3) );
+
+  handleMaterialChange();
+}//void setSphericalThickness( const double thickness )
+
+
+void ShieldingSelect::setCylindricalRadiusThickness( const double radius )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::CylinderEndOn, __func__ );
+  
+  if( radius < 0.0 )
+    m_cylRadiusEdit->setText( "" );
+  else
+    m_cylRadiusEdit->setText( PhysicalUnits::printToBestLengthUnits(radius,3) );
+  
+  handleMaterialChange();
+}//void setCylindricalRadiusThickness( const double radius )
+
+
+void ShieldingSelect::setCylindricalLengthThickness( const double length )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::CylinderEndOn, __func__ );
+  
+  if( length < 0.0 )
+    m_cylLengthEdit->setText( "" );
+  else
+    m_cylLengthEdit->setText( PhysicalUnits::printToBestLengthUnits(length,3) );
+  
+  handleMaterialChange();
+}//void setCylindricalLengthThickness( const double length )
+
+
+void ShieldingSelect::setRectangularWidthThickness( const double width )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  if( width < 0.0 )
+    m_rectWidthEdit->setText( "" );
+  else
+    m_rectWidthEdit->setText( PhysicalUnits::printToBestLengthUnits(width,3) );
+  
+  handleMaterialChange();
+}//void setRectangularWidth( const double width )
+
+
+void ShieldingSelect::setRectangularHeightThickness( const double height )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  if( height < 0.0 )
+    m_rectHeightEdit->setText( "" );
+  else
+    m_rectHeightEdit->setText( PhysicalUnits::printToBestLengthUnits(height,3) );
+  
+  handleMaterialChange();
+}//void setRectangularHeight( const double height )
+
+
+void ShieldingSelect::setRectangularDepthThickness( const double depth )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  if( depth < 0.0 )
+    m_rectDepthEdit->setText( "" );
+  else
+    m_rectDepthEdit->setText( PhysicalUnits::printToBestLengthUnits(depth,3) );
+  
+  handleMaterialChange();
+}//void setRectangularDepth( const double depth )
+
+
+
+void ShieldingSelect::setSphericalThicknessEditEnabled( const bool enabled )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Spherical, __func__ );
+  
+  m_thicknessEdit->setEnabled(enabled);
 }
 
 
@@ -1396,6 +1522,11 @@ void ShieldingSelect::init()
   
   m_materialEdit = new WLineEdit( "" );
   m_materialEdit->setAutoComplete( false );
+
+  m_materialEdit->changed().connect( this, &ShieldingSelect::handleMaterialChange );
+  m_materialEdit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
+  //m_materialEdit->blurred().connect( this, &ShieldingSelect::handleMaterialChange );
+
   
   if( m_forFitting )
   {
@@ -1416,86 +1547,37 @@ void ShieldingSelect::init()
     " quote the nuclide, ex: 'U238'0.2'U235'0.8",
                               showToolTips, HelpSystem::ToolTipPosition::Top );
 
-  // m_materialEdit->setTextSize( 22 );
-  // m_materialEdit->setWidth( 155 );
   
   if( m_materialSuggest )
     m_materialSuggest->forEdit( m_materialEdit,
                    WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
 
   
-  m_materialSummarry = new WText( "", XHTMLText );
+  m_materialSummary = new WText( "", XHTMLText );
   if( m_forFitting )
   {
-    materialDivLayout->addWidget( m_materialSummarry, 1, 1, AlignMiddle );
+    materialDivLayout->addWidget( m_materialSummary, 1, 1, AlignMiddle );
   }else
   {
-    //m_materialSummarry->setWidth( WLength(100,WLength::Unit::Pixel) );
-    m_materialSummarry->addStyleClass( "MaterialSummary" );
-    //materialDivLayout->addWidget( m_materialSummarry, 1, 2 );
+    m_materialSummary->addStyleClass( "MaterialSummary" );
   }
   
   materialDivLayout->setColumnStretch(1,1);
   if( m_forFitting )
     setClosableAndAddable( true,  materialDivLayout );
 
-  m_thicknessDiv = new WContainerWidget( this );
-  
-  WGridLayout * thicknessDivLayout = new WGridLayout();
-  m_thicknessDiv->setLayout(thicknessDivLayout);
-  thicknessDivLayout->setContentsMargins(3,3,3,3);
-  WLabel *label = new WLabel( "Thickness" );
-  thicknessDivLayout->addWidget(label,0,0,AlignMiddle);
-  m_thicknessEdit = new WLineEdit( "1.0 cm" );
-  m_thicknessEdit->setAutoComplete( false );
-  
-  label->setBuddy( m_thicknessEdit );
-  
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, this );
-  validator->setFlags( Wt::MatchCaseInsensitive );
-  m_thicknessEdit->setValidator( validator );
-  
-  if( m_forFitting )
-  {
-    m_thicknessEdit->setWidth( 150 );
-    thicknessDivLayout->addWidget(m_thicknessEdit,0,1,AlignMiddle);
-    
-    m_fitThicknessCB = new WCheckBox( "Fit" );
-    m_fitThicknessCB->setChecked( true );
-    thicknessDivLayout->addWidget(m_fitThicknessCB,0,2,AlignMiddle | AlignRight);
-    thicknessDivLayout->setColumnStretch(3,1);
-  }else
-  {
-    thicknessDivLayout->addWidget( m_thicknessEdit, 0, 1 );
-    thicknessDivLayout->addWidget( m_materialSummarry, 0, 2, AlignMiddle );
-    thicknessDivLayout->setColumnStretch( 1, 1 );
-  }//if( m_forFitting ) / else
+  m_dimensionsStack = new WStackedWidget( this );
   
   
-  const WBorder anAdBorder( WBorder::Solid, WBorder::None, black );
-
-  m_genericMaterialDiv = new WContainerWidget( this );
-  WGridLayout *genericMatLayout = new WGridLayout( m_genericMaterialDiv );
+  // Begin setting up generic material widgets
+  m_genericDiv = new WContainerWidget();
+  m_dimensionsStack->addWidget( m_genericDiv );
+  
+  WGridLayout *genericMatLayout = new WGridLayout( m_genericDiv );
   genericMatLayout->setContentsMargins(3,3,3,3);
-//  m_genericMaterialDiv->decorationStyle().setBorder( anAdBorder, Wt::All );
-
-//  WContainerWidget *anDiv = new WContainerWidget( m_genericMaterialDiv );
-//  WContainerWidget *adDiv = new WContainerWidget( m_genericMaterialDiv );
-  
-//  anDiv->decorationStyle().setBorder( anAdBorder, Wt::All );
-//  adDiv->decorationStyle().setBorder( anAdBorder, Wt::All );
-  
-  
-//  WContainerWidget *anAdDiv = new WContainerWidget( m_genericMaterialDiv );
-//  WGridLayout *anAdDivLayout = new WGridLayout( anAdDiv );
-//  anAdDivLayout->setContentsMargins(3,3,3,3);
-//  anAdDivLayout->setColumnStretch( 1, 1 );
-  
-  label = new WLabel( "AD" );
+  WLabel *label = new WLabel( "AD" );
   label->setAttributeValue( "style", "padding-left: 1em;" );
-//  label = new WLabel( "Areal Density" );
   label->setToolTip( "Areal Density of the shielding in g/cm2" );
-//  anAdDivLayout->addWidget(label,1,0,AlignMiddle);
   genericMatLayout->addWidget( label, 0, 2+m_forFitting, AlignMiddle );
   
   m_arealDensityEdit = new WLineEdit();
@@ -1505,7 +1587,6 @@ void ShieldingSelect::init()
   else
     m_arealDensityEdit->setEmptyText( "Areal Density" );
   
-//  anAdDivLayout->addWidget(m_arealDensityEdit,1,1,AlignMiddle);
   genericMatLayout->addWidget( m_arealDensityEdit, 0, 3+m_forFitting, AlignMiddle );
   genericMatLayout->setColumnStretch( 3+m_forFitting, 1 );
   
@@ -1522,7 +1603,6 @@ void ShieldingSelect::init()
   m_arealDensityEdit->setValidator( adValidator );
   label = new WLabel( "g/cm<sup>2</sup>");
   label->setAttributeValue( "style", "font-size: 75%;" );
-//  anAdDivLayout->addWidget(label,1,2,AlignMiddle);
   genericMatLayout->addWidget( label, 0, 4+m_forFitting, AlignMiddle );
   
   m_arealDensityEdit->addStyleClass( "numberValidator" ); //used to detect mobile keyboard
@@ -1531,12 +1611,9 @@ void ShieldingSelect::init()
   {
     m_fitArealDensityCB = new WCheckBox( "Fit" );
     m_fitArealDensityCB->setChecked( true );
-//    anAdDivLayout->addWidget(m_fitArealDensityCB,1,3,AlignRight | AlignMiddle);
     genericMatLayout->addWidget( m_fitArealDensityCB, 0, 6, AlignMiddle );
   }
-
-//  label = new WLabel( "Atomic Num." );
-//  anAdDivLayout->addWidget(label,0,0,AlignMiddle);
+  
   label = new WLabel( "AN" );
   label->setToolTip( "Atomic Number of the shielding" );
   genericMatLayout->addWidget( label, 0, 0, AlignMiddle );
@@ -1547,8 +1624,7 @@ void ShieldingSelect::init()
     m_atomicNumberEdit->setText( "15.0" );
   else
     m_atomicNumberEdit->setEmptyText( "Atomic Number" );
-
-//  anAdDivLayout->addWidget(m_atomicNumberEdit,0,1,AlignMiddle);
+  
   genericMatLayout->addWidget( m_atomicNumberEdit, 0, 1, AlignMiddle );
   genericMatLayout->setColumnStretch( 1, 1 );
   
@@ -1566,55 +1642,130 @@ void ShieldingSelect::init()
   {
     m_fitAtomicNumberCB = new WCheckBox( "Fit" );
     m_fitAtomicNumberCB->setChecked( false );
-//    anAdDivLayout->addWidget(m_fitAtomicNumberCB,0,3,AlignRight |AlignMiddle);
     genericMatLayout->addWidget( m_fitAtomicNumberCB, 0, 2, AlignMiddle );
     
     m_asSourceCBs = new WContainerWidget( this );
     m_asSourceCBs->addStyleClass( "ShieldingAsSourceCBDiv" );
-    WLabel *label = new WLabel( "Source for:", m_asSourceCBs );
+    label = new WLabel( "Source for:", m_asSourceCBs );
     label->setInline( false );
     m_asSourceCBs->hide();
     const char *tooltip = "When these nuclides are used as sources they are"
-                          " treated as uniformly distributed in the material"
-                          " (which is assumed spherical), so self attenuation"
-                          " and other factors are accounted for.";
-
+    " treated as uniformly distributed in the material"
+    " (which is assumed spherical), so self attenuation"
+    " and other factors are accounted for.";
+    
     HelpSystem::attachToolTipOn( m_asSourceCBs,tooltip, showToolTips );
     m_fitMassFrac = new WCheckBox( "Fit Mass Fractions", m_asSourceCBs );
     m_fitMassFrac->hide();
     m_fitMassFrac->setInline( false );
   }//if( m_forFitting )
-
   
-  handleMaterialChange();
   
+  // Note: the changed() signal should catch when you change the value and then the input is blurred
   m_atomicNumberEdit->changed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
   m_atomicNumberEdit->enterPressed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
-  m_atomicNumberEdit->blurred().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
   
   m_arealDensityEdit->changed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
   m_arealDensityEdit->enterPressed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
-  m_arealDensityEdit->blurred().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
   
-  m_materialEdit->changed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
-  m_materialEdit->enterPressed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
-  m_materialEdit->blurred().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
+  
+  // A validator for the various geometry distances
+  WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, this );
+  distValidator->setFlags( Wt::MatchCaseInsensitive );
+  
+  
+  // A lamda for setting up dimension edits for the various geometry dimensions
+  auto setupDimEdit = [this,distValidator]( const char *labelTxt, WLineEdit *&edit, WCheckBox *&fitCb, WGridLayout *grid ){
+    const int row = grid->rowCount();
+    
+    WLabel *label = new WLabel( labelTxt );
+    grid->addWidget( label, row, 0, AlignMiddle );
+    
+    edit = new WLineEdit( "1.0 cm" );
+    edit->setValidator( distValidator );
+    edit->setAutoComplete( false );
+    label->setBuddy( edit );
+    
+    //From a very brief experiment, it looks like the below JS would remove the uncertainty text,
+    //  however it appears when the server pushes the value of the edit to the client, the 'value'
+    //  tag of the element isnt updated... I have no clue.
+    //  const char *focusjs = "function(s,e){try{"
+    //  "s.value = s.value.replace('\\(.*\\)','').value.replace('  ',' ');"
+    //  "}catch(e){}}";
+    //  edit->changed().connect( focusjs );
+    
+    edit->changed().connect( boost::bind( &ShieldingSelect::removeUncertFromDistanceEdit, this, edit) );
+    edit->enterPressed().connect( boost::bind( &ShieldingSelect::removeUncertFromDistanceEdit, this, edit) );
+    //edit->blurred().connect( boost::bind( &ShieldingSelect::removeUncertFromDistanceEdit, this, edit) );
+    
+    edit->changed().connect( this, &ShieldingSelect::handleMaterialChange );
+    edit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
+    //edit->blurred().connect( this, &ShieldingSelect::handleMaterialChange );
+    
+    if( m_forFitting )
+    {
+      edit->setWidth( 150 );
+      grid->addWidget( edit, row, 1, AlignMiddle );
+      
+      fitCb = new WCheckBox( "Fit" );
+      fitCb->setChecked( false );
+      grid->addWidget( fitCb, row, 2, AlignMiddle | AlignRight );
+      grid->setColumnStretch( 3, 1 );
+    }else
+    {
+      grid->addWidget( edit, row, 1 );
+    }//if( m_forFitting ) / else
+  };//setupDimEdit(...)
+  
+  
+  
+  // Begin setting up spherical widgets
+  m_sphericalDiv = new WContainerWidget();
+  m_dimensionsStack->addWidget( m_sphericalDiv );
+  
+  WGridLayout *sphericalLayout = new WGridLayout();
+  m_sphericalDiv->setLayout( sphericalLayout );
+  sphericalLayout->setContentsMargins( 3, 3, 3, 3 );
+  
+  setupDimEdit( "Thickness", m_thicknessEdit, m_fitThicknessCB, sphericalLayout );
+  
+  if( !m_forFitting )
+  {
+    // TODO: right now the only place a ShieldingSelect will be non-generic or non-spherical is
+    //       in the Shielding/Activity fit tool, which we always have (m_forFitting == true), but
+    //       if geometry is cylindrical or rectangular, and (m_forFitting == false), then the
+    //       material summary wont be visible.
+    sphericalLayout->addWidget( m_materialSummary, 0, 2, AlignMiddle );
+    sphericalLayout->setColumnStretch( 1, 1 );
+  }//if( !m_forFitting )
+  
+  // Begin setting up cylindrical widgets
+  m_cylindricalDiv = new WContainerWidget();
+  m_dimensionsStack->addWidget( m_cylindricalDiv );
+  
+  WGridLayout *cylindricalLayout = new WGridLayout();
+  m_cylindricalDiv->setLayout( cylindricalLayout );
+  cylindricalLayout->setContentsMargins( 3, 3, 3, 3 );
+  
+  setupDimEdit( "Radius", m_cylRadiusEdit, m_fitCylRadiusCB, cylindricalLayout );
+  setupDimEdit( "Length", m_cylLengthEdit, m_fitCylLengthCB, cylindricalLayout );
 
-  m_thicknessEdit->changed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
-  m_thicknessEdit->enterPressed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
-  m_thicknessEdit->blurred().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
-
-  //From a very brief experiment, it looks like the below JS would remove the
-  //  uncertainty text, however it appears when the server pushes the value of
-  //  the edit to the client, the 'value' tag of the element isnt updated... I
-  //  have no clue.
-  //  const char *focusjs = "function(s,e){try{"
-  //  "s.value = s.value.replace('\\(.*\\)','').value.replace('  ',' ');"
-  //  "}catch(e){}}";
-  //  m_thicknessEdit->changed().connect( focusjs );
-  m_thicknessEdit->changed().connect( this, &ShieldingSelect::removeUncertFromThickness );
-  m_thicknessEdit->enterPressed().connect( this, &ShieldingSelect::removeUncertFromThickness );
-  m_thicknessEdit->blurred().connect( this, &ShieldingSelect::removeUncertFromThickness );
+  
+  // Begin setting up rectangular widgets
+  m_rectangularDiv = new WContainerWidget();
+  m_dimensionsStack->addWidget( m_rectangularDiv );
+  
+  WGridLayout *rectangularLayout = new WGridLayout();
+  m_rectangularDiv->setLayout( rectangularLayout );
+  rectangularLayout->setContentsMargins( 3, 3, 3, 3 );
+  
+  setupDimEdit( "Width", m_rectWidthEdit, m_fitRectWidthCB, rectangularLayout );
+  setupDimEdit( "Height", m_rectHeightEdit, m_fitRectHeightCB, rectangularLayout );
+  setupDimEdit( "Depth", m_rectDepthEdit, m_fitRectDepthCB, rectangularLayout );
+  
+  // We're all done creating the widgets
+  
+  handleMaterialChange();
   
   if( m_forFitting )
   {
@@ -1694,7 +1845,51 @@ void ShieldingSelect::emitAddAfterSignal()
 
 
 
-
+void ShieldingSelect::checkIsCorrectCurrentGeometry( const GeometryType wanted, const char *fcn ) const
+{
+  bool okayGeom = false;
+  
+  const bool is_generic = isGenericMaterial();
+  
+  switch( wanted )
+  {
+    case GeometryType::Spherical:
+      okayGeom = (!is_generic && (m_geometry == GeometryType::Spherical));
+      break;
+      
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+      okayGeom = (!is_generic
+                  && ((m_geometry == GeometryType::CylinderEndOn)
+                      || (m_geometry == GeometryType::CylinderSideOn)));
+      break;
+      
+    case GeometryType::Rectangular:
+      okayGeom = (!is_generic && (m_geometry == GeometryType::Rectangular));
+      break;
+      
+    case GeometryType::NumGeometryType:
+      okayGeom = is_generic;
+      break;
+  }//switch( wanted )
+  
+  
+  if( okayGeom )
+    return;
+  
+  const string current_geom = GammaInteractionCalc::to_str(m_geometry);
+  const string wanted_geom = GammaInteractionCalc::to_str(wanted);
+  //if( (wanted == GeometryType::CylinderEndOn) || (wanted == GeometryType::CylinderSideOn) )
+  //  remove "EndOn" or "SideOn"
+  
+  if( wanted == GeometryType::NumGeometryType )
+    throw runtime_error( "ShieldingSelect::" + string(fcn) + ": can not be called when"
+                        " a not a generic material (currently " + current_geom + ")" );
+  
+  throw runtime_error( "ShieldingSelect::" + string(fcn) + ": can not be called when"
+                        " a generic material or non-" + wanted_geom
+                        + " (currently " + current_geom + ")" );
+}//void checkIsCorrectCurrentGeometry(...)
 
 
 
@@ -1802,7 +1997,7 @@ void ShieldingSelect::handleTraceSourceNuclideChange( TraceSrcDisplay *changedSr
 
 void ShieldingSelect::handleTraceSourceActivityChange( const SandiaDecay::Nuclide *nuc, const double activity )
 {
-  m_activityFromThicknessNeedUpdating.emit( this, nuc );
+  m_activityFromVolumeNeedUpdating.emit( this, nuc );
 }
 
 void ShieldingSelect::handleTraceSourceWidgetAboutToBeRemoved( TraceSrcDisplay *src )
@@ -1820,19 +2015,107 @@ double ShieldingSelect::shieldingVolume() const
     throw runtime_error( "ShieldingSelect::shieldingVolume(): You should not call this function"
                          " for generic materials" );
   
-  const double innerRad = m_shieldSrcDisp ? m_shieldSrcDisp->innerRadiusOfShielding(this) : 0.0;
-  const double outerRad = innerRad + thickness();
-
-  if( innerRad >= (outerRad - (PhysicalUnits::cm * 1.0E-9) ) )
+  double volume = -1.0;
+  
+  const double pi = PhysicalUnits::pi;
+  
+  switch( m_geometry )
   {
-    return 0.0;
-  }//if( if this shielding thickness is zero )
+    case GeometryType::Spherical:
+    {
+      // Spheres are defined by their thickness relative to their inner sphere, so we have to loop
+      //  a bit to get our current radius.
+      double inner_rad = 0.0;
+      if( m_shieldSrcDisp )
+      {
+        for( const ShieldingSelect *inner = m_shieldSrcDisp->innerShielding(this);
+            inner; inner = m_shieldSrcDisp->innerShielding(inner) )
+        {
+          assert( inner->geometry() == m_geometry );
+          inner_rad += inner->thickness();
+        }
+      }//if( m_shieldSrcDisp )
+      
+      const double outer_rad = inner_rad + thickness();
+      
+      const double innerVolume = (4.0/3.0) * pi * inner_rad * inner_rad * inner_rad;
+      const double outerVolume = (4.0/3.0) * pi * outer_rad * outer_rad * outer_rad;
+      assert( outerVolume > innerVolume );
+      
+      volume = outerVolume - innerVolume;
+      
+      break;
+    }//case GeometryType::Spherical:
+      
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+    {
+      double inner_rad = 0.0, inner_half_length = 0.0;
+      if( m_shieldSrcDisp )
+      {
+        for( const ShieldingSelect *inner = m_shieldSrcDisp->innerShielding(this);
+            inner; inner = m_shieldSrcDisp->innerShielding(inner) )
+        {
+          assert( inner->geometry() == m_geometry );
+          inner_rad += inner->cylindricalRadiusThickness();
+          inner_half_length += inner->cylindricalLengthThickness();
+        }
+      }//if( m_shieldSrcDisp )
+      
+      const double innerVolume = pi * inner_rad * inner_rad * 2.0 * inner_half_length;
+      
+      
+      const double rad = inner_rad + cylindricalRadiusThickness();
+      const double len = inner_half_length + cylindricalLengthThickness();
+      const double outerVolume = pi * rad * rad * 2.0 * len;
+      
+      assert( outerVolume >= innerVolume );
+      
+      volume = outerVolume - innerVolume;
+      
+      break;
+    }//case CylinderEndOn and CylinderSideOn
+      
+    case GeometryType::Rectangular:
+    {
+      double inner_half_width = 0.0, inner_half_height = 0.0, inner_half_depth = 0.0;
+      if( m_shieldSrcDisp )
+      {
+        for( const ShieldingSelect *inner = m_shieldSrcDisp->innerShielding(this);
+            inner; inner = m_shieldSrcDisp->innerShielding(inner) )
+        {
+          assert( inner->geometry() == m_geometry );
+          inner_half_width  += inner->rectangularWidthThickness();
+          inner_half_height += inner->rectangularHeightThickness();
+          inner_half_depth  += inner->rectangularDepthThickness();
+        }
+      }//if( m_shieldSrcDisp )
+      
+      
+      const double innerVolume = 8.0 * inner_half_width * inner_half_height * inner_half_depth;
+      
+      const double half_width  = inner_half_width  + rectangularWidthThickness();
+      const double half_height = inner_half_height + rectangularHeightThickness();
+      const double half_depth  = inner_half_depth  + rectangularDepthThickness();
+      
+      const double outerVolume = 8.0 * half_width * half_height * half_depth;
+      
+      assert( outerVolume >= innerVolume );
+      
+      volume = outerVolume - innerVolume;
+      
+      break;
+    }//case Rectangular:
+      
+    case GeometryType::NumGeometryType:
+      assert(0);
+      throw runtime_error("shieldingVolume(): invalid geometry");
+      break;
+  }//switch( m_geometry )
 
-  const double innerVolume = (4.0/3.0) * PhysicalUnits::pi * innerRad * innerRad * innerRad;
-  const double outerVolume = (4.0/3.0) * PhysicalUnits::pi * outerRad * outerRad * outerRad;
-  assert( outerVolume > innerVolume );
-
-  return outerVolume - innerVolume;
+  assert( volume >= 0.0 );
+  
+  return volume;
 }//double ShieldingSelect::shieldingVolume()
 
 
@@ -1885,9 +2168,9 @@ Wt::Signal<ShieldingSelect *> &ShieldingSelect::materialChanged()
 }
 
 
-Wt::Signal<ShieldingSelect *,const SandiaDecay::Nuclide *> &ShieldingSelect::activityFromThicknessNeedUpdating()
+Wt::Signal<ShieldingSelect *,const SandiaDecay::Nuclide *> &ShieldingSelect::activityFromVolumeNeedUpdating()
 {
-  return m_activityFromThicknessNeedUpdating;
+  return m_activityFromVolumeNeedUpdating;
 }
 
 
@@ -1902,6 +2185,22 @@ Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &ShieldingSelect::remov
   return m_removingIsotopeAsSource;
 }
 
+void ShieldingSelect::setGeometry( GammaInteractionCalc::GeometryType type )
+{
+  assert( type != GeometryType::NumGeometryType );
+  if( type == GeometryType::NumGeometryType )
+    throw runtime_error( "setGeometry: invalid geometry" );
+  
+  m_geometry = type;
+  
+  displayInputsForCurrentGeometry();
+}//void setGeometry( GammaInteractionCalc::GeometryType type )
+
+
+GammaInteractionCalc::GeometryType ShieldingSelect::geometry() const
+{
+  return m_geometry;
+}
 
 bool ShieldingSelect::isGenericMaterial() const
 {
@@ -1909,28 +2208,61 @@ bool ShieldingSelect::isGenericMaterial() const
 }//bool isGenericMaterial() const
 
 
+
+
 double ShieldingSelect::thickness() const
 {
-  if( isGenericMaterial() )
-    throw std::runtime_error( "ShieldingSelect::thickness() can not be called "
-                              "for a generic material" );
+  checkIsCorrectCurrentGeometry( GeometryType::Spherical, __func__ );
   
-  const string text = m_thicknessEdit->text().toUTF8();
-
-  try
-  {
-    return PhysicalUnits::stringToDistance( text );
-  }catch( std::exception & )
-  {
-  }
-  
-  throw runtime_error( "Error converting '" + text + "' to a distance" );
-  return 0.0;
+  return distance_of_input_text( m_thicknessEdit );
 }//double thickness() const
+
+
+double ShieldingSelect::cylindricalRadiusThickness() const
+{
+  checkIsCorrectCurrentGeometry( GeometryType::CylinderSideOn, __func__ );
+  
+  return distance_of_input_text( m_cylRadiusEdit );
+}//double cylindricalRadiusThickness() const
+
+
+double ShieldingSelect::cylindricalLengthThickness() const
+{
+  checkIsCorrectCurrentGeometry( GeometryType::CylinderSideOn, __func__ );
+  
+  return distance_of_input_text( m_cylLengthEdit );
+}//double cylindricalLength() const
+
+
+double ShieldingSelect::rectangularWidthThickness() const
+{
+  checkIsCorrectCurrentGeometry( GeometryType::CylinderSideOn, __func__ );
+  
+  return distance_of_input_text( m_rectWidthEdit );
+}//double rectangularWidth() const
+
+
+double ShieldingSelect::rectangularHeightThickness() const
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  return distance_of_input_text( m_rectHeightEdit );
+}//double rectangularHeight() const
+
+
+double ShieldingSelect::rectangularDepthThickness() const
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  return distance_of_input_text( m_rectDepthEdit );
+}//double rectangularDepth() const
 
 
 double ShieldingSelect::atomicNumber() const
 {
+  if( !isGenericMaterial() )
+    throw runtime_error( "ShieldingSelect::atomicNumber() can not be called when a material" );
+  
   double answer = 0;
   const string text = m_atomicNumberEdit->text().toUTF8();
   
@@ -1945,6 +2277,9 @@ double ShieldingSelect::atomicNumber() const
 
 double ShieldingSelect::arealDensity() const
 {
+  if( !isGenericMaterial() )
+    throw runtime_error( "ShieldingSelect::arealDensity() can not be called when a material" );
+  
   const WString &text = m_arealDensityEdit->text();
   string txtstr = text.toUTF8();
   SpecUtils::trim( txtstr );
@@ -1964,15 +2299,70 @@ double ShieldingSelect::arealDensity() const
 
 bool ShieldingSelect::fitThickness() const
 {
-  if( isGenericMaterial() || !m_forFitting )
-    throw std::runtime_error( "ShieldingSelect::fitThickness() can not be "
-                              "called for a generic material" );
+  checkIsCorrectCurrentGeometry( GeometryType::Spherical, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( string(__func__) + ": can't be called when not for fitting." );
+  
   return m_fitThicknessCB->isChecked();
 }//bool fitThickness() const
 
 
-//fitAtomicNumber():
-//  throws std::runtime_error if not a GenericMaterial
+bool ShieldingSelect::fitCylindricalRadiusThickness() const
+{
+  checkIsCorrectCurrentGeometry( GeometryType::CylinderEndOn, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  return m_fitCylRadiusCB->isChecked();
+}//bool fitCylindricalRadiusThickness() const
+
+
+bool ShieldingSelect::fitCylindricalLengthThickness() const
+{
+  checkIsCorrectCurrentGeometry( GeometryType::CylinderEndOn, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  return m_fitCylLengthCB->isChecked();
+}//bool fitCylindricalLengthThickness() const
+
+
+bool ShieldingSelect::fitRectangularWidthThickness() const
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  return m_fitRectWidthCB->isChecked();
+}//bool fitRectangularWidthThickness() const
+
+
+bool ShieldingSelect::fitRectangularHeightThickness() const
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  return m_fitRectHeightCB->isChecked();
+}//bool fitRectangularHeightThickness() const
+
+
+bool ShieldingSelect::fitRectangularDepthThickness() const
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  return m_fitRectDepthCB->isChecked();
+}//bool fitRectangularDepthThickness() const
+
+
 bool ShieldingSelect::fitAtomicNumber() const
 {
   if( !isGenericMaterial() || !m_forFitting )
@@ -1993,7 +2383,7 @@ bool ShieldingSelect::fitArealDensity() const
 
 const Material *ShieldingSelect::material( const std::string &text )
 {
-  //See if 'text' is the name of a meterial in the database
+  //See if 'text' is the name of a material in the database
   try
   {
     const Material *answer = m_materialDB->material( text );
@@ -2877,19 +3267,21 @@ void ShieldingSelect::updateMassFractionDisplays( std::shared_ptr<const Material
 }//void updateMassFractionDisplays()
 
 
-void ShieldingSelect::removeUncertFromThickness()
+void ShieldingSelect::removeUncertFromDistanceEdit( Wt::WLineEdit *edit )
 {
-  cerr << "removeUncertFromThickness()" << endl;
+  if( !edit )
+    return;
+  
   //Get rid of the uncertainty text if the value is edited; this currently
   //  will cause the uncertainty to be removed
-  string thickstr = m_thicknessEdit->text().toUTF8();
+  string thickstr = edit->text().toUTF8();
   
   SpecUtils::trim( thickstr );
   
   if( thickstr.find_first_not_of( " \t0123456789.eE+-\n" ) == string::npos )
   {
     thickstr += " cm";
-    m_thicknessEdit->setText( thickstr );
+    edit->setText( thickstr );
   }
   
   const size_t open_pos = thickstr.find( '(' );
@@ -2905,7 +3297,7 @@ void ShieldingSelect::removeUncertFromThickness()
   while( (pos = thickstr.find( "  " )) != string::npos )
     thickstr.erase( thickstr.begin()+pos, thickstr.begin()+pos+1 );
   
-  m_thicknessEdit->setText( thickstr );
+  edit->setText( thickstr );
 }//void ShieldingSelect::removeUncertFromThickness()
 
 
@@ -2919,9 +3311,8 @@ void ShieldingSelect::handleToggleGeneric()
     const string oldmaterial = m_materialEdit->text().toUTF8();
     
     //See if we can convert the current material into AN, AD
-    m_thicknessDiv->hide();
-    m_genericMaterialDiv->show();
-    m_materialSummarry->setText( "" );
+    m_dimensionsStack->setCurrentWidget( m_genericDiv );
+    m_materialSummary->setText( "" );
     m_materialEdit->setText( "Generic" );
     m_materialEdit->disable();
     m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/atom_black.png") );
@@ -2962,8 +3353,7 @@ void ShieldingSelect::handleToggleGeneric()
   {
     m_toggleImage->setImageLink(Wt::WLink("InterSpec_resources/images/shield.png"));
     m_materialEdit->enable();
-    m_thicknessDiv->show();
-    m_genericMaterialDiv->hide();
+    m_dimensionsStack->setCurrentWidget( m_sphericalDiv );
     
     string aNstr = SpecUtils::trim_copy( m_atomicNumberEdit->text().toUTF8() );
     string aDstr = SpecUtils::trim_copy( m_arealDensityEdit->text().toUTF8() );
@@ -3030,6 +3420,32 @@ void ShieldingSelect::handleToggleGeneric()
 }//void ShieldingSelect::handleToggleGeneric()
 
 
+void ShieldingSelect::displayInputsForCurrentGeometry()
+{
+  WContainerWidget *displayWidget = nullptr;
+  if( m_isGenericMaterial )
+  {
+    displayWidget = m_genericDiv;
+  }else
+  {
+    switch( m_geometry )
+    {
+      case GeometryType::Spherical:       displayWidget = m_sphericalDiv;   break;
+      case GeometryType::CylinderEndOn:   displayWidget = m_cylindricalDiv; break;
+      case GeometryType::CylinderSideOn:  displayWidget = m_cylindricalDiv; break;
+      case GeometryType::Rectangular:     displayWidget = m_rectangularDiv; break;
+      case GeometryType::NumGeometryType: break;
+    }//switch( m_geometry )
+  }//if( is generic ) / else
+  
+  assert( displayWidget );
+  if( !displayWidget )
+    throw runtime_error( "ShieldingSelect: invalid m_geometry." );
+  
+  m_dimensionsStack->setCurrentWidget( displayWidget );
+}//void displayInputsForCurrentGeometry()
+
+
 void ShieldingSelect::handleMaterialChange()
 {
   typedef pair<const SandiaDecay::Element *,float> ElementFrac;
@@ -3038,13 +3454,12 @@ void ShieldingSelect::handleMaterialChange()
   std::shared_ptr<Material> newMaterial;
   std::shared_ptr<Material> previousMaterial = m_currentMaterial;
   
+  displayInputsForCurrentGeometry();
   setTraceSourceMenuItemStatus();
   
   if( m_isGenericMaterial )
   {
-    m_thicknessDiv->hide();
-    m_genericMaterialDiv->show();
-    m_materialSummarry->setText( "" );
+    m_materialSummary->setText( "" );
     m_materialEdit->setText( "Generic" );
     m_materialEdit->disable();
     m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/atom_black.png") );
@@ -3065,8 +3480,7 @@ void ShieldingSelect::handleMaterialChange()
   {
     m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/shield.png") );
     m_materialEdit->enable();
-    m_thicknessDiv->show();
-    m_genericMaterialDiv->hide();
+    
     
     string tooltip = "nothing";
     char summary[128];
@@ -3147,7 +3561,7 @@ void ShieldingSelect::handleMaterialChange()
 //    const bool showToolTips = true;//InterSpecUser::preferenceValue<bool>( "ShowTooltips", app->viewer() );
 //    HelpSystem::attachToolTipOn( this,tooltip, showToolTips );
     
-    m_materialSummarry->setText( summary );
+    m_materialSummary->setText( summary );
     
     if( m_traceSources )
     {
@@ -3177,14 +3591,14 @@ void ShieldingSelect::handleMaterialChange()
 #endif
         
         src->updateForMaterialChange();
-        m_activityFromThicknessNeedUpdating.emit( this, src->nuclide() );
+        m_activityFromVolumeNeedUpdating.emit( this, src->nuclide() );
       }//for( WWidget *w : traceSources )
     }//if( m_traceSources )
   }//if( generic material ) / else
   
   
-  //Now we need to update the activites for any isotopes that are
-  if( !!newMaterial && m_asSourceCBs && (previousMaterial==newMaterial) )
+  //Now we need to update the activities for any isotopes that are
+  if( !!newMaterial && m_asSourceCBs && (previousMaterial == newMaterial) )
   {
     updateMassFractionDisplays( newMaterial );
 
@@ -3195,7 +3609,7 @@ void ShieldingSelect::handleMaterialChange()
       {
         SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
         if( cb && cb->useAsSource() )
-          m_activityFromThicknessNeedUpdating.emit( this, cb->isotope() );
+          m_activityFromVolumeNeedUpdating.emit( this, cb->isotope() );
       }//for( WWidget *child : children )
     }//for(...)
   }//if( (previousMaterial == newMaterial) && m_asSourceCBs )

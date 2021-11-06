@@ -1117,7 +1117,7 @@ void DoseCalcWidget::init()
         
         m_enterShieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest );
         m_answerShieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest );
-        m_answerShieldingSelect->thicknessEdit()->disable();
+        m_answerShieldingSelect->setSphericalThicknessEditEnabled(false);
         m_answerShieldingSelect->arealDensityEdit()->disable();
         m_enterWidgets[i]->addWidget( m_enterShieldingSelect );
         m_answerWidgets[i]->addWidget( m_answerShieldingSelect );
@@ -1473,7 +1473,7 @@ void DoseCalcWidget::updateResultForGammaSource()
   if( m_answerShieldingSelect->isGenericMaterial() )
     m_answerShieldingSelect->arealDensityEdit()->setText( "" );
   else
-    m_answerShieldingSelect->thicknessEdit()->setText( "" );
+    m_answerShieldingSelect->setSphericalThickness( -1 );
   m_issueTxt->setText( "" );
   
 
@@ -1783,7 +1783,7 @@ void DoseCalcWidget::updateResultForGammaSource()
           m_answerShieldingSelect->arealDensityEdit()->setText( "" );
         }else
         {
-          m_answerShieldingSelect->thicknessEdit()->setText( "" );
+          m_answerShieldingSelect->setSphericalThickness( -1 );
         
           mat = m_answerShieldingSelect->material();
           if( !mat )
@@ -1814,7 +1814,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         }else
         {
           const double thickness = adfit / mat->density;
-          m_answerShieldingSelect->thicknessEdit()->setText( PhysicalUnits::printToBestLengthUnits(thickness) );
+          m_answerShieldingSelect->setSphericalThickness( thickness );
         }
         
       }catch( std::exception &e )
