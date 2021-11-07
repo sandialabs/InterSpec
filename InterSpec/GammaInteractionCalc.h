@@ -28,6 +28,7 @@
 #include <map>
 #include <set>
 #include <tuple>
+#include <array>
 #include <atomic>
 #include <vector>
 #include <utility>
@@ -112,8 +113,8 @@ double transmition_coefficient_generic( float atomic_number, float areal_density
 
 void example_integration();
   
-int DistributedSrcCalc_Integrand( const int *ndim, const double xx[],
-                      const int *ncomp, double ff[], void *userdata );
+int DistributedSrcCalc_integrand( const int *ndim, const double xx[],
+                         const int *ncomp, double ff[], void *userdata );
 
 
 //point_to_line_dist(...): calculates the distance from 'point' to the line
@@ -162,9 +163,20 @@ struct DistributedSrcCalc
   //Right now this struct assumes sources are solid, in terms of the attenuation
   //  calculation
   DistributedSrcCalc();
-  void eval( const double xx[], const int *ndimptr,
-             double ff[], const int *ncompptr ) const;
+  void eval_spherical( const double xx[], const int *ndimptr,
+                       double ff[], const int *ncompptr ) const;
+  
+  void eval_cyl_end_on( const double xx[], const int *ndimptr,
+                      double ff[], const int *ncompptr ) const;
+  
+  void eval_cyl_side_on( const double xx[], const int *ndimptr,
+                       double ff[], const int *ncompptr ) const;
+  
+  void eval_rect( const double xx[], const int *ndimptr,
+                        double ff[], const int *ncompptr ) const;
 
+  GeometryType m_geometry;
+  
   size_t m_sourceIndex;
   double m_detectorRadius;
   double m_observationDist;
@@ -180,11 +192,12 @@ struct DistributedSrcCalc
    */
   double m_airTransLenCoef;
   
-  std::vector<std::pair<double,double> > m_sphereRadAndTransLenCoef;
+  /** */
+  std::vector<std::pair<std::array<double,3>,double> > m_dimensionsAndTransLenCoef;
 
   double energy;
   double integral;
-  double srcVolumumetricActivity;
+  double srcVolumetricActivity;
 
   const SandiaDecay::Nuclide *nuclide;
 };//struct DistributedSrcCalc

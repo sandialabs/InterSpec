@@ -322,7 +322,8 @@ public:
   
   bool allowFittingActivity() const
   {
-    return m_allowFitting->isChecked();
+    const bool allow = m_allowFitting->isChecked();;
+    return allow;
   }
   
   void modelSourceAdded( const SandiaDecay::Nuclide * const nuc )
@@ -556,12 +557,12 @@ public:
       // If we are fitting for shielding thickness, then we probably dont also want to fit
       //  for activity per cm3 or per gram
       //  TODO: investigate how well fitting activity per gram or cm3 works when fitting thickness
-      if( m_parent->fitThickness()
-         && ((currentIndex == static_cast<int>(TraceActivityType::ActivityPerCm3))
-           || (currentIndex == static_cast<int>(TraceActivityType::ActivityPerGram))) )
-      {
-        m_allowFitting->setChecked( false );
-      }
+      //if( m_parent->fitThickness()
+      //   && ((currentIndex == static_cast<int>(TraceActivityType::ActivityPerCm3))
+      //     || (currentIndex == static_cast<int>(TraceActivityType::ActivityPerGram))) )
+      //{
+      //  m_allowFitting->setChecked( false );
+      //}
       
       // We will keep total activity the same, but update the display
       updateDispActivityFromTotalActivity();
@@ -1428,7 +1429,9 @@ bool ShieldingSelect::fitTraceSourceActivity( const SandiaDecay::Nuclide *nuc ) 
   if( !w )
     throw runtime_error( "traceSourceType: called with invalid nuclide" );
   
-  return w->allowFittingActivity();
+  const bool allow = w->allowFittingActivity();
+  
+  return allow;
 }//TraceActivityType traceSourceType( const SandiaDecay::Nuclide *nuc ) const
 
 
@@ -1923,7 +1926,10 @@ void ShieldingSelect::removeTraceSourceWidget( TraceSrcDisplay *toRemove )
     if( src == toRemove )
     {
       handleTraceSourceWidgetAboutToBeRemoved( src );
+      
       delete src;
+      
+      setTraceSourceMenuItemStatus();
       
       return;
     }//if( src == toRemove )
@@ -1992,6 +1998,8 @@ void ShieldingSelect::handleTraceSourceNuclideChange( TraceSrcDisplay *changedSr
       traceNucs.push_back( { srcNuc, src->totalActivity() } );
     }
   }//for( WWidget *w : traceSources )
+  
+  setTraceSourceMenuItemStatus();
 }//void handleTraceSourceNuclideChange( TraceSrcDisplay *src );
 
 
@@ -3353,17 +3361,31 @@ void ShieldingSelect::handleToggleGeneric()
   {
     m_toggleImage->setImageLink(Wt::WLink("InterSpec_resources/images/shield.png"));
     m_materialEdit->enable();
-    m_dimensionsStack->setCurrentWidget( m_sphericalDiv );
+    displayInputsForCurrentGeometry();
     
     string aNstr = SpecUtils::trim_copy( m_atomicNumberEdit->text().toUTF8() );
     string aDstr = SpecUtils::trim_copy( m_arealDensityEdit->text().toUTF8() );
+    
+    WLineEdit *dist_edit = nullptr;
+    switch( m_geometry )
+    {
+      case GeometryType::Spherical:      dist_edit = m_thicknessEdit; break;
+      case GeometryType::CylinderEndOn:  dist_edit = m_cylLengthEdit; break;
+      case GeometryType::CylinderSideOn: dist_edit = m_cylRadiusEdit; break;
+      case GeometryType::Rectangular:    dist_edit = m_rectDepthEdit; break;
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+    
+    assert( dist_edit );
     
     if( aNstr.empty() || aDstr.empty()
         || std::atof(aDstr.c_str())<=0.0
         || std::atof(aNstr.c_str())<=0.0 )
     {
       m_materialEdit->setText( "" );
-      m_thicknessEdit->setText( "1.0 cm" );
+      dist_edit->setText( "1.0 cm" );
     }else
     {
       //Get the atomic number closest to what the generic material was
@@ -3401,17 +3423,16 @@ void ShieldingSelect::handleToggleGeneric()
         {
           const double dist = ad / mat->density;
           const string diststr = PhysicalUnits::printToBestLengthUnits( dist );
-          m_thicknessEdit->setText( diststr );
+          dist_edit->setText( diststr );
         }else
         {
-          m_thicknessEdit->setText( "0 cm" );
+          dist_edit->setText( "0 cm" );
         }
       }else
       {
         m_materialEdit->setText( "" );
-        m_thicknessEdit->setText( "1 cm" );
+        dist_edit->setText( "1 cm" );
       }
-      
     }//if( input is empty ) / else
   }//if( m_isGenericMaterial ) / else
   
@@ -3716,7 +3737,11 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
   attr = doc->allocate_attribute( "version", value );
   base_node->append_attribute( attr );
 
-
+  name = "Geometry";
+  value = GammaInteractionCalc::to_str(m_geometry);
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  base_node->append_node( node );
+  
   name = "ForFitting";
   value = m_forFitting ? "1" : "0";
   node = doc->allocate_node( rapidxml::node_element, name, value );
@@ -3780,16 +3805,78 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     node = doc->allocate_node( rapidxml::node_element, name, value );
     material_node->append_node( node );
     
-    name = "Thickness";
-    value = doc->allocate_string( m_thicknessEdit->valueText().toUTF8().c_str() );
-    node = doc->allocate_node( rapidxml::node_element, name, value );
-    material_node->append_node( node );
-    if( m_forFitting )
+    //Lambda to add in dimension elements
+    auto addDimensionNode = [this,doc,material_node]( const char *name, WLineEdit *edit, WCheckBox *cb )
+                                                     -> rapidxml::xml_node<char> * {
+      const char *value = doc->allocate_string( edit->valueText().toUTF8().c_str() );
+      auto node = doc->allocate_node( rapidxml::node_element, name, value );
+      material_node->append_node( node );
+      if( m_forFitting )
+      {
+        value = cb->isChecked() ? "1" : "0";
+        auto attr = doc->allocate_attribute( "Fit", value );
+        node->append_attribute( attr );
+      }//if( m_forFitting )
+      
+      return node;
+    };//addDimensionNode lambda
+    
+    
+    // For backward compatibility with XML serialization version 0.0, we will add in a <Thickness>
+    //  element, corresponding to dimension along detector axis
+    switch( m_geometry )
     {
-      value = m_fitThicknessCB->isChecked() ? "1" : "0";
-      attr = doc->allocate_attribute( "Fit", value );
-      node->append_attribute( attr );
-    }//if( m_forFitting )
+      case GeometryType::Spherical:
+        node = addDimensionNode( "Thickness", m_thicknessEdit, m_fitThicknessCB );
+        node->append_attribute( doc->allocate_attribute( "Remark", "CylinderRadiusThickness" ) );
+        break;
+        
+      case GeometryType::CylinderEndOn:
+        node = addDimensionNode( "Thickness", m_cylLengthEdit, m_fitCylLengthCB );
+        node->append_attribute( doc->allocate_attribute( "Remark", "CylinderLengthThickness" ) );
+        break;
+        
+      case GeometryType::CylinderSideOn:
+        node = addDimensionNode( "Thickness", m_cylRadiusEdit, m_fitCylRadiusCB );
+        node->append_attribute( doc->allocate_attribute( "Remark", "CylinderRadiusThickness" ) );
+        break;
+        
+      case GeometryType::Rectangular:
+        node = addDimensionNode( "Thickness", m_rectDepthEdit, m_fitRectDepthCB );
+        node->append_attribute( doc->allocate_attribute( "Remark", "RectangularDepthThickness" ) );
+        break;
+        
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+    
+    // We could write dimensions from all the WLineEdits into the XML, which would kinda keep state
+    //  across changing geometries, but maybe for the moment we'll just write the relevant
+    //  dimensions.  TODO: think about this a little more
+    switch( m_geometry )
+    {
+      case GeometryType::Spherical:
+        addDimensionNode( "SphericalThickness", m_thicknessEdit, m_fitThicknessCB );
+        break;
+        
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+        addDimensionNode( "CylinderRadiusThickness", m_cylRadiusEdit, m_fitCylRadiusCB );
+        addDimensionNode( "CylinderLengthThickness", m_cylLengthEdit, m_fitCylLengthCB );
+        break;
+        
+      case GeometryType::Rectangular:
+        addDimensionNode( "RectangularWidthThickness",  m_rectWidthEdit,  m_fitRectWidthCB );
+        addDimensionNode( "RectangularHeightThickness", m_rectHeightEdit, m_fitRectHeightCB );
+        addDimensionNode( "RectangularDepthThickness",  m_rectDepthEdit,  m_fitRectDepthCB );
+        break;
+        
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+    
     
     if( m_forFitting )
     {
@@ -3855,7 +3942,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
 void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
 {
   rapidxml::xml_attribute<char> *attr;
-  rapidxml::xml_node<char> *node, *generic_node, *material_node;
+  rapidxml::xml_node<char> *node, *geom_node, *generic_node, *material_node;
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
  
   if( shield_node->name() != string("Shielding") )
@@ -3871,6 +3958,25 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
   
   // Note that version is either "0" (implied minor version 0), or "0.1" or something; we could read
   //  in the minor version to sm_xmlSerializationMinorVersion and use it, but theres really no need.
+  
+  GeometryType geometry = GeometryType::Spherical;
+  geom_node = shield_node->first_node( "Geometry", 8 );
+  if( geom_node && geom_node->value() )
+  {
+    bool matched = false;
+    const string geomstr( geom_node->value(), geom_node->value() + geom_node->value_size() );
+    for( GeometryType type = GeometryType(0);
+        !matched && (type != GeometryType::NumGeometryType);
+        type = GeometryType( static_cast<int>(type) + 1 ) )
+    {
+      matched = (geomstr == GammaInteractionCalc::to_str(type));
+      if( matched )
+        geometry = type;
+    }//for( loop over GeometryTypes )
+    
+    if( !matched )
+      throw runtime_error( "Invalid geometry type: '" + geomstr + "'" );
+  }//if( geom_node )
   
   
   bool forFitting;
@@ -3895,13 +4001,11 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
       throw runtime_error( "Generic material must have ArealDensity and"
                            " AtomicNumber nodes" );
     
-    
+    m_geometry = geometry;
     
     if( !m_isGenericMaterial )
       handleToggleGeneric();
     
-    cout << "AD=" << ad_node->value() << endl;
-    cout << "AN=" << an_node->value() << endl;
     m_arealDensityEdit->setValueText( WString::fromUTF8(ad_node->value()) );
     m_atomicNumberEdit->setValueText( WString::fromUTF8(an_node->value()) );
     
@@ -3943,31 +4047,124 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
   {
     bool fitMassFrac = false;
     vector<const SandiaDecay::Nuclide *> srcnuclides;
-    const rapidxml::xml_node<> *frac_node, *iso_node, *name_node, *thick_node;
-
+    const rapidxml::xml_node<> *frac_node, *iso_node, *name_node;
+    const rapidxml::xml_node<> *dim_nodes[3] = { nullptr, nullptr, nullptr };
+    WLineEdit *dim_edits[3] = { nullptr, nullptr, nullptr };
+    WCheckBox *dim_cb[3] = { nullptr, nullptr, nullptr };
+    
+    
     name_node = material_node->first_node( "Name", 4 );
-    thick_node = material_node->first_node( "Thickness", 9 );
-    if( !name_node || !name_node->value()
-        || !thick_node || !thick_node->value() )
-      throw runtime_error( "Material node didnt have name or thickness child" );
+    if( !name_node || !name_node->value() )
+      throw runtime_error( "Material node didnt have name node" );
+    
+    int required_dim = 0;
+    switch( m_geometry )
+    {
+      case GeometryType::Spherical:
+        required_dim = 1;
+        
+        dim_nodes[0] = XML_FIRST_NODE(material_node, "SphericalThickness");
+        if( !dim_nodes[0] )
+          dim_nodes[0] = XML_FIRST_NODE(material_node, "Thickness");
+        
+        dim_edits[0] = m_thicknessEdit;
+        dim_cb[0] = m_fitThicknessCB;
+        break;
+        
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+        required_dim = 2;
+        
+        dim_nodes[0] = XML_FIRST_NODE(material_node, "CylinderRadiusThickness");
+        dim_nodes[1] = XML_FIRST_NODE(material_node, "CylinderLengthThickness");
+        
+        dim_edits[0] = m_cylRadiusEdit;
+        dim_edits[1] = m_cylLengthEdit;
+        dim_cb[0]    = m_fitCylRadiusCB;
+        dim_cb[1]    = m_fitCylLengthCB;
+        break;
+        
+      case GeometryType::Rectangular:
+        required_dim = 3;
+        
+        dim_nodes[0] = XML_FIRST_NODE(material_node, "RectangularWidthThickness");
+        dim_nodes[1] = XML_FIRST_NODE(material_node, "RectangularHeightThickness");
+        dim_nodes[2] = XML_FIRST_NODE(material_node, "RectangularDepthThickness");
+        
+        dim_edits[0] = m_rectWidthEdit;
+        dim_edits[1] = m_rectHeightEdit;
+        dim_edits[2] = m_rectDepthEdit;
+        dim_cb[0]    = m_fitRectWidthCB;
+        dim_cb[1]    = m_fitRectHeightCB;
+        dim_cb[2]    = m_fitRectDepthCB;
+        break;
+        
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+    
+    // Check and make sure all the dimension node values are valid
+    bool fit_dim[3] = { false, false, false };
+    for( int i = 0; i < required_dim; ++i )
+    {
+      if( !dim_nodes[i] || !dim_nodes[i]->value() )
+        throw runtime_error( "Missing required dimension node" );
+      
+      const string val( dim_nodes[i]->value(), dim_nodes[i]->value() + dim_nodes[i]->value_size() );
+      try
+      {
+        const double dist = PhysicalUnits::stringToDistance(val);
+        if( dist < 0.0 )
+          throw runtime_error( "" );
+      }catch( std::exception & )
+      {
+        throw runtime_error( "Invalid dimension given '" + val + "'" );
+      }
+      
+      if( m_forFitting )
+      {
+        const auto attr = dim_nodes[i]->first_attribute( "Fit", 3 );
+        
+        if( !attr || !(stringstream(attr->value()) >> fit_dim[i]) )
+          throw runtime_error( "Material node expected thickness Fit attribute" );
+      }
+    }//for( int i = 0; i < required_dim; ++i )
+    
+    
+    const bool geom_changed = (m_geometry != geometry);
+    
+    // Now that we've mostly validated the XML, start actually changing the widgets values.
+    m_geometry = geometry;
     
     if( m_isGenericMaterial )
       handleToggleGeneric();
     
-    m_materialEdit->setValueText( WString::fromUTF8(name_node->value()) );
-    m_thicknessEdit->setValueText( WString::fromUTF8(thick_node->value()) );
+    if( geom_changed )
+      displayInputsForCurrentGeometry();
+    
+    const string material_name( name_node->value(), name_node->value() + name_node->value_size() );
+    m_materialEdit->setValueText( WString::fromUTF8(material_name) );
+    
+    for( int i = 0; i < required_dim; ++i )
+    {
+      assert( dim_nodes[i] );
+      assert( dim_edits[i] );
+      
+      const string val( dim_nodes[i]->value(), dim_nodes[i]->value() + dim_nodes[i]->value_size() );
+      dim_edits[i]->setValueText( WString::fromUTF8(val) );
+      if( m_forFitting )
+      {
+        assert( dim_cb[i] );
+        dim_cb[i]->setChecked( fit_dim[i] );
+      }
+    }//for( int i = 0; i < required_dim; ++i )
     
     handleMaterialChange();
     
     if( m_forFitting )
     {
-      bool fit;
-      attr = thick_node->first_attribute( "Fit", 3 );
-      if( !attr || !attr->value() || !(stringstream(attr->value())>>fit) )
-        throw runtime_error( "Material node expected thickness Fit attribute" );
-      m_fitThicknessCB->setChecked( fit );
-      
-      const rapidxml::xml_node<> *fitmassfrac_node = material_node->first_node( "FitMassFraction", 15 );
+      const rapidxml::xml_node<> *fitmassfrac_node = XML_FIRST_NODE(material_node, "FitMassFraction");
       if( fitmassfrac_node && fitmassfrac_node->value() )
       {
         stringstream(fitmassfrac_node->value()) >> fitMassFrac;

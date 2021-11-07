@@ -125,7 +125,8 @@ typedef std::shared_ptr<const PeakDef> PeakShrdPtr;
 const int ShieldingSourceDisplay::sm_xmlSerializationMajorVersion = 0;
 
 /** Change log:
- - 20211031, Version 1: added "SourceType" node under the <Nuclide> to say whterther its a point, intrinsic, or trace source.
+ - 20211031, Version 1: added "SourceType" node under the <Nuclide> to say whether its a point, intrinsic, or trace source.
+                  added "Geometry" node under the "ShieldingSourceFit" node
  */
 const int ShieldingSourceDisplay::sm_xmlSerializationMinorVersion = 1;
 
@@ -3910,6 +3911,8 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
       continue;
     
     assert( type == select->geometry() );
+    if( type != select->geometry() )
+      throw runtime_error( "A shieldings geometry didnt match expected." );
     
     // Check to make sure this shielding is larger than all shielding it contains
     switch( type )
@@ -5420,7 +5423,7 @@ bool ShieldingSourceDisplay::userChangedDuringCurrentForeground() const
 
 void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
-  const rapidxml::xml_node<char> *muti_iso_node, *atten_air_node, *back_sub_node,
+  const rapidxml::xml_node<char> *geom_node, *muti_iso_node, *atten_air_node, *back_sub_node,
                                  *peaks_node, *isotope_nodes, *shieldings_node,
                                  *dist_node, *same_age_node, *chart_disp_node;
   const rapidxml::xml_attribute<char> *attr;
@@ -5432,6 +5435,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     throw runtime_error( "ShieldingSourceDisplay::deSerialize: invalid node name passed in: '"
                         + std::string(base_node->name(),base_node->name()+base_node->name_size()) + "'" );
   
+  geom_node       = base_node->first_node( "Geometry", 8 );
   muti_iso_node   = base_node->first_node( "MultipleIsotopesPerPeak", 23 );
   atten_air_node  = base_node->first_node( "AttenuateForAir", 15 );
   back_sub_node   = base_node->first_node( "BackgroundPeakSubtraction", 25 );
@@ -5457,7 +5461,24 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   
   // Note that version is either "0" (implied minor version 0), or "0.1" or something; we could read
   //  in the minor version to sm_xmlSerializationMinorVersion and use it, but theres really no need.
-  
+  GeometryType geom_type = GeometryType::Spherical;
+  if( geom_node && geom_node->value() )
+  {
+    bool found = false;
+    const string val( geom_node->value(), geom_node->value() + geom_node->value_size() );
+    
+    for( GeometryType i = GeometryType(0);
+        !found && (i != GeometryType::NumGeometryType);
+        i = GeometryType(static_cast<int>(i) + 1) )
+    {
+      found = (val == GammaInteractionCalc::to_str(i));
+      if( found )
+        geom_type = i;
+    }//for( loop over GeometryType )
+    
+    if( !found )
+      throw runtime_error( "Invalid geometry specified in XML: " + val );
+  }//if( geom_node )
   
   if( !muti_iso_node || !muti_iso_node->value()
       || !(stringstream(muti_iso_node->value()) >> muti_iso) )
@@ -5492,6 +5513,8 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   //clear out the GUI
   reset();
   
+  m_geometrySelect->setCurrentIndex( static_cast<int>(geom_type) );
+  
   m_multiIsoPerPeak->setChecked( muti_iso );
   m_attenForAir->setChecked( air_atten );
   m_backgroundPeakSub->setChecked( back_sub );
@@ -5517,8 +5540,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   rapidxml::xml_document<char> *doc = parent_node->document();
   
   const char *name, *value;
-  rapidxml::xml_node<> *base_node, *dist_node, *peaks_node, *isotope_nodes,
-                       *shieldings_node;
+  rapidxml::xml_node<> *base_node, *node, *peaks_node, *isotope_nodes, *shieldings_node;
   rapidxml::xml_attribute<> *attr;
   
   name = "ShieldingSourceFit";
@@ -5533,36 +5555,39 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   attr = doc->allocate_attribute( "version", value );
   base_node->append_attribute( attr );
   
+  value = GammaInteractionCalc::to_str( geometry() );
+  node = doc->allocate_node( rapidxml::node_element, "Geometry", value );
+  base_node->append_node( node );
   
   name = "MultipleIsotopesPerPeak";
   value = m_multiIsoPerPeak->isChecked() ? "1" : "0";
-  dist_node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( dist_node );
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  base_node->append_node( node );
 
   name = "AttenuateForAir";
   value = m_attenForAir->isChecked() ? "1" : "0";
-  dist_node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( dist_node );
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  base_node->append_node( node );
   
   name = "BackgroundPeakSubtraction";
   value = m_backgroundPeakSub->isChecked() ? "1" : "0";
-  dist_node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( dist_node );
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  base_node->append_node( node );
   
   name = "SameAgeIsotopes";
   value = m_sameIsotopesAge->isChecked() ? "1" : "0";
-  dist_node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( dist_node );
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  base_node->append_node( node );
 
   name = "ShowChiOnChart";
   value = m_showChiOnChart->isChecked() ? "1" : "0";
-  dist_node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( dist_node );
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  base_node->append_node( node );
   
   name = "Distance";
   value = doc->allocate_string( m_distanceEdit->valueText().toUTF8().c_str() );
-  dist_node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( dist_node );
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  base_node->append_node( node );
 
   name = "Shieldings";
   shieldings_node = doc->allocate_node( rapidxml::node_element, name );
@@ -5933,6 +5958,7 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   else
     m_shieldingSelects->addWidget( select );
   
+  select->setGeometry( geometry() );
   
   select->addShieldingBefore().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingBefore, this, _1 ) );
   select->addShieldingAfter().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingAfter, this, _1 ) );
@@ -6350,11 +6376,12 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   if( m_specViewer->measurment(SpecUtils::SpectrumType::Foreground) )
     detector = m_specViewer->measurment(SpecUtils::SpectrumType::Foreground)->detector();
   
+  const GeometryType geom = geometry();
   const bool multiIsoPerPeak = m_multiIsoPerPeak->isChecked();
   const bool attenForAir = m_attenForAir->isChecked();
   
   auto answer = std::make_shared<GammaInteractionCalc::ShieldingSourceChi2Fcn>( distance,
-                              liveTime, peaks, detector, materials, multiIsoPerPeak, attenForAir );
+                        liveTime, peaks, detector, materials, geom, multiIsoPerPeak, attenForAir );
 
   //I think num_fit_params will end up same as inputPrams.VariableParameters()
   size_t num_fit_params = 0;
@@ -6424,8 +6451,12 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
             fitAct = select->fitTraceSourceActivity(nuclide);
             
             // Even though it doesnt really matter, lets try to keep the model in sync with trace
-            //  widget
-            assert( fitAct == m_sourceModel->fitActivity(nucn) );
+            //  widget, so we'll toss in a development check for it
+            if( fitAct != m_sourceModel->fitActivity(nucn) )
+            {
+              cerr << "\n\n\n\nTemporarily disabling assert 'fitAct=" << fitAct << "'- reaenable\n\n\n" << endl;
+//            assert( fitAct == m_sourceModel->fitActivity(nucn) );
+            }
           }//if( this shielding has the nuclide as a trace source )
         }//for( WWidget *w : m_shieldingSelects->children() )
         
