@@ -293,7 +293,7 @@ void update_gain_from_peak( SpecMeas &specfile, const float peak_energy )
   EnergyCal::RecalPeakInfo recalpeak;
   recalpeak.peakMean = peak->mean();
   recalpeak.peakMeanUncert = peak->meanUncert();
-  recalpeak.peakMeanBinNumber = raw->find_gamma_channel( peak->mean() );
+  recalpeak.peakMeanBinNumber = orig_cal->channel_for_energy( peak->mean() );
   recalpeak.photopeakEnergy = peak_energy;
   
   const size_t nchannels = raw->num_gamma_channels();
@@ -333,7 +333,7 @@ void update_gain_from_peak( SpecMeas &specfile, const float peak_energy )
   cout << "Updated energy calibration coefficients:\n";
   assert( fit_coefs.size() == orig_cal->coefficients().size() );
   for( size_t i = 0; i < fit_coefs.size(); ++i )
-    cout << "\t" << orig_cal->coefficients().at(i) << "\t-->\t" << fit_coefs[i] << endl;
+    cout << "\t" << std::setprecision(10) << orig_cal->coefficients().at(i) << "\t-->\t" << fit_coefs[i] << endl;
   
   cout << endl << endl;
 }//void update_gain_from_peak( ... )
