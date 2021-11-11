@@ -1701,8 +1701,10 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   m_showGridLines->setUnChecked();
   m_logYScale->setUnChecked();
   updateYScale();
-  m_logYScale->changed().connect( this, &DecayActivityDiv::updateYScale );
-  m_showGridLines->changed().connect(this, &DecayActivityDiv::setGridLineStatus );
+  m_logYScale->checked().connect( this, &DecayActivityDiv::updateYScale );
+  m_logYScale->unChecked().connect( this, &DecayActivityDiv::updateYScale );
+  m_showGridLines->checked().connect(this, &DecayActivityDiv::setGridLineStatus );
+  m_showGridLines->unChecked().connect(this, &DecayActivityDiv::setGridLineStatus );
 
   for( const auto &nuclide : PhysicalUnits::sm_activityUnitNameValues )
   {

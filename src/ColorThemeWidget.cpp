@@ -468,22 +468,37 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   
   m_themeTitle->changed().connect( boost::bind( &ColorThemeWidget::titleChangedCallback, this ) );
   m_themeDescription->changed().connect( boost::bind( &ColorThemeWidget::descriptionChangedCallback, this ) );
-  m_peaksTakeRefLineColor->changed().connect( boost::bind( &ColorThemeWidget::peaksTakeRefLineColorChangedCallback, this ) );
+  m_peaksTakeRefLineColor->checked().connect( boost::bind( &ColorThemeWidget::peaksTakeRefLineColorChangedCallback, this ) );
+  m_peaksTakeRefLineColor->unChecked().connect( boost::bind( &ColorThemeWidget::peaksTakeRefLineColorChangedCallback, this ) );
 
   m_nonChartAreaCssTheme->changed().connect( boost::bind( &ColorThemeWidget::nonChartAreaThemeChanged, this ) );
   
-  m_specMarginSameAsBackground->changed().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, SpectrumChartMargins ) );
-  m_timeMarginSameAsBackground->changed().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, TimeChartMargins ) );
+  m_specMarginSameAsBackground->checked().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, SpectrumChartMargins ) );
+  m_specMarginSameAsBackground->unChecked().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, SpectrumChartMargins ) );
+  
+  m_timeMarginSameAsBackground->checked().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, TimeChartMargins ) );
+  m_timeMarginSameAsBackground->unChecked().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, TimeChartMargins ) );
 
   if( m_noSpectrumBackground )
-    m_noSpectrumBackground->changed().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, SpectrumChartBackground ) );
+  {
+    m_noSpectrumBackground->checked().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, SpectrumChartBackground ) );
+    m_noSpectrumBackground->unChecked().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, SpectrumChartBackground ) );
+  }
+  
   if( m_noSpectrumMargin )
     m_noSpectrumMargin->changed().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, TimeChartMargins ) );
   
   if( m_noTimeBackground )
-    m_noTimeBackground->changed().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, TimeChartBackground ) );
+  {
+    m_noTimeBackground->checked().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, TimeChartBackground ) );
+    m_noTimeBackground->unChecked().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, TimeChartBackground ) );
+  }
+  
   if( m_noTimeMargin )
-    m_noTimeMargin->changed().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, TimeChartMargins ) );
+  {
+    m_noTimeMargin->checked().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, TimeChartMargins ) );
+    m_noTimeMargin->unChecked().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, TimeChartMargins ) );
+  }
 
 
 	for( SelectableColor color = SelectableColor(0); color < NumSelectableColors; color = SelectableColor(color + 1) )

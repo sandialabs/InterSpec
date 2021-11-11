@@ -61,6 +61,7 @@ enum class TraceActivityType : int
 {
   TotalActivity,
   ActivityPerCm3,
+  ExponentialDistribution,  //Activity of Bq/m2 of the entire column of soil
   ActivityPerGram, //Needs to come last as wont be available if a "void" material
   //ActivityPPM,
   NumTraceActivityType
@@ -192,13 +193,27 @@ struct DistributedSrcCalc
    */
   double m_airTransLenCoef;
   
+  /** Wether the #srcVolumetricActivity should be interpreted as a surface contamination, per unit area, divided by relaxation length (L),
+   with an exponential distribution (e.g. exp(-r/L) ) in the depth from surface.  E.g., for InSitu soil contamination measurements.
+   If false, #srcVolumetricActivity is interpreted as activity per cubic-area (as its name suggests).
+   */
+  bool m_isInSituExponential;
+  
+  /** The relaxation length for in-situ exponential distribution.
+   
+   E.g., where ~63% of the contamination is within this distance of the surface.
+   
+   Not used when #m_isInSituExponential is false.
+   */
+  double m_inSituRelaxationLength;
+  
   /** */
   std::vector<std::pair<std::array<double,3>,double> > m_dimensionsAndTransLenCoef;
 
   double energy;
   double integral;
   double srcVolumetricActivity;
-
+  
   const SandiaDecay::Nuclide *nuclide;
 };//struct DistributedSrcCalc
 
@@ -247,7 +262,7 @@ public:
 
   /** A struct to hold information about the material shieldings are made out of, and their respective self-attenuating and trace sources.
    
-   Thicknesses and activitiy levels are specified by the fitting parameters, so not tracked in this struct.
+   Thicknesses and activity levels are specified by the fitting parameters, so not tracked in this struct.
    */
   struct ShieldingInfo
   {
@@ -261,11 +276,13 @@ public:
      */
     std::vector<const SandiaDecay::Nuclide *> self_atten_sources;
     
-    /** The trace sources within this shielding.
+    /** The trace sources info within this shielding.
+     
+     The 'double' argument of the tuple is the relaxation parameter, iff TraceActivityType==TraceActivityType::ExponentialDistribution.
      
      At least one peak being used have this nuclide as its assigned nuclide.
      */
-    std::vector<std::pair<const SandiaDecay::Nuclide *,TraceActivityType>> trace_sources;
+    std::vector<std::tuple<const SandiaDecay::Nuclide *,TraceActivityType,double>> trace_sources;
   };//struct ShieldingInfo
   
   
@@ -437,6 +454,12 @@ public:
    */
   GammaInteractionCalc::TraceActivityType traceSourceActivityType(
                                                           const SandiaDecay::Nuclide *nuc ) const;
+  
+  /** Returns relaxation length for a nuclide.
+   
+   Throws exception if nuc is not a trace source, or not TraceActivityType::ExponentialDistribution.
+   */
+  double relaxationLength( const SandiaDecay::Nuclide *nuc ) const;
   
   /** Returns whether or not the nuclide is a self-attenuating OR trace source. */
   bool isVolumetricSource( const SandiaDecay::Nuclide *nuc ) const;

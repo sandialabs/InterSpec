@@ -113,7 +113,7 @@ public:
   bool useAsSource() const;
   void setUseAsSource( bool use );
 
-  Wt::EventSignal<> &changed();
+  //Wt::EventSignal<> &changed();
   Wt::EventSignal<> &checked();
   Wt::EventSignal<> &unChecked();
   Wt::Signal<float> &massFractionChanged();
@@ -313,7 +313,8 @@ public:
    
    Note the thickness is rounded to have at most three places after the decimal point.
    
-   The #handleMaterialChange function will also be called, which will emit appropriate signals to update activities.
+   Note: #handleMaterialChange function will not be called; if you need to trigger the appropriate materialChanged() or
+   materialModified() signals.
    
    Will throw exception if non-spherical geometry.
    */
@@ -380,6 +381,12 @@ public:
    */
   GammaInteractionCalc::TraceActivityType traceSourceType( const SandiaDecay::Nuclide *nuc ) const;
   
+  /** Returns the relaxation length for the specified trace source.
+   
+   Throws exception if not a trace source for the nuclide, or TraceActivityType != TraceActivityType::ExponentialDistribution.
+   */
+  double relaxationLength( const SandiaDecay::Nuclide *nuc ) const;
+  
   
   //serialize(...): saves state as a <Shielding />  node.
   void serialize( rapidxml::xml_node<char> *parent_node ) const;
@@ -435,6 +442,10 @@ protected:
   
   /** Returns the mass (in PhysicalUnits units) of this shielding.  This value does not include the mass of sub-shieldings. */
   double shieldingMass() const;
+  
+  /** Returns the surface area for the surface that an in-situ exponential surface-contamination would be applicable to. */
+  double inSituSurfaceArea() const;
+  
   
   //This simply toggles the generic, and calls handleMaterialChange()
   void handleToggleGeneric();

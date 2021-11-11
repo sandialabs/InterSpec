@@ -60,7 +60,12 @@ public:
   virtual void setUnChecked();
   virtual void setChecked();
   
-  Wt::EventSignal<> &changed();
+  // Using WCheckBox::changed() instead of WCheckBox::checked()/unChecked() causes some odd
+  //  issues in Wt 3.3.4 (at least) where m_allowFitting->isChecked() isnt always up to date in
+  //  the immediate render cycle (it is in the immediate call to to the connected signal, but
+  //  seemingly not in calls during render()... havent looked into this much yet, but not enabling
+  //  connecting to this signal until I figure it out
+  //Wt::EventSignal<> &changed();
   Wt::EventSignal<> &checked();
   Wt::EventSignal<> &unChecked();
   

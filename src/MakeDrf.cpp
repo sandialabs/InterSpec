@@ -499,7 +499,10 @@ namespace
         
         m_useForEffCb->setUnChecked();
         m_userBr->hide();
-        m_useForEffCb->changed().connect( std::bind( [this](){
+        m_useForEffCb->checked().connect( std::bind( [this](){
+          m_userBr->setHidden( !m_useForEffCb->isChecked() || m_isBackground );
+        } ) );
+        m_useForEffCb->unChecked().connect( std::bind( [this](){
           m_userBr->setHidden( !m_useForEffCb->isChecked() || m_isBackground );
         } ) );
       }
@@ -776,7 +779,8 @@ namespace
       WContainerWidget *bckgrndDiv = new WContainerWidget( body );
       bckgrndDiv->addStyleClass( "DrfSpecFileSampleBackground" );
       m_background = new WCheckBox( "Is Background?", bckgrndDiv );
-      m_background->changed().connect( this, &DrfSpecFileSample::isBackgroundToggled );
+      m_background->checked().connect( this, &DrfSpecFileSample::isBackgroundToggled );
+      m_background->unChecked().connect( this, &DrfSpecFileSample::isBackgroundToggled );
       m_background->setChecked( false );
       m_backgroundTxt = new WText( "These peaks will be subtracted from other samples", bckgrndDiv );
       m_backgroundTxt->addStyleClass( "DrfSpecFileSampleBackgroundTxt" );
@@ -837,7 +841,8 @@ namespace
         m_allNoneSome = new WCheckBox( "All Peaks", titleBarWidget() );
         m_allNoneSome->clicked().preventPropagation();
         m_allNoneSome->addStyleClass( "DrfSpecFileAllNoneSomeCb" );
-        m_allNoneSome->changed().connect( this, &DrfSpecFileSample::handleUserToggleAllNoneSum );
+        m_allNoneSome->checked().connect( this, &DrfSpecFileSample::handleUserToggleAllNoneSum );
+        m_allNoneSome->unChecked().connect( this, &DrfSpecFileSample::handleUserToggleAllNoneSum );
       }
       
       
@@ -1419,7 +1424,8 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   upperLayout->addWidget( chartOptionsDiv, 1, 1 );
   m_showFwhmPoints = new WCheckBox( "Show FWHM points", chartOptionsDiv );
   m_showFwhmPoints->setChecked( true );
-  m_showFwhmPoints->changed().connect( this, &MakeDrf::handleShowFwhmPointsToggled );
+  m_showFwhmPoints->checked().connect( this, &MakeDrf::handleShowFwhmPointsToggled );
+  m_showFwhmPoints->unChecked().connect( this, &MakeDrf::handleShowFwhmPointsToggled );
   
   WLabel *label = new WLabel( "Display Energy, Lower:", chartOptionsDiv );
   label->setMargin(15,Wt::Left);

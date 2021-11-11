@@ -55,7 +55,7 @@
   
 }
 
-.TraceSrcDisplay
+.TraceSrcDisplay, .RelaxDistDisplay
 {
   display: grid;
   row-gap: 5px;
@@ -63,6 +63,16 @@
   padding-bottom: 3px;
   padding-top: 0px;
   margin-bottom: 2px;
+}
+
+.RelaxDescription
+{
+  font-size: small;
+}
+
+.TraceSrcDisplay .GridFirstCol.RelaxDistDisplay
+{
+  width: auto;
 }
 
 .TraceSrcDisplay .closeicon-wtdefault
@@ -74,49 +84,73 @@
   margin-bottom: -2px;
 }
 
-.TraceSrcDisplay .FirstCol
+
+.TraceSrcDisplay .GridFirstCol
 {
-  grid-column-start: 1;
   width: 4em;
 }
 
-.TraceSrcDisplay .SecondCol
+.TraceSrcDisplay .GridFirstCol .GridFirstCol
+{
+  width: auto;
+}
+
+.RelaxDescription
+{
+  
+}
+
+.GridFirstCol
+{
+  grid-column-start: 1;
+}
+
+.GridSecondCol
 {
   grid-column-start: 2;
+}
+
+.GridStretchCol
+{
   justify-self: stretch;
 }
 
-.TraceSrcDisplay .ThirdCol
+.GridThirdCol
 {
   grid-column-start: 3;
 }
 
-.TraceSrcDisplay .FirstRow
+.GridFirstRow
 {
   grid-row-start: 1;
 }
 
-.TraceSrcDisplay .SecondRow
+.GridSecondRow
 {
   grid-row-start: 2;
 }
 
-.TraceSrcDisplay .ThirdRow
+.GridThirdRow
 {
   grid-row-start: 3;
 }
 
-.TraceSrcDisplay .FourthRow
+.GridFourthRow
 {
   grid-row-start: 4;
 }
 
-.TraceSrcDisplay .SpanTwoCol
+.GridFifthRow
+{
+  grid-row-start: 5;
+}
+
+.GridSpanTwoCol
 {
   grid-column-end: span 2;
 }
 
-.TraceSrcDisplay .SpanThreeCol
+.GridSpanThreeCol
 {
   grid-column-end: span 3;
 }

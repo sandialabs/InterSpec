@@ -1504,8 +1504,17 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
     if( (role == Wt::CheckStateRole) && (column != kFitActivity) && (column != kFitAge) )
       return false;
     
-    if( (role == Wt::EditRole) && ((column==kFitActivity) || (column==kFitAge)) )
-      return false;
+    // In principle we should only let (role == Wt::CheckStateRole) allow to change this value,
+    //  but it doesnt seem any harm in also allowing EditRole (the default value for the fcn call)
+    //  affect this value, as long as a bool is passed in.
+    bool boolean_val = false;
+    if( (column == kFitActivity) || (column == kFitAge) )
+    {
+      if( value.type() != boost::typeindex::type_id<bool>().type_info() )
+        return false;
+      
+      boolean_val = boost::any_cast<bool>( value );
+    }//if( (column==kFitActivity) || (column==kFitAge) )
 
     const WString txt_val = asString( value );
     string utf_str = txt_val.toUTF8();
@@ -1541,7 +1550,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
       }//case kActivity:
 
       case kFitActivity:
-        iso.fitActivity = boost::any_cast<bool>( value );
+        iso.fitActivity = boolean_val;
       break;
 
       case kAge:
@@ -1594,10 +1603,9 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
             return false;
         }else
         {
-          const bool bvalue = boost::any_cast<bool>( value );
-          if( bvalue == iso.fitAge )  //dont change this if we dont have to
+          if(  boolean_val == iso.fitAge )  //dont change this if we dont have to
             return false;
-          iso.fitAge = bvalue;
+          iso.fitAge = boolean_val;
         }//if( !ageIsFittable ) / else
       break;
 
@@ -2714,7 +2722,8 @@ if (m_specViewer->isSupportFile())
   tooltip = "Show the Chi of each peak for the current model on the chart, or"
   " the relative peak area multiple between current model and observed peak.";
   m_showChiOnChart->setToolTip( tooltip );
-  m_showChiOnChart->changed().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
+  m_showChiOnChart->checked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
+  m_showChiOnChart->unChecked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
   
   
   m_optionsDiv = new WContainerWidget();
@@ -2746,7 +2755,8 @@ if (m_specViewer->isSupportFile())
   " peak near 185 keV." ;
   lineDiv->setToolTip( tooltip );
   m_multiIsoPerPeak->setChecked();
-  m_multiIsoPerPeak->changed().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
+  m_multiIsoPerPeak->checked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
+  m_multiIsoPerPeak->unChecked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   
   lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, 2, 0 );
@@ -2755,7 +2765,8 @@ if (m_specViewer->isSupportFile())
             " detector will be accounted for in the calculations.";
   lineDiv->setToolTip( tooltip );
   m_attenForAir->setChecked();
-  m_attenForAir->changed().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
+  m_attenForAir->checked().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
+  m_attenForAir->unChecked().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
   
   
   lineDiv = new WContainerWidget();
@@ -2764,7 +2775,8 @@ if (m_specViewer->isSupportFile())
   tooltip = "This forces the isotopes of a element to all be the same age in"
             " the fit.";
   lineDiv->setToolTip( tooltip );
-  m_backgroundPeakSub->changed().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
+  m_backgroundPeakSub->checked().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
+  m_backgroundPeakSub->unChecked().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
   
   
   lineDiv = new WContainerWidget();
@@ -2774,7 +2786,8 @@ if (m_specViewer->isSupportFile())
             "age.";
   lineDiv->setToolTip( tooltip );
   m_sameIsotopesAge->setChecked( isotopesHaveSameAge );
-  m_sameIsotopesAge->changed().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
+  m_sameIsotopesAge->checked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
+  m_sameIsotopesAge->unChecked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
 
   
   WContainerWidget *detectorDiv = new WContainerWidget();
@@ -5377,6 +5390,20 @@ void ShieldingSourceDisplay::deSerializeShieldings( const rapidxml::xml_node<cha
   {
     ShieldingSelect *select = addShielding( nullptr, false );
     select->deSerialize( shield_node );
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
+    {
+      const int nucIndex = m_sourceModel->nuclideIndex(nuc);
+      const bool guiFit = select->fitTraceSourceActivity(nuc);
+      const bool modelFit = m_sourceModel->fitActivity( nucIndex );
+      assert( guiFit == modelFit );
+      
+      const double modelActivity = m_sourceModel->activity(nucIndex);
+      const double guiActivity = select->traceSourceTotalActivity(nuc);
+      assert( fabs(modelActivity - guiActivity) < 0.0001*std::max(modelActivity, guiActivity) );
+    }//for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
+#endif
   }//for( loop over shieldings )
   
 }//void deSerializeShieldings( const rapidxml::xml_node<char> *shiledings )
@@ -5938,6 +5965,22 @@ void ShieldingSourceDisplay::doAddShieldingAfter( ShieldingSelect *select )
 }//void doAddShieldingAfter( ShieldingSelect *select )
 
 
+size_t ShieldingSourceDisplay::numberShieldings() const
+{
+  // A simple count of children widgets should be good enough, but maybe to just be thorough,
+  //  we'll do a dynamic cast to make sure each child is a ShieldingSelect
+  //return m_shieldingSelects->children().size();
+  
+  size_t nwidgets = 0;
+  for( WWidget *w : m_shieldingSelects->children() )
+    nwidgets += (dynamic_cast<ShieldingSelect *>(w) != nullptr);
+    
+  assert( nwidgets == m_shieldingSelects->children().size() );
+  
+  return nwidgets;
+}//size_t numberShieldings() const;
+
+
 void ShieldingSourceDisplay::addGenericShielding()
 {
   ShieldingSelect *temp = addShielding( nullptr, true );
@@ -6209,7 +6252,8 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
                                                 const SandiaDecay::Nuclide *nuc,
                                                 const ModelSourceType type )
 {
-
+  assert( nuc );
+  
   //Make sure no other selects have this isotope selected
   const vector<WWidget *> &children = m_shieldingSelects->children();
   for( WWidget *widget : children )
@@ -6223,29 +6267,28 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
 
   //Set appropriate flags in the SourceFitModel so activity wont be editiable
   m_sourceModel->setSourceType( nuc, type );
+  
+  
+  // Sync the model up so fitting activity is same as trace-source widget
+  const bool fitAct = caller->fitTraceSourceActivity(nuc);
+  WModelIndex fitActIndex = m_sourceModel->index( nuc, SourceFitModel::kFitActivity );
+  m_sourceModel->setData( fitActIndex, fitAct, Wt::CheckStateRole );
 
-  //Change the age to something more reasonable for uranium, plutonium etc,
-  //  XXX - this age change should definetly be improved, on a nuclide by
-  //        nuclide basis
+  // Reset the age to something reasonable.
+  //  TODO: do we really want to do this?  Maybe not.
   string agestr = "";
   if( nuc )  //nuc should always be non-NULL, but just incase
   {
-    if( nuc->atomicMass > 200.0 &&  nuc->halfLife>(20.0*PhysicalUnits::year) )
-      agestr = "20y";
-  }//if( nuc )
-
-  if( agestr.size() )
-  {
+    PeakDef::defaultDecayTime( nuc, &agestr );
     WModelIndex index = m_sourceModel->index( nuc, SourceFitModel::kAge );
     m_sourceModel->setData( index, agestr );
-  }//if( agestr.size() )
+  }//if( nuc )
 
   WModelIndex fitAgeIndex = m_sourceModel->index( nuc, SourceFitModel::kFitAge );
   m_sourceModel->setData( fitAgeIndex, false );
 
   //Update activity displayed
   updateActivityOfShieldingIsotope( caller, nuc );
-
 
   //Update the Chi2
   updateChi2Chart();
@@ -6364,7 +6407,12 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       
       for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
       {
-        materialAndSrc.trace_sources.push_back( {nuc, select->traceSourceType(nuc)} );
+        const TraceActivityType type = select->traceSourceType(nuc);
+        const double relax_len = (type == TraceActivityType::ExponentialDistribution)
+                                ? select->relaxationLength(nuc)
+                                : -1.0;
+        
+        materialAndSrc.trace_sources.push_back( {nuc, type, relax_len} );
       }//for( loop over trace source nuclides )
 
       materials.push_back( materialAndSrc );
@@ -7811,6 +7859,11 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
             
           case TraceActivityType::ActivityPerCm3:
             act_postfix = " per cm3";
+            break;
+          
+          case TraceActivityType::ExponentialDistribution:
+            act_postfix = " per m2, with relaxation length "
+                          + PhysicalUnits::printToBestLengthUnits(chi2Fcn->relaxationLength(nuc) );
             break;
             
           case GammaInteractionCalc::TraceActivityType::ActivityPerGram:

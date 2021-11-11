@@ -92,6 +92,9 @@ const char *to_str( const TraceActivityType type )
     case TraceActivityType::ActivityPerGram:
       return "ActivityPerGram";
       
+    case TraceActivityType::ExponentialDistribution:
+      return "ExponentialDistribution";
+      
     case TraceActivityType::NumTraceActivityType:
       return "NumTraceActivityType";
   }//switch( type )
@@ -484,6 +487,8 @@ void example_integration()
     ObjectToIntegrate.m_sourceIndex = 0;
     ObjectToIntegrate.m_attenuateForAir = false;
     ObjectToIntegrate.m_airTransLenCoef = 0.0;
+    ObjectToIntegrate.m_isInSituExponential = false;
+    ObjectToIntegrate.m_inSituRelaxationLength = 0.0;
     ObjectToIntegrate.m_detectorRadius  = 2.0 * PhysicalUnits::cm;
     ObjectToIntegrate.m_observationDist = 400.0 * PhysicalUnits::cm;
 
@@ -617,6 +622,8 @@ DistributedSrcCalc::DistributedSrcCalc()
   m_observationDist = -1.0;
   m_attenuateForAir = false;
   m_airTransLenCoef = 0.0;
+  m_isInSituExponential = false;
+  m_inSituRelaxationLength = 0.0;
   nuclide = NULL;
 }//DistributedSrcCalc()
 
@@ -660,7 +667,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
   double source_inner_rad = ((m_sourceIndex>0)
                             ? m_dimensionsAndTransLenCoef[m_sourceIndex-1].first[0]
                             : 0.0);
-  const double surce_outer_rad = m_dimensionsAndTransLenCoef[m_sourceIndex].first[0];
+  const double source_outer_rad = m_dimensionsAndTransLenCoef[m_sourceIndex].first[0];
 
   //cuba goes from 0 to one, so we have to scale the variables
   //r:     goes from zero to sphere_rad
@@ -673,14 +680,14 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
   const double x_theta = xx[1];
   const double x_phi = (ndim<3 ? 0.5 : xx[2]);
   
-  const double r = source_inner_rad + x_r * (surce_outer_rad-source_inner_rad);
+  const double r = source_inner_rad + x_r * (source_outer_rad - source_inner_rad);
   const double theta =  x_theta * max_theta;
   
   //phi should go from zero to two pi, but we could reduce this to just 0 to
   //  pi, due to symmetry, but not doing right now (cause I'm to lazy to test it)
   const double max_phi = 2.0 * pi;
   const double phi = x_phi * max_phi;
-  const double j = (surce_outer_rad - source_inner_rad) * max_theta * max_phi;
+  const double j = (source_outer_rad - source_inner_rad) * max_theta * max_phi;
   const double dV = j * r * r * sin(theta);
 
   double source_point[3];
@@ -806,6 +813,11 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
     trans *= exp( -m_airTransLenCoef * air_dist );
   }//if( m_attenuateForAir )
   
+  if( m_isInSituExponential )
+  {
+    assert( m_inSituRelaxationLength > 0.0 );
+    trans *= exp( -(source_outer_rad - r) / m_inSituRelaxationLength );
+  }
   
   const double z_dist = (z - m_observationDist);
   const double dist_to_det = sqrt( x*x + y*y + z_dist*z_dist );
@@ -868,10 +880,9 @@ void DistributedSrcCalc::eval_cyl_end_on( const double xx[], const int *ndimptr,
   const double j = (source_outer_rad - source_inner_rad) * max_theta * total_height;
   const double dV = j * r;
   
+  const double eval_z_dist_to_det = m_observationDist - z;
+  
   //const double eval_point[3] = { r * cos(theta), r * sin(theta), z };
-  
-  const double total_z_dist = m_observationDist - z;
-  
 
   double exit_radius = 0.0;
     
@@ -880,7 +891,7 @@ void DistributedSrcCalc::eval_cyl_end_on( const double xx[], const int *ndimptr,
   {//begin code-block to compute distance through source
     // Take advantage of theta symmetry here
     const double z_dist_in_src = source_half_z - z;
-    const double r_dist_in_src = r * z_dist_in_src / total_z_dist;
+    const double r_dist_in_src = r * z_dist_in_src / eval_z_dist_to_det;
     exit_radius = r - r_dist_in_src;
     
     const double dist_in_src = sqrt(z_dist_in_src*z_dist_in_src + r_dist_in_src*r_dist_in_src);
@@ -899,10 +910,17 @@ void DistributedSrcCalc::eval_cyl_end_on( const double xx[], const int *ndimptr,
     trans *= exp( -m_airTransLenCoef * air_dist );
   }//if( m_attenuateForAir )
   
-  const double exit_z = m_observationDist - source_half_z;
-  const double exit_dist_to_det = sqrt( exit_radius*exit_radius + exit_z*exit_z );
   
-  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, exit_dist_to_det );
+  if( m_isInSituExponential )
+  {
+    assert( m_inSituRelaxationLength > 0.0 );
+    trans *= exp( -(source_half_z - z) / m_inSituRelaxationLength );
+  }
+  
+  
+  // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to to detector).
+  const double eval_dist_to_det = sqrt( r*r + eval_z_dist_to_det*eval_z_dist_to_det );
+  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det );
   
   ff[0] = trans * dV;
 }//void eval_cyl_end_on(...)
@@ -924,7 +942,72 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
 {
   assert( m_geometry == GeometryType::Rectangular );
   
-  throw runtime_error( "DistributedSrcCalc::eval_rect: not implemented yet" );
+  assert( m_dimensionsAndTransLenCoef.size() == 1 );
+  if( m_dimensionsAndTransLenCoef.size() != 1 )
+    throw runtime_error( "eval_rect currently only supports a single shielding" );
+  
+  
+  // This just integrates a right circular cylinder
+  const int ndim = (ndimptr ? (*ndimptr) : 2);
+  assert( ndim == 3 );
+  
+  assert( m_sourceIndex == 0 );
+  assert( m_dimensionsAndTransLenCoef.size() == 1 );
+  
+  const std::array<double,3> &dimensions = m_dimensionsAndTransLenCoef[m_sourceIndex].first;
+  const double half_width  = dimensions[0];
+  const double half_height = dimensions[1];
+  const double half_depth  = dimensions[2];
+  
+  const double trans_len_coef = m_dimensionsAndTransLenCoef[m_sourceIndex].second;
+  
+  // Translate the [0,1.0] coordinates from Cuba, to the world coordinates we are integrating over
+  const double eval_x = (xx[0] - 0.5) * 2.0 * half_width;
+  const double eval_y = (xx[1] - 0.5) * 2.0 * half_height;
+  const double eval_z = (xx[2] - 0.5) * 2.0 * half_depth;
+
+  const double dV = 8.0 * half_width * half_height * half_depth;
+  
+  const double eval_z_dist_to_det = m_observationDist - eval_z;
+  
+  //const double eval_point[3] = { r * cos(theta), r * sin(theta), z };
+  double trans = 0.0;
+  double exit_radius_xy = 0.0; // radius from z-axis where ray exits from material
+  
+  {//begin code-block to compute distance through source
+    const double r_xy = sqrt( eval_x*eval_x + eval_y*eval_y );  //radius in x-y plane
+    const double z_dist_in_src = half_depth - eval_z;
+    const double r_xy_dist_in_src = r_xy * z_dist_in_src / eval_z_dist_to_det;
+    exit_radius_xy = r_xy - r_xy_dist_in_src;
+    
+    const double dist_in_src = sqrt(z_dist_in_src*z_dist_in_src + exit_radius_xy*exit_radius_xy);
+    
+    trans += (trans_len_coef * dist_in_src);
+  }//end codeblock to compute distance through source
+  
+  trans = exp( -trans );
+  
+  if( m_attenuateForAir )
+  {
+    const double dz = m_observationDist - half_depth;
+    
+    const double air_dist = sqrt( exit_radius_xy*exit_radius_xy + dz*dz );
+    
+    trans *= exp( -m_airTransLenCoef * air_dist );
+  }//if( m_attenuateForAir )
+  
+  
+  if( m_isInSituExponential )
+  {
+    assert( m_inSituRelaxationLength > 0.0 );
+    trans *= exp( -(half_depth - eval_z) / m_inSituRelaxationLength );
+  }
+  
+  
+  const double eval_dist_to_det = sqrt( eval_x*eval_x + eval_y*eval_y + eval_z_dist_to_det*eval_z_dist_to_det );
+  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det );
+  
+  ff[0] = trans * dV;
 }//void eval_rect(...)
 
 
@@ -1022,14 +1105,15 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
     }//for( const SandiaDecay::Nuclide *nuc : info.self_atten_sources )
     
     
-    for( const pair<const SandiaDecay::Nuclide *,TraceActivityType> &trace : info.trace_sources )
+    for( const tuple<const SandiaDecay::Nuclide *,TraceActivityType,double> &trace : info.trace_sources )
     {
-      if( !trace.first )
+      const SandiaDecay::Nuclide *nuc = std::get<0>(trace);
+      if( !nuc )
         throw runtime_error( "ShieldingSourceChi2Fcn: null trace source" );
       
-      if( !nucs.count(trace.first) )
+      if( !nucs.count(nuc) )
         throw runtime_error( "ShieldingSourceChi2Fcn: self attenuating nuclide "
-                  + trace.first->symbol + " doesnt have a peak with that as an assigned nuclide" );
+                  + nuc->symbol + " doesnt have a peak with that as an assigned nuclide" );
     }//for( loop over trace sources )
     
     // Not checking if trace and self-atten sources share the same nuclide, because although the
@@ -1481,9 +1565,9 @@ bool ShieldingSourceChi2Fcn::isTraceSource( const SandiaDecay::Nuclide *nuclide 
   
   for( const ShieldingInfo &shield : m_materials )
   {
-    for( const pair<const SandiaDecay::Nuclide *,TraceActivityType> &trace : shield.trace_sources )
+    for( const tuple<const SandiaDecay::Nuclide *,TraceActivityType,double> &trace : shield.trace_sources )
     {
-      if( trace.first == nuclide )
+      if( get<0>(trace) == nuclide )
         return true;
     }
   }//for( const ShieldingInfo &material : m_materials )
@@ -1501,10 +1585,10 @@ TraceActivityType ShieldingSourceChi2Fcn::traceSourceActivityType(
   
   for( const ShieldingInfo &shield : m_materials )
   {
-    for( const pair<const SandiaDecay::Nuclide *,TraceActivityType> &trace : shield.trace_sources )
+    for( const tuple<const SandiaDecay::Nuclide *,TraceActivityType,double> &trace : shield.trace_sources )
     {
-      if( trace.first == nuc )
-        return trace.second;
+      if( get<0>(trace) == nuc )
+        return get<1>(trace);
     }
   }//for( const ShieldingInfo &material : m_materials )
   
@@ -1513,6 +1597,33 @@ TraceActivityType ShieldingSourceChi2Fcn::traceSourceActivityType(
   
   return TraceActivityType::NumTraceActivityType;
 }//traceSourceActivityType(...)
+
+
+double ShieldingSourceChi2Fcn::relaxationLength( const SandiaDecay::Nuclide *nuc ) const
+{
+  //TODO: this could probably be made a little more efficient
+  if( !nuc )
+    throw runtime_error( "ShieldingSourceChi2Fcn::traceSourceActivityType: null nuclide" );
+  
+  for( const ShieldingInfo &shield : m_materials )
+  {
+    for( const tuple<const SandiaDecay::Nuclide *,TraceActivityType,double> &trace : shield.trace_sources )
+    {
+      if( get<0>(trace) == nuc )
+      {
+        if( get<1>(trace) != TraceActivityType::ExponentialDistribution )
+          throw runtime_error( "ShieldingSourceChi2Fcn::relaxationLength: " + nuc->symbol
+                               + " is not an exponential distribution trace source." );
+        return get<2>(trace);
+      }
+    }
+  }//for( const ShieldingInfo &material : m_materials )
+  
+  throw runtime_error( "ShieldingSourceChi2Fcn::relaxationLength: " + nuc->symbol
+                      + " not a trace source" );
+  
+  return -1.0;
+}//double relaxationLength( const SandiaDecay::Nuclide *nuc ) const;
 
 
 double ShieldingSourceChi2Fcn::volumeOfMaterial( const int matn, const vector<double> &params ) const
@@ -1577,8 +1688,8 @@ double ShieldingSourceChi2Fcn::volumeOfMaterial( const int matn, const vector<do
       
     case GeometryType::Rectangular:
     {
-      const double outer_vol = 8.0 * inner_dim_1 * inner_dim_2 * inner_dim_3;
-      const double inner_vol = 8.0 * outer_dim_1 * outer_dim_2 * outer_dim_3;
+      const double inner_vol = 8.0 * inner_dim_1 * inner_dim_2 * inner_dim_3;
+      const double outer_vol = 8.0 * outer_dim_1 * outer_dim_2 * outer_dim_3;
       
       return outer_vol - inner_vol;
     }
@@ -1851,9 +1962,9 @@ double ShieldingSourceChi2Fcn::totalActivity( const SandiaDecay::Nuclide *nuclid
     const auto &trace_srcs = shield.trace_sources;
     for( const auto &trace : trace_srcs )
     {
-      if( trace.first == nuclide )
+      if( get<0>(trace) == nuclide )
       {
-        type = trace.second;
+        type = get<1>(trace);
         break;
       }
     }//for( const auto &trace : trace_srcs )
@@ -1875,6 +1986,44 @@ double ShieldingSourceChi2Fcn::totalActivity( const SandiaDecay::Nuclide *nuclid
       case TraceActivityType::ActivityPerGram:
         return activity * mat->density * vol / PhysicalUnits::gram;
         break;
+        
+      case TraceActivityType::ExponentialDistribution:
+      {
+        switch( m_geometry )
+        {
+          case GeometryType::Spherical:
+          {
+            const double r = sphericalThickness(matn, params);
+            return activity * 4.0 * PhysicalUnits::pi * r * r;
+          }
+            
+          case GeometryType::CylinderEndOn:
+          {
+            const double r = cylindricalRadiusThickness(matn, params);
+            return activity * PhysicalUnits::pi * r * r;
+          }
+            
+          case GeometryType::CylinderSideOn:
+          {
+            const double r = cylindricalRadiusThickness(matn, params);
+            const double z = cylindricalLengthThickness(matn, params);
+            return activity * PhysicalUnits::pi * 2.0 * r * z;
+          }
+            
+          case GeometryType::Rectangular:
+          {
+            const double w = 2.0 * rectangularWidthThickness(matn, params);
+            const double h = 2.0 * rectangularHeightThickness(matn, params);
+            return activity * w * h;
+          }
+            
+          case GeometryType::NumGeometryType:
+            assert( 0 );
+            break;
+        }//switch( m_geometry )
+        
+        break;
+      }//case TraceActivityType::ExponentialDistribution:
         
       case TraceActivityType::NumTraceActivityType:
         assert( 0 );
@@ -1975,13 +2124,13 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
   //  uncertainty of the thickness, and the uncertainty of the mass fractions.
   double activityUncertSquared = 0.0;
   
-  const int nmat = static_cast<int>(numMaterials());
-  for( int matn = 0; matn < nmat; ++matn )
+  const int num_materials = static_cast<int>( numMaterials() );
+  for( int material_index = 0; material_index < num_materials; ++material_index )
   {
-    if( isGenericMaterial( matn ) )
+    if( isGenericMaterial(material_index) )
       continue;
     
-    const ShieldingInfo &shield = m_materials[matn];
+    const ShieldingInfo &shield = m_materials[material_index];
     const Material * const mat = shield.material;
     
     if( shield.self_atten_sources.empty() && shield.trace_sources.empty() )
@@ -1991,55 +2140,60 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
     //const auto &traces = shield.trace_sources;
     //const bool is_self_atten = (std::find(begin(self_attens), end(self_attens), nuclide) != end(self_attens));
     
-    const double vol = volumeOfMaterial(matn, params);
-    const double volUncert = volumeUncertaintyOfMaterial(matn, params, errors);
+    const double vol = volumeOfMaterial(material_index, params);
+    const double volUncert = volumeUncertaintyOfMaterial(material_index, params, errors);
   
     // Add in uncertainty contributions if this is a self attenuating source
     for( const SandiaDecay::Nuclide *src : shield.self_atten_sources )
     {
-      if( src == nuclide )
+      if( src != nuclide )
+        continue;
+      
+      double massFrac = 0.0, massFracUncert = 0.0;
+      
+      if( hasVariableMassFraction(mat) )
       {
-        double massFrac = 0.0, massFracUncert = 0.0;
-        
-        if( hasVariableMassFraction(mat) )
+        massFraction( massFrac, massFracUncert, mat, src, params, errors );
+      }else
+      {
+        for( const Material::NuclideFractionPair &nfp : mat->nuclides )
         {
-          massFraction( massFrac, massFracUncert, mat, src, params, errors );
-        }else
-        {
-          for( const Material::NuclideFractionPair &nfp : mat->nuclides )
-          {
-            if( nfp.first == src )
-              massFrac += nfp.second;
-          }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
-        }//if( hasVariableMassFraction(mat) ) / else
-
-        
-        const double iso_density = massFrac * mat->density / PhysicalUnits::gram;
-        const double activity_per_gram = nuclide->activityPerGram();
-        const double mass_grams = iso_density * vol;
-        const double massUncertaintySquared_grams = iso_density * volUncert * volUncert;
-        const double thisActivity = mass_grams * activity_per_gram;
-        const double thisActivityUncertaintySquared = massUncertaintySquared_grams * activity_per_gram;
-        
-        //cout << src->symbol << ": sqrt(thisActivityUncertaintySquared)=" << sqrt(thisActivityUncertaintySquared) << endl
-        //<< "\tvolumeUncertDueToInnerRad=" << volumeUncertDueToInnerRad
-        //<< " (radUncert=" << sqrt(radiusUncertSquared)/PhysicalUnits::cm << " cm)" << endl
-        //<< "\tvolumeUncertDueToThickness=" << volumeUncertDueToThickness
-        //<< " (thickUncert=" << sqrt(thickUncert)/PhysicalUnits::cm << " cm)" << endl
-        //<< "\tmassFrac=" << massFrac << ", massFracUncert=" << massFracUncert
-        //<< endl;
-        
-        activityUncertSquared += thisActivityUncertaintySquared;
-        if( !IsNan(massFrac) && !IsInf(massFrac) && (massFrac > FLT_EPSILON) )
-          activityUncertSquared += std::pow( thisActivity * massFracUncert / massFrac, 2.0 );
-        
-        activity += thisActivity;
-      }//if( src == nuclide )
+          if( nfp.first == src )
+            massFrac += nfp.second;
+        }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+      }//if( hasVariableMassFraction(mat) ) / else
+      
+      
+      const double iso_density = massFrac * mat->density / PhysicalUnits::gram;
+      const double activity_per_gram = nuclide->activityPerGram();
+      const double mass_grams = iso_density * vol;
+      const double massUncertaintySquared_grams = iso_density * volUncert * volUncert;
+      const double thisActivity = mass_grams * activity_per_gram;
+      const double thisActivityUncertaintySquared = massUncertaintySquared_grams * activity_per_gram;
+      
+      //cout << src->symbol << ": sqrt(thisActivityUncertaintySquared)=" << sqrt(thisActivityUncertaintySquared) << endl
+      //<< "\tvolumeUncertDueToInnerRad=" << volumeUncertDueToInnerRad
+      //<< " (radUncert=" << sqrt(radiusUncertSquared)/PhysicalUnits::cm << " cm)" << endl
+      //<< "\tvolumeUncertDueToThickness=" << volumeUncertDueToThickness
+      //<< " (thickUncert=" << sqrt(thickUncert)/PhysicalUnits::cm << " cm)" << endl
+      //<< "\tmassFrac=" << massFrac << ", massFracUncert=" << massFracUncert
+      //<< endl;
+      
+      activityUncertSquared += thisActivityUncertaintySquared;
+      if( !IsNan(massFrac) && !IsInf(massFrac) && (massFrac > FLT_EPSILON) )
+        activityUncertSquared += std::pow( thisActivity * massFracUncert / massFrac, 2.0 );
+      
+      activity += thisActivity;
     }//for( const SandiaDecay::Nuclide *src : srcs )
   
     // Add in uncertainty contributions if this is a trace source
-    for( const pair<const SandiaDecay::Nuclide *,TraceActivityType> &trace : shield.trace_sources )
+    for( const tuple<const SandiaDecay::Nuclide *,TraceActivityType,double> &trace : shield.trace_sources )
     {
+      if( get<0>(trace) != nuclide )
+        continue;
+      
+      const TraceActivityType trace_type = get<1>(trace);
+      
       // Trace activity may be total, per cc, or per gram - but what the user really cares about
       //  is the uncertainty on the total (e.g., they dont care if it comes from trace activity
       //  or from dimension uncertainties), so we'll be a bit conservative here and just throw in
@@ -2049,14 +2203,17 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
       const double thisActivity = ShieldingSourceChi2Fcn::activity( nuclide, params );
       
       double thisActUncertSquared = niaveActUncert * niaveActUncert;
-      switch( trace.second )
+      switch( trace_type )
       {
         case TraceActivityType::TotalActivity:
+        {
           // I *guess* we can ignore effects of volume uncertainty; this isnt strictly true due to
           //  1/r2 effects, but actually the activity uncertainty parameter should already take this
           //  into account - so I think we are good.
           activity += thisActivity;
           break;
+        }//case TraceActivityType::TotalActivity:
+          
           
         case TraceActivityType::ActivityPerCm3:
         case TraceActivityType::ActivityPerGram:
@@ -2067,14 +2224,58 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
           //  no one ever questions).
           const double volFracUncert = volUncert / vol;
           
-          if( trace.second == TraceActivityType::ActivityPerCm3 )
+          if( trace_type == TraceActivityType::ActivityPerCm3 )
             activity += thisActivity * (vol/PhysicalUnits::cm3);
           else
             activity += thisActivity * vol * mat->density / PhysicalUnits::gram;
           
           thisActUncertSquared += volFracUncert*volFracUncert*thisActivity*thisActivity;
           break;
-        }
+        }//case TraceActivityType::ActivityPerCm3 or ActivityPerGram
+          
+          
+        case TraceActivityType::ExponentialDistribution:
+        {
+          switch( m_geometry )
+          {
+            case GeometryType::Spherical:
+            {
+              const double r =  sphericalThickness(material_index, params);
+              activity += thisActivity * 4.0 * PhysicalUnits::pi * r * r;
+              break;
+            }
+              
+            case GeometryType::CylinderEndOn:
+            {
+              const double r = cylindricalRadiusThickness(material_index, params);
+              activity += thisActivity * PhysicalUnits::pi * r * r;
+              break;
+            }
+              
+            case GeometryType::CylinderSideOn:
+            {
+              const double r = cylindricalRadiusThickness(material_index, params);
+              const double z = cylindricalLengthThickness(material_index, params);
+              activity += thisActivity * PhysicalUnits::pi * 2.0 * r * z;
+              break;
+            }
+              
+            case GeometryType::Rectangular:
+            {
+              const double w = 2.0 * rectangularWidthThickness(material_index, params);
+              const double h = 2.0 * rectangularHeightThickness(material_index, params);
+              activity += thisActivity * w * h;
+              break;
+            }
+              
+            case GeometryType::NumGeometryType:
+              assert( 0 );
+              break;
+          }//switch( m_geometry )
+          
+          break;
+        }//case TraceActivityType::ExponentialDistribution:
+          
           
         case TraceActivityType::NumTraceActivityType:
           assert( 0 );
@@ -2085,14 +2286,18 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
       
       activityUncertSquared += thisActUncertSquared;
     }//for( loop over trace sources )
-  }//for( size_t matn = 0; matn < nmat; ++matn )
+  }//for( size_t material_index = 0; material_index < num_materials; ++material_index )
   
   if( activityUncertSquared < 0.0 || IsNan(activityUncertSquared) || IsInf(activityUncertSquared) )
     throw runtime_error( "error calculating activity uncertainty for self-attenuating source;"
                          " squared value calculated is " + std::to_string(activityUncertSquared) );
   
   const double normalCalcAct = ShieldingSourceChi2Fcn::totalActivity( nuclide, params );
-  assert( fabs(normalCalcAct - activity) < 0.001*std::max(normalCalcAct,activity) );
+  if( fabs(normalCalcAct - activity) >= 0.001*std::max(normalCalcAct,activity) )
+  {
+    cerr << "\n\nCaught incorrect calculation of nuclide activity - disabling assert for development - need to re-enable\n\n" << endl;
+    assert( fabs(normalCalcAct - activity) < 0.001*std::max(normalCalcAct,activity) );
+  }
   
   return sqrt( activityUncertSquared );
 }//double activityUncertainty(...)
@@ -3031,7 +3236,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     {
       combined_srcs = self_atten_srcs;
       for( const auto &p : trace_srcs )
-        combined_srcs.push_back( p.first );
+        combined_srcs.push_back( std::get<0>(p) );
     }
     
     const auto &srcs = combined_srcs.empty() ? self_atten_srcs : combined_srcs;
@@ -3058,6 +3263,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     baseCalculator.m_attenuateForAir = m_attenuateForAir;
     baseCalculator.m_sourceIndex = materialN;
     
+    baseCalculator.m_isInSituExponential = false;
+    baseCalculator.m_inSituRelaxationLength = -1.0;
+    
     for( size_t src_index = 0; src_index < srcs.size(); ++src_index )
     {
       const SandiaDecay::Nuclide *src = srcs[src_index];
@@ -3067,7 +3275,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       {// begin quick sanity check
         bool trace_check = false;
         for( const auto &p : trace_srcs )
-          trace_check = (trace_check || (p.first == src));
+          trace_check = (trace_check || (std::get<0>(p) == src));
         assert( trace_check == is_trace );
       }// end quick sanity check
 #endif
@@ -3083,7 +3291,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         
         const double act = activity(src, x);
         
-        switch( trace_srcs[trace_index].second )
+        switch( std::get<1>(trace_srcs[trace_index]) )
         {
           case TraceActivityType::TotalActivity:
           {
@@ -3100,6 +3308,77 @@ vector< tuple<double,double,double,Wt::WColor,double> >
           case TraceActivityType::ActivityPerGram:
             actPerVol = act * material->density / PhysicalUnits::g;
             break;
+            
+          case TraceActivityType::ExponentialDistribution:
+          {
+            const double relaxation_len = std::get<2>(trace_srcs[trace_index]);
+            assert( relaxation_len > 0.0 );
+            
+            //actually activity of the entire soil-column, all the way down, so not an actPerVol,
+            //  strictly, but per surface area
+            actPerVol = act / PhysicalUnits::m2;
+            
+            // We need to normalize the activity by integrating over the entire volume
+            switch( m_geometry )
+            {
+              case GeometryType::Spherical:
+              {
+                // Integral from 0.0 to shielding radius R, of "r*r*exp(-(R-r)/L)" where L is
+                //  relaxation length, is L*(L*L*(2-2*exp(-R/L)) - 2*L*R + R*R)
+                //  So we will normalize by this factor (times 4pi) so the surface contamination
+                //  level (in activity/m2), multiplied by surface are will give total activity
+                
+                //4 π integral_0^R e^(-(R - ρ)/L) ρ^2 dρ = 4 π L (L^2 (2 - 2 e^(-R/L)) - 2 L R + R^2)
+                
+                const double R = sphericalThickness(materialN, x);
+                const double L = relaxation_len;
+                const double norm = 4*PhysicalUnits::pi * L * (L*L*(2 - 2*exp(-R/L)) - 2*L*R + R*R);
+                actPerVol /= norm;
+                
+                break;
+              }//case GeometryType::Spherical:
+                
+              case GeometryType::Rectangular:
+              case GeometryType::CylinderEndOn:
+              {
+                // Integral from 0.0 to shielding depth R, of relaxation length L, is L - L*exp(-R/L)
+                //  So we will normalize by this factor so the activity represents the entire activity
+                //  of the column
+                
+                double R = -1.0;
+                if( m_geometry == GeometryType::Rectangular )
+                  R = 2.0 * rectangularDepthThickness(materialN, x);
+                else
+                  R = 2.0 * cylindricalLengthThickness(materialN, x);
+
+                assert( R >= 0.0 );
+                
+                const double L = relaxation_len;
+                const double norm = L * (1.0 - exp(-R / L) );
+                actPerVol /= norm;
+                break;
+              }// case GeometryType::Rectangular or CylinderEndOn
+                
+              case GeometryType::CylinderSideOn:
+              {
+                //integrate 2*pi*r*exp(-(R-r)/L) wrt r, from 0 to R
+                const double R = cylindricalRadiusThickness(materialN, x);
+                const double L = relaxation_len;
+                
+                const double norm = 2 * L * PhysicalUnits::pi * (L*(exp(-R/L) - 1) + R);
+                actPerVol /= norm;
+                break;
+              }//case GeometryType::CylinderSideOn:
+              
+                
+                break;
+              case GeometryType::NumGeometryType:
+                assert( 0 );
+                break;
+            }//switch( m_geometry )
+            
+            break;
+          }//case TraceActivityType::ExponentialDistribution:
             
           case TraceActivityType::NumTraceActivityType:
             assert(0);
@@ -3164,6 +3443,19 @@ vector< tuple<double,double,double,Wt::WColor,double> >
           calculator.m_airTransLenCoef = transmission_length_coefficient_air( energy_count.first );
         else
           calculator.m_airTransLenCoef = 0.0;
+        
+        if( is_trace )
+        {
+          const size_t trace_index = src_index - self_atten_srcs.size();
+          assert( trace_index < trace_srcs.size() );
+          
+          if( std::get<1>(trace_srcs[trace_index]) == TraceActivityType::ExponentialDistribution )
+          {
+            calculator.m_isInSituExponential = true;
+            calculator.m_inSituRelaxationLength = std::get<2>(trace_srcs[trace_index]);
+            assert( calculator.m_inSituRelaxationLength > 0.0 );
+          }
+        }//if( is_trace )
         
         double outer_dims[3] = { 0.0, 0.0, 0.0 };
         
@@ -3277,6 +3569,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     {
       double contrib = calculator.integral * calculator.srcVolumetricActivity;
 
+      
       if( m_detector && m_detector->isValid() )
         contrib *= m_detector->intrinsicEfficiency( calculator.energy );
 

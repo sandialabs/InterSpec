@@ -307,7 +307,8 @@ public:
             }
             m_keepRefLinePeaksOnly = new WCheckBox( msg, contents() );
             m_keepRefLinePeaksOnly->setInline( false );
-            m_keepRefLinePeaksOnly->changed().connect( this, &PeakSelectorWindow::keepOnlyRefLinesCbChanged );
+            m_keepRefLinePeaksOnly->checked().connect( this, &PeakSelectorWindow::keepOnlyRefLinesCbChanged );
+            m_keepRefLinePeaksOnly->unChecked().connect( this, &PeakSelectorWindow::keepOnlyRefLinesCbChanged );
             m_keepRefLinePeaksOnly->setMargin( 10, Wt::Top );
             m_keepRefLinePeaksOnly->addStyleClass( "KeepRefLinPeaksOnlyCb" );
           }//if( anyNonAssignedPeaks )
@@ -329,7 +330,8 @@ public:
       m_showAllPeaks->addStyleClass( "ShowAllPeaksCb" );
       m_showAllPeaks->setInline( false );
       m_showAllPeaks->setChecked( false );
-      m_showAllPeaks->changed().connect( this, &PeakSelectorWindow::showAllPeaksCbChanged );
+      m_showAllPeaks->checked().connect( this, &PeakSelectorWindow::showAllPeaksCbChanged );
+      m_showAllPeaks->unChecked().connect( this, &PeakSelectorWindow::showAllPeaksCbChanged );
       if( !m_keepRefLinePeaksOnly )
         m_showAllPeaks->setMargin( 10, Wt::Top );
     }//if( m_showAllPeaks )
@@ -522,7 +524,8 @@ public:
           WCheckBox *cb = new WCheckBox( "Keep Peak", cbcell );
           cb->setWordWrap(false);
           cb->setChecked(true);
-          cb->changed().connect( this, &PeakSelectorWindow::keepPeakChanged );
+          cb->checked().connect( this, &PeakSelectorWindow::keepPeakChanged );
+          cb->unChecked().connect( this, &PeakSelectorWindow::keepPeakChanged );
           m_keep_peak_cbs[i] = cb;
         }
       }//
