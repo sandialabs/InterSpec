@@ -175,6 +175,8 @@ protected:
   
   Wt::WGroupBox *m_effOptionGroup;
   
+  Wt::WCheckBox *m_airAttenuate;
+  
   /** ToDo: make chart properly interactive so user doesnt need to input the
    energy range manually.
    */

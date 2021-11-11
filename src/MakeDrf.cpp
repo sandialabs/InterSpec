@@ -80,6 +80,7 @@
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 
@@ -1348,6 +1349,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_effEqnOrder( nullptr ),
   m_effEqnUnits( nullptr ),
   m_effOptionGroup( nullptr ),
+  m_airAttenuate( nullptr ),
   m_chartLowerE( nullptr ),
   m_chartUpperE( nullptr ),
   m_errorMsg( nullptr ),
@@ -1414,6 +1416,14 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   
   m_effOptionGroup->hide();
   m_fwhmOptionGroup->hide();
+  
+  WGroupBox *genOpts = new WGroupBox( fitOptionsDiv );
+  m_airAttenuate = new WCheckBox( "Atten. for air", genOpts );
+  m_airAttenuate->setChecked( true );
+  m_airAttenuate->setInline( false );
+  m_airAttenuate->addStyleClass( "AirAttenCb" );
+  m_airAttenuate->checked().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_airAttenuate->unChecked().connect( this, &MakeDrf::handleSourcesUpdates );
   
   m_chart = new MakeDrfChart();
   DrfChartHolder *chartholder = new DrfChartHolder( m_chart, nullptr );
@@ -1975,6 +1985,8 @@ void MakeDrf::handleSourcesUpdates()
     detDiamInvalid = true;
   }
   
+  const bool doAirAtten = m_airAttenuate->isChecked();
+  
   //Go through and and grab background peaks
   vector<DrfPeak *> backgroundpeaks;
   for( auto w : m_files->children() )
@@ -2115,10 +2127,19 @@ void MakeDrf::handleSourcesUpdates()
         
         
         
-        auto trans_frac = []( const float energy, MakeDrfSrcDef *src ) -> double {
+        auto trans_frac = [doAirAtten]( const float energy, MakeDrfSrcDef *src ) -> double {
+          
+          double airTransFrac = 1.0;
+          if( doAirAtten )
+          {
+            const double distance = src->distance();
+            const double mu = GammaInteractionCalc::transmission_length_coefficient_air( energy );
+            airTransFrac = exp( -mu * distance );
+          }//if( doAirAtten )
+          
           ShieldingSelect *shield = src ? src->shielding() : nullptr;
           if( !shield )
-            return 1.0;
+            return airTransFrac;
           
           //ToDo: Attenuation calculation not checked!
           double an = 14, ad = 0.0;
@@ -2141,7 +2162,7 @@ void MakeDrf::handleSourcesUpdates()
           }//if( shield->isGenericMaterial() ) / else
           
           const double mu = MassAttenuation::massAttenuationCoeficient( an, energy );
-          return exp( -mu * ad );
+          return airTransFrac * exp( -mu * ad );
         };//trans_frac lambda
         
         
