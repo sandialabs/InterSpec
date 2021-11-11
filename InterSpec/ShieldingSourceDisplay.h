@@ -443,6 +443,7 @@ public:
   void doAddShielding();
   void doAddShieldingBefore( ShieldingSelect *select );
   void doAddShieldingAfter( ShieldingSelect *select );
+  size_t numberShieldings() const;
   
   void removeShielding( ShieldingSelect *select );
   void materialModifiedCallback( ShieldingSelect *select );

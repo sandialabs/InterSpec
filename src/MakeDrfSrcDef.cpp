@@ -288,13 +288,15 @@ void MakeDrfSrcDef::create()
   m_useAgeInfo = new WCheckBox( "Age?", cell );
   m_useAgeInfo->setFloatSide( Wt::Right );
   m_useAgeInfo->setChecked( false );
-  m_useAgeInfo->changed().connect( this, &MakeDrfSrcDef::useAgeInfoUserToggled );
+  m_useAgeInfo->checked().connect( this, &MakeDrfSrcDef::useAgeInfoUserToggled );
+  m_useAgeInfo->unChecked().connect( this, &MakeDrfSrcDef::useAgeInfoUserToggled );
   
   cell = m_table->elementAt(sm_options_row,1);
   m_useShielding = new WCheckBox( "Shielded?", cell );
   m_useShielding->setFloatSide( Wt::Right );
   m_useShielding->setChecked( false );
-  m_useShielding->changed().connect( this, &MakeDrfSrcDef::useShieldingInfoUserToggled );
+  m_useShielding->checked().connect( this, &MakeDrfSrcDef::useShieldingInfoUserToggled );
+  m_useShielding->unChecked().connect( this, &MakeDrfSrcDef::useShieldingInfoUserToggled );
   
   
   cell = m_table->elementAt(sm_shield_material_row,0);

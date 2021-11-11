@@ -9899,7 +9899,9 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
       if( isneut )
         item->addStyleClass( "NeutDetCbItem" );
       
-      cb->changed().connect( this, &InterSpec::detectorsToDisplayChanged );
+      cb->checked().connect( this, &InterSpec::detectorsToDisplayChanged );
+      cb->unChecked().connect( this, &InterSpec::detectorsToDisplayChanged );
+      
       //item->triggered().connect( boost::bind( &InterSpec::detectorsToDisplayChanged, this, item ) );
       
       if( det_nums.size() == 1 )

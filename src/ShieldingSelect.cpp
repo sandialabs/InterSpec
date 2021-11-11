@@ -118,6 +118,11 @@ class TraceSrcDisplay : public WGroupBox
   Wt::WLineEdit *m_activityInput;
   Wt::WComboBox *m_activityType;
   Wt::WCheckBox *m_allowFitting;
+  
+  Wt::WContainerWidget *m_relaxationDiv;
+  Wt::WLineEdit *m_relaxationDistance;
+  Wt::WText *m_relaxationDescription;
+  
   Wt::Signal<const SandiaDecay::Nuclide *,double> m_activityUpdated;
   Wt::Signal<TraceSrcDisplay *, const SandiaDecay::Nuclide * /* old nuclide */> m_nucChangedSignal;
   
@@ -133,6 +138,9 @@ public:
     m_activityInput( nullptr ),
     m_activityType( nullptr ),
     m_allowFitting( nullptr ),
+    m_relaxationDiv( nullptr ),
+    m_relaxationDistance( nullptr ),
+    m_relaxationDescription( nullptr ),
     m_activityUpdated( this ),
     m_nucChangedSignal( this )
   {
@@ -142,27 +150,27 @@ public:
     addStyleClass( "TraceSrcDisplay" );
     
     WPushButton *closeIcon = new WPushButton( this );
-    closeIcon->addStyleClass( "closeicon-wtdefault ThirdCol FirstRow" );
+    closeIcon->addStyleClass( "closeicon-wtdefault GridThirdCol GridFirstRow" );
     closeIcon->clicked().connect( boost::bind( &ShieldingSelect::removeTraceSourceWidget, m_parent, this) );
     closeIcon->setToolTip( "Remove this trace source." );
     
     
     WLabel *label = new WLabel( "Nuclide", this );
-    label->addStyleClass( "FirstCol SecondRow" );
+    label->addStyleClass( "GridFirstCol GridSecondRow" );
     
     m_isoSelect = new WComboBox( this );
     m_isoSelect->addItem( "Select" );
     m_isoSelect->activated().connect( this, &TraceSrcDisplay::handleUserNuclideChange );
-    m_isoSelect->addStyleClass( "SecondCol SecondRow SpanTwoCol" );
+    m_isoSelect->addStyleClass( "GridSecondCol GridSecondRow GridSpanTwoCol" );
     label->setBuddy( m_isoSelect );
     
     
     label = new WLabel( "Activity", this );
-    label->addStyleClass( "FirstCol ThirdRow" );
+    label->addStyleClass( "GridFirstCol GridThirdRow" );
     
     
     m_activityInput = new WLineEdit( this );
-    m_activityInput->addStyleClass( "SecondCol ThirdRow" );
+    m_activityInput->addStyleClass( "GridSecondCol GridStretchCol GridThirdRow" );
     m_activityInput->setAutoComplete( false );
     
     WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, m_activityInput );
@@ -176,11 +184,39 @@ public:
     
     m_activityType = new WComboBox( this );
     m_activityType->activated().connect( this, &TraceSrcDisplay::handleUserChangeActivityType );
-    m_activityType->addStyleClass( "ThirdCol ThirdRow" );
+    m_activityType->addStyleClass( "GridThirdCol GridThirdRow" );
     
     m_allowFitting = new WCheckBox( "Fit activity value", this );
-    m_allowFitting->addStyleClass( "SecondCol FourthRow SpanTwoCol" );
-    m_allowFitting->changed().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
+    m_allowFitting->addStyleClass( "GridSecondCol GridStretchCol GridFourthRow GridSpanTwoCol" );
+    
+    
+    m_relaxationDiv = new WContainerWidget( this );
+    m_relaxationDiv->addStyleClass( "GridFirstCol GridFifthRow GridSpanThreeCol RelaxDistDisplay" );
+    
+    WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, m_relaxationDiv );
+    distValidator->setFlags( Wt::MatchCaseInsensitive );
+    
+    label = new WLabel( "Relaxation&nbsp;Distance", m_relaxationDiv );
+    label->addStyleClass( "GridFirstCol GridFirstRow" );
+    
+    m_relaxationDistance = new WLineEdit( m_relaxationDiv );
+    m_relaxationDistance->setText( "1.0 cm" );
+    m_relaxationDistance->setValidator( distValidator );
+    m_relaxationDistance->addStyleClass( "GridSecondCol GridStretchCol GridFirstRow" );
+    m_relaxationDistance->changed().connect( this, &TraceSrcDisplay::handleUserRelaxDistChange );
+    m_relaxationDistance->enterPressed().connect( this, &TraceSrcDisplay::handleUserRelaxDistChange );
+    
+    m_relaxationDescription = new WText("", m_relaxationDiv);
+    m_relaxationDescription->addStyleClass( "GridFirstCol GridSecondRow GridSpanTwoCol RelaxDescription" );
+    m_relaxationDiv->hide();
+    
+    // Using WCheckBox::changed() instead of WCheckBox::checked()/unChecked() causes some odd
+    //  issues in Wt 3.3.4 (at least) where m_allowFitting->isChecked() isnt always up to date in
+    //  the immediate render cycle (it is in the immediate call to to the connected signal, but
+    //  seemingly not in calls during render()... havent looked into this much yet.
+    //m_allowFitting->changed().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
+    m_allowFitting->checked().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
+    m_allowFitting->unChecked().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
       
     updateAvailableActivityTypes();
     updateAvailableIsotopes();
@@ -218,6 +254,14 @@ public:
     value = m_allowFitting->isChecked() ? "1" : "0";
     node = doc->allocate_node( rapidxml::node_element, "AllowFitting", value );
     base_node->append_node( node );
+    
+    if( type == TraceActivityType::ExponentialDistribution )
+    {
+      const string relax_dist = m_relaxationDistance->text().toUTF8();
+      value = doc->allocate_string( relax_dist.c_str() );
+      node = doc->allocate_node( rapidxml::node_element, "RelaxationDistance", value );
+      base_node->append_node( node );
+    }
   }//void serialize( rapidxml::xml_node<> *parent )
   
   
@@ -234,10 +278,41 @@ public:
     const rapidxml::xml_node<char> *disp_act_node = trace_node->first_node( "DisplayActivity" );
     const rapidxml::xml_node<char> *act_type_node = trace_node->first_node( "TraceActivityType" );
     const rapidxml::xml_node<char> *allow_fit_node = trace_node->first_node( "AllowFitting" );
+    const rapidxml::xml_node<char> *relax_node = trace_node->first_node( "RelaxationDistance" );
     
     if( !nuc_node || !disp_act_node || !act_type_node || !allow_fit_node )
       throw runtime_error( "TraceSrcDisplay::deSerialize: missing node" );
 
+    const string act_type = SpecUtils::xml_value_str(act_type_node);
+    
+    TraceActivityType type = TraceActivityType::NumTraceActivityType;
+    for( TraceActivityType t = TraceActivityType(0);
+        t != TraceActivityType::NumTraceActivityType;
+        t = TraceActivityType(static_cast<int>(t) + 1) )
+    {
+      if( act_type == GammaInteractionCalc::to_str(t) )
+      {
+        type = t;
+        break;
+      }
+    }//for( loop over TraceActivityTypes )
+    
+    if( type == TraceActivityType::NumTraceActivityType )
+    {
+      cerr << "TraceSrcDisplay::deSerialize: Trace activity type in XML ('" << act_type << "'),"
+      << " is invalid, setting to total activity." << endl;
+      type = TraceActivityType::TotalActivity;
+    }
+    
+    // TODO: uncomment out the below after initial development
+    //if( (type == TraceActivityType::ExponentialDistribution)
+    //   && (!relax_node || !relax_node->value_size()) )
+    //{
+    //  throw runtime_error( "TraceSrcDisplay::deSerialize: missing required RelaxationDistance node" );
+    //}
+    
+    
+    
     updateAvailableIsotopes();
     updateAvailableActivityTypes();
     
@@ -287,33 +362,18 @@ public:
     
     m_activityInput->setText( WString::fromUTF8(acttxt) );
     
-    const string act_type = SpecUtils::xml_value_str(act_type_node);
-    
-    TraceActivityType type = TraceActivityType::NumTraceActivityType;
-    for( TraceActivityType t = TraceActivityType(0);
-        t != TraceActivityType::NumTraceActivityType;
-        t = TraceActivityType(static_cast<int>(t) + 1) )
-    {
-      if( act_type == GammaInteractionCalc::to_str(t) )
-      {
-        type = t;
-        break;
-      }
-    }//for( loop over TraceActivityTypes )
-    
-    if( type == TraceActivityType::NumTraceActivityType )
-    {
-      cerr << "TraceSrcDisplay::deSerialize: Trace activity type in XML ('" << act_type << "'),"
-           << " is invalid, setting to toal activity." << endl;
-      type = TraceActivityType::TotalActivity;
-    }
     
     m_activityType->setCurrentIndex( static_cast<int>(type) );
+    
+    //if( type == TraceActivityType::ExponentialDistribution )
+    if( relax_node && relax_node->value_size() )
+      m_relaxationDistance->setValueText( SpecUtils::xml_value_str(relax_node) );
     
     const string do_fit_xml = SpecUtils::xml_value_str(allow_fit_node);
     const bool allow_fit = ((do_fit_xml == "1") || SpecUtils::iequals_ascii(do_fit_xml,"true"));
     m_allowFitting->setChecked( allow_fit );
     
+    updateRelaxationDisplay();
     updateTotalActivityFromDisplayActivity();
     handleUserActivityChange();
     handleUserChangeAllowFit();
@@ -322,7 +382,7 @@ public:
   
   bool allowFittingActivity() const
   {
-    const bool allow = m_allowFitting->isChecked();;
+    const bool allow = m_allowFitting->isChecked();
     return allow;
   }
   
@@ -425,6 +485,10 @@ public:
           m_currentTotalActivity = m_currentDisplayActivity * shieldMassGram;
           break;
         
+        case TraceActivityType::ExponentialDistribution:
+          m_currentTotalActivity = m_currentDisplayActivity * m_parent->inSituSurfaceArea();
+          break;
+          
         case TraceActivityType::NumTraceActivityType:
           assert( 0 );
           m_activityInput->setText( useCi ? "0 uCi" : "0 bq");
@@ -464,6 +528,21 @@ public:
           }
           break;
         
+        case TraceActivityType::ExponentialDistribution:
+        {
+          const double surface_area_m2 = m_parent->inSituSurfaceArea() / PhysicalUnits::m2;
+          
+          if( surface_area_m2 <= FLT_EPSILON )
+          {
+            m_currentTotalActivity = m_currentDisplayActivity = 0.0;
+            txt = (useCi ? "0 uCi" : "0 bq");
+          }else
+          {
+            txt = PhysicalUnits::printToBestActivityUnits( m_currentTotalActivity/surface_area_m2, 3, useCi );
+          }
+          break;
+        }//case TraceActivityType::ExponentialDistribution:
+          
         case TraceActivityType::NumTraceActivityType:
           assert( 0 );
           txt = (useCi ? "0 uCi" : "0 bq");
@@ -476,6 +555,56 @@ public:
     if( m_currentNuclide )
       m_activityUpdated.emit( m_currentNuclide, m_currentTotalActivity );
   }//void handleUserActivityChange()
+  
+  
+  void handleUserRelaxDistChange()
+  {
+    double distance = 0.0;
+    try
+    {
+      distance = PhysicalUnits::stringToDistance( m_relaxationDistance->text().toUTF8() );
+      if( distance < 10.0*PhysicalUnits::um )
+        throw runtime_error( "Relaxation distance must be at least 10 um." );
+    }catch( std::exception &e )
+    {
+      distance = 1.0 * PhysicalUnits::cm;
+      m_relaxationDistance->setText( "1.0 cm" );
+      passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+    }// try / catch
+    
+    // TODO: put in actual recommended dimensions for FOV and depth, based on current detector distance and energy peaks.
+    string geom_msg;
+    switch( m_parent->geometry() )
+    {
+      case GammaInteractionCalc::GeometryType::Spherical:
+        geom_msg = "The in-situ exponential distribution is not recommended for spherical geometry, but may be used.";
+        break;
+        
+      case GammaInteractionCalc::GeometryType::CylinderEndOn:
+        geom_msg = "Please make sure cylinder radius is large enough to cover field of view, and depth is at least a number of relaxation lengths large.";
+        break;
+        
+      case GammaInteractionCalc::GeometryType::CylinderSideOn:
+        geom_msg = "The in-situ exponential distribution is not recommended for cylindrical side-on geometry, but may be used.";
+        break;
+        
+      case GammaInteractionCalc::GeometryType::Rectangular:
+        geom_msg = "Please make sure width and height values are large enough to cover field of view, and depth is at least a number of relaxation lengths.";
+        break;
+        
+      case GammaInteractionCalc::GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_parent->geometry() )
+    
+    string msg = "This exponentially distributed in-situ surface contamination is usually used "
+                 "for soil contamination."
+                 " The relaxation distance is the depth from the surface at which ~63% of the"
+                 " contamination is above, with the contamination decaying exponentially with"
+                 " depth."
+                 "<p>" + geom_msg + "</p>";
+    m_relaxationDescription->setText( msg );
+  }//void handleUserRelaxDistChange()
   
   /** Returns total activity, or activity per gram, or activity per cm3, based on user input*/
   double displayActivity()
@@ -493,6 +622,20 @@ public:
   
     return static_cast<TraceActivityType>( currentIndex );
   }
+  
+  double relaxationLength() const
+  {
+    const int currentIndex = m_activityType->currentIndex();
+    if( (currentIndex < 0)
+       || (currentIndex >= static_cast<int>(TraceActivityType::NumTraceActivityType)) )
+      return -1.0;
+    
+    const TraceActivityType type = static_cast<TraceActivityType>(currentIndex);
+    if( type != TraceActivityType::ExponentialDistribution )
+      throw runtime_error( "TraceSrcDisplay::relaxationLength() not a ExponentialDistribution" );
+    
+    return PhysicalUnits::stringToDistance( m_relaxationDistance->text().toUTF8() );
+  }//double relaxationLength()
   
   
   void updateAvailableActivityTypes()
@@ -527,6 +670,10 @@ public:
           
         case TraceActivityType::ActivityPerCm3:
           m_activityType->addItem( "per cm^3" );
+          break;
+        
+        case TraceActivityType::ExponentialDistribution:
+          m_activityType->addItem( "per m^2 exp" );
           break;
           
         case TraceActivityType::ActivityPerGram:
@@ -598,6 +745,16 @@ public:
           m_currentDisplayActivity = m_currentTotalActivity / shieldVolumeCm3;
         break;
         
+      case TraceActivityType::ExponentialDistribution:
+      {
+        const double surface_area_m2 = m_parent->inSituSurfaceArea() / PhysicalUnits::m2;
+        if( surface_area_m2 <= FLT_EPSILON )
+          m_currentDisplayActivity = m_currentTotalActivity = 0.0;
+        else
+          m_currentDisplayActivity = m_currentTotalActivity / surface_area_m2;
+        break;
+      }//case TraceActivityType::ActivityPerGram:
+        
       case TraceActivityType::ActivityPerGram:
         if( shieldMassGram <= FLT_EPSILON )
           m_currentDisplayActivity = m_currentTotalActivity = 0.0;
@@ -652,6 +809,17 @@ public:
         else
           m_currentTotalActivity = m_currentDisplayActivity * shieldVolumeCm3;
         break;
+        
+      case TraceActivityType::ExponentialDistribution:
+      {
+        const double surface_area_m2 = m_parent->inSituSurfaceArea() / PhysicalUnits::m2;
+        if( surface_area_m2 <= FLT_EPSILON )
+          m_currentDisplayActivity = m_currentTotalActivity = 0.0;
+        else
+          m_currentTotalActivity = m_currentDisplayActivity * surface_area_m2;
+        
+        break;
+      }//case TraceActivityType::ExponentialDistribution:
         
       case TraceActivityType::ActivityPerGram:
         if( shieldMassGram <= FLT_EPSILON )
@@ -763,6 +931,10 @@ public:
           act /= (m_parent->shieldingVolume() / PhysicalUnits::cm3);
           break;
           
+        case TraceActivityType::ExponentialDistribution:
+          act /= (m_parent->inSituSurfaceArea() / PhysicalUnits::m2);
+          break;
+          
         case GammaInteractionCalc::TraceActivityType::ActivityPerGram:
           act /= (m_parent->shieldingMass() / PhysicalUnits::gram);
           break;
@@ -788,8 +960,21 @@ public:
   }//void handleUserNuclideChange()
   
   
+  void updateRelaxationDisplay()
+  {
+    const bool show = (m_activityType->currentIndex()
+                       == static_cast<int>(TraceActivityType::ExponentialDistribution));
+    
+    m_relaxationDiv->setHidden( !show );
+    if( show )
+      handleUserRelaxDistChange();
+  }//void showOrHideRelaxation()
+  
+  
   void handleUserChangeActivityType()
   {
+    updateRelaxationDisplay();
+    
     updateDispActivityFromTotalActivity();
   }//handleUserChangeActivityType()
   
@@ -999,10 +1184,10 @@ Wt::EventSignal<> &SourceCheckbox::checked()
   return m_useAsSourceCb->checked();
 }
 
-Wt::EventSignal<> &SourceCheckbox::changed()
-{
-  return m_useAsSourceCb->changed();
-}
+//Wt::EventSignal<> &SourceCheckbox::changed()
+//{
+//  return m_useAsSourceCb->changed();
+//}
 
 Wt::EventSignal<> &SourceCheckbox::unChecked()
 {
@@ -1261,12 +1446,19 @@ void ShieldingSelect::setSphericalThickness( const double thickness )
 {
   checkIsCorrectCurrentGeometry( GeometryType::Spherical, __func__ );
   
-  if( thickness < 0.0 )
-    m_thicknessEdit->setText( "" );
-  else
-    m_thicknessEdit->setText( PhysicalUnits::printToBestLengthUnits(thickness,3) );
-
-  handleMaterialChange();
+  // The DoseCalc tool ends up calling this function while reacting to a materialModified() or
+  //  materialChanged() signal - however, handleMaterialChange() will emit this signal as well,
+  //  causing a stack overflow and crash.  So if we arent actually changing the value, we'll break
+  //  the change and just return without making a change.
+  const string newval = (thickness < 0.0) ?  string("")
+                                          : PhysicalUnits::printToBestLengthUnits(thickness,3);
+  
+  const string oldval = m_thicknessEdit->text().toUTF8();
+  if( newval != oldval )
+  {
+    m_thicknessEdit->setText( newval );
+    //handleMaterialChange();
+  }
 }//void setSphericalThickness( const double thickness )
 
 
@@ -1274,12 +1466,16 @@ void ShieldingSelect::setCylindricalRadiusThickness( const double radius )
 {
   checkIsCorrectCurrentGeometry( GeometryType::CylinderEndOn, __func__ );
   
-  if( radius < 0.0 )
-    m_cylRadiusEdit->setText( "" );
-  else
-    m_cylRadiusEdit->setText( PhysicalUnits::printToBestLengthUnits(radius,3) );
+  // See comments from #setSphericalThickness
+  const string newval = (radius < 0.0) ? string("")
+                        : PhysicalUnits::printToBestLengthUnits(radius,3);
   
-  handleMaterialChange();
+  const string oldval = m_cylRadiusEdit->text().toUTF8();
+  if( newval != oldval )
+  {
+    m_cylRadiusEdit->setText( newval );
+    //handleMaterialChange();
+  }
 }//void setCylindricalRadiusThickness( const double radius )
 
 
@@ -1287,12 +1483,16 @@ void ShieldingSelect::setCylindricalLengthThickness( const double length )
 {
   checkIsCorrectCurrentGeometry( GeometryType::CylinderEndOn, __func__ );
   
-  if( length < 0.0 )
-    m_cylLengthEdit->setText( "" );
-  else
-    m_cylLengthEdit->setText( PhysicalUnits::printToBestLengthUnits(length,3) );
+  // See comments from #setSphericalThickness
+  const string newval = (length < 0.0) ? string("")
+                                       : PhysicalUnits::printToBestLengthUnits(length,3);
   
-  handleMaterialChange();
+  const string oldval = m_cylLengthEdit->text().toUTF8();
+  if( newval != oldval )
+  {
+    m_cylLengthEdit->setText( newval );
+    //handleMaterialChange();
+  }
 }//void setCylindricalLengthThickness( const double length )
 
 
@@ -1300,12 +1500,16 @@ void ShieldingSelect::setRectangularWidthThickness( const double width )
 {
   checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
   
-  if( width < 0.0 )
-    m_rectWidthEdit->setText( "" );
-  else
-    m_rectWidthEdit->setText( PhysicalUnits::printToBestLengthUnits(width,3) );
+  // See comments from #setSphericalThickness
+  const string newval = (width < 0.0) ? string("")
+                                      : PhysicalUnits::printToBestLengthUnits(width,3);
   
-  handleMaterialChange();
+  const string oldval = m_rectWidthEdit->text().toUTF8();
+  if( newval != oldval )
+  {
+    m_rectWidthEdit->setText( newval );
+    //handleMaterialChange();
+  }
 }//void setRectangularWidth( const double width )
 
 
@@ -1313,12 +1517,16 @@ void ShieldingSelect::setRectangularHeightThickness( const double height )
 {
   checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
   
-  if( height < 0.0 )
-    m_rectHeightEdit->setText( "" );
-  else
-    m_rectHeightEdit->setText( PhysicalUnits::printToBestLengthUnits(height,3) );
+  // See comments from #setSphericalThickness
+  const string newval = (height < 0.0) ? string("")
+                                       : PhysicalUnits::printToBestLengthUnits(height,3);
   
-  handleMaterialChange();
+  const string oldval = m_rectHeightEdit->text().toUTF8();
+  if( newval != oldval )
+  {
+    m_rectHeightEdit->setText( newval );
+    //handleMaterialChange();
+  }
 }//void setRectangularHeight( const double height )
 
 
@@ -1326,12 +1534,16 @@ void ShieldingSelect::setRectangularDepthThickness( const double depth )
 {
   checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
   
-  if( depth < 0.0 )
-    m_rectDepthEdit->setText( "" );
-  else
-    m_rectDepthEdit->setText( PhysicalUnits::printToBestLengthUnits(depth,3) );
+  // See comments from #setSphericalThickness
+  const string newval = (depth < 0.0) ? string("")
+                                      : PhysicalUnits::printToBestLengthUnits(depth,3);
   
-  handleMaterialChange();
+  const string oldval = m_rectDepthEdit->text().toUTF8();
+  if( newval != oldval )
+  {
+    m_rectDepthEdit->setText( newval );
+    //handleMaterialChange();
+  }
 }//void setRectangularDepth( const double depth )
 
 
@@ -1421,6 +1633,19 @@ TraceActivityType ShieldingSelect::traceSourceType( const SandiaDecay::Nuclide *
   
   return w->activityType();
 }//TraceActivityType traceSourceType( const SandiaDecay::Nuclide *nuc ) const
+
+
+double ShieldingSelect::relaxationLength( const SandiaDecay::Nuclide *nuc ) const
+{
+  const TraceSrcDisplay *w = traceSourceWidgetForNuclide( nuc );
+  if( !w )
+    throw runtime_error( "relaxationLength: called with invalid nuclide" );
+  
+  if( w->activityType() != TraceActivityType::ExponentialDistribution )
+    throw runtime_error( "relaxationLength: called for non-exponential distrinbution" );
+  
+  return w->relaxationLength();
+}//double relaxationLength( const SandiaDecay::Nuclide *nuc ) const;
 
 
 bool ShieldingSelect::fitTraceSourceActivity( const SandiaDecay::Nuclide *nuc ) const
@@ -1707,13 +1932,12 @@ void ShieldingSelect::init()
     
     if( m_forFitting )
     {
-      edit->setWidth( 150 );
+      //edit->setWidth( 150 );
       grid->addWidget( edit, row, 1, AlignMiddle );
       
       fitCb = new WCheckBox( "Fit" );
       fitCb->setChecked( false );
       grid->addWidget( fitCb, row, 2, AlignMiddle | AlignRight );
-      grid->setColumnStretch( 3, 1 );
     }else
     {
       grid->addWidget( edit, row, 1 );
@@ -1729,8 +1953,12 @@ void ShieldingSelect::init()
   WGridLayout *sphericalLayout = new WGridLayout();
   m_sphericalDiv->setLayout( sphericalLayout );
   sphericalLayout->setContentsMargins( 3, 3, 3, 3 );
+  sphericalLayout->setColumnStretch( 1, 1 );
   
-  setupDimEdit( "Thickness", m_thicknessEdit, m_fitThicknessCB, sphericalLayout );
+  const bool fistShield = (!m_shieldSrcDisp || !m_shieldSrcDisp->numberShieldings());
+  
+  const char *lbltxt = "Thickness"; //fistShield ? "Radius" : "Thickness";
+  setupDimEdit( lbltxt, m_thicknessEdit, m_fitThicknessCB, sphericalLayout );
   
   if( !m_forFitting )
   {
@@ -1739,7 +1967,7 @@ void ShieldingSelect::init()
     //       if geometry is cylindrical or rectangular, and (m_forFitting == false), then the
     //       material summary wont be visible.
     sphericalLayout->addWidget( m_materialSummary, 0, 2, AlignMiddle );
-    sphericalLayout->setColumnStretch( 1, 1 );
+    sphericalLayout->setColumnStretch( 2, 1 );
   }//if( !m_forFitting )
   
   // Begin setting up cylindrical widgets
@@ -1749,9 +1977,12 @@ void ShieldingSelect::init()
   WGridLayout *cylindricalLayout = new WGridLayout();
   m_cylindricalDiv->setLayout( cylindricalLayout );
   cylindricalLayout->setContentsMargins( 3, 3, 3, 3 );
+  cylindricalLayout->setColumnStretch( 1, 1 );
   
-  setupDimEdit( "Radius", m_cylRadiusEdit, m_fitCylRadiusCB, cylindricalLayout );
-  setupDimEdit( "Length", m_cylLengthEdit, m_fitCylLengthCB, cylindricalLayout );
+  lbltxt = fistShield ? "Radius" : "Radial Thickness";
+  setupDimEdit( lbltxt, m_cylRadiusEdit, m_fitCylRadiusCB, cylindricalLayout );
+  lbltxt = fistShield ? "Length" : "Length Thickness";
+  setupDimEdit( lbltxt, m_cylLengthEdit, m_fitCylLengthCB, cylindricalLayout );
 
   
   // Begin setting up rectangular widgets
@@ -1761,10 +1992,14 @@ void ShieldingSelect::init()
   WGridLayout *rectangularLayout = new WGridLayout();
   m_rectangularDiv->setLayout( rectangularLayout );
   rectangularLayout->setContentsMargins( 3, 3, 3, 3 );
+  rectangularLayout->setColumnStretch( 1, 1 );
   
-  setupDimEdit( "Width", m_rectWidthEdit, m_fitRectWidthCB, rectangularLayout );
-  setupDimEdit( "Height", m_rectHeightEdit, m_fitRectHeightCB, rectangularLayout );
-  setupDimEdit( "Depth", m_rectDepthEdit, m_fitRectDepthCB, rectangularLayout );
+  lbltxt = fistShield ? "Half-Width"  : "Width Thickness";
+  setupDimEdit( lbltxt, m_rectWidthEdit, m_fitRectWidthCB, rectangularLayout );
+  lbltxt = fistShield ? "Half-Height" : "Height Thickness";
+  setupDimEdit( lbltxt, m_rectHeightEdit, m_fitRectHeightCB, rectangularLayout );
+  lbltxt = fistShield ? "Half-Depth"  : "Depth Thickness";
+  setupDimEdit( lbltxt, m_rectDepthEdit, m_fitRectDepthCB, rectangularLayout );
   
   // We're all done creating the widgets
   
@@ -2142,9 +2377,99 @@ double ShieldingSelect::shieldingMass() const
 }//double ShieldingSelect::shieldingMass()
 
 
-
-
-
+double ShieldingSelect::inSituSurfaceArea() const
+{
+  if( isGenericMaterial() )
+    throw runtime_error( "ShieldingSelect::shieldingVolume(): You should not call this function"
+                        " for generic materials" );
+  
+  double surface_area = -1.0;
+  
+  const double pi = PhysicalUnits::pi;
+  
+  switch( m_geometry )
+  {
+    case GeometryType::Spherical:
+    {
+      // Spheres are defined by their thickness relative to their inner sphere, so we have to loop
+      //  a bit to get our current radius.
+      double inner_rad = 0.0;
+      if( m_shieldSrcDisp )
+      {
+        for( const ShieldingSelect *inner = m_shieldSrcDisp->innerShielding(this);
+            inner; inner = m_shieldSrcDisp->innerShielding(inner) )
+        {
+          assert( inner->geometry() == m_geometry );
+          inner_rad += inner->thickness();
+        }
+      }//if( m_shieldSrcDisp )
+      
+      const double outer_rad = inner_rad + thickness();
+      
+      surface_area = 4 * PhysicalUnits::pi * outer_rad * outer_rad;
+      
+      break;
+    }//case GeometryType::Spherical:
+      
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+    {
+      double inner_rad = 0.0, inner_half_length = 0.0;
+      if( m_shieldSrcDisp )
+      {
+        for( const ShieldingSelect *inner = m_shieldSrcDisp->innerShielding(this);
+            inner; inner = m_shieldSrcDisp->innerShielding(inner) )
+        {
+          assert( inner->geometry() == m_geometry );
+          inner_rad += inner->cylindricalRadiusThickness();
+          inner_half_length += inner->cylindricalLengthThickness();
+        }
+      }//if( m_shieldSrcDisp )
+      
+      const double rad = inner_rad + cylindricalRadiusThickness();
+      const double half_len = inner_half_length + cylindricalLengthThickness();
+      
+      if( m_geometry == GeometryType::CylinderEndOn )
+        surface_area = PhysicalUnits::pi * rad * rad;
+      else
+        surface_area = PhysicalUnits::pi * 2.0 * rad * 2.0 * half_len;
+    
+      break;
+    }//case CylinderEndOn and CylinderSideOn
+      
+    case GeometryType::Rectangular:
+    {
+      double inner_half_width = 0.0, inner_half_height = 0.0;
+      if( m_shieldSrcDisp )
+      {
+        for( const ShieldingSelect *inner = m_shieldSrcDisp->innerShielding(this);
+            inner; inner = m_shieldSrcDisp->innerShielding(inner) )
+        {
+          assert( inner->geometry() == m_geometry );
+          inner_half_width  += inner->rectangularWidthThickness();
+          inner_half_height += inner->rectangularHeightThickness();
+        }
+      }//if( m_shieldSrcDisp )
+      
+      
+      const double half_width  = inner_half_width  + rectangularWidthThickness();
+      const double half_height = inner_half_height + rectangularHeightThickness();
+      
+      surface_area = 4.0 * half_width * half_height;
+      
+      break;
+    }//case Rectangular:
+      
+    case GeometryType::NumGeometryType:
+      assert(0);
+      throw runtime_error("shieldingVolume(): invalid geometry");
+      break;
+  }//switch( m_geometry )
+  
+  assert( surface_area >= 0.0 );
+  
+  return surface_area;
+}//double ShieldingSelect::inSituSurfaceArea() const
 
 
 Wt::Signal<ShieldingSelect *> &ShieldingSelect::remove()
@@ -2244,7 +2569,7 @@ double ShieldingSelect::cylindricalLengthThickness() const
 
 double ShieldingSelect::rectangularWidthThickness() const
 {
-  checkIsCorrectCurrentGeometry( GeometryType::CylinderSideOn, __func__ );
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
   
   return distance_of_input_text( m_rectWidthEdit );
 }//double rectangularWidth() const
