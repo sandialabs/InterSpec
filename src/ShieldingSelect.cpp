@@ -604,6 +604,9 @@ public:
                  " depth."
                  "<p>" + geom_msg + "</p>";
     m_relaxationDescription->setText( msg );
+    
+    // We need to update chi2 chart and stuff, so lets cause that to happen.
+    m_parent->materialModified().emit(m_parent);
   }//void handleUserRelaxDistChange()
   
   /** Returns total activity, or activity per gram, or activity per cm3, based on user input*/
