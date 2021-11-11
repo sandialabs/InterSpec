@@ -1994,27 +1994,27 @@ double ShieldingSourceChi2Fcn::totalActivity( const SandiaDecay::Nuclide *nuclid
           case GeometryType::Spherical:
           {
             const double r = sphericalThickness(matn, params);
-            return activity * 4.0 * PhysicalUnits::pi * r * r;
+            return activity * 4.0 * PhysicalUnits::pi * r * r / PhysicalUnits::m2;
           }
             
           case GeometryType::CylinderEndOn:
           {
             const double r = cylindricalRadiusThickness(matn, params);
-            return activity * PhysicalUnits::pi * r * r;
+            return activity * PhysicalUnits::pi * r * r / PhysicalUnits::m2;
           }
             
           case GeometryType::CylinderSideOn:
           {
             const double r = cylindricalRadiusThickness(matn, params);
             const double z = cylindricalLengthThickness(matn, params);
-            return activity * PhysicalUnits::pi * 2.0 * r * z;
+            return activity * PhysicalUnits::pi * 2.0 * r * z / PhysicalUnits::m2;
           }
             
           case GeometryType::Rectangular:
           {
             const double w = 2.0 * rectangularWidthThickness(matn, params);
             const double h = 2.0 * rectangularHeightThickness(matn, params);
-            return activity * w * h;
+            return activity * w * h / PhysicalUnits::m2;
           }
             
           case GeometryType::NumGeometryType:
@@ -2236,19 +2236,21 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
           
         case TraceActivityType::ExponentialDistribution:
         {
+          cerr << "blah blah blah: need to account for surface-area/volume uncertainty in activity uncertainty of ExponentialDistribution" << endl;
+          
           switch( m_geometry )
           {
             case GeometryType::Spherical:
             {
               const double r =  sphericalThickness(material_index, params);
-              activity += thisActivity * 4.0 * PhysicalUnits::pi * r * r;
+              activity += thisActivity * 4.0 * PhysicalUnits::pi * r * r / PhysicalUnits::m2;
               break;
             }
               
             case GeometryType::CylinderEndOn:
             {
               const double r = cylindricalRadiusThickness(material_index, params);
-              activity += thisActivity * PhysicalUnits::pi * r * r;
+              activity += thisActivity * PhysicalUnits::pi * r * r / PhysicalUnits::m2;
               break;
             }
               
@@ -2256,7 +2258,7 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
             {
               const double r = cylindricalRadiusThickness(material_index, params);
               const double z = cylindricalLengthThickness(material_index, params);
-              activity += thisActivity * PhysicalUnits::pi * 2.0 * r * z;
+              activity += thisActivity * PhysicalUnits::pi * 2.0 * r * z / PhysicalUnits::m2;
               break;
             }
               
@@ -2264,7 +2266,7 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
             {
               const double w = 2.0 * rectangularWidthThickness(material_index, params);
               const double h = 2.0 * rectangularHeightThickness(material_index, params);
-              activity += thisActivity * w * h;
+              activity += thisActivity * w * h / PhysicalUnits::m2;
               break;
             }
               
@@ -2275,7 +2277,6 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
           
           break;
         }//case TraceActivityType::ExponentialDistribution:
-          
           
         case TraceActivityType::NumTraceActivityType:
           assert( 0 );
