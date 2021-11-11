@@ -980,7 +980,7 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
     const double r_xy_dist_in_src = r_xy * z_dist_in_src / eval_z_dist_to_det;
     exit_radius_xy = r_xy - r_xy_dist_in_src;
     
-    const double dist_in_src = sqrt(z_dist_in_src*z_dist_in_src + exit_radius_xy*exit_radius_xy);
+    const double dist_in_src = sqrt(z_dist_in_src*z_dist_in_src + r_xy_dist_in_src*r_xy_dist_in_src);
     
     trans += (trans_len_coef * dist_in_src);
   }//end codeblock to compute distance through source
