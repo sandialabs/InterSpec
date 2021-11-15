@@ -51,11 +51,9 @@ DecayWindow::DecayWindow( InterSpec *viewer )
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse) | AuxWindowProperties::EnableResize) ),
   m_activityDiv( 0 )
 {
-  WContainerWidget *contentDiv = WDialog::contents();
   m_activityDiv = new DecayActivityDiv( viewer );
   
-  WGridLayout *layout = new WGridLayout();
-  contentDiv->setLayout( layout );
+  WGridLayout *layout = stretcher();
   layout->addWidget( m_activityDiv, 0, 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
   layout->setVerticalSpacing( 0 );

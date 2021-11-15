@@ -1577,10 +1577,10 @@ AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt
     
   AuxWindow::addHelpInFooter( window->footer(), "make-drf" );
     
-  WPushButton *closeButton = window->addCloseButtonToFooter( "Cancel" );
+  WPushButton *closeButton = window->addCloseButtonToFooter( "Close" );
   closeButton->clicked().connect( window, &AuxWindow::hide );
     
-  WPushButton *saveAs = new WPushButton( "Save As...", window->footer() );
+  WPushButton *saveAs = new WPushButton( "Store/Export...", window->footer() );
   saveAs->clicked().connect( makeDrfWidget, &MakeDrf::startSaveAs );
   makeDrfWidget->intrinsicEfficiencyIsValid().connect( boost::bind( &WPushButton::setEnabled, saveAs, _1 ) );
   saveAs->disable();

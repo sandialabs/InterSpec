@@ -52,14 +52,26 @@
 }
 
 
+.DetAndMenu
+{
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+}
 
+.DetAndMenu .DetectorDisplay
+{
+  flex: 1 1 content;
+}
 
 .RoundMenuIcon,.RoundMenuIcon:hover
 {
   background-image: url('../InterSpec_resources/images/menu_icon_round.svg');
-  background-position: 3px center;
+  /* background-position: 3px center; */
   background-repeat: no-repeat;
-  padding-left: 23px;  /* width of the image plus a little extra padding */
+  /* padding-left: 23px; */ /* width of the image plus a little extra padding */
+  width: 26px;
   background-color: rgba(0,0,0,0) !important;
   border: none;
 }

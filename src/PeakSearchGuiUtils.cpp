@@ -337,9 +337,9 @@ public:
     }//if( m_showAllPeaks )
     
     
-    // The rel eff chart is close, but not fully debugged, so leaving diabled for now
+    // The rel eff chart is close, but not fully debugged, so leaving disabled for now
     //setupRelEffChart();
-    
+    contents()->setOverflow( WContainerWidget::Overflow::OverflowAuto, Orientation::Vertical );
     m_table = new WTable( contents() );
     m_table->addStyleClass( "PeakSelectorTable" );
     m_table->setHeaderCount( 1, Wt::Horizontal );
