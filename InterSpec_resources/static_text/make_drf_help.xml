@@ -105,7 +105,7 @@ Some comments on taking test-source data:
       and other effects.  Very roughly, scintillating detectors (NaI, LaBr, etc)
       should probably have less than about 20% dead-time, while HPGe should
       have less than about 50% dead-time, although acceptable levels will be
-      system dependant.
+      system dependent.
   </li>
   <li>Test-sources should be at least 25 cm away from the detector so that
       gammas striking the detector are about parallel.
@@ -279,6 +279,13 @@ def getFWHM( energy ):
 <div>
 You can also choose to show this fit and peak FWHM  data on the chart by selecting the
 &quot;Show FWHM points&quot; checkbox.
+</div>
+<div style="margin-top: 10px;">
+When the &quot;<span style="font-weight: bold;">Atten. for air</span>&quot; option is checked, the source distance will be used to
+compensate for the gamma attenuation in the air.  It is recommended to have this option checked
+unless your measurements will always be at the same distance as the calibration-measurements (in
+which case you should also disable air attenuation from the &quot;Activity/Shielding Fit&quot; tool;
+however, leaving it enabled in both places would cancel out anyway).
 </div>
 </p>
 </div>

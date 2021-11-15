@@ -1984,7 +1984,7 @@ void ShieldingSelect::init()
   
   lbltxt = fistShield ? "Radius" : "Radial Thickness";
   setupDimEdit( lbltxt, m_cylRadiusEdit, m_fitCylRadiusCB, cylindricalLayout );
-  lbltxt = fistShield ? "Length" : "Length Thickness";
+  lbltxt = fistShield ? "Half-Length" : "Length Thickness";
   setupDimEdit( lbltxt, m_cylLengthEdit, m_fitCylLengthCB, cylindricalLayout );
 
   

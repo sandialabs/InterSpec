@@ -2574,7 +2574,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_shieldingSelects = new WContainerWidget();
   m_shieldingSelects->setStyleClass( "ShieldingSelectContainer" );
 
-  tooltip = "Shieldings are treated as spherical shells with the innermost"
+  tooltip = "Shieldings are treated as shells with the innermost"
             " shell being the first one you add (the top one in this box), and"
             " the subsequent shieldings layered around that one.  Any sources"
             " not attributed as components of shieldings are treated as point"
@@ -2872,12 +2872,12 @@ if (m_specViewer->isSupportFile())
     chartDiv->setLayout(chartLayout);
     chartLayout->setContentsMargins(0, 0, 0, 0);
     
-    chartLayout->addWidget( m_detectorDisplay, 0, 0, AlignLeft );
-    chartLayout->addWidget( m_showChiOnChart, 0, 1 );
-    chartLayout->addWidget( addItemMenubutton, 0, 2, AlignRight);
-    chartLayout->addWidget( m_chi2Graphic, 1, 0, 1, 3 );
-    chartLayout->addWidget( m_fitModelButton, 2, 0, 1, 3, AlignCenter );
-    chartLayout->addWidget( m_fitProgressTxt, 3, 0, 1 ,3, AlignCenter );
+    chartLayout->addWidget( m_detectorDisplay,      0, 0, AlignLeft );
+    chartLayout->addWidget( m_showChiOnChart,       0, 1 );
+    chartLayout->addWidget( addItemMenubutton,      0, 2, AlignRight);
+    chartLayout->addWidget( m_chi2Graphic,          1, 0, 1, 3 );
+    chartLayout->addWidget( m_fitModelButton,       2, 0, 1, 3, AlignCenter );
+    chartLayout->addWidget( m_fitProgressTxt,       3, 0, 1 ,3, AlignCenter );
     chartLayout->addWidget( m_cancelfitModelButton, 4, 0, 1, 3, AlignCenter );
     
     chartLayout->setRowStretch(1, 1);
@@ -2885,17 +2885,24 @@ if (m_specViewer->isSupportFile())
   }else
   {
     //regular layout
-    detectorLayout->addWidget( m_detectorDisplay,          0, 0 );
-    detectorLayout->addWidget( addItemMenubutton,          0, 1 );
-    detectorLayout->addWidget( smallerContainer,           1, 0, 1, 2);
-    detectorLayout->addWidget( m_shieldingSelects,         2, 0, 1, 2 );
-    detectorLayout->addWidget( m_fitModelButton,           3, 0, 1, 2, AlignCenter );
-    detectorLayout->addWidget( m_fitProgressTxt,           4, 0, 1, 2 );
-    detectorLayout->addWidget( m_cancelfitModelButton,     5, 0, 1, 2, AlignCenter );
-    detectorLayout->addWidget( m_showChi2Text,             6, 0, 1, 2 );
+    
+    // We'll put the detector and menu icon in a flexbox layout, which is less hassle than
+    //  the Wt layout
+    WContainerWidget *toprow = new WContainerWidget();
+    toprow->addStyleClass( "DetAndMenu" );
+    toprow->addWidget( m_detectorDisplay );
+    toprow->addWidget( addItemMenubutton );
+    
+    
+    detectorLayout->addWidget( toprow,                     0, 0 );
+    detectorLayout->addWidget( smallerContainer,           1, 0 );
+    detectorLayout->addWidget( m_shieldingSelects,         2, 0 );
+    detectorLayout->addWidget( m_fitModelButton,           3, 0, AlignCenter );
+    detectorLayout->addWidget( m_fitProgressTxt,           4, 0 );
+    detectorLayout->addWidget( m_cancelfitModelButton,     5, 0, AlignCenter );
+    detectorLayout->addWidget( m_showChi2Text,             6, 0 );
     
     detectorLayout->setRowStretch( 2, 1 );
-    detectorLayout->setColumnStretch( 0, 1 );
     detectorLayout->setHorizontalSpacing( 0 );
     detectorLayout->setVerticalSpacing( 0 );
     detectorLayout->setContentsMargins( 1, 1, 1, 1 );
