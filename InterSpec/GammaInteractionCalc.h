@@ -111,9 +111,16 @@ double mass_attenuation_coef( float atomic_number, float energy );
 double transmition_coefficient_generic( float atomic_number, float areal_density,
                                 float energy );
 
+// When debugging we will grab a static mutex so we dont get jumbled stdout
+#define DEBUG_RAYTRACE_CALCS 0
+
 
 void example_integration();
   
+/** Runs some simple test cases for #cylinder_exit_position, and cause assert(0) on error. */
+void test_cylinder_exit_position();
+
+
 int DistributedSrcCalc_integrand( const int *ndim, const double xx[],
                          const int *ncomp, double ff[], void *userdata );
 
@@ -136,6 +143,31 @@ double exit_point_of_sphere_z( const double source_point[3],
                                double sphere_rad,
                                double observation_dist,
                                bool postiveSolution = true );
+
+/** Starting from a 'source_point' within the volume of the cylinder, and heading towards the 'detector_point' (think center
+ of the detector face), returns the total attenuation coefficient along the path, including recursing into any sub-tubes, as well as
+ sets the point where the ray leaves the cylinder.
+ 
+ Note: the cylinder is always oriented along the z-axis, and centered at {0,0,0}.
+ 
+ @param[in] radius The outer radius of the cylinder
+ @param[in] half_length The half-length of the cylinder
+ @param[in] source The {x, y, z} source location; must be within cylinder volume, and transformed so that {0,0,0} is center of cylinder.
+ @param[in] detector The {x, y, z} point on the detector face we care about (so center of detector, unless you are integrating over
+ the detector face), in the coordinate system where cylinder is centered at {0,0,0}.
+ @param[out] exit_point The final exit point from the cylinder, where the path will no longer go through the volume.
+ @returns the attenuation coefficient from the path through the cylinder and its sub-cylinders. E.g.,
+ \code{.cpp}
+ double exit_point[3];
+ const double distance_in_m = cylinder_exit_position( 0.5*m, 100*cm, {0,0.1*m,20*cm}, {0,0,10*m}, exit_point );
+ const double trans_fraction = exp( -trans_coef ); //trans_fraction will be between 0 and 1.
+ \endcode
+ */
+double cylinder_exit_position( const double radius, const double half_length,
+                              const double source[3],
+                              const double detector[3],
+                              double exit_point[3] );
+
 
 //distance(...): returns distance between two points specified in terms of x, y,
 //  and z.
@@ -170,7 +202,7 @@ struct DistributedSrcCalc
   void eval_cyl_end_on( const double xx[], const int *ndimptr,
                       double ff[], const int *ncompptr ) const;
   
-  void eval_cyl_side_on( const double xx[], const int *ndimptr,
+  void eval_cylinder( const double xx[], const int *ndimptr,
                        double ff[], const int *ncompptr ) const;
   
   void eval_rect( const double xx[], const int *ndimptr,

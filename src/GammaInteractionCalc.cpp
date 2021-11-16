@@ -76,6 +76,21 @@
 
 using namespace std;
 
+#if( DEBUG_RAYTRACE_CALCS )
+#include <mutex>
+static std::recursive_mutex s_stdout_raytrace_mutex;
+
+#  ifdef NDEBUG
+static_assert( 0, "Disable DEBUG_RAYTRACE_CALCS for release builds" );
+#  else
+#    ifndef _MSC_VER
+#      warning "DEBUG_RAYTRACE_CALCS is enabled"
+#    else
+#      pragma message("Warning: DEBUG_RAYTRACE_CALCS is enabled")
+#    endif //_MSC_VER / else
+#  endif //NDEBUG / else
+#endif //DEBUG_RAYTRACE_CALCS
+
 namespace GammaInteractionCalc
 {
 
@@ -296,47 +311,6 @@ double distance( const double a[3], const double b[3] )
 }//double distance( const double a[3], b[3] )
 
   
-/** Always centered at zero.
- 
- May have other tubes entirely contained within this one, all also centered at zero.
- 
- E.g. extends 0.5*length along both the positive and negative z-axis.
- */
-struct Tube
-{
-  double radius;
-  double length;
-  const Material *material;
-  const Tube *inner_tube;
-  
-  Tube()
-  : radius(0.0), length(0.0), material(nullptr), inner_tube(nullptr)
-  {}
-  
-  /** Starting from a 'source_point' within the volume of the tube, or a surface, and heading towards the 'detector_point' (think center
-   of the detector face), returns the total attenuation coefficient along the path, including recursing into any sub-tubes.
-   
-   @param[in] source_point The {x, y, z} source location; must be within Tube volume.
-   @param[in] detector_point The {x, y, z} point on the detector face we care about (so center of detector, unless you are integrating over
-   the detector face).
-   @param[out] exit_point The final exit point from the cylinder, where the path will no longer go through the volume.
-   @returns the attenuation coefficient from the path through the cylinder and its sub-cylinders. E.g.,
-   \code{.cpp}
-   double exit_point[3];
-   const double trans_coef = tube->exit_position( {0,1,2}, {0,0,10}, exit_point );
-   const double trans_fraction = exp( -trans_coef ); //trans_fraction will be between 0 and 1.
-   \endcode
-   */
-  double exit_position( const double source_point[3],
-                      const double detector_point[3],
-                      double exit_point[3] ) const
-  {
-    // blah blah blah
-    assert( 0 );
-  }//bool exit_position(...)
-  
-};//struct Tube
-
 
 
 
@@ -589,7 +563,7 @@ int DistributedSrcCalc_integrand( const int *ndim, const double xx[],
         break;
         
       case GeometryType::CylinderSideOn:
-        objToIntegrate->eval_cyl_side_on( xx, ndim, ff, ncomp );
+        objToIntegrate->eval_cylinder( xx, ndim, ff, ncomp );
         break;
         
       case GeometryType::Rectangular:
@@ -833,6 +807,11 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
 void DistributedSrcCalc::eval_cyl_end_on( const double xx[], const int *ndimptr,
                                           double ff[], const int *ncompptr ) const
 {
+#if( DEBUG_RAYTRACE_CALCS )
+  std::lock_guard<std::recursive_mutex> scoped_lock( s_stdout_raytrace_mutex );
+#endif
+
+  
   assert( m_geometry == GeometryType::CylinderEndOn );
   
   assert( m_dimensionsAndTransLenCoef.size() == 1 );
@@ -886,6 +865,15 @@ void DistributedSrcCalc::eval_cyl_end_on( const double xx[], const int *ndimptr,
 
   double exit_radius = 0.0;
     
+  
+  
+  const double test_eval_pos[3] = { r * cos(theta), r * sin(theta), z };
+  const double test_det_pos[3] = { 0.0, 0.0, m_observationDist };
+  double test_exit_point[3];
+  const double test_dist_in_cyl = cylinder_exit_position( source_outer_rad, source_half_z, test_eval_pos, test_det_pos, test_exit_point );
+  const double test_exit_radius = sqrt( test_exit_point[0]*test_exit_point[0] + test_exit_point[1]*test_exit_point[1] );
+  
+  
   double trans = 0.0;
   
   {//begin code-block to compute distance through source
@@ -895,6 +883,22 @@ void DistributedSrcCalc::eval_cyl_end_on( const double xx[], const int *ndimptr,
     exit_radius = r - r_dist_in_src;
     
     const double dist_in_src = sqrt(z_dist_in_src*z_dist_in_src + r_dist_in_src*r_dist_in_src);
+    
+    if( fabs(test_dist_in_cyl - dist_in_src) > std::max( 1.0E-12, 1.0E-6*std::max(fabs(test_dist_in_cyl), fabs(dist_in_src))) )
+    {
+      cerr << "dist_in_src=" << dist_in_src << ", test_dist_in_cyl=" << test_dist_in_cyl << endl;
+      cerr << endl;
+      assert( 0 );
+    }
+    
+    if( fabs(test_exit_radius - exit_radius) > std::max( 1.0E-12, 1.0E-6*std::max(fabs(test_exit_radius), fabs(exit_radius))) )
+    {
+      cerr << "test_exit_radius=" << test_exit_radius << ", exit_radius=" << exit_radius << endl;
+      cerr << endl;
+      assert( 0 );
+    }
+    
+    
     
     trans += (trans_len_coef * dist_in_src);
   }//end codeblock to compute distance through source
@@ -922,19 +926,522 @@ void DistributedSrcCalc::eval_cyl_end_on( const double xx[], const int *ndimptr,
   const double eval_dist_to_det = sqrt( r*r + eval_z_dist_to_det*eval_z_dist_to_det );
   trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det );
   
+  double test_ff[1];
+  eval_cylinder( xx, ndimptr, test_ff, ncompptr );
+  
+  assert( fabs(test_ff[0] - trans * dV) < 1.0E-9*std::max(0.001,std::max( fabs(test_ff[0]), fabs(trans * dV))) );
+  
+  
   ff[0] = trans * dV;
 }//void eval_cyl_end_on(...)
 
 
+// TODO: define/use a proper simple 3-point vector struct
+//struct ThreeVec : public std::array<double,3>
+//{
+//  ThreeVec() : std::array<double,3>( { 0.0, 0.0, 0.0 } ){}
+//  double x() const { return this->operator[](0); }
+//  double y() const { return this->operator[](1); }
+//  double z() const { return this->operator[](2); }
+//};//struct ThreeVec
 
-void DistributedSrcCalc::eval_cyl_side_on( const double xx[], const int *ndimptr,
-                      double ff[], const int *ncompptr ) const
+
+void test_cylinder_exit_position()
 {
-  assert( m_geometry == GeometryType::CylinderSideOn );
+  // This function doesnt exhaustively test #cylinder_exit_position, but I think it hits most (all?)
+  //  lines of its code, so is decent.
+  const double oneOverSqrt2 = 1.0 / sqrt(2.0);
   
-  assert( 0 );
-  throw runtime_error( "DistributedSrcCalc::eval_cyl_side_on: not implemented yet" );
-}//void eval_cyl_side_on(...)
+  double dist;
+  double radius = 1.0;
+  double half_length = 0.5;
+  double source[3], detector[3], exit_point[3];
+  
+  source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = 0.0; detector[1] = 2.0; detector[2] = 0.0;
+  dist = cylinder_exit_position( radius, half_length, source, detector, exit_point );
+  assert( fabs(exit_point[0] - 0.0) < 1.0E-14 );
+  assert( fabs(exit_point[1] - 1.0) < 1.0E-14 );
+  assert( fabs(exit_point[2] - 0.0) < 1.0E-14 );
+  assert( fabs(dist - 1.0) < 1.0E-14 );
+  
+  
+  source[0] = 0.5; source[1] = 0.5; source[2] = 0.0;
+  detector[0] = 2.0; detector[1] = 2.0; detector[2] = 0.0;
+  dist = cylinder_exit_position( radius, half_length, source, detector, exit_point );
+  assert( fabs(exit_point[0] - oneOverSqrt2) < 1.0E-14 );
+  assert( fabs(exit_point[1] - oneOverSqrt2) < 1.0E-14 );
+  assert( fabs(exit_point[2] - 0.0) < 1.0E-14 );
+  assert( fabs(dist - 0.292893) < 1.0E-5 );
+  
+  
+  source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = -2.0; detector[1] = 0.0; detector[2] = -2.0;
+  dist = cylinder_exit_position( radius, half_length, source, detector, exit_point );
+  assert( fabs(exit_point[0] - -0.5) < 1.0E-14 );
+  assert( fabs(exit_point[1] - 0) < 1.0E-14 );
+  assert( fabs(exit_point[2] - -0.5) < 1.0E-14 );
+  assert( fabs(dist - oneOverSqrt2) < 1.0E-14 );
+  
+  
+  source[0] = 0.5; source[1] = 0.5; source[2] = 0.0;
+  detector[0] = 0.5; detector[1] = 0.5; detector[2] = 1.0;
+  dist = cylinder_exit_position( radius, half_length, source, detector, exit_point );
+  assert( fabs(exit_point[0] - 0.5) < 1.0E-14 );
+  assert( fabs(exit_point[1] - 0.5) < 1.0E-14 );
+  assert( fabs(exit_point[2] - 0.5) < 1.0E-14 );
+  assert( fabs(dist - 0.5) < 1.0E-14 );
+  
+  
+  source[0] = 0.5; source[1] = 0.5; source[2] = 0.0;
+  detector[0] = 0.0; detector[1] = 0.0; detector[2] = 1.0;
+  dist = cylinder_exit_position( radius, half_length, source, detector, exit_point );
+  assert( fabs(exit_point[0] - 0.25) < 1.0E-14 );
+  assert( fabs(exit_point[1] - 0.25) < 1.0E-14 );
+  assert( fabs(exit_point[2] - 0.5) < 1.0E-14 );
+  assert( fabs(dist - sqrt(2*0.25*0.25 + 0.5*0.5)) < 1.0E-14 );
+  
+  
+  radius = 1.0;
+  half_length = 1.0;
+  source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = 0; detector[1] = 5; detector[2] = 5;
+  dist = cylinder_exit_position( radius, half_length, source, detector, exit_point );
+  assert( fabs(exit_point[0] - 0.0) < 1.0E-14 );
+  assert( fabs(exit_point[1] - 1.0) < 1.0E-14 );
+  assert( fabs(exit_point[2] - 1.0) < 1.0E-14 );
+  assert( fabs(dist - sqrt(2.0)) < 1.0E-14 );
+  
+  
+  radius = 1.0;
+  half_length = 1.0;
+  source[0] = 0.25; source[1] = 0.25; source[2] = 0.25;
+  detector[0] = 0.25; detector[1] = 0.25; detector[2] = 5;
+  dist = cylinder_exit_position( radius, half_length, source, detector, exit_point );
+  assert( fabs(exit_point[0] - 0.25) < 1.0E-14 );
+  assert( fabs(exit_point[1] - 0.25) < 1.0E-14 );
+  assert( fabs(exit_point[2] - 1.0) < 1.0E-14 );
+  assert( fabs(dist - 0.75) < 1.0E-14 );
+  
+
+  radius = 225000;
+  half_length = 1000;
+  source[0] = 112500.0; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = 0.0; detector[1] = 0.0; detector[2] = 2000;
+  dist = cylinder_exit_position( radius, half_length, source, detector, exit_point );
+  assert( fabs(exit_point[0] - 0.5*source[0]) < 1.0E-12 );
+  assert( fabs(exit_point[1] - source[1]) < 1.0E-12 );
+  assert( fabs(exit_point[2] - half_length) < 1.0E-12 );
+  assert( fabs(dist - sqrt(half_length*half_length + 0.25*source[0]*source[0])) < 1.0E-12 );
+  
+}//void test_cylinder_exit_position()
+
+
+double cylinder_exit_position( const double radius, const double half_length,
+                              const double source[3],
+                              const double detector[3],
+                              double exit_point[3] )
+{
+// When debugging we will grab a static mutex so we dont get jumbled stdout  
+#if( DEBUG_RAYTRACE_CALCS )
+  std::lock_guard<std::recursive_mutex> scoped_lock( s_stdout_raytrace_mutex );
+#endif
+  
+  assert( radius >= 0.0 );
+  assert( half_length >= 0.0 );
+  
+  // In order to handle nested geometries, we will want to know both places in the cylinder
+  //  the line intersects, but the function call signature doesnt currently support this.
+  //  As a start we'll compute the point of intersection opposite the exit_point, but this is
+  //  totally not tested, as of yet.
+  //  TODO: test enter_point gives good answers...
+  double enter_point[3];
+  bool line_intersects_cyl = false;
+  
+  if( (radius <= 0.0) || (half_length <= 0.0) )
+  {
+    enter_point[0] = exit_point[0] = source[0];
+    enter_point[1] = exit_point[1] = source[1];
+    enter_point[2] = exit_point[2] = source[2];
+    line_intersects_cyl = false;
+    
+    return 0;
+  }//if( no volume )
+  
+  const double geom_epsilon = 1.0E-14;
+
+  
+#if( DEBUG_RAYTRACE_CALCS )
+  cout << "Rad=" << radius << ", half-z=" << half_length
+       << ", src={" << source[0] << "," << source[1] << "," << source[2] << "}"
+       << ", det={" << detector[0] << "," << detector[1] << "," << detector[2] << "}" << endl;
+#endif
+  
+  assert( sqrt(source[0]*source[0] + source[1]*source[1]) < (radius + geom_epsilon) );
+  assert( source[2] < (half_length + geom_epsilon) );
+  
+  // Get unit direction vector from source to final position
+  double unit[3] = { detector[0] - source[0], detector[1] - source[1], detector[2] - source[2] };
+  
+  {// begin scope on norm
+    const double norm = sqrt( unit[0]*unit[0] + unit[1]*unit[1] + unit[2]*unit[2] );
+    unit[0] /= norm;
+    unit[1] /= norm;
+    unit[2] /= norm;
+  }// end scope on norm
+  
+  // Check if parallel to z-axis
+  //  We should probably compare to DBL_MIN, but realistically anything less than DBL_EPSILON
+  //  is close enough to zero for our purposes (the DRF will fail far before this assumption fails)
+  if( (fabs(unit[0]) < DBL_EPSILON) && (fabs(unit[1]) < DBL_EPSILON) )
+  {
+    assert( fabs(unit[2]) > geom_epsilon );
+    
+    const double r = sqrt(source[0]*source[0] + source[1]*source[1]);
+    
+    assert( r <= (radius + geom_epsilon) );
+    
+    if( r > (radius + geom_epsilon) )
+    {
+      enter_point[0] = exit_point[0] = source[0];
+      enter_point[1] = exit_point[1] = source[1];
+      enter_point[2] = exit_point[2] = source[2];
+      line_intersects_cyl = false;
+      
+      return 0.0;
+    }//if( r > (radius + geom_epsilon) )
+    
+    enter_point[0] = source[0];
+    enter_point[1] = source[1];
+    enter_point[2] = (unit[2] > 0.0) ? -half_length : half_length;
+    
+    const double exit_z = (unit[2] > 0.0) ? half_length : -half_length;
+    const double distance = fabs( exit_z - source[2] );
+    
+    exit_point[0] = source[0];
+    exit_point[1] = source[1];
+    exit_point[2] = exit_z;
+    
+    line_intersects_cyl = true;
+    
+    
+#if( DEBUG_RAYTRACE_CALCS )
+    cout << "\tParrallel on z\n"
+         << "\tExit={" << exit_point[0] << "," << exit_point[1] << "," << exit_point[2] << "}\n"
+         << "\tDistance=" << distance << endl << endl;
+#endif
+    
+    return distance;
+  }//if( (fabs(unit[0]) < DBL_EPSILON) && (fabs(unit[1]) < DBL_EPSILON) )
+  
+  
+  // Using the x-y component of unit, find where it intersects with the radius, which could be
+  //  well after the half-length
+  // x2 + y2 = r2
+  // y = mx + c
+  
+  double x_exit, y_exit, z_exit;  //intersection in the direction of detector
+  double x_enter, y_enter, z_enter;  //intersection in the direction away from detector
+  
+  // Lets find x, y, and z
+  if( detector[0] != source[0] )
+  {
+    //(1 + m2)x2 + 2cmx + c2 – r2 = 0
+    const double m = (detector[1] - source[1]) / (detector[0] - source[0]); //should change to unit[1] / unit[0]
+    const double c = source[1] - m*source[0];
+    
+    {// begin scope to solve for x of intersection
+      const double a_q = 1 + m*m;
+      const double b_q = 2.0 * c * m;
+      const double c_q = c*c - radius*radius;
+      
+      if( 4.0*a_q*c_q > b_q*b_q )
+      {
+        assert( 0 );
+        
+        line_intersects_cyl = false;
+        enter_point[0] = exit_point[0] = source[0];
+        enter_point[1] = exit_point[1] = source[1];
+        enter_point[2] = exit_point[2] = source[2];
+        
+        return 0.0;
+      }//if( 4.0*a_q*c_q > b_q*b_q )
+      
+      const double sqrt_quantity = sqrt(b_q*b_q -4.0*a_q*c_q);
+      
+      const double x_sol_1 = 0.5*(-b_q + sqrt_quantity) / a_q;
+      const double x_sol_2 = 0.5*(-b_q - sqrt_quantity) / a_q;
+      
+      // Pick the solution towards the detector
+      if( signbit(x_sol_1 - source[0]) == signbit(unit[0]) )
+      {
+        x_exit = x_sol_1;
+        x_enter = x_sol_2;
+      }else
+      {
+        x_exit = x_sol_2;
+        x_enter = x_sol_1;
+      }
+    }// end scope to solve for x of intersection
+    
+    y_exit = m*x_exit + c;
+    y_enter = m*x_enter + c;
+    
+    // Now find the z corresponding to {x_exit, y_exit}.
+    // We'll make the z-equation as a function of x, and then plug in.
+    const double m_zx = (detector[2] - source[2]) / (detector[0] - source[0]);  //should change to unit[2] / unit[1]
+    const double c_zx = source[2] - m_zx*source[0];
+    z_exit = m_zx*x_exit + c_zx;
+    z_enter = m_zx*x_enter + c_zx;
+  }else
+  {
+    // x2 + y2 = r2
+    assert( detector[0] == source[0] );
+    
+    if( detector[0] > (radius + geom_epsilon) )
+    {
+      assert( 0 );
+      // TODO: hmm I think we need to check direction of detector and so on to calculate intersections....
+      //line_intersects_cyl = false;
+      //enter_point[0] = exit_point[0] = source[0];
+      //enter_point[1] = exit_point[1] = source[1];
+      //enter_point[2] = exit_point[2] = source[2];
+      
+      return 0;
+    }//
+    
+    x_exit = detector[0];
+    x_enter = detector[0];
+    
+    y_exit = sqrt(radius*radius - x_exit*x_exit);
+    y_enter = -y_exit;
+    
+    
+    if( unit[1] < 0.0 )
+    {
+      y_exit *= -1.0;
+      y_enter *= -1.0;
+    }
+    
+    // If detector and source x and y are the same, that means is parallel to z-axis, which we've
+    //  already dealt with that case
+    assert( detector[1] != source[1] );
+    
+    const double m_zy = (detector[2] - source[2]) / (detector[1] - source[1]); //should change to unit[2] / unit[1]
+    const double c_zy = source[2] - m_zy*source[1];
+    z_exit = m_zy*y_exit + c_zy;
+    z_enter = m_zy*y_enter + c_zy;
+  }//if( detector[0] != source[0] ) / else
+  
+  
+  // If we are exiting the cylinder on the ends, we need to figure out where on those disks we exit
+  if( fabs(z_exit) > half_length )
+  {
+    assert( detector[2] != source[2] );
+    
+    const double z = ((unit[2] > 0.0) ? half_length : -half_length);
+    
+    // Just solve for x and y as a function of z, and fill those in
+    const double m_xz = unit[0] / unit[2];
+    assert( fabs( m_xz - ((detector[0] - source[0]) / (detector[2] - source[2])) ) < std::max(1.0E-6,1.0E-6 * m_xz) );
+    const double c_xz = source[0] - m_xz*source[2];
+    
+    const double m_yz = unit[1] / unit[2];
+    assert( fabs( m_yz - ((detector[1] - source[1]) / (detector[2] - source[2])) ) < std::max(1.0E-6,1.0E-6 * m_yz) );
+    const double c_yz = source[1] - m_yz*source[2];
+    
+    // A sanity check that we get source x and y locations correct, when evaluating a source z
+    //  location
+    assert( fabs((m_xz*source[2] + c_xz) - source[0]) < std::max(1.0,fabs(source[0])) );
+    assert( fabs((m_yz*source[2] + c_yz) - source[1]) < 1.0E-6*std::max(1.0,fabs(source[1])) );
+    
+    exit_point[0] = m_xz*z + c_xz;
+    exit_point[1] = m_yz*z + c_yz;
+    exit_point[2] = z;
+  }else
+  {
+    exit_point[0] = x_exit;
+    exit_point[1] = y_exit;
+    exit_point[2] = z_exit;
+  }//if( fabs(z_exit) > half_length ) / else
+  
+  
+  if( fabs(z_enter) > half_length )
+  {
+    assert( detector[2] != source[2] );
+    
+    const double z = ((unit[2] > 0.0) ? -half_length : half_length);
+    
+    // Just solve for x and y as a function of z, and fill those in
+    const double m_xz = (detector[0] - source[0]) / (detector[2] - source[2]); //should change to unit[0] / unit[2]
+    const double c_xz = source[2] - m_xz*source[0];
+    
+    const double m_yz = (detector[1] - source[1]) / (detector[2] - source[2]); //should change to unit[1] / unit[2]
+    const double c_yz = source[2] - m_xz*source[1];
+    
+    enter_point[0] = m_xz*z + c_xz;
+    enter_point[1] = m_yz*z + c_yz;
+    enter_point[2] = z;
+  }else
+  {
+    enter_point[0] = x_enter;
+    enter_point[1] = y_enter;
+    enter_point[2] = z_enter;
+  }//if( fabs(z_enter) > half_length ) / else
+  
+  // TODO: check to see if line ever came within a half-length of origin inside cylinder area
+  //  line_intersects_cyl = ...
+  
+  double dist_scaler = 0.0;
+  for( size_t i = 0; i < 3; ++i )
+  {
+    const double x = exit_point[i] - source[i];
+    dist_scaler += x*x;
+  }
+  
+  dist_scaler = sqrt( dist_scaler );
+  
+#if( DEBUG_RAYTRACE_CALCS )
+  cout << "\tCylInter={" << x_exit << "," << y_exit << "," << z_exit << "}" << endl
+       << "\tExit={" << exit_point[0] << "," << exit_point[1] << "," << exit_point[2] << "}\n"
+       << "\tEnter={" << enter_point[0] << "," << enter_point[1] << "," << enter_point[2] << "}\n"
+       << "\tDistance=" << dist_scaler << endl << endl;
+#endif
+  
+  return dist_scaler;
+}//double cylinder_exit_position(...)
+
+
+void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
+                                           double ff[], const int *ncompptr ) const
+{
+  assert( (m_geometry == GeometryType::CylinderSideOn)
+          || (m_geometry == GeometryType::CylinderEndOn) );
+  
+  //assert( m_sourceIndex == 0 );
+  //if( m_sourceIndex != 0 )
+  //  throw runtime_error( "eval_cylinder currently only supports trace source in inner most shielding shielding" );
+  
+  // This just integrates a right circular cylinder
+  const int ndim = (ndimptr ? (*ndimptr) : 3);
+  assert( ((m_geometry == GeometryType::CylinderEndOn) && ((ndim == 2) || (ndim == 3)))
+         || ((m_geometry == GeometryType::CylinderSideOn) && (ndim == 3)) );
+  
+  const std::array<double,3> &dimensions = m_dimensionsAndTransLenCoef[m_sourceIndex].first;
+  const double source_outer_rad = dimensions[0];
+  const double source_half_z = dimensions[1];
+  const double total_height = 2.0 * source_half_z;
+  const double trans_len_coef = m_dimensionsAndTransLenCoef[m_sourceIndex].second;
+  
+  
+  //cuba goes from 0 to one for each dimension, so we have to scale the variables
+  //  r:     goes from cylindrical inner radius, to outer radius
+  //  theta: goes from 0 to 2pi
+  //  z:     goes from the negative half-height to positive half-height
+  
+  double max_theta = 2.0 * PhysicalUnits::pi;
+  
+  const double r = xx[0] * source_outer_rad;
+  const double theta = ((ndim==3) ? xx[1] : 0.0) * max_theta;
+  const double z = total_height * (xx[((ndim==3) ? 2 : 1)] - 0.5);
+  
+  // If point to evaluate is within inner-cylinder, set the source term to zero and return.
+  if( m_sourceIndex > 0 )
+  {
+    const array<double,3> &inner_dims = m_dimensionsAndTransLenCoef[m_sourceIndex-1].first;
+    const double &inner_rad = inner_dims[0];
+    const double &inner_half_height = inner_dims[1];
+    
+    if( (r < inner_rad) && (fabs(z) < inner_half_height) )
+    {
+      ff[0] = 0.0;
+      return;
+    }
+  }//if( m_sourceIndex > 0 )
+  
+  
+  const double j = source_outer_rad * max_theta * total_height;
+  const double dV = j * r;
+  
+  const double eval_point[3] = { r * cos(theta), r * sin(theta), z };
+  const bool is_side_on = (m_geometry == GeometryType::CylinderSideOn);
+  const double detector_pos[3] = {
+    (is_side_on ? m_observationDist : 0.0), 0.0, (is_side_on ? 0.0 : m_observationDist)
+  };
+  
+  
+  double exit_point[3];
+  double dist_in_cyl = cylinder_exit_position( source_outer_rad, source_half_z, eval_point, detector_pos, exit_point );
+  
+  //- make so cylinder_exit_position take either a near or away from detector argument, and have it return zero if it doesnt intersect at all
+  //    - Look through cylinder_exit_position and make sure it can be mostly independent of the two points actual values
+  //- Accoutn for inner cylinders by getting their near and far intersections, and make sure they are closer to detector than source location
+  //- Also, update the recomended dimensions txt
+  
+  double trans = 0.0;
+  
+  // Do transport through inner cylinders, and also subtract off that distance through source
+  //  cylinder
+  for( size_t i = 0; i < m_sourceIndex; ++i )
+  {
+    // blah blah blah
+    
+    if( (i + 1) == m_sourceIndex )
+    {
+      // blah blah blah subtract off distance traveled through inner cylinder
+    }
+  }//for( size_t i = 0; i < m_sourceIndex; ++i )
+  
+  trans += (trans_len_coef * dist_in_cyl);
+  
+  // Do transport through outer cylinders
+  for( size_t i = m_sourceIndex + 1; i < m_dimensionsAndTransLenCoef.size(); ++i )
+  {
+    const std::array<double,3> &shield_dims = m_dimensionsAndTransLenCoef[i].first;
+    const double shield_outer_rad = shield_dims[0];
+    const double shield_half_z = shield_dims[1];
+    const double shield_trans_len_coef = m_dimensionsAndTransLenCoef[i].second;
+    
+    // TODO: #cylinder_exit_position will be safe to re-use exit_point for source location and exit_point in near future - make sure to update this here by getting rid of outer_exit_point
+    double outer_exit_point[3];
+    const double dist_in_shield = cylinder_exit_position( shield_outer_rad, shield_half_z,
+                                                      exit_point, detector_pos, outer_exit_point );
+    
+    trans += (shield_trans_len_coef * dist_in_shield);
+    
+    exit_point[0] = outer_exit_point[0];
+    exit_point[1] = outer_exit_point[1];
+    exit_point[2] = outer_exit_point[2];
+  }//for( loop over outer shielding )
+  
+  
+  trans = exp( -trans );
+  
+  if( m_attenuateForAir )
+  {
+    const double dz = m_observationDist - source_half_z;
+    const double air_dist = distance( exit_point, detector_pos );
+    
+    trans *= exp( -m_airTransLenCoef * air_dist );
+  }//if( m_attenuateForAir )
+  
+  
+  if( m_isInSituExponential )
+  {
+    assert( m_inSituRelaxationLength > 0.0 );
+    if( is_side_on )
+      trans *= exp( -(source_outer_rad - r) / m_inSituRelaxationLength );
+    else
+      trans *= exp( -(source_half_z - z) / m_inSituRelaxationLength );
+  }//if( m_isInSituExponential )
+  
+  
+  // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to to detector).
+  const double eval_dist_to_det = distance( eval_point, detector_pos );
+  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det );
+  
+  ff[0] = trans * dV;
+}//void eval_cylinder(...)
 
 
 void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
