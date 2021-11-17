@@ -111,12 +111,13 @@ double mass_attenuation_coef( float atomic_number, float energy );
 double transmition_coefficient_generic( float atomic_number, float areal_density,
                                 float energy );
 
+
+void example_integration();
+
 // When debugging we will grab a static mutex so we dont get jumbled stdout
 #define DEBUG_RAYTRACE_CALCS 0
 
 
-void example_integration();
-  
 /** Runs some simple test cases for #cylinder_exit_position, and cause assert(0) on error. */
 void test_cylinder_exit_position();
 
@@ -144,6 +145,16 @@ double exit_point_of_sphere_z( const double source_point[3],
                                double observation_dist,
                                bool postiveSolution = true );
 
+/** An enum to to tell #cylinder_exit_position which exit point from sphere you want.
+ 
+ A better name would be CylinderIntersectionDirection, but thats too long.
+ */
+enum class CylExitDir
+{
+  TowardDetector,
+  AwayFromDetector
+};
+
 /** Starting from a 'source_point' within the volume of the cylinder, and heading towards the 'detector_point' (think center
  of the detector face), returns the total attenuation coefficient along the path, including recursing into any sub-tubes, as well as
  sets the point where the ray leaves the cylinder.
@@ -156,7 +167,9 @@ double exit_point_of_sphere_z( const double source_point[3],
  @param[in] detector The {x, y, z} point on the detector face we care about (so center of detector, unless you are integrating over
  the detector face), in the coordinate system where cylinder is centered at {0,0,0}.
  @param[out] exit_point The final exit point from the cylinder, where the path will no longer go through the volume.
- @returns the attenuation coefficient from the path through the cylinder and its sub-cylinders. E.g.,
+ @returns The distance from source location to exit point.  Returns 0.0 if line does not intersect cylinder.  Note that this is not the
+ distance in the cylinder, but the total distance from source to exit point, so if source is outside volume, may be larger than cylinder
+ dimensions.
  \code{.cpp}
  double exit_point[3];
  const double distance_in_m = cylinder_exit_position( 0.5*m, 100*cm, {0,0.1*m,20*cm}, {0,0,10*m}, exit_point );
@@ -166,6 +179,7 @@ double exit_point_of_sphere_z( const double source_point[3],
 double cylinder_exit_position( const double radius, const double half_length,
                               const double source[3],
                               const double detector[3],
+                              const CylExitDir direction,
                               double exit_point[3] );
 
 
@@ -199,7 +213,7 @@ struct DistributedSrcCalc
   void eval_spherical( const double xx[], const int *ndimptr,
                        double ff[], const int *ncompptr ) const;
   
-  void eval_cyl_end_on( const double xx[], const int *ndimptr,
+  void eval_single_cyl_end_on( const double xx[], const int *ndimptr,
                       double ff[], const int *ncompptr ) const;
   
   void eval_cylinder( const double xx[], const int *ndimptr,

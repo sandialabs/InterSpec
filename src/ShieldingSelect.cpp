@@ -689,9 +689,11 @@ public:
       }//switch( type )
     }//for( loop over TraceActivityTypes )
     
-    bool changedIndex = false;
+    bool changedIndex = ((previous < 0)
+                      || (previous >= static_cast<int>(TraceActivityType::NumTraceActivityType)) );
     int currentIndex = 0;
     if( (previous >= 0)
+        && (previous < static_cast<int>(TraceActivityType::NumTraceActivityType) )
         && (allowActPerGram
             || (previous != static_cast<int>(TraceActivityType::ActivityPerGram))) )
     {
@@ -2189,6 +2191,15 @@ void ShieldingSelect::setTraceSourceMenuItemStatus()
     m_addTraceSourceItem->setDisabled( true );
     return;
   }//if( m_isGenericMaterial )
+  
+  // For the moment only have the inner most shielding have trace sources enabled for cylindrical
+  //  and rectangular geometries - until ray tracing is totally enabled.
+  if( (m_geometry != GammaInteractionCalc::GeometryType::Spherical)
+     && m_shieldSrcDisp && m_shieldSrcDisp->innerShielding(this) )
+  {
+    m_addTraceSourceItem->setDisabled( true );
+    return;
+  }
   
   int numAvailableNuclides = 0;
   const int numNuclides = m_sourceModel->numNuclides();

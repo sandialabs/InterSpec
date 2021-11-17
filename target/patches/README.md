@@ -38,7 +38,7 @@ export PATCH_DIR=/path/to/InterSpec/target/patches/
 
 ## Build boost 1.65.1
 ```bash
-curl -L https://dl.bintray.com/boostorg/release/1.65.1/source/boost_1_65_1.tar.gz --output boost_1_65_1.tar.gz
+curl -L https://sourceforge.net/projects/boost/files/boost/1.65.1/boost_1_65_1.zip/download --output boost_1_65_1.tar.gz
 tar -xzvf boost_1_65_1.tar.gz
 cd boost_1_65_1
 
@@ -116,16 +116,22 @@ open InterSpec.xcodeproj
 
 
 # Building dependencies on Windows 10 
+The Windows release build of InterSpec uses Electron (https://electronjs.org/) to render the application; the InterSpec build scripts require using Node.js and NPM to build things; these can downloaded from https://nodejs.org/en/download/.
+During the installation of Node.js, you can choose to install the [Chocolatey](https://chocolatey.org/) package manager; this will install the necessary Visual Studio command line compiler tools to install things (i.e., you dont need a full install of MSVC).
+You also need to install CMake, most easily from https://cmake.org/download/.
 
-From the Visual Studio 2017 "x64 Native Tools Command Prompt":
+The InterSpec build files are setup to use the MSVC static runtime - it is highly suggested to compile boost, Wt, zlib from from source, following these instructions.
+
+
+From the Visual Studio 2019 "x64 Native Tools Command Prompt":
 ```bash
 cd C:\temp
 mkdir build
 cd build
-curl https://boostorg.jfrog.io/artifactory/main/release/1.65.1/source/boost_1_65_1.tar.gz --output boost_1_65_1.tar.gz
+curl -L https://sourceforge.net/projects/boost/files/boost/1.65.1/boost_1_65_1.zip/download --output boost_1_65_1.tar.gz
 tar -xzvf boost_1_65_1.tar.gz
 cd boost_1_65_1
-boostrap.bat
+bootstrap.bat
 ```
 
 Edit project-config.jam to change
@@ -134,15 +140,41 @@ using msvc ;
 ```
 To something like
 ```bash
-using msvc : 14.1 : "C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Tools\MSVC\14.16.27023\bin\Hostx86\x86\cl.exe";
+using msvc : 14.2 : "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Tools\MSVC\14.29.30133\bin\Hostx64\x64\cl.exe";
 ```
 
 Then compile and install:
 
 ```bash
-.\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 architecture=x86 msvcver=msvc-14.1 --prefix=C:\install\msvc2017\x64\boost_1_65_1 --build-dir=win_build -j8 install
+set MY_BOOST_PREFIX=C:\install\msvc2019\x64\boost_1_65_1
+
+.\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 architecture=x86 msvcver=msvc-14.2 --prefix=%MY_BOOST_PREFIX% --build-dir=win_build -j8 install
+```
+
+
+Build zlib
+```bash
+curl -L https://zlib.net/zlib-1.2.11.tar.gz --output zlib-1.2.11.tar.gz
+tar -xzvf zlib-1.2.11.tar.gz
+cd zlib-1.2.11
+mkdir build
+
+set MY_ZLIB_PREFIX=C:\install\msvc2019\x64\zlib
+cmake -DCMAKE_INSTALL_PREFIX=%MY_ZLIB_PREFIX% -DCMAKE_BUILD_TYPE=Release ..
+# NOTE - you need to manually change all "MD" compiler flags to "MT" - I used the CMake GUI for this
+cmake --build . --config Debug --target install
+cmake --build . --config Release --target install
 ```
 
 To build Wt, you must patch the Wt source code as described above, and then you can use the cmake GUI to configure Wt, and Visual Studio to build and install it.
+You can use the following command from the command line to initiate the CMake config, but you also need to change all "MD" compiler flags to "MT", which its easiest to do this in the CMake gui.
+```bash
+set MY_WT_PREFIX=C:\install\msvc2019\x64\wt3.3.4
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=%MY_WT_PREFIX% -DBoost_INCLUDE_DIR=%MY_BOOST_PREFIX%/include -DBOOST_PREFIX=%MY_BOOST_PREFIX% -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=%MY_WT_PREFIX% -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++11" -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR=%MY_WT_PREFIX%/etc/wt ..
+
+cmake --build . --config Release --target install
+
+#Note if you run into permission problems while files are being copied to install location, you maye need to change permissions on CMakes "share" directory, at least temporarily
+```
 
 If you plan to package InterSpec as an Electron application (e.g., normal desktop app), see the instructions in [patches](/target/electron/) for building the InterSpec code and packaging the application.
