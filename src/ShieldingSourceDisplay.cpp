@@ -7972,7 +7972,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
           if( radThicknessUncert > DBL_EPSILON )
             msg << radLabel << PhysicalUnits::printToBestLengthUnits(radThickness,radThicknessUncert);
           else
-            msg << radLabel << PhysicalUnits::printToBestLengthUnits(radThickness) << " (fixed)";
+            msg << radLabel << PhysicalUnits::printToBestLengthUnits(radThickness) << " (fixed), ";
           
           if( lenThickness > DBL_EPSILON )
             msg << lengthLabel << PhysicalUnits::printToBestLengthUnits(radThickness,radThicknessUncert);
@@ -7993,21 +7993,21 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
           const double depthThickness = chi2Fcn->rectangularDepthThickness( matn, params );
           const double depthThicknessUncert = chi2Fcn->rectangularDepthThickness( matn, errors );
           
-          const char *widthLabel  = matn ? "radial-thickness=" : "radius=";
-          const char *heightLabel = matn ? "length-thickness=" : "half-length=";
-          const char *depthLabel  = matn ? "length-thickness=" : "half-length=";
+          const char *widthLabel  = matn ? "width-thickness="  : "half-width=";
+          const char *heightLabel = matn ? "height-thickness=" : "half-height=";
+          const char *depthLabel  = matn ? "depth-thickness="  : "half-depth=";
           
           msg << widthLabel;
           if( widthThicknessUncert > DBL_EPSILON )
-            msg << PhysicalUnits::printToBestLengthUnits(widthThickness,widthThicknessUncert);
+            msg << PhysicalUnits::printToBestLengthUnits(widthThickness,widthThicknessUncert) << ", ";
           else
-            msg << PhysicalUnits::printToBestLengthUnits(widthThickness) << " (fixed)";
+            msg << PhysicalUnits::printToBestLengthUnits(widthThickness) << " (fixed), ";
           
           msg << heightLabel;
           if( heightThicknessUncert > DBL_EPSILON )
-            msg << PhysicalUnits::printToBestLengthUnits(heightThickness,heightThicknessUncert);
+            msg << PhysicalUnits::printToBestLengthUnits(heightThickness,heightThicknessUncert) << ", ";
           else
-            msg << PhysicalUnits::printToBestLengthUnits(heightThickness) << " (fixed)";
+            msg << PhysicalUnits::printToBestLengthUnits(heightThickness) << " (fixed), ";
           
           msg << depthLabel;
           if( depthThicknessUncert > DBL_EPSILON )

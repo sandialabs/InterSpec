@@ -2,7 +2,7 @@
 # excpet iOS, Android, and Electron, InterSpecExe
 
 cmake_policy(SET CMP0048 NEW)
-project(InterSpec VERSION 1.0.8)
+project(InterSpec VERSION 1.0.9)
 
 cmake_minimum_required(VERSION 3.1.0 FATAL_ERROR)
 set(CMAKE_COLOR_MAKEFILE ON CACHE BOOL "Color" FORCE)
@@ -16,9 +16,9 @@ if(WIN32)
     include(cmake/ConfigureMsvc.txt)
     configure_msvc_runtime()
 
-    set(BOOST_PREFIX "C:/install/msvc2017/x64/boost_1_65_1")
-    set(ZLIB_PREFIX "C:/install/msvc2017/x64/zlib")
-    list(APPEND PATH_SUFFIXES "C:/install/msvc2017/x64/wt-3.3.4")
+    set(BOOST_PREFIX "C:/install/msvc2019/x64/boost_1_65_1")
+    set(ZLIB_PREFIX "C:/install/msvc2019/x64/zlib")
+    list(APPEND PATH_SUFFIXES "C:/install/msvc2019/x64/wt-3.3.4")
 
     set(EXECUTABLE_OUTPUT_PATH . CACHE PATH "Path to executables" FORCE)
     set(CMAKE_CXX_FLAGS
@@ -1042,7 +1042,7 @@ elseif(BUILD_AS_OSX_APP)
 
     #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate cooresponding value in Xcode
     #math(EXPR MACOS_BUNDLE_VERSION_NUMBER "100*(${PROJECT_VERSION_MAJOR}-1) + 10*${PROJECT_VERSION_MINOR} + ${PROJECT_VERSION_PATCH}" )
-    set(MACOS_BUNDLE_VERSION_NUMBER 13)
+    set(MACOS_BUNDLE_VERSION_NUMBER 14)
 
     set_target_properties(
         InterSpecExe
