@@ -1,5 +1,8 @@
 # Tutorials
 
+## Soil Contamination and Trace Sources
+* [20211117_IAEA_HPGe_InterSpec_SAND2021-14557TR.pdf](contamination/20211117_IAEA_HPGe_InterSpec_SAND2021-14557TR.pdf).
+
 ## Introduction To Spectroscopy with InterSpec
 * [20210315_spectroscopy_intro_InterSpec.pptx](spec_intro_March2021/20210315_spectroscopy_intro_InterSpec.pptx).
 * [spectrum_files.zip](spec_intro_March2021/spectrum_files.zip).
