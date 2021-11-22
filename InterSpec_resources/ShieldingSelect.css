@@ -17,6 +17,11 @@
   opacity:1.0;
 }
 
+.ShieldingDelete.Wt-disabled
+{
+  background-color: transparent;
+}
+
 .ShieldingSelect
 {
   border: 1px solid #e1e1e1;

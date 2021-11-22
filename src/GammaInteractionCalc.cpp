@@ -930,22 +930,25 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
 //};//struct ThreeVec
 
 
-void test_cylinder_exit_position()
+#if( DEBUG_RAYTRACE_CALCS )
+void test_cylinder_line_intersection()
 {
-  // This function doesnt exhaustively test #cylinder_exit_position, but I think it hits most (all?)
-  //  lines of its code, so is decent.
+  // This function doesnt exhaustively test #cylinder_line_intersection, but I think it hits all the
+  //  lines of its code, so is decent, although there is probably some permutation or possible test
+  //  case left out.
+  
   const double oneOverSqrt2 = 1.0 / sqrt(2.0);
   
   double dist;
   double radius = 1.0;
   double half_length = 0.5;
-  double source[3], detector[3], exit_point[3];
+  double source[3], detector[3], exit_point[3], start_point[3];
   
-  /*
+  
   // Start tests of a point in the cylinder, and going to the detector
   source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
   detector[0] = 0.0; detector[1] = 2.0; detector[2] = 0.0;
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - 0.0) < 1.0E-14 );
   assert( fabs(exit_point[1] - 1.0) < 1.0E-14 );
   assert( fabs(exit_point[2] - 0.0) < 1.0E-14 );
@@ -954,7 +957,7 @@ void test_cylinder_exit_position()
   
   source[0] = 0.5; source[1] = 0.5; source[2] = 0.0;
   detector[0] = 2.0; detector[1] = 2.0; detector[2] = 0.0;
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - oneOverSqrt2) < 1.0E-14 );
   assert( fabs(exit_point[1] - oneOverSqrt2) < 1.0E-14 );
   assert( fabs(exit_point[2] - 0.0) < 1.0E-14 );
@@ -963,7 +966,7 @@ void test_cylinder_exit_position()
   
   source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
   detector[0] = -2.0; detector[1] = 0.0; detector[2] = -2.0;
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - -0.5) < 1.0E-14 );
   assert( fabs(exit_point[1] - 0) < 1.0E-14 );
   assert( fabs(exit_point[2] - -0.5) < 1.0E-14 );
@@ -972,7 +975,7 @@ void test_cylinder_exit_position()
   
   source[0] = 0.5; source[1] = 0.5; source[2] = 0.0;
   detector[0] = 0.5; detector[1] = 0.5; detector[2] = 1.0;
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - 0.5) < 1.0E-14 );
   assert( fabs(exit_point[1] - 0.5) < 1.0E-14 );
   assert( fabs(exit_point[2] - 0.5) < 1.0E-14 );
@@ -981,7 +984,7 @@ void test_cylinder_exit_position()
   
   source[0] = 0.5; source[1] = 0.5; source[2] = 0.0;
   detector[0] = 0.0; detector[1] = 0.0; detector[2] = 1.0;
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - 0.25) < 1.0E-14 );
   assert( fabs(exit_point[1] - 0.25) < 1.0E-14 );
   assert( fabs(exit_point[2] - 0.5) < 1.0E-14 );
@@ -992,7 +995,7 @@ void test_cylinder_exit_position()
   half_length = 1.0;
   source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
   detector[0] = 0; detector[1] = 5; detector[2] = 5;
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - 0.0) < 1.0E-14 );
   assert( fabs(exit_point[1] - 1.0) < 1.0E-14 );
   assert( fabs(exit_point[2] - 1.0) < 1.0E-14 );
@@ -1003,7 +1006,7 @@ void test_cylinder_exit_position()
   half_length = 1.0;
   source[0] = 0.25; source[1] = 0.25; source[2] = 0.25;
   detector[0] = 0.25; detector[1] = 0.25; detector[2] = 5;
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - 0.25) < 1.0E-14 );
   assert( fabs(exit_point[1] - 0.25) < 1.0E-14 );
   assert( fabs(exit_point[2] - 1.0) < 1.0E-14 );
@@ -1014,7 +1017,7 @@ void test_cylinder_exit_position()
   half_length = 1000;
   source[0] = 112500.0; source[1] = 0.0; source[2] = 0.0;
   detector[0] = 0.0; detector[1] = 0.0; detector[2] = 2000;
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - 0.5*source[0]) < 1.0E-12 );
   assert( fabs(exit_point[1] - source[1]) < 1.0E-12 );
   assert( fabs(exit_point[2] - half_length) < 1.0E-12 );
@@ -1026,30 +1029,30 @@ void test_cylinder_exit_position()
   half_length = 1;
   source[0] = 0.0; source[1] = 0.0; source[2] = -2.0;
   detector[0] = 0.0; detector[1] = 0.0; detector[2] = 2;
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - source[0]) < 1.0E-12 );
   assert( fabs(exit_point[1] - source[1]) < 1.0E-12 );
   assert( fabs(exit_point[2] - half_length) < 1.0E-12 );
   assert( fabs(dist - 3.0) < 1.0E-12 );
   
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
   assert( fabs(exit_point[0] - source[0]) < 1.0E-12 );
   assert( fabs(exit_point[1] - source[1]) < 1.0E-12 );
   assert( fabs(exit_point[2] + half_length) < 1.0E-12 );
   assert( fabs(dist - 1.0) < 1.0E-12 );
   
-  dist = cylinder_exit_position( radius, half_length, exit_point, detector, CylExitDir::TowardDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, exit_point, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - source[0]) < 1.0E-12 );
   assert( fabs(exit_point[1] - source[1]) < 1.0E-12 );
   assert( fabs(exit_point[2] - half_length) < 1.0E-12 );
   assert( fabs(dist - 2.0) < 1.0E-12 );
-  */
+  
   
   radius = 1;
   half_length = 1;
   source[0] = 10.0; source[1] = 10.0; source[2] = 0.0;
   detector[0] = 0.0; detector[1] = 0.0; detector[2] = 10.0;
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - source[0]) < 1.0E-12 );
   assert( fabs(exit_point[1] - source[1]) < 1.0E-12 );
   assert( fabs(exit_point[2] - source[2]) < 1.0E-12 );
@@ -1059,34 +1062,260 @@ void test_cylinder_exit_position()
   half_length = 1;
   source[0] = -10.0; source[1] = 0.0; source[2] = -10.0;
   detector[0] = 10.0; detector[1] = 0.0; detector[2] = 10;
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - 1.0) < 1.0E-12 );
   assert( fabs(exit_point[1] - 0.0) < 1.0E-12 );
   assert( fabs(exit_point[2] - 1.0) < 1.0E-12 );
   assert( fabs(dist - sqrt(11.0*11.0 + 11.0*11.0)) < 1.0E-12 );
   
   
-  dist = cylinder_exit_position( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
   assert( fabs(exit_point[0] - -1.0) < 1.0E-12 );
   assert( fabs(exit_point[1] - 0.0) < 1.0E-12 );
   assert( fabs(exit_point[2] - -1.0) < 1.0E-12 );
   assert( fabs(dist - sqrt(2*81.0)) < 1.0E-12 );
   
-  
-  dist = cylinder_exit_position( radius, half_length, exit_point, detector, CylExitDir::AwayFromDetector, exit_point );
+  // {-1,0,-1} to {1,0,1}
+  dist = cylinder_line_intersection( radius, half_length, exit_point, detector, CylExitDir::TowardDetector, exit_point );
   assert( fabs(exit_point[0] - 1.0) < 1.0E-12 );
   assert( fabs(exit_point[1] - 0.0) < 1.0E-12 );
   assert( fabs(exit_point[2] - 1.0) < 1.0E-12 );
   assert( fabs(dist - sqrt(8.0)) < 1.0E-12 );
-}//void test_cylinder_exit_position()
+  
+  
+  radius = 1;
+  half_length = 1;
+  source[0] = -5; source[1] = 5; source[2] = 0.0;
+  detector[0] = 5; detector[1] = 4; detector[2] = 10.0;
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs(exit_point[0] - source[0]) < 1.0E-12 );
+  assert( fabs(exit_point[1] - source[1]) < 1.0E-12 );
+  assert( fabs(exit_point[2] - source[2]) < 1.0E-12 );
+  assert( dist == 0.0 );
+  
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
+  assert( dist == 0.0 );
+  
+  radius = 1;
+  half_length = 1;
+  source[0] = 5; source[1] = 5; source[2] = -10.0;
+  detector[0] = 5; detector[1] = 5; detector[2] = 10.0;
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs(exit_point[0] - source[0]) < 1.0E-12 );
+  assert( fabs(exit_point[1] - source[1]) < 1.0E-12 );
+  assert( fabs(exit_point[2] - source[2]) < 1.0E-12 );
+  assert( dist == 0.0 );
+  
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
+  assert( dist == 0.0 );
+  
+  
+  radius = 0.0;
+  half_length = 0.0;
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs(exit_point[0] - source[0]) < 1.0E-12 );
+  assert( fabs(exit_point[1] - source[1]) < 1.0E-12 );
+  assert( fabs(exit_point[2] - source[2]) < 1.0E-12 );
+  assert( dist == 0.0 );
+  
+  
+  radius = 1;
+  half_length = 1;
+  source[0] = 2; source[1] = 2; source[2] = -10.0;
+  detector[0] = 2; detector[1] = 3; detector[2] = 10.0;
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs(exit_point[0] - source[0]) < 1.0E-12 );
+  assert( fabs(exit_point[1] - source[1]) < 1.0E-12 );
+  assert( fabs(exit_point[2] - source[2]) < 1.0E-12 );
+  assert( dist == 0.0 );
+  
+  
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
+  assert( dist == 0.0 );
+  
+  
+  radius = 1;
+  half_length = 1;
+  source[0] = 0.5; source[1] = 0; source[2] = 2;
+  detector[0] = 0.5; detector[1] = 2; detector[2] = 10.0;
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs(exit_point[0] - source[0]) < 1.0E-12 );
+  assert( fabs(exit_point[1] - source[1]) < 1.0E-12 );
+  assert( fabs(exit_point[2] - source[2]) < 1.0E-12 );
+  assert( dist == 0.0 );
+  
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
+  assert( dist == 0.0 );
+  
+  
+  radius = 1;
+  half_length = 1;
+  source[0] = 0.0; source[1] = 2; source[2] = -2.0;
+  detector[0] = 0.0; detector[1] = 1; detector[2] = 2.0;
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs(exit_point[0] - source[0]) < 1.0E-12 );
+  assert( fabs(exit_point[1] - source[1]) < 1.0E-12 );
+  assert( fabs(exit_point[2] - source[2]) < 1.0E-12 );
+  assert( dist == 0.0 );
+  
+  
+  // Now do some cases to simulate what will happen when integrating over a volume and there is a
+  //  sub-volume
+  
+  radius = 1;
+  half_length = 1;
+  source[0] = 1.5; source[1] = 0; source[2] = 0;
+  detector[0] = -1.5; detector[1] = 0; detector[2] = 0;
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, start_point );
+  assert( fabs(start_point[0] - 1.0) < 1.0E-12 );
+  assert( fabs(start_point[1] - 0) < 1.0E-12 );
+  assert( fabs(start_point[2] - 0) < 1.0E-12 );
+  assert( dist == 0.5 );
+  
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs(exit_point[0] + 1.0) < 1.0E-12 );
+  assert( fabs(exit_point[1] - 0) < 1.0E-12 );
+  assert( fabs(exit_point[2] - 0) < 1.0E-12 );
+  assert( dist == 2.5 );
+  
+  dist = cylinder_line_intersection( radius, half_length, start_point, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs(exit_point[0] + 1.0) < 1.0E-12 );
+  assert( fabs(exit_point[1] - 0) < 1.0E-12 );
+  assert( fabs(exit_point[2] - 0) < 1.0E-12 );
+  assert( fabs(dist - 2.0) < 1.0E-12 );
+  
+  
+  
+  
+  radius = 1;
+  half_length = 1;
+  source[0] = -1.5; source[1] = 0; source[2] = 0;
+  detector[0] = 1.5; detector[1] = 0; detector[2] = 0;
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, start_point );
+  assert( fabs(start_point[0] + 1.0) < 1.0E-12 );
+  assert( fabs(start_point[1] - 0) < 1.0E-12 );
+  assert( fabs(start_point[2] - 0) < 1.0E-12 );
+  assert( dist == 0.5 );
+  
+  dist = cylinder_line_intersection( radius, half_length, start_point, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs(exit_point[0] - 1.0) < 1.0E-12 );
+  assert( fabs(exit_point[1] - 0) < 1.0E-12 );
+  assert( fabs(exit_point[2] - 0) < 1.0E-12 );
+  assert( fabs(dist - 2.0) < 1.0E-12 );
+  
+  
+  // Test on boundaries
+  
+  // Here we'll make the line pass *just* inside the circle to get around how exact intersections
+  //  arent totally worked out yet.
+  radius = 1.0;
+  half_length = 1;
+  source[0] = 1.0; source[1] = -1.0; source[2] = 0;
+  detector[0] = (1.0 - 2.0E-6); detector[1] = 1; detector[2] = 0;
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs(exit_point[0] - 1.0) < 3.0E-6 );
+  assert( fabs(exit_point[1] - 0) < 3.0E-6 );
+  assert( fabs(exit_point[2] - 0) < 3.0E-6 );
+  assert( fabs(dist - 1.0) < 3.0E-5 );
+  
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
+  assert( fabs(exit_point[0] - 1.0) < 3.0E-6 );
+  assert( fabs(exit_point[1] - 0) < 3.0E-6 );
+  assert( fabs(exit_point[2] - 0) < 3.0E-6 );
+  assert( fabs(dist - 1.0) < 3.0E-5);
+  
+  dist = cylinder_line_intersection( radius, half_length, exit_point, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs(exit_point[0] - 1.0) < 3.0E-6 );
+  assert( fabs(exit_point[1] - 0) < 3.0E-6 );
+  assert( fabs(exit_point[2] - 0) < 3.0E-6 );
+  assert( fabs(dist) < 3.0E-5 );
+
+  
+  radius = 1;
+  half_length = 1;
+  source[0] = 1.0; source[1] = 0; source[2] = -5;
+  detector[0] = 1.0; detector[1] = 0; detector[2] = 5;
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
+  assert( fabs(exit_point[0] - 1.0) < 1.0E-12 );
+  assert( fabs(exit_point[1] - 0) < 1.0E-12 );
+  assert( fabs(exit_point[2] - -1.0) < 1.0E-12 );
+  assert( dist == 4.0 );
+  
+  
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs(exit_point[0] - 1.0) < 1.0E-12 );
+  assert( fabs(exit_point[1] - 0) < 1.0E-12 );
+  assert( fabs(exit_point[2] - 1.0) < 1.0E-12 );
+  assert( dist == 6.0 );
+  
+   
+  // TODO: need more tests for exactly on boundary, or whatever
+  
+  // Check case where source is between cylinder and detector, so line segment doesnt actually
+  //  intersect the cylinder, although it would if line was infinitely long.
+  radius = 6.3499999999999996;
+  half_length = 106.67999999999999;
+  source[0] = 12.691863768989704; source[1] = 0.050459131221286244; source[2] = 0.0;
+  detector[0] = 269.23999999999995; detector[1] = 0; detector[2] = 5;
+  double to_enter_dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
+  double to_exit_dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  assert( to_enter_dist == 0.0 );
+  assert( to_exit_dist == 0.0 );
+  
+  
+  
+  //radius = 6.3499999999999996;
+  //half_length = 106.67999999999999;
+  //// source is at radius 6.35002389242
+  //source[0] = -2.430014265260013; source[1] = 5.8666714672787954; source[2] = 106.68019720704258;
+  //detector[0] = 269.23999999999995; detector[1] = 0; detector[2] = 0;
+  //dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
+  //dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+
+  
+  radius = 6.3499999999999996;
+  half_length = 106.67999999999999;
+  source[0] = 4.4901280605345768; source[1] = 4.4901280605345759; source[2] = 0;
+  detector[0] = 269.23999999999995; detector[1] = 0; detector[2] = 0;
+  
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  assert( dist == 0.0 );
+  
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
+  assert( dist == 0.0 );
+  
+  
+  radius = 6.3499999999999996;
+  half_length = 106.67999999999999;
+  source[0] = -2.430014265260013; source[1] = 5.8666714672787954; source[2] = 106.68019720704258;
+  detector[0] = 269.23999999999995; detector[1] = 0 ;detector[2] = 0;
+  
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::TowardDetector, exit_point );
+  assert( fabs( radius - sqrt(exit_point[0]*exit_point[0] + exit_point[1]*exit_point[1]) ) < 1.0E-9*std::max(1.0,radius) );
+  
+  dist = cylinder_line_intersection( radius, half_length, source, detector, CylExitDir::AwayFromDetector, exit_point );
+  assert( fabs( exit_point[2] - half_length ) < 1.0E-9*std::max(1.0,half_length) ); //exit on end
+  
+}//void test_cylinder_line_intersection()
+
+#endif //DEBUG_RAYTRACE_CALCS
 
 
-double cylinder_exit_position( const double radius, const double half_length,
+double cylinder_line_intersection( const double radius, const double half_length,
                               const double source[3],
                               const double detector[3],
                               const CylExitDir direction,
                               double exit_point[3] )
 {
+  // TODO: this function should be broken into two separate functions.  One to handle finding the exit
+  //  point when you know the source is inside the volume.  And one to find both intersection points
+  //  (if any) of external points.  This would both increase the efficiency of the function, and also
+  //  make the use cleaner/easier.
+  
+  // TODO: need to clearly define what happens for points exactly on boundary, or just over or
+  //       whatever (I think things are set up so equality is counted as being inside volume,
+  //       but there may be edge cases (pun realized) that dont obey this.
+  
 // When debugging we will grab a static mutex so we dont get jumbled stdout  
 #if( DEBUG_RAYTRACE_CALCS )
   std::lock_guard<std::recursive_mutex> scoped_lock( s_stdout_raytrace_mutex );
@@ -1096,18 +1325,22 @@ double cylinder_exit_position( const double radius, const double half_length,
   assert( radius >= 0.0 );
   assert( half_length >= 0.0 );
   
-  
-  if( (radius <= 0.0) || (half_length <= 0.0) )
-  {
+  // A convenience function for handling case where the line never enters our volume.
+  auto handle_line_outside_volume = [&exit_point,&source]() -> double {
     exit_point[0] = source[0];
     exit_point[1] = source[1];
     exit_point[2] = source[2];
     
+#if( DEBUG_RAYTRACE_CALCS )
+    cout << "\tDoes not intersect volume" << endl << endl;
+#endif
+    
     return 0.0;
-  }//if( no volume )
+  };//handle_line_outside_volume lamda
   
-  const double geom_epsilon = 1.0E-14;
-
+  
+  if( (radius <= 0.0) || (half_length <= 0.0) )
+    return handle_line_outside_volume();
   
 #if( DEBUG_RAYTRACE_CALCS )
   cout << "Rad=" << radius << ", half-z=" << half_length
@@ -1115,9 +1348,7 @@ double cylinder_exit_position( const double radius, const double half_length,
        << ", det={" << detector[0] << "," << detector[1] << "," << detector[2] << "}" << endl;
 #endif
   
-  //assert( sqrt(source[0]*source[0] + source[1]*source[1]) < (radius + geom_epsilon) );
-  //assert( source[2] < (half_length + geom_epsilon) );
-  
+
   // Get unit direction vector from source to final position
   double unit[3] = { detector[0] - source[0], detector[1] - source[1], detector[2] - source[2] };
   
@@ -1133,20 +1364,12 @@ double cylinder_exit_position( const double radius, const double half_length,
   //  is close enough to zero for our purposes (the DRF will fail far before this assumption fails)
   if( (fabs(unit[0]) < DBL_EPSILON) && (fabs(unit[1]) < DBL_EPSILON) )
   {
-    assert( fabs(unit[2]) > geom_epsilon );
+    assert( fabs(unit[2]) > DBL_EPSILON );
     
     const double r = sqrt(source[0]*source[0] + source[1]*source[1]);
     
-    //assert( r <= (radius + geom_epsilon) );
-    
-    if( r > (radius + geom_epsilon) )
-    {
-      exit_point[0] = source[0];
-      exit_point[1] = source[1];
-      exit_point[2] = source[2];
-      
-      return 0.0;
-    }//if( r > (radius + geom_epsilon) )
+    if( r > radius )
+      return handle_line_outside_volume();
     
     double exit_z = (unit[2] > 0.0) ? half_length : -half_length;
     switch( direction )
@@ -1176,6 +1399,46 @@ double cylinder_exit_position( const double radius, const double half_length,
   }//if( (fabs(unit[0]) < DBL_EPSILON) && (fabs(unit[1]) < DBL_EPSILON) )
   
   
+  // Make sure both source and detector z-coordinates are not on the same end of the cylinder,
+  //  and larger than the half length.
+  if( (signbit(source[2]) == signbit(detector[2]))
+     && (fabs(source[2]) > half_length)
+     && (fabs(detector[2]) > half_length) )
+  {
+    return handle_line_outside_volume();
+  }
+  
+  
+  // Check that the source point isnt on the same side of the circle as the detector, but outside
+  //  of the circles radius.  This will prevent the case where the infinite line would intersect
+  //  the cylinder, but not between source and detector (which we should return zero for)
+  // TODO: get rid of these sqrts, and also probably other ones throughout this function
+  const double src_rad = sqrt( source[0]*source[0] + source[1]*source[1] );
+  if( src_rad >= radius )
+  {
+    //There is probably a better way to check if source and detector are within 90 degrees of each
+    //  other
+    const double src_unit_x = source[0] / src_rad;
+    const double src_unit_y = source[1] / src_rad;
+    
+    const double det_rad = sqrt( detector[0]*detector[0] + detector[1]*detector[1] );
+    const double det_unit_x = detector[0] / det_rad;
+    const double det_unit_y = detector[1] / det_rad;
+    
+    const double unit_dx = src_unit_x - det_unit_x;
+    const double unit_dy = src_unit_y - det_unit_y;
+    
+    const double unit_dist_2 = unit_dx*unit_dx + unit_dy*unit_dy;
+
+    // TODO: for radius=1, half_length=1, source={1,-1,0}, detector{1,1,0}, because of numerical
+    //       rounding (unit_dist_2 = (2 - 4E-16) - i.e. 2*DBL_EPSILON) we will return in this next
+    //       statement, which we probably shouldnt since it is an exact intersection.  So we should
+    //       probably implement a check that accounts for these rounding errors
+    if( unit_dist_2 <= 2.0 )
+      return handle_line_outside_volume();
+  }//if( src_rad > radius )
+  
+  
   // Using the x-y component of unit, find where it intersects with the radius, which could be
   //  well after the half-length
   // x2 + y2 = r2
@@ -1190,6 +1453,7 @@ double cylinder_exit_position( const double radius, const double half_length,
     const double m = unit[1] / unit[0];
     assert( fabs( m - ((detector[1] - source[1]) / (detector[0] - source[0])) ) < std::max(1.0E-6,1.0E-6 * m) );
     const double c = source[1] - m*source[0];
+    double other_x_exit = std::numeric_limits<double>::quiet_NaN();
     
     {// begin scope to solve for x of intersection
       const double a_q = 1 + m*m;
@@ -1197,38 +1461,34 @@ double cylinder_exit_position( const double radius, const double half_length,
       const double c_q = c*c - radius*radius;
       
       if( 4.0*a_q*c_q > b_q*b_q )
-      {
-        exit_point[0] = source[0];
-        exit_point[1] = source[1];
-        exit_point[2] = source[2];
-        
-        return 0.0;
-      }//if( 4.0*a_q*c_q > b_q*b_q )
+        return handle_line_outside_volume();
       
       const double sqrt_quantity = sqrt(b_q*b_q -4.0*a_q*c_q);
       
       const double x_sol_1 = 0.5*(-b_q + sqrt_quantity) / a_q;
       const double x_sol_2 = 0.5*(-b_q - sqrt_quantity) / a_q;
       
-      // Pick the solution towards the detector
-      if( signbit(x_sol_1 - source[0]) == signbit(unit[0]) )
+      // Pick the solution towards/away-from the detector
+      const bool sol_1_toward = (fabs(x_sol_1 - detector[0]) < fabs(x_sol_2 - detector[0]));
+      
+      switch( direction )
       {
-        switch( direction )
-        {
-          case CylExitDir::TowardDetector:   x_exit = x_sol_1;  break;
-          case CylExitDir::AwayFromDetector: x_exit = x_sol_2; break;
-        }//switch( direction )
-      }else
-      {
-        switch( direction )
-        {
-          case CylExitDir::TowardDetector:   x_exit = x_sol_2;  break;
-          case CylExitDir::AwayFromDetector: x_exit = x_sol_1; break;
-        }//switch( direction )
-      }
+        case CylExitDir::TowardDetector:
+          x_exit       = sol_1_toward ? x_sol_1 : x_sol_2;
+          other_x_exit = sol_1_toward ? x_sol_2 : x_sol_1;
+          break;
+            
+        case CylExitDir::AwayFromDetector:
+          x_exit       = sol_1_toward ? x_sol_2 : x_sol_1;
+          other_x_exit = sol_1_toward ? x_sol_1 : x_sol_2;
+          break;
+      }//switch( direction )
     }// end scope to solve for x of intersection
     
+    assert( !IsNan(other_x_exit) );
+    
     y_exit = m*x_exit + c;
+    
     
     // Now find the z corresponding to {x_exit, y_exit}.
     // We'll make the z-equation as a function of x, and then plug in.
@@ -1237,19 +1497,26 @@ double cylinder_exit_position( const double radius, const double half_length,
     
     const double c_zx = source[2] - m_zx*source[0];
     z_exit = m_zx*x_exit + c_zx;
+    
+    // If the z_exit is past the half_length, lets check that the other intersection to the
+    //  infinite cylinder happens either in the volume, or on the other side of our volume
+    if( fabs(z_exit) > half_length )
+    {
+      const double other_z_exit = m_zx*other_x_exit + c_zx;
+      if( (fabs(other_z_exit) > half_length) && (signbit(z_exit) == signbit(other_z_exit)) )
+        return handle_line_outside_volume();
+    }//if( fabs(z_exit) > half_length )
+  
   }else
   {
+    // If we are here, the x coordinate of the source and detector location are the same.
     // x2 + y2 = r2
+    
     assert( detector[0] == source[0] );
     
-    if( detector[0] > (radius + geom_epsilon) )
-    {
-      exit_point[0] = source[0];
-      exit_point[1] = source[1];
-      exit_point[2] = source[2];
-      
-      return 0.0;
-    }//if( x is outside of cylinder - there is no way we would intersect cylinder )
+    //if( x is outside of cylinder - there is no way we would intersect cylinder )
+    if( detector[0] > radius )
+      return handle_line_outside_volume();
     
     x_exit = detector[0];
     
@@ -1274,30 +1541,26 @@ double cylinder_exit_position( const double radius, const double half_length,
     const double c_zy = source[2] - m_zy*source[1];
     z_exit = m_zy*y_exit + c_zy;
     
-    // TODO: blah blah blah need to test if the line never hit cylinder
+    // If the z_exit is past the half_length, lets check that the other intersection to the
+    //  infinite cylinder happens either in the volume, or on the other side of our volume
+    if( fabs(z_exit) > half_length )
+    {
+      const double other_y_exit = -y_exit;
+      const double other_z_exit = m_zy*other_y_exit + c_zy;
+      
+      if( (fabs(other_z_exit) > half_length) && (signbit(z_exit) == signbit(other_z_exit)) )
+        return handle_line_outside_volume();
+    }//if( fabs(z_exit) > half_length )
   }//if( detector[0] != source[0] ) / else
   
+  // If we are here, we are guaranteed the line does go through our volume
   
   // If we are exiting the cylinder on the ends, we need to figure out where on those disks we exit
   if( fabs(z_exit) > half_length )
   {
     assert( detector[2] != source[2] );
     
-    // TODO: blah blah blah need to check the line ever intersected cylinder...
-    // We'll check to make sure the line was ever in the cylinder.
-    //  If source point is in the volume, then we dont have to worry about this
-    //const double source_r = sqrt(source[0]*source[0] + source[1]*source[1]);
-    //const double source_z = source[2];
-    //if( (source_r > radius) || (fabs(source_z) > half_length) )
-    //{
-    //  double alt_exit_point[3];
-    //  const CylExitDir alt_dir = (direction == CylExitDir::AwayFromDetector) ? CylExitDir::TowardDetector : CylExitDir::AwayFromDetector;
-    //  double alt_len = cylinder_exit_position( radius, half_length, source, detector, alt_dir, alt_exit_point );
-    //}//if( (source_r > radius) || (fabs(source_z) > half_length) )
-    
-    
-    
-    const double z = ((unit[2] > 0.0) ? half_length : -half_length);
+    const double z = ((z_exit < 0.0) ? -half_length : half_length);
     
     // Just solve for x and y as a function of z, and fill those in
     const double m_xz = unit[0] / unit[2];
@@ -1313,19 +1576,22 @@ double cylinder_exit_position( const double radius, const double half_length,
     assert( fabs((m_xz*source[2] + c_xz) - source[0]) < std::max(1.0,fabs(source[0])) );
     assert( fabs((m_yz*source[2] + c_yz) - source[1]) < 1.0E-6*std::max(1.0,fabs(source[1])) );
     
-    exit_point[0] = m_xz*z + c_xz;
-    exit_point[1] = m_yz*z + c_yz;
-    exit_point[2] = z;
+    x_exit = m_xz*z + c_xz;
+    y_exit = m_yz*z + c_yz;
+    z_exit = z;
   }else
   {
-    exit_point[0] = x_exit;
-    exit_point[1] = y_exit;
-    exit_point[2] = z_exit;
+    // nothing to do here, we know we are exiting along the cylinder
   }//if( fabs(z_exit) > half_length ) / else
   
+  const double dx = (source[0] - x_exit);
+  const double dy = (source[1] - y_exit);
+  const double dz = (source[2] - z_exit);
+  const double dist_scaler = sqrt( dx*dx + dy*dy + dz*dz );
   
-  const double dist_scaler = distance( exit_point, source );
-  
+  exit_point[0] = x_exit;
+  exit_point[1] = y_exit;
+  exit_point[2] = z_exit;
   
 #if( DEBUG_RAYTRACE_CALCS )
   cout << "\tCylInter={" << x_exit << "," << y_exit << "," << z_exit << "}" << endl
@@ -1334,7 +1600,7 @@ double cylinder_exit_position( const double radius, const double half_length,
 #endif
   
   return dist_scaler;
-}//double cylinder_exit_position(...)
+}//double cylinder_line_intersection(...)
 
 
 void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
@@ -1388,7 +1654,7 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   const double j = source_outer_rad * max_theta * total_height;
   const double dV = j * r;
   
-  const double eval_point[3] = { r * cos(theta), r * sin(theta), z };
+  const double eval_point[3] = { r * cos(theta), r * sin(theta), z };  //cos is hitting 5% of total function time for debug build at least
   const bool is_side_on = (m_geometry == GeometryType::CylinderSideOn);
   const double detector_pos[3] = {
     (is_side_on ? m_observationDist : 0.0), 0.0, (is_side_on ? 0.0 : m_observationDist)
@@ -1396,28 +1662,73 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   
   
   double exit_point[3];
-  double dist_in_cyl = cylinder_exit_position( source_outer_rad, source_half_z, eval_point, detector_pos, CylExitDir::TowardDetector, exit_point );
+  double dist_in_cyl = cylinder_line_intersection( source_outer_rad, source_half_z, eval_point, detector_pos, CylExitDir::TowardDetector, exit_point );
   
-  //- make so cylinder_exit_position take either a near or away from detector argument, and have it return zero if it doesnt intersect at all
-  //    - Look through cylinder_exit_position and make sure it can be mostly independent of the two points actual values
+  //- make so cylinder_line_intersection take either a near or away from detector argument, and have it return zero if it doesnt intersect at all
+  //    - Look through cylinder_line_intersection and make sure it can be mostly independent of the two points actual values
   //- Accoutn for inner cylinders by getting their near and far intersections, and make sure they are closer to detector than source location
-  //- Also, update the recomended dimensions txt
+  //- Also, update the recommended dimensions txt
   
   double trans = 0.0;
   
   // Do transport through inner cylinders, and also subtract off that distance through source
   //  cylinder
+  double inner_distance = 0.0;
   for( size_t i = 0; i < m_sourceIndex; ++i )
   {
-    // blah blah blah
+    const std::array<double,3> &local_dims = m_dimensionsAndTransLenCoef[i].first;
+    const double local_rad = local_dims[0];
+    const double local_half_z = local_dims[1];
+    const double local_trans_len_coef = m_dimensionsAndTransLenCoef[i].second;
     
-    if( (i + 1) == m_sourceIndex )
+    
+    double local_exit_point[3];
+    const double dist_to_exit = cylinder_line_intersection( local_rad, local_half_z, eval_point,
+                                      detector_pos, CylExitDir::TowardDetector, local_exit_point );
+    
+    if( dist_to_exit <= 0.0 ) //Line doesnt intersect cylinder
     {
-      // blah blah blah subtract off distance traveled through inner cylinder
-    }
+      // TODO: consider eval_point is exactly at local_rad - which would return zero; do we want to
+      //       attribute this point to the inner or outer cylinder?
+      
+      assert( 0.0 == cylinder_line_intersection( local_rad, local_half_z, eval_point,
+                                    detector_pos, CylExitDir::AwayFromDetector, local_exit_point) );
+          
+      continue;
+    }//if( we dont intersect, or source is exactly on radius )
+    
+    // Check we either exit on the end, or on radius of the cylinder
+    assert( (fabs(fabs(local_exit_point[2]) - local_half_z) < 1.0E-6*std::max(1.0,local_half_z))
+      || (fabs( local_rad - sqrt(local_exit_point[0]*local_exit_point[0]
+                                + local_exit_point[1]*local_exit_point[1]))
+            < 1.0E-9*std::max(1.0,local_rad))
+    );
+    
+    assert( fabs(local_exit_point[2]) < (1.0 + 1.0E-9)*std::max(local_half_z,1.0) );
+    
+    double local_enter_point[3];
+    const double dist_to_enter = cylinder_line_intersection( local_rad, local_half_z, eval_point,
+                                   detector_pos, CylExitDir::AwayFromDetector, local_enter_point );
+    
+    assert( dist_to_enter <= dist_to_exit );
+    
+    // Check we either enter on the end, or on radius of the cylinder
+    assert( (fabs(fabs(local_enter_point[2]) - local_half_z) < 1.0E-6*std::max(1.0,local_half_z))
+      || (fabs( local_rad - sqrt(local_enter_point[0]*local_enter_point[0]
+                                + local_enter_point[1]*local_enter_point[1]))
+              < 1.0E-9*std::max(1.0,local_rad))
+    );
+    assert( fabs(local_enter_point[2]) < (1.0 + 1.0E-9)*std::max(local_half_z,1.0) );
+    
+    const double local_distance = dist_to_exit - dist_to_enter;
+    assert( fabs(local_distance - distance(local_enter_point,local_exit_point)) < 1.0E-9*std::max(1.0,local_distance) );
+    
+    trans += (local_trans_len_coef * (local_distance - inner_distance));
+
+    inner_distance = local_distance;
   }//for( size_t i = 0; i < m_sourceIndex; ++i )
   
-  trans += (trans_len_coef * dist_in_cyl);
+  trans += (trans_len_coef * (dist_in_cyl - inner_distance));
   
   // Do transport through outer cylinders
   for( size_t i = m_sourceIndex + 1; i < m_dimensionsAndTransLenCoef.size(); ++i )
@@ -1427,9 +1738,9 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
     const double shield_half_z = shield_dims[1];
     const double shield_trans_len_coef = m_dimensionsAndTransLenCoef[i].second;
     
-    // TODO: #cylinder_exit_position will be safe to re-use exit_point for source location and exit_point in near future - make sure to update this here by getting rid of outer_exit_point
+    // TODO: #cylinder_line_intersection will be safe to re-use exit_point for source location and exit_point in near future - make sure to update this here by getting rid of outer_exit_point
     double outer_exit_point[3];
-    const double dist_in_shield = cylinder_exit_position( shield_outer_rad, shield_half_z,
+    const double dist_in_shield = cylinder_line_intersection( shield_outer_rad, shield_half_z,
                                                       exit_point, detector_pos,
                                                       CylExitDir::TowardDetector, outer_exit_point );
     
@@ -1667,6 +1978,9 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
       int hasElement = 0;
       for( const auto &p : material->elements )
         hasElement += (p.first->atomicNumber == nuc->atomicNumber);
+      
+      for( const auto &p : material->nuclides )
+        hasElement += (p.first == nuc);
       
       if( !hasElement )
         throw runtime_error( "ShieldingSourceChi2Fcn: self attenuating nuclide "
@@ -3032,15 +3346,22 @@ const std::vector<PeakDef> &ShieldingSourceChi2Fcn::peaks() const
 }
 
 
+ShieldingSourceChi2Fcn::CancelException::CancelException( const std::string &msg, const int cancel_code )
+ : std::runtime_error( msg ),
+  m_code( cancel_code )
+{
+}
+
+
 double ShieldingSourceChi2Fcn::DoEval( const std::vector<double> &x ) const
 {
   const int cancelCode = m_cancel.load();
   switch( cancelCode )
   {
     case 0:  break;
-    case 1:  throw runtime_error( "User cancelled" );            break;
-    case 2:  throw runtime_error( "Calculation took to long." ); break;
-    default: throw runtime_error( "Other evaluation error, code " + std::to_string(cancelCode) );
+    case 1:  throw CancelException( "User cancelled", cancelCode );            break;
+    case 2:  throw CancelException( "Calculation took to long.", cancelCode ); break;
+    default: throw CancelException( "Other evaluation error, code " + std::to_string(cancelCode), cancelCode );
       break;
   }//switch( m_cancel.load() )
 
@@ -4035,19 +4356,19 @@ vector< tuple<double,double,double,Wt::WColor,double> >
           switch( m_geometry )
           {
             case GeometryType::Spherical:
-              outer_dims[0] += sphericalThickness( materialN, x );
+              outer_dims[0] += sphericalThickness( subMat, x );
               break;
               
             case GeometryType::CylinderEndOn:
             case GeometryType::CylinderSideOn:
-              outer_dims[0] += cylindricalRadiusThickness( materialN, x );
-              outer_dims[1] += cylindricalLengthThickness( materialN, x );
+              outer_dims[0] += cylindricalRadiusThickness( subMat, x );
+              outer_dims[1] += cylindricalLengthThickness( subMat, x );
               break;
               
             case GeometryType::Rectangular:
-              outer_dims[0] += rectangularWidthThickness( materialN, x );
-              outer_dims[1] += rectangularHeightThickness( materialN, x );
-              outer_dims[2] += rectangularDepthThickness( materialN, x );
+              outer_dims[0] += rectangularWidthThickness( subMat, x );
+              outer_dims[1] += rectangularHeightThickness( subMat, x );
+              outer_dims[2] += rectangularDepthThickness( subMat, x );
               break;
               
             case GeometryType::NumGeometryType:
@@ -4261,5 +4582,24 @@ void ShieldingSourceChi2Fcn::GuiProgressUpdateInfo::completed_eval( const double
     m_gui_updater( m_num_fcn_calls, elapsed_time, m_bestChi2, m_bestParameters );
   }
 }//completed_eval(...)
+
+
+size_t ShieldingSourceChi2Fcn::GuiProgressUpdateInfo::numFunctionCallsSoFar()
+{
+  std::lock_guard<std::mutex> scoped_lock( m_mutex );
+  return m_num_fcn_calls;
+}
+
+double ShieldingSourceChi2Fcn::GuiProgressUpdateInfo::bestChi2SoFar()
+{
+  std::lock_guard<std::mutex> scoped_lock( m_mutex );
+  return m_bestChi2;
+}
+
+std::vector<double> ShieldingSourceChi2Fcn::GuiProgressUpdateInfo::bestParametersSoFar()
+{
+  std::lock_guard<std::mutex> scoped_lock( m_mutex );
+  return m_bestParameters;
+}
 
 }//namespace GammaInteractionCalc

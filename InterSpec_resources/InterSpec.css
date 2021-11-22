@@ -1129,6 +1129,10 @@ padding: 0px;
 cursor: default;
 }
 
+.closeicon-wtdefault.Wt-disabled
+{
+  background-color: transparent;
+}
 
 .loading
 {

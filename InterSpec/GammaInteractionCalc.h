@@ -117,10 +117,10 @@ void example_integration();
 // When debugging we will grab a static mutex so we dont get jumbled stdout
 #define DEBUG_RAYTRACE_CALCS 0
 
-
-/** Runs some simple test cases for #cylinder_exit_position, and cause assert(0) on error. */
-void test_cylinder_exit_position();
-
+#if( DEBUG_RAYTRACE_CALCS )
+/** Runs some simple test cases for #cylinder_line_intersection, and cause assert(0) on error. */
+void test_cylinder_line_intersection();
+#endif
 
 int DistributedSrcCalc_integrand( const int *ndim, const double xx[],
                          const int *ncomp, double ff[], void *userdata );
@@ -145,7 +145,7 @@ double exit_point_of_sphere_z( const double source_point[3],
                                double observation_dist,
                                bool postiveSolution = true );
 
-/** An enum to to tell #cylinder_exit_position which exit point from sphere you want.
+/** An enum to to tell #cylinder_line_intersection which exit point from sphere you want.
  
  A better name would be CylinderIntersectionDirection, but thats too long.
  */
@@ -169,14 +169,18 @@ enum class CylExitDir
  @param[out] exit_point The final exit point from the cylinder, where the path will no longer go through the volume.
  @returns The distance from source location to exit point.  Returns 0.0 if line does not intersect cylinder.  Note that this is not the
  distance in the cylinder, but the total distance from source to exit point, so if source is outside volume, may be larger than cylinder
- dimensions.
+ dimensions.  Note that if source is on radius of cylinder, the value returned will be 0.0., for all values of CylExitDir.
  \code{.cpp}
  double exit_point[3];
- const double distance_in_m = cylinder_exit_position( 0.5*m, 100*cm, {0,0.1*m,20*cm}, {0,0,10*m}, exit_point );
+ const double distance_in_m = cylinder_line_intersection( 0.5*m, 100*cm, {0,0.1*m,20*cm}, {0,0,10*m}, exit_point );
  const double trans_fraction = exp( -trans_coef ); //trans_fraction will be between 0 and 1.
  \endcode
+ 
+ TODO: this function should be broken into two separate functions.  One to handle finding the exit
+ point when you know the source is inside the volume.  And one to find both intersection points (if any) of external points.  This would
+ both increase the efficiency of the function, and also make the use cleaner/easier.
  */
-double cylinder_exit_position( const double radius, const double half_length,
+double cylinder_line_intersection( const double radius, const double half_length,
                               const double source[3],
                               const double detector[3],
                               const CylExitDir direction,
@@ -348,6 +352,8 @@ public:
   /** Causes exception to be thrown if DoEval() is called afterwards. */
   void cancelFit();
   
+
+  
   /** Information tracked during test evaluation of the Chi2.  Set this object
    using #setGuiProgressUpdater so you can properly bind things to the GUI.
    */
@@ -358,6 +364,10 @@ public:
     
     void fitting_starting();
     void completed_eval( const double chi2, const std::vector<double> &pars );
+    
+    size_t numFunctionCallsSoFar();
+    double bestChi2SoFar();
+    std::vector<double> bestParametersSoFar();
     
   private:
     /** A mutex that protects all member variables.
@@ -450,9 +460,29 @@ public:
   //  function will scale peak areas/uncertainties for the live time
   void setBackgroundPeaks( const std::vector<PeakDef> &peaks, double liveTime );
   
-  virtual double operator()( const std::vector<double> &x ) const;
+  
+  /** Exception thrown from #DoEval when fitting is canceled by the user, or times-out.
+   Useful for propagating reason
+   */
+  class CancelException : public std::runtime_error
+  {
+  public:
+    CancelException( const std::string &msg, const int cancel_code );
+    
+    int m_code;
+  };//class CancelException
+  
+  /** Performs evaluation of Chi2, for parameters x.
+   
+   May through CancelException (if user or time limit cancelled computation), or other std::exception (on other error type).
+   */
   virtual double DoEval( const std::vector<double> &x ) const;
 
+  
+  /** For interface compatibility; calls directly to #DoEval */
+  virtual double operator()( const std::vector<double> &x ) const;
+  
+  
   //energy_chi_contributions(...): gives the chi2 contributions for each energy
   //  of peak, for the parameter values of x.
   //Does not take into account self attenuation.

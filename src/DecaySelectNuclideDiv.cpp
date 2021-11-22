@@ -347,7 +347,7 @@ void DecaySelectNuclide::initActivityAgeSelects()
   actvalidator->setFlags(Wt::MatchCaseInsensitive);
   m_nuclideActivityEdit->setValidator( actvalidator );
   m_nuclideActivityEdit->setTextSize( 10 );
-  if( InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() ) )
+  if( !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() ) )
     m_nuclideActivityEdit->setText( "1 uCi" );
   else
     m_nuclideActivityEdit->setText( "37 kBq" );
