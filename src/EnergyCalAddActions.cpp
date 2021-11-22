@@ -482,8 +482,7 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
         {
           case SpecUtils::EnergyCalType::Polynomial:
           case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-            avrgdiff = EnergyCal::fit_poly_from_channel_energies( ncoeffs,
-                                                                        lower_energies, coefs );
+            avrgdiff = EnergyCal::fit_poly_from_channel_energies( ncoeffs, lower_energies, coefs );
             newcal->set_polynomial( cal->num_channels(), coefs, {} );
             break;
             

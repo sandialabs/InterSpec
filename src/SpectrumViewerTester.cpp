@@ -2030,7 +2030,9 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
     
     switch( result->succesful )
     {
-      case ShieldingSourceDisplay::ModelFitResults::FitStatus::Invalid:
+      case ShieldingSourceDisplay::ModelFitResults::FitStatus::TimedOut:
+      case ShieldingSourceDisplay::ModelFitResults::FitStatus::UserCancelled:
+      case ShieldingSourceDisplay::ModelFitResults::FitStatus::InvalidOther:
       {
         answer.m_ntest += std::get<1>(nfitpars);
         answer.m_nwrong += std::get<1>(nfitpars);

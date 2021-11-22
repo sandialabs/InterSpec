@@ -472,7 +472,7 @@ public:
   {
     std::mutex m_mutex;
     
-    enum class FitStatus{ Invalid, InterMediate, Final };
+    enum class FitStatus{ UserCancelled, TimedOut, InvalidOther, InterMediate, Final };
     FitStatus succesful;
     std::vector<ShieldingSelect *> shieldings;  //I dont think we strickly need, but more as a sanity check
     

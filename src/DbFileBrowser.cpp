@@ -53,6 +53,17 @@
 using namespace std;
 using namespace Wt;
 
+namespace
+{
+  // The time and snapshot descriptions, if totally blank, take up no space, so if you select the
+  //  bottom most snapshot, then suddenly the time/description will take up space, shrinking the
+  //  table, and causing newly selected state to not be visible.  A way to fix this is to always
+  //  have the time/description take up space via a "&nbsp;", but I'm not sure I like all this
+  //  wasted space, so we'll leave this kinda wierdness alone for now
+  const char * const ns_empty_descrip_label = ""; //"&nbsp;"
+}//namespace
+
+
 
 DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
                               InterSpec *viewer,
@@ -410,15 +421,14 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     } //for
     
     transaction.commit();
-    tablecontainer->setOverflow(Wt::WContainerWidget::OverflowAuto);
     layout->addWidget( tablecontainer, ++row, 0 );
     layout->setRowStretch( row, 1 );
     
-    m_timeLabel = new WText();
+    m_timeLabel = new WText( ns_empty_descrip_label );
     m_timeLabel->addStyleClass( "SnapshotTime" );
     layout->addWidget(m_timeLabel, ++row,0);
     
-    m_descriptionLabel = new WText();
+    m_descriptionLabel = new WText( ns_empty_descrip_label );
     m_descriptionLabel->addStyleClass( "SnapshotDesc" );
     layout->addWidget(m_descriptionLabel, ++row,0);
     layout->columnStretch(1);
@@ -658,8 +668,8 @@ void SnapshotBrowser::selectionChanged()
     m_loadSnapshotButton->disable();
     //m_deleteButton->hide();
     m_loadSpectraButton->disable();
-    m_descriptionLabel->setText("");
-    m_timeLabel->setText("");
+    m_descriptionLabel->setText( ns_empty_descrip_label );
+    m_timeLabel->setText( ns_empty_descrip_label );
   } //some node not found
   
   if( (m_header && !m_header->m_uuid.empty()) ||  !m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )

@@ -2192,14 +2192,6 @@ void ShieldingSelect::setTraceSourceMenuItemStatus()
     return;
   }//if( m_isGenericMaterial )
   
-  // For the moment only have the inner most shielding have trace sources enabled for cylindrical
-  //  and rectangular geometries - until ray tracing is totally enabled.
-  if( (m_geometry != GammaInteractionCalc::GeometryType::Spherical)
-     && m_shieldSrcDisp && m_shieldSrcDisp->innerShielding(this) )
-  {
-    m_addTraceSourceItem->setDisabled( true );
-    return;
-  }
   
   int numAvailableNuclides = 0;
   const int numNuclides = m_sourceModel->numNuclides();
@@ -2834,6 +2826,7 @@ void ShieldingSelect::isotopeCheckedCallback( const SandiaDecay::Nuclide *nuc )
 void ShieldingSelect::isotopeUnCheckedCallback( const SandiaDecay::Nuclide *iso )
 {
   updateIfMassFractionCanFit();
+  setTraceSourceMenuItemStatus();
   m_removingIsotopeAsSource.emit( iso, ModelSourceType::Intrinsic );
 }//void isotopeUnCheckedCallback( const std::string symbol )
 
@@ -2881,6 +2874,7 @@ void ShieldingSelect::uncheckSourceIsotopeCheckBox( const SandiaDecay::Nuclide *
   }//for( WWidget *child : children )
   
   updateIfMassFractionCanFit();
+  setTraceSourceMenuItemStatus();
 }//void uncheckSourceIsotopeCheckBox( const std::string &symol )
 
 
@@ -2955,6 +2949,7 @@ void ShieldingSelect::sourceRemovedFromModel( const SandiaDecay::Nuclide *nuc )
     m_asSourceCBs->hide();
   
   updateIfMassFractionCanFit();
+  setTraceSourceMenuItemStatus();
   
   //call updateMassFractionDisplays() to update the "Assuming XX% other U isos"
   updateMassFractionDisplays( m_currentMaterial );
@@ -3120,6 +3115,7 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
     }//for( WWidget *w : traceSources )
   }//if( m_traceSources )
   
+  setTraceSourceMenuItemStatus();
   
   if( !m_asSourceCBs )
     return;

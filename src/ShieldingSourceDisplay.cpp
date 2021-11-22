@@ -130,7 +130,14 @@ const int ShieldingSourceDisplay::sm_xmlSerializationMajorVersion = 0;
  */
 const int ShieldingSourceDisplay::sm_xmlSerializationMinorVersion = 1;
 
+#ifdef NDEBUG
+// Give up after two minutes for release builds
 const size_t ShieldingSourceDisplay::sm_max_model_fit_time_ms = 120*1000;
+#else
+// For debug builds we'll let it go 7 times longer, which is about the debug slow down
+const size_t ShieldingSourceDisplay::sm_max_model_fit_time_ms = 7*120*1000;
+#endif
+
 const size_t ShieldingSourceDisplay::sm_model_update_frequency_ms = 2000;
 
 
@@ -3091,7 +3098,8 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
       assert( nuc );
       
       const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuc );
-      const bool selfAttNuc = m_sourceModel->isShieldingDeterminedActivity( i );
+      const ModelSourceType sourceType = m_sourceModel->sourceType( i );
+      const bool selfAttNuc = (sourceType == ModelSourceType::Intrinsic);
       
 //      if( selfAttNuc )
 //        throw runtime_error( "Model is not candidate for truth-level info<br />"
@@ -3416,7 +3424,8 @@ void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
     assert( nuc );
     
     const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuc );
-    const bool selfAttNuc = m_sourceModel->isShieldingDeterminedActivity( i );
+    const ModelSourceType sourceType = m_sourceModel->sourceType( i );
+    const bool selfAttNuc = (sourceType == ModelSourceType::Intrinsic);
     
     // For self-attenuating shieldings, we'll just test the shielding thickness
     // For nuclides whose age is controlled by another nuclide, we dont need to test age.
@@ -3480,7 +3489,8 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
     assert( nuc );
     
     const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuc );
-    const bool selfAttNuc = m_sourceModel->isShieldingDeterminedActivity( i );
+    const ModelSourceType sourceType = m_sourceModel->sourceType( i );
+    const bool selfAttNuc = (sourceType == ModelSourceType::Intrinsic);
     
     // For self-attenuating shieldings, we'll just test the shielding thickness
     // For nuclides whose age is controlled by another nuclide, we dont need to test age.
@@ -3602,7 +3612,8 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
       assert( nuc );
       
       const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuc );
-      const bool selfAttNuc = m_sourceModel->isShieldingDeterminedActivity( i );
+      const ModelSourceType sourceType = m_sourceModel->sourceType( i );
+      const bool selfAttNuc = (sourceType == ModelSourceType::Intrinsic);
       
       // For self-attenuating shieldings, we'll just test the shielding thickness
       // For nuclides whose age is controlled by another nuclide, we dont need to test age.
@@ -3918,10 +3929,12 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
   
   const GeometryType type = geometry();
   
-  const double tolerance = PhysicalUnits::um;
   
   double shieldrad = 0.0, distance = 0.0;
   
+  const double tolerance = PhysicalUnits::um;
+  
+  int shield_num = 0;
   bool updated_a_dim = false;
   for( WWidget *widget : m_shieldingSelects->children() )
   {
@@ -3953,18 +3966,37 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
       case GeometryType::CylinderEndOn:
       case GeometryType::CylinderSideOn:
       {
-        const double rad = select->cylindricalRadiusThickness();
-        const double len = select->cylindricalLengthThickness();
+        const double min_delta = (shield_num ? 0.0 : tolerance);
         
-        if( rad < tolerance )
+        double rad = select->cylindricalRadiusThickness();
+        double len = select->cylindricalLengthThickness();
+        
+        // If this is the first shielding, make sure it is at least 1 um rad/width.
+        //  After that, it makes sense to maybe have one of the dimensions be the same length
+        //  (e.x., in a hollow pipe, the inner void will be same length as metal tube).
+        if( rad < min_delta )
         {
+          rad = min_delta;
           updated_a_dim = true;
-          select->setCylindricalRadiusThickness( tolerance );
+          select->setCylindricalRadiusThickness( min_delta );
         }
         
-        if( len < tolerance )
+        if( len < min_delta )
         {
+          len = min_delta;
           updated_a_dim = true;
+          select->setCylindricalLengthThickness( min_delta );
+        }
+        
+        // Dont let the dimensions both be zero, even after first shielding... I think the code
+        //  would be fine if they are both zero, but this just doesnt quite seem right...
+        //  TODO: need to think about implications of (not) letting, both dimensions be zero
+        if( (rad == 0.0) && (len == 0.0) )
+        {
+          // I think we could leave
+          len = rad = tolerance;
+          updated_a_dim = true;
+          select->setCylindricalLengthThickness( tolerance );
           select->setCylindricalLengthThickness( tolerance );
         }
         
@@ -3973,25 +4005,41 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
         
       case GeometryType::Rectangular:
       {
-        const double width = select->rectangularWidthThickness();
-        const double height = select->rectangularHeightThickness();
-        const double depth = select->rectangularDepthThickness();
+        const double min_delta = (shield_num ? 0.0 : tolerance);
         
-        if( width < tolerance )
+        double width = select->rectangularWidthThickness();
+        double height = select->rectangularHeightThickness();
+        double depth = select->rectangularDepthThickness();
+        
+        if( width < min_delta )
         {
+          width = min_delta;
+          updated_a_dim = true;
+          select->setRectangularWidthThickness( min_delta );
+        }
+        
+        if( height < min_delta )
+        {
+          height = min_delta;
+          updated_a_dim = true;
+          select->setRectangularHeightThickness( min_delta );
+        }
+        
+        if( depth < min_delta )
+        {
+          depth = min_delta;
+          updated_a_dim = true;
+          select->setRectangularDepthThickness( min_delta );
+        }
+        
+        // Dont let the dimensions both be zero, even after first shielding.
+        //  See notes for cylindrical case.
+        if( (width == 0.0) && (height == 0.0) && (depth == 0.0) )
+        {
+          width = height = depth = tolerance;
           updated_a_dim = true;
           select->setRectangularWidthThickness( tolerance );
-        }
-        
-        if( height < tolerance )
-        {
-          updated_a_dim = true;
           select->setRectangularHeightThickness( tolerance );
-        }
-        
-        if( depth < tolerance )
-        {
-          updated_a_dim = true;
           select->setRectangularDepthThickness( tolerance );
         }
         
@@ -4028,6 +4076,7 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
         break;
     }//switch( type )
     
+    shield_num += 1;
   }//for( WWidget *widget : m_shieldingSelects->children() )
   
   const string distanceStr = m_distanceEdit->text().toUTF8();
@@ -6275,11 +6324,25 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
   //Set appropriate flags in the SourceFitModel so activity wont be editiable
   m_sourceModel->setSourceType( nuc, type );
   
+  switch( type )
+  {
+    case ModelSourceType::Point:
+      break;
+      
+    case ModelSourceType::Intrinsic:
+      break;
+      
+    case ModelSourceType::Trace:
+    {
+      // Sync the model up so fitting activity is same as trace-source widget
+      const bool fitAct = caller->fitTraceSourceActivity(nuc);
+      WModelIndex fitActIndex = m_sourceModel->index( nuc, SourceFitModel::kFitActivity );
+      m_sourceModel->setData( fitActIndex, fitAct, Wt::CheckStateRole );
+      break;
+    }
+  }//switch( type )
   
-  // Sync the model up so fitting activity is same as trace-source widget
-  const bool fitAct = caller->fitTraceSourceActivity(nuc);
-  WModelIndex fitActIndex = m_sourceModel->index( nuc, SourceFitModel::kFitActivity );
-  m_sourceModel->setData( fitActIndex, fitAct, Wt::CheckStateRole );
+  
 
   // Reset the age to something reasonable.
   //  TODO: do we really want to do this?  Maybe not.
@@ -7004,22 +7067,35 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
     }
   }//for( auto shielding : shieldings )
   
-  if( status == ModelFitResults::FitStatus::Invalid )
+  switch( status )
   {
-    passMessage( "<b>Fit to model failed</b>.",
-                  "", WarningWidget::WarningMsgHigh );
-    for( auto &s : errormsgs )
-      passMessage( s, "", WarningWidget::WarningMsgHigh );
-    m_currentFitFcn.reset();
-    return;
-  }
+    case ModelFitResults::FitStatus::TimedOut:
+      // TODO: check if best fit Chi2 is better than current, and if so, use new values, if available.
+      //       Note that the chi2 on the chart is sqrt(results->chi2) / number_peaks
+      
+    case ModelFitResults::FitStatus::UserCancelled:
+    case ModelFitResults::FitStatus::InvalidOther:
+    {
+      string msg = "<b>Fit to model failed</b>.";
+      for( auto &s : errormsgs )
+        msg += "<div>&nbsp;&nbsp;" + s + "</div>";
+      
+      passMessage( msg, "", WarningWidget::WarningMsgHigh );
+      
+      m_currentFitFcn.reset();
+      return;
+    }//
+     
+    case ModelFitResults::FitStatus::InterMediate:
+    {
+      passMessage( "Intermediate Fit status not handled yet.", "", WarningWidget::WarningMsgHigh );
+      return;
+    }//case ModelFitResults::FitStatus::InterMediate:
+      
+    case ModelFitResults::FitStatus::Final:
+      break;
+  }//switch( status )
   
-  if( status == ModelFitResults::FitStatus::InterMediate )
-  {
-    passMessage( "Intermediate Fit status not handled yet.",
-                "", WarningWidget::WarningMsgHigh );
-    return;
-  }
   
   for( auto &s : errormsgs )
     passMessage( s + "<br />Using fit solution anyway." ,
@@ -7355,7 +7431,7 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
   
   assert( results );
   
-  results->succesful = ModelFitResults::FitStatus::Invalid;
+  results->succesful = ModelFitResults::FitStatus::InvalidOther;
   
   Chi2FcnShrdPtr chi2Fcn;
   
@@ -7363,6 +7439,8 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
     chi2Fcn = m_currentFitFcn;
   }
+  
+  shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn::GuiProgressUpdateInfo> gui_progress_info;
   
   if( progress_fcn && progress ) //if we are wanted to post updates to the GUI periodically.
   {
@@ -7389,9 +7467,9 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     //  this lets us better make a consistent handoff of information (e.g., we
     //  can be sure all the member variables of ModelFitProgress are not-changed
     //  by the time the GUI update function gets executed in the Wt event loop).
-    auto progressUpdater = std::make_shared<GammaInteractionCalc::ShieldingSourceChi2Fcn::GuiProgressUpdateInfo>( sm_model_update_frequency_ms, updatefcn );
+    gui_progress_info = std::make_shared<GammaInteractionCalc::ShieldingSourceChi2Fcn::GuiProgressUpdateInfo>( sm_model_update_frequency_ms, updatefcn );
     
-    chi2Fcn->setGuiProgressUpdater( progressUpdater );
+    chi2Fcn->setGuiProgressUpdater( gui_progress_info );
   }//if( progress_fcn && progress )
   
   
@@ -7667,10 +7745,47 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     results->edm = minimum.Edm();
     results->num_fcn_calls = minimum.NFcn();
     results->chi2 = minimum.Fval();  //chi2Fcn->DoEval( results->paramValues );
+  }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
+  {
+    const size_t nFunctionCallsSoFar = gui_progress_info->numFunctionCallsSoFar();
+    const double bestChi2SoFar = gui_progress_info->bestChi2SoFar();
+    const vector<double> bestParsSoFar = gui_progress_info->bestParametersSoFar();
+    
+    std::lock_guard<std::mutex> lock( results->m_mutex );
+    
+    
+    //e.m_code: 0==KeepGoing, 1==UserCancelled, 2==CalcTimeout
+    switch( e.m_code )
+    {
+      case 1:
+        results->succesful = ModelFitResults::FitStatus::UserCancelled;
+        results->errormsgs.push_back( "User canceled fit." );
+        break;
+        
+      case 2:
+        results->succesful = ModelFitResults::FitStatus::TimedOut;
+        results->errormsgs.push_back( "Fit took to long." );
+        
+        if( gui_progress_info )
+        {
+          results->edm = -1.0;
+          results->num_fcn_calls = nFunctionCallsSoFar;
+          results->chi2 = bestChi2SoFar;
+          results->paramValues = bestParsSoFar;
+          results->paramErrors.clear();
+        }//if( gui_progress_info )
+        break;
+        
+      default:
+        results->succesful = ModelFitResults::FitStatus::InvalidOther;
+        results->errormsgs.push_back( "Fit not performed: " + string(e.what()) );
+        break;
+    }//switch( e.m_code )
+    
   }catch( exception &e )
   {
     std::lock_guard<std::mutex> lock( results->m_mutex );
-    results->succesful = ModelFitResults::FitStatus::Invalid;
+    results->succesful = ModelFitResults::FitStatus::InvalidOther;
     results->errormsgs.push_back( "Fit not performed: " + string(e.what()) );
   }// try / catch
   
@@ -7761,7 +7876,7 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
   }
   
   auto results = make_shared<ModelFitResults>();
-  results->succesful = ModelFitResults::FitStatus::Invalid;
+  results->succesful = ModelFitResults::FitStatus::InvalidOther;
   results->shieldings = shieldings;
   
   auto progress = std::make_shared<ModelFitProgress>();
