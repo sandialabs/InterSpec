@@ -2065,16 +2065,23 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
         return;
       }
       
-      cerr << "Caught exception: " << e.what() << endl;
+      cerr << "D3SpectrumDisplayDiv::chartFitRoiDragCallback: caught exception  " << e.what() << endl;
       
-      PeakDef tmppeak(midenergy, 0.5*erange, 0);
-      std::shared_ptr<PeakContinuum> cont = tmppeak.continuum();
-      cont->calc_linear_continuum_eqn( foreground, midenergy, lower_energy, upper_energy, 2, 2 );
+      try
+      {
+        PeakDef tmppeak(midenergy, 0.5*erange, 0);
+        std::shared_ptr<PeakContinuum> cont = tmppeak.continuum();
+        cont->calc_linear_continuum_eqn( foreground, midenergy, lower_energy, upper_energy, 2, 2 );
+        
+        std::vector<std::shared_ptr<const PeakDef> > peaks{ make_shared<const PeakDef>(tmppeak) };
+        const string roiJson = PeakDef::gaus_peaks_to_json( peaks, foreground );
+        
+        doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + roiJson + ");" );
+      }catch( std::exception &e )
+      {
+        cerr << "D3SpectrumDisplayDiv::chartFitRoiDragCallback: couldnt ." << endl;
+      }//try / catch
       
-      std::vector<std::shared_ptr<const PeakDef> > peaks{ make_shared<const PeakDef>(tmppeak) };
-      const string roiJson = PeakDef::gaus_peaks_to_json( peaks, foreground );
-      
-      doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + roiJson + ");" );
       m_fitRoiDrag.emit( lower_energy, upper_energy, nForcedPeaks, isfinal );
       app->triggerUpdate();
     }//try / catch

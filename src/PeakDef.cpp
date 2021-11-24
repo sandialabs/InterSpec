@@ -4276,8 +4276,9 @@ void PeakContinuum::calc_linear_continuum_eqn( const std::shared_ptr<const SpecU
   
   const size_t roi_first_channel = static_cast<size_t>( lower_cont_bound );
   // Upper cont bound give the channel number whos lower edge defines the upper bound on ROI, so we
-  //  will to subtract 1 from it to find the last channel _in_ the ROI
-  const size_t roi_last_channel = static_cast<size_t>( upper_cont_bound - 1.0 );
+  //  will to subtract 1 from it to find the last channel _in_ the ROI, however, we dont want to
+  //  make the upper ROI channel be lower than the low one
+  const size_t roi_last_channel = std::max( roi_first_channel, static_cast<size_t>( upper_cont_bound - 1.0 ) );
   
   double &m = m_values[1];
   double &b = m_values[0];
@@ -4416,7 +4417,7 @@ void PeakContinuum::eqn_from_offsets( size_t lowchannel,
   if( !data || !data->energy_calibration() || !data->energy_calibration()->valid() )
     throw runtime_error( "PeakContinuum::calc_linear_continuum_eqn: invalid input data" );
   
-  if( lowchannel >= highchannel )
+  if( lowchannel > highchannel )
     throw runtime_error( "PeakContinuum::eqn_from_offsets: lower channel greater than upper channel" );
   
   if( !num_lower_channels || !num_upper_channels )
