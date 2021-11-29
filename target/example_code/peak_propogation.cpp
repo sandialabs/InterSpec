@@ -228,7 +228,7 @@ int main( int argc, char **argv )
       for( const auto &exemplar : exemplar_peaks )
       {
         const double fit_mean = p.mean();
-        const double energy_diff = fabs( fit_mean - exemplar.mean() );
+        const double energy_diff = fabs( fit_mean - exemplar->mean() );
         // We will require the fit peak to be within 0.25 FWHM (arbitrarily chosen distance) 
         //  of the exemplar peak, and we will use the exemplar peak closest in energy to the
         //  fit peak
