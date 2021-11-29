@@ -221,8 +221,33 @@ int main( int argc, char **argv )
          << exemplar_peaks.size() <<  ") from the raw spectrum:"
          << endl;
     
-    for( const auto &p: fit_peaks )
+    for( PeakDef &p: fit_peaks )
+    {
+      // Find nearest exemplar peak, and we'll use this to set nuclides, colors, and such
+      shared_ptr<const PeakDef> exemplar_parent;
+      for( const auto &exemplar : exemplar_peaks )
+      {
+        const double fit_mean = p.mean();
+        const double energy_diff = fabs( fit_mean - exemplar.mean() );
+        // We will require the fit peak to be within 0.25 FWHM (arbitrarily chosen distance) 
+        //  of the exemplar peak, and we will use the exemplar peak closest in energy to the
+        //  fit peak
+        if( (energy_diff < 0.25*p.fwhm()) 
+            && (!exemplar_parent 
+                 || (energy_diff < fabs(exemplar_parent->mean() - fit_mean))) ) 
+        {
+          exemplar_parent = exemplar;
+        }
+      }//for( loop over exemplars to find original peak cooresponding to the fit peak 'p' )
+
+      if( exemplar_parent )
+        p.inheritUserSelectedOptions( *exemplar_parent, false );
+      else 
+        cerr << "Failed to find exemplar peak cooresponding to peak fit with mean=" << p.mean() 
+             << " - will not set parent nuclide/color/etc of fit peak." << endl;
+
       cout << "\tmean=" << p.mean() << ", FWHM=" << p.fwhm() << ", area=" << p.amplitude() << endl;
+    }
     
     cout << endl << endl;
     
