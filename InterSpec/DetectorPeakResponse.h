@@ -388,7 +388,7 @@ public:
   //  Note: For a detector diameter of 5cm, you might start running into numerical accuracy
   //        issues for distances around 100 km.
   static double fractionalSolidAngle( const double detector_diameter,
-                                     const double observation_distance );
+                                     const double observation_distance ) noexcept;
 
 
   //fractionalSolidAngle(...): similar to the above, but takes into account

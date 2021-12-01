@@ -209,6 +209,19 @@ public:
   bool fitRectangularHeightThickness() const;
   bool fitRectangularDepthThickness() const;
   
+  
+  /** Sometime we know we dont have the power to fit for shielding dimensions, so in these cases we wont the user have the option.
+   
+   These setFit**Enabled(...) functions will unset the fit option and hide the checkbox.
+   
+   Will throw exception if you call the function for a geometry different than the currently set one, or if not for fitting.
+   */
+  void setFitCylindricalRadiusEnabled( const bool allow );
+  void setFitCylindricalLengthEnabled( const bool allow );
+  
+  void setFitRectangularHeightEnabled( const bool allow );
+  void setFitRectangularWidthEnabled( const bool allow );
+  
   //material(): returns the currently selected Material.  Note that if the
   //  GenericMaterial is selected, will return NULL.
   //  If the material description has been changed, then a new Material will

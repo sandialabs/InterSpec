@@ -310,89 +310,9 @@ double distance( const double a[3], const double b[3] )
   return sqrt( dx*dx + dy*dy + dz*dz );
 }//double distance( const double a[3], b[3] )
 
-  
-
-
-
-int RCC_dev_Integrand( const int *ndimptr, const double xx[],
-                                 const int *ncompptr, double ff[], void *userdata )
-{
-  // This just integrates a right circular cylinder
-  const int ndim = (ndimptr ? (*ndimptr) : 3);
-  //assert( ndim == 3 );
-  
-  const double source_inner_rad = 1.0 * PhysicalUnits::cm;
-  const double source_outer_rad = 5.0 * PhysicalUnits::cm;
-  const double total_height = 5.0 * PhysicalUnits::cm;
-  
-  //cuba goes from 0 to one for each dimension, so we have to scale the variables
-  //  r:     goes from cylindrical inner radius, to outer radius
-  //  theta: goes from 0 to 2pi
-  //  z:     goes from the negative half-height to positive half-height
-  
-  double max_theta = 2.0 * PhysicalUnits::pi;
-  
-  const double x_r = xx[0];
-  const double x_theta = ndim==3 ? xx[1] : 0.0;
-  const double x_z = xx[ndim==3 ? 2 : 1];
-  
-  const double r = source_inner_rad + x_r * (source_outer_rad - source_inner_rad);
-  const double theta = x_theta * max_theta;
-  const double z = total_height * (x_z - 0.5);
-  
-  const double j = (source_outer_rad - source_inner_rad) * max_theta * total_height;
-  const double dV = j * r;
-  
-  const double contribution = 1.0;
-  
-  ff[0] = contribution * dV;
-  
-  return 0;
-}//int RCC_dev_Integrand(...)
-
-
-
 
 void example_integration()
 {
-  
-  {// begin right-circular-cylinder dev
-    int ndim = 2;
-    void *userdata = nullptr;
-    const double epsrel = 1e-5;  //the requested relative accuracy
-    const double epsabs = -1.0;//1e-12; //the requested absolute accuracy
-    const int mineval = 0; //the minimum number of integrand evaluations required.
-    const int maxeval = 5000000; //the (approximate) maximum number of integrand evaluations allowed.
-    
-    int nregions, neval, fail;
-    double integral, error, prob;
-    
-    Integrate::CuhreIntegrate( ndim, RCC_dev_Integrand, userdata, epsrel, epsabs,
-                              Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
-                              fail, integral, error, prob );
-  
-    integral /= PhysicalUnits::cm3;
-    error /= PhysicalUnits::cm3;
-    prob /= PhysicalUnits::cm3;
-  
-    printf("right-circular-cylinder dev:\n\tndim=%d CUHRE RESULT:\tnregions %d\tneval %d\tfail %d\n",
-           ndim, nregions, neval, fail);
-    printf("\tCUHRE RESULT:\t%.8f +- %.8f\tp = %.3f (all cm^3)\n", integral, error, prob);
-    printf("\n\n" );
-    
-    ndim = 3;
-    Integrate::CuhreIntegrate( ndim, RCC_dev_Integrand, userdata, epsrel, epsabs,
-                              Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
-                              fail, integral, error, prob );
-    
-    integral /= PhysicalUnits::cm3;
-    error /= PhysicalUnits::cm3;
-    prob /= PhysicalUnits::cm3;
-    printf("right-circular-cylinder dev:\n\tndim=%d CUHRE RESULT:\tnregions %d\tneval %d\tfail %d\n",
-           ndim, nregions, neval, fail);
-    printf("\tCUHRE RESULT:\t%.8f +- %.8f\tp = %.3f (all cm^3)\n", integral, error, prob);
-    printf("\n\n" );
-  }// begin right-circular-cylinder dev
   
   //cout << "Done in example_integration()" << endl;
   //return;
@@ -505,7 +425,7 @@ void example_integration()
     double integral, error, prob;
 
     ndim = 2;
-  Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand, userdata, epsrel, epsabs,
+  Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
                             Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
                             fail, integral, error, prob );
 
@@ -515,7 +435,7 @@ void example_integration()
   printf("\n\n" );
   
   ndim = 3;
-  Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand, userdata, epsrel, epsabs,
+  Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
                              Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
                             fail, integral, error, prob );
   
@@ -529,7 +449,7 @@ void example_integration()
   #define SEED 0
   #define NNEW 1000
   #define FLATNESS 25.
-    Suave(ndim, ncomp, DistributedSrcCalc_integrand, userdata,
+    Suave(ndim, ncomp, DistributedSrcCalc_integrand_spherical, userdata,
       epsrel, epsabs, verbose | last, SEED,
       mineval, maxeval, NNEW, FLATNESS,
       &nregions, &neval, &fail, integral, error, prob);
@@ -543,54 +463,62 @@ void example_integration()
 }//void example_integration()
   
 
-int DistributedSrcCalc_integrand( const int *ndim, const double xx[],
-                         const int *ncomp, double ff[], void *userdata )
+int DistributedSrcCalc_integrand_spherical( const int *ndim, const double xx[],
+                                           const int *ncomp, double ff[], void *userdata )
 {
   const DistributedSrcCalc * const objToIntegrate = (DistributedSrcCalc *)userdata;
   
   assert( objToIntegrate );
+  assert( objToIntegrate->m_geometry == GeometryType::Spherical );
   
-  try
-  {
-    switch( objToIntegrate->m_geometry )
-    {
-      case GeometryType::Spherical:
-        objToIntegrate->eval_spherical( xx, ndim, ff, ncomp );
-        break;
-        
-      case GeometryType::CylinderEndOn:
-        // For a single end-on cylinder we can use the ever-so-slightly faster function
-        //  to evaluate this (debug builds will validate gives same answer as
-        //  DistributedSrcCalc::eval_cylinder)
-        
-        if( objToIntegrate->m_dimensionsAndTransLenCoef.size() == 1 )
-          objToIntegrate->eval_single_cyl_end_on( xx, ndim, ff, ncomp );
-        else
-          objToIntegrate->eval_cylinder( xx, ndim, ff, ncomp );
-        break;
-        
-      case GeometryType::CylinderSideOn:
-        objToIntegrate->eval_cylinder( xx, ndim, ff, ncomp );
-        break;
-        
-      case GeometryType::Rectangular:
-        objToIntegrate->eval_rect( xx, ndim, ff, ncomp );
-        break;
-        
-      case GeometryType::NumGeometryType:
-        assert( 0 );
-        break;
-    }//switch( objToIntegrate->m_geometry )
-    
-    
-  }catch( std::exception e )
-  {
-    ff[0] = 0.0;
-    cerr << "Caught exception: " << e.what() << " setting evaluation to zero!" << endl;
-  }
-
+  objToIntegrate->eval_spherical( xx, ndim, ff, ncomp );
+  
   return 0;
-}//int DistributedSrcCalc_integrand(...)
+}//DistributedSrcCalc_integrand_spherical(...)
+
+
+int DistributedSrcCalc_integrand_cylindrical( const int *ndim, const double xx[],
+                                             const int *ncomp, double ff[], void *userdata )
+{
+  const DistributedSrcCalc * const objToIntegrate = (DistributedSrcCalc *)userdata;
+  
+  assert( objToIntegrate );
+  assert( (objToIntegrate->m_geometry == GeometryType::CylinderEndOn)
+          || (objToIntegrate->m_geometry == GeometryType::CylinderSideOn) );
+  
+  objToIntegrate->eval_cylinder( xx, ndim, ff, ncomp );
+  
+  return 0;
+}//DistributedSrcCalc_integrand_cylindrical(...)
+
+
+int DistributedSrcCalc_integrand_single_cyl_end_on( const int *ndim, const double xx[],
+                                                   const int *ncomp, double ff[], void *userdata )
+{
+  const DistributedSrcCalc * const objToIntegrate = (DistributedSrcCalc *)userdata;
+  
+  assert( objToIntegrate );
+  assert( objToIntegrate->m_geometry == GeometryType::CylinderEndOn );
+  assert( objToIntegrate->m_dimensionsAndTransLenCoef.size() == 1 );
+  
+  objToIntegrate->eval_single_cyl_end_on( xx, ndim, ff, ncomp );
+  
+  return 0;
+}//DistributedSrcCalc_integrand_single_cyl_end_on(...)
+
+
+int DistributedSrcCalc_integrand_rectangular( const int *ndim, const double xx[],
+                                          const int *ncomp, double ff[], void *userdata )
+{
+  const DistributedSrcCalc * const objToIntegrate = (DistributedSrcCalc *)userdata;
+  
+  assert( objToIntegrate );
+  assert( objToIntegrate->m_geometry == GeometryType::Rectangular );
+  
+  objToIntegrate->eval_rect( xx, ndim, ff, ncomp );
+  
+  return 0;
+}//DistributedSrcCalc_integrand_rectangular(...)
 
 
 
@@ -605,7 +533,7 @@ DistributedSrcCalc::DistributedSrcCalc()
   m_airTransLenCoef = 0.0;
   m_isInSituExponential = false;
   m_inSituRelaxationLength = 0.0;
-  nuclide = NULL;
+  m_nuclide = NULL;
 }//DistributedSrcCalc()
 
   
@@ -640,6 +568,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
                         double ff[], const int *ncompptr ) const
 {
   assert( m_geometry == GeometryType::Spherical );
+  assert( m_sourceIndex < m_dimensionsAndTransLenCoef.size() );
   
   const double pi = PhysicalUnits::pi;
 
@@ -743,6 +672,10 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
         ++start_index;
       
       //Some hopefully un-needed logic checks
+      assert( m_sourceIndex != 0 );
+      assert( start_index < m_sourceIndex );
+      assert( start_index < m_dimensionsAndTransLenCoef.size() );
+        
       if( start_index == m_dimensionsAndTransLenCoef.size() )
         throw runtime_error( "Logic error 1 in DistributedSrcCalc::eval(...)" );
       if( start_index >= m_sourceIndex )
@@ -812,7 +745,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
 
 
 void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *ndimptr,
-                                          double ff[], const int *ncompptr ) const
+                                          double ff[], const int *ncompptr ) const noexcept
 {
 #if( DEBUG_RAYTRACE_CALCS )
   std::lock_guard<std::recursive_mutex> scoped_lock( s_stdout_raytrace_mutex );
@@ -820,10 +753,10 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
 
   
   assert( m_geometry == GeometryType::CylinderEndOn );
-  
   assert( m_dimensionsAndTransLenCoef.size() == 1 );
-  if( m_dimensionsAndTransLenCoef.size() != 1 )
-    throw runtime_error( "eval_single_cyl_end_on only supports a single shielding" );
+  
+  //if( m_dimensionsAndTransLenCoef.size() != 1 )
+  //  throw runtime_error( "eval_single_cyl_end_on only supports a single shielding" );
   
   
   // This just integrates a right circular cylinder
@@ -1305,7 +1238,7 @@ double cylinder_line_intersection( const double radius, const double half_length
                               const double source[3],
                               const double detector[3],
                               const CylExitDir direction,
-                              double exit_point[3] )
+                              double exit_point[3] ) noexcept
 {
   // TODO: this function should be broken into two separate functions.  One to handle finding the exit
   //  point when you know the source is inside the volume.  And one to find both intersection points
@@ -1324,6 +1257,8 @@ double cylinder_line_intersection( const double radius, const double half_length
   
   assert( radius >= 0.0 );
   assert( half_length >= 0.0 );
+  assert( (direction == CylExitDir::TowardDetector)
+          || (direction == CylExitDir::AwayFromDetector) );
   
   // A convenience function for handling case where the line never enters our volume.
   auto handle_line_outside_volume = [&exit_point,&source]() -> double {
@@ -1453,7 +1388,7 @@ double cylinder_line_intersection( const double radius, const double half_length
     const double m = unit[1] / unit[0];
     assert( fabs( m - ((detector[1] - source[1]) / (detector[0] - source[0])) ) < std::max(1.0E-6,1.0E-6 * m) );
     const double c = source[1] - m*source[0];
-    double other_x_exit = std::numeric_limits<double>::quiet_NaN();
+    double other_x_exit;
     
     {// begin scope to solve for x of intersection
       const double a_q = 1 + m*m;
@@ -1485,7 +1420,6 @@ double cylinder_line_intersection( const double radius, const double half_length
       }//switch( direction )
     }// end scope to solve for x of intersection
     
-    assert( !IsNan(other_x_exit) );
     
     y_exit = m*x_exit + c;
     
@@ -1604,8 +1538,9 @@ double cylinder_line_intersection( const double radius, const double half_length
 
 
 void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
-                                           double ff[], const int *ncompptr ) const
+                                           double ff[], const int *ncompptr ) const noexcept
 {
+  assert( m_sourceIndex < m_dimensionsAndTransLenCoef.size() );
   assert( (m_geometry == GeometryType::CylinderSideOn)
           || (m_geometry == GeometryType::CylinderEndOn) );
   
@@ -1780,22 +1715,551 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   ff[0] = trans * dV;
 }//void eval_cylinder(...)
 
+#if( DEBUG_RAYTRACE_CALCS )
+void test_rectangular_intersections()
+{
+  bool intersected;
+  double half_width, half_height, half_depth, dist_in_shape;
+  double source[3], detector[3], exit_point[3], enter_point[3];
+  
+  /*
+  // First we'll test the simple case where we know the ray exits the volume on the plane at
+  //  +-half_depth on the z-axis
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = 0.0; detector[1] = 0.0; detector[2] = 10.0;
+  dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
+  assert( fabs(dist_in_shape - 1.0) < 1.0E-9*std::max(1.0,dist_in_shape) );
+  assert( fabs(exit_point[0] - 0.0) < 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
+  assert( fabs(exit_point[1] - 0.0) < 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
+  assert( fabs(exit_point[2] - half_depth) < 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  
+  
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = 1.0; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = 0.0; detector[1] = 0.0; detector[2] = 2.0;
+  dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
+  assert( fabs(dist_in_shape - sqrt(1.0*1.0 + 0.5*0.5)) < 1.0E-9*std::max(1.0,dist_in_shape) );
+  assert( fabs(exit_point[0] - 0.5) < 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
+  assert( fabs(exit_point[1] - 0.0) < 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
+  assert( fabs(exit_point[2] - half_depth) < 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  
+  
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = 0.5; source[1] = -0.5; source[2] = -1.0;
+  detector[0] = 0.0; detector[1] = 0.0; detector[2] = 3.0;
+  dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
+  assert( fabs(dist_in_shape - sqrt(0.25*0.25 + 0.25*0.25 + 2.0*2.0)) < 1.0E-9*std::max(1.0,dist_in_shape) );
+  assert( fabs(exit_point[0] - 0.25) < 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
+  assert( fabs(exit_point[1] - -0.25) < 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
+  assert( fabs(exit_point[2] - half_depth) < 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  
+  
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = 0.5; source[1] = -0.5; source[2] = -1.0;
+  detector[0] = 0.5; detector[1] = -0.5; detector[2] = 3.0;
+  dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
+  assert( fabs(dist_in_shape - 2) < 1.0E-9*std::max(1.0,dist_in_shape) );
+  assert( fabs(exit_point[0] - 0.5) < 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
+  assert( fabs(exit_point[1] - -0.5) < 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
+  assert( fabs(exit_point[2] - half_depth) < 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  
+  
+  
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = 0.5; detector[1] = -0.5; detector[2] = -2.0;
+  dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
+  assert( fabs(dist_in_shape - sqrt(0.25*0.25 + 0.25*0.25 + 1.0*1.0)) < 1.0E-9*std::max(1.0,dist_in_shape) );
+  assert( fabs(exit_point[0] - 0.25) < 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
+  assert( fabs(exit_point[1] - -0.25) < 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
+  assert( fabs(exit_point[2] - -half_depth) < 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  
+  
+  // Now test the other cases of the ray exiting the rectangle on an arbitrary face.
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = 2.0; detector[1] = 0.0; detector[2] = 0.0;
+  dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
+  assert( fabs(dist_in_shape - 1.0) < 1.0E-9*std::max(1.0,dist_in_shape) );
+  assert( fabs(exit_point[0] - 1.0) < 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
+  assert( fabs(exit_point[1] - 0.0) < 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
+  assert( fabs(exit_point[2] - 0.0) < 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  
+  
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = -2.0; detector[1] = 0.0; detector[2] = 0.0;
+  dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
+  assert( fabs(dist_in_shape - 1.0) < 1.0E-9*std::max(1.0,dist_in_shape) );
+  assert( fabs(exit_point[0] - -1.0) < 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
+  assert( fabs(exit_point[1] - 0.0) < 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
+  assert( fabs(exit_point[2] - 0.0) < 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  
+  
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = 0.0; detector[1] = 2.0; detector[2] = 0.0;
+  dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
+  assert( fabs(dist_in_shape - 1.0) < 1.0E-9*std::max(1.0,dist_in_shape) );
+  assert( fabs(exit_point[0] - 0.0) < 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
+  assert( fabs(exit_point[1] - 1.0) < 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
+  assert( fabs(exit_point[2] - 0.0) < 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = 0.0; detector[1] = -2.0; detector[2] = 0.0;
+  dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
+  assert( fabs(dist_in_shape - 1.0) < 1.0E-9*std::max(1.0,dist_in_shape) );
+  assert( fabs(exit_point[0] - 0.0) < 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
+  assert( fabs(exit_point[1] - -1.0) < 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
+  assert( fabs(exit_point[2] - 0.0) < 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  
+  
+  
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = -1.0; source[1] = 0.5; source[2] = -0.5;
+  detector[0] = 3.0; detector[1] = 0.0; detector[2] = 0.0;
+  dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
+  assert( fabs(dist_in_shape - sqrt(0.25*0.25 + 0.25*0.25 + 2.0*2.0)) < 1.0E-9*std::max(1.0,dist_in_shape) );
+  assert( fabs(exit_point[0] - half_width) < 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
+  assert( fabs(exit_point[1] - 0.25) < 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
+  assert( fabs(exit_point[2] - -0.25) < 1.0E-9*std::max(1.0,fabs(exit_point[2])) );
+  
+  
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = 1.0; source[1] = -1.0; source[2] = -1.0;
+  detector[0] = 0.0; detector[1] = 3.0; detector[2] = 0.0;
+  dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
+  assert( fabs(dist_in_shape - sqrt(0.5*0.5 + 0.5*0.5 + 2.0*2.0)) < 1.0E-9*std::max(1.0,dist_in_shape) );
+  assert( fabs(exit_point[0] - 0.5) < 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
+  assert( fabs(exit_point[1] - 1.0) < 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
+  assert( fabs(exit_point[2] - -0.5) < 1.0E-9*std::max(1.0,fabs(exit_point[2])) );
+  
+  
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = -0.5; source[1] = -0.5; source[2] = 0.5;
+  detector[0] = 2.5; detector[1] = 1.0; detector[2] = 1.0;
+  dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
+  assert( fabs(exit_point[0] - 1.0) < 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
+  assert( fabs(exit_point[1] - 0.25) < 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
+  assert( fabs(exit_point[2] - 0.75) < 1.0E-9*std::max(1.0,fabs(exit_point[2])) );
+  
+  // TODO: add more general direction test cases for rectangle_exit_location
+  
+  
+  //
+   */
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = -2.0; source[1] = 2.0; source[2] = 0.0;
+  detector[0] = 2.0; detector[1] = 2.0; detector[2] = 0.0;
+  intersected = rectangle_intersections( half_width, half_height, half_depth,
+                                        source, detector, enter_point, exit_point );
+  assert( !intersected );
+  
+  
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = -2.0; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = 2.0; detector[1] = 0.0; detector[2] = 0.0;
+  intersected = rectangle_intersections( half_width, half_height, half_depth,
+                                        source, detector, enter_point, exit_point );
+  assert( intersected );
+  assert( enter_point[0] == -1.0 );
+  assert( enter_point[1] == 0.0 );
+  assert( enter_point[2] == 0.0 );
+  assert( exit_point[0] == 1.0 );
+  assert( exit_point[1] == 0.0 );
+  assert( exit_point[2] == 0.0 );
+  
+  
+  
+  half_width = 1.0; half_height = 1.0; half_depth = 1.0;
+  source[0] = 0.0; source[1] = 0.0; source[2] = -2.0;
+  detector[0] = 0.0; detector[1] = 0.0; detector[2] = 2.0;
+  intersected = rectangle_intersections( half_width, half_height, half_depth,
+                                        source, detector, enter_point, exit_point );
+  assert( intersected );
+  assert( enter_point[0] == 0.0 );
+  assert( enter_point[1] == 0.0 );
+  assert( enter_point[2] == -1.0 );
+  assert( exit_point[0] == 0.0 );
+  assert( exit_point[1] == 0.0 );
+  assert( exit_point[2] == 1.0 );
+  
+  half_width = 10.0; half_height = 10.0; half_depth = 10.0;
+  source[0] = -10; source[1] = 0.0; source[2] = 0.0;
+  detector[0] = 0.0; detector[1] = 0.0; detector[2] = 250;
+  intersected = rectangle_intersections( half_width, half_height, half_depth,
+                                        source, detector, enter_point, exit_point );
+  assert( intersected );
+  //...
+  
+  // TODO Add more test cases here
+  
+  
+  {// Begin test integration over box
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    MaterialDB materialdb;
+    materialdb.parseGadrasMaterialFile( "../data/MaterialDataBase.txt", db, false );
+    const double energy = 185*PhysicalUnits::keV;
+    
+    //const Material *material = materialdb.material( "Uranium" );
+    const Material *material = materialdb.material( "void" );
+    assert( material );
+    
+    
+    DistributedSrcCalc calc;
+    calc.m_geometry = GeometryType::Rectangular;
+    calc.m_sourceIndex = 1;
+    calc.m_detectorRadius = 1.0*PhysicalUnits::cm;
+    calc.m_observationDist = 25*PhysicalUnits::cm;;
+    calc.m_attenuateForAir = false;
+    calc.m_airTransLenCoef = transmission_length_coefficient_air( energy );
+    calc.m_isInSituExponential = false;
+    calc.m_inSituRelaxationLength = 3*PhysicalUnits::cm;
+    calc.m_srcVolumetricActivity = 100*PhysicalUnits::bq/PhysicalUnits::cm3;
+    calc.m_energy = energy;
+    calc.m_nuclide = nullptr;
+    
+    double half_width = 1*PhysicalUnits::cm;
+    double half_height = 1*PhysicalUnits::cm;
+    double half_depth = 1*PhysicalUnits::cm;
+    double trans_coef = transmition_length_coefficient( material, energy );
+    calc.m_dimensionsAndTransLenCoef.push_back( {{half_width,half_height,half_depth},trans_coef} );
+    
+    half_width = 2*PhysicalUnits::cm;
+    half_height = 2*PhysicalUnits::cm;
+    half_depth = 2*PhysicalUnits::cm;
+    calc.m_dimensionsAndTransLenCoef.push_back( {{half_width,half_height,half_depth},trans_coef} );
+    
+    calc.integral = 0.0;
+    
+    void *userdata = (void *)&calc;
+    const double epsrel = 1e-4;  //the requested relative accuracy
+    const double epsabs = -1.0;//1e-12; //the requested absolute accuracy
+    const int mineval = 0; //the minimum number of integrand evaluations required.
+    const int maxeval = 5000000; //the (approximate) maximum number of integrand evaluations allowed.
+    
+    int ndim = 3;
+    int nregions, neval, fail;
+    double error, prob;
+    
+    Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_rectangular, userdata, epsrel, epsabs,
+                              Integrate::LastImportanceFcnt,
+                              mineval, maxeval, nregions, neval,
+                              fail, calc.integral, error, prob );
+    
+    printf("Rectangle CUHRE RESULT:\tnregions %d\tneval %d\tfail %d\n", nregions, neval, fail);
+    printf("CUHRE RESULT:\t%.8f +- %.8f\tp = %.3f\n", calc.integral, error, prob);
+    printf("\n\n" );
+  }// End test integration over box
+  
+  
+  
+  cout << "Done in test_rectangular_intersections() - no issues found." << endl;
+}//void test_rectangular_intersections()
+#endif //#if( DEBUG_RAYTRACE_CALCS )
+
+
+
+double rectangle_exit_location( const double half_width, const double half_height,
+                               const double half_depth,
+                               const double source[3],
+                               const double detector[3],
+                               double exit_point[3] ) noexcept
+{
+  assert( half_width > 0.0 );
+  assert( half_height > 0.0 );
+  assert( half_depth > 0.0 );
+  
+  assert( fabs(source[0]) <= (half_width + 1.0E-12) );
+  assert( fabs(source[1]) <= (half_height + 1.0E-12) );
+  assert( fabs(source[2]) <= (half_depth + 1.0E-12) );
+  
+  assert(fabs(detector[0]) > (half_width - 1.0E-12)
+         || fabs(detector[1]) > (half_height - 1.0E-12)
+         || fabs(detector[2]) > (half_depth - 1.0E-12) );
+  
+  assert( !((source[0] == detector[0])
+             && (source[1] == detector[1])
+             && (source[2] == detector[2])) );
+  
+#ifndef NDEBUG
+  // We only get here for debug builds - source and exit_point may be same array, so we'll make a
+  //  copy for development checks
+  const double src_copy[3] = { source[0], source[1], source[2] };
+#endif
+
+  
+  double norm[3] = { detector[0] - source[0], detector[1] - source[1], detector[2] - source[2] };
+  
+  // Currently (20211126) the detector will be [0.0,0.0,m_observationDist], so we know which face
+  //  of the detector the ray will exit, so we could first check for this case with this commented
+  //  out code, and then return an answer efficiently; need to benchmark before bothering to
+  //  uncomment this special case.
+  //if( (fabs(detector[0]) <= half_width) && (fabs(detector[1]) <= half_height) )
+  //{
+  //  const double z_frac_inside = fabs( (half_depth - source[2]) / (detector[2] - source[2]) );
+  //  exit_point[0] = source[0] + z_frac_inside * norm[0];
+  //  exit_point[1] = source[1] + z_frac_inside * norm[1];
+  //  exit_point[2] = ((detector[2] > 0.0) ? half_depth : -half_depth); //std::copysign(half_depth,detector[2]);
+  //
+  //  return distance( source, exit_point );
+  //}//if( we know ray is exiting the face on positive/negative z )
+  
+  
+  const double total_dist = sqrt( norm[0]*norm[0] + norm[1]*norm[1] + norm[2]*norm[2] );
+  norm[0] /= total_dist;
+  norm[1] /= total_dist;
+  norm[2] /= total_dist;
+  
+  // We'll find the intersection of all the possible planes, and then choose the one that
+  //  is the closest to source
+  // Recall equation of a line in three-space is:
+  //   x = x_0 + t*a --> source[0] + (t * norm[0])
+  //   y = z_0 + t*b --> source[1] + (t * norm[1])
+  //   z = z_0 + t*c --> source[2] + (t * norm[2])
+  
+  const double inv_slope_x = (norm[0] == 0.0) ? DBL_MAX : (1.0 / norm[0]);
+  const double x_intersect = (inv_slope_x >= 0.0) ? half_width : -half_width;
+  const double t_intersect_x = (x_intersect - source[0])*inv_slope_x;
+  
+  const double inv_slope_y = (norm[1] == 0.0) ? DBL_MAX : (1.0 / norm[1]);
+  const double y_intersect = (inv_slope_y >= 0.0) ? half_height : -half_height;
+  const double t_intersect_y = (y_intersect - source[1])*inv_slope_y;
+  
+  const double inv_slope_z = (norm[2] == 0.0) ? DBL_MAX : (1.0 / norm[2]);
+  const double z_intersect = (inv_slope_z >= 0.0) ? half_depth : -half_depth;
+  const double t_intersect_z = (z_intersect - source[2])*inv_slope_z;
+  
+  if( (t_intersect_x <= t_intersect_y) && (t_intersect_x <= t_intersect_z) )
+  {
+    // We are exiting through the plane perpendicular to x-axis
+    exit_point[0] = ((norm[0] >= 0.0) ? half_width : -half_width);
+    exit_point[1] = source[1] + (t_intersect_x * norm[1]);
+    exit_point[2] = source[2] + (t_intersect_x * norm[2]);
+    
+    assert( fabs( fabs((src_copy[0] + (t_intersect_x * norm[0]))) - half_width ) < half_width*1.0E-9 );
+    assert( fabs(t_intersect_x - distance(src_copy, exit_point)) < 1.0E-9*std::max(1.0,t_intersect_x) );
+    
+    return t_intersect_x;
+  }else if( t_intersect_y <= t_intersect_z )
+  {
+    // We are exiting through the plane perpendicular to y-axis
+    exit_point[0] = source[0] + (t_intersect_y * norm[0]);
+    exit_point[1] = ((norm[1] >= 0.0) ? half_height : -half_height);
+    exit_point[2] = source[2] + (t_intersect_y * norm[2]);
+    
+    assert( fabs( fabs((src_copy[1] + (t_intersect_y * norm[1]))) - half_height ) < half_height*1.0E-9 );
+    assert( fabs(t_intersect_y - distance(src_copy, exit_point)) < 1.0E-9*std::max(1.0,t_intersect_y) );
+    
+    return t_intersect_y;
+  }else
+  {
+    // We are exiting through the plane perpendicular to z-axis
+    
+    exit_point[0] = source[0] + (t_intersect_z * norm[0]);
+    exit_point[1] = source[1] + (t_intersect_z * norm[1]);
+    exit_point[2] = ((norm[2] >= 0.0) ? half_depth : -half_depth);
+    
+    assert( fabs( fabs((src_copy[2] + (t_intersect_z * norm[2]))) - half_depth ) < half_depth*1.0E-9 );
+    assert( (fabs(t_intersect_z - distance(src_copy, exit_point)) < 1.0E-9*std::max(1.0,t_intersect_z)) );
+    
+    return t_intersect_z;
+  }// if / else figure out where we are exiting.
+  
+  assert( 0 );
+  
+  return 0.0;
+}//rectangle_exit_location(...)
+
+
+
+bool rectangle_intersections( const double half_width, const double half_height,
+                             const double half_depth,
+                             const double source[3],
+                             const double detector[3],
+                             double enter_point[3],
+                             double exit_point[3] ) noexcept
+{
+  // Only checking inputs sanity on debug builds since this is a hot-path function, and is only
+  //  called from one spot, so it should be good to only check inputs on development builds.
+  
+  // Make sure we arent passing garbage dimensions in ever
+  assert( (half_width > 0.0) && (half_height > 0.0) && (half_depth > 0.0) );
+  
+  // Dev test that both the source and detector points are outside of the box; only checking on
+  //  debug builds because this should really be the case
+  assert( (fabs(source[0]) >= (half_width - 1.0E-12))
+          || (fabs(source[1]) >= (half_height - 1.0E-12))
+          || (fabs(source[2]) >= (half_depth - 1.0E-12)) );
+  assert( (fabs(detector[0]) >= (half_width - 1.0E-12))
+         || (fabs(detector[1]) >= (half_height - 1.0E-12))
+         || (fabs(detector[2]) >= (half_depth - 1.0E-12)) );
+  
+  // Make sure detector and source arent in same position.
+  assert( (detector[0] != source[0])
+         || (detector[1] != source[1])
+         || (detector[2] != source[2]) );
+  
+  // See notes in #rectangle_exit_location about
+  
+  double norm[3] = { detector[0] - source[0], detector[1] - source[1], detector[2] - source[2] };
+  const double total_dist = sqrt( norm[0]*norm[0] + norm[1]*norm[1] + norm[2]*norm[2] );
+  norm[0] /= total_dist;
+  norm[1] /= total_dist;
+  norm[2] /= total_dist;
+  
+  const double inv_slope_x = (norm[0] == 0.0) ? DBL_MAX : (1.0 / norm[0]);
+  const double x_intersect = (inv_slope_x >= 0.0) ? half_width : -half_width;
+  const double t_intersect_x_det = (x_intersect - source[0])*inv_slope_x;
+  const double t_intersect_x_src = (-x_intersect - source[0])*inv_slope_x;
+  
+  
+  const double inv_slope_y = (norm[1] == 0.0) ? DBL_MAX : (1.0 / norm[1]);
+  const double y_intersect = (inv_slope_y >= 0.0) ? half_height : -half_height;
+  const double t_intersect_y_det = (y_intersect - source[1])*inv_slope_y;
+  const double t_intersect_y_src = (-y_intersect - source[1])*inv_slope_y;
+  
+  const double inv_slope_z = (norm[2] == 0.0) ? DBL_MAX : (1.0 / norm[2]);
+  const double z_intersect = (inv_slope_z >= 0.0) ? half_depth : -half_depth;
+  const double t_intersect_z_det = (z_intersect - source[2])*inv_slope_z;
+  const double t_intersect_z_src = (-z_intersect - source[2])*inv_slope_z;
+  
+  const bool intersects_x_src = (t_intersect_x_src >= 0.0);
+  const bool intersects_y_src = (t_intersect_y_src >= 0.0);
+  const bool intersects_z_src = (t_intersect_z_src >= 0.0);
+  
+  const bool x_before_y_src = (!intersects_y_src || (t_intersect_x_src <= t_intersect_y_src));
+  const bool x_before_z_src = (!intersects_y_src || (t_intersect_x_src <= t_intersect_z_src));
+  const bool y_before_z_src = (!intersects_z_src || (t_intersect_y_src <= t_intersect_z_src));
+  
+  if( intersects_x_src && x_before_y_src && x_before_z_src )
+  {
+    // We are exiting through the plane perpendicular to x-axis
+    const double src_intersect_x = ((norm[0] >= 0.0) ? -half_width : half_width);
+    const double src_intersect_y = source[1] + (t_intersect_x_src * norm[1]);
+    const double src_intersect_z = source[2] + (t_intersect_x_src * norm[2]);
+      
+    if( (fabs(src_intersect_y) > half_height)
+       || (fabs(src_intersect_z) > half_depth) )
+    {
+      assert( std::min(std::min(t_intersect_x_src,t_intersect_y_src),t_intersect_z_src)
+             <= (std::min(std::min(t_intersect_x_det,t_intersect_y_det),t_intersect_z_det)+1.0E-9) );
+      return false;
+    }
+    
+    enter_point[0] = src_intersect_x;
+    enter_point[1] = src_intersect_y;
+    enter_point[2] = src_intersect_z;
+    
+    assert( fabs( fabs((source[0] + (t_intersect_x_src * norm[0]))) - half_width ) < half_width*1.0E-9 );
+  }else if( intersects_y_src && y_before_z_src )
+  {
+    // We are exiting through the plane perpendicular to y-axis
+    const double src_intersect_x = source[0] + (t_intersect_y_src * norm[0]);
+    const double src_intersect_y = ((norm[1] >= 0.0) ? -half_height : half_height);
+    const double src_intersect_z = source[2] + (t_intersect_y_src * norm[2]);
+    
+    if( (fabs(src_intersect_x) > half_width)
+       || (fabs(src_intersect_z) > half_depth) )
+    {
+      assert( std::min(std::min(t_intersect_x_src,t_intersect_y_src),t_intersect_z_src)
+             <= (std::min(std::min(t_intersect_x_det,t_intersect_y_det),t_intersect_z_det)+1.0E-9) );
+      return false;
+    }
+    
+    enter_point[0] = src_intersect_x;
+    enter_point[1] = src_intersect_y;
+    enter_point[2] = src_intersect_z;
+    
+    assert( fabs( fabs((source[1] + (t_intersect_y_src * norm[1]))) - half_height ) < half_height*1.0E-9 );
+  }else if( intersects_z_src )
+  {
+    // We are exiting through the plane perpendicular to z-axis
+    const double src_intersect_x = source[0] + (t_intersect_z_src * norm[0]);
+    const double src_intersect_y = source[1] + (t_intersect_z_src * norm[1]);
+    const double src_intersect_z = ((norm[2] >= 0.0) ? -half_depth : half_depth);
+    
+    if( (fabs(src_intersect_x) > half_width)
+       || (fabs(src_intersect_y) > half_height) )
+    {
+      assert( std::min(std::min(t_intersect_x_src,t_intersect_y_src),t_intersect_z_src)
+             <= (std::min(std::min(t_intersect_x_det,t_intersect_y_det),t_intersect_z_det)+1.0E-9) );
+      return false;
+    }
+    
+    enter_point[0] = src_intersect_x;
+    enter_point[1] = src_intersect_y;
+    enter_point[2] = src_intersect_z;
+    
+    assert( fabs( fabs((source[2] + (t_intersect_z_src * norm[2]))) - half_depth ) < half_depth*1.0E-9 );
+  }else
+  {
+    return false;
+  }// if / else figure out where we are exiting.
+  
+  const bool intersects_x_det = (t_intersect_x_det >= 0.0);
+  const bool intersects_y_det = (t_intersect_y_det >= 0.0);
+  const bool intersects_z_det = (t_intersect_z_det >= 0.0);
+  
+  const bool x_before_y_det = (!intersects_y_det || (t_intersect_x_det <= t_intersect_y_det));
+  const bool x_before_z_det = (!intersects_z_det || (t_intersect_x_det <= t_intersect_z_det));
+  const bool y_before_z_det = (!intersects_z_det || (t_intersect_y_det <= t_intersect_z_det));
+  
+  
+  
+  if( intersects_x_det && x_before_y_det && x_before_z_det )
+  {
+    // We are exiting through the plane perpendicular to x-axis
+    exit_point[0] = ((norm[0] >= 0.0) ? half_width : -half_width);
+    exit_point[1] = source[1] + (t_intersect_x_det * norm[1]);
+    exit_point[2] = source[2] + (t_intersect_x_det * norm[2]);
+    
+    assert( fabs( fabs((source[0] + (t_intersect_x_det * norm[0]))) - half_width ) < half_width*1.0E-9 );
+  }else if( intersects_y_det && y_before_z_det )
+  {
+    // We are exiting through the plane perpendicular to y-axis
+    exit_point[0] = source[0] + (t_intersect_y_det * norm[0]);
+    exit_point[1] = ((norm[1] >= 0.0) ? half_height : -half_height);
+    exit_point[2] = source[2] + (t_intersect_y_det * norm[2]);
+    
+    assert( fabs( fabs((source[1] + (t_intersect_y_det * norm[1]))) - half_height ) < half_height*1.0E-9 );
+  }else if( intersects_z_det )
+  {
+    // We are exiting through the plane perpendicular to z-axis
+    exit_point[0] = source[0] + (t_intersect_z_det * norm[0]);
+    exit_point[1] = source[1] + (t_intersect_z_det * norm[1]);
+    exit_point[2] = ((norm[2] >= 0.0) ? half_depth : -half_depth);
+    
+    assert( fabs( fabs((source[2] + (t_intersect_z_det * norm[2]))) - half_depth ) < half_depth*1.0E-9 );
+  }else
+  {
+    assert( 0 );
+  }// if / else figure out where we are exiting.
+  
+
+  assert( fabs(enter_point[0]) <= (half_width + 1.0E-9) );
+  assert( fabs(enter_point[1]) <= (half_height + 1.0E-9) );
+  assert( fabs(enter_point[2]) <= (half_depth + 1.0E-9) );
+  
+  assert( fabs(exit_point[0]) <= (half_width + 1.0E-9) );
+  assert( fabs(exit_point[1]) <= (half_height + 1.0E-9) );
+  assert( fabs(exit_point[2]) <= (half_depth + 1.0E-9) );
+  
+  return true;
+}//rectangle_intersections( ... )
+
+
 
 void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
-               double ff[], const int *ncompptr ) const
+               double ff[], const int *ncompptr ) const noexcept
 {
   assert( m_geometry == GeometryType::Rectangular );
+  assert( m_sourceIndex < m_dimensionsAndTransLenCoef.size() );
   
-  assert( m_sourceIndex == 0 );
-  if( m_sourceIndex != 0 )
-    throw runtime_error( "eval_rect currently only supports sources in inner most shielding" );
-  
-  // This just integrates a right circular cylinder
   const int ndim = (ndimptr ? (*ndimptr) : 2);
   assert( ndim == 3 );
-  
-  assert( m_sourceIndex == 0 );
-  //assert( m_dimensionsAndTransLenCoef.size() == 1 );
   
   const std::array<double,3> &dimensions = m_dimensionsAndTransLenCoef[m_sourceIndex].first;
   const double half_width  = dimensions[0];
@@ -1804,64 +2268,75 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
   
   const double trans_len_coef = m_dimensionsAndTransLenCoef[m_sourceIndex].second;
   
-  // Translate the [0,1.0] coordinates from Cuba, to the world coordinates we are integrating over
+  // Translate the [0,1.0] coordinates from Cuba, to the world coordinates we are integrating over.
+  //  (note: we would get the same answer if we integrated over just half the width/height, but it
+  //   also ends up taking same amount of evaluations, so we will leave fully integrating over
+  //   each dimensions, to not cause problems in the future if we add offsets or whatever)
   const double eval_x = (xx[0] - 0.5) * 2.0 * half_width;
   const double eval_y = (xx[1] - 0.5) * 2.0 * half_height;
   const double eval_z = (xx[2] - 0.5) * 2.0 * half_depth;
 
+  
+  // Check to see if [eval_x,eval_y,eval_z] is inside an inner volume, and if so set value to zero
+  //  and return
+  if( m_sourceIndex > 0 )
+  {
+    const array<double,3> &dims = m_dimensionsAndTransLenCoef[m_sourceIndex-1].first;
+    if( (fabs(eval_x) < dims[0]) && (fabs(eval_y) < dims[1]) && (fabs(eval_z) < dims[2]) )
+    {
+      ff[0] = 0.0;
+      return;
+    }
+  }//if( m_sourceIndex > 0 )
+  
+  
   const double dV = 8.0 * half_width * half_height * half_depth;
   
-  const double eval_z_dist_to_det = m_observationDist - eval_z;
+  const double eval_loc[3] = { eval_x, eval_y, eval_z };
+  const double detector_loc[3] = { 0.0, 0.0, m_observationDist };
+
+  double exit_point[3];
+  double dist_in_src = rectangle_exit_location( half_width, half_height, half_depth,
+                                               eval_loc, detector_loc, exit_point );
   
-  //const double eval_point[3] = { r * cos(theta), r * sin(theta), z };
   double trans = 0.0;
-  double dist_in_src = 0.0;
-  double exit_radius_xy = 0.0; // radius from z-axis where ray exits from material
   
-  {//begin code-block to compute distance through source
-    const double r_xy = sqrt( eval_x*eval_x + eval_y*eval_y );  //radius in x-y plane
-    const double z_dist_in_src = half_depth - eval_z;
-    const double r_xy_dist_in_src = r_xy * z_dist_in_src / eval_z_dist_to_det;
-    exit_radius_xy = r_xy - r_xy_dist_in_src;
-    
-    dist_in_src = sqrt(z_dist_in_src*z_dist_in_src + r_xy_dist_in_src*r_xy_dist_in_src);
-  }//end codeblock to compute distance through source
-  
-  
-  // Do transport through inner shieldings, and also subtract off that distance through source
-  //  cylinder
+  // Do transport through inner shielding's, and also subtract off that distance through source
+  //  Note: integrating over a 4cmx4cmx4cm void takes 381 evaluations; making the inner 2x2x2cm
+  //        portion an inner void, and integrating over the outer cube (with outer dimensions still
+  //        4x4x4cm, but just the inner 2x2x2cm removed) takes 11049 evaluations - 30 times longer!
+  double inner_rect_dist = 0.0;
   for( size_t i = 0; i < m_sourceIndex; ++i )
   {
-    // blah blah blah
+    const std::array<double,3> &dims = m_dimensionsAndTransLenCoef[i].first;
+    const double trans_len_coef_shield = m_dimensionsAndTransLenCoef[i].second;
     
-    if( (i + 1) == m_sourceIndex )
+    double enter_loc[3], exit_loc[3];
+    const bool intersects = rectangle_intersections( dims[0], dims[1], dims[2],
+                                                    eval_loc, detector_loc, enter_loc, exit_loc );
+    
+    if( intersects )
     {
-      // blah blah blah subtract off distance traveled through inner cylinder
-    }
+      const double dist = distance( enter_loc, exit_loc );
+      trans += (trans_len_coef_shield * (dist - inner_rect_dist));
+      inner_rect_dist = dist;
+    }//if( intersects )
   }//for( size_t i = 0; i < m_sourceIndex; ++i )
   
-  trans += (trans_len_coef * dist_in_src);
+  
+  trans += (trans_len_coef * (dist_in_src - inner_rect_dist));
   
   
-  // Lets account for additional external shieldings
-  double current_depth = half_depth;
+  // Account for additional external shielding's
   for( size_t i = m_sourceIndex + 1; i < m_dimensionsAndTransLenCoef.size(); ++i )
   {
     const std::array<double,3> &outer_dims = m_dimensionsAndTransLenCoef[i].first;
     const double trans_len_coef_shield = m_dimensionsAndTransLenCoef[i].second;
-    
-    const double outer_depth = outer_dims[2];
-    const double thickness = current_depth - outer_depth;
-    
-    const double r_xy = sqrt( eval_x*eval_x + eval_y*eval_y );  //radius in x-y plane
-    const double r_xy_dist_in_shield = r_xy * thickness / eval_z_dist_to_det;
-    exit_radius_xy = r_xy * (1.0 - (outer_depth / eval_z_dist_to_det));
-    
-    const double dist_in_shield = sqrt(thickness*thickness + r_xy_dist_in_shield*r_xy_dist_in_shield);
+  
+    const double dist_in_shield = rectangle_exit_location( outer_dims[0], outer_dims[1],
+                                            outer_dims[2], exit_point, detector_loc, exit_point );
     
     trans += (trans_len_coef_shield * dist_in_shield);
-    
-    current_depth = outer_depth;
   }//for( loop over outer shieldings )
   
   
@@ -1869,10 +2344,7 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
   
   if( m_attenuateForAir )
   {
-    const double dz = m_observationDist - current_depth;
-    
-    const double air_dist = sqrt( exit_radius_xy*exit_radius_xy + dz*dz );
-    
+    const double air_dist = distance( exit_point, detector_loc ); 
     trans *= exp( -m_airTransLenCoef * air_dist );
   }//if( m_attenuateForAir )
   
@@ -1883,8 +2355,7 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
     trans *= exp( -(half_depth - eval_z) / m_inSituRelaxationLength );
   }
   
-  
-  const double eval_dist_to_det = sqrt( eval_x*eval_x + eval_y*eval_y + eval_z_dist_to_det*eval_z_dist_to_det );
+  const double eval_dist_to_det = distance(eval_loc, detector_loc);
   trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det );
   
   ff[0] = trans * dV;
@@ -1925,7 +2396,7 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
                                  const bool allowMultipleNucsContribToPeaks,
                                  const bool attenuateForAir )
   : ROOT::Minuit2::FCNBase(),
-    m_cancel( 0 ),
+    m_cancel( CalcStatus::NotCanceled ),
     m_isFitting( false ),
     m_distance( distance ),
     m_liveTime( liveTime ),
@@ -2032,7 +2503,7 @@ const GeometryType ShieldingSourceChi2Fcn::geometry() const
 
 void ShieldingSourceChi2Fcn::cancelFit()
 {
-  m_cancel = 1;
+  m_cancel = CalcStatus::UserCanceled;
 }
 
 
@@ -2047,7 +2518,7 @@ void ShieldingSourceChi2Fcn::zombieCallback( const boost::system::error_code &ec
   if( ec )  //timer was cancelled
     return;
   
-  m_cancel = 2;
+  m_cancel = CalcStatus::Timeout;
 
   cerr << "In Zombie callback!" << endl;
 }//void zombieCallback( const boost::system::error_code &ec )
@@ -3177,11 +3648,7 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
                          " squared value calculated is " + std::to_string(activityUncertSquared) );
   
   const double normalCalcAct = ShieldingSourceChi2Fcn::totalActivity( nuclide, params );
-  if( fabs(normalCalcAct - activity) >= 0.001*std::max(normalCalcAct,activity) )
-  {
-    cerr << "\n\nCaught incorrect calculation of nuclide activity - disabling assert for development - need to re-enable\n\n" << endl;
-    assert( fabs(normalCalcAct - activity) < 0.001*std::max(normalCalcAct,activity) );
-  }
+  assert( fabs(normalCalcAct - activity) < 0.001*std::max(normalCalcAct,activity) );
   
   return sqrt( activityUncertSquared );
 }//double activityUncertainty(...)
@@ -3346,8 +3813,8 @@ const std::vector<PeakDef> &ShieldingSourceChi2Fcn::peaks() const
 }
 
 
-ShieldingSourceChi2Fcn::CancelException::CancelException( const std::string &msg, const int cancel_code )
- : std::runtime_error( msg ),
+ShieldingSourceChi2Fcn::CancelException::CancelException( const ShieldingSourceChi2Fcn::CalcStatus cancel_code )
+ : std::exception(),
   m_code( cancel_code )
 {
 }
@@ -3355,13 +3822,19 @@ ShieldingSourceChi2Fcn::CancelException::CancelException( const std::string &msg
 
 double ShieldingSourceChi2Fcn::DoEval( const std::vector<double> &x ) const
 {
-  const int cancelCode = m_cancel.load();
+  const CalcStatus cancelCode = m_cancel.load();
   switch( cancelCode )
   {
-    case 0:  break;
-    case 1:  throw CancelException( "User cancelled", cancelCode );            break;
-    case 2:  throw CancelException( "Calculation took to long.", cancelCode ); break;
-    default: throw CancelException( "Other evaluation error, code " + std::to_string(cancelCode), cancelCode );
+    case ShieldingSourceChi2Fcn::CalcStatus::NotCanceled:
+      // Keep going
+      break;
+      
+    case ShieldingSourceChi2Fcn::CalcStatus::UserCanceled:
+      throw CancelException( cancelCode );
+      break;
+      
+    case ShieldingSourceChi2Fcn::CalcStatus::Timeout:
+      throw CancelException( cancelCode );
       break;
   }//switch( m_cancel.load() )
 
@@ -3715,6 +4188,14 @@ void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calcu
   assert( (ndim == 2) || (ndim == 3) );
   
   void *userdata = (void *)&calculator;
+  
+  /** For an example problem, found setting the requested relative accuracy to larger values did decrease number of evaluations, but
+   only ~30% less for a relative accuracy of 100 times less than our nominal
+         epsrel {1e-6, 1e-5, 1e-4,1e-3, 1e-2},
+         neval { 2413, 2413, 2159, 1905, 1397}
+  
+   TODO: maybe it makes sense to lower relative accuracy when the current Chi2 is pretty bad.
+   */
   const double epsrel = 1e-4;  //the requested relative accuracy
   const double epsabs = -1.0;//1e-12; //the requested absolute accuracy
   //const int verbose = 0;
@@ -3727,10 +4208,92 @@ void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calcu
 
   calculator.integral = 0.0;
 
-  Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand, userdata, epsrel, epsabs,
-                             Integrate::LastImportanceFcnt,
-                             mineval, maxeval, nregions, neval,
-                             fail, calculator.integral, error, prob );
+  try
+  {
+    // For the moment, we know cylinders and rectange wont throw exception.
+    // TODO: need to make it so DistributedSrcCalc::eval_spherical doesnt ever throw exception
+    
+    switch( calculator.m_geometry )
+    {
+      case GeometryType::Spherical:
+        Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
+                                  Integrate::LastImportanceFcnt,
+                                  mineval, maxeval, nregions, neval,
+                                  fail, calculator.integral, error, prob );
+        break;
+        
+      case GeometryType::CylinderEndOn:
+        if( calculator.m_dimensionsAndTransLenCoef.size() == 1 )
+        {
+          // For a single end-on cylinder we can use the ever-so-slightly faster function
+          //  to evaluate this (debug builds will validate gives same answer as
+          //  DistributedSrcCalc::eval_cylinder)
+          
+          Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_single_cyl_end_on, userdata, epsrel, epsabs,
+                                    Integrate::LastImportanceFcnt,
+                                    mineval, maxeval, nregions, neval,
+                                    fail, calculator.integral, error, prob );
+        }else
+        {
+          Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_cylindrical, userdata, epsrel, epsabs,
+                                    Integrate::LastImportanceFcnt,
+                                    mineval, maxeval, nregions, neval,
+                                    fail, calculator.integral, error, prob );
+        }
+        break;
+        
+      case GeometryType::CylinderSideOn:
+        Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_cylindrical, userdata, epsrel, epsabs,
+                                  Integrate::LastImportanceFcnt,
+                                  mineval, maxeval, nregions, neval,
+                                  fail, calculator.integral, error, prob );
+        break;
+        
+      case GeometryType::Rectangular:
+        Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_rectangular, userdata, epsrel, epsabs,
+                                  Integrate::LastImportanceFcnt,
+                                  mineval, maxeval, nregions, neval,
+                                  fail, calculator.integral, error, prob );
+        break;
+        
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( objToIntegrate->m_geometry )
+  }catch( std::exception &e )
+  {
+#if( PERFORM_DEVELOPER_CHECKS )
+    stringstream msg;
+    msg << "Integration failed after " << neval
+    << " evaluations got integral " << calculator.integral
+    << "\n\t calculator.energy: " << calculator.m_energy
+    << "\n\t m_srcVolumetricActivity: " << calculator.m_srcVolumetricActivity
+    << "\n\t m_geometry: " << to_str(calculator.m_geometry)
+    << "\n\t m_sourceIndex: " << calculator.m_sourceIndex
+    << "\n\t m_detectorRadius: " << calculator.m_detectorRadius
+    << "\n\t m_observationDist: " << calculator.m_observationDist
+    << "\n\t m_attenuateForAir: " << calculator.m_attenuateForAir
+    << "\n\t m_airTransLenCoef: " << calculator.m_airTransLenCoef
+    << "\n\t m_isInSituExponential: " << calculator.m_isInSituExponential
+    << "\n\t m_inSituRelaxationLength: " << calculator.m_inSituRelaxationLength
+    << "\n\t m_dimensionsAndTransLenCoef: {";
+    for( const auto &i : calculator.m_dimensionsAndTransLenCoef )
+      msg << "{[" << i.first[0] << "," << i.first[1] << "," << i.first[2] << "]," << i.second << "}, ";
+    
+    msg << "}"
+    << "\n\t nuclide: " << (calculator.m_nuclide ? calculator.m_nuclide->symbol : string())
+    << "\n\t exception: '" << e.what() << "'"
+    << endl;
+      
+    log_developer_error( __func__, msg.str().c_str() );
+    cerr << __func__ << msg.str() << endl;
+#endif
+    
+    cerr << "Integration failed: " << e.what() << endl;
+    calculator.integral = 0.0;
+  }//try / catch
+  
+
   
   //should check for fails and stuff all over here
   
@@ -3739,7 +4302,7 @@ void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calcu
   std::lock_guard<std::mutex> scoped_lock( m );
   cerr << "After " << neval << " evaluations got integral " << calculator.integral
        << endl << "\t calculator.energy=" << calculator.energy
-       << " calculator.srcVolumetricActivity=" << calculator.srcVolumetricActivity
+       << " calculator.m_srcVolumetricActivity=" << calculator.m_srcVolumetricActivity
        << ", rad=" << calculator.m_dimensionsAndTransLenCoef[0].first[0]
        << ", transCoef=" << calculator.m_sphereRadAndTransLenCoef[0].second
        << endl;
@@ -4324,9 +4887,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       {
         DistributedSrcCalc calculator = baseCalculator;
 
-        calculator.nuclide = src;
-        calculator.energy = energy_count.first;
-        calculator.srcVolumetricActivity = energy_count.second;
+        calculator.m_nuclide = src;
+        calculator.m_energy = energy_count.first;
+        calculator.m_srcVolumetricActivity = energy_count.second;
         
         if( m_attenuateForAir )
           calculator.m_airTransLenCoef = transmission_length_coefficient_air( energy_count.first );
@@ -4403,7 +4966,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
           if( pastDetector )
             throw runtime_error( "energy_chi_contributions: radius > distance" );
           
-          const double transLenCoef = transmition_length_coefficient( material, calculator.energy );
+          const double transLenCoef = transmition_length_coefficient( material, calculator.m_energy );
 
           calculator.m_dimensionsAndTransLenCoef.push_back( {{outer_dims[0],outer_dims[1],outer_dims[2]},transLenCoef} );
         }//for( int subMat = 0; subMat < nMaterials; ++subMat )
@@ -4456,25 +5019,25 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     
     for( const DistributedSrcCalc &calculator : calculators )
     {
-      double contrib = calculator.integral * calculator.srcVolumetricActivity;
+      double contrib = calculator.integral * calculator.m_srcVolumetricActivity;
 
       
       if( m_detector && m_detector->isValid() )
-        contrib *= m_detector->intrinsicEfficiency( calculator.energy );
+        contrib *= m_detector->intrinsicEfficiency( calculator.m_energy );
 
-      if( energy_count_map.find( calculator.energy ) != energy_count_map.end() )
+      if( energy_count_map.find( calculator.m_energy ) != energy_count_map.end() )
       {
-//        cerr << "Adding " << contrib << " to energy " << calculator.energy
+//        cerr << "Adding " << contrib << " to energy " << calculator.m_energy
 //             << ", calculator.integral=" << calculator.integral
-//             << ", calculator.srcVolumetricActivity=" << calculator.srcVolumetricActivity
+//             << ", calculator.m_srcVolumetricActivity=" << calculator.m_srcVolumetricActivity
 //             << endl;
-        energy_count_map[calculator.energy] += contrib;
+        energy_count_map[calculator.m_energy] += contrib;
       }else
       {
 //        cerr << "Setting " << contrib*m_liveTime << " counts to energy " << calculator.energy
 //             << " for thickness=" << calculator.m_dimensionsAndTransLenCoef[calculator.m_sourceIndex].first[0] / PhysicalUnits::cm
 //             << " cm" << endl;
-        energy_count_map[calculator.energy] = contrib;
+        energy_count_map[calculator.m_energy] = contrib;
       }
       
       if( info )
@@ -4484,9 +5047,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         
         stringstream msg;
         msg << "\tAttributing " << contrib*PhysicalUnits::second << " cps to "
-            << calculator.energy/PhysicalUnits::keV << " keV photopeak ";
-        if( calculator.nuclide )
-          msg << "(from " << calculator.nuclide->symbol << ") ";
+            << calculator.m_energy/PhysicalUnits::keV << " keV photopeak ";
+        if( calculator.m_nuclide )
+          msg << "(from " << calculator.m_nuclide->symbol << ") ";
         
         msg << "for thicknesses {";
         double dx = calculator.m_dimensionsAndTransLenCoef[index].first[0];

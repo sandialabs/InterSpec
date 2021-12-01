@@ -118,12 +118,38 @@ void example_integration();
 #define DEBUG_RAYTRACE_CALCS 0
 
 #if( DEBUG_RAYTRACE_CALCS )
-/** Runs some simple test cases for #cylinder_line_intersection, and cause assert(0) on error. */
+/** Runs some test cases for #cylinder_line_intersection, and cause assert(0) on error. */
 void test_cylinder_line_intersection();
+
+/** Run some test cases for rectangular geometry intersection/exit functions; causes assert(0) or error. */
+void test_rectangular_intersections();
 #endif
 
-int DistributedSrcCalc_integrand( const int *ndim, const double xx[],
+/** Integrand for Cuba library; just calls #DistributedSrcCalc::eval_spherical .
+ @param userdata must be pointer to a DistributedSrcCalc object.
+ */
+int DistributedSrcCalc_integrand_spherical( const int *ndim, const double xx[],
                          const int *ncomp, double ff[], void *userdata );
+
+/** Integrand for Cuba library; just calls #DistributedSrcCalc::eval_cylinder.
+ @param userdata must be pointer to a DistributedSrcCalc object.
+ */
+int DistributedSrcCalc_integrand_cylindrical( const int *ndim, const double xx[],
+                                           const int *ncomp, double ff[], void *userdata );
+
+/** Integrand for Cuba library; just calls #DistributedSrcCalc::eval_single_cyl_end_on.
+ @param userdata must be pointer to a DistributedSrcCalc object.
+ 
+ Requires ((DistributedSrcCalc *)userdata)->m_dimensionsAndTransLenCoef.size() == 1 (checked by assert on debug builds)
+ */
+int DistributedSrcCalc_integrand_single_cyl_end_on( const int *ndim, const double xx[],
+                                             const int *ncomp, double ff[], void *userdata );
+
+/** Integrand for Cuba library; just calls #DistributedSrcCalc::eval_rect.
+ @param userdata must be pointer to a DistributedSrcCalc object.
+ */
+int DistributedSrcCalc_integrand_rectangular( const int *ndim, const double xx[],
+                                                   const int *ncomp, double ff[], void *userdata );
 
 
 //point_to_line_dist(...): calculates the distance from 'point' to the line
@@ -184,7 +210,46 @@ double cylinder_line_intersection( const double radius, const double half_length
                               const double source[3],
                               const double detector[3],
                               const CylExitDir direction,
-                              double exit_point[3] );
+                              double exit_point[3] ) noexcept;
+
+/** Provides the distance and exit point of a ray, originating inside a rectangle, when it goes from \p source to \p detector.
+ 
+ @param[in] half_width The half-width of the rectangle; e.g., the x-extent of the rectangle.
+ @param[in] half_height The half-height of the rectangle; e.g., the y-extent of the rectangle.
+ @param[in] half_depth The half-depth of the rectangle; e.g., the z-extent of the rectangle.
+ @param[in] source The {x,y,z} location the ray originates from (e.g., center of source voxel when integrating over).  This point must
+            be inside, or on surface of rectangle, or else results are not defined.
+ @param[in] detector The {x,y,z} location the ray terminates (e.g., the center face of the detector). This point must be outside, or on
+            surface of rectangle - and not equal in values to \p source, or else results are not defined.
+ @param[out] exit_point The {x,y,z} location where the ray exits the rectangle.  Note that this can be same array as \p source.
+ @returns The distance inside the rectangle the ray traverses.
+ */
+double rectangle_exit_location( const double half_width, const double half_height,
+                               const double half_depth,
+                               const double source[3],
+                               const double detector[3],
+                               double exit_point[3] ) noexcept;
+
+/** Provides the intersection points on the rectangle when the ray originates from \p source and terminates at \p detector.
+ 
+ @param[in] half_width The half-width of the rectangle; e.g., the x-extent of the rectangle.
+ @param[in] half_height The half-height of the rectangle; e.g., the y-extent of the rectangle.
+ @param[in] half_depth The half-depth of the rectangle; e.g., the z-extent of the rectangle.
+ @param[in] source The {x,y,z} location the ray originates from (e.g., center of source voxel when integrating over).  This point must
+ be outside, or on surface of rectangle, or else results are not defined.
+ @param[in] detector The {x,y,z} location the ray terminates (e.g., the center face of the detector)
+ @param[out] near_source_intersection The {x,y,z} location where the ray enters the rectangle.  If ray does not intersect the
+             rectangle, the values in the array are not specified.
+ @param[out] near_detector_intersection The {x,y,z} location where the ray exits the rectangle.  If ray does not intersect the
+ rectangle, the values in the array are not specified.
+ @returns If the ray intersects the rectangle.
+ */
+bool rectangle_intersections( const double half_width, const double half_height,
+                               const double half_depth,
+                               const double source[3],
+                               const double detector[3],
+                               double near_source_intersection[3],
+                               double near_detector_intersection[3] ) noexcept;
 
 
 //distance(...): returns distance between two points specified in terms of x, y,
@@ -218,13 +283,13 @@ struct DistributedSrcCalc
                        double ff[], const int *ncompptr ) const;
   
   void eval_single_cyl_end_on( const double xx[], const int *ndimptr,
-                      double ff[], const int *ncompptr ) const;
+                      double ff[], const int *ncompptr ) const noexcept;
   
   void eval_cylinder( const double xx[], const int *ndimptr,
-                       double ff[], const int *ncompptr ) const;
+                       double ff[], const int *ncompptr ) const noexcept;
   
   void eval_rect( const double xx[], const int *ndimptr,
-                        double ff[], const int *ncompptr ) const;
+                        double ff[], const int *ncompptr ) const noexcept;
 
   GeometryType m_geometry;
   
@@ -243,9 +308,9 @@ struct DistributedSrcCalc
    */
   double m_airTransLenCoef;
   
-  /** Wether the #srcVolumetricActivity should be interpreted as a surface contamination, per unit area, divided by relaxation length (L),
+  /** Wether the #m_srcVolumetricActivity should be interpreted as a surface contamination, per unit area, divided by relaxation length (L),
    with an exponential distribution (e.g. exp(-r/L) ) in the depth from surface.  E.g., for InSitu soil contamination measurements.
-   If false, #srcVolumetricActivity is interpreted as activity per cubic-area (as its name suggests).
+   If false, #m_srcVolumetricActivity is interpreted as activity per cubic-area (as its name suggests).
    */
   bool m_isInSituExponential;
   
@@ -257,14 +322,32 @@ struct DistributedSrcCalc
    */
   double m_inSituRelaxationLength;
   
-  /** */
+  /** The dimensions of this shielding, and also the transmission length coefficient for it.
+   
+   Note that the dimensions for each layer of shielding are the outer dimensions, and not the thicknesses.
+   */
   std::vector<std::pair<std::array<double,3>,double> > m_dimensionsAndTransLenCoef;
 
-  double energy;
-  double integral;
-  double srcVolumetricActivity;
+  /** The activity per volume of the shielding.
+   Is not used during integration; used to multiple integral by to get number of expected peak counts.
+   */
+  double m_srcVolumetricActivity;
   
-  const SandiaDecay::Nuclide *nuclide;
+  /** The energy of gamma being integrated over.
+   
+   Doesnt look to be used in the integration, but used for debug writing out.
+   */
+  double m_energy;
+  
+  /** The nuclide responsible for gamma being integrated over.
+   
+   Not used during integration - only for debug writing out; may be nullptr.
+   */
+  const SandiaDecay::Nuclide *m_nuclide;
+  
+  
+  /** TODO: Setting the integral value as part of the DistributedSrcCalc is poor form - need to fix */
+  double integral;
 };//struct DistributedSrcCalc
 
 
@@ -461,15 +544,25 @@ public:
   void setBackgroundPeaks( const std::vector<PeakDef> &peaks, double liveTime );
   
   
+  /** The calculation status for ShieldingSourceChi2Fcn. */
+  enum class CalcStatus : int
+  {
+    NotCanceled = 0,
+    UserCanceled = 1,
+    Timeout = 2
+  };//enum class CalcStatus : int
+  
+  
   /** Exception thrown from #DoEval when fitting is canceled by the user, or times-out.
    Useful for propagating reason
+   
    */
-  class CancelException : public std::runtime_error
+  class CancelException : public std::exception
   {
   public:
-    CancelException( const std::string &msg, const int cancel_code );
+    CancelException( const CalcStatus cancel_code );
     
-    int m_code;
+    CalcStatus m_code;
   };//class CancelException
   
   /** Performs evaluation of Chi2, for parameters x.
@@ -656,7 +749,8 @@ protected:
 
 
 protected:
-  std::atomic<int> m_cancel;  //0==KeepGoing, 1==UserCancelled, 2==CalcTimeout
+  
+  std::atomic<CalcStatus> m_cancel;
   
   //Used to determine if m_guiUpdateInfo related stuff should be checked on
   std::atomic<bool> m_isFitting;
