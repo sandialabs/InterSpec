@@ -654,12 +654,10 @@ public:
       return; //Probably wont ever get here
     
     std::shared_ptr<Material> material = m_parent->material();
-    if( !material )
-      return;
     
     // If less dense than 1% of nominal air, then dont allow activity per gram
     const double minDensity = 0.000013*PhysicalUnits::g/PhysicalUnits::cm3;
-    const bool allowActPerGram = (material->density > minDensity);
+    const bool allowActPerGram = (material ? (material->density > minDensity) : false);
     
     for( TraceActivityType type = TraceActivityType(0);
         type < TraceActivityType::NumTraceActivityType;
@@ -689,22 +687,18 @@ public:
       }//switch( type )
     }//for( loop over TraceActivityTypes )
     
-    bool changedIndex = ((previous < 0)
-                      || (previous >= static_cast<int>(TraceActivityType::NumTraceActivityType)) );
     int currentIndex = 0;
     if( (previous >= 0)
         && (previous < static_cast<int>(TraceActivityType::NumTraceActivityType) )
         && (allowActPerGram
             || (previous != static_cast<int>(TraceActivityType::ActivityPerGram))) )
     {
-      changedIndex = true;
       currentIndex = previous;
     }
     
     m_activityType->setCurrentIndex( currentIndex );
-    
-
-    if( changedIndex )
+  
+    if( previous != currentIndex )
     {
       // If we are fitting for shielding thickness, then we probably dont also want to fit
       //  for activity per cm3 or per gram
@@ -841,6 +835,25 @@ public:
   }//void updateTotalActivityFromDisplayActivity()
   
   
+  void deSelectNuclideNoEmit()
+  {
+    // Note: this function does not emit that its nuclide changed
+    assert( (!m_currentNuclide) == (!m_isoSelect->currentIndex()) );
+    
+    m_isoSelect->setCurrentIndex( 0 );
+    if( m_currentNuclide )
+    {
+      m_currentTotalActivity = m_currentDisplayActivity = 0.0;
+      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      m_activityInput->setText( (useCi ? "0 uCi" : "0 bq") );
+      
+      //const SandiaDecay::Nuclide * const oldNuc = m_currentNuclide;
+      m_currentNuclide = nullptr;
+      //m_nucChangedSignal.emit( this, oldNuc );
+    }
+  }//deSelectNuclideNoEmit()
+  
+  
   void updateForMaterialChange()
   {
     shared_ptr<Material> mat = m_parent->material();
@@ -860,6 +873,15 @@ public:
         m_nucChangedSignal.emit( this, oldNuc );
       }
     }//if( !mat )
+    
+    if( m_isoSelect->isDisabled() != (!mat) )
+    {
+      // This doesnt actually seem to work, but assuming bug in Wt 3.3.4, so leaving in
+      setDisabled( !mat );
+      m_isoSelect->setDisabled( !mat );
+      m_activityInput->setDisabled( !mat );
+      m_allowFitting->setDisabled( !mat );
+    }//if( m_isoSelect->isDisabled() != (!mat) )
     
     updateAvailableActivityTypes();
     updateAvailableIsotopes();
@@ -1024,6 +1046,46 @@ public:
       m_currentNuclide = nullptr;
     }
   }//void unselectNuclide( const SandiaDecay::Nuclide *nuc )
+  
+  
+  void selectNuclideForUser( const SandiaDecay::Nuclide *nuc )
+  {
+    // Emits signals and such, as if user made the change
+    if( !nuc )
+    {
+      m_isoSelect->setCurrentIndex(0);
+      handleUserNuclideChange();
+      return;
+    }
+    
+    int nucSelectIndex = -1;
+    for( int i = 0; i < m_isoSelect->count(); ++i )
+    {
+      const string nuctxt = m_isoSelect->itemText(i).toUTF8();
+      if( nuctxt == nuc->symbol )
+      {
+        nucSelectIndex = i;
+        break;
+      }
+    }//for( int i = 0; i < m_isoSelect->count(); ++i )
+    
+    assert( nucSelectIndex >= 0 );
+    
+    if( nucSelectIndex >= 0 )
+    {
+      m_isoSelect->setCurrentIndex(nucSelectIndex);
+      handleUserNuclideChange();
+    }else
+    {
+      // Shouldnt ever get here.
+      cerr << "selectNuclideForUser: Failed to find '" << nuc->symbol
+           << "' as a choice in m_isoSelect." << endl;
+    }
+  }//void selectNuclideForUser( const SandiaDecay::Nuclide *nuc )
+
+
+  
+  
   
   /** Updates which nuclides the user can choose.
    Still hashing out the behaviour I want, but currently, if calling this
@@ -2139,6 +2201,8 @@ void ShieldingSelect::checkIsCorrectCurrentGeometry( const GeometryType wanted, 
 
 void ShieldingSelect::addTraceSource()
 {
+  // TODO: maybe we shouldnt add a trace source if material() is nullptr; also when material()
+  //       becomes nullptr maybe we should remove trace sources
   if( !m_traceSources )
   {
     m_traceSources = new WContainerWidget( this );
@@ -2148,6 +2212,27 @@ void ShieldingSelect::addTraceSource()
   TraceSrcDisplay *src = new TraceSrcDisplay( this );
   src->nucChangedSignal().connect( this, &ShieldingSelect::handleTraceSourceNuclideChange );
   src->activityUpdated().connect( this, &ShieldingSelect::handleTraceSourceActivityChange );
+  
+  // Check how many nuclides arent already volumetric sources, and if exactly one, just select it
+  const SandiaDecay::Nuclide *nuc = nullptr;
+  const int nnuc = m_sourceModel->numNuclides();
+  for( int i = 0; i < nnuc; ++i )
+  {
+    if( !m_sourceModel->isVolumetricSource(i) )
+    {
+      if( nuc )
+      {
+        // We have more than one possible nuclide the user could select; so dont select any of them
+        nuc = nullptr;
+        break;
+      }
+      
+      nuc = m_sourceModel->nuclide(i);
+    }//if( not a volumetric source )
+  }//for( int i = 0; i < nnuc; ++i )
+  
+  if( nuc && material() )
+    src->selectNuclideForUser( nuc );
 }//void addTraceSource()
 
 
@@ -2209,7 +2294,14 @@ void ShieldingSelect::setTraceSourceMenuItemStatus()
 void ShieldingSelect::handleTraceSourceNuclideChange( TraceSrcDisplay *changedSrc, const SandiaDecay::Nuclide *oldNuc )
 {
   assert( changedSrc );
+  
+  if( !material() )
+    changedSrc->deSelectNuclideNoEmit();
+  
   const SandiaDecay::Nuclide *nuc = changedSrc->nuclide();
+  
+  if( nuc == oldNuc )
+    return;
   
   if( oldNuc )
     removingIsotopeAsSource().emit( oldNuc, ModelSourceType::Trace );
@@ -2654,7 +2746,7 @@ bool ShieldingSelect::fitCylindricalRadiusThickness() const
   if( !m_forFitting )
     throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
   
-  return m_fitCylRadiusCB->isChecked();
+  return (m_fitCylRadiusCB->isVisible() && m_fitCylRadiusCB->isChecked());
 }//bool fitCylindricalRadiusThickness() const
 
 
@@ -2665,7 +2757,7 @@ bool ShieldingSelect::fitCylindricalLengthThickness() const
   if( !m_forFitting )
     throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
   
-  return m_fitCylLengthCB->isChecked();
+  return (m_fitCylLengthCB->isVisible() && m_fitCylLengthCB->isChecked());
 }//bool fitCylindricalLengthThickness() const
 
 
@@ -2676,7 +2768,7 @@ bool ShieldingSelect::fitRectangularWidthThickness() const
   if( !m_forFitting )
     throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
   
-  return m_fitRectWidthCB->isChecked();
+  return (m_fitRectWidthCB->isVisible() && m_fitRectWidthCB->isChecked());
 }//bool fitRectangularWidthThickness() const
 
 
@@ -2687,7 +2779,7 @@ bool ShieldingSelect::fitRectangularHeightThickness() const
   if( !m_forFitting )
     throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
   
-  return m_fitRectHeightCB->isChecked();
+  return (m_fitRectHeightCB->isVisible() && m_fitRectHeightCB->isChecked());
 }//bool fitRectangularHeightThickness() const
 
 
@@ -2700,6 +2792,82 @@ bool ShieldingSelect::fitRectangularDepthThickness() const
   
   return m_fitRectDepthCB->isChecked();
 }//bool fitRectangularDepthThickness() const
+
+
+void ShieldingSelect::setFitCylindricalRadiusEnabled( const bool allow )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::CylinderSideOn, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  WCheckBox *cb = m_fitCylRadiusCB;
+  const bool previous = cb->isVisible();
+  if( previous == allow )
+    return;
+  
+  cb->setChecked( false );
+  cb->setHidden( !allow );
+  
+  assert( allow || !fitCylindricalRadiusThickness() );
+}//void setFitCylindricalRadiusEnabled( const bool allow )
+
+
+void ShieldingSelect::setFitCylindricalLengthEnabled( const bool allow )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::CylinderSideOn, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  WCheckBox *cb = m_fitCylLengthCB;
+  const bool previous = cb->isVisible();
+  if( previous == allow )
+    return;
+  
+  cb->setChecked( false );
+  cb->setHidden( !allow );
+  
+  assert( allow || !fitCylindricalLengthThickness() );
+}//void setFitCylindricalLengthEnabled( const bool allow )
+
+
+void ShieldingSelect::setFitRectangularHeightEnabled( const bool allow )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  WCheckBox *cb = m_fitRectHeightCB;
+  const bool previous = cb->isVisible();
+  if( previous == allow )
+    return;
+  
+  cb->setChecked( false );
+  cb->setHidden( !allow );
+  
+  assert( allow || !fitRectangularHeightThickness() );
+}//void setFitRectangularHeightEnabled( const bool allow )
+
+
+void ShieldingSelect::setFitRectangularWidthEnabled( const bool allow )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  WCheckBox *cb = m_fitRectWidthCB;
+  const bool previous = cb->isVisible();
+  if( previous == allow )
+    return;
+  
+  cb->setChecked( false );
+  cb->setHidden( !allow );
+  
+  assert( allow || !fitRectangularWidthThickness() );
+}//void setFitRectangularWidthEnabled( const bool allow )
 
 
 bool ShieldingSelect::fitAtomicNumber() const
@@ -3946,8 +4114,19 @@ void ShieldingSelect::handleMaterialChange()
         }//for(...)
 #endif
         
-        src->updateForMaterialChange();
-        m_activityFromVolumeNeedUpdating.emit( this, src->nuclide() );
+        if( !newMaterial )
+        {
+          const SandiaDecay::Nuclide * const oldNuc = src->nuclide();
+          if( oldNuc )
+          {
+            src->deSelectNuclideNoEmit();
+            src->nucChangedSignal().emit( src, oldNuc );
+          }
+        }else
+        {
+          src->updateForMaterialChange();
+          m_activityFromVolumeNeedUpdating.emit( this, src->nuclide() );
+        }
       }//for( WWidget *w : traceSources )
     }//if( m_traceSources )
   }//if( generic material ) / else

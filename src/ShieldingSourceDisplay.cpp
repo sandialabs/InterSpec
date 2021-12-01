@@ -3926,23 +3926,75 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
                                          " will be contained by outer shieldings.";
   const char * const scaled_err_msg = "Shielding thicknesses have been scaled to be less"
                                       " then detector distance.";
+ 
+  
+  // TODO: We should probably check that we arent trying to fit multiple AN of generic shieldings,
+  //       or the AD of two generic shieldings that have similar AN, or many other potentially
+  //       degenerate cases.
   
   const GeometryType type = geometry();
   
+  // Lets grab the shielding's we care about
+  vector<ShieldingSelect *> shieldings;
+  shieldings.reserve( m_shieldingSelects->children().size() );
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
+    assert( select );
+    if( select && !select->isGenericMaterial() )
+      shieldings.push_back( select );
+  }//for( WWidget *widget : m_shieldingSelects->children() )
   
+  
+  // Dont let geometry dimensions be fit for, that we know we dont have the power to fit for
+  //  e.g., rectangular width/height outside of last source shell
+  int outer_source_shell = -1;
+  for( int i = 0; i < static_cast<size_t>(shieldings.size()); ++i )
+  {
+    if( !shieldings[i]->traceSourceNuclides().empty()
+       || !shieldings[i]->selfAttenNuclides().empty() )
+      outer_source_shell = i;
+  }//for( int i = 0; i < static_cast<size_t>(shieldings.size()); ++i )
+  
+  
+  for( int i = 0; i < static_cast<size_t>(shieldings.size()); ++i )
+  {
+    const bool enable = (i <= outer_source_shell);
+    switch( type )
+    {
+      case GammaInteractionCalc::GeometryType::Spherical:
+        break;
+        
+      case GammaInteractionCalc::GeometryType::CylinderEndOn:
+        shieldings[i]->setFitCylindricalRadiusEnabled( enable );
+        break;
+        
+      case GammaInteractionCalc::GeometryType::CylinderSideOn:
+        shieldings[i]->setFitCylindricalLengthEnabled( enable );
+        break;
+        
+      case GammaInteractionCalc::GeometryType::Rectangular:
+        shieldings[i]->setFitRectangularWidthEnabled( enable );
+        shieldings[i]->setFitRectangularHeightEnabled( enable );
+        break;
+        
+      case GammaInteractionCalc::GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( type )
+  }//for( int i = outer_source_shell + 1; i < static_cast<size_t>(shieldings.size()); ++i )
+  
+  
+  
+  // Now check shielding doesnt go past detector, and if it does, shrink things down.
   double shieldrad = 0.0, distance = 0.0;
   
   const double tolerance = PhysicalUnits::um;
   
   int shield_num = 0;
   bool updated_a_dim = false;
-  for( WWidget *widget : m_shieldingSelects->children() )
+  for( ShieldingSelect *select : shieldings )
   {
-    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
-    assert( select );
-    if( !select || select->isGenericMaterial() )
-      continue;
-    
     assert( type == select->geometry() );
     if( type != select->geometry() )
       throw runtime_error( "A shieldings geometry didnt match expected." );
@@ -4095,14 +4147,8 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
   }else
   {
     const double scale = 0.95*distance/shieldrad;
-    for( WWidget *widget : m_shieldingSelects->children() )
+    for( ShieldingSelect *select : shieldings )
     {
-      ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
-      assert( select );
-      
-      if( !select || select->isGenericMaterial() )
-        continue;
-      
       switch( type )
       {
         case GeometryType::Spherical:
@@ -6087,7 +6133,8 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   
   
   handleShieldingChange();
-
+  select->setTraceSourceMenuItemStatus();
+  
   if( doUpdateChiChart )
     updateChi2Chart();
   
@@ -6229,7 +6276,8 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   if( !select || select->isGenericMaterial() || !select->material() || !nuc )
   {
     assert(0);
-    throw std::runtime_error( "updateActivityOfShieldingIsotope()\n\tShould not be here!" );
+    cerr << "updateActivityOfShieldingIsotope()\n\tShould not be here!" << endl;
+    return;
   }//if( !select || select->isGenericMaterial() )
 
   
@@ -6309,9 +6357,18 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
                                                 const ModelSourceType type )
 {
   assert( nuc );
+  assert( caller );
+  if( !caller )
+    return;
+  
+  const vector<WWidget *> &children = m_shieldingSelects->children();
+  
+  if( !caller->material() )
+  {
+    
+  }//if( !caller->material() )
   
   //Make sure no other selects have this isotope selected
-  const vector<WWidget *> &children = m_shieldingSelects->children();
   for( WWidget *widget : children )
   {
     ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
@@ -6342,8 +6399,6 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
     }
   }//switch( type )
   
-  
-
   // Reset the age to something reasonable.
   //  TODO: do we really want to do this?  Maybe not.
   string agestr = "";
@@ -6357,6 +6412,16 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
   WModelIndex fitAgeIndex = m_sourceModel->index( nuc, SourceFitModel::kFitAge );
   m_sourceModel->setData( fitAgeIndex, false );
 
+  
+  // Update if other shieldings can have add trace source menu item enabled
+  for( WWidget *widget : children )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
+    if( select )
+      select->setTraceSourceMenuItemStatus();
+  }//for( WWidget *widget : children )
+  
+  
   //Update activity displayed
   updateActivityOfShieldingIsotope( caller, nuc );
 
@@ -6376,6 +6441,14 @@ void ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback(
 
   m_sourceModel->setSourceType( nuc, ModelSourceType::Point );
   
+  const vector<WWidget *> &children = m_shieldingSelects->children();
+  for( WWidget *widget : children )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
+    if( select )
+      select->setTraceSourceMenuItemStatus();
+  }//for( WWidget *widget : children )
+  
   //Update the Chi2
   updateChi2Chart();
 }//isotopeRemovedAsVolumetricSourceCallback(...)
@@ -6388,30 +6461,31 @@ void ShieldingSourceDisplay::removeShielding( ShieldingSelect *select )
 
   m_modifiedThisForeground = true;
   
-  const int nwidget = m_shieldingSelects->count();
-  for( int i = 0; i < nwidget; ++i )
+  bool foundShielding = false;
+  const vector<WWidget *> &children = m_shieldingSelects->children();
+  for( WWidget *widget : children )
   {
-    WWidget *widget = m_shieldingSelects->widget( i );
     ShieldingSelect *shielding = dynamic_cast<ShieldingSelect *>( widget );
     if( shielding == select )
     {
       delete shielding;
-      
       handleShieldingChange();
-      return;
+      foundShielding = true;
+      break;
     }//if( shielding == select )
-  }//for( int i = 0; i < nwidget; ++i )
+  }//for( WWidget *widget : children )
 
-  try
+  // Now go through and update if we can add a trace source to the other shieldings
+  for( WWidget *widget : children )
   {
-    checkDistanceAndThicknessConsistent();
-  }catch( std::exception &e )
-  {
-    passMessage( e.what(), "", WarningWidget::WarningMsgMedium );
-  }//try / catch
+    ShieldingSelect *shielding = dynamic_cast<ShieldingSelect *>( widget );
+    if( shielding )
+      shielding->setTraceSourceMenuItemStatus();
+  }//for( WWidget *widget : children )
   
-  assert( 0 );
-  cerr << "\n\nCouldnt finding select to delete" << endl;
+  assert( foundShielding );
+  if( foundShielding )
+    cerr << "\n\nCouldnt finding select to delete" << endl;
 }//void removeShielding( ShieldingSelect *select )
 
 
@@ -7753,16 +7827,14 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     
     std::lock_guard<std::mutex> lock( results->m_mutex );
     
-    
-    //e.m_code: 0==KeepGoing, 1==UserCancelled, 2==CalcTimeout
     switch( e.m_code )
     {
-      case 1:
+      case GammaInteractionCalc::ShieldingSourceChi2Fcn::CalcStatus::UserCanceled:
         results->succesful = ModelFitResults::FitStatus::UserCancelled;
         results->errormsgs.push_back( "User canceled fit." );
         break;
         
-      case 2:
+      case GammaInteractionCalc::ShieldingSourceChi2Fcn::CalcStatus::Timeout:
         results->succesful = ModelFitResults::FitStatus::TimedOut;
         results->errormsgs.push_back( "Fit took to long." );
         

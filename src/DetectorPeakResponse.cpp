@@ -1656,7 +1656,7 @@ double DetectorPeakResponse::fractionalSolidAngle( const double detDiam,
 }//float DetectorPeakResponse::fractionalSolidAngle(...)
 
 
-double DetectorPeakResponse::fractionalSolidAngle( const double detDiam, const double D )
+double DetectorPeakResponse::fractionalSolidAngle( const double detDiam, const double D ) noexcept
 {
   // Using a metric that if you increase the distance by 1%, but get an identical results, you have
   //  hit the limit of numerical accuracy (not perfect, but whatever), using a 5cm Detector:
