@@ -8,6 +8,7 @@
 
 #include <boost/optional.hpp>
 
+#include <Wt/WLabel>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
 #include <Wt/WPushButton>
@@ -243,10 +244,57 @@ public:
     
     
     m_hideNeutrons = new WCheckBox( "Hide neutrons", filterContents );
-    m_hideNeutrons->addStyleClass( "D3TimeHideNuetrons" );
+    m_hideNeutrons->addStyleClass( "D3TimeHideNeutrons" );
     m_hideNeutrons->setToolTip( "Do not show neutrons on chart" );
     m_hideNeutrons->checked().connect( this, &D3TimeChartFilters::hideNeutronsChanged );
     m_hideNeutrons->unChecked().connect( this, &D3TimeChartFilters::hideNeutronsChanged );
+    
+    
+    WContainerWidget *sfDiv = new WContainerWidget( filterContents );
+    sfDiv->addStyleClass( "D3TimeYAxisRelScale" );
+    
+    sfDiv->setToolTip( "This value allows emphasizing either the gamma or neutron data by scaling"
+                       " one of the y-axis's range to be a multiple of the maximum data displayed.\n"
+                       " A value greater than 1.0 will scale the neutron axis by the entered"
+                       " value, while not affecting the gamma y-range.  A value less than one"
+                       " will scale gamma axis by one over the entered value.\n "
+                       "i.e., to emphasize gamma chart enter value >1, for neutron <1.\n"
+                       "Must be between 0.04 and 25." );
+    WLabel *label = new WLabel( "Rel. y-max:" , sfDiv );
+    
+    NativeFloatSpinBox *sfInput = new NativeFloatSpinBox( sfDiv );
+    label->setBuddy( sfInput );
+    sfInput->setText( "1.0" );
+    sfInput->valueChanged().connect( std::bind([this,sfInput](){
+      float value = 1.0f;
+      switch( sfInput->validate() )
+      {
+        case Wt::WValidator::Invalid:
+        case Wt::WValidator::InvalidEmpty:
+          sfInput->setText( "1.0" );
+          break;
+          
+        case Wt::WValidator::Valid:
+          value = sfInput->value();
+          if( value < 0.04f )
+          {
+            value = 0.04f;
+            sfInput->setText( "0.04" );
+          }
+          
+          if( value > 25.0f )
+          {
+            value = 25.0f;
+            sfInput->setText( "25" );
+          }
+          break;
+      }//switch( sfInput->validate() )
+      
+      const string js = m_parentChart->m_jsgraph
+                        +  ".setYAxisGammaNeutronRelMaxSf(" + std::to_string(value) + ");";
+      m_parentChart->doJavaScript( js );
+    }) );
+    
   }//D3TimeChartFilters
   
   
