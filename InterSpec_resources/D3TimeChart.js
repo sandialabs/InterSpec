@@ -1915,6 +1915,10 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
     rawData.realTimes,
     rawData.sourceTypes
   );
+  if( meanIntervalTime === 0 )
+    meanIntervalTime = 1;
+  if( meanIntervalTime < 0 )
+    meanIntervalTime = -meanIntervalTime;
 
   // format occupied array:
   var occupied;
@@ -2294,13 +2298,16 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
       // center so background is not started at 0
       // to reduce long lead-in for plotting, replace with a smaller value inside realTimeIntervals and then record the true backgroundDuration in this.state for future reference:
       var meanIntervalTime = this.getMeanIntervalTime(realTimes, sourceTypes);
-
-      var leadTime = Math.max(
-        -realTimes[i],
-        -meanIntervalTime * realTimes.length * 0.12
-      );
-      this.state.data.backgroundDuration = realTimes[i];
-      realTimeIntervals[i] = [leadTime, 0];
+      
+      if( meanIntervalTime <= 0 ){
+        // We have no foreground spectra, so we will start at zero anyway.
+        realTimeIntervals[i] = [0, realTimes[i]];
+        this.state.data.backgroundDuration = null;
+      }else{
+        const leadTime = Math.max( -realTimes[i], -meanIntervalTime * realTimes.length * 0.12 );
+        this.state.data.backgroundDuration = realTimes[i];
+        realTimeIntervals[i] = [leadTime, 0];
+      }
     } else if (i === 0) {
       // first point is not background, so don't need to center
       this.state.data.backgroundDuration = null;
@@ -2315,7 +2322,9 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
 };
 
 /**
- * Computes the mean interval time over all foreground sourcetype data
+ * Computes the mean interval time over all foreground sourcetype data; if no foreground, will use
+ * any sourcetype, but return the negative of the value.  If no realTimes, or all zero, then returns
+ * zero.
  * @param {Number[]} realTimes : realTimes array of raw data
  * @param {Number[]} sourceTypes : sourceTypes array of raw data
  * @returns a number which is the average interval time length over all foreground sourcetype data
@@ -2329,6 +2338,20 @@ D3TimeChart.prototype.getMeanIntervalTime = function (realTimes, sourceTypes) {
       n += 1;
     }
   }
+  
+  if( n === 0 ){
+    for (var i = 0; i < realTimes.length; i++) {
+      acc += realTimes[i];
+      n += 1;
+    }
+    if( n === 0 )
+      return 0;
+    return -acc / n;
+  }
+  
+  if( n === 0 )
+    return 0;
+  
   return acc / n;
 };
 
