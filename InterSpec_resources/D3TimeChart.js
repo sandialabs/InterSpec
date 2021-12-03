@@ -214,6 +214,11 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.gridy !== "boolean") this.options.gridy = false;
   if (typeof this.options.chartLineWidth !== "number")
     this.options.chartLineWidth = 1;
+  if( (typeof this.options.yAxisGammaNeutronRelMaxSf !== "number")
+       || isNaN(this.options.yAxisGammaNeutronRelMaxSf)
+       || (this.options.yAxisGammaNeutronRelMaxSf < 0.04)
+       || (this.options.yAxisGammaNeutronRelMaxSf > 25) )
+    this.options.yAxisGammaNeutronRelMaxSf = 1;
     
   /* The dontRebin option makes it so when there are more time samples than pixels, instead of
    averaging multiple time samples together, instead the min and max counts from that interval are
@@ -2245,6 +2250,10 @@ D3TimeChart.prototype.getYDomainsInRange = function (
  * }
  */
 D3TimeChart.prototype.getScales = function (domains) {
+  const sf = this.options.yAxisGammaNeutronRelMaxSf;
+  const yNeutMult  = ((sf >= 1) ? sf : 1);
+  const yGammaMult = ((sf >= 1) ?  1 : 1/sf);
+  
   var xScale = domains.x
     ? d3.scale
         .linear()
@@ -2254,13 +2263,13 @@ D3TimeChart.prototype.getScales = function (domains) {
   var yScaleGamma = domains.yGamma
     ? d3.scale
         .linear()
-        .domain(domains.yGamma)
+        .domain([domains.yGamma[0],yGammaMult*domains.yGamma[1]])
         .range([this.state.height - this.margin.bottom, this.margin.top])
     : undefined;
   var yScaleNeutron = domains.yNeutron
     ? d3.scale
         .linear()
-        .domain(domains.yNeutron)
+        .domain([domains.yNeutron[0],yNeutMult*domains.yNeutron[1]])
         .range([this.state.height - this.margin.bottom, this.margin.top])
     : undefined;
 
@@ -3604,6 +3613,28 @@ D3TimeChart.prototype.setCompactXAxis = function (compact) {
   this.options.compactXAxis = compact;
   if (this.state.data.formatted) this.reinitializeChart();
 };
+
+
+/**
+ * Function to handle setting yAxisGammaNeutronRelMaxSf.
+ * When yAxisGammaNeutronRelMaxSf is less than one, then the maximum range on the gamma axis will
+ * be multiplied by 1/yAxisGammaNeutronRelMaxSf over what the data requires; neutron y-max will be
+ * unaffected.
+ * If yAxisGammaNeutronRelMaxSf is greater than one, then the neutron max y will be multiplied by
+ * yAxisGammaNeutronRelMaxSf; gamma y-max will be unaffected.
+ *
+ * @param {Number} scale : value that will be set to yAxisGammaNeutronRelMaxSf; will be clamped to
+ *                         between 0.04 and 25
+ */
+D3TimeChart.prototype.setYAxisGammaNeutronRelMaxSf = function (scale) {
+  if( (typeof scale !== "number") || isNaN(scale) ) scale = 1;
+  if( scale < 0.04 ) scale = 0.04;
+  if( scale > 25 ) scale = 25;
+  
+  this.options.yAxisGammaNeutronRelMaxSf = scale;
+  if (this.state.data.formatted) this.reinitializeChart();
+};
+
 
 /**
  * Handles display of x-grid

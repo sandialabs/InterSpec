@@ -145,9 +145,25 @@
   margin-right: auto;
 }
 
-.D3TimeDontRebin, .D3TimeHideNuetrons {
+
+.D3TimeDontRebin, .D3TimeHideNeutrons {
   margin-top: 5px;
 }
+
+.D3TimeYAxisRelScale {
+  margin-top: 5px;
+  
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+}
+
+.D3TimeYAxisRelScale input {
+  margin-left: 5px;
+  flex: 1 1;
+  width: 0px; /* appears to be needed so flex will adjust the width. */
+}
+
 
 .axis > path,
 .axis line {
