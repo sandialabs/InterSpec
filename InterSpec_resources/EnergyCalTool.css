@@ -137,6 +137,13 @@
   float: right;
 }
 
+.DownloadCALpBtn, .DownloadCALpBtn:hover
+{
+  background: none !important;
+  border: none !important;
+  color: blue;
+  margin-left: 25px;
+}
 
 /*
 .EnergyCalTool .CalSpecMenu

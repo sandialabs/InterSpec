@@ -6542,6 +6542,11 @@ void InterSpec::handEnergyCalWindowClose()
 }//void handEnergyCalWindowClose()
 
 
+EnergyCalTool *InterSpec::energyCalTool()
+{
+  return m_energyCalTool;
+}
+
 void InterSpec::showEnergyCalWindow()
 {
   if( m_energyCalWindow && !m_toolsTabs )

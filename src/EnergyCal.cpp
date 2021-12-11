@@ -57,6 +57,8 @@
 #include "InterSpec/PeakDef.h"
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/EnergyCal.h"
+#include "SpecUtils/ParseUtils.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/EnergyCalibration.h"
 
 using namespace std;
@@ -1047,3 +1049,335 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
   
   return answer;
 }//propogate_energy_cal_change(...)
+
+
+
+std::shared_ptr<SpecUtils::EnergyCalibration>
+EnergyCal::energy_cal_from_CALp_file( std::istream &input, const size_t num_channels,
+                                      std::string &det_name )
+{
+  if( !input )
+    return nullptr;
+  
+  const std::streampos start_pos = input.tellg();
+  
+  if( num_channels < 2 )
+    return nullptr;
+  
+  try
+  {
+    string line;
+    while( SpecUtils::safe_get_line( input, line, 2*1024 ) && line.empty() )
+    {
+      // get rid of blank leading lines
+    }
+    
+    if( !SpecUtils::icontains(line, "CALp File") )
+      throw runtime_error( "First line doesnt contain CALp" );
+    
+    string name;
+    vector<float> exact_energies;
+    vector<pair<float,float>> deviation_pairs;
+    // Note that Full Range Fraction is an InterSpec specific extension
+    vector<float> poly_coefs( 6, 0.0f ), frf_coefs( 5, 0.0f );
+    
+    while( SpecUtils::safe_get_line( input, line, 2*1024 ) )
+    {
+      SpecUtils::trim( line );
+      
+      if( SpecUtils::istarts_with( line, "#END") )
+        break;
+        
+      if( line.empty() || line[0] == '#' )
+        continue;
+    
+      // Make sure there is a ':' character, and its not the last character in the line
+      const size_t semi_pos = line.find( ':' );
+      if( (semi_pos == string::npos) || ((semi_pos + 1) >= line.size()) )
+        break;
+      
+      const char *data_start = line.c_str() + semi_pos + 1;
+      const size_t data_len = line.length() - semi_pos - 1;
+      
+      if( SpecUtils::starts_with( line, "Offset") )
+      {
+        if( !SpecUtils::parse_float( data_start, data_len, poly_coefs[0] ) )
+          throw runtime_error( "Invalid offset" );
+      }else if( SpecUtils::starts_with( line, "Gain") )
+      {
+        if( !SpecUtils::parse_float( data_start, data_len, poly_coefs[1] ) )
+          throw runtime_error( "Invalid gain" );
+      }else if( SpecUtils::starts_with( line, "2nd Order") )
+      {
+        if( !SpecUtils::parse_float( data_start, data_len, poly_coefs[2] ) )
+          throw runtime_error( "Invalid 2nd Order" );
+      }else if( SpecUtils::starts_with( line, "3rd Order") )
+      {
+        if( !SpecUtils::parse_float( data_start, data_len, poly_coefs[3] ) )
+          throw runtime_error( "Invalid 3rd Order" );
+      }else if( SpecUtils::starts_with( line, "4th Order") )
+      {
+        if( !SpecUtils::parse_float( data_start, data_len, poly_coefs[4] ) )
+          throw runtime_error( "Invalid 4th Order" );
+      }else if( SpecUtils::starts_with( line, "5th Order") )
+      {
+        if( !SpecUtils::parse_float( data_start, data_len, poly_coefs[5] ) )
+          throw runtime_error( "Invalid 5th Order" );
+      }else if( SpecUtils::starts_with( line, "FRF Offset") )
+      {
+        if( !SpecUtils::parse_float( data_start, data_len, frf_coefs[0] ) )
+          throw runtime_error( "Invalid FRF Offset" );
+      }else if( SpecUtils::starts_with( line, "FRF Gain") )
+      {
+        if( !SpecUtils::parse_float( data_start, data_len, frf_coefs[1] ) )
+          throw runtime_error( "Invalid FRF Gain" );
+      }else if( SpecUtils::starts_with( line, "FRF 2nd Order") )
+      {
+        if( !SpecUtils::parse_float( data_start, data_len, frf_coefs[2] ) )
+          throw runtime_error( "Invalid FRF 2nd Order" );
+      }else if( SpecUtils::starts_with( line, "FRF 3rd Order") )
+      {
+        if( !SpecUtils::parse_float( data_start, data_len, frf_coefs[3] ) )
+          throw runtime_error( "Invalid FRF 3rd Order" );
+      }else if( SpecUtils::starts_with( line, "FRF 4th Order") )
+      {
+        if( !SpecUtils::parse_float( data_start, data_len, frf_coefs[4] ) )
+          throw runtime_error( "Invalid FRF 4th Order" );
+      }else if( SpecUtils::starts_with( line, "Deviation Pairs") )
+      {
+        int num_pairs = 0;
+        if( !SpecUtils::parse_int( data_start, data_len, num_pairs ) )
+          throw runtime_error( "Invalid number deviation pairs" );
+        
+        for( ; num_pairs > 0; --num_pairs )
+        {
+          if( !SpecUtils::safe_get_line(input, line, 2*1024) )
+            throw runtime_error( "Not as many exact energies as specified" );
+          
+          SpecUtils::trim( line );
+          
+          vector<float> pair;
+          SpecUtils::split_to_floats( line, pair ); //not bothering to check returned true
+          if( pair.size() != 2 )
+            throw runtime_error( "Deviation pair line didnt have exactly 2 floats" );
+          
+          deviation_pairs.push_back( {pair[0], pair[1]} );
+        }//for( ; num_pairs > 0; --num_pairs )
+      }else if( SpecUtils::starts_with( line, "Exact Energies") )
+      {
+        int num_energies = 0;
+        if( !SpecUtils::parse_int( data_start, data_len, num_energies ) )
+          throw runtime_error( "Invalid number exact energies" );
+        
+        if( num_energies < static_cast<int>(num_channels) )
+          throw runtime_error( "Not enough exact energies" );
+        
+        if( num_energies > (65536 + 3) )
+          throw runtime_error( "More exact energies than expected" );
+        
+        for( ; num_energies > 0; --num_energies )
+        {
+          if( !SpecUtils::safe_get_line(input, line, 128) )
+            throw runtime_error( "Not as many exact energies as specified" );
+          
+          SpecUtils::trim( line );
+          
+          float value;
+          if( !SpecUtils::parse_float( line.c_str(), line.size(), value ) )
+            throw runtime_error( "Invalid exact energy given: " + line );
+          
+          exact_energies.push_back( value );
+        }
+      }else if( SpecUtils::starts_with( line, "Detector Name") )
+      {
+        name = data_start;
+        SpecUtils::trim( name );
+      }else if( SpecUtils::starts_with( line, "#END") )
+      {
+        break;
+      }else
+      {
+        cerr << "Unrecognized line in CALp file: '" << line << "'" << endl;
+      }
+    }//while( SpecUtils::safe_get_line( istr, line ) )
+    
+    
+    if( exact_energies.size() )
+    {
+      auto cal = make_shared<SpecUtils::EnergyCalibration>();
+      cal->set_lower_channel_energy( num_channels, exact_energies );
+      det_name = name;
+      
+      return cal;
+    }//if( exact_energies.size() )
+    
+    const bool has_poly = ((poly_coefs[0] != 0.0) || (poly_coefs[1] != 0.0f) || (poly_coefs[2] != 0.0));
+    const bool has_frf = ((frf_coefs[0] != 0.0) || (frf_coefs[1] != 0.0f) || (frf_coefs[2] != 0.0));
+    
+    if( !has_frf && !has_poly )
+      throw runtime_error( "Didnt read any coefficients" );
+    
+    auto cal = make_shared<SpecUtils::EnergyCalibration>();
+    
+    if( has_frf )
+      cal->set_full_range_fraction( num_channels, frf_coefs, deviation_pairs );
+    else
+      cal->set_polynomial( num_channels, poly_coefs, deviation_pairs );
+    
+    det_name = name;
+    
+    return cal;
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to parse CALp file: " << e.what() << endl;
+    input.seekg( start_pos, ios::beg );
+  }//try / catch to parse file
+  
+  return nullptr;
+}//energy_cal_from_CALp_file(...)
+
+
+bool EnergyCal::write_CALp_file( std::ostream &output,
+                     const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal,
+                     const std::string &detector_name )
+{
+  const string eol_char = "\r\n";
+  
+  if( !cal || !cal->valid() )
+    return false;
+  
+  if( SpecUtils::contains( detector_name, "\n\r") )
+    throw runtime_error( "Detector name cant contain newline." );
+  
+  // RIght now well
+  vector<float> poly_coefs;
+  
+  switch( cal->type() )
+  {
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      poly_coefs = cal->coefficients();
+      break;
+      
+    case SpecUtils::EnergyCalType::FullRangeFraction:
+      // We'll also write the FRF coefficients as an InterSpec specific extension after everything
+      //  else
+      poly_coefs = SpecUtils::fullrangefraction_coef_to_polynomial( cal->coefficients(),
+                                                                   cal->num_channels() );
+      break;
+      
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::InvalidEquationType:
+      break;
+  }//switch( cal->type() )
+  
+  // Allowing a 6th coefficient is an InterSpec specific extension; maybe we shouldnt even allow this
+  if( poly_coefs.size() >= 6 )
+  {
+    poly_coefs.resize( 6 );
+    if( poly_coefs.back() == 0.0f )
+      poly_coefs.resize( 5 );
+  }else
+  {
+    poly_coefs.resize( 5, 0.0f );
+  }
+  
+  assert( poly_coefs.size() <= 6 );
+  
+  const char *poly_coeff_labels[6] = {
+    "Offset (keV)           :  ",
+    "Gain (keV / Chan)      :  ",
+    "2nd Order Coef         :  ",
+    "3rd Order Coef         :  ",
+    "4th Order Coef         :  ",
+    "5th Order Coef         :  "
+  };
+  
+  char buffer[128];
+  
+  output << "#PeakEasy CALp File Ver:  4.00" << eol_char;
+  
+  // CALp files always have polynomial coefficients, even when all zero, or exact energies.
+  for( size_t i = 0; i < poly_coefs.size(); ++i )
+  {
+    snprintf( buffer, sizeof(buffer), "%1.5e", poly_coefs[i] );
+    output << poly_coeff_labels[i] << buffer << eol_char;
+  }
+  
+  switch( cal->type() )
+  {
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::FullRangeFraction:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+    {
+      if( !cal->deviation_pairs().empty() )
+      {
+        output << "Deviation Pairs        :  " << cal->deviation_pairs().size() << eol_char;
+        for( const auto &db : cal->deviation_pairs() )
+        {
+          snprintf( buffer, sizeof(buffer), "%1.5e %1.5e", db.first, db.second );
+          output << buffer << eol_char;
+        }
+      }//if( there are deviation pairs )
+      break;
+    }//case polynomial or full-range-fraction
+   
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    {
+      const auto energies_ptr = cal->channel_energies();
+      if( !energies_ptr || energies_ptr->empty() ) //jic
+      {
+        assert( 0 );
+        break;
+      }
+      
+      const auto &energies = *energies_ptr;
+      const size_t nchan = energies.size() - 1;
+      output << "Exact Energies         :  " << nchan << eol_char;
+      for( size_t i = 0; i < nchan; ++i )
+      {
+        snprintf( buffer, sizeof(buffer), "%1.5e", energies[i] );
+        output << buffer << eol_char;
+      }
+      
+      break;
+    }//case LowerChannelEdge
+
+    case SpecUtils::EnergyCalType::InvalidEquationType:
+      assert( 0 );
+      break;
+  }//switch( cal->type() )
+  
+  // As a InterSpec specific extension, we will put in detector name, if specified
+  if( !detector_name.empty() )
+  {
+    output << "Detector Name          :  " << detector_name << eol_char;
+  }
+  
+  // As a InterSpec specific extension, we will put in the original FRF coefficients.
+  //  (nothing is lost going from FRF to polynomial, unless the 5th term is used, which is a
+  //   low-energy term, and not a higher order term)
+  if( cal->type() == SpecUtils::EnergyCalType::FullRangeFraction )
+  {
+    const char *frf_coeff_labels[5] = {
+      "FRF Offset             :  ",
+      "FRF Gain               :  ",
+      "FRF 2nd Order          :  ",
+      "FRF 3rd Order          :  ",
+      "FRF 4th Order          :  ",
+    };//frf_coeff_labels
+      
+    const vector<float> &coefs = cal->coefficients();
+    const size_t ncoef = std::min( coefs.size(), size_t(5) );
+    
+    for( size_t i = 0; i < ncoef; ++i )
+    {
+      snprintf( buffer, sizeof(buffer), "%1.5e", coefs[i] );
+      output << frf_coeff_labels[i] << buffer << eol_char;
+    }
+  }//if( cal->type() == FullRangeFraction )
+  
+  output << "#END" << eol_char << eol_char;
+  
+  return output.good();
+}//void write_CALp_file(...)
