@@ -169,17 +169,32 @@ public:
   
   void userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display );
   
-  /** Applies the change in coeffcients from 'orig' to 'updated' to all the measurements the
+  /** Applies the change in coefficients from 'orig' to 'updated' to all the measurements the
    user has selected in the GUI (e.g., Back/For/Sec, visible detectors, entire file, etc).
    
-   Only propogates for the coeffcients, not changes to deviation pairs.
+   Only propagates for the coefficients, not changes to deviation pairs.
    Changes to deviation pairs will cause spectra that dont originally have the 'orig' calibration to
-   have their coefficents altered to account for the change in deviation pairs, which is probably
-   never the wanted behaviour.
+   have their coefficients altered to account for the change in deviation pairs, which is probably
+   never the wanted behavior.
+   
+   Throws std::exception on error.
    */
   void applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalibration> orig,
                        std::shared_ptr<const SpecUtils::EnergyCalibration> updated,
+                       const std::vector<MeasToApplyCoefChangeTo> &changemeas,
                        const bool isOffsetOnly );
+  
+  /** Sets the energy calibration of the specified SpecMea/SampleNumber/Detector to the given energy calibration.
+   
+   Updates peaks only if one of the calibrations being set corresponds to a calibration being set.
+   
+   Note, does not call #EnergyCalTool::doRefreshFromFiles or #InterSpec::refreshDisplayedCharts (which #applyCalChange does),
+   so you should call these functions after you call into this function all the times you currently will.
+   
+   Throws std::exception on error.
+   */
+  void setEnergyCal( std::shared_ptr<const SpecUtils::EnergyCalibration> new_cal,
+                     const MeasToApplyCoefChangeTo &changemeas );
   
   /** Adds a deviation pair from the graphical calibration.  Adds the deviation pair measurements
    the user has selected in the GUI (e.g., Back/For/Sec, visible detectors, entire file, etc).
@@ -218,6 +233,34 @@ public:
    */
   std::vector<MeasToApplyCoefChangeTo> measurementsToApplyCoeffChangeTo();
   
+  
+  
+  /** Applies an energy calibration to the currently displayed spectrum.
+   This is the function called when the user drops a CALp file onto InterSpec.
+   
+   Effects all currently showing detectors, but if there is multiple detectors, and only a single calibration passed in, will take displayed
+   spectrum as reference and display differences to the rest of the detectors; handling may change in the future.
+   
+   Throws exception on error.
+   */
+  void applyCALpEnergyCal( std::map<std::string,std::shared_ptr<const SpecUtils::EnergyCalibration>> det_to_cal,
+                            const SpecUtils::SpectrumType specfile,
+                            const bool all_detectors, const bool all_samples );
+  
+  /** The spectrum type (foreground, background, secondary) of the coefficients currently showing.
+   
+   i.e., in the "Detector" column, which tab ("For.", "Back", "Sec.") is currently selected.  If there is only a single detector, and only a
+   single file, this whole column will likely not be shown, and Foreground will be returned.
+   */
+  SpecUtils::SpectrumType typeOfCurrentlyShowingCoefficients() const;
+  
+  /** The detector name currently selected in the currently selected in the "Detector" column.
+   If there is only a single detector, then the option for the user to select different detectors wont be shown, and this function will return
+   the relevant detectors name.
+   
+   Currently commented out since it is unused and untested.
+   */
+  //std::string detectorNameOfCurrentlyShowingCoefficients() const;
   
 protected:
   enum class LayoutType{ Tall, Wide };
@@ -280,7 +323,7 @@ protected:
   
   WContainerWidget *m_tallLayoutContent;
   
-  RowStretchTreeView *m_peakTable;  /** \TODO: can maybe remove this memeber variable */
+  RowStretchTreeView *m_peakTable;  /** \TODO: can maybe remove this member variable */
   
   /** Menu that lets you choose which spectrum (For., Back, Sec.) to show the detectors to select */
   Wt::WMenu *m_specTypeMenu;

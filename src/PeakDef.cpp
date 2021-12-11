@@ -2391,11 +2391,16 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
     m_transition = NULL;
     m_sourceGammaType = NormalGamma;
     m_parentNuclide = NULL;
+    
+    stringstream msg;
+    msg << "Failed to assign peak at " << mean() << " keV to nuclide/xray/reaction: " << e.what();
+    
     if( wApp )
     {
-      stringstream msg;
-      msg << "Failed to assign peak at " << mean() << " keV to nuclide/xray/reaction: " << e.what();
       passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+    }else
+    {
+      cerr << msg.str() << endl;
     }
   }
 }//void fromXml(...)

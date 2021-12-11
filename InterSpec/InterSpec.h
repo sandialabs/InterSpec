@@ -661,6 +661,9 @@ public:
   void showEnergyCalWindow();
   void handEnergyCalWindowClose();
 
+  EnergyCalTool *energyCalTool();
+  
+  
   void showWarningsWindow();
   void handleWarningsWindowClose( bool closeWindowTo );
 

@@ -414,7 +414,8 @@ void EnergyCalGraphicalConfirm::apply()
     
     if( preserveLast || (type == kOffset) || (type == kLinear) )
     {
-      m_calibrator->applyCalChange( energycal, newcal, isOffsetOnly );
+      const vector<MeasToApplyCoefChangeTo> changemeas = m_calibrator->measurementsToApplyCoeffChangeTo();
+      m_calibrator->applyCalChange( energycal, newcal, changemeas, isOffsetOnly );
     }else if( type == kDeviation )
     {
       m_calibrator->addDeviationPair( added_dev_pair );
