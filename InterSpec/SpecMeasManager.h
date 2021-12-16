@@ -186,6 +186,8 @@ public:
   bool handleNonSpectrumFile( const std::string &displayName,
                               const std::string &fileLocation );
   
+  bool handleCALpFile( std::istream &input, SimpleDialog *dialog, bool autoApply );
+  
   enum class VariantChecksToDo
   {
     None = 0,

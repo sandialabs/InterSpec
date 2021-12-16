@@ -129,21 +129,51 @@
 
 .EnergyCalTool .BtmBtnDiv
 {
+  /* Not used when IMP_COEF_FIT_AND_CALp_BTN_NEAR_COEFS */
   padding-right: 3px;
 }
 
 .EnergyCalTool .FitCoefBtn
 {
+  /* Not used when IMP_COEF_FIT_AND_CALp_BTN_NEAR_COEFS */
   float: right;
 }
 
-.DownloadCALpBtn, .DownloadCALpBtn:hover
+.CalCoefsBtnDiv
 {
-  background: none !important;
-  border: none !important;
-  color: blue;
-  margin-left: 25px;
+  /* Used when IMP_COEF_FIT_AND_CALp_BTN_NEAR_COEFS */
+  display: flex;
+  flex-flow: row nowrap;
 }
+
+.CalCoefFitBtn
+{
+}
+
+.CalCoefsBtnDiv .Spacer
+{
+  flex: 1 1 auto;
+}
+
+
+.CalCoefsBtnDiv .DownloadBtn.CALp, .CalCoefsBtnDiv .UploadBtn.CALp
+{
+  float: none !important;
+}
+
+.DownloadBtn.CALp, .UploadBtn.CALp
+{
+  padding-left: 2px;
+  flex-direction: row-reverse;
+}
+
+.UploadBtn.CALp img
+{
+  margin-bottom: -9px;
+}
+
+
+
 
 /*
 .EnergyCalTool .CalSpecMenu

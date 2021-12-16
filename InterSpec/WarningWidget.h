@@ -38,7 +38,7 @@ namespace Wt
 }//namespace Wt
 
 
-/// \TODO: seperate this class into kinda the model that acepts error messages, flashes them to the
+/// \TODO: separate this class into kinda the model that accepts error messages, flashes them to the
 ///        user, and keeps track of them, and the display (e.g., have #createContent() create a
 ///        view for this class), and then improve the memory management
 class WarningWidget : public Wt::WContainerWidget
@@ -49,7 +49,7 @@ public:
     WarningMsgInfo = 0,
     WarningMsgLow = 1,
     WarningMsgMedium = 2,
-    WarningMsgHigh = 3 /*Not actually used anywhere*/,
+    WarningMsgHigh = 3,
     WarningMsgSave = 4,
     WarningMsgShowRiid = 5,
     
@@ -68,7 +68,7 @@ public:
   void createContent();
   
   /** Displays message to the user in a q-tip popup if the user option is to display messages at
-   that level.  Also stores the message in the model for later vieweing.
+   that level.  Also stores the message in the model for later viewing.
    
    Input 'msg' will be sanitized before displaying (e.g., must be valid XHTML and not have any JS
    scripting) and storage.

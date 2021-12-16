@@ -747,16 +747,18 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
 #if( BUILD_AS_OSX_APP )
   WAnchor *csvButton = new WAnchor( WLink(csv), buttonDiv );
   csvButton->setTarget( AnchorTarget::TargetNewWindow );
+  csvButton->setStyleClass( "LinkBtn" );
 #else
   WPushButton *csvButton = new WPushButton( buttonDiv );
-  csvButton->setIcon( "InterSpec_resources/images/download_small.png" );
+  csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
   csvButton->setLink( WLink(csv) );
   csvButton->setLinkTarget( Wt::TargetNewWindow );
+  csvButton->setStyleClass( "LinkBtn DownloadBtn" );
 #endif
   
   csvButton->setText( "CSV" );
-  csvButton->setStyleClass( "LinkBtn" );
-  csvButton->setAttributeValue( "style", "float: none;" );  //Keep the CSV download to the left side of the close button.  .LinkBtn style class has the button float right..
+  //csvButton->setAttributeValue( "style", "float: none;" );  //Keep the CSV download to the left side of the close button.  .LinkBtn style class has the button float right..
+  csvButton->setFloatSide( Wt::Side::Left );
   
   auto enableDisableCsv = [csvButton,this](){
     csvButton->setDisabled( m_fluxTool->m_data.empty() );

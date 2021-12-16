@@ -33,6 +33,7 @@
           <string>mps</string>
           <string>lis</string>
           <string>chn</string>
+		  <string>CALp</string>
 				</array>
 				<key>public.mime-type</key>
 				<string>application/gamma-spectrum</string>

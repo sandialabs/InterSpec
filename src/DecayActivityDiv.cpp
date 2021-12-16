@@ -1809,10 +1809,10 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   if( app->viewer()->isSupportFile() && !m_viewer->isPhone() )
   {
     WPushButton *csvButton = new WPushButton( displOptLower );
-    csvButton->setIcon( "InterSpec_resources/images/download_small.png" );
+    csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
     csvButton->setLinkTarget( Wt::TargetNewWindow );
     csvButton->setText( "CSV..." );
-    csvButton->setStyleClass( "LinkBtn" );
+    csvButton->setStyleClass( "LinkBtn DownloadBtn" );
     csvButton->clicked().connect( this, &DecayActivityDiv::createCsvDownloadGui );
   }
 

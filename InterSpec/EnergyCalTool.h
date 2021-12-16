@@ -56,10 +56,24 @@ namespace SpecUtils
   enum class SpectrumType : int;
 }
 
+
+/** Previous to 20211213 the "Fit Coeffs" button was way over to the left, in the "More Actions" column.  I also crammed the download
+ CALp link over there as well.
+ 
+ However, it makes more sense to have this button and link near the actual coefficients, but the problem is that this area is owned by the
+ EnergyCalImp::CalDisplay widget - so to have the buttons/links there, it requires some additional boilerplate.  For them moment, we'll
+ use this compile-time define to dictate where things are, until we decide on things.
+ */
+#define IMP_COEF_FIT_BTN_NEAR_COEFS 1
+#define IMP_CALp_BTN_NEAR_COEFS 0
+
+
 namespace EnergyCalImp
 {
   class CalDisplay;
+  class CALpDownloadResource;
 }
+
 
 /** This class handles energy calibration by the user.
  
@@ -162,6 +176,10 @@ public:
   
   void updateFitButtonStatus();
   
+#if( !IMP_CALp_BTN_NEAR_COEFS )
+  void updateCALpButtonsStatus();
+#endif
+  
   void displayedSpecChangedCallback( const SpecUtils::SpectrumType,
                                      const std::shared_ptr<SpecMeas> meas,
                                      const std::set<int> samples,
@@ -262,6 +280,13 @@ public:
    */
   //std::string detectorNameOfCurrentlyShowingCoefficients() const;
   
+  /** Returns the pointer to the CALp resource (derived from Wt::WResource) that can be used to export CALp files.
+   */
+  EnergyCalImp::CALpDownloadResource *calpResources();
+
+  /** Makes a dialog the user can then use to upload a CALp file */
+  void handleRequestToUploadCALp();
+  
 protected:
   enum class LayoutType{ Tall, Wide };
   void initWidgets( LayoutType layout );
@@ -308,7 +333,9 @@ protected:
    */
   std::set<std::string> gammaDetectorsForDisplayedSamples( const SpecUtils::SpectrumType type );
   
-  
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+  std::vector<EnergyCalImp::CalDisplay *> calDisplays();
+#endif
   
   
   enum EnergyCalToolRenderFlags
@@ -320,6 +347,8 @@ protected:
   
   InterSpec *m_interspec;
   PeakModel *m_peakModel;
+  
+  EnergyCalImp::CALpDownloadResource *m_calpResource;
   
   WContainerWidget *m_tallLayoutContent;
   
@@ -357,8 +386,14 @@ protected:
   
   Wt::WAnchor *m_moreActions[static_cast<int>(MoreActionsIndex::NumMoreActionsIndex)];
   
-  
+#if( !IMP_COEF_FIT_BTN_NEAR_COEFS )
   Wt::WPushButton *m_fitCalBtn;
+#endif
+  
+#if( !IMP_CALp_BTN_NEAR_COEFS )
+  Wt::WPushButton *m_downloadCALp;
+  Wt::WPushButton *m_uploadCALp;
+#endif
   
   time_t m_lastGraphicalRecal;  // \TODO: switch this to std::chrono::timepoint
   int m_lastGraphicalRecalType;
