@@ -281,10 +281,10 @@ function()
             else
                 infodiv.html("Will open as " + updiv.find(".UpDivTxt").html() );
           
-            /*Could add some text such as "Multiple files may be uploaded if the names contina information such as i-/item/fore/b-/back/bkg/k-/known/cal/check" */
+            /*Could add some text such as "Multiple files may be uploaded if the names contain information such as i-/item/fore/b-/back/bkg/k-/known/cal/check" */
         }else
         {
-            infodiv.html("Will open as the foreground spectrum since there is currenly not one loaded");
+            infodiv.html("Will open as the foreground spectrum since there is currently not one loaded");
         }
       
         return;
@@ -300,6 +300,10 @@ function()
     }
 
     //The list of files (or even how many of them) does not appear to be available here... :(
+    //  If it was available, we could customize it for CALp files.
+    //const files = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files : null;
+    //const isCALp = (files && files.length === 1 && files[0].includes(".CALp"));
+    
     
     el = $('<div id=\"Uploader\" class=\"FileUploadCover\"></div>');
     el.appendTo(target);

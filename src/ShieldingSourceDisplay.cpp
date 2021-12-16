@@ -4434,13 +4434,14 @@ void ShieldingSourceDisplay::showCalcLog()
   
 #if( BUILD_AS_OSX_APP )
   WAnchor *logDownload = new WAnchor( m_logDiv->footer() );
+  logDownload->setStyleClass( "LinkBtn" );
 #else
   WPushButton *logDownload = new WPushButton( m_logDiv->footer() );
-  logDownload->setIcon( "InterSpec_resources/images/download_small.png" );
+  logDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
+  logDownload->setStyleClass( "LinkBtn DownloadBtn" );
 #endif
   
   logDownload->setText( "TXT file" );
-  logDownload->setStyleClass( "LinkBtn" );
   logDownload->setFloatSide( Wt::Side::Left );
     
   auto downloadResource = new WMemoryResource( "text/plain", logDownload );

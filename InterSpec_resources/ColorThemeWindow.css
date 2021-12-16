@@ -20,7 +20,7 @@
   border-top: solid 1px #e1e1e1;
 }
 
-.AddColorTheme, .DeleteColorTheme, .DownloadColorTheme
+.AddColorTheme, .DeleteColorTheme
 {
   display: inline-block;
   opacity: 0.8;
@@ -44,7 +44,7 @@
   background-image: url('../InterSpec_resources/images/minus_min.png');
 }
 
-.AddColorTheme:hover, .DeleteColorTheme:hover, .DownloadColorTheme:hover
+.AddColorTheme:hover, .DeleteColorTheme:hover
 {
   opacity: 1;
 }
@@ -54,9 +54,13 @@ div.AddColorTheme.Wt-disabled, div.DeleteColorTheme.Wt-disabled
   background: none;
 }
 
-.DownloadColorTheme{
-  right: 10px;
-  position: absolute;
-  background-image: url('../InterSpec_resources/images/download_small.png');
+.DownloadColorTheme
+{
+  
+}
+
+.UploadColorTheme
+{
+  
 }
 

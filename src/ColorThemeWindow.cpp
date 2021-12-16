@@ -207,12 +207,19 @@ m_apply( nullptr )
   m_addIcn->setInline( true );
   m_addIcn->setToolTip( "Creates a new color theme based upon the currently selected theme.", Wt::PlainText );
   
+  WPushButton *upload = new WPushButton( "", adSubDiv );
+  upload->setIcon( WLink("InterSpec_resources/images/upload_small.svg") );
+  upload->addStyleClass( "LinkBtn UploadBtn UploadColorTheme" );
+  upload->setToolTip( "Imports a color theme JSON file to use.", Wt::PlainText );
+  upload->clicked().connect( this, &ColorThemeWindow::uploadThemeCallback );
+  
   JsonDownloadResource *downloadResource = new JsonDownloadResource( this );
-  WAnchor *downloadAncor = new WAnchor( adSubDiv );
-  downloadAncor->setLink( WLink(downloadResource) );
-  downloadAncor->setStyleClass( "DownloadColorTheme Wt-icon" );
-  downloadAncor->setTarget( TargetNewWindow );
-  downloadAncor->setToolTip( "Downloads the currently selected theme to a JSON file.", Wt::PlainText );
+  WPushButton *download = new WPushButton( adSubDiv );
+  download->setIcon( "InterSpec_resources/images/download_small.svg" );
+  download->setLink( WLink(downloadResource) );
+  download->setLinkTarget( Wt::TargetNewWindow );
+  download->setStyleClass( "LinkBtn DownloadBtn DownloadColorTheme" );
+  download->setToolTip( "Exports the currently selected theme to a JSON file.", Wt::PlainText );
   
   
   leftMenuDivLayout->setRowStretch( 0, 1 );
@@ -225,16 +232,6 @@ m_apply( nullptr )
   
   WContainerWidget *foot = footer();
   AuxWindow::addHelpInFooter( foot, "color-theme-dialog" );
-  
-  
-#if( IOS || ANDROID )
-  WPushButton *upload = new WPushButton( "", foot); //needed or else button wont show up
-  upload->setIcon( WLink("InterSpec_resources/images/upload_small.png") );
-#else
-  WPushButton *upload = new WPushButton( "Upload...", foot); //needed or else button wont show up
-#endif
-
-  upload->clicked().connect( this, &ColorThemeWindow::uploadThemeCallback );
   
   m_save = new WPushButton( "Save", foot );
   m_apply = new WPushButton( "Apply", foot );

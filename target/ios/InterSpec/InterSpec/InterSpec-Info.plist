@@ -108,6 +108,25 @@
 				<string>spectrum/x-spectrum</string>
 			</dict>
 		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Spectrum File Energy Calibration</string>
+			<key>UTTypeIdentifier</key>
+			<string>sandia.InterSpec.CALp</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>CALp</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>spectrum/x-calp</string>
+			</dict>
+		</dict>
 	</array>
 </dict>
 </plist>

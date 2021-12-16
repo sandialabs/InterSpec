@@ -31,7 +31,8 @@
 #include <stdexcept>
 
 #include "SpecUtils/SpecFile.h"
-#include "SpecUtils/FileSystem.h"
+#include "SpecUtils/Filesystem.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/PeakFit.h"
@@ -39,6 +40,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/EnergyCal.h"
+#include "InterSpec/DecayDataBaseServer.h"
 
 using namespace std;
 
@@ -72,8 +74,6 @@ int main( int argc, char **argv )
 #endif
 
   //  You need to supply exactly three arguments to this program
-  cerr << "Commenting out using command line arguments for development" << endl;
-  
   if( argc != 4 )
   {
     cout << "Program usage: " << argv[0]
@@ -84,6 +84,15 @@ int main( int argc, char **argv )
     
     return EXIT_FAILURE;
   }//if( argc != 4 )
+  
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  if( !db )
+  {
+    cerr << "\n\nUnable to load the decay database - nuclides will not be able to be assigned"
+            " to peaks.  Run the executable from a working directory where the 'data' folder is "
+            " located - the program expects to load data/sandia.decay.xml" << endl;
+  }
+  
   
   // The "exemplar" spectrum file is the file you exported from InterSpec as a N42-2012 file, that
   //  has exactly one gamma spectrum in it, with some fit peaks.
@@ -209,6 +218,9 @@ int main( int argc, char **argv )
       //peak.setFitFor( PeakDef::Mean, true );
       //peak.setFitFor( PeakDef::Sigma, false );
       peak.setFitFor( PeakDef::GaussAmplitude, true );
+      
+      const SandiaDecay::Nuclide * const nuc = peak.parentNuclide();
+      cout << "Peak at " << peak.mean() << " keV has nuclide: " << (nuc ? nuc->symbol : string("null")) << endl;
       
       candidate_peaks.push_back( peak );
     }//for( const auto &p : exemplar_peaks )

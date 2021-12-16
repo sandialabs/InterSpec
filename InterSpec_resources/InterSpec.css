@@ -641,6 +641,17 @@ ul.Wt-popupmenu > li > a > span > span:hover
   background: none !important;
   border: none !important;
   color: blue;
+  opacity: 0.7;
+}
+
+.LinkBtn:hover
+{
+  opacity: 1.0;
+}
+
+button.Wt-btn.LinkBtn.Wt-disabled, button.Wt-btn.LinkBtn.Wt-disabled:hover
+{
+  opacity: 0.6;
 }
 
 .WarningWidget
@@ -1133,6 +1144,21 @@ cursor: default;
 {
   background-color: transparent;
 }
+
+
+.DownloadBtn, .DownloadBtn:hover
+{
+  display:flex;
+  align-items: flex-end;
+}
+
+.DownloadBtn.Wt-btn.with-label img, .UploadBtn.Wt-btn.with-label img
+{
+  padding-right: 1px;
+  margin-bottom: -5px;
+}
+
+
 
 .loading
 {

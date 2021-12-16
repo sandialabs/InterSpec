@@ -311,7 +311,7 @@ namespace
         if( noForeground )
         {
           instructions = string(viewer->isMobile() ?"Tap" : "Click")
-                         + " below to choost a foreground spectrum file to open.";
+                         + " below to choose a foreground spectrum file to open.";
         }else
         {
           instructions = "Select how you would like to open the spectrum file, and then ";
@@ -1573,217 +1573,273 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   
   // Check if this is a PeakEasy CALp file
-  if( currdata && header_contains( "CALp File" ) )
+  if( currdata
+     && header_contains( "CALp File" )
+     && SpecMeasManager::handleCALpFile(infile, dialog, false) )
   {
-    const size_t nchannel = currdata->num_gamma_channels();
-    map<string,shared_ptr<const SpecUtils::EnergyCalibration>> det_to_cal;
-    
-    while( infile.good() )
-    {
-      string name;
-      const auto cal = EnergyCal::energy_cal_from_CALp_file( infile, nchannel, name );
-      
-      if( !cal )
-      {
-        // Display message to user to let them know it was a CALp file, but we coultnt use it.
-        //  TODO: improve this error message with details, ex if it was a lower-channel-energy CALp, and number of channels didnt match, we should display this to the user
-        if( det_to_cal.empty() /* && SpecUtils::iends_with( displayName, "CALp" ) */ )
-        {
-          const string msg = "<p>The content of this CALp file was unreadable, or incompatible with the"
-                             " data</p>";
-          WText *t = new WText( WString::fromUTF8(msg) );
-          stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-          t->setTextAlignment( Wt::AlignCenter );
-          
-          return true;
-        }//if( we didnt get any calibrations )
-        
-        break;
-      }//if( !cal )
-      
-      if( !cal->valid() )
-      {
-        assert( 0 );
-        continue;
-      }
-      
-      det_to_cal[name] = cal;
-    }//while( true )
-    
-    set<string> fore_gamma_dets;
-    const shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
-    const set<int> &fore_samples = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
-    const vector<string> fore_dets = m_viewer->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
-    
-    
-    if( !det_to_cal.empty() && foreground )
-    {
-      // We will grab calibrations from our current foreground, to slightly better inform the user
-      //  TODO: do a similar thing for background and secondary spectra.
-      
-      set<shared_ptr<const SpecUtils::EnergyCalibration>> fore_energy_cals;
-      //map<string,set<shared_ptr<const SpecUtils::EnergyCalibration>>> fore_meas_cals;
-      
-      for( const string &det_name : fore_dets )
-      {
-        for( const int sample : fore_samples )
-        {
-          const auto m = foreground->measurement( sample, det_name );
-          if( m && m->num_gamma_channels() > 3 )
-          {
-            fore_gamma_dets.insert( m->detector_name() );
-            fore_energy_cals.insert( m->energy_calibration() );
-            //fore_meas_cals[det_name].insert( m->energy_calibration() );
-          }
-        }//for( const int sample : fore_samples )
-      }//for( const string &det_name : fore_dets )
-      
-      bool have_cal_for_all_dets = true;
-      for( const string &det_name : fore_gamma_dets )
-      {
-        if( !det_to_cal.count(det_name) )
-          have_cal_for_all_dets = false;
-      }
-      
-      // If we only have one calibration for our current data, or only one named detector, lets not
-      //  care about matching names up exactly.
-      if( (det_to_cal.size() == 1) && ((fore_energy_cals.size() == 1) || (fore_dets.size() == 1)) )
-        have_cal_for_all_dets = true;
-      
-      string msg = "<p style=\"white-space: nowrap;\">"
-      "This file looks to contain an energy calibration."
-      "</p>";
-      
-      if( !have_cal_for_all_dets )
-      {
-        if( det_to_cal.size() == 1 )
-        {
-          msg += "<p style=\"text-align: left; white-space: nowrap;\">"
-          "Warning: This CALp file contains a single calibration; it will<br />"
-          "be applied to the primary displayed energy calibration, and<br />"
-          "the relative change will be applied to the other detectors<br />"
-          "energy calibrations, which is probably what you want."
-          "</p>";
-        }else
-        {
-          msg += "<p style=\"text-align: left; white-space: nowrap;\">"
-          "Warning: This energy calibration may not be consistent<br />"
-          "with the structure of the current data."
-          "</p>";
-        }
-      }//if( !have_cal_for_all_dets )
-      
-      
-      WText *t = new WText( WString::fromUTF8(msg) );
-      stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-      t->setTextAlignment( Wt::AlignCenter );
-      
-      WCheckBox *applyOnlyCurrentlyVisible = nullptr;
-      WCheckBox *applyForeground = nullptr, *applyBackground = nullptr, *applySecondary = nullptr;
-            
-      if( fore_samples.size() != foreground->sample_numbers().size() )
-      {
-        applyOnlyCurrentlyVisible = new WCheckBox( "Apply only to displayed samples" );
-        stretcher->addWidget( applyOnlyCurrentlyVisible, stretcher->rowCount(), 0, AlignLeft );
-      }//if( not displaying all foreground samples )
-      
-      const auto back = m_viewer->measurment( SpecUtils::SpectrumType::Background );
-      const auto second = m_viewer->measurment( SpecUtils::SpectrumType::SecondForeground );
-      
-      //Only have
-      if( (back && (back != foreground)) || (second && (second != foreground)) )
-      {
-        applyForeground = new WCheckBox( "Apply to foreground" );
-        applyForeground->setChecked( true );
-        stretcher->addWidget( applyForeground, stretcher->rowCount(), 0, AlignLeft );
-      }
-      
-      if( back && (back != foreground) )
-      {
-        applyBackground = new WCheckBox( "Apply to background" );
-        applyBackground->setChecked( true );
-        stretcher->addWidget( applyBackground, stretcher->rowCount(), 0, AlignLeft );
-      }
-      
-      if( second && (second != foreground) && (second != back) )
-      {
-        applySecondary = new WCheckBox( "Apply to secondary" );
-        applySecondary->setChecked( true );
-        stretcher->addWidget( applySecondary, stretcher->rowCount(), 0, AlignLeft );
-      }
-      
-      
-      msg = "<p style=\"white-space: nowrap;\">Would you like to use it?</p>";
-      t = new WText( WString::fromUTF8(msg) );
-      stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-      t->setTextAlignment( Wt::AlignCenter );
-      
-      
-      dialog->contents()->addStyleClass( "CALp" );
-      // TODO: ask if they want to update deviation pairs - maybe?
-      
-      
-      dialog->addButton( "No" ); //no further action necessary if user clicks no; dialog will close
-      closeButton->setText( "Yes" );
-      closeButton->clicked().connect( std::bind( [=](){
-        InterSpec *interspec = InterSpec::instance();
-        if( !interspec )
-          return;
-        
-        
-        int napplied = 1;
-        
-        try
-        {
-          const bool all_detectors = true; // TODO: give user option wether to apply to all detectors or not
-          const bool all_samples = (!applyOnlyCurrentlyVisible
-                                    || !applyOnlyCurrentlyVisible->isChecked());
-          
-          EnergyCalTool *caltool = interspec->energyCalTool();
-          assert( caltool ); //should always be valid
-          if( !caltool )
-            throw runtime_error( "Invalid EnergyCalTool" );
-          
-          if( !applyForeground || applyForeground->isChecked() )
-          {
-            caltool->applyCALpEnergyCal( det_to_cal, SpecUtils::SpectrumType::Foreground, all_detectors, all_samples );
-            napplied += 1;
-          }
-          
-          if( applyBackground && applyBackground->isChecked() )
-          {
-            caltool->applyCALpEnergyCal( det_to_cal, SpecUtils::SpectrumType::Background, all_detectors, all_samples );
-            napplied += 1;
-          }
-          
-          if( applySecondary && applySecondary->isChecked() )
-          {
-            caltool->applyCALpEnergyCal( det_to_cal, SpecUtils::SpectrumType::SecondForeground, all_detectors, all_samples );
-            napplied += 1;
-          }
-        }catch( std::exception &e )
-        {
-          string msg = "There was an error applying calibration:<br />";
-          msg += e.what();
-          if( napplied == 1 )
-            msg += "<br /><br />Calibration was applied to foreground.";
-          else if( napplied == 2 )
-            msg += "<br /><br />Calibration was applied to foreground and background.";
-          
-          passMessage( msg, "", WarningWidget::WarningMsgHigh );
-        }//try / catch
-        
-      } ) );
-      
-      return true;
-    }
-  }//if( maybe a drf )
-  
+    return true;
+  }
   
   delete dialog;
   
   return false;
 }//void handleNonSpectrumFile(...)
+
+
+bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog, bool autoApply )
+{
+  WGridLayout *stretcher = nullptr;
+  WPushButton *closeButton = nullptr;
+  
+  // Make a lamda to clear dialog, if we are going to alter it
+  auto clear_dialog = [&](){
+    dialog->contents()->clear();
+    dialog->footer()->clear();
+    
+    closeButton = dialog->addButton( "Close" );
+    stretcher = new WGridLayout();
+    stretcher->setContentsMargins( 0, 0, 0, 0 );
+    dialog->contents()->setLayout( stretcher );
+    WText *title = new WText( "Not a spectrum file" );
+    title->addStyleClass( "title" );
+    stretcher->addWidget( title, 0, 0 );
+  };//clear_dialog lamda
+  
+  
+  auto currdata = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  if( !currdata )
+  {
+    clear_dialog();
+    assert( stretcher && closeButton );
+    
+    const string msg = "<p>No currently displayed foreground - skipping CALp file.</p>";
+    WText *t = new WText( WString::fromUTF8(msg) );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+    t->setTextAlignment( Wt::AlignCenter );
+    
+    return true;
+  }//if( !currdata )
+  
+  const size_t nchannel = currdata->num_gamma_channels();
+  map<string,shared_ptr<const SpecUtils::EnergyCalibration>> det_to_cal;
+  
+  while( infile.good() )
+  {
+    string name;
+    const auto cal = EnergyCal::energy_cal_from_CALp_file( infile, nchannel, name );
+    
+    if( !cal )
+    {
+      // Display message to user to let them know it was a CALp file, but we coultnt use it.
+      //  TODO: improve this error message with details, ex if it was a lower-channel-energy CALp, and number of channels didnt match, we should display this to the user
+      if( det_to_cal.empty() /* && SpecUtils::iends_with( displayName, "CALp" ) */ )
+      {
+        clear_dialog();
+        assert( stretcher && closeButton );
+        
+        const string msg = "<p style=\"white-space: nowrap;\">"
+        "The content of this CALp file was<br />"
+        "unreadable or incompatible with the data"
+        "</p>";
+        WText *t = new WText( WString::fromUTF8(msg) );
+        stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+        t->setTextAlignment( Wt::AlignCenter );
+        dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowVisible,
+                                         Wt::Horizontal | Wt::Vertical );
+        return true;
+      }//if( we didnt get any calibrations )
+      
+      break;
+    }//if( !cal )
+    
+    if( !cal->valid() )
+    {
+      assert( 0 );
+      continue;
+    }
+    
+    det_to_cal[name] = cal;
+  }//while( true )
+  
+  set<string> fore_gamma_dets;
+  const shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+  const set<int> &fore_samples = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
+  const vector<string> fore_dets = m_viewer->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
+  
+  if( det_to_cal.empty() || !foreground )
+    return false;
+  
+  clear_dialog();
+  assert( stretcher && closeButton );
+
+  
+  // We will grab calibrations from our current foreground, to slightly better inform the user
+  //  TODO: do a similar thing for background and secondary spectra.
+  
+  set<shared_ptr<const SpecUtils::EnergyCalibration>> fore_energy_cals;
+  //map<string,set<shared_ptr<const SpecUtils::EnergyCalibration>>> fore_meas_cals;
+  
+  for( const string &det_name : fore_dets )
+  {
+    for( const int sample : fore_samples )
+    {
+      const auto m = foreground->measurement( sample, det_name );
+      if( m && m->num_gamma_channels() > 3 )
+      {
+        fore_gamma_dets.insert( m->detector_name() );
+        fore_energy_cals.insert( m->energy_calibration() );
+        //fore_meas_cals[det_name].insert( m->energy_calibration() );
+      }
+    }//for( const int sample : fore_samples )
+  }//for( const string &det_name : fore_dets )
+  
+  bool have_cal_for_all_dets = true;
+  for( const string &det_name : fore_gamma_dets )
+  {
+    if( !det_to_cal.count(det_name) )
+      have_cal_for_all_dets = false;
+  }
+  
+  // If we only have one calibration for our current data, or only one named detector, lets not
+  //  care about matching names up exactly.
+  if( (det_to_cal.size() == 1) && ((fore_energy_cals.size() == 1) || (fore_dets.size() == 1)) )
+    have_cal_for_all_dets = true;
+  
+  string msg = "<p style=\"white-space: nowrap;\">"
+  "This file looks to contain an energy calibration."
+  "</p>";
+  
+  if( !have_cal_for_all_dets )
+  {
+    if( det_to_cal.size() == 1 )
+    {
+      msg += "<p style=\"text-align: left; white-space: nowrap;\">"
+      "Warning: This CALp file contains a single calibration; it will<br />"
+      "be applied to the primary displayed energy calibration, and<br />"
+      "the relative change will be applied to the other detectors<br />"
+      "energy calibrations, which is probably what you want."
+      "</p>";
+    }else
+    {
+      msg += "<p style=\"text-align: left; white-space: nowrap;\">"
+      "Warning: This energy calibration may not be consistent<br />"
+      "with the structure of the current data."
+      "</p>";
+    }
+  }//if( !have_cal_for_all_dets )
+  
+  
+  WText *t = new WText( WString::fromUTF8(msg) );
+  stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+  t->setTextAlignment( Wt::AlignCenter );
+  
+  WCheckBox *applyOnlyCurrentlyVisible = nullptr;
+  WCheckBox *applyForeground = nullptr, *applyBackground = nullptr, *applySecondary = nullptr;
+  
+  if( fore_samples.size() != foreground->sample_numbers().size() )
+  {
+    applyOnlyCurrentlyVisible = new WCheckBox( "Apply only to displayed samples" );
+    stretcher->addWidget( applyOnlyCurrentlyVisible, stretcher->rowCount(), 0, AlignLeft );
+  }//if( not displaying all foreground samples )
+  
+  const auto back = m_viewer->measurment( SpecUtils::SpectrumType::Background );
+  const auto second = m_viewer->measurment( SpecUtils::SpectrumType::SecondForeground );
+  
+  //Only have
+  if( (back && (back != foreground)) || (second && (second != foreground)) )
+  {
+    applyForeground = new WCheckBox( "Apply to foreground" );
+    applyForeground->setChecked( true );
+    stretcher->addWidget( applyForeground, stretcher->rowCount(), 0, AlignLeft );
+  }
+  
+  if( back && (back != foreground) )
+  {
+    applyBackground = new WCheckBox( "Apply to background" );
+    applyBackground->setChecked( true );
+    stretcher->addWidget( applyBackground, stretcher->rowCount(), 0, AlignLeft );
+  }
+  
+  if( second && (second != foreground) && (second != back) )
+  {
+    applySecondary = new WCheckBox( "Apply to secondary" );
+    applySecondary->setChecked( true );
+    stretcher->addWidget( applySecondary, stretcher->rowCount(), 0, AlignLeft );
+  }
+  
+  
+  msg = "<p style=\"white-space: nowrap;\">Would you like to use it?</p>";
+  t = new WText( WString::fromUTF8(msg) );
+  stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+  t->setTextAlignment( Wt::AlignCenter );
+  
+  
+  dialog->contents()->addStyleClass( "CALp" );
+  // TODO: ask if they want to update deviation pairs - maybe?
+  
+  const auto applyLambda = [=](){
+    InterSpec *interspec = InterSpec::instance();
+    if( !interspec )
+      return;
+    
+    
+    int napplied = 0;
+    
+    try
+    {
+      const bool all_detectors = true; // TODO: give user option wether to apply to all detectors or not
+      const bool all_samples = (!applyOnlyCurrentlyVisible
+                                || !applyOnlyCurrentlyVisible->isChecked());
+      
+      EnergyCalTool *caltool = interspec->energyCalTool();
+      assert( caltool ); //should always be valid
+      if( !caltool )
+        throw runtime_error( "Invalid EnergyCalTool" );
+      
+      if( !applyForeground || applyForeground->isChecked() )
+      {
+        caltool->applyCALpEnergyCal( det_to_cal, SpecUtils::SpectrumType::Foreground, all_detectors, all_samples );
+        napplied += 1;
+      }
+      
+      if( applyBackground && applyBackground->isChecked() )
+      {
+        caltool->applyCALpEnergyCal( det_to_cal, SpecUtils::SpectrumType::Background, all_detectors, all_samples );
+        napplied += 1;
+      }
+      
+      if( applySecondary && applySecondary->isChecked() )
+      {
+        caltool->applyCALpEnergyCal( det_to_cal, SpecUtils::SpectrumType::SecondForeground, all_detectors, all_samples );
+        napplied += 1;
+      }
+    }catch( std::exception &e )
+    {
+      string msg = "There was an error applying calibration:<br />";
+      msg += e.what();
+      if( napplied == 1 )
+        msg += "<br /><br />Calibration was applied to foreground.";
+      else if( napplied == 2 )
+        msg += "<br /><br />Calibration was applied to foreground and background.";
+      
+      passMessage( msg, "", WarningWidget::WarningMsgHigh );
+    }//try / catch
+  };//applyLambda(...)
+  
+  
+  if( autoApply && !applyOnlyCurrentlyVisible && !applyForeground && !applyBackground && !applySecondary )
+  {
+    applyLambda();
+    dialog->done( Wt::WDialog::DialogCode::Accepted );
+    return true;
+  }
+  
+  dialog->addButton( "No" ); //no further action necessary if user clicks no; dialog will close
+  closeButton->setText( "Yes" );
+  closeButton->clicked().connect( std::bind( applyLambda ) );
+  
+  return true;
+}//void handleCALpFile( std::istream &input )
 
 
 

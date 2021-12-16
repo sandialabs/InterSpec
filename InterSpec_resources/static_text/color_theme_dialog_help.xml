@@ -10,7 +10,7 @@ This tool allows you to customize colors on the spectrum and time charts, as wel
   To customize the color themes you will need need to add a theme using the <img src="InterSpec_resources/images/plus_min.png"  style="width: 16px; height 16px"/> button
   on the lower left side of the tool; the theme currently selected in the menu above the button will be cloned, and a new entry added to the menu.
   By default your customized color themes are saved to <em>InterSpec</em>s internal database, but you can also download a <em>JSON</em> 
-  representation of the current color theme by clicking on the <img src="InterSpec_resources/images/download_small.png"  style="width: 16px; height 16px"/>
+  representation of the current color theme by clicking on the <img src="InterSpec_resources/images/download_small.svg"  style="width: 16px; height 16px"/>
   icon; you can also upload <em>JSON</em> color themes by using the &quot;<b>Upload...</b>&quot; button at the bottom of the tool.  The <em>JSON</em>
   representation is convienient if you would like to use the same color theme on multiple devices.
 </p>

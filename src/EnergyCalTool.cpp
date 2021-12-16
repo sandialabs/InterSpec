@@ -36,6 +36,7 @@
 #include <Wt/WAnchor>
 #include <Wt/WResource>
 #include <Wt/WCheckBox>
+#include <Wt/WFileUpload>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
@@ -55,6 +56,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/WarningWidget.h"
@@ -82,9 +84,62 @@ template<class T> struct index_compare_assend
   }
   const T arr;
 };//struct index_compare
+}// namepsace
+
+namespace EnergyCalImp
+{
+
+  class DeviationPairDisplay;
+  class DevPair : public Wt::WContainerWidget
+  {
+  protected:
+    DevPair( Wt::WContainerWidget *parent = 0 );
+    void setDevPair( const std::pair<float,float> &d );
+    std::pair<float,float> devPair() const;
+    void visuallyIndicateChanged();
+    //Wt::WDoubleSpinBox *m_energy, *m_offset;
+    NativeFloatSpinBox *m_energy, *m_offset;
+    Wt::WContainerWidget *m_delete;
+    friend class DeviationPairDisplay;
+  };//class DevPair
+    
+  class DeviationPairDisplay : public Wt::WContainerWidget
+  {
+  public:
+    DeviationPairDisplay( Wt::WContainerWidget *parent = 0 );
+    void setDeviationPairs( std::vector< std::pair<float,float> > d );
+    std::vector< std::pair<float,float> > deviationPairs() const;
+    void removeDevPair( DevPair *devpair );
+    DevPair *newDevPair( const bool emitChangedNow );
+    void setInvalidValues();
+    void setValidValues();
+    
+    //void setMsg( const string &msg );
+    
+    enum class UserFieldChanged : int
+    {
+      AddedDeviationPair,
+      RemovedDeviationPair,
+      EnergyChanged,
+      OffsetChanged
+    };//enum UserFieldChanged
+    
+    /** Signal that gets emited when dev pair is added, deleted, or changed.
+     Int argument is of type UserFieldChanged endum
+     */
+    Wt::Signal<int> &changed();
+    
+  protected:
+    void sortDisplayOrder( const bool indicateVisually );
+    
+    void emitChanged( const UserFieldChanged whatChanged );
+      
+    Wt::Signal<int> m_changed;
+    Wt::WContainerWidget *m_pairs;
+    //Wt::WText *m_msg;
+  };//class DeviationPairDisplay
 
 
-//class CALpDownloadResource *calpResource = new CALpDownloadResource( m_interspec, downloadButton );
 class CALpDownloadResource : public Wt::WResource
 {
   Wt::WApplication *m_app;
@@ -239,62 +294,6 @@ public:
     }//if( disp_detectors.size() != dets_so_far.size() )
   }//void handleRequest(...)
 };//class CalFileDownloadResource
-
-}// namepsace
-
-namespace EnergyCalImp
-{
-  class DeviationPairDisplay;
-  class DevPair : public Wt::WContainerWidget
-  {
-  protected:
-    DevPair( Wt::WContainerWidget *parent = 0 );
-    void setDevPair( const std::pair<float,float> &d );
-    std::pair<float,float> devPair() const;
-    void visuallyIndicateChanged();
-    //Wt::WDoubleSpinBox *m_energy, *m_offset;
-    NativeFloatSpinBox *m_energy, *m_offset;
-    Wt::WContainerWidget *m_delete;
-    friend class DeviationPairDisplay;
-  };//class DevPair
-    
-  class DeviationPairDisplay : public Wt::WContainerWidget
-  {
-  public:
-    DeviationPairDisplay( Wt::WContainerWidget *parent = 0 );
-    void setDeviationPairs( std::vector< std::pair<float,float> > d );
-    std::vector< std::pair<float,float> > deviationPairs() const;
-    void removeDevPair( DevPair *devpair );
-    DevPair *newDevPair( const bool emitChangedNow );
-    void setInvalidValues();
-    void setValidValues();
-    
-    //void setMsg( const string &msg );
-    
-    enum class UserFieldChanged : int
-    {
-      AddedDeviationPair,
-      RemovedDeviationPair,
-      EnergyChanged,
-      OffsetChanged
-    };//enum UserFieldChanged
-    
-    /** Signal that gets emited when dev pair is added, deleted, or changed.
-     Int argument is of type UserFieldChanged endum
-     */
-    Wt::Signal<int> &changed();
-    
-  protected:
-    void sortDisplayOrder( const bool indicateVisually );
-    
-    void emitChanged( const UserFieldChanged whatChanged );
-      
-    Wt::Signal<int> m_changed;
-    Wt::WContainerWidget *m_pairs;
-    //Wt::WText *m_msg;
-  };//class DeviationPairDisplay
-
-
 
 
 DevPair::DevPair( Wt::WContainerWidget *parent )
@@ -621,6 +620,15 @@ class CalDisplay : public WContainerWidget
   WPushButton *m_addPairs;
 #endif
   
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+  WPushButton *m_fitCoeffs;
+#endif
+  
+#if( IMP_CALp_BTN_NEAR_COEFS )
+  WPushButton *m_downloadCALp;
+  WPushButton *m_uploadCALp;
+#endif
+  
   shared_ptr<const SpecUtils::EnergyCalibration> m_cal;
   
 public:
@@ -639,6 +647,13 @@ public:
    m_devPairs( nullptr )
 #if( HIDE_EMPTY_DEV_PAIRS )
    , m_addPairs( nullptr )
+#endif
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+  , m_fitCoeffs( nullptr )
+#endif
+#if( IMP_CALp_BTN_NEAR_COEFS )
+  , m_downloadCALp( nullptr )
+  , m_uploadCALp( nullptr )
 #endif
   {
     addStyleClass( "CalDisplay" );
@@ -659,6 +674,35 @@ public:
     m_coefficients = new WContainerWidget( coefDiv );
     m_coefficients->addStyleClass( "CoefContent" );
     
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS || IMP_CALp_BTN_NEAR_COEFS )
+    WContainerWidget *btndiv = new WContainerWidget();
+    btndiv->addStyleClass( "CalCoefsBtnDiv" );
+  
+#if( IMP_CALp_BTN_NEAR_COEFS )
+    m_downloadCALp = new WPushButton( "CALp", btndiv );
+    m_downloadCALp->setIcon( "InterSpec_resources/images/download_small.svg" );
+    m_downloadCALp->setLinkTarget( Wt::TargetNewWindow );
+    m_downloadCALp->setLink( WLink( m_tool->calpResources() ) );
+    m_downloadCALp->setStyleClass( "LinkBtn DownloadBtn CALp" );
+    
+    m_uploadCALp = new WPushButton( btndiv );
+    m_uploadCALp->setIcon( "InterSpec_resources/images/upload_small.svg" );
+    m_uploadCALp->setStyleClass( "LinkBtn UploadBtn CALp" );
+    m_uploadCALp->clicked().connect( m_tool, &EnergyCalTool::handleRequestToUploadCALp );
+#endif
+    
+    WContainerWidget *spacer = new WContainerWidget( btndiv );
+    spacer->addStyleClass( "Spacer" );
+    
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+    m_fitCoeffs = new WPushButton( "Fit Coeffs", btndiv );
+    m_fitCoeffs->addStyleClass( "CalCoefFitBtn" );
+#endif
+    
+    layout->addWidget( btndiv, 1, 0 );
+    layout->setRowStretch( 0, 1 );
+#endif
+    
     m_devPairs = new DeviationPairDisplay();
     
 #if( HIDE_EMPTY_DEV_PAIRS )
@@ -674,7 +718,12 @@ public:
     
     if( isWideLayout )
     {
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS || IMP_CALp_BTN_NEAR_COEFS )
+      layout->addWidget( m_devPairs, 0, 1, 2, 1 );
+#else
       layout->addWidget( m_devPairs, 0, 1 );
+#endif
+      
 #if( HIDE_EMPTY_DEV_PAIRS )
       layout->addWidget( m_addPairs, 1, 0, AlignmentFlag::AlignRight );
       layout->setRowStretch( 0, 1 );
@@ -799,6 +848,36 @@ public:
 #endif
     
     m_cal = cal;
+    
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS || IMP_CALp_BTN_NEAR_COEFS )
+    bool fitCoeffsVisible = false;
+    const auto type = m_cal ? m_cal->type() : SpecUtils::EnergyCalType::InvalidEquationType;
+    
+    switch( type )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        fitCoeffsVisible = true;
+        break;
+        
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+        fitCoeffsVisible = false;
+        break;
+    }//switch( m_cal->type() )
+    
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+    if( m_fitCoeffs )
+      m_fitCoeffs->setHidden( !fitCoeffsVisible );
+#endif
+    
+#if( IMP_CALp_BTN_NEAR_COEFS )
+    if( m_downloadCALp )
+      m_downloadCALp->setHidden( (type == SpecUtils::EnergyCalType::InvalidEquationType) );
+#endif
+#endif //IMP_COEF_FIT_BTN_NEAR_COEFS || IMP_CALp_BTN_NEAR_COEFS
+    
     
     if( !m_cal )
     {
@@ -968,7 +1047,22 @@ public:
      */
     
   }//updateToGui(...)
+
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+  void setFitButtonEnabled( const bool canFitCeofs )
+  {
+    if( !m_cal )
+      return;
+      
+    if( m_fitCoeffs->isEnabled() != canFitCeofs )
+      m_fitCoeffs->setEnabled( canFitCeofs );
+  }
   
+  Wt::EventSignal<Wt::WMouseEvent> &doFitCoeffs()
+  {
+    return m_fitCoeffs->clicked();
+  }
+#endif
   
 };//class CalDisplay
 
@@ -982,6 +1076,7 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
 : WContainerWidget( parent ),
   m_interspec( viewer ),
   m_peakModel( peakModel ),
+  m_calpResource( new EnergyCalImp::CALpDownloadResource(this, viewer, this) ),
   m_tallLayoutContent( nullptr ),
   m_peakTable( nullptr ),
   m_specTypeMenu( nullptr ),
@@ -998,7 +1093,13 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   m_layout( nullptr ),
   m_applyToCbs{ nullptr },
   m_moreActions{ nullptr },
+#if( !IMP_COEF_FIT_BTN_NEAR_COEFS )
   m_fitCalBtn( nullptr ),
+#endif
+#if( !IMP_CALp_BTN_NEAR_COEFS )
+  m_downloadCALp( nullptr ),
+  m_uploadCALp( nullptr ),
+#endif
   m_lastGraphicalRecal( 0 ),
   m_lastGraphicalRecalType( EnergyCalGraphicalConfirm::NumRecalTypes ),
   m_lastGraphicalRecalEnergy( -999.0f ),
@@ -1064,9 +1165,13 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
     m = nullptr;
   for( auto &m : m_moreActions )
     m = nullptr;
+#if( !IMP_COEF_FIT_BTN_NEAR_COEFS )
   m_fitCalBtn = nullptr;
-  
-  
+#endif
+#if( !IMP_CALp_BTN_NEAR_COEFS )
+  m_downloadCALp = nullptr;
+  m_uploadCALp = nullptr;
+#endif
   
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
@@ -1172,21 +1277,37 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   auto helpBtn = new WContainerWidget( btndiv );
   helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
   helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "energy-calibration" ) );
+
   
-  WPushButton *downloadButton = new WPushButton( btndiv );
-  downloadButton->setIcon( "InterSpec_resources/images/download_small.png" );
-  downloadButton->setLinkTarget( Wt::TargetNewWindow );
-  //downloadButton->setText( "CALp" );
-  downloadButton->setStyleClass( "DownloadCALpBtn" );
-  CALpDownloadResource *calpResource = new CALpDownloadResource( this, m_interspec, downloadButton );
-  downloadButton->setLink( WLink(calpResource) );
-  HelpSystem::attachToolTipOn( downloadButton, "Download a .CALp file that contains the current energy calibration."
+#if( !IMP_CALp_BTN_NEAR_COEFS )
+  m_uploadCALp = new WPushButton( btndiv );
+  m_uploadCALp->setIcon( "InterSpec_resources/images/upload_small.svg" );
+  m_uploadCALp->setStyleClass( "LinkBtn UploadBtn CALp" );
+  m_uploadCALp->clicked().connect( this, &EnergyCalTool::handleRequestToUploadCALp );
+  
+  m_downloadCALp = new WPushButton( "CALp", btndiv );
+  m_downloadCALp->setIcon( "InterSpec_resources/images/download_small.svg" );
+  m_downloadCALp->setLinkTarget( Wt::TargetNewWindow );
+  m_downloadCALp->setStyleClass( "LinkBtn DownloadBtn CALp" );
+  m_downloadCALp->setLink( WLink(m_calpResource) );
+  
+  m_downloadCALp->clicked().connect( std::bind([this](){
+    m_interspec->logMessage( "You can apply this CALp file later to a different spectrum by"
+                            " dragging and dropping the CALp file onto InterSpec.",
+                            "", WarningWidget::WarningMsgInfo );
+  }) );
+  HelpSystem::attachToolTipOn( m_downloadCALp, "Download a .CALp file that contains the current energy calibration."
                               "  You can drag-n-drop this file back onto InterSpec later to re-use this energy calibration."
                               "  This is especially useful if you often use data from a detector whose calibration needs to be"
                               " consistently adjusted.",
                               showToolTips );
   
+  m_downloadCALp->setHidden( true );
+  m_uploadCALp->setHidden( true );
+#endif // !IMP_CALp_BTN_NEAR_COEFS
   
+  
+#if( !IMP_COEF_FIT_BTN_NEAR_COEFS )
   m_fitCalBtn = new WPushButton( "Fit Coeffs", btndiv );
   m_fitCalBtn->addStyleClass( "FitCoefBtn" );
   m_fitCalBtn->clicked().connect( this, &EnergyCalTool::fitCoefficients );
@@ -1196,7 +1317,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   "associated with the fit peaks to fit for the energy coefficients.  This button is disabled if no"
   " coefficients are selected to fit for, or less peaks than coefficents are selected.",
                               showToolTips );
-  
+#endif // !IMP_COEF_FIT_BTN_NEAR_COEFS
   
   // Create the "Apply To" column that determines what to apply changes to
   m_applyToColumn = new WContainerWidget();
@@ -1457,6 +1578,39 @@ set<string> EnergyCalTool::gammaDetectorsForDisplayedSamples( const SpecUtils::S
   
   return detectors;
 }//set<string> gammaDetectorsForDisplayedSamples( const SpecUtils::SpectrumType type )
+
+
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+vector<EnergyCalImp::CalDisplay *> EnergyCalTool::calDisplays()
+{
+  vector<EnergyCalImp::CalDisplay *> answer;
+  for( int i = 0; i < 3; ++i )
+  {
+    WMenu *detMenu = m_detectorMenu[i];
+    
+    if( !detMenu )
+      continue;
+    
+    WStackedWidget *stack = detMenu->contentsStack();
+    
+    if( !stack )
+      continue;
+    
+    for( WWidget *w : stack->children() )
+    {
+      EnergyCalImp::CalDisplay *caldisp = dynamic_cast<EnergyCalImp::CalDisplay *>( w );
+      assert( caldisp );
+      if( caldisp )
+        answer.push_back( caldisp );
+    }
+  }//for( int i = 0; i < 3; ++i )
+  
+  return answer;
+}//vector<EnergyCalImp::CalDisplay *> calDisplays()
+#endif
+
+
+
 
 
 vector<MeasToApplyCoefChangeTo> EnergyCalTool::measurementsToApplyCoeffChangeTo()
@@ -1728,6 +1882,16 @@ void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<con
     for( const string &det : detectors_to_apply )
     {
       const auto pos = det_to_cal.find(det);
+      
+      // TODO: we can probably do a better job of _trying_ something...
+      if( pos == end(det_to_cal) )
+      {
+        if( det.empty() )
+          throw runtime_error( "All calibrations in CALp file specify a detector name, but"
+                               " current spectrum detector is unnamed.");
+        throw runtime_error( "No calibration available for detector '" + det + "'" );
+      }//if( pos == end(det_to_cal) )
+        
       const shared_ptr<const SpecUtils::EnergyCalibration> new_cal = pos->second;
       assert( new_cal && new_cal->valid() );
       if( !new_cal || !new_cal->valid() )
@@ -1736,10 +1900,11 @@ void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<con
       shared_ptr<const SpecUtils::EnergyCalibration> old_cal;
       for( const int sample : tochange.sample_numbers )
       {
-        auto m = measurment->measurement( sample, det );
-        if( m && m->energy_calibration() && m->energy_calibration()->valid() )
+        const auto m = measurment->measurement( sample, det );
+        const auto cal = m ? m->energy_calibration() : nullptr;
+        if( cal && cal->valid() )
         {
-          old_cal = m->energy_calibration();
+          old_cal = cal;
           break;
         }
       }
@@ -1823,6 +1988,113 @@ std::string EnergyCalTool::detectorNameOfCurrentlyShowingCoefficients() const
   return detitem->text().toUTF8();
 }//std::string detectorNameOfCurrentlyShowingCoefficients() const
 */
+
+
+EnergyCalImp::CALpDownloadResource *EnergyCalTool::calpResources()
+{
+  return m_calpResource;
+}
+
+
+
+void EnergyCalTool::handleRequestToUploadCALp()
+{
+  SimpleDialog *dialog = new SimpleDialog();
+  WPushButton *closeButton = dialog->addButton( "Cancel" );
+  WGridLayout *stretcher = new WGridLayout();
+  stretcher->setContentsMargins( 0, 0, 0, 0 );
+  dialog->contents()->setLayout( stretcher );
+  dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowVisible,
+                                  Wt::Horizontal | Wt::Vertical );
+  WText *title = new WText( "Import CALp file" );
+  title->addStyleClass( "title" );
+  stretcher->addWidget( title, 0, 0 );
+  
+  WText *t = new WText( "<p>Select the CALp file to use</p>" );
+  stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+  t->setTextAlignment( Wt::AlignCenter );
+  
+  
+  WFileUpload *upload = new WFileUpload();
+  upload->fileTooLarge().connect( std::bind( [=](){
+    dialog->contents()->clear();
+    dialog->footer()->clear();
+    
+    WPushButton *closeButton = dialog->addButton( "Close" );
+    WGridLayout *stretcher = new WGridLayout();
+    stretcher->setContentsMargins( 0, 0, 0, 0 );
+    dialog->contents()->setLayout( stretcher );
+    WText *title = new WText( "File to large to upload" );
+    title->addStyleClass( "title" );
+    stretcher->addWidget( title, 0, 0 );
+  }) );
+  
+  upload->changed().connect( upload, &WFileUpload::upload );
+  upload->uploaded().connect( std::bind( [dialog,upload](){
+    InterSpec *interspec = InterSpec::instance();
+    SpecMeasManager *measmn = interspec ? interspec->fileManager() : nullptr;
+    
+    assert( measmn );
+    if( !measmn )
+      return;
+    
+    ifstream input( upload->spoolFileName().c_str(), ios::in | ios::binary );
+    
+    if( !measmn->handleCALpFile( input, dialog, true ) )
+    {
+      dialog->contents()->clear();
+      dialog->footer()->clear();
+      
+      WPushButton *closeButton = dialog->addButton( "Close" );
+      WGridLayout *stretcher = new WGridLayout();
+      stretcher->setContentsMargins( 0, 0, 0, 0 );
+      dialog->contents()->setLayout( stretcher );
+      WText *title = new WText( "Not a valid CALp file" );
+      title->addStyleClass( "title" );
+      stretcher->addWidget( title, 0, 0 );
+      
+      return;
+    }//if( was not a valid CALp file )
+    
+    //wApp->doJavaScript( "$('.Wt-dialogcover').hide();" ); // JIC
+    //dialog->done( Wt::WDialog::DialogCode::Accepted );
+  } ) );
+  
+  stretcher->addWidget( upload, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+  
+  InterSpec *interspec = InterSpec::instance();
+  if( interspec && !interspec->isPhone() )
+  {
+    t = new WText( "<p style=\"font-size: small;\">Note: you can also drag-n-drop CALp files onto InterSpec<br /></p>" );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+    t->setTextAlignment( Wt::AlignCenter );
+  }
+  
+  /*
+   //In case we want to use AuxWindow instead of SimpleDialog
+   AuxWindow *window = new AuxWindow( "Import CALp file",
+   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+   | AuxWindowProperties::PhoneNotFullScreen
+   | AuxWindowProperties::DisableCollapse
+   | AuxWindowProperties::SetCloseable) );
+   
+   //...
+   
+   window->rejectWhenEscapePressed();
+   window->show();
+   window->resizeToFitOnScreen();
+   window->centerWindow();
+   
+   WPushButton *close = window->addCloseButtonToFooter( "Cancel" );
+   close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
+   
+   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+   
+   // TODO: add link to relevant section of documentation
+   //AuxWindow::addHelpInFooter( window->footer(), "energy-cal-CALp" );
+   */
+}//void handleRequestToUploadCALp();
+
 
 
 void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalibration> disp_prev_cal,
@@ -3346,9 +3618,30 @@ void EnergyCalTool::updateFitButtonStatus()
 {
   const bool canFit = canDoEnergyFit();
   
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+  for( EnergyCalImp::CalDisplay *disp : calDisplays() )
+    disp->setFitButtonEnabled( canFit );
+#else
   if( canFit != m_fitCalBtn->isEnabled() )
     m_fitCalBtn->setDisabled( !canFit );
+#endif
 }//void updateFitButtonStatus()
+
+
+#if( !IMP_CALp_BTN_NEAR_COEFS )
+void EnergyCalTool::updateCALpButtonsStatus()
+{
+  shared_ptr<const SpecUtils::Measurement> foregrnd
+                           = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  
+  const bool showDownload = (foregrnd && foregrnd->energy_calibration()
+                              && foregrnd->energy_calibration()->valid());
+  m_downloadCALp->setHidden( !showDownload );
+  
+  const bool showUpload = (foregrnd && foregrnd->num_gamma_channels());
+  m_uploadCALp->setHidden( !showUpload );
+}//void updateCALpButtonsStatus()
+#endif
 
 
 void EnergyCalTool::displayedSpecChangedCallback( const SpecUtils::SpectrumType,
@@ -3718,7 +4011,7 @@ void EnergyCalTool::doRefreshFromFiles()
     m_specTypeMenu = new WMenu( m_specTypeMenuStack );
     m_specTypeMenu->addStyleClass( "CalSpecMenu" );
     m_specTypeMenu->itemSelected().connect( this, &EnergyCalTool::specTypeToDisplayForChanged );
-    m_detColLayout->addWidget( m_specTypeMenu, 1, 0 );
+    m_detColLayout->addWidget( m_specTypeMenu, 1, 0 );  
     m_detColLayout->addWidget( m_specTypeMenuStack, 2, 0 );
     
     if( m_calInfoDisplayStack )
@@ -3754,13 +4047,24 @@ void EnergyCalTool::doRefreshFromFiles()
       m_detectorMenu[i]->itemSelected().connect( this, &EnergyCalTool::updateFitButtonStatus );
     }//for( int i = 0; i < 3; ++i )
   }//if( needStackRefresh )
-  
 
+#if( !IMP_CALp_BTN_NEAR_COEFS )
+  updateCALpButtonsStatus();
+#endif
+  
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+  const bool canFitCeofs = canDoEnergyFit();
+#endif
   
   if( !specfiles[0] )
   {
     setShowNoCalInfo( true );
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+    for( EnergyCalImp::CalDisplay *disp : calDisplays() )
+      disp->setFitButtonEnabled( false );
+#else
     m_fitCalBtn->disable();
+#endif
     return;
   }
   
@@ -3857,6 +4161,12 @@ void EnergyCalTool::doRefreshFromFiles()
           item = detMenu->addItem( WString::fromUTF8(displayname), calcontent, WMenuItem::LoadPolicy::PreLoading );
           //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
           item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+          
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+          calcontent->setFitButtonEnabled( canFitCeofs );
+          calcontent->doFitCoeffs().connect( this, &EnergyCalTool::fitCoefficients );
+#endif
+          
           calcontent->updateToGui( energycal );
           
           const auto fitfor_iter = set_fit_for_cbs.find( {type,displayname} );
