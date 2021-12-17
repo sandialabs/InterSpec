@@ -186,7 +186,29 @@ public:
   bool handleNonSpectrumFile( const std::string &displayName,
                               const std::string &fileLocation );
   
+  
+  bool handleMultipleDrfCsv( std::istream &input,
+                             const std::string &displayName,
+                             const std::string &fileLocation );
+  
+  
+  /** Reads a CALp file from input stream and then either applies the CALp to current spectra, or prompts the user how to apply it.
+   Function may return asynchronously to the CALp being applied, as the application may prompt user for options/input.
+   
+   @param input The input CALp stream; will usually be an std::ifstream of a CALp file
+   @param dialog The dialog to use for interacting with the user.  Must be valid.  Dialog contents will be cleared and replaced, only
+          if this function returns true.  Dialog will be accepted (e.g. `WDialog::done(Accepted)` called) if \p autoApply is true, and
+          the application is unambiguous.
+   @param autoApply For unambiguous cases (e.g., CALp matches data detector) if the CALp should be applied, without bothering
+          to prompt the user.  If auto applied, the dialog will be accepted.
+   
+   @returns True if dialog was modified, or CALp is accepted, or the CALp _may_ be applied, or an error message about the file (such
+          as it is an invalid CALp file) will be given to the user.  Returns false if the CALp is not even considered for application and no
+          error message will be presented to the user, and input \p dialog was not modified.
+          (not a very clean mechanism, but it works for the current two use cases of this function)
+   */
   bool handleCALpFile( std::istream &input, SimpleDialog *dialog, bool autoApply );
+  
   
   enum class VariantChecksToDo
   {
