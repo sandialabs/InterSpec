@@ -4385,7 +4385,9 @@ void InterSpec::showWarningsWindow()
   if( !m_warningsWindow )
   {
     m_warningsWindow = new AuxWindow( "Notification/Logs",
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen) | AuxWindowProperties::IsModal) );
+                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                   | AuxWindowProperties::IsModal
+                   | AuxWindowProperties::EnableResize) );
     m_warningsWindow->contents()->setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
     m_warningsWindow->rejectWhenEscapePressed();
     m_warningsWindow->stretcher()->addWidget( m_warnings, 0, 0, 1, 1 );
@@ -4393,7 +4395,6 @@ void InterSpec::showWarningsWindow()
     //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
     //  size to be the min-size
     m_warningsWindow->setMinimumSize( 640, 480 );
-    m_warningsWindow->setResizable(true);
     m_warningsWindow->resizeScaledWindow(0.75, 0.75);
     m_warningsWindow->centerWindow();
     m_warningsWindow->finished().connect( boost::bind( &InterSpec::handleWarningsWindowClose, this, false ) );
@@ -7575,7 +7576,10 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
   
   const set<int> &samples = displayedSamples( spectrum_type );
   
-  AuxWindow *window = new AuxWindow( "Map" );
+  AuxWindow *window = new AuxWindow( "Map",
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::EnableResize)
+                                      | AuxWindowProperties::DisableCollapse)
+                                    );
   
   int w = 0.66*renderedWidth();
   int h = 0.8*renderedHeight();
@@ -7588,8 +7592,6 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
     case SpecUtils::SpectrumType::Background:       label = "Background";        break;
   }//switch( spectrum_type )
   
-  window->disableCollapse();
-  window->setResizable( true );
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   //window->footer()->setStyleClass( "modal-footer" );
   
@@ -8010,7 +8012,10 @@ void InterSpec::showNuclideSearchWindow()
     m_nuclideSearchContainer = 0;
   }
   
-  m_nuclideSearchWindow = new AuxWindow( NuclideSearchTabTitle, (AuxWindowProperties::TabletNotFullScreen) );
+  
+  m_nuclideSearchWindow = new AuxWindow( NuclideSearchTabTitle,
+                                        (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                                         | AuxWindowProperties::EnableResize) );
   m_nuclideSearchWindow->contents()->setOverflow(Wt::WContainerWidget::OverflowHidden);
   m_nuclideSearchWindow->finished().connect( boost::bind( &InterSpec::closeNuclideSearchWindow, this ) );
   m_nuclideSearchWindow->rejectWhenEscapePressed();
@@ -8038,7 +8043,6 @@ void InterSpec::showNuclideSearchWindow()
   m_nuclideSearchWindow->resize( WLength(800,WLength::Pixel), WLength(510,WLength::Pixel));
   m_nuclideSearchWindow->resizeToFitOnScreen();
   m_nuclideSearchWindow->centerWindow();
-  m_nuclideSearchWindow->setResizable(true);
   m_nuclideSearchWindow->show();
   
   m_nuclideSearch->loadSearchEnergiesToClient(); //clear the isotope search on the canvas
@@ -8128,7 +8132,10 @@ void InterSpec::showGammaLinesWindow()
     m_referencePhotopeakLines = NULL;
   }//if( m_referencePhotopeakLines )
 
-  m_referencePhotopeakLinesWindow = new AuxWindow( GammaLinesTabTitle, (AuxWindowProperties::TabletNotFullScreen) );
+  m_referencePhotopeakLinesWindow = new AuxWindow( GammaLinesTabTitle,
+                                                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                                                   | AuxWindowProperties::EnableResize)
+                                                  );
   m_referencePhotopeakLinesWindow->contents()->setOverflow(WContainerWidget::OverflowHidden);
   m_referencePhotopeakLinesWindow->rejectWhenEscapePressed();
 
@@ -8166,7 +8173,6 @@ void InterSpec::showGammaLinesWindow()
   w = std::min( w, 800.0 );
   
   m_referencePhotopeakLinesWindow->resize( WLength(w,WLength::Pixel), WLength(310,WLength::Pixel));
-  m_referencePhotopeakLinesWindow->setResizable(true);
   m_referencePhotopeakLinesWindow->resizeToFitOnScreen();
   m_referencePhotopeakLinesWindow->centerWindow();
   m_referencePhotopeakLinesWindow->show();

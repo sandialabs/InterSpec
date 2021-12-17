@@ -102,6 +102,7 @@
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
+#include "SpecUtils/DateTime.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
@@ -109,6 +110,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/ParseUtils.h"
 #include "InterSpec/DetectorEdit.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
@@ -1093,7 +1095,9 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     }
     
     AuxWindow *window = new AuxWindow( "Uploaded ZIP File Contents",
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen) );
+                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                   | AuxWindowProperties::TabletNotFullScreen
+                   | AuxWindowProperties::EnableResize) );
     window->stretcher()->addWidget( t, 0, 0 );
     //window->stretcher()->addWidget( selection, 1, 0 );
     window->stretcher()->addWidget( table, 1, 0 );
@@ -1207,7 +1211,6 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     //openButton->clicked().connect( boost::bind( &SpecMeasManager::extractAndOpenFromZip, this, spoolName, type, selection, window ) );
     openButton->clicked().connect( boost::bind( &SpecMeasManager::extractAndOpenFromZip, this, spoolName, group, table, window, WModelIndex() ) );
     
-    window->setResizable( true );
     window->centerWindow();
     window->disableCollapse();
     window->show();
@@ -1505,7 +1508,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     {
       // TODO: generate a eff plot, and basic info, and display; probably by refactoring DetectorEdit::updateChart()
       // TODO: Ask user if they want to use DRF; if so save to `InterSpec::writableDataDirectory() + "UploadedDrfs"`
-      // TODO: handle CSV/TSV files that have multiple DRFs
       // TODO: handle GADRAS style Efficiency.csv files
       // TODO: allow users to rename the DRF.
       
@@ -1542,40 +1544,19 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }//if( maybe a drf )
   
   
-  /*
   // Check if this is TSV/CSV file containing multiple DRFs
-  if( header_contains( "Relative Eff" ) && header_contains( "#credit" ) )
+  if( header_contains( "Relative Eff" )
+     && handleMultipleDrfCsv(infile, displayName, fileLocation) )
   {
-    // Try to parse, and see if one or more DRFs.
-    //  Ask user to save in `InterSpec::writableDataDirectory() + "UploadedDrfs"` for later use
-    
-    string line;
-    while( SpecUtils::safe_get_line( input, line, 2048 ) )
-    {
-      SpecUtils::trim( line );
-      
-      if( SpecUtils::istarts_with( line, "#credit:") )
-        credits.push_back( SpecUtils::trim_copy(line.substr(8)) );
-      
-      if( line.empty() || line[0]=='#' )
-        continue;
-      
-      std::shared_ptr<DetectorPeakResponse> det = RelEffFile::parseDetector( line );
-      
-      if( det )
-      {
-        detcoefs.push_back( det->efficiencyExpOfLogsCoeffs() );
-        m_responses.push_back( det );
-      }
-    }//while( SpecUtils::safe_get_line( input, line ) )
-  }//if( header_contains( "Relative Eff" ) && header_contains( "#credit" ) )
-   */
+    delete dialog;
+    return true;
+  }
   
   
   // Check if this is a PeakEasy CALp file
   if( currdata
      && header_contains( "CALp File" )
-     && SpecMeasManager::handleCALpFile(infile, dialog, false) )
+     && handleCALpFile(infile, dialog, false) )
   {
     return true;
   }
@@ -1584,6 +1565,202 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   return false;
 }//void handleNonSpectrumFile(...)
+
+
+bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
+                                           const std::string &displayName,
+                                           const std::string &fileLocation )
+{
+  vector<string> credits;
+  vector<shared_ptr<DetectorPeakResponse>> drfs;
+  
+  DetectorPeakResponse::parseMultipleRelEffDrfCsv( input, credits, drfs );
+  
+  if( drfs.empty() )
+    return false;
+  
+  vector<char> fileContents;
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+  try
+  {
+    // We need to copy file contents into memory, because the file may disappear.
+    SpecUtils::load_file_data( fileLocation.c_str(), fileContents );
+  }catch( std::exception &e )
+  {
+    fileContents.clear();
+    cerr << "handleMultipleDrfCsv: Failed to read spool file '" << fileLocation << "'" << endl;
+  }
+#endif
+  
+  AuxWindow *dialog = new AuxWindow( "File contains Detector Response Functions",
+                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                      | AuxWindowProperties::TabletNotFullScreen
+                                      | AuxWindowProperties::DisableCollapse
+                                      | AuxWindowProperties::SetCloseable ) );
+  
+  dialog->rejectWhenEscapePressed();
+  dialog->contents()->addStyleClass( "SelectDrfFromMult" );
+  dialog->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
+  
+  WGridLayout *layout = new WGridLayout( dialog->contents() );
+  layout->setContentsMargins(5,5,0,0);
+  
+  
+  string msg = "<p style=\"white-space: nowrap;\">";
+  
+  if( drfs.size() == 1 )
+    msg += "This file looks to be a Detector Response Function.";
+  else
+    msg += "This file contains multiple Detector Response Functions.</p>"
+           "<p style=\"text-align: center;\">Please select DRF to use:";
+  msg += "</p>";
+  
+  WText *txt = new WText( msg, Wt::XHTMLText );
+  layout->addWidget( txt, 0, 0 );
+  
+  
+  WComboBox *drfsSelect = new WComboBox();
+  layout->addWidget( drfsSelect, layout->rowCount(), 0, AlignCenter );
+  
+  for( const auto &drf : drfs )
+    drfsSelect->addItem( WString::fromUTF8( drf->name() ) );
+  drfsSelect->setCurrentIndex( 0 );
+  
+  
+  WCheckBox *saveFile = nullptr;
+  
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+  if( !fileContents.empty() )
+  {
+    saveFile = new WCheckBox( "Save DRFs for later use" );
+    saveFile->addStyleClass( "SaveDrfForLaterCb" );
+    layout->addWidget( saveFile, layout->rowCount(), 0 );
+    
+    // TODO: check if we will overwrite a file
+  }//if( !fileContents.empty() )
+#endif
+  
+  
+  if( credits.size() )
+  {
+    WContainerWidget *w = new WContainerWidget();
+    w->addStyleClass( "Credits" );
+    const int row = layout->rowCount();
+    layout->addWidget( w, row, 0 );
+    layout->setRowStretch( row, 1 );
+    
+    for( string &s : credits )
+    {
+      txt = new WText( WString::fromUTF8(s), Wt::XHTMLText, w );
+      txt->setInline( false );
+    }
+  }//if( credits.size() )
+  
+  
+  
+  WPushButton *cancel = dialog->addCloseButtonToFooter( "Cancel", true );
+  cancel->clicked().connect( boost::bind( &AuxWindow::hide, dialog ) );
+  
+  WPushButton *accept = dialog->addCloseButtonToFooter( "Accept", true );
+  
+  accept->clicked().connect( std::bind( [=](){
+    //drfs,dialog,drfsSelect,saveFile,displayName,fileContents
+    
+    const int index = drfsSelect->currentIndex();
+    if( (index < 0) || (index >= static_cast<int>(drfs.size())) )
+    {
+      passMessage( "Invalid DRF selection", "", WarningWidget::WarningMsgHigh );
+      dialog->hide();
+    }
+    
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+    if( saveFile && saveFile->isChecked() && fileContents.size() > 0 )
+    {
+      try
+      {
+        std::string datadir = InterSpec::writableDataDirectory();
+        if( datadir.empty() )
+          throw runtime_error( "Writable data directory not set." );
+        
+        datadir = SpecUtils::append_path( datadir, "drfs" );
+        
+        if( SpecUtils::create_directory(datadir) == 0 ) //-1 means already existed, 1 means created
+          throw runtime_error( "Could not create 'drfs' directory in app data directory." );
+        
+        //displayName
+        string filename = SpecUtils::filename( displayName );
+        const string orig_extension = SpecUtils::file_extension( filename );
+        assert( orig_extension.size() <= filename.size() );
+        
+        if( orig_extension.size() )
+          filename = filename.substr( 0, filename.size() - orig_extension.size() );
+          
+        const int offset = wApp->environment().timeZoneOffset();
+        const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
+        string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
+        const string::size_type pos = timestr.find( ' ' );
+        //std::string timestr = SpecUtils::to_extended_iso_string( now ); //"2014-04-14T14:12:01.621543"
+        //string::size_type pos = timestr.find( 'T' );
+        if( pos != string::npos )
+          timestr = timestr.substr(0,pos);
+        SpecUtils::ireplace_all( timestr, "-", "_" );
+        
+        filename += "_" + timestr + orig_extension;
+        const string outputname = SpecUtils::append_path( datadir, filename );
+        
+        
+#ifdef _WIN32
+        const std::wstring wtmpfile = SpecUtils::convert_from_utf8_to_utf16(outputname);
+        ofstream outfilestrm( wtmpfile.c_str(), ios::out | ios::binary );
+#else
+        ofstream outfilestrm( outputname.c_str(), ios::out | ios::binary );
+#endif
+        
+        if( !outfilestrm )
+          throw runtime_error( "Unable to open file '" + outputname + "'" );
+        
+        if( !outfilestrm.write( &(fileContents[0]), fileContents.size() ) )
+        {
+          outfilestrm.close();
+          SpecUtils::remove_file(outputname);
+          
+          throw runtime_error( "Failed writing '" + outputname + "'" );
+        }//
+        
+        passMessage( "Saved '" + filename + "' for later use, and will be available in the"
+                    " &quot;<em>Rel. Eff.</em>&quot; portion of the"
+                    " &quot;<em>Detector Response Function Select</em>&quot; tool.",
+                    "", WarningWidget::WarningMsgInfo );
+      }catch( std::exception &e )
+      {
+        cerr << "handleMultipleDrfCsv: error saving multiple DRF file: " << e.what() << endl;
+        passMessage( "Error saving DRF file for later use.", "", WarningWidget::WarningMsgHigh );
+      }
+    }//if( we should save file )
+#endif
+    
+    const shared_ptr<DetectorPeakResponse> det = drfs[index];
+    
+    InterSpec *interspec = InterSpec::instance();
+    if( interspec )
+    {
+      auto sql = interspec->sql();
+      auto user = interspec->m_user;
+      DetectorEdit::updateLastUsedTimeOrAddToDb( det, user.id(), sql );
+      interspec->detectorChanged().emit( det ); //This loads it to the foreground spectrum file
+    }
+    
+    dialog->hide();
+  } ) ); //accept->clicked().connect(...
+  
+  
+  dialog->show();
+  dialog->centerWindow();
+  dialog->resizeToFitOnScreen();
+  dialog->centerWindowHeavyHanded();
+  
+  return true;
+}//bool handleMultipleDrfCsv( std::istream &input, SimpleDialog *dialog )
 
 
 bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog, bool autoApply )
@@ -1623,6 +1800,8 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   const size_t nchannel = currdata->num_gamma_channels();
   map<string,shared_ptr<const SpecUtils::EnergyCalibration>> det_to_cal;
   
+  const std::streampos start_pos = infile.tellg();
+  
   while( infile.good() )
   {
     string name;
@@ -1630,10 +1809,12 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     
     if( !cal )
     {
-      // Display message to user to let them know it was a CALp file, but we coultnt use it.
+      // Display message to user to let them know it was a CALp file, but we couldn't use it.
       //  TODO: improve this error message with details, ex if it was a lower-channel-energy CALp, and number of channels didnt match, we should display this to the user
       if( det_to_cal.empty() /* && SpecUtils::iends_with( displayName, "CALp" ) */ )
       {
+        infile.seekg( start_pos, ios::beg );
+        
         clear_dialog();
         assert( stretcher && closeButton );
         
@@ -1667,7 +1848,10 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   const vector<string> fore_dets = m_viewer->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
   
   if( det_to_cal.empty() || !foreground )
+  {
+    infile.seekg( start_pos, ios::beg );
     return false;
+  }
   
   clear_dialog();
   assert( stretcher && closeButton );
@@ -2338,7 +2522,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
   const char *title = "Select Binning";
   const char *msgtxt
    = "<div style=\"white-space: nowrap;\">Multiple energy binnings were found in the spectrum file.</div>"
-     "<div style=\"margin-top: 10px; margin-bottom: 10px;\">Please select which one you would like</div>";
+     "<div style=\"margin-top: 5px; margin-bottom: 5px;\">Please select which one you would like</div>";
   
   if( cals.size() > 3 )
   {

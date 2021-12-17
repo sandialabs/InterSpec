@@ -94,3 +94,8 @@ table.FormulaDrfTbl tr td:first-child
 {
   opacity:1.0;
 }
+
+.DrfDefaultOptions
+{
+  margin-bottom: 5px;
+}

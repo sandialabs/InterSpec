@@ -38,6 +38,7 @@
 #include <numeric>
 #include <stdexcept>
 
+#include <boost/tokenizer.hpp>
 #include <boost/functional/hash.hpp>
 
 #include "rapidxml/rapidxml.hpp"
@@ -164,7 +165,21 @@ namespace
     return reduced_peaks;
   }//removeOutlyingWidthPeaks(...)
 
+  //Allow the file to be comma or tab delimited, but if an individual field
+  //  contains a comma or tab, then the field must be quoted by a double
+  //  quote.  Note that if you just copy cells from Microsoft Excel, that
+  //  contain a comma, and then past into a text editor, fields with a comma
+  //  are not quoted.
+  void split_escaped_csv( vector<string> &fields, const string &line )
+  {
+    fields.clear();
   
+    typedef boost::tokenizer<boost::escaped_list_separator<char> > Tokeniser;
+    boost::escaped_list_separator<char> separator("\\",",\t", "\"");
+    Tokeniser t( line, separator );
+    for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
+      fields.push_back(*it);
+  }//void split_escaped_csv(...)
 }//namespace
 
 
@@ -953,6 +968,91 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
 
   computeHash();
 }//void fromExpOfLogPowerSeriesAbsEff
+
+
+std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRelEffDrf( std::string &line )
+{
+  std::shared_ptr<DetectorPeakResponse> det;
+  
+  vector<string> fields;
+  fields.reserve( 20 );
+  
+  split_escaped_csv( fields, line );
+  
+  if( fields.size() < 16 )
+    return det;
+  
+  try
+  {
+    const string name = fields[0] + " (" + fields[1] + ")";
+    
+    vector<float> coefs;
+    for( int i = 3; i < 11; ++i )
+    coefs.push_back( static_cast<float>( std::stod( fields[i] ) ) );
+    
+    //Get rid of the zero coefficients
+    for( size_t i = coefs.size()-1; i > 0; --i )
+    {
+      if( fabs(coefs[i]) > 1.0E-14 ) //1.0E-14 chosen arbitrarily
+      {
+        coefs.erase( coefs.begin()+i+1, coefs.end() );
+        break;
+      }
+    }//for( size_t i = coefs.size()-1; i > 0; --i )
+    
+    const float dist = static_cast<float>( std::stod(fields[14])*PhysicalUnits::cm );
+    const float diam = 2.0f*static_cast<float>( std::stod(fields[15])*PhysicalUnits::cm );
+    const float eunits = static_cast<float>( PhysicalUnits::MeV );
+    
+    string description = fields[2] + " - from Relative Eff. File";
+    det.reset( new DetectorPeakResponse( name, description ) );
+    det->fromExpOfLogPowerSeriesAbsEff( coefs, {}, dist, diam, eunits, 0.0f, 0.0f );
+    det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
+  }catch( std::exception &e )
+  {
+    det.reset();
+    cerr << "DetectorPeakResponse::parseSingleCsvLineRelEffDrf() caught: " << e.what() << endl;
+  }//try /catch
+  
+  return det;
+}//shared_ptr<DetectorPeakResponse> parseSingleCsvLineRelEffDrf( std::string &line )
+
+
+void DetectorPeakResponse::parseMultipleRelEffDrfCsv( std::istream &input,
+                                                     std::vector<std::string> &credits,
+                                      std::vector<std::shared_ptr<DetectorPeakResponse>> &drfs )
+{
+  credits.clear();
+  drfs.clear();
+  
+  const std::streampos start_pos = input.tellg();
+  
+  vector<vector<float>> detcoefs;
+  string line;
+  while( SpecUtils::safe_get_line( input, line, 2048 ) )
+  {
+    SpecUtils::trim( line );
+    
+    if( SpecUtils::istarts_with( line, "#credit:") )
+      credits.push_back( SpecUtils::trim_copy( line.substr(8) ) );
+    
+    if( line.empty() || line[0]=='#' )
+      continue;
+    
+    std::shared_ptr<DetectorPeakResponse> det = parseSingleCsvLineRelEffDrf( line );
+    
+    if( det )
+      drfs.push_back( det );
+  }//while( SpecUtils::safe_get_line( input, line ) )
+  
+  if( drfs.empty() )
+  {
+    // If we didnt read and DRFs, lets be nice and reset file location to where we started
+    credits.clear();
+    input.seekg( start_pos, ios::beg );
+  }
+}//parseMultipleRelEffDrfCsv(...)
+
 
 
 void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,

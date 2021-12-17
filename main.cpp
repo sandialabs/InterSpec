@@ -116,6 +116,15 @@ int main( int argc, char **argv )
     
     argc = static_cast<int>( default_argc );
     argv = default_argv;
+    
+    // If there is a "user_data" directory in the CWD, we'll set this as the writeable data
+    //  directory to simulate desktop app behavior of saving DRFs and similar
+    const std::string cwd = SpecUtils::get_working_path();
+    const std::string dev_user_data = SpecUtils::append_path( cwd, "user_data" );
+    if( SpecUtils::is_directory( dev_user_data ) )
+      InterSpec::setWritableDataDirectory( dev_user_data );
+    else
+      std::cerr << "No '" << dev_user_data << "' - not setting writeable data directory.\n";
   }//if( no command line arguments were given ).
 #endif //BUILD_AS_LOCAL_SERVER
   

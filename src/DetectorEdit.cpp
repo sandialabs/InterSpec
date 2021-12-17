@@ -36,6 +36,7 @@
 #include <boost/algorithm/string.hpp>
 
 #include <Wt/WMenu>
+#include <Wt/Utils>
 #include <Wt/WText>
 #include <Wt/WBreak>
 #include <Wt/WLabel>
@@ -204,6 +205,52 @@ namespace
       fields.push_back(*it);
   }//void split_escaped_csv(...)
   
+
+ /** Searches static and user-writable data directories for the given file.
+  */
+ string complete_drf_path( string pathstr )
+ {
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+   SpecUtils::ireplace_all(pathstr, "..", "");
+   pathstr = SpecUtils::lexically_normalize_path(pathstr);
+   return pathstr;
+#endif
+   
+   if( SpecUtils::is_file(pathstr) )
+     return pathstr;
+   
+   vector<string> trial_paths;
+   
+   string trialpath = InterSpec::staticDataDirectory();
+   trial_paths.push_back( trialpath );
+   
+   trialpath = SpecUtils::append_path( SpecUtils::append_path( trialpath, ".."), "data_ouo" );
+   trialpath = SpecUtils::lexically_normalize_path( trialpath );
+   trial_paths.push_back( trialpath );
+   
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+   try
+   {
+     const string user_data_dir = InterSpec::writableDataDirectory();
+     if( !user_data_dir.empty() )
+     {
+       trial_paths.push_back( user_data_dir );
+       trial_paths.push_back( SpecUtils::append_path( user_data_dir, "drfs" ) );
+     }
+   }catch( std::exception & )
+   {
+   }
+#endif
+   
+   for( const string &p : trial_paths )
+   {
+     trialpath = SpecUtils::append_path(p, pathstr);
+     if( SpecUtils::is_file(trialpath) )
+       return trialpath;
+   }//for( const string &p : trial_paths )
+   
+   return pathstr;
+  }//complete_drf_path
 }//namespace
 
 class RelEffFile;
@@ -290,8 +337,6 @@ public:
   
   bool trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
   
-  //parseDetector() returns null on error
-  static std::shared_ptr<DetectorPeakResponse> parseDetector( string &line );
   void initDetectors();
   void detectorSelected( const int index );
 };//class RelEffFile
@@ -410,6 +455,36 @@ m_credits( nullptr )
   closeIcon->clicked().connect( boost::bind( &RelEffDetSelect::removeFile, parentSelect, this ) );
   
   topdiv->addWidget( m_fileEdit );
+  
+  string user_data_dir;
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+  try
+  {
+    user_data_dir = InterSpec::writableDataDirectory();
+  }catch( std::exception & )
+  {
+  }
+#endif
+  
+  if( !user_data_dir.empty() )
+  {
+    const string data_norm = SpecUtils::lexically_normalize_path( user_data_dir );
+    const string file_norm = SpecUtils::lexically_normalize_path( file );
+    const string drf_norm = SpecUtils::append_path( data_norm, "drfs" );
+    
+    if( SpecUtils::istarts_with(file_norm, drf_norm) )
+    {
+      const string relpath = SpecUtils::fs_relative( drf_norm, file );
+      if( (relpath.size() >= 2) && !SpecUtils::istarts_with(relpath, "..") )
+        file = relpath;
+    }else if( SpecUtils::istarts_with(file_norm, data_norm) )
+    {
+      const string relpath = SpecUtils::fs_relative( user_data_dir, file );
+      if( (relpath.size() >= 2) && !SpecUtils::istarts_with(relpath, "..") )
+        file = relpath;
+    }
+  }//if( !user_data_dir.empty() )
+    
   m_fileEdit->setText( file );
   m_fileEdit->setTextSize( 48 );
   
@@ -513,55 +588,6 @@ bool RelEffFile::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 }//void trySelectDetector(...)
 
 
-//parseDetector() returns null on error
-std::shared_ptr<DetectorPeakResponse> RelEffFile::parseDetector( string &line )
-{
-  std::shared_ptr<DetectorPeakResponse> det;
-  
-  vector<string> fields;
-  fields.reserve( 20 );
-  
-  split_escaped_csv( fields, line );
-  
-  if( fields.size() < 16 )
-    return det;
-  
-  try
-  {
-    const string name = fields[0] + " (" + fields[1] + ")";
-    
-    vector<float> coefs;
-    for( int i = 3; i < 11; ++i )
-      coefs.push_back( static_cast<float>( std::stod( fields[i] ) ) );
-    
-    //Get rid of the zero coefficients
-    for( size_t i = coefs.size()-1; i > 0; --i )
-    {
-      if( fabs(coefs[i]) > 1.0E-14 ) //1.0E-14 chosen arbitrarily
-      {
-        coefs.erase( coefs.begin()+i+1, coefs.end() );
-        break;
-      }
-    }//for( size_t i = coefs.size()-1; i > 0; --i )
-    
-    const float dist = static_cast<float>( std::stod(fields[14])*PhysicalUnits::cm );
-    const float diam = 2.0f*static_cast<float>( std::stod(fields[15])*PhysicalUnits::cm );
-    const float eunits = float(PhysicalUnits::MeV);
-    
-    string description = fields[2] + " - from Relative Eff. File";
-    det.reset( new DetectorPeakResponse( name, description ) );
-    det->fromExpOfLogPowerSeriesAbsEff( coefs, {}, dist, diam, eunits, 0.0f, 0.0f );
-    det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
-  }catch( std::exception &e )
-  {
-    det.reset();
-    cerr << "RelEffDetSelect::parseDetector() caught: " << e.what() << endl;
-  }//try /catch
-  
-  return det;
-}//static std::shared_ptr<DetectorPeakResponse> parseDetector( string &line )
-
-
 void RelEffFile::initDetectors()
 {
   m_responses.clear();
@@ -577,6 +603,8 @@ void RelEffFile::initDetectors()
   pathstr = m_fileEdit->text().toUTF8();
 #endif
   
+  pathstr = complete_drf_path( pathstr );
+
 #ifdef _WIN32
   const std::wstring wpathstr = SpecUtils::convert_from_utf8_to_utf16(pathstr);
   std::ifstream input( wpathstr.c_str(), ios::in | ios::binary );
@@ -588,26 +616,7 @@ void RelEffFile::initDetectors()
   
   if( file_opened )
   {
-    vector<vector<float>> detcoefs;
-    string line;
-    while( SpecUtils::safe_get_line( input, line, 2048 ) )
-    {
-      SpecUtils::trim( line );
-      
-      if( SpecUtils::istarts_with( line, "#credit:") )
-        credits.push_back( SpecUtils::trim_copy(line.substr(8)) );
-      
-      if( line.empty() || line[0]=='#' )
-        continue;
-      
-      std::shared_ptr<DetectorPeakResponse> det = parseDetector( line );
-      
-      if( det )
-      {
-        detcoefs.push_back( det->efficiencyExpOfLogsCoeffs() );
-        m_responses.push_back( det );
-      }
-    }//while( SpecUtils::safe_get_line( input, line ) )
+    DetectorPeakResponse::parseMultipleRelEffDrfCsv( input, credits, m_responses );
     
     if( m_responses.empty() )
     {
@@ -639,8 +648,12 @@ void RelEffFile::initDetectors()
     credits.push_back( "<span style=\"color:red;\">File does not contain and DRFs</span>" );
   
   string creditHtml;
-  for( const string &credit : credits )
-    creditHtml += "<div>" + credit + "</div>";
+  for( string credit : credits )
+  {
+    WString c = WString::fromUTF8(credit);
+    Wt::Utils::removeScript(c);
+    creditHtml += "<div>" + c.toUTF8() + "</div>";
+  }
   
   m_credits->setText( creditHtml );
   
@@ -822,6 +835,17 @@ void RelEffDetSelect::docreate()
     const vector<string> tsv_files = SpecUtils::recursive_ls( userDir, ".tsv");
     for( const auto &p : tsv_files )
       pathstr += (pathstr.empty() ? "" : ";") + p;
+    
+    
+    const string drfsdir = SpecUtils::append_path( userDir, "drfs" );
+    
+    const vector<string> drf_files = SpecUtils::recursive_ls( drfsdir );
+    for( const auto &p : drf_files )
+    {
+      const auto pos = std::find( begin(tsv_files), end(tsv_files), p );
+      if( pos == end(tsv_files) )
+        pathstr += (pathstr.empty() ? "" : ";") + p;
+    }//for( const auto &p : drf_files )
   }catch( std::exception & )
   {
     cerr << "Couldnt call into InterSpec::writableDataDirectory()" << endl;
@@ -1787,7 +1811,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   WGridLayout *lowerLayout = new WGridLayout();
   lowerContent->setLayout( lowerLayout );
   
-  //Presize the lower content to accomidate the tallest DRF type ("Formula"),
+  //Pre-size the lower content to accommodate the tallest DRF type ("Formula"),
   //  so everything wont change size when the user selects the different types.
   //  Although, as it stands now if you add a bunch of paths to GADRAS/Rel. Eff.
   //  you can make its content larger than the 190 px.
@@ -1800,15 +1824,19 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_drfTypeMenu = new WMenu( m_drfTypeStack, Wt::Vertical );
   m_drfTypeMenu->addStyleClass( "VerticalNavMenu SideMenu HeavyNavMenu DetEditMenu" );
   WContainerWidget *menuHolder = new WContainerWidget();
+  menuHolder->setOverflow( WContainerWidget::Overflow::OverflowAuto, Wt::Orientation::Vertical );
+  menuHolder->setOverflow( WContainerWidget::Overflow::OverflowHidden, Wt::Orientation::Horizontal );
+  
   menuHolder->addWidget( m_drfTypeMenu );
   lowerLayout->addWidget( menuHolder, 0, 0, 2, 1 );
   lowerLayout->addWidget( m_drfTypeStack, 0, 1 );
   
   WContainerWidget *defaultOptions = new WContainerWidget();
-  lowerLayout->addWidget( defaultOptions, 1, 1 );
+  mainLayout->addWidget( defaultOptions, 2, 0 );
+  //lowerLayout->addWidget( defaultOptions, 1, 1 );
   
-  mainLayout->setRowStretch( 0, 1 );
-  mainLayout->setRowResizable( 0 );
+  mainLayout->setRowResizable( 0, true, WLength(250, WLength::Unit::Pixel) );
+  mainLayout->setRowStretch( 1, 1 );
   
   lowerLayout->setColumnStretch( 1, 1 );
   
@@ -2142,15 +2170,18 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   item = m_drfTypeMenu->addItem( "Previous", recentDiv );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
-  m_drfTypeStack->setHeight( WLength(185.0) );
+  //m_drfTypeStack->setHeight( WLength(185.0) );
   
   
   auto meas = specViewer->measurment( SpecUtils::SpectrumType::Foreground );
   
   if( meas && !meas->instrument_id().empty() )
   {
+    // Hack to keep checkboxes visible
+    if( !defaultOptions->hasStyleClass( "DrfDefaultOptions" ) )
+      defaultOptions->addStyleClass( "DrfDefaultOptions" );
+    
     m_defaultForSerialNumber = new WCheckBox( "Use as default DRF for SN '" + meas->instrument_id() + "'", defaultOptions );
-    //m_defaultForSerialNumber->setMargin( 21, Wt::Left );
     m_defaultForSerialNumber->setInline( false );
     //mainLayout->addWidget( m_defaultForSerialNumber, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
   }//if( have serial number )
@@ -2162,8 +2193,12 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
       model = meas->instrument_model();
     else
       model = detectorTypeToString( meas->detector_type() );
+    
+    // Hack to keep checkboxes visible
+    if( !defaultOptions->hasStyleClass( "DrfDefaultOptions" ) )
+      defaultOptions->addStyleClass( "DrfDefaultOptions" );
+    
     m_defaultForDetectorModel = new WCheckBox( "Use as default DRF for model '" + model + "'", defaultOptions );
-    //m_defaultForDetectorModel->setMargin( 21, Wt::Left );
     m_defaultForDetectorModel->setInline( false );
     //mainLayout->addWidget( m_defaultForDetectorModel, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
   }//if( have
@@ -3380,7 +3415,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const S
       
       if( SpecUtils::icontains( line, smname ) )
       {
-        auto det = RelEffFile::parseDetector( line );
+        auto det = DetectorPeakResponse::parseSingleCsvLineRelEffDrf( line );
         
         if( det )
         {
@@ -3680,26 +3715,28 @@ DetectorEditWindow::DetectorEditWindow(
                                   InterSpec *specViewer,
                                   SpectraFileModel *fileModel )
   : AuxWindow("Detector Response Function Select",
-              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen),
+              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                   | AuxWindowProperties::TabletNotFullScreen
+                   | AuxWindowProperties::DisableCollapse
+                   | AuxWindowProperties::EnableResize ),
     m_edit( NULL )
 {
-  disableCollapse();
   m_edit = new DetectorEdit( det, specViewer, fileModel, this );
+  
   contents()->setPadding( 0 );
+  contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
   stretcher()->addWidget( m_edit, 0, 0 );
   stretcher()->setContentsMargins( 6, 2, 6, 0 );
+  
   m_edit->done().connect( boost::bind( &DetectorEditWindow::acceptAndDelete, this ) );
   finished().connect( boost::bind( &DetectorEditWindow::acceptAndDelete, this ) );
   rejectWhenEscapePressed();
-  setMargin( 0 );
-  if( specViewer->isTablet() )
-    titleBar()->hide();
+  
   resize( WLength(650,WLength::Pixel), WLength(610,WLength::Pixel));
   centerWindow();
   show();
   resizeToFitOnScreen();
-  setResizable(true);
-//  resizeWindow( 300, 400 );
+  centerWindowHeavyHanded();
 }//DetectorEditWindow constructor
 
 

@@ -208,7 +208,9 @@ namespace HelpSystem
   
   HelpWindow::HelpWindow(std::string preselect)
    : AuxWindow( "InterSpec Help",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::IsHelpWIndow) ),
+               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                 | AuxWindowProperties::IsHelpWIndow
+                 | AuxWindowProperties::EnableResize) ),
      m_tree ( new Wt::WTree() ),
      m_searchText( new Wt::WLineEdit() )
   {
@@ -331,7 +333,7 @@ namespace HelpSystem
     resizeScaledWindow(0.85, 0.85);
     centerWindow();
     //centerWindowHeavyHanded();  //why not?
-    setResizable( true );
+    
     show();
     resizeToFitOnScreen();
   } //void HelpSystem::showHelpDialog()

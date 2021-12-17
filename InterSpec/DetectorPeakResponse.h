@@ -356,6 +356,40 @@ public:
                                       const float lowerEnergy,
                                       const float upperEnergy );
 
+  
+  static std::shared_ptr<DetectorPeakResponse> parseSingleCsvLineRelEffDrf( std::string &line );
+  
+  /** Parses CSV/TSV files that contain one or more Relative Efficiency DRFs, where each each line specifies a DRF via equation
+   coefficients
+   
+   Detector Name, Relative Eff, Detector Description,  c0,  c1,  c2,  c3,  c4,  c5,  c6,  c7,  p0,  p1,  p2,  Calib Distance, Radius (cm),  G factor
+   Detector Name: is usually the detector model, ex., "IdentiFINDER".
+   Relative Eff:. is the efficiency relative to a 3x3 NaI detector at 661 keV; this is only used for reference, and may be empty, ex., "11%"
+   Detector Description: Description of the detector crystal, ex., "2.5x1.5 Planar HPGe"
+   c0 through c7: the coefficients that will be fed into #fromExpOfLogPowerSeriesAbsEff and are in MeV (not keV); it is not uncommon for
+              only the first 4 or five coefficients to be non-zero.  These coefficients are teh relative efficiency at a given distance.
+   p0 through p2: unused. interaction depth coefficients
+   Calib Distance: the distance, in cm, the relative efficiency coefficients (c0 through c7) are defined for; a value of zero means the
+              coefficients are for the intrinsic efficiency (i.e., efficiency of gamma on detector face to be recorded at full-energy)
+   Radius (cm): Radius of the detector face.
+   G factor: unused. The geometric factor (i.e., fraction solid angle of the detector) at the calibration distance.
+   
+   An example input line might be:
+   <pre>
+   My Det, 100%, 3x3 NaI, -9.20, -0.66, -0.096, 0.0009, 0, 0, 0, 0, 0, 0, 0, 100, 3.81, 5.6E-05
+   </pre>
+   
+   Lines starting with a '#' character are be ignored, unless it is a '#credit' line.
+   
+   @param input The input CSV or TSV file stream
+   @param credits Lines in the file starting with '#credit:' will be added into this vector
+   @param drfs The DRFs parsed from the file.  If empty after return, not DRFs could be parsed.
+   */
+  static void parseMultipleRelEffDrfCsv( std::istream &input,
+                                        std::vector<std::string> &credits,
+                                        std::vector<std::shared_ptr<DetectorPeakResponse>> &drfs );
+  
+  
   /**
    if form==kGadrasResolutionFcn then coefs must have 3 entries
    if form==kSqrtPolynomial then coefs must not be empty,
