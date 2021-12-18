@@ -145,7 +145,13 @@ surface at which 63% of the contamination is contained within.
 See the <a href="https://sandialabs.github.io/InterSpec/tutorials/" target="_blank">InterSpec
 tutorials</a> further information.
 </p>
-
+<p>A current limitation in <b>InterSpec</b> is that detector response function does not have a
+angular dependent component, and assumes the same efficiency no matter the angle or position of the
+incoming gamma ray.  For volumetric sources that are comparable or larger than the distance to the
+detector, this can result in some inaccuracies.  For surface contamination measurements with the
+detector 1 meter from the ground, this may lead to inaccuracies of 10% or so, with lower energy
+gammas generally being effected more.
+</p>
 
 <h2>Graphic</h2>
 By default the chart shown by this tools is something like a &chi; chart where

@@ -3590,8 +3590,6 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
           
         case TraceActivityType::ExponentialDistribution:
         {
-          cerr << "blah blah blah: need to account for surface-area/volume uncertainty in activity uncertainty of ExponentialDistribution" << endl;
-          
           switch( m_geometry )
           {
             case GeometryType::Spherical:
@@ -4166,6 +4164,13 @@ vector< pair<double,double> > ShieldingSourceChi2Fcn::observedPeakEnergyWidths( 
 
 void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calculator )
 {
+  // TODO: if an exponential distribution with zero relaxation length, then just integrate over
+  //       the surface
+  //if( calculator.m_isInSituExponential && (calculator.m_inSituRelaxationLength < FLT_EPSILON) )
+  //{
+  //  // Integrate over surface instead of volume
+  //}
+  
   int ndim = -1;  //the number of dimensions of the integral.
   
   switch ( calculator.m_geometry )

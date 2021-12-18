@@ -1378,15 +1378,13 @@ void ShieldingSelect::setClosableAndAddable( bool closeable , WGridLayout* layou
 //    item->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal )
 //    m_addIcon->setMenu( popup );
     
-    PopupDivMenu *popup = new PopupDivMenu( NULL, PopupDivMenu::TransientMenu );
+    PopupDivMenu *popup = new PopupDivMenu( m_addIcon, PopupDivMenu::TransientMenu );
     PopupDivMenuItem *item = popup->addMenuItem( "Add shielding before" );
     item->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal );
     item = popup->addMenuItem( "Add Shielding after" );
     item->triggered().connect( this, &ShieldingSelect::emitAddAfterSignal );
     m_addTraceSourceItem = popup->addMenuItem( "Add Trace Source" );
     m_addTraceSourceItem->triggered().connect( this, &ShieldingSelect::addTraceSource );
-    
-    m_addIcon->setMenu( popup );
     
     layout->addWidget( m_closeIcon, 0, 2, AlignMiddle | AlignRight );
     layout->addWidget( m_addIcon, 1, 2, AlignTop | AlignRight );
@@ -2133,6 +2131,19 @@ void ShieldingSelect::emitRemoveSignal()
     }//for(...)
   }//if( m_asSourceCBs )
 
+  // Remove trace sources so model will get updated
+  if( m_traceSources )
+  {
+    for( WWidget *w : m_traceSources->children() )
+    {
+      TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
+      assert( src );
+      if( src ) // JIC
+        removeTraceSourceWidget( src );
+    }
+  }//if( m_traceSources )
+  
+  
   m_removeSignal.emit( this );
 }//void emitRemoveSignal()
 
