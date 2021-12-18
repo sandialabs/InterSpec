@@ -385,6 +385,13 @@ protected:
                                 int npeaks, bool isfinal,
                                 double window_xpx, double window_ypx );
   
+  /** Does the real work of #chartFitRoiDragCallback, but has extra argument to control if work is done synchronously or
+   asynchronously.  For normal gui operations you want asynchronously, but for testing you want synchronously.
+   */
+  void chartFitRoiDragCallbackWorker( double lower_energy, double upper_energy,
+                               int npeaks, bool isfinal,
+                               double window_xpx, double window_ypx, const bool allowAsync );
+  
   
   void yAxisScaled( const double scale, const std::string &spectrum );
   

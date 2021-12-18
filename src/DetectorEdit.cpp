@@ -205,10 +205,11 @@ namespace
       fields.push_back(*it);
   }//void split_escaped_csv(...)
   
+ 
 
  /** Searches static and user-writable data directories for the given file.
   */
- string complete_drf_path( string pathstr )
+ string find_valid_path( string pathstr, const bool isdir )
  {
 #if( BUILD_FOR_WEB_DEPLOYMENT )
    SpecUtils::ireplace_all(pathstr, "..", "");
@@ -216,7 +217,9 @@ namespace
    return pathstr;
 #endif
    
-   if( SpecUtils::is_file(pathstr) )
+   const auto file_check = isdir ? &SpecUtils::is_directory : &SpecUtils::is_file;
+   
+   if( file_check(pathstr) )
      return pathstr;
    
    vector<string> trial_paths;
@@ -245,12 +248,26 @@ namespace
    for( const string &p : trial_paths )
    {
      trialpath = SpecUtils::append_path(p, pathstr);
-     if( SpecUtils::is_file(trialpath) )
+     if( file_check(trialpath) )
        return trialpath;
    }//for( const string &p : trial_paths )
    
    return pathstr;
-  }//complete_drf_path
+  }//find_valid_path
+
+
+  string complete_drf_path( string pathstr )
+  {
+    return find_valid_path( pathstr, false );
+  }
+
+
+  string complete_drf_dir_path( string pathstr )
+  {
+    return find_valid_path( pathstr, true );
+  }
+
+
 }//namespace
 
 class RelEffFile;
@@ -1279,6 +1296,36 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 #else
 */
   
+  string user_data_dir;
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+  try
+  {
+    user_data_dir = InterSpec::writableDataDirectory();
+  }catch( std::exception & )
+  {
+  }
+#endif
+  
+  if( !user_data_dir.empty() )
+  {
+    const string data_norm = SpecUtils::lexically_normalize_path( user_data_dir );
+    const string file_norm = SpecUtils::lexically_normalize_path( directory );
+    const string drf_norm = SpecUtils::append_path( data_norm, "drfs" );
+    
+    if( SpecUtils::istarts_with(file_norm, drf_norm) )
+    {
+      const string relpath = SpecUtils::fs_relative( drf_norm, directory );
+      if( (relpath.size() >= 2) && !SpecUtils::istarts_with(relpath, "..") )
+        directory = relpath;
+    }else if( SpecUtils::istarts_with(file_norm, data_norm) )
+    {
+      const string relpath = SpecUtils::fs_relative( user_data_dir, directory );
+      if( (relpath.size() >= 2) && !SpecUtils::istarts_with(relpath, "..") )
+        directory = relpath;
+    }
+  }//if( !user_data_dir.empty() )
+  
+  
   topdiv->addWidget( m_directoryEdit );
   m_directoryEdit->setText( directory );
   m_directoryEdit->setTextSize( 48 );
@@ -1458,7 +1505,12 @@ void GadrasDirectory::initDetectors()
   m_msg->setText( "" );
   m_msg->hide();
   
-  const std::string basedir = directory();
+  string basedir = directory();
+  
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  basedir = complete_drf_dir_path( basedir );
+#endif
+  
   
   if( !SpecUtils::is_directory( basedir ) )
   {

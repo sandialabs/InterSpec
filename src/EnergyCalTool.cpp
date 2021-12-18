@@ -679,11 +679,20 @@ public:
     btndiv->addStyleClass( "CalCoefsBtnDiv" );
   
 #if( IMP_CALp_BTN_NEAR_COEFS )
+    
+    WResource *csv = m_model->peakCsvResource();
+#if( BUILD_AS_OSX_APP )
+    m_downloadCALp = new WAnchor( WLink(m_tool->calpResources()), btndiv );
+    m_downloadCALp->setTarget( AnchorTarget::TargetNewWindow );
+    m_downloadCALp->setStyleClass( "LinkBtn DownloadLink" );
+    m_downloadCALp->setText( "CALp" );
+#else
     m_downloadCALp = new WPushButton( "CALp", btndiv );
     m_downloadCALp->setIcon( "InterSpec_resources/images/download_small.svg" );
     m_downloadCALp->setLinkTarget( Wt::TargetNewWindow );
     m_downloadCALp->setLink( WLink( m_tool->calpResources() ) );
     m_downloadCALp->setStyleClass( "LinkBtn DownloadBtn CALp" );
+#endif
     
     m_uploadCALp = new WPushButton( btndiv );
     m_uploadCALp->setIcon( "InterSpec_resources/images/upload_small.svg" );
@@ -1285,11 +1294,18 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_uploadCALp->setStyleClass( "LinkBtn UploadBtn CALp" );
   m_uploadCALp->clicked().connect( this, &EnergyCalTool::handleRequestToUploadCALp );
   
+#if( BUILD_AS_OSX_APP )
+  m_downloadCALp = new WAnchor( WLink(m_calpResource), btndiv );
+  m_downloadCALp->setTarget( AnchorTarget::TargetNewWindow );
+  m_downloadCALp->setStyleClass( "LinkBtn DownloadLink CALp" );
+  m_downloadCALp->setText( "CALp" );
+#else
   m_downloadCALp = new WPushButton( "CALp", btndiv );
   m_downloadCALp->setIcon( "InterSpec_resources/images/download_small.svg" );
   m_downloadCALp->setLinkTarget( Wt::TargetNewWindow );
   m_downloadCALp->setStyleClass( "LinkBtn DownloadBtn CALp" );
   m_downloadCALp->setLink( WLink(m_calpResource) );
+#endif
   
   m_downloadCALp->clicked().connect( std::bind([this](){
     m_interspec->logMessage( "You can apply this CALp file later to a different spectrum by"

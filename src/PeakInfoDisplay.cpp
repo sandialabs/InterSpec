@@ -1117,7 +1117,7 @@ void PeakInfoDisplay::init()
 #if( BUILD_AS_OSX_APP )
   WAnchor *csvButton = new WAnchor( WLink(csv), buttonDiv );
   csvButton->setTarget( AnchorTarget::TargetNewWindow );
-  csvButton->setStyleClass( "LinkBtn" );
+  csvButton->setStyleClass( "LinkBtn DownloadLink" );
 #else
   WPushButton *csvButton = new WPushButton( buttonDiv );
   csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );

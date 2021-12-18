@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <mutex>
 #include <deque>
 #include <vector>
 #include <string>
@@ -33,6 +34,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <sys/stat.h>
+#include <condition_variable>
 
 #include <boost/ref.hpp>
 
@@ -2164,7 +2166,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
     
 #if( USE_SPECTRUM_CHART_D3 )
     D3SpectrumDisplayDiv *specchart = m_viewer->spectrum();
-    specchart->chartFitRoiDragCallback( lowerx, upperx, npeaks, true, -1, -1 );
+    specchart->chartFitRoiDragCallbackWorker( lowerx, upperx, npeaks, true, -1, -1, false );
 #else
     m_viewer->findPeakFromControlDrag( lowerx, upperx, npeaks );
 #endif
