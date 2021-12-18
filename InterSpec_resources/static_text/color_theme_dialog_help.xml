@@ -9,7 +9,7 @@ This tool allows you to customize colors on the spectrum and time charts, as wel
 </p>
   To customize the color themes you will need need to add a theme using the <img src="InterSpec_resources/images/plus_min.png"  style="width: 16px; height 16px"/> button
   on the lower left side of the tool; the theme currently selected in the menu above the button will be cloned, and a new entry added to the menu.
-  By default your customized color themes are saved to <em>InterSpec</em>s internal database, but you can also download a <em>JSON</em> 
+  By default your customized color themes are saved to <b>InterSpec</b>s internal database, but you can also download a <em>JSON</em> 
   representation of the current color theme by clicking on the <img src="InterSpec_resources/images/download_small.svg"  style="width: 16px; height 16px"/>
   icon; you can also upload <em>JSON</em> color themes by using the &quot;<b>Upload...</b>&quot; button at the bottom of the tool.  The <em>JSON</em>
   representation is convienient if you would like to use the same color theme on multiple devices.
@@ -25,7 +25,7 @@ This tool allows you to customize colors on the spectrum and time charts, as wel
       <li><strong>Descritiption</strong> is used for your reference in the future.</li>
       <li><strong>Backdrop Theme</strong> styles all non-chart areas of the application.  Currently only a default (light) and a dark theme is available.  More options may be added in the future.</li>
       <li><strong>Chart Colors</strong> Descriptions are provided next to each color option, but generally clicking the &quot;<strong>Apply</strong>&quot; button at the 
-       bottom of the window to actually see the changes within <em>InterSpec</em> is the most useful way to check each color choice.
+       bottom of the window to actually see the changes within <b>InterSpec</b> is the most useful way to check each color choice.
         <ul><li>The <strong>Peaks Use Reference Line Colors</strong> check box indicates if when you are displaying reference gamma lines, if the peaks you fit that
         will be associated with the source nuclide (or x-ray, or reaction) should take on the color of the reference lines.  This can be helpful to visually represent 
         which nuclear sources are responsible for which peaks.  Peak colors can be changed later by right clicking (or for touch devices tapping and 

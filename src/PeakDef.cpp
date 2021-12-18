@@ -4565,8 +4565,7 @@ void PeakContinuum::eqn_from_offsets( size_t lowchannel,
     m = b = 0.0;
   }//if( an invalid value of m or b )
   
-  cout << "For reference energy " << reference_energy << " fit ceofs {" << b << ", " << m << "}" << endl;
-  
+  //cout << "For reference energy " << reference_energy << " fit ceofs {" << b << ", " << m << "}" << endl;
 }//void PeakContinuum::eqn_from_offsets(...)
 
 

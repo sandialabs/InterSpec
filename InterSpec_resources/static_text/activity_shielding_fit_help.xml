@@ -6,13 +6,13 @@ The <em>Activity/Shielding Fit</em> tool allows for potentially fitting for sour
 activity, age, and shielding amounts.<br />
 Before using this tool you must fit all peaks within the spectrum you want to
 use to perform the analysis, and associate nuclides with the peaks.  The easiest
-way to associate nuclides (or more to the point, a specific gamma or x-ray energy
+way to associate nuclides (or more specifically, a gamma or x-ray energy
 of the nuclide) with photopeaks is by displaying reference lines of the nuclide
 before fitting peaks so that when the peak is fit for, the association with the
 specific gamma or x-ray of the nuclide will usually be automatically made.  You
 can also use the <em>Peak Editor</em> or <em>Peak Manager</em> to create the
 associations as well.
-<img src="InterSpec_resources/static_text/images/ActShieldFit.png"  class="imageBorder" style="max-height:300px;float:left;display:block;margin-right:20px; "/>
+<img src="InterSpec_resources/static_text/images/ActShieldFit.jpg"  class="imageBorder" style="max-height:300px;float:left;display:block;margin-right:20px; "/>
 
 <h2>Source Peaks</h2>
 The left-most column of the tool allows you to select which peaks you would like
@@ -34,7 +34,7 @@ known activity (and age).<br />
 
 For nuclides where age effects the distribution in energy of their gammas, you
 may be able to fit for their age if you have multiple peaks whose relative
-amplitudes will vary in time.  However, <em>InterSpec</em> may allow you to try
+amplitudes will vary in time.  However, <b>InterSpec</b> may allow you to try
 and fit for ages in cases where you dont actually have the power to do it, either
 because the peaks relative amplitudes dont actually vary enough, or they dont vary
 enough for the time regime the nuclide is in (e.x., after equilibrium), or the
@@ -46,7 +46,8 @@ be large, but this may not always be the case, so please use caution. <br />
 
 <h2>Detector Response</h2>
 You must specify the detector resposne function (DRF) to use.  You can select the
-DRF by tapping on the &quot;<b>Detector</b>&quot; widget.
+DRF by tapping on the &quot;<b>Detector</b>&quot; widget in the upper right-hand
+part of this tool.
 
 <h2>Distance</h2>
 You must also specify the distance from the center of the source, to the face
@@ -54,17 +55,97 @@ of the detector.  You can enter the distance using entries like
 &quot;3ft 4in&quot;,
 &quot;3'&quot;,
 &quot;13 cm&quot;,
-&quot;4m 100mm&quot;, where if mutliple distances are entered they are summed
+&quot;4m 100mm&quot;, where if multiple distances are entered they are summed
 (so the last example would give 4.1m).
+
+<h2>Geometry</h2>
+You can select the shielding geometry to be spherical, end-on cylindrical, side-on cylindrical, or
+rectangular.<br />
+For point sources the geometry is largely irrelevant, since its only the material between the source
+and the detector that affect attenuation, so it is recommended to use spherical geometry for
+simplicity.<br />
+The different geometries are most useful for self-attenuating sources, or trace-sources; both cases
+where the volumetric distribution of the source radioactive material impact the relative attenuation
+of detected gamma rays.
 
 <h2>Shielding</h2>
 You can add &quot;Material&quot; or &quot;Generic&quot; shieldings, where
 &quot;Material&quot; shieldings are common materials like plywood, stainless steel, copper,
 plexiglass, etc.  The material library is drawn from the NIST material database,
 as well as various other sources.  With material shieldings you can either specify a
-thickness, or fit for a thickness.
+fixed dimension, or fit for it.
 Generic material allows you to specify and/or fit the effective atomic number
-and areal density (g/cm<sup>2</sup>) of the shielding.
+and areal density (g/cm<sup>2</sup>) of the shielding; if combined with material
+shieldings, the generic shielding does not take up any volume.
+
+<h3>Volumetric Shielding Sources</h3>
+<h4>Self-Attenuating Sources</h4>
+When a shielding material contains the same element as one of the isotopes whose activity is being
+fit for, an option will appear in the shielding display to have the shielding be a source for the
+activity. That is, you will specify the fraction of that element the isotope composes, and then the
+activity, and physical distribution of that source isotope will be determined by the shieldings
+extent.<br />
+When you select the shielding to be the source for an isotope, the option to allow fitting the
+isotope activity will disappear from the center table; this is because the isotopes activity will
+now be determined by the materials composition, and the fraction of the element the isotope is
+assigned.<br />
+When you have multiple isotopes of an element, an option to fit for their relative abundances will
+also appear after you have selected two or more isotopes to be source isotopes.  An example of this
+is shown below.  Note that the sum abundance of the isotopes will remain fixed during the fit.  That
+is, if before fitting you assign isotope 1 to have a mass fraction of 0.1, and isotopes 2 to be 0.4,
+then after fitting the mass fraction of isotope 1 and isotope 2 will still sum to 0.5, although
+their individual values will likely change.
+<div style="padding-top: 10px; text-align: center;">
+<img src="InterSpec_resources/static_text/images/act_shield_self_atten.jpg" class="imageBorder" style="max-width: 75%" align="middle" />
+<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+An example of assigning a shielding to be a self-attenuating source for U235 and U238.  The relative
+abundance of U235 and U238 will also be fit for.
+</div>
+</div>
+
+<p>
+Self-attenuating sources are particularly useful for higher mass-number elements like Tungsten,
+Thorium, Uranium and Plutonium because these dense materials often provide a significant amount
+of attenuation before the gammas leave the object, and the radioactive isotopes are distributed
+over the volume of the object, making point-source approximations very poor.
+</p>
+<p><b>InterSpec</b> uses a ray-trace algorithm coupled to an adaptive quadrature based numerical
+integration scheme to take into account the attenuation in the shieldings on the way to the
+detector, from the entire shieldings volume, to calculate the expected full-energy peak areas.
+</p>
+
+<h4>Trace Sources</h4>
+Trace sources are similar to self-attenuating sources in that they are treated as volumetric
+sources that use a ray-trace algorithm to compute expected contributions, but they different in that
+the source isotopes do not have to be of an element in the shielding, the source isotope strength is
+not tied to the density or composition of the shielding, and the source isotope do not affect the
+attenuation properties of the shielding.
+<br />
+Trace source can be determined as total activity in the shielding, activity per volume
+(activity/cm<sup>3</sup>), activity per gram, or as an exponentially distributed surface
+contamination.
+<br />
+<div style="padding-top: 10px; text-align: center;">
+<img src="InterSpec_resources/static_text/images/add_trace_source.png" class="imageBorder" style="max-width: 40%; width: 275px;" align="middle" />
+<img src="InterSpec_resources/static_text/images/trace_source_example.png" class="imageBorder" style="max-width: 40%; width: 275px;" align="middle" />
+<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+[Left] how to add a trace source to a shielding.<br />
+[Right] Example of how a shielding area looks after adding a trace source to it.
+</div>
+</div>
+<p>You can add as many trace source isotopes to a shielding as you have in the currently selected
+peaks to use in the fit.  However, you can only use each isotope in your problem in a maximum of
+one shielding as either a self-attenuating source, or trace source.
+</p>
+<p>If you select the trace source to be of type &quot;per m^2 exp&quot;, the source term will be
+exponentially distributed from the surface of the shielding.  This option is most often used for
+soil contamination, using an end-on cylindrical, or a rectangular geometry.  When this option is
+selected you will have to enter a &quot;Relaxation Distance&quot;, which is the distance from the
+surface at which 63% of the contamination is contained within.
+See the <a href="https://sandialabs.github.io/InterSpec/tutorials/" target="_blank">InterSpec
+tutorials</a> further information.
+</p>
+
 
 <h2>Graphic</h2>
 By default the chart shown by this tools is something like a &chi; chart where
@@ -75,12 +156,42 @@ would predict, a red dot will be shown on the graphic at the energy of the peak,
 and y-value of 4.  Only statistical uncertainties of the fit peak are taken into
 account.<br />
 
-If instead you uncheck the <b>Show Chi Graphic</b> option, the chart shows the
-<em>multiple</em> of each peaks counts from what the model predicts.
+If instead you choose to display the <b>Mult.</b>-style, the chart shows the
+<em>multiple</em> of each peaks counts from what the model predicts, as well as 1-sigma
+statistical error bars.
+
+
+<div style="padding-top: 10px; text-align: center;">
+<img src="InterSpec_resources/static_text/images/act_shield_chi_plot.jpg" class="imageBorder" style="max-width: 45%;" align="middle" />
+<img src="InterSpec_resources/static_text/images/act_shield_mult_plot.jpg" class="imageBorder" style="max-width: 45%;" align="middle" />
+<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+[Left] Example <b>&chi;</b>-style chart showing number of statistical sigmas each peak is away from the models nominal value.<br />
+[Right] The same data, but presented in the <b>Mult.</b>-style chart option.  1-sigma error bars are shown for each data-point, with some errors being smaller than visible.
+</div>
+</div>
+
+<p>
+This chart can help to identify situations when not enough shielding is present (the data points
+have a general positive trend), too much shielding is present (data points have a general negative
+trend), or the effective atomic number of the shielding is to high or too low (the data points
+are concave upwards or downwards after fitting).
+
+<div style="padding-top: 10px; text-align: center;">
+<img src="InterSpec_resources/static_text/images/act_shield_to_much_shield.jpg" class="imageBorder" style="max-width: 45%;" align="middle" />
+<img src="InterSpec_resources/static_text/images/act_shield_to_low_z.jpg" class="imageBorder" style="max-width: 45%;" align="middle" />
+<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+[Left] Example of too much shielding being present, indicated by the clear trend of data points at the different energies.
+<br />
+[Right] Example of shielding being too low of an atomic number, as shown by data points generally being concave downwards.
+</div>
+</div>
+
+
+</p>
 
 <h2>Options</h2>
 <ul>
-<li><b>Multiple nuclides contribute to peak</b>: Currently in <em>InterSpec</em>
+<li><b>Multiple nuclides contribute to peak</b>: Currently in <b>InterSpec</b>
    a single gamma or x-ray is associated with each peak, however often times for
    spectra with multiple nuclides, or for nuclides with many gammas, more than
    one source gamma/x-ray may contribute to the observed peak.  Checking this
@@ -89,7 +200,22 @@ If instead you uncheck the <b>Show Chi Graphic</b> option, the chart shows the
    that these multiple contributions can be accounted for in calculating the models
    expected count for the peak.
   </li>
-  <li><b>Subtract Background Peaks</b>: If your source peaks coorespond to peaks
+  <li><b>Attenuate for air</b>: When checked, attenuation due to air will be included
+  when computing expected peak intensities.  The standard &quot;Air&quot; material is
+  used for attenuation calculation, with a length equal to the distance you entered to
+  the center of the shielding, minus the outer depth of the shielding in the direction
+  of the detector (e.g., the distance from detector to outside of shielding).
+  <br />
+  You may want to unselect this option if when you created your detector response
+  function you unselected the &quot;Atten. for air&quot; option, and your measurement
+  you are currently analyzing is at the same distance as your detector characterization.
+  One scenario when you may choose to not include attenuation from air is if you
+  are working with Marinelli beaker geometries, where you created your detector response
+  function using a Marinelli beaker standard and the sample you are analyzing is the same
+  geometry and distance (but also if you include air attenuation in creating the detector
+  response, and in this analysis, things should cancel out anyway).
+  </li>
+  <li><b>Subtract Background Peaks</b>: If your source peaks correspond to peaks
     that may also be found in the background, then this option will effectively
     subtract the background peak amplitudes from the foreground peak amplitudes.
     To use this feature, first load the background spectrum as a foreground, and
@@ -104,10 +230,6 @@ If instead you uncheck the <b>Show Chi Graphic</b> option, the chart shows the
    this option will constrain the ages of the nuclides for the same element to all
    have the same age in the fit.
   </li>
-  <li><b>Show Chi Graphic</b>: Toggles the graphic to either show the standard
-   deviations the data is away from the models prediction, or to show the multiple
-   of counts the prediction is away from the model.
-  </li>
 </ul>
 
 <h2>Fitting the Model</h2>
@@ -117,17 +239,17 @@ will perform a &chi;<sup>2</sup> based fit of the model to data.<br />
 
 The quality of the fit to data can generally be determined from the graphic.
 You want the dots on the &chi; graphic to be within &plusmn;10 of zero, ideally within
-&plusmn;2 or &plusmn;3 of zero.  If you are vieweing the graphic as the multiple chart,
+&plusmn;2 or &plusmn;3 of zero.  If you are viewing the graphic as the multiple chart,
 you want each of the peaks to be near one.  You can use these charts to eliminate
-outlying peaks (that may be due to being associated with the wrong uclide or
+outlying peaks (that may be due to being associated with the wrong nuclide or
 gamma/x-ray, or other interfering sources), or make tweaks to what you are fitting
 for in the model.  Uncertainties are also provided for the fit quantities that
 may be useful to determine if you have the power to fit for a given quantity;
-however, sometimes this may not always be a relieable way to deterine this.
+however, sometimes this may not always be a reliable way to deterine this.
 
 
 <h2>Further Options</h2>
-The gear icon in the upper right hand corner of the tool provides access to a
+The menu icon in the upper right hand corner of the tool provides access to a
 detailed calculation log that show exactly what went into calculating the final
 answer.  This menu also provides facilities to save/load/export/import model
 files.
@@ -135,7 +257,7 @@ files.
 <h2>Limitations</h2>
 <ul>
   <li>There are many ways the model may be degenerate given the input data.
-    <em>InterSpec</em> will not be able to detect most of these situations, and
+    <b>InterSpec</b> will not be able to detect most of these situations, and
     you must vigilant about not fitting for degenerative quantities.<br />
     An example is that you cant fit for the areal density and atomic number of
     shielding if you only have two peaks in the spectrum.

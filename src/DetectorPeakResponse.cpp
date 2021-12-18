@@ -1011,7 +1011,8 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
   }catch( std::exception &e )
   {
     det.reset();
-    cerr << "DetectorPeakResponse::parseSingleCsvLineRelEffDrf() caught: " << e.what() << endl;
+    cerr << "DetectorPeakResponse::parseSingleCsvLineRelEffDrf() caught: '" << e.what()
+         << "', on line='" << line << endl;
   }//try /catch
   
   return det;

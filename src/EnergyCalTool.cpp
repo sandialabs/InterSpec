@@ -1655,7 +1655,7 @@ vector<MeasToApplyCoefChangeTo> EnergyCalTool::measurementsToApplyCoeffChangeTo(
     //  already have an entry for this file in answer, and if so, use it.  We dont want duplicate
     //  entries for SpecFiles since this could cause us to maybe move peaks multiple times or
     //  something
-    //  \TODO: if the backgeround and foreground use different detectors (no overlap) or different
+    //  \TODO: if the background and foreground use different detectors (no overlap) or different
     //         sample numbers (no overlap) should return multiple entries for the SpecFile to handle
     //         the edge-case correctly
     MeasToApplyCoefChangeTo *changes = nullptr;
@@ -2864,7 +2864,9 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
     std::shared_ptr<SpecMeas> cal_disp_meas = m_interspec->measurment(type);
     assert( cal_disp_meas );
     
-    for( const MeasToApplyCoefChangeTo &delta : measurementsToApplyCoeffChangeTo() )
+    const vector<MeasToApplyCoefChangeTo> applyTo = measurementsToApplyCoeffChangeTo();
+    
+    for( const MeasToApplyCoefChangeTo &delta : applyTo )
     {
       const shared_ptr<SpecMeas> &meas = delta.meas;
       if( meas != cal_disp_meas )
@@ -3933,23 +3935,22 @@ void EnergyCalTool::doRefreshFromFiles()
           continue;
         }//if( item->isHidden() )
         
-        
-        //Need to check all the detectors are the same names
-        set<string> detsInMenu;
-        for( int j = 0; j < detMenu->count(); ++j )
-        {
-          auto detitem = detMenu->itemAt(j);
-          if( detitem )
-            detsInMenu.insert( detitem->text().toUTF8() );
-        }//for( int j = 0; j < detMenu->count(); ++j )
-        
-        needStackRefresh = (detsInMenu != disp_det_names[i]);
         //if( needStackRefresh )
         //  cout << "needStackRefresh: New det names dont equal old for type=" << i << endl;
       }//if( specTypeInForgrndMenu ) / else
+      
+      
+      //Need to check all the detectors are the same names
+      set<string> detsInMenu;
+      for( int j = 0; j < detMenu->count(); ++j )
+      {
+        auto detitem = detMenu->itemAt(j);
+        if( detitem )
+          detsInMenu.insert( detitem->text().toUTF8() );
+      }//for( int j = 0; j < detMenu->count(); ++j )
+      
+      needStackRefresh = (detsInMenu != disp_det_names[i]);
     }//for( int i = 0; i < 3; ++i )
-
-    
   }//end code-block to see if we need to refresh stack
   
   //Dont show spectype menu (the vertical "For.", "Back", "Sec." menu), if we dont need to
