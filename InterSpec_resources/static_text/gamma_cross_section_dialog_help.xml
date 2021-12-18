@@ -4,7 +4,7 @@
 	  </div>
 <div>
 This tool allows you to determine the cross section for gammas of arbitrary
-energy through any material in <em>InterSpec</em>'s library, or any element or
+energy through any material in <b>InterSpec</b>'s library, or any element or
 material formula you enter.  If the density of the material is known or
 specified, as well as the length of traversal through the material, the fraction
 of gamma rays that will make it through the material without interacting with it
@@ -22,7 +22,7 @@ detection of the gamma rays inside the full energy peak will also be given.
 <ul>
 <li><b>Energy</b>: Values entered must be in keV and inside the range of 10 to 10000 keV.</li>
 <li><b>Material/mass-formula</b>: Here you can enter any material or element in
-the <em>InterSpec</em> database (e.x. Polyethylene, Air, Fe, etc.) and you will be
+the <b>InterSpec</b> database (e.x. Polyethylene, Air, Fe, etc.) and you will be
 assisted with a suggestion popup as you type to let you know what is in the
 database.  If you choose to enter a <em>mass-formula</em> instead, you should
 enter the chemical symbol (e.x. C, Ni, Fe, etc.) followed by the mass fraction
@@ -44,7 +44,7 @@ which is what the &#34;Trans. Frac&#34; field provides.</li>
 &#34;Trans. Frac.&#34; field to be calculated for you, and must be in units of
 g/cm<sup>3</sup></li>
 <li><b>Length</b>: This is the <em>thickness</em> of the attenuating material,
-and can be entered in any distance units <em>InterSpec</em> accepts, as long
+and can be entered in any distance units <b>InterSpec</b> accepts, as long
 as they are specified.</li>
 <li><b>Trans. Frac.</b>: The fraction of gammas that will make it through the
 attenuating material at the specified energy, density and thickness, without

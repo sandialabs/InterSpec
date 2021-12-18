@@ -207,6 +207,32 @@ will adjust both the offset and gain coefficients to keep both peaks at the desi
 </div>
 
 <div style="display:table-row">
+<h4>Saving and re-using energy calibrations: CALp files</h4>
+
+
+In the lower left-hand corner of the energy calibration tool there are links to export or import
+<b>CALp</b> energy calibration files.
+<b>CALp</b> files contain the current energy calibration information in a simple text format, and
+allow saving commonly used energy calibrations for easy application to other spectrum files.
+They are particularly useful for working with detectors that either do not provide an energy
+calibration, or provide poor energy calibrations.<br />
+Once you have found an energy calibration you would like to use later, simply click/tap the download
+icon shown below, and save the file somewhere convenient on your filesystem.  When you later want
+to re-use that energy calibration with a different spectrum file, simple drag-n-drop the <b>CALp</b>
+file onto <b>InterSpec</b> and that energy calibration will be applied to the new spectrum file.
+
+<div style="padding-top: 10px; text-align: center;">
+<img src="InterSpec_resources/static_text/images/CALp_down_up.png" class="imageBorder" style="" align="middle" />
+<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+Icons to use for exporting or importing <b>CALp</b> energy calibration files.
+You can also drag-n-drop <b>CALp</b> files from your operating systems filesystem onto
+<b>InterSpec</b> to apply the <b>CALp</b> files.
+</div>
+</div>
+</div>
+
+
+<div style="display:table-row">
 <h4>Inheriting Energy Calibration from Previous Spectra</h4>
 When you load a new spectrum file, or change spectra within a file, <b>InterSpec</b> will check
 if the new file or spectrum is from the same detector as the previous one, and if the energy calibrations
@@ -225,7 +251,7 @@ displaying a background or secondary foreground, the <em>Energy Calibration</em>
 to allow un-ambiguous application of calibration coefficients to the spectra.
 
 <div style="padding-top: 10px; text-align: center;">
-<img src="InterSpec_resources/static_text/images/energy_cal_tool.png"  class="imageBorder" style="width: 85%" align="middle" />
+<img src="InterSpec_resources/static_text/images/energy_cal_tool.jpg"  class="imageBorder" style="width: 85%" align="middle" />
 <div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
 An example of how the <em>Energy Calibration</em> tool will look when displaying a foreground composed from
 multiple gamma detectors (A1, A2, ...), as well as a separate background file.

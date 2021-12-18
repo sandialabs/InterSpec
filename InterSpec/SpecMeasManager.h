@@ -186,7 +186,18 @@ public:
   bool handleNonSpectrumFile( const std::string &displayName,
                               const std::string &fileLocation );
   
-  
+  /** Handles parsing multiple DRF CSV/TSV files when dropped onto the app.
+   
+   Will parse file and prompt user to select a DRF, and if they also want to save the file for later use.
+   
+   @param input The input CSV/TSV file containing one or more DRFs.  See #DetectorPeakResponse::parseMultipleRelEffDrfCsv
+          for a description of the file contents.
+   @param displayName The display name (on the users system) of the DRF file.
+   @param fileLocation The spool file location of the \p input stream; used for copying the file into the apps writable data
+          directory if the user chooses to save it for later.
+   
+   @returns True if file contained DRFs and option of selecting one will be presented to the user.
+   */
   bool handleMultipleDrfCsv( std::istream &input,
                              const std::string &displayName,
                              const std::string &fileLocation );

@@ -1893,6 +1893,53 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   "This file looks to contain an energy calibration."
   "</p>";
   
+  
+  if( (det_to_cal.size() == 1) && det_to_cal.begin()->second )
+  {
+    shared_ptr<const SpecUtils::EnergyCalibration> cal = det_to_cal.begin()->second;
+    assert( cal );
+    const SpecUtils::EnergyCalType type = cal->type();
+    
+    switch( type )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+      {
+        msg += "<p>";
+        if( type == SpecUtils::EnergyCalType::FullRangeFraction )
+          msg += "FullRangeFrac:";
+        else
+          msg += "Polynomial:";
+        
+        for( size_t i = 0; i < cal->coefficients().size() && i < 4; ++i )
+        {
+          char buffer[64];
+          snprintf( buffer, sizeof(buffer), "%s%.3f", (i ? ", " : " "), cal->coefficients()[i] );
+          msg += buffer;
+        }
+        if( cal->coefficients().size() > 4 )
+          msg += "...";
+        
+        if( cal->deviation_pairs().size() )
+          msg += "<br />Plus " + std::to_string(cal->deviation_pairs().size()) + " deviation pairs";
+        
+        msg += "</p>";
+        break;
+      }//case polynomial or FRF
+        
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+        msg += "<p>Lower channel energies.</p>";
+        break;
+      
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+        break;
+    }//switch( type )
+  }else
+  {
+    msg += "<p>There are calibrations for " + std::to_string(det_to_cal.size()) + " detectors</p>";
+  }
+  
   if( !have_cal_for_all_dets )
   {
     if( det_to_cal.size() == 1 )

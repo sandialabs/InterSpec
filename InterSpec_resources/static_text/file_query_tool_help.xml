@@ -95,7 +95,7 @@
       in this additional <code>XML</code> file.  The idea is that it is common to store related spectra (ex. spectra from
       a given room, or spectra of a given source, or spectra of a experiment, etc) in a single directory, and then add a <code>XML</code>
       file that gives additional information such as who made the measurements, comments, distances, source strengths, etc.  Then to search
-      spectra files, using this additional information as well, you create a <code>JSON</code> file that instructs <em>InterSpec</em> how
+      spectra files, using this additional information as well, you create a <code>JSON</code> file that instructs <b>InterSpec</b> how
       to search these <code>XML</code> files.  An example <code>JSON</code> file is given at the bottom of this page.
       
 
@@ -129,9 +129,9 @@
           cached (if &quot;cache parse result&quot; is selected) in a database file in a temporary directory, and deleted
           as soon as the query tool is closed.  If this option <strong>is checked</strong>, the database cache file will
           be saved in the directory you are searching and will remain there for subsequent uses until manually deleted, 
-          or this option is unchecked for the current directory.  When a directory is selected for searching, <em>InterSpec</em>
+          or this option is unchecked for the current directory.  When a directory is selected for searching, <b>InterSpec</b>
           checks for this cache database, and if it exists, parsing the spectrum files can be avoided.  If this option is used
-          but the directory contents change between searches with the query tool, <em>InterSpec</em> will automatically 
+          but the directory contents change between searches with the query tool, <b>InterSpec</b> will automatically
           detect the changes and update the database appropriately.  In order to use this option you must have permissions 
           to write to the directory being searched.  If the search is recursive, only one database cache file will be created
           in the base directory to search.  This option is not checked by default, and must be re-checked for each directory
@@ -155,7 +155,7 @@
       <p>
       The result table can be sorted by any column by clicking on the table header for that column.<br />
       When an individual row is clicked on, it will become highlighted in yellow to indicate it is selected; you can
-      then either click the &quot;Load Selected&quot; button to display the file in <em>InterSpec</em>, or the 
+      then either click the &quot;Load Selected&quot; button to display the file in <b>InterSpec</b>, or the
       &quot;Show in Finder&quot; button to show the actual file in your operating systems file browser.<br />
       Clicking on the <strong>CSV</strong> link will save the query results to a CSV file for use in an external 
       application.
@@ -165,7 +165,7 @@
 The fields of Event XML files that can be queried are defined using a JSON file that defines 
 a <a target="_blank" href="https://en.wikipedia.org/wiki/XPath">XPath</a> to the field, as well as 
 how the user can enter a value to test against.
-<em>InterSpec</em> comes with a generic JSON file, <code>data/file_query_event_xml_fields.json</code>, that 
+<b>InterSpec</b> comes with a generic JSON file, <code>data/file_query_event_xml_fields.json</code>, that 
 can be used as an example for how to define a new field to search.  If you place a file <code>file_query_event_xml_fields.json</code>
 into the apps user data directory (<em>Help</em>&rarr;<em>About InterSpec</em>&rarr;<em>Data</em>), it will override the defaults.
 The first bit of this file is shown below (note: all comments are added for display, actual
