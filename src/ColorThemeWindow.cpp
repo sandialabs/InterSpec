@@ -214,13 +214,22 @@ m_apply( nullptr )
   upload->clicked().connect( this, &ColorThemeWindow::uploadThemeCallback );
   
   JsonDownloadResource *downloadResource = new JsonDownloadResource( this );
+  
+#if( BUILD_AS_OSX_APP )
+  WAnchor *download = new WAnchor( WLink(downloadResource), adSubDiv );
+  download->setTarget( AnchorTarget::TargetNewWindow );
+  download->setStyleClass( "LinkBtn DownloadLink DownloadColorTheme" );
+  download->setTarget( AnchorTarget::TargetNewWindow );
+  download->setText( "&nbsp;" );
+#else
   WPushButton *download = new WPushButton( adSubDiv );
   download->setIcon( "InterSpec_resources/images/download_small.svg" );
   download->setLink( WLink(downloadResource) );
   download->setLinkTarget( Wt::TargetNewWindow );
   download->setStyleClass( "LinkBtn DownloadBtn DownloadColorTheme" );
-  download->setToolTip( "Exports the currently selected theme to a JSON file.", Wt::PlainText );
+#endif
   
+  download->setToolTip( "Exports the currently selected theme to a JSON file.", Wt::PlainText );
   
   leftMenuDivLayout->setRowStretch( 0, 1 );
   

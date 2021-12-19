@@ -4435,10 +4435,12 @@ void ShieldingSourceDisplay::showCalcLog()
 #if( BUILD_AS_OSX_APP )
   WAnchor *logDownload = new WAnchor( m_logDiv->footer() );
   logDownload->setStyleClass( "LinkBtn" );
+  logDownload->setTarget( AnchorTarget::TargetNewWindow );
 #else
   WPushButton *logDownload = new WPushButton( m_logDiv->footer() );
   logDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
   logDownload->setStyleClass( "LinkBtn DownloadBtn" );
+  logDownload->setLinkTarget( Wt::TargetNewWindow );
 #endif
   
   logDownload->setText( "TXT file" );
@@ -4452,11 +4454,6 @@ void ShieldingSourceDisplay::showCalcLog()
   downloadResource->suggestFileName( filename, WResource::DispositionType::Attachment );
   
   logDownload->setLink( WLink(downloadResource) );
-#if( BUILD_AS_OSX_APP )
-  logDownload->setTarget( AnchorTarget::TargetNewWindow );
-#else
-  logDownload->setLinkTarget( Wt::TargetNewWindow );
-#endif
   
   WPushButton *close = m_logDiv->addCloseButtonToFooter();
   close->clicked().connect( boost::bind( &AuxWindow::hide, m_logDiv ) );
