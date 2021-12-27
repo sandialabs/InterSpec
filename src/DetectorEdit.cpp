@@ -206,6 +206,32 @@ namespace
   }//void split_escaped_csv(...)
   
  
+  //Eliminate any duplicate strings in the vector.
+  //  In the future we may decide to remove duplicates based just on the `leaf` file name
+  void remove_duplicate_paths( vector<string> &paths )
+  {
+    // Note that the following requires sorting paths first, (eg std::sort(begin(paths),end(paths)))
+    //  because std::unique only makes neighboring elements unique
+    //  paths.erase( std::unique( begin(paths), end(paths) ), end(paths) );
+  
+    const auto paths_begin = begin(paths);
+    const auto paths_end = end(paths);
+  
+    auto end_pos = paths_begin;
+  
+    for( auto iter = paths_begin; iter != paths_end; ++iter )
+    {
+      if( std::find(paths_begin, end_pos, *iter) == end_pos )
+      {
+        if( end_pos != iter )
+          *end_pos = *iter;
+        ++end_pos;
+      }
+    }//for( auto iter = paths_begin; iter != paths_end; ++iter )
+  
+    paths.erase( end_pos, end(paths) );
+  }//remove_duplicate_paths(...)
+
 
  /** Searches static and user-writable data directories for the given file.
   */
@@ -317,15 +343,10 @@ public:
  */
 class RelEffFile : public Wt::WContainerWidget
 {
-  //If we are deploying on the web, we do not want to allow the user access to
-  //  the filesystem(!), so we will only allow using detectors from
-  //  "data/OUO_lanl_simplemass_detectors.tsv"
-#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-  std::string m_file;
-#else
-  WLineEdit *m_fileEdit;
+  std::string m_currentFile;
+  WLineEdit *m_fileEdit; //Will be nullptr if fixed path
   WPushButton *m_setFileButton;
-#endif
+
   RelEffDetSelect *m_relEffDetSelect;
   DetectorEdit *m_detectorEdit;
   
@@ -334,7 +355,18 @@ class RelEffFile : public Wt::WContainerWidget
   std::vector<std::shared_ptr<DetectorPeakResponse> > m_responses;
   
 public:
+  enum class PathType
+  {
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
+    //If we are deploying on the web, we do not want to allow the user access to the filesystem
+    UserEditable,
+#endif
+    
+    FixedPath
+  };//enum class PathType
+  
   RelEffFile( std::string file,
+             const RelEffFile::PathType pathType,
              RelEffDetSelect *parentSelect,
              DetectorEdit *detectorEdit,
              WContainerWidget *parent );
@@ -356,6 +388,9 @@ public:
   
   void initDetectors();
   void detectorSelected( const int index );
+  
+  const std::vector<std::shared_ptr<DetectorPeakResponse> > &availableDrfs();
+  bool isFixedPath() const;
 };//class RelEffFile
 
 
@@ -446,75 +481,95 @@ public:
 //////////////////   Begin RelEffFile implementation   /////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 RelEffFile::RelEffFile( std::string file,
+                       const RelEffFile::PathType pathType,
                        RelEffDetSelect *parentSelect,
                        DetectorEdit *detectorEdit,
                        WContainerWidget *parent )
 : WContainerWidget( parent ),
-#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-m_file( file ),
-#else
-m_fileEdit( new WLineEdit() ),
-m_setFileButton( new WPushButton("Set") ),
-#endif
+m_currentFile( file ),
+m_fileEdit( nullptr ),
+m_setFileButton( nullptr ),
 m_relEffDetSelect( parentSelect ),
 m_detectorEdit( detectorEdit ),
 m_credits( nullptr )
 {
   addStyleClass( "RelEffFile" );
   
-#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-#else
-  WContainerWidget *topdiv = new WContainerWidget( this );
-  WPushButton *closeIcon = new WPushButton( topdiv );
-  closeIcon->addStyleClass( "closeicon-wtdefault" );
-  closeIcon->setToolTip( "Remove file from list of files InterSpec will look for detector response functions in." );
-  //closeIcon->setAttributeValue( "style", "position: relative; top: 3px; right: 3px;" + closeIcon->attributeValue("style") );
-  closeIcon->clicked().connect( boost::bind( &RelEffDetSelect::removeFile, parentSelect, this ) );
-  
-  topdiv->addWidget( m_fileEdit );
-  
   string user_data_dir;
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
   try
   {
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
     user_data_dir = InterSpec::writableDataDirectory();
+    
+    if( !user_data_dir.empty() )
+    {
+      const string data_norm = SpecUtils::lexically_normalize_path( user_data_dir );
+      const string file_norm = SpecUtils::lexically_normalize_path( file );
+      const string drf_norm = SpecUtils::append_path( data_norm, "drfs" );
+      
+      if( SpecUtils::istarts_with(file_norm, drf_norm) )
+      {
+        const string relpath = SpecUtils::fs_relative( drf_norm, file );
+        if( (relpath.size() >= 2) && !SpecUtils::istarts_with(relpath, "..") )
+          file = relpath;
+      }else if( SpecUtils::istarts_with(file_norm, data_norm) )
+      {
+        const string relpath = SpecUtils::fs_relative( user_data_dir, file );
+        if( (relpath.size() >= 2) && !SpecUtils::istarts_with(relpath, "..") )
+          file = relpath;
+      }
+    }//if( !user_data_dir.empty() )
+    
+    m_currentFile = file;
+#endif
   }catch( std::exception & )
   {
+    file = m_currentFile;
   }
 #endif
   
-  if( !user_data_dir.empty() )
+  WContainerWidget *topdiv = new WContainerWidget( this );
+  
+  
+  switch( pathType )
   {
-    const string data_norm = SpecUtils::lexically_normalize_path( user_data_dir );
-    const string file_norm = SpecUtils::lexically_normalize_path( file );
-    const string drf_norm = SpecUtils::append_path( data_norm, "drfs" );
-    
-    if( SpecUtils::istarts_with(file_norm, drf_norm) )
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
+    case RelEffFile::PathType::UserEditable:
     {
-      const string relpath = SpecUtils::fs_relative( drf_norm, file );
-      if( (relpath.size() >= 2) && !SpecUtils::istarts_with(relpath, "..") )
-        file = relpath;
-    }else if( SpecUtils::istarts_with(file_norm, data_norm) )
-    {
-      const string relpath = SpecUtils::fs_relative( user_data_dir, file );
-      if( (relpath.size() >= 2) && !SpecUtils::istarts_with(relpath, "..") )
-        file = relpath;
-    }
-  }//if( !user_data_dir.empty() )
-    
-  m_fileEdit->setText( file );
-  m_fileEdit->setTextSize( 48 );
-  
-  topdiv->addWidget( m_setFileButton );
-  m_setFileButton->setMargin( 5, Wt::Left );
-  m_setFileButton->disable();
-  m_setFileButton->setToolTip( "Parse the specified file for detector response functions." );
-  m_setFileButton->clicked().connect( this, &RelEffFile::filePathChanged );
-  
-  //m_fileEdit->changed().connect( m_setFileButton, &WPushButton::enable );
-  m_fileEdit->textInput().connect( m_setFileButton, &WPushButton::enable );
-  m_fileEdit->enterPressed().connect( this, &RelEffFile::filePathChanged );
+      WPushButton *closeIcon = new WPushButton( topdiv );
+      closeIcon->addStyleClass( "closeicon-wtdefault" );
+      closeIcon->setToolTip( "Remove file from list of files InterSpec will look for detector response functions in." );
+      //closeIcon->setAttributeValue( "style", "position: relative; top: 3px; right: 3px;" + closeIcon->attributeValue("style") );
+      closeIcon->clicked().connect( boost::bind( &RelEffDetSelect::removeFile, parentSelect, this ) );
+      
+      m_fileEdit = new WLineEdit( topdiv );
+      m_fileEdit->setText( WString::fromUTF8(m_currentFile) );
+      m_fileEdit->setTextSize( 48 );
+      
+      m_setFileButton = new WPushButton( "Set", topdiv );
+      m_setFileButton->setMargin( 5, Wt::Left );
+      m_setFileButton->disable();
+      m_setFileButton->setToolTip( "Parse the specified file for detector response functions." );
+      m_setFileButton->clicked().connect( this, &RelEffFile::filePathChanged );
+      
+      m_fileEdit->textInput().connect( m_setFileButton, &WPushButton::enable );
+      m_fileEdit->enterPressed().connect( this, &RelEffFile::filePathChanged );
+      //m_fileEdit->changed().connect( this, &RelEffFile::filePathChanged );
+      m_fileEdit->changed().connect( m_detectorSelect, &WPushButton::disable );
+      
+      break;
+    }//case RelEffFile::PathType::UserEditable:
 #endif
+      
+    case RelEffFile::PathType::FixedPath:
+    {
+      WText *filepath = new WText( WString::fromUTF8(m_currentFile), topdiv );
+      filepath->addStyleClass( "RelEffFixedPath" );
+      break;
+    }
+  }//switch( pathType )
+  
   
   WContainerWidget *bottomDiv = new WContainerWidget( this );
   
@@ -525,22 +580,13 @@ m_credits( nullptr )
   m_detectorSelect = new WComboBox( bottomDiv );
   m_detectorSelect->activated().connect( this, &RelEffFile::detectorSelectCallback );
   
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
-  m_fileEdit->changed().connect( m_detectorSelect, &WPushButton::disable );
-  //m_fileEdit->keyPressed().connect( m_detectorSelect, &WPushButton::disable );
-#endif
-  
   initDetectors();
 }//RelEffFile
 
 
 const std::string RelEffFile::filepath()
 {
-#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-  return m_file;
-#else
-  return m_fileEdit->text().toUTF8();
-#endif
+  return m_currentFile;
 }
 
 void RelEffFile::selectNone()
@@ -552,11 +598,21 @@ void RelEffFile::selectNone()
 #if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
 void RelEffFile::filePathChanged()
 {
+  if( !m_fileEdit )
+  {
+    assert( m_fileEdit );
+    return;
+  }
+  
+  m_currentFile = m_fileEdit->text().toUTF8();
+  
   m_relEffDetSelect->saveFilePathToUserPreferences();
   
   initDetectors();
   
-  m_setFileButton->disable();
+  if( m_setFileButton )
+    m_setFileButton->disable();
+  
   m_detectorSelect->enable();
 }//void filePathChanged()
 #endif  //#if( !BUILD_FOR_WEB_DEPLOYMENT )
@@ -612,15 +668,8 @@ void RelEffFile::initDetectors()
   while( m_detectorSelect->count() )
     m_detectorSelect->removeItem( 0 );
   
-  string pathstr;
   vector<string> credits;
-#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-  pathstr = m_file;
-#else
-  pathstr = m_fileEdit->text().toUTF8();
-#endif
-  
-  pathstr = complete_drf_path( pathstr );
+  string pathstr = complete_drf_path( m_currentFile );
 
 #ifdef _WIN32
   const std::wstring wpathstr = SpecUtils::convert_from_utf8_to_utf16(pathstr);
@@ -689,6 +738,17 @@ void RelEffFile::detectorSelected( const int index )
   m_detectorEdit->setDetector( det );
   m_detectorEdit->emitChangedSignal();
 }//void detectorSelected( const int index )
+
+
+const std::vector<std::shared_ptr<DetectorPeakResponse> > &RelEffFile::availableDrfs()
+{
+  return m_responses;
+}
+
+bool RelEffFile::isFixedPath() const
+{
+  return (m_fileEdit ? false : true);
+}
 ////////////////////////////////////////////////////////////////////////////////
 ///////////////////   End RelEffFile implementation   //////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -710,7 +770,7 @@ RelEffDetSelect::RelEffDetSelect( InterSpec *interspec, DetectorEdit *detedit, W
 void RelEffDetSelect::addFile()
 {
   if( m_files )
-    new RelEffFile( "", this, m_detectorEdit, m_files );
+    new RelEffFile( "", RelEffFile::PathType::UserEditable,  this, m_detectorEdit, m_files );
 }//void removeFile( RelEffFile )
 
 
@@ -744,13 +804,13 @@ void RelEffDetSelect::saveFilePathToUserPreferences()
   {
     auto child = dynamic_cast<RelEffFile *>( w );
     const string filepath = child ? child->filepath() : string("");
-    if( filepath.size() )
+    if( filepath.size() && !child->isFixedPath() )
       paths.push_back( filepath );
       //concat_path += (concat_path.size() ? ";" : "") + filepath;
   }//string concat_path;
   
   //Make sure we only save unique paths
-  paths.erase( std::unique( begin(paths), end(paths) ), end(paths) );
+  remove_duplicate_paths( paths );
 
   string concat_path;
   for( const auto &filepath : paths )
@@ -827,17 +887,21 @@ void RelEffDetSelect::docreate()
 #endif
   
   holder->setWidth( WLength(100,WLength::Percentage) );
-  holder->setToolTip( "Click the plus button to add an additonal relative efficiency detector response function file." );
+  holder->setToolTip( "Click the plus button to add an additional relative efficiency detector response function file." );
   
-  string pathstr;
-  vector<string> paths;
+  
+  vector<string> user_entered_paths, user_data_paths;
+  
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  pathstr = SpecUtils::append_path( InterSpec::staticDataDirectory(), "OUO_lanl_simplemass_detectors.tsv" );
 #elif( !defined(IOS) )
   try
   {
+    string pathstr;
+    
     if( m_interspec )
       pathstr = InterSpecUser::preferenceValue<string>( "RelativeEffDRFPaths", m_interspec );
+    
+    SpecUtils::split( user_entered_paths, pathstr, "\r\n;" );
   }catch( std::exception & )
   {
     passMessage( "Error retrieving 'RelativeEffDRFPaths' preference.", "", WarningWidget::WarningMsgHigh );
@@ -846,40 +910,98 @@ void RelEffDetSelect::docreate()
 
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
-  try
-  {
-    const string userDir = InterSpec::writableDataDirectory();
-    const vector<string> tsv_files = SpecUtils::recursive_ls( userDir, ".tsv");
+  auto check_for_drfs = [&user_data_paths]( const string &base_dir ){
+    const vector<string> tsv_files = SpecUtils::recursive_ls( base_dir, ".tsv");
     for( const auto &p : tsv_files )
-      pathstr += (pathstr.empty() ? "" : ";") + p;
+      user_data_paths.push_back( p );
     
-    
-    const string drfsdir = SpecUtils::append_path( userDir, "drfs" );
+    const string drfsdir = SpecUtils::append_path( base_dir, "drfs" );
     
     const vector<string> drf_files = SpecUtils::recursive_ls( drfsdir );
     for( const auto &p : drf_files )
     {
-      const auto pos = std::find( begin(tsv_files), end(tsv_files), p );
-      if( pos == end(tsv_files) )
-        pathstr += (pathstr.empty() ? "" : ";") + p;
+      const string fname = SpecUtils::filename(p);
+      if( SpecUtils::iequals_ascii( fname, "Efficiency.csv") )
+        continue;
+      
+      const string type = SpecUtils::file_extension(fname);
+      if( !SpecUtils::iequals_ascii( type, ".csv") && !SpecUtils::iequals_ascii( type, ".tsv") )
+        continue;
+      
+      // Note that this next line will cause duplicate TSV entries - we'll remove them later
+      user_data_paths.push_back( p );
     }//for( const auto &p : drf_files )
+  };//check_for_drfs lambda
+  
+  try
+  {
+    const string userDir = InterSpec::writableDataDirectory();
+    check_for_drfs( userDir );
   }catch( std::exception & )
   {
     cerr << "Couldnt call into InterSpec::writableDataDirectory()" << endl;
   }
+  
+  try
+  {
+    const string dataDir = InterSpec::staticDataDirectory();
+    check_for_drfs( dataDir );
+  }catch( std::exception & )
+  {
+    cerr << "Couldnt call into InterSpec::staticDataDirectory()" << endl;
+  }
 #endif
   
-  SpecUtils::split( paths, pathstr, "\r\n;" );
   
-  //Eliminate any duplicate entries in paths
-  paths.erase( std::unique( begin(paths), end(paths) ), end(paths) );
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
+    
+  }//if( InterSpecApp::isPrimaryWindowInstance() )
+#endif
 
-  if( paths.empty() )
-    new RelEffFile( "", this, m_detectorEdit, m_files );
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  user_entered_paths.clear();
+#endif
   
-  for( const string &path : paths )
-    new RelEffFile( path, this, m_detectorEdit, m_files );
+  remove_duplicate_paths( user_entered_paths );
+  remove_duplicate_paths( user_data_paths );
   
+  for( const auto &p : user_entered_paths )
+  {
+    const auto pos = std::find( begin(user_data_paths), end(user_data_paths), p );
+    if( pos != end(user_data_paths) )
+      user_data_paths.erase( pos );
+  }
+  
+    
+  if( user_entered_paths.empty() && user_data_paths.empty() )
+  {
+    new RelEffFile( "", RelEffFile::PathType::UserEditable, this, m_detectorEdit, m_files );
+  }
+  
+  
+  for( const string &path : user_entered_paths )
+  {
+    new RelEffFile( path, RelEffFile::PathType::FixedPath, this, m_detectorEdit, m_files );
+  }
+  
+  for( const string &path : user_data_paths )
+  {
+    RelEffFile *f = new RelEffFile( path, RelEffFile::PathType::FixedPath, this, m_detectorEdit, m_files );
+    
+    //We'll remove the widget if the DRF is invalid, or make it so path cant be changed for valid
+    //  files (this then doesnt provide any feedback to the user that a DRF they placed in their
+    //  data directory is invalid, but I'm not sure if dealing with that here would be a net
+    //  improvement vs the alternative of possibly showing lots of files not intended to be DRF
+    //  files)
+    //
+    const vector<shared_ptr<DetectorPeakResponse>> drfs = f->availableDrfs();
+    if( drfs.empty() )
+    {
+      delete f;
+    }
+  }//for( const string &path : user_data_paths )
 }//void docreate()
 
 
@@ -950,7 +1072,7 @@ void GadrasDetSelect::docreate()
       pathstr = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", m_interspec );
   }catch( std::exception & )
   {
-    passMessage( "Error retrieving 'RelativeEffDRFPaths' preference.", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error retrieving 'GadrasDRFPath' preference.", "", WarningWidget::WarningMsgHigh );
   }
 #endif
 

@@ -184,6 +184,12 @@ double transmission_length_coefficient_air( float energy )
 {
   double mu = 0.0;
   
+  // Instead of using the components, we could use the mass-weighted atomic number
+  //const float air_an = 7.3737f;  //Gadras uses 7.2
+  //const float air_density = static_cast<float>( 0.00129 * PhysicalUnits::g / PhysicalUnits::cm3 );
+  //const double mu = MassAttenuation::massAttenuationCoeficient( air_an, energy );
+  //return mu * air_density;
+  
   //Air (taken from definition used in InterSpec v1.0.8 20211017):
   //  AN=7, Density=6.08133411407 (0.000974337052716 g/cm3)
   //  AN=8, density=1.86634886265 (0.000299022026427 g/cm3)
@@ -4456,12 +4462,14 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         atomic_number = MassAttenuation::sm_min_xs_atomic_number;
       if( atomic_number > MassAttenuation::sm_max_xs_atomic_number )
         atomic_number = MassAttenuation::sm_max_xs_atomic_number;
-      if( areal_density > (400.0*PhysicalUnits::g/PhysicalUnits::cm2) )
+      
+      const double ad_in_gcm2 = areal_density * PhysicalUnits::cm2 / PhysicalUnits::g;
+      if( ad_in_gcm2 < 0.0 )
+        areal_density = 0.0;
+      if( ad_in_gcm2 > 400.0 )
         areal_density = static_cast<float>(400*PhysicalUnits::g/PhysicalUnits::cm2);
       
-      
-      att_coef_fcn = boost::bind( &transmition_coefficient_generic,
-                                  atomic_number, areal_density, _1 );
+      att_coef_fcn = boost::bind( &transmition_coefficient_generic, atomic_number, areal_density, _1 );
     }else
     {
       double thickness = 0.0;
@@ -4587,7 +4595,12 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     }//if( info )
     
     for( EnergyCountMap::value_type &energy_count : energy_count_map )
-      energy_count.second *= exp( -1.0 * att_coef_fcn( energy_count.first ) );
+    {
+      const double energy = energy_count.first;
+      const double frac = exp( -1.0 * att_coef_fcn( energy ) );
+      
+      energy_count.second *= frac;
+    }
   }//for( int materialN = 0; materialN < nMaterials; ++materialN )
 
   
@@ -4919,6 +4932,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         for( int subMat = 0; subMat < nMaterials; ++subMat )
         {
           if( isGenericMaterial( subMat ) )
+            // TODO: generic materials are not attenuating self-attenuating sources at all - we
+            //       should add generic materials in as zero-dimensions shells, and somehow mark
+            //       them that their attenuation
             continue;
 
           switch( m_geometry )

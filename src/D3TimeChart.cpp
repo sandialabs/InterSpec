@@ -73,6 +73,7 @@ class D3TimeChartFilters : public WContainerWidget
   WPushButton *m_clearEnergyFilterBtn;
   WCheckBox *m_dontRebin;
   WCheckBox *m_hideNeutrons;
+  NativeFloatSpinBox *m_gammaNeutRelEmphasis;
   
 public:
   D3TimeChartFilters( D3TimeChart *parent )
@@ -85,7 +86,8 @@ public:
       m_upperEnergy( nullptr ),
       m_clearEnergyFilterBtn( nullptr ),
       m_dontRebin( nullptr ),
-      m_hideNeutrons( nullptr )
+      m_hideNeutrons( nullptr ),
+      m_gammaNeutRelEmphasis( nullptr )
   {
     assert( parent );
     
@@ -262,39 +264,10 @@ public:
                        "Must be between 0.04 and 25." );
     WLabel *label = new WLabel( "Rel. y-max:" , sfDiv );
     
-    NativeFloatSpinBox *sfInput = new NativeFloatSpinBox( sfDiv );
-    label->setBuddy( sfInput );
-    sfInput->setText( "1.0" );
-    sfInput->valueChanged().connect( std::bind([this,sfInput](){
-      float value = 1.0f;
-      switch( sfInput->validate() )
-      {
-        case Wt::WValidator::Invalid:
-        case Wt::WValidator::InvalidEmpty:
-          sfInput->setText( "1.0" );
-          break;
-          
-        case Wt::WValidator::Valid:
-          value = sfInput->value();
-          if( value < 0.04f )
-          {
-            value = 0.04f;
-            sfInput->setText( "0.04" );
-          }
-          
-          if( value > 25.0f )
-          {
-            value = 25.0f;
-            sfInput->setText( "25" );
-          }
-          break;
-      }//switch( sfInput->validate() )
-      
-      const string js = m_parentChart->m_jsgraph
-                        +  ".setYAxisGammaNeutronRelMaxSf(" + std::to_string(value) + ");";
-      m_parentChart->doJavaScript( js );
-    }) );
-    
+    m_gammaNeutRelEmphasis = new NativeFloatSpinBox( sfDiv );
+    label->setBuddy( m_gammaNeutRelEmphasis );
+    m_gammaNeutRelEmphasis->setText( "1.0" );
+    m_gammaNeutRelEmphasis->valueChanged().connect( this, &D3TimeChartFilters::handleGammaNeutRelEmphasisChanged );
   }//D3TimeChartFilters
   
   
@@ -476,6 +449,39 @@ public:
     m_parentChart->setNeutronsHidden( m_hideNeutrons->isChecked() );
   }
   
+  
+  void handleGammaNeutRelEmphasisChanged()
+  {
+    float value = 1.0f;
+    switch( m_gammaNeutRelEmphasis->validate() )
+    {
+      case Wt::WValidator::Invalid:
+      case Wt::WValidator::InvalidEmpty:
+        m_gammaNeutRelEmphasis->setText( "1.0" );
+        break;
+        
+      case Wt::WValidator::Valid:
+        value = m_gammaNeutRelEmphasis->value();
+        if( value < 0.04f )
+        {
+          value = 0.04f;
+          m_gammaNeutRelEmphasis->setText( "0.04" );
+        }
+        
+        if( value > 25.0f )
+        {
+          value = 25.0f;
+          m_gammaNeutRelEmphasis->setText( "25" );
+        }
+        break;
+    }//switch( m_gammaNeutRelEmphasis->validate() )
+    
+    const string js = m_parentChart->m_jsgraph
+                      +  ".setYAxisGammaNeutronRelMaxSf(" + std::to_string(value) + ");";
+    m_parentChart->doJavaScript( js );
+  }//handleGammaNeutRelEmphasisChanged()
+  
+  
   void setDontRebin( const bool dontRebin )
   {
     m_dontRebin->setChecked( dontRebin );
@@ -489,6 +495,8 @@ public:
   void setHideNeutronsOptionVisible( const bool visible )
   {
     m_hideNeutrons->setHidden( !visible );
+    m_gammaNeutRelEmphasis->setHidden( !visible );
+    // Should we also reset m_gammaNeutRelEmphasis to 1.0 if we are hiding the option?
   }
 };//class D3TimeChartOptions
 

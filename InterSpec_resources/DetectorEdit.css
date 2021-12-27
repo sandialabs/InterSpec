@@ -99,3 +99,12 @@ table.FormulaDrfTbl tr td:first-child
 {
   margin-bottom: 5px;
 }
+
+
+.RelEffFixedPath
+{
+  /* DRF (TSV/CSV) filename for RelEffFile that cant be changed. */
+  display: inline-block;
+  max-width: 25px; /* Not checked yet if reasonable */
+  text-overflow: ellipsis;
+}
