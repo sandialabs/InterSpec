@@ -41,29 +41,23 @@ IT &quot;AS IS.&quot;
 </div>
   </message>
 
-  <message id='dhs-acknowledgement'>
-This InterSpec Software was developed with funds from the Science and Technology Directorate of the Department of Homeland Security.
-  </message>
-
   <message id='credits'>
 <div style="text-align: center; width: 100%; margin-top: 0.5em;">
 <div style="margin: 0 auto; display: inline-block;">
-  <img src="InterSpec_resources/images/DHSLogo129.jpg" alt="DHS Logo" height="67" width="67" />
   <img src="InterSpec_resources/images/InterSpec128.png" alt="InterSpec Logo" height="67" width="67" />
   <img src="InterSpec_resources/images/snl_logo.gif" alt="Sandia National Laboratories Logo" height="67" width="150" />
 </div>
 </div>
 <div style="margin-top: 0.5em;">
-  <b>InterSpec</b> is a product of Sandia
-  National Laboratories (SNL) Technical ReachBack (TRB) team, funded by the
-  Science and Technology Directorate of the Department of Homeland Security.
-  Feedback, bug reports, testing, and suggestions for improvement have been
-  provided by many members of the TRB team, as well as the wider gamma
-  spectroscopy community.  The primary developers of
-  <b>InterSpec</b>
-  are:
-  <i>Ethan Chan</i>, <i>William Johnson</i>, <i>David Ka-Ming Lee</i>, and <i>Christian Morte</i>,
-  with extensive additional support provided by <i>Noel Nachtigal</i> and <i>Edward Walsh</i>.
+  <b>InterSpec</b> is a product of Sandia National Laboratories (SNL), with development
+  supported by NNSA&lsquo;s Office of Nuclear Smuggling Detection and Deterrence (NSDD).
+  Initial development of <b>InterSpec</b> was funded by the Science and Technology Directorate of
+  the Department of Homeland Security
+  
+  <p><i>William Johnson</i> is the primary developer of <b>InterSpec</b>, with <i>Ethan Chan</i>,
+  <i>David Ka-Ming Lee</i>, and <i>Christian Morte</i> providing substantial contributions.
+  Extensive additional support has been provided by <i>Noel Nachtigal</i> and <i>Edward Walsh</i>.
+  </p>
 </div>
 <br />
 <div>
@@ -236,6 +230,8 @@ This InterSpec Software was developed with funds from the Science and Technology
     </li>
 
   </ul>
+
+  <p>This InterSpec Software was developed with funds from the Science and Technology Directorate of the Department of Homeland Security.</p>
 </div>
   </message>
 

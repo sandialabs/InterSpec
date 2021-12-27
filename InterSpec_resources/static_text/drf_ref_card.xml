@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>${drf-name} DRF Reference Card</title>
+    <style>
+    .general-info, .plots-info, .mda-info  {
+        margin-top: 20px;
+        margin-left: auto;
+        margin-right: auto;
+
+        font-size: 12px;
+        width: 5in;
+        height: 3in;
+        border: 1px solid black;
+        padding: 2px 4px 2px 4px;
+        display: flex;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        justify-content: space-around;
+    }
+
+    .title {
+        font-size: 14px;
+        font-weight: bold; 
+        text-align: center; 
+        width: 100%
+        text-overflow: ellipsis;
+    }
+
+    .date {
+        float: right;
+        font-weight: normal;
+        font-size: 12px;
+        margin-top: 1px;
+    }
+
+
+    .desciption {
+        font-weight: normal; 
+        text-align: left;
+    }
+
+    .diameter {
+        display: inline-block;
+    }
+    
+    .rel-eff {
+        display: inline-block;
+        float: right;
+    }
+
+    .eff-eqn, .fwhm-eqn {
+    }
+
+    .fwhm-eqn .gadras-fcn {
+      font-size: 8px;
+    }
+
+    .eff-table {
+        margin-left: auto;
+        margin-right: auto;
+        border: 1px solid black;
+        border-collapse: collapse;
+    }
+
+    .eff-table thead tr:first-child th {
+      border-bottom: 1px solid #000;
+    }
+
+    .eff-table th {
+      border-right: 1px solid #000;
+    }
+
+    </style>
+  </head>
+  <body>
+    <div class="general-info">
+      <div class="title">${drf-name}  <div class="date">${date}</div> </div>
+      <div class="desciption">${drf-desc}</div>
+      <div><div class="diameter"><label>Detector Diameter</label>:&nbsp;${diameter}</div>  <div class="rel-eff">${rel-eff}</div> </div>
+      
+      <div>${eff-table}</div>
+      
+      <div class="eff-eqn">${eff-eqn}</div>
+      <div class="fwhm-eqn">${fwhm-eqn}</div>
+    </div>
+
+    <div class="plots-info">
+    ${eff-svg}
+    </div>
+
+  <div class="mda-info">
+  In the future this will have MDA or MDQ (n-sigma = 5) at 2.5 meters from Co-57, Ba-133, Cs-137, Co-60.
+  </div>
+
+  </body>
+</html>

@@ -249,7 +249,7 @@ void InterSpecApp::setupDomEnvironment()
   setTitle( "InterSpec" );
   
   //Call tempDirectory() to set global variable holding path to the temp file
-  //  directory, to ensure this will be avaialble at all points in the future;
+  //  directory, to ensure this will be available at all points in the future;
   //  this is a workaround for FCGI deployment.
   tempDirectory();
   
@@ -266,6 +266,16 @@ void InterSpecApp::setupDomEnvironment()
   
   //Adding css/js files for pNotify popup notifications
   requireJQuery("InterSpec_resources/assets/js/jquery-1.11.1.min.js");
+  
+  //To upgrade to the latest jquery, see https://github.com/jquery/jquery-migrate/#README
+  // And then add the following here:
+  //requireJQuery("InterSpec_resources/assets/js/jquery-3.6.0.min.js");
+  //
+  //Which just a very quick search through shows that qTip should be upgraded, e.g., to:
+  //  https://github.com/qTip2/qTip2/releases/tag/v3.0.3
+  // then needs to be patched, e.g., see
+  //  https://stackoverflow.com/questions/66694407/qtip2-doesnt-work-with-jquery-3-6-elem-getclientrects-is-not-a-function
+  
   
   //for qTip2
   useStyleSheet( "InterSpec_resources/assets/css/jquery.qtip.min.css" );

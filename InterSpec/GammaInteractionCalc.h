@@ -94,10 +94,28 @@ double transmition_length_coefficient( const Material *material, float energy );
 double transmition_coefficient_material( const Material *material, float energy,
                                 float length );
 
-/** A convenience call to #transmition_coefficient_material that uses a static (compile-time defined) definition of air. */
+/** A convenience call to #transmition_coefficient_material that uses a static (compile-time defined) definition of air.
+ 
+ Example use of this function:
+ \code {.cpp}
+ double energy = 661.0*PhysicalUnits::keV;
+ double distance = 3.2*PhysicalUnits::cm;
+ double mu = transmission_coefficient_air( energy, distance );
+ double tranmission_fraction = exp( -mu );
+ \endcode
+ */
 double transmission_coefficient_air( float energy, float length );
 
-/** Similar to #transmission_coefficient_air, but not including length. */
+/** Similar to #transmission_coefficient_air, but not including length.
+ 
+ Example use of this function:
+ \code {.cpp}
+ double energy = 661.0*PhysicalUnits::keV;
+ double distance = 3.2*PhysicalUnits::cm;
+ double mu = transmission_length_coefficient_air( energy );
+ double tranmission_fraction = exp( - mu * distance );
+ \endcode
+ */
 double transmission_length_coefficient_air( float energy );
 
 

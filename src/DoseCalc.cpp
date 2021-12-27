@@ -133,11 +133,13 @@ namespace DoseCalc
         || areal_density < 0.0 || (areal_density*PhysicalUnits::cm2/PhysicalUnits::g) > 240.0f )
       throw runtime_error( "gamma_dose_with_shielding(): Invalid shielding; atomic number must be between 1 and 98, and areal density between zero and 240 g/cm2." );
     
-    //Calculate atomic number and areal density, taking into acount how the air
+    //Calculate atomic number and areal density, taking into account how the air
     //  effects the shielding.
     float an = atomic_number;
     float ad = areal_density;
     
+    //TODO: not taking into account
+    // At 3m, 59 keV gammas are attenuated by 6.5%
     if( distance > 300.0f*PhysicalUnits::cm )
     {
       const float air_an = 7.3737f;  //Gadras uses 7.2
