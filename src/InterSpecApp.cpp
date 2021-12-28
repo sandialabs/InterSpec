@@ -264,13 +264,16 @@ void InterSpecApp::setupDomEnvironment()
   
   setCssTheme( "default" );  //"polished" is the other option
   
-  //Adding css/js files for pNotify popup notifications
-  requireJQuery("InterSpec_resources/assets/js/jquery-1.11.1.min.js");
+  // Use newer version of jQuery than Wt uses by default
+  requireJQuery("InterSpec_resources/assets/js/jquery-3.6.0.min.js");
   
   //for qTip2
-  useStyleSheet( "InterSpec_resources/assets/css/jquery.qtip.min.css" );
-  require("InterSpec_resources/assets/js/jquery.qtip.min.js");
-  require("InterSpec_resources/assets/js/imagesloaded.pkg.min.js");
+  useStyleSheet( "InterSpec_resources/assets/js/qTip2-3.0.3/jquery.qtip.min.css" );
+  require("InterSpec_resources/assets/js/qTip2-3.0.3/jquery.qtip.js");
+  
+  //qTip2 has a dependancy on the imagesloaded plugin, but from a quick and niave test, it doesnt seem to be compulsory.
+  //Leaving next line commented out as a reminder, for the moment, that we may need it
+  //require("InterSpec_resources/assets/js/imagesloaded.pkg.min.js");
   
   // For older browsers (primarily the WkWebView for macOS Mojave (10.14) and older).
   require("InterSpec_resources/assets/js/resize-observer-polyfill/ResizeObserver.js", "ResizeObserver");
