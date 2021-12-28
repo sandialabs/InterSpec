@@ -66,7 +66,7 @@ RowStretchTreeView::RowStretchTreeView( WContainerWidget *parent )
     m_height( -1 ),
     m_rowWidthChanged( this, "widthchanged", true )
 {
-#if( WT_VERSION < 0x3030100 || WT_VERSION > 0x3030400 )
+#if( (WT_VERSION < 0x3030100 || WT_VERSION > 0x3030400) && (WT_VERSION != 0x3070100) )
 #warning The RowStretchTreeView JavaScript has only been verified for Wt 3.3.1 through 3.3.4
 #endif
   
@@ -181,12 +181,17 @@ void RowStretchTreeView::render(	Wt::WFlags<Wt::RenderFlag> flags )
   {
     //Redefine the wtResize so this way adjusting column sizes saves one client
     //  to server round trip.
-    //  Note that this JS is only checked to be valid Wt 3.3.1 through 3.3.4
+    //  Note that this JS is only checked to be valid Wt 3.3.1 through 3.3.4,
+    //  and only very superficially tested for Wt 3.7.1
     //  The WT_RESIZE_JS member seems to be called even if a CSS flex layout
     //  is controlling the size of the item.
     setJavaScriptMember(WT_RESIZE_JS,
                         "function(self,w,h) {"
+#if( WT_VERSION < 0x3030400 )
                         "$(self).data('obj').wtResize();"
+#else
+                        "self.wtObj.wtResize();"
+#endif
                         "Wt.WT.TreeViewCheckWidth(" + jsRef() + ");"
                         "}");
   }//if( flags & RenderFull )

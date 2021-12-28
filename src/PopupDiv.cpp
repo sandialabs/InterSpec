@@ -214,8 +214,9 @@ WT_DECLARE_WT_MEMBER
   if( !el || !btn || !wtapp )
     return; //shouldnt ever happen
   
-  const obj = jQuery.data(el, 'obj');
-  if(!obj) console.log('parentMouseWentOver: !obj');
+  let obj = jQuery.data(el, 'obj'); //Wt 3.3.4
+  if( !obj ) obj = el.wtObj; //Wt 3.7.1
+  if( !obj ) console.log('parentMouseWentOver: !obj' );
   
   if( $('.PopupMenuParentButton.active').length === 0 ){
     if(obj) obj.setHidden(1); //do cleanup from the c++ popup( WPoint(....) ); call
@@ -247,7 +248,11 @@ WT_DECLARE_WT_MEMBER
   
   $('.PopupDivMenu.AppMenu.current').each(function(){
     $(this).removeClass('current');
-    const thisobj = jQuery.data(this, 'obj');
+    let thisobj = jQuery.data(this, 'obj'); //Wt 3.3.4
+    if( !thisobj ) thisobj = this.wtObj;    //Wt 3.7.1
+    if(!thisobj)
+      console.log( 'ParentMouseWentOver: !thisobj' );
+      
     if(thisobj)
       thisobj.setHidden(1);
     
@@ -274,8 +279,9 @@ WT_DECLARE_WT_MEMBER
   if( !el || !btn || !wtapp )
     return; //shouldnt ever happen
   
-  const obj = jQuery.data(el, 'obj');
-  if(!obj) console.log('!obj');
+  let obj = jQuery.data(el, 'obj'); //Wt 3.3.4
+  if( !obj ) obj = el.wtObj;  // Wt 3.7.1
+  if( !obj ) console.log('ParentClicked: !obj');
   
   const showing = $(btn).hasClass('active');  //el.style.display !== 'block'
   if( !showing ){
@@ -318,7 +324,9 @@ WT_DECLARE_WT_MEMBER
   if( !el || !btn || !wtapp )
     return; //shouldnt ever happen
   
-  const obj = jQuery.data(el, 'obj');
+  let obj = jQuery.data(el, 'obj'); //Wt 3.3.4
+  if( !obj ) obj = el.wtObj; //Wt 3.7.1
+  if( !obj ) console.log( 'UndoParentClicked: !obj' );
   if(obj) obj.setHidden(1);
   $(el).removeClass('current');
   $(btn).removeClass('active');
