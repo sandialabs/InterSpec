@@ -496,7 +496,7 @@ public:
   //    height = chartArea().height() + plotAreaPadding(Top) + plotAreaPadding(Bottom);
   //  Returns -1 on error, 0 if no adjustment was necassary, and 1 if adjustment
   //  was made.
-  int setLeftYAxisPadding( double width, double height );
+  int setLeftYAxisPadding( double width, double height, Wt::WPaintDevice *paintDevice );
 #endif
   
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )

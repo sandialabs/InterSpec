@@ -54,6 +54,9 @@
 #include <Wt/WFontMetrics>
 #include <Wt/Chart/WDataSeries>
 #include <Wt/Chart/WCartesianChart>
+#if( WT_VERSION >= 0x3030600 )
+#include <Wt/Chart/WStandardChartProxyModel>
+#endif
 
 
 #if( WT_VERSION<=0x3030100 )
@@ -564,8 +567,19 @@ public:
     : Chart::WChart2DRenderer( chart, painter, rectangle ),
       m_rect( rectangle ),
       m_chart( chart ),
-      m_model( dynamic_cast<SpectrumDataModel *>( chart->model() ))
+      m_model( nullptr )
   {
+#if( WT_VERSION < 0x3030600 )
+    m_model = dynamic_cast<SpectrumDataModel *>( chart->model() );
+#else
+    auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+    if( !proxyModel )
+      throw runtime_error( "SpectrumRenderer: you must pass in a SpectrumChart"
+                           " with a valid WStandardChartProxyModel" );
+    m_model = dynamic_cast<SpectrumDataModel *>( proxyModel->sourceModel() );
+#endif
+
+    
     if( !m_model )
       throw runtime_error( "SpectrumRenderer: you must pass in a SpectrumChart"
                            " with a valid SpectrumDataModel" );
@@ -1111,7 +1125,7 @@ void SpectrumChart::render(	Wt::WPainter &painter, const Wt::WRectF &rectangle )
 #if(WT_VERSION<=0x3030100)
   initLayout(rectangle);
 #else
-  if( initLayout(rectangle) )
+  if( initLayout( rectangle, painter.device() ) )
 #endif
   {
     renderChartBackground(painter, rectangle);
@@ -1166,7 +1180,16 @@ void SpectrumChart::renderChartBackground( Wt::WPainter &painter, const Wt::WRec
     paintMargins();
   }
   
+  
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *specModel = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *specModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( specModel );
+#endif
+
+  
   if( textInMiddleOfChart().empty()
      && specModel && !specModel->histUsedForXAxis() )
   {
@@ -1333,7 +1356,13 @@ void SpectrumChart::renderAxes( Wt::WPainter &painter,
   if( !isLargeEnough(painter) )
     return;
   
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( m );
+#endif
   
   if( m )
   {
@@ -1756,7 +1785,15 @@ void SpectrumChart::iterateSpectrum( SpectrumRenderIterator *iterator,
 #endif
   //  unsigned rows = m_model ? m_model->rowCount() : 0;
   
+  
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( m );
+#endif
+  
   
   const int nrow = (!!m ? m->rowCount() : 0);
   
@@ -2403,7 +2440,14 @@ void SpectrumChart::handleArrowPress( const Wt::WKeyEvent &event )
   
   const double lowerx = highlights[0]->lowerx;
   const double upperx = highlights[0]->upperx;
+  
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *th1model = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *th1model = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( th1model );
+#endif
 
   if( !th1model )
     return;
@@ -2479,7 +2523,14 @@ void SpectrumChart::handleLeftClick( const int x1, const int y1, const int modif
   if( !m_allowSingleClickHighlight )
     return;
 
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *th1model = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *th1model = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( th1model );
+#endif
+  
 
   if( !th1model )
   {
@@ -2738,7 +2789,13 @@ void SpectrumChart::handleDrag( int _x0, int _y0, int _x1, int _y1,
       {
         //In principle, we should probably on zoom into regions that correspond
         //  to the edges of bins.
+#if( WT_VERSION < 0x3030600 )
         const SpectrumDataModel * const theModel = dynamic_cast<const SpectrumDataModel *>( model() );
+#else
+        auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model() );
+        const SpectrumDataModel * const theModel = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+        assert( theModel );
+#endif
 
         if( !theModel ) // This should never actually happen.
           break;
@@ -2815,8 +2872,14 @@ void SpectrumChart::handleDrag( int _x0, int _y0, int _x1, int _y1,
             setAutoYAxisRange();
           }else
           {
+#if( WT_VERSION < 0x3030600 )
             SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model() );
-
+#else
+            auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+            SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+            assert( theModel );
+#endif
+            
             if( !theModel )
               return;
 
@@ -2880,7 +2943,14 @@ void SpectrumChart::handleDrag( int _x0, int _y0, int _x1, int _y1,
           setAutoXAxisRange();
         }else
         {
+#if( WT_VERSION < 0x3030600 )
           SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+          auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+          SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+          assert( theModel );
+#endif
+          
           std::shared_ptr<Measurement> axisH = (theModel ? theModel->histUsedForXAxis()
                                        : std::shared_ptr<Measurement>());
           const bool hasSpectrum = (axisH && axisH->num_gamma_channels() > 3);
@@ -2937,7 +3007,15 @@ void SpectrumChart::handleAltDrag( const double dx )
   double newmax = oldmax - dx;
 
   //Check and make sure the user isnt dragging past where the axis is defined
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( theModel );
+#endif
+
+  
   if( theModel )
   {
     std::shared_ptr<const Measurement> axisH = theModel->histUsedForXAxis();
@@ -2987,7 +3065,14 @@ void SpectrumChart::setRenderWaitingStatus( const bool waiting ) const
 
 bool SpectrumChart::checkHighBandWidthInterActionApplicable() const
 {
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( m );
+#endif
+  
   const bool app = ((m_dragAction==ZoomIn) && m && !!m->histUsedForXAxis());
   if( !app )
     setRenderWaitingStatus( false );
@@ -3014,7 +3099,14 @@ void SpectrumChart::handlePinchZoomChange( int x0_t0, int x_t0,
   if( !checkHighBandWidthInterActionApplicable() )
     return;
   
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( m );
+#endif
+  
   if( !m )
     return;
   
@@ -3201,7 +3293,14 @@ void SpectrumChart::handleLeftMouseMove( int x, int y, int dt )
   
   double xaxismin = 0.0, xaxismax = 3000.0;
   
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( m );
+#endif
+  
   if( !m )
     return;
   
@@ -3258,7 +3357,14 @@ void SpectrumChart::handleAltLeftMouseMove( int x, int y, int dt )
   double xaxismin = 0.0, xaxismax = 3000.0;
   
   //checked in checkHighBandWidthInterActionApplicable() already
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( m );
+#endif
+  
   if( !m )
     return;
   
@@ -3344,7 +3450,14 @@ void SpectrumChart::setAutoXAxisRange()
   //  as well.
   //  Doing this means it's neccasary to re-call setAutoXAxisRange()
   //  whenever you load new data
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( theModel );
+#endif
+  
   if( theModel )
   {
     std::shared_ptr<Measurement> axisH = theModel->histUsedForXAxis();
@@ -3365,7 +3478,14 @@ void SpectrumChart::yAxisRangeFromXRange( const double x0, const double x1,
                                           double &y0, double &y1 )
 {
   y0 = y1 = 0.0;
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( theModel );
+#endif
+  
   if( !theModel )
     throw runtime_error( "SpectrumChart::setAutoXAxisRange(): warning, you "
                          "should only use the SpectrumChart class with a "
@@ -3624,12 +3744,13 @@ void SpectrumChart::loadPeakInfoToClient() const
   if( !m_overlayCanvas || !m_peakModel )
     return;
 
-#if( WT_VERSION >= 0x3030800 )
-  auto absModel = model();
+#if( WT_VERSION < 0x3030600 )
+  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( model() );
 #else
-  const WAbstractItemModel *absModel = model();
+  auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model() );
+  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( th1Model );
 #endif
-  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( absModel );
   
   if( !th1Model )
   {
@@ -3987,12 +4108,14 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
   if( peak.type() != PeakDef::DataDefined )
     return;
 
-#if( WT_VERSION >= 0x3030800 )
-  auto absModel = model();
+#if( WT_VERSION < 0x3030600 )
+  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( model() );
 #else
-  const WAbstractItemModel *absModel = model();
+  auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model() );
+  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( th1Model );
 #endif
-  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( absModel );
+  
   if( !th1Model )
     throw runtime_error( "SpectrumChart::paintNonGausPeak(...): stupid programmer error"
                          ", SpectrumChart may only be powered by a SpectrumDataModel." );
@@ -4260,8 +4383,13 @@ bool SpectrumChart::gausPeakDrawRange( int &minrow, int &maxrow,
   if( !peak.gausPeak() )
     return false;
   
-  const SpectrumDataModel *th1Model
-                           = dynamic_cast<const SpectrumDataModel *>( model() );
+#if( WT_VERSION < 0x3030600 )
+  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model() );
+  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+#endif
+  
   assert( th1Model );
 
   double minx = peak.lowerX();
@@ -4382,10 +4510,15 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
       axisMaxX = xend;
   }//if( xstart != xend )
   
-  const SpectrumDataModel *th1Model
-                          = dynamic_cast<const SpectrumDataModel *>( model() );
-  assert( th1Model );
   
+#if( WT_VERSION < 0x3030600 )
+  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model() );
+  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+#endif
+
+  assert( th1Model );
   
   std::shared_ptr<const PeakDef> prevPeak, nextPeak;
   
@@ -4675,7 +4808,12 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
   double axisMinX, axisMaxX, axisMinY, axisMaxY;
   visibleRange( axisMinX, axisMaxX, axisMinY, axisMaxY );
   
-  const SpectrumDataModel *th1Model  = dynamic_cast<const SpectrumDataModel *>( model() );
+#if( WT_VERSION < 0x3030600 )
+  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model() );
+  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+#endif
   
   assert( th1Model );
   assert( std::is_sorted( begin(peaks), end(peaks), &PeakDef::lessThanByMeanShrdPtr ) );
@@ -5092,14 +5230,16 @@ void SpectrumChart::paintPeaks( Wt::WPainter& painter ) const
   
   if( !m_peakModel )
     return;
-
-#if( WT_VERSION >= 0x3030800 )
-  auto absModel = model();
-#else
-  const WAbstractItemModel *absModel = model();
-#endif
   
-  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( absModel );
+#if( WT_VERSION < 0x3030600 )
+  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model() );
+  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( th1Model );
+#endif
+
+  
   if( !th1Model )
     throw runtime_error( "SpectrumChart::paintPeaks(...): stupid programmer"
                          " error, SpectrumChart may only be powered by a"
@@ -5151,7 +5291,15 @@ void SpectrumChart::renderFloatingLegend()
   
   char buffer[64];
   
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( m );
+#endif
+
+  
   if( !m )
     return;
   
@@ -5344,7 +5492,14 @@ void SpectrumChart::paintOnChartLegend( Wt::WPainter &painter ) const
   if( m_legendType != OnChartLegend )
     return;
   
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *mdl = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *mdl = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( mdl );
+#endif
+  
   if( !mdl )
     return;
   
@@ -5389,7 +5544,7 @@ void SpectrumChart::paintOnChartLegend( Wt::WPainter &painter ) const
   double ystart = topLeft.y();
   const double xstart = bottomRight.x() - width;
   
-  for( int index = 1; index < model()->columnCount(); ++index )
+  for( int index = 1; index < mdl->columnCount(); ++index )
   {
     if( !mdl->columnHasData( index ) )
       continue;
@@ -5397,7 +5552,7 @@ void SpectrumChart::paintOnChartLegend( Wt::WPainter &painter ) const
     std::shared_ptr<const Measurement> hist;
     const Chart::WDataSeries &serie = series(index);
     
-    WString title = asString(model()->headerData(index));
+    WString title = asString(mdl->headerData(index));
     float lt = 0.0f, rt = 0.0f, neutron = 0.0f, sf = 1.0f;
     
     if( index == mdl->dataColumn() )
@@ -5556,7 +5711,7 @@ void SpectrumChart::paintOnChartLegend( Wt::WPainter &painter ) const
     painter.setFont( oldFont );
     
     ystart += 5.0;
-  }//for( int index = 1; index < model()->columnCount(); ++index )
+  }//for( int index = 1; index < mdl->columnCount(); ++index )
   
   painter.restore();
 }//void paintOnChartLegend()
@@ -5579,7 +5734,7 @@ void SpectrumChart::paintEvent( WPaintDevice *paintDevice )
   {
     const double w = paintDevice->width().toPixels();
     const double h = paintDevice->height().toPixels();
-    const int status = setLeftYAxisPadding( w, h );
+    const int status = setLeftYAxisPadding( w, h, paintDevice );
     if( status < 0 )
       cerr << "SpectrumChart::paintEvent() warning: failed to adjust left axis"
            << endl;
@@ -5644,7 +5799,14 @@ void SpectrumChart::setYAxisScale( Wt::Chart::AxisScale scale )
 
 void SpectrumChart::showHistogramIntegralsInLegend( const bool show )
 {
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *the_model = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *the_model = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( the_model );
+#endif
+  
   if( the_model )
     the_model->addIntegralOfHistogramToLegend( show );
 }//void showHistogramIntegralsInLegend( const bool show = true );
@@ -5869,7 +6031,7 @@ void SpectrumChart::setHidden( bool hidden, const Wt::WAnimation &animation )
 
 
 #if(DYNAMICALLY_ADJUST_LEFT_CHART_PADDING)
-int SpectrumChart::setLeftYAxisPadding( double width, double height )
+int SpectrumChart::setLeftYAxisPadding( double width, double height, Wt::WPaintDevice *paintDevice )
 {
   const int oldleft = plotAreaPadding(Wt::Left);
   
@@ -5882,7 +6044,7 @@ int SpectrumChart::setLeftYAxisPadding( double width, double height )
 #if( WT_VERSION<=0x3030100 )
   initLayout( WRectF(0.0, 0.0, width, height ) );
 #else
-  const bool inited = initLayout( WRectF(0.0, 0.0, width, height ) );
+  const bool inited = initLayout( WRectF(0.0, 0.0, width, height ), paintDevice );
   if( !inited )
     return -1;
 #endif
@@ -5899,7 +6061,14 @@ int SpectrumChart::setLeftYAxisPadding( double width, double height )
     double ymax = yaxis.maximum();
 
     //I dont thing this section of the code will get called anymore.
+ #if( WT_VERSION < 0x3030600 )
     SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model() );
+ #else
+    auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+    SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+    assert( theModel );
+ #endif
+
     if( !theModel )
       return -1;
     
@@ -6187,7 +6356,14 @@ void SpectrumChart::modelChanged()
   m_legendNeedsRender = true;
   Wt::Chart::WCartesianChart::modelChanged();
   
+#if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model() );
+#else
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
+  assert( m );
+#endif
+  
   if( !m && model() )
     throw runtime_error( "SpectrumChart can only be used with SpectrumDataModel models" );
   
