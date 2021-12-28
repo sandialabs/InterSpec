@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <cfloat>
 #include <string>
 #include <sstream>
 #include <iostream>

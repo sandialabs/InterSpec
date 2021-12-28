@@ -26,6 +26,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <cfloat>
 
 #include <Wt/WColor>
 #include <Wt/WString>

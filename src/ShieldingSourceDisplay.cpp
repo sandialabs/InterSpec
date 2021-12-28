@@ -82,6 +82,9 @@
 #include <Wt/WRegExpValidator>
 #include <Wt/WDoubleValidator>
 #include <Wt/WStandardItemModel>
+#if( WT_VERSION >= 0x3030600 )
+#include <Wt/Chart/WStandardChartProxyModel>
+#endif
 #include <Wt/WCssDecorationStyle>
 #include <Wt/Chart/WChartPalette>
 #include <Wt/Chart/WCartesianChart>
@@ -1878,7 +1881,13 @@ void ShieldingSourceDisplay::Chi2Graphic::setShowChiOnChart( const bool show_chi
 
 void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisRanges()
 {
+#if( WT_VERSION < 0x3030600 )
   WAbstractItemModel *theModel = model();
+#else
+  Wt::Chart::WAbstractChartModel *theModel = model();
+  assert( theModel );
+#endif
+
   if( !theModel )
     return;
   
@@ -1890,7 +1899,7 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisRanges()
   {
     try
     {
-#if( WT_VERSION >= 0x3030800 )
+#if( WT_VERSION >= 0x3030600 )
       const double thischi = theModel->data(row,ycol);
       const double energy = theModel->data(row,0);
 #else
@@ -2066,7 +2075,15 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
   while( !areas().empty() )
     delete areas().front();
   
+#if( WT_VERSION < 0x3030600 )
   WStandardItemModel *chi2Model = dynamic_cast<WStandardItemModel *>( model() );
+#else
+  auto proxyChi2Model = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
+  assert( proxyChi2Model );
+  assert( proxyChi2Model->sourceModel() );
+  WStandardItemModel *chi2Model = dynamic_cast<WStandardItemModel *>( proxyChi2Model->sourceModel() );
+#endif
+    
   if( !chi2Model )  //prob never happen, but JIC
     return;
   
@@ -2656,9 +2673,16 @@ if (m_specViewer->isSupportFile())
   m_showChi2Text->setInline( false );
   m_showChi2Text->hide();
 
-  m_chi2Model = new WStandardItemModel( 0, 6, parent );
   m_chi2Graphic = new Chi2Graphic();
+    
+  m_chi2Model = new WStandardItemModel( 0, 6, parent );
+
+#if( WT_VERSION < 0x3030600 )
   m_chi2Graphic->setModel( m_chi2Model );
+#else
+  auto proxyModel = new Wt::Chart::WStandardChartProxyModel( m_chi2Model, this );
+  m_chi2Graphic->setModel( m_chi2Model );
+#endif
 
   m_chi2Graphic->setPlotAreaPadding( 12, Right );
   m_chi2Graphic->setPlotAreaPadding(  2, Top );

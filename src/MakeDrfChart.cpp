@@ -30,7 +30,13 @@
 #include <Wt/WPainter>
 #include <Wt/Chart/WAxis>
 #include <Wt/WStandardItemModel>
+#if( WT_VERSION >= 0x3030600 )
+#include <Wt/Chart/WAbstractChartModel>
+#endif
+
+
 #include <Wt/Chart/WCartesianChart>
+#include <Wt/Chart/WStandardChartProxyModel>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
@@ -93,7 +99,17 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   axis(Chart::XAxis).setMaximum( m_det_upper_energy );
   
   WStandardItemModel *m = new WStandardItemModel( this );
+    
+#if( WT_VERSION < 0x3030600 )
   setModel( m );
+#else
+  // TODO: make a class that derives from either Wt::WAbstractItemModel or
+  //       Wt::Chart::WAbstractChartModel class, depending on Wt version,
+  //       and implement all functionality needed in it
+  auto *proxyModel = new Chart::WStandardChartProxyModel( m, this );
+  setModel( proxyModel );
+#endif
+    
   m->insertColumns( 0, sm_num_model_cols );
   m->insertRows( 0, sm_num_eqn_energy_rows );
   setXSeriesColumn( sm_energy_col );
@@ -194,7 +210,17 @@ void MakeDrfChart::updateYAxisRange()
   
   double miny = 9999.9f, maxy = -9999.9f, miny2 = 9999.9f, maxy2 = -9999.9f;
   
+#if( WT_VERSION < 0x3030600 )
   WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
+#else
+  auto *proxyModel = dynamic_cast<Chart::WStandardChartProxyModel *>( model() );
+  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel() : nullptr;
+#endif
+  
+  assert( m );
+  if( !m )
+    return;
+
   const int nrows = m->rowCount();
   
   for( int row = 0; row < nrows; ++row )
@@ -253,7 +279,17 @@ void MakeDrfChart::updateYAxisRange()
 
 void MakeDrfChart::updateDataToModel()
 {
+#if( WT_VERSION < 0x3030600 )
   WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
+#else
+  auto *proxyModel = dynamic_cast<Chart::WStandardChartProxyModel *>( model() );
+  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel() : nullptr;
+#endif
+  
+  assert( m );
+  if( !m )
+    return;
+  
   if( m->rowCount() > sm_num_eqn_energy_rows )
     m->removeRows( sm_num_eqn_energy_rows, (m->rowCount()-sm_num_eqn_energy_rows) );
   
@@ -311,9 +347,17 @@ void MakeDrfChart::updateDataToModel()
 
 void MakeDrfChart::updateEqnEnergyToModel()
 {
+#if( WT_VERSION < 0x3030600 )
   WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
+#else
+  auto *proxyModel = dynamic_cast<Chart::WStandardChartProxyModel *>( model() );
+  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel() : nullptr;
+#endif
+  
   assert( m );
   assert( m->rowCount() >= sm_num_eqn_energy_rows );
+  if( !m )
+    return;
   
   if( m_det_upper_energy < m_det_lower_energy )
     std::swap( m_det_lower_energy, m_det_upper_energy );
@@ -338,8 +382,17 @@ void MakeDrfChart::updateEqnEnergyToModel()
 
 void MakeDrfChart::updateEffEquationToModel()
 {
+#if( WT_VERSION < 0x3030600 )
   WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
+#else
+  auto *proxyModel = dynamic_cast<Chart::WStandardChartProxyModel *>( model() );
+  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel() : nullptr;
+#endif
+  
   assert( m );
+  if( !m )
+    return;
+  
   assert( m->rowCount() >= sm_num_eqn_energy_rows );
   
   if( m_efficiencyCoefs.empty() )
@@ -414,8 +467,17 @@ void MakeDrfChart::updateEffEquationToModel()
 
 void MakeDrfChart::updateFwhmEquationToModel()
 {
+#if( WT_VERSION < 0x3030600 )
   WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
+#else
+  auto *proxyModel = dynamic_cast<Chart::WStandardChartProxyModel *>( model() );
+  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel() : nullptr;
+#endif
+
   assert( m );
+  if( !m )
+    return;
+  
   assert( m->rowCount() >= sm_num_eqn_energy_rows );
   
   if( ((m_fwhmEqnType==FwhmCoefType::Gadras) && m_fwhmCoefs.size() != 3)
@@ -581,15 +643,34 @@ void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) c
   
   
   //Draw error bars
+#if( WT_VERSION < 0x3030600 )
   WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
+#else
+  auto *m = dynamic_cast<Chart::WStandardChartProxyModel *>( model() );
+  assert( m );
+  if( !m )
+    return;
+    
+  WAbstractItemModel *itemModel = m->sourceModel();
+  assert( itemModel );
+  if( !itemModel )
+    return;
+#endif
+  
   const int nrows = m->rowCount();
   
   for( int row = sm_num_eqn_energy_rows; row < nrows; ++row )
   {
+#if( WT_VERSION < 0x3030600 )
     const double energy = Wt::asNumber( m->data(row,sm_energy_col,Wt::DisplayRole) );
     const double eff = Wt::asNumber( m->data(row,sm_data_eff_col,Wt::DisplayRole) );
     const double uncert = Wt::asNumber( m->data(row,sm_data_eff_col,Wt::UserRole) );
-    
+#else
+    const double energy = m->data(row,sm_energy_col);
+    const double eff = m->data(row,sm_data_eff_col);
+    const double uncert = Wt::asNumber( itemModel->data(row,sm_data_eff_col,Wt::UserRole) );
+#endif
+      
     if( IsNan(energy) || IsNan(eff) || IsNan(uncert) )
       continue;
   
