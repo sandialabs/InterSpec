@@ -177,7 +177,6 @@ void SpectrumDisplayDiv::setPeakModel( PeakModel *model )
   if( !model )
     throw runtime_error( "setPeakModel(...): invalid input model" );
   
-//  model->setDataModel( dynamic_cast<SpectrumDataModel *>(m_chart->model()) );
   model->setDataModel( m_model );
   m_chart->setPeakModel( model );
 }//void setPeakModel( PeakModel *model );
@@ -244,17 +243,15 @@ void SpectrumDisplayDiv::setControlDragDebouncePeriod( int milliseconds )
 void SpectrumDisplayDiv::setControlDragContinuumPreview( double x0,
                                                          double x1 )
 {
-  SpectrumDataModel *theModel
-                      = dynamic_cast<SpectrumDataModel *>( m_chart->model() );
-  if( !theModel || !m_chart->overlayCanvas() )
+  if( !m_model || !m_chart->overlayCanvas() )
     return;
   
   try
   {
-    const int row0 = theModel->findRow( x0 );
-    const int row1 = theModel->findRow( x1 );
-    const double y0 = theModel->data( row0, 1 );
-    const double y1 = theModel->data( row1, 1 );
+    const int row0 = m_model->findRow( x0 );
+    const int row1 = m_model->findRow( x1 );
+    const double y0 = m_model->data( row0, 1 );
+    const double y1 = m_model->data( row1, 1 );
     
     //Currently
     WStringStream js;

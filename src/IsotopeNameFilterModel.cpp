@@ -815,6 +815,7 @@ void IsotopeNameFilterModel::setQuickTypeFixHackjs( Wt::WSuggestionPopup *popup 
       var dofix = function(elid){
         var el = Wt.WT.getElement(elid);
         var self = el ? jQuery.data(el, 'obj') : null;
+        if( !self ) self = el ? el.wtObj : null;; //Wt 3.7.1
         if( !self ){ //Apparently not immediately available even though m_nuclideSuggest
                      //  should be in the DOM by the time this JS gets executed.
           setTimeout( function(){dofix(elid);}, 500 );

@@ -817,8 +817,6 @@ protected:
     
   std::set<int> timeRangeToSampleNumbers( double t0, double t1 );
   
-  std::vector<std::pair<float,int> > passthroughTimeToSampleNumber() const;
-  
   // Inclusive for t0, exclusive for t1, e.g., if you have time slices of 0.1s,
   // and you pass in t0 = 0.1, t1 = 0.2; then only the second time slice will be
   // displayed.
@@ -1192,7 +1190,9 @@ protected:
   Wt::WGridLayout        *m_layout;
   
   Wt::WContainerWidget   *m_charts;
+#if( USE_SPECTRUM_CHART_D3 )
   Wt::WContainerWidget   *m_chartResizer;
+#endif
   Wt::WGridLayout        *m_toolsLayout;
 #endif
   

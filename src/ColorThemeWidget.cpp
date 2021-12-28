@@ -430,6 +430,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
       var dofix = function(elid){
         var el = Wt.WT.getElement(elid);
         var self = el ? jQuery.data(el, 'obj') : null;
+        if( !self ) self = el ? el.wtObj : null;; //Wt 3.7.1
         if( !self ){ setTimeout( function(){dofix(elid);}, 100 ); return; }
         var oldfcn = self.refilter;
         self.refilter = function(value){ try{ oldfcn(value); }catch(e){ console.log('My refilter caught: ' + e ); } };

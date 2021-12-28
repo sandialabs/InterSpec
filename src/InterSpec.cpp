@@ -365,7 +365,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #else
     m_layout( 0 ),
     m_charts( nullptr ),
+#if( USE_SPECTRUM_CHART_D3 )
     m_chartResizer( nullptr ),
+#endif
     m_toolsLayout( 0 ),
 #endif
     m_menuDiv( 0 ),
@@ -907,6 +909,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
 
   m_charts = new WContainerWidget();
+      
+      
+#if( USE_SPECTRUM_CHART_D3 )
   m_charts->addWidget( m_spectrum );
   m_charts->addStyleClass( "charts" );
   m_chartResizer = new WContainerWidget( m_charts );
@@ -918,7 +923,32 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsInitFlexResizer);
   m_charts->doJavaScript( "Wt.WT.InitFlexResizer('" + m_chartResizer->id() + "','" + m_timeSeries->id() + "');" );
-  
+#else
+    
+  // The below doesnt seem to trigger the Wt resize mechanism, at least for Wt 3.7.1
+  //  m_spectrum->setJavaScriptMember( "resizeObserver",
+  //  "new ResizeObserver(entries => {"
+  //    "for (let entry of entries) {"
+  //      "if( entry.target ){" //&& (entry.target.id === '" + m_spectrum->id() + "')
+  //        "const w = entry.contentRect.width;"
+  //        "const h = entry.contentRect.height;"
+  //        "console.log( 'Got resize for SpecChart', entry.target.id, 'for {' + w + ',' + h + '}'  );"
+  //        "entry.target.wtResize(entry.target, Math.round(w), Math.round(h), true);"
+  //      "}"
+  //    "}});"
+  //  );
+  //  m_spectrum->callJavaScriptMember( "resizeObserver.observe", m_spectrum->jsRef() );
+      
+  // So to just get things through, we'll do a not-to-refined gridlayout
+  WGridLayout *chartLayout = new WGridLayout( m_charts );
+  chartLayout->setContentsMargins( 0, 0, 0, 0 );
+  chartLayout->addWidget( m_spectrum, 0, 0 );
+  chartLayout->addWidget( m_timeSeries, 1, 0 );
+  chartLayout->setRowResizable( 0, true );
+  chartLayout->setHorizontalSpacing( 5 );
+  chartLayout->setRowStretch( 0, 3 );
+  chartLayout->setRowStretch( 1, 2 );
+#endif
   
   m_layout = new WGridLayout();
   m_layout->setContentsMargins( 0, 0, 0, 0 );
@@ -1075,7 +1105,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this, _1 ) );
 
   m_timeSeries->setHidden( true );
+#if( USE_CSS_FLEX_LAYOUT || USE_SPECTRUM_CHART_D3 )
   m_chartResizer->setHidden( m_timeSeries->isHidden() );
+#endif
   
 #if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
   if( InterSpecApp::isPrimaryWindowInstance() )
@@ -5990,7 +6022,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   //  the bindings to watch for mousedown and touchstart were removed, so lets re-instate them.
 #if( USE_CSS_FLEX_LAYOUT )
 #else
+#if( USE_SPECTRUM_CHART_D3 )
   m_charts->doJavaScript( "Wt.WT.InitFlexResizer('" + m_chartResizer->id() + "','" + m_timeSeries->id() + "');" );
+#endif
 #endif
   
   if( m_toolsTabs )
@@ -10428,7 +10462,7 @@ void InterSpec::userAskedToFitPeaksInRange( double x0, double x1,
   if( isMobile() )
   {
     menu->addStyleClass( " Wt-popupmenu Wt-outset" );
-    menu->showFromMouseOver();
+    menu->showMobile();
   }else
   {
     menu->addStyleClass( " Wt-popupmenu Wt-outset NumPeakSelect" );
@@ -10976,7 +11010,9 @@ void InterSpec::displayTimeSeriesData()
     if( m_timeSeries->isHidden() )
     {
       m_timeSeries->setHidden( false );
+#if( USE_CSS_FLEX_LAYOUT )
       m_chartResizer->setHidden( m_timeSeries->isHidden() );
+#endif
     }//if( m_timeSeries->isHidden() )
     
     const vector<string> &det_names = m_dataMeasurement->detector_names();
@@ -11078,9 +11114,9 @@ void InterSpec::displayTimeSeriesData()
       neutronH.reset();
     
     const bool keep_current_xrange = false;
-    m_timeSeries->setData( gammaH, -1.0, -1.0, -1.0, keep_current_xrange );
-    m_timeSeries->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );  //we could use this for like the GMTubes or whatever
-    m_timeSeries->setSecondData( neutronH, -1.0, -1.0, -1.0, true );
+    m_timeSeries->setData( gammaH, keep_current_xrange );
+    m_timeSeries->setBackground( nullptr );  //we could use this for like the GMTubes or whatever
+    m_timeSeries->setSecondData( neutronH, true );
     
     for( SpecUtils::SpectrumType t = SpecUtils::SpectrumType(0);
         t <= SpecUtils::SpectrumType::Background;
@@ -11094,14 +11130,16 @@ void InterSpec::displayTimeSeriesData()
     m_timeSeries->setOccupancyRegions( foreFromfile );
   }else
   {
-    m_timeSeries->setData( gammaH, -1.0, -1.0, -1.0, false );
-    m_timeSeries->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );
-    m_timeSeries->setSecondData( neutronH, -1.0, -1.0, -1.0, true );
+    m_timeSeries->setData( gammaH, false );
+    m_timeSeries->setBackground( std::shared_ptr<SpecUtils::Measurement>() );
+    m_timeSeries->setSecondData( neutronH, true );
     
     if( !m_timeSeries->isHidden() )
     {
       m_timeSeries->setHidden( true );
+#if( USE_CSS_FLEX_LAYOUT )
       m_chartResizer->setHidden( m_timeSeries->isHidden() );
+#endif
     }//if( !m_timeSeries->isHidden() )
 
     m_timeSeries->clearTimeHighlightRegions(SpecUtils::SpectrumType::Foreground);
