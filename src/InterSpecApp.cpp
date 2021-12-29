@@ -269,7 +269,7 @@ void InterSpecApp::setupDomEnvironment()
   
   //for qTip2
   useStyleSheet( "InterSpec_resources/assets/js/qTip2-3.0.3/jquery.qtip.min.css" );
-  require("InterSpec_resources/assets/js/qTip2-3.0.3/jquery.qtip.js");
+  require("InterSpec_resources/assets/js/qTip2-3.0.3/jquery.qtip.min.js");
   
   //qTip2 has a dependancy on the imagesloaded plugin, but from a quick and niave test, it doesnt seem to be compulsory.
   //Leaving next line commented out as a reminder, for the moment, that we may need it
