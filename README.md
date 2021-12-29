@@ -65,9 +65,9 @@ may be useful for you:
 
 ### Prerequisites
 
-To compile, you need a C++11 compiler, and:
-* [Wt](https://www.webtoolkit.eu/wt) version 3.3.4.  Some patches are included in the [patches](https://github.com/sandialabs/InterSpec/tree/master/target/patches/wt/3.3.4) directory.
-* [boost](https://www.boost.org/) versions 1.48 through 1.65.1 will probably work, but development is done using 1.65.1.
+To compile, you need a C++14 compiler, and:
+* [Wt](https://www.webtoolkit.eu/wt) version 3.3.4 or 3.7.1.  Some patches are included in the [patches](https://github.com/sandialabs/InterSpec/tree/master/target/patches/wt/3.3.4) directory.
+* [boost](https://www.boost.org/) For Wt 3.3.4, boost version 1.65.1 is used for development, and for Wt 3.7.1 boost 1.78 is used.
 * [cmake](https://cmake.org/) 
 
 To make building a little easier, other required libraries, including
@@ -78,7 +78,7 @@ and [rapidxml](http://rapidxml.sourceforge.net/), are included in this git repos
 [external_libs](https://github.com/sandialabs/interspec/tree/master/external_libs) directory, while 
 the [js](https://github.com/sandialabs/interspec/tree/master/js) directory contains some ECMAScript libraries, including
 [jQuery](https://jquery.org),
-[qTip2](http://qtip2.com), and
+[qTip2](https://github.com/qTip2/qTip2), and
 [D3](https://d3js.org).
 
 You can use your package manager or a downloaded installer to install cmake, but you must build
@@ -122,7 +122,7 @@ cmake --build . --config Release
 
 If all goes well, InterSpec default to building an executable that when ran from the command line, starts a local web server, you can access then access from your browser.  To run InterSpec, use a command like:
 ```
-./bin/InterSpec.exe --docroot . --http-address 0.0.0.0 --http-port 8080 -c ./data/config/wt_config_localweb.xml
+./bin/InterSpec.exe --docroot . --http-address 127.0.0.1 --http-port 8080 -c ./data/config/wt_config_localweb.xml
 ```
 and then point your browser to [http://localhost:8080](http://localhost:8080).
 
