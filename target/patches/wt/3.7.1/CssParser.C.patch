@@ -1,0 +1,11 @@
+--- ../src/Wt/Render/CssParser.C.orig	2021-12-28 22:55:43.000000000 -0800
++++ ../src/Wt/Render/CssParser.C	2021-12-28 22:56:19.000000000 -0800
+@@ -41,6 +41,8 @@
+ #endif
+ #include <boost/spirit/include/classic_file_iterator.hpp>
+ 
++#include <boost/foreach.hpp>
++
+ #include <map>
+ 
+ #include <Wt/Render/Block.h>
