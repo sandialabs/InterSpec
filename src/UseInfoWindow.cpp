@@ -353,7 +353,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
       
       upload->uploaded().connect( std::bind( [this,upload](){
         const string filename = upload->spoolFileName();
-        const string displayFileName = upload->clientFileName().narrow();
+        const string displayFileName = upload->clientFileName().toUTF8();
         m_viewer->userOpenFileFromFilesystem( filename, displayFileName );
       } ) );
                                             
