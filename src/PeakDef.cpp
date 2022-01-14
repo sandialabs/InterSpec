@@ -3668,6 +3668,71 @@ void PeakDef::inheritUserSelectedOptions( const PeakDef &parent,
       }//switch( t )
     }//if( inheritNonFitForValues )
   }//for( loop over PeakDef::CoefficientType )
+  
+  
+  const auto &rhs_cont = parent.m_continuum;
+  if( m_continuum && rhs_cont )
+  {
+    //Currently not copying the following values of continuum:
+    //double m_lowerEnergy, m_upperEnergy;
+    //double m_referenceEnergy;
+    //std::vector<double> m_values, m_uncertainties;
+    
+    const vector<bool> rhs_fit_fors = rhs_cont->fitForParameter();
+    const vector<bool> orig_fit_fors = m_continuum->fitForParameter();
+    for( size_t i = 0; (i < rhs_fit_fors.size()) && (i < orig_fit_fors.size()); ++i )
+    {
+      m_continuum->setPolynomialCoefFitFor( i, rhs_fit_fors[i] );
+    }
+    
+    // If we wanted to copy values of coefficients, we could use:
+    /*
+    if( (m_continuum->type() == rhs_cont->type())
+       && (m_continuum->type() != PeakContinuum::OffsetType::External ) )
+    {
+      switch( m_continuum->type() )
+      {
+        case PeakContinuum::NoOffset:
+          break;
+        case PeakContinuum::External:
+          //if( inheritNonFitForValues )
+          //  m_continuum->setExternalContinuum( rhs_cont->externalContinuum() );
+          break;
+          
+        case PeakContinuum::Constant:
+        case PeakContinuum::Linear:
+        case PeakContinuum::Quadratic:
+        case PeakContinuum::Cubic:
+        case PeakContinuum::FlatStep:
+        case PeakContinuum::LinearStep:
+        case PeakContinuum::BiLinearStep:
+        {
+          const vector<bool> rhs_fit_fors = rhs_cont->fitForParameter();
+          assert( rhs_fit_fors.size() == m_continuum->fitForParameter().size() );
+          
+          for( size_t i = 0; i < rhs_fit_fors.size(); ++i )
+          {
+            m_continuum->setPolynomialCoefFitFor( i, rhs_fit_fors[i] );
+          
+            if( inheritNonFitForValues && !rhs_fit_fors[i] )
+            {
+              const vector<double> &rhs_pars = rhs_cont->parameters();
+              const vector<double> &rhs_uncerts = rhs_cont->unertainties();
+              assert( rhs_pars.size() == rhs_fit_fors.size() );
+              assert( rhs_pars.size() == rhs_uncerts.size() );
+              
+              m_continuum->setPolynomialCoef( i, rhs_pars[i] );
+              m_continuum->setPolynomialUncert( i, rhs_uncerts[i] );
+            }
+          }//for( size_t i = 0; i < rhs_fit_fors.size(); ++i )
+          
+          break;
+        }
+      }//switch( m_continuum->type() )
+    }
+     */
+  }//if( m_continuum )
+  
 }//void inheritUserSelectedOptions(...)
 
 

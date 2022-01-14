@@ -607,13 +607,20 @@ public:
   void setCandidateNuclides( const std::vector<CandidateNuclide> &candidates );
 
 
-  //inheritUserSelectedOptions(): sets m_fitFor[] values, useForCalibration,
-  //  useForShieldingSourceFit, and nuclide/xray/reaction values.
-  //  If 'inheritNonFitForValues' is specified true, then mean, width, and or
-  //  amplitude will also be inherited (only) IF they were specfified to not be
-  //  fit for.
-  //This function does not modify the continuum values (including ROI extent) or
-  //  type of peak.
+  /** Sets values of quantities/items that are not fit from the data.
+   So, whether to use for energy calibration, peak color, wether a quantity should be fit for, etc.
+   
+   @param parent The peak whose values should be copied
+   @param inheritNonFitForValues If true, then quantities that currently are selected to not be fit from data, but in principle could
+          be, will also be copied.  So for example, if the peak-mean is selected to not be fit for, and this parameter is true, then the
+          mean from \p parent will also be copied to *this.
+   
+   This function does not modify continuum extent, reference energy, or polynomial type, but does copy if polynomial coefficients should
+   be fit for, only (or if different polynomial order continuums, copies up to the lesser order of the two continuums).
+   
+   TODO: consider if more continuum information should be copied, like polynomial values not being
+         fit for, or continuum type.
+   */
   void inheritUserSelectedOptions( const PeakDef &parent,
                                   const bool inheritNonFitForValues );
 
