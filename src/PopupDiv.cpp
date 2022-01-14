@@ -931,6 +931,11 @@ void PopupDivMenu::setHidden( bool hidden, const Wt::WAnimation &animation )
     }//if( hidden ) / else
     
     WCompositeWidget::setHidden(hidden, animation);
+  }else if( m_type == PopupDivMenu::MenuType::TransientMenu )
+  {
+    WPopupMenu::setHidden( hidden, animation );
+    if( !hidden )
+      doJavaScript( "Wt.WT.BringAboveDialogs('" + id() + "');" );
   }else
   {
     WPopupMenu::setHidden( hidden, animation );
