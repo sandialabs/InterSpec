@@ -1008,8 +1008,6 @@ void PeakModel::setContinuumPolynomialFitFor( const Wt::WModelIndex index,
                                               size_t polyCoefNum,
                                               const bool fitfor )
 {
-  //XXX - should refactor this function to share code with
-  //      PeakModel::setPeakFitFor(...)
   if( !m_peaks )
     throw std::runtime_error( "PeakModel::setContinuumPolynomialFitFor(...): no"
                               " foreground spectrum loaded" );
@@ -1019,21 +1017,52 @@ void PeakModel::setContinuumPolynomialFitFor( const Wt::WModelIndex index,
   
   const int row = index.row();
   PeakShrdPtr old_peak = m_sortedPeaks.at( row );
-  std::deque< PeakShrdPtr >::iterator energy_pos
-                           = find( m_peaks->begin(), m_peaks->end(), old_peak );
-  if( energy_pos == m_peaks->end() || (*energy_pos) != old_peak )
-    throw runtime_error( "Serious logic error in"
-                         " setContinuumPolynomialFitFor(...)" );
-  const size_t energy_index = energy_pos - m_peaks->begin();
   
-  PeakDef newPeak = *old_peak;
-//  newPeak.setContinuum( old_peak->continuum() );
-  newPeak.continuum()->setPolynomialCoefFitFor( polyCoefNum, fitfor );
+  if( !old_peak )
+    throw std::runtime_error( "PeakModel::setContinuumPolynomialFitFor(...):"
+                             " invalid peak" );
   
-  m_sortedPeaks[row] = std::make_shared<PeakDef>( newPeak );
-  (*m_peaks)[energy_index] = m_sortedPeaks[row];
+  std::shared_ptr<const PeakContinuum> old_cont = old_peak->continuum();
+  
+  assert( old_cont );
+  if( !old_cont )// shouldnt happen, but JIC
+    throw std::runtime_error( "PeakModel::setContinuumPolynomialFitFor(...):"
+                             " invalid continuum" );
+  
+  std::shared_ptr<PeakContinuum> new_cont = make_shared<PeakContinuum>( *old_cont );
+  
+  const bool madeChange = new_cont->setPolynomialCoefFitFor( polyCoefNum, fitfor );
+  if( !madeChange )
+    throw std::runtime_error( "PeakModel::setContinuumPolynomialFitFor(...):"
+                             " invalid coefficient number" );
+  
+  // If we create a new peak, using the copy constructor of the peak to be modified, the _old_
+  //  continuum will be used.  This is a dangling issue of a poor design.  So we will manually
+  //  create a new continuum, and make new peaks to replace all the old peaks that shared this
+  //  continuum.
+  
+  for( PeakShrdPtr &p : m_sortedPeaks )
+  {
+    if( p && (p->continuum() == old_cont) )
+    {
+      auto new_peak = std::make_shared<PeakDef>( *old_peak );
+      new_peak->setContinuum( new_cont );
+      const auto pos = std::find( std::begin(*m_peaks), std::end(*m_peaks), p );
+      
+      assert( pos != std::end(*m_peaks) );
+      if( pos == std::end(*m_peaks) )
+        throw runtime_error( "PeakModel::setContinuumPolynomialFitFor(...):"
+                            "Failed to find peak in m_peaks" );
+      
+      // We will set the shared ptrs in m_sortedPeaks and m_peaks to equal the newly created pointer
+      *pos = new_peak;
+      p = new_peak;
+    }//if( this peaks continuum was old_cont )
+  }//for( const auto &p : m_sortedPeaks )
   
   notifySpecMeasOfPeakChange();
+  
+  //dataChanged().emit( index, PeakModel::index(...) );
 }//void setContinuumPolynomialFitFor(...)
 
 

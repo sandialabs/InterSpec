@@ -1286,7 +1286,7 @@ void PeakEdit::fitTypeChanged( PeakPars t )
       PeakDef::CoefficientType coef = PeakDef::CoefficientType(static_cast<int>(t));
       m_peakModel->setPeakFitFor( m_peakIndex, coef, isChecked );
       //  m_originalPeak.setFitFor( coef, isChecked );
-      m_currentPeak.setFitFor( coef, isChecked );
+      //m_currentPeak.setFitFor( coef, isChecked );
       break;
     }//case for one of the PeakDef fitCoefficients
       
@@ -1295,8 +1295,7 @@ void PeakEdit::fitTypeChanged( PeakPars t )
     {
       const int num = t - OffsetPolynomial0;
       m_peakModel->setContinuumPolynomialFitFor( m_peakIndex, num, isChecked );
-//    continuum->setPolynomialCoefFitFor( num, isChecked );
-      continuum->setPolynomialCoefFitFor( num, isChecked );
+      //continuum->setPolynomialCoefFitFor( num, isChecked );
       break;
     }
     
@@ -1305,6 +1304,7 @@ void PeakEdit::fitTypeChanged( PeakPars t )
     break;
   };//switch( t )
   
+  m_currentPeak = *m_peakModel->peak( m_peakIndex );
   
 //  m_apply->enable();
   m_accept->enable();
