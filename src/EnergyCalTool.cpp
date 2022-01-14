@@ -3477,6 +3477,9 @@ void EnergyCalTool::fitCoefficients()
       
       EnergyCal::RecalPeakInfo peakInfo;
       peakInfo.peakMean = peak.mean();
+      // Clamp to peak mean uncertainty to be at least 0.25 keV.  This is an arbitrary decision, but
+      //  motivated by not wanting a single peak to way, way, dominate the other peaks, when it is
+      //  likely non-linearities in the detector may actually dominate the effects
       peakInfo.peakMeanUncert = max( peak.meanUncert(), 0.25 );
       if( IsInf(peakInfo.peakMeanUncert) || IsNan(peakInfo.peakMeanUncert) )
         peakInfo.peakMeanUncert = 0.5;
