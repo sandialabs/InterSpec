@@ -51,9 +51,12 @@ void getUtf8Args( int &argc, char ** &argv );
 
 /** Fits a single peak near energy \p peak_energy, and uses that to update the energy gain.
  */
-void update_gain_from_peak( SpecMeas &specfile, const float peak_energy );
+void update_gain_from_peak( SpecMeas &specfile, const vector<float> &peak_energies );
 
 
+/** Fits the `num_coefs` leading energy calibration coefficients, using peaks you have already fit to data.
+ */
+void fit_energy_cal_from_fit_peaks( SpecMeas &specfile, vector<PeakDef> peaks, const size_t num_coefs );
 
 /** Example program that reads in an N42 file exported from InterSpec where you have performed energy calibration and fit for
  peaks of interest - this is the "exemplar" file.  This program then reads in a "raw" spectrum, applies the energy calibration from the
@@ -189,7 +192,7 @@ int main( int argc, char **argv )
     
     
     // Lets update the energy using the 609 keV peak
-    update_gain_from_peak( raw_n42, 609.31 );
+    update_gain_from_peak( raw_n42, {609.31} );
     
     
     // Define inputs to the peak fit.
@@ -224,6 +227,25 @@ int main( int argc, char **argv )
       
       candidate_peaks.push_back( peak );
     }//for( const auto &p : exemplar_peaks )
+    
+    
+    // We will refit the energy calibration - maybe a few times - to really hone in on things
+    for( size_t i = 0; i < 5; ++i )
+    {
+      vector<PeakDef> energy_cal_peaks = candidate_peaks;
+      for( auto &peak : energy_cal_peaks )
+      {
+        peak.setFitFor( PeakDef::Mean, true );
+        peak.setFitFor( PeakDef::Sigma, true );
+        peak.setFitFor( PeakDef::GaussAmplitude, true );
+      }
+      
+      vector<PeakDef> peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
+                                                  stat_threshold, hypothesis_threshold,
+                                              energy_cal_peaks, raw, {}, isRefit );
+      fit_energy_cal_from_fit_peaks( raw_n42, peaks, 4 );
+    }//for( size_t i = 0; i < 1; ++i )
+    
     
     vector<PeakDef> fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                  stat_threshold, hypothesis_threshold,
@@ -297,44 +319,137 @@ int main( int argc, char **argv )
 }//int main( int argc, const char * argv[] )
 
 
-
-void update_gain_from_peak( SpecMeas &specfile, const float peak_energy )
+void fit_energy_cal_from_fit_peaks( SpecMeas &specfile, vector<PeakDef> peaks, const size_t num_coefs )
 {
   if( specfile.measurements().size() != 1 )
     throw runtime_error( "update_gain_from_peak: expected one spectrum in file" );
   
+  vector<EnergyCal::RecalPeakInfo> peakinfos;
+  
   auto raw = specfile.measurements()[0];
-  
-  const double pixelPerKev = 2;
-  vector<shared_ptr<const PeakDef>> fit_peaks = searchForPeakFromUser( peak_energy, pixelPerKev, raw, {} ).first;
-  
-  if( fit_peaks.empty() )
-    throw runtime_error( "Could not fit a peaks near " + std::to_string(peak_energy) + " for energy calibration" );
-  
-  if( fit_peaks.size() != 1 )
-    throw runtime_error( "Logic error fitting energy calibration peak." );
-  
-  auto peak = fit_peaks[0];
-  
-  cout << "Peak fit for energy calibration has mean=" << peak->mean()
-       << ", FWHM=" << peak->fwhm() << ", area=" << peak->peakArea()
-       << endl;
-  
   shared_ptr<const SpecUtils::EnergyCalibration> orig_cal = raw->energy_calibration();
   assert( orig_cal && orig_cal->valid() && (orig_cal->coefficients().size() > 1) );
   
-  // We could easily adjust "gain" by just taking ratios, but we'll invoke the full energy
-  //  calibration fitting mechanism for demonstration, but also incase we want to be able to use
-  //  multiple peaks later.
-  
-  EnergyCal::RecalPeakInfo recalpeak;
-  recalpeak.peakMean = peak->mean();
-  recalpeak.peakMeanUncert = peak->meanUncert();
-  recalpeak.peakMeanBinNumber = orig_cal->channel_for_energy( peak->mean() );
-  recalpeak.photopeakEnergy = peak_energy;
+  for( const PeakDef &peak : peaks )
+  {
+    if( !peak.hasSourceGammaAssigned() )
+    {
+      cerr << "Warning: peak at " << peak.mean() << " keV doesnt have a source assigned, so will"
+           << " not be used for energy calibration" << endl;
+      continue;;
+    }
+    
+    EnergyCal::RecalPeakInfo recalpeak;
+    recalpeak.peakMean = peak.mean();
+    recalpeak.peakMeanUncert = peak.meanUncert();
+    recalpeak.peakMeanBinNumber = orig_cal->channel_for_energy( peak.mean() );
+    recalpeak.photopeakEnergy = peak.gammaParticleEnergy();
+    
+    peakinfos.push_back( recalpeak );
+  }//for( const double peak_energy : peak_energies )
   
   const size_t nchannels = raw->num_gamma_channels();
-  const vector<EnergyCal::RecalPeakInfo> peakinfos( 1, recalpeak );
+  
+  const vector<pair<float,float>> &dev_pairs = orig_cal->deviation_pairs();
+  
+  vector<float> fit_coefs_uncert;
+  vector<float> fit_coefs = orig_cal->coefficients();
+  
+  vector<bool> fitfor( orig_cal->coefficients().size(), false );
+  if( fitfor.size() < num_coefs )
+    fitfor.resize( num_coefs );
+  for( size_t i = 0; i < num_coefs; ++i )
+    fitfor[i] = true;
+  
+  shared_ptr<SpecUtils::EnergyCalibration> updated_cal = make_shared<SpecUtils::EnergyCalibration>();
+  
+  switch( orig_cal->type() )
+  {
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      EnergyCal::fit_energy_cal_poly( peakinfos, fitfor, nchannels, dev_pairs, fit_coefs, fit_coefs_uncert );
+      updated_cal->set_polynomial( nchannels, fit_coefs, dev_pairs );
+      break;
+      
+    case SpecUtils::EnergyCalType::FullRangeFraction:
+      EnergyCal::fit_energy_cal_frf( peakinfos, fitfor, nchannels, dev_pairs, fit_coefs, fit_coefs_uncert );
+      updated_cal->set_full_range_fraction( nchannels, fit_coefs, dev_pairs );
+      break;
+      
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::InvalidEquationType:
+      assert( 0 );
+      break;
+  }//switch( exemplar_cal->type() )
+  
+  specfile.set_energy_calibration( updated_cal, raw );
+  
+  cout << "Updated energy calibration using ROIs from exemplar.\n\tCoefficients:\n";
+  assert( fit_coefs.size() == orig_cal->coefficients().size() );
+  for( size_t i = 0; i < fit_coefs.size(); ++i )
+  cout << "\t\t" << std::setprecision(6) << std::setw(12) << orig_cal->coefficients().at(i)
+       << "\t-->\t" << std::setprecision(6) << std::setw(12) << fit_coefs[i] << endl;
+  
+  cout << "This moved peak energies:" << endl;
+  for( const auto &peak : peaks )
+  {
+    const double energy = peak.mean();
+    const double orig = orig_cal->channel_for_energy( energy );
+    const double now = updated_cal->channel_for_energy( energy );
+    cout << "\t" << std::setprecision(6) << std::setw(12) << energy << " keV from channel "
+    << std::setprecision(6) << std::setw(12) << orig << " to "
+    << std::setprecision(6) << std::setw(12) << now << endl;
+  }
+  
+  cout << endl << endl;
+}//void fit_energy_cal_from_fit_peaks(...)
+
+
+
+
+void update_gain_from_peak( SpecMeas &specfile, const vector<float> &peak_energies )
+{
+  if( specfile.measurements().size() != 1 )
+    throw runtime_error( "update_gain_from_peak: expected one spectrum in file" );
+  
+  vector<EnergyCal::RecalPeakInfo> peakinfos;
+  
+  auto raw = specfile.measurements()[0];
+  shared_ptr<const SpecUtils::EnergyCalibration> orig_cal = raw->energy_calibration();
+  assert( orig_cal && orig_cal->valid() && (orig_cal->coefficients().size() > 1) );
+  
+  
+  for( const double peak_energy : peak_energies )
+  {
+    const double pixelPerKev = 2;
+    vector<shared_ptr<const PeakDef>> fit_peaks = searchForPeakFromUser( peak_energy, pixelPerKev, raw, {} ).first;
+    
+    if( fit_peaks.empty() )
+      throw runtime_error( "Could not fit a peaks near " + std::to_string(peak_energy) + " for energy calibration" );
+    
+    if( fit_peaks.size() != 1 )
+      throw runtime_error( "Logic error fitting energy calibration peak." );
+    
+    auto peak = fit_peaks[0];
+    
+    cout << "Peak fit for energy calibration has mean=" << peak->mean()
+    << ", FWHM=" << peak->fwhm() << ", area=" << peak->peakArea()
+    << endl;
+  
+    // We could easily adjust "gain" by just taking ratios, but we'll invoke the full energy
+    //  calibration fitting mechanism for demonstration, but also incase we want to be able to use
+    //  multiple peaks later.
+    
+    EnergyCal::RecalPeakInfo recalpeak;
+    recalpeak.peakMean = peak->mean();
+    recalpeak.peakMeanUncert = peak->meanUncert();
+    recalpeak.peakMeanBinNumber = orig_cal->channel_for_energy( peak->mean() );
+    recalpeak.photopeakEnergy = peak_energy;
+    
+    peakinfos.push_back( recalpeak );
+  }//for( const double peak_energy : peak_energies )
+    
+  const size_t nchannels = raw->num_gamma_channels();
   
   const vector<pair<float,float>> &dev_pairs = orig_cal->deviation_pairs();
   

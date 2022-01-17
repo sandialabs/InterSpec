@@ -4347,8 +4347,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
 }//void loadFromFileSystem( std::string filename )
 
 
-int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload,
-                            std::shared_ptr<SpecMeas> &measurement )
+int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload, std::shared_ptr<SpecMeas> &measurement )
 {
   const string fileName = upload->spoolFileName();
   const WString clientFileName = upload->clientFileName();
@@ -4363,7 +4362,7 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload,
     selected.insert( index );
     m_treeView->setSelectedIndexes( WModelIndexSet() );
 
-    passMessage( "Successfully opened file.", "dataUploaded", 0 );
+    //passMessage( "Successfully opened file.", "dataUploaded", 0 );
 
     return result;
   }catch( const std::exception &e )

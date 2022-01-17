@@ -80,10 +80,14 @@ public:
   virtual ~D3TimeChart();
   
   /** Set the spectrum file to display the time history for.
+   @param data The data to be displayed.  May be nullptr to not display any data.
+   @param det_to_display Detectors to use for displaying.  If empty, will display all detectors.  If any detectors specified are not
+          in \p data, then an exception will be thrown.
    
    Will remove any existing highlighted intervals.
    */
-  void setData( std::shared_ptr<const SpecUtils::SpecFile> data );
+  void setData( std::shared_ptr<const SpecUtils::SpecFile> data,
+                std::vector<std::string> det_to_display );
   
   
   void setHighlightedIntervals( const std::set<int> &sample_numbers,
@@ -251,6 +255,7 @@ protected:
   bool m_hideNeutrons;
   
   std::shared_ptr<const SpecUtils::SpecFile> m_spec;
+  std::vector<std::string> m_detectors_to_display;
   
   struct HighlightRegion
   {
