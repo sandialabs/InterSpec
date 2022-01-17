@@ -121,6 +121,7 @@ public:
     std::shared_ptr<SpecMeas> foreground;
     std::set<int> foreground_samplenums;
     std::vector< std::vector<IsotopeMatch> > matches;
+    std::string error_msg;
     Column sortColumn;
     Wt::SortOrder sortOrder;
     boost::function< void(void) > searchdoneCallback;

@@ -384,7 +384,7 @@ void EnergyCalMultiFile::doFit()
     
     if( num_coeff_fit > static_cast<int>(npeaks) )
     {
-      const char *msg = "You must select at least as many peaks as coeficents to fit for";
+      const char *msg = "You must select at least as many peaks as coefficients to fit for";
       interspec->logMessage( msg, "", 3 );
       return;
     }//if( num_coeff_fit < 1 )

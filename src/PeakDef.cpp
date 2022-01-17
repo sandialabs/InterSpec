@@ -391,7 +391,7 @@ void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
     return;
   }//if( continuum->energyRangeDefined() )
   
-  if( !data )
+  if( !data || (data->num_gamma_channels() < 2) )
   {
     lowerEnengy = peak.lowerX();
     upperEnergy = peak.upperX();
@@ -400,8 +400,17 @@ void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
   
   const size_t lowbin = findROILimit( peak, data, false );
   const size_t upbin  = findROILimit( peak, data, true );
-  lowerEnengy = data->gamma_channel_lower( lowbin );
-  upperEnergy = data->gamma_channel_upper( upbin );
+  if( lowbin == 0 )
+    lowerEnengy = data->gamma_channel_center( lowbin );
+  else
+    lowerEnengy = data->gamma_channel_lower( lowbin );
+  
+  if( (upbin+1) >= data->num_gamma_channels() )
+    upperEnergy = data->gamma_channel_center( std::min(upbin,data->num_gamma_channels()-1) );
+  else
+    upperEnergy = data->gamma_channel_upper( upbin );
+  
+
 }//void findROIEnergyLimits(...)
 
 
