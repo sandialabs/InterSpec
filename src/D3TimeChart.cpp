@@ -632,8 +632,38 @@ void D3TimeChart::doJavaScript( const std::string& js )
 }//doJavaScript(...)
 
 
-void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
+void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data,
+                           vector<string> det_to_display )
 {
+  if( !data && !det_to_display.empty() )
+    throw runtime_error( "D3TimeChart::setData: detectors specified with null SpecFile." );
+  
+  
+  if( data )
+  {
+    if( det_to_display.empty() )
+    {
+      // Display all detectors if none were specified
+      det_to_display = m_spec->detector_names();
+    }else
+    {
+      // Check that all specified detectors are valid names
+      const vector<string> &valid_names = data->detector_names();
+      for( const string &n : det_to_display )
+      {
+        const auto pos = std::find( begin(valid_names), end(valid_names), n );
+        if( pos == end(valid_names) )
+          throw runtime_error( "D3TimeChart::setData: invalid detector name ('"
+                               + n + "') specified." );
+      }
+    }//if( no dets specified ) / else
+    
+    std::sort( begin(det_to_display), end(det_to_display) );
+    if( det_to_display != m_detectors_to_display )
+      scheduleRenderAll();
+  }//if( data )
+  
+  
   if( !m_highlights.empty() )
   {
     m_highlights.clear();
@@ -655,6 +685,7 @@ void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
   }//if( this is a different spectrum file )
   
   m_spec = data;
+  m_detectors_to_display = det_to_display;
 }//void setData(...)
   
 
@@ -705,9 +736,9 @@ void D3TimeChart::setDataToClient()
    
      // The gamma counts to plot.  Usually we will only plot one line, but if it makes sense to
      //  plan ahead now, being able to plot multiple gamma lines would be useful (either stacked, or
-     //  all lines just drawn on top of eachother); if there are multiple lines than the mouse going
+     //  all lines just drawn on top of each other); if there are multiple lines than the mouse going
      //  over a line could maybe pop-up the counts value for that time interval, and detector name
-     //  (unless only a single detector, then name isnt necassary).
+     //  (unless only a single detector, then name isnt necessary).
      //  The live-time array may not be present; if it isnt, then you can assume live-times are
      //  equal to real times, and use the realTimes array.  If live-time array is present, it will
      //  be the same length as the counts array; use the live-time to divide the counts by to get
@@ -763,6 +794,7 @@ void D3TimeChart::setDataToClient()
   //  each detector seperately.  This may become a user option at some point, or the idea of more
   //  than one line for gamma/neutron may get scrapped if it is to confusing or unhelpful.
   const bool plotDetectorsSeperate = false;
+  static_assert( !plotDetectorsSeperate, "Plotting detectors separate has not been checked if its implemented in the JS." );
   
   vector<double> realTimes;
   vector<int> sampleNumbers;
@@ -777,7 +809,25 @@ void D3TimeChart::setDataToClient()
   map<string,vector<double>> gammaCounts, neutronCounts, liveTimes;  //maps from detector name to counts
   
   const set<int> &sample_numbers = m_spec->sample_numbers();
-  const vector<string> &detNames = m_spec->detector_names();
+  //const vector<string> &detNames = m_spec->detector_names();
+  const vector<string> &detNames = m_detectors_to_display;
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  {// begin check that detector names to plot are valid
+    const vector<string> &all_det_names = m_spec->detector_names();
+    for( const string &name : detNames )
+    {
+      const auto pos = std::find( begin(all_det_names), end(all_det_names), name );
+      if( pos == end(all_det_names) )
+      {
+        log_developer_error( __func__, ("Found invalid detector name, '" + name + "'").c_str() );
+      }
+      
+      assert( pos != end(all_det_names) );
+    }//for( const string &name : detNames )
+  }// end check that detector names to plot are valid
+#endif
+  
 
   boost::optional<float> lowerEnergy, upperEnergy;
   if( m_options )
