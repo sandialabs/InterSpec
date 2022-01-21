@@ -397,18 +397,18 @@ void example_integration()
     const Material *material = materialdb.material( "void" );
     transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
     sphereRad += 99.5* PhysicalUnits::cm;
-    ObjectToIntegrate.m_dimensionsAndTransLenCoef.push_back( {{sphereRad,0.0,0.0},transLenCoef} );
+    ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
   
     material = materialdb.material( "U" );
     transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
     sphereRad += 0.5 * PhysicalUnits::cm;
-    ObjectToIntegrate.m_dimensionsAndTransLenCoef.push_back( {{sphereRad,0.0,0.0},transLenCoef} );
-    ObjectToIntegrate.m_sourceIndex = ObjectToIntegrate.m_dimensionsAndTransLenCoef.size() - 1;
+    ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
+    ObjectToIntegrate.m_sourceIndex = ObjectToIntegrate.m_dimensionsTransLenAndType.size() - 1;
 
     material = materialdb.material( "Fe" );
     transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
     sphereRad += 0.5 * PhysicalUnits::cm;
-    ObjectToIntegrate.m_dimensionsAndTransLenCoef.push_back( {{sphereRad,0.0,0.0},transLenCoef} );
+    ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
 
 
 //Original implementation (pre 20140816) with call directly to Cuhre library
@@ -505,7 +505,7 @@ int DistributedSrcCalc_integrand_single_cyl_end_on( const int *ndim, const doubl
   
   assert( objToIntegrate );
   assert( objToIntegrate->m_geometry == GeometryType::CylinderEndOn );
-  assert( objToIntegrate->m_dimensionsAndTransLenCoef.size() == 1 );
+  assert( objToIntegrate->m_dimensionsTransLenAndType.size() == 1 );
   
   objToIntegrate->eval_single_cyl_end_on( xx, ndim, ff, ncomp );
   
@@ -574,16 +574,19 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
                         double ff[], const int *ncompptr ) const
 {
   assert( m_geometry == GeometryType::Spherical );
-  assert( m_sourceIndex < m_dimensionsAndTransLenCoef.size() );
+  assert( m_sourceIndex < m_dimensionsTransLenAndType.size() );
+  assert( std::get<2>(m_dimensionsTransLenAndType[m_sourceIndex]) == ShellType::Material );
   
   const double pi = PhysicalUnits::pi;
-
+  
   const int ndim = (ndimptr ? (*ndimptr) : 3);
 
-  double source_inner_rad = ((m_sourceIndex>0)
-                            ? m_dimensionsAndTransLenCoef[m_sourceIndex-1].first[0]
+  const double source_inner_rad = ((m_sourceIndex>0)
+                            ? std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex-1])[0]
                             : 0.0);
-  const double source_outer_rad = m_dimensionsAndTransLenCoef[m_sourceIndex].first[0];
+  
+  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex]);
+  const double source_outer_rad = dimensions[0];
 
   //cuba goes from 0 to one, so we have to scale the variables
   //r:     goes from zero to sphere_rad
@@ -619,8 +622,8 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
   {//begin code-block to compute distance through source
     // - this could probably be cleaned up and made more efficient
     double exit_point[3];
-    const double srcRad = m_dimensionsAndTransLenCoef[m_sourceIndex].first[0];
-    const double srcTransCoef = m_dimensionsAndTransLenCoef[m_sourceIndex].second;
+    const double srcRad = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex])[0];
+    const double srcTransCoef = std::get<1>(m_dimensionsTransLenAndType[m_sourceIndex]);
     double dist_in_src = exit_point_of_sphere_z( source_point, exit_point,
                                                  srcRad, m_observationDist );
     
@@ -647,9 +650,12 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
       min_rad = sqrt( inner_shell_point[0]*inner_shell_point[0]
                       + inner_shell_point[1]*inner_shell_point[1]
                       + inner_shell_point[2]*inner_shell_point[2] );
-      const double subrad = m_dimensionsAndTransLenCoef[m_sourceIndex-1].first[0];
-      needShellCompute = ( (min_rad < subrad)
-                           && (inner_shell_point[2] > source_point[2]) );
+      
+      const array<double,3> &sub_dims = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex-1]);
+      const double subrad = sub_dims[0];
+      needShellCompute = ( (min_rad < subrad) && (inner_shell_point[2] > source_point[2]) );
+      // Note that if this shell is a generic shell, and the ray *just* touches it, then we wont
+      //  include the generic attenuation.
     }//if( m_sourceIndex > 0 )
     
     if( needShellCompute )
@@ -660,7 +666,8 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
       
       //Calc how far from the gammas original position it was, to the first
       //  inner shell it hit
-      const double innerRad = m_dimensionsAndTransLenCoef[m_sourceIndex-1].first[0];
+      const array<double,3> &sub_dims = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex-1]);
+      const double innerRad = sub_dims[0];
       exit_point_of_sphere_z( source_point, exit_point,
                                         innerRad, m_observationDist, false );
       double srcDist2 = 0.0;
@@ -673,16 +680,16 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
      
       //find inner most sphere the ray passes through
       size_t start_index = 0;
-      while( m_dimensionsAndTransLenCoef[start_index].first[0] < min_rad
-            && start_index < m_dimensionsAndTransLenCoef.size() )
+      while( std::get<0>(m_dimensionsTransLenAndType[start_index])[0] < min_rad
+            && start_index < m_dimensionsTransLenAndType.size() )
         ++start_index;
       
       //Some hopefully un-needed logic checks
       assert( m_sourceIndex != 0 );
       assert( start_index < m_sourceIndex );
-      assert( start_index < m_dimensionsAndTransLenCoef.size() );
+      assert( start_index < m_dimensionsTransLenAndType.size() );
         
-      if( start_index == m_dimensionsAndTransLenCoef.size() )
+      if( start_index == m_dimensionsTransLenAndType.size() )
         throw runtime_error( "Logic error 1 in DistributedSrcCalc::eval(...)" );
       if( start_index >= m_sourceIndex )
         throw runtime_error( "Logic error 2 in DistributedSrcCalc::eval(...)" );
@@ -692,14 +699,36 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
       //calc distance it travels through the inner spheres
       for( size_t index = start_index; index <= m_sourceIndex; ++index )
       {
-        const double shellRad = m_dimensionsAndTransLenCoef[index].first[0];
-        const double transCoef = m_dimensionsAndTransLenCoef[index].second;
-        double dist = exit_point_of_sphere_z( source_point, source_point,
-                                                  shellRad, m_observationDist );
-        if( index != m_sourceIndex )
-          dist = 2.0*dist;
+        const std::array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[index]);
+        const double transCoef = std::get<1>(m_dimensionsTransLenAndType[index]);
+        const ShellType type = std::get<2>(m_dimensionsTransLenAndType[index]);
+        assert( (type == ShellType::Material) || (type == ShellType::Generic) );
         
-        trans += (transCoef * dist);
+        switch( type )
+        {
+          case ShellType::Material:
+          {
+            const double shellRad = dims[0];
+            double dist = exit_point_of_sphere_z( source_point, source_point,
+                                                 shellRad, m_observationDist );
+            if( index != m_sourceIndex )
+              dist = 2.0*dist;
+            
+            trans += (transCoef * dist);
+            break;
+          }//case ShellType::Material:
+            
+          case ShellType::Generic:
+          {
+            trans += transCoef;
+            
+            // Make sure this is a zero dimension shell
+            assert( !index || (dims == std::get<0>(m_dimensionsTransLenAndType[index-1])) );
+            break;
+          }//case ShellType::Generic:
+        }//switch( type )
+        
+        
       }//for( ++sphere_index; sphere_index < m_sourceIndex; ++sphere_index )
     }else
     {
@@ -708,14 +737,35 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
     }//if( line actually goes into daughter sphere ) / else
   }//end codeblock to compute distance through source
   
-  for( size_t i = m_sourceIndex+1; i < m_dimensionsAndTransLenCoef.size(); ++i )
+  for( size_t i = m_sourceIndex+1; i < m_dimensionsTransLenAndType.size(); ++i )
   {
-    const double sphereRad = m_dimensionsAndTransLenCoef[i].first[0];
-    const double transLenCoef = m_dimensionsAndTransLenCoef[i].second;
-    const double dist_in_sphere = exit_point_of_sphere_z( source_point,
-                                   source_point, sphereRad, m_observationDist );
-    trans += (transLenCoef * dist_in_sphere);
-  }//for( size_t i = 0; i < m_dimensionsAndTransLenCoef.size(); ++i )
+    const std::array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[i]);
+    const double transLenCoef = std::get<1>(m_dimensionsTransLenAndType[i]);
+    const ShellType type = std::get<2>(m_dimensionsTransLenAndType[i]);
+    
+    const double sphereRad = dims[0];
+    
+    switch( type )
+    {
+      case ShellType::Material:
+      {
+        const double dist_in_sphere = exit_point_of_sphere_z( source_point,
+                                                             source_point, sphereRad, m_observationDist );
+        trans += (transLenCoef * dist_in_sphere);
+        
+        break;
+      }//case ShellType::Material:
+        
+      case ShellType::Generic:
+      {
+        trans += transLenCoef;
+        
+        // Make sure this is a zero dimension shell
+        assert( !i || (dims == std::get<0>(m_dimensionsTransLenAndType[i-1])) );
+        break;
+      }//case ShellType::Generic:
+    }//switch( type )
+  }//for( size_t i = 0; i < m_dimensionsTransLenAndType.size(); ++i )
 
   trans = exp( -trans );
   
@@ -757,11 +807,12 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
   std::lock_guard<std::recursive_mutex> scoped_lock( s_stdout_raytrace_mutex );
 #endif
 
-  
+  assert( m_sourceIndex == 0 );
   assert( m_geometry == GeometryType::CylinderEndOn );
-  assert( m_dimensionsAndTransLenCoef.size() == 1 );
+  assert( m_dimensionsTransLenAndType.size() == 1 );
+  assert( std::get<2>(m_dimensionsTransLenAndType[0]) == ShellType::Material );
   
-  //if( m_dimensionsAndTransLenCoef.size() != 1 )
+  //if( m_dimensionsTransLenAndType.size() != 1 )
   //  throw runtime_error( "eval_single_cyl_end_on only supports a single shielding" );
   
   
@@ -769,14 +820,12 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
   const int ndim = (ndimptr ? (*ndimptr) : 2);
   assert( ndim == 2 ); // ndim==3 is also valid and this function will work for that as well
   
-  assert( m_sourceIndex == 0 );
-  assert( m_dimensionsAndTransLenCoef.size() == 1 );
   
-  const std::array<double,3> &dimensions = m_dimensionsAndTransLenCoef[m_sourceIndex].first;
+  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex]);
   const double source_outer_rad = dimensions[0];
   const double source_half_z = dimensions[1];
   const double total_height = 2.0 * source_half_z;
-  const double trans_len_coef = m_dimensionsAndTransLenCoef[m_sourceIndex].second;
+  const double trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[m_sourceIndex]);
   
   
   // Right now we are only dealing with a single cylinder; however, when we move to nesting
@@ -1546,9 +1595,10 @@ double cylinder_line_intersection( const double radius, const double half_length
 void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
                                            double ff[], const int *ncompptr ) const noexcept
 {
-  assert( m_sourceIndex < m_dimensionsAndTransLenCoef.size() );
+  assert( m_sourceIndex < m_dimensionsTransLenAndType.size() );
   assert( (m_geometry == GeometryType::CylinderSideOn)
           || (m_geometry == GeometryType::CylinderEndOn) );
+  assert( std::get<2>(m_dimensionsTransLenAndType[m_sourceIndex]) == ShellType::Material );
   
   //assert( m_sourceIndex == 0 );
   //if( m_sourceIndex != 0 )
@@ -1559,11 +1609,11 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   assert( ((m_geometry == GeometryType::CylinderEndOn) && ((ndim == 2) || (ndim == 3)))
          || ((m_geometry == GeometryType::CylinderSideOn) && (ndim == 3)) );
   
-  const std::array<double,3> &dimensions = m_dimensionsAndTransLenCoef[m_sourceIndex].first;
+  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex]);
   const double source_outer_rad = dimensions[0];
   const double source_half_z = dimensions[1];
   const double total_height = 2.0 * source_half_z;
-  const double trans_len_coef = m_dimensionsAndTransLenCoef[m_sourceIndex].second;
+  const double trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[m_sourceIndex]);
   
   
   //cuba goes from 0 to one for each dimension, so we have to scale the variables
@@ -1580,7 +1630,7 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   // If point to evaluate is within inner-cylinder, set the source term to zero and return.
   if( m_sourceIndex > 0 )
   {
-    const array<double,3> &inner_dims = m_dimensionsAndTransLenCoef[m_sourceIndex-1].first;
+    const array<double,3> &inner_dims = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex-1]);
     const double &inner_rad = inner_dims[0];
     const double &inner_half_height = inner_dims[1];
     
@@ -1617,11 +1667,11 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   double inner_distance = 0.0;
   for( size_t i = 0; i < m_sourceIndex; ++i )
   {
-    const std::array<double,3> &local_dims = m_dimensionsAndTransLenCoef[i].first;
+    const std::array<double,3> &local_dims = std::get<0>(m_dimensionsTransLenAndType[i]);
     const double local_rad = local_dims[0];
     const double local_half_z = local_dims[1];
-    const double local_trans_len_coef = m_dimensionsAndTransLenCoef[i].second;
-    
+    const double local_trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[i]);
+    const ShellType type = std::get<2>(m_dimensionsTransLenAndType[i]);
     
     double local_exit_point[3];
     const double dist_to_exit = cylinder_line_intersection( local_rad, local_half_z, eval_point,
@@ -1631,10 +1681,16 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
     {
       // TODO: consider eval_point is exactly at local_rad - which would return zero; do we want to
       //       attribute this point to the inner or outer cylinder?
+#ifndef NDEBUG
+      const double dist_src_to_exit = cylinder_line_intersection( local_rad, local_half_z, eval_point,
+                                    detector_pos, CylExitDir::AwayFromDetector, local_exit_point);
+      const double eval_rad = sqrt(eval_point[0]*eval_point[0] + eval_point[1]*eval_point[1]);
       
-      assert( 0.0 == cylinder_line_intersection( local_rad, local_half_z, eval_point,
-                                    detector_pos, CylExitDir::AwayFromDetector, local_exit_point) );
-          
+      assert( (0.0 == dist_src_to_exit)
+             || (fabs(eval_rad - local_rad) < (0.000001*local_rad))
+             || (fabs(local_half_z - fabs(eval_point[2])) < (0.000001*local_half_z) ) );
+#endif
+      
       continue;
     }//if( we dont intersect, or source is exactly on radius )
     
@@ -1664,7 +1720,19 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
     const double local_distance = dist_to_exit - dist_to_enter;
     assert( fabs(local_distance - distance(local_enter_point,local_exit_point)) < 1.0E-9*std::max(1.0,local_distance) );
     
-    trans += (local_trans_len_coef * (local_distance - inner_distance));
+    switch( type )
+    {
+      case ShellType::Material:
+        trans += (local_trans_len_coef * (local_distance - inner_distance));
+        break;
+        
+      case ShellType::Generic:
+        trans += local_trans_len_coef;
+        
+        // Make sure zero thickness shell
+        assert( !i || (local_dims == std::get<0>(m_dimensionsTransLenAndType[i-1])) );
+        break;
+    }//switch( type )
 
     inner_distance = local_distance;
   }//for( size_t i = 0; i < m_sourceIndex; ++i )
@@ -1672,24 +1740,43 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   trans += (trans_len_coef * (dist_in_cyl - inner_distance));
   
   // Do transport through outer cylinders
-  for( size_t i = m_sourceIndex + 1; i < m_dimensionsAndTransLenCoef.size(); ++i )
+  for( size_t i = m_sourceIndex + 1; i < m_dimensionsTransLenAndType.size(); ++i )
   {
-    const std::array<double,3> &shield_dims = m_dimensionsAndTransLenCoef[i].first;
+    const std::array<double,3> &shield_dims = std::get<0>(m_dimensionsTransLenAndType[i]);
     const double shield_outer_rad = shield_dims[0];
     const double shield_half_z = shield_dims[1];
-    const double shield_trans_len_coef = m_dimensionsAndTransLenCoef[i].second;
+    const double shield_trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[i]);
+    const ShellType type = std::get<2>(m_dimensionsTransLenAndType[i]);
     
-    // TODO: #cylinder_line_intersection will be safe to re-use exit_point for source location and exit_point in near future - make sure to update this here by getting rid of outer_exit_point
-    double outer_exit_point[3];
-    const double dist_in_shield = cylinder_line_intersection( shield_outer_rad, shield_half_z,
-                                                      exit_point, detector_pos,
-                                                      CylExitDir::TowardDetector, outer_exit_point );
-    
-    trans += (shield_trans_len_coef * dist_in_shield);
-    
-    exit_point[0] = outer_exit_point[0];
-    exit_point[1] = outer_exit_point[1];
-    exit_point[2] = outer_exit_point[2];
+    switch( type )
+    {
+      case ShellType::Generic:
+      {
+        trans += shield_trans_len_coef;
+        
+        // Make sure zero thickness shell
+        assert( shield_dims == std::get<0>(m_dimensionsTransLenAndType[i-1]) );
+        
+        break;
+      }//case ShellType::Generic:
+        
+      case ShellType::Material:
+      {
+        // TODO: #cylinder_line_intersection will be safe to re-use exit_point for source location and exit_point in near future - make sure to update this here by getting rid of outer_exit_point
+        double outer_exit_point[3];
+        const double dist_in_shield = cylinder_line_intersection( shield_outer_rad, shield_half_z,
+                                                                 exit_point, detector_pos,
+                                                                 CylExitDir::TowardDetector, outer_exit_point );
+        
+        trans += (shield_trans_len_coef * dist_in_shield);
+        
+        exit_point[0] = outer_exit_point[0];
+        exit_point[1] = outer_exit_point[1];
+        exit_point[2] = outer_exit_point[2];
+        
+        break;
+      }//case ShellType::Material:
+    }//switch( type )
   }//for( loop over outer shielding )
   
   
@@ -1931,12 +2018,12 @@ void test_rectangular_intersections()
     double half_height = 1*PhysicalUnits::cm;
     double half_depth = 1*PhysicalUnits::cm;
     double trans_coef = transmition_length_coefficient( material, energy );
-    calc.m_dimensionsAndTransLenCoef.push_back( {{half_width,half_height,half_depth},trans_coef} );
+    calc.m_dimensionsTransLenAndType.push_back( {{half_width,half_height,half_depth},trans_coef,ShellType::Material} );
     
     half_width = 2*PhysicalUnits::cm;
     half_height = 2*PhysicalUnits::cm;
     half_depth = 2*PhysicalUnits::cm;
-    calc.m_dimensionsAndTransLenCoef.push_back( {{half_width,half_height,half_depth},trans_coef} );
+    calc.m_dimensionsTransLenAndType.push_back( {{half_width,half_height,half_depth},trans_coef,ShellType::Material} );
     
     calc.integral = 0.0;
     
@@ -2262,17 +2349,18 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
                double ff[], const int *ncompptr ) const noexcept
 {
   assert( m_geometry == GeometryType::Rectangular );
-  assert( m_sourceIndex < m_dimensionsAndTransLenCoef.size() );
+  assert( m_sourceIndex < m_dimensionsTransLenAndType.size() );
+  assert( std::get<2>(m_dimensionsTransLenAndType[m_sourceIndex]) == ShellType::Material );
   
   const int ndim = (ndimptr ? (*ndimptr) : 2);
   assert( ndim == 3 );
   
-  const std::array<double,3> &dimensions = m_dimensionsAndTransLenCoef[m_sourceIndex].first;
+  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex]);
   const double half_width  = dimensions[0];
   const double half_height = dimensions[1];
   const double half_depth  = dimensions[2];
   
-  const double trans_len_coef = m_dimensionsAndTransLenCoef[m_sourceIndex].second;
+  const double trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[m_sourceIndex]);
   
   // Translate the [0,1.0] coordinates from Cuba, to the world coordinates we are integrating over.
   //  (note: we would get the same answer if we integrated over just half the width/height, but it
@@ -2287,7 +2375,7 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
   //  and return
   if( m_sourceIndex > 0 )
   {
-    const array<double,3> &dims = m_dimensionsAndTransLenCoef[m_sourceIndex-1].first;
+    const array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex-1]);
     if( (fabs(eval_x) < dims[0]) && (fabs(eval_y) < dims[1]) && (fabs(eval_z) < dims[2]) )
     {
       ff[0] = 0.0;
@@ -2314,8 +2402,9 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
   double inner_rect_dist = 0.0;
   for( size_t i = 0; i < m_sourceIndex; ++i )
   {
-    const std::array<double,3> &dims = m_dimensionsAndTransLenCoef[i].first;
-    const double trans_len_coef_shield = m_dimensionsAndTransLenCoef[i].second;
+    const std::array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[i]);
+    const double trans_len_coef_shield = std::get<1>(m_dimensionsTransLenAndType[i]);
+    const ShellType type = std::get<2>(m_dimensionsTransLenAndType[i]);
     
     double enter_loc[3], exit_loc[3];
     const bool intersects = rectangle_intersections( dims[0], dims[1], dims[2],
@@ -2324,7 +2413,23 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
     if( intersects )
     {
       const double dist = distance( enter_loc, exit_loc );
-      trans += (trans_len_coef_shield * (dist - inner_rect_dist));
+      
+      switch( type )
+      {
+        case ShellType::Generic:
+        {
+          trans += trans_len_coef_shield;
+          assert( !i || (dims == std::get<0>(m_dimensionsTransLenAndType[i-1])) );
+          break;
+        }//case ShellType::Generic:
+          
+        case ShellType::Material:
+        {
+          trans += (trans_len_coef_shield * (dist - inner_rect_dist));
+          break;
+        }//case ShellType::Material:
+      }//switch( type )
+      
       inner_rect_dist = dist;
     }//if( intersects )
   }//for( size_t i = 0; i < m_sourceIndex; ++i )
@@ -2334,15 +2439,32 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
   
   
   // Account for additional external shielding's
-  for( size_t i = m_sourceIndex + 1; i < m_dimensionsAndTransLenCoef.size(); ++i )
+  for( size_t i = m_sourceIndex + 1; i < m_dimensionsTransLenAndType.size(); ++i )
   {
-    const std::array<double,3> &outer_dims = m_dimensionsAndTransLenCoef[i].first;
-    const double trans_len_coef_shield = m_dimensionsAndTransLenCoef[i].second;
+    const std::array<double,3> &outer_dims = std::get<0>(m_dimensionsTransLenAndType[i]);
+    const double trans_len_coef_shield = std::get<1>(m_dimensionsTransLenAndType[i]);
+    const ShellType type = std::get<2>(m_dimensionsTransLenAndType[i]);
   
-    const double dist_in_shield = rectangle_exit_location( outer_dims[0], outer_dims[1],
-                                            outer_dims[2], exit_point, detector_loc, exit_point );
+    switch( type )
+    {
+      case ShellType::Generic:
+      {
+        trans += trans_len_coef_shield;
+        assert( outer_dims == std::get<0>(m_dimensionsTransLenAndType[i-1]) );
+        break;
+      }
+        
+      case ShellType::Material:
+      {
+        const double dist_in_shield = rectangle_exit_location( outer_dims[0], outer_dims[1],
+                                                              outer_dims[2], exit_point, detector_loc, exit_point );
+        
+        trans += (trans_len_coef_shield * dist_in_shield);
+        break;
+      }//case ShellType::Material:
+    }//switch( type )
     
-    trans += (trans_len_coef_shield * dist_in_shield);
+    
   }//for( loop over outer shieldings )
   
   
@@ -4234,7 +4356,7 @@ void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calcu
         break;
         
       case GeometryType::CylinderEndOn:
-        if( calculator.m_dimensionsAndTransLenCoef.size() == 1 )
+        if( calculator.m_dimensionsTransLenAndType.size() == 1 )
         {
           // For a single end-on cylinder we can use the ever-so-slightly faster function
           //  to evaluate this (debug builds will validate gives same answer as
@@ -4287,9 +4409,13 @@ void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calcu
     << "\n\t m_airTransLenCoef: " << calculator.m_airTransLenCoef
     << "\n\t m_isInSituExponential: " << calculator.m_isInSituExponential
     << "\n\t m_inSituRelaxationLength: " << calculator.m_inSituRelaxationLength
-    << "\n\t m_dimensionsAndTransLenCoef: {";
-    for( const auto &i : calculator.m_dimensionsAndTransLenCoef )
-      msg << "{[" << i.first[0] << "," << i.first[1] << "," << i.first[2] << "]," << i.second << "}, ";
+    << "\n\t m_dimensionsTransLenAndType: {";
+    for( const auto &i : calculator.m_dimensionsTransLenAndType )
+    {
+      const auto &dims = std::get<0>(i);
+      msg << "{[" << dims[0] << "," << dims[1] << "," << dims[2] << "],"
+          << std::get<1>(i) << "," << static_cast<int>(std::get<2>(i)) << "}, ";
+    }
     
     msg << "}"
     << "\n\t nuclide: " << (calculator.m_nuclide ? calculator.m_nuclide->symbol : string())
@@ -4314,7 +4440,7 @@ void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calcu
   cerr << "After " << neval << " evaluations got integral " << calculator.integral
        << endl << "\t calculator.energy=" << calculator.energy
        << " calculator.m_srcVolumetricActivity=" << calculator.m_srcVolumetricActivity
-       << ", rad=" << calculator.m_dimensionsAndTransLenCoef[0].first[0]
+       << ", rad=" << get<0>(calculator.m_dimensionsTransLenAndType[0])[0]
        << ", transCoef=" << calculator.m_sphereRadAndTransLenCoef[0].second
        << endl;
 */
@@ -4466,9 +4592,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       const double ad_in_gcm2 = areal_density * PhysicalUnits::cm2 / PhysicalUnits::g;
       if( ad_in_gcm2 < 0.0 )
         areal_density = 0.0;
-      if( ad_in_gcm2 > 400.0 )
-        areal_density = static_cast<float>(400*PhysicalUnits::g/PhysicalUnits::cm2);
-      
+      if( ad_in_gcm2 > sm_max_areal_density_g_cm2 )
+        areal_density = static_cast<float>(sm_max_areal_density_g_cm2*PhysicalUnits::g/PhysicalUnits::cm2);
+  
       att_coef_fcn = boost::bind( &transmition_coefficient_generic, atomic_number, areal_density, _1 );
     }else
     {
@@ -4526,7 +4652,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         
         char buffer[256];
         snprintf( buffer, sizeof(buffer),
-                 "Shielding %i: AN=%.2f, AD=%.2f g/cm2", materialN, an, ad );
+                 "Shielding %i: AN=%.2f, AD=%.3f g/cm2", materialN, an, ad );
         info->push_back( buffer );
       }else
       {
@@ -4927,15 +5053,29 @@ vector< tuple<double,double,double,Wt::WColor,double> >
           }
         }//if( is_trace )
         
-        double outer_dims[3] = { 0.0, 0.0, 0.0 };
+        std::array<double,3> outer_dims = { 0.0, 0.0, 0.0 };
         
         for( int subMat = 0; subMat < nMaterials; ++subMat )
         {
           if( isGenericMaterial( subMat ) )
-            // TODO: generic materials are not attenuating self-attenuating sources at all - we
-            //       should add generic materials in as zero-dimensions shells, and somehow mark
-            //       them that their attenuation
+          {
+            // A generic material at the very center has zero volume, so skip it
+            if( subMat == 0 )
+              continue;
+            
+            const double an = atomicNumber(subMat, x);
+            const double ad = arealDensity(subMat, x);
+            const double transLenCoef = transmition_coefficient_generic( an, ad, calculator.m_energy );
+            
+            //cout << "Adding generic material (index=" << subMat << ") with AN=" << an
+            //     << " and AD=" << ad / (PhysicalUnits::g/PhysicalUnits::cm2) << " g/cm2"
+            //     << " atten(" << calculator.m_energy << " keV-->" << transLenCoef << ") = " << exp(-1.0*transLenCoef)
+            //     << endl;
+            
+            calculator.m_dimensionsTransLenAndType.push_back( {outer_dims, transLenCoef, DistributedSrcCalc::ShellType::Generic} );
+            
             continue;
+          }//if( isGenericMaterial( subMat ) )
 
           switch( m_geometry )
           {
@@ -4989,10 +5129,10 @@ vector< tuple<double,double,double,Wt::WColor,double> >
           
           const double transLenCoef = transmition_length_coefficient( material, calculator.m_energy );
 
-          calculator.m_dimensionsAndTransLenCoef.push_back( {{outer_dims[0],outer_dims[1],outer_dims[2]},transLenCoef} );
+          calculator.m_dimensionsTransLenAndType.push_back( {outer_dims, transLenCoef, DistributedSrcCalc::ShellType::Material} );
         }//for( int subMat = 0; subMat < nMaterials; ++subMat )
 
-        if( calculator.m_dimensionsAndTransLenCoef.empty() )
+        if( calculator.m_dimensionsTransLenAndType.empty() )
           throw std::logic_error( "No source/shielding sphere for calculator" );
         
         calculators.push_back( calculator );
@@ -5056,7 +5196,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       }else
       {
 //        cerr << "Setting " << contrib*m_liveTime << " counts to energy " << calculator.energy
-//             << " for thickness=" << calculator.m_dimensionsAndTransLenCoef[calculator.m_sourceIndex].first[0] / PhysicalUnits::cm
+//             << " for thickness=" << calculator.m_dimensionsTransLenAndType[calculator.m_sourceIndex].first[0] / PhysicalUnits::cm
 //             << " cm" << endl;
         energy_count_map[calculator.m_energy] = contrib;
       }
@@ -5073,14 +5213,16 @@ vector< tuple<double,double,double,Wt::WColor,double> >
           msg << "(from " << calculator.m_nuclide->symbol << ") ";
         
         msg << "for thicknesses {";
-        double dx = calculator.m_dimensionsAndTransLenCoef[index].first[0];
-        double dy = calculator.m_dimensionsAndTransLenCoef[index].first[1];
-        double dz = calculator.m_dimensionsAndTransLenCoef[index].first[2];
+        const array<double,3> &dims = std::get<0>(calculator.m_dimensionsTransLenAndType[index]);
+        double dx = dims[0];
+        double dy = dims[1];
+        double dz = dims[2];
         if( index > 0 )
         {
-          dx -= calculator.m_dimensionsAndTransLenCoef[index-1].first[0];
-          dy -= calculator.m_dimensionsAndTransLenCoef[index-1].first[1];
-          dz -= calculator.m_dimensionsAndTransLenCoef[index-1].first[2];
+          const array<double,3> &inner_dims = std::get<0>(calculator.m_dimensionsTransLenAndType[index-1]);
+          dx -= inner_dims[0];
+          dy -= inner_dims[1];
+          dz -= inner_dims[2];
         }
         
         switch( m_geometry )

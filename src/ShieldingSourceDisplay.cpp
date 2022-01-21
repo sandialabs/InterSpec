@@ -7265,7 +7265,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         char buffer[32];
         snprintf( buffer, sizeof(buffer), "%.2f", an );
         select->m_atomicNumberEdit->setText( buffer );
-        snprintf( buffer, sizeof(buffer), "%.2g", ad );
+        snprintf( buffer, sizeof(buffer), "%.4f", ad );
         select->m_arealDensityEdit->setText( buffer );
       }else
       {

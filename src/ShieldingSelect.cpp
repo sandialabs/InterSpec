@@ -1486,14 +1486,19 @@ void ShieldingSelect::setAtomicNumberAndArealDensity( const double an, const dou
     throw runtime_error( "setAtomicNumberAndArealDensity: Atomic number must be between 1 and 100." );
   
   const double ad_gcm2 = ad * PhysicalUnits::cm2/PhysicalUnits::g;
-  if( ad_gcm2 < 0.0 || ad_gcm2 > 1000.0 )
-    throw runtime_error( "setAtomicNumberAndArealDensity: Areal density must be between 0 and 1000 g/cm2." );
+  if( ad_gcm2 < 0.0 || ad_gcm2 > GammaInteractionCalc::sm_max_areal_density_g_cm2 )
+    throw runtime_error( "setAtomicNumberAndArealDensity: Areal density must be between 0 and "
+                         + std::to_string(GammaInteractionCalc::sm_max_areal_density_g_cm2)+ " g/cm2." );
   
   if( !m_isGenericMaterial )
     handleToggleGeneric();
   
-  m_atomicNumberEdit->setText( std::to_string(an) );
-  m_arealDensityEdit->setText( std::to_string(ad_gcm2) );
+  char an_buffer[32], ad_buffer[32];
+  snprintf( an_buffer, sizeof(an_buffer), "%.2f", an );
+  snprintf( ad_buffer, sizeof(ad_buffer), "%.4f", ad_gcm2 );
+  
+  m_atomicNumberEdit->setText( an_buffer );
+  m_arealDensityEdit->setText( ad_buffer );
   
   handleMaterialChange();
 }//void setAtomicNumberAndArealDensity( const double an, const double ad )
@@ -1887,11 +1892,11 @@ void ShieldingSelect::init()
   label->setBuddy( m_arealDensityEdit );
   
   WDoubleValidator *adValidator = new WDoubleValidator( this );
-  adValidator->setRange( 0.0, 500.0 );
-  adValidator->setInvalidTooSmallText( "0.0" );
-  adValidator->setInvalidTooLargeText( "500.0" );
-  adValidator->setInvalidNotANumberText( "0.0" );
-  adValidator->setInvalidBlankText( "0.0" );
+  adValidator->setRange( 0.0, GammaInteractionCalc::sm_max_areal_density_g_cm2 );
+  //adValidator->setInvalidTooSmallText( "0.0" );
+  //adValidator->setInvalidTooLargeText( "500.0" );
+  //adValidator->setInvalidNotANumberText( "0.0" );
+  //adValidator->setInvalidBlankText( "0.0" );
   
   m_arealDensityEdit->setValidator( adValidator );
   label = new WLabel( "g/cm<sup>2</sup>");
@@ -3862,7 +3867,7 @@ void ShieldingSelect::handleToggleGeneric()
     {
       char an_buffer[32], ad_buffer[32];
       snprintf( an_buffer, sizeof(an_buffer), "%.2f", mat->massWeightedAtomicNumber() );
-      snprintf( ad_buffer, sizeof(ad_buffer), "%.2f", ad*PhysicalUnits::cm2/PhysicalUnits::g );
+      snprintf( ad_buffer, sizeof(ad_buffer), "%.4f", ad*PhysicalUnits::cm2/PhysicalUnits::g );
       
       m_atomicNumberEdit->setText( an_buffer );
       m_arealDensityEdit->setText( ad_buffer );
@@ -3871,6 +3876,30 @@ void ShieldingSelect::handleToggleGeneric()
       m_atomicNumberEdit->setText( "26" );
       m_arealDensityEdit->setText( "0.0" );
     }
+    
+    
+    switch( m_geometry )
+    {
+      case GammaInteractionCalc::GeometryType::Spherical:
+        m_fitArealDensityCB->setChecked( m_fitThicknessCB->isChecked() );
+        break;
+        
+      case GammaInteractionCalc::GeometryType::CylinderEndOn:
+      case GammaInteractionCalc::GeometryType::CylinderSideOn:
+        m_fitArealDensityCB->setChecked( m_fitCylRadiusCB->isChecked()
+                                        || m_fitCylLengthCB->isChecked() );
+        break;
+      
+      case GammaInteractionCalc::GeometryType::Rectangular:
+        m_fitArealDensityCB->setChecked( m_fitRectWidthCB->isChecked()
+                                        || m_fitRectHeightCB->isChecked()
+                                        || m_fitRectDepthCB->isChecked() );
+        break;
+      case GammaInteractionCalc::GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+    
   }else
   {
     m_toggleImage->setImageLink(Wt::WLink("InterSpec_resources/images/shield.png"));
@@ -4045,12 +4074,12 @@ void ShieldingSelect::handleMaterialChange()
         {
           const float effAtomicNumber = newMaterial->massWeightedAtomicNumber();
           snprintf( summary, sizeof(summary),
-                    "&rho;=%.2g g/cm<sup>3</sup>, <span style=\"text-decoration:overline\">AN</span>&#126;%.1f",
+                    "&rho;=%.3g g/cm<sup>3</sup>, <span style=\"text-decoration:overline\">AN</span>&#126;%.1f",
                     density, effAtomicNumber );
         }else
         {
           snprintf( summary, sizeof(summary),
-                    "&rho;=%.2g g/cm<sup>3</sup>", density );
+                    "&rho;=%.3g g/cm<sup>3</sup>", density );
         }//if( m_forFitting ) / else
         
         

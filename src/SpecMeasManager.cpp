@@ -1285,6 +1285,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   WGridLayout *stretcher = new WGridLayout();
   stretcher->setContentsMargins( 0, 0, 0, 0 );
   dialog->contents()->setLayout( stretcher );
+  dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
   WText *title = new WText( "Not a spectrum file" );
   title->addStyleClass( "title" );
   stretcher->addWidget( title, 0, 0 );
