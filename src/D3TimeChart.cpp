@@ -717,18 +717,18 @@ void D3TimeChart::setDataToClient()
      startTimes: [0,604800,100,100,900, ...],
    
      // The sample number for each time interval.  These usually be monotonically increasing, but
-     //  this isnt garunteed, and the starting value isnt garunteed either.  These values link-up
+     //  this isnt guaranteed, and the starting value isnt guaranteed either.  These values link-up
      //  to the SampleNumber of the SpecFile the data is being loaded from.
      sampleNumbers: [-1,2,3,4,5,...],
    
      // Array, that if present, will be same length as reaTimes and sampleNumbers, and gives the
-     //  source-type of each sample.  The values in this array coorespond to the numberical values
+     //  source-type of each sample.  The values in this array correspond to the numerical values
      //  of the SpecUtils::SourceType enum, specifically:
      //    IntrinsicActivity : 0, Calibration : 1, Background : 2, Foreground : 3, Unknown : 4.
      sourceTypes: [2,3,3,3,2,...],
    
      // The GPS coordinates of the timeslice.
-     //  This array will be missing if no GPS goordinates are available, and if there isnt
+     //  This array will be missing if no GPS coordinates are available, and if there isnt
      //  coordinates for a given sample, null will be provided.
      //  In the future may add timestamp as third element of array.
      gpsCoordinates: [[37.675821,-121.709863],[37.675821,-121.709863],null,[37.675821,-121.709863],
@@ -764,16 +764,16 @@ void D3TimeChart::setDataToClient()
      //  described.  This field is typically used for describing radiation portal monitor data, and
      //  will be absent for portable detection systems.
      occupancies: [{
-                    // Says whether this sample range cooresponds to being "occupied" (cooresponding
+                    // Says whether this sample range corresponds to being "occupied" (corresponding
                     //  to (SpecUtils::OccupancyStatus::Occupied) or if false, "not occupied"
-                    //  cooresponding to SpecUtils::OccupancyStatus::NotOccupied).  If occupancy
+                    //  corresponding to SpecUtils::OccupancyStatus::NotOccupied).  If occupancy
                     //  status for a sample is unknown or undefined, then that sample will not be
                     //  included in any of these ranges.
                     //  Typically non-occupied intervals will also be marked as Background in the
                     //  'sourceTypes' array, and occupied intervals will be marked as Foreground.
                     status: true,
    
-                    // The sample number cooresponding to the first occupied sample
+                    // The sample number corresponding to the first occupied sample
                     // In the previous implementation a vertical line was drawn, on left side of
                     // sample with the text "occ. start"
                     startSample: 4,
@@ -791,10 +791,10 @@ void D3TimeChart::setDataToClient()
    */
   
   //Variable to control if we will only plot a single gamma and neutron line, or if we will plot
-  //  each detector seperately.  This may become a user option at some point, or the idea of more
-  //  than one line for gamma/neutron may get scrapped if it is to confusing or unhelpful.
-  const bool plotDetectorsSeperate = false;
-  static_assert( !plotDetectorsSeperate, "Plotting detectors separate has not been checked if its implemented in the JS." );
+  //  each detector separately.  This may become a user option at some point, or the idea of more
+  //  then one line for gamma/neutron may get scrapped if it is to confusing or unhelpful.
+  const bool plotDetectorsSeparate = false;
+  static_assert( !plotDetectorsSeparate, "Plotting detectors separate JS functionality has not been tested." );
   
   vector<double> realTimes;
   vector<int> sampleNumbers;
@@ -1069,7 +1069,7 @@ void D3TimeChart::setDataToClient()
   }//if( haveAnyGps )
   
   
-  if( plotDetectorsSeperate )
+  if( plotDetectorsSeparate )
   {
     int nwrote = 0;
     for( const auto &detName : detNames )
@@ -1231,7 +1231,7 @@ void D3TimeChart::setDataToClient()
       
       js << "\n\t}]";
     }//if( haveAnyNeutron )
-  }//if( plotDetectorsSeperate ) / else
+  }//if( plotDetectorsSeparate ) / else
   
   auto occRanges = sampleNumberRangesWithOccupancyStatus( SpecUtils::OccupancyStatus::Occupied, m_spec );
   if( occRanges.size() )
