@@ -1959,8 +1959,7 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   
   if( !m_lineColor.isDefault() )
   {
-    //Added 20181027 without incremeneting XML version since we're making it
-    //  optional
+    //Added 20181027 without incrementing XML version since we're making it optional
     val = doc->allocate_string( m_lineColor.cssText(false).c_str() );  //Note: not including alpha because of Wt bug
     node = doc->allocate_node( node_element, "LineColor", val );
     peak_node->append_node( node );
@@ -2196,10 +2195,9 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
 
   
   xml_node<char> *line_color_node = peak_node->first_node("LineColor",9);
-  if( line_color_node && line_color_node->value_size()==7 )
+  if( line_color_node && (line_color_node->value_size() >= 7) )
   {
-    //Added 20181027 without incremeneting XML version since we're making it
-    //  optional
+    //Added 20181027 without incrementing XML version since we're making it optional
     const string color = string( line_color_node->value(), line_color_node->value_size() );
     try
     {
