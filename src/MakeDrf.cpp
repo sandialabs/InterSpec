@@ -77,6 +77,7 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -2147,11 +2148,13 @@ void MakeDrf::handleSourcesUpdates()
           double an = 14, ad = 0.0;
           if( shield->isGenericMaterial() )
           {
-            if( !shield->atomicNumberEdit()->text().empty()
-               && !shield->arealDensityEdit()->text().empty() )
+            an = shield->atomicNumber();
+            ad = shield->arealDensity();
+            
+            if( an < 1.0 || ad < 0.0 )
             {
-              an = shield->atomicNumber();
-              ad = shield->arealDensity();
+              an = 14;
+              ad = 0.0;
             }
           }else
           {

@@ -6107,8 +6107,8 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   select->addShieldingAfter().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingAfter, this, _1 ) );
   
   //connect up signals of select and such
-  select->m_arealDensityEdit->changed().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
-  select->m_atomicNumberEdit->changed().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
+  select->m_arealDensityEdit->valueChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
+  select->m_atomicNumberEdit->valueChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
 
   select->materialChanged().connect( this, &ShieldingSourceDisplay::handleShieldingChange );
   select->materialModified().connect( this, &ShieldingSourceDisplay::handleShieldingChange );
@@ -7262,11 +7262,8 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         const double an = m_currentFitFcn->atomicNumber( i, paramValues );
         const double ad = m_currentFitFcn->arealDensity( i, paramValues ) / adUnits;
         
-        char buffer[32];
-        snprintf( buffer, sizeof(buffer), "%.2f", an );
-        select->m_atomicNumberEdit->setText( buffer );
-        snprintf( buffer, sizeof(buffer), "%.4f", ad );
-        select->m_arealDensityEdit->setText( buffer );
+        select->m_atomicNumberEdit->setValue( static_cast<float>(an) );
+        select->m_arealDensityEdit->setValue( static_cast<float>(ad) );
       }else
       {
         

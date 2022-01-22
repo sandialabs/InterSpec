@@ -47,6 +47,7 @@
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 //#include "InterSpec/IsotopeNameFilterModel.h"
 

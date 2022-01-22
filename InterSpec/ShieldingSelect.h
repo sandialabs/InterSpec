@@ -341,8 +341,8 @@ public:
   
   void setSphericalThicknessEditEnabled( const bool enabled );
   
-  Wt::WLineEdit *arealDensityEdit();
-  Wt::WLineEdit *atomicNumberEdit();
+  NativeFloatSpinBox *arealDensityEdit();
+  NativeFloatSpinBox *atomicNumberEdit();
   
   /** Returns all the nuclides this shielding is a trace source for. */
   std::vector<const SandiaDecay::Nuclide *> traceSourceNuclides() const;
@@ -541,9 +541,9 @@ protected:
   Wt::WStackedWidget *m_dimensionsStack;
   
   Wt::WContainerWidget *m_genericDiv;
-  Wt::WLineEdit *m_arealDensityEdit;
+  NativeFloatSpinBox *m_arealDensityEdit;
   Wt::WCheckBox *m_fitArealDensityCB;
-  Wt::WLineEdit *m_atomicNumberEdit;
+  NativeFloatSpinBox *m_atomicNumberEdit;
   Wt::WCheckBox *m_fitAtomicNumberCB;
   
   

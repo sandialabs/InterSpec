@@ -40,7 +40,6 @@
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/WStackedWidget>
-#include <Wt/WDoubleValidator>
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
 
@@ -1493,12 +1492,8 @@ void ShieldingSelect::setAtomicNumberAndArealDensity( const double an, const dou
   if( !m_isGenericMaterial )
     handleToggleGeneric();
   
-  char an_buffer[32], ad_buffer[32];
-  snprintf( an_buffer, sizeof(an_buffer), "%.2f", an );
-  snprintf( ad_buffer, sizeof(ad_buffer), "%.4f", ad_gcm2 );
-  
-  m_atomicNumberEdit->setText( an_buffer );
-  m_arealDensityEdit->setText( ad_buffer );
+  m_atomicNumberEdit->setValue( an );
+  m_arealDensityEdit->setValue( ad_gcm2 );
   
   handleMaterialChange();
 }//void setAtomicNumberAndArealDensity( const double an, const double ad )
@@ -1626,13 +1621,13 @@ void ShieldingSelect::setSphericalThicknessEditEnabled( const bool enabled )
 }
 
 
-Wt::WLineEdit *ShieldingSelect::arealDensityEdit()
+NativeFloatSpinBox *ShieldingSelect::arealDensityEdit()
 {
   return m_arealDensityEdit;
 }
 
 
-Wt::WLineEdit *ShieldingSelect::atomicNumberEdit()
+NativeFloatSpinBox *ShieldingSelect::atomicNumberEdit()
 {
   return m_atomicNumberEdit;
 }
@@ -1878,32 +1873,26 @@ void ShieldingSelect::init()
   label->setToolTip( "Areal Density of the shielding in g/cm2" );
   genericMatLayout->addWidget( label, 0, 2+m_forFitting, AlignMiddle );
   
-  m_arealDensityEdit = new WLineEdit();
+  m_arealDensityEdit = new NativeFloatSpinBox();
+  m_arealDensityEdit->setSpinnerHidden( true );
+  m_arealDensityEdit->setFormatString( "%.4g" );
+  m_arealDensityEdit->setTextSize( 5 );
+  m_arealDensityEdit->setRange( 0.0f,
+                            static_cast<float>(GammaInteractionCalc::sm_max_areal_density_g_cm2) );
+  label->setBuddy( m_arealDensityEdit );
   m_arealDensityEdit->setToolTip( "Areal Density of the shielding in g/cm2" );
+  
   if( m_forFitting )
-    m_arealDensityEdit->setText( "15.0" );
+    m_arealDensityEdit->setValue( 15.0f );
   else
-    m_arealDensityEdit->setEmptyText( "Areal Density" );
+    m_arealDensityEdit->setPlaceholderText( "Areal Density" );
   
   genericMatLayout->addWidget( m_arealDensityEdit, 0, 3+m_forFitting, AlignMiddle );
   genericMatLayout->setColumnStretch( 3+m_forFitting, 1 );
   
-  m_arealDensityEdit->setTextSize( 5 );
-  label->setBuddy( m_arealDensityEdit );
-  
-  WDoubleValidator *adValidator = new WDoubleValidator( this );
-  adValidator->setRange( 0.0, GammaInteractionCalc::sm_max_areal_density_g_cm2 );
-  //adValidator->setInvalidTooSmallText( "0.0" );
-  //adValidator->setInvalidTooLargeText( "500.0" );
-  //adValidator->setInvalidNotANumberText( "0.0" );
-  //adValidator->setInvalidBlankText( "0.0" );
-  
-  m_arealDensityEdit->setValidator( adValidator );
   label = new WLabel( "g/cm<sup>2</sup>");
   label->setAttributeValue( "style", "font-size: 75%;" );
   genericMatLayout->addWidget( label, 0, 4+m_forFitting, AlignMiddle );
-  
-  m_arealDensityEdit->addStyleClass( "numberValidator" ); //used to detect mobile keyboard
   
   if( m_forFitting )
   {
@@ -1916,25 +1905,23 @@ void ShieldingSelect::init()
   label->setToolTip( "Atomic Number of the shielding" );
   genericMatLayout->addWidget( label, 0, 0, AlignMiddle );
   
-  m_atomicNumberEdit = new WLineEdit();
+  m_atomicNumberEdit = new NativeFloatSpinBox();
+  m_atomicNumberEdit->setSpinnerHidden( true );
+  m_atomicNumberEdit->setFormatString( "%.3g" );
+  m_atomicNumberEdit->setTextSize( 5 );
+  m_atomicNumberEdit->setRange( MassAttenuation::sm_min_xs_atomic_number,
+                                 MassAttenuation::sm_max_xs_atomic_number );
+  label->setBuddy( m_atomicNumberEdit );
   m_atomicNumberEdit->setToolTip( "Atomic Number of the shielding" );
+  
   if( m_forFitting )
-    m_atomicNumberEdit->setText( "15.0" );
+    m_atomicNumberEdit->setValue( 15.0f );
   else
-    m_atomicNumberEdit->setEmptyText( "Atomic Number" );
+    m_atomicNumberEdit->setPlaceholderText( "Atomic Number" );
   
   genericMatLayout->addWidget( m_atomicNumberEdit, 0, 1, AlignMiddle );
   genericMatLayout->setColumnStretch( 1, 1 );
   
-  m_atomicNumberEdit->setTextSize( 5 );
-  label->setBuddy( m_atomicNumberEdit );
-  WDoubleValidator *dblValidator = new WDoubleValidator( MassAttenuation::sm_min_xs_atomic_number, MassAttenuation::sm_max_xs_atomic_number, m_atomicNumberEdit );
-  m_atomicNumberEdit->setValidator( dblValidator );
-  m_atomicNumberEdit->addStyleClass( "numberValidator"); //used to detect mobile keyboard
-  dblValidator->setInvalidTooSmallText( std::to_string(MassAttenuation::sm_min_xs_atomic_number) );
-  dblValidator->setInvalidTooLargeText( std::to_string(MassAttenuation::sm_max_xs_atomic_number) );
-  dblValidator->setInvalidNotANumberText( "1.0" );
-  dblValidator->setInvalidBlankText( "1.0" );
   
   if( m_forFitting )
   {
@@ -1959,13 +1946,8 @@ void ShieldingSelect::init()
   }//if( m_forFitting )
   
   
-  // Note: the changed() signal should catch when you change the value and then the input is blurred
-  m_atomicNumberEdit->changed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
-  m_atomicNumberEdit->enterPressed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
-  
-  m_arealDensityEdit->changed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
-  m_arealDensityEdit->enterPressed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
-  
+  m_atomicNumberEdit->valueChanged().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
+  m_arealDensityEdit->valueChanged().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
   
   // A validator for the various geometry distances
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, this );
@@ -2710,15 +2692,19 @@ double ShieldingSelect::atomicNumber() const
   if( !isGenericMaterial() )
     throw runtime_error( "ShieldingSelect::atomicNumber() can not be called when a material" );
   
-  double answer = 0;
-  const string text = m_atomicNumberEdit->text().toUTF8();
+  switch( m_atomicNumberEdit->validate() )
+  {
+    case Wt::WValidator::Invalid:
+      throw runtime_error( "ShieldingSelect::atomicNumber() invalid value entered" );
+      
+    case Wt::WValidator::InvalidEmpty:
+      return 13.0;
+      
+    case Wt::WValidator::Valid:
+      break;
+  }//switch( m_arealDensityEdit->validate() )
   
-  if( text.empty() )
-    return 13.0;
-  
-  if( !(stringstream(text) >> answer) )
-    throw std::runtime_error( "Error converting '" + text + "' to a atomic number");
-  return answer;
+  return m_atomicNumberEdit->value();
 }//double atomicNumber() const
 
 
@@ -2727,17 +2713,19 @@ double ShieldingSelect::arealDensity() const
   if( !isGenericMaterial() )
     throw runtime_error( "ShieldingSelect::arealDensity() can not be called when a material" );
   
-  const WString &text = m_arealDensityEdit->text();
-  string txtstr = text.toUTF8();
-  SpecUtils::trim( txtstr );
+  switch( m_arealDensityEdit->validate() )
+  {
+    case Wt::WValidator::Invalid:
+      throw runtime_error( "ShieldingSelect::arealDensity() invalid value entered" );
+      
+    case Wt::WValidator::InvalidEmpty:
+      return 0.0;
+      
+    case Wt::WValidator::Valid:
+      break;
+  }//switch( m_arealDensityEdit->validate() )
   
-  if( txtstr.empty() )
-    return 0.0;
-
-  double answer = 0;
-  if( !(stringstream(txtstr) >> answer) )
-    throw std::runtime_error( "Error converting '" + txtstr + "' to an areal density");
-
+  double answer = m_arealDensityEdit->value();
   answer *= (PhysicalUnits::gram / PhysicalUnits::cm2);
 
   return answer;
@@ -3865,49 +3853,57 @@ void ShieldingSelect::handleToggleGeneric()
     
     if( ad >= 0.0 && mat )
     {
-      char an_buffer[32], ad_buffer[32];
-      snprintf( an_buffer, sizeof(an_buffer), "%.2f", mat->massWeightedAtomicNumber() );
-      snprintf( ad_buffer, sizeof(ad_buffer), "%.4f", ad*PhysicalUnits::cm2/PhysicalUnits::g );
-      
-      m_atomicNumberEdit->setText( an_buffer );
-      m_arealDensityEdit->setText( ad_buffer );
+      m_atomicNumberEdit->setValue( mat->massWeightedAtomicNumber() );
+      m_arealDensityEdit->setValue( ad*PhysicalUnits::cm2/PhysicalUnits::g );
     }else
     {
-      m_atomicNumberEdit->setText( "26" );
-      m_arealDensityEdit->setText( "0.0" );
+      m_atomicNumberEdit->setValue( 26.0f );
+      m_arealDensityEdit->setValue( 0.0f );
     }
     
-    
-    switch( m_geometry )
+    if( m_forFitting )
     {
-      case GammaInteractionCalc::GeometryType::Spherical:
-        m_fitArealDensityCB->setChecked( m_fitThicknessCB->isChecked() );
-        break;
-        
-      case GammaInteractionCalc::GeometryType::CylinderEndOn:
-      case GammaInteractionCalc::GeometryType::CylinderSideOn:
-        m_fitArealDensityCB->setChecked( m_fitCylRadiusCB->isChecked()
-                                        || m_fitCylLengthCB->isChecked() );
-        break;
-      
-      case GammaInteractionCalc::GeometryType::Rectangular:
-        m_fitArealDensityCB->setChecked( m_fitRectWidthCB->isChecked()
-                                        || m_fitRectHeightCB->isChecked()
-                                        || m_fitRectDepthCB->isChecked() );
-        break;
-      case GammaInteractionCalc::GeometryType::NumGeometryType:
-        assert( 0 );
-        break;
-    }//switch( m_geometry )
-    
+      switch( m_geometry )
+      {
+        case GammaInteractionCalc::GeometryType::Spherical:
+          assert( m_fitArealDensityCB && m_fitThicknessCB );
+          m_fitArealDensityCB->setChecked( m_fitThicknessCB->isChecked() );
+          break;
+          
+        case GammaInteractionCalc::GeometryType::CylinderEndOn:
+        case GammaInteractionCalc::GeometryType::CylinderSideOn:
+          assert( m_fitArealDensityCB && m_fitCylRadiusCB && m_fitCylLengthCB );
+          m_fitArealDensityCB->setChecked( m_fitCylRadiusCB->isChecked()
+                                          || m_fitCylLengthCB->isChecked() );
+          break;
+          
+        case GammaInteractionCalc::GeometryType::Rectangular:
+          assert( m_fitArealDensityCB && m_fitRectWidthCB && m_fitRectHeightCB && m_fitRectDepthCB );
+          m_fitArealDensityCB->setChecked( m_fitRectWidthCB->isChecked()
+                                          || m_fitRectHeightCB->isChecked()
+                                          || m_fitRectDepthCB->isChecked() );
+          break;
+        case GammaInteractionCalc::GeometryType::NumGeometryType:
+          assert( 0 );
+          break;
+      }//switch( m_geometry )
+    }//if( m_forFitting )
   }else
   {
     m_toggleImage->setImageLink(Wt::WLink("InterSpec_resources/images/shield.png"));
     m_materialEdit->enable();
     displayInputsForCurrentGeometry();
     
-    string aNstr = SpecUtils::trim_copy( m_atomicNumberEdit->text().toUTF8() );
-    string aDstr = SpecUtils::trim_copy( m_arealDensityEdit->text().toUTF8() );
+    double ad = -1, an = -1;
+    
+    try
+    {
+      an = m_atomicNumberEdit->value();
+      ad = m_arealDensityEdit->value() * PhysicalUnits::g / PhysicalUnits::cm2;
+    }catch(...)
+    {
+      //
+    }// try / catch
     
     WLineEdit *dist_edit = nullptr;
     switch( m_geometry )
@@ -3923,22 +3919,14 @@ void ShieldingSelect::handleToggleGeneric()
     
     assert( dist_edit );
     
-    if( aNstr.empty() || aDstr.empty()
-        || std::atof(aDstr.c_str())<=0.0
-        || std::atof(aNstr.c_str())<=0.0 )
+    if( (an <= 0.0) || (ad <=0.0) )
     {
       m_materialEdit->setText( "" );
       dist_edit->setText( "1.0 cm" );
     }else
     {
       //Get the atomic number closest to what the generic material was
-      int atomicNum = (m_forFitting ? 16 : -1);
-      double ad = -1;
-      try
-      {
-        atomicNum = static_cast<int>( 0.5+std::stod(aNstr) );
-        ad = std::stod(aDstr) * PhysicalUnits::g / PhysicalUnits::cm2;
-      }catch(...){};
+      int atomicNum = (an > 0.5) ? static_cast<int>(0.5 + an) : (m_forFitting ? 16 : -1);
       
       if( !m_forFitting )
       {
@@ -4303,6 +4291,8 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
 
   if( m_isGenericMaterial )
   {
+    char buffer[32] = { '\0' };
+    
     rapidxml::xml_node<> *generic_node;
     
     name = "Generic";
@@ -4310,7 +4300,8 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     base_node->append_node( generic_node );
     
     name = "ArealDensity";
-    value = doc->allocate_string( m_arealDensityEdit->valueText().toUTF8().c_str() );
+    snprintf( buffer, sizeof(buffer), "%.9g", m_arealDensityEdit->value() );
+    value = doc->allocate_string( buffer );
     node = doc->allocate_node( rapidxml::node_element, name, value );
     generic_node->append_node( node );
     if( m_forFitting )
@@ -4321,7 +4312,8 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     }//if( m_fitArealDensityCB )
     
     name = "AtomicNumber";
-    value = doc->allocate_string( m_atomicNumberEdit->valueText().toUTF8().c_str() );
+    snprintf( buffer, sizeof(buffer), "%.9g", m_atomicNumberEdit->value() );
+    value = doc->allocate_string( buffer );
     node = doc->allocate_node( rapidxml::node_element, name, value );
     generic_node->append_node( node );
     if( m_forFitting )
@@ -4551,7 +4543,7 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
     ad_node = generic_node->first_node( "ArealDensity", 12 );
     an_node = generic_node->first_node( "AtomicNumber", 12 );
     
-    if( !ad_node || !ad_node->value() || !ad_node || !ad_node->value() )
+    if( !ad_node || !ad_node->value() || !an_node || !an_node->value() )
       throw runtime_error( "Generic material must have ArealDensity and"
                            " AtomicNumber nodes" );
     
@@ -4560,8 +4552,15 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
     if( !m_isGenericMaterial )
       handleToggleGeneric();
     
-    m_arealDensityEdit->setValueText( WString::fromUTF8(ad_node->value()) );
-    m_atomicNumberEdit->setValueText( WString::fromUTF8(an_node->value()) );
+    float ad, an;
+    if( !(std::stringstream(ad_node->value()) >> ad) )
+      throw runtime_error( "Invalid areal density - not a floating point" );
+    
+    if( !(std::stringstream(an_node->value()) >> an) )
+      throw runtime_error( "Invalid atomic number specified - not a floating point" );
+    
+    m_arealDensityEdit->setValue( ad );
+    m_atomicNumberEdit->setValue( an );
     
     if( m_forFitting && m_fitArealDensityCB && m_fitAtomicNumberCB )
     {
