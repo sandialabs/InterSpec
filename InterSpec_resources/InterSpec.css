@@ -1443,3 +1443,6 @@ body.Wt-rtl .Wt-tabs a {
   overflow: hidden;
 }
 
+.FloatInput:invalid {
+  background-color: pink;
+}
