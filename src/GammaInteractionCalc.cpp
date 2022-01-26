@@ -397,19 +397,30 @@ void example_integration()
     const Material *material = materialdb.material( "void" );
     transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
     sphereRad += 99.5* PhysicalUnits::cm;
+#if( defined(__GNUC__) && __GNUC__ < 5 )
+  ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
+#else
     ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
+#endif
   
     material = materialdb.material( "U" );
     transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
     sphereRad += 0.5 * PhysicalUnits::cm;
+#if( defined(__GNUC__) && __GNUC__ < 5 )
+  ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
+#else
     ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
+#endif
     ObjectToIntegrate.m_sourceIndex = ObjectToIntegrate.m_dimensionsTransLenAndType.size() - 1;
 
     material = materialdb.material( "Fe" );
     transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
     sphereRad += 0.5 * PhysicalUnits::cm;
+#if( defined(__GNUC__) && __GNUC__ < 5 )
+  ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
+#else
     ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
-
+#endif
 
 //Original implementation (pre 20140816) with call directly to Cuhre library
 //  gave:
@@ -2018,12 +2029,20 @@ void test_rectangular_intersections()
     double half_height = 1*PhysicalUnits::cm;
     double half_depth = 1*PhysicalUnits::cm;
     double trans_coef = transmition_length_coefficient( material, energy );
+#if( defined(__GNUC__) && __GNUC__ < 5 )
+    calc.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{{half_width,half_height,half_depth},trans_coef,ShellType::Material} );
+#else
     calc.m_dimensionsTransLenAndType.push_back( {{half_width,half_height,half_depth},trans_coef,ShellType::Material} );
+#endif
     
     half_width = 2*PhysicalUnits::cm;
     half_height = 2*PhysicalUnits::cm;
     half_depth = 2*PhysicalUnits::cm;
+#if( defined(__GNUC__) && __GNUC__ < 5 )
+    calc.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{{half_width,half_height,half_depth},trans_coef,ShellType::Material} );
+#else
     calc.m_dimensionsTransLenAndType.push_back( {{half_width,half_height,half_depth},trans_coef,ShellType::Material} );
+#endif
     
     calc.integral = 0.0;
     
@@ -5072,7 +5091,11 @@ vector< tuple<double,double,double,Wt::WColor,double> >
             //     << " atten(" << calculator.m_energy << " keV-->" << transLenCoef << ") = " << exp(-1.0*transLenCoef)
             //     << endl;
             
+#if( defined(__GNUC__) && __GNUC__ < 5 )
+            calculator.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{outer_dims, transLenCoef, DistributedSrcCalc::ShellType::Generic} );
+#else
             calculator.m_dimensionsTransLenAndType.push_back( {outer_dims, transLenCoef, DistributedSrcCalc::ShellType::Generic} );
+#endif
             
             continue;
           }//if( isGenericMaterial( subMat ) )
@@ -5129,7 +5152,11 @@ vector< tuple<double,double,double,Wt::WColor,double> >
           
           const double transLenCoef = transmition_length_coefficient( material, calculator.m_energy );
 
+#if( defined(__GNUC__) && __GNUC__ < 5 )
+          calculator.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{outer_dims, transLenCoef, DistributedSrcCalc::ShellType::Material} );
+#else
           calculator.m_dimensionsTransLenAndType.push_back( {outer_dims, transLenCoef, DistributedSrcCalc::ShellType::Material} );
+#endif
         }//for( int subMat = 0; subMat < nMaterials; ++subMat )
 
         if( calculator.m_dimensionsTransLenAndType.empty() )

@@ -165,111 +165,53 @@ public:
     assert( m_app );
     assert( m_interspec );
     
-    WApplication::UpdateLock lock( m_app );
-    
-    if( !lock )
+    try
     {
-      log("error") << "Failed to WApplication::UpdateLock in CALpDownloadResource.";
+      WApplication::UpdateLock lock( m_app );
       
-      response.out() << "Error grabbing application lock to from CALpDownloadResource resource; please report to InterSpec@sandia.gov.";
-      response.setStatus(500);
-      assert( 0 );
+      if( !lock )
+        throw std::runtime_error( "Error grabbing application lock to from CALpDownloadResource resource." );
+  
+      const SpecUtils::SpectrumType type = m_tool->typeOfCurrentlyShowingCoefficients();
+      shared_ptr<SpecMeas> meas = m_interspec->measurment( type );
+      if( !meas )
+        throw std::runtime_error( "Error getting spectrum file currently being shown." );
       
-      return;
-    }//if( !lock )
-    
-    const SpecUtils::SpectrumType type = m_tool->typeOfCurrentlyShowingCoefficients();
-    shared_ptr<SpecMeas> meas = m_interspec->measurment( type );
-    if( !meas )
-    {
-      log("error") << "Error getting spectrum file currently being shown";
-      response.out() << "Error getting spectrum file currently being shown; please report to InterSpec@sandia.gov.";
+      string filename = meas->filename();
+      if( filename.empty() )
+        filename = "energy_calibration";
+      const string orig_extension = SpecUtils::file_extension(filename);
+      if( orig_extension.size() && (orig_extension.size() < filename.size()) )
+        filename = filename.substr(0,filename.size() - orig_extension.size());
+      filename += ".CALp";
       
-      //passMessage( "Error getting spectrum file currently being shown",
-      //              "", WarningWidget::WarningMsgHigh );
-      
-      response.setStatus(500);
-      assert( 0 );
-      
-      return;
-    }//if( !meas )
-    
-    string filename = meas->filename();
-    if( filename.empty() )
-      filename = "energy_calibration";
-    const string orig_extension = SpecUtils::file_extension(filename);
-    if( orig_extension.size() && (orig_extension.size() < filename.size()) )
-      filename = filename.substr(0,filename.size() - orig_extension.size());
-    filename += ".CALp";
-    
-    //Remove bad filename characters
-    const string notallowed = "\\/:?\"<>|*";
-    for( auto it = begin(filename) ; it < end(filename) ; ++it )
-    {
-      if( notallowed.find(*it) != string::npos )
-        *it = ' ';
-    }
-    
-    suggestFileName( filename, WResource::Attachment );
-    response.setMimeType( "application/octet-stream" );
-    
-    // First loop over visible measurements, adding calibrations for each new detector name,
-    //  then loop over all measurements to pick up the rest.  This is because there may be multiple
-    //  calibrations for a single detector, but we want to prefer the ones in the currently
-    //  displayed spectra, and not deal with the complexity of handling multiple calibrations per
-    //  detector
-    set<string> dets_so_far;
-    
-    //Note that disp_detectors has both gamma and neutron detectors, but we only care about gamma
-    const vector<string> &gamma_detectors = meas->gamma_detector_names();
-    const vector<string> &detectors = meas->detector_names();
-    const vector<string> disp_detectors = m_interspec->detectorsToDisplay(type);
-    const vector<string> &neut_dets = meas->neutron_detector_names();
-    
-    for( const int sample : m_interspec->displayedSamples(type) )
-    {
-      for( const string det : disp_detectors )
+      //Remove bad filename characters
+      const string notallowed = "\\/:?\"<>|*";
+      for( auto it = begin(filename) ; it < end(filename) ; ++it )
       {
-        if( dets_so_far.count(det) )
-          continue;
-        
-        const shared_ptr<const SpecUtils::Measurement> m = meas->measurement( sample, det );
-        shared_ptr<const SpecUtils::EnergyCalibration> cal = m ? m->energy_calibration() : nullptr;
-        
-        if( !cal || !cal->valid() || (cal->num_channels() < 3) )
-        {
-          // We'll assume that a detector that only has neutrons, will always only have neutrons...
-          //  TODO: this may not actually be that good of an assumptions; re-evaluate later.
-          if( std::find(begin(neut_dets), end(neut_dets), det) != end(neut_dets) )
-            dets_so_far.insert( det );
-          
-          continue;
-        }//if( energy cal is not valid )
-        
-        // Dont write the detector name if its unambiguous
-        const string detname = (gamma_detectors.size() == 1) ? string() : det;
-        
-        if( EnergyCal::write_CALp_file(response.out(), cal, detname) )
-        {
-          dets_so_far.insert( det );
-        }else
-        {
-          log("error") << "Error writing CALp file to WResource output stream.";
-        }
-      }//
+        if( notallowed.find(*it) != string::npos )
+          *it = ' ';
+      }
       
-      if( disp_detectors.size() == dets_so_far.size() )
-        break;
-    }//for( const int sample : m_interspec->displayedSamples(type) )
-    
-    if( disp_detectors.size() != dets_so_far.size() )
-    {
-      // Note that we are goign over all samples and detectors here - being super thorough - we
-      //  could probably tighten this up a lot.
+      suggestFileName( filename, WResource::Attachment );
+      response.setMimeType( "application/octet-stream" );
       
-      for( const int sample : meas->sample_numbers() )
+      // First loop over visible measurements, adding calibrations for each new detector name,
+      //  then loop over all measurements to pick up the rest.  This is because there may be multiple
+      //  calibrations for a single detector, but we want to prefer the ones in the currently
+      //  displayed spectra, and not deal with the complexity of handling multiple calibrations per
+      //  detector
+      set<string> dets_so_far;
+      
+      //Note that disp_detectors has both gamma and neutron detectors, but we only care about gamma
+      const vector<string> &gamma_detectors = meas->gamma_detector_names();
+      const vector<string> &detectors = meas->detector_names();
+      const vector<string> disp_detectors = m_interspec->detectorsToDisplay(type);
+      const vector<string> &neut_dets = meas->neutron_detector_names();
+      
+      for( const int sample : m_interspec->displayedSamples(type) )
       {
-        for( const string &det : detectors )
+        for( const string det : disp_detectors )
         {
           if( dets_so_far.count(det) )
             continue;
@@ -279,19 +221,72 @@ public:
           
           if( !cal || !cal->valid() || (cal->num_channels() < 3) )
           {
+            // We'll assume that a detector that only has neutrons, will always only have neutrons...
+            //  TODO: this may not actually be that good of an assumptions; re-evaluate later.
+            if( std::find(begin(neut_dets), end(neut_dets), det) != end(neut_dets) )
+              dets_so_far.insert( det );
+            
             continue;
           }//if( energy cal is not valid )
           
-          if( EnergyCal::write_CALp_file(response.out(), cal, det) )
+          // Dont write the detector name if its unambiguous
+          const string detname = (gamma_detectors.size() == 1) ? string() : det;
+          
+          if( EnergyCal::write_CALp_file(response.out(), cal, detname) )
           {
             dets_so_far.insert( det );
           }else
           {
-            log("error") << "Error writing CALp file to WResource output stream (2).";
+            log("error") << "Error writing CALp file to WResource output stream.";
           }
-        }//for( const string &det : gamma_dets )
-      }//for( const int sample : meas->sample_numbers() )
-    }//if( disp_detectors.size() != dets_so_far.size() )
+        }//
+        
+        if( disp_detectors.size() == dets_so_far.size() )
+          break;
+      }//for( const int sample : m_interspec->displayedSamples(type) )
+      
+      if( disp_detectors.size() != dets_so_far.size() )
+      {
+        // Note that we are going over all samples and detectors here - being super thorough - we
+        //  could probably tighten this up a lot.
+        
+        for( const int sample : meas->sample_numbers() )
+        {
+          for( const string &det : detectors )
+          {
+            if( dets_so_far.count(det) )
+              continue;
+            
+            const shared_ptr<const SpecUtils::Measurement> m = meas->measurement( sample, det );
+            shared_ptr<const SpecUtils::EnergyCalibration> cal = m ? m->energy_calibration() : nullptr;
+            
+            if( !cal || !cal->valid() || (cal->num_channels() < 3) )
+            {
+              continue;
+            }//if( energy cal is not valid )
+            
+            if( EnergyCal::write_CALp_file(response.out(), cal, det) )
+            {
+              dets_so_far.insert( det );
+            }else
+            {
+              log("error") << "Error writing CALp file to WResource output stream (2).";
+            }
+          }//for( const string &det : gamma_dets )
+        }//for( const int sample : meas->sample_numbers() )
+      }//if( disp_detectors.size() != dets_so_far.size() )
+    }catch( std::exception &e )
+    {
+      log("error") << "Error handling request for CalFileDownloadResource: " << e.what();
+      response.out() << "Error creating CALp file: " << e.what()
+                     << "\n\nPlease report to InterSpec@sandia.gov.";
+      
+      //passMessage( "Error getting spectrum file currently being shown",
+      //              "", WarningWidget::WarningMsgHigh );
+      
+      response.setStatus(500);
+      assert( 0 );
+    }//try / catch
   }//void handleRequest(...)
 };//class CalFileDownloadResource
 
@@ -1966,7 +1961,7 @@ SpecUtils::SpectrumType EnergyCalTool::typeOfCurrentlyShowingCoefficients() cons
   if( selectedType < 0 || selectedType > 2 )
   {
     assert( 0 );  //shouldnt ever happen, right?
-    return;
+    throw runtime_error( "EnergyCalTool::typeOfCurrentlyShowingCoefficients(): invalid spec type" );
   }
   
   return spectypes[selectedType];

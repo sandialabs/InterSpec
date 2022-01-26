@@ -6553,8 +6553,11 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
         const double relax_len = (type == TraceActivityType::ExponentialDistribution)
                                 ? select->relaxationLength(nuc)
                                 : -1.0;
-        
+#if( defined(__GNUC__) && __GNUC__ < 5 )
+        materialAndSrc.trace_sources.push_back( tuple<const SandiaDecay::Nuclide *,TraceActivityType,double>{nuc, type, relax_len} );
+#else
         materialAndSrc.trace_sources.push_back( {nuc, type, relax_len} );
+#endif
       }//for( loop over trace source nuclides )
 
       materials.push_back( materialAndSrc );
