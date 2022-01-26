@@ -969,6 +969,13 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
       d3.select("body").style("cursor", "auto");
     });
 
+  // Work around bug in safari (but not macOS WebView) of the mouse-wheel binding not working.  See:
+  //  https://stackoverflow.com/questions/67836886/wheel-event-is-not-fired-on-a-svg-group-element-in-safari#answer-67925459
+  //  https://bugs.webkit.org/show_bug.cgi?id=226683#c3
+  if( navigator.userAgent.indexOf('Safari') > -1 && navigator.userAgent.indexOf('Chrome') <= -1 ){
+    d3.select(document.body).on('wheel.body', e => {});
+  }
+    
   // mouse wheel behavior
   this.rect.node().onwheel = (evt) => {
     evt.preventDefault();
