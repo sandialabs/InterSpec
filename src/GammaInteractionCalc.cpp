@@ -3774,7 +3774,7 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
                          " squared value calculated is " + std::to_string(activityUncertSquared) );
   
   const double normalCalcAct = ShieldingSourceChi2Fcn::totalActivity( nuclide, params );
-  assert( fabs(normalCalcAct - activity) < 0.001*std::max(normalCalcAct,activity) );
+  assert( fabs(normalCalcAct - activity) < std::max(1.0E-6*PhysicalUnits::bq, 0.001*std::max(normalCalcAct,activity)) );
   
   return sqrt( activityUncertSquared );
 }//double activityUncertainty(...)
