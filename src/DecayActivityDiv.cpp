@@ -2012,8 +2012,6 @@ void DecayActivityDiv::Nuclide::updateTxt()
   
   if( age > 0.0 )
   {
-    //const PhysicalUnits::UnitNameValuePair units = PhysicalUnits::bestTimeUnitShortHtml( age );
-    //label << " " << fixed << setprecision(2) <<  age/units.second << units.first;
     label << " " << PhysicalUnits::printToBestTimeUnits(age);
   }//if( age > 0.0 )
   

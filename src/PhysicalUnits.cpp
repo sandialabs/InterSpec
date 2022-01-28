@@ -126,30 +126,6 @@ const UnitNameValuePairV sm_activityUnitHtmlNameValues{
   {"mCi", mCi},
   {"ci", ci}
 };
-  
-const UnitNameValuePairV sm_timeUnitNameValues{
-  {"ps", picosecond},
-  {"ns", nanosecond},
-  {"microS", microsecond},
-  {"ms", millisecond},
-  {"seconds", second},
-  {"hour", hour},
-  {"day", day},
-  {"month", month},
-  {"year", year}
-};
-
-const UnitNameValuePairV sm_timeUnitHtmlNameValues{
-  {"ps", picosecond},
-  {"ns", nanosecond},
-  {"micro-s", microsecond},
-  {"ms", millisecond},
-  {"seconds", second},
-  {"hours", hour},
-  {"days", day},
-  {"months", month},
-  {"years", year}
-};
 
 const UnitNameValuePairV sm_doseRateUnitHtmlNameValues{
   {"&mu;R/hr", (rem*1.0E-6)/hour},
@@ -311,28 +287,37 @@ std::string printToBestTimeUnits( double time,
   snprintf(formatflag, sizeof(formatflag), "%%.%if %%s", maxDecimal );
   
   if( fabs(time) < second*1.0E-3 )
+  {
     snprintf(buffer, sizeof(buffer), formatflag, (time*1.0E6/second), "us" );
-  else if( fabs(time) < second*0.1 )
+  }else if( fabs(time) < second*0.1 )
+  {
     snprintf(buffer, sizeof(buffer), formatflag, (time*1.0E3/second), "ms");
-  else if( fabs(time) < minute )
+  }else if( fabs(time) < minute )
+  {
     snprintf(buffer, sizeof(buffer), formatflag, (time/second), "s");
-  else if( fabs(time) > 1.0E3*year )
+  }else if( fabs(time) > 1.0E3*year )
   {
     snprintf(formatflag, sizeof(formatflag), "%%.%ig y", maxDecimal );
     snprintf(buffer, sizeof(buffer), formatflag, (time/year) );
   }else if( fabs(time) > 0.99*year )
+  {
     snprintf(buffer, sizeof(buffer), formatflag, (time/year), "y");
-  else if( fabs(time) > 3.0*day )
+  }else if( fabs(time) > 3.0*day )
+  {
     snprintf(buffer, sizeof(buffer), formatflag, (time/day), "d");
-  else if( fabs(time) > 3.0*hour )
+  }else if( fabs(time) > 3.0*hour )
+  {
     snprintf(buffer, sizeof(buffer), formatflag, (time/hour), "h");
-  else if( fabs(time) > 3.0*minute )
+  }else if( fabs(time) > 3.0*minute )
+  {
     snprintf(buffer, sizeof(buffer), formatflag, (time/minute), "m");
-  else if( fabs(time) > 1.0*second )
+  }else if( fabs(time) > 1.0*second )
+  {
     snprintf(buffer, sizeof(buffer), formatflag, (time/second), "s");
-  else if( fabs(time) > 1.0*millisecond )
+  }else if( fabs(time) > 1.0*millisecond )
+  {
     snprintf(buffer, sizeof(buffer), formatflag, (time/millisecond), "ms");
-  else if( fabs(time) > 1.0*microsecond )
+  }else if( fabs(time) > 1.0*microsecond )
   {
 //#if ( defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64) )
     const unsigned char utf8mus[] = { 0xCE, 0xBC, 0x73, 0 };
@@ -341,9 +326,12 @@ std::string printToBestTimeUnits( double time,
 //    snprintf(buffer, sizeof(buffer), formatflag, (time/microsecond), "&mu;s" );
 //#endif
   }else if( fabs(time) > 1.0*picosecond )
+  {
     snprintf(buffer, sizeof(buffer), formatflag, (time/picosecond), "ps");
-  else
+  }else
+  {
     snprintf(buffer, sizeof(buffer), formatflag, (time/second), "s");
+  }
   /*
   else
   {
@@ -1301,67 +1289,24 @@ const UnitNameValuePair &bestActivityUnitHtml( const double activity,
 }//const UnitNameValuePair &bestActivityUnitHtml(...)
 
   
-UnitNameValuePair bestTimeUnit( const double t )
+UnitNameValuePair bestTimeUnit( double t )
 {
-  if( t <= 100.0*nanosecond )
-    return UnitNameValuePair("nano-seconds", nanosecond );
+  t = fabs( t );
+  
   if( t <= 100.0*picosecond )
     return UnitNameValuePair("pico-seconds", picosecond );
+  if( t <= 100.0*nanosecond )
+    return UnitNameValuePair("nano-seconds", nanosecond );
   if( t <= 100.0*microsecond )
     return UnitNameValuePair("micro-seconds", microsecond );
   if( t <= 100.0*millisecond )
     return UnitNameValuePair("milli-seconds", millisecond );
   if( t <= 5.0*hour )
     return UnitNameValuePair("seconds", second );
-  if( t <= 6.0*month )
+  if( t <= 1.0*year )
     return UnitNameValuePair("days", day );
-  if( t <= 5.0*year )
-    return UnitNameValuePair("months", month );
 
-  return UnitNameValuePair("Years", year );
+  return UnitNameValuePair("years", year );
 }//UnitNameValuePair bestTimeUnit( const double time )
-
-
-const UnitNameValuePair &bestTimeUnitLongHtml( const double t )
-{
-  if( t <= 100.0*nanosecond )
-    return sm_timeUnitHtmlNameValues[1];
-  if( t <= 100.0*picosecond )
-    return sm_timeUnitHtmlNameValues[0];
-  if( t <= 100.0*microsecond )
-    return sm_timeUnitHtmlNameValues[2];
-  if( t <= 100.0*millisecond )
-    return sm_timeUnitHtmlNameValues[3];
-  if( t <= 5.0*hour )
-    return sm_timeUnitHtmlNameValues[4];
-  if( t <= 6.0*month )
-    return sm_timeUnitHtmlNameValues[6];
-  if( t <= 5.0*year )
-    return sm_timeUnitHtmlNameValues[7];
-
-  return sm_timeUnitHtmlNameValues[8];
-}//UnitNameValuePair bestTimeUnitLongHtml( const double time )
-
-
-
-UnitNameValuePair bestTimeUnitShortHtml( const double t )
-{
-  if( t <= 100.0*nanosecond )
-    return UnitNameValuePair("ns", nanosecond );
-  if( t <= 100.0*picosecond )
-    return UnitNameValuePair("ps", picosecond );
-  if( t <= 100.0*microsecond )
-    return UnitNameValuePair("&mu;s", microsecond );
-  if( t <= 100.0*millisecond )
-    return UnitNameValuePair("ms", millisecond );
-  if( t <= 5.0*hour )
-    return UnitNameValuePair("s", second );
-  if( t <= 6.0*month )
-    return UnitNameValuePair("d", day );
-  if( t <= 5.0*year )
-    return UnitNameValuePair("m", month );
-
-  return UnitNameValuePair("y", year );
-}//UnitNameValuePair bestTimeUnitShortHtml( const double time )
 
 }//namespace PhysicalUnits
