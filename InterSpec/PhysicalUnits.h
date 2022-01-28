@@ -272,14 +272,12 @@ namespace PhysicalUnits
 
   //Functions below here were imported 20121014 from some other code I have
   //  written, and are not yet consistent with the above functions (e.g.
-  //  will have differnt available prefixes on the units and such)
+  //  will have different available prefixes on the units and such)
   typedef std::pair<std::string,double>    UnitNameValuePair;
   typedef std::vector< UnitNameValuePair > UnitNameValuePairV;
 
   extern const UnitNameValuePairV sm_activityUnitNameValues;
   extern const UnitNameValuePairV sm_activityUnitHtmlNameValues;
-  extern const UnitNameValuePairV sm_timeUnitNameValues;
-  extern const UnitNameValuePairV sm_timeUnitHtmlNameValues;
   extern const UnitNameValuePairV sm_doseRateUnitHtmlNameValues;
 
   //Returns a reference to an element in sm_activityUnitNameValues.
@@ -292,9 +290,6 @@ namespace PhysicalUnits
   
   const UnitNameValuePair &bestDoseUnitHtml( const double dose,
                                                 bool useRem = true );
-  UnitNameValuePair bestTimeUnit( const double time );
-  UnitNameValuePair bestTimeUnitShortHtml( const double time );
-  //Below matches sm_timeUnitHtmlNameValues
-  const UnitNameValuePair &bestTimeUnitLongHtml( const double time );
+  UnitNameValuePair bestTimeUnit( double time );
 }//namespace PhysicalUnits
 #endif
