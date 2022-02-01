@@ -1553,11 +1553,11 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
   //The efficiency of S.E. and D.E. peaks, relative to F.E. peak, for the 20% Generic GADRAS DRF
   //  included in InterSpec, is given pretty well by the following (energy in keV):
   const auto single_escape_sf = []( const double x ) -> double {
-    return (1.8768E-11 *x*x*x) - (9.1467E-08 *x*x) + (2.1565E-04 *x) - 0.16367;
+    return std::max( 0.0, (1.8768E-11 *x*x*x) - (9.1467E-08 *x*x) + (2.1565E-04 *x) - 0.16367 );
   };
   
   const auto double_escape_sf = []( const double x ) -> double {
-    return (1.8575E-11 *x*x*x) - (9.0329E-08 *x*x) + (2.1302E-04 *x) - 0.16176;
+    return std::max( 0.0, (1.8575E-11 *x*x*x) - (9.0329E-08 *x*x) + (2.1302E-04 *x) - 0.16176 );
   };
   
   
@@ -1895,6 +1895,8 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
     
     if( nuclide || reaction || element )
     {
+      assert( mindist >= 0.0 );
+      
       string src;
       char nuclide_label[128];
       
