@@ -1569,7 +1569,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
     //  We will assume a generic 20% HPGe detector to get S.E. and D.E. efficiencies.
     //  And on top of all those assumptions, we will apply an arbitrary amplitude factor of 0.5
     //    to reactions if we arent showing escape peak features, and 0.2 for xrays
-    const float pair_prod_thresh = 1122.0f;
+    const float pair_prod_thresh = 1255.0f; //The single_escape_sf and double_escape_sf give negative values below 1255.
     const float always_check_escape_thresh = 4000.0f;
     const float escape_suppression_factor = 0.5;
     const bool xray_suppression_factor = 0.2;
