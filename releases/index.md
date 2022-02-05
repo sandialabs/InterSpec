@@ -46,36 +46,42 @@ In particular, support volumetric trace sources and cylindrical and rectangular 
   </a>
 - Added option to emphasize either gamma or neutron data on time chart.  
   By default gammas and neutrons are scaled to take up the entire y-range, but this can sometimes cause the lines to obstruct the views of each other, or maybe just the gamma or neutron data is relevant to your problem, so this option lets you clearly separate the lines, making the less important smaller.  Note, there is also an option to completely hide the neutron line on the time chart.  
-  <div style="display: flex; justify-content: center; align-items: flex-start; column-gap: 10px;">
+<div style="display: flex; justify-content: center; align-items: flex-start; column-gap: 10px;">
     <div style="display: inline-block; width: 20%;">
-      <a href="v1.0.9/time_emphasize_1.png">
-        <img alt="Time chart with settings icon" src="v1.0.9/time_emphasize_1.png" style="width: 100%;" /></a>
-        <div>First click on the settings icon on the time chart.</div>
-        <div>In the data shown here you can see the gamma (black line) and neutron (green line) data obscure each other which could make it hard to see features of the data in either of the lines.
-        </div>
-      </div>
-      <div style="display: inline-block; width: 20%;">
-        <a href="v1.0.9/time_emphasize_2.png">
-          <img alt="Filter tab" src="v1.0.9/time_emphasize_2.png" style="width: 100%;" />
+        <a href="v1.0.9/time_emphasize_1.png">
+            <img alt="Time chart with settings icon" src="v1.0.9/time_emphasize_1.png" style="width: 100%;" />
         </a>
-      <div>Select the &quot;Filter&quot; tab.</div>
-      <div>Here you can see other settings that can be useful for improving the view of the time data.</div>
+        <div>First click on the settings icon on the time chart.</div>
+        <div>In the data shown here you can see the gamma (black line) and neutron (green line) data obscure each other
+            which could make it hard to see features of the data in either of the lines.
+        </div>
     </div>
-  <div style="display: inline-block; width: 20%;">
-    <a href="v1.0.9/time_emphasize_3.png">
-      <img alt="Emphasizing the gamma data." src="v1.0.9/time_emphasize_3.png" style="width: 100%;" />
-    </a>
-    <div>Adjust the &quot;Rel. y-max&quot; value to be between 0.04 and 25.  
-    Values larger than 1.0 will cause the neutron y-axis range to be that multiple of neutron data range, while not effecting the gamma y-axis range.  The value of &quot;10.0&quot; shown here causes the neutron y-axis to have a range ten times larger than the data, which emphasizes the gamma data.
+    <div style="display: inline-block; width: 20%;">
+        <a href="v1.0.9/time_emphasize_2.png">
+            <img alt="Filter tab" src="v1.0.9/time_emphasize_2.png" style="width: 100%;" />
+        </a>
+        <div>Select the &quot;Filter&quot; tab.</div>
+        <div>Here you can see other settings that can be useful for improving the view of the time data.</div>
     </div>
-  </div>
-  <div style="display: inline-block; width: 20%;">
-    <a href="v1.0.9/time_emphasize_4.png">
-      <img alt="Emphasizing the neutron data." src="v1.0.9/time_emphasize_4.png" style="width: 100%;" />
-    </a>
-    <div>Values less than 1.0 cause the gamma y-axis range to be scaled by the inverse of the entered value, while not effecting the neutron y-axis range. The value of &quot;0.5&quot; shown here causes the gamma y-axis to have twice the range the data calls for, which causes the neutron data to be emphasized.
+    <div style="display: inline-block; width: 20%;">
+        <a href="v1.0.9/time_emphasize_3.png">
+            <img alt="Emphasizing the gamma data." src="v1.0.9/time_emphasize_3.png" style="width: 100%;" />
+        </a>
+        <div>Adjust the &quot;Rel. y-max&quot; value to be between 0.04 and 25.
+            Values larger than 1.0 will cause the neutron y-axis range to be that multiple of neutron data range, while
+            not effecting the gamma y-axis range. The value of &quot;10.0&quot; shown here causes the neutron y-axis to
+            have a range ten times larger than the data, which emphasizes the gamma data.
+        </div>
     </div>
-  </div>
+    <div style="display: inline-block; width: 20%;">
+        <a href="v1.0.9/time_emphasize_4.png">
+            <img alt="Emphasizing the neutron data." src="v1.0.9/time_emphasize_4.png" style="width: 100%;" />
+        </a>
+        <div>Values less than 1.0 cause the gamma y-axis range to be scaled by the inverse of the entered value, while
+            not effecting the neutron y-axis range. The value of &quot;0.5&quot; shown here causes the gamma y-axis to
+            have twice the range the data calls for, which causes the neutron data to be emphasized.
+        </div>
+    </div>
 </div>
 
 - Added support for <em>CALp</em> energy calibration files.  
@@ -88,9 +94,17 @@ In particular, support volumetric trace sources and cylindrical and rectangular 
   <div>The red oval in the lower-left shows the icons that when clicked/tapped will export of import a <em>CALp</em> file.  To apply a <em>CALp</em> file, you can also just drag-n-drop the <em>CALp</em> file from your computers filesystem onto InterSpec.
   </div>
   </div>
+  
 - Added support to drag-n-drop a CSV/TSV multiple-detector detector response function (DRF) file onto app.  After dropping the file onto InterSpec a dialog will popup that will let you pick the DRF you want from the file, as well as offer to save the file to InterSpecs internal data so you can use the DRFs later on from the "Rel. Eff." tab of the "Detector Response Function Select" tool (e.g., the dialog that pops up when you click on the detector icon anywhere in the app).  
-  The format of the CSV/TSV file is adapted from the LANL SimpleMass spreadsheet, and documentation on its format can be found in the source code comments [here](https://github.com/sandialabs/InterSpec/blob/7ba7703d5a2cf2707f4f6ed791cfefbc81484750/InterSpec/DetectorPeakResponse.h#L362). <div style="width: 300px; margin-left: auto; margin-right: auto;">
-<a href='v1.0.9/tsv_drf_load.png'><img alt='Popup window when loading CSV/TSV file' src='v1.0.9/tsv_drf_load.png' style="display: block; auto; width: 100%"/></a><div>Example dialog after dropping a CSV/TSV DRF file onto InterSpec.  If selected to </div></div>
+  The format of the CSV/TSV file is adapted from the LANL SimpleMass spreadsheet, and documentation on its format can be found in the source code comments [here](https://github.com/sandialabs/InterSpec/blob/7ba7703d5a2cf2707f4f6ed791cfefbc81484750/InterSpec/DetectorPeakResponse.h#L362). 
+<div style="width: 300px; margin-left: auto; margin-right: auto;">
+  <a href='v1.0.9/tsv_drf_load.png'>
+    <img alt='Popup window when loading CSV/TSV file' src='v1.0.9/tsv_drf_load.png' style="display: block; auto; width: 100%"/>
+  </a>
+  <div>Example dialog after dropping a CSV/TSV DRF file onto InterSpec.  If selected to 
+  </div>
+</div>
+
 - Added ability to automatically detect and associate single and double escape peaks with a nuclide or reaction energy when you fit for a peak and are showing reference photopeak lines.  An example of this is that often in HPGe spectra, peaks are seen at 2103.5 keV and 1592.5 keV, which are the single and double escape peaks of the 2614.5 keV Th232 line.
     - For lower-resolution detectors this association is only performed if showing the "Escape Peaks" option of the "Feature Markers..." tool, or if above 4 MeV.
     - When there is a full-energy gamma also near the single or double escape peak, which gamma or escape peak line the peak is assigned to is decided using an expected escape peak amplitude for a generic 20% HPGe detector, with an additional (arbitrary) factor of 0.5 applied to prefer assigning to the gamma.  The algorithm to decide on photopeak assignment takes into account energy difference and expected gamma-line amplitude, so it is expected this amplitude estimates should work quite well for most detectors.  An example of this is that the Th232 decay chain has a gamma at 1588.2 keV (from the Ac228 to Th228 decay), which is near the 1592.5 keV double escape peak of the 2614 keV peak; with the chosen amplitude estimates and typical HPGe energy calibration accuracy, the correct assignment was made for both of these peaks when showing Th232 reference lines for a number of detector models tried.
@@ -111,7 +125,17 @@ Thank you to all the users who reported bugs or requested features!
 ## Detailed changes for v1.0.8
 - The time-history chart was completely re-written to be more responsive, flexible, display more information, have more options, and be easier to use.  
   This work was primarily carried out by [David Ka-Ming Lee](https://github.com/davidkml) as part of his internship for Sandia National Laboratories.
-  - Clicking/tapping the <img src='v1.0.8/filter.svg' width="16px" height="16px" style="background: white"></img> icon in the upper-right-hand portion of the time chart will display a widget that allows you to select if you want to zoom in/out, select samples to display the summed spectrum of, and more, as shown in the below animated gif:<div style="width: 500px; margin-left: auto; margin-right: auto;"><a href='v1.0.8/TimeChartDemo.gif'><img alt='Example of using the new time chart controls' src='v1.0.8/TimeChartDemo.gif' style="display: block; auto; width: 100%"/></a><div>Example of using the time-chart settings widget to navigate the time-series chart, select samples to sum, and set energy range to display the time-chart for.</div></div>
+  - Clicking/tapping the 
+<img src='v1.0.8/filter.svg' width="16px" height="16px" style="background: white"></img>
+icon in the upper-right-hand portion of the time chart will display a widget that allows you to select if you want to zoom in/out, select samples to display the summed spectrum of, and more, as shown in the below animated gif:
+<div style="width: 500px; margin-left: auto; margin-right: auto;">
+  <a href='v1.0.8/TimeChartDemo.gif'>
+    <img alt='Example of using the new time chart controls' src='v1.0.8/TimeChartDemo.gif' style="display: block; auto; width: 100%" />
+  </a>
+  <div>Example of using the time-chart settings widget to navigate the time-series chart, select samples to sum, and set energy range to display the time-chart for.
+  </div>
+</div>
+
   - If you regularly work with search-mode or radiation portal monitor data that has a time component, you do not need to use the graphical method of selecting the zooming/panning/selecting/etc on the chart - the following shortcuts will allow you to quickly perform all the same operations.
     - <b>Select samples to display spectrum of</b>: For the foreground use the left-mouse button with no modifier keys to select samples.  Pressing the Alt-key (or Option key on macOS) with the left-mouse key will select background samples.  And holding the 's' key while using the mouse buttons will select samples for the secondary spectrum.
     - <b>Adding samples to displayed spectra</b>: Hold the shift-key while dragging with the left mouse button will <em>add</em> samples to the foreground.  Holding the shift-key while pressing the Alt-key (Option-key) or 's'-key will add samples to the background or secondary spectra, respectively.
