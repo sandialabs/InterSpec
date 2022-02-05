@@ -1,6 +1,6 @@
 <div style="text-align: right;">SAND2022-0432 O</div>
 
-# v1.0.9 (Feb XX, 2021)
+# v1.0.9 (Feb 0X, 2021)
 InterSpec version 1.0.9 adds a number of user requested features and user reported fixes.
 In particular, support volumetric trace sources and cylindrical and rectangular geometries; these are particularly useful for determining contamination levels, or activities of bulk materials.
 
@@ -126,7 +126,7 @@ Thank you to all the users who reported bugs or requested features!
 - The time-history chart was completely re-written to be more responsive, flexible, display more information, have more options, and be easier to use.  
   This work was primarily carried out by [David Ka-Ming Lee](https://github.com/davidkml) as part of his internship for Sandia National Laboratories.
   - Clicking/tapping the 
-<img src='v1.0.8/filter.svg' width="16px" height="16px" style="background: white"></img>
+<img src='v1.0.8/filter.svg' width="16" height="16" style="background: white" />
 icon in the upper-right-hand portion of the time chart will display a widget that allows you to select if you want to zoom in/out, select samples to display the summed spectrum of, and more, as shown in the below animated gif:
 <div style="width: 500px; margin-left: auto; margin-right: auto;">
   <a href='v1.0.8/TimeChartDemo.gif'>
@@ -145,11 +145,13 @@ icon in the upper-right-hand portion of the time chart will display a widget tha
     - <b>Panning left and right</b>: Click on a x-axis label and drage left/right, or use the mouse left/right wheel (or trackpad equivalent).
       
     These shortcuts are also listed in the filter tool inside the app for a quick reminder.
-  - The ability to have the time-chart be displayed for only a specific energy range was also added under the "Filter" tab of the time-chart settings widget.<div style="width: 450px; margin-left: auto; margin-right: auto;"><a href='v1.0.8/time_energy_filter.png'><img
+  - The ability to have the time-chart be displayed for only a specific energy range was also added under the "Filter" tab of the time-chart settings widget.
+  <div style="width: 450px; margin-left: auto; margin-right: auto;"><a href='v1.0.8/time_energy_filter.png'><img
             alt='Example of displaying the time-chart for only a specified energy range.'
             src='v1.0.8/time_energy_filter.png' style="display: block; auto; width: 100%" /></a>
     <div>Example of displaying the time-chart for only the 1163 keV to 1183 keV (i.e., the lower Co-60 full energy peak
-        range) region.</div>
+        range) region.
+    </div>
 </div>
 
   - By default if there are more time-samples in your data than pixels available to display the samples them, multiple time samples will be summed together for display.  This often makes the chart look cleaner and clearer, however, if you are looking for short count-rate spikes, this combining of samples may de-emphasize the elevated regions.  So a "Dont&lsquo;t rebin" option is also available on the "Filter" tab so that each time interval will be plotted.
