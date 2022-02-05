@@ -1,6 +1,6 @@
 <div style="text-align: right;">SAND2022-0432 O</div>
 
-# v1.0.9 (Jan XX, 2021)
+# v1.0.9 (Feb XX, 2021)
 InterSpec version 1.0.9 adds a number of user requested features and user reported fixes.
 In particular, support volumetric trace sources and cylindrical and rectangular geometries; these are particularly useful for determining contamination levels, or activities of bulk materials.
 
@@ -94,7 +94,7 @@ In particular, support volumetric trace sources and cylindrical and rectangular 
   <div>The red oval in the lower-left shows the icons that when clicked/tapped will export of import a <em>CALp</em> file.  To apply a <em>CALp</em> file, you can also just drag-n-drop the <em>CALp</em> file from your computers filesystem onto InterSpec.
   </div>
   </div>
-  
+
 - Added support to drag-n-drop a CSV/TSV multiple-detector detector response function (DRF) file onto app.  After dropping the file onto InterSpec a dialog will popup that will let you pick the DRF you want from the file, as well as offer to save the file to InterSpecs internal data so you can use the DRFs later on from the "Rel. Eff." tab of the "Detector Response Function Select" tool (e.g., the dialog that pops up when you click on the detector icon anywhere in the app).  
   The format of the CSV/TSV file is adapted from the LANL SimpleMass spreadsheet, and documentation on its format can be found in the source code comments [here](https://github.com/sandialabs/InterSpec/blob/7ba7703d5a2cf2707f4f6ed791cfefbc81484750/InterSpec/DetectorPeakResponse.h#L362). 
 <div style="width: 300px; margin-left: auto; margin-right: auto;">
@@ -145,10 +145,27 @@ icon in the upper-right-hand portion of the time chart will display a widget tha
     - <b>Panning left and right</b>: Click on a x-axis label and drage left/right, or use the mouse left/right wheel (or trackpad equivalent).
       
     These shortcuts are also listed in the filter tool inside the app for a quick reminder.
-  - The ability to have the time-chart be displayed for only a specific energy range was also added under the "Filter" tab of the time-chart settings widget.<div style="width: 450px; margin-left: auto; margin-right: auto;"><a href='v1.0.8/time_energy_filter.png'><img alt='Example of displaying the time-chart for only a specified energy range.' src='v1.0.8/time_energy_filter.png' style="display: block; auto; width: 100%" /></a><div>Example of displaying the time-chart for only the 1163 keV to 1183 keV (i.e., the lower Co-60 full energy peak range) region.</div></div>
+  - The ability to have the time-chart be displayed for only a specific energy range was also added under the "Filter" tab of the time-chart settings widget.<div style="width: 450px; margin-left: auto; margin-right: auto;"><a href='v1.0.8/time_energy_filter.png'><img
+            alt='Example of displaying the time-chart for only a specified energy range.'
+            src='v1.0.8/time_energy_filter.png' style="display: block; auto; width: 100%" /></a>
+    <div>Example of displaying the time-chart for only the 1163 keV to 1183 keV (i.e., the lower Co-60 full energy peak
+        range) region.</div>
+</div>
+
   - By default if there are more time-samples in your data than pixels available to display the samples them, multiple time samples will be summed together for display.  This often makes the chart look cleaner and clearer, however, if you are looking for short count-rate spikes, this combining of samples may de-emphasize the elevated regions.  So a "Dont&lsquo;t rebin" option is also available on the "Filter" tab so that each time interval will be plotted.
 - Added Flat-step, Linear-step, and Bi-linear-step peak-continuums.
-  - After fitting a peak, you can right-click on a peak and go to the "Change Continuum" menu item to select the continuum type you would like.  Or you can use the "Peak Editor" (which can be opened by right-clicking on a peak) to change the continuum type as well.<div style="display: flex; justify-content: center; align-items: flex-start; column-gap: 20px;"><div style="display: inline-block; width: 250px;"><a href="v1.0.8/select_cont_type_1.png"><img src="v1.0.8/select_cont_type_1.png" style="height: 250px;" /></a><div>Right-clicking on a peak and using the "Change Continuum" menu-item to select the continuum type.</div></div><div style="display: inline-block; width: 250px;"><a href='v1.0.8/select_cont_type_2.png'><img src="v1.0.8/select_cont_type_2.png" style="height: 250px;" /></a><div>Using the "Peak Editor" to change the continuum type.</div></div></div>
+  - After fitting a peak, you can right-click on a peak and go to the "Change Continuum" menu item to select the continuum type you would like.  Or you can use the "Peak Editor" (which can be opened by right-clicking on a peak) to change the continuum type as well.
+<div style="display: flex; justify-content: center; align-items: flex-start; column-gap: 20px;">
+    <div style="display: inline-block; width: 250px;"><a href="v1.0.8/select_cont_type_1.png"><img
+                src="v1.0.8/select_cont_type_1.png" style="height: 250px;" /></a>
+        <div>Right-clicking on a peak and using the "Change Continuum" menu-item to select the continuum type.</div>
+    </div>
+    <div style="display: inline-block; width: 250px;"><a href='v1.0.8/select_cont_type_2.png'><img
+                src="v1.0.8/select_cont_type_2.png" style="height: 250px;" /></a>
+        <div>Using the "Peak Editor" to change the continuum type.</div>
+    </div>
+</div>
+
   - A comparison of the different continuum types is shown below:
 <div style="display: flex; flex-flow: row wrap; align-items: flex-start; column-gap: 20px; width: 80%; margin-left: auto; margin-right: auto;">
   <div style="">
