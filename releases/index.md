@@ -112,6 +112,7 @@ In particular, support volumetric trace sources and cylindrical and rectangular 
 - Fixed potential infinite loop in TimeChart JS that could cause the application to stop responding.
 - Fixed regression causing the ctrl-drag (e.g., to fit multiple peaks at a time) on the chart to not work.
 - Fixed issue where changing the energy calibration could result in an error when only a single spectrum is showing; happened when a previous spectrum had a differently named detector, but otherwise similar data.
+- Fixed issue when opening N42-2012 files exported from InterSpec, the peaks would sometimes lose their colors.
 - Improved various aspects of peak fitting.
 - A number of various display and layout improvements, as well as a number of smaller bug fixes.
 - Improved a few spectrum file format parsing, as well as added a few new format variants.
