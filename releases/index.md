@@ -1,6 +1,6 @@
 <div style="text-align: right;">SAND2022-0432 O</div>
 
-# v1.0.9 (Feb 0X, 2021)
+# v1.0.9 (Feb 06, 2021)
 InterSpec version 1.0.9 adds a number of user requested features and user reported fixes.
 In particular, support volumetric trace sources and cylindrical and rectangular geometries; these are particularly useful for determining contamination levels, or activities of bulk materials.
 
