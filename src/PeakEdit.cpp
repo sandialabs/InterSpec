@@ -453,8 +453,8 @@ void PeakEdit::init()
   
   m_peakModel->dataChanged().connect( this, &PeakEdit::refreshPeakInfo );
   m_peakModel->layoutChanged().connect( this, &PeakEdit::refreshPeakInfo );
-  m_peakModel->rowsRemoved().connect( this, &PeakEdit::refreshPeakInfo );
-  m_peakModel->rowsInserted().connect( this, &PeakEdit::refreshPeakInfo );
+  m_peakModel->rowsRemoved().connect( this, &PeakEdit::peakModelRowsRemoved );
+  m_peakModel->rowsInserted().connect( this, &PeakEdit::peakModelRowsAdded );
 }//void init()
 
 
@@ -688,15 +688,72 @@ Wt::Signal<> &PeakEdit::done()
   return m_doneSignal;
 }
 
+void PeakEdit::peakModelRowsRemoved( WModelIndex, int firstRowToBeRemoved, int lastRowToBeRemoved )
+{
+  if( m_blockInfoRefresh )
+    return;
+  
+  if( !m_peakIndex.isValid() )
+    return;
+  
+  // We might be here if the user right-clicked on the peak and asked for a re-fit, which we would
+  //  then, in principle want to pick the new peak up to edit.
+  const int currentRow = m_peakIndex.row();
+  if( (currentRow >= firstRowToBeRemoved) && (currentRow <= lastRowToBeRemoved) )
+    m_peakIndex = WModelIndex();
+  
+  refreshPeakInfo();
+}//void peakModelRowsRemoved()
+
+
+void PeakEdit::peakModelRowsAdded()
+{
+  if( m_blockInfoRefresh )
+    return;
+  
+  // We may be here if the user refit either the current peak, or any other peak by right-clicking
+  //  on them (which causes all peaks to be removed, and then added back in).
+  //  There are probably a number of other ways to get here.
+  
+  float mean = m_currentPeak.mean();
+  if( mean < 1.0 )
+    mean = m_energy;
+  
+  if( mean >= 1.0 )
+  {
+    PeakModel::PeakShrdPtr nearest = m_peakModel->nearestPeak( mean );
+    
+    // Allowing new peak to be within 0.5*FWHM of original peak is an arbitrary choice, but should
+    //  about uniquely identify the originally intended peak region
+    if( nearest && (fabs(nearest->mean() - mean) < 0.5*nearest->fwhm()) )
+    {
+      m_peakIndex = m_peakModel->indexOfPeak( nearest );
+    }else
+    {
+      m_peakIndex = WModelIndex();
+    }
+  }else
+  {
+    m_peakIndex = WModelIndex();
+  }
+  
+  refreshPeakInfo();
+}//void PeakEdit::peakModelRowsAdded()
+
 
 void PeakEdit::refreshPeakInfo()
 {
   if( m_blockInfoRefresh )
     return;
   
+  PeakModel::PeakShrdPtr updated_peak;
+  if( m_peakIndex.isValid() )
+    updated_peak = m_peakModel->peak( m_peakIndex );
   
-  if( !m_peakIndex.isValid() )
+  if( !updated_peak )
   {
+    m_peakIndex = WModelIndex();
+    
     for( PeakPars t = PeakPars(0); t < NumPeakPars; t = PeakPars(t+1) )
     {
       m_valTxts[t] = m_uncertTxts[t] = "";
@@ -720,6 +777,8 @@ void PeakEdit::refreshPeakInfo()
     
     return;
   }//if( !nrow )
+  
+  m_currentPeak = *updated_peak;
   
   std::shared_ptr<const PeakContinuum> continuum = m_currentPeak.continuum();
   
@@ -1286,7 +1345,7 @@ void PeakEdit::fitTypeChanged( PeakPars t )
       PeakDef::CoefficientType coef = PeakDef::CoefficientType(static_cast<int>(t));
       m_peakModel->setPeakFitFor( m_peakIndex, coef, isChecked );
       //  m_originalPeak.setFitFor( coef, isChecked );
-      m_currentPeak.setFitFor( coef, isChecked );
+      //m_currentPeak.setFitFor( coef, isChecked );
       break;
     }//case for one of the PeakDef fitCoefficients
       
@@ -1295,8 +1354,7 @@ void PeakEdit::fitTypeChanged( PeakPars t )
     {
       const int num = t - OffsetPolynomial0;
       m_peakModel->setContinuumPolynomialFitFor( m_peakIndex, num, isChecked );
-//    continuum->setPolynomialCoefFitFor( num, isChecked );
-      continuum->setPolynomialCoefFitFor( num, isChecked );
+      //continuum->setPolynomialCoefFitFor( num, isChecked );
       break;
     }
     
@@ -1305,6 +1363,7 @@ void PeakEdit::fitTypeChanged( PeakPars t )
     break;
   };//switch( t )
   
+  m_currentPeak = *m_peakModel->peak( m_peakIndex );
   
 //  m_apply->enable();
   m_accept->enable();
@@ -1807,6 +1866,7 @@ void PeakEdit::refit()
     }//for( loop over PeakDef::CoefficientType )
     
     m_currentPeak = outputPeak[0];
+    m_energy = m_currentPeak.mean();
     m_blockInfoRefresh = true;
     m_peakModel->removePeak( m_peakIndex );
     m_peakIndex   = m_viewer->addPeak( m_currentPeak, false );
@@ -1953,7 +2013,11 @@ void PeakEdit::apply()
             val /= 2.3548201; //note: purposfull fall-through
             if( val < 0.0 )
               val = -val;
+          
           case PeakEdit::Mean:
+            m_energy = m_currentPeak.mean();
+            //note: fall-through intentional
+            
           case PeakEdit::LandauAmplitude:
           case PeakEdit::LandauMode:
           case PeakEdit::LandauSigma:
@@ -2245,14 +2309,14 @@ void PeakEdit::apply()
     m_blockInfoRefresh = false;
     
     refreshPeakInfo();
-    
   }catch ( std::exception &e)
   {
     if( m_peakIndex.isValid() )
       m_peakModel->removePeak( m_peakIndex );
     m_peakIndex = m_viewer->addPeak( revertPeak, false );
     m_currentPeak = *m_peakModel->peak( m_peakIndex );
-
+    m_energy = m_currentPeak.mean();
+    
     const string what = e.what();
     throw runtime_error( "Error applying changes to peak.<br/>Fix error(s) before retrying: " + what );
   }//try / catch

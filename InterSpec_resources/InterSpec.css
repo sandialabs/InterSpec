@@ -1157,7 +1157,15 @@ cursor: default;
   padding-right: 1px;
 }
 
-
+a.DownloadLink > span
+{
+  background-image: url('../InterSpec_resources/images/download_small.svg');
+  padding-left: 24px;
+  background-repeat: no-repeat;
+  background-position: bottom 0px left 0px;
+  display: inline-block;
+  margin-top: 5px;
+}
 
 .loading
 {
@@ -1435,3 +1443,6 @@ body.Wt-rtl .Wt-tabs a {
   overflow: hidden;
 }
 
+.FloatInput:invalid {
+  background-color: pink;
+}

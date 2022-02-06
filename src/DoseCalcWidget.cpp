@@ -76,6 +76,7 @@
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/GadrasSpecFunc.h"
 #include "InterSpec/ShieldingSelect.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -1807,10 +1808,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         
         if( isGeneric )
         {
-          char buffer[128];
-          snprintf( buffer, sizeof(buffer), "%f", adfit*PhysicalUnits::cm2/PhysicalUnits::g );
-          
-          m_answerShieldingSelect->arealDensityEdit()->setText( buffer );
+          m_answerShieldingSelect->arealDensityEdit()->setValue( static_cast<float>(adfit*PhysicalUnits::cm2/PhysicalUnits::g) );
         }else
         {
           const double thickness = adfit / mat->density;

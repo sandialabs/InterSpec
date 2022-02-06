@@ -391,7 +391,12 @@ protected:
 #endif
   
 #if( !IMP_CALp_BTN_NEAR_COEFS )
+#if( BUILD_AS_OSX_APP )
+  Wt::WAnchor *m_downloadCALp;
+#else
   Wt::WPushButton *m_downloadCALp;
+#endif
+  
   Wt::WPushButton *m_uploadCALp;
 #endif
   

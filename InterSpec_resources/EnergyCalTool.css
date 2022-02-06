@@ -171,6 +171,12 @@
 {
 }
 
+a.DownloadLink.CALp > span
+{
+  padding-right: 24px;
+  background-position: bottom 0px right 0px;
+  margin-top: 7px;
+}
 
 
 

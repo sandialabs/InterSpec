@@ -139,13 +139,11 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
     WDialog::contents()->addStyleClass( "PhoneCopywriteContent" );
   
   WContainerWidget *topDiv = new WContainerWidget();
-  WContainerWidget *bottomDiv = new WContainerWidget();
   
   WBorder border(WBorder::Solid, WBorder::Explicit, Wt::gray);
   border.setWidth( WBorder::Explicit, WLength(1) );
   
   topDiv->decorationStyle().setBorder( border,  Wt::Bottom );
-  bottomDiv->decorationStyle().setBorder( border, Wt::Top );
   stack->decorationStyle().setBorder( border,  Wt::Right | Wt::Left );
   m_menu->decorationStyle().setBorder( border,  Wt::Left );
   
@@ -154,7 +152,6 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   layout->addWidget( topDiv,    0, 0, 1, 2 );
   layout->addWidget( m_menu,    1, 0 );
   layout->addWidget( stack,     1, 1, 1, 1 );
-  layout->addWidget( bottomDiv, 2, 0, 1, 2 );
   layout->setRowStretch( 1, 1 );
   layout->setVerticalSpacing( 0 );
   layout->setHorizontalSpacing( 0 );
@@ -171,12 +168,6 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   title->bindString("build-version", InterSpec_VERSION);
   title->bindString("build-date", std::to_string(COMPILE_DATE_AS_INT) );
   title->bindString("copyright", copyright );
-  
-  //Populate bottomDiv
-  string dhsack;
-  m_resourceBundle.resolveKey( "dhs-acknowledgement", dhsack );
-  new WText( dhsack, Wt::XHTMLText, bottomDiv );
-  bottomDiv->setAttributeValue( "style", "text-align: center; font-size: smaller; padding-top: 0.6em;" );
   
   //Add items to the left menu; the contents wont be loaded until shown.
   makeItem( "Disclaimer", "dhs-disclaimer" );
@@ -305,7 +296,7 @@ void LicenseAndDisclaimersWindow::lgplLicenseCreator( Wt::WContainerWidget *pare
   
   WText *text = new WText( license_content, XHTMLText, parent );
   if( !error_reading )
-    text->setAttributeValue( "style", "display: block; font-family: monospace; white-space: pre; margin: 1em 0;" );
+    text->setAttributeValue( "style", "display: block; font-family: monospace; white-space: pre; margin: 1em 0; font-size: x-small;" );
 }//void lgplLicenseCreator()
 
 

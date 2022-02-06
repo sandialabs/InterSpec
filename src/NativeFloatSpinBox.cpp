@@ -44,6 +44,7 @@ NativeFloatSpinBox::NativeFloatSpinBox( Wt::WContainerWidget *parent )
       m_max( std::numeric_limits<float>::max() ),
       m_format( "%.6G" )
 {
+  addStyleClass( "FloatInput" );
   setAutoComplete( false );
   setAttributeValue( "type", "number" );
   setAttributeValue( "step", "any" ); //For FF
@@ -68,7 +69,7 @@ NativeFloatSpinBox::~NativeFloatSpinBox()
 }
   
 
-void NativeFloatSpinBox::setValue( const float value )
+void NativeFloatSpinBox:: setValue( const float value )
 {
   m_value = value;
   char buffer[64];
@@ -88,6 +89,8 @@ void NativeFloatSpinBox::setSingleStep( const float step )
  
 void NativeFloatSpinBox::setMinimum( const float minval )
 {
+  m_min = minval;
+  
   char buffer[64];
   snprintf( buffer, sizeof(buffer), m_format.c_str(), minval );
   setAttributeValue( "min", buffer );
@@ -96,6 +99,8 @@ void NativeFloatSpinBox::setMinimum( const float minval )
 
 void NativeFloatSpinBox::setMaximum( const float maxval )
 {
+  m_max = maxval;
+  
   char buffer[64];
   snprintf( buffer, sizeof(buffer), m_format.c_str(), maxval );
   setAttributeValue( "max", buffer );

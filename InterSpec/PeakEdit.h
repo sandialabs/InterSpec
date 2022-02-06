@@ -114,6 +114,8 @@ public:
 protected:
   void init();
   void refreshPeakInfo();
+  void peakModelRowsRemoved( Wt::WModelIndex, int, int );
+  void peakModelRowsAdded();
   void checkIfDirty( PeakPars type, bool uncert );
   void checkIfColorDirty();
   void checkIfUserLabelDirty();

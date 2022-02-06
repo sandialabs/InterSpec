@@ -435,7 +435,7 @@ namespace
           pos->second += src.numPerSecond;
         if( print_debug() )
           cout << "For " << source_name << " Peak " << peak->mean() << "keV "
-               << " is contributted to by " << src.numPerSecond << endl;
+               << " is contributed to by " << src.numPerSecond << endl;
         in_peaks_frac += src.numPerSecond;
       }//if( src.energy contributes to thie peak )
       
@@ -659,64 +659,77 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
             const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
             std::vector< vector<IsotopeSearchByEnergyModel::IsotopeMatch> > &answer )
 {
+  // Note: most parts of this function are wrapped in try/catch blocks, but exceptions are really
+  //       not expected.
+  
   if( energies.empty() )
     return;
   
   char buffer[32];
   
-  //XXX - currently only taking 'most likely' combination of matching of
-  //      energies - should implement getting all permutations!
+  // TODO: currently only taking 'most likely' combination of matching of
+  //       energies - should implement getting all permutations!
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   
   for( const NucToEnergiesMap::value_type &nm : filteredNuclides )
   {
-    //chack to see if this nuclide has gammas for each energy, not strictly
-    //  necassarry, but probably computationally faster (do we care about this
+    //check to see if this nuclide has gammas for each energy, not strictly
+    //  necessary, but probably computationally faster (do we care about this
     //  here though)
     bool hasAll = true;
     vector<size_t> energy_xray_is_for;
     vector<const SandiaDecay::EnergyIntensityPair *> matching_xrays;
     for( size_t i = 0; i < energies.size(); ++i )
     {
-      const double energy = energies[i];
-      const double de = fabs( windows[i] );
-      set<double>::const_iterator lb, up, iter;
-      lb = nm.second.lower_bound( energy - de );
-      up = nm.second.upper_bound( energy + de );
-      bool found = false;
-      for( iter = lb; iter != up; ++iter )
-        found |= (fabs((*iter)-energy) <= de);
-      
-      
-      if( !found && (energy < 115.0*PhysicalUnits::keV) )
-      {//lets look through the x-rays for this
-        double minxraydist = 999.9;
-        SandiaDecay::EnergyIntensityPair closest_xray(0.0,0.0);
-        const SandiaDecay::Element *el = db->element( nm.first->atomicNumber );
-        const vector<SandiaDecay::EnergyIntensityPair> &xrays = el->xrays;
-        for( size_t j = 0; j < xrays.size(); ++j )
-        {
-          const double dist = fabs(xrays[j].energy-energy);
-          if( dist <= minxraydist )
-          {
-            minxraydist = dist;
-            closest_xray = xrays[j];
-          }//if( dist <= minxraydist )
-          
-          if( minxraydist <= de )
-          {
-            found = true;
-            energy_xray_is_for.push_back( i );
-            matching_xrays.push_back( &(xrays[j]) );
-          }//if( minxraydist <= de )
-        }//for( loop iver x-rays )
-      }//if( !found && (energy < 115.0*PhysicalUnits::keV) )
-      
-      if( !found )
+      try
       {
-        hasAll = false;
-        break;
-      }//if( !found )
+        const double energy = energies[i];
+        const double de = fabs( windows[i] );
+        set<double>::const_iterator lb, up, iter;
+        lb = nm.second.lower_bound( energy - de );
+        up = nm.second.upper_bound( energy + de );
+        bool found = false;
+        for( iter = lb; iter != up; ++iter )
+        found |= (fabs((*iter)-energy) <= de);
+        
+        
+        if( !found && (energy < 115.0*PhysicalUnits::keV) )
+        {//lets look through the x-rays for this
+          double minxraydist = 999.9;
+          SandiaDecay::EnergyIntensityPair closest_xray(0.0,0.0);
+          const SandiaDecay::Element *el = db->element( nm.first->atomicNumber );
+          const vector<SandiaDecay::EnergyIntensityPair> &xrays = el->xrays;
+          for( size_t j = 0; j < xrays.size(); ++j )
+          {
+            const double dist = fabs(xrays[j].energy-energy);
+            if( dist <= minxraydist )
+            {
+              minxraydist = dist;
+              closest_xray = xrays[j];
+            }//if( dist <= minxraydist )
+            
+            if( minxraydist <= de )
+            {
+              found = true;
+              energy_xray_is_for.push_back( i );
+              matching_xrays.push_back( &(xrays[j]) );
+            }//if( minxraydist <= de )
+          }//for( loop iver x-rays )
+        }//if( !found && (energy < 115.0*PhysicalUnits::keV) )
+        
+        if( !found )
+        {
+          hasAll = false;
+          break;
+        }//if( !found )
+      }catch( std::exception &e )
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        stringstream msg;
+        msg << "Unexpected exception (1): " << e.what();
+        log_developer_error( __func__, msg.str().c_str() );
+#endif
+      }//try / catch
     }//for( size_t i = 0; i < energies.size(); ++i )
     
     if( !hasAll )
@@ -726,223 +739,243 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
     vector<IsotopeMatch> nucmatches;
     for( size_t i = 0; i < energies.size(); ++i )
     {
-      vector<size_t>::const_iterator xraypos = find( energy_xray_is_for.begin(),
-                                                    energy_xray_is_for.end(), i );
-      
-      if( xraypos != energy_xray_is_for.end() )
+      try
       {
-        const size_t pos = xraypos - energy_xray_is_for.begin();
-        const double energy = energies[i];
-        const SandiaDecay::EnergyIntensityPair *xray = matching_xrays[pos];
+        vector<size_t>::const_iterator xraypos = find( energy_xray_is_for.begin(),
+                                                      energy_xray_is_for.end(), i );
         
-        IsotopeMatch match;
-        match.m_distance = fabs(energy - xray->energy);    //sum of distance over all energies searched
-        dist += match.m_distance;
-        
-        match.m_age = 0.0;         //age assumed for listing things
-        match.m_branchRatio = xray->intensity;
-        
-        //Only one of the following will be valid: m_nuclide, m_element, m_reaction
-        match.m_nuclide = NULL;
-        match.m_transition = NULL;
-        match.m_particle = NULL;
-        match.m_element = db->element( nm.first->atomicNumber );
-        match.m_xray = xray;
-        match.m_reaction = NULL;
-        //        match.m_reactionEnergy;
-        
-        //        match.m_displayData[ParentHalfLife] = "";
-        match.m_displayData[AssumedAge] = PhysicalUnits::printToBestTimeUnits( 0.0 );
-        //        match.m_displayData[SpecificIsotope] = "";
-        if( match.m_element )
-          match.m_displayData[ParentIsotope] = match.m_element->symbol;
-        
-        if( xray )
+        if( xraypos != energy_xray_is_for.end() )
         {
-          snprintf( buffer, sizeof(buffer), "%.2f", xray->energy );
-          match.m_displayData[Energy] = buffer;
-        }//if( xray )
-        
-        snprintf( buffer, sizeof(buffer), "%.2f", match.m_distance );
-        match.m_displayData[Distance] = buffer;
-        
-        snprintf( buffer, sizeof(buffer), "%.2g", match.m_branchRatio );
-        match.m_displayData[BranchRatio] = buffer;
-        
-        nucmatches.push_back( match );
-      }else//if( xraypos != energy_xray_is_for.end() )
-      {
-        size_t trans_index = 0;
-        const SandiaDecay::Transition *transition = NULL;
-        IsotopeMatch match;
-        
-        PeakDef::SourceGammaType sourceGammaType = PeakDef::NormalGamma;
-        
-        PeakDef::findNearestPhotopeak( nm.first, energies[i],
-                                      windows[i], false, transition, trans_index, sourceGammaType );
-        if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) )
-          continue;
-        
-        match.m_nuclide = nm.first;
-        match.m_transition = transition;
-        if( transition )
-          match.m_particle = &(transition->products[trans_index]);
-        match.m_sourceGammaType = sourceGammaType;
-        
-        match.m_distance = 99999999.9;
-        switch( sourceGammaType )
+          const size_t pos = xraypos - energy_xray_is_for.begin();
+          const double energy = energies[i];
+          const SandiaDecay::EnergyIntensityPair *xray = matching_xrays[pos];
+          
+          IsotopeMatch match;
+          match.m_distance = fabs(energy - xray->energy);    //sum of distance over all energies searched
+          dist += match.m_distance;
+          
+          match.m_age = 0.0;         //age assumed for listing things
+          match.m_branchRatio = xray->intensity;
+          
+          //Only one of the following will be valid: m_nuclide, m_element, m_reaction
+          match.m_nuclide = NULL;
+          match.m_transition = NULL;
+          match.m_particle = NULL;
+          match.m_element = db->element( nm.first->atomicNumber );
+          match.m_xray = xray;
+          match.m_reaction = NULL;
+          //        match.m_reactionEnergy;
+          
+          //        match.m_displayData[ParentHalfLife] = "";
+          match.m_displayData[AssumedAge] = PhysicalUnits::printToBestTimeUnits( 0.0 );
+          //        match.m_displayData[SpecificIsotope] = "";
+          if( match.m_element )
+            match.m_displayData[ParentIsotope] = match.m_element->symbol;
+          
+          if( xray )
+          {
+            snprintf( buffer, sizeof(buffer), "%.2f", xray->energy );
+            match.m_displayData[Energy] = buffer;
+          }//if( xray )
+          
+          snprintf( buffer, sizeof(buffer), "%.2f", match.m_distance );
+          match.m_displayData[Distance] = buffer;
+          
+          snprintf( buffer, sizeof(buffer), "%.2g", match.m_branchRatio );
+          match.m_displayData[BranchRatio] = buffer;
+          
+          nucmatches.push_back( match );
+        }else//if( xraypos != energy_xray_is_for.end() )
         {
-          case PeakDef::NormalGamma:
-          case PeakDef::XrayGamma:
-            if( match.m_particle )
-              match.m_distance = fabs(energies[i] - match.m_particle->energy);
-            break;
+          size_t trans_index = 0;
+          const SandiaDecay::Transition *transition = NULL;
+          IsotopeMatch match;
+          
+          PeakDef::SourceGammaType sourceGammaType = PeakDef::NormalGamma;
+          
+          PeakDef::findNearestPhotopeak( nm.first, energies[i],
+                                        windows[i], false, transition, trans_index, sourceGammaType );
+          if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) )
+            continue;
+          
+          match.m_nuclide = nm.first;
+          match.m_transition = transition;
+          if( transition )
+            match.m_particle = &(transition->products[trans_index]);
+          match.m_sourceGammaType = sourceGammaType;
+          
+          match.m_distance = 99999999.9;
+          switch( sourceGammaType )
+          {
+            case PeakDef::NormalGamma:
+            case PeakDef::XrayGamma:
+              if( match.m_particle )
+                match.m_distance = fabs(energies[i] - match.m_particle->energy);
+              break;
+              
+            case PeakDef::AnnihilationGamma:
+              match.m_distance = fabs(energies[i] - 510.99891*SandiaDecay::keV );
+              break;
+              
+            case PeakDef::SingleEscapeGamma:
+              if( match.m_particle )
+                match.m_distance = fabs(energies[i] - (match.m_particle->energy - 510.99891));
+              break;
+              
+            case PeakDef::DoubleEscapeGamma:
+              if( match.m_particle )
+                match.m_distance = fabs(energies[i] - (match.m_particle->energy - 2.0*510.99891) );
+              break;
+          }//switch( sourceGammaType )
+          
+          match.m_age = PeakDef::defaultDecayTime( nm.first );
+          
+          SandiaDecay::NuclideMixture mixture;
+          mixture.addNuclide( SandiaDecay::NuclideActivityPair(nm.first,1.0) );
+          const vector<SandiaDecay::EnergyRatePair> gammas
+          = mixture.gammas( match.m_age,
+                           SandiaDecay::NuclideMixture::OrderByAbundance, true );
+          
+          double nearestEnergy = 999999.9, nearestAbun = 0.0, maxAbund = -999.9;
+          for( const SandiaDecay::EnergyRatePair &aep : gammas )
+          {
+            double d = 999999.9;
             
-          case PeakDef::AnnihilationGamma:
-            match.m_distance = fabs(energies[i] - 510.99891*SandiaDecay::keV );
-            break;
+            if( match.m_sourceGammaType == PeakDef::AnnihilationGamma )
+              d = fabs( aep.energy - 510.99891*SandiaDecay::keV );
+            else if( match.m_particle )
+              d = fabs( aep.energy - match.m_particle->energy );
             
-          case PeakDef::SingleEscapeGamma:
-            if( match.m_particle )
-              match.m_distance = fabs(energies[i] - (match.m_particle->energy - 510.99891));
-            break;
+            if( d < nearestEnergy )
+            {
+              nearestEnergy = d;
+              nearestAbun = aep.numPerSecond;
+            }//if( d < nearestEnergy )
             
-          case PeakDef::DoubleEscapeGamma:
-            if( match.m_particle )
-              match.m_distance = fabs(energies[i] - (match.m_particle->energy - 2.0*510.99891) );
-            break;
-        }//switch( sourceGammaType )
-        
-        match.m_age = PeakDef::defaultDecayTime( nm.first );
-        
-        SandiaDecay::NuclideMixture mixture;
-        mixture.addNuclide( SandiaDecay::NuclideActivityPair(nm.first,1.0) );
-        const vector<SandiaDecay::EnergyRatePair> gammas
-        = mixture.gammas( match.m_age,
-                         SandiaDecay::NuclideMixture::OrderByAbundance, true );
-        
-        double nearestEnergy = 999999.9, nearestAbun = 0.0, maxAbund = -999.9;
-        for( const SandiaDecay::EnergyRatePair &aep : gammas )
-        {
-          double d = 999999.9;
+            maxAbund = std::max( maxAbund, aep.numPerSecond );
+          }//for( const SandiaDecay::AbundanceEnergyPair &aep : gammas )
+          
+          match.m_branchRatio = nearestAbun / maxAbund;
+          
+          if( match.m_branchRatio < minBR )
+            continue;
+          
+          match.m_displayData[ParentIsotope] = match.m_nuclide->symbol;
           
           if( match.m_sourceGammaType == PeakDef::AnnihilationGamma )
-            d = fabs( aep.energy - 510.99891*SandiaDecay::keV );
+            snprintf( buffer, sizeof(buffer), "510.99" );
           else if( match.m_particle )
-            d = fabs( aep.energy - match.m_particle->energy );
+            snprintf( buffer, sizeof(buffer), "%.2f", match.m_particle->energy );
           
-          if( d < nearestEnergy )
+          match.m_displayData[Energy] = buffer;
+          
+          snprintf( buffer, sizeof(buffer), "%.2f", match.m_distance );
+          match.m_displayData[Distance] = buffer;
+          
+          snprintf( buffer, sizeof(buffer), "%.2f", match.m_branchRatio );
+          match.m_displayData[BranchRatio] = buffer;
+          
+          stringstream trnsitionstrm;
+          if( match.m_transition && match.m_transition->parent && match.m_transition->child )
           {
-            nearestEnergy = d;
-            nearestAbun = aep.numPerSecond;
-          }//if( d < nearestEnergy )
+            trnsitionstrm << match.m_transition->parent->symbol << "&rarr;"
+            << match.m_transition->child->symbol;
+          }else if( match.m_transition && match.m_transition->parent )
+          {
+            using namespace SandiaDecay;
+            trnsitionstrm << match.m_transition->mode
+            << " of " << match.m_transition->parent->symbol;
+          }else if( !match.m_transition )
+          {
+            trnsitionstrm << "Annih. Gamma";
+          }//if( match.m_transition->parent... ) / else
           
-          maxAbund = std::max( maxAbund, aep.numPerSecond );
-        }//for( const SandiaDecay::AbundanceEnergyPair &aep : gammas )
-        
-        match.m_branchRatio = nearestAbun / maxAbund;
-        
-        if( match.m_branchRatio < minBR )
-          continue;
-        
-        match.m_displayData[ParentIsotope] = match.m_nuclide->symbol;
-        
-        if( match.m_sourceGammaType == PeakDef::AnnihilationGamma )
-          snprintf( buffer, sizeof(buffer), "510.99" );
-        else if( match.m_particle )
-          snprintf( buffer, sizeof(buffer), "%.2f", match.m_particle->energy );
-        
-        match.m_displayData[Energy] = buffer;
-        
-        snprintf( buffer, sizeof(buffer), "%.2f", match.m_distance );
-        match.m_displayData[Distance] = buffer;
-        
-        snprintf( buffer, sizeof(buffer), "%.2f", match.m_branchRatio );
-        match.m_displayData[BranchRatio] = buffer;
-        
-        stringstream trnsitionstrm;
-        if( match.m_transition && match.m_transition->parent && match.m_transition->child )
-        {
-          trnsitionstrm << match.m_transition->parent->symbol << "&rarr;"
-          << match.m_transition->child->symbol;
-        }else if( match.m_transition && match.m_transition->parent )
-        {
-          using namespace SandiaDecay;
-          trnsitionstrm << match.m_transition->mode
-          << " of " << match.m_transition->parent->symbol;
-        }else if( !match.m_transition )
-        {
-          trnsitionstrm << "Annih. Gamma";
-        }//if( match.m_transition->parent... ) / else
-        
-        if( match.m_transition && match.m_particle->type == SandiaDecay::XrayParticle )
-          trnsitionstrm << " xray";
-        
-        match.m_displayData[SpecificIsotope] = trnsitionstrm.str();
-        
-        if( !i )
-        {
-          match.m_displayData[ParentHalfLife]
-              = PhysicalUnits::printToBestTimeUnits(match.m_nuclide->halfLife);
-          match.m_displayData[AssumedAge]
-              = PhysicalUnits::printToBestTimeUnits(match.m_age);
-        }//if( !i )
-        
-        dist += match.m_distance;
-        
-        nucmatches.push_back( match );
-      }//if( xraypos != energy_xray_is_for.end() ) / else
+          if( match.m_transition && match.m_particle->type == SandiaDecay::XrayParticle )
+            trnsitionstrm << " xray";
+          
+          match.m_displayData[SpecificIsotope] = trnsitionstrm.str();
+          
+          if( !i )
+          {
+            match.m_displayData[ParentHalfLife]
+            = PhysicalUnits::printToBestTimeUnits(match.m_nuclide->halfLife);
+            match.m_displayData[AssumedAge]
+            = PhysicalUnits::printToBestTimeUnits(match.m_age);
+          }//if( !i )
+          
+          dist += match.m_distance;
+          
+          nucmatches.push_back( match );
+        }//if( xraypos != energy_xray_is_for.end() ) / else
+      }catch( std::exception &e )
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        stringstream msg;
+        msg << "Unexpected exception (2): " << e.what();
+        log_developer_error( __func__, msg.str().c_str() );
+#endif
+      }//try/catch
     }//for( size_t i = 0; i < energies.size(); ++i )
     
     if( nucmatches.size() != energies.size() )
       continue;
     
-    if( !nucmatches[0].m_nuclide )
+    try
     {
-      for( IsotopeMatch &match : nucmatches )
+      if( !nucmatches[0].m_nuclide )
       {
-        if( match.m_nuclide )
+        for( IsotopeMatch &match : nucmatches )
         {
-          nucmatches[0].m_nuclide = match.m_nuclide;
-          nucmatches[0].m_displayData[ParentIsotope] = match.m_nuclide->symbol;
-          nucmatches[0].m_displayData[Energy]
-                = nucmatches[0].m_displayData[Energy].narrow() + " (xray)";
-          break;
-        }//if( match.m_nuclide )
-      }//for( IsotopeMatch &match : nmagicucmatches )
-    }//if( !nucmatches[0].m_nuclide )
-    
-    nucmatches[0].m_distance = dist;
-    
-    const double gcm2 = PhysicalUnits::g / PhysicalUnits::cm2;
-    const double atomic_nums[]   = { 1.0, 26.0, 74.0 };
-    const double areal_density[] = { 0.0*gcm2, 10.0*gcm2, 25.0*gcm2 };
-    static_assert( sizeof(atomic_nums) == 3*sizeof(atomic_nums[0]), "" );
-    static_assert( sizeof(areal_density) == 3*sizeof(areal_density[0]), "" );
-    
-    double mw = -999.9;
-    SandiaDecay::NuclideMixture mix;
-    mix.addNuclideByActivity( nucmatches[0].m_nuclide, 0.001*SandiaDecay::curie );
-    vector<SandiaDecay::EnergyRatePair> srcgammas = mix.photons( nucmatches[0].m_age );
-    
-    for( size_t i = 0; i < 3; ++i )
+          if( match.m_nuclide )
+          {
+            nucmatches[0].m_nuclide = match.m_nuclide;
+            nucmatches[0].m_displayData[ParentIsotope] = match.m_nuclide->symbol;
+            nucmatches[0].m_displayData[Energy]
+            = nucmatches[0].m_displayData[Energy].narrow() + " (xray)";
+            break;
+          }//if( match.m_nuclide )
+        }//for( IsotopeMatch &match : nmagicucmatches )
+      }//if( !nucmatches[0].m_nuclide )
+      
+      nucmatches[0].m_distance = dist;
+      
+      const double gcm2 = PhysicalUnits::g / PhysicalUnits::cm2;
+      const double atomic_nums[]   = { 1.0, 26.0, 74.0 };
+      const double areal_density[] = { 0.0*gcm2, 10.0*gcm2, 25.0*gcm2 };
+      static_assert( sizeof(atomic_nums) == 3*sizeof(atomic_nums[0]), "" );
+      static_assert( sizeof(areal_density) == 3*sizeof(areal_density[0]), "" );
+      
+      double mw = -999.9;
+      SandiaDecay::NuclideMixture mix;
+      mix.addNuclideByActivity( nucmatches[0].m_nuclide, 0.001*SandiaDecay::curie );
+      vector<SandiaDecay::EnergyRatePair> srcgammas = mix.photons( nucmatches[0].m_age );
+      
+      for( size_t i = 0; i < 3; ++i )
+      {
+        const double weight = profile_weight( detector_response_function,
+                                             displayed_measurement,
+                                             user_peaks,
+                                             automated_search_peaks, srcgammas,
+                                             energies, windows, nucmatches[0],
+                                             atomic_nums[i], areal_density[i] );
+        mw = std::max(mw,weight);
+      }
+      nucmatches[0].m_profileDistance = mw;
+      snprintf( buffer, sizeof(buffer), "%.2f", mw );
+      nucmatches[0].m_displayData[ProfileDistance] = buffer;
+      
+      
+      snprintf( buffer, sizeof(buffer), "%.2f", dist );
+      nucmatches[0].m_displayData[Distance] = buffer;
+      answer.push_back( nucmatches );
+    }catch( std::exception &e )
     {
-      const double weight = profile_weight( detector_response_function,
-                                    displayed_measurement,
-                                    user_peaks,
-                                    automated_search_peaks, srcgammas,
-                                    energies, windows, nucmatches[0],
-                                    atomic_nums[i], areal_density[i] );
-      mw = std::max(mw,weight);
-    }
-    nucmatches[0].m_profileDistance = mw;
-    snprintf( buffer, sizeof(buffer), "%.2f", mw );
-    nucmatches[0].m_displayData[ProfileDistance] = buffer;
-  
-    
-    snprintf( buffer, sizeof(buffer), "%.2f", dist );
-    nucmatches[0].m_displayData[Distance] = buffer;
-    answer.push_back( nucmatches );
+#if( PERFORM_DEVELOPER_CHECKS )
+      stringstream msg;
+      msg << "Unexpected exception (3): " << e.what();
+      log_developer_error( __func__, msg.str().c_str() );
+#endif
+    }//try / catch
   }//for( const NuclideMatches::value_type &nm : filteredNuclides )
 }//void nuclidesWithAllEnergies
 
@@ -1217,6 +1250,13 @@ void IsotopeSearchByEnergyModel::updateSearchResults(
   
   workingspace->searchdoneCallback();
   
+  
+  if( !workingspace->error_msg.empty() )
+  {
+    // Probably wont ever get here - but JIC.
+    passMessage( workingspace->error_msg, "", 3 );
+  }
+  
   wApp->triggerUpdate();
 }//void updateSearchResults()
 
@@ -1230,95 +1270,114 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
                                                    const std::string appid,
                                                    boost::function< void(void) > updatefcn )
 {
-  if( !workingspace )
-    throw runtime_error( "setSearchEnergies(...): invalid workingspace" );
-  
-  const vector<double> &energies = workingspace->energies;
-  const vector<double> &windows = workingspace->windows;
-  
-  vector< vector<IsotopeMatch> > &matches = workingspace->matches;
-  matches.clear();
-  
-  if( energies.size() != windows.size() )
-    throw runtime_error( "setSearchEnergies(...): input error" );
-  
-  if( energies.empty() )
+  try
   {
-    WServer::instance()->post(  appid, updatefcn );
-    return;
-  }//if( energies.empty() )
-  
-  
-  using SandiaDecay::Element;
-  using SandiaDecay::Nuclide;
-  using SandiaDecay::EnergyIntensityPair;
-  
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  const vector<const SandiaDecay::Element *> &elements = db->elements();
-  
-  //Get x-rays with at least one of the energies
-  map<const SandiaDecay::Element *, vector<EnergyIntensityPair> > filteredXrays;
-  for( const Element *el : elements )
-    for( const EnergyIntensityPair &xray : el->xrays )
-      filteredXrays[el].push_back( xray );
-  
-  //Get reactions with at least one of the energies
-  const ReactionGamma *rctnDb = ReactionGammaServer::database();
-  vector<ReactionGamma::ReactionPhotopeak> reactions;
-  for( size_t i = 0; i < energies.size(); ++i )
-  {
-    const float minenergy = static_cast<float>(energies[i] - windows[i]);
-    const float maxenergy = static_cast<float>(energies[i] + windows[i]);
-    rctnDb->reactions( minenergy, maxenergy, reactions );
-  }//for( size_t i = 0; i < energies.size(); ++i )
-  
-  
-  //Time to make all the pairings
-  auto &user_peaks = workingspace->user_peaks;
-  std::vector<std::shared_ptr<const PeakDef>> auto_peaks = workingspace->automated_search_peaks;
-  
-  if( auto_peaks.empty() && workingspace->foreground && workingspace->displayed_measurement )
-  {
-    //iOS/Android may not have auto-search peaks yet.  Also recently loaded
-    //  spectra and it looks like sometimes when previous states were loaded
-    const auto data = workingspace->displayed_measurement;
-    auto userpeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>( begin(user_peaks), end(user_peaks) );
-    const bool singleThreaded = false;
-    auto_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, userpeaksdeque, singleThreaded );
+    if( !workingspace )
+      throw runtime_error( "setSearchEnergies(...): invalid workingspace" );
+    
+    const vector<double> &energies = workingspace->energies;
+    const vector<double> &windows = workingspace->windows;
+    
+    vector< vector<IsotopeMatch> > &matches = workingspace->matches;
+    matches.clear();
+    
+    if( energies.size() != windows.size() )
+      throw runtime_error( "setSearchEnergies(...): input error" );
+    
+    if( energies.empty() )
+    {
+      WServer::instance()->post(  appid, updatefcn );
+      return;
+    }//if( energies.empty() )
     
     
-    const std::set<int> samplenums = workingspace->foreground_samplenums;
-    auto autopeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>( begin(auto_peaks), end(auto_peaks) );
-    workingspace->foreground->setAutomatedSearchPeaks( samplenums, autopeaksdeque );
-  }//
-  
-  const auto &meas = workingspace->displayed_measurement;
-  
-  auto &drf = workingspace->detector_response_function;
-  
-  //Nuclides that match all energies
-  if( srcs & kGamma )
+    using SandiaDecay::Element;
+    using SandiaDecay::Nuclide;
+    using SandiaDecay::EnergyIntensityPair;
+    
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    const vector<const SandiaDecay::Element *> &elements = db->elements();
+    
+    //Get x-rays with at least one of the energies
+    map<const SandiaDecay::Element *, vector<EnergyIntensityPair> > filteredXrays;
+    for( const Element *el : elements )
+      for( const EnergyIntensityPair &xray : el->xrays )
+        filteredXrays[el].push_back( xray );
+    
+    //Get reactions with at least one of the energies
+    const ReactionGamma *rctnDb = ReactionGammaServer::database();
+    vector<ReactionGamma::ReactionPhotopeak> reactions;
+    for( size_t i = 0; i < energies.size(); ++i )
+    {
+      const float minenergy = static_cast<float>(energies[i] - windows[i]);
+      const float maxenergy = static_cast<float>(energies[i] + windows[i]);
+      rctnDb->reactions( minenergy, maxenergy, reactions );
+    }//for( size_t i = 0; i < energies.size(); ++i )
+    
+    
+    //Time to make all the pairings
+    auto &user_peaks = workingspace->user_peaks;
+    std::vector<std::shared_ptr<const PeakDef>> auto_peaks = workingspace->automated_search_peaks;
+    
+    if( auto_peaks.empty() && workingspace->foreground && workingspace->displayed_measurement )
+    {
+      //iOS/Android may not have auto-search peaks yet.  Also recently loaded
+      //  spectra and it looks like sometimes when previous states were loaded
+      const auto data = workingspace->displayed_measurement;
+      auto userpeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>( begin(user_peaks), end(user_peaks) );
+      const bool singleThreaded = false;
+      auto_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, userpeaksdeque, singleThreaded );
+      
+      
+      const std::set<int> samplenums = workingspace->foreground_samplenums;
+      auto autopeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>( begin(auto_peaks), end(auto_peaks) );
+      workingspace->foreground->setAutomatedSearchPeaks( samplenums, autopeaksdeque );
+    }//
+    
+    const auto &meas = workingspace->displayed_measurement;
+    
+    auto &drf = workingspace->detector_response_function;
+    
+    // TODO: if searching for more than one source type (e.g., gamma, xray, reaction) use separate
+    //       threads and then combine results
+    
+    //Nuclides that match all energies
+    if( srcs & kGamma )
+    {
+      // nuclidesWithAllEnergies probably wont throw - it will discard any sub-results that cause
+      //  unexpected (and there really are none expected) exceptions.
+      const auto filteredNuclides = filter_nuclides( minbr, minHalfLife, energies, windows );
+      nuclidesWithAllEnergies( filteredNuclides, energies, windows, minbr, drf, meas, user_peaks, auto_peaks, matches );
+    }//if( srcs & kGamma )
+    
+    //Get elements with x-rays which match all energies
+    if( srcs & kXRay )
+      xraysWithAllEnergies( energies, windows, drf, meas, user_peaks, auto_peaks, matches );
+    
+    //Get elements with reactions which match all energies
+    if( srcs & kReaction )
+      reactionsWithAllEnergies( energies, windows, drf, meas, user_peaks, auto_peaks, matches );
+    
+    //Get elements with gamma+xrays which match all energies
+    
+    //Get elements with xrays+reactions which match all energies
+    
+    //Get elements with gamma+reactions which match all energies
+    
+    //sort the data
+    sortData( matches, energies, workingspace->sortColumn, workingspace->sortOrder );
+  }catch( std::exception &e )
   {
-    const auto filteredNuclides = filter_nuclides( minbr, minHalfLife, energies, windows );
-    nuclidesWithAllEnergies( filteredNuclides, energies, windows, minbr, drf, meas, user_peaks, auto_peaks, matches );
-  }//if( srcs & kGamma )
-  
-  //Get elements with x-rays which match all energies
-  if( srcs & kXRay )
-    xraysWithAllEnergies( energies, windows, drf, meas, user_peaks, auto_peaks, matches );
-  
-  //Get elements with reactions which match all energies
-  if( srcs & kReaction )
-    reactionsWithAllEnergies( energies, windows, drf, meas, user_peaks, auto_peaks, matches );
-  
-  //Get elements with gamma+xrays which match all energies
-  
-  //Get elements with xrays+reactions which match all energies
-  
-  //Get elements with gamma+reactions which match all energies
-  
-  //sort the data
-  sortData( matches, energies, workingspace->sortColumn, workingspace->sortOrder );
+    workingspace->error_msg = "The was an unexpected exception, and search results may not be complete.";
+    
+    stringstream msg;
+    msg << "IsotopeSearchByEnergyModel::setSearchEnergies: caught exception: " << e.what();
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, msg.str().c_str() );
+#endif
+    
+    cerr << msg.str() << endl;
+  }//try / catch
   
   WServer::instance()->post(  appid, updatefcn );
 }//void setSearchEnergies( const vector<double> &energies, const double window )

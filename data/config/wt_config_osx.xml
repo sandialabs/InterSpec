@@ -35,7 +35,7 @@
 	<plain-ajax-sessions-ratio-limit>1</plain-ajax-sessions-ratio-limit>
 	<ajax-puzzle>false</ajax-puzzle>
 	<strict-event-serialization>false</strict-event-serialization>
-	<web-sockets>true</web-sockets>
+	<web-sockets>false</web-sockets>
 	<webgl-detection>true</webgl-detection>
 	<redirect-message>Load basic HTML</redirect-message>
 	<behind-reverse-proxy>false</behind-reverse-proxy>

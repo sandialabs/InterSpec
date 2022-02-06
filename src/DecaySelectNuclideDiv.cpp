@@ -138,13 +138,6 @@ void DecaySelectNuclide::setAddButtonToAccept()
 void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
                                        double age, double activity, bool useCurrie )
 {
-  using PhysicalUnits::bestActivityUnit;
-  using PhysicalUnits::UnitNameValuePair;
-  using PhysicalUnits::bestTimeUnitLongHtml;
-  using PhysicalUnits::sm_timeUnitNameValues;
-  using PhysicalUnits::sm_activityUnitNameValues;
-  using PhysicalUnits::sm_timeUnitHtmlNameValues;
-
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   
   const SandiaDecay::Element *el = db->element( z );

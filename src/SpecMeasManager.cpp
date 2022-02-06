@@ -1285,6 +1285,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   WGridLayout *stretcher = new WGridLayout();
   stretcher->setContentsMargins( 0, 0, 0, 0 );
   dialog->contents()->setLayout( stretcher );
+  dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
   WText *title = new WText( "Not a spectrum file" );
   title->addStyleClass( "title" );
   stretcher->addWidget( title, 0, 0 );
@@ -1775,7 +1776,12 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     
     closeButton = dialog->addButton( "Close" );
     stretcher = new WGridLayout();
-    stretcher->setContentsMargins( 0, 0, 0, 0 );
+    
+    // If we set the contents margins to 0, then scroll-bars may appear.
+    //  However doing just the below looks okay, and the scroll bars dont seem to appear
+    stretcher->setContentsMargins( 9, 2, 9, 2 );
+    //dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
+    
     dialog->contents()->setLayout( stretcher );
     WText *title = new WText( "Not a spectrum file" );
     title->addStyleClass( "title" );
@@ -4342,8 +4348,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
 }//void loadFromFileSystem( std::string filename )
 
 
-int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload,
-                            std::shared_ptr<SpecMeas> &measurement )
+int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload, std::shared_ptr<SpecMeas> &measurement )
 {
   const string fileName = upload->spoolFileName();
   const WString clientFileName = upload->clientFileName();
@@ -4358,7 +4363,7 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload,
     selected.insert( index );
     m_treeView->setSelectedIndexes( WModelIndexSet() );
 
-    passMessage( "Successfully opened file.", "dataUploaded", 0 );
+    //passMessage( "Successfully opened file.", "dataUploaded", 0 );
 
     return result;
   }catch( const std::exception &e )

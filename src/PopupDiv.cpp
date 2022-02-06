@@ -939,6 +939,11 @@ void PopupDivMenu::setHidden( bool hidden, const Wt::WAnimation &animation )
     }//if( hidden ) / else
     
     WCompositeWidget::setHidden(hidden, animation);
+  }else if( m_type == PopupDivMenu::MenuType::TransientMenu )
+  {
+    WPopupMenu::setHidden( hidden, animation );
+    if( !hidden )
+      doJavaScript( "Wt.WT.BringAboveDialogs('" + id() + "');" );
   }else
   {
     WPopupMenu::setHidden( hidden, animation );
@@ -973,11 +978,14 @@ void PopupDivMenu::parentClicked()
   //  want to close it, and then we'll use the JS to close the menu if we dont actually want it open
   popup( WPoint(-10000,-10000) );
   
-  // We need this setTimeout(...) or else sometimes when we open it, it will immediately close
+  // We need this setTimeout(...) or else sometimes when we open it, it will immediately close,
+  //  although after setting preventPropagation(); on parent button, the timeout doesnt seem to
+  //  be needed
   const string parent_clicked_js =
   "setTimeout( function(){"
     "Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
-  "}, 0 );";
+  "}, 0 );"
+  ;
 
   doJavaScript( parent_clicked_js );
 }//void parentClicked()
@@ -986,6 +994,7 @@ void PopupDivMenu::parentClicked()
 
 void PopupDivMenu::undoParentClicked()
 {
+  // The below JS doesnt seem to get called client-side ever
   const string undo_js = "setTimeout( function(){"
     "Wt.WT.UndoParentClicked('" + id() + "','" + m_menuParent->id() + "');"
   "}, 0 );";
@@ -1079,6 +1088,12 @@ void PopupDivMenu::setupDesktopMenuStuff()
   
   //setAutoHide( true, 500 );
   
+  // Calling preventPropagation() and preventDefaultAction() seems to help remove glitches, although
+  //  its a little unclear all around since the glitches are a little rare, and mostly *just* after
+  //  page load (so perhaps before all the loading JS is executed?)
+  m_menuParent->clicked().preventPropagation();
+  m_menuParent->clicked().preventDefaultAction();
+  
   // Note: when WebSocket are used instead of Ajax and long-polling, implementing the below will
   //       cause the JS to be emitted twice (once when event originates in JS, and I think second
   //       time after going back to c++ then it issuing the JS).  We are currently relying on the JS
@@ -1088,11 +1103,20 @@ void PopupDivMenu::setupDesktopMenuStuff()
   implementStateless( &PopupDivMenu::parentClicked, &PopupDivMenu::undoParentClicked );
   implementStateless( &PopupDivMenu::parentMouseWentOver, &PopupDivMenu::undoParentHoveredOver );
   
+  // If we instead implement the statelessness using the following, the first invocation to show
+  //  menu may take up to ~100 ms (when run locally), but then after that showing the menus are
+  //  instant.  But the glitch on first menu usage disappears, although maybe there are some other
+  //  glitches.
+  //  Whereas using the above makes even first invocation instant.
+  //implementStateless( &PopupDivMenu::parentClicked );
+  //implementStateless( &PopupDivMenu::parentMouseWentOver );
+  
   m_menuParent->clicked().connect( this, &PopupDivMenu::parentClicked );
+  
   
   m_menuParent->touchStarted().connect( std::bind( [this](){
     popup( WPoint( -10000, -10000 ) );
-    doJavaScript( 
+    doJavaScript(
       "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
       "Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");" );
   }));

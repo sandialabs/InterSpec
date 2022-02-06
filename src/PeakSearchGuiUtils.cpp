@@ -54,6 +54,7 @@
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
@@ -1515,7 +1516,9 @@ public:
  assignment would cause one of the already existing peaks to change assignment
  (most likely if two peaks of diff amp, but same nuc, are right next to each
  other) then the peak that should be changed, along with the string of the
- assignement it should be changed to.
+ assignment it should be changed to.
+ 
+ TODO: I dont think the return value is what is claimed, or at least not handled correctly; this should all be improved
  */
 std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
       assign_nuc_from_ref_lines( PeakDef &peak,
@@ -1542,13 +1545,35 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
   
   double prevPeakDist = DBL_MAX, prevIntensity = DBL_MAX;
   double thisIntensity = DBL_MAX;
+  PeakDef::SourceGammaType thisGammaType = PeakDef::SourceGammaType::NormalGamma;
   
   PeakModel::PeakShrdPtr prevpeak;
   
   
+  //The efficiency of S.E. and D.E. peaks, relative to F.E. peak, for the 20% Generic GADRAS DRF
+  //  included in InterSpec, is given pretty well by the following (energy in keV):
+  const auto single_escape_sf = []( const double x ) -> double {
+    return std::max( 0.0, (1.8768E-11 *x*x*x) - (9.1467E-08 *x*x) + (2.1565E-04 *x) - 0.16367 );
+  };
+  
+  const auto double_escape_sf = []( const double x ) -> double {
+    return std::max( 0.0, (1.8575E-11 *x*x*x) - (9.0329E-08 *x*x) + (2.1302E-04 *x) - 0.16176 );
+  };
+  
+  
   try
   {
-    //const bool isHPGe = PeakFitUtils::is_high_res(data);
+    // We will also check if single or double escape peak.
+    //  We will only check for escape peaks if HPGe, or user is showing escape peak features,
+    //    or if the energy is above 4 MeV (arbitrarily chosen).
+    //  We will assume a generic 20% HPGe detector to get S.E. and D.E. efficiencies.
+    //  And on top of all those assumptions, we will apply an arbitrary amplitude factor of 0.5
+    //    to reactions if we arent showing escape peak features, and 0.2 for xrays
+    const float pair_prod_thresh = 1255.0f; //The single_escape_sf and double_escape_sf give negative values below 1255.
+    const float always_check_escape_thresh = 4000.0f;
+    const float escape_suppression_factor = 0.5;
+    const bool xray_suppression_factor = 0.2;
+    const bool isHPGe = PeakFitUtils::is_high_res(data);
     
     double mindist = 99999999.9;
     double nearestEnergy = -999.9;
@@ -1572,36 +1597,46 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         if( rpp.abundance <= 0.0 )
           continue;
         
+        double abundance = rpp.abundance;
+        double expectedPhotoPeakEnergy = rpp.energy;
         const double delta_e = fabs( mean - rpp.energy );
-        const double dist = (0.25*sigma + delta_e) / rpp.abundance;
+        double dist = (0.25*sigma + delta_e) / abundance;
+        PeakDef::SourceGammaType gammaType = PeakDef::SourceGammaType::NormalGamma;
         
-        /*
-         //ToDo: implement checking if the S.E. or D.E. of this line is a better
-         //      fit than this line, and if so, use it, and assign the peak
-         //      as a S.E. or D.E.
-        bool is_SE = false, is_DE = false;
-        if( isHPGe && showingEscapePeakFeature && rpp.energy > 1122.0f )
+        if( ((isHPGe || showingEscapePeakFeature) && (rpp.energy > pair_prod_thresh))
+            || (rpp.energy > always_check_escape_thresh) )
         {
-          //ToDo: Right now we are assuming the escape peaks will have the same
-          //      amplitudes as the full energy peaks, which isnt correct.
+          const double suppress_sf = showingEscapePeakFeature ? 1.0 : escape_suppression_factor;
           
+          double se_abundance = rpp.abundance * single_escape_sf(rpp.energy) * suppress_sf;
           const double se_delta_e = fabs( mean + 510.9989 - rpp.energy );
-          const double se_dist = (0.25*sigma + se_delta_e) / rpp.abundance;
+          const double se_dist = (0.25*sigma + se_delta_e) / se_abundance;
           
+          double de_abundance = rpp.abundance * double_escape_sf(rpp.energy) * suppress_sf;
           const double de_delta_e = fabs( mean + (2*510.9989) - rpp.energy );
-          const double de_dist = (0.25*sigma + de_delta_e) / rpp.abundance;
+          const double de_dist = (0.25*sigma + de_delta_e) / de_abundance;
           
           if( se_dist < dist )
           {
-            is_SE = true;
             dist = se_dist;
+            abundance = se_abundance;
+            expectedPhotoPeakEnergy = rpp.energy - 510.9989;
+            gammaType = PeakDef::SourceGammaType::SingleEscapeGamma;
           }
-        }//if( showingEscapePeakFeature )
-        */
+          
+          if( de_dist < dist )
+          {
+            dist = de_dist;
+            abundance = de_abundance;
+            expectedPhotoPeakEnergy = rpp.energy - 2*510.9989;
+            gammaType = PeakDef::SourceGammaType::DoubleEscapeGamma;
+          }
+        }//if( check for S.E. or D.E. )
         
-        if( dist < mindist && rpp.energy >= minx && rpp.energy <= maxx )
+        if( (dist < mindist)
+           && (expectedPhotoPeakEnergy >= minx) && (expectedPhotoPeakEnergy <= maxx) )
         {
-          //should check to see if this energy is already assigned to another
+          //Check to see if this energy is already assigned to another
           //  peak, if it is, ideally we would want to see which one is most
           //  compatible and swap
           
@@ -1609,7 +1644,8 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
           for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
           {
             if( pp->reaction() && (pp->reaction() == rpp.reaction)
-                && (fabs(pp->reactionEnergy() - rpp.energy) < 1.0) )
+                && (fabs(pp->reactionEnergy() - rpp.energy) < 1.0)
+               && (pp->sourceGammaType() == gammaType) )
             {
               currentlyused = true;
               if( dist < prevPeakDist )
@@ -1626,12 +1662,13 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
           {
             prevpeak.reset();
             mindist = dist;
-            nuclide = NULL;
-            element = NULL;
+            nuclide = nullptr;
+            element = nullptr;
             color = nuc.lineColor;
             reaction = rpp.reaction;
             nearestEnergy = rpp.energy;
-            thisIntensity = rpp.abundance;
+            thisIntensity = abundance;
+            thisGammaType = gammaType;
           }
         }//if( we should possible associate this peak with this line )
       }//for( const ReactionGamma::ReactionPhotopeak &rpp : nuc.reactionGammas )
@@ -1641,7 +1678,9 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         for( size_t i = 0; i < nuc.energies.size(); ++i )
         {
           const double energy = nuc.energies[i];
+          double expectedPhotoPeakEnergy = energy;
           double intensity = nuc.intensities.at(i);
+          PeakDef::SourceGammaType gammaType = PeakDef::SourceGammaType::NormalGamma;
           
           bool isXray = !nuc.nuclide;
           if( nuc.nuclide && (energy < 120.0*SandiaDecay::keV) )
@@ -1652,27 +1691,61 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
           }//if( this could possibly be an xray )
           
           if( isXray )
-            intensity *= 0.1;
+            intensity *= xray_suppression_factor;
           
           const double delta_e = fabs( mean - energy );
-          const double dist = (0.25*sigma + delta_e) / intensity;
+          double dist = (0.25*sigma + delta_e) / intensity;
           
           
-          if( dist < mindist && energy >= minx && energy <= maxx )
+          if( ((isHPGe || showingEscapePeakFeature) && (energy > pair_prod_thresh))
+             || (energy > always_check_escape_thresh) )
+          {
+            const double suppress_sf = showingEscapePeakFeature ? 1.0 : escape_suppression_factor;
+            
+            double se_abundance = intensity * single_escape_sf(energy) * suppress_sf;
+            const double se_delta_e = fabs( mean + 510.9989 - energy );
+            const double se_dist = (0.25*sigma + se_delta_e) / se_abundance;
+            
+            double de_abundance = intensity * double_escape_sf(energy) * suppress_sf;
+            const double de_delta_e = fabs( mean + (2*510.9989) - energy );
+            const double de_dist = (0.25*sigma + de_delta_e) / de_abundance;
+            
+            if( se_dist < dist )
+            {
+              dist = se_dist;
+              intensity = se_abundance;
+              expectedPhotoPeakEnergy = energy - 510.9989;
+              gammaType = PeakDef::SourceGammaType::SingleEscapeGamma;
+            }
+            
+            if( de_dist < dist )
+            {
+              dist = de_dist;
+              intensity = de_abundance;
+              expectedPhotoPeakEnergy = energy - 2*510.9989;
+              gammaType = PeakDef::SourceGammaType::DoubleEscapeGamma;
+            }
+          }//if( check for S.E. or D.E. )
+          
+          
+          if( (dist < mindist)
+             && (expectedPhotoPeakEnergy >= minx) && (expectedPhotoPeakEnergy <= maxx) )
           {
             bool currentlyused = false;
             for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
             {
-              const bool sampleNuc = (nuc.nuclide
+              const bool sameNuc = (nuc.nuclide
                                       && pp->decayParticle()
                                       && (pp->parentNuclide() == nuc.nuclide)
-                                      && (fabs(pp->decayParticle()->energy - energy) < 0.01));
+                                      && (fabs(pp->decayParticle()->energy - energy) < 0.01)
+                                      && (pp->sourceGammaType() == gammaType));
               const bool sameXray = (isXray
                                      && nuc.element
                                      && (pp->xrayElement() == nuc.element)
-                                     &&  (fabs(pp->xrayEnergy() - energy) < 0.01));
+                                     &&  (fabs(pp->xrayEnergy() - energy) < 0.01)
+                                     && (pp->sourceGammaType() == gammaType));
               
-              if( sampleNuc || sameXray )
+              if( sameNuc || sameXray )
               {
                 currentlyused = true;
                 if( dist < prevPeakDist )
@@ -1695,9 +1768,11 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
               reaction = NULL;
               nearestEnergy = energy;
               thisIntensity = intensity;
+              thisGammaType = gammaType;
               
               if( isXray )
               {
+                thisGammaType = PeakDef::SourceGammaType::XrayGamma;
                 nuclide = NULL;
                 if( !element && nuc.nuclide )
                   element = db->element( nuc.nuclide->atomicNumber );
@@ -1710,7 +1785,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
       
       for( const BackgroundLine *line : nuc.backgroundLines )
       {
-        const float energy = std::get<0>(*line);
+        float energy = std::get<0>(*line);
         const float intensity = std::get<1>(*line);
         const string &isotope = std::get<2>(*line);
         const BackgroundLineType type = std::get<3>(*line);
@@ -1720,8 +1795,9 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         
         const double delta_e = fabs( mean - energy );
         const double dist = (0.25*sigma + delta_e) / intensity;
+        PeakDef::SourceGammaType gammaType = PeakDef::NormalGamma;
         
-        if( dist < mindist && energy >= minx && energy <= maxx )
+        if( (dist < mindist) && (energy >= minx) && (energy <= maxx) )
         {
           const SandiaDecay::Nuclide *thisnuclide = NULL;
           const SandiaDecay::Element *thiselement = NULL;
@@ -1736,24 +1812,42 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
             case K40Background:   thisnuclide = db->nuclide( "K40" );   break;
             case OtherBackground:
             {
-              //ToDo: deal with single and double escapes, both for backgrounds
-              //      and normal sources.
-              //auto pos = isotope.find( "S.E." );
-              //if( pos == string::npos )
-              //  pos = isotope.find( "D.E." );
-              //if( pos != string::npos )
-              //{
-              //  string iso = isotope.substr(0,pos);
-              //  SpecUtils::trim( iso );
-              //  thisnuclide = db->nuclide( iso );
-              //}else
-              //{
+              // S.E. and D.E. escape peaks are all labeled as OtherBackground::BackgroundLineType
+              //  and isotope will look like "Th232 D.E. 2614 keV", but the energy will be after
+              //  the 511 or 1022 keV subtraction (e.g., 2103.51 for the 2614.51)
+              
+              auto pos = isotope.find( "S.E." );
+              if( pos != string::npos )
+              {
+                energy += 510.9989;
+                gammaType = PeakDef::SingleEscapeGamma;
+              }else
+              {
+                pos = isotope.find( "D.E." );
+                if( pos != string::npos )
+                {
+                  energy += 2*510.9989;
+                  gammaType = PeakDef::DoubleEscapeGamma;
+                }
+              }//if( found "S.E." ) else ( check for "D.E." )
+              
+              if( pos != string::npos )
+              {
+                string iso = isotope.substr(0,pos);
+                SpecUtils::trim( iso );
+                thisnuclide = db->nuclide( iso );
+                if( !thisnuclide )
+                  gammaType = PeakDef::NormalGamma;
+              }else
+              {
                 thisnuclide = db->nuclide( isotope );
-              //}
+              }
               break;
             }
             case BackgroundXRay:
               thiselement = db->element( isotope.substr(0,isotope.find(' ')) );
+              if( thiselement )
+                gammaType = PeakDef::XrayGamma;
               break;
               
             case BackgroundReaction:
@@ -1767,7 +1861,8 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
           for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
           {
             if( ((thisnuclide && (pp->parentNuclide() == thisnuclide))
-                 && (fabs(pp->decayParticle()->energy - energy) < 0.01))
+                 && (fabs(pp->decayParticle()->energy - energy) < 0.1)
+                 && (pp->sourceGammaType() == gammaType))
                || (thiselement && (pp->xrayElement() == thiselement)
                    && (fabs(energy - pp->xrayEnergy()) < 0.1)) )
             {
@@ -1792,6 +1887,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
             mindist  = dist;
             nearestEnergy = energy;
             thisIntensity = intensity;
+            thisGammaType = gammaType;
           }//if( !currentlyused )
         }//if( we should possible associate this peak with this line )
       }//for( const BackgroundLine &line : nuc.backgroundLines )
@@ -1799,8 +1895,21 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
     
     if( nuclide || reaction || element )
     {
+      assert( mindist >= 0.0 );
+      
       string src;
       char nuclide_label[128];
+      
+      const char *prefix = "", *postfix = "";
+      switch( thisGammaType )
+      {
+        case PeakDef::NormalGamma:       break;
+        case PeakDef::AnnihilationGamma: break;
+        case PeakDef::SingleEscapeGamma: prefix  = "S.E. "; break;
+        case PeakDef::DoubleEscapeGamma: prefix  = "D.E. "; break;
+        case PeakDef::XrayGamma:         postfix = " xray"; break;
+      }//switch( thisGammaType )
+      
       
       if( !!prevpeak )
       {
@@ -1808,6 +1917,8 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         //  "closer" (in terms of the distance metric used) than the
         //  nuclide/xray/reaction actually assigned to this new peak.  We need
         //  to check that we shouldnt swap them, based on relative intensities.
+        //
+        //  TODO: Havent fully verified this logic when a S.E. or D.E. peak is involved
         const bool prevAmpSmaller = (prevpeak->amplitude()<peak.amplitude());
         const bool prevIntenitySmaller = (prevIntensity < thisIntensity);
         if( prevAmpSmaller != prevIntenitySmaller )
@@ -1830,11 +1941,13 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
             prevEnergy = prevpeak->reactionEnergy();
             src = prevpeak->reaction()->name();
           }else
+          {
             throw std::logic_error( "InterSpec::addPeak(): bad logic "
                                    "checking previous peak gamma assignment" );
+          }
           
           snprintf( nuclide_label, sizeof(nuclide_label),
-                   "%s %.6f keV", src.c_str(), nearestEnergy );
+                   "%s%s%s %.6f keV", prefix, postfix, src.c_str(), nearestEnergy );
           
           
           other_change.reset( new std::pair<PeakModel::PeakShrdPtr,std::string>(prevpeak,nuclide_label) );
@@ -1847,14 +1960,27 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
       }//if( !!prevpeak )
       
       if( nuclide )
+      {
+        assert( thisGammaType == PeakDef::NormalGamma
+               || thisGammaType == PeakDef::SingleEscapeGamma
+               || thisGammaType == PeakDef::DoubleEscapeGamma );
+        
         src = nuclide->symbol;
-      else if( reaction )
+      }else if( reaction )
+      {
+        assert( thisGammaType == PeakDef::NormalGamma
+               || thisGammaType == PeakDef::SingleEscapeGamma
+               || thisGammaType == PeakDef::DoubleEscapeGamma );
+        
         src = reaction->name();
-      else if( element )
-        src = element->symbol + " xray";
+      }else if( element )
+      {
+        assert( thisGammaType == PeakDef::XrayGamma );
+        src = element->symbol;
+      }
       
       snprintf( nuclide_label, sizeof(nuclide_label),
-               "%s %.6f keV", src.c_str(), nearestEnergy );
+               "%s%s%s %.6f keV", prefix, src.c_str(), postfix, nearestEnergy );
       
       PeakModel::setNuclideXrayReaction( peak, nuclide_label, -1.0 );
       
@@ -2380,7 +2506,7 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
   {
     auto addswap = assign_nuc_from_ref_lines( *peak, answerpeaks, data, displayed, setColor, showingEscapePeakFeature );
     
-    if( addswap )  //The assignemnt caused a better assignment to be made for a previously existing peak.
+    if( addswap )  //The assignment caused a better assignment to be made for a previously existing peak.
     {
       auto pos = std::find( begin(*answerpeaks), end(*answerpeaks), addswap->first );
       if( pos != end(*answerpeaks) )

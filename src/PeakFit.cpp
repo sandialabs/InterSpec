@@ -5359,7 +5359,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
       double lowerEnengy, upperEnergy;
       findROIEnergyLimits( lowerEnengy, upperEnergy, *peak, dataH );
       
-      //Clamp the ROI to not get riducuolouse
+      //Clamp the ROI to not get ridiculous
       lowerEnengy = std::max( lowerEnengy, mean-5.0*sigma );
       upperEnergy = std::min( upperEnergy, mean+5.0*sigma );
       
