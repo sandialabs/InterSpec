@@ -59,6 +59,11 @@ div.AddColorTheme.Wt-disabled, div.DeleteColorTheme.Wt-disabled
   
 }
 
+a.DownloadLink.DownloadColorTheme > span
+{
+  margin-top: 7px;
+}
+
 .UploadColorTheme
 {
   

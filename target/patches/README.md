@@ -166,11 +166,15 @@ To build Wt, you must patch the Wt source code as described above, and then you 
 You can use the following command from the command line to initiate the CMake config, but you also need to change all "MD" compiler flags to "MT", which its easiest to do this in the CMake gui.
 ```bash
 set MY_WT_PREFIX=C:\install\msvc2019\x64\wt3.3.4
+mkdir build_msvc2019
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=%MY_WT_PREFIX% -DBoost_INCLUDE_DIR=%MY_BOOST_PREFIX%/include -DBOOST_PREFIX=%MY_BOOST_PREFIX% -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=%MY_WT_PREFIX% -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++11" -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR=%MY_WT_PREFIX%/etc/wt ..
 
 cmake --build . --config Release --target install
 
 #Note if you run into permission problems while files are being copied to install location, you maye need to change permissions on CMakes "share" directory, at least temporarily
+#Note also I had to manually add the following to Wt's CMakeLists.txt to fix an issue when linking InterSpec
+# SET( Boost_USE_STATIC_LIBS ON )
+# add_definitions( -DBOOST_ALL_NO_LIB)
 ```
 
 If you plan to package InterSpec as an Electron application (e.g., normal desktop app), see the instructions in [patches](/target/electron/) for building the InterSpec code and packaging the application.

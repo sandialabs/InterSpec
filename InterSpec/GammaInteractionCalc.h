@@ -53,6 +53,14 @@ namespace SandiaDecay
 namespace GammaInteractionCalc
 {
 
+/** Maximum areal density allowed for computations, in units of g/cm2 -
+ 
+ Not in units of PhysicalUnits; e.g., you need to multiple by PhysicalUnits::cm2 / PhysicalUnits::g before using for computation..
+ 
+ Currently value of 500 is fairly arbitrary.
+ */
+static const double sm_max_areal_density_g_cm2 = 500.0;
+
 /** We will let trace source activities be specified in a few different ways, since it makes sense from a users-perspective, and because
  we may want total activity to vary independently from physical volume and then this just makes things a little easier to track in the Minuit
  variables.
@@ -94,10 +102,28 @@ double transmition_length_coefficient( const Material *material, float energy );
 double transmition_coefficient_material( const Material *material, float energy,
                                 float length );
 
-/** A convenience call to #transmition_coefficient_material that uses a static (compile-time defined) definition of air. */
+/** A convenience call to #transmition_coefficient_material that uses a static (compile-time defined) definition of air.
+ 
+ Example use of this function:
+ \code {.cpp}
+ double energy = 661.0*PhysicalUnits::keV;
+ double distance = 3.2*PhysicalUnits::cm;
+ double mu = transmission_coefficient_air( energy, distance );
+ double tranmission_fraction = exp( -mu );
+ \endcode
+ */
 double transmission_coefficient_air( float energy, float length );
 
-/** Similar to #transmission_coefficient_air, but not including length. */
+/** Similar to #transmission_coefficient_air, but not including length.
+ 
+ Example use of this function:
+ \code {.cpp}
+ double energy = 661.0*PhysicalUnits::keV;
+ double distance = 3.2*PhysicalUnits::cm;
+ double mu = transmission_length_coefficient_air( energy );
+ double tranmission_fraction = exp( - mu * distance );
+ \endcode
+ */
 double transmission_length_coefficient_air( float energy );
 
 
@@ -140,7 +166,7 @@ int DistributedSrcCalc_integrand_cylindrical( const int *ndim, const double xx[]
 /** Integrand for Cuba library; just calls #DistributedSrcCalc::eval_single_cyl_end_on.
  @param userdata must be pointer to a DistributedSrcCalc object.
  
- Requires ((DistributedSrcCalc *)userdata)->m_dimensionsAndTransLenCoef.size() == 1 (checked by assert on debug builds)
+ Requires ((DistributedSrcCalc *)userdata)->m_dimensionsTransLenAndType.size() == 1 (checked by assert on debug builds)
  */
 int DistributedSrcCalc_integrand_single_cyl_end_on( const int *ndim, const double xx[],
                                              const int *ncomp, double ff[], void *userdata );
@@ -322,11 +348,17 @@ struct DistributedSrcCalc
    */
   double m_inSituRelaxationLength;
   
-  /** The dimensions of this shielding, and also the transmission length coefficient for it.
+  enum class ShellType
+  {
+    Material, Generic
+  };
+  
+  /** The dimensions of this shielding, and also the transmission length coefficient for it, and if it is a material shielding or a
+   generic shielding.
    
    Note that the dimensions for each layer of shielding are the outer dimensions, and not the thicknesses.
    */
-  std::vector<std::pair<std::array<double,3>,double> > m_dimensionsAndTransLenCoef;
+  std::vector<std::tuple<std::array<double,3>,double,ShellType> > m_dimensionsTransLenAndType;
 
   /** The activity per volume of the shielding.
    Is not used during integration; used to multiple integral by to get number of expected peak counts.

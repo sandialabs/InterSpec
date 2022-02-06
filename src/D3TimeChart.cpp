@@ -73,6 +73,7 @@ class D3TimeChartFilters : public WContainerWidget
   WPushButton *m_clearEnergyFilterBtn;
   WCheckBox *m_dontRebin;
   WCheckBox *m_hideNeutrons;
+  NativeFloatSpinBox *m_gammaNeutRelEmphasis;
   
 public:
   D3TimeChartFilters( D3TimeChart *parent )
@@ -85,7 +86,8 @@ public:
       m_upperEnergy( nullptr ),
       m_clearEnergyFilterBtn( nullptr ),
       m_dontRebin( nullptr ),
-      m_hideNeutrons( nullptr )
+      m_hideNeutrons( nullptr ),
+      m_gammaNeutRelEmphasis( nullptr )
   {
     assert( parent );
     
@@ -262,39 +264,10 @@ public:
                        "Must be between 0.04 and 25." );
     WLabel *label = new WLabel( "Rel. y-max:" , sfDiv );
     
-    NativeFloatSpinBox *sfInput = new NativeFloatSpinBox( sfDiv );
-    label->setBuddy( sfInput );
-    sfInput->setText( "1.0" );
-    sfInput->valueChanged().connect( std::bind([this,sfInput](){
-      float value = 1.0f;
-      switch( sfInput->validate() )
-      {
-        case Wt::WValidator::Invalid:
-        case Wt::WValidator::InvalidEmpty:
-          sfInput->setText( "1.0" );
-          break;
-          
-        case Wt::WValidator::Valid:
-          value = sfInput->value();
-          if( value < 0.04f )
-          {
-            value = 0.04f;
-            sfInput->setText( "0.04" );
-          }
-          
-          if( value > 25.0f )
-          {
-            value = 25.0f;
-            sfInput->setText( "25" );
-          }
-          break;
-      }//switch( sfInput->validate() )
-      
-      const string js = m_parentChart->m_jsgraph
-                        +  ".setYAxisGammaNeutronRelMaxSf(" + std::to_string(value) + ");";
-      m_parentChart->doJavaScript( js );
-    }) );
-    
+    m_gammaNeutRelEmphasis = new NativeFloatSpinBox( sfDiv );
+    label->setBuddy( m_gammaNeutRelEmphasis );
+    m_gammaNeutRelEmphasis->setText( "1.0" );
+    m_gammaNeutRelEmphasis->valueChanged().connect( this, &D3TimeChartFilters::handleGammaNeutRelEmphasisChanged );
   }//D3TimeChartFilters
   
   
@@ -476,6 +449,39 @@ public:
     m_parentChart->setNeutronsHidden( m_hideNeutrons->isChecked() );
   }
   
+  
+  void handleGammaNeutRelEmphasisChanged()
+  {
+    float value = 1.0f;
+    switch( m_gammaNeutRelEmphasis->validate() )
+    {
+      case Wt::WValidator::Invalid:
+      case Wt::WValidator::InvalidEmpty:
+        m_gammaNeutRelEmphasis->setText( "1.0" );
+        break;
+        
+      case Wt::WValidator::Valid:
+        value = m_gammaNeutRelEmphasis->value();
+        if( value < 0.04f )
+        {
+          value = 0.04f;
+          m_gammaNeutRelEmphasis->setText( "0.04" );
+        }
+        
+        if( value > 25.0f )
+        {
+          value = 25.0f;
+          m_gammaNeutRelEmphasis->setText( "25" );
+        }
+        break;
+    }//switch( m_gammaNeutRelEmphasis->validate() )
+    
+    const string js = m_parentChart->m_jsgraph
+                      +  ".setYAxisGammaNeutronRelMaxSf(" + std::to_string(value) + ");";
+    m_parentChart->doJavaScript( js );
+  }//handleGammaNeutRelEmphasisChanged()
+  
+  
   void setDontRebin( const bool dontRebin )
   {
     m_dontRebin->setChecked( dontRebin );
@@ -489,6 +495,8 @@ public:
   void setHideNeutronsOptionVisible( const bool visible )
   {
     m_hideNeutrons->setHidden( !visible );
+    m_gammaNeutRelEmphasis->setHidden( !visible );
+    // Should we also reset m_gammaNeutRelEmphasis to 1.0 if we are hiding the option?
   }
 };//class D3TimeChartOptions
 
@@ -624,8 +632,38 @@ void D3TimeChart::doJavaScript( const std::string& js )
 }//doJavaScript(...)
 
 
-void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
+void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data,
+                           vector<string> det_to_display )
 {
+  if( !data && !det_to_display.empty() )
+    throw runtime_error( "D3TimeChart::setData: detectors specified with null SpecFile." );
+  
+  
+  if( data )
+  {
+    if( det_to_display.empty() )
+    {
+      // Display all detectors if none were specified
+      det_to_display = m_spec->detector_names();
+    }else
+    {
+      // Check that all specified detectors are valid names
+      const vector<string> &valid_names = data->detector_names();
+      for( const string &n : det_to_display )
+      {
+        const auto pos = std::find( begin(valid_names), end(valid_names), n );
+        if( pos == end(valid_names) )
+          throw runtime_error( "D3TimeChart::setData: invalid detector name ('"
+                               + n + "') specified." );
+      }
+    }//if( no dets specified ) / else
+    
+    std::sort( begin(det_to_display), end(det_to_display) );
+    if( det_to_display != m_detectors_to_display )
+      scheduleRenderAll();
+  }//if( data )
+  
+  
   if( !m_highlights.empty() )
   {
     m_highlights.clear();
@@ -647,6 +685,7 @@ void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
   }//if( this is a different spectrum file )
   
   m_spec = data;
+  m_detectors_to_display = det_to_display;
 }//void setData(...)
   
 
@@ -678,18 +717,18 @@ void D3TimeChart::setDataToClient()
      startTimes: [0,604800,100,100,900, ...],
    
      // The sample number for each time interval.  These usually be monotonically increasing, but
-     //  this isnt garunteed, and the starting value isnt garunteed either.  These values link-up
+     //  this isnt guaranteed, and the starting value isnt guaranteed either.  These values link-up
      //  to the SampleNumber of the SpecFile the data is being loaded from.
      sampleNumbers: [-1,2,3,4,5,...],
    
      // Array, that if present, will be same length as reaTimes and sampleNumbers, and gives the
-     //  source-type of each sample.  The values in this array coorespond to the numberical values
+     //  source-type of each sample.  The values in this array correspond to the numerical values
      //  of the SpecUtils::SourceType enum, specifically:
      //    IntrinsicActivity : 0, Calibration : 1, Background : 2, Foreground : 3, Unknown : 4.
      sourceTypes: [2,3,3,3,2,...],
    
      // The GPS coordinates of the timeslice.
-     //  This array will be missing if no GPS goordinates are available, and if there isnt
+     //  This array will be missing if no GPS coordinates are available, and if there isnt
      //  coordinates for a given sample, null will be provided.
      //  In the future may add timestamp as third element of array.
      gpsCoordinates: [[37.675821,-121.709863],[37.675821,-121.709863],null,[37.675821,-121.709863],
@@ -697,9 +736,9 @@ void D3TimeChart::setDataToClient()
    
      // The gamma counts to plot.  Usually we will only plot one line, but if it makes sense to
      //  plan ahead now, being able to plot multiple gamma lines would be useful (either stacked, or
-     //  all lines just drawn on top of eachother); if there are multiple lines than the mouse going
+     //  all lines just drawn on top of each other); if there are multiple lines than the mouse going
      //  over a line could maybe pop-up the counts value for that time interval, and detector name
-     //  (unless only a single detector, then name isnt necassary).
+     //  (unless only a single detector, then name isnt necessary).
      //  The live-time array may not be present; if it isnt, then you can assume live-times are
      //  equal to real times, and use the realTimes array.  If live-time array is present, it will
      //  be the same length as the counts array; use the live-time to divide the counts by to get
@@ -725,16 +764,16 @@ void D3TimeChart::setDataToClient()
      //  described.  This field is typically used for describing radiation portal monitor data, and
      //  will be absent for portable detection systems.
      occupancies: [{
-                    // Says whether this sample range cooresponds to being "occupied" (cooresponding
+                    // Says whether this sample range corresponds to being "occupied" (corresponding
                     //  to (SpecUtils::OccupancyStatus::Occupied) or if false, "not occupied"
-                    //  cooresponding to SpecUtils::OccupancyStatus::NotOccupied).  If occupancy
+                    //  corresponding to SpecUtils::OccupancyStatus::NotOccupied).  If occupancy
                     //  status for a sample is unknown or undefined, then that sample will not be
                     //  included in any of these ranges.
                     //  Typically non-occupied intervals will also be marked as Background in the
                     //  'sourceTypes' array, and occupied intervals will be marked as Foreground.
                     status: true,
    
-                    // The sample number cooresponding to the first occupied sample
+                    // The sample number corresponding to the first occupied sample
                     // In the previous implementation a vertical line was drawn, on left side of
                     // sample with the text "occ. start"
                     startSample: 4,
@@ -752,9 +791,10 @@ void D3TimeChart::setDataToClient()
    */
   
   //Variable to control if we will only plot a single gamma and neutron line, or if we will plot
-  //  each detector seperately.  This may become a user option at some point, or the idea of more
-  //  than one line for gamma/neutron may get scrapped if it is to confusing or unhelpful.
-  const bool plotDetectorsSeperate = false;
+  //  each detector separately.  This may become a user option at some point, or the idea of more
+  //  then one line for gamma/neutron may get scrapped if it is to confusing or unhelpful.
+  const bool plotDetectorsSeparate = false;
+  static_assert( !plotDetectorsSeparate, "Plotting detectors separate JS functionality has not been tested." );
   
   vector<double> realTimes;
   vector<int> sampleNumbers;
@@ -769,7 +809,25 @@ void D3TimeChart::setDataToClient()
   map<string,vector<double>> gammaCounts, neutronCounts, liveTimes;  //maps from detector name to counts
   
   const set<int> &sample_numbers = m_spec->sample_numbers();
-  const vector<string> &detNames = m_spec->detector_names();
+  //const vector<string> &detNames = m_spec->detector_names();
+  const vector<string> &detNames = m_detectors_to_display;
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  {// begin check that detector names to plot are valid
+    const vector<string> &all_det_names = m_spec->detector_names();
+    for( const string &name : detNames )
+    {
+      const auto pos = std::find( begin(all_det_names), end(all_det_names), name );
+      if( pos == end(all_det_names) )
+      {
+        log_developer_error( __func__, ("Found invalid detector name, '" + name + "'").c_str() );
+      }
+      
+      assert( pos != end(all_det_names) );
+    }//for( const string &name : detNames )
+  }// end check that detector names to plot are valid
+#endif
+  
 
   boost::optional<float> lowerEnergy, upperEnergy;
   if( m_options )
@@ -1011,7 +1069,7 @@ void D3TimeChart::setDataToClient()
   }//if( haveAnyGps )
   
   
-  if( plotDetectorsSeperate )
+  if( plotDetectorsSeparate )
   {
     int nwrote = 0;
     for( const auto &detName : detNames )
@@ -1173,7 +1231,7 @@ void D3TimeChart::setDataToClient()
       
       js << "\n\t}]";
     }//if( haveAnyNeutron )
-  }//if( plotDetectorsSeperate ) / else
+  }//if( plotDetectorsSeparate ) / else
   
   auto occRanges = sampleNumberRangesWithOccupancyStatus( SpecUtils::OccupancyStatus::Occupied, m_spec );
   if( occRanges.size() )

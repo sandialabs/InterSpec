@@ -4459,10 +4459,12 @@ void ShieldingSourceDisplay::showCalcLog()
 #if( BUILD_AS_OSX_APP )
   WAnchor *logDownload = new WAnchor( m_logDiv->footer() );
   logDownload->setStyleClass( "LinkBtn" );
+  logDownload->setTarget( AnchorTarget::TargetNewWindow );
 #else
   WPushButton *logDownload = new WPushButton( m_logDiv->footer() );
   logDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
   logDownload->setStyleClass( "LinkBtn DownloadBtn" );
+  logDownload->setLinkTarget( Wt::TargetNewWindow );
 #endif
   
   logDownload->setText( "TXT file" );
@@ -4476,11 +4478,6 @@ void ShieldingSourceDisplay::showCalcLog()
   downloadResource->suggestFileName( filename, WResource::DispositionType::Attachment );
   
   logDownload->setLink( WLink(downloadResource) );
-#if( BUILD_AS_OSX_APP )
-  logDownload->setTarget( AnchorTarget::TargetNewWindow );
-#else
-  logDownload->setLinkTarget( Wt::TargetNewWindow );
-#endif
   
   WPushButton *close = m_logDiv->addCloseButtonToFooter();
   close->clicked().connect( boost::bind( &AuxWindow::hide, m_logDiv ) );
@@ -6134,8 +6131,8 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   select->addShieldingAfter().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingAfter, this, _1 ) );
   
   //connect up signals of select and such
-  select->m_arealDensityEdit->changed().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
-  select->m_atomicNumberEdit->changed().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
+  select->m_arealDensityEdit->valueChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
+  select->m_atomicNumberEdit->valueChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
 
   select->materialChanged().connect( this, &ShieldingSourceDisplay::handleShieldingChange );
   select->materialModified().connect( this, &ShieldingSourceDisplay::handleShieldingChange );
@@ -6580,8 +6577,11 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
         const double relax_len = (type == TraceActivityType::ExponentialDistribution)
                                 ? select->relaxationLength(nuc)
                                 : -1.0;
-        
+#if( defined(__GNUC__) && __GNUC__ < 5 )
+        materialAndSrc.trace_sources.push_back( tuple<const SandiaDecay::Nuclide *,TraceActivityType,double>{nuc, type, relax_len} );
+#else
         materialAndSrc.trace_sources.push_back( {nuc, type, relax_len} );
+#endif
       }//for( loop over trace source nuclides )
 
       materials.push_back( materialAndSrc );
@@ -7289,11 +7289,8 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         const double an = m_currentFitFcn->atomicNumber( i, paramValues );
         const double ad = m_currentFitFcn->arealDensity( i, paramValues ) / adUnits;
         
-        char buffer[32];
-        snprintf( buffer, sizeof(buffer), "%.2f", an );
-        select->m_atomicNumberEdit->setText( buffer );
-        snprintf( buffer, sizeof(buffer), "%.2g", ad );
-        select->m_arealDensityEdit->setText( buffer );
+        select->m_atomicNumberEdit->setValue( static_cast<float>(an) );
+        select->m_arealDensityEdit->setValue( static_cast<float>(ad) );
       }else
       {
         

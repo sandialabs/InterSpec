@@ -293,7 +293,7 @@
 	   and the current implementation is based on
 	   http://tools.ietf.org/html/draft-ietf-hybi-thewebsocketprotocol-00
 	  -->
-	<web-sockets>true</web-sockets>
+	<web-sockets>false</web-sockets>
 
 	<!-- Redirect message shown for browsers without JavaScript support
 

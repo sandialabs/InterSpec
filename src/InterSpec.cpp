@@ -10966,7 +10966,8 @@ void InterSpec::displayTimeSeriesData()
       m_chartResizer->setHidden( m_timeSeries->isHidden() );
     }//if( m_timeSeries->isHidden() )
     
-    m_timeSeries->setData( m_dataMeasurement );
+    const vector<string> det_to_use = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+    m_timeSeries->setData( m_dataMeasurement, det_to_use );
     
     const set<int> emptyset;
     const set<int> &fore   = m_displayedSamples;
@@ -10980,7 +10981,7 @@ void InterSpec::displayTimeSeriesData()
     m_timeSeries->setHighlightedIntervals( second, SpecUtils::SpectrumType::SecondForeground );
   }else
   {
-    m_timeSeries->setData( nullptr );
+    m_timeSeries->setData( nullptr, {} );
     m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::Foreground );
     m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::Background );
     m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::SecondForeground );

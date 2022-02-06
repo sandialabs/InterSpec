@@ -1742,18 +1742,29 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
                                                     int nForcedPeaks, bool isfinal,
                                                     double window_xpx, double window_ypx )
 {
-  /* ToDo:
-     - try to use RSP if available (need to figure out how to get it here).
-     - Put all of this in a seperate function to post to the Wt Worker pool, and then push results
-     - maybe keep state between calls to speed up subsequent calls
-     - Really punish peaks being close together with no dip in-between to avoid the tendancy to fit lots of peaks.
-   */
-  
   if( !m_model || !m_model->getData() )
   {
     doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(null);}catch(error){}" );
     return;
   }
+  const bool allowAsync = true;
+  
+  chartFitRoiDragCallbackWorker( lower_energy, upper_energy, nForcedPeaks, isfinal, window_xpx,
+                                window_ypx, allowAsync );
+}//chartFitRoiDragCallback(...)
+
+
+void D3SpectrumDisplayDiv::chartFitRoiDragCallbackWorker( double lower_energy, double upper_energy,
+                                   int nForcedPeaks, bool isfinal,
+                                   double window_xpx, double window_ypx, const bool allowAsync )
+{
+  /* ToDo:
+     - try to use RSP if available (need to figure out how to get it here).
+     - Put all of this in a separate function to post to the Wt Worker pool, and then push results
+     - maybe keep state between calls to speed up subsequent calls
+     - Really punish peaks being close together with no dip in-between to avoid the tendency to fit lots of peaks.
+   */
+  
   
   
   if( upper_energy < lower_energy )
@@ -1767,13 +1778,12 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
   
   std::shared_ptr<Measurement> foreground = m_model->getData();
   
-  const size_t nchan = foreground->num_gamma_channels();
-  const bool isHpge = PeakFitUtils::is_high_res( foreground );
-  const float erange = upper_energy - lower_energy;
-  const float midenergy = 0.5f*(lower_energy + upper_energy);
+  auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,this](){
   
-  
-  auto fcnworker = [=](){
+    const bool isHpge = PeakFitUtils::is_high_res( foreground );
+    const float erange = upper_energy - lower_energy;
+    const float midenergy = 0.5f*(lower_energy + upper_energy);
+    
     try
     {
       //const auto start_cpu_time = SpecUtils::get_cpu_time();
@@ -1931,6 +1941,8 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
         return;
       }
       
+      InterSpec *viewer = app ? app->viewer() : nullptr;
+      
       if( isfinal )
       {
         deque< PeakModel::PeakShrdPtr > preaddpeaks, postaddpeaks;
@@ -2067,28 +2079,42 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
       
       cerr << "D3SpectrumDisplayDiv::chartFitRoiDragCallback: caught exception  " << e.what() << endl;
       
-      try
+      // If the user hasnt dragged at least 1 keV, dont try to fit things
+      if( (lower_energy + 1.0) < upper_energy )
       {
-        PeakDef tmppeak(midenergy, 0.5*erange, 0);
-        std::shared_ptr<PeakContinuum> cont = tmppeak.continuum();
-        cont->calc_linear_continuum_eqn( foreground, midenergy, lower_energy, upper_energy, 2, 2 );
-        
-        std::vector<std::shared_ptr<const PeakDef> > peaks{ make_shared<const PeakDef>(tmppeak) };
-        const string roiJson = PeakDef::gaus_peaks_to_json( peaks, foreground );
-        
-        doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + roiJson + ");" );
-      }catch( std::exception &e )
+        try
+        {
+          PeakDef tmppeak(midenergy, 0.5*erange, 0);
+          std::shared_ptr<PeakContinuum> cont = tmppeak.continuum();
+          cont->calc_linear_continuum_eqn( foreground, midenergy, lower_energy, upper_energy, 2, 2 );
+          
+          std::vector<std::shared_ptr<const PeakDef> > peaks{ make_shared<const PeakDef>(tmppeak) };
+          const string roiJson = PeakDef::gaus_peaks_to_json( peaks, foreground );
+          
+          doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + roiJson + ");" );
+        }catch( std::exception &e )
+        {
+          cerr << "D3SpectrumDisplayDiv::chartFitRoiDragCallback: couldnt ." << endl;
+        }//try / catch
+      }else
       {
-        cerr << "D3SpectrumDisplayDiv::chartFitRoiDragCallback: couldnt ." << endl;
-      }//try / catch
+        doJavaScript( m_jsgraph + ".updateRoiBeingDragged(null);" );
+        
+      }
       
       m_fitRoiDrag.emit( lower_energy, upper_energy, nForcedPeaks, isfinal );
       app->triggerUpdate();
     }//try / catch
   };//fcnworker
   
-  Wt::WServer::instance()->post( wApp->sessionId(), fcnworker );
-}//void chartFitRoiDragCallback(...)
+  if( allowAsync )
+  {
+    Wt::WServer::instance()->post( wApp->sessionId(), fcnworker );
+  }else
+  {
+    fcnworker();
+  }
+}//void chartFitRoiDragCallbackWorker(...)
 
 
 

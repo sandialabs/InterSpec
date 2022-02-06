@@ -77,6 +77,7 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -1062,8 +1063,10 @@ namespace
                 {
                   vector<float> an_ad;
                   SpecUtils::split_to_floats( shielding, an_ad );
-                  if( an_ad.size() >= 2 && an_ad[0] >= 1.0f && an_ad[0] <= 100.0f
-                     && an_ad[1] >= 0.0f && an_ad[1] <= 500.0f )
+                  
+                  if( an_ad.size() >= 2
+                     && an_ad[0] >= 1.0f && an_ad[0] <= 100.0f
+                     && an_ad[1] >= 0.0f && an_ad[1] <= GammaInteractionCalc::sm_max_areal_density_g_cm2 )
                   {
                     src->setShielding( an_ad[0], an_ad[1]*PhysicalUnits::gram/PhysicalUnits::cm2 );
                   }
@@ -2145,11 +2148,13 @@ void MakeDrf::handleSourcesUpdates()
           double an = 14, ad = 0.0;
           if( shield->isGenericMaterial() )
           {
-            if( !shield->atomicNumberEdit()->text().empty()
-               && !shield->arealDensityEdit()->text().empty() )
+            an = shield->atomicNumber();
+            ad = shield->arealDensity();
+            
+            if( an < 1.0 || ad < 0.0 )
             {
-              an = shield->atomicNumber();
-              ad = shield->arealDensity();
+              an = 14;
+              ad = 0.0;
             }
           }else
           {
