@@ -33,12 +33,7 @@
 #include <Wt/WString>
 #include <Wt/WContainerWidget>
 
-#if ( USE_SPECTRUM_CHART_D3 )
 class D3SpectrumDisplayDiv;
-#else
-class SpectrumDisplayDiv;
-#endif
-
 
 namespace Wt
 {
@@ -107,11 +102,7 @@ protected:
   
 public:
   IsotopeSearchByEnergy(  InterSpec *viewer,
-#if ( USE_SPECTRUM_CHART_D3 )
                           D3SpectrumDisplayDiv *chart,
-#else
-                          SpectrumDisplayDiv *chart,
-#endif
                           Wt::WContainerWidget *parent = 0 );
   
   virtual ~IsotopeSearchByEnergy();
@@ -179,11 +170,7 @@ protected:
   void hideSearchingTxt( const int searchNum );
   
   InterSpec *m_viewer;
-#if ( USE_SPECTRUM_CHART_D3 )
   D3SpectrumDisplayDiv *m_chart;
-#else
-  SpectrumDisplayDiv *m_chart;
-#endif
   Wt::WContainerWidget *m_searchEnergies;
   int m_currentSearch;
   Wt::WText *m_searching;

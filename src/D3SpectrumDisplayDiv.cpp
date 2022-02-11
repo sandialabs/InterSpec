@@ -207,7 +207,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_chartBackgroundColor(),
   m_defaultPeakColor( 0, 51, 255, 155 )
 {
-  addStyleClass( "SpectrumDisplayDiv" );
+  addStyleClass( "D3SpectrumDisplayDiv" );
   
   // Cancel right-click events for the div, we handle it all in JS
   setAttributeValue( "oncontextmenu",
@@ -300,8 +300,6 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   
   setJavaScriptMember( "chart", "new SpectrumChartD3(" + jsRef() + "," + options + ");");
   
-
-//#if( USE_CSS_FLEX_LAYOUT )
   setJavaScriptMember( "resizeObserver",
     "new ResizeObserver(entries => {"
       "for (let entry of entries) {"
@@ -312,13 +310,8 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   );
   
   callJavaScriptMember( "resizeObserver.observe", jsRef() );
-//#else
-//  setJavaScriptMember( WT_RESIZE_JS, "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
-//#endif
   
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   updateReferncePhotoPeakLines();
-#endif
   
   setHighlightRegionsToClient();
   
@@ -549,7 +542,6 @@ Wt::Signal<double,double> &D3SpectrumDisplayDiv::rightMouseDragg()
 
 
 
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
 void D3SpectrumDisplayDiv::setReferncePhotoPeakLines( const ReferenceLineInfo &nuc )
 {
   m_referencePhotoPeakLines = nuc;
@@ -605,7 +597,6 @@ void D3SpectrumDisplayDiv::updateReferncePhotoPeakLines()
   if( isRendered() )
     doJavaScript( "try{" + m_jsgraph + ".setReferenceLines(" + result + ")}catch(e){ console.log('Exception setting ref lines: ' + e ); }");
 }
-#endif //#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
 
 
 void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )

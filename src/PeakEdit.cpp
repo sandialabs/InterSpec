@@ -48,7 +48,6 @@
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/WarningWidget.h"
-#include "InterSpec/SpectrumDisplayDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/DetectorPeakResponse.h"

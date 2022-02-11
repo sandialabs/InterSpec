@@ -40,10 +40,6 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/FeatureMarkerWidget.h"
 
-#if( !USE_SPECTRUM_CHART_D3 )
-#include "InterSpec/CanvasForDragging.h"
-#endif
-
 using namespace Wt;
 using namespace std;
 

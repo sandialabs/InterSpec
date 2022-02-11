@@ -37,7 +37,6 @@ class PeakEdit;
 class PeakModel;
 class InterSpec;
 class ColorSelect;
-class SpectrumDisplayDiv;
 class IsotopeNameFilterModel;
 class PeakIsotopeNameFilterModel;
 

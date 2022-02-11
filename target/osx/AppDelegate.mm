@@ -357,14 +357,14 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //pageVisibilityBasedProcessSuppressionEnabled
   
   
-//#if( PERFORM_DEVELOPER_CHECKS )
+#if( PERFORM_DEVELOPER_CHECKS )
   [prefs setValue:@YES forKey:@"developerExtrasEnabled"];
   
   //Note: currently I disable right click in InterSpecApp using javascript if
   //      no PERFORM_DEVELOPER_CHECKS.  However, could also do:
   //https://stackoverflow.com/questions/28801032/how-can-the-context-menu-in-wkwebview-on-the-mac-be-modified-or-overridden#28981319
   //[_InterSpecWebView willOpenMenu:<#(nonnull NSMenu *)#> withEvent:<#(nonnull NSEvent *)#>];
-//#endif
+#endif
 
   //To allow deep integration, could
   //[_webConfig setURLSchemeHandler:<#(nullable id<WKURLSchemeHandler>)#> forURLScheme: @"helloworld://"];

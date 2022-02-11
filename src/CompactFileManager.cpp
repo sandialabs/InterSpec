@@ -53,7 +53,6 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/CompactFileManager.h"
 #if( !ANDROID && !IOS )

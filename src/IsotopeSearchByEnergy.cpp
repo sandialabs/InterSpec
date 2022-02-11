@@ -53,19 +53,13 @@
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
-#include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/IsotopeSearchByEnergyModel.h"
-
-#if( USE_SPECTRUM_CHART_D3 )
-#include "InterSpec/D3SpectrumDisplayDiv.h"
-#else
-#include "InterSpec/SpectrumDisplayDiv.h"
-#endif
 
 using namespace Wt;
 using namespace std;
@@ -241,11 +235,7 @@ Wt::Signal<> &IsotopeSearchByEnergy::SearchEnergy::addAnother()
 
 
 IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
-#if ( USE_SPECTRUM_CHART_D3 )
                                               D3SpectrumDisplayDiv *chart,
-#else
-                                              SpectrumDisplayDiv *chart,
-#endif
                                               Wt::WContainerWidget *parent )
 : WContainerWidget( parent ),
   m_viewer( viewer ),
@@ -517,8 +507,6 @@ vector<IsotopeSearchByEnergy::SearchEnergy *> IsotopeSearchByEnergy::searches()
 
 void IsotopeSearchByEnergy::loadSearchEnergiesToClient()
 {
-#if( USE_SPECTRUM_CHART_D3 )
-  
   vector<pair<double,double>> searchRegions;
   
   for( auto sw : searches() )
@@ -528,37 +516,6 @@ void IsotopeSearchByEnergy::loadSearchEnergiesToClient()
   }
   
   m_chart->setSearchEnergies( searchRegions );
-#else
-  CanvasForDragging *can = m_chart->overlayCanvas();
-  if( !can )
-    return;
-  
-  string js;
-  const vector<SearchEnergy *> searchW = searches();
-  
-  if( !searchW.empty() )
-  {
-    js += "[";
-    char buffer[120];
-    for( size_t index = 0; index < searchW.size(); ++index )
-    {
-      if( searchW[index]->energy() > 0.1 )
-      {
-        if( js.size() > 2 )
-          js += ",";
-        snprintf( buffer, sizeof(buffer), "[%.2f,%.2f]",
-                 searchW[index]->energy(), searchW[index]->window() );
-        js += buffer;
-      }//if( searchW[index]->energy() > 0.1 )
-    }//for( size_t index = 0; index < searchW.size(); ++index )
-    js += "]";
-  }//if( searchW.empty() ) / else
-  
-  if( js.size() < 2 )
-    js = "null";
-  doJavaScript( "$('#c"+can->id()+"').data('SearchEnergies'," + js + ");"
-                "Wt.WT.DrawGammaLines('c" + can->id() + "',true);" );
-#endif
 }//void loadSearchEnergiesToClient()
 
 
@@ -575,16 +532,7 @@ Wt::SortOrder IsotopeSearchByEnergyModel::sortOrder() const
 
 void IsotopeSearchByEnergy::clearSearchEnergiesOnClient()
 {
-#if( USE_SPECTRUM_CHART_D3 )
   m_chart->setSearchEnergies( vector<pair<double,double>>() );
-#else
-  //Calling wApp->doJavaScript(...) rather than this->doJavaScript(...) to
-  //  ensure the command is done, even if this widget is deleted
-  CanvasForDragging *can = m_chart->overlayCanvas();
-  if( can )
-    wApp->doJavaScript( "$('#c"+can->id()+"').data('SearchEnergies',null);"
-                       "Wt.WT.DrawGammaLines('c" + can->id() + "',true);" );
-#endif
 }//void clearSearchEnergiesOnClient()
 
 

@@ -40,11 +40,8 @@
 #include <Wt/Chart/WCartesianChart>
 
 #include "InterSpec/PeakDef.h"
-#include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/SpectrumDataModel.h"
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
 #include "InterSpec/ReferenceLineInfo.h"
-#endif
 
 //Forward declarations
 namespace Wt
@@ -56,52 +53,27 @@ namespace Wt
   class WButtonGroup;
   class WDoubleSpinBox;
   class WContainerWidget;
-#if( WT_VERSION<=0x3030100 )
-  namespace Chart
-  {
-    class WChart2DRenderer;
-    enum AxisProperty{ Labels = 0x1, Line = 0x2 };
-    W_DECLARE_OPERATORS_FOR_FLAGS(AxisProperty)
-  }//namespace Chart
-#endif
 }//namespace Wt
 
 class AuxWindow;
 class PeakModel;
-class CanvasForDragging;
 
 //See comments about SpectrumChart::setLeftYAxisPadding() for what
 //  DYNAMICALLY_ADJUST_LEFT_CHART_PADDING controls.  This feature has not
 //  been tested well enough to fully use yet, although it seems to work well.
 #define DYNAMICALLY_ADJUST_LEFT_CHART_PADDING 1
 
-#if(WT_VERSION<=0x3030100)
-class SpectrumRenderer;
-#endif
-
-//#if(WT_VERSION>0x3030100)
 class SeriesRenderer;
 class LabelRenderIterator;
 class MarkerRenderIterator;
 class SpectrumSeriesRenderer;
 class SpectrumRenderIterator;
-//#endif
+
+
+static_assert( WT_VERSION > 0x3030100, "Wt should be 3.3.2 or newer (really 3.3.4 at least)" );
 
 class SpectrumChart : public Wt::Chart::WCartesianChart
 {
-  /****************************************************************************\
-  | This class provides the basic viewing functionality for the interactive
-  | analysis of gamma spectra. User input (zooming, clicking, etc.) is handled
-  | in one of two ways:
-  |   1. Via the CanvasForDragging overlay canvas (primary method)
-  |   2. As a fallback for browsers that don't support the <canvas> tag (just IE?)
-  |      the dragged(...) and mouseUp(...) functions handle the mouseWentUp() and
-  |      mouseDragged() signals. This has been tested and is current with #1.
-  |
-  | Will likely eventually be replaced by D3.js based implementation in
-  | D3SpectrumDisplayDiv.cpp.
-  \****************************************************************************/
-
 //XXX
 // Whenever you load a new data histogram into the model which powers this
 // chart, please call SpectrumChart::setAutoXAxisRange() as well, this is a
@@ -172,9 +144,6 @@ public:
   virtual ~SpectrumChart();
 
   void setPeakModel( PeakModel *model );
-
-  //graphableAreaWidth(): the width of the actual chart area, in pixels
-//  int graphableAreaWidth() const;
   
   //Note: do not overide height() and width() or else when used in a stretching
   //      layout side will get really messed up after the first painting
@@ -293,20 +262,6 @@ public:
   
   virtual void paintHighlightRegions( Wt::WPainter& painter ) const;
 
-  virtual void loadPeakInfoToClient() const;
-  
-  virtual void loadXAndYRangeEquationToClient() const;
-  std::string pixelToCoordinateMappingJs( const Wt::Chart::Axis axis ) const;
-  std::string energyToPixelMappingJs() const;
-//#if(DRAW_GAMMA_LINES_LOG_AND_LIN)
-  std::string countsToPixelMappingJs() const;
-//#endif
-  
-  //setShowRefLineInfoForMouseOver(): set wether or not the text information
-  //  should be shown for the line that the mouse is currently over.  Default is
-  //  to show the information.
-  void setShowRefLineInfoForMouseOver( const bool show );
-
   virtual void setYAxisScale( Wt::Chart::AxisScale scale );
   virtual void setXAxisRange( const double x1, const double x2 );
   virtual void setYAxisRange( const double y1, const double y2 );
@@ -320,35 +275,6 @@ public:
 
   virtual void setXAxisUnits( XAxisUnits units );
   virtual XAxisUnits xAxisUnits() const;
-
-  //The following are <x-begin,x-end> coordinates in units of energy for the
-  //  dragging action.
-  Wt::Signal<double,double> &xRangeChanged();
-  Wt::Signal<double,double,int/*last pageX*/,int/*last pageY*/> &controlKeyDragged();
-  Wt::Signal<double,double> &shiftKeyDragged();
-  Wt::Signal<double,double> &altKeyDragged();
-  Wt::Signal<double,double> &shiftAltKeyDragged();
-  Wt::Signal<double,double> &rightMouseDragg();
-  
-  //For the following, the doubles are the <x,y> coordinates of the action, in
-  //  units of energy and counts
-  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> &leftClick();
-  Wt::Signal<double,double> &doubleLeftClick();
-  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> &rightClick();
-
-  //The following emits the enrgy of the start and current energy of current
-  //  action
-  Wt::Signal<double,double> &controlMouseMoved();
-
-  //The keyPressedWhileMousedOver() function/signal may only be called
-  //  after enableOverlayCanvas(bool,bool) has been called, otherwise will
-  //  throw an exception.
-  Wt::JSignal<Wt::WKeyEvent> &keyPressedWhileMousedOver();
-
-  //setControlDragDebouncePeriod(...): set how often the client will phone home
-  //  to the server during a control-drag event.  Periods of <= 0 will result
-  //  in it happening whenever the mouse is moved.
-  void setControlDragDebouncePeriod( int milliseconds );
 
   //Adding or clearing the highlight regions does not cause an update to the
   //  chart; you need to manually call update() to cause a rerender.
@@ -375,19 +301,7 @@ public:
                                        const float upperx,
                                        const Wt::WColor &color );
 
-  void setDragAction( const DragAction action );
-
-  //below only applicable when setDragAction(HighLight) has been called
-  void allowMultipleRegionHighlight( bool allow = true );
-
-  //below only applicable when setDragAction(HighLight) has been called
-  void allowSingleClickHighlight( bool allow = true );
-
-  //below may only be called after enableOverlayCanvas(...), and will only
-  //  have an effect if allowSingleClickHighlight(true) has been called, and
-  //  there is exactly one singly-clicked highlighted region
-  void allowArrowToMoveSingleClickRegion( bool allow = true );
-
+  
   //enableLegend():  Makes it so the legend will be rendered, with some caviots.
   //  If no spectrums are present, will not be rendered.
   //  If a time series chart (DragAction==Highlight), only rendered if more than
@@ -411,13 +325,6 @@ public:
   void legendExpandedCallback();
   
   void legendTextSizeCallback( const float legendwidth );
-
-  
-  void enableOverlayCanvas( bool outline, bool highlight, bool altShiftHighlight );
-  CanvasForDragging *overlayCanvas();
-  void disableOverlayCanvas();
-  bool overlayCanvasEnabled() const;
-  void setOverlayCanvasVisible( bool visible );
 
   void setDefaultPeakColor( const Wt::WColor &color );
   
@@ -454,37 +361,9 @@ public:
    the currently showing spectrum.  PNG generation is done client side.
    */
   void saveChartToPng( const std::string &name );
-  
-  /** When the mobile (hamburger) menu is showing, we shouldnt place text (the
-   y-axis labels) underneath it; it looks bad.
-   */
-  void setAvoidMobileMenu( const bool avoid );
-  
-  //setScrollingParent(...): sets the scrolling frame which contains the chart
-  //  from which the overlay canvas should not extend beyond.  Calling this
-  //  function when the overlay canvas is not enabled has no effect. Calling
-  //  this function with a NULL argument removes this parent.
-  void setScrollingParent( Wt::WContainerWidget *parent );
-  Wt::JSlot *alignOverlayCanvas();  //returns NULL if overlay canvas not enabled
-
-  //overlayCanvasJsException() is mostly for debugging and will
-  //  probably be romived in the future
-  Wt::JSignal<std::string> *overlayCanvasJsException();  //returns NULL if not available
-
-  //functions to connect/disconnect the Wt::Chart::WCartesianChart based
-  //  mouse signals.  If you are using the overlay canvas, you can (but dont
-  //  have to) disconnect these signals.  If you are not using the overlay
-  //  canvas, than you should connect these signals.
-  void connectWtMouseConnections();
-  void disconnectWtMouseConnections();
 
   virtual void setHidden( bool hidden,
                           const Wt::WAnimation &animation = Wt::WAnimation() );
-
-  //setScrollY(...): sets the number of pixels the page has been scrooled, to
-  //  help interpret clicked loacations - note that this is a hack for the
-  //  anthony NM app.
-  void setScrollY( int scrollY );
 
 #if(DYNAMICALLY_ADJUST_LEFT_CHART_PADDING)
   //setLeftYAxisPadding(): tries to guess how many characters will be used for
@@ -499,14 +378,12 @@ public:
   int setLeftYAxisPadding( double width, double height, Wt::WPaintDevice *paintDevice );
 #endif
   
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   void setReferncePhotoPeakLines( const ReferenceLineInfo &nuc );
   void persistCurrentReferncePhotoPeakLines();
   void clearAllReferncePhotoPeakLines();
   void renderReferncePhotoPeakLines( Wt::WPainter &painter ) const;
   void renderReferncePhotoPeakLines( Wt::WPainter &painter,
                           const ReferenceLineInfo &line ) const;
-#endif
 
 protected:
   //modelChanged(): hooks up the signals to catch when the legend needs to be
@@ -518,39 +395,12 @@ protected:
   void setLegendNeedsRendered();
   
 protected:
-#if(WT_VERSION<=0x3030100)
-  friend class SpectrumRenderer;
-  Wt::Chart::WChart2DRenderer *createRenderer( Wt::WPainter &painter,
-                                            const Wt::WRectF &rectangle ) const;
-
-  //The functions below here were added to WCartesianChart in newer versions
-  //  of Wt, so to be able to use the same rendering code, we had reimplement.
-  Wt::WRectF chartSegmentArea( Wt::Chart::WAxis yAxis, int xSegment,
-                                            int ySegment) const;
-  Wt::WPointF map( double xValue, double yValue,
-                   Wt::Chart::Axis yAxis = Wt::Chart::OrdinateAxis,
-                   int 	currentXSegment = 0,
-                  int 	currentYSegment = 0 ) const;
-  
-  Wt::WPointF hv( double x, double y ) const;
-  Wt::WPointF hv( const Wt::WPointF &p ) const;
-  Wt::WRectF hv( const Wt::WRectF &p ) const;
-  void renderLabel( Wt::WPainter& painter, const Wt::WString& text,
-                   const Wt::WPointF& p, const Wt::WColor& color,
-                                    Wt::WFlags<Wt::AlignmentFlag> flags,
-                   double angle, int margin) const;
-#endif
-
   void labelRender( Wt::WPainter& painter, const Wt::WString& text,
                    const Wt::WPointF& p, const Wt::WColor& color,
                    Wt::WFlags<Wt::AlignmentFlag> flags,
                    double angle, int margin) const;
   
-#if(WT_VERSION<=0x3030100)
-  virtual void customRender( Wt::WPainter &painter, const Wt::WRectF &rectangle );
-#else
   virtual void render( Wt::WPainter &painter, const Wt::WRectF &rectangle ) const;
-#endif
   
   virtual void renderChartBackground( Wt::WPainter &painter, const Wt::WRectF &rectangle ) const;  //Take places of WCartesianChart::renderBackground(...)
   virtual void renderGridLines( Wt::WPainter &painter, const Wt::Chart::Axis axis ) const;
@@ -579,89 +429,9 @@ protected:
   friend class SpectrumRenderIterator;
   friend class SpectrumSeriesRenderer;
   
-  
-  //wtDragged and wtMouseUp are backup functions incase there is now overlay
-  //  canvas, and are only called in this case.  These functions then call the
-  //  appropriate functions to provide similar functionality to what wede expect
-  //  with the overlay canvas.
-  void wtDragged( Wt::WMouseEvent event );
-  void wtMouseUp( Wt::WMouseEvent event );
-
-  
-#if( USE_OverlayDragEvent )
-  void userDragged( const OverlayDragEvent &event );
-#else
-  void userDragged( int x0, int x1, Wt::WMouseEvent event );
-#endif
-
-  
-  void handleLeftClick( const int x1, const int y1, const int modifier,
-                        const int pageX, const int pageY );
-  void handleRightClick( const int x1, const int y1, const int modifier,
-                         const int pageX, const int pageY );
-  void handleDoubleTap( int x, int y );
-  void handleDoubleLeftClick( Wt::WMouseEvent event );
-  void handleDrag( int widgetStartX, int widgetStartY,
-                   int widgetFinalX, int widgetFinalY,
-                   int widgetOffsetLeft, int widgetOffsetTop,
-                   Wt::WFlags<Wt::KeyboardModifier> modifiers,
-                   Wt::WMouseEvent::Button button,
-                   int dt );
-  
-  //handleArrowPress(...) only reacts to left and right arrow presses, and only
-  //  if m_allowSingleClickHighlight==true.  If the shift key is pressed then
-  //  bins on the left or right side of the region are added, otherwise the
-  //  highlighted region is moved one bin to the left or right.  If multiple
-  //  regions are highlighted, no action is taken.
-  void handleArrowPress( const Wt::WKeyEvent &event );
-
-  void handleControlMouseMove( int x_low, int x_high );
-  void handleAltDrag( const double dx );
-  
-  
-#if( USE_HIGH_BANDWIDTH_INTERACTIONS )
-  void setRenderWaitingStatus( const bool waiting ) const;
-  bool checkHighBandWidthInterActionApplicable() const;
-  void handleMouseDown( int x, int y, int modifiers );
-  void handleMouseUp( int x, int y, int modifiers, int dt );
-  void handleLeftMouseMove( int x, int y, int dt );
-  void handleAltLeftMouseMove( int x, int y, int dt );
-  void handleMouseLeft();
-  void handleMouseEnter();
-  void handlePinchZoomChange( int x0_t0, int x_t0, int x0_t1, int x_t1, int y );
-#endif
-  
-  
 protected:
   double m_widthInPixels;        //The width of the chart in pixels
   double m_heightInPixels;       //The height of the chart in pixels
-  
-  //Based just off the mouseWentUp() signal we dont know if the user is clicking
-  //  or dragging.  So we will mark m_isDragging is true using the
-  //  mouseDragged() signal
-  bool m_isDragging;
-  
-  //xRangeChanged() signal will be emitted whenever the user does a 'drag'
-  //  action when m_dragAction==ZoomIn.
-  //If m_dragAction==HighLight then the xRangeChanged() will only be emmitted
-  //  if it was with the left mouse button, and there where no modifier keys.
-  DragAction m_dragAction;
-  bool m_allowMultipleHighlightRegions; //only applicable when m_dragAction==HighLight
-  bool m_allowSingleClickHighlight;     //only applicable when m_dragAction==HighLight
-  
-  //for all the below, the doubles are all the <x,y> coordinated of the action
-  //  where x is in energy, and y is in counts.
-  Wt::Signal<double,double> m_xRangeChanged;
-  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_controlKeyDragg;
-  Wt::Signal<double,double> m_shiftKeyDragg;
-  Wt::Signal<double,double> m_altKeyDragg;
-  Wt::Signal<double,double> m_shiftAltKeyDragg;
-  Wt::Signal<double,double> m_rightMouseDragg;
-  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_leftClick;
-  Wt::Signal<double,double> m_doubleLeftClick;
-  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_rightClick;
-  
-  Wt::Signal<double/*start energy*/,double /*current energy*/> m_controlMouseMoved;
   
   PeakModel *m_peakModel;
   Wt::WColor m_defaultPeakColor;
@@ -727,32 +497,7 @@ protected:
   float m_paintedLegendWidth;
   std::unique_ptr< Wt::JSignal<float> > m_legendTextMetric;
   
-  Wt::Signal<> m_legendEnabled;
-  Wt::Signal<> m_legendDisabled;
-  
-  CanvasForDragging *m_overlayCanvas;
-  //If we use the OverlayCanvas, we might as well disconnect the
-  //  mouseWentUp() and mouseDragged() signals of *this, so we have to keep
-  //  track of these connections
-#ifdef WT_USE_BOOST_SIGNALS2
-  boost::signals2::connection m_arrowRespondConnection;
-  boost::signals2::connection m_doubleClickConnection;
-  boost::signals2::connection m_wtMouseWentUpConnection;
-  boost::signals2::connection m_wtMouseDraggedConnection;
-#else
-  boost::signals::connection m_arrowRespondConnection;
-  boost::signals::connection m_doubleClickConnection;
-  boost::signals::connection m_wtMouseWentUpConnection;
-  boost::signals::connection m_wtMouseDraggedConnection;
-#endif
-  
-  std::unique_ptr<Wt::JSlot> m_alignOverlayCanvas;
-  std::unique_ptr<Wt::JSlot> m_legendMovedSlot;
-  
-  // Used in case the user scrolls in the Anthony app
-  // avoids overlapping the tabs
-  int m_scrollY;
-  
+
   //
   bool m_peakLabelsToShow[kNumPeakLabels];
   uint32_t m_peakLabelsColors[kNumPeakLabels]; //{red, green, blue, alpha}
@@ -766,23 +511,9 @@ protected:
   // Added by christian (20170425)
   bool m_verticalLinesShowing;
   bool m_horizontalLinesShowing;
-  
-  /** On mobil avoid writing y-axis label text where the hamburger menu is. */
-  bool m_avoidMobileMenu;
-  
-#if( USE_HIGH_BANDWIDTH_INTERACTIONS )
-  //Not all these variables are needed
-  int m_mouseDownX, m_mouseDownY;
-  int m_currentDownX, m_currentDownY;
-  float m_mouseDownEnergy, m_mouseDownCounts;
-  float m_mouseDownXMin, m_mouseDownXMax;
-  float m_mouseDownYMin, m_mouseDownYMax;
-#endif
-  
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
+    
   ReferenceLineInfo m_referencePhotoPeakLines;
   std::vector<ReferenceLineInfo> m_persistedPhotoPeakLines;
-#endif
 };//class SpectrumChart
 
 

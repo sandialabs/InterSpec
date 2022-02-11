@@ -1,35 +1,9 @@
-# This CMakeLists potentially defines two items, InterSpecLib and for all targets
-# excpet iOS, Android, and Electron, InterSpecExe
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
-cmake_policy(SET CMP0048 NEW)
-project(InterSpec VERSION 1.0.9)
-
-cmake_minimum_required(VERSION 3.1.0 FATAL_ERROR)
-set(CMAKE_COLOR_MAKEFILE ON CACHE BOOL "Color" FORCE)
+project(InterSpec VERSION 1.10.0)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-if(WIN32)
-    set(MSVC_RUNTIME "static")
-    set(TRY_TO_STATIC_LINK "ON")
-    include(cmake/ConfigureMsvc.txt)
-    configure_msvc_runtime()
-
-    set(BOOST_PREFIX "C:/install/msvc2019/x64/boost_1_65_1")
-    set(ZLIB_PREFIX "C:/install/msvc2019/x64/zlib")
-    list(APPEND PATH_SUFFIXES "C:/install/msvc2019/x64/wt-3.3.4")
-
-    set(EXECUTABLE_OUTPUT_PATH . CACHE PATH "Path to executables" FORCE)
-    set(CMAKE_CXX_FLAGS
-        "${CMAKE_CXX_FLAGS} /bigobj -D_SCL_SECURE_NO_WARNINGS /MP /wd4996 /wd4267 /DWINVER=0x0601 /D_WIN32_WINNT=0x0601"
-    )
-    #0x0601==Win7, 0x0501==WinXP
-else(WIN32)
-    set(EXECUTABLE_OUTPUT_PATH bin CACHE PATH "Path to executables" FORCE)
-endif(WIN32)
-
-SET(MYSQL_DATABASE_TO_USE "dev" CACHE STRING "Which mysql database to use (if applicable): dev/qc/prod")
 
 option(BUILD_AS_OSX_APP "Build a OSX native app" OFF)
 option(
@@ -88,11 +62,6 @@ option(
     OFF
 )
 option(
-    USE_HIGH_BANDWIDTH_INTERACTIONS
-    "Allow more interactiveness with the charts"
-    ON
-)
-option(
     SUPPORT_ZIPPED_SPECTRUM_FILES
     "(Work in progress) Allows opening zipped spectrum files"
     ON
@@ -110,19 +79,9 @@ option(
 )
 option(USE_DB_TO_STORE_SPECTRA "Use the database to store spectra" ON)
 option(
-    RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE
-    "Render photopeaks server-side rather than client side"
-    ON
-)
-option(
     USE_SPECRUM_FILE_QUERY_WIDGET
     "Enables compilation of the spectrum file query tool (not for web deployment)"
     OFF
-)
-option(
-    USE_FEATURE_MARKER_WIDGET
-    "Use the feature marker widget to display feature marker options"
-    ON
 )
 option(
     USE_SEARCH_MODE_3D_CHART
@@ -130,19 +89,6 @@ option(
     ON
 )
 option(USE_TERMINAL_WIDGET "Enables use of terminal widget" ON)
-set(SpecUtils_ENABLE_D3_CHART ON
-    CACHE BOOL "Enables use of exporting D3 HTML files"
-)
-option(
-    USE_SPECTRUM_CHART_D3
-    "(experimental) Replaces Wt SpectrumChart with D3.js chart"
-    ON
-)
-option(
-    USE_SIMPLE_NUCLIDE_ASSIST
-    "Enable using of Mike E. gamma rays of interest to help with nuclide ID"
-    OFF
-)
 
 option(
     USE_SQLITE3_DB
@@ -174,6 +120,18 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
 set(GOOGLE_MAPS_KEY "" CACHE STRING "Google maps api key.")
 
 set(GUI_TYPE "")
+
+
+if(WIN32)
+    set(EXECUTABLE_OUTPUT_PATH . CACHE PATH "Path to executables" FORCE)
+    add_definitions(-D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS ) #0x0601==Win7
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj /MP /wd4996 /wd4267" )
+else(WIN32)
+    set(EXECUTABLE_OUTPUT_PATH bin CACHE PATH "Path to executables" FORCE)
+endif(WIN32)
+
+SET(MYSQL_DATABASE_TO_USE "dev" CACHE STRING "Which mysql database to use (if applicable): dev/qc/prod")
+
 
 if(WIN32 OR BUILD_AS_OSX_APP OR BUILD_AS_ELECTRON_APP)
     set(TRY_TO_STATIC_LINK "ON")
@@ -228,8 +186,6 @@ if(ANDROID)
     set(USE_HIGH_BANDWIDTH_INTERACTION ON)
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
     set(USE_TERMINAL_WIDGET OFF)
-    set(SpecUtils_ENABLE_D3_CHART OFF)
-    set(USE_SPECTRUM_CHART_D3 OFF)
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
     set(SHARED_LIBS OFF)
     add_definitions(-DANDROID -DWT_NO_STD_WSTRING=ON -DWT_NO_STD_LOCALE=ON)
@@ -318,8 +274,6 @@ if(IOS)
     set(SHARED_LIBS OFF)
     set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${Boost_DIR})
     set(SUPPORT_ZIPPED_SPECTRUM_FILES ON)
-    set(SpecUtils_ENABLE_D3_CHART ON)
-    set(USE_SPECTRUM_CHART_D3 OFF)
     set(USE_GOOGLE_MAP OFF)
 
     #if you change this IPHONEOS_DEPLOYMENT_TARGET also change the variable in
@@ -334,11 +288,10 @@ if(IOS)
 endif(IOS)
 
 if(BUILD_AS_OSX_APP)
+    set(BUILD_AS_LOCAL_SERVER OFF)
     set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(USE_OSX_NATIVE_MENU ON)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
-    set(SpecUtils_ENABLE_D3_CHART ON)
-    set(USE_SPECTRUM_CHART_D3 ON)
 endif(BUILD_AS_OSX_APP)
 
 if(BUILD_AS_ELECTRON_APP)
@@ -355,8 +308,6 @@ if(BUILD_AS_ELECTRON_APP)
     set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(USE_OSX_NATIVE_MENU OFF)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
-    set(SpecUtils_ENABLE_D3_CHART ON)
-    set(USE_SPECTRUM_CHART_D3 ON)
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
 endif(BUILD_AS_ELECTRON_APP)
 
@@ -369,8 +320,6 @@ if(BUILD_AS_UNIT_TEST_SUITE)
     set(TRY_TO_STATIC_LINK ON)
     set(PERFORM_DEVELOPER_CHECKS ON)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
-    set(SpecUtils_ENABLE_D3_CHART ON)
-    set(USE_SPECTRUM_CHART_D3 ON)
 endif(BUILD_AS_UNIT_TEST_SUITE)
 
 if(BUILD_FOR_WEB_DEPLOYMENT)
@@ -387,8 +336,6 @@ if(BUILD_FOR_WEB_DEPLOYMENT)
     set(SUPPORT_ZIPPED_SPECTRUM_FILES ON)
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
     set(USE_TERMINAL_WIDGET OFF)
-    set(SpecUtils_ENABLE_D3_CHART ON)
-    set(USE_SPECTRUM_CHART_D3 ON)
 endif(BUILD_FOR_WEB_DEPLOYMENT)
 
 if(BUILD_AS_LOCAL_SERVER)
@@ -398,9 +345,9 @@ endif(BUILD_AS_LOCAL_SERVER)
 #check to make sure exactly one target is specified
 set(NUM_TARGETS_SPECIFIED 0)
 
-#if( BUILD_AS_OSX_APP )
-#  MATH( EXPR NUM_TARGETS_SPECIFIED "${NUM_TARGETS_SPECIFIED}+1" )
-#endif()
+if( BUILD_AS_OSX_APP )
+  MATH( EXPR NUM_TARGETS_SPECIFIED "${NUM_TARGETS_SPECIFIED}+1" )
+endif()
 
 if(BUILD_AS_ELECTRON_APP)
     MATH( EXPR NUM_TARGETS_SPECIFIED "${NUM_TARGETS_SPECIFIED}+1" )
@@ -483,11 +430,9 @@ set(sources
     src/IsotopeSearchByEnergyModel.cpp
     src/SpectrumChart.cpp
     src/SpectrumDataModel.cpp
-    src/SpectrumDisplayDiv.cpp
     src/HelpSystem.cpp
     src/InterSpec.cpp
     src/PopupDiv.cpp
-    src/CanvasForDragging.cpp
     src/SpecMeas.cpp
     src/PeakFit.cpp
     src/PeakFitUtils.cpp
@@ -541,8 +486,13 @@ set(sources
     src/EnergyCalPreserveWindow.cpp
     src/EnergyCalMultiFile.cpp
     src/SimpleDialog.cpp
+    src/FeatureMarkerWidget.cpp
     src/ShowRiidInstrumentsAna.cpp
-    js/CanvasForDragging.js
+    src/D3SpectrumDisplayDiv.cpp
+    external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
+    external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
+    external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
+    src/D3TimeChart.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -569,11 +519,9 @@ set(headers
     InterSpec/IsotopeSearchByEnergyModel.h
     InterSpec/SpectrumChart.h
     InterSpec/SpectrumDataModel.h
-    InterSpec/SpectrumDisplayDiv.h
     InterSpec/HelpSystem.h
     InterSpec/InterSpec.h
     InterSpec/PopupDiv.h
-    InterSpec/CanvasForDragging.h
     InterSpec/SpecMeas.h
     InterSpec/PeakFit.h
     InterSpec/PeakFitUtils.h
@@ -627,7 +575,10 @@ set(headers
     InterSpec/EnergyCalPreserveWindow.h
     InterSpec/EnergyCalMultiFile.h
     InterSpec/SimpleDialog.h
+    InterSpec/FeatureMarkerWidget.h
     InterSpec/ShowRiidInstrumentsAna.h
+    InterSpec/D3SpectrumDisplayDiv.h
+    InterSpec/D3TimeChart.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -685,11 +636,6 @@ if(USE_SEARCH_MODE_3D_CHART)
     )
 endif(USE_SEARCH_MODE_3D_CHART)
 
-if(USE_FEATURE_MARKER_WIDGET)
-    list(APPEND sources src/FeatureMarkerWidget.cpp)
-    list(APPEND headers InterSpec/FeatureMarkerWidget.h)
-endif(USE_FEATURE_MARKER_WIDGET)
-
 if(USE_TERMINAL_WIDGET)
     list(
         APPEND
@@ -705,11 +651,6 @@ if(SUPPORT_ZIPPED_SPECTRUM_FILES)
     list(APPEND sources src/ZipArchive.cpp)
     list(APPEND headers InterSpec/ZipArchive.h)
 endif(SUPPORT_ZIPPED_SPECTRUM_FILES)
-
-if(USE_SIMPLE_NUCLIDE_ASSIST)
-    list(APPEND sources src/SimpleNuclideAssist.cpp)
-    list(APPEND headers InterSpec/SimpleNuclideAssist.h)
-endif(USE_SIMPLE_NUCLIDE_ASSIST)
 
 if(USE_SPECRUM_FILE_QUERY_WIDGET)
     if(
@@ -749,38 +690,25 @@ deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resou
                     "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/d3.v3.min.js"
 )
 
-if(USE_SPECTRUM_CHART_D3)
-    if(NOT RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE)
-        MESSAGE(FATAL_ERROR     "You must enable RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE when enabling USE_SPECTRUM_CHART_D3")
-    endif()
 
-    list(
-        APPEND
-        sources
-        src/D3SpectrumDisplayDiv.cpp
-        external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
-        external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
-        external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
-        src/D3TimeChart.cpp
-    )
-    list( APPEND headers InterSpec/D3SpectrumDisplayDiv.h InterSpec/D3TimeChart.h )
 
-    list( APPEND OTHER_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js )
+list( APPEND OTHER_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js )
 
-    deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
+deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
          "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js"
-    )
+)
 
-    set(CSS_RESOURCES_TO_COPY
+set(CSS_RESOURCES_TO_COPY
         "SpectrumChartD3.css"
         "SpectrumChartD3StandAlone.css"
-    )
-    foreach(_file ${CSS_RESOURCES_TO_COPY})
-        deploy_css_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file}"
+)
+    
+foreach(_file ${CSS_RESOURCES_TO_COPY})
+  deploy_css_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file}"
           "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}"
-        )
-    endforeach()
-endif(USE_SPECTRUM_CHART_D3)
+  )
+endforeach()
+
 
 find_path(
     WT_RESOURCES_DIRECTORY
@@ -801,6 +729,7 @@ set(SpecUtils_BUILD_UNIT_TESTS OFF CACHE BOOL "")
 set(SpecUtils_BUILD_REGRESSION_TEST OFF CACHE BOOL "")
 set(SpecUtils_PYTHON_BINDINGS OFF CACHE BOOL "")
 set(SpecUtils_JAVA_SWIG OFF CACHE BOOL "")
+set(SpecUtils_ENABLE_D3_CHART ON CACHE BOOL "")
 set(SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE BOOL "")
 set(SpecUtils_D3_SCRIPTS_RUNTIME_DIR "InterSpec_resources" CACHE STRING "")
 
@@ -1041,8 +970,7 @@ elseif(BUILD_AS_OSX_APP)
     )
 
     #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate cooresponding value in Xcode
-    #math(EXPR MACOS_BUNDLE_VERSION_NUMBER "100*(${PROJECT_VERSION_MAJOR}-1) + 10*${PROJECT_VERSION_MINOR} + ${PROJECT_VERSION_PATCH}" )
-    set(MACOS_BUNDLE_VERSION_NUMBER 18)
+    set(MACOS_BUNDLE_VERSION_NUMBER 22)
 
     set_target_properties(
         InterSpecExe

@@ -61,21 +61,16 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/ReferenceLineInfo.h"
-#include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
+#include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
-#if ( USE_SPECTRUM_CHART_D3 )
-#include "InterSpec/D3SpectrumDisplayDiv.h"
-#else
-#include "InterSpec/SpectrumDisplayDiv.h"
-#endif
 
 using namespace std;
 using namespace Wt;
@@ -377,11 +372,7 @@ void DecayParticleModel::setRowData( const std::vector<RowData> &newData )
 
 
 ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
-#if ( USE_SPECTRUM_CHART_D3 )
                                             D3SpectrumDisplayDiv *chart,
-#else
-                                            SpectrumDisplayDiv *chart,
-#endif
                                             MaterialDB *materialDB,
                                             WSuggestionPopup *materialSuggest,
                                             InterSpec *specViewer,
@@ -1263,24 +1254,11 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
       m_persistLines->disable();
     m_clearLines->setDisabled( m_persisted.empty() );
     
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
     ReferenceLineInfo emptylines;
     m_chart->setReferncePhotoPeakLines( emptylines );
-#endif
     
     m_particleModel->clear();
-    
-#if( !USE_SPECTRUM_CHART_D3 )
-    CanvasForDragging *canvas = m_chart->overlayCanvas();
-    if( canvas )
-    {
-      const string canvasjs = "$('#c" + canvas->id() + "')";
-      string js = canvasjs + ".data('gammalines',null);"
-                  "Wt.WT.DrawGammaLines('c" + canvas->id() + "',true);";
-      doJavaScript( js );
-    }//canvas
-#endif
-    
+        
     if( age < 0.0 || !nuc )
     {
       m_particleModel->clear();
@@ -1774,29 +1752,16 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   //Also, we could play some tricks to eliminate some of the gamma lines that
   //  are so small in amplitude, they would never impact the user
   
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   if( show )
     m_chart->setReferncePhotoPeakLines( m_currentlyShowingNuclide );
   else
     m_chart->setReferncePhotoPeakLines( ReferenceLineInfo() );
-#endif
   
-  
-  string json;
-#if( !USE_SPECTRUM_CHART_D3 )
-  CanvasForDragging *canvas = m_chart->overlayCanvas();
-  if( canvas )
-  {
-    const string canvasjs = "$('#c" + canvas->id() + "')";
-    json = canvasjs + ".data('gammalines',";
-    m_currentlyShowingNuclide.toJson( json );
-    json += ");";
-    json += "Wt.WT.DrawGammaLines('c" + canvas->id() + "',true);";
-  }
-#endif
 
   if( show )
   {
+    string json;
+    
     if( m_persistLines->isDisabled() )
       m_persistLines->enable();
     if( m_clearLines->isDisabled() )
@@ -1806,7 +1771,6 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
       m_clearLines->setText( m_persisted.empty() ? "Remove" : "Remove All" );
     else
       m_clearLines->setText( m_persisted.empty() ? "Clear" : "Clear All" );
-    
     
     if( json.size() )
       doJavaScript( json );
@@ -1820,27 +1784,7 @@ void ReferencePhotopeakDisplay::persistCurentLines()
   if( m_currentlyShowingNuclide.energies.empty() )
     return;
 
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   m_chart->persistCurrentReferncePhotoPeakLines();
-#endif
-
-#if( !USE_SPECTRUM_CHART_D3 )
-  CanvasForDragging *canvas = m_chart->overlayCanvas();
-  if( canvas )
-  {
-    const string canvasjs = "$('#c" + canvas->id() + "')";
-  
-    WStringStream js;
-    js << "var a=" << canvasjs << ".data('gammalines');"
-       << "var b=" << canvasjs << ".data('persistedLines');"
-       << "if(a && !b)b=[];"
-       << "if(a)b[a.parent]=a;"
-       << canvasjs << ".data('persistedLines',b);"
-       << canvasjs << ".data('gammalines',null);";
-    
-    doJavaScript( js.str() );
-  }//if( canvas )
-#endif
   
   vector<ReferenceLineInfo>::iterator pos;
   pos = std::find( m_persisted.begin(), m_persisted.end(),
@@ -2263,78 +2207,15 @@ void ReferencePhotopeakDisplay::refreshLinesDisplayedToGui( int millisecdelay )
   //Note that the millisecond delay _may_ be vestigulal (untested), from when
   //  this->doJavaScript() was being called instead of wApp->doJavaScript().
   
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   m_chart->clearAllReferncePhotoPeakLines();
+  
   for( size_t i = 0; i < m_persisted.size(); ++i )
   {
     m_chart->setReferncePhotoPeakLines( m_persisted[i] );
     m_chart->persistCurrentReferncePhotoPeakLines();
   }
+  
   m_chart->setReferncePhotoPeakLines( m_currentlyShowingNuclide );
-#endif
-
-#if( USE_SPECTRUM_CHART_D3 )
-  return;
-#else
-  CanvasForDragging *canvas = m_chart->overlayCanvas();
-  if( !canvas )
-    return;
-  
-  const string canvasjs = "$('#c" + canvas->id() + "')";
-  
-  WStringStream js;
-  
-  //Arrrg, we need a setTimeout(...) here since when are calling this function
-  //  from deSerialize(...), the call to clearAllLines() will wipe out the
-  //  effect of this function {this is just a guess, may be something else}
-  if( millisecdelay > 0 )
-    js << "setTimeout(function(){";
-  if( m_currentlyShowingNuclide.energies.size()
-      && m_currentlyShowingNuclide.displayLines )
-  {
-    string json = canvasjs + ".data('gammalines',";
-    m_currentlyShowingNuclide.toJson( json );
-    json += ");";
-    js << json;
-    if( m_persistLines->isDisabled() )
-       m_persistLines->enable();
-    if( m_clearLines->isDisabled() )
-      m_clearLines->enable();
-  }else
-  {
-    m_persistLines->disable();
-    m_clearLines->setDisabled( m_persisted.empty() );
-  }//if( m_currentlyShowingNuclide.energies.size() )
-  
-  if( m_spectrumViewer && m_spectrumViewer->isPhone() )
-    m_clearLines->setText( m_persisted.empty() ? "Remove" : "Remove All" );
-  else
-    m_clearLines->setText( m_persisted.empty() ? "Clear" : "Clear All" );
-  
-  for( size_t i = 0; i < m_persisted.size(); ++i )
-  {
-    if( !i )
-      js << "var b=[];";
-    
-    string json;
-    m_persisted[i].toJson( json );
-    js << "b['" << m_persisted[i].parentLabel() << "']=" << json << ";";
-  }//for( const ReferenceLineInfo *disp : m_persisted )
-
-  if( m_persisted.size() )
-    js << canvasjs << ".data('persistedLines',b);";
-  else
-    js << canvasjs << ".data('persistedLines',null);";
-  
-  js << "Wt.WT.DrawGammaLines('c" + canvas->id() + "',true);";
-  
-  if( millisecdelay > 0 )
-    js << "}, " << millisecdelay << " );";
-  
-//  cerr << "Sending: " << js.str() << endl;
-  
-  wApp->doJavaScript( js.str() );
-#endif  //#if( USE_SPECTRUM_CHART_D3 ) / else
 }//void refreshLinesDisplayedToGui()
 
 
@@ -2455,27 +2336,7 @@ void ReferencePhotopeakDisplay::clearAllLines()
   else
     m_clearLines->setText( "Remove" );
 
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   m_chart->clearAllReferncePhotoPeakLines();
-#endif
-
-#if( !USE_SPECTRUM_CHART_D3 )
-  CanvasForDragging *canvas = m_chart->overlayCanvas();
-  if( canvas )
-  {
-    const string canvasjs = "$('#c" + canvas->id() + "')";
-
-    WStringStream js;
-    js << canvasjs << ".data('gammalines',null);"
-       << canvasjs << ".data('persistedLines',null);"
-       << "Wt.WT.DrawGammaLines('c" << canvas->id() << "',true);";
-
-    //We capp wApp->doJavaScript(...) incase this object will be deleted before
-    //  the javaScript is sent to the client (in which case it wont be sent if
-    //  calling WWidget::doJavaScript(...) )
-    wApp->doJavaScript( js.str() );
-  }//if( canvas )
-#endif //USE_SPECTRUM_CHART_D3
   
   m_nuclidesCleared.emit();
 }//void clearAllLines()

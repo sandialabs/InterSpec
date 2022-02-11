@@ -927,6 +927,8 @@ struct UserState
   
   double energyAxisMinimum, energyAxisMaximum;
   double countsAxisMinimum, countsAxisMaximum;
+  
+  /** deprecated */
   int displayBinFactor;
   
   int shownDisplayFeatures;  //bitwise or of ShownDisplayFeatures

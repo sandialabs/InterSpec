@@ -1583,7 +1583,7 @@ string jsfct = "function(s,e){"
   m_csv->setTarget( Wt::TargetNewWindow );
 #else
   m_csv = new WPushButton();
-  m_csv->setIcon( "InterSpec_resources/images/download_small.png" );
+  m_csv->setIcon( "InterSpec_resources/images/download_small.svg" );
   m_csv->setLink( WLink(csvresource) );
   m_csv->setLinkTarget( Wt::TargetNewWindow );
 #endif

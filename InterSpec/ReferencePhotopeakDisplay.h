@@ -67,11 +67,7 @@ namespace Wt
 class InterSpec;
 class ColorSelect;
 class DetectorDisplay;
-#if ( USE_SPECTRUM_CHART_D3 )
 class D3SpectrumDisplayDiv;
-#else
-class SpectrumDisplayDiv;
-#endif
 class IsotopeNameFilterModel;
 
 
@@ -131,11 +127,7 @@ class ReferencePhotopeakDisplay : public Wt::WContainerWidget
 {
 public:
   ReferencePhotopeakDisplay(
-#if ( USE_SPECTRUM_CHART_D3 )
                         D3SpectrumDisplayDiv *chart,
-#else
-                        SpectrumDisplayDiv *chart,
-#endif
                         MaterialDB *materialDB,
                         Wt::WSuggestionPopup *materialSuggest,
                         InterSpec *specViewer,
@@ -258,11 +250,8 @@ protected:
    */
   std::map<std::string,std::vector<Wt::WColor>> currentlyUsedPeakColors();
   
-#if ( USE_SPECTRUM_CHART_D3 )
   D3SpectrumDisplayDiv *m_chart;
-#else
-  SpectrumDisplayDiv *m_chart;
-#endif
+
   InterSpec *m_spectrumViewer;
   
   Wt::WLineEdit *m_nuclideEdit;
