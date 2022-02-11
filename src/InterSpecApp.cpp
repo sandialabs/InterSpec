@@ -78,7 +78,6 @@
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/SpecMeasManager.h"
-#include "InterSpec/SpectrumDisplayDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
 

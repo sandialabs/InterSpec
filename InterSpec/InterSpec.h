@@ -44,9 +44,7 @@ class AuxWindow;
 class GoogleMap;
 class PeakModel;
 class MaterialDB;
-#if ( USE_SPECTRUM_CHART_D3 )
 class D3TimeChart;
-#endif
 class DecayWindow;
 struct ColorTheme;
 class UserFileInDb;
@@ -63,15 +61,9 @@ class SpecMeasManager;
 class GammaCountDialog;
 class PopupDivMenuItem;
 class SpectraFileHeader;
-class SpectrumDataModel;
 class PopupWarningWidget;
-class SpectrumDisplayDiv;
-#if ( USE_SPECTRUM_CHART_D3 )
 class D3SpectrumDisplayDiv;
-#endif
-#if( USE_FEATURE_MARKER_WIDGET )
 class FeatureMarkerWindow;
-#endif
 class DetectorPeakResponse;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
@@ -331,14 +323,12 @@ public:
   */
   std::shared_ptr<const SpecUtils::Measurement> displayedHistogram( SpecUtils::SpectrumType spectrum_type ) const;
 
-#if( USE_SPECTRUM_CHART_D3 )
   /** Returns the sample numbers marked as Foreground, Background, or Secondary (i.e., intrinsic or
    known), in the foreground spectrum file.
    This is used for displaying the highlighted regions on the time series chart.
    */
   std::set<int> sampleNumbersForTypeFromForegroundFile(
                                                 const SpecUtils::SpectrumType spec_type ) const;
-#endif
   
 #if( IOS )
   void exportSpecFile();
@@ -445,12 +435,7 @@ public:
    
    Note: currently only PNG is supported for time chart
    */
-#if ( USE_SPECTRUM_CHART_D3 )
   void saveChartToImg( const bool spectrum, const bool asPng );
-#else
-  void saveChartToImg( const bool spectrum );
-#endif
-
   
   //displayScaleFactor(...): the live time scale factor used by to display
   //  the histogram returned by displayedHistogram( spectrum_type ).
@@ -500,13 +485,6 @@ public:
 
   //ToDo: add a signal that fires when the app size changes, to allow adjusting AuxWindow's and stuff.
 
-  void setOverlayCanvasVisible( bool visible );
-#if( !USE_SPECTRUM_CHART_D3 )
-  Wt::JSlot *alignSpectrumOverlayCanvas();  //returns NULL if overlay canvas not enabled
-  Wt::JSlot *alignTimeSeriesOverlayCanvas();
-#endif
-  
-
   
   //displayedSpectrumChanged(): is a singal emitted whenever a spectrum or
   //  sample numbers of a spectrum is changed.
@@ -523,10 +501,6 @@ public:
    */
   Wt::Signal<SpecUtils::SpectrumType,double> &spectrumScaleFactorChanged();
   
-  //overlayCanvasJsExceptionCallback(...) is mostly for debugging and will
-  //  probably be romived in the future
-  void overlayCanvasJsExceptionCallback( const std::string &message );
-  
   
   //addHighlightedEnergyRange(): Adds highlighted range to the energy spectrum.
   //  Returns the ID of the highlight region, which you will need to remove
@@ -538,20 +512,6 @@ public:
   //  passed in from the energy chart.  Returns succesfulness of the removing
   //  the region.
   bool removeHighlightedEnergyRange( const size_t regionid );
-  
-#if( !USE_SPECTRUM_CHART_D3 )
-  //set___ScrollingParent(...): sets the scrolling frame which contains the chart
-  //  from which the overlay canvas should not extend beyond.  Calling this
-  //  function when the overlay canvas is not enabled has no effect. Calling
-  //  this function with a NULL argument removes this parent.  This may be set
-  //  seperately for the time and energy charts incase different behavior is
-  //  wanted (e.g. if time series chart will never scroll beyond parent, but
-  //  energy spectrum might).
-  void setSpectrumScrollingParent( Wt::WContainerWidget *parent );
-  void setScrollY( int scrollY );
-  
-  void setTimeSeriesScrollingParent( Wt::WContainerWidget *parent );
-#endif  //#if( !USE_SPECTRUM_CHART_D3 )
   
   //setDisplayedEnergyRange(): sets the displayed energy range that should be
   //  shown.  Range is not checked for validity. E.g. you should not ask to zoom
@@ -565,11 +525,6 @@ public:
   void displayedSpectrumRange( double &xmin, double &xmax, double &ymin, double &ymax ) const;
   
   void handleShiftAltDrag( double lowEnergy, double upperEnergy );
-  
-#if( USE_HIGH_BANDWIDTH_INTERACTIONS && !USE_SPECTRUM_CHART_D3 )
-  void enableSmoothChartOperations();
-  void disableSmoothChartOperations();
-#endif
   
   void setToolTabsVisible( bool show );
   bool toolTabsVisible() const;
@@ -783,7 +738,6 @@ protected:
                                            const int sample,
                                            const std::vector<std::string> &detector_names );
   
-#if( USE_SPECTRUM_CHART_D3 )
   /** Function to call when the time chart is clicked or tapped on.
    @param sample_start The starting sample number (as defined by the SpecFile) that was drug.
    @param sample_end The ending sample number (as defined by the SpecFile) that was drug.
@@ -798,38 +752,7 @@ protected:
   /** A simple passthrough to #timeChartDragged to handle when time chart is clicked on or tapped.
    */
   void timeChartClicked( const int sample_number, Wt::WFlags<Wt::KeyboardModifier> modifiers );
-  
-#else
-  //timeRegionsToHighlight(): returns the time ranges for the currently set
-  //  sample numbers to display for the SpecUtils::SpectrumType indicated.  For
-  //  foreground and background the set SpecMeas must be the same as the
-  //  foreground, or else an empty result is returned.  Also, if foreground isnt
-  //  a passthrough or is missing, an empty result is returned.
-  std::vector< std::pair<double,double> > timeRegionsToHighlight(
-                                          const SpecUtils::SpectrumType spec_type ) const;
-  
-  /** Returns the area from m_dataMeasurement that coorespond to being marked,
-      from the detector, as being the SpecUtils::SpectrumType specified.  If it cooresponds
-      to the whole measurement, nothing is returned.
-   */
-  std::vector< std::pair<double,double> > timeRegionsFromFile(
-                              const SpecUtils::OccupancyStatus occ_type ) const;
     
-  std::set<int> timeRangeToSampleNumbers( double t0, double t1 );
-  
-  // Inclusive for t0, exclusive for t1, e.g., if you have time slices of 0.1s,
-  // and you pass in t0 = 0.1, t1 = 0.2; then only the second time slice will be
-  // displayed.
-  //emits the m_displayedSpectrumChangedSignal
-  void changeTimeRange( const double t0, const double t1,
-                         const SpecUtils::SpectrumType type );
-   
-  //sampleNumbersToDisplayAddded(...): emitted when user control dragg on the
-  //  chart to add more time slices
-  void sampleNumbersToDisplayAddded( const double t0, const double t1,
-                                      const SpecUtils::SpectrumType type );
-#endif //if( USE_SPECTRUM_CHART_D3 ) / else
-  
   void displayForegroundData( const bool keep_current_energy_range );
   void displaySecondForegroundData();
   void displayBackgroundData();
@@ -900,9 +823,6 @@ protected:
                         const double pageX, const double pageY );
   void rightClickMenuClosed();
   
-#if( USE_SIMPLE_NUCLIDE_ASSIST )
-  void leftClickMenuClosed();
-#endif
   void peakEditFromRightClick();
   void refitPeakFromRightClick();
   void deletePeakFromRightClick();
@@ -930,19 +850,15 @@ protected:
   
 //If we are using D3 to render the spectrum chart, we need to have feature markers available
 //  to be able to display/hide them on the chart
-//#if ( USE_SPECTRUM_CHART_D3 )
 public:
-//#endif
   //Tracking of which feature markers are being shown on the c++ side of things
   //  is currently only used for export to the D3 chart...
   
   void setFeatureMarkerOption( const FeatureMarkerType option, const bool show );
   bool showingFeatureMarker( const FeatureMarkerType option );
-#if( USE_FEATURE_MARKER_WIDGET )
   void setComptonPeakAngle( const int angle );
   void toggleFeatureMarkerWindow();
   void deleteFeatureMarkerWindow();
-#endif
   
 public:
 
@@ -992,11 +908,6 @@ public:
   // while.
   //void findPeakFromUserRange( double x0, double x1 );
   
-#if( !USE_SPECTRUM_CHART_D3 )
-  void userAskedToFitPeaksInRange( double x0, double x1,
-                                   int lastPageLeft, int lastPageTop );
-  void findPeakFromControlDrag( double x0, double x1, int nPeaks );
-#endif  //!USE_SPECTRUM_CHART_D3
   
   void excludePeaksFromRange( double x0, double x1 );
   
@@ -1031,11 +942,9 @@ public:
   void startHardBackgroundSub();
   void finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std::shared_ptr<bool> round_counts );
   
-#if( USE_SPECTRUM_CHART_D3 )
   void setXAxisSlider( bool show );
   void setXAxisCompact( bool compact );
   void setShowYAxisScalers( bool show );
-#endif
   
   ReferencePhotopeakDisplay *referenceLinesWidget();
 
@@ -1131,15 +1040,6 @@ protected:
   void initDragNDrop();
 #endif //#if( !ANDROID && !IOS )
   
-#if( !USE_SPECTRUM_CHART_D3 )
-  //initWindowZoomWatcher(): when the browser emits the window.onresize signal,
-  //  force the canvas overlays to re-align themselves.
-  //  This is necassary when when the user changes zoom-level.
-  //  Only slightly more modern browsers emit this, but its rare enough to not
-  //  bother wasting time supporting old browsers.
-  void initWindowZoomWatcher();
-#endif
-  
   void initHotkeySignal();
   void hotKeyPressed( const unsigned int value );
   void arrowKeyPressed( const unsigned int value );
@@ -1156,13 +1056,8 @@ protected:
   
 protected:
   PeakModel *m_peakModel;
-#if ( USE_SPECTRUM_CHART_D3 )
   D3SpectrumDisplayDiv *m_spectrum;
   D3TimeChart *m_timeSeries;
-#else
-  SpectrumDisplayDiv   *m_spectrum;
-  SpectrumDisplayDiv   *m_timeSeries;
-#endif
   
   PopupDivMenu *m_detectorToShowMenu;
   Wt::WPushButton *m_mobileMenuButton;
@@ -1190,9 +1085,7 @@ protected:
   Wt::WGridLayout        *m_layout;
   
   Wt::WContainerWidget   *m_charts;
-#if( USE_SPECTRUM_CHART_D3 )
   Wt::WContainerWidget   *m_chartResizer;
-#endif
   Wt::WGridLayout        *m_toolsLayout;
 #endif
   
@@ -1290,9 +1183,6 @@ protected:
   Wt::WMenuItem        *m_rightClickMenutItems[kNumRightClickItems];
   PopupDivMenu         *m_rightClickNuclideSuggestMenu;
   PopupDivMenu         *m_rightClickChangeContinuumMenu;
-#if( USE_SIMPLE_NUCLIDE_ASSIST )
-  SimpleNuclideAssistPopup   *m_leftClickMenu;
-#endif
   
   Wt::WMenuItem        *m_showPeakManager;
   
@@ -1315,11 +1205,9 @@ protected:
   PopupDivMenuItem *m_hardBackgroundSub;
   PopupDivMenuItem *m_verticalLinesItems[2];
   PopupDivMenuItem *m_horizantalLinesItems[2];
-#if( USE_SPECTRUM_CHART_D3 )
   PopupDivMenuItem *m_showXAxisSliderItems[2];
   PopupDivMenuItem *m_showYAxisScalerItems[2];
   PopupDivMenuItem *m_compactXAxisItems[2];
-#endif
   
   enum class ToolTabMenuItems
   {
@@ -1341,18 +1229,17 @@ protected:
    */
   Wt::WMenuItem *m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NumItems)];
   
-  //Christian (20170425): Featuer marker option helpers for D3.js preferences
-  //  When USE_FEATURE_MARKER_WIDGET is enabled full-time, remove this field
+  /** Tracks which features are being used
+   TODO: remove this member variable and, and use m_featureMarkers to track things
+   */
   bool m_featureMarkersShown[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];
   
-#if( USE_FEATURE_MARKER_WIDGET )
   /** A window that controls if S.E., D.E., Compton Peak, Compton Edge, or Sum
    Peaks are shown.  Is null when window is not showing.
    */
   FeatureMarkerWindow *m_featureMarkers;
   
   PopupDivMenuItem *m_featureMarkerMenuItem;
-#endif //USE_FEATURE_MARKER_WIDGET
 
   
 #if( USE_GOOGLE_MAP )
@@ -1503,9 +1390,7 @@ protected:
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;
   
-#if( USE_SPECTRUM_CHART_D3 )
   D3SpectrumDisplayDiv *spectrum(){ return m_spectrum; }
-#endif
 #endif
 };//class InterSpec
 

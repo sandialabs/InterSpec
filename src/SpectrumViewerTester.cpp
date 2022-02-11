@@ -99,10 +99,8 @@
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/GammaXsGui.h"
 
-#if( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
-#endif
 
 
 //#include <Wt/Dbo/WtSqlTraits>
@@ -1053,7 +1051,6 @@ std::shared_ptr<Wt::WSvgImage> SpectrumViewerTester::renderChartToSvg( double lo
                                                        double upperx,
                                                        int width, int height )
 {
-#if( USE_SPECTRUM_CHART_D3 )
   auto hist = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   
   shared_ptr<const deque< PeakModel::PeakShrdPtr > > peaks = m_viewer->peakModel()->peaks();
@@ -1063,49 +1060,6 @@ std::shared_ptr<Wt::WSvgImage> SpectrumViewerTester::renderChartToSvg( double lo
   
   return PeakSearchGuiUtils::renderChartToSvg( hist, peaks, reflines, lowx, upperx, width,
                                                height, theme, compact );
-#else
-  auto img = make_shared<Wt::WSvgImage>( width, height );
-  
-  SpectrumChart *chart = m_viewer->m_spectrum->m_chart;
-  SpectrumDataModel *model = m_viewer->m_spectrum->m_model;
-  std::shared_ptr<Measurement> axisH = model->histUsedForXAxis();
-  
-  const int oldrebin = model->rebinFactor();
-  const double oldlowx = chart->axis(Chart::XAxis).minimum();
-  const double oldhighx = chart->axis(Chart::XAxis).maximum();
-
-  if( axisH && (fabs(upperx-lowx) < 0.000001) )
-  {
-    lowx = axisH->gamma_energy_min();
-    upperx = axisH->gamma_energy_max();
-  }//if( lowx == upperx )
-  
-  chart->setXAxisRange( lowx, upperx );
-  
-  if( axisH )
-  {
-    assert( axisH->find_gamma_channel(upperx) >= axisH->find_gamma_channel(lowx) );
-    
-    const size_t displayednbin = axisH->find_gamma_channel( upperx )
-                              - axisH->find_gamma_channel( lowx );
-    const int width = static_cast<int>( img->width().toPixels() )
-                      - chart->plotAreaPadding(Left)
-                      - chart->plotAreaPadding(Right);
-    const float bins_per_pixel = float(displayednbin) / float(width);
-    const int factor = max( static_cast<int>(ceil(bins_per_pixel)), 1 );
-    
-    model->setRebinFactor( factor );
-  }//if( axisH )
-  
-  WPainter p( img.get() );
-  chart->paint( p );
-  p.end();
-
-  chart->setXAxisRange( oldlowx, oldhighx );
-  model->setRebinFactor( oldrebin );
-  
-  return img;
-#endif //#if ( !USE_SPECTRUM_CHART_D3 )
 }//renderChartToSvg(...)
 
 
@@ -2164,12 +2118,8 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
     lowerx = lowerx + lowerXChangeFrac*energydelta;
     upperx = upperx + upperXChangeFrac*energydelta;
     
-#if( USE_SPECTRUM_CHART_D3 )
     D3SpectrumDisplayDiv *specchart = m_viewer->spectrum();
     specchart->chartFitRoiDragCallbackWorker( lowerx, upperx, npeaks, true, -1, -1, false );
-#else
-    m_viewer->findPeakFromControlDrag( lowerx, upperx, npeaks );
-#endif
     
     vector<PeakDef> foundpeaks, refitOrigPeaks, allPostFitPeaks;
     for( const PeakModel::PeakShrdPtr &peak : *peakModel->peaks() )

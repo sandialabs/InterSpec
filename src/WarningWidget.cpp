@@ -174,7 +174,7 @@ WarningWidget::WarningWidget( InterSpec *hostViewer,
   
   // Hook it up to the message handler in InterSpec
   hostViewer->messageLogged().connect( this, &WarningWidget::addMessage );
-}//WarningWidget::WarningWidget( SpectrumDisplayDiv * )
+}//WarningWidget::WarningWidget()
 
 
 bool WarningWidget::active( WarningWidget::WarningMsgLevel level ) const

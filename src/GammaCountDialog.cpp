@@ -47,7 +47,6 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/GammaCountDialog.h"
-#include "InterSpec/SpectrumDisplayDiv.h"
 
 using namespace std;
 using namespace Wt;

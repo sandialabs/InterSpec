@@ -211,9 +211,6 @@ width:100%;
 }
 
 
-.SpectrumDisplayDiv
-{
-}
 
 .Wt-btn .with-label {
   font-size: 0.9em;
@@ -316,16 +313,6 @@ width:100%;
 .modal-footer button,.modal-footer button:hover{
   margin-right:2px;
   margin-left:2px;
-}
-
-
-.CanvasForDragging
-{
-  -moz-user-select: none; 
-  -khtml-user-select: none; 
-  -webkit-user-select: none; 
-  -o-user-select: none;
-  user-select: none;
 }
 
 
@@ -1416,7 +1403,7 @@ body.Wt-rtl .Wt-tabs a {
   flex-wrap: nowrap;
 }
 
-.InterSpec .charts .SpectrumDisplayDiv {
+.InterSpec .charts .D3SpectrumDisplayDiv {
   flex: 3;
   min-height: 70px;
 }
@@ -1433,7 +1420,7 @@ body.Wt-rtl .Wt-tabs a {
   flex-wrap: nowrap;
 }
 
-.InterSpecFlex .SpectrumDisplayDiv {
+.InterSpecFlex .D3SpectrumDisplayDiv {
   flex: 3;
   overflow: hidden;
 }

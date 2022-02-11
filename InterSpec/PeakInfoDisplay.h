@@ -32,11 +32,8 @@
 
 class PeakModel;
 class InterSpec;
-#if ( USE_SPECTRUM_CHART_D3 )
 class D3SpectrumDisplayDiv;
-#else
-class SpectrumDisplayDiv;
-#endif
+
 namespace Wt
 {
   class WImage;
@@ -55,11 +52,7 @@ class PeakInfoDisplay : public Wt::WContainerWidget
 {
 public:
   PeakInfoDisplay( InterSpec *viewer,
-#if ( USE_SPECTRUM_CHART_D3 )
                    D3SpectrumDisplayDiv *spectrumDisplayDiv,
-#else
-                   SpectrumDisplayDiv *spectrumDisplayDiv,
-#endif
                    PeakModel *peakModel,
                    Wt::WContainerWidget *parent = 0 );
   virtual ~PeakInfoDisplay();
@@ -84,11 +77,7 @@ protected:
   //  DetectorPeakResponse when the InterSpec::detectorChanged() signal
   //  is emitted.
   InterSpec *m_viewer;
-#if ( USE_SPECTRUM_CHART_D3 )
   D3SpectrumDisplayDiv *m_spectrumDisplayDiv;
-#else
-  SpectrumDisplayDiv *m_spectrumDisplayDiv;
-#endif
 
   //variables which will be populated by createInfoTab();
   Wt::WGridLayout *m_infoLayout;

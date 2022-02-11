@@ -119,7 +119,6 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/RowStretchTreeView.h"

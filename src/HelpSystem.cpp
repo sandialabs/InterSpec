@@ -658,7 +658,7 @@ namespace HelpSystem
         continue;
       }
       //Other potential topics to filter (if we add help content for them):
-      //  USE_SEARCH_MODE_3D_CHART, USE_SIMPLE_NUCLIDE_ASSIST, USE_GOOGLE_MAP
+      //  USE_SEARCH_MODE_3D_CHART, USE_GOOGLE_MAP
         
 
       WTreeNode *insertNode = new Wt::WTreeNode( titlestr.toUTF8() );

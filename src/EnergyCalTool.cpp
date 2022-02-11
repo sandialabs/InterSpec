@@ -3724,17 +3724,10 @@ void EnergyCalTool::deleteGraphicalRecalConfirmWindow()
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
   if( showToolTips )
   {
-#if( USE_SPECTRUM_CHART_D3 )
     m_interspec->logMessage( "If you recalibrate again by ALT+CTRL+DRAG on"
                             " another portion of the spectrum, you will be given the"
                             " option of preserving the effects of this calibration"
                             " as well.", "", 1 );
-#else
-    m_interspec->logMessage( "If you recalibrate again by right-click dragging on"
-                            " another portion of the spectrum, you will be given the"
-                            " option of preserving the effects of this calibration"
-                            " as well.", "", 1 );
-#endif
   }//if( showToolTips )
 }//void deleteGraphicalRecalConfirmWindow()
 

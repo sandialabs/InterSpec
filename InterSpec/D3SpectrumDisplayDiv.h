@@ -16,12 +16,8 @@
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/InterSpec.h"  //Only for FeatureMarkerType::NumFeatureMarkers
-
-static_assert( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE, "RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE must be enabled when USE_SPECTRUM_CHART_D3 is enabled" );
-
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
 #include "InterSpec/ReferenceLineInfo.h"
-#endif
+
 
 //Forward declarations
 class SpecMeas;
@@ -233,12 +229,10 @@ public:
 #endif
   
     
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   void setReferncePhotoPeakLines( const ReferenceLineInfo &nuc );
   void persistCurrentReferncePhotoPeakLines();
   void clearAllReferncePhotoPeakLines();
   void updateReferncePhotoPeakLines();
-#endif
   
   //setShowRefLineInfoForMouseOver(): set wether or not the text information
   //  should be shown for the line that the mouse is currently over.  Default is
@@ -414,11 +408,9 @@ protected:
   double m_chartWidthPx;
   double m_chartHeightPx;
   
-  
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   ReferenceLineInfo m_referencePhotoPeakLines;
   std::vector<ReferenceLineInfo> m_persistedPhotoPeakLines;
-#endif
+
   bool m_showRefLineInfoForMouseOver;
   
   bool m_showFeatureMarker[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];

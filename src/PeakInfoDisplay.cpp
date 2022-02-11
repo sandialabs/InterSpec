@@ -65,11 +65,7 @@
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
-#if( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/D3SpectrumDisplayDiv.h"
-#else
-#include "InterSpec/SpectrumDisplayDiv.h"
-#endif
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
@@ -286,11 +282,7 @@ namespace
 
 
 PeakInfoDisplay::PeakInfoDisplay( InterSpec *viewer,
-#if ( USE_SPECTRUM_CHART_D3 )
                                   D3SpectrumDisplayDiv *spectrumDisplayDiv,
-#else
-                                  SpectrumDisplayDiv *spectrumDisplayDiv,
-#endif
                                   PeakModel *peakModel,
                                   Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
@@ -323,11 +315,7 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
   WPushButton *yes_button = window->addButton( "Yes" );
   WPushButton *no_button = window->addButton( "No" );
   
-#if ( USE_SPECTRUM_CHART_D3 )
   yes_button->clicked().connect( boost::bind( &D3SpectrumDisplayDiv::removeAllPeaks, m_spectrumDisplayDiv ) );
-#else
-  yes_button->clicked().connect( boost::bind( &PeakModel::removeAllPeaks, m_model ) );
-#endif
 }//void confirmRemoveAllPeaks()
 
 

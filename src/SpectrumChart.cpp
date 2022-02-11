@@ -59,12 +59,7 @@
 #endif
 
 
-#if( WT_VERSION<=0x3030100 )
-#include <Wt/Chart/WChart2DRenderer>
-typedef Wt::Chart::WChart2DRenderer ChartRenderHelper_t;
-#else
 typedef Wt::Chart::WCartesianChart ChartRenderHelper_t;
-#endif
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
@@ -80,7 +75,6 @@ typedef Wt::Chart::WCartesianChart ChartRenderHelper_t;
 #include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/ReferenceLineInfo.h"
 
-#include "InterSpec/CanvasForDragging.h"
 #include "js/SpectrumChart.js"
 
 using namespace std;
@@ -558,51 +552,6 @@ std::vector<std::shared_ptr<const PeakDef> >::const_iterator next_gaus_peaks(
 }//namespace
 
 
-#if( WT_VERSION<=0x3030100 )
-class SpectrumRenderer : public Chart::WChart2DRenderer
-{
-public:
-  SpectrumRenderer( SpectrumChart *chart,
-                    WPainter &painter, const WRectF &rectangle )
-    : Chart::WChart2DRenderer( chart, painter, rectangle ),
-      m_rect( rectangle ),
-      m_chart( chart ),
-      m_model( nullptr )
-  {
-#if( WT_VERSION < 0x3030600 )
-    m_model = dynamic_cast<SpectrumDataModel *>( chart->model() );
-#else
-    auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
-    if( !proxyModel )
-      throw runtime_error( "SpectrumRenderer: you must pass in a SpectrumChart"
-                           " with a valid WStandardChartProxyModel" );
-    m_model = dynamic_cast<SpectrumDataModel *>( proxyModel->sourceModel() );
-#endif
-
-    
-    if( !m_model )
-      throw runtime_error( "SpectrumRenderer: you must pass in a SpectrumChart"
-                           " with a valid SpectrumDataModel" );
-  }
-  
-  virtual ~SpectrumRenderer()
-  {
-  }
-
-  
-protected:
-  virtual void render()
-  {
-    m_chart->customRender( painter(), m_rect );
-  }
-  
-
-  WRectF m_rect;
-  SpectrumChart *m_chart;
-  SpectrumDataModel *m_model;
-};//class SpectrumRenderer
-
-#endif
 
 class SpectrumRenderIterator;
 
@@ -945,188 +894,23 @@ void SpectrumChart::calcRenderRectangle( const Wt::WRectF &rectangle ) const
 }//void calcRenderRectangle( const Wt::WRectF &rectangle )
 
 
-#if(WT_VERSION<=0x3030100)
-Wt::WPointF SpectrumChart::map( double xValue, double yValue,
-                Wt::Chart::Axis yAxis,
-                int XSegment,
-                int YSegment ) const
-{
-  return mapToDevice( xValue, yValue, yAxis, XSegment, YSegment );
-}//map
-
-Wt::WPointF SpectrumChart::hv( double x, double y ) const
-{
-  return hv( WPointF(x,y) );
-}
-
-Wt::WPointF SpectrumChart::hv( const WPointF &r ) const
-{
-  if( orientation() == Vertical )
-    return r;
-  throw runtime_error( "SpectrumChart does not support non-Vertical orientation for Wt 3.3.1 or earlier" );
-}
-
-Wt::WRectF SpectrumChart::hv( const Wt::WRectF &p ) const
-{
-  if( orientation() == Vertical )
-    return p;
-  throw runtime_error( "SpectrumChart does not support non-Vertical orientation for Wt 3.3.1 or earlier" );
-}
-
-
-void SpectrumChart::renderLabel(WPainter& painter, const WString& text,
-                                 const WPointF& p, const WColor& color,
-                                 WFlags<AlignmentFlag> flags,
-                                 double angle, int margin) const
-{
-  AlignmentFlag horizontalAlign = flags & AlignHorizontalMask;
-  AlignmentFlag verticalAlign = flags & AlignVerticalMask;
-  
-  AlignmentFlag rHorizontalAlign = horizontalAlign;
-  AlignmentFlag rVerticalAlign = verticalAlign;
-  
-  double width = 1000;
-  double height = 20;
-  
-  WPointF pos = hv(p);
-  
-  if (orientation() == Horizontal) {
-    switch (horizontalAlign) {
-      case AlignLeft:
-        rVerticalAlign = AlignTop; break;
-      case AlignCenter:
-        rVerticalAlign = AlignMiddle; break;
-      case AlignRight:
-        rVerticalAlign = AlignBottom; break;
-      default:
-        break;
-    }
-    
-    switch (verticalAlign) {
-      case AlignTop:
-        rHorizontalAlign = AlignRight; break;
-      case AlignMiddle:
-        rHorizontalAlign = AlignCenter; break;
-      case AlignBottom:
-        rHorizontalAlign = AlignLeft; break;
-      default:
-        break;
-    }
-  }
-  
-  double left = pos.x();
-  double top = pos.y();
-  
-  switch (rHorizontalAlign) {
-    case AlignLeft:
-      left += margin; break;
-    case AlignCenter:
-      left -= width/2; break;
-    case AlignRight:
-      left -= width + margin;
-    default:
-      break;
-  }
-  
-  switch (rVerticalAlign) {
-    case AlignTop:
-      top += margin; break;
-    case AlignMiddle:
-      top -= height/2; break;
-    case AlignBottom:
-      top -= height + margin; break;
-    default:
-      break;
-  }
-  
-  WPen pen(color);
-  WPen oldPen = painter.pen();
-  painter.setPen(pen);
-  
-  if (angle == 0)
-    painter.drawText(WRectF(left, top, width, height),
-                     rHorizontalAlign | rVerticalAlign, text);
-  else {
-    painter.save();
-    painter.translate(pos);
-    painter.rotate(-angle);
-    painter.drawText(WRectF(left - pos.x(), top - pos.y(), width, height),
-                     rHorizontalAlign | rVerticalAlign, text);
-    painter.restore();
-  }
-  
-  painter.setPen(oldPen);
-}//#if(WT_VERSION<=0x3030100)
-
-
-
-Wt::WRectF SpectrumChart::chartSegmentArea( Wt::Chart::WAxis yAxis, int xSegment,
-                                              int ySegment) const
-{
-  cerr << "SpectrumChart::chartSegmentArea(...) for Wt<=3.3.1 isnt quite correct" << endl;
-  return m_renderRectangle;
-  
-//  const WAxis& xAxis = axis(Chart::XAxis);
-//  
-//  const Chart::WAxis::Segment& xs = xAxis.segments_[xSegment];
-//  const Chart::WAxis::Segment& ys = yAxis.segments_[ySegment];
-//  
-//  // margin used when clipping, see also WAxis::prepareRender(),
-//  // when the renderMinimum/maximum is 0, clipping is done exact
-//  
-//  double x1 = xs.renderStart
-//  + (xSegment == 0
-//     ? (xs.renderMinimum == 0 ? 0 : -chart_->axisPadding())
-//     : -segmentMargin_/2);
-//  double x2 = xs.renderStart + xs.renderLength
-//  + (xSegment == xAxis.segmentCount() - 1
-//     ? (xs.renderMaximum == 0 ? 0 : chart_->axisPadding())
-//     : segmentMargin_/2);
-//  
-//  double y1 = ys.renderStart - ys.renderLength
-//  - (ySegment == yAxis.segmentCount() - 1
-//     ? (ys.renderMaximum == 0 ? 0 : chart_->axisPadding())
-//     : segmentMargin_/2);
-//  double y2 = ys.renderStart
-//  + (ySegment == 0
-//     ? (ys.renderMinimum == 0 ? 0 : chart_->axisPadding())
-//     : segmentMargin_/2);
-//  
-//  return WRectF(std::floor(x1 + 0.5), std::floor(y1 + 0.5),
-//                std::floor(x2 - x1 + 0.5), std::floor(y2 - y1 + 0.5));
-}
-#endif
-
-
 void SpectrumChart::labelRender( Wt::WPainter& painter, const Wt::WString& text,
                                 const Wt::WPointF& p, const Wt::WColor& color,
                                 Wt::WFlags<Wt::AlignmentFlag> flags,
                                 double angle, int margin) const
 {
-#if(WT_VERSION>=0x3030400)
   const WPen oldpen = painter.pen();
   painter.setPen( WPen(color) );
   renderLabel( painter, text, p, /*color,*/ flags, angle, margin );
   painter.setPen( oldpen );
-#else
-  renderLabel( painter, text, p, color, flags, angle, margin );
-#endif
 }//void labelRender(...)
 
 
-#if(WT_VERSION<=0x3030100)
-void SpectrumChart::customRender(	Wt::WPainter &painter, const Wt::WRectF &rectangle )
-#else
 void SpectrumChart::render(	Wt::WPainter &painter, const Wt::WRectF &rectangle ) const
-#endif
 {
   calcRenderRectangle( rectangle );
   
-#if(WT_VERSION<=0x3030100)
-  initLayout(rectangle);
-#else
   if( initLayout( rectangle, painter.device() ) )
-#endif
   {
     renderChartBackground(painter, rectangle);
     renderGridLines(painter, Chart::XAxis);
@@ -1371,13 +1155,9 @@ void SpectrumChart::renderAxes( Wt::WPainter &painter,
     renderYAxis( painter, axis(Chart::Y2Axis), properties );
   }else
   {
-#if(WT_VERSION<=0x3030100)
-    throw runtime_error( "SpectrumChart only supports SpectrumDataModel for Wt 3.3.1 or before" );
-#else
     renderAxis( painter, axis(Chart::XAxis), properties);
     renderAxis( painter, axis(Chart::Y1Axis), properties );
     renderAxis( painter, axis(Chart::Y2Axis), properties );
-#endif
   }//if( m ) / else
 }//void renderAxes(...) const;
 
@@ -1543,8 +1323,7 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
       break;
     }//switch( location )
     
-    if( (properties & Chart::Labels) && !ticks[i].label.empty()
-       && (!m_avoidMobileMenu || labelypx > 42) ) //Check that we dont overlap with the hamburger menu.
+    if( (properties & Chart::Labels) && !ticks[i].label.empty() )
     {   
       painter.setPen( m_textPen );
       painter.drawText( WRectF(labelxpx, labelypx, txtwidth, txtheight),
@@ -1938,10 +1717,6 @@ SpectrumChart::SpectrumChart( Wt::WContainerWidget *parent )
 : Wt::Chart::WCartesianChart( parent ),
   m_widthInPixels( 0 ),
   m_heightInPixels ( 0 ),
-  m_isDragging( false ),
-  m_dragAction( SpectrumChart::ZoomIn ),
-  m_allowMultipleHighlightRegions( true ),
-  m_allowSingleClickHighlight( false ),
   m_peakModel( NULL ),
   m_defaultPeakColor( ns_default_peakFillColor ),
   m_occupiedMarkerColor( ns_default_occupiedTimeColor ),
@@ -1950,26 +1725,11 @@ SpectrumChart::SpectrumChart( Wt::WContainerWidget *parent )
   m_legendType( SpectrumChart::NoLegend ),
   m_legendNeedsRender( true ),
   m_paintedLegendWidth(-100.0f),
-  m_overlayCanvas( NULL ),
-  m_scrollY( 0 ),
   m_xAxisUnits( SpectrumChart::kUndefinedUnits ),
   m_compactAxis( false ),
   m_textInMiddleOfChart(),
   m_verticalLinesShowing( false ),
-  m_horizontalLinesShowing( false ),
-  m_avoidMobileMenu( false )
-#if( USE_HIGH_BANDWIDTH_INTERACTIONS )
-  , m_mouseDownX( -999 ),
-  m_mouseDownY( -999 ),
-  m_currentDownX( -999 ),
-  m_currentDownY( -999 ),
-  m_mouseDownEnergy( -999.9f ),
-  m_mouseDownCounts( -999.9f ),
-  m_mouseDownXMin( -999.9f ),
-  m_mouseDownXMax( -999.9f ),
-  m_mouseDownYMin( -999.9f ),
-  m_mouseDownYMax( -999.9f )
-#endif
+  m_horizontalLinesShowing( false )
 {
   addStyleClass( "SpectrumChart" );
   
@@ -2027,12 +1787,6 @@ SpectrumChart::~SpectrumChart()
     delete m_legend;
     m_legend = 0;
   }
-
-  if( m_overlayCanvas )
-  {
-    delete m_overlayCanvas;
-    m_overlayCanvas = 0;
-  }
 }//~SpectrumChart()
 
 void SpectrumChart::setPeakLabelColor( SpectrumChart::PeakLabels label,
@@ -2063,33 +1817,9 @@ bool SpectrumChart::showingPeakLabel( SpectrumChart::PeakLabels label ) const
   return m_peakLabelsToShow[label];
 }
 
-
-#if( WT_VERSION<=0x3030100 )
-Wt::Chart::WChart2DRenderer *SpectrumChart::createRenderer( WPainter& painter,
-                                                const WRectF &rectangle ) const
-{
-  SpectrumDataModel *specModel = dynamic_cast<SpectrumDataModel *>( model() );
-  
-  if( !specModel )
-    throw runtime_error( "SpectrumChart::createRenderer: invalid model" );
-    
-    
-  return new SpectrumRenderer( const_cast<SpectrumChart *>(this),
-                                        painter, rectangle);
-  
-//  return createRenderer( painter, rectangle );
-//  return Chart::WCartesianChart::createRenderer( painter, rectangle );
-}//createRenderer(...)
-#endif
-
 void SpectrumChart::peakModelDataChanged( const WModelIndex &topLeft,
                                           const WModelIndex &bottomRight )
 {
-  //right now peakModelDataChanged(...) assumes loadPeakInfoToClient()
-  //  only loads nuclide symbol and energy to client, and
-  //  not kUseForShieldingSourceFit, kCandidateIsotopes, kUseForCalibration;
-  //  if this changes in the future, make sure to update
-  //  peakModelDataChanged(...)
   const int left = topLeft.column();
   const int right = bottomRight.column();
   
@@ -2097,15 +1827,19 @@ void SpectrumChart::peakModelDataChanged( const WModelIndex &topLeft,
       || left <= PeakModel::kAmplitude
       || left >= PeakModel::kUserLabel
       || right >= PeakModel::kUserLabel )
+  {
     update( WFlags<PaintFlag>(0) );
-  else if( left <= PeakModel::kPhotoPeakEnergy )
-      loadPeakInfoToClient();
-  //This next statment is poorly formed, and only catches if a single data thingy
-  //  is changed - I'll fix this at some point when I'm not so tired
+  }else if( left <= PeakModel::kPhotoPeakEnergy )
+  {
+  }
   else if( (left == PeakModel::kUserLabel && m_peakLabelsToShow[kShowPeakUserLabel])
           || (left == PeakModel::kIsotope && m_peakLabelsToShow[kShowPeakNuclideLabel])
           || (left == PeakModel::kPhotoPeakEnergy && m_peakLabelsToShow[kShowPeakNuclideEnergies])  )
+  {
+    //This next statment is poorly formed, and only catches if a single data thingy
+    //  is changed - I'll fix this at some point when I'm not so tired
     update( WFlags<PaintFlag>(0) );
+  }
 }//void peakModelDataChanged(...)
 
 
@@ -2129,85 +1863,9 @@ void SpectrumChart::setPeakModel( PeakModel *model )
 }//void setPeakModel( PeakModel *model )
 
 
-
-//int SpectrumChart::graphableAreaWidth() const
-//{
-//  return m_widthInPixels - plotAreaPadding(Left) - plotAreaPadding(Right);
-//}//int SpectrumChart::graphableAreaWidth() const
-
-
-Wt::Signal<double,double> &SpectrumChart::xRangeChanged()
-{
-  return m_xRangeChanged;
-}//xRangeChanged()
-
-
-Wt::Signal<double,double> &SpectrumChart::rightMouseDragg()
-{
-  return m_rightMouseDragg;
-}//rightMouseDragg()
-
-Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> &SpectrumChart::leftClick()
-{
-  return m_leftClick;
-}//Wt::Signal<double> &leftClick()
-
-Wt::Signal<double,double> &SpectrumChart::doubleLeftClick()
-{
-  return m_doubleLeftClick;
-}
-
-Wt::Signal<double,double,int,int> &SpectrumChart::rightClick()
-{
-  return m_rightClick;
-}//Wt::Signal<double> &rightClick()
-
-
-Wt::Signal<double,double> &SpectrumChart::controlMouseMoved()
-{
-  return m_controlMouseMoved;
-}
-
-Wt::Signal<double,double,int,int> &SpectrumChart::controlKeyDragged()
-{
-  return m_controlKeyDragg;
-}//controlKeyDragged();
-
-
-Wt::Signal<double,double> &SpectrumChart::shiftKeyDragged()
-{
-  return m_shiftKeyDragg;
-}//controlKeyDragged();
-
-
-Wt::Signal<double,double> &SpectrumChart::shiftAltKeyDragged()
-{
-  return m_shiftAltKeyDragg;
-}
-
-Wt::Signal<double,double> &SpectrumChart::altKeyDragged()
-{
-  return m_altKeyDragg;
-}
-
 void SpectrumChart::setXAxisUnits( SpectrumChart::XAxisUnits units )
 {
   m_xAxisUnits = units;
-  string unitstr;
-  switch( units )
-  {
-    case kkeV:           unitstr = "keV";     break;
-    case kSeconds:       unitstr = "seconds"; break;
-    case kUndefinedUnits: break;
-  }//switch( units )
-
-  if( unitstr.length() && m_overlayCanvas )
-    wApp->doJavaScript( "$('#c" + m_overlayCanvas->id() + "').data('xunit','" + unitstr + "');" );
-  else if( m_overlayCanvas )
-    wApp->doJavaScript( "$('#c" + m_overlayCanvas->id() + "').data('xunit',null);" );
-  else
-    cerr << "SpectrumChart::setXAxisUnits(...)\n\tSpectrumChart::setXAxisUnits(...): overlayCanvas not set"
-         << endl;
 }//setXAxisUnits( SpectrumChart::XAxisUnits units )
 
 
@@ -2215,26 +1873,6 @@ SpectrumChart::XAxisUnits SpectrumChart::xAxisUnits() const
 {
   return m_xAxisUnits;
 }//XAxisUnits xAxisUnits() const
-
-
-void SpectrumChart::setDragAction( const SpectrumChart::DragAction action )
-{
-  m_dragAction = action;
-}//void setDragAction( const DragAction action )
-
-
-void SpectrumChart::allowMultipleRegionHighlight( bool allow )
-{
-  m_allowMultipleHighlightRegions = allow;
-}//void allowMultipleRegionHighlight( bool allow )
-
-
-
-void SpectrumChart::allowSingleClickHighlight( bool allow )
-{
-  m_allowSingleClickHighlight = allow;
-}//void allowSingleClickHighlight( bool allow )
-
 
 void SpectrumChart::showGridLines( const bool draw )
 {
@@ -2302,8 +1940,6 @@ void SpectrumChart::setCompactAxis( const bool compact )
   
   m_compactAxis = compact;
   setPlotAreaPadding( new_pad, Bottom );
-  if( m_overlayCanvas )
-    m_overlayCanvas->setChartPadding();
 }
 
 bool SpectrumChart::isAxisCompacted() const
@@ -2311,257 +1947,6 @@ bool SpectrumChart::isAxisCompacted() const
   return m_compactAxis;
 }
 
-void SpectrumChart::wtDragged( Wt::WMouseEvent /*event*/ )
-{
-  //This function handles the standard Wt mouseMoved() signal
-  m_isDragging = true;
-}//void wtDragged( int x0, int y0, int dx, int dy )
-
-
-void SpectrumChart::wtMouseUp( Wt::WMouseEvent event )
-{
-  //This function handles the standard Wt mouseWentUp() signal
-  const int x1 = event.widget().x;
-  const int y1 = event.widget().y;
-  const int dx = event.dragDelta().x;
-  const int dy = event.dragDelta().y;
-  const int x0 = x1 - dx;
-  const int y0 = y1 - dy;
-
-
-  const bool wasDragging = m_isDragging;
-  m_isDragging = false;
-
-  if( !wasDragging && (event.button() == WMouseEvent::RightButton) )
-  {
-    handleRightClick( x1, y1, event.modifiers(),
-                     event.document().x, event.document().y );
-    return;
-  }
-  
-  if( !wasDragging && (!m_allowSingleClickHighlight || (m_dragAction!=HighLight)) )
-    return;
-
-  if( !wasDragging )
-    handleLeftClick( x1, y1, event.modifiers(),
-                     event.document().x, event.document().y );
-  else
-    handleDrag( x0, y0, x1, y0,
-                event.window().x-event.widget().x,
-                event.window().y-event.widget().y,
-                event.modifiers(), event.button(), -1 );
-}//void wtMouseUp( Wt::WMouseEvent event )
-
-
-
-#if( USE_OverlayDragEvent )
-void SpectrumChart::userDragged( const OverlayDragEvent &e )
-{
-  handleDrag( e.x0, e.y0, e.x1, e.y1,
-              e.offsetLeft, e.offsetTop,
-              e.keyModifiers, WMouseEvent::Button(e.button), e.dt );
-}//void userDragged( OverlayDragEvent event )
-#else
-void SpectrumChart::userDragged( int x0, int y0, Wt::WMouseEvent event )
-{
-  const int x1 = event.widget().x;
-  const int y1 = event.widget().y;
-
-  handleDrag( x0, y0, x1, y1,
-              event.window().x-event.widget().x,
-              event.window().y-event.widget().y,
-              event.modifiers(), event.button(), -1 );
-}//void userDragged( int x0, int x1, Wt::WMouseEvent event )
-#endif  //#if( USE_OverlayDragEvent )
-
-
-
-Wt::JSignal<Wt::WKeyEvent> &SpectrumChart::keyPressedWhileMousedOver()
-{
-  if( !m_overlayCanvas )
-  {
-    throw std::runtime_error( "SpectrumChart::keyPressedWhileMousedOver(): "
-                              "you may only call this function if you have "
-                              "first called "
-                              "SpectrumChart::enableOverlayCanvas(bool,bool)!" );
-  }//if( !m_overlayCanvas )
-
-  return m_overlayCanvas->keyPressWhileMousedOver();
-}//Wt::JSignal<Wt::WKeyEvent> &keyPressedWhileMousedOver()
-
-
-void SpectrumChart::allowArrowToMoveSingleClickRegion( bool allow )
-{
-  if( !allow )
-  {
-    if( !m_overlayCanvas )
-    {
-      cerr << "SpectrumChart::allowArrowToMoveSingleClickRegion( bool allow ): "
-           << "some funny error: signal is connected, but m_overlayCanvas==NULL"
-           << " - you probably willl never see this message" << endl;
-      return;
-    }//if( !m_overlayCanvas )
-
-    if( m_arrowRespondConnection.connected() )
-      m_overlayCanvas->keyPressWhileMousedOver().disconnect( m_arrowRespondConnection );
-    return;
-  }//if( !allow )
-
-  if( !m_overlayCanvas )
-  {
-    throw std::runtime_error( "SpectrumChart::allowArrowToMoveSingleClickRegion(bool): "
-                              "you may only call this function if you have "
-                              "first called "
-                              "SpectrumChart::enableOverlayCanvas(bool,bool)!" );
-  }//if( !m_overlayCanvas )
-
-  m_arrowRespondConnection = m_overlayCanvas->keyPressWhileMousedOver().connect( boost::bind( &SpectrumChart::handleArrowPress, this, _1 ) );
-}//void allowArrowToMoveSingleClickRegion( bool allow )
-
-
-void SpectrumChart::handleArrowPress( const Wt::WKeyEvent &event )
-{
-  if( !m_allowSingleClickHighlight )
-    return;
-
-  if( (event.key() != Key_Left) && (event.key() != Key_Right) )
-    return;
-
-  vector< HighlightRegion * > highlights;
-  for( size_t i = 0; i < m_highlights.size(); ++i )
-    if( m_highlights[i].hash == size_t(ForegroundHighlight) )
-      highlights.push_back( &(m_highlights[i]) );
-  
-  if( highlights.size() != 1 )
-    return;
-  
-  if( event.modifiers()!=0x0 && event.modifiers() != ShiftModifier )
-    return;
-  
-  const double lowerx = highlights[0]->lowerx;
-  const double upperx = highlights[0]->upperx;
-  
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *th1model = dynamic_cast<SpectrumDataModel *>( model() );
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
-  SpectrumDataModel *th1model = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
-  assert( th1model );
-#endif
-
-  if( !th1model )
-    return;
-
-  double newlowerx = 0.0, newupperx = 0.0;
-  
-  const int nrowmove = ((event.key()==Key_Left) ? -1 : 1);
-  int lowrow = th1model->findRow( lowerx+(1.0E-6) );
-  int highrow = th1model->findRow( (float)upperx-(1.0E-6) );
-
-  if( event.modifiers() != ShiftModifier )
-  {
-    lowrow += nrowmove;
-    highrow += nrowmove;
-  }else
-  {
-    if( event.key() == Key_Left )
-      lowrow += nrowmove;
-    if(event.key() == Key_Right )
-      highrow += nrowmove;
-  }//if( event.modifiers() != ShiftModifier ) / else
-  
-  lowrow = std::max( lowrow, 0 );
-  highrow = std::min( highrow, th1model->rowCount()-1 );
-  newlowerx = th1model->rowLowEdge( lowrow );
-  newupperx = th1model->rowLowEdge( highrow ) + th1model->rowWidth( highrow );
-  
-  highlights[0]->lowerx = static_cast<float>( newlowerx );
-  highlights[0]->upperx = static_cast<float>( newupperx );
-
-  update();//force re-rendering
-
-  //XXX
-  //   see XXX note in handleLeftClick(...)!
-  //    m_xRangeChanged.emit( lowerx, upperx );
-  m_xRangeChanged.emit( newlowerx, newupperx );
-}//void SpectrumChart::handleArrowPress( Wt::WKeyEvent &event )
-
-
-void SpectrumChart::handleDoubleTap( int x, int y )
-{
-  const WPointF point1( x, y );
-  const WPointF modelPoint1 = mapFromDevice( point1, Chart::OrdinateAxis );
-  m_doubleLeftClick.emit( modelPoint1.x(), modelPoint1.y() );
-}//void handleDoubleTap( int x, int y )
-
-
-void SpectrumChart::handleDoubleLeftClick( Wt::WMouseEvent event )
-{
-  if( event.button()!=WMouseEvent::LeftButton )
-    return;
-
-  const int x1 = event.widget().x;
-  const int y1 = event.widget().y;
-  const WPointF point1( x1, y1 );
-  const WPointF modelPoint1 = mapFromDevice( point1, Chart::OrdinateAxis );
-  
-  m_doubleLeftClick.emit( modelPoint1.x(), modelPoint1.y() );
-}//void handleDoubleLeftClick( Wt::WMouseEvent event )
-
-
-void SpectrumChart::handleLeftClick( const int x1, const int y1, const int modifier,
-                                     const int pageX, const int pageY )
-{
-  //This function assumes the user actually single clicked, and didnt drag
-  //  or anything else like that (and not the standard Wt mouseWentUp() signal).  
-  const WPointF point1( x1, y1 );
-  const WPointF modelPoint1 = mapFromDevice( point1, Chart::OrdinateAxis );
-
-  if( modifier == 0x0 )
-    m_leftClick.emit( modelPoint1.x(), modelPoint1.y(), pageX, pageY );
-  
-  if( !m_allowSingleClickHighlight )
-    return;
-
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *th1model = dynamic_cast<SpectrumDataModel *>( model() );
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
-  SpectrumDataModel *th1model = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
-  assert( th1model );
-#endif
-  
-
-  if( !th1model )
-  {
-    cerr << "Super lame programmer logic error SpectrumChart::wtMouseUp(...)" << endl;
-    return;
-  }//if( !th1model )
-  
-  const int row = th1model->findRow( modelPoint1.x() );
-
-  if( row < 0 || row >= th1model->rowCount() )
-    return;
-  
-  const double lowerx = th1model->rowLowEdge( row );
-  const double upperx = lowerx + th1model->rowWidth( row );
-  
-  if( !m_allowMultipleHighlightRegions || (modifier != ShiftModifier) )
-    m_xRangeChanged.emit( lowerx, upperx );
-  else
-    m_shiftKeyDragg.emit( (lowerx+upperx)/2.0, (lowerx+upperx)/2.0 );
-}//void handleLeftClick( int x, int y )
-
-
-void SpectrumChart::handleRightClick( const int x1, const int y1,
-                                      const int ,//modifier
-                                      const int pageX, const int pageY )
-{
-  const WPointF point1( x1, y1 );
-  const WPointF modelPoint = mapFromDevice( point1, Chart::OrdinateAxis );
-
-  m_rightClick.emit( modelPoint.x(), modelPoint.y(), pageX, pageY );
-}//void handleRightClick( Wt::WMouseEvent event )
 
 
 void SpectrumChart::setTimeHighLightRegions( const vector< pair<double,double> > &p,
@@ -2660,755 +2045,6 @@ size_t SpectrumChart::addDecorativeHighlightRegion( const float lowerx,
   
   return region.hash;
 }//void addDecorativeHighlightRegion(...)
-
-
-void SpectrumChart::handleDrag( int _x0, int _y0, int _x1, int _y1,
-                                int offsetLeft, int offsetTop,
-                               Wt::WFlags<Wt::KeyboardModifier> modifiers,
-                               Wt::WMouseEvent::Button button,
-                               int dt )
-{
-  //What this function does:
-  // 1) If user dragged mouse less than 'mouse_epsilon' in either x or y
-  //    direction, than do nothing
-  // 2) If user drags to the right more than up/down, then zoom in the 'x' axis
-  // 3) If user drags down more 'y' than 'x', than zoom in on the 'y' axis
-  // 4) If user drags to the left, more than up/down, then zoom-out; for
-  //    highlighting, add region to highlighted regions
-
-  // This compensates for the canvas not moving when the user scrolls up or down
-  // In the Anthony app, the user may vertically scroll the chart.  Although
-  // the chart vertically moves, we don't vertically scroll the overlay
-  // canvas, because that might overlap with the tabs, making the tabs
-  // non-clickable.  The workaround is to detect how much the user has
-  // scrolled in the y axis (in number of pixels), and compensate for that
-  // in this function, which is a simple y-axis translation, in pixels.
-  _y0 += m_scrollY;
-  _y1 += m_scrollY;
-
-   
-  const double mouse_epsilon = std::max( 5.0, m_widthInPixels/model()->rowCount() );
-  const double left_mouse_epsilon = 10.0;
-
-  const double x0 = static_cast<double>( _x0 );
-  const double y0 = static_cast<double>( _y0 );
-  const double x1 = static_cast<double>( _x1 );
-  const double y1 = static_cast<double>( _y1 );
-  const double dx = x1 - x0;
-  const double dy = y1 - y0;
-
-  const WPointF point0( x0, y0 );
-  const WPointF point1( x1, y1 );
-  const WPointF modelPoint0 = mapFromDevice( point0, Chart::OrdinateAxis );
-  const WPointF modelPoint1 = mapFromDevice( point1, Chart::OrdinateAxis );
-
-  //Make it so if there are multiple modifiers, than nothing is done
-  const int nmodifiers = ((modifiers & Wt::ControlModifier)==Wt::ControlModifier)
-                         + ((modifiers & Wt::ShiftModifier)==Wt::ShiftModifier)
-                         + ((modifiers & Wt::AltModifier)==Wt::AltModifier)
-//                         + (button==WMouseEvent::RightButton)
-                         ;
-  const unsigned int shiftAltMod = (Wt::ShiftModifier | Wt::AltModifier);
-  const bool isShiftAlt = ((modifiers & shiftAltMod) == shiftAltMod);
-
-  if( m_dragAction == HighLight )
-  {
-    if( button != WMouseEvent::LeftButton )
-      return;
-    if( (modifiers != 0x0) && (modifiers != Wt::ShiftModifier)
-        && !isShiftAlt && (modifiers!=Wt::AltModifier) )
-      return;
-  }//if( m_dragAction == HighLight )
-
-  
-  if( (nmodifiers > 1) && !isShiftAlt )
-    return;
-
-  //case 1
-  if( ((dx>0.0 && dx<mouse_epsilon)
-       || (dx<0.0 && fabs(dx)<left_mouse_epsilon))
-     && (fabs(dy) < mouse_epsilon) )
-  {
-    cerr << "\nDrag epsilon too small; doing nothing." << endl;
-    return;
-  }//case 1
-  
-  
-  if( dt > 0 && dt < 100 ) //This 100 should mach same value in 'OverlayOnMouseUp' JS function as well
-  {
-    cerr << "\nDrag to short of time (" << dt << "); not doing anything" << endl;
-    return;
-  }
-  
-  if( button==WMouseEvent::RightButton )
-  {
-    if( nmodifiers == 0 )
-      m_rightMouseDragg.emit( modelPoint0.x(), modelPoint1.x() );
-    return;
-  }//if( button==WMouseEvent::RightButton )
-
-  if( modifiers == Wt::ControlModifier )
-  {
-    m_controlKeyDragg.emit( modelPoint0.x(), modelPoint1.x(),
-                            offsetLeft + _x1,
-                            offsetTop + _y1 );
-    return;
-  }//if( modifiers | Wt::ControlModifier )
-
-  if( modifiers == Wt::AltModifier
-     || button == WMouseEvent::RightButton )
-  {
-    if( m_dragAction != HighLight )
-      handleAltDrag( modelPoint1.x() - modelPoint0.x() );
-    else
-      m_altKeyDragg.emit( modelPoint0.x(), modelPoint1.x() );
-    return;
-  }//if( modifiers == Wt::AltModifier )
-
-  
-  if( modifiers == Wt::ShiftModifier )
-  {
-    m_shiftKeyDragg.emit( modelPoint0.x(), modelPoint1.x() );
-    
-    if( m_dragAction != HighLight )
-      return;
-  }//if( modifiers == Wt::ShiftModifier )
-
-  if( isShiftAlt )
-  {
-    m_shiftAltKeyDragg.emit( modelPoint0.x(), modelPoint1.x() );
-    return;
-  }//if( isShiftAlt )
-
-  //case 2
-  if( (dx > 0.0) && (fabs(dx) >= fabs(dy)) )
-  {
-    switch( m_dragAction )
-    {
-      case ZoomIn:
-      {
-        //In principle, we should probably on zoom into regions that correspond
-        //  to the edges of bins.
-#if( WT_VERSION < 0x3030600 )
-        const SpectrumDataModel * const theModel = dynamic_cast<const SpectrumDataModel *>( model() );
-#else
-        auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model() );
-        const SpectrumDataModel * const theModel = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
-        assert( theModel );
-#endif
-
-        if( !theModel ) // This should never actually happen.
-          break;
-
-        const std::shared_ptr<const Measurement> xHist = theModel->histUsedForXAxis();
-
-        if( !xHist )
-          break;
-
-        //We want to keep the user from zooming in past were it is useful;
-        //  e.g. to an area less than the width of a bin
-        //  XXX - This method of controlling this could use improvment as well
-        //        as some kind of notification to the user upon failure
-        //
-        
-        const size_t channel_X0 = xHist->find_gamma_channel( (float)modelPoint0.x() );
-        const size_t channel_X1 = xHist->find_gamma_channel( (float)modelPoint1.x() );
-        const size_t dbin = ((channel_X1 > channel_X0) ? (channel_X1 - channel_X0) : size_t(0));
-        if( dbin > 3 )
-        {
-          setXAxisRange( modelPoint0.x(), modelPoint1.x() );
-        }else if( dbin > 0 )
-        {
-          const double delta = modelPoint1.x() - modelPoint0.x();
-          const double mindelta = 0.5*(xHist->gamma_channel_width(channel_X0)
-                                       + xHist->gamma_channel_width(channel_X1));
-          if( delta > mindelta )
-            setXAxisRange( modelPoint0.x(), modelPoint1.x() );
-        }//if( binX0 != binX1 )
-
-//        setAutoYAxisRange();
-        m_xRangeChanged.emit( modelPoint0.x(), modelPoint1.x() );
-        break;
-      }//case ZoomIn:
-
-
-      case HighLight:
-        if( !m_allowMultipleHighlightRegions || (modifiers != ShiftModifier) )
-          m_xRangeChanged.emit( modelPoint0.x(), modelPoint1.x() );
-//Next lines commented out because this signal has already been emited
-//        else
-//          m_shiftKeyDragg.emit( modelPoint0.x(), modelPoint1.x() );
-      break;
-      case NoAction:
-      break;
-    };//switch( m_dragAction )
-
-    return;
-  }//case 2
-
-  //case 3
-  if( fabs(dx) < fabs(dy) )
-  {
-    switch( m_dragAction )
-    {
-      case ZoomIn:
-        if( dy > 0.0 )
-        {
-          //If the y-axis range gets too small, we can get a JS error on the
-          //  client side - lets protect against this.  Note that this could
-          //  cause problems on extremely scalled spectrums but I expect this
-          //  to never actually happen to anyone
-          const double ydiff = fabs( modelPoint1.y()-modelPoint0.y() );
-          if( ydiff > 0.005
-          || (axis(Chart::Y1Axis).scale()==Chart::LinearScale && ydiff>1.0E-8) )
-            setYAxisRange( modelPoint1.y(), modelPoint0.y() );
-        }
-        else
-        {
-          const int can_height = (int)paintedHeight().toPixels();
-
-          if( fabs(dy) >= 0.075*can_height )  //XXX the 0.075 and 0.05 must be same as in javascript for this app
-          {
-            setAutoYAxisRange();
-          }else
-          {
-#if( WT_VERSION < 0x3030600 )
-            SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model() );
-#else
-            auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
-            SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
-            assert( theModel );
-#endif
-            
-            if( !theModel )
-              return;
-
-            const double x0 = axis(Chart::XAxis).minimum();
-            const double x1 = axis(Chart::XAxis).maximum();
-            const double old_y0 = axis(Chart::YAxis).minimum();
-            const double old_y1 = axis(Chart::YAxis).maximum();
-            const double old_range = old_y1 - old_y0;
-
-            //XXX the below (and above to some extent) shares enough logic
-            //    with setAutoYAxisRange() that it should be refactored to
-            //    ensure consistency in future code upgrades
-
-            double data_y0 = 0.0, data_y1 = 0.0;
-            double min_disp = 0.0, max_disp = 0.0;
-
-            theModel->yRangeInXRange( x0, x1, data_y0, data_y1 );
-
-            if( axis(Chart::OrdinateAxis).scale() == Chart::LogScale )
-            {
-              if( data_y0 <= 0.0 ) min_disp = 0.1;
-              else                 min_disp = 0.1*data_y0;
-              max_disp = 2.5*data_y1;
-            }else //if( axis(Chart::YAxis).scale() == Chart::LinearScale )
-            {
-              if( data_y0 <= 0.0 ) min_disp = 1.1*data_y0;
-              else                 min_disp = 0.9*data_y0;
-              max_disp = 1.1*data_y1;
-            }//if( Y is ogScale ) / else
-
-            const double centroid = old_y0 + 0.5*old_range;
-            const bool zoomX2 = (fabs(dy) < 0.05*can_height);
-            const double mult = (zoomX2 ? 1.0 : 2.0);
-            const double new_y0 = max(centroid - mult*old_range, min_disp);
-            const double new_y1 = min(new_y0 + 2.0*mult*old_range, max_disp);
-
-            setYAxisRange( new_y0, new_y1 );
-          }//if( do full zoom out ) / else due to or 4
-        }//if( zoom-in ) / else ( zoom-out )
-      break;
-
-      case HighLight:
-      case NoAction:
-      break;
-    };//switch( m_dragAction )
-
-    return;
-  }//case 3
-
-  //case 4
-  if( (dx < 0.0) && (fabs(dx) >= fabs(dy)) )
-  {
-    switch( m_dragAction )
-    {
-      case ZoomIn:
-      {
-        const int can_width = (int)paintedWidth().toPixels();
-
-        if( -dx >= 0.04*can_width ) //XXX this 0.04 and 0.02 need to be same as with the JavaScript
-        {
-          setAutoXAxisRange();
-        }else
-        {
-#if( WT_VERSION < 0x3030600 )
-          SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model() );
-#else
-          auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
-          SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
-          assert( theModel );
-#endif
-          
-          std::shared_ptr<Measurement> axisH = (theModel ? theModel->histUsedForXAxis()
-                                       : std::shared_ptr<Measurement>());
-          const bool hasSpectrum = (axisH && axisH->num_gamma_channels() > 3);
-          const double hist_min = (hasSpectrum ? axisH->gamma_energy_min() : 0.0f );
-          const double hist_max = (hasSpectrum ? axisH->gamma_energy_max() : 3000.0f);
-
-          const double old_xmin = axis(Chart::XAxis).minimum();
-          const double old_xmax = axis(Chart::XAxis).maximum();
-
-          const double old_range = old_xmax - old_xmin;
-          const double centroid = old_xmin + 0.5*old_range;
-
-          const bool is2xZoom = (-dx < 0.02*can_width); //else 4x xoom
-
-          const double mult = (is2xZoom ? 1.0 : 2.0);
-          const double new_xmin = max(centroid - mult*old_range, hist_min);
-          const double new_xmax = min(new_xmin + 2.0*mult*old_range, hist_max);
-
-          axis(Chart::XAxis).setMinimum( new_xmin );
-          axis(Chart::XAxis).setMaximum( new_xmax );
-        }//if( full zoom out ) / else
-
-        setAutoYAxisRange();
-        m_xRangeChanged.emit( axis(Chart::XAxis).minimum(),
-                             axis(Chart::XAxis).maximum() );
-        break;
-      }//case ZoomIn:
-
-      case HighLight:
-        if( !m_allowMultipleHighlightRegions || (modifiers != ShiftModifier) )
-          m_xRangeChanged.emit( modelPoint0.x(), modelPoint1.x() );
-//Next couple lines commented out because this signal should have been emmitted
-//        else
-//          m_shiftKeyDragg.emit( modelPoint0.x(), modelPoint1.x() );
-      break;
-
-      case NoAction:
-      break;
-    };//switch( m_dragAction )
-
-    return;
-  }//case 4
-
-  //case 5
-  //...
-}//void handleDrag( Wt::WMouseEvent event )
-
-
-void SpectrumChart::handleAltDrag( const double dx )
-{
-  const double oldmin = axis(Chart::XAxis).minimum();
-  const double oldmax = axis(Chart::XAxis).maximum();
-  double newmin = oldmin - dx;
-  double newmax = oldmax - dx;
-
-  //Check and make sure the user isnt dragging past where the axis is defined
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model() );
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
-  SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
-  assert( theModel );
-#endif
-
-  
-  if( theModel )
-  {
-    std::shared_ptr<const Measurement> axisH = theModel->histUsedForXAxis();
-
-    if( axisH
-        && (axisH->energy_calibration_model() != SpecUtils::EnergyCalType::InvalidEquationType) )
-    {
-      if( dx < 0 )
-      {
-        const double max_energy = axisH->gamma_energy_max();
-        if( newmax > max_energy )
-        {
-          newmax = max_energy;
-          newmin = max_energy - (oldmax-oldmin);
-        }//if( newmax > max )
-      }else
-      {
-        const double min_energy = axisH->gamma_energy_min();
-        if( newmin < min_energy )
-        {
-          newmin = min_energy;
-          newmax = min_energy + (oldmax-oldmin);
-        }//if( newmin < min )
-      }//if( dragging to the left ) / else (dragging to the right )
-    }//if( axisH )
-  }//if( theModel )
-
-  setXAxisRange( newmin, newmax );
-  m_xRangeChanged.emit( newmin, newmax );
-}//void handleAltDrag( const double x1, const double x2 )
-
-
-#if( USE_HIGH_BANDWIDTH_INTERACTIONS )
-
-void SpectrumChart::setRenderWaitingStatus( const bool waiting ) const
-{
-  if( !m_overlayCanvas )
-    return;
-    
-  const string js = "$('#c" + m_overlayCanvas->id() + "').data('RenderWaiting',"
-                    + string( waiting ? "true" : "false" ) + ");";
-  
-  wApp->doJavaScript( js, true );
-//  wApp->doJavaScript( "setTimeout(function(){" + js + "},10);",true);
-}//void setRenderWaitingStatus( const bool waiting ) const;
-
-
-bool SpectrumChart::checkHighBandWidthInterActionApplicable() const
-{
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model() );
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
-  assert( m );
-#endif
-  
-  const bool app = ((m_dragAction==ZoomIn) && m && !!m->histUsedForXAxis());
-  if( !app )
-    setRenderWaitingStatus( false );
-  
-  return app;
-}//bool checkHighBandWidthInterActionApplicable() const
-
-
-void SpectrumChart::handleMouseLeft()
-{
-  m_mouseDownX = m_mouseDownY = -999;
-  m_currentDownX = m_currentDownY = -999;
-  m_mouseDownEnergy = m_mouseDownCounts = -999.9f;
-  m_mouseDownXMin = m_mouseDownXMax = -999.9f;
-  m_mouseDownYMin = m_mouseDownYMax = -999.9f;
-  
-  setRenderWaitingStatus( false );
-}//void handleMouseLeft()
-
-
-void SpectrumChart::handlePinchZoomChange( int x0_t0, int x_t0,
-                                           int x0_t1, int x_t1, int y )
-{
-  if( !checkHighBandWidthInterActionApplicable() )
-    return;
-  
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model() );
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
-  assert( m );
-#endif
-  
-  if( !m )
-    return;
-  
-  std::shared_ptr<const Measurement> axisH = m->histUsedForXAxis();
-  if( !axisH || y != 0 )
-  {
-    setRenderWaitingStatus( false );
-    return;
-  }
-  
-  //The below assumes the x-axis is a continuous, linear scale (which is
-  //  true for InterSpec, but not Wt::Chart::WCartesianChart in general).
-  const double factor = fabs((double)(x_t0 - x_t1)) / fabs((double)(x0_t0 - x0_t1));
-  
-  const double xaxismin = axisH->gamma_energy_min();
-  const double xaxismax = axisH->gamma_energy_max();
-  const double initialDE = fabs(m_mouseDownXMax - m_mouseDownXMin);
-  
-  const float currentXMin = static_cast<float>( axis(Chart::XAxis).minimum() );
-  const float currentXMax = static_cast<float>( axis(Chart::XAxis).maximum() );
-  const float currentYMin = static_cast<float>( axis(Chart::OrdinateAxis).minimum() );
-  const float currentYMax = static_cast<float>( axis(Chart::OrdinateAxis).maximum() );
-
-  const WPointF lowerleft = mapToDevice( currentXMin, currentYMin );
-  const WPointF upperright = mapToDevice( currentXMax, currentYMax );
-  const double dpx = upperright.x() - lowerleft.x();
-  if( dpx==0.0 || IsInf(dpx) || IsNan(dpx) || m_mouseDownXMax<0.0f )
-  {
-    setRenderWaitingStatus( false );
-    return;
-  }
-  
-  const double origDE = m_mouseDownXMax - m_mouseDownXMin;
-  const double t0E0 = m_mouseDownXMin + origDE*((x0_t0-lowerleft.x())/dpx);
-  const double t1E0 = m_mouseDownXMin + origDE*((x0_t1-lowerleft.x())/dpx);
-  const double origMidE = 0.5*(t0E0 + t1E0);
-  const double midPxFrac = (0.5*(x_t0+x_t1) - lowerleft.x())/dpx;
-  
-  double newxmin = xaxismin, newxmax = xaxismax;
-  
-  if( factor > 1.0 )
-  {
-    //zooming-in - fingers are further apart then when they startet
-    //0.5 below is arbitrary, just to speed up the zooming
-    const double newDE = 0.5 * initialDE / factor;
-    
-    //origMidE should be at midPx, and the total x-range should span newDE
-    newxmin = std::max( origMidE - midPxFrac*newDE, xaxismin );
-    newxmax = std::min( origMidE + (1.0-midPxFrac)*newDE, xaxismax );
-  }else
-  {
-    //zooming-out - fingers are closer together then when they started
-    const double maxDE = xaxismax - xaxismin;
-    const double originalzoom = (m_mouseDownXMax - m_mouseDownXMin) / maxDE;
-    
-    //we want to get to a zoom of 1.0 by the time fingers are 25px apart
-    const double delta = 1.0 - originalzoom;
-    const double originalDPx = fabs((double)(x0_t0 - x0_t1));
-    const double currentDPx = fabs((double)(x_t0 - x_t1));
-    const double frac = 1.0 - (currentDPx-25.0)/(originalDPx-25.0);
-    
-    double zoom = originalzoom + delta*frac;
-    
-    zoom = std::max( zoom, originalzoom/factor );
-    zoom = std::min( zoom, 1.0 );
-    const double newDE = zoom * maxDE;
-    
-    double shift = 0.0;
-    newxmin = origMidE - midPxFrac*newDE;
-    newxmax = origMidE + (1.0-midPxFrac)*newDE;
-    
-    if( newxmin < xaxismin )
-      shift = xaxismin - newxmin;
-    else if( newxmax > xaxismax )
-      shift = xaxismax - newxmax;
-    
-    newxmin += shift;
-    newxmax += shift;
-  }//if( factor < 1.0 )
-  
-  
-  if( IsInf(newxmin) || IsNan(newxmin) || IsInf(newxmax) || IsNan(newxmax)
-      || newxmin==newxmax || newxmax<newxmin )
-  {
-    newxmin = m_mouseDownXMin;
-    newxmax = m_mouseDownXMax;
-  }
-  
-  setXAxisRange( newxmin, newxmax );
-  m_xRangeChanged.emit( newxmin, newxmax );
-}//handlePinchZoomChange(...)
-
-
-void SpectrumChart::handleMouseEnter()
-{
-  handleMouseLeft();
-}
-
-
-void SpectrumChart::handleMouseDown( int x, int y, int modifiers )
-{
-  if( !checkHighBandWidthInterActionApplicable() )
-    return;
-  
-  y += m_scrollY;
-  
-  const WPointF point = mapFromDevice( WPointF(x,y), Chart::OrdinateAxis );
-
-//  const int ntouches = (modifiers / 1000);
-  
-  m_mouseDownX = x;
-  m_mouseDownY = y;
-  m_currentDownX = x;
-  m_currentDownY = y;
-  m_mouseDownEnergy = point.x();
-  m_mouseDownCounts = point.y();
-
-  m_mouseDownXMin = static_cast<float>( axis(Chart::XAxis).minimum() );
-  m_mouseDownXMax = static_cast<float>( axis(Chart::XAxis).maximum() );
-  m_mouseDownYMin = static_cast<float>( axis(Chart::OrdinateAxis).minimum() );
-  m_mouseDownYMax = static_cast<float>( axis(Chart::OrdinateAxis).maximum() );
-  
-  setRenderWaitingStatus( false );
-}//void handleMouseDown( int x, int y, int modifiers )
-
-
-void SpectrumChart::handleMouseUp( int x, int y, int modifiers, int dt )
-{
-  if( !checkHighBandWidthInterActionApplicable() )
-    return;
-  
-//  if( dt < 120 )
-//    return;
-  
-  handleMouseLeft();
-}//void handleMouseUp( int x, int y, int modifiers )
-
-
-void SpectrumChart::handleLeftMouseMove( int x, int y, int dt )
-{
-  if( !checkHighBandWidthInterActionApplicable() )
-    return;
-    
-  if( x > m_mouseDownX )
-    return;
-  
-  if( (m_mouseDownX == -999)
-     || (m_currentDownX==x && m_currentDownY==y) )
-  {
-    setRenderWaitingStatus( false );
-    return;
-  }
-
-  //The zooming out on the y-axis is a bit messed up
-  //Should implement handling the user hit the escape key while zooming out
-  const int dx = m_mouseDownX - x;
-  const int dy = m_mouseDownY - y;
-  
-  if( (abs(dy) > abs(dx)) )
-  {
-    if( abs(dy) > 10 )
-    {
-      const float xmin = static_cast<float>( axis(Chart::XAxis).minimum() );
-      const float xmax = static_cast<float>( axis(Chart::XAxis).maximum() );
-  
-      if( fabs(m_mouseDownXMin-xmin)>0.001 || fabs(m_mouseDownXMax-xmax)>0.001 )
-      {
-        setXAxisRange( m_mouseDownXMin, m_mouseDownXMax );
-        m_xRangeChanged.emit( m_mouseDownXMin, m_mouseDownXMax );
-        setYAxisRange( m_mouseDownYMin, m_mouseDownYMax ); //doesnt seem to be working
-      }
-    }//if( abs(dy) > 10 )
-    
-    setRenderWaitingStatus( false );
-    
-    return;
-  }//if( (abs(dy) > abs(dx)) && (abs(dy) > 20) )
-  
-  
-  m_currentDownX = x;
-  m_currentDownY = y;
-  
-  y += m_scrollY;
-  
-  double xaxismin = 0.0, xaxismax = 3000.0;
-  
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model() );
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
-  assert( m );
-#endif
-  
-  if( !m )
-    return;
-  
-  std::shared_ptr<Measurement> axisH = m->histUsedForXAxis();
-  if( !!axisH )
-  {
-    xaxismin = axisH->gamma_energy_min();
-    xaxismax = axisH->gamma_energy_max();
-  }//if( !!axisH )
-  
-  double frac = 4.0 * (m_mouseDownX - x) / double(m_mouseDownX);
-  if( IsInf(frac) || IsNan(frac) || frac < 0.0 )
-    frac = 0.0;
-  
-  const double origdx = m_mouseDownXMax - m_mouseDownXMin;
-  const double maxdx = xaxismax - xaxismin;
-  const double newdx = origdx + frac*(maxdx - origdx);
-  
-  const double deltadx = newdx - origdx;
-  const double newxmin = std::max( m_mouseDownXMin - 0.5*deltadx, xaxismin );
-  const double newxmax = std::min( m_mouseDownXMax + 0.5*deltadx, xaxismax );
-    
-  setXAxisRange( newxmin, newxmax );
-  m_xRangeChanged.emit( newxmin, newxmax );
-}//void handleLeftMouseMove( int x, int y )
-
-
-void SpectrumChart::handleAltLeftMouseMove( int x, int y, int dt )
-{
-  if( !checkHighBandWidthInterActionApplicable() )
-    return;
-
-  if( (m_mouseDownX == -999)
-      || (m_currentDownX==x && m_currentDownY==y) )
-  {
-    setRenderWaitingStatus( false );
-    return;
-  }
-  
-  m_currentDownX = x;
-  m_currentDownY = y;
-  
-  y += m_scrollY;
-  
-  const WPointF point = mapFromDevice( WPointF(x,y), Chart::OrdinateAxis );
-  
-  const double delta = m_mouseDownEnergy - point.x();
-  const double oldmin = axis(Chart::XAxis).minimum();
-  const double oldmax = axis(Chart::XAxis).maximum();
-
-  double newmin = oldmin + delta;
-  double newmax = oldmax + delta;
-  
-  double xaxismin = 0.0, xaxismax = 3000.0;
-  
-  //checked in checkHighBandWidthInterActionApplicable() already
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model() );
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
-  assert( m );
-#endif
-  
-  if( !m )
-    return;
-  
-  std::shared_ptr<Measurement> axisH = m->histUsedForXAxis();
-  if( !!axisH )
-  {
-    xaxismin = axisH->gamma_energy_min();
-    xaxismax = axisH->gamma_energy_max();
-  }//if( !!axisH )
-  
-  if( newmin < xaxismin )
-  {
-    newmin = xaxismin;
-    newmax = newmin + (oldmax-oldmin);
-  }
-  
-  if( newmax > xaxismax )
-  {
-    newmax = xaxismax;
-    newmin = newmax - (oldmax-oldmin);
-  }
- 
-  setXAxisRange( newmin, newmax );
-  m_xRangeChanged.emit( newmin, newmax );
-}//void handleAltLeftMouseMove( int x, int y );
-#endif  //#if( USE_HIGH_BANDWIDTH_INTERACTIONS )
-
-
-void SpectrumChart::handleControlMouseMove( int x_start, int x_finish )
-{
-  try
-  {
-    const WPointF point0( static_cast<double>( x_start ), 0.0 );
-    const WPointF point1( static_cast<double>( x_finish ), 0.0 );
-    const WPointF modelPoint0 = mapFromDevice( point0, Chart::OrdinateAxis );
-    const WPointF modelPoint1 = mapFromDevice( point1, Chart::OrdinateAxis );
-
-    m_controlMouseMoved.emit( modelPoint0.x(), modelPoint1.x() );
-  }catch(...)
-  {
-    cerr << "Caught exception in handleControlMouseMove(...)" << endl;
-  }
-}//void handleControlMouseMove( int x_start )
-
 
 
 
@@ -3653,21 +2289,7 @@ void SpectrumChart::paint( WPainter &painter, const WRectF &rectangle ) const
   
   paintOnChartLegend( painter );
   
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   renderReferncePhotoPeakLines( painter );
-#endif
-  
-  loadPeakInfoToClient();
-  loadXAndYRangeEquationToClient();
-  
-  if( m_overlayCanvas )
-  {
-#if( IOS || ANDROID )
-    wApp->doJavaScript( "Wt.WT.OverlayTouchChange(" + m_overlayCanvas->jsRef() + ",null);" ); 
-#else
-    wApp->doJavaScript( "Wt.WT.DrawGammaLines('c" + m_overlayCanvas->id() + "',true);" );
-#endif
-  }
 }//paint( ... )
 
 
@@ -3733,372 +2355,6 @@ void SpectrumChart::paintHighlightRegions( Wt::WPainter &painter ) const
 }//void paintHighlightRegions( Wt::WPainter& painter ) const
 
 
-void SpectrumChart::loadPeakInfoToClient() const
-{
-  //right now peakModelDataChanged(...) assumes loadPeakInfoToClient()
-  //  only loads nuclide symbol and energy to client, and
-  //  not kUseForShieldingSourceFit, kCandidateIsotopes, kUseForCalibration;
-  //  if this changes in the future, make sure to update
-  //  peakModelDataChanged(...)
-  
-  if( !m_overlayCanvas || !m_peakModel )
-    return;
-
-#if( WT_VERSION < 0x3030600 )
-  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( model() );
-#else
-  auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model() );
-  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
-  assert( th1Model );
-#endif
-  
-  if( !th1Model )
-  {
-    cerr << "SpectrumChart::loadPeakInfoToClient(): no SpectrumDataModel" << endl;
-    return;
-  }
-
-  std::shared_ptr<const Measurement> data;
-  int dataCol = -1, backgroundCol = -1;
-
-  if( th1Model )
-  {
-    data = th1Model->getData();
-
-    dataCol = th1Model->dataColumn();
-    backgroundCol = th1Model->backgroundColumn();
-  }//if( th1Model )
-
-
-  stringstream js;
-  js << ""
-     << "" "{"
-     << ""   "try{"
-     << ""      "$('#c" << m_overlayCanvas->id() << "').data('peaks',"
-     << ""        "[";
-
-  const size_t npeaks = m_peakModel->npeaks();
-  for( size_t peakn = 0; peakn < npeaks; ++peakn )
-  {
-    const PeakDef &peak = m_peakModel->peak(peakn);
-    if( peakn )
-      js << ",";
-
-    try
-    {
-      double ymin = 0.0;
-      
-      double lowx(0.0), upperx(0.0);
-      findROIEnergyLimits( lowx, upperx, peak, data );
-      
-      const int peakrow = th1Model->findRow( peak.mean() );
-//      const int lowerrow = th1Model->findRow( lowx );
-//      const int upperrow = th1Model->findRow( upperx );
-
-      double ymax = th1Model->data( peakrow, dataCol );
-
-      if( data && th1Model->backgroundSubtract() && (backgroundCol >= 0) )
-      {
-        ymin = th1Model->data( peakrow, backgroundCol );
-        ymax -= ymin;
-      }//if( data && th1Model )
-
-      double contarea = 0;
-      switch( peak.continuum()->type() )
-      {
-        case PeakContinuum::NoOffset:     case PeakContinuum::Constant:
-        case PeakContinuum::Linear:       case PeakContinuum::Quadratic:
-        case PeakContinuum::Cubic:        case PeakContinuum::External:
-          contarea = peak.offset_integral( lowx, upperx, data );
-          break;
-          
-        case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
-        case PeakContinuum::BiLinearStep:
-          if( data )
-            contarea = peak.offset_integral( lowx, upperx, data );
-          break;
-      }//switch( peak.continuum()->type() )
-      
-
-      double lowe = 0.0, highe = 0.0;
-      findROIEnergyLimits( lowe, highe, peak, data );
-      
-      const WPointF lower = mapToDevice( lowe, ymin );
-      const WPointF upper = mapToDevice( highe, ymax );
-      const WPointF meanpoint = mapToDevice( peak.mean(), ymax );
-
-//      cout << "testpeaks.push_back( EnergyIntensityPair( " << fixed << setprecision(2) << peak.mean
-//           << ", " << fixed << setprecision(1) << peak.amplitude << " );" << endl;
-
-      if( IsInf(peak.mean()) || IsNan(peak.mean()) )
-        continue;
-
-      js << "{mean:"   << fixed << setprecision(2) << peak.mean();
-      const double ampuncert = peak.amplitudeUncert();
-      
-      switch ( peak.type() )
-      {
-        case PeakDef::GaussianDefined:
-          js << ",sigma:" << fixed << setprecision(2) << peak.sigma()
-             << ",amp:"   << fixed << setprecision(1) << peak.peakArea();
-          if( ampuncert > 0.0 && !IsNan( ampuncert ) && !IsInf( ampuncert ) )
-            js << ",ampuncert:" << fixed << setprecision(2) << ampuncert;
-        break;
-          
-        default:
-          js << ",sigma:'na',amp:'na'";
-        break;
-      }//switch ( peak.type() )
-
-
-      float energy = 0.0f;
-      try
-      {
-        energy = peak.gammaParticleEnergy();
-      }catch(...)
-      {
-      }
-      
-      if( peak.parentNuclide() && peak.decayParticle() )
-      {
-        js << ",nuclide:'" << peak.parentNuclide()->symbol << " (";
-        
-        switch( peak.sourceGammaType() )
-        {
-          case PeakDef::NormalGamma:
-          case PeakDef::AnnihilationGamma:
-          {
-            const SandiaDecay::Transition *trans = peak.nuclearTransition();
-            if( trans && trans->parent && trans->parent != peak.parentNuclide() )
-              js << trans->parent->symbol << ", ";
-            break;
-          }
-            
-          case PeakDef::SingleEscapeGamma:
-          {
-            energy += 510.99891f;
-            js << "S.E. from ";
-            break;
-          }
-            
-          case PeakDef::DoubleEscapeGamma:
-          {
-            energy += 2.0f*510.99891f;
-            js << "D.E. from ";
-            break;
-          }
-            
-          case PeakDef::XrayGamma:
-          {
-            const SandiaDecay::Transition *trans = peak.nuclearTransition();
-            if( trans && trans->parent && trans->parent != peak.parentNuclide() )
-              js << trans->parent->symbol << ", ";
-            js << "xray ";
-            break;
-          }
-        }//switch( peak.sourceGammaType() )
-        
-        js << std::setprecision(2) << energy << " keV)'";
-      }else if( peak.parentNuclide() && energy>0.0f)
-      {
-        js << ",nuclide:'" << peak.parentNuclide()->symbol
-           << " (" << std::setprecision(2) << energy << " keV ann.)'";
-      }else if( peak.xrayElement() )
-      {
-        js << ",nuclide:'" << peak.xrayElement()->symbol << " x-ray ("
-           << std::setprecision(2) << energy << " keV)'";
-      }else if( peak.reaction() )
-      {
-        js << ",nuclide:'" << peak.reaction()->name() << " ("
-        << std::setprecision(2) << energy << " keV)'";
-      }//if( parent nuclide ) / else ( xray ) / else if( reaction )
-
-      if( peak.chi2Defined() )
-        js << ",chi2:'" << std::setprecision(2) << peak.chi2dof() << "'";
-      
-      js <<   ",xminp:" << static_cast<int>(floor(lower.x()+0.5))
-         <<   ",xmaxp:" << static_cast<int>(floor(upper.x()+0.5))
-         <<   ",yminp:" << static_cast<int>(floor(lower.y()+0.5))
-         <<   ",ymaxp:" << static_cast<int>(floor(upper.y()+0.5))
-         <<   ",meanp:" << static_cast<int>(floor(meanpoint.x()+0.5))
-         <<   ",cont:" << fixed << setprecision(1) << contarea
-         << "}";
-    }catch(...)
-    {
-      //
-    }//try / catch
-  }//for( loop over peaks )
-
-  js << ""        "]);"
-     << ""     "}catch(e){}"
-     << ""   "}"
-        ;
-
-  wApp->doJavaScript( js.str() );
-}//void loadPeakInfoToClient()
-
-
-std::string SpectrumChart::pixelToCoordinateMappingJs( const Wt::Chart::Axis axisType ) const
-{
-  const Chart::WAxis &yaxis = axis(axisType);
-  const Chart::AxisScale yscale = yaxis.scale();
-  const bool logy = (yscale==Chart::LogScale); //CategoryScale LinearScale LogScale DateScale DateTimeScale
-
-  if( logy )
-  {
-    const double ymin = max(0.1,yaxis.minimum());
-    const double ymax = yaxis.maximum();
-
-    WPointF lowerLog, upperLog;
-    if( axisType == Chart::XAxis )
-    {
-      lowerLog = mapToDevice( ymin, 0.0, axisType );
-      upperLog = mapToDevice( ymax, 0.0, axisType );
-    }else
-    {
-      lowerLog = mapToDevice( 0.0, ymin, axisType );
-      upperLog = mapToDevice( 0.0, ymax, axisType );
-    }//if( axisType == Chart::XAxis ) / else
-
-/*
-    double h, y;
-    const double lowerYCoord = lowerLog.y();
-    const double upperYCoord = upperLog.y();
-    const double midy_pixel = (lowerLog.y() - upperLog.y())/2.0;
-    const WPointF midLog = mapFromDevice( WPointF(0.0, midy_pixel) );
-    h = midy_pixel;
-    y = std::exp(std::log(ymin) + h * (std::log(ymax) - std::log(ymin)) / (lowerLog.y() - upperLog.y()) );
-    WPointF answer = mapFromDevice( WPointF(0.0, lowerYCoord-h) );
-    cerr << "trying h=" << h << ", y=" << y << ", ymax=" << ymax << ", answer.y()=" << answer.y() << endl;
-*/
-    const double y_pixel_range = lowerLog.y() - upperLog.y();
-    const double log_coord_range_ratio = std::log(ymax) - std::log(ymin);
-    const double pixel_multiplier = log_coord_range_ratio / y_pixel_range;
-    WStringStream js;
-    js << "function(y){"
-       << "return Math.exp(" << std::log(ymin)
-                             << "+(" << lowerLog.y() << "-y)*"
-                             << pixel_multiplier
-       << ");}";
-    return js.str();
-  }else
-  {
-    const WPointF lowerLeft = mapFromDevice( WPointF(0.0,m_heightInPixels), axisType );
-    const WPointF upperRight = mapFromDevice( WPointF(m_widthInPixels,0.0), axisType );
-
-    WStringStream js;
-    if( axisType == Chart::XAxis )
-    {
-      const double x0 = lowerLeft.x();
-      const double x1 = (upperRight.x() - x0) / m_widthInPixels;
-      js << "function(x){return " << x0 << "+" << x1 << "*x;}";
-    }else
-    {
-      const double y0 = lowerLeft.y();
-      const double y1 = (upperRight.y()-y0) / m_heightInPixels;
-      js << "function(y){return " << y0 << "-" << y1 << "*(y-" << m_heightInPixels << ");}";
-    }//if( axisType == Chart::XAxis ) / else
-
-    return js.str();
-  }//if( logy ) / else
-
-  return "null"; //wont ever get here
-}//std::string pixelToCoordinateMappingJs( Wt::Chart::Axis axis )
-
-//#if(DRAW_GAMMA_LINES_LOG_AND_LIN)
-std::string SpectrumChart::countsToPixelMappingJs() const
-{
-  const Chart::WAxis &yaxis = axis(Chart::YAxis);
-  const Chart::AxisScale yscale = yaxis.scale();
-  const bool logy = (yscale==Chart::LogScale); //CategoryScale LinearScale LogScale DateScale DateTimeScale
-  
-  if( logy )
-  {
-    const double ymin = max(0.1,yaxis.minimum());
-    const double ymax = yaxis.maximum();
-    
-    WPointF lowerLog, upperLog;
-    lowerLog = mapToDevice( 0.0, ymin, Chart::YAxis );
-    upperLog = mapToDevice( 0.0, ymax, Chart::YAxis );
-    
-    const double y_pixel_range = lowerLog.y() - upperLog.y();
-    const double log_coord_range_ratio = std::log(ymax) - std::log(ymin);
-    const double pixel_multiplier = log_coord_range_ratio / y_pixel_range;
-    WStringStream js;
-    
-    js << "function(counts){ return " << lowerLog.y() << "-(Math.log(counts)-("
-       << std::log(ymin) << "))/" << pixel_multiplier << ";}";
-    return js.str();
-  }else
-  {
-    const WPointF lowerLeft = mapFromDevice( WPointF(0.0,m_heightInPixels), Chart::YAxis );
-    const WPointF upperRight = mapFromDevice( WPointF(m_widthInPixels,0.0), Chart::YAxis );
-    
-    WStringStream js;
-    const double y0 = lowerLeft.y();
-    const double y1 = (upperRight.y()-y0) / m_heightInPixels;
-    const double high = 1.0*m_heightInPixels + y0/y1;
-    js << "function(counts){return " << high << "-counts/" << y1 << ";}";
-    return js.str();
-  }//if( logy ) / else
-  
-  return "null"; //wont ever get here
-}//std::string SpectrumChart::countsToPixelMappingJs() const
-//#endif
-
-std::string SpectrumChart::energyToPixelMappingJs() const
-{
-  const WPointF lowerLeft = mapFromDevice( WPointF(0.0,m_heightInPixels), Wt::Chart::XAxis );
-  const WPointF upperRight = mapFromDevice( WPointF(m_widthInPixels,0.0), Wt::Chart::XAxis );
-
-  WStringStream js;
-  const double x0 = lowerLeft.x();
-  const double x1 = (upperRight.x() - x0) / m_widthInPixels;
-
-  if( x0 >= 0.0 )
-    js << "function(x){return (x-" << x0 << ")/"<< x1 << ";}";
-  else
-    js << "function(x){return (x+" << -x0 << ")/"<< x1 << ";}";
-
-  return js.str();
-}//std::string SpectrumChart::energyToPixelMappingJs() const
-
-
-void SpectrumChart::loadXAndYRangeEquationToClient() const
-{
-  if( m_xAxisUnits == kUndefinedUnits )
-    return;
-  
-  WStringStream js;
-  js << ""
-     << "" "{"
-     << ""   "try{"
-     << ""      "var can = $('#c" << m_overlayCanvas->id() << "');"
-     << ""      "can.data('xeqn'," << pixelToCoordinateMappingJs( Wt::Chart::XAxis ) << ");"
-     << ""      "can.data('yeqn'," << pixelToCoordinateMappingJs( Wt::Chart::YAxis ) << ");"
-     << ""      "can.data('exeqn'," << energyToPixelMappingJs() << ");"
-//#if(DRAW_GAMMA_LINES_LOG_AND_LIN)
-     << ""      "can.data('cyeqn'," << countsToPixelMappingJs() << ");"
-//#endif
-        ;
-  if( axis(Chart::Y2Axis).isVisible() )
-    js << ""    "can.data('y2eqn'," << pixelToCoordinateMappingJs( Wt::Chart::Y2Axis ) << ");";
-  else
-    js << ""    "can.data('y2eqn',null);";
-  js << ""     "}catch(e){}"
-     << ""   "}";
-
-  wApp->doJavaScript( js.str() );
-}//void loadXAndYRangeEquationToClient() const
-
-
-
-
-void SpectrumChart::setShowRefLineInfoForMouseOver( const bool show )
-{
-  if( m_overlayCanvas )
-    m_overlayCanvas->setShowRefLineInfoForMouseOver( show );
-}//void setShowRefLineInfoForMouseOver( const bool show )
 
 
 void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter ) const
@@ -5307,11 +3563,10 @@ void SpectrumChart::renderFloatingLegend()
 
   //Dont draw legend text if theres no spectrum on the chart, or for
   //  time series data, dont show the legend for gamma only data
-  if( (nhists < 1) || ((m_dragAction == HighLight) && (nhists < 2)) )
+  if( nhists < 1 )
   {
     if( m_legend )
     {
-      m_legendMovedSlot.reset();
       delete m_legend;
       m_legend = 0;
     }//if( m_legend )
@@ -5351,9 +3606,6 @@ void SpectrumChart::renderFloatingLegend()
     titleBar->addStyleClass( "legend-title" );
     legendContents->addStyleClass( "legend-body" );
     
-    string js = "function(e,s){this.WT.LegendMoved('" + id() + "');}";
-    m_legendMovedSlot.reset( new JSlot( js, m_legend ) );
-    titleBar->clicked().connect( *m_legendMovedSlot );
     m_legend->show();
     needRender = true;
   }//if( !m_legend )
@@ -5503,15 +3755,14 @@ void SpectrumChart::paintOnChartLegend( Wt::WPainter &painter ) const
   if( !mdl )
     return;
   
-  const int nhists = (!!mdl->getData() + !!mdl->getSecondData()
-                      + !!mdl->getBackground());
+  const int nhists = (!!mdl->getData() + !!mdl->getSecondData() + !!mdl->getBackground());
   
   //Dont draw legend text if theres no spectrum on the chart
   if( nhists < 1 )
     return;
   
   //For time series data, dont show the legend for gamma only data
-  if( (m_dragAction == HighLight) && (nhists < 2) )
+  if( (m_xAxisUnits == XAxisUnits::kSeconds) && (nhists < 2) )
     return;
   
   char buffer[64];
@@ -5771,10 +4022,6 @@ void SpectrumChart::paintEvent( WPaintDevice *paintDevice )
   
   //paint the chart
   Wt::Chart::WCartesianChart::paintEvent( paintDevice );
-  
-#if( USE_HIGH_BANDWIDTH_INTERACTIONS )
-  setRenderWaitingStatus( false );
-#endif
 }//void paintEvent( WPaintDevice *paintDevice )
 
 
@@ -5782,13 +4029,6 @@ void SpectrumChart::clearTimeHighlightRegions( const HighlightRegionType region 
 {
   setTimeHighLightRegions( vector< pair<double,double> >(), region );
 }//void clearTimeHighlightRegions()
-
-
-void SpectrumChart::setControlDragDebouncePeriod( int milliseconds )
-{
-  if( m_overlayCanvas )
-    m_overlayCanvas->setControlDragDebounceTimePeriod( milliseconds );
-}
 
 
 void SpectrumChart::setYAxisScale( Wt::Chart::AxisScale scale )
@@ -5818,138 +4058,6 @@ bool SpectrumChart::legendIsEnabled() const
 }//bool legendIdEnabled() const
 
 
-Signal<> &SpectrumChart::legendEnabled()
-{
-  return m_legendEnabled;
-}//Signal<> &legendEnabled()
-
-
-Signal<> &SpectrumChart::legendDisabled()
-{
-  return m_legendDisabled;
-}//Signal<> &legendDisabled()
-
-
-void SpectrumChart::connectWtMouseConnections()
-{
-  if( !m_doubleClickConnection.connected() )
-    m_doubleClickConnection = doubleClicked().connect( this, &SpectrumChart::handleDoubleLeftClick );
-  if( !m_wtMouseWentUpConnection.connected() )
-    m_wtMouseWentUpConnection = mouseWentUp().connect(  boost::bind( &SpectrumChart::wtMouseUp, this, _1 ) );
-  if( !m_wtMouseDraggedConnection.connected() )
-    m_wtMouseDraggedConnection = mouseDragged().connect( boost::bind( &SpectrumChart::wtDragged, this, _1 ) );
-}//void connectWtMouseConnections()
-
-
-void SpectrumChart::disconnectWtMouseConnections()
-{
-  if( m_doubleClickConnection.connected() )
-    doubleClicked().disconnect( m_doubleClickConnection );
-  if( m_wtMouseWentUpConnection.connected() )
-    mouseWentUp().disconnect( m_wtMouseWentUpConnection );
-  if( m_wtMouseDraggedConnection.connected() )
-    mouseDragged().disconnect( m_wtMouseDraggedConnection );
-}//void disconnectWtMouseConnections()
-
-
-bool SpectrumChart::overlayCanvasEnabled() const
-{
-  return (m_overlayCanvas && m_overlayCanvas->isEnabled() && !m_overlayCanvas->isHidden());
-}//bool overlayCanvasEnabled() const
-
-
-void SpectrumChart::disableOverlayCanvas()
-{
-  if( m_overlayCanvas )
-  {
-    delete m_overlayCanvas;
-    m_overlayCanvas = NULL;
-  }//if( m_overlayCanvas )
-
-  // XXX - if you have previously hardcoded alignOverlayCanvas()->execJs() into your javascript,
-  // I'm not sure what will happen
-  if( m_alignOverlayCanvas )
-    m_alignOverlayCanvas.reset();
-
-  connectWtMouseConnections();
-}//void disableOverlayCanvas()
-
-
-
-Wt::JSlot *SpectrumChart::alignOverlayCanvas() //returns NULL if overlay canvas not enabled
-{
-  return m_alignOverlayCanvas.get();
-}
-
-
-
-Wt::JSignal<std::string> *SpectrumChart::overlayCanvasJsException()  //returns NULL if not available
-{
-  if( !m_overlayCanvas )
-    return NULL;
-  return m_overlayCanvas->jsException();
-}//JSignal<string> overlayCanvasJsException()
-
-
-CanvasForDragging *SpectrumChart::overlayCanvas()
-{
-  return m_overlayCanvas;
-}//CanvasForDragging *overlayCanvas()
-
-
-void SpectrumChart::enableOverlayCanvas( bool outline, bool highlight, bool altShiftHighlight )
-{
-  if( !m_overlayCanvas )
-  {
-    disconnectWtMouseConnections();
-    
-    if( !m_doubleClickConnection.connected() )
-      m_doubleClickConnection = doubleClicked().connect( this, &SpectrumChart::handleDoubleLeftClick );
-    
-    WApplication *app = WApplication::instance();
-    LOAD_JAVASCRIPT(app, "js/SpectrumChart.js", "SpectrumChart", wtjsAlignOverlay);
-    
-    m_overlayCanvas = new CanvasForDragging( this, outline, highlight, altShiftHighlight );
-    m_overlayCanvas->userDragged().connect( this, &SpectrumChart::userDragged );
-    m_overlayCanvas->userSingleClicked().connect( this, &SpectrumChart::handleLeftClick );
-//    m_overlayCanvas->controlMouseDown().connect( boost::bind( &SpectrumChart::handleControlMouseDown, this, _1 ) );
-    m_overlayCanvas->controlMouseMove().connect( boost::bind( &SpectrumChart::handleControlMouseMove, this, _1, _2 ) );
-    m_overlayCanvas->rightClickSignal().connect( this, &SpectrumChart::handleRightClick );
-    if( m_overlayCanvas->dblTap() )
-      m_overlayCanvas->dblTap()->connect( boost::bind( &SpectrumChart::handleDoubleTap, this, _1, _2 ) );
-    
-//    const string js = "function(e,s){Wt.WT.AlignOverlay('" + id() + "Cover', '" + id() + "' );};";
-    const string js = "function(e,s){this.WT.AlignOverlay('" + m_overlayCanvas->id() + "', '" + id() + "' );}";
-    m_alignOverlayCanvas.reset( new JSlot( js, this ) );
-    
-#if(DRAW_GAMMA_LINES_LOG_AND_LIN)
-    string gamloglinoptjs = "$('#c" + m_overlayCanvas->id() + "').data('GammaLinesLogAndLin',true);";
-#else
-    string gamloglinoptjs = "$('#c" + m_overlayCanvas->id() + "').data('GammaLinesLogAndLin',false);";
-#endif
-    
-   app->doJavaScript( gamloglinoptjs );
-    
-    
-#if( USE_HIGH_BANDWIDTH_INTERACTIONS )
-    m_overlayCanvas->mousedown().connect( this, &SpectrumChart::handleMouseDown );
-    m_overlayCanvas->mouseup().connect( this, &SpectrumChart::handleMouseUp );
-    m_overlayCanvas->leftDownMouseMove().connect( this, &SpectrumChart::handleLeftMouseMove );
-    m_overlayCanvas->altLeftDownMouseMove().connect( this, &SpectrumChart::handleAltLeftMouseMove );
-    m_overlayCanvas->mouseWentOut().connect( this, &SpectrumChart::handleMouseLeft );
-    m_overlayCanvas->mouseWentOver().connect( this, &SpectrumChart::handleMouseEnter );
-    m_overlayCanvas->pinchZoomChange().connect( this, &SpectrumChart::handlePinchZoomChange );
-#endif
-
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
-    const string renderjs = "$('#c" + m_overlayCanvas->id() + "').data('ServerReferencePhotopeaks',true);";
-    wApp->doJavaScript( renderjs );
-#endif
-  }//if( !m_overlayCanvas )
-}//void SpectrumChart::enableOverlayCanvas()
-
-
-
 void SpectrumChart::disableLegend()
 {
   if( m_legendType == NoLegend )
@@ -5970,8 +4078,6 @@ void SpectrumChart::disableLegend()
   
   if( rerender )
     update();
-  
-  m_legendDisabled.emit();
 }//void disableLegend()
 
 
@@ -5994,8 +4100,6 @@ void SpectrumChart::enableLegend( const bool forceMobileStyle )
   if( forceMobileStyle || (app && app->isMobile()) || (BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT) )
   {
     m_legendType = OnChartLegend;
-    m_legendEnabled.emit();  //notify observers (mostly to togle menu item)
-    
     update(); //force a re-draw
     return;
   }
@@ -6003,12 +4107,10 @@ void SpectrumChart::enableLegend( const bool forceMobileStyle )
   if( wtapp )
   {
     LOAD_JAVASCRIPT(wtapp, "js/SpectrumChart.js", "SpectrumChart", wtjsAlignLegend);
-    LOAD_JAVASCRIPT(wtapp, "js/SpectrumChart.js", "SpectrumChart", wtjsLegendMoved);
   }
   
   m_legendType = FloatingLegend;
   renderFloatingLegend();
-  m_legendEnabled.emit();
 }//void enableLegend()
 
 
@@ -6017,16 +4119,11 @@ void SpectrumChart::setHidden( bool hidden, const Wt::WAnimation &animation )
 {
   WCartesianChart::setHidden( hidden, animation );
 
-  
   if( m_legend )
   {
-    m_legendMovedSlot.reset();
     delete m_legend;
     m_legend = 0;
   }//if( m_legend )
-
-  if( m_overlayCanvas )
-    m_overlayCanvas->setHidden( hidden, animation );
 }//void setHidden( bool hidden, const Wt::WAnimation &animation )
 
 
@@ -6041,13 +4138,9 @@ int SpectrumChart::setLeftYAxisPadding( double width, double height, Wt::WPaintD
 //    height = chartArea().height() + plotAreaPadding(Top) + plotAreaPadding(Bottom);
 //  }
   
-#if( WT_VERSION<=0x3030100 )
-  initLayout( WRectF(0.0, 0.0, width, height ) );
-#else
   const bool inited = initLayout( WRectF(0.0, 0.0, width, height ), paintDevice );
   if( !inited )
     return -1;
-#endif
   
   Chart::WAxis &yaxis = axis(Chart::OrdinateAxis);
   
@@ -6115,35 +4208,10 @@ int SpectrumChart::setLeftYAxisPadding( double width, double height, Wt::WPaintD
     return 0;
     
   setPlotAreaPadding( left, Wt::Left );
-
-  if( m_overlayCanvas )
-    m_overlayCanvas->setChartPadding();
   
   return 1;
 }//setLeftYAxisPadding()
 #endif
-
-
-void SpectrumChart::setScrollY( int scrollY )
-{
-  m_scrollY = scrollY;
-}
-
-
-void SpectrumChart::setScrollingParent( Wt::WContainerWidget *parent )
-{
-  if( m_overlayCanvas )
-    m_overlayCanvas->setScrollingParent( parent );
-  else
-    cerr << "SpectrumChart::setScrollingParent(...)\n\tWarning, calling this funtion has no effect\n";
-}//void setScrollingParent( Wt::WContainerWidget *parent )
-
-
-void SpectrumChart::setOverlayCanvasVisible( bool visible )
-{
-  if( m_overlayCanvas )
-    m_overlayCanvas->setHidden( !visible );
-}//void setOverlayCanvasVisible( bool visible )
 
 
 void SpectrumChart::setDefaultPeakColor( const Wt::WColor &color )
@@ -6219,13 +4287,6 @@ void SpectrumChart::saveChartToPng( const std::string &filename )
 }//void saveChartToPng( const std::string &name )
 
 
-void SpectrumChart::setAvoidMobileMenu( const bool avoid )
-{
-  m_avoidMobileMenu = avoid;
-}//void setAvoidMobileMenu( const bool avoid )
-
-
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
 void SpectrumChart::setReferncePhotoPeakLines( const ReferenceLineInfo &nuc )
 {
   m_referencePhotoPeakLines = nuc;
@@ -6347,8 +4408,6 @@ void SpectrumChart::renderReferncePhotoPeakLines( Wt::WPainter &painter ) const
   if( m_referencePhotoPeakLines.energies.size() )
     renderReferncePhotoPeakLines( painter, m_referencePhotoPeakLines );
 }//void renderReferncePhotoPeakLines( Wt::WPainter &painter );
-
-#endif
 
 
 void SpectrumChart::modelChanged()

@@ -2982,9 +2982,12 @@ D3TimeChart.prototype.hideToolTip = function () {
  * @returns the tooltip string
  */
 D3TimeChart.prototype.setMouseInfoText = function (time, data, optargs) {
+  // optargs.startTimeStamp is the time in milliseconds since epoch; the Date object is constructed
+  //  in the current locale, so we want to call the "toLocaleString(...)" function with no locales,
+  //  which should then use the current locale, so everything washes out.
   var s = "";
   if (optargs && optargs.startTimeStamp != null)
-    s += new Date(optargs.startTimeStamp).toLocaleString() + "<\n>";
+    s += new Date(optargs.startTimeStamp).toLocaleString([], {hour12: false}) + "<\n>";
 
   // If want compression data in the tooltip, uncomment below
   // var compressionIndex = this.state.selection
