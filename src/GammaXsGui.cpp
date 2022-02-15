@@ -37,12 +37,12 @@
 #include <Wt/WRegExpValidator>
 
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/GammaXsGui.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/DetectorEdit.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/MassAttenuationTool.h"
