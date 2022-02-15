@@ -47,12 +47,12 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/DrfSelect.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/DetectorEdit.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"

@@ -29,12 +29,12 @@
 #include <Wt/WAbstractItemDelegate>
 
 #include "InterSpec/FluxTool.h"
+#include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/Filesystem.h"
-#include "InterSpec/DetectorEdit.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"

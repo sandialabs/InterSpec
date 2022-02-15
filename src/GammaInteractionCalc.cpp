@@ -58,12 +58,12 @@
 #include "Minuit2/MnMinimize.h"
 
 #include "SpecUtils/DateTime.h"
+#include "InterSpec/DrfSelect.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/Integrate.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/DetectorEdit.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
