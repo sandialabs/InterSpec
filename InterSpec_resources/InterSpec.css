@@ -1046,6 +1046,21 @@ input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner
 
 
 
+.RefGammaHelp
+{
+  position: absolute;
+  left: 0px;
+  bottom: 0px;
+}
+
+.RefGammaCsv
+{
+  position: absolute;
+  right: 0px;
+  bottom: 0px;
+}
+
+
 .legend
 {
 border: none;

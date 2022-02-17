@@ -39,6 +39,8 @@
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
+#include <Wt/Http/Request>
+#include <Wt/Http/Response>
 #include <Wt/WStringStream>
 #include <Wt/WDoubleSpinBox>
 #include <Wt/WContainerWidget>
@@ -93,6 +95,343 @@ namespace
     {"#FF66FF"}, {"#CC3333"}, {"#FF6633"}, {"#FFFF99"},
     {"#CCFFCC"}, {"#0000CC"}, {"#666666"}, {"#003333"}
   };
+  
+  
+  
+  
+  class RefGammaCsvResource : public Wt::WResource
+  {
+  protected:
+    ReferencePhotopeakDisplay *m_display;
+    Wt::WApplication *m_app;
+    
+  public:
+    RefGammaCsvResource( ReferencePhotopeakDisplay *parent )
+    : WResource( parent ),
+    m_display( parent ),
+    m_app( WApplication::instance() )
+    {
+      assert( m_app );
+      assert( m_display );
+    }
+    
+    virtual ~RefGammaCsvResource()
+    {
+      beingDeleted();
+    }
+    
+    
+  private:
+    virtual void handleRequest( const Wt::Http::Request &, Wt::Http::Response &response )
+    {
+      WApplication::UpdateLock lock( m_app );
+      
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in RefGammaCsvResource.";
+        
+        response.out() << "Error grabbing application lock to form RefGammaCsvResource resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+        
+        return;
+      }//if( !lock )
+      
+    
+      if( !m_display )
+        return;
+      
+      const DecayParticleModel *particleModel = m_display->particleModel();
+      if( !particleModel )
+        return;
+      
+      char buffer[128] = { '\0' };
+      
+      const string eol_char = "\r\n"; //for windows - could potentially cosutomize this for the users operating system
+      
+      
+      vector<DecayParticleModel::RowData> row_data = particleModel->rowData();
+      
+      stable_sort( begin(row_data), end(row_data),
+        [](const DecayParticleModel::RowData &lhs,const DecayParticleModel::RowData &rhs) -> bool {
+          return lhs.energy < rhs.energy;
+      } );
+      
+      
+      // Right now we'll just download the curernt nuclide/reaction/x-ray, and not any
+      //  of the "persisted" lines
+      //std::vector<ReferenceLineInfo> refinfos = m_display->showingNuclides() const;
+      const ReferenceLineInfo &refinfo = m_display->currentlyShowingNuclide();
+      
+      string filename = "empty";
+      if( refinfo.element )
+        filename = refinfo.element->name + "_xrays";
+      else if( refinfo.nuclide )
+        filename = refinfo.nuclide->symbol + "_gammas";
+      else if( !refinfo.reactionGammas.empty() )
+        filename = refinfo.reactionsTxt + "_lines";
+      else if( !refinfo.backgroundLines.empty() )
+        filename =  "background_lines";
+      
+      SpecUtils::ireplace_all( filename, "(", "_" );
+      SpecUtils::ireplace_all( filename, ")", "_" );
+      SpecUtils::ireplace_all( filename, ",", "-" );
+      if( !filename.empty() && ((filename.back() == '_') || (filename.back() == '-')) )
+         filename = filename.substr( 0, filename.size()-1 );
+      
+      filename += ".csv";
+      suggestFileName( filename, WResource::Attachment );
+      
+      std::ostream &out = response.out();
+      
+      if( row_data.empty() )
+      {
+        //refinfo.element could be non-null, and the element just not have x-rays
+        assert( !refinfo.nuclide && refinfo.reactionGammas.empty() && refinfo.backgroundLines.empty() );
+      }//if( row_data.empty() )
+      
+      
+      if( (!refinfo.element && !refinfo.nuclide
+         && refinfo.reactionGammas.empty() && refinfo.backgroundLines.empty()) )
+      {
+        assert( row_data.empty() );
+        
+        out << "No displayed photopeaks to output" << eol_char;
+        return;
+      }
+      
+      const DetectorDisplay *detDisp = m_display->detectorDisplay();
+      shared_ptr<const DetectorPeakResponse> det = detDisp ? detDisp->detector() : nullptr;
+      if( det && !det->isValid() )
+        det.reset();
+      
+      const ShieldingSelect *shielding = m_display->shieldingSelect();
+      
+      
+      if( refinfo.element )
+      {
+        out << "Element," << refinfo.element->name << eol_char;
+        out << "Florescent x-rays" << eol_char;
+      }else if( refinfo.nuclide )
+      {
+        out << "Nuclide," << refinfo.nuclide->symbol << eol_char;
+        out << "HalfLife," << PhysicalUnits::printToBestTimeUnits(refinfo.nuclide->halfLife,6) << eol_char;
+        out << "AgeDecayedTo," << PhysicalUnits::printToBestTimeUnits(refinfo.age,6);
+        if( refinfo.promptLinesOnly )
+          out << ",PromptEquilibriumNuclidesOnly";
+        out << eol_char;
+      }else if( !refinfo.reactionGammas.empty() )
+      {
+        out << "Reactions," << refinfo.reactionsTxt << eol_char;
+      }else if( !refinfo.backgroundLines.empty() )
+      {
+        out << "Source,CommonBackgroundGammas" << eol_char;
+      }
+      
+      assert( shielding );
+      boost::function<double(float)> att_coef_fcn;
+      //double transmision_frac *= exp( -1.0 * att_coef_fcn(energy) );
+      
+      try
+      {
+        if( !shielding )
+          throw runtime_error( "invalid shielding" );
+      
+        if( shielding->isGenericMaterial() )
+        {
+          const float an = static_cast<float>( shielding->atomicNumber() );
+          const float ad = static_cast<float>( shielding->arealDensity() );
+          const static double cm2PerG = PhysicalUnits::cm2 / PhysicalUnits::g;
+          
+          if( (ad < (0.0001f * cm2PerG) ) || (an < 1.0f) )
+            throw runtime_error( "no shielding" );
+          
+          snprintf( buffer, sizeof(buffer), "%.6f", an );
+          out << "Shielding Atomic Number," << buffer << eol_char;
+          
+          snprintf( buffer, sizeof(buffer), "%.6f", (ad*cm2PerG) );
+          out << "Shielding Areal Density (g/cm2)," << buffer << eol_char;
+          
+          
+          att_coef_fcn = [=]( float energy ) -> double {
+            return GammaInteractionCalc::transmition_coefficient_generic(an, ad, energy);
+          };
+          //= boost::bind( &GammaInteractionCalc::transmition_coefficient_generic,
+          //          atomic_number, areal_density, _1 );
+        }else
+        {
+          shared_ptr<const Material> material = shielding->currentMaterial();
+          const float thick = static_cast<float>(shielding->thickness());
+          
+          if( !material || (thick < (1.0E-11*PhysicalUnits::meter)) )
+            throw runtime_error( "no shielding" );
+            
+          out << "Shielding Material," << material->name << eol_char;
+          
+          const static double cm3PerG = PhysicalUnits::cm3 / PhysicalUnits::g;
+          snprintf( buffer, sizeof(buffer), "%.6g", (material->density * cm3PerG) );
+          out << "Shielding Density (g/cm3)," << buffer << eol_char;
+          
+          snprintf( buffer, sizeof(buffer), "%.6g", (thick / PhysicalUnits::cm) );
+          out << "Shielding Thickness (cm)," << buffer << eol_char;
+          
+          snprintf( buffer, sizeof(buffer), "%1.6g", material->massWeightedAtomicNumber() );
+          out << "Shielding Mass Weighted Atomic Number," << buffer << eol_char;
+          
+          out << "Shielding Chemical Formula," << material->chemicalFormula() << eol_char;
+          
+          att_coef_fcn = [material,thick]( float energy ) -> double {
+            return GammaInteractionCalc::transmition_coefficient_material( material.get(), energy, thick );
+          };
+          //= boost::bind( &GammaInteractionCalc::transmition_coefficient_material,
+          //             material.get(), _1, thick ); //note: if you use this, make sure the lifetime of material is long-enough
+          
+        }//if( is generic material ) / else
+      }catch( std::exception &e )
+      {
+        out << "Shielding,None" << eol_char;
+      }//try / catch
+      
+      
+      out << "Detector Response Function (DRF),";
+      if( det )
+      {
+        string name = det->name();
+        SpecUtils::ireplace_all( name, ",", "-" );
+        out << name << eol_char;
+      }else
+      {
+        out << "None" << eol_char;
+      }
+      
+      const char *rel_amp_note = "Note,The Rel. Amp. column does not include effects of shielding or DRF";
+      
+      if( refinfo.element )
+      {
+        out << eol_char << rel_amp_note << eol_char << eol_char;
+        
+        out << "Energy (keV),Rel. Yield" << eol_char;
+      }else if( refinfo.nuclide )
+      {
+        out << eol_char
+            << "Note,The g/Bq/second column is rate of gammas emitted per becquerel of "
+            << refinfo.nuclide->symbol << ", and does not include effects of shielding or DRF"
+            << eol_char
+            << eol_char;
+        
+        out << "Energy (keV),g/Bq/second";
+      }else if( !refinfo.reactionGammas.empty() )
+      {
+        out << eol_char << rel_amp_note << eol_char << eol_char;
+        
+        out << "Energy (keV),Rel. Yield" << eol_char;
+      }else if( !refinfo.backgroundLines.empty() )
+      {
+        out << eol_char << rel_amp_note << eol_char << eol_char;
+        
+        out << "Energy (keV),Rel. Yield";
+      }
+      
+      
+      out << ",Parent,Mode,Particle";
+      
+      if( att_coef_fcn )
+      {
+        out << ",Shielding Transmission";
+        if( !det )
+          out << ",Yield*ShieldTrans";
+      }
+      
+      if( det )
+      {
+        out << ",DRF Instrinsic Efficiency";
+        if( !att_coef_fcn )
+          out << ",Yield*DRF";
+      }
+      
+      if( att_coef_fcn && det )
+        out << ",Yield*ShieldTrans*DRF";
+      
+      out << eol_char;
+      
+      for( const DecayParticleModel::RowData &row : row_data )
+      {
+        
+        auto decayModeTxt = []( const int decayMode ) -> const char * {
+          switch( decayMode )
+          {
+            case SandiaDecay::AlphaDecay:                          return "alpha" ;
+            case SandiaDecay::BetaDecay:                           return "beta-";
+            case SandiaDecay::BetaPlusDecay:                       return "beta+";
+            case SandiaDecay::DoubleBetaDecay:                     return "double beta;";
+            case SandiaDecay::IsometricTransitionDecay:            return "Iso";
+            case SandiaDecay::ElectronCaptureDecay:                return "e.c.";
+            case SandiaDecay::ProtonDecay:                         return "proton";
+            case SandiaDecay::SpontaneousFissionDecay:             return "s.f.";
+            case SandiaDecay::Carbon14Decay:                       return "C14";
+            case DecayParticleModel::RowData::XRayDecayMode:       return "xray";
+            case DecayParticleModel::RowData::ReactionToGammaMode: return "Reaction";
+            case DecayParticleModel::RowData::NormGammaDecayMode:  return "NORM";
+          }//switch( dataRow.decayMode )
+
+          return "";
+        };//decayModeTxt
+        
+        auto particleType = []( SandiaDecay::ProductType particle ) -> const char * {
+          switch( particle )
+          {
+            case SandiaDecay::BetaParticle:            return "beta-";
+            case SandiaDecay::GammaParticle:           return "gamma";
+            case SandiaDecay::AlphaParticle:           return "alpha";
+            case SandiaDecay::PositronParticle:        return "e+";
+            case SandiaDecay::CaptureElectronParticle: return "ec";
+            case SandiaDecay::XrayParticle:            return "xray";
+          }//switch( dataRow.particle )
+          
+          return "";
+        };//particleType(...)
+        
+        
+        snprintf( buffer, sizeof(buffer), "%.3f,%1.6g", row.energy, row.branchRatio );
+        out << buffer;
+        
+        if( row.responsibleNuc )
+          out << "," << row.responsibleNuc->symbol;
+        else
+          out << ",";
+        
+        out << "," << decayModeTxt(row.decayMode) << "," << particleType(row.particle);
+        
+        double shield_eff = 1.0, drf_eff = 1.0;
+        if( att_coef_fcn )
+        {
+          shield_eff = exp( -1.0 * att_coef_fcn( row.energy ) );
+          snprintf( buffer, sizeof(buffer), "%1.7g", shield_eff );
+          out << "," << buffer;
+        }//if( att_coef_fcn )
+        
+        
+        if( det )
+        {
+          drf_eff = det->intrinsicEfficiency( row.energy );
+          snprintf( buffer, sizeof(buffer), "%1.7g", drf_eff );
+          out << "," << buffer;
+        }//if( det )
+        
+        if( att_coef_fcn || det )
+        {
+          snprintf( buffer, sizeof(buffer), "%1.7g,", row.branchRatio*shield_eff*drf_eff );
+          out << "," << buffer;
+        }
+        
+        out << eol_char;
+      }//for( const DecayParticleModel::RowData &row : row_data )
+      
+      out << eol_char;
+    }//handleRequest(...)
+    
+  };//class RefGammaCsvResource
+  
 }//namespace
 
 bool DecayParticleModel::less_than( const DecayParticleModel::RowData &lhs,
@@ -370,6 +709,11 @@ void DecayParticleModel::setRowData( const std::vector<RowData> &newData )
 }//setRowData(...)
 
 
+const std::vector<DecayParticleModel::RowData> &DecayParticleModel::rowData() const
+{
+  return m_data;
+}
+
 
 ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
                                             D3SpectrumDisplayDiv *chart,
@@ -401,6 +745,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_particleModel( NULL ),
     m_currentlyShowingNuclide(),
     m_colorSelect( nullptr ),
+    m_csvDownload( nullptr ),
     m_userHasPickedColor( false ),
     m_peaksGetAssignedRefLineColor( false ),
     m_lineColors{ ns_def_line_colors }
@@ -731,12 +1076,41 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   overallLayout->addWidget( inputDiv, 0, 0 );
   overallLayout->addWidget( lowerInput, 1, 0 );
   overallLayout->addWidget( m_particleView, 0, 1, 3, 1 );
-    
-  auto helpBtn = new WContainerWidget();
-  helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
+  
+  auto bottomRow = new WContainerWidget();
+  overallLayout->addWidget( bottomRow, 2, 0 );
+  
+  auto helpBtn = new WContainerWidget( bottomRow );
+  helpBtn->addStyleClass( "Wt-icon ContentHelpBtn RefGammaHelp" );
   helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "reference-gamma-lines-dialog" ) );
-  overallLayout->addWidget( helpBtn, 2, 0, Wt::AlignLeft | Wt::AlignBottom );
+  //overallLayout->addWidget( helpBtn, 2, 0, Wt::AlignLeft | Wt::AlignBottom );
     
+  
+  RefGammaCsvResource *csv = new RefGammaCsvResource( this );
+#if( BUILD_AS_OSX_APP )
+  WAnchor *csvButton = new WAnchor( WLink(csv), bottomRow );
+  csvButton->setTarget( AnchorTarget::TargetNewWindow );
+  csvButton->setStyleClass( "LinkBtn DownloadLink RefGammaCsv" );
+#else
+  WPushButton *csvButton = new WPushButton( bottomRow );
+  csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
+  csvButton->setLink( WLink(csv) );
+  csvButton->setLinkTarget( Wt::TargetNewWindow );
+  csvButton->setStyleClass( "LinkBtn DownloadBtn RefGammaCsv" );
+#endif
+  
+  csvButton->clicked().connect( std::bind([](){
+    passMessage( "The 'Nuclide Decay Info' tool provides additional capabilities for"
+                 " exporting nuclide, decay products, and decay information to CSV files.",
+                 "", WarningWidget::WarningMsgInfo );
+    //TODO: check about calling WarningWidget::displayPopupMessageUnsafe( msg, level, 5000 ); directly with a longer time for the message to hang around
+  }));
+  
+  csvButton->setText( "CSV" );
+  csvButton->disable();
+  m_csvDownload = csvButton;
+  
+  
   overallLayout->setRowStretch( 2, 1 );
   overallLayout->setColumnStretch( 1, 1 );
 }//ReferencePhotopeakDisplay constructor
@@ -772,6 +1146,25 @@ std::vector<ReferenceLineInfo> ReferencePhotopeakDisplay::showingNuclides() cons
   
   return answer;
 }//std::vector<ReferenceLineInfo> showingNuclides() const;
+
+
+const DetectorDisplay *ReferencePhotopeakDisplay::detectorDisplay() const
+{
+  return m_detectorDisplay;
+};
+
+
+const ShieldingSelect *ReferencePhotopeakDisplay::shieldingSelect() const
+{
+  return m_shieldingSelect;
+};
+
+
+const DecayParticleModel *ReferencePhotopeakDisplay::particleModel() const
+{
+  return m_particleModel;
+}
+
 
 void ReferencePhotopeakDisplay::setFocusToIsotopeEdit()
 {
@@ -1253,6 +1646,9 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     if( m_persistLines->isEnabled() )
       m_persistLines->disable();
     m_clearLines->setDisabled( m_persisted.empty() );
+   
+    if( m_csvDownload && m_csvDownload->isEnabled() )
+      m_csvDownload->disable();
     
     ReferenceLineInfo emptylines;
     m_chart->setReferncePhotoPeakLines( emptylines );
@@ -1766,7 +2162,9 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
       m_persistLines->enable();
     if( m_clearLines->isDisabled() )
       m_clearLines->enable();
-
+    if( m_csvDownload && !m_csvDownload->isEnabled() )
+      m_csvDownload->enable();
+    
     if( m_spectrumViewer && m_spectrumViewer->isPhone() )
       m_clearLines->setText( m_persisted.empty() ? "Remove" : "Remove All" );
     else

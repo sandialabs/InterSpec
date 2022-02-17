@@ -115,6 +115,8 @@ public:
   void clear();
   virtual void setRowData( const std::vector<RowData> &newData );
 
+  const std::vector<RowData> &rowData() const;
+  
 protected:
   Column m_sortColumn;
   Wt::SortOrder m_sortOrder;
@@ -182,6 +184,14 @@ public:
   //Returns all nuclides currently showing
   std::vector<ReferenceLineInfo> showingNuclides() const;
 
+  /** Simple accessor for the detectorDisplay widget; used for CSV download of displayed info.  */
+  const DetectorDisplay *detectorDisplay() const;
+  
+  /** Accessor to the shielding select; used for CSV download of displayed info. */
+  const ShieldingSelect *shieldingSelect() const;
+  
+  const DecayParticleModel *particleModel() const;
+  
   //serialize(...): Serializes the current state of this widget to the XML
   //  document or string.  Currently, all persisted lines will be assumed to
   //  have the same shielding as the currently saved lines.
@@ -245,6 +255,8 @@ protected:
   //  m_persisted objects
   void refreshLinesDisplayedToGui( int millisecdelay );
   
+  void userColorSelectCallback( const Wt::WColor &color );
+  
   /** Returns a map from source name (ex "U235", "Be(n,n')", etc) to colors used
    for peaks with that as a source, as well as for persisted reference lines.
    */
@@ -286,7 +298,7 @@ protected:
   ReferenceLineInfo m_currentlyShowingNuclide;
   
   ColorSelect *m_colorSelect;
-  void userColorSelectCallback( const Wt::WColor &color );
+  Wt::WInteractWidget *m_csvDownload;
   
   /** Indicates if the user has picked a color for the current source.
    */
