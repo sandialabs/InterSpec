@@ -2956,6 +2956,11 @@ std::shared_ptr<Material> ShieldingSelect::material()
 }//const Material *material() const;
 
 
+std::shared_ptr<const Material> ShieldingSelect::currentMaterial() const
+{
+  return m_currentMaterial;
+}
+
 void ShieldingSelect::updateIfMassFractionCanFit()
 {
   if( !m_fitMassFrac )

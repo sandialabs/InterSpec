@@ -99,6 +99,7 @@ public:
   void editDetector();
 
   std::shared_ptr<DetectorPeakResponse> detector();
+  std::shared_ptr<const DetectorPeakResponse> detector() const;
 
 protected:
   static const char * const sm_noDetectorTxt;

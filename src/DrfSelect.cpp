@@ -1821,6 +1821,12 @@ std::shared_ptr<DetectorPeakResponse> DetectorDisplay::detector()
 }// std::shared_ptr<DetectorPeakResponse> DetectorDisplay::detector()
 
 
+std::shared_ptr<const DetectorPeakResponse> DetectorDisplay::detector() const
+{
+  return m_currentDetector.lock();
+}// std::shared_ptr<const DetectorPeakResponse> DetectorDisplay::detector() const
+
+
 void DetectorDisplay::setDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
   m_currentDetector = det;

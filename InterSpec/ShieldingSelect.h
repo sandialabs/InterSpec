@@ -228,7 +228,17 @@ public:
   //  be created in memorry.  Otherwise, the previously existing Material in
   //  memmorry will be returned - unmodified.  Call handleMaterialChange() and
   //  handleIsotopicChange(...) to deal with modifying materials.
+  // TODO: should the returned pointer be made const, or maybe unique?
   std::shared_ptr<Material> material();
+  
+  /** Returns the current m_currentMaterial.
+   
+   Does not update material if description has been changed.
+   
+   Note that although the pointer returned is const, it points to the same object as m_currentMaterial,
+   which is non-const, so may be modified.
+   */
+  std::shared_ptr<const Material> currentMaterial() const;
 
   //material( string ) returns the material for the text passed in.  Does not
   //  change the material represented by the widget, but will add the material
@@ -579,6 +589,8 @@ protected:
   
   
   std::string m_currentMaterialDescrip;
+  
+  // TODO: should m_currentMaterial be made a const pointer?
   std::shared_ptr<Material> m_currentMaterial;
 
   Wt::Signal<ShieldingSelect *> m_removeSignal;
