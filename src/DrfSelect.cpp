@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <regex>
 #include <memory>
 #include <string>
 #include <vector>
@@ -68,6 +69,7 @@
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
+#include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "SpecUtils/Filesystem.h"
@@ -77,7 +79,6 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/DetectorEdit.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
@@ -88,28 +89,13 @@
 #include "InterSpec/DetectorPeakResponse.h"
 
 
-// The regex in GCC 4.8.x does not have working regex...., so we will detect this via
-//    https://stackoverflow.com/questions/12530406/is-gcc-4-8-or-earlier-buggy-about-regular-expressions#answer-41186162
-#if defined(_MSC_VER) \
-    || (__cplusplus >= 201103L &&                             \
-        (!defined(__GLIBCXX__) || (__cplusplus >= 201402L) || \
-            (defined(_GLIBCXX_REGEX_DFS_QUANTIFIERS_LIMIT) || \
-            defined(_GLIBCXX_REGEX_STATE_LIMIT)           || \
-                (defined(_GLIBCXX_RELEASE)                && \
-                _GLIBCXX_RELEASE > 4))))
-#define HAVE_WORKING_REGEX 1
-#else
-#define HAVE_WORKING_REGEX 0
+// The regex in GCC 4.8.x does not have working regex
+#if( defined(__GLIBCXX__) && (__cplusplus < 201402L) )
+static_assert( defined(_GLIBCXX_REGEX_DFS_QUANTIFIERS_LIMIT) \
+              || defined(_GLIBCXX_REGEX_STATE_LIMIT) \
+              || (defined(_GLIBCXX_RELEASE) && _GLIBCXX_RELEASE > 4), "GCC 4.8 is not supported due to buggy regex implementation" );
 #endif
 
-#if( HAVE_WORKING_REGEX )
-#include <regex>
-namespace RegexNs = std;
-#else
-#include <boost/regex.hpp>
-#warning "DetectorEdit using boost regex - support for this compiler will be dropped soon"
-namespace RegexNs = boost;
-#endif
 
 
 using namespace std;
@@ -334,11 +320,11 @@ class RelEffDetSelect : public Wt::WContainerWidget
   
 protected:
   InterSpec *m_interspec;
-  DetectorEdit *m_detectorEdit;
+  DrfSelect *m_drfSelect;
   WContainerWidget *m_files; //holds the RelEffFile objects..
   
 public:
-  RelEffDetSelect( InterSpec *interspec, DetectorEdit *detedit, WContainerWidget *parent = 0 );
+  RelEffDetSelect( InterSpec *interspec, DrfSelect *detedit, WContainerWidget *parent = 0 );
   
   virtual ~RelEffDetSelect(){}
   
@@ -372,7 +358,7 @@ class RelEffFile : public Wt::WContainerWidget
   WFileUpload *m_fileUpload; //Will be nullptr if constructor with a string is used
 
   RelEffDetSelect *m_relEffDetSelect;
-  DetectorEdit *m_detectorEdit;
+  DrfSelect *m_drfSelect;
   
   Wt::WText *m_credits;
   Wt::WComboBox *m_detectorSelect;
@@ -382,12 +368,12 @@ public:
   /** Constructor to point to an existing file on disk. */
   RelEffFile( std::string file,
              RelEffDetSelect *parentSelect,
-             DetectorEdit *detectorEdit,
+             DrfSelect *drfSelect,
              WContainerWidget *parent );
   
   /** Constructor that will create a file upload area for user to upload a file */
   RelEffFile( RelEffDetSelect *parentSelect,
-             DetectorEdit *detectorEdit,
+             DrfSelect *drfSelect,
              WContainerWidget *parent );
   
   
@@ -421,7 +407,7 @@ protected:
   WPushButton *m_setDirectoryButton;
 #endif
   GadrasDetSelect *m_parent;
-  DetectorEdit *m_detectorEdit;
+  DrfSelect *m_drfSelect;
   
   Wt::WComboBox *m_detectorSelect;
   std::vector<std::shared_ptr<DetectorPeakResponse> > m_responses;
@@ -430,7 +416,7 @@ protected:
   Wt::WPushButton *m_deleteBtn;
   
   GadrasDirectory( std::string dorectory, GadrasDetSelect *parentSelect,
-                   DetectorEdit *detectorEdit, WContainerWidget *parent );
+                   DrfSelect *drfSelect, WContainerWidget *parent );
   
   
   ~GadrasDirectory(){}
@@ -462,12 +448,12 @@ class GadrasDetSelect : public Wt::WContainerWidget
 {
 protected:
   InterSpec *m_interspec;
-  DetectorEdit *m_detectorEdit;
+  DrfSelect *m_drfSelect;
   
   WContainerWidget *m_directories; //holds the GadrasDirectory objects..
   
 public:
-  GadrasDetSelect( InterSpec *interspec, DetectorEdit *detedit, WContainerWidget *parent = 0 );
+  GadrasDetSelect( InterSpec *interspec, DrfSelect *detedit, WContainerWidget *parent = 0 );
   
   virtual ~GadrasDetSelect(){}
   
@@ -500,13 +486,13 @@ public:
 
 RelEffFile::RelEffFile( std::string file,
                        RelEffDetSelect *parentSelect,
-                       DetectorEdit *detectorEdit,
+                       DrfSelect *drfSelect,
                        WContainerWidget *parent )
 : WContainerWidget( parent ),
   m_existingFilePath( file ),
   m_fileUpload( nullptr ),
   m_relEffDetSelect( parentSelect ),
-  m_detectorEdit( detectorEdit ),
+  m_drfSelect( drfSelect ),
   m_credits( nullptr )
 {
   init();
@@ -514,13 +500,13 @@ RelEffFile::RelEffFile( std::string file,
 
 
 RelEffFile::RelEffFile( RelEffDetSelect *parentSelect,
-                        DetectorEdit *detectorEdit,
+                        DrfSelect *drfSelect,
                         WContainerWidget *parent )
 : WContainerWidget( parent ),
 m_existingFilePath(),
 m_fileUpload( nullptr ),
 m_relEffDetSelect( parentSelect ),
-m_detectorEdit( detectorEdit ),
+m_drfSelect( drfSelect ),
 m_credits( nullptr )
 {
   init();
@@ -751,11 +737,11 @@ void RelEffFile::detectorSelectCallback()
   if( m_relEffDetSelect )
     m_relEffDetSelect->detectorSelected( this, det );
   
-  if( m_detectorEdit )
+  if( m_drfSelect )
   {
-    m_detectorEdit->setDetector( det );
-    m_detectorEdit->emitChangedSignal();
-  }//if( m_detectorEdit )
+    m_drfSelect->setDetector( det );
+    m_drfSelect->emitChangedSignal();
+  }//if( m_drfSelect )
 }//void detectorSelectCallback()
 
 
@@ -872,11 +858,11 @@ void RelEffFile::detectorSelected( const int index )
   if( index > 0 )
     det = m_responses.at( index - 1 );
   
-  if( !m_detectorEdit )
+  if( !m_drfSelect )
     return;
   
-  m_detectorEdit->setDetector( det );
-  m_detectorEdit->emitChangedSignal();
+  m_drfSelect->setDetector( det );
+  m_drfSelect->emitChangedSignal();
 }//void detectorSelected( const int index )
 
 
@@ -896,10 +882,10 @@ const std::vector<std::shared_ptr<DetectorPeakResponse> > &RelEffFile::available
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////   Begin RelEffDetSelect implementation   //////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-RelEffDetSelect::RelEffDetSelect( InterSpec *interspec, DetectorEdit *detedit, WContainerWidget *parent )
+RelEffDetSelect::RelEffDetSelect( InterSpec *interspec, DrfSelect *detedit, WContainerWidget *parent )
     : WContainerWidget( parent ),
       m_interspec( interspec ),
-      m_detectorEdit( detedit ),
+      m_drfSelect( detedit ),
       m_files( nullptr )
 {
 }
@@ -909,7 +895,7 @@ RelEffDetSelect::RelEffDetSelect( InterSpec *interspec, DetectorEdit *detedit, W
 void RelEffDetSelect::addFile()
 {
   if( m_files )
-    new RelEffFile( this, m_detectorEdit, m_files );
+    new RelEffFile( this, m_drfSelect, m_files );
 }//void addFile()
 
 
@@ -1016,7 +1002,7 @@ void RelEffDetSelect::docreate()
   size_t num_user = 0;
   for( const string &path : user_data_paths )
   {
-    RelEffFile *f = new RelEffFile( path, this, m_detectorEdit, m_files );
+    RelEffFile *f = new RelEffFile( path, this, m_drfSelect, m_files );
     
     //We'll remove the widget if the DRF is invalid, or make it so path cant be changed for valid
     //  files (this then doesnt provide any feedback to the user that a DRF they placed in their
@@ -1036,7 +1022,7 @@ void RelEffDetSelect::docreate()
   
   if( !num_user )
   {
-    new RelEffFile( this, m_detectorEdit, m_files );
+    new RelEffFile( this, m_drfSelect, m_files );
   }
 }//void docreate()
 
@@ -1061,10 +1047,10 @@ void RelEffDetSelect::load()
 
 
 ///************************ Begin Need to implement for GADRAS **************/////
-GadrasDetSelect::GadrasDetSelect( InterSpec *interspec, DetectorEdit *detedit, WContainerWidget *parent )
+GadrasDetSelect::GadrasDetSelect( InterSpec *interspec, DrfSelect *detedit, WContainerWidget *parent )
   : WContainerWidget(parent),
     m_interspec( interspec ),
-    m_detectorEdit( detedit ),
+    m_drfSelect( detedit ),
     m_directories( nullptr )
 {
   //GADRAS-DRF URL: https://rsicc.ornl.gov/codes/psr/psr6/psr-610.html
@@ -1167,7 +1153,7 @@ void GadrasDetSelect::docreate()
     
   for( const string &path : paths )
   {
-    auto dir = new GadrasDirectory( path, this, m_detectorEdit, m_directories );
+    auto dir = new GadrasDirectory( path, this, m_drfSelect, m_directories );
     
     if( path.find("GenericGadrasDetectors") != string::npos )
     {
@@ -1258,7 +1244,7 @@ std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
       {
         WAbstractItemModel *m = d->m_detectorSelect->model();
         const string p = boost::any_cast<std::string>( m->data( currentIndex, 0, Wt::UserRole ) );
-        auto answer = DetectorEdit::initAGadrasDetectorFromDirectory( p, m_interspec );
+        auto answer = DrfSelect::initAGadrasDetectorFromDirectory( p, m_interspec );
         
         if( p.find("GenericGadrasDetectors") != string::npos )
           answer->setDrfSource( DetectorPeakResponse::DrfSource::DefaultGadrasDrf );
@@ -1280,7 +1266,7 @@ std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
 void GadrasDetSelect::addDirectory()
 {
   if( m_directories )
-    new GadrasDirectory( "", this, m_detectorEdit, m_directories );
+    new GadrasDirectory( "", this, m_drfSelect, m_directories );
 }//void addDirectory()
 
 
@@ -1346,7 +1332,7 @@ void GadrasDetSelect::detectorSelected( GadrasDirectory *dir, std::shared_ptr<De
 
 
 GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parentSelect,
-                  DetectorEdit *detectorEdit, WContainerWidget *parent )
+                  DrfSelect *drfSelect, WContainerWidget *parent )
 : WContainerWidget( parent ),
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
   m_directory( directory ),
@@ -1355,7 +1341,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_setDirectoryButton( new WPushButton("Set") ),
 #endif
   m_parent( parentSelect ),
-  m_detectorEdit( detectorEdit ),
+  m_drfSelect( drfSelect ),
   m_detectorSelect( new WComboBox() ),
   m_msg( new WText() ),
   m_deleteBtn( new WPushButton() )
@@ -1561,8 +1547,8 @@ void GadrasDirectory::detectorSelectCallback()
   if( m_parent )
     m_parent->detectorSelected( this, det );
   
-  m_detectorEdit->setDetector( det );
-  m_detectorEdit->emitChangedSignal();
+  m_drfSelect->setDetector( det );
+  m_drfSelect->emitChangedSignal();
 }//void detectorSelectCallback()
 
   
@@ -1780,8 +1766,8 @@ void GadrasDirectory::detectorSelected( const int index )
   if( index > 0 )
     det = m_responses.at( index - 1 );
   
-  m_detectorEdit->setDetector( det );
-  m_detectorEdit->emitChangedSignal();
+  m_drfSelect->setDetector( det );
+  m_drfSelect->emitChangedSignal();
 }//void detectorSelected( const int index )
 
 
@@ -1835,6 +1821,12 @@ std::shared_ptr<DetectorPeakResponse> DetectorDisplay::detector()
 }// std::shared_ptr<DetectorPeakResponse> DetectorDisplay::detector()
 
 
+std::shared_ptr<const DetectorPeakResponse> DetectorDisplay::detector() const
+{
+  return m_currentDetector.lock();
+}// std::shared_ptr<const DetectorPeakResponse> DetectorDisplay::detector() const
+
+
 void DetectorDisplay::setDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
   m_currentDetector = det;
@@ -1851,15 +1843,15 @@ void DetectorDisplay::setDetector( std::shared_ptr<DetectorPeakResponse> det )
 
 void DetectorDisplay::editDetector()
 {
-  new DetectorEditWindow( m_currentDetector.lock(), m_interspec, m_fileModel );
+  new DrfSelectWindow( m_currentDetector.lock(), m_interspec, m_fileModel );
 }//void editDetector()
 
-std::shared_ptr<DetectorPeakResponse> DetectorEdit::detector()
+std::shared_ptr<DetectorPeakResponse> DrfSelect::detector()
 {
   return m_detector;
-} //std::shared_ptr<DetectorPeakResponse> DetectorEdit::detector()
+} //std::shared_ptr<DetectorPeakResponse> DrfSelect::detector()
 
-DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
+DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
                 InterSpec *specViewer,
                 SpectraFileModel *fileModel,
                 AuxWindow* auxWindow )
@@ -1900,7 +1892,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_defaultForSerialNumber( nullptr ),
     m_defaultForDetectorModel( nullptr )
 {
-  wApp->useStyleSheet( "InterSpec_resources/DetectorEdit.css" );
+  wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
   
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
@@ -1911,8 +1903,8 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   mainLayout->setVerticalSpacing( 5 ); //so the chart resizer handle will show up
   mainLayout->setHorizontalSpacing( 0 );
   
-  specViewer->detectorChanged().connect( this, &DetectorEdit::setDetector );
-  specViewer->detectorModified().connect( this, &DetectorEdit::setDetector );
+  specViewer->detectorChanged().connect( this, &DrfSelect::setDetector );
+  specViewer->detectorModified().connect( this, &DrfSelect::setDetector );
 
   if( currentDet )
   {
@@ -2090,7 +2082,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_efficiencyCsvUpload = new WFileUpload( uploadDetTab );
   m_efficiencyCsvUpload->setInline( false );
-  m_efficiencyCsvUpload->uploaded().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::EfficiencyCsvUploaded ) );
+  m_efficiencyCsvUpload->uploaded().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::EfficiencyCsvUploaded ) );
   m_efficiencyCsvUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, _1) );
   m_efficiencyCsvUpload->changed().connect( m_efficiencyCsvUpload, &WFileUpload::upload );
   m_efficiencyCsvUpload->setInline( false );
@@ -2105,15 +2097,15 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_detectorDiameter->setValidator( distValidator );
   m_detectorDiameter->setTextSize( 10 );
-  m_detectorDiameter->changed().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
-  m_detectorDiameter->enterPressed().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
-  m_detectorDiameter->blurred().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
+  m_detectorDiameter->changed().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
+  m_detectorDiameter->enterPressed().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
+  m_detectorDiameter->blurred().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
 
   
   m_uploadedDetNameDiv = new WContainerWidget( m_detectrDiameterDiv );
   new WLabel( "Name:", m_uploadedDetNameDiv );
   m_uploadedDetName = new WLineEdit( m_uploadedDetNameDiv );
-  m_uploadedDetName->textInput().connect( this, &DetectorEdit::handleUserChangedUploadedDrfName );
+  m_uploadedDetName->textInput().connect( this, &DrfSelect::handleUserChangedUploadedDrfName );
   m_uploadedDetName->setTextSize( 30 );
   
   m_detectrDotDatDiv = new WContainerWidget( m_detectrDiameterDiv );
@@ -2123,7 +2115,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   label->setInline( false );
   m_detectorDotDatUpload = new WFileUpload( m_detectrDotDatDiv );
   m_detectorDotDatUpload->setInline( false );
-  m_detectorDotDatUpload->uploaded().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDotDatUploaded ) );
+  m_detectorDotDatUpload->uploaded().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDotDatUploaded ) );
   m_detectorDotDatUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, _1) );
   m_detectorDotDatUpload->changed().connect( m_detectorDotDatUpload, &WFileUpload::upload );
   m_detectrDiameterDiv->hide();
@@ -2154,11 +2146,11 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   new WLabel("Detector name ", cell );
   cell = formulaTable->elementAt( 0, 1 );
   m_detectorManualFunctionName = new WLineEdit( cell );
-  m_detectorManualFunctionName->setStyleClass("DetectorEditFunctionalFormText");
+  m_detectorManualFunctionName->setStyleClass("DrfSelectFunctionalFormText");
   m_detectorManualFunctionName->setText( manualdetname );
   m_detectorManualFunctionName->setEmptyText("Unique Detector Name");
   m_detectorManualFunctionName->setInline(false);
-  m_detectorManualFunctionName->keyWentUp().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
+  m_detectorManualFunctionName->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
 
   cell = formulaTable->elementAt( 1, 0 );
   new WLabel("Efficiency f(x) = ", cell );
@@ -2168,11 +2160,11 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   //m_detectorManualFunctionText->setColumns(60);
   
   m_detectorManualFunctionText->setRows(3);
-  m_detectorManualFunctionText->setStyleClass("DetectorEditFunctionalFormText");
+  m_detectorManualFunctionText->setStyleClass("DrfSelectFunctionalFormText");
   m_detectorManualFunctionText->setText(fcn);
   m_detectorManualFunctionText->setEmptyText(fcn);
   m_detectorManualFunctionText->setInline(false);
-  m_detectorManualFunctionText->keyWentUp().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
+  m_detectorManualFunctionText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
   cell = formulaTable->elementAt( 2, 0 );
   Wt::WContainerWidget *energyContainer = new Wt::WContainerWidget( cell );
@@ -2183,7 +2175,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   button = new WRadioButton( "MeV", energyContainer );
   button->setMargin( 5, Wt::Left );
   m_eqnEnergyGroup->addButton( button, 1 );
-  m_eqnEnergyGroup->checkedChanged().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
+  m_eqnEnergyGroup->checkedChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_eqnEnergyGroup->setSelectedButtonIndex( 0 );
     
   HelpSystem::attachToolTipOn( energyContainer,"Energy unit for efficiency formula" ,
@@ -2195,7 +2187,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDescription = new WLineEdit( cell );
   m_detectorManualDescription->setWidth( WLength(100,WLength::Percentage) );
   m_detectorManualDescription->setEmptyText( "Description of this detector response" );
-  m_detectorManualDescription->changed().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
+  m_detectorManualDescription->changed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
   cell = formulaTable->elementAt( 4, 0 );
   new WLabel("Detector diameter ", cell );
@@ -2205,8 +2197,8 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDiameterText->setText( diamtxt );
   m_detectorManualDiameterText->setEmptyText( diamtxt );
   m_detectorManualDiameterText->setValidator( distValidator );
-  m_detectorManualDiameterText->blurred().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
-  m_detectorManualDiameterText->enterPressed().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
+  m_detectorManualDiameterText->blurred().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualDiameterText->enterPressed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
   cell = formulaTable->elementAt( 5, 0 );
   cell->setColumnSpan( 2 );
@@ -2216,7 +2208,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   button = new WRadioButton( "Absolute", cell );
   button->setMargin( 5, Wt::Left );
   m_absOrIntrinsicGroup->addButton( button, 1 );
-  m_absOrIntrinsicGroup->checkedChanged().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
+  m_absOrIntrinsicGroup->checkedChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_absOrIntrinsicGroup->setSelectedButtonIndex( 0 );
 
   m_detectorManualDistLabel = new WLabel( "Dist:", cell );
@@ -2228,13 +2220,13 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDistText->setHiddenKeepsGeometry( true );
   m_detectorManualDistLabel->hide();
   m_detectorManualDistText->hide();
-  m_detectorManualDistText->keyWentUp().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
+  m_detectorManualDistText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
   m_manualSetButton = new WPushButton( "Set", cell );
   //m_manualSetButton->setInline(false);
   m_manualSetButton->setFloatSide( Wt::Right );
   //selfDefineLayout->setColumnStretch( 1, 1 );
-  m_manualSetButton->clicked().connect(boost::bind(&DetectorEdit::setDefineDetector, this));
+  m_manualSetButton->clicked().connect(boost::bind(&DrfSelect::setDefineDetector, this));
     
   //-------------------------------------
   //--- 5)  Recent
@@ -2293,13 +2285,13 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_DBtable->setSortingEnabled( col, true );
   }//for( int col = 0; col < model->columnCount(); ++col )
   
-  m_DBtable->selectionChanged().connect( this, &DetectorEdit::dbTableSelectionChanged );
+  m_DBtable->selectionChanged().connect( this, &DrfSelect::dbTableSelectionChanged );
 
   m_deleteButton = new WPushButton( "Delete" );
   m_deleteButton->setIcon( "InterSpec_resources/images/minus_min_white.png" );
   m_deleteButton->setDefault(true);
   m_deleteButton->disable();
-  m_deleteButton->clicked().connect( this, &DetectorEdit::deleteDBTableSelected );
+  m_deleteButton->clicked().connect( this, &DrfSelect::deleteDBTableSelected );
 
   WComboBox *filter = new WComboBox();
   filter->addItem( "All" );
@@ -2430,7 +2422,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   
   m_noDrfButton = new WPushButton( "No Detector", m_footer );
-  m_noDrfButton->clicked().connect( this, &DetectorEdit::finishWithNoDetector );
+  m_noDrfButton->clicked().connect( this, &DrfSelect::finishWithNoDetector );
   if( specViewer && !specViewer->isPhone() )
     m_noDrfButton->addStyleClass( "NoDrfBtn" );
   
@@ -2443,7 +2435,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_footer->insertWidget( m_footer->count(), close );
   }
   
-  m_cancelButton->clicked().connect( this, &DetectorEdit::cancelAndFinish );
+  m_cancelButton->clicked().connect( this, &DrfSelect::cancelAndFinish );
 
   
   if( specViewer && !specViewer->isPhone() )
@@ -2463,17 +2455,17 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_acceptButton->addStyleClass( "CenterBtnInMblAuxWindowHeader" );
   }//if( isMobile() ) / else
   
-  m_acceptButton->clicked().connect( this, &DetectorEdit::acceptAndFinish );
+  m_acceptButton->clicked().connect( this, &DrfSelect::acceptAndFinish );
   if( !currentDet || !currentDet->isValid() )
     setAcceptButtonEnabled( false );
   
   m_drfTypeMenu->select( 0 );
   
   init();
-}//DetectorEdit constructor
+}//DrfSelect constructor
 
 
-void DetectorEdit::setAcceptButtonEnabled( const bool enable )
+void DrfSelect::setAcceptButtonEnabled( const bool enable )
 {
   m_acceptButton->setEnabled( enable );
   m_noDrfButton->setHidden( !m_detector );
@@ -2484,7 +2476,7 @@ void DetectorEdit::setAcceptButtonEnabled( const bool enable )
 }
 
 
-void DetectorEdit::handleUserChangedUploadedDrfName()
+void DrfSelect::handleUserChangedUploadedDrfName()
 {
   if( !m_uploadedDetName || !m_detector )
     return;
@@ -2502,7 +2494,7 @@ void DetectorEdit::handleUserChangedUploadedDrfName()
 }//handleUserChangedUploadedDrfName()
 
 
-void DetectorEdit::deleteDBTableSelected()
+void DrfSelect::deleteDBTableSelected()
 {
   WModelIndexSet indices = m_DBtable->selectedIndexes();
   if( !indices.size() )
@@ -2520,7 +2512,7 @@ void DetectorEdit::deleteDBTableSelected()
 } //deleteDBTableSelected
 
 // Grabs the detector if selected in DB table
-void DetectorEdit::dbTableSelectionChanged()
+void DrfSelect::dbTableSelectionChanged()
 {
   if( m_DBtable->selectedIndexes().size() )
     m_deleteButton->enable();
@@ -2548,7 +2540,7 @@ void DetectorEdit::dbTableSelectionChanged()
   }catch(...)
   {
     failed = true;
-    passMessage( "Error getting from DetectorPeakResponse table", "DetectorEdit", WarningWidget::WarningMsgHigh );
+    passMessage( "Error getting from DetectorPeakResponse table", "DrfSelect", WarningWidget::WarningMsgHigh );
   }//try / catch
   
   m_detector = det;
@@ -2556,7 +2548,7 @@ void DetectorEdit::dbTableSelectionChanged()
   emitChangedSignal();
 }//void dbTableSelectionChanged()
 
-void DetectorEdit::init()
+void DrfSelect::init()
 {
   //----initialize
   
@@ -2650,12 +2642,12 @@ void DetectorEdit::init()
 }// init()
 
 
-DetectorEdit::~DetectorEdit()
+DrfSelect::~DrfSelect()
 {
-} //~DetectorEdit()
+} //~DrfSelect()
 
 
-void DetectorEdit::setDetector( std::shared_ptr<DetectorPeakResponse> det )
+void DrfSelect::setDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
   if( m_detector != det )
   {
@@ -2665,7 +2657,7 @@ void DetectorEdit::setDetector( std::shared_ptr<DetectorPeakResponse> det )
 }//void setDetector( std::shared_ptr<DetectorPeakResponse> det )
 
 
-void DetectorEdit::verifyManualDefinition()
+void DrfSelect::verifyManualDefinition()
 { //if we change anything in the text fields, we should disable Accept
   setAcceptButtonEnabled( false );
   m_manualSetButton->enable();
@@ -2696,7 +2688,7 @@ void DetectorEdit::verifyManualDefinition()
 } //verifyManualDefinition
 
 
-void DetectorEdit::setDefineDetector()
+void DrfSelect::setDefineDetector()
 {
   std::shared_ptr<DetectorPeakResponse> detec = detector();
 //  if( !!detec &&
@@ -2780,7 +2772,7 @@ void DetectorEdit::setDefineDetector()
 
 // This calls the action to initialize the charts to whatever
 // is selected.  Each stack page should have something to update
-void DetectorEdit::selectButton( WStackedWidget *stack,
+void DrfSelect::selectButton( WStackedWidget *stack,
                                  WMenu *menu,
                                  bool activateCallBack)
 {
@@ -2819,10 +2811,10 @@ void DetectorEdit::selectButton( WStackedWidget *stack,
   }//if( activateCallBack )
   
   updateChart();
-} //DetectorEdit::selectButton(Wt::WStackedWidget * stack, int index)
+} //DrfSelect::selectButton(Wt::WStackedWidget * stack, int index)
 
 
-void DetectorEdit::updateChart()
+void DrfSelect::updateChart()
 {
   // clear series if any
   m_chart->removeSeries(1);
@@ -2905,13 +2897,13 @@ void DetectorEdit::updateChart()
       }//no ResolutionInfo
     }catch( std::exception &e )
     {
-      cerr << "DetectorEdit::updateChart()\n\tCaught: " << e.what() << endl;
+      cerr << "DrfSelect::updateChart()\n\tCaught: " << e.what() << endl;
     }//try / catch
   }//if( hasEfficiency )
-} //DetectorEdit::updateChart()
+} //DrfSelect::updateChart()
 
 
-std::shared_ptr<DetectorPeakResponse> DetectorEdit::parseRelEffCsvFile( const std::string filename )
+std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::string filename )
 {
 #ifdef _WIN32
   const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
@@ -3024,7 +3016,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::parseRelEffCsvFile( const st
 #define POS_DECIMAL_REGEX "\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
       const char * const rng_exprsn_txt = "Valid energy range:\\s*(" POS_DECIMAL_REGEX ")\\s*keV to\\s*(" POS_DECIMAL_REGEX ")\\s*keV.";
       
-      RegexNs::regex range_expression( rng_exprsn_txt );
+      std::regex range_expression( rng_exprsn_txt );
       
       while( SpecUtils::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
       {
@@ -3058,8 +3050,8 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::parseRelEffCsvFile( const st
           }
         }//if( start of FWHM section of CSV file )
         
-        RegexNs::smatch range_matches;
-        if( RegexNs::regex_search( line, range_matches, range_expression ) )
+        std::smatch range_matches;
+        if( std::regex_search( line, range_matches, range_expression ) )
         {
           lowerEnergy = std::stof( range_matches[1] );
           upperEnergy = std::stof( range_matches[6] );
@@ -3080,7 +3072,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::parseRelEffCsvFile( const st
 
 
 
-void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
+void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
 {
   auto updateUserName = [this](){
     
@@ -3130,7 +3122,7 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
       if( !m_efficiencyCsvUpload->empty() )
       {
         const string filename = m_efficiencyCsvUpload->spoolFileName();
-        auto det = DetectorEdit::parseRelEffCsvFile( filename );
+        auto det = DrfSelect::parseRelEffCsvFile( filename );
         
         if( det )
         {
@@ -3228,13 +3220,13 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
 }//void fileUploadedCallback();
 
 
-void DetectorEdit::relEffDetectorSelectCallback()
+void DrfSelect::relEffDetectorSelectCallback()
 {
   m_relEffSelect->userSelectedRelEffDetSelect();
 }//void relEffDetectorSelectCallback()
 
 
-void DetectorEdit::gadrasDetectorSelectCallback()
+void DrfSelect::gadrasDetectorSelectCallback()
 {
   std::shared_ptr<DetectorPeakResponse> det = m_gadrasDetSelect->selectedDetector();
 
@@ -3245,7 +3237,7 @@ void DetectorEdit::gadrasDetectorSelectCallback()
 }//void gadrasDetectorSelectCallback()
 
 
-void DetectorEdit::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakResponse> drf,
+void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakResponse> drf,
                                                 long long db_user_id,
                                                 std::shared_ptr<DataBaseUtils::DbSession> sql )
 {
@@ -3291,7 +3283,7 @@ void DetectorEdit::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakResp
 
 
 
-std::shared_ptr<DetectorPeakResponse> DetectorEdit::getUserPrefferedDetector(
+std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPrefferedDetector(
                                 std::shared_ptr<DataBaseUtils::DbSession> sql,
                                 Wt::Dbo::ptr<InterSpecUser> user,
                                 std::shared_ptr<const SpecUtils::SpecFile> meas )
@@ -3383,7 +3375,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::getUserPrefferedDetector(
 };//getUserPrefferedDetector(...)
 
 
-void DetectorEdit::setUserPrefferedDetector( std::shared_ptr<DetectorPeakResponse> drf,
+void DrfSelect::setUserPrefferedDetector( std::shared_ptr<DetectorPeakResponse> drf,
                                      std::shared_ptr<DataBaseUtils::DbSession> sql,
                                      Wt::Dbo::ptr<InterSpecUser> user,
                                      UseDrfPref::UseDrfType prefType,
@@ -3461,7 +3453,7 @@ void DetectorEdit::setUserPrefferedDetector( std::shared_ptr<DetectorPeakRespons
 }//void setUserPrefferedDetector(...)
 
 
-void DetectorEdit::acceptAndFinish()
+void DrfSelect::acceptAndFinish()
 {
   updateLastUsedTimeOrAddToDb( m_detector, m_interspec->m_user.id(), m_sql );
   
@@ -3477,7 +3469,7 @@ void DetectorEdit::acceptAndFinish()
   {
     UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
     WServer::instance()->ioService().post( std::bind( [=](){
-      DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, meas );
+      DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
     } ) );
   }//if( m_defaultForSerialNumber and is checked )
   
@@ -3485,7 +3477,7 @@ void DetectorEdit::acceptAndFinish()
   {
     UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
     WServer::instance()->ioService().post( std::bind( [=](){
-      DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, meas );
+      DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
     } ) );
   }//if( m_defaultForDetectorModel and is checked )
   
@@ -3494,7 +3486,7 @@ void DetectorEdit::acceptAndFinish()
 }//void acceptAndFinish()
 
 
-void DetectorEdit::cancelAndFinish()
+void DrfSelect::cancelAndFinish()
 {
   m_detector = m_originalDetector;
   if( m_detector && m_originalDetectorCopy )
@@ -3506,7 +3498,7 @@ void DetectorEdit::cancelAndFinish()
 }//void cancelAndFinish()
 
 
-void DetectorEdit::finishWithNoDetector()
+void DrfSelect::finishWithNoDetector()
 {
   m_detector.reset();
   emitChangedSignal();
@@ -3515,7 +3507,7 @@ void DetectorEdit::finishWithNoDetector()
 }//void finishWithNoDetector()
 
 
-vector<pair<string,string>> DetectorEdit::avaliableGadrasDetectors() const
+vector<pair<string,string>> DrfSelect::avaliableGadrasDetectors() const
 {
   vector<pair<string,string>> answer;
 
@@ -3567,7 +3559,7 @@ vector<pair<string,string>> DetectorEdit::avaliableGadrasDetectors() const
 }//vector<string> avaliableGadrasDetectors() const
 
 
-std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const SpecUtils::DetectorType type, InterSpec *interspec )
+std::shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils::DetectorType type, InterSpec *interspec )
 {
   using SpecUtils::DetectorType;
   
@@ -3656,7 +3648,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const S
 }//initARelEffDetector( int type )
 
 
-std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector(
+std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
                                                             const SpecUtils::DetectorType type, InterSpec *interspec )
 
 {
@@ -3782,7 +3774,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector(
 }//initAGadrasDetector
 
 
-std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector( const std::string &currentDetName, InterSpec *interspec )
+std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const std::string &currentDetName, InterSpec *interspec )
 {
   //Grab "GadrasDRFPath" and split it by semicolon and newlines, then go through
   //  and look for sub-folders with the given name that contain Detector.data
@@ -3835,7 +3827,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector( const s
 }//std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const std::string &name );
 
 
-std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetectorFromDirectory( const std::string &path, InterSpec *interspec )
+std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetectorFromDirectory( const std::string &path, InterSpec *interspec )
 {
   auto det = std::make_shared<DetectorPeakResponse>();
 
@@ -3887,7 +3879,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetectorFromDirec
 }//std::shared_ptr<DetectorPeakResponse> initAGadrasDetectorFromDirectory()
 
 
-void DetectorEdit::emitChangedSignal()
+void DrfSelect::emitChangedSignal()
 {
   //Make sure this is a necessary signal to emit
   if( m_previousEmmittedDetector == m_detector )
@@ -3908,7 +3900,7 @@ void DetectorEdit::emitChangedSignal()
 }//void emitChangedSignal()
 
 
-void DetectorEdit::emitModifiedSignal()
+void DrfSelect::emitModifiedSignal()
 {
   //Make sure this is a necessary signal to emit
   if( !m_detector && !m_previousDetectorDef.isValid() )
@@ -3929,13 +3921,13 @@ void DetectorEdit::emitModifiedSignal()
 }//void emitModifiedSignal()
 
 
-Wt::Signal<> &DetectorEdit::done()
+Wt::Signal<> &DrfSelect::done()
 {
   return m_doneSignal;
 }
 
 
-DetectorEditWindow::DetectorEditWindow(
+DrfSelectWindow::DrfSelectWindow(
                                   std::shared_ptr<DetectorPeakResponse> det,
                                   InterSpec *specViewer,
                                   SpectraFileModel *fileModel )
@@ -3946,15 +3938,15 @@ DetectorEditWindow::DetectorEditWindow(
                    | AuxWindowProperties::EnableResize ),
     m_edit( NULL )
 {
-  m_edit = new DetectorEdit( det, specViewer, fileModel, this );
+  m_edit = new DrfSelect( det, specViewer, fileModel, this );
   
   contents()->setPadding( 0 );
   contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
   stretcher()->addWidget( m_edit, 0, 0 );
   stretcher()->setContentsMargins( 6, 2, 6, 0 );
   
-  m_edit->done().connect( boost::bind( &DetectorEditWindow::acceptAndDelete, this ) );
-  finished().connect( boost::bind( &DetectorEditWindow::acceptAndDelete, this ) );
+  m_edit->done().connect( boost::bind( &DrfSelectWindow::acceptAndDelete, this ) );
+  finished().connect( boost::bind( &DrfSelectWindow::acceptAndDelete, this ) );
   rejectWhenEscapePressed();
   
   resize( WLength(650,WLength::Pixel), WLength(610,WLength::Pixel));
@@ -3962,17 +3954,17 @@ DetectorEditWindow::DetectorEditWindow(
   show();
   resizeToFitOnScreen();
   centerWindowHeavyHanded();
-}//DetectorEditWindow constructor
+}//DrfSelectWindow constructor
 
 
-DetectorEditWindow::~DetectorEditWindow()
+DrfSelectWindow::~DrfSelectWindow()
 {
 }
 
 
-void DetectorEditWindow::acceptAndDelete( DetectorEditWindow *window )
+void DrfSelectWindow::acceptAndDelete( DrfSelectWindow *window )
 {
   window->m_edit->emitChangedSignal();  //will only emit if necessary
   window->m_edit->emitModifiedSignal(); //will only emit if necessary
   AuxWindow::deleteAuxWindow( window );
-}//void acceptAndDelete( DetectorEditWindow *window )
+}//void acceptAndDelete( DrfSelectWindow *window )

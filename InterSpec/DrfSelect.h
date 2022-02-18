@@ -1,5 +1,5 @@
-#ifndef DetectorEdit_h
-#define DetectorEdit_h
+#ifndef DrfSelect_h
+#define DrfSelect_h
 /* InterSpec: an application to analyze spectral gamma radiation data.
  
  Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
@@ -99,6 +99,7 @@ public:
   void editDetector();
 
   std::shared_ptr<DetectorPeakResponse> detector();
+  std::shared_ptr<const DetectorPeakResponse> detector() const;
 
 protected:
   static const char * const sm_noDetectorTxt;
@@ -112,7 +113,7 @@ protected:
 };//class DetectorDisplay
 
 
-class DetectorEdit : public Wt::WContainerWidget
+class DrfSelect : public Wt::WContainerWidget
 {
 /*
   This class is meant to allow the user to change or edit the detector
@@ -121,17 +122,17 @@ class DetectorEdit : public Wt::WContainerWidget
 */
   
 public:
-  /** DetectorEdit Constructor
+  /** DrfSelect Constructor
    @param currentDet Current DRF; will be used to help select what DRF to show.
    @param parentWindow Used only to place the close, cancel and help buttons
           into the footer
    */
-  DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
+  DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
                 InterSpec *specViewer,
                 SpectraFileModel *fileModel,
                 AuxWindow *parentWindow = 0
  );
-  virtual ~DetectorEdit();
+  virtual ~DrfSelect();
 
   
   //verify manual definition, set Apply to enabled if ok
@@ -353,25 +354,25 @@ protected:
 
   Wt::WCheckBox *m_defaultForSerialNumber;
   Wt::WCheckBox *m_defaultForDetectorModel;
-};//class DetectorEdit
+};//class DrfSelect
 
 
-class DetectorEditWindow : public AuxWindow
+class DrfSelectWindow : public AuxWindow
 {
 /*
-  Provides a window that contains a DetectorEdit
+  Provides a window that contains a DrfSelect
 */
 public:
-  DetectorEditWindow( std::shared_ptr<DetectorPeakResponse> currentDet,
+  DrfSelectWindow( std::shared_ptr<DetectorPeakResponse> currentDet,
                 InterSpec *specViewer,
                 SpectraFileModel *fileModel );
-  virtual ~DetectorEditWindow();
+  virtual ~DrfSelectWindow();
 
 protected:
-  static void acceptAndDelete( DetectorEditWindow *window );
+  static void acceptAndDelete( DrfSelectWindow *window );
 
-  DetectorEdit *m_edit;
-};//class DetectorEditWindow
+  DrfSelect *m_edit;
+};//class DrfSelectWindow
 
 
-#endif //DetectorEdit_h
+#endif //DrfSelect_h

@@ -130,7 +130,14 @@ else(WIN32)
     set(EXECUTABLE_OUTPUT_PATH bin CACHE PATH "Path to executables" FORCE)
 endif(WIN32)
 
+
 SET(MYSQL_DATABASE_TO_USE "dev" CACHE STRING "Which mysql database to use (if applicable): dev/qc/prod")
+
+
+# I think requiring c++14 will require GCC>=5, but we'll double check anyway
+if( CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0 )
+  message( fatal, "GCC less than 5 not supported." )
+endif()
 
 
 if(WIN32 OR BUILD_AS_OSX_APP OR BUILD_AS_ELECTRON_APP)
@@ -446,7 +453,6 @@ set(sources
     src/SpecMeasManager.cpp
     src/InterSpecUser.cpp
     src/CompactFileManager.cpp
-    src/DetectorEdit.cpp
     src/OneOverR2Calc.cpp
     src/UnitsConverterTool.cpp
     src/DecayWindow.cpp
@@ -472,6 +478,7 @@ set(sources
     src/ColorThemeWidget.cpp
     src/ColorThemeWindow.cpp
     src/PeakSearchGuiUtils.cpp
+    src/DrfSelect.cpp
     src/MakeDrf.cpp
     src/MakeDrfSrcDef.cpp
     src/MakeDrfChart.cpp
@@ -535,7 +542,6 @@ set(headers
     InterSpec/SpecMeasManager.h
     InterSpec/InterSpecUser.h
     InterSpec/CompactFileManager.h
-    InterSpec/DetectorEdit.h
     InterSpec/OneOverR2Calc.h
     InterSpec/UnitsConverterTool.h
     InterSpec/DecayWindow.h
@@ -561,6 +567,7 @@ set(headers
     InterSpec/ColorThemeWidget.h
     InterSpec/ColorThemeWindow.h
     InterSpec/PeakSearchGuiUtils.h
+    InterSpec/DrfSelect.h
     InterSpec/MakeDrf.h
     InterSpec/MakeDrfSrcDef.h
     InterSpec/MakeDrfChart.h

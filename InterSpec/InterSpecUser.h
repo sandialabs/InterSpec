@@ -857,7 +857,7 @@ struct UserState
   enum ShowingWindows
   {
     kEnergyCalibration = 0x1,
-    kDetectorEditSelect = 0x2
+    kDrfSelectSelect = 0x2
     //etc..
   };//enum ShowingWindows
   

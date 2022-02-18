@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <regex>
 #include <deque>
 #include <fstream>
 
@@ -60,6 +61,7 @@
 #include "SpecUtils/DateTime.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/DrfSelect.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
@@ -67,7 +69,6 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
-#include "InterSpec/DetectorEdit.h"
 #include "InterSpec/MakeDrfChart.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -85,27 +86,11 @@
 #include "InterSpec/DetectorPeakResponse.h"
 
 
-// The regex in GCC 4.8.x does not have working regex...., so we will detect this via
-//    https://stackoverflow.com/questions/12530406/is-gcc-4-8-or-earlier-buggy-about-regular-expressions#answer-41186162
-#if defined(_MSC_VER) \
-    || (__cplusplus >= 201103L &&                             \
-        (!defined(__GLIBCXX__) || (__cplusplus >= 201402L) || \
-          (defined(_GLIBCXX_REGEX_DFS_QUANTIFIERS_LIMIT) || \
-            defined(_GLIBCXX_REGEX_STATE_LIMIT)           || \
-            (defined(_GLIBCXX_RELEASE)                && \
-            _GLIBCXX_RELEASE > 4))))
-#define HAVE_WORKING_REGEX 1
-#else
-#define HAVE_WORKING_REGEX 0
-#endif
-
-#if( HAVE_WORKING_REGEX )
-#include <regex>
-namespace RegexNs = std;
-#else
-#include <boost/regex.hpp>
-#warning "MakeDrf using boost regex - support for this compiler will be dropped soon"
-namespace RegexNs = boost;
+// The regex in GCC 4.8.x does not have working regex
+#if( defined(__GLIBCXX__) && (__cplusplus < 201402L) )
+static_assert( defined(_GLIBCXX_REGEX_DFS_QUANTIFIERS_LIMIT) \
+              || defined(_GLIBCXX_REGEX_STATE_LIMIT) \
+              || (defined(_GLIBCXX_RELEASE) && _GLIBCXX_RELEASE > 4), "GCC 4.8 is not supported due to buggy regex implementation" );
 #endif
 
 using namespace std;
@@ -916,10 +901,10 @@ namespace
               SpecUtils::trim( remark );
               
               //Look for a string like "Age= 13y 5d 3s something something something"
-              RegexNs::smatch mtch;
-              RegexNs::regex expr( string(".+(Age\\s*\\=\\s*(") + PhysicalUnits::sm_timeDurationRegex + ")).*?", RegexNs::regex::icase );
+              std::smatch mtch;
+              std::regex expr( string(".+(Age\\s*\\=\\s*(") + PhysicalUnits::sm_timeDurationRegex + ")).*?", std::regex::icase );
                 
-              if( RegexNs::regex_match( remark, mtch, expr ) )
+              if( std::regex_match( remark, mtch, expr ) )
               {
                 try
                 {
@@ -956,9 +941,9 @@ namespace
               
               /*
                //Untested regex quivalent (or maybe a bit stricter) of the above.
-               RegexNs::smatch shieldmtch;
-               RegexNs::regex expr( ".+({\\s*[+]?[0-9]*\\.?[0-9]+\\s*,\\s*[+]?[0-9]*\\.?[0-9]+\\s*}).*?" );  //could be optimized, and extended to arbitrary number of floats
-               if( RegexNs::regex_match( remark, shieldmtch, expr ) )
+               std::smatch shieldmtch;
+               std::regex expr( ".+({\\s*[+]?[0-9]*\\.?[0-9]+\\s*,\\s*[+]?[0-9]*\\.?[0-9]+\\s*}).*?" );  //could be optimized, and extended to arbitrary number of floats
+               if( std::regex_match( remark, shieldmtch, expr ) )
                {
                  shielding = shieldmtch[1].str();
                  const size_t removepos = remark.find( shielding );
@@ -999,9 +984,9 @@ namespace
                   SpecUtils::trim( activitystr );
                   
                   //search for a positive decimal number foloowed by some letters; take fir occirance
-                  RegexNs::smatch mtch;
-                  RegexNs::regex expr( "(\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?)\\s*([a-zA-Z \\-]+)" );
-                  if( RegexNs::regex_search( activitystr, mtch, expr ) )
+                  std::smatch mtch;
+                  std::regex expr( "(\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?)\\s*([a-zA-Z \\-]+)" );
+                  if( std::regex_search( activitystr, mtch, expr ) )
                     activitystr = SpecUtils::trim_copy( mtch[0] );
                   
                   activity = PhysicalUnits::stringToActivity( activitystr );
@@ -1912,7 +1897,7 @@ void MakeDrf::startSaveAs()
     {
       UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
       WServer::instance()->ioService().post( std::bind( [=](){
-        DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
+        DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
       } ) );
     }//if( def_for_serial_cb and is checked )
     
@@ -1920,7 +1905,7 @@ void MakeDrf::startSaveAs()
     {
       UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
       WServer::instance()->ioService().post( std::bind( [=](){
-        DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
+        DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
       } ) );
     }//if( def_for_serial_cb and is checked )
     
@@ -2827,7 +2812,7 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
         if( distance > 0.0 )
         {
           string title = m->title();
-          RegexNs::smatch mtch;
+          std::smatch mtch;
           
           string regexstr = PhysicalUnits::sm_distanceRegex;
           if( regexstr.size()>1 && regexstr[0]=='^')
@@ -2836,9 +2821,9 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
             regexstr = regexstr.substr(0,regexstr.size()-1);
           regexstr = string(".+(@\\s*") + regexstr + ").*?";
           
-          RegexNs::regex expr( regexstr, RegexNs::regex::icase );
+          std::regex expr( regexstr, std::regex::icase );
           
-          if( RegexNs::regex_match( title, mtch, expr ) )
+          if( std::regex_match( title, mtch, expr ) )
           {
             size_t distpos = title.find( mtch[1].str() );
             title = SpecUtils::trim_copy( title.substr(0,distpos) )
@@ -2892,7 +2877,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   const char * const endline = "\r\n";
   
   //ToDo: implement proper reading in of escaped fields, including new lines in
-  //      DetectorEdit, then get rid of the below.
+  //      DrfSelect, then get rid of the below.
   SpecUtils::ireplace_all( drfname, "\r", " ");
   SpecUtils::ireplace_all( drfname, "\n", " ");
   SpecUtils::ireplace_all( drfdescription, "\r", " ");
