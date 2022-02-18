@@ -102,6 +102,7 @@
 #include "InterSpec/PeakEdit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/DrfSelect.h"
 #include "InterSpec/IsotopeId.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
@@ -116,7 +117,6 @@
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
-#include "InterSpec/DetectorEdit.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/UseInfoWindow.h"
@@ -2923,7 +2923,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 //    m_nuclideSearchWindow
 //    enum ShowingWindows
 //    {
-//      kEnergyCalibration = 0x1, DetectorEditSelect = 0x2 //etc..
+//      kEnergyCalibration = 0x1, DrfSelectSelect = 0x2 //etc..
 //    };
   
     entry.modify()->isotopeSearchEnergiesXml.clear();
@@ -7302,7 +7302,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   
   item = popup->addMenuItem( "Detector Response Select" );
   HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::showDetectorEditWindow, this ) );
+  item->triggered().connect( boost::bind( &InterSpec::showDrfSelectWindow, this ) );
   
   item = popup->addMenuItem( "Make Detector Response" );
   HelpSystem::attachToolTipOn( item, "Create detector response function from characterization data.", showToolTips );
@@ -7425,10 +7425,10 @@ void InterSpec::showDoseTool()
 void InterSpec::showMakeDrfWindow()
 {
   MakeDrf::makeDrfWindow( this, m_materialDB.get(), m_shieldingSuggestion );
-}//void showDetectorEditWindow()
+}//void showDrfSelectWindow()
 
 
-void InterSpec::showDetectorEditWindow()
+void InterSpec::showDrfSelectWindow()
 {
   std::shared_ptr<DetectorPeakResponse> currentDet;
   if( m_dataMeasurement )
@@ -7436,8 +7436,8 @@ void InterSpec::showDetectorEditWindow()
   InterSpec *specViewer = this;
   SpectraFileModel *fileModel = m_fileManager->model();
 
-  new DetectorEditWindow( currentDet, specViewer, fileModel );
-}//void showDetectorEditWindow()
+  new DrfSelectWindow( currentDet, specViewer, fileModel );
+}//void showDrfSelectWindow()
 
 
 void InterSpec::showCompactFileManagerWindow()
@@ -8180,7 +8180,7 @@ void InterSpec::loadDetectorToPrimarySpectrum( SpecUtils::DetectorType type,
 
   //First see if the user has opted for a detector for this serial number of
   //  detector model
-  det = DetectorEdit::getUserPrefferedDetector( m_sql, m_user, meas );
+  det = DrfSelect::getUserPrefferedDetector( m_sql, m_user, meas );
   
   const bool usingUserDefaultDet = !!det;
   
@@ -8196,7 +8196,7 @@ void InterSpec::loadDetectorToPrimarySpectrum( SpecUtils::DetectorType type,
         case SpecUtils::DetectorType::IdentiFinder:
         case SpecUtils::DetectorType::IdentiFinderNG:
         case SpecUtils::DetectorType::IdentiFinderLaBr3:
-          det = DetectorEdit::initARelEffDetector( type, this );
+          det = DrfSelect::initARelEffDetector( type, this );
         break;
         
         default:
@@ -8204,7 +8204,7 @@ void InterSpec::loadDetectorToPrimarySpectrum( SpecUtils::DetectorType type,
       }
     
       if( !det )
-        det = DetectorEdit::initAGadrasDetector( type, this );
+        det = DrfSelect::initAGadrasDetector( type, this );
     }catch( std::exception &e )
     {
       cerr << "InterSpec::loadDetectorToPrimarySpectrum caught: "
@@ -8444,7 +8444,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           if( drf )
           {
             auto drfcopy = std::make_shared<DetectorPeakResponse>( *drf );
-            boost::function<void(void)> worker = boost::bind( &DetectorEdit::updateLastUsedTimeOrAddToDb, drfcopy, m_user.id(), m_sql );
+            boost::function<void(void)> worker = boost::bind( &DrfSelect::updateLastUsedTimeOrAddToDb, drfcopy, m_user.id(), m_sql );
             WServer::instance()->ioService().post( worker );
           }
         }//if( meas->detector() != old_det )

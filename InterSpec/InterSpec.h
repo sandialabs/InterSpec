@@ -530,7 +530,7 @@ public:
   bool toolTabsVisible() const;
   
   void showMakeDrfWindow();
-  void showDetectorEditWindow();
+  void showDrfSelectWindow();
   void showCompactFileManagerWindow();
   
   //Nuclide Search

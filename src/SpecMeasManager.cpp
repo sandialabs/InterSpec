@@ -107,11 +107,11 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/DrfSelect.h"
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/ParseUtils.h"
-#include "InterSpec/DetectorEdit.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/EnergyCalTool.h"
@@ -1502,11 +1502,11 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   // Check if this is an InterSpec exported DRF CSV
   if( header_contains( "# Detector Response Function" ) )
   {
-    shared_ptr<DetectorPeakResponse> det = DetectorEdit::parseRelEffCsvFile( fileLocation );
+    shared_ptr<DetectorPeakResponse> det = DrfSelect::parseRelEffCsvFile( fileLocation );
     
     if( det && det->isValid() )
     {
-      // TODO: generate a eff plot, and basic info, and display; probably by refactoring DetectorEdit::updateChart()
+      // TODO: generate a eff plot, and basic info, and display; probably by refactoring DrfSelect::updateChart()
       // TODO: Ask user if they want to use DRF; if so save to `InterSpec::writableDataDirectory() + "UploadedDrfs"`
       // TODO: handle GADRAS style Efficiency.csv files
       // TODO: allow users to rename the DRF.
@@ -1534,7 +1534,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         {
           auto sql = interspec->sql();
           auto user = interspec->m_user;
-          DetectorEdit::updateLastUsedTimeOrAddToDb( det, user.id(), sql );
+          DrfSelect::updateLastUsedTimeOrAddToDb( det, user.id(), sql );
           interspec->detectorChanged().emit( det ); //This loads it to the foreground spectrum file
         }
       } ) );
@@ -1746,7 +1746,7 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
     {
       auto sql = interspec->sql();
       auto user = interspec->m_user;
-      DetectorEdit::updateLastUsedTimeOrAddToDb( det, user.id(), sql );
+      DrfSelect::updateLastUsedTimeOrAddToDb( det, user.id(), sql );
       interspec->detectorChanged().emit( det ); //This loads it to the foreground spectrum file
     }
     
