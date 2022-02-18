@@ -2987,7 +2987,19 @@ D3TimeChart.prototype.setMouseInfoText = function (time, data, optargs) {
   //  which should then use the current locale, so everything washes out.
   var s = "";
   if (optargs && optargs.startTimeStamp != null)
-    s += new Date(optargs.startTimeStamp).toLocaleString([], {hour12: false}) + "<\n>";
+  {
+    const d = new Date(optargs.startTimeStamp);
+    
+    // To print the time in the users current locale, but print the same value as was in the
+    //  spectrum file, discarding time-zones everywhere:
+    //const adjd = new Date(d.getTime() - 120000*d.getTimezoneOffset());
+    //s += adjd.toLocaleString([], {hour12: false}) + "<\n>";
+    
+    //However, the above seems to have some quirks (e.g., will use hour '24', instead of
+    //  incrementing the date), so we'll just use the one true, unambiguous format, ISO, and remove
+    //  trailing 'Z' character since we ignored the timezone when parsing the spectrum file anyway.
+    s += d.toISOString().slice(0, -1) + "<\n>";
+  }
 
   // If want compression data in the tooltip, uncomment below
   // var compressionIndex = this.state.selection
