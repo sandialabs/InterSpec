@@ -1443,6 +1443,11 @@ D3TimeChart.prototype.updateChart = function (
         var endSample = occupancies[i].endSample;
         var lIdx = chart.state.data.sampleNumberToIndexMap[startSample];
         var rIdx = chart.state.data.sampleNumberToIndexMap[endSample];
+        
+        if( lIdx === undefined || rIdx === undefined ){
+          chart.occupancyLinesG.selectAll(".occupancy_line_group").remove();
+          return;
+        }
 
         var startTime =
           chart.state.data.formatted[0].realTimeIntervals[lIdx][0];

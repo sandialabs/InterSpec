@@ -267,6 +267,7 @@ public:
     m_gammaNeutRelEmphasis = new NativeFloatSpinBox( sfDiv );
     label->setBuddy( m_gammaNeutRelEmphasis );
     m_gammaNeutRelEmphasis->setText( "1.0" );
+    m_gammaNeutRelEmphasis->setSingleStep( 0.2f );
     m_gammaNeutRelEmphasis->valueChanged().connect( this, &D3TimeChartFilters::handleGammaNeutRelEmphasisChanged );
   }//D3TimeChartFilters
   
@@ -847,6 +848,21 @@ void D3TimeChart::setDataToClient()
     boost::posix_time::ptime startTime;
     SpecUtils::SourceType sourcetype = SpecUtils::SourceType::Unknown;
     tuple<double,double,boost::posix_time::ptime> coords{ Q_DBL_NaN, Q_DBL_NaN, {} };
+    
+    // Lets make sure this sample number has data from any of the currently selected data, and if
+    //  not, we wont include this sample.
+    bool haveAnyDataThisSample = false;
+    for( const string &detName : detNames )
+    {
+      if( m_spec->measurement( sample_num, detName ) )
+      {
+        haveAnyDataThisSample = true;
+        break;
+      }
+    }//for( const string &detName : detNames )
+    
+    if( !haveAnyDataThisSample )
+      continue;
     
     sampleNumbers.push_back( sample_num );
     

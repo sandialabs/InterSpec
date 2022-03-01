@@ -697,16 +697,16 @@ void SpecFileSummary::updateMeasurmentFieldsFromMemory()
       m_gpsTimeStamp->setText( "" );
     }else
     {
-      stringstream gpsTimeStampStrm;
-      gpsTimeStampStrm << sample->position_time();
-      m_gpsTimeStamp->setText( gpsTimeStampStrm.str() );
+      m_gpsTimeStamp->setText( SpecUtils::to_extended_iso_string(sample->position_time()) );
     }
-
-
-    stringstream timeStampStrm;
-    timeStampStrm << sample->start_time();
-    m_timeStamp->setText( timeStampStrm.str() );
-
+    
+    if( sample->start_time().is_special() )
+    {
+      m_timeStamp->setText( "" );
+    }else
+    {
+      m_timeStamp->setText( SpecUtils::to_extended_iso_string(sample->start_time()) );
+    }
 
     const size_t nchannel = sample->num_gamma_channels();
     m_numberOfBins->setText( std::to_string(nchannel) );

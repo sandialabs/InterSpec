@@ -408,11 +408,6 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     root()->clear();
   }
   
-  if( !m_miscSignal )
-  {
-    m_miscSignal.reset( new JSignal<std::string>(this, "miscSignal", false) );
-    m_miscSignal->connect( this, &InterSpecApp::miscSignalHandler );
-  }
   
   try
   {
@@ -448,6 +443,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   }//try / catch to create a InterSpec object
   
   root()->addStyleClass( "specviewer" );
+  
+  if( !m_miscSignal )
+  {
+    m_miscSignal.reset( new JSignal<std::string>(root(), "miscSignal", false) );
+    m_miscSignal->connect( this, &InterSpecApp::miscSignalHandler );
+  }
   
   m_layout = new WGridLayout();
   root()->setLayout( m_layout );
@@ -667,7 +668,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         WStringStream js;
         js << "Resuming where you left off on " << state->name.toUTF8()
            << "<div onclick="
-        "\"Wt.emit('" << id() << "',{name:'miscSignal'}, 'clearSession');"
+        "\"Wt.emit('" << root()->id() << "',{name:'miscSignal'}, 'clearSession');"
         //"$('.qtip.jgrowl:visible:last').remove();"
         "try{$(this.parentElement.parentElement).remove();}catch(e){}"
         "return false;\" "
