@@ -8829,7 +8829,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       js << "File contained RIID analysis results: "
       << riidAnaSummary(meas)
       << "<div onclick="
-           "\"Wt.emit('" << wApp->id() << "',{name:'miscSignal'}, 'showRiidAna-" << type << "');"
+           "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showRiidAna-" << type << "');"
            //"$('.qtip.jgrowl:visible:last').remove();"
            "try{$(this.parentElement.parentElement).remove();}catch(e){}"
            "return false;\" "
@@ -9194,7 +9194,13 @@ void InterSpec::detectorsToDisplayChanged()
   displayBackgroundData();
   displaySecondForegroundData();
   displayForegroundData( true );
-  displayTimeSeriesData(); //wcjohns change 20160602 to true, to force an update of highlighted regions, should consider removing the highlight option
+  displayTimeSeriesData();
+ 
+  // \TODO: The foreground may be pass-through, but the user could have just de-selected a detector
+  //        so that none of the currently selected sample numbers have gamma/neutron data, and in
+  //        this case we should fix things up.  Or it could be the case that the remaining detectors
+  //        are not time-series (e.g., only have one or two spectra), so we then no longer would
+  //        need/want the time chart (and vice versa when adding a detector).
   
   // This function is only called when a checkbox in the "Detectors" sub-menu is changed, so for the
   //  moment, we will only emit that things changed for the foreground.  In the future we should get
