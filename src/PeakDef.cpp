@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <regex>
 #include <memory>
 #include <iostream>
 
@@ -1524,6 +1525,76 @@ const char *PeakDef::to_string( const CoefficientType type )
 
   return "";
 }//const char *PeakDef::to_string( const CoefficientType type )
+
+
+
+double PeakDef::extract_energy_from_peak_source_string( std::string &str )
+{  
+  std::smatch energy_match;
+  const std::regex energy_regexp("(?:^|\\s)((((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?)\\s*(kev|mev|ev|$))",
+                                 regex::ECMAScript | regex::icase );
+  
+  if( !std::regex_search(str, energy_match, energy_regexp) )
+    return -1.0;
+  
+  
+  const string &val = energy_match[2];
+  const string &units = energy_match[7];
+  const string &total_match = energy_match[0];
+  
+  //cout << "Match for '"  << str << "': ";
+  //for( const auto i : energy_match )
+  //  cout << "'" << i << "', ";
+  //cout << ", val='" << val << ", units='" << units << "'" << endl;
+  
+  double energy = -1.0;
+  if( !(stringstream(val) >> energy) )
+  {
+    assert( 0 ); //should ever get here if regex is well formed
+    return -1.0;
+  }
+  
+  if( SpecUtils::iequals_ascii(units, "kev") )
+  {
+    // Nothing to do here
+  }else if( SpecUtils::iequals_ascii(units, "mev") )
+  {
+    energy *= 1000.0;
+  }else if( SpecUtils::iequals_ascii(units, "ev") )
+  {
+    energy /= 1000.0;
+  }else if( units.empty() )
+  {
+    if( (energy < 295.0) && (str.find('.') == string::npos) )
+    {
+      // If value is less than 295, and there is no decimal, then its possible we've picked up on
+      //  isotope number (e.g., the 235 from U235), so for the moment, we'll reject this match,
+      //  unless we unambiguously know there were numbers or reaction before what we think is the
+      //  energy
+      const auto matchpos = str.find(total_match);
+      auto first_num_pos = str.find_first_of( "0123456789)" );
+      //if( first_num_pos > matchpos )
+      //  first_num_pos = str.find_first_of( "x-ray" );
+      //if( first_num_pos > matchpos )
+      //  first_num_pos = str.find_first_of( "xray" );
+      //if( first_num_pos > matchpos )
+      //  first_num_pos = str.find_first_of( "x ray" );
+      
+      if( first_num_pos < matchpos )
+      {
+        // We have an x-ray, or there were numbers, or closing parenthesis before our match
+      }else
+      {
+        return -1.0;
+      }
+    }//if( (energy < 295.0) && (str.find('.') == string::npos) )
+  }
+  
+  SpecUtils::ireplace_all( str, total_match.c_str(), " " );
+  SpecUtils::trim( str );
+  
+  return energy;
+};//extract_energy_from_peak_source_string
 
 
 void PeakDef::gammaTypeFromUserInput( std::string &txt,
@@ -3204,7 +3275,7 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
   
   
   double max_intensity = 0.0;
-  for( SandiaDecay::NuclideActivityPair activity : activities )
+  for( const SandiaDecay::NuclideActivityPair &activity : activities )
   {
     for( const SandiaDecay::Transition *trans : activity.nuclide->decaysToChildren )
     {
@@ -3235,7 +3306,7 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
   
   double positronfrac = 0.0;
   
-  for( SandiaDecay::NuclideActivityPair activity : activities )
+  for( const SandiaDecay::NuclideActivityPair &activity : activities )
   {
     for( const SandiaDecay::Transition *trans : activity.nuclide->decaysToChildren )
     {
@@ -3271,8 +3342,7 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
           if( fracIntensity <= 0.0 )
             continue;
           
-//          const double delta_e = fabs( product.energy - nearest_gamma.energy ); //XXX - I think nearest_gamma.energy should just be energy (wcjohns 20140711)
-          const double delta_e = fabs( product.energy - energy);
+          const double delta_e = fabs( product.energy - energy );
           double scaleDeltaE = (0.1*windowHalfWidth + delta_e) / fracIntensity;
           if( windowHalfWidth <= 0.0 )
             scaleDeltaE = delta_e;

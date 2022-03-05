@@ -46,6 +46,7 @@ namespace SpecUtils{ class Measurement; }
 namespace SandiaDecay
 {
   struct Nuclide;
+  struct Element;
   struct Transition;
   struct EnergyIntensityPair;
 }//namespace SandiaDecay
@@ -253,22 +254,52 @@ public:
   virtual bool setData( const Wt::WModelIndex &index, const boost::any &value,
                         int role = Wt::EditRole );
 
+  
+  enum SetGammaSource{ NoSourceChange, SourceChange, SourceAndUseChanged };
+  
+  /** Sets the nuclide, x-ray, or reaction for a peak.
+   
+   The specific gamma or x-ray to associate with the peak is chosen either according to the \p peak mean passed in, or if
+   \p ref_energy is greater than zero, then it will override the peak mean.
+   
+   If no #SandiaDecay::Nuclide, #SandiaDecay::Element, or #ReactionGamma::Reaction is passed in, no changes will be made
+    
+   */
+  static SetGammaSource setNuclide( PeakDef &peak,
+                                    const PeakDef::SourceGammaType src_type,
+                                    const SandiaDecay::Nuclide * const nuclide,
+                                    const double ref_energy,
+                                    const double nsigma_window = 0.0 );
+  static SetGammaSource setXray( PeakDef &peak,
+                                   const SandiaDecay::Element * const element,
+                                   const double ref_energy );
+  static SetGammaSource setReaction( PeakDef &peak,
+                                    std::string reaction_name,
+                                    const PeakDef::SourceGammaType src_type,
+                                    const double ref_energy,
+                                    const double nsigma_window = 0.0 );
+  
+  
   //setNuclideXrayReaction(): sets the nuclide, xray, or reaction specified
   //  by the 'txt' string.  If the string specifies an energy, that is used
   //  to help decide which gamma of the nuclide/xray/reaction should be
   //  assigned, otherwise the peak mean is used.
   //  'nsigma_window' is only applicable for the nuclide case (so not xray or
-  //  reaction), and provides a notion of tradoff between ditance in energy, and
+  //  reaction), and provides a notion of tradeoff between distance in energy, and
   //  intensity of gamma assigned; if <= 0.0, then only distance in energy will
   //  be used to decide which gamma is assigned, other wise:
   //  (0.1*nsigma_window*peak.sigma() + delta_energy)/gamma_relative_intensity;
   //  will used as; a value of 4.0 for nsigma_window yields good results for
   //  when the user clicks on a on a reasonalaby isolated peak, but can fail
-  //  when identiying a small intensity photopeak near a much larger intenisty
+  //  when identifying a small intensity photopeak near a much larger intensity
   //  peak thats already been identified.
-  enum SetGammaSource{ NoSourceChange, SourceChange, SourceAndUseChanged };
+  //  Currently, \p nsigma_window only is applied to nuclides, not x-rays or
+  //    reactions (those always are alway matched to closest line in energy).
+  //  Example inputs are "fe xray 98.2 kev", "hf178m2 574.219971 kev", etc
   static SetGammaSource setNuclideXrayReaction( PeakDef &peak, std::string txt,
                                                 const double nsigma_window );
+  
+  
   
 
   virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder );
