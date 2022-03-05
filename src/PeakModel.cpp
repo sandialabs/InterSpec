@@ -42,7 +42,6 @@
 #pragma warning(disable:4244)  // warning C4244: 'initializing' : conversion from 'std::streamoff' to 'size_t', possible loss of data
 
 #include <boost/any.hpp>
-#include <boost/regex.hpp>
 #include <boost/tokenizer.hpp>
 
 #include "SandiaDecay/SandiaDecay.h"
@@ -68,6 +67,198 @@
 
 using namespace std;
 using namespace Wt;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+namespace
+{
+void testSetNuclideXrayRctn()
+{
+  auto check_extract_energy = []( std::string testval, const double expected_energy, const std::string expected_str ) {
+    const double energy = PeakDef::extract_energy_from_peak_source_string(testval);
+    assert( energy == expected_energy );
+    assert( testval == expected_str );
+  };
+  
+  check_extract_energy( "fe xray 98.2 kev", 98.2, "fe xray" );
+  check_extract_energy( "5.34e+2 kev", 534, "" );
+  check_extract_energy( "hf178m 5.34e-3 Mev", 5.34, "hf178m" );
+  check_extract_energy( "8.0e+02 kev hf178m", 800, "hf178m" );
+  check_extract_energy( "8.0E+02 kev hf178m", 800, "hf178m" );
+  check_extract_energy( "hf178m2 574. KEV", 574, "hf178m2" );
+  check_extract_energy( "hf178m2 574.", 574, "hf178m2" );
+  check_extract_energy( "u232 xray 98.", 98, "u232 xray" );
+  check_extract_energy( "u232 xray 98", 98, "u232 xray" );
+  check_extract_energy( "u232 98", 98, "u232" );
+  check_extract_energy( "98 u232", -1, "98 u232" );
+  check_extract_energy( "u-232", -1.0, "u-232" );
+  check_extract_energy( "321 u-232", -1.0, "321 u-232" );
+  check_extract_energy( "321 keV u-232", 321, "u-232" );
+  check_extract_energy( "3.3mev be(a,n)", 3300, "be(a,n)" );
+  check_extract_energy( "co60 1173.23", 1173.23, "co60" );
+  check_extract_energy( "co60 1173.23 kev", 1173.23, "co60" );
+  check_extract_energy( "1173.23 kev co60", 1173.23, "co60" );
+  check_extract_energy( "CO60 1173.23", 1173.23, "CO60" );
+  check_extract_energy( "CO60 1173", 1173, "CO60" );
+  check_extract_energy( "1173 CO60", -1, "1173 CO60" );
+  check_extract_energy( "1173.0 CO60", -1, "1173.0 CO60" );
+  check_extract_energy( "Pb 98", -1, "Pb 98" );
+  check_extract_energy( "Pb 98.2", 98.2, "Pb" );
+  
+  
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  assert( db );
+  
+  PeakModel::SetGammaSource result;
+  
+  PeakDef peak;
+  const SandiaDecay::Nuclide *nuc = nullptr;
+  
+  
+  peak = PeakDef( 1001, 1, 1.8E6 );
+  nuc = db->nuclide( "U238" );
+  result = PeakModel::setNuclide( peak, PeakDef::SourceGammaType::NormalGamma, nuc, 1001, 4.0 );
+  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( peak.parentNuclide() == nuc );
+  assert( fabs(peak.gammaParticleEnergy() - 1001) < 1.0 );
+  
+  nuc = db->nuclide( "Th232" );
+  peak = PeakDef( 2614-511, 5, 1.8E6 );
+  result = PeakModel::setNuclide( peak, PeakDef::SourceGammaType::SingleEscapeGamma, nuc, 2614, 4.0 );
+  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( peak.parentNuclide() == nuc );
+  assert( fabs(peak.gammaParticleEnergy() - (2614-511)) < 1.0 );
+  
+  nuc = db->nuclide( "Th232" );
+  peak = PeakDef( 2614-511, 5, 1.8E6 );
+  result = PeakModel::setNuclide( peak, PeakDef::SourceGammaType::SingleEscapeGamma, nuc, 2614, 4.0 );
+  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( peak.parentNuclide() == nuc );
+  assert( fabs(peak.gammaParticleEnergy() - (2614-511)) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::SingleEscapeGamma );
+  
+  nuc = db->nuclide( "Th232" );
+  peak = PeakDef( 2614-511-511, 5, 1.8E6 );
+  result = PeakModel::setNuclide( peak, PeakDef::SourceGammaType::DoubleEscapeGamma, nuc, 2614, -1 );
+  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( peak.parentNuclide() == nuc );
+  assert( fabs(peak.gammaParticleEnergy() - (2614 - 511 - 511)) < 1.0 );
+  
+  peak = PeakDef( 2614-511, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "Th232 S.E.", -1.0 );
+  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( peak.parentNuclide() != nullptr );
+  assert( fabs(peak.gammaParticleEnergy() - (2614-511)) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::SingleEscapeGamma );
+  
+  
+  peak = PeakDef( 2614 - 511 - 511, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "Th232 D.E.", -1.0 );
+  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( peak.parentNuclide() != nullptr );
+  assert( fabs(peak.gammaParticleEnergy() - (2614 - 511 - 511)) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::DoubleEscapeGamma );
+  
+  peak = PeakDef( 2614 - 511 - 100, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "Th232 2614 keV D.E.", -1.0 );
+  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( peak.parentNuclide() != nullptr );
+  assert( fabs(peak.gammaParticleEnergy() - (2614 - 511 - 511)) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::DoubleEscapeGamma );
+  
+  peak = PeakDef( 2223.248, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "H(n,g) 2223.248 keV", -1.0 );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
+  assert( peak.reaction() != nullptr );
+  assert( fabs(peak.gammaParticleEnergy() - 2223.248) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
+  
+  peak = PeakDef( 100.0, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "H(n,g) 2223.248", -1.0 );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
+  assert( peak.reaction() != nullptr );
+  assert( fabs(peak.gammaParticleEnergy() - 2223.248) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
+  
+  peak = PeakDef( 2223.248, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "H(n,g)", 4.0 );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
+  assert( peak.reaction() != nullptr );
+  assert( fabs(peak.gammaParticleEnergy() - 2223.248) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
+  
+  peak = PeakDef( 2223.248, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "H(n,g) 2223.248 keV S.E.", 4.0 );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
+  assert( peak.reaction() != nullptr );
+  assert( fabs(peak.gammaParticleEnergy() - (2223.248-511)) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::SingleEscapeGamma );
+  
+  peak = PeakDef( 2223.248, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "H(n,g) 2223.248 keV D.E.", 4.0 );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
+  assert( peak.reaction() != nullptr );
+  assert( fabs(peak.gammaParticleEnergy() - (2223.248-2*511)) < 2.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::DoubleEscapeGamma );
+  
+  peak = PeakDef( 100, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "U xray 98.4340 kev", -1. );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
+  assert( peak.xrayElement() != nullptr );
+  assert( fabs(peak.gammaParticleEnergy() - 98.4340) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
+  
+  peak = PeakDef( 574, 5, 1.8E6 );
+  nuc = db->nuclide( "hf178m2" );
+  assert( nuc );
+  result = PeakModel::setNuclideXrayReaction( peak, "hf178m2 574.219971 kev", -1. );
+  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( peak.parentNuclide() == nuc );
+  assert( fabs(peak.gammaParticleEnergy() - 574.219971) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
+  
+  peak = PeakDef( 574, 5, 1.8E6 );
+  nuc = db->nuclide( "hf178m2" );
+  assert( nuc );
+  result = PeakModel::setNuclideXrayReaction( peak, "hf178m2", -1. );
+  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( peak.parentNuclide() == nuc );
+  assert( fabs(peak.gammaParticleEnergy() - 574.219971) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
+  
+  peak = PeakDef( 100, 5, 1.8E6 );
+  nuc = db->nuclide( "hf178m2" );
+  assert( nuc );
+  result = PeakModel::setNuclideXrayReaction( peak, "hf178m2 574.219971", -1. );
+  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( peak.parentNuclide() == nuc );
+  assert( fabs(peak.gammaParticleEnergy() - 574.219971) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
+  
+  peak = PeakDef( 84.9, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "Pb xray 84.9 kev", -1. );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
+  assert( peak.xrayElement() );
+  assert( fabs(peak.gammaParticleEnergy() - 84.9) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
+  
+  peak = PeakDef( 84.9, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "Pb 84.9 kev", -1. );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
+  assert( peak.xrayElement() );
+  assert( fabs(peak.gammaParticleEnergy() - 84.9) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
+  
+  peak = PeakDef( 84.9, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "Pb212 84.9 kev", -1. );
+  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( peak.parentNuclide() );
+  assert( peak.parentNuclide()->symbol == "Pb212" );
+  assert( fabs(peak.gammaParticleEnergy() - 84.865) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::XrayGamma );
+}//void testSetNuclideXrayRctn()
+
+}//namespace
+#endif
 
 
 bool PeakModel::recomendUseForFit( const SandiaDecay::Nuclide *nuc,
@@ -454,6 +645,10 @@ PeakModel::PeakModel( Wt::WObject *parent )
     m_csvResource( NULL )
 {
   m_csvResource = new PeakCsvResource( this );
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  testSetNuclideXrayRctn();
+#endif
 }//PeakModel constructor
 
 PeakModel::~PeakModel()
@@ -1417,10 +1612,195 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
 }//boost::any PeakModel::data( const WModelIndex &index, int role ) const
 
 
+
+PeakModel::SetGammaSource PeakModel::setNuclide( PeakDef &peak,
+                                 const PeakDef::SourceGammaType src_type,
+                                 const SandiaDecay::Nuclide * const nuclide,
+                                 const double ref_energy,
+                                 const double nsigma_window )
+{
+  const bool hadSource = (peak.parentNuclide() || peak.xrayElement() || peak.reaction() );
+  assert( !nuclide || (ref_energy > 1.0) );
+  
+  size_t transition_index = 0;
+  const SandiaDecay::Transition *transition = nullptr;
+  
+  // If width is negative, then nearest photopeak by energy will be used.
+  const double width = peak.gausPeak() ? nsigma_window*peak.sigma() : (nsigma_window/8.0)*peak.roiWidth();
+  
+  double extraEnergy = 0.0;
+  switch( src_type )
+  {
+    case PeakDef::NormalGamma:
+    case PeakDef::AnnihilationGamma:
+    case PeakDef::XrayGamma:
+      break;
+      
+    case PeakDef::SingleEscapeGamma: extraEnergy = 510.99891;     break;
+    case PeakDef::DoubleEscapeGamma: extraEnergy = 2.0*510.99891; break;
+  }//switch( src_type )
+  
+  const bool xrayOnly = (src_type == PeakDef::SourceGammaType::XrayGamma);
+  PeakDef::SourceGammaType sourceGammaType = src_type;
+  
+  PeakDef::findNearestPhotopeak( nuclide, ref_energy + extraEnergy, width,
+                                xrayOnly, transition, transition_index, sourceGammaType );
+  
+  //There wasnt any photopeaks within 4 sigma, so instead we'll just use
+  //  the closest photpopeak
+  if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) && (nsigma_window>=0.0) )
+    PeakDef::findNearestPhotopeak( nuclide, ref_energy + extraEnergy, -1.0, xrayOnly,
+                                  transition, transition_index, sourceGammaType );
+  
+  switch( src_type )
+  {
+    case PeakDef::NormalGamma:
+    case PeakDef::AnnihilationGamma:
+    case PeakDef::XrayGamma:
+      break;
+      
+    case PeakDef::SingleEscapeGamma: case PeakDef::DoubleEscapeGamma:
+      if( transition )
+        sourceGammaType = src_type;
+      else if( sourceGammaType == PeakDef::AnnihilationGamma )
+        transition = nullptr;  //dont expect this to ever happen
+      break;
+  }//switch( src_type )
+  
+  
+  if( !transition && (sourceGammaType != PeakDef::AnnihilationGamma) )
+  {
+    peak.clearSources();
+    
+    return (hadSource ? SourceChange : NoSourceChange);
+  }
+  
+  
+  bool changedFit = false, shouldFit = false;
+  
+  switch( sourceGammaType )
+  {
+    case PeakDef::NormalGamma:
+      shouldFit = recomendUseForFit( nuclide, transition->products[transition_index].energy );
+      break;
+      
+    case PeakDef::AnnihilationGamma:
+      shouldFit = recomendUseForFit( nuclide, 510.99891f );
+      break;
+      
+    case PeakDef::SingleEscapeGamma:
+    case PeakDef::DoubleEscapeGamma:
+    case PeakDef::XrayGamma:
+      shouldFit = false;
+      break;
+  }//switch( src_type )
+  
+  
+  changedFit |= (shouldFit==peak.useForShieldingSourceFit());
+  changedFit |= (shouldFit && !peak.nuclearTransition());
+  
+  peak.useForShieldingSourceFit( shouldFit );
+  peak.setNuclearTransition( nuclide, transition, int(transition_index), sourceGammaType );
+  
+  return (changedFit ? SourceAndUseChanged : SourceChange);
+}//setNuclide(...)
+
+
+PeakModel::SetGammaSource PeakModel::setXray( PeakDef &peak,
+                              const SandiaDecay::Element *el,
+                              const double ref_energy )
+{
+  const bool hadSource = (peak.parentNuclide() || peak.xrayElement() || peak.reaction() );
+  assert( !el || (ref_energy > 1.0) );
+  
+  if( !el )
+  {
+    peak.clearSources();
+    return (hadSource ? SourceChange : NoSourceChange);
+  }//if( !el )
+  
+  double xray_energy = ref_energy;
+  const SandiaDecay::EnergyIntensityPair *nearXray = PeakDef::findNearestXray( el, ref_energy );
+  xray_energy = (nearXray ? nearXray->energy : 0.0);
+  peak.setXray( el, ref_energy );
+  
+  return ((!nearXray && !hadSource) ? NoSourceChange : SourceChange);
+}//setXray(...)
+
+
+PeakModel::SetGammaSource PeakModel::setReaction( PeakDef &peak,
+                                  std::string label,
+                                  const PeakDef::SourceGammaType src_type,
+                                  const double ref_energy,
+                                  const double windowHalfWidth )
+{
+  const bool hadSource = (peak.parentNuclide() || peak.xrayElement() || peak.reaction() );
+  assert( label.empty() || (ref_energy > 1.0) );
+  
+  const ReactionGamma *rctndb = ReactionGammaServer::database();
+  string rctstr = label;
+  size_t pos = label.find_first_of( ')' );
+  if( pos != string::npos )
+    rctstr = label.substr( 0, pos+1 );
+  
+  vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+  try
+  {
+    rctndb->gammas( rctstr, possible_rctns );
+    if( possible_rctns.empty() )
+    {
+      peak.clearSources();
+      return (hadSource ? SourceChange : NoSourceChange);
+    }
+  }catch(...)
+  {
+    peak.clearSources();
+    return (hadSource ? SourceChange : NoSourceChange);
+  }
+  
+  // TODO: just taking first reaction, however there may be multiple
+  const ReactionGamma::Reaction *rctn = possible_rctns[0].reaction;
+  
+  if( !rctn )
+  {
+    peak.clearSources();
+    return (hadSource ? SourceChange : NoSourceChange);
+  }
+  
+  double best_delta_e = std::numeric_limits<double>::max(), nearestE = 0.0;
+  for( const ReactionGamma::EnergyAbundance &eip : rctn->gammas )
+  {
+    if( eip.abundance <= 0.0 )
+      continue;
+    
+    const double delta_e = fabs( eip.energy - ref_energy );
+    double scaleDeltaE = (0.1*windowHalfWidth + delta_e) / eip.abundance;
+    if( windowHalfWidth <= 0.0 )
+      scaleDeltaE = delta_e;
+    
+    if( scaleDeltaE <= best_delta_e )
+    {
+      nearestE = eip.energy;
+      best_delta_e = scaleDeltaE;
+    }
+  }//for( const ReactionGamma::EnergyAbundance &eip : rctn->gammas )
+  
+  if( nearestE == 0.0 )
+  {
+    peak.clearSources();
+    return (hadSource ? SourceChange : NoSourceChange);
+  }
+  
+  peak.setReaction( rctn, static_cast<float>(nearestE), src_type );
+  
+  return (rctn ? SourceChange : NoSourceChange);
+}//setReaction
+
+
 PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
                                                             std::string label,
                                                     const double nsigma_window )
-{
+{  
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   
   if( !db )
@@ -1447,25 +1827,60 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
     return SourceChange;
   }//if( getting rid of source )
   
-  double ref_energy = -1.0;
+  
   const SandiaDecay::Nuclide *nuclide = NULL;
   
   PeakDef::SourceGammaType srcType;
   PeakDef::gammaTypeFromUserInput( label, srcType );
   
-
+  
+  
+  double ref_energy = PeakDef::extract_energy_from_peak_source_string( label );
+  if( ref_energy < std::numeric_limits<float>::epsilon() )
+  {
+    ref_energy = peak.mean();
+    
+    double extraEnergy = 0.0;
+    switch( srcType )
+    {
+      case PeakDef::NormalGamma:
+      case PeakDef::AnnihilationGamma:
+      case PeakDef::XrayGamma:
+        break;
+        
+      case PeakDef::SingleEscapeGamma:
+        ref_energy += 510.99891;
+        break;
+        
+      case PeakDef::DoubleEscapeGamma:
+        ref_energy += 2.0*510.99891;
+        break;
+    }//switch( src_type )
+  }//if( input string didnt contain energy )
+  
+  
   //If there are 2 non-connected strings of numbers, and the second one is
-  //  not followed by a m or meta, but rather nothingn or ev, kev, or MeV,
+  //  not followed by a m or meta, but rather nothing or ev, kev, or MeV,
   //  then we will assume the second one is an energy
-  //XXX - this assumes we will never deal with meta-stable states higher
-  //      than 1 - e.g. if user types int 2m Co 60 55.1 keV, we will mess
-  //      things up
+  // "hf178m2 574.219971 kev"
   size_t number_start, number_stop = string::npos;
   number_start = label.find_first_of( "0123456789" );
   if( number_start != string::npos )
     number_stop = label.find_first_not_of( "0123456789", number_start );
   if( number_stop != string::npos )
   {
+    // If label[number_stop] is 'm', then let '1 ' or '2 ' or '3 ' come after it (to indicate meta
+    //   stable state).
+    if( ((number_stop+1) < label.size())
+       && (label[number_stop] == 'm')
+       && (label[number_stop+1] == '1' || label[number_stop+1] == '2' || label[number_stop+1] == '3')
+       && ((label.size() > (number_stop + 2) && std::isspace( static_cast<unsigned char>(label[number_stop+2])) )
+           || ((number_stop + 2) == label.size()) )
+       )
+    {
+      number_stop += 2;
+    }
+    
     number_start = label.find_first_of( "0123456789", number_stop );
     if( number_start != string::npos )
     {
@@ -1477,189 +1892,55 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
   
   if( (number_start == string::npos) || (number_stop == string::npos) )
   {
-    ref_energy = peak.mean();
     nuclide = db->nuclide( label );
   }else
   {
-    const string nuclabel = label.substr( 0, number_start );
+    const string nuclabel = SpecUtils::trim_copy( label.substr( 0, number_start ) );
     nuclide = db->nuclide( nuclabel );
-    
-    if( number_stop == string::npos )
-      number_stop = label.size();
-    string energy( label.begin()+number_start, label.begin()+number_stop );
-    ref_energy = std::stod( energy );
-    
-    if( number_stop < label.size() )
-    {
-      if( label.find( "mev", number_stop ) != string::npos )
-        ref_energy *= 1000.0;
-      else if( label.find( "ev", number_stop ) != string::npos
-              && label.find( "kev", number_stop ) == string::npos )
-        ref_energy /= 1000.0;
-      // else assume keV
-    }//if( number_stop < label.size() )
   }//if( number_start == string::npos )
   
-  
   if( nuclide )
-  {
-    size_t transition_index = 0;
-    const SandiaDecay::Transition *transition = NULL;
-    
-    const double width = peak.gausPeak() ? nsigma_window*peak.sigma() : (nsigma_window/8.0)*peak.roiWidth();
-    
-    double extraEnergy = 0.0;
-    switch( srcType )
-    {
-      case PeakDef::NormalGamma:
-      case PeakDef::AnnihilationGamma:
-      case PeakDef::XrayGamma:
-        break;
-        
-      case PeakDef::SingleEscapeGamma: extraEnergy = 510.99891;     break;
-      case PeakDef::DoubleEscapeGamma: extraEnergy = 2.0*510.99891; break;
-    }//switch( srcType )
-    
-    const bool xrayOnly = (srcType == PeakDef::SourceGammaType::XrayGamma);
-    PeakDef::SourceGammaType sourceGammaType = srcType;
-    
-    PeakDef::findNearestPhotopeak( nuclide, ref_energy + extraEnergy, width,
-                                    xrayOnly, transition, transition_index, sourceGammaType );
-    
-    //There wasnt any photopeaks within 4 sigma, so instead we'll just use
-    //  the closest photpopeak
-    if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma)
-        && nsigma_window>=0.0 )
-      PeakDef::findNearestPhotopeak( nuclide, ref_energy + extraEnergy, -1.0, xrayOnly,
-                                    transition, transition_index, sourceGammaType );
-    
-    switch( srcType )
-    {
-      case PeakDef::NormalGamma:
-      case PeakDef::AnnihilationGamma:
-      case PeakDef::XrayGamma:
-      break;
-        
-      case PeakDef::SingleEscapeGamma: case PeakDef::DoubleEscapeGamma:
-        if( transition )
-          sourceGammaType = srcType;
-        else if( sourceGammaType == PeakDef::AnnihilationGamma )
-          transition = NULL;  //dont expect this to ever happen
-      break;
-    }//switch( srcType )
-    
-    
-    if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) )
-    {
-      peak.clearSources();
-      return (hadSource ? SourceChange : NoSourceChange);
-    }else
-    {
-      bool changedFit = false, shouldFit = false;
-      
-      switch( sourceGammaType )
-      {
-        case PeakDef::NormalGamma:
-          shouldFit = recomendUseForFit( nuclide, transition->products[transition_index].energy );
-        break;
-        
-        case PeakDef::AnnihilationGamma:
-          shouldFit = recomendUseForFit( nuclide, 510.99891f );
-        break;
-          
-        case PeakDef::SingleEscapeGamma:
-        case PeakDef::DoubleEscapeGamma:
-        case PeakDef::XrayGamma:
-          shouldFit = false;
-        break;
-      }//switch( srcType )
-
-      
-      changedFit |= (shouldFit==peak.useForShieldingSourceFit());
-      changedFit |= (shouldFit && !peak.nuclearTransition());
-      
-      peak.useForShieldingSourceFit( shouldFit );
-      peak.setNuclearTransition( nuclide, transition, int(transition_index), sourceGammaType );
-      
-      return (changedFit ? SourceAndUseChanged : SourceChange);
-    }
-  }else if( srcType == PeakDef::SourceGammaType::XrayGamma )
-  {
-      //Assume input like "fe xray 98.2 kev", which will have been transformed
-      //  to "fe 98.2 kev" by PeakDef::gammaTypeFromUserInput
-      size_t alpha_start = label.size(), alpha_end = label.size();
-      for( size_t i = 0; i < label.size(); ++i )
-        if( label[i]>='a' && label[i]<='z' ) { alpha_start = i; break; }
-      
-      for( size_t i = alpha_start; i < label.size(); ++i )
-        if( label[i]<'a' || label[i]>'z' ){alpha_end = i; break;}
-      
-      string elname;
-      if( alpha_start != alpha_end )
-        elname = string(label.begin()+alpha_start, label.begin()+alpha_end);
-      
-      const SandiaDecay::Element *el = db->element( elname );
-      if( !el )
-      {
-        peak.clearSources();
-        return (hadSource ? SourceChange : NoSourceChange);
-      }//if( !el )
-      
-      double energy = 0.0;
-      const size_t numstart = label.find_first_of( "0123456789" );
-      if( !(stringstream( string(label.c_str() + numstart) ) >> energy) )
-        energy = peak.mean();
-      
-      const SandiaDecay::EnergyIntensityPair *nearXray
-                                      = PeakDef::findNearestXray( el, energy );
-      energy = (nearXray ? nearXray->energy : 0.0);
-      peak.setXray( el, energy );
-      
-      return ((!nearXray && !hadSource) ? NoSourceChange : SourceChange);
-    }else
-    {
-      //lets check for a reaction
-      const ReactionGamma *rctndb = ReactionGammaServer::database();
-      string rctstr = label;
-      size_t pos = label.find_first_of( ')' );
-      if( pos != string::npos )
-        rctstr = label.substr( 0, pos+1 );
-      vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
-      try
-      {
-        rctndb->gammas( rctstr, possible_rctns );
-        if( possible_rctns.empty() )
-          return NoSourceChange;
-      }catch(...)
-      {
-        return NoSourceChange;
-      }
-      
-      //XXX - just taking first reaction, however there may be multiple
-      const ReactionGamma::Reaction *rctn = possible_rctns[0].reaction;
-      
-      pos = label.find_first_of( "0123456789", pos );
-      string energystr;
-      if( pos != string::npos )
-        energystr = label.substr( pos );
-      double energy = 0.0;
-      if( rctn )
-      {
-        if( !(stringstream(energystr) >> energy) )
-          energy = peak.mean();
-        double nearestE = -9999999.9;
-        for( const ReactionGamma::EnergyAbundance &eip : rctn->gammas )
-          if( fabs(eip.energy-energy) < fabs(nearestE-energy) )
-            nearestE = eip.energy;
-        energy = nearestE;
-      }//if( (stringstream(energystr) >> energy) )
-      
-      peak.setReaction( rctn, static_cast<float>(energy), srcType );
-      
-      return (rctn ? SourceChange : NoSourceChange);
-  }//if( nuclide ) / else if( xray ) / else
+    return setNuclide( peak, srcType, nuclide, ref_energy, nsigma_window );
   
-  return NoSourceChange;
+  
+  //lets check for a reaction
+  const size_t paren_pos = label.find_first_of( ')' );
+  if( paren_pos != string::npos )
+  {
+    const string rctstr = SpecUtils::trim_copy( label.substr( 0, paren_pos+1 ) );
+    return PeakModel::setReaction( peak, rctstr, srcType, ref_energy, nsigma_window );
+  }//if( paren_pos != string::npos )
+  
+  
+  bool isXray = (srcType == PeakDef::SourceGammaType::XrayGamma);
+  if( !isXray )
+  {
+    SpecUtils::trim( label ); //jic, but probably already fine
+    
+    isXray = true;
+    for( size_t i = 0; isXray && (i < label.size()); ++i )
+      isXray = (label[i]>='a' && label[i]<='z');
+  }//if( !isXray )
+  
+  if( isXray )
+  {
+    //Example input that might get here is "Pb xray 84.9 kev", which will have been transformed
+    //  to "pb 98.2 kev" by PeakDef::gammaTypeFromUserInput, and
+    //  PeakDef::extract_energy_from_peak_source_string would have transformed into
+    //  "pb"
+    const SandiaDecay::Element *el = db->element( label );
+    
+    // We'll require the label to now _only_ be either the element label (ex Pb), or name (ex Lead).
+    if( el && (SpecUtils::iequals_ascii(el->name, label)
+              || SpecUtils::iequals_ascii(el->symbol, label)) )
+    {
+      return setXray( peak, el, ref_energy );
+    }
+  }//if( srcType == PeakDef::SourceGammaType::XrayGamma )
+  
+  
+  peak.clearSources();
+  return (hadSource ? SourceChange : NoSourceChange);
 }//bool PeakModel::setNuclideXrayReaction( PeakDef &peak, std::string )
 
 

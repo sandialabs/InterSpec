@@ -420,6 +420,29 @@ public:
   //  'se ', 's.e.', 'de', 'de ', 'single escape', 'double escape'
   static void gammaTypeFromUserInput( std::string &txt, SourceGammaType &type );
   
+  /** Function to extract energy from a peaks source string, such as "U238 185.7 keV".
+   On success, returns energy extracted, as well as modifies the input string to remove the portion of the string that specified the energy.
+   On failure, returns -1.0 and does not modify input string.
+   Input is case insensitive.
+   
+   Examples input strings that will be successful:
+    "fe xray 98.2 kev"         -> {98.2, "fe xray"},
+    "5.34e+2 keV"              -> {534, ""},
+    "hf178m 5.34e-3 Mev" -> {5.34, "hf178m"},
+    "8.0E+02 kev hf178m" -> {800, "hf178m"},
+    "hf178m2 574."            -> {574, "hf178m2"},
+    "u232 98"                     -> {98, "u232"},
+    "3.3mev be(a,n)"          -> {3300, "be(a,n)"},
+    "co60 1173.23"            -> {1173.23, "co60"},
+    "co60 1173.23 kev"     -> {1173.23, "co60"},
+    "Pb 98.2"                     -> {98.2,"Pb"}
+   Examples input strings that will NOT be successful:
+    "98 u232", "u-232", "321 u-232", "1173.0 CO60", "Pb 98"
+   */
+  static double extract_energy_from_peak_source_string( std::string &str );
+  
+  
+  
   static const char *to_string( const CoefficientType type );
   
 public:
@@ -583,7 +606,7 @@ public:
   //gammaParticleEnergy(): returns the energy of the gamma/xray responsible for
   //  this peak, despite if it is a normal nuclear transition, an annihilation,
   //  an xray, or a reaction gamma.  For single and double excape peaks, the 511
-  //  or 1022 keV is subrtacted off of the SandiaDecay::RadParticle::energy
+  //  or 1022 keV is subtracted off of the SandiaDecay::RadParticle::energy
   //  or reactionEnergy() that gave rise to this escape peak.
   //Throws an exception if there is no gamma associated with this peak.
   float gammaParticleEnergy() const;
