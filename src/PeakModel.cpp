@@ -1628,28 +1628,16 @@ PeakModel::SetGammaSource PeakModel::setNuclide( PeakDef &peak,
   // If width is negative, then nearest photopeak by energy will be used.
   const double width = peak.gausPeak() ? nsigma_window*peak.sigma() : (nsigma_window/8.0)*peak.roiWidth();
   
-  double extraEnergy = 0.0;
-  switch( src_type )
-  {
-    case PeakDef::NormalGamma:
-    case PeakDef::AnnihilationGamma:
-    case PeakDef::XrayGamma:
-      break;
-      
-    case PeakDef::SingleEscapeGamma: extraEnergy = 510.99891;     break;
-    case PeakDef::DoubleEscapeGamma: extraEnergy = 2.0*510.99891; break;
-  }//switch( src_type )
-  
   const bool xrayOnly = (src_type == PeakDef::SourceGammaType::XrayGamma);
   PeakDef::SourceGammaType sourceGammaType = src_type;
   
-  PeakDef::findNearestPhotopeak( nuclide, ref_energy + extraEnergy, width,
+  PeakDef::findNearestPhotopeak( nuclide, ref_energy, width,
                                 xrayOnly, transition, transition_index, sourceGammaType );
   
   //There wasnt any photopeaks within 4 sigma, so instead we'll just use
   //  the closest photpopeak
   if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) && (nsigma_window>=0.0) )
-    PeakDef::findNearestPhotopeak( nuclide, ref_energy + extraEnergy, -1.0, xrayOnly,
+    PeakDef::findNearestPhotopeak( nuclide, ref_energy, -1.0, xrayOnly,
                                   transition, transition_index, sourceGammaType );
   
   switch( src_type )
@@ -1696,7 +1684,7 @@ PeakModel::SetGammaSource PeakModel::setNuclide( PeakDef &peak,
   }//switch( src_type )
   
   
-  changedFit |= (shouldFit==peak.useForShieldingSourceFit());
+  changedFit |= (shouldFit == peak.useForShieldingSourceFit());
   changedFit |= (shouldFit && !peak.nuclearTransition());
   
   peak.useForShieldingSourceFit( shouldFit );
@@ -1710,7 +1698,8 @@ PeakModel::SetGammaSource PeakModel::setXray( PeakDef &peak,
                               const SandiaDecay::Element *el,
                               const double ref_energy )
 {
-  const bool hadSource = (peak.parentNuclide() || peak.xrayElement() || peak.reaction() );
+  const SandiaDecay::Element * const prevEl = peak.xrayElement();
+  const bool hadSource = (peak.parentNuclide() || prevEl || peak.reaction() );
   assert( !el || (ref_energy > 1.0) );
   
   if( !el )
@@ -1722,9 +1711,23 @@ PeakModel::SetGammaSource PeakModel::setXray( PeakDef &peak,
   double xray_energy = ref_energy;
   const SandiaDecay::EnergyIntensityPair *nearXray = PeakDef::findNearestXray( el, ref_energy );
   xray_energy = (nearXray ? nearXray->energy : 0.0);
-  peak.setXray( el, ref_energy );
   
-  return ((!nearXray && !hadSource) ? NoSourceChange : SourceChange);
+  const bool isSame = ((prevEl == el) && (fabs(peak.xrayEnergy() - xray_energy) < 0.0001));
+  if( isSame )
+    return NoSourceChange;
+  
+  peak.setXray( el, xray_energy );
+  
+  if( !nearXray && !hadSource )
+    return NoSourceChange;
+  
+  if( peak.useForShieldingSourceFit() )
+  {
+    peak.useForShieldingSourceFit( false );
+    return SourceAndUseChanged;
+  }
+  
+  return SourceChange;
 }//setXray(...)
 
 
@@ -1834,7 +1837,6 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
   PeakDef::gammaTypeFromUserInput( label, srcType );
   
   
-  
   double ref_energy = PeakDef::extract_energy_from_peak_source_string( label );
   if( ref_energy < std::numeric_limits<float>::epsilon() )
   {
@@ -1898,6 +1900,7 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
     const string nuclabel = SpecUtils::trim_copy( label.substr( 0, number_start ) );
     nuclide = db->nuclide( nuclabel );
   }//if( number_start == string::npos )
+  
   
   if( nuclide )
     return setNuclide( peak, srcType, nuclide, ref_energy, nsigma_window );

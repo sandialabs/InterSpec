@@ -2225,20 +2225,11 @@ void PeakEdit::apply()
         size_t transition_index = 0;
         const SandiaDecay::Transition *transition = NULL;
         
-        switch( srcType )
-        {
-          case PeakDef::NormalGamma:       break;
-          case PeakDef::AnnihilationGamma: break;
-          case PeakDef::SingleEscapeGamma: energy += 510.99891;     break;
-          case PeakDef::DoubleEscapeGamma: energy += 2.0*510.99891; break;
-          case PeakDef::XrayGamma:         break;
-        }//switch( sourceGammaType )
-        
         const bool xrayOnly = (srcType == PeakDef::XrayGamma);
         
-        PeakDef::SourceGammaType sourceGammaType;
+        PeakDef::SourceGammaType nearestGammaType;
         PeakDef::findNearestPhotopeak( nuc, energy, 0.0, xrayOnly,
-                                      transition, transition_index, sourceGammaType );
+                                      transition, transition_index, nearestGammaType );
         
         switch( srcType )
         {
@@ -2249,13 +2240,13 @@ void PeakEdit::apply()
             
           case PeakDef::SingleEscapeGamma:
           case PeakDef::DoubleEscapeGamma:
-            sourceGammaType = srcType;
+            nearestGammaType = srcType;
             break;
-        }//switch( sourceGammaType )
+        }//switch( srcType )
         
         m_currentPeak.setNuclearTransition( nuc, transition,
                                            static_cast<int>(transition_index),
-                                           sourceGammaType );
+                                           nearestGammaType );
       }else if( !nuc )
       {
         m_currentPeak.setNuclearTransition( NULL, NULL, -1, PeakDef::NormalGamma );
