@@ -257,19 +257,21 @@ public:
   
   enum SetGammaSource{ NoSourceChange, SourceChange, SourceAndUseChanged };
   
-  /** Sets the nuclide, x-ray, or reaction for a peak.
-   
-   The specific gamma or x-ray to associate with the peak is chosen either according to the \p peak mean passed in, or if
-   \p ref_energy is greater than zero, then it will override the peak mean.
-   
-   If no #SandiaDecay::Nuclide, #SandiaDecay::Element, or #ReactionGamma::Reaction is passed in, no changes will be made
-    
+  /** Sets the nuclide for the given peak.
+   \param peak Peak to set nuclide for
+   \param src_type The source type (normal, xray, single escape, double escape, annih.) for this peak.
+   \param nuclide The nuclide to set for the peak; may be nullptr.
+   \param ref_energy The energy of the photopeak from the nuclide that should be associated with the peak.  Note, you must give
+          this value; i.e.,  the \p peak mean will not be used.  If you are setting peak as a S.E. or D.E., you should pass in the
+          full-energy gamma value (i.e., for the 2103 and 1592 keV S.E. and D.E. peaks you would pass in a value of 2614 keV.
+   \param window_width The relative width to use for weighting amplitude against closeness in energy.  If zero or less, no weighting
+          will be used (i.e., closest gamma in energy will be used)
    */
   static SetGammaSource setNuclide( PeakDef &peak,
                                     const PeakDef::SourceGammaType src_type,
                                     const SandiaDecay::Nuclide * const nuclide,
                                     const double ref_energy,
-                                    const double nsigma_window = 0.0 );
+                                    const double window_width = 0.0 );
   static SetGammaSource setXray( PeakDef &peak,
                                    const SandiaDecay::Element * const element,
                                    const double ref_energy );
@@ -277,27 +279,37 @@ public:
                                     std::string reaction_name,
                                     const PeakDef::SourceGammaType src_type,
                                     const double ref_energy,
-                                    const double nsigma_window = 0.0 );
+                                    const double window_width = 0.0 );
   
   
-  //setNuclideXrayReaction(): sets the nuclide, xray, or reaction specified
-  //  by the 'txt' string.  If the string specifies an energy, that is used
-  //  to help decide which gamma of the nuclide/xray/reaction should be
-  //  assigned, otherwise the peak mean is used.
-  //  'nsigma_window' is only applicable for the nuclide case (so not xray or
-  //  reaction), and provides a notion of tradeoff between distance in energy, and
-  //  intensity of gamma assigned; if <= 0.0, then only distance in energy will
-  //  be used to decide which gamma is assigned, other wise:
-  //  (0.1*nsigma_window*peak.sigma() + delta_energy)/gamma_relative_intensity;
-  //  will used as; a value of 4.0 for nsigma_window yields good results for
-  //  when the user clicks on a on a reasonalaby isolated peak, but can fail
-  //  when identifying a small intensity photopeak near a much larger intensity
-  //  peak thats already been identified.
-  //  Currently, \p nsigma_window only is applied to nuclides, not x-rays or
-  //    reactions (those always are alway matched to closest line in energy).
-  //  Example inputs are "fe xray 98.2 kev", "hf178m2 574.219971 kev", etc
+/** Associates the peak with a given nuclide, x-ray, or reaction, specified using a string.
+ 
+ Example input strings are:
+  \c "Th232 2614 keV D.E."
+  \c "H(n,g) 2223.248 keV"
+  \c "Pb xray 84.9 kev"
+  \c "Th232 D.E."
+  \c "none"
+ Where for the first three examples, the energies given in the string will be used to associate the gamma with the peak, and for the
+ fourth example that doesn't given an energy will use the peaks mean (with 1022 keV added since its a D.E.).  The sixth example of "none"
+ makes it so the peak is not associated with any nuclide/x-ray/reaction.
+ 
+ \param peak The peak to make the association for.
+ \param txt The string specifying the nuclide, reaction, or x-ray, as well as optionally the energy to use, an if its a x-ray, S.E., or D.E.
+ \param window_width The relative width to use for weighting amplitude against closeness in energy.  If zero or less, no weighting
+        will be used (i.e., closest gamma in energy will be used).  Only applicable for nuclides and reaction (i.e., not x-rays). A value of
+        4.0 yields good results for when the user clicks on a on a reasonably isolated peak, but can fail  when identifying a small
+        intensity photo-peak near a much larger intensity peak thats already been identified.
+ 
+ \returns the status of the change.
+ 
+ \sa setNuclide
+ \sa setXray
+ \sa setReaction
+ \sa PeakDef::extract_energy_from_peak_source_string
+ */
   static SetGammaSource setNuclideXrayReaction( PeakDef &peak, std::string txt,
-                                                const double nsigma_window );
+                                                const double window_width );
   
   
   
