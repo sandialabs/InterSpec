@@ -2366,8 +2366,6 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   item = m_drfTypeMenu->addItem( "Import", uploadDetTab );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
-  if( !m_interspec->isSupportFile() )
-    item->setHidden(true);
   
   item = m_drfTypeMenu->addItem( "Formula", formulaDiv );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );

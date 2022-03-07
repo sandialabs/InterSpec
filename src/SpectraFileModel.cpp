@@ -2274,8 +2274,7 @@ void DownloadCurrentSpectrumResource::handleRequest(
      || m_format == SpecUtils::SaveSpectrumAsType::N42_2006 )
     m_viewer->saveShieldingSourceModelToForegroundSpecMeas();
 
-  std::shared_ptr<const SpecMeas> measurement
-                                           = m_viewer->measurment( m_spectrum );
+  shared_ptr<const SpecMeas> measurement = m_viewer->measurment( m_spectrum );
   if( !measurement )
   {
     response.setStatus( 404 );
@@ -2358,14 +2357,14 @@ void DownloadSpectrumResource::handleRequest( const Wt::Http::Request& request,
   if( selected.empty() )
     return;
   
-  vector<std::shared_ptr<const SpectraFileHeader> > headers;
+  vector<shared_ptr<const SpectraFileHeader> > headers;
 
 
   for( const WModelIndex &index : selected )
   {
     if( m_display->model()->level(index) != SpectraFileModel::FileHeaderLevel )
       continue;
-    std::shared_ptr<const SpectraFileHeader> header;
+    shared_ptr<const SpectraFileHeader> header;
     header = m_display->model()->fileHeader( index.row() );
 
     if( header )
@@ -2375,20 +2374,31 @@ void DownloadSpectrumResource::handleRequest( const Wt::Http::Request& request,
   const set<int> samplenums;
   const vector<string> detectornames;
   
-  std::shared_ptr<const SpecMeas> measurement;
-  
-  if( headers.size() > 1 || headers.empty() )
+  try
   {
-    measurement = m_display->selectedToSpecMeas();
-    handle_resource_request( m_type, measurement, samplenums,
-                             detectornames, m_display->viewer(), request, response );
-  }else if( headers.size() == 1 )
-  {
-    std::shared_ptr<const SpectraFileHeader> header = headers[0];
-    measurement = header->parseFile();
-    if( measurement )
+    shared_ptr<const SpecMeas> measurement;
+    if( headers.size() > 1 || headers.empty() )
+    {
+      measurement = m_display->selectedToSpecMeas();
       handle_resource_request( m_type, measurement, samplenums,
-                               detectornames, m_display->viewer(), request, response );
+                              detectornames, m_display->viewer(), request, response );
+    }else if( headers.size() == 1 )
+    {
+      shared_ptr<const SpectraFileHeader> header = headers[0];
+      measurement = header->parseFile();
+      if( measurement )
+        handle_resource_request( m_type, measurement, samplenums,
+                                detectornames, m_display->viewer(), request, response );
+    }
+  }catch( std::exception &e )
+  {
+    stringstream msg;
+    msg << "Failed in creating resource to export: " << e.what();
+    passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, msg.str().c_str() );
+#endif
   }
 }//void DownloadSpectrumResource::handleRequest(...)
 

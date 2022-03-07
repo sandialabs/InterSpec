@@ -73,18 +73,20 @@ public:
   //Default constructor for this class
   SpecMeas();
 
+  // Get rid of copy constructor and assignment operators.
+  //  Note: this is an artifact of the development history, and can probably be implemented at some
+  //        point, but we probably dont want the default constructor that would just blindly copy
+  //        pointers to various things.
+  SpecMeas( const SpecMeas &rhs ) = delete;
+  const SpecMeas &operator=( const SpecMeas &meas ) = delete;
+  
+  
   //uniqueCopyContents(...):  makes *this a copy copy of 'rhs'.  this->m_peaks,
   //  this->m_detector, etc. will not point to the objects owned by 'rhs', but
   //  rather unique copies of those objects.
-  //If *this has any "UserSpaceObservers", then they _will_ "see" the changes,
-  //  and future changes to *this.
-  //Also, all the measurment objects of *this and rhs will point to different
-  //  locations in memorry (although channel data and bin energies will have
-  //  same shared const pointers).
   //
-  //  Note 20180426: This function is only used when INCLUDE_ANALYSIS_TEST_SUITE
-  //    And can probably be eliminated (it is a vestigial of a previous (poor)
-  //    design)
+  //  Note: this function is an artifact of development history, and should probably become
+  //        operator= now; also need to check that it properly copies all member functions/
   void uniqueCopyContents( const SpecMeas &rhs );
 
   //~SpecMeas(): will emit the aboutToBeDeleted() signal
@@ -132,9 +134,6 @@ public:
   //guessDetectorTypeFromFileName(...): not called by default
   static SpecUtils::DetectorType guessDetectorTypeFromFileName( std::string name );
   
-
-  std::shared_ptr<SpecUtils::Measurement> continuum();
-  bool continuumVisible() const;
   std::shared_ptr<DetectorPeakResponse> detector();
   std::shared_ptr<const DetectorPeakResponse> detector() const;
 
@@ -172,6 +171,14 @@ public:
                                          std::vector<std::string> detectors  );
   virtual void cleanup_after_load( const unsigned int flags
                                          = SpecFile::StandardCleanup );
+  
+  /** Removes peaks, displayed sample numbers, and similar if any of the sample
+   numbers or detectors referencing the information are no longer present in the
+   SpecMeas object.
+   
+   This function is primarily useful if you remove some sample numbers.
+   */
+  void cleanup_orphaned_info();
   
   std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
                                  peaks( const std::set<int> &samplenums );
@@ -288,19 +295,6 @@ public:
   /** Sets the shielding source model that was serialized by the gui. */
   void setShieldingSourceModel( std::unique_ptr<rapidxml::xml_document<char>> &&model );
   
-  
-private:
-  //Do not call operator= or copy constructor, will (purposely) crash program.
-  //  See makeUserSpaceObserver(...) and uniqueCopyContents(...).
-  //Design rational: in various places we make copies of a SpecMeas object
-  //  so we can 'undo' an action, or split a file; however, I dont want to
-  //  carelessly call a sequence of operator= and then end up with a SpecMeas
-  //  not hooked up to the notification signals that I want hooked up, therefore
-  //  we have to explicitly call makeUserSpaceObserver(...) or
-  //  uniqueCopyContents(...) to make a copy, to really understand the sequence
-  //  of object copies
-  SpecMeas( const SpecMeas &rhs );
-  const SpecMeas &operator=( const SpecMeas &meas );
 
 protected:
   //m_peaks: is only accessed by the PeakModel class - it shouldnt be set or
@@ -346,8 +340,8 @@ protected:
   
   /** ToDo/hack: we are currently using sample numbers to match peaks fit by
    InterSpec up to specific Measurement's.  This variable tells us if we need
-   to strickly enforce the sample numbers found in the N42 file attributes
-   (which is a non-standad thing we are doing).  The real solution is to use
+   to strictly enforce the sample numbers found in the N42 file attributes
+   (which is a non-standard thing we are doing).  The real solution is to use
    MeasurementGroupReferences, for both InterSpec specific stuff, but also for
    analysis results.
    */

@@ -458,9 +458,6 @@ public:
                 | AuxWindowProperties::EnableResize) ),
   m_manager( manager )
   {
-    setResizable( true );
-  
-    
     WGridLayout *layout = new Wt::WGridLayout();
     contents()->setLayout(layout);
     
@@ -510,248 +507,8 @@ public:
   {
   }
   
-//  void selectionChanged()
-//  {
-//    if( !m_model )
-//      return;
-//    
-//    if( m_snapshotModel->rowCount() )
-//      m_snapshotModel->removeRows( 0, m_snapshotModel->rowCount() );
-//    
-//    const WModelIndexSet indices = m_table->selectedIndexes();
-//    
-//    if( indices.empty() )
-//    {
-//      m_snapshot->hide();
-//      m_loadButton->disable();
-//      return;
-//    }//if( !indices.empty() )
-//    
-//    m_loadButton->enable();
-//    const WModelIndex index = *indices.begin();
-//    Dbo::ptr<UserFileInDb> dbfile = m_model->stableResultRow( index.row() );
-//    
-//    try
-//    {
-//      Dbo::Transaction transaction( *m_session );
-//      typedef Dbo::collection< Dbo::ptr<UserFileInDb> > Snapshots;
-//      typedef Snapshots::iterator SnapshotIter;
-//      Snapshots snapshots = m_session->find<UserFileInDb>()
-//      .where( "SnapshotParent_id = ?" )
-//      .bind( dbfile.id() );
-//      
-//      if( snapshots.size() )
-//      {
-//        m_snapshot->show();
-//        m_snapshotModel->addString( "Latest Saved Version" );
-//        m_snapshotModel->setData( 0, 0, -1, Wt::UserRole );
-//      }else
-//      {
-//        m_snapshot->hide();
-//      }//if( snapshots.size() ) / else
-//      
-//      int timeoffset = 0;
-//      if( wApp )
-//        timeoffset = wApp->environment().timeZoneOffset();
-//      
-//      for( SnapshotIter i = snapshots.begin(); i != snapshots.end(); ++i )
-//      {
-//        Dbo::ptr<UserFileInDb> snap = *i;
-//        string desc = WString::fromUTF8( snap->description ).toUTF8() + " (";
-//        desc += snap->serializeTime.addSecs( 60*timeoffset )
-//        .toString( DATE_TIME_FORMAT_STR ).toUTF8() + ")";
-//        if( desc.size() > 64 )
-//          desc = desc.substr( 0, 61 ) + "...";
-//        m_snapshotModel->addString( desc );
-//        m_snapshotModel->setData( m_snapshotModel->rowCount()-1, 0,
-//                                 boost::any(int(snap.id())), Wt::UserRole );
-//      }//for( SnapshotIter i = snapshots.begin(); i != snapshots.end(); ++i )
-//      
-//      transaction.commit();
-//    }catch( std::exception &e )
-//    {
-//      cerr << "UploadBrowser::selectionChanged() caught: "
-//      << e.what() << endl;
-//    }//try / catch
-//  }//void selectionChanged()
-  
-//  void handleDoubleClicked( WModelIndex index, WMouseEvent event )
-//  {
-//    if( (event.button() != WMouseEvent::LeftButton) || !index.isValid() )
-//      return;
-//    
-//    WModelIndexSet selected = m_table->selectedIndexes();
-//    if( selected.size() && (*selected.begin() != index) )
-//    {
-//      selected.clear();
-//      if( m_snapshotModel->rowCount() )
-//        m_snapshotModel->removeRows( 0, m_snapshotModel->rowCount() );
-//    }//if( selected.size() && (*selected.begin() != index ) ) / else
-//    
-//    selected.clear();
-//    selected.insert( index );
-//    
-//    m_table->setSelectedIndexes( selected );
-//    loadSelected();
-//  }//void handleDoubleClicked( WModelIndex index, WMouseEvent event )
-  
-//  std::shared_ptr<SpecMeas> retrieveMeas( const int dbid )
-//  {
-//    std::shared_ptr<SpecMeas> snapshotmeas;
-//    if( dbid < 0 )
-//      return snapshotmeas;
-//    
-//    try
-//    {
-//      Dbo::Transaction transaction( *m_session );
-//      Dbo::ptr<UserFileInDb> dbsnapshot = m_session->find<UserFileInDb>()
-//      .where( "id = ?" )
-//      .bind( dbid );
-//      
-//      Dbo::ptr<UserFileInDbData> data;
-//      if( dbsnapshot && dbsnapshot->filedata.size() )
-//        data = *(dbsnapshot->filedata.begin());
-//      transaction.commit();
-//      if( data )
-//        snapshotmeas = data->decodeSpectrum();
-//    }catch( std::exception &e )
-//    {
-//      cerr << "retrieveMeas() caught (while trying to load snaphot): "
-//      << e.what() << endl;
-//      passMessage( "Sorry, couldnt load requested snapshot",
-//                  "", WarningWidget::WarningMsgHigh );
-//    }//try / catch
-//    
-//    return snapshotmeas;
-//  }//std::shared_ptr<SpecMeas> retrieveMeas( const int dbid )
-  
-//  void loadSelected()
-//  {
-//    if( !m_model )
-//      return;
-//    
-//    WModelIndexSet indices = m_table->selectedIndexes();
-//    if( !indices.size() )
-//    {
-//      m_loadButton->disable();
-//      return;
-//    }//if( !indices.size() )
-//    
-//    WModelIndex index = *indices.begin();
-//    
-//    Dbo::ptr<UserFileInDb> dbfile = m_model->stableResultRow( index.row() );
-//    
-//    //Now we have to make 'dbfile' be associated with same session of
-//    //  m_viewer->m_user.session()  {I dont know what would happen otherwise)
-//    if( dbfile.id() >= 0 )
-//    {
-//      std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-//      DataBaseUtils::DbTransaction transaction( *sql );
-//      dbfile = sql->session()->find< UserFileInDb >()
-//                             .where( "id = ?").bind( dbfile.id() );
-//      transaction.commit();
-//    }//if( dbfile.id() >= 0 )
-//    
-//    if( !dbfile || dbfile.id() < 0 )
-//    {
-//      passMessage( "Error loading from the database",
-//                  "", WarningWidget::WarningMsgHigh );
-//      delete this;
-//      return;
-//    }//if( !selected )
-//    
-//    int snapshot_id = -1;
-//    if( m_snapshotModel->rowCount() > 0
-//       && m_snapshot->currentIndex() > 0 )
-//    {
-//      try
-//      {
-//        const int snapnum = m_snapshot->currentIndex();
-//        const WModelIndex index = m_snapshotModel->index( snapnum, 0 );
-//        boost::any val = m_snapshotModel->data( index, Wt::UserRole );
-//        snapshot_id = boost::any_cast<int>( val );
-//      }catch( std::exception &e )
-//      {
-//        cerr << "loadSelected() caught: " << e.what() << endl;
-//      }//try / catch
-//    }//if( m_snapshot->rowCount() > 0 )
-//    
-//    SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
-//    if( m_buttonGroup )
-//      type = SpecUtils::SpectrumType( m_buttonGroup->checkedId() );
-//    
-//    int modelrow = -1;
-//    std::shared_ptr<SpecMeas> measurement;
-//    std::shared_ptr<SpectraFileHeader> header;
-//    
-//#if( USE_DB_TO_STORE_SPECTRA )
-//    //Now should check if already opened
-//    SpectraFileModel *specmodel = m_manager->model();
-//    for( int row = 0; row < specmodel->rowCount(); ++row )
-//    {
-//      std::shared_ptr<SpectraFileHeader> thisheader
-//                                            = specmodel->fileHeader( row );
-//      Wt::Dbo::ptr<UserFileInDb> dbentry = thisheader->dbEntry();
-//      if( dbentry.id() == dbfile.id() )
-//      {
-//        modelrow = row;
-//        dbfile = dbentry;
-//        header = thisheader;
-//        measurement = thisheader->parseFile();
-//        if( measurement == m_viewer->measurment(type) )
-//        {
-//          if( snapshot_id >= 0 )
-//          {
-//            std::shared_ptr<SpecMeas> meas = retrieveMeas( snapshot_id );
-//            if( meas )
-//            {
-//              thisheader->setMeasurmentInfo( meas );
-//              m_manager->displayFile( row, meas, type, false, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
-//            }//if( meas )
-//          }//if( snapshot_id )
-//          
-//          delete this;
-//          return;
-//        }
-//        break;
-//      }
-//    }//for( int row = 0; row < specmodel->rowCount(); ++row )
-//    
-//    if( modelrow < 0 )
-//      modelrow = m_manager->setDbEntry( dbfile, header, measurement, true );
-//    
-//    if( snapshot_id >= 0 && header )
-//    {
-//      std::shared_ptr<SpecMeas> snapshotmeas = retrieveMeas( snapshot_id );
-//      if( snapshotmeas )
-//      {
-//        header->setMeasurmentInfo( snapshotmeas );
-//        measurement = snapshotmeas;
-//      }else
-//      {
-//        cerr << "Could not load spectrum file snapshot with id = "
-//        << snapshot_id << endl;
-//        passMessage( "Couldnt load requested snapshot",
-//                    "", WarningWidget::WarningMsgHigh );
-//      }//if( measurment ) / else
-//    }//if( snapshot_id >= 0 && header )
-//#endif //#if( USE_DB_TO_STORE_SPECTRA )
-//    
-//    m_manager->displayFile( modelrow, measurement, type, false, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
-//    
-//    delete this;
-//  }//void loadSelected()
-  
 protected:
-//  std::shared_ptr<Wt::Dbo::Session> m_session;
   SpecMeasManager  *m_manager;
-//  InterSpec   *m_viewer;
-//  Dbo::QueryModel< Dbo::ptr<UserFileInDb> >    *m_model;
-//  RowStretchTreeView       *m_table;
-//  WPushButton      *m_loadButton;
-//  WButtonGroup     *m_buttonGroup;
-//  WComboBox        *m_snapshot;
-//  WStringListModel *m_snapshotModel;
 };//class UploadBrowser
 
 
@@ -761,23 +518,13 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_fileModel( NULL ),
     m_fileUpload( NULL ),
     m_viewer( viewer ),
-//    m_setPrimaryButton( NULL ),
-//    m_setSecondaryButton( NULL ),
-//    m_setBackgroundButton( NULL ),
-//    m_unDisplayMenuButton( NULL ),
-//    m_unDisplayPopup( NULL ),
-//    m_unDisplayPrimaryButton( NULL ),
-//    m_unDisplaySecondaryButton( NULL ),
-//    m_unDisplayBackgroundButton( NULL ),
-//    m_makeNewFileButton( NULL ),
-//    m_removeFileButton( NULL ),
-//    m_saveFileAsButton( NULL ),
-//    m_saveAsPopup( NULL ),
     m_setButton ( NULL),
     m_setAsForeground ( NULL),
     m_setAsBackground ( NULL),
     m_setAsSecForeground ( NULL),
-    m_combineButton ( NULL),
+    m_combineToNewFileButton ( NULL),
+    m_subsetOfMeasToNewFileButton( nullptr ),
+    m_sumSpectraButton( nullptr ),
     m_saveButton ( NULL),
     m_deleteButton ( NULL),
     m_removeForeButton ( NULL),
@@ -848,14 +595,12 @@ void  SpecMeasManager::startSpectrumManager()
     //WText* spec =
     new WText("Load spectrum from: ", uploadDiv);
     //spec->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
-    if( m_viewer->isSupportFile() )
-    {
-      Wt::WPushButton* uploadButton = new Wt::WPushButton("File...",uploadDiv);
-      uploadButton->clicked().connect(  this, &SpecMeasManager::uploadSpectrum );
-      HelpSystem::attachToolTipOn(uploadButton, "Import spectrum from file", showToolTips, HelpSystem::ToolTipPosition::Bottom );
-      uploadButton->setIcon( "InterSpec_resources/images/file_search.png" );
-      uploadButton->setMargin(10,Wt::Left);
-    } //isSupportFile()
+    
+    Wt::WPushButton* uploadButton = new Wt::WPushButton("File...",uploadDiv);
+    uploadButton->clicked().connect(  this, &SpecMeasManager::uploadSpectrum );
+    HelpSystem::attachToolTipOn(uploadButton, "Import spectrum from file", showToolTips, HelpSystem::ToolTipPosition::Bottom );
+    uploadButton->setIcon( "InterSpec_resources/images/file_search.png" );
+    uploadButton->setMargin(10,Wt::Left);
     
 #if( USE_DB_TO_STORE_SPECTRA )
     Wt::WPushButton* importButton = new Wt::WPushButton( "Previous...", uploadDiv );
@@ -3374,161 +3119,227 @@ void SpecMeasManager::renameSaveAsFile()
     const string name = origName + "." + suggestedNameEnding( type );
     m_downloadResources[toint(type)]->suggestFileName( name, WResource::Attachment );
   }
-  
-//    m_saveAsPopup->jsOpen().exec();
 } // void SpecMeasManager::renameSaveAsFile()
 
 
-std::shared_ptr<SpecMeas>
-                     SpecMeasManager::selectedToSpecMeas() const
+std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
 {
-  std::shared_ptr<SpecMeas> newspec = std::make_shared<SpecMeas>();
   const WModelIndexSet selected = m_treeView->selectedIndexes();
 
-  bool warnAboutRebinning = false;
+  if( selected.empty() )
+    throw runtime_error( "No files or samples are selected" );
 
-  // We'll do a simple caching in case SpectraFileHeader isn't caching the files.
-  std::shared_ptr<SpectraFileHeader> lastHeader;
-  std::shared_ptr<SpecMeas> measurementinfo;
-
+  // First we will go through and figure out which sample numbers we want from each selected file.
+  //
+  // Note that currently the Spectrum Manager only shows records at the "sample" level, and
+  //  not the {sample,detector} level.
+  map<std::shared_ptr<const SpecMeas>,set<int>> files_involved;
   for( const WModelIndex &index : selected )
   {
-    const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
-
-    bool is_sample = (indexLevel == SpectraFileModel::SampleLevel);
-    bool is_measurement = is_sample;
-
-    if( !is_sample )
+    const SpectraFileModel::Level index_level = m_fileModel->level(index);
+    
+    shared_ptr<SpectraFileHeader> header;
+    switch( index_level )
     {
-      std::shared_ptr<SpectraFileHeader> thisHeader;
-      thisHeader = m_fileModel->fileHeader( index.row() );
-      if( thisHeader )
-      {
-        //We should have already split up measurments with differnt numbers of
-        //  bins, therefore I *think* we can just rreturn the whole SpecMeas
-        //  object.  IMplemented this 20130118.
-        //20160523: I'm not sure what I was thinking, returning the function
-        //          here when multiple files are selected, clearly isnt correct.
-        //return thisHeader->parseFile();
-//        is_measurement = (thisHeader->numSamples() == 1);
-      }//if( thisHeader )
-    } // if( !is_sample )
-
-
-    if( is_measurement )
+      case SpectraFileModel::FileHeaderLevel:
+        header = m_fileModel->fileHeader( index.row() );
+        break;
+        
+      case SpectraFileModel::SampleLevel:
+        header = m_fileModel->fileHeader( index.parent().row() );
+        break;
+        
+      case SpectraFileModel::InvalidLevel:
+        break;
+    }//switch( index_level )
+    
+    if( !header )
     {
-      // We are relying on the fact that if a user selects a file, then
-      // all of its measurements are then selected.
-      std::shared_ptr<SpectraFileHeader> thisHeader;
-      if( is_sample )
-        thisHeader = m_fileModel->fileHeader( index.parent().row() );
-      else
-        thisHeader = m_fileModel->fileHeader( index.row() );
-
-      if( !thisHeader )
+#if( PERFORM_DEVELOPER_CHECKS )
+      const string msg = "Failed to get header for row " + std::to_string( index.row() );
+      log_developer_error( __func__, msg.c_str() );
+#endif
+      continue;
+    }//if( !header )
+    
+    
+    const shared_ptr<const SpecMeas> file = header->parseFile();
+    if( !file )
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      const string msg = "Failed to parse file '" + header->displayName().toUTF8() + "'";
+      log_developer_error( __func__, msg.c_str() );
+#endif
+      continue;
+    }//if( !file )
+    
+    
+    switch( index_level )
+    {
+      case SpectraFileModel::FileHeaderLevel:
       {
-        cout << endl << "!thisHeader continuing" << endl;
-        continue;
-      }
-
-      if( lastHeader != thisHeader )
+        set<int> &samples = files_involved[file];
+        samples = file->sample_numbers();
+        
+        break;
+      }//case SpectraFileModel::FileHeaderLevel
+        
+      
+      case SpectraFileModel::SampleLevel:
       {
-        lastHeader = thisHeader;
-        measurementinfo = thisHeader->parseFile();
-      } // if( lastHeader != thisHeader )
-
-      if( !measurementinfo )
-      {
-       cout << endl << "!measurementinfo  continuing" << endl;
-        continue;
-      }
-
-      const set<int> sample_numbers_set = measurementinfo->sample_numbers();
-      const vector<int> sample_numbers( sample_numbers_set.begin(), sample_numbers_set.end() );
-      const vector<int> &detector_numbers = measurementinfo->detector_numbers();
-
-      vector<std::shared_ptr<SpecUtils::Measurement>> meas_to_add;
-
-      const int model_row = (is_sample ? index.row() : 0);
-
-
-      if( model_row >= (int)sample_numbers.size() )
-      {
-        cerr << "SpecMeasManager::selectedToMeasurementInfo()\n\t"
-             << "Warning, serious logic error here, please correct" << endl;
-        cerr << "sample_numbers.size()=" << sample_numbers.size() << endl;
-        cerr << "model_row=" << model_row << endl;
-        continue;
-      }
-
-      for( int detector : detector_numbers )
-      {
-        auto meas = measurementinfo->measurement( sample_numbers[model_row], detector );
-        if( meas )
-        {
-          auto meas_copy = std::make_shared<SpecUtils::Measurement>( *meas );
-          
-          //Add a slightly meaningful title
-          const string &oldtitle = meas_copy->title();
-          if( oldtitle.empty() )
-          {
-            string filename = measurementinfo->filename();
-            const string::size_type pos = filename.find_last_of('.');
-            if( pos != string::npos )
-              filename = filename.substr(0, pos);
-            
-            char buffer[256];
-            snprintf( buffer, sizeof(buffer), "%s (sample %i, detector %i)",
-                      filename.c_str(), sample_numbers[model_row], detector );
-            meas_copy->set_title( buffer );
-          }//if( oldtitle.empty() && !measurementinfo->filename().empty() )
-          
-          meas_to_add.push_back( meas_copy );
-        } // if( meas )
-      } // for( int detector : detector_numbers )
-
-
-      vector<std::shared_ptr<const SpecUtils::Measurement>> newspecMeas = newspec->measurements();
-      for( const auto &meas : meas_to_add )
-      {
-        if( newspecMeas.size() )
-        {
-          if( newspecMeas[0]->channel_energies()
-              && meas->channel_energies()
-              && meas->channel_energies()->size() //neutron detectors will have a size of zero
-              && newspecMeas[0]->channel_energies()->size()
-              && newspecMeas[0]->channel_energies()->size() != meas->channel_energies()->size() )
-          {
-            warnAboutRebinning = true;
-          }
-        } // if( newspecMeas.size() )
-
-        newspec->add_measurement( meas, false );
-      } // for( std::shared_ptr<const Measurement> &meas : meas_to_add )
-    } // if( is_measurement  )
-  } // for( const WModelIndex &index : selected )
-
-  newspec->set_filename( "Combination-" + WDateTime::currentDateTime().toString(DATE_TIME_FORMAT_STR).toUTF8() );
-  newspec->cleanup_after_load();
-
-  if( warnAboutRebinning )
+        assert( index.row() >= 0 );
+        if( index.row() < 0 )
+          continue;
+        
+        const size_t row = static_cast<size_t>( index.row() );
+        
+        assert( row < header->m_samples.size() );
+        if( row >= header->m_samples.size() )
+          continue;
+        
+        set<int> &samples = files_involved[file];
+        samples.insert( header->m_samples[row].sample_number );
+        break;
+      }//case SpectraFileModel::SampleLevel:
+        
+      case SpectraFileModel::InvalidLevel:
+        break;
+    }//switch( indexLevel )
+  }//for( const WModelIndex &index : selected )
+  
+  if( files_involved.empty() )
+    throw runtime_error( "[logic error] Unable to determine contents to use." );
+  
+  const string current_time = WDateTime::currentDateTime().toString("yyyyMMdd hh:mm:ss").toUTF8();
+  
+  // Check if we want samples from a single spectrum file, and if so, we'll clone that SpecMeas
+  //  object, and just removed any un-wanted samples.  This helps to preserve all the detector
+  //  information and stuff.
+  if( files_involved.size() == 1 )
   {
-    const char *msg = "Not all of the spectrum combined had the same number of "
-                      "bins so the results may be a bit wonky, sorry :(";
-    passMessage( msg, "", WarningWidget::WarningMsgHigh );
-  } // if( warnAboutRebinning )
+    const shared_ptr<const SpecMeas> &parent_file = files_involved.begin()->first;
+    const set<int> &samples_to_use = files_involved.begin()->second;
+    assert( parent_file );
+    
+    shared_ptr<SpecMeas> newspec = make_shared<SpecMeas>();
+    newspec->uniqueCopyContents( *parent_file );
+    
+    if( samples_to_use == parent_file->sample_numbers() )
+      return newspec;
+    
+    vector<shared_ptr<const SpecUtils::Measurement>> meas_to_remove;
+    for( const shared_ptr<const SpecUtils::Measurement> m : newspec->measurements() )
+    {
+      if( m && (samples_to_use.count( m->sample_number() ) == 0) )
+        meas_to_remove.push_back( m );
+    }
+    
+    for( const auto m : meas_to_remove )
+      newspec->remove_measurement( m, false );
+     
+    unsigned int cleanup_flags = SpecUtils::SpecFile::CleanupAfterLoadFlags::StandardCleanup
+                          | SpecUtils::SpecFile::CleanupAfterLoadFlags::DontChangeOrReorderSamples;
+    newspec->cleanup_after_load( cleanup_flags );
+    
+    if( !parent_file->filename().empty() )
+      newspec->set_filename( "Subset " + current_time + " " + parent_file->filename() );
+    
+    newspec->cleanup_orphaned_info();
+    newspec->setShieldingSourceModel( nullptr );
+    newspec->displayedSpectrumChangedCallback( SpecUtils::SpectrumType::Foreground, newspec, {}, {} );
+    
+    return newspec;
+  }//if( files_involved.size() == 1 )
+  
+  
+  // If we are here, we are combining multiple file.
+  //  We could probably to a little better preserving the detection system level "meta-info", but
+  //  for the moment it isnt clear what the best thing to do is, in general.
+  //  Also, we arent preserving any peaks, which maybe we could do.
+  shared_ptr<SpecMeas> newspec = make_shared<SpecMeas>();
+  
+  // We'll try to preserve some of the file-level meta information, if it makes sense.
+  //  Although using set<string> like below will re-order things, which maybe isnt what we want.
+  //  Note: meas->detectors_analysis() is currently not being saved.
+  set<int> lane_numbers;
+  set<SpecUtils::DetectorType> det_types;
+  set<string> locations, inst_types, manufacturers, inst_models, inst_ids, remarks, warnings, insps;
+  for( const auto specmeas_samples : files_involved )
+  {
+    const shared_ptr<const SpecMeas> &meas = specmeas_samples.first;
+    const set<int> &samples = specmeas_samples.second;
+  
+    assert( meas );
+    
+    det_types.insert( meas->detector_type() );
+    locations.insert( meas->measurement_location_name() );
+    inst_types.insert( meas->instrument_type() );
+    manufacturers.insert( meas->manufacturer() );
+    inst_models.insert( meas->instrument_model() );
+    inst_ids.insert( meas->instrument_id() );
+    insps.insert( meas->inspection() );
+    lane_numbers.insert( meas->lane_number() );
+    
+    const vector<string> &meas_remarks = meas->remarks();
+    remarks.insert( begin(meas_remarks), end(meas_remarks) );
+    
+    const vector<string> &meas_warning = meas->parse_warnings();
+    warnings.insert( begin(meas_warning), end(meas_warning) );
+    
+    for( const int sample : samples )
+    {
+      for( const string &det_name : meas->detector_names() )
+      {
+        const shared_ptr<const SpecUtils::Measurement> m = meas->measurement( sample, det_name );
+        
+        if( m )
+          newspec->add_measurement(make_shared<SpecUtils::Measurement>( *m ),  false );
+      }//for( const string &det_name : meas->detector_names() )
+    }//for( const int sample : samples )
+  }//for( const auto specmeas_samples : files_involved )
+  
+  
+  if( det_types.size() == 1 )
+    newspec->set_detector_type( *begin(det_types) );
+  
+  if( lane_numbers.size() == 1 )
+    newspec->set_lane_number( *begin(lane_numbers) );
+  
+  newspec->set_remarks( vector<string>( begin(remarks), end(remarks) ) );
+  
+  newspec->set_parse_warnings( vector<string>( begin(warnings), end(warnings) ) );
+  
+  const auto strings_to_csv = []( const set<string> &input ) -> string {
+    string answer;
+    for( const string &val : input )
+    {
+      if( !val.empty() )
+        answer += (answer.empty() ? "" : ", ") + val;
+    }
+    return answer;
+  };//strings_to_csv
 
+  newspec->set_measurement_location_name( strings_to_csv(locations) );
+  newspec->set_instrument_id( strings_to_csv(inst_ids) );
+  newspec->set_instrument_model( strings_to_csv(inst_models) );
+  newspec->set_manufacturer( strings_to_csv(manufacturers) );
+  newspec->set_instrument_type( strings_to_csv(inst_types) );
+  newspec->set_inspection( strings_to_csv(insps) );
+  
+  newspec->set_filename( "Combination-" + current_time );
+  
+  newspec->cleanup_after_load();
+  
   return newspec;
-} // std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas()
+}//std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas()
 
 
 void SpecMeasManager::newFileFromSelection()
 {
   try
   {
-    std::shared_ptr<SpecMeas> spec = selectedToSpecMeas();
-    std::shared_ptr<SpectraFileHeader> header
-                                     = addFile( spec->filename(), spec );
+    shared_ptr<SpecMeas> spec = selectedToSpecMeas();
+    shared_ptr<SpectraFileHeader> header = addFile( spec->filename(), spec );
     
     WModelIndex index = m_fileModel->index( header );
     if( index.isValid() )
@@ -3537,6 +3348,8 @@ void SpecMeasManager::newFileFromSelection()
       selected.insert( index );
       m_treeView->setSelectedIndexes( selected );
       selectionChanged();
+      
+      m_treeView->scrollTo( index, WAbstractItemView::ScrollHint::EnsureVisible );
     }// if( index.isValid() )
   }catch( std::exception &e )
   {
@@ -3548,57 +3361,23 @@ void SpecMeasManager::newFileFromSelection()
     log_developer_error( __func__, msg.str().c_str() );
 #endif
   }
-  
-  
-  /*
+}//void SpecMeasManager::newFileFromSelection()
+
+
+void SpecMeasManager::sumSelectedSpectra()
+{
   try
   {
-    static int customnum = 0;
-    string output( wApp->sessionId()
-                                    + "_" + std::to_string(customnum++) );
-
-    output = SpecUtils::temp_file_name( output, InterSpecApp::tempDirectory() );
-
-    { // Begin codeblock to write file.
-      ofstream ofs( output.generic_string().c_str(), ios::binary|ios::out );
-      if( !ofs.is_open() )
-      {
-        stringstream msg;
-        msg << "SpecMeasManager::newFileFromSelection():\n\tCould not spectrum file - " << output;
-        throw runtime_error( msg.str() );
-      } // if( fileptr == 0 )
-
-      newspec->write_2012_N42( ofs );
-      cout << "Wrote " << output << endl;
-    } // End codeblock to write file.
-
-    std::shared_ptr<SpectraFileHeader> header;
-    std::shared_ptr<SpecMeas> measurement;
-    try
-    {
-      setFile( newspec->filename(), output, header, measurement, N42_2012 );
-    }catch( std::exception &e )
-    {
-      stringstream msg;
-      msg << "Failed to parse file created from combining multiple spectra: "
-          << e.what();
-#if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, msg.str().c_str() );
-#else
-      cerr << msg.str() << endl;
-#endif
-    }
-
-    if( !SpecUtils::remove_file( output ) )
-    {
-      stringstream msg;
-      msg << "Failed to remove temporary file: " << output;
-#if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, msg.str().c_str() );
-#else
-      cerr << msg.str() << endl;
-#endif
-    }
+    shared_ptr<SpecMeas> meas = selectedToSpecMeas();
+    assert( meas );
+      
+    shared_ptr<SpecUtils::Measurement> spec = meas->sum_measurements( meas->sample_numbers(), meas->detector_names(), nullptr );
+    spec->set_sample_number( 1 );
+    meas->remove_measurements( meas->measurements() );
+    meas->add_measurement( spec, true );
+    meas->set_filename( "summed" );
+    
+    shared_ptr<SpectraFileHeader> header = addFile( meas->filename(), meas );
     
     WModelIndex index = m_fileModel->index( header );
     if( index.isValid() )
@@ -3607,16 +3386,20 @@ void SpecMeasManager::newFileFromSelection()
       selected.insert( index );
       m_treeView->setSelectedIndexes( selected );
       selectionChanged();
-    } // if( index.isValid() )
-  }
-  catch( const std::exception &e )
+      
+      m_treeView->scrollTo( index, WAbstractItemView::ScrollHint::EnsureVisible );
+    }// if( index.isValid() )
+  }catch( std::exception &e )
   {
-    string msg = "I'm sorry, I had trouble making the combined spectrum file: ";
-    msg += e.what();
+    const string msg = "Failed summing spectra: " + string( e.what() );
     passMessage( msg, "", WarningWidget::WarningMsgHigh );
-  } // try / catch
-*/
-} // void SpecMeasManager::newFileFromSelection()
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, msg.c_str() );
+#endif
+  }//try / catch
+}//void SpecMeasManager::sumSelectedSpectra()
+
 
 
 void SpecMeasManager::selectionChanged()
@@ -3627,138 +3410,111 @@ void SpecMeasManager::selectionChanged()
   const WModelIndexSet selected = m_treeView->selectedIndexes();
   WModelIndexSet toSelect = selected;
   WModelIndexSet selectedFiles;
-
+  
   if( selected.empty() )
   {
-      if (m_viewer->isSupportFile())
-      {
-          m_saveButton->disable();
-          m_saveButton->setHidden(true, WAnimation());
-      } //isSupportFile()
-      m_combineButton->setHidden(true,WAnimation());
-      m_deleteButton->setHidden(true,WAnimation());
-      m_setButton->setHidden(true,WAnimation());
-  } // if( selected.empty() )
-  else {
-
-  m_deleteButton->enable();
-  m_deleteButton->show();
-      
-  set<WString> files;
-  for( const WModelIndex &index : selected )
-  {
-    std::shared_ptr<const SpectraFileHeader> header;
-
-    const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
-
-    switch( indexLevel )
-    {
-      case SpectraFileModel::FileHeaderLevel:
-      {
-        selectedFiles.insert( index );
-        header = m_fileModel->fileHeader( index.row() );
-
-       // Let's set all of the children as selected.
-       const int nrow = m_fileModel->rowCount( index );
-       for( int i = 0; i < nrow; ++i )
-         toSelect.insert( index.child(i,0) );
-       break;
-      } // case SpectraFileModel::FileHeaderLevel:
-
-      case SpectraFileModel::SampleLevel:
-        header = m_fileModel->fileHeader( index.parent().row() );
-        break;
-
-      case SpectraFileModel::InvalidLevel:
-        break; // no-op
-        break;
-    } // switch( level( index ) )
-
-    if( header )
-      files.insert( header->displayName() );
-  } // for( const WModelIndex &index : selected )
-
-  if( files.size() > 1 )
-  {
-    m_combineButton->enable();
-    m_combineButton->show();
-    m_setButton->setHidden(true, WAnimation());
-    m_setButton->disable();
-    m_setAsForeground->disable();
-    m_setAsBackground->disable();
-    m_setAsSecForeground->disable();
+    m_saveButton->hide();
+    m_combineToNewFileButton->hide();
+    m_subsetOfMeasToNewFileButton->hide();
+    m_sumSpectraButton->hide();
+    m_deleteButton->hide();
+    m_setButton->hide();
   }else
   {
-    m_setAsForeground->enable();
+    m_deleteButton->show();
     
-    if( m_viewer->measurment(SpecUtils::SpectrumType::Foreground) )
+    set<shared_ptr<const SpectraFileHeader>> files;
+    bool fullFileSelected = false;
+    for( const WModelIndex &index : selected )
     {
-      m_setAsBackground->enable();
-      m_setAsSecForeground->enable();
-    }else
+      std::shared_ptr<const SpectraFileHeader> header;
+      
+      const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
+      
+      switch( indexLevel )
+      {
+        case SpectraFileModel::FileHeaderLevel:
+        {
+          fullFileSelected = true;
+          selectedFiles.insert( index );
+          header = m_fileModel->fileHeader( index.row() );
+          
+          // Let's set all of the children as selected.
+          const int nrow = m_fileModel->rowCount( index );
+          for( int i = 0; i < nrow; ++i )
+            toSelect.insert( index.child(i,0) );
+          break;
+        } // case SpectraFileModel::FileHeaderLevel:
+          
+        case SpectraFileModel::SampleLevel:
+          header = m_fileModel->fileHeader( index.parent().row() );
+          break;
+          
+        case SpectraFileModel::InvalidLevel:
+          break;
+      } // switch( level( index ) )
+      
+      if( header )
+        files.insert( header );
+    }// for( const WModelIndex &index : selected )
+    
+    
+    if( files.size() > 1 )
     {
+      m_combineToNewFileButton->show();
+      m_subsetOfMeasToNewFileButton->hide();
+      m_sumSpectraButton->show();
+      m_setButton->hide();
+      m_setAsForeground->disable();
       m_setAsBackground->disable();
       m_setAsSecForeground->disable();
-    } // if( primary spectrums loaded ) / else
-
-    m_combineButton->disable();
-    m_combineButton->hide();
-    m_setButton->show();
-    m_setButton->enable();
-  }// if( multiple files are selected ) / else
-
-  if( (selectedFiles.size()==1) && (files.size()==1) )
-  {
-      if (m_viewer->isSupportFile())
-      {
-          m_saveButton->enable();
-          m_saveButton->show();
-      }//isSupportFile()
-
-  }else
-  {
-      const bool enableSave = (files.size()==1);
-      if (m_viewer->isSupportFile())
-      {
-          m_saveButton->setEnabled( enableSave );
-          m_saveButton->setHidden( !enableSave );
-      }
+    }else
+    {
+      m_setAsForeground->enable();
       
-  } // if( selectedFiles.size() == 1 )
-
-  if( selected.size() != toSelect.size() )
-    m_treeView->setSelectedIndexes( toSelect );
-
-  }
+      if( m_viewer->measurment(SpecUtils::SpectrumType::Foreground) )
+      {
+        m_setAsBackground->enable();
+        m_setAsSecForeground->enable();
+      }else
+      {
+        m_setAsBackground->disable();
+        m_setAsSecForeground->disable();
+      }//if( primary spectrums loaded ) / else
+      
+      m_combineToNewFileButton->hide();
+      m_subsetOfMeasToNewFileButton->setHidden( fullFileSelected );
+      m_sumSpectraButton->show();
+      m_setButton->show();
+    }// if( multiple files are selected ) / else
+    
+    if( (selectedFiles.size()==1) && (files.size()==1) )
+    {
+      m_saveButton->show();
+    }else
+    {
+      const bool enableSave = (files.size()==1);
+      m_saveButton->setHidden( !enableSave );
+    } // if( selectedFiles.size() == 1 )
+    
+    if( selected.size() != toSelect.size() )
+      m_treeView->setSelectedIndexes( toSelect );
+  }//if( selected.empty() ) / else
+  
   // Disable/hide everything and just show what's needed.
-//  m_unDisplayMenuButton->hide();
-//  m_unDisplayPrimaryButton->   disable();
-//  m_unDisplaySecondaryButton-> disable();
-//  m_unDisplayBackgroundButton->disable();
-
   m_removeForeButton->hide();
   m_removeBackButton->hide();
   m_removeFore2Button->hide();
   
-  if( m_viewer->measurment(SpecUtils::SpectrumType::Foreground)
-      || m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground)
-      || m_viewer->measurment(SpecUtils::SpectrumType::Background) )
-  {
-//    m_unDisplayMenuButton->show();
-  }
-  if( m_viewer->measurment(SpecUtils::SpectrumType::Foreground) ) {
-//    m_unDisplayPrimaryButton->enable();
+  if( m_viewer->measurment(SpecUtils::SpectrumType::Foreground) )
     m_removeForeButton->show();
-  }
-  if( m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground) ) {
-//    m_unDisplaySecondaryButton->enable();
+
+  if( m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground) )
     m_removeFore2Button->show();
-  }
-  if( m_viewer->measurment(SpecUtils::SpectrumType::Background) ) {
-//    m_unDisplayBackgroundButton->enable();
+    
+  if( m_viewer->measurment(SpecUtils::SpectrumType::Background) )
     m_removeBackButton->show();
-  }
-} // void SpecMeasManager::selectionChanged()
+}//void selectionChanged()
 
 
 void SpecMeasManager::deleteSpectrumManager()
@@ -3808,10 +3564,6 @@ WContainerWidget *SpecMeasManager::createTreeViewDiv()
 
 WContainerWidget *SpecMeasManager::createButtonBar()
 {
-//  assert( !m_unDisplayMenuButton );
-//  assert( !m_setPrimaryButton );
-  // ...
-
   WContainerWidget *buttonBar = new WContainerWidget();
   buttonBar->setStyleClass( "SpectraFileManagerButtonDiv" );
 
@@ -3837,42 +3589,58 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   m_setAsSecForeground = setPopup->addItem("Secondary Foreground");
   m_setAsSecForeground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, SpecUtils::SpectrumType::SecondForeground, true ) );
   m_setButton->setMenu(setPopup);
-  m_setButton->setHidden( true, WAnimation() );
-//  m_removeFileButton->disable();
+  m_setButton->hide();
 
+  // Note: the only difference between the m_combineToNewFileButton and
+  //  m_subsetOfMeasToNewFileButton buttons are the icons, and a slight difference in text, but the
+  //  functionality they trigger is the same either way.
+  m_combineToNewFileButton = new Wt::WPushButton( "To New File", m_newDiv );
+  m_combineToNewFileButton->setToolTip( "Creates a new in-memory spectrum file from the current selection." );
+  m_combineToNewFileButton->addStyleClass("InvertInDark");
+  m_combineToNewFileButton->setIcon( "InterSpec_resources/images/arrow_join.svg" );
+  m_combineToNewFileButton->clicked().connect( boost::bind( &SpecMeasManager::newFileFromSelection, this ) );
+  m_combineToNewFileButton->hide();
   
-  m_combineButton = new Wt::WPushButton("Combine",m_newDiv);
-  m_combineButton->addStyleClass("Wt-icon");
-  m_combineButton->setIcon( "InterSpec_resources/images/arrow_join.svg" );
-  m_combineButton->clicked().connect( boost::bind( &SpecMeasManager::newFileFromSelection, this ) );
-  m_combineButton->setHidden( true, WAnimation() );
-
-  if( m_viewer->isSupportFile() )
+  m_subsetOfMeasToNewFileButton = new Wt::WPushButton( "As New File", m_newDiv );
+  m_subsetOfMeasToNewFileButton->setToolTip( "Creates a new in-memory spectrum file from the current selection." );
+  m_subsetOfMeasToNewFileButton->addStyleClass("InvertInDark");
+  m_subsetOfMeasToNewFileButton->setIcon( "InterSpec_resources/images/partial.svg" );
+  m_subsetOfMeasToNewFileButton->clicked().connect( boost::bind( &SpecMeasManager::newFileFromSelection, this ) );
+  m_subsetOfMeasToNewFileButton->hide();
+  
+  
+  m_sumSpectraButton = new Wt::WPushButton( "Sum Spectra", m_newDiv );
+  m_sumSpectraButton->setToolTip( "Creates a new in-memory spectrum file from the current selection." );
+  m_sumSpectraButton->addStyleClass("InvertInDark");
+  m_sumSpectraButton->setIcon( "InterSpec_resources/images/sum_symbol.svg" );
+  m_sumSpectraButton->clicked().connect( boost::bind( &SpecMeasManager::sumSelectedSpectra, this ) );
+  m_sumSpectraButton->hide();
+  
+  
+  m_saveButton = new Wt::WPushButton("Export",m_newDiv);
+  m_saveButton->setIcon( "InterSpec_resources/images/bullet_arrow_down.png" );
+  Wt::WPopupMenu *setPopup2 = new Wt::WPopupMenu();
+  
+  m_saveButton->mouseWentOver().connect( boost::bind( &SpecMeasManager::renameSaveAsFile, this ) );
+  
+  for( SpecUtils::SaveSpectrumAsType type = SpecUtils::SaveSpectrumAsType(0);
+      type < SpecUtils::SaveSpectrumAsType::NumTypes;
+      type = SpecUtils::SaveSpectrumAsType(static_cast<int>(type)+1) )
   {
-    m_saveButton = new Wt::WPushButton("Export",m_newDiv);
-    m_saveButton->setIcon( "InterSpec_resources/images/bullet_arrow_down.png" );
-    Wt::WPopupMenu *setPopup2 = new Wt::WPopupMenu();
-        
-    m_saveButton->mouseWentOver().connect( boost::bind( &SpecMeasManager::renameSaveAsFile, this ) );
-      
-    for( SpecUtils::SaveSpectrumAsType type = SpecUtils::SaveSpectrumAsType(0);
-        type < SpecUtils::SaveSpectrumAsType::NumTypes;
-         type = SpecUtils::SaveSpectrumAsType(static_cast<int>(type)+1) )
-    {
-      const string descrip = string("As ") + descriptionText(type) + " File";
-      WMenuItem *temp = setPopup2->addItem( descrip );
-      temp->setLink( m_downloadResources[toint(type)] );
-      temp->setLinkTarget( TargetNewWindow );
-    }
-      
-    m_saveButton->setMenu( setPopup2 );
-    m_saveButton->setHidden( true, WAnimation() );
-  }//isSupportFile
+    const string descrip = string("As ") + descriptionText(type) + " File";
+    WMenuItem *temp = setPopup2->addItem( descrip );
+    temp->setLink( m_downloadResources[toint(type)] );
+    temp->setLinkTarget( TargetNewWindow );
+  }
   
-  m_deleteButton =  new Wt::WPushButton("Unload",m_newDiv);
+  m_saveButton->setMenu( setPopup2 );
+  m_saveButton->hide();
+  
+  
+  m_deleteButton = new Wt::WPushButton("Unload",m_newDiv);
   m_deleteButton->setIcon( "InterSpec_resources/images/minus_min_white.png" );
-  m_deleteButton ->clicked().connect( boost::bind( &SpecMeasManager::removeSelected, this ) );
-  m_deleteButton->setHidden( true, WAnimation() );
+  m_deleteButton->clicked().connect( boost::bind( &SpecMeasManager::removeSelected, this ) );
+  m_deleteButton->hide();
   
   // ---- try new bar 2 ----
   WContainerWidget *m_newDiv2 = new WContainerWidget( );

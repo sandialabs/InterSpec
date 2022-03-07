@@ -165,6 +165,7 @@ public:
   void removeAllFiles();
   void renameSaveAsFile();
   void newFileFromSelection();
+  void sumSelectedSpectra();
   std::shared_ptr<SpecMeas> selectedToSpecMeas() const;
   void unDisplay( SpecUtils::SpectrumType type );
   
@@ -461,38 +462,22 @@ protected:
   Wt::WFileUpload  *m_fileUpload;
   InterSpec   *m_viewer;
   Wt::WContainerWidget *m_spectrumManagertreeDiv;
-    
-//  Wt::WPushButton  *m_setPrimaryButton;
-//  Wt::WPushButton  *m_setSecondaryButton;
-//  Wt::WPushButton  *m_setBackgroundButton;
-//  Wt::WPushButton  *m_unDisplayMenuButton;
-  
   
   Wt::WPushButton *m_setButton;
   Wt::WPopupMenuItem  *m_setAsForeground;
   Wt::WPopupMenuItem  *m_setAsBackground;
   Wt::WPopupMenuItem  *m_setAsSecForeground;
-  Wt::WPushButton *m_combineButton;
-  Wt::WPushButton *m_saveButton; // replaces m_saveFileAsButton
+  Wt::WPushButton *m_combineToNewFileButton;
+  Wt::WPushButton *m_subsetOfMeasToNewFileButton;
+  Wt::WPushButton *m_sumSpectraButton;
+  Wt::WPushButton *m_saveButton;
   Wt::WPushButton *m_deleteButton;
   Wt::WPushButton *m_removeForeButton;
   Wt::WPushButton *m_removeBackButton;
   Wt::WPushButton *m_removeFore2Button;
   
-  
-  
-//  PopupDivMenu     *m_unDisplayPopup;
-//  PopupDivMenuItem *m_unDisplayPrimaryButton;
-//  PopupDivMenuItem *m_unDisplaySecondaryButton;
-//  PopupDivMenuItem *m_unDisplayBackgroundButton;
-  
   Wt::WContainerWidget *m_infoHandler;
   std::vector< std::string > m_labelTags;
-
-//  Wt::WPushButton  *m_makeNewFileButton;
-//  Wt::WPushButton  *m_removeFileButton;
-//  Wt::WPushButton  *m_saveFileAsButton;
-//  PopupDivMenu     *m_saveAsPopup;
   
   DownloadSpectrumResource *m_downloadResources[static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes)];
   SpecificSpectrumResource *m_specificResources[static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes)];

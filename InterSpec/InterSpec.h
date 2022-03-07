@@ -921,7 +921,6 @@ public:
   //  DetectorPeakResponse.
   void guessIsotopesForPeaks( Wt::WApplication *app );
   
-  bool isSupportFile() const;
     
   bool isMobile() const;
   bool isPhone() const;
