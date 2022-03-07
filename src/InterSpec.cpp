@@ -1404,18 +1404,6 @@ void InterSpec::layoutSizeChanged( int w, int h )
   }
 }//void layoutSizeChanged( int w, int h )
 
-//isSupportFile(): If the platform supports file transfer.  Use this method
-//instead of #if(IOS) or isMobile() because those hold no context.
-bool InterSpec::isSupportFile() const
-{
-#if( IOS )
-    //return false;
-  return true; //20180602: it looks like web version of InterSpec allows you to browse for files (from google drive, etc) - not tried from app yet though.
-#else
-    return true;
-#endif
-}
-
 
 bool InterSpec::isMobile() const
 {
@@ -5154,7 +5142,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   }//if( mobile )
   
   
-  if( isSupportFile() && !mobile )
+  if( !mobile )
   {
     string tip = "Creates a dialog to browse for a spectrum file on your file system.";
     if( !mobile )
@@ -5163,174 +5151,167 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     item = m_fileMenuPopup->addMenuItem( "Open File..." );
     HelpSystem::attachToolTipOn( item, tip, showToolTips );
     item->triggered().connect( boost::bind ( &SpecMeasManager::startQuickUpload, m_fileManager ) );
-  } //!isSupportFile
+  }//if( !mobile )
   
 
 #if( USE_SAVEAS_FROM_MENU )
-  if( isSupportFile() )
+  //only display when not on desktop.
+  m_downloadMenu = m_fileMenuPopup->addPopupMenuItem( "Export File" );
+  
+  for( SpecUtils::SpectrumType i = SpecUtils::SpectrumType(0);
+      i <= SpecUtils::SpectrumType::Background;
+      i = SpecUtils::SpectrumType(static_cast<int>(i)+1) )
   {
-    //only display when not on desktop.
-    m_downloadMenu = m_fileMenuPopup->addPopupMenuItem( "Export File" );
+    m_downloadMenus[static_cast<int>(i)] = m_downloadMenu->addPopupMenuItem( descriptionText( i ) );
     
-    for( SpecUtils::SpectrumType i = SpecUtils::SpectrumType(0);
-         i <= SpecUtils::SpectrumType::Background;
-         i = SpecUtils::SpectrumType(static_cast<int>(i)+1) )
+    for( SpecUtils::SaveSpectrumAsType j = SpecUtils::SaveSpectrumAsType(0);
+        j < SpecUtils::SaveSpectrumAsType::NumTypes;
+        j = SpecUtils::SaveSpectrumAsType(static_cast<int>(j)+1) )
     {
-      m_downloadMenus[static_cast<int>(i)] = m_downloadMenu->addPopupMenuItem( descriptionText( i ) );
+      const string desc = descriptionText( j );
+      item = m_downloadMenus[static_cast<int>(i)]->addMenuItem( desc + " File" );
+      DownloadCurrentSpectrumResource *resource
+      = new DownloadCurrentSpectrumResource( i, j, this, item );
       
-      for( SpecUtils::SaveSpectrumAsType j = SpecUtils::SaveSpectrumAsType(0);
-          j < SpecUtils::SaveSpectrumAsType::NumTypes;
-          j = SpecUtils::SaveSpectrumAsType(static_cast<int>(j)+1) )
-      {
-        const string desc = descriptionText( j );
-        item = m_downloadMenus[static_cast<int>(i)]->addMenuItem( desc + " File" );
-        DownloadCurrentSpectrumResource *resource
-                     = new DownloadCurrentSpectrumResource( i, j, this, item );
-        
 #if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
-        //If were using OS X native menus, we obviously cant relly on the
-        //  browser responding to a click on an anchor; we also cant click the
-        //  link of the PopupDivMenuItem itself in javascript, or we get a
-        //  cycle of the server telling the browser to click the link again,
-        //  each time it tells it to do it in javascript.  So we will introduce
-        //  a false menu item that will actually have the URL of the download
-        //  associated with its anchor, and not connect any server side
-        //  triggered() events to it, thus breaking the infiinite cycle - blarg.
-        PopupDivMenuItem *fakeitem = new PopupDivMenuItem( "", "" );
-        m_downloadMenus[static_cast<int>(i)]->WPopupMenu::addItem( fakeitem );
-        fakeitem->setLink( WLink( resource ) );
-        fakeitem->setLinkTarget( TargetNewWindow );
-
-        if( fakeitem->anchor() )
-        {
-          const string jsclick = "try{document.getElementById('"
-                                 + fakeitem->anchor()->id()
-                                 + "').click();}catch(e){}";
-          item->triggered().connect( boost::bind( &WApplication::doJavaScript, wApp, jsclick, true ) );
-        }else
-        {
-          cerr << "Unexpected error accessing the anchor for file downloading" << endl;
-        }
-#else
-        item->setLink( WLink( resource ) );
-        item->setLinkTarget( TargetNewWindow );
-#endif
-        
-        const char *tooltip = nullptr;
-        switch( j )
-        {
-          case SpecUtils::SaveSpectrumAsType::Txt:
-            tooltip = "A space delimited file will be created with a header of"
-                      " things like live time, followed by three columns"
-                      " (channel number, lower channel energy, counts). Each"
-                      " record in the file will be sequentially recorded with"
-                      " three line breaks between records.";
-            break;
-            
-          case SpecUtils::SaveSpectrumAsType::Csv:
-            tooltip = "A comma delimietd file will be created with a channel"
-                      " lower energy and a counts column.  All records in the"
-                      " current spectrum file will be written sequentially,"
-                      " with an extra line break and &quot;<b>Energy, Data</b>"
-                      "&quot; header between subsequent records.";
-            break;
-            
-          case SpecUtils::SaveSpectrumAsType::Pcf:
-            tooltip = "A binary PCF file will be created which contains all"
-                      " records of the current file.";
-            break;
-            
-          case SpecUtils::SaveSpectrumAsType::N42_2006:
-            tooltip = "A simple spectromiter style 2006 N42 XML file will be"
-                      " produced which contains all records in the current file.";
-            break;
-            
-          case SpecUtils::SaveSpectrumAsType::N42_2012:
-            tooltip = "A 2012 N42 XML document will be produced which contains"
-                      " all samples of the current spectrum file, as well as"
-                      " some additional <code>InterSpec</code> information"
-                      " such as the identified peaks and detector response.";
-            break;
-            
-          case SpecUtils::SaveSpectrumAsType::Chn:
-            tooltip = "A binary integer CHN file will be produced containing a"
-                      " single spectrum matching what is currently shown.";
-            break;
-            
-          case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
-            tooltip = "A binary floating point SPC file will be produced containing a"
-                      " single spectrum matching what is currently shown.";
-            break;
-           
-          case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
-            tooltip = "A binary integer SPC file will be produced containing a"
-                      " single spectrum matching what is currently shown.";
-            break;
-            
-          case SpecUtils::SaveSpectrumAsType::SpcAscii:
-            tooltip = "A ascii based SPC file will be produced containing a"
-                      " single spectrum matching what is currently shown.";
-            break;
-          
-          case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
-            tooltip = "A binary Exploranium GR130 file will be produced with"
-                      " each record (spectrum) containing 256 channels.";
-            break;
-            
-          case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
-            tooltip = "A binary Exploranium GR135v2 file (includes neutron info)"
-                      " will be produced with each record (spectrum) containing"
-                      " 1024 channels.";
-            break;
-          
-          case SpecUtils::SaveSpectrumAsType::SpeIaea:
-            tooltip = "A ASCII based standard file format that will contain a"
-                      " single spectrum only.";
-            break;
-            
-          case SpecUtils::SaveSpectrumAsType::Cnf:
-            tooltip = "A binary Canberra file format that contains only a single spectrum.";
-            break;
-            
-          case SpecUtils::SaveSpectrumAsType::Tka:
-            tooltip = "A text based format that provides real time and channel counts only.";
-            break;
-            
-#if( SpecUtils_ENABLE_D3_CHART )
-          case SpecUtils::SaveSpectrumAsType::HtmlD3:
-            tooltip = "An HTML file using D3.js to generate a spectrum chart"
-                          " that you can optionally interact with and view offline.";
-            break;
-#endif //#if( SpecUtils_ENABLE_D3_CHART )
-           case SpecUtils::SaveSpectrumAsType::NumTypes:
-            break;
-        }//switch( j )
-        
-        assert( tooltip );
-        
-        const bool showInstantly = true;
-        if( tooltip )
-          HelpSystem::attachToolTipOn( item, tooltip, showInstantly,
-                                      HelpSystem::ToolTipPosition::Right );
-      }//for( loop over file types )
+      //If were using OS X native menus, we obviously cant relly on the
+      //  browser responding to a click on an anchor; we also cant click the
+      //  link of the PopupDivMenuItem itself in javascript, or we get a
+      //  cycle of the server telling the browser to click the link again,
+      //  each time it tells it to do it in javascript.  So we will introduce
+      //  a false menu item that will actually have the URL of the download
+      //  associated with its anchor, and not connect any server side
+      //  triggered() events to it, thus breaking the infiinite cycle - blarg.
+      PopupDivMenuItem *fakeitem = new PopupDivMenuItem( "", "" );
+      m_downloadMenus[static_cast<int>(i)]->WPopupMenu::addItem( fakeitem );
+      fakeitem->setLink( WLink( resource ) );
+      fakeitem->setLinkTarget( TargetNewWindow );
       
-      m_downloadMenus[static_cast<int>(i)]->disable();
-      if( m_downloadMenus[static_cast<int>(i)]->parentItem() )
-        m_downloadMenu->setItemHidden( m_downloadMenus[static_cast<int>(i)]->parentItem(), true );
-    }//for( loop over spectrums )
+      if( fakeitem->anchor() )
+      {
+        const string jsclick = "try{document.getElementById('"
+        + fakeitem->anchor()->id()
+        + "').click();}catch(e){}";
+        item->triggered().connect( boost::bind( &WApplication::doJavaScript, wApp, jsclick, true ) );
+      }else
+      {
+        cerr << "Unexpected error accessing the anchor for file downloading" << endl;
+      }
+#else
+      item->setLink( WLink( resource ) );
+      item->setLinkTarget( TargetNewWindow );
+#endif
+      
+      const char *tooltip = nullptr;
+      switch( j )
+      {
+        case SpecUtils::SaveSpectrumAsType::Txt:
+          tooltip = "A space delimited file will be created with a header of"
+          " things like live time, followed by three columns"
+          " (channel number, lower channel energy, counts). Each"
+          " record in the file will be sequentially recorded with"
+          " three line breaks between records.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::Csv:
+          tooltip = "A comma delimietd file will be created with a channel"
+          " lower energy and a counts column.  All records in the"
+          " current spectrum file will be written sequentially,"
+          " with an extra line break and &quot;<b>Energy, Data</b>"
+          "&quot; header between subsequent records.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::Pcf:
+          tooltip = "A binary PCF file will be created which contains all"
+          " records of the current file.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::N42_2006:
+          tooltip = "A simple spectromiter style 2006 N42 XML file will be"
+          " produced which contains all records in the current file.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::N42_2012:
+          tooltip = "A 2012 N42 XML document will be produced which contains"
+          " all samples of the current spectrum file, as well as"
+          " some additional <code>InterSpec</code> information"
+          " such as the identified peaks and detector response.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::Chn:
+          tooltip = "A binary integer CHN file will be produced containing a"
+          " single spectrum matching what is currently shown.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
+          tooltip = "A binary floating point SPC file will be produced containing a"
+          " single spectrum matching what is currently shown.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
+          tooltip = "A binary integer SPC file will be produced containing a"
+          " single spectrum matching what is currently shown.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::SpcAscii:
+          tooltip = "A ascii based SPC file will be produced containing a"
+          " single spectrum matching what is currently shown.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
+          tooltip = "A binary Exploranium GR130 file will be produced with"
+          " each record (spectrum) containing 256 channels.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
+          tooltip = "A binary Exploranium GR135v2 file (includes neutron info)"
+          " will be produced with each record (spectrum) containing"
+          " 1024 channels.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::SpeIaea:
+          tooltip = "A ASCII based standard file format that will contain a"
+          " single spectrum only.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::Cnf:
+          tooltip = "A binary Canberra file format that contains only a single spectrum.";
+          break;
+          
+        case SpecUtils::SaveSpectrumAsType::Tka:
+          tooltip = "A text based format that provides real time and channel counts only.";
+          break;
+          
+#if( SpecUtils_ENABLE_D3_CHART )
+        case SpecUtils::SaveSpectrumAsType::HtmlD3:
+          tooltip = "An HTML file using D3.js to generate a spectrum chart"
+          " that you can optionally interact with and view offline.";
+          break;
+#endif //#if( SpecUtils_ENABLE_D3_CHART )
+        case SpecUtils::SaveSpectrumAsType::NumTypes:
+          break;
+      }//switch( j )
+      
+      assert( tooltip );
+      
+      const bool showInstantly = true;
+      if( tooltip )
+        HelpSystem::attachToolTipOn( item, tooltip, showInstantly,
+                                    HelpSystem::ToolTipPosition::Right );
+    }//for( loop over file types )
     
-    m_fileMenuPopup->setItemHidden(m_downloadMenu->parentItem(),true); //set as hidden first, will be visible when spectrum is added
-  } //!mobile
+    m_downloadMenus[static_cast<int>(i)]->disable();
+    if( m_downloadMenus[static_cast<int>(i)]->parentItem() )
+      m_downloadMenu->setItemHidden( m_downloadMenus[static_cast<int>(i)]->parentItem(), true );
+  }//for( loop over spectrums )
+  
+  m_fileMenuPopup->setItemHidden(m_downloadMenu->parentItem(),true); //set as hidden first, will be visible when spectrum is added
 #elif( IOS )
   PopupDivMenuItem *exportFile = m_fileMenuPopup->addMenuItem( "Export Spectrum..." );
   exportFile->triggered().connect( this, &InterSpec::exportSpecFile );
 #else
-if (isSupportFile())
-{
   item = m_fileMenuPopup->addMenuItem( "Export" );
   item->triggered().connect( m_fileManager, &SpecMeasManager::displayQuickSaveAsDialog );
-}//isSupportFile()
-    
 #endif //#if( USE_SAVEAS_FROM_MENU )
   
 

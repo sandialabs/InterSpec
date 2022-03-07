@@ -1806,7 +1806,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   m_yAxisType->activated().connect( this,&DecayActivityDiv::refreshDecayDisplay );
   
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-  if( app->viewer()->isSupportFile() && !m_viewer->isPhone() )
+  if( !m_viewer->isPhone() )
   {
     WPushButton *csvButton = new WPushButton( displOptLower );
     csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );

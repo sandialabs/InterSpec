@@ -122,19 +122,6 @@ SpecMeas::SpecMeas()
 }
 
 
-SpecMeas::SpecMeas( const SpecMeas &rhs )
-  : SpecUtils::SpecFile( rhs )
-{
-  assert(0);
-}
-
-
-const SpecMeas &SpecMeas::operator=( const SpecMeas &rhs )
-{
-  assert(0);
-  return *this;
-}//operator=
-
 #if( PERFORM_DEVELOPER_CHECKS )
 
 namespace
@@ -345,7 +332,7 @@ void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
   
   if( !!lhs.m_displayedDetectors != !!rhs.m_displayedDetectors )
   {
-    snprintf( buffer, sizeof(buffer), "SpecMeas: displayed detectors avaialblity for LHS (%s)"
+    snprintf( buffer, sizeof(buffer), "SpecMeas: displayed detectors availability for LHS (%s)"
              " doesnt match RHS (%s)",
              (!lhs.m_displayedDetectors?"missing":"available"),
              (!rhs.m_displayedDetectors?"missing":"available") );
@@ -471,6 +458,7 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
   }else
     m_shieldingSourceModel.reset();
   
+  m_fileWasFromInterSpec = rhs.m_fileWasFromInterSpec;
 }//void uniqueCopyContents( const SpecMeas &rhs )
 
 
@@ -1675,6 +1663,7 @@ void SpecMeas::displayedSpectrumChangedCallback( SpecUtils::SpectrumType type,
     modified_ = true;
     *m_displayedSampleNumbers = sample_numbers;
     *m_displayType = type;
+    *m_displayedDetectors = detectors;
   }
 }
 
@@ -1741,6 +1730,63 @@ void SpecMeas::cleanup_after_load( const unsigned int flags )
   //  we could then load it.
   //   -instead for right now lets do this in InterSpec...
 }//void SpecMeas::cleanup_after_load()
+
+
+
+void SpecMeas::cleanup_orphaned_info()
+{
+  auto remove_dangling_peaks = [this]( SampleNumsToPeakMap &peaks ){
+    vector<set<int>> peaks_to_remove;
+    for( auto iter = begin(peaks); iter != end(peaks); ++iter )
+    {
+      const set<int> &samples = iter->first;
+      //const shared_ptr<deque<shared_ptr<const PeakDef>>> &peaks = iter->second;
+      
+      bool missing_sample = false;
+      for( const int sample: samples )
+        missing_sample |= !sample_numbers_.count(sample);
+      
+      if( missing_sample )
+        peaks_to_remove.push_back( samples );
+    }//for( const auto iter = begin(*m_peaks); iter != end(*m_peaks); ++iter )
+    
+    for( const set<int> &samples : peaks_to_remove )
+      peaks.erase( samples );
+  };//remove_dangling_peaks(...)
+  
+  if( m_peaks )
+    remove_dangling_peaks( *m_peaks );
+  remove_dangling_peaks( m_autoSearchPeaks );
+  
+  
+  if( m_displayedSampleNumbers )
+  {
+    bool missing_sample = false;
+    for( const int sample: *m_displayedSampleNumbers )
+      missing_sample |= !sample_numbers_.count(sample);
+    
+    if( missing_sample )
+      m_displayedSampleNumbers->clear();
+  }//if( m_displayedSampleNumbers )
+  
+  
+  if( m_displayedDetectors )
+  {
+    bool missing_det = false;
+    for( const string &det_name : *m_displayedDetectors )
+    {
+      const auto pos = std::find( begin(detector_names_), end(detector_names_), det_name );
+      if( pos == end(detector_names_) )
+        missing_det = true;
+    }
+      
+    if( missing_det )
+      m_displayedDetectors->clear();
+  }//if( m_displayedDetectors )
+  
+  setModified();
+}//void cleanup_orphaned_info()
+
 
 
 Wt::Signal<> &SpecMeas::aboutToBeDeleted()

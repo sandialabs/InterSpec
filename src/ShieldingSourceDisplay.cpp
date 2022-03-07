@@ -2641,8 +2641,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 //  PopupDivMenuItem *item = m_addItemMenu->addMenuItem( "Test Serialization" );
 //  item->triggered().connect( this, &ShieldingSourceDisplay::testSerialization );
 
-if (m_specViewer->isSupportFile())
-{
   item = m_addItemMenu->addMenuItem( "Import Model..." );
   item->triggered().connect( this, &ShieldingSourceDisplay::startModelUpload );
   
@@ -2650,7 +2648,7 @@ if (m_specViewer->isSupportFile())
   item = m_addItemMenu->addMenuItem( "Export Model" );
   item->setLink( WLink( xmlResource ) );
   item->setLinkTarget(Wt::TargetNewWindow);
-} //isSupportFile()
+  
   
 #if( USE_DB_TO_STORE_SPECTRA )
   item = m_addItemMenu->addMenuItem( "Open From Database..." );

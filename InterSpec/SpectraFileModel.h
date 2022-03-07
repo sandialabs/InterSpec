@@ -476,11 +476,12 @@ private:
 public:
   
   //handle_resource_request(): does the actual streaming of the SpecMeas.
-  //  'samplenums' and 'detectornums' are only used for file formats where
-  //  SpecMeas must be collapsed down into a single spectrum; right now
-  //  (20140709)this is only CHN files, but in the future I expect other formats
-  //  to.  Specifying empty detector and sample numbers will default to all
-  //  samples/detectors.
+  //  'samplenums' and 'detectornums' are only used for file formats where SpecMeas must be
+  //  collapsed down into a single spectrum (i.e., Chn, IntegerSpcType, SpcBinaryFloat, SpcAscii,
+  //  SpeIaea, Cnf, Tka, will have all the spectra summed into a single spectrum); for other formats
+  //  the entire SpecMeas is written out.
+  //
+  //  Specifying empty detector and sample numbers will default to all samples/detectors.
   static void handle_resource_request(
                                 SpecUtils::SaveSpectrumAsType type,
                                 std::shared_ptr<const SpecMeas> Measurement,

@@ -585,7 +585,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   // ---- Cheat sheet PDF
 /*
  //Cheat sheet is currently outdated, so dont display it.
-  if( m_viewer->isSupportFile() && !m_viewer->isMobile() )
+  if( !m_viewer->isMobile() )
   {
     WContainerWidget* controlContainer = new WContainerWidget();
     controlContainer->setOverflow(WContainerWidget::OverflowHidden);
