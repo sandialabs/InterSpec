@@ -28,6 +28,7 @@
 #include <Wt/Json/Array>
 #include <Wt/Json/Parser>
 #include <Wt/Json/Object>
+#include <Wt/WStringStream>
 
 #include <Wt/Dbo/Dbo>
 #include <Wt/Dbo/WtSqlTraits>
@@ -47,6 +48,7 @@
 
 
 #include <boost/config.hpp>
+#include <boost/io/quoted.hpp>
 
 
 #if( defined(BOOST_NO_CXX11_HDR_CODECVT) )
@@ -76,8 +78,14 @@ using namespace Wt;
 #include <boost/io/detail/quoted_manip.hpp>
 #define USE_TEXT_FOR_BLOB 1
 #else
-#define USE_TEXT_FOR_BLOB 0
-static_assert( 0, "Serialization to database hasnt been checked (but is probably okay, assuming this version of Wt doesnt have the bug 3.3.4 does)" );
+//#define USE_TEXT_FOR_BLOB 0
+//static_assert( 0, "Serialization to database hasnt been checked (but is probably okay, assuming this version of Wt doesnt have the bug 3.3.4 does)" );
+#define USE_TEXT_FOR_BLOB 1
+#ifdef _MSC_VER
+#pragma message("You should check if USE_TEXT_FOR_BLOB can be set to zero, for better serialization to database, since Wt is newer than 3.3.4")
+#else
+#warning "You should check if USE_TEXT_FOR_BLOB can be set to zero, for better serialization to database, since Wt is newer than 3.3.4"
+#endif
 #endif
 
 namespace

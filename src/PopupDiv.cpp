@@ -1369,7 +1369,14 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
     {
       // TODO: it would be nice to move the sub-menu to the right by a couple pixels, but the Wt.fitToWindow JS function clobers any CSS rule, so maybe try adding a few pixels to the right position in AdjustTopPos(...)
       menu->addStyleClass( "AppSubMenu" );
+    }else
+    {
+      menu->addStyleClass( "ContextSubMenu" );
     }
+    
+#if( BUILD_AS_ELECTRON_APP && !USING_ELECTRON_NATIVE_MENU )
+    menu->setMargin( 25, Wt::Top );
+#endif
     
     menu->m_parentItem = addMenu( iconPath, text, menu );
     menu->m_parentItem->clicked().preventPropagation();
