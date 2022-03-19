@@ -1,4 +1,11 @@
-cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
+
+if(POLICY CMP0091)
+  cmake_policy(SET CMP0091 NEW) # For CMake 3.15 and newer, enable use of CMAKE_MSVC_RUNTIME_LIBRARY, without requiring CMake 3.15
+endif(POLICY CMP0091)
+
+cmake_policy(SET CMP0048 NEW)
+
+cmake_minimum_required(VERSION 3.1.0 FATAL_ERROR)
 
 project(InterSpec VERSION 1.10.0)
 
@@ -216,7 +223,6 @@ if(ANDROID)
     set(Boost_LIBRARY_DIR "${USRPREFIX}/lib")
     set(Boost_INCLUDE_DIR "${USRPREFIX}/include")
     set(Boost_ATOMIC_LIBRARY_RELEASE ${BOOST_LIB_START}atomic${BOOST_LIB_END})
-    set(Boost_CHRONO_LIBRARY_RELEASE ${BOOST_LIB_START}chrono${BOOST_LIB_END})
     set(Boost_DATE_TIME_LIBRARY_RELEASE
         ${BOOST_LIB_START}date_time${BOOST_LIB_END}
     )
@@ -405,7 +411,7 @@ INCLUDE(cmake/FindWt.cmake)
 INCLUDE(cmake/WtFindZlib.txt) #ToDo: switch to using CMake privided FindZLIB.cmake, e.g. use find_package( ZLIB REQUIRED )
 
 SET( Boost_ADDITIONAL_VERSIONS "1.55" "1.57" "1.65" "1.65_1" )
-#find_package( Boost 1.41.0 COMPONENTS thread date_time system filesystem program_options regex random chrono atomic )
+#find_package( Boost 1.41.0 COMPONENTS thread date_time system filesystem program_options regex random atomic )
 
 INCLUDE(cmake/WtFindBoost-cmake.txt)
 if(NOT BOOST_WT_FOUND)
@@ -1131,14 +1137,6 @@ elseif(WIN32)
     endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
 
     target_link_directories(InterSpecLib PUBLIC ${Boost_LIBRARY_DIR})
-
-    if(Boost_CHRONO_FOUND)
-        target_link_libraries(InterSpecLib PUBLIC ${Boost_CHRONO_LIBRARY})
-    endif(Boost_CHRONO_FOUND)
-
-    if(Boost_TIMER_FOUND)
-        target_link_libraries(InterSpecLib PUBLIC ${Boost_TIMER_LIBRARY})
-    endif(Boost_TIMER_FOUND)
 elseif(BUILD_AS_ELECTRON_APP)
     #Not sure why Wt_LIBRARIES isnt filled out here, but its not, so will manually specify Wt libraries for the moment
     target_link_libraries(
@@ -1158,21 +1156,20 @@ elseif(YES)
 endif(IOS)
 
 if(NOT IOS)
+    find_package(Threads REQUIRED)
+
     target_link_libraries(
         InterSpecLib
         PUBLIC
-        ${Boost_LIBRARIES}
-        ${Boost_SYSTEM_LIBRARY}
-        ${Boost_REGEX_LIBRARY}
-        ${Boost_THREAD_LIBRARY}
-        ${Boost_FILESYSTEM_LIBRARY}
-        ${Boost_RANDOM_LIBRARY}
-        ${Boost_PROGRAM_OPTIONS_LIBRARY}
-        ${Boost_DATE_TIME_LIBRARY}
+        Threads::Threads
+        Boost::system
+        Boost::regex
+        Boost::thread
+        Boost::filesystem
+        Boost::random
+        Boost::program_options
+        Boost::date_time
     )
-
-    find_package(Threads REQUIRED)
-    target_link_libraries(InterSpecLib PUBLIC Threads::Threads)
 endif(NOT IOS)
 
 if(APPLE AND NOT IOS)
@@ -1231,8 +1228,6 @@ if(TRY_TO_STATIC_LINK)
         target_link_libraries(
             InterSpecLib
             PUBLIC
-            ${Boost_RANDOM_LIBRARY}
-            ${Boost_PROGRAM_OPTIONS_LIBRARY}
             ${LIBZ_LIBRARY}
             libSystem.B.dylib
             /System/Library/Frameworks/Carbon.framework/Versions/A/Carbon
@@ -1296,9 +1291,6 @@ if(BUILD_AS_UNIT_TEST_SUITE)
     )
 endif(BUILD_AS_UNIT_TEST_SUITE)
 
-if(PERFORM_DEVELOPER_CHECKS)
-    target_link_libraries(InterSpecLib PUBLIC ${Boost_DATE_TIME_LIBRARY})
-endif(PERFORM_DEVELOPER_CHECKS)
 
 include(CheckIncludeFileCXX)
 set(CMAKE_REQUIRED_INCLUDES ${Wt_INCLUDE_DIR} ${Boost_INCLUDE_DIR} )
@@ -1322,7 +1314,7 @@ if(ZLIB_FOUND AND Boost_IOSTREAMS_FOUND)
         InterSpecLib
         PUBLIC
         ${ZLIB_LIBRARIES}
-        ${Boost_IOSTREAMS_LIBRARY}
+        Boost::iostreams
     )
 endif(ZLIB_FOUND AND Boost_IOSTREAMS_FOUND)
 
@@ -1365,6 +1357,11 @@ if(ANDROID)
     target_link_libraries(InterSpecLib PUBLIC log)
     target_include_directories(InterSpecLib PUBLIC target)
 endif(ANDROID)
+
+if( WIN32 )
+  # The following are only needed for Wt 3.7.1, not 3.3.4
+  target_link_libraries( InterSpecLib PRIVATE opengl32.lib d2d1.lib windowscodecs.lib Dwrite.lib )
+endif( WIN32 )
 
 if(BUILD_AS_UNIT_TEST_SUITE)
     add_subdirectory(testing)

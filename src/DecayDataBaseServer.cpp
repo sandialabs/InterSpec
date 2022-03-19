@@ -25,6 +25,7 @@
 
 #include <string>
 #include <iostream>
+#include <algorithm>
 #include <boost/filesystem.hpp>
 
 #include "SpecUtils/Filesystem.h"

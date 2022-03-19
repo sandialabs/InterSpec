@@ -124,9 +124,10 @@ From the Visual Studio 2019 "x64 Native Tools Command Prompt":
 cd C:\temp
 mkdir build
 cd build
-curl -L https://sourceforge.net/projects/boost/files/boost/1.65.1/boost_1_65_1.zip/download --output boost_1_65_1.tar.gz
-tar -xzvf boost_1_65_1.tar.gz
-cd boost_1_65_1
+
+curl -L https://sourceforge.net/projects/boost/files/boost/1.78.0/boost_1_78_0.zip/download --output boost_1_78_0.tar.gz
+tar -xzvf boost_1_78_0.tar.gz
+cd boost_1_78_0
 bootstrap.bat
 ```
 
@@ -142,9 +143,9 @@ using msvc : 14.2 : "C:\Program Files (x86)\Microsoft Visual Studio\2019\Profess
 Then compile and install:
 
 ```bash
-set MY_BOOST_PREFIX=C:\install\msvc2019\x64\boost_1_65_1
+set MY_PREFIX=C:\install\msvc2019\x64\wt_3.7.1_prefix
 
-.\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 architecture=x86 msvcver=msvc-14.2 --prefix=%MY_BOOST_PREFIX% --build-dir=win_build -j8 install
+.\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 architecture=x86 --prefix=%MY_PREFIX% --build-dir=win_build -j8 install
 ```
 
 
@@ -155,8 +156,7 @@ tar -xzvf zlib-1.2.11.tar.gz
 cd zlib-1.2.11
 mkdir build
 
-set MY_ZLIB_PREFIX=C:\install\msvc2019\x64\zlib
-cmake -DCMAKE_INSTALL_PREFIX=%MY_ZLIB_PREFIX% -DCMAKE_BUILD_TYPE=Release ..
+cmake -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DCMAKE_BUILD_TYPE=Release ..
 # NOTE - you need to manually change all "MD" compiler flags to "MT" - I used the CMake GUI for this
 cmake --build . --config Debug --target install
 cmake --build . --config Release --target install
@@ -165,9 +165,15 @@ cmake --build . --config Release --target install
 To build Wt, you must patch the Wt source code as described above, and then you can use the cmake GUI to configure Wt, and Visual Studio to build and install it.
 You can use the following command from the command line to initiate the CMake config, but you also need to change all "MD" compiler flags to "MT", which its easiest to do this in the CMake gui.
 ```bash
-set MY_WT_PREFIX=C:\install\msvc2019\x64\wt3.3.4
 mkdir build_msvc2019
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=%MY_WT_PREFIX% -DBoost_INCLUDE_DIR=%MY_BOOST_PREFIX%/include -DBOOST_PREFIX=%MY_BOOST_PREFIX% -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=%MY_WT_PREFIX% -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++11" -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR=%MY_WT_PREFIX%/etc/wt ..
+
+# Note: I'm not sure how to patch things from the command prompt, so I just used 
+#       an Ubuntu WSL shell to run the following two patch commands; you could probably
+#       also use your command line version of git
+patch -u src/Wt/Render/CssParser.C -i ${PATCH_DIR}/wt/3.7.1/CssParser.C.patch
+patch -u CMakeLists.txt -i ${PATCH_DIR}/wt/3.7.1/CMakeLists.txt.patch  # Only if linking to static runtime
+
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DBoost_INCLUDE_DIR=%MY_PREFIX%/include -DBOOST_PREFIX=%MY_PREFIX% -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++11" -DCONFIGURATION=data/config/wt_config_electron.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR=%MY_PREFIX%/etc/wt ..
 
 cmake --build . --config Release --target install
 
