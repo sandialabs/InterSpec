@@ -26,11 +26,12 @@ add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/
 
 
 include_directories( ${CMAKE_JS_INC})
-set( SOURCE_FILES InterSpecAddOn.cpp )
+set( SOURCE_FILES InterSpecAddOn.cpp InterSpecAddOn.h )
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${CMAKE_JS_SRC})
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_JS_LIB} InterSpecLib )
-set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
+
 
 target_include_directories( ${PROJECT_NAME} PUBLIC 
                             node_modules/node-addon-api/ 

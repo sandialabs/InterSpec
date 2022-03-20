@@ -192,6 +192,9 @@
 #include "SpecUtils/D3SpectrumExport.h"
 #endif
 
+#if( BUILD_AS_ELECTRON_APP )
+#include "target/electron/ElectronUtils.h"
+#endif
 
 #include "js/InterSpec.js"
 #include "js/AppHtmlMenu.js"
@@ -5950,7 +5953,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     auto browserItem = m_displayOptionsPopupDiv->addMenuItem( "Use in external browser" );
 #if( BUILD_AS_ELECTRON_APP )
     browserItem->triggered().connect( std::bind( [](){
-      wApp->doJavaScript( "if(ipcRenderer) ipcRenderer.send('OpenInExternalBrowser');" );
+      ElectronUtils::send_nodejs_message("OpenInExternalBrowser", "");
     } ) );
 #endif
     

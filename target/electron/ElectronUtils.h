@@ -123,6 +123,12 @@ namespace ElectronUtils
    session to open any files the OS requested.
    */
   bool notifyNodeJsOfNewSessionLoad();
+
+  /**
+   
+   Returns true if it thinks message was sent.
+   */
+  bool send_nodejs_message( const std::string &msg_name, const std::string &msg_data );
 }//namespace ElectronUtils
 
 

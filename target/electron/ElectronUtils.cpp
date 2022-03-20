@@ -41,6 +41,7 @@
 #include "InterSpec/DbToFilesystemLink.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "target/electron/ElectronUtils.h"
+#include "target/electron/InterSpecAddOn.h"
 #include "SpecUtils/SerialToDetectorModel.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
@@ -65,7 +66,7 @@ bool requestNewCleanSession()
     js += "$(window).data('HaveTriggeredMenuUpdate',null);";
     
     //Have electron reload the page.
-    js += "ipcRenderer.send('NewCleanSession','" + app->externalToken() + "');";
+    ElectronUtils::send_nodejs_message("NewCleanSession", "");
     
     //Just in case the page reload doesnt go through, make sure menus will get updated eventually
     //  (this shouldnt be necassary, right?)
@@ -93,11 +94,26 @@ bool notifyNodeJsOfNewSessionLoad()
 
   const string oldexternalid = app->externalToken();
   if( !oldexternalid.empty() )
-    app->doJavaScript( "if( ipcRenderer ) ipcRenderer.send('SessionFinishedLoading','" + app->externalToken() + "');" );
+    ElectronUtils::send_nodejs_message("SessionFinishedLoading", "");
   app->triggerUpdate();
   
   return true;
 }//bool notifyNodeJsOfNewSessionLoad( const std::string sessionid )
+
+
+bool send_nodejs_message( const std::string &msg_name, const std::string &msg_data )
+{
+  auto app = dynamic_cast<InterSpecApp *>(wApp);
+  if( !app )
+  {
+    cerr << "Error: send_nodejs_message: wApp is null!!!" << endl;
+    return false;
+  }
+  
+  const string session_token = app->externalToken();
+  return InterSpecAddOn::send_nodejs_message( session_token, msg_name, msg_data );
+}//void send_nodejs_message(...)
+
 }//namespace ElectronUtils
 
 

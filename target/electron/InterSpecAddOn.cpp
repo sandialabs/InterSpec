@@ -2,28 +2,65 @@
 /* cppsrc/main.cpp */
 #include <napi.h>
 
+#include <node.h>
+
 #include <string>
+#include <array>
+#include <iostream>
 #include <stdlib.h>
+
+#include <boost/optional.hpp>
 
 #include "target/electron/ElectronUtils.h"
 
 //A good, simple, N-API tutorial is at:
-//https://medium.com/@atulanand94/beginners-guide-to-writing-nodejs-addons-using-c-and-n-api-node-addon-api-9b3b718a9a7f
+//  https://blog.atulr.com/node-addon-guide/
 
-
-
-namespace functionexample
+namespace
 {
-  int add(int a, int b)
-  {
-    return a + b;
-  }
+void call_js_in_node(Napi::Env env, Napi::Function callback, Napi::Reference<Napi::Value> *context, std::array<std::string,3> *data);
+using TSFN = Napi::TypedThreadSafeFunction<Napi::Reference<Napi::Value>, std::array<std::string,3>, call_js_in_node>;
+boost::optional<TSFN> ns_message_to_node_js_callback;
 
-  std::string hello()
-  {
-    return "Hello World.js";
-  }
 
+void call_js_in_node(Napi::Env env, Napi::Function callback, Napi::Reference<Napi::Value> *context, std::array<std::string,3> *data)
+{
+  assert( data ); //we should always have valid data
+  if( !data )
+  {
+    std::cerr << "call_js_in_node: data is nullptr - unexpected." << std::endl;
+    return;
+  }
+  
+  std::unique_ptr<std::array<std::string,3>> data_holder( data );
+  
+  std::cout << "call_js_in_node" << std::endl;
+  
+  // Check if TSFN has been aborted
+  if( env == nullptr )
+  {
+    std::cerr << "call_js_in_node: function has been aborted." << std::endl;
+    return;
+  }
+    
+  assert( callback != nullptr );
+  
+  if( callback == nullptr )
+  {
+    std::cerr << "call_js_in_node: callback is null - unexpected." << std::endl;
+    return;
+  }
+    
+  std::array<std::string,3> &d = *data;
+  callback.Call( context->Value(), { Napi::String::New(env,d[0]), Napi::String::New(env,d[1]),
+                 Napi::String::New(env,d[2])} );
+}//call_js_in_node
+
+}//namespace
+
+
+namespace InterSpecAddOn
+{
   Napi::Number startServingInterSpec(const Napi::CallbackInfo& info) 
   {
     Napi::Env env = info.Env();
@@ -155,35 +192,81 @@ namespace functionexample
     return Napi::Boolean::New( env, isUsing );
   }
 
+  bool send_nodejs_message( const std::string &session_token, const std::string &msg_name, const std::string &msg_data )
+  {
+    std::cout << "In InterSpecAddOn::send_nodejs_message, for msg_name=" << msg_name << std::endl;
+    
+    if( !ns_message_to_node_js_callback.has_value() )
+    {
+      std::cerr << "InterSpecAddOn::send_nodejs_message: callback to JS not initialized" << std::endl;
+      
+      return false;
+    }
+    
+    ns_message_to_node_js_callback->Acquire();
+    
+    std::array<std::string,3> *value = new std::array<std::string,3>{session_token,msg_name,msg_data};
+    napi_status status = ns_message_to_node_js_callback->BlockingCall(value);
+    
+    ns_message_to_node_js_callback->Release();
+    
+    if( status == napi_ok )
+    {
+      std::cout << "InterSpecAddOn::send_nodejs_message: successfully called JS for msg_name=" << msg_name << std::endl;
+      return true;
+    }
+    
+    std::cerr << "InterSpecAddOn::send_nodejs_message: failed call to JS for msg_name=" << msg_name << std::endl;
+    return false;
+    
+  }//send_nodejs_message(...)
 
-  Napi::Number AddWrapped(const Napi::CallbackInfo& info) 
+
+  void setMessageToNodeJsCallback( const Napi::CallbackInfo &info )
   {
     Napi::Env env = info.Env();
-    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsNumber()) {
-        Napi::TypeError::New(env, "Number expected").ThrowAsJavaScriptException();
-    } 
-
-    Napi::Number first = info[0].As<Napi::Number>();
-    Napi::Number second = info[1].As<Napi::Number>();
-
-    int returnValue = functionexample::add(first.Int32Value(), second.Int32Value());
+    if( info.Length() != 1 || !info[0].IsFunction() )
+    {
+      Napi::TypeError::New(env, "setMessageToNodeJsCallback: expected function").ThrowAsJavaScriptException();
+      return;
+    }
     
-    return Napi::Number::New(env, returnValue);
-  }
-}//namespace functionexample
+    // See https://github.com/nodejs/node-addon-api/blob/main/doc/typed_threadsafe_function.md#example
+    //  and also https://github.com/nodejs/node-addon-api/blob/main/doc/threadsafe.md
+    //  for info about using this thread safe function callback in Napi.
+    //  Basically, to call a node JS function, we have to do this from the Node main thread, but
+    //  send_nodejs_message(...) is called from some random thread, so we have to use the
+    //  TypedThreadSafeFunction mechanism (the ThreadSafeFunction mechanism didnt seem to work
+    //  when I tried it - caused program aborts).
+    Napi::Reference<Napi::Value> *context = new Napi::Reference<Napi::Value>( Persistent(info.This() ) );
+    
+    auto finalizer = []( Napi::Env, void *, Napi::Reference<Napi::Value> *ctx ) {
+      // This finalizer is called at program exit.
+      delete ctx;
+    };//finalizer
+    
+    ns_message_to_node_js_callback = TSFN::New( env,
+                     info[0].As<Napi::Function>(), // JavaScript function called asynchronously
+                     "MessageToNodeJs",  0, 1, context, finalizer );
+
+    std::cout << "setMessageToNodeJsCallback: Have set callback to JS" << std::endl;
+  }//setMessageToNodeJsCallback
+
+}//namespace InterSpecAddOn
 
 Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
-  exports.Set( "startServingInterSpec", Napi::Function::New(env, functionexample::startServingInterSpec) );
-  exports.Set( "killServer", Napi::Function::New(env, functionexample::killServer) );
-  exports.Set( "openFile", Napi::Function::New(env, functionexample::openFile ));
+  exports.Set( "startServingInterSpec", Napi::Function::New(env, InterSpecAddOn::startServingInterSpec) );
+  exports.Set( "killServer", Napi::Function::New(env, InterSpecAddOn::killServer) );
+  exports.Set( "openFile", Napi::Function::New(env, InterSpecAddOn::openFile ));
 
-  exports.Set( "setTempDir", Napi::Function::New(env, functionexample::setTempDir ));
-  exports.Set( "addSessionToken", Napi::Function::New(env, functionexample::addSessionToken ));
-  exports.Set( "removeSessionToken", Napi::Function::New(env, functionexample::removeSessionToken ));
+  exports.Set( "setTempDir", Napi::Function::New(env, InterSpecAddOn::setTempDir ));
+  exports.Set( "addSessionToken", Napi::Function::New(env, InterSpecAddOn::addSessionToken ));
+  exports.Set( "removeSessionToken", Napi::Function::New(env, InterSpecAddOn::removeSessionToken ));
 
-  exports.Set( "usingElectronMenus", Napi::Function::New(env, functionexample::usingElectronMenus ));
-
-  exports.Set("add", Napi::Function::New(env, functionexample::AddWrapped));
+  exports.Set( "usingElectronMenus", Napi::Function::New(env, InterSpecAddOn::usingElectronMenus ));
+  
+  exports.Set("setMessageToNodeJsCallback", Napi::Function::New(env, InterSpecAddOn::setMessageToNodeJsCallback));
+  
   return exports;
 }
 
@@ -195,5 +278,6 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
 * that the argument will be correct, as long as the module is built with
 * node-gyp (which is the usual way of building modules). The second argument
 * points to the function to invoke. The function must not be namespaced.
+ // Note that the actual name used doesnt seem to really matter, so I'll just use InsterSpecAddOn
 */
-NODE_API_MODULE(testaddon, InitAll)
+NODE_API_MODULE(InsterSpecAddOn, InitAll)
