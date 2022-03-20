@@ -1337,7 +1337,7 @@ void SpecFileQueryWidget::init()
   WText *uploadtext = new WText( "(No Path Selected)", pathDiv );
   uploadtext->setMargin( 3, Wt::Left );
 string jsfct = "function(s,e){"
-"const { dialog } = require('electron').remote;"
+"const { dialog } = require('@electron/remote');"
 "let dirs = dialog.showOpenDialogSync(null, {properties: ['openDirectory'] });"
 "if( typeof dirs==='undefined' ) return;"
 "let outputdir = (dirs.length<1) ? '' : dirs[0];"
