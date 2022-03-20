@@ -41,11 +41,6 @@ const electron = require('electron')
 
 const interspec = require('./InterSpecAddOn.node');
 
-
-//To use IPC, just:
-const { ipcMain } = electron;
-
-
 const {dialog} = electron;
 const {Menu, MenuItem} = electron;
 //const {systemPreferences} = electron;
@@ -615,6 +610,95 @@ function createWindow () {
 }//createWindow
 
 
+function messageToNodeJs( token, msg_name, msg_data ){
+  console.log( 'In js messageToNodeJs, with msg_name="' + msg_name + '" for token="' + token + '"');
+  
+  if( msg_name == 'NewCleanSession' ){
+    //ToDo: Check that token is valid token; also identify window this token belongs to
+    console.log( 'Got NewCleanSession from session with token: ' + token );
+    const session_token_buf = crypto.randomBytes(16);
+    session_token = session_token_buf.toString('hex');
+    console.log("New session token: " + session_token );
+    
+    interspec.removeSessionToken( token );
+    interspec.addSessionToken( session_token );
+    doMenuStuff(mainWindow);
+    mainWindow.loadURL( interspec_url + "?apptoken=" + session_token + "&restore=no&primary=yes");
+  }else if( msg_name == 'SessionFinishedLoading' ){
+    wtapp_loaded = true;
+    
+    console.log( "Received SessionFinishedLoading for Token='" + token + "'" );
+    
+    try{
+      fs.writeFileSync(allowRestorePath, ""+Date.now() );
+      console.log( 'Wrote reload file: ' + allowRestorePath );
+    }catch(e){
+      console.log( "Error writing allow reload file " );
+    }
+    
+    //ToDo: should make sure token is what we want
+    //ToDo: just aff &specfilename="UriEncodedFilename" to URL argument... (but make sure ALLOW_URL_TO_FILESYSTEM_MAP is enabled)
+    
+    if( initial_file_to_open )
+    {
+      load_file(initial_file_to_open);
+      initial_file_to_open = null;
+    }
+  }else if( msg_name == 'debug-msg' ){
+    //Setup a debug message, mostly for timing things.
+    var timestamp = '[' + Date.now() + '] ';
+    console.log( timestamp + msg_data );
+  }else if( msg_name == 'OpenInExternalBrowser' ){
+    console.log( `Will try to open ${interspec_url} in external browser` );
+    
+    electron.shell.openExternal(interspec_url);
+    console.log( `Should have opened external URL...` );
+    
+    /*
+     //The pure node way to do this is below - I think it can be deleted once the above is tested.
+     const { exec } = require('child_process');
+     let command = '';
+     
+     switch( process.platform )
+     {
+     case 'android':
+     case 'linux':
+     command =  `xdg-open ${interspec_url}`;
+     break;
+     
+     case 'darwin':
+     command = `open ${interspec_url}`;
+     break;
+     
+     case 'win32':
+     command `cmd /c start ${interspec_url}`;
+     break;
+     
+     default:
+     console.log( "Unsupported platform for opening URL" );
+     return;
+     }//switch( process.platform )
+     
+     exec( command, (error, stdout, stderr) => {
+     if (error)
+     {
+     console.log( 'Couldnt open InterSpec URL in external browser: ' + error );
+     return;
+     }
+     
+     console.log( `stdout: ${stdout}` );
+     console.log( `stderr: ${stderr}` );
+     console.log( `Have opened ${interspec_url} in external browser (hopefully)` );
+     } );
+     */
+  }else{
+    console.log( "messageToNodeJs: unrecognized msg_name:", msg_name, ", token:", token, ", msg_data:", msg_data );
+  }
+  
+  //"ServerKilled"
+
+}//messageToNodeJs
+
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
@@ -632,6 +716,8 @@ app.on('ready', function(){
   console.log( 'path.dirname(require.main.filename)="' + path.dirname(require.main.filename) + '"');
   console.log( 'basedir="' + basedir + '"');
 
+  interspec.setMessageToNodeJsCallback( messageToNodeJs );
+  
   const xml_config_path = path.join(basedir, "data/config/wt_config_electron.xml");
   let portnum = 0;
   
@@ -651,94 +737,8 @@ app.on('ready', function(){
 
   interspec_url = "http://127.0.0.1:" + portnum;
   
+  
   createWindow();
-
-  ipcMain.on('NewCleanSession', function(evt, oldtoken ){
-    //ToDo: Check that oldtoken is valid token; also identify window this token belongs to
-    console.log( 'Got NewCleanSession from session with token: ' + oldtoken );
-    const session_token_buf = crypto.randomBytes(16);
-    session_token = session_token_buf.toString('hex');
-    console.log("New session token: " + session_token );
-    
-    interspec.removeSessionToken( oldtoken );
-    interspec.addSessionToken( session_token );
-    doMenuStuff(mainWindow);
-    mainWindow.loadURL( interspec_url + "?apptoken=" + session_token + "&restore=no&primary=yes");
-  } );
-
-  ipcMain.on('SessionFinishedLoading', function(evt, token ){
-    wtapp_loaded = true;
-
-    console.log( "Received SessionFinishedLoading for Token='" + token + "'" );
-      
-    try{ 
-      fs.writeFileSync(allowRestorePath, ""+Date.now() );
-      console.log( 'Wrote reload file: ' + allowRestorePath );
-    }catch(e){
-      console.log( "Error writing allow reload file " );
-    }
-
-    //ToDo: should make sure token is what we want
-    //ToDo: just aff &specfilename="UriEncodedFilename" to URL argument... (but make sure ALLOW_URL_TO_FILESYSTEM_MAP is enabled)
-    
-    if( initial_file_to_open )
-    {
-      load_file(initial_file_to_open);
-      initial_file_to_open = null;
-    }
-  } );
-  
-  //Setup a debug message, mostly for timing things.
-  ipcMain.on('debug-msg', function(evt,msg){
-    var timestamp = '[' + Date.now() + '] ';
-    console.log( timestamp + msg );
-  } );
-  
-  ipcMain.on('OpenInExternalBrowser', function(evt, token ){
-    console.log( `Will try to open ${interspec_url} in external browser` );
-    
-    electron.shell.openExternal(interspec_url);
-    console.log( `Should have opened external URL...` );
-    
-    /*
-     //The pure node way to do this is below - I think it can be deleted once the above is tested.
-    const { exec } = require('child_process');
-    let command = '';
-    
-    switch( process.platform )
-    {
-      case 'android':
-      case 'linux':
-        command =  `xdg-open ${interspec_url}`;
-        break;
-        
-      case 'darwin':
-        command = `open ${interspec_url}`;
-        break;
-        
-      case 'win32':
-        command `cmd /c start ${interspec_url}`;
-        break;
-        
-      default:
-        console.log( "Unsupported platform for opening URL" );
-        return;
-    }//switch( process.platform )
-    
-    exec( command, (error, stdout, stderr) => {
-      if (error)
-      {
-        console.log( 'Couldnt open InterSpec URL in external browser: ' + error );
-        return;
-      }
-      
-      console.log( `stdout: ${stdout}` );
-      console.log( `stderr: ${stderr}` );
-      console.log( `Have opened ${interspec_url} in external browser (hopefully)` );
-    } );
-    */
-  } );
-  //"ServerKilled"
 });
 
 // Quit when all windows are closed.

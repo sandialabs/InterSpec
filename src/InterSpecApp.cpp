@@ -237,9 +237,9 @@ void InterSpecApp::setupDomEnvironment()
   {
 #if( USING_ELECTRON_NATIVE_MENU )
     //Some support to use native menu...
-    doJavaScript( "const { remote, ipcRenderer } = require('electron');const {Menu, MenuItem} = remote;", false );
+    doJavaScript( "const { remote } = require('electron');const {Menu, MenuItem} = remote;", false );
 #else
-    doJavaScript( "const { remote, ipcRenderer } = require('electron'); ", false );
+    doJavaScript( "const { remote } = require('electron'); ", false );
 #endif
   }//if( isPrimaryWindowInstance() )
   
@@ -1395,6 +1395,7 @@ void InterSpecApp::loadSuccesfullCallback()
   {
 #if( BUILD_AS_ELECTRON_APP )
     ElectronUtils::notifyNodeJsOfNewSessionLoad();
+    ElectronUtils::send_nodejs_message( "SessionFinishedLoading", "" );
 #elif( BUILD_AS_OSX_APP )
     macOsUtils::sessionSuccessfullyLoaded();
 #elif( ANDROID )
