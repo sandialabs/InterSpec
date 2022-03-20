@@ -239,7 +239,7 @@ void InterSpecApp::setupDomEnvironment()
     //Some support to use native menu...
     doJavaScript( "const { remote } = require('electron');const {Menu, MenuItem} = remote;", false );
 #else
-    doJavaScript( "const { remote } = require('electron'); ", false );
+    doJavaScript( "const { remote } = require('@electron/remote'); ", false );
 #endif
   }//if( isPrimaryWindowInstance() )
   

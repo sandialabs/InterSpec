@@ -21,7 +21,7 @@ WT_DECLARE_WT_MEMBER
 (SetupAppTitleBar, Wt::JavaScriptFunction, "SetupAppTitleBar",
 function(){
   if( Wt.WT.IsElectronInstance() ){
-    let currentWindow = remote.getCurrentWindow();
+    let currentWindow = require('@electron/remote').getCurrentWindow();
     $(window).data('ElectronWindow',currentWindow);
                                       
     Wt.WT.TitleBarChangeMaximized( currentWindow.isMaximized() );

@@ -10,7 +10,7 @@
   },
   "scripts": {
     "install": "cmake-js compile",
-    "start": "electron ./build_win/app/",
+    "start": "electron ./build_xcode/app/",
     "package-mac": "electron-packager ./build_macos/app --overwrite --platform=darwin --arch=x64 --icon=macOS/InterSpec.icns --prune=true --out=release-builds --binaries=InterSpec.exe --extendInfo=macOS/Info.plist --entitlements=macOS/entitlements.mac.plist --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md",
     "package-win": "electron-packager ./build_win/app InterSpec --overwrite --asar=false --platform=win32 --arch=x64 --icon=windows/icon.ico --prune=true --out=release-builds --version-string.CompanyName=\"Sandia National Laboratories\" --version-string.FileDescription=\"nuclear spectroscopy analysis program\" --version-string.ProductName=\"InterSpec\" --ignore=LICENSE.md --ignore=README.md",
     "package-linux": "electron-packager ./build_linux/app InterSpec --overwrite --asar=false --platform=linux --arch=x64 --icon=linux/InterSpec_desktop_icon_256x256.png --prune=true --out=release-builds --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md"
@@ -21,10 +21,11 @@
   },
   "license": "LGPL-2.1-only",
   "dependencies": {
+    "@electron/remote": "^2.0.8",
     "cmake-js": "^6.1.0"
   },
   "devDependencies": {
-    "electron": "^11.5.0",
+    "electron": "^17.1.2",
     "electron-packager": "^15.4.0",
     "node-addon-api": "^3.2.1"
   }

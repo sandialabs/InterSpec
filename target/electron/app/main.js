@@ -55,6 +55,7 @@ const app = electron.app
 // Module to create native browser window.
 const BrowserWindow = electron.BrowserWindow
 
+
 var initial_file_to_open = null;
 var page_loaded = false, wtapp_loaded = false;
 let interspec_url = null;
@@ -285,11 +286,14 @@ function createWindow () {
   //To get nodeIntegration to work, there is som JS hacks in
   //  InterSpecApp::setupDomEnvironment()
   windowPrefs.frame = ((process.platform == 'darwin') || interspec.usingElectronMenus());
-  windowPrefs.webPreferences = { nodeIntegration: true, nativeWindowOpen: true, enableRemoteModule: true, spellcheck: false };
+  windowPrefs.webPreferences = { nodeIntegration: true, contextIsolation: false, nativeWindowOpen: true, spellcheck: false };
 
   mainWindow = new BrowserWindow( windowPrefs );
   
-
+  
+  require('@electron/remote/main').initialize();
+  require("@electron/remote/main").enable(mainWindow.webContents);
+  
   let allowRestore = false;
   try{
     if( fs.lstatSync(allowRestorePath).isFile() ){
@@ -367,7 +371,7 @@ function createWindow () {
   
   
   // Open the developer tools.
-  // mainWindow.webContents.openDevTools({mode: "bottom"});
+  mainWindow.webContents.openDevTools({mode: "bottom"});
 
   // A nice way to have the renderes console.log show up on the command line
   //  when running for development.
