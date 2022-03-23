@@ -86,6 +86,9 @@
 
 #include "js/SpecFileQueryWidget.js"
 
+#if( BUILD_AS_ELECTRON_APP )
+#include "target/electron/ElectronUtils.h"
+#endif
 
 #if( !BUILD_AS_ELECTRON_APP && defined(WIN32) && BUILD_AS_LOCAL_SERVER )
 #include <shellapi.h>  //for ShellExecute
@@ -1230,11 +1233,7 @@ SpecFileQueryWidget::SpecFileQueryWidget( InterSpec *viewer, Wt::WContainerWidge
 #endif
     m_resultmodel( nullptr ),
     m_resultview( nullptr ),
-#if( BUILD_AS_ELECTRON_APP )
-    m_pathSelectedSignal( nullptr ),
-#else
     m_baseLocation( nullptr ),
-#endif
     m_recursive( nullptr ),
     m_filterByExtension( nullptr ),
     m_maxFileSize( nullptr ),
@@ -1327,32 +1326,35 @@ void SpecFileQueryWidget::init()
   label->setMargin( 3, Wt::Top );
   
 #if( BUILD_AS_ELECTRON_APP )
-  //Based see https://jaketrent.com/post/select-directory-in-electron/
-  m_pathSelectedSignal.reset( new Wt::JSignal<std::string>( this, "BaseDirSelected", false ) );
   WContainerWidget *pathDiv = new WContainerWidget();
   linelayout->addWidget( pathDiv, 0, 1 );
 
   //ToDo: make a proper path selecting widget for Electron
   WPushButton *pickPath = new WPushButton( "Select Path", pathDiv );
-  WText *uploadtext = new WText( "(No Path Selected)", pathDiv );
-  uploadtext->setMargin( 3, Wt::Left );
-string jsfct = "function(s,e){"
-"const { dialog } = require('@electron/remote');"
-"let dirs = dialog.showOpenDialogSync(null, {properties: ['openDirectory'] });"
-"if( typeof dirs==='undefined' ) return;"
-"let outputdir = (dirs.length<1) ? '' : dirs[0];"
-"Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputdir );"
-+ uploadtext->jsRef() + ".textContent = outputdir.length ? outputdir : '(No Path Selected)';"
-"}";
-  pickPath->clicked().connect( jsfct );
+  m_baseLocation = new WText( "(No Path Selected)", pathDiv );
+  m_baseLocation->setMargin( 3, Wt::Left );
+  
+  
+  pickPath->clicked().connect( std::bind( [this](){
+    // We need to use the lifetime management of WObject to safely bind the callback:
+    auto bound_callback = boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, boost::placeholders::_1 );
+    
+    // Now we need to convert the boost bound thing, to a std::function, so we'll use a lamda as an
+    //  intermediary to also capture the bound_function
+    auto callback = [bound_callback]( string value ){
+      bound_callback( value );
+    };
+    
+    ElectronUtils::browse_for_directory( "Select Directory", "Select base-directory to search in.", callback );
+  }) );
 
 
   /*
   const string uploadname = id() + "PathPicker";
   const string uploadhtml = "<input id=\"" + uploadname + "\" type=\"file\" webkitdirectory=\"\" />";
   
-  WText *uploadtext = new WText( uploadhtml, XHTMLUnsafeText );
-  linelayout->addWidget( uploadtext, 0, 1 );
+  WText *m_baseLocation = new WText( uploadhtml, XHTMLUnsafeText );
+  linelayout->addWidget( m_baseLocation, 0, 1 );
   
   //TODO: put in error handling!
   wApp->doJavaScript( "document.getElementById('" + uploadname + "').onchange = function(event){"
@@ -1361,7 +1363,6 @@ string jsfct = "function(s,e){"
                      "};"
                      );
   */
-  m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, _1 ) );
 #elif( BUILD_AS_OSX_APP )
   SpecFileQuery::setIsSelectingDirectory( true );
   setSearchDirectory( "" );
@@ -1903,7 +1904,9 @@ void SpecFileQueryWidget::newElectronPathSelected( std::string path )
 {
   if( path == "")
     return;
+  
   m_basePath = path;
+  
   basePathChanged();
 }
 #elif( BUILD_AS_OSX_APP )
@@ -1929,12 +1932,19 @@ void SpecFileQueryWidget::basePathChanged()
   if( basepath.empty() || !SpecUtils::is_directory( basepath ) )
   {
     m_numberResults->setText( "Not a valid base directory" );
-#if( !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_ELECTRON_APP )
+    m_baseLocation->setText( "(No Path Selected)" );
+#elif( !BUILD_AS_OSX_APP )
     m_baseLocation->addStyleClass( "SpecFileQueryErrorTxt" );
 #endif
     m_update->disable();
     return;
   }
+  
+#if( BUILD_AS_ELECTRON_APP )
+  // TODO: need to limit string length here... maybe by adding a style class, or whatever
+  m_baseLocation->setText( WString::fromUTF8(basepath) );
+#endif
   
   const bool recursive = m_recursive->isChecked();
   const bool docache = m_cacheParseResults->isChecked();

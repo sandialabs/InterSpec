@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <functional>
 
 static_assert( BUILD_AS_ELECTRON_APP, "You shouldnt be including InterSpecAddOn.h for non-electron builds." );
 
@@ -33,6 +34,10 @@ static_assert( BUILD_AS_ELECTRON_APP, "You shouldnt be including InterSpecAddOn.
 namespace InterSpecAddOn
 {
   bool send_nodejs_message( const std::string &session_token, const std::string &msg_name, const std::string &msg_data );
+
+  bool browse_for_directory( const std::string &session_token, const std::string &window_title,
+                             const std::string &window_message,
+                             std::function<void(std::string)> callback );
 }//namespace InterSpecAddOn
 
 
