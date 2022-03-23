@@ -286,14 +286,11 @@ function createWindow () {
   //To get nodeIntegration to work, there is som JS hacks in
   //  InterSpecApp::setupDomEnvironment()
   windowPrefs.frame = ((process.platform == 'darwin') || interspec.usingElectronMenus());
-  windowPrefs.webPreferences = { nodeIntegration: true, contextIsolation: false, nativeWindowOpen: true, spellcheck: false };
+  windowPrefs.webPreferences = { nodeIntegration: false, contextIsolation: true, nativeWindowOpen: true, spellcheck: false };
 
   mainWindow = new BrowserWindow( windowPrefs );
   
-  
-  require('@electron/remote/main').initialize();
-  require("@electron/remote/main").enable(mainWindow.webContents);
-  
+
   let allowRestore = false;
   try{
     if( fs.lstatSync(allowRestorePath).isFile() ){
@@ -394,6 +391,13 @@ function createWindow () {
     mainWindow = null;
   });
 
+  
+  mainWindow.on( 'blur', function(){ interspec.sendMessageToRenderer( session_token, "OnBlur"); } );
+  mainWindow.on( 'focus', function(){ interspec.sendMessageToRenderer( session_token, "OnFocus"); } );
+  mainWindow.on( 'unmaximize', function(){ interspec.sendMessageToRenderer( session_token, "OnUnMaximize"); } );
+  mainWindow.on( 'maximize', function(){ interspec.sendMessageToRenderer( session_token, "OnMaximize"); } );
+  mainWindow.on( 'leave-full-screen', function(){ interspec.sendMessageToRenderer( session_token, "OnLeaveFullScreen"); } );
+  mainWindow.on( 'enter-full-screen', function(){ interspec.sendMessageToRenderer( session_token, "OnEnterFullScreen"); } );
 
   mainWindow.webContents.on('will-navigate', function(event, url){
     //Emitted when a user or the page wants to start navigation. It can happen
@@ -520,6 +524,11 @@ function createWindow () {
       initial_file_to_open = null;
     }
     //I think this is were we set any files to be opened
+    
+    
+    // Lets make sure the titlebar is in the right state for the window size.
+    //  Sending now because our C++ should have the session_token at this point.
+    interspec.sendMessageToRenderer( session_token, mainWindow.isMaximized() ? "OnMaximize" : "OnUnMaximize" );
   })
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -695,6 +704,23 @@ function messageToNodeJs( token, msg_name, msg_data ){
      console.log( `Have opened ${interspec_url} in external browser (hopefully)` );
      } );
      */
+  }else if( msg_name == 'MinimizeWindow' ){
+    mainWindow.minimize();
+  }else if( msg_name == 'MaximizeWindow' ){
+    mainWindow.maximize();
+    interspec.sendMessageToRenderer(token, "OnMaximize");
+  }else if( msg_name == 'CloseWindow' ){
+    mainWindow.close();
+  }else if( msg_name == "ToggleMaximizeWindow" ){
+    if( mainWindow.isMaximized() ) {
+      mainWindow.unmaximize();
+      interspec.sendMessageToRenderer(token, "OnUnMaximize");
+    } else {
+      mainWindow.maximize();
+      interspec.sendMessageToRenderer( token, "OnMaximize");
+    }
+  }else if( msg_name == 'ToggleDevTools' ){
+    mainWindow.toggleDevTools();
   }else{
     console.log( "messageToNodeJs: unrecognized msg_name:", msg_name, ", token:", token, ", msg_data:", msg_data );
   }
@@ -702,6 +728,25 @@ function messageToNodeJs( token, msg_name, msg_data ){
   //"ServerKilled"
 
 }//messageToNodeJs
+
+
+function browseForDirectory( token, title, msg ){
+  const { dialog } = require('electron');
+  
+  let dirs = dialog.showOpenDialogSync( mainWindow, {
+    title: title,
+    properties: ['openDirectory'],
+    //defaultPath: '/my/previous/path',
+    message: msg
+  });
+  
+  if( typeof dirs==='undefined' )
+    return null;
+  
+  return (dirs.length<1) ? '' : dirs[0];
+};//function browseForDirectory
+
+
 
 
 // This method will be called when Electron has finished
@@ -721,6 +766,7 @@ app.on('ready', function(){
   console.log( 'basedir="' + basedir + '"');
 
   interspec.setMessageToNodeJsCallback( messageToNodeJs );
+  interspec.setBrowseForDirectoryCallback( browseForDirectory );
   
   const xml_config_path = path.join(basedir, "data/config/wt_config_electron.xml");
   let portnum = 0;

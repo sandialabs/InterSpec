@@ -668,28 +668,43 @@ InterSpec::InterSpec( WContainerWidget *parent )
       
       LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsSetupAppTitleBar);
       LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsTitleBarChangeMaximized);
-      LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsTitleBarHandleMaximizeClick);
       
       doJavaScript( "Wt.WT.SetupAppTitleBar();" );
       
-      const string maximizeJS = "function(){ Wt.WT.TitleBarHandleMaximizeClick(); }";
-      maximizeIcon->clicked().connect( maximizeJS );
-      appIcon->doubleClicked().connect( maximizeJS );
-      dragRegion->doubleClicked().connect( maximizeJS );
-      menuTitle->doubleClicked().connect( maximizeJS );
+      auto toggleMaximize = [](){
+        const char *js =
+        "let elem = document.querySelector(\".Wt-domRoot\");"
+        "if (!document.fullscreenElement) {"
+        "  elem.requestFullscreen().catch(err => {"
+        "    console.log( 'Error attempting to enable full-screen mode' );"
+        "  });"
+        "} else {"
+        "  document.exitFullscreen();"
+        "}";
+        
+#if( BUILD_AS_ELECTRON_APP )
+        if( InterSpecApp::isPrimaryWindowInstance() )
+          ElectronUtils::send_nodejs_message( "ToggleMaximizeWindow", "" );
+        else
+          wApp->doJavaScript( js );
+#else
+        wApp->doJavaScript( js );
+#endif
+      };//doMaximize
+      
+      maximizeIcon->clicked().connect( std::bind( toggleMaximize ) );
+      appIcon->doubleClicked().connect( std::bind( toggleMaximize )  );
+      dragRegion->doubleClicked().connect( std::bind( toggleMaximize )  );
+      menuTitle->doubleClicked().connect( std::bind( toggleMaximize )  );
       
 #if( BUILD_AS_ELECTRON_APP )
-      minimizeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').minimize(); }" );
+      minimizeIcon->clicked().connect( std::bind([](){
+        ElectronUtils::send_nodejs_message( "MinimizeWindow", "" );
+      }) );
       
-      // Note that this does not work if developer console is open.  Could use
-      //  app.exit(0), or maybe set a timeout for it or something...
-      closeIcon->clicked().connect( "function(){ "
-                                   "  console.log('Will close electron window');"
-                                   "  let w = $(window).data('ElectronWindow');"
-                                   "  if( !w ) w = remote.getCurrentWindow();"
-                                   "  w.close();"
-                                   "  console.log('Electron window should have closed');"
-                                   "}" );
+      closeIcon->clicked().connect( std::bind([](){
+        ElectronUtils::send_nodejs_message( "CloseWindow", "" );
+      }) );
 #endif //BUILD_AS_ELECTRON_APP
     }//if( !isAppTitlebar ) / else
   }//if( isMobile() ) / else
@@ -5362,9 +5377,8 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 #elif( BUILD_AS_ELECTRON_APP )
   m_fileMenuPopup->addSeparator();
   PopupDivMenuItem *exitItem = m_fileMenuPopup->addMenuItem( "Exit" );
-  //exitItem->triggered().connect( "function(){ $(window).data('ElectronWindow').close(); }" );
   exitItem->triggered().connect( std::bind( []{
-    wApp->doJavaScript( "$(window).data('ElectronWindow').close();" );
+    ElectronUtils::send_nodejs_message( "CloseWindow", "" );
   }) );
 #endif
   }//if( InterSpecApp::isPrimaryWindowInstance() )
@@ -5995,12 +6009,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleDevTools );
 #endif
 #elif( BUILD_AS_ELECTRON_APP )
-  
-  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsResetPageZoom);
-  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
-  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsDecreasePageZoom);
-  
-  
+
   m_displayOptionsPopupDiv->addSeparator();
   PopupDivMenuItem *fullScreenItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Full Screen" );  //F11
   m_displayOptionsPopupDiv->addSeparator();
@@ -6008,10 +6017,14 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   PopupDivMenuItem *zoomInItem = m_displayOptionsPopupDiv->addMenuItem( "Zoom In" ); //Ctrl+Shift+=
   PopupDivMenuItem *zoomOutItem = m_displayOptionsPopupDiv->addMenuItem( "Zoom Out" ); //Ctrl+-
 
+  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsResetPageZoom);
+  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
+  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsDecreasePageZoom);
+  
   // Note: the triggered() signal a Wt::Signal, which is C++ only, so we cant just hook it up to
   //       javascript for it to run - we have to make the round-trip JS -> C++ -> JS
   fullScreenItem->triggered().connect( std::bind( []{
-    wApp->doJavaScript( "Wt.WT.TitleBarHandleMaximizeClick();" );
+    ElectronUtils::send_nodejs_message( "ToggleMaximizeWindow", "" );
   }) );
   
   resetZoomItem->triggered().connect( std::bind( []{
@@ -6030,11 +6043,10 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 #if( PERFORM_DEVELOPER_CHECKS )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
-    LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsToggleDevTools);
     m_displayOptionsPopupDiv->addSeparator();
     PopupDivMenuItem *devToolItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Dev Tools" );
     devToolItem->triggered().connect( std::bind( []{
-      wApp->doJavaScript( "Wt.WT.ToggleDevTools();" );
+      ElectronUtils::send_nodejs_message( "ToggleDevTools", "" );
     }) );
   }//if( InterSpecApp::isPrimaryWindowInstance() )
 #endif

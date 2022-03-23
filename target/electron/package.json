@@ -21,7 +21,6 @@
   },
   "license": "LGPL-2.1-only",
   "dependencies": {
-    "@electron/remote": "^2.0.8",
     "cmake-js": "^6.1.0"
   },
   "devDependencies": {

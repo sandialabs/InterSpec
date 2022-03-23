@@ -129,6 +129,31 @@ namespace ElectronUtils
    Returns true if it thinks message was sent.
    */
   bool send_nodejs_message( const std::string &msg_name, const std::string &msg_data );
+
+
+  /**
+ 
+   Returns true if session was found, and message delivered.
+  */
+  bool handle_message_from_nodejs( const std::string &session_token,
+                                   const std::string &msg_name, const std::string &msg_data );
+
+
+  /** Starts a os-native dialog to browse for, and select a directory.
+   
+   This function returns immediately, and will call the \c callback function, inside the
+   WApplication event loop thread, once the user successfully selects a directory.
+   
+   If user cancels browsing, or there is an error opening the dialog, the callback will never be
+   called.
+   
+   Returns true if the function thinks it will be able to open a dialog; this still isnt guaranteed
+   to happen.
+   
+   TODO: have the callback always called, with a status flag argument as well.
+   */
+  bool browse_for_directory( const std::string &window_title, const std::string &window_message,
+                             std::function<void(std::string)> callback );
 }//namespace ElectronUtils
 
 

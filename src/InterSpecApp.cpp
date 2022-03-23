@@ -236,10 +236,8 @@ void InterSpecApp::setupDomEnvironment()
   if( isPrimaryWindowInstance() )
   {
 #if( USING_ELECTRON_NATIVE_MENU )
-    //Some support to use native menu...
-    doJavaScript( "const { remote } = require('electron');const {Menu, MenuItem} = remote;", false );
-#else
-    doJavaScript( "const { remote } = require('@electron/remote'); ", false );
+    //Some support to use native menu
+    doJavaScript( "const {Menu, MenuItem} = remote;", false );
 #endif
   }//if( isPrimaryWindowInstance() )
   
@@ -265,16 +263,6 @@ void InterSpecApp::setupDomEnvironment()
   
   // Use newer version of jQuery than Wt uses by default
   requireJQuery("InterSpec_resources/assets/js/jquery-3.6.0.min.js");
-  
-  //To upgrade to the latest jquery, see https://github.com/jquery/jquery-migrate/#README
-  // And then add the following here:
-  //requireJQuery("InterSpec_resources/assets/js/jquery-3.6.0.min.js");
-  //
-  //Which just a very quick search through shows that qTip should be upgraded, e.g., to:
-  //  https://github.com/qTip2/qTip2/releases/tag/v3.0.3
-  // then needs to be patched, e.g., see
-  //  https://stackoverflow.com/questions/66694407/qtip2-doesnt-work-with-jquery-3-6-elem-getclientrects-is-not-a-function
-  
   
   //for qTip2
   useStyleSheet( "InterSpec_resources/assets/js/qTip2-3.0.3/jquery.qtip.min.css" );
