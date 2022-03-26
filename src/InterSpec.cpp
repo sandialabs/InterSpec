@@ -2282,7 +2282,7 @@ void InterSpec::handleLeftClick( double energy, double counts,
   if( m_rightClickMenu && !m_rightClickMenu->isHidden() )
     m_rightClickMenu->hide();
 
-  if( (m_toolsTabs && m_currentToolsTab == m_toolsTabs->indexOf(m_nuclideSearchContainer))
+  if( (m_toolsTabs && (m_currentToolsTab == m_toolsTabs->indexOf(m_nuclideSearchContainer)))
       || m_nuclideSearchWindow )
   {
     setIsotopeSearchEnergy( energy );
@@ -2296,6 +2296,13 @@ void InterSpec::handleLeftClick( double energy, double counts,
     m_terminal->chartClicked(energy,counts,pageX,pageY);
   }
 #endif
+  
+  if( (m_toolsTabs && (m_currentToolsTab == m_toolsTabs->indexOf(m_peakInfoDisplay)))
+     || m_peakInfoWindow )
+  {
+    m_peakInfoDisplay->handleChartLeftClick( energy );
+    return;
+  }
 }//void handleLeftClick(...)
 
 

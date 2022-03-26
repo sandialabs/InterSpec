@@ -331,6 +331,20 @@ void PeakInfoDisplay::enablePeakSearchButton( bool enable )
 }//void enablePeakSearchButton( bool enable = true )
 
 
+void PeakInfoDisplay::handleChartLeftClick( const double energy )
+{
+  PeakModel::PeakShrdPtr peak = m_model->nearestPeak(energy);
+  if( !peak )
+    return;
+  
+  if( (energy < peak->lowerX()) || (energy > peak->upperX()) )
+    return;
+  
+  Wt::WModelIndex index = m_model->indexOfPeak( peak );
+  m_infoView->scrollTo( index, WTreeView::ScrollHint::EnsureVisible );
+  m_infoView->select( index );
+}//void handleChartLeftClick( const double energy )
+
 
 void PeakInfoDisplay::createNewPeak()
 {
