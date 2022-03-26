@@ -242,9 +242,21 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   try
   {
     Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
+    WContainerWidget* tablecontainer = new WContainerWidget();
     
     m_snapshotTable = new WTree();
     m_snapshotTable->addStyleClass( "SnapshotTable" );
+
+    
+    WGridLayout *tablelayout = new WGridLayout();
+    //tablelayout->setContentsMargins(2, 2, 2, 2);
+    tablelayout->setContentsMargins(0,0,0,0);
+    tablelayout->addWidget(m_snapshotTable, 0, 0);
+    tablelayout->setRowStretch(0, 1);
+    tablelayout->setColumnStretch(0, 1);
+    tablecontainer->setLayout( tablelayout );
+    tablecontainer->setMargin(0);
+    tablecontainer->setOffsets(0);
     
     //m_snapshotTable->resize(400,WLength(WLength::Auto));
     
@@ -409,14 +421,16 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     } //for
     
     transaction.commit();
+    layout->addWidget( tablecontainer, ++row, 0 );
+    layout->setRowStretch( row - 1, 1 );
     
     m_timeLabel = new WText( ns_empty_descrip_label );
     m_timeLabel->addStyleClass( "SnapshotTime" );
-    layout->addWidget(m_timeLabel, ++row, 0);
+    layout->addWidget(m_timeLabel, ++row,0);
     
     m_descriptionLabel = new WText( ns_empty_descrip_label );
     m_descriptionLabel->addStyleClass( "SnapshotDesc" );
-    layout->addWidget(m_descriptionLabel, ++row, 0);
+    layout->addWidget(m_descriptionLabel, ++row,0);
     
     m_buttonbox = new WGroupBox( "Open Related Spectrum As:" );
     m_buttonbox->setOffsets(10);
