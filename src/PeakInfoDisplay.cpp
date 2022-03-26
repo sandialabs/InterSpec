@@ -278,6 +278,112 @@ namespace
     }//void setModelData(...)
   };//class ColorDelegate
 #endif //ALLOW_PEAK_COLOR_DELEGATE
+
+/** Simple specialization of WItemDelegate that closes the editor on blur, if the user
+ has pressed any keys that cause the value to change.
+ 
+ TODO: Should probably totally re-implement WItemDelegate for doubles, and to get the exact
+       behavior we would like, rather than hacking on top of WItemDelegate, which isnt great
+ */
+class ItemDelegate : public Wt::WItemDelegate
+{
+public:
+  ItemDelegate(WObject *parent = 0)
+  : WItemDelegate( parent )
+  {
+  }
+   
+protected:
+  
+  // Make sure we it is still safe to access lineEdit
+  //  (we get some decodeSignal() in the C++ if you press Esc or Enter while editing - even without
+  //   this checkWidgetInDom we dont get any crashes, but this is just to make sure)
+  bool checkWidgetInDom( const string &lineEditID ) const
+  {
+    auto app = wApp;
+    if( !app || !app->domRoot()->findById(lineEditID) )
+    {
+      cerr << "ItemDelegate: Somehow lineEdit disapeared from DOM" << endl;
+      return false;
+    }
+    return true;
+  }//checkWidgetInDom(... )
+  
+  
+  void closeOnBlur( WWidget *editor, WLineEdit *lineEdit, const string &lineEditID, shared_ptr<bool> changed ) const
+  {
+    // We'll
+    auto app = wApp;
+    if( !checkWidgetInDom(lineEditID) )
+    {
+      closeEditor().emit(editor, false);
+      return;
+    }
+    
+    bool save = false;
+    if( changed && (*changed) && lineEdit && !lineEdit->text().empty() )
+      save = true;
+
+    closeEditor().emit(editor, save);
+  }//closeOnBlur
+  
+  void onKeyDown( WLineEdit *e, const string &eID, shared_ptr<bool> changed,
+                  shared_ptr<Wt::Signals::connection> sig, WKeyEvent k ) const
+  {
+    if( !checkWidgetInDom(eID) )
+      return;
+    
+    assert( changed );
+    
+    switch( k.key() )
+    {
+      case Wt::Key_Enter: case Wt::Key_Tab: case Wt::Key_Shift: case Wt::Key_Control:
+      case Wt::Key_Alt: case Wt::Key_PageUp: case Wt::Key_PageDown: case Wt::Key_End:
+      case Wt::Key_Home: case Wt::Key_Left: case Wt::Key_Up: case Wt::Key_Right:
+      case Wt::Key_Down: case Wt::Key_Escape: case Wt::Key_Insert:
+      case Wt::Key_F1: case Wt::Key_F2: case Wt::Key_F3: case Wt::Key_F4: case Wt::Key_F5:
+      case Wt::Key_F6: case Wt::Key_F7: case Wt::Key_F8: case Wt::Key_F9: case Wt::Key_F10:
+      case Wt::Key_F11: case Wt::Key_F12:
+        break;
+        
+        // Only set changed if the key actually made a difference.
+      default:
+        if( changed)
+          (*changed) = true;
+        if( sig )
+          e->keyWentDown().disconnect( *sig );
+        break;
+    }//switch( k.key() )
+  }//onKeyDown
+  
+  
+  virtual WWidget *createEditor( const WModelIndex& index,
+                                WFlags<ViewItemRenderFlag> flags) const
+  {
+    WWidget *w = WItemDelegate::createEditor(index, flags);
+    auto div = dynamic_cast<WContainerWidget *>( w );
+    assert( div );
+    if( !div )
+      return w;
+    
+    for( WWidget *d : div->children() )
+    {
+      auto e = dynamic_cast<WLineEdit *>( d );
+      if( e )
+      {
+        auto changed = make_shared<bool>( false );
+        auto keydownsig = make_shared<Wt::Signals::connection>();
+        e->blurred().connect( boost::bind( &ItemDelegate::closeOnBlur, this, w, e, e->id(), changed ) );
+        
+        *keydownsig = e->keyWentDown().connect( boost::bind( &ItemDelegate::onKeyDown, this,
+                                                e, e->id(), changed, keydownsig, boost::placeholders::_1 ) );
+      }//if( e )
+    }//
+    
+    return w;
+  }//createEditor(...)
+};//class ItemDelegate
+
 }//namespace
 
 
@@ -871,6 +977,20 @@ void PeakInfoDisplay::disablePeakDelete()
 }//void disablePeakDelete()
 
 
+void PeakInfoDisplay::handleSelectionChanged()
+{
+  m_infoView->closeEditors();
+  
+  const WModelIndexSet selected = m_infoView->selectedIndexes();
+  if( selected.size() != 1 )
+    return;
+  
+  const auto peak = m_model->peak( *begin(selected) );
+  if( peak )
+    m_spectrumDisplayDiv->highlightPeakAtEnergy( peak->mean() );
+}//void handleSelectionChanged()
+
+
 void PeakInfoDisplay::init()
 {
   if( !m_model )
@@ -906,15 +1026,16 @@ void PeakInfoDisplay::init()
   m_infoView->setColumnHidden( PeakModel::kUseForShieldingSourceFit, true );
 
   m_infoView->setEditTriggers( WAbstractItemView::SingleClicked | WAbstractItemView::DoubleClicked );
-
-  WItemDelegate *dblDelagate = new WItemDelegate( m_infoView );
+  blurred().connect( boost::bind(&RowStretchTreeView::closeEditors, m_infoView, true) );
+  
+  ItemDelegate *dblDelagate = new ItemDelegate( m_infoView );
   dblDelagate->setTextFormat( "%.2f" );
   m_infoView->setItemDelegateForColumn( PeakModel::kMean, dblDelagate );
   m_infoView->setItemDelegateForColumn( PeakModel::kFwhm, dblDelagate );
   m_infoView->setItemDelegateForColumn( PeakModel::kLowerX, dblDelagate );
   m_infoView->setItemDelegateForColumn( PeakModel::kUpperX, dblDelagate );
 
-  dblDelagate = new WItemDelegate( m_infoView );
+  dblDelagate = new ItemDelegate( m_infoView );
   dblDelagate->setTextFormat( "%.0f" );
   m_infoView->setItemDelegateForColumn( PeakModel::kAmplitude, dblDelagate );
   m_infoView->setItemDelegateForColumn( PeakModel::kRoiCounts, dblDelagate );
@@ -926,7 +1047,7 @@ void PeakInfoDisplay::init()
   m_infoView->setColumnWidth( PeakModel::kCps,        WLength(13, WLength::FontEx) );
   
   
-  m_infoView->setColumnWidth( PeakModel::kIsotope,    WLength(/*8*/9, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kIsotope,    WLength(9, WLength::FontEx) );
   m_infoView->setColumnWidth( PeakModel::kDifference,    WLength(8, WLength::FontEx) );
   //Note 20131211, wcjohns: closeOnBlur was previoulsy set to false, however
   //  there was a rare crash that happened with the model row was deleted while
@@ -974,6 +1095,8 @@ void PeakInfoDisplay::init()
   m_infoView->clicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this, _1 ) );
   m_infoView->doubleClicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this, _1 ) );
 
+  m_infoView->selectionChanged().connect( this, &PeakInfoDisplay::handleSelectionChanged );
+  
   m_infoLayout->addWidget( m_infoView, 0, 0 );
   m_infoLayout->setRowStretch( 0, 1 );
   

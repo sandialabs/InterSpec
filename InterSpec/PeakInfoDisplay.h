@@ -68,6 +68,7 @@ protected:
   void createNewPeak();
   void deleteSelectedPeak();
   void enablePeakDelete( Wt::WModelIndex index );
+  void handleSelectionChanged();
   void disablePeakDelete();
   void confirmRemoveAllPeaks();
   void assignNuclidesFromRefLines();

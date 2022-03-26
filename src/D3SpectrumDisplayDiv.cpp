@@ -607,6 +607,13 @@ void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )
 }//void setShowRefLineInfoForMouseOver( const bool show )
 
 
+void D3SpectrumDisplayDiv::highlightPeakAtEnergy( const double energy )
+{
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".highlightPeakAtEnergy(" + std::to_string(energy) + ")" );
+}
+
+
 void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
