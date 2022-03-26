@@ -59,6 +59,8 @@ public:
 
   void enablePeakSearchButton( bool enable );
   
+  void handleChartLeftClick( const double energy );
+  
 protected:
   //init() must be called exactly once
   void init();
