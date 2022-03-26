@@ -34,13 +34,21 @@
 
 	       Note: currently only supported by the wtfcgi and wthttp
 	       connectors.
+
+		   max-num-sessions determines the maximum number of sessions
+
+	       num-session-threads determines the number of threads for every
+	       session process. If not specified, the number of threads for every
+	       session process is the same as the number of threads for the parent
+	       process.
               -->
 
 	    <!--
 	       <dedicated-process>
 		 <max-num-sessions>100</max-num-sessions>
+		 <num-session-threads>10</num-session-threads>
 	       </dedicated-process>
-	      -->
+	    -->
 
 	    <!-- Multiple sessions within one process.
 
@@ -69,10 +77,14 @@
 	    <!-- Session tracking strategy.
 
 	       Possible values:
-		 Auto: cookies is available, otherwise URL rewriting
+		 Auto: cookies if available, otherwise URL rewriting
 		 URL:  only URL rewriting
+		 Combined: uses URL rewriting, with a multi-session cookie to
+			   prevent stealing of sessions through the URL. Will
+			   not fall back to URL rewriting if cookies are not
+			   available. This is the most secure strategy.
 
-               It is recommended to stick to URL rewriting for session
+               It is recommended to stick to URL rewriting or Combined for session
 	       tracking as this is more secure (it avoids the risk of attacks
 	       like CSRF or BREACH), and also provides proper support for
 	       concurrent sessions in a single browser.
@@ -94,6 +106,21 @@
 	       cleaned up.
 	      -->
 	    <timeout>600</timeout>
+
+		<!-- Idle timeout (seconds).
+
+               When the user does not interact with the application for the set number of seconds,
+               WApplication::idleTimeout() is called. By default, this
+               method quits the application immediately, but it can be overridden
+               if different behaviour is desired.
+
+               This feature can be used to prevent others from taking over a session
+               when the device that the Wt application is being used from is left behind,
+               and is most effective in combination with a fairly short session timeout (<timeout>)
+
+               When omitted, or left empty, this feature is disabled.
+               -->
+            <!--<idle-timeout>900</idle-timeout>-->
 
 	    <!-- Server push timeout (seconds).
 
@@ -149,7 +176,8 @@
 
                The default value is 1.
 	      -->
-	    <num-threads>1</num-threads>
+	    <!-- <num-threads>1</num-threads> 
+		-->
 
 	</connector-fcgi>
 
@@ -191,9 +219,10 @@
 
                The default value is 10.
 	      -->
-	    <num-threads>10</num-threads>
+	    <!-- <num-threads>10</num-threads>
+		-->
 
-	    <!-- Maximum Request Size spooled in memory (Kb)
+	    <!-- Maximum Request Size spooled in memory (KiB)
         
                Normally, Wt keeps incoming requests (POST data) in memory.
                However, malicious users could send a big POST and as such
@@ -274,6 +303,50 @@
          -->
 	<max-request-size>262144</max-request-size>
 
+<!-- Maximum form data (KiB)
+	     
+	   Maximum size of the data in a POST request of type
+	   'application/x-www-form-urlencoded' (used for Wt form-field values)
+	   Note that the maximum size is also limited by the value of
+	   'max-request-size'.
+	-->
+	<max-formdata-size>5120</max-formdata-size>
+
+        <!-- Number of threads per process
+
+           You may want to change this value if you would like to
+           support more reentrant event loops, where you block one
+           event loop using WDialog::exec() or related static
+           methods. Everytime you enter such an event loop, one
+           thread is blocked, and therefore the total number of
+           sessions that reliably can do this is limited to the
+           number of thread you have (minus one to unblock).
+
+           You may also want to increase this number if your Wt
+           application is regularly waiting for IO (databases, network,
+           files, ...). If this number is too low, all threads could
+           be waiting for IO operations to complete while your CPU
+           is idle. Increasing the number of threads may help.
+
+           Computing intensive applications may also increase this number,
+           even though it is better to offload computations to a helper
+           thread and user server push or a WTimer to check for
+           completion of the task in order to keep your GUI responsive
+           during the computations.
+
+           When using the MS IIS ISAPI connector, this configures the
+           number of threads that will be used to handle Wt requests.
+           The IIS internal threads are never used to do any
+           processing; all requests are forwarded to be handled in
+           this threadpool. Rather than to configure a so-called
+           'web-garden' in IIS, increase this number. The ISAPI
+           connector will not work correctly when a web-garden is
+           configured.
+
+           The default value is 10.
+              -->
+        <num-threads>10</num-threads>
+
 	<!-- Session id length (number of characters) -->
 	<session-id-length>16</session-id-length>
 
@@ -289,6 +362,11 @@
            fraction (e.g. less than 5%) will be plain HTML
            sessions. This ratio is only enforced when more than 20 sessions
 	   have been created.
+
+	   The default is 1 (= 100%), which means that 100% of all sessions
+           may be plain HTML sessions, effectively disabling this feature. If
+           you set it to 0.5 for example, that means that 50% of all sessions
+           may be plain HTML sessions.
 	  -->
 	<plain-ajax-sessions-ratio-limit>1</plain-ajax-sessions-ratio-limit>
 
@@ -340,10 +418,6 @@
 	   a special hand-shake mechanism, and requires
            that all (reverse) proxy servers also have explicit support
            for this protocol.
-
-           This feature is still experimental: the Web Sockets RFC is
-           still a draft. Wt implements up to version 17 of the draft
-	   (latest as of November 2011).
 
 	   wcjohns note: enabling WebSockets causes 'implementStateless' calls to
 	                 emit the JS twice (I think once in the JS when the call
@@ -450,12 +524,19 @@
 	  -->
 	<user-agents type="bot">
 	  <user-agent>.*Googlebot.*</user-agent>
-	  <user-agent>.*msnbot.*</user-agent>
-	  <user-agent>.*Slurp.*</user-agent>
-	  <user-agent>.*Crawler.*</user-agent>
-	  <user-agent>.*Bot.*</user-agent>
-	  <user-agent>.*ia_archiver.*</user-agent>
-	  <user-agent>.*Twiceler.*</user-agent>
+        <user-agent>.*msnbot.*</user-agent>
+        <user-agent>.*Slurp.*</user-agent>
+        <user-agent>.*Crawler.*</user-agent>
+        <user-agent>.*Bot.*</user-agent>
+        <user-agent>.*ia_archiver.*</user-agent>
+        <user-agent>.*Twiceler.*</user-agent>
+        <user-agent>.*Yandex.*</user-agent>
+        <user-agent>.*Nutch.*</user-agent>
+        <user-agent>.*MJ12bot.*</user-agent>
+        <user-agent>.*Baiduspider.*</user-agent>
+        <user-agent>.*Ezooms.*</user-agent>
+        <user-agent>.*Sogou web spider.*</user-agent>
+        <user-agent>.*AhrefsBot.*</user-agent>
 	</user-agents>
 
 	<!-- Configures different rendering engines for certain browsers.
@@ -534,6 +615,35 @@
 	  <meta name="robots" content="noindex" />
 	</meta-headers>
 	
+	<!-- Configure allowed origins for CORS (only for WidgetSet entry points)
+
+	 Since Wt 3.3.8, cross-origin requests are disallowed by default.
+
+	 <allowed-origins> allows to selectively allow cross-origin requests
+	 for WidgetSet entry points (cross-origin requests are always disallowed
+	 for normal applications).
+
+	 Use <allowed-origins> to determine which origins should be allowed.
+	 Wt will only allow requests with an Origin header if it is an exact
+	 match for one of the origins in the list.
+
+	 "null" can be included in the list of allowed origins. In that case,
+	 Wt responds with "Access-Control-Allow-Origin: *".
+
+	 If <allowed-origins> is omitted or empty, no origins are allowed.
+
+	 If <allowed-origins> contains * (the asterisk character),
+	 all origins are allowed.
+	  -->
+	<allowed-origins>
+	  <!-- Leave empty to disallow all origins. -->
+
+	  <!-- To allow any origin: -->
+	  <!-- * -->
+
+	  <!-- To allow only http://example.com and http://example.org: -->
+	  <!-- http://example.com,http://example.org -->
+	</allowed-origins>
 
 	<!-- Runtime Properties
      
@@ -604,6 +714,16 @@
 	       entry point by passing a location to WServer::addEntryPoint().
 	      -->
 	    <!-- <property name="favicon">images/favicon.ico</property> -->
+
+
+            <!-- leafletJSURL and leafletCSSURL properties
+
+               This is required if you want to use WLeafletMap, since leaflet itself is not bundled with Wt.
+               leafletJSURL should be a valid URL leading to the leaflet JavaScript, and leafletCSSURL to the leaflet CSS.
+              -->
+            <!-- <property name="leafletJSURL">https://unpkg.com/leaflet@1.5.1/dist/leaflet.js</property> -->
+            <!-- <property name="leafletCSSURL">https://unpkg.com/leaflet@1.5.1/dist/leaflet.css</property> -->
+
 	</properties>
 
     </application-settings>

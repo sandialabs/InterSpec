@@ -145,7 +145,7 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   enableUpdates( true );
   
   //Might as well initialize the DecayDataBaseServer, but in the background
-  WServer::instance()->ioService().post( &DecayDataBaseServer::initialize );
+  WServer::instance()->ioService().boost::asio::io_service::post( &DecayDataBaseServer::initialize );
    
   setupDomEnvironment();
   setupWidgets( true );

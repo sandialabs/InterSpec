@@ -1332,6 +1332,7 @@ void SpecFileQueryWidget::init()
   //ToDo: make a proper path selecting widget for Electron
   WPushButton *pickPath = new WPushButton( "Select Path", pathDiv );
   m_baseLocation = new WText( "(No Path Selected)", pathDiv );
+  m_baseLocation->addStyleClass( "SpecFileQueryPathTxt" );
   m_baseLocation->setMargin( 3, Wt::Left );
   
   

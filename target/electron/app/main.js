@@ -167,6 +167,12 @@ function load_file(filename){
 }
 
 
+// On one computer I was getting a "GPU process launch failed: error_code=18" error when starting
+//  electron - the following line seems to fix this.
+//  Didnt investigate heavily; could be that I was running from a network drive.
+app.commandLine.appendSwitch('--no-sandbox');
+
+
 //File opening untested on OSX and Windows
 if( process.platform == 'darwin' ) {
   app.on('open-file', function (event,path) {

@@ -1756,7 +1756,7 @@ void GadrasDirectory::initDetectors()
   
   Wt::WServer *server = Wt::WServer::instance();
   Wt::WIOService &io = server->ioService();
-  io.post( searchpaths );
+  io.boost::asio::io_service::post( searchpaths );
 }//void initDetectors()
 
 
@@ -3466,7 +3466,7 @@ void DrfSelect::acceptAndFinish()
   if( meas && drf && m_defaultForSerialNumber && m_defaultForSerialNumber->isChecked() )
   {
     UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
-    WServer::instance()->ioService().post( std::bind( [=](){
+    WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
       DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
     } ) );
   }//if( m_defaultForSerialNumber and is checked )
@@ -3474,7 +3474,7 @@ void DrfSelect::acceptAndFinish()
   if( meas && drf && m_defaultForDetectorModel && m_defaultForDetectorModel->isChecked() )
   {
     UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
-    WServer::instance()->ioService().post( std::bind( [=](){
+    WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
       DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
     } ) );
   }//if( m_defaultForDetectorModel and is checked )

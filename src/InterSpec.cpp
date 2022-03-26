@@ -2210,9 +2210,8 @@ void InterSpec::updateRightClickNuclidesMenu(
   
   for( WMenuItem *item : menu->items() )
   {
-    if( !item->hasStyleClass("PhoneMenuBack")
-        && !item->hasStyleClass("PhoneMenuClose") )
-    delete item;
+    if( !item->hasStyleClass("PhoneMenuBack") && !item->hasStyleClass("PhoneMenuClose") )
+      delete item;
   }//for( WMenuItem *item : menu->items() )
 
   
@@ -2369,6 +2368,7 @@ void InterSpec::handleRightClick( double energy, double counts,
                                                        "", false );
           
           Wt::WServer *server = Wt::WServer::instance();
+          assert( server );
           if( server )  //this should always be true
           {
             Wt::WIOService &io = server->ioService();
@@ -2408,7 +2408,7 @@ void InterSpec::handleRightClick( double energy, double counts,
                       peaks, refLines, detector, session_id, candidates, updater );
             };
             
-            io.post( worker );
+            io.boost::asio::io_service::post( worker );
           }//if( server )
         }//if( menu )
         else
@@ -7401,7 +7401,7 @@ void InterSpec::initMaterialDbAndSuggestions()
     
     boost::function<void(void)> worker = boost::bind( &fillMaterialDb,
                                     m_materialDB, wApp->sessionId(), success );
-    WServer::instance()->ioService().post( worker );
+    WServer::instance()->ioService().boost::asio::io_service::post( worker );
   }//if( !m_materialDB )
 }//void InterSpec::initMaterialDbAndSuggestions()
 
@@ -8441,7 +8441,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           {
             auto drfcopy = std::make_shared<DetectorPeakResponse>( *drf );
             boost::function<void(void)> worker = boost::bind( &DrfSelect::updateLastUsedTimeOrAddToDb, drfcopy, m_user.id(), m_sql );
-            WServer::instance()->ioService().post( worker );
+            WServer::instance()->ioService().boost::asio::io_service::post( worker );
           }
         }//if( meas->detector() != old_det )
         
@@ -8658,7 +8658,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         m_preserveCalibWindow->finished().connect( std::bind( [=](){
           deleteEnergyCalPreserveWindow();
           std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
-          WServer::instance()->ioService().post( std::bind([=](){ propigate_peaks_fcns(data); }) );
+          WServer::instance()->ioService().boost::asio::io_service::post( std::bind([=](){ propigate_peaks_fcns(data); }) );
         } ) );
         
         propigate_peaks_fcns = nullptr;
@@ -8673,7 +8673,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   if( propigate_peaks_fcns )
   {
     std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
-    WServer::instance()->ioService().post( std::bind([=](){ propigate_peaks_fcns(data); }) );
+    WServer::instance()->ioService().boost::asio::io_service::post( std::bind([=](){ propigate_peaks_fcns(data); }) );
     propigate_peaks_fcns = nullptr;
   }
   
@@ -8841,7 +8841,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     boost::function<void(void)> worker = boost::bind(
                                   &InterSpec::doFinishupSetSpectrumWork,
                                   this, meas, furtherworkers );
-    WServer::instance()->ioService().post( worker );
+    WServer::instance()->ioService().boost::asio::io_service::post( worker );
   }//if( meas && furtherworkers.size() )
   
   if( m_mobileBackButton && m_mobileForwardButton )
@@ -9550,7 +9550,7 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
     if( server )  //this should always be true
     {
       m_findingHintPeaks = true;
-      server->ioService().post( worker );
+      server->ioService().boost::asio::io_service::post( worker );
     }//if( server )
   }
 }//void searchForHintPeaks(...)
@@ -9580,7 +9580,7 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
       cerr << "InterSpec::setHintPeaks(...): posting queued job" << endl;
       boost::function<void()> worker = m_hintQueue.back();
       m_hintQueue.pop_back();
-      server->ioService().post( worker );
+      server->ioService().boost::asio::io_service::post( worker );
     }//if( server )
   }//if( m_hintQueue.size() )
   

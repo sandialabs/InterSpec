@@ -502,7 +502,7 @@ void SpecMeas::save2012N42FileInClientThread( std::shared_ptr<SpecMeas> info,
   WServer *server = WServer::instance();  //can this ever be NULL?
   if( server )
   {
-    server->ioService().post( worker );
+    server->ioService().boost::asio::io_service::post( worker );
   }else
   {
     //Probably wont ever get here - but just incase

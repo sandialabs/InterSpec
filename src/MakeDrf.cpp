@@ -1896,7 +1896,7 @@ void MakeDrf::startSaveAs()
     if( def_for_serial_cb && def_for_serial_cb->isChecked() && representative_meas )
     {
       UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
-      WServer::instance()->ioService().post( std::bind( [=](){
+      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
         DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
       } ) );
     }//if( def_for_serial_cb and is checked )
@@ -1904,7 +1904,7 @@ void MakeDrf::startSaveAs()
     if( def_for_model_cb && def_for_model_cb->isChecked() && representative_meas )
     {
       UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
-      WServer::instance()->ioService().post( std::bind( [=](){
+      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
         DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
       } ) );
     }//if( def_for_serial_cb and is checked )
@@ -2517,7 +2517,7 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
     }//try / catch fit FWHM
   };
   
-  WServer::instance()->ioService().post( worker );
+  WServer::instance()->ioService().boost::asio::io_service::post( worker );
 }//void fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks )
 
 
@@ -2639,7 +2639,7 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
     }//try / catch fit FWHM
   };
   
-  WServer::instance()->ioService().post( worker );
+  WServer::instance()->ioService().boost::asio::io_service::post( worker );
 }//void fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
 
 
