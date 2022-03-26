@@ -325,10 +325,10 @@ public:
   //  last session with the spectrum.
   //The mutex and bool ptr are to avoid a race condition when this function is
   //  called from outside the event loop
-  //  (e.g. WServer::instance()->ioService().post(...) ), where teh WApplication
-  //  could get terminated while the function is executing.  The bool indicates
-  //  if SpecMeasManager has destructed, and if not the mutex will keep it from
-  //  destructing.
+  //  (e.g. WServer::instance()->ioService().boost::asio::io_service::post(...) ),
+  //  where the WApplication could get terminated while the function is executing.
+  //  The bool indicates if SpecMeasManager has destructed, and if not the mutex
+  //  will keep it from destructing.
   void checkIfPreviouslyOpened( const std::string sessionID,
                                 std::shared_ptr<SpectraFileHeader> header,
                                 SpecUtils::SpectrumType type,

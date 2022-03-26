@@ -953,7 +953,7 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
                                 &IsotopeSearchByEnergyModel::setSearchEnergies,
                                 workingspace, m_minBr, m_minHl, srcs,
                                 app->sessionId(), updatefcnt );
-  WServer::instance()->ioService().post( worker );
+  WServer::instance()->ioService().boost::asio::io_service::post( worker );
   
   m_searching->show();
 }//void startSearch()

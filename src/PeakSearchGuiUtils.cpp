@@ -2271,7 +2271,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   std::weak_ptr<const SpecUtils::Measurement> weakdata = dataPtr;
   const string seshid = wApp->sessionId();
   
-  server->ioService().post( std::bind( [=](){
+  server->ioService().boost::asio::io_service::post( std::bind( [=](){
     search_for_peaks_worker( weakdata, startingPeaks, displayed, setColor,
                             searchresults, callback, seshid, false );
     

@@ -1768,6 +1768,15 @@ double DetectorPeakResponse::fractionalSolidAngle( const double detDiam, const d
   
   const double r = 0.5 * detDiam;
   return 0.5*(1.0 - (D/sqrt(D*D+r*r)));
+  
+  // The below should be a numerically more stable computation... not tested yet.
+  //const double t_0 = D / sqrt((D * D) + (r * r));
+  //const double t_1 = fma(D, (-0.5 / hypot(D, r)), 0.5);
+  //if (t_0 <= 0.9674535662344166)
+  //  return log(exp(t_1));
+  //if (t_0 <= 1.0)
+  //  return 0.25 * (pow(r, 2.0) / pow(D, 2.0));
+  //return log1p(expm1(t_1));
 }//double fractionalSolidAngle(...)
 
 

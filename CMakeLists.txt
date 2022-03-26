@@ -119,6 +119,18 @@ option(
     OFF
 )
 
+if(MSVC)
+  option(${PROJECT_NAME}_USE_MSVC_MultiThreadDLL "Use dynamically-link runtime library." OFF)
+
+  if( ${PROJECT_NAME}_USE_MSVC_MultiThreadDLL)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+  else()
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  endif()
+  message(STATUS "Using CMAKE_MSVC_RUNTIME_LIBRARY ${CMAKE_MSVC_RUNTIME_LIBRARY}")
+endif()
+
+
 set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
     CACHE STRING
     "Amount of memory to allow spectra to take up before trying to offload them onto disk when not in use"
