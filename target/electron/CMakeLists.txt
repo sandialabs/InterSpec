@@ -1,39 +1,37 @@
-cmake_policy(SET CMP0048 NEW)
+# Require CMake 3.15 to use MSVC_RUNTIME_LIBRARY
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
+
 project( InterSpecAddOn )
-
-cmake_minimum_required(VERSION 3.1.0 FATAL_ERROR)
-
-set( CMAKE_CXX_STANDARD 11 )
-set( CMAKE_CXX_STANDARD_REQUIRED ON )
-
-if( BOOST_ROOT AND Wt_INCLUDE_DIR )
-elseif( APPLE )
-  set( BOOST_ROOT "/Users/wcjohns/install/osx_wt_prefix/" CACHE BOOL "Set boost root dir to use" )
-  set( Wt_INCLUDE_DIR "/Users/wcjohns/install/osx_wt_prefix/include/" CACHE BOOL "Set Wt include dir to use" )
-elseif(WIN32)
-endif()
 
 set( BUILD_AS_ELECTRON_APP ON CACHE BOOL "Set to build Electron target" )
 set( TRY_TO_STATIC_LINK ON CACHE BOOL "Lets statically link everything" )
 
-
 IF(WIN32)
-  set( MSVC_RUNTIME "static" )
-  include( ../../cmake/ConfigureMsvc.txt )
-  configure_msvc_runtime() 
-  set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj -D_SCL_SECURE_NO_WARNINGS /MP /wd4996 /wd4267 /DWINVER=0x0601 /D_WIN32_WINNT=0x0601" )
-    #0x0601==Win7, 0x0501==WinXP
+  add_definitions(-DBOOST_ALL_NO_LIB) #Prevent boost auto-linking, which seems to call in vc141 boost libs instead of vc142
+  add_definitions(-D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS ) #0x0601==Win7
 ENDIF(WIN32)
 
+if(MSVC)
+  option(${PROJECT_NAME}_USE_MSVC_MultiThreadDLL "Use dynamically-link runtime library." OFF)
+
+  if( ${PROJECT_NAME}_USE_MSVC_MultiThreadDLL)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+  else()
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  endif()
+  message(STATUS "Using CMAKE_MSVC_RUNTIME_LIBRARY ${CMAKE_MSVC_RUNTIME_LIBRARY}")
+endif()
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
 
 
 include_directories( ${CMAKE_JS_INC})
-set( SOURCE_FILES InterSpecAddOn.cpp )
+set( SOURCE_FILES InterSpecAddOn.cpp InterSpecAddOn.h )
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${CMAKE_JS_SRC})
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_JS_LIB} InterSpecLib )
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
+
 
 target_include_directories( ${PROJECT_NAME} PUBLIC 
                             node_modules/node-addon-api/ 
@@ -41,13 +39,6 @@ target_include_directories( ${PROJECT_NAME} PUBLIC
 )
 
 
-# Need to put all this stuff below into the "install" stage.
-# Also need to copy InterSpecAddOn.node to the app directory
-# Also need to fix up FindWt.cmake in SpecUtils.
-# Then need to test out running InterSpec and packaging it, and updating the README.md
-
-
-#CMAKE_INSTALL_PREFIX
 
 install( DIRECTORY ${WT_RESOURCES_DIRECTORY} DESTINATION ${PROJECT_BINARY_DIR}/app/ )
 install( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../data 

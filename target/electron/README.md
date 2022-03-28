@@ -18,9 +18,10 @@ npm install --save-dev node-addon-api
 cmake-js
 
 # Or to have a little more control over things
-cmake-js --generator "Visual Studio 16 2019" --architecture x64 \
-         --CDBOOST_ROOT=/path/to/boost \
-         --CDWt_INCLUDE_DIR=/path/to/wt/include \
+cmake-js --generator "Visual Studio 16 2019" \
+         --architecture x64 --arch=x64 \
+         --CDCMAKE_PREFIX_PATH=/path/to/boost/and/wt/and/zlib \
+         --CDBoost_USE_STATIC_RUNTIME=ON \
          --CDCMAKE_BUILD_TYPE="Release" \
          --CDGOOGLE_MAPS_KEY="..." \
          --out="build_dir" \

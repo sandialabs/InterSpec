@@ -2729,6 +2729,12 @@ void ReferencePhotopeakDisplay::clearAllLines()
   m_persistLines->disable();
   m_clearLines->disable();
   
+  // Reset the shielding as well
+  if( m_shieldingSelect->isGenericMaterial() )
+    m_shieldingSelect->setAtomicNumberAndArealDensity( m_shieldingSelect->atomicNumber(), 0.0 );
+  else
+    m_shieldingSelect->setSphericalThickness( 0.0 );
+  
   if( m_spectrumViewer && m_spectrumViewer->isPhone() )
     m_clearLines->setText( "Clear" );
   else

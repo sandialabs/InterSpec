@@ -807,7 +807,9 @@ void IsotopeNameFilterModel::replacerJs( std::string &js )
 void IsotopeNameFilterModel::setQuickTypeFixHackjs( Wt::WSuggestionPopup *popup )
 {
 #if( WT_SERIES > 3 || (WT_SERIES==3 && WT_MAJOR>3) || (WT_SERIES==3 && WT_MAJOR==3 && WT_MINOR>4) )
+#ifndef _WIN32
 #warning "You can probably remove IsotopeNameFilterModel::setQuickTypeFixHackjs(...), but you should check this"
+#endif
 #endif
   
   string js = INLINE_JAVASCRIPT(

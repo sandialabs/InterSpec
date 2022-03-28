@@ -239,6 +239,13 @@ public:
   //  to show the information.
   void setShowRefLineInfoForMouseOver( const bool show );
   
+  /** Highlights a peak, at the specified energy, as if you had moused over it.
+   
+   Energy must match the peak mean to to places past the decimal; otherwise no action is taken.
+   */
+  void highlightPeakAtEnergy( const double energy );
+  
+  
   void removeAllPeaks();
   
   

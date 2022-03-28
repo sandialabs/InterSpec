@@ -1220,7 +1220,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                       = PeakModel::csv_to_candidate_fit_peaks(currdata, infile);
       
       const std::string seessionid = wApp->sessionId();
-      Wt::WServer::instance()->ioService().post( std::bind( [=](){
+      Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
         PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
                   orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
       } ) );
@@ -1923,7 +1923,7 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
 //                             boost::bind( &SpecMeasManager::handleFileDropWorker, this,
 //                                          name, spoolName, type, dialog, wApp ) );
   
-  WServer::instance()->ioService().post( boost::bind( &SpecMeasManager::handleFileDropWorker, this,
+  WServer::instance()->ioService().boost::asio::io_service::post( boost::bind( &SpecMeasManager::handleFileDropWorker, this,
                                                     name, spoolName, type, dialog, wApp ) );
 }//handleFileDrop(...)
 
@@ -2752,7 +2752,7 @@ void SpecMeasManager::displayFile( int row,
                       boost::bind( &SpecMeasManager::checkIfPreviouslyOpened,
                                    this, app->sessionId(), header, type, m_destructMutex, m_destructed ) );
 //    WServer::instance()->post( app->sessionId(), worker );
-    WServer::instance()->ioService().post( worker );
+    WServer::instance()->ioService().boost::asio::io_service::post( worker );
   }//if( checkIfPreviouslyOpened )
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 }//void displayFile(...)
@@ -3736,7 +3736,7 @@ void SpecMeasManager::saveToDatabase(
     
     std::shared_ptr<SpecMeas> meas = header->parseFile();
     boost::function<void(void)> worker = boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header );
-    WServer::instance()->ioService().post( worker );
+    WServer::instance()->ioService().boost::asio::io_service::post( worker );
   }//if( headermeas && (headermeas==meas) )
 }//void saveToDatabase( std::shared_ptr<const SpecMeas> meas ) const
 
@@ -3782,7 +3782,7 @@ void SpecMeasManager::userCanceledResumeFromPreviousOpened( AuxWindow *window,
   
 //  boost::function<void(void)> worker = wApp->bind( f );
 //  WServer::instance()->post( wApp->sessionId(), worker );
-  WServer::instance()->ioService().post( f );
+  WServer::instance()->ioService().boost::asio::io_service::post( f );
 }//userCanceledResumeFromPreviousOpened(..)
 
 
@@ -4188,7 +4188,7 @@ void SpecMeasManager::serializeToTempFile( std::shared_ptr<const SpecMeas> meas 
       boost::function<void(void)> worker
                       = boost::bind( &SpectraFileHeader::saveToDatabaseWorker,
                                      headermeas, header );
-      WServer::instance()->ioService().post( worker );
+      WServer::instance()->ioService().boost::asio::io_service::post( worker );
     }//if( header->m_app && header->shouldSaveToDb() )
 #endif
 */

@@ -192,6 +192,9 @@
 #include "SpecUtils/D3SpectrumExport.h"
 #endif
 
+#if( BUILD_AS_ELECTRON_APP )
+#include "target/electron/ElectronUtils.h"
+#endif
 
 #include "js/InterSpec.js"
 #include "js/AppHtmlMenu.js"
@@ -665,28 +668,43 @@ InterSpec::InterSpec( WContainerWidget *parent )
       
       LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsSetupAppTitleBar);
       LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsTitleBarChangeMaximized);
-      LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsTitleBarHandleMaximizeClick);
       
       doJavaScript( "Wt.WT.SetupAppTitleBar();" );
       
-      const string maximizeJS = "function(){ Wt.WT.TitleBarHandleMaximizeClick(); }";
-      maximizeIcon->clicked().connect( maximizeJS );
-      appIcon->doubleClicked().connect( maximizeJS );
-      dragRegion->doubleClicked().connect( maximizeJS );
-      menuTitle->doubleClicked().connect( maximizeJS );
+      auto toggleMaximize = [](){
+        const char *js =
+        "let elem = document.querySelector(\".Wt-domRoot\");"
+        "if (!document.fullscreenElement) {"
+        "  elem.requestFullscreen().catch(err => {"
+        "    console.log( 'Error attempting to enable full-screen mode' );"
+        "  });"
+        "} else {"
+        "  document.exitFullscreen();"
+        "}";
+        
+#if( BUILD_AS_ELECTRON_APP )
+        if( InterSpecApp::isPrimaryWindowInstance() )
+          ElectronUtils::send_nodejs_message( "ToggleMaximizeWindow", "" );
+        else
+          wApp->doJavaScript( js );
+#else
+        wApp->doJavaScript( js );
+#endif
+      };//doMaximize
+      
+      maximizeIcon->clicked().connect( std::bind( toggleMaximize ) );
+      appIcon->doubleClicked().connect( std::bind( toggleMaximize )  );
+      dragRegion->doubleClicked().connect( std::bind( toggleMaximize )  );
+      menuTitle->doubleClicked().connect( std::bind( toggleMaximize )  );
       
 #if( BUILD_AS_ELECTRON_APP )
-      minimizeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').minimize(); }" );
+      minimizeIcon->clicked().connect( std::bind([](){
+        ElectronUtils::send_nodejs_message( "MinimizeWindow", "" );
+      }) );
       
-      // Note that this does not work if developer console is open.  Could use
-      //  app.exit(0), or maybe set a timeout for it or something...
-      closeIcon->clicked().connect( "function(){ "
-                                   "  console.log('Will close electron window');"
-                                   "  let w = $(window).data('ElectronWindow');"
-                                   "  if( !w ) w = remote.getCurrentWindow();"
-                                   "  w.close();"
-                                   "  console.log('Electron window should have closed');"
-                                   "}" );
+      closeIcon->clicked().connect( std::bind([](){
+        ElectronUtils::send_nodejs_message( "CloseWindow", "" );
+      }) );
 #endif //BUILD_AS_ELECTRON_APP
     }//if( !isAppTitlebar ) / else
   }//if( isMobile() ) / else
@@ -2192,9 +2210,8 @@ void InterSpec::updateRightClickNuclidesMenu(
   
   for( WMenuItem *item : menu->items() )
   {
-    if( !item->hasStyleClass("PhoneMenuBack")
-        && !item->hasStyleClass("PhoneMenuClose") )
-    delete item;
+    if( !item->hasStyleClass("PhoneMenuBack") && !item->hasStyleClass("PhoneMenuClose") )
+      delete item;
   }//for( WMenuItem *item : menu->items() )
 
   
@@ -2265,7 +2282,7 @@ void InterSpec::handleLeftClick( double energy, double counts,
   if( m_rightClickMenu && !m_rightClickMenu->isHidden() )
     m_rightClickMenu->hide();
 
-  if( (m_toolsTabs && m_currentToolsTab == m_toolsTabs->indexOf(m_nuclideSearchContainer))
+  if( (m_toolsTabs && (m_currentToolsTab == m_toolsTabs->indexOf(m_nuclideSearchContainer)))
       || m_nuclideSearchWindow )
   {
     setIsotopeSearchEnergy( energy );
@@ -2279,6 +2296,13 @@ void InterSpec::handleLeftClick( double energy, double counts,
     m_terminal->chartClicked(energy,counts,pageX,pageY);
   }
 #endif
+  
+  if( (m_toolsTabs && (m_currentToolsTab == m_toolsTabs->indexOf(m_peakInfoDisplay)))
+     || m_peakInfoWindow )
+  {
+    m_peakInfoDisplay->handleChartLeftClick( energy );
+    return;
+  }
 }//void handleLeftClick(...)
 
 
@@ -2351,6 +2375,7 @@ void InterSpec::handleRightClick( double energy, double counts,
                                                        "", false );
           
           Wt::WServer *server = Wt::WServer::instance();
+          assert( server );
           if( server )  //this should always be true
           {
             Wt::WIOService &io = server->ioService();
@@ -2390,7 +2415,7 @@ void InterSpec::handleRightClick( double energy, double counts,
                       peaks, refLines, detector, session_id, candidates, updater );
             };
             
-            io.post( worker );
+            io.boost::asio::io_service::post( worker );
           }//if( server )
         }//if( menu )
         else
@@ -5359,9 +5384,8 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 #elif( BUILD_AS_ELECTRON_APP )
   m_fileMenuPopup->addSeparator();
   PopupDivMenuItem *exitItem = m_fileMenuPopup->addMenuItem( "Exit" );
-  //exitItem->triggered().connect( "function(){ $(window).data('ElectronWindow').close(); }" );
   exitItem->triggered().connect( std::bind( []{
-    wApp->doJavaScript( "$(window).data('ElectronWindow').close();" );
+    ElectronUtils::send_nodejs_message( "CloseWindow", "" );
   }) );
 #endif
   }//if( InterSpecApp::isPrimaryWindowInstance() )
@@ -5950,7 +5974,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     auto browserItem = m_displayOptionsPopupDiv->addMenuItem( "Use in external browser" );
 #if( BUILD_AS_ELECTRON_APP )
     browserItem->triggered().connect( std::bind( [](){
-      wApp->doJavaScript( "if(ipcRenderer) ipcRenderer.send('OpenInExternalBrowser');" );
+      ElectronUtils::send_nodejs_message("OpenInExternalBrowser", "");
     } ) );
 #endif
     
@@ -5992,12 +6016,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleDevTools );
 #endif
 #elif( BUILD_AS_ELECTRON_APP )
-  
-  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsResetPageZoom);
-  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
-  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsDecreasePageZoom);
-  
-  
+
   m_displayOptionsPopupDiv->addSeparator();
   PopupDivMenuItem *fullScreenItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Full Screen" );  //F11
   m_displayOptionsPopupDiv->addSeparator();
@@ -6005,10 +6024,14 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   PopupDivMenuItem *zoomInItem = m_displayOptionsPopupDiv->addMenuItem( "Zoom In" ); //Ctrl+Shift+=
   PopupDivMenuItem *zoomOutItem = m_displayOptionsPopupDiv->addMenuItem( "Zoom Out" ); //Ctrl+-
 
+  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsResetPageZoom);
+  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
+  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsDecreasePageZoom);
+  
   // Note: the triggered() signal a Wt::Signal, which is C++ only, so we cant just hook it up to
   //       javascript for it to run - we have to make the round-trip JS -> C++ -> JS
   fullScreenItem->triggered().connect( std::bind( []{
-    wApp->doJavaScript( "Wt.WT.TitleBarHandleMaximizeClick();" );
+    ElectronUtils::send_nodejs_message( "ToggleMaximizeWindow", "" );
   }) );
   
   resetZoomItem->triggered().connect( std::bind( []{
@@ -6027,11 +6050,10 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 #if( PERFORM_DEVELOPER_CHECKS )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
-    LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsToggleDevTools);
     m_displayOptionsPopupDiv->addSeparator();
     PopupDivMenuItem *devToolItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Dev Tools" );
     devToolItem->triggered().connect( std::bind( []{
-      wApp->doJavaScript( "Wt.WT.ToggleDevTools();" );
+      ElectronUtils::send_nodejs_message( "ToggleDevTools", "" );
     }) );
   }//if( InterSpecApp::isPrimaryWindowInstance() )
 #endif
@@ -7386,7 +7408,7 @@ void InterSpec::initMaterialDbAndSuggestions()
     
     boost::function<void(void)> worker = boost::bind( &fillMaterialDb,
                                     m_materialDB, wApp->sessionId(), success );
-    WServer::instance()->ioService().post( worker );
+    WServer::instance()->ioService().boost::asio::io_service::post( worker );
   }//if( !m_materialDB )
 }//void InterSpec::initMaterialDbAndSuggestions()
 
@@ -8426,7 +8448,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           {
             auto drfcopy = std::make_shared<DetectorPeakResponse>( *drf );
             boost::function<void(void)> worker = boost::bind( &DrfSelect::updateLastUsedTimeOrAddToDb, drfcopy, m_user.id(), m_sql );
-            WServer::instance()->ioService().post( worker );
+            WServer::instance()->ioService().boost::asio::io_service::post( worker );
           }
         }//if( meas->detector() != old_det )
         
@@ -8643,7 +8665,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         m_preserveCalibWindow->finished().connect( std::bind( [=](){
           deleteEnergyCalPreserveWindow();
           std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
-          WServer::instance()->ioService().post( std::bind([=](){ propigate_peaks_fcns(data); }) );
+          WServer::instance()->ioService().boost::asio::io_service::post( std::bind([=](){ propigate_peaks_fcns(data); }) );
         } ) );
         
         propigate_peaks_fcns = nullptr;
@@ -8658,7 +8680,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   if( propigate_peaks_fcns )
   {
     std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
-    WServer::instance()->ioService().post( std::bind([=](){ propigate_peaks_fcns(data); }) );
+    WServer::instance()->ioService().boost::asio::io_service::post( std::bind([=](){ propigate_peaks_fcns(data); }) );
     propigate_peaks_fcns = nullptr;
   }
   
@@ -8826,7 +8848,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     boost::function<void(void)> worker = boost::bind(
                                   &InterSpec::doFinishupSetSpectrumWork,
                                   this, meas, furtherworkers );
-    WServer::instance()->ioService().post( worker );
+    WServer::instance()->ioService().boost::asio::io_service::post( worker );
   }//if( meas && furtherworkers.size() )
   
   if( m_mobileBackButton && m_mobileForwardButton )
@@ -9535,7 +9557,7 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
     if( server )  //this should always be true
     {
       m_findingHintPeaks = true;
-      server->ioService().post( worker );
+      server->ioService().boost::asio::io_service::post( worker );
     }//if( server )
   }
 }//void searchForHintPeaks(...)
@@ -9565,7 +9587,7 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
       cerr << "InterSpec::setHintPeaks(...): posting queued job" << endl;
       boost::function<void()> worker = m_hintQueue.back();
       m_hintQueue.pop_back();
-      server->ioService().post( worker );
+      server->ioService().boost::asio::io_service::post( worker );
     }//if( server )
   }//if( m_hintQueue.size() )
   

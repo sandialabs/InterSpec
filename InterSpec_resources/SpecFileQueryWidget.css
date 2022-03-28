@@ -16,6 +16,13 @@
     color: red;
 }
 
+.SpecFileQueryPathTxt {
+  font: 1em 'Andale Mono', Consolas, 'Courier New';
+  text-overflow: ellipsis;
+  overflow: hidden;
+  display: inline-block;
+}
+
 .SpecFileQueryOptionsBtn, .SpecFileQueryOptionsBtn:hover{
     background-image: url('../InterSpec_resources/images/bullet_arrow_down.png');
     background-position: right center;

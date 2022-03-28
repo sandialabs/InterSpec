@@ -7985,7 +7985,7 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
   if( fitInBackground )
   {
     Wt::WServer *server = Wt::WServer::instance();
-    server->ioService().post( boost::bind( &ShieldingSourceDisplay::doModelFittingWork,
+    server->ioService().boost::asio::io_service::post( boost::bind( &ShieldingSourceDisplay::doModelFittingWork,
                             this, sessionid, inputPrams, progress, progress_updater, results, gui_updater ) );
   }else
   {

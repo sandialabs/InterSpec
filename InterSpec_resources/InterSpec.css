@@ -951,6 +951,12 @@ input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner
   box-shadow: 0 5px 3px -3px rgba(0,0,0,.12), 4px 8px 6px 1px rgba(0,0,0,.08), 5px 3px 6px 1px rgba(0,0,0,.06);
 }
 
+.PopupDivMenu.ContextSubMenu
+{
+
+}
+
+
 /*
  TODO: it would be nice to hide separators that are at the bottom and top of menus; this happens when all the menu items above or below the separator is hidden.  For some reason selectors like the next dont actually function (but they will aw part of a jQuery selector).
 .PopupDivMenu > li.Wt-separator:visible:last
