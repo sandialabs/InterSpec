@@ -36,7 +36,9 @@
 
 
 #include <Wt/Chart/WCartesianChart>
+#if( WT_VERSION >= 0x3030600 )
 #include <Wt/Chart/WStandardChartProxyModel>
+#endif
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"

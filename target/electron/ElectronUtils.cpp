@@ -33,6 +33,10 @@
 #include <string>
 #include <memory>
 
+#include <Wt/WServer>
+#include <Wt/WIOService>
+#include <Wt/WApplication>
+
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
@@ -41,6 +45,7 @@
 #include "InterSpec/DbToFilesystemLink.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "target/electron/ElectronUtils.h"
+#include "target/electron/InterSpecAddOn.h"
 #include "SpecUtils/SerialToDetectorModel.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
@@ -65,7 +70,7 @@ bool requestNewCleanSession()
     js += "$(window).data('HaveTriggeredMenuUpdate',null);";
     
     //Have electron reload the page.
-    js += "ipcRenderer.send('NewCleanSession','" + app->externalToken() + "');";
+    ElectronUtils::send_nodejs_message("NewCleanSession", "");
     
     //Just in case the page reload doesnt go through, make sure menus will get updated eventually
     //  (this shouldnt be necassary, right?)
@@ -93,11 +98,143 @@ bool notifyNodeJsOfNewSessionLoad()
 
   const string oldexternalid = app->externalToken();
   if( !oldexternalid.empty() )
-    app->doJavaScript( "if( ipcRenderer ) ipcRenderer.send('SessionFinishedLoading','" + app->externalToken() + "');" );
+    ElectronUtils::send_nodejs_message("SessionFinishedLoading", "");
   app->triggerUpdate();
   
   return true;
 }//bool notifyNodeJsOfNewSessionLoad( const std::string sessionid )
+
+
+bool send_nodejs_message( const std::string &msg_name, const std::string &msg_data )
+{
+  auto app = dynamic_cast<InterSpecApp *>(wApp);
+  if( !app )
+  {
+    cerr << "Error: send_nodejs_message: wApp is null!!!" << endl;
+    return false;
+  }
+  
+  const string session_token = app->externalToken();
+  return InterSpecAddOn::send_nodejs_message( session_token, msg_name, msg_data );
+}//void send_nodejs_message(...)
+
+
+bool handle_message_from_nodejs( const std::string &session_token,
+                                const std::string &msg_name, const std::string &msg_data )
+{
+  InterSpecApp *app = InterSpecApp::instanceFromExtenalToken( session_token );
+  
+  if( !app )
+  {
+    // We will get here if the app-instance with this token hasnt yet loaded
+    cerr << "Failed to find app instance for token='" << session_token << "'" << endl;
+    
+    //assert( 0 );
+    
+    return false;
+  }//if( !app )
+  
+  Wt::WApplication::UpdateLock lock( app );
+  if( !lock )
+  {
+    cerr << "Failed to get WApplication::UpdateLock lock token='" << session_token << "'" << endl;
+    return false;
+  }
+  
+// TODO: maybe we should make a own function for each of the cases below; maybe make things both
+//       clearer here, as well as in main.js
+  if( msg_name == "..." )
+  {
+    
+  }
+#if( !USE_ELECTRON_NATIVE_MENU )
+  else if( msg_name == "OnMaximize" )
+  {
+    cout << "\n\nOnMaximize\n\n";
+    app->doJavaScript( "Wt.WT.TitleBarChangeMaximized(true);" );
+  }else if( msg_name == "OnUnMaximize" )
+  {
+    cout << "\n\nOnUnMaximize\n\n";
+    app->doJavaScript( "Wt.WT.TitleBarChangeMaximized(false);" );
+  }else if( msg_name == "OnBlur" )
+  {
+    app->doJavaScript( "$('.app-titlebar').addClass('inactive');" );
+  }else if( msg_name == "OnFocus" )
+  {
+    app->doJavaScript( "$('.app-titlebar').removeClass('inactive');" );
+  }else if( msg_name == "OnLeaveFullScreen" )
+  {
+    cout << "Left to fullscreen." << endl;
+  }else if( msg_name == "OnEnterFullScreen" )
+  {
+    cout << "Went to fullscreen." << endl;
+  }else
+#endif
+  {
+    cerr << "Unrecognized msg_name from nodejs: '" << msg_name << "'" << endl;
+    return false;
+  }
+  
+  app->triggerUpdate();
+  return true;
+}//handle_message_from_nodejs(...)
+
+
+bool browse_for_directory( const std::string &window_title,
+                           const std::string &window_message,
+                           std::function<void(std::string)> callback )
+{
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( Wt::WApplication::instance() );
+  
+  if( !app )
+    throw runtime_error( "ElectronUtils::browse_for_directory(): must be called from within Wt event-loop." );
+  
+  if( !InterSpecApp::isPrimaryWindowInstance() )
+  {
+    cerr << "Browse for directory should only be called from a primary instance\n";
+    assert( 0 );
+    return false;
+  }
+  //session_token
+  assert( callback );
+  if( !callback )
+    return false;
+  
+  const string session_id = app->sessionId();
+  
+  std::function<void(std::string)> wrapped_callback = [session_id,callback](string result_path){
+    Wt::WServer *server = Wt::WServer::instance();
+    if( !server ){
+      cerr << "browse_for_directory callback wrapper: WServer no longer available." << endl;
+      assert( 0 );
+      return;
+    }
+    
+    server->post(session_id, [callback,result_path](){
+      Wt::WApplication *app = Wt::WApplication::instance();
+      if( !app )
+        return;
+      
+      callback( result_path );
+      app->triggerUpdate();
+    });
+  };//wrapped_callback(...)
+  
+  const string token = app->externalToken();
+  
+  auto worker = [=](){
+    InterSpecAddOn::browse_for_directory( token, window_title, window_message, wrapped_callback );
+  };
+  
+  Wt::WServer *server = Wt::WServer::instance();
+  assert( server );
+
+  Wt::WIOService &io = server->ioService();
+  io.post( worker );
+  
+  return true;
+}//bool browse_for_directory(...)
+
 }//namespace ElectronUtils
 
 
@@ -109,7 +246,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   //Using a relative path should get us in less trouble than an absolute path
   //  on Windows.  Although havent yet tested (20190902) with network drives and such on Windows.
   //Should check if basedir is a relative or absolut path before this next step
-//#warning "Need to check out how this setting basedir for Electron tartget works on WIndows network drives and such"
+//#warning "Need to check out how this setting basedir for Electron target works on Windows network drives and such"
   string cwd, relbasedir;
 
   try

@@ -106,12 +106,14 @@ cmake -DCMAKE_PREFIX_PATH=/path/to/prefix ..
 ```
 or if boost and Wt are in different directories:
 ```
-cmake --generator "Visual Studio 15 2017 Win64" \
-      --DBOOST_ROOT=/path/to/boost \
-      --DWt_INCLUDE_DIR=/path/to/wt/include \
+cmake -generator "Visual Studio 15 2017 Win64" \
+      -DBOOST_ROOT=/path/to/boost \
+      -DWt_INCLUDE_DIR=/path/to/wt/include \
+      -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" \
+      -DBoost_USE_STATIC_LIBS=OFF \
+      -DBoost_USE_STATIC_RUNTIME=ON \
       ..
 ```
-
 
 And then make:
 ```

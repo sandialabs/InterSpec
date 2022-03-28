@@ -466,13 +466,8 @@ PhotopeakDelegate::~PhotopeakDelegate()
 
 void PhotopeakDelegate::doCloseEditor( WWidget *editor, bool save, bool isBlurr ) const
 {
-  PhotopeakDelegate::EditWidget *editWidgetPtr
-                      = dynamic_cast<PhotopeakDelegate::EditWidget *>( editor );
-
-  WLineEdit *lineEdit = NULL;
-
-  if( editWidgetPtr )
-    lineEdit = editWidgetPtr->edit();
+  PhotopeakDelegate::EditWidget *edit = dynamic_cast<PhotopeakDelegate::EditWidget *>( editor );
+  WLineEdit *lineEdit = edit ? edit->edit() : nullptr;
 
   if( !lineEdit || (isBlurr && lineEdit->text().empty()) )
     save = false;

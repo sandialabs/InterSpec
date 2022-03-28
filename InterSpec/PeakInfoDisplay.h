@@ -59,6 +59,8 @@ public:
 
   void enablePeakSearchButton( bool enable );
   
+  void handleChartLeftClick( const double energy );
+  
 protected:
   //init() must be called exactly once
   void init();
@@ -66,6 +68,7 @@ protected:
   void createNewPeak();
   void deleteSelectedPeak();
   void enablePeakDelete( Wt::WModelIndex index );
+  void handleSelectionChanged();
   void disablePeakDelete();
   void confirmRemoveAllPeaks();
   void assignNuclidesFromRefLines();

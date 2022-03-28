@@ -204,8 +204,8 @@ protected:
   RowStretchTreeView *m_resultview;
   
 #if( BUILD_AS_ELECTRON_APP )
-  std::unique_ptr<Wt::JSignal<std::string>> m_pathSelectedSignal;
   std::string m_basePath;
+  Wt::WText *m_baseLocation;
 #elif( BUILD_AS_OSX_APP )
   //TODO: currently using a WFileUpload to browse for a file - should use custom JS/html to get rid of some issues
   std::string m_basePath;
