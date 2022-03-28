@@ -1,0 +1,13 @@
+diff --git a/src/Wt/Render/CssParser.C b/src/Wt/Render/CssParser.C
+index cf21160e..bf4710db 100644
+--- a/src/Wt/Render/CssParser.C
++++ b/src/Wt/Render/CssParser.C
+@@ -41,6 +41,8 @@ using namespace Wt::Render;
+ #endif
+ #include <boost/spirit/include/classic_file_iterator.hpp>
+ 
++#include <boost/foreach.hpp>
++
+ #include <map>
+ 
+ #include <Wt/Render/Block.h>

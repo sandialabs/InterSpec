@@ -1,0 +1,40 @@
+find_package(Git)
+include(FetchContent)
+
+set( BOOST_IOSTREAMS_ENABLE_ZSTD OFF CACHE INTERNAL ""  )
+set( BOOST_IOSTREAMS_ENABLE_ZLIB OFF CACHE INTERNAL ""  )
+set( BOOST_IOSTREAMS_ENABLE_LZMA OFF CACHE INTERNAL ""  )
+set( BOOST_IOSTREAMS_ENABLE_BZIP2 OFF CACHE INTERNAL ""  )
+
+FetchContent_Declare(
+  boost
+  GIT_REPOSITORY https://github.com/boostorg/boost.git
+  GIT_TAG        5df8086b733798c8e08e316626a16babe11bd0d2 # release-1.79 - beta 1
+  GIT_SHALLOW    ON
+)
+
+#FetchContent_GetProperties(boost)
+#if(NOT boost_POPULATED)
+#  FetchContent_Populate(boost)
+#  add_subdirectory(${boost_SOURCE_DIR} ${boost_BINARY_DIR} EXCLUDE_FROM_ALL)
+#endif()
+
+FetchContent_Declare(
+  wt
+  GIT_REPOSITORY https://github.com/emweb/wt.git
+  GIT_TAG        b84925215d2b45879cf20c0cb340c4e7960d0c53 # 3.7.1
+  GIT_SHALLOW    ON
+
+  #The '|| true' is in next command is due to bug in cmake I think: https://gitlab.kitware.com/cmake/cmake/-/issues/21146
+  PATCH_COMMAND ${GIT_EXECUTABLE} apply --ignore-space-change --ignore-whitespace ${CMAKE_CURRENT_SOURCE_DIR}/../patches/wt/3.7.1/FetchContent/wt_3.7.1_FetchContent.git.patch || true
+)
+
+
+
+#FetchContent_GetProperties(wt)
+#if(NOT wt_POPULATED)
+#  FetchContent_Populate(wt)
+#  add_subdirectory(${wt_SOURCE_DIR} ${wt_BINARY_DIR} EXCLUDE_FROM_ALL)
+#endif()
+
+FetchContent_MakeAvailable( wt boost )
