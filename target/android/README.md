@@ -7,18 +7,14 @@ the command line.  Further, for the life of me I couldnt get CMake to actually
 find boost and Wt libraries for android, even when I specified all the 
 directories I could. I was unable to find an elegant way to do all this, so I 
 just brute forced it.
-These instructions are for May of 2018, and macOS was used.
+These instructions are for March of 2022, and macOS was used.
 
-- Download and install Android Studio.
+- Download and install Android Studio (2021.1.1 Patch 2 was used).
 - Then use the HelloJNI example project to determine which compile flags is used
  by cmake/Android-Studio.
-  - First in build.gradle set options to what you want ('minSdkVersion 19',
-    'targetSdkVersion 23', 'compileSdkVersion 25', and CMake arguments
-    "-DANDROID_CPP_FEATURES=rtti exceptions", "-DANDROID_TOOLCHAIN=clang",
-    "-DANDROID_PIE=ON", "-DANDROID_STL=c++_static").
-  - Then build each architecture you might want, and then in like
-    /Users/wcjohns/AndroidStudioProjects/HelloJNI/app/.externalNativeBuild/cmake/x86_64Release/x86_64
-    open android_gradle_build.json and get the actual compile flags.
+  - Build each architecture you might want, and then in like
+    AndroidStudioProjects/HelloJNI/app/.cxx/cmake/arm8Debug/armeabi-v7a/compile_commands.json
+    you can get the actual compile flags.
 - Then use https://github.com/moritz-wundke/Boost-for-Android to build boost
   - Boost-for-Android is great, but you really need to check that it uses
     the same build settings as CMake will.  To do this edit the
@@ -28,27 +24,34 @@ These instructions are for May of 2018, and macOS was used.
     HelloJNI.  You need to do this for each architecture.
   - Also, you may need to edit build-android.sh to allow using NDK version 17
     (using same settings as 16)
-  - run `./build-android.sh --boost=1.65.1 --toolchain=llvm --arch=armeabi-v7a,arm64-v8a,x86,x86_64 --prefix=/Users/wcjohns/install/android/ /Users/wcjohns/Library/Android/sdk/ndk-bundle`
-- Then compile Wt 3.3.4.
-  - Replace a few Wt files: target/android/wt_patch/wt-3.3.4/Android.C
-    target/android/wt_patch/wt-3.3.4/CMakeLists.txt
-    target/android/wt_patch/wt-3.3.4/base64.cpp
+  - run `./build-android.sh --boost=1.78.0 --arch=armeabi-v7a,arm64-v8a,x86,x86_64 --prefix=/Users/wcjohns/install/android/ /Users/wcjohns/Library/Android/sdk/ndk/23.1.7779620/`
+- Then compile Wt 3.7.1.
+
+patch -u src/Wt/Render/CssParser.C -i ${PATCH_DIR}/wt/3.7.1/CssParser.C.patch
+
   - Manually build Wt for each architecture
     - ```bash
       mkdir build_android_armeabi-v7a;cd build_android_armeabi-v7a`
-      
+
       export MY_ANDROID_ABI="armeabi-v7a"
-      export MY_ANDROID_PLATFORM="android-19"
-      export MY_BOOST_DIR="/Users/wcjohns/install/android/${MY_ANDROID_ABI}"
-      cmake -DANDROID_ABI=${MY_ANDROID_ABI} -DANDROID_PLATFORM=${MY_ANDROID_PLATFORM} \
-            -DCMAKE_BUILD_TYPE=Release -DANDROID_NDK=/Users/wcjohns/Library/Android/sdk/ndk-bundle \
-            -DCMAKE_CXX_FLAGS=-std=c++11 \
-            -DANDROID_STL=c++_static \
-            -DCMAKE_TOOLCHAIN_FILE=/Users/wcjohns/Library/Android/sdk/ndk-bundle/build/cmake/android.toolchain.cmake \
+    
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DBoost_INCLUDE_DIR=${MY_WT_PREFIX}/include -DBOOST_PREFIX=${MY_WT_PREFIX} -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DHARU_PREFIX=${MY_WT_PREFIX} -DHARU_LIB=${MY_WT_PREFIX}/lib/libhpdfs.a -DENABLE_SSL=OFF  -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON  -DCONFIGDIR=${MY_WT_PREFIX}/etc/wt -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
+
+
+      export MY_BOOST_DIR="/Users/wcjohns/install/android/armeabi-v7a"
+      cmake -DANDROID_ABI=${MY_ANDROID_ABI} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} 
+            -DANDROID_NDK=/Users/wcjohns/Library/Android/sdk/ndk/23.1.7779620/ \
+            -DCMAKE_CXX_FLAGS=-std=c++14 \
+            -DCMAKE_TOOLCHAIN_FILE=/Users/wcjohns/Library/Android/sdk/ndk/23.1.7779620/build/cmake/android.toolchain.cmake \
             -DANDROID_CPP_FEATURES=rtti exceptions -DANDROID_TOOLCHAIN=clang -DANDROID_PIE=ON \
-            -DSHARED_LIBS=OFF -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DWT_CPP_11_MODE='-std=c++11' \
-            -DENABLE_SSL=OFF \
-            -DBoost_INCLUDE_DIR=${MY_BOOST_DIR}/include/boost-1_65_1 \
+            -DSHARED_LIBS=OFF -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DWT_CPP_11_MODE='-std=c++14' \
+            -DENABLE_SSL=OFF -DHTTP_WITH_ZLIB=OFF \
+            -DCONFIGURATION=data/config/wt_config_android.xml\
+            -DWTHTTP_CONFIGURATION=data/config/wthttpd \
+            -DCMAKE_INSTALL_PREFIX=${MY_BOOST_DIR} \
+            -DBoost_INCLUDE_DIR=${MY_BOOST_DIR}/include/boost-1_78 \
             -DBoost_DATE_TIME_LIBRARY_RELEASE=${MY_BOOST_DIR}/lib/libboost_date_time-clang-darwin-mt-1_65_1.a \
             -DBoost_FILESYSTEM_LIBRARY_RELEASE=${MY_BOOST_DIR}/lib/libboost_filesystem-clang-darwin-mt-1_65_1.a \
             -DBoost_PROGRAM_OPTIONS_LIBRARY_RELEASE=${MY_BOOST_DIR}/lib/libboost_program_options-clang-darwin-mt-1_65_1.a \
@@ -57,7 +60,6 @@ These instructions are for May of 2018, and macOS was used.
             -DBoost_SIGNALS_LIBRARY_RELEASE=${MY_BOOST_DIR}/lib/libboost_signals-clang-darwin-mt-1_65_1.a \
             -DBoost_SYSTEM_LIBRARY_RELEASE=${MY_BOOST_DIR}/lib/libboost_system-clang-darwin-mt-1_65_1.a \
             -DBoost_THREAD_LIBRARY_RELEASE=${MY_BOOST_DIR}/lib/libboost_thread-clang-darwin-mt-1_65_1.a \
-            -DCMAKE_INSTALL_PREFIX=${MY_BOOST_DIR} \
             ..
       make -j8
       make install
@@ -65,21 +67,18 @@ These instructions are for May of 2018, and macOS was used.
       And of course you probably want to do this for the other architectures:
       ```bash
       export MY_ANDROID_ABI="arm64-v8a"
-      export MY_ANDROID_PLATFORM="android-21"
       export MY_BOOST_DIR="/Users/wcjohns/install/android/${MY_ANDROID_ABI}"
       cmake ...
       ```
 
       ```
       export MY_ANDROID_ABI="x86"
-      export MY_ANDROID_PLATFORM="android-19"
       export MY_BOOST_DIR="/Users/wcjohns/install/android/${MY_ANDROID_ABI}"
       cmake ...
       ```
 
       ```
       export MY_ANDROID_ABI="x86_64"
-      export MY_ANDROID_PLATFORM="android-21"
       export MY_BOOST_DIR="/Users/wcjohns/install/android/${MY_ANDROID_ABI}"
       cmake ...
       ```
