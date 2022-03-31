@@ -7192,8 +7192,9 @@ void InterSpec::createTerminalWidget()
     m_toolsTabs->tabClosed().connect( this, &InterSpec::handleTerminalWindowClose );
   }else
   {
-    m_terminalWindow = new AuxWindow( "Terminal" );
-    m_terminalWindow->setClosable( true );
+    m_terminalWindow = new AuxWindow( "Terminal",
+                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                      | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
     
     m_terminalWindow->rejectWhenEscapePressed();
     m_terminalWindow->finished().connect( this, &InterSpec::handleTerminalWindowClose );
