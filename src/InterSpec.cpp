@@ -9354,6 +9354,31 @@ void InterSpec::setDisplayedEnergyRange( float lowerEnergy, float upperEnergy )
   m_spectrum->setXAxisRange( lowerEnergy, upperEnergy );
 }//void setDisplayedEnergyRange()
 
+
+bool InterSpec::setYAxisRange( float lower_counts, float upper_counts )
+{
+  bool success = true;
+  if( upper_counts < lower_counts )
+    std::swap( lower_counts, upper_counts );
+  
+  if( (lower_counts <= 1.0E-6) && (upper_counts <= 1.0E-6) )
+    return false;
+  
+  if( (lower_counts < 9.9E-7) && m_spectrum->yAxisIsLog() )
+  {
+    success = false;
+    lower_counts = 1.0E-6;
+    if( upper_counts <= lower_counts )
+      upper_counts = 10*lower_counts;
+  }//if( log y-axis, and specifying approx less than zero counts )
+  
+  m_spectrum->setYAxisRange( lower_counts, upper_counts );
+  
+  return success;
+}//bool setYAxisRange(...)
+
+
+
 void InterSpec::displayedSpectrumRange( double &xmin, double &xmax, double &ymin, double &ymax ) const
 {
   m_spectrum->visibleRange( xmin, xmax, ymin, ymax );

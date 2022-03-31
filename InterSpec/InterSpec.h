@@ -515,10 +515,17 @@ public:
   
   //setDisplayedEnergyRange(): sets the displayed energy range that should be
   //  shown.  Range is not checked for validity. E.g. you should not ask to zoom
-  //  in to less than one bin.  You can also specify a lowere or higher energy
-  //  than data is available for.  Definetly dont input the same energy for both
+  //  in to less than one bin.  You can also specify a lower or higher energy
+  //  than data is available for.  Definitely dont input the same energy for both
   //  values, or bad things will happen.
   void setDisplayedEnergyRange( float lowerEnergy, float upperEnergy );
+  
+  /** Sets the Y-axis range.
+   
+   Returns true if successful, or false if the request couldnt be fully honored
+   (e.g., a negative lower counts was specified, but its currently log-scale)
+   */
+  bool setYAxisRange( float lower_counts, float upper_counts );
   
   //displayedSpectrumRange(): Grab the ranges in y and y that are currently
   //  displayed to the user.
