@@ -997,7 +997,8 @@ void FluxToolWidget::init()
   "}" );
   layout->addWidget( m_copyBtn, 2, 0, AlignLeft | AlignMiddle );
   
-  m_infoCopied.connect( boost::bind( &FluxToolWidget::tableCopiedToCliboardCallback, this, _1 ) );
+  m_infoCopied.connect( boost::bind( &FluxToolWidget::tableCopiedToCliboardCallback, this,
+                                    boost::placeholders::_1 ) );
 #endif
   
   m_displayInfoLevel = DisplayInfoLevel::Simple; //set to simple so #setDisplayInfoLevel(...) will do its work

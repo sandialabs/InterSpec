@@ -1609,7 +1609,8 @@ void DecayActivityDiv::init()
   
   m_nuclideSelectDialog->hide();
   
-  m_nuclideSelect->selected().connect( boost::bind( &DecayActivityDiv::addTheNuclide, this, _1 ) );
+  m_nuclideSelect->selected().connect( boost::bind( &DecayActivityDiv::addTheNuclide, this,
+                                                   boost::placeholders::_1 ) );
   m_clearNuclidesButton->clicked().connect( this, &DecayActivityDiv::clearAllNuclides );
   m_decayChart->clicked().connect( this, &DecayActivityDiv::decayChartClicked );
 

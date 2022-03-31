@@ -171,8 +171,8 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     m_selects[typeindex]->setInline( false );
     m_selects[typeindex]->addStyleClass( "SpecFileSelect" );
     m_selects[typeindex]->setCurrentIndex( -1 );
-    m_selects[typeindex]->activated().connect(
-                  boost::bind( &CompactFileManager::handleFileChangeRequest, this, _1, type ) );
+    m_selects[typeindex]->activated().connect( boost::bind( &CompactFileManager::handleFileChangeRequest,
+                                                        this, boost::placeholders::_1, type ) );
     
     m_sampleDivs[typeindex] = new WContainerWidget( wrapper );
     m_sampleDivs[typeindex]->setStyleClass( "SampleSelectRow" );
@@ -246,7 +246,8 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       m_scaleValueTxt[typeindex]->addStyleClass( "SpecNormTxt" );
       m_scaleValueTxt[typeindex]->setFormatString( "%.4G" );
       m_scaleValueTxt[typeindex]->valueChanged().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactor, this, type) );
-      m_scaleValueTxt[typeindex]->mouseWheel().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactorWheel, this, type, _1) );
+      m_scaleValueTxt[typeindex]->mouseWheel().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactorWheel, this, type,
+          boost::placeholders::_1) );
       
       HelpSystem::attachToolTipOn( m_scaleValueTxt[typeindex],
                                   "Factor to scale the spectrum by. Entering an"
@@ -311,7 +312,8 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   m_files->rowsRemoved().connect( this, &CompactFileManager::refreshContents );
   hostViewer->displayedSpectrumChanged().connect(
                           boost::bind( &CompactFileManager::handleDisplayChange,
-                                       this, _1, _2, _3, _4 ) );
+                                       this, boost::placeholders::_1, boost::placeholders::_2,
+                                      boost::placeholders::_3, boost::placeholders::_4 ) );
 }//CompactFileManager constructor
 
 

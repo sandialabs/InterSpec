@@ -1857,7 +1857,9 @@ void SpectrumChart::setPeakModel( PeakModel *model )
   //Note that if you first remove rows from m_peakModel, then add some, then
   //  modify some data, all within one server callback, this will all only
   //  cause one update to be pushed to the user
-  m_peakModel->dataChanged().connect( boost::bind( &SpectrumChart::peakModelDataChanged, this, _1, _2 ) );
+  m_peakModel->dataChanged().connect( boost::bind( &SpectrumChart::peakModelDataChanged, this,
+                                                  boost::placeholders::_1,
+                                                  boost::placeholders::_2 ) );
   m_peakModel->rowsRemoved().connect( boost::bind( &SpectrumChart::update, this, WFlags<PaintFlag>(0) ) );
   m_peakModel->rowsInserted().connect( boost::bind( &SpectrumChart::update, this, WFlags<PaintFlag>(0) ) );
 }//void setPeakModel( PeakModel *model )
@@ -4014,7 +4016,8 @@ void SpectrumChart::paintEvent( WPaintDevice *paintDevice )
     LOAD_JAVASCRIPT(wApp, "js/SpectrumChart.js", "SpectrumChart", wtjsDrawnLegendTextMetric);
     
     m_legendTextMetric.reset( new JSignal<float>( this, "LegendTextMetric" ) );
-    m_legendTextMetric->connect( boost::bind(&SpectrumChart::legendTextSizeCallback, this, _1) );
+    m_legendTextMetric->connect( boost::bind(&SpectrumChart::legendTextSizeCallback, this,
+                                             boost::placeholders::_1) );
     
     wApp->doJavaScript( "Wt.WT.DrawnLegendTextMetric('"+id()+"');" );
   }//if( preferredMethod() == WPaintedWidget::HtmlCanvas )

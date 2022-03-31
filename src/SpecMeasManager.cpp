@@ -390,7 +390,8 @@ namespace
       cancel->clicked().connect( this, &FileUploadDialog::userCanceled );
       m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
       m_fileUpload->uploaded().connect( this, &FileUploadDialog::finishUpload );
-      m_fileUpload->fileTooLarge().connect( boost::bind( &FileUploadDialog::toLarge, this, _1 ) );
+      m_fileUpload->fileTooLarge().connect( boost::bind( &FileUploadDialog::toLarge, this,
+                                                        boost::placeholders::_1 ) );
       m_specChangedConection = viewer->displayedSpectrumChanged().connect( this, &AuxWindow::emitReject );
       
       finished().connect( this, &FileUploadDialog::userCanceled );
@@ -465,19 +466,22 @@ public:
     WFileUpload *m_fileUpload = new WFileUpload(  );
     m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
     m_fileUpload->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload, SpectrumType::Foreground));
-    m_fileUpload->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge, _1 ) );
+    m_fileUpload->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge,
+                                                      boost::placeholders::_1 ) );
 
     WText *uploadText2 = new WText( "Background: " );
     WFileUpload *m_fileUpload2 = new WFileUpload(  );
     m_fileUpload2->changed().connect( m_fileUpload2, &Wt::WFileUpload::upload );
     m_fileUpload2->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload2, SpectrumType::Background));
-    m_fileUpload2->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge, _1 ) );
+    m_fileUpload2->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge,
+                                                       boost::placeholders::_1 ) );
     
     WText *uploadText3 = new WText( "Secondary Foreground: " );
     WFileUpload *m_fileUpload3 = new WFileUpload(  );
     m_fileUpload3->changed().connect( m_fileUpload3, &Wt::WFileUpload::upload );
     m_fileUpload3->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload3, SpectrumType::SecondForeground));
-    m_fileUpload3->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge, _1 ) );
+    m_fileUpload3->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge,
+                                                       boost::placeholders::_1 ) );
     
     layout->addWidget( uploadText, 0, 0 );
     layout->addWidget( m_fileUpload, 0, 1 );
@@ -564,9 +568,18 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_specificResources[static_cast<int>(i)] = (SpecificSpectrumResource *)0;
   
 #if( !ANDROID && !IOS )
-  m_foregroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::Foreground ) );
-  m_secondForegroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::SecondForeground ) );
-  m_backgroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::Background ) );
+  m_foregroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this,
+                                                         boost::placeholders::_1,
+                                                         boost::placeholders::_2,
+                                                         SpectrumType::Foreground ) );
+  m_secondForegroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop,
+                                                               this, boost::placeholders::_1,
+                                                               boost::placeholders::_2,
+                                                               SpectrumType::SecondForeground ) );
+  m_backgroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this,
+                                                         boost::placeholders::_1,
+                                                         boost::placeholders::_2,
+                                                         SpectrumType::Background ) );
 #endif
 
 
@@ -949,7 +962,9 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     openButton->disable();
     //selection->activated().connect( openButton, &WPushButton::enable );
     table->clicked().connect( openButton, &WPushButton::enable );
-    table->doubleClicked().connect( boost::bind( &SpecMeasManager::extractAndOpenFromZip, this, spoolName, group, table, window, _1 ) );
+    table->doubleClicked().connect( boost::bind( &SpecMeasManager::extractAndOpenFromZip, this,
+                                                spoolName, group, table, window,
+                                                boost::placeholders::_1 ) );
     window->footer()->addWidget( openButton );
     
     //openButton->clicked().connect( boost::bind( &SpecMeasManager::extractAndOpenFromZip, this, spoolName, type, selection, window ) );
