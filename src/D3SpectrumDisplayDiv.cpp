@@ -303,8 +303,12 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   setJavaScriptMember( "resizeObserver",
     "new ResizeObserver(entries => {"
       "for (let entry of entries) {"
-        "if( entry.target && (entry.target.id === '" + id() + "') )"
-          + m_jsgraph + ".handleResize();"
+        "if( entry.target && (entry.target.id === '" + id() + "') ){"
+          // When we "Clear Session", jsRef() will give a null result temporarily, so we'll protect against that
+          "const c=" + jsRef() + ";"
+          "if(c && c.chart)"
+            "c.chart.handleResize();"
+        "}"
       "}"
     "});"
   );
