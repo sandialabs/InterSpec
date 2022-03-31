@@ -814,7 +814,6 @@ void D3SpectrumDisplayDiv::setXAxisRange( const double minimum, const double max
 void D3SpectrumDisplayDiv::setYAxisRange( const double minimum,
                                        const double maximum )
 {
-  cout << "setYAxisRange" << endl;
   const string minimumStr = to_string( minimum );
   const string maximumStr = to_string( maximum );
   m_yAxisMinimum = minimum;
