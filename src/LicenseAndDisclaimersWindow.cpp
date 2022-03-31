@@ -231,7 +231,9 @@ void LicenseAndDisclaimersWindow::right_select_item(  WMenuItem *item )
 
 SideMenuItem * LicenseAndDisclaimersWindow::makeItem( const WString &title, const string &resource)
 {
-  std::function<void(WContainerWidget *)> f = boost::bind( &LicenseAndDisclaimersWindow::itemCreator, this, resource, _1, title );
+  std::function<void(WContainerWidget *)> f = boost::bind( &LicenseAndDisclaimersWindow::itemCreator,
+                                                          this, resource, boost::placeholders::_1,
+                                                          title );
   
   WWidget *w = deferCreate( f );
   w->addStyleClass( "UseInfoItem" );
@@ -302,7 +304,9 @@ void LicenseAndDisclaimersWindow::lgplLicenseCreator( Wt::WContainerWidget *pare
 
 SideMenuItem *LicenseAndDisclaimersWindow::makeLgplLicenseItem()
 {
-  std::function<void(WContainerWidget *)> f = boost::bind( &LicenseAndDisclaimersWindow::lgplLicenseCreator, this, _1 );
+  std::function<void(WContainerWidget *)> f
+              = boost::bind( &LicenseAndDisclaimersWindow::lgplLicenseCreator, this,
+                            boost::placeholders::_1 );
   
   WWidget *w = deferCreate( f );
   w->addStyleClass( "UseInfoItem" );
@@ -463,7 +467,9 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 
 SideMenuItem *LicenseAndDisclaimersWindow::makeDataStorageItem()
 {
-  std::function<void(WContainerWidget *)> f = boost::bind( &LicenseAndDisclaimersWindow::dataStorageCreator, this, _1 );
+  std::function<void(WContainerWidget *)> f
+         = boost::bind( &LicenseAndDisclaimersWindow::dataStorageCreator, this,
+                        boost::placeholders::_1 );
   
   WWidget *w = deferCreate( f );
   w->addStyleClass( "UseInfoItem" );

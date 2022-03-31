@@ -673,7 +673,8 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
   
   std::vector<IsoFitStruct>::iterator pos;
   pos = std::lower_bound( m_nuclides.begin(), m_nuclides.end(), newIso,
-                          boost::bind( &SourceFitModel::compare, _1, _2, m_sortColumn, m_sortOrder ) );
+                          boost::bind( &SourceFitModel::compare, boost::placeholders::_1,
+                                      boost::placeholders::_2, m_sortColumn, m_sortOrder ) );
 
   const int row = static_cast<int>( pos - m_nuclides.begin() );
   beginInsertRows( WModelIndex(), row, row );
@@ -1788,7 +1789,8 @@ void SourceFitModel::sort( int column, Wt::SortOrder order )
   m_sortOrder = order;
   m_sortColumn = Columns( column );
   std::sort( m_nuclides.begin(), m_nuclides.end(),
-             boost::bind( &SourceFitModel::compare, _1, _2, m_sortColumn, m_sortOrder ) );
+             boost::bind( &SourceFitModel::compare, boost::placeholders::_1,
+                         boost::placeholders::_2, m_sortColumn, m_sortOrder ) );
   layoutChanged().emit();
 }//void sort(...)
 
@@ -4574,8 +4576,10 @@ void ShieldingSourceDisplay::startModelUpload()
   WFileUpload *upload = new WFileUpload( contents );
   upload->setInline( false );
   
-  upload->uploaded().connect( boost::bind( &ShieldingSourceDisplay::finishModelUpload, this, window, upload ) );
-  upload->fileTooLarge().connect( boost::bind( &ShieldingSourceDisplay::modelUploadError, this, _1, window ) );
+  upload->uploaded().connect( boost::bind( &ShieldingSourceDisplay::finishModelUpload, this, window,
+                                          upload ) );
+  upload->fileTooLarge().connect( boost::bind( &ShieldingSourceDisplay::modelUploadError, this,
+                                              boost::placeholders::_1, window ) );
   upload->changed().connect( upload, &WFileUpload::upload );
   
     
@@ -6125,8 +6129,10 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   
   select->setGeometry( geometry() );
   
-  select->addShieldingBefore().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingBefore, this, _1 ) );
-  select->addShieldingAfter().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingAfter, this, _1 ) );
+  select->addShieldingBefore().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingBefore,
+                                                    this, boost::placeholders::_1 ) );
+  select->addShieldingAfter().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingAfter,
+                                                   this, boost::placeholders::_1 ) );
   
   //connect up signals of select and such
   select->m_arealDensityEdit->valueChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
@@ -6139,9 +6145,15 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   select->materialModified().connect( this, &ShieldingSourceDisplay::materialModifiedCallback );
   select->materialChanged().connect( this, &ShieldingSourceDisplay::materialChangedCallback );
 
-  select->addingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback, this, select, _1, _2 ) );
-  select->removingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback, this, select, _1, _2 ) );
-  select->activityFromVolumeNeedUpdating().connect( boost::bind( &ShieldingSourceDisplay::updateActivityOfShieldingIsotope, this, _1, _2 ) );
+  select->addingIsotopeAsSource().connect( boost::bind(
+      &ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback, this,
+      select, boost::placeholders::_1, boost::placeholders::_2 ) );
+  select->removingIsotopeAsSource().connect( boost::bind(
+      &ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback, this,
+      select, boost::placeholders::_1, boost::placeholders::_2 ) );
+  select->activityFromVolumeNeedUpdating().connect( boost::bind(
+      &ShieldingSourceDisplay::updateActivityOfShieldingIsotope, this,
+      boost::placeholders::_1, boost::placeholders::_2 ) );
 
   try
   {

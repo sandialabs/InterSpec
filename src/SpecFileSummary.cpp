@@ -440,8 +440,10 @@ void SpecFileSummary::init()
   overallLayout->setRowStretch( 1, 1 );
   overallLayout->setRowStretch( 2, 1 );
 
-  m_specViewer->displayedSpectrumChanged().connect( boost::bind( &SpecFileSummary::handleSpectrumChange, this, _1, _2, _3, _4 ) );
-
+  m_specViewer->displayedSpectrumChanged().connect( boost::bind(
+                &SpecFileSummary::handleSpectrumChange, this,
+                boost::placeholders::_1, boost::placeholders::_2,
+                boost::placeholders::_3, boost::placeholders::_4 ) );
 
   m_displayedLiveTime->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDisplayedLiveTime) );
   m_displayedLiveTime->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDisplayedLiveTime) );
@@ -606,7 +608,9 @@ void SpecFileSummary::showGoogleMap()
   GoogleMap *googlemap = new GoogleMap( false );
   googlemap->addMarker( latitude, longitude );
   googlemap->adjustPanAndZoom();
-  googlemap->mapClicked().connect( boost::bind( &updateCoordText, googlemap, _1, _2, latitude, longitude ) );
+  googlemap->mapClicked().connect( boost::bind( &updateCoordText, googlemap,
+                                               boost::placeholders::_1, boost::placeholders::_2,
+                                               latitude, longitude ) );
   layout->addWidget( googlemap, 0, 0 );
   window->resize( WLength(w), WLength(h) );
   layout->setContentsMargins( 0, 0, 0, 0 );

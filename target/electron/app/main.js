@@ -374,7 +374,7 @@ function createWindow () {
   
   
   // Open the developer tools.
-  mainWindow.webContents.openDevTools({mode: "bottom"});
+  //mainWindow.webContents.openDevTools({mode: "bottom"});
 
   // A nice way to have the renderes console.log show up on the command line
   //  when running for development.

@@ -324,34 +324,51 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   if( !m_xRangeChangedJS )
   {
     m_xRangeChangedJS.reset( new JSignal<double,double,double,double>( this, "xrangechanged", true ) );
-    m_xRangeChangedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartXRangeChangedCallback, this, _1, _2, _3, _4 ) );
+    m_xRangeChangedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartXRangeChangedCallback, this,
+                                            boost::placeholders::_1, boost::placeholders::_2,
+                                            boost::placeholders::_3, boost::placeholders::_4 ) );
     
     m_shiftKeyDraggJS.reset( new JSignal<double,double>( this, "shiftkeydragged", true ) );
-    m_shiftKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftKeyDragCallback, this, _1, _2 ) );
+    m_shiftKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftKeyDragCallback, this,
+                                            boost::placeholders::_1, boost::placeholders::_2 ) );
     
     m_shiftAltKeyDraggJS.reset( new JSignal<double,double>( this, "shiftaltkeydragged", true ) );
-    m_shiftAltKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback, this, _1, _2 ) );
+    m_shiftAltKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback,
+                                               this, boost::placeholders::_1, boost::placeholders::_2 ) );
     
     m_rightMouseDraggJS.reset( new JSignal<double,double>( this, "rightmousedragged", true ) );
-    m_rightMouseDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightMouseDragCallback, this, _1, _2 ) );
+    m_rightMouseDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightMouseDragCallback,
+                                              this, boost::placeholders::_1, boost::placeholders::_2 ) );
     
     m_leftClickJS.reset( new JSignal<double,double,double,double>( this, "leftclicked", true ) );
-    m_leftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartLeftClickCallback, this, _1, _2, _3, _4 ) );
+    m_leftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartLeftClickCallback, this,
+                                        boost::placeholders::_1, boost::placeholders::_2,
+                                        boost::placeholders::_3, boost::placeholders::_4 ) );
     
     m_doubleLeftClickJS.reset( new JSignal<double,double>( this, "doubleclicked", true ) );
-    m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback, this, _1, _2 ) );
+    m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback,
+                                              this, boost::placeholders::_1, boost::placeholders::_2 ) );
     
     m_rightClickJS.reset( new JSignal<double,double,double,double>( this, "rightclicked", true ) );
-    m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this, _1, _2, _3, _4 ) );
+    m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this,
+                                         boost::placeholders::_1, boost::placeholders::_2,
+                                         boost::placeholders::_3, boost::placeholders::_4 ) );
     
     m_roiDraggedJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
-    m_roiDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRoiDragedCallback, this, _1, _2, _3, _4, _5, _6 ) );
+    m_roiDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRoiDragedCallback, this,
+                                         boost::placeholders::_1, boost::placeholders::_2,
+                                         boost::placeholders::_3, boost::placeholders::_4,
+                                         boost::placeholders::_5, boost::placeholders::_6 ) );
     
     m_fitRoiDragJS.reset( new JSignal<double,double,int,bool,double,double>( this, "fitRoiDrag", true ) );
-    m_fitRoiDragJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartFitRoiDragCallback, this, _1, _2, _3, _4, _5, _6 ) );
+    m_fitRoiDragJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartFitRoiDragCallback, this,
+                                         boost::placeholders::_1, boost::placeholders::_2,
+                                         boost::placeholders::_3, boost::placeholders::_4,
+                                         boost::placeholders::_5, boost::placeholders::_6 ) );
     
     m_yAxisDraggedJS.reset( new Wt::JSignal<double,std::string>( this, "yscaled", true ) );
-    m_yAxisDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisScaled, this, _1, _2 ) );
+    m_yAxisDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisScaled, this,
+                                           boost::placeholders::_1, boost::placeholders::_2 ) );
     
     //need legend closed signal.
     m_legendClosedJS.reset( new JSignal<>( this, "legendClosed", true ) );

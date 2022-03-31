@@ -3344,7 +3344,8 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   isotopeDiv->insertWidget( isotopeDiv->count(), cb );
   cb->checked().connect( boost::bind( &ShieldingSelect::isotopeCheckedCallback, this, iso ) );
   cb->unChecked().connect( boost::bind( &ShieldingSelect::isotopeUnCheckedCallback, this, iso ) );
-  cb->massFractionChanged().connect( boost::bind( &ShieldingSelect::handleIsotopicChange, this, _1, iso ) );
+  cb->massFractionChanged().connect( boost::bind( &ShieldingSelect::handleIsotopicChange, this,
+                                                 boost::placeholders::_1, iso ) );
 
   handleIsotopicChange( static_cast<float>(massFrac), iso );
   

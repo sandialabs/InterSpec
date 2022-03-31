@@ -695,8 +695,10 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
     boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
     
     shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
-    sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, m_sortOrder, data );
-    meansort = boost::bind( &PeakModel::compare, _1, _2, kMean, Wt::AscendingOrder, data );
+    sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
+                          m_sortColumn, m_sortOrder, data );
+    meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
+                           kMean, Wt::AscendingOrder, data );
 
     //Make sure no null peaks
     peaks->erase( std::remove_if( peaks->begin(), peaks->end(), [](std::shared_ptr<const PeakDef> a){return !a;}), peaks->end() );
@@ -745,7 +747,8 @@ PeakModel::PeakShrdPtr PeakModel::nearestPeak( double energy ) const
   
   boost::function<bool( const PeakShrdPtr &, const PeakShrdPtr &)> meansort;
   shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
-  meansort = boost::bind( &PeakModel::compare, _1, _2, kMean, Wt::AscendingOrder, data );
+  meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
+                         kMean, Wt::AscendingOrder, data );
   PeakDef *new_peak_ptr = new PeakDef();
   PeakShrdPtr peak_ptr( new_peak_ptr );
   new_peak_ptr->setMean( energy );
@@ -899,8 +902,10 @@ std::pair<std::shared_ptr<const PeakDef>,Wt::WModelIndex> PeakModel::addNewPeakI
   
   boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
   shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
-  sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, m_sortOrder, data );
-  meansort = boost::bind( &PeakModel::compare, _1, _2, kMean, Wt::AscendingOrder, data );
+  sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
+                        m_sortColumn, m_sortOrder, data );
+  meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
+                         kMean, Wt::AscendingOrder, data );
 
   deque< PeakShrdPtr >::iterator mean_pos
          = lower_bound( m_peaks->begin(), m_peaks->end(), peak_ptr, meansort );
@@ -983,7 +988,8 @@ void PeakModel::setPeaks( vector<PeakDef> peaks )
   // Remove any peaks that aren't within the range.
   const vector<PeakDef>::const_iterator peaks_end
               = remove_if( peaks.begin(), peaks.end(),
-                           boost::bind( &PeakModel::isOutOfRange, this, _1 ) );
+                           boost::bind( &PeakModel::isOutOfRange, this,
+                                       boost::placeholders::_1 ) );
   
   
   const size_t npeaksadd = peaks_end - peaks.begin();
@@ -996,8 +1002,10 @@ void PeakModel::setPeaks( vector<PeakDef> peaks )
     
     boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
     shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
-    sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, m_sortOrder, data );
-    meansort = boost::bind( &PeakModel::compare, _1, _2, kMean, Wt::AscendingOrder, data );
+    sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
+                          m_sortColumn, m_sortOrder, data );
+    meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
+                           kMean, Wt::AscendingOrder, data );
 
     beginInsertRows( WModelIndex(), 0, int(npeaksadd - 1) );
 
@@ -2535,7 +2543,8 @@ void PeakModel::sort( int col, Wt::SortOrder order )
 
   boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn;
   shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
-  sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, order, data );
+  sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
+                        m_sortColumn, order, data );
 
   layoutAboutToBeChanged();
   stable_sort( m_sortedPeaks.begin(), m_sortedPeaks.end(), sortfcn );

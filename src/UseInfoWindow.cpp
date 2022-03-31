@@ -332,7 +332,9 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     samplesLayout->setColumnStretch(0,1);
     
     m_tableSample->selectionChanged().connect( this, &UseInfoWindow::handleSampleSelectionChanged );
-    m_tableSample->doubleClicked().connect( boost::bind( &UseInfoWindow::handleSampleDoubleClicked, this, _1, _2 ) );
+    m_tableSample->doubleClicked().connect( boost::bind( &UseInfoWindow::handleSampleDoubleClicked,
+                                                        this, boost::placeholders::_1,
+                                                        boost::placeholders::_2 ) );
     
     
     //Import tab
@@ -962,7 +964,9 @@ SideMenuItem * UseInfoWindow::makeItem( const WString &title, const string &reso
     //itemCreator( resource, w, title );
   //};
   
-  std::function<void(WContainerWidget *)> f = boost::bind( &UseInfoWindow::itemCreator, this, resource, _1, title );
+  std::function<void(WContainerWidget *)> f = boost::bind( &UseInfoWindow::itemCreator, this,
+                                                          resource, boost::placeholders::_1,
+                                                          title );
   
   WWidget *w = deferCreate( f );
   w->addStyleClass( "UseInfoItem" );

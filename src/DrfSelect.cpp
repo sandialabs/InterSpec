@@ -548,7 +548,8 @@ void RelEffFile::init()
     m_fileUpload = new WFileUpload( topdiv );
     m_fileUpload->setInline( false );
     m_fileUpload->uploaded().connect( this, &RelEffFile::handleFileUpload );
-    m_fileUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, _1) );
+    m_fileUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge,
+                                                      boost::placeholders::_1) );
     m_fileUpload->changed().connect( m_fileUpload, &WFileUpload::upload );
   }//if( m_existingFilePath.size() )
   
@@ -1374,7 +1375,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 //                     "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
 //                     "};"
 //                     );
-  //m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, _1 ) );
+  //m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, boost::placeholders::_1 ) );
 //#elif( BUILD_AS_OSX_APP )
 //  SpecFileQuery::setIsSelectingDirectory( true );
 //  setSearchDirectory( "" );
@@ -1431,7 +1432,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
                      "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
                      "};"
                      );
-  m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, _1 ) );
+  m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, boost::placeholders::_1 ) );
 #elif( BUILD_AS_OSX_APP )
  //For macOS dont saved picked directory to preferences in DB as sandboxing will mess this up.
   SpecFileQuery::setIsSelectingDirectory( true );
@@ -2083,7 +2084,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_efficiencyCsvUpload = new WFileUpload( uploadDetTab );
   m_efficiencyCsvUpload->setInline( false );
   m_efficiencyCsvUpload->uploaded().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::EfficiencyCsvUploaded ) );
-  m_efficiencyCsvUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, _1) );
+  m_efficiencyCsvUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge,
+                                                             boost::placeholders::_1) );
   m_efficiencyCsvUpload->changed().connect( m_efficiencyCsvUpload, &WFileUpload::upload );
   m_efficiencyCsvUpload->setInline( false );
  
@@ -2116,7 +2118,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorDotDatUpload = new WFileUpload( m_detectrDotDatDiv );
   m_detectorDotDatUpload->setInline( false );
   m_detectorDotDatUpload->uploaded().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDotDatUploaded ) );
-  m_detectorDotDatUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, _1) );
+  m_detectorDotDatUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge,
+                                                              boost::placeholders::_1) );
   m_detectorDotDatUpload->changed().connect( m_detectorDotDatUpload, &WFileUpload::upload );
   m_detectrDiameterDiv->hide();
   m_detectrDiameterDiv->setHiddenKeepsGeometry( true );

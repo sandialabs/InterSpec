@@ -749,7 +749,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
     
-    m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact, _1, _2 ) );
+    m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
+                                                   boost::placeholders::_1, boost::placeholders::_2 ) );
     
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
     
@@ -887,7 +888,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->showHistogramIntegralsInLegend( true );
   m_spectrum->shiftAltKeyDragged().connect( this, &InterSpec::handleShiftAltDrag );
 
-//  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::createPeakEdit, this, _1) );
+//  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::createPeakEdit, this, boost::placeholders::_1) );
   m_rightClickMenu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
   m_rightClickMenu->aboutToHide().connect( this, &InterSpec::rightClickMenuClosed );
   
@@ -962,13 +963,20 @@ InterSpec::InterSpec( WContainerWidget *parent )
     }//switch( i )
   }//for( loop over right click menu items )
   
-  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::handleRightClick, this, _1, _2, _3, _4 ) );
-  m_spectrum->chartClicked().connect( boost::bind( &InterSpec::handleLeftClick, this, _1, _2, _3, _4 ) );
+  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::handleRightClick, this,
+                                                  boost::placeholders::_1, boost::placeholders::_2,
+                                                  boost::placeholders::_3, boost::placeholders::_4 ) );
+  m_spectrum->chartClicked().connect( boost::bind( &InterSpec::handleLeftClick, this,
+                                                  boost::placeholders::_1, boost::placeholders::_2,
+                                                  boost::placeholders::_3, boost::placeholders::_4 ) );
   
-//  m_spectrum->controlKeyDragged().connect( boost::bind( &InterSpec::findPeakFromUserRange, this, _1, _2 ) );
+//  m_spectrum->controlKeyDragged().connect( boost::bind( &InterSpec::findPeakFromUserRange, this, boost::placeholders::_1, boost::placeholders::_2 ) );
   
-  m_spectrum->shiftKeyDragged().connect( boost::bind( &InterSpec::excludePeaksFromRange, this, _1, _2 ) );
-  m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this, _1 ) );
+  m_spectrum->shiftKeyDragged().connect( boost::bind( &InterSpec::excludePeaksFromRange, this,
+                                                     boost::placeholders::_1,
+                                                     boost::placeholders::_2 ) );
+  m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this,
+                                                     boost::placeholders::_1 ) );
 
   m_timeSeries->setHidden( true );
   m_chartResizer->setHidden( m_timeSeries->isHidden() );
@@ -1556,12 +1564,12 @@ void InterSpec::initHotkeySignal()
         case 'h': // Help dialog
         case 'i': // Info about InterSpec
         case 'k': // Clear showing reference photopeak lines
+        case 's': // Store
         case 'l': // Log/Linear
           if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
             return;
           code = e.key.charCodeAt(0);
           break;
-        
         default:  //Unused - nothing to see here - let the event propagate up
           return;
       }//switch( e.key )
@@ -1591,7 +1599,7 @@ void InterSpec::initHotkeySignal()
   const string jsfcn = "document.addEventListener('keydown'," + wApp->javaScriptClass() + ".appKeyDown);";
   doJavaScript( jsfcn );
   
-  m_hotkeySignal->connect( boost::bind( &InterSpec::hotKeyPressed, this, _1 ) );
+  m_hotkeySignal->connect( boost::bind( &InterSpec::hotKeyPressed, this, boost::placeholders::_1 ) );
 }//void initHotkeySignal()
 
 
@@ -1625,6 +1633,10 @@ void InterSpec::hotKeyPressed( const unsigned int value )
       
       case 'l': case 'L':
         setLogY( !m_spectrum->yAxisIsLog() );
+        break;
+        
+      case 's': case 'S':
+        stateSave();
         break;
         
       case 37: case 38: case 39: case 40:
@@ -2047,7 +2059,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
   deque<PeakModel::PeakShrdPtr >::const_iterator iter;
   
 //  boost::function<bool(const PeakModel::PeakShrdPtr &, const PeakModel::PeakShrdPtr &)> meansort;
-//  meansort = boost::bind( &PeakModel::compare, _1, _2, PeakModel::kMean, Wt::AscendingOrder );
+//  meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2, PeakModel::kMean, Wt::AscendingOrder );
 //  iter = lower_bound( peaks->begin(), peaks->end(), peak, meansort );
   iter = std::find( peaks->begin(), peaks->end(), peak );
   
@@ -5557,7 +5569,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
     
-    m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact, _1, _2 ) );
+    m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
+                                                   boost::placeholders::_1, boost::placeholders::_2 ) );
     
     //WMenuItem * peakManTab =
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
@@ -7448,7 +7461,8 @@ void InterSpec::showCompactFileManagerWindow()
 {
  auto *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::Tabbed );
 
-  m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact, _1, _2 ) );
+  m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
+                                                 boost::placeholders::_1, boost::placeholders::_2 ) );
   
   AuxWindow *window = new AuxWindow( "Select Opened Spectra to Display", (AuxWindowProperties::TabletNotFullScreen) );
   window->disableCollapse();
@@ -8162,7 +8176,8 @@ void InterSpec::emitDetectorChanged()
 void InterSpec::initOsColorThemeChangeDetect()
 {
   m_osColorThemeChange.reset( new JSignal<std::string>( this, "OsColorThemeChange", true ) );
-  m_osColorThemeChange->connect( boost::bind( &InterSpec::osThemeChange, this, _1 ) );
+  m_osColorThemeChange->connect( boost::bind( &InterSpec::osThemeChange, this,
+                                             boost::placeholders::_1 ) );
   
   LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsSetupOsColorThemeChangeJs);
   
@@ -8469,9 +8484,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           furtherworkers.push_back( worker );
         }//if( we could try to load a detector type )
         
-        m_detectorChangedConnection = m_detectorChanged.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), _1 ) );
-        m_detectorModifiedConnection = m_detectorModified.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), _1 ) );
-        m_displayedSpectrumChanged = m_displayedSpectrumChangedSignal.connect( boost::bind( &SpecMeas::displayedSpectrumChangedCallback, meas.get(), _1, _2, _3, _4 ) );
+        m_detectorChangedConnection = m_detectorChanged.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), boost::placeholders::_1 ) );
+        m_detectorModifiedConnection = m_detectorModified.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), boost::placeholders::_1 ) );
+        m_displayedSpectrumChanged = m_displayedSpectrumChangedSignal.connect( boost::bind( &SpecMeas::displayedSpectrumChangedCallback, meas.get(), boost::placeholders::_1,
+            boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4 ) );
       }//if( meas )
 
       m_dataMeasurement = meas;

@@ -728,7 +728,8 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
   
   m_efficiencyForm = kFunctialEfficienyForm;
   m_efficiencyFormula = fcnstr;
-  m_efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression, _1  );
+  m_efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression,
+                                boost::placeholders::_1  );
   m_detectorDiameter = diameter;
   m_efficiencyEnergyUnits = energyUnits;
   
@@ -1401,7 +1402,8 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
       try
       {
         auto expression = std::make_shared<FormulaWrapper>( m_efficiencyFormula, isMeV );
-        m_efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression, _1  );
+        m_efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression,
+                                      boost::placeholders::_1  );
       }catch( std::exception &e )
       {
         throw runtime_error( "Invalid detector efficiency formula in XML: " + string(e.what()) );
