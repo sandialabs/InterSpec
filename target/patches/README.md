@@ -242,7 +242,7 @@ cmake --build . --config Release --target install
 cd ../..
 ```
 
-You can now either build a local web server 
+You can now build a local web server:
 ```bash
 cd ~/development
 git clone --recursive https://github.com/sandialabs/interspec/
@@ -261,9 +261,10 @@ ln -s ../external_libs/SpecUtils/d3_resources ./external_libs/
 ./bin/InterSpec.exe --docroot . --http-address 127.0.0.1 --http-port 8080 -c ./data/config/wt_config_localweb.xml
 
 # And then point your browser to http://localhost:8080 to access the application
+```
 
-
-# Or if you want the desktop version of the application, see InterSpec/target/electron/README.md for build instructions
+Or if you want the desktop version of the application; see InterSpec/target/electron/README.md for full build instructions, but a summary is:
+```bash
 cd /path/to/InterSpec/target/electron
 
 sudo apt-get install nodejs npm
