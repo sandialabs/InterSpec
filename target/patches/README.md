@@ -1,6 +1,3 @@
-
-
-
 # Building dependencies on macOS Catalina
 First, lets set the directory we will install all the pre-requisites to:
 ```bash
@@ -186,6 +183,112 @@ cmake --build . --config Release --target install
 If you plan to package InterSpec as an Electron application (e.g., normal desktop app), see the instructions in [patches](/target/electron/) for building the InterSpec code and packaging the application.
 
 
+
+# Building dependencies on Linux 
+The commands to build both the prerequists and InterSpec on Ubuntu 18.04 are below.
+
+These commands build boost, Wt, and zlib and install them to a non-system directory prefix so they wont interfere with any other builds, or use the system package managers packages that may not be the exact version of Wt needed.
+
+
+```bash
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get install build-essential cmake cmake-curses-gui git
+
+# First, lets set the directory we will install all the pre-requisites to:
+export MY_WT_PREFIX=/home/wcjohns/install/wt3.7.1_prefix
+export PATCH_DIR=/mnt/hgfs/wcjohns/rad_ana/InterSpec_master/target/patches
+
+# Move to a temporary location to build boost/wt
+cd /tmp
+mkdir build-wt
+cd build-wt
+
+# Download and build boost 1.78
+curl -L https://sourceforge.net/projects/boost/files/boost/1.78.0/boost_1_78_0.zip/download --output boost_1_78_0.zip
+unzip boost_1_78_0.zip
+cd boost_1_78_0
+
+# build the b2 executable
+./bootstrap.sh --prefix=${MY_WT_PREFIX}
+
+# build and install boost
+./b2 cxxflags="-std=c++14 -fPIC" cflags="-fPIC" linkflags="-std=c++14" link=static variant=release threading=multi --build-dir=build --prefix=${MY_WT_PREFIX} -a install
+cd ..
+
+
+## Download and build Wt 3.7.1
+curl -L https://github.com/emweb/wt/archive/3.7.1.tar.gz --output wt-3.7.1.tar.gz
+tar -xzvf wt-3.7.1.tar.gz
+
+cd wt-3.7.1
+patch -u src/Wt/Render/CssParser.C -i ${PATCH_DIR}/wt/3.7.1/CssParser.C.patch
+mkdir build
+cd build
+
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DBOOST_PREFIX=${MY_WT_PREFIX} -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=OFF -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++14" -DCONFIGURATION=data/config/wt_config_electron.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR=${MY_WT_PREFIX}/etc/wt  -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_C_FLAGS="-fPIC" ..
+make -j10 install
+cd ../..
+
+## Download and build zlib (for supporting zipped spectrum files)
+curl -L  https://www.zlib.net/zlib-1.2.12.tar.gz --output zlib-1.2.12.tar.gz
+tar -xzvf zlib-1.2.12.tar.gz
+cd zlib-1.2.12
+
+mkdir build
+cd build
+cmake -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_C_FLAGS="-fPIC" ..
+cmake --build . --config Release --target install
+cd ../..
+```
+
+You can now either build a local web server 
+```bash
+cd ~/development
+git clone --recursive https://github.com/sandialabs/interspec/
+cd interspec
+mkdir build; cd build
+
+cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} ..
+make -j8
+
+# If you compiled it in debug mode, you may need symlink the D3.js based resources to where the web-requests expect to find them, e.g.
+ln -s ../external_libs/SpecUtils/d3_resources ./external_libs/
+# (this is so you can edit d3_resources/SpectrumChartD3.js and see changes without doing a file copy)
+
+
+# And if all went well you can run the executable using the command:
+./bin/InterSpec.exe --docroot . --http-address 127.0.0.1 --http-port 8080 -c ./data/config/wt_config_localweb.xml
+
+# And then point your browser to http://localhost:8080 to access the application
+
+
+# Or if you want the desktop version of the application, see InterSpec/target/electron/README.md for build instructions
+cd /path/to/InterSpec/target/electron
+
+sudo apt-get install nodejs npm
+npm install -g cmake-js
+npm install --save-dev node-addon-api
+npm install electron
+npm install electron-packager
+
+cmake-js --CDCMAKE_PREFIX_PATH=${MY_WT_PREFIX} --CDCMAKE_BUILD_TYPE="Release" --out="build_linux" --target install
+
+# To run InterSpec:
+electron build_linux/app
+
+# Or to create a self-contained package of the app
+npm run package-linux
+
+#InterSpec is now in release-builds/InterSpec-linux-x64
+
+# (note: you may need to upgrade to a newer version of npm and/or nodejs to
+#        use latest versions of electron)
+```
+
+
+
+
 # Process for patching files.
 
 ## To make a patch
@@ -202,3 +305,4 @@ diff -Naur someFile.txt.orig  someFile.txt > someFile.txt.patch
 ```bash
 patch -u someFile.txt -i someFile.txt.patch
 ```
+

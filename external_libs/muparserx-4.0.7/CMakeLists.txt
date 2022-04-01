@@ -3,7 +3,7 @@ cmake_policy(SET CMP0048 NEW)
 ########################################################################
 # Project setup
 ########################################################################
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.1...3.20)
 project(muparserx VERSION 4.0.7 LANGUAGES CXX)
 
 ########################################################################
