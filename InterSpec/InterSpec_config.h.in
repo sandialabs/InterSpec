@@ -131,4 +131,9 @@ void log_developer_error( const char *location, const char *error );
 #define DATE_TIME_FORMAT_STR "dd/MM/yy hh:mm:ss"
 
 
+// Prevent some compile warnings from using like _1 instead of
+//  boost::placeholders::_1 (I think this must be in the Wt
+//  headers, since our code uses the namespace prefixes)
+#define BOOST_BIND_GLOBAL_PLACEHOLDERS
+
 #endif // InterSpec_config_h

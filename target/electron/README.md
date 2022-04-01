@@ -12,7 +12,7 @@ export MACOSX_DEPLOYMENT_TARGET=10.12
 cd /path/to/InterSpec/target/electron
 
 # Install dependency for compiling a node.js add-on
-npm install --save-dev node-addon-api
+npm install --save-dev node-addon-api --arch=x64
 
 # If boost and Wt are in standard locations, you can just run
 cmake-js
@@ -49,7 +49,7 @@ ninja -C build_dir install
 
 # To run InterSpec without packaging everything, you
 # need to install the Electron package
-npm install electron
+npm install electron --arch=x64
 
 # Then to actually run things
 npm start
