@@ -100,35 +100,32 @@ extern "C"
 
 namespace ElectronUtils
 {
-#if( USING_ELECTRON_NATIVE_MENU )
-  /** Requests main.js to load a new clean session (i.e., don restore any state)
-   This is a workaround to when the user requests a new session, the normal
-   mechanism in c++ creates duplicate Electron menu items...
+  /** Tells main.js to load a new clean session (i.e., don restore any state).
+   This gives main.js a chance to clear menus (if using native Electron menus),
+   and generate a new session token to use with the new session.
    
    Must be called from within a WApplication thread (e.g., wApp is valid).
    
-   @returns whether message was succesfully sent or not.
+   @returns whether message was successfully sent or not.
    */
   bool requestNewCleanSession();
-#endif
   
   /** Notify parent application (main.js, or objective-c) that the session has
    loaded.
    
    Must be called from within a WApplication thread (e.g., wApp is valid).
    
-   @returns whether message was succesfully sent or not.
+   @returns whether message was successfully sent or not.
    
-   Note: main.js will wait till recieveing this notification before asking the
+   Note: main.js will wait till receiving this notification before asking the
    session to open any files the OS requested.
    */
   bool notifyNodeJsOfNewSessionLoad();
 
-  /**
-   
-   Returns true if it thinks message was sent.
+  /** Sends main.js a message via InterSpecAddOn::send_nodejs_message(...) in another
+   asio thread.
    */
-  bool send_nodejs_message( const std::string &msg_name, const std::string &msg_data );
+  void send_nodejs_message( const std::string msg_name, const std::string msg_data );
 
 
   /**
