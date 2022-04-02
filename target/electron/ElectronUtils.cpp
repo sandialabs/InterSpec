@@ -54,8 +54,6 @@ using namespace std;
 namespace ElectronUtils
 {
 
-  
-#if( USING_ELECTRON_NATIVE_MENU )
 bool requestNewCleanSession()
 {
   auto app = dynamic_cast<InterSpecApp *>(wApp);
@@ -63,20 +61,23 @@ bool requestNewCleanSession()
   const string oldexternalid = app ? app->externalToken() : string();
   if( !oldexternalid.empty() )
   {
-    //should check ns_externalid==oldexternalid
-    string js;
-    //Speed up loading by defering calls to Menu.setApplicationMenu() until app
-    //  is fully reloaded.
-    js += "$(window).data('HaveTriggeredMenuUpdate',null);";
-    
     //Have electron reload the page.
     ElectronUtils::send_nodejs_message("NewCleanSession", "");
+    
+#if( USING_ELECTRON_NATIVE_MENU )
+    //should check ns_externalid==oldexternalid
+    string js;
+    //Speed up loading by deferring calls to Menu.setApplicationMenu() until app
+    //  is fully reloaded.
+    js += "$(window).data('HaveTriggeredMenuUpdate',null);";
     
     //Just in case the page reload doesnt go through, make sure menus will get updated eventually
     //  (this shouldnt be necassary, right?)
     js += "setTimeout(function(){$(window).data('HaveTriggeredMenuUpdate',true);},5000);";
     
     wApp->doJavaScript(js);
+#endif
+    
     return true;
   }else
   {
@@ -85,7 +86,7 @@ bool requestNewCleanSession()
 
   return false;
 }//void requestNewCleanSession()
-#endif //USING_ELECTRON_NATIVE_MENU
+
   
 bool notifyNodeJsOfNewSessionLoad()
 {
@@ -105,17 +106,24 @@ bool notifyNodeJsOfNewSessionLoad()
 }//bool notifyNodeJsOfNewSessionLoad( const std::string sessionid )
 
 
-bool send_nodejs_message( const std::string &msg_name, const std::string &msg_data )
+void send_nodejs_message( const std::string msg_name, const std::string msg_data )
 {
   auto app = dynamic_cast<InterSpecApp *>(wApp);
   if( !app )
   {
     cerr << "Error: send_nodejs_message: wApp is null!!!" << endl;
-    return false;
+    return;
   }
   
   const string session_token = app->externalToken();
-  return InterSpecAddOn::send_nodejs_message( session_token, msg_name, msg_data );
+  
+  Wt::WServer *server = Wt::WServer::instance();
+  assert( server );
+  
+  Wt::WIOService &io = server->ioService();
+  io.boost::asio::io_service::post( [=](){
+    InterSpecAddOn::send_nodejs_message( session_token, msg_name, msg_data );
+  } );
 }//void send_nodejs_message(...)
 
 
@@ -230,7 +238,7 @@ bool browse_for_directory( const std::string &window_title,
   assert( server );
 
   Wt::WIOService &io = server->ioService();
-  io.post( worker );
+  io.boost::asio::io_service::post( worker );
   
   return true;
 }//bool browse_for_directory(...)
@@ -238,7 +246,6 @@ bool browse_for_directory( const std::string &window_title,
 }//namespace ElectronUtils
 
 
-#if( BUILD_AS_ELECTRON_APP )
 
 int interspec_start_server( const char *process_name, const char *userdatadir,
                             const char *basedir, const char *xml_config_path )
@@ -409,6 +416,3 @@ void interspec_kill_server()
 {
   InterSpecServer::killServer();
 }//void interspec_kill_server()
-
-
-#endif //#if( BUILD_AS_ELECTRON_APP )

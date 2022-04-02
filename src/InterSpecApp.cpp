@@ -1239,7 +1239,7 @@ void InterSpecApp::prepareForEndOfSession()
 
 void InterSpecApp::clearSession()
 {
-#if( USING_ELECTRON_NATIVE_MENU )
+#if( BUILD_AS_ELECTRON_APP )
   // As a workaround setup a function ElectronUtils::requestNewCleanSession() that
   //  sends websocket message to node land to clear menus, and load a new session
   //  but with argument "restore=no"

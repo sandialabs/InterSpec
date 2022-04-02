@@ -241,9 +241,6 @@ if(ANDROID)
     set(Boost_FILESYSTEM_LIBRARY_RELEASE
         ${BOOST_LIB_START}filesystem${BOOST_LIB_END}
     )
-    set(Boost_IOSTREAMS_LIBRARY_RELEASE
-        ${BOOST_LIB_START}iostreams${BOOST_LIB_END}
-    )
     set(Boost_PROGRAM_OPTIONS_LIBRARY_RELEASE
         ${BOOST_LIB_START}program_options${BOOST_LIB_END}
     )
@@ -835,6 +832,7 @@ elseif(BUILD_AS_OSX_APP)
           CMAKE_CACHE_ARGS -DWt_INCLUDE_DIR:PATH=${Wt_INCLUDE_DIR}
                            -DBOOST_ROOT:PATH=${Boost_INCLUDE_DIR}/..
                            -DBOOST_INCLUDEDIR:PATH=${Boost_INCLUDE_DIR}
+                           -DCMAKE_PREFIX_PATH:PATH=${CMAKE_PREFIX_PATH}
                            -DCMAKE_BUILD_TYPE:STRING=RELEASE
                            -DSpecUtils_ENABLE_D3_CHART:BOOL=OFF
                            INSTALL_COMMAND   ""
@@ -1318,17 +1316,6 @@ if(Wt_MYSQL_LIBRARY)
     find_file( HAS_WT_DBO_MYSQL "MySQL" PATHS "${Wt_INCLUDE_DIR}/Wt/Dbo/backend/" NO_DEFAULT_PATH )
 endif(Wt_MYSQL_LIBRARY)
 
-INCLUDE( CheckIncludeFiles )
-
-if(ZLIB_FOUND AND Boost_IOSTREAMS_FOUND)
-    #CHECK_INCLUDE_FILES( "zlib.h" HAS_ZLIB_SUPPORT )
-    target_link_libraries(
-        InterSpecLib
-        PUBLIC
-        ${ZLIB_LIBRARIES}
-        Boost::iostreams
-    )
-endif(ZLIB_FOUND AND Boost_IOSTREAMS_FOUND)
 
 if(SUPPORT_ZIPPED_SPECTRUM_FILES)
     #CMake seems to fail to find zlib on ios/android (even using find_package(ZLIB REQUIRED)), but we know it will be in
