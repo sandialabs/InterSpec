@@ -1,5 +1,5 @@
 #adapted from https://github.com/Kitware/CMake/tree/master/Tests/CFBundleTest
-cmake_minimum_required(VERSION 3.1.0)
+cmake_minimum_required(VERSION 3.15)
 
 #project( SpecFilePreview )
 
@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.1.0)
 set( CMAKE_CXX_STANDARD 14 )
 set( CMAKE_CXX_STANDARD_REQUIRED ON )
 
-set( CMAKE_OSX_DEPLOYMENT_TARGET "10.10" )
+set( CMAKE_OSX_DEPLOYMENT_TARGET "10.12" )
 set( Boost_USE_STATIC_LIBS ON )
 SET( CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES} )
 
@@ -15,7 +15,7 @@ set( TRY_TO_STATIC_LINK ON CACHE BOOL "Try to static link" FORCE )
 
 INCLUDE( ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/FindWt.cmake )
 INCLUDE( ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/WtFindBoost-cmake.txt )
-INCLUDE( ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/WtFindZlib.txt )
+find_package( ZLIB REQUIRED )
 
 set( SOURCES
     main.c
@@ -78,8 +78,7 @@ target_link_libraries( SpecFilePreview PUBLIC
   SpecUtils
   ${HPDF_LIBRARY}
   ${PNG_LIBRARY}
-  ${LIBZ_LIBRARY}
-  ${ZLIB_LIBRARIES}
+  ZLIB::ZLIB
   ${Wt_LIBRARIES}
   ${Boost_LIBRARIES}
   ${Boost_SYSTEM_LIBRARY}
