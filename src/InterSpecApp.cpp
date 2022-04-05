@@ -185,34 +185,25 @@ bool InterSpecApp::checkExternalTokenFromUrl()
       
       const int status = InterSpecServer::set_session_loaded( m_externalToken.c_str() );
       
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
-      m_primaryApp = false;
-#else
-      // Default to true if we have an app token; this is temporary until I get around to changing
-      //  android/ios targets to always give "primary=yes" URL argument
-      m_primaryApp = true;
-#endif
-            
-      for( const Http::ParameterMap::value_type &primary : parmap )
-      {
-        if( !primary.second.empty() && SpecUtils::iequals_ascii(primary.first, "primary") )
-        {
-          const string &val = primary.second.front();
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
-          m_primaryApp = ((status == 0)
-                           && (SpecUtils::iequals_ascii(val,"yes")
-                               || SpecUtils::iequals_ascii(val,"true")
-                               || SpecUtils::iequals_ascii(val,"1") ));
-#else
-          m_primaryApp = !(SpecUtils::iequals_ascii(val,"no")
-                            || SpecUtils::iequals_ascii(val,"false")
-                            || SpecUtils::iequals_ascii(val,"0") );
-#endif
-          break;
-        }//if( there is a 'primary' argument in the URL
-      }//for( loop over parameters to see if this _shouldnt_ be a primary app )
+      pair<bool,InterSpecServer::SessionType> session_type
+                                         = InterSpecServer::session_type( m_externalToken.c_str() );
       
-      return (allow_untokened || (status==0));
+      m_primaryApp = false;
+      if( session_type.first )
+      {
+        switch( session_type.second )
+        {
+          case InterSpecServer::SessionType::PrimaryAppInstance:
+            m_primaryApp = true;
+            break;
+            
+          case InterSpecServer::SessionType::ExternalBrowserInstance:
+            m_primaryApp = false;
+            break;
+        }//switch( session_type.second )
+      }//if( session_type.first )
+      
+      return (allow_untokened || ((status==0) && session_type.first));
     }
   }//for( const Http::ParameterMap::value_type &p : parmap )
   
@@ -816,9 +807,11 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID )
-  m_sucessfullyLoadedSignal.reset( new Wt::JSignal<>( this, "SucessfullyLoadedConf" ) );
+  // TODO 20220405: in macOS app I see the error "Wt: decodeSignal(): signal 'of7g69f.SucessfullyLoadedConf' not exposed"
+  //                Not sure how to fix this, atm
+  m_sucessfullyLoadedSignal.reset( new Wt::JSignal<>( m_viewer, "SucessfullyLoadedConf", false ) );
   m_sucessfullyLoadedSignal->connect( this, &InterSpecApp::loadSuccesfullCallback );
-  doJavaScript( "setTimeout(function(){Wt.emit('" + id() + "',{name: 'SucessfullyLoadedConf'});}, 250);" );
+  doJavaScript( "setTimeout(function(){" + m_sucessfullyLoadedSignal->createCall() + "}, 250);" );
 #endif
 }//void setupWidgets()
 
@@ -930,7 +923,14 @@ bool InterSpecApp::isPrimaryWindowInstance()
   const string &externalid = app->m_externalToken;
   const int status = InterSpecServer::session_status( externalid.c_str() );
   
-  return ((status == 1) || (status == 2));
+  const pair<bool,InterSpecServer::SessionType> session_type = InterSpecServer::session_type( externalid.c_str() );
+  
+  //app->m_primaryApp should only be true if its SessionType::PrimaryAppInstance, but we'll double
+  //  check this, JIC
+  assert( !session_type.first || (session_type.second == InterSpecServer::SessionType::PrimaryAppInstance) );
+  
+  return (((status == 1) || (status == 2))
+           && (session_type.first && session_type.second == InterSpecServer::SessionType::PrimaryAppInstance));
 }//bool isPrimaryWindowInstance()
 
 
@@ -1288,6 +1288,13 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
 #endif
   cerr << errmsg << endl;
 }//void miscSignalHandler( const std::string &signal )
+
+
+bool InterSpecApp::handleAppUrl( std::string url )
+{
+  cout << "\n\n\nIn InterSpecApp::handleAppUrl: '" << url << "'\n\n" << endl;
+}//bool handleAppUrl( std::string url )
+
 
 
 void InterSpecApp::finalize()

@@ -78,7 +78,7 @@ apt-get install libxss1
 If you are cross-compiling, you can, for example, build the Linux package from macOS using a command like 
 
 ```bash
-npm i --target_arch=x64 --target_platform=linux ws
+npm --target_arch=x64 --target_platform=linux run package-linux
 ```
 
 ## Linux Considerations

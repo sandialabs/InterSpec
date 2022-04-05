@@ -376,10 +376,21 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
 }//int interspec_start_server( int argc, char *argv[] )
 
 
-void interspec_add_allowed_session_token( const char *session_id )
+void interspec_set_require_session_token( const bool require_token )
 {
-  InterSpecServer::add_allowed_session_token( session_id );
-}//void interspec_add_allowed_session_token( const char *session_id )
+  InterSpecServer::set_require_tokened_sessions( require_token );
+}
+
+void interspec_add_allowed_primary_session_token( const char *session_token )
+{
+  InterSpecServer::add_allowed_session_token( session_token, InterSpecServer::SessionType::PrimaryAppInstance );
+}//void interspec_add_allowed_primary_session_token( const char *session_id )
+
+
+void interspec_add_allowed_external_session_token( const char *session_token )
+{
+  InterSpecServer::add_allowed_session_token( session_token, InterSpecServer::SessionType::ExternalBrowserInstance );
+}
 
 
 int interspec_remove_allowed_session_token( const char *session_token )

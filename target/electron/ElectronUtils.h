@@ -61,10 +61,18 @@ extern "C"
    */
   LIB_INTERFACE(void) interspec_kill_server();
   
-  /** ToDo: allow adding of mutliple tokens; should also add a mechanism to
-   mark the token as having been loaded, so it cant be reused.
+  /** Sets wether or not a session token is required in order to load an instance.
+   Currently the default is false, until this is called - this may change.
    */
-  LIB_INTERFACE(void) interspec_add_allowed_session_token( const char *session_token );
+  LIB_INTERFACE(void) interspec_set_require_session_token( const bool require_token );
+
+  /** Sets token of a primary window session to allow.
+   */
+  LIB_INTERFACE(void) interspec_add_allowed_primary_session_token( const char *session_token );
+
+  /** Sets token of an external session (i.e., in the users browser) to allow.
+  */
+  LIB_INTERFACE(void) interspec_add_allowed_external_session_token( const char *session_token );
   
   /** Returns 0 if authorized but not alive, 1 if session is alive, -1 if dead, -2 if nor authorized. */
   LIB_INTERFACE(int) interspec_remove_allowed_session_token( const char *session_token );

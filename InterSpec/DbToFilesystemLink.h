@@ -74,7 +74,11 @@ namespace DbToFilesystemLink
     Wt::WString m_userName;
     
     //m_foregroundFilePath: must be a valid path in order for this request to
-    //  be fufilled
+    //  be fulfilled, or it must be a url beginning with "interspec://".
+    //
+    // If this path begins with "interspec://", then InterSpecApp::handleAppUrl(...) will
+    //  be called with this URL, and attempting to load the path or the background/secondary
+    //  path will not be done.
     Wt::WString m_foregroundFilePath;
     
     //m_backgroundFilePath: if left blank or is invalid, wont be loaded

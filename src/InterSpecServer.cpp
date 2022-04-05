@@ -70,13 +70,20 @@ struct SessionState
   
   State current_state;
   
+  InterSpecServer::SessionType session_type;
+  
   std::chrono::system_clock::time_point auth_time;
   std::chrono::system_clock::time_point load_time;
   std::chrono::system_clock::time_point deauth_time;
   std::chrono::system_clock::time_point destruct_time;
   
   SessionState()
-  : current_state( State::Invalid ), auth_time(), load_time(), deauth_time(), destruct_time()
+  : current_state( State::Invalid ),
+    auth_time(),
+    session_type(InterSpecServer::SessionType::ExternalBrowserInstance),
+    load_time(),
+    deauth_time(),
+    destruct_time()
   {
   }
 };//struct SessionState
@@ -340,10 +347,11 @@ namespace InterSpecServer
   }//void experimental_killServer()
   
   
-  int add_allowed_session_token( const char *session_id )
+  int add_allowed_session_token( const char *session_id, const SessionType session_type )
   {
     //Returns zero if hadnt been seen before, 1 if authorized but not seen yet, 2 if authorized and loaded, 3 if deauthorized session, 4 if dead session
     SessionState newsession;
+    newsession.session_type = session_type;
     newsession.auth_time = std::chrono::system_clock::now();
     newsession.current_state = SessionState::State::AuthorizedNotLoaded;
     
@@ -463,6 +471,17 @@ namespace InterSpecServer
     
     return -1;
   }//int set_session_loaded( const char *session_token )
+
+  
+  std::pair<bool,SessionType> session_type( const char *session_token )
+  {
+    lock_guard<mutex> lock( ns_sessions_mutex );
+    auto pos = ns_sessions.find( session_token );
+    if( pos == end(ns_sessions) )
+      return std::pair<bool,SessionType>( false, SessionType::ExternalBrowserInstance );
+    
+    return std::pair<bool,SessionType>( true, pos->second.session_type );
+  }
 
   
   void set_session_destructing( const char *session_token )
