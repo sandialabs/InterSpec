@@ -993,7 +993,7 @@ elseif(BUILD_AS_OSX_APP)
     )
 
     #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate cooresponding value in Xcode
-    set(MACOS_BUNDLE_VERSION_NUMBER 22)
+    set(MACOS_BUNDLE_VERSION_NUMBER 25)
 
     set_target_properties(
         InterSpecExe

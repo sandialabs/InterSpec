@@ -1293,6 +1293,10 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
 bool InterSpecApp::handleAppUrl( std::string url )
 {
   cout << "\n\n\nIn InterSpecApp::handleAppUrl: '" << url << "'\n\n" << endl;
+  
+  
+  //Get rid of (optional) leading "interspec://", so URL will look like: 'drf?v=1&n=MyName&"My other Par"'
+  
 }//bool handleAppUrl( std::string url )
 
 
