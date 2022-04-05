@@ -59,6 +59,10 @@ namespace InterSpecServer
   
   std::string getWtConfigXml( int argc, char *argv[] );
   
+  enum class SessionType
+  {
+    PrimaryAppInstance, ExternalBrowserInstance
+  };
 
   /** Add a session token to be tracked or allowed.
    
@@ -81,7 +85,7 @@ namespace InterSpecServer
    
    if session had been seen before (e.g., non-zero return value), no changes will be made to that sessions allowed state.
    */
-  int add_allowed_session_token( const char *session_id );
+  int add_allowed_session_token( const char *session_id, const SessionType type );
 
   /** Returns -1 if invalid token.  Returns +1 if valid token that had never been loaded.  Returns zero if was loaded.  */
   int remove_allowed_session_token( const char *session_token );
@@ -111,6 +115,11 @@ namespace InterSpecServer
    Returns 0 if had been authorized, 1 if had been seen, and 2 if dead or no longer authorized
    */
   int set_session_loaded( const char *session_token );
+
+  /** Returns if the session was found, and if so the type set when #add_allowed_session_token
+   was called.
+   */
+  std::pair<bool,SessionType> session_type( const char *session_token );
 
   /** Sets the session as dead. */
   void set_session_destructing( const char *session_token );

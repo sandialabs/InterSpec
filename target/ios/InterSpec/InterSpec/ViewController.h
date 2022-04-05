@@ -71,7 +71,7 @@
 //initiatedByFrame:(WKFrameInfo *)frame
 //completionHandler:(void (^)(void))completionHandler;
 
-
+-(NSString *)generateSessionToken;
 
 -(BOOL)startServer;
 -(BOOL)openSpectrumFile:(NSURL *)url;

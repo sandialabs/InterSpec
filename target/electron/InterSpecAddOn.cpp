@@ -256,22 +256,52 @@ namespace InterSpecAddOn
 
     return Napi::Boolean::New( env, true );
   }
-  
 
-  Napi::Boolean addSessionToken(const Napi::CallbackInfo& info) 
+  Napi::Boolean setRequireSessionToken(const Napi::CallbackInfo& info)
+  {
+    Napi::Env env = info.Env();
+  
+    if (info.Length() < 1 || !info[0].IsBoolean() ) {
+      Napi::TypeError::New(env, "setRequireSessionToken: Expected one bool").ThrowAsJavaScriptException();
+    }
+  
+    const bool require = info[0].ToBoolean();
+  
+    interspec_set_require_session_token(require)
+  
+    return Napi::Boolean::New( env, true );
+  }
+
+  Napi::Boolean addPrimarySessionToken(const Napi::CallbackInfo& info)
   {
     Napi::Env env = info.Env();
 
     if (info.Length() < 1 || !info[0].IsString() ) {
-        Napi::TypeError::New(env, "addSessionToken: Expected one strings").ThrowAsJavaScriptException();
+        Napi::TypeError::New(env, "addPrimarySessionToken: Expected one strings").ThrowAsJavaScriptException();
     } 
 
     std::string token = info[0].ToString();
 
-    interspec_add_allowed_session_token( token.c_str() );
+    interspec_add_allowed_primary_session_token( token.c_str() );
 
     return Napi::Boolean::New( env, true );
   }
+
+  Napi::Boolean addExternalSessionToken(const Napi::CallbackInfo& info)
+  {
+    Napi::Env env = info.Env();
+  
+    if (info.Length() < 1 || !info[0].IsString() ) {
+      Napi::TypeError::New(env, "addExternalSessionToken: Expected one strings").ThrowAsJavaScriptException();
+    }
+  
+    std::string token = info[0].ToString();
+  
+    interspec_add_allowed_external_session_token( token.c_str() );
+ 
+    return Napi::Boolean::New( env, true );
+  }
+
 
 
   Napi::Number removeSessionToken(const Napi::CallbackInfo& info) 
@@ -476,7 +506,12 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
   exports.Set( "openFile", Napi::Function::New(env, InterSpecAddOn::openFile ));
 
   exports.Set( "setTempDir", Napi::Function::New(env, InterSpecAddOn::setTempDir ));
-  exports.Set( "addSessionToken", Napi::Function::New(env, InterSpecAddOn::addSessionToken ));
+  
+  exports.Set( "setRequireSessionToken", Napi::Function::New(env, InterSpecAddOn::setRequireSessionToken ));
+  exports.Set( "addPrimarySessionToken", Napi::Function::New(env, InterSpecAddOn::addPrimarySessionToken ));
+  exports.Set( "addExternalSessionToken", Napi::Function::New(env, InterSpecAddOn::addExternalSessionToken ));
+  
+  
   exports.Set( "removeSessionToken", Napi::Function::New(env, InterSpecAddOn::removeSessionToken ));
 
   exports.Set( "usingElectronMenus", Napi::Function::New(env, InterSpecAddOn::usingElectronMenus ));

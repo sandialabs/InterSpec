@@ -9093,12 +9093,26 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
        && !fileinfo.m_fufilled
        && sameUser )
     {
+      const string foregroundPath = fileinfo.m_foregroundFilePath.toUTF8();
+      
+      if( SpecUtils::istarts_with(foregroundPath, "interspec://") )
+      {
+        InterSpecApp *app = dynamic_cast<InterSpecApp*>( Wt::WApplication::instance() );
+        if( app )
+        {
+          app->handleAppUrl( foregroundPath );
+          return true;
+        }
+        
+        return false;
+      }//if( SpecUtils::istarts_with(foregroundPath, "interspec://") )
+      
       if( m_fileManager )
       {
         typedef map<SpecUtils::SpectrumType,string> TypeToPathMap;
         TypeToPathMap specToLoadMap;
         
-        specToLoadMap[SpecUtils::SpectrumType::Foreground] = fileinfo.m_foregroundFilePath.toUTF8();
+        specToLoadMap[SpecUtils::SpectrumType::Foreground] = foregroundPath;
         specToLoadMap[SpecUtils::SpectrumType::SecondForeground] = fileinfo.m_secondForegroundFilePath.toUTF8();
         specToLoadMap[SpecUtils::SpectrumType::Background] = fileinfo.m_backgroundFilePath.toUTF8();
         

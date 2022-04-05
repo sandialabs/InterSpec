@@ -108,6 +108,17 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
 }
 
+-(NSString *)generateSessionToken
+{
+#define TOKEN_LEN 14
+  char data[TOKEN_LEN];
+  for( int index = 0; index < TOKEN_LEN; ++index )
+    data[index] = (char)('A' + (arc4random_uniform(26)));
+  
+  return [[NSString alloc] initWithBytes:data length:TOKEN_LEN encoding:NSUTF8StringEncoding];
+}//NSString *generateSessionToken
+
+
 
 -(BOOL)startServer
 {
@@ -169,6 +180,16 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     
     _isServing = NO;
     _UrlServingOn = @"";
+
+  
+    if( _UrlUniqueId )
+    {
+      const int status = InterSpecServer::remove_allowed_session_token( [_UrlUniqueId UTF8String] );
+      if( status != 0 )
+      {
+        NSLog( @"InterSpecServer::remove_allowed_session_token gave unexpected status %ld for token '%@'.", _UrlUniqueId );
+      }
+    }
     _UrlUniqueId = @"";
     
     //We could actually delete the webview here and recreate when bringing to
@@ -265,8 +286,10 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   _appComminFromBackground = NO;
   
-  //
-  _UrlUniqueId = [NSString stringWithFormat:@"%i", arc4random_uniform(10000000)];
+  
+  _UrlUniqueId = [this generateSessionToken];
+  InterSpecServer::add_allowed_session_token( [_UrlUniqueId UTF8String], InterSpecServer::SessionType::PrimaryAppInstance );
+  
   NSString *actualURL = [NSString stringWithFormat:@"%@?apptoken=%@", _UrlServingOn, _UrlUniqueId];
   
   //Check to see if we should open a spectrum file; if so append which on to URL
