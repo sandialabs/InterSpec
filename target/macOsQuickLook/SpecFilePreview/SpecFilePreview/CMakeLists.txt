@@ -1,21 +1,21 @@
 #adapted from https://github.com/Kitware/CMake/tree/master/Tests/CFBundleTest
 cmake_minimum_required(VERSION 3.15)
 
-#project( SpecFilePreview )
-
+project( SpecFilePreview )
 
 set( CMAKE_CXX_STANDARD 14 )
 set( CMAKE_CXX_STANDARD_REQUIRED ON )
 
-set( CMAKE_OSX_DEPLOYMENT_TARGET "10.12" )
-set( Boost_USE_STATIC_LIBS ON )
-SET( CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES} )
 
-set( TRY_TO_STATIC_LINK ON CACHE BOOL "Try to static link" FORCE )
-
-INCLUDE( ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/FindWt.cmake )
-INCLUDE( ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/WtFindBoost-cmake.txt )
 find_package( ZLIB REQUIRED )
+find_package( Threads REQUIRED )
+
+message( "InterSpec_BASE_DIR=${InterSpec_BASE_DIR}" )
+INCLUDE( ${InterSpec_BASE_DIR}/cmake/FindWt.cmake )
+
+set(Boost_USE_MULTITHREADED ON)
+find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
+
 
 set( SOURCES
     main.c
@@ -40,7 +40,7 @@ set( SOURCES
 
 add_library( SpecFilePreview MODULE ${SOURCES} )
 
-add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../../../../external_libs/SpecUtils ${CMAKE_CURRENT_BINARY_DIR}/SpecUtils )
+add_subdirectory( ${InterSpec_BASE_DIR}/external_libs/SpecUtils ${CMAKE_CURRENT_BINARY_DIR}/SpecUtils )
 
 set(sysroot)
 if(CMAKE_OSX_SYSROOT)
@@ -58,6 +58,18 @@ if( NOT PNG_LIBRARY )
   message( FATAL "Could not find libpng - requred for libharu" )
 endif()
   
+find_library(QUICK_LOOK QuickLook)
+if (NOT QUICK_LOOK)
+    message(FATAL_ERROR "QuickLook not found")
+endif()
+
+find_library(CORE_SERVICES CoreServices)
+if (NOT CORE_SERVICES)
+    message(FATAL_ERROR "CoreServices not found")
+endif()
+
+MARK_AS_ADVANCED(QUICK_LOOK CORE_SERVICES)
+
 
 # note that for some reason, the makefile and xcode generators use a different
 # property to indicate where the Info.plist file is :-/ For that reason, we
@@ -80,22 +92,27 @@ target_link_libraries( SpecFilePreview PUBLIC
   ${PNG_LIBRARY}
   ZLIB::ZLIB
   ${Wt_LIBRARIES}
-  ${Boost_LIBRARIES}
-  ${Boost_SYSTEM_LIBRARY}
-  ${Boost_REGEX_LIBRARY}
-  ${Boost_THREAD_LIBRARY}
-  ${Boost_FILESYSTEM_LIBRARY}
-  ${Boost_RANDOM_LIBRARY}
-  ${Boost_PROGRAM_OPTIONS_LIBRARY}
-  ${Boost_DATE_TIME_LIBRARY}
-  /System/Library/Frameworks/QuickLook.framework/QuickLook
-  /System/Library/Frameworks/CoreServices.framework/CoreServices
+  ${Wt_LIBRARY}
+  ${Wt_HTTP_LIBRARY}
+  ${Wt_DBO_LIBRARY}
+  ${Wt_DBOSQLITE3_LIBRARY}
+  Boost::system
+  Boost::regex
+  Boost::thread
+  Boost::filesystem
+  Boost::random
+  Boost::program_options
+  Boost::date_time
+  ${QUICK_LOOK}
+  ${CORE_SERVICES}
 )
 
 
-target_include_directories( SpecFilePreview PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../../external_libs 
-                            ${Wt_INCLUDE_DIR} ${Boost_INCLUDE_DIR} )
-message( "SpecFilePreview: ${CMAKE_CURRENT_SOURCE_DIR}/../../../../external_libs" )
+target_include_directories( SpecFilePreview 
+  PUBLIC  
+    ${Wt_INCLUDE_DIR}
+    ${InterSpec_BASE_DIR}/external_libs
+)
 
 
 #install(TARGETS SpecFilePreview DESTINATION InterSpec.app/Contents/Library/QuickLook/ )
