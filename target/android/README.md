@@ -39,19 +39,23 @@ cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DBoost_INC
 
 
       export MY_BOOST_DIR="/Users/wcjohns/install/android/armeabi-v7a"
-      cmake -DANDROID_ABI=${MY_ANDROID_ABI} \
+      cmake -DANDROID_SDK_DIR=/Users/wcjohns/Library/Android/sdk \
+            -DANDROID_NDK_TOOLS_DIR=/Users/wcjohns/Library/Android/sdk/tools \
+            -DANDROID_STAGING_DIR=${MY_BOOST_DIR} \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} 
+            -DCMAKE_PREFIX_PATH=${MY_BOOST_DIR} \
             -DANDROID_NDK=/Users/wcjohns/Library/Android/sdk/ndk/23.1.7779620/ \
             -DCMAKE_CXX_FLAGS=-std=c++14 \
             -DCMAKE_TOOLCHAIN_FILE=/Users/wcjohns/Library/Android/sdk/ndk/23.1.7779620/build/cmake/android.toolchain.cmake \
-            -DANDROID_CPP_FEATURES=rtti exceptions -DANDROID_TOOLCHAIN=clang -DANDROID_PIE=ON \
             -DSHARED_LIBS=OFF -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DWT_CPP_11_MODE='-std=c++14' \
             -DENABLE_SSL=OFF -DHTTP_WITH_ZLIB=OFF \
-            -DCONFIGURATION=data/config/wt_config_android.xml\
+            -DCONFIGURATION=data/config/wt_config_android.xml \
             -DWTHTTP_CONFIGURATION=data/config/wthttpd \
             -DCMAKE_INSTALL_PREFIX=${MY_BOOST_DIR} \
             -DBoost_INCLUDE_DIR=${MY_BOOST_DIR}/include/boost-1_78 \
+
+I dont think we need below here
+-DANDROID_CPP_FEATURES=rtti exceptions -DANDROID_TOOLCHAIN=clang -DANDROID_PIE=ON \
             -DBoost_DATE_TIME_LIBRARY_RELEASE=${MY_BOOST_DIR}/lib/libboost_date_time-clang-darwin-mt-1_65_1.a \
             -DBoost_FILESYSTEM_LIBRARY_RELEASE=${MY_BOOST_DIR}/lib/libboost_filesystem-clang-darwin-mt-1_65_1.a \
             -DBoost_PROGRAM_OPTIONS_LIBRARY_RELEASE=${MY_BOOST_DIR}/lib/libboost_program_options-clang-darwin-mt-1_65_1.a \
