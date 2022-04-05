@@ -107,16 +107,12 @@
   //  [url standardizedURL]: interspec://drf
   //  [[url absoluteString] stringByRemovingPercentEncoding]: interspec://drf:v1:MyName:"My other Par":Eqn=323.32+5.2l(x)-3.5E-6*ln(y);someOtherPar
   
-  
-  if( !_UrlUniqueId )
-  {
-    NSLog( @"\topenURLs: _UrlUniqueId is nil - not handling URL!" );
-    
-    return;
-  }
-  
   std::unique_ptr<Wt::WApplication::UpdateLock> app_lock;
-  InterSpecApp *specapp = InterSpecApp::instanceFromExtenalToken( [_UrlUniqueId UTF8String] );
+  InterSpecApp *specapp = nullptr;
+  
+  if( _UrlUniqueId )
+    specapp = InterSpecApp::instanceFromExtenalToken( [_UrlUniqueId UTF8String] );
+  
   if( specapp )
   {
     app_lock = std::make_unique<Wt::WApplication::UpdateLock>( specapp );
@@ -173,7 +169,7 @@
     }// if( [url isFileURL] ) / else
     
     
-    if( !app_lock )
+    if( !app_lock && !urlcontent.empty() )
     {
       //The WebView may not have requested the URL yet when this function gets
       //  called, in the case a user double clicks on a file in the Finder to launch
