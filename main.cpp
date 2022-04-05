@@ -132,6 +132,7 @@ int main( int argc, char **argv )
   
   DataBaseVersionUpgrade::checkAndUpgradeVersion();
   
+  // TODO: switch to using InterSpecServer::startServer(), etc
   return Wt::WRun( argc, argv, &createApplication );
 }//int main( int argc, const char * argv[] )
 

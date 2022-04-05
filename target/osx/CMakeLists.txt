@@ -3,12 +3,11 @@ cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 project( InterSpecApp VERSION 1.10.0)
 
 set(BUILD_AS_OSX_APP ON CACHE INTERNAL "Build a OSX native app" )
-set(BUILD_AS_LOCAL_SERVER OFF CACHE INTERNAL )
-set(ALLOW_URL_TO_FILESYSTEM_MAP ON CACHE INTERNAL )
-set(USE_OSX_NATIVE_MENU ON CACHE INTERNAL )
-set(USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE INTERNAL )
-set(TRY_TO_STATIC_LINK ON CACHE INTERNAL )
-set(CMAKE_OSX_DEPLOYMENT_TARGET "10.12" CACHE INTERNAL)
+set(ALLOW_URL_TO_FILESYSTEM_MAP ON CACHE INTERNAL "Allow url to filesystem map" )
+set(USE_OSX_NATIVE_MENU ON CACHE INTERNAL "Use macOS native menu-system" )
+set(USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE INTERNAL "Enable spectrum file query widget" )
+set(TRY_TO_STATIC_LINK ON CACHE INTERNAL "Try to statically link" )
+set(CMAKE_OSX_DEPLOYMENT_TARGET "10.12" CACHE INTERNAL "Set OSX deployment target to 10.12" )
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../../ InterSpecLib )
 
@@ -37,8 +36,8 @@ FIND_LIBRARY(FOUNDATION_LIBRARY Foundation)
 MARK_AS_ADVANCED(WEBKIT_LIBRARY COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY)
 
 
-list(APPEND sources src/InterSpecServer.cpp target/osx/macOsUtils.mm)
-list(APPEND headers InterSpec/InterSpecServer.h target/osx/macOsUtils.h)
+list(APPEND sources macOsUtils.mm)
+list(APPEND headers macOsUtils.h)
 
 add_library(InterSpecAppLib STATIC ${sources} ${headers})
 
@@ -65,6 +64,7 @@ ExternalProject_Add(SpecFilePreview
     CMAKE_GENERATOR   "Unix Makefiles"
     CMAKE_CACHE_ARGS -DWt_INCLUDE_DIR:PATH=${Wt_INCLUDE_DIR}
                      -DBOOST_ROOT:PATH=${Boost_INCLUDE_DIR}/..
+                     -DInterSpec_BASE_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/../../
                      -DBOOST_INCLUDEDIR:PATH=${Boost_INCLUDE_DIR}
                      -DCMAKE_BUILD_TYPE:STRING=RELEASE
                      -DSpecUtils_ENABLE_D3_CHART:BOOL=OFF
@@ -78,19 +78,25 @@ add_custom_command(
     COMMAND ""
 )
 
+
 #In order to copy all the needed resources to the "Archive" builds of Xcode,
 #  we need to specify each individual file, and later set their MACOSX_PACKAGE_LOCATION properties...
-file(GLOB_RECURSE DATA_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/data/*")
+file(GLOB_RECURSE DATA_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../../data/*")
 file(GLOB_RECURSE WT_RES_SOURCES "${WT_RESOURCES_DIRECTORY}/*")
 file( GLOB_RECURSE INTERSPEC_RES_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../InterSpec_resources/*"
 )
-list( APPEND INTERSPEC_RES_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/NOTICE.html )
+
+list( APPEND INTERSPEC_RES_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../NOTICE.html )
+
+
 file( GLOB_RECURSE EXAMPLE_RES_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/example_spectra/*"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../example_spectra/*"
 )
-SET( EN_LOCALIZATION_FILES  "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/InfoPlist.strings"   
-    "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/Credits.rtf"
+
+
+SET( EN_LOCALIZATION_FILES  "${CMAKE_CURRENT_SOURCE_DIR}/en.lproj/InfoPlist.strings"   
+    "${CMAKE_CURRENT_SOURCE_DIR}/en.lproj/Credits.rtf"
 )
 
 find_program(IBTOOL ibtool HINTS "/usr/bin" "${OSX_DEVELOPER_ROOT}/usr/bin")
@@ -104,34 +110,34 @@ add_custom_command(
         ${IBTOOL} --errors --warnings --notices --output-format
             human-readable-text --compile
             "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib"
-            "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/MainMenu.xib"
+            "${CMAKE_CURRENT_SOURCE_DIR}/en.lproj/MainMenu.xib"
     COMMENT "Compiling MainMenu.xib"
 )
 
-ADD_EXECUTABLE( InterSpecExe MACOSX_BUNDLE ${app_sources}
+ADD_EXECUTABLE( InterSpecApp MACOSX_BUNDLE ${app_sources}
     ${DATA_RES_SOURCES} ${WT_RES_SOURCES} ${INTERSPEC_RES_SOURCES} ${EXAMPLE_RES_SOURCES} ${EN_LOCALIZATION_FILES}
     "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib"
     "${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator"
 )
     
-SET_TARGET_PROPERTIES( InterSpecExe PROPERTIES MACOSX_BUNDLE TRUE )
-#set_target_properties( InterSpecExe PROPERTIES SUFFIX "")
-set_target_properties(InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec")
+SET_TARGET_PROPERTIES( InterSpecApp PROPERTIES MACOSX_BUNDLE TRUE )
+#set_target_properties( InterSpecApp PROPERTIES SUFFIX "")
+set_target_properties(InterSpecApp PROPERTIES OUTPUT_NAME "InterSpec")
 
-target_link_libraries(InterSpecExe PUBLIC InterSpecAppLib)
+target_link_libraries(InterSpecApp PUBLIC InterSpecAppLib)
 
-SET_SOURCE_FILES_PROPERTIES( ${CMAKE_CURRENT_SOURCE_DIR}/target/osx/InterSpec.icns 
+SET_SOURCE_FILES_PROPERTIES( ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec.icns 
     PROPERTIES MACOSX_PACKAGE_LOCATION Resources
 )
 
-add_dependencies(InterSpecExe SpecFilePreview)
+add_dependencies(InterSpecApp SpecFilePreview)
 
 #Set resources MACOSX_PACKAGE_LOCATION property so it is where we want in the app bundle
 #ToDo: combine 5 loops below into a single loop...
-# ToDo: Try to use: install(DIRECTORY InterSpec_resources DESTINATION $<TARGET_FILE_DIR:InterSpecExe>/../Resources/ )
+# ToDo: Try to use: install(DIRECTORY InterSpec_resources DESTINATION $<TARGET_FILE_DIR:InterSpecApp>/../Resources/ )
 # ToDo: Try using (something like):
 #                 add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
-#                                    "${CMAKE_SOURCE_DIR}/example_spectra" "$<TARGET_FILE_DIR:InterSpecExe>/Contents/Resources/")
+#                                    "${CMAKE_SOURCE_DIR}/example_spectra" "$<TARGET_FILE_DIR:InterSpecApp>/Contents/Resources/")
 
 # set( RES_SOURCES_DIRS DATA_RES_SOURCES WT_RES_SOURCES INTERSPEC_RES_SOURCES EXAMPLE_RES_SOURCES EN_LOCALIZATION_FILES )
 # set( RES_DEST_DIRS data resources InterSpec_resources example_spectra en.lproj )
@@ -167,7 +173,7 @@ endforeach(RES_FILE)
 
 foreach(RES_FILE ${INTERSPEC_RES_SOURCES})
     file( RELATIVE_PATH RES_PATH
-            "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../InterSpec_resources"
             ${RES_FILE}
     )
     get_filename_component(RES_PATH ${RES_PATH} DIRECTORY)
@@ -203,16 +209,16 @@ set_property( SOURCE "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib"
 )
 
 
-set_target_properties( InterSpecExe
-    PROPERTIES MACOSX_BUNDLE_INFO_PLIST Info.plist.template
+set_target_properties( InterSpecApp
+    PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.template"
 )
 
-set_target_properties( InterSpecExe
+set_target_properties( InterSpecApp
         PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS InterSpec.entitlements
 )
 
 # With out this next line, Xcode will (silently) fail to build Archive builds
-set_target_properties( InterSpecExe
+set_target_properties( InterSpecApp
     PROPERTIES XCODE_ATTRIBUTE_INSTALL_PATH "/Applications"
 )
 
@@ -229,14 +235,14 @@ STRING(REGEX MATCH "\\(.+\\)" mac_team_id ${dev_team_ids} )
 STRING(REGEX REPLACE "\\(|\\)" "" mac_team_id "${mac_team_id}")
 message("Using Mac Developer Team ID='${mac_team_id}'")
 
-set_target_properties( InterSpecExe
+set_target_properties( InterSpecApp
     PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer"
 )
     
-set_target_properties( InterSpecExe
+set_target_properties( InterSpecApp
     PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}"
 )
 
-set_target_properties( InterSpecExe
+set_target_properties( InterSpecApp
     PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES"
 )

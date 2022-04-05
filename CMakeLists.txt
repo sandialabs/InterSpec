@@ -596,6 +596,13 @@ set(headers
     InterSpec/D3TimeChart.h
 )
 
+
+if( hasParent)
+  # TODO: have even local-server use InterSpecServer.h
+  list(APPEND sources src/InterSpecServer.cpp)
+  list(APPEND headers InterSpec/InterSpecServer.h)
+endif( hasParent)
+
 if(USE_DB_TO_STORE_SPECTRA)
     list(APPEND sources src/DbStateBrowser.cpp src/DbFileBrowser.cpp)
     list(APPEND headers InterSpec/DbStateBrowser.h InterSpec/DbFileBrowser.h)
@@ -738,7 +745,12 @@ set(SpecUtils_REBIN_FILES_TO_SINGLE_BINNING OFF
 set(SpecUtils_NO_BOOST_LIB OFF
     CACHE BOOL "Use boost for threading primitives in SpecUtils"
 )
-set(SpecUtils_USE_WT_THREADPOOL ON CACHE BOOL "")
+
+if( APPLE )
+  set(SpecUtils_USE_WT_THREADPOOL OFF CACHE BOOL "")
+else( APPLE )
+  set(SpecUtils_USE_WT_THREADPOOL ON CACHE BOOL "")
+endif( APPLE )
 set(SpecUtils_EXTERNALLY_DEFINED_LOG_MESSAGE ON CACHE BOOL "")
 set(SpecUtils_BUILD_UNIT_TESTS OFF CACHE BOOL "")
 set(SpecUtils_BUILD_REGRESSION_TEST OFF CACHE BOOL "")
@@ -760,8 +772,6 @@ add_subdirectory(external_libs/muparserx-4.0.7)
 #We should have figured out all the header and source files we need by here, so
 #  lets add the executable to the build
 if(IOS)
-    list(APPEND sources src/InterSpecServer.cpp)
-    list(APPEND headers InterSpec/InterSpecServer.h)
 elseif(ANDROID)
     # TODO: Need to move making Android shared library to its CMakeLists.txt
     #list(APPEND headers target/android/AndroidUtils.hpp)
@@ -777,14 +787,12 @@ elseif(BUILD_AS_ELECTRON_APP)
     list(
         APPEND
         sources
-        src/InterSpecServer.cpp
         target/electron/ElectronUtils.cpp
     )
     
     list(
         APPEND
         headers
-        InterSpec/InterSpecServer.h
         target/electron/ElectronUtils.h
     )
     
@@ -812,6 +820,7 @@ set_target_properties(InterSpecLib PROPERTIES OUTPUT_NAME "InterSpec")
 target_link_libraries(
     InterSpecLib
     PUBLIC
+    Threads::Threads
     SpecUtils
     SandiaDecay
     minuit2
@@ -824,6 +833,12 @@ target_link_libraries(
     Boost::program_options
     Boost::regex
     Boost::random
+    ZLIB::ZLIB
+    ${Wt_LIBRARIES}
+    ${Wt_LIBRARY}
+    ${Wt_HTTP_LIBRARY}
+    ${Wt_DBO_LIBRARY}
+    ${Wt_DBOSQLITE3_LIBRARY}
 )
 
 if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
@@ -877,20 +892,7 @@ if(NOT IOS)
     target_link_libraries(
         InterSpecLib
         PUBLIC
-        ${Wt_LIBRARIES}
-        ${Wt_LIBRARY}
-        ${Wt_HTTP_LIBRARY}
-        ${Wt_DBO_LIBRARY}
-        ${Wt_DBOSQLITE3_LIBRARY}
         
-        Threads::Threads
-        Boost::system
-        Boost::regex
-        Boost::thread
-        Boost::filesystem
-        Boost::program_options
-        Boost::date_time
-        ZLIB::ZLIB
     )
 endif(NOT IOS)
 
