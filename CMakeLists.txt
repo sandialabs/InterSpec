@@ -160,7 +160,7 @@ set( INTERSPEC_LIB_TYPE "STATIC" )
 
 
 if(WIN32)
-#    set(EXECUTABLE_OUTPUT_PATH . CAxCHE PATH "Path to executables" FORCE)
+#    set(EXECUTABLE_OUTPUT_PATH . CACHE PATH "Path to executables" FORCE)
     add_definitions(-D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS ) #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
 #    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj /MP /wd4996 /wd4267" )
 else(WIN32)
@@ -208,10 +208,7 @@ if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
     set(PERFORM_DEVELOPER_CHECKS ON)
 endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
-if("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-    #elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-    #elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
-elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     #get rid of a million warnings by Wt/Dbo/ptr_impl.h in VS2015
     add_definitions("/wd4297")
     add_definitions("/wd4244")
@@ -336,6 +333,7 @@ if(BUILD_AS_ELECTRON_APP)
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
 endif(BUILD_AS_ELECTRON_APP)
 
+
 if(BUILD_AS_UNIT_TEST_SUITE)
     set(BUILD_AS_LOCAL_SERVER OFF)
     set(USE_ENERGY_VS_TIME_PLOTS OFF)
@@ -346,6 +344,7 @@ if(BUILD_AS_UNIT_TEST_SUITE)
     set(PERFORM_DEVELOPER_CHECKS ON)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
 endif(BUILD_AS_UNIT_TEST_SUITE)
+
 
 if(BUILD_FOR_WEB_DEPLOYMENT)
     set(TRY_TO_STATIC_LINK ON)
@@ -367,46 +366,14 @@ if(BUILD_AS_LOCAL_SERVER)
     set(PERFORM_DEVELOPER_CHECKS ON)
 endif(BUILD_AS_LOCAL_SERVER)
 
-#check to make sure exactly one target is specified
-set(NUM_TARGETS_SPECIFIED 0)
 
-if( BUILD_AS_OSX_APP )
-  MATH( EXPR NUM_TARGETS_SPECIFIED "${NUM_TARGETS_SPECIFIED}+1" )
+if(BUILD_FOR_WEB_DEPLOYMENT AND BUILD_AS_LOCAL_SERVER )
+  message( FATAL "You can not buildfor both local webserver and web deployment" )
 endif()
 
-if(BUILD_AS_ELECTRON_APP)
-    MATH( EXPR NUM_TARGETS_SPECIFIED "${NUM_TARGETS_SPECIFIED}+1" )
-endif()
 
-if(BUILD_FOR_WEB_DEPLOYMENT)
-    MATH( EXPR NUM_TARGETS_SPECIFIED "${NUM_TARGETS_SPECIFIED}+1" )
-endif()
-
-if(BUILD_AS_LOCAL_SERVER)
-    MATH( EXPR NUM_TARGETS_SPECIFIED "${NUM_TARGETS_SPECIFIED}+1" )
-endif()
-
-if(BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE)
-    MATH( EXPR NUM_TARGETS_SPECIFIED "${NUM_TARGETS_SPECIFIED}+1" )
-endif()
-
-if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    MATH( EXPR NUM_TARGETS_SPECIFIED "${NUM_TARGETS_SPECIFIED}+1" )
-endif()
-
-if(ANDROID OR IOS)
-    MATH( EXPR NUM_TARGETS_SPECIFIED "${NUM_TARGETS_SPECIFIED}+1" )
-endif()
-
-if(NOT ${NUM_TARGETS_SPECIFIED} EQUAL "1")
-    message(
-        FATAL
-        "You must specify exactly one target, you specified ${NUM_TARGETS_SPECIFIED}"
-    )
-endif()
 
 #try to link to static libraries whenever possible
-#  doing this to boost libraries only adds about 0.6 megabytes
 if(TRY_TO_STATIC_LINK)
     if(WIN32)
         SET(CMAKE_FIND_LIBRARY_SUFFIXES .lib .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
@@ -417,15 +384,18 @@ else(TRY_TO_STATIC_LINK)
     SET(CMAKE_FIND_LIBRARY_SUFFIXES .so .dylib ${CMAKE_FIND_LIBRARY_SUFFIXES})
 endif(TRY_TO_STATIC_LINK)
 
-include(cmake/FindWt.cmake)
+include( cmake/FindWt.cmake )
 
 find_package( ZLIB REQUIRED )
 find_package( Threads REQUIRED )
 
-#set(Boost_USE_STATIC_LIBS OFF)
-set(Boost_USE_MULTITHREADED ON)
-
-find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
+if( InterSpec_FETCH_DEPENDENCIES )
+  set( Wt_INCLUDE_DIR "${wt_SOURCE_DIR}/src" )
+else( InterSpec_FETCH_DEPENDENCIES )
+  set(Boost_USE_STATIC_LIBS ON)
+  set(Boost_USE_MULTITHREADED ON)
+  find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
+endif( InterSpec_FETCH_DEPENDENCIES )
 
 
 
@@ -865,6 +835,29 @@ target_include_directories(
     external_libs
 )
 
+
+if( InterSpec_FETCH_DEPENDENCIES )
+  target_link_libraries( InterSpecLib
+    PUBLIC
+      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array
+      # Boost::signals2 Boost::asio Boost::multi_index
+      wt
+      wttest
+      wthttp
+      wtdbosqlite3
+      wtdbo
+)
+
+  target_include_directories( InterSpecLib
+    PUBLIC
+      ${wt_BINARY_DIR}
+      ${boost_SOURCE_DIR}/libs/numeric/ublas/include
+  )
+  
+  # Need to fix copying the "resources" directory and configs and stuff probably
+endif( InterSpec_FETCH_DEPENDENCIES )
+
+
 if(IOS)
 elseif(WIN32)
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -1019,9 +1012,9 @@ if(USE_MYSQL_DB AND NOT HAS_WT_DBO_MYSQL)
     MESSAGE(FATAL_ERROR   "You do not have the MySQL Wt Dbo backend installed, but you have asked to use it")
 endif(USE_MYSQL_DB AND NOT HAS_WT_DBO_MYSQL)
 
-if(USE_SQLITE3_DB AND NOT HAS_WT_DBO_SQLITE3 AND NOT WIN32)
+if(USE_SQLITE3_DB AND NOT HAS_WT_DBO_SQLITE3 AND NOT WIN32 AND NOT InterSpec_FETCH_DEPENDENCIES )
     MESSAGE(FATAL_ERROR   "You do not have the SQLITE3 Wt Dbo backend installed, but you have asked to use it")
-endif(USE_SQLITE3_DB AND NOT HAS_WT_DBO_SQLITE3 AND NOT WIN32)
+endif(USE_SQLITE3_DB AND NOT HAS_WT_DBO_SQLITE3 AND NOT WIN32 AND NOT InterSpec_FETCH_DEPENDENCIES )
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec/InterSpec_config.h.in
