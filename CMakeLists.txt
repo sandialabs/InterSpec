@@ -76,10 +76,18 @@ option(
 )
 option(
     SUPPORT_ZIPPED_SPECTRUM_FILES
-    "(Work in progress) Allows opening zipped spectrum files"
+    "Allows opening zipped spectrum files"
     ON
 )
-option(TRY_TO_STATIC_LINK "Try to link to static libs whenever possible" OFF)
+
+if( NOT DEFINED TRY_TO_STATIC_LINK )
+  if(WIN32)
+    set( TRY_TO_STATIC_LINK ON )
+  else(WIN32)
+    option(TRY_TO_STATIC_LINK "Try to link to static libs whenever possible" OFF)
+  endif(WIN32)
+endif( NOT DEFINED TRY_TO_STATIC_LINK )
+
 option(
     DRAW_GAMMA_LINES_LOG_AND_LIN
     "Have gamma lines indicators be drawn in log mode when y-axis is log"
@@ -169,9 +177,6 @@ if( CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0 )
 endif()
 
 
-if(WIN32 OR BUILD_AS_ELECTRON_APP)
-    set(TRY_TO_STATIC_LINK "ON")
-endif(WIN32 OR BUILD_AS_ELECTRON_APP)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     #Default to debug
@@ -412,7 +417,7 @@ else(TRY_TO_STATIC_LINK)
     SET(CMAKE_FIND_LIBRARY_SUFFIXES .so .dylib ${CMAKE_FIND_LIBRARY_SUFFIXES})
 endif(TRY_TO_STATIC_LINK)
 
-INCLUDE(cmake/FindWt.cmake)
+include(cmake/FindWt.cmake)
 
 find_package( ZLIB REQUIRED )
 find_package( Threads REQUIRED )
@@ -783,22 +788,6 @@ elseif(ANDROID)
     #    ${headers}
     #)
 elseif(BUILD_AS_UNIT_TEST_SUITE)
-elseif(BUILD_AS_ELECTRON_APP)
-    list(
-        APPEND
-        sources
-        target/electron/ElectronUtils.cpp
-    )
-    
-    list(
-        APPEND
-        headers
-        target/electron/ElectronUtils.h
-    )
-    
-    if( NOT USE_ELECTRON_NATIVE_MENU )
-      list( APPEND sources js/AppHtmlMenu.js )
-    endif( NOT USE_ELECTRON_NATIVE_MENU )
 else()
 endif(IOS)
 
@@ -839,6 +828,7 @@ target_link_libraries(
     ${Wt_HTTP_LIBRARY}
     ${Wt_DBO_LIBRARY}
     ${Wt_DBOSQLITE3_LIBRARY}
+    ${CMAKE_DL_LIBS}
 )
 
 if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
@@ -884,7 +874,6 @@ elseif(WIN32)
     endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
 
     target_link_directories(InterSpecLib PUBLIC ${Boost_LIBRARY_DIR})
-elseif(BUILD_AS_ELECTRON_APP)
 elseif(YES)
 endif(IOS)
 
@@ -946,28 +935,19 @@ endif()
 
 #bellow is what I need to get things working 20131120 for statically linked
 if(TRY_TO_STATIC_LINK)
-    if(APPLE AND NOT IOS)
-        FIND_LIBRARY(LIBZ_LIBRARY z)
 
-        target_link_libraries(
-            InterSpecLib
-            PUBLIC
-            ${LIBZ_LIBRARY}
-            libSystem.B.dylib
-            /System/Library/Frameworks/Carbon.framework/Versions/A/Carbon
-            /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation
-        )
+    if(APPLE AND NOT IOS)
+        find_library( CARBON_LIBRARY Carbon REQUIRED )
+        find_library( FOUNDATION_LIBRARY Foundation REQUIRED )
+        mark_as_advanced( CARBON_LIBRARY FOUNDATION_LIBRARY )
+        target_link_libraries( InterSpecLib PUBLIC ${CARBON_LIBRARY} ${FOUNDATION_LIBRARY} )
 
         if(USE_OSX_NATIVE_MENU)
-            target_link_libraries(
-                InterSpecLib
-                PUBLIC
-                /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit
-            )
+          find_library( APP_KIT_LIBRARY AppKit REQUIRED )
+          mark_as_advanced( APP_KIT_LIBRARY )
+          target_link_libraries( InterSpecLib PUBLIC ${APP_KIT_LIBRARY} )
         endif(USE_OSX_NATIVE_MENU)
     endif(APPLE AND NOT IOS)
-
-    target_link_libraries(InterSpecLib PUBLIC ${CMAKE_DL_LIBS})
 
     if(USE_MYSQL_DB)
         include(cmake/WtFindMysql.txt)
@@ -985,11 +965,7 @@ if(TRY_TO_STATIC_LINK)
     endif(SSL_FOUND)
 
     if("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID)
-        find_library(RT_LIB rt)
-        if(RT_LIB EQUAL RT_LIB-NOTFOUND)
-            message(FATAL "could not find rt lib")
-        endif()
-
+        find_library( RT_LIB rt REQUIRES )
         target_link_libraries(InterSpecLib PUBLIC ${RT_LIB})
 
         #target_link_libraries( InterSpecExe -static-libgcc -static-libstdc++)
@@ -1007,17 +983,12 @@ if(BUILD_AS_UNIT_TEST_SUITE)
 endif(BUILD_AS_UNIT_TEST_SUITE)
 
 
-include(CheckIncludeFileCXX)
-set(CMAKE_REQUIRED_INCLUDES ${Wt_INCLUDE_DIR} ${Boost_INCLUDE_DIR} )
 
 if(Wt_DBOSQLITE3_LIBRARY)
-    # check_include_file_cxx(...) doesnt look to work w/ apple clang 12...
-    #check_include_file_cxx("Wt/Dbo/backend/Sqlite3" HAS_WT_DBO_SQLITE3)
     find_file( HAS_WT_DBO_SQLITE3 "Sqlite3" PATHS "${Wt_INCLUDE_DIR}/Wt/Dbo/backend/" NO_DEFAULT_PATH )
 endif(Wt_DBOSQLITE3_LIBRARY)
 
 if(Wt_MYSQL_LIBRARY)
-    #check_include_file_cxx("${Wt_INCLUDE_DIR}/Wt/Dbo/backend/MySQL" HAS_WT_DBO_MYSQL)
     find_file( HAS_WT_DBO_MYSQL "MySQL" PATHS "${Wt_INCLUDE_DIR}/Wt/Dbo/backend/" NO_DEFAULT_PATH )
 endif(Wt_MYSQL_LIBRARY)
 
@@ -1097,17 +1068,6 @@ list(
 
 add_custom_target(interspec_resources SOURCES ${OTHER_SUPPORT_FILES})
 
-if(BUILD_AS_ELECTRON_APP)
-    set(ELECTRON_SUPPORT_FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/main.js
-        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/loading.html
-        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/README.md
-        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/package.json
-        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/launch_options.json
-    )
-
-    add_custom_target(electron_resources SOURCES ${ELECTRON_SUPPORT_FILES})
-endif(BUILD_AS_ELECTRON_APP)
 
 #Copy files to the install directory
 set(OTHER_FILES runLocalOn8080.sh)
