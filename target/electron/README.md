@@ -28,7 +28,7 @@ cmake-js --generator "Visual Studio 16 2019" \
          --target install
 
 # If you make changes and want to recompile
-cmake-js build --out="build_dir"
+CMAKE_BUILD_PARALLEL_LEVEL=12 cmake-js build --out="build_dir"
 # Or you can use CMake to run the `make` command, which can be useful when
 # the CMake generator isnt a command-line based system like (ex Xcode, MSVC)
 cmake --build build_dir --config Release
