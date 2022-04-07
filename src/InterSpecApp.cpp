@@ -1290,13 +1290,20 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
 }//void miscSignalHandler( const std::string &signal )
 
 
-bool InterSpecApp::handleAppUrl( std::string url )
+bool InterSpecApp::handleAppUrl( const std::string &url )
 {
-  cout << "\n\n\nIn InterSpecApp::handleAppUrl: '" << url << "'\n\n" << endl;
+  try
+  {
+    m_viewer->handleAppUrl( url );
+  }catch( std::exception &e )
+  {
+    cerr << "InterSpecApp::handleAppUrl: invalid URL: " << e.what() << endl;
+    wApp->log( "error" ) << "InterSpecApp::handleAppUrl: invalid URL: " << e.what();
+    
+    return false;
+  }// try / catch to process th URL
   
-  
-  //Get rid of (optional) leading "interspec://", so URL will look like: 'drf?v=1&n=MyName&"My other Par"'
-  
+  return true;
 }//bool handleAppUrl( std::string url )
 
 

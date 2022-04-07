@@ -1001,7 +1001,7 @@ namespace
                 //- Check for "*Source.lib" file in application directory,
                 //  and if found, scan through for the source identified in previous line, and put in date
                 vector<string> base_paths{ InterSpec::staticDataDirectory(), SpecUtils::get_working_path() };
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
                 try{ base_paths.push_back( InterSpec::writableDataDirectory() ); } catch(...){}
 #endif
                 vector<string> source_lib_files;

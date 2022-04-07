@@ -207,7 +207,7 @@ using namespace std;
 std::mutex InterSpec::sm_staticDataDirectoryMutex;
 std::string InterSpec::sm_staticDataDirectory = "data";
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 std::mutex InterSpec::sm_writableDataDirectoryMutex;
 std::string InterSpec::sm_writableDataDirectory = "";
 #endif  //if( not a webapp )
@@ -1053,7 +1053,7 @@ std::string InterSpec::staticDataDirectory()
   return sm_staticDataDirectory;
 }
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 void InterSpec::setWritableDataDirectory( const std::string &dir )
 {
   std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
@@ -9221,6 +9221,49 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
   return true;
 }//bool loadFileFromDbFilesystemLink( int id )
 #endif
+
+
+
+void InterSpec::handleAppUrl( std::string url )
+{
+  //Get rid of (optional) leading "interspec://", so URL will look like: 'drf/specify?v=1&n=MyName&"My other Par"'
+  const string scheme = "interspec://";
+  if( SpecUtils::istarts_with(url, scheme) )
+    url = url.substr(scheme.size());
+  
+  // For the moment, we will require there to be a query string, even if its empty.
+  const string::size_type q_pos = url.find( '?' );
+  if( q_pos == string::npos )
+    throw runtime_error( "App URL did not contain the host/path component that specifies the intent"
+                         " of the URL (e.g., what tool to use, or what info is contained in the URL)." );
+  
+  // the q_pos+1 should be safe, even if q_pos is last character in string.
+  if( url.find(q_pos+1, 'q') != string::npos )
+    throw runtime_error( "App URL contained more than one '?' character, which isnt allowed" );
+    
+  const string host_path = url.substr( 0, q_pos );
+  const string::size_type host_end = host_path.find( '/' );
+  const string host = (host_end == string::npos) ? host_path : host_path.substr(0,host_end);
+  const string path = (host_end == string::npos) ? string("") : host_path.substr(host_end+1);
+  const string query_str = url.substr( q_pos + 1 );
+  
+  //cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
+  
+  if( SpecUtils::iequals_ascii(host,"drf") )
+  {
+    if( SpecUtils::iequals_ascii(path,"specify") )
+    {
+      //
+    }else
+    {
+      throw runtime_error( "App 'drf' URL with path '" + path + "' not supported." );
+    }
+  }else
+  {
+    throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );
+  }
+}//void handleAppUrl( std::string url )
+
 
 
 void InterSpec::detectorsToDisplayChanged()

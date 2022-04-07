@@ -390,6 +390,38 @@ public:
                                         std::vector<std::shared_ptr<DetectorPeakResponse>> &drfs );
   
   
+  /** Creates a DetectorPeakResponse from "App URL" data.
+   Takes in just the "query" portion of the URL (i.e., the data after the '?' character), that
+   comes from, say, a QR code.
+   
+   Throws exception on failure, otherwise returns a valid DRF.
+   */
+  static std::shared_ptr<DetectorPeakResponse> parseFromAppUrl( const std::string &url_query );
+  
+  /** Converts this DRF to a string that can be used as the "query" portion of a URL.
+   
+   This function will try to fit the entire DRF within the limits imposed by a QR code, but
+   if that isnt possible, it will then try the following until things fit:
+   - Make name, description, and if applicable equation, into uppercase ASCII characters.
+   - Shorten description, all the way down to zero length.
+   - Remove the hash
+   - Remove the creation date
+   - Remove the lower/upper energies
+   - Remove m_expOfLogPowerSeriesUncerts if present
+   - Remove the FWHM resolution info
+   - Admit failure and throw an exception.
+   
+   If this DRF is not valid, will throw an exception.
+   */
+  std::string toAppUrl() const;
+  
+  /** Decodes the "query" portion of a URL to form the DRF.
+   
+   If URL is not a valid DRF, throws exception.
+   */
+  void fromAppUrl( std::string url_query );
+  
+  
   /**
    if form==kGadrasResolutionFcn then coefs must have 3 entries
    if form==kSqrtPolynomial then coefs must not be empty,

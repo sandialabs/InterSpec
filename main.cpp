@@ -190,7 +190,7 @@ void processCustomArgs( int argc, char **argv )
   bool set_serial_num_file = false;
   for( int i = 1; i < (argc-1); ++i )
   {
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
     if( argv[i] == std::string("--userdatadir") )
     {
       try
