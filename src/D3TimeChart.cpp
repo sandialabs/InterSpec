@@ -959,8 +959,8 @@ void D3TimeChart::setDataToClient()
       if( m->has_gps_info() )
       {
         haveAnyGps = true;
-        std::get<0>(coords) = m->longitude();
-        std::get<1>(coords) = m->latitude();
+        std::get<0>(coords) = m->latitude();
+        std::get<1>(coords) = m->longitude();
         std::get<2>(coords) = m->position_time();
       }
     }//for( const string &name : m_spec->detector_names() )
