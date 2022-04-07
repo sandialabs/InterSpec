@@ -46,6 +46,8 @@
 
 #include "mpParser.h"
 
+#include "Wt/Utils"
+
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/PeakModel.h"
 #include "SpecUtils/Filesystem.h"
@@ -180,6 +182,15 @@ namespace
     for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
       fields.push_back(*it);
   }//void split_escaped_csv(...)
+  
+  string to_url_array( const std::vector<float> &vals )
+  {
+    string answer;
+    for( size_t i = 0; i < vals.size(); ++i )
+      answer += (i ? "*" : "") + PhysicalUnits::printCompact( vals[i], 6 );
+    return answer;
+  }//string to_url_array
+
 }//namespace
 
 
@@ -1054,6 +1065,134 @@ void DetectorPeakResponse::parseMultipleRelEffDrfCsv( std::istream &input,
     input.seekg( start_pos, ios::beg );
   }
 }//parseMultipleRelEffDrfCsv(...)
+
+
+std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseFromAppUrl( const std::string &url_query )
+{
+  auto drf = make_shared<DetectorPeakResponse>();
+  drf->fromAppUrl( url_query );
+  assert( drf->isValid() );
+  
+  return drf;
+}//shared_ptr<DetectorPeakResponse> parseFromAppUrl( const std::string &url_query )
+
+std::string DetectorPeakResponse::toAppUrl() const
+{
+  
+  // QR codes can hold:
+  //  Numeric only: Max. 7,089 characters (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+  //  Alphanumeric: Max. 4,296 characters (0–9, A–Z [upper-case only], space, $, %, *, +, -, ., /, :)
+  //  Binary/byte:  Max. 2,953 characters (8-bit bytes) (23624 bits)
+  //
+  // So we will try to fit the DRF inside of this limitation, by first not changing anything, and
+ 
+  if( !isValid() )
+    throw runtime_error( "Invalid DRF." );
+  
+  //  "interspec://drf/specify?" takes up 24 bytes - so we'll try to hit the character limit,
+  //     minus about 30.
+  map<string,string> parts;
+  parts["VER"] = "1";
+  
+  if( !m_name.empty() )
+    parts["NAME"] = Wt::Utils::urlEncode( m_name );
+  
+  if( !m_description.empty() )
+    parts["DESC"] = Wt::Utils::urlEncode( m_description );
+  
+  parts["DIAM"] = PhysicalUnits::printCompact( m_detectorDiameter, 5 );
+  
+  // We'll assume units are MeV, unless stated otherwise.
+  const bool notKeV = (fabs(m_efficiencyEnergyUnits - PhysicalUnits::keV) > 0.001);
+  if( notKeV )
+    parts["EUNIT"] = PhysicalUnits::printCompact( m_efficiencyEnergyUnits, 4 );
+  
+  
+  switch( m_efficiencyForm )
+  {
+    case EfficiencyFnctForm::kEnergyEfficiencyPairs:
+    {
+      parts["EFFT"] = "P";
+      string energies, effs;
+      for( size_t i = 0; i < m_energyEfficiencies.size(); ++i )
+      {
+        const EnergyEfficiencyPair &v = m_energyEfficiencies[i];
+        energies += (i ? "*" : "") + PhysicalUnits::printCompact( v.energy, 3 );
+        effs     += (i ? "*" : "") + PhysicalUnits::printCompact( v.efficiency, 4 );
+      }
+      parts["EFFX"] = energies;
+      parts["EFFY"] = effs;
+      break;
+    }//case EfficiencyFnctForm::kEnergyEfficiencyPairs:
+      
+    case EfficiencyFnctForm::kFunctialEfficienyForm:
+      parts["EFFT"] = "F";
+      //m_efficiencyFcn
+      //m_efficiencyFormula
+      break;
+      
+    case EfficiencyFnctForm::kExpOfLogPowerSeries:
+      parts["EFFT"] = "E";
+      //m_expOfLogPowerSeriesCoeffs
+      //m_expOfLogPowerSeriesUncerts
+      break;
+      
+    case EfficiencyFnctForm::kNumEfficiencyFnctForms:
+      assert( 0 );
+      throw std::logic_error("m_efficiencyForm");
+      break;
+  }//switch( m_efficiencyForm )
+  
+  switch( m_resolutionForm )
+  {
+    case ResolutionFnctForm::kGadrasResolutionFcn:
+      parts["FWHMT"] = "GAD";
+      break;
+      
+    case ResolutionFnctForm::kSqrtPolynomial:
+      parts["FWHMT"] = "SQRTPOLY";
+      break;
+      
+    case ResolutionFnctForm::kNumResolutionFnctForm:
+      break;
+  }//switch( m_resolutionForm )
+  
+  if( m_resolutionCoeffs.size() )
+    parts["FWHMC"] = to_url_array( m_resolutionCoeffs );
+  
+  if( m_resolutionUncerts.size() )
+    parts["FWHMU"] = to_url_array( m_resolutionUncerts );
+  
+  // blah blah blah
+  /*
+  ResolutionFnctForm m_resolutionForm;
+  
+   
+  DrfSource m_efficiencySource;
+  EfficiencyFnctForm m_efficiencyForm;
+  std::vector<EnergyEfficiencyPair> m_energyEfficiencies;
+  std::string m_efficiencyFormula;
+  std::function<float(float)> m_efficiencyFcn;
+  std::vector<float> m_expOfLogPowerSeriesCoeffs;
+  std::vector<float> m_expOfLogPowerSeriesUncerts;
+  uint64_t m_hash;
+  uint64_t m_parentHash;
+  uint64_t m_flags;
+  double m_lowerEnergy;
+  double m_upperEnergy;
+  int64_t m_createdUtc = std::time(nullptr);
+  int64_t m_lastUsedUtc;
+  */
+  
+  
+}//std::string toAppUrl() const
+
+
+void DetectorPeakResponse::fromAppUrl( std::string url_query )
+{
+  //blah blah blah
+  throw runtime_error( "DetectorPeakResponse::fromAppUrl not implemented yet" );
+}//void fromAppUrl( std::string url_query )
 
 
 

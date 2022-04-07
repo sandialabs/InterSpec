@@ -41,7 +41,7 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WCssDecorationStyle>
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 #include <Wt/WServer>
 #endif
 
@@ -321,7 +321,7 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeLgplLicenseItem()
   return item;
 }//SideMenuItem *makeItem( const WString &title, const string &resource)
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *parent )
 {
   auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );

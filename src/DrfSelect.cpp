@@ -237,7 +237,7 @@ namespace
    
    vector<string> trial_paths;
    
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
    try
    {
      const string user_data_dir = InterSpec::writableDataDirectory();
@@ -567,7 +567,7 @@ void RelEffFile::init()
   initDetectors();
 }//void RelEffFile::init()
 
-
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 void RelEffFile::handleUserAskedRemove()
 {
   if( m_existingFilePath.empty() )
@@ -593,6 +593,7 @@ void RelEffFile::handleUserAskedRemove()
                   "", WarningWidget::WarningMsgHigh );
       return;
     }
+    
     
     try
     {
@@ -716,7 +717,7 @@ void RelEffFile::handleSaveFileForLater()
     passMessage( "Error saving DRF file for later use; sorry.", "", WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void handleSaveFileForLater();
-
+#endif  //#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 
 void RelEffFile::selectNone()
 {
@@ -969,7 +970,7 @@ void RelEffDetSelect::docreate()
   
   vector<string> user_data_paths;
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   try
   {
     const string userDir = InterSpec::writableDataDirectory();
@@ -1103,7 +1104,7 @@ void GadrasDetSelect::docreate()
   }
 #endif
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   try
   {
     //ToDo: do more testing and use only the Android implementation
@@ -1444,7 +1445,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 */
   
   string user_data_dir;
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   try
   {
     user_data_dir = InterSpec::writableDataDirectory();
@@ -3591,7 +3592,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const Spec
   
   vector<string> paths;
   
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   try
   {
     const string userDir = InterSpec::writableDataDirectory();

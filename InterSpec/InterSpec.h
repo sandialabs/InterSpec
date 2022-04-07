@@ -130,8 +130,9 @@ class InterSpec : public Wt::WContainerWidget
 {
   /****************************************************************************\
   | This class is the overall architecture for the InterSpec application.      |
-  | It contains most of the widgets for the visible app.                       |
-  | Its comming quite close to being a God Class.                              |
+  | It contains most of the widgets for the visible app and handles most of    |
+  | the actions taken by the user that are not within a specific tool.         |
+  |
   \****************************************************************************/
 
 public:
@@ -139,7 +140,7 @@ public:
 
   ~InterSpec() noexcept(true);
     
-  /** Returns the InterSpec instance cooresponding to the current WApplication instance.
+  /** Returns the InterSpec instance corresponding to the current WApplication instance.
    Will return nullptr if WApplication::instance() is null (e.g., current thread is not in a
    WApplication event loop).
    */
@@ -166,7 +167,7 @@ public:
    */
   static std::string staticDataDirectory();
  
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   /** Sets the directory were we can write write the user preference database
    file (if using sqlite3); also the location will search for extra detector
    response functions.
@@ -284,6 +285,24 @@ public:
                                       bool keepMeasModificationStatus,
                                       boost::function<void(void)> modifiedcallback );
 
+  
+  /** Handles "deep" urls.
+   
+   Meant to handle URLs with the scheme "interspec://...", that would be passed to the application
+   by the OS, like when a QR code is scanned.
+   
+   The prefix "interspec://" is optional, and may be omitted.
+   
+   An example URL is "interspec://drf/specify?v=1"
+   
+   Throws std::exception if url cant be used.
+   
+   As of 20220405: Implementation and scope of use still being fleshed out.
+   */
+  void handleAppUrl( std::string url );
+  
+  
+  
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
   //  WContainerWidget or a PopupDivMenu
   void addFileMenu( Wt::WWidget *menuDiv, const bool isAppTitlebar );
@@ -1388,7 +1407,7 @@ protected:
   static std::mutex sm_staticDataDirectoryMutex;
   static std::string sm_staticDataDirectory;
   
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   static std::mutex sm_writableDataDirectoryMutex;
   static std::string sm_writableDataDirectory;
 #endif  //if( not a webapp )

@@ -1433,7 +1433,7 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
       dialog->hide();
     }
     
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
     if( saveFile && saveFile->isChecked() && fileContents.size() > 0 )
     {
       try

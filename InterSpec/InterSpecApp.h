@@ -218,12 +218,16 @@ public:
    
    The prefix "interspec://" is optional, and may be omitted.
    
+   Currently just passes through to InterSpec::handleAppUrl(...)
+   
+   Returns if the URL was successfully used.
+   
    As of 20220405: currently being implemented and not fully fleshed out; in the future could
                    implement to handle spectra, display decay data for a isotope, DRFs, etc.  Could
                    also have an argument to the regular browsers URL that this function could
                    process.
    */
-  bool handleAppUrl( std::string url );
+  bool handleAppUrl( const std::string &url );
   
 protected: 
 
