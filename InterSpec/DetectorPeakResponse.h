@@ -402,14 +402,12 @@ public:
    
    This function will try to fit the entire DRF within the limits imposed by a QR code, but
    if that isnt possible, it will then try the following until things fit:
-   - Make name, description, and if applicable equation, into uppercase ASCII characters.
-   - Shorten description, all the way down to zero length.
-   - Remove the hash
-   - Remove the creation date
-   - Remove the lower/upper energies
-   - Remove m_expOfLogPowerSeriesUncerts if present
-   - Remove the FWHM resolution info
+   - Remove: last used, DrfSource, parents hash, created data, energy range, hash, description,
+             uncertainties, FWHM info, and finally name
    - Admit failure and throw an exception.
+   
+   In the future it may be implemented that the description is only cut down as much as needed,
+   or all characters converted to QR-ascii so the available number of characters is larger.
    
    If this DRF is not valid, will throw an exception.
    */

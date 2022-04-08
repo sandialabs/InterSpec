@@ -183,14 +183,64 @@ namespace
       fields.push_back(*it);
   }//void split_escaped_csv(...)
   
-  string to_url_array( const std::vector<float> &vals )
+  string to_url_flt_array( const std::vector<float> &vals, const size_t num_sig_fig )
   {
     string answer;
     for( size_t i = 0; i < vals.size(); ++i )
-      answer += (i ? "*" : "") + PhysicalUnits::printCompact( vals[i], 6 );
+      answer += (i ? "*" : "") + PhysicalUnits::printCompact( vals[i], num_sig_fig );
     return answer;
-  }//string to_url_array
+  }//string to_url_flt_array
 
+  vector<float> from_url_flt_array( const string &val )
+  {
+    vector<float> answer;
+    vector<string> parts;
+    SpecUtils::split( parts, val, "*" );
+    for( const string &v : parts )
+    {
+      float vf;
+      if( (stringstream(v) >> vf) )
+      {
+        answer.push_back( vf );
+      }else
+      {
+        assert( 0 );
+        cerr << "Failed in from_url_flt_array: '" << val << "'" << endl;
+        return {};
+      }
+    }//for( const string &v : parts )
+    
+    return answer;
+  }//from_url_flt_array(...)
+
+  std::string url_encode( const std::string& url, const std::string &not_allowed, const bool qr_ascii_only )
+  {
+    auto to_hex = [](int n) -> char {
+      return "0123456789ABCDEF"[(n & 0xF)];
+    };
+    
+    const std::string unsafe_chars = " $&+,:;=?@'\"<>#%{}|\\^~[]`/";
+    const string qr_ascii_allowed = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+    
+    std::stringstream result;
+    
+    for( size_t i = 0; i < url.size(); ++i )
+    {
+      unsigned char c = (unsigned char)url[i];
+      
+      bool allowable = ((c <= 31) || (c >= 127) || (unsafe_chars.find(c) != std::string::npos));
+      
+      if( qr_ascii_only && allowable )
+        allowable = (qr_ascii_allowed.find(url[i]) != string::npos);
+      
+      if( allowable )
+        result << '%' << to_hex(c >> 4) << to_hex(c);
+      else
+        result << (char)c;
+    }//for( size_t i = 0; i < url.size(); ++i )
+    
+    return result.str();
+  }//url_encode(...)
 }//namespace
 
 
@@ -488,7 +538,7 @@ bool DetectorPeakResponse::isValid() const
   switch( m_efficiencyForm )
   {
     case kEnergyEfficiencyPairs:
-      return !m_energyEfficiencies.empty();
+      return (m_energyEfficiencies.size() >= 2);
     case kFunctialEfficienyForm:
       return !m_efficiencyFormula.empty();
     case kExpOfLogPowerSeries:
@@ -854,8 +904,8 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
           case 8:  m_resolutionCoeffs[2] = value; break;
           case 11: detWidth = value;              break;
           case 12: heightToWidth = value;         break;
-          case 62: lowerEnergy = value;           break;  //template error / min energy, keV
-          case 63: upperEnergy = value;           break;  //chi-square / max energy, keV
+          //case 35: lowerEnergy = value;           break;  //LLD(keV)
+          //case ??: upperEnergy = value;           break;  //chi-square / max energy, keV
         }//switch( parnum )
       }catch(...)
       {
@@ -1076,29 +1126,43 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseFromAppUrl( con
   return drf;
 }//shared_ptr<DetectorPeakResponse> parseFromAppUrl( const std::string &url_query )
 
+
 std::string DetectorPeakResponse::toAppUrl() const
 {
-  
   // QR codes can hold:
   //  Numeric only: Max. 7,089 characters (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
   //  Alphanumeric: Max. 4,296 characters (0–9, A–Z [upper-case only], space, $, %, *, +, -, ., /, :)
   //  Binary/byte:  Max. 2,953 characters (8-bit bytes) (23624 bits)
   //
   // So we will try to fit the DRF inside of this limitation, by first not changing anything, and
- 
+  // strlen("interspec://drf/specify?") == 24, so we'll round up to 30.
+  const size_t max_binary_num = 2953 - 30;
+  //const size_t max_alpha_num = 4296 - 30;
+  
+  // Currently we are just trying to fit everything in the binary size
+  
+  //*********************************************************************
+  // A note for the future:
+  //  We are actually pretty close to being an QR Alphanumeric code.
+  //  The '&' and '=' would have to be replaced by say like '/' and ':'
+  //  and also the '?' that indicates the query string would have to
+  //  become say '%3F', but we're mostly there.
+  //  Also we would need to change calls to url_encode to be like:
+  //    url_encode(...,"",true);
+  //*********************************************************************
+  
+  
   if( !isValid() )
     throw runtime_error( "Invalid DRF." );
   
-  //  "interspec://drf/specify?" takes up 24 bytes - so we'll try to hit the character limit,
-  //     minus about 30.
   map<string,string> parts;
   parts["VER"] = "1";
   
   if( !m_name.empty() )
-    parts["NAME"] = Wt::Utils::urlEncode( m_name );
+    parts["NAME"] = url_encode( m_name, "", false );
   
   if( !m_description.empty() )
-    parts["DESC"] = Wt::Utils::urlEncode( m_description );
+    parts["DESC"] = url_encode( m_description, "", false );
   
   parts["DIAM"] = PhysicalUnits::printCompact( m_detectorDiameter, 5 );
   
@@ -1107,41 +1171,53 @@ std::string DetectorPeakResponse::toAppUrl() const
   if( notKeV )
     parts["EUNIT"] = PhysicalUnits::printCompact( m_efficiencyEnergyUnits, 4 );
   
-  
   switch( m_efficiencyForm )
   {
     case EfficiencyFnctForm::kEnergyEfficiencyPairs:
     {
+      assert( m_energyEfficiencies.size() );
+      
       parts["EFFT"] = "P";
-      string energies, effs;
+      vector<float> energies, effs;
+      
       for( size_t i = 0; i < m_energyEfficiencies.size(); ++i )
       {
         const EnergyEfficiencyPair &v = m_energyEfficiencies[i];
-        energies += (i ? "*" : "") + PhysicalUnits::printCompact( v.energy, 3 );
-        effs     += (i ? "*" : "") + PhysicalUnits::printCompact( v.efficiency, 4 );
+        energies.push_back( v.energy );
+        effs.push_back( v.efficiency );
       }
-      parts["EFFX"] = energies;
-      parts["EFFY"] = effs;
+      
+      parts["EFFX"] = to_url_flt_array( energies, 4 );
+      parts["EFFY"] = to_url_flt_array( effs, 5 );
       break;
     }//case EfficiencyFnctForm::kEnergyEfficiencyPairs:
       
     case EfficiencyFnctForm::kFunctialEfficienyForm:
+    {
+      assert( m_efficiencyFormula.size() );
+      
       parts["EFFT"] = "F";
-      //m_efficiencyFcn
-      //m_efficiencyFormula
+      parts["EFFE"] = url_encode(m_efficiencyFormula, "", false);
       break;
+    }
       
     case EfficiencyFnctForm::kExpOfLogPowerSeries:
+    {
+      assert( m_expOfLogPowerSeriesCoeffs.size() );
+      
       parts["EFFT"] = "E";
-      //m_expOfLogPowerSeriesCoeffs
-      //m_expOfLogPowerSeriesUncerts
+      parts["EFFC"] = to_url_flt_array( m_expOfLogPowerSeriesCoeffs, 7 );
+      if( !m_expOfLogPowerSeriesUncerts.empty() )
+        parts["EFFU"] = to_url_flt_array( m_expOfLogPowerSeriesUncerts, 7 );
       break;
+    }
       
     case EfficiencyFnctForm::kNumEfficiencyFnctForms:
       assert( 0 );
       throw std::logic_error("m_efficiencyForm");
       break;
   }//switch( m_efficiencyForm )
+  
   
   switch( m_resolutionForm )
   {
@@ -1158,40 +1234,397 @@ std::string DetectorPeakResponse::toAppUrl() const
   }//switch( m_resolutionForm )
   
   if( m_resolutionCoeffs.size() )
-    parts["FWHMC"] = to_url_array( m_resolutionCoeffs );
+    parts["FWHMC"] = to_url_flt_array( m_resolutionCoeffs, 7 );
   
   if( m_resolutionUncerts.size() )
-    parts["FWHMU"] = to_url_array( m_resolutionUncerts );
+    parts["FWHMU"] = to_url_flt_array( m_resolutionUncerts, 7 );
   
-  // blah blah blah
-  /*
-  ResolutionFnctForm m_resolutionForm;
+  parts["ORIGIN"] = std::to_string( static_cast<int>(m_efficiencySource) );
   
-   
-  DrfSource m_efficiencySource;
-  EfficiencyFnctForm m_efficiencyForm;
-  std::vector<EnergyEfficiencyPair> m_energyEfficiencies;
-  std::string m_efficiencyFormula;
-  std::function<float(float)> m_efficiencyFcn;
-  std::vector<float> m_expOfLogPowerSeriesCoeffs;
-  std::vector<float> m_expOfLogPowerSeriesUncerts;
-  uint64_t m_hash;
-  uint64_t m_parentHash;
-  uint64_t m_flags;
-  double m_lowerEnergy;
-  double m_upperEnergy;
-  int64_t m_createdUtc = std::time(nullptr);
-  int64_t m_lastUsedUtc;
-  */
+  if( m_hash )
+    parts["HASH"] = std::to_string( m_hash );
+  
+  if( m_parentHash )
+    parts["HASHP"] = std::to_string( m_parentHash );
+  
+  if( (fabs(m_lowerEnergy - m_upperEnergy) > 1.0) && (m_upperEnergy > 0.0) )
+  {
+    parts["LOWE"] = PhysicalUnits::printCompact( m_lowerEnergy, 4 );
+    parts["HIGHE"] = PhysicalUnits::printCompact( m_upperEnergy, 4 );
+  }
+  
+  if( m_createdUtc )
+    parts["CREATED"] = std::to_string( m_createdUtc );
+  
+  if( m_lastUsedUtc )
+    parts["LASTUSED"] = std::to_string( m_lastUsedUtc );
+  
+  auto current_url_len = [&parts]() -> size_t {
+    size_t nchar = (2 * parts.size()) - (parts.size() ? 1 : 0);
+    for( const auto &p : parts )
+      nchar += p.first.size() + p.second.size();
+    return nchar;
+  };//current_url_len(...)
+
+  
+  auto combine_parts = [&parts]() -> string {
+    string answer;
+    for( const auto &p : parts )
+      answer += (answer.size() ? "&" : "") + p.first + "=" + p.second;
+    
+    /*
+     //If we wanted to check if it was QR ASCII
+    for( const auto &p : parts )
+    {
+      //0–9, A–Z [upper-case only], space, $, %, *, +, -, ., /, :
+      const string allowed = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+      for( auto c : parts.first )
+      {
+        assert( allowed.find(c) != string::npos );
+      }
+      
+      for( auto c : parts.second )
+      {
+        assert( allowed.find(c) != string::npos );
+      }
+    }//for( const auto &p : parts )
+    */
+    
+    return answer;
+  };//
   
   
+  //  For the DRFs I have, as of 20220408, they all come in under 1000 bytes, so we wont really
+  //  usually need to shorten things, but we'll add this code in anyway
+  
+  if( current_url_len() < max_binary_num )
+    return combine_parts();
+  
+  // Remove part of URL, and return if now short engough
+  auto remove_part = [&parts,&current_url_len]( const string &part ) -> bool {
+    if( parts.count(part) )
+      parts.erase( part );
+    
+    return (current_url_len() < max_binary_num);
+  };//remove_part
+  
+  if( remove_part("LASTUSED") )
+    return combine_parts();
+  
+  if( remove_part("ORIGIN") )
+    return combine_parts();
+  
+  if( remove_part("HASHP") )
+    return combine_parts();
+  
+  if( remove_part("CREATED") )
+    return combine_parts();
+  
+  remove_part("LOWE");
+  if( remove_part("HIGHE") )
+    return combine_parts();
+  
+  if( remove_part("HASH") )
+    return combine_parts();
+  
+  // TODO: try to remove as little of the description as possible... but shorten the string
+  //       before URL encoding so you dont have hanging encoding (e.g., "%2" would make things
+  //       invalid)
+  if( remove_part("DESC") )
+    return combine_parts();
+
+  if( remove_part("FWHMU") )
+    return combine_parts();
+  
+  if( remove_part("EFFU") )
+    return combine_parts();
+  
+  remove_part("FWHMT");
+  if( remove_part("FWHMC") )
+    return combine_parts();
+  
+  if( remove_part("NAME") )
+    return combine_parts();
+  
+  throw runtime_error( "toAppUrl: Unable to shorten information enough" );
+  
+  return "";
 }//std::string toAppUrl() const
 
 
 void DetectorPeakResponse::fromAppUrl( std::string url_query )
 {
-  //blah blah blah
-  throw runtime_error( "DetectorPeakResponse::fromAppUrl not implemented yet" );
+  map<string,string> parts;
+  vector<string> components;
+  SpecUtils::split( components, url_query, "&/" );
+  
+  for( string comp : components )
+  {
+    SpecUtils::trim( comp );
+    if( comp.empty() )
+      continue;
+    
+    auto pos = comp.find('=');
+    if( pos == string::npos )
+      pos = comp.find(':');
+    
+    if( pos == string::npos )
+      throw runtime_error( "fromAppUrl: query portion '" + comp + "' missing a = or : character" );
+    
+    string key = comp.substr(0,pos);
+    string value = comp.substr(pos+1);
+    SpecUtils::trim(key);
+    SpecUtils::trim(value);
+    SpecUtils::to_upper_ascii(key);
+    
+    if( key.empty() )
+      throw runtime_error( "fromAppUrl: query portion '" + comp + "' has empty name" );
+    
+    if( value.empty() )
+      throw runtime_error( "fromAppUrl: query portion '" + comp + "' has empty value" );
+    
+    parts[key] = value;
+  }//for( string comp : components )
+  
+  if( !parts.count("VER") || (parts["VER"] != "1") )
+    throw runtime_error( "fromAppUrl: missing or invalid 'VER'" );
+  
+  string name, desc, eqn;
+  float detectorDiameter = 0.0, efficiencyEnergyUnits = 1.0;
+  EfficiencyFnctForm eff_form;
+  vector<EnergyEfficiencyPair> energyEfficiencies;
+  std::function<float(float)> efficiencyFcn;
+  vector<float> expOfLogPowerSeriesCoeffs, expOfLogPowerSeriesUncerts;
+  ResolutionFnctForm resolutionForm = ResolutionFnctForm::kNumResolutionFnctForm;
+  vector<float> resolutionCoeffs, resolutionUncerts;
+  DrfSource drf_source = DrfSource::UnknownDrfSource;
+  uint64_t hash = 0, parent_hash = 0;
+  int64_t createdUtc = 0, lastUsedUtc = 0;
+  double lowerEnergy = 0.0, upperEnergy = 0.0;
+  
+  if( parts.count("NAME") )
+    name = Wt::Utils::urlDecode( parts["NAME"] );
+  
+  if( parts.count("DESC") )
+    desc = Wt::Utils::urlDecode( parts["DESC"] );
+  
+  if( !parts.count("DIAM") )
+    throw runtime_error( "fromAppUrl: missing required DIAM component" );
+  
+  if( !(stringstream(parts["DIAM"]) >> detectorDiameter) || (detectorDiameter <= 0.0) )
+    throw runtime_error( "fromAppUrl: invalid DIAM component" );
+  
+  if( parts.count("EUNIT") )
+  {
+    if( !(stringstream(parts["EUNIT"]) >> efficiencyEnergyUnits) || (efficiencyEnergyUnits <= 0.0) )
+      throw runtime_error( "fromAppUrl: invalid EUNIT component" );
+  }
+  
+  if( !parts.count("EFFT") )
+    throw runtime_error( "fromAppUrl: missing required EFFT component" );
+  
+  
+  SpecUtils::to_upper_ascii( parts["EFFT"] );
+  if( parts["EFFT"] == "P" )
+  {
+    eff_form = EfficiencyFnctForm::kEnergyEfficiencyPairs;
+  
+    if( !parts.count("EFFX") || !parts.count("EFFY") )
+      throw runtime_error( "fromAppUrl: missing required EFFX or EFFY component for Eff Pair" );
+      
+    const vector<float> x = from_url_flt_array( parts["EFFX"] );
+    const vector<float> y = from_url_flt_array( parts["EFFY"] );
+    
+    if( (x.size() < 2) || (x.size() != y.size()) )
+      throw runtime_error( "fromAppUrl: missing required EFFX or EFFY component for Eff Pair" );
+    
+    for( size_t i = 0; i < x.size(); ++i )
+    {
+      EnergyEfficiencyPair p;
+      p.energy = x[i];
+      p.efficiency = y[i];
+      energyEfficiencies.push_back( p );
+    }
+  }else if( parts["EFFT"] == "F" )
+  {
+    eff_form = EfficiencyFnctForm::kFunctialEfficienyForm;
+    
+    if( !parts.count("EFFE") )
+      throw runtime_error( "fromAppUrl: missing required EFFE component for Eff Eqn" );
+    
+    eqn = Wt::Utils::urlDecode( parts["EFFE"] );
+    
+    try
+    {
+      const bool isMeV = (efficiencyEnergyUnits > 10.0f);
+      auto expression = std::make_shared<FormulaWrapper>( m_efficiencyFormula, isMeV );
+      efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression, boost::placeholders::_1  );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "fromAppUrl: Invalid detector efficiency formula: " + string(e.what()) );
+    }
+  }else if( parts["EFFT"] == "E" )
+  {
+    eff_form = EfficiencyFnctForm::kExpOfLogPowerSeries;
+    
+    if( !parts.count("EFFC") )
+      throw runtime_error( "fromAppUrl: missing EFFC for " );
+      
+    if( !parts.count("EFFC") )
+      throw runtime_error( "fromAppUrl: missing required EFFC component for Eff Series" );
+      
+    expOfLogPowerSeriesCoeffs = from_url_flt_array( parts["EFFC"] );
+    if( expOfLogPowerSeriesCoeffs.empty() )
+      throw runtime_error( "fromAppUrl: invalid EFFC component for Eff Series" );
+    
+    if( parts.count("EFFU") )
+    {
+      expOfLogPowerSeriesUncerts = from_url_flt_array( parts["EFFU"] );
+      if( !expOfLogPowerSeriesUncerts.empty() )
+      {
+        if( expOfLogPowerSeriesUncerts.size() != expOfLogPowerSeriesCoeffs.size() )
+          throw runtime_error( "fromAppUrl: EFFC and EFFU are different lengths" );
+      }
+    }
+  }else
+  {
+    throw runtime_error( "fromAppUrl: invalid EFFT value: " + parts["EFFT"]  );
+  }
+  
+                              
+  if( parts.count("FWHMT") )
+  {
+    if( parts["FWHMT"] == "GAD" )
+    {
+      resolutionForm = ResolutionFnctForm::kGadrasResolutionFcn;
+    }else if( parts["FWHMT"] == "SQRTPOLY" )
+    {
+      resolutionForm = ResolutionFnctForm::kSqrtPolynomial;
+    }else
+    {
+      throw runtime_error( "fromAppUrl: invalid FWHMT value '" + parts["FWHMT"] + "'" );
+    }
+    
+    resolutionCoeffs = from_url_flt_array( parts["FWHMC"] );
+            
+    if( parts.count("FWHMU") )
+      resolutionUncerts = from_url_flt_array( parts["FWHMU"] );
+      
+    if( resolutionUncerts.size() && (resolutionUncerts.size() != resolutionCoeffs.size()) )
+       throw runtime_error( "fromAppUrl: FWHMC and FWHMU different lengths" );
+      
+    switch( resolutionForm )
+    {
+      case ResolutionFnctForm::kGadrasResolutionFcn:
+       if( resolutionCoeffs.size() != 3 )
+         throw runtime_error( "fromAppUrl: invalid number resolution coefs" );
+        break;
+        
+      case ResolutionFnctForm::kSqrtPolynomial:
+        if( resolutionCoeffs.size() < 2 )
+          throw runtime_error( "fromAppUrl: not enough resolution coefs" );
+        break;
+       
+      case ResolutionFnctForm::kNumResolutionFnctForm:
+        break;
+    }//switch( resolutionForm )
+  }//if( parts.count("FWHMT") )
+      
+  if( parts.count("ORIGIN") )
+  {
+    int val;
+    if( !(stringstream(parts["ORIGIN"]) >> val) )
+      throw runtime_error( "fromAppUrl: ORIGIN must be an integer value." );
+    
+    drf_source = static_cast<DrfSource>( val );
+    switch( drf_source )
+    {
+      case DrfSource::UnknownDrfSource:
+      case DrfSource::DefaultGadrasDrf:
+      case DrfSource::UserAddedGadrasDrf:
+      case DrfSource::UserAddedRelativeEfficiencyDrf:
+      case DrfSource::UserImportedIntrisicEfficiencyDrf:
+      case DrfSource::UserImportedGadrasDrf:
+      case DrfSource::UserSpecifiedFormulaDrf:
+      case DrfSource::UserCreatedDrf:
+      case DrfSource::FromSpectrumFileDrf:
+        break;
+      
+      default:
+        throw runtime_error( "fromAppUrl: invalid ORIGIN value." );
+    }//switch( static_cast<DrfSource>( val ) )
+  }//if( parts.count("ORIGIN") )
+       
+  if( parts.count("HASH") )
+  {
+     if( !(stringstream(parts["HASH"]) >> hash) )
+       throw runtime_error( "fromAppUrl: HASH not an integer." );
+  }//if( parts.count("HASH") )
+       
+  if( parts.count("HASHP") )
+  {
+    if( !(stringstream(parts["HASHP"]) >> parent_hash) )
+      throw runtime_error( "fromAppUrl: HASHP not an integer." );
+  }//if( parts.count("HASH") )
+    
+  if( parts.count("CREATED") )
+  {
+    if( !(stringstream(parts["CREATED"]) >> createdUtc) )
+      throw runtime_error( "fromAppUrl: CREATED not an integer." );
+  }//if( parts.count("CREATED") )
+       
+  if( parts.count("LASTUSED") )
+  {
+    if( !(stringstream(parts["LASTUSED"]) >> lastUsedUtc) )
+      throw runtime_error( "fromAppUrl: LASTUSED not an integer." );
+  }//if( parts.count("LASTUSED") )
+  
+  if( parts.count("LOWE") )
+  {
+    if( !(stringstream(parts["LOWE"]) >> lowerEnergy) )
+      throw runtime_error( "fromAppUrl: LOWE not an float." );
+  }
+  
+  if( parts.count("HIGHE") )
+  {
+    if( !(stringstream(parts["HIGHE"]) >> upperEnergy) )
+      throw runtime_error( "fromAppUrl: HIGHE not an float." );
+      
+    // We wont actually check this, as its not required to be isValid()
+    //if( upperEnergy < lowerEnergy )
+    //  throw runtime_error( "fromAppUrl: HIGHE is lower than LOWE." );
+  }
+ 
+  // We should be good to go here
+  m_name = name;
+  m_description = desc;
+       
+  m_detectorDiameter = detectorDiameter;
+  m_efficiencyEnergyUnits = efficiencyEnergyUnits;
+       
+  m_efficiencyForm = eff_form;
+  m_efficiencyFormula = eqn;
+  m_efficiencyFcn = efficiencyFcn;
+  m_energyEfficiencies = energyEfficiencies;
+  m_expOfLogPowerSeriesCoeffs = expOfLogPowerSeriesCoeffs;
+  m_expOfLogPowerSeriesUncerts = expOfLogPowerSeriesUncerts;
+       
+  m_resolutionForm = resolutionForm;
+  m_resolutionCoeffs = resolutionCoeffs;
+  m_resolutionUncerts = resolutionUncerts;
+       
+  m_efficiencySource = drf_source;
+       
+  m_hash = hash;
+  m_parentHash = parent_hash;
+  m_createdUtc = createdUtc;
+  m_lastUsedUtc = lastUsedUtc;
+       
+  m_lowerEnergy = lowerEnergy;
+  m_upperEnergy = upperEnergy;
+      
+  if( !isValid() )
+    throw runtime_error( "fromAppUrl: DRF is invalid - even though it shouldnt be - logic error in this function." );
 }//void fromAppUrl( std::string url_query )
 
 
@@ -1662,7 +2095,7 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
   {
     snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: efficiency units"
              " of LHS (%1.8E) doesnt match RHS (%1.8E)",
-             lhs.m_detectorDiameter, rhs.m_detectorDiameter );
+             lhs.m_efficiencyEnergyUnits, rhs.m_efficiencyEnergyUnits );
     throw runtime_error(buffer);
   }
 
