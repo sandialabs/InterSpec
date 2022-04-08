@@ -305,6 +305,35 @@ namespace
     }//for( const auto &p : drf_files )
   }//potential_rel_eff_files(..)
 
+/*
+#if( PERFORM_DEVELOPER_CHECKS )
+void check_url_serialization( std::shared_ptr<const DetectorPeakResponse> drf )
+{
+  if( !drf || !drf->isValid() )
+    return;
+  
+  string appUrl;
+  try
+  {
+    appUrl = drf->toAppUrl();
+    DetectorPeakResponse rhs;
+    
+    rhs.fromAppUrl( appUrl );
+    
+    DetectorPeakResponse::equalEnough( *drf, rhs );
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to decode DRF from URL: " << e.what() << endl;
+    assert( 0 );
+    throw runtime_error( "Failed to decode DRF from URL: " + string(e.what()) );
+  }
+  
+  cout << "Detector '" << drf->name() <<  "' has initial DRF len=" << appUrl.size()
+       << " and passes going to and then from URL" << endl;
+}//void check_url_serialization( std::shared_ptr<const DetectorPeakResponse> drf )
+#endif //#if( PERFORM_DEVELOPER_CHECKS )
+*/
+
 }//namespace
 
 class RelEffFile;
@@ -809,6 +838,11 @@ void RelEffFile::initDetectors()
   if( file_opened )
   {
     DetectorPeakResponse::parseMultipleRelEffDrfCsv( input, credits, m_responses );
+    
+//#if( PERFORM_DEVELOPER_CHECKS )
+//    for( auto drf : m_responses )
+//      check_url_serialization( drf );
+//#endif
     
     if( m_responses.empty() )
     {
@@ -1584,6 +1618,10 @@ std::shared_ptr<DetectorPeakResponse> GadrasDirectory::parseDetector( string pat
     const string name = SpecUtils::filename( path );
     auto drf = make_shared<DetectorPeakResponse>( name, "" );
     drf->fromGadrasDirectory( path );
+    
+//#if( PERFORM_DEVELOPER_CHECKS )
+//    check_url_serialization( drf );
+//#endif
     
     return drf;
   }catch( std::exception &e )
@@ -2753,6 +2791,10 @@ void DrfSelect::setDefineDetector()
     detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits, 0.0f, 0.0f );
     detec->setDrfSource( DetectorPeakResponse::DrfSource::UserSpecifiedFormulaDrf );
     
+//#if( PERFORM_DEVELOPER_CHECKS )
+//    check_url_serialization( detec );
+//#endif
+    
     updateChart();
   }catch( std::exception &e )
   {
@@ -3062,6 +3104,10 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
         }
       }//while( getline )
       
+//#if( PERFORM_DEVELOPER_CHECKS )
+//      check_url_serialization( det );
+//#endif
+
       return det;
     }catch(...)
     {
@@ -3214,6 +3260,11 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
     passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
     return;
   }//try / catch
+  
+//#if( PERFORM_DEVELOPER_CHECKS )
+//  check_url_serialization( det );
+//#endif
+
   
   m_detector = det;
   setAcceptButtonEnabled( true );
@@ -3876,6 +3927,10 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetectorFromDirector
 
   det->fromGadrasDefinition( effstrm, datstrm );
   det->setName( SpecUtils::filename( SpecUtils::parent_path(thiscsv) ) );
+
+//#if( PERFORM_DEVELOPER_CHECKS )
+//  check_url_serialization( det );
+//#endif
 
   return det;
 }//std::shared_ptr<DetectorPeakResponse> initAGadrasDetectorFromDirectory()

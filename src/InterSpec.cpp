@@ -9232,13 +9232,27 @@ void InterSpec::handleAppUrl( std::string url )
     url = url.substr(scheme.size());
   
   // For the moment, we will require there to be a query string, even if its empty.
-  const string::size_type q_pos = url.find( '?' );
+  string::size_type q_pos = url.find( '?' );
+  if( q_pos != string::npos )
+  {
+    q_pos += 1;
+  }else
+  {
+    // Since '?' isnt a QR alphanumeric code also allow the URL encoded value of it, "%3F"
+    q_pos = url.find( "%3F" );
+    if( q_pos == string::npos )
+      q_pos = url.find( "%3f" );
+    
+    if( q_pos != string::npos )
+      q_pos += 3;
+  }//
+    
   if( q_pos == string::npos )
     throw runtime_error( "App URL did not contain the host/path component that specifies the intent"
                          " of the URL (e.g., what tool to use, or what info is contained in the URL)." );
   
   // the q_pos+1 should be safe, even if q_pos is last character in string.
-  if( url.find(q_pos+1, 'q') != string::npos )
+  if( url.find(q_pos, 'q') != string::npos )
     throw runtime_error( "App URL contained more than one '?' character, which isnt allowed" );
     
   const string host_path = url.substr( 0, q_pos );
