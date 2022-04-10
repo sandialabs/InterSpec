@@ -267,7 +267,7 @@ namespace InterSpecAddOn
   
     const bool require = info[0].ToBoolean();
   
-    interspec_set_require_session_token(require)
+    interspec_set_require_session_token(require);
   
     return Napi::Boolean::New( env, true );
   }
