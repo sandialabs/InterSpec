@@ -94,10 +94,6 @@
 #include <Wt/WCssDecorationStyle>
 #include <Wt/Dbo/backend/Sqlite3>
 
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
-#include "InterSpec/ZipArchive.h"
-#endif
-
 
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
@@ -108,6 +104,7 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/ZipArchive.h"
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -689,7 +686,6 @@ FileDragUploadResource *SpecMeasManager::backgroundDragNDrop()
 #endif  //if( !ANDROID && !IOS )
 
 
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
 
 void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
                                              WButtonGroup *group,
@@ -968,7 +964,6 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
   
   return true;
 }//void handleZippedFile(...)
-#endif //#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
 
 
 
@@ -1112,16 +1107,9 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   if( iszip )
   {
     const char *msg = NULL;
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
   //zip (but can be xlsx, pptx, docx, odp, jar, apk) 50 4B 03 04
     msg = "This file appears to be an invalid ZIP file (or xlsx, pptx, <br />"
           "docx, odp, jar, apk, etc), sorry I cant open it :(";
-#else
-    msg = "This build of InterSpec does not support ZIP files.<br />"
-          "Please contact "
-          "<a href=\"mailto:wcjohns@sandia.gov\" target=\"_blank\">wcjohns@sandia.gov</a> "
-          "for a version that supports ZIP files.";
-#endif
     WText *t = new WText( msg );
     stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
@@ -1866,15 +1854,12 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
   } BOOST_SCOPE_EXIT_END
   
  
-  
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
   if( name.length() > 4
      && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
      && handleZippedFile( name, spoolName, type ) )
   {
     return;
   }
-#endif
   
   
   try
@@ -4090,7 +4075,6 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
     displayFile( row, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
   }catch( const std::exception &e )
   {
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
     {
       ifstream test( name.c_str(), ios::in | ios::binary );
       const bool iszip = (test.get()==0x50 && test.get()==0x4B
@@ -4102,7 +4086,6 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
          && handleZippedFile( origName, name, type ) )
       return true;
     }
-#endif
     
     if( !handleNonSpectrumFile( origName, name ) )
     {

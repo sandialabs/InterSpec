@@ -55,7 +55,7 @@ extern "C"
   JNIEXPORT
   jint
   JNICALL
-  Java_gov_sandia_interspec_InterSpec_addopenfiletodb
+  Java_gov_sandia_InterSpec_InterSpec_addopenfiletodb
   (JNIEnv* env, jobject thiz, jstring path )
   {
      std::string filepath = std::string(env->GetStringUTFChars(path, 0));
@@ -78,7 +78,7 @@ extern "C"
   JNIEXPORT
   jint
   JNICALL
-  Java_gov_sandia_interspec_InterSpec_openfileininterppec
+  Java_gov_sandia_InterSpec_InterSpec_openfileininterppec
   (JNIEnv* env, jobject thiz, jstring path, jint type, jstring sessionid )
   {
     const std::string filepath = std::string(env->GetStringUTFChars(path, 0));
@@ -88,7 +88,7 @@ extern "C"
                          (std::string("Will try to open following file in InterSpec '") + filepath + "' in session " + id).c_str());
     
 	 //
-    InterSpecApp *app = InterSpecApp::instanceFromExtenalIdString( id );
+    InterSpecApp *app = InterSpecApp::instanceFromExtenalToken( id );
     if( !app )
     {
       __android_log_write( ANDROID_LOG_INFO, "openfileininterppec",
@@ -118,7 +118,7 @@ extern "C"
   }//Java_gov_sandia_InterSpec_openfileininterppec
   
   
-void Java_gov_sandia_interspec_InterSpec_settmpdir( JNIEnv* env, jobject thiz, jstring tmpPath )
+void Java_gov_sandia_InterSpec_InterSpec_settmpdir( JNIEnv* env, jobject thiz, jstring tmpPath )
 {
   const char *path = env->GetStringUTFChars( tmpPath, 0 );
   setenv("TMPDIR", path, 1);

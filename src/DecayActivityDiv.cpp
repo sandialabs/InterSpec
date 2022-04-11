@@ -81,9 +81,6 @@
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DecayChainChart.h"
-#if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
-#include "InterSpec/ChartToImageResource.h"
-#endif
 #include "InterSpec/DecaySelectNuclideDiv.h"
 #include "InterSpec/MassAttenuationTool.h"
 
@@ -1423,9 +1420,6 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *par
   m_logYScale( NULL ),
   m_photopeakLogYScale( NULL ),
   m_showGridLines( NULL ),
-#if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
-  m_pdfAnchor( NULL ),
-#endif
   m_yAxisType( NULL ),
   m_parentNuclidesDiv( NULL ),
   m_nuclidesAddedDiv( NULL ),
@@ -1448,9 +1442,6 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *par
 #endif
   m_moreInfoDialog( NULL ),
   m_decayLegend( NULL ),
-#if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
-  m_pdfResource( NULL ),
-#endif
   m_calc( NULL ),
   m_csvDownloadDialog( NULL ),
   m_currentTimeUnits( -1.0 ),
@@ -1513,9 +1504,6 @@ void DecayActivityDiv::init()
   m_displayActivityUnitsLabel      = new WLabel( isPhone ? "Units:" : "Display Units:" );
   m_logYScale                      = new WCheckBox( "Log-Y Scale" );
   m_showGridLines                  = new WCheckBox( "Grid Lines" );
-#if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
-  m_pdfAnchor                      = new WAnchor();
-#endif
   m_yAxisType                      = new WComboBox();
   m_parentNuclidesDiv              = new WContainerWidget();
   m_nuclidesAddedDiv               = new WContainerWidget();
@@ -1544,9 +1532,6 @@ void DecayActivityDiv::init()
   m_photoPeakShieldingAD           = new WDoubleSpinBox();
 #endif  //ADD_PHOTOPEAK_CHART
 
-#if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
-  m_pdfResource                    = new ChartToImageResource( m_decayChart );
-#endif
 
   //Sete elements names so we can style with css
   m_parentNuclidesDiv->addStyleClass( "m_parentNuclidesDiv" );
@@ -1574,10 +1559,6 @@ void DecayActivityDiv::init()
   m_photoPeakShieldingAD->addStyleClass( "m_photoPeakShieldingAD" );
 #endif
   m_decayLegend->addStyleClass( "DecayLegend" );
-
-#if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
-  m_pdfAnchor->addStyleClass( "DecayChartImgDownload" );
-#endif
 
   m_displayTimeLength->addStyleClass( "m_displayTimeLength" );
 
@@ -1716,12 +1697,6 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   m_displayActivityUnitsCombo->setCurrentIndex( (useBq ? 2 : 7) ); //MBq : mCi
 
-#if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
-  m_pdfAnchor->setResource( m_pdfResource );
-  m_pdfAnchor->setTarget( TargetNewWindow );
-  string anchorText = string("Export ") + m_pdfResource->imageType();
-  m_pdfAnchor->setText( anchorText );
-#endif
 
   WContainerWidget *displayOptionsDiv = new WContainerWidget();
   displayOptionsDiv->addStyleClass( "displayOptionsDiv" );
@@ -1815,10 +1790,6 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
     csvButton->setStyleClass( "LinkBtn DownloadBtn" );
     csvButton->clicked().connect( this, &DecayActivityDiv::createCsvDownloadGui );
   }
-
-#if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
-  displOptLower->addWidget( m_pdfAnchor );
-#endif
 
   m_displayActivityUnitsCombo->changed().connect( this,
                                         &DecayActivityDiv::refreshDecayDisplay );

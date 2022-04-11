@@ -74,11 +74,7 @@ option(
     "Mirrors WMenus with Electrons native Menu (not fully implemented); if off will use HTML based menus"
     OFF
 )
-option(
-    SUPPORT_ZIPPED_SPECTRUM_FILES
-    "Allows opening zipped spectrum files"
-    ON
-)
+
 
 if( NOT DEFINED TRY_TO_STATIC_LINK )
   if(WIN32)
@@ -122,11 +118,7 @@ option(
     OFF
 )
 option(USE_GOOGLE_MAP "Use google maps widget" ON)
-option(
-    DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK
-    "Include support for downloading images of the displayed page"
-    OFF
-)
+
 option(
     USE_CSS_FLEX_LAYOUT
     "Use CSS Flex/Grid Layout in-place of Wts layouts were possible (work in progress)"
@@ -210,8 +202,8 @@ endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     #get rid of a million warnings by Wt/Dbo/ptr_impl.h in VS2015
-    add_definitions("/wd4297")
-    add_definitions("/wd4244")
+#    add_definitions("/wd4297")
+#    add_definitions("/wd4244")
     #set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/ignore:4099")
 endif()
 
@@ -225,54 +217,54 @@ if(ANDROID)
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
     set(USE_TERMINAL_WIDGET OFF)
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
-    set(SHARED_LIBS OFF)
-    add_definitions(-DANDROID -DWT_NO_STD_WSTRING=ON -DWT_NO_STD_LOCALE=ON)
+#    set(SHARED_LIBS OFF)
+#    add_definitions(-DANDROID -DWT_NO_STD_WSTRING=ON -DWT_NO_STD_LOCALE=ON)
 
     #This is just painful.  I cant get the find_* macros to work with the CMake
     # included as part of Android Studio... After wasting what seems like an entire
     # day, its time for the brute force solution
-    if(NOT BOOST_WT_PREFIX_BASE)
-        message(
-            fatal
-            "You must define BOOST_WT_PREFIX_BASE when building Android build"
-        )
-    endif(NOT BOOST_WT_PREFIX_BASE)
-    set(USRPREFIX "${BOOST_WT_PREFIX_BASE}/${ANDROID_ABI}")
-    set(BOOST_LIB_START "${USRPREFIX}/lib/libboost_")
-    set(BOOST_LIB_END "-clang-darwin-mt-1_65_1.a")
+#    if(NOT BOOST_WT_PREFIX_BASE)
+#        message(
+#            fatal
+#            "You must define BOOST_WT_PREFIX_BASE when building Android build"
+#        )
+ #   endif(NOT BOOST_WT_PREFIX_BASE)
+ #   set(USRPREFIX "${BOOST_WT_PREFIX_BASE}/${ANDROID_ABI}")
+ #   set(BOOST_LIB_START "${USRPREFIX}/lib/libboost_")
+ #   set(BOOST_LIB_END "-clang-darwin-mt-1_65_1.a")
 
-    list(APPEND CMAKE_FIND_ROOT_PATH "${USRPREFIX}")
+#    list(APPEND CMAKE_FIND_ROOT_PATH "${USRPREFIX}")
 
-    set(BOOST_PREFIX "${USRPREFIX}")
-    set(Boost_LIBRARY_DIR "${USRPREFIX}/lib")
-    set(Boost_INCLUDE_DIR "${USRPREFIX}/include")
-    set(Boost_ATOMIC_LIBRARY_RELEASE ${BOOST_LIB_START}atomic${BOOST_LIB_END})
-    set(Boost_DATE_TIME_LIBRARY_RELEASE
-        ${BOOST_LIB_START}date_time${BOOST_LIB_END}
-    )
-    set(Boost_FILESYSTEM_LIBRARY_RELEASE
-        ${BOOST_LIB_START}filesystem${BOOST_LIB_END}
-    )
-    set(Boost_IOSTREAMS_LIBRARY_RELEASE
-        ${BOOST_LIB_START}iostreams${BOOST_LIB_END}
-    )
-    set(Boost_PROGRAM_OPTIONS_LIBRARY_RELEASE
-        ${BOOST_LIB_START}program_options${BOOST_LIB_END}
-    )
-    set(Boost_RANDOM_LIBRARY_RELEASE ${BOOST_LIB_START}random${BOOST_LIB_END})
-    set(Boost_REGEX_LIBRARY_RELEASE ${BOOST_LIB_START}regex${BOOST_LIB_END})
-    set(Boost_SYSTEM_LIBRARY_RELEASE ${BOOST_LIB_START}system${BOOST_LIB_END})
-    set(Boost_THREAD_LIBRARY_RELEASE ${BOOST_LIB_START}thread${BOOST_LIB_END})
-    set(Boost_UNIT_TEST_FRAMEWORK_LIBRARY_RELEASE
-        ${BOOST_LIB_START}unit_test_framework${BOOST_LIB_END}
-    )
-    set(Boost_SIGNALS_LIBRARY_RELEASE ${BOOST_LIB_START}signals${BOOST_LIB_END})
-    set(Wt_INCLUDE_DIR=${USRPREFIX}/include)
-    set(Wt_LIBRARY=${USRPREFIX}/lib/libwt.a)
-    set(Wt_TEST_LIBRARY=${USRPREFIX}/lib/libwttest.a)
-    set(Wt_HTTP_LIBRARY=${USRPREFIX}/lib/libwthttp.a)
-    set(Wt_DBO_LIBRARY=${USRPREFIX}/lib/libwtdbo.a)
-    set(Wt_DBOSQLITE3_LIBRARY=${USRPREFIX}/lib/libwtdbosqlite3.a)
+#    set(BOOST_PREFIX "${USRPREFIX}")
+#    set(Boost_LIBRARY_DIR "${USRPREFIX}/lib")
+#    set(Boost_INCLUDE_DIR "${USRPREFIX}/include")
+#    set(Boost_ATOMIC_LIBRARY_RELEASE ${BOOST_LIB_START}atomic${BOOST_LIB_END})
+#    set(Boost_DATE_TIME_LIBRARY_RELEASE
+#        ${BOOST_LIB_START}date_time${BOOST_LIB_END}
+#    )
+#    set(Boost_FILESYSTEM_LIBRARY_RELEASE
+#        ${BOOST_LIB_START}filesystem${BOOST_LIB_END}
+#    )
+#    set(Boost_IOSTREAMS_LIBRARY_RELEASE
+#        ${BOOST_LIB_START}iostreams${BOOST_LIB_END}
+#    )
+#    set(Boost_PROGRAM_OPTIONS_LIBRARY_RELEASE
+#        ${BOOST_LIB_START}program_options${BOOST_LIB_END}
+#    )
+#    set(Boost_RANDOM_LIBRARY_RELEASE ${BOOST_LIB_START}random${BOOST_LIB_END})
+#    set(Boost_REGEX_LIBRARY_RELEASE ${BOOST_LIB_START}regex${BOOST_LIB_END})
+#    set(Boost_SYSTEM_LIBRARY_RELEASE ${BOOST_LIB_START}system${BOOST_LIB_END})
+#    set(Boost_THREAD_LIBRARY_RELEASE ${BOOST_LIB_START}thread${BOOST_LIB_END})
+#    set(Boost_UNIT_TEST_FRAMEWORK_LIBRARY_RELEASE
+#        ${BOOST_LIB_START}unit_test_framework${BOOST_LIB_END}
+#    )
+#    set(Boost_SIGNALS_LIBRARY_RELEASE ${BOOST_LIB_START}signals${BOOST_LIB_END})
+#    set(Wt_INCLUDE_DIR=${USRPREFIX}/include)
+#    set(Wt_LIBRARY=${USRPREFIX}/lib/libwt.a)
+#    set(Wt_TEST_LIBRARY=${USRPREFIX}/lib/libwttest.a)
+#    set(Wt_HTTP_LIBRARY=${USRPREFIX}/lib/libwthttp.a)
+#    set(Wt_DBO_LIBRARY=${USRPREFIX}/lib/libwtdbo.a)
+#    set(Wt_DBOSQLITE3_LIBRARY=${USRPREFIX}/lib/libwtdbosqlite3.a)
 endif(ANDROID)
 
 if(IOS)
@@ -310,7 +302,6 @@ if(IOS)
     SET(CMAKE_MODULE_PATH ${Boost_DIR} ${CMAKE_MODULE_PATH} )
     set(SHARED_LIBS OFF)
     set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${Boost_DIR})
-    set(SUPPORT_ZIPPED_SPECTRUM_FILES ON)
     set(USE_GOOGLE_MAP OFF)
 
     #if you change this IPHONEOS_DEPLOYMENT_TARGET also change the variable in
@@ -357,7 +348,6 @@ if(BUILD_FOR_WEB_DEPLOYMENT)
     set(USE_GOOGLE_MAP OFF)
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
     set(PERFORM_DEVELOPER_CHECKS OFF)
-    set(SUPPORT_ZIPPED_SPECTRUM_FILES ON)
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
     set(USE_TERMINAL_WIDGET OFF)
 endif(BUILD_FOR_WEB_DEPLOYMENT)
@@ -483,6 +473,7 @@ set(sources
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
     external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
     src/D3TimeChart.cpp
+    src/ZipArchive.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -569,6 +560,7 @@ set(headers
     InterSpec/ShowRiidInstrumentsAna.h
     InterSpec/D3SpectrumDisplayDiv.h
     InterSpec/D3TimeChart.h
+    InterSpec/ZipArchive.h
 )
 
 
@@ -598,20 +590,12 @@ if(INCLUDE_ANALYSIS_TEST_SUITE)
     list(APPEND headers InterSpec/SpectrumViewerTester.h)
 endif(INCLUDE_ANALYSIS_TEST_SUITE)
 
-if(DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK)
-    list(APPEND SRCS src/ChartToImageResource.cpp)
-    list(APPEND HEADRS InterSpec/ChartToImageResource.h)
-endif(DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK)
 
 if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    list(APPEND sources testing/developcode.cpp src/DbUserState.cpp)
-    list(APPEND headers testing/developcode.h InterSpec/DbUserState.h)
+    list(APPEND sources testing/developcode.cpp )
+    list(APPEND headers testing/developcode.h )
 endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
-if(USE_OSX_NATIVE_MENU)
-    list(APPEND sources target/osx/NativeMenu.mm)
-    list(APPEND headers target/osx/NativeMenu.h)
-endif(USE_OSX_NATIVE_MENU)
 
 if(IOS)
     list(APPEND sources target/ios/InterSpec/FileHandling.mm)
@@ -644,10 +628,6 @@ if(USE_TERMINAL_WIDGET)
     list(APPEND headers InterSpec/TerminalModel.h InterSpec/TerminalWidget.h)
 endif(USE_TERMINAL_WIDGET)
 
-if(SUPPORT_ZIPPED_SPECTRUM_FILES)
-    list(APPEND sources src/ZipArchive.cpp)
-    list(APPEND headers InterSpec/ZipArchive.h)
-endif(SUPPORT_ZIPPED_SPECTRUM_FILES)
 
 if(USE_SPECRUM_FILE_QUERY_WIDGET)
     if(
@@ -744,10 +724,7 @@ add_subdirectory(external_libs/muparserx-4.0.7)
 
 
 
-#We should have figured out all the header and source files we need by here, so
-#  lets add the executable to the build
-if(IOS)
-elseif(ANDROID)
+if(ANDROID)
     # TODO: Need to move making Android shared library to its CMakeLists.txt
     #list(APPEND headers target/android/AndroidUtils.hpp)
     #add_library(
@@ -757,9 +734,7 @@ elseif(ANDROID)
     #    ${sources}
     #    ${headers}
     #)
-elseif(BUILD_AS_UNIT_TEST_SUITE)
-else()
-endif(IOS)
+endif(ANDROID)
 
 
 add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers})
@@ -842,7 +817,7 @@ if( InterSpec_FETCH_DEPENDENCIES )
       Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array
       # Boost::signals2 Boost::asio Boost::multi_index
       wt
-      wttest
+#      wttest
       wthttp
       wtdbosqlite3
       wtdbo
@@ -858,8 +833,7 @@ if( InterSpec_FETCH_DEPENDENCIES )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
 
-if(IOS)
-elseif(WIN32)
+if(WIN32)
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         target_link_libraries(InterSpecLib PUBLIC ${Wt_DEBUG_LIBRARIES})
     else(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -867,16 +841,9 @@ elseif(WIN32)
     endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
 
     target_link_directories(InterSpecLib PUBLIC ${Boost_LIBRARY_DIR})
-elseif(YES)
-endif(IOS)
+endif(WIN32)
 
-if(NOT IOS)
-    target_link_libraries(
-        InterSpecLib
-        PUBLIC
-        
-    )
-endif(NOT IOS)
+
 
 if(INCLUDE_ANALYSIS_TEST_SUITE)
   target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
@@ -892,21 +859,16 @@ if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
         )
     endif( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
     
-    # Xcode stopped generating debug sybols by default recently, so force enable,
-    if( CMAKE_BUILD_TYPE MATCHES Debug )
-      target_compile_options(SpecUtils PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
-      target_compile_options(SandiaDecay PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
-      target_compile_options(minuit2 PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
-      target_compile_options(InterSpecLib PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
-      #Cuba-3.0, muparserx
-    endif( CMAKE_BUILD_TYPE MATCHES Debug )
+#    # Xcode stopped generating debug sybols by default recently, so force enable,
+#    if( CMAKE_BUILD_TYPE MATCHES Debug )
+#      target_compile_options(SpecUtils PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
+#      target_compile_options(SandiaDecay PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
+#      target_compile_options(minuit2 PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
+#      target_compile_options(InterSpecLib PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
+#      #Cuba-3.0, muparserx
+#    endif( CMAKE_BUILD_TYPE MATCHES Debug )
 endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
 
-if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR MATCHES "Visual Studio") )
-    #set_target_properties(InterSpecExe PROPERTIES
-    #    VS_DEBUGGER_COMMAND "debug_command"
-    #    VS_DEBUGGER_COMMAND_ARGUMENTS "debug_arguments")
-endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR MATCHES "Visual Studio") )
 
 
 #20180104: on my mac I tried compiling Wt with support for PDF (libharu), but only
@@ -928,7 +890,6 @@ endif()
 
 #bellow is what I need to get things working 20131120 for statically linked
 if(TRY_TO_STATIC_LINK)
-
     if(APPLE AND NOT IOS)
         find_library( CARBON_LIBRARY Carbon REQUIRED )
         find_library( FOUNDATION_LIBRARY Foundation REQUIRED )
@@ -1021,10 +982,9 @@ configure_file(
     ${CMAKE_BINARY_DIR}/InterSpec_config.h
 )
 
-if(ANDROID)
-    target_link_libraries(InterSpecLib PUBLIC log)
-    target_include_directories(InterSpecLib PUBLIC target)
-endif(ANDROID)
+#if(ANDROID)
+#    target_include_directories(InterSpecLib PUBLIC target)
+#endif(ANDROID)
 
 if( WIN32 )
   # The following are only needed for Wt 3.7.1, not 3.3.4
@@ -1063,8 +1023,6 @@ add_custom_target(interspec_resources SOURCES ${OTHER_SUPPORT_FILES})
 
 
 #Copy files to the install directory
-set(OTHER_FILES runLocalOn8080.sh)
-
 foreach(_file ${OTHER_FILES})
     configure_file(
         ${PROJECT_SOURCE_DIR}/${_file}

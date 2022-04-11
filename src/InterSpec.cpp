@@ -9108,7 +9108,7 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
             std::shared_ptr<SpecMeas> meas;
             std::shared_ptr<SpectraFileHeader> header;
             
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
+
             {
               //This is a hack to allow opening zip files on iOS.
               //  Currently the selection GUI looks horrible, and the spectrum
@@ -9135,7 +9135,6 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
                   return true;
               }//if( iszip )
             }
-#endif
             
             header = std::make_shared<SpectraFileHeader>( m_user, true, this );
             meas = header->setFile( displayName, filepath, SpecUtils::ParserType::Auto );
