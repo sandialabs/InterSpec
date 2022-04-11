@@ -36,8 +36,8 @@ FIND_LIBRARY(FOUNDATION_LIBRARY Foundation)
 MARK_AS_ADVANCED(WEBKIT_LIBRARY COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY)
 
 
-list(APPEND sources macOsUtils.mm)
-list(APPEND headers macOsUtils.h)
+list(APPEND sources macOsUtils.mm NativeMenu.mm )
+list(APPEND headers macOsUtils.h NativeMenu.h )
 
 add_library(InterSpecAppLib STATIC ${sources} ${headers})
 

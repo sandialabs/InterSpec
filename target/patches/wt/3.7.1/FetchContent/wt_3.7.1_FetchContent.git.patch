@@ -1,15 +1,14 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 15aab351..7df18ae3 100644
+index 15aab351..1e618bf1 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -1,18 +1,51 @@
+@@ -1,18 +1,50 @@
 -CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12)
 +CMAKE_MINIMUM_REQUIRED(VERSION 3.15)
 +
 +set( CMAKE_CXX_STANDARD 11 CACHE INTERNAL "cxx standard" )
 +set( CMAKE_CXX_STANDARD_REQUIRED ON CACHE INTERNAL "require std std"  )
 +set( CMAKE_CXX_EXTENSIONS OFF CACHE INTERNAL "no cxx extensions"  )
-+set( CMAKE_REQUIRED_FLAGS "-std=c++11" )
 +set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11" )
 +
 +set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE INTERNAL "Use MSVC static runtime" )
@@ -63,7 +62,7 @@ index 15aab351..7df18ae3 100644
  
  PROJECT(WT)
  
-@@ -26,13 +59,14 @@ SET(VERSION_SERIES 3)
+@@ -26,34 +58,35 @@ SET(VERSION_SERIES 3)
  SET(VERSION_MAJOR 7)
  SET(VERSION_MINOR 1)
  
@@ -84,8 +83,48 @@ index 15aab351..7df18ae3 100644
 +OPTION(SHARED_LIBS "Compile shared libraries" OFF)
  
  IF(ANDROID)
-   IF(NOT DEFINED ANDROID_SDK_DIR)
-@@ -85,21 +119,21 @@ ENDIF(GCC_COMPILER_VERSION MATCHES ".*4\\.4\\.4\\-14ubuntu5.*")
+-  IF(NOT DEFINED ANDROID_SDK_DIR)
+-    MESSAGE(FATAL_ERROR 
+-    "Your configuration is missing the ANDROID_SDK_DIR variable. ")
+-  ENDIF(NOT DEFINED ANDROID_SDK_DIR)
+-  IF(NOT DEFINED ANDROID_NDK_TOOLS_DIR)
+-    MESSAGE(FATAL_ERROR 
+-    "Your configuration is missing the ANDROID_NDK_TOOLS_DIR variable. ")
+-  ENDIF(NOT DEFINED ANDROID_NDK_TOOLS_DIR)
+-  IF(NOT DEFINED ANDROID_STAGING_DIR)	
+-    MESSAGE(FATAL_ERROR 
+-    "Your configuration is missing the ANDROID_STAGING_DIR variable. ")
+-  ENDIF(NOT DEFINED ANDROID_STAGING_DIR)
+-  IF(NOT DEFINED ANDROID_SDK_TARGET_ID)	
+-    MESSAGE(FATAL_ERROR 
+-    "Your configuration is missing the ANDROID_SDK_TARGET_ID variable. ")
+-  ENDIF(NOT DEFINED ANDROID_SDK_TARGET_ID)
+-
+-  SET(SHARED_LIBS OFF)
+-  add_definitions(-DANDROID -DWT_NO_STD_WSTRING=ON -DWT_NO_STD_LOCALE=ON)
++#  IF(NOT DEFINED ANDROID_SDK_DIR)
++#    MESSAGE(FATAL_ERROR 
++#    "Your configuration is missing the ANDROID_SDK_DIR variable. ")
++#  ENDIF(NOT DEFINED ANDROID_SDK_DIR)
++#  IF(NOT DEFINED ANDROID_NDK_TOOLS_DIR)
++#    MESSAGE(FATAL_ERROR 
++#    "Your configuration is missing the ANDROID_NDK_TOOLS_DIR variable. ")
++#  ENDIF(NOT DEFINED ANDROID_NDK_TOOLS_DIR)
++#  IF(NOT DEFINED ANDROID_STAGING_DIR)	
++#    MESSAGE(FATAL_ERROR 
++#    "Your configuration is missing the ANDROID_STAGING_DIR variable. ")
++#  ENDIF(NOT DEFINED ANDROID_STAGING_DIR)
++#  IF(NOT DEFINED ANDROID_SDK_TARGET_ID)	
++#    MESSAGE(FATAL_ERROR 
++#    "Your configuration is missing the ANDROID_SDK_TARGET_ID variable. ")
++#  ENDIF(NOT DEFINED ANDROID_SDK_TARGET_ID)
++
++#  SET(SHARED_LIBS OFF)
++#  add_definitions(-DANDROID -DWT_NO_STD_WSTRING=ON -DWT_NO_STD_LOCALE=ON)
+ ENDIF(ANDROID)
+ 
+ #
+@@ -85,21 +118,21 @@ ENDIF(GCC_COMPILER_VERSION MATCHES ".*4\\.4\\.4\\-14ubuntu5.*")
  #
  # Various things that must be configured by the user or packager ...
  #
@@ -114,7 +153,7 @@ index 15aab351..7df18ae3 100644
  OPTION(ENABLE_LIBWTTEST "Build Wt::Test" ON)
  OPTION(ENABLE_LIBWTDBO "Build Wt::Dbo" ON)
  OPTION(WT_NO_STD_LOCALE "Build Wt to run on a system without std::locale support" OFF)
-@@ -113,7 +147,7 @@ OPTION(ENABLE_UNWIND "Build Wt with stacktrace support using libunwind" OFF)
+@@ -113,7 +146,7 @@ OPTION(ENABLE_UNWIND "Build Wt with stacktrace support using libunwind" OFF)
  # We're not sure yet if you can safely link Wt compiled in 03 mode against
  # an application compiled in 11 mode. Boost probably causes problems here
  # (specially boost.signals2)
@@ -123,7 +162,7 @@ index 15aab351..7df18ae3 100644
    # For now, don't auto-detect
    #IF(CMAKE_COMPILER_IS_GNUCXX)
    #  execute_process(COMMAND ${CMAKE_C_COMPILER} "-dumpversion"
-@@ -122,17 +156,20 @@ IF(NOT MSVC)
+@@ -122,17 +155,20 @@ IF(NOT MSVC)
    #    SET(HAS_CXX11 ON)
    #  ENDIF(${GCC_VERSION} VERSION_GREATER "4.5.99")
    #ENDIF(CMAKE_COMPILER_IS_GNUCXX)
@@ -155,7 +194,7 @@ index 15aab351..7df18ae3 100644
  
  IF(MSVC)
    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj")
-@@ -310,7 +347,7 @@ OPTION(DEBUG "Support for debugging, must be enabled also in wt_config.xml" OFF)
+@@ -310,7 +346,7 @@ OPTION(DEBUG "Support for debugging, must be enabled also in wt_config.xml" OFF)
  IF(CYGWIN)
    OPTION(BUILD_TESTS "Build Wt tests" OFF)
  ELSE(CYGWIN)
@@ -164,7 +203,7 @@ index 15aab351..7df18ae3 100644
  ENDIF(CYGWIN)
  
  ADD_DEFINITIONS(-DWT_WITH_OLD_INTERNALPATH_API)
-@@ -344,7 +381,10 @@ find_package(PNG)
+@@ -344,7 +380,10 @@ find_package(PNG)
  set(ZLIB_ROOT ${ZLIB_PREFIX})
  find_package(ZLIB)
  
@@ -176,7 +215,7 @@ index 15aab351..7df18ae3 100644
  INCLUDE(cmake/WtFindFcgi.txt)
  INCLUDE(cmake/WtFindSsl.txt)
  INCLUDE(cmake/WtFindMysql.txt)
-@@ -376,63 +416,63 @@ ENDIF(ENABLE_QT4)
+@@ -376,63 +415,63 @@ ENDIF(ENABLE_QT4)
  
  INCLUDE(FindThreads)
  
@@ -288,7 +327,7 @@ index 15aab351..7df18ae3 100644
  SET(WT_SIGNALS_IMPLEMENTATION ${DEFAULT_WT_SIGNALS_IMPLEMENTATION} CACHE STRING "Select what implementation should be used for Wt signals")
  IF (CMAKE_MAJOR_VERSION EQUAL 2 AND CMAKE_MINOR_VERSION LESS 8)
    MESSAGE(STATUS "Informational: WT_SIGNALS_IMPLEMENTATION should be either boost.signals or boost.signals2")
-@@ -488,7 +528,8 @@ ENDIF (${WT_WRASTERIMAGE_IMPLEMENTATION} STREQUAL "GraphicsMagick")
+@@ -488,7 +527,8 @@ ENDIF (${WT_WRASTERIMAGE_IMPLEMENTATION} STREQUAL "GraphicsMagick")
  FIND_PACKAGE(Doxygen)
  
  # Boost is used nearly everywhere, so we can put these here
@@ -459,6 +498,22 @@ index cf21160e..bf4710db 100644
  #include <map>
  
  #include <Wt/Render/Block.h>
+diff --git a/src/http/Android.C b/src/http/Android.C
+index 56726cd2..767f2f92 100644
+--- a/src/http/Android.C
++++ b/src/http/Android.C
+@@ -37,7 +37,10 @@ void preventRemoveOfSymbolsDuringLinking() {
+ 	  std::string env = s.substr(2);
+ 	  size_t index = env.find("=");
+ 	  if (index != std::string::npos) {
+-	    if (!putenv(env.c_str()))
++
++        char *newenv = (char *)malloc( env.size() + 1 );
++		strcpy( newenv, env.c_str() );
++	    if (!putenv( newenv ) )
+ 	      std::cerr 
+ 		<< "WtAndroid::startwt putenv() failed on: " 
+ 		<< env
 diff --git a/src/http/CMakeLists.txt b/src/http/CMakeLists.txt
 index cefbf2a7..53ae4ece 100644
 --- a/src/http/CMakeLists.txt

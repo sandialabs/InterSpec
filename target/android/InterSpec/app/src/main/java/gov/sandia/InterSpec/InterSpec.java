@@ -21,7 +21,7 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-package gov.sandia.interspec;
+package gov.sandia.InterSpec;
 
 import android.app.Activity;
 import android.content.res.AssetManager;
@@ -67,7 +67,7 @@ import eu.webtoolkit.android.WtAndroid;
 //import gov.sandia.InterSpecMainActivity.InterSpecMainActivity.R;
 //import android.R;
 
-import gov.sandia.interspec.R;
+import gov.sandia.InterSpec.R;
 
 //TODO: look at extending with AppCompatActivity instead of Activity.  WIll need to add entry into AndroidManifest.xml
 //  To use a compatible theme, and also rpobably add a style to get rid of app bar.
@@ -648,7 +648,7 @@ public class InterSpec extends Activity
   static
   {
     // Load the 'native-lib' library on application startup.
-    System.loadLibrary("InterSpec" );
+    System.loadLibrary("InterSpecAppLib" );
   }
 
   public static int startWt( Activity activity )
