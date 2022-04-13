@@ -41,6 +41,7 @@ namespace PhysicalUnits
 #define MU_CHARACTER_2 "\xC2\xB5"
 #define DIAERESIS_O  "\xC3\xB6"
 
+#define DECIMAL_REGEX "\\s*[\\+\\-]?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
 #define POS_DECIMAL_REGEX "\\s*\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
 #define DIST_UNITS_REGEX "(meter|cm|km|mm|um|nm|m|ft|feet|'|inches|inch|in|\")"
 #define METRIC_PREFIX_UNITS "m|M|k|g|G|t|T|u|" MU_CHARACTER_1 "|" MU_CHARACTER_2 "|p|n|milli|micro|pico|nano|kilo|mega|giga|terra"
@@ -53,6 +54,7 @@ namespace PhysicalUnits
 #define EQUIVALENT_DOSE_UNIT_REGEX "(sievert|Sv|rem|roentgen|r" DIAERESIS_O "entgen)"
 
 #define DURATION_REGEX "(\\+?\\d+:\\d\\d:\\d+(\\.\\d+)?)"
+#define DURATION_REGEX_POS_NEG "([\\+\\-]?\\d+:\\d\\d:\\d+(\\.\\d+)?)"
 #define ISO_8601_DURATION_REGEX "[\\-+]?[Pp](?!$)(\\d+(?:\\.\\d+)?[Yy])?(\\d+(?:\\.\\d+)?[Mm])?(\\d+(?:\\.\\d+)?[Ww])?(\\d+(?:\\.\\d+)?[Dd])?([Tt](?=\\d)(\\d+(?:\\.\\d+)?[Hh])?(\\d+(?:\\.\\d+)?[Mm])?(\\d+(?:\\.\\d+)?[Ss])?)?"
   
 const char * const sm_distanceRegex
@@ -100,6 +102,13 @@ const char * const sm_timeDurationHalfLiveOptionalRegex
    = "\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
      "|(" DURATION_REGEX "\\s*)"
      "|(" POS_DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*))+";
+
+const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex
+   = "\\s*((" DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
+     "|(" DURATION_REGEX_POS_NEG "\\s*)"
+     "|(" DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*))+";
+
+
 
 const char * const sm_positiveDecimalRegex = POS_DECIMAL_REGEX;
 

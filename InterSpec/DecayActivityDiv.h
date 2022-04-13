@@ -193,7 +193,7 @@ public:
 #if( ADD_PHOTOPEAK_CHART )
   void setPhotoPeakChartLogY( bool logy );
 #endif 
-  void refreshDecayDisplay();
+  void refreshDecayDisplay( const bool update_calc );
   void addDecaySeries();
   void userSetShowSeries( int series, bool show );
   
