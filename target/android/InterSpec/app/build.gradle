@@ -97,3 +97,21 @@ def local_props(key) { // reads ~ value from local.properties
 
     return val
 }
+
+task makeAssets(type:Exec) {
+    workingDir '../'
+
+    //on windows:
+    //commandLine 'cmd', '/c', 'stop.bat'
+
+    //on linux
+    commandLine './make_assets.sh'
+}
+
+preBuild.dependsOn makeAssets
+
+gradle.projectsEvaluated {
+    assembleRelease.dependsOn makeAssets
+    assembleDebug.dependsOn makeAssets
+}
+

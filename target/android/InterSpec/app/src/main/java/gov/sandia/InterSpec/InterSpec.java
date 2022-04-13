@@ -726,11 +726,15 @@ public class InterSpec extends Activity
 
     if( !needToExtract )
     {
+      Log.d("copyWtAssets", "initially wtAssetsDir exists");
       needToExtract = !(new File(wtAssetsDir + "/asset_size.txt").exists());
+      Log.d("copyWtAssets", "then needToExtract=" + needToExtract );
     }
 
     if( !needToExtract )
     {
+      Log.d("copyWtAssets", "In !needToExtract" );
+
       try
       {
         Log.d("copyWtAssets", "Will check size of interspect-assets.zip");
@@ -759,6 +763,8 @@ public class InterSpec extends Activity
 
     if( needToExtract )
     {
+      Log.d("copyWtAssets", "We do need to extract" );
+
       if( new File(wtAssetsDir).exists() ) {
         try{
           new File(wtAssetsDir + "/data").delete();
