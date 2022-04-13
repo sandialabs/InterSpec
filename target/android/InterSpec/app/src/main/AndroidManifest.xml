@@ -8,7 +8,8 @@
     <supports-screens android:largeScreens="true" android:normalScreens="true" android:anyDensity="true" android:smallScreens="true"/>
     <!-- <uses-sdk android:minSdkVersion="12" android:targetSdkVersion="19"/> -->
     <supports-screens android:largeScreens="true" android:normalScreens="true" android:anyDensity="true" android:smallScreens="true"/>
-    <application android:label="InterSpec">
+    <application android:label="InterSpec"
+        android:usesCleartextTraffic="true" >
         <activity android:name="InterSpec"
             android:label="InterSpec"
             android:icon="@mipmap/ic_launcher"

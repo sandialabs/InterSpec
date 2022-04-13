@@ -23,7 +23,7 @@ add_definitions( -DANDROID )
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
 
-
+# TODO: test if ${log-lib} can replace log below
 add_library( InterSpecAppLib SHARED main.cpp )
 target_link_libraries( InterSpecAppLib PUBLIC Boost::filesystem wt InterSpecLib log )
 target_include_directories( InterSpecAppLib PUBLIC ${wt_BINARY_DIR} )
