@@ -141,6 +141,7 @@ namespace PhysicalUnits
 
   extern const char * const sm_timeDurationRegex;
   extern const char * const sm_timeDurationHalfLiveOptionalRegex;
+  extern const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex;
   
   extern const char * const sm_positiveDecimalRegex;
 
