@@ -1116,10 +1116,19 @@ Wt::WFlags<Wt::ItemFlag> SourceFitModel::flags( const Wt::WModelIndex &index ) c
       break;
       
     case kAge:
-//      if( iso.shieldingIsSource )
-//        return WFlags<ItemFlag>();
-      if( iso.ageDefiningNuc && iso.ageDefiningNuc!=iso.nuclide )
+      if( !iso.ageIsFittable && !iso.ageDefiningNuc )
         return WFlags<ItemFlag>();
+      
+      if( iso.ageDefiningNuc )
+      {
+        for( const IsoFitStruct &isodef : m_nuclides )
+        {
+          if( isodef.nuclide == iso.ageDefiningNuc )
+            return isodef.ageIsFittable ? WFlags<ItemFlag>(Wt::ItemIsEditable) : WFlags<ItemFlag>();
+        }
+        return WFlags<ItemFlag>();
+      }//if( iso.ageDefiningNuc )
+      
       return WFlags<ItemFlag>(Wt::ItemIsEditable);
     case kFitAge:
 //      if( iso.shieldingIsSource )
@@ -1592,19 +1601,24 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
           
           if( m_sameAgeForIsotopes )
           {
+            const SandiaDecay::Nuclide *ageNuc = iso.ageDefiningNuc ? iso.ageDefiningNuc : iso.nuclide;
+            assert( ageNuc );
+            
             for( size_t i = 0; i < m_nuclides.size(); ++i )
             {
               const int thisrow = static_cast<int>(i);
-              if( thisrow == row )
-                continue;
               
-              if( m_nuclides[i].ageDefiningNuc == iso.nuclide )
+              if( (m_nuclides[i].ageDefiningNuc == ageNuc) || (m_nuclides[i].nuclide == ageNuc) )
               {
-                WModelIndex ind = createIndex(thisrow, kAge,(void *)0);
-                dataChanged().emit( ind, ind );
+                m_nuclides[i].age = iso.age;
+                
+                WModelIndex ind = createIndex( thisrow, kAge, (void *)0 );
+                if( thisrow != row )  // We'll emit for 'row' later on
+                  dataChanged().emit( ind, ind );
+                
                 if( iso.ageUncertainty >= 0.0 )
                 {
-                  ind = createIndex(thisrow, kAgeUncertainty,(void *)0);
+                  ind = createIndex( thisrow, kAgeUncertainty, (void *)0 );
                   dataChanged().emit( ind, ind );
                 }//if( iso.ageUncertainty >= 0.0 )
               }//if( nuc.ageDefiningNuc == iso.nuclide )
