@@ -868,18 +868,27 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
     return;
   }//if( !dirty )
 
+  set<const SandiaDecay::Nuclide *> prenucs, postnucs;
+  
   vector<const SandiaDecay::Nuclide *> preisotopes, postisotopes;
   for( const IsoFitStruct &ifs : m_nuclides )
+  {
+    prenucs.insert( ifs.nuclide );
     preisotopes.push_back( ifs.nuclide );
+  }
   
   const size_t npreisotopes = m_nuclides.size();
   
   repopulateIsotopes();
   
   for( const IsoFitStruct &ifs : m_nuclides )
+  {
+    postnucs.insert( ifs.nuclide );
     postisotopes.push_back( ifs.nuclide );
+  }
   
-  if( m_sameAgeForIsotopes && (preisotopes.size() != postisotopes.size()) )
+  
+  if( m_sameAgeForIsotopes && (prenucs != postnucs) )
   {
     vector<const SandiaDecay::Nuclide *> removednucs, addednucs;
     for( const SandiaDecay::Nuclide *nuc : preisotopes )
@@ -6833,7 +6842,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
         }
       }//for( size_t ansnucn = 0; ansnucn < answer->numNuclides(); ++ansnucn )
       
-      assert( age_defining_index >= 0 );
+      //assert( age_defining_index >= 0 );
       if( age_defining_index < 0 )  //shouldnt ever happen, but JIC
         throw runtime_error( "Error finding age defining nuclide for " + nuclide->symbol
                              + " (should have been " + ageDefiningNuc->symbol + ")" );
