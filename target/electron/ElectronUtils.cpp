@@ -411,6 +411,20 @@ int interspec_open_file( const char *session_token, const char *files_json )
   return InterSpecServer::open_file_in_session( session_token, files_json );
 }
 
+bool interspec_set_initial_file_to_open( const char *session_token, const char *file_path )
+{
+  try
+  {
+    InterSpecServer::set_file_to_open_on_load( session_token, file_path );
+  }catch( std::exception &e )
+  {
+    cerr << "interspec_set_initial_file_to_open: " << e.what() << endl;
+    return false;
+  }
+  
+  return true;
+}
+
 
 bool interspec_using_electron_menus()
 {

@@ -94,6 +94,9 @@
 #include <Wt/WCssDecorationStyle>
 #include <Wt/Dbo/backend/Sqlite3>
 
+#include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_utils.hpp"
+
 #if( SUPPORT_ZIPPED_SPECTRUM_FILES )
 #include "InterSpec/ZipArchive.h"
 #endif
@@ -1028,6 +1031,18 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   infile.seekg(0);
   
   //Case insensitive search of 'term' in the header 'data'
+  auto position_in_header = [&data]( const std::string &term ) -> int {
+    const char * const char_start = (const char *)data;
+    const char * const char_end = (const char *)(data + boost::size(data));
+    const auto pos = std::search( char_start, char_end, begin(term), end(term),
+                                 [](unsigned char a, unsigned char b) -> bool {
+      return (a == b);
+    } );
+    if( pos == char_end )
+      return -1;
+    return static_cast<int>( pos - char_start );
+  };//position_in_header lambda
+  
   auto header_contains = [&data]( const std::string &term ) -> bool {
     const char * const char_start = (const char *)data;
     const char * const char_end = (const char *)(data + boost::size(data));
@@ -1222,23 +1237,50 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   //Check if CSV giving peak ROIs.
   auto currdata = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   
-  if( currdata
-      //&& SpecUtils::icontains( SpecUtils::file_extension(displayName), "csv" )
-      && header_contains("Centroid")
-      && header_contains("Net_Area")
-      && header_contains("FWHM") )
+  const bool possible_peak_csv = ( currdata
+                                  //&& SpecUtils::icontains( SpecUtils::file_extension(displayName), "csv" )
+                                  && header_contains("Centroid")
+                                  && header_contains("Net_Area")
+                                  && header_contains("FWHM") );
+  
+  const bool possible_gadras_peak_csv = ( currdata
+                                  //&& SpecUtils::icontains( SpecUtils::file_extension(displayName), "csv" )
+                                  && header_contains("Energy(keV)")
+                                  && header_contains("Rate(cps)")
+                                  && header_contains("FWHM(keV)")
+                                  && header_contains("Centroid"));
+  
+  
+  if( possible_peak_csv || possible_gadras_peak_csv )
   {
     try
     {
-      const vector<PeakDef> orig_peaks = m_viewer->peakModel()->peakVec();
-      const vector<PeakDef> candidate_peaks
-                      = PeakModel::csv_to_candidate_fit_peaks(currdata, infile);
-      
       const std::string seessionid = wApp->sessionId();
-      Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
-        PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
-                  orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
-      } ) );
+      const vector<PeakDef> orig_peaks = m_viewer->peakModel()->peakVec();
+      
+      if( possible_peak_csv )
+      {
+        const vector<PeakDef> candidate_peaks
+                                      = PeakModel::csv_to_candidate_fit_peaks(currdata, infile);
+        
+        // For peaks from a InterSpec/PeakEasy CSV file, we will re-fit the peaks, as in practice
+        //  they might not be from this exact spectrum file.
+        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+          PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
+                                                 orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
+        } ) );
+      }else
+      {
+        assert( possible_gadras_peak_csv );
+        
+        const vector<PeakDef> candidate_peaks = PeakModel::gadras_peak_csv_to_peaks(currdata, infile);
+        
+        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+          PeakSearchGuiUtils::prepare_and_add_gadras_peaks( currdata, candidate_peaks,
+                                                 orig_peaks, seessionid );
+        } ) );
+      }//if( possible_peak_csv )
+      
       
       delete dialog;
 
@@ -1259,10 +1301,40 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }//if( we could possible care about propagating peaks from a CSV file )
   
   
-  // Check if this is an InterSpec exported DRF CSV
-  if( header_contains( "# Detector Response Function" ) )
+  // Check if this is an InterSpec exported DRF CSV, or XML file.
+  const bool rel_eff_csv_drf = header_contains( "# Detector Response Function" );
+  const int xml_drf_pos = position_in_header( "<DetectorPeakResponse" );
+  
+  if( rel_eff_csv_drf || ((xml_drf_pos >= 0) && (xml_drf_pos <= 20)) )
   {
-    shared_ptr<DetectorPeakResponse> det = DrfSelect::parseRelEffCsvFile( fileLocation );
+    shared_ptr<DetectorPeakResponse> det;
+    
+    if( rel_eff_csv_drf )
+    {
+      det = DrfSelect::parseRelEffCsvFile( fileLocation );
+    }else
+    {
+      try
+      {
+        if( filesize > 100*1024 ) //if larger than 100 KB, probably not a DRF
+          throw runtime_error( "To large to be XML file" );
+          
+        rapidxml::file<char> input_file( infile );
+        
+        rapidxml::xml_document<char> doc;
+        doc.parse<rapidxml::parse_default>( input_file.data() );
+        auto *node = doc.first_node( "DetectorPeakResponse" );
+        if( !node )
+          throw runtime_error( "No DetectorPeakResponse node" );
+        
+        det = make_shared<DetectorPeakResponse>();
+        det->fromXml( node );
+      }catch( std::exception &e )
+      {
+        det.reset();
+        log("info") << "Failed to parse perspective XML DRF file as DRF: " << e.what();
+      }
+    }//if( rel_eff_csv_drf ) / else XML DRF
     
     if( det && det->isValid() )
     {
@@ -1340,7 +1412,7 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
     return false;
   
   vector<char> fileContents;
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   try
   {
     // We need to copy file contents into memory, because the file may disappear.
@@ -1389,7 +1461,7 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
   
   WCheckBox *saveFile = nullptr;
   
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   if( !fileContents.empty() )
   {
     saveFile = new WCheckBox( "Save DRFs for later use" );

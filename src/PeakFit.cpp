@@ -5790,6 +5790,11 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     for( size_t i = 1; i <= fitpeaks.size(); ++i ) //Note weird convntion of index
     {
       const PeakDef *peak = &(fitpeaks[i-1]);
+      
+      // Dont remove peaks whos amplitudes we arent fitting
+      if( !peak->fitFor(PeakDef::GaussAmplitude) )
+        continue;
+      
       const bool significant = chi2_significance_test( *peak, stat_threshold, hypothesis_threshold,
                                                           *all_peaks, data );
       if( !significant )
@@ -5804,11 +5809,15 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     }//for( size_t i = 1; i < fitpeaks.size(); ++i )
         
     bool removed_peak = false;
-    for( size_t i = 1; i < fitpeaks.size(); ++i ) //Note weird convntion of index
+    for( size_t i = 1; i < fitpeaks.size(); ++i ) //Note weird convention of index
     {
       PeakDef *this_peak = &(fitpeaks[i-1]);
       PeakDef *next_peak = &(fitpeaks[i+1-1]);
           
+      // Dont remove peaks whos amplitudes we arent fitting
+      if( !this_peak->fitFor(PeakDef::GaussAmplitude) )
+        continue;
+      
       const double min_sigma = min( this_peak->sigma(), next_peak->sigma() );
       const double mean_diff = next_peak->mean() - this_peak->mean();
           
