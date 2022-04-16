@@ -7,33 +7,56 @@
   /* We have to set min and max width in the C++ */
   overflow: hidden;
   box-shadow: 0 1px 6px rgba(0,0,0,.06),0 2px 32px rgba(0,0,0,.16) !important;
+  max-width: 50vw;
+  max-height: 95vh;
 }
 
 .simple-dialog .title
 {
-  background: none;
-  line-height: 20px;
+  /* line-height: 20px; */
   padding: 20px 20px 6px;
+   
   text-align: center;
   font-weight: 700;
+  font-size: x-large;
   user-select: none;
 }
 
-.simple-dialog .Wt-dialog .body
+/* The parent of .title, .body and .footer can be selected as below.
+   We cant actually do much here as things are managed by Wt's layout stuff.
+ */
+.Wt-popup.simple-dialog > .dialog-layout > div
+{
+}
+
+/* By default Wt sets the dialog-layout to 999999px if you dont set it in the C++ at object
+construction, so we will over-ride this in a kinda hacky way so contents wont overflow the
+dialog
+*/
+.simple-dialog .dialog-layout
+{
+  max-width: 100%
+}
+
+/* Note: the dialog .body position and height is adjusted by Wt layout JS. */
+.simple-dialog .body
 {
   padding: 0px 0px 0px 0px;
+  
+  /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
+  max-height: calc( 95vh - 90px );
+  overflow-y: auto;
 }
 
 .simple-dialog .content
 {
   padding: 0 20px 20px;
-  text-align: center
+  text-align: center;
 }
 
 .simple-dialog .footer
 {
   display: flex;
-  /* background: #fff; */
   padding: 0px 0px 0px 0px;
 }
 
