@@ -98,6 +98,16 @@ extern "C"
    */
   LIB_INTERFACE(int) interspec_open_file( const char *session_token, const char *files_json );
 
+
+  /** Set the initial file, or app-url (e.g., "interspec://...") to load when constructing
+   a new session with the specified token.  Must be called after adding an allowed token,
+   but before the session is loaded.
+   
+   Return true on success, or false there was an error (invalid token, or session already loaded)
+   
+   */
+  LIB_INTERFACE(bool) interspec_set_initial_file_to_open( const char *session_token, const char *file_path );
+
   /** Returns if using the Electron-native menus.  If you are using the HTML-electron menu, will return false.
    */
   LIB_INTERFACE(bool) interspec_using_electron_menus();
