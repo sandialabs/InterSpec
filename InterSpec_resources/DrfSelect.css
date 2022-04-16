@@ -137,3 +137,9 @@ table.FormulaDrfTbl tr td:first-child
   max-width: 25px; /* Not checked yet if reasonable */
   text-overflow: ellipsis;
 }
+
+.DrfXmlDownload, .DrfXmlDownload:hover
+{
+  float: left;
+  padding-right: 20px;
+}
