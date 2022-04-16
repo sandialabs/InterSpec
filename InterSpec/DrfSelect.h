@@ -134,6 +134,8 @@ public:
  );
   virtual ~DrfSelect();
 
+  /** Decodes the URL, and then prompts the user if they want to use the DRF. */
+  static void handle_app_url_drf( const std::string &url_query );
   
   //verify manual definition, set Apply to enabled if ok
   void verifyManualDefinition();
@@ -329,6 +331,12 @@ protected:
   Wt::WPushButton *m_acceptButton;
   Wt::WPushButton *m_cancelButton;
   Wt::WPushButton *m_noDrfButton;
+  
+#if( BUILD_AS_OSX_APP )
+  Wt::WAnchor *m_xmlDownload;
+#else
+  Wt::WPushButton *m_xmlDownload;
+#endif
   
   Wt::WLineEdit    *m_detectorManualFunctionName;
   Wt::WTextArea    *m_detectorManualFunctionText;

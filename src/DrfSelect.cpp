@@ -48,6 +48,7 @@
 #include <Wt/WRandom>
 #include <Wt/WDateTime>
 #include <Wt/WTextArea>
+#include <Wt/WResource>
 #include <Wt/WLineEdit>
 #include <Wt/WComboBox>
 #include <Wt/WIOService>
@@ -60,12 +61,18 @@
 #include <Wt/WRadioButton>
 #include <Wt/WButtonGroup>
 #include <Wt/WEnvironment>
+#include <Wt/Http/Request>
+#include <Wt/Http/Response>
 #include <Wt/WItemDelegate>
 #include <Wt/WStackedWidget>
 #include <Wt/Dbo/QueryModel>
 #include <Wt/WRegExpValidator>
 #include <Wt/WContainerWidget>
 #include <Wt/WStandardItemModel>
+
+
+#include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_print.hpp"
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
@@ -334,7 +341,84 @@ void check_url_serialization( std::shared_ptr<const DetectorPeakResponse> drf )
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
 */
 
+class DrfDownloadResource : public Wt::WResource
+{
+  DrfSelect * const m_drfSelect;
+  Wt::WApplication *m_app;
+  
+public:
+  DrfDownloadResource( DrfSelect *drfSelect )
+  : WResource( drfSelect ),
+    m_drfSelect( drfSelect ),
+    m_app( WApplication::instance() )
+  {
+    assert( m_app );
+    assert( m_drfSelect );
+  }
+  
+  virtual ~DrfDownloadResource()
+  {
+    beingDeleted();
+  }
+  
+  virtual void handleRequest( const Wt::Http::Request &request,
+                             Wt::Http::Response &response )
+  {
+    WApplication::UpdateLock lock( m_app );
+    
+    if( !lock )
+    {
+      log("error") << "Failed to WApplication::UpdateLock in DrfDownloadResource.";
+      
+      response.out() << "Error grabbing application lock to form DrfDownloadResource resource;"
+                        " please report to InterSpec@sandia.gov.";
+      response.setStatus(500);
+      assert( 0 );
+      
+      return;
+    }//if( !lock )
+    
+    if( !m_drfSelect )
+      return;
+    
+    std::shared_ptr<DetectorPeakResponse> det = m_drfSelect->detector();
+    if( !det || !det->isValid() )
+      return;
+    
+    string name = det->name();
+    if( !name.empty() )
+      name += ".";
+    name += "drf.xml";
+    
+    //Remove bad filename characters
+    const string notallowed = "\\/:?\"<>|*";
+    for( auto it = begin(name) ; it < end(name) ; ++it )
+    {
+      if( notallowed.find(*it) != string::npos )
+        *it = '_';
+    }
+    
+    suggestFileName( name, WResource::Attachment );
+    response.setMimeType( "application/octet-stream" );
+    
+    try
+    {
+      rapidxml::xml_document<char> doc;
+      det->toXml( &doc, &doc );
+      rapidxml::print( response.out(), doc, 0 );
+    }catch( std::exception &e )
+    {
+      log("error") << "Failed to to writ XML for DRF: " << e.what();
+      
+      response.out() << "Error creating DRF XML.";
+      response.setStatus(500);
+      return;
+    }
+  }
+};//class DrfDownloadResource
+
 }//namespace
+
 
 class RelEffFile;
 
@@ -1913,6 +1997,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_acceptButton( nullptr ),
     m_cancelButton( nullptr ),
     m_noDrfButton( nullptr ),
+    m_xmlDownload( nullptr ),
     m_detectorManualFunctionName( nullptr ),
     m_detectorManualFunctionText( nullptr ),
     m_detectorManualDescription( nullptr ),
@@ -2460,6 +2545,22 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   AuxWindow::addHelpInFooter( m_footer, "detector-edit-dialog" );
   
+  DrfDownloadResource *xmlResource = new DrfDownloadResource( this );
+#if( BUILD_AS_OSX_APP )
+  m_xmlDownload = new WAnchor( WLink(xmlResource), m_footer );
+  m_xmlDownload->setTarget( AnchorTarget::TargetNewWindow );
+  m_xmlDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );
+#else
+  m_xmlDownload = new WPushButton( m_footer );
+  m_xmlDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
+  m_xmlDownload->setLink( WLink(xmlResource) );
+  m_xmlDownload->setLinkTarget( Wt::TargetNewWindow );
+  m_xmlDownload->setStyleClass( "LinkBtn DownloadBtn DrfXmlDownload" );
+#endif
+  
+  m_xmlDownload->setText( "XML" );
+  m_xmlDownload->setHidden( !m_detector || !m_detector->isValid() );
+  
   
   m_noDrfButton = new WPushButton( "No Detector", m_footer );
   m_noDrfButton->clicked().connect( this, &DrfSelect::finishWithNoDetector );
@@ -2505,10 +2606,36 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 }//DrfSelect constructor
 
 
+
+void DrfSelect::handle_app_url_drf( const std::string &url_query )
+{
+  try
+  {
+    auto drf = make_shared<DetectorPeakResponse>();
+    drf->fromAppUrl( url_query );
+    
+    assert( drf->isValid() );
+    
+    SimpleDialog *dialog = new SimpleDialog( "Use DRF", "Blah blah blah" );
+    
+    InterSpec *viewer = InterSpec::instance();
+    if( (viewer->renderedWidth() > 100) && (viewer->renderedHeight() > 100) )
+    {
+      //
+    }//
+  }catch( std::exception &e )
+  {
+    wApp->log( "error" ) << "App URL was invalid DRF: " << e.what();
+    throw runtime_error( "Detector response function URL was invalid." );
+  }
+}//void DrfSelect::handle_app_url_drf( const std::string &url_query )
+
+
 void DrfSelect::setAcceptButtonEnabled( const bool enable )
 {
   m_acceptButton->setEnabled( enable );
   m_noDrfButton->setHidden( !m_detector );
+  m_xmlDownload->setHidden( !m_detector );
   if( m_defaultForSerialNumber )
     m_defaultForSerialNumber->setEnabled( enable );
   if( m_defaultForDetectorModel )
@@ -3984,8 +4111,7 @@ Wt::Signal<> &DrfSelect::done()
 }
 
 
-DrfSelectWindow::DrfSelectWindow(
-                                  std::shared_ptr<DetectorPeakResponse> det,
+DrfSelectWindow::DrfSelectWindow( std::shared_ptr<DetectorPeakResponse> det,
                                   InterSpec *specViewer,
                                   SpectraFileModel *fileModel )
   : AuxWindow("Detector Response Function Select",
