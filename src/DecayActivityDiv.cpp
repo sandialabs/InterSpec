@@ -906,11 +906,84 @@ class DateLengthCalculator : public WContainerWidget
       ageEdit->enterPressed().connect( std::bind( doAgeUpdate ) );
     }//for( size_t i = 0; i < nucs.size(); ++i )
     
+    auto checkUseCurries = [&nucs,db]( const SandiaDecay::NuclideActivityPair &nap ) -> bool {
+      
+      for( size_t nucn = 0; nucn < nucs.size(); ++nucn )
+      {
+        const vector<const SandiaDecay::Nuclide *> parents = nap.nuclide->forebearers();
+        const SandiaDecay::Nuclide *nuc = db->nuclide( nucs[nucn].z, nucs[nucn].a, nucs[nucn].iso );
+        if( std::find(parents.begin(),parents.end(),nuc) != parents.end() )
+          return nucs[nucn].useCurrie;
+      }//for( size_t nucn = 0; nucn < nucs.size(); ++nucn )
+      
+      return true;
+    };//checkUseCurries
+    
+    
+    if( timeSpan < 0.0 )
+    {
+      WText *line = new WText( "&nbsp;", m_info );
+      line->setInline( false );
+      line = new WText( "Before " + durationTxt + ":", m_info );
+      line->setInline( false );
+      
+      WTable *beforeTable = new WTable( m_info );
+      beforeTable->addStyleClass( "BeforeDecayNucInfoTable DecayedNucInfoTable" );
+      beforeTable->setHeaderCount( 1, Wt::Horizontal );
+      beforeTable->elementAt(0, 0)->addWidget( new WLabel("Nuclide") );
+      beforeTable->elementAt(0, 1)->addWidget( new WLabel("Activity") );
+      beforeTable->elementAt(0, 2)->addWidget( new WLabel("Mass") );
+      
+      const vector<SandiaDecay::NuclideActivityPair> activities = mix->activity( 0.0 );
+      const vector<SandiaDecay::NuclideNumAtomsPair> numatoms = mix->numAtoms( 0.0 );
+      
+      for( size_t actnum = 0, row_num = 0; actnum < activities.size(); ++actnum )
+      {
+        const SandiaDecay::NuclideActivityPair &nap = activities[activities.size()-1-actnum];
+        if( !nap.nuclide )
+          continue;
+        
+        bool is_orig = false;
+        const int nInitialNuc = mix->numInitialNuclides();
+        for( int i = 0; !is_orig && (i < nInitialNuc); ++i )
+        {
+          auto n = mix->initialNuclide(i);
+          is_orig = (n && (n == nap.nuclide));
+        }
+          
+        if( !is_orig )
+          continue;
+        
+        row_num += 1;
+        
+        //Figure out if user inputed activity in Ci or Bq for this nuclide
+        const bool useCurries = checkUseCurries( nap );
+        
+        beforeTable->elementAt(row_num,0)->addWidget( new WText(nap.nuclide->symbol) );
+        
+        const string actstr = PhysicalUnits::printToBestActivityUnits( nap.activity, 2, useCurries, SandiaDecay::becquerel );
+        beforeTable->elementAt(row_num,1)->addWidget( new WText(actstr) );
+        
+        const SandiaDecay::NuclideNumAtomsPair *natomp = NULL;
+        for( size_t a = 0; !natomp && a < numatoms.size(); ++a )
+        if( numatoms[a].nuclide == nap.nuclide )
+          natomp = &(numatoms[a]);
+        
+        if( natomp )
+        {
+          const double num_atoms_in_gram = nap.nuclide->atomsPerGram();
+          const double ngrams = natomp->numAtoms / num_atoms_in_gram;
+          const string massstr = PhysicalUnits::printToBestMassUnits( ngrams*PhysicalUnits::gram );
+          beforeTable->elementAt(row_num,2)->addWidget( new WText(massstr) );
+        }
+      }//for( size_t i = 0; i < activities.size(); ++i )
+    }//if( timeSpan < 0.0 )
+    
     
     {
       WText *line = new WText( "&nbsp;", m_info );
       line->setInline( false );
-      line = new WText( ((timeSpan < 0.0) ? "Before " : "After ") + durationTxt + ":", m_info );
+      line = new WText( "After " + durationTxt + ":", m_info );
       line->setInline( false );
     }
     
@@ -925,53 +998,25 @@ class DateLengthCalculator : public WContainerWidget
     //infotable->elementAt(0, 4)->addWidget( new WLabel("Mass Frac") );
     //infotable->elementAt(0, 5)->addWidget( new WLabel("Act. Frac") );
     
-    double ageToDecayTo = absTimeSpan;
-    if( timeSpan < 0.0 )
-      ageToDecayTo = 0.0;
+    const vector<SandiaDecay::NuclideActivityPair> activities = mix->activity( absTimeSpan );
+    const vector<SandiaDecay::NuclideNumAtomsPair> numatoms = mix->numAtoms( absTimeSpan );
+        
     
-    const vector<SandiaDecay::NuclideActivityPair> activities = mix->activity( ageToDecayTo );
-    const vector<SandiaDecay::NuclideNumAtomsPair> numatoms = mix->numAtoms( ageToDecayTo );
-    
-    for( size_t actnum = 0; actnum < activities.size(); ++actnum )
+    for( size_t actnum = 0, row_num = 1; actnum < activities.size(); ++actnum )
     {
       const SandiaDecay::NuclideActivityPair &nap = activities[activities.size()-1-actnum];
       if( !nap.nuclide )
         continue;
       
-      if( timeSpan < 0.0 )
-      {
-        bool is_orig = false;
-        const int nInitialNuc = mix->numInitialNuclides();
-        for( int i = 0; !is_orig && (i < nInitialNuc); ++i )
-        {
-          auto n = mix->initialNuclide(i);
-          is_orig = (n && (n == nap.nuclide));
-        }
-        
-        if( !is_orig )
-          continue;
-      }//if( timeSpan < 0.0 )
-      
-      
       //Figure out if user inputed activity in Ci or Bq for this nuclide
-      bool useCurries = true;
-      for( size_t nucn = 0; nucn < nucs.size(); ++nucn )
-      {
-        const vector<const SandiaDecay::Nuclide *> parents = nap.nuclide->forebearers();
-        const SandiaDecay::Nuclide *nuc = db->nuclide( nucs[nucn].z, nucs[nucn].a, nucs[nucn].iso );
-        if( std::find(parents.begin(),parents.end(),nuc) != parents.end() )
-        {
-          useCurries = nucs[nucn].useCurrie;
-          break;
-        }
-      }//for( size_t nucn = 0; nucn < nucs.size(); ++nucn )
+      const bool useCurries = checkUseCurries( nap );
       
-      infotable->elementAt(1+actnum,0)->addWidget( new WText(nap.nuclide->symbol) );
+      infotable->elementAt(row_num,0)->addWidget( new WText(nap.nuclide->symbol) );
       
       string actstr = PhysicalUnits::printToBestActivityUnits( nap.activity, 2, useCurries, SandiaDecay::becquerel );
       if( IsInf(nap.nuclide->halfLife) )
         actstr = "stable";
-      infotable->elementAt(1+actnum,1)->addWidget( new WText(actstr) );
+      infotable->elementAt(row_num,1)->addWidget( new WText(actstr) );
       
       
       const SandiaDecay::NuclideNumAtomsPair *natomp = NULL;
@@ -984,8 +1029,10 @@ class DateLengthCalculator : public WContainerWidget
         const double num_atoms_in_gram = nap.nuclide->atomsPerGram();
         const double ngrams = natomp->numAtoms / num_atoms_in_gram;
         const string massstr = PhysicalUnits::printToBestMassUnits( ngrams*PhysicalUnits::gram );
-        infotable->elementAt(1+actnum,2)->addWidget( new WText(massstr) );
+        infotable->elementAt(row_num,2)->addWidget( new WText(massstr) );
       }
+      
+      row_num += 1;
     }//for( size_t i = 0; i < activities.size(); ++i )
   }//void updateInfo()
   
