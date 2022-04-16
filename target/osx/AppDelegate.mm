@@ -46,7 +46,6 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecServer.h"
-#include "InterSpec/DbToFilesystemLink.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
@@ -177,10 +176,13 @@
       //  URL argument (that uses an intermediate database to store file location).
       NSLog( @"Will mark the file to open once a session is created" );
       
-      const std::string dbpath = [[[self applicationFilesDirectory] path] UTF8String];
-      DbToFilesystemLink::setFileNumToFilePathDBNameBasePath( dbpath );
+      // I dont quite understand why we need this next '[NSString alloc] initWithString', but we
+      //  do or the app will crash when opened wit ha long app-url, but not with a file...
+      //  This probably indicates something is wrong with my understanding of the obj-c the memory
+      //  management somehow, but I guess for now I'll cross my fingers, or put my head in the sand.
+      _fileNeedsOpening = [[NSString alloc] initWithString: [NSString stringWithUTF8String:urlcontent.c_str()]];
       
-      _fileNeedsOpening = DbToFilesystemLink::addFileToOpenToDatabase( urlcontent );
+      NSLog( @"Initially fileNeedsOpening %@", _fileNeedsOpening );
     }//if( !app_lock )
     
   }//for( NSURL *url in urls )
@@ -211,7 +213,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 {
   NSLog(@"applicationWillFinishLaunching");
   _PreferenceDbPath = nil;
-  _fileNeedsOpening = -1;
+  _fileNeedsOpening = nil;
   _isServing = NO;
   _UrlServingOn = @"";
   _UrlUniqueId = nil;
@@ -459,11 +461,22 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     
     NSString *actualURL = [NSString stringWithFormat:@"%@?apptoken=%@&primary=yes", _UrlServingOn, _UrlUniqueId];
     
-    if( _fileNeedsOpening > -1 )
+    
+    if( _fileNeedsOpening )
     {
-      actualURL = [NSString stringWithFormat:@"%@&specfile=%i", actualURL, _fileNeedsOpening ];
-      _fileNeedsOpening = -1;
-    }//if( fileNeedsOpening.size() )
+      NSLog( @"There isa  file that needs opening" );
+      NSLog( @"UrlUniqueId %@", _UrlUniqueId );
+      NSLog( @"fileNeedsOpening %@", _fileNeedsOpening );
+      
+      const std::string session_token = [_UrlUniqueId UTF8String];
+      const std::string file_path = [_fileNeedsOpening UTF8String];
+      
+      InterSpecServer::set_file_to_open_on_load( session_token.c_str(), file_path );
+      
+      NSLog( @"Have called InterSpecServer::set_file_to_open_on_load" );
+      
+      _fileNeedsOpening = nil;
+    }//if( fileNeedsOpening )
     
     //Note: this bit of code does not seem to work from the themeChanged notification.
 #ifdef AVAILABLE_MAC_OS_X_VERSION_10_14_AND_LATER   //preproccessor to compile on older macOS

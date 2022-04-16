@@ -49,7 +49,6 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/DbToFilesystemLink.h"
 
 
 using namespace std;
@@ -71,6 +70,9 @@ struct SessionState
   State current_state;
   
   InterSpecServer::SessionType session_type;
+  
+  /** Either a file-system path, or app-url to open when the session is first constructed. */
+  std::string initial_file_to_open;
   
   std::chrono::system_clock::time_point auth_time;
   std::chrono::system_clock::time_point load_time;
@@ -344,7 +346,7 @@ namespace InterSpecServer
       ns_server = 0;
       std::cerr << "Stopped and killed server" << std::endl;
     }
-  }//void experimental_killServer()
+  }//void killServer()
   
   
   int add_allowed_session_token( const char *session_id, const SessionType session_type )
@@ -612,5 +614,36 @@ namespace InterSpecServer
     
     return -2;
   }
+
+void set_file_to_open_on_load( const char *session_token, const std::string file_path )
+{
+  lock_guard<mutex> lock( ns_sessions_mutex );
+  auto pos = ns_sessions.find( session_token );
+  if( pos == end(ns_sessions) )
+    throw runtime_error( "set_file_to_open_on_load: specified token is not present." );
+  
+  if( pos->second.current_state != SessionState::State::AuthorizedNotLoaded )
+  {
+    assert( 0 );
+    throw runtime_error( "set_file_to_open_on_load: specified session has already been loaded" );
+  }
+  
+  pos->second.initial_file_to_open = file_path;
+}//void set_file_to_open_on_load(...)
+
+
+std::string file_to_open_on_load( const std::string &session_token )
+{
+  lock_guard<mutex> lock( ns_sessions_mutex );
+  auto pos = ns_sessions.find( session_token );
+  if( pos == end(ns_sessions) )
+  {
+    assert( 0 );
+    return "";
+  }
+  
+  return pos->second.initial_file_to_open;
+}//file_to_open_on_load(...)
+
 }//namespace InterSpecServer
 

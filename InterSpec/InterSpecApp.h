@@ -154,10 +154,6 @@ public:
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   bool userOpenFromFileSystem( const std::string &path );
-
-#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-  bool openFileFromDbFileSystemLink( int index );
-#endif
   
   static std::set<InterSpecApp *> runningInstances();
   

@@ -253,28 +253,25 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   if( !_appComminFromBackground )
   {
     NSLog( @"App never went in background, skipping from wakeupFromBackground" );
-    if( _dbIndexOfFileToOpen < 0 )
+    if( !_fileNeedsOpening )
       return YES;
 
-    if( _dbIndexOfFileToOpen >= 0 )
-    {
-      NSLog( @"We should open up a file though" );
-      InterSpecApp *app = InterSpecApp::instanceFromExtenalToken( [_UrlUniqueId UTF8String] );
+    NSLog( @"We should open up a file though" );
+    InterSpecApp *app = InterSpecApp::instanceFromExtenalToken( [_UrlUniqueId UTF8String] );
 
-      if( app )
-      {
-        Wt::WApplication::UpdateLock applock( app );
-        Wt::WApplication *wtapp = Wt::WApplication::instance();
+    if( app )
+    {
+      Wt::WApplication::UpdateLock applock( app );
         
-        if( applock && wtapp )
-        {
-          const bool success = app->openFileFromDbFileSystemLink( _dbIndexOfFileToOpen );
-          app->triggerUpdate();
-          NSLog( @"Success opening file = %i", int(success) );
-          return YES;
-        }//if( applock && wtapp )
-      }//if( app )
-    }//if( _dbIndexOfFileToOpen >= 0 )
+      if( applock )
+      {
+        const bool success = app->userOpenFromFileSystem( [_fileNeedsOpening UTF8String] );
+        _fileNeedsOpening = nil;
+        app->triggerUpdate();
+        NSLog( @"Success opening file = %i", int(success) );
+        return YES;
+      }//if( applock && wtapp )
+    }//if( app )
     
     //If were here, we failed to get the WApplication or something, so lets kill
     //  off the server (to save any active sessions), and then restore the state
@@ -293,9 +290,11 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   NSString *actualURL = [NSString stringWithFormat:@"%@?apptoken=%@", _UrlServingOn, _UrlUniqueId];
   
   //Check to see if we should open a spectrum file; if so append which on to URL
-  if( _dbIndexOfFileToOpen >= 0 )
-    actualURL = [NSString stringWithFormat:@"%@&specfile=%i", actualURL, _dbIndexOfFileToOpen];
-  _dbIndexOfFileToOpen = -1;
+  if( _fileNeedsOpening )
+  {
+    InterSpecServer::set_file_to_open_on_load( [_UrlUniqueId UTF8String], [_fileNeedsOpening UTF8String] );
+    _fileNeedsOpening = nill;
+  }
   
   //See if we should specify orientation and safe area in the URL, so it will be
   //  known before the html/JS gets loaded.  We could do the same thing for initial
@@ -393,20 +392,10 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     // TODO: Try parsing the file here, and see if it is a valid spectrum file, so this way we can return a proper YES/NO.  Also, we could just hold it in memorry and pass it off to the InterSpec session once it starts (but would need to implement this in InterSpec class)
     // TODO: cleanup temporary file if we copied it over
     // TODO: skip this whole database thing, and just have a member variable to hold the URL, and open it once the app loads
-    
-    //TODO - could try to see if file is a background file to the current
-    //       spectrum, and if so load it as the background spectrum `
-    DbToFilesystemLink::FileIdToLocation requestinfo;
-    requestinfo.m_foregroundFilePath = urlstr;
-    //    requestinfo.m_backgroundFilePath = "/path/to/background";
-    const int dbid = DbToFilesystemLink::addFileToOpenToDatabase( requestinfo );
-    if( dbid < 0 )
-    {
-      NSLog( @"openSpectrumFile: Error saving file path to database" );
-      return NO;
-    }
-      
-    _dbIndexOfFileToOpen = dbid;
+    //TODO - could try to see if file is a background file to the current spectrum, and if so load it as the background spectrum
+
+    // Note: the extra call to '[[NSString alloc] initWithString...]' is due to crash in macOS app - not sure if this is needed here to, or if it indicates some other issue.
+    _fileNeedsOpening = [[NSString alloc] initWithString: [NSString stringWithUTF8String: urlstr.c_str()]];
   }catch( std::exception &e )
   {
     NSLog( @"Caught exception trying to access file: %s", e.what() );
@@ -426,7 +415,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   _isServing = NO;
   _UrlUniqueId = @"";
   _UrlServingOn = @"";
-  _dbIndexOfFileToOpen = -1;
+  _fileNeedsOpening = nill;
   _appHasGoneIntoBackground = NO;
   _appComminFromBackground = YES;
   
