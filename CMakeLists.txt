@@ -79,11 +79,6 @@ option(
     "Have gamma lines indicators be drawn in log mode when y-axis is log"
     OFF
 )
-option(
-    ALLOW_URL_TO_FILESYSTEM_MAP
-    "Allows a file ID to be specified in the URL to open a file from the filesystem"
-    ON
-)
 option(USE_DB_TO_STORE_SPECTRA "Use the database to store spectra" ON)
 option(
     USE_SPECRUM_FILE_QUERY_WIDGET
@@ -205,7 +200,6 @@ endif()
 
 if(ANDROID)
     set(BUILD_AS_LOCAL_SERVER OFF)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(TRY_TO_STATIC_LINK ON)
     set(MAX_SPECTRUM_MEMMORY_SIZE_MB 32)
     set(USE_DB_TO_STORE_SPECTRA ON)
@@ -274,7 +268,6 @@ if(IOS)
     SET(CMAKE_C_ARCHIVE_CREATE   "<CMAKE_AR> -static -o <TARGET> <LINK_FLAGS> <OBJECTS>")
 
     set(BUILD_AS_LOCAL_SERVER OFF)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
     set(PERFORM_DEVELOPER_CHECKS OFF)
     set(TRY_TO_STATIC_LINK ON)
@@ -311,7 +304,6 @@ endif(IOS)
 
 if(BUILD_AS_OSX_APP)
     set(BUILD_AS_LOCAL_SERVER OFF)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(USE_OSX_NATIVE_MENU ON)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
 endif(BUILD_AS_OSX_APP)
@@ -327,7 +319,6 @@ if(BUILD_AS_ELECTRON_APP)
         CACHE BOOL "Set PIC to make electron lib"
     )
     set(BUILD_AS_LOCAL_SERVER OFF)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(USE_OSX_NATIVE_MENU OFF)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
@@ -337,7 +328,6 @@ if(BUILD_AS_UNIT_TEST_SUITE)
     set(BUILD_AS_LOCAL_SERVER OFF)
     set(USE_ENERGY_VS_TIME_PLOTS OFF)
     set(USE_DB_TO_STORE_SPECTRA ON)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(INCLUDE_ANALYSIS_TEST_SUITE ON)
     set(TRY_TO_STATIC_LINK ON)
     set(PERFORM_DEVELOPER_CHECKS ON)
@@ -347,7 +337,6 @@ endif(BUILD_AS_UNIT_TEST_SUITE)
 if(BUILD_FOR_WEB_DEPLOYMENT)
     set(TRY_TO_STATIC_LINK ON)
     set(CMAKE_BUILD_TYPE:STRING "Release")
-    set(ALLOW_URL_TO_FILESYSTEM_MAP OFF)
     set(USE_DB_TO_STORE_SPECTRA ON)
     #    set( USE_SQLITE3_DB ON )
     #    set( USE_MYSQL_DB OFF )
@@ -607,11 +596,6 @@ if(USE_DB_TO_STORE_SPECTRA)
     list(APPEND sources src/DbStateBrowser.cpp src/DbFileBrowser.cpp)
     list(APPEND headers InterSpec/DbStateBrowser.h InterSpec/DbFileBrowser.h)
 endif(USE_DB_TO_STORE_SPECTRA)
-
-if(ALLOW_URL_TO_FILESYSTEM_MAP)
-    list(APPEND sources src/DbToFilesystemLink.cpp)
-    list(APPEND headers InterSpec/DbToFilesystemLink.h)
-endif(ALLOW_URL_TO_FILESYSTEM_MAP)
 
 if(NOT ANDROID AND NOT IOS)
     list(APPEND sources src/FileDragUploadResource.cpp)

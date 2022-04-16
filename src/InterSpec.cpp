@@ -164,10 +164,6 @@
 #include "target/ios/InterSpec/FileHandling.h"
 #endif 
 
-#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-#include "InterSpec/DbToFilesystemLink.h"
-#endif
-
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 #include "InterSpec/SpectrumViewerTester.h"
 #endif
@@ -9069,161 +9065,6 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
 }//bool userOpenFileFromFilesystem( const std::string filepath )
 
 
-#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBackound )
-{
-  try
-  {
-    using namespace DbToFilesystemLink;
-    FileIdToLocation fileinfo = getFileToOpenToInfo( id );
-    //        const int nsec = fileinfo.m_utcRequestTime.secsTo( WDateTime::currentDateTime() );
-    
-    string username = fileinfo.m_userName.toUTF8();
-    SpecUtils::ireplace_all( username, "_phone", "" );
-    SpecUtils::ireplace_all( username, "_tablet", "" );
-    SpecUtils::ireplace_all( username, "_mobile", "" );
-    
-    const bool sameUser = (username.empty() ? true
-                           : (m_user->m_userName == username) );
-    
-    if( !fileinfo.m_foregroundFilePath.empty()
-       && SpecUtils::is_file(fileinfo.m_foregroundFilePath.toUTF8())
-       //            && fileinfo.m_utcRequestTime.isValid()
-       //            && nsec < 300 && nsec >= 0
-       && !fileinfo.m_fufilled
-       && sameUser )
-    {
-      const string foregroundPath = fileinfo.m_foregroundFilePath.toUTF8();
-      
-      if( SpecUtils::istarts_with(foregroundPath, "interspec://") )
-      {
-        InterSpecApp *app = dynamic_cast<InterSpecApp*>( Wt::WApplication::instance() );
-        if( app )
-        {
-          app->handleAppUrl( foregroundPath );
-          return true;
-        }
-        
-        return false;
-      }//if( SpecUtils::istarts_with(foregroundPath, "interspec://") )
-      
-      if( m_fileManager )
-      {
-        typedef map<SpecUtils::SpectrumType,string> TypeToPathMap;
-        TypeToPathMap specToLoadMap;
-        
-        specToLoadMap[SpecUtils::SpectrumType::Foreground] = foregroundPath;
-        specToLoadMap[SpecUtils::SpectrumType::SecondForeground] = fileinfo.m_secondForegroundFilePath.toUTF8();
-        specToLoadMap[SpecUtils::SpectrumType::Background] = fileinfo.m_backgroundFilePath.toUTF8();
-        
-        for( TypeToPathMap::const_iterator iter = specToLoadMap.begin();
-            iter != specToLoadMap.end(); ++iter )
-        {
-          SpecUtils::SpectrumType type = iter->first;
-          const string filepath = iter->second;
-          
-          if( filepath.empty() || !SpecUtils::is_file(filepath) )
-            continue;
-          
-          const string displayName = SpecUtils::filename( filepath );
-          
-          try
-          {
-            std::shared_ptr<SpecMeas> meas;
-            std::shared_ptr<SpectraFileHeader> header;
-            
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
-            {
-              //This is a hack to allow opening zip files on iOS.
-              //  Currently the selection GUI looks horrible, and the spectrum
-              //  is always loaded as foreground.
-              const string extension = SpecUtils::file_extension(filepath);
-              bool iszip = SpecUtils::iequals_ascii(extension, ".zip");
-              
-              if( !iszip ) //check for zip files magic number to more-confirm
-              {
-#ifdef _WIN32
-                const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(filepath);
-                ifstream test( wfilepath.c_str() );
-#else
-                ifstream test( filepath.c_str() );
-#endif
-                iszip = (test.get()==0x50 && test.get()==0x4B
-                         && test.get()==0x03 && test.get()==0x04);
-              }//if( !iszip )
-              
-              if( iszip )
-              {
-                //ToDo: I feel uneasy creating an invalid SpecUtils::SpectrumType, should fix up function call signaure
-                if( fileManager()->handleZippedFile( displayName, filepath, SpecUtils::SpectrumType(-1) ) )
-                  return true;
-              }//if( iszip )
-            }
-#endif
-            
-            header = std::make_shared<SpectraFileHeader>( m_user, true, this );
-            meas = header->setFile( displayName, filepath, SpecUtils::ParserType::Auto );
-            
-            
-            bool couldBeBackground = askIfBackound;
-            if( !m_dataMeasurement || !meas
-                || meas->uuid() == m_dataMeasurement->uuid() )
-            {
-              couldBeBackground = false;
-            }else if( askIfBackound )
-            {
-              couldBeBackground &= (type == SpecUtils::SpectrumType::Foreground);
-              couldBeBackground &= (m_dataMeasurement->instrument_id() == meas->instrument_id());
-              couldBeBackground &= (m_dataMeasurement->num_gamma_channels() == meas->num_gamma_channels());
-            }//if( !m_dataMeasurement || !meas )
-            
-            
-            if( !couldBeBackground )
-            {
-              finishLoadUserFilesystemOpenedFile( meas, header, type );
-              
-              
-              cout << "Will load file '" << filepath
-                   << "' requested to be loaded at "
-                   << fileinfo.m_utcRequestTime.toString(DATE_TIME_FORMAT_STR)
-                   << " (currently "
-                   << WDateTime::currentDateTime().toString(DATE_TIME_FORMAT_STR)
-                   << ")" << endl;
-            }else
-            {
-              promptUserHowToOpenFile( meas, header );
-            }//
-          }catch( std::exception &e )
-          {
-            cerr << "InterSpec::loadFileFromDbFilesystemLink(...) caught: "
-                 << e.what() << endl;
-            passMessage( "There was an error loading " + displayName,
-                         "", WarningWidget::WarningMsgHigh );
-          }//try / catch
-          
-//          m_fileManager->loadFromFileSystem( fileinfo.m_foregroundFilePath.toUTF8(), SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::Auto );
-        }//for( loop over files to potentially open )
-      }//if( m_fileManager )
-      
-    }else
-    {
-      cerr << "Failed to find entry in FileIdToLocation with id=" << id
-      << endl;
-      return false;
-    }//if( file_entry ) / else
-  }catch( std::exception &e )
-  {
-    cerr << "\n\tFailed to load file indicated by 'specfile' argument."
-    << "  Caught: " << e.what() << endl << endl;
-    return false;
-  }//try / catch
-  
-  return true;
-}//bool loadFileFromDbFilesystemLink( int id )
-#endif
-
-
-
 void InterSpec::handleAppUrl( std::string url )
 {
   //Get rid of (optional) leading "interspec://", so URL will look like: 'drf/specify?v=1&n=MyName&"My other Par"'
@@ -9232,46 +9073,41 @@ void InterSpec::handleAppUrl( std::string url )
     url = url.substr(scheme.size());
   
   // For the moment, we will require there to be a query string, even if its empty.
-  string::size_type q_pos = url.find( '?' );
-  if( q_pos != string::npos )
-  {
-    q_pos += 1;
-  }else
+  string::size_type q_start_pos = url.find( '?' );
+  string::size_type q_end_pos = q_start_pos + 1;
+  if( q_start_pos == string::npos )
   {
     // Since '?' isnt a QR alphanumeric code also allow the URL encoded value of it, "%3F"
-    q_pos = url.find( "%3F" );
-    if( q_pos == string::npos )
-      q_pos = url.find( "%3f" );
+    q_start_pos = url.find( "%3F" );
+    if( q_start_pos == string::npos )
+      q_start_pos = url.find( "%3f" );
     
-    if( q_pos != string::npos )
-      q_pos += 3;
+    if( q_start_pos != string::npos )
+      q_end_pos = q_start_pos + 3;
   }//
     
-  if( q_pos == string::npos )
+  if( q_start_pos == string::npos )
     throw runtime_error( "App URL did not contain the host/path component that specifies the intent"
                          " of the URL (e.g., what tool to use, or what info is contained in the URL)." );
   
   // the q_pos+1 should be safe, even if q_pos is last character in string.
-  if( url.find(q_pos, 'q') != string::npos )
+  if( url.find(q_end_pos, 'q') != string::npos )
     throw runtime_error( "App URL contained more than one '?' character, which isnt allowed" );
     
-  const string host_path = url.substr( 0, q_pos );
+  const string host_path = url.substr( 0, q_start_pos );
   const string::size_type host_end = host_path.find( '/' );
   const string host = (host_end == string::npos) ? host_path : host_path.substr(0,host_end);
   const string path = (host_end == string::npos) ? string("") : host_path.substr(host_end+1);
-  const string query_str = url.substr( q_pos + 1 );
+  const string query_str = url.substr( q_end_pos + 1 );
   
-  //cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
+  cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
   
   if( SpecUtils::iequals_ascii(host,"drf") )
   {
-    if( SpecUtils::iequals_ascii(path,"specify") )
-    {
-      //
-    }else
-    {
+    if( !SpecUtils::iequals_ascii(path,"specify") )
       throw runtime_error( "App 'drf' URL with path '" + path + "' not supported." );
-    }
+    
+    DrfSelect::handle_app_url_drf( query_str );
   }else
   {
     throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );

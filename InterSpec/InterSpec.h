@@ -215,18 +215,8 @@ public:
   //  status of if the file could be parsed or not.
   bool userOpenFileFromFilesystem( const std::string filepath, std::string displayFileName = "" );
   
-#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-  //loadFileFromDbFilesystemLink(): load file from the DbToFilesystemLink
-  //  mechanism with index 'dbid'.  If 'askIfBackound' is true, and this
-  //  spectrum looks like it could be the background to the current foreground
-  //  (e.g. same serial number detector, number of bins, etc), the user will
-  //  be prompted if they want it to be the background.
-  bool loadFileFromDbFilesystemLink( const int dbid, const bool askIfBackound );
-#endif  //#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-  
   //promptUserHowToOpenFile(): method called by userOpenFileFromFilesystem()
-  //  and loadFileFromDbFilesystemLink() when the file could possibly be a
-  //  background to the current foreground.
+  //  and when the file could possibly be a background to the current foreground.
   void promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
                                  std::shared_ptr<SpectraFileHeader> header );
   

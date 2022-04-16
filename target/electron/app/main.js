@@ -319,10 +319,13 @@ function createWindow () {
       session_token = session_token_buf.toString('hex');
       interspec.addPrimarySessionToken( session_token );
       
+    
       let url_to_load = interspec_url  + "?apptoken=" + session_token;
       if( initial_file_to_open && ((typeof initial_file_to_open === 'string') || initial_file_to_open.length==1) ) {
         let filepath = (typeof initial_file_to_open === 'string') ? initial_file_to_open : initial_file_to_open[0];
-        url_to_load += "&specfilename=" + encodeURI(filepath);
+        
+        interspec.setInitialFileToLoad( session_token, filepath );
+        
         initial_file_to_open = null;
       }
 
@@ -656,7 +659,6 @@ function messageToNodeJs( token, msg_name, msg_data ){
     }
     
     //ToDo: should make sure token is what we want
-    //ToDo: just aff &specfilename="UriEncodedFilename" to URL argument... (but make sure ALLOW_URL_TO_FILESYSTEM_MAP is enabled)
     
     if( initial_file_to_open )
     {

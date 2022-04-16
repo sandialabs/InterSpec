@@ -174,7 +174,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   makeLgplLicenseItem();
   makeItem( "Credits", "credits" );
   makeItem( "Contact", "contact" );
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   makeDataStorageItem();
 #endif
   m_menu->select( 0 );
@@ -483,4 +483,4 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeDataStorageItem()
   
   return item;
 }//SideMenuItem *makeDataStorageItem()
-#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
+#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
