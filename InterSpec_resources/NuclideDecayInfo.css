@@ -296,6 +296,11 @@ cursor: default;
   
 }
 
+.BeforeDecayNucInfoTable
+{
+ margin-bottom: 10px;
+}
+
 .DecayedNucInfoTable
 {
   border: 1px solid black;
