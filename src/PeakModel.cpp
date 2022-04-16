@@ -574,6 +574,170 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
 }//csv_to_candidate_fit_peaks(...)
 
 
+vector<PeakDef> PeakModel::gadras_peak_csv_to_peaks( std::shared_ptr<const SpecUtils::Measurement> meas,
+                                                     std::istream &csv )
+{
+  if( !meas || !meas->gamma_counts() || (meas->gamma_counts()->size() < 7) || !csv )
+    throw runtime_error( "input data invalid" );
+  
+  // TODO: switch to using escaped fields - e.g.:
+  //typedef boost::tokenizer<boost::escaped_list_separator<char> > Tokeniser;
+  //boost::escaped_list_separator<char> separator("\\",",\t", "\"");
+  //vector<string> fields;
+  //Tokeniser t( line, separator );
+  //for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
+  //  fields.push_back( to_lower_ascii_copy( trim_copy(*it) ) );
+  
+  enum class PeakCsvFormat{ PeakEasy, Gadras, Unknown };
+ 
+  using SpecUtils::trim;
+  using SpecUtils::trim_copy;
+  using SpecUtils::to_lower_ascii_copy;
+  
+  PeakCsvFormat csv_format = PeakCsvFormat::Unknown;
+  
+  string line;
+  while( std::getline( csv, line ) )
+  {
+    trim( line );
+    if( line.empty() || line[0] == '#' )
+      continue;
+    
+    // Line should either be "Energy(keV),sigma,Rate(cps)...", or "Centroid,  Net_Area,   Net_Area"
+    vector<string> fields;
+    SpecUtils::split_no_delim_compress( fields, line, "," );
+    if( fields.empty() )
+      continue;
+    
+    if( fields.size() < 9 )
+      throw runtime_error( "Invalid Peak CSV header line: '" + line + "'" );
+    
+    if( (fields[0] == "Energy(keV)") && (fields[1] == "sigma")
+       && (fields[2] == "Rate(cps)") && (fields[3] == "sigma") )
+    {
+      csv_format = PeakCsvFormat::Gadras;
+      break;
+    }else if( (fields[0] == "Centroid") && (fields[1] == "Net_Area")
+             && (fields[2] == "Net_Area") && (fields[3] == "Peak") )
+    {
+      if( !std::getline( csv, line ) )
+        throw runtime_error( "Failed to get second line of PeakEasy CSV" );
+      
+      SpecUtils::split_no_delim_compress( fields, line, "," );
+      
+      if( (fields.size() < 9) || (fields[0] != "keV") || (fields[1] != "Counts")
+         || (fields[2] != "Uncertainty") || (fields[3] != "CPS") )
+      {
+        throw runtime_error( "Second line of PeakEasy CSV file is not correct: '" + line + "'" );
+      }
+      
+      csv_format = PeakCsvFormat::PeakEasy;
+      break;
+    }else
+    {
+      throw runtime_error( "Invalid peak CSV line: '" + line + "'" );
+    }
+  }//while( std::getline( csv, line ) )
+  
+  
+  
+  vector<PeakDef> answer;
+  
+  while( std::getline(csv, line) )
+  {
+    trim(line);
+    if( line.empty() || line[0]=='#' || (!isdigit(line[0]) && line[0]!='+' && line[0]!='-') )
+      continue;
+    
+    vector<string> fields;
+    SpecUtils::split_no_delim_compress(fields, line, ",");
+    
+    const size_t nfields = fields.size();
+    if( nfields == 0 )
+      continue;
+    
+    if( nfields < 9 )
+      throw runtime_error( "Encountered line in GADRAS CSV file with only "
+                          + std::to_string(nfields) + " fields.\n\tLine: \"" + line + "\"" );
+    
+    const double meas_live_time = (meas && (meas->live_time() > 0.0)) ? meas->live_time() : 1.0f;
+    
+    try
+    {
+      double energy, energy_uncert, counts, counts_uncert, fwhm, fwhm_uncert;
+      
+      switch( csv_format )
+      {
+        case PeakCsvFormat::PeakEasy:
+        {
+          energy = std::stod( fields[0] );
+          energy_uncert = -1.0;
+          counts = std::stod( fields[1] );
+          counts_uncert = std::stod( fields[2] );
+          fwhm = std::stod( fields[4] );
+          fwhm_uncert = -1.0;
+          
+          const double live_time = ((fields.size() > 10) ? std::stod(fields[10]) : meas_live_time );
+          counts /= live_time;
+          counts_uncert /= live_time;
+          
+          //const size_t peak_cps_index = 3, fwhm_percent_index = 5;
+          //const size_t roi_total_counts_index = 6, roi_id_index = 7, filename_index = 8;
+          //const size_t live_time_index = 9, date_index = 10, time_index = 11;
+          
+          break;
+        }//case PeakCsvFormat::PeakEasy:
+          
+        case PeakCsvFormat::Gadras:
+        {
+          energy = std::stod( fields[0] );
+          energy_uncert = std::stod( fields[1] );
+          counts = std::stod( fields[2] );
+          counts_uncert = std::stod( fields[3] );
+          fwhm = std::stod( fields[4] );
+          fwhm_uncert = std::stod( fields[5] );
+          
+          //const size_t leakage_per_second_index = 6, centroid_index = 7, filename_index = 8;
+          //const size_t record_idx_index = 9, title_index = 10, date_time_index = 11;
+          break;
+        }
+          
+        case PeakCsvFormat::Unknown:
+          assert( 0 );
+          throw runtime_error( "Not a peak CSV file." );
+          break;
+      }//switch( csv_format )
+      
+      counts *= meas_live_time;
+      counts_uncert *= meas_live_time;
+      const double sigma = fwhm / 2.35482f;
+      
+      PeakDef info( energy, sigma, counts );
+      
+      if( energy_uncert > 0.0 )
+        info.setMeanUncert( energy_uncert );
+      
+      if( counts_uncert > 0.0 )
+        info.setAmplitudeUncert( counts_uncert );
+      
+      if( fwhm_uncert > 0.0 )
+        info.setSigmaUncert( fwhm_uncert  / 2.35482f );
+      
+      answer.push_back( info );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "Invalid value on line '" + line + "', " + string(e.what()) );
+    }//try / catch to parse a line into a peak
+  }//while( SpecUtils::safe_get_line(csv, line, 2048) )
+  
+  if( answer.empty() )
+    throw runtime_error( "No peak rows found in file." );
+  
+  return answer;
+}//gadras_peak_csv_to_peaks(...)
+
+
+
 PeakModel::PeakCsvResource::PeakCsvResource( PeakModel *parent )
   : WResource( parent ),
     m_model( parent ),
@@ -2152,7 +2316,27 @@ bool PeakModel::setData( const WModelIndex &index,
 
         double energy = -999.0;
         if( !(convertstr >> energy) )
-          return false;
+        {
+          switch( srcType )
+          {
+            case PeakDef::NormalGamma:
+            case PeakDef::XrayGamma:
+              return false;
+              break;
+           
+            case PeakDef::AnnihilationGamma:
+              energy = 511.0;
+              break;
+              
+            case PeakDef::SingleEscapeGamma:
+              energy = new_peak.mean() + 511.0;
+              break;
+              
+            case PeakDef::DoubleEscapeGamma:
+              energy = new_peak.mean() + 1022.0;
+              break;
+          }//switch( srcType )
+        }//if( !(convertstr >> energy) )
         
         energy *= unit;
         
