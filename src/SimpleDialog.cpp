@@ -61,6 +61,9 @@ SimpleDialog::SimpleDialog( const Wt::WString &title, const Wt::WString &content
 
 void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
+  Wt::WDialog::render( flags );
+  
+  /*
   if( flags & RenderFull )
   {
     // WDialog::setMaximumSize will silently not use dimensions if WLength::Percentage
@@ -69,78 +72,18 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
     
     // Override some WDialog settings
     
-    // Set the dialog max-width
-    string maxw = " $('#" + id() + "').css('maxWidth', ($(window).width() * 0.5 | 0) + 'px' );";
-    doJavaScript( maxw );
-    
-    // Set the dialog max-height
-    //string maxh = " $('#" + id() + "').css('maxHeight', ($(window).height() * 0.95 | 0) + 'px' );";
-    //doJavaScript( maxh );
-    
-    // By default Wt sets the dialog-layout to 999999px if you dont set it in the C++ at object
-    //  construction, so we will over-ride this in a kinda hacky way so contents wont overflow the
-    //  dialog
-    doJavaScript( "$('#" + id() + " .dialog-layout').css('maxWidth','100%');" );
-    
-    // We could update the max-width when window size changes, but we'll ignore this for now
-    //doJavaScript( "$(window).bind('resize', function(){" + maxw + "} );" );
-    
     // The below seems to be necessary or else sometimes the window doesnt resize to fit its content
-    doJavaScript( "setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 0 );"
-                  "setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 50 );" );
-    
-    
-    // We want to make sure the contents arent so big the dialog will be taller than the whole
-    //  screen, meaning the bottom buttons wont be showing.
-    //  For now we'll use screen info available in the InterSpec class, but should probably make
-    //  this done through JS at some point.  See below for the start of the JS code to do this,
-    //  which isnt working yet.
-    const InterSpec *interspec = InterSpec::instance();
-    const int ww = interspec->renderedWidth(), wh = interspec->renderedHeight();
-    if( ww > 100 && wh > 100 )
-    {
-      contents()->setMaximumSize( WLength::Auto, wh - 90 );  //Footer is 41px, so we probably only need ~50px or so of extra space
-      contents()->setOverflow( WContainerWidget::Overflow::OverflowAuto, Wt::Vertical );
-    }
-    
-    
-    /*
-     // For some reason this JS setting of heights isnt working - I suspect the Wt JS resize code
-     //  is clobering the set values, but I didnt debug this idea yet.
-    const std::string make_sure_fit_fcn = INLINE_JAVASCRIPT
-    (
-     function(id,cid){
-      try{
-        let el = $('#'+id), cel = $('#'+cid), ws = Wt.WT.windowSize();
-        if( !el || !cel || !ws ) return;
-        
-        if( el.height() > ws.y ){
-          el.height(ws.y-20);  //Doesnt seem to actually be working
-          $('#'+id + ' .dialog-layout' ).height(ws.y-20);
-          el.css('top', '10px');
-          el.css('bottom', null );
-          cel.css( 'overflow-y', 'auto' );
-        }
-        
-        if( el.width() > ws.x){
-          el.width(ws.x-20);
-          el.css( 'left', '5px' );
-          el.css( 'right', null );
-          cel.css( 'overflow-x', 'auto' );
-        }
-      }catch(err){ }
-    }
-     );
-    
-    const string define_make_sure_fit_js =
-    "let checkToBig = " + make_sure_fit_fcn + ";\n"
-    "checkToBig('" + id() + "','" + WDialog::contents()->id() + "');";
-    doJavaScript( checkThisToBig );
-  */
+    doJavaScript( "let a = function(ms){"
+                  + wApp->javaScriptClass() + ".layouts2.scheduleAdjust();"
+                  " setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, ms );"
+                  "};"
+                  "a(0); a(50); a(250);"
+    );
   }else
   {
     Wt::WDialog::render( flags );
   }//if( flags & RenderFull )
+   */
 }//render( flags )
 
 
@@ -152,13 +95,20 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
   
   setModal( true );
   
-  // Dont use the titlebar so the dialog wont be able to be moved around
-  setTitleBarEnabled( false );
-  if( !title.empty() )
+  setMovable( false );
+  
+  if( title.empty() )
   {
-    m_title = new WText( title, contents() );
+    setTitleBarEnabled( false );
+  }else
+  {
+    setTitleBarEnabled( true );
+    //setWindowTitle( title ); //Dont use the default Wt <h4>Some Text...</h4> stuff
+    titleBar()->removeStyleClass( "titlebar" );  //Avoid the Wt changing of text color and such
+    titleBar()->addStyleClass( "title" );
+    m_title = new WText( title, titleBar() );
     m_title->setInline( false );
-    m_title->addStyleClass( "title" );
+    //m_title->addStyleClass( "title" );
   }
   
   if( !content.empty() )
