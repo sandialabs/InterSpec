@@ -147,49 +147,10 @@ public class InterSpec extends Activity
   }//public final class WtWebChromeClient extends WebChromeClient 
 
 
-  public String getFilePath( final Uri uri ) 
-  {
-	//adapted from https://github.com/iPaulPro/aFileChooser/tree/master/aFileChooser
-    final Context context = getApplicationContext();
-	  final boolean isKitKat = Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT;
-
-    if( isKitKat && DocumentsContract.isDocumentUri(context, uri) ) 
-	  {
-      // ExternalStorageProvider
-      if( "com.android.externalstorage.documents".equals(uri.getAuthority()) ) 
-	    {
-        final String docId = DocumentsContract.getDocumentId(uri);
-        final String[] split = docId.split(":");
-        final String type = split[0];
-
-        if( "primary".equalsIgnoreCase(type) )
-		    {
-          return Environment.getExternalStorageDirectory() + "/" + split[1];
-        }
-        // TODO handle non-primary volumes
-      }else if( "com.android.providers.downloads.documents".equals(uri.getAuthority()) ) 
-	    {
-        final String id = DocumentsContract.getDocumentId(uri);
-        final Uri contentUri = ContentUris.withAppendedId(
-            Uri.parse("content://downloads/public_downloads"), Long.valueOf(id));
-
-        return getDataColumn(contentUri, null, null);
-      } //else if media
-    }else if ("content".equalsIgnoreCase(uri.getScheme())) 
-	  {
-      return getDataColumn(uri, null, null);
-    }else if ("file".equalsIgnoreCase(uri.getScheme())) 
-	  {
-      return uri.getPath();
-    }
-
-    return null;
-  }//public String getFilePath( final Uri uri ) 
-
   public String getDataColumn(Uri uri, String selection, String[] selectionArgs) 
   {
     //from https://github.com/iPaulPro/aFileChooser/tree/master/aFileChooser
-	  final Context context = getApplicationContext();
+    final Context context = getApplicationContext();
     Cursor cursor = null;
     final String column = "_data";
     final String[] projection = { column };
@@ -227,7 +188,7 @@ public class InterSpec extends Activity
 	
 	  return name;
   }//public String getDisplayFileName( Uri result ) 
-  
+
   public String copyUriToTmpDir( Uri result, final String displayName ) 
   {
 	  String outputname = null;
@@ -269,20 +230,19 @@ public class InterSpec extends Activity
   
   public void openFileInInterSpec( Uri result )
   {
+    Log.d("openFileInInterSpec", "Got URI" );
+
     if( result == null )
       return;
 	
-    boolean shouldDeleteFile = false;
-    String pathname = getFilePath( result );
-    
-    if( true || pathname == null )
-    {
-      shouldDeleteFile = true;
-      String displayName = getDisplayFileName( result );	
-      if( displayName == null )
-        displayName = "unamedfile";
-      pathname = copyUriToTmpDir( result, displayName );
-    }//if( pathname == null )
+    boolean shouldDeleteFile = true;
+
+    String displayName = getDisplayFileName( result );
+    Log.d("openFileInInterSpec", "displayName=" + displayName );
+
+    if( displayName == null )
+      displayName = "unamedfile";
+    String pathname = copyUriToTmpDir( result, displayName );
 
 		
     if( pathname != null )
@@ -393,9 +353,9 @@ public class InterSpec extends Activity
       settings.setLoadWithOverviewMode(true);
       settings.setUseWideViewPort(true);
       settings.setSupportZoom(true);
+      settings.setGeolocationEnabled(false);
       settings.setBuiltInZoomControls(false);
       settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.SINGLE_COLUMN);
-      settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
       settings.setDomStorageEnabled(true);
       webview.setScrollBarStyle(WebView.SCROLLBARS_OUTSIDE_OVERLAY);
       webview.setScrollbarFadingEnabled(true);
@@ -411,6 +371,8 @@ public class InterSpec extends Activity
       */
 
       webview.setWebChromeClient(new WtWebChromeClient());
+
+
 
       if( Intent.ACTION_VIEW.equals(action) )
       {
@@ -478,10 +440,7 @@ public class InterSpec extends Activity
 
     Log.d("onCreate", "done starting server ish");
 
-	/* Need at least API 19 for the full screen emmersive view 
-	 * I havent yet tested to make sure the bellow protections 
-	 * for earlier API's actually works
-     */
+	/* Need at least API 19 for the full screen emmersive view */
     if( Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT ) 
 	  {
 	    mDecorView = getWindow().getDecorView();
