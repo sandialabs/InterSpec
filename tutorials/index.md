@@ -1,5 +1,12 @@
 # Tutorials
 
+## InterSpec familiarization Apr 2022
+* Part 1: Initial Familiarization (1 hour)
+  * Presentation: [InterSpec_familiarization.pdf](familiarization_Apr2022/20220420_InterSpec_familiarization.pdf).
+  * Example spectrum file: [example_problem_1.n42](familiarization_Apr2022/example_problem_1.n42).
+* Part 2: 3 More In-depth usage (3 hours): coming soon 
+
+
 ## Soil Contamination and Trace Sources
 * [20211117_IAEA_HPGe_InterSpec_SAND2021-14557TR.pdf](contamination/20211117_IAEA_HPGe_InterSpec_SAND2021-14557TR.pdf).  
   The content in this PDF was presented as part of a IAEA webinar that can be watched [here](https://elearning.iaea.org/m2/course/view.php?id=1224) (requires IAEA NUCLEUS account).
