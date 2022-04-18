@@ -4,6 +4,7 @@
 * Part 1: Initial Familiarization (1 hour)
   * Presentation: [InterSpec_familiarization.pdf](familiarization_Apr2022/20220420_InterSpec_familiarization.pdf).
   * Example spectrum file: [example_problem_1.n42](familiarization_Apr2022/example_problem_1.n42).
+  * DRFs of commonly encountered detectors (for InterSpec v1.0.9): [common_drfs.tsv](familiarization_Apr2022/common_drfs.tsv.
 * Part 2: 3 More In-depth usage (3 hours): coming soon 
 
 
