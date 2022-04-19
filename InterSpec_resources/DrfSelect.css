@@ -143,3 +143,60 @@ table.FormulaDrfTbl tr td:first-child
   float: left;
   padding-right: 20px;
 }
+
+.Wt-popup.DrfFileSelectDialog
+{
+  /* width: min(800px, 50vw); */
+  /* max-width: calc(50vw - 25px); */
+  /* max-height: 95vh; */
+}
+
+.Wt-popup.DrfFileSelectDialog > .dialog-layout
+{
+  /* padding-left: 10px;
+  padding-right: 10px;
+   */
+}
+
+.DrfFileSelectDialog .body
+{
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.DrfFileSelectMainDesc
+{
+  margin-top: 5px;
+  max-width: calc(50vw - 25px);
+}
+
+.DrfFileSelectCredits
+{
+  margin-top: 10px;
+  max-width: calc(50vw - 25px);
+}
+
+.DrfFileSelectChart
+{
+  min-width: 200px;
+  min-height: 200px;
+}
+
+.DrfFileSelectDrfDesc
+{
+  margin-top: 10px;
+}
+
+.DrfFileSelectCombo
+{
+  margin-top: 10px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.DrfFileSelectSaveCbs
+{
+  margin-top: 10px;
+  margin-bottom: 5px;
+}

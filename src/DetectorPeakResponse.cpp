@@ -652,6 +652,18 @@ void DetectorPeakResponse::setEnergyRange( const double lower, const double uppe
 }//void setEnergyRange( const double lower, const double upper )
 
 
+double DetectorPeakResponse::lowerEnergy() const
+{
+  return m_lowerEnergy;
+}
+
+
+double DetectorPeakResponse::upperEnergy() const
+{
+  return m_upperEnergy;
+}
+
+
 void DetectorPeakResponse::updateLastUsedTimeToNow()
 {
   m_lastUsedUtc = std::time(nullptr);

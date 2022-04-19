@@ -1354,22 +1354,9 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       "<p>Would you like to use this DRF?</p>"
       ;
       
-      WText *t = new WText( WString::fromUTF8(msg) );
-      stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-      t->setTextAlignment( Wt::AlignCenter );
-
-      dialog->addButton( "No" ); //no further action necessary if user clicks no; dialog will close
-      closeButton->setText( "Yes" );
-      closeButton->clicked().connect( std::bind( [det](){
-        InterSpec *interspec = InterSpec::instance();
-        if( interspec )
-        {
-          auto sql = interspec->sql();
-          auto user = interspec->m_user;
-          DrfSelect::updateLastUsedTimeOrAddToDb( det, user.id(), sql );
-          interspec->detectorChanged().emit( det ); //This loads it to the foreground spectrum file
-        }
-      } ) );
+      DrfSelect::createChooseDrfDialog( {det}, msg, "" );
+      
+      delete dialog;
       
       return true;
     }
@@ -1424,172 +1411,91 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
   }
 #endif
   
-  AuxWindow *dialog = new AuxWindow( "File contains Detector Response Functions",
-                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                                      | AuxWindowProperties::TabletNotFullScreen
-                                      | AuxWindowProperties::DisableCollapse
-                                      | AuxWindowProperties::SetCloseable ) );
-  
-  dialog->rejectWhenEscapePressed();
-  dialog->contents()->addStyleClass( "SelectDrfFromMult" );
-  dialog->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
-  
-  WGridLayout *layout = new WGridLayout( dialog->contents() );
-  layout->setContentsMargins(5,5,0,0);
-  
-  
-  string msg = "<p style=\"white-space: nowrap;\">";
-  
-  if( drfs.size() == 1 )
-    msg += "This file looks to be a Detector Response Function.";
-  else
-    msg += "This file contains multiple Detector Response Functions.</p>"
-           "<p style=\"text-align: center;\">Please select DRF to use:";
-  msg += "</p>";
-  
-  WText *txt = new WText( msg, Wt::XHTMLText );
-  layout->addWidget( txt, 0, 0 );
-  
-  
-  WComboBox *drfsSelect = new WComboBox();
-  layout->addWidget( drfsSelect, layout->rowCount(), 0, AlignCenter );
-  
-  for( const auto &drf : drfs )
-    drfsSelect->addItem( WString::fromUTF8( drf->name() ) );
-  drfsSelect->setCurrentIndex( 0 );
-  
-  
-  WCheckBox *saveFile = nullptr;
-  
+  std::function<void()> saveDrfFile;
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
-  if( !fileContents.empty() )
-  {
-    saveFile = new WCheckBox( "Save DRFs for later use" );
-    saveFile->addStyleClass( "SaveDrfForLaterCb" );
-    layout->addWidget( saveFile, layout->rowCount(), 0 );
+  saveDrfFile = [displayName,fileContents](){
+    if( fileContents.empty() )
+      return;
     
-    // TODO: check if we will overwrite a file
-  }//if( !fileContents.empty() )
+    try
+    {
+      std::string datadir = InterSpec::writableDataDirectory();
+      if( datadir.empty() )
+        throw runtime_error( "Writable data directory not set." );
+      
+      datadir = SpecUtils::append_path( datadir, "drfs" );
+      
+      if( SpecUtils::create_directory(datadir) == 0 ) //-1 means already existed, 1 means created
+        throw runtime_error( "Could not create 'drfs' directory in app data directory." );
+      
+      //displayName
+      string filename = SpecUtils::filename( displayName );
+      const string orig_extension = SpecUtils::file_extension( filename );
+      assert( orig_extension.size() <= filename.size() );
+      
+      if( orig_extension.size() )
+        filename = filename.substr( 0, filename.size() - orig_extension.size() );
+      
+      const int offset = wApp->environment().timeZoneOffset();
+      const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
+      string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
+      const string::size_type pos = timestr.find( ' ' );
+      //std::string timestr = SpecUtils::to_extended_iso_string( now ); //"2014-04-14T14:12:01.621543"
+      //string::size_type pos = timestr.find( 'T' );
+      if( pos != string::npos )
+        timestr = timestr.substr(0,pos);
+      SpecUtils::ireplace_all( timestr, "-", "_" );
+      
+      filename += "_" + timestr + orig_extension;
+      const string outputname = SpecUtils::append_path( datadir, filename );
+      
+      
+#ifdef _WIN32
+      const std::wstring wtmpfile = SpecUtils::convert_from_utf8_to_utf16(outputname);
+      ofstream outfilestrm( wtmpfile.c_str(), ios::out | ios::binary );
+#else
+      ofstream outfilestrm( outputname.c_str(), ios::out | ios::binary );
 #endif
+      
+      if( !outfilestrm )
+        throw runtime_error( "Unable to open file '" + outputname + "'" );
+      
+      if( !outfilestrm.write( &(fileContents[0]), fileContents.size() ) )
+      {
+        outfilestrm.close();
+        SpecUtils::remove_file(outputname);
+        
+        throw runtime_error( "Failed writing '" + outputname + "'" );
+      }//
+      
+      passMessage( "Saved '" + filename + "' for later use, and will be available in the"
+                  " &quot;<em>Rel. Eff.</em>&quot; portion of the"
+                  " &quot;<em>Detector Response Function Select</em>&quot; tool.",
+                  "", WarningWidget::WarningMsgInfo );
+    }catch( std::exception &e )
+    {
+      cerr << "handleMultipleDrfCsv: error saving multiple DRF file: " << e.what() << endl;
+      passMessage( "Error saving DRF file for later use.", "", WarningWidget::WarningMsgHigh );
+    }//try / catch to save file
+#endif
+  };//saveDrfFile
   
   
+  string dialogmsg;
+  if( drfs.size() == 1 )
+    dialogmsg += "This file looks to be a Detector Response Function.";
+  else
+    dialogmsg += "This file contains multiple Detector Response Functions.";
+
+  string creditsHtml;
   if( credits.size() )
   {
-    WContainerWidget *w = new WContainerWidget();
-    w->addStyleClass( "Credits" );
-    const int row = layout->rowCount();
-    layout->addWidget( w, row, 0 );
-    layout->setRowStretch( row, 1 );
-    
     for( string &s : credits )
-    {
-      txt = new WText( WString::fromUTF8(s), Wt::XHTMLText, w );
-      txt->setInline( false );
-    }
+      creditsHtml += "<div>" + s + "</div>";
   }//if( credits.size() )
   
   
-  
-  WPushButton *cancel = dialog->addCloseButtonToFooter( "Cancel", true );
-  cancel->clicked().connect( boost::bind( &AuxWindow::hide, dialog ) );
-  
-  WPushButton *accept = dialog->addCloseButtonToFooter( "Accept", true );
-  
-  accept->clicked().connect( std::bind( [=](){
-    //drfs,dialog,drfsSelect,saveFile,displayName,fileContents
-    
-    const int index = drfsSelect->currentIndex();
-    if( (index < 0) || (index >= static_cast<int>(drfs.size())) )
-    {
-      passMessage( "Invalid DRF selection", "", WarningWidget::WarningMsgHigh );
-      dialog->hide();
-    }
-    
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
-    if( saveFile && saveFile->isChecked() && fileContents.size() > 0 )
-    {
-      try
-      {
-        std::string datadir = InterSpec::writableDataDirectory();
-        if( datadir.empty() )
-          throw runtime_error( "Writable data directory not set." );
-        
-        datadir = SpecUtils::append_path( datadir, "drfs" );
-        
-        if( SpecUtils::create_directory(datadir) == 0 ) //-1 means already existed, 1 means created
-          throw runtime_error( "Could not create 'drfs' directory in app data directory." );
-        
-        //displayName
-        string filename = SpecUtils::filename( displayName );
-        const string orig_extension = SpecUtils::file_extension( filename );
-        assert( orig_extension.size() <= filename.size() );
-        
-        if( orig_extension.size() )
-          filename = filename.substr( 0, filename.size() - orig_extension.size() );
-          
-        const int offset = wApp->environment().timeZoneOffset();
-        const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
-        string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
-        const string::size_type pos = timestr.find( ' ' );
-        //std::string timestr = SpecUtils::to_extended_iso_string( now ); //"2014-04-14T14:12:01.621543"
-        //string::size_type pos = timestr.find( 'T' );
-        if( pos != string::npos )
-          timestr = timestr.substr(0,pos);
-        SpecUtils::ireplace_all( timestr, "-", "_" );
-        
-        filename += "_" + timestr + orig_extension;
-        const string outputname = SpecUtils::append_path( datadir, filename );
-        
-        
-#ifdef _WIN32
-        const std::wstring wtmpfile = SpecUtils::convert_from_utf8_to_utf16(outputname);
-        ofstream outfilestrm( wtmpfile.c_str(), ios::out | ios::binary );
-#else
-        ofstream outfilestrm( outputname.c_str(), ios::out | ios::binary );
-#endif
-        
-        if( !outfilestrm )
-          throw runtime_error( "Unable to open file '" + outputname + "'" );
-        
-        if( !outfilestrm.write( &(fileContents[0]), fileContents.size() ) )
-        {
-          outfilestrm.close();
-          SpecUtils::remove_file(outputname);
-          
-          throw runtime_error( "Failed writing '" + outputname + "'" );
-        }//
-        
-        passMessage( "Saved '" + filename + "' for later use, and will be available in the"
-                    " &quot;<em>Rel. Eff.</em>&quot; portion of the"
-                    " &quot;<em>Detector Response Function Select</em>&quot; tool.",
-                    "", WarningWidget::WarningMsgInfo );
-      }catch( std::exception &e )
-      {
-        cerr << "handleMultipleDrfCsv: error saving multiple DRF file: " << e.what() << endl;
-        passMessage( "Error saving DRF file for later use.", "", WarningWidget::WarningMsgHigh );
-      }
-    }//if( we should save file )
-#endif
-    
-    const shared_ptr<DetectorPeakResponse> det = drfs[index];
-    
-    InterSpec *interspec = InterSpec::instance();
-    if( interspec )
-    {
-      auto sql = interspec->sql();
-      auto user = interspec->m_user;
-      DrfSelect::updateLastUsedTimeOrAddToDb( det, user.id(), sql );
-      interspec->detectorChanged().emit( det ); //This loads it to the foreground spectrum file
-    }
-    
-    dialog->hide();
-  } ) ); //accept->clicked().connect(...
-  
-  
-  dialog->show();
-  dialog->centerWindow();
-  dialog->resizeToFitOnScreen();
-  dialog->centerWindowHeavyHanded();
+  DrfSelect::createChooseDrfDialog( drfs, dialogmsg, creditsHtml, saveDrfFile );
   
   return true;
 }//bool handleMultipleDrfCsv( std::istream &input, SimpleDialog *dialog )

@@ -56,6 +56,7 @@ namespace Wt
   class WStandardItemModel;
 }//namespace Wt
 
+class DrfChart;
 class InterSpec;
 class InterSpecUser;
 class RelEffDetSelect;
@@ -223,6 +224,20 @@ public:
   //   on deplandcies)
   static std::shared_ptr<DetectorPeakResponse> initARelEffDetector( const SpecUtils::DetectorType type, InterSpec *interspec );
   
+  /** Creates a dialog to allow the user to select to use (one of) the passed in DRFs.
+   
+   @param drfs The DRFs to allow the user to choose from; if empty (or only null or invalid drfs),
+          no dialog will be shown.  If a single DRF, then user wont be given a choice.
+   @param mainMsgHtml The HTML to show as the description for the DRFs; this appears above the
+          drf selection combo-box (if more than one DRF)
+   @param creditsHtml The HTML to show below the combo-box.
+   @param saveDrfsCallBack If non-empty, a checkbox to allow saving DRFs will be shown, and if
+          checked when the user accepts dialog, will call this callback.
+   */
+  static void createChooseDrfDialog( std::vector<std::shared_ptr<DetectorPeakResponse>> drfs,
+                                    std::string mainMsgHtml,
+                                    std::string creditsHtml,
+                                    std::function<void()> saveDrfsCallBack = nullptr );
   
   /** Checks if file at passed in path is a TSV/CSV file that contains
    coefficients for the exp( c0 + c1*logx + c2*logx^2 + ...) equation.
@@ -284,10 +299,7 @@ protected:
   WContainerWidget *m_footer;
   InterSpec *m_interspec;
   SpectraFileModel *m_fileModel;
-  Wt::WColor m_chartEnergyLineColor;
-  Wt::WColor m_chartFwhmLineColor;
-  Wt::Chart::WCartesianChart *m_chart;
-  Wt::WStandardItemModel* m_efficiencyModel;
+  DrfChart *m_chart;
   
   //m_detector: the detector that is currently defined for the user to edit.
   //  When ever there is a substantial edit, this detector wil be emitted via
