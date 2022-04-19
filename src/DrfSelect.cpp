@@ -420,6 +420,260 @@ public:
 }//namespace
 
 
+
+
+/** Class that plots the DRF efficiency and possible FWHM.
+ 
+ TODO: replace this Wt plotting with d3.js based plotting so we can do things a little more interactively.
+ 
+ We need this outside of namespace so we can forward-declare in the header
+ */
+class DrfChart : public Wt::Chart::WCartesianChart
+{
+protected:
+  Wt::WColor m_chartEnergyLineColor;
+  Wt::WColor m_chartFwhmLineColor;
+  Wt::WStandardItemModel* m_efficiencyModel;
+  
+  std::shared_ptr<const DetectorPeakResponse> m_detector;
+
+  
+public:
+  
+  DrfChart( WContainerWidget *parent = 0 )
+  : Wt::Chart::WCartesianChart( 0 )
+  {
+    setBackground(Wt::WColor(220, 220, 220));
+    setXSeriesColumn(0);
+    setType(Wt::Chart::ScatterPlot);
+    
+    //Before, m_efficiencyModel was actually a memory leak, because it didnt have
+    //  a parent (m_chart in this case), so everytime you created a new one, the
+    //  old one would be leaked since there was no longer a refernce to it anywhere
+    m_efficiencyModel = new WStandardItemModel( this );
+    setModel( m_efficiencyModel );
+    
+    m_chartEnergyLineColor = WColor("#B02B2C"); //Ruby on Rails red
+    m_chartFwhmLineColor = WColor("#3F4C6B");  //Mozilla blue
+    
+    //We should check the color theme for colors
+    InterSpec *viewer = InterSpec::instance();
+    
+    if( viewer )
+      viewer->colorThemeChanged().connect( this, &DrfChart::handleColorThemeChange );
+    
+    auto theme = viewer ? viewer->getColorTheme() : nullptr;
+    handleColorThemeChange( theme );
+    
+    //setAutoLayoutEnabled(); //Leaves a lot of room at the top, but maybe because font-metrics not available?
+    setPlotAreaPadding(5, Wt::Top);
+    setPlotAreaPadding(60, Wt::Bottom);
+    setPlotAreaPadding(55, Wt::Right | Wt::Left);
+    
+    setMinimumSize(WLength(350), WLength(200));
+    
+    axis(Wt::Chart::XAxis).setVisible(true);
+    axis(Wt::Chart::XAxis).setTitle("Energy (keV)");
+    
+    axis(Wt::Chart::Y1Axis).setVisible(true);
+    axis(Wt::Chart::Y1Axis).setTitle("Efficiency");
+    
+    axis(Wt::Chart::Y1Axis).setTitleOrientation( Wt::Vertical );
+    axis(Wt::Chart::Y2Axis).setTitleOrientation( Wt::Vertical );
+    
+    setLegendEnabled( true );
+    
+    setLegendLocation(Wt::Chart::LegendInside, Wt::Top, Wt::AlignRight);
+    
+#if( WT_VERSION >= 0x3040000 )  //I'm not too sure when these features became available, but I dont think in Wt 3.3.4
+    setCurveManipulationEnabled( true );
+        
+    Wt::Chart::WheelActions wheelAction;
+    //InteractiveAction: ZoomY, ZoomXY, ZoomMatching, PanX, PanY, PanMatching
+    wheelAction[KeyboardModifier::NoModifier] = Chart::InteractiveAction::ZoomX;
+    
+    setWheelActions(wheelAction);
+     
+    setPanEnabled(true);
+    setZoomEnabled(true);
+    
+    //setRubberBandEffectEnabled(true);
+#endif
+  }//DrfChart constructor
+  
+  
+  void handleColorThemeChange( std::shared_ptr<const ColorTheme> theme )
+  {
+    if( !theme )
+      return;
+    
+    if( !theme->foregroundLine.isDefault() )
+      m_chartEnergyLineColor = theme->foregroundLine;
+    else
+      m_chartEnergyLineColor = WColor("#B02B2C"); //Ruby on Rails red
+    
+    
+    if( !theme->backgroundLine.isDefault() )
+      m_chartFwhmLineColor = theme->backgroundLine;
+    else
+      m_chartFwhmLineColor = WColor("#3F4C6B");  //Mozilla blue
+    
+    const WColor txtColor = theme->spectrumChartText.isDefault()
+                                  ? WColor(GlobalColor::black)
+                                  : theme->spectrumChartText;
+      
+    WPen txtpen( txtColor );
+    setTextPen( txtpen );
+    axis(Chart::XAxis).setTextPen( txtpen );
+    axis(Chart::YAxis).setTextPen( txtpen );
+    axis(Chart::Y2Axis).setTextPen( txtpen );
+      
+    setCrosshairColor( txtColor );
+    
+    if( theme->spectrumChartBackground.isDefault() )
+      setBackground( Wt::NoBrush );
+    else
+      setBackground( WBrush(theme->spectrumChartBackground) );
+    
+    
+    //From what I can tell, we cant change the legend text color easily, so
+    //  we'll just cheat and back the legend background different enough from
+    //  black so we can always read the text.  Lame, but whatever.
+    setLegendStyle( legendFont(), legendBorder(), WBrush(Wt::WColor(220, 220, 220, 120)) );
+    
+    if( (theme->spectrumChartMargins.isDefault() && !theme->spectrumChartBackground.isDefault()) )
+    {
+      //theme->spectrumChartBackground
+    }else if( !theme->spectrumChartMargins.isDefault() )
+    {
+      //theme->spectrumChartMargins
+    }
+    
+    const WColor axisLineColor = theme->spectrumAxisLines.isDefault()
+                                      ? WColor(GlobalColor::black)
+                                      : theme->spectrumAxisLines;
+    
+    WPen defpen = axis(Chart::XAxis).pen();
+    defpen.setColor( axisLineColor );
+    axis(Chart::XAxis).setPen( defpen );
+    axis(Chart::Y1Axis).setPen( defpen );
+    axis(Chart::Y2Axis).setPen( defpen );
+  }//handleColorThemeChange(...)
+  
+  
+  void updateChart( std::shared_ptr<const DetectorPeakResponse> det )
+  {
+    m_detector = det;
+    
+    // clear series if any
+    removeSeries(1);
+    removeSeries(2);
+    
+    const Wt::Chart::SeriesType seriesType = Wt::Chart::SeriesType::CurveSeries;
+    
+    const bool hasEfficiency = !!m_detector && m_detector->isValid();
+    
+    if( hasEfficiency )
+    {
+      int nValidPoints = 0, nEffPoints = 0;
+      try
+      {
+        const bool hasResloution = m_detector->hasResolutionInfo();
+        
+        float minEnergy = 0.0f, maxEnergy = 3000.0f;
+        
+        // If DRF has a defined energy range, of at least 100 keV, use it.
+        if( m_detector && m_detector->isValid()
+           && (m_detector->upperEnergy() > (m_detector->lowerEnergy() + 100.0)) )
+        {
+          minEnergy = m_detector->lowerEnergy();
+          maxEnergy = m_detector->upperEnergy();
+        }
+        
+        
+        // TODO: pick this better using the chart width or whatever
+        int numEnergyPoints = floor(maxEnergy - minEnergy) / 2.5; //max of 8k points, but usually 12.5
+        if( numEnergyPoints > 4500 ) //4500 chosen arbitrarily
+          numEnergyPoints = 4500;
+        
+        m_efficiencyModel->clear();
+        m_efficiencyModel->insertRows( 0, numEnergyPoints );
+        m_efficiencyModel->insertColumns( 0, hasResloution? 3 : 2 );
+        float energy = 0.0f, efficiency = 0.0f;
+        for( int row = 0; row < numEnergyPoints; ++row )
+        {
+          energy = minEnergy + (float(row)/float(numEnergyPoints)) * (maxEnergy-minEnergy);
+          efficiency = static_cast<float>( m_detector->intrinsicEfficiency( energy ) );
+          m_efficiencyModel->setData(row, 0, energy );
+          
+          
+          //Skip any points outside where we would expect.
+          if( IsNan(efficiency) || IsInf(efficiency) || efficiency < 0.0f )
+          {
+            m_efficiencyModel->setData(row, 1, boost::any() );
+          }else
+          {
+            ++nValidPoints;
+            m_efficiencyModel->setData(row, 1, efficiency );
+          }
+          
+          if( hasResloution )
+          {
+            const float fwhm = m_detector->peakResolutionFWHM(energy);
+            if( !IsNan(fwhm) && !IsInf(fwhm) && fwhm>=0.0f && fwhm<9999.9f )
+            {
+              ++nEffPoints;
+              m_efficiencyModel->setData(row, 2, fwhm);
+            }
+          }
+        }//for( int row = 0; row < numEnergyPoints; ++row )
+        
+        m_efficiencyModel->setHeaderData(0, Wt::WString("Energy"));
+        m_efficiencyModel->setHeaderData(1, Wt::WString("Efficiency"));
+        if( m_detector->hasResolutionInfo() )
+          m_efficiencyModel->setHeaderData(2, Wt::WString("FWHM"));
+        
+        setXSeriesColumn(0);  //Not having this line after creating a new model was why the x-axis was the wrong scale
+        Wt::Chart::WDataSeries s1(1, seriesType, Wt::Chart::Y1Axis);
+        s1.setPen( WPen(m_chartEnergyLineColor) );
+        addSeries(s1);
+        
+#if( WT_VERSION >= 0x3040000 )
+        setFollowCurve( 1 );
+#endif
+        
+        if( nValidPoints == 0 )
+        {
+          axis(Wt::Chart::Y1Axis).setRange( 0.0, 1.0 );
+        }else
+        {
+          //m_chart->axis(Wt::Chart::Y1Axis).setRoundLimits(<#WFlags<Wt::Chart::AxisValue> locations#>)
+          axis(Wt::Chart::Y1Axis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
+        }
+        
+        if( nEffPoints )
+        { //only if there is resolution FWHM
+          Wt::Chart::WDataSeries s2(2, seriesType, Wt::Chart::Y2Axis);
+          s2.setPen( WPen(m_chartFwhmLineColor) );
+          addSeries(s2);
+          axis(Wt::Chart::Y2Axis).setTitle("FWHM");
+          axis(Wt::Chart::Y2Axis).setVisible(true);
+        }else
+        { //no ResolutionInfo
+          axis(Wt::Chart::Y2Axis).setVisible(false);
+          axis(Wt::Chart::Y2Axis).setTitle("");
+        }//no ResolutionInfo
+      }catch( std::exception &e )
+      {
+        cerr << "DrfSelect::updateChart()\n\tCaught: " << e.what() << endl;
+      }//try / catch
+    }//if( hasEfficiency )
+  } //DrfSelect::updateChart()
+};//class DrfChart
+
+
+
+
 class RelEffFile;
 
 /** This class represents potentially many CSV or TSV relative efficiency
@@ -1984,7 +2238,6 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_interspec( specViewer ),
     m_fileModel( fileModel ),
     m_chart( 0 ),
-    m_efficiencyModel( 0 ),
     m_detector( currentDet ),
     m_tabs( nullptr ),
     m_detectorDiameter( nullptr ),
@@ -2041,93 +2294,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   m_previousEmmittedDetector = m_detector;
   
-  m_chart = new Wt::Chart::WCartesianChart();
-  m_chart->setBackground(Wt::WColor(220, 220, 220));
-  m_chart->setXSeriesColumn(0);
-  m_chart->setLegendEnabled(false);
-  m_chart->setType(Wt::Chart::ScatterPlot);
-
-  //Before, m_efficiencyModel was actually a memory leak, because it didnt have
-  //  a parent (m_chart in this case), so everytime you created a new one, the
-  //  old one would be leaked since there was no longer a refernce to it anywhere
-  m_efficiencyModel = new WStandardItemModel( m_chart );
-  m_chart->setModel( m_efficiencyModel );
-  
-  m_chartEnergyLineColor = WColor("#B02B2C"); //Ruby on Rails red
-  m_chartFwhmLineColor = WColor("#3F4C6B");  //Mozilla blue
-  
-  //We should check the color theme for colors
-  auto theme = specViewer->getColorTheme();
-  if( theme )
-  {
-    if( !theme->foregroundLine.isDefault() )
-      m_chartEnergyLineColor = theme->foregroundLine;
-    if( !theme->backgroundLine.isDefault() )
-      m_chartFwhmLineColor = theme->backgroundLine;
-    
-    if( !theme->spectrumChartText.isDefault() )
-    {
-      WPen txtpen(theme->spectrumChartText);
-      m_chart->setTextPen( txtpen );
-      m_chart->axis(Chart::XAxis).setTextPen( txtpen );
-      m_chart->axis(Chart::YAxis).setTextPen( txtpen );
-      m_chart->axis(Chart::Y2Axis).setTextPen( txtpen );
-    }
-    
-    if( theme->spectrumChartBackground.isDefault() )
-      m_chart->setBackground( Wt::NoBrush );
-    else
-      m_chart->setBackground( WBrush(theme->spectrumChartBackground) );
-    
-    //From what I can tell, we cant change the legend text color easily, so
-    //  we'll just cheat and back the legend background different enough from
-    //  black so we can always read the text.  Lame, but whatever.
-    m_chart->setLegendStyle( m_chart->legendFont(), m_chart->legendBorder(), WBrush(Wt::WColor(220, 220, 220, 120)) );
-    
-    if( (theme->spectrumChartMargins.isDefault() && !theme->spectrumChartBackground.isDefault()) )
-    {
-      //theme->spectrumChartBackground
-    }else if( !theme->spectrumChartMargins.isDefault() )
-    {
-      //theme->spectrumChartMargins
-    }
-    
-    if( !theme->spectrumAxisLines.isDefault() )
-    {
-      WPen defpen = m_chart->axis(Chart::XAxis).pen();
-      defpen.setColor( theme->spectrumAxisLines );
-      m_chart->axis(Chart::XAxis).setPen( defpen );
-      m_chart->axis(Chart::Y1Axis).setPen( defpen );
-      m_chart->axis(Chart::Y2Axis).setPen( defpen );
-    }
-  }//if( theme )
-  
-  /*
-   * Provide ample space for the title, the X and Y axis and the legend.
-   */
-  m_chart->setPlotAreaPadding(5, Wt::Top);
-  m_chart->setPlotAreaPadding(60, Wt::Bottom);
-  m_chart->setPlotAreaPadding(55, Wt::Right | Wt::Left);
-
-  m_chart->setMinimumSize(WLength(350), WLength(200));
-
-  m_chart->axis(Wt::Chart::XAxis).setVisible(true);
-  m_chart->axis(Wt::Chart::XAxis).setTitle("Energy (keV)");
-
-  m_chart->axis(Wt::Chart::Y1Axis).setVisible(true);
-  m_chart->axis(Wt::Chart::Y1Axis).setTitle("Efficiency");
-
-#if( WT_VERSION >= 0x3030400 )
-  m_chart->axis(Wt::Chart::Y1Axis).setTitleOrientation( Wt::Vertical );
-  m_chart->axis(Wt::Chart::Y2Axis).setTitleOrientation( Wt::Vertical );
-#endif
-
-  m_chart->setLegendEnabled( true );
-
-  m_chart->setLegendLocation(Wt::Chart::LegendInside, Wt::Top, Wt::AlignRight);
-  //m_chart->setLegendLocation(Wt::Chart::LegendOutside, Wt::Bottom, Wt::AlignRight);
-  
-  //m_chart->setTitle("Detector Energy");
+  m_chart = new DrfChart();
   mainLayout->addWidget( m_chart, 0, 0 );
   
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
@@ -2606,6 +2773,268 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 }//DrfSelect constructor
 
 
+void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> inputdrfs,
+                                       string mainMsgHtml,
+                                       string creditsHtml,
+                                       std::function<void()> saveDrfsCallBack )
+{
+  wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
+  
+  vector<shared_ptr<DetectorPeakResponse>> drfs;
+  for( auto d : inputdrfs )
+  {
+    if( d && d->isValid() )
+      drfs.push_back( d );
+  }
+  
+  if( drfs.empty() )
+    return;
+  
+  auto interspec = InterSpec::instance();
+  auto meas = interspec ? interspec->measurment(SpecUtils::SpectrumType::Foreground) : nullptr;
+  
+  
+  auto selected_drf = make_shared<shared_ptr<DetectorPeakResponse>>();
+  
+  const char *title = (drfs.size() == 1) ? "Use DRF?" : "Select DRF to Use";
+  
+  SimpleDialog *dialog = new SimpleDialog( title );
+  dialog->addStyleClass( "DrfFileSelectDialog" );
+  
+  WPushButton *cancel = dialog->addButton( "Cancel" );
+  WPushButton *accept = dialog->addButton( "Accept" );
+  
+  //WGridLayout *layout = new WGridLayout( dialog->contents() );
+  //layout->setContentsMargins( 0, 0, 0, 0 );
+  
+  dialog->contents()->setOverflow( Overflow::OverflowHidden, Wt::Orientation::Horizontal );
+  
+  DrfChart *chart = new DrfChart();
+  chart->addStyleClass( "DrfFileSelectChart" );
+  
+  //layout->addWidget( chart, 0, 0 );
+  dialog->contents()->addWidget( chart );
+  
+  
+  if( !mainMsgHtml.empty() )
+  {
+    WText *gen_desc = new WText( mainMsgHtml );
+    gen_desc->addStyleClass( "DrfFileSelectMainDesc" );
+    
+    //layout->addWidget( gen_desc, layout->rowCount(), 0 );
+    gen_desc->setInline( false );
+    dialog->contents()->addWidget( gen_desc );
+  }//if( !descrip_html.empty() )
+  
+  
+  // Create drfDescription so we can capture in lambda; we'll add to layout in a bit
+  WText *drfDescription = new WText();
+  drfDescription->addStyleClass( "DrfFileSelectDrfDesc" );
+
+  auto showDrf = [drfs,chart,accept,drfDescription,selected_drf](const int index){
+    if( (index < 0) || (index >= drfs.size()) )
+    {
+      // Shouldnt happen, but JIC
+      accept->disable();
+      drfDescription->setText( "" );
+      chart->updateChart( nullptr );
+      (*selected_drf) = nullptr;
+      return;
+    }
+    
+    auto drf = drfs[index];
+    (*selected_drf) = drf;
+    chart->updateChart( drf );
+    
+    string drfdesc = drf->description();
+    if( !drfdesc.empty() )
+      drfdesc = "<b>DRF Desc:</b>&nbsp;" + drfdesc;
+    
+    drfDescription->setHidden( drfdesc.empty() );
+    drfDescription->setText( drfdesc );
+  };//showDrf lambda
+  
+  
+  auto bestGuessDrf = []( std::shared_ptr<const SpecMeas> meas, const vector<shared_ptr<DetectorPeakResponse>> &drfs ) -> pair<shared_ptr<DetectorPeakResponse>,int> {
+    if( !meas
+       || ((meas->detector_type() == DetectorType::Unknown) && meas->instrument_model().empty()) )
+      return {nullptr,-1};
+    
+    string model;
+    if( meas->detector_type() == DetectorType::Unknown )
+      model = meas->instrument_model();
+    else
+      model = detectorTypeToString( meas->detector_type() );
+    
+    // Remove all non-alphanumeric
+    auto removeNonAlpha = []( string &str ){
+      str.erase( std::remove_if(begin(str), end(str), [](char a){return !isalnum(a);}), end(str) );
+    };
+    
+    removeNonAlpha( model );
+    if( model.size() < 2 )
+      return {nullptr,-1};
+    
+    for( int i = 0; i < static_cast<int>(drfs.size()); ++i )
+    {
+      const shared_ptr<DetectorPeakResponse> &d = drfs[i];
+      
+      string name = d->name();
+      removeNonAlpha( name );
+      
+      const size_t pos = name.find( model );
+      if( pos != string::npos )
+        return {d,i};
+    }
+    
+    return {nullptr,-1};
+  };//bestGuessDrf lamda
+  
+  int initialDrf = 0;
+  
+  if( drfs.size() > 1 )
+  {
+    // TODO: try to guess which DRF is closest, and select that one
+    initialDrf = 1;
+    
+    const auto bestDrf = bestGuessDrf( meas, drfs );
+    if( bestDrf.first && (bestDrf.second >= 0) )
+      initialDrf = bestDrf.second;
+  }//if( drfs.size() > 1 )
+  
+  showDrf( initialDrf );
+  
+  if( drfs.size() > 1 )
+  {
+    WComboBox *combo = new WComboBox();
+    combo->addStyleClass( "DrfFileSelectCombo" );
+    
+    //layout->addWidget( combo, layout->rowCount(), 0, AlignCenter );
+    combo->setInline( false );
+    dialog->contents()->addWidget( combo );
+    
+    for( auto drf : drfs )
+      combo->addItem( drf->name() );
+    combo->setCurrentIndex( 0 );
+    combo->activated().connect( std::bind(showDrf, std::placeholders::_1) );
+  }//if( drfs.size() > 1 )
+  
+  
+  //layout->addWidget( drfDescription, layout->rowCount(), 0 );
+  drfDescription->setInline( false );
+  dialog->contents()->addWidget( drfDescription );
+
+
+  if( !creditsHtml.empty() )
+  {
+    WText *credits = new WText( creditsHtml );
+    credits->addStyleClass( "DrfFileSelectCredits" );
+    
+    //layout->addWidget( credits, layout->rowCount(), 0 );
+    dialog->contents()->addWidget( credits );
+  }//if( !descrip_html.empty() )
+
+  const bool makeDrfsSaveCb = !!saveDrfsCallBack;
+  const bool makeSerialNumCb = (meas && !meas->instrument_id().empty());
+  const bool makeModelCb = (meas
+                            && ((meas->detector_type()!=DetectorType::Unknown)
+                                 || !meas->instrument_model().empty()));
+  
+  WContainerWidget *saveCbDiv = nullptr;
+  WCheckBox *saveCb = nullptr;
+  WCheckBox *defaultForSerialNumber = nullptr, *defaultForDetectorModel = nullptr;
+  
+  if( makeDrfsSaveCb || makeSerialNumCb || makeModelCb )
+  {
+    saveCbDiv = new WContainerWidget( dialog->contents() );
+    saveCbDiv->addStyleClass( "DrfFileSelectSaveCbs" );
+  }
+  
+  if( makeDrfsSaveCb )
+  {
+    saveCb = new WCheckBox( "Save for later use?", saveCbDiv );
+    //layout->addWidget( saveCb, layout->rowCount(), 0, AlignLeft );
+    saveCb->setInline( false );
+    dialog->contents()->addWidget( saveCb );
+  }//if( makeDrfsSaveCb )
+  
+  if( makeSerialNumCb )
+  {
+    string msg = "Use as default DRF for SN '" + meas->instrument_id() + "'";
+    defaultForSerialNumber = new WCheckBox( msg, saveCbDiv );
+    defaultForSerialNumber->setInline( false );
+  }//if( have serial number )
+  
+  if( makeModelCb )
+  {
+    string model;
+    if( meas->detector_type() == DetectorType::Unknown )
+      model = meas->instrument_model();
+    else
+      model = detectorTypeToString( meas->detector_type() );
+    
+    string msg = "Use as default DRF for model '" + model + "'";
+    defaultForDetectorModel = new WCheckBox( msg, saveCbDiv );
+    defaultForDetectorModel->setInline( false );
+  }//if( makeModelCb )
+  
+  
+  accept->clicked().connect( std::bind( [=](){
+    auto drf = *selected_drf;
+    auto interspec = InterSpec::instance();
+    if( !drf || !interspec )
+      return;
+      
+    auto sql = interspec->sql();
+    auto user = interspec->m_user;
+    DrfSelect::updateLastUsedTimeOrAddToDb( drf, user.id(), sql );
+    interspec->detectorChanged().emit( drf ); //This loads it to the foreground spectrum file
+      
+    if( saveCb && saveCb->isChecked() && !!saveDrfsCallBack )
+      saveDrfsCallBack();
+    
+    
+    auto meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    
+    
+    if( meas && drf && defaultForSerialNumber && defaultForSerialNumber->isChecked() )
+    {
+      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
+      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+        DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
+      } ) );
+    }//if( m_defaultForSerialNumber and is checked )
+    
+    if( meas && drf && defaultForDetectorModel && defaultForDetectorModel->isChecked() )
+    {
+      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
+      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+        DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
+      } ) );
+    }//if( m_defaultForDetectorModel and is checked )
+  }) );
+  
+  if( interspec && (interspec->renderedWidth() > 100) && (interspec->renderedHeight() > 50) )
+  {
+    double dialogWidth = std::min(800.0, 0.5*interspec->renderedWidth());
+    
+    double chartHeight = 0.5*interspec->renderedHeight();
+    chartHeight = std::min( std::min( chartHeight, 325.0 ), dialogWidth );
+    
+    chart->setWidth( dialogWidth - 25 );
+    chart->setHeight( chartHeight );
+    
+    dialog->setWidth( dialogWidth );
+    dialog->setMaximumSize( 0.5*interspec->renderedWidth(), 0.95*interspec->renderedHeight() );
+  }else
+  {
+    chart->setHeight( 250 );
+    dialog->setWidth( 640 );
+  }
+  
+  dialog->rejectWhenEscapePressed();
+}//createChooseDrfDialog(...)
+
 
 void DrfSelect::handle_app_url_drf( const std::string &url_query )
 {
@@ -2616,13 +3045,7 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
     
     assert( drf->isValid() );
     
-    SimpleDialog *dialog = new SimpleDialog( "Use DRF", "Blah blah blah" );
-    
-    InterSpec *viewer = InterSpec::instance();
-    if( (viewer->renderedWidth() > 100) && (viewer->renderedHeight() > 100) )
-    {
-      //
-    }//
+    DrfSelect::createChooseDrfDialog( {drf}, "DRF received from external program.", "" );
   }catch( std::exception &e )
   {
     wApp->log( "error" ) << "App URL was invalid DRF: " << e.what();
@@ -2987,90 +3410,7 @@ void DrfSelect::selectButton( WStackedWidget *stack,
 
 void DrfSelect::updateChart()
 {
-  // clear series if any
-  m_chart->removeSeries(1);
-  m_chart->removeSeries(2);
-  
-  const bool hasEfficiency = !!m_detector && m_detector->isValid();
-  
-  if( hasEfficiency )
-  {
-    int nValidPoints = 0, nEffPoints = 0;
-    try
-    {
-      const bool hasResloution = m_detector->hasResolutionInfo();
-      const float minEnergy = 0.0f, maxEnergy = 3000.0f;
-      const int numEnergyPoints = 1200; //whatever, you can pick this better using the chart width or whateever
-    
-      m_efficiencyModel->clear();
-      m_efficiencyModel->insertRows( 0, numEnergyPoints );
-      m_efficiencyModel->insertColumns( 0, hasResloution? 3 : 2 );
-      float energy=0;
-      float efficincy=0;
-      for( int row = 0; row < numEnergyPoints; ++row )
-      {
-        energy = minEnergy + (float(row)/float(numEnergyPoints)) * (maxEnergy-minEnergy);
-        efficincy = static_cast<float>( m_detector->intrinsicEfficiency( energy ) );
-        m_efficiencyModel->setData(row, 0, energy );
-
-
-        //Skip any points outside where we would expect.
-        if( IsNan(efficincy) || IsInf(efficincy) || efficincy > 1.2f || efficincy < 0.0f )
-        {
-          m_efficiencyModel->setData(row, 1, boost::any() );
-        }else
-        {
-          ++nValidPoints;
-          m_efficiencyModel->setData(row, 1, efficincy );
-        }
-        
-        if( hasResloution )
-        {
-          const float fwhm = m_detector->peakResolutionFWHM(energy);
-          if( !IsNan(fwhm) && !IsInf(fwhm) && fwhm>=0.0f && fwhm<9999.9f )
-          {
-            ++nEffPoints;
-            m_efficiencyModel->setData(row, 2, fwhm);
-          }
-        }
-      }//for( int row = 0; row < numEnergyPoints; ++row )
-     
-      m_efficiencyModel->setHeaderData(0, Wt::WString("Energy"));
-      m_efficiencyModel->setHeaderData(1, Wt::WString("Efficiency"));
-      if( m_detector->hasResolutionInfo() )
-        m_efficiencyModel->setHeaderData(2, Wt::WString("FWHM"));
-    
-      m_chart->setXSeriesColumn(0);  //Not having this line after creating a new model was why the x-axis was the wrong scale
-      Wt::Chart::WDataSeries s1(1, Wt::Chart::LineSeries,Wt::Chart::Y1Axis);
-      s1.setPen( WPen(m_chartEnergyLineColor) );
-      m_chart->addSeries(s1);
-    
-      if( nValidPoints == 0 )
-      {
-        m_chart->axis(Wt::Chart::Y1Axis).setRange( 0.0, 1.0 );
-      }else
-      {
-        //m_chart->axis(Wt::Chart::Y1Axis).setRoundLimits(<#WFlags<Wt::Chart::AxisValue> locations#>)
-        m_chart->axis(Wt::Chart::Y1Axis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
-      }
-    
-      if( nEffPoints )
-      { //only if there is resolution FWHM
-        Wt::Chart::WDataSeries s2(2, Wt::Chart::LineSeries,Wt::Chart::Y2Axis);
-        s2.setPen( WPen(m_chartFwhmLineColor) );
-        m_chart->addSeries(s2);
-        m_chart->axis(Wt::Chart::Y2Axis).setTitle("FWHM");
-        m_chart->axis(Wt::Chart::Y2Axis).setVisible(true);
-      }else
-      { //no ResolutionInfo
-        m_chart->axis(Wt::Chart::Y2Axis).setVisible(false);
-        m_chart->axis(Wt::Chart::Y2Axis).setTitle("");
-      }//no ResolutionInfo
-    }catch( std::exception &e )
-    {
-      cerr << "DrfSelect::updateChart()\n\tCaught: " << e.what() << endl;
-    }//try / catch
-  }//if( hasEfficiency )
+  m_chart->updateChart( m_detector );
 } //DrfSelect::updateChart()
 
 

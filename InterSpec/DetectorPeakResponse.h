@@ -502,6 +502,22 @@ public:
    */
   void setEnergyRange( const double lower, const double upper );
   
+  /** The upper energy (in keV) the DRF is valid to.
+   
+   By default, if not known, this and upperEnergy will be 0.0.
+   
+   Note: this limit is not currently enforced/used anywhere in InterSpec.
+   */
+  double lowerEnergy() const;
+  
+  /** The upper energy (in keV) the DRF is good to.
+   
+   By default, if not known, this and lowerEnergy will be 0.0.
+   
+   Note: this limit is not currently enforced/used anywhere in InterSpec.
+   */
+  double upperEnergy() const;
+  
   /** Updated the #m_lastUsedUtc member variable to current time.  Does not
       save to database.
    */

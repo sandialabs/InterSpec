@@ -330,6 +330,8 @@ void InterSpecApp::setupDomEnvironment()
   //  (The CSS wont be re-loaded later, so maybe we dont hurt anything doing it here too - maybe)
   WServer::instance()->schedule( 500, sessionId(), [](){
     wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
+    wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
+    
     // anything else relevant?
     wApp->triggerUpdate();
   } );
