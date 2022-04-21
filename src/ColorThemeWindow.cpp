@@ -315,7 +315,8 @@ m_apply( nullptr )
       m_apply->hide();
   }//if( currentItem )
   
-  m_menu->itemSelected().connect(boost::bind(&ColorThemeWindow::themeSelected, this, _1));
+  m_menu->itemSelected().connect(boost::bind(&ColorThemeWindow::themeSelected, this,
+                                             boost::placeholders::_1));
   
   finished().connect(boost::bind(&ColorThemeWindow::checkForSavesAndCleanUp, this));
   

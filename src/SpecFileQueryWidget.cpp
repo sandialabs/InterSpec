@@ -2035,7 +2035,7 @@ void SpecFileQueryWidget::basePathChanged()
   {
     m_numberFiles->setText( "Updating # of files" );
     const size_t maxsize_mb = static_cast<size_t>(maxsize*1024*1024);
-    server->ioService().post( boost::bind( &SpecFileQueryWidget::updateNumberFiles,
+    server->ioService().boost::asio::io_service::post( boost::bind( &SpecFileQueryWidget::updateNumberFiles,
                                            basepath, recursive, filter, maxsize_mb,
                                            this, wApp->sessionId(), m_widgetDeleted,
                                            database ) );
@@ -2349,7 +2349,7 @@ void SpecFileQueryWidget::searchRequestedCallback( const std::string &queryJson 
       database = std::make_shared<SpecFileQueryDbCache>( false, basepath, m_eventXmlFilters );
     
     m_stopUpdate->store( false );
-    WServer::instance()->ioService().post(
+    WServer::instance()->ioService().boost::asio::io_service::post(
                                           boost::bind( &SpecFileQueryWidget::doSearch, this, basepath, options,
                                                       maxsize, test, wApp->sessionId(), database, m_stopUpdate,
                                                       m_widgetDeleted ) );

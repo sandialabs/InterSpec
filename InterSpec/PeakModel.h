@@ -343,6 +343,17 @@ public:
                                                          std::shared_ptr<const SpecUtils::Measurement> meas,
                                                          std::istream &csv );
   
+  /** Parses either CSV from InterSpec/PeakEasy, or from GADRAS, and returns fairly raw values from
+   the CSV file.  I.e., each peak is its own ROI, there is no continuum defined, and source nuclides
+   are not included into the peak.
+   
+   Despite the name should parse either InterSpec/PeakEasy format, or GADRAS format peaks (but has
+   only been tested on GADRAS peaks).
+   
+   Throws exception if inputs are invalid, or no peaks present in the file.
+   */
+  static std::vector<PeakDef> gadras_peak_csv_to_peaks( std::shared_ptr<const SpecUtils::Measurement> meas,
+                                                         std::istream &csv );
   
   /** Writes the peaks to a CSV file output - e.g., what the user gets when they click on the CSV download on the "Peak Manager" tab.
    */

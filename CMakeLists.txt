@@ -5,9 +5,9 @@ endif(POLICY CMP0091)
 
 cmake_policy(SET CMP0048 NEW)
 
-cmake_minimum_required(VERSION 3.1.0 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
-project(InterSpec VERSION 1.10.0)
+project(InterSpec VERSION 1.0.10)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -78,11 +78,6 @@ option(
     DRAW_GAMMA_LINES_LOG_AND_LIN
     "Have gamma lines indicators be drawn in log mode when y-axis is log"
     OFF
-)
-option(
-    ALLOW_URL_TO_FILESYSTEM_MAP
-    "Allows a file ID to be specified in the URL to open a file from the filesystem"
-    ON
 )
 option(USE_DB_TO_STORE_SPECTRA "Use the database to store spectra" ON)
 option(
@@ -205,7 +200,6 @@ endif()
 
 if(ANDROID)
     set(BUILD_AS_LOCAL_SERVER OFF)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(TRY_TO_STATIC_LINK ON)
     set(MAX_SPECTRUM_MEMMORY_SIZE_MB 32)
     set(USE_DB_TO_STORE_SPECTRA ON)
@@ -241,9 +235,6 @@ if(ANDROID)
     set(Boost_FILESYSTEM_LIBRARY_RELEASE
         ${BOOST_LIB_START}filesystem${BOOST_LIB_END}
     )
-    set(Boost_IOSTREAMS_LIBRARY_RELEASE
-        ${BOOST_LIB_START}iostreams${BOOST_LIB_END}
-    )
     set(Boost_PROGRAM_OPTIONS_LIBRARY_RELEASE
         ${BOOST_LIB_START}program_options${BOOST_LIB_END}
     )
@@ -277,7 +268,6 @@ if(IOS)
     SET(CMAKE_C_ARCHIVE_CREATE   "<CMAKE_AR> -static -o <TARGET> <LINK_FLAGS> <OBJECTS>")
 
     set(BUILD_AS_LOCAL_SERVER OFF)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
     set(PERFORM_DEVELOPER_CHECKS OFF)
     set(TRY_TO_STATIC_LINK ON)
@@ -314,7 +304,6 @@ endif(IOS)
 
 if(BUILD_AS_OSX_APP)
     set(BUILD_AS_LOCAL_SERVER OFF)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(USE_OSX_NATIVE_MENU ON)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
 endif(BUILD_AS_OSX_APP)
@@ -330,7 +319,6 @@ if(BUILD_AS_ELECTRON_APP)
         CACHE BOOL "Set PIC to make electron lib"
     )
     set(BUILD_AS_LOCAL_SERVER OFF)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(USE_OSX_NATIVE_MENU OFF)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
@@ -340,7 +328,6 @@ if(BUILD_AS_UNIT_TEST_SUITE)
     set(BUILD_AS_LOCAL_SERVER OFF)
     set(USE_ENERGY_VS_TIME_PLOTS OFF)
     set(USE_DB_TO_STORE_SPECTRA ON)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(INCLUDE_ANALYSIS_TEST_SUITE ON)
     set(TRY_TO_STATIC_LINK ON)
     set(PERFORM_DEVELOPER_CHECKS ON)
@@ -350,7 +337,6 @@ endif(BUILD_AS_UNIT_TEST_SUITE)
 if(BUILD_FOR_WEB_DEPLOYMENT)
     set(TRY_TO_STATIC_LINK ON)
     set(CMAKE_BUILD_TYPE:STRING "Release")
-    set(ALLOW_URL_TO_FILESYSTEM_MAP OFF)
     set(USE_DB_TO_STORE_SPECTRA ON)
     #    set( USE_SQLITE3_DB ON )
     #    set( USE_MYSQL_DB OFF )
@@ -611,11 +597,6 @@ if(USE_DB_TO_STORE_SPECTRA)
     list(APPEND headers InterSpec/DbStateBrowser.h InterSpec/DbFileBrowser.h)
 endif(USE_DB_TO_STORE_SPECTRA)
 
-if(ALLOW_URL_TO_FILESYSTEM_MAP)
-    list(APPEND sources src/DbToFilesystemLink.cpp)
-    list(APPEND headers InterSpec/DbToFilesystemLink.h)
-endif(ALLOW_URL_TO_FILESYSTEM_MAP)
-
 if(NOT ANDROID AND NOT IOS)
     list(APPEND sources src/FileDragUploadResource.cpp)
     list(APPEND headers InterSpec/FileDragUploadResource.h)
@@ -835,6 +816,7 @@ elseif(BUILD_AS_OSX_APP)
           CMAKE_CACHE_ARGS -DWt_INCLUDE_DIR:PATH=${Wt_INCLUDE_DIR}
                            -DBOOST_ROOT:PATH=${Boost_INCLUDE_DIR}/..
                            -DBOOST_INCLUDEDIR:PATH=${Boost_INCLUDE_DIR}
+                           -DCMAKE_PREFIX_PATH:PATH=${CMAKE_PREFIX_PATH}
                            -DCMAKE_BUILD_TYPE:STRING=RELEASE
                            -DSpecUtils_ENABLE_D3_CHART:BOOL=OFF
                            INSTALL_COMMAND   ""
@@ -995,7 +977,7 @@ elseif(BUILD_AS_OSX_APP)
     )
 
     #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate cooresponding value in Xcode
-    set(MACOS_BUNDLE_VERSION_NUMBER 22)
+    set(MACOS_BUNDLE_VERSION_NUMBER 25)
 
     set_target_properties(
         InterSpecExe
@@ -1318,17 +1300,6 @@ if(Wt_MYSQL_LIBRARY)
     find_file( HAS_WT_DBO_MYSQL "MySQL" PATHS "${Wt_INCLUDE_DIR}/Wt/Dbo/backend/" NO_DEFAULT_PATH )
 endif(Wt_MYSQL_LIBRARY)
 
-INCLUDE( CheckIncludeFiles )
-
-if(ZLIB_FOUND AND Boost_IOSTREAMS_FOUND)
-    #CHECK_INCLUDE_FILES( "zlib.h" HAS_ZLIB_SUPPORT )
-    target_link_libraries(
-        InterSpecLib
-        PUBLIC
-        ${ZLIB_LIBRARIES}
-        Boost::iostreams
-    )
-endif(ZLIB_FOUND AND Boost_IOSTREAMS_FOUND)
 
 if(SUPPORT_ZIPPED_SPECTRUM_FILES)
     #CMake seems to fail to find zlib on ios/android (even using find_package(ZLIB REQUIRED)), but we know it will be in

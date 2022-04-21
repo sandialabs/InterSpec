@@ -85,19 +85,3 @@ float: right;
 {
   margin-left: 10px;
 }
-
-.SelectDrfFromMult
-{
-  overflow: hidden;
-  padding-bottom: 10px;
-}
-
-.SelectDrfFromMult .SaveDrfForLaterCb
-{
-  margin-bottom: 5px;
-}
-
-.SelectDrfFromMult .Credits
-{
-  margin-top: 5px;
-}

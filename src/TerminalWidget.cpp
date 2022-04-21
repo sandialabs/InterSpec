@@ -200,7 +200,8 @@ TerminalWidget::TerminalWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
   const string slotjs = "function(sender,event){Wt.WT.ButtonClickedJsSlot('" + id() + "'," + m_edit->jsRef() + ");}";
   button->clicked().connect( slotjs );
   m_buttonClickedSignal.reset( new JSignal<std::string>( this, "lineentered", true ) );
-  m_buttonClickedSignal->connect( boost::bind( &TerminalWidget::handleButtonClickedSignal, this, _1 ) );
+  m_buttonClickedSignal->connect( boost::bind( &TerminalWidget::handleButtonClickedSignal, this,
+                                              boost::placeholders::_1 ) );
 }//TerminalWidget
 
 void TerminalWidget::focusText()

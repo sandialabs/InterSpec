@@ -46,7 +46,6 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecServer.h"
-#include "InterSpec/DbToFilesystemLink.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
@@ -88,82 +87,106 @@
 }
 
 
--(BOOL)application:(NSApplication *)theApplication openFile:(NSString *)filename
+- (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls
 {
-  BOOL loaded = NO;
-  
-  if( !filename )
-    return NO;
-  
-  NSLog( @"openFile" );
-  [self setDbDirectory];
-  
-  NSLog( @"have setDbDirectory" );
-  filename=[NSString stringWithFormat:@"\"%@\"",filename];
-  
-  std::string specfile = [filename UTF8String];
-  if( specfile.length() && specfile[0] == '\"' )
-    specfile = specfile.substr(1);
-  if( specfile.length() && specfile[specfile.length()-1] == '\"' )
-    specfile = specfile.substr(0,specfile.size()-1);
+  NSLog( @"In openURLs!" );
+    
+  // Note: Implementing this method causes `openFile` to not be called, so this function will
+  //  be called anytime the user double-clicks on a spectrum file in the Finder, as well
+  //  as whenever a user clicks on a URL of the scheme "interspec://..." in the operating system.
 
-  NSLog( @"Will open specfile %s", specfile.c_str() );
+
+  // From the terminal, if we type: `open 'interspec://drf:v1:MyName:"My other Par":Eqn=323.32+5.2l(x)-3.5E-6*ln(y);someOtherPar'`
+  //
+  // Then here we get an NSArray with one entry, with url properties:
+  //  [url scheme] == interspec
+  //  [url absoluteString]: interspec://drf:v1:MyName:%22My%20other%20Par%22:Eqn=323.32+5.2l(x)-3.5E-6*ln(y);someOtherPar
+  //  [url absoluteURL]: interspec://drf:v1:MyName:%22My%20other%20Par%22:Eqn=323.32+5.2l(x)-3.5E-6*ln(y);someOtherPar
+  //  [url resourceSpecifier]: //drf:v1:MyName:%22My%20other%20Par%22:Eqn=323.32+5.2l(x)-3.5E-6*ln(y);someOtherPar
+  //  [url standardizedURL]: interspec://drf
+  //  [[url absoluteString] stringByRemovingPercentEncoding]: interspec://drf:v1:MyName:"My other Par":Eqn=323.32+5.2l(x)-3.5E-6*ln(y);someOtherPar
   
-  std::string name_ending;
-  const std::string::size_type lastperiod = specfile.find_last_of( '.' );
-  if( lastperiod != std::string::npos )
-    name_ending = specfile.substr( lastperiod+1 );
+  std::unique_ptr<Wt::WApplication::UpdateLock> app_lock;
+  InterSpecApp *specapp = nullptr;
   
-  //There is a race condition here, the InterSpecApp might destruct before
-  //  we call it
-  InterSpecApp *specapp = 0;
-  const std::set<InterSpecApp *> apps = InterSpecApp::runningInstances();
+  if( _UrlUniqueId )
+    specapp = InterSpecApp::instanceFromExtenalToken( [_UrlUniqueId UTF8String] );
   
-  if( !apps.empty() && !!_UrlUniqueId )
+  if( specapp )
   {
-    //for some reasons accessing the _UrlUniqueId was causing a crash bellow,
-    //  so will instead cop out and just use the first app instance in the set,
-    //  which really isnt the correct thing to do
-//    const char *uniqueid = [_UrlUniqueId UTF8String];
-//    const char *uniqueid = [_UrlUniqueId cStringUsingEncoding:NSASCIIStringEncoding];
-//    if( uniqueid )
-//      specapp = InterSpecApp::instanceFromExtenalIdString( uniqueid );
-//    else
-      specapp = *apps.begin();
-    
-    if( specapp )
+    app_lock = std::make_unique<Wt::WApplication::UpdateLock>( specapp );
+    if( !(*app_lock) )
     {
-      NSLog( @"Will use existing session to open file" );
+      NSLog( @"\topenURLs: _UrlUniqueId unable to get WApplication::UpdateLock for apptoken='%@' - not handling URL!", _UrlUniqueId );
       
-      Wt::WApplication::UpdateLock lock( specapp );
-      
-      if( lock )
-      {
-        loaded = specapp->userOpenFromFileSystem( specfile );
-        specapp->triggerUpdate();
-      }else
-      {
-        NSLog( @"Couldnt get WApplication::UpdateLock when opening a file" );
-      }
-    }//if( specapp )
-    
-    [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];
-  }else if( apps.empty() )
+      app_lock.reset();
+    }
+  }else
   {
-    //The WebView may not have requested the URL yet when this function gets
-    //  called, in the case a user double clicks on a file in the Finder to launch
-    //  this app.  Therefore we will mark that we should open this file using the
-    //  URL argument (that uses an intermediate database to store file location).
-    NSLog( @"Will mark the file to open once a session is created" );
+    NSLog( @"\topenURLs: _UrlUniqueId unable to get app for apptoken='%@' - not handling URL! ", _UrlUniqueId );
+  }
     
-    const std::string dbpath = [[[self applicationFilesDirectory] path] UTF8String];
-    DbToFilesystemLink::setFileNumToFilePathDBNameBasePath( dbpath );
+  for( NSURL *url in urls )
+  {
+    // NSLog( @"scheme: %@", [url scheme] );
+    if( !url )
+    {
+      NSLog( @"openURLs: null url" );
+      continue;
+    }
     
-    _fileNeedsOpening = DbToFilesystemLink::addFileToOpenToDatabase( specfile );
-  }//if( instances.empty() )
-  
-  return loaded;
-}//openFile
+    std::string urlcontent;
+    
+    if( [url isFileURL] )
+    {
+      urlcontent = [url fileSystemRepresentation];
+      
+      NSLog( @"Will open specfile '%s'", urlcontent.c_str() );
+      
+      if( app_lock )
+      {
+        specapp->userOpenFromFileSystem( urlcontent );
+        specapp->triggerUpdate();
+      }
+    }else
+    {
+      NSString *absStr = [url absoluteString];
+      if( !absStr )
+      {
+        NSLog( @"openURLs: null absoluteString" );
+        continue;
+      }
+      
+      NSString *normalStr = [absStr stringByRemovingPercentEncoding];
+      urlcontent = normalStr ? [normalStr UTF8String] : [absStr UTF8String];
+      
+      if( app_lock )
+      {
+        specapp->handleAppUrl( urlcontent );
+        specapp->triggerUpdate();
+      }
+    }// if( [url isFileURL] ) / else
+    
+    
+    if( !app_lock && !urlcontent.empty() )
+    {
+      //The WebView may not have requested the URL yet when this function gets
+      //  called, in the case a user double clicks on a file in the Finder to launch
+      //  this app.  Therefore we will mark that we should open this file using the
+      //  URL argument (that uses an intermediate database to store file location).
+      NSLog( @"Will mark the file to open once a session is created" );
+      
+      // I dont quite understand why we need this next '[NSString alloc] initWithString', but we
+      //  do or the app will crash when opened wit ha long app-url, but not with a file...
+      //  This probably indicates something is wrong with my understanding of the obj-c the memory
+      //  management somehow, but I guess for now I'll cross my fingers, or put my head in the sand.
+      _fileNeedsOpening = [[NSString alloc] initWithString: [NSString stringWithUTF8String:urlcontent.c_str()]];
+      
+      NSLog( @"Initially fileNeedsOpening %@", _fileNeedsOpening );
+    }//if( !app_lock )
+    
+  }//for( NSURL *url in urls )
+}//openURLs
 
 
 -(BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender
@@ -190,7 +213,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 {
   NSLog(@"applicationWillFinishLaunching");
   _PreferenceDbPath = nil;
-  _fileNeedsOpening = -1;
+  _fileNeedsOpening = nil;
   _isServing = NO;
   _UrlServingOn = @"";
   _UrlUniqueId = nil;
@@ -249,8 +272,10 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   Wt::WString::setDefaultEncoding( Wt::UTF8 );
   
+  InterSpecServer::set_require_tokened_sessions( true );
+  
   /*
-   //Could maybe get rid of using XIB/NIB by manueally creating a window like:
+   //Could maybe get rid of using XIB/NIB by manually creating a window like:
    NSRect frame = NSMakeRect(0, 0, 300, 300);
    NSWindow *window  = [[[NSWindow alloc] initWithContentRect:frame
                  styleMask:NSBorderlessWindowMask
@@ -430,18 +455,28 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     //[_window setTitle: [NSString stringWithFormat:@"TRB InterSpec - %@", _UrlServingOn]];
     [_window setTitle: @"InterSpec"];
     
-    const int randint = arc4random();
-    _UrlUniqueId = [NSString stringWithFormat:@"%i", randint]; //@"123456789";
+    _UrlUniqueId = [self generateSessionToken];
     
-    InterSpecServer::add_allowed_session_token( [_UrlUniqueId UTF8String] );
+    InterSpecServer::add_allowed_session_token( [_UrlUniqueId UTF8String], InterSpecServer::SessionType::PrimaryAppInstance );
     
     NSString *actualURL = [NSString stringWithFormat:@"%@?apptoken=%@&primary=yes", _UrlServingOn, _UrlUniqueId];
     
-    if( _fileNeedsOpening > -1 )
+    
+    if( _fileNeedsOpening )
     {
-      actualURL = [NSString stringWithFormat:@"%@&specfile=%i", actualURL, _fileNeedsOpening ];
-      _fileNeedsOpening = -1;
-    }//if( fileNeedsOpening.size() )
+      NSLog( @"There isa  file that needs opening" );
+      NSLog( @"UrlUniqueId %@", _UrlUniqueId );
+      NSLog( @"fileNeedsOpening %@", _fileNeedsOpening );
+      
+      const std::string session_token = [_UrlUniqueId UTF8String];
+      const std::string file_path = [_fileNeedsOpening UTF8String];
+      
+      InterSpecServer::set_file_to_open_on_load( session_token.c_str(), file_path );
+      
+      NSLog( @"Have called InterSpecServer::set_file_to_open_on_load" );
+      
+      _fileNeedsOpening = nil;
+    }//if( fileNeedsOpening )
     
     //Note: this bit of code does not seem to work from the themeChanged notification.
 #ifdef AVAILABLE_MAC_OS_X_VERSION_10_14_AND_LATER   //preproccessor to compile on older macOS
@@ -951,9 +986,12 @@ createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
     {
       NSLog( @"didReceiveScriptMessage: request for external instance" );
       
+      NSString *sessionToken = [self generateSessionToken];
+      InterSpecServer::add_allowed_session_token( [sessionToken UTF8String], InterSpecServer::SessionType::ExternalBrowserInstance );
+      
       //url = InterSpecServer::urlBeingServedOn(); //will be empty if not serving
       const NSInteger port = InterSpecServer::portBeingServedOn();
-      NSString *url = [NSString stringWithFormat:@"http://localhost:%ld?primary=no&restore=no", port];
+      NSString *url = [NSString stringWithFormat:@"http://localhost:%ld?apptoken=%@&restore=no", port, sessionToken];
       //NSString *url = [NSString stringWithFormat:@"%@?primary=no&restore=no", _UrlServingOn];
       [[NSWorkspace sharedWorkspace] openURL: [NSURL URLWithString:url] ];
     }else
@@ -968,5 +1006,16 @@ createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
   // Could call back into the WebView using
   //[_InterSpecWebView evaluateJavaScript: @"someJavascript" completionHandler:nil];
 }//didReceiveScriptMessage
+
+
+-(NSString *)generateSessionToken
+{
+#define TOKEN_LEN 14
+  char data[TOKEN_LEN];
+  for( int index = 0; index < TOKEN_LEN; ++index )
+    data[index] = (char)('A' + (arc4random_uniform(26)));
+  
+  return [[NSString alloc] initWithBytes:data length:TOKEN_LEN encoding:NSUTF8StringEncoding];
+}//NSString *generateSessionToken
 
 @end

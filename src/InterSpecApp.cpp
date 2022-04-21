@@ -63,9 +63,6 @@
 #include <Wt/Chart/WCartesianChart>
 #include <Wt/WMessageResourceBundle>
 
-#if( ALLOW_URL_TO_FILESYSTEM_MAP && (BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_LOCAL_SERVER ) )
-#include <Wt/Utils>
-#endif
 
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
@@ -185,34 +182,25 @@ bool InterSpecApp::checkExternalTokenFromUrl()
       
       const int status = InterSpecServer::set_session_loaded( m_externalToken.c_str() );
       
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
-      m_primaryApp = false;
-#else
-      // Default to true if we have an app token; this is temporary until I get around to changing
-      //  android/ios targets to always give "primary=yes" URL argument
-      m_primaryApp = true;
-#endif
-            
-      for( const Http::ParameterMap::value_type &primary : parmap )
-      {
-        if( !primary.second.empty() && SpecUtils::iequals_ascii(primary.first, "primary") )
-        {
-          const string &val = primary.second.front();
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
-          m_primaryApp = ((status == 0)
-                           && (SpecUtils::iequals_ascii(val,"yes")
-                               || SpecUtils::iequals_ascii(val,"true")
-                               || SpecUtils::iequals_ascii(val,"1") ));
-#else
-          m_primaryApp = !(SpecUtils::iequals_ascii(val,"no")
-                            || SpecUtils::iequals_ascii(val,"false")
-                            || SpecUtils::iequals_ascii(val,"0") );
-#endif
-          break;
-        }//if( there is a 'primary' argument in the URL
-      }//for( loop over parameters to see if this _shouldnt_ be a primary app )
+      pair<bool,InterSpecServer::SessionType> session_type
+                                         = InterSpecServer::session_type( m_externalToken.c_str() );
       
-      return (allow_untokened || (status==0));
+      m_primaryApp = false;
+      if( session_type.first )
+      {
+        switch( session_type.second )
+        {
+          case InterSpecServer::SessionType::PrimaryAppInstance:
+            m_primaryApp = true;
+            break;
+            
+          case InterSpecServer::SessionType::ExternalBrowserInstance:
+            m_primaryApp = false;
+            break;
+        }//switch( session_type.second )
+      }//if( session_type.first )
+      
+      return (allow_untokened || ((status==0) && session_type.first));
     }
   }//for( const Http::ParameterMap::value_type &p : parmap )
   
@@ -337,6 +325,17 @@ void InterSpecApp::setupDomEnvironment()
   doJavaScript( "if (window.module) module = window.module;", false );
 #endif
   
+  // Pre-load some CSS we will likely encounter anyway; avoids some glitching when loading new
+  //  widgets.
+  //  (The CSS wont be re-loaded later, so maybe we dont hurt anything doing it here too - maybe)
+  WServer::instance()->schedule( 500, sessionId(), [](){
+    wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
+    wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
+    
+    // anything else relevant?
+    wApp->triggerUpdate();
+  } );
+  
   
 #if( IOS )
   //Check if device orientation and SafeAreas are specified in the URL.
@@ -451,76 +450,33 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   bool loadedSpecFile = false;
   const Http::ParameterMap &parmap = environment().getParameterMap();
   
-#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-#if( BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_LOCAL_SERVER )
-  //Allowing opening a file via the URL could potentially be a security issue
-  //  if serving over the web, or the port being served on is available outside
-  //  of the local computer (or user account).  Therefore we will only enable this
-  //  feature for test setups, and to allow the Electron based app to more reliably
-  //  open spectrum files when the user drags the spectrum to the app icon; the Electron
-  //  app serves on 127.0.0.1, which is only available on the local computer, so this 
-  //  provides some protection.
-  static_assert( !BUILD_FOR_WEB_DEPLOYMENT,
-                "Web deployment doesnt allow openeing spectrum files from URL" );
-  
-  const Http::ParameterMap::const_iterator specfileiter
-                                   = parmap.find( "specfilename" );
-  if( (specfileiter != parmap.end()) && specfileiter->second.size() )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  if( !m_externalToken.empty() )
   {
-    //An initial test says  environment().clientAddress() return "127.0.0.1".
-    //  ToDo: after a little more testing enable always testing the request is
-    //        from 127.0.0.1, AND for Electron version of app that that the 
-    //        value of "externalid" in the URL matches InterSpecServer::external_id()
-
-#if( BUILD_AS_LOCAL_SERVER )
-    const string &clientAddress = environment().clientAddress();
-    const string msg = "Will open file from URL.  ClientAddress='" + clientAddress + "',"
-                       " UriFileName='" + specfileiter->second[0].c_str() + "'";
-    wApp->log( "info" ) << msg;
-    cerr << msg << endl;
-    
-    if( !SpecUtils::icontains( clientAddress, "127.0.0.1" ) )
+    const string initial_file = InterSpecServer::file_to_open_on_load( m_externalToken );
+    if( !initial_file.empty() )
     {
-      string errormsg = "Security error: Request to open a file came from client-address '"
-                        + clientAddress + "' for file (uri encoded) '" + specfileiter->second[0]
-                        + "', will not do this, since not from 127.0.0.1.";
-      wApp->log( "error" ) << errormsg.c_str();
-      cerr << "From cerr: " << errormsg << endl;
-    }else
-    {
-#endif
       
-      const string filename = Wt::Utils::urlDecode( specfileiter->second[0] );
+      if( SpecUtils::istarts_with(initial_file, "interspec://") )
+      {
+        loadedSpecFile = handleAppUrl( initial_file );
+      }else
+      {
+        loadedSpecFile = m_viewer->userOpenFileFromFilesystem( initial_file );
+      }//if( SpecUtils::istarts_with(foregroundPath, "interspec://") )
       
-      loadedSpecFile = m_viewer->userOpenFileFromFilesystem( filename );
       if( loadedSpecFile )
-        cout << "Opened file specified by URL '" << filename << "'" << endl;
-      else
-        cerr << "Invalid specfile specified in URL '" << filename << "'" << endl;
-#if( BUILD_AS_LOCAL_SERVER )
-    }//
+      {
+        cout << "Opened file/url from initial request: '" << initial_file << "'" << endl;
+      }else
+      {
+        //userOpenFileFromFilesystem will call SpecMeasManager::displayInvalidFileMsg for us
+        cerr << "Invalid file/url from initial request: '" << initial_file << "'" << endl;
+      }
+    }//if( !initial_file.empty() )
+  }//if( !m_externalToken.empty() )
 #endif
-  }//if( speciter != parmap.end() )
-#endif //#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS )
-
   
-  const Http::ParameterMap::const_iterator speciter = parmap.find( "specfile" );
-  if( !loadedSpecFile && (speciter != parmap.end()) && speciter->second.size() )
-  {
-    try
-    {
-      const int id = std::stoi( speciter->second[0] );
-      std::cerr << "SpecViewerApp: Will try to open file with ID="
-      << id << " (" << speciter->second[0] << ")" << std::endl;
-      loadedSpecFile = m_viewer->loadFileFromDbFilesystemLink( id, false );
-    } catch( std::exception &e )
-    {
-      SpecMeasManager::displayInvalidFileMsg( "", e.what() );
-      cerr << "Invalid specfile" << endl;
-    }//try / catch
-  }//if( speciter != parmap.end() )
-#endif  //#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-
 
 #if( USE_DB_TO_STORE_SPECTRA )
   //Check to see if we should load the apps last saved state
@@ -678,13 +634,9 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
   
   
-#if( USE_DB_TO_STORE_SPECTRA && (ALLOW_URL_TO_FILESYSTEM_MAP || INCLUDE_ANALYSIS_TEST_SUITE ) )
+#if( USE_DB_TO_STORE_SPECTRA && INCLUDE_ANALYSIS_TEST_SUITE )
   bool userstate = true;
   Http::ParameterMap::const_iterator stateiter = parmap.end();
-  
-#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-  stateiter = parmap.find( "appstate" );
-#endif
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   userstate = (stateiter != parmap.end());
@@ -816,9 +768,11 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID )
-  m_sucessfullyLoadedSignal.reset( new Wt::JSignal<>( this, "SucessfullyLoadedConf" ) );
+  // TODO 20220405: in macOS app I see the error "Wt: decodeSignal(): signal 'of7g69f.SucessfullyLoadedConf' not exposed"
+  //                Not sure how to fix this, atm
+  m_sucessfullyLoadedSignal.reset( new Wt::JSignal<>( m_viewer, "SucessfullyLoadedConf", false ) );
   m_sucessfullyLoadedSignal->connect( this, &InterSpecApp::loadSuccesfullCallback );
-  doJavaScript( "setTimeout(function(){Wt.emit('" + id() + "',{name: 'SucessfullyLoadedConf'});}, 250);" );
+  doJavaScript( "setTimeout(function(){" + m_sucessfullyLoadedSignal->createCall() + "}, 250);" );
 #endif
 }//void setupWidgets()
 
@@ -930,7 +884,14 @@ bool InterSpecApp::isPrimaryWindowInstance()
   const string &externalid = app->m_externalToken;
   const int status = InterSpecServer::session_status( externalid.c_str() );
   
-  return ((status == 1) || (status == 2));
+  const pair<bool,InterSpecServer::SessionType> session_type = InterSpecServer::session_type( externalid.c_str() );
+  
+  //app->m_primaryApp should only be true if its SessionType::PrimaryAppInstance, but we'll double
+  //  check this, JIC
+  assert( !session_type.first || (session_type.second == InterSpecServer::SessionType::PrimaryAppInstance) );
+  
+  return (((status == 1) || (status == 2))
+           && (session_type.first && session_type.second == InterSpecServer::SessionType::PrimaryAppInstance));
 }//bool isPrimaryWindowInstance()
 
 
@@ -963,13 +924,6 @@ bool InterSpecApp::userOpenFromFileSystem( const std::string &path )
   return m_viewer->userOpenFileFromFilesystem( path );
 }//bool userOpenFromFileSystem(...)
 
-
-#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-bool InterSpecApp::openFileFromDbFileSystemLink( int index )
-{
-  return m_viewer->loadFileFromDbFilesystemLink( index, true );
-}//bool openFileFromDbFileSystemLink( int index );
-#endif
 
 std::set<InterSpecApp *> InterSpecApp::runningInstances()
 {
@@ -1239,7 +1193,7 @@ void InterSpecApp::prepareForEndOfSession()
 
 void InterSpecApp::clearSession()
 {
-#if( USING_ELECTRON_NATIVE_MENU )
+#if( BUILD_AS_ELECTRON_APP )
   // As a workaround setup a function ElectronUtils::requestNewCleanSession() that
   //  sends websocket message to node land to clear menus, and load a new session
   //  but with argument "restore=no"
@@ -1288,6 +1242,26 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
 #endif
   cerr << errmsg << endl;
 }//void miscSignalHandler( const std::string &signal )
+
+
+bool InterSpecApp::handleAppUrl( const std::string &url )
+{
+  try
+  {
+    m_viewer->handleAppUrl( url );
+  }catch( std::exception &e )
+  {
+    passMessage( "Error handling deep-link: " + string(e.what()),
+                 "", WarningWidget::WarningMsgHigh );
+    cerr << "InterSpecApp::handleAppUrl: invalid URL: " << e.what() << endl;
+    wApp->log( "error" ) << "InterSpecApp::handleAppUrl: invalid URL: " << e.what();
+    
+    return false;
+  }// try / catch to process th URL
+  
+  return true;
+}//bool handleAppUrl( std::string url )
+
 
 
 void InterSpecApp::finalize()

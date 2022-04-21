@@ -317,12 +317,15 @@ function createWindow () {
     if( interspec_url ) {
       const session_token_buf = crypto.randomBytes(16);
       session_token = session_token_buf.toString('hex');
-      interspec.addSessionToken( session_token );
+      interspec.addPrimarySessionToken( session_token );
       
-      let url_to_load = interspec_url  + "?apptoken=" + session_token + "&primary=yes";
+    
+      let url_to_load = interspec_url  + "?apptoken=" + session_token;
       if( initial_file_to_open && ((typeof initial_file_to_open === 'string') || initial_file_to_open.length==1) ) {
         let filepath = (typeof initial_file_to_open === 'string') ? initial_file_to_open : initial_file_to_open[0];
-        url_to_load += "&specfilename=" + encodeURI(filepath);
+        
+        interspec.setInitialFileToLoad( session_token, filepath );
+        
         initial_file_to_open = null;
       }
 
@@ -374,7 +377,7 @@ function createWindow () {
   
   
   // Open the developer tools.
-  mainWindow.webContents.openDevTools({mode: "bottom"});
+  //mainWindow.webContents.openDevTools({mode: "bottom"});
 
   // A nice way to have the renderes console.log show up on the command line
   //  when running for development.
@@ -520,7 +523,7 @@ function createWindow () {
   
     if( currentURL.includes("apptoken="+session_token) ){
       //We have found main window.  Lets be conservative though and not require
-      //  the URL have this options.  We could also look to require "primary=yes"
+      //  the URL have this options.  We could also look to require
     }
   
     page_loaded = true;
@@ -640,9 +643,9 @@ function messageToNodeJs( token, msg_name, msg_data ){
     console.log("New session token: " + session_token );
     
     interspec.removeSessionToken( token );
-    interspec.addSessionToken( session_token );
+    interspec.addPrimarySessionToken( session_token );
     doMenuStuff(mainWindow);
-    mainWindow.loadURL( interspec_url + "?apptoken=" + session_token + "&restore=no&primary=yes");
+    mainWindow.loadURL( interspec_url + "?apptoken=" + session_token + "&restore=no");
   }else if( msg_name == 'SessionFinishedLoading' ){
     wtapp_loaded = true;
     
@@ -656,7 +659,6 @@ function messageToNodeJs( token, msg_name, msg_data ){
     }
     
     //ToDo: should make sure token is what we want
-    //ToDo: just aff &specfilename="UriEncodedFilename" to URL argument... (but make sure ALLOW_URL_TO_FILESYSTEM_MAP is enabled)
     
     if( initial_file_to_open )
     {
@@ -668,9 +670,15 @@ function messageToNodeJs( token, msg_name, msg_data ){
     var timestamp = '[' + Date.now() + '] ';
     console.log( timestamp + msg_data );
   }else if( msg_name == 'OpenInExternalBrowser' ){
-    console.log( `Will try to open ${interspec_url} in external browser` );
+    const ext_session_token_buf = crypto.randomBytes(16);
+    const ext_session_token = ext_session_token_buf.toString('hex');
+    interspec.addExternalSessionToken( ext_session_token );
     
-    electron.shell.openExternal(interspec_url);
+    const ext_url = interspec_url + "?apptoken=" + ext_session_token + "&restore=no"
+    
+    console.log( `Will try to open ${ext_url} in external browser` );
+    
+    electron.shell.openExternal(ext_url);
     console.log( `Should have opened external URL...` );
     
     /*
@@ -771,6 +779,7 @@ app.on('ready', function(){
   console.log( 'path.dirname(require.main.filename)="' + path.dirname(require.main.filename) + '"');
   console.log( 'basedir="' + basedir + '"');
 
+  interspec.setRequireSessionToken( true );
   interspec.setMessageToNodeJsCallback( messageToNodeJs );
   interspec.setBrowseForDirectoryCallback( browseForDirectory );
   

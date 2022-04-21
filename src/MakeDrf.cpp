@@ -1001,7 +1001,7 @@ namespace
                 //- Check for "*Source.lib" file in application directory,
                 //  and if found, scan through for the source identified in previous line, and put in date
                 vector<string> base_paths{ InterSpec::staticDataDirectory(), SpecUtils::get_working_path() };
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
                 try{ base_paths.push_back( InterSpec::writableDataDirectory() ); } catch(...){}
 #endif
                 vector<string> source_lib_files;
@@ -1514,7 +1514,8 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
     for( DrfSpecFileSample *fs : fileWidget->fileSamples() )
     {
       for( DrfPeak *p : fs->peaks() )
-        p->m_peakPreviewShow.connect( boost::bind(&MakeDrf::peakPreviewShown, this, _1)  );
+        p->m_peakPreviewShow.connect( boost::bind(&MakeDrf::peakPreviewShown, this,
+                                                  boost::placeholders::_1)  );
     }
     
   }//for( loop over opened files )
@@ -1570,7 +1571,8 @@ AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt
     
   WPushButton *saveAs = new WPushButton( "Store/Export...", window->footer() );
   saveAs->clicked().connect( makeDrfWidget, &MakeDrf::startSaveAs );
-  makeDrfWidget->intrinsicEfficiencyIsValid().connect( boost::bind( &WPushButton::setEnabled, saveAs, _1 ) );
+  makeDrfWidget->intrinsicEfficiencyIsValid().connect( boost::bind( &WPushButton::setEnabled, saveAs,
+                                                                   boost::placeholders::_1 ) );
   saveAs->disable();
     
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
@@ -2483,7 +2485,9 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
   
   //ToDo: I'm not entirely sure the next line protects against updateFwhmEqn()
   //  not being called if this widget is deleted before fit is done.
-  auto updater = boost::bind( &MakeDrf::updateFwhmEqn, this, _1, _2, _3, static_cast<int>(fnctnlForm), fitid );
+  auto updater = boost::bind( &MakeDrf::updateFwhmEqn, this, boost::placeholders::_1,
+                             boost::placeholders::_2, boost::placeholders::_3,
+                             static_cast<int>(fnctnlForm), fitid );
   
   const string thisid = id();
   
@@ -2592,7 +2596,10 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
   
   //ToDo: I'm not entirely sure the next line protects against updateEffEqn()
   //  not being called if this widget is deleted before fit is done. (it doesnt!)
-  auto updater = boost::bind( &MakeDrf::updateEffEqn, this, _1, _2, _3, _4, _5, fitid, _6 );
+  auto updater = boost::bind( &MakeDrf::updateEffEqn, this, boost::placeholders::_1,
+                             boost::placeholders::_2, boost::placeholders::_3,
+                             boost::placeholders::_4, boost::placeholders::_5,
+                             fitid, boost::placeholders::_6 );
   const string thisid = id();
   
   

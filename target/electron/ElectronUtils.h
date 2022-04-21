@@ -61,10 +61,18 @@ extern "C"
    */
   LIB_INTERFACE(void) interspec_kill_server();
   
-  /** ToDo: allow adding of mutliple tokens; should also add a mechanism to
-   mark the token as having been loaded, so it cant be reused.
+  /** Sets wether or not a session token is required in order to load an instance.
+   Currently the default is false, until this is called - this may change.
    */
-  LIB_INTERFACE(void) interspec_add_allowed_session_token( const char *session_token );
+  LIB_INTERFACE(void) interspec_set_require_session_token( const bool require_token );
+
+  /** Sets token of a primary window session to allow.
+   */
+  LIB_INTERFACE(void) interspec_add_allowed_primary_session_token( const char *session_token );
+
+  /** Sets token of an external session (i.e., in the users browser) to allow.
+  */
+  LIB_INTERFACE(void) interspec_add_allowed_external_session_token( const char *session_token );
   
   /** Returns 0 if authorized but not alive, 1 if session is alive, -1 if dead, -2 if nor authorized. */
   LIB_INTERFACE(int) interspec_remove_allowed_session_token( const char *session_token );
@@ -90,6 +98,16 @@ extern "C"
    */
   LIB_INTERFACE(int) interspec_open_file( const char *session_token, const char *files_json );
 
+
+  /** Set the initial file, or app-url (e.g., "interspec://...") to load when constructing
+   a new session with the specified token.  Must be called after adding an allowed token,
+   but before the session is loaded.
+   
+   Return true on success, or false there was an error (invalid token, or session already loaded)
+   
+   */
+  LIB_INTERFACE(bool) interspec_set_initial_file_to_open( const char *session_token, const char *file_path );
+
   /** Returns if using the Electron-native menus.  If you are using the HTML-electron menu, will return false.
    */
   LIB_INTERFACE(bool) interspec_using_electron_menus();
@@ -100,35 +118,32 @@ extern "C"
 
 namespace ElectronUtils
 {
-#if( USING_ELECTRON_NATIVE_MENU )
-  /** Requests main.js to load a new clean session (i.e., don restore any state)
-   This is a workaround to when the user requests a new session, the normal
-   mechanism in c++ creates duplicate Electron menu items...
+  /** Tells main.js to load a new clean session (i.e., don restore any state).
+   This gives main.js a chance to clear menus (if using native Electron menus),
+   and generate a new session token to use with the new session.
    
    Must be called from within a WApplication thread (e.g., wApp is valid).
    
-   @returns whether message was succesfully sent or not.
+   @returns whether message was successfully sent or not.
    */
   bool requestNewCleanSession();
-#endif
   
   /** Notify parent application (main.js, or objective-c) that the session has
    loaded.
    
    Must be called from within a WApplication thread (e.g., wApp is valid).
    
-   @returns whether message was succesfully sent or not.
+   @returns whether message was successfully sent or not.
    
-   Note: main.js will wait till recieveing this notification before asking the
+   Note: main.js will wait till receiving this notification before asking the
    session to open any files the OS requested.
    */
   bool notifyNodeJsOfNewSessionLoad();
 
-  /**
-   
-   Returns true if it thinks message was sent.
+  /** Sends main.js a message via InterSpecAddOn::send_nodejs_message(...) in another
+   asio thread.
    */
-  bool send_nodejs_message( const std::string &msg_name, const std::string &msg_data );
+  void send_nodejs_message( const std::string msg_name, const std::string msg_data );
 
 
   /**

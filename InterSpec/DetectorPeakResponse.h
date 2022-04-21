@@ -390,6 +390,36 @@ public:
                                         std::vector<std::shared_ptr<DetectorPeakResponse>> &drfs );
   
   
+  /** Creates a DetectorPeakResponse from "App URL" data.
+   Takes in just the "query" portion of the URL (i.e., the data after the '?' character), that
+   comes from, say, a QR code.
+   
+   Throws exception on failure, otherwise returns a valid DRF.
+   */
+  static std::shared_ptr<DetectorPeakResponse> parseFromAppUrl( const std::string &url_query );
+  
+  /** Converts this DRF to a string that can be used as the "query" portion of a URL.
+   
+   This function will try to fit the entire DRF within the limits imposed by a QR code, but
+   if that isnt possible, it will then try the following until things fit:
+   - Remove: last used, DrfSource, parents hash, created data, energy range, hash, description,
+             uncertainties, FWHM info, and finally name
+   - Admit failure and throw an exception.
+   
+   In the future it may be implemented that the description is only cut down as much as needed,
+   or all characters converted to QR-ascii so the available number of characters is larger.
+   
+   If this DRF is not valid, will throw an exception.
+   */
+  std::string toAppUrl() const;
+  
+  /** Decodes the "query" portion of a URL to form the DRF.
+   
+   If URL is not a valid DRF, throws exception.
+   */
+  void fromAppUrl( std::string url_query );
+  
+  
   /**
    if form==kGadrasResolutionFcn then coefs must have 3 entries
    if form==kSqrtPolynomial then coefs must not be empty,
@@ -471,6 +501,22 @@ public:
       indicated anywhere in InterSpec, but may be in the future.
    */
   void setEnergyRange( const double lower, const double upper );
+  
+  /** The upper energy (in keV) the DRF is valid to.
+   
+   By default, if not known, this and upperEnergy will be 0.0.
+   
+   Note: this limit is not currently enforced/used anywhere in InterSpec.
+   */
+  double lowerEnergy() const;
+  
+  /** The upper energy (in keV) the DRF is good to.
+   
+   By default, if not known, this and lowerEnergy will be 0.0.
+   
+   Note: this limit is not currently enforced/used anywhere in InterSpec.
+   */
+  double upperEnergy() const;
   
   /** Updated the #m_lastUsedUtc member variable to current time.  Does not
       save to database.
