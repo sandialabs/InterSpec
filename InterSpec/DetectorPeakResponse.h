@@ -220,7 +220,12 @@ public:
     UserCreatedDrf = 7,
     
     /** The DRF was included in a spectrum (N42) file. */
-    FromSpectrumFileDrf = 8
+    FromSpectrumFileDrf = 8,
+    
+    /** Relative (or intrinsic) efficiency DRF from a CSV or TSV from InterSpecs static "data"
+     directory.
+     */
+    DefaultRelativeEfficiencyDrf = 9,
   };//enum DrfSource
   
 public:
