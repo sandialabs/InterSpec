@@ -631,6 +631,7 @@ TerminalModel::TerminalModel( InterSpec* viewer )
     
     addDropDownListHeader( "Spectrum Viewer Commands" );
     addCommand( "setRange"  , SetEnergyRangeCommand );
+    addCommand( "setYRange"  , SetYaxisRangeCommand );
     addDropDownListSeparator();
     
     addDropDownListHeader( "Nuclide Commands" );
@@ -1584,40 +1585,91 @@ std::string TerminalModel::commandRegex() { return commandRegexStr;  }
 
 void TerminalModel::addCommand(const std::string& command, CommandType type)
 {
-    commandRegexStr.insert(2, command + "|");              // insert new command into the command-checking regex
-    m_commandMap.insert ( CommandPair (command, type) );     // add new command to the map of known commands
+  commandRegexStr.insert(2, command + "|");              // insert new command into the command-checking regex
+  m_commandMap.insert ( CommandPair (command, type) );     // add new command to the map of known commands
     
-    switch ( m_commandMap.at(command) ) {                                  // add to helper list of commands
-        case VarmapCommand:         addDropDownListItem( "showDefinedVariables( optional_variable )", "defined vars map varmap",
-                                                        "Output <b>information about defined variables</b>. Can specify a <i>single</i> variable, if given as an argument, or output <b>all variable values</b> if no argument is specified." );
-            break;
-        case SearchPeakCommand:     addDropDownListItem( "searchPeak( energy )", "addpeak add peaks searchfor",
-                                                        "Searches for and <b>adds peak</b> onto the spectrum at the specified <i>energy</i> value." );
-            break;
-        case DeletePeakCommand:     addDropDownListItem( "deletePeak( energy )", "removepeak remove peaks deletepeaks",
-                                                        "Searches for and <b>deletes peak</b> at the specified <i>energy</i> value in the spectrum." );
-            break;
-        case RefitPeakCommand:      addDropDownListItem( "refitPeak( energy )", "refitpeaks refitting",
-                                                        "Searches for and <b>refits peak</b> at the specified <i>energy</i> value in the spectrum." );
-            break;
-        case DarkenCommand:         addDropDownListItem( "darken()", "command line cli black interface",
-                                                        "<b>Darkens</b> the text areas for the Terminal and <b><font color='white'>whitens</font></b> the text font." );
-            break;
-        case LightenCommand:        addDropDownListItem( "lighten()", "command line cli white interface",
-                                                        "<b><font color='white'>Whitens</font></b> the text areas for the Terminal and <b>darkens</b> the font. Currently set to default." );
-            break;
-        case SetNuclideCommand:     addDropDownListItem( "setNuclide( nuclide, optional_age )", "nuclides age reference photopeaks",
-                                                        "Sets the <i>nuclide</i> and <i>age</i> inside the ‘Reference Photopeaks Tab’. If the <i>age</i> is not specified, then the default age is provided. If the nuclide could not be found, then nothing happens." );
-            break;
-        case ClearVarCommand:       addDropDownListItem( "clearVariable( variable )", "variables delete map vars variablemap varmap",
-                                                        "Deletes a stored <i>variable</i>. If the <i>variable</i> does not exist, then an <b><font color='red'>error message</font></b> is returned." );
-            break;
-        case SetEnergyRangeCommand: addDropDownListItem( "setRange( lower_energy, upper_energy )", "x zooming energy range energyrange axis zoom",
-                                                        "Sets the displayed x-axis range of the current spectrum. Automatically detects the <i>lower-x</i> and <i>upper-x</i> bounds. Outputs if action was a success or not." );
-            break;
-        default: break;
-    }
-}
+  switch( m_commandMap.at(command) )
+  {                                  // add to helper list of commands
+    case VarmapCommand:
+      addDropDownListItem( "showDefinedVariables( optional_variable )",
+                           "defined vars map varmap",
+                           "Output <b>information about defined variables</b>."
+                           " Can specify a <i>single</i> variable, if given as an argument,"
+                           " or output <b>all variable values</b> if no argument is specified." );
+    break;
+      
+    case SearchPeakCommand:
+      addDropDownListItem( "searchPeak( energy )",
+                           "addpeak add peaks searchfor",
+                           "Searches for and <b>adds peak</b> onto the spectrum at the"
+                           " specified <i>energy</i> value." );
+    break;
+    
+    case DeletePeakCommand:
+      addDropDownListItem( "deletePeak( energy )",
+                           "removepeak remove peaks deletepeaks",
+                           "Searches for and <b>deletes peak</b> at the specified <i>energy</i>"
+                           " value in the spectrum." );
+    break;
+    
+    case RefitPeakCommand:
+      addDropDownListItem( "refitPeak( energy )",
+                           "refitpeaks refitting",
+                           "Searches for and <b>refits peak</b> at the specified <i>energy</i>"
+                           " value in the spectrum." );
+    break;
+    
+    case DarkenCommand:
+      addDropDownListItem( "darken()",
+                           "command line cli black interface",
+                           "<b>Darkens</b> the text areas for the Terminal and"
+                           " <b><font color='white'>whitens</font></b> the text font." );
+    break;
+    
+    case LightenCommand:
+      addDropDownListItem( "lighten()",
+                           "command line cli white interface",
+                           "<b><font color='white'>Whitens</font></b> the text areas for the"
+                           " Terminal and <b>darkens</b> the font. Currently set to default." );
+    break;
+    
+    case SetNuclideCommand:
+      addDropDownListItem( "setNuclide( nuclide, optional_age )",
+                           "nuclides age reference photopeaks",
+                           "Sets the <i>nuclide</i> and <i>age</i> inside the"
+                           " ‘Reference Photopeaks Tab’. If the <i>age</i> is not specified,"
+                           " then the default age is provided. If the nuclide could not be found,"
+                           " then nothing happens." );
+    break;
+    
+    case ClearVarCommand:
+      addDropDownListItem( "clearVariable( variable )",
+                           "variables delete map vars variablemap varmap",
+                           "Deletes a stored <i>variable</i>. If the <i>variable</i>"
+                           " does not exist, then an <b><font color='red'>error message</font></b>"
+                           " is returned." );
+    break;
+    
+    case SetEnergyRangeCommand:
+      addDropDownListItem( "setRange( lower_energy, upper_energy )",
+                           "x zooming energy range energyrange axis zoom",
+                           "Sets the displayed x-axis range of the current spectrum."
+                           " Outputs if action was a success or not." );
+    break;
+        
+        
+    case SetYaxisRangeCommand:
+      addDropDownListItem( "setYRange( lower_y_counts, upper_y_counts )",
+                           "y axis zooming counts range yrange axis zoom",
+                           "Sets the displayed y-axis range of the current spectrum."
+                           " Outputs if action was a success or not." );
+    break;
+        
+        
+    default: break;
+  }//switch( m_commandMap.at(command) )
+  
+}//void TerminalModel::addCommand(const std::string& command, CommandType type)
 
 // Executes inputted command from user
 std::string TerminalModel::doCommand(const std::string& input)
@@ -1631,6 +1683,7 @@ std::string TerminalModel::doCommand(const std::string& input)
     switch ( m_commandMap.at(command) ) {
         case VarmapCommand:         return variableMapStr( arguments );
         case SetEnergyRangeCommand: return setEnergyRange( arguments );
+        case SetYaxisRangeCommand:  return setYRange( arguments );
         case SearchPeakCommand:     return searchforPeak ( arguments );
         case DeletePeakCommand:     return deletePeak    ( arguments );
         case RefitPeakCommand:      return refitPeak     ( arguments );
@@ -1766,6 +1819,55 @@ std::string TerminalModel::setEnergyRange( const std::string& arguments )
     }
     return os.str();
 }
+
+
+std::string TerminalModel::setYRange( const std::string& arguments )
+{
+  // Regex matching arguments: must be two valid expressions separated by commas inside parentheses
+  std::ostringstream os;
+  const std::regex argumentRegex = std::regex ( "^\\s*([\\s*\\S*\\s*]*)\\s*\\,\\s*([\\s*\\S*\\s*]*)\\s*$" );
+  
+  if (!std::regex_match(arguments, argumentRegex)) {
+    // User provided invalid arguments, display proper error message
+    os << "The arguments (" << arguments << ") are not valid arguments for the function setYRange( lower_counts, upper_counts )";
+    return os.str();
+  }
+  
+  try
+  {
+    std::smatch match;
+    std::regex_match(arguments, match, argumentRegex);
+    
+    float lower, upper;
+    m_parser->SetExpr(match[1]);
+    lower = m_parser->Eval().GetFloat();
+    
+    m_parser->SetExpr(match[2]);
+    upper = m_parser->Eval().GetFloat();
+    
+    if (lower > upper)
+      std::swap(lower, upper);
+    
+    if( std::abs(upper - lower) <= 0.01 )
+      throw mup::ParserError( "Invalid arguments for function (setYRange). Lower and upper bound"
+                              " must not have difference less than or equal to 0.01." );
+    
+    const bool success = m_viewer->setYAxisRange(lower, upper);
+    
+    if( success )
+      os << "Now setting count range to [" << lower << ", " << upper << "] counts.";
+    else
+      os << "Setting to count range [" << lower << ", " << upper << "] not fully be fulfilled.";
+  } catch ( const mup::ParserError& e ) {
+    os << "Error code " << e.GetCode() << ": " << e.GetMsg();
+    
+  } catch ( const std::exception& e ) {
+    os << "Error: " << e.what();
+  }
+  return os.str();
+  
+}//string TerminalModel::setYRange(string)
+
 
 // Command: searchpeak - does the work of double-clicking a peak inside the spectrum
 // Syntax: searchpeak( x )

@@ -743,7 +743,8 @@ public:
       m_devPairs->setHeight( 100 );
     }
     
-    m_devPairs->changed().connect( boost::bind( &EnergyCalTool::userChangedDeviationPair, m_tool, this, _1 ) );
+    m_devPairs->changed().connect( boost::bind( &EnergyCalTool::userChangedDeviationPair, m_tool, this,
+                                               boost::placeholders::_1 ) );
   }//CalDisplay( constructor )
   
   SpecUtils::SpectrumType spectrumType() const { return m_cal_type; }
@@ -1526,7 +1527,10 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_peakModel->rowsInserted().connect( this, &EnergyCalTool::updateFitButtonStatus );
   m_peakModel->layoutChanged().connect( this, &EnergyCalTool::updateFitButtonStatus );
   
-  m_interspec->displayedSpectrumChanged().connect( boost::bind( &EnergyCalTool::displayedSpectrumChanged, this, _1, _2, _3, _4 ) );
+  m_interspec->displayedSpectrumChanged().connect(
+              boost::bind( &EnergyCalTool::displayedSpectrumChanged,
+                           this, boost::placeholders::_1, boost::placeholders::_2,
+                          boost::placeholders::_3, boost::placeholders::_4 ) );
   
   m_renderFlags |= EnergyCalToolRenderFlags::FullGuiUpdate;
   scheduleRender();

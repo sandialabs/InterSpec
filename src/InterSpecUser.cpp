@@ -635,7 +635,7 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
   sb->setValue( value );
   sb->valueChanged().connect(
                       boost::bind( &InterSpecUser::setPreferenceValue<double>,
-                                   user, name, _1, viewer ) );
+                                   user, name, boost::placeholders::_1, viewer ) );
   
   const string sbid = sb->id();
   
@@ -671,7 +671,7 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
   
   sb->valueChanged().connect(
                              boost::bind( &InterSpecUser::setPreferenceValue<int>,
-                                         user, name, _1, viewer ) );
+                                         user, name, boost::placeholders::_1, viewer ) );
   
   const string sbid = sb->id();
   

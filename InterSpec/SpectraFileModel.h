@@ -99,8 +99,8 @@ public:
   float real_time;
   bool contained_neutron_;
   int  sample_number;
-  float gamma_counts_;
-  float neutron_counts_;
+  double gamma_counts_;
+  double neutron_counts_;
   SpecUtils::SourceType spectra_type;
   Wt::WString speed_;
   std::vector<Wt::WString> detector_names;

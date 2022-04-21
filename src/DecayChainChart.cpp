@@ -148,8 +148,10 @@ DecayChainChart::DecayChainChart( WContainerWidget *parent  )
   wApp->useStyleSheet( "InterSpec_resources/DecayChainChart.css" );
   addStyleClass( "DecayChainChart" );
   
-  m_showDecayParticles.connect( boost::bind( &DecayChainChart::showDecayParticleInfo, this, _1 ) );
-  m_showDecaysThrough.connect( boost::bind( &DecayChainChart::showDecaysThrough, this, _1 ) );
+  m_showDecayParticles.connect( boost::bind( &DecayChainChart::showDecayParticleInfo, this,
+                                            boost::placeholders::_1 ) );
+  m_showDecaysThrough.connect( boost::bind( &DecayChainChart::showDecaysThrough, this,
+                                           boost::placeholders::_1 ) );
 }//DecayChainChart constructor
 
 

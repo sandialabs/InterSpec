@@ -229,7 +229,8 @@ ColorSelect::ColorSelect( Wt::WFlags<ColorSelectOptions> options, Wt::WContainer
     doJavaScript( init_js );
   }//if( m_usingNative ) / else
   
-  m_userSelectedColor.connect( boost::bind( &ColorSelect::colorSetCallback, this, _1 ) );
+  m_userSelectedColor.connect( boost::bind( &ColorSelect::colorSetCallback, this,
+                                           boost::placeholders::_1 ) );
 }//ColorSelect(...)
 
 

@@ -673,7 +673,8 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
   
   std::vector<IsoFitStruct>::iterator pos;
   pos = std::lower_bound( m_nuclides.begin(), m_nuclides.end(), newIso,
-                          boost::bind( &SourceFitModel::compare, _1, _2, m_sortColumn, m_sortOrder ) );
+                          boost::bind( &SourceFitModel::compare, boost::placeholders::_1,
+                                      boost::placeholders::_2, m_sortColumn, m_sortOrder ) );
 
   const int row = static_cast<int>( pos - m_nuclides.begin() );
   beginInsertRows( WModelIndex(), row, row );
@@ -867,18 +868,27 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
     return;
   }//if( !dirty )
 
+  set<const SandiaDecay::Nuclide *> prenucs, postnucs;
+  
   vector<const SandiaDecay::Nuclide *> preisotopes, postisotopes;
   for( const IsoFitStruct &ifs : m_nuclides )
+  {
+    prenucs.insert( ifs.nuclide );
     preisotopes.push_back( ifs.nuclide );
+  }
   
   const size_t npreisotopes = m_nuclides.size();
   
   repopulateIsotopes();
   
   for( const IsoFitStruct &ifs : m_nuclides )
+  {
+    postnucs.insert( ifs.nuclide );
     postisotopes.push_back( ifs.nuclide );
+  }
   
-  if( m_sameAgeForIsotopes && (preisotopes.size() != postisotopes.size()) )
+  
+  if( m_sameAgeForIsotopes && (prenucs != postnucs) )
   {
     vector<const SandiaDecay::Nuclide *> removednucs, addednucs;
     for( const SandiaDecay::Nuclide *nuc : preisotopes )
@@ -1106,10 +1116,19 @@ Wt::WFlags<Wt::ItemFlag> SourceFitModel::flags( const Wt::WModelIndex &index ) c
       break;
       
     case kAge:
-//      if( iso.shieldingIsSource )
-//        return WFlags<ItemFlag>();
-      if( iso.ageDefiningNuc && iso.ageDefiningNuc!=iso.nuclide )
+      if( !iso.ageIsFittable && !iso.ageDefiningNuc )
         return WFlags<ItemFlag>();
+      
+      if( iso.ageDefiningNuc )
+      {
+        for( const IsoFitStruct &isodef : m_nuclides )
+        {
+          if( isodef.nuclide == iso.ageDefiningNuc )
+            return isodef.ageIsFittable ? WFlags<ItemFlag>(Wt::ItemIsEditable) : WFlags<ItemFlag>();
+        }
+        return WFlags<ItemFlag>();
+      }//if( iso.ageDefiningNuc )
+      
       return WFlags<ItemFlag>(Wt::ItemIsEditable);
     case kFitAge:
 //      if( iso.shieldingIsSource )
@@ -1582,19 +1601,24 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
           
           if( m_sameAgeForIsotopes )
           {
+            const SandiaDecay::Nuclide *ageNuc = iso.ageDefiningNuc ? iso.ageDefiningNuc : iso.nuclide;
+            assert( ageNuc );
+            
             for( size_t i = 0; i < m_nuclides.size(); ++i )
             {
               const int thisrow = static_cast<int>(i);
-              if( thisrow == row )
-                continue;
               
-              if( m_nuclides[i].ageDefiningNuc == iso.nuclide )
+              if( (m_nuclides[i].ageDefiningNuc == ageNuc) || (m_nuclides[i].nuclide == ageNuc) )
               {
-                WModelIndex ind = createIndex(thisrow, kAge,(void *)0);
-                dataChanged().emit( ind, ind );
+                m_nuclides[i].age = iso.age;
+                
+                WModelIndex ind = createIndex( thisrow, kAge, (void *)0 );
+                if( thisrow != row )  // We'll emit for 'row' later on
+                  dataChanged().emit( ind, ind );
+                
                 if( iso.ageUncertainty >= 0.0 )
                 {
-                  ind = createIndex(thisrow, kAgeUncertainty,(void *)0);
+                  ind = createIndex( thisrow, kAgeUncertainty, (void *)0 );
                   dataChanged().emit( ind, ind );
                 }//if( iso.ageUncertainty >= 0.0 )
               }//if( nuc.ageDefiningNuc == iso.nuclide )
@@ -1788,7 +1812,8 @@ void SourceFitModel::sort( int column, Wt::SortOrder order )
   m_sortOrder = order;
   m_sortColumn = Columns( column );
   std::sort( m_nuclides.begin(), m_nuclides.end(),
-             boost::bind( &SourceFitModel::compare, _1, _2, m_sortColumn, m_sortOrder ) );
+             boost::bind( &SourceFitModel::compare, boost::placeholders::_1,
+                         boost::placeholders::_2, m_sortColumn, m_sortOrder ) );
   layoutChanged().emit();
 }//void sort(...)
 
@@ -4574,8 +4599,10 @@ void ShieldingSourceDisplay::startModelUpload()
   WFileUpload *upload = new WFileUpload( contents );
   upload->setInline( false );
   
-  upload->uploaded().connect( boost::bind( &ShieldingSourceDisplay::finishModelUpload, this, window, upload ) );
-  upload->fileTooLarge().connect( boost::bind( &ShieldingSourceDisplay::modelUploadError, this, _1, window ) );
+  upload->uploaded().connect( boost::bind( &ShieldingSourceDisplay::finishModelUpload, this, window,
+                                          upload ) );
+  upload->fileTooLarge().connect( boost::bind( &ShieldingSourceDisplay::modelUploadError, this,
+                                              boost::placeholders::_1, window ) );
   upload->changed().connect( upload, &WFileUpload::upload );
   
     
@@ -6125,8 +6152,10 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   
   select->setGeometry( geometry() );
   
-  select->addShieldingBefore().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingBefore, this, _1 ) );
-  select->addShieldingAfter().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingAfter, this, _1 ) );
+  select->addShieldingBefore().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingBefore,
+                                                    this, boost::placeholders::_1 ) );
+  select->addShieldingAfter().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingAfter,
+                                                   this, boost::placeholders::_1 ) );
   
   //connect up signals of select and such
   select->m_arealDensityEdit->valueChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
@@ -6139,9 +6168,15 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   select->materialModified().connect( this, &ShieldingSourceDisplay::materialModifiedCallback );
   select->materialChanged().connect( this, &ShieldingSourceDisplay::materialChangedCallback );
 
-  select->addingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback, this, select, _1, _2 ) );
-  select->removingIsotopeAsSource().connect( boost::bind( &ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback, this, select, _1, _2 ) );
-  select->activityFromVolumeNeedUpdating().connect( boost::bind( &ShieldingSourceDisplay::updateActivityOfShieldingIsotope, this, _1, _2 ) );
+  select->addingIsotopeAsSource().connect( boost::bind(
+      &ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback, this,
+      select, boost::placeholders::_1, boost::placeholders::_2 ) );
+  select->removingIsotopeAsSource().connect( boost::bind(
+      &ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback, this,
+      select, boost::placeholders::_1, boost::placeholders::_2 ) );
+  select->activityFromVolumeNeedUpdating().connect( boost::bind(
+      &ShieldingSourceDisplay::updateActivityOfShieldingIsotope, this,
+      boost::placeholders::_1, boost::placeholders::_2 ) );
 
   try
   {
@@ -6821,7 +6856,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
         }
       }//for( size_t ansnucn = 0; ansnucn < answer->numNuclides(); ++ansnucn )
       
-      assert( age_defining_index >= 0 );
+      //assert( age_defining_index >= 0 );
       if( age_defining_index < 0 )  //shouldnt ever happen, but JIC
         throw runtime_error( "Error finding age defining nuclide for " + nuclide->symbol
                              + " (should have been " + ageDefiningNuc->symbol + ")" );

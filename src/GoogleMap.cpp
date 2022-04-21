@@ -477,11 +477,16 @@ void GoogleMap::init()
   setLayout( layout );
   
   layout->addWidget( m_map, 0, 0 );
-  m_map->clicked().connect( boost::bind( &wasClicked, _1, boost::ref(m_clicked) ) );
+  m_map->clicked().connect( boost::bind( &wasClicked,
+                                        boost::placeholders::_1, boost::ref(m_clicked) ) );
 
   m_mapExtents[0] = m_mapExtents[1] = m_mapExtents[2] = m_mapExtents[3] = -999.9f;
   if( !!m_map->m_mapGpsExtentFound )
-    m_map->m_mapGpsExtentFound->connect( boost::bind(&GoogleMap::updateMapGpsCoords, this, _1, _2, _3, _4 ) );
+    m_map->m_mapGpsExtentFound->connect( boost::bind(&GoogleMap::updateMapGpsCoords, this,
+                                                     boost::placeholders::_1,
+                                                     boost::placeholders::_2,
+                                                     boost::placeholders::_3,
+                                                     boost::placeholders::_4 ) );
 }//void init()
 
 void GoogleMap::updateMapGpsCoords( const double upperLat, const double leftLng,
