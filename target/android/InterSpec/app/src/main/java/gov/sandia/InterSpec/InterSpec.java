@@ -23,9 +23,16 @@
 
 package gov.sandia.InterSpec;
 
+import android.Manifest;
 import android.app.Activity;
+import android.app.DownloadManager;
+import android.content.pm.PackageManager;
+import android.content.DialogInterface;
 import android.content.res.AssetManager;
 import android.os.Bundle;
+import androidx.appcompat.app.AlertDialog;
+import androidx.core.app.ActivityCompat;
+
 import android.webkit.*;
 import android.net.*;
 import android.content.*;
@@ -373,6 +380,30 @@ public class InterSpec extends Activity
       webview.setWebChromeClient(new WtWebChromeClient());
 
 
+      webview.setDownloadListener(new DownloadListener() {
+        @Override
+        public void onDownloadStart(final String url, final String userAgent, String contentDisposition, String mimetype, long contentLength)
+        {
+          Log.d("onDownloadStart", "Entering onDownloadStart");
+          //checking runtime permissions
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    == PackageManager.PERMISSION_GRANTED) {
+
+              downloadDialog(url,userAgent,contentDisposition,mimetype);
+            } else {
+
+              //requesting permissions
+              ActivityCompat.requestPermissions(InterSpec.this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1);
+            }
+          }
+          else {
+            //Code for devices below API 23 or Marshmallow
+            downloadDialog(url,userAgent,contentDisposition,mimetype);
+          }
+
+        }
+      });
 
       if( Intent.ACTION_VIEW.equals(action) )
       {
@@ -495,6 +526,56 @@ public class InterSpec extends Activity
       });
 	}//if( Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT ) 
   }//public void onCreate(Bundle savedInstanceState)
+
+
+  public void downloadDialog(final String url,final String userAgent,String contentDisposition,String mimetype)
+  {
+    //filename using url.
+    final String filename = URLUtil.guessFileName(url,contentDisposition,mimetype);
+    //creates alertdialog
+    AlertDialog.Builder builder=new AlertDialog.Builder(InterSpec.this);
+    //alertdialog title
+    builder.setTitle("Download");
+    //alertdialog message
+    builder.setMessage("Do you want to save " +filename);
+
+    builder.setPositiveButton("Yes", new DialogInterface.OnClickListener()
+    {
+      @Override
+      public void onClick(DialogInterface dialog, int which)
+      {
+        //DownloadManager.Request created with url.
+        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+        //cookie
+        String cookie=CookieManager.getInstance().getCookie(url);
+        //Add cookie and User-Agent to request
+        request.addRequestHeader("Cookie",cookie);
+        request.addRequestHeader("User-Agent",userAgent);
+        //file scanned by MediaScannar
+        request.allowScanningByMediaScanner();
+        //Download is visible and its progress, after completion too.
+        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+        //DownloadManager created
+        DownloadManager downloadManager=(DownloadManager)getSystemService(DOWNLOAD_SERVICE);
+        //saves file in Download folder
+        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename);
+        //download enqued
+        downloadManager.enqueue(request);
+      }
+    });
+    builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+      @Override
+      public void onClick(DialogInterface dialog, int which)
+      {
+        //cancel the dialog if Cancel clicks
+        dialog.cancel();
+      }
+
+    });
+    //alertdialog shows
+    builder.create().show();
+
+  }
 
 
   @Override
