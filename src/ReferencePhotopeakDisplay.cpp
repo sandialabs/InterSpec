@@ -257,7 +257,7 @@ namespace
             return GammaInteractionCalc::transmition_coefficient_generic(an, ad, energy);
           };
           //= boost::bind( &GammaInteractionCalc::transmition_coefficient_generic,
-          //          atomic_number, areal_density, _1 );
+          //          atomic_number, areal_density, boost::placeholders::_1 );
         }else
         {
           shared_ptr<const Material> material = shielding->currentMaterial();
@@ -284,7 +284,7 @@ namespace
             return GammaInteractionCalc::transmition_coefficient_material( material.get(), energy, thick );
           };
           //= boost::bind( &GammaInteractionCalc::transmition_coefficient_material,
-          //             material.get(), _1, thick ); //note: if you use this, make sure the lifetime of material is long-enough
+          //             material.get(), boost::placeholders::_1, thick ); //note: if you use this, make sure the lifetime of material is long-enough
           
         }//if( is generic material ) / else
       }catch( std::exception &e )
@@ -668,8 +668,8 @@ void DecayParticleModel::sort( int column, Wt::SortOrder order )
   vector<RowData> data = m_data;
 
   boost::function<bool(const RowData&,const RowData&)> comparer;
-  comparer = boost::bind(&DecayParticleModel::less_than, _1, _2,
-                                                  m_sortColumn, m_sortOrder);
+  comparer = boost::bind(&DecayParticleModel::less_than, boost::placeholders::_1,
+                         boost::placeholders::_2, m_sortColumn, m_sortOrder);
 
   stable_sort( data.begin(), data.end(), comparer );
   m_data.swap( data );
@@ -1001,7 +1001,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     w->setFloatSide( Wt::Right );
   }
   
-  m_colorSelect->cssColorChanged().connect( boost::bind( &ReferencePhotopeakDisplay::userColorSelectCallback, this, _1 ) );
+  m_colorSelect->cssColorChanged().connect( boost::bind(
+                                               &ReferencePhotopeakDisplay::userColorSelectCallback,
+                                               this, boost::placeholders::_1 ) );
   m_currentlyShowingNuclide.lineColor = m_lineColors[0];
   
   WContainerWidget *whatToShow = new WContainerWidget();
@@ -1963,7 +1965,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
       const float areal_density = static_cast<float>(m_shieldingSelect->arealDensity());
       att_coef_fcn
           = boost::bind( &GammaInteractionCalc::transmition_coefficient_generic,
-                         atomic_number, areal_density, _1 );
+                         atomic_number, areal_density, boost::placeholders::_1 );
     }else
     {
       material = m_shieldingSelect->material();
@@ -1972,7 +1974,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
         const float thick = static_cast<float>(m_shieldingSelect->thickness());
         att_coef_fcn
           = boost::bind( &GammaInteractionCalc::transmition_coefficient_material,
-                          material.get(), _1, thick );
+                          material.get(), boost::placeholders::_1, thick );
       }//if( !!material )
     }//if( isGenericMaterial ) / else
 

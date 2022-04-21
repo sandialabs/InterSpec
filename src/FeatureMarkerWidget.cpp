@@ -135,7 +135,8 @@ void FeatureMarkerWidget::init()
   m_comptonAngle->setRange( 0, 180 );
   m_comptonAngle->setValue( 180 );
   m_viewer->setComptonPeakAngle( 180 );
-  m_comptonAngle->valueChanged().connect( boost::bind( &InterSpec::setComptonPeakAngle, m_viewer, _1 ) );
+  m_comptonAngle->valueChanged().connect( boost::bind( &InterSpec::setComptonPeakAngle, m_viewer,
+                                                      boost::placeholders::_1 ) );
   
   m_comptonEdge = new WCheckBox( "Compton Edge", this );
   m_comptonEdge->setInline( false );

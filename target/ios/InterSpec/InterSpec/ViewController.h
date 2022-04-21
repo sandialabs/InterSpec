@@ -33,7 +33,7 @@
 @property (nonatomic) BOOL isServing;
 @property (nonatomic) BOOL appHasGoneIntoBackground;
 @property (nonatomic) BOOL appComminFromBackground;
-@property (nonatomic) int dbIndexOfFileToOpen;
+@property (nonatomic) NSString *fileNeedsOpening;
 @property (nonatomic) NSString *UrlServingOn;
 @property (nonatomic) NSString *UrlUniqueId;
 
@@ -71,7 +71,7 @@
 //initiatedByFrame:(WKFrameInfo *)frame
 //completionHandler:(void (^)(void))completionHandler;
 
-
+-(NSString *)generateSessionToken;
 
 -(BOOL)startServer;
 -(BOOL)openSpectrumFile:(NSURL *)url;

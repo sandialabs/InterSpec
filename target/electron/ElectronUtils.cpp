@@ -54,8 +54,6 @@ using namespace std;
 namespace ElectronUtils
 {
 
-  
-#if( USING_ELECTRON_NATIVE_MENU )
 bool requestNewCleanSession()
 {
   auto app = dynamic_cast<InterSpecApp *>(wApp);
@@ -63,20 +61,23 @@ bool requestNewCleanSession()
   const string oldexternalid = app ? app->externalToken() : string();
   if( !oldexternalid.empty() )
   {
-    //should check ns_externalid==oldexternalid
-    string js;
-    //Speed up loading by defering calls to Menu.setApplicationMenu() until app
-    //  is fully reloaded.
-    js += "$(window).data('HaveTriggeredMenuUpdate',null);";
-    
     //Have electron reload the page.
     ElectronUtils::send_nodejs_message("NewCleanSession", "");
+    
+#if( USING_ELECTRON_NATIVE_MENU )
+    //should check ns_externalid==oldexternalid
+    string js;
+    //Speed up loading by deferring calls to Menu.setApplicationMenu() until app
+    //  is fully reloaded.
+    js += "$(window).data('HaveTriggeredMenuUpdate',null);";
     
     //Just in case the page reload doesnt go through, make sure menus will get updated eventually
     //  (this shouldnt be necassary, right?)
     js += "setTimeout(function(){$(window).data('HaveTriggeredMenuUpdate',true);},5000);";
     
     wApp->doJavaScript(js);
+#endif
+    
     return true;
   }else
   {
@@ -85,7 +86,7 @@ bool requestNewCleanSession()
 
   return false;
 }//void requestNewCleanSession()
-#endif //USING_ELECTRON_NATIVE_MENU
+
   
 bool notifyNodeJsOfNewSessionLoad()
 {
@@ -105,17 +106,24 @@ bool notifyNodeJsOfNewSessionLoad()
 }//bool notifyNodeJsOfNewSessionLoad( const std::string sessionid )
 
 
-bool send_nodejs_message( const std::string &msg_name, const std::string &msg_data )
+void send_nodejs_message( const std::string msg_name, const std::string msg_data )
 {
   auto app = dynamic_cast<InterSpecApp *>(wApp);
   if( !app )
   {
     cerr << "Error: send_nodejs_message: wApp is null!!!" << endl;
-    return false;
+    return;
   }
   
   const string session_token = app->externalToken();
-  return InterSpecAddOn::send_nodejs_message( session_token, msg_name, msg_data );
+  
+  Wt::WServer *server = Wt::WServer::instance();
+  assert( server );
+  
+  Wt::WIOService &io = server->ioService();
+  io.boost::asio::io_service::post( [=](){
+    InterSpecAddOn::send_nodejs_message( session_token, msg_name, msg_data );
+  } );
 }//void send_nodejs_message(...)
 
 
@@ -230,7 +238,7 @@ bool browse_for_directory( const std::string &window_title,
   assert( server );
 
   Wt::WIOService &io = server->ioService();
-  io.post( worker );
+  io.boost::asio::io_service::post( worker );
   
   return true;
 }//bool browse_for_directory(...)
@@ -238,7 +246,6 @@ bool browse_for_directory( const std::string &window_title,
 }//namespace ElectronUtils
 
 
-#if( BUILD_AS_ELECTRON_APP )
 
 int interspec_start_server( const char *process_name, const char *userdatadir,
                             const char *basedir, const char *xml_config_path )
@@ -369,10 +376,21 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
 }//int interspec_start_server( int argc, char *argv[] )
 
 
-void interspec_add_allowed_session_token( const char *session_id )
+void interspec_set_require_session_token( const bool require_token )
 {
-  InterSpecServer::add_allowed_session_token( session_id );
-}//void interspec_add_allowed_session_token( const char *session_id )
+  InterSpecServer::set_require_tokened_sessions( require_token );
+}
+
+void interspec_add_allowed_primary_session_token( const char *session_token )
+{
+  InterSpecServer::add_allowed_session_token( session_token, InterSpecServer::SessionType::PrimaryAppInstance );
+}//void interspec_add_allowed_primary_session_token( const char *session_id )
+
+
+void interspec_add_allowed_external_session_token( const char *session_token )
+{
+  InterSpecServer::add_allowed_session_token( session_token, InterSpecServer::SessionType::ExternalBrowserInstance );
+}
 
 
 int interspec_remove_allowed_session_token( const char *session_token )
@@ -393,6 +411,20 @@ int interspec_open_file( const char *session_token, const char *files_json )
   return InterSpecServer::open_file_in_session( session_token, files_json );
 }
 
+bool interspec_set_initial_file_to_open( const char *session_token, const char *file_path )
+{
+  try
+  {
+    InterSpecServer::set_file_to_open_on_load( session_token, file_path );
+  }catch( std::exception &e )
+  {
+    cerr << "interspec_set_initial_file_to_open: " << e.what() << endl;
+    return false;
+  }
+  
+  return true;
+}
+
 
 bool interspec_using_electron_menus()
 {
@@ -409,6 +441,3 @@ void interspec_kill_server()
 {
   InterSpecServer::killServer();
 }//void interspec_kill_server()
-
-
-#endif //#if( BUILD_AS_ELECTRON_APP )

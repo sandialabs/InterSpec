@@ -24,12 +24,13 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 
+
 @interface AppDelegate : NSObject <NSApplicationDelegate,WKNavigationDelegate,WKUIDelegate,NSURLDownloadDelegate,WKScriptMessageHandler>
 @property (nonatomic,strong) WKWebView *InterSpecWebView;
 //@property (nonatomic, strong) WKWebViewConfiguration *webConfig;
 
 @property (nonatomic) BOOL isServing;
-@property (nonatomic) int fileNeedsOpening;
+@property (strong, nonatomic) NSString *fileNeedsOpening;
 @property (strong, nonatomic) NSString *UrlServingOn;
 @property (strong, nonatomic) NSString *UrlUniqueId;
 @property (strong, nonatomic) NSString *PreferenceDbPath;
@@ -43,11 +44,14 @@
 -(void)setDbDirectory;
 
 -(void) terminated: (NSNotification *)notification;
--(BOOL) application:(NSApplication *)theApplication openFile:(NSString *)filename;
+-(void) application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls;
 -(BOOL) applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender;
 -(void)themeChanged:(NSNotification *) notification;
 
 -(void)application:(NSApplication *)app didDecodeRestorableState:(NSCoder *)coder;
 -(void)application:(NSApplication *)app willEncodeRestorableState:(NSCoder *)coder;
 -(void)applicationWillTerminate:(NSNotification *)notification;
+
+
+-(NSString *)generateSessionToken;
 @end

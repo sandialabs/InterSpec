@@ -422,7 +422,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     
     transaction.commit();
     layout->addWidget( tablecontainer, ++row, 0 );
-    layout->setRowStretch( row - 1, 1 );
+    layout->setRowStretch( row, 1 );
     
     m_timeLabel = new WText( ns_empty_descrip_label );
     m_timeLabel->addStyleClass( "SnapshotTime" );

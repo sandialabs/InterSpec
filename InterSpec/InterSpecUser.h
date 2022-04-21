@@ -1221,9 +1221,10 @@ void InterSpecUser::addCallbackWhenChanged( const std::string &name,
 {
   
   auto s = std::make_shared<Wt::Signals::signal<void(boost::any)>>();
-  Wt::Signals::connection conn = s->connect( boost::bind(method, target, _1) );
+  Wt::Signals::connection conn = s->connect( boost::bind(method, target, boost::placeholders::_1) );
   auto conn_ptr = std::make_shared<Wt::Signals::connection>( std::move(conn) );
-  boost::function<void(boost::any)> fcn = boost::bind( &InterSpecUser::EmitBindSignal, s, _1 );
+  boost::function<void(boost::any)> fcn = boost::bind( &InterSpecUser::EmitBindSignal, s,
+                                                      boost::placeholders::_1 );
   
   addCallbackWhenChanged( name, fcn, conn_ptr );
 }//InterSpecUser::addCallbackWhenChanged(...)

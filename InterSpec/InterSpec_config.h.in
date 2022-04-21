@@ -63,7 +63,6 @@
 #cmakedefine01 BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT
 
 #cmakedefine01 DRAW_GAMMA_LINES_LOG_AND_LIN
-#cmakedefine01 ALLOW_URL_TO_FILESYSTEM_MAP
 #cmakedefine01 USE_DB_TO_STORE_SPECTRA
 #cmakedefine01 SUPPORT_ZIPPED_SPECTRUM_FILES
 #cmakedefine01 USE_SPECRUM_FILE_QUERY_WIDGET
@@ -130,5 +129,10 @@ void log_developer_error( const char *location, const char *error );
 
 #define DATE_TIME_FORMAT_STR "dd/MM/yy hh:mm:ss"
 
+
+// Prevent some compile warnings from using like _1 instead of
+//  boost::placeholders::_1 (I think this must be in the Wt
+//  headers, since our code uses the namespace prefixes)
+#define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
 #endif // InterSpec_config_h

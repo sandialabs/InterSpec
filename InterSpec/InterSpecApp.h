@@ -142,17 +142,18 @@ public:
   /** Returns true if this app instance corresponds to the primary window instance. */
   static bool isPrimaryWindowInstance();
   
+  /** Get a pointer to the app-instance, using the external token to identify the instance.
+   
+   Returns nullptr on failure.
+   
+   Note that you still need to take an WApplication::UpdateLock before accessing the app instance,
+   and you may need to call WApplication::triggerUpdate() to cause changes to propagate to user.
+   */
   static InterSpecApp *instanceFromExtenalToken( const std::string &externalToken );
 #endif
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
-  
-  //
   bool userOpenFromFileSystem( const std::string &path );
-
-#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-  bool openFileFromDbFileSystemLink( int index );
-#endif
   
   static std::set<InterSpecApp *> runningInstances();
   
@@ -205,6 +206,24 @@ public:
   virtual void clearSession();
     
   void miscSignalHandler( const std::string &signal );
+  
+  /** Handles "deep" urls.
+   
+   Meant to handle URLs with the scheme "interspec://...", that would be passed to the application
+   by the OS, like when a QR code is scanned.
+   
+   The prefix "interspec://" is optional, and may be omitted.
+   
+   Currently just passes through to InterSpec::handleAppUrl(...)
+   
+   Returns if the URL was successfully used.
+   
+   As of 20220405: currently being implemented and not fully fleshed out; in the future could
+                   implement to handle spectra, display decay data for a isotope, DRFs, etc.  Could
+                   also have an argument to the regular browsers URL that this function could
+                   process.
+   */
+  bool handleAppUrl( const std::string &url );
   
 protected: 
 

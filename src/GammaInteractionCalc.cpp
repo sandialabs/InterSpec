@@ -4614,7 +4614,8 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       if( ad_in_gcm2 > sm_max_areal_density_g_cm2 )
         areal_density = static_cast<float>(sm_max_areal_density_g_cm2*PhysicalUnits::g/PhysicalUnits::cm2);
   
-      att_coef_fcn = boost::bind( &transmition_coefficient_generic, atomic_number, areal_density, _1 );
+      att_coef_fcn = boost::bind( &transmition_coefficient_generic, atomic_number, areal_density,
+                                 boost::placeholders::_1 );
     }else
     {
       double thickness = 0.0;
@@ -4642,7 +4643,8 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       }//switch( m_geometry )
       
       shield_outer_rad += thickness;
-      att_coef_fcn = boost::bind( &transmition_coefficient_material, material, _1, static_cast<float>(thickness) );
+      att_coef_fcn = boost::bind( &transmition_coefficient_material, material,
+                                 boost::placeholders::_1, static_cast<float>(thickness) );
     }//if( generic material ) / else
 
 /*

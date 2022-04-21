@@ -164,10 +164,6 @@
 #include "target/ios/InterSpec/FileHandling.h"
 #endif 
 
-#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-#include "InterSpec/DbToFilesystemLink.h"
-#endif
-
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 #include "InterSpec/SpectrumViewerTester.h"
 #endif
@@ -207,7 +203,7 @@ using namespace std;
 std::mutex InterSpec::sm_staticDataDirectoryMutex;
 std::string InterSpec::sm_staticDataDirectory = "data";
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 std::mutex InterSpec::sm_writableDataDirectoryMutex;
 std::string InterSpec::sm_writableDataDirectory = "";
 #endif  //if( not a webapp )
@@ -749,7 +745,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
     
-    m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact, _1, _2 ) );
+    m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
+                                                   boost::placeholders::_1, boost::placeholders::_2 ) );
     
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
     
@@ -887,7 +884,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->showHistogramIntegralsInLegend( true );
   m_spectrum->shiftAltKeyDragged().connect( this, &InterSpec::handleShiftAltDrag );
 
-//  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::createPeakEdit, this, _1) );
+//  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::createPeakEdit, this, boost::placeholders::_1) );
   m_rightClickMenu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
   m_rightClickMenu->aboutToHide().connect( this, &InterSpec::rightClickMenuClosed );
   
@@ -962,13 +959,20 @@ InterSpec::InterSpec( WContainerWidget *parent )
     }//switch( i )
   }//for( loop over right click menu items )
   
-  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::handleRightClick, this, _1, _2, _3, _4 ) );
-  m_spectrum->chartClicked().connect( boost::bind( &InterSpec::handleLeftClick, this, _1, _2, _3, _4 ) );
+  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::handleRightClick, this,
+                                                  boost::placeholders::_1, boost::placeholders::_2,
+                                                  boost::placeholders::_3, boost::placeholders::_4 ) );
+  m_spectrum->chartClicked().connect( boost::bind( &InterSpec::handleLeftClick, this,
+                                                  boost::placeholders::_1, boost::placeholders::_2,
+                                                  boost::placeholders::_3, boost::placeholders::_4 ) );
   
-//  m_spectrum->controlKeyDragged().connect( boost::bind( &InterSpec::findPeakFromUserRange, this, _1, _2 ) );
+//  m_spectrum->controlKeyDragged().connect( boost::bind( &InterSpec::findPeakFromUserRange, this, boost::placeholders::_1, boost::placeholders::_2 ) );
   
-  m_spectrum->shiftKeyDragged().connect( boost::bind( &InterSpec::excludePeaksFromRange, this, _1, _2 ) );
-  m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this, _1 ) );
+  m_spectrum->shiftKeyDragged().connect( boost::bind( &InterSpec::excludePeaksFromRange, this,
+                                                     boost::placeholders::_1,
+                                                     boost::placeholders::_2 ) );
+  m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this,
+                                                     boost::placeholders::_1 ) );
 
   m_timeSeries->setHidden( true );
   m_chartResizer->setHidden( m_timeSeries->isHidden() );
@@ -1045,7 +1049,7 @@ std::string InterSpec::staticDataDirectory()
   return sm_staticDataDirectory;
 }
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 void InterSpec::setWritableDataDirectory( const std::string &dir )
 {
   std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
@@ -1556,12 +1560,12 @@ void InterSpec::initHotkeySignal()
         case 'h': // Help dialog
         case 'i': // Info about InterSpec
         case 'k': // Clear showing reference photopeak lines
+        case 's': // Store
         case 'l': // Log/Linear
           if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
             return;
           code = e.key.charCodeAt(0);
           break;
-        
         default:  //Unused - nothing to see here - let the event propagate up
           return;
       }//switch( e.key )
@@ -1591,7 +1595,7 @@ void InterSpec::initHotkeySignal()
   const string jsfcn = "document.addEventListener('keydown'," + wApp->javaScriptClass() + ".appKeyDown);";
   doJavaScript( jsfcn );
   
-  m_hotkeySignal->connect( boost::bind( &InterSpec::hotKeyPressed, this, _1 ) );
+  m_hotkeySignal->connect( boost::bind( &InterSpec::hotKeyPressed, this, boost::placeholders::_1 ) );
 }//void initHotkeySignal()
 
 
@@ -1625,6 +1629,10 @@ void InterSpec::hotKeyPressed( const unsigned int value )
       
       case 'l': case 'L':
         setLogY( !m_spectrum->yAxisIsLog() );
+        break;
+        
+      case 's': case 'S':
+        stateSave();
         break;
         
       case 37: case 38: case 39: case 40:
@@ -2047,7 +2055,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
   deque<PeakModel::PeakShrdPtr >::const_iterator iter;
   
 //  boost::function<bool(const PeakModel::PeakShrdPtr &, const PeakModel::PeakShrdPtr &)> meansort;
-//  meansort = boost::bind( &PeakModel::compare, _1, _2, PeakModel::kMean, Wt::AscendingOrder );
+//  meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2, PeakModel::kMean, Wt::AscendingOrder );
 //  iter = lower_bound( peaks->begin(), peaks->end(), peak, meansort );
   iter = std::find( peaks->begin(), peaks->end(), peak );
   
@@ -5557,7 +5565,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
     
-    m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact, _1, _2 ) );
+    m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
+                                                   boost::placeholders::_1, boost::placeholders::_2 ) );
     
     //WMenuItem * peakManTab =
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
@@ -7192,8 +7201,9 @@ void InterSpec::createTerminalWidget()
     m_toolsTabs->tabClosed().connect( this, &InterSpec::handleTerminalWindowClose );
   }else
   {
-    m_terminalWindow = new AuxWindow( "Terminal" );
-    m_terminalWindow->setClosable( true );
+    m_terminalWindow = new AuxWindow( "Terminal",
+                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                      | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
     
     m_terminalWindow->rejectWhenEscapePressed();
     m_terminalWindow->finished().connect( this, &InterSpec::handleTerminalWindowClose );
@@ -7447,7 +7457,8 @@ void InterSpec::showCompactFileManagerWindow()
 {
  auto *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::Tabbed );
 
-  m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact, _1, _2 ) );
+  m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
+                                                 boost::placeholders::_1, boost::placeholders::_2 ) );
   
   AuxWindow *window = new AuxWindow( "Select Opened Spectra to Display", (AuxWindowProperties::TabletNotFullScreen) );
   window->disableCollapse();
@@ -8161,7 +8172,8 @@ void InterSpec::emitDetectorChanged()
 void InterSpec::initOsColorThemeChangeDetect()
 {
   m_osColorThemeChange.reset( new JSignal<std::string>( this, "OsColorThemeChange", true ) );
-  m_osColorThemeChange->connect( boost::bind( &InterSpec::osThemeChange, this, _1 ) );
+  m_osColorThemeChange->connect( boost::bind( &InterSpec::osThemeChange, this,
+                                             boost::placeholders::_1 ) );
   
   LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsSetupOsColorThemeChangeJs);
   
@@ -8468,9 +8480,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           furtherworkers.push_back( worker );
         }//if( we could try to load a detector type )
         
-        m_detectorChangedConnection = m_detectorChanged.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), _1 ) );
-        m_detectorModifiedConnection = m_detectorModified.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), _1 ) );
-        m_displayedSpectrumChanged = m_displayedSpectrumChangedSignal.connect( boost::bind( &SpecMeas::displayedSpectrumChangedCallback, meas.get(), _1, _2, _3, _4 ) );
+        m_detectorChangedConnection = m_detectorChanged.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), boost::placeholders::_1 ) );
+        m_detectorModifiedConnection = m_detectorModified.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), boost::placeholders::_1 ) );
+        m_displayedSpectrumChanged = m_displayedSpectrumChangedSignal.connect( boost::bind( &SpecMeas::displayedSpectrumChangedCallback, meas.get(), boost::placeholders::_1,
+            boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4 ) );
       }//if( meas )
 
       m_dataMeasurement = meas;
@@ -9052,144 +9065,55 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
 }//bool userOpenFileFromFilesystem( const std::string filepath )
 
 
-#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBackound )
+void InterSpec::handleAppUrl( std::string url )
 {
-  try
-  {
-    using namespace DbToFilesystemLink;
-    FileIdToLocation fileinfo = getFileToOpenToInfo( id );
-    //        const int nsec = fileinfo.m_utcRequestTime.secsTo( WDateTime::currentDateTime() );
-    
-    string username = fileinfo.m_userName.toUTF8();
-    SpecUtils::ireplace_all( username, "_phone", "" );
-    SpecUtils::ireplace_all( username, "_tablet", "" );
-    SpecUtils::ireplace_all( username, "_mobile", "" );
-    
-    const bool sameUser = (username.empty() ? true
-                           : (m_user->m_userName == username) );
-    
-    if( !fileinfo.m_foregroundFilePath.empty()
-       && SpecUtils::is_file(fileinfo.m_foregroundFilePath.toUTF8())
-       //            && fileinfo.m_utcRequestTime.isValid()
-       //            && nsec < 300 && nsec >= 0
-       && !fileinfo.m_fufilled
-       && sameUser )
-    {
-      if( m_fileManager )
-      {
-        typedef map<SpecUtils::SpectrumType,string> TypeToPathMap;
-        TypeToPathMap specToLoadMap;
-        
-        specToLoadMap[SpecUtils::SpectrumType::Foreground] = fileinfo.m_foregroundFilePath.toUTF8();
-        specToLoadMap[SpecUtils::SpectrumType::SecondForeground] = fileinfo.m_secondForegroundFilePath.toUTF8();
-        specToLoadMap[SpecUtils::SpectrumType::Background] = fileinfo.m_backgroundFilePath.toUTF8();
-        
-        for( TypeToPathMap::const_iterator iter = specToLoadMap.begin();
-            iter != specToLoadMap.end(); ++iter )
-        {
-          SpecUtils::SpectrumType type = iter->first;
-          const string filepath = iter->second;
-          
-          if( filepath.empty() || !SpecUtils::is_file(filepath) )
-            continue;
-          
-          const string displayName = SpecUtils::filename( filepath );
-          
-          try
-          {
-            std::shared_ptr<SpecMeas> meas;
-            std::shared_ptr<SpectraFileHeader> header;
-            
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
-            {
-              //This is a hack to allow opening zip files on iOS.
-              //  Currently the selection GUI looks horrible, and the spectrum
-              //  is always loaded as foreground.
-              const string extension = SpecUtils::file_extension(filepath);
-              bool iszip = SpecUtils::iequals_ascii(extension, ".zip");
-              
-              if( !iszip ) //check for zip files magic number to more-confirm
-              {
-#ifdef _WIN32
-                const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(filepath);
-                ifstream test( wfilepath.c_str() );
-#else
-                ifstream test( filepath.c_str() );
-#endif
-                iszip = (test.get()==0x50 && test.get()==0x4B
-                         && test.get()==0x03 && test.get()==0x04);
-              }//if( !iszip )
-              
-              if( iszip )
-              {
-                //ToDo: I feel uneasy creating an invalid SpecUtils::SpectrumType, should fix up function call signaure
-                if( fileManager()->handleZippedFile( displayName, filepath, SpecUtils::SpectrumType(-1) ) )
-                  return true;
-              }//if( iszip )
-            }
-#endif
-            
-            header = std::make_shared<SpectraFileHeader>( m_user, true, this );
-            meas = header->setFile( displayName, filepath, SpecUtils::ParserType::Auto );
-            
-            
-            bool couldBeBackground = askIfBackound;
-            if( !m_dataMeasurement || !meas
-                || meas->uuid() == m_dataMeasurement->uuid() )
-            {
-              couldBeBackground = false;
-            }else if( askIfBackound )
-            {
-              couldBeBackground &= (type == SpecUtils::SpectrumType::Foreground);
-              couldBeBackground &= (m_dataMeasurement->instrument_id() == meas->instrument_id());
-              couldBeBackground &= (m_dataMeasurement->num_gamma_channels() == meas->num_gamma_channels());
-            }//if( !m_dataMeasurement || !meas )
-            
-            
-            if( !couldBeBackground )
-            {
-              finishLoadUserFilesystemOpenedFile( meas, header, type );
-              
-              
-              cout << "Will load file '" << filepath
-                   << "' requested to be loaded at "
-                   << fileinfo.m_utcRequestTime.toString(DATE_TIME_FORMAT_STR)
-                   << " (currently "
-                   << WDateTime::currentDateTime().toString(DATE_TIME_FORMAT_STR)
-                   << ")" << endl;
-            }else
-            {
-              promptUserHowToOpenFile( meas, header );
-            }//
-          }catch( std::exception &e )
-          {
-            cerr << "InterSpec::loadFileFromDbFilesystemLink(...) caught: "
-                 << e.what() << endl;
-            passMessage( "There was an error loading " + displayName,
-                         "", WarningWidget::WarningMsgHigh );
-          }//try / catch
-          
-//          m_fileManager->loadFromFileSystem( fileinfo.m_foregroundFilePath.toUTF8(), SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::Auto );
-        }//for( loop over files to potentially open )
-      }//if( m_fileManager )
-      
-    }else
-    {
-      cerr << "Failed to find entry in FileIdToLocation with id=" << id
-      << endl;
-      return false;
-    }//if( file_entry ) / else
-  }catch( std::exception &e )
-  {
-    cerr << "\n\tFailed to load file indicated by 'specfile' argument."
-    << "  Caught: " << e.what() << endl << endl;
-    return false;
-  }//try / catch
+  //Get rid of (optional) leading "interspec://", so URL will look like: 'drf/specify?v=1&n=MyName&"My other Par"'
+  const string scheme = "interspec://";
+  if( SpecUtils::istarts_with(url, scheme) )
+    url = url.substr(scheme.size());
   
-  return true;
-}//bool loadFileFromDbFilesystemLink( int id )
-#endif
+  // For the moment, we will require there to be a query string, even if its empty.
+  string::size_type q_start_pos = url.find( '?' );
+  string::size_type q_end_pos = q_start_pos + 1;
+  if( q_start_pos == string::npos )
+  {
+    // Since '?' isnt a QR alphanumeric code also allow the URL encoded value of it, "%3F"
+    q_start_pos = url.find( "%3F" );
+    if( q_start_pos == string::npos )
+      q_start_pos = url.find( "%3f" );
+    
+    if( q_start_pos != string::npos )
+      q_end_pos = q_start_pos + 3;
+  }//
+    
+  if( q_start_pos == string::npos )
+    throw runtime_error( "App URL did not contain the host/path component that specifies the intent"
+                         " of the URL (e.g., what tool to use, or what info is contained in the URL)." );
+  
+  // the q_pos+1 should be safe, even if q_pos is last character in string.
+  if( url.find(q_end_pos, 'q') != string::npos )
+    throw runtime_error( "App URL contained more than one '?' character, which isnt allowed" );
+    
+  const string host_path = url.substr( 0, q_start_pos );
+  const string::size_type host_end = host_path.find( '/' );
+  const string host = (host_end == string::npos) ? host_path : host_path.substr(0,host_end);
+  const string path = (host_end == string::npos) ? string("") : host_path.substr(host_end+1);
+  const string query_str = url.substr( q_end_pos + 1 );
+  
+  cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
+  
+  if( SpecUtils::iequals_ascii(host,"drf") )
+  {
+    if( !SpecUtils::iequals_ascii(path,"specify") )
+      throw runtime_error( "App 'drf' URL with path '" + path + "' not supported." );
+    
+    DrfSelect::handle_app_url_drf( query_str );
+  }else
+  {
+    throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );
+  }
+}//void handleAppUrl( std::string url )
+
 
 
 void InterSpec::detectorsToDisplayChanged()
@@ -9352,6 +9276,31 @@ void InterSpec::setDisplayedEnergyRange( float lowerEnergy, float upperEnergy )
   
   m_spectrum->setXAxisRange( lowerEnergy, upperEnergy );
 }//void setDisplayedEnergyRange()
+
+
+bool InterSpec::setYAxisRange( float lower_counts, float upper_counts )
+{
+  bool success = true;
+  if( upper_counts < lower_counts )
+    std::swap( lower_counts, upper_counts );
+  
+  if( (lower_counts <= 1.0E-6) && (upper_counts <= 1.0E-6) )
+    return false;
+  
+  if( (lower_counts < 9.9E-7) && m_spectrum->yAxisIsLog() )
+  {
+    success = false;
+    lower_counts = 1.0E-6;
+    if( upper_counts <= lower_counts )
+      upper_counts = 10*lower_counts;
+  }//if( log y-axis, and specifying approx less than zero counts )
+  
+  m_spectrum->setYAxisRange( lower_counts, upper_counts );
+  
+  return success;
+}//bool setYAxisRange(...)
+
+
 
 void InterSpec::displayedSpectrumRange( double &xmin, double &xmax, double &ymin, double &ymax ) const
 {
