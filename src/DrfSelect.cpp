@@ -2854,7 +2854,6 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
     drfDescription->setText( drfdesc );
   };//showDrf lambda
   
-  
   auto bestGuessDrf = []( std::shared_ptr<const SpecMeas> meas, const vector<shared_ptr<DetectorPeakResponse>> &drfs ) -> pair<shared_ptr<DetectorPeakResponse>,int> {
     if( !meas
        || ((meas->detector_type() == DetectorType::Unknown) && meas->instrument_model().empty()) )
@@ -2865,6 +2864,9 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
       model = meas->instrument_model();
     else
       model = detectorTypeToString( meas->detector_type() );
+  
+    // TODO: this bestGuessDrf function is not very good...
+    //       instead of removing non-alhpanumeric, should match first word, or something...
     
     // Remove all non-alphanumeric
     auto removeNonAlpha = []( string &str ){
@@ -3162,6 +3164,7 @@ void DrfSelect::init()
       }
       
       case DetectorPeakResponse::UserAddedRelativeEfficiencyDrf:
+      case DetectorPeakResponse::DefaultRelativeEfficiencyDrf:
       {
         m_drfTypeMenu->select( 1 );
         m_relEffSelect->trySelectDetector( m_detector );
@@ -3803,13 +3806,15 @@ void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakRespons
 
 
 
-std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPrefferedDetector(
+std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
                                 std::shared_ptr<DataBaseUtils::DbSession> sql,
                                 Wt::Dbo::ptr<InterSpecUser> user,
-                                std::shared_ptr<const SpecUtils::SpecFile> meas )
+                                const std::string &serial_number,
+                                SpecUtils::DetectorType detType,
+                                const std::string &detector_model )
 {
   std::shared_ptr<DetectorPeakResponse> answer;
-  if( !sql || !user || !meas )
+  if( !sql || !user )
     return answer;
   
   
@@ -3817,17 +3822,15 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPrefferedDetector(
   {
     DataBaseUtils::DbTransaction transaction( *sql );
     
-    const std::string &serial = meas->instrument_id();
-    
     Wt::Dbo::ptr<UseDrfPref> pref;
     
-    if( !serial.empty() )
+    if( !serial_number.empty() )
     {
       auto results = sql->session()->find<UseDrfPref>()
                      .where( "InterSpecUser_id = ? AND MatchField = ? AND Criteria = ?" )
                      .bind( user.id() )
                      .bind( UseDrfPref::UseDrfType::UseDetectorSerialNumber )
-                     .bind( serial )
+                     .bind( serial_number )
                      .orderBy("id desc") //shouldnt have an effect because we should only get at most one result
                      .resultList();
       if( results.size() )
@@ -3837,10 +3840,10 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPrefferedDetector(
     if( !pref )
     {
       string model;
-      if( meas->detector_type() == DetectorType::Unknown )
-        model = meas->instrument_model();
+      if( detType == DetectorType::Unknown )
+        model = detector_model;
       else
-        model = detectorTypeToString( meas->detector_type() );
+        model = detectorTypeToString( detType );
       if( !model.empty() )
       {
         auto results = sql->session()->find<UseDrfPref>()
@@ -3892,7 +3895,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPrefferedDetector(
   //  cout << "Did not get user preffered default det" << endl;
   
   return answer;
-};//getUserPrefferedDetector(...)
+};//getUserPreferredDetector(...)
 
 
 void DrfSelect::setUserPrefferedDetector( std::shared_ptr<DetectorPeakResponse> drf,
@@ -4079,42 +4082,186 @@ vector<pair<string,string>> DrfSelect::avaliableGadrasDetectors() const
 }//vector<string> avaliableGadrasDetectors() const
 
 
-std::shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils::DetectorType type, InterSpec *interspec )
+shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils::DetectorType type,
+                                                                std::string manufacturer,
+                                                                std::string model,
+                                                                InterSpec *interspec )
 {
-  using SpecUtils::DetectorType;
-  
-  string smname;
-  switch( type )
-  {
-    case DetectorType::Exploranium:       smname = "GR135";             break;
-    case DetectorType::IdentiFinder:      smname = "IdentiFINDER";      break;
-    case DetectorType::IdentiFinderNG:    smname = "IdentiFINDER-NGH";  break;
-    case DetectorType::IdentiFinderLaBr3: smname = "IdentiFINDER-LaBr"; break;
-    case DetectorType::DetectiveUnknown:  smname = "Detective";         break;
-    case DetectorType::DetectiveEx:       smname = "Detetive DX";       break;
-    case DetectorType::DetectiveEx100:    smname = "Detective EX-100";  break;
-    case DetectorType::DetectiveEx200:    smname = "Detective EX-200";  break;
-    case DetectorType::DetectiveX:        smname = "Detective X";       break;
-    case DetectorType::SAIC8:             smname = "";                  break;
-    case DetectorType::Falcon5000:        smname = "Falcon 5000";       break;
-    case DetectorType::Unknown:           smname = "";                  break;
-    case DetectorType::MicroDetective:    smname = "Micro Detective";   break;
+
+  // Get a list of potential model names for a given DetectorType.
+  //  Note that depending on the file format, capitalization, or non alpha-numeric character
+  //  seem to commonly not be consistent (e.g., using a space instead of dash, etc).
+  // TODO: Need to go through data from the various model detectors and fill in the rest of the
+  //       potential names - and then maybe make this below lambda a stand-alone function
+  auto potentialDetModelNames = []( const SpecUtils::DetectorType type ) -> vector<string> {
+    switch( type )
+    {
+      case SpecUtils::DetectorType::Exploranium:
+        return { "GR135" };
+        
+      case SpecUtils::DetectorType::IdentiFinder:
+        return { "IdentiFINDER" };
+        
+      case SpecUtils::DetectorType::IdentiFinderNG:
+        return { "IdentiFINDER-NG", "IdentiFINDER 2 NG" };
+        
+      case SpecUtils::DetectorType::IdentiFinderLaBr3:
+        return { "IdentiFINDER-LaBr", "IdentiFINDER-LG" };
+        
+      case SpecUtils::DetectorType::IdentiFinderTungsten:
+      case SpecUtils::DetectorType::IdentiFinderR500NaI:
+      case SpecUtils::DetectorType::IdentiFinderR500LaBr:
+      case SpecUtils::DetectorType::IdentiFinderUnknown:
+        break;
+        
+      case SpecUtils::DetectorType::DetectiveUnknown:
+        return { "Detective" };
+        
+      case SpecUtils::DetectorType::DetectiveEx:
+        return { "Detective-DX" };
+        
+      case SpecUtils::DetectorType::MicroDetective:
+        return { "MicroDetective", "uDetective" };
+        
+      case SpecUtils::DetectorType::DetectiveEx100:
+        return { "Detective-EX100", "Detective-DX100", "EX100", "DX100" };
+        
+      case SpecUtils::DetectorType::DetectiveEx200:
+        return { "Detective-EX200", "Detective-DX200" };
+        
+      case SpecUtils::DetectorType::DetectiveX:
+        return { "Detective-X" };
+        
+      case SpecUtils::DetectorType::SAIC8:
+        //return  { }
+        break;
+        
+      case SpecUtils::DetectorType::Falcon5000:
+        return { "Falcon5000", "Falcon5k" };
+        
+      case SpecUtils::DetectorType::Unknown:
+        break;
+        
+      case SpecUtils::DetectorType::MicroRaider:
+        //return  { }
+        break;
+        
+      case SpecUtils::DetectorType::Interceptor:
+        //return  { }
+        break;
+        
+      case SpecUtils::DetectorType::RadHunterNaI:
+        //return  { }
+        break;
+        
+      case SpecUtils::DetectorType::RadHunterLaBr3:
+        //return  { }
+        break;
+        
+      case SpecUtils::DetectorType::Rsi701:
+        return { "Rsi701" };
+        
+      case SpecUtils::DetectorType::Rsi705:
+        return { "Rsi705" };
+        
+      case SpecUtils::DetectorType::AvidRsi:
+        //return  { }
+        break;
+        
+      case SpecUtils::DetectorType::OrtecRadEagleNai:
+        return { "RadEagle" };
+        break;
+        
+      case SpecUtils::DetectorType::OrtecRadEagleCeBr2Inch:
+        //return  { }
+        break;
+        
+      case SpecUtils::DetectorType::OrtecRadEagleCeBr3Inch:
+        //return  { }
+        break;
+        
+      case SpecUtils::DetectorType::OrtecRadEagleLaBr:
+        return { "RadEagleLaBr" };
+        break;
+        
+      case SpecUtils::DetectorType::Sam940LaBr3:
+        //return { };
+        break;
+        
+      case SpecUtils::DetectorType::Sam940:
+        return { "Sam-940" };
+        
+      case SpecUtils::DetectorType::Sam945:
+        return { "Sam-945" };
+        
+      case SpecUtils::DetectorType::Srpm210:
+        //return { }
+        break;
+        
+      case SpecUtils::DetectorType::RIIDEyeNaI:
+        //return { }
+        break;
+        
+      case SpecUtils::DetectorType::RIIDEyeLaBr:
+        //return { }
+        break;
+        
+      case SpecUtils::DetectorType::RadSeekerNaI:
+        return { "RadSeeker-DL" };
+        
+      case SpecUtils::DetectorType::RadSeekerLaBr:
+        //return { }
+        break;
+        
+      case SpecUtils::DetectorType::VerifinderNaI:
+        //return { }
+        break;
+        
+      case SpecUtils::DetectorType::VerifinderLaBr:
+        //return { }
+        break;
+    }//switch( type )
     
-    default:
-      break;
-  }//switch( type )
+    return {};
+  };//potentialDetModelNames lambda
+  
+  // Remove all non-alphanumeric
+  auto removeNonAlphaNumAndLower = []( string &str ){
+    str.erase( std::remove_if(begin(str), end(str), [](char a){return !isalnum(a);}), end(str) );
+    SpecUtils::to_lower_ascii( str );
+  };
   
   
-  if( smname.empty() )
+  vector<string> potential_names;
+  
+  for( string &s : potentialDetModelNames(type) )
+  {
+    removeNonAlphaNumAndLower( s );
+    if( s.size() > 2 )
+      potential_names.push_back( s );
+  }//for( string &s : potentialDetModelNames(type) )
+  
+  removeNonAlphaNumAndLower( model );
+  
+  // If we have DetectorType, we will trust that more than the string model number, because, for
+  //  example some IndentiFINDER-NG will list the model as "IndentiFINDER" in the N42 file, while
+  //  SpecUtils, goes into the comments and uses detector size to infer detector model in this case.
+  if( (type == SpecUtils::DetectorType::Unknown) && (model.size() > 2) )
+    potential_names.push_back( model );
+  
+  removeNonAlphaNumAndLower( manufacturer );
+  
+  if( potential_names.empty() )
     throw std::runtime_error( "Could not find Rel. Eff. detector response functions" );
   
-  vector<string> paths;
+  
+  vector<string> user_paths, default_paths;
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   try
   {
     const string userDir = InterSpec::writableDataDirectory();
-    potential_rel_eff_files( userDir, paths );
+    potential_rel_eff_files( userDir, user_paths );
   }catch( std::exception & )
   {
     cerr << "Couldnt call into InterSpec::writableDataDirectory()" << endl;
@@ -4123,12 +4270,17 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const Spec
   
   try
   {
-    const string dataDir = InterSpec::staticDataDirectory();
-    potential_rel_eff_files( dataDir, paths );
+    const string staticDataDir = InterSpec::staticDataDirectory();
+    potential_rel_eff_files( staticDataDir, default_paths );
+    
+    // TODO: we could prioritize "common_drfs.tsz"
   }catch( std::exception & )
   {
     cerr << "Couldnt call into InterSpec::staticDataDirectory()" << endl;
   }
+  
+  vector<string> paths = user_paths;
+  paths.insert( end(paths), begin(default_paths), end(default_paths) );
   
   for( const string &filename : paths )
   {
@@ -4146,23 +4298,62 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const Spec
     while( SpecUtils::safe_get_line( input, line, 2048 ) )
     {
       SpecUtils::trim( line );
-      if( line.empty() || line[0]=='#' || line.size() < smname.size() )
+      if( line.empty() || line[0]=='#' )
         continue;
       
-      if( SpecUtils::icontains( line, smname ) )
+      auto det = DetectorPeakResponse::parseSingleCsvLineRelEffDrf( line );
+      string det_name = det ? det->name() : string();
+
+      removeNonAlphaNumAndLower( det_name );
+      
+      if( !det || !det->isValid() || det_name.empty() )
+        continue;
+      
+      bool isMatch = false;
+      
+      for( const string &candidate_name : potential_names )
       {
-        auto det = DetectorPeakResponse::parseSingleCsvLineRelEffDrf( line );
+        const size_t pos = det_name.find( candidate_name );
+        if( pos == string::npos )
+          continue;
         
-        if( det )
+        // For Identifinder (and probably RadEagle, RadSeeker, etc), we want the model to go all the
+        //  way to the end of the DRF name - since we dont want to match like "IdentiFINDER-NGH",
+        //  when the detector is "just" an IdentiFINDER.
+        switch( type )
         {
+          case SpecUtils::DetectorType::IdentiFinder:
+          {
+            if( (pos + candidate_name.size()) < det_name.size() )
+              continue;
+            
+            break;
+          }//case (we should )
+            
+          default:
+            break;
+        }//switch( type )
+        
+        isMatch = true;
+        break;
+      }//for( const string &candidate_name : potential_names )
+      
+      
+      if( isMatch )
+      {
+        const auto filenampos = std::find(begin(default_paths), end(default_paths), filename );
+        
+        if( filenampos == end(default_paths) )
           det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
-          return det;
-        }
-      }//if( thisname == smname )
+        else
+          det->setDrfSource( DetectorPeakResponse::DrfSource::DefaultRelativeEfficiencyDrf );
+        
+        return det;
+      }
     }//while( SpecUtils::safe_get_line( input, line ) )
   }//for( const string &filename : paths )
   
-  throw runtime_error( "Coudlnt find detector '" + smname + " in relative efficiency files" );
+  throw runtime_error( "Coudlnt find detector in relative efficiency files" );
   
   return std::shared_ptr<DetectorPeakResponse>();
 }//initARelEffDetector( int type )
