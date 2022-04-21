@@ -2937,4 +2937,151 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
   } );
 }//fit_template_peaks( ... )
   
+
+void prepare_and_add_gadras_peaks( std::shared_ptr<const SpecUtils::Measurement> data,
+                                  std::vector<PeakDef> gadras_peaks,
+                                  std::vector<PeakDef> orig_peaks,
+                                  const std::string sessionid )
+{
+  //cout << "prepare_and_add_gadras_peaks:" << endl;
+  //for( const auto &p : gadras_peaks )
+  //  cout << "\t" << p.mean() << ": " << p.amplitude() / data->live_time() << " cps" << endl;
+  
+  if( !data )
+  {
+    cerr << "prepare_and_add_gadras_peaks: data is invalid!" << endl; //prob shouldnt ever happen
+    return;
+  }
+  
+  unique_copy_continuum( gadras_peaks );
+  
+  vector<PeakDef> candidate_peaks, data_def_peaks;
+  
+  for( PeakDef peak : gadras_peaks )
+  {
+    if( !peak.gausPeak() || (peak.continuum()->type() != PeakContinuum::NoOffset) )
+    {
+      auto externalcont = peak.continuum()->externalContinuum();
+      
+      //Update peak area for new data.  I dont think anything else needs updating
+      //  (but not 100% sure ATM)
+      double peak_area = data->gamma_integral( peak.lowerX(), peak.upperX() );
+      if( externalcont )
+        peak_area -= externalcont->gamma_integral( peak.lowerX(), peak.upperX() );
+      peak.setPeakArea( peak_area );
+      
+      data_def_peaks.push_back( peak );
+      continue;
+    }//if( !peak.gausPeak() )
+    
+    
+    //If the template peak is the same as an already existing peak - skip it
+    bool already_has = false;
+    const double centroid = peak.mean();
+    for( const PeakDef &p : orig_peaks )
+      already_has = (already_has || (fabs(p.mean() - centroid) < 1.5*p.sigma()));
+    if( already_has )
+      continue;
+    
+    peak.continuum()->setType( PeakContinuum::Linear );
+    peak.continuum()->calc_linear_continuum_eqn( data, centroid, peak.lowerX(), peak.upperX(), 2, 2 );
+    
+    peak.setFitFor( PeakDef::GaussAmplitude, false );
+    peak.setFitFor( PeakDef::Mean, false );
+    peak.setFitFor( PeakDef::Sigma, false );
+    
+    candidate_peaks.push_back( peak );
+  }//for( auto &peak : input_peaks )
+  
+  sort( begin(candidate_peaks), end(candidate_peaks), PeakDef::lessThanByMean );
+  
+  // Combine peaks into a ROI, if they are close
+  size_t npeaks_in_roi = 0;
+  for( size_t i = 1; i < candidate_peaks.size(); ++i )
+  {
+    PeakDef &prev_peak = candidate_peaks[i-1];
+    PeakDef &this_peak = candidate_peaks[i];
+    
+    const double prev_upper = prev_peak.mean() + 3.0*prev_peak.sigma();
+    const double this_lower = this_peak.mean() - 3.0*this_peak.sigma();
+    
+    if( prev_upper < this_lower )
+    {
+      npeaks_in_roi = 1;
+    }else
+    {
+      npeaks_in_roi += 1;
+      
+      const double prev_lower = prev_peak.lowerX();
+      const double this_upper = this_peak.upperX();
+      
+      auto cont = prev_peak.continuum();
+      assert( cont );
+      this_peak.setContinuum( cont );
+      cont->setRange( prev_lower, this_upper );
+      cont->calc_linear_continuum_eqn( data, 0.5*(prev_lower + this_upper), prev_lower, this_upper, 2, 2 );
+      
+      if( npeaks_in_roi < 3 )
+        cont->setType( PeakContinuum::Linear );
+      else if( npeaks_in_roi < 4 )
+        cont->setType( PeakContinuum::Quadratic );
+      else
+        cont->setType( PeakContinuum::Cubic );
+    }//if( we should combine these peaks ) / else
+  }//for( size_t i = 1; i < candidate_peaks.size(); ++i )
+  
+  
+  const bool isRefit = false;
+  const double x0 = data->gamma_energy_min();
+  const double x1 = data->gamma_energy_max();
+  const double ncausalitysigma = 3.0;
+  const double stat_threshold  = 0.0;
+  const double hypothesis_threshold = 0.0;
+  
+  vector<PeakDef> fitpeaks = fitPeaksInRange( x0, x1, ncausalitysigma,
+                                             stat_threshold, hypothesis_threshold,
+                                             candidate_peaks, data, orig_peaks, isRefit );
+  
+  //Add back in data_def_peaks and orig_peaks.
+  fitpeaks.insert( end(fitpeaks), begin(data_def_peaks), end(data_def_peaks) );
+  fitpeaks.insert( end(fitpeaks), begin(orig_peaks), end(orig_peaks) );
+  
+  //Make sure peaks are sorted, for good measure
+  std::sort( begin(fitpeaks), end(fitpeaks), &PeakDef::lessThanByMean );
+  
+  
+  for( PeakDef &peak : fitpeaks )
+  {
+    peak.setFitFor( PeakDef::GaussAmplitude, true );
+    peak.setFitFor( PeakDef::Mean, true );
+    peak.setFitFor( PeakDef::Sigma, true );
+  }//for( PeakDef &peak : fitpeaks )
+  
+  
+  //Dont show user the dialog if no peaks were found, and we were looking for peaks from previous
+  //  spectrum
+  if( fitpeaks.empty() )
+    return;
+  
+  WServer::instance()->post( sessionid, [=](){
+    
+    InterSpec *interspec = InterSpec::instance();
+    assert( interspec );
+    if( !interspec )
+      return;
+    
+    //Check if a new spectrum has been loaded while the peaks were being fit.
+    //  If so, dont try to propogate the fit peaks.
+    if( !wApp || (interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground) != data) )
+      return;
+    
+    vector<ReferenceLineInfo> reflines;
+    
+    const PeakSelectorWindowReason reason = PeakSelectorWindowReason::PeaksFromCsvFile; //PeaksFromPreviousSpectum
+    new PeakSelectorWindow( interspec, reason, orig_peaks, data, fitpeaks, reflines );
+    
+    wApp->triggerUpdate();
+  } );
+}//void prepare_and_add_gadras_peaks(...)
+
 }//namespace PeakSearchGuiUtils

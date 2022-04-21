@@ -467,7 +467,8 @@ class DateLengthCalculator : public WContainerWidget
     
     m_duration = new WLineEdit();
     label->setBuddy( m_duration );
-    WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_duration );
+    
+    WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalPosOrNegRegex, m_duration );
     validator->setFlags(Wt::MatchCaseInsensitive);
     m_duration->setValidator(validator);
     m_duration->changed().connect( this, &DateLengthCalculator::durationChanged );
@@ -494,7 +495,9 @@ class DateLengthCalculator : public WContainerWidget
     m_layout->setColumnStretch( 2, 1 );
   }//DateLengthCalculator
   
-  
+  /** Returns 0.0 on error.
+   Return a negative time period if we want to calculate an initial activity.
+   */
   double getValidatedTimeSpan()
   {
     double halfLife = 0.0;
@@ -542,8 +545,9 @@ class DateLengthCalculator : public WContainerWidget
           throw runtime_error( "Begin date is invalid" );
         if( !validEndDate )
           throw runtime_error( "End date is invalid" );
-        if( m_begindate->date() >= m_enddate->date() )
-          throw runtime_error( "End date must be later than start date" );
+        
+        //if( m_begindate->date() >= m_enddate->date() )
+        //  throw runtime_error( "End date must be later than start date" );
         
         const int days = m_begindate->date().daysTo(m_enddate->date());
         duration = 24.0*3600.0*days*PhysicalUnits::second;
@@ -573,11 +577,9 @@ class DateLengthCalculator : public WContainerWidget
       //if( m_updateParent )
       //  m_updateParent->disable();
       m_info->hide();
-      
-      return 0.0;
     }//try / catch
     
-    return 0.0; //avoid warning
+    return 0.0;
   }//double getValidatedTimeSpan()
   
   
@@ -586,13 +588,12 @@ class DateLengthCalculator : public WContainerWidget
     if( getValidatedTimeSpan() == 0.0 )
       return;
     
-    const string txt = m_duration->text().toUTF8();
+    string txt = m_duration->text().toUTF8();
+    if( txt.length() && (txt[0] == '-') )
+      txt = txt.substr(1);
+    
     m_activityDiv->m_displayTimeLength->setText( txt );
-    m_activityDiv->refreshDecayDisplay();
-//#if( ADD_PHOTOPEAK_CHART )
-//    m_activityDiv->updatePhotopeakSliderEndDateText();
-//#endif
-//    m_activityDiv->m_chartTabWidget->setCurrentIndex( 0 );
+    m_activityDiv->refreshDecayDisplay( false );
   }//void pushCurrentToParent()
   
   
@@ -604,7 +605,7 @@ class DateLengthCalculator : public WContainerWidget
       return;
     
     int days = m_begindate->date().daysTo(m_enddate->date());
-    days = abs(days);
+    //days = abs(days);
     string datestr = PhysicalUnits::printToBestTimeUnits( 24.0*3600.0*days*PhysicalUnits::second, 2 );
     m_duration->setText( datestr );
     
@@ -622,7 +623,6 @@ class DateLengthCalculator : public WContainerWidget
       try
       {
         const double duration = PhysicalUnits::stringToTimeDuration( durtxt );
-        
         
         double mintime = 1.0 * SandiaDecay::second;
         const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
@@ -675,7 +675,10 @@ class DateLengthCalculator : public WContainerWidget
     if( txt != oldtxt )
     {
       m_duration->setText( txt );
-      m_begindate->setText( "" );
+      if( oldtxt.empty() || (oldtxt[0]!= '-') || m_begindate->text().empty() )
+        m_begindate->setText( "" );
+      else
+        m_enddate->setText( "" );
     }
     
     updateInfo(); //the
@@ -688,6 +691,7 @@ class DateLengthCalculator : public WContainerWidget
     const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
     
     const double timeSpan = getValidatedTimeSpan();
+    const double absTimeSpan = fabs( timeSpan );
     
     if( timeSpan == 0.0 )
     {
@@ -699,27 +703,69 @@ class DateLengthCalculator : public WContainerWidget
     
     
     SandiaDecay::NuclideMixture *mix = m_activityDiv->m_currentMixture;
+    
+    
+    // If we have a negative time span, we need to create our own mixture
+    std::unique_ptr<SandiaDecay::NuclideMixture> local_mix;
+    if( timeSpan < 0.0 )
+    {
+      local_mix.reset( new SandiaDecay::NuclideMixture() );
+      mix = local_mix.get();
+      // We'll add the nuclides in the loop over nuclides below
+    }//if( timeSpan < 0.0 )
+    
     if( !mix )
       return;
     
-    const string txt = m_duration->text().toUTF8();
+    //const string durationTxt = m_duration->text().toUTF8();
+    const string durationTxt = PhysicalUnits::printToBestTimeUnits( absTimeSpan );
     
     const std::vector<DecayActivityDiv::Nuclide> &nucs = m_activityDiv->m_nuclides;
     if( nucs.empty() )
       return;
     
+    
     for( size_t i = 0; i < nucs.size(); ++i )
     {
-      const DecayActivityDiv::Nuclide nucinfo = nucs[i];
+      const DecayActivityDiv::Nuclide &nucinfo = nucs[i];
       const SandiaDecay::Nuclide *nuc = db->nuclide( nucinfo.z, nucinfo.a, nucinfo.iso );
       if( !nuc )
         continue;
       
-      const double activity = nucinfo.activity;
+      double entered_activity = nucinfo.activity;
+      double initial_activity = entered_activity;
       const bool useCurrie = nucinfo.useCurrie;
       //const bool useCurrie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       
-      const string actTxt = PhysicalUnits::printToBestActivityUnits( activity, 3, useCurrie );
+      if( timeSpan < 0.0 )
+      {
+        // TODO: estimate how many half-lives is reasonable to calculate this initial activity for.
+        const double decrease_factor = std::exp( timeSpan * nuc->decayConstant() );
+        initial_activity = entered_activity / decrease_factor;
+        
+        if( IsNan(initial_activity)
+            || IsInf(initial_activity)
+            || (initial_activity < std::numeric_limits<float>::epsilon()) )
+        {
+          m_info->hide();
+          m_error->show();
+          string errmsg = "Duration of " + printToBestTimeUnits(absTimeSpan) + " is to long for "
+                          + nuc->symbol + " (half life " + printToBestTimeUnits(nuc->halfLife) + ")";
+          m_error->setText( errmsg );
+          m_duration->setText( "" );
+          
+          return;
+        }//if( probably too many half-lives to back calculate or zero initial activity )
+        
+        assert( local_mix && (mix == local_mix.get()) );
+        
+        if( nucinfo.age > DBL_EPSILON )
+          local_mix->addAgedNuclideByActivity( nuc, initial_activity, nucinfo.age );
+        else
+          local_mix->addNuclideByActivity( nuc, initial_activity );
+      }//if( timeSpan < 0.0 )
+      
+      const string actTxt = PhysicalUnits::printToBestActivityUnits( entered_activity, 3, useCurrie );
       
       WTable *nuctbl = new WTable( m_info );
       nuctbl->setMargin( 10, Wt::Side::Top );
@@ -741,7 +787,7 @@ class DateLengthCalculator : public WContainerWidget
       
       cell = nuctbl->elementAt(1 + rowOffset, 0);
       cell->setVerticalAlignment( AlignmentFlag::AlignMiddle );
-      celltxt = new WLabel( "Initial Activity", cell );
+      celltxt = new WLabel( ((timeSpan < 0.0) ? "Final Activity&nbsp;" : "Initial Activity&nbsp;"), cell );
       
       cell = nuctbl->elementAt(1 + rowOffset, 1);
       WLineEdit *activityEdit = new WLineEdit(cell);
@@ -761,9 +807,16 @@ class DateLengthCalculator : public WContainerWidget
         
         try
         {
-          double activity = PhysicalUnits::stringToActivity( activityEdit->text().toUTF8() );
+          const double activity = PhysicalUnits::stringToActivity( activityEdit->text().toUTF8() );
+          
           if( activity <= 0.0 )
             throw runtime_error( "Activity must be greater than zero" );
+          
+          //if( timeSpan < 0.0 )
+          //  activity = activity / std::exp( timeSpan * nuc->decayConstant() );
+          
+          if( IsNan(activity) || IsInf(activity) )
+            throw runtime_error( "Invalid time-span or activity" );
           
           bool updated = false;
           for( DecayActivityDiv::Nuclide &n : m_activityDiv->m_nuclides )
@@ -786,7 +839,7 @@ class DateLengthCalculator : public WContainerWidget
           return;
         }// try / catch
         
-        m_activityDiv->refreshDecayDisplay();
+        m_activityDiv->refreshDecayDisplay( false );
         updateInfo();
       };//doActivityUpdate lambda
       
@@ -797,7 +850,7 @@ class DateLengthCalculator : public WContainerWidget
       const string ageTxt = PhysicalUnits::printToBestTimeUnits( nucinfo.age );
       cell = nuctbl->elementAt(2 + rowOffset, 0);
       cell->setVerticalAlignment( AlignmentFlag::AlignMiddle );
-      celltxt = new WLabel( "Initial Age", cell );
+      celltxt = new WLabel( "Initial Age&nbsp;", cell );
       
       cell = nuctbl->elementAt(2 + rowOffset, 1);
       WLineEdit *ageEdit = new WLineEdit(cell);
@@ -818,7 +871,7 @@ class DateLengthCalculator : public WContainerWidget
         try
         {
           double age = PhysicalUnits::stringToTimeDuration( ageEdit->text().toUTF8() );
-          if( activity < 0.0 )
+          if( age < 0.0 )
             throw runtime_error( "Initial age must be zero or more" );
           
           bool updated = false;
@@ -842,7 +895,7 @@ class DateLengthCalculator : public WContainerWidget
           return;
         }// try / catch
         
-        m_activityDiv->refreshDecayDisplay();
+        m_activityDiv->refreshDecayDisplay( false );
         updateInfo();
       };//doActivityUpdate lambda
       
@@ -850,11 +903,84 @@ class DateLengthCalculator : public WContainerWidget
       ageEdit->enterPressed().connect( std::bind( doAgeUpdate ) );
     }//for( size_t i = 0; i < nucs.size(); ++i )
     
+    auto checkUseCurries = [&nucs,db]( const SandiaDecay::NuclideActivityPair &nap ) -> bool {
+      
+      for( size_t nucn = 0; nucn < nucs.size(); ++nucn )
+      {
+        const vector<const SandiaDecay::Nuclide *> parents = nap.nuclide->forebearers();
+        const SandiaDecay::Nuclide *nuc = db->nuclide( nucs[nucn].z, nucs[nucn].a, nucs[nucn].iso );
+        if( std::find(parents.begin(),parents.end(),nuc) != parents.end() )
+          return nucs[nucn].useCurrie;
+      }//for( size_t nucn = 0; nucn < nucs.size(); ++nucn )
+      
+      return true;
+    };//checkUseCurries
+    
+    
+    if( timeSpan < 0.0 )
+    {
+      WText *line = new WText( "&nbsp;", m_info );
+      line->setInline( false );
+      line = new WText( "Before " + durationTxt + ":", m_info );
+      line->setInline( false );
+      
+      WTable *beforeTable = new WTable( m_info );
+      beforeTable->addStyleClass( "BeforeDecayNucInfoTable DecayedNucInfoTable" );
+      beforeTable->setHeaderCount( 1, Wt::Horizontal );
+      beforeTable->elementAt(0, 0)->addWidget( new WLabel("Nuclide") );
+      beforeTable->elementAt(0, 1)->addWidget( new WLabel("Activity") );
+      beforeTable->elementAt(0, 2)->addWidget( new WLabel("Mass") );
+      
+      const vector<SandiaDecay::NuclideActivityPair> activities = mix->activity( 0.0 );
+      const vector<SandiaDecay::NuclideNumAtomsPair> numatoms = mix->numAtoms( 0.0 );
+      
+      for( size_t actnum = 0, row_num = 0; actnum < activities.size(); ++actnum )
+      {
+        const SandiaDecay::NuclideActivityPair &nap = activities[activities.size()-1-actnum];
+        if( !nap.nuclide )
+          continue;
+        
+        bool is_orig = false;
+        const int nInitialNuc = mix->numInitialNuclides();
+        for( int i = 0; !is_orig && (i < nInitialNuc); ++i )
+        {
+          auto n = mix->initialNuclide(i);
+          is_orig = (n && (n == nap.nuclide));
+        }
+          
+        if( !is_orig )
+          continue;
+        
+        row_num += 1;
+        
+        //Figure out if user inputed activity in Ci or Bq for this nuclide
+        const bool useCurries = checkUseCurries( nap );
+        
+        beforeTable->elementAt(row_num,0)->addWidget( new WText(nap.nuclide->symbol) );
+        
+        const string actstr = PhysicalUnits::printToBestActivityUnits( nap.activity, 2, useCurries, SandiaDecay::becquerel );
+        beforeTable->elementAt(row_num,1)->addWidget( new WText(actstr) );
+        
+        const SandiaDecay::NuclideNumAtomsPair *natomp = NULL;
+        for( size_t a = 0; !natomp && a < numatoms.size(); ++a )
+        if( numatoms[a].nuclide == nap.nuclide )
+          natomp = &(numatoms[a]);
+        
+        if( natomp )
+        {
+          const double num_atoms_in_gram = nap.nuclide->atomsPerGram();
+          const double ngrams = natomp->numAtoms / num_atoms_in_gram;
+          const string massstr = PhysicalUnits::printToBestMassUnits( ngrams*PhysicalUnits::gram );
+          beforeTable->elementAt(row_num,2)->addWidget( new WText(massstr) );
+        }
+      }//for( size_t i = 0; i < activities.size(); ++i )
+    }//if( timeSpan < 0.0 )
+    
     
     {
       WText *line = new WText( "&nbsp;", m_info );
       line->setInline( false );
-      line = new WText( "After " + txt + ":", m_info );
+      line = new WText( "After " + durationTxt + ":", m_info );
       line->setInline( false );
     }
     
@@ -869,34 +995,25 @@ class DateLengthCalculator : public WContainerWidget
     //infotable->elementAt(0, 4)->addWidget( new WLabel("Mass Frac") );
     //infotable->elementAt(0, 5)->addWidget( new WLabel("Act. Frac") );
     
-    const vector<SandiaDecay::NuclideActivityPair> activities = mix->activity( timeSpan );
-    const vector<SandiaDecay::NuclideNumAtomsPair> numatoms = mix->numAtoms( timeSpan );
+    const vector<SandiaDecay::NuclideActivityPair> activities = mix->activity( absTimeSpan );
+    const vector<SandiaDecay::NuclideNumAtomsPair> numatoms = mix->numAtoms( absTimeSpan );
+        
     
-    for( size_t actnum = 0; actnum < activities.size(); ++actnum )
+    for( size_t actnum = 0, row_num = 1; actnum < activities.size(); ++actnum )
     {
       const SandiaDecay::NuclideActivityPair &nap = activities[activities.size()-1-actnum];
       if( !nap.nuclide )
         continue;
       
       //Figure out if user inputed activity in Ci or Bq for this nuclide
-      bool useCurries = true;
-      for( size_t nucn = 0; nucn < nucs.size(); ++nucn )
-      {
-        const vector<const SandiaDecay::Nuclide *> parents = nap.nuclide->forebearers();
-        const SandiaDecay::Nuclide *nuc = db->nuclide( nucs[nucn].z, nucs[nucn].a, nucs[nucn].iso );
-        if( std::find(parents.begin(),parents.end(),nuc) != parents.end() )
-        {
-          useCurries = nucs[nucn].useCurrie;
-          break;
-        }
-      }//for( size_t nucn = 0; nucn < nucs.size(); ++nucn )
+      const bool useCurries = checkUseCurries( nap );
       
-      infotable->elementAt(1+actnum,0)->addWidget( new WText(nap.nuclide->symbol) );
+      infotable->elementAt(row_num,0)->addWidget( new WText(nap.nuclide->symbol) );
       
       string actstr = PhysicalUnits::printToBestActivityUnits( nap.activity, 2, useCurries, SandiaDecay::becquerel );
       if( IsInf(nap.nuclide->halfLife) )
         actstr = "stable";
-      infotable->elementAt(1+actnum,1)->addWidget( new WText(actstr) );
+      infotable->elementAt(row_num,1)->addWidget( new WText(actstr) );
       
       
       const SandiaDecay::NuclideNumAtomsPair *natomp = NULL;
@@ -909,8 +1026,10 @@ class DateLengthCalculator : public WContainerWidget
         const double num_atoms_in_gram = nap.nuclide->atomsPerGram();
         const double ngrams = natomp->numAtoms / num_atoms_in_gram;
         const string massstr = PhysicalUnits::printToBestMassUnits( ngrams*PhysicalUnits::gram );
-        infotable->elementAt(1+actnum,2)->addWidget( new WText(massstr) );
+        infotable->elementAt(row_num,2)->addWidget( new WText(massstr) );
       }
+      
+      row_num += 1;
     }//for( size_t i = 0; i < activities.size(); ++i )
   }//void updateInfo()
   
@@ -1590,7 +1709,8 @@ void DecayActivityDiv::init()
   
   m_nuclideSelectDialog->hide();
   
-  m_nuclideSelect->selected().connect( boost::bind( &DecayActivityDiv::addTheNuclide, this, _1 ) );
+  m_nuclideSelect->selected().connect( boost::bind( &DecayActivityDiv::addTheNuclide, this,
+                                                   boost::placeholders::_1 ) );
   m_clearNuclidesButton->clicked().connect( this, &DecayActivityDiv::clearAllNuclides );
   m_decayChart->clicked().connect( this, &DecayActivityDiv::decayChartClicked );
 
@@ -1706,13 +1826,13 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   endLabel->setBuddy( m_displayTimeLength );
   displOptUpper->addWidget( endLabel );
   displOptUpper->addWidget( m_displayTimeLength );
-  m_displayTimeLength->changed().connect( this, &DecayActivityDiv::refreshDecayDisplay );
+  m_displayTimeLength->changed().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
 #if( ADD_PHOTOPEAK_CHART )
   m_displayTimeLength->changed().connect( this,
                             &DecayActivityDiv::updatePhotopeakSliderEndDateText );
   m_displayTimeLength->enterPressed().connect( this, &DecayActivityDiv::updatePhotopeakSliderEndDateText );
 #endif
-  m_displayTimeLength->enterPressed().connect( this, &DecayActivityDiv::refreshDecayDisplay );
+  m_displayTimeLength->enterPressed().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
   
   
   const char *tooltip = "<div>Age can be specified using a combination of time units, "
@@ -1778,7 +1898,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   }
   
   m_yAxisType->setCurrentIndex( ActivityAxis );
-  m_yAxisType->activated().connect( this,&DecayActivityDiv::refreshDecayDisplay );
+  m_yAxisType->activated().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
   
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
   if( !m_viewer->isPhone() )
@@ -1791,8 +1911,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
     csvButton->clicked().connect( this, &DecayActivityDiv::createCsvDownloadGui );
   }
 
-  m_displayActivityUnitsCombo->changed().connect( this,
-                                        &DecayActivityDiv::refreshDecayDisplay );
+  m_displayActivityUnitsCombo->changed().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
 
   return displayOptionsDiv;
 }//Wt::WContainerWidget *initDisplayOptionWidgets()
@@ -2066,7 +2185,7 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
   const auto nucptr = db->nuclide(z, a, iso);
   m_decayChainChart->setNuclide( nucptr, useCurrie, DecayChainChart::DecayChainType::DecayFrom );
 
-  refreshDecayDisplay();
+  refreshDecayDisplay( true );
 }//void addNuclide(..)
 
 
@@ -2105,7 +2224,7 @@ void DecayActivityDiv::removeNuclide( Wt::WContainerWidget *frame )
 
   setTimeLimitToDisplay();
 
-  refreshDecayDisplay();
+  refreshDecayDisplay( true );
 }//void DecayActivityDiv::removeNuclide( Wt::WContainerWidget *frame )
 
 
@@ -2124,7 +2243,7 @@ void DecayActivityDiv::clearAllNuclides()
   if( m_decayChainChart )
     m_decayChainChart->deleteMoreInfoDialog();
 
-  refreshDecayDisplay();
+  refreshDecayDisplay( true );
 }//void clearAllNuclides();
 
 
@@ -2931,7 +3050,7 @@ void DecayActivityDiv::refreshPhotopeakDisplay()
 #endif //ADD_PHOTOPEAK_CHART
 
 
-void DecayActivityDiv::refreshDecayDisplay()
+void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
 {
   checkTimeRangeValid();
   
@@ -3224,7 +3343,7 @@ void DecayActivityDiv::refreshDecayDisplay()
   m_currentTimeUnits  = tunit;
   m_currentTimeRange  = maxDiplayTime;
   
-  if( m_calc )
+  if( m_calc && update_calc )
     m_calc->setTimeRangeTxt( m_displayTimeLength->text().toUTF8() );
 }//void refreshDecayDisplay()
 

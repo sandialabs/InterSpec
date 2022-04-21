@@ -130,8 +130,9 @@ class InterSpec : public Wt::WContainerWidget
 {
   /****************************************************************************\
   | This class is the overall architecture for the InterSpec application.      |
-  | It contains most of the widgets for the visible app.                       |
-  | Its comming quite close to being a God Class.                              |
+  | It contains most of the widgets for the visible app and handles most of    |
+  | the actions taken by the user that are not within a specific tool.         |
+  |
   \****************************************************************************/
 
 public:
@@ -139,7 +140,7 @@ public:
 
   ~InterSpec() noexcept(true);
     
-  /** Returns the InterSpec instance cooresponding to the current WApplication instance.
+  /** Returns the InterSpec instance corresponding to the current WApplication instance.
    Will return nullptr if WApplication::instance() is null (e.g., current thread is not in a
    WApplication event loop).
    */
@@ -166,7 +167,7 @@ public:
    */
   static std::string staticDataDirectory();
  
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   /** Sets the directory were we can write write the user preference database
    file (if using sqlite3); also the location will search for extra detector
    response functions.
@@ -214,18 +215,8 @@ public:
   //  status of if the file could be parsed or not.
   bool userOpenFileFromFilesystem( const std::string filepath, std::string displayFileName = "" );
   
-#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-  //loadFileFromDbFilesystemLink(): load file from the DbToFilesystemLink
-  //  mechanism with index 'dbid'.  If 'askIfBackound' is true, and this
-  //  spectrum looks like it could be the background to the current foreground
-  //  (e.g. same serial number detector, number of bins, etc), the user will
-  //  be prompted if they want it to be the background.
-  bool loadFileFromDbFilesystemLink( const int dbid, const bool askIfBackound );
-#endif  //#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-  
   //promptUserHowToOpenFile(): method called by userOpenFileFromFilesystem()
-  //  and loadFileFromDbFilesystemLink() when the file could possibly be a
-  //  background to the current foreground.
+  //  and when the file could possibly be a background to the current foreground.
   void promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
                                  std::shared_ptr<SpectraFileHeader> header );
   
@@ -284,6 +275,24 @@ public:
                                       bool keepMeasModificationStatus,
                                       boost::function<void(void)> modifiedcallback );
 
+  
+  /** Handles "deep" urls.
+   
+   Meant to handle URLs with the scheme "interspec://...", that would be passed to the application
+   by the OS, like when a QR code is scanned.
+   
+   The prefix "interspec://" is optional, and may be omitted.
+   
+   An example URL is "interspec://drf/specify?v=1"
+   
+   Throws std::exception if url cant be used.
+   
+   As of 20220405: Implementation and scope of use still being fleshed out.
+   */
+  void handleAppUrl( std::string url );
+  
+  
+  
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
   //  WContainerWidget or a PopupDivMenu
   void addFileMenu( Wt::WWidget *menuDiv, const bool isAppTitlebar );
@@ -515,10 +524,17 @@ public:
   
   //setDisplayedEnergyRange(): sets the displayed energy range that should be
   //  shown.  Range is not checked for validity. E.g. you should not ask to zoom
-  //  in to less than one bin.  You can also specify a lowere or higher energy
-  //  than data is available for.  Definetly dont input the same energy for both
+  //  in to less than one bin.  You can also specify a lower or higher energy
+  //  than data is available for.  Definitely dont input the same energy for both
   //  values, or bad things will happen.
   void setDisplayedEnergyRange( float lowerEnergy, float upperEnergy );
+  
+  /** Sets the Y-axis range.
+   
+   Returns true if successful, or false if the request couldnt be fully honored
+   (e.g., a negative lower counts was specified, but its currently log-scale)
+   */
+  bool setYAxisRange( float lower_counts, float upper_counts );
   
   //displayedSpectrumRange(): Grab the ranges in y and y that are currently
   //  displayed to the user.
@@ -1381,7 +1397,7 @@ protected:
   static std::mutex sm_staticDataDirectoryMutex;
   static std::string sm_staticDataDirectory;
   
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   static std::mutex sm_writableDataDirectoryMutex;
   static std::string sm_writableDataDirectory;
 #endif  //if( not a webapp )

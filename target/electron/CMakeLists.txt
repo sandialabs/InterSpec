@@ -1,5 +1,5 @@
 # Require CMake 3.15 to use MSVC_RUNTIME_LIBRARY
-cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
 project( InterSpecAddOn )
 

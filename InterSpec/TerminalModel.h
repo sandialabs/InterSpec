@@ -150,9 +150,18 @@ protected:  /* Command methods (complete actions on Spectrum, cannot be used wit
              Extra notes for commands: Methods for commands should NOT throw errors, instead return a proper an error message.
      */
     
-    enum CommandType {  VarmapCommand, ClearVarCommand, SetEnergyRangeCommand, SearchPeakCommand,
-                        DeletePeakCommand, RefitPeakCommand, DarkenCommand, LightenCommand,
-                        SetNuclideCommand, SaveCommand
+    enum CommandType {
+      VarmapCommand,
+      ClearVarCommand,
+      SetEnergyRangeCommand,
+      SetYaxisRangeCommand,
+      SearchPeakCommand,
+      DeletePeakCommand,
+      RefitPeakCommand,
+      DarkenCommand,
+      LightenCommand,
+      SetNuclideCommand,
+      SaveCommand
     };
     typedef std::pair<std::string, CommandType> CommandPair;
     std::string commandRegexStr = std::string("^(default*)\\(([\\s*\\S*\\s*]*)\\)$");  // initial command regex; this changes everytime new command is issued
@@ -165,6 +174,7 @@ protected:  /* Command methods (complete actions on Spectrum, cannot be used wit
     std::string darken        ( const std::string& arguments );
     std::string lighten       ( const std::string& arguments );
     std::string setEnergyRange( const std::string& arguments );
+    std::string setYRange     ( const std::string& arguments );
     std::string searchforPeak ( const std::string& arguments );
     std::string deletePeak    ( const std::string& arguments );
     std::string refitPeak     ( const std::string& arguments );

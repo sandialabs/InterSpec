@@ -59,6 +59,10 @@ namespace InterSpecServer
   
   std::string getWtConfigXml( int argc, char *argv[] );
   
+  enum class SessionType
+  {
+    PrimaryAppInstance, ExternalBrowserInstance
+  };
 
   /** Add a session token to be tracked or allowed.
    
@@ -81,7 +85,7 @@ namespace InterSpecServer
    
    if session had been seen before (e.g., non-zero return value), no changes will be made to that sessions allowed state.
    */
-  int add_allowed_session_token( const char *session_id );
+  int add_allowed_session_token( const char *session_id, const SessionType type );
 
   /** Returns -1 if invalid token.  Returns +1 if valid token that had never been loaded.  Returns zero if was loaded.  */
   int remove_allowed_session_token( const char *session_token );
@@ -112,6 +116,11 @@ namespace InterSpecServer
    */
   int set_session_loaded( const char *session_token );
 
+  /** Returns if the session was found, and if so the type set when #add_allowed_session_token
+   was called.
+   */
+  std::pair<bool,SessionType> session_type( const char *session_token );
+
   /** Sets the session as dead. */
   void set_session_destructing( const char *session_token );
   
@@ -133,6 +142,25 @@ namespace InterSpecServer
    sessions to open the files... ToDo: decide on this behavior).
    */
   int open_file_in_session( const char *session_token, const char *files_json );
+
+
+  /** Sets a file to open upon session load.
+   
+   The \c session_token must have been set by #add_allowed_session_token, but must not have actually
+   been loaded yet.
+   
+   The file path must either be a file-system path to a spectrum file, or it can be a App URL with
+   the schema "interspec://..."
+   
+   Throws exception if an invalid session token, or the session has already been loaded.
+   */
+  void set_file_to_open_on_load( const char *session_token, const std::string file_path );
+
+  /** Returns the file path, or app url, of any files to be opened during creating of a new session.
+   
+   Returns empty string if none.
+   */
+  std::string file_to_open_on_load( const std::string &session_token );
 }//namespace InterSpecServer
 
 

@@ -41,7 +41,7 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WCssDecorationStyle>
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 #include <Wt/WServer>
 #endif
 
@@ -174,7 +174,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   makeLgplLicenseItem();
   makeItem( "Credits", "credits" );
   makeItem( "Contact", "contact" );
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   makeDataStorageItem();
 #endif
   m_menu->select( 0 );
@@ -231,7 +231,9 @@ void LicenseAndDisclaimersWindow::right_select_item(  WMenuItem *item )
 
 SideMenuItem * LicenseAndDisclaimersWindow::makeItem( const WString &title, const string &resource)
 {
-  std::function<void(WContainerWidget *)> f = boost::bind( &LicenseAndDisclaimersWindow::itemCreator, this, resource, _1, title );
+  std::function<void(WContainerWidget *)> f = boost::bind( &LicenseAndDisclaimersWindow::itemCreator,
+                                                          this, resource, boost::placeholders::_1,
+                                                          title );
   
   WWidget *w = deferCreate( f );
   w->addStyleClass( "UseInfoItem" );
@@ -302,7 +304,9 @@ void LicenseAndDisclaimersWindow::lgplLicenseCreator( Wt::WContainerWidget *pare
 
 SideMenuItem *LicenseAndDisclaimersWindow::makeLgplLicenseItem()
 {
-  std::function<void(WContainerWidget *)> f = boost::bind( &LicenseAndDisclaimersWindow::lgplLicenseCreator, this, _1 );
+  std::function<void(WContainerWidget *)> f
+              = boost::bind( &LicenseAndDisclaimersWindow::lgplLicenseCreator, this,
+                            boost::placeholders::_1 );
   
   WWidget *w = deferCreate( f );
   w->addStyleClass( "UseInfoItem" );
@@ -317,7 +321,7 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeLgplLicenseItem()
   return item;
 }//SideMenuItem *makeItem( const WString &title, const string &resource)
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *parent )
 {
   auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
@@ -463,7 +467,9 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 
 SideMenuItem *LicenseAndDisclaimersWindow::makeDataStorageItem()
 {
-  std::function<void(WContainerWidget *)> f = boost::bind( &LicenseAndDisclaimersWindow::dataStorageCreator, this, _1 );
+  std::function<void(WContainerWidget *)> f
+         = boost::bind( &LicenseAndDisclaimersWindow::dataStorageCreator, this,
+                        boost::placeholders::_1 );
   
   WWidget *w = deferCreate( f );
   w->addStyleClass( "UseInfoItem" );
@@ -477,4 +483,4 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeDataStorageItem()
   
   return item;
 }//SideMenuItem *makeDataStorageItem()
-#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
+#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )

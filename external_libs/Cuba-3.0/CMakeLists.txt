@@ -1,6 +1,6 @@
 project(Cuba-3.0)
 #right now this file only compiles "cuhre" version of the integration routines
-cmake_minimum_required( VERSION 3.1 )
+cmake_minimum_required( VERSION 3.1...3.20 )
 
 
 

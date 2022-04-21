@@ -237,7 +237,10 @@ void GammaCountDialog::init()
 
   m_lowerEnergy->valueChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
   m_upperEnergy->valueChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
-  m_specViewer->displayedSpectrumChanged().connect( boost::bind( &GammaCountDialog::handleSpectrumChange, this, _1, _2, _3, _4) );
+  m_specViewer->displayedSpectrumChanged().connect(
+                boost::bind( &GammaCountDialog::handleSpectrumChange, this,
+                            boost::placeholders::_1, boost::placeholders::_2,
+                            boost::placeholders::_3, boost::placeholders::_4) );
   
  
   WPushButton *closeButton = addCloseButtonToFooter();

@@ -164,7 +164,8 @@ namespace
             m_color = new ColorSelect(ColorSelect::PrefferNative,this);
             setAttributeValue( "style", "margin: 0px; background-color: null;" );
             m_color->setAttributeValue("style", "height: 15px;" );
-            m_color->cssColorChanged().connect( boost::bind( &EditWidget::colorSelected, this, _1 ) );
+            m_color->cssColorChanged().connect( boost::bind( &EditWidget::colorSelected, this,
+                                                            boost::placeholders::_1 ) );
           }
           try
           {
@@ -204,7 +205,8 @@ namespace
     ColorDelegate( Wt::WObject *parent = NULL )
       : WAbstractItemDelegate(parent)
     {
-      closeEditor().connect( boost::bind( &ColorDelegate::doCloseEditor, this, _1, _2 ) );
+      closeEditor().connect( boost::bind( &ColorDelegate::doCloseEditor, this,
+                                         boost::placeholders::_1, boost::placeholders::_2 ) );
     }
     
     virtual ~ColorDelegate(){}
@@ -1092,8 +1094,10 @@ void PeakInfoDisplay::init()
 //  m_infoView->setSelectionMode( Wt::SingleSelection );
   m_infoView->setEditOptions( WAbstractItemView::SingleEditor );
 
-  m_infoView->clicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this, _1 ) );
-  m_infoView->doubleClicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this, _1 ) );
+  m_infoView->clicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this,
+                                             boost::placeholders::_1 ) );
+  m_infoView->doubleClicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this,
+                                                   boost::placeholders::_1 ) );
 
   m_infoView->selectionChanged().connect( this, &PeakInfoDisplay::handleSelectionChanged );
   

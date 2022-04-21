@@ -1,3 +1,26 @@
+/* InterSpec: an application to analyze spectral gamma radiation data.
+ 
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+ 
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+ 
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ 
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
 #include "InterSpec_config.h"
 
 #include <memory>
@@ -303,8 +326,12 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   setJavaScriptMember( "resizeObserver",
     "new ResizeObserver(entries => {"
       "for (let entry of entries) {"
-        "if( entry.target && (entry.target.id === '" + id() + "') )"
-          + m_jsgraph + ".handleResize();"
+        "if( entry.target && (entry.target.id === '" + id() + "') ){"
+          // When we "Clear Session", jsRef() will give a null result temporarily, so we'll protect against that
+          "const c=" + jsRef() + ";"
+          "if(c && c.chart)"
+            "c.chart.handleResize();"
+        "}"
       "}"
     "});"
   );
@@ -320,34 +347,51 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   if( !m_xRangeChangedJS )
   {
     m_xRangeChangedJS.reset( new JSignal<double,double,double,double>( this, "xrangechanged", true ) );
-    m_xRangeChangedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartXRangeChangedCallback, this, _1, _2, _3, _4 ) );
+    m_xRangeChangedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartXRangeChangedCallback, this,
+                                            boost::placeholders::_1, boost::placeholders::_2,
+                                            boost::placeholders::_3, boost::placeholders::_4 ) );
     
     m_shiftKeyDraggJS.reset( new JSignal<double,double>( this, "shiftkeydragged", true ) );
-    m_shiftKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftKeyDragCallback, this, _1, _2 ) );
+    m_shiftKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftKeyDragCallback, this,
+                                            boost::placeholders::_1, boost::placeholders::_2 ) );
     
     m_shiftAltKeyDraggJS.reset( new JSignal<double,double>( this, "shiftaltkeydragged", true ) );
-    m_shiftAltKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback, this, _1, _2 ) );
+    m_shiftAltKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback,
+                                               this, boost::placeholders::_1, boost::placeholders::_2 ) );
     
     m_rightMouseDraggJS.reset( new JSignal<double,double>( this, "rightmousedragged", true ) );
-    m_rightMouseDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightMouseDragCallback, this, _1, _2 ) );
+    m_rightMouseDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightMouseDragCallback,
+                                              this, boost::placeholders::_1, boost::placeholders::_2 ) );
     
     m_leftClickJS.reset( new JSignal<double,double,double,double>( this, "leftclicked", true ) );
-    m_leftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartLeftClickCallback, this, _1, _2, _3, _4 ) );
+    m_leftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartLeftClickCallback, this,
+                                        boost::placeholders::_1, boost::placeholders::_2,
+                                        boost::placeholders::_3, boost::placeholders::_4 ) );
     
     m_doubleLeftClickJS.reset( new JSignal<double,double>( this, "doubleclicked", true ) );
-    m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback, this, _1, _2 ) );
+    m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback,
+                                              this, boost::placeholders::_1, boost::placeholders::_2 ) );
     
     m_rightClickJS.reset( new JSignal<double,double,double,double>( this, "rightclicked", true ) );
-    m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this, _1, _2, _3, _4 ) );
+    m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this,
+                                         boost::placeholders::_1, boost::placeholders::_2,
+                                         boost::placeholders::_3, boost::placeholders::_4 ) );
     
     m_roiDraggedJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
-    m_roiDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRoiDragedCallback, this, _1, _2, _3, _4, _5, _6 ) );
+    m_roiDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRoiDragedCallback, this,
+                                         boost::placeholders::_1, boost::placeholders::_2,
+                                         boost::placeholders::_3, boost::placeholders::_4,
+                                         boost::placeholders::_5, boost::placeholders::_6 ) );
     
     m_fitRoiDragJS.reset( new JSignal<double,double,int,bool,double,double>( this, "fitRoiDrag", true ) );
-    m_fitRoiDragJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartFitRoiDragCallback, this, _1, _2, _3, _4, _5, _6 ) );
+    m_fitRoiDragJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartFitRoiDragCallback, this,
+                                         boost::placeholders::_1, boost::placeholders::_2,
+                                         boost::placeholders::_3, boost::placeholders::_4,
+                                         boost::placeholders::_5, boost::placeholders::_6 ) );
     
     m_yAxisDraggedJS.reset( new Wt::JSignal<double,std::string>( this, "yscaled", true ) );
-    m_yAxisDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisScaled, this, _1, _2 ) );
+    m_yAxisDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisScaled, this,
+                                           boost::placeholders::_1, boost::placeholders::_2 ) );
     
     //need legend closed signal.
     m_legendClosedJS.reset( new JSignal<>( this, "legendClosed", true ) );
@@ -810,7 +854,6 @@ void D3SpectrumDisplayDiv::setXAxisRange( const double minimum, const double max
 void D3SpectrumDisplayDiv::setYAxisRange( const double minimum,
                                        const double maximum )
 {
-  cout << "setYAxisRange" << endl;
   const string minimumStr = to_string( minimum );
   const string maximumStr = to_string( maximum );
   m_yAxisMinimum = minimum;

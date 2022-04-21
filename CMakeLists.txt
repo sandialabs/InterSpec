@@ -1,4 +1,13 @@
-cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
+
+if(POLICY CMP0091)
+  cmake_policy(SET CMP0091 NEW) # For CMake 3.15 and newer, enable use of CMAKE_MSVC_RUNTIME_LIBRARY, without requiring CMake 3.15
+endif(POLICY CMP0091)
+
+cmake_policy(SET CMP0048 NEW)
+
+cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
+
+project(InterSpec VERSION 1.0.10)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -88,11 +97,6 @@ option(
     DRAW_GAMMA_LINES_LOG_AND_LIN
     "Have gamma lines indicators be drawn in log mode when y-axis is log"
     OFF
-)
-option(
-    ALLOW_URL_TO_FILESYSTEM_MAP
-    "Allows a file ID to be specified in the URL to open a file from the filesystem"
-    ON
 )
 option(USE_DB_TO_STORE_SPECTRA "Use the database to store spectra" ON)
 option(
@@ -209,7 +213,6 @@ endif()
 
 if(ANDROID)
     set(BUILD_AS_LOCAL_SERVER OFF)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(TRY_TO_STATIC_LINK ON)
     set(MAX_SPECTRUM_MEMMORY_SIZE_MB 32)
     set(USE_DB_TO_STORE_SPECTRA ON)
@@ -281,7 +284,6 @@ if(IOS)
     SET(CMAKE_C_ARCHIVE_CREATE   "<CMAKE_AR> -static -o <TARGET> <LINK_FLAGS> <OBJECTS>")
 
     set(BUILD_AS_LOCAL_SERVER OFF)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
     set(PERFORM_DEVELOPER_CHECKS OFF)
     set(TRY_TO_STATIC_LINK ON)
@@ -318,7 +320,6 @@ endif(IOS)
 
 if(BUILD_AS_ELECTRON_APP)
     set(BUILD_AS_LOCAL_SERVER OFF)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(USE_OSX_NATIVE_MENU OFF)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
@@ -329,7 +330,6 @@ if(BUILD_AS_UNIT_TEST_SUITE)
     set(BUILD_AS_LOCAL_SERVER OFF)
     set(USE_ENERGY_VS_TIME_PLOTS OFF)
     set(USE_DB_TO_STORE_SPECTRA ON)
-    set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(INCLUDE_ANALYSIS_TEST_SUITE ON)
     set(TRY_TO_STATIC_LINK ON)
     set(PERFORM_DEVELOPER_CHECKS ON)
@@ -340,7 +340,6 @@ endif(BUILD_AS_UNIT_TEST_SUITE)
 if(BUILD_FOR_WEB_DEPLOYMENT)
     set(TRY_TO_STATIC_LINK ON)
     set(CMAKE_BUILD_TYPE:STRING "Release")
-    set(ALLOW_URL_TO_FILESYSTEM_MAP OFF)
     set(USE_DB_TO_STORE_SPECTRA ON)
     #    set( USE_SQLITE3_DB ON )
     #    set( USE_MYSQL_DB OFF )
@@ -574,11 +573,6 @@ if(USE_DB_TO_STORE_SPECTRA)
     list(APPEND sources src/DbStateBrowser.cpp src/DbFileBrowser.cpp)
     list(APPEND headers InterSpec/DbStateBrowser.h InterSpec/DbFileBrowser.h)
 endif(USE_DB_TO_STORE_SPECTRA)
-
-if(ALLOW_URL_TO_FILESYSTEM_MAP)
-    list(APPEND sources src/DbToFilesystemLink.cpp)
-    list(APPEND headers InterSpec/DbToFilesystemLink.h)
-endif(ALLOW_URL_TO_FILESYSTEM_MAP)
 
 if(NOT ANDROID AND NOT IOS)
     list(APPEND sources src/FileDragUploadResource.cpp)
