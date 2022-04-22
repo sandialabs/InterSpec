@@ -22,6 +22,8 @@ FetchContent_Declare(
 #  add_subdirectory(${boost_SOURCE_DIR} ${boost_BINARY_DIR} EXCLUDE_FROM_ALL)
 #endif()
 
+message("CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}")
+
 FetchContent_Declare(
   wt
   #URL /Users/wcjohns/install/wt_fetch_contents/wt-b84925215d2b45879cf20c0cb340c4e7960d0c53.zip
@@ -43,7 +45,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable( wt boost )
 
 
-# macOS, iOS, and Android all hav ezlib already - we dont need to build it
+# macOS, iOS, and Android all have zlib already - we dont need to build it
 if( NOT APPLE AND NOT ANDROID )
   set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "Build SHARED libraries")
 
@@ -54,10 +56,14 @@ if( NOT APPLE AND NOT ANDROID )
     GIT_SHALLOW    ON
 
     #The '|| true' is in next command is due to bug in cmake I think: https://gitlab.kitware.com/cmake/cmake/-/issues/21146
-    PATCH_COMMAND ${GIT_EXECUTABLE} apply --ignore-space-change --ignore-whitespace ${CMAKE_CURRENT_SOURCE_DIR}/../patches/zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch || true
+    #PATCH_COMMAND ${GIT_EXECUTABLE} apply --ignore-space-change --ignore-whitespace ${CMAKE_CURRENT_SOURCE_DIR}/../patches/zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch || true
+    PATCH_COMMAND patch -p1 < ${CMAKE_CURRENT_SOURCE_DIR}/target/patches/zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch || true
   )
 
 
   FetchContent_MakeAvailable( zlib )
+
+  # This next line fails when building on Fedora Linux; if you comment it out, InterSpec will use system zlib, but
+  #  we should add a proper fix for this, or maybe only build zlib if the system doesnt already have it.
   add_library( ZLIB::ZLIB ALIAS ZLIB::zlib )
 endif( NOT APPLE AND NOT ANDROID )
