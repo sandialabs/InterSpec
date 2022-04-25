@@ -23,9 +23,8 @@ Please note that security is not consided at all (e.g., InterSpec is currently r
 ## Building using a Alpine container
 ```bash
 # From your host OS terminal, run the following commands
-git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_fetch_content
-cd InterSpec_fetch_content
-git checkout feature/FetchContent
+git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_alpine_build
+cd InterSpec_alpine_build
 
 # Grab the Alpine image to your machine
 docker pull alpine:latest
@@ -92,9 +91,9 @@ docker load -i interspec_alpine_web.20220424.docker
 
 ```bash
 # From your host OS terminal, run the following commands
-git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_fetch_content
-cd InterSpec_fetch_content
-git checkout feature/FetchContent
+git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_fedora_build
+cd InterSpec_fedora_build
+
 docker pull fedora:35
 
 # Start a shell session within the image
