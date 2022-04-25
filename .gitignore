@@ -16,6 +16,7 @@ target/android/InterSpec/app/
 target/android/InterSpec/app/build
 target/electron/node_modules
 target/electron/release-builds
+InterSpec_resources/SpectrumChartD3StandAlone.css
 
 *OUO*
 *ouo*
