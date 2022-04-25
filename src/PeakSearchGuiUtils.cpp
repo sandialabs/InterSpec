@@ -1572,7 +1572,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
     const float pair_prod_thresh = 1255.0f; //The single_escape_sf and double_escape_sf give negative values below 1255.
     const float always_check_escape_thresh = 4000.0f;
     const float escape_suppression_factor = 0.5;
-    const bool xray_suppression_factor = 0.2;
+    const float xray_suppression_factor = 0.2;
     const bool isHPGe = PeakFitUtils::is_high_res(data);
     
     double mindist = 99999999.9;

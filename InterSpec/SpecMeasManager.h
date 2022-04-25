@@ -376,7 +376,7 @@ public:
   FileDragUploadResource *backgroundDragNDrop();
 #endif
   
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
+
   //handleZippedFile:  presents the user with a dialog to extract and use one
   //  of the spectrum files in a zip archive.  Returns true if a valid zip file.
   //  'name' is the display name of the original file, while 'spoolName' is
@@ -399,7 +399,6 @@ public:
                               AuxWindow *window,
                               Wt::WModelIndex index );
   
-#endif
   
   //Handles a file dropped onto the application, or finishes opening files from
   //  filesystem URL.
