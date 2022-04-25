@@ -3,6 +3,11 @@
 In order to create the [Electron]([https://electronjs.org/](https://electronjs.org/) packaged version of `InterSpec`, we create a node add-on that contains all the C++ code, and then request to start the `InterSpec` server from [main.js](app/main.js).  To create the add-on we use [cmake-js](https://www.npmjs.com/package/cmake-js) to build things, and [node-addon-api](https://www.npmjs.com/package/node-addon-api) to actually interface the C++ to JS.
 
 
+You can either manually build the InterSpec dependencies (boost, Wt, zlib, and for macOS libpng and libharu), or you can have CMake fetch and build these dependencies.  Having CMake fetch and build the dependencies takes maybe an hour to build things the first time (however, only a couple minutes of this requires your attention) and then subsequent builds are a couple minutes; if you plan to make a substantual number of changes and re-compilations, then the manually built dependencies will yield a slightly faster compile time after each change.
+
+## Building with manually compiled dependencies
+To compile the InterSpec code, and package the Electron app, with the manually compiled dependencies (see [patches/README.md](../patches/README.md) for instructions), the following commands are a good base to start with:
+
 ```bash
 npm install -g cmake-js 
 
@@ -80,6 +85,50 @@ If you are cross-compiling, you can, for example, build the Linux package from m
 ```bash
 npm --target_arch=x64 --target_platform=linux run package-linux
 ```
+
+
+## Building with CMake fetched and compiled dependencies
+The following commands will compile and package the InterSpec code, starting from the Fedora 35 Docker image; there is nothing special about Fedora, and any of the distributions compatible with npm, node.js, and Electron should work.
+
+Using the CMake FetchContent has not been tested on Windows, and will fail on macOS because it currently doesnt fetch/build libpng and libharu.
+
+```bash
+# From host OS terminal - grab InterSpec source code
+git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec
+cd InterSpec
+
+# Start Fedora Docker container
+docker run --rm -it -v `pwd`:/interspec fedora:35 sh
+
+# Install the packages we need
+dnf install -y make automake gcc gcc-c++ kernel-devel cmake git patch npm
+
+# Change to directory we need
+cd /interspec/target/electron/
+
+# Install the NPM dependencies we need
+npm install -g cmake-js
+npm install --save-dev node-addon-api --arch=x64
+npm install electron --arch=x64
+npm install electron-packager
+
+# Configure and build the node-add-on shared library
+#  This step may take half and hour or more to clone into the Boost and Wt github repos, and 
+#  then another half hour or hour to build
+CMAKE_BUILD_PARALLEL_LEVEL=8 cmake-js --architecture x64 --arch=x64 --CDInterSpec_FETCH_DEPENDENCIES=ON --out=build_linux --target install
+
+# Package the code up
+npm run package-linux
+
+# If you are using Docker, you will need to install some additional libraries to run things, although the GUI still probably wont run
+#   dnf install nss atk at-spi2-atk cups libdrm gtk3
+
+# Run the executable 
+cd release-builds/InterSpec-linux-x64/
+./InterSpec
+```
+
+
 
 ## Linux Considerations
 The `InterSpec` module is really a shared library that node.js loads, therefore you need the `-fPIC` C/C++ compiler flag enabled not just for the `InterSpec` code, but for all of the static libraries you link it against, including boost, Wt, and zlib - which isnt the default when compiling static libraries for any of them, so when building them you may want to add `-fPIC -std=c++11` flags to the flags.
