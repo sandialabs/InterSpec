@@ -42,7 +42,6 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecServer.h"
-#include "InterSpec/DbToFilesystemLink.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "target/electron/ElectronUtils.h"
 #include "target/electron/InterSpecAddOn.h"

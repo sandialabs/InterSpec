@@ -1,12 +1,16 @@
 find_package(Git)
 include(FetchContent)
 
+#message("CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}")
+message("It may take 10 or 20 minutes to clone into boost and Wt repos...")
+
 set( BOOST_IOSTREAMS_ENABLE_ZSTD OFF CACHE INTERNAL ""  )
 set( BOOST_IOSTREAMS_ENABLE_ZLIB OFF CACHE INTERNAL ""  )
 set( BOOST_IOSTREAMS_ENABLE_LZMA OFF CACHE INTERNAL ""  )
 set( BOOST_IOSTREAMS_ENABLE_BZIP2 OFF CACHE INTERNAL ""  )
 set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "Build SHARED libraries")
 
+# TODO: set BOOST libraries to not build, like wave, beast, wserialization, etc
 
 FetchContent_Declare(
   boost
@@ -42,8 +46,19 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable( wt boost )
 
+# Since we arent installing Wt, the InterSpec CMakeLists.txt wont find Wt resources,
+#  so we'll hard code this directory.
+set(WT_RESOURCES_DIRECTORY "${wt_SOURCE_DIR}/resources" CACHE INTERNAL "Set Wt resources dir")
 
-# macOS, iOS, and Android all hav ezlib already - we dont need to build it
+
+# If we run the Cmake "install" target, we'll get an error because 
+# ${boost_BINARY_DIR}/cmake_install.cmake doesnt exist, so we'll just put a dummy 
+# there, and things seem to work
+#   However, the proper fix would be something like:
+#     https://stackoverflow.com/questions/65527126/disable-install-for-fetchcontent#answer-65529161
+write_file( "${boost_BINARY_DIR}/cmake_install.cmake" "# This is a dummy patch file the InterSpec build put in" )
+
+# macOS, iOS, and Android all have zlib already - we dont need to build it
 if( NOT APPLE AND NOT ANDROID )
   set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "Build SHARED libraries")
 
@@ -54,10 +69,21 @@ if( NOT APPLE AND NOT ANDROID )
     GIT_SHALLOW    ON
 
     #The '|| true' is in next command is due to bug in cmake I think: https://gitlab.kitware.com/cmake/cmake/-/issues/21146
-    PATCH_COMMAND ${GIT_EXECUTABLE} apply --ignore-space-change --ignore-whitespace ${CMAKE_CURRENT_SOURCE_DIR}/../patches/zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch || true
+    #PATCH_COMMAND ${GIT_EXECUTABLE} apply --ignore-space-change --ignore-whitespace ${CMAKE_CURRENT_SOURCE_DIR}/../patches/zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch || true
+    PATCH_COMMAND patch -p1 < ${CMAKE_CURRENT_SOURCE_DIR}/target/patches/zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch || true
   )
 
 
   FetchContent_MakeAvailable( zlib )
-  add_library( ZLIB::ZLIB ALIAS ZLIB::zlib )
+   
+  if( ZLIB::zlib ) 
+    # Hmmm, not sure if we ever actually get here
+    add_library( ZLIB::ZLIB ALIAS ZLIB::zlib )
+  elseif( NOT ZLIB::ZLIB )
+    # On Linux, we seem to always get here, so we'll just hack things.  
+    #  I must not understand the export(...) cmake stuff of the sub-project - oh well for now.
+    add_library( ZLIB::ZLIB ALIAS zlib )
+    set( ZLIB_LIBRARY zlib CACHE INTERNAL "set zlib static lib" )
+    set( ZLIB_INCLUDE_DIR "${zlib_BINARY_DIR}" CACHE INTERNAL "set zlib include dir" )
+  endif()
 endif( NOT APPLE AND NOT ANDROID )

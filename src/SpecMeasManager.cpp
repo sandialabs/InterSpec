@@ -1464,8 +1464,8 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
       cerr << "handleMultipleDrfCsv: error saving multiple DRF file: " << e.what() << endl;
       passMessage( "Error saving DRF file for later use.", "", WarningWidget::WarningMsgHigh );
     }//try / catch to save file
-#endif
   };//saveDrfFile
+#endif
   
   
   string dialogmsg;
