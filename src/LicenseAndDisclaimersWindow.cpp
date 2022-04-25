@@ -483,4 +483,4 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeDataStorageItem()
   
   return item;
 }//SideMenuItem *makeDataStorageItem()
-#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#endif //#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )

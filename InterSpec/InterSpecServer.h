@@ -40,7 +40,18 @@ namespace InterSpecServer
                              std::string basedir,
                              const std::string configpath );
   
+  /** Starts the server, given the various options.
+   Sets user data database directory; creates user data directory if needed and sets writable directory; looks for serial_to_model in user data directory; upgrades user data database if needed; sets static data directory (to be basedir + "/data").
+   Then calls #startServerNodeAddon.
+
+   Returns port being served on, or a negative value on error.
+
+   This function is currently used to start the server for the "Electron" version of the app.
+   */
+  int start_server( const char *process_name, const char *userdatadir,
+                            const char *basedir, const char *xml_config_path );
   
+
   void killServer();
   
   
@@ -140,6 +151,11 @@ namespace InterSpecServer
    -1 if files_json is invalid format.
    -2 if session_token is invalid (however, for everywhere besides iOS, currently asks ALL
    sessions to open the files... ToDo: decide on this behavior).
+
+   TODO: currently if session_token is valid, file will be opened synchronously, meaning you 
+         can delete the file immediately after this call.  But if token is invalid, it will
+         open it asynchonously (in all open sessions), meaning you cant delete the file yet... 
+         Not a very nice interface, should brobably remove this latter behaviour
    */
   int open_file_in_session( const char *session_token, const char *files_json );
 
