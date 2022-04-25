@@ -1,8 +1,12 @@
 find_package(Git)
 include(FetchContent)
 
-#message("CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}")
 message("It may take 10 or 20 minutes to clone into boost and Wt repos...")
+
+# We'll set the install directory to somewhere not /usr/local or something, so we dont
+#  mess the system filesystem up; Wt and zlib will install 
+#set( CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/prefix/" CACHE INTERNAL ""  )
+
 
 set( BOOST_IOSTREAMS_ENABLE_ZSTD OFF CACHE INTERNAL ""  )
 set( BOOST_IOSTREAMS_ENABLE_ZLIB OFF CACHE INTERNAL ""  )
@@ -38,25 +42,35 @@ FetchContent_Declare(
   PATCH_COMMAND patch -p1 < ${CMAKE_CURRENT_SOURCE_DIR}/target/patches/wt/3.7.1/FetchContent/wt_3.7.1_FetchContent.git.patch || true
 )
 
-#FetchContent_GetProperties(wt)
-#if(NOT wt_POPULATED)
-#  FetchContent_Populate(wt)
-#  add_subdirectory(${wt_SOURCE_DIR} ${wt_BINARY_DIR} EXCLUDE_FROM_ALL)
-#endif()
+# We will explicitly populate Wt and boost, rather than using this next line, so this way when the user
+#  builds the install target (e.g., for electron build), it wont install stuff to /usr/local
+# FetchContent_MakeAvailable( wt boost )
 
-FetchContent_MakeAvailable( wt boost )
+FetchContent_GetProperties(wt)
+if(NOT wt_POPULATED)
+  FetchContent_Populate(wt)
+  add_subdirectory(${wt_SOURCE_DIR} ${wt_BINARY_DIR} EXCLUDE_FROM_ALL)
+endif()
+
+FetchContent_GetProperties(boost)
+if(NOT boost_POPULATED)
+  FetchContent_Populate(boost)
+  add_subdirectory(${boost_SOURCE_DIR} ${boost_BINARY_DIR} EXCLUDE_FROM_ALL)
+endif()
 
 # Since we arent installing Wt, the InterSpec CMakeLists.txt wont find Wt resources,
 #  so we'll hard code this directory.
 set(WT_RESOURCES_DIRECTORY "${wt_SOURCE_DIR}/resources" CACHE INTERNAL "Set Wt resources dir")
 
 
-# If we run the Cmake "install" target, we'll get an error because 
+# If we run the Cmake "install" target (e.g., for Electron build), we'll get an error because 
 # ${boost_BINARY_DIR}/cmake_install.cmake doesnt exist, so we'll just put a dummy 
 # there, and things seem to work
 #   However, the proper fix would be something like:
 #     https://stackoverflow.com/questions/65527126/disable-install-for-fetchcontent#answer-65529161
+#   Or maybe even better yet, we should modify the patching for Wt and zlib to remove the instal(...) commands
 write_file( "${boost_BINARY_DIR}/cmake_install.cmake" "# This is a dummy patch file the InterSpec build put in" )
+
 
 # macOS, iOS, and Android all have zlib already - we dont need to build it
 if( NOT APPLE AND NOT ANDROID )
@@ -73,6 +87,11 @@ if( NOT APPLE AND NOT ANDROID )
     PATCH_COMMAND patch -p1 < ${CMAKE_CURRENT_SOURCE_DIR}/target/patches/zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch || true
   )
 
+  FetchContent_GetProperties(zlib)
+  if(NOT zlib_POPULATED)
+    FetchContent_Populate(zlib)
+    add_subdirectory(${zlib_SOURCE_DIR} ${zlib_BINARY_DIR} EXCLUDE_FROM_ALL)
+  endif()
 
   FetchContent_MakeAvailable( zlib )
    
@@ -87,3 +106,6 @@ if( NOT APPLE AND NOT ANDROID )
     set( ZLIB_INCLUDE_DIR "${zlib_BINARY_DIR}" CACHE INTERNAL "set zlib include dir" )
   endif()
 endif( NOT APPLE AND NOT ANDROID )
+
+
+message("Building Wt and boost may also take up to a couple hours...")
