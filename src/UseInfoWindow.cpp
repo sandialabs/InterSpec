@@ -1015,6 +1015,8 @@ void UseInfoWindow::loadSample( const Wt::WModelIndex index )
   const string docroot = wApp->docRoot();
   string filepath = SpecUtils::append_path( docroot, val.toUTF8() );
   
+  cout << "Will try to load '" << filepath << "'" << endl;
+  
   manager->loadFromFileSystem( filepath, SpecUtils::SpectrumType::Foreground, parserType );
 }//void UseInfoWindow::loadSample( const Wt::WModelIndex index )
 

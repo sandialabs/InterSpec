@@ -42,7 +42,6 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecServer.h"
-#include "InterSpec/DbToFilesystemLink.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "target/electron/ElectronUtils.h"
 #include "target/electron/InterSpecAddOn.h"
@@ -291,7 +290,6 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
     
     cout << "Will set user preferences file to: '" << preffile << "'" << endl;
     DataBaseUtils::setPreferenceDatabaseFile( preffile );
-    DbToFilesystemLink::setFileNumToFilePathDBNameBasePath( userdatadir );
   }catch( std::exception &e )
   {
     cerr << e.what() << endl;
