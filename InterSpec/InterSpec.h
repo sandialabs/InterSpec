@@ -265,15 +265,20 @@ public:
   //  and would like to propogate this to to the GUI componenets
   void reloadCurrentSpectrum( SpecUtils::SpectrumType spec_type );
 
-  //loadDetectorToPrimarySpectrum(...): loads a default DetectorType to the meas
-  //  object.  If keepMeasModificationStatus is specified true, then the
-  //  modified() and modified_since_decode() statuses of meas will not be
-  //  altered when the detector is loaded (e.x. will remain unmodified).
-  void loadDetectorToPrimarySpectrum( SpecUtils::DetectorType type,
-                                      std::shared_ptr<SpecMeas> meas,
-                                      const std::string sessionId,
-                                      bool keepMeasModificationStatus,
-                                      boost::function<void(void)> modifiedcallback );
+  /** Loads either the user-preferred DRF (e.g., they checked a box to always use a DRF for a
+   specific serial number or model), or a DRF based on DetectorType/manufacturer/model from
+   DRFs available in either the static and user data directories.
+   
+   The modified() and modified_since_decode() statuses of meas will not be changed by loading of a
+   DRF.
+   */
+  void loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
+                                     const SpecUtils::DetectorType type,
+                                     const std::string serial_number,
+                                     const std::string manufacturer,
+                                     const std::string model,
+                                     const bool tryDefaultDrf,
+                                     const std::string sessionId );
 
   
   /** Handles "deep" urls.
@@ -1065,9 +1070,6 @@ protected:
   //  as of 20140110, but still pretty reasonable.
   void detectClientDeviceType();
   
-  //emitDetectorChanged(): emits the detector changed signal for the current
-  //  foreground spectrums detector.
-  void emitDetectorChanged();
   
 protected:
   PeakModel *m_peakModel;
