@@ -179,10 +179,12 @@ public:
       model cooresponds to a user preference in the database for  a DRF to use.
       If found, returns the DRF, if not, returns null.
    */
-  static std::shared_ptr<DetectorPeakResponse> getUserPrefferedDetector(
-                                std::shared_ptr<DataBaseUtils::DbSession> sql,
-                                Wt::Dbo::ptr<InterSpecUser> user,
-                                std::shared_ptr<const SpecUtils::SpecFile> meas );
+  static std::shared_ptr<DetectorPeakResponse> getUserPreferredDetector(
+                                            std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                            Wt::Dbo::ptr<InterSpecUser> user,
+                                            const std::string &serial_number,
+                                            SpecUtils::DetectorType detType,
+                                            const std::string &detector_model );
   
   /**
    */
@@ -218,11 +220,13 @@ public:
    */
   static std::shared_ptr<DetectorPeakResponse> initAGadrasDetectorFromDirectory( const std::string &directory, InterSpec *interspec );
 
-  //Will init detector in the data/detector_responses folder, and return result.
+  //Will init detector in the static and user data folders, and return the first DRF that matches
+  //  DetectorType, or the manufacturer/model.
   //  throws exception if there is an error.
-  //Type should be a DetectorType enum (just not including that header to save
-  //   on deplandcies)
-  static std::shared_ptr<DetectorPeakResponse> initARelEffDetector( const SpecUtils::DetectorType type, InterSpec *interspec );
+  static std::shared_ptr<DetectorPeakResponse> initARelEffDetector( const SpecUtils::DetectorType type,
+                                                                   std::string manufacturer,
+                                                                   std::string model,
+                                                                   InterSpec *interspec );
   
   /** Creates a dialog to allow the user to select to use (one of) the passed in DRFs.
    
