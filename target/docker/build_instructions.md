@@ -1,24 +1,5 @@
-# Step 1) build and install boost 1.65.1 and Wt 3.3.4 into an Ubuntu 18.0.4 base image
-docker build -t interspec_ubuntu_build_env:v1.0 -f "setup_build_env_ubuntu.dockerfile" ../..
-
-# Step 2) Compile InterSpec.
-docker build -t interspec_ubuntu_build:v1.0 -f "build_interspec_ubuntu.dockerfile" ../..
-
-# Step 3) Enter docker image with compiled InterSpec.  The below command will let you use gdb to debug if you want and it maps the images port 8080 to your machines port 8080.
-docker run --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -p 8080:8080 -i -t -v /Users/wcjohns/rad_ana/InterSpec:/interspec interspec_ubuntu_build:v1.0 bash
-
-# Step 4) From within docker, run InterSpec
-cd /tmp/build_interspec/
-./bin/InterSpec.exe --docroot . --http-address 0.0.0.0 --http-port 8080 -c ./data/config/wt_config_localweb.xml
-
-# Step 5) Point your browser to http://localhost:8080/ and use InterSpec.
-
-
 # Instructions 20220422 for building InterSpec using FetchContent for serving over the web
 Please note that security is not consided at all (e.g., InterSpec is currently running as root in container), and no testing has been done for the web-deployment build.
-
-
-
 
 ## Building using a Alpine container
 ```bash
@@ -144,3 +125,21 @@ docker save -o interspec_web.20220422.docker interspec_web
 docker load -i interspec_web.20220422.docker
 ```
 
+# Outdated instrcutions for building under Ubuntu, with manually compiled prerequisits
+
+```bash
+# Step 1) build and install boost 1.65.1 and Wt 3.3.4 into an Ubuntu 18.0.4 base image
+docker build -t interspec_ubuntu_build_env:v1.0 -f "setup_build_env_ubuntu.dockerfile" ../..
+
+# Step 2) Compile InterSpec.
+docker build -t interspec_ubuntu_build:v1.0 -f "build_interspec_ubuntu.dockerfile" ../..
+
+# Step 3) Enter docker image with compiled InterSpec.  The below command will let you use gdb to debug if you want and it maps the images port 8080 to your machines port 8080.
+docker run --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -p 8080:8080 -i -t -v /Users/wcjohns/rad_ana/InterSpec:/interspec interspec_ubuntu_build:v1.0 bash
+
+# Step 4) From within docker, run InterSpec
+cd /tmp/build_interspec/
+./bin/InterSpec.exe --docroot . --http-address 0.0.0.0 --http-port 8080 -c ./data/config/wt_config_localweb.xml
+
+# Step 5) Point your browser to http://localhost:8080/ and use InterSpec.
+```
