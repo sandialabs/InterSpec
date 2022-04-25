@@ -3894,19 +3894,15 @@ void InterSpec::showLicenseAndDisclaimersWindow( const bool is_awk,
 
 void InterSpec::startClearSession()
 {
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( !app )
+    return;
+  
   SimpleDialog *window = new SimpleDialog( "Clear Session?",
                                           "Are you sure you would like to start a clean session?" );
+  
   WPushButton *button = window->addButton( "Yes" );
-  button->clicked().connect( std::bind([=](){
-    WServer::instance()->post( wApp->sessionId(), std::bind( [](){
-      auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
-      if( app )
-      {
-        app->clearSession();
-        app->triggerUpdate();
-      }
-    } ) );
-  }) );
+  button->clicked().connect( app, &InterSpecApp::clearSession );
   
   button = window->addButton( "No" );
   button->setFocus();
@@ -6674,6 +6670,16 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     InterSpecUser::associateWidget( m_user, "DisplayBecquerel", checkbox, this, false );
   }//end add "DisplayBecquerel"
   
+  {//begin add "LoadDefaultDrf"
+    WCheckBox *checkbox = new WCheckBox( " Use default DRFs" );
+    item = subPopup->addWidget( checkbox );
+    HelpSystem::attachToolTipOn( item, "When a spectrum is loaded, and you have not previously"
+                                " associated a detector response function with the model of"
+                                " detector the spectrum is from, whether a default DRF should try"
+                                " to be found and loaded automatically.",
+                                true, HelpSystem::ToolTipPosition::Right );
+    InterSpecUser::associateWidget( m_user, "LoadDefaultDrf", checkbox, this, false );
+  }//end add "LoadDefaultDrf"
   
 	item = subPopup->addMenuItem("Color Themes...");
 	item->triggered().connect(boost::bind(&InterSpec::showColorThemeWindow, this));
@@ -8154,27 +8160,6 @@ std::set<int> InterSpec::validForegroundSamples() const
 }//std::set<int> validForegroundSamples() const
 
 
-void InterSpec::emitDetectorChanged()
-{
-  WApplication *app = wApp;
-  if( !app )
-  {
-    cerr << "InterSpec::emitDetectorChanged: no app available" << endl;
-    return;
-  }
-  
-  std::shared_ptr<DetectorPeakResponse> det;
-  if( !!m_dataMeasurement )
-  {
-    std::lock_guard<std::recursive_mutex> scoped_lock( m_dataMeasurement->mutex() );
-    det = m_dataMeasurement->detector();
-  }
-  
-  m_detectorChanged.emit( det );
-  app->triggerUpdate();
-}//void emitDetectorChanged( std::shared_ptr<DetectorPeakResponse> det )
-
-
 #if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS && !BUILD_AS_ELECTRON_APP )
 void InterSpec::initOsColorThemeChangeDetect()
 {
@@ -8189,11 +8174,13 @@ void InterSpec::initOsColorThemeChangeDetect()
 #endif
 
 
-void InterSpec::loadDetectorToPrimarySpectrum( SpecUtils::DetectorType type,
-                                                    std::shared_ptr<SpecMeas> meas,
-                                                    const string sessionId,
-                                                    bool keepModStatus,
-                                                    boost::function<void(void)> modifiedcallback )
+void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
+                                              SpecUtils::DetectorType type,
+                                              const std::string serial_number,
+                                              const std::string manufacturer,
+                                              const std::string model,
+                                              const bool tryDefaultDrf,
+                                              const std::string sessionId )
 {
   if( !meas )
     return;
@@ -8202,90 +8189,94 @@ void InterSpec::loadDetectorToPrimarySpectrum( SpecUtils::DetectorType type,
 
   //First see if the user has opted for a detector for this serial number of
   //  detector model
-  det = DrfSelect::getUserPrefferedDetector( m_sql, m_user, meas );
+  det = DrfSelect::getUserPreferredDetector( m_sql, m_user, serial_number, type, model );
+  
+  if( !det && (type == SpecUtils::DetectorType::Unknown) )
+    return;
+  
+  if( !det && !tryDefaultDrf )
+    return;
   
   const bool usingUserDefaultDet = !!det;
   
   if( !det )
   {
-    if( type == SpecUtils::DetectorType::Unknown )
-      return;
-    
     try
     {
-      switch( type )
-      {
-        case SpecUtils::DetectorType::IdentiFinder:
-        case SpecUtils::DetectorType::IdentiFinderNG:
-        case SpecUtils::DetectorType::IdentiFinderLaBr3:
-          det = DrfSelect::initARelEffDetector( type, this );
-        break;
-        
-        default:
-          break;
-      }
-    
-      if( !det )
-        det = DrfSelect::initAGadrasDetector( type, this );
-    }catch( std::exception &e )
+      det = DrfSelect::initARelEffDetector( type, manufacturer, model, this );
+    }catch( std::exception & )
     {
-      cerr << "InterSpec::loadDetectorToPrimarySpectrum caught: "
-           << e.what() << endl;
-      return;
     }
   }//if( !det )
+  
+  if( !det )
+  {
+    try
+    {
+      det = DrfSelect::initAGadrasDetector( type, this );
+    }catch( std::exception & )
+    {
+    }
+  }//if( !det )
+  
 
   if( !det )
     return;
   
-  {//begin meas->mutex_ protected codeblock
-    std::lock_guard<std::recursive_mutex> scoped_lock( meas->mutex() );
-    if( meas->detector() /*|| meas->detector_type()!=Unknown*/ )
+  WServer::instance()->post( sessionId, std::bind( [this, meas, det, usingUserDefaultDet](){
+    //ToDo: could add button to remove association with DRF in database,
+    //      similar to the "Start Fresh Session" button.  Skeleton code to do this
+    /*
+     std::unique_ptr<Wt::JSignal<> > m_clearDrfAssociation;
+     m_clearDrfAssociation.reset( new JSignal<>(this, "removeDrfAssociation", false) );
+     m_clearDrfAssociation->connect( this, &InterSpec::... );
+     
+     WStringStream js;
+     js << "File contained RIID analysis results: "
+     << riidAnaSummary(meas)
+     << "<div onclick="
+     "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showRiidAna-" << type << "');"
+     //"$('.qtip.jgrowl:visible:last').remove();"
+     "try{$(this.parentElement.parentElement).remove();}catch(e){}"
+     "return false;\" "
+     "class=\"clearsession\">"
+     "<span class=\"clearsessiontxt\">Show full RIID results</span></div>";
+     
+     WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgShowRiid, 20000 );
+     */
+    
+    if( meas != m_dataMeasurement )
+    {
+      cerr << "Foreground changed by the time DRF was loaded." << endl;
       return;
+    }
     
     const bool wasModified = meas->modified();
     const bool wasModifiedSinceDecode = meas->modified_since_decode();
-    
-    meas->setDetector( det );
-    
-    if( keepModStatus )
-    {
-      if( !wasModified )
-        meas->reset_modified();
-      if( !wasModifiedSinceDecode )
-        meas->reset_modified_since_decode();
-    }//if( keepModStatus )
-  }//end meas->mutex_ protected codeblock
-
-  if( !modifiedcallback.empty() )
-    WServer::instance()->post( sessionId, modifiedcallback );
-
-  if( usingUserDefaultDet )
-  {
-    WServer::instance()->post( sessionId, std::bind( [](){
-      //ToDo: could add button to remove association with DRF in database,
-      //      similar to the "Start Fresh Session" button.  Skeleton code to do this
-      /*
-       std::unique_ptr<Wt::JSignal<> > m_clearDrfAssociation;
-       m_clearDrfAssociation.reset( new JSignal<>(this, "removeDrfAssociation", false) );
-       m_clearDrfAssociation->connect( this, &InterSpec::... );
-       
-       WStringStream js;
-       js << "<div onclick=\"Wt.emit('" << id() << "',{name:'removeDrfAssociation'});"
-       //"$('.qtip.jgrowl:visible:last').remove();return false;\" "
-       "try{$(this.parentElement.parentElement).remove();}catch(e){} return false;\"
-       "class=\"clearsession\"><span class=\"clearsessiontxt\">Remove association of detector with DRF.</span></div>";
-       
-       passMessage( "Using the detector response function you specified to use as default for this detector."
-                    + js.str(), "", WarningWidget::WarningMsgInfo );
-       */
       
-      passMessage( "Using the detector response function you specified to use as default for this detector.",
-                   "", WarningWidget::WarningMsgInfo );
-    }) );
-  }//if( usingUserDefaultDet )
+    meas->setDetector( det );
+      
+    if( !wasModified )
+      meas->reset_modified();
+      
+    if( !wasModifiedSinceDecode )
+      meas->reset_modified_since_decode();
+    
+    m_detectorChanged.emit( det );
+    
+    
+    const char *msg = "Using the detector response function you specified to use as default for this detector.";
+    if( !usingUserDefaultDet )
+      msg = "Have loaded a default detector response function for this detection system.";
+    
+    passMessage( msg, "", WarningWidget::WarningMsgInfo );
+    
+    WApplication *app = WApplication::instance();
+    if( app )
+      app->triggerUpdate();
+  }) );
   
-}//void InterSpec::loadDetectorToPrimarySpectrum( WApplication *app )
+}//void InterSpec::loadDetectorResponseFunction( WApplication *app )
 
 
 void InterSpec::doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
@@ -8470,20 +8461,21 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
             WServer::instance()->ioService().boost::asio::io_service::post( worker );
           }
         }//if( meas->detector() != old_det )
-        
-        SpecUtils::DetectorType detType = meas->detector_type();
-        if( detType == SpecUtils::DetectorType::Unknown )
-          detType = SpecMeas::guessDetectorTypeFromFileName( meas->filename() );
       
         if( !meas->detector() /* && (detType != SpecUtils::DetectorType::Unknown) */ )
         {
-          boost::function<void()> updateemit
-                  = wApp->bind( boost::bind( &InterSpec::emitDetectorChanged,
-                                this ) );
+          const bool doLoadDefault = InterSpecUser::preferenceValue<bool>( "LoadDefaultDrf", this );
+          
+          const string &manufacturer = meas->manufacturer();
+          const string &model = meas->instrument_model();
+          const string &serial_num = meas->instrument_id();
+          SpecUtils::DetectorType type = meas->detector_type();
+          if( type == SpecUtils::DetectorType::Unknown )
+            type = SpecMeas::guessDetectorTypeFromFileName( meas->filename() );
           
           boost::function<void()> worker
-                  = wApp->bind( boost::bind( &InterSpec::loadDetectorToPrimarySpectrum,
-                          this, detType, meas, wApp->sessionId(), true, updateemit ) );
+                  = wApp->bind( boost::bind( &InterSpec::loadDetectorResponseFunction,
+                          this, meas, type, serial_num, manufacturer, model, doLoadDefault, wApp->sessionId() ) );
           furtherworkers.push_back( worker );
         }//if( we could try to load a detector type )
         

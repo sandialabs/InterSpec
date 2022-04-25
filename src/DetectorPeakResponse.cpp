@@ -1555,6 +1555,7 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
       case DrfSource::DefaultGadrasDrf:
       case DrfSource::UserAddedGadrasDrf:
       case DrfSource::UserAddedRelativeEfficiencyDrf:
+      case DrfSource::DefaultRelativeEfficiencyDrf:
       case DrfSource::UserImportedIntrisicEfficiencyDrf:
       case DrfSource::UserImportedGadrasDrf:
       case DrfSource::UserSpecifiedFormulaDrf:
@@ -1704,6 +1705,7 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     case DefaultGadrasDrf:                  val = "DefaultGadrasDrf";                  break;
     case UserAddedGadrasDrf:                val = "UserAddedGadrasDrf";                break;
     case UserAddedRelativeEfficiencyDrf:    val = "UserAddedRelativeEfficiencyDrf";    break;
+    case DefaultRelativeEfficiencyDrf:      val = "DefaultRelativeEfficiencyDrf";      break;
     case UserImportedIntrisicEfficiencyDrf: val = "UserImportedIntrisicEfficiencyDrf"; break;
     case UserImportedGadrasDrf:             val = "UserImportedGadrasDrf";             break;
     case UserSpecifiedFormulaDrf:           val = "UserSpecifiedFormulaDrf";           break;
@@ -1890,6 +1892,8 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
            || compare(node->value(),node->value_size(),"RelativeEfficiencyDefintion",27,false)
            || compare(node->value(),node->value_size(),"UserAddedRelativeEfficiencyDrf",30,false) )
     m_efficiencySource = DrfSource::UserAddedRelativeEfficiencyDrf;
+  else if( compare(node->value(),node->value_size(),"DefaultRelativeEfficiencyDrf",28,false) )
+    m_efficiencySource = DrfSource::DefaultRelativeEfficiencyDrf;
   else if( compare(node->value(),node->value_size(),"UserUploadedEfficiencyCsv",25,false)
           || compare(node->value(),node->value_size(),"UserImportedIntrisicEfficiencyDrf",33,false) )
     m_efficiencySource = DrfSource::UserImportedIntrisicEfficiencyDrf;
