@@ -26,7 +26,7 @@ add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/
 
 
 include_directories( ${CMAKE_JS_INC})
-set( SOURCE_FILES InterSpecAddOn.cpp InterSpecAddOn.h )
+set( SOURCE_FILES InterSpecAddOn.cpp InterSpecAddOn.h ElectronUtils.cpp ElectronUtils.h ../../js/AppHtmlMenu.js )
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${CMAKE_JS_SRC})
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_JS_LIB} InterSpecLib )
@@ -38,6 +38,16 @@ target_include_directories( ${PROJECT_NAME} PUBLIC
                             ${CMAKE_CURRENT_SOURCE_DIR}/../.. 
 )
 
+
+set( ELECTRON_SUPPORT_FILES
+  app/main.js
+  app/loading.html
+  README.md
+  package.json
+  app/launch_options.json
+)
+
+add_custom_target( electron_resources SOURCES ${ELECTRON_SUPPORT_FILES} )
 
 
 install( DIRECTORY ${WT_RESOURCES_DIRECTORY} DESTINATION ${PROJECT_BINARY_DIR}/app/ )

@@ -190,10 +190,10 @@
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"
+#include "js/AppHtmlMenu.js"
 #endif
 
 #include "js/InterSpec.js"
-#include "js/AppHtmlMenu.js"
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
@@ -615,7 +615,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
       snlLogo->addStyleClass("SnlWebMenuBarLogo");
     }else
     {
-      // TODO: If we're here, BUILD_AS_ELECTRON_APP is true, but not putting all this stuff behind compile switch for development purposes - should do this and the including of AppHtmlMenu.js to be behind compile switch.
+      // If we're here, BUILD_AS_ELECTRON_APP is true, but leaving the compile switch easy to comment out for
+      //  development purposes (i.e., there are redundant nested #if statements we can clear up once AppHtmlMenu.js
+      //  development is more clear).
+      
+#if( BUILD_AS_ELECTRON_APP )
       app->useStyleSheet( "InterSpec_resources/AppHtmlMenu.css" );
       m_menuDiv->addStyleClass( "app-titlebar" );
       m_menuDiv->setHeight( 30 );
@@ -702,6 +706,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
         ElectronUtils::send_nodejs_message( "CloseWindow", "" );
       }) );
 #endif //BUILD_AS_ELECTRON_APP
+#else //#if( BUILD_AS_ELECTRON_APP - for dev purposes )
+      assert( 0 );
+#endif //#if( BUILD_AS_ELECTRON_APP - for dev pupropses )
     }//if( !isAppTitlebar ) / else
   }//if( isMobile() ) / else
 

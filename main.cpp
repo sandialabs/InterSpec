@@ -40,6 +40,10 @@
 #include "android/AndroidUtils.hpp"
 #endif
 
+#if( USE_SQLITE3_DB )
+#include "InterSpec/DataBaseUtils.h"
+#endif
+
 
 #if( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE )
 #include "InterSpec/SpectrumViewerTester.h"
@@ -132,6 +136,7 @@ int main( int argc, char **argv )
   
   DataBaseVersionUpgrade::checkAndUpgradeVersion();
   
+  // TODO: switch to using InterSpecServer::startServer(), etc
   return Wt::WRun( argc, argv, &createApplication );
 }//int main( int argc, const char * argv[] )
 
@@ -181,7 +186,7 @@ void getUtf8Args( int &argc, char ** &argv )
 
   // Free memory allocated for CommandLineToArgvW arguments.
   LocalFree(argvw);
-}//void processCustomArgs()
+}//void getUtf8Args()
 #endif
 
 
@@ -209,6 +214,33 @@ void processCustomArgs( int argc, char **argv )
       }
     }//if( argv[i] == std::string("--userdatadir") )
 #endif  //if( not a webapp )
+
+#if( USE_SQLITE3_DB )
+    if( argv[i] == std::string("--userdb") )
+    {
+      try
+      {
+        // TODO: make sure the filename is valid and we can write to it, and also let using = sign
+        DataBaseUtils::setPreferenceDatabaseFile( argv[i+1] );
+      }catch( std::exception & )
+      {
+        std::cerr << "Invalid userdb ('" << argv[i+1] << "') specified" << std::endl;
+      }
+    }//if( argv[i] == std::string("--userdatadir") )
+#endif
+   
+    if( argv[i] == std::string("--static-data-dir") )
+    {
+      try
+      {
+        // Let user use the = sign
+        InterSpec::setStaticDataDirectory( argv[i+1] );
+      }catch( std::exception &e )
+      {
+        std::cerr << "Invalid static data directory ('" << argv[i+1] << "') specified: " << e.what() << std::endl;
+      }
+    }//if( argv[i] == std::string("--userdatadir") )
+
   }//for( int i = 1; i < (argc-1); ++i )
   
   

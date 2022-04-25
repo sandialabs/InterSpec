@@ -65,8 +65,8 @@ protected:
   
   void lgplLicenseCreator( Wt::WContainerWidget *parent );
   SideMenuItem *makeLgplLicenseItem();
-  
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   void dataStorageCreator( Wt::WContainerWidget *parent );
   SideMenuItem *makeDataStorageItem();
 #endif

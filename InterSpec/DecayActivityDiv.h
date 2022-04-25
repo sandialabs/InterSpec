@@ -122,9 +122,6 @@ public:
   Wt::WCheckBox               *m_logYScale;
   Wt::WCheckBox               *m_photopeakLogYScale;
   Wt::WCheckBox               *m_showGridLines;
-#if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
-  Wt::WAnchor                 *m_pdfAnchor;
-#endif
 
   Wt::WComboBox               *m_yAxisType;
   
@@ -161,10 +158,6 @@ public:
   AuxWindow                   *m_moreInfoDialog;
 
   Wt::WContainerWidget        *m_decayLegend;
-  
-#if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
-  ChartToImageResource        *m_pdfResource;
-#endif
 
   DateLengthCalculator *m_calc;
   

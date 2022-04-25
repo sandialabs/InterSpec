@@ -97,11 +97,6 @@
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
-#include "InterSpec/ZipArchive.h"
-#endif
-
-
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
@@ -111,6 +106,7 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/ZipArchive.h"
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -705,7 +701,6 @@ FileDragUploadResource *SpecMeasManager::backgroundDragNDrop()
 #endif  //if( !ANDROID && !IOS )
 
 
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
 
 void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
                                              WButtonGroup *group,
@@ -986,7 +981,6 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
   
   return true;
 }//void handleZippedFile(...)
-#endif //#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
 
 
 
@@ -1142,16 +1136,9 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   if( iszip )
   {
     const char *msg = NULL;
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
   //zip (but can be xlsx, pptx, docx, odp, jar, apk) 50 4B 03 04
     msg = "This file appears to be an invalid ZIP file (or xlsx, pptx, <br />"
           "docx, odp, jar, apk, etc), sorry I cant open it :(";
-#else
-    msg = "This build of InterSpec does not support ZIP files.<br />"
-          "Please contact "
-          "<a href=\"mailto:wcjohns@sandia.gov\" target=\"_blank\">wcjohns@sandia.gov</a> "
-          "for a version that supports ZIP files.";
-#endif
     WText *t = new WText( msg );
     stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
@@ -1477,8 +1464,8 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
       cerr << "handleMultipleDrfCsv: error saving multiple DRF file: " << e.what() << endl;
       passMessage( "Error saving DRF file for later use.", "", WarningWidget::WarningMsgHigh );
     }//try / catch to save file
-#endif
   };//saveDrfFile
+#endif
   
   
   string dialogmsg;
@@ -1859,15 +1846,12 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
   } BOOST_SCOPE_EXIT_END
   
  
-  
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
   if( name.length() > 4
      && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
      && handleZippedFile( name, spoolName, type ) )
   {
     return;
   }
-#endif
   
   
   try
@@ -2899,18 +2883,13 @@ void SpecMeasManager::displayQuickSaveAsDialog()
     a->setInline( false );
     a->setStyleClass( "LoadSpectrumSaveAsLink" );
 
-//Either of the two lines below will work to get rid of the save as dialog (at
-//  least it looks like it), but I think looking for the link being clicked is
-//  a little safer, since I'm not sure how the connections are managed in the
-//  case of using the downloadComplete() slot
-    a->clicked().connect( boost::bind( &SpecMeasManager::cleanupQuickSaveAsDialog, this, dialog, wApp ) );
-//    m_specificResources[i]->downloadComplete().connect( boost::bind( &SpecMeasManager::cleanupQuickSaveAsDialog, this, dialog, wApp ) );
+    a->clicked().connect( dialog, &AuxWindow::hide );
   }//for( SaveSpectrumAsType i = ... )
   
 
   WPushButton *cancel = new WPushButton( "Cancel", dialog->contents() );
   cancel->setInline( false );
-  cancel->clicked().connect( boost::bind( &SpecMeasManager::cleanupQuickSaveAsDialog, this, dialog, wApp ) );
+  cancel->clicked().connect( dialog, &AuxWindow::hide );
   dialog->finished().connect( boost::bind( &SpecMeasManager::cleanupQuickSaveAsDialog, this, dialog, wApp ) );
   
   dialog->show();
@@ -4083,7 +4062,6 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
     displayFile( row, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
   }catch( const std::exception &e )
   {
-#if( SUPPORT_ZIPPED_SPECTRUM_FILES )
     {
       ifstream test( name.c_str(), ios::in | ios::binary );
       const bool iszip = (test.get()==0x50 && test.get()==0x4B
@@ -4095,7 +4073,6 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
          && handleZippedFile( origName, name, type ) )
       return true;
     }
-#endif
     
     if( !handleNonSpectrumFile( origName, name ) )
     {
@@ -4296,7 +4273,7 @@ void SpecMeasManager::cleanupQuickSaveAsDialog( AuxWindow *dialog, WApplication 
   }
   
   
-  dialog->accept();
+  //dialog->accept();
   delete dialog;
     
   for( SaveSpectrumAsType i = SaveSpectrumAsType(0);

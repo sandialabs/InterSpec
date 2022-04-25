@@ -1,21 +1,37 @@
-//
-//  wtServer.cpp
-//  InterSpec
-//
-//  Created by Johnson, William C on 6/25/17.
-//  Copyright © 2017 Sandia National Laboratories. All rights reserved.
-//
+/* InterSpec: an application to analyze spectral gamma radiation data.
+
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
 
 #include "InterSpec_config.h"
-
-#include "InterSpec/InterSpecServer.h"
 
 #include <map>
 #include <mutex>
 #include <string>
 #include <chrono>
+#include <fstream>
 #include <cstdlib>
 #include <stdlib.h>
+#include <iostream>
+
 
 #if __APPLE__
 #include "TargetConditionals.h"
@@ -35,20 +51,17 @@
 #include <Wt/Json/Parser>
 
 
-#include <stdlib.h>
-#include <iostream>
-#include <fstream>
-
-
-#include <boost/thread.hpp>
-#include <boost/shared_ptr.hpp>
 #include <boost/filesystem.hpp>
 
-
 #include "SpecUtils/SpecFile.h"
+#include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/DataBaseUtils.h"
+#include "InterSpec/InterSpecServer.h"
+#include "SpecUtils/SerialToDetectorModel.h"
+#include "InterSpec/DataBaseVersionUpgrade.h"
 
 
 using namespace std;
@@ -333,6 +346,132 @@ namespace InterSpecServer
     }//if( server.start() )
   }//startServerNodeAddon(...)
   
+
+int start_server( const char *process_name, const char *userdatadir,
+                            const char *basedir, const char *xml_config_path )
+{
+  //Using a relative path should get us in less trouble than an absolute path
+  //  on Windows.  Although havent yet tested (20190902) with network drives and such on Windows.
+  //Should check if basedir is a relative or absolut path before this next step
+//#warning "Need to check out how this setting basedir for Electron target works on Windows network drives and such"
+  string cwd, relbasedir;
+
+  try
+  {
+    cwd = SpecUtils::get_working_path();
+    relbasedir = basedir; //SpecUtils::fs_relative( cwd, basedir );
+    cerr << "cwd='" << cwd << "'" << endl;
+    cerr << "relbasedir='" << relbasedir << "'" << endl;
+    cerr << "userdatadir='" << userdatadir << "'" << endl;
+    //if( relbasedir.size() >= strlen(basedir) )
+    //  relbasedir = basedir;
+    if( relbasedir.empty() )
+      relbasedir = ".";
+  }catch( std::exception &e )
+  {
+    cerr << "When setting directories to serve, caught: " << e.what() << endl;
+    return -1;
+  }
+  
+  try
+  {
+    //ToDo: refactor this userdatadir stuff into function inside InterSpecServer
+    //      or InterSpecApp or something.
+    if( !SpecUtils::create_directory(userdatadir) )
+      throw std::runtime_error( "Failed to create directory '" + string(userdatadir) + "' for user data." );
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -2;
+  }
+  
+  try
+  {
+    const string preffile = SpecUtils::append_path( userdatadir, "InterSpecUserData.db" );
+    
+    cout << "Will set user preferences file to: '" << preffile << "'" << endl;
+    DataBaseUtils::setPreferenceDatabaseFile( preffile );
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -3;
+  }
+  
+  try
+  {
+    const string directories_to_try[] = { userdatadir, 
+      SpecUtils::append_path(relbasedir,"data"), 
+      SpecUtils::append_path(relbasedir,"data_ouo") 
+    };
+
+    for( const string &trial_dir : directories_to_try )
+    {
+      const auto serial_db = SpecUtils::ls_files_in_directory( trial_dir, "serial_to_model.csv" );
+      if( !serial_db.empty() )
+      {
+        SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
+        cout << "Will use serial_to_model.csv from directory '" << trial_dir << "'" << endl;
+        break;
+      }
+    }//
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -4;
+  }
+  
+  
+  try
+  {
+    InterSpec::setWritableDataDirectory( userdatadir );
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -5;
+  }
+  
+  try
+  {
+    cout << "Will make sure preferences database is up to date" << endl;
+    DataBaseVersionUpgrade::checkAndUpgradeVersion();
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -6;
+  }
+  
+  
+  try
+  {
+    InterSpec::setStaticDataDirectory( SpecUtils::append_path(relbasedir,"data") );
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -8;
+  }
+    //ToDo: should look into using '--approot' Wt Argument.
+    
+    //try
+    //{
+    //  boost::filesystem::current_path( basedir );
+    //  cout << "Changed to cwd: " << basedir << endl;
+    //}catch ( std::exception &e )
+    //{
+    //  cerr << "Unable to change to directory: '" << basedir << "' :" << e.what() << endl;
+    //}
+
+  try
+  {
+    InterSpecServer::startServerNodeAddon( process_name, relbasedir, xml_config_path );
+  }catch( std::exception &e )
+  {
+    std::cerr << "\n\nCaught exception trying to start InterSpec server:\n\t"
+    << e.what() << std::endl << std::endl;
+    return -9;
+  }
+  
+  return InterSpecServer::portBeingServedOn();
+}//int interspec_start_server( int argc, char *argv[] )
   
   void killServer()
   {
