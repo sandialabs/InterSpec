@@ -2883,18 +2883,13 @@ void SpecMeasManager::displayQuickSaveAsDialog()
     a->setInline( false );
     a->setStyleClass( "LoadSpectrumSaveAsLink" );
 
-//Either of the two lines below will work to get rid of the save as dialog (at
-//  least it looks like it), but I think looking for the link being clicked is
-//  a little safer, since I'm not sure how the connections are managed in the
-//  case of using the downloadComplete() slot
-    a->clicked().connect( boost::bind( &SpecMeasManager::cleanupQuickSaveAsDialog, this, dialog, wApp ) );
-//    m_specificResources[i]->downloadComplete().connect( boost::bind( &SpecMeasManager::cleanupQuickSaveAsDialog, this, dialog, wApp ) );
+    a->clicked().connect( dialog, &AuxWindow::hide );
   }//for( SaveSpectrumAsType i = ... )
   
 
   WPushButton *cancel = new WPushButton( "Cancel", dialog->contents() );
   cancel->setInline( false );
-  cancel->clicked().connect( boost::bind( &SpecMeasManager::cleanupQuickSaveAsDialog, this, dialog, wApp ) );
+  cancel->clicked().connect( dialog, &AuxWindow::hide );
   dialog->finished().connect( boost::bind( &SpecMeasManager::cleanupQuickSaveAsDialog, this, dialog, wApp ) );
   
   dialog->show();
@@ -4278,7 +4273,7 @@ void SpecMeasManager::cleanupQuickSaveAsDialog( AuxWindow *dialog, WApplication 
   }
   
   
-  dialog->accept();
+  //dialog->accept();
   delete dialog;
     
   for( SaveSpectrumAsType i = SaveSpectrumAsType(0);

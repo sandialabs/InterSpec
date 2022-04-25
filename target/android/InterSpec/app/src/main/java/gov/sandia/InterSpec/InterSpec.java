@@ -255,10 +255,16 @@ public class InterSpec extends Activity
     if( pathname != null )
     {
       //now we should tell InterSpec to open pathname.
-      //  The only problem is we dont know if it should be foreground, sceond, or background
+      //  The only problem is we dont know if it should be foreground, secondary, or background
 		  
 	  Log.d("openFileInInterSpec", "Will send the following to InterSpec: " + pathname);
-	  int staus = openfileininterppec( pathname, 0, interspecID );
+	  // TODO: as long as there are no errors, we can clean up the file immediately, but if there is an error we should do something...
+      int status = openFile( interspecID, pathname );
+
+      if( status <= 0 )
+      {
+        Log.d("onActivityResult", "Failed to open file with status: " + status );
+      }
 
       Log.d("onActivityResult", "Open file status: " + pathname);
 
@@ -330,24 +336,28 @@ public class InterSpec extends Activity
   @Override
   public void onCreate( Bundle savedInstanceState )
   {
-	  Log.d("onCreate", "Starting");
+    Log.d("onCreate", "Starting");
 
     Intent intent = getIntent();
     String action = intent.getAction();
     String type = intent.getType();
 
     Random rn = new Random();
-	  interspecID = "androidsession" + Integer.toString(rn.nextInt(9999999));
-		 
+    interspecID = "androidsession" + Integer.toString(rn.nextInt(9999999));
+
+    addPrimarySessionToken( interspecID );
+
     if( httpPort == 0 )
     {
-	    Log.d("onCreate", "Starting server");
+      setTempDir( getCacheDir().getPath() );
+      //File tmpDir = new File(activity.getFilesDir().getAbsolutePath() + "/tmp");
+      //tmpDir.mkdir();
+      //setTempDir( tmpDir.getAbsolutePath() );
+
+      Log.d("onCreate", "Starting server");
       super.onCreate(savedInstanceState);
     
       this.requestWindowFeature( android.view.Window.FEATURE_NO_TITLE );
-
-      settmpdir( getCacheDir().getPath() );
-    
       httpPort = startWt(this);
     
       setContentView(R.layout.main);
@@ -379,6 +389,8 @@ public class InterSpec extends Activity
 
       webview.setWebChromeClient(new WtWebChromeClient());
 
+      // TODO: I think see https://stackoverflow.com/questions/3926629/downloadlistener-not-working to get download listner working
+      //webview.setWebViewClient( blah blah blah );
 
       webview.setDownloadListener(new DownloadListener() {
         @Override
@@ -424,29 +436,19 @@ public class InterSpec extends Activity
             String pathname = copyUriToTmpDir( fileUri, displayName );
             if( pathname != null )
             {
-              int entrynum = addopenfiletodb(pathname);
-              Log.d("onCreate", "ACTION_VIEW, after copying to temp file '" + pathname
-                      + "' will load from from dbentry=" + entrynum );
-              webview.loadUrl("http://localhost:" + httpPort + "/?externalid=" + interspecID + "&specfile=" + entrynum);
-
+              int status = setInitialFileToLoad( interspecID, pathname );
+              Log.d("onCreate", "ACTION_VIEW, Will open file '" + pathname + "' on load; status=" + status );
               //We should delete the file at some point...
-            }else
-            {
-              Log.d("onCreate", "ACTION_VIEW, Failed to copy resource to a temporary file." );
-              webview.loadUrl("http://localhost:" + httpPort + "/?externalid=" + interspecID );
             }
           }else
           {
             // handle as file uri
-            Log.d("onCreate", "ACTION_VIEW, fileUri is NOT a SCHEME_CONTENT, but a path=" + fileUri.getPath() );
-            int entrynum = addopenfiletodb( fileUri.getPath() );
-            Log.d("onCreate", "ACTION_VIEW, will load from from dbentry=" + entrynum );
-            webview.loadUrl("http://localhost:" + httpPort + "/?externalid=" + interspecID + "&specfile=" + entrynum );
+            int status = setInitialFileToLoad( interspecID, fileUri.getPath() );
+            Log.d("onCreate", "ACTION_VIEW, fileUri is NOT a SCHEME_CONTENT, but a path=" + fileUri.getPath()  + "; will open with status=" + status );
           }
         }else
         {
-          Log.d("onCreate", "ACTION_VIEW, but not fileUri, will call loadUrl though");
-          webview.loadUrl("http://localhost:" + httpPort + "/?externalid=" + interspecID );
+          Log.d("onCreate", "ACTION_VIEW, fileUri is null");
         }
       }else
       {
@@ -457,10 +459,10 @@ public class InterSpec extends Activity
         {
           Log.d("onCreate", "Another Action: " + action );
         }
-
-        Log.d("onCreate", "Loading default initial page");
-        webview.loadUrl("http://localhost:" + httpPort + "/?externalid=" + interspecID);
       }
+
+      Log.d("onCreate", "Will load 'http://127.0.0.1:" + httpPort + "/?apptoken=" + interspecID + "'");
+      webview.loadUrl("http://127.0.0.1:" + httpPort + "/?apptoken=" + interspecID );
 
 	    /*Enable remote debugging of webview, requires API 19 (KITKAT) */
 	    if( Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT )
@@ -693,7 +695,7 @@ public class InterSpec extends Activity
 
   public static int startWt( Activity activity )
   {
-    Log.d("WtAndroid::onCreate", "in startWt ...");
+    Log.d("WtAndroid::startWt", "in startWt ...");
 
     String wtAssetsDir = activity.getFilesDir().getAbsolutePath() + "/wt-assets/";
     try
@@ -710,6 +712,23 @@ public class InterSpec extends Activity
     if( userDataDir.isEmpty() )
       userDataDir = activity.getFilesDir().getAbsolutePath();
 
+    String xml_config_path = wtAssetsDir + "/data/config/wt_config_android.xml";
+
+    // TODO: need to change wt_error_log.log to go into cache directory
+
+    Log.d("WtAndroid::startWt", "About to call into native");
+    int httpPort = startServingInterSpec( "InterSpec", userDataDir, wtAssetsDir, xml_config_path );
+
+    if( httpPort <= 0 )
+    {
+      Log.d("WtAndroid::startWt", "Failed to  " + httpPort);
+      // TODO: display flat HTML page with error
+    }
+
+    Log.d("WtAndroid::startWt", "Started wt application on http-port " + httpPort);
+
+    return httpPort;
+/*
     List<String> args = new ArrayList<String>();
     args.add("app");
 
@@ -743,15 +762,16 @@ public class InterSpec extends Activity
 
     //Electron version of app also specifies "--userdatadir", "--basedir", and "--externalid"
 
-    Log.d("WtAndroid::onCreate", "Starting wt application ...");
+    Log.d("WtAndroid::startWt", "Starting wt application ...");
     String[] argv = new String[args.size()];
     args.toArray(argv);
 
 
     int httpPort = WtAndroid.startwt(argv);
-    Log.d("WtAndroid::onCreate", "Started wt application on http-port " + httpPort);
+    Log.d("WtAndroid::startWt", "Started wt application on http-port " + httpPort);
 
     return httpPort;
+ */
   }//public static int startWt(...)
 
 
@@ -876,7 +896,18 @@ public class InterSpec extends Activity
   }
 
 
-  public static native int addopenfiletodb( String path );
+
+  public static native int startServingInterSpec( String process_name, String userdatadir, String basedir, String xml_config_path );
+  public static native int openFile( String sessionToken, String filepath);
+  public static native boolean killServer();
+  public static native boolean setTempDir( String tmpdir );
+  public static native boolean setRequireSessionToken( String require );
+  public static native boolean addPrimarySessionToken( String token );
+  public static native boolean addExternalSessionToken( String token );
+  public static native int removeSessionToken( String token );
+  public static native int setInitialFileToLoad( String token, String filepath );
+
+
   public static native int openfileininterppec( String path, int type, String sessionid );
   public static native void settmpdir( String tmpPath );
 }
