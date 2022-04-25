@@ -719,7 +719,9 @@ public:
 class RelEffFile : public Wt::WContainerWidget
 {
   void init();
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   void handleUserAskedRemove();
+#endif
   
   std::string m_existingFilePath; //Will be non-empty only if constructor with a path name is used, or user has asked to save the file for later
   WFileUpload *m_fileUpload; //Will be nullptr if constructor with a string is used
@@ -756,7 +758,10 @@ public:
   void detectorSelected( const int index );
   
   void handleFileUpload();
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   void handleSaveFileForLater();
+#endif
   
   const std::vector<std::shared_ptr<DetectorPeakResponse> > &availableDrfs();
 };//class RelEffFile
@@ -886,12 +891,13 @@ void RelEffFile::init()
   
   WContainerWidget *topdiv = new WContainerWidget( this );
 
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
   WPushButton *closeIcon = new WPushButton( topdiv );
   closeIcon->addStyleClass( "closeicon-wtdefault" );
   closeIcon->setToolTip( "Remove file from list of files InterSpec will look for detector response functions in." );
   //closeIcon->setAttributeValue( "style", "position: relative; top: 3px; right: 3px;" + closeIcon->attributeValue("style") );
   closeIcon->clicked().connect( this, &RelEffFile::handleUserAskedRemove );
-  
+#endif
   
   if( m_existingFilePath.size() )
   {
@@ -996,29 +1002,6 @@ void RelEffFile::handleUserAskedRemove()
   delete this;
 }//void RelEffFile::handleUserAskedRemove()
 
-
-void RelEffFile::handleFileUpload()
-{
-  selectNone();
-
-  initDetectors();
-  
-  if( m_responses.empty() )
-  {
-    passMessage( "Not a valid TSV or CSV relative-efficiency DRF file.",
-                 "", WarningWidget::WarningMsgHigh );
-    return;
-  }//if( invalid file )
-  
-  SimpleDialog *dialog = new SimpleDialog( "Save Detector Responses?",
-                                "Would you like to save these detector responses for later use?" );
-  
-  Wt::WPushButton *yes = dialog->addButton( "Yes" );
-  dialog->addButton( "No" );
-  yes->clicked().connect( this, &RelEffFile::handleSaveFileForLater );
-}//void handleFileUpload()
-
-
 void RelEffFile::handleSaveFileForLater()
 {
   if( !m_fileUpload )
@@ -1085,6 +1068,32 @@ void RelEffFile::handleSaveFileForLater()
   }//try / catch
 }//void handleSaveFileForLater();
 #endif  //#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+
+
+void RelEffFile::handleFileUpload()
+{
+  selectNone();
+
+  initDetectors();
+  
+  if( m_responses.empty() )
+  {
+    passMessage( "Not a valid TSV or CSV relative-efficiency DRF file.",
+                 "", WarningWidget::WarningMsgHigh );
+    return;
+  }//if( invalid file )
+  
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+  SimpleDialog *dialog = new SimpleDialog( "Save Detector Responses?",
+                                "Would you like to save these detector responses for later use?" );
+  
+  Wt::WPushButton *yes = dialog->addButton( "Yes" );
+  dialog->addButton( "No" );
+  yes->clicked().connect( this, &RelEffFile::handleSaveFileForLater );
+#endif
+}//void handleFileUpload()
+
+
 
 void RelEffFile::selectNone()
 {

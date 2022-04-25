@@ -13,3 +13,135 @@ cd /tmp/build_interspec/
 
 # Step 5) Point your browser to http://localhost:8080/ and use InterSpec.
 
+
+# Instructions 20220422 for building InterSpec using FetchContent for serving over the web
+Please note that security is not consided at all (e.g., InterSpec is currently running as root in container), and no testing has been done for the web-deployment build.
+
+
+
+
+## Building using a Alpine container
+```bash
+# From your host OS terminal, run the following commands
+git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_fetch_content
+cd InterSpec_fetch_content
+git checkout feature/FetchContent
+
+# Grab the Alpine image to your machine
+docker pull alpine:latest
+
+# Start a shell session within the image, mapping the InterSpec source 
+#  directory to /interspec.  We'll also map port 8082 for testing.
+docker run --rm -it -v `pwd`:/interspec -p 127.0.0.1:8082:8082/tcp alpine:latest sh
+
+# Get the dependancies we need to build InterSpec
+apk add --update alpine-sdk cmake patch linux-headers
+
+# Make and cd into build directory - note this is in host filesystem incase we  
+#  want to come back to things, but dont want to rebuild everything from scratch
+cd interspec/
+mkdir build_docker
+cd build_docker
+
+# This next command will take like 10 or 20 minutes to clone into the boost and Wt repositories
+#  Also note that it will build a static executable, that *should* run on nearly any linux (but unteted)
+cmake -DUSE_SQLITE3_DB=ON -DBUILD_FOR_WEB_DEPLOYMENT=ON -DInterSpec_FETCH_DEPENDENCIES=ON -DBUILD_AS_LOCAL_SERVER=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_E
+XE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -static" ..
+
+# And actually building everything will take maybe an hour the first time; after
+#  that each rebuild should only take a minute or less.
+cmake --build . --config Release -j6
+
+# Grab html resources needed by Wt
+cp -r _deps/wt-src/resources .
+
+# Test running the newly compiled InterSpec executable (connect on your host OS browser at http://127.0.0.1:8082)
+./InterSpec --docroot=. --http-address=0.0.0.0 --http-port=8082 --config=data/config/wt_config_localweb.xml --accesslog=- --no-compression
+
+
+# Now create a directory with all the InterSpec resources you need
+mkdir interspec_install
+mkdir interspec_install/html_root
+cp InterSpec interspec_install
+cp -r ../data ../InterSpec_resources ../example_spectra _deps/wt-src/resources interspec_install/html_root/
+```
+
+Now to make a self-contained container - back in your host OS terminal:
+```bash
+# Get rid of old containers:
+docker rmi interspec_alpine_web
+
+# Build the container run the following from the InterSpec base-dir:
+docker build -t 'interspec_alpine_web' -f target/docker/alpine_web_container.dockerfile .
+
+# Run the InterSpec docker container:
+docker run -p 127.0.0.1:8078:8078/tcp interspec_alpine_web
+
+# To save the container to a file, run:
+docker save -o interspec_alpine_web.20220424.docker interspec_alpine_web
+
+# To load the container from a  file, run:
+docker load -i interspec_alpine_web.20220424.docker
+```
+
+
+
+
+
+## Building using a Fedora container
+
+```bash
+# From your host OS terminal, run the following commands
+git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_fetch_content
+cd InterSpec_fetch_content
+git checkout feature/FetchContent
+docker pull fedora:35
+
+# Start a shell session within the image
+docker run --rm -it -v `pwd`:/interspec -p 127.0.0.1:8082:8082/tcp fedora:35 sh
+
+# Install dependancies needed to compile InterSpec
+dnf install make automake gcc gcc-c++ kernel-devel cmake git patch
+
+cd interspec/
+mkdir build_docker
+cd build_docker
+
+# This next command will take like 10 or 20 minutes to clone into the boost and Wt repositories
+cmake -DUSE_SQLITE3_DB=ON -DBUILD_FOR_WEB_DEPLOYMENT=ON -DInterSpec_FETCH_DEPENDENCIES=ON -DBUILD_AS_LOCAL_SERVER=OFF -DCMAKE_BUILD_TYPE=Release ..
+
+# Build everything; may take while first time
+cmake --build . --config Release -j6
+
+# Grab html resources needed by Wt
+cp -r _deps/wt-src/resources .
+
+# Test running the newly compiled InterSpec executable
+./InterSpec --docroot=. --http-address=0.0.0.0 --http-port=8082 --config=data/config/wt_config_localweb.xml --accesslog=- --no-compression
+
+# Now create a directory with all the InterSpec resources you need
+mkdir interspec_install
+mkdir interspec_install/html_root
+cp InterSpec interspec_install
+cp -r ../data ../InterSpec_resources ../example_spectra _deps/wt-src/resources interspec_install/html_root/
+```
+
+
+Now to make a self-contained container - back in your host OS terminal:
+```bash
+# Get rid of old containers:
+docker rmi interspec_web
+
+# Build the container run the following from the InterSpec base-dir:
+docker build -t 'interspec_web' -f target/docker/fedora_web_container.dockerfile .
+
+# Run the InterSpec docker container:
+docker run -p 127.0.0.1:8078:8078/tcp interspec_web
+
+# To save the container to a file, run:
+docker save -o interspec_web.20220422.docker interspec_web
+
+# To load the container from a  file, run:
+docker load -i interspec_web.20220422.docker
+```
+
