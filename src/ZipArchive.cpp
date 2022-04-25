@@ -234,7 +234,7 @@ std::map<std::string, std::shared_ptr<const ZipFileHeader> >
   const ios::streampos end_position = instrm.tellg();
   const size_t max_comment_size = 0xffff; // max size of header, 65535
   const size_t read_size_before_comment = 22;
-  ios::streamoff read_start = max_comment_size + read_size_before_comment;
+  std::streamoff read_start = max_comment_size + read_size_before_comment;
   
   if( read_start > end_position)
     read_start = end_position;
@@ -251,7 +251,7 @@ std::map<std::string, std::shared_ptr<const ZipFileHeader> >
   
   bool foundheader = false;
   size_t headerstart = -1;
-  for( size_t i = 0; static_cast<ios::streamoff>(i) < read_start-3; i++)
+  for( size_t i = 0; static_cast<std::streamoff>(i) < read_start-3; i++)
   {
     if( buf[i]==0x50 && buf[i+1]==0x4b && buf[i+2]==0x05 && buf[i+3]==0x06 )
     {
@@ -265,7 +265,7 @@ std::map<std::string, std::shared_ptr<const ZipFileHeader> >
   if( headerstart == -1 )
     throw runtime_error( "ZipArchive: Couldnt find zip header" );
   
-  const ios::streamoff nbytesFromEnd = read_start - headerstart;
+  const std::streamoff nbytesFromEnd = read_start - headerstart;
   instrm.seekg( end_position - nbytesFromEnd );
   
   uint32_t word;
