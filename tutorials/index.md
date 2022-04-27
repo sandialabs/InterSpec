@@ -12,7 +12,7 @@
       * [trinitite_sample_b.n42](familiarization_Apr2022/trinitite_sample_b.n42)
       * [trinitite_sample_b_background.n42](familiarization_Apr2022/trinitite_sample_b_background.n42)
     * Energy calibration practice: [th232_energy_cal_practice.n42](familiarization_Apr2022/th232_energy_cal_practice.n42)
-    * Uranium enrichment [uranium_HPGe_15cm_peaks_fit.n42](familiarization_Apr2022/uranium_HPGe_15cm_peaks_fit.n42)
+    * Uranium enrichment [uranium_40%_HPGe_15cm_peaks_fit.n42](familiarization_Apr2022/uranium_40%_HPGe_15cm_peaks_fit.n42)
     * Surface contamination: [Eu152_surface_contamination_uDetective.n42](familiarization_Apr2022/Eu152_surface_contamination_uDetective.n42)
 
 
