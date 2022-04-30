@@ -319,6 +319,11 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   }//for( loop over FeatureMarkerType's )
   options += ", comptonPeakAngle:" + std::to_string(m_comptonPeakAngle);
   
+//Reading the configuration property from wt_config.xml doesnt seem to work; didnt spend time to debug
+//  string double_click_time;
+//  if( wApp->readConfigurationProperty( "double-click-timeout", double_click_time ) )
+//    options += ", doubleClickDelay:" + double_click_time;
+  
   options += "}";
   
   setJavaScriptMember( "chart", "new SpectrumChartD3(" + jsRef() + "," + options + ");");
