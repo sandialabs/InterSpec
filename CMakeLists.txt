@@ -156,8 +156,10 @@ set( INTERSPEC_LIB_TYPE "STATIC" )
 
 
 if(WIN32)
+  #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
+  add_definitions(-D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS /bigobj /MP )
+
 #    set(EXECUTABLE_OUTPUT_PATH . CACHE PATH "Path to executables" FORCE)
-    add_definitions(-D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS ) #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
 #    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj /MP /wd4996 /wd4267" )
 else(WIN32)
 #    set(EXECUTABLE_OUTPUT_PATH bin CACHE PATH "Path to executables" FORCE)
@@ -216,58 +218,7 @@ if(ANDROID)
     set(TRY_TO_STATIC_LINK ON)
     set(MAX_SPECTRUM_MEMMORY_SIZE_MB 32)
     set(USE_DB_TO_STORE_SPECTRA ON)
-    set(USE_HIGH_BANDWIDTH_INTERACTION ON)
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
-    set(USE_TERMINAL_WIDGET OFF)
-    set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
-#    set(SHARED_LIBS OFF)
-#    add_definitions(-DANDROID -DWT_NO_STD_WSTRING=ON -DWT_NO_STD_LOCALE=ON)
-
-    #This is just painful.  I cant get the find_* macros to work with the CMake
-    # included as part of Android Studio... After wasting what seems like an entire
-    # day, its time for the brute force solution
-#    if(NOT BOOST_WT_PREFIX_BASE)
-#        message(
-#            fatal
-#            "You must define BOOST_WT_PREFIX_BASE when building Android build"
-#        )
- #   endif(NOT BOOST_WT_PREFIX_BASE)
- #   set(USRPREFIX "${BOOST_WT_PREFIX_BASE}/${ANDROID_ABI}")
- #   set(BOOST_LIB_START "${USRPREFIX}/lib/libboost_")
- #   set(BOOST_LIB_END "-clang-darwin-mt-1_65_1.a")
-
-#    list(APPEND CMAKE_FIND_ROOT_PATH "${USRPREFIX}")
-
-#    set(BOOST_PREFIX "${USRPREFIX}")
-#    set(Boost_LIBRARY_DIR "${USRPREFIX}/lib")
-#    set(Boost_INCLUDE_DIR "${USRPREFIX}/include")
-#    set(Boost_ATOMIC_LIBRARY_RELEASE ${BOOST_LIB_START}atomic${BOOST_LIB_END})
-#    set(Boost_DATE_TIME_LIBRARY_RELEASE
-#        ${BOOST_LIB_START}date_time${BOOST_LIB_END}
-#    )
-#    set(Boost_FILESYSTEM_LIBRARY_RELEASE
-#        ${BOOST_LIB_START}filesystem${BOOST_LIB_END}
-#    )
-#    set(Boost_IOSTREAMS_LIBRARY_RELEASE
-#        ${BOOST_LIB_START}iostreams${BOOST_LIB_END}
-#    )
-#    set(Boost_PROGRAM_OPTIONS_LIBRARY_RELEASE
-#        ${BOOST_LIB_START}program_options${BOOST_LIB_END}
-#    )
-#    set(Boost_RANDOM_LIBRARY_RELEASE ${BOOST_LIB_START}random${BOOST_LIB_END})
-#    set(Boost_REGEX_LIBRARY_RELEASE ${BOOST_LIB_START}regex${BOOST_LIB_END})
-#    set(Boost_SYSTEM_LIBRARY_RELEASE ${BOOST_LIB_START}system${BOOST_LIB_END})
-#    set(Boost_THREAD_LIBRARY_RELEASE ${BOOST_LIB_START}thread${BOOST_LIB_END})
-#    set(Boost_UNIT_TEST_FRAMEWORK_LIBRARY_RELEASE
-#        ${BOOST_LIB_START}unit_test_framework${BOOST_LIB_END}
-#    )
-#    set(Boost_SIGNALS_LIBRARY_RELEASE ${BOOST_LIB_START}signals${BOOST_LIB_END})
-#    set(Wt_INCLUDE_DIR=${USRPREFIX}/include)
-#    set(Wt_LIBRARY=${USRPREFIX}/lib/libwt.a)
-#    set(Wt_TEST_LIBRARY=${USRPREFIX}/lib/libwttest.a)
-#    set(Wt_HTTP_LIBRARY=${USRPREFIX}/lib/libwthttp.a)
-#    set(Wt_DBO_LIBRARY=${USRPREFIX}/lib/libwtdbo.a)
-#    set(Wt_DBOSQLITE3_LIBRARY=${USRPREFIX}/lib/libwtdbosqlite3.a)
 endif(ANDROID)
 
 if(IOS)
@@ -284,7 +235,6 @@ if(IOS)
     SET(CMAKE_C_ARCHIVE_CREATE   "<CMAKE_AR> -static -o <TARGET> <LINK_FLAGS> <OBJECTS>")
 
     set(BUILD_AS_LOCAL_SERVER OFF)
-    set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
     set(PERFORM_DEVELOPER_CHECKS OFF)
     set(TRY_TO_STATIC_LINK ON)
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
@@ -322,7 +272,6 @@ if(BUILD_AS_ELECTRON_APP)
     set(BUILD_AS_LOCAL_SERVER OFF)
     set(USE_OSX_NATIVE_MENU OFF)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
-    set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
 endif(BUILD_AS_ELECTRON_APP)
 
 
@@ -345,7 +294,6 @@ if(BUILD_FOR_WEB_DEPLOYMENT)
     #    set( USE_MYSQL_DB OFF )
     set(DATABASE_PASSWORD_FILE "/path/to/passwords/databases.xml")
     set(USE_GOOGLE_MAP OFF)
-    set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
     set(PERFORM_DEVELOPER_CHECKS OFF)
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
     set(USE_TERMINAL_WIDGET OFF)
@@ -603,54 +551,23 @@ endif(USE_GOOGLE_MAP)
 
 if(USE_SEARCH_MODE_3D_CHART)
     list(APPEND sources src/SearchMode3DChart.cpp src/SearchMode3DDataModel.cpp)
-    list(
-        APPEND
-        headers
-        InterSpec/SearchMode3DChart.h
-        InterSpec/SearchMode3DDataModel.h
-    )
+    list( APPEND headers InterSpec/SearchMode3DChart.h InterSpec/SearchMode3DDataModel.h )
 endif(USE_SEARCH_MODE_3D_CHART)
 
 if(USE_TERMINAL_WIDGET)
-    list(
-        APPEND
-        sources
-        src/TerminalModel.cpp
-        src/TerminalWidget.cpp
-        js/TerminalWidget.js
-    )
-    list(APPEND headers InterSpec/TerminalModel.h InterSpec/TerminalWidget.h)
+    list( APPEND sources src/TerminalModel.cpp src/TerminalWidget.cpp js/TerminalWidget.js )
+    list( APPEND headers InterSpec/TerminalModel.h InterSpec/TerminalWidget.h )
 endif(USE_TERMINAL_WIDGET)
 
 
 if(USE_SPECRUM_FILE_QUERY_WIDGET)
-    if(
-        BUILD_AS_OSX_APP
-        OR BUILD_AS_ELECTRON_APP
-        OR BUILD_AS_LOCAL_SERVER
-        OR BUILD_AS_UNIT_TEST_SUITE
-    )
-        list(
-            APPEND
-            sources
-            src/SpecFileQuery.cpp
-            src/SpecFileQueryWidget.cpp
-            src/SpecFileQueryDbCache.cpp
-        )
-        list(
-            APPEND
-            headers
-            InterSpec/SpecFileQuery.h
-            InterSpec/SpecFileQueryWidget.h
-            InterSpec/SpecFileQueryDbCache.h
-        )
-        list(APPEND sources js/SpecFileQueryWidget.js)
-    else()
-        message(
-            FATAL_ERROR
-            "The spectrum file query widget can not be enabled for web deployements."
-        )
-    endif()
+  if( BUILD_FOR_WEB_DEPLOYMENT )
+    message( FATAL_ERROR "The spectrum file query widget can not be enabled for web deployments." )
+  endif( BUILD_FOR_WEB_DEPLOYMENT )
+        
+  list( APPEND sources src/SpecFileQuery.cpp src/SpecFileQueryWidget.cpp src/SpecFileQueryDbCache.cpp )
+  list( APPEND headers InterSpec/SpecFileQuery.h InterSpec/SpecFileQueryWidget.h InterSpec/SpecFileQueryDbCache.h )
+  list( APPEND sources js/SpecFileQueryWidget.js )
 endif(USE_SPECRUM_FILE_QUERY_WIDGET)
 
 #Copy D3 resources into InterSpec_resources directory at compile time
@@ -717,20 +634,6 @@ add_subdirectory(external_libs/SandiaDecay)
 add_subdirectory(external_libs/muparserx-4.0.7)
 
 
-
-if(ANDROID)
-    # TODO: Need to move making Android shared library to its CMakeLists.txt
-    #list(APPEND headers target/android/AndroidUtils.hpp)
-    #add_library(
-    #    InterSpecLib
-    #    SHARED
-    #    main.cpp
-    #    ${sources}
-    #    ${headers}
-    #)
-endif(ANDROID)
-
-
 add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers})
 
 
@@ -775,13 +678,7 @@ if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
     target_link_libraries(InterSpecLib PUBLIC pugixml)
 endif()
 
-if(
-    BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE
-    OR
-    BUILD_AS_UNIT_TEST_SUITE
-    OR
-    BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT
-)
+if( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE OR BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
     target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
 endif()
 
@@ -789,13 +686,10 @@ if(USE_MYSQL_DB EQUAL USE_SQLITE3_DB)
     MESSAGE(FATAL_ERROR   "Exactly one type of database (MySQL or SQLITE3) must be chosen")
 endif()
 
-set(RAPID_XML_INC_DIR
-    ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/3rdparty
-)
+set( RAPID_XML_INC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/3rdparty )
 
-target_include_directories(
-    InterSpecLib
-    PUBLIC
+target_include_directories( InterSpecLib
+  PUBLIC
     ${Wt_INCLUDE_DIR}
     ${Boost_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -844,7 +738,6 @@ if(INCLUDE_ANALYSIS_TEST_SUITE)
 endif(INCLUDE_ANALYSIS_TEST_SUITE)
 
 if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
-    
     # Setting Xcode working directory requires cmake 3.17
     if( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
         set_target_properties(InterSpecExe PROPERTIES
@@ -852,15 +745,6 @@ if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
             XCODE_SCHEME_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         )
     endif( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
-    
-#    # Xcode stopped generating debug sybols by default recently, so force enable,
-#    if( CMAKE_BUILD_TYPE MATCHES Debug )
-#      target_compile_options(SpecUtils PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
-#      target_compile_options(SandiaDecay PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
-#      target_compile_options(minuit2 PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
-#      target_compile_options(InterSpecLib PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
-#      #Cuba-3.0, muparserx
-#    endif( CMAKE_BUILD_TYPE MATCHES Debug )
 endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
 
 
