@@ -5346,7 +5346,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   PopupDivMenuItem *exportFile = m_fileMenuPopup->addMenuItem( "Export Spectrum..." );
   exportFile->triggered().connect( this, &InterSpec::exportSpecFile );
 #else
-  item = m_fileMenuPopup->addMenuItem( "Export" );
+  item = m_fileMenuPopup->addMenuItem( "Export..." );
   item->triggered().connect( m_fileManager, &SpecMeasManager::displayQuickSaveAsDialog );
 #endif //#if( USE_SAVEAS_FROM_MENU )
   

@@ -754,6 +754,24 @@ int start_server( const char *process_name, const char *userdatadir,
     return -2;
   }
 
+  bool pass_app_url_to_session( const char *session_token, const std::string &url )
+  {
+    bool used = false;
+    InterSpecApp *app = InterSpecApp::instanceFromExtenalToken( session_token );
+    if( app )
+    {
+      Wt::WApplication::UpdateLock applock( app );
+      used = app->handleAppUrl( url );
+      app->triggerUpdate();
+    }else
+    {
+      cerr << "Failed to find session with token '" << session_token << "'" << endl;
+    }
+
+    return used;
+  }//pass_app_url_to_session(....)
+
+
 void set_file_to_open_on_load( const char *session_token, const std::string file_path )
 {
   lock_guard<mutex> lock( ns_sessions_mutex );

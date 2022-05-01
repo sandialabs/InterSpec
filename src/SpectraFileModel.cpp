@@ -45,6 +45,7 @@
 #include <boost/system/error_code.hpp>
 
 #include <Wt/WText>
+#include <Wt/Utils>
 #include <Wt/WLabel>
 #include <Wt/WAnchor>
 #include <Wt/WString>
@@ -2644,6 +2645,9 @@ void SpecificSpectrumResource::setSpectrum( std::shared_ptr<const SpecMeas> spec
   if( pos!=string::npos && ((name.size()-pos)==4) )
     name = name.substr( 0, pos );
 
+  if( name.empty() )
+    name = "spectrum";
+  
   name += ".";
   name += SpecUtils::suggestedNameEnding( m_type );
   
@@ -2654,6 +2658,9 @@ void SpecificSpectrumResource::setSpectrum( std::shared_ptr<const SpecMeas> spec
 void SpecificSpectrumResource::handleRequest( const Wt::Http::Request& request,
                                Wt::Http::Response& response)
 {
+  cout << "SpecificSpectrumResource::handleRequest" << endl;
+  
+  
   WApplication::UpdateLock lock( m_app );
   
   if( !lock )

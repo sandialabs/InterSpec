@@ -31,6 +31,7 @@ import android.content.DialogInterface;
 import android.content.res.AssetManager;
 import android.os.Bundle;
 import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
 import android.webkit.*;
@@ -48,37 +49,27 @@ import android.os.ParcelFileDescriptor;
 import java.io.BufferedInputStream;
 import java.io.FileDescriptor;
 import java.nio.channels.FileChannel;
-import java.nio.ByteBuffer;
 import java.util.Scanner;
 import java.io.FileInputStream;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.FileOutputStream;
-import android.provider.DocumentsContract;
 import android.os.Environment;
 import android.database.Cursor;
 import android.provider.OpenableColumns;
-import android.content.res.AssetFileDescriptor;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Random;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import android.app.Fragment;
-import java.lang.ref.WeakReference;
 
-import eu.webtoolkit.android.WtAndroid;
 //import gov.sandia.InterSpecMainActivity.InterSpecMainActivity;
 //import gov.sandia.InterSpecMainActivity.InterSpecMainActivity.R;
 //import android.R;
 
 import gov.sandia.InterSpec.R;
 
-//TODO: look at extending with AppCompatActivity instead of Activity.  WIll need to add entry into AndroidManifest.xml
-//  To use a compatible theme, and also rpobably add a style to get rid of app bar.
-public class InterSpec extends Activity
+public class InterSpec extends AppCompatActivity
 {
   private int httpPort = 0;
   private String interspecID = "";
@@ -241,7 +232,15 @@ public class InterSpec extends Activity
 
     if( result == null )
       return;
-	
+
+    if( result.getScheme().contentEquals("interspec") )
+    {
+      Log.d("openFileInInterSpec", "Got scheme of interspec, url: " + result.toString()  );
+      openAppUrl( interspecID, result.toString() );
+      return;
+    }
+
+
     boolean shouldDeleteFile = true;
 
     String displayName = getDisplayFileName( result );
@@ -331,7 +330,7 @@ public class InterSpec extends Activity
      }
     }//if( pathname != null )
   }//protected void onActivityResult(...)
-  
+
 
   @Override
   public void onCreate( Bundle savedInstanceState )
@@ -341,9 +340,15 @@ public class InterSpec extends Activity
     Intent intent = getIntent();
     String action = intent.getAction();
     String type = intent.getType();
+    Uri data = intent.getData();
+
+    if( data != null )
+      Log.d("onCreate", "data: " + data.toString() );
+    else
+      Log.d("onCreate", "data: null" );
 
     Random rn = new Random();
-    interspecID = "androidsession" + Integer.toString(rn.nextInt(9999999));
+    interspecID = "session" + Integer.toString(rn.nextInt(9999999));
 
     addPrimarySessionToken( interspecID );
 
@@ -389,14 +394,12 @@ public class InterSpec extends Activity
 
       webview.setWebChromeClient(new WtWebChromeClient());
 
-      // TODO: I think see https://stackoverflow.com/questions/3926629/downloadlistener-not-working to get download listner working
-      //webview.setWebViewClient( blah blah blah );
-
-      webview.setDownloadListener(new DownloadListener() {
+      DownloadListener ourDownloadListner = new DownloadListener() {
         @Override
         public void onDownloadStart(final String url, final String userAgent, String contentDisposition, String mimetype, long contentLength)
         {
-          Log.d("onDownloadStart", "Entering onDownloadStart");
+          Log.d("onDownloadStart", "Entering onDownloadStart: url=" + url + ", Length: " + contentLength );
+
           //checking runtime permissions
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -407,6 +410,8 @@ public class InterSpec extends Activity
 
               //requesting permissions
               ActivityCompat.requestPermissions(InterSpec.this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1);
+
+              // Do we need to implement ActivityCompat.OnRequestPermissionsResultCallback(...) to then get the file after permission is granted?
             }
           }
           else {
@@ -414,8 +419,31 @@ public class InterSpec extends Activity
             downloadDialog(url,userAgent,contentDisposition,mimetype);
           }
 
+        }//void onDownloadStart(...)
+      };//new DownloadListener(){...}
+
+      webview.setDownloadListener( ourDownloadListner );
+
+      // TODO: I think see https://stackoverflow.com/questions/3926629/downloadlistener-not-working to get download listner working
+      WebViewClient ourWebClient = new WebViewClient(){
+
+        // you tell the webclient you want to catch when a url is about to load
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView  view, String  url){
+          Log.d("shouldOverrideUrlLoad", "shouldOverrideUrlLoading: " + url );
+          view.loadUrl(url);
+          view.setDownloadListener(ourDownloadListner);
+          return true;
         }
-      });
+        // here you execute an action when the URL you want is about to load; gets called for al JS and CSS, and images, etc
+        //@Override
+        //public void onLoadResource(WebView  view, String  url){
+        //  Log.d("onLoadResource", "onLoadResource: " + url );
+        //}
+      };
+      webview.setWebViewClient( ourWebClient );
+
+
 
       if( Intent.ACTION_VIEW.equals(action) )
       {
@@ -450,15 +478,15 @@ public class InterSpec extends Activity
         {
           Log.d("onCreate", "ACTION_VIEW, fileUri is null");
         }
+      }
+
+
+      else if( Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null )
+      {
+        Log.d("onCreate", "ACTION_SEND_MULTIPLE"); // Need to handle multiple files here
       }else
       {
-        if( Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null )
-        {
-          Log.d("onCreate", "ACTION_SEND_MULTIPLE"); // Need to handle multiple files here
-        }else
-        {
-          Log.d("onCreate", "Another Action: " + action );
-        }
+        Log.d("onCreate", "Another Action: " + action );
       }
 
       Log.d("onCreate", "Will load 'http://127.0.0.1:" + httpPort + "/?apptoken=" + interspecID + "'");
@@ -529,17 +557,58 @@ public class InterSpec extends Activity
 	}//if( Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT ) 
   }//public void onCreate(Bundle savedInstanceState)
 
+  @Override
+  protected void onPause()
+  {
+    super.onPause();
+    Log.d("onPause", "onPause was called");
+  }//void onPause()
+
+
+  @Override
+  protected void onResume()
+  {
+    super.onResume();
+
+    Log.d("onResume", "onResume was called");
+  }//void onResume()
+
 
   public void downloadDialog(final String url,final String userAgent,String contentDisposition,String mimetype)
   {
+    Log.d("downloadDialog", "downloadDialog was called");
+
     //filename using url.
-    final String filename = URLUtil.guessFileName(url,contentDisposition,mimetype);
-    //creates alertdialog
-    AlertDialog.Builder builder=new AlertDialog.Builder(InterSpec.this);
-    //alertdialog title
+    String filename = URLUtil.guessFileName(url,contentDisposition,mimetype);
+
+    //if( filename.isEmpty() || filename.equals("downloadfile.bin") )
+    //{
+      // The Wt URL will look something like:
+      //    http://127.0.0.1:36919/?_=/Th232LowResNoCalib.chn&wtd=knS3FCBHU3MIcCNk&request=resource&resource=op0l2ri&rand=21
+      // Which isnt compatible with URLUtil.guessFileName(...); so we'll try to get the name ourselves
+      final int startpos = url.indexOf("/?_=/");
+      if( startpos != -1 )
+      {
+        final int endpos = url.indexOf("&wtd=", startpos);
+        if( endpos != -1 )
+        {
+          filename = url.substring(startpos + 5, endpos);
+          Log.d("downloadDialog", "Hacked in getting the filename to: '" + filename + "'");
+        }
+      }
+    //}//if( filename.isEmpty() || (filename == "downloadfile.bin") )
+
+    if( filename.isEmpty() )
+    {
+
+    }
+
+    final String downloadname = filename;
+    Log.d("downloadDialog", "guessed filename: " + downloadname);
+
+    AlertDialog.Builder builder = new AlertDialog.Builder(InterSpec.this);
     builder.setTitle("Download");
-    //alertdialog message
-    builder.setMessage("Do you want to save " +filename);
+    builder.setMessage("Do you want to save " + downloadname);
 
     builder.setPositiveButton("Yes", new DialogInterface.OnClickListener()
     {
@@ -560,9 +629,11 @@ public class InterSpec extends Activity
         //DownloadManager created
         DownloadManager downloadManager=(DownloadManager)getSystemService(DOWNLOAD_SERVICE);
         //saves file in Download folder
-        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename);
+        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, downloadname);
         //download enqued
         downloadManager.enqueue(request);
+
+        // Files dont look to be getting download - need to figure out why how (could be in c++?)
       }
     });
     builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
@@ -583,6 +654,8 @@ public class InterSpec extends Activity
   @Override
   protected void onNewIntent( Intent intent )
   {
+    Log.d("onNewIntent", "onNewIntent" );
+
     //This function is called when InterSpec is already running (but in the background)
     //  and another app like Google Drive requests it to open up a file.	  
 	super.onNewIntent( intent );
@@ -595,8 +668,7 @@ public class InterSpec extends Activity
       Uri fileUri = (Uri) intent.getData();
 
       openFileInInterSpec( fileUri );
-    }
-    else if( Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null )
+    } else if( Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null )
     {
         // Need to handle multiple files here
     } else
@@ -899,6 +971,7 @@ public class InterSpec extends Activity
 
   public static native int startServingInterSpec( String process_name, String userdatadir, String basedir, String xml_config_path );
   public static native int openFile( String sessionToken, String filepath);
+  public static native boolean openAppUrl( String sessionToken, String url );
   public static native boolean killServer();
   public static native boolean setTempDir( String tmpdir );
   public static native boolean setRequireSessionToken( String require );

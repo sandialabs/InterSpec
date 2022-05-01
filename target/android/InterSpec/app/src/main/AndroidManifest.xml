@@ -5,10 +5,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- We need the internet permission to use the DownloadManager to save spectrum files, CSV, etc -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <supports-screens android:largeScreens="true" android:normalScreens="true" android:anyDensity="true" android:smallScreens="true"/>
     <!-- <uses-sdk android:minSdkVersion="12" android:targetSdkVersion="19"/> -->
     <supports-screens android:largeScreens="true" android:normalScreens="true" android:anyDensity="true" android:smallScreens="true"/>
     <application android:label="InterSpec"
+        android:theme="@style/Theme.AppCompat.NoActionBar"
         android:usesCleartextTraffic="true" >
         <activity android:name="InterSpec"
             android:label="InterSpec"
@@ -26,6 +29,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" />
+                <data android:host="*" />
                 <data android:mimeType="*/*" />
                 <data android:pathPattern=".*\\.n42" />
                 <data android:pathPattern=".*\\.spc" />
@@ -48,6 +53,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.SELECTED_ALTERNATIVE" />
+                <data android:scheme="file" />
+                <data android:host="*" />
                 <data android:mimeType="*/*" />
                 <data android:pathPattern=".*\\.txt" />
                 <data android:pathPattern=".*\\.csv" />
@@ -56,6 +63,13 @@
                 <data android:pathPattern=".*\\.CSV" />
                 <data android:pathPattern=".*\\.XML" />
                 <data android:pathPattern=".*\\.zip" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="interspec" />
             </intent-filter>
 
             <!-- Splash screen -->
