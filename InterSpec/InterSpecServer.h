@@ -159,6 +159,10 @@ namespace InterSpecServer
    */
   int open_file_in_session( const char *session_token, const char *files_json );
 
+  /** Passes the specified url to InterSpecApp::handleAppUrl(url), and returns
+  if the URL was used.
+  */
+  bool pass_app_url_to_session( const char *session_token, const std::string &url );
 
   /** Sets a file to open upon session load.
    

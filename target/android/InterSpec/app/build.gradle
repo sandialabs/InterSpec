@@ -1,6 +1,5 @@
 apply plugin: 'com.android.application'
 
-def my_prefix = "/Users/wcjohns/install/android"
 def keystore_file = local_props("keystore.location")
 def keystore_pword = local_props("keystore.password")
 def keystore_alias_name = local_props("keystore.alias.name")
@@ -79,8 +78,8 @@ android {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
-    implementation 'androidx.appcompat:appcompat:1.1.0'
-    implementation 'androidx.constraintlayout:constraintlayout:1.1.3'
+    implementation 'androidx.appcompat:appcompat:1.4.1'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.3'
 }
 
 //------------------------------------------------------------
