@@ -62,7 +62,7 @@ public:
     enum Source { FromCout, FromCerr  };
     enum { bufsize = 128 }; // ... or some other suitable buffer size
     androidbuf( Source src )
-       : m_type( src ), m_origSrc( NULL )
+       : m_type( src ), m_origSrc( nullptr )
     {
       this->setp(buffer, buffer + bufsize - 1);
       
@@ -94,7 +94,7 @@ public:
   }//~androidbuf()
   
 private:
-    int overflow(int c)
+    int overflow(int c) override
     {
         if (c == traits_type::eof()) {
             *this->pptr() = traits_type::to_char_type(c);
@@ -102,7 +102,8 @@ private:
         }
         return this->sync() ? traits_type::eof() : traits_type::not_eof(c);
     }//int overflow(int c)
-    int sync()
+
+    int sync() override
     {
         int rc = 0;
         if (this->pbase() != this->pptr())
@@ -149,10 +150,10 @@ JNIEXPORT
   Java_gov_sandia_InterSpec_InterSpec_startServingInterSpec
   (JNIEnv* env, jobject thiz, jstring jprocess_name, jstring juserdatadir, jstring jbasedir, jstring jxml_config_path )
   {
-    std::string process_name = std::string(env->GetStringUTFChars(jprocess_name, 0));
-    std::string userdatadir = std::string(env->GetStringUTFChars(juserdatadir, 0));
-    std::string basedir = std::string(env->GetStringUTFChars(jbasedir, 0));
-    std::string xml_config_path = std::string(env->GetStringUTFChars(jxml_config_path, 0));
+    std::string process_name = std::string(env->GetStringUTFChars(jprocess_name, nullptr));
+    std::string userdatadir = std::string(env->GetStringUTFChars(juserdatadir, nullptr));
+    std::string basedir = std::string(env->GetStringUTFChars(jbasedir, nullptr));
+    std::string xml_config_path = std::string(env->GetStringUTFChars(jxml_config_path, nullptr));
 
     if( !g_stdbuf )
       g_stdbuf.reset( new AndroidUtils::androidbuf( AndroidUtils::androidbuf::FromCout ) );
@@ -216,8 +217,8 @@ JNIEXPORT
   JNICALL
   Java_gov_sandia_InterSpec_InterSpec_openFile(JNIEnv* env, jobject thiz, jstring jsessionToken, jstring jfilepath) 
   {
-    const std::string sessionToken = std::string(env->GetStringUTFChars(jsessionToken, 0));
-    const std::string filepath = std::string(env->GetStringUTFChars(jfilepath, 0));
+    const std::string sessionToken = std::string(env->GetStringUTFChars(jsessionToken, nullptr));
+    const std::string filepath = std::string(env->GetStringUTFChars(jfilepath, nullptr));
     
     __android_log_write( ANDROID_LOG_INFO, "killServer", 
                          (std::string("Will open file '") + filepath + " in session '" + sessionToken + "'").c_str() );
@@ -225,6 +226,24 @@ JNIEXPORT
     // We need to turn the file path into JSON.
     return InterSpecServer::open_file_in_session( sessionToken.c_str(), ("[\"" + filepath + "\"]").c_str() );
   }
+
+  JNIEXPORT
+  jboolean
+  JNICALL
+  Java_gov_sandia_InterSpec_InterSpec_openAppUrl(JNIEnv* env, jobject thiz, jstring jsessionToken, jstring jurl)
+  {
+    const std::string sessionToken = std::string(env->GetStringUTFChars(jsessionToken, nullptr));
+    const std::string url = std::string(env->GetStringUTFChars(jurl, nullptr));
+
+    __android_log_write( ANDROID_LOG_INFO, "openAppUrl",
+                         (std::string("Will open url '") + url + " in session '" + sessionToken + "'").c_str() );
+
+    // We need to turn the file path into JSON.
+    return InterSpecServer::pass_app_url_to_session( sessionToken.c_str(), url );
+  }
+
+
+
 
   JNIEXPORT
   jboolean
@@ -275,7 +294,7 @@ JNIEXPORT
   JNICALL
   Java_gov_sandia_InterSpec_InterSpec_addPrimarySessionToken( JNIEnv* env, jobject thiz, jstring jtoken )
   {
-    const std::string token = std::string(env->GetStringUTFChars(jtoken, 0));
+    const std::string token = std::string(env->GetStringUTFChars(jtoken, nullptr));
 
     const int status = InterSpecServer::add_allowed_session_token( token.c_str(), InterSpecServer::SessionType::PrimaryAppInstance );
 
@@ -298,7 +317,7 @@ JNIEXPORT
   JNICALL
   Java_gov_sandia_InterSpec_InterSpec_addExternalSessionToken( JNIEnv* env, jobject thiz, jstring jtoken )
   {
-    const std::string token = std::string(env->GetStringUTFChars(jtoken, 0));
+    const std::string token = std::string(env->GetStringUTFChars(jtoken, nullptr));
 
     const int status = InterSpecServer::add_allowed_session_token( token.c_str(), InterSpecServer::SessionType::ExternalBrowserInstance );
 
@@ -322,7 +341,7 @@ JNIEXPORT
   JNICALL
   Java_gov_sandia_InterSpec_removeSessionToken( JNIEnv* env, jobject thiz, jstring jtoken )
   {
-    const std::string token = std::string(env->GetStringUTFChars(jtoken, 0));
+    const std::string token = std::string(env->GetStringUTFChars(jtoken, nullptr));
 
     const int removed = InterSpecServer::remove_allowed_session_token( token.c_str() );
 
@@ -345,8 +364,8 @@ JNIEXPORT
   JNICALL
   Java_gov_sandia_InterSpec_setInitialFileToLoad( JNIEnv* env, jobject thiz, jstring jtoken, jstring jfilepath )
   {
-    const std::string token = std::string(env->GetStringUTFChars(jtoken, 0));
-    const std::string filepath = std::string(env->GetStringUTFChars(jfilepath, 0));
+    const std::string token = std::string(env->GetStringUTFChars(jtoken, nullptr));
+    const std::string filepath = std::string(env->GetStringUTFChars(jfilepath, nullptr));
     
     try
     {
@@ -375,8 +394,8 @@ JNIEXPORT
   Java_gov_sandia_InterSpec_InterSpec_openfileininterppec
   (JNIEnv* env, jobject thiz, jstring path, jint type, jstring sessionid )
   {
-    const std::string filepath = std::string(env->GetStringUTFChars(path, 0));
-    const std::string id = std::string(env->GetStringUTFChars(sessionid, 0));
+    const std::string filepath = std::string(env->GetStringUTFChars(path, nullptr));
+    const std::string id = std::string(env->GetStringUTFChars(sessionid, nullptr));
 //   env->ReleaseStringUTFChars(...)
     __android_log_write( ANDROID_LOG_INFO, "openfileininterppec",
                          (std::string("Will try to open following file in InterSpec '") + filepath + "' in session " + id).c_str());
@@ -414,7 +433,7 @@ JNIEXPORT
   
 void Java_gov_sandia_InterSpec_InterSpec_settmpdir( JNIEnv* env, jobject thiz, jstring tmpPath )
 {
-  const char *path = env->GetStringUTFChars( tmpPath, 0 );
+  const char *path = env->GetStringUTFChars( tmpPath, nullptr );
   setenv("TMPDIR", path, 1);
   __android_log_write( ANDROID_LOG_DEBUG, "settmpdir",
                        (std::string("Set TMPDIR='") + path + "'").c_str() );
