@@ -95,6 +95,9 @@
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
+#if( USE_QR_CODES )
+#include "InterSpec/QrCode.h"
+#endif
 
 // The regex in GCC 4.8.x does not have working regex
 #if( defined(__GLIBCXX__) && (__cplusplus < 201402L) )
@@ -2737,6 +2740,30 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_xmlDownload->setText( "XML" );
   m_xmlDownload->setHidden( !m_detector || !m_detector->isValid() );
   
+#if( USE_QR_CODES )
+  WPushButton *qr_btn = new WPushButton( m_footer );
+  qr_btn->setText( "QR Code" );
+  qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
+  qr_btn->setStyleClass( "LinkBtn DownloadBtn DrfXmlDownload" );
+  
+  qr_btn->clicked().connect( std::bind( [this](){
+  
+    if( !m_detector || !m_detector->isValid() )
+    {
+      passMessage( "No DRF loaded", "", WarningWidget::WarningMsgHigh );
+      return;
+    }
+  
+    try
+    {
+      const string url = "interspec://drf/specify?" + m_detector->toAppUrl();
+      QrCode::displayTxtAsQrCode( url, m_detector->name(), m_detector->description() );
+    }catch( std::exception &e )
+    {
+      passMessage( "Error creating QR code: " + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+    }
+  }) );
+#endif //USE_QR_CODES
   
   m_noDrfButton = new WPushButton( "No Detector", m_footer );
   m_noDrfButton->clicked().connect( this, &DrfSelect::finishWithNoDetector );
