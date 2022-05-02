@@ -1234,6 +1234,26 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
     return;
   }
   
+  if( SpecUtils::istarts_with( signal, "showMsg-" ) )
+  {
+    string msg = signal.substr(8);
+    WarningWidget::WarningMsgLevel level = WarningWidget::WarningMsgLevel::WarningMsgInfo;
+  
+    if( SpecUtils::istarts_with( msg, "info-" ) )
+    {
+      msg = msg.substr(5);
+      level = WarningWidget::WarningMsgLevel::WarningMsgInfo;
+    }else if( SpecUtils::istarts_with( msg, "error-" ) )
+    {
+      msg = signal.substr(6);
+      level = WarningWidget::WarningMsgLevel::WarningMsgHigh;
+    }
+    
+    passMessage( msg, "", level );
+    return;
+  }//if( SpecUtils::istarts_with( signal, "showMsg-" ) )
+  
+  
   // shouldnt ever make it here..
   const string errmsg = "InterSpecApp::miscSignalHandler: unhandled signal '" + signal + "'";
   passMessage( errmsg, "", WarningWidget::WarningMsgHigh );

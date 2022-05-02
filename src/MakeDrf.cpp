@@ -56,6 +56,7 @@
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
 
+#include "InterSpec/QrCode.h"
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/SpecMeas.h"
 #include "SpecUtils/DateTime.h"
@@ -189,7 +190,7 @@ namespace
     
   public:
     CalFileDownloadResource( const bool pcf, MakeDrf *parent )
-     : WResource( parent ), m_pcf(pcf), m_makedrf( parent ), m_filename( "" ),
+     : Wt::WResource( parent ), m_pcf(pcf), m_makedrf( parent ), m_filename( "" ),
        m_app( WApplication::instance() )
     {
       assert( m_app );
@@ -1826,49 +1827,15 @@ void MakeDrf::startSaveAs()
     SpecUtils::trim( drfname );
     SpecUtils::trim( drfdescrip );
     
-    auto drf = make_shared<DetectorPeakResponse>( drfname, drfdescrip );
-    
-    float diameter;
+    std::shared_ptr<DetectorPeakResponse> drf;
     try
     {
-      const double diam = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() );
-      diameter = static_cast<float>( diam );
-    }catch(...)
+      drf = assembleDrf( drfname, drfdescrip );
+    }catch( std::exception &e )
     {
-      passMessage( "Detector diameter entered is not a valid distance.", "", 3 );
+      passMessage( "Error creating DRF: " + string(e.what()), "", 3 );
       return;
     }
-    
-    const bool inMeV = isEffEqnInMeV();
-    const float eqnEnergyUnits = inMeV ? 1000.0f : 1.0f;
-    
-    float lowerEnergy = 0.0f, upperEnergy = 0.0f;
-    const std::vector<MakeDrfChart::DataPoint> &data = m_chart->currentDataPoints();
-    if( data.size() >= 2 )
-    {
-      lowerEnergy = data.front().energy;
-      upperEnergy = data.back().energy;
-    }
-    
-    drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, m_effEqnCoefUncerts,
-                                        0.0f, diameter, eqnEnergyUnits, lowerEnergy, upperEnergy );
-    drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
-    
-    if( !m_fwhmCoefs.empty() )
-    {
-      switch( m_fwhmEqnType->currentIndex() )
-      {
-        case 0:
-          drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn );
-          break;
-          
-        case 1:
-          drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
-          break;
-      }//switch( m_fwhmEqnType->currentIndex() )
-    }//if( !m_fwhmCoefs.empty() )
-  
-    //Need something here to indicate this is a created DRF.
     
     try
     {
@@ -2878,6 +2845,69 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
 }//std::shared_ptr<SpecMeas> assembleCalFile()
 
 
+shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const string &descrip ) const
+{
+  if( m_effEqnCoefs.empty() )
+    throw runtime_error( "Equation coefficients are empty." );
+  
+  for( const float val : m_effEqnCoefs )
+  {
+    if( IsNan(val) || IsInf(val) )
+      throw runtime_error( "An equation coefficient is invalid." );
+  }
+  
+  auto drf = make_shared<DetectorPeakResponse>( name, descrip );
+  
+  float diameter;
+  try
+  {
+    const double diam = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() );
+    diameter = static_cast<float>( diam );
+    
+    if( IsNan(diameter) || IsInf(diameter) || (diameter <= 0.0) )
+      throw runtime_error( "invalid diameter." );
+  }catch(...)
+  {
+    throw runtime_error( "Detector diameter entered is not a valid distance." );
+  }
+  
+  const bool inMeV = isEffEqnInMeV();
+  const float eqnEnergyUnits = inMeV ? 1000.0f : 1.0f;
+  
+  float lowerEnergy = 0.0f, upperEnergy = 0.0f;
+  const std::vector<MakeDrfChart::DataPoint> &data = m_chart->currentDataPoints();
+  if( data.size() >= 2 )
+  {
+    lowerEnergy = data.front().energy;
+    upperEnergy = data.back().energy;
+  }
+  
+  drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, m_effEqnCoefUncerts,
+                                     0.0f, diameter, eqnEnergyUnits, lowerEnergy, upperEnergy );
+  drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
+  
+  if( !m_fwhmCoefs.empty() )
+  {
+    switch( m_fwhmEqnType->currentIndex() )
+    {
+      case 0:
+        drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn );
+        break;
+        
+      case 1:
+        drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+        break;
+    }//switch( m_fwhmEqnType->currentIndex() )
+  }//if( !m_fwhmCoefs.empty() )
+  
+  if( !drf->isValid() )
+    throw runtime_error( "DRF wasnt valid after creation" );
+  //Need something here to indicate this is a created DRF.
+  
+  return drf;
+}//std::make_shared<DetectorPeakResponse> assembleDrf() const;
+
+
 void MakeDrf::writeCsvSummary( std::ostream &out,
                                std::string drfname, std::string drfdescription )
 {
@@ -3323,6 +3353,23 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   stringstream eff_chart_svg;
   eff_chart.write( eff_chart_svg );
   
+  string qr_code;
+  try
+  {
+    shared_ptr<DetectorPeakResponse> drf = assembleDrf( drfname, drfdescrip );
+    assert( drf && drf->isValid() );
+    
+    const string url = "interspec://drf/specify?" + drf->toAppUrl();
+    
+    pair<std::string,int> qr_and_size = QrCode::utf8_string_to_svg_qr( url );
+    
+    qr_code = qr_and_size.first;
+  }catch(std::exception &e )
+  {
+    qr_code = "Error creating QR code: " + string(e.what());
+    cerr << qr_code << endl;
+  }
+  
   
   WTemplate tmplt;
   // tmplttxt is unsafe HTML because of <head> tag and stuff, so we dont want Wt to filter it
@@ -3336,6 +3383,10 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   tmplt.bindString("fwhm-eqn", fwhm_eqn, TextFormat::XHTMLUnsafeText );
   tmplt.bindString("eff-table", efftable.str(), TextFormat::XHTMLUnsafeText );
   tmplt.bindString("eff-svg", eff_chart_svg.str(), TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("qr-code-title", drfname, TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("qr-code", qr_code, TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("qr-code-summary", drfdescrip, TextFormat::XHTMLUnsafeText );
+  
   
   tmplt.renderTemplate( output );
 }//void writeRefSheet(...)

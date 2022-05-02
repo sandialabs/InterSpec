@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <title>${drf-name} DRF Reference Card</title>
     <style>
-    .general-info, .plots-info, .mda-info  {
+    .general-info, .plots-info, .qr-code-info  {
         margin-top: 20px;
         margin-left: auto;
         margin-right: auto;
@@ -20,11 +20,11 @@
         justify-content: space-around;
     }
 
-    .title {
+    .title, .qr-code-title {
         font-size: 14px;
         font-weight: bold; 
         text-align: center; 
-        width: 100%
+        width: 100%;
         text-overflow: ellipsis;
     }
 
@@ -72,6 +72,19 @@
       border-right: 1px solid #000;
     }
 
+
+  .qr-code{
+    width: 6cm; 
+    margin-left: auto; 
+    margin-right: auto;
+  }
+  
+  .qr-code-summary{
+    font-weight: normal;
+    font-size: 12px;
+    margin-left: 10px;
+  }
+
     </style>
   </head>
   <body>
@@ -90,8 +103,10 @@
     ${eff-svg}
     </div>
 
-  <div class="mda-info">
-  In the future this will have MDA or MDQ (n-sigma = 5) at 2.5 meters from Co-57, Ba-133, Cs-137, Co-60.
+  <div class="qr-code-info">
+    <div class="qr-code-title">${qr-code-title}</div>
+    <div class="qr-code">${qr-code}</div>
+    <div class="qr-code-summary">${qr-code-summary}</div>
   </div>
 
   </body>

@@ -111,6 +111,8 @@ option(
 )
 option(USE_TERMINAL_WIDGET "Enables use of terminal widget" ON)
 
+option(USE_QR_CODES "Enables generating QR codes for like DRFs" ON)
+
 option(
     USE_SQLITE3_DB
     "Use SQLITE3 database to store user preferences and spectra"
@@ -559,6 +561,11 @@ if(USE_TERMINAL_WIDGET)
     list( APPEND headers InterSpec/TerminalModel.h InterSpec/TerminalWidget.h )
 endif(USE_TERMINAL_WIDGET)
 
+
+if(USE_QR_CODES)
+  list( APPEND sources external_libs/QR-Code-generator/cpp/qrcodegen.cpp src/QrCode.cpp )
+  list( APPEND headers external_libs/QR-Code-generator/cpp/qrcodegen.hpp InterSpec/QrCode.h )
+endif(USE_QR_CODES)
 
 if(USE_SPECRUM_FILE_QUERY_WIDGET)
   if( BUILD_FOR_WEB_DEPLOYMENT )
