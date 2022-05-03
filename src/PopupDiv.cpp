@@ -658,8 +658,10 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
   m_mobile( false ),
   m_type( menutype )
 {
+#if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   addStyleClass( "wt-no-reparent" );
   setJavaScriptMember("wtNoReparent", "true");
+#endif
   
   InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
   

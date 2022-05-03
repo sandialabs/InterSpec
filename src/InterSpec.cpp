@@ -3752,7 +3752,13 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
   if( (m_currentColorThemeCssFile != cssfile)
       && !SpecUtils::iequals_ascii(theme->nonChartAreaTheme, "default") )
   {
-    if( SpecUtils::is_file(cssfile) )
+    // We'll explicitly check if the CSS file exists on disk... and we'll generous and check both
+    //  from the CWD, and the docRoot() directory (e.g., InterSpec_resources), although I guess
+    //  we should only do the latter.
+    //  Also, we "know" we should have the dark theme, so we wont touch disk for this.
+    if( (theme->nonChartAreaTheme == "dark")
+        || SpecUtils::is_file( SpecUtils::append_path(wApp->docRoot(), cssfile) )
+        || SpecUtils::is_file(cssfile) )
     {
       wApp->useStyleSheet( cssfile );
       m_currentColorThemeCssFile = cssfile;
@@ -7418,7 +7424,9 @@ void InterSpec::initMaterialDbAndSuggestions()
     popupOptions.appendReplacedText = "";             //When replacing the curr
     m_shieldingSuggestion = new WSuggestionPopup( popupOptions );
     m_shieldingSuggestion->addStyleClass("suggestion");
+#if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
     m_shieldingSuggestion->setJavaScriptMember("wtNoReparent", "true");
+#endif
     m_shieldingSuggestion->setFilterLength( 0 );
     m_shieldingSuggestion->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
   }//if( !m_shieldingSuggestion )

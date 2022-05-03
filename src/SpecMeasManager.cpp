@@ -3195,6 +3195,7 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
     
     shared_ptr<SpecMeas> newspec = make_shared<SpecMeas>();
     newspec->uniqueCopyContents( *parent_file );
+    newspec->set_uuid( "" );
     
     if( samples_to_use == parent_file->sample_numbers() )
       return newspec;
@@ -3291,6 +3292,7 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
     return answer;
   };//strings_to_csv
 
+  newspec->set_uuid( "" );
   newspec->set_measurement_location_name( strings_to_csv(locations) );
   newspec->set_instrument_id( strings_to_csv(inst_ids) );
   newspec->set_instrument_model( strings_to_csv(inst_models) );
