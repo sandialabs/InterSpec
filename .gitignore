@@ -13,10 +13,12 @@ target/android/InterSpec/app/libs
 target/android/InterSpec/app/universal
 target/android/InterSpec/app/x86*
 target/android/InterSpec/app/
-target/android/InterSpec/app/build
-target/electron/node_modules
+target/android/InterSpec/app/build/
+target/electron/node_modules/
+target/electron/node_modules*/
 target/electron/release-builds
 InterSpec_resources/SpectrumChartD3StandAlone.css
+infer-out/
 
 *OUO*
 *ouo*
@@ -81,3 +83,4 @@ InterSpec_resources/SpectrumChartD3.js
 InterSpec_resources/SpectrumChartD3.css
 InterSpecUserData.db
 InterSpec_resources/d3.v3.min.js
+target/macOsQuickLook/SpecFilePreview/SpecFilePreview.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
