@@ -102,10 +102,19 @@ namespace
 
 class DecayActivityModel : public Wt::WStandardItemModel
 {
+#if( WT_VERSION > 0x3040000 )
+  // HACK:
+  // Wt 3.7.1 has an issue for really, really small values, it will actually draw the line at
+  //  the top of the chart, when it should be at the bottom.
+  //  So we will do this hack that sets the value to zero, for anything effectively at zero
+  //  compared to what we are showing.
+  double m_max_activity;
+#endif
   
 public:
   DecayActivityModel( Wt::WObject *parent = 0 )
-    : Wt::WStandardItemModel( parent )
+    : Wt::WStandardItemModel( parent ),
+      m_max_activity( 0.0 )
   {
   }
   
@@ -131,6 +140,26 @@ public:
            << endl << index.row() << ", " << index.column()
            << endl;
     }//try / catch
+    
+#if( WT_VERSION > 0x3040000 )
+    if( role == Wt::DisplayRole )
+    {
+      boost::any val = WStandardItemModel::data( index, role );
+      if( val.empty() )
+        return val;
+      
+      const double valdbl = asNumber(val);
+      if( IsNan(valdbl) )
+        return val;
+      
+      // 0.00001 chosen arbitrarily, but values this small wont show up as non-zero on the chart
+      if( valdbl < 0.00001*m_max_activity )
+        return boost::any( 0.0 );
+      
+      return val;
+    }//if( role == Wt::DisplayRole )
+#endif
+    
     
     return WStandardItemModel::data( index, role );
   }//data(...)
@@ -169,6 +198,31 @@ public:
     return true;
   }//bool showSeries( int colum ) const
 
+#if( WT_VERSION > 0x3040000 )
+  void updateMaxActivity()
+  {
+    m_max_activity = 0.0;
+    
+    for( int row = 0; row < rowCount(); ++row )
+    {
+      for( int col = 1; col < columnCount(); ++col )
+      {
+        if( !showSeries( col ) )
+          continue;
+        
+        boost::any val = WStandardItemModel::data( index(row, col) );
+        if( val.empty() )
+          continue;
+        
+        const double valdbl = asNumber(val);
+        if( IsNan(valdbl) )
+          continue;
+        
+        m_max_activity = std::max( m_max_activity, valdbl );
+      }
+    }
+  }//void updateMaxActivity()
+#endif
   
   void setShowSeries( int colum, bool show )
   {
@@ -180,6 +234,10 @@ public:
       return;
     
     setHeaderData( colum, Wt::Horizontal, boost::any(show), Wt::UserRole );
+    
+#if( WT_VERSION > 0x3040000 )
+    updateMaxActivity();
+#endif
     
     if( rowCount() )
     {
@@ -209,6 +267,10 @@ public:
     m_phone( false )
   {
     setStyleClass( "DecayActivityChart" );
+    //setPreferredMethod( WPaintedWidget::Method::InlineSvgVml );
+    setSeriesSelectionEnabled(true);
+    //Signal<const WDataSeries *, WPointF>& seriesSelected() { return seriesSelected_; }
+    //setFollowCurve(const WDataSeries *series);
   }//DecayActivityChart( constructor )
   
   virtual ~DecayActivityChart()
@@ -1549,16 +1611,6 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *par
   m_chartTabWidget( NULL ),
   m_decayChart( NULL ),
   m_decayModel( NULL ),
-#if( ADD_PHOTOPEAK_CHART )
-  m_photoPeakChart( NULL ),
-  m_photoPeakModel( NULL ),
-  m_photopeakAgeSlider( NULL ),
-  m_sliderCurrentAgeText( NULL ),
-  m_sliderEndAgeText( NULL ),
-  m_photoPeakYScaleFixed( NULL ),
-  m_photoPeakShieldingZ( NULL ),
-  m_photoPeakShieldingAD( NULL ),
-#endif
   m_moreInfoDialog( NULL ),
   m_decayLegend( NULL ),
   m_calc( NULL ),
@@ -1638,20 +1690,6 @@ void DecayActivityDiv::init()
   m_decayChart                     = new DecayActivityChart();
   m_decayModel                     = new DecayActivityModel( this );
 
-#if( ADD_PHOTOPEAK_CHART )
-  m_photoPeakChart                 = new Chart::WCartesianChart();
-  m_photoPeakModel                 = new WStandardItemModel( this );
-
-  m_photopeakAgeSlider             = new WSlider();
-  m_sliderCurrentAgeText           = new WText( "", XHTMLUnsafeText );
-  m_sliderEndAgeText               = new WText( "", XHTMLUnsafeText );
-  m_photoPeakYScaleFixed           = new WCheckBox( "Fix Y-Range to Maximum" );
-
-  m_photoPeakShieldingZ            = new WDoubleSpinBox();
-  m_photoPeakShieldingAD           = new WDoubleSpinBox();
-#endif  //ADD_PHOTOPEAK_CHART
-
-
   //Sete elements names so we can style with css
   m_parentNuclidesDiv->addStyleClass( "m_parentNuclidesDiv" );
   m_nuclidesAddedDiv->addStyleClass( "m_nuclidesAddedDiv" );
@@ -1671,12 +1709,6 @@ void DecayActivityDiv::init()
   m_chartTabWidget->addStyleClass( "DecayChartTabWidget" );
   m_chartTabWidget->contentsStack()->addStyleClass( "ChartTabWidgetStack" );
   
-#if( ADD_PHOTOPEAK_CHART )
-  m_photoPeakYScaleFixed->addStyleClass( "m_photoPeakYScaleFixed" );
-  m_sliderCurrentAgeText->addStyleClass( "m_sliderCurrentAgeText" );
-  m_photoPeakShieldingZ->addStyleClass( "m_photoPeakShieldingZ" );
-  m_photoPeakShieldingAD->addStyleClass( "m_photoPeakShieldingAD" );
-#endif
   m_decayLegend->addStyleClass( "DecayLegend" );
 
   m_displayTimeLength->addStyleClass( "m_displayTimeLength" );
@@ -1827,11 +1859,6 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   displOptUpper->addWidget( endLabel );
   displOptUpper->addWidget( m_displayTimeLength );
   m_displayTimeLength->changed().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
-#if( ADD_PHOTOPEAK_CHART )
-  m_displayTimeLength->changed().connect( this,
-                            &DecayActivityDiv::updatePhotopeakSliderEndDateText );
-  m_displayTimeLength->enterPressed().connect( this, &DecayActivityDiv::updatePhotopeakSliderEndDateText );
-#endif
   m_displayTimeLength->enterPressed().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
   
   
@@ -1988,25 +2015,6 @@ void DecayActivityDiv::initCharts()
 
   m_decayChart->setToolTip( "Click for more information" );
 //  m_decayChart->mouseMoved().connect( this, &DecayActivityDiv::updateMouseOver );
-
-#if( ADD_PHOTOPEAK_CHART )
-  //Now lets init the phoptopeak chart
-  m_photoPeakChart->setModel( m_photoPeakModel );
-  m_photoPeakChart->setXSeriesColumn( 0 );
-  m_photoPeakChart->setMinimumSize( WLength(250), WLength(100) );
-//  m_photoPeakChart->setType( Chart::CategoryChart );
-  m_photoPeakChart->setType( Chart::ScatterPlot );
-  m_photoPeakChart->axis(Chart::XAxis).setScale( Chart::LinearScale );
-  m_photoPeakChart->setPlotAreaPadding( 80, Left );
-  m_photoPeakChart->setPlotAreaPadding( 50, Bottom );
-
-  m_photoPeakChart->setPlotAreaPadding( 20, Right );
-  m_photoPeakChart->setPlotAreaPadding( 5, Top );
-  m_photoPeakChart->setLegendEnabled( false );
-  m_photoPeakChart->axis(Chart::XAxis).setTitle( "Photopeak Energy (keV)" );
-  m_photoPeakChart->axis(Chart::XAxis).setRange( 0.0, 3000.0 );
-  m_photoPeakChart->initLayout();
-#endif  //ADD_PHOTOPEAK_CHART
 }//void initCharts()
 
 
@@ -2366,23 +2374,6 @@ void DecayActivityDiv::updateYScale()
     m_decayChart->axis(Chart::YAxis).setScale( Chart::LinearScale );
 }//void updateYScale()
 
-#if( ADD_PHOTOPEAK_CHART )
-void DecayActivityDiv::setPhotoPeakChartLogY( bool logy )
-{
-  if( logy )
-  {
-    if( m_photoPeakChart->axis(Chart::YAxis).minimum() < 0.0001 )
-      m_photoPeakChart->axis(Chart::YAxis).setMinimum( 0.0001 );
-    m_photoPeakChart->axis(Chart::YAxis).setScale( Chart::LogScale );
-  }else
-  {
-    m_photoPeakChart->axis(Chart::YAxis).setScale( Chart::LinearScale );
-  }
-
-  if( m_photopeakLogYScale->isChecked() != logy )
-    m_photopeakLogYScale->setChecked( logy );
-}//void setPhotoPeakChartLogY( bool logy )
-#endif //ADD_PHOTOPEAK_CHART
 
 void DecayActivityDiv::displayMoreInfoPopup( const double time )
 {
@@ -2433,14 +2424,6 @@ void DecayActivityDiv::displayMoreInfoPopup( const double time )
   m_moreInfoDialog->centerWindow();
 }//void displayMoreInfoPopup( const double time )
 
-#if( ADD_PHOTOPEAK_CHART )
-void DecayActivityDiv::photopeakDisplayMoreInfo()
-{
-  const double time = photopeakSliderTime();
-  displayMoreInfoPopup( time );
-}//void photopeakDisplayMoreInfo()
-#endif
-
 
 void DecayActivityDiv::checkTimeRangeValid()
 {
@@ -2486,18 +2469,6 @@ void DecayActivityDiv::checkTimeRangeValid()
   }//if( nunits*unitpair.second < 0.001*minhl )
 }//void DecayActivityDiv::checkTimeRangeValid()
 
-#if( ADD_PHOTOPEAK_CHART )
-void DecayActivityDiv::updatePhotopeakSliderEndDateText()
-{
-  using namespace PhysicalUnits;
-  checkTimeRangeValid();
-  
-  m_sliderEndAgeText->setText( m_displayTimeLength->text() );
-}//void updatePhotopeakSliderEndDateText()
-#endif //#if( ADD_PHOTOPEAK_CHART )
-
-
-
 
 void DecayActivityDiv::setTimeLimitToDisplay()
 {
@@ -2516,10 +2487,6 @@ void DecayActivityDiv::setTimeLimitToDisplay()
   
   string txt = PhysicalUnits::printToBestTimeUnits( finalTime );
   m_displayTimeLength->setText( txt );
-
-#if( ADD_PHOTOPEAK_CHART )
-  updatePhotopeakSliderEndDateText();
-#endif
 }//void DecayActivityDiv::setTimeLimitToDisplay()
 
 
@@ -2527,10 +2494,6 @@ void DecayActivityDiv::setDecayChartTimeRange( double finalTime )
 {
   string txt = PhysicalUnits::printToBestTimeUnits( finalTime );
   m_displayTimeLength->setText( txt );
-  
-#if( ADD_PHOTOPEAK_CHART )
-  updatePhotopeakSliderEndDateText();
-#endif
 }//void setDecayChartTimeRange()
 
 
@@ -2538,129 +2501,6 @@ void DecayActivityDiv::colorThemeChanged()
 {
   m_decayChainChart->colorThemeChanged();
 }//void colorThemeChanged();
-
-
-#if( ADD_PHOTOPEAK_CHART )
-double DecayActivityDiv::attentuationCoeff( const double energy )
-{
-  if( (m_photoPeakShieldingZ->validate() != WValidator::Valid)
-      || (m_photoPeakShieldingAD->validate() != WValidator::Valid) )
-    return 0.0;
-
-  const int atomicNumber = static_cast<int>(m_photoPeakShieldingZ->value() + 0.5f);
-  const float arealDensity = static_cast<float>(m_photoPeakShieldingAD->value());
-
-  if( (atomicNumber<=0) || (arealDensity<=0.0f) )
-    return 1.0;
-
-  if( atomicNumber>98 )
-    return 0.0;
-
-  const double xsenergy = (energy/SandiaDecay::keV)
-                              * PhysicalUnits::keV;
-  const double mu = MassAttenuation::massAttenuationCoeficient( atomicNumber,
-                                        static_cast<float>(xsenergy) );
-
-  const static double gPerCm2 = PhysicalUnits::g / PhysicalUnits::cm2;
-  return exp( -mu * (arealDensity*gPerCm2) );
-}//double attentuationCoeff( const double energy )
-
-
-void DecayActivityDiv::setPhotopeakXScaleRange()
-{
-  const int nrow = m_photoPeakModel->rowCount();
-  if( nrow < 2 )
-  {
-    m_photoPeakChart->axis(Chart::XAxis).setRange( 0.0, 3000.0 );
-    return;
-  }//if( nrow < 2 )
-
-  const WModelIndex index = m_photoPeakModel->index( nrow-1, 0 );
-  boost::any last_data = m_photoPeakModel->data( index );
-  double energy = 3000.0;
-  try{ energy = boost::any_cast<double>( last_data ); }catch(...){}
-
-  //Display to at leat 3 MeV to be consistent with converntion, but if isotope
-  //  has heigher energy gamma lines, display those too, up to 10 MeV.
-  energy = max( energy, 3000.0 );
-  energy = min( energy, 10000.0 );
-
-  m_photoPeakChart->axis(Chart::XAxis).setRange( 0.0, energy );
-}//void DecayActivityDiv::setPhotopeakXScaleRange()
-
-
-
-void DecayActivityDiv::setPhotopeakYScaleRange()
-{
-  double minValue = DBL_MAX, maxValue = -1.0;
-
-  if( m_photoPeakYScaleFixed->isChecked() )
-  {
-    const double maxDiplayTime = timeToDisplayTill();
-    const double dt = maxDiplayTime / 100.0;
-
-    for( double age = 0; age <= maxDiplayTime; age += dt )
-    {
-      const vector<SandiaDecay::EnergyRatePair> gammas
-           = m_currentMixture->gammas( age,
-                                     SandiaDecay::NuclideMixture::OrderByAbundance, true);
-
-      if( gammas.size() )
-      {
-        const double maxAtten = attentuationCoeff( gammas[0].energy );
-        const double minAtten = attentuationCoeff( gammas.back().energy );
-        maxValue = max( maxValue, maxAtten*gammas[0].numPerSecond );
-        minValue = min( minValue, minAtten*gammas.back().numPerSecond );
-      }//if( gammas.size() )
-    }//for( loop over times to find max value )
-  }else
-  {
-    const double age = photopeakSliderTime();
-    const vector<SandiaDecay::EnergyRatePair> gammas
-         = m_currentMixture->gammas( age,
-                                   SandiaDecay::NuclideMixture::OrderByAbundance, true );
-
-    if( gammas.size() )
-    {
-      const double maxAtten = attentuationCoeff( gammas[0].energy );
-      const double minAtten = attentuationCoeff( gammas.back().energy );
-      maxValue = max( maxValue, maxAtten*gammas[0].numPerSecond );
-      minValue = 0.1*min( minValue, minAtten*gammas.back().numPerSecond );
-    }//if( gammas.size() )
-
-//    m_photoPeakChart->axis(Chart::YAxis).setAutoLimits( Chart::MaximumValue );
-//    m_photoPeakChart->axis(Chart::YAxis).setAutoLimits( Chart::MinimumValue );
-  }//if( fixed y axis ) / else
-
-  if( minValue==maxValue )
-  {
-    if( minValue == 0.0 )
-    {
-      minValue = 0.0;
-      maxValue = 1.0;
-    }else
-    {
-      minValue = 0.1 * minValue;
-      maxValue = 1.1 * maxValue;
-    }//
-  }//if( fabs(minValue-maxValue) < 0.00000001 )
-
-  if( (m_photoPeakChart->axis(Chart::YAxis).scale() != Chart::LinearScale)
-      && (minValue <= 0.00001) )
-    minValue = 0.00001;
-
-  if( m_photoPeakChart->axis(Chart::YAxis).scale() == Chart::LinearScale )
-    minValue = 1.0;
-
-  if( maxValue > 0.0 )
-    m_photoPeakChart->axis(Chart::YAxis).setMaximum( maxValue );
-
-  if( (minValue > 0.0) && (minValue < DBL_MAX) )
-    m_photoPeakChart->axis(Chart::YAxis).setMinimum( minValue );
-  else
-    m_photoPeakChart->axis(Chart::YAxis).setAutoLimits( Chart::MinimumValue );
-}//void setPhotopeakYScaleRange()
-#endif //ADD_PHOTOPEAK_CHART
 
 
 void DecayActivityDiv::deleteMoreInfoDialog()
@@ -2976,79 +2816,6 @@ WContainerWidget *DecayActivityDiv::nuclideInformation(
   return cont;
 }//WContainerWidget *nuclideInformation( const Nuclide &nuclide ) const;
 
-#if( ADD_PHOTOPEAK_CHART )
-double DecayActivityDiv::photopeakSliderTime()
-{
-  const double minSlider = static_cast<double>(m_photopeakAgeSlider->minimum());
-  const double maxSlider = static_cast<double>(m_photopeakAgeSlider->maximum());
-  const double sliderValue = static_cast<double>(m_photopeakAgeSlider->value());
-  const double sliderFraction = (sliderValue-minSlider) / (maxSlider-minSlider);
-  const double maxDiplayTime = timeToDisplayTill();
-  return sliderFraction * maxDiplayTime;
-}//double DecayActivityDiv::photopeakSliderTime()
-
-
-void DecayActivityDiv::setPhopeakSliderTime( double time )
-{
-  time = max( time, 0.0 );
-
-  {//begin codeblock to set display time range to make sure resolution of slider
-   // doesnt significantly effect desired display range
-    //m_displayTimeLength->setValue( 20 );
-  }//end codeblock to set display time range
-
-  const double maxDisplayTime = timeToDisplayTill();
-  const double minSlider = static_cast<double>(m_photopeakAgeSlider->minimum());
-  const double maxSlider = static_cast<double>(m_photopeakAgeSlider->maximum());
-  const double sliderRange = maxSlider - minSlider;
-
-  const double fractionSlider = time / maxDisplayTime;
-  const double slidVal =  minSlider + fractionSlider*sliderRange;
-  m_photopeakAgeSlider->setValue( static_cast<int>( floor(0.5 + slidVal)  ));
-
-  refreshPhotopeakDisplay();
-}//void setPhopeakSliderTime( double time )
-
-void DecayActivityDiv::refreshPhotopeakDisplay()
-{
-  m_photoPeakModel->clear();
-
-  if( m_nuclides.empty() )
-    return;
-
-  const double age = photopeakSliderTime();
-  m_sliderCurrentAgeText->setText( PhysicalUnits::printToBestTimeUnits(age) );
-
-
-  const vector<SandiaDecay::EnergyRatePair> gammas
-                        = m_currentMixture->gammas( age,
-                             SandiaDecay::NuclideMixture::OrderByEnergy, true );
-  const int nGamma = static_cast<int>( gammas.size() );
-
-  m_photoPeakModel->insertRows( 0, nGamma );
-  m_photoPeakModel->insertColumns( 0, 2 );
-
-  for( int i = 0; i < nGamma; ++i )
-  {
-    const SandiaDecay::EnergyRatePair &gamma = gammas[i];
-    const double energy_keV = gamma.energy/SandiaDecay::keV;
-    const double attenuation = attentuationCoeff( gamma.energy );
-    const double numPerSecond = attenuation * gamma.numPerSecond;
-
-    m_photoPeakModel->setData( i, 0, boost::any(energy_keV));
-    m_photoPeakModel->setData( i, 1, boost::any(numPerSecond) );
-  }//for( loop over gammas, i )
-
-  Chart::WDataSeries series(1, Chart::BarSeries, Chart::YAxis);
-  WPen photopeakPen;
-  photopeakPen.setWidth(2);
-  series.setPen( photopeakPen );
-  m_photoPeakChart->addSeries( series );
-  setPhotopeakXScaleRange();
-  setPhotopeakYScaleRange();
-}//void refreshPhotopeakDisplay()
-#endif //ADD_PHOTOPEAK_CHART
-
 
 void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
 {
@@ -3095,11 +2862,6 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
   m_currentTimeRange  = -1.0;
 
   updateInitialMixture();
-
-#if( ADD_PHOTOPEAK_CHART )
-  //TODO: call refreshPhotopeakDisplay() seperately from refreshDecayDisplay()
-  refreshPhotopeakDisplay();
-#endif
   
   if( m_nuclides.empty() )
   {
@@ -3146,8 +2908,6 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
   
   if( maxDiplayTime <= 0.0 )
     return;
- 
-
   
   const int nRows = m_currentNumXPoints;
   const vector<SandiaDecay::NuclideTimeEvolution> &origEvolutions
@@ -3219,14 +2979,23 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
         }//for( const SandiaDecay::Transition *trans : decays )
       }//if( yaxis == ActivityAxis ) / else
 
-      if( yval==0.0 || IsInf(yval) || IsNan(yval) )
+      if( IsInf(yval) || IsNan(yval) )
         continue;
 
       totalActivities[row] += yval;
       maxActivity = std::max( maxActivity, yval );
       minActivity = std::min( minActivity, yval );
       
+#if( WT_VERSION > 0x3040000 )
+      // TODO: In Wt 3.7.1, having really small values causes the line to be drawn to really go whack; I'm not sure how to fix this, or where the problem actually comes in.  Maybe the thing to do is just create a D3.js version of this chart
+      //if( yval < 10*FLT_EPSILON )
+      //{
+      //  yval = 0.0;
+      //  cout << "[" << row << "," << evolutions[elN].nuclide->symbol << "," << elN << "," << labelText.str() << "]=" << yval << endl;
+      //}
+#endif
 //      if( activity >= (0.00001*endActivity) )
+      
       m_decayModel->setData( row, column, boost::any( yval ) );
       
       //WString tt = "My Tool Tip";
@@ -3327,17 +3096,6 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
   }//end section to add interactive areas
   */
   
-  
-//  double miny = 0.1*endActivity;
-//  double miny = 0.9*minActivity;
-//  const double maxy = 1.1*maxActivity;
-  
-  //If it wont change the dynamic range of the chart much anyways, might as well
-  //  anchor the y-axis to zero
-//  if( miny < 0.05*maxy )
-//    miny = 0.0; //never read
-//  m_decayChart->axis(Chart::YAxis).setRange( miny, maxy );
-  m_decayChart->axis(Chart::YAxis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
 
   //fill in the 'cache' variables for updateMouseOver(...)
   m_currentTimeUnits  = tunit;
@@ -3345,23 +3103,53 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
   
   if( m_calc && update_calc )
     m_calc->setTimeRangeTxt( m_displayTimeLength->text().toUTF8() );
+  
+#if( WT_VERSION > 0x3040000 )
+  m_decayModel->updateMaxActivity();
+#endif
+  
+  updateYAxisRange();
 }//void refreshDecayDisplay()
 
+
+void DecayActivityDiv::updateYAxisRange()
+{
+  //The next line of letting Wt set y-axis limits doesnt always work super great, so we'll do it
+  //  manually
+  // m_decayChart->axis(Chart::YAxis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
+  
+  double miny = 0.0, maxy = 0.0;
+  
+  for( int row = 0; row < m_decayModel->rowCount(); ++row )
+  {
+    for( int col = 1; col < m_decayModel->columnCount(); ++col )
+    {
+      if( !m_decayModel->showSeries( col ) )
+        continue;
+      
+      boost::any data = m_decayModel->data( m_decayModel->index(row, col) );
+      const double yval = asNumber(data);
+      if( !IsNan(yval) )
+      {
+        miny = std::min( miny, yval );
+        maxy = std::max( maxy, yval );
+      }
+    }
+  }
+
+  if( maxy <= 0.0 )
+    maxy = 1.0;
+  
+  //If it wont change the dynamic range of the chart much anyways, might as well
+  //  anchor the y-axis to zero
+  m_decayChart->axis(Chart::YAxis).setRange( 0.0, 1.1*maxy );
+}//void updateYAxisRange();
 
 
 void DecayActivityDiv::userSetShowSeries( int series, bool show )
 {
   m_decayModel->setShowSeries( series, show );
-  
-  
-//  double miny = 0.9*minActivity/actunit;
-//  const double maxy = 1.1*maxActivity/actunit;
-  //If it wont change the dynamic range of the chart much anyways, might as well
-  //  anchor the y-axis to zero
-//  if( miny < 0.05*maxy )
-//    miny = 0.0;
-//  m_decayChart->axis(Chart::YAxis).setRange( miny, maxy );
-  m_decayChart->axis(Chart::YAxis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
+  updateYAxisRange();
 }//void userSetShowSeries()
 
 
