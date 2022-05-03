@@ -831,7 +831,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   IsotopeNameFilterModel *isoSuggestModel = new IsotopeNameFilterModel( this );
   isoSuggestModel->addCustomSuggestPossibility( "background" );
   m_nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
+#if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
+#endif
   m_nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
   m_nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
 

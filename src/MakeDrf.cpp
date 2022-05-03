@@ -29,6 +29,7 @@
 #include <fstream>
 
 #include <Wt/WText>
+#include <Wt/WPoint>
 #include <Wt/WImage>
 #include <Wt/WPanel>
 #include <Wt/WLabel>
@@ -514,7 +515,7 @@ namespace
       m_previewBtn->setIcon( "InterSpec_resources/images/peak_small.png" );
       //m_previewBtn = new WImage( "InterSpec_resources/images/peak_small.png", this );
       
-      m_previewBtn->clicked().connect( this, &DrfPeak::togglePeakPreview );
+      m_previewBtn->clicked().connect( boost::bind( &DrfPeak::togglePeakPreview, this, boost::placeholders::_1 ) );
     }//DrfPeak constructor;
     
     bool useForEffFit() const
@@ -569,12 +570,12 @@ namespace
     {
       if( m_previewPopup && !m_previewPopup->isHidden() )
       {
-        m_previewBtn->removeStyleClass( "active" );
+        m_previewBtn->removeStyleClass( "active", true );
         m_previewPopup->setHidden( true );
       }
     }//void hidePeakPreview()
     
-    void togglePeakPreview()
+    void togglePeakPreview( WMouseEvent event )
     {
       //WAnimation animation(WAnimation::AnimationEffect::Pop, WAnimation::Linear, 250 );
       if( m_previewPopup )
@@ -586,7 +587,7 @@ namespace
           m_peakPreviewShow.emit( this );
         }else
         {
-          m_previewBtn->removeStyleClass( "active" );
+          m_previewBtn->removeStyleClass( "active", true );
           m_previewPopup->setHidden( true );
         }
         
@@ -617,7 +618,7 @@ namespace
         stringstream strm;
         svg->write( strm );
         
-        WText *chart = new WText( strm.str(), Wt::XHTMLUnsafeText /*, this*/ );
+        WText *chart = new WText( strm.str(), Wt::XHTMLUnsafeText );
         chart->addStyleClass( "DrfPeakChart" );
         m_previewPopup = new WPopupWidget( chart, this );
         
@@ -628,9 +629,42 @@ namespace
         m_previewPopup = new WPopupWidget( msg, this );
       }//try / catch make a chart
       
+#if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
       m_previewPopup->setAnchorWidget( m_previewBtn, Wt::Orientation::Vertical );
       m_previewPopup->setJavaScriptMember("wtNoReparent", "true");
       m_previewPopup->show();
+#else
+      // In Wt 3.7.1, it looks like there is no way to keep the JS from "re-parenting" the
+      //  popup-widget when you call positionAtWidget (See positionAtWidget in Wt.js); Wt will
+      //  re-parent the widget to the first ancestor of the anchor widget with scrollbars or
+      //  something.
+      //  This causes our window to then expand to scroll left/right, which is not what we want.
+      //  So we'll hack around this by just positioning the popup at the mouse click.
+      m_previewPopup->show();
+      
+      // Positioning taken from WPopupMenu.C
+      m_previewPopup->setOffsets(42, Left | Top);
+      m_previewPopup->setOffsets(-10000, Left | Top);
+      doJavaScript(WT_CLASS ".positionXY('" + m_previewPopup->id() + "',"
+                   + boost::lexical_cast<std::string>(event.window().x) + ","
+                   + boost::lexical_cast<std::string>(event.window().y) + ");");
+      
+      m_previewPopup->setTransient( true, 0 );
+      // connecting to WWebWidget::removeStyleClass(...) fails for some reason I cant quite tell why,
+      //  and I dont want to use the std::bind(lamda) version for possible life-time issues, so we'll
+      //  just remove the "active" style class in JS - has the downside if we then show the chart
+      //  again, the "active" style class wont be added since then the C++ and JS are out of sync,
+      //  so to fix this up, we'll also add the "active" style class in JS when its shown.  Of
+      //  course now the roundtrips from JS -> C++ -> make notable delays, but this is a minor
+      //  detail for the moment.
+      //m_previewPopup->hidden().connect( boost::bind( &WPushButton::removeStyleClass, m_previewBtn, WString("active"), true ) );
+      //m_previewPopup->hidden().connect( std::bind([this](){ m_previewBtn->removeStyleClass("active",true); }));
+      m_previewPopup->hidden().connect( boost::bind( &WWebWidget::doJavaScript, m_previewBtn,
+                            "$('#" + m_previewBtn->id() + "').removeClass('active');" ) );
+      m_previewPopup->shown().connect( boost::bind( &WWebWidget::doJavaScript, m_previewBtn,
+                                                   "$('#" + m_previewBtn->id() + "').addClass('active');" ) );
+#endif
+      
       m_previewBtn->addStyleClass( "active" );
       m_peakPreviewShow.emit( this );
     }//void togglePeakPreview()

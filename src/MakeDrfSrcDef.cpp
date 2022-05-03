@@ -173,7 +173,9 @@ void MakeDrfSrcDef::create()
   PhotopeakDelegate::EditWidget::nuclideNameMatcherJs( matcherJs );
   
   WSuggestionPopup *nucSuggest = new WSuggestionPopup( matcherJs, replacerJs );
+ #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   nucSuggest->setJavaScriptMember("wtNoReparent", "true");
+#endif
   
   nucSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
   nucSuggest->forEdit( m_nuclideEdit,
