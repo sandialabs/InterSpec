@@ -11,8 +11,8 @@ cd InterSpec_alpine_build
 docker pull alpine:latest
 
 # Start a shell session within the image, mapping the InterSpec source 
-#  directory to /interspec.  We'll also map port 8082 for testing.
-docker run --rm -it -v `pwd`:/interspec -p 127.0.0.1:8082:8082/tcp alpine:latest sh
+#  directory to /interspec.  We'll also map port 8081 for testing.
+docker run --rm -it -v `pwd`:/interspec -p 127.0.0.1:8081:8082/tcp alpine:latest sh
 
 # Get the dependancies we need to build InterSpec
 apk add --update alpine-sdk cmake patch linux-headers
@@ -24,13 +24,15 @@ apk add --update alpine-sdk cmake patch linux-headers
 
 # Make and cd into build directory - note this is in host filesystem incase we  
 #  want to come back to things, but dont want to rebuild everything from scratch
-cd interspec/
+cd /interspec/
 mkdir build_docker
 cd build_docker
 
 # This next command will take like 10 or 20 minutes to clone into the boost and Wt repositories
 #  Also note that it will build a static executable, that *should* run on nearly any linux (but unteted)
 cmake -DUSE_SQLITE3_DB=ON -DBUILD_FOR_WEB_DEPLOYMENT=ON -DInterSpec_FETCH_DEPENDENCIES=ON -DBUILD_AS_LOCAL_SERVER=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -static" ..
+
+# TODO: should we add: -DUSE_TERMINAL_WIDGET=ON ?
 
 # And actually building everything will take maybe an hour the first time; after
 #  that each rebuild should only take a minute or less.

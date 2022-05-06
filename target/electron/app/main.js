@@ -75,6 +75,121 @@ const crypto = require('crypto');
 var session_token = null;
 
 
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('interspec', process.execPath, [path.resolve(process.argv[1])])
+  }
+} else {
+    app.setAsDefaultProtocolClient('interspec')
+}
+
+const gotTheLock = app.requestSingleInstanceLock();
+
+if( !gotTheLock ) 
+{
+  // TODO: need to make sure the 'will-quit' and 'before-quit', and beforeunload and unload handlers are fine being called
+  app.quit();
+  return;
+}else 
+{
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+  
+    // TODO: if no files/urls are being opened, open a second window of InterSpec... this will need changing of code to handle mainWindow being the latest focussed window (and an array of all open windows kep), and similarly session_token (which session_token should become a member variable of mainWindow)
+    
+    // Someone tried to run a second instance, we should focus our window.
+    console.log( "Second instance: workingDirectory:", workingDirectory, ", commandLine:", commandLine, ", event:", event );
+
+    const infiles = argvToPaths(commandLine,workingDirectory);
+
+    if( mainWindow ) 
+    {
+      if( mainWindow.isMinimized() ) 
+        mainWindow.restore();
+      mainWindow.focus();
+    }
+
+    if( infiles.length > 0 )   
+    {
+      if( session_token )
+        interspec.openFile( session_token, JSON.stringify(infiles) );
+      else
+        initial_file_to_open = infiles;
+    }
+
+    //let argvstr = commandLine.join(', ');
+    //dialog.showErrorBox('second instance', `infiles.length: ${infiles.length}, workingDirectory: ${workingDirectory}, commandLine: ${argvstr}`)
+  });
+
+  // Create mainWindow, load the rest of the app, etc...
+  //app.whenReady().then(() => {
+  //  createWindow()
+  //})
+  
+  app.on('open-url', (event, url) => {
+    //dialog.showErrorBox('Welcome Back', `You arrived from: ${url}`)
+    // TODO: this function totally untested 
+    console.log( `'open-url' totally untested: url: ${url}` );
+
+    if( path_string.startsWith("interspec://") )
+    {
+      if( session_token )
+        interspec.openAppUrl( session_token, JSON.stringify( [url] ) );
+      else
+        initial_file_to_open = [url];
+    }
+  })
+}//if (!gotTheLock) /
+
+/** Loops over argv_array arguments to look for actual files or "deeplinks" (urls starting with "interspec://") to open.
+ * 
+ * @param {*} argv_array Array of strings passes to the executable; the first entry is assumed to be executable path, so will be discarded.
+ * @param {*} workingDir Optional argument of path to look for files relative to; if not provided, the CWD is used.
+ * @returns Returns an array of strings of actual files (with absolute paths), and app-urls, that you can have InterSpec try to open.
+ */
+function argvToPaths( argv_array, workingDir ) {
+  let infiles = [];
+  if( !argv_array || (argv_array.length < 2) )
+    return infiles;
+    
+  for( let path_string of argv_array.slice(1) )
+  {
+    if( path_string.startsWith("interspec://") )
+    {
+      infiles.push( path_string );
+    }else
+    {
+      let found = false;
+      if( workingDir )
+      {
+        try {
+          const abspath = path.join(workingDir, path_string);
+          if( fs.lstatSync( abspath ).isFile() ){
+            infiles.push( path.resolve( abspath ) );
+            found = true;
+          }
+        }catch(e){
+
+        }
+      }
+
+      if( !found )
+      {
+        try 
+        {
+          if( fs.lstatSync(path_string).isFile() ){
+            infiles.push(path.resolve(path_string));
+            found = true;
+          }
+        }catch( e ) 
+        {
+        }
+      }//if( !found )
+    }//if( deeplink ) / else (maybe a file )
+  }//for( loop over command line ards )
+
+  return infiles
+}//argvToPaths
+
 function checkWindowPosition(state) {
   //Adapted from https://github.com/Sethorax/electron-window-state-manager/blob/master/src/lib/windowState.js (20171121)
   //  Not the best.  Should find which screen we're currently (mostly) on and shrink
@@ -187,18 +302,10 @@ if( process.platform == 'darwin' ) {
   })
 } else {
   
-  var myArgs = process.argv.slice(1);
-  console.log('myArgs: ', myArgs);
+ // var myArgs = process.argv.slice(1);
+ // console.log('myArgs: ', myArgs);
   
-  var infiles = [];
-  for( var path_string of myArgs )
-  {
-      try {
-          if (fs.lstatSync(path_string).isFile())
-              infiles.push(path.resolve(path_string));
-      } catch (e) {
-      }
-  }
+  const infiles = argvToPaths(process.argv,null);
   
   if( infiles.length )
     load_file(infiles);

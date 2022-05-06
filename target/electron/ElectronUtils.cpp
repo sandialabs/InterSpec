@@ -288,6 +288,11 @@ int interspec_open_file( const char *session_token, const char *files_json )
   return InterSpecServer::open_file_in_session( session_token, files_json );
 }
 
+bool interspec_open_app_url( const char *session_token, const char *files_json )
+{
+  return InterSpecServer::pass_app_url_to_session( session_token, files_json );
+}
+
 bool interspec_set_initial_file_to_open( const char *session_token, const char *file_path )
 {
   try

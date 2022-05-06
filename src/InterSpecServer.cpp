@@ -661,7 +661,7 @@ int start_server( const char *process_name, const char *userdatadir,
     //Are we guaranteed to receeve the entire message at once?
     cerr << "Opening files not tested!" << endl;
     
-    vector<string> files;
+    vector<string> files, appurls;
     
     try
     {
@@ -677,6 +677,8 @@ int start_server( const char *process_name, const char *userdatadir,
         const string valstr = val.orIfNull("");
         if( SpecUtils::is_file(valstr) )
           files.push_back(valstr);
+        else if( SpecUtils::istarts_with(valstr,"interspec://") )
+          appurls.push_back(valstr);
         else
           cerr << "File '" << valstr << "' is not a file" << endl;
       }//for( const auto &val : jsonfiles )
@@ -697,14 +699,22 @@ int start_server( const char *process_name, const char *userdatadir,
       int numopened = 0;
       Wt::WApplication::UpdateLock applock( app );
       
-      for( auto filename : files )
+      for( const string &filename : files )
       {
         if( app->userOpenFromFileSystem( filename ) )
           numopened += 1;
         else
-          cerr << "InterSpec failed to open file filename" << endl;
+          cerr << "InterSpec failed to open file: '" << filename << "'" << endl;
       }
       
+      for( const string &url : appurls )
+      {
+        if( app->handleAppUrl( url ) )
+          numopened += 1;
+        else
+          cerr << "InterSpec failed to open app-url: '" << url << "'"  << endl;
+      }
+
       app->triggerUpdate();
       
       return numopened;

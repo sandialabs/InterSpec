@@ -1444,10 +1444,10 @@ string printCompact_trial( double val, size_t precision, const bool use_scientif
  
 string printCompact( const double val, const size_t precision )
 {
-  if( std::isnan(val) )
+  if( IsNan(val) )
     return "nan";
   
-  if( std::isinf(val) )
+  if( IsInf(val) )
     return "inf";
   
   const string as_science = printCompact_trial( val, precision, true );
