@@ -361,6 +361,24 @@ namespace InterSpecAddOn
   }//setInitialFileToLoad
 
 
+  Napi::Boolean openAppUrl(const Napi::CallbackInfo& info) 
+  {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString())
+    {
+      Napi::TypeError::New(env, "openAppUrl: Expected two strings").ThrowAsJavaScriptException();
+      return Napi::Boolean();
+    } 
+
+    const std::string sessionToken = info[0].As<Napi::String>();
+    const std::string url = info[1].As<Napi::String>();
+    
+    const bool result = interspec_open_app_url( sessionToken.c_str(), url.c_str() );
+
+    return Napi::Boolean::New( env, result );
+  }
+
 
   Napi::Boolean usingElectronMenus(const Napi::CallbackInfo& info) 
   {
@@ -558,6 +576,7 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
   
   exports.Set( "setInitialFileToLoad", Napi::Function::New(env, InterSpecAddOn::setInitialFileToLoad ));
   
+  exports.Set( "openAppUrl", Napi::Function::New(env, InterSpecAddOn::openAppUrl) );
   
   exports.Set( "removeSessionToken", Napi::Function::New(env, InterSpecAddOn::removeSessionToken ));
 

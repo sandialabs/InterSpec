@@ -1313,7 +1313,7 @@ std::string DetectorPeakResponse::toAppUrl() const
     return combine_parts();
   
   // Remove part of URL, and return if now short engough
-  auto remove_part = [&parts,&current_url_len]( const string &part ) -> bool {
+  auto remove_part = [&parts,&current_url_len,max_binary_num]( const string &part ) -> bool {
     if( parts.count(part) )
       parts.erase( part );
     
