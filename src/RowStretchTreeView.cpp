@@ -81,7 +81,7 @@ RowStretchTreeView::RowStretchTreeView( WContainerWidget *parent )
 
   //Add a little square in the upper right hand corner, that is the same color
   //  as the header, so if scroll bars appear, that little area doesnt look
-  //  wierd.  Definetly a bit of a hack, but whatever for now.
+  //  weird.  Definitely a bit of a hack, but whatever for now.
   WStringStream backjs;
   backjs << "$(" << jsRef() << ")"
             ".prepend(\"<div style='position: absolute; width: 20px;"

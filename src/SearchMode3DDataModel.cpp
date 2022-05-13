@@ -366,6 +366,12 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
   
       endInsertRows();
       endInsertColumns();
+      
+      // The tabular Wt widgets are a bit sticky refreshing sometimes, so we'll also force the
+      //  refresh here as well, even though I dont know if that issue is applicable.
+      //reset();
+      layoutAboutToBeChanged().emit();
+      layoutChanged().emit();
     }//if( newenergies.size() && newtimes.size() )
   }catch( std::exception &e )
   {

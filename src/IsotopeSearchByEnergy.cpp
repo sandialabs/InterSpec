@@ -351,7 +351,6 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   //m_results->sortByColumn( IsotopeSearchByEnergyModel::Distance, Wt::AscendingOrder );
   m_results->sortByColumn( IsotopeSearchByEnergyModel::Column::ProfileDistance, Wt::DescendingOrder );
   
-  
   for( IsotopeSearchByEnergyModel::Column col = IsotopeSearchByEnergyModel::Column(0);
       col < IsotopeSearchByEnergyModel::NumColumns;
       col = IsotopeSearchByEnergyModel::Column(col+1) )

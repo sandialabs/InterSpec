@@ -879,8 +879,18 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
     endInsertRows();
   }//if( peaks.size() )
   
-  
-  
+  // There is an apparent bug in Wt 3.7.1 (at least), that once you remove all the rows and add
+  //  new ones back in (at least in the same event loop), then if you scroll down the table, it
+  //  will get to indicating its loading more rows, but just never will; this is triggered when
+  //  you change spectrum files.
+  //  To trigger, I suspect it requires the removal of the rows, and re-adding them back in, since
+  //  this issue isnt seen in #PeakModel::addNewPeakInternal.
+  //  Since we have to re-render the table anyway, this isnt really that heavy handed.
+  //  \sa PeakModel::setPeaks
+  //  \sa IsotopeSearchByEnergyModel::updateSearchResults
+  //reset();
+  layoutAboutToBeChanged().emit();
+  layoutChanged().emit();
 }//void setPeakFromSpecMeas(...)
 
 
@@ -1185,6 +1195,10 @@ void PeakModel::setPeaks( vector<PeakDef> peaks )
     std::stable_sort( m_sortedPeaks.begin(), m_sortedPeaks.end(), sortfcn );
     
     endInsertRows();
+    
+    // Trigger a layout change to keep issue with scrolling in table not working from happening.
+    //reset();
+    layoutAboutToBeChanged().emit();
     layoutChanged().emit();
   }//if( peaks.size() )
   
@@ -2730,9 +2744,12 @@ void PeakModel::sort( int col, Wt::SortOrder order )
   sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
                         m_sortColumn, order, data );
 
-  layoutAboutToBeChanged();
+  layoutAboutToBeChanged().emit();
   stable_sort( m_sortedPeaks.begin(), m_sortedPeaks.end(), sortfcn );
-
+  layoutChanged().emit();
+  
+  // I think this next part about saying the data changed is probably unnecessary; but didnt fully
+  //  test, so leaving it in for now
   const int nrow = rowCount();
   const int ncol = columnCount();
   
