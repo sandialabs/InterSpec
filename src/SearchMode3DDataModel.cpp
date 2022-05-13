@@ -253,41 +253,17 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
     const size_t nsamples = sample_numbers.size();
     
     size_t nenergies = energy_cal->num_channels();
-    while( nenergies > m_maxNumChannels )
-      nenergies /= 2;
-      
-    if( nenergies != energy_cal->num_channels() )
+    size_t ncombine = 1;
+    while( (ncombine < nenergies) && (nenergies / ncombine) > m_maxNumChannels )
     {
-      const auto &coefs = energy_cal->coefficients();
-      const auto &dev_pairs = energy_cal->deviation_pairs();
+      ncombine += 1;
+    }
       
-      auto newcal = make_shared<SpecUtils::EnergyCalibration>();
-      switch( energy_cal->type() )
-      {
-        case SpecUtils::EnergyCalType::Polynomial:
-        case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-          newcal->set_polynomial( nenergies, coefs, dev_pairs );
-          break;
-          
-        case SpecUtils::EnergyCalType::FullRangeFraction:
-          newcal->set_full_range_fraction( nenergies, coefs, dev_pairs );
-          break;
-          
-        case SpecUtils::EnergyCalType::LowerChannelEdge:
-          assert( nenergies < coefs.size() );
-          newcal->set_lower_channel_energy( nenergies, vector<float>(begin(coefs),begin(coefs)+nenergies+1) );
-          break;
-        
-        case SpecUtils::EnergyCalType::InvalidEquationType:
-          throw runtime_error( "unexpected logic error" );
-          break;
-      }//switch( energy_cal->type() )
-      
-      energy_cal = newcal;
-    }//if( nenergies != energy_cal->num_channels() )
-    
-      
-    assert( energy_cal->num_channels() == nenergies );
+    if( ncombine != 1 )
+    {
+      energy_cal = energy_cal_combine_channels( *energy_cal, ncombine );
+      nenergies = energy_cal->num_channels();
+    }
       
     m_minCounts = FLT_MAX;
     m_maxCounts = 0.0f;
@@ -344,7 +320,6 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
         m_minCounts = std::min( m_minCounts, counts[i] );
         m_maxCounts = std::max( m_maxCounts, counts[i] );
         
-        //Kevin: note that we are displaying detected counts, since the real-time of each sample may not be the same, you might want to display counts per second.
         m_counts[samplen][i] = counts[i];
       }
       newtimes.push_back( cumulativeRealTime );
@@ -366,13 +341,13 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
   
       endInsertRows();
       endInsertColumns();
-      
-      // The tabular Wt widgets are a bit sticky refreshing sometimes, so we'll also force the
-      //  refresh here as well, even though I dont know if that issue is applicable.
-      //reset();
-      layoutAboutToBeChanged().emit();
-      layoutChanged().emit();
     }//if( newenergies.size() && newtimes.size() )
+    
+    // The tabular Wt widgets are a bit sticky refreshing sometimes, so we'll also force the
+    //  refresh here as well, even though I dont know if that issue is applicable.
+    //reset();
+    layoutAboutToBeChanged().emit();
+    layoutChanged().emit();
   }catch( std::exception &e )
   {
       cerr << "SearchMode3DDataModel::update() caught: " << e.what() << endl;
