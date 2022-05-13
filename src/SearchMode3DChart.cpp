@@ -73,7 +73,6 @@ SearchMode3DChart::SearchMode3DChart( InterSpec *viewer,
    m_model( nullptr ),
    m_data( nullptr ),
    m_chart( nullptr ),
-   m_logScaleCheckBox( nullptr ),
    m_inputMinEnergy( nullptr ),
    m_inputMaxEnergy( nullptr ),
    m_inputMinTime( nullptr ),
@@ -101,12 +100,15 @@ void SearchMode3DChart::init()
   
   m_layout->addWidget( new WText( "Loading..." ), 0, 0, 1, 5 );
   
+  /*
+   FIXME: I cant seem to get the actual data display to properly become log, so disabling the checkbox for now
   //Creates Checkbox and connects with logScaleToggleSwitchOn and logScaleToggleSwitchOff
-  m_logScaleCheckBox = new WCheckBox( "Log Scale" );
-  m_logScaleCheckBox->setChecked( false );
-  m_logScaleCheckBox->checked().connect( boost::bind( &SearchMode3DChart::setLogZ, this, true ) );
-  m_logScaleCheckBox->unChecked().connect( boost::bind( &SearchMode3DChart::setLogZ, this, false ) );
-  m_layout->addWidget( m_logScaleCheckBox, 1, 4, AlignRight );
+  WCheckBox *logScaleCheckBox = new WCheckBox( "Log Scale" );
+  logScaleCheckBox->setChecked( false );
+  logScaleCheckBox->checked().connect( boost::bind( &SearchMode3DChart::setLogZ, this, true ) );
+  logScaleCheckBox->unChecked().connect( boost::bind( &SearchMode3DChart::setLogZ, this, false ) );
+  m_layout->addWidget( logScaleCheckBox, 1, 4, AlignRight );
+  */
   
   //Creates a editable textbox that allows users to input the minimum energy they are interested in
   WLabel *label = new WLabel( "Min Energy" );
@@ -230,7 +232,6 @@ void SearchMode3DChart::initChart()
   m_chart->axis(Chart::ZAxis_3D).setLabelBasePoint( 0 );
   // m_chart->axis(Wt::Chart::ZAxis_3D).setLabelInterval( 100 );
   
-  
   //Create legend
   //m_chart->setLegendStyle(Wt::WFont(), Wt::WPen(), Wt::WBrush(Wt::WColor(Wt::lightGray)));
   //m_chart->setLegendEnabled(true);
@@ -249,7 +250,10 @@ void SearchMode3DChart::initChart()
   
   updateDisplay();
   updateRange();
+  
+  wApp->triggerUpdate();
 }//void initChart();
+
 
 void SearchMode3DChart::setLogZ( const bool log )
 {
@@ -264,6 +268,7 @@ void SearchMode3DChart::setLogZ( const bool log )
   //  figure out how to force it.
   //m_model->dataChanged().emit( m_model->index(0, 0), m_model->index(m_model->rowCount()-1, m_model->columnCount()-1) );
   newSpectralDataSet();
+  m_model->modelReset().emit();
 }//void setLogZ( const bool log )
 
 

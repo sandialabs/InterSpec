@@ -115,7 +115,6 @@ protected:
   SearchMode3DDataModel *m_model;
   Wt::Chart::WGridData  *m_data;
   Wt::Chart::WCartesian3DChart *m_chart;
-  Wt::WCheckBox *m_logScaleCheckBox;
   Wt::WDoubleSpinBox *m_inputMinEnergy;
   Wt::WDoubleSpinBox *m_inputMaxEnergy;
   Wt::WDoubleSpinBox *m_inputMinTime;
