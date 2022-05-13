@@ -140,11 +140,14 @@ namespace InterSpecServer
    dropping a file to the app icon in the Finder.  Or on Windows it would be
    dropping multiple files onto app icon.
    
+   URLs with the "interspec://" schema can also be included instead of a file path; 
+   they will be processed after the files are opened.
+
    ToDo: should add logic to try and figure out what files are background, foreground, etc.
    
    \param session_token session token you want to open the file.
    \param files_json: a JSON array of files to open.  Opened,
-   ex. ["/path/to/some/file","/some/other/file"] .
+   ex. ["/path/to/some/file","/some/other/file","interspec://drf/define?..."] .
    Input files are opened one at a time using #InterSpecApp::userOpenFromFileSystem
    \returns number of files opened.
    Will be zero if files were not valid spectrum files.
