@@ -64,6 +64,10 @@ class SpecMeas : public SpecUtils::SpecFile
 public:
   typedef std::deque< std::shared_ptr<const PeakDef> > PeakDeque;
   typedef std::shared_ptr< PeakDeque >                 PeakDequeShrdPtr;
+  // TODO: going from sample numbers to peaks isnt great; the peaks can get confused, or
+  //       mis-assigned when/if sample numbers change, and also, if you change displayed detectors
+  //       the peaks used dont change; so instead should use set<weak_ptr<const Measurement>> to
+  //       track peak ownership.
   typedef std::map<std::set<int>, PeakDequeShrdPtr >     SampleNumsToPeakMap;
   
   //
@@ -207,6 +211,9 @@ public:
   //  Note: does not notify PeakModel, or anywhere else.
   void setPeaks( const std::deque< std::shared_ptr<const PeakDef> > &peakdeque,
                  const std::set<int> &samplenums );
+  
+  /** Removes the peaks for the given sample numbers. */
+  void removePeaks( const std::set<int> &samplenums );
   
   std::shared_ptr< const PeakDeque > automatedSearchPeaks(
                                         const std::set<int> &samplenums ) const;

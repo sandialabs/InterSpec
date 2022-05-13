@@ -1572,6 +1572,18 @@ void SpecMeas::setPeaks( const std::deque< std::shared_ptr<const PeakDef> > &pea
 }//void setPeaks(...)
 
 
+void SpecMeas::removePeaks( const std::set<int> &samplenums )
+{
+  if( !m_peaks )
+    return;
+  
+  auto pos = m_peaks->find(samplenums);
+  if( pos == end(*m_peaks) )
+    return;
+  m_peaks->erase( pos );
+}//void removePeaks( const std::set<int> &samplenums )
+
+
 std::shared_ptr< const SpecMeas::PeakDeque > SpecMeas::automatedSearchPeaks( const std::set<int> &samplenums ) const
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );

@@ -1,10 +1,3 @@
-
-if(POLICY CMP0091)
-  cmake_policy(SET CMP0091 NEW) # For CMake 3.15 and newer, enable use of CMAKE_MSVC_RUNTIME_LIBRARY, without requiring CMake 3.15
-endif(POLICY CMP0091)
-
-cmake_policy(SET CMP0048 NEW)
-
 cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
 project(InterSpec VERSION 1.0.10)
@@ -17,9 +10,6 @@ set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make InterSpec st
 if( InterSpec_FETCH_DEPENDENCIES )
   include( cmake/FetchInterSpecDeps.txt )
 endif( InterSpec_FETCH_DEPENDENCIES )
-
-
-project(InterSpec VERSION 1.10.0)
 
 # If we are the top-level project, we'll build the local-server exe
 get_directory_property(hasParent PARENT_DIRECTORY)
@@ -152,7 +142,6 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
 
 set(GOOGLE_MAPS_KEY "" CACHE STRING "Google maps api key.")
 
-set(GUI_TYPE "")
 set( INTERSPEC_LIB_TYPE "STATIC" )
 #set( INTERSPEC_LIB_TYPE "SHARED" )
 
@@ -646,7 +635,7 @@ add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers})
 
 # If we are the top-level project, we'll build the local-server exe
 if( NOT hasParent)
-  add_executable(InterSpecExe ${GUI_TYPE} main.cpp)
+  add_executable(InterSpecExe main.cpp)
   target_link_libraries(InterSpecExe PUBLIC InterSpecLib)
   set_target_properties(InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec")
 endif()
