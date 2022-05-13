@@ -705,6 +705,8 @@ void DecayParticleModel::setRowData( const std::vector<RowData> &newData )
   endInsertRows();
 
   sort( m_sortColumn, m_sortOrder );
+  //reset();
+  layoutAboutToBeChanged().emit();
   layoutChanged().emit();
 }//setRowData(...)
 

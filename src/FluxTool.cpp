@@ -326,6 +326,8 @@ namespace FluxToolImp
         doSortWork();
         endInsertRows();
       }//
+      
+      reset(); //JIC, to make sure the GUI refreshes
     }//void handleFluxToolWidgetUpdated()
     
     
