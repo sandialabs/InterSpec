@@ -12,6 +12,7 @@
  * 
  * wcjohns manually removed the following plugins: ie6, svg, imagemap, modal (to save about 10 kb minified - didnt try removing viewport)
  * wcjohns also corrected issue when using with jQuery 3.6.0
+ * wcjohns also added making z-index being highest shown when used with Wt popups, etc
  */
 /*global window: false, jQuery: false, console: false, define: false */
 
@@ -1156,7 +1157,18 @@ PROTOTYPE.hide = function(event) { return this.toggle(FALSE, event); };
 	var qtips = $(SELECTOR),
 		tooltip = this.tooltip,
 		curIndex = parseInt(tooltip[0].style.zIndex, 10),
-		newIndex = QTIP.zindex + qtips.length;
+		//newIndex = QTIP.zindex + qtips.length;
+		newIndex = 0;
+	
+	// wcjohns modification: bring the q-tip above all other qtips, and above all Wt dialogs, etc
+	$(".qtip,.body,.Wt-popup,.Wt-dialogcover").each(function() {
+	  var index_current = parseInt($(this).css("zIndex"), 10);
+	  // Only increment z-index if this element is visible, and not the one being shown
+	  if( (index_current > newIndex) && (tooltip[0] !== this) && $(this).is(":visible") ) {
+		newIndex = index_current;
+	  }
+	});
+	newIndex += 1;
 
 	// Only update the z-index if it has changed and tooltip is not already focused
 	if(!tooltip.hasClass(CLASS_FOCUS)) {
