@@ -35,7 +35,7 @@
                It is also a convenient mode during development, as it is easy
 	       to enable disable debugging using valgrind, and it always starts
 	       the latest deployed executable for a new session.
-	   
+
 	       Note: currently only supported using the FastCGI connector
               -->
 
@@ -90,7 +90,7 @@
 	       When a session remains inactive for this amount of time, it is
 	       cleaned up.
 	      -->
-	    <timeout>240</timeout>
+	    <timeout>600</timeout>
 
 	    <!-- Server push timeout (seconds).
 
@@ -101,7 +101,7 @@
                periodically and issues a new one. This timeout sets
                the frequency.
 	      -->
-	    <server-push-timeout>110</server-push-timeout>
+	    <server-push-timeout>50</server-push-timeout>
 	</session-management>
 
 	<!-- Settings that apply only to the FastCGI connector.
@@ -191,7 +191,7 @@
 	    <num-threads>10</num-threads>
 
 	    <!-- Maximum Request Size spooled in memory (Kb)
-        
+
                Normally, Wt keeps incoming requests (POST data) in memory.
                However, malicious users could send a big POST and as such
                use up all memory of your HTTP server. With this parameter,
@@ -207,12 +207,17 @@
 	    <max-memory-request-size>128</max-memory-request-size>
 	</connector-isapi>
 
-        <!-- Enable debug
+        <!-- Javascript debug options
 
-	     When enabled,
-	     - JavaScript errors are not caught to display an error message.
+	     Values:
+	     - true: JavaScript errors are not caught but the browser
+	             built-in debug options are used
+	     - stack: JavaScript errors are caught but also a stack trace
+                      is printed, useful for diagnosing a problem in production
+	     - false: JavaScript errors are caught and a simple error message
+	              is printed to indicate that something is terribly wrong
 	  -->
-	<debug>true</debug>
+	<debug>false</debug>
 
 	<!-- Log file
 
@@ -221,34 +226,76 @@
 	   (e.g. for apache + fastcgi module), or on stderr (e.g. for
 	   the built-in httpd).
          -->
-	<log-file>wt_error_log.log</log-file>
-    <log-config>-*</log-config>
-	
-	
+	<log-file></log-file>
+
+	<!-- Logger configuration
+
+	   This configures the logger. With the default configuration,
+	   everything except for debugging messages are logged.
+
+	   The configuration is a string that defines rules for
+	   enabling or disabling certain logging. It is a white-space
+	   delimited list of rules, and each rule is of the form:
+
+	     [-]level : enables (or disables) logging of messages of
+	     the given level; '*' is a wild-card that matches all
+	     levels
+
+	     [-]level:scope : enables (or disables) logging of
+	     messages of the given level and scope; '*' is a wild-card
+	     that matches all levels or scopes.  The default
+	     configuration is "* -debug", i.e. by default everything
+	     is logged, except for "debug" messages.
+
+	   Some other examples:
+
+	     "* -debug debug:wthttp": logs everything, including
+	     debugging messages of scope "wthttp", but no other
+	     debugging messages.
+
+	     "* -info -debug": disables logging of info messages
+	     in addition to debugging messages.
+
+	   Note debugging messages are only emitted when debugging
+	   has been enabled while building Wt.
+	  -->
+	<log-config>-* -debug -info +error +warning +secure</log-config>
+
 	<!-- Maximum HTTP request size (Kb)
 
            Maximum size of an incoming POST request. This value must be
            increased when the user is allowed to upload files.
          -->
-	<max-request-size>10240000</max-request-size>
+	<max-request-size>524288</max-request-size>
 
 	<!-- Session id length (number of characters) -->
 	<session-id-length>16</session-id-length>
 
-	<!-- Send the XHTML mime type when appropriate
+	<!-- DoS prevention: limit plain HTML sessions
 
-	   Wt renders XHTML1 (XML variant of HTML) that is backward-compatible
-	   with HTML. Using XHTML, Wt is capable of supporting XHTML-only
-	   features such as embedded SVG or MathML.
+           This is a simple measure which avoids Denial-of-Service
+           attacks on plain HTML sessions, which are easy to mount in
+           particular in the case of progressive bootstrap mode.
 
-	   When enabled, JWt sets an XHTML mime-type
-	   (application/xhtml+xml) when the browser reports support
-	   for it. Most notably, Internet Explorer does not support
-	   it.  Because XHTML and HTML are slightly different with
-	   respect to default CSS rules, you may want to disable
-	   sending the XHTML mime-type alltogether, at least if you
-	   are not using SVG (used by the WPaintedWidget).  -->
-	<send-xhtml-mime-type>false</send-xhtml-mime-type>
+           This setting may be used to keep the ratio of plain HTML
+           versus Ajax sessions under a certain ratio. Typically, most
+           of your sessions will be Ajax sessions, and only a tiny
+           fraction (e.g. less than 5%) will be plain HTML
+           sessions. This ratio is only enforced when more than 20 sessions
+	   have been created.
+	  -->
+	<plain-ajax-sessions-ratio-limit>1</plain-ajax-sessions-ratio-limit>
+
+	<!-- DoS prevention: adds a puzzle to validate Ajax sessions
+
+           This is a simple measure which avoids Denial-of-Service
+           attacks on Ajax sessions.
+
+           When enabled, a puzzle needs to be solved in the first Ajax
+           request which eliminates agents that do not build a proper
+           DOM tree.
+	  -->
+	<ajax-puzzle>false</ajax-puzzle>
 
 	<!-- Do strict serialization of events.
 
@@ -275,7 +322,7 @@
 
 	<!-- Enables web socket.
 
-	   By default AJAX and long polling are used to communicate
+	   By default Ajax and long polling are used to communicate
 	   between server and browser.
 
            By enabling web socket support, if the browser supports
@@ -283,17 +330,28 @@
            communication between client and server. WebSockets are
            currently only supported by the built-in httpd Connector,
 	   which acts as both an HTTP and WebSocket server. The WebSocket
-	   protocol is intentionally not compatible with HTTP, through 
+	   protocol is intentionally not compatible with HTTP, through
 	   a special hand-shake mechanism, and requires
            that all (reverse) proxy servers also have explicit support
            for this protocol.
 
            This feature is still experimental: the Web Sockets RFC is
-           still a draft with ongoing changes to the framing protocol,
-	   and the current implementation is based on
-	   http://tools.ietf.org/html/draft-ietf-hybi-thewebsocketprotocol-00
+           still a draft. Wt implements up to version 17 of the draft
+	   (latest as of November 2011).
 	  -->
 	<web-sockets>false</web-sockets>
+
+	<!-- Enables the detection of webgl-capabilites.
+
+	     When this is enabled, the browser will try to create a
+	     webgl-context when loading to verify that it is possible. This
+	     is neccesary when using WGLWidget.
+
+	     This can take up some load time. When your application does not
+	     use WGLWidget, this option can be set to false. It will improve
+	     the initial loading time of the web-application.
+	-->
+	<webgl-detection>true</webgl-detection>
 
 	<!-- Redirect message shown for browsers without JavaScript support
 
@@ -309,7 +367,7 @@
           -->
 	<redirect-message>Load basic HTML</redirect-message>
 
-	<!-- Whether we are sitting behind a reverse proxy 
+	<!-- Whether we are sitting behind a reverse proxy
 
 	   When deployed behind a reverse proxy (such as Apache or Squid),
 	   the server location is not read from the "Host" header,
@@ -335,24 +393,30 @@
           -->
 	<indicator-timeout>500</indicator-timeout>
 
+	<!-- The timeout for processing a double click event.
+
+	   The value is specified in ms.
+          -->
+	<double-click-timeout>200</double-click-timeout>
+
 	<!-- Ajax user agent list
 
            Wt considers three types of sessions:
-	   - AJAX sessions: use AJAX and JavaScript
+	   - Ajax sessions: use Ajax and JavaScript
 	   - plain HTML sessions: use plain old server GETs and POSTs
 	   - bots: have clean internal paths and no persistent sessions
 
            By default, Wt does a browser detection to distinguish between
 	   the first two: if a browser supports JavaScript (and has it
-	   enabled), and has an AJAX DOM API, then AJAX sessions are chosen,
+	   enabled), and has an Ajax DOM API, then Ajax sessions are chosen,
 	   otherwise plain HTML sessions.
 
            Here, you may indicate which user agents should or should
-           not receive an AJAX session regardless of what they report as
+           not receive an Ajax session regardless of what they report as
 	   capabilities.
 
            Possible values for 'mode' or "white-list" or "black-list". A
-	   white-list will only treat the listed agents as supporting AJAX,
+	   white-list will only treat the listed agents as supporting Ajax,
 	   all other agents will be served plain HTML sessions. A black-list
 	   will always server plain HTML sessions to listed agents and
 	   otherwise rely on browser capability detection.
@@ -380,26 +444,131 @@
 	  <user-agent>.*Twiceler.*</user-agent>
 	</user-agents>
 
-	<!-- Whether the progressive bootstrap is used.
+	<!-- Configures different rendering engines for certain browsers.
 
-	   The default bootstrap method first senses whether there is AJAX
+           Currently this is only used to select IE7 compatible rendering
+	   engine for IE8, which solves problems of unreliable and slow
+	   rendering performance for VML which Microsoft broke in IE8.
+
+           Before 3.3.0, the default value was IE8=IE7, but since 3.3.0
+	   this has been changed to an empty string (i.e. let IE8 use the
+	   standard IE8 rendering engine) to take advantage of IE8's
+	   improved CSS support. If you make heavy use of VML, you may need
+	   to revert to IE8=IE7.
+	  -->
+	<UA-Compatible></UA-Compatible>
+
+	<!-- Configures whether the progressive bootstrap method is used.
+
+	   The default bootstrap method first senses whether there is Ajax
 	   support, and only then creates the application.
 
 	   The progressive bootstrap method first renders a plain HTML
-	   version and later upgrades to an AJAX version.
+	   version and later upgrades to an Ajax version.
+
+           (Not to be confused with the Twitter Bootstrap theme)
 	  -->
 	<progressive-bootstrap>false</progressive-bootstrap>
 
+	<!-- Set session-ID cookie
+
+	   In its default (and recommended) configuration, Wt does not
+	   rely on cookies for session tracking.
+
+	   Wt has several mechanisms in place to prevent session ID stealing:
+	   - for an Ajax session, the session ID is not shown in the URL,
+             avoiding session ID stealing through a referer attack.
+	   - in case the session ID is present in the URL (e.g. for a plain
+	     HTML session), Wt will redirect links to images or external
+	     anchors through an intermediate page that censors the session ID
+
+	   In case of the loss of a session ID, the impact is minimized:
+	   - a full page refresh is not supported if the client IP address
+	     changes or the user-agent changes
+           - an Ajax update is protected by other state which is not exposed
+	     in the URL
+
+	   To still enable a full page refresh when the client IP address
+	   changes, an additional cookie may be set which is used only
+	   for this purpose, and can be enabled using this setting.
+	  -->
+	<session-id-cookie>false</session-id-cookie>
+
+	<!-- Configure cookie checks
+
+         By default, Wt will test for cookie support using JavaScript.
+	 Because cookie manipulation from JavaScript is a common security
+	 risk vector, some prefer to disable these checks.
+
+	 -->
+	<cookie-checks>true</cookie-checks>
+
+	<!-- Configure meta headers
+
+         The user-agent allows optional filtering based on the
+         user-agent, using a regular expression. You can have multiple
+         set-meta-headers definitions.
+
+	 -->
+	<meta-headers user-agent=".*MSIE.*">
+	  <meta name="robots" content="noindex" />
+	</meta-headers>
+
+    <!-- 
+	Wt 3.3.4 only supports <meta> entries in meta-headers, so the <link ... > wont make it to the app.  
+	Newer versions of Wt support putting preload links into its <head-matter> tag,
+
+	<head-matter user-agent=".*">
+	  <meta name="keywords" content="InterSpec,SpecUtils,..." />
+	  <meta name="description" content="Peak based analysis...." />
+      <link rel="preload" href="/InterSpec_resources/InterSpec.css" as="style" />
+	  ....
+    </head-matter>
+	-->
+
 	<!-- Runtime Properties
-     
+
            These properties may be used to adapt applications to their
 	   deployment environment. Typical use is for paths to resources
 	   that may or may not be shared between several applications.
 	  -->
 	<properties>
+	    <!-- baseURL property
+
+	       The absolute URL at which the application is deployed
+	       (known to the user). This is needed only in two scenarios.
+
+	       a) use of relative URLs in included XHTML
+
+	       When you use relative URLs for images, etc... in
+	       literal XHTML fragments (e.g. in WTemplate), which need
+	       to resolve against the deployment path of the
+	       application. This will not work as expected in the
+	       presence of an internal application path.  This URL is
+	       set as base URL in the HTML, against which relative
+	       URLs are resolved so that these work correctly
+	       regardless of the internal path. It is also used
+	       explicitly in any URL generated by the library.
+
+	       b) widgetset mode deployments
+
+	       Another situation in which you need to define the baseURL is
+	       when deploying a widgetset mode application behind a reverse
+	       proxy. A widgetset mode application uses only absolute URLs
+	       because it may be hosted in a web page from an entirely
+	       different domain.
+
+	       By default, no baseURL is specified, in which case Wt will
+	       avoid using absolute URLs. Relative URLs passed in API calls
+	       will be "fixed" so that they resolve against the location of the
+	       application deploy path, even in the presence of an
+	       internal path.
+	      -->
+	    <!-- <property name="baseURL">"http://mysite.com/app</property> -->
+
             <!-- resourcesURL property
 
-	       The URL at which the resources/ folder is deploeyd that
+	       The URL at which the resources/ folder is deployed that
 	       comes distributed with Wt and contains auxiliary files
 	       used to primarily for styles and themes.
 
@@ -426,15 +595,6 @@
 	       entry point by passing a location to WServer::addEntryPoint().
 	      -->
 	    <!-- <property name="favicon">images/favicon.ico</property> -->
-
-	    <!-- oldInternalPathAPI property
-
-	       Since wt 2.99.3, the internal path API has been simplified.
-	       The API functions are still the same, but the semantics have
-	       changed. To keep using the old semantics (which are deprecated
-	       but still implemented) you can set this property.
-	      -->
-	    <!-- <property name="oldInternalPathAPI">true</property> -->
 	</properties>
 
     </application-settings>

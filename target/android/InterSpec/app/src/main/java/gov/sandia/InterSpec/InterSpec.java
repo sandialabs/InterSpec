@@ -34,6 +34,8 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
+import android.provider.DocumentsContract;
+import android.provider.MediaStore;
 import android.webkit.*;
 import android.net.*;
 import android.content.*;
@@ -47,8 +49,17 @@ import android.view.MotionEvent;
 import android.os.ParcelFileDescriptor;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.FileDescriptor;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.Scanner;
 import java.io.FileInputStream;
 import java.io.File;
@@ -58,16 +69,24 @@ import java.io.FileOutputStream;
 import android.os.Environment;
 import android.database.Cursor;
 import android.provider.OpenableColumns;
+import android.widget.Toast;
+
 import java.io.InputStream;
 import java.util.Random;
+import java.util.concurrent.ExecutorService;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import java.util.concurrent.Executors;
 
 //import gov.sandia.InterSpecMainActivity.InterSpecMainActivity;
 //import gov.sandia.InterSpecMainActivity.InterSpecMainActivity.R;
 //import android.R;
 
 import gov.sandia.InterSpec.R;
+
+interface CallbackInterface {
+  public void callback();
+}
 
 public class InterSpec extends AppCompatActivity
 {
@@ -79,19 +98,28 @@ public class InterSpec extends AppCompatActivity
   /** File upload callback for Android 5.0+ */
   private ValueCallback<Uri[]> mUploadMessageMult;
   private final static int FILECHOOSER_RESULTCODE = 1;
- 
- 
+
+  private final static int SAVE_AS_CODE = 9821341;
+
+  // We're keeping \c mUrlToDownload around for the moment, in hopes we can undo the Android specific
+  //  hack for downloading files
+  private String mUrlToDownload;
+
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  //   These next two variables keep track of the temporary  file made by the c++ we will need to
+  //   copy over to where the user selects.
+  private String mTempFileToSave;
+  private String mTempFileDisplayName;
+
+
   public final class WtWebChromeClient extends WebChromeClient 
   {
-
-
     @Override
     public boolean onJsAlert(WebView view, String url,  String message,  JsResult result) 
-	  {
+    {
       Log.d("onJsAlert", message);
       return true;
     }
-
 
     //openFileChooser for Android 2.2 (API level 8) up to Android 2.3 (API level 10)
 	  public void openFileChooser(ValueCallback<Uri> uploadMsg)
@@ -104,13 +132,13 @@ public class InterSpec extends AppCompatActivity
       InterSpec.this.startActivityForResult(
 	    Intent.createChooser(i,"File Chooser"), FILECHOOSER_RESULTCODE);
     }
-    
+
 	  //openFileChooser for Android 3.0 (API level 11) up to Android 4.0 (API level 15)
     public void openFileChooser(ValueCallback<Uri> uploadMsg, String acceptType)
     {
       Log.d("onShowFileChooser", "In chooser for Android 3.0 through 4.0");
       openFileChooser(uploadMsg);
-    }                   
+    }
 
     //openFileChooser for Android 4.1 (API level 16) up to Android 4.3 (API level 18)
     public void openFileChooser(ValueCallback<Uri> uploadMsg, String acceptType, String capture) 
@@ -145,30 +173,11 @@ public class InterSpec extends AppCompatActivity
   }//public final class WtWebChromeClient extends WebChromeClient 
 
 
-  public String getDataColumn(Uri uri, String selection, String[] selectionArgs) 
+  public static void saveFileFromTempLocation( String location, String displayName )
   {
-    //from https://github.com/iPaulPro/aFileChooser/tree/master/aFileChooser
-    final Context context = getApplicationContext();
-    Cursor cursor = null;
-    final String column = "_data";
-    final String[] projection = { column };
-
-    try
-	  {
-      cursor = context.getContentResolver().query(uri, projection, selection, selectionArgs, null);
-      if (cursor != null && cursor.moveToFirst()) 
-	    {
-        final int column_index = cursor.getColumnIndexOrThrow(column);
-        return cursor.getString(column_index);
-      }
-    }finally 
-    {
-      if( cursor != null )
-        cursor.close();
-    }
-	
-    return null;
-  }//public static String getDataColumn(Context context, Uri uri, String selection, String[] selectionArgs) 
+    // This function can probably get deleted See TRY_TO_CALL_JAVA_FROM_CPP in android.cpp for notes
+    Log.d("fromCpp", "Being called from C++ location=" + location + ", diaplyName=" + displayName );
+  }
 
   public String getDisplayFileName( Uri result ) 
   {
@@ -278,14 +287,156 @@ public class InterSpec extends AppCompatActivity
 	  }//if( shouldDeleteFile )
 	}//if( pathname != null )
   }//public void openFileInInterSpec( Uri result )
-  
+
   @Override
   protected void onActivityResult( int requestCode, int resultCode, Intent intent )
   {
-    if( requestCode == FILECHOOSER_RESULTCODE )
-    {
-      if( null != mUploadMessage )
+    super.onActivityResult(requestCode, resultCode, intent);
+
+    if( (requestCode == SAVE_AS_CODE) ){
+      // Using hacked saving to temporary file in Android, instead of via network download of file.
+
+      if( resultCode != Activity.RESULT_OK ) {
+        if( !mTempFileToSave.isEmpty() ){
+          File file = new File( mTempFileToSave );
+          if( file.delete() )
+            Log.d("DD run", "Deleted temporary file: " + mTempFileToSave );
+          else
+            Log.d("DD run", "Failed to delete temporary file: " + mTempFileToSave );
+        }// if( we have a temporary file we need to cleanup )
+        return;
+      }//if( user decided to not save file )
+
+      final Uri uri = intent.getData();
+
+       // Downloading the link via the DownloadManager, or the below manual connection always fails;
+       //  we get zero bytes.
+       //  I'm guessing the failure is due to Wt's session management; I would think this would be
+       //  either using cookies, or the session-id; however, the session-id is already in the
+       //  download URL, and we are setting the cookie - so I really dont know why it isnt working.
+       //  I basically gave up and am hacking in having the c++ copy files to temporary files, and
+       //  then copying those to the URI the user selects.
+
+      /*
+       // This is code I would *think* should work to copy the data from a download URL; leaving in
+       //  for future investigations.
+       // Using hacked saving to temporary file in Android, instead of via network download of file.
+       WebView webview = (WebView)findViewById(R.id.webview);
+       final String appUrl = webview.getUrl();
+       final String url = mUrlToDownload;
+       String cookie = CookieManager.getInstance().getCookie(url);
+       String userAgent = webview.getSettings().getUserAgentString();
+
+      ExecutorService myExecutor = Executors.newCachedThreadPool();
+      myExecutor.execute(() -> {
+        Log.d("DD run", "Will download: " + url + " to " + uri.getPath() );
+
+        Context context = getApplicationContext();
+        try
+        {
+          OutputStream output = context.getContentResolver().openOutputStream(uri);
+
+          HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
+          con.setRequestMethod("GET");
+          con.addRequestProperty("Cookie", cookie );
+          con.addRequestProperty("User-Agent", userAgent );
+          BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+
+          //All of this is crap - I cant figure out how to download a local url - its amazing
+          //  Next step is to really start thinking terribly and differently.
+
+          // Diff buffer types...I to keep things happy; I dont know.
+          byte dataBuffer[] = new byte[8*1024];
+          char charBuffer[] = new char[8*1024];
+
+          int bytesRead, totalBytes = 0;
+
+          while ((bytesRead = in.read(charBuffer, 0, 8*1024)) != -1) {
+            for( int i = 0; i < bytesRead; ++i )
+              dataBuffer[i] = (byte)charBuffer[i];
+            output.write(dataBuffer, 0, bytesRead);
+            totalBytes += bytesRead;
+          }
+
+          output.flush();
+          output.close();
+          Log.d("DD run", "Done writing from URL: " + url + " - " + totalBytes + " total bytes." );
+
+          //String filename = uri.getLastPathSegment();
+          //Log.d("DD run", "Will make: " + filename + " visible to user." );
+
+          //Make it so user can actually see the file in the Downloads folder
+          //DownloadManager downloadManager=(DownloadManager)getSystemService(DOWNLOAD_SERVICE);
+          //downloadManager.addCompletedDownload( uri.getPath(), "Spectrum File", true, "application/octet-stream", filename, totalBytes, true);
+
+        } catch (IOException e) {
+          Toast.makeText(context, "Error writing output file", Toast.LENGTH_SHORT).show();
+        }
+      });
+*/
+
+      // Using hacked saving to temporary file in Android, instead of via network download of file.
+      Log.d("DD run", "Got location: " + mTempFileToSave + " and displayName:" + mTempFileDisplayName );
+
+      Context context = getApplicationContext();
+
+      if( mTempFileToSave.isEmpty() )
       {
+        Toast.makeText(context, "No output file to copy to destination - sorry!", Toast.LENGTH_SHORT).show();
+        return;
+      }
+
+      try
+      {
+        // Copy file to URI, then delete temp file
+        OutputStream output = context.getContentResolver().openOutputStream(uri);
+        FileInputStream is = new FileInputStream(mTempFileToSave);
+
+        byte[] buffer = new byte[1024];
+        int length, totalBytes = 0;
+        while ((length = is.read(buffer)) > 0) {
+          output.write(buffer, 0, length);
+          totalBytes += length;
+        }
+
+        output.flush();
+        output.close();
+        is.close();
+
+        Log.d("DD run", "Done writing: " + mTempFileToSave + " - " + totalBytes + " total bytes - to dest" );
+
+        // Right now the file wont show up in the Downloads app; we would have to call
+        //  downloadManager.addCompletedDownload(...) below, but we dont actually have the filename
+        //  or path, and it appears nigh impossible to get this from the URI (i.e., the URI may
+        //  not even point to a file on the filesystem), so I guess we just wont notify the
+        //  download manager (and the DownloadManager only takes in "file" URIs).
+        //DownloadManager downloadManager=(DownloadManager)getSystemService(DOWNLOAD_SERVICE);
+        //downloadManager.addCompletedDownload( uri.getPath(), "Spectrum File", true, "application/octet-stream", mTempFileDisplayName, totalBytes, true);
+
+        Toast.makeText(context, "Done writing file to disk.", Toast.LENGTH_SHORT).show();
+      } catch (IOException e) {
+        Toast.makeText(context, "Error writing output file", Toast.LENGTH_SHORT).show();
+      }
+
+      if( !mTempFileToSave.isEmpty() )
+      {
+        File file = new File( mTempFileToSave );
+        if (file.delete()) {
+          Log.d("DD run", "Deleted temporary file: " + mTempFileToSave );
+        }
+        else {
+          Log.d("DD run", "Failed to delete temporary file: " + mTempFileToSave );
+        }
+      }//if( !mTempFileToSave.isEmpty() )
+
+      mTempFileDisplayName = "";
+      mTempFileToSave = "";
+
+      return;
+    }//if( this is result of save as dialog )
+
+    if (requestCode == FILECHOOSER_RESULTCODE) {
+      if (null != mUploadMessage) {
         Log.d("onActivityRe", "null != mUploadMessage");
 
         Uri result = intent == null || resultCode != RESULT_OK ? null : intent.getData();
@@ -294,43 +445,35 @@ public class InterSpec extends AppCompatActivity
 
         mUploadMessage.onReceiveValue(result);
         mUploadMessage = null;
-      }else if( mUploadMessageMult != null )
-      {
+      } else if (mUploadMessageMult != null) {
         Log.d("onActivityRe", "mUploadMessageMult != null");
 
         Uri[] dataUris;
-        if( intent != null )
-        {
-          try
-          {
+        if (intent != null) {
+          try {
             dataUris = new Uri[]{Uri.parse(intent.getDataString())};
-          } catch (Exception e)
-          {
-            Log.d( "onActivityRes", "Failed to parse dataUris" );
+          } catch (Exception e) {
+            Log.d("onActivityRes", "Failed to parse dataUris");
             dataUris = null;
           }
 
-          Log.d( "onActivityRes", "dataUris.length=" + dataUris.length );
-          for (int i = 0; i < dataUris.length; i++)
-          {
-            openFileInInterSpec( dataUris[i] );
+          Log.d("onActivityRes", "dataUris.length=" + dataUris.length);
+          for (int i = 0; i < dataUris.length; i++) {
+            openFileInInterSpec(dataUris[i]);
           }
 
           mUploadMessageMult.onReceiveValue(dataUris);
-        }else
-        {
-          mUploadMessageMult.onReceiveValue( null );
+        } else {
+          mUploadMessageMult.onReceiveValue(null);
         }//if( intent != null )
 
 
-       mUploadMessageMult = null;
-     }else
-     {
-       Log.d("onActivityRe", "Neither upload messages were non - null - unexpected!");
-     }
+        mUploadMessageMult = null;
+      } else {
+        Log.d("onActivityRe", "Neither upload messages were non - null - unexpected!");
+      }
     }//if( pathname != null )
   }//protected void onActivityResult(...)
-
 
   @Override
   public void onCreate( Bundle savedInstanceState )
@@ -354,10 +497,17 @@ public class InterSpec extends AppCompatActivity
 
     if( httpPort == 0 )
     {
+      initNative();
+
+      setFileSaveCallback( new CallbackInterface() {
+        public void callback() {
+          // TODO: in the future we could maybe have this callback (or one that takes a cople string arguments)
+          //       launch the Save As dialog, and then trigger the copying of files
+          Log.d("callback", "Being called-back when file is to be saved");
+        }
+      });
+
       setTempDir( getCacheDir().getPath() );
-      //File tmpDir = new File(activity.getFilesDir().getAbsolutePath() + "/tmp");
-      //tmpDir.mkdir();
-      //setTempDir( tmpDir.getAbsolutePath() );
 
       Log.d("onCreate", "Starting server");
       super.onCreate(savedInstanceState);
@@ -381,48 +531,27 @@ public class InterSpec extends AppCompatActivity
       settings.setDomStorageEnabled(true);
       webview.setScrollBarStyle(WebView.SCROLLBARS_OUTSIDE_OVERLAY);
       webview.setScrollbarFadingEnabled(true);
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-          webview.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-      } else {
-          webview.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
-      }
+      webview.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
       /*
       webview.getSettings().setUseWideViewPort(true);
       webview.getSettings().setAllowFileAccess(true);
       */
 
-      webview.setWebChromeClient(new WtWebChromeClient());
-
+      webview.setWebChromeClient( new WtWebChromeClient() );
+/*
+      // Using hacked saving to temporary file in Android, instead of via network download of file.
       DownloadListener ourDownloadListner = new DownloadListener() {
         @Override
         public void onDownloadStart(final String url, final String userAgent, String contentDisposition, String mimetype, long contentLength)
         {
           Log.d("onDownloadStart", "Entering onDownloadStart: url=" + url + ", Length: " + contentLength );
-
-          //checking runtime permissions
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                    == PackageManager.PERMISSION_GRANTED) {
-
-              downloadDialog(url,userAgent,contentDisposition,mimetype);
-            } else {
-
-              //requesting permissions
-              ActivityCompat.requestPermissions(InterSpec.this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1);
-
-              // Do we need to implement ActivityCompat.OnRequestPermissionsResultCallback(...) to then get the file after permission is granted?
-            }
-          }
-          else {
-            //Code for devices below API 23 or Marshmallow
-            downloadDialog(url,userAgent,contentDisposition,mimetype);
-          }
-
-        }//void onDownloadStart(...)
+          ... have user select location ... and get the data ...
       };//new DownloadListener(){...}
 
       webview.setDownloadListener( ourDownloadListner );
+*/
+
 
       // TODO: I think see https://stackoverflow.com/questions/3926629/downloadlistener-not-working to get download listner working
       WebViewClient ourWebClient = new WebViewClient(){
@@ -431,15 +560,38 @@ public class InterSpec extends AppCompatActivity
         @Override
         public boolean shouldOverrideUrlLoading(WebView  view, String  url){
           Log.d("shouldOverrideUrlLoad", "shouldOverrideUrlLoading: " + url );
-          view.loadUrl(url);
-          view.setDownloadListener(ourDownloadListner);
+
+          // Using hacked saving to temporary file in Android, instead of via network download of file.
+          //  Once we use the callback (set via setFileSaveCallback) to trigger saving of file (after
+          //  some more testing), then this function of overriding URL
+          String[] spoolAndDisplay = mostRecentSaveLocation();
+          if( spoolAndDisplay.length == 0 )
+          {
+            Toast.makeText( getApplicationContext(), "Error writing output file - perhaps Android workaround for saving files isnt implemented in the C++ for this case.", Toast.LENGTH_SHORT).show();
+            return true;
+          }
+
+          String location = spoolAndDisplay[0];
+          String displayName = spoolAndDisplay[1];
+          mTempFileToSave = location;
+          mTempFileDisplayName = displayName;
+          Log.d("shouldOverrideUrlLoad", "Got location: " + location + " and displayName:" + displayName );
+
+          Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+          intent.addCategory(Intent.CATEGORY_OPENABLE);
+          intent.setType("*/*"); //not needed, but maybe usefull
+          intent.putExtra(Intent.EXTRA_TITLE, displayName); //not needed, but maybe usefull
+          mUrlToDownload = url;
+          startActivityForResult(intent, SAVE_AS_CODE);
+
+/*
+          // Using hacked saving to temporary file in Android, instead of via network download of file.
+          //view.loadUrl(url);
+          //view.setDownloadListener(ourDownloadListner);
+          ... let user select where to save ... and download file
+ */
           return true;
         }
-        // here you execute an action when the URL you want is about to load; gets called for al JS and CSS, and images, etc
-        //@Override
-        //public void onLoadResource(WebView  view, String  url){
-        //  Log.d("onLoadResource", "onLoadResource: " + url );
-        //}
       };
       webview.setWebViewClient( ourWebClient );
 
@@ -447,7 +599,7 @@ public class InterSpec extends AppCompatActivity
 
       if( Intent.ACTION_VIEW.equals(action) )
       {
-        Log.d("onCreate", "ACTION_VIEW: Will load a file via URL");
+        Log.d("onCreate", "ACTION_VIEW: Will set initial file to load at start");
         Uri fileUri = (Uri) intent.getData();
 
         if( fileUri != null )
@@ -492,28 +644,21 @@ public class InterSpec extends AppCompatActivity
       Log.d("onCreate", "Will load 'http://127.0.0.1:" + httpPort + "/?apptoken=" + interspecID + "'");
       webview.loadUrl("http://127.0.0.1:" + httpPort + "/?apptoken=" + interspecID );
 
-	    /*Enable remote debugging of webview, requires API 19 (KITKAT) */
-	    if( Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT )
-	    {
-	      WebView.setWebContentsDebuggingEnabled(true);
-	    }
+      WebView.setWebContentsDebuggingEnabled(true);
     }//if( httpPort == 0 )
 
     Log.d("onCreate", "done starting server ish");
 
-	/* Need at least API 19 for the full screen emmersive view */
-    if( Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT ) 
-	  {
-	    mDecorView = getWindow().getDecorView();
-      mDecorView.setOnSystemUiVisibilityChangeListener( new View.OnSystemUiVisibilityChangeListener()
-      {
+    mDecorView = getWindow().getDecorView();
+    mDecorView.setOnSystemUiVisibilityChangeListener( new View.OnSystemUiVisibilityChangeListener()
+    {
         @Override
         public void onSystemUiVisibilityChange(int flags)
         {
         boolean visible = (flags & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) == 0;
 //			WebView webview = (WebView)findViewById(R.id.webview);
         if( visible )
-			  {
+        {
           //make it so we are no longer in emmersive mode, so this way
           //  Android will resize the WebView so that the active form
           //  (assuming keyboard is visible) will be visible.  There
@@ -523,15 +668,15 @@ public class InterSpec extends AppCompatActivity
           //  Non-optimal, but I cant figure out how to detect if the
           //  keyboard is visible.
           mDecorView.setSystemUiVisibility(0);
-			  }
+        }
       }//public void onSystemUiVisibilityChange(int flags)
-      });
+    });
 	 
-      final View contentView = findViewById( R.id.webview );
-      contentView.setClickable( true );
-      final GestureDetector clickDetector = new GestureDetector( this,
-        new GestureDetector.SimpleOnGestureListener() 
-        {
+    final View contentView = findViewById( R.id.webview );
+    contentView.setClickable( true );
+    final GestureDetector clickDetector = new GestureDetector( this,
+            new GestureDetector.SimpleOnGestureListener()
+    {
           @Override
           public boolean onSingleTapUp(MotionEvent e) 
           {
@@ -543,9 +688,9 @@ public class InterSpec extends AppCompatActivity
             } 
             return false;
           }
-      });
+    });
 	   
-      contentView.setOnTouchListener(
+    contentView.setOnTouchListener(
         new View.OnTouchListener() 
         {
           @Override
@@ -553,8 +698,7 @@ public class InterSpec extends AppCompatActivity
           {
             return clickDetector.onTouchEvent(motionEvent);
           }
-      });
-	}//if( Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT ) 
+    });
   }//public void onCreate(Bundle savedInstanceState)
 
   @Override
@@ -572,83 +716,6 @@ public class InterSpec extends AppCompatActivity
 
     Log.d("onResume", "onResume was called");
   }//void onResume()
-
-
-  public void downloadDialog(final String url,final String userAgent,String contentDisposition,String mimetype)
-  {
-    Log.d("downloadDialog", "downloadDialog was called");
-
-    //filename using url.
-    String filename = URLUtil.guessFileName(url,contentDisposition,mimetype);
-
-    //if( filename.isEmpty() || filename.equals("downloadfile.bin") )
-    //{
-      // The Wt URL will look something like:
-      //    http://127.0.0.1:36919/?_=/Th232LowResNoCalib.chn&wtd=knS3FCBHU3MIcCNk&request=resource&resource=op0l2ri&rand=21
-      // Which isnt compatible with URLUtil.guessFileName(...); so we'll try to get the name ourselves
-      final int startpos = url.indexOf("/?_=/");
-      if( startpos != -1 )
-      {
-        final int endpos = url.indexOf("&wtd=", startpos);
-        if( endpos != -1 )
-        {
-          filename = url.substring(startpos + 5, endpos);
-          Log.d("downloadDialog", "Hacked in getting the filename to: '" + filename + "'");
-        }
-      }
-    //}//if( filename.isEmpty() || (filename == "downloadfile.bin") )
-
-    if( filename.isEmpty() )
-    {
-
-    }
-
-    final String downloadname = filename;
-    Log.d("downloadDialog", "guessed filename: " + downloadname);
-
-    AlertDialog.Builder builder = new AlertDialog.Builder(InterSpec.this);
-    builder.setTitle("Download");
-    builder.setMessage("Do you want to save " + downloadname);
-
-    builder.setPositiveButton("Yes", new DialogInterface.OnClickListener()
-    {
-      @Override
-      public void onClick(DialogInterface dialog, int which)
-      {
-        //DownloadManager.Request created with url.
-        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-        //cookie
-        String cookie=CookieManager.getInstance().getCookie(url);
-        //Add cookie and User-Agent to request
-        request.addRequestHeader("Cookie",cookie);
-        request.addRequestHeader("User-Agent",userAgent);
-        //file scanned by MediaScannar
-        request.allowScanningByMediaScanner();
-        //Download is visible and its progress, after completion too.
-        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-        //DownloadManager created
-        DownloadManager downloadManager=(DownloadManager)getSystemService(DOWNLOAD_SERVICE);
-        //saves file in Download folder
-        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, downloadname);
-        //download enqued
-        downloadManager.enqueue(request);
-
-        // Files dont look to be getting download - need to figure out why how (could be in c++?)
-      }
-    });
-    builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
-      @Override
-      public void onClick(DialogInterface dialog, int which)
-      {
-        //cancel the dialog if Cancel clicks
-        dialog.cancel();
-      }
-
-    });
-    //alertdialog shows
-    builder.create().show();
-
-  }
 
 
   @Override
@@ -691,23 +758,18 @@ public class InterSpec extends AppCompatActivity
   public void onWindowFocusChanged( boolean hasFocus )
   {
     super.onWindowFocusChanged( hasFocus );
-	
-	if( Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT ) 
+
+    mHideHandler.removeMessages(0);
+    if( hasFocus )
     {
-	  mHideHandler.removeMessages(0);
-      if( hasFocus ) 
-      {
-        mHideHandler.sendEmptyMessageDelayed(0, 300);
-      }
-    }//if( KITKAT or greater )
+      mHideHandler.sendEmptyMessageDelayed(0, 300);
+    }
   }//public void onWindowFocusChanged(boolean hasFocus) 
   
   
   private void hideSystemUI() 
   {
-	if( Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT ) 
-	{
-      mDecorView.setSystemUiVisibility(
+    mDecorView.setSystemUiVisibility(
                   View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                   | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                   | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
@@ -715,7 +777,6 @@ public class InterSpec extends AppCompatActivity
                   | View.SYSTEM_UI_FLAG_LOW_PROFILE
                   | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
 	//View.SYSTEM_UI_FLAG_IMMERSIVE View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-    }
   }//private void hideSystemUI() 
   
   private final Handler mHideHandler = new Handler() 
@@ -800,50 +861,6 @@ public class InterSpec extends AppCompatActivity
     Log.d("WtAndroid::startWt", "Started wt application on http-port " + httpPort);
 
     return httpPort;
-/*
-    List<String> args = new ArrayList<String>();
-    args.add("app");
-
-    args.add("--docroot");
-    args.add(wtAssetsDir);
-    args.add("--approot");
-    args.add(wtAssetsDir);
-
-    if( userDataDir.isEmpty() )
-    {
-      args.add("--userdatadir");
-      args.add(userDataDir);
-    }
-
-    args.add("--http-address");
-    args.add("127.0.0.1");
-    args.add("--http-port");
-    args.add("0");
-
-    args.add("-c");
-    args.add(wtAssetsDir + "/data/config/wt_config_android.xml");
-
-    File tmpDir = new File(activity.getFilesDir().getAbsolutePath() + "/tmp");
-    tmpDir.mkdir();
-
-    //ToDo: delete tmpDir contents if it exists
-    args.add("-DWT_TMP_DIR=" + tmpDir.getAbsolutePath());
-
-    //Quite down all the log outputs of ever GET or REQUEST
-    args.add("--accesslog=-");
-
-    //Electron version of app also specifies "--userdatadir", "--basedir", and "--externalid"
-
-    Log.d("WtAndroid::startWt", "Starting wt application ...");
-    String[] argv = new String[args.size()];
-    args.toArray(argv);
-
-
-    int httpPort = WtAndroid.startwt(argv);
-    Log.d("WtAndroid::startWt", "Started wt application on http-port " + httpPort);
-
-    return httpPort;
- */
   }//public static int startWt(...)
 
 
@@ -968,7 +985,7 @@ public class InterSpec extends AppCompatActivity
   }
 
 
-
+  public static native void initNative();
   public static native int startServingInterSpec( String process_name, String userdatadir, String basedir, String xml_config_path );
   public static native int openFile( String sessionToken, String filepath);
   public static native boolean openAppUrl( String sessionToken, String url );
@@ -979,8 +996,6 @@ public class InterSpec extends AppCompatActivity
   public static native boolean addExternalSessionToken( String token );
   public static native int removeSessionToken( String token );
   public static native int setInitialFileToLoad( String token, String filepath );
-
-
-  public static native int openfileininterppec( String path, int type, String sessionid );
-  public static native void settmpdir( String tmpPath );
+  public static native String[] mostRecentSaveLocation();
+  static native void setFileSaveCallback(CallbackInterface cb);
 }

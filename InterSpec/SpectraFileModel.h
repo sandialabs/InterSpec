@@ -475,6 +475,13 @@ private:
 
 public:
   
+  static void write_file( std::ostream &output,
+                          const SpecUtils::SaveSpectrumAsType type,
+                          const std::shared_ptr<const SpecMeas> Measurement,
+                          const std::set<int> &samplenums,
+                          const std::vector<std::string> &detectornums,
+                          const InterSpec *viewer );
+  
   //handle_resource_request(): does the actual streaming of the SpecMeas.
   //  'samplenums' and 'detectornums' are only used for file formats where SpecMeas must be
   //  collapsed down into a single spectrum (i.e., Chn, IntegerSpcType, SpcBinaryFloat, SpcAscii,
@@ -509,6 +516,14 @@ public:
 
   Wt::Signal<> &downloadStarting();
   Wt::Signal<> &downloadComplete();
+  
+#if( ANDROID )
+  const std::set<int> &samplenums();
+  const std::vector<std::string> &detnames();
+  SpecUtils::SaveSpectrumAsType type();
+  std::shared_ptr<const SpecMeas> spectrum();
+#endif
+  
 private:
   std::set<int> m_samplenums;
   std::vector<std::string> m_detnames;
