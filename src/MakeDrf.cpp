@@ -29,6 +29,7 @@
 #include <fstream>
 
 #include <Wt/WText>
+#include <Wt/WPoint>
 #include <Wt/WImage>
 #include <Wt/WPanel>
 #include <Wt/WLabel>
@@ -56,6 +57,7 @@
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
 
+#include "InterSpec/QrCode.h"
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/SpecMeas.h"
 #include "SpecUtils/DateTime.h"
@@ -189,7 +191,7 @@ namespace
     
   public:
     CalFileDownloadResource( const bool pcf, MakeDrf *parent )
-     : WResource( parent ), m_pcf(pcf), m_makedrf( parent ), m_filename( "" ),
+     : Wt::WResource( parent ), m_pcf(pcf), m_makedrf( parent ), m_filename( "" ),
        m_app( WApplication::instance() )
     {
       assert( m_app );
@@ -513,7 +515,7 @@ namespace
       m_previewBtn->setIcon( "InterSpec_resources/images/peak_small.png" );
       //m_previewBtn = new WImage( "InterSpec_resources/images/peak_small.png", this );
       
-      m_previewBtn->clicked().connect( this, &DrfPeak::togglePeakPreview );
+      m_previewBtn->clicked().connect( boost::bind( &DrfPeak::togglePeakPreview, this, boost::placeholders::_1 ) );
     }//DrfPeak constructor;
     
     bool useForEffFit() const
@@ -568,12 +570,12 @@ namespace
     {
       if( m_previewPopup && !m_previewPopup->isHidden() )
       {
-        m_previewBtn->removeStyleClass( "active" );
+        m_previewBtn->removeStyleClass( "active", true );
         m_previewPopup->setHidden( true );
       }
     }//void hidePeakPreview()
     
-    void togglePeakPreview()
+    void togglePeakPreview( WMouseEvent event )
     {
       //WAnimation animation(WAnimation::AnimationEffect::Pop, WAnimation::Linear, 250 );
       if( m_previewPopup )
@@ -585,7 +587,7 @@ namespace
           m_peakPreviewShow.emit( this );
         }else
         {
-          m_previewBtn->removeStyleClass( "active" );
+          m_previewBtn->removeStyleClass( "active", true );
           m_previewPopup->setHidden( true );
         }
         
@@ -616,7 +618,7 @@ namespace
         stringstream strm;
         svg->write( strm );
         
-        WText *chart = new WText( strm.str(), Wt::XHTMLUnsafeText /*, this*/ );
+        WText *chart = new WText( strm.str(), Wt::XHTMLUnsafeText );
         chart->addStyleClass( "DrfPeakChart" );
         m_previewPopup = new WPopupWidget( chart, this );
         
@@ -627,9 +629,42 @@ namespace
         m_previewPopup = new WPopupWidget( msg, this );
       }//try / catch make a chart
       
+#if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
       m_previewPopup->setAnchorWidget( m_previewBtn, Wt::Orientation::Vertical );
       m_previewPopup->setJavaScriptMember("wtNoReparent", "true");
       m_previewPopup->show();
+#else
+      // In Wt 3.7.1, it looks like there is no way to keep the JS from "re-parenting" the
+      //  popup-widget when you call positionAtWidget (See positionAtWidget in Wt.js); Wt will
+      //  re-parent the widget to the first ancestor of the anchor widget with scrollbars or
+      //  something.
+      //  This causes our window to then expand to scroll left/right, which is not what we want.
+      //  So we'll hack around this by just positioning the popup at the mouse click.
+      m_previewPopup->show();
+      
+      // Positioning taken from WPopupMenu.C
+      m_previewPopup->setOffsets(42, Left | Top);
+      m_previewPopup->setOffsets(-10000, Left | Top);
+      doJavaScript(WT_CLASS ".positionXY('" + m_previewPopup->id() + "',"
+                   + boost::lexical_cast<std::string>(event.window().x) + ","
+                   + boost::lexical_cast<std::string>(event.window().y) + ");");
+      
+      m_previewPopup->setTransient( true, 0 );
+      // connecting to WWebWidget::removeStyleClass(...) fails for some reason I cant quite tell why,
+      //  and I dont want to use the std::bind(lamda) version for possible life-time issues, so we'll
+      //  just remove the "active" style class in JS - has the downside if we then show the chart
+      //  again, the "active" style class wont be added since then the C++ and JS are out of sync,
+      //  so to fix this up, we'll also add the "active" style class in JS when its shown.  Of
+      //  course now the roundtrips from JS -> C++ -> make notable delays, but this is a minor
+      //  detail for the moment.
+      //m_previewPopup->hidden().connect( boost::bind( &WPushButton::removeStyleClass, m_previewBtn, WString("active"), true ) );
+      //m_previewPopup->hidden().connect( std::bind([this](){ m_previewBtn->removeStyleClass("active",true); }));
+      m_previewPopup->hidden().connect( boost::bind( &WWebWidget::doJavaScript, m_previewBtn,
+                            "$('#" + m_previewBtn->id() + "').removeClass('active');" ) );
+      m_previewPopup->shown().connect( boost::bind( &WWebWidget::doJavaScript, m_previewBtn,
+                                                   "$('#" + m_previewBtn->id() + "').addClass('active');" ) );
+#endif
+      
       m_previewBtn->addStyleClass( "active" );
       m_peakPreviewShow.emit( this );
     }//void togglePeakPreview()
@@ -1642,7 +1677,7 @@ void MakeDrf::startSaveAs()
   const char *tooltip = "Name of the detector response function to save to <em>InterSpecs</em>"
                         " internal database so you can use the response function later."
                         "  Name must be a valid filename (e.g., no \\\\, /, :, etc. characters).";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   cell = table->elementAt(1, 0);
   label = new WLabel( "Description", cell );
@@ -1656,7 +1691,7 @@ void MakeDrf::startSaveAs()
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
   tooltip = "Optional description of the DRF to help remind yourself of details when you use the DRF in the future.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   std::shared_ptr<const SpecMeas> representative_meas;
   
@@ -1699,7 +1734,7 @@ void MakeDrf::startSaveAs()
       tooltip = "Make it so when spectra from a detector with a matching serial"
                 " number is loaded into InterSpec, this detector response function"
                 " will automatically be loaded and used.";
-      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
+      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
     }//if( serial_number.size() )
     
     string model;
@@ -1720,7 +1755,7 @@ void MakeDrf::startSaveAs()
       tooltip = "Make it so when spectra from this model detector is loaded"
                 " into InterSpec, this detector response function will"
                 " automatically be loaded and used.";
-      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
+      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
     }//if( !model.empty() )
   }//if( representative_meas )
   
@@ -1739,7 +1774,7 @@ void MakeDrf::startSaveAs()
             "  Source and shielding information is also usually stored into the file as well to,"
             " in principal, except for detector diameter and equation orders,"
             " provide all the input information used to create the DRF.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   currentRow = table->rowCount();
   cell = table->elementAt(currentRow, 0);
@@ -1754,7 +1789,7 @@ void MakeDrf::startSaveAs()
   help->addStyleClass( "MakeDrfSaveHelp" );
   tooltip = "Exports the DRF into a CSV file that contains all of the information of the DRF."
   " Especially useful for using with other tools.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   
   currentRow = table->rowCount();
@@ -1768,7 +1803,7 @@ void MakeDrf::startSaveAs()
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
   tooltip = "Exports a 3x5 style card that has a brief summary of detector performance.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   
   auto updateName = [name,csvResource,n42Resource,refSheetResource](){
@@ -1826,49 +1861,15 @@ void MakeDrf::startSaveAs()
     SpecUtils::trim( drfname );
     SpecUtils::trim( drfdescrip );
     
-    auto drf = make_shared<DetectorPeakResponse>( drfname, drfdescrip );
-    
-    float diameter;
+    std::shared_ptr<DetectorPeakResponse> drf;
     try
     {
-      const double diam = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() );
-      diameter = static_cast<float>( diam );
-    }catch(...)
+      drf = assembleDrf( drfname, drfdescrip );
+    }catch( std::exception &e )
     {
-      passMessage( "Detector diameter entered is not a valid distance.", "", 3 );
+      passMessage( "Error creating DRF: " + string(e.what()), "", 3 );
       return;
     }
-    
-    const bool inMeV = isEffEqnInMeV();
-    const float eqnEnergyUnits = inMeV ? 1000.0f : 1.0f;
-    
-    float lowerEnergy = 0.0f, upperEnergy = 0.0f;
-    const std::vector<MakeDrfChart::DataPoint> &data = m_chart->currentDataPoints();
-    if( data.size() >= 2 )
-    {
-      lowerEnergy = data.front().energy;
-      upperEnergy = data.back().energy;
-    }
-    
-    drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, m_effEqnCoefUncerts,
-                                        0.0f, diameter, eqnEnergyUnits, lowerEnergy, upperEnergy );
-    drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
-    
-    if( !m_fwhmCoefs.empty() )
-    {
-      switch( m_fwhmEqnType->currentIndex() )
-      {
-        case 0:
-          drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn );
-          break;
-          
-        case 1:
-          drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
-          break;
-      }//switch( m_fwhmEqnType->currentIndex() )
-    }//if( !m_fwhmCoefs.empty() )
-  
-    //Need something here to indicate this is a created DRF.
     
     try
     {
@@ -2878,6 +2879,69 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
 }//std::shared_ptr<SpecMeas> assembleCalFile()
 
 
+shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const string &descrip ) const
+{
+  if( m_effEqnCoefs.empty() )
+    throw runtime_error( "Equation coefficients are empty." );
+  
+  for( const float val : m_effEqnCoefs )
+  {
+    if( IsNan(val) || IsInf(val) )
+      throw runtime_error( "An equation coefficient is invalid." );
+  }
+  
+  auto drf = make_shared<DetectorPeakResponse>( name, descrip );
+  
+  float diameter;
+  try
+  {
+    const double diam = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() );
+    diameter = static_cast<float>( diam );
+    
+    if( IsNan(diameter) || IsInf(diameter) || (diameter <= 0.0) )
+      throw runtime_error( "invalid diameter." );
+  }catch(...)
+  {
+    throw runtime_error( "Detector diameter entered is not a valid distance." );
+  }
+  
+  const bool inMeV = isEffEqnInMeV();
+  const float eqnEnergyUnits = inMeV ? 1000.0f : 1.0f;
+  
+  float lowerEnergy = 0.0f, upperEnergy = 0.0f;
+  const std::vector<MakeDrfChart::DataPoint> &data = m_chart->currentDataPoints();
+  if( data.size() >= 2 )
+  {
+    lowerEnergy = data.front().energy;
+    upperEnergy = data.back().energy;
+  }
+  
+  drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, m_effEqnCoefUncerts,
+                                     0.0f, diameter, eqnEnergyUnits, lowerEnergy, upperEnergy );
+  drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
+  
+  if( !m_fwhmCoefs.empty() )
+  {
+    switch( m_fwhmEqnType->currentIndex() )
+    {
+      case 0:
+        drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn );
+        break;
+        
+      case 1:
+        drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+        break;
+    }//switch( m_fwhmEqnType->currentIndex() )
+  }//if( !m_fwhmCoefs.empty() )
+  
+  if( !drf->isValid() )
+    throw runtime_error( "DRF wasnt valid after creation" );
+  //Need something here to indicate this is a created DRF.
+  
+  return drf;
+}//std::make_shared<DetectorPeakResponse> assembleDrf() const;
+
+
 void MakeDrf::writeCsvSummary( std::ostream &out,
                                std::string drfname, std::string drfdescription )
 {
@@ -3323,6 +3387,23 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   stringstream eff_chart_svg;
   eff_chart.write( eff_chart_svg );
   
+  string qr_code;
+  try
+  {
+    shared_ptr<DetectorPeakResponse> drf = assembleDrf( drfname, drfdescrip );
+    assert( drf && drf->isValid() );
+    
+    const string url = "interspec://drf/specify?" + drf->toAppUrl();
+    
+    pair<std::string,int> qr_and_size = QrCode::utf8_string_to_svg_qr( url );
+    
+    qr_code = qr_and_size.first;
+  }catch(std::exception &e )
+  {
+    qr_code = "Error creating QR code: " + string(e.what());
+    cerr << qr_code << endl;
+  }
+  
   
   WTemplate tmplt;
   // tmplttxt is unsafe HTML because of <head> tag and stuff, so we dont want Wt to filter it
@@ -3336,6 +3417,10 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   tmplt.bindString("fwhm-eqn", fwhm_eqn, TextFormat::XHTMLUnsafeText );
   tmplt.bindString("eff-table", efftable.str(), TextFormat::XHTMLUnsafeText );
   tmplt.bindString("eff-svg", eff_chart_svg.str(), TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("qr-code-title", drfname, TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("qr-code", qr_code, TextFormat::XHTMLUnsafeText );
+  tmplt.bindString("qr-code-summary", drfdescrip, TextFormat::XHTMLUnsafeText );
+  
   
   tmplt.renderTemplate( output );
 }//void writeRefSheet(...)

@@ -1057,6 +1057,10 @@ void SourceFitModel::repopulateIsotopes()
       insertPeak( peak );
   }//for( loop over peaks)
     
+  // Double check that things get refreshed.
+  //reset();
+  layoutAboutToBeChanged().emit();
+  layoutChanged().emit();
 }//void SourceFitModel::repopulateIsotopes()
 
 

@@ -323,7 +323,9 @@ void PeakEdit::init()
   PhotopeakDelegate::EditWidget::nuclideNameMatcherJs( matcherJs );
     
   m_suggestions = new WSuggestionPopup( matcherJs, replacerJs );
+#if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   m_suggestions->setJavaScriptMember("wtNoReparent", "true");
+#endif
   
   m_suggestions->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
   m_suggestions->forEdit( m_nuclide,

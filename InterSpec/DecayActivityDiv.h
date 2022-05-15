@@ -75,8 +75,6 @@ class ChartToImageResource;
 struct NuclideSelectedInfo;
 class DateLengthCalculator;
 
-//Showing photopeak chart currently not tested (used to be, but became vestigual)
-#define ADD_PHOTOPEAK_CHART 0
 
 class DecayActivityDiv : public Wt::WContainerWidget
 {
@@ -142,19 +140,7 @@ public:
   DecayActivityModel          *m_decayModel;
   
   DecayChainChart           *m_decayChainChart;
-  
-#if( ADD_PHOTOPEAK_CHART )
-  Wt::Chart::WCartesianChart  *m_photoPeakChart;
-  Wt::WStandardItemModel      *m_photoPeakModel;
-  Wt::WSlider                 *m_photopeakAgeSlider;
-  Wt::WText                   *m_sliderCurrentAgeText;
-  Wt::WText                   *m_sliderEndAgeText;
-  Wt::WCheckBox               *m_photoPeakYScaleFixed;
-
-  Wt::WDoubleSpinBox          *m_photoPeakShieldingZ;
-  Wt::WDoubleSpinBox          *m_photoPeakShieldingAD;
-#endif
-  
+    
   AuxWindow                   *m_moreInfoDialog;
 
   Wt::WContainerWidget        *m_decayLegend;
@@ -183,24 +169,15 @@ public:
   
   
   void updateYScale();
-#if( ADD_PHOTOPEAK_CHART )
-  void setPhotoPeakChartLogY( bool logy );
-#endif 
   void refreshDecayDisplay( const bool update_calc );
   void addDecaySeries();
   void userSetShowSeries( int series, bool show );
+  void updateYAxisRange();
   
   void createCsvDownloadGui();
   void deleteCsvDownloadGui();
   void deleteCsvDownloadGuiTriggerUpdate();
-  
-#if( ADD_PHOTOPEAK_CHART )
-  //TODO: call refreshPhotopeakDisplay() sepereatel from refreshDecayDisplay()
-  void refreshPhotopeakDisplay();
-  double photopeakSliderTime();
-  void setPhopeakSliderTime( double time );
-#endif  //#if( ADD_PHOTOPEAK_CHART )
-  
+    
   void updateMouseOver( const Wt::WMouseEvent &event );
   void removeNuclide( Wt::WContainerWidget *frame );
 
@@ -225,10 +202,6 @@ public:
 
   void displayMoreInfoPopup( const double time );
   void decayChartClicked( const Wt::WMouseEvent& event );
-#if( ADD_PHOTOPEAK_CHART )
-  double attentuationCoeff( const double energy );
-  void photopeakDisplayMoreInfo();
-#endif
   
   Wt::WContainerWidget *nuclideInformation(
                                     const SandiaDecay::Nuclide *nuclide ) const;
@@ -236,14 +209,6 @@ public:
 
 
   void setTimeLimitToDisplay();
-#if( ADD_PHOTOPEAK_CHART )
-  void updatePhotopeakSliderEndDateText();
-#endif
-  
-#if( ADD_PHOTOPEAK_CHART )
-  void setPhotopeakXScaleRange();
-  void setPhotopeakYScaleRange();
-#endif
   
   void updateInitialMixture() const;
   

@@ -411,6 +411,7 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
     {
       info.referenceLineColor.clear();
       const Json::Array &lineColors = refLines["lineColors"];
+      
       for( const auto &c : lineColors )
         info.referenceLineColor.push_back( WColor(static_cast<const WString &>(c)) );
     }

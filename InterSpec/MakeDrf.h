@@ -32,11 +32,11 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/MakeDrfFit.h"
 
-class MakeDrf;
 class PeakDef;
 class InterSpec;
 class MaterialDB;
 class MakeDrfChart;
+class DetectorPeakResponse;
 
 namespace Wt
 {
@@ -78,13 +78,13 @@ public:
   /** Returns whether it is worthwhile to call #startSaveAs */
   bool isIntrinsicEfficiencyValid();
   
-  /** Signal emmitted wheneever the intrinsic efficiency becomes valid, or
+  /** Signal emitted whenever the intrinsic efficiency becomes valid, or
      invalid.  Intended for enabling/disabling save button.
    */
   Wt::Signal<bool> &intrinsicEfficiencyIsValid();
   
   /** Assembles a SpecMeas with a single (summed, if need be) spectrum for
-   each sampel number that has a peak being used; has peaks as well.
+   each sample number that has a peak being used; has peaks as well.
    
    Will return nullptr on error.
    
@@ -92,6 +92,13 @@ public:
    then re-creating this widget is maybe complete?)
    */
   std::shared_ptr<SpecMeas> assembleCalFile();
+  
+  /** Creates a DRF from current fit parameters, and gui inputs..
+   
+   Will throw exception if cant create; otherwise will always return a valid DRF.
+   */
+  std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &drfname,
+                                                    const std::string &drfdescrip ) const;
   
   /** Writes fit parameters and input data to a CSV-style file.  Tries to
      capture most of the relevant information in a the user can reference later.
