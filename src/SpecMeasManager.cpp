@@ -134,6 +134,11 @@
 using namespace Wt;
 using namespace std;
 
+#if( ANDROID )
+// Defined in target/android/android.cpp
+extern void android_save_file_in_temp( bool, std::string, std::string );
+#endif
+
 const int ForeBtnInd = 0;//static_cast<int>(SpecUtils::SpectrumType::Foreground);
 const int BackBtnInd = 1;//static_cast<int>(SpecUtils::SpectrumType::Background);
 const int SecondBtnInd = 2;//static_cast<int>(SpecUtils::SpectrumType::SecondForeground);
@@ -2812,7 +2817,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
     WButtonGroup *group = new WButtonGroup( dialog->contents() );
     if( data )
     {
-      WRadioButton *button = new WRadioButton( "Forground", buttons );
+      WRadioButton *button = new WRadioButton( "Foreground", buttons );
       button->setInline( false );
       button->setChecked( true );
       
@@ -2831,7 +2836,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
     
     if( second )
     {
-      WRadioButton *button = new WRadioButton( "Second Forground", buttons );
+      WRadioButton *button = new WRadioButton( "Second Foreground", buttons );
       button->setInline( false );
       
       samplenums = m_viewer->displayedSamples( SpectrumType::SecondForeground );
@@ -2882,8 +2887,43 @@ void SpecMeasManager::displayQuickSaveAsDialog()
     a->setTarget( TargetNewWindow );
     a->setInline( false );
     a->setStyleClass( "LoadSpectrumSaveAsLink" );
-
+    
+#if( ANDROID )
+      // Using hacked saving to temporary file in Android, instead of via network download of file.
+      //
+      //  There look to be about a dozen more places something similar to he below needs to be implemented...
+    SpecificSpectrumResource *resource = m_specificResources[toint(i)];
+    InterSpec *viewer = m_viewer;
+    a->clicked().connect( std::bind( [dialog,resource,viewer](){
+      cout << "calling to save file to temp location:" << endl;
+      const std::set<int> &samplenums = resource->samplenums();
+      const std::vector<std::string> &detnames = resource->detnames();
+      SpecUtils::SaveSpectrumAsType type = resource->type();
+      std::shared_ptr<const SpecMeas> measurement = resource->spectrum();
+      const std::string suggestedName = resource->suggestedFileName().toUTF8();
+    
+      string tempFileName = SpecUtils::temp_file_name( suggestedName, SpecUtils::temp_dir() );
+      
+      bool wrote_file = false;
+      
+      if( measurement )
+      {
+        ofstream tmp( tempFileName.c_str(), ios_base::binary|ios_base::out );
+      
+        if( tmp.is_open() )
+        {
+          DownloadSpectrumResource::write_file( tmp, type, measurement, samplenums, detnames, viewer );
+          wrote_file = true;
+          cout << "Wrote spectrum file to: " << tempFileName << endl;
+        }//if( tmp.is_open() )
+      }//if( measurement )
+      
+      android_save_file_in_temp( wrote_file, tempFileName, suggestedName );
+      dialog->hide();
+    }));
+#else
     a->clicked().connect( dialog, &AuxWindow::hide );
+#endif
   }//for( SaveSpectrumAsType i = ... )
   
 

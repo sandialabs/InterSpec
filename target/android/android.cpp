@@ -24,12 +24,14 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <mutex>
 #include <string>
 #include <stdio.h>
 #include <fstream>
 #include <stdlib.h>
 #include <iostream>
 #include <iostream>
+#include <condition_variable>
 
 #include <Wt/WString>
 #include <Wt/WApplication>
@@ -50,6 +52,34 @@
 #include <android/log.h>
 #include <jni.h>
 
+// I cant get getting Java methods here in C++ to work; it would be great to have
+//  \c android_save_file_in_temp directly call into Java to save the temporary file,
+//  this way we could bypass having to implement \c WebViewClient::shouldOverrideUrlLoading
+#define TRY_TO_RESOLVE_JAVA_FUNCTIONS_FROM_CPP 0
+
+namespace
+{
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  std::mutex sm_interop_mutex;
+
+  JavaVM* sm_jvm = nullptr;
+  jobject sm_activity = 0; // GlobalRef - doesnt appear to be valid or work, after we set it...
+
+#if( !TRY_TO_RESOLVE_JAVA_FUNCTIONS_FROM_CPP )
+  std::condition_variable sm_saved_condition;
+  bool sm_haveSavedFile;
+  std::string sm_lastSavedLocation;
+  std::string sm_lastSavedDisplayName;
+
+  // Since I cant get resolving java function working from the c++, we'll set callbacks (using the
+  // #setFileSaveCallback function) that we can call from C++ into Java.
+  // Right now this call is basically a no-op, but in the future we should make it trigger the
+  // "Save As" dialog, instead of using the WebViewClient::shouldOverrideUrlLoading Java function
+  // to intercept downloads.
+  jobject sm_java_file_save_cb_obj;
+  jmethodID sm_java_file_save_cb_method_id;
+#endif
+}
 
 namespace AndroidUtils
 {
@@ -140,9 +170,190 @@ void print_cwd_info()
 
 std::unique_ptr<AndroidUtils::androidbuf> g_stdbuf, g_errbuf;
 
+void android_save_file_in_temp( bool success, std::string filepath, std::string displayName )
+{
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+
+  __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp",
+                       "Temp Filepath '%s' and displayName '%s'", filepath.c_str(), displayName.c_str() );
+#if( TRY_TO_RESOLVE_JAVA_FUNCTIONS_FROM_CPP )
+  if( !sm_jvm )
+  {
+    __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","The JVM has not been set." );
+    return;
+  }
+
+  JNIEnv* env = nullptr;
+  jint status = sm_jvm->AttachCurrentThread( &env, nullptr );
+
+  if( status != JNI_OK )
+  {
+    __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","The JVM has not been set." );
+    return;
+  }
+
+  if( !env )
+  {
+    __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","Failed to get env." );
+    sm_jvm->DetachCurrentThread();
+    return;
+  }
+
+  jstring jFilepath = env->NewStringUTF( filepath.c_str() );
+  jstring jDisplayName = env->NewStringUTF( displayName.c_str() );
+  jclass cls = env->GetObjectClass( sm_activity );
+  if( cls ) {
+    __android_log_print(ANDROID_LOG_INFO, "save_file_in_temp", "Got class using sm_activity.");
+  }
+
+  jclass second_cls = env->FindClass("gov/sandia/InterSpec/InterSpec");
+if( second_cls )
+  __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","Got class gov.sandia.InterSpec.InterSpec." );
+else
+  __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","Did not get class gov.sandia.InterSpec.InterSpec." );
+
+  auto exc = env->ExceptionOccurred();
+  if (exc)
+  {
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+  }
+
+  //jclass third_cls = env->FindClass("gov/sandia/InterSpec");
+  //if( third_cls )
+  //  __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","Got class InterSpec." );
+  //else
+  //  __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","Did not get class InterSpec." );
+
+  if( cls )
+  {
+    __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","Got class." );
+    jmethodID methodID = env->GetMethodID( cls, "saveFileFromTempLocation", "(Ljava/lang/String;Ljava/lang/String;)V" );
+
+    exc = env->ExceptionOccurred();
+    if (exc)
+    {
+      env->ExceptionDescribe();
+      env->ExceptionClear();
+    }
+
+    if( methodID )
+    {
+      __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","Got methodID." );
+    env->CallObjectMethod( sm_activity, methodID, jFilepath, jDisplayName );
+    }else
+    {
+      // AAAARRRRG:  I always end up here - I have no idea why...
+      __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","Did not get methodID." );
+    }
+  }else
+  {
+    __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","Failed to get class." );
+  }
+
+  exc = env->ExceptionOccurred();
+  if (exc)
+  {
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+  }
+
+
+  sm_jvm->DetachCurrentThread();
+#else
+  std::unique_lock<std::mutex> scoped_lock( sm_interop_mutex );
+  sm_haveSavedFile = success;
+  sm_lastSavedLocation = filepath;
+  sm_lastSavedDisplayName = displayName;
+  sm_saved_condition.notify_all();
+
+  // TODO:
+  JNIEnv* env = nullptr;
+  jint status = sm_jvm->AttachCurrentThread( &env, nullptr );
+
+  auto exc = env->ExceptionOccurred();
+  if (exc)
+  {
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+  }
+
+  if( status != JNI_OK )
+  {
+    __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","The JVM has not been set." );
+    return;
+  }
+
+  if( !env )
+  {
+    __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp","Failed to get env." );
+    sm_jvm->DetachCurrentThread();
+    return;
+  }
+
+  __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp", "Will call!" );
+
+  env->CallVoidMethod(sm_java_file_save_cb_obj, sm_java_file_save_cb_method_id );
+
+  exc = env->ExceptionOccurred();
+  if (exc)
+  {
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+  }
+
+  __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp", "Have called!" );
+
+  sm_jvm->DetachCurrentThread();
+
+  exc = env->ExceptionOccurred();
+  if (exc)
+  {
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+  }
+#endif
+}
+
 
 extern "C" 
 {
+JNIEXPORT void JNICALL Java_gov_sandia_InterSpec_InterSpec_initNative( JNIEnv* env, jobject thiz )
+{
+  std::unique_lock<std::mutex> lock(sm_interop_mutex);
+
+  __android_log_print( ANDROID_LOG_INFO, "initNative", "Will init pointers to JVM and Activity" );
+  env->GetJavaVM( &sm_jvm );
+  sm_activity = env->NewGlobalRef( thiz ); // This doesnt really appear to work...
+  __android_log_print( ANDROID_LOG_INFO, "initNative", "done initing" );
+}
+
+JNIEXPORT void JNICALL Java_gov_sandia_InterSpec_InterSpec_setFileSaveCallback
+        (JNIEnv *env, jclass cls, jobject impl_obj)
+{
+  std::unique_lock<std::mutex> lock(sm_interop_mutex);
+
+  jclass impl_cls;
+  jmethodID impl_cb_mid;
+
+  impl_cls = env->GetObjectClass(impl_obj);
+  if (!impl_cls)
+  {
+    __android_log_print( ANDROID_LOG_INFO, "nativeCallJavaMethod", "!impl_cls" );
+    return;
+  }
+
+  impl_cb_mid = env->GetMethodID(impl_cls, "callback", "()V");
+  if (!impl_cb_mid)
+  {
+    __android_log_print( ANDROID_LOG_INFO, "nativeCallJavaMethod", "!impl_cb_mid" );
+    return;
+  }
+
+  sm_java_file_save_cb_obj = env->NewGlobalRef( impl_obj );
+  sm_java_file_save_cb_method_id = impl_cb_mid;
+}
+
 
 JNIEXPORT
   jint
@@ -384,60 +595,48 @@ JNIEXPORT
   }//setInitialFileToLoad
 
 
-
-
-  
-  
-  JNIEXPORT
-  jint
-  JNICALL
-  Java_gov_sandia_InterSpec_InterSpec_openfileininterppec
-  (JNIEnv* env, jobject thiz, jstring path, jint type, jstring sessionid )
-  {
-    const std::string filepath = std::string(env->GetStringUTFChars(path, nullptr));
-    const std::string id = std::string(env->GetStringUTFChars(sessionid, nullptr));
-//   env->ReleaseStringUTFChars(...)
-    __android_log_write( ANDROID_LOG_INFO, "openfileininterppec",
-                         (std::string("Will try to open following file in InterSpec '") + filepath + "' in session " + id).c_str());
-    
-	 //
-    InterSpecApp *app = InterSpecApp::instanceFromExtenalToken( id );
-    if( !app )
-    {
-      __android_log_write( ANDROID_LOG_INFO, "openfileininterppec",
-                          (std::string("Couldnt get app instance from id '") + id + "'").c_str() );
-      
-      std::set<InterSpecApp *> instances = InterSpecApp::runningInstances();
-      if( instances.empty() )
-        return 1;
-      app = *instances.begin();
-    }
-	
-	  Wt::WApplication::UpdateLock lock( app );
-    const bool opened = app->userOpenFromFileSystem( filepath );
-	  app->triggerUpdate();
-
-	  if( !opened )
-	  {
-      __android_log_write( ANDROID_LOG_INFO, "openfileininterppec",
-                           (std::string("InterSpec couldnt open file '") + filepath + "'").c_str() );
-	    return 2;
-    }
-	
-    __android_log_write( ANDROID_LOG_INFO, "openfileininterppec",
-                         (std::string("InterSpec opened file '") + filepath + "'").c_str() );
-
-    return 0;
-  }//Java_gov_sandia_InterSpec_openfileininterppec
-  
-  
-void Java_gov_sandia_InterSpec_InterSpec_settmpdir( JNIEnv* env, jobject thiz, jstring tmpPath )
+JNIEXPORT
+jobjectArray
+JNICALL
+Java_gov_sandia_InterSpec_InterSpec_mostRecentSaveLocation( JNIEnv* env, jobject thiz )
 {
-  const char *path = env->GetStringUTFChars( tmpPath, nullptr );
-  setenv("TMPDIR", path, 1);
-  __android_log_write( ANDROID_LOG_DEBUG, "settmpdir",
-                       (std::string("Set TMPDIR='") + path + "'").c_str() );
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  bool have_saved = false;
+  std::string location, display;
+
+  {
+    std::unique_lock<std::mutex> lock(sm_interop_mutex);
+
+    // Wait for up to 1.5 second to get the location; an arbirary amount of time, but should be good enough to write most files to disk
+    if( sm_lastSavedLocation.empty() )
+    {
+      // auto pred = [&](){return !sm_lastSavedLocation.empty();};
+      sm_saved_condition.wait_for(lock, std::chrono::milliseconds(1500) );
+    }
+    have_saved = sm_haveSavedFile;
+    location = sm_lastSavedLocation;
+    display = sm_lastSavedDisplayName;
+
+    sm_haveSavedFile = false;
+    sm_lastSavedLocation = sm_lastSavedDisplayName = "";
+  }
+
+  std::cout<< "mostRecentSaveLocation: have_saved=" << have_saved << ", location='" << location << "', display='" << display << "'" << std::endl;
+
+  jobjectArray ret;
+  if( have_saved && !location.empty() )
+  {
+    ret = (jobjectArray)env->NewObjectArray(2,env->FindClass("java/lang/String"),env->NewStringUTF(""));
+    env->SetObjectArrayElement( ret,0, env->NewStringUTF( location.c_str() ) );
+    env->SetObjectArrayElement( ret, 1 , env->NewStringUTF( display.c_str() ) );
+  }else
+  {
+    ret = (jobjectArray)env->NewObjectArray(0,env->FindClass("java/lang/String"),env->NewStringUTF(""));
+  }
+
+  return ret;
 }
+
 
 }  //extern "C"
 

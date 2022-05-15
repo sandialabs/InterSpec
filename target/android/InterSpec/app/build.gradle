@@ -21,6 +21,7 @@ android {
 
     defaultConfig {
         applicationId "gov.sandia.interspec"
+        // Android 4 (Kit Kat) is level 19.  Android 6 (Marshmallow - e.x., Nexus 7) is level 23.
         minSdkVersion 19
         targetSdkVersion 32
         versionCode 9
@@ -73,6 +74,7 @@ android {
             //   armeabi-v7a, arm64-v8a, x86, x86_64
         }
     }
+    namespace 'gov.sandia.InterSpec'
     //buildToolsVersion '27.0.3'
 }
 

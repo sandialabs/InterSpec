@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="gov.sandia.InterSpec">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
@@ -12,7 +11,32 @@
     <supports-screens android:largeScreens="true" android:normalScreens="true" android:anyDensity="true" android:smallScreens="true"/>
     <application android:label="InterSpec"
         android:theme="@style/Theme.AppCompat.NoActionBar"
-        android:usesCleartextTraffic="true" >
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config">
+        <!-- I added InterSpec/target/android/InterSpec/app/src/main/xml/network_security_config.xml,
+        to allow clear-text, however it is only applicable if we set min API level to 24; but I guess
+        we'll just leave in for then...
+
+         Otherwise can just us eBufferedInputStream from URL, see https://www.baeldung.com/java-download-file, but need to do
+         it in a background thread, like https://stackoverflow.com/questions/64724824/how-to-implement-a-background-thread-using-java-util-concurrent-package
+OR maybe
+ExecutorService myExecutor = Executors.newCachedThreadPool();
+    myExecutor.execute(new Runnable() {
+        @Override
+        public void run() {
+            try (BufferedInputStream in = new BufferedInputStream(new URL(FILE_URL).openStream());
+                FileOutputStream fileOutputStream = new FileOutputStream(FILE_NAME)) {
+                byte dataBuffer[] = new byte[8*1024];
+                int bytesRead;
+                while ((bytesRead = in.read(dataBuffer, 0, 8*1024)) != -1) {
+                    fileOutputStream.write(dataBuffer, 0, bytesRead);
+            }
+            } catch (IOException e) {
+                // handle exception
+            }
+        }
+    });
+         -->
         <activity android:name="InterSpec"
             android:label="InterSpec"
             android:icon="@mipmap/ic_launcher"

@@ -2404,6 +2404,148 @@ void DownloadSpectrumResource::handleRequest( const Wt::Http::Request& request,
 }//void DownloadSpectrumResource::handleRequest(...)
 
 
+void DownloadSpectrumResource::write_file( std::ostream &output,
+                       const SpecUtils::SaveSpectrumAsType type,
+                       const std::shared_ptr<const SpecMeas> measurement,
+                       const std::set<int> &samplenums,
+                       const std::vector<std::string> &detectornames,
+                       const InterSpec *viewer )
+{
+  //Convert detector names to detector numbers.
+  set<int> detectornums;
+  const auto &names = measurement->detector_names();
+  const auto &numbers = measurement->detector_numbers();
+  assert( names.size() == numbers.size() );
+  
+  for( const string &n : detectornames )
+  {
+    auto pos = std::find( begin(names), end(names), n );
+    if( pos != end(names) )
+      detectornums.insert( numbers[pos - begin(names)] );
+  }
+  
+  
+  switch( type )
+  {
+    case SpecUtils::SaveSpectrumAsType::Txt:
+      measurement->write_txt( output );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::Csv:
+      measurement->write_csv( output );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::Pcf:
+      measurement->write_pcf( output );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::N42_2006:
+      measurement->write_2006_N42( output );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::N42_2012:
+      measurement->write_2012_N42( output );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::Chn:
+      measurement->write_integer_chn( output, samplenums, detectornums );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
+      measurement->write_binary_spc( output,
+                                    SpecUtils::SpecFile::IntegerSpcType,
+                                    samplenums, detectornums );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
+      measurement->write_binary_spc( output,
+                                    SpecUtils::SpecFile::FloatSpcType,
+                                    samplenums, detectornums );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::SpcAscii:
+      measurement->write_ascii_spc( output, samplenums, detectornums );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
+      measurement->write_binary_exploranium_gr130v0( output );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
+      measurement->write_binary_exploranium_gr135v2( output );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::SpeIaea:
+      measurement->write_iaea_spe( output, samplenums, detectornums );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::Cnf:
+      measurement->write_cnf( output, samplenums, detectornums );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::Tka:
+      measurement->write_tka( output, samplenums, detectornums );
+      break;
+      
+      
+#if( SpecUtils_ENABLE_D3_CHART )
+    case SpecUtils::SaveSpectrumAsType::HtmlD3:
+    {
+      //For purposes of development, lets cheat and export everything as it is now
+      if( viewer )
+      {
+        const SpecUtils::SpectrumType types[] = { SpecUtils::SpectrumType::Foreground, SpecUtils::SpectrumType::SecondForeground, SpecUtils::SpectrumType::Background };
+        
+        std::vector< std::pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
+        
+        for( SpecUtils::SpectrumType type : types )
+        {
+          std::shared_ptr<const SpecUtils::Measurement> histogram = viewer->displayedHistogram( type );
+          std::shared_ptr<const SpecMeas> data = viewer->measurment( type );
+          
+          if( !histogram || !data )
+            continue;
+          
+          //string title = Wt::WWebWidget::escapeText(data->title()).toUTF8();
+          //if( title != data->title() )
+          //data->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
+          
+          D3SpectrumExport::D3SpectrumOptions options;
+          switch( type )
+          {
+            case SpecUtils::SpectrumType::Foreground: options.line_color = "black"; break;
+            case SpecUtils::SpectrumType::SecondForeground: options.line_color = "steelblue"; break;
+            case SpecUtils::SpectrumType::Background: options.line_color = "green"; break;
+          }
+          options.display_scale_factor = viewer->displayScaleFactor( type );
+          options.spectrum_type = type;
+          const std::set<int> samples = viewer->displayedSamples( type );
+          
+          std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > peaks = data->peaks(samples);
+          if( peaks )
+          {
+            vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
+            std::shared_ptr<const SpecUtils::Measurement> foreground = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+            options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
+          }
+          
+          measurements.push_back( pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions>(histogram.get(),options) );
+        }//for( SpecUtils::SpectrumType type : types )
+        
+        write_d3_html( output, measurements, viewer->getD3SpectrumOptions() );
+      }//if( viewer )
+      //      if( viewer != 0 )
+      //        measurement->write_d3_html( output, viewer->getD3SpectrumOptions(), samplenums, detectornums );
+    }
+      break;
+#endif //#if( USE_D3_EXPORTING )
+      
+    case SpecUtils::SaveSpectrumAsType::NumTypes:
+      break;
+  }//switch( type )
+}//DownloadSpectrumResource::write_file(...)
+
+
 void DownloadSpectrumResource::handle_resource_request(
                               SpecUtils::SaveSpectrumAsType type,
                               std::shared_ptr<const SpecMeas> measurement,
@@ -2467,139 +2609,7 @@ void DownloadSpectrumResource::handle_resource_request(
   if( !measurement )
     return;
   
-  
-  //Convert detector names to detector numbers.
-  set<int> detectornums;
-  const auto &names = measurement->detector_names();
-  const auto &numbers = measurement->detector_numbers();
-  assert( names.size() == numbers.size() );
-  
-  for( const string &n : detectornames )
-  {
-    auto pos = std::find( begin(names), end(names), n );
-    if( pos != end(names) )
-      detectornums.insert( numbers[pos - begin(names)] );
-  }
-  
-  
-  switch( type )
-  {
-    case SpecUtils::SaveSpectrumAsType::Txt:
-      measurement->write_txt( response.out() );
-    break;
-
-    case SpecUtils::SaveSpectrumAsType::Csv:
-      measurement->write_csv( response.out() );
-    break;
-
-    case SpecUtils::SaveSpectrumAsType::Pcf:
-      measurement->write_pcf( response.out() );
-    break;
-
-    case SpecUtils::SaveSpectrumAsType::N42_2006:
-      measurement->write_2006_N42( response.out() );
-    break;
-      
-    case SpecUtils::SaveSpectrumAsType::N42_2012:
-      measurement->write_2012_N42( response.out() );
-    break;
-      
-    case SpecUtils::SaveSpectrumAsType::Chn:
-      measurement->write_integer_chn( response.out(), samplenums, detectornums );
-    break;
-      
-    case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
-      measurement->write_binary_spc( response.out(),
-                                       SpecUtils::SpecFile::IntegerSpcType,
-                                       samplenums, detectornums );
-    break;
-      
-    case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
-      measurement->write_binary_spc( response.out(),
-                                       SpecUtils::SpecFile::FloatSpcType,
-                                       samplenums, detectornums );
-    break;
-
-    case SpecUtils::SaveSpectrumAsType::SpcAscii:
-      measurement->write_ascii_spc( response.out(), samplenums, detectornums );
-    break;
-      
-    case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
-      measurement->write_binary_exploranium_gr130v0( response.out() );
-      break;
-      
-    case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
-      measurement->write_binary_exploranium_gr135v2( response.out() );
-      break;
-      
-    case SpecUtils::SaveSpectrumAsType::SpeIaea:
-      measurement->write_iaea_spe( response.out(), samplenums, detectornums );
-      break;
-      
-    case SpecUtils::SaveSpectrumAsType::Cnf:
-      measurement->write_cnf( response.out(), samplenums, detectornums );
-      break;
-    
-    case SpecUtils::SaveSpectrumAsType::Tka:
-      measurement->write_tka( response.out(), samplenums, detectornums );
-      break;
-      
-      
-#if( SpecUtils_ENABLE_D3_CHART )
-    case SpecUtils::SaveSpectrumAsType::HtmlD3:
-    {
-      //For purposes of development, lets cheat and export everything as it is now
-      if( viewer )
-      {
-        const SpecUtils::SpectrumType types[] = { SpecUtils::SpectrumType::Foreground, SpecUtils::SpectrumType::SecondForeground, SpecUtils::SpectrumType::Background };
-        
-        std::vector< std::pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
-        
-        for( SpecUtils::SpectrumType type : types )
-        {
-          std::shared_ptr<const SpecUtils::Measurement> histogram = viewer->displayedHistogram( type );
-          std::shared_ptr<const SpecMeas> data = viewer->measurment( type );
-          
-          if( !histogram || !data )
-            continue;
-          
-          //string title = Wt::WWebWidget::escapeText(data->title()).toUTF8();
-          //if( title != data->title() )
-            //data->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
-          
-          D3SpectrumExport::D3SpectrumOptions options;
-          switch( type )
-          {
-            case SpecUtils::SpectrumType::Foreground: options.line_color = "black"; break;
-            case SpecUtils::SpectrumType::SecondForeground: options.line_color = "steelblue"; break;
-            case SpecUtils::SpectrumType::Background: options.line_color = "green"; break;
-          }
-          options.display_scale_factor = viewer->displayScaleFactor( type );
-          options.spectrum_type = type;
-          const std::set<int> samples = viewer->displayedSamples( type );
-          
-          std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > peaks = data->peaks(samples);
-          if( peaks )
-          {
-            vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-            std::shared_ptr<const SpecUtils::Measurement> foreground = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
-            options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
-          }
-          
-          measurements.push_back( pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions>(histogram.get(),options) );
-        }//for( SpecUtils::SpectrumType type : types )
-        
-        write_d3_html( response.out(), measurements, viewer->getD3SpectrumOptions() );
-      }//if( viewer )
-//      if( viewer != 0 )
-//        measurement->write_d3_html( response.out(), viewer->getD3SpectrumOptions(), samplenums, detectornums );
-    }
-      break;
-#endif //#if( USE_D3_EXPORTING )
-      
-    case SpecUtils::SaveSpectrumAsType::NumTypes:
-    break;
-  }//switch( type )
+  DownloadSpectrumResource::write_file( response.out(), type, measurement, samplenums, detectornames, viewer );
 }//void handle_resource_request(...)
 
 
@@ -2654,6 +2664,28 @@ void SpecificSpectrumResource::setSpectrum( std::shared_ptr<const SpecMeas> spec
   suggestFileName( name, WResource::Attachment );
 }//void setSpectrum( std::shared_ptr<const SpecUtils::SpecFile> spec )
 
+
+#if( ANDROID )
+const std::set<int> &SpecificSpectrumResource::samplenums()
+{
+  return m_samplenums;
+}
+
+const std::vector<std::string> &SpecificSpectrumResource::detnames()
+{
+  return m_detnames;
+}
+
+SpecUtils::SaveSpectrumAsType SpecificSpectrumResource::type()
+{
+  return m_type;
+}
+
+std::shared_ptr<const SpecMeas> SpecificSpectrumResource::spectrum()
+{
+  return m_spectrum;
+}
+#endif //ANDROID
 
 void SpecificSpectrumResource::handleRequest( const Wt::Http::Request& request,
                                Wt::Http::Response& response)
