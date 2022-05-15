@@ -3235,6 +3235,7 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
     
     shared_ptr<SpecMeas> newspec = make_shared<SpecMeas>();
     newspec->uniqueCopyContents( *parent_file );
+    newspec->set_uuid( "" );
     
     if( samples_to_use == parent_file->sample_numbers() )
       return newspec;
@@ -3270,6 +3271,13 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
   //  Also, we arent preserving any peaks, which maybe we could do.
   shared_ptr<SpecMeas> newspec = make_shared<SpecMeas>();
   
+  
+  // We'll create a map from newly created Measurements, to newly created peaks for them; we will
+  //  then set the peaks to the SpecMeas object after cleanup (because sample numbers may change
+  //  after cleanup, and its sample numbers who peaks belong to)
+  map<set<shared_ptr<SpecUtils::Measurement>>,
+      shared_ptr<deque<shared_ptr<const PeakDef>>> > peaks_to_keep;
+  
   // We'll try to preserve some of the file-level meta information, if it makes sense.
   //  Although using set<string> like below will re-order things, which maybe isnt what we want.
   //  Note: meas->detectors_analysis() is currently not being saved.
@@ -3298,6 +3306,8 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
     const vector<string> &meas_warning = meas->parse_warnings();
     warnings.insert( begin(meas_warning), end(meas_warning) );
     
+    
+    map< shared_ptr<const SpecUtils::Measurement>, shared_ptr<SpecUtils::Measurement> > old_to_new_meas;
     for( const int sample : samples )
     {
       for( const string &det_name : meas->detector_names() )
@@ -3305,9 +3315,73 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
         const shared_ptr<const SpecUtils::Measurement> m = meas->measurement( sample, det_name );
         
         if( m )
-          newspec->add_measurement(make_shared<SpecUtils::Measurement>( *m ),  false );
+        {
+          auto new_meas = make_shared<SpecUtils::Measurement>( *m );
+          old_to_new_meas[m] = new_meas;
+          newspec->add_measurement( new_meas,  false );
+        }
       }//for( const string &det_name : meas->detector_names() )
     }//for( const int sample : samples )
+    
+    
+    for( const set<int> &peakssamples : meas->sampleNumsWithPeaks() )
+    {
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = meas->peaks(peakssamples);
+      if( !peaks || peaks->empty() )
+        continue;
+      
+      bool will_keep_all_meas = true;
+      set<shared_ptr<SpecUtils::Measurement>> new_meas_set;
+      
+      for( const int sample : peakssamples )
+      {
+        for( const auto m : meas->sample_measurements(sample) )
+        {
+          if( old_to_new_meas.count(m) )
+          {
+            new_meas_set.insert( old_to_new_meas[m] );
+          }else
+          {
+            will_keep_all_meas = false;
+          }
+        }//for( const auto m : meas->sample_measurements(sample) )
+      }//for( const int sample : peakssamples )
+      
+      if( !will_keep_all_meas )
+        continue;
+      
+      
+      // We will create completely new instances of all the old peaks
+      auto new_peaks = make_shared< deque<shared_ptr<const PeakDef>> >();
+      
+      // However, PeakDef has a design flaw that shared continuums arent necessarily constant, and
+      //  multiple peaks may share a continuum; so we also have to take a little care to clone those
+      //  and keep the shared relationship (maybe this has been worked around in some/most places,
+      //  but we'll play it safe and so a deep clone here)
+      map<shared_ptr<const PeakContinuum>,std::shared_ptr<PeakContinuum>> old_cont_map;
+      
+      for( shared_ptr<const PeakDef> peak : *peaks )
+      {
+        assert( peak );
+        if( !peak )
+          continue;
+        
+        auto p = make_shared<PeakDef>(*peak);
+        shared_ptr<const PeakContinuum> old_cont = peak->continuum();
+        if( old_cont_map.count(old_cont) )
+        {
+          p->setContinuum( old_cont_map[old_cont] );
+        }else
+        {
+          p->makeUniqueNewContinuum();
+          old_cont_map[old_cont] = p->continuum();
+        }
+        
+        new_peaks->push_back( p );
+      }//for( shared_ptr<const PeakDef> peak : *peaks )
+      
+      peaks_to_keep[new_meas_set] = new_peaks;
+    }//for( const set<int> &peakssamples : meas->sampleNumsWithPeaks() )
   }//for( const auto specmeas_samples : files_involved )
   
   
@@ -3331,6 +3405,7 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
     return answer;
   };//strings_to_csv
 
+  newspec->set_uuid( "" );
   newspec->set_measurement_location_name( strings_to_csv(locations) );
   newspec->set_instrument_id( strings_to_csv(inst_ids) );
   newspec->set_instrument_model( strings_to_csv(inst_models) );
@@ -3341,6 +3416,35 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
   newspec->set_filename( "Combination-" + current_time );
   
   newspec->cleanup_after_load();
+  
+  for( auto meas_to_peaks : peaks_to_keep )
+  {
+    const set<shared_ptr<SpecUtils::Measurement>> &meass = meas_to_peaks.first;
+    const shared_ptr<deque<shared_ptr<const PeakDef>>> peaks = meas_to_peaks.second;
+    
+    assert( !meass.empty() );
+    assert( peaks && !peaks->empty() );
+    if( meass.empty() || !peaks || peaks->empty() ) // Shouldnt ever evaluate to tru, but Jic
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "Got an empty set of peaks for new measuremnt..." );
+#endif
+      continue;
+    }
+    
+    set<int> sample_nums;
+    for( auto m : meass )
+    {
+      assert( m );
+      if( m )
+        sample_nums.insert( m->sample_number() );
+    }
+    
+    assert( !sample_nums.empty() );
+    if( sample_nums.size() )
+      newspec->setPeaks( *peaks, sample_nums );
+  }//for( auto meas_to_peaks : peaks_to_keep )
+  
   
   return newspec;
 }//std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas()

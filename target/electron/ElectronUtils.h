@@ -98,6 +98,11 @@ extern "C"
    */
   LIB_INTERFACE(int) interspec_open_file( const char *session_token, const char *files_json );
 
+  /** Passes a "deeplink" with schema "interspec://" into the specificd session.
+   
+   Returns if the URL was successfully used.
+   */ 
+  LIB_INTERFACE(bool) interspec_open_app_url( const char *session_token, const char *files_json );
 
   /** Set the initial file, or app-url (e.g., "interspec://...") to load when constructing
    a new session with the specified token.  Must be called after adding an allowed token,

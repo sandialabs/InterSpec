@@ -343,30 +343,10 @@ cursor: default;
 }
 
 
-.m_sliderCurrentAgeText
-{
-}
-
 .photpeakOptionsDiv
 {
 }
 
-.m_photoPeakYScaleFixed
-{
-  margin-left: 2ex;
-}
-
-
-.m_photoPeakShieldingZ
-{
-  margin-right: 1em;
-}
-
-
-.m_photoPeakShieldingAD
-{
-  
-}
 
 .photpeakShieldingDiv
 {
@@ -374,7 +354,6 @@ cursor: default;
   border: 1px inset;
   padding: 4px;
 }
-
 
 
 .NuclideInfo

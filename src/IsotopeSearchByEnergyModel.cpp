@@ -1248,6 +1248,17 @@ void IsotopeSearchByEnergyModel::updateSearchResults(
     endInsertRows();
   }//if( matches.size() )
   
+  // There is an apparent bug in Wt 3.7.1 (at least), that if we search on an energy, then change
+  //  the window or something, then scroll down in the results table, we will then just get
+  //  the loading indicator, and the rows will never render.
+  //  I couldnt easily figure out the underlying cause of this, but calling `reset()` or
+  //  layoutChanged() in this next line keeps this from happening; we are re-rendering the whole
+  //  table anyway, so I guess this isnt that heavy-handed of a work-around...
+  //  \sa PeakModel::setPeakFromSpecMeas, PeakModel::setPeaks, ...
+  //reset();
+  layoutAboutToBeChanged().emit();
+  layoutChanged().emit();
+  
   workingspace->searchdoneCallback();
   
   
@@ -1256,6 +1267,8 @@ void IsotopeSearchByEnergyModel::updateSearchResults(
     // Probably wont ever get here - but JIC.
     passMessage( workingspace->error_msg, "", 3 );
   }
+  
+  
   
   wApp->triggerUpdate();
 }//void updateSearchResults()

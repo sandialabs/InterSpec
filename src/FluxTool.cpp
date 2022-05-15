@@ -326,6 +326,8 @@ namespace FluxToolImp
         doSortWork();
         endInsertRows();
       }//
+      
+      reset(); //JIC, to make sure the GUI refreshes
     }//void handleFluxToolWidgetUpdated()
     
     
@@ -1014,6 +1016,10 @@ void FluxToolWidget::init()
   LOAD_JAVASCRIPT(wApp, "FluxTool.cpp", "FluxTool", wtjsCopyFluxDataTextToClipboard );
   
   m_copyBtn = new WPushButton( "Copy To Clipboard" );
+
+  // TODO: "upgrade" to using the InterSpecApp 'miscSignal' directly in CopyFluxDataTextToClipboard, and get rid of m_infoCopied signal handler
+  //"Wt.emit( '" + wApp->dom()->id() + "', {name:'miscSignal'}, 'showMsg-info-' );"
+  
   m_copyBtn->clicked().connect( "function(s,e){ "
     "var success = Wt.WT.CopyFluxDataTextToClipboard(s,e,'" + m_copyBtn->id() + "'); "
     "Wt.emit( '" + id() + "', {name:'infocopied', eventObject:e}, success );"
