@@ -41,6 +41,8 @@ public:
                   const double activity, const bool useCurries,
                   const double age, const double maxtime = -1.0 );
   
+  void handleAppUrl( const std::string &path, const std::string &query_str );
+  
  protected:
   DecayActivityDiv *m_activityDiv;
 };//class DecayWindow

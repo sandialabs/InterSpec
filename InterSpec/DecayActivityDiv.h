@@ -92,6 +92,41 @@ public:
   
   void colorThemeChanged();
   
+  /** Handles receiving a "deep-link" url starting with "interspec://decay/...".
+   
+   Example URIs:
+   - "interspec://decay/chain?nuclide=U238&activity=3uCi&initialage=20y&timespan=22y&actunits=ci"
+   - "interspec://decay/chart?nuc=Ba133&act=3uCi&nuc=Cs137&act=2uci&actunits=ci&timespan=20y"
+   - "interspec://decay/chain?nuc=232-th"
+   
+   @param path The path specified in the URI; must be one of three values "chart", "chain", or
+          "calc".  So for example, in the URI "interspec://decay/chain?nuc...", the path is "chain".
+          This value determines which tab of the tool will be shown.
+   @param query_str The query portion of the URI.  So for example, if the URI has a value of
+          "interspec://decay/chain?nuclide=U238&...", then this string would be "nuclide=U238&...".
+          This string is is in standard URL format of "key1=value1&key2=value2&..." with the
+          ordering only mattering if there is more than one nuclide specified.  Possible key values
+          are listed below.  Capitalization is not important.
+   
+   Possible url key-value values:
+   - "time", "timespan": The timespan fo display on the chart or calculator.  The value may be
+     specified using standard time units, or may be specified in half-lives (of the first nuclide).
+     Examples include: "timespan=20y", "timespan=5hl", "timespan=200seconds", "timespan=3half-lives"
+   - "actunits": Must have a value of "becquerel", "bq", "curie", or "ci". This is the style of
+     units that will be used to display things to the user.
+   - "iso", "nuc", "isotope", "nuclide": these are all synonyms; the value must list an isotopes.
+      Examples include "nuc=Am241", "iso=Co60m", "iso=Co-60", "iso=60Co"
+   - "initialage", "age": The initial age of the nuclide, at the time of starting the age.
+   - "act", "activity": this is the activity of the nuclide.  If more than one nuclide is specified,
+     then this is the activity for the immediately preceding nuclide (e.g., you specify nuclide,
+     then its activity). The value provided must specify magnitude and units of activity.
+     Examples include "act=5uci", "activity=10kbq"
+   
+   TODO: implement display options like Log-Y scale, Y-axis type (Activity, Gamma Rate, etc), and grid-lines.
+   TODO: implement showing QR code for the tools current state, and put in the DecayWindow footer. 
+   */
+  void handleAppUrl( std::string path, std::string query_str );
+  
 public:
   friend class PeakCsvResource;
   friend class DateLengthCalculator;
@@ -227,8 +262,7 @@ public:
   
   Wt::WContainerWidget *initDisplayOptionWidgets();
 
-  void showDecayTab();
-  void showPhotopeakTab();
+  
 };//DecayActivityDiv
 
 

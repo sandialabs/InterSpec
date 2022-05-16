@@ -114,7 +114,7 @@
   
   if( specapp )
   {
-    app_lock = std::make_unique<Wt::WApplication::UpdateLock>( specapp );
+    app_lock.reset( new Wt::WApplication::UpdateLock( specapp ) );
     if( !(*app_lock) )
     {
       NSLog( @"\topenURLs: _UrlUniqueId unable to get WApplication::UpdateLock for apptoken='%@' - not handling URL!", _UrlUniqueId );

@@ -3,7 +3,6 @@ cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 project( InterSpecApp VERSION 1.10.0)
 
 set(BUILD_AS_OSX_APP ON CACHE INTERNAL "Build a OSX native app" )
-set(ALLOW_URL_TO_FILESYSTEM_MAP ON CACHE INTERNAL "Allow url to filesystem map" )
 set(USE_OSX_NATIVE_MENU ON CACHE INTERNAL "Use macOS native menu-system" )
 set(USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE INTERNAL "Enable spectrum file query widget" )
 set(TRY_TO_STATIC_LINK ON CACHE INTERNAL "Try to statically link" )
@@ -62,10 +61,11 @@ ExternalProject_Add(SpecFilePreview
     BINARY_DIR   "${CMAKE_BINARY_DIR}/SpecFilePreview"
     URL ${CMAKE_CURRENT_SOURCE_DIR}/../macOsQuickLook/SpecFilePreview/SpecFilePreview/
     CMAKE_GENERATOR   "Unix Makefiles"
-    CMAKE_CACHE_ARGS -DWt_INCLUDE_DIR:PATH=${Wt_INCLUDE_DIR}
-                     -DBOOST_ROOT:PATH=${Boost_INCLUDE_DIR}/..
+    CMAKE_CACHE_ARGS -DCMAKE_PREFIX_PATH:PATH=${CMAKE_PREFIX_PATH}
+                     #-DWt_INCLUDE_DIR:PATH=${Wt_INCLUDE_DIR}
+                     #-DBOOST_ROOT:PATH=${Boost_INCLUDE_DIR}/..
                      -DInterSpec_BASE_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/../../
-                     -DBOOST_INCLUDEDIR:PATH=${Boost_INCLUDE_DIR}
+                     #-DBOOST_INCLUDEDIR:PATH=${Boost_INCLUDE_DIR}
                      -DCMAKE_BUILD_TYPE:STRING=RELEASE
                      -DSpecUtils_ENABLE_D3_CHART:BOOL=OFF
                      INSTALL_COMMAND   ""

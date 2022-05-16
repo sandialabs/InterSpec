@@ -459,7 +459,15 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       
       if( SpecUtils::istarts_with(initial_file, "interspec://") )
       {
-        loadedSpecFile = handleAppUrl( initial_file );
+        try
+        {
+          loadedSpecFile = handleAppUrl( initial_file );
+        }catch( std::exception &e )
+        {
+          passMessage( "Error handling deep-link (1): " + string(e.what()),
+                      "", WarningWidget::WarningMsgHigh );
+          wApp->log( "error" ) << "InterSpecApp::setupWidgets: invalid URL: " << e.what();
+        }
       }else
       {
         loadedSpecFile = m_viewer->userOpenFileFromFilesystem( initial_file );
