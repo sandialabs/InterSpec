@@ -84,7 +84,7 @@ import java.util.concurrent.Executors;
 
 import gov.sandia.InterSpec.R;
 
-interface CallbackInterface {
+interface CallbackFromNativeInterface {
   public void callback();
 }
 
@@ -98,6 +98,7 @@ public class InterSpec extends AppCompatActivity
   /** File upload callback for Android 5.0+ */
   private ValueCallback<Uri[]> mUploadMessageMult;
   private final static int FILECHOOSER_RESULTCODE = 1;
+  private final static int OPEN_FILE_CODE = 2;
 
   private final static int SAVE_AS_CODE = 9821341;
 
@@ -111,6 +112,27 @@ public class InterSpec extends AppCompatActivity
   private String mTempFileToSave;
   private String mTempFileDisplayName;
 
+  /** Define a class whose member functions we can call from JavaScript. */
+  class CallbackFromJavaScriptInterface {
+    private InterSpec activity;
+
+    public CallbackFromJavaScriptInterface(InterSpec activity) {
+      this.activity = activity;
+    }
+
+    /* Function to call when the user wants to open a spectrum file */
+    @JavascriptInterface
+    public void startBrowseToOpenFile(){
+      Log.d("js_inter", "startBrowseToOpenFile()");
+      Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+      i.addCategory(Intent.CATEGORY_OPENABLE);
+      i.setType("*/*");
+      activity.startActivityForResult( Intent.createChooser(i,"Select File"),
+              OPEN_FILE_CODE );
+    }
+
+    // TODO: other places we open up files in InterSpec, define a cooresponding function here to browse for the file and open it; where it makes sense.
+  }//class CallbackFromJavaScriptInterface
 
   public final class WtWebChromeClient extends WebChromeClient 
   {
@@ -201,33 +223,41 @@ public class InterSpec extends AppCompatActivity
 	  String outputname = null;
   	try
   	{
+      Log.d("copyUriToTmpDir", "About to open ParcelFileDescriptor" );
       ParcelFileDescriptor parcelFD = InterSpec.this.getContentResolver().openFileDescriptor(result, "r");
-      FileDescriptor fd = parcelFD.getFileDescriptor();
-      FileChannel inchannel = new FileInputStream(fd).getChannel();
-	    outputname = InterSpec.this.getFilesDir().getAbsolutePath()
-		                        + java.io.File.separator + "tmp" 
-							    + java.io.File.separator + displayName;
-	
-      File outputfile = new File( outputname );
-      outputfile.createNewFile();
-      FileChannel outchannel = new FileOutputStream(outputfile).getChannel();
-	
-      try 
+      Log.d("copyUriToTmpDir", "Got ParcelFileDescriptor" );
+
+      File tmpDir = getCacheDir();
+      File outputFile = File.createTempFile("spectrum", ".tmp", tmpDir);
+      outputFile.deleteOnExit();
+
+      InputStream input = new FileInputStream( parcelFD.getFileDescriptor() );
+      FileOutputStream output = new FileOutputStream( outputFile );
+
+      byte[] buffer = new byte[1024];
+      int length;
+      while((length = input.read(buffer)) > 0)
       {
-        inchannel.transferTo(0, inchannel.size(), outchannel);
-      }finally
-      {
-        if( inchannel != null )
-         inchannel.close();
-        if( outchannel != null )
-          outchannel.close();
+        output.write(buffer, 0, length);
       }
+
+      output.flush();
+      input.close();
+      output.close();
+
+      outputname = outputFile.getAbsolutePath();
+
+      Log.d("copyUriToTmpDir", "Done copying file to temp file" );
     }catch( java.io.IOException e )
 	  {
+        Context context = getApplicationContext();
+        Toast.makeText(context, "Error copying file into InterSpec.", Toast.LENGTH_SHORT).show();
       Log.d("copyUriToTmpDir", "IOException copying file" );
 	    return null;
 	  }catch( java.lang.NullPointerException e )  //possibly thrown by the parcelFD.getFileDescriptor() line
     {
+      Context context = getApplicationContext();
+      Toast.makeText(context, "Error (2) copying file into InterSpec.", Toast.LENGTH_SHORT).show();
       Log.d("copyUriToTmpDir", "NullPointerException" );
       return null;
     }
@@ -249,16 +279,12 @@ public class InterSpec extends AppCompatActivity
       return;
     }
 
-
-    boolean shouldDeleteFile = true;
-
     String displayName = getDisplayFileName( result );
     Log.d("openFileInInterSpec", "displayName=" + displayName );
 
     if( displayName == null )
       displayName = "unamedfile";
     String pathname = copyUriToTmpDir( result, displayName );
-
 		
     if( pathname != null )
     {
@@ -266,7 +292,6 @@ public class InterSpec extends AppCompatActivity
       //  The only problem is we dont know if it should be foreground, secondary, or background
 		  
 	  Log.d("openFileInInterSpec", "Will send the following to InterSpec: " + pathname);
-	  // TODO: as long as there are no errors, we can clean up the file immediately, but if there is an error we should do something...
       int status = openFile( interspecID, pathname );
 
       if( status <= 0 )
@@ -276,15 +301,8 @@ public class InterSpec extends AppCompatActivity
 
       Log.d("onActivityResult", "Open file status: " + pathname);
 
-      if( shouldDeleteFile )
-      {
-        File f = new File( pathname );	
-        boolean deleted = f.delete();
-        if( !deleted )
-        {
-          Log.d("onActivityResult", "Couldnt cleaned up: " + pathname);
-        }
-	  }//if( shouldDeleteFile )
+      // We could delete the file here..., but since copyUriToTmpDir() has marked the file to
+      //  be cleaned up at app exit anyway, we wont bother.
 	}//if( pathname != null )
   }//public void openFileInInterSpec( Uri result )
 
@@ -473,6 +491,14 @@ public class InterSpec extends AppCompatActivity
         Log.d("onActivityRe", "Neither upload messages were non - null - unexpected!");
       }
     }//if( pathname != null )
+
+    if (requestCode == OPEN_FILE_CODE) {
+      Log.d("onActivityRe", "Picked file based on starting from JS");
+
+      Uri result = intent == null || resultCode != RESULT_OK ? null : intent.getData();
+
+      openFileInInterSpec(result);
+    }
   }//protected void onActivityResult(...)
 
   @Override
@@ -499,7 +525,7 @@ public class InterSpec extends AppCompatActivity
     {
       initNative();
 
-      setFileSaveCallback( new CallbackInterface() {
+      setFileSaveCallback( new CallbackFromNativeInterface() {
         public void callback() {
           // TODO: in the future we could maybe have this callback (or one that takes a cople string arguments)
           //       launch the Save As dialog, and then trigger the copying of files
@@ -532,6 +558,9 @@ public class InterSpec extends AppCompatActivity
       webview.setScrollBarStyle(WebView.SCROLLBARS_OUTSIDE_OVERLAY);
       webview.setScrollbarFadingEnabled(true);
       webview.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
+      CallbackFromJavaScriptInterface jsInterface = new CallbackFromJavaScriptInterface(this);
+      webview.addJavascriptInterface(jsInterface, "interspecJava");
 
       /*
       webview.getSettings().setUseWideViewPort(true);
@@ -997,5 +1026,5 @@ public class InterSpec extends AppCompatActivity
   public static native int removeSessionToken( String token );
   public static native int setInitialFileToLoad( String token, String filepath );
   public static native String[] mostRecentSaveLocation();
-  static native void setFileSaveCallback(CallbackInterface cb);
+  static native void setFileSaveCallback(CallbackFromNativeInterface cb);
 }

@@ -34,6 +34,7 @@
 #include <condition_variable>
 
 #include <Wt/WString>
+#include <Wt/WResource>
 #include <Wt/WApplication>
 #include <Wt/WEnvironment>
 
@@ -170,6 +171,8 @@ void print_cwd_info()
 
 std::unique_ptr<AndroidUtils::androidbuf> g_stdbuf, g_errbuf;
 
+
+
 void android_save_file_in_temp( bool success, std::string filepath, std::string displayName )
 {
   // Using hacked saving to temporary file in Android, instead of via network download of file.
@@ -304,16 +307,41 @@ else
 
   __android_log_print( ANDROID_LOG_INFO, "save_file_in_temp", "Have called!" );
 
-  sm_jvm->DetachCurrentThread();
-
   exc = env->ExceptionOccurred();
   if (exc)
   {
     env->ExceptionDescribe();
     env->ExceptionClear();
   }
+
+  sm_jvm->DetachCurrentThread();
 #endif
-}
+}//android_save_file_in_temp(...)
+
+
+void android_download_workaround( Wt::WResource *resource, std::string description )
+{
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+
+  bool wrote_file = false;
+  std::string suggestedName;
+  const std::string tempFileName = SpecUtils::temp_file_name( description, SpecUtils::temp_dir() );
+
+  {//Begin write temp file
+    std::ofstream tmp( tempFileName.c_str(), std::ios_base::binary | std::ios_base::out );
+    if( resource && tmp.is_open() )
+    {
+      resource->write( tmp );
+      suggestedName = resource->suggestedFileName().toUTF8();
+      wrote_file = true;
+
+      __android_log_print( ANDROID_LOG_INFO, "android_workaround",
+                           "Wrote photopeak ref CSV to: '%s'", tempFileName.c_str() );
+    }//if( tmp.is_open() )
+  }//android_download_workaround(...)
+
+  android_save_file_in_temp( wrote_file, tempFileName, suggestedName );
+}//android_download_workaround(...)
 
 
 extern "C" 

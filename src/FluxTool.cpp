@@ -68,6 +68,12 @@ using namespace std;
 using namespace Wt;
 
 
+#if( ANDROID )
+// Defined in target/android/android.cpp
+extern void android_download_workaround( Wt::WResource *resource, std::string description );
+#endif
+
+
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
 WT_DECLARE_WT_MEMBER
 (CopyFluxDataTextToClipboard, Wt::JavaScriptFunction, "CopyFluxDataTextToClipboard",
@@ -779,6 +785,14 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   csvButton->setLink( WLink(csv) );
   csvButton->setLinkTarget( Wt::TargetNewWindow );
   csvButton->setStyleClass( "LinkBtn DownloadBtn" );
+  
+#if( ANDROID )
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  csvButton->clicked().connect( std::bind([csv](){
+    android_download_workaround(csv, "flux.csv");
+  }) );
+#endif //ANDROID
+  
 #endif
   
   csvButton->setText( "CSV" );

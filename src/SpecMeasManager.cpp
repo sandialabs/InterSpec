@@ -134,10 +134,12 @@
 using namespace Wt;
 using namespace std;
 
+
 #if( ANDROID )
 // Defined in target/android/android.cpp
-extern void android_save_file_in_temp( bool, std::string, std::string );
+extern void android_download_workaround( Wt::WResource *resource, std::string description );
 #endif
+
 
 const int ForeBtnInd = 0;//static_cast<int>(SpecUtils::SpectrumType::Foreground);
 const int BackBtnInd = 1;//static_cast<int>(SpecUtils::SpectrumType::Background);
@@ -2794,10 +2796,14 @@ void SpecMeasManager::displayQuickSaveAsDialog()
       i < SpecUtils::SaveSpectrumAsType::NumTypes;
       i = SpecUtils::SaveSpectrumAsType(static_cast<int>(i)+1) )
   {
-    if( !m_specificResources[toint(i)] )
-      m_specificResources[toint(i)] = new SpecificSpectrumResource( i, this );
-    
-    m_specificResources[toint(i)]->setSpectrum( initial, samplenums, detnames );
+    SpecificSpectrumResource *&resource = m_specificResources[toint(i)];
+    if( !resource )
+    {
+      resource = new SpecificSpectrumResource(i, this);
+      resource->setTakesUpdateLock( true );
+    }
+
+    resource->setSpectrum( initial, samplenums, detnames );
   }//loop over save as types
   
   const string msgstr = "Please select the file format:";
@@ -2882,45 +2888,19 @@ void SpecMeasManager::displayQuickSaveAsDialog()
       i < SaveSpectrumAsType::NumTypes;
       i = SaveSpectrumAsType(toint(i)+1) )
   {
-    const string linktitle = string("As ") + descriptionText(i) + " File";    
-    WAnchor *a = new WAnchor( m_specificResources[toint(i)], linktitle, linkDiv );
+    const string linktitle = string("As ") + descriptionText(i) + " File";
+    SpecificSpectrumResource *resource = m_specificResources[toint(i)];
+    WAnchor *a = new WAnchor( resource, linktitle, linkDiv );
     a->setTarget( TargetNewWindow );
     a->setInline( false );
     a->setStyleClass( "LoadSpectrumSaveAsLink" );
     
 #if( ANDROID )
-      // Using hacked saving to temporary file in Android, instead of via network download of file.
-      //
-      //  There look to be about a dozen more places something similar to he below needs to be implemented...
-    SpecificSpectrumResource *resource = m_specificResources[toint(i)];
-    InterSpec *viewer = m_viewer;
-    a->clicked().connect( std::bind( [dialog,resource,viewer](){
-      cout << "calling to save file to temp location:" << endl;
-      const std::set<int> &samplenums = resource->samplenums();
-      const std::vector<std::string> &detnames = resource->detnames();
-      SpecUtils::SaveSpectrumAsType type = resource->type();
-      std::shared_ptr<const SpecMeas> measurement = resource->spectrum();
-      const std::string suggestedName = resource->suggestedFileName().toUTF8();
-    
-      string tempFileName = SpecUtils::temp_file_name( suggestedName, SpecUtils::temp_dir() );
-      
-      bool wrote_file = false;
-      
-      if( measurement )
-      {
-        ofstream tmp( tempFileName.c_str(), ios_base::binary|ios_base::out );
-      
-        if( tmp.is_open() )
-        {
-          DownloadSpectrumResource::write_file( tmp, type, measurement, samplenums, detnames, viewer );
-          wrote_file = true;
-          cout << "Wrote spectrum file to: " << tempFileName << endl;
-        }//if( tmp.is_open() )
-      }//if( measurement )
-      
-      android_save_file_in_temp( wrote_file, tempFileName, suggestedName );
+    // Using hacked saving to temporary file in Android, instead of via network download of file.
+    a->clicked().connect( std::bind([resource,dialog](){
+      android_download_workaround(resource, "spec_file_export");
       dialog->hide();
-    }));
+    }) );
 #else
     a->clicked().connect( dialog, &AuxWindow::hide );
 #endif
@@ -3745,9 +3725,17 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   {
     const string descrip = string("As ") + descriptionText(type) + " File";
     WMenuItem *temp = setPopup2->addItem( descrip );
-    temp->setLink( m_downloadResources[toint(type)] );
+    DownloadSpectrumResource *resource = m_downloadResources[toint(type)];
+    temp->setLink( resource );
     temp->setLinkTarget( TargetNewWindow );
-  }
+    
+#if( ANDROID )
+    // Using hacked saving to temporary file in Android, instead of via network download of file.
+    temp->clicked().connect( std::bind([resource](){
+      android_download_workaround(resource, "spewc_download");
+    }) );
+#endif //ANDROID
+  }//for( loop over save-as spectrum file types )
   
   m_saveButton->setMenu( setPopup2 );
   m_saveButton->hide();

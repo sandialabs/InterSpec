@@ -200,6 +200,13 @@
 using namespace Wt;
 using namespace std;
 
+
+#if( ANDROID )
+// Defined in target/android/android.cpp
+extern void android_download_workaround( Wt::WResource *resource, std::string description );
+#endif
+
+
 std::mutex InterSpec::sm_staticDataDirectoryMutex;
 std::string InterSpec::sm_staticDataDirectory = "data";
 
@@ -5081,7 +5088,13 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     if( mobile )
     {
       item = m_fileMenuPopup->addMenuItem( "Open File..." );
+#if( ANDROID )
+      item->triggered().connect( std::bind([this](){
+        doJavaScript( "window.interspecJava.startBrowseToOpenFile();" );
+      }) );
+#else
       item->triggered().connect( boost::bind ( &SpecMeasManager::startQuickUpload, m_fileManager ) );
+#endif
       
       item = m_fileMenuPopup->addMenuItem( "Loaded Spectra..." );
       item->triggered().connect( this, &InterSpec::showCompactFileManagerWindow );
@@ -5192,7 +5205,14 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     
     item = m_fileMenuPopup->addMenuItem( "Open File..." );
     HelpSystem::attachToolTipOn( item, tip, showToolTips );
+    
+#if( ANDROID )
+    item->triggered().connect( std::bind([this](){
+      doJavaScript( "window.interspecJava.startBrowseToOpenFile();" );
+    }) );
+#else
     item->triggered().connect( boost::bind ( &SpecMeasManager::startQuickUpload, m_fileManager ) );
+#endif
   }//if( !mobile )
   
 
@@ -5242,6 +5262,14 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 #else
       item->setLink( WLink( resource ) );
       item->setLinkTarget( TargetNewWindow );
+      
+#if( ANDROID )
+      // Using hacked saving to temporary file in Android, instead of via network download of file.
+      item->clicked().connect( std::bind([resource](){
+        android_download_workaround(resource, "spectrum_download");
+      }) );
+#endif //ANDROID
+      
 #endif
       
       const char *tooltip = nullptr;

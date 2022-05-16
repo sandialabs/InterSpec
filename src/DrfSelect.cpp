@@ -111,6 +111,13 @@ static_assert( defined(_GLIBCXX_REGEX_DFS_QUANTIFIERS_LIMIT) \
 using namespace std;
 using namespace Wt;
 
+
+#if( ANDROID )
+// Defined in target/android/android.cpp
+extern void android_download_workaround( Wt::WResource *resource, std::string description );
+#endif
+
+
 using SpecUtils::Measurement;
 using SpecUtils::DetectorType;
 
@@ -2735,6 +2742,14 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_xmlDownload->setLink( WLink(xmlResource) );
   m_xmlDownload->setLinkTarget( Wt::TargetNewWindow );
   m_xmlDownload->setStyleClass( "LinkBtn DownloadBtn DrfXmlDownload" );
+    
+#if( ANDROID )
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  m_xmlDownload->clicked().connect( std::bind([xmlResource](){
+    android_download_workaround(xmlResource, "drf.xml");
+  }) );
+#endif //ANDROID
+
 #endif
   
   m_xmlDownload->setText( "XML" );
