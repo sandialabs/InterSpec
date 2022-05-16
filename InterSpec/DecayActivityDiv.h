@@ -114,6 +114,10 @@ public:
      Examples include: "timespan=20y", "timespan=5hl", "timespan=200seconds", "timespan=3half-lives"
    - "actunits": Must have a value of "becquerel", "bq", "curie", or "ci". This is the style of
      units that will be used to display things to the user.
+   - "charttype": Must be one of "act", "gamma", "alpha", "beta"; selects y-axis type on decay chart
+   - "grid" or "gridlines": If value is "1", "yes", or "true", then displays grid lines on decay
+     chart.
+   - "logy": If value is "1", "yes", or "true", then displays decay chart with log-y axis.
    - "iso", "nuc", "isotope", "nuclide": these are all synonyms; the value must list an isotopes.
       Examples include "nuc=Am241", "iso=Co60m", "iso=Co-60", "iso=60Co"
    - "initialage", "age": The initial age of the nuclide, at the time of starting the age.
@@ -122,10 +126,18 @@ public:
      then its activity). The value provided must specify magnitude and units of activity.
      Examples include "act=5uci", "activity=10kbq"
    
-   TODO: implement display options like Log-Y scale, Y-axis type (Activity, Gamma Rate, etc), and grid-lines.
-   TODO: implement showing QR code for the tools current state, and put in the DecayWindow footer. 
+   TODO: currently does not support:
+    - If have multiple nuclides, showing decay chain/calc for specific nuclide not supported
+    - Initial data on calc tab.
+    - On decay chart, if user has de-selected some nuclides.
+    - On decay chain if the user has selected a specific nuclide in the chain to show info about.
    */
   void handleAppUrl( std::string path, std::string query_str );
+  
+  /** Encodes current tool state to app-url format.  Returned string does not include the
+   "interspec://" protocol, or "decay" path; so will look something like "chart?nuc=Ba133&ac..."
+   */
+  std::string encodeStateToUrl();
   
 public:
   friend class PeakCsvResource;
