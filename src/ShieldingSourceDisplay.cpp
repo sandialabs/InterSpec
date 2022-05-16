@@ -123,6 +123,13 @@
 using namespace Wt;
 using namespace std;
 
+
+#if( ANDROID )
+// Defined in target/android/android.cpp
+extern void android_download_workaround( Wt::WResource *resource, std::string description );
+#endif
+
+
 typedef std::shared_ptr<const PeakDef> PeakShrdPtr;
 
 const int ShieldingSourceDisplay::sm_xmlSerializationMajorVersion = 0;
@@ -2678,6 +2685,13 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   item->setLink( WLink( xmlResource ) );
   item->setLinkTarget(Wt::TargetNewWindow);
   
+#if( ANDROID )
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  item->clicked().connect( std::bind([xmlResource](){
+    android_download_workaround(xmlResource, "fit_model.xml");
+  }) );
+#endif //ANDROID
+  
   
 #if( USE_DB_TO_STORE_SPECTRA )
   item = m_addItemMenu->addMenuItem( "Open From Database..." );
@@ -4505,6 +4519,14 @@ void ShieldingSourceDisplay::showCalcLog()
   downloadResource->suggestFileName( filename, WResource::DispositionType::Attachment );
   
   logDownload->setLink( WLink(downloadResource) );
+  
+#if( ANDROID )
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  logDownload->clicked().connect( std::bind([downloadResource](){
+    android_download_workaround(downloadResource, "fit_log.txt");
+  }) );
+#endif //ANDROID
+  
   
   WPushButton *close = m_logDiv->addCloseButtonToFooter();
   close->clicked().connect( boost::bind( &AuxWindow::hide, m_logDiv ) );

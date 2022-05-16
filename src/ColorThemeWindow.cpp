@@ -51,6 +51,10 @@
 using namespace std;
 using namespace Wt;
 
+#if( ANDROID )
+// Defined in target/android/android.cpp
+extern void android_download_workaround( Wt::WResource *resource, std::string description );
+#endif
 
 namespace
 {
@@ -227,6 +231,14 @@ m_apply( nullptr )
   download->setLink( WLink(downloadResource) );
   download->setLinkTarget( Wt::TargetNewWindow );
   download->setStyleClass( "LinkBtn DownloadBtn DownloadColorTheme" );
+  
+#if( ANDROID )
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  download->clicked().connect( std::bind([downloadResource](){
+    android_download_workaround(downloadResource, "color_theme.xml");
+  }) );
+#endif //ANDROID
+
 #endif
   
   download->setToolTip( "Exports the currently selected theme to a JSON file.", Wt::PlainText );

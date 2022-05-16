@@ -73,11 +73,16 @@
 #include "InterSpec/IsotopeNameFilterModel.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
-
 using namespace std;
 using namespace Wt;
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
+
+
+#if( ANDROID )
+// Defined in target/android/android.cpp
+extern void android_download_workaround( Wt::WResource *resource, std::string description );
+#endif
 
 const int ReferencePhotopeakDisplay::sm_xmlSerializationVersion = 0;
 
@@ -1093,6 +1098,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     
   
   RefGammaCsvResource *csv = new RefGammaCsvResource( this );
+  csv->setTakesUpdateLock( true );
+  
 #if( BUILD_AS_OSX_APP )
   WAnchor *csvButton = new WAnchor( WLink(csv), bottomRow );
   csvButton->setTarget( AnchorTarget::TargetNewWindow );
@@ -1103,7 +1110,13 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   csvButton->setLink( WLink(csv) );
   csvButton->setLinkTarget( Wt::TargetNewWindow );
   csvButton->setStyleClass( "LinkBtn DownloadBtn RefGammaCsv" );
-#endif
+  
+#if( ANDROID )
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  csvButton->clicked().connect( std::bind([csv](){ android_download_workaround(csv, "photopeak_ref_info.csv"); }) );
+#endif //ANDROID
+  
+#endif // BUILD_AS_OSX_APP / else
   
   csvButton->clicked().connect( std::bind([](){
     passMessage( "The 'Nuclide Decay Info' tool provides additional capabilities for"
