@@ -212,6 +212,13 @@ IT &quot;AS IS.&quot;
       </div>
     </li>
 
+    <li><b><a href="https://www.nayuki.io/page/qr-code-generator-library" target="_blank">QR Code generator library</a>:</b> Multiple programming language QR code generator.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>QR Code generator library</b> is used to generate QR codes throughout InterSpec; notably to represent detector response functions.
+        <b>QR Code generator library</b> is <a href="https://opensource.org/licenses/MIT">MIT licensed</a> library.
+      </div>
+    </li>
+
     <li>In addition to the many libraries used within <b>InterSpec</b>, many open-source, or publicly available tools
         and resources are used to develop <b>InterSpec</b> including, but not limited to:
         <ul style="list-style-type: none; margin-left: 1em; padding: 0; font-size: small;">
