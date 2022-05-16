@@ -40,6 +40,11 @@
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
+#if( USE_QR_CODES )
+#include "InterSpec/QrCode.h"
+#include "InterSpec/InterSpecApp.h"
+#include "InterSpec/WarningWidget.h"
+#endif
 
 using namespace Wt;
 using namespace std;
@@ -68,6 +73,27 @@ DecayWindow::DecayWindow( InterSpec *viewer )
   Wt::WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
 
+  
+#if( USE_QR_CODES )
+  WPushButton *qr_btn = new WPushButton( footer() );
+  qr_btn->setText( "QR Code" );
+  qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
+  qr_btn->setStyleClass( "LinkBtn DownloadBtn DecayToolQrBtn" );
+  
+  qr_btn->clicked().connect( std::bind( [this](){
+    try
+    {
+      const string url = "interspec://decay/" + m_activityDiv->encodeStateToUrl();
+      QrCode::displayTxtAsQrCode( url, "Decay Tool State", "Current State of decay tool state." );
+    }catch( std::exception &e )
+    {
+      passMessage( "Error creating QR code: " + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+    }
+  }) );
+#endif //USE_QR_CODES
+
+  
+  
   rejectWhenEscapePressed();
 
   if( !viewer || !viewer->isPhone() )

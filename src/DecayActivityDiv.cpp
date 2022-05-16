@@ -1828,7 +1828,6 @@ void DecayActivityDiv::handleAppUrl( std::string path, std::string query_str )
   bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   
   clearAllNuclides();
-  
 
   //setDecayChartTimeRange( double dt );
   if( !query_str.empty() && (query_str[0] == '?') )
@@ -1901,9 +1900,33 @@ void DecayActivityDiv::handleAppUrl( std::string path, std::string query_str )
     }else if( (key == "time") || (key == "timespan") )
     {
       dispTimeLen = value;
-    }else if( !isNucKey(key) )
+    }else if( (key == "grid") || (key == "gridlines") )
     {
-      error_messages.push_back( "Unrecognized supported query key '" + key + "'." );
+      const bool show = ((value == "1") || (value == "true") || (value == "yes"));
+      m_showGridLines->setChecked( show );
+      m_decayChart->showGridLines( show );
+    }else if( key == "charttype" )
+    {
+      if( (value == "act") || (value == "activity") )
+        m_yAxisType->setCurrentIndex( YAxisType::ActivityAxis );
+      else if( value == "gamma" )
+        m_yAxisType->setCurrentIndex( YAxisType::GammasAxis );
+      else if( value == "beta" )
+        m_yAxisType->setCurrentIndex( YAxisType::BetasAxis );
+      else if( value == "alpha" )
+        m_yAxisType->setCurrentIndex( YAxisType::AlphasAxis );
+      else
+        error_messages.push_back( "Unrecognized chart type '" + value
+                                  + "', must be Activity, Gamma, Beta, or Alpha." );
+    }else if( key == "logy" )
+    {
+      const bool logy = ((value == "1") || (value == "true") || (value == "yes"));
+      m_logYScale->setChecked( logy );
+      updateYScale();
+    }else if( !isNucKey(key) && (key != "age") && (key != "initialage")
+             && (key != "act") && (key != "activity") )
+    {
+      error_messages.push_back( "Unrecognized query key '" + key + "'." );
     }
   }//for( size_t i = 0; i < field_values.size(); ++i )
   
@@ -1982,16 +2005,70 @@ void DecayActivityDiv::handleAppUrl( std::string path, std::string query_str )
     m_chartTabWidget->setCurrentIndex( 2 );
   }else if( !path.empty() )
   {
-    passMessage( "Unrecognized component '" + path + "' to show on decay window.", "",
-                WarningWidget::WarningMsgHigh );
+    error_messages.push_back( "Unrecognized component '" + path + "' to show on decay window." );
   }
   
   m_displayTimeLength->setText( dispTimeLen );
   
   refreshDecayDisplay( true );
+  
+  // Display up to the first 5 (arbitrary) error messages
+  for( size_t i = 0; (i < 5) && (i < error_messages.size()); ++i )
+    passMessage( error_messages[i], "", WarningWidget::WarningMsgHigh );
 }//void handleAppUrl( std::string path, std::string query_str )
 
 
+std::string DecayActivityDiv::encodeStateToUrl()
+{
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  
+  string path, query_str;
+  
+  switch( m_chartTabWidget->currentIndex() )
+  {
+    case 0: path += "chart"; break;
+    case 1: path += "chain"; break;
+    case 2: path += "calc"; break;
+    default: assert( 0 ); break;
+  }//
+  
+  query_str = "grid=" + string(m_showGridLines->isChecked() ? "1" : "0");
+  query_str += "&logy=" + string(m_logYScale->isChecked() ? "1" : "0");
+  
+  const bool usebq = SpecUtils::icontains( m_displayActivityUnitsCombo->currentText().toUTF8(), "bq" );
+  query_str += "&actunits=" + string(usebq ? "bq" : "ci");
+  
+  
+  switch( static_cast<YAxisType>( m_yAxisType->currentIndex() ) )
+  {
+    case ActivityAxis: query_str += "&charttype=activity"; break;
+    case GammasAxis:   query_str += "&charttype=gamma";    break;
+    case BetasAxis:    query_str += "&charttype=beta";     break;
+    case AlphasAxis:   query_str += "&charttype=alpha";    break;
+    case NumYAxisType: break;
+  }//switch( y-axis type )
+  
+  
+  const double timespan = timeToDisplayTill();
+  if( timespan > FLT_EPSILON )
+    query_str += "&timespan=" + PhysicalUnits::printToBestTimeUnits(timespan,6);
+  
+  
+  for( const Nuclide &nucinfo : m_nuclides )
+  {
+    const SandiaDecay::Nuclide *nuc = db->nuclide( nucinfo.z, nucinfo.a, nucinfo.iso );
+    if( !nuc )
+      continue;  //shouldnt ever happen
+    query_str += "&nuc="  + nuc->symbol;
+    query_str += "&act="  + PhysicalUnits::printToBestActivityUnits(nucinfo.activity);
+    if( nucinfo.age > FLT_EPSILON )
+      query_str += "&initialage="  + PhysicalUnits::printToBestTimeUnits(nucinfo.age,6);
+  }//for( const Nuclide &nucinfo : m_nuclides )
+  
+  query_str = Wt::Utils::urlEncode(query_str);
+  
+  return path + "?" + query_str;
+}//std::string encodeStateToUrl()
 
 
 void DecayActivityDiv::setGridLineStatus()

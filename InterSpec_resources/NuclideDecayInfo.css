@@ -393,5 +393,10 @@ cursor: default;
 }
 
 
+.DecayToolQrBtn, .DecayToolQrBtn:hover
+{
+  float: left;
+  padding-right: 20px;
+}
 
 
