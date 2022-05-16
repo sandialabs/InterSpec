@@ -90,7 +90,7 @@
 	       When a session remains inactive for this amount of time, it is
 	       cleaned up.
 	      -->
-	    <timeout>600</timeout>
+	    <timeout>-1</timeout>
 
 	    <!-- Server push timeout (seconds).
 

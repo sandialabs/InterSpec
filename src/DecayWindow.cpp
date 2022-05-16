@@ -105,3 +105,9 @@ void DecayWindow::addNuclide( const int z, const int a, const int iso,
       m_activityDiv->setDecayChartTimeRange( maxtime );
   }//if( m_activityDiv )
 }//void addNuclide(...)
+
+
+void DecayWindow::handleAppUrl( const std::string &path, const std::string &query_str )
+{
+  m_activityDiv->handleAppUrl( path, query_str );
+}//void handleAppUrl( std::string path, std::string query_str )

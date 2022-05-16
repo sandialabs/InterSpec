@@ -34,6 +34,7 @@
 #include <boost/any.hpp>
 
 #include <Wt/WPen>
+#include <Wt/Utils>
 #include <Wt/WText>
 #include <Wt/WDate>
 #include <Wt/WTable>
@@ -47,23 +48,17 @@
 #include <Wt/WPainter>
 #include <Wt/WSpinBox>
 #include <Wt/WDateEdit>
-#include <Wt/WRectArea>
-#include <Wt/WTemplate>
 #include <Wt/WCheckBox>
 #include <Wt/WGroupBox>
-#include <Wt/WCalendar>
 #include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WResource>
 #include <Wt/WTabWidget>
-#include <Wt/WPopupMenu>
 #include <Wt/WGridLayout>
-#include <Wt/WDatePicker>
 #include <Wt/WPushButton>
 #include <Wt/WPaintDevice>
 #include <Wt/Http/Request>
 #include <Wt/Http/Response>
-#include <Wt/WDoubleSpinBox>
 #include <Wt/WStackedWidget>
 #include <Wt/WContainerWidget>
 #include <Wt/WRegExpValidator>
@@ -75,14 +70,16 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorTheme.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
+#include "InterSpec/DecayChainChart.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
-#include "InterSpec/DecayChainChart.h"
-#include "InterSpec/DecaySelectNuclideDiv.h"
 #include "InterSpec/MassAttenuationTool.h"
+#include "InterSpec/DecaySelectNuclideDiv.h"
 
 
 using namespace Wt;
@@ -1791,7 +1788,6 @@ void DecayActivityDiv::init()
   // tab widget
   const WTabWidget::LoadPolicy loadPolicy = WTabWidget::LazyLoading; //WTabWidget::PreLoading;
   m_chartTabWidget->addTab( decayDiv, "Activity Chart", loadPolicy );
-    //  m_chartTabWidget->addTab( photopeakDiv, "Photo Peaks", loadPolicy );
 
   m_chartTabWidget->addTab( decayChainDiv, "Decay Chain", loadPolicy );
   m_chartTabWidget->currentChanged().connect( m_decayChainChart,
@@ -1821,24 +1817,187 @@ void DecayActivityDiv::init()
 }//void DecayActivityDiv::init()
 
 
-void DecayActivityDiv::showDecayTab()
+
+void DecayActivityDiv::handleAppUrl( std::string path, std::string query_str )
 {
-  m_chartTabWidget->setCurrentIndex( 0 );
-}//void showDecayTab()
+  auto isNucKey = []( const std::string &key ) -> bool {
+    return (key == "iso") || (key == "nuc") || (key == "isotope") || (key == "nuclide");
+  };
+  
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  
+  clearAllNuclides();
+  
+
+  //setDecayChartTimeRange( double dt );
+  if( !query_str.empty() && (query_str[0] == '?') )
+    query_str = query_str.substr(1);
+  
+  query_str = Wt::Utils::urlDecode( query_str );
+  
+  vector<string> query_args;
+  SpecUtils::split( query_args, query_str, "&" );
+  
+  size_t num_nucs = 0, last_nuc_index = 0;
+  vector<pair<string,string>> field_values;
+  for( size_t i = 0; i < query_args.size(); ++i )
+  {
+    string comp = query_args[i];
+    SpecUtils::trim( comp );
+    if( comp.empty() )
+      continue;
+    
+    auto pos = comp.find('=');
+    if( pos == string::npos )
+      pos = comp.find(':');
+    
+    string key = (pos == string::npos) ? comp : comp.substr(0,pos);
+    string value = (pos == string::npos) ? string("") : comp.substr(pos+1);
+    
+    SpecUtils::trim(key);
+    SpecUtils::trim(value);
+    
+    //key = Wt::Utils::urlDecode( key );
+    //value = Wt::Utils::urlDecode( value );
+    
+    SpecUtils::to_lower_ascii(key);
+    
+    field_values.push_back( {key,value} );
+    
+    if( isNucKey(key) )
+    {
+      num_nucs += 1;
+      last_nuc_index = i;
+    }
+  }//for( string comp : query_args )
+  
+  // If only a single nuclide, the ordering or URL arguments wont matter, but if there are multiple
+  //  nuclides, then it will matter (e.g., age, activity, etc, must come AFTER the nuclide)
+  if( (num_nucs == 1) && (last_nuc_index != 0) )
+    std::swap( field_values[0], field_values[last_nuc_index] );
+  
+  string dispTimeLen;
+  vector<string> error_messages;
+  vector<const SandiaDecay::Nuclide *> nuclides;
+  
+  // Loop over and check for activity units to use, as well as time span to display of
+  for( size_t i = 0; i < field_values.size(); ++i )
+  {
+    const string &key = field_values[i].first;
+    string &value = field_values[i].second;
+    
+    if( key == "actunits" )
+    {
+      SpecUtils::to_lower_ascii( value );
+      
+      if( (value == "becquerel") || (value == "bq") )
+        useBq = true;
+      else if( (value == "curie") || (value == "ci") )
+        useBq = false;
+      else
+        error_messages.push_back( "Unrecognized activity units '" + value + "', must be one of"
+                                  " 'becquerel', 'bq', 'curie', 'ci'" );
+    }else if( (key == "time") || (key == "timespan") )
+    {
+      dispTimeLen = value;
+    }else if( !isNucKey(key) )
+    {
+      error_messages.push_back( "Unrecognized supported query key '" + key + "'." );
+    }
+  }//for( size_t i = 0; i < field_values.size(); ++i )
+  
+  
+  // Loop over and add all nuclides
+  for( size_t i = 0; i < field_values.size(); ++i )
+  {
+    const string &key = field_values[i].first;
+    string &value = field_values[i].second;
+    
+    if( isNucKey(key) )
+    {
+      const SandiaDecay::Nuclide *nuc = db->nuclide(value);
+      if( !nuc )
+      {
+        error_messages.push_back( "'" + value + "' not a valid nuclide." );
+        continue;
+      }
+      
+      if( nuc->isStable() )
+      {
+        error_messages.push_back( "'" + value + "' is a stable nuclide." );
+        continue;
+      }
+            
+      string activity_str, age_str;
+      for( size_t j = i + 1; j < field_values.size(); ++j )
+      {
+        if( isNucKey(field_values[j].first) )
+          break;
+        
+        if( (field_values[j].first == "age") || (field_values[j].first == "initialage") )
+        {
+          age_str = field_values[j].second;
+        }else if( (field_values[j].first == "act")|| (field_values[j].first == "activity") )
+        {
+          activity_str = field_values[j].second;
+        }
+      }//for( size_t j = i + 1; j < field_values.size(); ++j )
+      
+      
+      double act = 1.0*PhysicalUnits::mCi, age = 0.0;
+      
+      try
+      {
+        const double actFromStr = PhysicalUnits::stringToActivity( activity_str );
+        if( actFromStr > 0.0 )
+          act = actFromStr;
+      }catch(...)
+      {
+      }
+      
+      try
+      {
+        const double ageFromStr = PhysicalUnits::stringToTimeDurationPossibleHalfLife( age_str, nuc->halfLife );
+        if( ageFromStr >= 0.0 )
+          age = ageFromStr;
+      }catch(...)
+      {
+      }//try / catch for age
+      
+      nuclides.push_back( nuc );
+      addNuclide( nuc->atomicNumber, nuc->massNumber, nuc->isomerNumber, act, !useBq, age );
+    }
+  }//for( size_t i = 0; i < field_values.size(); ++i )
+  
+  
+  if( SpecUtils::iequals_ascii(path, "chart") )
+  {
+    m_chartTabWidget->setCurrentIndex( 0 );
+  }else if( SpecUtils::iequals_ascii(path, "chain") )
+  {
+    m_chartTabWidget->setCurrentIndex( 1 );
+  }else if( SpecUtils::iequals_ascii(path, "calc") )
+  {
+    m_chartTabWidget->setCurrentIndex( 2 );
+  }else if( !path.empty() )
+  {
+    passMessage( "Unrecognized component '" + path + "' to show on decay window.", "",
+                WarningWidget::WarningMsgHigh );
+  }
+  
+  m_displayTimeLength->setText( dispTimeLen );
+  
+  refreshDecayDisplay( true );
+}//void handleAppUrl( std::string path, std::string query_str )
 
 
-
-void DecayActivityDiv::showPhotopeakTab()
-{
-  m_chartTabWidget->setCurrentIndex( 1 );
-}//void showPhotopeakTab()
 
 
 void DecayActivityDiv::setGridLineStatus()
 {
   m_decayChart->showGridLines( m_showGridLines->isChecked() );
 }//void DecayActivityDiv::setGridLineStatus()
-
 
 
 Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()

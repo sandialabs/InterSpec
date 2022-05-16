@@ -11,10 +11,18 @@ find_package( ZLIB REQUIRED )
 find_package( Threads REQUIRED )
 
 message( "InterSpec_BASE_DIR=${InterSpec_BASE_DIR}" )
+message( "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" )
 INCLUDE( ${InterSpec_BASE_DIR}/cmake/FindWt.cmake )
 
-set(Boost_USE_MULTITHREADED ON)
-find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
+
+
+if( InterSpec_FETCH_DEPENDENCIES )
+  set( Wt_INCLUDE_DIR "${wt_SOURCE_DIR}/src" )
+else( InterSpec_FETCH_DEPENDENCIES )
+  set(Boost_USE_STATIC_LIBS ON)
+  set(Boost_USE_MULTITHREADED ON)
+  find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
+endif( InterSpec_FETCH_DEPENDENCIES )
 
 
 set( SOURCES
@@ -91,6 +99,7 @@ target_link_libraries( SpecFilePreview PUBLIC
   ${HPDF_LIBRARY}
   ${PNG_LIBRARY}
   ZLIB::ZLIB
+  #wt wthttp wtdbosqlite3 wtdbo
   ${Wt_LIBRARIES}
   ${Wt_LIBRARY}
   ${Wt_HTTP_LIBRARY}

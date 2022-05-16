@@ -9133,7 +9133,7 @@ void InterSpec::handleAppUrl( std::string url )
   const string::size_type host_end = host_path.find( '/' );
   const string host = (host_end == string::npos) ? host_path : host_path.substr(0,host_end);
   const string path = (host_end == string::npos) ? string("") : host_path.substr(host_end+1);
-  const string query_str = url.substr( q_end_pos + 1 );
+  const string query_str = url.substr( q_end_pos );
   
   cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
   
@@ -9143,6 +9143,15 @@ void InterSpec::handleAppUrl( std::string url )
       throw runtime_error( "App 'drf' URL with path '" + path + "' not supported." );
     
     DrfSelect::handle_app_url_drf( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"decay") )
+  {
+    if( !m_decayInfoWindow )
+    {
+      m_decayInfoWindow = new DecayWindow( this );
+      m_decayInfoWindow->finished().connect( boost::bind( &InterSpec::deleteDecayInfoWindow, this ) );
+    }
+    
+    m_decayInfoWindow->handleAppUrl( path, query_str );
   }else
   {
     throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );
