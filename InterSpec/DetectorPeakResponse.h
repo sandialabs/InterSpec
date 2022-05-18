@@ -365,7 +365,10 @@ public:
   static std::shared_ptr<DetectorPeakResponse> parseSingleCsvLineRelEffDrf( std::string &line );
   
   /** Parses CSV/TSV files that contain one or more Relative Efficiency DRFs, where each each line specifies a DRF via equation
-   coefficients
+   coefficients, or a DRF can be specified using its "app-url" encoded representation when
+   there are four fields to the line and the third field equals "UrlEncoded", and the fourth field
+   contains the data portion of URL (i.e., the part of the URL that comes after the '?' character in
+   a deep-link).
    
    Detector Name, Relative Eff, Detector Description,  c0,  c1,  c2,  c3,  c4,  c5,  c6,  c7,  p0,  p1,  p2,  Calib Distance, Radius (cm),  G factor
    Detector Name: is usually the detector model, ex., "IdentiFINDER".

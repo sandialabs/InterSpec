@@ -689,11 +689,12 @@ public:
   //  After creation m_useInfoWindow will point to the dialog.
   void showWelcomeDialog( bool force = false );
 
-  //deleteWelcomeCountDialog(): deletes the currently showing dialog (if its
-  //  showing), and sets m_useInfoWindow to null
-  void deleteWelcomeCountDialog();
+  /** Deletes the currently showing dialog (if its showing), and
+   sets m_useInfoWindow to null
+   */
+  void deleteWelcomeDialog();
   
-  //deleteEnergyCalPreserveWindow(): deletes the currently showing diaolg (if its
+  //deleteEnergyCalPreserveWindow(): deletes the currently showing dialog (if its
   //  showing), and sets m_preserveCalibWindow to null
   void deleteEnergyCalPreserveWindow();
   

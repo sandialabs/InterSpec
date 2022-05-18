@@ -3956,7 +3956,7 @@ void InterSpec::showWelcomeDialog( bool force )
      For Android, showing this useInfoWindow at startup causes some exceptions
      in the JavaScript whenever the loading indicator is shown.  I'm pretty
      confused by it.
-     I tried setting a new loading indicator in deleteWelcomeCountDialog(), but it didnt work
+     I tried setting a new loading indicator in deleteWelcomeDialog(), but it didnt work
      
      Havent checked if creating this window via "posting" helps
      */
@@ -3968,21 +3968,21 @@ void InterSpec::showWelcomeDialog( bool force )
     };
     m_useInfoWindow = new UseInfoWindow( dontShowAgainCallback , this );
   
-    m_useInfoWindow->finished().connect( this, &InterSpec::deleteWelcomeCountDialog );
+    m_useInfoWindow->finished().connect( this, &InterSpec::deleteWelcomeDialog );
     
     wApp->triggerUpdate();
   } ) );
 }//void showWelcomeDialog()
 
 
-void InterSpec::deleteWelcomeCountDialog()
+void InterSpec::deleteWelcomeDialog()
 {
   if( !m_useInfoWindow )
     return;
   
   AuxWindow::deleteAuxWindow( m_useInfoWindow );
   m_useInfoWindow = nullptr;
-}//void deleteWelcomeCountDialog()
+}//void deleteWelcomeDialog()
 
 
 void InterSpec::deleteEnergyCalPreserveWindow()
@@ -5980,6 +5980,32 @@ void InterSpec::addDisplayMenu( WWidget *parent )
                     " when GPS coordinates are available.", showToolTips );
 #endif
   
+  /*
+   // Example of having a menu-item that triggers opening google maps in an external Window
+  auto mapsItem = m_displayOptionsPopupDiv->addMenuItem( "External Google Maps","InterSpec_resources/images/map_small.png" );
+  auto dummyItem = m_displayOptionsPopupDiv->addMenuItem( "","" );
+  dummyItem->setLink( WLink("#") );
+  dummyItem->setLinkTarget( TargetNewWindow );
+  
+  mapsItem->triggered().connect( std::bind([this,dummyItem](){
+    //
+    dummyItem->setLink( WLink("https://www.google.com/maps/search/?api=1&query=47.5951518%2C-122.3316393") );
+   
+    if( dummyItem->anchor() )
+    {
+      WServer::instance()->schedule( 100, wApp->sessionId(), [dummyItem](){
+        const string jsclick = "try{document.getElementById('"+ dummyItem->anchor()->id() + "').click();}catch(e){}";
+        wApp->doJavaScript( jsclick );
+        wApp->triggerUpdate();
+      });
+    }else
+    {
+      cerr << "Unexpected error accessing the anchor for file downloading" << endl;
+    }
+  }) );
+  */
+  
+  
 #if( USE_SEARCH_MODE_3D_CHART )
   m_searchMode3DChart = m_displayOptionsPopupDiv->addMenuItem( "Show 3D View","" );
   m_searchMode3DChart->triggered().connect( boost::bind( &InterSpec::create3DSearchModeChart, this ) );
@@ -6017,6 +6043,14 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
     m_displayOptionsPopupDiv->addSeparator();
+    
+#if( BUILD_AS_ELECTRON_APP )
+    auto newWindowItem = m_displayOptionsPopupDiv->addMenuItem( "New app window" );
+    newWindowItem->triggered().connect( std::bind( [](){
+      ElectronUtils::send_nodejs_message("NewAppWindow", "");
+    } ) );
+#endif
+    
     auto browserItem = m_displayOptionsPopupDiv->addMenuItem( "Use in external browser" );
 #if( BUILD_AS_ELECTRON_APP )
     browserItem->triggered().connect( std::bind( [](){
@@ -8367,7 +8401,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       WApplication *app = wApp;
       if( !app )
         return;
-      deleteWelcomeCountDialog();
+      deleteWelcomeDialog();
       app->triggerUpdate();
     }) );
       
@@ -9129,6 +9163,10 @@ void InterSpec::handleAppUrl( std::string url )
   if( url.find(q_end_pos, 'q') != string::npos )
     throw runtime_error( "App URL contained more than one '?' character, which isnt allowed" );
     
+  deleteWelcomeDialog();
+  deleteEnergyCalPreserveWindow();
+  deleteLicenseAndDisclaimersWindow();
+  
   const string host_path = url.substr( 0, q_start_pos );
   const string::size_type host_end = host_path.find( '/' );
   const string host = (host_end == string::npos) ? host_path : host_path.substr(0,host_end);
