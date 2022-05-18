@@ -1053,6 +1053,22 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
   
   split_escaped_csv( fields, line );
   
+  // If the line is a "URL" encoded DRF, try parsing it.  Right now I'm being a little frugal
+  //  about only letting there be 4 fields, and there are probably some more smaller issues to
+  //  be taken care of.
+  if( (fields.size() == 4) && SpecUtils::iequals_ascii(fields[2], "UrlEncoded") )
+  {
+    try
+    {
+      return parseFromAppUrl( fields[3] );
+    } catch( std::exception &e )
+    {
+      cerr << "Failed to parse 'UrlEncoded' DRF: " << e.what() << endl;
+    }
+    
+    return det;
+  }//if( a UrlEncoded DRF )
+  
   if( fields.size() < 16 )
     return det;
   

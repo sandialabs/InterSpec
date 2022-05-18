@@ -352,12 +352,18 @@ std::string riidAnaSummary( const std::shared_ptr<const SpecMeas> &spec )
   if( !ana )
     return summary;
 
-  
+  set<string> seen_nucs;
   for( const SpecUtils::DetectorAnalysisResult &res : ana->results_ )
   {
     if( !res.isEmpty() && !res.nuclide_.empty() )
-      summary += (summary.empty() ? "" : ", ") + res.nuclide_;
-  }
+    {
+      if( !seen_nucs.count(res.nuclide_) )
+      {
+        seen_nucs.insert(res.nuclide_);
+        summary += (summary.empty() ? "" : ", ") + res.nuclide_;
+      }//if( we havent already seen this nuclide )
+    }//if( we have a nuclide result )
+  }//for( for over results )
   
   if( summary.length() > 64 )
     summary = summary.substr(0,61) + "...";
