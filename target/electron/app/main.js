@@ -55,24 +55,25 @@ const app = electron.app
 // Module to create native browser window.
 const BrowserWindow = electron.BrowserWindow
 
+//Create the 'apptoken' we will designate for the main window
+const crypto = require('crypto');
 
-var initial_file_to_open = null;
-var page_loaded = false, wtapp_loaded = false;
+
+let initial_file_to_open = null;
 let interspec_url = null;
-let app_is_closing = false;
 
 global.__basedir = __dirname;
 
 
-// Keep a global reference of the window object, if you don't, the window will
+// Keep a global reference of the window objects, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
-//  (we could setup allowing multiple windows, but not currently properly
-//   handled in most places)
-let mainWindow
+// We will keep windows stored with the most recently used window as the last 
+//  element in the array
+let openWindows = [];
 
-//Create the 'apptoken' we will designate for the main window
-const crypto = require('crypto');
-var session_token = null;
+// Just to debug, define a windowNumber that will increment with each newly created window
+//  (This can be removed)
+let windowNumber = 1;
 
 
 if (process.defaultApp) {
@@ -88,42 +89,47 @@ const gotTheLock = app.requestSingleInstanceLock();
 if( !gotTheLock ) 
 {
   // TODO: need to make sure the 'will-quit' and 'before-quit', and beforeunload and unload handlers are fine being called
-  app.quit();
-  return;
+  app.quit(); //Try to close all windows; however the quitting could be cancelled.
+  app.exit(-1); //Exits immediately.
 }else 
 {
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
-  
-    // TODO: if no files/urls are being opened, open a second window of InterSpec... this will need changing of code to handle mainWindow being the latest focussed window (and an array of all open windows kep), and similarly session_token (which session_token should become a member variable of mainWindow)
-    
+  app.on('second-instance', (event, commandLine, workingDirectory) => {  
     // Someone tried to run a second instance, we should focus our window.
     console.log( "Second instance: workingDirectory:", workingDirectory, ", commandLine:", commandLine, ", event:", event );
 
     const infiles = argvToPaths(commandLine,workingDirectory);
 
-    if( mainWindow ) 
-    {
-      if( mainWindow.isMinimized() ) 
-        mainWindow.restore();
-      mainWindow.focus();
-    }
 
     if( infiles.length > 0 )   
     {
-      if( session_token )
-        interspec.openFile( session_token, JSON.stringify(infiles) );
-      else
+      let window = (openWindows.length ? openWindows.at(-1) : null);
+
+      if( window ) 
+      {
+        if( window.isMinimized() ) 
+          window.restore();
+        window.focus();
+
+        interspec.openFile( window.appSessionToken, JSON.stringify(infiles) );
+      }else
+      {
+        // I dont think we will get here; so lets show an error, for development purposes, incase it happens, so I'll see it.
+        dialog.showErrorBox('second instance with no previous window', `infiles.length: ${infiles.length}, workingDirectory: ${workingDirectory}, commandLine: ${argvstr}`)
         initial_file_to_open = infiles;
+      }//if( window ) / else
+    }else
+    {
+      // If the user double-clicked the executable again, then the only command line arguments will be executable 
+      //  path and the "--allow-file-access-from-files" flag
+      // Lets open a new window, if we arent using the Electron native menus (I havent tested having multiple windows open while using native windows)
+      if( !interspec.usingElectronMenus() )
+        createWindow();
     }
 
     //let argvstr = commandLine.join(', ');
     //dialog.showErrorBox('second instance', `infiles.length: ${infiles.length}, workingDirectory: ${workingDirectory}, commandLine: ${argvstr}`)
   });
 
-  // Create mainWindow, load the rest of the app, etc...
-  //app.whenReady().then(() => {
-  //  createWindow()
-  //})
   
   app.on('open-url', (event, url) => {
     //dialog.showErrorBox('Welcome Back', `You arrived from: ${url}`)
@@ -132,10 +138,12 @@ if( !gotTheLock )
 
     if( path_string.startsWith("interspec://") )
     {
-      if( session_token )
-        interspec.openAppUrl( session_token, JSON.stringify( [url] ) );
+      let window = (openWindows.length ? openWindows.at(-1) : null);
+
+      if( window )
+        interspec.openAppUrl( window.appSessionToken, JSON.stringify( [url] ) );
       else
-        initial_file_to_open = [url];
+        appendInitialFileToLoad(url);
     }
   })
 }//if (!gotTheLock) /
@@ -189,6 +197,26 @@ function argvToPaths( argv_array, workingDir ) {
 
   return infiles
 }//argvToPaths
+
+
+/** Appends either a single file-path to `initial_file_to_open` or an array of file-paths */
+function appendInitialFileToLoad( fileToLoad ){
+  if (typeof fileToLoad === 'string') {
+    const singlefname = "" + fileToLoad;
+    fileToLoad = [];
+    fileToLoad.push( singlefname );
+  }
+
+  if( initial_file_to_open ){
+    if( Array.isArray(initial_file_to_open) )
+      fileToLoad = initial_file_to_open.concat(fileToLoad);
+    else
+      fileToLoad.push(initial_file_to_open);
+  }
+  
+  initial_file_to_open = fileToLoad;
+}//appendInitialFileToLoad(...)
+
 
 function checkWindowPosition(state) {
   //Adapted from https://github.com/Sethorax/electron-window-state-manager/blob/master/src/lib/windowState.js (20171121)
@@ -250,35 +278,22 @@ function checkWindowPosition(state) {
 };
 
 //Load single file or an array of files
-function load_file(filename){
+function load_file(window, filename){
   if( !filename )
     return;
-    
-  //Make into array
-  //if( !Array.isArray(filename) )
-  if (typeof filename === 'string') {
-    let singlefname = "" + filename;
-    filename = [];
-    filename.push( singlefname );
-  }
-  
-  if( !wtapp_loaded || !page_loaded || !interspec_url ){
-    if( initial_file_to_open ){
-       if( Array.isArray(initial_file_to_open) )
-         filename = initial_file_to_open.concat(filename);
-       else
-         filename.push(initial_file_to_open);
-    }
-    
-    initial_file_to_open = filename;
-    console.log( "Will open files " + JSON.stringify(filename) + " once page_loaded" );
+      
+  if( !window.appHasLoadConfirmed || !window.pageHasLoaded ){
+
+    appendInitialFileToLoad( filename );
+
+    console.log( "Will open files " + JSON.stringify(filename) + " once page loads" );
     return;
   }
 
   var msg = "openfile=" + JSON.stringify(filename);
   console.log( "" + (typeof filename)+ "To IPC Sending: " +  msg );
 
-  interspec.openFile( session_token, JSON.stringify(filename) );
+  interspec.openFile( window.appSessionToken, JSON.stringify(filename) );
 }
 
 
@@ -295,10 +310,14 @@ if( process.platform == 'darwin' ) {
    
      console.log( "Got request to open file: " + path );
      
-     if( page_loaded )
-       load_file(path);
-     else
-      initial_file_to_open = path;
+     let window = openWindows.length ? openWindows.at(-1) : null;
+     if( window && window.pageHasLoaded && window.appHasLoadConfirmed )
+     {
+       load_file(window, path);
+     }else
+     {
+      appendInitialFileToLoad( path );
+     }
   })
 } else {
   
@@ -308,7 +327,13 @@ if( process.platform == 'darwin' ) {
   const infiles = argvToPaths(process.argv,null);
   
   if( infiles.length )
-    load_file(infiles);
+  {
+    let window = openWindows.length ? openWindows.at(-1) : null;
+    if( window )
+      load_file(window,infiles);
+    else 
+      appendInitialFileToLoad(infiles);
+  }
 }
 
 app.on('open-url', function (event,url) {
@@ -334,12 +359,12 @@ function get_launch_options(){
 
 
 function doMenuStuff(currentwindow){
-  console.log( 'Doing doMenuStuff' );
-  
   if( !interspec.usingElectronMenus() ){
-    console.log( 'Not using ElectronMenus - bailing' );
+    //console.log( 'Not using ElectronMenus - bailing' );
     return;
   }
+
+  console.log( 'Doing doMenuStuff' );
 
   currentwindow.setMenu(null);
   
@@ -374,23 +399,48 @@ function doMenuStuff(currentwindow){
 }
 
 
+let setAsMostRecentWindow = function(window){
+  const index = openWindows.indexOf(window);
+  if( index < 0 )
+  {
+    // We may have removed the window already - e.g., in 
+    //dialog.showErrorBox('Error', 'Trying to set window as most recent that isnt in openWindows.');
+    return;
+  }
 
-function createWindow () {
+  console.log( 'Removing window ' + window.windowNumber + ' from active windows.' );
+
+  openWindows.splice(index, 1);
+  openWindows.push(window);
+};
+
+
+function createWindow() {
   
   app.setName( "InterSpec" );
   
-  var guiConfig = {};
-  try {
+  let guiConfig = {};
+  try 
+  {
     guiConfig = JSON.parse(fs.readFileSync(guiOtionsPath, 'utf8'));
-  }catch(e) {
+  }catch(e) 
+  {
   }
+  
   if( (typeof guiConfig.bounds === 'undefined') || guiConfig.bounds == null )
    guiConfig.bounds = {};
-  
+
+  if( openWindows.length )
+  {
+    let lastWindow = openWindows.at(-1);
+    guiConfig.bounds = lastWindow.getBounds();
+    guiConfig.bounds.x += 20;
+    guiConfig.bounds.y += 20;
+  }
+
   checkWindowPosition(guiConfig.bounds);
-  
-  var windowPrefs = Object.assign({}, guiConfig.bounds);
-  
+
+  let windowPrefs = Object.assign({}, guiConfig.bounds);
   if( !windowPrefs.minWidth )
     windowPrefs.minWidth = 200;
   if( !windowPrefs.minHeight )  
@@ -401,18 +451,38 @@ function createWindow () {
   windowPrefs.frame = ((process.platform == 'darwin') || interspec.usingElectronMenus());
   windowPrefs.webPreferences = { nodeIntegration: false, contextIsolation: true, nativeWindowOpen: true, spellcheck: false };
 
-  mainWindow = new BrowserWindow( windowPrefs );
+  // Create the new window
+  let newWindow = new BrowserWindow( windowPrefs );
   
+  // Set debug windowNumber - not actually currently used
+  newWindow.windowNumber = windowNumber++;
+
+  // Set an indicator if the page has loaded, as messaged to us through Electron signals
+  newWindow.pageHasLoaded = false;
+
+  // Set an indicator if the InterSpec app has loaded, as messaged to us through out C++ code
+  newWindow.appHasLoadConfirmed = false;
+  
+  // Add new window to the end (i.e., the most recently used) openWindows array
+  openWindows.push( newWindow );
+
+  console.log( 'Adding window ' + newWindow.windowNumber + ' to active windows.' );
 
   let allowRestore = false;
-  try{
-    if( fs.lstatSync(allowRestorePath).isFile() ){
-      allowRestore = true;
-      fs.unlinkSync( allowRestorePath );
+  if( !openWindows.length )
+  {
+    try
+    {
+      if( fs.lstatSync(allowRestorePath).isFile() )
+      {
+        allowRestore = true;
+        fs.unlinkSync( allowRestorePath );
+      }
+    }catch(e) 
+    {
+      console.error( 'Exception checking on/deleting allow reload path ("' + allowRestorePath + '"): ' + e );
     }
-  }catch(e) {
-    console.error( 'Exception checking on/deleting allow reload path ("' + allowRestorePath + '"): ' + e );
-  }
+  }//if( no other windows are open )
   
   
   let hasSetInialUrl = false;
@@ -423,15 +493,15 @@ function createWindow () {
     
     if( interspec_url ) {
       const session_token_buf = crypto.randomBytes(16);
-      session_token = session_token_buf.toString('hex');
-      interspec.addPrimarySessionToken( session_token );
+      newWindow.appSessionToken = session_token_buf.toString('hex');
+      interspec.addPrimarySessionToken( newWindow.appSessionToken );
       
     
-      let url_to_load = interspec_url  + "?apptoken=" + session_token;
+      let url_to_load = interspec_url  + "?apptoken=" + newWindow.appSessionToken;
       if( initial_file_to_open && ((typeof initial_file_to_open === 'string') || initial_file_to_open.length==1) ) {
         let filepath = (typeof initial_file_to_open === 'string') ? initial_file_to_open : initial_file_to_open[0];
         
-        interspec.setInitialFileToLoad( session_token, filepath );
+        interspec.setInitialFileToLoad( newWindow.appSessionToken, filepath );
         
         initial_file_to_open = null;
       }
@@ -444,15 +514,15 @@ function createWindow () {
       //  see https://github.com/electron/electron/blob/master/docs/api/native-theme.md#nativethemeshouldusedarkcolors-readonly
       
       if( !allowRestore )
-      url_to_load += "&restore=no";
+        url_to_load += "&restore=no";
       
       console.log('Will Load ' + url_to_load);
       
-      doMenuStuff(mainWindow);
-      mainWindow.loadURL( url_to_load );
+      doMenuStuff( newWindow );
+      newWindow.loadURL( url_to_load );
     } else {
       let workingdir = path.dirname(require.main.filename);
-      mainWindow.loadURL( "file://" + path.join(workingdir, "loading.html") );
+      newWindow.loadURL( "file://" + path.join(workingdir, "loading.html") );
     }
   };
   
@@ -463,7 +533,7 @@ function createWindow () {
   //      value, but I was too lazy to test out what will work (requires transfering over 
   //      remote desktop currently), and also I guess should actually do the loadUrl() call
   //      from the setback, but the current way seems to work right now...
-  let ses = mainWindow.webContents.session;
+  let ses = newWindow.webContents.session;
   ses.setProxy( {proxyBypassRules: 'local,<local>,127.0.0.1,http://127.0.0.1,http://<local>,http://localhost'} ).then( 
     function(){
     console.log('Bypassing proxy for local');
@@ -480,42 +550,69 @@ function createWindow () {
   }, 500 );
   
   
-  
-  
-  
   // Open the developer tools.
-  //mainWindow.webContents.openDevTools({mode: "bottom"});
+  //newWindow.webContents.openDevTools({mode: "bottom"});
 
   // A nice way to have the renderes console.log show up on the command line
   //  when running for development.
-  //mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+  //newWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
   //  //https://www.electronjs.org/docs/api/web-contents#event-console-message  
   //  //console.log( sourceId+ " ("+line+"): " + message );
   //  console.log( "From renderer: " + message );
   //});
 
   // Emitted when the window is closed.
-  mainWindow.on('closed', function () {
+  newWindow.on('closed', function () {
     //Could tell InterSpec to save user place...
     
     console.log( "Writing config: " + JSON.stringify(guiConfig) );
     fs.writeFileSync(guiOtionsPath, JSON.stringify(guiConfig));
-    
-    // Dereference the window object, usually you would store windows
-    // in an array if your app supports multi windows, this is the time
-    // when you should delete the corresponding element.
-    mainWindow = null;
+
+    // Dereference the window object
+    console.log( 'Removing window ' + newWindow.windowNumber + ' from active windows.' );
+    const index = openWindows.indexOf(newWindow);
+    if( index >= 0 )
+      openWindows.splice(index, 1);
+    else
+      console.error( "on(closed): Trying to remove window not in openWindows" );
   });
 
   
-  mainWindow.on( 'blur', function(){ interspec.sendMessageToRenderer( session_token, "OnBlur"); } );
-  mainWindow.on( 'focus', function(){ interspec.sendMessageToRenderer( session_token, "OnFocus"); } );
-  mainWindow.on( 'unmaximize', function(){ interspec.sendMessageToRenderer( session_token, "OnUnMaximize"); } );
-  mainWindow.on( 'maximize', function(){ interspec.sendMessageToRenderer( session_token, "OnMaximize"); } );
-  mainWindow.on( 'leave-full-screen', function(){ interspec.sendMessageToRenderer( session_token, "OnLeaveFullScreen"); } );
-  mainWindow.on( 'enter-full-screen', function(){ interspec.sendMessageToRenderer( session_token, "OnEnterFullScreen"); } );
+  newWindow.on( 'blur', function(){ 
+    //Emitted when the window loses focus.
+    //Could save the work here.
+    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnBlur"); 
+  } );
 
-  mainWindow.webContents.on('will-navigate', function(event, url){
+  newWindow.on( 'focus', function(){ 
+    //Emitted when the window gains focus.
+    setAsMostRecentWindow(newWindow);
+    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnFocus"); 
+  } );
+
+  newWindow.on( 'unmaximize', function(){ 
+    //Emitted when the window exits from a maximized state.
+    setAsMostRecentWindow(newWindow);
+    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnUnMaximize"); 
+  } );
+  
+  newWindow.on( 'maximize', function(){ 
+    //Emitted when window is maximized.
+    setAsMostRecentWindow(newWindow);
+    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnMaximize"); 
+  } );
+  
+  newWindow.on( 'leave-full-screen', function(){ 
+    setAsMostRecentWindow(newWindow);
+    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnLeaveFullScreen"); 
+  } );
+  
+  newWindow.on( 'enter-full-screen', function(){ 
+    setAsMostRecentWindow(newWindow);
+    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnEnterFullScreen"); 
+  } );
+
+  newWindow.webContents.on('will-navigate', function(event, url){
     //Emitted when a user or the page wants to start navigation. It can happen
     //  when the window.location object is changed or a user clicks a link in
     //  the page.
@@ -526,7 +623,7 @@ function createWindow () {
     
     console.log('webContents: will-navigate');
     if( !url.startsWith(interspec_url) ) {
-      console.log( "Will prevent Opening URL=" + url + ", mainWindow.webContents.getURL()=" + mainWindow.webContents.getURL() );
+      console.log( "Will prevent Opening URL=" + url + ", newWindow.webContents.getURL()=" + newWindow.webContents.getURL() );
       event.preventDefault();
       electron.shell.openExternal(url)
     } else {
@@ -539,15 +636,12 @@ function createWindow () {
       //   http://127.0.0.1:57851/?wtd=oiaGAdsaiwqAs&request=resource&resource=asSaEwq&rand=65
       //   but I didnt bother about this yet)
       //(as of 20191012 only tested by calling wApp->quit() from c++).
-      doMenuStuff(mainWindow);
+      doMenuStuff(newWindow);
     }
   });
 
-  
-  mainWindow.webContents.on('new-window', (event, url,frameName,disposition,options,additionalFeatures) => {
-    event.preventDefault();
-    event.defaultPrevented = true;
 
+  newWindow.webContents.setWindowOpenHandler(({ url }) => {
     //console.log( 'url=' + url );
     //console.log( 'frameName=' + frameName );
     //console.log( 'additionalFeatures=' + additionalFeatures );
@@ -555,21 +649,36 @@ function createWindow () {
     if( url.startsWith(interspec_url) ) {
       //Lets prevent a weird popup window that the user has to close...
       //  I think this is because InterSpec targets a new window for downloads.
-      mainWindow.webContents.downloadURL(url)
+      newWindow.webContents.downloadURL(url);
     } else {
       //Keep the page from navigating away from the InterSpec, to say somewhere 
       //  like http://www.boost.org from on the "about" page.
-      electron.shell.openExternal(url)
+      electron.shell.openExternal(url);
     }
-  });
 
+    return { action: 'deny' };
+  } );
 
+  
   //For windows, if we want to customize the title of the download dialog
   //  could use the following (doesnt seem to be needed on macOS, but leaving in for consistency)
-  mainWindow.webContents.session.on('will-download', (event, item, webContents) => {
+  newWindow.webContents.session.on('will-download', (event, item, webContents) => {
     //console.log( 'will-download: ' + item.getFilename() );
-    var fname = "Untitled";
-    try { fname = item.getFilename(); } catch(e) { }
+
+    // For some reason, I dont understand, clicking on a link to download a file in 
+    //  one window, will then cause all the other open windows to get the 'will-download' 
+    //  signal; so we'll detect this, and only do an action for the window that emits 
+    //  the original  download.
+    if( newWindow.webContents !== webContents )
+      return;
+
+    let fname = "Untitled";
+    try 
+    { 
+      fname = item.getFilename(); 
+    }catch( e ) 
+    { 
+    }
 
     item.once('done', (event, state) => {
       if (state === 'completed') {
@@ -590,172 +699,173 @@ function createWindow () {
 
     dialog_options.defaultPath = path.join(dialog_options.defaultPath, fname);
     
-    let filename = dialog.showSaveDialogSync( mainWindow, dialog_options );
+    let filename = dialog.showSaveDialogSync( newWindow, dialog_options );
     
-    if (typeof filename == "undefined") {
+    if( typeof filename == "undefined" )
+    {
       item.cancel();
       return;
     }
+    
     console.log( "Saving to: " + filename );
-    try {
+    
+    try 
+    {
       guiConfig.defaultSavePath = path.dirname(filename);
       console.log( "Setting save path to: " + guiConfig.defaultSavePath );
       
       item.setSavePath(filename);
-    } catch( e ) {
+    }catch( e ) 
+    {
       console.log( "Error saving file: " + e );
       item.cancel();
     }
   });
 
   
-  mainWindow.webContents.on('did-start-loading', (event) => {
+  newWindow.webContents.on('did-start-loading', (event) => {
     //Corresponds to the points in time when the spinner of the tab started spinning.
     console.log( "did-start-loading" );
     
   });
 
 
-  mainWindow.webContents.on('did-finish-load', (event) => {
+  newWindow.webContents.on('did-finish-load', (event) => {
     //Emitted when the navigation is done, i.e. the spinner of the tab has
     //  stopped spinning, and the onload event was dispatched.
     
     console.log( "In did-finish-load!" );
   
-    let currentURL = mainWindow.webContents.getURL();
+    let currentURL = newWindow.webContents.getURL();
     
     console.log("currentURL="+currentURL);
     if( currentURL.includes("loading.html") )
       return;
   
-    if( currentURL.includes("apptoken="+session_token) ){
-      //We have found main window.  Lets be conservative though and not require
-      //  the URL have this options.  We could also look to require
+    if( currentURL.includes("apptoken="+newWindow.appSessionToken) ){
     }
   
-    page_loaded = true;
-    if( wtapp_loaded && initial_file_to_open )
+    newWindow.pageHasLoaded = true;
+
+    if( newWindow.appHasLoadConfirmed && initial_file_to_open )
     {
-      load_file(initial_file_to_open);
+      load_file(newWindow,initial_file_to_open);
       initial_file_to_open = null;
     }
+    
     //I think this is were we set any files to be opened
     
-    
     // Lets make sure the titlebar is in the right state for the window size.
-    //  Sending now because our C++ should have the session_token at this point.
-    interspec.sendMessageToRenderer( session_token, mainWindow.isMaximized() ? "OnMaximize" : "OnUnMaximize" );
+    //  Sending now because our C++ should have the newWindow.appSessionToken at this point.
+    interspec.sendMessageToRenderer( newWindow.appSessionToken, newWindow.isMaximized() ? "OnMaximize" : "OnUnMaximize" );
   })
 
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+  newWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     //This event is like did-finish-load but emitted when the load failed or was cancelled, e.g. window.stop() is invoked.
     console.log( "Unhandled did-fail-load event!" );
   })
  
-  mainWindow.webContents.on('did-get-redirect-request', function(event,oldURL,newURL,isMainFrame,httpResponseCode,requestMethod,referrer,headers){
+  newWindow.webContents.on('did-get-redirect-request', function(event,oldURL,newURL,isMainFrame,httpResponseCode,requestMethod,referrer,headers){
     console.log( 'did-get-redirect-request from ' + oldURL + ' to ' + newURL );
   });
 
-  mainWindow.webContents.on('crashed', function(event,killed){
+  newWindow.webContents.on('crashed', function(event,killed){
     console.log('renderer process ' + (killed ? 'killed' : 'crashed') );
   });
   
-
-
-  //Could instead customize file download...
-  //mainWindow.webContents.session.on('will-download', (event, item, webContents) => {
-    // Set the save path, making Electron not to prompt a save dialog.
-    //item.setSavePath('/tmp/save.pdf')
-    //item.on('updated', (event, state) => { } )
-   //item.once('done', (event, state) => { } )
-  //})
   
-  //mainWindow.webContents.on('did-navigate-in-page',function(){
+  //newWindow.webContents.on('did-navigate-in-page',function(){
   //  console.log( 'did-navigate-in-page' );
   //});
-  //mainWindow.webContents.on('destroyed',function(){
+  //newWindow.webContents.on('destroyed',function(){
   //  console.log( 'destroyed!' );
   //});
-  //mainWindow.webContents.on('unresponsive',function(){
+  //newWindow.webContents.on('unresponsive',function(){
   //  console.log( 'unresponsive!' );
   //});
 
-  mainWindow.on('session-end', function () {
+  newWindow.on('session-end', function () {
     //Windows only here
     //Could save the work here.
   });
   
-  mainWindow.on('blur', function () {
-    //Emitted when the window loses focus.
-    //Could save the work here.
-  });
   
-  mainWindow.on('focus', function () {
-    //Emitted when the window gains focus.
-  });
-  
-  mainWindow.on('show', function () {
+  newWindow.on('show', function () {
     //Emitted when the window is shown.
+    setAsMostRecentWindow(newWindow);
   });
   
-  mainWindow.on('hide', function () {
+  newWindow.on('hide', function () {
     //Emitted when the window is hidden.
   });
   
-  mainWindow.on('ready-to-show', function () {
+  newWindow.on('ready-to-show', function () {
     //Emitted when the web page has been rendered (while not being shown) and window can be displayed without a visual flash.
   });
   
-  mainWindow.on('maximize', function () {
-    //Emitted when window is maximized.
-  });
   
-  mainWindow.on('unmaximize', function () {
-    //Emitted when the window exits from a maximized state.
-  });
-  
-  mainWindow.on('minimize', function () {
+  newWindow.on('minimize', function () {
     //Emitted when the window is minimized.
   });
   
-  mainWindow.on('restore', function () {
+  newWindow.on('restore', function () {
     //Emitted when the window is restored from a minimized state.
+    setAsMostRecentWindow(newWindow);
   });
   
-  mainWindow.on('resize', function () {
+  newWindow.on('resize', function () {
     //Emitted when the window is being resized.
-    guiConfig.bounds = mainWindow.getBounds();
+    guiConfig.bounds = newWindow.getBounds();
+    setAsMostRecentWindow(newWindow);
   });
   
-  mainWindow.on('move', function () {
+  newWindow.on('move', function () {
     //Emitted when the window is being moved to a new position.
-    guiConfig.bounds = mainWindow.getBounds();
+    guiConfig.bounds = newWindow.getBounds();
+    setAsMostRecentWindow(newWindow);
   });
   
-  mainWindow.on('new-window-for-tab', function () { //macOS
+  newWindow.on('new-window-for-tab', function () { //macOS
     //Emitted when the native new tab button is clicked.
   });
   
+  return newWindow;
 }//createWindow
 
 
 function messageToNodeJs( token, msg_name, msg_data ){
   console.log( 'In js messageToNodeJs, with msg_name="' + msg_name + '" for token="' + token + '"');
   
+  let window = null;
+  for( let i = 0; i < openWindows.length; ++i ){
+    if( openWindows[i].appSessionToken === token ){
+      window = openWindows[i];
+      break;
+    }
+  }
+
+  if( !window ){
+    console.error( 'messageToNodeJs token: ' + token + "' did not coorespond to any open windows.");
+    dialog.showErrorBox('Error', 'Recieved message from a window that couldnt be found - app state is suspect.\nThere are currently ' + openWindows.length + ' open windows.');
+    
+    return;
+  }
+
   if( msg_name == 'NewCleanSession' ){
     //ToDo: Check that token is valid token; also identify window this token belongs to
     console.log( 'Got NewCleanSession from session with token: ' + token );
     const session_token_buf = crypto.randomBytes(16);
-    session_token = session_token_buf.toString('hex');
-    console.log("New session token: " + session_token );
+    window.appSessionToken = session_token_buf.toString('hex');
+    window.appHasLoadConfirmed = false;
+    console.log("New session token: " + window.appSessionToken );
     
     interspec.removeSessionToken( token );
-    interspec.addPrimarySessionToken( session_token );
-    doMenuStuff(mainWindow);
-    mainWindow.loadURL( interspec_url + "?apptoken=" + session_token + "&restore=no");
+    interspec.addPrimarySessionToken( window.appSessionToken );
+    doMenuStuff(window);
+    window.loadURL( interspec_url + "?apptoken=" + window.appSessionToken + "&restore=no");
   }else if( msg_name == 'SessionFinishedLoading' ){
-    wtapp_loaded = true;
-    
+    window.appHasLoadConfirmed = true;
+
     console.log( "Received SessionFinishedLoading for Token='" + token + "'" );
     
     try{
@@ -765,11 +875,9 @@ function messageToNodeJs( token, msg_name, msg_data ){
       console.log( "Error writing allow reload file " );
     }
     
-    //ToDo: should make sure token is what we want
-    
     if( initial_file_to_open )
     {
-      load_file(initial_file_to_open);
+      load_file(window,initial_file_to_open);
       initial_file_to_open = null;
     }
   }else if( msg_name == 'debug-msg' ){
@@ -787,61 +895,25 @@ function messageToNodeJs( token, msg_name, msg_data ){
     
     electron.shell.openExternal(ext_url);
     console.log( `Should have opened external URL...` );
-    
-    /*
-     //The pure node way to do this is below - I think it can be deleted once the above is tested.
-     const { exec } = require('child_process');
-     let command = '';
-     
-     switch( process.platform )
-     {
-     case 'android':
-     case 'linux':
-     command =  `xdg-open ${interspec_url}`;
-     break;
-     
-     case 'darwin':
-     command = `open ${interspec_url}`;
-     break;
-     
-     case 'win32':
-     command `cmd /c start ${interspec_url}`;
-     break;
-     
-     default:
-     console.log( "Unsupported platform for opening URL" );
-     return;
-     }//switch( process.platform )
-     
-     exec( command, (error, stdout, stderr) => {
-     if (error)
-     {
-     console.log( 'Couldnt open InterSpec URL in external browser: ' + error );
-     return;
-     }
-     
-     console.log( `stdout: ${stdout}` );
-     console.log( `stderr: ${stderr}` );
-     console.log( `Have opened ${interspec_url} in external browser (hopefully)` );
-     } );
-     */
+  }else if( msg_name == 'NewAppWindow' ){
+    createWindow();
   }else if( msg_name == 'MinimizeWindow' ){
-    mainWindow.minimize();
+    window.minimize();
   }else if( msg_name == 'MaximizeWindow' ){
-    mainWindow.maximize();
+    window.maximize();
     interspec.sendMessageToRenderer(token, "OnMaximize");
   }else if( msg_name == 'CloseWindow' ){
-    mainWindow.close();
+    window.close();
   }else if( msg_name == "ToggleMaximizeWindow" ){
-    if( mainWindow.isMaximized() ) {
-      mainWindow.unmaximize();
+    if( window.isMaximized() ) {
+      window.unmaximize();
       interspec.sendMessageToRenderer(token, "OnUnMaximize");
     } else {
-      mainWindow.maximize();
+      window.maximize();
       interspec.sendMessageToRenderer( token, "OnMaximize");
     }
   }else if( msg_name == 'ToggleDevTools' ){
-    mainWindow.toggleDevTools();
+    window.toggleDevTools();
   }else{
     console.log( "messageToNodeJs: unrecognized msg_name:", msg_name, ", token:", token, ", msg_data:", msg_data );
   }
@@ -854,7 +926,9 @@ function messageToNodeJs( token, msg_name, msg_data ){
 function browseForDirectory( token, title, msg ){
   const { dialog } = require('electron');
   
-  let dirs = dialog.showOpenDialogSync( mainWindow, {
+  let window = openWindows.length ? openWindows.at(-1) : null;
+
+  let dirs = dialog.showOpenDialogSync( window, {
     title: title,
     properties: ['openDirectory'],
     //defaultPath: '/my/previous/path',
@@ -893,22 +967,25 @@ app.on('ready', function(){
   const xml_config_path = path.join(basedir, "data/config/wt_config_electron.xml");
   let portnum = 0;
   
-  try {
+  try 
+  {
     portnum = interspec.startServingInterSpec( process_name, userdata, basedir, xml_config_path );
-  } catch(e) {
-    createWindow();
+  }catch( e ) 
+  {
+    let window = createWindow();
     var html = [
       "<body>",
         "<h1>Error</h1>",
         e.message,
       "</body>",
     ].join("");
-    mainWindow.loadURL( "data:text/html;charset=utf-8," + encodeURI(html) );
+
+    window.loadURL( "data:text/html;charset=utf-8," + encodeURI(html) );
+
     return;
   }
 
   interspec_url = "http://127.0.0.1:" + portnum;
-  
   
   createWindow();
 });
@@ -920,6 +997,7 @@ app.on('window-all-closed', function () {
   //if (process.platform !== 'darwin') {
     //app.quit()
   //}
+  openWindows = [];
   
   interspec.killServer();
 
@@ -928,30 +1006,27 @@ app.on('window-all-closed', function () {
 
 app.on('before-quit', function() {
   //Emitted before the application starts closing its windows.
-  app_is_closing = true;
-  
   console.log( "Sending Wt code command to exit" );
   interspec.killServer();
 });
 
 app.on('will-quit', function(){
   //Emitted when all windows have been closed and the application will quit.
-  app_is_closing = true;
   console.log( "will-quit" );
 });
 
 app.on('quit', function(){
   //Emitted when the application is quitting.
-  app_is_closing = true;
 });
 
 
 app.on('activate', function () {
   // On OS X it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
-  if (mainWindow === null) {
-    createWindow()
-  }
+  if( openWindows.length )
+    openWindows.at(-1).focus();
+  else
+    createWindow();
 })
 
 // In this file you can include the rest of your app's specific main process
