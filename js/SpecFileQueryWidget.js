@@ -213,7 +213,8 @@ function( divid, parentid, additional_filters )
       34: 'SRPM-210',
       35: 'Verifinder-NaI',
       36: 'Verifinder-LaBr3',
-      37: 'Unknown'
+      37: 'Kromek D3S',
+      38: 'Unknown'
     },
     operators: ['equal']
   },{

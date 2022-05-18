@@ -4271,6 +4271,9 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
       case SpecUtils::DetectorType::VerifinderLaBr:
         //return { }
         break;
+        
+      case SpecUtils::DetectorType::KromekD3S:
+        return { "D3S", "Kromek D3S", "D3", "Kromek D3S", "Kromek D3" };
     }//switch( type )
     
     return {};
@@ -4461,6 +4464,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
     case DetectorType::IdentiFinderR500NaI:        name = "IdentiFINDER-R500-NaI";   break;
     case DetectorType::IdentiFinderR500LaBr:       name = "IdentiFINDER-R500-LaBr3"; break;
       
+    case SpecUtils::DetectorType::KromekD3S:       name = "D3S"; break;
       
     case DetectorType::OrtecRadEagleCeBr2Inch:
     case DetectorType::OrtecRadEagleCeBr3Inch:
