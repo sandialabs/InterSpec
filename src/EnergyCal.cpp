@@ -307,7 +307,7 @@ double fit_from_channel_energies_imp( const size_t ncoeffs, const vector<float> 
   
   //General Linear Least Squares fit
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //Implementation is quite inneficient
+  //Implementation is quite inefficient
   using namespace boost::numeric;
   
   ublas::matrix<double> A( nenergies, ncoeffs );
@@ -318,7 +318,7 @@ double fit_from_channel_energies_imp( const size_t ncoeffs, const vector<float> 
     //Energy_i = P0 + P1*pow(i,1) + P2*pow(i,2) + P3*pow(i,3)  //for polynomial
     const double uncert = 1.0;
     for( size_t col = 0; col < ncoeffs; ++col )
-      A(row,col) = coeffcn(row, col, nchannel) / uncert;
+      A(row,col) = coeffcn(col, row, nchannel) / uncert;
     b(row) = channel_energies[row] / uncert;
   }//for( int col = 0; col < order; ++col )
   
@@ -341,7 +341,7 @@ double fit_from_channel_energies_imp( const size_t ncoeffs, const vector<float> 
   {
     double energy = 0.0;
     for( size_t col = 0; col < ncoeffs; ++col )
-      energy += coefs[col] * coeffcn(i, col, nchannel);
+      energy += coefs[col] * coeffcn(col, i, nchannel);
     avrgdiffs += fabs( energy - channel_energies[i] );
   }
   
