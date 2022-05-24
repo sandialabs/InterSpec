@@ -2499,16 +2499,18 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
               << " local (" << SpecUtils::to_extended_iso_string( utctime )
               << " UTC)\r\n";
   if( recursive )
-    description << "Recursive" << " search of \"" << basedir << "\"\r\n";
+    output_csv_field( description, "Recursive search of \"" + basedir + "\"" );
   else
-   description << "Non-recursive" << " search of \"" << basedir << "\"\r\n";
-
+    output_csv_field( description, "Non-recursive search of \"" + basedir + "\"" );
+  description << "\r\n";
+  
   if( extfilter )
     description << "Candidate files pre-filtered based on file extension and other niave properties to exclude common non-spectrum files\r\n";
   description << "Candidate files pre-filtered to have a size under " << (maxsize/1024/1024) << " MB\r\n";
   if( filterUnique )
     description << "Only considered unique spectrum files.\r\n";
-  description << "Search Query: " << query.summary() << "\r\n\r\n";
+  output_csv_field( description, "Search Query: " + query.summary() );
+  description << "\r\n\r\n";
   
   HaveSeenUuid uniqueCheck( filterUnique );
   
