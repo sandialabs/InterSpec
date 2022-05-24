@@ -425,61 +425,76 @@ namespace SpecFileQuery
         if( !meas.has_riid_analysis )
           return false;
         
+        bool found_nuclide = false;
         const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-        const SandiaDecay::Nuclide * const nuc = db->nuclide( m_searchString );
-      
-        //const vector<string> &remarks = ana->remarks_;
-        const vector<SpecUtils::DetectorAnalysisResult> &res = meas.riid_ana.results_;
         
-        if( nuc )
+        // Sometimes user may want to search for a large number of isotopes (e.g., any spectrum
+        //  file containing a medical isotope), so we'll let the user "OR" isotopes by separating
+        //  them with a comma or semi-colon.
+        vector<string> user_wanted_nuclides;
+        SpecUtils::split( user_wanted_nuclides, m_searchString, ",;" );
+        
+        for( const auto &search_nuc : user_wanted_nuclides )
         {
-          bool found_nuclide = false;
+          const SandiaDecay::Nuclide * const nuc = db->nuclide( search_nuc );
           
-          for( size_t i = 0; !found_nuclide && i < res.size(); ++i )
+          //const vector<string> &remarks = ana->remarks_;
+          const vector<SpecUtils::DetectorAnalysisResult> &res = meas.riid_ana.results_;
+          
+          if( nuc )
           {
-            //Maybe there was somethign like "Am 241" that splitting them up
-            //  would mess up.
-            const SandiaDecay::Nuclide *testnuc = db->nuclide( res[i].nuclide_ );
-            if( nuc == testnuc )
-              return true;
-            
-            //Just in case nuclide has mutliple fields for some reason, we'll
-            //  split them up and try; this isnt foolproof,
-            //  ex "found Am-241, Th 232" would fail for looking for Th232, but
-            //  its better than nothing for now
-            vector<string> fields;
-            SpecUtils::split( fields, res[i].nuclide_, " \t\n,;" );
-            
-            
-            for( size_t j = 0; !found_nuclide && j < fields.size(); ++j )
+            for( size_t i = 0; !found_nuclide && i < res.size(); ++i )
             {
-              testnuc = db->nuclide( fields[j] );
-              if( !testnuc && ((j+1)<fields.size()) )
-                testnuc = db->nuclide( fields[j] + fields[j+1] ); //Try to make uf for things like "Th 232"
+              //Maybe there was something like "Am 241" that splitting them up
+              //  would mess up.
+              const SandiaDecay::Nuclide *testnuc = db->nuclide( res[i].nuclide_ );
+              if( nuc == testnuc )
+                found_nuclide = true;
               
-              found_nuclide = (nuc == testnuc);
-            }
-          }//for( size_t i = 0; i < res.size(); ++i )
-          
-          //assert( (m_stringSearchType==TextDoesNotContain) || (m_stringSearchType==TextIsContained) );
-          
-          return (m_stringSearchType==TextDoesNotContain) ? !found_nuclide : found_nuclide;
-        }else
-        {
-          //Go through here and check if the specified text is contained within nuclide_, nuclide_type_, or remark_
-          for( size_t i = 0; i < res.size(); ++i )
+              //Just in case nuclide has mutliple fields for some reason, we'll
+              //  split them up and try; this isnt foolproof,
+              //  ex "found Am-241, Th 232" would fail for looking for Th232, but
+              //  its better than nothing for now
+              vector<string> fields;
+              if( !found_nuclide )
+                SpecUtils::split( fields, res[i].nuclide_, " \t\n,;" );
+              
+              for( size_t j = 0; !found_nuclide && j < fields.size(); ++j )
+              {
+                testnuc = db->nuclide( fields[j] );
+                if( !testnuc && ((j+1)<fields.size()) )
+                  testnuc = db->nuclide( fields[j] + fields[j+1] ); //Try to make uf for things like "Th 232"
+                
+                found_nuclide = (nuc == testnuc);
+              }
+            }//for( size_t i = 0; i < res.size(); ++i )
+          }else
           {
-            const SpecUtils::DetectorAnalysisResult &r = res[i];
-            if( test_string( r.nuclide_, m_stringSearchType, m_searchString ) )
-              return true;
-            if( test_string( r.nuclide_type_, m_stringSearchType, m_searchString ) )
-              return true;
-            if( test_string( r.remark_, m_stringSearchType, m_searchString ) )
-              return true;
-          }//for( size_t i = 0; i < res.size(); ++i )
-        }
+            //Go through here and check if the specified text is contained within nuclide_,
+            //  nuclide_type_, or remark_
+            //
+            // Note we arent searching by `m_stringSearchType`, but instead always by
+            //  TextIsContained, since the user may have entered multiple comma separated things,
+            //  and we want to "OR" those together.
+            for( size_t i = 0; !found_nuclide && (i < res.size()); ++i )
+            {
+              const SpecUtils::DetectorAnalysisResult &r = res[i];
+              if( test_string( r.nuclide_, TextIsContained, m_searchString ) )
+                found_nuclide = true;
+              if( test_string( r.nuclide_type_, TextIsContained, m_searchString ) )
+                found_nuclide = true;
+              if( test_string( r.remark_, TextIsContained, m_searchString ) )
+                found_nuclide = true;
+            }//for( size_t i = 0; i < res.size(); ++i )
+          }//if( user is searching for valid nuclide ) / else (user searching for like "HEU" )
+          
+          if( found_nuclide )
+            break;
+        }//for( const auto search_nuc : user_wanted_nuclides )
         
-        return false;
+        assert( (m_stringSearchType == TextDoesNotContain) || (m_stringSearchType == TextIsContained) );
+        
+        return (m_stringSearchType == TextDoesNotContain) ? !found_nuclide : found_nuclide;
       }//case AnalysisResultNuclide:
         
       case DetectionSystemType:
