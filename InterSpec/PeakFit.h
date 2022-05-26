@@ -50,7 +50,7 @@ namespace SpecUtils{ class Measurement; }
 typedef std::shared_ptr<const DetectorPeakResponse> DetctorPtr;
 typedef std::vector< std::shared_ptr<const PeakDef> > PeakShrdVec;
 
-//XXX - should put everything in this file into a namespace
+// TODO: put everything in this file into a namespace
 
 
 struct SavitzyGolayCoeffs
@@ -205,17 +205,42 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const SpecUtils::Measu
                                    std::vector< std::tuple<float,float,float> > &results );
 
 
+//combine_peaks_to_roi: throws exception on error
+void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
+                          double &roiLower,
+                          double &roiUpper,
+                          bool &lowstatregion,
+                          const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+                          const PeakShrdVec &inpeaks,
+                          const double mean0,
+                          const double sigma0,
+                          const double area0,
+                          const double pixelPerKev );
+
+bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
+                                  const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+                                  const bool lowstatregion,
+                                  const bool automated );
+
+void get_candidate_peak_estimates_for_user_click(
+                                                 double &sigma0, double &mean0, double &area0,
+                                                 const double x,
+                                                 const double pixelPerKev,
+                                                 const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+                                                 const PeakShrdVec &inpeaks );
+
 //searchForPeakFromUser: looks for a peak near x.  The returned pair contains
 //  peaks that should be added (in .first) and peaks that should be removed
 //  (in .second)
 //Tries to take into account user resolution in limiting how far the fit peak
 //  can be away from the nominal energy.
 //  If pixelPerKev <= 0.0 is specified, then it is assumed this is an automated
-//  search, and tougher quality requirments will be placed on the fit peaks.
+//  search, and tougher quality requirements will be placed on the fit peaks.
 std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                                            double pixelPerKev,
                                            const std::shared_ptr<const SpecUtils::Measurement> &data,
-                                           const PeakShrdVec &existing_peaks );
+                                           const PeakShrdVec &existing_peaks,
+                                           std::shared_ptr<const DetectorPeakResponse> drf );
 
 //refitPeaksThatShareROI: intended to refit peaks fit for by
 //  searchForPeakFromUser(...), for instance when you modfiy the ROI range.
@@ -367,6 +392,7 @@ namespace ExperimentalAutomatedPeakSearch
 {
   std::vector<std::shared_ptr<const PeakDef> >
               search_for_peaks( const std::shared_ptr<const SpecUtils::Measurement> meas,
+                                const std::shared_ptr<const DetectorPeakResponse> drf,
                                 std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > origpeaks,
                                 const bool singleThreaded );
 }//namespace ExperimentalAutomatedPeakSearch

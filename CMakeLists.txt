@@ -121,6 +121,8 @@ option(
     OFF
 )
 
+option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
+
 if(MSVC)
   option(${PROJECT_NAME}_USE_MSVC_MultiThreadDLL "Use dynamically-link runtime library." OFF)
 
@@ -566,6 +568,44 @@ if(USE_SPECRUM_FILE_QUERY_WIDGET)
   list( APPEND sources js/SpecFileQueryWidget.js )
 endif(USE_SPECRUM_FILE_QUERY_WIDGET)
 
+if( USE_REL_ACT_TOOL )
+  list( APPEND sources src/PeakFitLM.cpp )
+  list( APPEND headers InterSpec/PeakFitLM.h )
+  
+  include(FetchContent)
+  
+  # Make sure we use only MPL2 licensed (Mozillas non-copyleft) Eigen code (not LGPL-2.1)
+  add_compile_options( -DEIGEN_MPL2_ONLY )
+  
+  # Set some eigen options
+  set( EIGEN_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" )
+  set( EIGEN_BUILD_DOC OFF CACHE INTERNAL "" )
+  set( EIGEN_BUILD_TESTING OFF CACHE INTERNAL "" )
+  FetchContent_Declare(
+    eigen
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG        3147391d946bb4b6c68edd901f2add6ac1f31f8c # release-3.4.0
+  )
+  
+  # Set some Google Ceres options; both to allow compiling without further dependancies, and
+  #  avoid some things we dont need
+  set( MINIGLOG ON CACHE INTERNAL "" )
+  set( GFLAGS OFF CACHE INTERNAL "" )
+  set( CXSPARSE OFF CACHE INTERNAL "" )
+  set( ACCELERATESPARSE OFF CACHE INTERNAL "" )
+  set( CUDA OFF CACHE INTERNAL "" )
+  set( EXPORT_BUILD_DIR ON CACHE INTERNAL "" )
+  set( BUILD_TESTING OFF CACHE INTERNAL "" )
+  set( BUILD_EXAMPLES OFF CACHE INTERNAL "" )
+  set( PROVIDE_UNINSTALL_TARGET OFF CACHE INTERNAL "" )
+  FetchContent_Declare(
+    ceres-solver
+    GIT_REPOSITORY https://ceres-solver.googlesource.com/ceres-solver
+    GIT_TAG        783637a6ed285abc6c57b16ccd968c594a91b35f # release-2.1.0
+  )
+  FetchContent_MakeAvailable(eigen ceres-solver)
+endif( USE_REL_ACT_TOOL )
+
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)
 
@@ -732,6 +772,12 @@ endif(WIN32)
 if(INCLUDE_ANALYSIS_TEST_SUITE)
   target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
 endif(INCLUDE_ANALYSIS_TEST_SUITE)
+
+
+if( USE_REL_ACT_TOOL )
+  target_link_libraries(InterSpecLib PUBLIC Eigen3::Eigen Ceres::ceres )
+endif( USE_REL_ACT_TOOL )
+
 
 if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
     # Setting Xcode working directory requires cmake 3.17

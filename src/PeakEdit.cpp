@@ -881,7 +881,7 @@ void PeakEdit::refreshPeakInfo()
         }else
         {
           val = continuum->parameters().at( coefnum );
-          uncert = continuum->unertainties().at( coefnum );
+          uncert = continuum->uncertainties().at( coefnum );
         }//if( hide ) / else
         
         break;

@@ -2199,7 +2199,7 @@ void automated_search_for_peaks( InterSpec *viewer,
     return; //shouldnt happen
   
   
-  auto dataPtr = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );;
+  auto dataPtr = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   
   if( !dataPtr )
   {
@@ -2264,6 +2264,9 @@ void automated_search_for_peaks( InterSpec *viewer,
                           = wApp->bind( boost::bind( &set_peaks_from_search,
                                         viewer, displayed, searchresults, dataPtr, originalPeaks, guiupdater ) );
   
+  auto foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  shared_ptr<const DetectorPeakResponse> drf = foreground ? foreground->detector() : nullptr;
+  
   Wt::WServer *server = Wt::WServer::instance();
   if( !server )
     return;
@@ -2272,7 +2275,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   const string seshid = wApp->sessionId();
   
   server->ioService().boost::asio::io_service::post( std::bind( [=](){
-    search_for_peaks_worker( weakdata, startingPeaks, displayed, setColor,
+    search_for_peaks_worker( weakdata, drf, startingPeaks, displayed, setColor,
                             searchresults, callback, seshid, false );
     
   } ) );
@@ -2426,6 +2429,7 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
 
   
 void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_data,
+                              shared_ptr<const DetectorPeakResponse> drf,
                                std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > existingPeaks,
                                const vector<ReferenceLineInfo> displayed,
                                const bool setColor,
@@ -2448,7 +2452,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
   
   try
   {
-    *resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, existingPeaks, singleThread );
+    *resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread );
     
     assign_srcs_from_ref_lines( data, resultpeaks, displayed, setColor, false );
   }catch( std::exception &e )

@@ -9432,7 +9432,7 @@ void InterSpec::searchForSinglePeak( const double x )
   }//if( m_peakModel->peaks() )
   
   pair< PeakShrdVec, PeakShrdVec > foundPeaks;
-  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks );
+  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, m_dataMeasurement->detector() );
   
   //cerr << "Found " << foundPeaks.first.size() << " peaks to add, and "
   //     << foundPeaks.second.size() << " peaks to remove" << endl;
@@ -9567,6 +9567,7 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
             = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
   
   std::weak_ptr<const SpecUtils::Measurement> weakdata = m_spectrum->data();
+  auto drf = data->detector();
   std::weak_ptr<SpecMeas> spectrum = data;
   
   boost::function<void(void)> callback = wApp->bind(
@@ -9574,10 +9575,15 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                 this, spectrum, samples, origPeaks, searchresults) );
   
   boost::function<void(void)> worker = boost::bind( &PeakSearchGuiUtils::search_for_peaks_worker,
-                                                   weakdata, origPeaks,
-                                                   vector<ReferenceLineInfo>(), false,
+                                                   weakdata,
+                                                   drf, 
+                                                   origPeaks,
+                                                   vector<ReferenceLineInfo>(),
+                                                   false,
                                                    searchresults,
-                                                   callback, wApp->sessionId(), true );
+                                                   callback,
+                                                   wApp->sessionId(),
+                                                   true );
 
   if( m_findingHintPeaks )
   {

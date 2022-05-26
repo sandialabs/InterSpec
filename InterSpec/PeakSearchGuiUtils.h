@@ -43,6 +43,7 @@ class InterSpec;
 struct ColorTheme;
 namespace SpecUtils{ class Measurement; }
 struct ReferenceLineInfo;
+class DetectorPeakResponse;
 class ReferencePhotopeakDisplay;
 
 namespace Wt{
@@ -110,6 +111,7 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
 //  peak search.  'callback' is intended to be a bound function call to
 //  setPeaksFromSearch(...) or setHintPeaks(...).
 void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_data,
+                             std::shared_ptr<const DetectorPeakResponse> drf,
                              std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > existingPeaks,
                                const std::vector<ReferenceLineInfo> displayed,
                                const bool setColorFromRefLine,

@@ -1227,7 +1227,10 @@ int MultiPeakFitChi2Fcn::nbin() const
 
 double MultiPeakFitChi2Fcn::dof() const
 {
-  return 1.0*m_nbin - 2.0*m_npeak - (m_offsetType - 1);
+  const double num_continuum_pars = PeakContinuum::num_parameters( m_offsetType );
+  
+  // TODO: I'm not sure why its (num_continuum_pars - 1) below
+  return 1.0*m_nbin - 2.0*m_npeak - (num_continuum_pars - 1);
 }
 
 

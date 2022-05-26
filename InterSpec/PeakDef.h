@@ -115,6 +115,9 @@ struct PeakContinuum
   /** Returns string to be used for XML or JSON identification of continuum type. */
   static const char *offset_type_str( const OffsetType type );
   
+  /** Returns the number of parameters for a specified offset type. */
+  static size_t num_parameters( const OffsetType type );
+  
   /** Throws exception if string does not match a string returned by #offset_type_str.
    @param str String to be tested.  Must not be a null pointer, but string does not need to be null terminated.
    @param len The length of the string to be tested.
@@ -138,8 +141,8 @@ struct PeakContinuum
                      const std::vector<double> &parameters,
                      const std::vector<double> &uncertainties );
 
-  //setParameters: a convienience function which actually calls other form of
-  //  this member function.  This funtion assumes both passed in arrays are
+  //setParameters: a convenience function which actually calls other form of
+  //  this member function.  This function assumes both passed in arrays are
   //  of a length equal to OffsetType; uncertainties may be a null pointer.
   void setParameters( double referenceEnergy,
                       const double *parameters,
@@ -159,7 +162,7 @@ struct PeakContinuum
   
   double referenceEnergy() const { return m_referenceEnergy; }
   const std::vector<double> &parameters() const { return m_values; }
-  const std::vector<double> &unertainties() const { return m_uncertainties; }
+  const std::vector<double> &uncertainties() const { return m_uncertainties; }
   std::vector<bool> fitForParameter() const { return m_fitForValue; }
   std::shared_ptr<const SpecUtils::Measurement> externalContinuum() const { return m_externalContinuum; }
   

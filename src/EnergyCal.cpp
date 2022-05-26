@@ -742,7 +742,7 @@ EnergyCal::translatePeaksForCalibrationChange( const std::deque<std::shared_ptr<
       }//if( IsNan(strech) || IsInf(strech) )
  
       vector<double> vars = oldcont->parameters();
-      vector<double> uncerts = oldcont->unertainties();
+      vector<double> uncerts = oldcont->uncertainties();
 
       for( size_t i = 0; i < vars.size(); ++i )
       {

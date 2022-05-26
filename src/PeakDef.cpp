@@ -2554,7 +2554,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       
       answer << "," << q << "referenceEnergy" << q << ":" << continuum->referenceEnergy();
       const vector<double> &values = continuum->parameters();
-      const vector<double> &uncerts = continuum->unertainties();
+      const vector<double> &uncerts = continuum->uncertainties();
       answer << "," << q << "coeffs" << q << ":[";
       for (size_t i = 0; i < values.size(); ++i)
       {
@@ -3794,7 +3794,7 @@ void PeakDef::inheritUserSelectedOptions( const PeakDef &parent,
             if( inheritNonFitForValues && !rhs_fit_fors[i] )
             {
               const vector<double> &rhs_pars = rhs_cont->parameters();
-              const vector<double> &rhs_uncerts = rhs_cont->unertainties();
+              const vector<double> &rhs_uncerts = rhs_cont->uncertainties();
               assert( rhs_pars.size() == rhs_fit_fors.size() );
               assert( rhs_pars.size() == rhs_uncerts.size() );
               
@@ -4031,6 +4031,32 @@ const char *PeakContinuum::offset_type_str( const PeakContinuum::OffsetType type
   return "InvalidOffsetType";
 }
 
+
+size_t PeakContinuum::num_parameters( const PeakContinuum::OffsetType type )
+{
+  switch( type )
+  {
+    case OffsetType::NoOffset:
+    case OffsetType::External:
+      return 0;
+      
+    case OffsetType::Constant:
+    case OffsetType::Linear:
+    case OffsetType::Quadratic:
+    case OffsetType::Cubic:
+      return static_cast<size_t>(type);
+      
+    case OffsetType::FlatStep:
+    case OffsetType::LinearStep:
+    case OffsetType::BiLinearStep:
+      return 2 + (type - FlatStep);
+  }//switch( type )
+  
+  assert( 0 );
+  return 0;
+}//size_t num_parameters( const OffsetType type );
+
+
 PeakContinuum::OffsetType PeakContinuum::str_to_offset_type_str( const char * const str, const size_t len )
 {
   using ::rapidxml::internal::compare;
@@ -4107,34 +4133,13 @@ void PeakContinuum::setParameters( double referenceEnergy,
                                    const std::vector<double> &uncertainties )
 {
   // First check size of inputs are valid
-  switch( m_type )
-  {
-    case NoOffset: case External:
-      throw runtime_error( "PeakContinuum::setParameters invalid m_type" );
-      
-    case Constant:   case Linear:
-    case Quadratic:  case Cubic:
-      if( x.size() != static_cast<size_t>(m_type) )
-        throw runtime_error( "PeakContinuum::setParameters invalid parameter size" );
-      
-      if( !uncertainties.empty() && (uncertainties.size() != static_cast<size_t>(m_type)) )
-        throw runtime_error( "PeakContinuum::setParameters invalid uncert size" );
-    break;
-      
-    case FlatStep:
-    case LinearStep:
-    case BiLinearStep:
-    {
-      const size_t numpars = 2 + (m_type - FlatStep);
-      if( x.size() != numpars )
-        throw runtime_error( "PeakContinuum::setParameters invalid parameter size for stepped continuum" );
-      
-      if( !uncertainties.empty() && (uncertainties.size() != numpars) )
-        throw runtime_error( "PeakContinuum::setParameters invalid uncert size for stepped continuum" );
-    
-      break;
-    }//case Flat/Linear/BiLinear-step
-  };//switch( m_type )
+  const size_t num_expected_pars = PeakContinuum::num_parameters( m_type );
+  
+  if( x.size() != num_expected_pars )
+    throw runtime_error( "PeakContinuum::setParameters invalid parameter size" );
+  
+  if( !uncertainties.empty() && (uncertainties.size() != num_expected_pars) )
+    throw runtime_error( "PeakContinuum::setParameters invalid uncert size" );
   
   m_values = x;
   m_referenceEnergy = referenceEnergy;
@@ -4182,6 +4187,7 @@ void PeakContinuum::setParameters( double referenceEnergy,
     throw runtime_error( "PeakContinuum::setParameters invalid parameters" );
   
   vector<double> uncerts, values;
+  
   switch( m_type )
   {
     case NoOffset: case External:
@@ -4189,19 +4195,15 @@ void PeakContinuum::setParameters( double referenceEnergy,
       
     case Constant:   case Linear:
     case Quadratic: case Cubic:
-      values.insert( end(values), parameters, parameters + m_type );
-      if( uncertainties )
-        uncerts.insert( end(uncerts), uncertainties, uncertainties+m_type );
-      break;
-      
     case FlatStep:
     case LinearStep:
     case BiLinearStep:
     {
-      const size_t npars = 2 + (m_type - FlatStep);
-      values.insert( end(values), parameters, parameters + npars );
+      const size_t npar = num_parameters(m_type);
+      values.insert( end(values), parameters, parameters + npar );
       if( uncertainties )
-        uncerts.insert( end(uncerts), uncertainties, uncertainties + npars );
+        uncerts.insert( end(uncerts), uncertainties, uncertainties + npar );
+      
       break;
     }
   };//switch( m_type )

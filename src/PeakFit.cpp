@@ -60,6 +60,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "SpecUtils/SpecFile.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "SpecUtils/SpecUtilsAsync.h"
@@ -130,6 +131,7 @@ bool largerByAmplitude( const std::shared_ptr<const PeakDef> &lhs, const std::sh
   
 void do_peak_automated_searchfit( const double x,
                                   const std::shared_ptr<const Measurement> &meas,
+                                  const std::shared_ptr<const DetectorPeakResponse> &drf,
                                   const PeakShrdVec &inpeaks,
                                   std::pair< PeakShrdVec, PeakShrdVec > &answer )
 {
@@ -138,7 +140,7 @@ void do_peak_automated_searchfit( const double x,
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
     DebugLog(cout) << "Will try fitting peak clicked on at " << x << "\n";
 #endif
-    answer = searchForPeakFromUser( x, -1.0, meas, inpeaks );
+    answer = searchForPeakFromUser( x, -1.0, meas, inpeaks, drf );
   }catch( std::exception &e )
   {
     cerr << "do_peak_searchfit(...): caught unexpected exception: '" << e.what()
@@ -272,8 +274,8 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
 
         PeakShrdVec onepeak( 1, input[i] );
         pair< PeakShrdVec, PeakShrdVec > twoPeaksPlus, twoPeaksMinus;
-        twoPeaksPlus = searchForPeakFromUser( m + s, -1.0, meas, onepeak );
-        twoPeaksMinus = searchForPeakFromUser( m - s, -1.0, meas, onepeak );
+        twoPeaksPlus = searchForPeakFromUser( m + s, -1.0, meas, onepeak, nullptr );
+        twoPeaksMinus = searchForPeakFromUser( m - s, -1.0, meas, onepeak, nullptr );
         
         if( twoPeaksPlus.first.size() == 2 && twoPeaksMinus.first.size() == 2 )
         {
@@ -339,6 +341,7 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
 
 std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
                                        const std::shared_ptr<const Measurement> meas,
+                                       const std::shared_ptr<const DetectorPeakResponse> &drf,
                                        std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks )
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
@@ -459,7 +462,6 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
       candidatesBeingFitFor.push_back( peak );
     }//for( size_t i = 0; i < candidates.size(); ++i )
     
-    
     SpecUtilsAsync::ThreadPool pool;
     
     vector< pair< PeakShrdVec, PeakShrdVec > > results( candidatesBeingFitFor.size() );
@@ -468,8 +470,8 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
     {
       const double mean = candidatesBeingFitFor[i]->mean();
       pool.post( boost::bind( &do_peak_automated_searchfit, mean,
-                             boost::cref(meas), boost::cref(fitpeakvec),
-                             boost::ref(results[i]) ));
+                             boost::cref(meas), boost::cref(drf),
+                             boost::cref(fitpeakvec), boost::ref(results[i]) ));
     }//for( size_t i = 0; i < peaksToTryIndices.size(); ++i )
     
     pool.join();
@@ -522,6 +524,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
 
 vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
                         const std::shared_ptr<const Measurement> meas,
+                        const std::shared_ptr<const DetectorPeakResponse> &drf,
                         std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks )
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
@@ -585,7 +588,7 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
 #endif
     
     pair< PeakShrdVec, PeakShrdVec > results;
-    do_peak_automated_searchfit( p.mean(), meas, fitpeakvec, results );
+    do_peak_automated_searchfit( p.mean(), meas, drf, fitpeakvec, results );
     
     const PeakShrdVec &toadd = results.first;
     const PeakShrdVec &toremove = results.second;
@@ -615,15 +618,16 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
   
 vector<std::shared_ptr<const PeakDef> > search_for_peaks(
                               const std::shared_ptr<const Measurement> meas,
+                              const std::shared_ptr<const DetectorPeakResponse> drf,
                               std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks,
                               const bool singleThreaded  )
 {
   vector<std::shared_ptr<const PeakDef> > answer;
   
   if( singleThreaded )
-    answer = search_for_peaks_singlethread( meas, origpeaks );
+    answer = search_for_peaks_singlethread( meas, drf, origpeaks );
   else
-    answer = search_for_peaks_multithread( meas, origpeaks );
+    answer = search_for_peaks_multithread( meas, drf, origpeaks );
   
   return answer;
 }
@@ -3440,13 +3444,22 @@ PeakShrdVec highres_shrink_roi( const PeakShrdVec &inpeaks,
       for( size_t i = 0; i < fitpeaks.size(); ++i )
         answer.push_back( std::make_shared<PeakDef>(fitpeaks[i]) );
     }//if( fitpeaks.size() )
-  }catch( std::exception & )
+  }catch( std::exception &e )
   {
     answer.clear();
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
+    DebugLog(cout) << "Caught exception; clearing peaks: " << e.what() << "\n";
+#endif
   }
   
   if( answer.empty() )
+  {
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
+    DebugLog(cout) << "Answer is empty, returning inpeaks.\n";
+#endif
+    
     return inpeaks;
+  }
   
   return answer;
 }//PeakShrdVec highres_shrink_roi( PeakShrdVec initialfitpeaks )
@@ -4693,7 +4706,8 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
 pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                                                         double pixelPerKev,
                                                         const std::shared_ptr<const Measurement> &dataH,
-                                                        const PeakShrdVec &inpeaks )
+                                                        const PeakShrdVec &inpeaks,
+                                                        std::shared_ptr<const DetectorPeakResponse> drf )
 {
   typedef std::shared_ptr<const PeakDef> PeakDefShrdPtr;
   
@@ -4712,6 +4726,9 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   double sigma0, mean0, area0;
   get_candidate_peak_estimates_for_user_click( sigma0, mean0, area0, x,
                                               pixelPerKev, dataH, inpeaks );
+  
+  if( drf && drf->isValid() && drf->hasResolutionInfo() )
+    sigma0 = drf->peakResolutionSigma( mean0 );
   
   PeakShrdVec coFitPeaks;
   double roiLower, roiUpper;
@@ -4751,20 +4768,87 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 //  initialLowerEnergies.push_back( roiLowerFeature );
 //  initialUpperEnergies.push_back( roiUpperFeature );
   
+  /** Using google Ceres to fit peaks is an experiment in using Ceres.
+   
+   Its actually about 4-times slower (although this is probably not the fault of Ceres - but of my
+   coding - and actually this is only when using a single thread, and for a single peak - for
+   multiple peaks and multiple Ceres threads, it doe beat-out minuit - even with my non-optimal
+   usage of Ceres), is totally untested, and hasnt been finished implementing everything.
+   
+   */
+#define USE_LM_PEAK_FIT 1
+  
+#if( !USE_LM_PEAK_FIT )
   PeakShrdVec initialfitpeaks;
   fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
+                          mean0, sigma0, area0, lowerEnergies, upperEnergies );
+#else
+  PeakShrdVec mnInitialfitpeaks;
+  const auto t1 = std::chrono::high_resolution_clock::now();
+  fit_peak_for_user_click( mnInitialfitpeaks, chi2Dof, dataH, coFitPeaks,
                            mean0, sigma0, area0, lowerEnergies, upperEnergies );
+  const auto t2 = std::chrono::high_resolution_clock::now();
+  
+  for( size_t i = 0; i < mnInitialfitpeaks.size(); ++i )
+  {
+    cout << "PRE LM  Peak " << std::setw(2) << i << ": mean=" << std::setw(10) << mnInitialfitpeaks[i]->mean()
+    << " keV, FWHM=" << std::setw(10) << mnInitialfitpeaks[i]->fwhm() << ", amp=" << std::setw(10)
+    << mnInitialfitpeaks[i]->amplitude() << endl;
+  }
+  
+  PeakShrdVec lmInitialfitpeaks;
+  const auto t3 = std::chrono::high_resolution_clock::now();
+  PeakFitLM::fit_peak_for_user_click_LM( lmInitialfitpeaks, chi2Dof, dataH, coFitPeaks,
+                             mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0] );
+  const auto t4 = std::chrono::high_resolution_clock::now();
+  
+  
+  cout << "Old way fit " << mnInitialfitpeaks.size() << " peaks - LM way fit " << lmInitialfitpeaks.size() << endl;
+  const size_t npeaks = std::min( lmInitialfitpeaks.size(), mnInitialfitpeaks.size() );
+  
+  auto mnCont = mnInitialfitpeaks.size() ? mnInitialfitpeaks[0]->continuum() : nullptr;
+  auto lmCont = lmInitialfitpeaks.size() ? lmInitialfitpeaks[0]->continuum() : nullptr;
+  
+  cout << "Contiuum: minuit={";
+  if( mnCont )
+  {
+    for( size_t i = 0; i < mnCont->parameters().size(); ++i )
+      cout << (i ? ", " : "") << mnCont->parameters()[i] << " +- " << (i < mnCont->uncertainties().size() ? mnCont->uncertainties()[i] : 0.0);
+  }
+  cout << "}, L-M={";
+  if( lmCont )
+  {
+    for( size_t i = 0; i < lmCont->parameters().size(); ++i )
+    cout << (i ? ", " : "") << lmCont->parameters()[i] << " +- " << (i < lmCont->uncertainties().size() ? lmCont->uncertainties()[i] : 0.0);
+  }
+  cout << "}\n";
+  
+  
+  for( size_t i = 0; i < npeaks; ++i )
+  {
+    const PeakDef &mnPeak = *mnInitialfitpeaks[i];
+    const PeakDef &lmPeak = *lmInitialfitpeaks[i];
+    cout << "Peak " << i << ":\n";
+    cout << "\tMinuit" << std::setw(24) << "" << "\t\tL-M" << endl;
+    cout << "\tmean: " << std::setw(10) << mnPeak.mean() << " +- " << std::setw(10) << mnPeak.meanUncert()
+    << "\t\t" << std::setw(10) << lmPeak.mean() << " +- " << std::setw(10) << lmPeak.meanUncert() << endl;
+    cout << "\tsigma: " << std::setw(10) << mnPeak.sigma() << " +- " << std::setw(10) << mnPeak.sigmaUncert()
+    << "\t\t" << std::setw(10) << lmPeak.sigma() << " +- " << std::setw(10) << lmPeak.sigmaUncert() << endl;
+    cout << "\tamp:   " << std::setw(10) << mnPeak.amplitude() << " +- " << std::setw(10) << mnPeak.amplitudeUncert()
+    << "\t\t" << std::setw(10) << lmPeak.amplitude() << " +- " << std::setw(10) << lmPeak.amplitudeUncert() << endl;
+    cout << "\tchi2:  " << std::setw(24) << mnPeak.chi2dof() << "\t\t" << std::setw(24) << lmPeak.chi2dof() << endl;
+  }
+  
+  cout << "Old method: " << std::chrono::duration<double, std::milli>(t2 - t1).count()
+  << "ms, vs new method " << std::chrono::duration<double, std::milli>(t4 - t3).count()
+  << endl;
+  
+  
+  PeakShrdVec initialfitpeaks = lmInitialfitpeaks;
+#endif // !USE_LM_PEAK_FIT / else
   
   if( initialfitpeaks.empty() )
     return pair<PeakShrdVec,PeakShrdVec>();
-  
-  // Using the number of channels to determine if high-resolution isnt a great method, as its not
-  //  uncommon for LaBr systems to have 4096 channels.  We should probably define some resolution
-  //  function that is the worst possible possible for high-resolution detectors, and threshold off
-  //  of this
-  const float keV_per_channel = (dataH->gamma_energy_max() - dataH->gamma_energy_min()) / dataH->num_gamma_channels();
-  // Plan: if we have
-  //inpeaks
   
   const bool highres = PeakFitUtils::is_high_res( dataH );
   
@@ -4819,6 +4903,26 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
       
       fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
                           mean0, sigma0, area0, lowerEnergies, upperEnergies );
+      
+#if( USE_LM_PEAK_FIT )
+      for( size_t i = 0; i < initialfitpeaks.size(); ++i )
+      {
+        cout << "OLD Peak " << std::setw(2) << i << ": mean=" << std::setw(10) << initialfitpeaks[i]->mean()
+        << " keV, FWHM=" << std::setw(10) << initialfitpeaks[i]->fwhm() << ", amp=" << std::setw(10)
+        << initialfitpeaks[i]->amplitude() << endl;
+      }
+      
+      
+      PeakFitLM::fit_peak_for_user_click_LM( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
+                                 mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0] );
+      
+      for( size_t i = 0; i < initialfitpeaks.size(); ++i )
+      {
+        cout << "LM  Peak " << std::setw(2) << i << ": mean=" << std::setw(10) << initialfitpeaks[i]->mean()
+        << " keV, FWHM=" << std::setw(10) << initialfitpeaks[i]->fwhm() << ", amp=" << std::setw(10)
+        << initialfitpeaks[i]->amplitude() << endl;
+      }
+#endif  //!USE_LM_PEAK_FIT / else
     }else
     {
       return pair<PeakShrdVec,PeakShrdVec>();
