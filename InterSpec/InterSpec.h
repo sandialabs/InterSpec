@@ -77,6 +77,10 @@ namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
 class SpectrumViewerTester;
 #endif
 
+#if( USE_REL_ACT_TOOL )
+class RelActGui;
+#endif
+
 namespace SpecUtils{ class SpecFile; }
 namespace SpecUtils{ class Measurement; }
 namespace SpecUtils{ enum class SpectrumType : int; }
@@ -583,6 +587,9 @@ public:
   void showGammaXsTool();
   void showDoseTool();
   void showShieldingSourceFitWindow();
+#if( USE_REL_ACT_TOOL )
+  void showRelActWindow();
+#endif
   void closeShieldingSourceFitWindow();
   void saveShieldingSourceModelToForegroundSpecMeas();
   
@@ -1140,6 +1147,11 @@ protected:
   ShieldingSourceDisplay *m_shieldingSourceFit;
   AuxWindow              *m_shieldingSourceFitWindow;
   std::shared_ptr<MaterialDB> m_materialDB;
+  
+#if( USE_REL_ACT_TOOL )
+  RelActGui              *m_relActGui;
+  AuxWindow              *m_relActWindow;
+#endif
 
   //m_nuclideSearchWindow: only valid when in tool tabs are hidden, and the user
   //  currently has the window nuclide search window open.

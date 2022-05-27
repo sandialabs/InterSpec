@@ -193,6 +193,10 @@
 #include "js/AppHtmlMenu.js"
 #endif
 
+#if( USE_REL_ACT_TOOL )
+#include "InterSpec/RelActGui.h"
+#endif
+
 #include "js/InterSpec.js"
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
@@ -354,6 +358,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_shieldingSuggestion( 0 ),
     m_shieldingSourceFit( 0 ),
     m_shieldingSourceFitWindow( 0 ),
+#if( USE_REL_ACT_TOOL )
+    m_relActGui( nullptr ),
+    m_relActWindow( nullptr ),
+#endif
     m_materialDB( nullptr ),
     m_nuclideSearchWindow( 0 ),
     m_nuclideSearchContainer(0),
@@ -7357,6 +7365,15 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item = popup->addMenuItem( "Activity/Shielding Fit" );
   HelpSystem::attachToolTipOn( item,"Allows advanced input of shielding material and activity around source isotopes to improve the fit." , showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showShieldingSourceFitWindow, this ) );
+ 
+  
+  item = popup->addMenuItem( "Relative Act. Isotopics" );
+  HelpSystem::attachToolTipOn( item,"UNDER DEVELOPMENT."
+                              "  Tool to allow fitting the relative activities of nuclides, that"
+                              " does not require knowing the detector response or shielding"
+                              " information." , showToolTips );
+  item->triggered().connect( boost::bind( &InterSpec::showRelActWindow, this ) );
+  
   
   item = popup->addMenuItem( "Gamma XS Calc", "" );
   HelpSystem::attachToolTipOn( item,"Allows user to determine the cross section for gammas of arbitrary energy though any material in <code>InterSpec</code>'s library. Efficiency estimates for detection of the gamma rays inside the full energy peak and the fraction of gamma rays that will make it through the material without interacting with it can be provided with the input of additional information.", showToolTips );
@@ -7664,6 +7681,28 @@ void InterSpec::showShieldingSourceFitWindow()
     m_shieldingSourceFitWindow->centerWindow();
   }//if( !m_shieldingSourceFit )
 }//void showShieldingSourceFitWindow()
+
+
+#if( USE_REL_ACT_TOOL )
+void InterSpec::showRelActWindow()
+{
+  if( !m_relActGui )
+  {
+    auto widgets = RelActGui::createWindow( this );
+    m_relActGui = widgets.first;
+    m_relActWindow  = widgets.second;
+  }else
+  {
+    const double windowWidth = 0.95 * renderedWidth();
+    const double windowHeight = 0.95 * renderedHeight();
+    m_relActWindow->resizeWindow( windowWidth, windowHeight );
+    
+    m_relActWindow->resizeToFitOnScreen();
+    m_relActWindow->show();
+    m_relActWindow->centerWindow();
+  }//if( !m_shieldingSourceFit )
+}//void showRelActWindow()
+#endif
 
 
 void InterSpec::saveShieldingSourceModelToForegroundSpecMeas()

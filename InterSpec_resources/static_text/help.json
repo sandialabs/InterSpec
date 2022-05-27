@@ -107,6 +107,12 @@
         "keywords":"Activity Shielding Fit Tools Multiple Nuclides Materials Common Generic Density Manual Thickness Upload Distance Measurement Off Adjust Accurate Accuracy False Source XML Model"
       },
       {
+        "id":"rel-act-dialog",
+        "title":"Relative Activity Isotopics",
+        "help-xml":"rel_act_help.xml",
+        "keywords":"Relative Activity Efficiency Isotopics"
+      },
+      {
         "id":"gamma-xs-dialog",
         "title":"Gamma XS Calc",
         "help-xml":"gamma_cross_section_dialog_help.xml",

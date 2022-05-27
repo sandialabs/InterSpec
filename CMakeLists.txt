@@ -569,8 +569,8 @@ if(USE_SPECRUM_FILE_QUERY_WIDGET)
 endif(USE_SPECRUM_FILE_QUERY_WIDGET)
 
 if( USE_REL_ACT_TOOL )
-  list( APPEND sources src/PeakFitLM.cpp )
-  list( APPEND headers InterSpec/PeakFitLM.h )
+  list( APPEND sources src/PeakFitLM.cpp src/RelActGui.cpp src/RelActCalcAuto.cpp )
+  list( APPEND headers InterSpec/PeakFitLM.h InterSpec/RelActGui.h InterSpec/RelActCalcAuto.h )
   
   include(FetchContent)
   
@@ -581,6 +581,8 @@ if( USE_REL_ACT_TOOL )
   set( EIGEN_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" )
   set( EIGEN_BUILD_DOC OFF CACHE INTERNAL "" )
   set( EIGEN_BUILD_TESTING OFF CACHE INTERNAL "" )
+  #set( Eigen3_DIR "${FETCHCONTENT_BASE_DIR}/..." CACHE INTERNAL "" )
+  
   FetchContent_Declare(
     eigen
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git

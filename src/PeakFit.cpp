@@ -60,12 +60,15 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "SpecUtils/SpecFile.h"
-#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/DetectorPeakResponse.h"
+
+#if( USE_REL_ACT_TOOL )
+#include "InterSpec/PeakFitLM.h"
+#endif
 
 using namespace std;
 
@@ -4776,7 +4779,12 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
    usage of Ceres), is totally untested, and hasnt been finished implementing everything.
    
    */
+#if( USE_REL_ACT_TOOL )
 #define USE_LM_PEAK_FIT 1
+#else
+#define USE_LM_PEAK_FIT 0
+#endif
+
   
 #if( !USE_LM_PEAK_FIT )
   PeakShrdVec initialfitpeaks;

@@ -41,6 +41,8 @@
 //           to change - or reimplementing their layouts using CSS grid or flex
 #cmakedefine01 USE_CSS_FLEX_LAYOUT
 
+#cmakedefine01 USE_REL_ACT_TOOL
+
 // Since USE_ELECTRON_NATIVE_MENU can be set to true without BUILD_AS_ELECTRON_APP being true, you
 //  have to test both its an electron app, and the menu type, so we'll create a little bit of a
 //  shortcut
