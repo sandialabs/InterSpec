@@ -569,8 +569,8 @@ if(USE_SPECRUM_FILE_QUERY_WIDGET)
 endif(USE_SPECRUM_FILE_QUERY_WIDGET)
 
 if( USE_REL_ACT_TOOL )
-  list( APPEND sources src/PeakFitLM.cpp src/RelActGui.cpp src/RelActCalcAuto.cpp )
-  list( APPEND headers InterSpec/PeakFitLM.h InterSpec/RelActGui.h InterSpec/RelActCalcAuto.h )
+  list( APPEND sources src/PeakFitLM.cpp src/RelActGui.cpp src/RelActCalc.cpp src/RelActCalcAuto.cpp )
+  list( APPEND headers InterSpec/PeakFitLM.h InterSpec/RelActGui.h InterSpec/RelActCalc.h InterSpec/RelActCalcAuto.h )
   
   include(FetchContent)
   

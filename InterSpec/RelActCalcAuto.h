@@ -25,12 +25,16 @@
 
 #include "InterSpec_config.h"
 
+#include <string>
+#include <memory>
 #include <vector>
 
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType
 
 
-// Forward declerations
+// Forward declarations
+class DetectorPeakResponse;
+
 namespace SpecUtils
 {
   class Measurement;
@@ -39,6 +43,11 @@ namespace SpecUtils
 namespace SandiaDecay
 {
   struct Nuclide;
+}
+
+namespace RelActCalc
+{
+  enum class RelEffEqnForm : int;
 }
 
 /*
@@ -83,10 +92,17 @@ namespace RelActCalcAuto
  */
 struct RoiRange
 {
-  double lower_energy;
-  double upper_energy;
-  PeakContinuum::OffsetType continuum_type;
-  bool force_full_range;
+  double lower_energy = -1.0;
+  double upper_energy = -1.0;
+  PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Quadratic;
+  
+  /** Dont allow cutting range down based on peaks not being anywhere reasonably near edge. */
+  bool force_full_range = false;
+  
+  /** If we have a peak right-on the edge, allow the ROI to extend out to a few FWHM.
+   If #force_full_range is true, this value must be false.
+   */
+  bool allow_expand_for_peak_width = false;
 };//struct RoiRange
 
 
@@ -94,11 +110,177 @@ struct RoiRange
  */
 struct NucInputInfo
 {
-  const SandiaDecay::Nuclide *nuclide;
-  double age;
-  bool fit_age;
-  std::vector<double> gammas_to_release;
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+  
+  /** Must not be negative. */
+  double age = -1.0;
+  
+  
+  bool fit_age = false;
+  
+  /** Energy corresponding to SandiaDecay::EnergyRatePair::energy */
+  std::vector<double> gammas_to_exclude;
 };//struct NucInputInfo
+
+
+/** A peak at a specific energy, that has a free-floating amplitude, and may also have a floating
+ FWHM.
+ */
+struct FloatingPeak
+{
+  double energy = -1.0;
+  bool release_fwhm = false;
+};//struct FloatingPeak
+
+/** The FWHM functional form to use.
+ 
+ See #DetectorPeakResponse::ResolutionFnctForm for details.
+ 
+ 
+ See #DetectorPeakResponse::Polynomial for details
+ 
+ FWHM = sqrt( Sum_i{A_i*pow(x/1000,i)} );
+ */
+enum class FwhmForm : int
+{
+  /** See #DetectorPeakResponse::peakResolutionFWHM implementation for details.
+   Will use three parameters to fit FWHM as a function of energy.
+   */
+  Gadras,
+  
+  /** The linear polynomial: e.g. FWHM = sqrt(A_0 + A_1*1/1000) */
+  Polynomial_2,
+  
+  /** The quadratic polynomial: e.g. FWHM = sqrt(A_0 + A_1*0.001*Energy + A_2*0.000001*Energy*Energy */
+  Polynomial_3,
+  Polynomial_4,
+  Polynomial_5,
+  Polynomial_6
+};//enum ResolutionFnctForm
+
+
+
+struct Options
+{
+  Options();
+  
+  bool fit_energy_cal;
+  
+  RelActCalc::RelEffEqnForm rel_eff_eqn_type;
+  
+  /** The number of energy dependent terms to use for the relative efficiency equation.  I.e., the
+   number of terms fit for will be one more than this value.
+   */
+  size_t rel_eff_eqn_order;
+  
+  FwhmForm fwhm_form;
+};//struct Options
+
+
+struct NuclideRelAct
+{
+  const SandiaDecay::Nuclide *nuclide;
+  
+  double age;
+  double age_uncertainty;
+  bool age_was_fit;
+  
+  double activity;
+  double activity_uncertainty;
+};//struct NuclideRelAc
+
+
+struct FloatingPeakResult
+{
+  double energy;
+  double amplitude;
+  double amplitude_uncert;
+  double fwhm;
+  double fwhm_uncert;
+};//struct FloatingPeakResult
+
+
+struct RelActAutoSolution
+{
+  RelActAutoSolution();
+  
+  enum class Status : int
+  {
+    Success,
+    NotInitiated,
+    FailedToSetupProblem,
+    FailToSolveProblem
+  };//
+  
+  RelActAutoSolution::Status m_status;
+  std::string m_error_message;
+  
+  std::shared_ptr<const SpecUtils::Measurement> m_foreground;
+  std::shared_ptr<const SpecUtils::Measurement> m_background;
+  
+  /** This is a spectrum that will be background subtracted and energy calibrated, if those options
+   where wanted.
+   */
+  std::shared_ptr<SpecUtils::Measurement> m_spectrum;
+  
+  RelActCalc::RelEffEqnForm m_rel_eff_form;
+  
+  std::vector<double> m_rel_eff_coefficients;
+  std::vector<std::vector<double>> m_rel_eff_covariance;
+  
+  std::vector<NuclideRelAct> m_rel_activities;
+  std::vector<std::vector<double>> m_rel_act_covariance;
+  
+  FwhmForm m_fwhm_form;
+  std::vector<double> m_fwhm_coefficients;
+  std::vector<std::vector<double>> m_fwhm_covariance;
+  
+  std::vector<FloatingPeakResult> m_floating_peaks;
+  
+  std::vector<PeakDef> m_fit_peaks;
+  
+  std::vector<RoiRange> m_input_roi_ranges;
+  
+  /** This DRF will be the input DRF you passed in, if it was valid and had energy resolution info.
+   Otherwise, this will be a "FLAT" DRF with a rough energy resolution function fit from the
+   foreground spectrum; in this case, it may be useful to re-use the DRF on subsequent calls to
+   avoid the overhead of searching for all the peaks and such.
+   */
+  std::shared_ptr<const DetectorPeakResponse> m_drf;
+  
+  double m_energy_cal_adjustments[2];
+  bool m_fit_energy_cal_adjustments;
+  
+  
+  /** */
+  double m_chi2;
+  
+  /** The number of degrees of freedom in the fit for equation parameters.
+   
+   Note: this is currently just a
+   */
+  size_t m_dof;
+  
+  /** The number steps it took L-M to reach a solution. Only useful for debugging and curiosity. */
+  int m_num_function_eval;
+  
+  
+  int m_num_microseconds_eval;
+};//struct RelEffSolution
+
+
+RelActAutoSolution solve( Options options,
+                         std::vector<RoiRange> energy_ranges,
+                         std::vector<NucInputInfo> nuclides,
+                         std::vector<FloatingPeak> extra_peaks,
+                         FwhmForm fwhm_form,
+                         RelActCalc::RelEffEqnForm rel_eff_form,
+                         size_t rel_eff_order,
+                         std::shared_ptr<const SpecUtils::Measurement> foreground,
+                         std::shared_ptr<const SpecUtils::Measurement> background,
+                         const std::shared_ptr<const DetectorPeakResponse> drf
+                         );
+
 
 }//namespace RelActCalcAuto
 

@@ -37,14 +37,6 @@ using namespace std;
 
 namespace PeakFitLM
 {
-using ceres::AutoDiffCostFunction;
-using ceres::CauchyLoss;
-using ceres::CostFunction;
-using ceres::Problem;
-using ceres::Solve;
-using ceres::Solver;
-
-
 // TODO: can we make this a "CostFunctor" where operator() is templated to allow better differentiation?
 // Takes 1 parameter blocks, of size number_parameters() - e.g., we are putting all parameters together:
 // Emits number_residuals() residuals
@@ -462,7 +454,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
       - Should separate the linear and non-linear parameter blocks now at least
      - Add punishment for stat insignificant peaks
      - See if we can template cost function to take advantage of the auto diff
-       - It looks like to use AutoDiffCostFunction, we need to know how many parameters we will use at compile-time (so we could just have special cases for 1 and 2 peaks, and just use DynamicNumericDiffCostFunction otherwise); we also need to inline all the peak and continuum calculations to be in this file so we can evaluate ceres::Jets (we could also potentially template these function)
+       - It looks like to use ceres::AutoDiffCostFunction, we need to know how many parameters we will use at compile-time (so we could just have special cases for 1 and 2 peaks, and just use DynamicNumericDiffCostFunction otherwise); we also need to inline all the peak and continuum calculations to be in this file so we can evaluate ceres::Jets (we could also potentially template these function)
      - Need to deal with errors during solving, and during Covariance computation
      - Deal with setting number of threads reasonably.
      - Try out using a ceres::LossFunction
@@ -582,7 +574,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
     double minsigma = binwidth;
     double maxsigma = 0.5*range;
       
-    Problem problem;
+    ceres::Problem problem;
     
     auto cost_functor = new PeakFitDiffCostFunction( dataH, coFitPeaks, roiLowerEnergy, roiUpperEnergy, offset_type, reference_energy );
     
@@ -604,7 +596,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
       
     // TODO: investigate using a LossFunction; from a brief investigation it maybe really affects the amplitude uncertainty if not chosen carefully
     ceres::LossFunction *lossfcn = nullptr;
-    //ceres::LossFunction *lossfcn = new CauchyLoss(0.5) or new HuberLoss(...), or ...
+    //ceres::LossFunction *lossfcn = new ceres::CauchyLoss(0.5) or new HuberLoss(...), or ...
     
     problem.AddResidualBlock( cost_function, lossfcn, parameter_blocks );
     //problem.SetParameterBlockConstant( nullptr );
@@ -680,7 +672,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
       }
     }//if( num_sigmas_fit > 0 )
     
-    Solver::Options options;
+    ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_QR;
     options.minimizer_progress_to_stdout = false; //true;
     options.num_threads = 4;
@@ -691,13 +683,13 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
     //options.inner_iteration_ordering->AddElementToGroup
     //options.inner_iteration_tolerance = ...;
     
-    Solver::Summary summary;
-    Solve(options, &problem, &summary);
+    ceres::Solver::Summary summary;
+    ceres::Solve(options, &problem, &summary);
     //std::cout << summary.BriefReport() << "\n";
     std::cout << summary.FullReport() << "\n";
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
     cost_functor->m_ncalls = 0;
-    //Solve(options, &problem, nullptr );
+    //ceres::Solve(options, &problem, nullptr );
     
     
     ceres::Covariance::Options cov_options;
