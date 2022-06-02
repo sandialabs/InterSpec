@@ -375,6 +375,7 @@ void SpecFileSummary::init()
   addField( m_title, measTable, "Description:", 4, 0, 1, 5 );
   
   addField( m_source, measTable, "Source Type:", 4, 6 );
+  m_source->setNoSelectionEnabled( true );
   
   for( SpecUtils::SourceType i = SpecUtils::SourceType(0);
        i <= SpecUtils::SourceType::Unknown;

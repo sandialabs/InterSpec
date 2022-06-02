@@ -107,6 +107,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   //ToDo: right m_nonChartAreaCssTheme only lists names given by ColorTheme::predefinedThemeName(),
   //      but what we should *really* do is list options in InterSpec_resources/themes
   m_nonChartAreaCssTheme = new WComboBox( cell );
+  m_nonChartAreaCssTheme->setNoSelectionEnabled( true );
   
   for( ColorTheme::PredefinedColorTheme t = ColorTheme::DefaultColorTheme;
       t < ColorTheme::NumPredefinedColorTheme;
