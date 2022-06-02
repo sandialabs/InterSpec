@@ -1420,6 +1420,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   
   m_effOptionGroup = new WGroupBox( "Intrinsic Eff.", fitOptionsDiv );
   m_effEqnOrder = new WComboBox( m_effOptionGroup );
+  m_effEqnOrder->setNoSelectionEnabled( true );
   m_effEqnOrder->setInline( false );
   m_effEqnOrder->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   
@@ -1433,6 +1434,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   
   m_fwhmOptionGroup = new WGroupBox( "FWHM Eqn.", fitOptionsDiv );
   m_fwhmEqnType = new WComboBox( m_fwhmOptionGroup );
+  m_fwhmEqnType->setNoSelectionEnabled( true );
   m_fwhmEqnType->setInline( false );
   m_fwhmEqnType->addItem( "Gadras Eqation" );
   m_fwhmEqnType->addItem( "Sqrt Power Series" );
@@ -1440,6 +1442,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_fwhmEqnType->changed().connect( this, &MakeDrf::handleFwhmTypeChanged );
   
   m_sqrtEqnOrder = new WComboBox( m_fwhmOptionGroup );
+  m_sqrtEqnOrder->setNoSelectionEnabled( true );
   m_sqrtEqnOrder->setInline( false );
   m_sqrtEqnOrder->hide();
   m_sqrtEqnOrder->changed().connect( this, &MakeDrf::handleSqrtEqnOrderChange );

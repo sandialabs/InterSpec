@@ -173,6 +173,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     m_selects[typeindex] = new WComboBox( wrapper );
     m_selects[typeindex]->setInline( false );
     m_selects[typeindex]->addStyleClass( "SpecFileSelect" );
+    m_selects[typeindex]->setNoSelectionEnabled( true );
     m_selects[typeindex]->setCurrentIndex( -1 );
     m_selects[typeindex]->activated().connect( boost::bind( &CompactFileManager::handleFileChangeRequest,
                                                         this, boost::placeholders::_1, type ) );
@@ -680,9 +681,7 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
   }//if( !meas )
 
   if( m_scaleValueTxt[typeindex] )
-  {
     m_scaleValueTxt[typeindex]->enable();
-  }
   
   if( m_rescaleByLiveTime[typeindex] )
     m_rescaleByLiveTime[typeindex]->hide();
@@ -695,9 +694,6 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
     return;
   }//if( !index.isValid() )
 
-  //if( meas )
-  //  cout << "There are " << meas->sample_numbers().size() << " sample numbers, " << meas->measurements().size() << " meas" << endl;
-  
   select->setCurrentIndex( index.row() );
 
   const set<int> total_sample_nums = meas->sample_numbers();

@@ -945,6 +945,7 @@ void RelEffFile::init()
   m_credits->addStyleClass( "RelEffFileCredits" );
   
   m_detectorSelect = new WComboBox( bottomDiv );
+  m_detectorSelect->setNoSelectionEnabled( true );
   m_detectorSelect->activated().connect( this, &RelEffFile::detectorSelectCallback );
   
   initDetectors();
@@ -1735,9 +1736,9 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 #endif
   m_parent( parentSelect ),
   m_drfSelect( drfSelect ),
-  m_detectorSelect( new WComboBox() ),
-  m_msg( new WText() ),
-  m_deleteBtn( new WPushButton() )
+  m_detectorSelect( nullptr ),
+  m_msg( nullptr ),
+  m_deleteBtn( nullptr )
 {
   setObjectName( "GadDir" + Wt::WRandom::generateId() );
   
@@ -1746,7 +1747,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
 #else
   WContainerWidget *topdiv = new WContainerWidget( this );
-  topdiv->addWidget( m_deleteBtn );
+  m_deleteBtn = new WPushButton( topdiv );
   m_deleteBtn->addStyleClass( "closeicon-wtdefault" );
   m_deleteBtn->setToolTip( "Remove directory from list of directories InterSpec will look in for detector response functions in." );
   m_deleteBtn->clicked().connect( boost::bind( &GadrasDetSelect::removeDirectory, parentSelect, this ) );
@@ -1883,15 +1884,15 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   WContainerWidget *bottomDiv = new WContainerWidget( this );
   
   m_detectorSelect = new WComboBox( bottomDiv );
+  m_detectorSelect->setNoSelectionEnabled( true );
   m_detectorSelect->activated().connect( this, &GadrasDirectory::detectorSelectCallback );
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
   m_directoryEdit->changed().connect( m_detectorSelect, &WPushButton::disable );
 #endif
   
+  m_msg = new WText( bottomDiv );
   m_msg->setInline( false );
-  bottomDiv->addWidget( m_msg );
-  
   
   initDetectors();
 }//GadrasDirectory constructor

@@ -272,7 +272,8 @@ void DecaySelectNuclide::init()
   
   m_massSelection->setSelectionMode( SingleSelection );
   m_elementSelection->setSelectionMode( SingleSelection );
-  
+  m_massSelection->setNoSelectionEnabled( true );
+  m_elementSelection->setNoSelectionEnabled( true );
   
   
   m_acceptButton = new WPushButton( "Add" ,m_footer);
