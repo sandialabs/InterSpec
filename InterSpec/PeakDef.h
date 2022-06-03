@@ -59,8 +59,8 @@ namespace rapidxml
  
  TODO: When PeakDefs are copied, their continuum still points to the same PeakContinuum object,
        meaning if the copies modify their continuum, the originals continuum also gets modified.
-       This is currently necassary since multiple PeakDefs can share a PeakContinuum.  To fix this
-       a ROI (e.g., contimuum) should own the peaks, not the other way around
+       This is currently necessary since multiple PeakDefs can share a PeakContinuum.  To fix this
+       a ROI (e.g., continuum) should own the peaks, not the other way around
  */
 struct PeakContinuum
 {
@@ -117,6 +117,9 @@ struct PeakContinuum
   
   /** Returns the number of parameters for a specified offset type. */
   static size_t num_parameters( const OffsetType type );
+  
+  /** Returns true if continuum type is FlatStep, LinearStep, or BiLinearStep and otherwise false */
+  static bool is_step_continuum( const OffsetType type );
   
   /** Throws exception if string does not match a string returned by #offset_type_str.
    @param str String to be tested.  Must not be a null pointer, but string does not need to be null terminated.

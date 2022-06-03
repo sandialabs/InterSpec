@@ -2512,25 +2512,6 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
                                                 ResolutionFnctForm fcnFrm,
                                                 const std::vector<float> &pars )
 {
-  /*
-   //The below is to compare for the Anthony NM detector, what FWHM we should
-   //  get, verses what we actually get reading the Detector.dat from GADRAS
-   std::vector<float> coeffs;
-   coeffs.push_back( 0.1401463  );
-   coeffs.push_back( 0.187422  );
-   coeffs.push_back( -2.07732e-09 );
-   
-   float channel = find_bin_from_polynomial( energy, coeffs, 16384 );
-   
-   double expected_fwhm_channels = 6.220468 + 0.0005996688*channel + channel*channel*-1.25688e-10;
-   double fwhm_kev = (0.187422 + channel*-2.07732e-09)* expected_fwhm_channels;
-   cerr << "FWHM at energy=" << energy << " to be Expected=" << fwhm_kev
-   << ", Actual = " << 2.35482 * peakResolutionSigma( energy )
-   << "  - channel=" << channel
-   << endl;
-   */
-  
-  
   switch( fcnFrm )
   {
     case kGadrasResolutionFcn:

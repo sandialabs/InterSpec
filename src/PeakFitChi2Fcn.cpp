@@ -1493,7 +1493,9 @@ size_t LinearProblemSubSolveChi2Fcn::nbin() const
 
 double LinearProblemSubSolveChi2Fcn::dof() const
 {
-  return 1.0*m_nbin - 2.0*m_npeak - (m_offsetType - 1);
+  const double ncont_pars = PeakContinuum::num_parameters(m_offsetType);
+  
+  return 1.0*m_nbin - 2.0*m_npeak - ((ncont_pars > 0.0) ? (ncont_pars - 1.0) : 0.0);
 }
 
 
@@ -1577,45 +1579,9 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
     }//for( size_t i = 0; i < m_npeak; ++i )
   }//if( one peak ) / else
   
-  const int num_polynomial_terms = ([this]() -> int {
-    switch( m_offsetType )
-    {
-      case PeakContinuum::NoOffset: case PeakContinuum::External:
-        return 0;
-        
-      case PeakContinuum::Constant: case PeakContinuum::Linear:
-      case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
-        return m_offsetType - PeakContinuum::NoOffset;
-        
-      case PeakContinuum::FlatStep:
-      case PeakContinuum::LinearStep:
-      case PeakContinuum::BiLinearStep:
-        return 2 + (m_offsetType - PeakContinuum::FlatStep);
-    }//switch( cont->type() )
-
-    assert( 0 );
-    throw std::runtime_error( "Somehow invalid continuum polynomial type." );
-    return 0;
-  })();
+  const int num_polynomial_terms = PeakContinuum::num_parameters( m_offsetType );
+  const bool step_continuum = PeakContinuum::is_step_continuum( m_offsetType );
   
-  const bool step_continuum = ([this]() -> int {
-    switch( m_offsetType )
-    {
-      case PeakContinuum::NoOffset: case PeakContinuum::External:
-      case PeakContinuum::Constant: case PeakContinuum::Linear:
-      case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
-        return false;
-        
-      case PeakContinuum::FlatStep:
-      case PeakContinuum::LinearStep:
-      case PeakContinuum::BiLinearStep:
-        return true;
-    }//switch( cont->type() )
-
-    assert( 0 );
-    throw std::runtime_error( "Somehow invalid continuum polynomial type." );
-    return false;
-  })();
   
   vector<double> amps, offsets, amps_uncerts, offsets_uncerts;
   

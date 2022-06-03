@@ -77,11 +77,10 @@ namespace RelActCalc
  
  Parameters to fit:
  - Energy offset; Energy gain adjust //will be fixed to begin with
- - Fwhm Parameters
- - RelEff coefs
- - Activities
- - Ages //will mostly be fixed
- - Free float peaks {amplitude, width} // if width is negative, then use Fwhm eqn
+ - Fwhm Parameters  // Will be `num_parameters(FwhmForm)` number of these
+ - RelEff coefs     // There will be one more than the "order" of relative eff eqn
+ - {Activity,Age}   // One pair for each nuclide.  Age will be mostly fixed, but can also be tied to another nuclide of the same elements age
+ - Free float peaks {amplitude, width-multiple} // The width multiple is of what the Fwhm Parameters predict (e.g., 1.0 says use parameter value).
  
  */
 
@@ -94,6 +93,11 @@ struct RoiRange
 {
   double lower_energy = -1.0;
   double upper_energy = -1.0;
+  
+  /** The continuum type to use.
+   
+   TODO: Allow setting to #PeakContinuum::OffsetType::External to auto-choose this.
+   */
   PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Quadratic;
   
   /** Dont allow cutting range down based on peaks not being anywhere reasonably near edge. */
@@ -112,7 +116,12 @@ struct NucInputInfo
 {
   const SandiaDecay::Nuclide *nuclide = nullptr;
   
-  /** Must not be negative. */
+  /** Age in units of PhysicalUnits (i.e., 1.0 == second).
+   
+   If the age is being fit, this will be used as the initial age to start with.
+   
+   Must not be negative.
+   */
   double age = -1.0;
   
   
@@ -128,9 +137,19 @@ struct NucInputInfo
  */
 struct FloatingPeak
 {
+  /** Energy (in keV) of the peak.
+   
+   Note that if energy calibration is being fit for, this energy will not have that correction
+   applied when fitting things; this is because these peaks are nominally expected to be added
+   by a user who gets the energy based on looking at the spectrum.
+   */
   double energy = -1.0;
+  
   bool release_fwhm = false;
+  
+  // TODO: should maybe have a max-width in FloatingPeak
 };//struct FloatingPeak
+
 
 /** The FWHM functional form to use.
  
@@ -158,14 +177,28 @@ enum class FwhmForm : int
   Polynomial_6
 };//enum ResolutionFnctForm
 
+size_t num_parameters( const FwhmForm eqn_form );
 
 
 struct Options
 {
   Options();
   
+  /** Whether to allow making small adjustments to the gain and/or offset of the energy calibration.
+   
+   Which coefficients are fit will be determined based on energy ranges used.
+   */
   bool fit_energy_cal;
   
+  /** If true, all nuclides of a given element will be constrained to be the same age.
+   
+   If true, all #NucInputInfo::age of nuclides of the same element must be the same, or an exception
+   will be thrown (even if age is being fit, this is .
+   */
+  bool nucs_of_el_same_age;
+  
+  /** The functional form of the relative efficiency equation to use.
+   */
   RelActCalc::RelEffEqnForm rel_eff_eqn_type;
   
   /** The number of energy dependent terms to use for the relative efficiency equation.  I.e., the
@@ -173,7 +206,11 @@ struct Options
    */
   size_t rel_eff_eqn_order;
   
+  /** The functional form of the FWHM equation to use.  The coefficients of this equation will
+   be fit for across all energy ranges.
+   */
   FwhmForm fwhm_form;
+  
 };//struct Options
 
 
@@ -214,6 +251,7 @@ struct RelActAutoSolution
   
   RelActAutoSolution::Status m_status;
   std::string m_error_message;
+  std::vector<std::string> m_warnings;
   
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
   std::shared_ptr<const SpecUtils::Measurement> m_background;
@@ -268,7 +306,11 @@ struct RelActAutoSolution
   int m_num_microseconds_eval;
 };//struct RelEffSolution
 
-
+/**
+ 
+ @param rel_eff_order The number of energy dependent terms to have in the relative efficiency
+        equation (e.g., one more parameter than this will be fit for).
+ */
 RelActAutoSolution solve( Options options,
                          std::vector<RoiRange> energy_ranges,
                          std::vector<NucInputInfo> nuclides,
@@ -278,7 +320,7 @@ RelActAutoSolution solve( Options options,
                          size_t rel_eff_order,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
-                         const std::shared_ptr<const DetectorPeakResponse> drf
+                         std::shared_ptr<const DetectorPeakResponse> drf
                          );
 
 

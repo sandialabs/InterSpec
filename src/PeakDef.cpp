@@ -3491,11 +3491,10 @@ void PeakDef::setNuclearTransition( const SandiaDecay::Nuclide *parentNuclide,
                                     const int index,
                                     const SourceGammaType sourceType )
 {
-  const size_t ind = static_cast<size_t>( index );
   m_transition = transition;
   m_sourceGammaType = sourceType;
   
-  if( m_transition && (ind<m_transition->products.size()) && (index>=0) )
+  if( m_transition && (index >= 0) && (index < static_cast<int>(m_transition->products.size())) )
     m_radparticleIndex = index;
   else
     m_radparticleIndex = -1;
@@ -4053,8 +4052,31 @@ size_t PeakContinuum::num_parameters( const PeakContinuum::OffsetType type )
   }//switch( type )
   
   assert( 0 );
+  throw std::runtime_error( "Somehow invalid continuum polynomial type." );
+  
   return 0;
 }//size_t num_parameters( const OffsetType type );
+
+
+bool PeakContinuum::is_step_continuum( const OffsetType type )
+{
+  switch( type )
+  {
+    case PeakContinuum::NoOffset: case PeakContinuum::External:
+    case PeakContinuum::Constant: case PeakContinuum::Linear:
+    case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+      return false;
+      
+    case PeakContinuum::FlatStep:
+    case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep:
+      return true;
+  }//switch( cont->type() )
+  
+  assert( 0 );
+  throw std::runtime_error( "Somehow invalid continuum polynomial type." );
+  return false;
+}//bool is_step_continuum( const OffsetType type );
 
 
 PeakContinuum::OffsetType PeakContinuum::str_to_offset_type_str( const char * const str, const size_t len )
