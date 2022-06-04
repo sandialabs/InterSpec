@@ -27,21 +27,32 @@
 #include <deque>
 #include <tuple>
 #include <limits>
+#include <sstream>
 #include <functional>
+#include <type_traits>
+
+#include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_utils.hpp"
+#include "rapidxml/rapidxml_print.hpp"
 
 #include "ceres/ceres.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
 #include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/PeakFit.h"
+#include "InterSpec/SpecMeas.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
@@ -55,6 +66,150 @@ struct DoWorkOnDestruct
   DoWorkOnDestruct( std::function<void()> &&worker ) : m_worker( std::move(worker) ){}
   ~DoWorkOnDestruct(){ if(m_worker) m_worker(); }
 };//struct DoWorkOnDestruct
+
+
+// We'll define some XML helper functions for serializing to/from XML
+//  (we should probably put these in a header somewhere and use through the code to minimize
+//   things a little)
+void append_float_node( rapidxml::xml_node<char> *base_node, const char *node_name, const double value )
+{
+  using namespace rapidxml;
+  
+  assert( base_node && base_node->document() );
+  xml_document<char> *doc = base_node->document();
+  
+  char buffer[128];
+  snprintf( buffer, sizeof(buffer), "%1.8e", value );
+  const char *strvalue = doc->allocate_string( buffer );
+  xml_node<char> *node = doc->allocate_node( node_element, node_name, strvalue );
+  base_node->append_node( node );
+}//append_float_node(...)
+
+
+void append_bool_node( rapidxml::xml_node<char> *base_node, const char *node_name, const bool value )
+{
+  using namespace rapidxml;
+  
+  assert( base_node && base_node->document() );
+  xml_document<char> *doc = base_node->document();
+  xml_node<char> *node = doc->allocate_node( node_element, node_name, (value ? "true" : "false") );
+  base_node->append_node( node );
+}//append_bool_node(...)
+
+
+template <class T, typename std::enable_if<std::is_integral<T>::value>::type* = nullptr >
+void append_int_node( rapidxml::xml_node<char> *base_node, const char *node_name, const T value )
+{
+  using namespace rapidxml;
+  
+  assert( base_node && base_node->document() );
+  xml_document<char> *doc = base_node->document();
+  const char *strvalue = doc->allocate_string( std::to_string(value).c_str() );
+  xml_node<char> *node = doc->allocate_node( node_element, node_name, strvalue );
+  base_node->append_node( node );
+}//append_bool_node(...)
+
+
+void append_string_node( rapidxml::xml_node<char> *base_node, const char *node_name, const string &value )
+{
+  using namespace rapidxml;
+  
+  assert( base_node && base_node->document() );
+  xml_document<char> *doc = base_node->document();
+  const char *strvalue = doc->allocate_string( value.c_str(), value.size() + 1 );
+  xml_node<char> *node = doc->allocate_node( node_element, node_name, strvalue );
+  base_node->append_node( node );
+}//append_string_node(...)
+
+
+void append_version_attrib( rapidxml::xml_node<char> *base_node, const int version )
+{
+  using namespace rapidxml;
+  
+  assert( base_node && base_node->document() );
+  xml_document<char> *doc = base_node->document();
+  
+  char buffer[128];
+  snprintf( buffer, sizeof(buffer), "%i", version );
+  const char *value = doc->allocate_string( buffer );
+  xml_attribute<char> *attrib = doc->allocate_attribute( "version", value );
+  base_node->append_attribute( attrib );
+}//append_version_attrib(...)
+
+
+template<size_t n>
+double get_float_node_value( const rapidxml::xml_node<char> * const parent_node, const char (&name)[n] )
+{
+  assert( parent_node );
+  assert( name );
+  
+  if( !parent_node )
+    throw runtime_error( "null parent node." );
+  
+  const rapidxml::xml_node<char> *node = XML_FIRST_NODE(parent_node, name);
+  if( !node )
+    throw runtime_error( "Missing node '" + std::string(name) + "'" );
+  
+  const string value = SpecUtils::xml_value_str(node);
+  double answer;
+  if( !(stringstream(value) >> answer) )
+    throw runtime_error( "Value ('" + value + "') of node '"
+                        + string(name) + "' was a valid float." );
+  
+  return answer;
+}//double get_float_node_value(...)
+
+
+template<size_t n>
+bool get_bool_node_value( const rapidxml::xml_node<char> * const parent_node, const char (&name)[n] )
+{
+  assert( parent_node );
+  assert( name );
+  
+  if( !parent_node )
+    throw runtime_error( "null parent node." );
+  
+  const rapidxml::xml_node<char> *node = XML_FIRST_NODE(parent_node, name);
+  if( !node )
+    throw runtime_error( "Missing node '" + std::string(name) + "'" );
+  
+  if( XML_VALUE_ICOMPARE(node,"yes") || XML_VALUE_ICOMPARE(node,"true") || XML_VALUE_ICOMPARE(node,"1") )
+    return true;
+  
+  if( !XML_VALUE_ICOMPARE(node,"no") && !XML_VALUE_ICOMPARE(node,"false") && !XML_VALUE_ICOMPARE(node,"0") )
+    throw runtime_error( "Invalid boolean value in node '" + string(name) + "' with value '"
+                        + SpecUtils::xml_value_str(node) );
+  
+  return false;
+}//bool get_bool_node_value(...)
+
+
+void check_xml_version( const rapidxml::xml_node<char> * const node, const int required_version )
+{
+  assert( node );
+  const rapidxml::xml_attribute<char> *att = XML_FIRST_ATTRIB(node, "version");
+  
+  int version;
+  if( !att || !att->value()
+     || (sscanf(att->value(), "%i", &version) != 1) )
+    throw runtime_error( "invalid or missing version" );
+  
+  if( (version < 0) || (version > required_version) )
+    throw runtime_error( "Invalid version: " + std::to_string(version) + ".  "
+                        + "Only up to version " + to_string(required_version)
+                        + " supported." );
+}//check_xml_version(...)
+
+template<size_t n>
+const rapidxml::xml_node<char> *get_required_node( const rapidxml::xml_node<char> *parent, const char (&name)[n] )
+{
+  assert( parent );
+  const auto child_node = XML_FIRST_INODE(parent, name);
+  if( !child_node )
+    throw runtime_error( "No <" + string(name) + "> node" );
+  
+  return child_node;
+}//get_required_node(...)
 
 
 struct RoiRangeChannels : public RelActCalcAuto::RoiRange
@@ -554,9 +709,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                                         std::vector<RelActCalcAuto::RoiRange> energy_ranges,
                                                         std::vector<RelActCalcAuto::NucInputInfo> nuclides,
                                                         std::vector<RelActCalcAuto::FloatingPeak> extra_peaks,
-                                                        RelActCalcAuto::FwhmForm fwhm_form,
-                                                        RelActCalc::RelEffEqnForm rel_eff_form,
-                                                        size_t rel_eff_order,
                                                         std::shared_ptr<const SpecUtils::Measurement> foreground,
                                                         std::shared_ptr<const SpecUtils::Measurement> background,
                                                         const std::shared_ptr<const DetectorPeakResponse> input_drf
@@ -575,8 +727,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     solution.m_foreground       = foreground;
     solution.m_background       = background;
-    solution.m_rel_eff_form     = rel_eff_form;
-    solution.m_fwhm_form        = fwhm_form;
+    solution.m_rel_eff_form     = options.rel_eff_eqn_type;
+    solution.m_fwhm_form        = options.fwhm_form;
     solution.m_input_roi_ranges = energy_ranges;
     solution.m_fit_energy_cal_adjustments = options.fit_energy_cal;
     if( input_drf && input_drf->isValid() && input_drf->hasResolutionInfo() )
@@ -654,7 +806,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const size_t fwhm_start = 2;
     const size_t num_fwhm_pars = num_parameters( options.fwhm_form );
     const size_t rel_eff_start = fwhm_start + num_fwhm_pars;
-    const size_t acts_start = rel_eff_start + rel_eff_order + 1;
+    const size_t acts_start = rel_eff_start + options.rel_eff_eqn_order + 1;
     const size_t free_peak_start = acts_start + 2*nuclides.size();
     assert( (free_peak_start + 2*extra_peaks.size()) == cost_functor->number_parameters() );
     
@@ -815,8 +967,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }//if( we want GADRAS FWHM function ) / else
     }//if( has DRF resolution info ) / else
     
-    assert( rel_eff_order != 0 );
-    if( rel_eff_order == 0 )
+    assert( options.rel_eff_eqn_order != 0 );
+    if( options.rel_eff_eqn_order == 0 )
       throw runtime_error( "Relative efficiency order must be at least 1 (but should probably be at least 2)" );
     
     // Note that \p rel_eff_order is the number of energy-dependent terms we will fit for in the
@@ -825,12 +977,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //
     //  We'll start with all values for rel eff equation at zero, except maybe the first one
     //  (e.g., we'll start with rel eff line == 1.0 for all energies)
-    for( size_t rel_eff_index = 0; rel_eff_index <= rel_eff_order; ++rel_eff_index )
+    for( size_t rel_eff_index = 0; rel_eff_index <= options.rel_eff_eqn_order; ++rel_eff_index )
     {
       parameters[rel_eff_start + rel_eff_index] = 0.0;
     }
     
-    switch( rel_eff_form )
+    switch( options.rel_eff_eqn_type )
     {
       case RelActCalc::RelEffEqnForm::LnX:
       case RelActCalc::RelEffEqnForm::LnY:
@@ -1051,6 +1203,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     solution.m_num_function_eval = cost_functor->m_ncalls;
     
+    // blah blah blah - need to fill out all the answer info - also need to update energy calibration of m_spectrum, as well as shift the
+    
     /*
     std::vector<double> m_rel_eff_coefficients;
     std::vector<std::vector<double>> m_rel_eff_covariance;
@@ -1067,7 +1221,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
      // Update solution.m_spectrum with updated energy calibration
     */
     
-  }//void solve_ceres( ceres::Problem &problem )
+    
+    return solution;
+  }//RelActCalcAuto::RelActAutoSolution solve_ceres( ceres::Problem &problem )
   
   
   float fwhm( const float energy, const std::vector<double> &x ) const
@@ -1546,6 +1702,429 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 namespace RelActCalcAuto
 {
 
+
+
+
+
+int run_test()
+{
+  try
+  {
+    const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/simple_u_test.xml";
+    
+    rapidxml::file<char> input_file( xml_file_path );
+    
+    rapidxml::xml_document<char> doc;
+    doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
+    
+    
+    const auto base_node = get_required_node(&doc, "RelActCalcAuto");
+  
+    auto open_file = [xml_file_path]( const string &filename ) -> shared_ptr<SpecMeas> {
+      
+      if( filename.empty() )
+        return nullptr;
+      
+      string file_path = filename;
+      if( !SpecUtils::is_file(file_path) )
+      {
+        // We'll let the test XML specify paths, relative to itself.
+        string base_path = SpecUtils::parent_path( xml_file_path );
+        file_path = SpecUtils::append_path( base_path, filename );
+      }
+      
+      if( !SpecUtils::is_file(file_path) )
+        throw runtime_error( "Spec file at '" + filename + "', or '" + file_path + "' is not a file" );
+      
+      auto spec = make_shared<SpecMeas>();
+      if( !spec->load_file( file_path, SpecUtils::ParserType::Auto ) )
+        throw runtime_error( "File at '" + file_path + "' could not be parsed" );
+      
+      if( spec->num_measurements() != 1 )
+        throw runtime_error( "File at '" + file_path + "' had "
+                             + to_string(spec->num_measurements()) + " measurements; requires 1.");
+      
+      return spec;
+    };//open_file() lamda
+    
+    const auto foreground_node = get_required_node(base_node, "ForegroundFileName");
+    const string foreground_file = SpecUtils::xml_value_str(foreground_node);
+    
+    const auto background_node = XML_FIRST_INODE(base_node, "BackgroundFileName");
+    const string background_file = SpecUtils::xml_value_str(background_node);
+    
+    auto foreground = open_file( foreground_file );
+    auto background = open_file( background_file );
+    
+    const auto options_node = get_required_node(base_node, "Options");
+    Options options;
+    options.fromXml( options_node );
+
+    std::vector<RoiRange> energy_ranges;
+    const auto roi_ranges_node = get_required_node(base_node, "RoiRangeList");
+    XML_FOREACH_DAUGHTER(roi_range_node, roi_ranges_node, "RoiRange")
+    {
+      RoiRange range;
+      range.fromXml( roi_range_node );
+      energy_ranges.push_back( range );
+    }
+    
+    if( energy_ranges.empty() )
+      throw runtime_error( "No RoiRanges specified" );
+    
+    std::vector<NucInputInfo> nuclides;
+    const auto nucs_node = get_required_node(base_node, "NucInputInfoList");
+    XML_FOREACH_DAUGHTER(nuc_node, nucs_node, "NucInputInfo")
+    {
+      NucInputInfo nuc;
+      nuc.fromXml( nuc_node );
+      nuclides.push_back( nuc );
+    }
+    
+    if( nuclides.empty() )
+      throw runtime_error( "No nuclides specified" );
+    
+    
+    std::vector<FloatingPeak> extra_peaks;
+    const auto float_peak_node = get_required_node(base_node, "FloatingPeakList");
+    XML_FOREACH_DAUGHTER(float_peak_node, nucs_node, "FloatingPeak")
+    {
+      FloatingPeak peak;
+      peak.fromXml( float_peak_node );
+      extra_peaks.push_back( peak );
+    }
+    
+    
+    assert( foreground && (foreground->num_measurements() == 1) );
+    
+    shared_ptr<const DetectorPeakResponse> drf = foreground->detector();
+    shared_ptr<const SpecUtils::Measurement> fore_meas = foreground->measurements()[0];
+    shared_ptr<const SpecUtils::Measurement> back_meas;
+    if( background )
+      back_meas = background->measurements()[0];
+
+    RelActAutoSolution solution = solve( options, energy_ranges, nuclides, extra_peaks, fore_meas, back_meas, drf );
+    
+    //Print out summarry, etc.
+  }catch( std::exception &e )
+  {
+    cerr << "RelAct test failed: " << e.what() << endl;
+    return EXIT_FAILURE;
+  }// try / catch
+  
+  return EXIT_SUCCESS;
+  
+  /*
+   Create input from XML:
+   
+
+   Then create XML to represent Options, FloatingPeak, NucInputInfo, RoiRange...
+   
+   Then create something to printout summary of RelActAutoSolution ....  Then wait on making sure things actually work before going much further
+   
+
+   
+   
+   
+   
+   <Nuclides><Nuclide>U235</Nuclide><Nuclide>U238</Nuclide>...</Nuclides>
+   <EnergyRanges><Range><Lower
+   */
+  
+  
+}//void run_test()
+
+
+
+const char *to_str( const FwhmForm form )
+{
+  switch( form )
+  {
+    case FwhmForm::Gadras:       return "Gadras";
+    case FwhmForm::Polynomial_2: return "Polynomial_2";
+    case FwhmForm::Polynomial_3: return "Polynomial_3";
+    case FwhmForm::Polynomial_4: return "Polynomial_4";
+    case FwhmForm::Polynomial_5: return "Polynomial_5";
+    case FwhmForm::Polynomial_6: return "Polynomial_6";
+  }//switch( form )
+  
+  assert( 0 );
+  return "";
+}//to_str( const FwhmForm form )
+
+
+FwhmForm fwhm_form_from_str( const char *str )
+{
+  const size_t str_len = strlen(str);
+  
+  for( int iform = 0; iform <= static_cast<int>(FwhmForm::Polynomial_6); iform += 1 )
+  {
+    const FwhmForm x = FwhmForm(iform);
+    const char *form_str = to_str( x );
+    const bool case_sensitive = false;
+    const size_t form_str_len = strlen(form_str);
+    if( rapidxml::internal::compare(str, str_len, form_str, form_str_len, case_sensitive) )
+       return x;
+  }
+  
+  throw runtime_error( "fwhm_form_from_str(...): invalid input string '" + std::string(str) + "'" );
+  return FwhmForm::Gadras;
+}//FwhmForm fwhm_form_from_str(str)
+
+
+
+void RoiRange::toXml( ::rapidxml::xml_node<char> *parent ) const
+{
+  using namespace rapidxml;
+  
+  assert( parent );
+  if( !parent || !parent->document() )
+    throw runtime_error( "RoiRange::toXml: invalid parent." );
+  
+  xml_document<char> *doc = parent->document();
+  xml_node<char> *base_node = doc->allocate_node( node_element, "RoiRange" );
+  parent->append_node( base_node );
+  
+  append_version_attrib( base_node, RoiRange::sm_xmlSerializationVersion );
+  
+  append_float_node( base_node, "LowerEnergy", lower_energy );
+  append_float_node( base_node, "UpperEnergy", upper_energy );
+  
+  const char *cont_type_str = PeakContinuum::offset_type_str( continuum_type );
+  append_string_node( base_node, "ContinuumType", cont_type_str );
+  
+  append_bool_node( base_node, "ForceFullRange", force_full_range );
+  append_bool_node( base_node, "AllowExpandForPeakWidth", allow_expand_for_peak_width );
+}//RoiRange::toXml(...)
+
+
+
+
+
+void RoiRange::fromXml( const rapidxml::xml_node<char> *range_node )
+{
+  try
+  {
+    if( !range_node )
+      throw runtime_error( "invalid input" );
+    
+    if( !rapidxml::internal::compare( range_node->name(), range_node->name_size(), "RoiRange", 8, false ) )
+      throw std::logic_error( "invalid input node name" );
+    
+    // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
+    static_assert( RoiRange::sm_xmlSerializationVersion == 0,
+                  "needs to be updated for new serialization version." );
+    
+    check_xml_version( range_node, RoiRange::sm_xmlSerializationVersion );
+    
+    lower_energy = get_float_node_value( range_node, "LowerEnergy" );
+    upper_energy = get_float_node_value( range_node, "UpperEnergy" );
+    
+    const rapidxml::xml_node<char> *cont_type_node = XML_FIRST_NODE( range_node, "ContinuumType" );
+    const string cont_type_str = SpecUtils::xml_value_str( cont_type_node );
+    continuum_type = PeakContinuum::str_to_offset_type_str( cont_type_str.c_str(), cont_type_str.size() );
+    
+    force_full_range = get_bool_node_value( range_node, "ForceFullRange" );
+    allow_expand_for_peak_width = get_bool_node_value( range_node, "AllowExpandForPeakWidth" );
+  }catch( std::exception &e )
+  {
+    throw runtime_error( "RoiRange::fromXml(): " + string(e.what()) );
+  }
+}//void fromXml( const ::rapidxml::xml_node<char> *parent )
+
+
+
+void NucInputInfo::toXml( ::rapidxml::xml_node<char> *parent ) const
+{
+  using namespace rapidxml;
+  
+  assert( nuclide );
+  if( !nuclide )
+    throw runtime_error( "NucInputInfo::toXml: null nuclide." );
+  
+  assert( parent );
+  if( !parent || !parent->document() )
+    throw runtime_error( "NucInputInfo::toXml: invalid parent." );
+  
+  xml_document<char> *doc = parent->document();
+  xml_node<char> *base_node = doc->allocate_node( node_element, "NucInputInfo" );
+  parent->append_node( base_node );
+  
+  append_version_attrib( base_node, NucInputInfo::sm_xmlSerializationVersion );
+  
+  append_string_node( base_node, "Nuclide", nuclide->symbol.c_str() );
+  const string age_str = PhysicalUnits::printToBestTimeUnits(age, 10);
+  append_string_node( base_node, "Age", age_str);
+  append_bool_node( base_node, "FitAge", fit_age );
+  
+  if( !gammas_to_exclude.empty() )
+  {
+    xml_node<char> *exclude_node = doc->allocate_node( node_element, "GammasToExclude" );
+    base_node->append_node( exclude_node );
+    for( const double energy : gammas_to_exclude )
+      append_float_node( exclude_node, "Energy", energy );
+  }//if( !gammas_to_exclude.empty() )
+}//void NucInputInfo::toXml(...)
+
+
+void NucInputInfo::fromXml( const ::rapidxml::xml_node<char> *nuc_info_node )
+{
+  try
+  {
+    if( !nuc_info_node )
+      throw runtime_error( "invalid input" );
+    
+    if( !rapidxml::internal::compare( nuc_info_node->name(), nuc_info_node->name_size(), "NucInputInfo", 12, false ) )
+      throw std::logic_error( "invalid input node name" );
+    
+    // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
+    static_assert( NucInputInfo::sm_xmlSerializationVersion == 0,
+                  "needs to be updated for new serialization version." );
+    
+    check_xml_version( nuc_info_node, NucInputInfo::sm_xmlSerializationVersion );
+    
+    const rapidxml::xml_node<char> *nuc_node = XML_FIRST_NODE( nuc_info_node, "Nuclide" );
+    if( !nuc_node )
+      throw runtime_error( "Missing 'Nuclide' node." );
+    
+    const string nuc_str = SpecUtils::xml_value_str( nuc_node );
+    
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    nuclide = db->nuclide( nuc_str );
+    if( !nuclide )
+      throw runtime_error( "Invalid nuclide '" + nuc_str + "'" );
+    
+    const auto age_node = XML_FIRST_INODE( nuc_info_node, "Age");
+    const string age_str = SpecUtils::xml_value_str( age_node );
+    age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( age_str, nuclide->halfLife );
+    
+    fit_age = get_bool_node_value( nuc_info_node, "FitAge" );
+    
+    gammas_to_exclude.clear();
+    const rapidxml::xml_node<char> *exclude_node = XML_FIRST_NODE( nuc_info_node, "GammasToExclude" );
+    XML_FOREACH_DAUGHTER( energy_node, exclude_node, "Energy" ) //ok if exclude_node is nullptr
+    {
+      const string strval = SpecUtils::xml_value_str(energy_node);
+      double energy;
+      if( !(stringstream(strval) >> energy) )
+        throw runtime_error( "Invalid exclude energy '" + strval + "'" );
+      gammas_to_exclude.push_back( energy );
+    }//foreach( <Energy> node under <GammasToExclude> )
+  }catch( std::exception &e )
+  {
+    throw runtime_error( "NucInputInfo::fromXml(): " + string(e.what()) );
+  }
+}//void fromXml( const ::rapidxml::xml_node<char> *parent )
+
+
+
+void FloatingPeak::toXml( ::rapidxml::xml_node<char> *parent ) const
+{
+  using namespace rapidxml;
+  
+  assert( parent );
+  if( !parent || !parent->document() )
+    throw runtime_error( "FloatingPeak::toXml: invalid parent." );
+  
+  xml_document<char> *doc = parent->document();
+  xml_node<char> *base_node = doc->allocate_node( node_element, "FloatingPeak" );
+  parent->append_node( base_node );
+  
+  append_version_attrib( base_node, FloatingPeak::sm_xmlSerializationVersion );
+  append_float_node( base_node, "Energy", energy );
+  append_bool_node( base_node, "ReleaseFwhm", release_fwhm );
+}//void FloatingPeak::toXml(...)
+
+
+void FloatingPeak::fromXml( const ::rapidxml::xml_node<char> *parent )
+{
+  try
+  {
+    if( !parent )
+      throw runtime_error( "invalid input" );
+    
+    if( !rapidxml::internal::compare( parent->name(), parent->name_size(), "FloatingPeak", 12, false ) )
+      throw std::logic_error( "invalid input node name" );
+    
+    // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
+    static_assert( NucInputInfo::sm_xmlSerializationVersion == 0,
+                  "needs to be updated for new serialization version." );
+    
+    check_xml_version( parent, FloatingPeak::sm_xmlSerializationVersion );
+    energy = get_float_node_value( parent, "Energy" );
+    release_fwhm = get_bool_node_value( parent, "ReleaseFwhm" );
+  }catch( std::exception &e )
+  {
+    throw runtime_error( "FloatingPeak::fromXml(): " + string(e.what()) );
+  }
+}//void fromXml(...)
+
+
+void Options::toXml( ::rapidxml::xml_node<char> *parent ) const
+{
+  using namespace rapidxml;
+  
+  assert( parent );
+  if( !parent || !parent->document() )
+    throw runtime_error( "Options::toXml: invalid parent." );
+  
+  xml_document<char> *doc = parent->document();
+  xml_node<char> *base_node = doc->allocate_node( node_element, "Options" );
+  parent->append_node( base_node );
+  
+  append_version_attrib( base_node, Options::sm_xmlSerializationVersion );
+  append_bool_node( base_node, "FitEnergyCal", fit_energy_cal );
+  append_bool_node( base_node, "NucsOfElSameAge", nucs_of_el_same_age );
+  
+  const char *rell_eff_eqn_str = RelActCalc::to_str( rel_eff_eqn_type );
+  append_string_node( base_node, "RelEffEqnType", rell_eff_eqn_str);
+  
+  append_int_node( base_node, "RelEffEqnOrder", rel_eff_eqn_order);
+  
+  const char *fwhm_form_str = to_str( fwhm_form );
+  append_string_node( base_node, "FwhmForm", fwhm_form_str );
+}//void Options::toXml(...)
+
+
+void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
+{
+  try
+  {
+    if( !parent )
+      throw runtime_error( "invalid input" );
+    
+    if( !rapidxml::internal::compare( parent->name(), parent->name_size(), "Options", 7, false ) )
+      throw std::logic_error( "invalid input node name" );
+    
+    // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
+    static_assert( Options::sm_xmlSerializationVersion == 0,
+                  "needs to be updated for new serialization version." );
+    
+    check_xml_version( parent, Options::sm_xmlSerializationVersion );
+    
+    fit_energy_cal = get_bool_node_value( parent, "FitEnergyCal" );
+    nucs_of_el_same_age = get_bool_node_value( parent, "NucsOfElSameAge" );
+    
+    const rapidxml::xml_node<char> *rel_eff_eqn_node = XML_FIRST_NODE( parent, "RelEffEqnType" );
+    const string rel_eff_str = SpecUtils::xml_value_str( rel_eff_eqn_node );
+    
+    rel_eff_eqn_type = RelActCalc::rel_eff_eqn_form_from_str( rel_eff_str.c_str() );
+    
+    const rapidxml::xml_node<char> *rel_eff_order_node = XML_FIRST_NODE( parent, "RelEffEqnOrder" );
+    const string rel_eff_order_str = SpecUtils::xml_value_str( rel_eff_order_node );
+    if( !(stringstream(rel_eff_order_str) >> rel_eff_eqn_order) )
+      throw runtime_error( "Invalid 'RelEffEqnOrder' value '" + rel_eff_order_str + "'" );
+    
+    const rapidxml::xml_node<char> *fwhm_node = XML_FIRST_NODE( parent, "FwhmForm" );
+    const string fwhm_str = SpecUtils::xml_value_str( fwhm_node );
+    fwhm_form = fwhm_form_from_str( fwhm_str.c_str() );
+  }catch( std::exception &e )
+  {
+    throw runtime_error( "Options::fromXml(): " + string(e.what()) );
+  }
+}//void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
+
+
 size_t num_parameters( const FwhmForm eqn_form )
 {
   switch( eqn_form )
@@ -1607,9 +2186,6 @@ RelActAutoSolution solve( Options options,
                          std::vector<RoiRange> energy_ranges,
                          std::vector<NucInputInfo> nuclides,
                          std::vector<FloatingPeak> extra_peaks,
-                         FwhmForm fwhm_form,
-                         RelActCalc::RelEffEqnForm rel_eff_form,
-                         size_t rel_eff_order,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> input_drf
@@ -1620,9 +2196,6 @@ RelActAutoSolution solve( Options options,
                      energy_ranges,
                      nuclides,
                      extra_peaks,
-                     fwhm_form,
-                     rel_eff_form,
-                     rel_eff_order,
                      foreground,
                      background,
                      input_drf );

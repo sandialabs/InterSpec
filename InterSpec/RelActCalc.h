@@ -66,6 +66,8 @@ enum class RelEffEqnForm : int
 /** Returns string representation of RelEffEqnForm, i.e., "LnX", "LnY", "LnXLnY", or "FRAM Empirical" */
 const char *to_str( const RelEffEqnForm form );
 
+RelEffEqnForm rel_eff_eqn_form_from_str( const char *str );
+
 /** Evaluate the relative efficiency equation at a given energy, for a specific form of the equation, and coefficients. */
 double eval_eqn( const double energy, const RelEffEqnForm eqn_form,
                 const double * const coefs, const size_t num_coefs );

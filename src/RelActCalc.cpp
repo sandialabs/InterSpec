@@ -24,8 +24,12 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <string>
 #include <vector>
+#include <cstring>
 #include <stdexcept>
+
+#include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/RelActCalc.h"
 
@@ -50,10 +54,33 @@ const char *to_str( const RelEffEqnForm form )
   return "";
 }//to_str(...)
 
+
+RelEffEqnForm rel_eff_eqn_form_from_str( const char *str )
+{
+  // Not sure of a good way to get a warning if we change RelEffEqnForm enum arbitrarily
+  const RelEffEqnForm eqn_forms[] = {
+    RelEffEqnForm::LnX,
+    RelEffEqnForm::LnY,
+    RelEffEqnForm::LnXLnY,
+    RelEffEqnForm::FramEmpirical
+  };
+  
+  for( const RelEffEqnForm eqn : eqn_forms )
+  {
+    const char *this_eqn_str = to_str( eqn );
+    if( SpecUtils::iequals_ascii( this_eqn_str, str ) )
+      return eqn;
+  }
+  
+  throw runtime_error( "String '" + std::string(str) + "' not a valid RelEffEqnForm" );
+}//rel_eff_eqn_rorm_from_str(...)
+
+
 double eval_eqn( const double energy, const RelEffEqnForm eqn_form, const vector<double> &coeffs )
 {
   return eval_eqn( energy, eqn_form, &(coeffs[0]), coeffs.size() );
 }
+
 
 double eval_eqn( const double energy, const RelEffEqnForm eqn_form,
                 const double * const coeffs, const size_t num_coefs )

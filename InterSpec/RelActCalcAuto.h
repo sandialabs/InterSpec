@@ -35,6 +35,11 @@
 // Forward declarations
 class DetectorPeakResponse;
 
+namespace rapidxml
+{
+  template<class Ch> class xml_node;
+}
+
 namespace SpecUtils
 {
   class Measurement;
@@ -87,6 +92,8 @@ namespace RelActCalc
 namespace RelActCalcAuto
 {
 
+int run_test();
+
 /** Struct to specify an energy range to consider for doing relative-efficiency/activity calc.
  */
 struct RoiRange
@@ -107,6 +114,10 @@ struct RoiRange
    If #force_full_range is true, this value must be false.
    */
   bool allow_expand_for_peak_width = false;
+  
+  static const int sm_xmlSerializationVersion = 0;
+  void toXml( ::rapidxml::xml_node<char> *parent ) const;
+  void fromXml( const ::rapidxml::xml_node<char> *parent );
 };//struct RoiRange
 
 
@@ -129,6 +140,10 @@ struct NucInputInfo
   
   /** Energy corresponding to SandiaDecay::EnergyRatePair::energy */
   std::vector<double> gammas_to_exclude;
+  
+  static const int sm_xmlSerializationVersion = 0;
+  void toXml( ::rapidxml::xml_node<char> *parent ) const;
+  void fromXml( const ::rapidxml::xml_node<char> *parent );
 };//struct NucInputInfo
 
 
@@ -148,6 +163,10 @@ struct FloatingPeak
   bool release_fwhm = false;
   
   // TODO: should maybe have a max-width in FloatingPeak
+  
+  static const int sm_xmlSerializationVersion = 0;
+  void toXml( ::rapidxml::xml_node<char> *parent ) const;
+  void fromXml( const ::rapidxml::xml_node<char> *parent );
 };//struct FloatingPeak
 
 
@@ -176,6 +195,17 @@ enum class FwhmForm : int
   Polynomial_5,
   Polynomial_6
 };//enum ResolutionFnctForm
+
+/** Returns string representation of the #FwhmForm.
+ String returned is a static string, so do not delete it.
+ */
+const char *to_str( const FwhmForm form );
+
+/** Converts from the string representation of #FwhmForm to enumerated value.
+ 
+ Throws exception if invalid string (i.e., any string not returned by #to_str(FwhmForm) ).
+ */
+FwhmForm fwhm_form_from_str( const char *str );
 
 size_t num_parameters( const FwhmForm eqn_form );
 
@@ -211,6 +241,10 @@ struct Options
    */
   FwhmForm fwhm_form;
   
+  
+  static const int sm_xmlSerializationVersion = 0;
+  void toXml( ::rapidxml::xml_node<char> *parent ) const;
+  void fromXml( const ::rapidxml::xml_node<char> *parent );
 };//struct Options
 
 
@@ -315,9 +349,6 @@ RelActAutoSolution solve( Options options,
                          std::vector<RoiRange> energy_ranges,
                          std::vector<NucInputInfo> nuclides,
                          std::vector<FloatingPeak> extra_peaks,
-                         FwhmForm fwhm_form,
-                         RelActCalc::RelEffEqnForm rel_eff_form,
-                         size_t rel_eff_order,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> drf
