@@ -62,6 +62,7 @@ void getUtf8Args( int &argc, char ** &argv );
 
 void processCustomArgs( int argc, char **argv );
 
+#include "InterSpec/RelActCalcAuto.h"
 
 int main( int argc, char **argv )
 {

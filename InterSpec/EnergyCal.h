@@ -164,7 +164,7 @@ double fit_energy_cal_iterative( const std::vector<EnergyCal::RecalPeakInfo> &pe
 /** Translates the input peaks for a given energy calibration change.
  
  This translation keeps peak features (mean, ROI start and end, FWHM, continuum) at the same channel
- numbers, but their energies will coorespondingly change.  This is useful for energy calibration
+ numbers, but their energies will correspondingly change.  This is useful for energy calibration
  changes.  Note that this function accounts for peaks that share a continuum.
  
  Will throw exception on error (an invalid calibration, less than 5 channels, etc), and on success
@@ -178,7 +178,7 @@ translatePeaksForCalibrationChange( const std::deque<std::shared_ptr<const PeakD
 
 
 
-/** Propogates the difference of energy calibration between 'orig_cal' and 'new_cal' to
+/** Propagates the difference of energy calibration between 'orig_cal' and 'new_cal' to
  'other_cal', returning the answer.  E.g., if you map what channels coorispond to what other
  channels for orig_cal<==>other_cal, then the returned answer gives new_cal<==>answer.
  
@@ -188,10 +188,10 @@ translatePeaksForCalibrationChange( const std::deque<std::shared_ptr<const PeakD
  The reason this is a non-trivial operation is that when you perform a a change in energy
  calibration to one spectrum, and expect a second spectrum with a different starting energy
  calibration (maybe higher-order, or more/less-quadratic, etc) to behave similarly (e.g., a peak at
- 626 keV in boh spectrum to begin with, should end up at 661 keV after the change), what you need to
+ 626 keV in both spectra to begin with, should end up at 661 keV after the change), what you need to
  do is ensure the relative channels stay fixed to each other (e.x., channel 5 of spectrum 1 may
- coorespond to same energy as channel 19.3 of spectrum two, while channel 1024 of spectrum 1
- cooresponds to the same energy of channel 999 of spectrum two, etc).  That is what this function
+ correspond to same energy as channel 19.3 of spectrum two, while channel 1024 of spectrum 1
+ corresponds to the same energy of channel 999 of spectrum two, etc).  That is what this function
  does.
  
  Throws exception if any input #SpecUtils::EnergyCalibration is null, invalid, or if 'orig_cal'

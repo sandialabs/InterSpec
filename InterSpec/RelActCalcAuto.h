@@ -28,6 +28,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <ostream>
 
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType
 
@@ -140,6 +141,8 @@ struct NucInputInfo
   
   /** Energy corresponding to SandiaDecay::EnergyRatePair::energy */
   std::vector<double> gammas_to_exclude;
+  
+  std::string peak_color_css;
   
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
@@ -256,8 +259,8 @@ struct NuclideRelAct
   double age_uncertainty;
   bool age_was_fit;
   
-  double activity;
-  double activity_uncertainty;
+  double rel_activity;
+  double rel_activity_uncertainty;
 };//struct NuclideRelAc
 
 
@@ -275,6 +278,41 @@ struct RelActAutoSolution
 {
   RelActAutoSolution();
   
+  std::ostream &print_summary( std::ostream &strm ) const;
+  
+  /** Returns the fractional amount of an element (by mass), the nuclide composes.
+   
+   Throws exception if \c nuclide was not in the problem.
+   
+   @param nuclide The nuclide of interest.
+   @returns The fraction of mass (so between 0.0 and 1.0), the input nuclide is responsible for
+            in the solution.  Ex., if Eu152 is passed in, and that was the only europium isotope
+            then 1.0 will be returned.  If it was a natural uranium problem, and U235 was passed
+            in, then the returned value would likely be something like 0.0072
+   
+   TODO: add uncertainty, via returning pair<double,double>
+   */
+  double mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide ) const;
+  
+  /** Returns the mass ratio of two nuclides.
+   
+   Throws exception if either input \c nuclide is nullptr, or was not in the problem.
+   
+   TODO: add uncertainty, via returning pair<double,double>
+   */
+  double mass_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator ) const;
+  
+  /** Returns the activity ratio of two nuclides.
+   
+   Throws exception if either input \c nuclide is nullptr, or was not in the problem.
+   
+   TODO: add uncertainty, via returning pair<double,double>
+   */
+  double activity_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator ) const;
+  
+  /** Get the index of specified nuclide within #m_rel_activities and #m_rel_act_covariance. */
+  size_t nuclide_index( const SandiaDecay::Nuclide *nuclide ) const;
+  
   enum class Status : int
   {
     Success,
@@ -289,6 +327,8 @@ struct RelActAutoSolution
   
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
   std::shared_ptr<const SpecUtils::Measurement> m_background;
+  
+  std::vector<double> m_final_parameters;
   
   /** This is a spectrum that will be background subtracted and energy calibrated, if those options
    where wanted.
@@ -333,9 +373,13 @@ struct RelActAutoSolution
    */
   size_t m_dof;
   
-  /** The number steps it took L-M to reach a solution. Only useful for debugging and curiosity. */
-  int m_num_function_eval;
+  /** The number of evaluation calls it took L-M to reach a solution.
+   Only useful for debugging and curiosity.
+   */
+  int m_num_function_eval_solution;
   
+  /** The number of evaluation calls it took to reach a solution, and compute final covariance. */
+  int m_num_function_eval_total;
   
   int m_num_microseconds_eval;
 };//struct RelEffSolution

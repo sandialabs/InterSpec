@@ -76,6 +76,94 @@ RelEffEqnForm rel_eff_eqn_form_from_str( const char *str )
 }//rel_eff_eqn_rorm_from_str(...)
 
 
+string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double> &coefs )
+{
+  string rel_eff_eqn_str;
+  switch( eqn_form )
+  {
+    case RelActCalc::RelEffEqnForm::LnX:
+    {
+      for( size_t i = 0; i < coefs.size(); ++i )
+      {
+        const auto val = coefs[i];
+        if( i == 0 )
+          rel_eff_eqn_str += to_string(val);
+        else
+          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " ) +  to_string( fabs(val) ) + "*ln(x)^" + to_string(i);
+      }//for( size_t i = 0; i < answer.m_eqn_coefficients.size(); ++i )
+      
+      break;
+    }//case RelActCalc::RelEffEqnForm::LnX:
+      
+    case RelActCalc::RelEffEqnForm::LnY:
+    {
+      //y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )
+      rel_eff_eqn_str += "exp( ";
+      
+      for( size_t i = 0; i < coefs.size(); ++i )
+      {
+        const auto val = coefs[i];
+        if( i == 0 )
+        {
+          rel_eff_eqn_str += to_string(val);
+        }else
+        {
+          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " ) + to_string( fabs(val) );
+          if( i == 1 )
+            rel_eff_eqn_str += "*x";
+          else if( i == 2 )
+            rel_eff_eqn_str += "/x";
+          else
+            rel_eff_eqn_str += "/x^" +  to_string( i - 1 );
+        }
+      }//for( size_t i = 0; i < answer.m_eqn_coefficients.size(); ++i )
+      rel_eff_eqn_str += ")";
+      
+      break;
+    }//case RelActCalc::RelEffEqnForm::LnY:
+      
+    case RelActCalc::RelEffEqnForm::LnXLnY:
+    {
+      rel_eff_eqn_str += "exp( ";
+      
+      for( size_t i = 0; i < coefs.size(); ++i )
+      {
+        const auto val = coefs[i];
+        if( i == 0 )
+          rel_eff_eqn_str += to_string(val);
+        else
+          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " ) + to_string(fabs(val)) + "*ln(x)^" + to_string(i);
+      }//for( size_t i = 0; i < answer.m_eqn_coefficients.size(); ++i )
+      
+      rel_eff_eqn_str += " )";
+      break;
+    }//case RelActCalc::RelEffEqnForm::LnXLnY:
+      
+    case RelActCalc::RelEffEqnForm::FramEmpirical:
+    {
+      rel_eff_eqn_str += "exp( ";
+      
+      for( size_t i = 0; i < coefs.size(); ++i )
+      {
+        const auto val = coefs[i];
+        if( i == 0 )
+          rel_eff_eqn_str += to_string(val);
+        else if( i == 1 )
+          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " ) + to_string(fabs(val)) + "/(x*x)";
+        else
+          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " ) + to_string(fabs(val)) + "*ln(x)^" + to_string(i-1);
+      }//for( size_t i = 0; i < answer.m_eqn_coefficients.size(); ++i )
+      
+      rel_eff_eqn_str += " )";
+      
+      break;
+    }//case RelActCalc::RelEffEqnForm::FramEmpirical:
+  }//switch( answer.m_eqn_form )
+  
+  return rel_eff_eqn_str;
+}//rel_eff_eqn_text(...)
+
+
 double eval_eqn( const double energy, const RelEffEqnForm eqn_form, const vector<double> &coeffs )
 {
   return eval_eqn( energy, eqn_form, &(coeffs[0]), coeffs.size() );

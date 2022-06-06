@@ -28,6 +28,7 @@
 #include <tuple>
 #include <limits>
 #include <sstream>
+#include <algorithm>
 #include <functional>
 #include <type_traits>
 
@@ -47,6 +48,7 @@
 
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/EnergyCal.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
@@ -110,7 +112,7 @@ void append_int_node( rapidxml::xml_node<char> *base_node, const char *node_name
 }//append_bool_node(...)
 
 
-void append_string_node( rapidxml::xml_node<char> *base_node, const char *node_name, const string &value )
+rapidxml::xml_node<char> *append_string_node( rapidxml::xml_node<char> *base_node, const char *node_name, const string &value )
 {
   using namespace rapidxml;
   
@@ -119,21 +121,31 @@ void append_string_node( rapidxml::xml_node<char> *base_node, const char *node_n
   const char *strvalue = doc->allocate_string( value.c_str(), value.size() + 1 );
   xml_node<char> *node = doc->allocate_node( node_element, node_name, strvalue );
   base_node->append_node( node );
+  
+  return node;
 }//append_string_node(...)
 
 
-void append_version_attrib( rapidxml::xml_node<char> *base_node, const int version )
+void append_attrib( rapidxml::xml_node<char> *base_node, const string &name, const string &value )
 {
   using namespace rapidxml;
   
   assert( base_node && base_node->document() );
   xml_document<char> *doc = base_node->document();
   
-  char buffer[128];
-  snprintf( buffer, sizeof(buffer), "%i", version );
-  const char *value = doc->allocate_string( buffer );
-  xml_attribute<char> *attrib = doc->allocate_attribute( "version", value );
+  const char *name_str = doc->allocate_string( name.c_str() );
+  const char *value_str = doc->allocate_string( value.c_str() );
+  
+  xml_attribute<char> *attrib = doc->allocate_attribute( name_str, value_str );
   base_node->append_attribute( attrib );
+}//void append_attrib(...)
+
+
+void append_version_attrib( rapidxml::xml_node<char> *base_node, const int version )
+{
+  char buffer[32];
+  snprintf( buffer, sizeof(buffer), "%i", version );
+  append_attrib( base_node, "version", buffer );
 }//append_version_attrib(...)
 
 
@@ -601,6 +613,39 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const double num_fwhm_roi = 2.5; // arbitrary...
       
       vector<pair<double,double>> gammas_in_range;
+      
+      // Define a helper function to add a gamma at an energy into \c gammas_in_range
+      auto add_peak_to_range = [&gammas_in_range, this, highres, &roi_range, num_fwhm_roi]( const double energy ){
+        double energy_sigma;
+        float min_sigma, max_sigma;
+        expected_peak_width_limits( energy, highres, min_sigma, max_sigma );
+        
+        if( m_drf && m_drf->hasResolutionInfo() )
+        {
+          energy_sigma = m_drf->peakResolutionSigma(energy);
+          
+          // A sanity check... maybe we dont want this?
+          if( energy_sigma < min_sigma )
+            energy_sigma = min_sigma;
+          if( energy_sigma > max_sigma )
+            energy_sigma = max_sigma;
+        }else
+        {
+          energy_sigma = max_sigma;
+        }
+        
+        double gamma_row_lower = energy - num_fwhm_roi*energy_sigma;
+        double gamma_row_upper = energy + num_fwhm_roi*energy_sigma;
+        
+        if( !roi_range.allow_expand_for_peak_width )
+        {
+          gamma_row_lower = std::max( gamma_row_lower, roi_range.lower_energy );
+          gamma_row_upper = std::min( gamma_row_upper, roi_range.upper_energy );
+        }
+        
+        gammas_in_range.push_back( {gamma_row_lower,gamma_row_upper} );
+      };//add_peak_to_range(...) lamda
+      
       for( const auto &n : m_nuclides )
       {
         for( const auto &g : n.nominal_gammas )
@@ -609,36 +654,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
              && (g.energy >= roi_range.lower_energy)
              && (g.energy <= roi_range.upper_energy) )
           {
-            double energy_sigma;
-            float min_sigma, max_sigma;
-            expected_peak_width_limits( g.energy, highres, min_sigma, max_sigma );
-            
-            if( m_drf && m_drf->hasResolutionInfo() )
-            {
-              energy_sigma = m_drf->peakResolutionSigma(g.energy);
-              
-              // A sanity check... maybe we dont want this?
-              if( energy_sigma < min_sigma )
-                energy_sigma = min_sigma;
-              if( energy_sigma > max_sigma )
-                energy_sigma = max_sigma;
-            }else
-            {
-              energy_sigma = max_sigma;
-            }
-            
-            double gamma_row_lower = g.energy - num_fwhm_roi*energy_sigma;
-            double gamma_row_upper = g.energy + num_fwhm_roi*energy_sigma;
-            
-            if( !roi_range.allow_expand_for_peak_width )
-            {
-              gamma_row_lower = std::max( gamma_row_lower, roi_range.lower_energy );
-              gamma_row_upper = std::min( gamma_row_upper, roi_range.upper_energy );
-            }
-            
-            gammas_in_range.push_back( {gamma_row_lower,gamma_row_upper} );
+            add_peak_to_range( g.energy );
           }
         }//for( const auto &g : n.nominal_gammas )
+        
+        for( const auto &peak : m_extra_peaks )
+        {
+          if( (peak.energy >= roi_range.lower_energy) && (peak.energy <= roi_range.upper_energy) )
+            add_peak_to_range( peak.energy );
+        }//for( const auto &peak : m_extra_peaks )
       }//for( const auto &n : m_nuclides )
       
       std::sort( begin(gammas_in_range), end(gammas_in_range) );
@@ -661,6 +685,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         m_energy_ranges.emplace_back( m_energy_cal, this_range );
       }//for( loop over gammas_in_range )
     }//for( const RelActCalcAuto::RoiRange &input : energy_ranges )
+    
+    
+    // Check to make sure the floating peak is in a ROI range
+    for( const RelActCalcAuto::FloatingPeak &peak : m_extra_peaks )
+    {
+      bool in_a_range = false;
+      for( const RoiRangeChannels &r : m_energy_ranges )
+      {
+        if( (peak.energy >= r.lower_energy) && (peak.energy <= r.upper_energy) )
+        {
+          in_a_range = true;
+          break;
+        }//if( `peak` is in a energy range )
+      }//for( loop over energy ranges )
+      
+      if( !in_a_range )
+        throw runtime_error( "Free floating peak at " + std::to_string(peak.energy) + " is not in a ROI." );
+    }//for( const auto &peak : m_extra_peaks )
+    
     
     // TODO: Figure out a proper value to set m_rel_eff_anchor_enhancement to, like maybe largest peak area divided m_live_time, or something like that
     m_rel_eff_anchor_enhancement = 0.0;
@@ -753,7 +796,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
     solution.m_drf = cost_functor->m_drf;
-    solution.m_spectrum = cost_functor->m_spectrum;
+    solution.m_spectrum = make_shared<SpecUtils::Measurement>( *cost_functor->m_spectrum );
     
     const size_t num_pars = cost_functor->number_parameters();
     
@@ -806,9 +849,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const size_t fwhm_start = 2;
     const size_t num_fwhm_pars = num_parameters( options.fwhm_form );
     const size_t rel_eff_start = fwhm_start + num_fwhm_pars;
-    const size_t acts_start = rel_eff_start + options.rel_eff_eqn_order + 1;
-    const size_t free_peak_start = acts_start + 2*nuclides.size();
-    assert( (free_peak_start + 2*extra_peaks.size()) == cost_functor->number_parameters() );
+    const size_t num_rel_eff_par = options.rel_eff_eqn_order + 1;
+    const size_t acts_start = rel_eff_start + num_rel_eff_par;
+    const size_t num_acts_par = 2*cost_functor->m_nuclides.size();
+    const size_t free_peak_start = acts_start + num_acts_par;
+    const size_t num_free_peak_par = 2*extra_peaks.size();
+    
+    assert( (free_peak_start + num_free_peak_par) == cost_functor->number_parameters() );
     
     try
     {
@@ -1149,7 +1196,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       assert( peak.energy > 0.0 );
       if( peak.energy <= 0.0 )
         throw runtime_error( "Invalid floating peak energy." );
-    
+      
       const size_t amp_index = free_peak_start + 2*extra_peak_index;
       const size_t fwhm_index = amp_index + 1;
       
@@ -1198,29 +1245,250 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::Success;
     
+    solution.m_num_function_eval_solution = cost_functor->m_ncalls;
     
     
+    ceres::Covariance::Options cov_options;
+    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::SPARSE_QR; //
+    //cov_options.num_threads = 1;
     
-    solution.m_num_function_eval = cost_functor->m_ncalls;
+    vector<double> uncertainties( num_pars, 0.0 ), uncerts_squared( num_pars, 0.0 );
     
-    // blah blah blah - need to fill out all the answer info - also need to update energy calibration of m_spectrum, as well as shift the
+    ceres::Covariance covariance(cov_options);
+    vector<pair<const double*, const double*> > covariance_blocks;
+    for( size_t i = 0; i < num_pars; ++i )
+      covariance_blocks.push_back( make_pair( pars + i, pars + i ) );
     
-    /*
-    std::vector<double> m_rel_eff_coefficients;
-    std::vector<std::vector<double>> m_rel_eff_covariance;
-    std::vector<NuclideRelAct> m_rel_activities;
-    std::vector<std::vector<double>> m_rel_act_covariance;
-    std::vector<double> m_fwhm_coefficients;
-    std::vector<std::vector<double>> m_fwhm_covariance;
-    std::vector<FloatingPeakResult> m_floating_peaks;
-    std::vector<PeakDef> m_fit_peaks;
-    double m_energy_cal_adjustments[2];
-    bool m_fit_energy_cal_adjustments;
-    double m_chi2;
-    size_t m_dof;
-     // Update solution.m_spectrum with updated energy calibration
-    */
+    auto add_cov_block = [&covariance_blocks, &pars]( size_t start, size_t num ){
+      for( size_t i = start; i < num; ++i )
+        for( size_t j = start; j < i; ++j )
+          covariance_blocks.push_back( make_pair( pars + i, pars + j ) );
+    };
     
+    add_cov_block( rel_eff_start, num_rel_eff_par );
+    add_cov_block( acts_start, num_acts_par );
+    add_cov_block( fwhm_start, num_fwhm_pars );
+    
+    if( !covariance.Compute(covariance_blocks, &problem) )
+    {
+      cerr << "Failed to compute final covariances!" << endl;
+      solution.m_warnings.push_back( "Failed to compute final covariances." );
+    }else
+    {
+      for( size_t i = 0; i < num_pars; ++i )
+      {
+        covariance.GetCovarianceBlock( pars + i, pars + i, &(uncerts_squared[i]) );
+        if( uncerts_squared[i] >= 0.0 )
+          uncertainties[i] = sqrt( uncerts_squared[i] );
+        else
+          uncertainties[i] = std::numeric_limits<double>::quiet_NaN();
+      }
+      
+      // TODO: check the covariance is actually defined right (like not swapping row/col, calling the right places, etc).
+      auto get_cov_block = [&pars,&covariance]( const size_t start, const size_t num, vector<vector<double>> &cov ){
+        cov.clear();
+        cov.resize( num, vector<double>(num,0.0) );
+        
+        for( size_t i = start; i < num; ++i )
+        {
+          for( size_t j = start; j < i; ++j )
+          {
+            covariance.GetCovarianceBlock( pars + i, pars + j, &(cov[i][j]) );
+            cov[j][i] = cov[i][j];
+          }
+        }
+      };
+      
+      get_cov_block( rel_eff_start, num_rel_eff_par, solution.m_rel_eff_covariance );
+      get_cov_block( acts_start, num_acts_par, solution.m_rel_act_covariance );
+      get_cov_block( fwhm_start, num_fwhm_pars, solution.m_fwhm_covariance );
+    }//if( we failed to get covariance ) / else
+    
+    
+    solution.m_num_function_eval_total = cost_functor->m_ncalls;
+  
+    solution.m_final_parameters = parameters;
+    
+    solution.m_energy_cal_adjustments[0] = parameters[0];
+    solution.m_energy_cal_adjustments[1] = parameters[1];
+    solution.m_fit_energy_cal_adjustments = options.fit_energy_cal;
+    
+    shared_ptr<const SpecUtils::EnergyCalibration> new_cal = cost_functor->m_energy_cal;
+    if( options.fit_energy_cal )
+    {
+      auto new_cal = make_shared<SpecUtils::EnergyCalibration>( *cost_functor->m_energy_cal );
+      
+      const size_t num_channel = cost_functor->m_energy_cal->num_channels();
+      const SpecUtils::EnergyCalType energy_cal_type = cost_functor->m_energy_cal->type();
+      
+      switch( energy_cal_type )
+      {
+        case SpecUtils::EnergyCalType::Polynomial:
+        case SpecUtils::EnergyCalType::FullRangeFraction:
+        case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        {
+          vector<float> coefs = cost_functor->m_energy_cal->coefficients();
+          assert( coefs.size() >= 2 );
+          coefs[0] += parameters[0];
+          coefs[1] *= (1.0 + parameters[1]);
+          
+          const auto &dev_pairs = cost_functor->m_energy_cal->deviation_pairs();
+          
+          if( energy_cal_type == SpecUtils::EnergyCalType::FullRangeFraction )
+            new_cal->set_full_range_fraction( num_channel, coefs, dev_pairs );
+          else
+            new_cal->set_polynomial( num_channel, coefs, dev_pairs );
+          
+          break;
+        }//case polynomial or FRF
+          
+          
+        case SpecUtils::EnergyCalType::LowerChannelEdge:
+        {
+          vector<float> lower_energies = *cost_functor->m_energy_cal->channel_energies();
+          for( float &energy : lower_energies )
+            energy = parameters[0] + ((1.0 + parameters[1]) * energy);
+          
+          new_cal->set_lower_channel_energy( num_channel, std::move(lower_energies) );
+          
+          break;
+        }//case LowerChannelEdge
+          
+        case SpecUtils::EnergyCalType::InvalidEquationType:
+          break;
+      }//switch( m_energy_cal->type() )
+      
+      new_cal = new_cal;
+      solution.m_spectrum->set_energy_calibration( new_cal );
+    }//if( options.fit_energy_cal )
+    
+    vector<PeakDef> fit_peaks;
+    for( const auto &range : cost_functor->m_energy_ranges )
+    {
+      PeaksForEnergyRange these_peaks = cost_functor->peaks_for_energy_range( range, parameters );
+      fit_peaks.insert( end(fit_peaks), begin(these_peaks.peaks), end(these_peaks.peaks) );
+    }
+    
+    std::sort( begin(fit_peaks), end(fit_peaks), &PeakDef::lessThanByMean );
+    
+    // \c fit_peaks are in the original energy calibration of the spectrum, we may need to adjust
+    //  them to match the new energy calibration
+    if( new_cal != cost_functor->m_energy_cal )
+    {
+      deque<shared_ptr<const PeakDef>> tmp_peaks;
+      for( const auto &p : fit_peaks )
+        tmp_peaks.push_back( make_shared<const PeakDef>( p ) );
+      
+      auto adjusted_peaks = EnergyCal::translatePeaksForCalibrationChange( tmp_peaks,
+                                       cost_functor->m_energy_cal, new_cal );
+      
+      fit_peaks.clear();
+      for( const auto &p : adjusted_peaks )
+        fit_peaks.push_back( *p );
+    }//if( new_cal != cost_functor->m_energy_cal )
+    
+    solution.m_fit_peaks = fit_peaks;
+    
+    
+    const auto rel_eff_iter = begin(parameters) + rel_eff_start;
+    solution.m_rel_eff_coefficients.clear();
+    solution.m_rel_eff_coefficients.insert( end(solution.m_rel_eff_coefficients),
+                                      rel_eff_iter, rel_eff_iter + options.rel_eff_eqn_order + 1 );
+    
+    const auto rel_act_iter = begin(parameters) + acts_start;
+    for( size_t act_index = 0; act_index < cost_functor->m_nuclides.size(); ++ act_index )
+    {
+      const NucInputGamma &nuc_input = cost_functor->m_nuclides[act_index];
+      
+      const size_t par_nuc_index = cost_functor->nuclide_index( nuc_input.nuclide );
+      const size_t par_act_index = acts_start + 2*par_nuc_index;
+      const size_t par_age_index = par_act_index + 1;
+      
+      RelActCalcAuto::NuclideRelAct nuc_output;
+      nuc_output.nuclide = nuc_input.nuclide;
+      nuc_output.age = cost_functor->age( nuc_input.nuclide, parameters );
+      nuc_output.age_was_fit = nuc_input.fit_age;
+      nuc_output.rel_activity = cost_functor->relative_activity( nuc_input.nuclide, parameters );
+      
+      nuc_output.age_uncertainty = uncertainties[par_age_index];
+      nuc_output.rel_activity_uncertainty = uncertainties[par_act_index];
+      
+      if( IsNan(nuc_output.age_uncertainty) )
+      {
+        solution.m_warnings.push_back( "Variance for nuclide " + nuc_input.nuclide->symbol
+                                      + " age, is invalid ("
+                                      + std::to_string(uncerts_squared[par_age_index]) + ")" );
+      }
+      
+      if( IsNan(nuc_output.rel_activity_uncertainty) )
+      {
+        solution.m_warnings.push_back( "Variance for nuclide " + nuc_input.nuclide->symbol
+                                      + " activity, is invalid ("
+                                      + std::to_string(uncerts_squared[par_act_index]) + ")" );
+      }
+      
+
+      solution.m_rel_activities.push_back( nuc_output );
+    }//for( size_t act_index = 0; act_index < cost_functor->m_nuclides.size(); ++ act_index )
+    
+    solution.m_fwhm_form = options.fwhm_form;
+    solution.m_fwhm_coefficients.clear();
+    for( size_t i = 0; i < num_fwhm_pars; ++i )
+      solution.m_fwhm_coefficients.push_back( parameters[fwhm_start + i] );
+    
+    for( size_t i = 0; i < cost_functor->m_extra_peaks.size(); ++i )
+    {
+      const size_t amp_index = free_peak_start + 2*i + 0;
+      const size_t fwhm_index = free_peak_start + 2*i + 1;
+      
+      RelActCalcAuto::FloatingPeakResult peak;
+      peak.energy = cost_functor->m_extra_peaks[i].energy;
+      peak.amplitude = parameters[amp_index];
+      peak.fwhm = parameters[fwhm_index];
+      
+      if( !cost_functor->m_extra_peaks[i].release_fwhm )
+      {
+        const double true_energy = cost_functor->un_apply_energy_cal_adjustment( peak.energy, parameters );
+        peak.fwhm = cost_functor->fwhm( true_energy, parameters );
+        
+        // TODO: implement evaluating uncertainty of FWHM, given covariance.
+        peak.fwhm_uncert = -1;
+      }else
+      {
+        peak.fwhm_uncert = uncertainties[fwhm_index];
+        if( IsNan(peak.fwhm_uncert) )
+        {
+          solution.m_warnings.push_back( "Variance for floating peak at " + std::to_string(peak.energy)
+                                        + " FWHM is invalid ("
+                                        + std::to_string(uncerts_squared[fwhm_index]) + ")" );
+        }
+      }//if( we didnt let FWHM float ) / else
+      
+      peak.amplitude_uncert = uncertainties[amp_index];
+      
+      
+      if( IsNan(peak.amplitude_uncert) )
+      {
+        solution.m_warnings.push_back( "Variance for floating peak at " + std::to_string(peak.energy)
+                                      + " amplitude is invalid ("
+                                      + std::to_string(uncerts_squared[amp_index]) + ")" );
+      }
+      
+      solution.m_floating_peaks.push_back( peak );
+    }//for( size_t i = 0; i < cost_functor->m_extra_peaks.size(); ++i )
+    
+    vector<double> residuals( cost_functor->number_residuals(), 0.0 );
+    cost_functor->eval( parameters, residuals.data() );
+    solution.m_chi2 = 0.0;
+    for( const double v : residuals )
+      solution.m_chi2 += v*v;
+    
+    // TODO: need to setup the DOF
+    solution.m_dof = -1.0;
+    solution.m_warnings.push_back( "Not currently calculating DOF - need to implement" );
+    //solution.m_dof = residuals.size() - ;
+    
+    solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::Success;
     
     return solution;
   }//RelActCalcAuto::RelActAutoSolution solve_ceres( ceres::Problem &problem )
@@ -1351,8 +1619,46 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( fabs(x[0]) <= 5.1 );
     assert( fabs(x[1]) <= 0.011 );
       
-    // TODO: is this the best way to apply corrections?
-    return (1.0 + x[1]) * (energy + x[0]);
+    // If there is no adjustment to be made, skip doing the calculation.
+    //  Using numeric_limits<float>::epsilon() is fairly arbitrary, but is smaller than what will
+    //  actually affect the energy calibrarion
+    if( (fabs(x[0]) < std::numeric_limits<float>::epsilon())
+       && (fabs(x[1]) < std::numeric_limits<float>::epsilon()) )
+      return energy;
+    
+    switch( m_energy_cal->type() )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      {
+        vector<float> coefs = m_energy_cal->coefficients();
+        assert( coefs.size() >= 2 );
+        coefs[0] += x[0];
+        coefs[1] *= (1.0 + x[1]);
+        
+        const auto &dev_pairs = m_energy_cal->deviation_pairs();
+        const double channel = m_energy_cal->channel_for_energy( energy );
+        
+        if( m_energy_cal->type() == SpecUtils::EnergyCalType::FullRangeFraction )
+          return SpecUtils::fullrangefraction_energy( channel, coefs, m_energy_cal->num_channels(), dev_pairs );
+        
+        return SpecUtils::polynomial_energy( channel, coefs, dev_pairs );
+        break;
+      }//case polynomial or FRF
+      
+        
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+        return x[0] + ((1.0 + x[1]) * energy);
+        
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+        break;
+    }//switch( m_energy_cal->type() )
+    
+    assert( 0 );
+    throw runtime_error( "Energy cal must be valid" );
+    
+    return energy;
   }//double apply_energy_cal_adjustment( double energy, const std::vector<double> &x ) const
   
   
@@ -1396,6 +1702,22 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   };//struct PeaksForEnergyRange
   
   
+  /** Creates the peaks for a ROI.
+   
+   All peaks will share a single continuum, and have amplitudes and FWHM according to input
+   paramaters \c x.
+   
+   If energy calibration is being adjusted, peaks are returned with energy range and mean w.r.t.,
+   the original energy calibration - i.e., the mean will not be that of the gamma, but the energy
+   that gamma would be observed in the spectrum, with its original energy calibration.
+   
+   @param range The energy range to create peaks for.
+   @param x The vector of parameters that specify relative activities, efficiencies, energy
+          calibration, etc. of the problem.
+   
+   @returns A peak for each gamma, of each nuclide, as well as each free-floating peak, in the
+            problem, that is within the specified energy range.
+   */
   PeaksForEnergyRange peaks_for_energy_range( const RoiRangeChannels &range, const std::vector<double> &x ) const
   {
     const size_t num_channels = range.num_channels;
@@ -1407,7 +1729,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     pair<size_t,size_t> channel_range = range.channel_range( adjusted_lower_energy, adjusted_upper_energy, num_channels, m_energy_cal );
     const size_t first_channel = channel_range.first;
-    const size_t last_channel = channel_range.first;
+    const size_t last_channel = channel_range.second;
     
     //const float adjusted_first_channel_lower = m_energy_cal->energy_for_channel(first_channel);
     //const float adjusted_last_channel_upper = m_energy_cal->energy_for_channel(last_channel + 0.999 );
@@ -1432,7 +1754,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       const double rel_act = relative_activity( nucinfo.nuclide, x );
       
-      cout << "peaks_for_energy_range: Relative activity of " << nucinfo.nuclide->symbol << " is " << PhysicalUnits::printToBestActivityUnits(rel_act) << endl;
+      //cout << "peaks_for_energy_range: Relative activity of " << nucinfo.nuclide->symbol
+      //     << " is " << PhysicalUnits::printToBestActivityUnits(rel_act) << endl;
       
       if( is_fixed_age(nucinfo.nuclide) )
       {
@@ -1470,9 +1793,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const double peak_amplitude = rel_act * m_live_time * rel_eff;
         const double peak_mean = apply_energy_cal_adjustment( gamma.energy, x );
         
-        cout << "peaks_for_energy_range: Peak at " << gamma.energy << " keV for " << nucinfo.nuclide->symbol
-        << " has a mean of " << peak_mean << " keV, FWHM=" << peak_fwhm << ", RelEff=" << rel_eff
-        << ", and AMP=" << peak_amplitude << endl;
+        //cout << "peaks_for_energy_range: Peak at " << gamma.energy << " keV for " << nucinfo.nuclide->symbol
+        //<< " has a mean of " << peak_mean << " keV, FWHM=" << peak_fwhm << ", RelEff=" << rel_eff
+        //<< ", and AMP=" << peak_amplitude << endl;
         
         peaks.emplace_back( peak_mean, peak_fwhm/2.35482, peak_amplitude );
         
@@ -1489,6 +1812,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( transition )
           new_peak.setNuclearTransition( nucinfo.nuclide, transition,
                                            static_cast<int>(transition_index), gamma_type );
+        
+        if( !nucinfo.peak_color_css.empty() )
+          new_peak.setLineColor( Wt::WColor( Wt::WString::fromUTF8(nucinfo.peak_color_css) ) );
       }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
     }//for( const NucInputGamma &nucinfo : m_nuclides )
     
@@ -1521,7 +1847,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         num_free_peak_pars += 1;
       }
       
-      cout << "peaks_for_energy_range: free peak at " << peak.energy << " has a FWHM=" << peak_fwhm << " and AMP=" << peak_amp << endl;
+      //cout << "peaks_for_energy_range: free peak at " << peak.energy << " has a FWHM=" << peak_fwhm << " and AMP=" << peak_amp << endl;
       
       peaks.emplace_back( peak.energy, peak_fwhm/2.35482, peak_amp );
     }//for( const RelActCalcAuto::FloatingPeak &peak : m_extra_peaks )
@@ -1581,8 +1907,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     std::sort( begin(peaks), end(peaks), &PeakDef::lessThanByMean );
     
     
-    cerr << "peaks_for_energy_range: returning " << peaks.size() << " in range [" << range.lower_energy << ", "
-    << range.upper_energy << "] keV." << endl;
+    //cerr << "peaks_for_energy_range: returning " << peaks.size() << " in range [" << range.lower_energy << ", "
+    //<< range.upper_energy << "] keV." << endl;
     
     return answer;
   }//PeaksForEnergyRange peaks_for_energy_range( const double lower_energy, const double upper_energy ) const
@@ -1625,10 +1951,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           
         residuals[residual_index] = (data_counts - continuum_counts - gaussian_area) / data_uncert;
         
-        cout << "eval: For channel " << channel << " (" << lower_energy << " to " << upper_energy
-        << " keV) there are " << data_counts << " data counts, and currently fitting for "
-        << gaussian_area << " gaussian counts, and " << continuum_counts
-        << " continuum counts (total fit: " << (gaussian_area + continuum_counts) << ")" << endl;
+        //cout << "eval: For channel " << channel << " (" << lower_energy << " to " << upper_energy
+        //<< " keV) there are " << data_counts << " data counts, and currently fitting for "
+        //<< gaussian_area << " gaussian counts, and " << continuum_counts
+        //<< " continuum counts (total fit: " << (gaussian_area + continuum_counts) << ")" << endl;
         
         ++residual_index;
       }//for( loop over channels )
@@ -1760,40 +2086,230 @@ int run_test()
     Options options;
     options.fromXml( options_node );
 
-    std::vector<RoiRange> energy_ranges;
-    const auto roi_ranges_node = get_required_node(base_node, "RoiRangeList");
-    XML_FOREACH_DAUGHTER(roi_range_node, roi_ranges_node, "RoiRange")
+    bool extract_info_from_n42 = false;
+    try
     {
-      RoiRange range;
-      range.fromXml( roi_range_node );
-      energy_ranges.push_back( range );
+      extract_info_from_n42 = get_bool_node_value(base_node, "RoiAndNucsFromFile");
+    }catch(std::exception &)
+    {
+      //<RoiAndNucsFromFile> is optional, so will get here if it doesnt exist (or invalid value in it)
     }
+    
+    vector<RoiRange> energy_ranges;
+    vector<NucInputInfo> nuclides;
+    vector<FloatingPeak> extra_peaks;
+    vector<string> input_warnings;
+    
+    
+    if( extract_info_from_n42 )
+    {
+      // Do a quick sanity check that we arent accidentally over-specifying things or something
+      if( XML_FIRST_INODE(base_node, "RoiRangeList")
+          || XML_FIRST_INODE(base_node, "NucInputInfoList")
+          || XML_FIRST_INODE(base_node, "FloatingPeakList") )
+      {
+        throw runtime_error( "When RoiAndNucsFromFile is true, <RoiRangeList>, <NucInputInfoList>,"
+                              " or <FloatingPeakList> may not also be specified" );
+      }
+      
+      shared_ptr<deque<shared_ptr<const PeakDef>>> peaks = foreground->peaks( foreground->sample_numbers() );
+      if( !peaks || peaks->empty() )
+        throw runtime_error( "No peaks specified in file even though <RoiAndNucsFromFile> option is set true." );
+      
+      set<const SandiaDecay::Nuclide *> nucs;
+      set<shared_ptr<const PeakContinuum>> continuums;
+      for( const auto &peak : *peaks )
+      {
+        continuums.insert( peak->continuum() );
+        const auto n = peak->parentNuclide();
+        if( n )
+        {
+          if( !nucs.count(n) )
+          {
+            nucs.insert( n );
+            NucInputInfo nucinfo;
+            // We dont actually know the age the user wanted; we could look for the shielding/source
+            //  model, but thats to much to bother with for our purposes right now.
+            nucinfo.age = PeakDef::defaultDecayTime( n, nullptr );
+            nucinfo.fit_age = false;
+            //nucinfo.gammas_to_exclude
+            nucinfo.nuclide = n;
+            nucinfo.peak_color_css = peak->lineColor().cssText();
+            
+            nuclides.push_back( nucinfo );
+          }//if( we havnet seen this nuclide yet )
+        }else
+        {
+          // If peak doesnt have a nuclide, it will be a floating peak
+          FloatingPeak fp;
+          fp.energy = peak->mean();
+          fp.release_fwhm = false;
+          
+          extra_peaks.push_back( fp );
+        }//if( peak has a nuclide ) / else ( a floating nuclide )
+      }//for( loop over user peaks )
+      
+      
+      for( const auto &cont : continuums )
+      {
+        RoiRange range;
+        range.lower_energy = cont->lowerEnergy();
+        range.upper_energy = cont->upperEnergy();
+        range.force_full_range = true;
+        range.allow_expand_for_peak_width = false;
+        
+        energy_ranges.push_back( range );
+      }//for( loop over ROIs )
+    }else
+    {
+      const auto roi_ranges_node = get_required_node(base_node, "RoiRangeList");
+      XML_FOREACH_DAUGHTER(roi_range_node, roi_ranges_node, "RoiRange")
+      {
+        RoiRange range;
+        range.fromXml( roi_range_node );
+        energy_ranges.push_back( range );
+      }
+      
+      const auto nucs_node = get_required_node(base_node, "NucInputInfoList");
+      XML_FOREACH_DAUGHTER(nuc_node, nucs_node, "NucInputInfo")
+      {
+        NucInputInfo nuc;
+        nuc.fromXml( nuc_node );
+        nuclides.push_back( nuc );
+      }
+      
+      const auto float_peak_node = get_required_node(base_node, "FloatingPeakList");
+      XML_FOREACH_DAUGHTER(float_peak_node, nucs_node, "FloatingPeak")
+      {
+        FloatingPeak peak;
+        peak.fromXml( float_peak_node );
+        extra_peaks.push_back( peak );
+      }
+    }//if( extract_info_from_n42 )
+    
+    
+    std::sort( begin(energy_ranges), end(energy_ranges), []( const RoiRange &lhs, const RoiRange &rhs ) -> bool {
+      return lhs.lower_energy < rhs.lower_energy;
+    });
+    
+    std::sort( begin(extra_peaks), end(extra_peaks), []( const FloatingPeak &lhs, const FloatingPeak &rhs ) -> bool {
+      return lhs.energy < rhs.energy;
+    });
+    
+    
+    // Make sure ranges dont overlap - if they do, split the difference.
+    //  This only catches simple small
+    for( size_t i = 1; i < energy_ranges.size(); ++i )
+    {
+      RoiRange &prev_range = energy_ranges[i-1];
+      RoiRange &this_range = energy_ranges[i];
+      if( prev_range.upper_energy > this_range.lower_energy )
+      {
+        const double diff = prev_range.upper_energy - this_range.lower_energy;
+        
+        const double prev_kev = prev_range.upper_energy - prev_range.lower_energy;
+        const double this_kev = this_range.upper_energy - this_range.lower_energy;
+        
+        char buffer[512] = { '\0' };
+        snprintf( buffer, sizeof(buffer), "Energy range [%.1f, %.1f] keV, overlaps with range"
+                 " [%.1f, %.1f] keV",
+                 prev_range.lower_energy, prev_range.upper_energy,
+                 this_range.lower_energy, this_range.upper_energy );
+        
+        if( diff > 0.2*(std::min(prev_kev,this_kev)) )
+          throw runtime_error( string(buffer) + " - and overlap is too large to fix." );
+        
+        input_warnings.push_back( string(buffer) + " - will remove overlap down the middle." );
+
+        const double adjust = 0.51*diff;
+        
+        // TODO: should check that adjusting the ROIs to be not overlapping, doesnt result in invalid ROIs
+        prev_range.upper_energy -= adjust;
+        this_range.lower_energy += adjust;
+      }//if( prev_range.upper_energy > this_range.lower_energy )
+    }//for( size_t i = 1; i < energy_ranges.size(); ++i )
+    
     
     if( energy_ranges.empty() )
       throw runtime_error( "No RoiRanges specified" );
-    
-    std::vector<NucInputInfo> nuclides;
-    const auto nucs_node = get_required_node(base_node, "NucInputInfoList");
-    XML_FOREACH_DAUGHTER(nuc_node, nucs_node, "NucInputInfo")
-    {
-      NucInputInfo nuc;
-      nuc.fromXml( nuc_node );
-      nuclides.push_back( nuc );
-    }
     
     if( nuclides.empty() )
       throw runtime_error( "No nuclides specified" );
     
     
-    std::vector<FloatingPeak> extra_peaks;
-    const auto float_peak_node = get_required_node(base_node, "FloatingPeakList");
-    XML_FOREACH_DAUGHTER(float_peak_node, nucs_node, "FloatingPeak")
-    {
-      FloatingPeak peak;
-      peak.fromXml( float_peak_node );
-      extra_peaks.push_back( peak );
-    }
+    // A helper function to print out the XML; right now just to stdout, but could be useful
+    auto print_xml = [&](){
+      try
+      {
+        using namespace rapidxml;
+        
+        rapidxml::xml_document<char> doc;
+        
+        xml_node<char> *base_node = doc.allocate_node( node_element, "RelActCalcAuto" );
+        doc.append_node( base_node );
+        
+        xml_attribute<char> *attrib = doc.allocate_attribute( "version", "0" );
+        base_node->append_attribute( attrib );
+        
+        const char *strvalue = doc.allocate_string( foreground_node->value(), foreground_node->value_size() );
+        xml_node<char> *node = doc.allocate_node( node_element, "ForegroundFileName", strvalue );
+        base_node->append_node( node );
+        
+        if( background_file.size() )
+        {
+          strvalue = doc.allocate_string( background_file.c_str() );
+          node = doc.allocate_node( node_element, "BackgroundFileName", strvalue );
+          base_node->append_node( node );
+        }
+        
+        options.toXml( base_node );
+        
+        // Note that when we write <RoiAndNucsFromFile> as "true" it actually makes the XML so it
+        //  wont be read back in
+        
+        if( extract_info_from_n42 )
+        {
+          node = doc.allocate_node( node_comment, "", "You must change RoiAndNucsFromFile to false,"
+                                   " or delete RoiRangeList, NucInputInfoList, and FloatingPeakList"
+                                   " nodes, or else you cant use this XML as input" );
+          base_node->append_node( node );
+        }//if( extract_info_from_n42 )
+        
+        node = doc.allocate_node( node_comment, "", "Optionally, we can extract ROI and Nuclide"
+                                 " information from N42 files saved by InterSpec" );
+        base_node->append_node( node );
+        
+        node = doc.allocate_node( node_element, "RoiAndNucsFromFile", (extract_info_from_n42 ? "true" : "false") );
+        base_node->append_node( node );
+        
+        node = doc.allocate_node( node_element, "RoiRangeList" );
+        base_node->append_node( node );
+        for( const auto &range : energy_ranges )
+          range.toXml( node );
+        
+        node = doc.allocate_node( node_element, "NucInputInfoList" );
+        base_node->append_node( node );
+        for( const auto &nuc : nuclides )
+          nuc.toXml( node );
+        
+        if( !extra_peaks.empty() )
+        {
+          node = doc.allocate_node( node_element, "FloatingPeakList" );
+          base_node->append_node( node );
+          for( const auto &peak : extra_peaks )
+            peak.toXml( node );
+        }
+       
+        cout << "RelActCalcAuto input XML is:\n\n";
+        rapidxml::print( std::cout, doc, 0 );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to to write XML for RelActCalcAuto input: " << e.what() << endl;
+      }
+    };//print_xml(...)
     
+    if( extract_info_from_n42 )
+      print_xml();
     
     assert( foreground && (foreground->num_measurements() == 1) );
     
@@ -1805,7 +2321,20 @@ int run_test()
 
     RelActAutoSolution solution = solve( options, energy_ranges, nuclides, extra_peaks, fore_meas, back_meas, drf );
     
-    //Print out summarry, etc.
+    std::reverse( begin(input_warnings), end(input_warnings) );
+    for( const string &w : input_warnings )
+      solution.m_warnings.insert( std::begin(solution.m_warnings), "Preparing input: " + w );
+      
+    
+    //Print out summary, etc.
+    
+    cout << "\n\n\n\n-----------------------------------------------------------\n\n"
+    << "Done fitting:\n";
+    
+    solution.print_summary( std::cout );
+    
+    cout << "\n\n\n";
+    
   }catch( std::exception &e )
   {
     cerr << "RelAct test failed: " << e.what() << endl;
@@ -1964,6 +2493,9 @@ void NucInputInfo::toXml( ::rapidxml::xml_node<char> *parent ) const
     for( const double energy : gammas_to_exclude )
       append_float_node( exclude_node, "Energy", energy );
   }//if( !gammas_to_exclude.empty() )
+  
+  if( !peak_color_css.empty() )
+    append_string_node( base_node, "PeakColorCss", peak_color_css);
 }//void NucInputInfo::toXml(...)
 
 
@@ -2010,6 +2542,9 @@ void NucInputInfo::fromXml( const ::rapidxml::xml_node<char> *nuc_info_node )
         throw runtime_error( "Invalid exclude energy '" + strval + "'" );
       gammas_to_exclude.push_back( energy );
     }//foreach( <Energy> node under <GammasToExclude> )
+    
+    const auto color_node = XML_FIRST_INODE( nuc_info_node, "PeakColorCss");
+    peak_color_css = SpecUtils::xml_value_str( color_node );
   }catch( std::exception &e )
   {
     throw runtime_error( "NucInputInfo::fromXml(): " + string(e.what()) );
@@ -2077,12 +2612,14 @@ void Options::toXml( ::rapidxml::xml_node<char> *parent ) const
   append_bool_node( base_node, "NucsOfElSameAge", nucs_of_el_same_age );
   
   const char *rell_eff_eqn_str = RelActCalc::to_str( rel_eff_eqn_type );
-  append_string_node( base_node, "RelEffEqnType", rell_eff_eqn_str);
+  auto rel_eff_node = append_string_node( base_node, "RelEffEqnType", rell_eff_eqn_str);
+  append_attrib( rel_eff_node, "remark", "Possible values: Possible values: LnX, LnY, LnXLnY, \"FRAM Empirical\"" );
   
   append_int_node( base_node, "RelEffEqnOrder", rel_eff_eqn_order);
   
   const char *fwhm_form_str = to_str( fwhm_form );
-  append_string_node( base_node, "FwhmForm", fwhm_form_str );
+  auto fwhm_node = append_string_node( base_node, "FwhmForm", fwhm_form_str );
+  append_attrib( fwhm_node, "remark", "Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6" );
 }//void Options::toXml(...)
 
 
@@ -2174,13 +2711,173 @@ RelActAutoSolution::RelActAutoSolution()
   m_fit_energy_cal_adjustments( false ),
   m_chi2( -1.0 ),
   m_dof( 0 ),
-  m_num_function_eval( 0 ),
+  m_num_function_eval_solution( 0 ),
+  m_num_function_eval_total( 0 ),
   m_num_microseconds_eval( 0 )
 {
   
 }
 
+std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
+{
+  const double nsec_eval = 1.0E-6*m_num_microseconds_eval;
+  
+  out << "Computation took " << PhysicalUnits::printToBestTimeUnits(nsec_eval)
+  << " with " << m_num_function_eval_solution << " function calls to solve, and "
+  << (m_num_microseconds_eval - m_num_function_eval_solution)
+  << " more for covariance\n";
+  
+  switch( m_status )
+  {
+    case Status::Success:
+      out << "Solution was successfully found.\n";
+      break;
+      
+    case Status::NotInitiated:
+      out << "Problem was not initialized.\n";
+      break;
+      
+    case Status::FailedToSetupProblem:
+      out << "Failed to setup problem.\n";
+      break;
+      
+    case Status::FailToSolveProblem:
+      out << "Failed to solve problem.\n";
+      break;
+  }//switch( m_status )
+  
+  if( m_error_message.size() )
+    out << "Error: " << m_error_message << "\n";
+  
+  for( const string &warning: m_warnings )
+    out << "Warning: " << warning << "\n";
+  
+  if( m_status != Status::Success )
+    return;
+  
+  // Rake code from RelEff
+  out << "Rel. Eff. Eqn.: y = "
+  << RelActCalc::rel_eff_eqn_text(m_rel_eff_form,m_rel_eff_coefficients) << "\n"
+  << "Activity ratios:\n";
+  
+  for( size_t i = 1; i < m_rel_activities.size(); ++i )
+  {
+    const NuclideRelAct &nuc_i = m_rel_activities[i];
+      
+    for( size_t j = 0; j < i; ++j )
+    {
+      const NuclideRelAct &nuc_j = m_rel_activities[j];
+      
+      const double act_ratio = activity_ratio(nuc_i.nuclide, nuc_j.nuclide);
+      const double nuc_mass_ratio = mass_ratio(nuc_i.nuclide, nuc_j.nuclide);
+      
+      out << "\t" << std::setw(16) << (nuc_i.nuclide->symbol + " / " + nuc_j.nuclide->symbol)
+      << "\tact: " << std::setw(10) << std::setprecision(4) << act_ratio
+      << "\tmass: " << std::setw(10) << std::setprecision(4) << nuc_mass_ratio
+      << "\n";
+      out << "\t" << std::setw(16) << (nuc_j.nuclide->symbol + " / " + nuc_i.nuclide->symbol)
+      << "\tact: " << std::setw(10) << std::setprecision(4) << 1.0/act_ratio
+      << "\tmass: " << std::setw(10) << std::setprecision(4) << 1.0/nuc_mass_ratio
+      << "\n";
+    }//for( size_t j = 0; j < i; ++j )
+  }//for( size_t i = 0; i < used_isotopes.size(); ++i )
+  
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  
+  map<int,vector<const SandiaDecay::Nuclide *>> nucs_of_element;
+  const SandiaDecay::Nuclide *u235 = nullptr, *pu240 = nullptr;
+  for( const NuclideRelAct &nuc_rel_act : m_rel_activities )
+  {
+    const SandiaDecay::Nuclide * const nuc = nuc_rel_act.nuclide;
+    
+    nucs_of_element[nuc->atomicNumber].push_back( nuc );
+    
+    if( (nuc->atomicNumber == 92) && (nuc->massNumber == 235) )
+      u235 = nuc;
+    
+    if( (nuc->atomicNumber == 94) && (nuc->massNumber == 240) )
+      pu240 = nuc;
+  }//for( const NuclideRelAct &nuc : m_rel_activities )
+  
+  if( u235 )
+    out << "\nEnrichment " << 100.0*mass_enrichment_fraction(u235) << "% U235\n";
+  
+  if( pu240 )
+    out << "\nEnrichment " << 100.0*mass_enrichment_fraction(pu240) << "% Pu240\n";
+  
+  for( auto &v : nucs_of_element )
+  {
+    vector<const SandiaDecay::Nuclide *> nucs = v.second;
+    if( nucs.size() < 2 )
+      continue;
+    
+    sort( begin(nucs), end(nucs), [](auto l, auto r){ return l->massNumber < r->massNumber; } );
+    
+    const SandiaDecay::Element * const el = db->element( nucs.front()->atomicNumber );
+    assert( el );
+    
+    out << "For " << el->name << ":\n";
+    for( const SandiaDecay::Nuclide *nuc : nucs )
+      out << std::setw(5) << nuc->symbol << ": "
+      << std::setw(10) << std::setprecision(4) << 100.0*mass_enrichment_fraction(nuc) << "%"
+      << " of the " << el->name << ", by mass.\n";
+  }//for( auto &v : nucs_of_element )
+  
+  return out;
+}//RelActAutoSolution::print_summary(...)
 
+
+double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide ) const
+{
+  const size_t nuc_index = nuclide_index( nuclide );
+  const double rel_mass = m_rel_activities[nuc_index].rel_activity / nuclide->activityPerGram();
+  
+  double el_total_mass = 0.0;
+  for( const NuclideRelAct &nuc : m_rel_activities )
+  {
+    if( nuc.nuclide->atomicNumber == nuclide->atomicNumber )
+      el_total_mass += nuc.rel_activity / nuc.nuclide->activityPerGram();
+  }
+  
+  return rel_mass / el_total_mass;
+}//mass_enrichment_fraction
+
+
+double RelActAutoSolution::mass_ratio( const SandiaDecay::Nuclide *numerator,
+                                      const SandiaDecay::Nuclide *denominator ) const
+{
+  const double ratio = activity_ratio(numerator,denominator);
+  
+  return ratio * denominator->activityPerGram() / numerator->activityPerGram();
+}//double mass_ratio(...)
+
+
+double RelActAutoSolution::activity_ratio( const SandiaDecay::Nuclide *numerator,
+                                          const SandiaDecay::Nuclide *denominator ) const
+{
+  const size_t i = nuclide_index(numerator);
+  const size_t j = nuclide_index(denominator);
+  
+  const NuclideRelAct &nuc_i = m_rel_activities[i];
+  const NuclideRelAct &nuc_j = m_rel_activities[j];
+  
+  const double act_i = nuc_i.rel_activity;
+  const double act_j = nuc_j.rel_activity;
+  
+  return act_i / act_j;
+}//double activity_ratio(...)
+
+
+size_t RelActAutoSolution::nuclide_index( const SandiaDecay::Nuclide *nuclide ) const
+{
+  for( size_t i = 0; i < m_rel_activities.size(); ++i )
+    if( nuclide == m_rel_activities[i].nuclide )
+      return i;
+  
+  assert( 0 );
+  throw runtime_error( "RelActAutoSolution: " + (nuclide ? nuclide->symbol : string()) + " is an invalid nuclide." );
+  return m_rel_activities.size();
+}//nuclide_index(...)
 
 RelActAutoSolution solve( Options options,
                          std::vector<RoiRange> energy_ranges,
