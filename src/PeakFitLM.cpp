@@ -689,6 +689,21 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
     std::cout << summary.FullReport() << "\n";
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
     cost_functor->m_ncalls = 0;
+    
+    switch( summary.termination_type )
+    {
+      case ceres::CONVERGENCE:
+      case ceres::USER_SUCCESS:
+        break;
+        
+      case ceres::NO_CONVERGENCE:
+      case ceres::FAILURE:
+      case ceres::USER_FAILURE:
+        throw runtime_error( "The L-M ceres::Solver solving failed." );
+        break;
+    }//switch( summary.termination_type )
+    
+    
     //ceres::Solve(options, &problem, nullptr );
     
     

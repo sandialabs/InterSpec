@@ -63,6 +63,7 @@ void getUtf8Args( int &argc, char ** &argv );
 void processCustomArgs( int argc, char **argv );
 
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/RelActCalcManual.h"
 
 int main( int argc, char **argv )
 {
@@ -70,7 +71,8 @@ int main( int argc, char **argv )
   getUtf8Args( argc, argv );
 #endif
 
-  return RelActCalcAuto::run_test();
+  //return RelActCalcAuto::run_test();
+  return RelActCalcManual::run_test();
   
   
 #if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )

@@ -1,0 +1,476 @@
+<html>
+
+<head>
+    <title>${TITLE}</title>
+
+    
+    <!-- <script src="https://d3js.org/d3.v3.min.js"></script> -->
+    <script>
+    ${D3_SCRIPT}
+    </script>
+    
+    <script>
+    ${SPECTRUM_CHART_JS}
+    </script>
+
+  
+
+    <style>
+        /* set the CSS */
+
+        body {
+            font: Arial;
+        }
+
+        .title {
+            padding: 10px;
+            text-align: center;
+        }
+
+        .results {
+            padding: 10px;
+            font-size: medium;
+        }
+
+        .nuctable, .peaktable, .massratiotable {
+        }
+
+        .resulttable {
+            margin-top: 15px;
+            table-layout: fixed;
+            border-collapse: collapse;
+            border: 1px solid black;
+        }
+
+        .resulttable th, .resulttable td {
+            padding-left: 5px;
+            padding-right: 5px;
+            border: 1px solid black;
+        }
+
+        .optionstable {
+          margin-top: 15px;
+          text-align: left;
+        }
+
+        .optionstable th, .optionstable td {
+          padding-left: 5px;
+          padding-right: 5px;
+        }
+
+        .releffeqn {
+            margin: 10px;
+        }
+
+        .warnings {
+          margin-top: 15px;
+          margin-left: 10px;
+          margin-right: 10px;
+          padding: 5px;
+          border: 1px solid yellow;
+        }
+        
+        .warningline {
+          margin-top: 5px;
+        }
+
+        .anacommand, .unusednucs {
+          margin-top: 15px;
+          padding-left: 10px;
+          padding-right: 10px;
+        }
+
+        .anatime {
+            padding-top: 10px;
+            text-align: center;
+            font: 12px Arial;
+        }
+
+        .anacomputetime {
+          padding-top: 10px;
+          font: 12px Arial;
+        }
+
+        .RelEffPlot {
+            font-size: 14px;
+        }
+
+        .RelEffPlot path {
+            stroke: steelblue;
+            stroke-width: 2;
+            fill: none;
+        }
+
+        .RelEffPlot .xAxis path,
+        .RelEffPlot .xAxis line,
+        .RelEffPlot .yAxis path,
+        .RelEffPlot .yAxis line {
+            fill: none;
+            stroke: grey;
+            stroke-width: 1;
+            shape-rendering: crispEdges;
+        }
+
+        .RelEffPlot circle {
+            cursor: pointer;
+            fill: steelblue;
+        }
+
+        .RelEffPlot circle.noiso{ fill: black; }
+        .RelEffPlot circle.multiiso{ fill: #ef5675; }
+
+        ${REL_EFF_PLOT_CSS}
+
+        .RelEffPlot .errorbar {
+          fill: none;
+          stroke: grey;
+          stroke-width: 1;
+        }
+
+        div.RelEffPlotTooltip {
+            position: absolute;
+            padding: 6px;
+            font: 12px sans-serif;
+            background: lightsteelblue;
+            border: 0px;
+            border-radius: 8px;
+            pointer-events: none;
+        }
+    </style>
+
+    <!-- Some additional styling for the D3-based spectrum chart -->
+    <style>
+    ${SPECTRUM_CHART_CSS}
+    </style>
+
+    <style>
+      .SpecChart .chartarea{
+        fill: white;
+      }
+
+      .SpecChart .xaxistitle, .SpecChart .yaxistitle, .SpecChart .yaxis, .SpecChart .xaxis{
+        /* stroke: black; */
+      }
+
+
+      .xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick {
+        /* stroke: black; */
+      }
+
+      .xgrid > .tick, .ygrid > .tick{
+        stroke: #b3b3b3;
+      }
+
+      .minorgrid{
+        stroke: #e6e6e6;
+      }
+    </style>
+
+    <script>
+        RelEffPlot = function (elem) {
+            let self = this;
+            this.chart = typeof elem === "string" ? document.getElementById(elem) : elem;
+
+            // Set the dimensions of the canvas / graph
+            this.margins = { top: 30, right: 20, bottom: 30, left: 50 };
+            const width = this.chart.clientWidth - this.margins.left - this.margins.right;
+            const height = this.chart.clientHeight - this.margins.top - this.margins.bottom;
+
+            // Setup the tooltip
+            this.tooltip = d3.select("body").append("div")
+                .attr("class", "RelEffPlotTooltip")
+                .style("opacity", 0);
+
+            // Set the ranges
+            this.xScale = d3.scale.linear().range([0, width]);
+            this.yScale = d3.scale.linear().range([height, 0]);
+
+            // Define the axes
+            this.xAxis = d3.svg
+                .axis()
+                .scale(this.xScale)
+                .orient("bottom")
+                .ticks(5);
+
+            this.yAxis = d3.svg
+                .axis()
+                .scale(this.yScale)
+                .orient("left")
+                .ticks(5);
+
+            // Adds the svg canvas
+            this.svg = d3.select(this.chart)
+                .append("svg")
+                .attr("width", this.chart.clientWidth)
+                .attr("height", this.chart.clientHeight)
+                .attr("class", "RelEffPlot")
+                .append("g")
+                .attr("transform", "translate(" + this.margins.left + "," + this.margins.top + ")");
+
+            this.xScale.domain([0, 3000]);
+            this.yScale.domain([0, 1]);
+
+            // Add the valueline path.
+            this.path = this.svg.append("path")		// Add the valueline path.
+                .attr("class", "line");
+
+            // Add the X Axis
+            this.svg.append("g")
+                .attr("class", "xAxis")
+                .attr("transform", "translate(0," + height + ")")
+                .call(this.xAxis);
+
+            // Add the Y Axis
+            this.svg.append("g")
+                .attr("class", "yAxis")
+                .call(this.yAxis);
+        }//RelEffPlot constructor
+
+
+        RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
+            const self = this;
+
+            const width = this.chart.clientWidth - this.margins.left - this.margins.right;
+            const height = this.chart.clientHeight - this.margins.top - this.margins.bottom;
+
+            this.xScale
+                .range([0, width]);
+            this.yScale
+                .range([height, 0]);
+            this.svg
+                .selectAll('.xAxis')
+                .attr("transform", "translate(0," + height + ")");
+
+            d3.select(this.chart).select("svg")
+                .attr("width", this.chart.clientWidth)
+                .attr("height", this.chart.clientHeight)
+
+            this.data_vals = data_vals;
+            this.fit_eqn = fit_eqn;
+
+            if (!this.data_vals || !this.fit_eqn) {
+                this.xScale.domain([0, 3000]);
+                this.yScale.domain([0, 1]);
+                this.svg.selectAll('.xAxis').call(this.xAxis);
+                this.svg.selectAll('.yAxis').call(this.yAxis);
+                this.path.attr("d", null);
+                this.svg.selectAll("circle").remove();
+                this.svg.selectAll("line.errorbar").remove();
+
+                return;
+            }//if( we dont have both data the rel eff function )
+  
+
+            
+            
+            const num_eqn_points = width / 4;
+
+            // Scale the range of the data
+            let min_x = d3.min(data_vals, function (d) { return d.energy; });
+            let max_x = d3.max(data_vals, function (d) { return d.energy; });
+            const initial_x_range = max_x - min_x;
+            min_x -= ((min_x >=0 && min_x < (0.05*initial_x_range)) ? min_x : (0.05*initial_x_range));
+            max_x += 0.05 * initial_x_range;
+
+
+            let fit_eqn_points = [];
+            for (let i = 0; i < num_eqn_points; ++i) {
+                const ene = min_x + i * (max_x - min_x) / num_eqn_points;
+                fit_eqn_points.push({ energy: ene, eff: fit_eqn(ene) });
+            }
+
+            let min_y = d3.min(data_vals, function (d) { return d.eff; });
+            let max_y = d3.max(data_vals, function (d) { return d.eff; });
+            min_y = Math.min(min_y, d3.min(fit_eqn_points, function (d) { return d.eff; }));
+            max_y = Math.max(max_y, d3.max(fit_eqn_points, function (d) { return d.eff; }));
+
+            const initial_y_range = max_y - min_y;
+            min_y -= 0.1 * initial_y_range;
+            max_y += 0.2 * initial_y_range;
+
+            this.xScale.domain([min_x, max_x]);
+            this.yScale.domain([min_y, max_y]);
+
+            // Update the X Axis
+            this.svg.selectAll('.xAxis')
+                .call(this.xAxis);
+
+            // Update the Y Axis
+            this.svg.selectAll('.yAxis')
+                .call(this.yAxis);
+
+            // Define the line
+            let valueline = d3.svg.line()
+                .x(function (d) { return self.xScale(d.energy); })
+                .y(function (d) { return self.yScale(d.eff); });
+
+            this.path
+                .attr("d", valueline(fit_eqn_points));
+
+
+            // For some reason the circles position arent being updated on resize, so we'll just remove them first
+            //  With later versions of D3 there is a .merge() function that is maybe relevant
+            this.svg.selectAll("circle").remove();
+            this.svg.selectAll("line.errorbar").remove();
+            
+            let lines = this.svg.selectAll("line.errorbar")
+                        .data(data_vals);
+            
+            lines.enter()
+              .append('line')
+              .attr("class", "errorbar")
+              .attr('x1', function(d) { return self.xScale(d.energy); })
+              .attr('x2', function(d) { return self.xScale(d.energy); })
+              .attr('y1', function(d) { return self.yScale(d.eff + d.eff_uncert); })
+              .attr('y2', function(d) { return self.yScale(d.eff - d.eff_uncert); });
+            
+            // Add the data points
+            this.svg
+                .selectAll("circle")
+                .data(data_vals)
+                .enter()
+                .append("circle")
+                .attr("r", 5)
+                .attr("cx", function (d) {
+                    return self.xScale(d.energy)
+                })
+                .attr("cy", function (d) {
+                    return self.yScale(d.eff)
+                })
+                .attr("class", function (d) {
+                  
+                  if( d.nuc_info.length === 0 )
+                    return "noiso";
+
+                  if( d.nuc_info.length !== 1 )
+                    return "multiiso";
+                  
+                  const nuc = d.nuc_info[0].nuc;
+                  return nuc;
+                })
+                .on("mouseover", function (d, i) {
+
+                    self.tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+
+                    d3.select(this).transition()
+                        .duration('50')
+                        .attr('opacity', '.85')
+                        .attr("r", 8);
+
+
+                    let txt = "<div>Energy: " + d.energy.toFixed(2) + " keV</div>"
+                        + "<div>Peak Area: " + d.counts.toFixed(1) + " &pm; " + d.counts_uncert.toFixed(1) + "</div>"
+                        + "<div>Measured RelEff: " + d.eff.toPrecision(5) + "</div>"
+                        + "<div>RelEff Curve: " + fit_eqn(d.energy).toPrecision(5) + "</div>";
+                    for (const el of d.nuc_info) {
+                        txt += "<div>&nbsp;&nbsp;" + el.nuc + ": br=" + el.br.toPrecision(4) + ", RelAct=" + el.rel_act.toPrecision(4) + "</div>"
+                    }
+                    
+                    self.tooltip.html(txt);
+
+                    // Make it so tooltip doesnt extend above/below/left/right of chart area
+                    const svg_location = d3.mouse( self.svg.node() );
+                    const svg_bb = self.svg.node().getBoundingClientRect();
+                    const tt_bb = self.tooltip.node().getBoundingClientRect();
+                    const render_right = ((svg_location[0] + tt_bb.width + 10 + 15) < svg_bb.width);
+                    const render_top = (svg_location[1] + tt_bb.height + 4 + 15 > svg_bb.height)
+                    const x_offset = render_right ? d3.event.pageX + 10 : d3.event.pageX - 10 - tt_bb.width;
+                    const y_offset = render_top ? d3.event.pageY - 10 - tt_bb.height : d3.event.pageY + 4;
+                    
+                    self.tooltip
+                      .style("left", x_offset + "px")
+                      .style("top", y_offset + "px");
+                })
+                .on('mouseout', function (d, i) {
+                    d3.select(this).transition()
+                        .duration('50')
+                        .attr('opacity', '1')
+                        .attr("r", 5);
+                    self.tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                })
+                ;
+        };//RelEffPlot.prototype.setRelEffData
+
+
+        RelEffPlot.prototype.handleResize = function () {
+            this.setRelEffData(this.data_vals, this.fit_eqn);
+        };//RelEffPlot.prototype.handleResize
+    </script>
+</head>
+
+<body>
+    <h1 class="title">
+    ${TITLE}
+    </h1>
+
+    <div id="chartsdiv" style="display: flex; flex-direction: row; justify-content: space-around; overflow: none;">
+        ${CHART_SPACER_LEFT}
+        ${SPECTRUM_CHART_DIV}
+        <div id="releffchart" style="height: 30vw; flex: 1 2; overflow: hidden;"></div>
+        ${CHART_SPACER_RIGHT}
+    </div>
+
+    <div class="results">
+    ${RESULTS_TXT}
+    </div>
+
+    <script>
+        const data_vals = ${REL_EFF_DATA_VALS};
+        const fit_eqn = ${FIT_REL_EFF_EQUATION};
+
+        let chart = new RelEffPlot("releffchart");
+        chart.setRelEffData(data_vals, fit_eqn);
+
+        var olddivhight = 0;
+        let divobserver = new ResizeObserver(entries => {
+          for (let entry of entries) {
+            if (entry.target && (entry.target.id === "chartsdiv")) {
+              // We'll adjust the height based on width
+              let w, h;
+              if (entry.contentBoxSize) {
+                // Firefox implements `contentBoxSize` as a single content rect, rather than an array
+                const contentBoxSize = Array.isArray(entry.contentBoxSize) ? entry.contentBoxSize[0] : entry.contentBoxSize;
+                w = contentBoxSize.width;
+                h = contentBoxSize.height;
+              } else {
+                w = entry.contentRect.width;
+                h = entry.contentRect.height;
+              }
+      
+              let new_height = Math.max( 100, Math.min( 0.5*window.innerHeight, 0.75*w ) );
+              if( Math.abs(new_height - olddivhight) > 2 )
+              {
+                olddivhight = new_height;
+                //entry.target.style.height = h + "px";
+                let el = document.getElementById("chartsdiv");
+                el.style.height = new_height + "px";
+                for (let i = 0; i < el.children.length; i++) {
+                  el.children[i].style.height = new_height + "px";
+                }
+              }
+            }
+          }
+        });
+        divobserver.observe( document.getElementById("chartsdiv") );
+
+
+        let rel_eff_observer = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                if (entry.target && (entry.target.id === "releffchart")) {
+                    chart.handleResize();
+                }
+            }
+        });
+        rel_eff_observer.observe(chart.chart);
+    </script>
+
+    <script>
+      ${SPECTRUM_CHART_INIT_JS}
+    </script>
+
+</body>
+<html>

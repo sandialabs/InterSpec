@@ -741,14 +741,14 @@ public:
                                      const double ncausality,
                                      const bool useRoiAsWell );
   
-  /** Use hyristics to guess at a reasonable age a nuclide might be if
+  /** Use heuristics to guess at a reasonable age a nuclide might be if
    * encountered in the real world.  
    *
    * \param nuc Nuclide to return the age for.
    * \param strAnswer If provided, will assign a suggested string for the age
-   *        to this string.  May yeild either a actual unit of time (ex. 
-   *        "2.31 years") or a mutliple of half lives (ex. "3.5 HL").
-   * Is set to have a maximum of 2 decimal points.
+   *        to this string.  May yield either an actual unit of time (ex.
+   *        "2.31 years") or a multiple of half lives (ex. "3.5 HL").
+   *        Will have a maximum of 2 decimal points.
    * \returns Suggested age= value in PhysicalUnits units.
    *
    * \sa defaultDecayTimeString

@@ -3166,8 +3166,6 @@ bool PeakDef::ageFitNotAllowed( const SandiaDecay::Nuclide *nuc )
 
 double PeakDef::defaultDecayTime( const SandiaDecay::Nuclide *nuclide, string *stranswer )
 {
-  //Same logic as defaultDecayTime(...), just returns string. If you change
-  // the logic in this funcion, you should also change defaultDecayTime(...).
   string decayTimeStr = "";
   double decaytime = 0;
   if( nuclide->canObtainSecularEquilibrium() )
@@ -3190,7 +3188,11 @@ double PeakDef::defaultDecayTime( const SandiaDecay::Nuclide *nuclide, string *s
     decayTimeStr = "0 s";
   }
   
-  if( nuclide->halfLife > 100.0*SandiaDecay::year )
+  // If half-life is great than 100 years, or if U or Pu isotope, and half-life is greater than 2
+  //  years, set default decay time to 20 years.
+  if( (nuclide->halfLife > 100.0*SandiaDecay::year)
+     || ( (nuclide->halfLife > 2.0*SandiaDecay::year)
+         && ((nuclide->atomicNumber == 92) || (nuclide->atomicNumber == 94))) )
   {
     decaytime = 20.0 * SandiaDecay::year;
     decayTimeStr = "20 y";
@@ -3198,7 +3200,7 @@ double PeakDef::defaultDecayTime( const SandiaDecay::Nuclide *nuclide, string *s
   
   //I *think* promptEquilibriumHalfLife() can maybe give a large value for an
   //  isotope (although I dont know of any examples of this) with a small half
-  //  life, so we'll preotect against it.
+  //  life, so we'll protect against it.
   if( decaytime > 100.0*nuclide->halfLife )
   {
     decaytime = 7.0 * nuclide->halfLife;

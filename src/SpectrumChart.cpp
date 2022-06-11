@@ -1219,6 +1219,13 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
       
       break;
     }//case Chart::ZeroValue:
+      
+      
+    case Wt::Chart::BothSides:
+    {
+      throw runtime_error( "SpectrumChart::renderYAxis(...): Wt::Chart::BothSides not implemented." );
+      break;
+    }//case Wt::Chart::BothSides:
   }//switch( location )
   
   
@@ -1321,6 +1328,12 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
         labelypx = ypx - txtheight/2;
         labelAlignFlags = AlignLeft | AlignMiddle;
       break;
+        
+      case Wt::Chart::BothSides:
+      {
+        throw runtime_error( "SpectrumChart::renderYAxis(...): Wt::Chart::BothSides not implemented." );
+        break;
+      }//case Wt::Chart::BothSides:
     }//switch( location )
     
     if( (properties & Chart::Labels) && !ticks[i].label.empty() )
@@ -1377,6 +1390,10 @@ void SpectrumChart::renderXAxis( Wt::WPainter &painter,
       tickPos = Both;
       labelHFlag = AlignTop;
       lineypx = std::floor(map(0, 0, Chart::YAxis).y()) + 0.5;
+      break;
+      
+    case Wt::Chart::BothSides:
+      throw runtime_error( "SpectrumChart::renderXAxis(...): Wt::Chart::BothSides not implemented." );
       break;
   }//switch( location_[axis.id()] )
   
@@ -1444,6 +1461,10 @@ void SpectrumChart::renderXAxis( Wt::WPainter &painter,
           
         case Wt::Chart::MaximumValue:
           labelPos = WPointF(dd, lineypx - tickLength);
+          break;
+          
+        case Wt::Chart::BothSides:
+          throw runtime_error( "SpectrumChart::renderXAxis(...): Wt::Chart::BothSides not implemented." );
           break;
       }//switch( location )
       

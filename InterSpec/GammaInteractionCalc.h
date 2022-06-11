@@ -734,13 +734,9 @@ public:
 
   static void selfShieldingIntegration( DistributedSrcCalc &calculator );
 
-protected:
-  
-  void zombieCallback( const boost::system::error_code &ec );
-
   //observedPeakEnergyWidths(): get energy sorted pairs of peak means and widths
   static std::vector< std::pair<double,double> > observedPeakEnergyWidths(
-                                           const std::vector<PeakDef> &peaks );
+                                                              const std::vector<PeakDef> &peaks );
 
   //cluster_peak_activities(...): clusters the number of decays per second
   //  by energies.  If photopeakClusterSigma>0.0, then all gamma lines nearby
@@ -778,6 +774,9 @@ protected:
                               const std::vector<PeakDef> &backgroundPeaks,
                               const std::map<double,double> &energy_count_map,
                               std::vector<std::string> *info = 0 );
+protected:
+  
+  void zombieCallback( const boost::system::error_code &ec );
 
 
 protected:

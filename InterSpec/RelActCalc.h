@@ -71,6 +71,12 @@ RelEffEqnForm rel_eff_eqn_form_from_str( const char *str );
 /** Returns a human-readable representation of the relative efficiency equation. */
 std::string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double> &coefs );
 
+/** Returns a javascript expression of the relative efficiency equation.
+ 
+ Example return value: "function(x){ return Math.exp( 1.2 + x + ... ); }"
+ */
+std::string rel_eff_eqn_js_function( const RelEffEqnForm eqn_form, const std::vector<double> &coefs );
+
 /** Evaluate the relative efficiency equation at a given energy, for a specific form of the equation, and coefficients. */
 double eval_eqn( const double energy, const RelEffEqnForm eqn_form,
                 const double * const coefs, const size_t num_coefs );

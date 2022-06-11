@@ -4773,14 +4773,15 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   
   /** Using google Ceres to fit peaks is an experiment in using Ceres.
    
-   Its actually about 4-times slower (although this is probably not the fault of Ceres - but of my
+   Its actually maybe a slower (although this is probably not the fault of Ceres - but of my
    coding - and actually this is only when using a single thread, and for a single peak - for
    multiple peaks and multiple Ceres threads, it doe beat-out minuit - even with my non-optimal
    usage of Ceres), is totally untested, and hasnt been finished implementing everything.
    
    */
 #if( USE_REL_ACT_TOOL )
-#define USE_LM_PEAK_FIT 1
+#warning "Not using L-M peak fit, even though USE_REL_ACT_TOOL defined."
+#define USE_LM_PEAK_FIT 0
 #else
 #define USE_LM_PEAK_FIT 0
 #endif

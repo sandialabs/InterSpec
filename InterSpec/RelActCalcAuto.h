@@ -88,6 +88,9 @@ namespace RelActCalc
  - {Activity,Age}   // One pair for each nuclide.  Age will be mostly fixed, but can also be tied to another nuclide of the same elements age
  - Free float peaks {amplitude, width-multiple} // The width multiple is of what the Fwhm Parameters predict (e.g., 1.0 says use parameter value).
  
+ 
+ Further things to consider:
+ - Sum peaks - not totally sure how to handle - can there just be one parameter that controls strength of peak random summing, and then another for cascade?
  */
 
 namespace RelActCalcAuto
@@ -217,6 +220,7 @@ struct Options
 {
   Options();
   
+  
   /** Whether to allow making small adjustments to the gain and/or offset of the energy calibration.
    
    Which coefficients are fit will be determined based on energy ranges used.
@@ -244,6 +248,8 @@ struct Options
    */
   FwhmForm fwhm_form;
   
+  /** Optional title of the spectrum; used as title in HTML and text summaries. */
+  std::string spectrum_title;
   
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
@@ -261,6 +267,9 @@ struct NuclideRelAct
   
   double rel_activity;
   double rel_activity_uncertainty;
+  
+  /** The energy and its respective number of gammas per decay for this nuclide, at its age. */
+  std::vector<std::pair<double,double>> gamma_energy_br;
 };//struct NuclideRelAc
 
 
@@ -279,6 +288,8 @@ struct RelActAutoSolution
   RelActAutoSolution();
   
   std::ostream &print_summary( std::ostream &strm ) const;
+  
+  void print_html_report( std::ostream &strm ) const;
   
   /** Returns the fractional amount of an element (by mass), the nuclide composes.
    
@@ -325,6 +336,8 @@ struct RelActAutoSolution
   std::string m_error_message;
   std::vector<std::string> m_warnings;
   
+  Options m_options;
+  
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
   std::shared_ptr<const SpecUtils::Measurement> m_background;
   
@@ -334,6 +347,14 @@ struct RelActAutoSolution
    where wanted.
    */
   std::shared_ptr<SpecUtils::Measurement> m_spectrum;
+  
+  std::vector<float> m_channel_counts;
+  std::vector<float> m_channel_counts_uncerts;
+  
+  /** These are the peaks passed into the #solve function, or if no peaks were passed in, the
+   auto-search peaks from the (potentially background subtracted) foreground.
+   */
+  std::vector<std::shared_ptr<const PeakDef>> m_spectrum_peaks;
   
   RelActCalc::RelEffEqnForm m_rel_eff_form;
   
@@ -360,8 +381,9 @@ struct RelActAutoSolution
    */
   std::shared_ptr<const DetectorPeakResponse> m_drf;
   
+  
   double m_energy_cal_adjustments[2];
-  bool m_fit_energy_cal_adjustments;
+  bool m_fit_energy_cal[2];
   
   
   /** */
@@ -395,7 +417,8 @@ RelActAutoSolution solve( Options options,
                          std::vector<FloatingPeak> extra_peaks,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
-                         std::shared_ptr<const DetectorPeakResponse> drf
+                         std::shared_ptr<const DetectorPeakResponse> drf,
+                         std::vector<std::shared_ptr<const PeakDef>> all_peaks
                          );
 
 
