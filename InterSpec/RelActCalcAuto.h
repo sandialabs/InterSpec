@@ -219,7 +219,11 @@ size_t num_parameters( const FwhmForm eqn_form );
 struct Options
 {
   Options();
-  
+ 
+  // TODO: 
+  // - Fix RelEff to flat 1.0 - dont fit
+  //  - Do not fit FWHM - use DRF, or if that doesnt have it, use FWHM eqn fit from all peaks in spectrum
+  //    This should allow getting a rough idea of which gamma lines _could_ be statistically significant, and hence be used.  And also, for generic nuclides, it will allow fitting small numbers of peaks; so like we could still use the "auto" rel act stuff to fit peaks, even for Cs137
   
   /** Whether to allow making small adjustments to the gain and/or offset of the energy calibration.
    

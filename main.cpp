@@ -71,8 +71,7 @@ int main( int argc, char **argv )
   getUtf8Args( argc, argv );
 #endif
 
-  //return RelActCalcAuto::run_test();
-  return RelActCalcManual::run_test();
+  return RelActCalcAuto::run_test();
   
   
 #if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )

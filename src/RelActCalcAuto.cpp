@@ -3268,7 +3268,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   
   
   // TODO: figure out how to reasonably plot RelEff values
-  stringstream rel_eff_plot_values, rel_eff_plot_css;
+  stringstream rel_eff_plot_values, add_rel_eff_plot_css;
   
   rel_eff_plot_values << "[";
   //rel_eff_plot_values << "{energy: 185, counts: 100, counts_uncert: 10, eff: 1.0, eff_uncert: 0.1, nuc_info: [{nuc: \"U235\", br: 0.2, rel_act: 300}]}"
@@ -3296,7 +3296,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     all_nuclides.insert( nuc );
     if( !nuclides_with_colors.count(nuc) && !peak.lineColor().isDefault() )
     {
-      rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol << "{ fill: " << peak.lineColor().cssText() << "; }\n";
+      add_rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol << "{ fill: " << peak.lineColor().cssText() << "; }\n";
       nuclides_with_colors.insert( nuc );
     }
     
@@ -3339,7 +3339,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     if( nuclides_with_colors.count(nuc) )
       continue;
     
-    rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol << "{ fill: "
+    add_rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol << "{ fill: "
                      << default_nuc_colors[unseen_nuc_index % default_nuc_colors.size()]
                      << "; }\n";
     
@@ -3380,8 +3380,13 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   string html_title = m_options.spectrum_title;
   SpecUtils::ireplace_all( html, "${TITLE}", html_title.c_str() );
   
+  const string rel_eff_plot_js = load_file_contents( "RelEffPlot.js" );
+  const string rel_eff_plot_css = load_file_contents( "RelEffPlot.css" );
+  SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_JS}", rel_eff_plot_js.c_str() );
+  SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_CSS}", rel_eff_plot_css.c_str() );
+  SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_ADDITIONAL_CSS}", add_rel_eff_plot_css.str().c_str() );
+  
   SpecUtils::ireplace_all( html, "${REL_EFF_DATA_VALS}", rel_eff_plot_values.str().c_str() );
-  SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_CSS}", rel_eff_plot_css.str().c_str() );
   
   const string rel_eff_eqn_js = RelActCalc::rel_eff_eqn_js_function( m_rel_eff_form, m_rel_eff_coefficients );
   SpecUtils::ireplace_all( html, "${FIT_REL_EFF_EQUATION}", rel_eff_eqn_js.c_str() );

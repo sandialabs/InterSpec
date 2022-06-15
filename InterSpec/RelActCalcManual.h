@@ -27,6 +27,7 @@
 
 #include <vector>
 #include <memory>
+#include <istream>
 
 // Forward declarations
 class PeakDef;
@@ -41,6 +42,11 @@ namespace SandiaDecay
   struct Nuclide;
 }
 
+namespace SpecUtils
+{
+  class Measurement;
+}
+
 
 /** The structs/functions in this namespace facilitate performing a relative activity calculation
  on user-fit peaks (hence the term "Manual").
@@ -52,9 +58,6 @@ namespace SandiaDecay
  */
 namespace RelActCalcManual
 {
-int run_test();
-
-
 /** Information about a SandaiDecay defined nuclide for input into relative efficiency calculation.
  */
 struct SandiaDecayNucInfo
@@ -270,7 +273,6 @@ enum class ManualSolutionStatus : int
  */
 struct RelEffSolution
 {
-  
   RelActCalc::RelEffEqnForm m_rel_eff_eqn_form;
   size_t m_rel_eff_eqn_order = 0;
   std::vector<double> m_rel_eff_eqn_coefficients;
@@ -356,26 +358,45 @@ struct RelEffSolution
   /** Returns the activity ratio between the two isotopes at index \p iso1 and index \p iso2, where the
    indexes are int #RelEffSolution::m_rel_activities.
    */
-  double ratio( const size_t iso1, const size_t iso2 ) const;
+  double activity_ratio( const size_t iso1, const size_t iso2 ) const;
   
   /** A convenience method for the above #ratio function,
    
    If either isotope is invalid, will throw std::exception.
    */
-  double ratio( const std::string &iso1, const std::string &iso2 ) const;
+  double activity_ratio( const std::string &iso1, const std::string &iso2 ) const;
   
   /** Returns the activity ratio uncertainty between the two isotopes at index \p iso1 and index \p iso2, taking into account
    correlations.
    
    Note: it appears that taking into account correlations usually makes the uncertainty _smaller_ than not taking them into account.
    */
-  double ratio_uncert( const size_t iso1, const size_t iso2 ) const;
+  double activity_ratio_uncert( const size_t iso1, const size_t iso2 ) const;
   
   /** A convenience method for the above #ratio_uncert function,
    
    If either isotope is invalid, will throw std::exception.
    */
-  double ratio_uncert( const std::string &iso1, const std::string &iso2 ) const;
+  double activity_ratio_uncert( const std::string &iso1, const std::string &iso2 ) const;
+  
+  /** Returns the mass fraction of the specified nuclide. */
+  double mass_fraction( const std::string &iso ) const;
+  
+  /** Prints out a summary of the results to the provided stream; for development/debug. */
+  std::ostream &print_summary( std::ostream &strm ) const;
+  
+  /** Creates a self-contained HTML report of the results.
+   
+   @param strm The stream to place the HTML file into.
+   @param spectrum_title The title to display on the HTML pace
+   @param spectrum The optional spectrum to display on the HTML page (may be nullptr)
+   @param spectrum_display_peaks The peaks to display on the spectrum; may be empty.
+   */
+  void print_html_report( std::ostream &strm,
+                         std::string spectrum_title,
+                         std::shared_ptr<const SpecUtils::Measurement> spectrum,
+                         std::vector<std::shared_ptr<const PeakDef>> spectrum_display_peaks
+                         ) const;
 };//struct RelEffSolution
 
 /** Solve for the relative efficiency equation and relative activities for all isotopes
@@ -394,6 +415,118 @@ struct RelEffSolution
 RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &peak_infos,
                                          const RelActCalc::RelEffEqnForm eqn_form,
                                          const size_t eqn_order );
+
+
+/** Functions in this namespace are for importing peak data from CSV files, and then matching
+ up nuclide info, if it wasnt in the CSV files.
+ Accepts CSV files from InterSpec, PeakEasy, and GADRAS-DRF.
+ */
+namespace PeakCsvInput
+{
+
+/** Nominally InterSpec uses SandiaDecay for gamma yields everywhere, but for benchmarking
+ their are some slightly different Uranium yields available.
+ */
+enum class NucDataSrc
+{
+  Icrp107_U,
+  Lanl_U,
+  IcrpLanlGadras_U,
+  SandiaDecay,
+  Undefined
+};//enum class NucDataSrc
+
+const char *to_str( const NucDataSrc src );
+
+
+struct NuclideInfo
+{
+  std::string parent, source_nuclide;
+  float energy, yield;
+  bool optional;
+  
+  NuclideInfo( const char *p, const char *nuc, bool opt, float kev, float br );
+};//struct NuclideInfo
+
+
+
+/** Struct to hold results of matching peaks from CSV to nuclides.
+ 
+ For logging purposes peaks or requested nuclides that werent used are also stored.
+ */
+struct NucMatchResults
+{
+  /** Peaks (originally from CSV file - e.g., InterSpec, PeakEasy or GADRAS) that were successfully
+   matched to at least one source data gamma line.
+   */
+  std::vector<RelActCalcManual::GenericPeakInfo> peaks_matched;
+  
+  /** Peaks that were not matched to any source gammas */
+  std::vector<RelActCalcManual::GenericPeakInfo> peaks_not_matched;
+  
+  /** Peaks specifically excluded from the analysis via the 'exclude-peak' command line argument. */
+  std::vector<RelActCalcManual::GenericPeakInfo> peaks_excluded;
+  
+  /** The isotopes (with names normalized to the form like U238, Co60, Pa234m, etc) used for the
+   matching.
+   */
+  std::vector<std::string> used_isotopes;
+  
+  /** Isotopes that were requested to be used, but no peaks matched to them. */
+  std::vector<std::string> unused_isotopes;
+  
+  /** The ages of the isotopes used; this vector will be empty unless #NucMatchResults::data_source
+   is NucDataSrc::SandiaDecay, in which case, the entries in this vector will correspond to the
+   entries in #NucMatchResults::used_isotopes, on an index-by-index basis.
+   */
+  std::vector<double> used_isotope_ages;
+  
+  /** Where the nuclear source data (e.g., gamma energy and branch ratios) came from. */
+  NucDataSrc data_source;
+  
+  /** The energy tolerance used to match gamma lines to fit peaks. */
+  float match_energy_tolerance;
+  
+  /** The energy ranges used; if empty, all energies used. */
+  std::vector<std::pair<float,float>> energy_ranges;
+  
+  /** Source gammas that are matched to at least one peak, and within the allowed energy range, and
+   not specifically excluded.
+   */
+  std::vector<NuclideInfo> source_gammas_used;
+  
+  /** Source gammas that are in a valid energy range, not specifically excluded, but didnt match to
+   any of the peaks fit in data.
+   */
+  std::vector<NuclideInfo> source_gammas_not_used;
+};//struct NucMatchResults
+
+
+/** Reads in a peak CSV from InterSpec, PeakEasy, or GADRAS. */
+std::vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( std::istream &csv );
+
+
+/** Matches peaks up to source nuclides, and filters peaks based on energy ranges and, not matching
+ an input nuclide gamma, and explicitly not-wanted peaks.
+ 
+ @param peaks Input peaks from the CSV file.
+ @param nuc_data_src The nuclear data source to use.  If any non-uranium nuclides are specified,
+        this must be #NucDataSrc::SandiaDecay.  When #NucDataSrc::SandiaDecay is used, then default
+        ages are assumed.
+ @param energy_ranges The energy ranges of peaks to keep.  If empty, will not filter on this.
+ @param isotopes The names of isotopes to potentially match up.
+ @param energy_tolerance The matching tolerance (in keV); all source gammas within this energy range
+        of the peak mean will be attributed to the peak.  This is slightly non-deal, since we
+        probably want to use FWHM or something.
+ @param excluded_peak_energies Peaks to explicitly exclude from the analysis.
+ */
+NucMatchResults fill_in_nuclide_info( const std::vector<RelActCalcManual::GenericPeakInfo> peaks,
+                                     const NucDataSrc nuc_data_src,
+                                     const std::vector<std::pair<float,float>> energy_ranges,
+                                     std::vector<std::string> isotopes,
+                                     const float energy_tolerance,
+                                     const std::vector<float> excluded_peak_energies );
+}//namespace PeakCsvInput
 
 }//namespace RelActCalcManual
 
