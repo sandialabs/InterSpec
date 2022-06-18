@@ -420,8 +420,13 @@ class ShieldingSourceChi2Fcn
 //  Mass fraction is then ...
   
 public:
-  //Inorder to keep numbers roughly where Minuit2 can handle them, we
-  //  have to work in units of 1.0E6 becquerel
+  /** In order to keep numbers roughly where Minuit2 can handle them, we have to work in units of
+   1.0E6 becquerel.  E.g., for like plutonium problems, some of the branching rations of 1E-11 are
+   still significant to the problem, so to avoid losing accuracy in decay calculations, we will
+   multiply things  a bit.
+   
+   \sa ns_decay_act_mult in RelActCalcAuto.cpp
+   */
   static const double sm_activityUnits;  //SandiaDecay::MBq
 
 

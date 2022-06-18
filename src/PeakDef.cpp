@@ -3336,7 +3336,16 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
           
           double intensity = activity.activity * trans->branchRatio * product.intensity;
           const double fracIntensity = intensity / max_intensity;
-          const double minRelativeBr = 1.0E-10;
+          
+          // Previous to 20220617, a value of 1E-10 was used for the minimum BR, however, this fails
+          //  for some non-user defined peaks (specifically in the Relative Activity calculations);
+          //  so when search window is not being used (i.e., probably an automated process), the
+          //  value is now small enough it seems to work well, but I also decreased the value when
+          //  there is a window being used
+          //  However, we could probably just eliminate this check, as all it really is for is to
+          //  reduce the chances of using a gamma with a small BR, that just happens to be really
+          //  close to our wanted energy.
+          const double minRelativeBr = (windowHalfWidth <= 0.0) ? 1.0E-20 : 1.0E-12;
           
           if( fracIntensity < minRelativeBr )
             continue;

@@ -58,14 +58,25 @@ namespace SpecUtils
  */
 namespace RelActCalcManual
 {
-/** Information about a SandaiDecay defined nuclide for input into relative efficiency calculation.
+
+/** A SandiaDecay defined nuclide source at a fixed age, for use in adding GenericLineInfo to peaks
+ from nuclides.
  */
-struct SandiaDecayNucInfo
+struct SandiaDecayNuc
 {
-  const SandiaDecay::Nuclide *nuclide;
-  double age;
-  double rel_activity;
-};//struct SandiaDecayNucInfo
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+  double age = -1;
+};//struct SandiaDecayNucRelAct
+
+
+/** Information about a SandiaDecay defined nuclide for input into relative efficiency calculation.
+ */
+struct SandiaDecayNucRelAct
+{
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+  double age = -1.0;
+  double rel_activity = -1.0;
+};//struct SandiaDecayNucRelAct
 
 
 /** Struct to specify the yield of a nuclide, that will be associated with a specific peak. */
@@ -103,6 +114,11 @@ struct GenericPeakInfo
    All source gammas in \c m_source_gammas are assumed at this energy.
    */
   double m_energy;
+  
+  /** The FWHM of the peak; not use for relative activity or efficiency calculations, but useful
+   for assigning source gamma terms.
+   */
+  double m_fwhm;
   
   /** The peak amplitude.
    
@@ -143,6 +159,12 @@ struct GenericPeakInfo
   GenericPeakInfo();
 };//struct GenericPeakInfo
 
+
+
+std::vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo> &peaks,
+                                                   const std::vector<SandiaDecayNuc> &nuclides,
+                                                   const double cluster_sigma = 1.5
+                                                   );
 
 
 /** Uses weighted least squares (i.e., matrix based solution) to determine relative efficiency
@@ -205,7 +227,7 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
  */
 void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
                            const size_t order,
-                           const std::vector<SandiaDecayNucInfo> &nuclides,
+                           const std::vector<SandiaDecayNucRelAct> &nuclides,
                            const double base_rel_eff_uncert,
                            const std::vector<std::shared_ptr<const PeakDef>> &peak_infos,
                            std::vector<double> &fit_pars,
@@ -346,6 +368,9 @@ struct RelEffSolution
   size_t nuclide_index( const std::string &nuc ) const;
   
   /** The relative activity of a nuclide.
+   
+   Note that this assumes the peak counts are in CPS (or equivalently the data is 1-second long),
+   so you will need to divide by live-time to compare to the "auto" relative activity.
    
    Throws std::exception if an invalid nuclide.
    */

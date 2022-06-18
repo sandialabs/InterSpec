@@ -37,6 +37,7 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/D3SpectrumExport.h"
@@ -193,15 +194,11 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         if( (pos == std::end(m_isotopes)) || ((*pos) != iso) )
           m_isotopes.insert( pos, iso );
         
-        // 32 bit floats have ~7 significant figures, which is probably more than we know any
-        //  branching ratios to, so we'll use a floats precisions at 1.0 (i.e. FLT_EPSILON which
-        //  is the difference between 1 and the smallest floating point number greater than 1) as
-        //  the minimum yield we'll consider, otherwise you shouldnt be saying this isotope
-        //  contributes to the peak.
-        //  Although note that not allowing the yield to be zero is arbitrary - the stuff would work
-        //  fine if we let zero through.
-        //  TODO: look at the various decay chains to determine better minimal value (~10E-14?).
-        const double min_allowable_yield = std::numeric_limits<float>::epsilon();
+        //  TODO: look at the various decay chains to determine better minimal yield value.
+        //    Note that numeric_limits<float> is 1.19209e-07 on my system, which the BR for
+        //    Pu that are important can be significantly smaller than this - so for the moment we'll
+        //    essentially use zero.
+        const double min_allowable_yield = std::numeric_limits<float>::min();
         if( line.m_yield <= min_allowable_yield )
           throw std::runtime_error( "ManualGenericRelActFunctor: yields must be greater than zero." );
       }//for( loop over nuclides that contribute to this peak )
@@ -437,6 +434,7 @@ GenericLineInfo::GenericLineInfo( const double yield, const std::string &isotope
 
 GenericPeakInfo::GenericPeakInfo()
  : m_energy( 0.0 ),
+   m_fwhm( 0.0 ),
    m_counts( 0.0 ),
    m_counts_uncert( 0.0 ),
    m_base_rel_eff_uncert( 0.0 ),
@@ -721,10 +719,58 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
 }//fit_rel_eff_eqn_lls(...)
 
 
+vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo> &peaks,
+                                                   const std::vector<SandiaDecayNuc> &nuclides,
+                                                   const double cluster_sigma )
+{
+  vector<GenericPeakInfo> answer = peaks;
+  
+  vector< pair<double,double> > energy_widths, energy_obs_counts, energy_obs_counts_uncert;
+  for( const auto &p : peaks )
+    energy_widths.push_back( {p.m_energy, p.m_fwhm / 2.634} );
+  
+  set<const SandiaDecay::Nuclide *> nuclides_seen;
+  for( const auto &n : nuclides )
+  {
+    if( nuclides_seen.count(n.nuclide) )
+      throw runtime_error( "add_nuclides_to_peaks: input nuclides must be unique" );
+    nuclides_seen.insert( n.nuclide );
+    
+    SandiaDecay::NuclideMixture mixture;
+    mixture.addNuclideByActivity(n.nuclide, GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits);
+    
+    // We will map from the peaks mean, to the total number of gammas that contribute to that peak,
+    //  for this nuclide
+    map<double,double> energy_gammas_map;
+    
+    const double activity = 1.0;
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
+                            energy_widths, mixture, activity, n.age, cluster_sigma, -1, nullptr );
+    
+    // Convert energy_gammas_map to a vector for convenience
+    vector<pair<double,double>> energy_gammas;
+    for( const auto &ec : energy_gammas_map )
+      energy_gammas.push_back( ec );
+    
+    assert( energy_gammas.size() == answer.size() );
+    
+    for( size_t peak_index = 0; peak_index < energy_gammas.size(); ++peak_index )
+    {
+      GenericPeakInfo &peak = answer[peak_index];
+      const double yield = energy_gammas[peak_index].second;
+      if( yield > numeric_limits<float>::min() )
+        peak.m_source_gammas.emplace_back( yield, n.nuclide->symbol );
+    }//for( size_t row = 0; row < num_peaks; ++row )
+  }//for( const auto &n : nuclides )
+  
+  return answer;
+}//add_nuclides_to_peaks(...)
+
+
 
 void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
                          const size_t order,
-                         const std::vector<SandiaDecayNucInfo> &nuclides,
+                         const std::vector<SandiaDecayNucRelAct> &nuclides,
                          const double base_rel_eff_uncert,
                          const std::vector<std::shared_ptr<const PeakDef>> &peak_infos,
                          vector<double> &fit_pars,
@@ -839,6 +885,7 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
   {
     GenericPeakInfo peak;
     peak.m_energy = energy_gammas[peak_index].first;
+    peak.m_fwhm = 2.634*energy_widths[peak_index].second;
     peak.m_counts = energy_obs_counts[peak_index].second;
     peak.m_counts_uncert = (energy_obs_counts_uncert[peak_index].second > 0.0)
                              ? energy_obs_counts_uncert[peak_index].second
@@ -1197,39 +1244,53 @@ std::ostream &RelEffSolution::print_summary( std::ostream &strm ) const
   switch( m_status )
   {
     case RelActCalcManual::ManualSolutionStatus::NotInitialized:
-      cout << "Status: NotInitialized\n";
+      strm << "Status: NotInitialized\n";
       break;
     case RelActCalcManual::ManualSolutionStatus::ErrorInitializing:
-      cout << "Status: ErrorInitializing\n";
+      strm << "Status: ErrorInitializing\n";
       break;
     case RelActCalcManual::ManualSolutionStatus::ErrorFindingSolution:
-      cout << "Status: ErrorFindingSolution\n";
+      strm << "Status: ErrorFindingSolution\n";
       break;
     case RelActCalcManual::ManualSolutionStatus::ErrorGettingSolution:
-      cout << "Status: ErrorGettingSolution\n";
+      strm << "Status: ErrorGettingSolution\n";
       break;
     case RelActCalcManual::ManualSolutionStatus::Success:
-      cout << "Status: Success\n";
+      strm << "Status: Success\n";
       break;
   }//switch( solution.m_status )
   
+  if( !m_error_message.empty() )
+  {
+    strm << "--------------------------------------------------------------------------------\n";
+    strm << "Error: " << m_error_message << "\n";
+    strm << "--------------------------------------------------------------------------------\n";
+  }
   
-  cout << "Eqn coefficients: ";
+  if( !m_warnings.empty() )
+  {
+    strm << "--------------------------------------------------------------------------------\n";
+    for( const string &warning : m_warnings )
+      strm << "Warning: " << warning << "\n";
+    strm << "--------------------------------------------------------------------------------\n";
+  }//if( !m_warnings.empty() )
+  
+  strm << "Eqn coefficients: ";
   for( size_t i = 0; i < m_rel_eff_eqn_coefficients.size(); ++i )
-  cout << (!i ? "" : ", ") << m_rel_eff_eqn_coefficients[i];
-  cout << endl;
-  cout << "Eqn coefficient covariance:\n";
+  strm << (!i ? "" : ", ") << m_rel_eff_eqn_coefficients[i];
+  strm << endl;
+  strm << "Eqn coefficient covariance:\n";
   for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
   {
     for( size_t j = 0; j < m_rel_eff_eqn_covariance[i].size(); ++j )
-    cout << std::setw(14) << m_rel_eff_eqn_covariance[i][j];
-    cout << endl;
+    strm << std::setw(14) << m_rel_eff_eqn_covariance[i][j];
+    strm << endl;
   }
-  cout << endl;
+  strm << endl;
   
-  cout << "Relative activities:" << endl;
+  strm << "Relative activities:" << endl;
   for( const RelActCalcManual::IsotopeRelativeActivity &i : m_rel_activities )
-    cout << "\t" << i.m_isotope << ": " << i.m_rel_activity << " +- " << i.m_rel_activity_uncert << endl;
+    strm << "\t" << i.m_isotope << ": " << i.m_rel_activity << " +- " << i.m_rel_activity_uncert << endl;
   
   
   double total_rel_mass = 0.0;
@@ -1241,7 +1302,7 @@ std::ostream &RelEffSolution::print_summary( std::ostream &strm ) const
       total_rel_mass += i.m_rel_activity / nuclide->activityPerGram();
   }
   
-  cout << "Relative masses:" << endl;
+  strm << "Relative masses:" << endl;
   for( const RelActCalcManual::IsotopeRelativeActivity &i : m_rel_activities )
   {
     const SandiaDecay::Nuclide *nuclide = db->nuclide( i.m_isotope );
@@ -1249,26 +1310,28 @@ std::ostream &RelEffSolution::print_summary( std::ostream &strm ) const
     if( nuclide )
     {
       const double rel_mass = i.m_rel_activity / nuclide->activityPerGram();
-      cout << "\t" << i.m_isotope << ": " << 100.0*rel_mass/total_rel_mass << endl;
+      strm << "\t" << i.m_isotope << ": " << 100.0*rel_mass/total_rel_mass << endl;
     }
   }
   
   
-  cout << "Chi2: " << m_chi2 << endl;
-  cout << "Num Fcnt Evals: " << m_num_function_eval_total << "\n\n" << endl;
+  strm << "Chi2: " << m_chi2 << endl;
+  strm << "Num Fcnt Evals: " << m_num_function_eval_total << "\n\n" << endl;
   
   
   for( const auto &peak: m_input_peak )
   {
-    double function_val = RelActCalc::eval_eqn( peak.m_energy, m_rel_eff_eqn_form, m_rel_eff_eqn_coefficients );
+    double function_val = std::numeric_limits<double>::quiet_NaN();
+    if( !m_rel_eff_eqn_coefficients.empty() )
+      function_val = RelActCalc::eval_eqn( peak.m_energy, m_rel_eff_eqn_form, m_rel_eff_eqn_coefficients );
     
-    cout << "For energy " << peak.m_energy << " (";
+    strm << "For energy " << peak.m_energy << " (";
     for( size_t i = 0; i < peak.m_source_gammas.size(); ++i )
-    cout << (i ? ", " : "") << peak.m_source_gammas[i].m_isotope;
-    cout << ") function value is " << function_val << ", and:" << endl;
+    strm << (i ? ", " : "") << peak.m_source_gammas[i].m_isotope;
+    strm << ") function value is " << function_val << ", and:" << endl;
     
     //peak.m_counts
-    cout << "\t";
+    strm << "\t";
     double total_contrib_counts = 0.0;
     for( size_t i = 0; i < peak.m_source_gammas.size(); ++i )
     {
@@ -1276,16 +1339,20 @@ std::ostream &RelEffSolution::print_summary( std::ostream &strm ) const
       
       const string &iso = line.m_isotope;
       const double yield = line.m_yield;
-      const double rel_act = relative_activity(iso);
+      double rel_act = std::numeric_limits<double>::quiet_NaN();
+      if( !m_rel_activities.empty() )
+        rel_act = relative_activity(iso);
       
       const double contrib_counts = rel_act * yield * function_val;
       total_contrib_counts += contrib_counts;
-      cout << (i ? ", " : "") << iso << ": fit " << contrib_counts << " counts";
+      strm << (i ? ", " : "") << iso << ": fit " << contrib_counts << " counts";
     }//for( const RelActCalc::GammaLineInfo &line : peak.m_source_gammas )
     
-    cout << " and observed " << peak.m_counts << "+-" << peak.m_counts_uncert << " (off by "
+    strm << " and observed " << peak.m_counts << "+-" << peak.m_counts_uncert << " (off by "
     << ((total_contrib_counts - peak.m_counts) / peak.m_counts_uncert)
     << " sigma)" << endl;
+    
+    
   }//for( const auto &peak: peak_infos )
   
   return strm;
@@ -1618,8 +1685,18 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
     chart_options.m_allowDragRoiExtent = false;
     write_set_options_for_chart( set_js_str, "specchart", chart_options );
     set_js_str << "  spec_chart_specchart.setShowLegend(false);\n";
+    set_js_str << "  spec_chart_specchart.setXAxisRange("
+               << spectrum->gamma_energy_min()
+               << ", " << spectrum->gamma_energy_max() << ", false);\n";
     
     D3SpectrumExport::D3SpectrumOptions spec_options;
+    spec_options.spectrum_type = SpecUtils::SpectrumType::Foreground;
+    
+    vector<shared_ptr<const PeakDef>> peaks;
+    for( const auto &p : display_peaks )
+      peaks.push_back( make_shared<PeakDef>(*p) );
+    spec_options.peaks_json = PeakDef::peak_json( peaks, spectrum );
+    
     const SpecUtils::Measurement * const meas_ptr = spectrum.get();
     D3SpectrumExport::write_and_set_data_for_chart( set_js_str, "specchart", { std::make_pair(meas_ptr,spec_options) } );
     
@@ -2094,7 +2171,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
           //if( !is_close )
           //  continue;
           
-          if( br > std::numeric_limits<float>::epsilon() )
+          if( br > std::numeric_limits<float>::min() )
             initial_nucs_info.emplace_back( parent, resp_nuc, optional_use, energy, br );
         }//for( const SandiaDecay::EnergyRatePair info : photons )
       }//for( size_t i = 0; i < isotopes.size(); ++i )
@@ -2369,6 +2446,7 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
     {
       RelActCalcManual::GenericPeakInfo info;
       info.m_energy = std::stod( fields[energy_index] );
+      info.m_fwhm = stod( fields[fwhm_kev_index] );
       info.m_counts = std::stod( fields[amplitude_index] );
       info.m_counts_uncert = std::stod( fields[amplitude_sigma_index] );
       
@@ -2394,7 +2472,7 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
         
         const double age = PeakDef::defaultDecayTime( nuc, nullptr );
         
-        const double fwhm = stod( fields[fwhm_kev_index] );
+        const double fwhm = info.m_fwhm;
         
         //size_t transition_index = 0;
         //const SandiaDecay::Transition *transition = nullptr;
