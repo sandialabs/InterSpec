@@ -40,12 +40,14 @@
 
 #include "Wt/WDateTime"
 #include "Wt/WApplication"
+#include "Wt/WLocalDateTime"
 
 #include "ceres/ceres.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/DateTime.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/SpecUtilsAsync.h"
@@ -383,7 +385,7 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
     SandiaDecay::NuclideMixture mix;
     mix.addAgedNuclideByActivity( parent, ns_decay_act_mult, age );
     
-    const vector<SandiaDecay::NuclideActivityPair> activities = mix.activity( age );
+    const vector<SandiaDecay::NuclideActivityPair> activities = mix.activity( 0.0 );
     
     // all_gamma_transitions may contain duplicate energies - we will combine these below
     vector<EnergyYield> all_gamma_transitions;
@@ -478,7 +480,7 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
         //  that much, I guess, given peaks only get a single source transition, but it seems like
         //  the right thing to do anyway).
         double max_yield = -1;
-        for( size_t i = energy_start_index; i < current_index; ++i )
+        for( size_t i = energy_start_index; i <= current_index; ++i )
         {
           if( all_gamma_transitions[i].yield > max_yield )
           {
@@ -495,22 +497,9 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
       }
     }//for( size_t current_index = 1; current_index < all_gamma_transitions.size(); ++current_index )
     
-    
     return answer;
   }//static vector<EnergyYield> decay_gammas( const SandiaDecay::Nuclide * const parent, ... )
 
-  
-  static size_t remove_gamma( const double energy, vector<SandiaDecay::EnergyRatePair> &gammas )
-  {
-    const size_t ninitial = gammas.size();
-    
-    gammas.erase( std::remove_if(begin(gammas), end(gammas),
-      [energy](const SandiaDecay::EnergyRatePair &e ){
-        return fabs(e.energy - energy) < 0.001;
-    }), end(gammas) );
-    
-    return gammas.size() - ninitial;
-  }
   
   NucInputGamma( const RelActCalcAuto::NucInputInfo &info )
    : RelActCalcAuto::NucInputInfo( info )
@@ -3537,8 +3526,18 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     results_html << "</div>\n";
   }//if( !warnings.empty() )
   
-
-  const string current_time = Wt::WDateTime::currentDateTime().toString("yyyyMMdd hh:mm:ss").toUTF8();
+  string utc_time, local_time;
+  if( wApp )
+  {
+    utc_time = Wt::WDateTime::currentDateTime().toString("yyyyMMdd hh:mm:ss").toUTF8();
+    local_time = Wt::WLocalDateTime::currentDateTime().toString("yyyyMMdd hh:mm:ss").toUTF8();
+  }else
+  {
+    const auto utc_ts = boost::posix_time::second_clock::universal_time();
+    const auto local_ts = boost::posix_time::second_clock::local_time();
+    utc_time = SpecUtils::to_common_string( utc_ts, true);
+    local_time = SpecUtils::to_common_string( local_ts, true );
+  }
   
   const double nsec_eval = 1.0E-6*m_num_microseconds_eval;
   results_html << "<div class=\"anacomputetime\">"
@@ -3549,9 +3548,8 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   << "</div>\n";
   
   
-  results_html << "<div class=\"anatime\">Analysis performed " << current_time
-  << " with code compiled " __TIMESTAMP__
-  << "</div>\n";
+  results_html << "<div class=\"anatime\">Analysis performed " << local_time << " (" << utc_time
+  << " UTC), with code compiled " __TIMESTAMP__ "</div>\n";
   
   
   // TODO: figure out how to reasonably plot RelEff values
