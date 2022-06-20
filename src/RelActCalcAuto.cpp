@@ -366,11 +366,139 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
 {
   struct EnergyYield
   {
-    double energy;
-    double yield;
+    double energy = 0.0;
+    double yield = 0.0;
+      
+    size_t transition_index = 0;
+    const SandiaDecay::Transition *transition = nullptr;
+    PeakDef::SourceGammaType gamma_type;
   };
   
   vector<EnergyYield> nominal_gammas;
+  
+  static vector<EnergyYield> decay_gammas( const SandiaDecay::Nuclide * const parent,
+                                          const double age,
+                                          const std::vector<double> &gammas_to_exclude )
+  {
+    SandiaDecay::NuclideMixture mix;
+    mix.addAgedNuclideByActivity( parent, ns_decay_act_mult, age );
+    
+    const vector<SandiaDecay::NuclideActivityPair> activities = mix.activity( age );
+    
+    // all_gamma_transitions may contain duplicate energies - we will combine these below
+    vector<EnergyYield> all_gamma_transitions;
+    all_gamma_transitions.reserve( 1536 ); //avoid a few resizes; for Pu241, at nominal age, the actual number of entries is 1229
+    
+    EnergyYield annihilationInfo;
+    annihilationInfo.energy = 510.998910;
+    annihilationInfo.yield = 0.0;
+    annihilationInfo.transition = nullptr;
+    annihilationInfo.transition_index = 0;
+    annihilationInfo.gamma_type = PeakDef::SourceGammaType::AnnihilationGamma;
+    
+    
+    for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
+    {
+      const SandiaDecay::Nuclide * const nuclide = activities[nucIndex].nuclide;
+      const double activity = activities[nucIndex].activity / ns_decay_act_mult;
+      
+      if( activity <= 0.0 )
+        continue;
+      
+      const size_t n_decaysToChildren = nuclide->decaysToChildren.size();
+      
+      for( size_t decayIndex = 0; decayIndex < n_decaysToChildren; ++decayIndex )
+      {
+        const SandiaDecay::Transition * const transition = nuclide->decaysToChildren[decayIndex];
+        const size_t n_products = transition->products.size();
+        
+        for( size_t productNum = 0; productNum < n_products; ++productNum )
+        {
+          const SandiaDecay::RadParticle &particle = transition->products[productNum];
+          if( particle.type == SandiaDecay::ProductType::GammaParticle )
+          {
+            bool exclude = false;
+            for( const double exclude_energy : gammas_to_exclude )
+              exclude = (exclude || (fabs(particle.energy - exclude_energy) < 0.001));
+            
+            if( exclude )
+              continue;
+            
+            all_gamma_transitions.push_back( {} );
+            EnergyYield &info = all_gamma_transitions.back();
+            info.energy = particle.energy;
+            info.yield = activity * particle.intensity * transition->branchRatio;
+            
+            info.transition_index = productNum;
+            info.transition = transition;
+            info.gamma_type = PeakDef::SourceGammaType::NormalGamma;
+          }else if( particle.type == SandiaDecay::ProductType::PositronParticle )
+          {
+            annihilationInfo.yield += 2.0 * activity * particle.intensity * transition->branchRatio;
+            
+            annihilationInfo.transition_index = productNum;
+            annihilationInfo.transition = transition;
+          }//if( particle.type is gamma ) / else if( position )
+        }//for( size_t productNum = 0; productNum < n_products; ++productNum )
+      }//for( size_t decayIndex = 0; decayIndex < n_decaysToChildren; ++decayIndex )
+    }//for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
+    
+    
+    if( annihilationInfo.yield > 0.0 )
+    {
+      bool exclude = false;
+      for( const double exclude_energy : gammas_to_exclude )
+        exclude = (exclude || (fabs(annihilationInfo.energy - exclude_energy) < 0.001));
+      
+      if( !exclude )
+        all_gamma_transitions.push_back( annihilationInfo );
+    }//if( annihilationInfo.yield > 0.0 )
+    
+    
+    std::sort( begin(all_gamma_transitions), end(all_gamma_transitions),
+               []( const auto &lhs, const auto &rhs ) { return lhs.energy < rhs.energy; });
+    
+    if( all_gamma_transitions.empty() )
+      return all_gamma_transitions;
+    
+    // Now go throw and combine duplicate energies
+    vector<EnergyYield> answer;
+    answer.reserve( all_gamma_transitions.size() );
+    answer.push_back( all_gamma_transitions.front() );
+    size_t energy_start_index = 0;
+    for( size_t current_index = 1; current_index < all_gamma_transitions.size(); ++current_index )
+    {
+      const EnergyYield &current = all_gamma_transitions[current_index];
+      EnergyYield &prev = answer.back();
+      if( current.energy == prev.energy )
+      {
+        prev.yield += current.yield;
+        
+        // We will assign the transition to the largest yield of this energy (not that it matters
+        //  that much, I guess, given peaks only get a single source transition, but it seems like
+        //  the right thing to do anyway).
+        double max_yield = -1;
+        for( size_t i = energy_start_index; i < current_index; ++i )
+        {
+          if( all_gamma_transitions[i].yield > max_yield )
+          {
+            max_yield = all_gamma_transitions[i].yield;
+            prev.gamma_type = all_gamma_transitions[i].gamma_type;
+            prev.transition = all_gamma_transitions[i].transition;
+            prev.transition_index = all_gamma_transitions[i].transition_index;
+          }//
+        }//for( size_t i = energy_start_index; i < current_index; ++i )
+      }else
+      {
+        energy_start_index = current_index;
+        answer.push_back( current );
+      }
+    }//for( size_t current_index = 1; current_index < all_gamma_transitions.size(); ++current_index )
+    
+    
+    return answer;
+  }//static vector<EnergyYield> decay_gammas( const SandiaDecay::Nuclide * const parent, ... )
+
   
   static size_t remove_gamma( const double energy, vector<SandiaDecay::EnergyRatePair> &gammas )
   {
@@ -399,22 +527,7 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
     //if( !fit_age )
     //  nominal_age = PeakDef::defaultDecayTime( nuclide, nullptr );
     
-    SandiaDecay::NuclideMixture mix;
-    mix.addAgedNuclideByActivity( nuclide, ns_decay_act_mult, nominal_age );
-    auto gammas = mix.gammas( 0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
-    
-    for( double energy : gammas_to_exclude )
-    {
-      const size_t did_remove = remove_gamma( energy, gammas );
-      assert( did_remove );
-    }
-    
-    nominal_gammas.resize( gammas.size() );
-    for( size_t i = 0; i < gammas.size(); ++i )
-    {
-      nominal_gammas[i].energy = gammas[i].energy;
-      nominal_gammas[i].yield = gammas[i].numPerSecond / ns_decay_act_mult;
-    }
+    nominal_gammas = decay_gammas( nuclide, nominal_age, gammas_to_exclude );
   }//NucInputGamma constructor
 };//struct NucInputGamma
 
@@ -1840,7 +1953,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     const SandiaDecay::Nuclide *parent_nuc = age_controlling_nuc( nuc );
     const size_t nuc_index = nuclide_index( parent_nuc );
-    return m_nuclides[nuc_index].fit_age;
+    return !m_nuclides[nuc_index].fit_age;
   }//
   
   
@@ -2017,24 +2130,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         gammas = &(nucinfo.nominal_gammas);
       }else
       {
-        SandiaDecay::NuclideMixture mix;
-        mix.addAgedNuclideByActivity( nucinfo.nuclide, ns_decay_act_mult, age(nucinfo.nuclide,x) );
-        auto aged_gammas = mix.gammas( 0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
-        
-        for( double energy : nucinfo.gammas_to_exclude )
-        {
-          const size_t did_remove = nucinfo.remove_gamma( energy, aged_gammas );
-          assert( did_remove );
-        }
-        
-        aged_gammas_cache.reset( new vector<NucInputGamma::EnergyYield>(aged_gammas.size()) );
+        const double nuc_age = age(nucinfo.nuclide,x);
+        aged_gammas_cache.reset( new vector<NucInputGamma::EnergyYield>() );
+        *aged_gammas_cache = NucInputGamma::decay_gammas( nucinfo.nuclide, nuc_age, nucinfo.gammas_to_exclude );
         gammas = aged_gammas_cache.get();
-        vector<NucInputGamma::EnergyYield> &aged_gammas_ref = *aged_gammas_cache;
-        for( size_t i = 0; i < aged_gammas.size(); ++i )
-        {
-          aged_gammas_ref[i].energy = aged_gammas[i].energy;
-          aged_gammas_ref[i].yield = aged_gammas[i].numPerSecond / ns_decay_act_mult;
-        }
       }//if( age is fixed ) / else( age may vary )
       
       assert( gammas );
@@ -2043,16 +2142,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         const double energy = gamma.energy;
         const double yield = gamma.yield;
+        const size_t transition_index = gamma.transition_index;
+        const SandiaDecay::Transition * const transition = gamma.transition;
+        const PeakDef::SourceGammaType gamma_type = gamma.gamma_type;
         
-        //if( nucinfo.nuclide->symbol == "Pu238" )
-        //{
-//#warning "Hacking Pu238 to a single gamma at 152 keV"
-          //if( fabs(gamma.energy - 152.72) > 0.1 )
-          //  continue;
-             
-        //  if( (fabs(gamma.energy - 152.72) < 0.1) || (fabs(gamma.energy - 368.65) < 0.1) )
-        //    cout << "\t" << nucinfo.nuclide->symbol << ": {" << gamma.energy << "," << yield << "}\n";
-        //}
+        assert( transition || (gamma_type == PeakDef::SourceGammaType::AnnihilationGamma) );
+        assert( !transition || (fabs(transition->products[transition_index].energy - energy) < 0.0001) );
 
         // Filter out zero-amplitude gammas
         // TODO: - come up with more intelligent lower bound of gamma rate to bother wit
@@ -2114,20 +2209,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         PeakDef &new_peak = peaks.back();
 
-        // TODO: (low priority) Instead of calling #PeakDef::findNearestPhotopeak, should instead keep gamma source information from decay... and should actually implement this in SandiaDecay...
-        const bool xray_only = false;
-        size_t transition_index = 0;
-        const SandiaDecay::Transition *transition = nullptr;
-        PeakDef::SourceGammaType gamma_type;
-        const double window_half_width = -1.0;
-        PeakDef::findNearestPhotopeak( nucinfo.nuclide, gamma.energy, window_half_width, xray_only,
-                                       transition, transition_index, gamma_type );
-        assert( transition );
-        
-        const double matched_energy = transition->products[transition_index].energy;
-        assert( fabs(matched_energy - gamma.energy) < 0.0001 );
-        
-        if( transition )
+        if( transition || (gamma_type == PeakDef::SourceGammaType::AnnihilationGamma) )
           new_peak.setNuclearTransition( nucinfo.nuclide, transition,
                                            static_cast<int>(transition_index), gamma_type );
         
@@ -2206,6 +2288,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     vector<double> dummy_amps, continuum_coeffs, dummy_amp_uncert, continuum_uncerts;
     
+    // The #fit_amp_and_offset function is taking most of the time for calculations - and in fact
+    //  the PeakDef::gauss_integral is taking all of its time
     const double chi2 = fit_amp_and_offset( energies, data, num_channels, num_polynomial_terms,
                                            is_step_continuum, ref_energy, {}, {}, peaks, dummy_amps,
                                            continuum_coeffs, dummy_amp_uncert, continuum_uncerts );
@@ -2369,8 +2453,8 @@ int run_test()
 {
   try
   {
-    //const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/simple_pu_test.xml";
-    const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/thor_core_614_668_kev_test.xml";
+    const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/simple_pu_test.xml";
+    //const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/thor_core_614_668_kev_test.xml";
     
     rapidxml::file<char> input_file( xml_file_path );
     

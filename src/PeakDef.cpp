@@ -67,14 +67,16 @@ const int PeakContinuum::sm_xmlSerializationVersion = 1;
 namespace
 {
   /** 20191230: wcjohns extracted the boost::math::erf() function implementation
-   from boost 1.65.1 for double precision (53 bit mantessa) into this function,
+   from boost 1.65.1 for double precision (53 bit mantissa) into this function,
    boost_erf_imp(). Removing some of the supporting code structure, and
    explicitly writing out the polynomial equation evaluation seems to speed
    things up by about a factor of ~3 over calling boost::math::erf().
    
-   Suprisingly, the erf() function is a bottlneck for peak fitting.
+   Using the commented out erf_approx() function looks to be about 25% faster than
+   this boost version, but I havent carefully checked out the precision implications
+   so not switching to it yet.
    
-   
+   Surprisingly, the erf() function is the major bottleneck for peak fitting.
    */
   double boost_erf_imp( double z )
   {
@@ -199,7 +201,7 @@ namespace
   
   
   /*
-  double erf_approx( const double x )
+  double erf_approx( double x )
   {
     //https://stackoverflow.com/questions/457408/is-there-an-easily-available-implementation-of-erf-for-python#answer-457805
     // Error is less than 1.5 * 10-7 for all inputs
@@ -211,6 +213,7 @@ namespace
     return sign * y;
   }
    */
+   
   
   //clones 'source' into the document that 'result' is a part of.
   //  'result' is cleared and set lexically equal to 'source'.
