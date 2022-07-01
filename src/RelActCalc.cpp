@@ -32,6 +32,7 @@
 #include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/PhysicalUnits.h"
 
 using namespace std;
 
@@ -78,6 +79,7 @@ RelEffEqnForm rel_eff_eqn_form_from_str( const char *str )
 
 string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double> &coefs )
 {
+  const size_t nsigfig = 5;
   string rel_eff_eqn_str;
   switch( eqn_form )
   {
@@ -87,9 +89,14 @@ string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double>
       {
         const auto val = coefs[i];
         if( i == 0 )
-          rel_eff_eqn_str += to_string(val);
-        else
-          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " ) +  to_string( fabs(val) ) + "*ln(x)^" + to_string(i);
+        {
+          rel_eff_eqn_str += PhysicalUnits::printCompact(val,nsigfig);
+        }else
+        {
+          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " )
+                             +  PhysicalUnits::printCompact(fabs(val),nsigfig)
+                             + "*ln(x)^" + to_string(i);
+        }
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       break;
@@ -105,10 +112,11 @@ string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double>
         const auto val = coefs[i];
         if( i == 0 )
         {
-          rel_eff_eqn_str += to_string(val);
+          rel_eff_eqn_str += PhysicalUnits::printCompact(val,nsigfig);
         }else
         {
-          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " ) + to_string( fabs(val) );
+          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " )
+                             + PhysicalUnits::printCompact(fabs(val),nsigfig);
           if( i == 1 )
             rel_eff_eqn_str += "*x";
           else if( i == 2 )
@@ -130,9 +138,14 @@ string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double>
       {
         const auto val = coefs[i];
         if( i == 0 )
+        {
           rel_eff_eqn_str += to_string(val);
-        else
-          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " ) + to_string(fabs(val)) + "*ln(x)^" + to_string(i);
+        }else
+        {
+          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " )
+                             + PhysicalUnits::printCompact(fabs(val),nsigfig)
+                             + "*ln(x)^" + to_string(i);
+        }
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       rel_eff_eqn_str += " )";
@@ -147,11 +160,18 @@ string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double>
       {
         const auto val = coefs[i];
         if( i == 0 )
-          rel_eff_eqn_str += to_string(val);
-        else if( i == 1 )
-          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " ) + to_string(fabs(val)) + "/(x*x)";
-        else
-          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " ) + to_string(fabs(val)) + "*ln(x)^" + to_string(i-1);
+        {
+          rel_eff_eqn_str += PhysicalUnits::printCompact(val,nsigfig);
+        }else if( i == 1 )
+        {
+          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " )
+                             + PhysicalUnits::printCompact(fabs(val),nsigfig) + "/(x*x)";
+        }else
+        {
+          rel_eff_eqn_str += (val < 0.0 ? " - " : " + " )
+                             + PhysicalUnits::printCompact(fabs(val),nsigfig)
+                             + "*ln(x)^" + to_string(i-1);
+        }
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       rel_eff_eqn_str += " )";

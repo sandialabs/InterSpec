@@ -1278,6 +1278,14 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   }
   
   
+  if( lhs.m_useForManualRelEff != rhs.m_useForManualRelEff )
+  {
+    snprintf(buffer, sizeof(buffer),
+             "PeakDef use for rel act from peaks of LHS (%i) vs RHS (%i) doesnt match.",
+             int(lhs.m_useForManualRelEff), int(rhs.m_useForManualRelEff) );
+    throw runtime_error( buffer );
+  }
+  
   if( lhs.m_useForDrfIntrinsicEffFit != rhs.m_useForDrfIntrinsicEffFit )
   {
     snprintf(buffer, sizeof(buffer),
@@ -1439,6 +1447,7 @@ void PeakDef::reset()
   m_sourceGammaType           = NormalGamma;
   m_useForEnergyCal           = true;
   m_useForShieldingSourceFit  = false;
+  m_useForManualRelEff        = true;
   
   m_useForDrfIntrinsicEffFit       = PeakDef::sm_defaultUseForDrfIntrinsicEffFit;
   m_useForDrfFwhmFit               = PeakDef::sm_defaultUseForDrfFwhmFit;
@@ -2010,6 +2019,9 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   att = doc->allocate_attribute( "source", (m_useForShieldingSourceFit ? "true" : "false") );
   peak_node->append_attribute( att );
   
+  att = doc->allocate_attribute( "useForManualRelEff", (m_useForManualRelEff ? "true" : "false") );
+  peak_node->append_attribute( att );
+  
   // Dont bother writing useForDrfIntrinsicEffFit, useForDrfFwhmFit, useForDrfDepthOfInteractionFit,
   //  unless their values have been set to true (when de-serializing them we will set to false
   //  if the attributes arent found)
@@ -2173,6 +2185,18 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
   m_useForShieldingSourceFit = compare(att->value(),att->value_size(),"true",4,false);
   if( !m_useForShieldingSourceFit && !compare(att->value(),att->value_size(),"false",5,false) )
     throw runtime_error( "invalid source value" );
+  
+  // useForManualRelEff was added June 2022, so for backward compatibility, dont require it
+  att = peak_node->first_attribute( "useForManualRelEff", 18 );
+  if( att )
+  {
+    m_useForManualRelEff = compare(att->value(),att->value_size(),"true",4,false);
+    if( !m_useForManualRelEff && !compare(att->value(),att->value_size(),"false",5,false) )
+      throw runtime_error( "invalid useForManualRelEff value" );
+  }else
+  {
+    m_useForManualRelEff = true;
+  }
   
   m_useForDrfIntrinsicEffFit = PeakDef::sm_defaultUseForDrfIntrinsicEffFit;
   att = peak_node->first_attribute( "useForDrfIntrinsicEffFit", 24 );
@@ -3447,7 +3471,8 @@ const PeakDef &PeakDef::operator=( const PeakDef &rhs )
   m_radparticleIndex         = rhs.m_radparticleIndex;
   m_useForEnergyCal        = rhs.m_useForEnergyCal;
   m_useForShieldingSourceFit = rhs.m_useForShieldingSourceFit;
-
+  m_useForManualRelEff = rhs.m_useForManualRelEff;
+ 
   m_useForDrfIntrinsicEffFit = rhs.m_useForDrfIntrinsicEffFit;
   m_useForDrfFwhmFit = rhs.m_useForDrfFwhmFit;
   m_useForDrfDepthOfInteractionFit = rhs.m_useForDrfDepthOfInteractionFit;
@@ -3475,6 +3500,7 @@ bool PeakDef::operator==( const PeakDef &rhs ) const
       && m_radparticleIndex==rhs.m_radparticleIndex
       && m_useForEnergyCal==rhs.m_useForEnergyCal
       && m_useForShieldingSourceFit==rhs.m_useForShieldingSourceFit
+      && m_useForManualRelEff==rhs.m_useForManualRelEff
       && m_useForDrfIntrinsicEffFit == rhs.m_useForDrfIntrinsicEffFit
       && m_useForDrfFwhmFit == rhs.m_useForDrfFwhmFit
       && m_useForDrfDepthOfInteractionFit == rhs.m_useForDrfDepthOfInteractionFit
@@ -3732,6 +3758,7 @@ void PeakDef::inheritUserSelectedOptions( const PeakDef &parent,
   m_userLabel = parent.m_userLabel;
   m_useForEnergyCal = parent.m_useForEnergyCal;
   m_useForShieldingSourceFit = parent.m_useForShieldingSourceFit;
+  m_useForManualRelEff = parent.m_useForManualRelEff;
   m_useForDrfIntrinsicEffFit = parent.m_useForDrfIntrinsicEffFit;
   m_useForDrfFwhmFit = parent.m_useForDrfFwhmFit;
   m_useForDrfDepthOfInteractionFit = parent.m_useForDrfDepthOfInteractionFit;

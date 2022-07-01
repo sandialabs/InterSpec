@@ -194,7 +194,8 @@
 #endif
 
 #if( USE_REL_ACT_TOOL )
-#include "InterSpec/RelActGui.h"
+#include "InterSpec/RelActAutoGui.h"
+#include "InterSpec/RelActManualGui.h"
 #endif
 
 #include "js/InterSpec.js"
@@ -359,8 +360,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_shieldingSourceFit( 0 ),
     m_shieldingSourceFitWindow( 0 ),
 #if( USE_REL_ACT_TOOL )
-    m_relActGui( nullptr ),
-    m_relActWindow( nullptr ),
+    m_relActAutoGui( nullptr ),
+    m_relActAutoWindow( nullptr ),
+    m_relActAutoMenuItem( nullptr ),
+    m_relActManualGui( nullptr ),
+    m_relActManualWindow( nullptr ),
+    m_relActManualMenuItem( nullptr ),
 #endif
     m_materialDB( nullptr ),
     m_nuclideSearchWindow( 0 ),
@@ -811,6 +816,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
     //    const char *tooltip = "Search for nuclides with constraints on energy, "
     //                          "branching ratio, and half life.";
     //    HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
+    
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+    // Handle when the user closes the tab for the Math/Command terminal and the Manual Relative
+    //  Activity tool
+    m_toolsTabs->tabClosed().connect( boost::bind( &InterSpec::handleToolTabClosed, this, boost::placeholders::_1 ) );
+#endif
     
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
@@ -5712,6 +5723,12 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 //    if( m_nuclideSearch )
 //      m_nuclideSearch->loadSearchEnergiesToClient();
     
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+    // Handle when the user closes the tab for the Math/Command terminal and the Manual Relative
+    //  Activity tool
+    m_toolsTabs->tabClosed().connect( boost::bind( &InterSpec::handleToolTabClosed, this, boost::placeholders::_1 ) );
+#endif
+    
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
     
@@ -7287,7 +7304,9 @@ void InterSpec::createTerminalWidget()
     m_toolsTabs->setCurrentWidget( m_terminal );
     const int index = m_toolsTabs->currentIndex();
     m_toolsTabs->setTabToolTip( index, "Numeric, algebraic, and text-based spectrum interaction terminal." );
-    m_toolsTabs->tabClosed().connect( this, &InterSpec::handleTerminalWindowClose );
+    
+    // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
+    //  handleToolTabClosed(), which will delete m_terminal when the user closes the tab.
   }else
   {
     m_terminalWindow = new AuxWindow( "Terminal",
@@ -7320,7 +7339,7 @@ void InterSpec::handleTerminalWindowClose()
   
   if( m_terminalWindow )
   {
-    delete m_terminalWindow;
+    AuxWindow::deleteAuxWindow( m_terminalWindow );
   }else
   {
     delete m_terminal;
@@ -7334,6 +7353,144 @@ void InterSpec::handleTerminalWindowClose()
 #endif  //#if( USE_TERMINAL_WIDGET )
 
 
+#if( USE_REL_ACT_TOOL )
+void InterSpec::showRelActAutoWindow()
+{
+  if( !m_relActAutoGui )
+  {
+    auto widgets = RelActAutoGui::createWindow( this );
+    m_relActAutoGui = widgets.first;
+    m_relActAutoWindow  = widgets.second;
+    
+    m_relActAutoWindow->finished().connect( boost::bind( &InterSpec::handleRelActAutoClose, this ) );
+  }else
+  {
+    const double windowWidth = 0.95 * renderedWidth();
+    const double windowHeight = 0.95 * renderedHeight();
+    m_relActAutoWindow->resizeWindow( windowWidth, windowHeight );
+    
+    m_relActAutoWindow->resizeToFitOnScreen();
+    m_relActAutoWindow->show();
+    m_relActAutoWindow->centerWindow();
+  }//if( !m_shieldingSourceFit )
+  
+  assert( m_relActAutoMenuItem );
+  m_relActAutoMenuItem->disable();
+}//void showRelActAutoWindow()
+
+
+void InterSpec::handleRelActAutoClose()
+{
+  assert( m_relActAutoMenuItem );
+  m_relActAutoMenuItem->enable();
+  
+  assert( m_relActAutoWindow );
+  if( !m_relActAutoWindow )
+    return;
+  
+  delete m_relActAutoWindow;
+  m_relActAutoGui = nullptr;
+  m_relActAutoWindow = nullptr;
+}//void handleRelActAutoClose()
+
+
+void InterSpec::createRelActManualWidget()
+{
+  assert( m_relActManualMenuItem );
+  m_relActManualMenuItem->disable();
+  
+  if( m_relActManualGui )
+    return;
+  
+  m_relActManualGui = new RelActManualGui( this );
+  
+  if( m_toolsTabs )
+  {
+    WMenuItem *item = m_toolsTabs->addTab( m_relActManualGui, "Isotopics" );
+    item->setCloseable( true );
+    m_toolsTabs->setCurrentWidget( m_relActManualGui );
+    const int index = m_toolsTabs->currentIndex();
+    m_toolsTabs->setTabToolTip( index, "Numeric, algebraic, and text-based spectrum interaction terminal." );
+    
+    // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
+    //  handleToolTabClosed(), which will delete m_relActManualGui when the user closes the tab.
+  }else
+  {
+    m_relActManualWindow = new AuxWindow( "Isotopics from user-fit peaks",
+                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                      | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
+    
+    m_relActManualWindow->rejectWhenEscapePressed();
+    m_relActManualWindow->finished().connect( this, &InterSpec::handleRelActManualClose );
+    
+    m_relActManualWindow->show();
+    if( (m_renderedWidth > 100) && (m_renderedHeight > 100) && !isPhone() )
+    {
+      m_terminalWindow->resizeWindow( 0.95*m_renderedWidth, 0.25*m_renderedHeight );
+      m_terminalWindow->centerWindow();
+    }
+    
+    m_relActManualWindow->stretcher()->addWidget( m_relActManualGui, 0, 0 );
+  }//if( toolTabsVisible() )
+  
+  assert( m_relActManualMenuItem );
+  m_relActManualMenuItem->disable();
+}//void InterSpec::createRelActManualWidget()
+
+
+void InterSpec::handleRelActManualClose()
+{
+  assert( m_relActManualGui );
+  
+  if( m_relActManualWindow )
+  {
+    AuxWindow::deleteAuxWindow( m_relActManualWindow );
+  }else
+  {
+    if( m_relActManualGui )
+      delete m_relActManualGui;
+    
+    if( m_toolsTabs )
+      m_toolsTabs->setCurrentIndex( 2 );
+  }//if( m_relActManualWindow ) / else
+  
+  m_relActManualGui = nullptr;
+  m_relActManualWindow = nullptr;
+
+  assert( m_relActManualMenuItem );
+  m_relActManualMenuItem->enable();
+}//void InterSpec::handleRelActManualClose()
+#endif //#if( USE_REL_ACT_TOOL )
+
+
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+void InterSpec::handleToolTabClosed( const int tabnum )
+{
+  assert( m_toolsTabs );
+  if( !m_toolsTabs )
+    return;
+  
+  WWidget *w = m_toolsTabs->widget( tabnum );
+  
+#if( USE_TERMINAL_WIDGET && USE_REL_ACT_TOOL )
+  if( w == m_relActManualGui )
+  {
+    handleRelActManualClose();
+  }else if( w == m_terminal )
+  {
+    handleTerminalWindowClose();
+  }else
+  {
+    assert( 0 );
+  }
+#elif( USE_TERMINAL_WIDGET )
+  handleTerminalWindowClose();
+#elif( USE_REL_ACT_TOOL )
+  handleRelActManualClose();
+  static_assert( 0, "Need to update handleToolTabClosed logic" );
+#endif
+}//void handleToolTabClosed( const int tabnum )
+#endif
 
 void InterSpec::addToolsMenu( Wt::WWidget *parent )
 {
@@ -7366,14 +7523,23 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   HelpSystem::attachToolTipOn( item,"Allows advanced input of shielding material and activity around source isotopes to improve the fit." , showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showShieldingSourceFitWindow, this ) );
  
+#if( USE_REL_ACT_TOOL )
+  m_relActAutoMenuItem = popup->addMenuItem( "Isotopics by nuclides" );
+  HelpSystem::attachToolTipOn( item,
+                              "UNDER DEVELOPMENT."
+                              " Automatically fits nuclides peaks to allow determining the relative"
+                              " activities of nuclides.  Does not require knowing the detector"
+                              " response or shielding information." , showToolTips );
+  m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::showRelActAutoWindow, this ) );
   
-  item = popup->addMenuItem( "Relative Act. Isotopics" );
-  HelpSystem::attachToolTipOn( item,"UNDER DEVELOPMENT."
-                              "  Tool to allow fitting the relative activities of nuclides, that"
-                              " does not require knowing the detector response or shielding"
-                              " information." , showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::showRelActWindow, this ) );
-  
+  m_relActManualMenuItem = popup->addMenuItem( "Isotopics from peaks" );
+  HelpSystem::attachToolTipOn( item,
+                              "UNDER DEVELOPMENT."
+                              " Uses the peaks you have fit to determine the relative activities of"
+                              " nuclides.  Does not require knowing the detector response or"
+                              " shielding information." , showToolTips );
+  m_relActManualMenuItem->triggered().connect( boost::bind( &InterSpec::createRelActManualWidget, this ) );
+#endif
   
   item = popup->addMenuItem( "Gamma XS Calc", "" );
   HelpSystem::attachToolTipOn( item,"Allows user to determine the cross section for gammas of arbitrary energy though any material in <code>InterSpec</code>'s library. Efficiency estimates for detection of the gamma rays inside the full energy peak and the fraction of gamma rays that will make it through the material without interacting with it can be provided with the input of additional information.", showToolTips );
@@ -7681,28 +7847,6 @@ void InterSpec::showShieldingSourceFitWindow()
     m_shieldingSourceFitWindow->centerWindow();
   }//if( !m_shieldingSourceFit )
 }//void showShieldingSourceFitWindow()
-
-
-#if( USE_REL_ACT_TOOL )
-void InterSpec::showRelActWindow()
-{
-  if( !m_relActGui )
-  {
-    auto widgets = RelActGui::createWindow( this );
-    m_relActGui = widgets.first;
-    m_relActWindow  = widgets.second;
-  }else
-  {
-    const double windowWidth = 0.95 * renderedWidth();
-    const double windowHeight = 0.95 * renderedHeight();
-    m_relActWindow->resizeWindow( windowWidth, windowHeight );
-    
-    m_relActWindow->resizeToFitOnScreen();
-    m_relActWindow->show();
-    m_relActWindow->centerWindow();
-  }//if( !m_shieldingSourceFit )
-}//void showRelActWindow()
-#endif
 
 
 void InterSpec::saveShieldingSourceModelToForegroundSpecMeas()

@@ -1,0 +1,29 @@
+<!-- SAND2021-1543 O -->
+<div align="center">
+   <h1 id="rel-act-manual"><b>Isotopics from User Peaks</b></h1>
+   <hr />
+</div>
+<p>
+  Perfforms isotopics...
+</p>
+
+
+<div style="display:table-row">
+<h4>Basics of use</h4>
+<p>
+  blah blah blah ...
+</p>
+
+<div style="padding-top: 10px; text-align: center;">
+<img src="InterSpec_resources/static_text/images/CALp_down_up.png" class="imageBorder" style="" align="middle" />
+<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+Icons to use for exporting or importing <b>CALp</b> energy calibration files.
+You can also drag-n-drop <b>CALp</b> files from your operating systems filesystem onto
+<b>InterSpec</b> to apply the <b>CALp</b> files.
+</div>
+</div>
+
+
+</div> <!-- end Basics of use -->
+
+

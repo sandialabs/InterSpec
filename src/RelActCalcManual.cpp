@@ -218,6 +218,19 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
                        m_isotopes, m_peak_infos,
                        m_rel_act_norms, rel_act_norm_uncerts );
     
+    assert( m_isotopes.size() == m_rel_act_norms.size() );
+    
+    for( size_t i = 0; i < m_rel_act_norms.size(); ++i )
+    {
+      if( (m_rel_act_norms[i] < 1.0) || IsInf(m_rel_act_norms[i]) || IsNan(m_rel_act_norms[i]) )
+      {
+        m_setup_warnings.push_back( "The initial activity estimate for " + m_isotopes[i]
+                                    + " was " + std::to_string(m_rel_act_norms[i])
+                                    + ", so will use 1.0 instead.");
+        m_rel_act_norms[i] = 1.0;
+      }//if( m_rel_act_norms[i] < 1.0 )
+    }//for( size_t i = 0; i < m_rel_act_norms.size(); ++i )
+    
     //cout << "For initial rel act:\n";
     //for( size_t peak_index = 0; peak_index < m_peak_infos.size(); ++peak_index )
     //{
@@ -1359,23 +1372,13 @@ std::ostream &RelEffSolution::print_summary( std::ostream &strm ) const
 }//std::ostream &print_summary( std::ostream &strm ) const
 
 
-void RelEffSolution::print_html_report( ostream &output_html_file,
-                                       string spectrum_title,
-                                       shared_ptr<const SpecUtils::Measurement> spectrum,
-                                       vector<shared_ptr<const PeakDef>> display_peaks ) const
+void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
 {
+  const int nsigfig = 4;
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   assert( db );
-  
-  char buffer[8*1024] = { '\0' };
-  
-  
-  stringstream results_html;
-  results_html << "<div>&chi;<sup>2</sup>=" << m_chi2 << " and there were " << m_dof << " DOF</div>\n";
-  
-  results_html << "<div class=\"releffeqn\">Rel. Eff. Eqn: y = "
-  << RelActCalc::rel_eff_eqn_text( m_rel_eff_eqn_form, m_rel_eff_eqn_coefficients )
-  << "</div>\n";
+  if( !db )
+    return;
   
   results_html << "<table class=\"nuctable resulttable\">\n";
   results_html << "  <caption>Isotope relative activities and mass fractions</caption>\n";
@@ -1387,14 +1390,23 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
     const double frac_mass = mass_fraction(act.m_isotope);
     
     results_html << "  <tr><td>" << act.m_isotope << "</td>"
-    << "<td>" << act.m_rel_activity
-    << " &pm; " << act.m_rel_activity_uncert
+    << "<td>" << PhysicalUnits::printValueWithUncertainty( act.m_rel_activity, act.m_rel_activity_uncert, nsigfig )
     << "</td>"
-    << "<td>" << (100.0*frac_mass) << "%</td>"
+    << "<td>" << PhysicalUnits::printCompact(100.0*frac_mass, nsigfig) << "%</td>"
     << "</tr>\n";
   }
   results_html << "  </tbody>\n"
   << "</table>\n\n";
+}//void get_mass_fraction_table( std::ostream &strm ) const
+
+
+void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
+{
+  const size_t nsigfig = 4;
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  assert( db );
+  if( !db )
+    return;
   
   // Make the table of mass and activity ratios
   results_html << "<table class=\"massratiotable resulttable\">\n";
@@ -1432,31 +1444,71 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       const double j_to_i_specific_act = 1.0 / i_to_j_specific_act;
       
       const double i_to_j_act_ratio = activity_ratio( nuc_i_str, nuc_j_str );
-      const double i_to_j_act_ratio_uncert = activity_ratio_uncert( nuc_i_str, nuc_j_str );
       const double j_to_i_act_ratio = activity_ratio( nuc_j_str, nuc_i_str );
-      const double j_to_i_act_ratio_uncert = activity_ratio_uncert( nuc_j_str, nuc_i_str );
       
+      const double i_to_j_mass_ratio = i_to_j_act_ratio * j_to_i_specific_act;
+      const double j_to_i_mass_ratio = j_to_i_act_ratio * i_to_j_specific_act;
       
-      const double i_to_j_mass_ratio = i_to_j_act_ratio * i_to_j_specific_act;
-      const double i_to_j_mass_ratio_uncert = i_to_j_act_ratio_uncert * i_to_j_specific_act;
-      
-      const double j_to_i_mass_ratio = j_to_i_act_ratio * j_to_i_specific_act;
-      const double j_to_i_mass_ratio_uncert = j_to_i_act_ratio_uncert * j_to_i_specific_act;
-      
-      snprintf( buffer, sizeof(buffer), "<tr><td>%s</td><td>%1.6G&pm;%1.6G</td><td>%1.6G&pm;%1.6G</td></tr>\n",
-               (nuc_i->symbol + "/" + nuc_j->symbol).c_str(),
-               i_to_j_mass_ratio, i_to_j_mass_ratio_uncert, i_to_j_act_ratio, i_to_j_act_ratio_uncert );
-      results_html << buffer;
-      
-      snprintf( buffer, sizeof(buffer), "<tr><td>%s</td><td>%1.6G&pm;%1.6G</td><td>%1.6G&pm;%1.6G</td></tr>\n",
-               (nuc_j->symbol + "/" + nuc_i->symbol).c_str(),
-               j_to_i_mass_ratio, j_to_i_mass_ratio_uncert, j_to_i_act_ratio, j_to_i_act_ratio_uncert );
-      
-      results_html << buffer;
+      if( !m_rel_act_covariance.empty() )
+      {
+        const double i_to_j_act_ratio_uncert = activity_ratio_uncert( nuc_i_str, nuc_j_str );
+        const double j_to_i_act_ratio_uncert = activity_ratio_uncert( nuc_j_str, nuc_i_str );
+        const double i_to_j_mass_ratio_uncert = i_to_j_act_ratio_uncert * i_to_j_specific_act;
+        const double j_to_i_mass_ratio_uncert = j_to_i_act_ratio_uncert * j_to_i_specific_act;
+        
+        results_html << "<tr><td>" << nuc_i->symbol << "/" << nuc_j->symbol
+        << "</td><td>" << PhysicalUnits::printValueWithUncertainty( i_to_j_mass_ratio, i_to_j_mass_ratio_uncert, nsigfig )
+        << "</td><td>" << PhysicalUnits::printValueWithUncertainty( i_to_j_act_ratio, i_to_j_act_ratio_uncert, nsigfig )
+        << "</td></tr>\n";
+        
+        results_html << "<tr><td>" << nuc_j->symbol << "/" << nuc_i->symbol
+        << "</td><td>" << PhysicalUnits::printValueWithUncertainty( j_to_i_mass_ratio, j_to_i_mass_ratio_uncert, nsigfig )
+        << "</td><td>"<< PhysicalUnits::printValueWithUncertainty( j_to_i_act_ratio, j_to_i_act_ratio_uncert, nsigfig )
+        << "</td></tr>\n";
+      }else
+      {
+        results_html << "<tr><td>" << nuc_i->symbol << "/" << nuc_j->symbol
+        << "</td><td>" << PhysicalUnits::printCompact(i_to_j_mass_ratio, nsigfig) << " \xC2\xB1 n/a"
+        << "</td><td>" << PhysicalUnits::printCompact(i_to_j_act_ratio, nsigfig) << " \xC2\xB1 n/a"
+        << "</td></tr>\n";
+        
+        results_html << "<tr><td>" <<nuc_j->symbol << "/" << nuc_i->symbol
+        << "</td><td>" << PhysicalUnits::printCompact(j_to_i_mass_ratio, nsigfig) << " \xC2\xB1 n/a"
+        << "</td><td>" << PhysicalUnits::printCompact(j_to_i_act_ratio, nsigfig) << " \xC2\xB1 n/a"
+        << "</td></tr>\n";
+      }//if( we have covariance ) / else
     }//for( size_t j = 0; j < i; ++j )
   }//for( size_t i = 0; i < used_isotopes.size(); ++i )
   results_html << "  </tbody>\n"
   << "</table>\n\n";
+}//void get_mass_ratio_table( std::ostream &strm ) const
+
+
+void RelEffSolution::print_html_report( ostream &output_html_file,
+                                       string spectrum_title,
+                                       shared_ptr<const SpecUtils::Measurement> spectrum,
+                                       vector<shared_ptr<const PeakDef>> display_peaks ) const
+{
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  assert( db );
+  
+  const size_t nsigfig = 4;
+  
+  char buffer[8*1024] = { '\0' };
+  
+  
+  stringstream results_html;
+  results_html << "<div>&chi;<sup>2</sup>=" << PhysicalUnits::printCompact(m_chi2, nsigfig)
+  << " and there were " << m_dof << " DOF; &chi;<sup>2</sup>/dof="
+  << PhysicalUnits::printCompact(m_chi2/m_dof, nsigfig)
+  << " </div>\n";
+  
+  results_html << "<div class=\"releffeqn\">Rel. Eff. Eqn: y = "
+  << RelActCalc::rel_eff_eqn_text( m_rel_eff_eqn_form, m_rel_eff_eqn_coefficients )
+  << "</div>\n";
+  
+  get_mass_fraction_table( results_html );
+  get_mass_ratio_table( results_html );
   
   
   // Make table giving info on each of the _used_ peaks
@@ -1488,22 +1540,21 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       
       const double rel_act = relative_activity(info.m_source_gammas[i].m_isotope);
       const double counts_over_yield = info.m_counts / info.m_source_gammas[i].m_yield;
+      const double counts_uncert_percent = 100.0*(info.m_counts_uncert / info.m_counts);
       const double meas_rel_eff = info.m_counts / (info.m_source_gammas[i].m_yield * rel_act);
       const double meas_rel_eff_uncert = 100* info.m_counts_uncert / info.m_counts;
       
-      snprintf(buffer, sizeof(buffer), "<td>%s</td><td>%1.6G</td><td>%1.6G</td><td>%1.6G</td><td>%1.6G</td><td>%1.6G%%</td><td>%1.6G</td><td>%1.6G</td><td>%1.6G%%</td></tr>\n",
-               info.m_source_gammas[i].m_isotope.c_str(),
-               info.m_source_gammas[i].m_yield,
-               info.m_counts,
-               info.m_counts_uncert,
-               counts_over_yield,
-               100.0*(info.m_counts_uncert / info.m_counts),
-               info.m_base_rel_eff_uncert,
-               meas_rel_eff,
-               meas_rel_eff_uncert
-               );
-      results_html << buffer;
-    }
+      results_html << "<td>" << info.m_source_gammas[i].m_isotope
+      << "</td><td>" << PhysicalUnits::printCompact( info.m_source_gammas[i].m_yield, nsigfig )
+      << "</td><td" << PhysicalUnits::printCompact( info.m_counts, nsigfig )
+      << "</td><td>" << PhysicalUnits::printCompact( info.m_counts_uncert, nsigfig )
+      << "</td><td>" << PhysicalUnits::printCompact( counts_over_yield, nsigfig )
+      << "</td><td>" << PhysicalUnits::printCompact( counts_uncert_percent, nsigfig ) << "%"
+      << "</td><td>" << PhysicalUnits::printCompact( info.m_base_rel_eff_uncert, nsigfig )
+      << "</td><td>" << PhysicalUnits::printCompact( meas_rel_eff, nsigfig )
+      << "</td><td>" << PhysicalUnits::printCompact( meas_rel_eff_uncert, nsigfig ) << "%"
+      << "</td></tr>\n";
+    }//for( size_t i = 0; i < info.m_source_gammas.size(); ++i )
   }//for( const RelEff::PeakInfo &info : input_peaks )
   
   results_html << "  </tbody>\n"
@@ -1931,6 +1982,14 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
     
     // TODO: The DOF is probably off by one - need to think on this and come back to it
     assert( cost_functor->m_peak_infos.size() >= ((eqn_order+1) + (cost_functor->m_isotopes.size() - 1)) );
+    if( cost_functor->m_peak_infos.size() < ((eqn_order+1) + (cost_functor->m_isotopes.size() - 1)) )
+      throw runtime_error( "There are only " + std::to_string(cost_functor->m_peak_infos.size())
+                          + " peaks, but you are asking to fit " + std::to_string(eqn_order+1)
+                          + " rel. eff. parameters, and "
+                          + std::to_string(cost_functor->m_isotopes.size())
+                          + " isotope rel. act."
+                          );
+    
     solution.m_dof = cost_functor->m_peak_infos.size() - (eqn_order+1) - (cost_functor->m_isotopes.size() - 1);
     
     for( const GenericPeakInfo &peak : cost_functor->m_peak_infos )
@@ -1995,8 +2054,8 @@ const char *to_str( const NucDataSrc src )
 NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeakInfo> peaks,
                                      const NucDataSrc nuc_data_src,
                                      const vector<pair<float,float>> energy_ranges,
-                                     vector<string> isotopes,
-                                     const float energy_tolerance,
+                                     std::vector<NucAndAge> isotopes,
+                                     const float energy_tolerance_fwhm,
                                      const vector<float> excluded_peak_energies )
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
@@ -2082,68 +2141,127 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
   }};
   
   // Check isotopes are valid, and normalize their name, and if there is an age, get it.
-  vector<double> nuclide_ages( isotopes.size(), 0.0 );
-  for( size_t i = 0; i < isotopes.size(); ++i )
+  if( isotopes.empty() )
   {
-    string &iso = isotopes[i];
-    
-    string agestr;
-    const auto start_pos = iso.find_first_of( "({[" );
-    const auto end_pos = iso.find_first_of( ")}]", start_pos );
-    if( end_pos != string::npos )
+    if( (nuc_data_src == NucDataSrc::SandiaDecay) || (nuc_data_src == NucDataSrc::Undefined) )
+      throw runtime_error( "fill_in_nuclide_info: No nuclides, or specialized nuclear data sources specified." );
+       
+    vector<NuclideInfo> specialize_src;
+    switch( nuc_data_src )
     {
-      assert( end_pos > start_pos );
-      agestr = iso.substr( start_pos + 1, (end_pos - start_pos) - 1 );
-      iso = iso.substr( 0, start_pos );
-      cout << "Found age='" << agestr << "' for iso " << iso << endl;
+      case NucDataSrc::Icrp107_U:
+        specialize_src = icrp107;
+        break;
+        
+      case NucDataSrc::Lanl_U:
+        specialize_src = lanl;
+        break;
+        
+      case NucDataSrc::IcrpLanlGadras_U:
+        specialize_src = lanl_icrp_gad;
+        break;
+        
+      case NucDataSrc::SandiaDecay:
+      case NucDataSrc::Undefined:
+        assert( 0 );
+        break;
+    }//switch( nuc_data_src )
+    
+    
+    for( const auto &info : specialize_src )
+    {
+      bool has_iso = false;
+      for( const auto &iso : isotopes )
+        has_iso |= (iso.nuclide == info.parent);
       
-      if( nuc_data_src != NucDataSrc::SandiaDecay )
-        throw runtime_error( "Specifying a nuclide age is only allowed when using a 'nucdata'"
-                            " value of 'SandiaDecay'" );
-    }//if( end_pos != string::npos )
-    
-    const SandiaDecay::Nuclide *nuc = db->nuclide( iso );
-    if( !nuc )
-      throw runtime_error( "Invalid nuclide '" + iso + "' specified." );
-    iso = nuc->symbol;
-    
-    if( agestr.empty() )
-      nuclide_ages[i] = PeakDef::defaultDecayTime(nuc, &agestr);
-    else
-      nuclide_ages[i] = PhysicalUnits::stringToTimeDuration( agestr );
-  }//for( string &iso : isotopes )
+      if( !has_iso )
+      {
+        const SandiaDecay::Nuclide *nuc = db->nuclide(info.parent);
+        assert( nuc );
+        if( !nuc )
+          throw runtime_error( "Some how '" + info.parent + "' isnt a valid nuclide." );
+        
+        isotopes.emplace_back( nuc->symbol, -1.0 );
+      }//
+    }//for( const auto &info : initial_nucs_info )
+  }//if( isotopes.empty() )
+  
   
   // We will put raw source info into 'initial_nucs_info', and then filter this down to the
   //  nuclides and energy ranges we will actually use
   vector<NuclideInfo> initial_nucs_info;
-  switch( nuc_data_src )
+  for( size_t i = 0; i < isotopes.size(); ++i )
   {
-    case NucDataSrc::Icrp107_U:
-      initial_nucs_info = icrp107;
-      break;
-      
-    case NucDataSrc::Lanl_U:
-      initial_nucs_info = lanl;
-      break;
-      
-    case NucDataSrc::IcrpLanlGadras_U:
-      initial_nucs_info = lanl_icrp_gad;
-      break;
-      
-    case NucDataSrc::SandiaDecay:
+    string &iso = isotopes[i].nuclide;
+    double &age = isotopes[i].age;
+    const SandiaDecay::Nuclide *nuc = db->nuclide( iso );
+    if( !nuc )
+      throw runtime_error( "Invalid nuclide '" + iso + "' specified." );
+    
+    iso = nuc->symbol;
+    
+    auto src = nuc_data_src;
+    if( nuc->atomicNumber != 92 )
+      src = NucDataSrc::SandiaDecay;
+    
+    switch( src )
     {
-      if( isotopes.empty() )
-        throw runtime_error( "You must specify the isotopes to use when using SandiaDecay as your source data." );
-      
-      for( size_t i = 0; i < isotopes.size(); ++i )
-      {
-        const string &iso = isotopes[i];
-        const double age = nuclide_ages[i];
+      case NucDataSrc::Icrp107_U:
+      case NucDataSrc::Lanl_U:
+      case NucDataSrc::IcrpLanlGadras_U:
+      case NucDataSrc::Undefined:
+        age = -1.0;
+        break;
         
-        const SandiaDecay::Nuclide *nuc = db->nuclide( iso );
-        assert( nuc ); // we already checked this
-        if( !nuc )
-          throw logic_error( "!nuc" );
+      case NucDataSrc::SandiaDecay:
+        if( age < 0.0 )
+          age = PeakDef::defaultDecayTime(nuc, nullptr);
+        break;
+    }//switch( nucdatasrc )
+    
+    
+    auto filter_for_nuc = [db]( const SandiaDecay::Nuclide *nuc, const vector<NuclideInfo> &input ) -> vector<NuclideInfo> {
+      vector<NuclideInfo> results;
+      
+      for( const NuclideInfo &inputnuc : input )
+      {
+        const SandiaDecay::Nuclide *inputnuc_ptr = db->nuclide( inputnuc.parent );
+        assert( inputnuc_ptr );
+        if( inputnuc_ptr == nuc )
+          results.push_back( inputnuc );
+      }//for( const NuclideInfo &inputnuc : input )
+      
+      return results;
+    };//filter_for_nuc(...)
+    
+    
+    switch( nuc_data_src )
+    {
+      case NucDataSrc::Icrp107_U:
+      {
+        const auto these_infos = filter_for_nuc( nuc, icrp107 );
+        initial_nucs_info.insert( end(initial_nucs_info), begin(these_infos), end(these_infos) );
+        break;
+      }
+        
+      case NucDataSrc::Lanl_U:
+      {
+        const auto these_infos = filter_for_nuc( nuc, lanl );
+        initial_nucs_info.insert( end(initial_nucs_info), begin(these_infos), end(these_infos) );
+        break;
+      }
+        
+      case NucDataSrc::IcrpLanlGadras_U:
+      {
+        const auto these_infos = filter_for_nuc( nuc, lanl_icrp_gad );
+        initial_nucs_info.insert( end(initial_nucs_info), begin(these_infos), end(these_infos) );
+        break;
+      }
+        
+      case NucDataSrc::SandiaDecay:
+      {
+        if( isotopes.empty() )
+          throw runtime_error( "You must specify the isotopes to use when using SandiaDecay as your source data." );
         
         SandiaDecay::NuclideMixture mix;
         const double ref_act = 1.0*SandiaDecay::MBq;
@@ -2174,34 +2292,22 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
           if( br > std::numeric_limits<float>::min() )
             initial_nucs_info.emplace_back( parent, resp_nuc, optional_use, energy, br );
         }//for( const SandiaDecay::EnergyRatePair info : photons )
-      }//for( size_t i = 0; i < isotopes.size(); ++i )
-      
-      break;
-    }//case NucDataSrc::SandiaDecay:
-      
-    case NucDataSrc::Undefined:
-      assert(0);
-      throw std::logic_error( "shouldnt be here" );
-      break;
-  }//switch( nucdatasrc )
+        
+        break;
+      }//case NucDataSrc::SandiaDecay:
+        
+      case NucDataSrc::Undefined:
+        assert(0);
+        throw std::logic_error( "shouldnt be here" );
+        break;
+    }//switch( nucdatasrc )
+  }//for( size_t i = 0; i < isotopes.size(); ++i )
   
-  
-  if( isotopes.empty() )
-  {
-    assert( (nuc_data_src != NucDataSrc::SandiaDecay) && (nuc_data_src != NucDataSrc::Undefined) );
-    
-    for( const auto &info : initial_nucs_info )
-    {
-      const auto pos = std::find( begin(isotopes), end(isotopes), info.parent );
-      if( pos == end(isotopes) )
-      {
-        isotopes.push_back( info.parent );
-        assert( db->nuclide(info.parent) );
-      }
-    }//for( const auto &info : initial_nucs_info )
-    
-    nuclide_ages.resize( isotopes.size(), 0.0 );
-  }//if( isotopes.empty() )
+  //blah blah blah
+  //Need to check above logic and sort initial_nucs_info blah blah blah
+  //Also update render() so it updates possible nuclides and also check if WContainerWidget::render should be called before or after all our code.
+  // Switch to using this function instead of add_nuclides_to_peaks everywhere
+  // Add check, such that if a non SandiaDecay data source, that it actually has Uranium in it
   
   
   // Now we'll put the entries from 'initial_nucs_info' we *might* actually use, into
@@ -2211,8 +2317,11 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
   for( const auto &info : initial_nucs_info )
   {
     // Check if isotope is wanted
-    const auto nuc_pos = std::find( begin(isotopes), end(isotopes), info.parent );
-    if( nuc_pos == end(isotopes) )
+    bool nuc_wanted = false;
+    for( const auto &n : isotopes )
+      nuc_wanted |= (n.nuclide == info.parent);
+    
+    if( !nuc_wanted )
       continue;
     
     // Check if in energy range  (energy_ranges)
@@ -2240,7 +2349,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
     // Check if this peak is specifically excluded via the 'exclude-peak' command line argument
     bool exclude = false;
     for( size_t i = 0; !exclude && (i < excluded_peak_energies.size()); ++i )
-    exclude = (fabs(excluded_peak_energies[i] - peak.m_energy) < energy_tolerance);
+    exclude = (fabs(excluded_peak_energies[i] - peak.m_energy) < energy_tolerance_fwhm );
     peak_was_excluded[peak_index] = exclude;
     if( exclude )
       continue;
@@ -2250,17 +2359,26 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
     {
       NuclideInfo &nuc = candidate_nucs_info[nuc_index];
       
-      if( fabs(nuc.energy - peak.m_energy) < energy_tolerance )
+      if( fabs(nuc.energy - peak.m_energy) < energy_tolerance_fwhm )
       {
         used_peak[peak_index] = true;
         used_candidate_nucs_info[nuc_index] = true;
         
-        const auto iso_pos = std::find( begin(isotopes), end(isotopes), nuc.parent );
-        assert( iso_pos != end(isotopes) );
-        if( iso_pos == end(isotopes) ) //Shouldnt ever happen
+        size_t iso_pos = isotopes.size();
+        for( size_t i = 0; i < isotopes.size(); ++i )
+        {
+          if( isotopes[i].nuclide == nuc.parent )
+          {
+            iso_pos = i;
+            break;
+          }
+        }
+
+        assert( iso_pos != isotopes.size() );
+        if( iso_pos == isotopes.size() )//Shouldnt ever happen
           throw std::logic_error( "Failed to find source nuclide in isotopes to use, after filtering" );
         
-        used_isotope[iso_pos - begin(isotopes)] = true;
+        used_isotope[iso_pos] = true;
         
         bool nuc_already_used = false;
         for( RelActCalcManual::GenericLineInfo &gamma : peak.m_source_gammas )
@@ -2282,7 +2400,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
   NucMatchResults results;
   results.data_source = nuc_data_src;
   
-  results.match_energy_tolerance = energy_tolerance;
+  results.match_fwhm_tolerance = energy_tolerance_fwhm;
   results.energy_ranges = energy_ranges;
   
   for( size_t peak_index = 0; peak_index < matched_peaks.size(); ++peak_index )
@@ -2299,17 +2417,15 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
   
   
   assert( used_isotope.size() == isotopes.size() );
-  assert( used_isotope.size() == nuclide_ages.size() );
   for( size_t index = 0; index < used_isotope.size(); ++index )
   {
     if( used_isotope[index] )
     {
-      results.used_isotopes.push_back( isotopes[index] );
-      if( nuc_data_src == NucDataSrc::SandiaDecay )
-        results.used_isotope_ages.push_back( nuclide_ages[index] );
+      results.used_isotopes.push_back( isotopes[index].nuclide );
+      results.used_isotope_ages.push_back( isotopes[index].age );
     }else
     {
-      results.unused_isotopes.push_back( isotopes[index] );
+      results.unused_isotopes.push_back( isotopes[index].nuclide );
     }
   }//for( size_t index = 0; index < used_isotope.size(); ++index )
   

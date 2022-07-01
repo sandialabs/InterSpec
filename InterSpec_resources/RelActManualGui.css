@@ -1,0 +1,169 @@
+
+.RelActNucCol
+{
+}
+
+.ManRelEffNucDisp
+{
+  width: 175px;
+  margin-bottom: 5px;
+  
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+  
+  border: 1px solid #888888;
+}
+
+.ManRelEffNucDisp > .titlebar :nth-child(2)
+{
+  margin-top: 5px;
+  display: inline-block;
+  margin-left: 25%;
+}
+
+.ManRelEffNucDisp > .body
+{
+  -webkit-border-bottom-right-radius: 5px;
+  -webkit-border-bottom-left-radius: 5px;
+  -moz-border-radius-bottomright: 5px;
+  -moz-border-radius-bottomleft: 5px;
+  border-bottom-right-radius: 5px;
+  border-bottom-left-radius: 5px;
+}
+
+.ManRelEffNucDisp .NucInfoTable
+{
+
+}
+
+
+.ManRelEffNucDisp .AgeEdit
+{
+
+}
+
+.ManRelEffNucDisp .FixedAge
+{
+    
+}
+
+
+.RelActResCol
+{
+  width: 200px;
+}
+
+.RelActManualGui .ResultStack
+{
+  border-left: 1px solid gray;
+  /* border-top: none; */
+}
+
+.RelActManualGui .ResultMenu
+{
+  padding-left: 2px;
+  padding-right:2px;
+  font-size: 13px;
+}
+
+
+
+.RelActManualGui .ResultMenu a
+{
+  /* 
+  padding-left: 10px;
+  padding-right: 5px;
+  */
+}
+
+
+.RelActManualGui ul.ResultMenu
+{
+    padding-inline-start: 0px;
+    list-style-type: none;
+    max-width: 30px;
+}
+
+.RelActManualGui ul.ResultMenu li
+{
+  display: inline-block;
+  -webkit-writing-mode: vertical-lr;
+  writing-mode: vertical-rl;
+  writing-mode: tb-lr;
+  transform: scale(-1, -1);
+  white-space: nowrap;
+  height: 50px;
+  
+  font-weight: bold;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+
+  text-align: center;
+}
+
+
+.RelActManualGui .ResultsTxt
+{
+  padding-left: 10px;
+}
+
+
+.RelActManualGui .NoCalcResults
+{
+  text-align: centered;
+  font-weight: bold;
+}
+
+.RelActManualGui .CalcError
+{
+  color: red;
+  font-weight: bold;
+  text-align: centered;
+  
+  padding: 1em;
+  margin: 2px;
+  border: 1px solid grey;
+  background: lightcoral;
+}
+
+.RelActManualGui .CalcWarning
+{
+  color: red;
+  font-weight: bold;
+  text-align: centered;
+  
+  padding: 1em;
+  margin: 2px;
+  border: 1px solid grey;
+  background: yellow;
+}
+
+
+.nuctable, .peaktable, .massratiotable {
+}
+
+.resulttable {
+  margin-top: 15px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  border: 1px solid black;
+}
+
+.resulttable th, .resulttable td {
+  padding-left: 5px;
+  padding-right: 5px;
+  border: 1px solid black;
+}
+
+.releffeqn {
+  margin: 10px;
+}
+

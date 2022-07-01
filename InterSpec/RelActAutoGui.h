@@ -1,5 +1,5 @@
-#ifndef RelActGui_h
-#define RelActGui_h
+#ifndef RelActAutoGui_h
+#define RelActAutoGui_h
 /* InterSpec: an application to analyze spectral gamma radiation data.
  
  Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
@@ -32,13 +32,13 @@
 class AuxWindow;
 class InterSpec;
 
-class RelActGui : public Wt::WContainerWidget
+class RelActAutoGui : public Wt::WContainerWidget
 {
 public:
-  RelActGui( InterSpec *viewer, Wt::WContainerWidget *parent = nullptr );
+  RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent = nullptr );
   
-  static std::pair<RelActGui *,AuxWindow *> createWindow( InterSpec *viewer  );
-};//class RelActGui
+  static std::pair<RelActAutoGui *,AuxWindow *> createWindow( InterSpec *viewer  );
+};//class RelActAutoGui
 
 
-#endif //RelActGui_h
+#endif //RelActAutoGui_h

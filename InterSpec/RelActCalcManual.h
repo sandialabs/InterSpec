@@ -394,13 +394,15 @@ struct RelEffSolution
   /** Returns the activity ratio uncertainty between the two isotopes at index \p iso1 and index \p iso2, taking into account
    correlations.
    
+   Will throw exception if covariances were not computed, or invalid indexes.
+   
    Note: it appears that taking into account correlations usually makes the uncertainty _smaller_ than not taking them into account.
    */
   double activity_ratio_uncert( const size_t iso1, const size_t iso2 ) const;
   
   /** A convenience method for the above #ratio_uncert function,
    
-   If either isotope is invalid, will throw std::exception.
+   If either isotope is invalid, or covariances not computed, will throw std::exception.
    */
   double activity_ratio_uncert( const std::string &iso1, const std::string &iso2 ) const;
   
@@ -422,6 +424,20 @@ struct RelEffSolution
                          std::shared_ptr<const SpecUtils::Measurement> spectrum,
                          std::vector<std::shared_ptr<const PeakDef>> spectrum_display_peaks
                          ) const;
+  
+  /** Makes a HTML table of the activity and mass fractions of all the nuclides.
+   
+   The table has CSS style class "nuctable resulttable" and columns: "Nuclide", "Rel. Act",
+   and "Mass Fraction".
+   */
+  void get_mass_fraction_table( std::ostream &strm ) const;
+  
+  /** Makes a HTML table of the activity and mass ratios for all the nuclides.
+   
+   The table has CSS style class "massratiotable resulttable" and columns: "Nuclide", "Mass Ratio",
+   and "Activity Ratio".
+   */
+  void get_mass_ratio_table( std::ostream &strm ) const;
 };//struct RelEffSolution
 
 /** Solve for the relative efficiency equation and relative activities for all isotopes
@@ -500,9 +516,10 @@ struct NucMatchResults
   /** Isotopes that were requested to be used, but no peaks matched to them. */
   std::vector<std::string> unused_isotopes;
   
-  /** The ages of the isotopes used; this vector will be empty unless #NucMatchResults::data_source
-   is NucDataSrc::SandiaDecay, in which case, the entries in this vector will correspond to the
+  /** The ages of the isotopes used; the entries in this vector will correspond to the
    entries in #NucMatchResults::used_isotopes, on an index-by-index basis.
+   If age was not applicable (i.e., a Uranium isotope with a non SandiaDecay NucDataSrc),
+   then the age will be negative.
    */
   std::vector<double> used_isotope_ages;
   
@@ -510,7 +527,7 @@ struct NucMatchResults
   NucDataSrc data_source;
   
   /** The energy tolerance used to match gamma lines to fit peaks. */
-  float match_energy_tolerance;
+  float match_fwhm_tolerance;
   
   /** The energy ranges used; if empty, all energies used. */
   std::vector<std::pair<float,float>> energy_ranges;
@@ -530,6 +547,20 @@ struct NucMatchResults
 /** Reads in a peak CSV from InterSpec, PeakEasy, or GADRAS. */
 std::vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( std::istream &csv );
 
+/** Simple struct to hold a nuclides name and its age. */
+struct NucAndAge
+{
+  /** The nuclide name, in a format that SandiaDecay will understand. */
+  std::string nuclide;
+  
+  /** Age of nuclide; a negative value will cause the default age for the nuclide to be used. */
+  double age = -1.0;
+  
+  NucAndAge( const std::string &nuc, const double the_age )
+  : nuclide(nuc),
+    age( the_age )
+  {}
+};//NucAndAge
 
 /** Matches peaks up to source nuclides, and filters peaks based on energy ranges and, not matching
  an input nuclide gamma, and explicitly not-wanted peaks.
@@ -540,16 +571,16 @@ std::vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( std::istream &
         ages are assumed.
  @param energy_ranges The energy ranges of peaks to keep.  If empty, will not filter on this.
  @param isotopes The names of isotopes to potentially match up.
- @param energy_tolerance The matching tolerance (in keV); all source gammas within this energy range
-        of the peak mean will be attributed to the peak.  This is slightly non-deal, since we
-        probably want to use FWHM or something.
+ @param energy_tolerance_fwhm The matching tolerance, in the peaks FWHM; all source gammas within
+        this energy range of the peak mean will be attributed to the peak.  A value of 0.57 will
+        include all gammas within 1.5 sigma of the mean.
  @param excluded_peak_energies Peaks to explicitly exclude from the analysis.
  */
 NucMatchResults fill_in_nuclide_info( const std::vector<RelActCalcManual::GenericPeakInfo> peaks,
                                      const NucDataSrc nuc_data_src,
                                      const std::vector<std::pair<float,float>> energy_ranges,
-                                     std::vector<std::string> isotopes,
-                                     const float energy_tolerance,
+                                     std::vector<NucAndAge> isotopes,
+                                     const float energy_tolerance_fwhm,
                                      const std::vector<float> excluded_peak_energies );
 }//namespace PeakCsvInput
 

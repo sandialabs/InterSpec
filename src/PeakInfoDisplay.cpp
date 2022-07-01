@@ -1032,6 +1032,7 @@ void PeakInfoDisplay::init()
   
   m_infoView->setColumnHidden( PeakModel::kCandidateIsotopes, true );
   m_infoView->setColumnHidden( PeakModel::kUseForCalibration, true );
+  m_infoView->setColumnHidden( PeakModel::kUseForManualRelEff, true );
   m_infoView->setColumnHidden( PeakModel::kUseForShieldingSourceFit, true );
 
   m_infoView->setEditTriggers( WAbstractItemView::SingleClicked | WAbstractItemView::DoubleClicked );

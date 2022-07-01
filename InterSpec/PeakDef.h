@@ -527,6 +527,9 @@ public:
   inline bool useForShieldingSourceFit() const;
   inline void useForShieldingSourceFit( const bool use );
   
+  inline bool useForManualRelEff() const;
+  inline void useForManualRelEff( const bool use );
+  
   /** Returns if should use for DRF intrinsic efficiency fit.  Note that this does not check that the nuclide and transition has actually
    been defined.
    */
@@ -888,7 +891,8 @@ public:
   
   bool m_useForEnergyCal;
   bool m_useForShieldingSourceFit;
-
+  bool m_useForManualRelEff;
+  
   
   /** Fif this peak should be used in the detector response function model fit for intrinsic efficiency */
   bool m_useForDrfIntrinsicEffFit;
@@ -1122,6 +1126,33 @@ void PeakDef::useForShieldingSourceFit( const bool use )
 {
   m_useForShieldingSourceFit = use;
 }//void useForShieldingSourceFit( const bool use )
+
+
+bool PeakDef::useForManualRelEff() const
+{
+  if( !m_useForManualRelEff || !m_parentNuclide )
+    return m_useForManualRelEff;
+  
+  switch( m_sourceGammaType )
+  {
+    case PeakDef::NormalGamma:
+      return m_useForManualRelEff;
+      
+    case PeakDef::XrayGamma:
+    case PeakDef::AnnihilationGamma:
+    case PeakDef::SingleEscapeGamma:
+    case PeakDef::DoubleEscapeGamma:
+      break;
+  }//switch( srcType )
+  
+  return false;
+}//bool useForManualRelEff() const
+
+
+void PeakDef::useForManualRelEff( const bool use )
+{
+  m_useForManualRelEff = use;
+}//void useForManualRelEff( const bool use )
 
 
 bool PeakDef::useForDrfIntrinsicEffFit() const

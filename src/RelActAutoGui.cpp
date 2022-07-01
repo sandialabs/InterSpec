@@ -29,8 +29,8 @@
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
-#include "InterSpec/RelActGui.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/RelActAutoGui.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RelActCalcAuto.h"
 
@@ -40,23 +40,23 @@ using namespace std;
 
 
 
-RelActGui::RelActGui( InterSpec *viewer, Wt::WContainerWidget *parent )
+RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
 : WContainerWidget( parent )
 {
   
-}//RelActGui constructor
+}//RelActAutoGui constructor
   
   
-std::pair<RelActGui *,AuxWindow *> RelActGui::createWindow( InterSpec *viewer  )
+std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *viewer  )
 {
   assert( viewer );
   
   AuxWindow *window = nullptr;
-  RelActGui *disp = nullptr;
+  RelActAutoGui *disp = nullptr;
   
   try
   {
-    disp = new RelActGui( viewer );
+    disp = new RelActAutoGui( viewer );
     
     window = new AuxWindow( "Relative Act. Isotopics" );
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions

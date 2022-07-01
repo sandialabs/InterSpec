@@ -1177,11 +1177,11 @@ double stringToEquivalentDose( const std::string &str, const double sievert_defi
 }//double stringToEquivalentDose( std::string str, double gray_definition )
 
 
-std::string printValueWithUncertainty( double value, double uncert, int nsigfig )
+std::string printValueWithUncertainty( double value, double uncert, size_t unsigfig )
 {
   // We will explicitly round value/uncert, 
   //cout << "Value=" << value << ", uncert=" << uncert << ", nsigfig=" << nsigfig << endl;
-  nsigfig = std::max(1,nsigfig);
+  const int nsigfig = std::max(1,static_cast<int>(unsigfig));
   
   //Get the exponent
   double valorder = std::floor( std::log10(value) );  //1.2345E-06 will give value -6

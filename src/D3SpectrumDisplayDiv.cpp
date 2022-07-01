@@ -1458,7 +1458,10 @@ void D3SpectrumDisplayDiv::setChartMarginColor( const Wt::WColor &color )
     return;
   }//if( color.isDefault() )
   
-  //Actualkly this will set the background for the entire chart...
+  if( m_cssRules.count(rulename) )
+    style.removeRule( m_cssRules[rulename] );
+  
+  //Actually this will set the background for the entire chart...
   m_cssRules[rulename] = style.addRule( "#" + id() + " > svg", "background: " + color.cssText() );
 }//setChartMarginColor(...)
 
@@ -1472,11 +1475,8 @@ void D3SpectrumDisplayDiv::setChartBackgroundColor( const Wt::WColor &color )
   
   WCssStyleSheet &style = wApp->styleSheet();
   
-  if( color.isDefault() )
-  {
-    if( m_cssRules.count(rulename) )
-      style.removeRule( m_cssRules[rulename] );
-  }//if( color.isDefault() )
+  if( m_cssRules.count(rulename) )
+    style.removeRule( m_cssRules[rulename] );
   
   m_cssRules[rulename] = style.addRule( "#chartarea" + id(), "fill: " + c );
 }

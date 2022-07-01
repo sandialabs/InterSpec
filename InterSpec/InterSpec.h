@@ -78,7 +78,8 @@ class SpectrumViewerTester;
 #endif
 
 #if( USE_REL_ACT_TOOL )
-class RelActGui;
+class RelActAutoGui;
+class RelActManualGui;
 #endif
 
 namespace SpecUtils{ class SpecFile; }
@@ -112,7 +113,7 @@ namespace Wt
   }
 }//namespace Wt
 
-/** A convience function to call #InterSpec::logMessage
+/** A convenience function to call #InterSpec::logMessage
  
  \deprecated Please directly call InterSpec::instance()->logMessage(message,source,priority).
  */
@@ -313,7 +314,7 @@ public:
 
   //addPeak(): Adds a new peak to the peak model, and returns the models index
   //  of the new peak. If associateShownNucXrayRctn is specified true _and_ the
-  //  user is showwing some reference gamma lines, than the new peak will be
+  //  user is showing some reference gamma lines, than the new peak will be
   //  assigned to be from the shown lines if and are reasonably close.
   //  If the returned WModelIndex is not valid, then the peak was not added.
   Wt::WModelIndex addPeak( PeakDef peak, const bool associateShownNucXrayRctn );
@@ -587,9 +588,6 @@ public:
   void showGammaXsTool();
   void showDoseTool();
   void showShieldingSourceFitWindow();
-#if( USE_REL_ACT_TOOL )
-  void showRelActWindow();
-#endif
   void closeShieldingSourceFitWindow();
   void saveShieldingSourceModelToForegroundSpecMeas();
   
@@ -671,7 +669,19 @@ public:
   void createTerminalWidget();
   void handleTerminalWindowClose();
 #endif
-
+  
+#if( USE_REL_ACT_TOOL )
+  void showRelActAutoWindow();
+  void handleRelActAutoClose();
+  
+  void createRelActManualWidget();
+  void handleRelActManualClose();
+#endif
+  
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+  void handleToolTabClosed( const int tabnum );
+#endif
+  
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
       If is_awk is true, the confirm button will say "Awcknowledge" and the
@@ -1149,8 +1159,13 @@ protected:
   std::shared_ptr<MaterialDB> m_materialDB;
   
 #if( USE_REL_ACT_TOOL )
-  RelActGui              *m_relActGui;
-  AuxWindow              *m_relActWindow;
+  RelActAutoGui          *m_relActAutoGui;
+  AuxWindow              *m_relActAutoWindow;
+  PopupDivMenuItem       *m_relActAutoMenuItem;
+  
+  RelActManualGui        *m_relActManualGui;
+  AuxWindow              *m_relActManualWindow;
+  PopupDivMenuItem       *m_relActManualMenuItem;
 #endif
 
   //m_nuclideSearchWindow: only valid when in tool tabs are hidden, and the user

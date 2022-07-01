@@ -69,6 +69,7 @@ public:
   {
     kIsotope,           //The isotope to display as the isotope responsible for this gamma line
     kUseForCalibration,
+    kUseForManualRelEff,
     kMean, kFwhm, kAmplitude,
     kCps,
     kPhotoPeakEnergy,

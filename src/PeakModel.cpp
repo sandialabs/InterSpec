@@ -1502,9 +1502,14 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     throw std::runtime_error( msg.str() );
   }//if( m_sortedPeaks.size() != m_peaks->size() )
 
-  //should consider impementing ToolTipRole
-  if( role != Wt::DisplayRole && role != Wt::EditRole
-      && !((role==Wt::CheckStateRole) && ((index.column()==kUseForCalibration) || (index.column()==kUseForShieldingSourceFit)))
+  //should consider implementing ToolTipRole
+  if( (role != Wt::DisplayRole)
+     && (role != Wt::EditRole)
+     && !((role==Wt::CheckStateRole)
+            && ((index.column()==kUseForCalibration)
+            || (index.column()==kUseForShieldingSourceFit)
+            || (index.column()==kUseForManualRelEff))
+          )
       )
     return any();
 
@@ -1712,6 +1717,13 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
 
     case kUseForCalibration:
       return peak->useForEnergyCalibration();
+      
+    case kUseForManualRelEff:
+    {
+      if( !peak->parentNuclide() || (peak->sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) )
+        return boost::any();
+      return peak->useForManualRelEff();
+    }
       
     case kPeakLineColor:
     {
@@ -2162,6 +2174,7 @@ bool PeakModel::setData( const WModelIndex &index,
       case kPhotoPeakEnergy:
       case kCandidateIsotopes:
       case kUseForCalibration:
+      case kUseForManualRelEff:
       case kUseForShieldingSourceFit:
       case kUserLabel:
       case kPeakLineColor:
@@ -2509,6 +2522,30 @@ bool PeakModel::setData( const WModelIndex &index,
         break;
       }//case kUseForCalibration:
 
+         
+      case kUseForManualRelEff:
+      {
+        try
+        {
+          const bool use = boost::any_cast<bool>( value );
+          if( use && (!new_peak.parentNuclide()
+                      || (new_peak.sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) ) )
+            passMessage( "Only peaks associated with a nuclides gamma can be used for relative"
+                        " activity analysis.", "", WarningWidget::WarningMsgHigh );
+          
+          if( use == new_peak.useForManualRelEff() )
+            return false;
+          new_peak.useForManualRelEff( use );
+        }catch(...)
+        {
+          cerr << "\n\tFailed in casting checkbox" << endl;
+          return false;
+        }
+        
+        break;
+      }//case kUseForManualRelEff:
+        
+        
       case kPeakLineColor:
       {
         const string css_color = txt_val.toUTF8();
@@ -2587,6 +2624,7 @@ WFlags<ItemFlag> PeakModel::flags( const WModelIndex &index ) const
 
     case kUseForShieldingSourceFit:
     case kUseForCalibration:
+    case kUseForManualRelEff:
       return ItemIsUserCheckable | ItemIsSelectable;
 
     case kHasSkew: case kSkewAmount: case kType:
@@ -2632,8 +2670,9 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
       case kPhotoPeakEnergy:return boost::any( WString("Photopeak") );
       case kDifference:     return boost::any( WString("Difference") );
       case kUseForShieldingSourceFit: return boost::any( WString("Use") );
-      case kCandidateIsotopes: return boost::any();
-      case kUseForCalibration: return boost::any( WString("Calib. Peak") );
+      case kCandidateIsotopes:  return boost::any();
+      case kUseForCalibration:  return boost::any( WString("Calib. Peak") );
+      case kUseForManualRelEff: return boost::any( WString("Rel Act") );
       case kUserLabel:      return boost::any( WString("Label") );
       case kPeakLineColor:  return boost::any( WString("Color") );
       case kHasSkew:        return boost::any( WString("Skew") );
@@ -2658,8 +2697,9 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
       case kPhotoPeakEnergy:return boost::any( WString("Photopeak Energy") );
       case kDifference:     return boost::any( WString("Difference between photopeak and mean energy") );
       case kUseForShieldingSourceFit: return boost::any();
-      case kCandidateIsotopes: return boost::any();
-      case kUseForCalibration: return boost::any();
+      case kCandidateIsotopes:  return boost::any();
+      case kUseForCalibration:  return boost::any();
+      case kUseForManualRelEff: return boost::any( WString("Use for &quot;Isotopics from peaks&quot; analysis.") );
       case kPeakLineColor:     return boost::any( WString("Peak color") );
       case kUserLabel:         return boost::any( WString("User specified label") );
       case kRoiCounts:         return boost::any( WString("Integral of gamma counts over the region of interest") );
@@ -2903,6 +2943,12 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       const bool thisorder = lhs->useForEnergyCalibration() < rhs->useForEnergyCalibration();
       return (asscend ? thisorder : (!thisorder));
     }//case kUseForCalibration:
+      
+    case kUseForManualRelEff:
+    {
+      const bool thisorder = lhs->useForManualRelEff() < rhs->useForManualRelEff();
+      return (asscend ? thisorder : (!thisorder));
+    }//case kUseForManualRelEff:
 
     case kCandidateIsotopes:
     case kNumColumns:

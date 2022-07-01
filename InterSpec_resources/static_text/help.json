@@ -77,6 +77,12 @@
         "keywords" : "Energy Calibration Tool Calibrate Adjust Offset Peaks Information Offset Linear Quadratic Normalize"
       },
       {
+        "id" : "rel-act-manual",
+        "title" : "Isotopics from User Peaks",
+        "help-xml" : "rel_act_manual_help.xml",
+        "keywords" : "isotopics relative activity mass efficiency enrichment tool"
+      },
+      {
         "id" : "peak-manager",
         "title" : "Peak Manager",
         "help-xml" : "peak_manager_help.xml",

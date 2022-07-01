@@ -1,11 +1,24 @@
-RelEffPlot = function (elem) {
+RelEffPlot = function (elem,options) {
     let self = this;
     this.chart = typeof elem === "string" ? document.getElementById(elem) : elem;
 
+    this.options = options ? options : {};
+    if( !this.options.margins )
+        this.options.margins = {};
+    if( typeof this.options.margins.top !== "number" )
+        this.options.margins.top = 30;
+    if( typeof this.options.margins.right !== "number" )
+        this.options.margins.right = 20;
+    if( typeof this.options.margins.bottom !== "number" )
+        this.options.margins.bottom = 30;
+    if( typeof this.options.margins.left !== "number" )
+        this.options.margins.left = 50;
+    
     // Set the dimensions of the canvas / graph
-    this.margins = { top: 30, right: 20, bottom: 30, left: 50 };
-    const width = this.chart.clientWidth - this.margins.left - this.margins.right;
-    const height = this.chart.clientHeight - this.margins.top - this.margins.bottom;
+    const parentWidth = this.chart.clientWidth;
+    const parentHeight = this.chart.clientHeight;
+    const chartAreaWidth = parentWidth - this.options.margins.left - this.options.margins.right;
+    const chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom;
 
     // Setup the tooltip
     this.tooltip = d3.select("body").append("div")
@@ -13,30 +26,40 @@ RelEffPlot = function (elem) {
         .style("opacity", 0);
 
     // Set the ranges
-    this.xScale = d3.scale.linear().range([0, width]);
-    this.yScale = d3.scale.linear().range([height, 0]);
+    this.xScale = d3.scale.linear().range([0, chartAreaWidth]);
+    this.yScale = d3.scale.linear().range([chartAreaHeight, 0]);
 
     // Define the axes
     this.xAxis = d3.svg
         .axis()
         .scale(this.xScale)
         .orient("bottom")
+        .tickFormat( x => `${x.toFixed(0)}` )
         .ticks(5);
 
     this.yAxis = d3.svg
         .axis()
         .scale(this.yScale)
+        .tickFormat( function(x){
+            if( x == 0 ) 
+              return "0";
+            if( x <= 1.0 ) 
+              return x.toFixed(2); 
+            if( x <= 10.0 ) 
+             return x.toFixed(1); 
+            return x.toFixed(0); 
+        } )
         .orient("left")
         .ticks(5);
 
     // Adds the svg canvas
     this.svg = d3.select(this.chart)
         .append("svg")
-        .attr("width", this.chart.clientWidth)
-        .attr("height", this.chart.clientHeight)
+        .attr("width", "100%")
+        .attr("height", "100%")
         .attr("class", "RelEffPlot")
         .append("g")
-        .attr("transform", "translate(" + this.margins.left + "," + this.margins.top + ")");
+        .attr("transform", "translate(" + this.options.margins.left + "," + this.options.margins.top + ")");
 
     this.xScale.domain([0, 3000]);
     this.yScale.domain([0, 1]);
@@ -48,7 +71,7 @@ RelEffPlot = function (elem) {
     // Add the X Axis
     this.svg.append("g")
         .attr("class", "xAxis")
-        .attr("transform", "translate(0," + height + ")")
+        .attr("transform", "translate(0," + chartAreaHeight + ")")
         .call(this.xAxis);
 
     // Add the Y Axis
@@ -61,20 +84,22 @@ RelEffPlot = function (elem) {
 RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
     const self = this;
 
-    const width = this.chart.clientWidth - this.margins.left - this.margins.right;
-    const height = this.chart.clientHeight - this.margins.top - this.margins.bottom;
+    const parentWidth = this.chart.clientWidth;
+    const parentHeight = this.chart.clientHeight;
+    const chartAreaWidth = parentWidth - this.options.margins.left - this.options.margins.right;
+    const chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom;
 
     this.xScale
-        .range([0, width]);
+        .range([0, chartAreaWidth]);
     this.yScale
-        .range([height, 0]);
+        .range([chartAreaHeight, 0]);
     this.svg
         .selectAll('.xAxis')
-        .attr("transform", "translate(0," + height + ")");
+        .attr("transform", "translate(0," + chartAreaHeight + ")");
 
-    d3.select(this.chart).select("svg")
-        .attr("width", this.chart.clientWidth)
-        .attr("height", this.chart.clientHeight)
+    //d3.select(this.chart).select("svg")
+        //.attr("width", parentWidth)
+        //.attr("height", parentHeight)
 
     this.data_vals = data_vals;
     this.fit_eqn = fit_eqn;
@@ -94,7 +119,7 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
 
     
     
-    const num_eqn_points = width / 4;
+    const num_eqn_points = chartAreaWidth / 4;
 
     // Scale the range of the data
     let min_x = d3.min(data_vals, function (d) { return d.energy; });
@@ -196,7 +221,10 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
                 + "<div>Measured RelEff: " + d.eff.toPrecision(5) + "</div>"
                 + "<div>RelEff Curve: " + fit_eqn(d.energy).toPrecision(5) + "</div>";
             for (const el of d.nuc_info) {
-                txt += "<div>&nbsp;&nbsp;" + el.nuc + ": br=" + el.br.toPrecision(4) + ", RelAct=" + el.rel_act.toPrecision(4) + "</div>"
+                txt += "<div>&nbsp;&nbsp;" + el.nuc + ": br=" + el.br.toPrecision(4);
+                if( el.rel_act )
+                  txt += ", RelAct=" + el.rel_act.toPrecision(4);
+                txt += "</div>";
             }
             
             self.tooltip.html(txt);

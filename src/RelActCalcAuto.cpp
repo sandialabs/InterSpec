@@ -1274,11 +1274,33 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           peaks_with_sources.push_back( p );
       }//for( const auto &p : peaks_with_nucs )
       
+      size_t manual_rel_eff_order = options.rel_eff_eqn_order;
+      set<string> manual_nucs;
+      for( const auto &p : peaks_with_sources )
+      {
+        for( const auto &l : p.m_source_gammas )
+          manual_nucs.insert( l.m_isotope );
+      }
       
+      int manual_num_peaks = static_cast<int>( peaks_with_sources.size() );
+      int manual_num_isos = static_cast<int>( manual_nucs.size() );
+      int manual_num_rel_eff = manual_rel_eff_order + 1;
+      int num_free_pars = manual_num_peaks - (manual_num_rel_eff + manual_num_isos - 1);
       
+      if( (manual_num_peaks - manual_num_isos) < 1 )
+        throw runtime_error( "Not enough fit-peaks to perform initial manual rel. eff. estimation of parameters." );
+      
+      if( num_free_pars < 0 )
+        manual_rel_eff_order = manual_num_peaks - manual_num_isos;
+        
       RelActCalcManual::RelEffSolution manual_solution
                  = RelActCalcManual::solve_relative_efficiency( peaks_with_sources,
-                                              options.rel_eff_eqn_type, options.rel_eff_eqn_order );
+                                              options.rel_eff_eqn_type, manual_rel_eff_order );
+      
+      if( manual_rel_eff_order < options.rel_eff_eqn_order )
+        solution.m_warnings.push_back( "Due to a lack of manually fit peaks, the relative"
+                                       " efficiency equation order had to be reduced for initial"
+                                       " estimate of relative efficiencies and activities." );
       
       cout << "Initial estimates:" << endl;
       manual_solution.print_summary( cout );
@@ -1291,7 +1313,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
         throw runtime_error( manual_solution.m_error_message );
       
-      assert( manual_solution.m_rel_eff_eqn_coefficients.size() == (options.rel_eff_eqn_order + 1) );
+      assert( manual_solution.m_rel_eff_eqn_coefficients.size() == (manual_rel_eff_order + 1) );
+      
+      if( manual_rel_eff_order != options.rel_eff_eqn_order )
+      {
+        manual_solution.m_rel_eff_eqn_coefficients.resize( options.rel_eff_eqn_order + 1, 0.0 );
+        manual_solution.m_rel_eff_eqn_covariance.resize( options.rel_eff_eqn_order + 1 );
+        for( auto &v : manual_solution.m_rel_eff_eqn_covariance )
+          v.resize( options.rel_eff_eqn_order + 1, 0.0 );
+      }//
       
       const string rel_eff_eqn_str = RelActCalc::rel_eff_eqn_text( manual_solution.m_rel_eff_eqn_form, manual_solution.m_rel_eff_eqn_coefficients );
       cout << "Starting with initial rel. eff. eqn = " << rel_eff_eqn_str << endl;
@@ -2442,8 +2472,9 @@ int run_test()
 {
   try
   {
-    const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/simple_pu_test.xml";
+    //const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/simple_pu_test.xml";
     //const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/thor_core_614_668_kev_test.xml";
+    const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/LaBr_pu_test.xml";
     
     rapidxml::file<char> input_file( xml_file_path );
     
@@ -3333,7 +3364,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     const double rel_mass = act.rel_activity / act.nuclide->activityPerGram();
     
     results_html << "  <tr><td>" << act.nuclide->symbol << "</td>"
-    << "<td>" << act.rel_activity << " &pm; " << act.rel_activity_uncertainty << "</td>"
+    << "<td>" << act.rel_activity << " &plusmn; " << act.rel_activity_uncertainty << "</td>"
     << "<td>" << (100.0*rel_mass/sum_rel_mass) << "%</td>"
     << "<td>" << (100.0*mass_enrichment_fraction(act.nuclide)) << "%</td>"
     << "</tr>\n";
