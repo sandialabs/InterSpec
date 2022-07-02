@@ -12,46 +12,14 @@
   overflow: auto;
 }
 
-.EnergyCalTool .ContentHelpBtn
-{
-  position: absolute;
-  margin-left: 5px;
-  bottom: 0px;
-}
 
-.EnergyCalTool .ColHeader
-{
-  white-space: nowrap;
-  font-size: 10pt;
-  text-align: center;
-  font-weight: bold;
-  padding-top: 4px;
-  padding-bottom: 1px;
-  padding-left: 3px;
-  padding-right: 3px;
-  margin-bottom: 2px;
-  border-bottom: 1px solid #e1e1e1;
-}
-
-
-.EnergyCalTool .CalColumn
-{
-  border-right: 1px solid #e1e1e1;
-  padding-bottom: 3px;
-}
-
-.EnergyCalTool.TallEnergyCal .CalColumn
+.EnergyCalTool.TallEnergyCal .ToolTabTitledColumn
 {
   margin-bottom: 10px;
 }
 
 
-.EnergyCalTool .CalColContent
-{
-  margin-left: 5px;
-  margin-right: 5px;
-  margin-top: 5px;
-}
+
 
 .EnergyCalTool .DetCol
 {
@@ -89,8 +57,6 @@
 {
   border: 1px solid #e1e1e1;
 }
-
-
 
 
 .EnergyCalTool .NoCalContentTxt

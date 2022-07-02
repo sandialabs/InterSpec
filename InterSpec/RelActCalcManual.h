@@ -468,7 +468,7 @@ namespace PeakCsvInput
 /** Nominally InterSpec uses SandiaDecay for gamma yields everywhere, but for benchmarking
  their are some slightly different Uranium yields available.
  */
-enum class NucDataSrc
+enum class NucDataSrc : int
 {
   Icrp107_U,
   Lanl_U,
@@ -526,8 +526,10 @@ struct NucMatchResults
   /** Where the nuclear source data (e.g., gamma energy and branch ratios) came from. */
   NucDataSrc data_source;
   
-  /** The energy tolerance used to match gamma lines to fit peaks. */
-  float match_fwhm_tolerance;
+  /** The energy tolerance used to match gamma lines to fit peaks; the number of the peaks Gaussian
+   sigmas the gamma line must be within the peak mean.
+   */
+  float match_sigma_tolerance;
   
   /** The energy ranges used; if empty, all energies used. */
   std::vector<std::pair<float,float>> energy_ranges;
@@ -580,7 +582,7 @@ NucMatchResults fill_in_nuclide_info( const std::vector<RelActCalcManual::Generi
                                      const NucDataSrc nuc_data_src,
                                      const std::vector<std::pair<float,float>> energy_ranges,
                                      std::vector<NucAndAge> isotopes,
-                                     const float energy_tolerance_fwhm,
+                                     const float energy_tolerance_sigma,
                                      const std::vector<float> excluded_peak_energies );
 }//namespace PeakCsvInput
 

@@ -639,6 +639,7 @@ list( APPEND OTHER_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources
 
 deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
          "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js"
+         
 )
 
 set(CSS_RESOURCES_TO_COPY
@@ -948,6 +949,7 @@ list(
     APPEND
     OTHER_SUPPORT_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DecayChainChart.js
+    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/RelEffPlot.js
 )
 
 FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml)

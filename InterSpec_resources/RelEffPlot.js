@@ -177,8 +177,14 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
       .attr("class", "errorbar")
       .attr('x1', function(d) { return self.xScale(d.energy); })
       .attr('x2', function(d) { return self.xScale(d.energy); })
-      .attr('y1', function(d) { return self.yScale(d.eff + d.eff_uncert); })
-      .attr('y2', function(d) { return self.yScale(d.eff - d.eff_uncert); });
+      .attr('y1', function(d) { 
+        const val = self.yScale(d.eff + d.eff_uncert);
+        return isNaN(val) ? 0 : val;
+    })
+      .attr('y2', function(d) { 
+        const val = self.yScale(d.eff - d.eff_uncert);
+        return isNaN(val) ? 0 : val;
+    });
     
     // Add the data points
     this.svg
@@ -186,12 +192,13 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
         .data(data_vals)
         .enter()
         .append("circle")
-        .attr("r", 5)
+        .attr("r", 3)
         .attr("cx", function (d) {
             return self.xScale(d.energy)
         })
         .attr("cy", function (d) {
-            return self.yScale(d.eff)
+            const val = self.yScale(d.eff);
+            return isNaN(val) ? 0 : val;
         })
         .attr("class", function (d) {
           
@@ -213,8 +220,7 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
             d3.select(this).transition()
                 .duration('50')
                 .attr('opacity', '.85')
-                .attr("r", 8);
-
+                .attr("r", 6);
 
             let txt = "<div>Energy: " + d.energy.toFixed(2) + " keV</div>"
                 + "<div>Peak Area: " + d.counts.toFixed(1) + " &pm; " + d.counts_uncert.toFixed(1) + "</div>"
@@ -246,7 +252,7 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
             d3.select(this).transition()
                 .duration('50')
                 .attr('opacity', '1')
-                .attr("r", 5);
+                .attr("r", 3);
             self.tooltip.transition()
                 .duration(500)
                 .style("opacity", 0);

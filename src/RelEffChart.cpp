@@ -63,6 +63,9 @@ RelEffChart::RelEffChart( WContainerWidget *parent )
   //wApp->useStyleSheet( resource_base + "RelEffPlot.css" );
   
   setCssRules();
+  InterSpec *interspec = InterSpec::instance();
+  if( interspec )
+    interspec->colorThemeChanged().connect( this, &RelEffChart::setCssRules );
   
   wApp->require( resource_base + "d3.v3.min.js", "d3.v3.js" );
   wApp->require( resource_base + "RelEffPlot.js" );
@@ -136,6 +139,7 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
   
   //Write out the data JSON
   stringstream rel_eff_plot_values, add_rel_eff_plot_css;
+  size_t njson_entries = 0;
   rel_eff_plot_values << "[";
   for( size_t index = 0; index < peaks.size(); ++index )
   {
@@ -164,15 +168,32 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
     }//for( const RelEff::GammaLineInfo &line : peak.m_source_gammas )
     
     const double eff = peak.m_counts / src_counts;
-    const double eff_uncert = peak.m_counts_uncert / src_counts;
+    double eff_uncert = peak.m_counts_uncert / src_counts;
+    
+    if( IsNan(eff) || IsInf(eff) )
+    {
+      cerr << "RelEffChart::setData: Got invalid eff at " << peak.m_energy << ", peak.m_counts="
+           << peak.m_counts << ", src_counts=" << src_counts << endl;
+      
+      continue;
+    }
+    
+    if( IsNan(eff_uncert) || IsInf(eff_uncert) )
+    {
+      cerr << "RelEffChart::setData: Got invalid eff_uncert at " << peak.m_energy
+           << ", peak.m_counts=" << peak.m_counts_uncert << ", src_counts=" << src_counts << endl;
+      
+      eff_uncert = 0.0;
+    }
     
     snprintf( buffer, sizeof(buffer),
              "%s{energy: %.2f, counts: %1.7g, counts_uncert: %1.7g,"
              " eff: %1.6g, eff_uncert: %1.6g, nuc_info: [%s]}",
-             (index ? ", " : ""), peak.m_energy, peak.m_counts, peak.m_counts_uncert,
+             (njson_entries ? ", " : ""), peak.m_energy, peak.m_counts, peak.m_counts_uncert,
              eff, eff_uncert, isotopes_json.c_str() );
     
     rel_eff_plot_values << buffer;
+    njson_entries += 1;
   }//for( size_t index = 0; index < input_peaks.size(); ++index )
   
   rel_eff_plot_values << "]";
@@ -247,7 +268,7 @@ void RelEffChart::setTextColor( const Wt::WColor &color )
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "fill: " + c );
+  m_cssRules[rulename] = style.addRule( ".RelEffPlot .xaxistitle, .RelEffPlot .yaxistitle, .RelEffPlot .yaxis, .RelEffPlot .yaxislabel, .RelEffPlot .xaxis, .RelEffPlot .tick text", "fill: " + c );
 }
 
 

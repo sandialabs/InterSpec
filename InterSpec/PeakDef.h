@@ -1131,7 +1131,7 @@ void PeakDef::useForShieldingSourceFit( const bool use )
 bool PeakDef::useForManualRelEff() const
 {
   if( !m_useForManualRelEff || !m_parentNuclide )
-    return m_useForManualRelEff;
+    return false;
   
   switch( m_sourceGammaType )
   {

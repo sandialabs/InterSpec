@@ -5744,6 +5744,22 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs->removeTab( m_peakInfoDisplay );
     m_toolsTabs->removeTab( m_energyCalTool );
     
+    if( m_relActManualGui )
+    {
+      if( !m_relActManualWindow )
+        m_toolsTabs->removeTab( m_energyCalTool );
+      handleRelActManualClose();
+    }//if( m_relActManualGui )
+    
+#if( USE_TERMINAL_WIDGET )
+    if( m_terminal )
+    {
+      if( !m_terminalWindow )
+        m_toolsTabs->removeTab( m_terminal );
+      handleTerminalWindowClose();
+    }
+#endif
+    
     m_nuclideSearch->clearSearchEnergiesOnClient();
     m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
     m_toolsTabs->removeTab( m_nuclideSearchContainer );

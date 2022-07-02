@@ -118,7 +118,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
   m_ncalls( 0 )
   {
     if( peak_infos.size() < 2 )
-      throw runtime_error( "ManualGenericRelActFunctor: you must use at least two peaks." );
+      throw runtime_error( "You must use at least two peaks." );
     
     // Apply some sanity checks to the eqn_order.  Realistically eqn_order should probably be
     //  between 3 and 6, but we'll allow an arbitrary amount of slop here.
@@ -1981,7 +1981,7 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
     solution.m_chi2 = 0.0;
     
     // TODO: The DOF is probably off by one - need to think on this and come back to it
-    assert( cost_functor->m_peak_infos.size() >= ((eqn_order+1) + (cost_functor->m_isotopes.size() - 1)) );
+    //assert( cost_functor->m_peak_infos.size() >= ((eqn_order+1) + (cost_functor->m_isotopes.size() - 1)) );
     if( cost_functor->m_peak_infos.size() < ((eqn_order+1) + (cost_functor->m_isotopes.size() - 1)) )
       throw runtime_error( "There are only " + std::to_string(cost_functor->m_peak_infos.size())
                           + " peaks, but you are asking to fit " + std::to_string(eqn_order+1)
@@ -2055,7 +2055,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
                                      const NucDataSrc nuc_data_src,
                                      const vector<pair<float,float>> energy_ranges,
                                      std::vector<NucAndAge> isotopes,
-                                     const float energy_tolerance_fwhm,
+                                     const float energy_tolerance_sigma,
                                      const vector<float> excluded_peak_energies )
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
@@ -2183,7 +2183,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
         
         isotopes.emplace_back( nuc->symbol, -1.0 );
       }//
-    }//for( const auto &info : initial_nucs_info )
+    }//for( const auto &info : specialize_src )
   }//if( isotopes.empty() )
   
   
@@ -2274,20 +2274,10 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
         for( const SandiaDecay::EnergyRatePair &rate_info : photons )
         {
           const char * const parent = nuc->symbol.c_str();
-          const char * const resp_nuc = ""; //TODO: bother to get the nuclide thats actually giving off this gamma
+          const char * const resp_nuc = ""; //TODO: bother to get the nuclide thats actually giving off this gamma; see decay_gammas(...) in RelActCalcAuto.cpp
           const bool optional_use = true;
           const float energy = rate_info.energy;
           const float br = static_cast<float>( rate_info.numPerSecond / ref_act );
-          
-          //cout << "Using Hack to exclude peaks" << endl;
-          //bool is_close = false;
-          //for( const auto &gl : lanl )
-          //{
-          //  if( fabs(gl.energy - energy) < 0.5 )
-          //    is_close = true;
-          //}
-          //if( !is_close )
-          //  continue;
           
           if( br > std::numeric_limits<float>::min() )
             initial_nucs_info.emplace_back( parent, resp_nuc, optional_use, energy, br );
@@ -2303,11 +2293,11 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
     }//switch( nucdatasrc )
   }//for( size_t i = 0; i < isotopes.size(); ++i )
   
-  //blah blah blah
-  //Need to check above logic and sort initial_nucs_info blah blah blah
-  //Also update render() so it updates possible nuclides and also check if WContainerWidget::render should be called before or after all our code.
-  // Switch to using this function instead of add_nuclides_to_peaks everywhere
-  // Add check, such that if a non SandiaDecay data source, that it actually has Uranium in it
+  
+  std::sort( begin(initial_nucs_info), end(initial_nucs_info), []( const NuclideInfo &lhs, const NuclideInfo &rhs ){
+    return lhs.energy < rhs.energy;
+  });
+
   
   
   // Now we'll put the entries from 'initial_nucs_info' we *might* actually use, into
@@ -2346,10 +2336,12 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
   {
     RelActCalcManual::GenericPeakInfo &peak = matched_peaks[peak_index];
     
+    const double peak_sigma = (peak.m_fwhm > 0.0) ? (peak.m_fwhm / 2.634) : 1.0;
+    
     // Check if this peak is specifically excluded via the 'exclude-peak' command line argument
     bool exclude = false;
     for( size_t i = 0; !exclude && (i < excluded_peak_energies.size()); ++i )
-    exclude = (fabs(excluded_peak_energies[i] - peak.m_energy) < energy_tolerance_fwhm );
+      exclude = (fabs(excluded_peak_energies[i] - peak.m_energy) <= (peak_sigma * energy_tolerance_sigma) );
     peak_was_excluded[peak_index] = exclude;
     if( exclude )
       continue;
@@ -2359,7 +2351,9 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
     {
       NuclideInfo &nuc = candidate_nucs_info[nuc_index];
       
-      if( fabs(nuc.energy - peak.m_energy) < energy_tolerance_fwhm )
+      const double peak_sigma = (peak.m_fwhm > 0.0) ? (peak.m_fwhm / 2.634) : 1.0;
+      
+      if( fabs(nuc.energy - peak.m_energy) <= (peak_sigma * energy_tolerance_sigma) )
       {
         used_peak[peak_index] = true;
         used_candidate_nucs_info[nuc_index] = true;
@@ -2400,7 +2394,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
   NucMatchResults results;
   results.data_source = nuc_data_src;
   
-  results.match_fwhm_tolerance = energy_tolerance_fwhm;
+  results.match_sigma_tolerance = energy_tolerance_sigma;
   results.energy_ranges = energy_ranges;
   
   for( size_t peak_index = 0; peak_index < matched_peaks.size(); ++peak_index )

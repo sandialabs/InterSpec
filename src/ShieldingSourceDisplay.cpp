@@ -3101,13 +3101,13 @@ void ShieldingSourceDisplay::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
   
-  WContainerWidget::render( flags );
-  
   if( m_chi2ChartNeedsUpdating )
   {
     updateChi2ChartActual();
     m_chi2ChartNeedsUpdating = false;
   }
+  
+  WContainerWidget::render( flags );
 }//void render( Wt::WFlags<Wt::RenderFlag> flags )
 
 

@@ -1,9 +1,16 @@
 
 .RelActNucCol
 {
+  
 }
 
-.ManRelEffNucDisp
+.RelActNucCol .ToolTabColumnTitle
+{
+  /* Set the approx with for when no nuclides are inserted.*/
+  min-width: 175px;
+}
+
+.ManRelEffNucDisp.Wt-panel
 {
   width: 175px;
   margin-bottom: 5px;
@@ -12,8 +19,17 @@
   -moz-border-radius: 5px;
   border-radius: 5px;
   
-  border: 1px solid #888888;
+  background: none;
+  border: 1px solid #e1e1e1; /* To be consistent with LightNavMenu */
 }
+
+.ManRelEffNucDisp.Wt-panel .titlebar {
+  /* background: #C6C6C6; */
+  background: none;
+  color: black;
+  border-radius: 5px;
+}
+
 
 .ManRelEffNucDisp > .titlebar :nth-child(2)
 {
@@ -36,6 +52,13 @@
 {
 
 }
+
+.NucInfoTable td
+{
+  padding-bottom: 5px;
+  padding-left: 6px;
+}
+
 
 
 .ManRelEffNucDisp .AgeEdit
@@ -109,6 +132,45 @@
   text-align: center;
 }
 
+.RelActManualGui .OptionsCol
+{
+}
+
+.ToolTabTitledColumnContent.ResultColumnContent, .RelActManualGui .OptionsColContent
+{
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.RelActManualGui .OptionsList
+{
+  font-size: 13px;
+}
+
+.OptionsList td
+{
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  white-space: nowrap;
+}
+
+
+.RelActManualGui .OptionsList li
+{
+  /* font-weight: bold; */
+  height: 1.5em;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  -webkit-border-radius: 2px;
+  -moz-border-radius: 2px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+
 
 .RelActManualGui .ResultsTxt
 {
@@ -130,13 +192,13 @@
   
   padding: 1em;
   margin: 2px;
-  border: 1px solid grey;
-  background: lightcoral;
+  border: 1px solid red;
+  background: yellow;
 }
 
 .RelActManualGui .CalcWarning
 {
-  color: red;
+  color: navy;
   font-weight: bold;
   text-align: centered;
   

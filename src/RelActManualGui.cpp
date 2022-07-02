@@ -49,6 +49,7 @@
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
@@ -71,6 +72,9 @@
 
 using namespace Wt;
 using namespace std;
+
+const int RelActManualGui::sm_xmlSerializationMajorVersion = 0;
+const int RelActManualGui::sm_xmlSerializationMinorVersion = 1;
 
 namespace
 {
@@ -338,6 +342,7 @@ RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *paren
 void RelActManualGui::init()
 {
   m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::UpdateNuclides;
   scheduleRender();
   
   if( m_layout )
@@ -352,7 +357,7 @@ void RelActManualGui::init()
   
   //Create the options column
   m_optionsColumn = new WContainerWidget();
-  m_optionsColumn->addStyleClass( "CalColumn MoreActionCol" );
+  m_optionsColumn->addStyleClass( "ToolTabTitledColumn OptionsCol" );
   m_layout->addWidget( m_optionsColumn, 0, 0 );
   
   WGridLayout *collayout = new WGridLayout( m_optionsColumn );
@@ -362,26 +367,21 @@ void RelActManualGui::init()
   collayout->setRowStretch( 1, 1 );
   
   WText *header = new WText( "Options" );
-  header->addStyleClass( "ColHeader" );
+  header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
   
   //We will put the apply-to list inside a div so we can style consistently with other rows
   // (a <ul> element doesnt accept same css as <div>, apparently).
   WContainerWidget *optionsDiv = new WContainerWidget();
-  optionsDiv->addStyleClass( "CalColContent MoreActionsMenuContent" );
+  optionsDiv->addStyleClass( "ToolTabTitledColumnContent OptionsColContent" );
   collayout->addWidget( optionsDiv, 1, 0 );
   collayout->setRowStretch( 1, 1 );
   
-  WContainerWidget *optionsList = new WContainerWidget( optionsDiv );
-  optionsList->addStyleClass( "MoreActionsMenuList" );
-  optionsList->setList( true );
+  WTable *optionsList = new WTable( optionsDiv );
+  optionsList->addStyleClass( "OptionsList" );
+  WLabel *label = new WLabel( "Eqn Form", optionsList->elementAt(0, 0) );
   
-
-  WContainerWidget *holder = new WContainerWidget( optionsList );
-  WLabel *label = new WLabel( "Rel. Eff. Eqn Form", holder );
-  label->setInline( false );
-  
-  m_relEffEqnForm = new WComboBox( optionsList );
+  m_relEffEqnForm = new WComboBox( optionsList->elementAt(0, 1) );
   m_relEffEqnForm->activated().connect( this, &RelActManualGui::relEffEqnFormChanged );
   
   const char *tooltip = "The functional form to use for the relative efficiciency curve.<br />"
@@ -392,7 +392,8 @@ void RelActManualGui::init()
   "<tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>"
   "<tr><th>FRAM Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>"
   "</table>";
-  HelpSystem::attachToolTipOn( holder, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( optionsList->elementAt(0,0), tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( optionsList->elementAt(0,1), tooltip, showToolTips );
   
   
   // Will assume FramEmpirical is the highest
@@ -435,15 +436,10 @@ void RelActManualGui::init()
   
   m_relEffEqnForm->setCurrentIndex( static_cast<int>(RelActCalc::RelEffEqnForm::LnX) );
   
-  // Blah Blah Blah - add other options here
-  holder = new WContainerWidget( optionsList );
-  tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
-  HelpSystem::attachToolTipOn( holder, tooltip, showToolTips );
+  label = new WLabel( "Eqn Order", optionsList->elementAt(1, 0) );
   
-  label = new WLabel( "Rel. Eff. Eqn Order", holder );
-  
-  m_relEffEqnOrder = new WComboBox( holder );
-  m_relEffEqnForm->activated().connect( this, &RelActManualGui::relEffEqnOrderChanged );
+  m_relEffEqnOrder = new WComboBox( optionsList->elementAt(1, 1) );
+  m_relEffEqnOrder->activated().connect( this, &RelActManualGui::relEffEqnOrderChanged );
   
   m_relEffEqnOrder->addItem( "1" );
   m_relEffEqnOrder->addItem( "2" );
@@ -453,17 +449,21 @@ void RelActManualGui::init()
   m_relEffEqnOrder->addItem( "6" );
   m_relEffEqnOrder->setCurrentIndex( 2 );
   
+  m_nucDataSrcHolder = optionsList->rowAt(1);
   
-  m_nucDataSrcHolder = new WContainerWidget( optionsList );
-  holder = m_nucDataSrcHolder;
+  tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
+  HelpSystem::attachToolTipOn( optionsList->elementAt(1, 0), tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( optionsList->elementAt(1, 1), tooltip, showToolTips );
   
-  tooltip = "The source for gamma branching ratios to use.";
-  HelpSystem::attachToolTipOn( holder, tooltip, showToolTips );
-  
-  label = new WLabel( "B.R. src", holder );
-  m_nucDataSrc = new WComboBox( holder );
+  label = new WLabel( "Yield Info", optionsList->elementAt(2, 0) );
+  m_nucDataSrc = new WComboBox( optionsList->elementAt(2, 1) );
   label->setBuddy( m_nucDataSrc );
   m_nucDataSrc->activated().connect( this, &RelActManualGui::nucDataSrcChanged );
+  
+  tooltip = "The nuclear data source for gamma branching ratios.";
+  HelpSystem::attachToolTipOn( optionsList->elementAt(2, 0), tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( optionsList->elementAt(2, 1), tooltip, showToolTips );
+  
   
   using RelActCalcManual::PeakCsvInput::NucDataSrc;
   for( NucDataSrc src = NucDataSrc(0); src < NucDataSrc::Undefined; src = NucDataSrc(static_cast<int>(src) + 1) )
@@ -472,8 +472,8 @@ void RelActManualGui::init()
     switch( src )
     {
       case NucDataSrc::Icrp107_U:         src_label = "ICRP 107";   break;
-      case NucDataSrc::Lanl_U:            src_label = "LANL/FRAM";  break;
-      case NucDataSrc::IcrpLanlGadras_U:  src_label = "SNL Combo";  break;
+      case NucDataSrc::Lanl_U:            src_label = "FRAM";       break;
+      case NucDataSrc::IcrpLanlGadras_U:  src_label = "Combo";      break;
       case NucDataSrc::SandiaDecay:       src_label = "InterSpec";  break;
       case NucDataSrc::Undefined:         assert( 0 );              break;
     }//switch( src )
@@ -483,10 +483,18 @@ void RelActManualGui::init()
   
   m_nucDataSrc->setCurrentIndex( static_cast<int>(NucDataSrc::SandiaDecay) );
   
-  
-  holder = new WContainerWidget( optionsList );
-  label = new WLabel( "Match tol. (FWHM)", holder );
 
+  label = new WLabel( "Match tol.", optionsList->elementAt(3, 0) ); //(FWHM)
+  m_matchTolerance = new NativeFloatSpinBox( optionsList->elementAt(3, 1) );
+  label->setBuddy( m_matchTolerance );
+  m_matchTolerance->setSpinnerHidden();
+  m_matchTolerance->setWidth( 35 );
+  m_matchTolerance->setRange( 0, 5 );
+  m_matchTolerance->setValue( 0.5 ); //Other places we use 1.25/2.355 = 0.530786
+  label = new WLabel( "&nbsp;FWHM", optionsList->elementAt(3, 1) );
+  label->setBuddy( m_matchTolerance );
+  
+  
   tooltip = "The number of FWHM, from the peak mean, to include source gammas from as contributing"
   " to a peaks area.<br />"
   "For some photopeaks of some nuclides multiple gammas that are close in energy may contribute"
@@ -494,18 +502,12 @@ void RelActManualGui::init()
   " observed peak mean source gammas should be summed to determine the branching ratio to use."
   "<br />Specifying a value of zero will will cause only the gamma energy assigned to a peak to"
   " be used, even if there are very nearby other gammas.";
-  HelpSystem::attachToolTipOn( holder, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( optionsList->elementAt(3, 0), tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( optionsList->elementAt(3, 1), tooltip, showToolTips );
   
-  m_matchTolerance = new NativeFloatSpinBox( holder );
-  label->setBuddy( m_matchTolerance );
-  m_matchTolerance->setSpinnerHidden();
-  m_matchTolerance->setWidth( 30 );
-  m_matchTolerance->setRange( 0, 5 );
-  m_matchTolerance->setValue( 0.5 ); //Other places we use 1.25/2.355 = 0.530786
-  
-  
-  holder = new WContainerWidget( optionsList );
-  label = new WLabel( "Add. Uncert", holder );
+  label = new WLabel( "Add. Uncert", optionsList->elementAt(4, 0) );
+  m_addUncertainty = new WComboBox( optionsList->elementAt(4, 1) );
+  label->setBuddy( m_addUncertainty );
   
   tooltip = "An additional uncertainty to add to the relative efficiency line, for each fit"
   " photopeak.<br />"
@@ -518,10 +520,10 @@ void RelActManualGui::init()
   " important, just as long as there is something.  You can also choose to use an unweighted fit,"
   " where each peak will contribute to the fit equally, no matter its statistical uncertainty.";
   
-  HelpSystem::attachToolTipOn( holder, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( optionsList->elementAt(4, 0), tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( optionsList->elementAt(4, 1), tooltip, showToolTips );
   
-  m_addUncertainty = new WComboBox( holder );
-  label->setBuddy( m_addUncertainty );
+  
   m_addUncertainty->activated().connect( this, &RelActManualGui::addUncertChanged );
   
   for( AddUncert i = AddUncert(0); i < AddUncert::NumAddUncert; i = AddUncert(static_cast<int>(i) + 1) )
@@ -579,7 +581,7 @@ void RelActManualGui::init()
 #endif
   
   WContainerWidget *nucCol = new WContainerWidget();
-  nucCol->addStyleClass( "CalColumn RelActNucCol" );
+  nucCol->addStyleClass( "ToolTabTitledColumn RelActNucCol" );
   
   collayout = new WGridLayout( nucCol );
   collayout->setContentsMargins( 0, 0, 0, 0 );
@@ -588,18 +590,18 @@ void RelActManualGui::init()
   collayout->setRowStretch( 1, 1 );
 
   header = new WText( "Nuclides" );
-  header->addStyleClass( "ColHeader" );
+  header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
   
   m_nuclidesDisp = new WContainerWidget();
-  m_nuclidesDisp->addStyleClass( "CalColContent ApplyToMenuContent" );
+  m_nuclidesDisp->addStyleClass( "ToolTabTitledColumnContent" );
   collayout->addWidget( m_nuclidesDisp, 1, 0 );
   collayout->setRowStretch( 1, 1 );
   m_layout->addWidget( nucCol, 0, 1 );
   
   // Create the "Cal Peaks" table
   m_peakTableColumn = new WContainerWidget();
-  m_peakTableColumn->addStyleClass( "CalColumn PeakTableCol" );
+  m_peakTableColumn->addStyleClass( "ToolTabTitledColumn PeakTableCol" );
   m_layout->addWidget( m_peakTableColumn, 0, 2 );
   //m_layout->setColumnStretch( 2, 1 );
   
@@ -611,11 +613,11 @@ void RelActManualGui::init()
   collayout->setRowStretch( 1, 1 );
   
   header = new WText( "Peaks to Use" );
-  header->addStyleClass( "ColHeader" );
+  header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
   
   m_peakTable = new RowStretchTreeView();
-  m_peakTable->addStyleClass( "CalColContent PeakTable" );
+  m_peakTable->addStyleClass( "ToolTabTitledColumnContent PeakTable" );
   collayout->addWidget( m_peakTable, 1, 0 );
   collayout->setRowStretch( 1, 1 );
   
@@ -669,7 +671,7 @@ void RelActManualGui::init()
   
   // Create the results column
   WContainerWidget *resCol = new WContainerWidget();
-  resCol->addStyleClass( "CalColumn RelActResCol" );
+  resCol->addStyleClass( "ToolTabTitledColumn RelActResCol" );
   
   collayout = new WGridLayout( resCol );
   collayout->setContentsMargins( 0, 0, 0, 0 );
@@ -677,13 +679,13 @@ void RelActManualGui::init()
   collayout->setHorizontalSpacing( 0 );
   
   header = new WText( "Results" );
-  header->addStyleClass( "ColHeader" );
+  header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
   
   
   
   WContainerWidget *resultContent = new WContainerWidget();
-  resultContent->addStyleClass( "CalColContent ApplyToMenuContent" );
+  resultContent->addStyleClass( "ToolTabTitledColumnContent ResultColumnContent" );
   collayout->addWidget( resultContent, 1, 0 );
   collayout->setRowStretch( 1, 1 );
   m_layout->addWidget( resCol, 0, 3 );
@@ -727,15 +729,21 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
   const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
   //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
   
-  WContainerWidget::render( flags );
-  
   //if( renderFull )
   //  defineJavaScript();
+  
+  if( m_renderFlags.testFlag(RelActManualGui::RenderActions::UpdateNuclides) )
+  {
+    updateNuclides();
+    m_renderFlags |= RelActManualGui::RenderActions::UpdateCalc; //just to make sure
+  }
   
   if( m_renderFlags.testFlag(RelActManualGui::RenderActions::UpdateCalc) )
     calculateSolution();
   
   m_renderFlags = 0;
+  
+  WContainerWidget::render( flags );
 }
 
 
@@ -749,6 +757,7 @@ void RelActManualGui::calculateSolution()
   try
   {
     using namespace RelActCalcManual;
+    vector<string> prep_warnings;
     vector<GenericPeakInfo> peak_infos;
     
     if( !m_peakModel || !m_peakModel->peaks() )
@@ -775,10 +784,14 @@ void RelActManualGui::calculateSolution()
       throw runtime_error( "Invalid add. uncert. selected." );
       
       
-    const double matchToleranceFwhm = m_matchTolerance->value();
+    const double match_tol_sigma = 2.634 * m_matchTolerance->value();
+    
+    
+    const RelActCalcManual::PeakCsvInput::NucDataSrc srcData = nucDataSrc();
+    
+    set<pair<float,float>> energy_cal_match_warning_energies;
     
     vector<SandiaDecayNuc> nuclides_to_match_to;
-
     
     set<string> unique_isotopes;
     for( const PeakModel::PeakShrdPtr &p : *m_peakModel->peaks() )
@@ -791,6 +804,21 @@ void RelActManualGui::calculateSolution()
         peak.m_counts = p->amplitude();
         peak.m_counts_uncert = p->amplitudeUncert();
         peak.m_base_rel_eff_uncert = addUncert;
+        
+        // If we are using SandiaDecay as our nuclear data source, we will use the energy of the
+        //  gamma line, and not the fit-energy.  I'm a little torn on this, as the behavior could
+        //  be unexpected to the user, either way.  But if we dont do this, and the energy
+        //  calibration is slightly off for HPGe detectors, we will miss the match
+        if( srcData == RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay )
+        {
+          if( (fabs(peak.m_energy - p->gammaParticleEnergy()) > (match_tol_sigma*(peak.m_fwhm/2.634)))
+             && (match_tol_sigma > 0.0) )
+          {
+            energy_cal_match_warning_energies.emplace( peak.m_energy, p->gammaParticleEnergy() );
+          }
+          
+          peak.m_energy = p->gammaParticleEnergy();
+        }//if( using SandiaDecay nuc data )
         
         SandiaDecayNuc nuc;
         bool hadNuclide = false;
@@ -823,8 +851,10 @@ void RelActManualGui::calculateSolution()
           nuclides_to_match_to.push_back( nuc );
         }//if( pos != end(nuclides_to_match_to) ) / else
         
-        
-        if( matchToleranceFwhm == 0.0 )
+/*
+ //Above we set the peak energy to the gamma line energy, so I believe
+ //  `RelActCalcManual::PeakCsvInput::fill_in_nuclide_info(...)`, should math things correctly.
+        if( match_tol_sigma == 0.0 )
         {
           GenericLineInfo info;
           info.m_yield = 0.0;
@@ -846,7 +876,8 @@ void RelActManualGui::calculateSolution()
           //                                        const std::vector<double> &gammas_to_exclude )
           
           peak.m_source_gammas.push_back( info );
-        }//if( matchToleranceFwhm == 0.0 )
+        }//if( match_tol_sigma == 0.0 )
+*/
         
         peak_infos.push_back( peak );
         
@@ -854,111 +885,119 @@ void RelActManualGui::calculateSolution()
       }//
     }//for( const PeakModel::PeakShrdPtr &p : *m_peakModel->peaks() )
     
-    const vector<SandiaDecayNuc> orig_nuclides_to_match_to = nuclides_to_match_to;
+    if( energy_cal_match_warning_energies.size() && (match_tol_sigma > 0.0) )
+    {
+      stringstream msg;
+      const bool multiple = (energy_cal_match_warning_energies.size() > 1);
+      msg << "The assigned gamma" << (multiple ? "s of {" : " of ");
+      bool first = true;
+      for( const auto &pp : energy_cal_match_warning_energies )
+      {
+        msg << (first ? "" : ", ") << PhysicalUnits::printCompact(pp.second, 4);
+        first = false;
+      }
+      msg << (multiple ? "}" : "") << " keV are outside of the match tolerance with the peak"
+      << (multiple ? "s of {" : " of ");
+      first = true;
+      for( const auto &pp : energy_cal_match_warning_energies )
+      {
+        msg << (first ? "" : ", ") << PhysicalUnits::printCompact(pp.first, 4);
+        first = false;
+      }
+      msg << (multiple ? "}" : "")
+          << "; note that the assigned gamma energy is used to compensate for nearby gammas,"
+          << " and not the fit peak mean.";
+      
+      prep_warnings.push_back( msg.str() );
+    }//if( energy_cal_match_warning_energies.size() )
     
-    bool validSrcData = false;
-    const auto srcData = RelActCalcManual::PeakCsvInput::NucDataSrc( m_nucDataSrc->currentIndex() );
-    
+    // Check that if we are using a specialized nuc data source, we actually have uranium in the
+    //  problem
     switch( srcData )
     {
       case RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay:
-        validSrcData = true;
         break;
         
       case RelActCalcManual::PeakCsvInput::NucDataSrc::Icrp107_U:
       case RelActCalcManual::PeakCsvInput::NucDataSrc::Lanl_U:
       case RelActCalcManual::PeakCsvInput::NucDataSrc::IcrpLanlGadras_U:
       {
-        validSrcData = true;
-        //Remove Uranium nuclides from nuclides_to_match_to
-        const auto nucs_copy = nuclides_to_match_to;
-        nuclides_to_match_to.clear();
-        for( const auto &n : nucs_copy )
+        if( match_tol_sigma <= 0.0 )
+          throw runtime_error( "You must have a non-zero match tolerance if you are not using InterSpecs default nuclear data." );
+        
+        size_t num_u_isos = 0;
+        for( const auto &n : nuclides_to_match_to )
         {
-          if( n.nuclide && (n.nuclide->atomicNumber != 92) )
-            nuclides_to_match_to.push_back( n );
+          if( n.nuclide && (n.nuclide->atomicNumber == 92) )
+            num_u_isos += 1;
         }
+        
+        if( !num_u_isos )
+          throw runtime_error( "A uranium specialized data source was selected, but there is no uranium in this problem." );
+        
         break;
       }//case( not using SandiaDecay for uranium )
         
       case RelActCalcManual::PeakCsvInput::NucDataSrc::Undefined:
-        validSrcData = false;
         break;
     }//switch( srcData )
     
-    if( (matchToleranceFwhm != 0.0) && nuclides_to_match_to.size() )
-      peak_infos = add_nuclides_to_peaks( peak_infos, nuclides_to_match_to, matchToleranceFwhm*2.634 );
+    if( peak_infos.empty() )
+      throw runtime_error( "No peaks selected." );
     
-    switch( srcData )
-    {
-      case RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay:
-      case RelActCalcManual::PeakCsvInput::NucDataSrc::Undefined:
-        break;
-        
-      case RelActCalcManual::PeakCsvInput::NucDataSrc::Icrp107_U:
-      case RelActCalcManual::PeakCsvInput::NucDataSrc::Lanl_U:
-      case RelActCalcManual::PeakCsvInput::NucDataSrc::IcrpLanlGadras_U:
+    assert( !nuclides_to_match_to.empty() );
+    if( nuclides_to_match_to.empty() )
+      throw runtime_error( "No nuclides selected." );
+    
+    {// Begin code to fill in nuclide information
+      vector<RelActCalcManual::PeakCsvInput::NucAndAge> isotopes;
+      for( const auto &n : nuclides_to_match_to )
+        isotopes.emplace_back( n.nuclide->symbol, n.age );
+      
+      // Make sure the match tolerance is ever so slightly above zero, for practical purposes
+      const double tol = std::max( match_tol_sigma, 0.0001 );
+      
+      RelActCalcManual::PeakCsvInput::NucMatchResults matched_res
+        = RelActCalcManual::PeakCsvInput::fill_in_nuclide_info( peak_infos, srcData,
+                                                           {}, isotopes, tol, {} );
+      
+      if( matched_res.unused_isotopes.size() )
       {
-        // should re-factor fill_in_nuclide_info to use SandiaDecay for non-U isotopes
-        //  And see if it makes sense to use this function instead of add_nuclides_to_peaks(...) everywhere.
-        std::vector<RelActCalcManual::PeakCsvInput::NucAndAge> isotopes;
+        stringstream msg;
+        msg << "Failed to match nuclide" << ((matched_res.unused_isotopes.size() > 1) ? "s" : "")
+        << " to any peaks: ";
+        for( size_t i = 0; i < matched_res.unused_isotopes.size(); ++i )
+          msg << (i ? ", " : "") << matched_res.unused_isotopes[i];
         
-        for( const auto &n : orig_nuclides_to_match_to )
-        {
-          if( n.nuclide && (n.nuclide->atomicNumber != 92) )
-            isotopes.emplace_back( n.nuclide->symbol, n.age );
-        }
-        
-        if( isotopes.empty() )
-          throw runtime_error( "A uranium specialized data source was selected, but there is no uranium in this problem." );
-        
-        RelActCalcManual::PeakCsvInput::NucMatchResults matched_res
-            = RelActCalcManual::PeakCsvInput::fill_in_nuclide_info( peak_infos, srcData,
-                                                            {}, isotopes, matchToleranceFwhm, {} );
-        if( matched_res.peaks_matched.empty() )
-          throw runtime_error( "No uranium peaks were matched to the specialized uranium nuclear data." );
-        
-        peak_infos = matched_res.peaks_matched;
-        peak_infos.insert( end(peak_infos),
-                          begin(matched_res.peaks_not_matched),
-                          end(matched_res.peaks_not_matched) );
-        
-        std::sort( begin(peak_infos), end(peak_infos),
-          []( const RelActCalcManual::GenericPeakInfo &lhs, const RelActCalcManual::GenericPeakInfo &rhs ){
-            return lhs.m_energy < rhs.m_energy;
-        });
-      }//case not SandiaDecay
-    }//switch( srcData )
+        throw runtime_error( msg.str() );
+      }//if( matched_res.unused_isotopes.size() )
+      
+      if( (srcData == RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay)
+         && matched_res.peaks_not_matched.size() )
+      {
+        throw runtime_error( "logic error: not all input peaks were matched to a nuclide - even though they should have been." );
+      }//if( we somehow didnt match a peak the user wanted to be used )
     
+      peak_infos = matched_res.peaks_matched;
+      //peak_infos.insert( end(peak_infos),
+      //                begin(matched_res.peaks_not_matched),
+      //                end(matched_res.peaks_not_matched) );
     
+      //std::sort( begin(peak_infos), end(peak_infos),
+      //        []( const RelActCalcManual::GenericPeakInfo &lhs, const RelActCalcManual::GenericPeakInfo &rhs ){
+      //  return lhs.m_energy < rhs.m_energy;
+      //});
+    }// End code to fill in nuclide information
     
-    if( !validSrcData )
-      throw runtime_error( "Invalid SourceData" );
-    
-    
-    bool validSelect = false;
-    const auto eqn_form = RelActCalc::RelEffEqnForm( m_relEffEqnForm->currentIndex() );
-    switch( eqn_form )
-    {
-      case RelActCalc::RelEffEqnForm::LnX:
-      case RelActCalc::RelEffEqnForm::LnY:
-      case RelActCalc::RelEffEqnForm::LnXLnY:
-      case RelActCalc::RelEffEqnForm::FramEmpirical:
-        validSelect = true;
-        break;
-    }//switch( eqn_form )
-    
-    if( !validSelect )
-      throw runtime_error( "Invalid RelEffEqnForm" );
-    
-    const int orderIndex = m_relEffEqnOrder->currentIndex();
-    if( (orderIndex < 0) || (orderIndex > 7) )
-      throw runtime_error( "Invalid RelEffEqnOrder" );
-    const size_t eqn_order = static_cast<size_t>(orderIndex) + 1;
-    
-    
-    const RelEffSolution solution = solve_relative_efficiency( peak_infos, eqn_form, eqn_order );
   
+    const RelActCalc::RelEffEqnForm eqn_form = relEffEqnForm();
+    const size_t eqn_order = relEffEqnOrder();
+    
+    
+    RelEffSolution solution = solve_relative_efficiency( peak_infos, eqn_form, eqn_order );
+    
+    solution.m_warnings.insert(begin(solution.m_warnings), begin(prep_warnings), end(prep_warnings));
+    
     m_currentSolution = make_shared<RelEffSolution>( solution );
     
     updateGuiWithResults();
@@ -970,6 +1009,7 @@ void RelActManualGui::calculateSolution()
     
     string errormsg = "Error calculating relative activity/efficiency: " + string(e.what());
     WText *error = new WText( errormsg, m_results );
+    error->setInline( false );
     error->addStyleClass( "CalcError" );
     m_resultMenu->select( 0 );
   }//try / catch
@@ -1011,6 +1051,7 @@ void RelActManualGui::updateGuiWithResults()
     WText *errtxt = new WText( "Error: " + solution.m_error_message , m_results );
     errtxt->setInline( false );
     errtxt->addStyleClass( "CalcError" );
+    m_resultMenu->select( 0 );
   }
   
   
@@ -1102,8 +1143,14 @@ void RelActManualGui::addUncertChanged()
   scheduleRender();
 }
 
-
 void RelActManualGui::handlePeaksChanged()
+{
+  m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::UpdateNuclides;
+  scheduleRender();
+}
+
+void RelActManualGui::updateNuclides()
 {
   bool showAge = false;
   const auto srcData = RelActCalcManual::PeakCsvInput::NucDataSrc( m_nucDataSrc->currentIndex() );
@@ -1199,13 +1246,14 @@ void RelActManualGui::handlePeaksChanged()
   // We may have deleted some of current_nucs, so lets clear it, just to make sure we dont access
   current_nucs.clear();
   
-  
+  bool has_uranium = false;
   for( auto w : m_nuclidesDisp->children() )
   {
     ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
     if( rr )
     {
       const bool isU = (rr->m_nuc->atomicNumber == 92);
+      has_uranium |= isU;
       rr->setAgeHidden( isU ? !showAge : false );
     }else
     {
@@ -1213,10 +1261,8 @@ void RelActManualGui::handlePeaksChanged()
     }
   }//for( auto w : m_nuclidesDisp->children() )
   
-  
-  m_renderFlags |= RenderActions::UpdateCalc;
-  scheduleRender();
-}//void handlePeaksChanged()
+  m_nucDataSrcHolder->setHidden( !has_uranium );
+}//void updateNuclides()
 
 
 void RelActManualGui::displayedSpectrumChanged()
@@ -1228,7 +1274,336 @@ void RelActManualGui::displayedSpectrumChanged()
 }//void displayedSpectrumChanged()
 
 
+RelActCalc::RelEffEqnForm RelActManualGui::relEffEqnForm() const
+{
+  bool validSelect = false;
+  const auto eqn_form = RelActCalc::RelEffEqnForm( m_relEffEqnForm->currentIndex() );
+  switch( eqn_form )
+  {
+    case RelActCalc::RelEffEqnForm::LnX:
+    case RelActCalc::RelEffEqnForm::LnY:
+    case RelActCalc::RelEffEqnForm::LnXLnY:
+    case RelActCalc::RelEffEqnForm::FramEmpirical:
+      validSelect = true;
+      break;
+  }//switch( eqn_form )
+  
+  if( !validSelect )
+    throw runtime_error( "Invalid RelEffEqnForm" );
+  
+  return eqn_form;
+}//RelEffEqnForm relEffEqnForm() const
+
+
+size_t RelActManualGui::relEffEqnOrder() const
+{
+  const int orderIndex = m_relEffEqnOrder->currentIndex();
+  if( (orderIndex < 0) || (orderIndex > 7) )
+    throw runtime_error( "Invalid RelEffEqnOrder" );
+  
+  return static_cast<size_t>(orderIndex) + 1;
+}//size_t relEffEqnOrder() const
+
+
+RelActCalcManual::PeakCsvInput::NucDataSrc RelActManualGui::nucDataSrc() const
+{
+  bool validSrcData = false;
+  const auto srcData = RelActCalcManual::PeakCsvInput::NucDataSrc( m_nucDataSrc->currentIndex() );
+  
+  switch( srcData )
+  {
+    case RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay:
+    case RelActCalcManual::PeakCsvInput::NucDataSrc::Icrp107_U:
+    case RelActCalcManual::PeakCsvInput::NucDataSrc::Lanl_U:
+    case RelActCalcManual::PeakCsvInput::NucDataSrc::IcrpLanlGadras_U:
+      validSrcData = true;
+      break;
+      
+    case RelActCalcManual::PeakCsvInput::NucDataSrc::Undefined:
+      validSrcData = false;
+      break;
+  }//switch( srcData )
+  
+  if( !validSrcData )
+    throw runtime_error( "Invalid SourceData" );
+  
+  // Now check to see if there is any uranium in the problem, and if not, return SandiaDecay;
+  //  Note, could call `m_nucDataSrcHolder->isHidden()`, but it may not be up to date until the
+  //  render stage
+  
+  if( srcData != RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay )
+  {
+    PeakModel *peakModel = m_interspec->peakModel();
+    const auto peaks = peakModel ? peakModel->peaks() : nullptr;
+    if( peaks )
+    {
+      for( const auto &p : *peaks )
+      {
+        const auto parent = (p && p->parentNuclide()) ? p->parentNuclide() : nullptr;
+        if( parent && p->useForManualRelEff() && (parent->atomicNumber == 92) )
+          return srcData;
+      }//
+    }//if( peaks )
+    
+    // IF we made it here, there was no Uranium isotope, so use SandiaDecay
+    return RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay;
+  }//if( srcData != RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay )
+  
+  return srcData;
+}//NucDataSrc nucDataSrc() const
+
+
 shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolution()
 {
   return m_currentSolution;
 }
+
+
+rapidxml::xml_node<char> *RelActManualGui::serialize( rapidxml::xml_node<char> *parent_node )
+{
+  rapidxml::xml_document<char> *doc = parent_node->document();
+  assert( doc );
+  
+  const char *name = "RelActManualGui";
+  rapidxml::xml_node<> * const base_node = doc->allocate_node( rapidxml::node_element, name );
+  parent_node->append_node( base_node );
+  
+  //If you change the available options or formatting or whatever, increment the
+  //  version field of the XML!
+  const string versionstr = std::to_string(RelActManualGui::sm_xmlSerializationMajorVersion)
+                            + "." + std::to_string(RelActManualGui::sm_xmlSerializationMinorVersion);
+  const char *value = doc->allocate_string( versionstr.c_str() );
+  rapidxml::xml_attribute<> *attr = doc->allocate_attribute( "version", value );
+  base_node->append_attribute( attr );
+  
+  const RelActCalc::RelEffEqnForm eqn_form = relEffEqnForm();
+  value = RelActCalc::to_str( eqn_form );
+  rapidxml::xml_node<> *node = doc->allocate_node( rapidxml::node_element, "RelEffEqnForm", value );
+  base_node->append_node( node );
+  
+  const size_t eqn_order = relEffEqnOrder();
+  value = doc->allocate_string( std::to_string(eqn_order).c_str() );
+  node = doc->allocate_node( rapidxml::node_element, "RelEffEqnOrder", value );
+  base_node->append_node( node );
+  
+  const RelActCalcManual::PeakCsvInput::NucDataSrc srcData = nucDataSrc();
+  
+  value = RelActCalcManual::PeakCsvInput::to_str( srcData );
+  node = doc->allocate_node( rapidxml::node_element, "NucDataSrc", value );
+  base_node->append_node( node );
+  
+  const float match_tolerance = m_matchTolerance->value();
+  const string match_tolerance_str = PhysicalUnits::printCompact(match_tolerance, 7);
+  value = doc->allocate_string( match_tolerance_str.c_str() );
+  node = doc->allocate_node( rapidxml::node_element, "MatchTolerance", value );
+  base_node->append_node( node );
+  
+  value = RelActManualGui::to_str( AddUncert(m_addUncertainty->currentIndex()) );
+  node = doc->allocate_node( rapidxml::node_element, "AddUncertainty", value );
+  base_node->append_node( node );
+  
+  
+  value = m_resultMenu->currentIndex() ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, "ResultTabShowing", value );
+  base_node->append_node( node );
+  
+  
+  map<string,double> nuc_age_cache = m_nucAge;
+  
+  for( auto w : m_nuclidesDisp->children() )
+  {
+    const ManRelEffNucDisp *rr = dynamic_cast<const ManRelEffNucDisp *>(w);
+    if( rr && rr->m_nuc )
+      nuc_age_cache[rr->m_nuc->symbol] = rr->m_current_age;
+  }//for( auto w : m_nuclidesDisp->children() )
+  
+  
+  rapidxml::xml_node<> *nuc_ages_node = doc->allocate_node( rapidxml::node_element, "NuclideAges" );
+  base_node->append_node( nuc_ages_node );
+  for( const auto &n : nuc_age_cache )
+  {
+    rapidxml::xml_node<> *nuc_node = doc->allocate_node( rapidxml::node_element, "Nuclide" );
+    nuc_ages_node->append_node( nuc_node );
+    
+    value = doc->allocate_string( n.first.c_str() );
+    rapidxml::xml_node<> *name_node = doc->allocate_node( rapidxml::node_element, "Name", value );
+    nuc_node->append_node(name_node);
+    
+    value = doc->allocate_string( PhysicalUnits::printCompact(n.second,8).c_str() );
+    rapidxml::xml_node<> *age_node = doc->allocate_node( rapidxml::node_element, "Age", value );
+    nuc_node->append_node(age_node);
+  }
+  
+  return base_node;
+}//serialize(...)
+
+
+void RelActManualGui::deSerialize( const rapidxml::xml_node<char> *base_node )
+{
+  if( !SpecUtils::xml_value_compare(base_node,"RelActManualGui") )
+    throw runtime_error( "RelActManualGui::deSerialize: invalid base node passed in: '"
+                        + SpecUtils::xml_name_str(base_node) + "'" );
+    
+  int version;
+  const rapidxml::xml_attribute<char> *attr = XML_FIRST_ATTRIB(base_node, "version");
+  if( !attr || !attr->value() || !(stringstream(attr->value()) >> version) )
+    throw runtime_error( "Deserializing requires a version" );
+  
+  if( version != sm_xmlSerializationMajorVersion )
+    throw runtime_error( "Invalid version of RelActManualGui XML" );
+  
+  m_nuclidesDisp->clear();
+  //m_nucAge.clear();
+  
+  const rapidxml::xml_node<char> *RelEffEqnForm_node = XML_FIRST_NODE(base_node, "RelEffEqnForm");
+  const rapidxml::xml_node<char> *RelEffEqnOrder_node = XML_FIRST_NODE(base_node, "RelEffEqnOrder");
+  const rapidxml::xml_node<char> *NucDataSrc_node = XML_FIRST_NODE(base_node, "NucDataSrc");
+  const rapidxml::xml_node<char> *MatchTolerance_node = XML_FIRST_NODE(base_node, "MatchTolerance");
+  const rapidxml::xml_node<char> *AddUncertainty_node = XML_FIRST_NODE(base_node, "AddUncertainty");
+  const rapidxml::xml_node<char> *ResultTabShowing_node = XML_FIRST_NODE(base_node, "ResultTabShowing");
+  const rapidxml::xml_node<char> *NuclideAges_node = XML_FIRST_NODE(base_node, "NuclideAges");
+  
+  
+  if( !RelEffEqnForm_node || !RelEffEqnOrder_node || !NucDataSrc_node || !MatchTolerance_node
+     || !AddUncertainty_node || !ResultTabShowing_node || !NuclideAges_node )
+    throw runtime_error( "RelActManualGui::deSerialize: missing required node" );
+  
+  bool got_eqn_form = false;
+  RelActCalc::RelEffEqnForm eqn_form = RelActCalc::RelEffEqnForm::LnX;
+  const string rel_eff_eqn_form_str = SpecUtils::xml_value_str( RelEffEqnForm_node );
+  for( RelActCalc::RelEffEqnForm form = RelActCalc::RelEffEqnForm(0);
+      form <= RelActCalc::RelEffEqnForm::FramEmpirical;
+      form = RelActCalc::RelEffEqnForm(static_cast<int>(form)+1) )
+  {
+    const char * const test_form = RelActCalc::to_str( form );
+    if( test_form == rel_eff_eqn_form_str )
+    {
+      got_eqn_form = true;
+      eqn_form = form;
+      break;
+    }
+  }//for( loop over RelEffEqnForm )
+  
+  if( !got_eqn_form )
+    throw runtime_error( "RelActManualGui::deSerialize: '" + rel_eff_eqn_form_str + "' is invalid RelEffEqnForm" );
+  
+  
+  size_t eqn_order;
+  const string rel_eff_order_str = SpecUtils::xml_value_str(RelEffEqnOrder_node);
+  if( !(stringstream(rel_eff_order_str) >> eqn_order) )
+    throw runtime_error( "RelActManualGui::deSerialize: '" + rel_eff_order_str + "' is invalid RelEffEqnOrder" );
+  
+  bool got_data_src = false;
+  auto data_src = RelActCalcManual::PeakCsvInput::NucDataSrc::Icrp107_U;
+  const string data_src_str = SpecUtils::xml_value_str(NucDataSrc_node);
+  for( auto src = RelActCalcManual::PeakCsvInput::NucDataSrc(0);
+      src < RelActCalcManual::PeakCsvInput::NucDataSrc::Undefined;
+      src = RelActCalcManual::PeakCsvInput::NucDataSrc(static_cast<int>(src) + 1) )
+  {
+    const char *val = RelActCalcManual::PeakCsvInput::to_str( src );
+    if( val == data_src_str )
+    {
+      got_data_src = true;
+      data_src = src;
+      break;
+    }
+  }
+  
+  if( !got_data_src )
+    throw runtime_error( "RelActManualGui::deSerialize: '" + data_src_str + "' is invalid NucDataSrc" );
+  
+  float match_tolerance;
+  const string match_tol_str = SpecUtils::xml_value_str(MatchTolerance_node);
+  if( !(stringstream( match_tol_str ) >> match_tolerance) )
+    throw runtime_error( "RelActManualGui::deSerialize: '" + match_tol_str + "' is invalid match tolerance" );
+  
+  bool got_add_uncert = false;
+  AddUncert add_uncert = AddUncert::FiftyPercent;
+  const string add_uncert_str = SpecUtils::xml_value_str(AddUncertainty_node);
+  for( AddUncert uncert = AddUncert(0);
+      uncert <= AddUncert::NumAddUncert;
+      uncert = AddUncert(static_cast<int>(uncert) + 1) )
+  {
+    const char *test_str = RelActManualGui::to_str( uncert );
+    if( test_str == add_uncert_str )
+    {
+      got_add_uncert = true;
+      add_uncert = uncert;
+      break;
+    }
+  }//for( loop over AddUncert )
+  
+  if( !got_add_uncert )
+    cerr << "RelActManualGui::deSerialize: failed to decode '"
+         << add_uncert_str << "' into a AddUncert enum" << endl;
+  
+  int tab_showing = 0;
+  const string tab_show_str = SpecUtils::xml_value_str(ResultTabShowing_node);
+  if( !(stringstream(tab_show_str) >> tab_showing) )
+    cerr << "RelActManualGui::deSerialize: invalid ResultTabShowing node '"
+         << tab_show_str << "'" << endl;
+  
+  if( (tab_showing != 0) && (tab_showing != 1) )
+    tab_showing = 0;
+  
+  XML_FOREACH_DAUGHTER( nuc_node, NuclideAges_node, "Nuclide" )
+  {
+    rapidxml::xml_node<> *name_node = XML_FIRST_NODE(nuc_node, "Name");
+    rapidxml::xml_node<> *age_node = XML_FIRST_NODE(nuc_node, "Age");
+    
+    const string nuc = SpecUtils::xml_value_str(name_node);
+    const string age_str = SpecUtils::xml_value_str(age_node);
+    if( nuc.empty() || age_str.empty() )
+    {
+      cerr << "RelActManualGui::deSerialize: invalid Nuclide Name or Age '"
+      << nuc << "', '" << age_str << "'" << endl;
+      continue;
+    }
+    
+    double age;
+    if( !(stringstream(age_str) >> age) )
+    {
+      cerr << "RelActManualGui::deSerialize: Age '" << age_str << "'" << endl;
+      continue;
+    }
+    
+    m_nucAge[nuc] = age;
+  }//for( loop over <Nuclide> nodes )
+  
+  
+  // Now need to set state of widgets
+  //  eqn_form
+  //  eqn_order
+  //  data_src
+  //  match_tolerance
+  //  add_uncert
+  //  tab_showing
+  
+  
+  m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::UpdateNuclides;
+  scheduleRender();
+  
+  //Now need to integrate XML into SpecMeas, N42, and app state, which includes looking everwhere for saveShieldingSourceModelToForegroundSpecMeas() and add in for this tool as well
+  //Maybe add peak  info to XML for automated testing...or maybe add the testing widget into this code now to setup automated testing
+}//deSerialize(...)
+
+
+const char *RelActManualGui::to_str( const RelActManualGui::AddUncert val )
+{
+  switch( val )
+  {
+    case AddUncert::Unweighted:         return "Unweighted";
+    case AddUncert::StatOnly:           return "StatOnly";
+    case AddUncert::OnePercent:         return "OnePercent";
+    case AddUncert::FivePercent:        return "FivePercent";
+    case AddUncert::TenPercent:         return "TenPercent";
+    case AddUncert::TwentyFivePercent:  return "TwentyFivePercent";
+    case AddUncert::FiftyPercent:       return "FiftyPercent";
+    case AddUncert::SeventyFivePercent: return "SeventyFivePercent";
+    case AddUncert::OneHundredPercent:  return "OneHundredPercent";
+    case AddUncert::NumAddUncert:       return "NumAddUncert";
+  }//
+  
+  return "InvalidAddUncert";
+}//to_str( const AddUncert val )

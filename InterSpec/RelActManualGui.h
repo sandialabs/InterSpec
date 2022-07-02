@@ -43,14 +43,30 @@ class RowStretchTreeView;
 namespace Wt
 {
   class WMenu;
+  class WTableRow;
   class WComboBox;
   class WResource;
   class WGridLayout;
 }
 
+//A Forward declaration
+namespace rapidxml
+{
+  template<class Ch> class xml_node;
+}//namespace rapidxml
+
+namespace RelActCalc
+{
+  enum class RelEffEqnForm : int;
+}
+
 namespace RelActCalcManual
 {
   struct RelEffSolution;
+  namespace PeakCsvInput
+  {
+    enum class NucDataSrc : int;
+  }
 }
 
 
@@ -63,6 +79,19 @@ public:
 
   std::shared_ptr<const RelActCalcManual::RelEffSolution> currentSolution();
   
+  /** creates (and returns) a node "RelActManualGui" under `parent` which contains the XML for
+   this object.
+   
+   Note that this XML doesnt include current solution information, or peak information (or hence
+   nuclide information).
+   */
+  ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent );
+  
+  /** takes in a "RelActManualGui" node and sets the state of this object to match the XML.
+  
+   Throws when it runs into an unexpected situation, or invalid parent_node.
+  */
+  void deSerialize( const ::rapidxml::xml_node<char> *parent_node );
   
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
@@ -75,14 +104,20 @@ protected:
   void nucDataSrcChanged();
   void addUncertChanged();
   
+  void updateNuclides();
   void handlePeaksChanged();
   
   void displayedSpectrumChanged();
   
+  RelActCalc::RelEffEqnForm relEffEqnForm() const;
+  size_t relEffEqnOrder() const;
+  RelActCalcManual::PeakCsvInput::NucDataSrc nucDataSrc() const;
+  
 protected:
   enum RenderActions
   {
-    UpdateCalc = 0x01
+    UpdateNuclides = 0x01,
+    UpdateCalc = 0x02
   };//enum D3RenderActions
   
   Wt::WFlags<RelActManualGui::RenderActions> m_renderFlags;
@@ -98,7 +133,7 @@ protected:
   Wt::WComboBox *m_relEffEqnForm;
   Wt::WComboBox *m_relEffEqnOrder;
   
-  Wt::WContainerWidget *m_nucDataSrcHolder;
+  Wt::WTableRow *m_nucDataSrcHolder;
   Wt::WComboBox *m_nucDataSrc;
   
   NativeFloatSpinBox *m_matchTolerance;
@@ -110,6 +145,8 @@ protected:
     Unweighted, StatOnly, OnePercent, FivePercent, TenPercent, TwentyFivePercent,
     FiftyPercent, SeventyFivePercent, OneHundredPercent, NumAddUncert
   };//enum class AddUncert
+  
+  static const char *to_str( const AddUncert val );
   
   Wt::WComboBox *m_addUncertainty;
   
@@ -134,6 +171,9 @@ protected:
   
   RelEffChart *m_chart;
   Wt::WContainerWidget *m_results;
+  
+  static const int sm_xmlSerializationMajorVersion;
+  static const int sm_xmlSerializationMinorVersion;
 };//class RelActManualGui
 
 

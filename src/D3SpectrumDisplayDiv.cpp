@@ -668,8 +668,6 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
   //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
   
-  WContainerWidget::render( flags );
-  
   if( renderFull )
     defineJavaScript();
   
@@ -686,6 +684,8 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
     setForegroundPeaksToClient();
   
   m_renderFlags = 0;
+  
+  WContainerWidget::render( flags );
 }
 
 

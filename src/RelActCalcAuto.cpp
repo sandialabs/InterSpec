@@ -378,6 +378,12 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
   
   vector<EnergyYield> nominal_gammas;
   
+  /** Returns the decay gammas along with their rate, and the transition that led to them (i.e.,
+   where in the decay chain they come from).
+   
+   Note that the returned result may have multiple entries with the exact same energy (i.e., from
+   different decays).
+   */
   static vector<EnergyYield> decay_gammas( const SandiaDecay::Nuclide * const parent,
                                           const double age,
                                           const std::vector<double> &gammas_to_exclude )
@@ -1252,8 +1258,90 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         nuc_sources.push_back( nucinfo );
       }
       
+      
+        vector<RelActCalcManual::PeakCsvInput::NucAndAge> isotopes;
+        for( const auto &n : nuc_sources )
+        {
+          if( n.nuclide )
+            isotopes.emplace_back( n.nuclide->symbol, n.age );
+        }
+        
+      
+      // TODO: For cbnm9375, fill_in_nuclide_info() and add_nuclides_to_peaks() produce nearly identical results (like tiny rounding errors on yields), but this causes a notable difference in the final "auto" solution, although this manual solution apears the same - really should figure this out - and then get rid of add_nuclides_to_peaks(...) - maybe this is all a testimate to how brittle somethign else is...
       const double cluster_sigma = 1.5;
       const auto peaks_with_nucs = add_nuclides_to_peaks( peaks_in_range, nuc_sources, cluster_sigma );
+      
+      //RelActCalcManual::PeakCsvInput::NucMatchResults matched_res
+      //  = RelActCalcManual::PeakCsvInput::fill_in_nuclide_info( peaks_in_range,
+      //                                    RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay,
+      //                                    {}, isotopes, cluster_sigma, {} );
+      // const auto peaks_with_nucs = matched_res.peaks_matched;
+      
+      /*
+        // Code to help debug difference between matching stuff...
+      for( auto &p : peaks_with_nucs )
+      {
+        std::sort( begin(p.m_source_gammas), end(p.m_source_gammas), []( auto &lhs, auto &rhs ){
+          return lhs.m_isotope < rhs.m_isotope;
+        } );
+      }
+      
+      for( auto &p : matched_res.peaks_matched )
+      {
+        std::sort( begin(p.m_source_gammas), end(p.m_source_gammas), []( auto &lhs, auto &rhs ){
+          return lhs.m_isotope < rhs.m_isotope;
+        } );
+      }
+      
+      assert( matched_res.peaks_matched.size() == peaks_with_nucs.size() );
+      
+      
+      for( size_t i = 0; i < std::max(matched_res.peaks_matched.size(), peaks_with_nucs.size()); ++i )
+      {
+        const auto newp = matched_res.peaks_matched[i];
+        const auto oldp = peaks_with_nucs[i];
+        assert( newp.m_energy == oldp.m_energy );
+        assert( newp.m_counts == oldp.m_counts );
+        assert( newp.m_counts_uncert == oldp.m_counts_uncert );
+        assert( newp.m_fwhm == oldp.m_fwhm );
+        assert( newp.m_base_rel_eff_uncert == oldp.m_base_rel_eff_uncert );
+        assert( newp.m_source_gammas.size() == oldp.m_source_gammas.size() );
+        for( size_t j = 0; j < newp.m_source_gammas.size(); ++j )
+        {
+          assert( newp.m_source_gammas[j].m_isotope == oldp.m_source_gammas[j].m_isotope );
+          
+          double diff = fabs( newp.m_source_gammas[j].m_yield - oldp.m_source_gammas[j].m_yield );
+          assert( diff <= 0.00001*newp.m_source_gammas[j].m_yield );
+          assert( diff <= 0.00001*oldp.m_source_gammas[j].m_yield );
+          if( newp.m_source_gammas[j].m_yield != oldp.m_source_gammas[j].m_yield )
+          {
+            double brnew = newp.m_source_gammas[j].m_yield;
+            double brold = oldp.m_source_gammas[j].m_yield;
+            cout << "Mismatcht BR: " << brnew << " vs " << brold << " for " << newp.m_energy << " keV" << endl;
+            cout << endl;
+          }
+          //assert( newp.m_source_gammas[j].m_yield == oldp.m_source_gammas[j].m_yield );
+        }
+        
+        if( i < matched_res.peaks_matched.size() )
+        {
+          const auto p = matched_res.peaks_matched[i];
+          cout << "new " << i << ": e=" << p.m_energy << ", fwhm=" << p.m_fwhm << endl;
+          for( const auto g : p.m_source_gammas )
+            cout << "\tsource: " << g.m_isotope << ": " << g.m_yield << endl;
+        }
+        
+        if( i < peaks_with_nucs.size() )
+        {
+          const auto p = peaks_with_nucs[i];
+          cout << "old " << i << ": e=" << p.m_energy << ", fwhm=" << p.m_fwhm << endl;
+          for( const auto g : p.m_source_gammas )
+            cout << "\tsource: " << g.m_isotope << ": " << g.m_yield << endl;
+        }
+      }
+      cout << endl << endl;
+      //peaks_with_nucs = matched_res.peaks_matched;
+      */
       
       vector<RelActCalcManual::GenericPeakInfo> peaks_with_sources;
       for( const auto &p : peaks_with_nucs )
@@ -2472,9 +2560,9 @@ int run_test()
 {
   try
   {
-    //const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/simple_pu_test.xml";
+    const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/simple_pu_test.xml";
     //const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/thor_core_614_668_kev_test.xml";
-    const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/LaBr_pu_test.xml";
+    //const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/LaBr_pu_test.xml";
     
     rapidxml::file<char> input_file( xml_file_path );
     
