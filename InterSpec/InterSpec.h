@@ -676,6 +676,8 @@ public:
   
   void createRelActManualWidget();
   void handleRelActManualClose();
+  
+  void saveRelActManualStateToForegroundSpecMeas();
 #endif
   
 #if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )

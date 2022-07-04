@@ -69,6 +69,20 @@ namespace RelActCalcManual
   }
 }
 
+/**
+ 
+ Future work on this tool:
+ 
+ - Add Pu240/U236 by correlation.  Also, group Am241 into Pu-mass
+ - Add in Pu gamma BR from ICRP/FRAM/etc, as user selectable options
+ - Add capability to fix ratios of nuclide/masses - this way you can easily show data is
+ inconsistent with a particular hypothesis; although when something is fixed, it needs to be
+ clearly shown on the results/report that it is fixed.
+ - Add in "truth-level" hooks for testing; can maybe just be isotope/mass ratios at first
+ - Add in saving Peak/Nuclide info, and current results to state XML, so this way it can easily be
+ used for regression testing; this maybe ties into the "truth-level" bullet above.
+ - Add in plot that shows deviations, or pulls, or whatever.
+ */
 
 class RelActManualGui : public Wt::WContainerWidget
 {
@@ -102,6 +116,7 @@ protected:
   void relEffEqnFormChanged();
   void relEffEqnOrderChanged();
   void nucDataSrcChanged();
+  void matchToleranceChanged();
   void addUncertChanged();
   
   void updateNuclides();

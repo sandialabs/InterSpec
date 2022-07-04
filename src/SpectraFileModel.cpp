@@ -2273,7 +2273,12 @@ void DownloadCurrentSpectrumResource::handleRequest(
   
   if( m_format == SpecUtils::SaveSpectrumAsType::N42_2012
      || m_format == SpecUtils::SaveSpectrumAsType::N42_2006 )
+  {
     m_viewer->saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
+    m_viewer->saveRelActManualStateToForegroundSpecMeas();
+#endif
+  }
 
   shared_ptr<const SpecMeas> measurement = m_viewer->measurment( m_spectrum );
   if( !measurement )

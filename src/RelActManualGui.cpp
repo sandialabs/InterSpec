@@ -493,6 +493,7 @@ void RelActManualGui::init()
   m_matchTolerance->setValue( 0.5 ); //Other places we use 1.25/2.355 = 0.530786
   label = new WLabel( "&nbsp;FWHM", optionsList->elementAt(3, 1) );
   label->setBuddy( m_matchTolerance );
+  m_matchTolerance->valueChanged().connect( this, &RelActManualGui::matchToleranceChanged );
   
   
   tooltip = "The number of FWHM, from the peak mean, to include source gammas from as contributing"
@@ -1137,6 +1138,13 @@ void RelActManualGui::nucDataSrcChanged()
 }
 
 
+void RelActManualGui::matchToleranceChanged()
+{
+  m_renderFlags |= RenderActions::UpdateCalc;
+  scheduleRender();
+}//void matchToleranceChanged();
+
+
 void RelActManualGui::addUncertChanged()
 {
   m_renderFlags |= RenderActions::UpdateCalc;
@@ -1440,7 +1448,7 @@ rapidxml::xml_node<char> *RelActManualGui::serialize( rapidxml::xml_node<char> *
 
 void RelActManualGui::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
-  if( !SpecUtils::xml_value_compare(base_node,"RelActManualGui") )
+  if( SpecUtils::xml_name_str(base_node) != "RelActManualGui" )
     throw runtime_error( "RelActManualGui::deSerialize: invalid base node passed in: '"
                         + SpecUtils::xml_name_str(base_node) + "'" );
     
@@ -1490,8 +1498,12 @@ void RelActManualGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   
   size_t eqn_order;
   const string rel_eff_order_str = SpecUtils::xml_value_str(RelEffEqnOrder_node);
-  if( !(stringstream(rel_eff_order_str) >> eqn_order) )
+  if( !(stringstream(rel_eff_order_str) >> eqn_order)
+     || (eqn_order <= 0)
+     || (eqn_order > m_relEffEqnOrder->count() ) )
+  {
     throw runtime_error( "RelActManualGui::deSerialize: '" + rel_eff_order_str + "' is invalid RelEffEqnOrder" );
+  }
   
   bool got_data_src = false;
   auto data_src = RelActCalcManual::PeakCsvInput::NucDataSrc::Icrp107_U;
@@ -1514,8 +1526,13 @@ void RelActManualGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   
   float match_tolerance;
   const string match_tol_str = SpecUtils::xml_value_str(MatchTolerance_node);
-  if( !(stringstream( match_tol_str ) >> match_tolerance) )
+  if( !(stringstream( match_tol_str ) >> match_tolerance)
+     || (match_tolerance < 0.0f)
+     || (match_tolerance > 5.0f)
+     || IsNan(match_tolerance))
+  {
     throw runtime_error( "RelActManualGui::deSerialize: '" + match_tol_str + "' is invalid match tolerance" );
+  }
   
   bool got_add_uncert = false;
   AddUncert add_uncert = AddUncert::FiftyPercent;
@@ -1572,20 +1589,17 @@ void RelActManualGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   
   
   // Now need to set state of widgets
-  //  eqn_form
-  //  eqn_order
-  //  data_src
-  //  match_tolerance
-  //  add_uncert
-  //  tab_showing
+  m_relEffEqnForm->setCurrentIndex( static_cast<int>(eqn_form) );
+  m_relEffEqnOrder->setCurrentIndex( eqn_order - 1 );
+  m_nucDataSrc->setCurrentIndex( static_cast<int>(data_src) );
+  m_matchTolerance->setValue( match_tolerance );
+  m_addUncertainty->setCurrentIndex( static_cast<int>(add_uncert) );
+  m_resultMenu->select( tab_showing );
   
-  
+  // Schedult
   m_renderFlags |= RenderActions::UpdateCalc;
   m_renderFlags |= RenderActions::UpdateNuclides;
   scheduleRender();
-  
-  //Now need to integrate XML into SpecMeas, N42, and app state, which includes looking everwhere for saveShieldingSourceModelToForegroundSpecMeas() and add in for this tool as well
-  //Maybe add peak  info to XML for automated testing...or maybe add the testing widget into this code now to setup automated testing
 }//deSerialize(...)
 
 

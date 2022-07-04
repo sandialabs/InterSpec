@@ -1546,7 +1546,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       
       results_html << "<td>" << info.m_source_gammas[i].m_isotope
       << "</td><td>" << PhysicalUnits::printCompact( info.m_source_gammas[i].m_yield, nsigfig )
-      << "</td><td" << PhysicalUnits::printCompact( info.m_counts, nsigfig )
+      << "</td><td>" << PhysicalUnits::printCompact( info.m_counts, nsigfig )
       << "</td><td>" << PhysicalUnits::printCompact( info.m_counts_uncert, nsigfig )
       << "</td><td>" << PhysicalUnits::printCompact( counts_over_yield, nsigfig )
       << "</td><td>" << PhysicalUnits::printCompact( counts_uncert_percent, nsigfig ) << "%"
@@ -1671,7 +1671,9 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   
   
   auto load_file_contents = []( string filename ) -> string {
-    string filepath = wApp ? wApp->docRoot() : "InterSpec_resources";
+    //Wt::WApplication *app = Wt::WApplication::instance();
+    //string filepath = app ? app->docRoot() : "InterSpec_resources";
+    string filepath = "InterSpec_resources";
     filepath = SpecUtils::append_path(filepath, filename );
     
     vector<char> file_data;

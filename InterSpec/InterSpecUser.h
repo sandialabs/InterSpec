@@ -843,6 +843,12 @@ struct UserState
     kCalibration,
     kIsotopeSearch,
     kFileTab,
+#if( USE_TERMINAL_WIDGET )
+    kTerminalTab,
+#endif
+#if( USE_REL_ACT_TOOL )
+    kRelActManualTab,
+#endif
     kNoTabs
   };//enum CurrentTab
 
@@ -878,6 +884,12 @@ struct UserState
     kTimeSeriesLegend       = 0x20,
     kShowingShieldSourceFit = 0x40,
     kShowingEnergySearch    = 0x80
+#if( USE_TERMINAL_WIDGET )
+  , kShowingTerminalWidget  = 0x0100
+#endif
+#if( USE_REL_ACT_TOOL )
+  , kShowingRelActManual    = 0x0200
+#endif
   };//enum ShownDisplayFeatures
   
   //UserState(): default constructor, initializes values to reasonable defaults

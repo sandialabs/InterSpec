@@ -238,7 +238,13 @@ namespace
   static const char * const CalibrationTabTitle   = "Energy Calibration";
   static const char * const NuclideSearchTabTitle = "Nuclide Search";
   static const char * const FileTabTitle          = "Spectrum Files";
-  
+#if( USE_TERMINAL_WIDGET )
+  static const char * const TerminalTabTitle      = "Terminal";
+#endif
+#if( USE_REL_ACT_TOOL )
+  static const char * const RelActManualTitle     = "Isotopics";
+#endif
+
 //#if( !BUILD_FOR_WEB_DEPLOYMENT )
 //  const WTabWidget::LoadPolicy TabLoadPolicy = WTabWidget::LazyLoading;
 //#else
@@ -1589,7 +1595,7 @@ void InterSpec::initHotkeySignal()
     if( e.ctrlKey )
     {
       switch( e.key ){
-        case '1': case '2': case '3': case '4': case '5': //Shortcuts to switch to the various tabs
+        case '1': case '2': case '3': case '4': case '5': case '6': case '7': //Shortcuts to switch to the various tabs
         case 'h': // Help dialog
         case 'i': // Info about InterSpec
         case 'k': // Clear showing reference photopeak lines
@@ -1636,15 +1642,44 @@ void InterSpec::hotKeyPressed( const unsigned int value )
 {
   if( m_toolsTabs )
   {
-    string expectedTxt;
+    //string expectedTxt;
     switch( value )
     {
-      case '1': expectedTxt = FileTabTitle;          break;
-      case '2': expectedTxt = PeakInfoTabTitle;      break;
-      case '3': expectedTxt = GammaLinesTabTitle;    break;
-      case '4': expectedTxt = CalibrationTabTitle;   break;
-      case '5': expectedTxt = NuclideSearchTabTitle; break;
-      
+      //case '1': expectedTxt = FileTabTitle;          break;
+      //case '2': expectedTxt = PeakInfoTabTitle;      break;
+      //case '3': expectedTxt = GammaLinesTabTitle;    break;
+      //case '4': expectedTxt = CalibrationTabTitle;   break;
+      //case '5': expectedTxt = NuclideSearchTabTitle; break;
+      //case '6':
+#if( USE_TERMINAL_WIDGET )
+      //  if( m_terminal && !m_terminalWindow )
+      //  {
+      //blah blah blah fix up terminal tab name, etc
+      //  }
+#endif
+#if( USE_REL_ACT_TOOL )
+      //  if( m_relActManualGui && !m_relActManualWindow )
+      //  {
+      //    blah blah blah hcekc if this or terminal tab
+      //    expectedTxt = RelActManualTitle;
+      //  }
+#endif
+      //  break;
+        
+      case '1': case '2': case '3': case '4': case '5': case '6': case '7':
+      {
+        const int tabIndex = value - '1';
+        
+        if( tabIndex < m_toolsTabs->count() )
+        {
+          m_toolsTabs->setCurrentIndex( tabIndex );
+          handleToolTabChanged( tabIndex );
+        }
+        
+        break;
+      }// case '1' through '7'
+        
+        
       case 'h': case 'H':
         HelpSystem::createHelpWindow( "getting-started" );
         break;
@@ -1673,6 +1708,9 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         break;
     }//switch( value )
   
+    
+    
+    /*
     if( expectedTxt.empty() )
       return;
   
@@ -1685,6 +1723,7 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         break;
       }
     }//for( int i = 0; i < m_toolsTabs->count(); ++i )
+     */
   }else
   {
     switch( value )
@@ -2765,6 +2804,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
   try
   {
     saveShieldingSourceModelToForegroundSpecMeas();
+    saveRelActManualStateToForegroundSpecMeas();
     
     DataBaseUtils::DbTransaction transaction( *m_sql );
     entry.modify()->serializeTime = WDateTime::currentDateTime();
@@ -2919,13 +2959,20 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     }
     
     if( m_spectrum->legendIsEnabled() )
-    {
-      cerr << "Legend enabled" << endl;
       entry.modify()->shownDisplayFeatures |= UserState::kSpectrumLegend;
-    }else cerr << "Legend NOT enabled" << endl;
     
     if( m_shieldingSourceFit )
       entry.modify()->shownDisplayFeatures |= UserState::kShowingShieldSourceFit;
+    
+#if( USE_TERMINAL_WIDGET )
+    if( m_terminal )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingTerminalWidget;
+#endif
+    
+#if( USE_REL_ACT_TOOL )
+    if( m_relActManualGui )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingRelActManual;
+#endif
     
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
@@ -2945,6 +2992,14 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         entry.modify()->currentTab = UserState::kIsotopeSearch;
       else if( txt == FileTabTitle )
         entry.modify()->currentTab = UserState::kFileTab;
+#if( USE_TERMINAL_WIDGET )
+      else if( txt == TerminalTabTitle )
+        entry.modify()->currentTab = UserState::kTerminalTab;
+#endif
+#if( USE_REL_ACT_TOOL )
+      else if( txt == RelActManualTitle )
+        entry.modify()->currentTab = UserState::kRelActManualTab;
+#endif
     }//if( m_toolsTabs )
     
     entry.modify()->showingMarkers = 0x0;
@@ -3473,17 +3528,36 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     
 //  SpectrumSubtractMode backgroundSubMode;
     
+    if( (entry->shownDisplayFeatures & UserState::kShowingShieldSourceFit) )
+      showShieldingSourceFitWindow();
+    
+#if( USE_TERMINAL_WIDGET )
+    if( (entry->shownDisplayFeatures & UserState::kShowingTerminalWidget) )
+      createTerminalWidget();
+#endif
+    
+#if( USE_REL_ACT_TOOL )
+    if( (entry->shownDisplayFeatures & UserState::kShowingRelActManual) )
+      createRelActManualWidget();
+#endif
+    
     if( wasDocked )
     {
       WString title;
       switch( entry->currentTab )
       {
-        case UserState::kPeakInfo:      title = PeakInfoTabTitle;      break;
-        case UserState::kGammaLines:    title = GammaLinesTabTitle;    break;
-        case UserState::kCalibration:   title = CalibrationTabTitle;   break;
-        case UserState::kIsotopeSearch: title = NuclideSearchTabTitle; break;
-        case UserState::kFileTab:       title = FileTabTitle;          break;
-        case UserState::kNoTabs:                                       break;
+        case UserState::kPeakInfo:        title = PeakInfoTabTitle;      break;
+        case UserState::kGammaLines:      title = GammaLinesTabTitle;    break;
+        case UserState::kCalibration:     title = CalibrationTabTitle;   break;
+        case UserState::kIsotopeSearch:   title = NuclideSearchTabTitle; break;
+        case UserState::kFileTab:         title = FileTabTitle;          break;
+#if( USE_TERMINAL_WIDGET )
+        case UserState::kTerminalTab:     title = TerminalTabTitle;      break;
+#endif
+#if( USE_REL_ACT_TOOL )
+        case UserState::kRelActManualTab: title = RelActManualTitle;     break;
+#endif
+        case UserState::kNoTabs:                                         break;
       };//switch( entry->currentTab )
       
       for( int tab = 0; tab < m_toolsTabs->count(); ++tab )
@@ -3499,7 +3573,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     }//if( wasDocked )
     
     
-    //Should take care of entry->showingWindows here, so we can relie on it below
+    //Should take care of entry->showingWindows here, so we can rely on it below
     if( entry->gammaLinesXml.size() )
     {
       bool toolTabsHidden = false;
@@ -3601,8 +3675,6 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }//try / catch
     }//if( entry->userOptionsJson.size() )
     
-    if( (entry->shownDisplayFeatures & UserState::kShowingShieldSourceFit) )
-      showShieldingSourceFitWindow();
     
     if( entry->colorThemeJson.size() > 32 )  //32 is arbitrary
     {
@@ -4730,6 +4802,7 @@ void InterSpec::stateSave()
   {
     //TODO: Should check if can save?
     saveShieldingSourceModelToForegroundSpecMeas();
+    saveRelActManualStateToForegroundSpecMeas();
     startStoreStateInDb( false, false, false, false ); //save snapshot
   }else
   {
@@ -7315,7 +7388,7 @@ void InterSpec::createTerminalWidget()
   
   if( m_toolsTabs )
   {
-    WMenuItem *item = m_toolsTabs->addTab( m_terminal, "Terminal" );
+    WMenuItem *item = m_toolsTabs->addTab( m_terminal, TerminalTabTitle );
     item->setCloseable( true );
     m_toolsTabs->setCurrentWidget( m_terminal );
     const int index = m_toolsTabs->currentIndex();
@@ -7325,7 +7398,7 @@ void InterSpec::createTerminalWidget()
     //  handleToolTabClosed(), which will delete m_terminal when the user closes the tab.
   }else
   {
-    m_terminalWindow = new AuxWindow( "Terminal",
+    m_terminalWindow = new AuxWindow( TerminalTabTitle,
                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
                                       | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
     
@@ -7422,7 +7495,7 @@ void InterSpec::createRelActManualWidget()
   
   if( m_toolsTabs )
   {
-    WMenuItem *item = m_toolsTabs->addTab( m_relActManualGui, "Isotopics" );
+    WMenuItem *item = m_toolsTabs->addTab( m_relActManualGui, RelActManualTitle );
     item->setCloseable( true );
     m_toolsTabs->setCurrentWidget( m_relActManualGui );
     const int index = m_toolsTabs->currentIndex();
@@ -7451,12 +7524,34 @@ void InterSpec::createRelActManualWidget()
   
   assert( m_relActManualMenuItem );
   m_relActManualMenuItem->disable();
+  
+  try
+  {
+    rapidxml::xml_document<char> *relActSate = m_dataMeasurement
+                                                 ? m_dataMeasurement->relActManualGuiState()
+                                                 : nullptr;
+    if( relActSate && relActSate->first_node() )
+      m_relActManualGui->deSerialize( relActSate->first_node() );
+  }catch( std::exception &e )
+  {
+    passMessage( "Error setting &quot;Isotopics from peaks&quot; state to previously used state: "
+                 + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
+#endif
+    
+    assert( 0 );
+  }//try / catch
 }//void InterSpec::createRelActManualWidget()
 
 
 void InterSpec::handleRelActManualClose()
 {
   assert( m_relActManualGui );
+  
+  if( m_relActManualGui )
+    saveRelActManualStateToForegroundSpecMeas();
   
   if( m_relActManualWindow )
   {
@@ -7476,6 +7571,20 @@ void InterSpec::handleRelActManualClose()
   assert( m_relActManualMenuItem );
   m_relActManualMenuItem->enable();
 }//void InterSpec::handleRelActManualClose()
+
+
+void InterSpec::saveRelActManualStateToForegroundSpecMeas()
+{
+  if( !m_relActManualGui || !m_dataMeasurement )
+    return;
+  
+  string xml_data;
+  std::unique_ptr<rapidxml::xml_document<char>> doc( new rapidxml::xml_document<char>() );
+  
+  m_relActManualGui->serialize( doc.get() );
+  
+  m_dataMeasurement->setRelActManualGuiState( std::move(doc) );
+}//void saveRelActManualStateToForegroundSpecMeas()
 #endif //#if( USE_REL_ACT_TOOL )
 
 
@@ -7875,11 +7984,10 @@ void InterSpec::saveShieldingSourceModelToForegroundSpecMeas()
   
   m_shieldingSourceFit->serialize( doc.get() );
   
-  //rapidxml::print(std::back_inserter(xml_data), *doc, 0);
-  //cout << "\n\nsaveShieldingSourceModelToForegroundSpecMeas Model: " << xml_data << endl << endl;
-  
   m_dataMeasurement->setShieldingSourceModel( std::move(doc) );
 }//void saveShieldingSourceModelToForegroundSpecMeas()
+
+
 
 void InterSpec::closeShieldingSourceFitWindow()
 {
