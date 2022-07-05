@@ -43,6 +43,7 @@ class RowStretchTreeView;
 namespace Wt
 {
   class WMenu;
+  class WCheckBox;
   class WTableRow;
   class WComboBox;
   class WResource;
@@ -70,11 +71,11 @@ namespace RelActCalcManual
 }
 
 /**
- 
+
  Future work on this tool:
- 
  - Add Pu240/U236 by correlation.  Also, group Am241 into Pu-mass
  - Add in Pu gamma BR from ICRP/FRAM/etc, as user selectable options
+ - Indicate effect of background subtraction somehow (maybe list this in a table).
  - Add capability to fix ratios of nuclide/masses - this way you can easily show data is
  inconsistent with a particular hypothesis; although when something is fixed, it needs to be
  clearly shown on the results/report that it is fixed.
@@ -118,10 +119,20 @@ protected:
   void nucDataSrcChanged();
   void matchToleranceChanged();
   void addUncertChanged();
+  void backgroundSubtractChanged();
   
-  void updateNuclides();
+  /** Marks that nuclides needs to be updated, and schedules rending; but doesnt do any real work */
   void handlePeaksChanged();
   
+  /** Does the actual work of updating nuclide display.  Inserts/removes nuclide displays, sets
+   nuclide ages hidden/shown, and hides/shows the nuclear dataset options.
+   */
+  void updateNuclides();
+  
+  /** Hides/shows the background subtract option. */
+  void updateSpectrumBasedOptions();
+  
+  /** Marks that nuclides, options, and calculation, need to be updated, and schedules render. */
   void displayedSpectrumChanged();
   
   RelActCalc::RelEffEqnForm relEffEqnForm() const;
@@ -132,7 +143,8 @@ protected:
   enum RenderActions
   {
     UpdateNuclides = 0x01,
-    UpdateCalc = 0x02
+    UpdateCalc = 0x02,
+    UpdateSpectrumOptions = 0x04
   };//enum D3RenderActions
   
   Wt::WFlags<RelActManualGui::RenderActions> m_renderFlags;
@@ -164,6 +176,9 @@ protected:
   static const char *to_str( const AddUncert val );
   
   Wt::WComboBox *m_addUncertainty;
+  
+  Wt::WCheckBox *m_backgroundSubtract;
+  Wt::WTableRow *m_backgroundSubtractHolder;
   
 #if( BUILD_AS_OSX_APP )
   Wt::WAnchor *m_downloadHtmlReport;

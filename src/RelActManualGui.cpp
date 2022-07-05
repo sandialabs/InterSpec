@@ -33,6 +33,7 @@
 #include <Wt/WMenuItem>
 #include <Wt/WResource>
 #include <Wt/WTableRow>
+#include <Wt/WCheckBox>
 #include <Wt/WTableCell>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
@@ -317,6 +318,8 @@ RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *paren
   m_nucDataSrc( nullptr ),
   m_matchTolerance( nullptr ),
   m_addUncertainty( nullptr ),
+  m_backgroundSubtract( nullptr ),
+  m_backgroundSubtractHolder( nullptr ),
   m_downloadHtmlReport( nullptr ),
   m_peakTableColumn( nullptr ),
   m_peakModel( viewer ? viewer->peakModel() : nullptr ),
@@ -449,7 +452,6 @@ void RelActManualGui::init()
   m_relEffEqnOrder->addItem( "6" );
   m_relEffEqnOrder->setCurrentIndex( 2 );
   
-  m_nucDataSrcHolder = optionsList->rowAt(1);
   
   tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
   HelpSystem::attachToolTipOn( optionsList->elementAt(1, 0), tooltip, showToolTips );
@@ -483,6 +485,7 @@ void RelActManualGui::init()
   
   m_nucDataSrc->setCurrentIndex( static_cast<int>(NucDataSrc::SandiaDecay) );
   
+  m_nucDataSrcHolder = optionsList->rowAt(2);
 
   label = new WLabel( "Match tol.", optionsList->elementAt(3, 0) ); //(FWHM)
   m_matchTolerance = new NativeFloatSpinBox( optionsList->elementAt(3, 1) );
@@ -548,6 +551,14 @@ void RelActManualGui::init()
   }//for( loop over AddUncert )
   
   m_addUncertainty->setCurrentIndex( static_cast<int>(AddUncert::FiftyPercent) );
+  
+  
+  m_backgroundSubtract = new WCheckBox( "Background Subtract", optionsList->elementAt(5, 0) );
+  m_backgroundSubtract->addStyleClass( "BackSub" );
+  optionsList->elementAt(5, 0)->setColumnSpan( 2 );
+  m_backgroundSubtractHolder = optionsList->rowAt(5);
+  m_backgroundSubtract->checked().connect( this, &RelActManualGui::backgroundSubtractChanged );
+  m_backgroundSubtract->unChecked().connect( this, &RelActManualGui::backgroundSubtractChanged );
   
   
   WContainerWidget *btndiv = new WContainerWidget();
@@ -727,11 +738,17 @@ void RelActManualGui::init()
 
 void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
-  const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
-  //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
-  
+  //const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
   //if( renderFull )
   //  defineJavaScript();
+  
+  
+  if( m_renderFlags.testFlag(RelActManualGui::RenderActions::UpdateSpectrumOptions) )
+  {
+    updateSpectrumBasedOptions();
+    m_renderFlags |= RelActManualGui::RenderActions::UpdateCalc; //just to make sure
+  }
+    
   
   if( m_renderFlags.testFlag(RelActManualGui::RenderActions::UpdateNuclides) )
   {
@@ -739,8 +756,11 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
     m_renderFlags |= RelActManualGui::RenderActions::UpdateCalc; //just to make sure
   }
   
+  
   if( m_renderFlags.testFlag(RelActManualGui::RenderActions::UpdateCalc) )
+  {
     calculateSolution();
+  }
   
   m_renderFlags = 0;
   
@@ -761,8 +781,37 @@ void RelActManualGui::calculateSolution()
     vector<string> prep_warnings;
     vector<GenericPeakInfo> peak_infos;
     
+    InterSpec *viewer = InterSpec::instance();
+    assert( viewer );
+    if( !viewer )
+      throw runtime_error( "Not in GUI thread???" );
+    
     if( !m_peakModel || !m_peakModel->peaks() )
-      throw runtime_error( "No peaks avaiable" );
+      throw runtime_error( "No peaks available" );
+    
+    // PeakModel stores all PeakDefs as const, so I think it is fine to just make a copy of
+    //  the deque, and then it should be thread-safe to access the PeakDef objects from off
+    //  of the main thread.
+    const deque<shared_ptr<const PeakDef>> peaks = *m_peakModel->peaks();
+    
+    const shared_ptr<const SpecUtils::Measurement> fore_spec = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    const shared_ptr<const SpecUtils::Measurement> back_spec = viewer->displayedHistogram(SpecUtils::SpectrumType::Background);
+    const std::shared_ptr<const SpecMeas> back_meas = viewer->measurment(SpecUtils::SpectrumType::Background);
+    
+    const double back_sub_nsigma_near = 1.0; // Fairly arbitrary.  TODO: have this be a user setable value?
+    const float foreground_live_time = fore_spec ? fore_spec->live_time() : 1.0f;
+    const float background_live_time = back_spec ? back_spec->live_time() : 1.0f;
+    const bool background_sub = (!m_backgroundSubtractHolder->isHidden()
+                                 && m_backgroundSubtract->isChecked());
+    
+    deque<shared_ptr<const PeakDef>> background_peaks;
+    if( background_sub && back_spec && back_meas && (background_live_time > 0.0) )
+    {
+      const auto &displayed = viewer->displayedSamples(SpecUtils::SpectrumType::Background);
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> backpeaks = back_meas->peaks( displayed );
+      if( backpeaks )
+        background_peaks = *backpeaks;
+    }//if( background_sub && back_spec && back_meas )
     
     double addUncert = -2.0;
     
@@ -784,8 +833,7 @@ void RelActManualGui::calculateSolution()
     if( addUncert < -1.0 )
       throw runtime_error( "Invalid add. uncert. selected." );
       
-      
-    const double match_tol_sigma = 2.634 * m_matchTolerance->value();
+    const double match_tol_sigma = 2.35482 * m_matchTolerance->value();
     
     
     const RelActCalcManual::PeakCsvInput::NucDataSrc srcData = nucDataSrc();
@@ -794,17 +842,60 @@ void RelActManualGui::calculateSolution()
     
     vector<SandiaDecayNuc> nuclides_to_match_to;
     
+    size_t num_peaks_back_sub = 0;
+    double lowest_energy_peak = 3000;
+    bool has_U_or_Pu = false;
     set<string> unique_isotopes;
-    for( const PeakModel::PeakShrdPtr &p : *m_peakModel->peaks() )
+    for( const PeakModel::PeakShrdPtr &p : peaks )
     {
       if( p && p->parentNuclide() && p->useForManualRelEff() )
       {
         GenericPeakInfo peak;
         peak.m_energy = p->mean();
-        peak.m_fwhm = p->fwhm();
+        peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
         peak.m_counts = p->amplitude();
         peak.m_counts_uncert = p->amplitudeUncert();
         peak.m_base_rel_eff_uncert = addUncert;
+        
+        lowest_energy_peak = std::min( lowest_energy_peak, peak.m_energy );
+        
+        if( background_sub )
+        {
+          const double sigma = p->gausPeak() ? p->sigma() : 0.25*p->roiWidth();
+          const double scale = foreground_live_time / background_live_time;
+          
+          double back_counts = 0.0, back_uncert_2 = 0.0;
+          for( const shared_ptr<const PeakDef> &back_peak : background_peaks )
+          {
+            // In principle the peak shouldnt need to be a gaussian peak - but this has yet to be
+            //  tested
+            //if( !back_peak->gausPeak() )
+            //  continue;
+            
+            if( fabs(back_peak->mean() - p->mean()) < (back_sub_nsigma_near * sigma) )
+            {
+              back_counts += scale * back_peak->peakArea();
+              back_uncert_2 += scale * scale * back_peak->peakAreaUncert() * back_peak->peakAreaUncert();
+            }//if( fabs(backPeak.mean()-peak.mean()) < sigma )
+            
+            if( back_counts > 0.0 )
+            {
+              num_peaks_back_sub += 1;
+              peak.m_counts -= back_counts;
+              peak.m_counts_uncert = sqrt( peak.m_counts_uncert*peak.m_counts_uncert + back_uncert_2 );
+            }
+          }//for( const PeakDef &peak : backPeaks )
+          
+          if( peak.m_counts <= 0.0 )
+          {
+            stringstream msg;
+            msg << "After background subtraction, peak at "
+            << std::fixed << std::setprecision(2) << peak.m_energy << " keV had negative counts"
+            << " so was not used.";
+            prep_warnings.push_back( msg.str() );
+            continue;
+          }
+        }//if( background_sub )
         
         // If we are using SandiaDecay as our nuclear data source, we will use the energy of the
         //  gamma line, and not the fit-energy.  I'm a little torn on this, as the behavior could
@@ -812,7 +903,7 @@ void RelActManualGui::calculateSolution()
         //  calibration is slightly off for HPGe detectors, we will miss the match
         if( srcData == RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay )
         {
-          if( (fabs(peak.m_energy - p->gammaParticleEnergy()) > (match_tol_sigma*(peak.m_fwhm/2.634)))
+          if( (fabs(peak.m_energy - p->gammaParticleEnergy()) > (match_tol_sigma*(peak.m_fwhm/2.35482)))
              && (match_tol_sigma > 0.0) )
           {
             energy_cal_match_warning_energies.emplace( peak.m_energy, p->gammaParticleEnergy() );
@@ -882,9 +973,32 @@ void RelActManualGui::calculateSolution()
         
         peak_infos.push_back( peak );
         
+        has_U_or_Pu |= (p->parentNuclide()->atomicNumber == 92);
+        has_U_or_Pu |= (p->parentNuclide()->atomicNumber == 94);
+        
         unique_isotopes.insert( p->parentNuclide()->symbol );
       }//
     }//for( const PeakModel::PeakShrdPtr &p : *m_peakModel->peaks() )
+    
+    
+    if( background_sub && !num_peaks_back_sub )
+    {
+      prep_warnings.push_back( "Subtraction of background peaks was selected, but no background"
+                               " peaks matched to the selected foreground peaks." );
+    }//if( user wanted to background subtract peaks, but no peaks matched up )
+    
+    if( has_U_or_Pu && (lowest_energy_peak < 122) )
+    {
+      prep_warnings.push_back( "The relative efficiency curve does not account for x-ray"
+                              " absorption edges - using peaks under 120 keV for U or Pu problems"
+                              " is not recommended.");
+    }else if( lowest_energy_peak < 90 )
+    {
+      prep_warnings.push_back( "The relative efficiency curve does not account for x-ray"
+                              " absorption edges of any potential shielding - please ensure the"
+                              " peaks used do not span across absorption edges of any shielding.");
+    }
+    
     
     if( energy_cal_match_warning_energies.size() && (match_tol_sigma > 0.0) )
     {
@@ -1151,12 +1265,21 @@ void RelActManualGui::addUncertChanged()
   scheduleRender();
 }
 
+void RelActManualGui::backgroundSubtractChanged()
+{
+  m_renderFlags |= RenderActions::UpdateCalc;
+  scheduleRender();
+}
+
+
 void RelActManualGui::handlePeaksChanged()
 {
   m_renderFlags |= RenderActions::UpdateCalc;
   m_renderFlags |= RenderActions::UpdateNuclides;
   scheduleRender();
 }
+
+
 
 void RelActManualGui::updateNuclides()
 {
@@ -1273,11 +1396,44 @@ void RelActManualGui::updateNuclides()
 }//void updateNuclides()
 
 
+void RelActManualGui::updateSpectrumBasedOptions()
+{
+  InterSpec *interspec = InterSpec::instance();
+  
+  assert( interspec );
+  
+  if( !interspec )
+    return;
+  
+  shared_ptr<const SpecMeas> back = interspec->measurment(SpecUtils::SpectrumType::Background);
+  
+  if( !back )
+  {
+    m_backgroundSubtractHolder->setHidden( true );
+    return;
+  }//if( !back )
+  
+  const set<int> &displayed = interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+  const auto peaks = back->peaks( displayed );
+  
+  if( !peaks || peaks->empty() )
+  {
+    m_backgroundSubtractHolder->setHidden( true );
+    return;
+  }//if( !peaks || peaks->empty() )
+  
+  // We have peaks - although they may not overlap
+  m_backgroundSubtractHolder->setHidden( false );
+}//void updateSpectrumBasedOptions();
+
+
+
 void RelActManualGui::displayedSpectrumChanged()
 {
-  handlePeaksChanged();
-  
   m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::UpdateNuclides;
+  m_renderFlags |= RenderActions::UpdateSpectrumOptions;
+  
   scheduleRender();
 }//void displayedSpectrumChanged()
 

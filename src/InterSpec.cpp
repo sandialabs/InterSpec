@@ -2658,7 +2658,7 @@ void InterSpec::setIsotopeSearchEnergy( double energy )
   if( !!peak )
   {
     const double width = peak->gausPeak() ? peak->fwhm() : 0.5*peak->roiWidth();
-    if( (fabs(peak->mean()-energy) < (3.0/2.634)*width) )
+    if( (fabs(peak->mean()-energy) < (3.0/2.35482)*width) )
     {
       energy = peak->mean();
       sigma = width;

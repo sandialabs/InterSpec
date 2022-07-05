@@ -525,8 +525,8 @@ void PeakInfoDisplay::createNewPeak()
       }catch(...)
       {
         if( !PeakFitUtils::is_high_res(meas) )
-          return std::min( maxfwhm, std::max(minfwhm,2.634f*17.5f*sqrt(energy/661.0f)) );
-        return std::min( maxfwhm, std::max(minfwhm,2.634f*0.67f*sqrt(energy/661.0f)) );
+          return std::min( maxfwhm, std::max(minfwhm,2.35482f*17.5f*sqrt(energy/661.0f)) );
+        return std::min( maxfwhm, std::max(minfwhm,2.35482f*0.67f*sqrt(energy/661.0f)) );
       }
     }//if( peaks.empty() )
   
@@ -543,7 +543,7 @@ void PeakInfoDisplay::createNewPeak()
   const float initialFWHM = estimateFWHM(initialEnergy);
   const double initialArea = std::max(10.0,0.2*meas->gamma_integral(initialEnergy-initialFWHM, initialEnergy+initialFWHM));
   
-  shared_ptr<PeakDef> candidatePeak = make_shared<PeakDef>(initialEnergy,initialFWHM/2.634,initialArea);
+  shared_ptr<PeakDef> candidatePeak = make_shared<PeakDef>(initialEnergy,initialFWHM/2.35482,initialArea);
   
   size_t roi_lower_channel, roi_upper_channel;
   estimatePeakFitRange( *candidatePeak, meas, roi_lower_channel, roi_upper_channel );
@@ -805,10 +805,10 @@ void PeakInfoDisplay::createNewPeak()
     const double oldFWHM = candidatePeak->fwhm();
     
     if( WValidator::State::Valid != fwhmSB->validate() )
-      candidatePeak->setSigma( oldFWHM/2.634 );
+      candidatePeak->setSigma( oldFWHM/2.35482 );
     
     const double newFWHM = fwhmSB->value();
-    candidatePeak->setSigma( newFWHM/2.634 );
+    candidatePeak->setSigma( newFWHM/2.35482 );
     
     updateCandidatePeakPreview();
   };

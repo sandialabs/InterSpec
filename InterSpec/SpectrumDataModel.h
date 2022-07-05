@@ -196,7 +196,7 @@ public:
   bool columnHasData( int column ) const;
 
   
-  //dataSet(): emitted when a foreground, backgorund, or secondary spectrum is
+  //dataSet(): emitted when a foreground, background, or secondary spectrum is
   //  changed.
   Wt::Signal<ColumnType> &dataSet();
   

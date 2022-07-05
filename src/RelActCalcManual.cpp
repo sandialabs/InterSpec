@@ -740,7 +740,7 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
   
   vector< pair<double,double> > energy_widths, energy_obs_counts, energy_obs_counts_uncert;
   for( const auto &p : peaks )
-    energy_widths.push_back( {p.m_energy, p.m_fwhm / 2.634} );
+    energy_widths.push_back( {p.m_energy, p.m_fwhm / 2.35482} );
   
   set<const SandiaDecay::Nuclide *> nuclides_seen;
   for( const auto &n : nuclides )
@@ -898,7 +898,7 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
   {
     GenericPeakInfo peak;
     peak.m_energy = energy_gammas[peak_index].first;
-    peak.m_fwhm = 2.634*energy_widths[peak_index].second;
+    peak.m_fwhm = 2.35482*energy_widths[peak_index].second;
     peak.m_counts = energy_obs_counts[peak_index].second;
     peak.m_counts_uncert = (energy_obs_counts_uncert[peak_index].second > 0.0)
                              ? energy_obs_counts_uncert[peak_index].second
@@ -2338,7 +2338,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
   {
     RelActCalcManual::GenericPeakInfo &peak = matched_peaks[peak_index];
     
-    const double peak_sigma = (peak.m_fwhm > 0.0) ? (peak.m_fwhm / 2.634) : 1.0;
+    const double peak_sigma = (peak.m_fwhm > 0.0) ? (peak.m_fwhm / 2.35482) : 1.0;
     
     // Check if this peak is specifically excluded via the 'exclude-peak' command line argument
     bool exclude = false;
@@ -2353,7 +2353,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
     {
       NuclideInfo &nuc = candidate_nucs_info[nuc_index];
       
-      const double peak_sigma = (peak.m_fwhm > 0.0) ? (peak.m_fwhm / 2.634) : 1.0;
+      const double peak_sigma = (peak.m_fwhm > 0.0) ? (peak.m_fwhm / 2.35482) : 1.0;
       
       if( fabs(nuc.energy - peak.m_energy) <= (peak_sigma * energy_tolerance_sigma) )
       {

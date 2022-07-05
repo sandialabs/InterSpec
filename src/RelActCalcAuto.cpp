@@ -1238,7 +1238,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           RelActCalcManual::GenericPeakInfo peak;
           peak.m_energy = p->mean();
-          peak.m_fwhm = p->gausPeak() ? p->fwhm() : 2.634*0.25*p->roiWidth();
+          peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
           peak.m_counts = p->amplitude();
           peak.m_counts_uncert = p->amplitudeUncert();
           peak.m_base_rel_eff_uncert = 0.5;
@@ -1353,7 +1353,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         //         but maybe there is a better way of dealing with things?
         for( const RelActCalcAuto::FloatingPeak &floater : extra_peaks )
         {
-          if( fabs(floater.energy - p.m_energy) < 1.0*(p.m_fwhm/2.634) )
+          if( fabs(floater.energy - p.m_energy) < 1.0*(p.m_fwhm/2.35482) )
             is_floater_peak = true;
         }//for( const RelActCalcAuto::FloatingPeak &floater : extra_peaks )
         

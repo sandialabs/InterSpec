@@ -124,7 +124,7 @@ struct ColorTheme
   /** Line color of foreground spectrum. */
   Wt::WColor foregroundLine;
   
-  /** Line color of backgorund spectrum. */
+  /** Line color of background spectrum. */
   Wt::WColor backgroundLine;
   
   /** Line color of secondary spectrum. */
