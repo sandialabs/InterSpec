@@ -193,6 +193,10 @@
 #include "js/AppHtmlMenu.js"
 #endif
 
+#if( USE_REMOTE_RID )
+#include "InterSpec/RemoteRid.h"
+#endif
+
 #include "js/InterSpec.js"
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
@@ -401,6 +405,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_terminal( 0 ),
     m_terminalWindow( 0 ),
 #endif
+#if( USE_REMOTE_RID )
+    m_remoteRidMenuItem( nullptr ),
+    m_remoteRid( nullptr ),
+    m_remoteRidWindow( nullptr ),
+#endif
+
     m_clientDeviceType( 0x0 ),
     m_referencePhotopeakLines( 0 ),
     m_referencePhotopeakLinesWindow( 0 ),
@@ -7326,6 +7336,46 @@ void InterSpec::handleTerminalWindowClose()
 #endif  //#if( USE_TERMINAL_WIDGET )
 
 
+#if( USE_REMOTE_RID )
+void InterSpec::createRemoteRidWindow()
+{
+  if( m_remoteRid )
+    return;
+  
+  m_remoteRidMenuItem->disable();
+  
+  RemoteRid::startRemoteRidDialog( this, [this](AuxWindow *window, RemoteRid *rid ){
+    assert( (!window) == (!rid) );
+    
+    // `window` and `rid` will be nullptr if user canceled the operation
+    if( !window || !rid )
+    {
+      m_remoteRidMenuItem->enable();
+      assert( !m_remoteRid && !m_remoteRidWindow );
+    }else
+    {
+      m_remoteRid = rid;
+      m_remoteRidWindow = window;
+      window->finished().connect( this, &InterSpec::handleRemoteRidClose );
+    }
+  } );
+}//void createRemoteRidWindow()
+
+
+void InterSpec::handleRemoteRidClose()
+{
+  assert( m_remoteRid );
+  if( !m_remoteRid )
+    return;
+  
+  m_remoteRidMenuItem->enable();
+  
+  m_remoteRid = nullptr;
+  m_remoteRidWindow = nullptr;
+}//void handleRemoteRidClose()
+#endif  //#if( USE_REMOTE_RID )
+
+
 
 void InterSpec::addToolsMenu( Wt::WWidget *parent )
 {
@@ -7431,6 +7481,16 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   m_terminalMenuItem = popup->addMenuItem( "Math/Command Terminal" );
   HelpSystem::attachToolTipOn( m_terminalMenuItem, "Creates a terminal that provides numeric and algebraic computations, as well as allowing text based interactions with the spectra.", showToolTips );
   m_terminalMenuItem->triggered().connect( this, &InterSpec::createTerminalWidget );
+#endif
+  
+#if( USE_REMOTE_RID )
+  m_remoteRidMenuItem = popup->addMenuItem( "External RIID" );
+  HelpSystem::attachToolTipOn( m_terminalMenuItem, "Uses a"
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+                              " external program or"
+#endif
+                              " remote URL to perform nuclide identification on your spectrum.", showToolTips );
+  m_remoteRidMenuItem->triggered().connect( this, &InterSpec::createRemoteRidWindow );
 #endif
 }//void InterSpec::addToolsMenu( Wt::WContainerWidget *menuDiv )
 

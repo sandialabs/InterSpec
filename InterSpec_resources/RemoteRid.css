@@ -1,0 +1,107 @@
+.RemoteRid
+{
+
+}
+
+.RestRidWidget
+{
+
+}
+
+.RemoteRid .UseInfoStack
+{
+  min-height: 100px;
+  min-width: 350px;
+}
+
+.RestRidResult, .ExeRidWidget
+{
+  
+}
+
+.ExternalRidWarningDialog .NoShowAgain
+{
+  float: right:
+  margin-right: 10px;
+  margin-bottom: 10px;
+}
+
+
+.DrfStack
+{
+  height: 20px;
+}
+
+.RestRidInfoStack
+{
+  height: 150px;
+  width: 375px;
+}
+
+.RestRidError
+{
+  color: red;
+}
+
+.RestRidStatus
+{
+  color: blue;
+}
+
+.RestRidResult
+{
+  color: black;
+}
+
+
+
+
+.RestRidResult
+{
+  margin-top: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.RestRidResult .ResultLabel
+{
+  font-weight: bold;
+  margin-right: 15px;
+}
+
+.RestRidResult .ResultChi2
+{
+  margin-right: 12px;
+}
+
+.RestRidResult .ResultTable
+{
+  color: #434C5E;
+  border: 1px solid #4C566A;
+  flex-grow: 4;
+}
+
+.RestRidResult .ResultTable th
+{
+  border-bottom: 1px solid #4C566A;
+}
+
+.RestRidResult .ResultTable td
+{
+  border-bottom: 1px solid #D8DEE9;
+  text-align: center;
+}
+
+.RestRidResult .ResultTable td, .ResultTable th
+{
+  padding-left: 10px;
+  padding-right: 10px;
+  padding-top: 5px;
+}
+
+.ResultTable tbody > tr:last-child > td
+{
+  border-bottom: none;
+}

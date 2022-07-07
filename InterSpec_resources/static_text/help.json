@@ -193,6 +193,12 @@
             "keywords":"InterSpec commands functions command calculator compute"
           }
         ]
+      },
+      {
+        "id":"external-rid",
+        "title":"External RIID",
+        "help-xml":"external_rid_help.xml",
+        "keywords":"RID RIID external isotope ID"
       }
     ]
   },

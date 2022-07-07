@@ -53,7 +53,6 @@ class EnergyCalTool;
 class SpectrumChart;
 class UseInfoWindow;
 class WarningWidget;
-class TerminalWidget;
 class WarningMessage;
 class PeakEditWindow;
 class PeakInfoDisplay;
@@ -72,6 +71,14 @@ class SimpleNuclideAssistPopup;
 class ReferencePhotopeakDisplay;
 class LicenseAndDisclaimersWindow;
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
+
+#if( USE_TERMINAL_WIDGET )
+class TerminalWidget;
+#endif
+
+#if( USE_REMOTE_RID )
+class RemoteRid;
+#endif
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 class SpectrumViewerTester;
@@ -663,6 +670,11 @@ public:
 #if( USE_TERMINAL_WIDGET )
   void createTerminalWidget();
   void handleTerminalWindowClose();
+#endif
+  
+#if( USE_REMOTE_RID )
+  void createRemoteRidWindow();
+  void handleRemoteRidClose();
 #endif
 
   /** Will show the disclaimer, license, and statment window, setting
@@ -1275,6 +1287,14 @@ protected:
   TerminalWidget   *m_terminal;
   AuxWindow        *m_terminalWindow;
 #endif
+  
+#if( USE_REMOTE_RID )
+  PopupDivMenuItem *m_remoteRidMenuItem;
+  RemoteRid        *m_remoteRid;
+  AuxWindow        *m_remoteRidWindow;
+#endif
+
+  
   
   std::set<int> m_excludedSamples;//these are samples that should not be displayed for the primary spectrum
   std::set<int> m_displayedSamples;

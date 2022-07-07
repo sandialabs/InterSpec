@@ -121,6 +121,8 @@ option(
     OFF
 )
 
+option(USE_REMOTE_RID "Enables using remote RID tool" OFF)
+
 if(MSVC)
   option(${PROJECT_NAME}_USE_MSVC_MultiThreadDLL "Use dynamically-link runtime library." OFF)
 
@@ -565,6 +567,13 @@ if(USE_SPECRUM_FILE_QUERY_WIDGET)
   list( APPEND headers InterSpec/SpecFileQuery.h InterSpec/SpecFileQueryWidget.h InterSpec/SpecFileQueryDbCache.h )
   list( APPEND sources js/SpecFileQueryWidget.js )
 endif(USE_SPECRUM_FILE_QUERY_WIDGET)
+
+
+if( USE_REMOTE_RID )
+  list( APPEND sources src/RemoteRid.cpp  )
+  list( APPEND headers InterSpec/RemoteRid.h )
+endif( USE_REMOTE_RID )
+
 
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)

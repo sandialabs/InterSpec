@@ -85,7 +85,7 @@ namespace
     const bool m_editable;
     bool m_isEditedSinceApply;
     std::unique_ptr<ColorTheme> m_theme;
-  };//class SideMenuItem
+  };//class ThemeMenuItem
   
   
   class JsonDownloadResource : public Wt::WResource

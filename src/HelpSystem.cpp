@@ -656,6 +656,9 @@ namespace HelpSystem
       }else if( !USE_SPECRUM_FILE_QUERY_WIDGET && SpecUtils::icontains(idstr,"spectrum-file-query") )
       {
         continue;
+      }else if( !USE_REMOTE_RID && SpecUtils::icontains(idstr,"external-rid") )
+      {
+        continue;
       }
       //Other potential topics to filter (if we add help content for them):
       //  USE_SEARCH_MODE_3D_CHART, USE_GOOGLE_MAP

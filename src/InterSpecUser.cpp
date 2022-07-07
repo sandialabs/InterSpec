@@ -171,14 +171,25 @@ namespace
     {
       const XmlAttribute *name_att = pref->first_attribute( "name", 4 );
       const XmlAttribute *type_att = pref->first_attribute( "type", 4 );
-      const char *valuestr = pref->value();
-      if( !name_att || !name_att->value() || !type_att
-         || !type_att->value() || !valuestr )
+      if( !name_att || !name_att->value() || !type_att || !type_att->value()  )
         throw runtime_error( "Ill formatted default preferences file" );
       
       const char *typestr = type_att->value();
       std::size_t typestrlen = type_att->value_size();
+      
       option->m_name = name_att->value();
+      
+      const char *valuestr = pref->value();
+      
+      // We'll let "String" type values be empty, but no other types.
+      if( !valuestr )
+      {
+        if( !compare(typestr, typestrlen, "String", 6, true) )
+          throw runtime_error( "Missing value for \"" + option->m_name + "\" in default preferences file" );
+        
+        valuestr = "";
+      }//if( value is empty in XML )
+      
       option->m_value = valuestr;
       
       if( option->m_name.length() > UserOption::sm_max_name_str_len )
@@ -1127,8 +1138,8 @@ UserFileInDbData::UserFileInDbData()
 
 boost::any UserOption::value() const
 {
-  if( m_value.empty() || m_name.empty() )
-    throw runtime_error( "UserOption::value(): unitialized UserOption" );
+  if( m_name.empty() || ((m_type != String) && m_value.empty()) )
+    throw runtime_error( "UserOption::value(): un-initialized UserOption" );
   
   switch( m_type )
   {
@@ -1204,7 +1215,7 @@ void InterSpecUser::initFromDefaultValues( Wt::Dbo::ptr<InterSpecUser> user,
   DataBaseUtils::DbTransaction transaction( *session );
   
   //we actually need to go through here and eliminate options where a "phone"
-  //  or "tablet" option is avaialble, and also rename ish...
+  //  or "tablet" option is available, and also rename ish...
   try
   {
     for( const XmlNode *pref = node->first_node( "pref", 4 );
@@ -1220,7 +1231,7 @@ void InterSpecUser::initFromDefaultValues( Wt::Dbo::ptr<InterSpecUser> user,
       }catch( std::exception &e )
       {
         const string value = pref->value() ? pref->value() : "";
-        const string msg = "Value \"" + value + "\" is not convertable to a"
+        const string msg = "Value \"" + value + "\" is not convertible to the"
                            " intended type in " + filename
                            + " for pref "
                            + option->m_name + "\n" + string(e.what());

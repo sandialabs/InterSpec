@@ -72,6 +72,7 @@
 #cmakedefine01 USE_SEARCH_MODE_3D_CHART
 #cmakedefine01 USE_TERMINAL_WIDGET
 #cmakedefine01 USE_QR_CODES
+#cmakedefine01 USE_REMOTE_RID
 #cmakedefine01 SpecUtils_ENABLE_D3_CHART
 #cmakedefine01 SpecUtils_NO_BOOST_LIB
 
