@@ -23,18 +23,24 @@
 
 #include "InterSpec_config.h"
 
+#include <mutex>
 #include <string>
 #include <sstream>
 #include <iostream>
 
+#include <boost/process.hpp>
+#include <boost/filesystem.hpp>
+
 #include <Wt/Utils>
 #include <Wt/WMenu>
 #include <Wt/WLabel>
+#include <Wt/WServer>
 #include <Wt/WCheckBox>
 #include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WMenuItem>
 #include <Wt/WResource>
+#include <Wt/WIOService>
 #include <Wt/WGridLayout>
 #include <Wt/WJavaScript>
 #include <Wt/WPushButton>
@@ -45,6 +51,7 @@
 #include <Wt/WRegExpValidator>
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/SpecMeas.h"
@@ -57,9 +64,202 @@
 using namespace std;
 using namespace Wt;
 
+
 namespace
 {
-class RestRidWidget;
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+std::string run_external_command( const string &exe, const vector<string> &args )
+{
+  namespace bp = boost::process;
+  
+  const auto pp = boost::filesystem::path(exe).parent_path();
+  
+  bp::ipstream proc_stdout, proc_stderr; //reading pipe-stream
+  bp::child c( exe, bp::args(args), bp::start_dir(pp), bp::std_out > proc_stdout, bp::std_err > proc_stderr );
+  
+  c.wait();
+
+  std::string output(std::istreambuf_iterator<char>(proc_stdout), {});
+  std::string error(std::istreambuf_iterator<char>(proc_stderr), {});
+  
+  cout << "Process output: " << output << endl;
+  cout << "Process stdout: " << error << endl;
+  
+  int result = c.exit_code();
+  
+  return output;
+  
+  /*
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#define WEXITSTATUS
+#endif
+  
+  FILE *stream = popen( cmd.c_str(), "r" );
+  //FILE *stream = popen( "echo 'Hello'", "r" );
+  
+  if( !stream )
+    throw runtime_error( "Failed to start command '" + cmd + "'" );
+  
+  string result;
+  try
+  {
+    char buf[128];
+    std::size_t bytesread;
+    
+    while( (bytesread = fread( buf, sizeof(buf[0]), sizeof(buf), stream)) )
+    {
+      result += string(buf,bytesread);
+    }
+  }catch(...)
+  {
+    pclose( stream );
+    throw;
+  }
+  
+  const int plcose_val = pclose( stream );
+  const int exitcode = WEXITSTATUS( plcose_val );
+  
+  cout << "exitcode=" << exitcode << endl;
+  
+  SpecUtils::trim(result);
+  
+  return result;
+   */
+  /*
+  vector<char> buffer( 512, '\0' );
+  
+  std::string result;
+  std::unique_ptr<FILE, decltype(&pclose)> pipe( popen(cmd.c_str(), "r"), pclose );
+  if( !pipe )
+    throw std::runtime_error("Failed to execute command '" + cmd + "'" );
+  
+  while( fgets(buffer.data(), buffer.size(), pipe.get() ) != nullptr )
+    result += buffer.data();
+  
+  return result;
+   */
+}
+#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+
+}//namespace
+
+
+namespace RestRidImp
+{
+class ExternalRidWidget;
+
+// Some structs to represent the results from the Full-Spectrum analysis service
+struct FullSpecIsotope
+{
+  string name;
+  string type;
+  string confidenceStr;
+  
+  double countRate;
+  double confidence;
+};//struct FullSpecIsotope
+
+
+struct FullSpecResults
+{
+  int code = -1;
+  int analysisError = 0;
+  string errorMessage;
+  vector<string> analysisWarnings;
+  string drf;
+  double chi2 = -1.0;
+  double stuffOfInterest = 1.0;
+  double alarmBasisDuration = -1.0;
+  
+  string foregroundDescription;
+  string foregroundTitle;
+  string isotopeString;
+  
+  string analysisType;
+  
+  vector<FullSpecIsotope> isotopes;
+};//struct FullSpecResults
+
+
+
+FullSpecResults json_to_results( const string &input )
+{
+  /*
+   // Input will look something like:
+   {
+     "alarmBasisDuration" : 5025.6,
+     "analysisError" : 0,
+     "analysisWarnings" : ["background synthesized ..."],
+     "chi2" : 1.849143743515015,
+     "code" : 0,
+     "drf" : "Detective-EX200",
+     "errorMessage" : null,
+     "foregroundDescription" : "17-Apr-2010 17:33:19, 521.6 &gamma; cps, real time: 5119.3 s",
+     "foregroundTitle" : "Foreground",
+     "isotopeString" : "Ba133 (H)",
+     "isotopes" : [{"confidence" : 9.4, "confidenceStr" : "H", "countRate" : 309.1, "name" : "Ba133", "type" : "Industrial"}],
+     "stuffOfInterest" : 9.47948169708252
+   }
+   */
+  
+  Json::Object result;
+  try
+  {
+    Json::parse( input, result );
+  }catch( std::exception &e )
+  {
+    throw runtime_error( "Error parsing analysis results: <code>" + string(e.what()) + "</code>" );
+  }
+  
+  Json::Value code = result.contains("code") ? result["code"].toNumber() : Json::Value::Null;
+  if( code.isNull() )
+    throw runtime_error( "Analysis response JSON did not include a 'code' field." );
+  
+  FullSpecResults answer;
+  
+  answer.code = code;
+  answer.errorMessage = result["errorMessage"].orIfNull("");
+  answer.analysisError = result["analysisError"].orIfNull(0);
+  answer.drf = result["drf"].orIfNull("");
+  answer.chi2 = result["chi2"].orIfNull( -1.0 );
+  answer.stuffOfInterest = result["stuffOfInterest"].orIfNull( -1.0 );
+  answer.alarmBasisDuration = result["alarmBasisDuration"].orIfNull( -1.0 );
+  answer.foregroundDescription = result["foregroundDescription"].orIfNull("");
+  answer.foregroundTitle = result["foregroundTitle"].orIfNull("");
+  answer.isotopeString = result["isotopeString"].orIfNull("");
+  answer.analysisType = result["analysisType"].orIfNull("AnalysisTypeNotSpecified");
+  
+  if( result.contains("analysisWarnings") )
+  {
+    const Json::Array &warnings = result["analysisWarnings"];
+    for( const Json::Value &warning : warnings )
+      answer.analysisWarnings.push_back( warning.orIfNull( "invalid-warning" ) );
+  }//if( result.contains("analysisWarnings") )
+  
+  if( result.contains("isotopes") )
+  {
+    const Json::Array &isotopes = result["isotopes"];
+    for( size_t i = 0; i < isotopes.size(); ++i )
+    {
+      const Json::Object &obj = isotopes[i];
+      
+      FullSpecIsotope iso;
+      
+      iso.confidence = obj.get("confidence").orIfNull( -1.0 );
+      iso.countRate = obj.get("countRate").orIfNull( -1.0 );
+      iso.name = obj.get("name").orIfNull( "null" );
+      iso.type = obj.get("type").orIfNull( "null" );
+      iso.confidenceStr = obj.get("confidenceStr").orIfNull( "null" );
+      
+      answer.isotopes.push_back( iso );
+    }//for( size_t i = 0; i < isotopes.size(); ++i )
+  }//if( result.contains("isotopes") )
+  
+  return answer;
+}//FullSpecResults json_to_results(string)
+
 
 /** A class to stream the current spectrum data and analysis options to the JavaScript FormData
  format expected by the FullSpectrum service.
@@ -72,18 +272,18 @@ class RestRidWidget;
  wApp->doJavaScript(...), because I assume performance will be better, and there is probably some
  practical size limit to what wApp->doJavaScript(...) can handle.
  
- We are declaring up here, and implementing below RestRidWidget so everything is defined when its
+ We are declaring up here, and implementing below ExternalRidWidget so everything is defined when its
  used.
  */
 class RestRidInputResource : public Wt::WResource
 {
   RemoteRid *m_remote_rid;
-  RestRidWidget *m_widget;
+  ExternalRidWidget *m_widget;
   Wt::WApplication *m_app; //it looks like WApplication::instance() will be valid in handleRequest, but JIC
   InterSpec *m_interspec;
   
 public:
-  RestRidInputResource( RemoteRid *remote_rid, RestRidWidget *widget, InterSpec *interspec, WObject* parent = 0 );
+  RestRidInputResource( RemoteRid *remote_rid, ExternalRidWidget *widget, InterSpec *interspec, WObject* parent = 0 );
   
   virtual ~RestRidInputResource();
   virtual void handleRequest( const Wt::Http::Request &request,
@@ -92,11 +292,21 @@ public:
 
 
 
-class RestRidWidget : public Wt::WContainerWidget
+class ExternalRidWidget : public Wt::WContainerWidget
 {
+public:
+  enum class ServiceType
+  {
+    Rest, Exe
+  };
+  
 protected:
   InterSpec *m_interspec;
   RemoteRid *m_remote_rid;
+  ServiceType m_type;
+  
+  /// m_url is either the REST API URL (minus the "/analysis" or "/info" part), or path to
+  /// executable, depending on ServiceType.
   WLineEdit *m_url;
   WStackedWidget *m_drf_stack;
   WPushButton *m_retrieve_drfs_btn;
@@ -107,18 +317,33 @@ protected:
   WText *m_status;
   WText *m_result;
   RestRidInputResource *m_resource;
+  WCheckBox *m_alwaysDoAnalysisCb;
   
-  JSignal<std::string> m_info_response_signal;
-  JSignal<std::string> m_info_error_signal;
-  JSignal<std::string> m_analysis_results_signal;
-  JSignal<std::string> m_analysis_error_signal;
+  
+  std::unique_ptr<JSignal<std::string>> m_info_response_signal;
+  std::unique_ptr<JSignal<std::string>> m_info_error_signal;
+  std::unique_ptr<JSignal<std::string>> m_analysis_results_signal;
+  std::unique_ptr<JSignal<std::string>> m_analysis_error_signal;
   
   
   std::string mostRecentUserUrl()
   {
     try
     {
-      const string prev_urls = InterSpecUser::preferenceValue<string>( "ExternalRidUrl", m_interspec );
+      const char *prefname = "";
+      switch( m_type )
+      {
+        case ServiceType::Rest:
+          prefname = "ExternalRidUrl";
+          break;
+          
+        case ServiceType::Exe:
+          prefname = "ExternalRidExe";
+          break;
+      }//switch( m_type )
+      
+      
+      const string prev_urls = InterSpecUser::preferenceValue<string>( prefname, m_interspec );
       vector<string> prev;
       SpecUtils::split( prev, prev_urls, ";" );
       if( prev.empty() )
@@ -140,7 +365,19 @@ protected:
   {
     try
     {
-      const string prev_urls = InterSpecUser::preferenceValue<string>( "ExternalRidUrl", m_interspec );
+      const char *prefname = "";
+      switch( m_type )
+      {
+        case ServiceType::Rest:
+          prefname = "ExternalRidUrl";
+          break;
+          
+        case ServiceType::Exe:
+          prefname = "ExternalRidExe";
+          break;
+      }//switch( m_type )
+      
+      const string prev_urls = InterSpecUser::preferenceValue<string>( prefname, m_interspec );
       vector<string> prev;
       SpecUtils::split( prev, prev_urls, ";" );
       
@@ -158,7 +395,7 @@ protected:
         new_url += (i ? ";" : "") + prev[i];
       }
       
-      InterSpecUser::setPreferenceValue( m_interspec->m_user, "ExternalRidUrl", new_url, m_interspec );
+      InterSpecUser::setPreferenceValue( m_interspec->m_user, prefname, new_url, m_interspec );
     }catch( std::exception &e )
     {
       cerr << "Error in setMostRecentUrl( '" << url << "' ): " << e.what() << endl;
@@ -168,10 +405,11 @@ protected:
   
   
 public:
-  RestRidWidget( RemoteRid *remoterid, InterSpec *interspec, WContainerWidget *parent = 0 )
+  ExternalRidWidget( const ServiceType type, RemoteRid *remoterid, InterSpec *interspec, WContainerWidget *parent = 0 )
   : WContainerWidget( parent ),
-   m_remote_rid( remoterid ),
    m_interspec( interspec ),
+   m_remote_rid( remoterid ),
+   m_type( type ),
    m_url( nullptr ),
    m_drf_stack( nullptr ),
    m_retrieve_drfs_btn( nullptr ),
@@ -182,35 +420,65 @@ public:
    m_status( nullptr ),
    m_result( nullptr ),
    m_resource( nullptr ),
-   m_info_response_signal( this, "info_response", false ),
-   m_info_error_signal( this, "info_error", false ),
-   m_analysis_results_signal( this, "analysis_results", false ),
-   m_analysis_error_signal( this, "analysis_error", false )
+   m_alwaysDoAnalysisCb( nullptr ),
+   m_info_response_signal{},
+   m_info_error_signal{},
+   m_analysis_results_signal{},
+   m_analysis_error_signal{}
   {
     assert( m_remote_rid );
     assert( interspec );
     
-    addStyleClass( "RestRidWidget" );
+    addStyleClass( "ExternalRidWidget" );
     
     WGridLayout *layout = new WGridLayout( this );
+    layout->setContentsMargins( 0, 0, 0, 0 );
+    layout->setVerticalSpacing( 0 );
+    layout->setHorizontalSpacing( 0 );
     
-    WLabel *label = new WLabel( "URL" );
+    const char *url_label = "";
+    switch( m_type )
+    {
+      case ServiceType::Rest:
+        url_label = "URL";
+        break;
+        
+      case ServiceType::Exe:
+        url_label = "Exe Path";
+        break;
+    }//switch( m_type )
+    
+    WLabel *label = new WLabel( url_label );
     layout->addWidget( label, 0, 0, AlignMiddle );
     m_url = new WLineEdit();
     label->setBuddy( m_url );
-    layout->addWidget( m_url, 0, 1, AlignMiddle );
-    layout->setColumnStretch( 1, 1 );
+    m_url->changed().connect( this, &ExternalRidWidget::urlChanged );
+    m_url->enterPressed().connect( this, &ExternalRidWidget::urlChanged );
     
-    const char *url_regex = "^(http(s)?:\\/\\/)[\\w.-]+(?:\\.[\\w\\.-]+)+[\\w\\-\\._~:/?#[\\]@!\\$&'\\(\\)\\*\\+,;=.]+$";
-    WRegExpValidator *validator = new WRegExpValidator( url_regex, m_url );
-    m_url->setValidator( validator );
-    m_url->setPlaceholderText( "URL of FullSpectrum Service" );
+    switch( m_type )
+    {
+      case ServiceType::Rest:
+      {
+        const char *url_regex = "^(http(s)?:\\/\\/)[\\w.-]+(?:\\.[\\w\\.-]+)+[\\w\\-\\._~:/?#[\\]@!\\$&'\\(\\)\\*\\+,;=.]+$";
+        WRegExpValidator *validator = new WRegExpValidator( url_regex, m_url );
+        m_url->setValidator( validator );
+        m_url->setPlaceholderText( "URL of FullSpectrum Service" );
+        break;
+      }//case ServiceType::Rest:
+        
+      case ServiceType::Exe:
+      {
+        // TODO: need to implement path validator, and actually for macOS and Electron builds implement allowing to select executable!
+        m_url->setPlaceholderText( "Path to FullSpectrum executable" );
+        break;
+      }//case ServiceType::Exe:
+    }//switch( m_type )
     
     m_url->setText( WString::fromUTF8( mostRecentUserUrl() ) );
     
-    m_url->changed().connect( this, &RestRidWidget::urlChanged );
-    m_url->enterPressed().connect( this, &RestRidWidget::urlChanged );
-    
+    layout->addWidget( m_url, 0, 1, AlignMiddle );
+    layout->setColumnStretch( 1, 1 );
+  
 
     m_drf_stack = new WStackedWidget();
     m_drf_stack->addStyleClass( "DrfStack" );
@@ -220,7 +488,7 @@ public:
     WGridLayout *sub_layout = new WGridLayout( container );
     m_retrieve_drfs_btn = new WPushButton( "Retrieve DRFs" );
     sub_layout->addWidget( m_retrieve_drfs_btn, 0, 0, AlignCenter | AlignMiddle );
-    m_retrieve_drfs_btn->clicked().connect( this, &RestRidWidget::requestServiceInfo );
+    m_retrieve_drfs_btn->clicked().connect( this, &ExternalRidWidget::requestServiceInfo );
     
     m_drf_stack->addWidget( container );
     
@@ -234,7 +502,6 @@ public:
     
     m_drf_stack->addWidget( container );
     m_drf_stack->setCurrentIndex( 0 );
-    
     
     m_status_stack = new WStackedWidget();
     m_status_stack->addStyleClass( "RestRidInfoStack" );
@@ -259,31 +526,76 @@ public:
     
     m_submit = new WPushButton( "Submit Analysis" );
     layout->addWidget( m_submit, 3, 0, 1, 2, AlignCenter );
-    m_submit->clicked().connect( this, &RestRidWidget::submitForAnalysis );
+    m_submit->clicked().connect( this, &ExternalRidWidget::submitForAnalysis );
     m_submit->disable();
     
-    m_resource = new RestRidInputResource( m_remote_rid, this, m_interspec, this );
+    if( m_type == ServiceType::Rest )
+      m_resource = new RestRidInputResource( m_remote_rid, this, m_interspec, this );
     
-    m_interspec->displayedSpectrumChanged().connect( this, &RestRidWidget::displayedSpectrumChanged );
+    m_alwaysDoAnalysisCb = new WCheckBox( "Always submit analysis on spectrum load" );
+    m_alwaysDoAnalysisCb->addStyleClass( "AlwaysSubmitAna" );
+    layout->addWidget( m_alwaysDoAnalysisCb, 4, 0, 1, 2 );
     
-    m_info_response_signal.connect( boost::bind( &RestRidWidget::handleInfoResponse, this, boost::placeholders::_1 ) );
-    m_info_error_signal.connect( boost::bind( &RestRidWidget::handleInfoResponseError, this, boost::placeholders::_1 ) );
-    m_analysis_results_signal.connect( boost::bind( &RestRidWidget::handleResultResponse, this, boost::placeholders::_1 ) );
-    m_analysis_error_signal.connect( boost::bind( &RestRidWidget::handleResultResponseError, this, boost::placeholders::_1 ) );
+    const int always_call_index = (m_type == ServiceType::Rest) ? 1 : 2;
+    const int always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", m_interspec );
+    if( always_call == always_call_index )
+      m_alwaysDoAnalysisCb->setChecked( true );
+    
+    m_alwaysDoAnalysisCb->checked().connect( std::bind([this,always_call_index](){
+      try
+      {
+        InterSpecUser::setPreferenceValue(m_interspec->m_user, "AlwaysCallExternalRid", always_call_index, m_interspec);
+        m_remote_rid->alwaysCallRestAnaChecked();
+      }catch( std::exception & )
+      {
+        assert(0);
+      }
+    }) );
+    
+    m_alwaysDoAnalysisCb->unChecked().connect( std::bind([this](){
+      try
+      {
+        InterSpecUser::setPreferenceValue(m_interspec->m_user, "AlwaysCallExternalRid", 0, m_interspec);
+      }catch( std::exception & )
+      {
+        assert(0);
+      }
+    }) );
+    
+    
+    m_interspec->displayedSpectrumChanged().connect( this, &ExternalRidWidget::displayedSpectrumChanged );
+    
+    if( m_type == ServiceType::Rest )
+    {
+      m_info_response_signal.reset( new JSignal<std::string>( this, "info_response", false ) );
+      m_info_error_signal.reset( new JSignal<std::string>( this, "info_error", false ) );
+      m_analysis_results_signal.reset( new JSignal<std::string>( this, "analysis_results", false ) );
+      m_analysis_error_signal.reset( new JSignal<std::string>( this, "analysis_error", false ) );
+      
+      m_info_response_signal->connect( boost::bind( &ExternalRidWidget::handleInfoResponse, this, boost::placeholders::_1 ) );
+      m_info_error_signal->connect( boost::bind( &ExternalRidWidget::handleInfoResponseError, this, boost::placeholders::_1 ) );
+      m_analysis_results_signal->connect( boost::bind( &ExternalRidWidget::handleResultResponse, this, boost::placeholders::_1 ) );
+      m_analysis_error_signal->connect( boost::bind( &ExternalRidWidget::handleResultResponseError, this, boost::placeholders::_1 ) );
+    }//if( m_type == ServiceType::Rest )
     
     urlChanged();
-  }//RestRidWidget
+  }//ExternalRidWidget
+  
+  void uncheckAlwaysCallAnalysis()
+  {
+    m_alwaysDoAnalysisCb->setChecked( false );
+  }
   
 protected:
   
-  void submitForAnalysis()
+  void startRestAnalysis()
   {
     const string ana_service_url = m_url->text().toUTF8();
     const string &resource_url = m_resource->url();
-
-    m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_status) );
-    m_status->setText( "Requesting analysis" );
     
+    // Note: the JS is defined in the C++ to avoid having a separate JS file that will end up being
+    // packaged in builds that wont use it (i.e., most InterSpec builds); I dont like having various
+    // `fetch` commands around that can call off of localhost; if nothing else this is a bad look.
     
     WStringStream js;
     js <<
@@ -293,12 +605,12 @@ protected:
     "    .then(json_results => {\n"
     "      console.log( 'Got JSON analysis response:', json_results );\n"
     "      const result_str = JSON.stringify(json_results);\n"
-    << "      " << m_analysis_results_signal.createCall("result_str") << "\n"
+    << "      " << m_analysis_results_signal->createCall("result_str") << "\n"
     "    })\n"
     "  .catch( error => {\n"
     "    console.error( 'Error getting analysis input:', error);\n"
     "    const error_str = 'Error retrieving results from server: ' + error.toString();\n"
-    "  " << m_analysis_error_signal.createCall( "error_str" ) << ";\n"
+    "  " << m_analysis_error_signal->createCall( "error_str" ) << ";\n"
     "  });\n"
     "};\n";
     
@@ -313,11 +625,224 @@ protected:
     << ".catch( error => {\n"
     << "  console.error( 'Error getting analysis input:', error);"
     << "  const error_str = 'Error getting analysis input:' + error.toString();\n"
-    << "  " << m_analysis_error_signal.createCall( "error_str" ) << ";\n"
+    << "  " << m_analysis_error_signal->createCall( "error_str" ) << ";\n"
     << "});\n";
     
     doJavaScript( js.str() );
+  }//void startRestAnalysis()
+  
+  
+  void receiveExeAnalysis( std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
+  {
+    assert( result && m );
+    assert( WApplication::instance() );
+    
+    std::lock_guard<mutex> lock( *m );
+    
+    const string &res = *result;
+    if( SpecUtils::starts_with(res, "Success:") )
+    {
+      const string json = SpecUtils::trim_copy(res.substr(8));
+      handleResultResponse( json );
+    }else if( SpecUtils::starts_with(res, "Fail:") )
+    {
+      const string result = SpecUtils::trim_copy(res.substr(5));
+      handleResultResponseError( result );
+    }else
+    {
+      assert( 0 );
+    }
+    
+    wApp->triggerUpdate();
+  }//void receiveExeAnalysis( std::shared_ptr<string> result )
+  
+  
+  void startExeAnalysis()
+  {
+    shared_ptr<SpecUtils::SpecFile> spec_file = RemoteRid::fileForAnalysis(m_interspec);
+    assert( spec_file );
+    
+    if( !spec_file )
+    {
+      m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
+      m_error->setText( "No displayed spectrum" );
+      
+      return;
+    }//if( !spec_file )
+    
+    vector<string> arguments;
+    arguments.push_back( "--mode=command-line" );
+    arguments.push_back( "--out-format=json" );
+    arguments.push_back( "--drf" );
+    arguments.push_back( drf() );
+    
+    if( spec_file->num_measurements() < 2 )
+      arguments.push_back( "--synthesize-background=1" );
+    
+    const string tmpfilename = SpecUtils::temp_file_name( "interspec_ana_" + wApp->sessionId(),
+                                                          SpecUtils::temp_dir() );
+    
+    if( SpecUtils::is_file(tmpfilename) || SpecUtils::is_directory(tmpfilename) )
+    {
+      // Shouldnt ever happen
+      m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
+      m_error->setText( "Error creating temp file name." );
+      return;
+    }
+    
+    {//begin writing temp file
+      ofstream tmpfile( tmpfilename.c_str(), ios::out | ios::binary );
+      if( !tmpfile.is_open() )
+      {
+        m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
+        m_error->setText( "Error opening temp file." );
+        return;
+      }
+      
+      spec_file->write_2012_N42( tmpfile );
+    }//end writing temp file
+    
+    arguments.push_back( tmpfilename );
+    
+    
+    const string exe_path = m_url->text().toUTF8();
+    
+    const string appsession = WApplication::instance()->sessionId();
+    auto result = std::make_shared<string>();
+    auto m = make_shared<mutex>();
+    auto doUpdateFcn = wApp->bind( boost::bind( &ExternalRidWidget::receiveExeAnalysis, this, result, m ) );
+    
+    auto commandRunner = [tmpfilename,exe_path,arguments,doUpdateFcn,result,m,appsession](){
+      try
+      {
+        string results = run_external_command( exe_path, arguments );
+        
+        if( results.empty() )
+          throw runtime_error( "No output from running executable." );
+        
+        std::lock_guard<mutex> lock( *m );
+        *result = "Success:" + results;
+      }catch( std::exception &e )
+      {
+        std::lock_guard<mutex> lock( *m );
+        *result = "Fail:" + string(e.what());
+      }
+      
+      if( !SpecUtils::remove_file( tmpfilename ) )
+      {
+        cerr << "\n\nFailed to remove temporary file: '" << tmpfilename << "'\n\n";
+        assert( 0 );
+      }
+      
+      WServer *server = WServer::instance();
+      if( server )
+        server->post( appsession, doUpdateFcn );
+    };//commandRunner lamda
+    
+    WServer::instance()->ioService().boost::asio::io_service::post( commandRunner );
+  }//void startExeAnalysis()
+  
+  
+  void submitForAnalysis()
+  {
+    m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_status) );
+    m_status->setText( "Requesting analysis" );
+    
+    switch( m_type )
+    {
+      case ServiceType::Rest:
+        startRestAnalysis();
+        break;
+        
+      case ServiceType::Exe:
+        startExeAnalysis();
+        break;
+    }//switch( m_type )
   }//void submitForAnalysis()
+  
+  
+  void requestRestServiceInfo()
+  {
+    const string url = m_url->text().toUTF8();
+    
+    WStringStream js;
+    
+    js << "fetch('" << url << "/info', {method: 'POST'})"
+    << ".then( response => response.json() )"
+    << ".then( data => {"
+    //          << "console.log( 'Got data:', data );"
+    << "const data_str = JSON.stringify(data);"
+    << m_info_response_signal->createCall( "data_str" )
+    << "})"
+    << ".catch( error => {"
+    << "console.error( 'Error retrieving info:', error);"
+    << "const error_str = error.toString();"
+    << m_info_error_signal->createCall( "error_str" )
+    << "});";
+    
+    doJavaScript( js.str() );
+  }//void requestRestServiceInfo()
+  
+  
+  void receiveExeDrfInfo( std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
+  {
+    assert( result && m );
+    assert( WApplication::instance() );
+    
+    std::lock_guard<mutex> lock( *m );
+    
+    const string &res = *result;
+    if( SpecUtils::starts_with(res, "Success:") )
+    {
+      string json = "{\"Options\":[{\"name\":\"drf\","
+                        "\"possibleValues\":" + SpecUtils::trim_copy(res.substr(8)) + "}]}";
+      handleInfoResponse( json );
+    }else if( SpecUtils::starts_with(res, "Fail:") )
+    {
+      handleInfoResponseError( res.substr(5) );
+    }else
+    {
+      assert( 0 );
+    }
+    
+    wApp->triggerUpdate();
+  }//void receiveExeDrfInfo( std::shared_ptr<string> result )
+  
+  
+  void requestExeInfo()
+  {
+    const string exe_path = m_url->text().toUTF8();
+    
+    const string appsession = WApplication::instance()->sessionId();
+    auto result = std::make_shared<string>();
+    auto m = make_shared<mutex>();
+    auto doUpdateFcn = wApp->bind( boost::bind( &ExternalRidWidget::receiveExeDrfInfo, this, result, m ) );
+    
+    auto commandRunner = [exe_path,doUpdateFcn,result,m,appsession](){
+      try
+      {
+        vector<string> args{"--command-line", "--out-format", "json", "--drfs"};
+        string drfs = run_external_command( exe_path, args );
+        
+        if( drfs.empty() )
+          throw runtime_error( "No output from running executable." );
+        
+        std::lock_guard<mutex> lock( *m );
+        *result = "Success:" + drfs;
+      }catch( std::exception &e )
+      {
+        std::lock_guard<mutex> lock( *m );
+        *result = "Fail:" + string(e.what());
+      }
+      
+      WServer *server = WServer::instance();
+      if( server )
+        server->post( appsession, doUpdateFcn );
+    };//commandRunner lamda
+    
+    WServer::instance()->ioService().boost::asio::io_service::post( commandRunner );
+  }//void requestExeInfo()
+    
   
   
   void requestServiceInfo()
@@ -329,24 +854,16 @@ protected:
     m_status->setText( "Requesting service information." );
     m_drf_select->clear();
     
-    const string url = m_url->text().toUTF8();
-    
-    WStringStream js;
-    
-    js << "fetch('" << url << "/info', {method: 'POST'})"
-       << ".then( response => response.json() )"
-       << ".then( data => {"
-//          << "console.log( 'Got data:', data );"
-          << "const data_str = JSON.stringify(data);"
-          << m_info_response_signal.createCall( "data_str" )
-       << "})"
-       << ".catch( error => {"
-          << "console.error( 'Error retrieving info:', error);"
-          << "const error_str = error.toString();"
-          << m_info_error_signal.createCall( "error_str" )
-       << "});";
-    
-    doJavaScript( js.str() );
+    switch( m_type )
+    {
+      case ServiceType::Rest:
+        requestRestServiceInfo();
+        break;
+        
+      case ServiceType::Exe:
+        requestExeInfo();
+        break;
+    }//switch( m_type )
   }//void requestServiceInfo()
   
   
@@ -478,16 +995,16 @@ protected:
     m_error->setText( "Error retrieving service information: <code>" + msg + "</code>" );
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
   }//void handleInfoResponseError()
-  
+
   
   void handleResultResponse( const std::string &msg )
   {
     m_submit->enable();
     
-    Json::Object result;
+    FullSpecResults results;
     try
     {
-      Json::parse( msg, result );
+      results = json_to_results( msg );
     }catch( std::exception &e )
     {
       m_error->setText( "Error parsing analysis results: <code>" + string(e.what()) + "</code>" );
@@ -496,121 +1013,43 @@ protected:
     
     try
     {
-      Json::Value code = result.contains("code") ? result["code"].toNumber() : Json::Value::Null;
-      if( code.isNull() )
-        throw runtime_error( "Analysis response JSON did not include a 'code' field." );
-      
-      string errorMessage = result["errorMessage"].orIfNull("");
-      if( !errorMessage.empty() )
-        throw runtime_error( "Analysis service returned error message: " +errorMessage );
-      
-      const double codeVal = code;
-      
-      /*
-       {
-       "alarmBasisDuration" : 5025.6201171875,
-       "analysisError" : 0,
-       "analysisWarnings" : ["background synthesized ..."],
-       "chi2" : 1.849143743515015,
-       "code" : 0,
-       "drf" : "Detective-EX200",
-       "errorMessage" : null,
-       "foregroundDescription" : "17-Apr-2010 17:33:19, 521.6 &gamma; cps, real time: 5119.3 s",
-       "foregroundTitle" : "Foreground",
-       "isotopeString" : "Ba133 (H)",
-       "isotopes" : [
-       {
-       "confidence" : 9.47948169708252,
-       "confidenceStr" : "H",
-       "countRate" : 309.19342041015625,
-       "name" : "Ba133",
-       "type" : "Industrial"
-       }
-       ],
-       "stuffOfInterest" : 9.47948169708252
-       }
-       */
-      
-      cout << Json::serialize(result) << endl;
-    
+      if( !results.errorMessage.empty() )
+        throw runtime_error( "Analysis service returned error message: " + results.errorMessage );
       
       WStringStream rslttxt;
-      rslttxt << "<div>\n";
       rslttxt << "<div class=\"ResultLabel\">Results:</div>";
-      
-      double chi_sqr = -1.0;
-      std::vector<std::string> isotope_names;
-      std::vector<std::string> isotope_types;
-      std::vector<float> isotope_count_rates; //!< If negative, ignore
-      std::vector<float> isotope_confidences; //!< If negative, ignore
-      std::vector<std::string> isotope_confidence_strs;
-      
-      //"drf" : "Detective-EX200",
-      //"isotopes" : [{"confidence" : 9.4, "confidenceStr" : "H", "countRate" : 309.2, "name" : "Ba133", "type" : "Industrial"}]
-      if( result.contains("chi2") )
-        chi_sqr = result["chi2"];
-      
-      if( result.contains("isotopes") )
-      {
-        const Json::Array &isotopes = result["isotopes"];
-        for( size_t i = 0; i < isotopes.size(); ++i )
-        {
-          const Json::Object &obj = isotopes[i];
-          const double isotope_confidence = obj.get("confidence").orIfNull( -1.0 );
-          const double isotope_count_rate = obj.get("countRate").orIfNull( -1.0 );
-          const string isotope_name = obj.get("name").orIfNull( "null" );
-          const string isotope_type = obj.get("type").orIfNull( "null" );
-          const string isotope_confidence_str = obj.get("confidenceStr").orIfNull( "null" );
-          
-          isotope_names.push_back( isotope_name );
-          isotope_types.push_back( isotope_type );
-          isotope_confidence_strs.push_back( isotope_confidence_str );
-          isotope_count_rates.push_back( static_cast<float>(isotope_count_rate) );
-          isotope_confidences.push_back( static_cast<float>(isotope_confidence) );
-        }//for( size_t i = 0; i < isotopes.size(); ++i )
-      }//if( result.contains("isotopes") )
-      
-      if( codeVal != 0.0 )
-        rslttxt << "<div class=\"ResultChi2\">Result Code: " << static_cast<int>(codeVal) << "</div>";
-      
-      if( (chi_sqr > 0.0001f) && (isotope_names.size() > 0) )
-      {
-        char buffer[64] = { '\0' };
-        snprintf( buffer, sizeof(buffer), "%.2f", chi_sqr );
-        rslttxt << "<div class=\"ResultChi2\">&chi;<sup>2</sup>=" << std::string(buffer) << "</div>";
-      }//if( output.chi_sqr > 0.0f )
-      rslttxt << "</div>\n";
-      
       rslttxt << "<table class=\"ResultTable\"><tbody>\n"
       << "\t<tr>"
       << "\t\t<th>Nuclide</th>\n"
       << "\t\t<th>Confidence</th>\n"
       << "\t\t<th>Category</th>\n";
       
-      //if( output.ana_type == Analysis::AnalysisType::Simple )
+      if( SpecUtils::iequals_ascii(results.analysisType, "Simple")
+         || SpecUtils::icontains(results.analysisType, "NotSpecified")
+         || results.analysisType.empty() )
+      {
         rslttxt << "\t\t<th>Count Rate</th>\n";
-      //else
-      //  rslttxt << "\t\t<th>MaxCountRate</th>\n";
+      }else
+      {
+        rslttxt << "\t\t<th>Max CPS</th>\n";
+      }
+      
       rslttxt << "\t</tr>";
       
-      if( isotope_names.empty() )
+      if( results.isotopes.empty() )
       {
         rslttxt << "\t<tr>"
         << "\t\t<td colspan=\"4\" style=\"text-align: center; vertical-align: middle;\">None Found</td>\n\t</tr>\n";
       }else
       {
-        const size_t nres = isotope_names.size();
-        assert( nres == isotope_confidences.size() );
-        assert( nres == isotope_types.size() );
-        assert( nres == isotope_count_rates.size() );
-        assert( nres == isotope_confidence_strs.size() );
+        const size_t nres = results.isotopes.size();
         
-        for( size_t i = 0; i < nres; ++i )
+        for( const FullSpecIsotope &res_iso : results.isotopes )
         {
-          const string &iso = isotope_names[i];
-          string type = isotope_types[i];
-          string conf = isotope_confidence_strs[i];
-          const float count_rate = isotope_count_rates[i];
+          const string &iso = res_iso.name;
+          string type = res_iso.type;
+          string conf = res_iso.confidenceStr;
+          const float count_rate = res_iso.countRate;
           
           if( conf == "H" )
             conf = "High";
@@ -638,6 +1077,24 @@ protected:
       
       rslttxt << "</tbody></table>";
       
+      if( results.code != 0 )
+        rslttxt << "<div class=\"ResultChi2\">Result Code: " << results.code << "</div>";
+      
+      if( (results.chi2 > 0.0001f) && (results.isotopes.size() > 0) )
+      {
+        char buffer[64] = { '\0' };
+        snprintf( buffer, sizeof(buffer), "%.2f", results.chi2 );
+        rslttxt << "<div class=\"ResultChi2\">&chi;<sup>2</sup>=" << std::string(buffer) << "</div>";
+      }//if( output.chi_sqr > 0.0f )
+      
+      if( !results.analysisWarnings.empty() )
+      {
+        rslttxt << "<div class=\"AnaWarnings\">\n";
+        for( const string &warning : results.analysisWarnings )
+          rslttxt << "<div>" << warning << "</div>\n";
+        rslttxt << "</div>\n";
+      }//if( result.contains("analysisWarnings") )
+      
       m_result->setText( rslttxt.str() );
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_result) );
     }catch( std::exception &e )
@@ -658,6 +1115,64 @@ protected:
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
   }//void handleResultResponseError()
   
+  bool isValidUrl()
+  {
+    switch( m_type )
+    {
+      case ServiceType::Rest:
+      {
+        switch( m_url->validate() )
+        {
+          case Wt::WValidator::Invalid:
+          case Wt::WValidator::InvalidEmpty:
+            return false;
+            
+          case Wt::WValidator::Valid:
+            return true;
+        }//switch( m_url->validate() )
+        
+        break;
+      }//case ServiceType::Rest:
+        
+        
+      case ServiceType::Exe:
+      {
+        const string url = m_url->text().toUTF8();
+        try
+        {
+          const boost::filesystem::file_status status = boost::filesystem::status(url);
+          if( !boost::filesystem::exists(status) )
+            return false;
+          
+          const boost::filesystem::perms p = status.permissions();
+          
+          // We'll check if _anyone_ can execute the file, and if so return true - we are not
+          //  checking if _we_ can execute the file, which would require determining if _we_
+          //  or our group can execute
+          if( (p & boost::filesystem::perms::owner_exe)
+             || (p & boost::filesystem::perms::group_exe)
+             || (p & boost::filesystem::perms::others_all)
+             )
+          {
+            return true;
+          }
+          
+          return false;
+        }catch( std::exception & )
+        {
+          return false;
+        }
+
+        assert( 0 );
+        //blah blah blah
+        break;
+      }//case ServiceType::Exe:
+    }//switch( m_type )
+
+    assert( 0 );
+    return false;
+  }//bool isValidUrl()
+  
   
   void urlChanged()
   {
@@ -670,33 +1185,52 @@ protected:
       
     auto spec = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     
-    switch( m_url->validate() )
+    const bool validUrl = isValidUrl();
+    const char *errmsg = "";
+    switch( m_type )
     {
-      case Wt::WValidator::Invalid:
-      case Wt::WValidator::InvalidEmpty:
-        m_submit->hide();
-        m_retrieve_drfs_btn->hide();
-        m_retrieve_drfs_btn->disable();
-        m_status->setText( "Invalid URL" );
-        m_submit->disable();
-        break;
-        
-      case Wt::WValidator::Valid:
+      case ServiceType::Rest:
       {
-        const string url = m_url->text().toUTF8();
-        
-        m_submit->setHidden( !spec || url.empty() );
-        m_retrieve_drfs_btn->setHidden( !spec || url.empty() );
-        m_retrieve_drfs_btn->setEnabled( spec && !url.empty() );
-        
-        if( !url.empty() )
-          setMostRecentUrl( url );
-        
-        m_submit->enable();
+        errmsg = "Invalid URL";
         break;
-      }//case Wt::WValidator::Valid:
-    }//switch( m_url->validate() )
+      }//case ServiceType::Rest:
+        
+      case ServiceType::Exe:
+      {
+        errmsg = "Invalid path to executable.";
+        
+        const char *invalid_style_class = "Wt-invalid";
+        if( validUrl )
+          m_url->removeStyleClass(invalid_style_class);
+        else if( !m_url->hasStyleClass(invalid_style_class) )
+          m_url->addStyleClass(invalid_style_class);
+        break;
+      }//case ServiceType::Exe:
+    }//switch( m_type )
+    
+    
+    if( validUrl )
+    {
+      const string url = m_url->text().toUTF8();
+      
+      m_submit->setHidden( !spec || url.empty() );
+      m_retrieve_drfs_btn->setHidden( !spec || url.empty() );
+      m_retrieve_drfs_btn->setEnabled( spec && !url.empty() );
+      
+      if( !url.empty() )
+        setMostRecentUrl( url );
+      
+      m_submit->enable();
+    }else
+    {
+      m_submit->hide();
+      m_retrieve_drfs_btn->hide();
+      m_retrieve_drfs_btn->disable();
+      m_status->setText( "Invalid URL" );
+      m_submit->disable();
+    }//if( !validUrl ) / else
   }//urlChanged()
+  
   
   void displayedSpectrumChanged()
   {
@@ -706,7 +1240,7 @@ protected:
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_status) );
     
     string url = m_url->text().toUTF8();
-    if( m_url->validate() != Wt::WValidator::Valid )
+    if( !isValidUrl() )
       url = "";
     
     auto spec = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
@@ -722,8 +1256,8 @@ protected:
       m_submit->setHidden( false );
       m_status->setText( "Click &quot;Submit Analysis&quot; to get RIID results." );
     }
-    
   }//void displayedSpectrumChanged()
+  
   
 public:
   string drf() const
@@ -734,12 +1268,12 @@ public:
     return m_drf_select->currentText().toUTF8();
   }//string drf() const
   
-};//RestRidWidget
+};//ExternalRidWidget
 
 
 
 
-RestRidInputResource::RestRidInputResource( RemoteRid *remote_rid, RestRidWidget *widget, InterSpec *interspec, WObject* parent )
+RestRidInputResource::RestRidInputResource( RemoteRid *remote_rid, ExternalRidWidget *widget, InterSpec *interspec, WObject* parent )
 : WResource( parent ),
 m_remote_rid( remote_rid ),
 m_widget( widget ),
@@ -771,7 +1305,7 @@ void RestRidInputResource::handleRequest( const Wt::Http::Request &request,
   }//if( !lock )
   
   // Generate some JSON then
-  shared_ptr<SpecUtils::SpecFile> spec_file = m_remote_rid->fileForAnalysis();
+  shared_ptr<SpecUtils::SpecFile> spec_file = RemoteRid::fileForAnalysis(m_interspec);
   assert( spec_file );
   
   const string drf = m_widget->drf();
@@ -813,25 +1347,6 @@ void RestRidInputResource::handleRequest( const Wt::Http::Request &request,
   
   response.out() << body;
 }//handleRequest(...)
-
-
-
-#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
-class ExeRidWidget : public Wt::WContainerWidget
-{
-  InterSpec *m_interspec;
-  
-public:
-  ExeRidWidget( InterSpec *interspec, WContainerWidget *parent = 0 )
-  : WContainerWidget( parent ),
-  m_interspec( interspec )
-  {
-    addStyleClass( "ExeRidWidget" );
-    
-    new WText( "This will eventually be the ExeRidWidget", this );
-  }
-};//class ExeRidWidget
-#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
 
 }//namespace
 
@@ -904,6 +1419,7 @@ pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
   
   WPushButton *close = window->addCloseButtonToFooter();
   close->clicked().connect( window, &AuxWindow::hide );
+  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->addHelpInFooter( window->footer(), "external-rid" );
   
   RemoteRid *w = new RemoteRid( viewer, window->contents() );
@@ -917,7 +1433,11 @@ pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
 
 RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
 : WContainerWidget( parent ),
-  m_interspec( viewer )
+  m_interspec( viewer ),
+  m_rest_rid( nullptr )
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+  , m_exe_rid( nullptr )
+#endif
 {
   assert( viewer );
   if( !viewer )
@@ -927,7 +1447,7 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   addStyleClass( "RemoteRid" );
   
-  RestRidWidget *remote = new RestRidWidget( this, viewer );
+  m_rest_rid = new RestRidImp::ExternalRidWidget( RestRidImp::ExternalRidWidget::ServiceType::Rest, this, viewer );
   
   WGridLayout *layout = new WGridLayout( this );
   layout->setVerticalSpacing( 0 );
@@ -936,14 +1456,14 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
-  ExeRidWidget *exe = new ExeRidWidget( viewer );
+  m_exe_rid = new RestRidImp::ExternalRidWidget( RestRidImp::ExternalRidWidget::ServiceType::Exe, this, viewer );
   
   WStackedWidget *stack = new WStackedWidget();
   stack->addStyleClass( "UseInfoStack" );
   stack->setOverflow( WContainerWidget::OverflowAuto );
   
-  stack->addWidget( remote );
-  stack->addWidget( exe );
+  stack->addWidget( m_rest_rid );
+  stack->addWidget( m_exe_rid );
   
   WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
   stack->setTransitionAnimation( animation, true );
@@ -955,7 +1475,7 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
   menu->addStyleClass( style_class );
   
   
-  WMenuItem *item = new WMenuItem( "Remote URL", remote );
+  WMenuItem *item = new WMenuItem( "Remote URL", m_rest_rid );
   menu->addItem( item );
   
   item->clicked().connect( std::bind([item,menu](){
@@ -963,7 +1483,7 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
     item->triggered().emit( item );
   }) );
   
-  item = new WMenuItem( "Executable", exe );
+  item = new WMenuItem( "Executable", m_exe_rid );
   menu->addItem( item );
   item->clicked().connect( std::bind([item,menu](){
     menu->select( item );
@@ -982,28 +1502,20 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
 #else
   layout->setContentsMargins( 0, 0, 0, 0 );
   layout->setColumnStretch( 0, 1 );
-  layout->addWidget( remote, 0, 0 );
+  layout->addWidget( m_rest_rid, 0, 0 );
 #endif
-  
-  
-  
-  //RestRidWidget
-  
-  
-  // "ExternalRidExe"
-  
 }//RemoteRid constructor
 
 
 
-std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis()
+std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis( InterSpec *interspec )
 {
   try
   {
-    if( !m_interspec )
+    if( !interspec )
       return nullptr;
     
-    shared_ptr<const SpecMeas> foreground_file = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    shared_ptr<const SpecMeas> foreground_file = interspec->measurment(SpecUtils::SpectrumType::Foreground);
     if( !foreground_file )
       return nullptr;
     
@@ -1014,14 +1526,14 @@ std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis()
     
     answer->remove_measurements( answer->measurements() );
     
-    auto disp_fore = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    auto disp_fore = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     if( !disp_fore )
       return nullptr;
     
     auto fore = make_shared<SpecUtils::Measurement>( *disp_fore );
     fore->set_source_type(SpecUtils::SourceType::Foreground);
     
-    auto disp_back = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+    auto disp_back = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
     
     answer->add_measurement( fore, !disp_back );
     if( disp_back )
@@ -1040,3 +1552,18 @@ std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis()
   
   return nullptr;
 }//std::shared_ptr<SpecUtils::SpecFile> fileForAnalysis()
+
+
+void RemoteRid::alwaysCallRestAnaChecked()
+{
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+  m_exe_rid->uncheckAlwaysCallAnalysis();
+#endif
+}//void alwaysCallRestAnaChecked()
+
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+void RemoteRid::alwaysCallExeAnaChecked()
+{
+  m_rest_rid->uncheckAlwaysCallAnalysis();
+}//void alwaysCallExeAnaChecked()
+#endif

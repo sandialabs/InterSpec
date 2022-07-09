@@ -40,4 +40,5 @@
  <pref name="ExternalRidWarn" type="Boolean">true</pref>
  <pref name="ExternalRidUrl" type="String"></pref>
  <pref name="ExternalRidExe" type="String"></pref>
+ <pref name="AlwaysCallExternalRid" type="Integer">0</pref>
 </preferences>

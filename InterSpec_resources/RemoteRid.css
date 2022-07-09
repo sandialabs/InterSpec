@@ -3,7 +3,7 @@
 
 }
 
-.RestRidWidget
+.ExternalRidWidget
 {
 
 }
@@ -14,14 +14,10 @@
   min-width: 350px;
 }
 
-.RestRidResult, .ExeRidWidget
-{
-  
-}
 
 .ExternalRidWarningDialog .NoShowAgain
 {
-  float: right:
+  float: right;
   margin-right: 10px;
   margin-bottom: 10px;
 }
@@ -34,8 +30,10 @@
 
 .RestRidInfoStack
 {
-  height: 150px;
+  height: 225px;
   width: 375px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .RestRidError
@@ -48,17 +46,11 @@
   color: blue;
 }
 
+
 .RestRidResult
 {
   color: black;
-}
-
-
-
-
-.RestRidResult
-{
-  margin-top: 15px;
+  margin-top: 5px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -74,11 +66,13 @@
 .RestRidResult .ResultChi2
 {
   margin-right: 12px;
+  margin-top: 5px;
 }
 
 .RestRidResult .ResultTable
 {
-  color: #434C5E;
+  /* color: #434C5E; */
+  margin-top: 5px;
   border: 1px solid #4C566A;
   flex-grow: 4;
 }
@@ -104,4 +98,24 @@
 .ResultTable tbody > tr:last-child > td
 {
   border-bottom: none;
+}
+
+
+.RestRidResult .AnaWarnings
+{
+  margin-top: 5px;
+  color: #D08770;
+}
+
+.AnaWarnings > div
+{
+  margin-bottom: 4px;
+  border-left: solid 1px #EBCB8B;
+  padding-left: 4px;
+}
+
+
+.RemoteRid .AlwaysSubmitAna
+{
+  margin-left: 10px;
 }

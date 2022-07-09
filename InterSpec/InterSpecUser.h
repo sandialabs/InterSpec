@@ -262,9 +262,11 @@ public:
   T preferenceValue( const std::string &name ) const;
   
   //setPreferenceValue(): Sets preference value for named preference to both
-  //  the InterSpecUser in memorry and the database.
+  //  the InterSpecUser in memory and the database.
   //  If the preference isnt already in memory, and its not in
   //  data/default_preferences.xml then will throw an exception
+  //  Note the reason for passing InterSpecUser and viewer pointers is so
+  //  we dont have to #include InterSpec.h in this file.
   template<typename T>
   static void setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
                                   const std::string &name, const T &value,

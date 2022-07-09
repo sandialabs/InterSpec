@@ -32,7 +32,10 @@
 
 class AuxWindow;
 class InterSpec;
+
 namespace SpecUtils { class SpecFile; }
+
+namespace RestRidImp { class ExternalRidWidget; }
 
 class RemoteRid : public Wt::WContainerWidget
 {
@@ -56,10 +59,23 @@ public:
   RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent );
   
   
-  std::shared_ptr<SpecUtils::SpecFile> fileForAnalysis();
+  static std::shared_ptr<SpecUtils::SpecFile> fileForAnalysis( InterSpec *interspec );
+  
+  void alwaysCallRestAnaChecked();
+  
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+  void alwaysCallExeAnaChecked();
+#endif
   
 protected:
   InterSpec *m_interspec;
+  
+  RestRidImp::ExternalRidWidget *m_rest_rid;
+  
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+  RestRidImp::ExternalRidWidget *m_exe_rid;
+#endif
+
 };//class RemoteRid
 
 #endif //RemoteRid_h
