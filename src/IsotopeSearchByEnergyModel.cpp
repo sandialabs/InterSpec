@@ -1265,7 +1265,7 @@ void IsotopeSearchByEnergyModel::updateSearchResults(
   if( !workingspace->error_msg.empty() )
   {
     // Probably wont ever get here - but JIC.
-    passMessage( workingspace->error_msg, "", 3 );
+    passMessage( workingspace->error_msg, 3 );
   }
   
   

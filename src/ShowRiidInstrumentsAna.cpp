@@ -105,7 +105,7 @@ class AnaResultDisplay : public WContainerWidget
         break;
     }//switch( field )
     
-    InterSpec::instance()->logMessage( "Editing Analysis Results Not implemented - sorry", "", 0 );
+    InterSpec::instance()->logMessage( "Editing Analysis Results Not implemented - sorry", 0 );
   }//void handleFieldUpdate( AnaResultEditableFields field )
   
 #if( ENABLE_EDIT_RESULTS )

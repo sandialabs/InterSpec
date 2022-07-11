@@ -568,7 +568,7 @@ public:
     {
       distance = 1.0 * PhysicalUnits::cm;
       m_relaxationDistance->setText( "1.0 cm" );
-      passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+      passMessage( e.what(), WarningWidget::WarningMsgHigh );
     }// try / catch
     
     // TODO: put in actual recommended dimensions for FOV and depth, based on current detector distance and energy peaks.
@@ -3735,7 +3735,6 @@ void ShieldingSelect::updateMassFractionDisplays( std::shared_ptr<const Material
                      " dealing with the material change, you may want to"
                      " try re-selecting the material, as well as checking the"
                      " calculation log before trusting the results.",
-                     "",
                      WarningWidget::WarningMsgHigh );
         cerr << endl << "ShieldingSelect::updateMassFractionDisplays(...)\n\tSerious programming error here"
              << endl << endl;
@@ -4110,7 +4109,7 @@ void ShieldingSelect::handleMaterialChange()
       WStringStream msg;
       msg << "'" << m_materialEdit->text().toUTF8()
           << "' is not a valid material";
-      passMessage( msg.str(), "", WarningWidget::WarningMsgInfo );
+      passMessage( msg.str(), WarningWidget::WarningMsgInfo );
     }//if( material ) / else
     
 

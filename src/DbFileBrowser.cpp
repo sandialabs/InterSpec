@@ -509,7 +509,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     txt->setAttributeValue( "style", "color: red; font-weight: bold; font-size: 22px;" );
     
     passMessage( (string("Error creating database spectrum file browser: ") + e.what()).c_str(),
-                "", WarningWidget::WarningMsgHigh );
+                WarningWidget::WarningMsgHigh );
     cerr << "\n\nSnapshotModel caught: " << e.what() << endl << endl;
   }//try / catch
 }//SnapshotBrowser
@@ -737,7 +737,7 @@ void SnapshotBrowser::startEditSelected()
 {
   if( !m_session )
   {
-    passMessage( "No active database session", "", WarningWidget::WarningMsgHigh );
+    passMessage( "No active database session", WarningWidget::WarningMsgHigh );
     return;
   }
   
@@ -760,7 +760,7 @@ void SnapshotBrowser::startEditSelected()
   
   if( !state )  //shouldnt ever happend
   {
-    passMessage( "Invalid state selected", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Invalid state selected", WarningWidget::WarningMsgHigh );
     return;
   }
   
@@ -808,7 +808,7 @@ void SnapshotBrowser::startEditSelected()
   yes->clicked().connect( std::bind([=](){
     if( nameEdit->text().toUTF8().empty() ) //should happen
     {
-      passMessage( "You must enter a name", "", WarningWidget::WarningMsgHigh );
+      passMessage( "You must enter a name", WarningWidget::WarningMsgHigh );
       return;
     }
     
@@ -823,7 +823,7 @@ void SnapshotBrowser::startEditSelected()
       m_descriptionLabel->setText( "<i>" + description->text().toUTF8() + "</i>" );
     }catch( ... )
     {
-      passMessage( "Error modifying state - probably not changed", "", WarningWidget::WarningMsgHigh );
+      passMessage( "Error modifying state - probably not changed", WarningWidget::WarningMsgHigh );
     }//try /catch
     
     m_editWindow->hide();
@@ -873,8 +873,7 @@ std::shared_ptr<SpecMeas> SnapshotBrowser::retrieveMeas( const int dbid )
     {
       cerr << "retrieveMeas() caught (while trying to load snaphot): "
       << e.what() << endl;
-      passMessage( "Sorry, couldnt load requested snapshot",
-                  "", WarningWidget::WarningMsgHigh );
+      passMessage( "Sorry, couldnt load requested snapshot", WarningWidget::WarningMsgHigh );
     }//try / catch
     
     return snapshotmeas;
@@ -887,7 +886,7 @@ void SnapshotBrowser::deleteSelected()
   if( selection.empty() )
   {
     //m_deleteButton->disable();
-    passMessage( "No state selected to delete", "", WarningWidget::WarningMsgMedium );
+    passMessage( "No state selected to delete", WarningWidget::WarningMsgMedium );
     return;
   }//if( !indices.size() )
   
@@ -901,7 +900,7 @@ void SnapshotBrowser::deleteSelected()
   
   if( !state )
   {
-    passMessage( "Invalid state selected", "", WarningWidget::WarningMsgMedium );
+    passMessage( "Invalid state selected", WarningWidget::WarningMsgMedium );
     return;
   }
   
@@ -924,10 +923,10 @@ void SnapshotBrowser::deleteSelected()
     m_snapshotTable->treeRoot()->removeChildNode(node);
     m_nrows -= 1;
     
-    passMessage( "Snapshot '" + name + "' removed from database.", "", WarningWidget::WarningMsgInfo );
+    passMessage( "Snapshot '" + name + "' removed from database.", WarningWidget::WarningMsgInfo );
   }catch( ... )
   {
-    passMessage( "Error removing snapshot from database.", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error removing snapshot from database.", WarningWidget::WarningMsgHigh );
   }
   
   if( m_editWindow )
@@ -972,8 +971,7 @@ void SnapshotBrowser::loadSnapshotSelected()
   
   if( !dbstate || dbstate.id() < 0 )
   {
-    passMessage( "Error loading from the database",
-                "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error loading from the database", WarningWidget::WarningMsgHigh );
     m_finished.emit();
     return;
   }//if( !selected )
@@ -986,10 +984,10 @@ void SnapshotBrowser::loadSnapshotSelected()
     msg += dbstate.get()->name;
     msg += "' loaded";
     
-    passMessage( msg.toUTF8(), "", WarningWidget::WarningMsgInfo );
+    passMessage( msg.toUTF8(), WarningWidget::WarningMsgInfo );
   }catch( std::exception &e )
   {
-    passMessage( "Failed to load state", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Failed to load state", WarningWidget::WarningMsgHigh );
     cerr << "DbStateBrowser::loadSelected() caught: " << e.what() << endl;
   }//try / catch
   
@@ -1025,8 +1023,7 @@ void SnapshotBrowser::loadSpectraSelected()
     
     if( !dbfile || dbfile.id() < 0 )
     {
-        passMessage( "Error loading from the database",
-                    "", WarningWidget::WarningMsgHigh );
+        passMessage( "Error loading from the database", WarningWidget::WarningMsgHigh );
         m_finished.emit();
         return;
     }//if( !selected )
@@ -1069,7 +1066,7 @@ void SnapshotBrowser::loadSpectraSelected()
                         }//if( meas )
                     }//if( snapshot_id )
                     
-                    passMessage("Already opened","",WarningWidget::WarningMsgInfo);
+                    passMessage("Already opened", WarningWidget::WarningMsgInfo);
                     m_finished.emit();
                     return;
                 } //measurement == m_viewer->measurment(type)
@@ -1124,7 +1121,7 @@ void SnapshotBrowser::loadSpectraSelected()
             {
                 cerr << "\n\nSnapshotModel\n\tCaught: " << e.what() << "\n\n";
                 passMessage( "Error displaying previous measurment, things may not"
-                            " be as expected" , "", WarningWidget::WarningMsgHigh );
+                            " be as expected" , WarningWidget::WarningMsgHigh );
             }//try / catch
         }else
         {

@@ -92,6 +92,10 @@
 #include "InterSpec/InterSpecServer.h"
 #endif
 
+#if( USE_REMOTE_RID )
+#include "InterSpec/RemoteRid.h"
+#endif
+
 
 using namespace std;
 using namespace Wt;
@@ -465,7 +469,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         }catch( std::exception &e )
         {
           passMessage( "Error handling deep-link (1): " + string(e.what()),
-                      "", WarningWidget::WarningMsgHigh );
+                      WarningWidget::WarningMsgHigh );
           wApp->log( "error" ) << "InterSpecApp::setupWidgets: invalid URL: " << e.what();
         }
       }else
@@ -626,7 +630,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         "return false;\" "
         "class=\"clearsession\"><span class=\"clearsessiontxt\">Start Fresh Session</span></div>";
         
-        WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgInfo, 5000 );
+        m_viewer->warningWidget()->addMessageUnsafe( js.str(), WarningWidget::WarningMsgInfo, 5000 );
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
         }
 #endif
@@ -1045,7 +1049,7 @@ void InterSpecApp::notify( const Wt::WEvent& event )
   {
     string msg = "There was an unexpected error, application state may be suspect: ";
     msg += e.what();
-    svlog( msg, "", WarningWidget::WarningMsgHigh );
+    svlog( msg, WarningWidget::WarningMsgHigh );
     
 #if( PERFORM_DEVELOPER_CHECKS )
     char message[1024];
@@ -1210,7 +1214,7 @@ void InterSpecApp::clearSession()
     if( !ElectronUtils::requestNewCleanSession() )
     {
       passMessage( "There was an error requesting a new session - sorry.",
-                   "", WarningWidget::WarningMsgHigh );
+                   WarningWidget::WarningMsgHigh );
     }
   }else
   {
@@ -1257,14 +1261,35 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
       level = WarningWidget::WarningMsgLevel::WarningMsgHigh;
     }
     
-    passMessage( msg, "", level );
+    passMessage( msg, level );
     return;
   }//if( SpecUtils::istarts_with( signal, "showMsg-" ) )
+  
+#if( USE_REMOTE_RID )
+  if( signal == "openRemoteRidTool" )
+  {
+    RemoteRid::handleOpeningRemoteRidTool(m_viewer);
+    return;
+  }//if( signal == "openRemoteRidTool" )
+  
+  if( signal == "disableRemoteRid" )
+  {
+    RemoteRid::disableAutoRemoteRid(m_viewer);
+    return;
+  }//if( signal == "disableRemoteRid" )
+  
+  
+  if( SpecUtils::istarts_with( signal, "showRemoteRidRefLines-" ) )
+  {
+    RemoteRid::handleShowingRemoteRidRefLines(m_viewer,signal);
+    return;
+  }//if( signal == "showRemoteRidRefLines-" )
+#endif
   
   
   // shouldnt ever make it here..
   const string errmsg = "InterSpecApp::miscSignalHandler: unhandled signal '" + signal + "'";
-  passMessage( errmsg, "", WarningWidget::WarningMsgHigh );
+  passMessage( errmsg, WarningWidget::WarningMsgHigh );
 #if( PERFORM_DEVELOPER_CHECKS )
   log_developer_error( __func__, errmsg.c_str() );
 #endif
@@ -1279,8 +1304,7 @@ bool InterSpecApp::handleAppUrl( const std::string &url )
     m_viewer->handleAppUrl( url );
   }catch( std::exception &e )
   {
-    passMessage( "Error handling deep-link: " + string(e.what()),
-                 "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error handling deep-link: " + string(e.what()), WarningWidget::WarningMsgHigh );
     cerr << "InterSpecApp::handleAppUrl: invalid URL: " << e.what() << endl;
     wApp->log( "error" ) << "InterSpecApp::handleAppUrl: invalid URL: " << e.what();
     
@@ -1302,21 +1326,21 @@ void InterSpecApp::finalize()
 }//void InterSpecApp::finalize()
 
 
-void InterSpecApp::svlog( const WString& message, const WString& source, int priority )
+void InterSpecApp::svlog( const WString& message, int priority )
 {
   if( m_viewer )
-    m_viewer->logMessage( message, source, priority );
-}//void svlog(WString&, WString&)
+    m_viewer->logMessage( message, priority );
+}//void svlog(WString&, int)
 
 
-void InterSpecApp::svlog( const char *message, const char *source, int priority )
+void InterSpecApp::svlog( const char *message, int priority )
 {
-  svlog( Wt::WString::fromUTF8(message), Wt::WString::fromUTF8(source), priority );
+  svlog( Wt::WString::fromUTF8(message), priority );
 }
 
-void InterSpecApp::svlog( const std::string& message, const std::string& source, int priority )
+void InterSpecApp::svlog( const std::string& message, int priority )
 {
-  svlog( Wt::WString::fromUTF8(message), Wt::WString::fromUTF8(source), priority );
+  svlog( Wt::WString::fromUTF8(message), priority );
 }
 
 

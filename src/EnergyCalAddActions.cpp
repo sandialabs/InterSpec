@@ -1071,7 +1071,7 @@ bool LinearizeCalTool::checkValidInputs()
         string msg = "The input for spectra with " + to_string(nOrigChann)
                      + " channels are invalid.  You must have at least 6 channels and upper energy"
                        " must be greater than lower energy";
-        viewer->logMessage( WString::fromUTF8(msg), "", 2 );
+        viewer->logMessage( WString::fromUTF8(msg), 2 );
       }
     }//if( nCurrentChan < 5 || lower >= upper )
   }//for( auto &m : m_options )
@@ -1155,7 +1155,7 @@ void LinearizeCalTool::handleFinish( Wt::WDialog::DialogCode result )
               }catch( std::exception &e ) //Shouldnt ever actually happen, but JIC
               {
                 if( viewer )
-                  viewer->logMessage( "Error creating new cal: " + string(e.what()), "", 3 );
+                  viewer->logMessage( "Error creating new cal: " + string(e.what()), 3 );
                 continue;
               }//try / catch to create new calibration
               
@@ -1168,7 +1168,7 @@ void LinearizeCalTool::handleFinish( Wt::WDialog::DialogCode result )
             }catch( std::exception &e )  //Shouldnt ever actually happen, but JIC
             {
               if( viewer )
-                viewer->logMessage( "Error rebinning whiel linearizing: " + string(e.what()), "", 3 );
+                viewer->logMessage( "Error rebinning whiel linearizing: " + string(e.what()), 3 );
             }//try / catch to create new calibration
           }//for( const int sample : toapplyto.sample_numbers )
         }//for( const auto &detname : toapplyto.detectors )
@@ -1335,7 +1335,7 @@ void CombineChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
       
       if( ncombine <= 1 )
       {
-        viewer->logMessage( "Not combining channels; invalid input", "", 2 );
+        viewer->logMessage( "Not combining channels; invalid input", 2 );
         break;
       }
       
@@ -1364,7 +1364,7 @@ void CombineChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
                 toapplyto.meas->set_energy_calibration( pos->second, m );
             }catch( std::exception &e )
             {
-              viewer->logMessage( "Error combining channels: " + string(e.what()), "", 3 );
+              viewer->logMessage( "Error combining channels: " + string(e.what()), 3 );
               continue;
             }//try / catch
           }//for( const int sample : toapplyto.sample_numbers )
@@ -1643,7 +1643,7 @@ bool TruncateChannelsTool::validateInput()
   {
     InterSpec *viewer = InterSpec::instance();
     assert( viewer );
-    viewer->logMessage( "You can not truncate to fewer than 6 channels.", "", 2 );
+    viewer->logMessage( "You can not truncate to fewer than 6 channels.", 2 );
   }//if( !valid )
   
   return valid;
@@ -1683,7 +1683,7 @@ void TruncateChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
       const bool valid = validateInput();
       if( !valid )
       {
-        viewer->logMessage( "Input wasnt valid; not applying changes", "", 2 );
+        viewer->logMessage( "Input wasnt valid; not applying changes", 2 );
         break;
       }
       
@@ -1727,7 +1727,7 @@ void TruncateChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
               toapplyto.meas->truncate_gamma_channels( first, last, keepOverflow, m );
             }catch( std::exception &e )
             {
-              viewer->logMessage( "Error applying truncation: " + string(e.what()), "", 2 );
+              viewer->logMessage( "Error applying truncation: " + string(e.what()), 2 );
               continue;
             }
             

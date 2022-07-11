@@ -187,7 +187,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     
     if( qr_svg_str.empty() )
     {
-      passMessage( "Sorry, couldnt create QR code", "", 3 );
+      passMessage( "Sorry, couldnt create QR code", 3 );
       return nullptr;
     }
     
@@ -259,7 +259,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     return window;
   }catch( std::exception &e )
   {
-    passMessage( "Sorry, error creating QR code: " + string(e.what()), "", 3 );
+    passMessage( "Sorry, error creating QR code: " + string(e.what()), 3 );
     cerr << "Error creating QR code window: " << e.what() << endl;
   }
   

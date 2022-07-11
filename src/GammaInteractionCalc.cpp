@@ -4160,8 +4160,7 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
              "ShieldingSourceChi2Fcn::cluster_peak_activities(...)"
              " which is keeping this activity/shielding fit from happening "
              "(place a) - please complain to Will Johnson about this";
-      passMessage( msg.str(),
-                "ShieldingSourceChi2Fcn", WarningWidget::WarningMsgHigh );
+      passMessage( msg.str(), WarningWidget::WarningMsgHigh );
       throw std::runtime_error( msg.str() );
     }//if( energy_count_map.count( energy ) == 0 )
 
@@ -4242,8 +4241,7 @@ vector< tuple<double,double,double,Wt::WColor,double> > ShieldingSourceChi2Fcn::
              "ShieldingSourceChi2Fcn::expected_observed_chis(...)"
              " which is keeping this activity/shielding fit from happening "
              "(place b) - please complain to Will Johnson about this";
-      passMessage( msg.str(),
-                   "ShieldingSourceChi2Fcn", WarningWidget::WarningMsgHigh );
+      passMessage( msg.str(), WarningWidget::WarningMsgHigh );
       throw std::runtime_error( msg.str() );
     }//if( energy_count_map.count( energy ) == 0 )
 
@@ -4486,7 +4484,7 @@ void ShieldingSourceChi2Fcn::setBackgroundPeaks(
       msg << "The non-gaussian background peak at " << p.mean() << " keV "
           << " will not be used for backgorund peak area subtraction;"
           << " non-gaussian peaks may be supported for this in the future";
-      passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+      passMessage( msg.str(), WarningWidget::WarningMsgHigh );
     }//if( p.gausPeak() ) / else
   }//for( PeakDef &p : m_backgroundPeaks )
 }//void setBackgroundPeaks(...)

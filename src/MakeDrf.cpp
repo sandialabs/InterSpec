@@ -1872,13 +1872,13 @@ void MakeDrf::startSaveAs()
     auto state = validator->validate(name->text()).state();
     if( name->text().empty() || state!=WValidator::Valid )
     {
-      passMessage( "Detector name not valid.", "", 3 );
+      passMessage( "Detector name not valid.", 3 );
       return;
     }
     
     if( m_effEqnCoefs.empty() )
     {
-      passMessage( "Intrinsic Efficiency Equation is not valid.", "", 3 );
+      passMessage( "Intrinsic Efficiency Equation is not valid.", 3 );
       return;
     }
     
@@ -1893,7 +1893,7 @@ void MakeDrf::startSaveAs()
       drf = assembleDrf( drfname, drfdescrip );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating DRF: " + string(e.what()), "", 3 );
+      passMessage( "Error creating DRF: " + string(e.what()), 3 );
       return;
     }
     
@@ -1913,7 +1913,7 @@ void MakeDrf::startSaveAs()
       transaction.commit();
     }catch( std::exception &e )
     {
-      passMessage( "Error saving DetectorPeakResponse to data base: " + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+      passMessage( "Error saving DetectorPeakResponse to data base: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
       return;
     }//try / catch
     
@@ -1941,7 +1941,7 @@ void MakeDrf::startSaveAs()
     w->hide();
     
     //m_finished.emit();
-    passMessage( "Saved '" + drfname + "' to the internal database.", "", 0 );
+    passMessage( "Saved '" + drfname + "' to the internal database.", 0 );
   };//auto doSave
   
   WPushButton *save = w->addCloseButtonToFooter( "Save" );

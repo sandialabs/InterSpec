@@ -106,11 +106,11 @@
 
 
 // Sets up the message handler, assuming it's standalone.
-#define passMessage(message,source,priority) \
+#define passMessage(message,priority) \
   {if(dynamic_cast<InterSpecApp*>(Wt::WApplication::instance())) \
-    dynamic_cast<InterSpecApp*>(Wt::WApplication::instance())->svlog(message,source,priority); \
+    dynamic_cast<InterSpecApp*>(Wt::WApplication::instance())->svlog(message,priority); \
   else \
-    std::cerr << source << ": " << message << std::endl;}
+    std::cerr << "passMessage: " << message << std::endl;}
 
 
 #cmakedefine HAS_WTDBOSQLITE3 1

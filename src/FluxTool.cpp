@@ -1234,19 +1234,19 @@ void FluxToolWidget::tableCopiedToCliboardCallback( const int copied )
   switch( copied )
   {
     case 0:
-      passMessage( "Failed to copy to clipboard - maybe a permissions issue - sorry.", "", 3 );
+      passMessage( "Failed to copy to clipboard - maybe a permissions issue - sorry.", 3 );
       break;
     
     case 1:
-      passMessage( "Copied table to clipboard.", "", 0 );
+      passMessage( "Copied table to clipboard.", 0 );
       break;
     
     case 2:
-      passMessage( "Copied table to clipboard as HTML text.", "", 0 );
+      passMessage( "Copied table to clipboard as HTML text.", 0 );
       break;
       
     default:
-      passMessage( "Unknown result of copy command - sorry.", "", 3 );
+      passMessage( "Unknown result of copy command - sorry.", 3 );
       break;
   }//switch( copied )
 }//void tableCopiedToCliboardCallback( const int copied )

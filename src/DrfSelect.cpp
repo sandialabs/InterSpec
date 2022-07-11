@@ -974,7 +974,7 @@ void RelEffFile::handleUserAskedRemove()
     if( !SpecUtils::is_absolute_path(pathToDel) )
     {
       passMessage( "Error removing TSV or CSV relative-efficiency DRF file - not an absolute path.",
-                  "", WarningWidget::WarningMsgHigh );
+                  WarningWidget::WarningMsgHigh );
       return;
     }
     
@@ -987,7 +987,7 @@ void RelEffFile::handleUserAskedRemove()
     }catch( std::exception &e )
     {
       passMessage( "Error removing TSV or CSV relative-efficiency DRF file - file path is in unexpected base.",
-                  "", WarningWidget::WarningMsgHigh );
+                  WarningWidget::WarningMsgHigh );
       return;
     }//
     
@@ -1000,13 +1000,13 @@ void RelEffFile::handleUserAskedRemove()
     {
       cerr << "Error removing file '" << filepath << "': " << e.what() << endl;
       passMessage( "Error removing TSV or CSV relative-efficiency DRF file - invalid path.",
-                  "", WarningWidget::WarningMsgHigh );
+                  WarningWidget::WarningMsgHigh );
       return;
     }
     
     
     passMessage( "File '" + SpecUtils::filename(pathToDel) + "' removed from future use.",
-                "", WarningWidget::WarningMsgInfo );
+                WarningWidget::WarningMsgInfo );
   }) );
   
   
@@ -1023,7 +1023,7 @@ void RelEffFile::handleSaveFileForLater()
   
   if( m_fileUpload->empty() || m_responses.empty() )
   {
-    passMessage( "No valid file available for saving.", "", WarningWidget::WarningMsgHigh );
+    passMessage( "No valid file available for saving.", WarningWidget::WarningMsgHigh );
     return;
   }
   
@@ -1069,13 +1069,13 @@ void RelEffFile::handleSaveFileForLater()
     passMessage( "Saved '" + filename + "' for later use, and will be available in the"
                 " &quot;<em>Rel. Eff.</em>&quot; portion of the"
                 " &quot;<em>Detector Response Function Select</em>&quot; tool.",
-                "", WarningWidget::WarningMsgInfo );
+                WarningWidget::WarningMsgInfo );
   }catch( std::exception &e )
   {
     // Dont ever expect to really get here.
     cerr << "RelEffFile::handleSaveFileForLater(): Caught exception trying to save '"
          << displayName << "' from '" << spoolPath << "'." << endl;
-    passMessage( "Error saving DRF file for later use; sorry.", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error saving DRF file for later use; sorry.", WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void handleSaveFileForLater();
 #endif  //#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
@@ -1090,7 +1090,7 @@ void RelEffFile::handleFileUpload()
   if( m_responses.empty() )
   {
     passMessage( "Not a valid TSV or CSV relative-efficiency DRF file.",
-                 "", WarningWidget::WarningMsgHigh );
+                 WarningWidget::WarningMsgHigh );
     return;
   }//if( invalid file )
   
@@ -1492,7 +1492,7 @@ void GadrasDetSelect::docreate()
       pathstr = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", m_interspec );
   }catch( std::exception & )
   {
-    passMessage( "Error retrieving 'GadrasDRFPath' preference.", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error retrieving 'GadrasDRFPath' preference.", WarningWidget::WarningMsgHigh );
   }
 #endif
 
@@ -1648,7 +1648,7 @@ std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
         return answer;
       }catch( std::exception &e )
       {
-        passMessage( "Failed to parse a GADRAS detector: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
+        passMessage( "Failed to parse a GADRAS detector: " + string(e.what()), WarningWidget::WarningMsgHigh );
       }//try / catch
     }//if( user has selected an index )
   }//for( auto w : m_directories->children() )
@@ -1705,7 +1705,7 @@ void GadrasDetSelect::saveFilePathToUserPreferences()
     InterSpecUser::setPreferenceValue( m_interspec->m_user, "GadrasDRFPath", dirs, m_interspec );
   }catch( std::exception &e )
   {
-    passMessage( "Error saving GADRAS path to user preferences: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error saving GADRAS path to user preferences: " + string(e.what()), WarningWidget::WarningMsgHigh );
   }
 }//void saveFilePathToUserPreferences()
 #endif
@@ -2766,7 +2766,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
     if( !m_detector || !m_detector->isValid() )
     {
-      passMessage( "No DRF loaded", "", WarningWidget::WarningMsgHigh );
+      passMessage( "No DRF loaded", WarningWidget::WarningMsgHigh );
       return;
     }
   
@@ -2776,7 +2776,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
       QrCode::displayTxtAsQrCode( url, m_detector->name(), m_detector->description() );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES
@@ -3184,7 +3184,7 @@ void DrfSelect::dbTableSelectionChanged()
   }catch(...)
   {
     failed = true;
-    passMessage( "Error getting from DetectorPeakResponse table", "DrfSelect", WarningWidget::WarningMsgHigh );
+    passMessage( "Error getting from DetectorPeakResponse table", WarningWidget::WarningMsgHigh );
   }//try / catch
   
   m_detector = det;
@@ -3403,7 +3403,7 @@ void DrfSelect::setDefineDetector()
     updateChart();
   }catch( std::exception &e )
   {
-    passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+    passMessage( e.what(), WarningWidget::WarningMsgHigh );
     setAcceptButtonEnabled( false );
     m_manualSetButton->enable();
     updateChart();
@@ -3737,7 +3737,7 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
   if( !isGadrasDet && !isDiamDet )
   {
     if( diameter > 0.0 )
-      passMessage( "Need the detectors diameter", "", WarningWidget::WarningMsgHigh );
+      passMessage( "Need the detectors diameter", WarningWidget::WarningMsgHigh );
     return;
   }//if( !isGadrasDet && !isDiamDet )
 
@@ -3779,7 +3779,7 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
   }catch( std::exception &e )
   {
     setAcceptButtonEnabled( false );
-    passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+    passMessage( e.what(), WarningWidget::WarningMsgHigh );
     return;
   }//try / catch
   
@@ -3852,7 +3852,7 @@ void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakRespons
     transaction.commit();
   }catch( std::exception &e )
   {
-    passMessage( "Error writing DetectorPeakResponse to DB: " + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error writing DetectorPeakResponse to DB: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void updateLastUsedTimeOrAddToDb(...)
 

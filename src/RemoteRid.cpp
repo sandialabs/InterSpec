@@ -28,6 +28,19 @@
 #include <sstream>
 #include <iostream>
 
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+#include <cstdlib>
+
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#elif( defined(_WIN32) )
+#define WIN32_LEAN_AND_MEAN
+#include <stdio.h>
+#include <windows.h>
+#include <libloaderapi.h>
+#endif
+#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+
 #include <boost/process.hpp>
 #include <boost/filesystem.hpp>
 
@@ -59,6 +72,9 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/RemoteRid.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/WarningWidget.h"
+#include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/ReferencePhotopeakDisplay.h"
 
 
 using namespace std;
@@ -68,6 +84,10 @@ using namespace Wt;
 namespace
 {
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+/** Runs an executable from the filesystem with the specified arguments.
+ 
+ TODO: currently doesnt handle error super well - mostly because I dont fully trust the return codes of `full-spec` yet, but we can probably improve things a bit as that project matures.
+ */
 std::string run_external_command( const string &exe, const vector<string> &args )
 {
   namespace bp = boost::process;
@@ -79,13 +99,18 @@ std::string run_external_command( const string &exe, const vector<string> &args 
   
   c.wait();
 
-  std::string output(std::istreambuf_iterator<char>(proc_stdout), {});
-  std::string error(std::istreambuf_iterator<char>(proc_stderr), {});
-  
-  cout << "Process output: " << output << endl;
-  cout << "Process stdout: " << error << endl;
+  string output( std::istreambuf_iterator<char>(proc_stdout), {});
+  string error( std::istreambuf_iterator<char>(proc_stderr), {});
   
   int result = c.exit_code();
+  
+  //cout << "Process output: " << output << endl;
+  //cout << "Process stdout: " << error << endl;
+  
+  // Throw exception only if return code is not success, and either there is some error output,
+  //  or no stdout
+  if( (result != EXIT_SUCCESS) && (error.size() || output.empty()) )
+    throw runtime_error( error );
   
   return output;
   
@@ -141,8 +166,132 @@ std::string run_external_command( const string &exe, const vector<string> &args 
   return result;
    */
 }
-#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
 
+
+/** Looks at the file path passed in to try and find the file wether it is a relative path, or
+ an absolute path.
+ 
+ Returns if the path could be found, and modifies the filename passed in such that you can open that
+ path as an ifstream or something.
+ */
+bool locate_file( string &filename, const bool is_dir )
+{
+  auto check_exists = [is_dir]( const string &name ) -> bool {
+    return is_dir ? SpecUtils::is_directory(name) : SpecUtils::is_file(name);
+  };//auto check_exists
+  
+  if( SpecUtils::is_absolute_path(filename) )
+    return check_exists(filename);
+  
+  // Check if path is there, relative to CWD
+  if( check_exists(filename) )
+    return true;
+  
+  // We'll look relative to the executables path, but note that if we started from a symlink, I
+  //  think it will resolve relative to actual executable
+  try
+  {
+#ifdef __APPLE__
+    char path_buffer[PATH_MAX + 1] = { '\0' };
+    uint32_t size = PATH_MAX + 1;
+    
+    if (_NSGetExecutablePath(path_buffer, &size) != 0) {
+      return false;
+    }
+    
+    path_buffer[PATH_MAX] = '\0'; // JIC
+    const string exe_path = path_buffer;
+#elif( defined(_WIN32) )
+    //static_assert( 0, "Need to test this EXE path stuff on Windows..." );
+    wchar_t wbuffer[2*MAX_PATH];
+    const DWORD len = GetModuleFileNameW( NULL, wbuffer, 2*MAX_PATH );
+    if( len <= 0 )
+      throw runtime_error( "Call to GetModuleFileName falied" );
+    
+    const string exe_path = SpecUtils::convert_from_utf16_to_utf8( wbuffer );
+#else // if __APPLE__ / Win32 / else
+    
+    char path_buffer[PATH_MAX + 1] = { '\0' };
+    const ssize_t ret = readlink("/proc/self/exe", path_buffer, PATH_MAX);
+    
+    if( (ret == -1) || (ret > PATH_MAX) )
+      throw runtime_error( "Failed to read line" );
+    
+    assert( ret < PATH_MAX );
+    path_buffer[ret] = '\0';
+    path_buffer[PATH_MAX] = '\0'; // JIC
+    const string exe_path = path_buffer;
+#endif // else not __APPLE__
+    
+    string trial_parent_path = exe_path;
+    if( !SpecUtils::make_canonical_path(trial_parent_path) )
+      throw runtime_error( "Failed to make trial_parent_path canonical" );
+    
+    trial_parent_path = SpecUtils::parent_path(trial_parent_path);
+    
+    string trialpath = SpecUtils::append_path( trial_parent_path, filename );
+    
+    if( check_exists(trialpath) )
+    {
+      filename = trialpath;
+      return true;
+    }
+    
+    if( boost::filesystem::is_symlink(trialpath) )
+    {
+      trialpath = boost::filesystem::read_symlink(trialpath).string<string>();
+      if( check_exists(trialpath) )
+      {
+        filename = trialpath;
+        return true;
+      }
+    }//if( is symlink )
+    
+    // We could try again, going up one more directory, incase executable is in "Debug" directory
+    //  or something, but we'll skip this for the moment
+    //trial_parent_path = SpecUtils::parent_path(trial_parent_path);
+    //trialpath = SpecUtils::append_path( trial_parent_path, filename );
+    //if( check_exists(trialpath) )
+    //{
+    //  filename = trialpath;
+    //  return true;
+    //}
+  }catch( std::exception &e )
+  {
+    //cerr << "Caught exception: " << e.what() << endl;
+  }
+  
+  
+  // Check relative to environments "PATH"
+  const char *env_path = std::getenv("PATH");
+  if( !env_path )
+    return false;
+  
+  // grab the PATH system variable, and check if the input path is relative to any of those
+  vector<string> paths;
+#if( defined(_WIN32) )
+  const char *delims = ";";
+#else
+  const char *delims = ":";
+#endif
+  SpecUtils::split( paths, env_path, ";" );
+  
+  for( string base : paths )
+  {
+    const string trialpath = SpecUtils::append_path( base, filename );
+    
+    if( check_exists(filename) )
+    {
+      filename = trialpath;
+      return true;
+    }
+  }//for( string base : paths )
+  
+  // Out of luck, we failed if we're here.
+
+  return false;
+}//bool locate_file( ... )
+#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
 }//namespace
 
 
@@ -277,18 +426,55 @@ FullSpecResults json_to_results( const string &input )
  */
 class RestRidInputResource : public Wt::WResource
 {
-  RemoteRid *m_remote_rid;
-  ExternalRidWidget *m_widget;
+  Wt::WFlags<RemoteRid::AnaFileOptions> m_flags;
+  std::string m_drf;
   Wt::WApplication *m_app; //it looks like WApplication::instance() will be valid in handleRequest, but JIC
   InterSpec *m_interspec;
   
 public:
-  RestRidInputResource( RemoteRid *remote_rid, ExternalRidWidget *widget, InterSpec *interspec, WObject* parent = 0 );
+  RestRidInputResource( InterSpec *interspec, WObject* parent = 0 );
+  
+  void setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags );
+  void setDrf( const std::string &drf );
   
   virtual ~RestRidInputResource();
   virtual void handleRequest( const Wt::Http::Request &request,
                              Wt::Http::Response &response );
 };//class RestRidInputResource : public Wt::WResource
+
+
+
+
+
+/** This class handles REST communication/facilitation.
+ It is inserted into the DOM so signals are exposed, but it does not display any content, and
+ its size is set to zero.
+ 
+ We could probably make this a "lighter" widget than a WContainerWidget, but effort to check
+ this out probably wasnt worth it.
+ */
+class RestRidInterface : public Wt::WContainerWidget
+{
+public:
+  JSignal<std::string> m_info_response_signal;
+  JSignal<std::string> m_info_error_signal;
+  JSignal<std::string> m_analysis_results_signal;
+  JSignal<std::string> m_analysis_error_signal;
+  
+  RestRidInputResource *m_resource;
+  
+public:
+  RestRidInterface( InterSpec *viewer, Wt::WContainerWidget *parent );
+  void setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags );
+  void setDrf( const string &drf );
+  void startRestAnalysis( const string ana_service_url );
+  void requestRestServiceInfo( const string url );
+  void deleteSelfForToast();
+  void handleAnaResultSuccessForToast( string response );
+  void handleAnaResultFailureForToast( string response );
+};//class RestRidInterface
+
+
 
 
 
@@ -311,55 +497,16 @@ protected:
   WStackedWidget *m_drf_stack;
   WPushButton *m_retrieve_drfs_btn;
   WComboBox *m_drf_select;
+  WCheckBox *m_onlyDisplayedSamples;
   WPushButton *m_submit;
   WStackedWidget *m_status_stack;
   WText *m_error;
   WText *m_status;
   WText *m_result;
-  RestRidInputResource *m_resource;
+  
   WCheckBox *m_alwaysDoAnalysisCb;
-  
-  
-  std::unique_ptr<JSignal<std::string>> m_info_response_signal;
-  std::unique_ptr<JSignal<std::string>> m_info_error_signal;
-  std::unique_ptr<JSignal<std::string>> m_analysis_results_signal;
-  std::unique_ptr<JSignal<std::string>> m_analysis_error_signal;
-  
-  
-  std::string mostRecentUserUrl()
-  {
-    try
-    {
-      const char *prefname = "";
-      switch( m_type )
-      {
-        case ServiceType::Rest:
-          prefname = "ExternalRidUrl";
-          break;
-          
-        case ServiceType::Exe:
-          prefname = "ExternalRidExe";
-          break;
-      }//switch( m_type )
-      
-      
-      const string prev_urls = InterSpecUser::preferenceValue<string>( prefname, m_interspec );
-      vector<string> prev;
-      SpecUtils::split( prev, prev_urls, ";" );
-      if( prev.empty() )
-        return "";
-      
-      return prev.front();
-    }catch( std::exception &e )
-    {
-      cerr << "Error in mostRecentUserUrl(): " << e.what() << endl;
-      assert( 0 );
-    }//try / catch
-    
-    return "";
-  }//std::string mostRecentUserUrl()
-  
-  
+
+  RestRidInterface *m_rest_interface;
   
   void setMostRecentUrl( const string &url )
   {
@@ -405,6 +552,62 @@ protected:
   
   
 public:
+  static std::string mostRecentUserUrl( const ServiceType type, InterSpec *interspec )
+  {
+    const char *prefname = "";
+    switch( type )
+    {
+      case ServiceType::Rest:
+        prefname = "ExternalRidUrl";
+        break;
+        
+      case ServiceType::Exe:
+        prefname = "ExternalRidExe";
+        break;
+    }//switch( m_type )
+    
+    // Make option to just copy FullSpectrum into InterSpecs directory for easy access
+    auto check_for_default = [type]() -> string {
+      if( type == ServiceType::Rest )
+        return "";
+      
+#if( defined(_WIN32) )
+      // Assumes Electron build
+      string exe_name = "resources/app/FullSpectrum/full-spec.exe";
+#elif( APPLE )
+      // Assumes app build
+      string exe_name = "../Resources/FullSpectrum/full-spec";
+#else
+      // Assumes Electron build
+      string exe_name = "resources/app/FullSpectrum/full-spec";
+#endif
+      
+      if( locate_file( exe_name, false ) )
+        return exe_name;
+      
+      return "";
+    };//check_for_default() lamda
+    
+    
+    try
+    {
+      const string prev_urls = InterSpecUser::preferenceValue<string>( prefname, interspec );
+      vector<string> prev;
+      SpecUtils::split( prev, prev_urls, ";" );
+      if( prev.empty() )
+        return check_for_default();
+      
+      return prev.front();
+    }catch( std::exception &e )
+    {
+      cerr << "Error in mostRecentUserUrl(): " << e.what() << endl;
+      assert( 0 );
+    }//try / catch
+    
+    return "";
+  }//std::string mostRecentUserUrl()
+  
+public:
   ExternalRidWidget( const ServiceType type, RemoteRid *remoterid, InterSpec *interspec, WContainerWidget *parent = 0 )
   : WContainerWidget( parent ),
    m_interspec( interspec ),
@@ -414,17 +617,14 @@ public:
    m_drf_stack( nullptr ),
    m_retrieve_drfs_btn( nullptr ),
    m_drf_select( nullptr ),
+   m_onlyDisplayedSamples( nullptr ),
    m_submit( nullptr ),
    m_status_stack( nullptr ),
    m_error( nullptr ),
    m_status( nullptr ),
    m_result( nullptr ),
-   m_resource( nullptr ),
    m_alwaysDoAnalysisCb( nullptr ),
-   m_info_response_signal{},
-   m_info_error_signal{},
-   m_analysis_results_signal{},
-   m_analysis_error_signal{}
+   m_rest_interface( nullptr )
   {
     assert( m_remote_rid );
     assert( interspec );
@@ -474,7 +674,7 @@ public:
       }//case ServiceType::Exe:
     }//switch( m_type )
     
-    m_url->setText( WString::fromUTF8( mostRecentUserUrl() ) );
+    m_url->setText( WString::fromUTF8( mostRecentUserUrl(m_type,m_interspec) ) );
     
     layout->addWidget( m_url, 0, 1, AlignMiddle );
     layout->setColumnStretch( 1, 1 );
@@ -499,6 +699,7 @@ public:
     m_drf_select = new WComboBox();
     sub_layout->addWidget( m_drf_select, 0, 1 );
     sub_layout->setColumnStretch( 1, 1 );
+    m_drf_select->activated().connect( this, &ExternalRidWidget::handleUserChangedDrf );
     
     m_drf_stack->addWidget( container );
     m_drf_stack->setCurrentIndex( 0 );
@@ -524,17 +725,25 @@ public:
     
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_result) );
     
+    
+    m_onlyDisplayedSamples = new WCheckBox( "Only Displayed Samples" );
+    m_onlyDisplayedSamples->setToolTip( "Normally search-mode and portal data are analyzed in their"
+                                        " entirety, but selecting this option will cause only the"
+                                        " displayed foreground/background to be analyzed." );
+    m_onlyDisplayedSamples->addStyleClass( "AlwaysSubmitAna" );
+    layout->addWidget( m_onlyDisplayedSamples, 3, 0, 1, 2 );
+    auto meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    m_onlyDisplayedSamples->setHidden( !meas || !meas->passthrough() );
+    
+    
     m_submit = new WPushButton( "Submit Analysis" );
-    layout->addWidget( m_submit, 3, 0, 1, 2, AlignCenter );
+    layout->addWidget( m_submit, 4, 0, 1, 2, AlignCenter );
     m_submit->clicked().connect( this, &ExternalRidWidget::submitForAnalysis );
     m_submit->disable();
     
-    if( m_type == ServiceType::Rest )
-      m_resource = new RestRidInputResource( m_remote_rid, this, m_interspec, this );
-    
     m_alwaysDoAnalysisCb = new WCheckBox( "Always submit analysis on spectrum load" );
     m_alwaysDoAnalysisCb->addStyleClass( "AlwaysSubmitAna" );
-    layout->addWidget( m_alwaysDoAnalysisCb, 4, 0, 1, 2 );
+    layout->addWidget( m_alwaysDoAnalysisCb, 5, 0, 1, 2 );
     
     const int always_call_index = (m_type == ServiceType::Rest) ? 1 : 2;
     const int always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", m_interspec );
@@ -545,7 +754,16 @@ public:
       try
       {
         InterSpecUser::setPreferenceValue(m_interspec->m_user, "AlwaysCallExternalRid", always_call_index, m_interspec);
-        m_remote_rid->alwaysCallRestAnaChecked();
+        switch( m_type )
+        {
+          case ServiceType::Rest:
+            m_remote_rid->alwaysCallRestAnaChecked();
+            break;
+          case ServiceType::Exe:
+            m_remote_rid->alwaysCallExeAnaChecked();
+            break;
+        }//switch( m_type )
+        
       }catch( std::exception & )
       {
         assert(0);
@@ -567,15 +785,13 @@ public:
     
     if( m_type == ServiceType::Rest )
     {
-      m_info_response_signal.reset( new JSignal<std::string>( this, "info_response", false ) );
-      m_info_error_signal.reset( new JSignal<std::string>( this, "info_error", false ) );
-      m_analysis_results_signal.reset( new JSignal<std::string>( this, "analysis_results", false ) );
-      m_analysis_error_signal.reset( new JSignal<std::string>( this, "analysis_error", false ) );
+      m_rest_interface = new RestRidInterface( m_interspec, nullptr );
+      layout->addWidget( m_rest_interface, 6, 0, 1, 2 );
       
-      m_info_response_signal->connect( boost::bind( &ExternalRidWidget::handleInfoResponse, this, boost::placeholders::_1 ) );
-      m_info_error_signal->connect( boost::bind( &ExternalRidWidget::handleInfoResponseError, this, boost::placeholders::_1 ) );
-      m_analysis_results_signal->connect( boost::bind( &ExternalRidWidget::handleResultResponse, this, boost::placeholders::_1 ) );
-      m_analysis_error_signal->connect( boost::bind( &ExternalRidWidget::handleResultResponseError, this, boost::placeholders::_1 ) );
+      m_rest_interface->m_info_response_signal.connect( this, &ExternalRidWidget::handleInfoResponse );
+      m_rest_interface->m_info_error_signal.connect( this, &ExternalRidWidget::handleInfoResponseError );
+      m_rest_interface->m_analysis_results_signal.connect( this, &ExternalRidWidget::handleResultResponse );
+      m_rest_interface->m_analysis_error_signal.connect( this, &ExternalRidWidget::handleResultResponseError );
     }//if( m_type == ServiceType::Rest )
     
     urlChanged();
@@ -586,98 +802,186 @@ public:
     m_alwaysDoAnalysisCb->setChecked( false );
   }
   
+  Wt::WFlags<RemoteRid::AnaFileOptions> anaFlags() const
+  {
+    Wt::WFlags<RemoteRid::AnaFileOptions> flags;
+    if( !m_onlyDisplayedSamples->isHidden() && m_onlyDisplayedSamples->isChecked() )
+      flags |= RemoteRid::AnaFileOptions::OnlyDisplayedSearchSamples;
+    
+    return flags;
+  }//anaFlags()
+  
 protected:
   
   void startRestAnalysis()
   {
-    const string ana_service_url = m_url->text().toUTF8();
-    const string &resource_url = m_resource->url();
-    
-    // Note: the JS is defined in the C++ to avoid having a separate JS file that will end up being
-    // packaged in builds that wont use it (i.e., most InterSpec builds); I dont like having various
-    // `fetch` commands around that can call off of localhost; if nothing else this is a bad look.
-    
-    WStringStream js;
-    js <<
-    "let sendAnaRequest = function(formData){\n"
-    "  fetch('" << ana_service_url << "/analysis', {method: 'POST', body: formData})\n"
-    "    .then(response => response.json() )\n"
-    "    .then(json_results => {\n"
-    "      console.log( 'Got JSON analysis response:', json_results );\n"
-    "      const result_str = JSON.stringify(json_results);\n"
-    << "      " << m_analysis_results_signal->createCall("result_str") << "\n"
-    "    })\n"
-    "  .catch( error => {\n"
-    "    console.error( 'Error getting analysis input:', error);\n"
-    "    const error_str = 'Error retrieving results from server: ' + error.toString();\n"
-    "  " << m_analysis_error_signal->createCall( "error_str" ) << ";\n"
-    "  });\n"
-    "};\n";
-    
-    js << "fetch('" << resource_url << "', {method: 'POST'})\n"
-    << ".then( response => response.formData() )\n"
-    << ".then( data => {\n"
-    //<< "  console.log( 'Got FormData wt app!' );\n"
-    << "  sendAnaRequest(data);"
-    //<< "  const data_str = JSON.stringify(data);\n"
-    //<< "  " << m_info_response_signal.createCall( "data_str" ) << ";\n"
-    << "})\n"
-    << ".catch( error => {\n"
-    << "  console.error( 'Error getting analysis input:', error);"
-    << "  const error_str = 'Error getting analysis input:' + error.toString();\n"
-    << "  " << m_analysis_error_signal->createCall( "error_str" ) << ";\n"
-    << "});\n";
-    
-    doJavaScript( js.str() );
+    assert( m_rest_interface );
+    if( m_rest_interface )
+    {
+      m_rest_interface->setDrf( drf() );
+      m_rest_interface->setAnaFlags( anaFlags() );
+      m_rest_interface->startRestAnalysis( m_url->text().toUTF8() );
+    }
   }//void startRestAnalysis()
   
-  
-  void receiveExeAnalysis( std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
+  void requestRestServiceInfo()
   {
-    assert( result && m );
+    assert( m_rest_interface );
+    if( m_rest_interface )
+      m_rest_interface->requestRestServiceInfo( m_url->text().toUTF8() );
+  }//void requestRestServiceInfo()
+  
+  
+  void receiveExeAnalysis( std::shared_ptr<int> rcode, std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
+  {
+    assert( rcode && result && m );
     assert( WApplication::instance() );
     
     std::lock_guard<mutex> lock( *m );
     
+    const int code = *rcode;
     const string &res = *result;
-    if( SpecUtils::starts_with(res, "Success:") )
+    if( code == 0 )
     {
-      const string json = SpecUtils::trim_copy(res.substr(8));
-      handleResultResponse( json );
-    }else if( SpecUtils::starts_with(res, "Fail:") )
-    {
-      const string result = SpecUtils::trim_copy(res.substr(5));
-      handleResultResponseError( result );
+      handleResultResponse( res );
     }else
     {
-      assert( 0 );
+      handleResultResponseError( res );
     }
     
     wApp->triggerUpdate();
   }//void receiveExeAnalysis( std::shared_ptr<string> result )
   
-  
-  void startExeAnalysis()
+public:
+  static void makeToastNotificationForAnaResult( std::shared_ptr<int> rcode, std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
   {
-    shared_ptr<SpecUtils::SpecFile> spec_file = RemoteRid::fileForAnalysis(m_interspec);
-    assert( spec_file );
-    
-    if( !spec_file )
-    {
-      m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
-      m_error->setText( "No displayed spectrum" );
-      
+    assert( rcode && result && m );
+    WApplication *app = WApplication::instance();
+    assert( app );
+    if( !app )
       return;
-    }//if( !spec_file )
     
+    std::lock_guard<mutex> lock( *m );
+    
+    string message;
+    const int code = *rcode;
+    const string &res = *result;
+    if( code == 0 )
+    {
+      vector<string> nuclides;
+      
+      try
+      {
+        const FullSpecResults result = json_to_results( res );
+        
+        string iso_str = result.isotopeString;
+        SpecUtils::ireplace_all( iso_str, "+", ", " );
+        
+        if( iso_str.empty() )
+        {
+          if( result.errorMessage.size() )
+            message = "GADRAS RID Error: " + result.errorMessage;
+          else if( result.code )
+            message = "GADRAS RID Error code " + to_string(result.code);
+          else
+            message = "GADRAS RID: nothing identified";
+        }else
+        {
+          message = "GADRAS RID: " + iso_str;
+        }
+        
+        const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+        assert( db );
+        for( const auto &iso : result.isotopes )
+        {
+          const SandiaDecay::Nuclide *nuc = db->nuclide(iso.name);
+          if( nuc )
+            nuclides.push_back( nuc->symbol );
+        }
+      }catch( std::exception &e )
+      {
+        message = "Failed to parse GADRAS RID results.";
+        
+        cerr << "makeToastNotificationForAnaResult: Failed to parse results from GADRAS: "
+        << e.what() << endl;
+      }//try / catch
+      
+      WStringStream js;
+      js << message;
+      
+      js << "<div class=\"RemoteRidToastButtons\">";
+      if( !nuclides.empty() )
+      {
+        string nucstr;
+        for( size_t i = 0; i < nuclides.size(); ++i )
+          nucstr += (i ? "," : "") + nuclides[i];
+        
+        js <<
+        "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'showRemoteRidRefLines-" << nucstr << "');"
+        "try{$(this.parentElement.parentElement.parentElement).remove();}catch(e){}"
+        "return false;\">Show Ref. Lines</div>";
+      }//if( !nuclides.empty() )
+      
+      js <<
+      "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'openRemoteRidTool');"
+      "try{$(this.parentElement.parentElement.parentElement).remove();}catch(e){}"
+      "return false;\">Open Remote RID</div>";
+      
+      js << "</div>";
+      
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer )
+        viewer->warningWidget()->addMessageUnsafe( js.str(), WarningWidget::WarningMsgExternalRiid, 20000 );
+    }else // if( code != 0 )
+    {
+      // TODO: check for return code, etc., and customize message based on that
+      
+      WStringStream js;
+      js << res;
+      js <<
+      "<div class=\"RemoteRidToastButtons\">"
+      "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'openRemoteRidTool');"
+      "try{$(this.parentElement.parentElement.parentElement).remove();}catch(e){}"
+      "return false;\">Open Remote RID</div>"
+      "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'disableRemoteRid');"
+      "try{$(this.parentElement.parentElement.parentElement).remove();}catch(e){}"
+      "return false;\">Disable Remote RID</div>"
+      "</div>";
+      
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer )
+        viewer->warningWidget()->addMessageUnsafe( js.str(), WarningWidget::WarningMsgExternalRiid, 20000 );
+    }//if( code == 0 ) / else
+    
+    wApp->triggerUpdate();
+  }//void makeToastNotificationForAnaResult( std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
+
+public:
+  static void startExeAnalysis( string exe_path, ExternalRidWidget *parent, string drf, shared_ptr<SpecUtils::SpecFile> spec_file )
+  {
     vector<string> arguments;
     arguments.push_back( "--mode=command-line" );
     arguments.push_back( "--out-format=json" );
     arguments.push_back( "--drf" );
-    arguments.push_back( drf() );
+    arguments.push_back( drf );
     
     if( spec_file->num_measurements() < 2 )
       arguments.push_back( "--synthesize-background=1" );
+    
+    if( !locate_file(exe_path, false) )
+    {
+      if( parent )
+      {
+        parent->m_status_stack->setCurrentIndex( parent->m_status_stack->indexOf(parent->m_error) );
+        parent->m_error->setText( "Error locating executable: '" + exe_path + "'" );
+      }else
+      {
+        cerr << __func__ << ": Error locating executable: '" + exe_path + "'" << endl;
+      }
+      
+      return;
+    }//if( !locate_file(exe_path, false) )
+    
     
     const string tmpfilename = SpecUtils::temp_file_name( "interspec_ana_" + wApp->sessionId(),
                                                           SpecUtils::temp_dir() );
@@ -685,19 +989,33 @@ protected:
     if( SpecUtils::is_file(tmpfilename) || SpecUtils::is_directory(tmpfilename) )
     {
       // Shouldnt ever happen
-      m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
-      m_error->setText( "Error creating temp file name." );
+      if( parent )
+      {
+        parent->m_status_stack->setCurrentIndex( parent->m_status_stack->indexOf(parent->m_error) );
+        parent->m_error->setText( "Error creating temp file name." );
+      }else
+      {
+        cerr << __func__ << ": Error creating temp file name." << endl;
+      }
+      
       return;
-    }
+    }//if( SpecUtils::is_file(tmpfilename) || SpecUtils::is_directory(tmpfilename) )
     
     {//begin writing temp file
       ofstream tmpfile( tmpfilename.c_str(), ios::out | ios::binary );
       if( !tmpfile.is_open() )
       {
-        m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
-        m_error->setText( "Error opening temp file." );
+        if( parent )
+        {
+          parent->m_status_stack->setCurrentIndex( parent->m_status_stack->indexOf(parent->m_error) );
+          parent->m_error->setText( "Error opening temp file." );
+        }else
+        {
+          cerr << __func__ << ": Error opening temp file." << endl;
+        }
+        
         return;
-      }
+      }//if( !tmpfile.is_open() )
       
       spec_file->write_2012_N42( tmpfile );
     }//end writing temp file
@@ -705,27 +1023,34 @@ protected:
     arguments.push_back( tmpfilename );
     
     
-    const string exe_path = m_url->text().toUTF8();
-    
     const string appsession = WApplication::instance()->sessionId();
     auto result = std::make_shared<string>();
+    auto rcode = std::make_shared<int>(-1);
     auto m = make_shared<mutex>();
-    auto doUpdateFcn = wApp->bind( boost::bind( &ExternalRidWidget::receiveExeAnalysis, this, result, m ) );
+    boost::function<void()> doUpdateFcn;
     
-    auto commandRunner = [tmpfilename,exe_path,arguments,doUpdateFcn,result,m,appsession](){
+    if( parent )
+      doUpdateFcn = wApp->bind( boost::bind( &ExternalRidWidget::receiveExeAnalysis, parent, rcode, result, m ) );
+    else
+      doUpdateFcn = boost::bind( &ExternalRidWidget::makeToastNotificationForAnaResult, rcode, result, m );
+    
+    auto commandRunner = [tmpfilename,exe_path,arguments,doUpdateFcn,rcode,result,m,appsession](){
       try
       {
         string results = run_external_command( exe_path, arguments );
+        SpecUtils::trim( results );
         
         if( results.empty() )
           throw runtime_error( "No output from running executable." );
         
         std::lock_guard<mutex> lock( *m );
-        *result = "Success:" + results;
+        *rcode = 0;
+        *result = results;
       }catch( std::exception &e )
       {
         std::lock_guard<mutex> lock( *m );
-        *result = "Fail:" + string(e.what());
+        *rcode = -1;
+        *result = e.what();
       }
       
       if( !SpecUtils::remove_file( tmpfilename ) )
@@ -755,54 +1080,44 @@ protected:
         break;
         
       case ServiceType::Exe:
-        startExeAnalysis();
+      {
+        const string drf_name = drf();
+        const string exe_path = m_url->text().toUTF8();
+        shared_ptr<SpecUtils::SpecFile> spec_file = RemoteRid::fileForAnalysis(m_interspec, anaFlags());
+        assert( spec_file );
+        
+        if( !spec_file )
+        {
+          m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
+          m_error->setText( "No displayed spectrum" );
+          
+          return;
+        }//if( !spec_file )
+        
+        startExeAnalysis( exe_path, this, drf_name, spec_file );
         break;
+      }//case ServiceType::Exe:
     }//switch( m_type )
   }//void submitForAnalysis()
   
   
-  void requestRestServiceInfo()
+  void receiveExeDrfInfo( std::shared_ptr<int> success, std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
   {
-    const string url = m_url->text().toUTF8();
-    
-    WStringStream js;
-    
-    js << "fetch('" << url << "/info', {method: 'POST'})"
-    << ".then( response => response.json() )"
-    << ".then( data => {"
-    //          << "console.log( 'Got data:', data );"
-    << "const data_str = JSON.stringify(data);"
-    << m_info_response_signal->createCall( "data_str" )
-    << "})"
-    << ".catch( error => {"
-    << "console.error( 'Error retrieving info:', error);"
-    << "const error_str = error.toString();"
-    << m_info_error_signal->createCall( "error_str" )
-    << "});";
-    
-    doJavaScript( js.str() );
-  }//void requestRestServiceInfo()
-  
-  
-  void receiveExeDrfInfo( std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
-  {
-    assert( result && m );
+    assert( success && result && m );
     assert( WApplication::instance() );
     
     std::lock_guard<mutex> lock( *m );
     
+    const int successval = *success;
     const string &res = *result;
-    if( SpecUtils::starts_with(res, "Success:") )
+    if( successval == 0 )
     {
       string json = "{\"Options\":[{\"name\":\"drf\","
-                        "\"possibleValues\":" + SpecUtils::trim_copy(res.substr(8)) + "}]}";
+                        "\"possibleValues\":" + res + "}]}";
       handleInfoResponse( json );
-    }else if( SpecUtils::starts_with(res, "Fail:") )
-    {
-      handleInfoResponseError( res.substr(5) );
     }else
     {
-      assert( 0 );
+      handleInfoResponseError( res );
     }
     
     wApp->triggerUpdate();
@@ -815,24 +1130,28 @@ protected:
     
     const string appsession = WApplication::instance()->sessionId();
     auto result = std::make_shared<string>();
+    auto success = std::make_shared<int>(0);
     auto m = make_shared<mutex>();
-    auto doUpdateFcn = wApp->bind( boost::bind( &ExternalRidWidget::receiveExeDrfInfo, this, result, m ) );
+    auto doUpdateFcn = wApp->bind( boost::bind( &ExternalRidWidget::receiveExeDrfInfo, this, success, result, m ) );
     
-    auto commandRunner = [exe_path,doUpdateFcn,result,m,appsession](){
+    auto commandRunner = [exe_path,doUpdateFcn,result,success,m,appsession](){
       try
       {
         vector<string> args{"--command-line", "--out-format", "json", "--drfs"};
         string drfs = run_external_command( exe_path, args );
+        SpecUtils::trim( drfs );
         
         if( drfs.empty() )
           throw runtime_error( "No output from running executable." );
         
         std::lock_guard<mutex> lock( *m );
-        *result = "Success:" + drfs;
+        *success = 0;
+        *result = drfs;
       }catch( std::exception &e )
       {
         std::lock_guard<mutex> lock( *m );
-        *result = "Fail:" + string(e.what());
+        *success = -1;
+        *result = e.what();
       }
       
       WServer *server = WServer::instance();
@@ -843,7 +1162,6 @@ protected:
     WServer::instance()->ioService().boost::asio::io_service::post( commandRunner );
   }//void requestExeInfo()
     
-  
   
   void requestServiceInfo()
   {
@@ -1084,14 +1402,19 @@ protected:
       {
         char buffer[64] = { '\0' };
         snprintf( buffer, sizeof(buffer), "%.2f", results.chi2 );
-        rslttxt << "<div class=\"ResultChi2\">&chi;<sup>2</sup>=" << std::string(buffer) << "</div>";
+        rslttxt << "<div class=\"ResultChi2\">&chi;<sup>2</sup>=" << std::string(buffer)
+        << ", DRF:&nbsp;" << Wt::Utils::htmlEncode(results.drf) << "</div>";
+      }else
+      {
+        rslttxt << "<div class=\"ResultChi2\">DRF:&nbsp;" << Wt::Utils::htmlEncode(results.drf)
+        << "</div>";
       }//if( output.chi_sqr > 0.0f )
       
       if( !results.analysisWarnings.empty() )
       {
         rslttxt << "<div class=\"AnaWarnings\">\n";
         for( const string &warning : results.analysisWarnings )
-          rslttxt << "<div>" << warning << "</div>\n";
+          rslttxt << "<div>" << Wt::Utils::htmlEncode(warning) << "</div>\n";
         rslttxt << "</div>\n";
       }//if( result.contains("analysisWarnings") )
       
@@ -1115,6 +1438,7 @@ protected:
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
   }//void handleResultResponseError()
   
+  
   bool isValidUrl()
   {
     switch( m_type )
@@ -1137,12 +1461,18 @@ protected:
         
       case ServiceType::Exe:
       {
-        const string url = m_url->text().toUTF8();
+        string url = m_url->text().toUTF8();
         try
         {
+          if( !locate_file(url, false) )
+            return false;
+          
           const boost::filesystem::file_status status = boost::filesystem::status(url);
           if( !boost::filesystem::exists(status) )
+          {
+            assert( 0 );
             return false;
+          }
           
           const boost::filesystem::perms p = status.permissions();
           
@@ -1229,7 +1559,23 @@ protected:
       m_status->setText( "Invalid URL" );
       m_submit->disable();
     }//if( !validUrl ) / else
+    
+    if( m_rest_interface )
+    {
+      m_rest_interface->setAnaFlags( anaFlags() );
+      m_rest_interface->setDrf( drf() );
+    }
   }//urlChanged()
+  
+  
+  void handleUserChangedDrf()
+  {
+    if( m_rest_interface )
+    {
+      m_rest_interface->setAnaFlags( anaFlags() );
+      m_rest_interface->setDrf( drf() );
+    }//if( m_rest_interface )
+  }//void handleUserChangedDrf()
   
   
   void displayedSpectrumChanged()
@@ -1247,6 +1593,8 @@ protected:
     if( !spec || url.empty() )
     {
       m_submit->setHidden( true );
+      m_onlyDisplayedSamples->setHidden( true );
+      
       if( !spec )
         m_status->setText( "No spectrum displayed to submit." );
       else if( url.empty() )
@@ -1255,6 +1603,15 @@ protected:
     {
       m_submit->setHidden( false );
       m_status->setText( "Click &quot;Submit Analysis&quot; to get RIID results." );
+      
+      auto m = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+      m_onlyDisplayedSamples->setHidden( !m || !m->passthrough() );
+    }
+    
+    if( m_rest_interface )
+    {
+      m_rest_interface->setAnaFlags( anaFlags() );
+      m_rest_interface->setDrf( drf() );
     }
   }//void displayedSpectrumChanged()
   
@@ -1272,20 +1629,171 @@ public:
 
 
 
+RestRidInterface::RestRidInterface( InterSpec *viewer, Wt::WContainerWidget *parent )
+: Wt::WContainerWidget( parent ),
+m_info_response_signal( this, "info_response", false ),
+m_info_error_signal( this, "info_error", false ),
+m_analysis_results_signal( this, "analysis_results", false ),
+m_analysis_error_signal( this, "analysis_error", false ),
+m_resource( new RestRidInputResource(viewer, this) )
+{
+  setPositionScheme( PositionScheme::Absolute ); //or Fixed
+  setWidth( 0 );
+  setHeight( 0 );
+}
 
-RestRidInputResource::RestRidInputResource( RemoteRid *remote_rid, ExternalRidWidget *widget, InterSpec *interspec, WObject* parent )
+
+void RestRidInterface::setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags )
+{
+  m_resource->setAnaFlags( flags );
+}
+
+void RestRidInterface::setDrf( const string &drf )
+{
+  m_resource->setDrf( drf );
+}
+
+void RestRidInterface::startRestAnalysis( const string ana_service_url )
+{
+  const string &resource_url = m_resource->url();
+  
+  // Note: the JS is defined in the C++ to avoid having a separate JS file that will end up being
+  // packaged in builds that wont use it (i.e., most InterSpec builds); I dont like having various
+  // `fetch` commands around that can call off of localhost; if nothing else this is a bad look.
+  
+  WStringStream js;
+  js <<
+  "\n"
+  "let sendAnaRequest = function(formData){\n"
+  "  fetch('" << ana_service_url << "/analysis', {method: 'POST', body: formData})\n"
+  "    .then(response => response.json() )\n"
+  "    .then(json_results => {\n"
+  //"      console.log( 'Got JSON analysis response:', json_results );\n"
+  "      const result_str = JSON.stringify(json_results);\n"
+  "      " << m_analysis_results_signal.createCall("result_str") << "\n"
+  "    })\n"
+  "  .catch( error => {\n"
+  "    console.error( 'Error retrieving results from server:', error);\n"
+  "    const error_str = 'Error retrieving results from server: ' + error.toString();\n"
+  "  " << m_analysis_error_signal.createCall( "error_str" ) << ";\n"
+  "  });\n"
+  "};\n";
+  
+  js <<
+  "\n"
+  "fetch('" << resource_url << "', {method: 'POST'})\n"
+  "  .then( response => response.formData() )\n"
+  "  .then( data => {\n"
+  //"  console.log( 'Got FormData wt app!' );\n"
+  "    sendAnaRequest(data);\n"
+  "  })\n"
+  "  .catch( error => {\n"
+  "    console.error( 'Error getting analysis input:', error);\n"
+  "    const error_str = 'Error getting analysis input:' + error.toString();\n"
+  "    " << m_analysis_error_signal.createCall( "error_str" ) << ";\n"
+  "});\n";
+  
+  doJavaScript( js.str() );
+}//void startRestAnalysis()
+
+void RestRidInterface::requestRestServiceInfo( const string url )
+{
+  WStringStream js;
+  
+  js <<
+  "fetch('" << url << "/info', {method: 'POST'})\n"
+  "  .then( response => response.json() )\n"
+  "  .then( data => {\n"
+//            << "console.log( 'Got service info data:', data );"
+  "    const data_str = JSON.stringify(data);\n"
+  "    " << m_info_response_signal.createCall( "data_str" ) << ";\n"
+  "  })\n"
+  "  .catch( error => {\n"
+  "  console.error( 'Error retrieving info:', error);\n"
+  "  const error_str = error.toString();\n"
+  "  " << m_info_error_signal.createCall( "error_str" ) << ";\n"
+  "});";
+  
+  doJavaScript( js.str() );
+}//void requestRestServiceInfo()
+
+
+
+void RestRidInterface::deleteSelfForToast()
+{
+  // Function called after a RestRidInterface object has served its purpose in getting a
+  //  result back (or an error) for a "Toast" notification analysis (e.g., RID ana performed when
+  //  spectrum is changed in InterSpec).
+  //
+  // We could leave the RestRidInterface in the DOM, and just update its ana flags and URL, but
+  //  for the moment, we'll just delete the widget after its intended use... although I *think*
+  //  we should always get a call-back for success or failure is the case, I'm not 100% certain
+  //  ... need to do some more testing
+  
+  const string rest_id = id();
+  RestRidInterface *instance = this;
+  
+  // I think its fine to just call `delete this`, but we'll do a little delay, "just because"
+  WServer::instance()->schedule( 1000, wApp->sessionId(), [rest_id, instance](){
+    assert( wApp );
+    WWidget *w = wApp->domRoot()->findById( rest_id );
+    RestRidInterface *ww = dynamic_cast<RestRidInterface *>( w );
+    cout << "When deleting RestRidInterface, got w = " << w << ", ww = " << ww << ", instance = " << instance << endl;
+    
+    assert( w );
+    delete instance;
+  } );
+}//deleteSelfForToast()
+
+void RestRidInterface::handleAnaResultSuccessForToast( string response )
+{
+  auto result = std::make_shared<string>( response );
+  auto rcode = std::make_shared<int>( 0 );
+  auto m = make_shared<mutex>();
+  
+  RestRidImp::ExternalRidWidget::makeToastNotificationForAnaResult( rcode, result, m );
+  
+  deleteSelfForToast();
+}//handleAnaResultSuccessForToast(...)
+
+void RestRidInterface::handleAnaResultFailureForToast( string response )
+{
+  auto result = std::make_shared<string>( response );
+  auto rcode = std::make_shared<int>( -1 );
+  auto m = make_shared<mutex>();
+  
+  RestRidImp::ExternalRidWidget::makeToastNotificationForAnaResult( rcode, result, m );
+  
+  deleteSelfForToast();
+}//handleAnaResultFailureForToast(...)
+
+
+
+RestRidInputResource::RestRidInputResource( InterSpec *interspec, WObject* parent )
 : WResource( parent ),
-m_remote_rid( remote_rid ),
-m_widget( widget ),
+m_flags( 0 ),
+m_drf( "auto" ),
 m_app( WApplication::instance() ),
 m_interspec( interspec )
 {
-  assert( m_remote_rid && m_widget && m_app && m_interspec );
+  assert( m_app && m_interspec );
 }
 
 RestRidInputResource::~RestRidInputResource()
 {
   beingDeleted();
+}
+
+
+void RestRidInputResource::setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags )
+{
+  m_flags = flags;
+}//void setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags )
+
+
+void RestRidInputResource::setDrf( const std::string &drf )
+{
+  m_drf = drf;
 }
 
 void RestRidInputResource::handleRequest( const Wt::Http::Request &request,
@@ -1305,11 +1813,10 @@ void RestRidInputResource::handleRequest( const Wt::Http::Request &request,
   }//if( !lock )
   
   // Generate some JSON then
-  shared_ptr<SpecUtils::SpecFile> spec_file = RemoteRid::fileForAnalysis(m_interspec);
+  shared_ptr<SpecUtils::SpecFile> spec_file = RemoteRid::fileForAnalysis(m_interspec, m_flags);
   assert( spec_file );
   
-  const string drf = m_widget->drf();
-  string options = "{\"drf\": \"" + drf + "\"";
+  string options = "{\"drf\": \"" + m_drf + "\"";
   if( spec_file && (spec_file->num_measurements() < 2) )
     options += ", \"synthesizeBackground\": true";
   options += "}";
@@ -1413,7 +1920,6 @@ pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
   AuxWindow *window = new AuxWindow( WString::fromUTF8("External RIID"),
                                     (Wt::WFlags<AuxWindowProperties> (AuxWindowProperties::DisableCollapse)
                                      | AuxWindowProperties::SetCloseable
-                                     | AuxWindowProperties::IsModal
                                      | AuxWindowProperties::TabletNotFullScreen)
                                     );
   
@@ -1497,7 +2003,9 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
   layout->addWidget( stack, 0, 1 );
   layout->setColumnStretch( 0, 1 );
   
-  menu->select( 0 );
+  // If we have it setup to always call the EXE, then show this tab, otherwise show REST tab.
+  const int always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", viewer );
+  menu->select( (always_call == 2) ? 1 : 0 );
   
 #else
   layout->setContentsMargins( 0, 0, 0, 0 );
@@ -1508,7 +2016,8 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
 
 
 
-std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis( InterSpec *interspec )
+std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis( InterSpec *interspec,
+                                                              const WFlags<AnaFileOptions> flags )
 {
   try
   {
@@ -1521,7 +2030,7 @@ std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis( InterSpec *inte
     
     auto answer = make_shared<SpecUtils::SpecFile>( *foreground_file );
     
-    if( foreground_file->passthrough() )
+    if( foreground_file->passthrough() && !flags.testFlag(OnlyDisplayedSearchSamples) )
       return answer;
     
     answer->remove_measurements( answer->measurements() );
@@ -1567,3 +2076,125 @@ void RemoteRid::alwaysCallExeAnaChecked()
   m_rest_rid->uncheckAlwaysCallAnalysis();
 }//void alwaysCallExeAnaChecked()
 #endif
+
+
+void RemoteRid::startAutomatedOnLoadAnalysis( InterSpec *interspec,
+                                              const Wt::WFlags<AnaFileOptions> flags )
+{
+  WApplication *app = WApplication::instance();
+  if( !interspec || !app )
+    return;
+  
+  const int always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", interspec );
+  if( (always_call != 1) && (always_call != 2) )
+    return;
+  
+  shared_ptr<SpecUtils::SpecFile> meas = fileForAnalysis( interspec, flags );
+  if( !meas )
+    return;
+  
+  
+  const auto service_type = (always_call == 1) ? RestRidImp::ExternalRidWidget::ServiceType::Rest
+                                               : RestRidImp::ExternalRidWidget::ServiceType::Exe;
+  
+  const string uri = RestRidImp::ExternalRidWidget::mostRecentUserUrl( service_type, interspec );
+  
+  switch( service_type )
+  {
+    case RestRidImp::ExternalRidWidget::ServiceType::Rest:
+    {
+      RestRidImp::RestRidInterface *rest = new RestRidImp::RestRidInterface( interspec, wApp->domRoot() );
+      rest->m_resource->setAnaFlags( flags );
+      rest->m_resource->setDrf( "auto" );
+      rest->m_analysis_results_signal.connect( rest, &RestRidImp::RestRidInterface::handleAnaResultSuccessForToast );
+      rest->m_analysis_error_signal.connect( rest, &RestRidImp::RestRidInterface::handleAnaResultFailureForToast );
+      rest->startRestAnalysis( uri );
+    
+      break;
+    }//case RestRidImp::ExternalRidWidget::ServiceType::Rest:
+      
+    case RestRidImp::ExternalRidWidget::ServiceType::Exe:
+      RestRidImp::ExternalRidWidget::startExeAnalysis( uri, nullptr, "auto", meas );
+      break;
+  }//switch( service_type )
+}//void startAutomatedOnLoadAnalysis( InterSpec *interspec )
+
+
+void RemoteRid::handleOpeningRemoteRidTool( InterSpec *interspec )
+{
+  if( !interspec )
+    return;
+  
+  interspec->createRemoteRidWindow();
+  WApplication *app = WApplication::instance();
+  if( app )
+    app->triggerUpdate();
+}//void handleOpeningRemoteRidTool( InterSpec *interspec )
+
+
+void RemoteRid::disableAutoRemoteRid( InterSpec *interspec )
+{
+  if( !interspec )
+    return;
+  
+  try
+  {
+    InterSpecUser::setPreferenceValue(interspec->m_user, "AlwaysCallExternalRid", 0, interspec);
+  }catch(...)
+  {
+    assert( 0 );
+  }
+}//void disableAutoRemoteRid( InterSpec *interspec )
+
+
+void RemoteRid::handleShowingRemoteRidRefLines( InterSpec *interspec, std::string signal )
+{
+  if( !interspec )
+    return;
+  
+  SpecUtils::ireplace_all( signal, "showRemoteRidRefLines-", "" );
+  vector<string> nuclides;
+  SpecUtils::split( nuclides, signal, "," );
+  
+  ReferencePhotopeakDisplay *display = interspec->referenceLinesWidget();
+  
+  bool hadToCreateWindow = false;
+  if( !display && !interspec->toolTabsVisible() )
+  {
+    hadToCreateWindow = true;
+    interspec->showGammaLinesWindow();
+    display = interspec->referenceLinesWidget();
+  }
+  
+  if( !display )
+  {
+    cerr << "Failed to get referenceLinesWidget!" << endl;
+    assert( 0 );
+    return;
+  }
+  
+  display->clearAllLines();
+  display->setShieldingMaterialAndThickness( "", "0 cm" );
+  
+  size_t ndisp = 0;
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
+  for( string &nuc : nuclides )
+  {
+    if( ndisp )
+      display->persistCurentLines();
+  
+    if( !db->nuclide(nuc) )
+      continue;
+    
+    display->setNuclideAndAge( nuc, "" );
+    ++ndisp;
+  }//for( string &nuc : nuclides )
+  
+  if( hadToCreateWindow && interspec->isPhone() )
+    interspec->closeGammaLinesWindow();
+  
+  WApplication *app = WApplication::instance();
+  if( app )
+    app->triggerUpdate();
+}//void handleShowingRemoteRidRefLines( InterSpec *interspec, std::string signal)

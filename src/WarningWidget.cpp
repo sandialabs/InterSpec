@@ -61,7 +61,12 @@ const char *iconUrl( const WarningWidget::WarningMsgLevel level )
     case WarningWidget::WarningMsgLevel::WarningMsgMedium:   return "InterSpec_resources/images/error.svg";
     case WarningWidget::WarningMsgLevel::WarningMsgHigh:     return "InterSpec_resources/images/exclamation.svg";
     case WarningWidget::WarningMsgLevel::WarningMsgSave:     return "InterSpec_resources/images/disk.svg";
-    case WarningWidget::WarningMsgLevel::WarningMsgShowRiid: return "InterSpec_resources/images/search_results.svg";
+    case WarningWidget::WarningMsgLevel::WarningMsgShowOnBoardRiid:
+#if( USE_REMOTE_RID )
+    case WarningWidget::WarningMsgLevel::WarningMsgExternalRiid:
+#endif
+      return "InterSpec_resources/images/search_results.svg";
+      
     case WarningWidget::WarningMsgLevel::NumWarningMsgType:  return "";
   }//switch( WarningMsgLevel(level) )
   
@@ -83,8 +88,13 @@ const char *WarningWidget::tostr( const WarningMsgLevel level )
       return "BlockNotificationHigh";
     case WarningWidget::WarningMsgSave:
       return "BlockNotificationSave";
-    case WarningMsgLevel::WarningMsgShowRiid:
+    case WarningMsgLevel::WarningMsgShowOnBoardRiid:
       return "BlockNotificationRiid";
+#if( USE_REMOTE_RID )
+    case WarningWidget::WarningMsgLevel::WarningMsgExternalRiid:
+      assert( 0 );
+      return "BlockNotificationExternalRiid";
+#endif
     case WarningMsgLevel::NumWarningMsgType:
       return "";
   }//switch( i )
@@ -108,8 +118,13 @@ const char *WarningWidget::popupToStr( const WarningMsgLevel level )
       return "PopupBlockNotificationHigh";
     case WarningWidget::WarningMsgSave:
       return "PopupBlockNotificationSave";
-    case WarningWidget::WarningMsgShowRiid:
+    case WarningWidget::WarningMsgShowOnBoardRiid:
       return "PopupBlockNotificationRiid";
+#if( USE_REMOTE_RID )
+    case WarningWidget::WarningMsgLevel::WarningMsgExternalRiid:
+      assert( 0 );
+      return "PopupBlockNotificationExternalRiid";
+#endif
     case WarningWidget::NumWarningMsgType:
       return "PopupBlockNotificationNumTypes";
   }//switch( i )
@@ -133,8 +148,18 @@ const char *WarningWidget::description( const WarningMsgLevel level )
       return "high";
     case WarningWidget::WarningMsgSave:
       return "save";
-    case WarningWidget::WarningMsgShowRiid:
+    case WarningWidget::WarningMsgShowOnBoardRiid:
+#if( USE_REMOTE_RID )
+      return "On-board RIID";
+#else
       return "RIID";
+#endif
+      
+#if( USE_REMOTE_RID )
+    case WarningWidget::WarningMsgLevel::WarningMsgExternalRiid:
+      return "External RIID";
+#endif
+      
     case WarningWidget::NumWarningMsgType:
       return "";
   }//switch( i )
@@ -155,7 +180,7 @@ WarningWidget::WarningWidget( InterSpec *hostViewer,
   m_description(NULL)
 {
   setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
-  m_messageModel = new WStandardItemModel( 1, 4, this );
+  m_messageModel = new WStandardItemModel( 1, 3, this );
   
   // Find which messages should be active.
   for( WarningMsgLevel i = WarningMsgLevel(0); i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
@@ -169,8 +194,13 @@ WarningWidget::WarningWidget( InterSpec *hostViewer,
   m_popupActive[WarningMsgSave] = true;
   
   //Force ShowRiid to always be true
-  m_active[WarningMsgShowRiid] = true;
-  m_popupActive[WarningMsgShowRiid] = true;
+  m_active[WarningMsgShowOnBoardRiid] = true;
+  m_popupActive[WarningMsgShowOnBoardRiid] = true;
+  
+#if( USE_REMOTE_RID )
+  m_active[WarningMsgExternalRiid] = true;
+  m_popupActive[WarningMsgExternalRiid] = true;
+#endif
   
   // Hook it up to the message handler in InterSpec
   hostViewer->messageLogged().connect( this, &WarningWidget::addMessage );
@@ -206,7 +236,6 @@ void WarningWidget::createContent()
     m_messageModel->setHeaderData(  0, Horizontal, WString("#"), DisplayRole );
     m_messageModel->setHeaderData(  1, Horizontal, WString("Type"), DisplayRole );
     m_messageModel->setHeaderData(  2, Horizontal, WString("Message"), DisplayRole );
-    m_messageModel->setHeaderData(  3, Horizontal, WString("Source"), DisplayRole );
     
     m_tableView = new RowStretchTreeView();
     m_tableView->setRootIsDecorated	(	false); //makes the tree look like a table! :)
@@ -218,7 +247,6 @@ void WarningWidget::createContent()
     m_tableView->setColumnWidth(0,50);
     m_tableView->setColumnWidth(1,100);
     m_tableView->setColumnWidth(2,400);
-    m_tableView->setColumnWidth(3,200);
     
     m_tableView->setAlternatingRowColors(true);
     m_tableView->setSelectionMode(Wt::NoSelection);
@@ -308,16 +336,19 @@ void WarningWidget::createContent()
 //Displays the error message in m_description. This helps, as column may not be wide enough.
 void WarningWidget::resultSelectionChanged()
 {
-    WModelIndexSet selected = m_tableView->selectedIndexes();
-    if( selected.empty() )
-    {
-        return;
-    }//if( selected.empty() )
+  WModelIndexSet selected = m_tableView->selectedIndexes();
+  if( selected.empty() )
+  {
+    m_description->setText( "" );
+    return;
+  }//if( selected.empty() )
+  
+  WStandardItem *item = m_messageModel->item( (*selected.begin()).row(), 2 );
 
-    WStandardItem * item = m_messageModel->item(    (*selected.begin()).row(),2);
-
-    m_description->setText(item->text());
+  WString txt = item->text();
+  m_description->setText( txt );
 }//void resultSelectionChanged()
+
 
 void WarningWidget::clearMessages()
 {
@@ -368,12 +399,25 @@ void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
       style = "qtip-green";
     break;
       
-    case WarningMsgShowRiid:
+    case WarningMsgShowOnBoardRiid:
+#if( USE_REMOTE_RID )
+      header = "On-board RIID Results";
+#else
       header = "RIID Results";
+#endif
       style = "qtip-blue qtip-riid";
       // remove all the other "show riid" results
       strm << "$('.qtip.qtip-riid').remove();";
       break;
+    
+#if( USE_REMOTE_RID )
+    case WarningMsgExternalRiid:
+      header = "External RIID Results";
+      style = "qtip-blue qtip-ext-riid";
+      // remove all the other external RID results
+      strm << "$('.qtip.qtip-ext-riid').remove();";
+      break;
+#endif
     
     case NumWarningMsgType:
       throw std::runtime_error( "Invalid warning message requested" );
@@ -429,9 +473,7 @@ void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
 }//displayPopupMessageUnsafe(...)
 
 
-
-
-void WarningWidget::addMessage( Wt::WString msg, Wt::WString src, int ilevel )
+void WarningWidget::addMessage( Wt::WString msg, int ilevel )
 {
   if( ilevel < 0 || ilevel >= WarningMsgLevel::NumWarningMsgType )
     ilevel = WarningMsgHigh;
@@ -442,7 +484,36 @@ void WarningWidget::addMessage( Wt::WString msg, Wt::WString src, int ilevel )
   if( !Wt::Utils::removeScript(msg) )
     msg = Wt::Utils::htmlEncode( msg, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
   
-  if( m_active[level] )
+  addMessageUnsafe( msg, level, 5000 );
+} // void WarningWidget::addMessage(...)
+
+
+void WarningWidget::addMessageUnsafe( const Wt::WString &msg,
+                                     const WarningMsgLevel level,
+                                     int num_millies )
+{
+  bool loggingActive = false, displayActive = false;
+  
+  switch( level )
+  {
+    case WarningMsgInfo:
+    case WarningMsgLow:
+    case WarningMsgMedium:
+    case WarningMsgHigh:
+    case WarningMsgSave:
+    case WarningMsgShowOnBoardRiid:
+#if( USE_REMOTE_RID )
+    case WarningMsgExternalRiid:
+#endif
+      loggingActive =  m_active[level];
+      displayActive = m_popupActive[level];
+      break;
+      
+    case NumWarningMsgType:
+      break;
+  }//switch( level )
+  
+  if( loggingActive )
   {
     m_totalMessages++; //only count if logging
     
@@ -453,23 +524,44 @@ void WarningWidget::addMessage( Wt::WString msg, Wt::WString src, int ilevel )
     msgItem = new Wt::WStandardItem( WarningWidget::description(level) );
     message.push_back(msgItem);
     
-    msgItem = new Wt::WStandardItem(msg);
-    message.push_back(msgItem);
     
-    msgItem = new Wt::WStandardItem(src);
+    // Remove any script so we wont store that
+    WString sanitized = msg;
+    if( !Wt::Utils::removeScript(sanitized) )
+      sanitized = Wt::Utils::htmlEncode( sanitized, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
+    
+    if( (level == WarningMsgShowOnBoardRiid)
+#if( USE_REMOTE_RID )
+       || (level == WarningMsgExternalRiid)
+#endif
+       )
+    {
+      // Remove "buttons" we might be displaying
+      string sanitized_utf8 = sanitized.toUTF8();
+      const auto div_pos = sanitized_utf8.find("<div class=\"");
+      if( div_pos != string::npos )
+      {
+        sanitized_utf8 = sanitized_utf8.substr( 0, div_pos );
+        sanitized = WString::fromUTF8( sanitized_utf8 );
+      }//if( we might have custom buttons on this message )
+    }//if( a RIID message )
+    
+    msgItem = new Wt::WStandardItem(sanitized);
     message.push_back(msgItem);
     
     m_messageModel->appendRow(message);
   } // if( m_active[ level ] )
-    
-  if( m_popupActive[level] )
+  
+  if( displayActive )
     displayPopupMessageUnsafe( msg, level, 5000 );
-} // void WarningWidget::addMessage(...)
+}//addMessageUnsafe(...)
+
 
 void WarningWidget::setActivity( WarningWidget::WarningMsgLevel priority, bool allowed )
 {
   m_active[ priority ] = allowed;
 } // WarningWidget::setActivity( WarningWidget::WarningMsgLevel priority, bool allowed )
+
 
 void WarningWidget::setPopupActivity( WarningWidget::WarningMsgLevel priority, bool allowed )
 {

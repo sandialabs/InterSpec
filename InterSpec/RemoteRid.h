@@ -37,6 +37,9 @@ namespace SpecUtils { class SpecFile; }
 
 namespace RestRidImp { class ExternalRidWidget; }
 
+/** Interface to the Full-Spectrum nuclide ID algorithm, either to the REST web service, or to
+ the command line interface of the executable.
+ */
 class RemoteRid : public Wt::WContainerWidget
 {
 public:
@@ -58,14 +61,26 @@ public:
 public:
   RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent );
   
+  enum AnaFileOptions
+  {
+    OnlyDisplayedSearchSamples = 0x01
+  };//enum AnaFileOptions
   
-  static std::shared_ptr<SpecUtils::SpecFile> fileForAnalysis( InterSpec *interspec );
+  static std::shared_ptr<SpecUtils::SpecFile> fileForAnalysis( InterSpec *interspec,
+                                                      const Wt::WFlags<AnaFileOptions> flags = 0 );
   
   void alwaysCallRestAnaChecked();
   
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   void alwaysCallExeAnaChecked();
 #endif
+  
+  static void startAutomatedOnLoadAnalysis( InterSpec *interspec,
+                                            const Wt::WFlags<AnaFileOptions> flags = 0 );
+  
+  static void handleOpeningRemoteRidTool( InterSpec *interspec );
+  static void disableAutoRemoteRid( InterSpec *interspec );
+  static void handleShowingRemoteRidRefLines( InterSpec *interspec, std::string signal);
   
 protected:
   InterSpec *m_interspec;

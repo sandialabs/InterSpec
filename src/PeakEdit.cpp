@@ -472,22 +472,19 @@ void PeakEdit::validateMeanOrRoiChange()
   {
     if( m_values[Mean]->validate() != WValidator::Valid )
     {
-      passMessage( "Invalid mean value - must be numeric.",
-                  "", WarningWidget::WarningMsgHigh );
+      passMessage( "Invalid mean value - must be numeric.", WarningWidget::WarningMsgHigh );
       throw runtime_error( "" );
     }
     
     if( m_values[RangeStartEnergy]->validate() != WValidator::Valid )
     {
-      passMessage( "Invalid ROI start value - must be numeric.",
-                  "", WarningWidget::WarningMsgHigh );
+      passMessage( "Invalid ROI start value - must be numeric.", WarningWidget::WarningMsgHigh );
       throw runtime_error( "" );
     }
     
     if( m_values[Mean]->validate() != WValidator::Valid )
     {
-      passMessage( "Invalid ROI end value - must be numeric.",
-                  "", WarningWidget::WarningMsgHigh );
+      passMessage( "Invalid ROI end value - must be numeric.", WarningWidget::WarningMsgHigh );
       throw runtime_error( "" );
     }
     
@@ -497,16 +494,14 @@ void PeakEdit::validateMeanOrRoiChange()
     
     if( newmean <= newroilow || newmean >= newroiup )
     {
-      passMessage( "Peak mean must be between ROI start and end.",
-                  "", WarningWidget::WarningMsgHigh );
+      passMessage( "Peak mean must be between ROI start and end.", WarningWidget::WarningMsgHigh );
       throw runtime_error( "" );
     }
     
     if( newroilow >= newroiup )
     {
       //Probably cant get here, but JIC
-      passMessage( "ROI start must be less than ROI end.",
-                  "", WarningWidget::WarningMsgHigh );
+      passMessage( "ROI start must be less than ROI end.", WarningWidget::WarningMsgHigh );
       throw runtime_error( "" );
     }
     
@@ -1542,8 +1537,7 @@ void PeakEdit::skewTypeChanged()
     case PeakDef::LandauSkew:
       if( !m_currentPeak.gausPeak() )
       {
-        passMessage( "Only Gaussian peaks can have a skew.",
-                     "", WarningWidget::WarningMsgHigh );
+        passMessage( "Only Gaussian peaks can have a skew.", WarningWidget::WarningMsgHigh );
         m_skewType->setCurrentIndex( PeakDef::NoSkew );
         return;
       }//if( !m_currentPeak.gausPeak() )
@@ -1780,7 +1774,7 @@ void PeakEdit::refit()
     apply();
   }catch( std::exception &e )
   {
-    passMessage( e.what(), "PeakEdit::refit()", WarningWidget::WarningMsgHigh );
+    passMessage( e.what(), WarningWidget::WarningMsgHigh );
     return;
   }
 
@@ -1845,7 +1839,7 @@ void PeakEdit::refit()
   if( outputPeak.size() != inputPeak.size() )
   {
     passMessage( "Failed to refit peak (became insignificant), so not doing "
-                 "anything", "", WarningWidget::WarningMsgHigh );
+                 "anything", WarningWidget::WarningMsgHigh );
     return;
   }//if( outputPeak.size() != inputPeak.size() )
   
@@ -2322,7 +2316,7 @@ void PeakEdit::accept()
     apply();
   }catch( std::exception &e )
   {
-    passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+    passMessage( e.what(), WarningWidget::WarningMsgHigh );
     return;
   }
   

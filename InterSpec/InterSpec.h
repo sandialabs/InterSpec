@@ -115,12 +115,6 @@ namespace Wt
   }
 }//namespace Wt
 
-/** A convience function to call #InterSpec::logMessage
- 
- \deprecated Please directly call InterSpec::instance()->logMessage(message,source,priority).
- */
-void log_error_message( const std::string &message, const std::string &source, const int priority );
-
 
 enum class FeatureMarkerType : int
 {
@@ -490,12 +484,15 @@ public:
    - Medium: 2
    - High: 3
    - Save: 4
-   
-   \sa log_error_message
    */
-  void logMessage( const Wt::WString& message, const Wt::WString& source, int priority );
+  void logMessage( const Wt::WString& message, int priority );
   
-  virtual Wt::Signal< Wt::WString, Wt::WString, int > &messageLogged();
+  /** In case you need to display a custom Toast item, you can access the WarningWidget
+   using this function.
+   */
+  WarningWidget *warningWidget();
+  
+  virtual Wt::Signal< Wt::WString, int > &messageLogged();
   
   void toggleToolTip( const bool showToolTips );
   
@@ -1100,7 +1097,7 @@ protected:
   
  /* Start widgets this class keeps track of */
 
-  Wt::Signal< Wt::WString, Wt::WString, int > m_messageLogged;
+  Wt::Signal< Wt::WString, int > m_messageLogged;
   
   WarningWidget          *m_warnings;
   AuxWindow              *m_warningsWindow;

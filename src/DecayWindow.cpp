@@ -87,7 +87,7 @@ DecayWindow::DecayWindow( InterSpec *viewer )
       QrCode::displayTxtAsQrCode( url, "Decay Tool State", "Current State of decay tool state." );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES

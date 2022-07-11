@@ -878,18 +878,35 @@ input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner
   text-align: center;
 }
 
-.clearsessiontxt
+.clearsessiontxt, .RemoteRidToastButtons > div
 {
   padding: 3px;
   padding-top: 4px;
   border: 1px solid grey;
-  margin-left: auto;
-  margin-right: auto;
+  
   cursor: pointer;
   -moz-border-radius: 4px;
   -webkit-border-radius: 4px;
   border-radius: 4px;
   background-color: #EEEEEE;
+}
+
+.clearsessiontxt
+{
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.RemoteRidToastButtons
+{
+  padding-top: 7px;
+  display: flex;
+  flex-flow: row wrap;
+  justify-content: space-evenly;
+}
+
+.RemoteRidToastButtons > div
+{
 }
 
 /* The MenuBar CSS class is added to the title bar both for browser-based, and Electron based (that

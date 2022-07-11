@@ -133,8 +133,7 @@ DbStateBrowser::DbStateBrowser( InterSpec *viewer, bool testStatesOnly )
       finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating database spectrum file browser",
-                  "", WarningWidget::WarningMsgHigh );
+      passMessage( "Error creating database spectrum file browser", WarningWidget::WarningMsgHigh );
       cerr << "\n\nDbFileBrowser caught: " << e.what() << endl << endl;
     }//try / catch
     
@@ -191,8 +190,7 @@ DbStateBrowser::DbStateBrowser( InterSpec *viewer, bool testStatesOnly )
     
     if( !dbstate || dbstate.id() < 0 )
     {
-      passMessage( "Error loading from the database",
-                  "", WarningWidget::WarningMsgHigh );
+      passMessage( "Error loading from the database", WarningWidget::WarningMsgHigh );
       delete this;
       return;
     }//if( !selected )
@@ -202,7 +200,7 @@ DbStateBrowser::DbStateBrowser( InterSpec *viewer, bool testStatesOnly )
       m_viewer->loadStateFromDb( dbstate );
     }catch( std::exception &e )
     {
-      passMessage( "Failed to load state", "", WarningWidget::WarningMsgHigh );
+      passMessage( "Failed to load state", WarningWidget::WarningMsgHigh );
       cerr << "DbStateBrowser::loadSelected() caught: " << e.what() << endl;
     }//try / catch
     

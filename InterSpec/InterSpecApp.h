@@ -87,19 +87,13 @@ public:
 #endif
   
   /* svlog send the message to the InterSpec for display to the user. */
-  void svlog( const Wt::WString& message,
-              const Wt::WString& source,
-              int priority = 1 );
+  void svlog( const Wt::WString& message, int priority = 1 );
   
-  /* convience overload */
-  void svlog( const char *message,
-              const char *source,
-             int priority = 1 );
+  /* convenience overload */
+  void svlog( const char *message, int priority = 1 );
   
-  /* convience overload */
-  void svlog( const std::string& message,
-             const std::string& source,
-             int priority = 1 );
+  /* convenience overload */
+  void svlog( const std::string& message, int priority = 1 );
 
   InterSpec *viewer();
 

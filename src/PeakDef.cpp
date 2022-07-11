@@ -2475,7 +2475,7 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
     
     if( wApp )
     {
-      passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+      passMessage( msg.str(), WarningWidget::WarningMsgHigh );
     }else
     {
       cerr << msg.str() << endl;

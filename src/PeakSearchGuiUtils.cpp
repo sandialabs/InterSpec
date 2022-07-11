@@ -1198,7 +1198,7 @@ public:
       case PeakModel::SetGammaSource::NoSourceChange:
         //Shouldnt ever happen, but JIC...
         passMessage( "Trouble making change to nuclide - not applying, sorry!<br />"
-                     "Please report error, including selected nuclides to interspec@sandia.gov", "", 2 );
+                     "Please report error, including selected nuclides to interspec@sandia.gov", 2 );
         populateNuclideSelects();
         break;
         
@@ -1989,8 +1989,8 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
     }//if( nuclide || reaction || element )
   }catch( std::exception &e )
   {
-    passMessage( "Unexpected error searching for isotope for peak: "
-                + string(e.what()), "", WarningWidget::WarningMsgHigh );
+    passMessage( "Unexpected error searching for isotope for peak: " + string(e.what()),
+                WarningWidget::WarningMsgHigh );
   }
   
   return other_change;
@@ -2018,8 +2018,7 @@ void set_peaks_from_search( InterSpec *viewer,
   
   if( (currentdata != originaldata) || !peaks )
   {
-    passMessage( "Peaks not updated, spectrum has changed.",
-                "", WarningWidget::WarningMsgHigh );
+    passMessage( "Peaks not updated, spectrum has changed.", WarningWidget::WarningMsgHigh );
     viewer->automatedPeakSearchCompleted();
     return;
   }
@@ -2042,7 +2041,7 @@ void set_peaks_from_search( InterSpec *viewer,
   
   viewer->automatedPeakSearchCompleted();
   
-  passMessage( "Peaks updated.", "", WarningWidget::WarningMsgInfo );
+  passMessage( "Peaks updated.", WarningWidget::WarningMsgInfo );
   
   ReferencePhotopeakDisplay *refLineDisplay = viewer->referenceLinesWidget();
   
@@ -2203,7 +2202,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   
   if( !dataPtr )
   {
-    passMessage( "There is no data to search for peaks on.", "", 1 );
+    passMessage( "There is no data to search for peaks on.", 1 );
     return;
   }//if( !dataPtr )
   
@@ -2345,7 +2344,8 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   //Hack because I'm short on time
   if( result_peaks.size() != orig_peaks.size() )
   {
-    passMessage( "Unexpected issue assigning nuclides - accepting all assignments - sorry :(", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Unexpected issue assigning nuclides - accepting all assignments - sorry :(",
+                WarningWidget::WarningMsgHigh );
     return;
   }
   
@@ -2360,7 +2360,8 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   {
     if( fabs(orig_peaks[i].mean() - result_peaks[i].mean()) > 1.0 )
     {
-      passMessage( "Unexpected issue assigning nuclides, mismatch in energy - accepting all assignments - sorry :(", "", WarningWidget::WarningMsgHigh );
+      passMessage( "Unexpected issue assigning nuclides, mismatch in energy - accepting all assignments - sorry :(",
+                  WarningWidget::WarningMsgHigh );
       return;
     }
   }//for( size_t i = 0; i < peaks.size(); ++i )
@@ -2553,7 +2554,7 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
     
     if( !model || !data || !foreground ) //shouldnt ever happen
     {
-      passMessage( "No data loaded to refit", "", WarningWidget::WarningMsgInfo );
+      passMessage( "No data loaded to refit", WarningWidget::WarningMsgInfo );
       return;
     }
     
@@ -2561,7 +2562,7 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
     shared_ptr<const PeakDef> peak = model->nearestPeak( rightClickEnergy );
     if( !peak )
     {
-      passMessage( "There was no peak to refit", "", WarningWidget::WarningMsgInfo );
+      passMessage( "There was no peak to refit", WarningWidget::WarningMsgInfo );
       return;
     }
     
@@ -2618,7 +2619,7 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
       WStringStream msg;
       msg << "Failed to refit peak (became insignificant), from "
       << int(inputPeak.size()) << " to " << int(outputPeak.size()) << " peaks";
-      passMessage( msg.str(), "", WarningWidget::WarningMsgInfo );
+      passMessage( msg.str(), WarningWidget::WarningMsgInfo );
       return;
     }//if( outputPeak.size() != 1 )
     
@@ -2635,7 +2636,7 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
     }//if( inputPeak.size() > 1 )
   }catch( std::exception &e )
   {
-    passMessage( "Sorry, error encountered refitting ROI.", "", WarningWidget::WarningMsgInfo );
+    passMessage( "Sorry, error encountered refitting ROI.", WarningWidget::WarningMsgInfo );
     cerr << "Error encountered refitting ROI: " << e.what() << endl;
   }
 }//void refit_peaks_from_right_click(...)
@@ -2669,7 +2670,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
     {
       // Should never happen, but will leave check in for development
       passMessage( "Unexpected error in InterSpec::handleChangeContinuumTypeFromRightClick"
-                   " - invalid continuum type - not proceeding", "", WarningWidget::WarningMsgHigh );
+                   " - invalid continuum type - not proceeding", WarningWidget::WarningMsgHigh );
       return;
     }//if( !valid_offset )
     
@@ -2679,7 +2680,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
     
     if( !model || !data || !foreground ) //shouldnt ever happen
     {
-      passMessage( "No data loaded to refit", "", WarningWidget::WarningMsgInfo );
+      passMessage( "No data loaded to refit", WarningWidget::WarningMsgInfo );
       return;
     }
     
@@ -2689,7 +2690,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
     {
       // Shouldnt happen, but jic
       passMessage( "There was no ROI at " + std::to_string(rightClickEnergy)
-                  + " keV to modify continuum of", "", WarningWidget::WarningMsgInfo );
+                  + " keV to modify continuum of", WarningWidget::WarningMsgInfo );
       return;
     }//if( !peak )
     
@@ -2708,7 +2709,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
     if( oldContinuum->type() == type )
     {
       passMessage( "Continuum is already of type " + string(PeakContinuum::offset_type_label(type)),
-                  "", WarningWidget::WarningMsgInfo)
+                  WarningWidget::WarningMsgInfo)
       return;
     }
     
@@ -2768,7 +2769,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
                     + " caused " + string( newCandidatePeaks.size() > 1 ? "at least one" : "the" )
                     + " peak to become insignificant.<br />"
                     "Please use the <b>Peak Editor</b> to make this change.",
-                    "", WarningWidget::WarningMsgInfo);
+                    WarningWidget::WarningMsgInfo);
       }//if( result.size() == inputPeak.size() ) / else
       
       return;
@@ -2804,7 +2805,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
         << " caused the peak to become insignificant.<br />"
         "Please use the <b>Peak Editor</b> to make this change.";
         
-        passMessage( msg.str(), "", WarningWidget::WarningMsgInfo );
+        passMessage( msg.str(), WarningWidget::WarningMsgInfo );
         return;
       }//if( outputPeak.empty() )
       
@@ -2823,7 +2824,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
   }catch( std::exception &e )
   {
     cerr << "Unexpected error changing continuum type: " << e.what() << endl;
-    passMessage( "Unexpected error changing continuum type." , "", WarningWidget::WarningMsgHigh );
+    passMessage( "Unexpected error changing continuum type." , WarningWidget::WarningMsgHigh );
   }
 }//change_continuum_type_from_right_click(...)
 

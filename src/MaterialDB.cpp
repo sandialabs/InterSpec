@@ -208,8 +208,7 @@ void Material::parseChemicalFormula( string text,
 
 //    if( fabs(totalfraction-1.0) > 0.02 )
 //      passMessage( "Total mass fraction does not add up to 1.0, rescaling all"
-//                   " mass fractions to make this true",
-//                   "GammaXsGui::parseMaterial", WarningWidget::WarningMsgInfo );
+//                   " mass fractions to make this true", WarningWidget::WarningMsgInfo );
 
     density = totalfraction * static_cast<float>(PhysicalUnits::g / PhysicalUnits::cm3);
 
@@ -228,8 +227,7 @@ void Material::parseChemicalFormula( string text,
       }catch(...)
       {
         passMessage( "Couldnt cast '" + densitystr + "' to a density, sorry,"
-                     " not using is, becareful!",
-                     "Material::parseChemicalFormula", WarningWidget::WarningMsgInfo );
+                     " not using is, becareful!", WarningWidget::WarningMsgInfo );
       }
     }//if( densitystr.size() )
   }catch( std::exception &e )

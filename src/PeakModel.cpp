@@ -2462,8 +2462,8 @@ bool PeakModel::setData( const WModelIndex &index,
 //               << " and typename=" << myfalsebool.type().name() << endl;
           if( use && !new_peak.parentNuclide() )
             passMessage( "You must associate a nuclide with the"
-                        " peak before using it for shielding/source-fitting." ,
-                        "", WarningWidget::WarningMsgHigh );
+                        " peak before using it for shielding/source-fitting.",
+                        WarningWidget::WarningMsgHigh );
           
           if( new_peak.useForShieldingSourceFit() == use )
             return false;
@@ -2471,9 +2471,9 @@ bool PeakModel::setData( const WModelIndex &index,
           const SandiaDecay::RadParticle *radpart = new_peak.decayParticle();
           if( use && radpart && (radpart->type == SandiaDecay::XrayParticle) )
           {
-            passMessage( "Warning: using x-rays for fitting source nuclides " \
-                         "is not usually a great idea, so please use caution", \
-                         "", WarningWidget::WarningMsgLow );
+            passMessage( "Warning: using x-rays for fitting source nuclides "
+                         "is not usually a great idea, so please use caution",
+                         WarningWidget::WarningMsgLow );
           }
           
           new_peak.useForShieldingSourceFit( use );
@@ -2493,9 +2493,9 @@ bool PeakModel::setData( const WModelIndex &index,
           const bool use = boost::any_cast<bool>( value );
           if( use && !new_peak.xrayElement() && !new_peak.parentNuclide()
               && !new_peak.reaction() )
-            passMessage( "You must associate a nuclide, xray, or reaction with"
-                         " the peak before using it for calibrarion" ,
-                         "", WarningWidget::WarningMsgHigh );
+            passMessage( "You must associate a nuclide, x-ray, or reaction with"
+                         " the peak before using it for calibration",
+                         WarningWidget::WarningMsgHigh );
           
           if( use == new_peak.useForEnergyCalibration() )
             return false;

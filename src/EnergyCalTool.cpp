@@ -287,8 +287,7 @@ public:
       response.out() << "Error creating CALp file: " << e.what()
                      << "\n\nPlease report to InterSpec@sandia.gov.";
       
-      //passMessage( "Error getting spectrum file currently being shown",
-      //              "", WarningWidget::WarningMsgHigh );
+      //passMessage( "Error getting spectrum file currently being shown", WarningWidget::WarningMsgHigh );
       
       response.setStatus(500);
       assert( 0 );
@@ -1328,7 +1327,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_downloadCALp->clicked().connect( std::bind([this](){
     m_interspec->logMessage( "You can apply this CALp file later to a different spectrum by"
                             " dragging and dropping the CALp file onto InterSpec.",
-                            "", WarningWidget::WarningMsgInfo );
+                            WarningWidget::WarningMsgInfo );
   }) );
   HelpSystem::attachToolTipOn( m_downloadCALp, "Download a .CALp file that contains the current energy calibration."
                               "  You can drag-n-drop this file back onto InterSpec later to re-use this energy calibration."
@@ -2361,7 +2360,7 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
     log_developer_error( __func__, msg.c_str() );
 #endif
     
-    m_interspec->logMessage( msg, "", 3 );
+    m_interspec->logMessage( msg, 3 );
     
 #if( PERFORM_DEVELOPER_CHECKS )
     assert( 0 );
@@ -2396,7 +2395,7 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
           log_developer_error( __func__, msg.c_str() );
 #endif
           
-          m_interspec->logMessage( msg, "", 3 );
+          m_interspec->logMessage( msg, 3 );
           assert( 0 );
           continue;
         }//if( we havent already computed a new energy cal )
@@ -2615,7 +2614,7 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
         log_developer_error( __func__, msg.c_str() );
 #endif
           
-        m_interspec->logMessage( msg, "", 3 );
+        m_interspec->logMessage( msg, 3 );
         assert( 0 );
         continue;
       }//if( we havent already computed a new energy cal )
@@ -2833,7 +2832,7 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
           log_developer_error( __func__, msg.c_str() );
 #endif
           
-          m_interspec->logMessage( msg, "", 3 );
+          m_interspec->logMessage( msg, 3 );
           assert( 0 );
           continue;
         }//if( we havent already computed a new energy cal )
@@ -2888,7 +2887,7 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
   if( !disp_prev_cal )
   {
     cerr << "unexpected error getting updaettd energy calibration coefficents" << endl;
-    m_interspec->logMessage( "Unexpected error retrieving previous calibration coefficients - not applying changes", "", 2 );
+    m_interspec->logMessage( "Unexpected error retrieving previous calibration coefficients - not applying changes", 2 );
     doRefreshFromFiles();
     return;
   }//if( !disp_prev_cal )
@@ -2931,7 +2930,7 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
     if( !willBeAppliedToDisplay )
     {
       m_interspec->logMessage( "It looks like the energy calibration you changed isn't marked"
-                               " for changes to be applied to; please correct that.", "", 2 );
+                               " for changes to be applied to; please correct that.", 2 );
       doRefreshFromFiles();
       return;
     }
@@ -2984,7 +2983,7 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
     
     string msg = "Calibration change made energy calibration become invalid.  Error: ";
     msg += e.what();
-    m_interspec->logMessage( msg, "", 2 );
+    m_interspec->logMessage( msg, 2 );
     
     return;
   }//try / catch to create new_disp_cal
@@ -2998,7 +2997,7 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
   }catch( std::exception &e )
   {
     display->updateToGui( disp_prev_cal );
-    m_interspec->logMessage( e.what(), "", 2 );
+    m_interspec->logMessage( e.what(), 2 );
   }//try / catch
 }//userChangedCoefficient(...)
 
@@ -3054,7 +3053,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
   if( !specfile )  //Shouldnt ever happen
   {
     display->updateToGui( old_cal );
-    m_interspec->logMessage( "Internal error retrieveing correct measurement", "", 2 );
+    m_interspec->logMessage( "Internal error retrieveing correct measurement", 2 );
     return;
   }
 
@@ -3107,7 +3106,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
     
     string msg = "Changing the deviation pair made energy calibration become invalid.  Error: ";
     msg += e.what();
-    m_interspec->logMessage( msg, "", 2 );
+    m_interspec->logMessage( msg, 2 );
     
     return;
   }//try / catch
@@ -3160,7 +3159,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
 #if( PERFORM_DEVELOPER_CHECKS )
       log_developer_error( __func__, msg.c_str() );
 #endif
-      m_interspec->logMessage( msg, "", 2 );
+      m_interspec->logMessage( msg, 2 );
       
       return;
     }//try / catch
@@ -3200,7 +3199,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
   if( num_updated == 0 )
   {
     display->updateToGui( old_cal );
-    m_interspec->logMessage( "There was an error setting deviation pairs for this detector.", "", 2 );
+    m_interspec->logMessage( "There was an error setting deviation pairs for this detector.", 2 );
     return;
   }
   
@@ -3253,7 +3252,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
   
     /// \TODO: keep from issuing this message for ever single change!
     if( !msg.empty() )
-      m_interspec->logMessage( msg, "", 1 );
+      m_interspec->logMessage( msg, 1 );
     
     //Calling setDeviationPairMsg(...) is useless because we currently completely replace 
     //display->setDeviationPairMsg( msg );
@@ -3401,7 +3400,7 @@ void EnergyCalTool::fitCoefficients()
     {
       m_interspec->logMessage( "Can not fit calibration coefficients right now.  You must select at"
                               " least as many peaks for fitting as coefficients you have selected"
-                              " to fit for.", "", 2 );
+                              " to fit for.", 2 );
       return;
     }//if( double check we can actually do the fit )
     
@@ -3596,7 +3595,7 @@ void EnergyCalTool::fitCoefficients()
                                           calib_coefs, devpairs, coefs, coefs_uncert, warning_msg );
       
       if( warning_msg.size() )
-        m_interspec->logMessage( warning_msg, "", 3 );
+        m_interspec->logMessage( warning_msg, 3 );
       
       switch ( original_cal->type() )
       {
@@ -3644,14 +3643,14 @@ void EnergyCalTool::fitCoefficients()
     }
     */
     
-    m_interspec->logMessage( WString::fromUTF8(msg), "", 1 );
+    m_interspec->logMessage( WString::fromUTF8(msg), 1 );
   }catch( std::exception &e )
   {
     string msg = "Failed calibration by fitting peak means. ";
     msg += e.what();
     
     cerr << "EnergyCalTool::fitCoefficients():\n\tCaught: " << msg << endl;
-    m_interspec->logMessage( msg, "", 3 );
+    m_interspec->logMessage( msg, 3 );
   }//try / catch
 }//void fitCoefficients()
 
@@ -3734,7 +3733,7 @@ void EnergyCalTool::handleGraphicalRecalRequest( double xstart, double xfinish )
     }
   }catch( std::runtime_error & )
   {
-    m_interspec->logMessage( "Internal error doing graphical recal; sorry :(", "", 3 );
+    m_interspec->logMessage( "Internal error doing graphical recal; sorry :(", 3 );
   }
 }//void handleGraphicalRecalRequest( double xstart, double xfinish )
 
@@ -3753,7 +3752,7 @@ void EnergyCalTool::deleteGraphicalRecalConfirmWindow()
     m_interspec->logMessage( "If you recalibrate again by ALT+CTRL+DRAG on"
                             " another portion of the spectrum, you will be given the"
                             " option of preserving the effects of this calibration"
-                            " as well.", "", 1 );
+                            " as well.", 1 );
   }//if( showToolTips )
 }//void deleteGraphicalRecalConfirmWindow()
 

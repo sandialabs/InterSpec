@@ -1150,7 +1150,7 @@ void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
         options[i].remove();
       }catch(...)
       {
-        std::cerr << "Caught excettion removing duplicate preference from database" << std::endl;
+        std::cerr << "Caught exception removing duplicate preference from database" << std::endl;
       }
     }//for( size_t i = 1; i < noptions; ++i )
     

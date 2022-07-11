@@ -239,7 +239,7 @@ namespace
         {
           cerr << "\n\nPreviousDbEntry::dorevert()\n\tCaught: " << e.what() << "\n\n";
           passMessage( "Error displaying previous measurment, things may not"
-                      " be as expected" , "", WarningWidget::WarningMsgHigh );
+                      " be as expected", WarningWidget::WarningMsgHigh );
         }//try / catch
       }else
       {
@@ -760,7 +760,7 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     SpecUtils::remove_file( tmpfile );
   }catch( std::exception & )
   {
-    passMessage( "Error extracting file from zip", "", 2 );
+    passMessage( "Error extracting file from zip", 2 );
   }//try / catch
   
   delete window;
@@ -1018,7 +1018,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   if( filesize <= 128 )
   {
-    passMessage( "File was probably an empty file - not a spectrum file.", "", 2 );
+    passMessage( "File was probably an empty file - not a spectrum file.", 2 );
     return true;
   }
   
@@ -1026,7 +1026,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   if( !infile.read( (char *)data, std::min(sizeof(data), filesize) ) )
   {
-    passMessage( "Failed to read non-spectrum file.", "", 2 );
+    passMessage( "Failed to read non-spectrum file.", 2 );
     return true;
   }
   infile.seekg(0);
@@ -1465,11 +1465,11 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
       passMessage( "Saved '" + filename + "' for later use, and will be available in the"
                   " &quot;<em>Rel. Eff.</em>&quot; portion of the"
                   " &quot;<em>Detector Response Function Select</em>&quot; tool.",
-                  "", WarningWidget::WarningMsgInfo );
+                  WarningWidget::WarningMsgInfo );
     }catch( std::exception &e )
     {
       cerr << "handleMultipleDrfCsv: error saving multiple DRF file: " << e.what() << endl;
-      passMessage( "Error saving DRF file for later use.", "", WarningWidget::WarningMsgHigh );
+      passMessage( "Error saving DRF file for later use.", WarningWidget::WarningMsgHigh );
     }//try / catch to save file
   };//saveDrfFile
 #endif
@@ -1790,7 +1790,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       else if( napplied == 2 )
         msg += "<br /><br />Calibration was applied to foreground and background.";
       
-      passMessage( msg, "", WarningWidget::WarningMsgHigh );
+      passMessage( msg, WarningWidget::WarningMsgHigh );
     }//try / catch
   };//applyLambda(...)
   
@@ -1933,7 +1933,7 @@ void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string e
   "<a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a>, and"
   " we'll try to fix this issue.</p>";
   
-  //passMessage( msg.str(), "", 2 );
+  //passMessage( msg.str(), 2 );
   
   SimpleDialog *dialog = new SimpleDialog( "Could Not Parse File", msg );
   dialog->addButton( "Okay" );
@@ -2060,7 +2060,7 @@ std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
     }else checkheader = m_fileModel->fileHeader( index.parent().row() );
     if( checkheader != header )
     {
-      passMessage( "Currently cant load samples from multiple files, sorry, will is lazy.", "", 3 );
+      passMessage( "Currently cant load samples from multiple files, sorry, will is lazy.", 3 );
       return std::shared_ptr<SpectraFileHeader>();
     }
     
@@ -2149,7 +2149,7 @@ void SpecMeasManager::selectEnergyBinning( const string binning,
   {
     passMessage( "Aborting loading of file after selecting energy binning - "
                 "the file is no longer available in memory. please report "
-                "this bug to interspec@sandia.gov", "", WarningWidget::WarningMsgHigh );
+                "this bug to interspec@sandia.gov", WarningWidget::WarningMsgHigh );
     return;
   }//if( !index.isValid() )
   
@@ -2162,7 +2162,7 @@ void SpecMeasManager::selectEnergyBinning( const string binning,
     }catch( std::exception &e )
     {
       passMessage( "There was an error separating energy cal type; loading all (error: "
-                   + std::string(e.what()) + ")", "", WarningWidget::WarningMsgHigh )
+                   + std::string(e.what()) + ")", WarningWidget::WarningMsgHigh )
     }
     
     // Trigger a refresh of row info and selected rows in File Manager
@@ -2190,7 +2190,7 @@ void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDat
   {
     passMessage( "Aborting loading of file after selecting derived data type to keep - "
                 "the file is no longer available in memory. please report "
-                "this bug to interspec@sandia.gov", "", WarningWidget::WarningMsgHigh );
+                "this bug to interspec@sandia.gov", WarningWidget::WarningMsgHigh );
     return;
   }//if( !index.isValid() )
   
@@ -2694,7 +2694,7 @@ void SpecMeasManager::displayFile( int row,
   m_treeView->setSelectedIndexes( selected );
 
   if( warningmsg.str().size() )
-    passMessage( warningmsg.str(), "SpecMeasManager", warningmsgLevel );
+    passMessage( warningmsg.str(), warningmsgLevel );
   
   loadSelected( type, doPreviousEnergyRangeCheck );
 
@@ -3451,7 +3451,7 @@ void SpecMeasManager::newFileFromSelection()
   {
     stringstream msg;
     msg << "Failed in combining files: " << e.what();
-    passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
     
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, msg.str().c_str() );
@@ -3488,7 +3488,7 @@ void SpecMeasManager::sumSelectedSpectra()
   }catch( std::exception &e )
   {
     const string msg = "Failed summing spectra: " + string( e.what() );
-    passMessage( msg, "", WarningWidget::WarningMsgHigh );
+    passMessage( msg, WarningWidget::WarningMsgHigh );
     
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, msg.c_str() );
@@ -3980,7 +3980,7 @@ void SpecMeasManager::createPreviousSpectraDialog( const std::string sessionID,
 
 void postErrorMessage( const string msg, const WarningWidget::WarningMsgLevel level )
 {
-  passMessage( msg, "", level );
+  passMessage( msg, level );
   wApp->triggerUpdate();
 }//void postErrorMessage( string msg )
 
@@ -4065,7 +4065,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
         string msg = "Will not be able to save this file to the database. ";
         msg += e.what();
         cerr << msg << endl;
-        passMessage( msg, "", WarningWidget::WarningMsgInfo );
+        passMessage( msg, WarningWidget::WarningMsgInfo );
       }
       return;
     }//if( !files.size() )
@@ -4189,7 +4189,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
     WModelIndex index = m_fileModel->index( row, 0 );
     selected.insert( index );
     m_treeView->setSelectedIndexes( WModelIndexSet() );    
-//    passMessage( "Successfully uploaded file.", "", 0 );
+//    passMessage( "Successfully uploaded file.", 0 );
 
     displayFile( row, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
   }catch( const std::exception &e )
@@ -4232,7 +4232,7 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload, std::shared_ptr<Spec
     selected.insert( index );
     m_treeView->setSelectedIndexes( WModelIndexSet() );
 
-    //passMessage( "Successfully opened file.", "dataUploaded", 0 );
+    //passMessage( "Successfully opened file.", 0 );
 
     return result;
   }catch( const std::exception &e )
@@ -4425,7 +4425,7 @@ void SpecMeasManager::fileTooLarge( const ::int64_t size_tried )
   stringstream msg;
   msg << "Attempted file is too large; max size is " << (max_size/1012)
       << " you tried to upload " << (size_tried/1012) << " kb";
-  passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+  passMessage( msg.str(), WarningWidget::WarningMsgHigh );
 } // void SpecMeasManager::fileTooLarge()
 
 
@@ -4472,7 +4472,7 @@ void SpecMeasManager::finishStoreAsSpectrumInDb( Wt::WLineEdit *nameWidget,
   
   if( name.empty() )
   {
-    passMessage( "You must specify a name", "", WarningWidget::WarningMsgHigh );
+    passMessage( "You must specify a name", WarningWidget::WarningMsgHigh );
     return;
   }//if( name.empty() )
   
@@ -4483,7 +4483,7 @@ void SpecMeasManager::finishStoreAsSpectrumInDb( Wt::WLineEdit *nameWidget,
   if( !header )
   {
     cerr << "SpecMeasManager::finishStoreAsSpectrumInDb(...)\n\tFailed to save file to DB." << endl;
-    passMessage( "Error saving to database", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error saving to database", WarningWidget::WarningMsgHigh );
     return;
   }//if( !header )
   
@@ -4497,7 +4497,7 @@ void SpecMeasManager::finishStoreAsSpectrumInDb( Wt::WLineEdit *nameWidget,
   if( !entry )
   {
     cerr << "SpecMeasManager::finishStoreAsSpectrumInDb(...)\n\tFailed to save file to DB, apparently" << endl;
-    passMessage( "Error saving to database", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error saving to database", WarningWidget::WarningMsgHigh );
     return;
   }
   
@@ -4508,13 +4508,13 @@ void SpecMeasManager::finishStoreAsSpectrumInDb( Wt::WLineEdit *nameWidget,
     entry.modify()->description = desc.toUTF8();
     
     transaction.commit();
-//    passMessage( "Stored " + entry->filename, "", WarningWidget::WarningMsgInfo );
+//    passMessage( "Stored " + entry->filename, WarningWidget::WarningMsgInfo );
   }catch( std::exception &e )
   {
     cerr << "SpecMeasManager::finishStoreSpectrumInDb() caught: " << e.what()
          << endl;
     passMessage( "Filename or description you entered may not have been used"
-                 " when saving the spectrum", "", WarningWidget::WarningMsgHigh );
+                 " when saving the spectrum", WarningWidget::WarningMsgHigh );
   }//try / catc
 }//void finishStoreAsSpectrumInDb(...)
 
@@ -4533,7 +4533,7 @@ void SpecMeasManager::storeSpectraInDb()
 //      WString msg = "Stored '";
 //      msg += header ? header->displayName() : WString("");
 //      msg += "'";
-//      passMessage( msg, "", WarningWidget::WarningMsgInfo );
+//      passMessage( msg, WarningWidget::WarningMsgInfo );
     }//if( m )
   }//for( int i = 0; i < 3; ++i )
 }//void storeSpectraInDb()
@@ -4665,18 +4665,17 @@ void SpecMeasManager::finishSaveSnapshotInDb(
       UserFileInDb::makeWriteProtected( dbptr );
       
       transaction.commit();
-      passMessage( "Saved state of " + dbptr->filename,
-                  "", WarningWidget::WarningMsgSave );
+      passMessage( "Saved state of " + dbptr->filename, WarningWidget::WarningMsgSave );
     }catch( FileToLargeForDbException &e )
     {
       transaction.rollback();
-      passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+      passMessage( e.what(), WarningWidget::WarningMsgHigh );
     }catch( std::exception &e )
     {
       transaction.rollback();
       cerr << "Error saving snaphshot to database: " << e.what() << endl;
       passMessage( "Error saving snaphshot to database, sorry :(",
-                  "", WarningWidget::WarningMsgHigh );
+                   WarningWidget::WarningMsgHigh );
     }//try / catch
   }//for( size_t i = 0; i < specs.size(); ++i )
 }//void finishSaveSnapshotInDb(...)
@@ -4707,13 +4706,13 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
       dbentry = header->dbEntry();
 //      WString msg = "Stored '";
 //      msg += (header ? header->displayName() : WString("")) + "'";
-//      passMessage( msg, "", WarningWidget::WarningMsgInfo );
+//      passMessage( msg, WarningWidget::WarningMsgInfo );
     }//if( !dbentry )
       
     if( !dbentry )
     {
       passMessage( "Couldnt save spectrum to database in order to make a"
-                    " snapshot", "", WarningWidget::WarningMsgInfo );
+                    " snapshot", WarningWidget::WarningMsgInfo );
       continue;
     }//if( !dbentry )
     
@@ -4795,7 +4794,7 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
       msg += tagname;
       msg += "' for '";
       msg += "'";
-      passMessage( msg, "", WarningWidget::WarningMsgInfo );
+      passMessage( msg, WarningWidget::WarningMsgInfo );
       
   } // name.length>1
 }//void storeSpectraSnapshotInDb()

@@ -317,7 +317,7 @@ void EnergyCalMultiFile::doFit()
   if( !disp_cal || !disp_cal->valid() || disp_cal->num_channels() < 16 )
   {
     const char *msg = "You need to be displaying a foreground spectrum to do a calibration fit";
-    interspec->logMessage( msg, "", 3 );
+    interspec->logMessage( msg, 3 );
     return;
   }
   
@@ -378,14 +378,14 @@ void EnergyCalMultiFile::doFit()
     if( num_coeff_fit < 1 )
     {
       const char *msg = "You must select at least one coefficient to fit for";
-      interspec->logMessage( msg, "", 3 );
+      interspec->logMessage( msg, 3 );
       return;
     }//if( num_coeff_fit < 1 )
     
     if( num_coeff_fit > static_cast<int>(npeaks) )
     {
       const char *msg = "You must select at least as many peaks as coefficients to fit for";
-      interspec->logMessage( msg, "", 3 );
+      interspec->logMessage( msg, 3 );
       return;
     }//if( num_coeff_fit < 1 )
     
@@ -439,7 +439,7 @@ void EnergyCalMultiFile::doFit()
                               devpairs, coefs, coefs_uncert, warning_msg );
       
       if( warning_msg.size() )
-        interspec->logMessage( warning_msg, "", 3 );
+        interspec->logMessage( warning_msg, 3 );
       
       assert( coefs.size() == ncoeffs );
       assert( coefs.size() == coefs_uncert.size() );
@@ -483,7 +483,7 @@ void EnergyCalMultiFile::doFit()
       msg = exceptionmsg.substr(8);
     
     cerr << "EnergyCalMultiFile::doFit(): \n\tCaught: " << exceptionmsg << endl;
-    interspec->logMessage(msg, "", 3);
+    interspec->logMessage(msg, 3);
   }//try / catch
 }//void doFit()
 
@@ -521,7 +521,7 @@ void EnergyCalMultiFile::applyCurrentFit()
   
   if( m_calVal.size() < 2 )
   {
-    viewer->logMessage( "Currently fit calibration is invalid", "", 3 );
+    viewer->logMessage( "Currently fit calibration is invalid", 3 );
     return;
   }
   
@@ -716,10 +716,10 @@ void EnergyCalMultiFile::applyCurrentFit()
   {
     errmsg = "There was an error an error changing calibration of "
              + std::to_string(error_msgs.size()) + " file:\n" + errmsg;
-    viewer->logMessage( WString::fromUTF8(errmsg), "", 3 );
+    viewer->logMessage( WString::fromUTF8(errmsg), 3 );
   }else
   {
-    viewer->logMessage( "Have updated calibration for all files with any peaks selected.", "", 1 );
+    viewer->logMessage( "Have updated calibration for all files with any peaks selected.", 1 );
   }
 }//void applyCurrentFit()
 

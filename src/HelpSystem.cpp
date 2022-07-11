@@ -242,7 +242,7 @@ namespace HelpSystem
                                  std::istreambuf_iterator<char>());
     }else
     {
-      passMessage( "Could not open help JSON file at '" + string(help_json) + "'", "", 2 );
+      passMessage( "Could not open help JSON file at '" + string(help_json) + "'", 2 );
     }
     
     initialize();
@@ -263,7 +263,7 @@ namespace HelpSystem
     }else if( !preselect.empty() )
     {
       passMessage( "The help instructions appears to not have an entry for "
-                  + preselect, "", 2 );
+                  + preselect, 2 );
     }//!hasinfo
     
     //contents()->setMargin(0);

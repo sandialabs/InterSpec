@@ -221,15 +221,6 @@ std::string InterSpec::sm_writableDataDirectory = "";
 
 
 
-void log_error_message( const std::string &message, const std::string &source, const int priority )
-{
-  InterSpecApp *app = dynamic_cast<InterSpecApp*>( Wt::WApplication::instance() );
-  if( app )
-    app->svlog(message,source,priority);
-  else
-    std::cerr << source << ": " << message << std::endl;
-}
-
 namespace
 {
   static const char * const PeakInfoTabTitle      = "Peak Manager";
@@ -248,7 +239,7 @@ namespace
   {
     InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
     if( app )
-      app->svlog( msg, WString(), priority );
+      app->svlog( msg, priority );
   }
   
   //adapted from: http://stackoverflow.com/questions/1894886/parsing-a-comma-delimited-stdstring
@@ -1803,8 +1794,7 @@ void InterSpec::addPeakFromRightClick()
       || !m_dataMeasurement
       || !dataH )
   {
-    passMessage( "There was no ROI to add peak to",
-                 "", WarningWidget::WarningMsgInfo );
+    passMessage( "There was no ROI to add peak to", WarningWidget::WarningMsgInfo );
     return;
   }//if( !peak )
   
@@ -1831,7 +1821,7 @@ void InterSpec::addPeakFromRightClick()
     if( !p.gausPeak() )
     {
       passMessage( "Sorry, cant add peaks to a ROI with a data defined peak.",
-                  "", WarningWidget::WarningMsgInfo );
+                  WarningWidget::WarningMsgInfo );
       return;
     }
   }//for( const PeakDef &p : origRoiPeaks )
@@ -1941,7 +1931,7 @@ void InterSpec::addPeakFromRightClick()
   if( fitChi2 > startingChi2 )
   {
     passMessage( "Adding a peak did not improve overall ROI fit - not adding one.",
-                "", WarningWidget::WarningMsgInfo );
+                WarningWidget::WarningMsgInfo );
     return;
   }
   
@@ -1990,8 +1980,7 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
       || m_rightClickEnergy < peak->lowerX()
       || m_rightClickEnergy > peak->upperX() )
   {
-    passMessage( "There was no ROI to add peak to",
-                "", WarningWidget::WarningMsgInfo );
+    passMessage( "There was no ROI to add peak to", WarningWidget::WarningMsgInfo );
     return;
   }//if( !peak )
   
@@ -2065,7 +2054,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   if( !peak || m_rightClickEnergy < peak->lowerX() || m_rightClickEnergy > peak->upperX() )
   {
-    passMessage( "There was no ROI to add peak to", "", WarningWidget::WarningMsgInfo );
+    passMessage( "There was no ROI to add peak to", WarningWidget::WarningMsgInfo );
     return;
   }//if( !peak )
   
@@ -2172,7 +2161,7 @@ void InterSpec::deletePeakFromRightClick()
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   if( !peak )
   {
-    passMessage( "There was no peak to delete", "", WarningWidget::WarningMsgInfo );
+    passMessage( "There was no peak to delete", WarningWidget::WarningMsgInfo );
     return;
   }
 
@@ -3098,7 +3087,7 @@ Dbo::ptr<UserState> InterSpec::serializeStateToDb( const Wt::WString &name,
     saveStateToDb( answer );
   }catch( std::exception &e )
   {
-    passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+    passMessage( e.what(), WarningWidget::WarningMsgHigh );
   }
       
   if (parent) {
@@ -3107,13 +3096,13 @@ Dbo::ptr<UserState> InterSpec::serializeStateToDb( const Wt::WString &name,
     msg += "' under snapshot '";
     msg += parent.get()->name.toUTF8();
     msg += "'.";
-    passMessage( msg, "", WarningWidget::WarningMsgInfo );
+    passMessage( msg, WarningWidget::WarningMsgInfo );
   }else
   {
     WString msg = "Created new snapshot '";
     msg += name.toUTF8();
     msg += "'";
-    passMessage( msg, "", WarningWidget::WarningMsgSave );
+    passMessage( msg, WarningWidget::WarningMsgSave );
   }
     
   return answer;
@@ -3226,7 +3215,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 //                          " over-written with the current state (plus any"
 //                          " changes you make) unless you disable auto saving,"
 //                          " or do a &quot;Save As&quot; asap.";
-//        passMessage( txt, "", WarningWidget::WarningMsgMedium );
+//        passMessage( txt, WarningWidget::WarningMsgMedium );
 //      }
       
       if( dbforeground && dbforeground->filedata.size() )
@@ -3782,7 +3771,7 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
     }else
     {
       passMessage( "Could not load the non-peak-area theme '" + theme->nonChartAreaTheme + "'",
-                  "", WarningWidget::WarningMsgLow );
+                  WarningWidget::WarningMsgLow );
     }
   }//if( should load CSS file )
   
@@ -4095,7 +4084,7 @@ PopupDivMenu * InterSpec::displayOptionsPopupDiv()
 }//WContainerWidget *displayOptionsPopupDiv()
 
 
-void InterSpec::logMessage( const Wt::WString& message, const Wt::WString& source, int priority )
+void InterSpec::logMessage( const Wt::WString& message, int priority )
 {
 #if( PERFORM_DEVELOPER_CHECKS )
   static std::mutex s_message_mutex;
@@ -4105,33 +4094,31 @@ void InterSpec::logMessage( const Wt::WString& message, const Wt::WString& sourc
     ofstream output( "interspec_messages_to_users.txt", ios::out | ios::app );
     const boost::posix_time::ptime now = WDateTime::currentDateTime().toPosixTime();
     output << "Message " << SpecUtils::to_iso_string( now ) << " ";
-    if( !source.empty() )
-      output << "[" << source.toUTF8() << ", " << priority << "]: ";
-    else
-      output << "[" << priority << "]: ";
+    output << "[" << priority << "]: ";
     output << message.toUTF8() << endl << endl;
   }//end codeblock to logg message
 #endif
   
   if( wApp )
   {
-    m_messageLogged.emit( message, source, priority );
+    m_messageLogged.emit( message, priority );
 //    wApp->triggerUpdate();
   }else
   {
     const boost::posix_time::ptime now = WDateTime::currentDateTime().toPosixTime();
     cerr << "Message " << SpecUtils::to_iso_string( now ) << " ";
-    if( !source.empty() )
-      cerr << "[" << source.toUTF8() << ", " << priority << "]: ";
-    else
-      cerr << "[" << priority << "]: ";
+    cerr << "[" << priority << "]: ";
     cerr << message.toUTF8() << endl << endl;
   }
 }//void InterSpec::logMessage(...)
 
 
+WarningWidget *InterSpec::warningWidget()
+{
+  return m_warnings;
+}
 
-Wt::Signal< Wt::WString, Wt::WString, int > &InterSpec::messageLogged()
+Wt::Signal< Wt::WString, int > &InterSpec::messageLogged()
 {
   return m_messageLogged;
 }
@@ -4279,7 +4266,7 @@ void InterSpec::finishStoreStateInDb( WLineEdit *nameedit,
   const WString &name = nameedit->text();
   if( name.empty() )
   {
-    passMessage( "You must specify a name", "", WarningWidget::WarningMsgHigh );
+    passMessage( "You must specify a name", WarningWidget::WarningMsgHigh );
     return;
   }//if( name.empty() )
   
@@ -4472,7 +4459,7 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
   {
     string msg = "Failed to save test state to N42 file: ";
     msg += e.what();
-    passMessage( msg, "", WarningWidget::WarningMsgHigh );
+    passMessage( msg, WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void storeTestStateToN42( const std::string &name )
 
@@ -4611,12 +4598,12 @@ void InterSpec::loadTestStateFromN42( const std::string filename )
     if( descrip && descrip->value_size() )
       msg << " with description " << descrip->value();
     
-    passMessage( msg.str(), "", WarningWidget::WarningMsgInfo );
+    passMessage( msg.str(), WarningWidget::WarningMsgInfo );
   }catch( std::exception &e )
   {
     string msg = "InterSpec::loadTestStateFromN42: ";
     msg += e.what();
-    passMessage( msg, "", WarningWidget::WarningMsgHigh );
+    passMessage( msg, WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void InterSpec::loadTestStateFromN42()
 
@@ -4639,7 +4626,7 @@ void InterSpec::startN42TestStates()
   if( files.empty() )
   {
     passMessage( "There are no test files to load in the 'analysis_tests' "
-                 "directory", "", WarningWidget::WarningMsgHigh );
+                 "directory", WarningWidget::WarningMsgHigh );
     return;
   }//if( files.empty() )
   
@@ -4841,7 +4828,7 @@ void InterSpec::stateSaveTagAction( WLineEdit *nameedit, AuxWindow *window )
     finishStoreStateInDb( nameedit, 0, 0, false, state );
   else
     passMessage( "You must first save a state before creating a snapshot.",
-                 "", WarningWidget::WarningMsgHigh );
+                 WarningWidget::WarningMsgHigh );
       
   //close window
   AuxWindow::deleteAuxWindow( window );
@@ -4947,7 +4934,7 @@ void InterSpec::startStoreStateInDb( const bool forTesting,
       saveStateToDb( state );
     }catch( std::exception &e )
     {
-      passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+      passMessage( e.what(), WarningWidget::WarningMsgHigh );
     }//try / catch
     
     if( writeProtected )
@@ -4958,8 +4945,7 @@ void InterSpec::startStoreStateInDb( const bool forTesting,
     }//if( writeProtected )
     
     
-    passMessage( "Saved state '" + state->name + "'", "",
-                 WarningWidget::WarningMsgSave );
+    passMessage( "Saved state '" + state->name + "'", WarningWidget::WarningMsgSave );
     return;
   }//if( state )
   
@@ -6382,7 +6368,7 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
   {
     passMessage( "Error doing hard background subtraction."
                  " Foreground or background was not available, or background scale factor invalid.",
-                 "", WarningWidget::WarningMsgHigh );
+                 WarningWidget::WarningMsgHigh );
     return;
   }
   
@@ -6495,7 +6481,7 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
   {
     passMessage( "There was an error loading the newly created spectrum file, sorry:"
                 + string(e.what()),
-                "", WarningWidget::WarningMsgHigh );
+                WarningWidget::WarningMsgHigh );
   }//try / catch
   
 }//finishHardBackgroundSub();
@@ -7126,7 +7112,7 @@ void InterSpec::displayOnlySamplesWithinView( GoogleMap *map,
   
   if( !meass )
   {
-    passMessage( "Could not load spectrum", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Could not load spectrum", WarningWidget::WarningMsgHigh );
     return;
   }//if( !meass )
   
@@ -7152,7 +7138,7 @@ void InterSpec::displayOnlySamplesWithinView( GoogleMap *map,
   if( sample_numbers.empty() )
   {
     passMessage( "There were no samples in the visible map area.",
-                 "", WarningWidget::WarningMsgHigh );
+                 WarningWidget::WarningMsgHigh );
     return;
   }//if( sample_numbers.empty() )
   
@@ -7243,7 +7229,7 @@ void InterSpec::create3DSearchModeChart()
   if( !m_dataMeasurement || !m_dataMeasurement->passthrough() )
   {
     passMessage( "The 3D chart is only available for search mode or RPM passthrough data.",
-                "", WarningWidget::WarningMsgInfo );
+                WarningWidget::WarningMsgInfo );
     return;
   }//if( we dont have the proper data to make a 3D chart )
   
@@ -7907,7 +7893,7 @@ void InterSpec::handleToolTabChanged( int tab )
     if( InterSpecUser::preferenceValue<bool>( "ShowTooltips", this ) )
       passMessage( "You can also recalibrate graphically by right-clicking and "
                    "dragging the spectrum to where you want",
-                   "", WarningWidget::WarningMsgInfo );
+                   WarningWidget::WarningMsgInfo );
   }//if( tab == calibtab )
   
   m_currentToolsTab = tab;
@@ -8145,7 +8131,7 @@ void InterSpec::timeChartDragged( const int sample_start_in, const int sample_en
     passMessage( "Received invalid sample number from time chart (" + std::to_string(sample_start)
                  + ", " + std::to_string(sample_end) + ") - this shouldnt have happend"
                  " - not changing sample numbers of spectrum",
-                 "", WarningWidget::WarningMsgHigh );
+                 WarningWidget::WarningMsgHigh );
     return;
   }//if( invalid sample numbers )
   
@@ -8356,24 +8342,7 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
   WServer::instance()->post( sessionId, std::bind( [this, meas, det, usingUserDefaultDet](){
     //ToDo: could add button to remove association with DRF in database,
     //      similar to the "Start Fresh Session" button.  Skeleton code to do this
-    /*
-     std::unique_ptr<Wt::JSignal<> > m_clearDrfAssociation;
-     m_clearDrfAssociation.reset( new JSignal<>(this, "removeDrfAssociation", false) );
-     m_clearDrfAssociation->connect( this, &InterSpec::... );
-     
-     WStringStream js;
-     js << "File contained RIID analysis results: "
-     << riidAnaSummary(meas)
-     << "<div onclick="
-     "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showRiidAna-" << type << "');"
-     //"$('.qtip.jgrowl:visible:last').remove();"
-     "try{$(this.parentElement.parentElement).remove();}catch(e){}"
-     "return false;\" "
-     "class=\"clearsession\">"
-     "<span class=\"clearsessiontxt\">Show full RIID results</span></div>";
-     
-     WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgShowRiid, 20000 );
-     */
+    //      can be found by searching for "WarningMsgShowOnBoardRiid"
     
     if( meas != m_dataMeasurement )
     {
@@ -8399,7 +8368,7 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
     if( !usingUserDefaultDet )
       msg = "Have loaded a default detector response function for this detection system.";
     
-    passMessage( msg, "", WarningWidget::WarningMsgInfo );
+    passMessage( msg, WarningWidget::WarningMsgInfo );
     
     WApplication *app = WApplication::instance();
     if( app )
@@ -8471,7 +8440,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   std::shared_ptr<SpecMeas> previous = measurment(spec_type);
   const set<int> prevsamples = displayedSamples(spec_type);
   const vector<string> prevdets = detectorsToDisplay(spec_type);
-  const bool sameSpec = (meas==previous);
+  const bool sameSpecFile = (meas==previous);
   std::shared_ptr<const SpecUtils::Measurement> prev_display = m_spectrum->histUsedForXAxis();
   
 
@@ -8511,7 +8480,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       m_currentStateID = -1;
       updateSaveWorkspaceMenu();
 #endif
-      if( !sameSpec )
+      if( !sameSpecFile )
         deletePeakEdit();
     break;
     
@@ -8522,7 +8491,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
   if( meas
       /*&& sample_numbers.empty() */
-      && !sameSpec
+      && !sameSpecFile
       && (spec_type==meas->displayType())
       && meas->displayedSampleNumbers().size() )
   {
@@ -8619,7 +8588,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       
       findAndSetExcludedSamples( sample_numbers );
 
-      if( !sameSpec && m_shieldingSourceFit )
+      if( !sameSpecFile && m_shieldingSourceFit )
         m_shieldingSourceFit->newForegroundSet();
     break;
 
@@ -8639,14 +8608,14 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   };//switch( spec_type )
 
   if( msg.size() )
-    passMessage( msg, "", 0 );
+    passMessage( msg, 0 );
 
   
   //If loading a new foreground that has a different number of channels than
   //  the background/secondary, and differnet number of bins than previous
   //  foreground, get rid of the background/secondary since the user probably
   //  isnt interested in files from a completely different detector anymore.
-  if( spec_type == SpecUtils::SpectrumType::Foreground && m_dataMeasurement && !sameSpec )
+  if( spec_type == SpecUtils::SpectrumType::Foreground && m_dataMeasurement && !sameSpecFile )
   {
     //Assume we will use all the detectors (just to determine binning)
     const vector<string> &detectors = m_dataMeasurement->detector_names();
@@ -8725,7 +8694,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   };//switch( spec_type )
   
   
-  if( !sameSpec )
+  if( !sameSpecFile )
   {
     const bool enableScaler = (m_secondDataMeasurement || m_backgroundMeasurement);
     const int windex_0 = m_spectrum->yAxisScalersIsVisible() ? 0 : 1;
@@ -8734,7 +8703,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     m_showYAxisScalerItems[windex_0]->enable();
     m_showYAxisScalerItems[windex_1]->show();
     m_showYAxisScalerItems[windex_1]->setDisabled( !enableScaler );
-  }//if( !sameSpec )
+  }//if( !sameSpecFile )
   
   //Making fcn call take current data as a argument so that if this way a
   //  recalibration happens (which will change m_spectrum->data()), then the
@@ -8745,7 +8714,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
   if( askToPropigatePeaks
      && options.testFlag(InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal)
-     && !sameSpec && meas && m_dataMeasurement && previous && m_spectrum->data()
+     && !sameSpecFile && meas && m_dataMeasurement && previous && m_spectrum->data()
      && spec_type==SpecUtils::SpectrumType::Foreground
      && previous->instrument_id()==meas->instrument_id()
      && previous->num_gamma_channels()==meas->num_gamma_channels() )
@@ -8781,7 +8750,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   deleteEnergyCalPreserveWindow();
   
   if( options.testFlag(SetSpectrumOptions::CheckToPreservePreviousEnergyCal)
-      && !sameSpec && m_energyCalTool && !!meas && !!m_dataMeasurement )
+      && !sameSpecFile && m_energyCalTool && !!meas && !!m_dataMeasurement )
   {
     switch( spec_type )
     {
@@ -8817,7 +8786,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       }//if( propigate_peaks_fcns ) / else
       
     }
-  }//if( !sameSpec && m_energyCalTool && !!meas )
+  }//if( !sameSpecFile && m_energyCalTool && !!meas )
   
   if( propigate_peaks_fcns )
   {
@@ -8840,7 +8809,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       {
         passMessage( "You must load a foreground spectrum before viewing a"
                      " background or second foreground spectrum.",
-                    "", WarningWidget::WarningMsgHigh );
+                    WarningWidget::WarningMsgHigh );
       }
     break;
   }//switch( spec_type )
@@ -8900,7 +8869,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   
   //Lets see if there are any parse warnings that we should give to the user.
-  if( meas && !sameSpec )
+  if( meas && !sameSpecFile )
   {
     Wt::WApplication *app = wApp;
     
@@ -8925,17 +8894,17 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         if( lock )
         {
           for( const auto &msg : givenwarnings )
-            passMessage( msg, "", WarningWidget::WarningMsgMedium );
+            passMessage( msg, WarningWidget::WarningMsgMedium );
           app->triggerUpdate();
         }//
       }//if( !givenwarnings.empty() )
     };//checkForWarnings lamda
     
     furtherworkers.push_back( checkForWarnings );
-  }//if( meas && !sameSpec )
+  }//if( meas && !sameSpecFile )
   
   // Check if there are RIID analysis results in the file, and if so let the user know.
-  if( !sameSpec && meas && meas->detectors_analysis()
+  if( !sameSpecFile && meas && meas->detectors_analysis()
      && options.testFlag(SetSpectrumOptions::CheckForRiidResults) )
   {
     auto ana = meas->detectors_analysis();
@@ -8971,7 +8940,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     {
       const std::string type = SpecUtils::descriptionText(spec_type);
       WStringStream js;
+#if( USE_REMOTE_RID )
+      js << "File contained on-board RIID results: "
+#else
       js << "File contained RIID analysis results: "
+#endif
       << riidAnaSummary(meas)
       << "<div onclick="
            "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showRiidAna-" << type << "');"
@@ -8981,9 +8954,37 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
            "class=\"clearsession\">"
          "<span class=\"clearsessiontxt\">Show full RIID results</span></div>";
       
-      WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgShowRiid, 20000 );
+      m_warnings->addMessageUnsafe( js.str(), WarningWidget::WarningMsgShowOnBoardRiid, 20000 );
     }//if( nusedfor == 1 )
-  }//if( meas && !sameSpec )
+  }//if( meas && !sameSpecFile )
+  
+#if( USE_REMOTE_RID )
+  if( meas )
+  {
+    const int call_ext_rid = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", this );
+    if( (call_ext_rid == 1) || (call_ext_rid == 2) )
+    {
+      Wt::WApplication *app = wApp;
+      auto callExternalRid = [app,this,sameSpecFile](){
+        WApplication::UpdateLock lock(app);
+        if( lock )
+        {
+          Wt::WFlags<RemoteRid::AnaFileOptions> flags;
+          if( sameSpecFile )
+            flags |= RemoteRid::AnaFileOptions::OnlyDisplayedSearchSamples;
+          
+          RemoteRid::startAutomatedOnLoadAnalysis(this, flags );
+        }else
+        {
+          cerr << "Failed to get WApplication::UpdateLock to call external RID." << endl;
+        }
+      };//callExternalRid lamda
+      
+      furtherworkers.push_back( callExternalRid );
+    }//if( user selected to call either external REST API, or external EXE )
+  }//if( meas )
+#endif //#if( USE_REMOTE_RID )
+  
   
   if( meas && furtherworkers.size() )
   {
@@ -9023,8 +9024,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
     if( !energy_cal )
       passMessage( "Warning, no energy calibration for the selected samples",
-                   "", WarningWidget::WarningMsgMedium );
-  }//if( spec_type == SpecUtils::SpectrumType::Foreground && m_dataMeasurement && !sameSpec )
+                   WarningWidget::WarningMsgMedium );
+  }//if( spec_type == SpecUtils::SpectrumType::Foreground && m_dataMeasurement && !sameSpecFile )
   
 
   //Display a notice to the user about how they can select different portions of
@@ -9047,7 +9048,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       " while doing the above will perform the same actions,"
       " but for the background if it is the same spectrum"
       " file as the foreground.";
-      passMessage( tip, "", WarningWidget::WarningMsgInfo );
+      passMessage( tip, WarningWidget::WarningMsgInfo );
     }//if( showToolTips )
   }//if( passthrough foreground )
    */
@@ -9097,7 +9098,7 @@ void InterSpec::finishLoadUserFilesystemOpenedFile(
   {
     passMessage( "There was an error loading "
                  + (!!meas ? meas->filename() : string("spectrum file")),
-                "", WarningWidget::WarningMsgHigh );
+                WarningWidget::WarningMsgHigh );
   }//try / catch
   
 }//finishLoadUserFilesystemOpenedFile(...)
@@ -9502,7 +9503,7 @@ void InterSpec::searchForSinglePeak( const double x )
   {
     char msg[256];
     snprintf( msg, sizeof(msg), "Couldn't find peak a peak near %.1f keV", x );
-    passMessage( msg, "", 0 );
+    passMessage( msg, 0 );
     return;
   }//if( foundPeaks.first.empty() )
   
@@ -9751,7 +9752,7 @@ void InterSpec::findPeakFromUserRange( double x0, double x1 )
   
   if( !data )
   {
-    passMessage( "No spectrum data", "", WarningWidget::WarningMsgMedium );
+    passMessage( "No spectrum data", WarningWidget::WarningMsgMedium );
     return;
   }
     
@@ -9792,7 +9793,7 @@ void InterSpec::findPeakFromUserRange( double x0, double x1 )
     
   if( peakV.size()==0 )
     passMessage( "No peaks were found. You might try a slighlty changed ROI "
-                 "region.", "", WarningWidget::WarningMsgLow );
+                 "region.", WarningWidget::WarningMsgLow );
 }//void findPeakFromUserRange( const double x0, const double x1 )
 */
 
@@ -10523,7 +10524,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
         "the <b>File manager</b>, or a sample with gamma counts.</p>";
     }//if(
     
-    passMessage( msg, "", WarningWidget::WarningMsgHigh );
+    passMessage( msg, WarningWidget::WarningMsgHigh );
   }//if( !binning )
 
 

@@ -404,7 +404,7 @@ void ColorThemeWindow::removeThemeCallback()
         transaction.commit();
       }catch( Wt::Dbo::Exception & )
       {
-        m_interspec->logMessage( "Error removing theme from database.", "", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgMedium
+        m_interspec->logMessage( "Error removing theme from database.", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgMedium
       }
     }//if( in DB )
     
@@ -521,7 +521,7 @@ void ColorThemeWindow::uploadThemeCallback()
             m_apply->show();
           }else
           {
-             m_interspec->logMessage( "Error saving theme to database - sorry!.", "", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgInfo
+             m_interspec->logMessage( "Error saving theme to database - sorry!.", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgInfo
           }
           window->hide();
         }) );
@@ -628,7 +628,7 @@ unique_ptr<ColorTheme> ColorThemeWindow::saveThemeToDb( const ColorTheme *theme 
   
   if( !theme || !user || !sql )
   {
-    m_interspec->logMessage( "Programming Logic Error in ColorThemeWindow::saveCallback(): unable to get database resource", "", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgMedium
+    m_interspec->logMessage( "Programming Logic Error in ColorThemeWindow::saveCallback(): unable to get database resource", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgMedium
     return newTheme;
   }
   
@@ -696,9 +696,9 @@ unique_ptr<ColorTheme> ColorThemeWindow::saveThemeToDb( const ColorTheme *theme 
   }//if( in not in database ) / else ( already in DB )
   
   if( errormsg.empty() )
-    m_interspec->logMessage( theme->theme_name + " color theme saved.", "", 0 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgInfo
+    m_interspec->logMessage( theme->theme_name + " color theme saved.", 0 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgInfo
   else
-    m_interspec->logMessage( errormsg, "", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgMedium
+    m_interspec->logMessage( errormsg, 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgMedium
   
   return newTheme;
 }//void saveThemeToDb( const ColorTheme *theme )

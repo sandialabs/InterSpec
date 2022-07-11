@@ -105,7 +105,7 @@ namespace
   void giveMessageToApp( const string msg,
                         const WarningWidget::WarningMsgLevel level )
   {
-    passMessage( msg, "", level );
+    passMessage( msg, level );
     if( wApp )  //wApp should aways be valid here
       wApp->triggerUpdate();
   }
@@ -282,7 +282,7 @@ SpectraFileHeader::~SpectraFileHeader() noexcept(true)
             WString msg = "Autosaved previously opened spectra '";
             msg += (!!memObj ? memObj->filename() : fileSystemLocation);
             msg += "'";
-            passMessage( msg, "", WarningWidget::WarningMsgSave );
+            passMessage( msg, WarningWidget::WarningMsgSave );
         }
         else if( fileSystemLocation.size() )
         {
@@ -291,7 +291,7 @@ SpectraFileHeader::~SpectraFileHeader() noexcept(true)
             //WString msg = "Autosaved previously opened spectra '";
             //msg += (!!memObj ? memObj->filename() : fileSystemLocation);
             //msg += "'";
-            //passMessage( msg, "", WarningWidget::WarningMsgInfo );
+            //passMessage( msg, WarningWidget::WarningMsgInfo );
         }
         else //probably shouldnt happen
           throw runtime_error( "There is absolutely no reference to the spectra"
@@ -2395,7 +2395,7 @@ void DownloadSpectrumResource::handleRequest( const Wt::Http::Request& request,
   {
     stringstream msg;
     msg << "Failed in creating resource to export: " << e.what();
-    passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
     
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, msg.str().c_str() );

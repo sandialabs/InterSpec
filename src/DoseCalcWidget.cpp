@@ -442,12 +442,10 @@ public:
       {
         if( IsInf(nuc->halfLife) )
         {
-          passMessage( isotopeLabel + " is stable",
-                      "", WarningWidget::WarningMsgHigh );
+          passMessage( isotopeLabel + " is stable", WarningWidget::WarningMsgHigh );
         }else
         {
-          passMessage( isotopeLabel + " is missing decay data",
-                      "", WarningWidget::WarningMsgHigh );
+          passMessage( isotopeLabel + " is missing decay data", WarningWidget::WarningMsgHigh );
         }
         
         m_nuclideEdit->setText( "" );
@@ -462,12 +460,12 @@ public:
     {
       if( nuc )
       {
-        string agstr;
-        PeakDef::defaultDecayTime( nuc, &agstr );
-        passMessage( "Changed age to a more reasonable value for " + nuc->symbol,
-                    " from '" + agestr + "' to '" + agstr + "'",
+        string defagstr;
+        PeakDef::defaultDecayTime( nuc, &defagstr );
+        passMessage( "Changed age to a more reasonable value for " + nuc->symbol
+                    + " from '" + agestr + "' to '" + defagstr + "'",
                     WarningWidget::WarningMsgLow );
-        m_nuclideAgeEdit->setText( agstr );
+        m_nuclideAgeEdit->setText( defagstr );
       }else
       {
         m_nuclideAgeEdit->setText( "0y" );
@@ -503,8 +501,7 @@ public:
     
     if( age > 50.0*m_currentNuc->halfLife || age < 0.0 )
     {
-      passMessage( agestr + "is to many half lives to decay "
-                   + m_currentNuc->symbol, "",
+      passMessage( agestr + "is to many half lives to decay " + m_currentNuc->symbol,
                    WarningWidget::WarningMsgHigh );
       if( m_prevAgeTxt.count(m_currentNuc) )
         m_nuclideAgeEdit->setText( m_prevAgeTxt[m_currentNuc] );

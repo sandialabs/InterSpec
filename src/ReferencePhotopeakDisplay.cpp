@@ -1046,11 +1046,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   m_showAlphas->checked().connect( std::bind([](){
     passMessage( "Alphas are only be shown in the table, not on the spectrum.",
-                "", WarningWidget::WarningMsgInfo );
+                WarningWidget::WarningMsgInfo );
   }) );
   m_showBetas->checked().connect( std::bind([](){
     passMessage( "Betas are only be shown in the table, not on the spectrum.",
-                "", WarningWidget::WarningMsgInfo );
+                WarningWidget::WarningMsgInfo );
   }) );
   
   
@@ -1121,7 +1121,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   csvButton->clicked().connect( std::bind([](){
     passMessage( "The 'Nuclide Decay Info' tool provides additional capabilities for"
                  " exporting nuclide, decay products, and decay information to CSV files.",
-                 "", WarningWidget::WarningMsgInfo );
+                 WarningWidget::WarningMsgInfo );
     //TODO: check about calling WarningWidget::displayPopupMessageUnsafe( msg, level, 5000 ); directly with a longer time for the message to hang around
   }));
   
@@ -1256,12 +1256,10 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
   {
     if( IsInf(nuc->halfLife) )
     {
-      passMessage( isotopeLabel + " is stable",
-                   "", WarningWidget::WarningMsgHigh );
+      passMessage( isotopeLabel + " is stable", WarningWidget::WarningMsgHigh );
     }else
     {
-      passMessage( isotopeLabel + " is missing decay data",
-                   "", WarningWidget::WarningMsgHigh );
+      passMessage( isotopeLabel + " is missing decay data", WarningWidget::WarningMsgHigh );
     }
     
     m_nuclideEdit->setText( "" );
@@ -1285,8 +1283,7 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
       if( isotopeLabel.size() && reactions.empty()
           && !SpecUtils::icontains( isotopeLabel, "background") )
       {
-        passMessage( isotopeLabel +
-                     " is not a valid isotope, element, or reaction", "",
+        passMessage( isotopeLabel + " is not a valid isotope, element, or reaction",
                      WarningWidget::WarningMsgHigh );
       }
     }
@@ -1295,12 +1292,12 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
   {
     if( nuc )
     {
-      string agestr;
-      PeakDef::defaultDecayTime( nuc, &agestr );
-      passMessage( "Changed age to a more reasonable value for " + nuc->symbol,
-                   " from '" + agestr + "' to '" + agestr + "'",
+      string defagestr;
+      PeakDef::defaultDecayTime( nuc, &defagestr );
+      passMessage( "Changed age to a more reasonable value for " + nuc->symbol
+                   + " from '" + agestr + "' to '" + defagestr + "'",
                    WarningWidget::WarningMsgLow );
-      m_ageEdit->setText( agestr );
+      m_ageEdit->setText( defagestr );
     }else
     {
       m_ageEdit->setText( "0y" );
@@ -1465,12 +1462,12 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
         
         if( age > 100.0*nuc->halfLife || age < 0.0 )
         {
-          string agestr;
-          age = PeakDef::defaultDecayTime( nuc, &agestr );
-          passMessage("Changed age to a more reasonable value for " + nuc->symbol,
-                      " from '" + agestr + "' to " + agestr,
+          string defagestr;
+          age = PeakDef::defaultDecayTime( nuc, &defagestr );
+          passMessage("Changed age to a more reasonable value for " + nuc->symbol
+                      + " from '" + agestr + "' to " + defagestr,
                       WarningWidget::WarningMsgLow );
-          m_ageEdit->setText( agestr );
+          m_ageEdit->setText( defagestr );
         }
       }//if( prompt ) / else
     }catch(...)
@@ -2572,7 +2569,7 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
     cerr << "ReferencePhotopeakDisplay::deSerialize() caught: " << e.what() << endl;
     stringstream msg;
     msg << "Error opening displayed photopeaks from database for display: " << e.what();
-    passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void deSerialize( std::string &xml_data  )
 
@@ -2701,7 +2698,7 @@ void ReferencePhotopeakDisplay::setReaction( const ReactionGamma::Reaction *rctn
 void ReferencePhotopeakDisplay::fitPeaks()
 {
   passMessage( "ReferencePhotopeakDisplay::fitPeaks() not implemented yet,"
-               " but it will be really cool once it is", "", 2 );
+               " but it will be really cool once it is", 2 );
   
   //-Get nuclide being displayed, including persisted, then do a whole lot of work...
   //-Get the existing peaks, and (temporarily fix their means).

@@ -433,7 +433,7 @@ public:
         auto interspec = InterSpec::instance();
         const char *msg = "Energy sum range must be larger than 0.1 keV.";
         if( interspec )
-          interspec->logMessage( msg, "", 3 );
+          interspec->logMessage( msg, 3 );
       }//
     }//if( both lower and upper energies are specified )
     
@@ -1334,7 +1334,7 @@ void D3TimeChart::setHighlightedIntervals( const std::set<int> &sample_numbers,
   {
     const char *msg = "Time chart passed sample numbers when no data is set - should not happen";
     if( interspec )
-      interspec->logMessage( msg, "", 3 );
+      interspec->logMessage( msg, 3 );
 #if( PERFORM_DEVELOPER_CHECKS )
       log_developer_error( __func__, msg );
 #endif

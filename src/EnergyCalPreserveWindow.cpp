@@ -474,7 +474,7 @@ void EnergyCalPreserveWindow::propogateCalibrations()
     log_developer_error( __func__, msg.c_str() );
 #endif
             
-    viewer->logMessage( msg, "", 2 );
+    viewer->logMessage( msg, 2 );
     finished().emit(WDialog::Accepted);
     return;
   }//try / catch translate peaks
@@ -539,7 +539,7 @@ void EnergyCalPreserveWindow::propogateCalibrations()
     }//for( loop over new peaks mape )
   }catch( std::exception &e )
   {
-    viewer->logMessage( e.what(), "", 2 );
+    viewer->logMessage( e.what(), 2 );
     finished().emit(WDialog::Accepted);
     return;
   }//try / catch

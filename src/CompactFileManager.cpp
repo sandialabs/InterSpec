@@ -374,8 +374,7 @@ void CompactFileManager::changeToSampleNum( int sampleNum,
         cfm->handleDisplayChange( type, meas, samples, dets );
       }
       
-      passMessage( "Sample number requested doesnt exist.",
-                   "", WarningWidget::WarningMsgHigh );
+      passMessage( "Sample number requested doesnt exist.", WarningWidget::WarningMsgHigh );
       return;
     }//if( total_sample_nums.find(sampleNum) == total_sample_nums.end() )
 
@@ -386,8 +385,8 @@ void CompactFileManager::changeToSampleNum( int sampleNum,
 //    m_interspec->setSpectrum( meas, sampleNumToLoad, type, false );
   }else
   {
-    passMessage( "Cant change sample numbers, there is no current measurment",
-                 "", WarningWidget::WarningMsgHigh );
+    passMessage( "Cant change sample numbers, there is no current measurement",
+                 WarningWidget::WarningMsgHigh );
   }//if( meas ) / else
 }//void changeToSampleNum(...)
 
@@ -411,7 +410,7 @@ void CompactFileManager::changeToSampleRange( int first, int last,
       
       handleDisplayChange( type, meas, samples, dets );
       passMessage( "One of the sample number requested doesnt exist.",
-                   "", WarningWidget::WarningMsgHigh );
+                  WarningWidget::WarningMsgHigh );
       return;
     }//if( total_sample_nums.find(sampleNum) == total_sample_nums.end() )
 
@@ -423,8 +422,8 @@ void CompactFileManager::changeToSampleRange( int first, int last,
 //    m_interspec->setSpectrum( meas, sampleNumToLoad, type, false );
   }else
   {
-    passMessage( "Can't change sample numbers, there is no current measurment",
-                 "",WarningWidget::WarningMsgHigh );
+    passMessage( "Can't change sample numbers, there is no current measurement",
+                 WarningWidget::WarningMsgHigh );
   }//if( meas ) / else
 }//void changeToSampleRange(...)
 
@@ -489,8 +488,8 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
 
   if( !meas )
   {
-    passMessage( "Can't change sample numbers, there is no current measurment",
-                 "", WarningWidget::WarningMsgHigh );
+    passMessage( "Can't change sample numbers, there is no current measurement",
+                WarningWidget::WarningMsgHigh );
     m_displaySampleNumEdits[typeindex]->setText( "" );
     return;
   }//if( !meas )
@@ -529,7 +528,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
             msg << "Sample number " << firstStr << " doesnt exist.";
           else
             msg << "Sample number " << lastStr << " doesnt exist.";
-          passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+          passMessage( msg.str(), WarningWidget::WarningMsgHigh );
           const auto dets = m_interspec->detectorsToDisplay(type);
           const set<int> &samples = m_interspec->displayedSamples(type);
           handleDisplayChange( type, meas, samples, dets );
@@ -547,7 +546,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
         {
           stringstream msg;
           msg << "Sample number " << sample << " does not exist in the measurement.";
-          passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+          passMessage( msg.str(), WarningWidget::WarningMsgHigh );
           const auto dets = m_interspec->detectorsToDisplay(type);
           const set<int> &samples = m_interspec->displayedSamples(type);
           handleDisplayChange( type, meas, samples, dets );
@@ -565,8 +564,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
   }catch( exception &e )
   { 
     cerr << "CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type )" << "\n\t" << e.what() << endl;
-    passMessage( "Error changing to requested sample number(s)",
-                 "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error changing to requested sample number(s)", WarningWidget::WarningMsgHigh );
 
     if( meas )
     {
@@ -642,10 +640,10 @@ void CompactFileManager::handleUserIncrementSampleNum( SpecUtils::SpectrumType t
   {
     cerr << "CompactFileManager::handleUserIncrementSampleNum(...): caught "
          << e.what() << endl;
-    passMessage( "Error advancing spectrum", "",WarningWidget::WarningMsgHigh );
+    passMessage( "Error advancing spectrum", WarningWidget::WarningMsgHigh );
   }catch(...)
   {
-    passMessage( "Error advancing spectrum", "",WarningWidget::WarningMsgHigh );
+    passMessage( "Error advancing spectrum", WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void handleUserWantsNextSampleNum( SpecUtils::SpectrumType spectrum_type )
 

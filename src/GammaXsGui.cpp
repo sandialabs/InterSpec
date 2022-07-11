@@ -561,7 +561,7 @@ void GammaXsGui::calculateCrossSections()
       comptonMu  += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::ComptonScatter ) ;
     }catch(exception &e)
     {
-      passMessage( string("XS Calculation may be suspect: ")+e.what(), "", 3 );
+      passMessage( string("XS Calculation may be suspect: ")+e.what(), 3 );
     }
 
 #if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
@@ -570,7 +570,7 @@ void GammaXsGui::calculateCrossSections()
       rayleighMu += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::RayleighScatter );
     }catch(exception &e)
     {
-      passMessage( string("XS Calculation may be suspect: ")+e.what(), "", 3 );
+      passMessage( string("XS Calculation may be suspect: ")+e.what(), 3 );
     }
 #endif
 
@@ -579,7 +579,7 @@ void GammaXsGui::calculateCrossSections()
       photoMu    += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::PhotoElectric );
     }catch(exception &e)
     {
-      passMessage( string("XS Calculation may be suspect: ")+e.what(), "", 3 );
+      passMessage( string("XS Calculation may be suspect: ")+e.what(), 3 );
     }
 
     try
@@ -587,7 +587,7 @@ void GammaXsGui::calculateCrossSections()
       pairMu     += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::PairProduction );
     }catch(exception &e)
     {
-      passMessage( string("XS Calculation may be suspect: ")+e.what(), "", 3 );
+      passMessage( string("XS Calculation may be suspect: ")+e.what(), 3 );
     }
     
     try
@@ -595,7 +595,7 @@ void GammaXsGui::calculateCrossSections()
       totalMu += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy );
     }catch(exception &e)
     {
-      passMessage( string("XS Calculation may be suspect: ")+e.what(), "", 3 );
+      passMessage( string("XS Calculation may be suspect: ")+e.what(), 3 );
     }
   }//for( Material::NuclideFractionPair &nf : chemFormula )
 

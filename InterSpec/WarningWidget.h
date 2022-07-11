@@ -51,7 +51,10 @@ public:
     WarningMsgMedium = 2,
     WarningMsgHigh = 3,
     WarningMsgSave = 4,
-    WarningMsgShowRiid = 5,
+    WarningMsgShowOnBoardRiid = 5,
+#if( USE_REMOTE_RID )
+    WarningMsgExternalRiid = 6,
+#endif
     
     NumWarningMsgType
   };//enum WarningMsgLevel
@@ -73,11 +76,20 @@ public:
    Input 'msg' will be sanitized before displaying (e.g., must be valid XHTML and not have any JS
    scripting) and storage.
    */
-  void addMessage( Wt::WString msg, Wt::WString src, int level );
+  void addMessage( Wt::WString msg, int level );
 
+  /** Similar to #addMessage, but \c msg contents will not be sanitized before displaying (so
+   see warnings from the #displayPopupMessageUnsafe function), and you can control how long the
+   message will be displayed for.
+   */
+  void addMessageUnsafe( const Wt::WString &msg, const WarningMsgLevel level, int num_millies );
+  
   /** Displays the message to the user in the q-tip popup style.
+   
    Does not check the format or content of the msg, so you need to make sure any potentially bad
    script, or non-XHTML-ness is removed first.
+   
+   Also, does not include the message into the application log (e.g., m_messageModel)
    
    @param num_millies The number of milliseconds to have the popup stick around for.
    */

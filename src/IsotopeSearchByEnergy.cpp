@@ -797,7 +797,7 @@ void IsotopeSearchByEnergy::deSerialize( std::string &xml_data,
     cerr << "IsotopeSearchByEnergy::deSerialize(...) caught: " << e.what() << endl;
     stringstream msg;
     msg << "Error opening displayed photopeaks from database for search: " << e.what();
-    passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void IsotopeSearchByEnergy::deSerialize( std::string &xml_data )
 

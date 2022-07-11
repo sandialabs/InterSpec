@@ -402,7 +402,7 @@ void EnergyCalGraphicalConfirm::apply()
     msg += "are invalid because they will cause higher numbered bins to have lower energy values."
            " Calibration not applied.";
     
-    viewer->logMessage( WString::fromUTF8(msg), "", 3 );
+    viewer->logMessage( WString::fromUTF8(msg), 3 );
     finished().emit(WDialog::Accepted);
     return;
   }//try / catch
@@ -427,7 +427,7 @@ void EnergyCalGraphicalConfirm::apply()
     m_calibrator->setWasGraphicalRecal( type, finalE );
   }catch( std::exception &e )
   {
-    viewer->logMessage( e.what(), "", 2 );
+    viewer->logMessage( e.what(), 2 );
   }//try / catch
   
   finished().emit(WDialog::Accepted);

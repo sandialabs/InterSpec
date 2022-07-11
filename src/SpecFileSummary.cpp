@@ -926,7 +926,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
 
   if( !sample || !meas )
   {
-    passMessage( "No spectrum to update", "", WarningWidget::WarningMsgInfo );
+    passMessage( "No spectrum to update", WarningWidget::WarningMsgInfo );
     return;
   }//if( !sample )
 
@@ -949,7 +949,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
         meas->set_live_time( newLiveTime, sample );
       }catch( exception &e )
       {
-        passMessage( e.what(), "SpecFileSummary", WarningWidget::WarningMsgHigh );
+        passMessage( e.what(), WarningWidget::WarningMsgHigh );
         
         char text[32];
         snprintf( text, sizeof(text), "%.2f s", sample->live_time() );
@@ -973,7 +973,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
         meas->set_real_time( newRealTime, sample );
       }catch( exception &e )
       {
-        passMessage( e.what(), "SpecFileSummary",WarningWidget::WarningMsgHigh );
+        passMessage( e.what(), WarningWidget::WarningMsgHigh );
         
         char text[32];
         snprintf( text, sizeof(text), "%.2f", sample->real_time() );
@@ -989,9 +989,8 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
 
       if( newDate.is_special() )
       {
-        passMessage( "Error converting '" + newDateStr
-                     + string("' to a date/time string"),
-                     "SpecFileSummary",WarningWidget::WarningMsgHigh );
+        passMessage( "Error converting '" + newDateStr + string("' to a date/time string"),
+                    WarningWidget::WarningMsgHigh );
         stringstream timeStampStrm;
         timeStampStrm << sample->start_time();
         m_timeStamp->setText( timeStampStrm.str() );
@@ -1050,7 +1049,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
       
       if( converror )
         passMessage( "Error converting Long/Lat to valid float",
-                     "", WarningWidget::WarningMsgHigh );
+                     WarningWidget::WarningMsgHigh );
       
       
       const string newDateStr = m_gpsTimeStamp->text().toUTF8();
@@ -1058,9 +1057,8 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
       
       if( newDate.is_special() && newDateStr.size() )
       {
-        passMessage( "Error converting '" + newDateStr
-                     + string("' to a date/time string"),
-                     "",WarningWidget::WarningMsgHigh );
+        passMessage( "Error converting '" + newDateStr + string("' to a date/time string"),
+                     WarningWidget::WarningMsgHigh );
         newDate = sample->position_time();
         stringstream timeStampStrm;
         timeStampStrm << newDate;

@@ -473,7 +473,7 @@ void PeakInfoDisplay::createNewPeak()
   if( !meas || meas->num_gamma_channels() < 7 )
   {
     passMessage( "A foreground spectrum must be loaded to add a peak.",
-                "", WarningWidget::WarningMsgHigh );
+                WarningWidget::WarningMsgHigh );
     return;
   }//if( we dont have a valid foreground )
   
@@ -876,7 +876,7 @@ void PeakInfoDisplay::createNewPeak()
     
     if( results.empty() )
     {
-      passMessage( "Fit Failed.", "", WarningWidget::WarningMsgLow );
+      passMessage( "Fit Failed.", WarningWidget::WarningMsgLow );
     }else
     {
       *candidatePeak = results[0];

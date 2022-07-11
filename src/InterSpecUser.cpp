@@ -547,9 +547,12 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
     else
       setunchecked();
     
+    // The below doesnt seem to find widgets in AuxWindows (and maybe pop-ups)
     auto w = wApp->domRoot()->findById(cbid);
     if( !w && wApp->domRoot2() )
       w = wApp->domRoot2()->findById(cbid);
+    if( !w && wApp->root() )
+      w = wApp->root()->findById(cbid);
     
     if( w )
     {

@@ -2355,7 +2355,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
         cerr << debugmsg.str() << endl;
   #endif
         passMessage( "There was an error loading the previous shielding/source model for this file - model state is suspect!",
-                      "", WarningWidget::WarningMsgHigh );
+                      WarningWidget::WarningMsgHigh );
       }
     }//if( shield_source )
     
@@ -2414,7 +2414,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
   }catch( std::exception &e )
   {
     passMessage( "Error creating Activity/Shielding fit display: " + string(e.what()),
-                 "", WarningWidget::WarningMsgHigh );
+                 WarningWidget::WarningMsgHigh );
     
     if( disp )
       delete disp;
@@ -3198,7 +3198,7 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           m_sourceModel->setData(index, valtxt);
         }catch(...)
         {
-          passMessage( "'" + valtxt + "' is not a valid entry", "", WarningWidget::WarningMsgHigh );
+          passMessage( "'" + valtxt + "' is not a valid entry", WarningWidget::WarningMsgHigh );
           valuefld->setText( asString( m_sourceModel->data(index) ) );
         }
       };//fieldUpdate
@@ -3877,7 +3877,7 @@ void ShieldingSourceDisplay::backgroundPeakSubChanged()
       m_backgroundPeakSub->setUnChecked();
       passMessage( "There is no background spectrum loaded, so can not"
                    " subtract background peak areas from foreground",
-                   "", WarningWidget::WarningMsgHigh );
+                   WarningWidget::WarningMsgHigh );
       return;
     }//if( !back )
     
@@ -3894,7 +3894,7 @@ void ShieldingSourceDisplay::backgroundPeakSubChanged()
                    " the foreground, identify the peaks to potentially be"
                    " subtracted, and then switch back to your current"
                    " foreground/background combination.",
-                   "", WarningWidget::WarningMsgHigh );
+                   WarningWidget::WarningMsgHigh );
       return;
     }//if( !peaks || peaks->empty() )
   }//if( m_backgroundPeakSub->isChecked() )
@@ -3976,7 +3976,7 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
     checkDistanceAndThicknessConsistent();
   }catch( std::exception &e )
   {
-    passMessage( e.what(), "", WarningWidget::WarningMsgMedium );
+    passMessage( e.what(), WarningWidget::WarningMsgMedium );
   }//try / catch
   
   handleShieldingChange();
@@ -4323,7 +4323,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
     checkDistanceAndThicknessConsistent();
   }catch( exception &e )
   {
-    passMessage( e.what() , "", WarningWidget::WarningMsgHigh );
+    passMessage( e.what(), WarningWidget::WarningMsgHigh );
   }//try / catch
   
   try
@@ -4402,7 +4402,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
         stringstream msg;
         msg << "An invalid chi2 was calculated for " << energy
             << " keV, other results may be invalid";
-        passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+        passMessage( msg.str(), WarningWidget::WarningMsgHigh );
         continue;
       }//if( IsNan(p.second) || IsInf(p.second) )
       
@@ -4586,7 +4586,7 @@ void ShieldingSourceDisplay::finishModelUpload( AuxWindow *window,
   {
     stringstream msg;
     msg << "Error opening uploaded Source Shielding Fit Model: " << e.what();
-    passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
     
     try
     {
@@ -4594,7 +4594,7 @@ void ShieldingSourceDisplay::finishModelUpload( AuxWindow *window,
     }catch( std::exception & )
     {
       passMessage( "Even worse, there was an error trying to recover",
-                   "", WarningWidget::WarningMsgHigh );
+                   WarningWidget::WarningMsgHigh );
     }//try / catch
   }//try / catch
   
@@ -4609,7 +4609,7 @@ void ShieldingSourceDisplay::modelUploadError( const ::int64_t size_tried,
   const int max_size = static_cast<int>( wApp->maximumRequestSize() );
   msg << "Error uploading Source Shielding Fit Model.  Tried to upload "
       << size_tried << " (max size " << max_size << ")";
-  passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+  passMessage( msg.str(), WarningWidget::WarningMsgHigh );
   
   AuxWindow::deleteAuxWindow( window );
 }//void modelUploadError( const ::int64_t size_tried );
@@ -4779,7 +4779,7 @@ bool ShieldingSourceDisplay::loadModelFromDb( Dbo::ptr<ShieldingSourceModel> shi
   {
     stringstream msg;
     msg << "Error opening Source Shielding Fit Model from database: " << e.what();
-    passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
+    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
     
     try
     {
@@ -4787,7 +4787,7 @@ bool ShieldingSourceDisplay::loadModelFromDb( Dbo::ptr<ShieldingSourceModel> shi
     }catch( std::exception & )
     {
       passMessage( "Even worse, there was an error trying to recover",
-                  "", WarningWidget::WarningMsgHigh );
+                  WarningWidget::WarningMsgHigh );
     }//try / catch
     
     return false;
@@ -4821,8 +4821,7 @@ void ShieldingSourceDisplay::finishLoadModelFromDatabase( AuxWindow *window,
   Dbo::ptr<ShieldingSourceModel> shieldmodel = querymodel->resultRow( row );
   if( !shieldmodel )
   {
-    passMessage( "Unable to load selected model - sorry :(",
-                 "", WarningWidget::WarningMsgHigh );
+    passMessage( "Unable to load selected model - sorry :(", WarningWidget::WarningMsgHigh );
     return;
   }//if( !shieldmodel )
   
@@ -5001,8 +5000,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     if( del )
       delete del;
     delete window;
-    passMessage( "Error creating database model browser",
-                 "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error creating database model browser", WarningWidget::WarningMsgHigh );
     cerr << "\n\nShieldingSourceDisplay::startBrowseDatabaseModels() caught: "
          << e.what() << endl << endl;
   }//try / catch
@@ -5279,7 +5277,7 @@ void ShieldingSourceDisplay::saveCloneModelToDatabase()
     cerr << "\n\nException caught in ShieldingSourceDisplay::saveCloneModelToDatabase(): "
          << e.what() << endl;
     transaction.rollback();
-    passMessage( "Error saving to the database", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error saving to the database", WarningWidget::WarningMsgHigh );
     return;
   }//try / catch
   
@@ -6209,7 +6207,7 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
     checkDistanceAndThicknessConsistent();
   }catch( std::exception &e )
   {
-    passMessage( e.what(), "", WarningWidget::WarningMsgMedium );
+    passMessage( e.what(), WarningWidget::WarningMsgMedium );
   }//try / catch
   
   
@@ -6301,7 +6299,7 @@ void ShieldingSourceDisplay::materialModifiedCallback( ShieldingSelect *select )
     checkDistanceAndThicknessConsistent();
   }catch( std::exception &e )
   {
-    passMessage( e.what(), "", WarningWidget::WarningMsgMedium );
+    passMessage( e.what(), WarningWidget::WarningMsgMedium );
   }//try / catch
   
   
@@ -6327,7 +6325,7 @@ void ShieldingSourceDisplay::materialChangedCallback( ShieldingSelect *select )
     checkDistanceAndThicknessConsistent();
   }catch( std::exception &e )
   {
-    passMessage( e.what(), "", WarningWidget::WarningMsgMedium );
+    passMessage( e.what(), WarningWidget::WarningMsgMedium );
   }//try / catch
   
   
@@ -6422,7 +6420,7 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   {
     string msg = "An invalid activity was calculated for " + nuclide->symbol
                  + ", other results may be invalid";
-    passMessage( msg, "", WarningWidget::WarningMsgHigh );
+    passMessage( msg, WarningWidget::WarningMsgHigh );
     return;
   }//if( IsNan(p.second) || IsInf(p.second) )
   
@@ -6599,9 +6597,8 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   if( liveTime <= 0.0 )
   {
     if( m_sourceModel->numNuclides() )
-      passMessage( "There was no defined detector live time, so assuming"
-                   " 300 seconds", "ShieldingSourceDisplay::doModelFit",
-                   WarningWidget::WarningMsgHigh );
+      passMessage( "There was no defined detector live time, so assuming 300 seconds",
+                  WarningWidget::WarningMsgHigh );
     liveTime = 300.0 * PhysicalUnits::second;
   }//if( liveTime <= 0.0 )
 
@@ -7044,7 +7041,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     {
       m_backgroundPeakSub->setUnChecked();
       passMessage( "There are no background peaks defined, not subtracting them",
-                   "", WarningWidget::WarningMsgInfo );
+                   WarningWidget::WarningMsgInfo );
     }//if( !peaks || peaks->empty() )
   }//if( m_backgroundPeakSub->isChecked() )
   
@@ -7077,7 +7074,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
                     "sum of the fit for mass fractions equal the sum of the "
                     "inital values, therefore the initial sum of mass "
                     "fractions must be greater than 0.0",
-                    "", WarningWidget::WarningMsgHigh );
+                    WarningWidget::WarningMsgHigh );
         throw runtime_error( "Error fitting mass fraction" );
       }//if( fracmaterial <= 0.0 )
       
@@ -7205,7 +7202,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
   std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
   if( !m_currentFitFcn )
   {
-    passMessage( "Programming Logic Error - received model fit results at an invalid time.", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Programming Logic Error - received model fit results at an invalid time.", WarningWidget::WarningMsgHigh );
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, "Programming Logic Error - received model fit results at an invalid time." );
 #endif
@@ -7216,7 +7213,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
   {
     if( m_shieldingSelects->indexOf(shielding) < 0 )
     {
-      passMessage( "Programming Logic Error - shieldings have changed.", "", WarningWidget::WarningMsgHigh );
+      passMessage( "Programming Logic Error - shieldings have changed.", WarningWidget::WarningMsgHigh );
 #if( PERFORM_DEVELOPER_CHECKS )
       log_developer_error( __func__, "Programming Logic Error - received fit results when model was no longer valid." );
 #endif
@@ -7238,7 +7235,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
       for( auto &s : errormsgs )
         msg += "<div>&nbsp;&nbsp;" + s + "</div>";
       
-      passMessage( msg, "", WarningWidget::WarningMsgHigh );
+      passMessage( msg, WarningWidget::WarningMsgHigh );
       
       m_currentFitFcn.reset();
       return;
@@ -7246,7 +7243,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
      
     case ModelFitResults::FitStatus::InterMediate:
     {
-      passMessage( "Intermediate Fit status not handled yet.", "", WarningWidget::WarningMsgHigh );
+      passMessage( "Intermediate Fit status not handled yet.", WarningWidget::WarningMsgHigh );
       return;
     }//case ModelFitResults::FitStatus::InterMediate:
       
@@ -7256,8 +7253,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
   
   
   for( auto &s : errormsgs )
-    passMessage( s + "<br />Using fit solution anyway." ,
-                   "", WarningWidget::WarningMsgHigh );
+    passMessage( s + "<br />Using fit solution anyway.", WarningWidget::WarningMsgHigh );
   
   try
   {
@@ -7457,7 +7453,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         {
           const string msg = "An invalid age was calculated for " + nuc->symbol
                              + ", other results may be invalid to";
-          passMessage( msg, "", WarningWidget::WarningMsgHigh );
+          passMessage( msg, WarningWidget::WarningMsgHigh );
         }//if( IsNan(p.second) || IsInf(p.second) )
         
         const double ageUncert = m_currentFitFcn->age( nuc, paramErrors );
@@ -7520,7 +7516,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         {
           const string msg = "An invalid activity was calculated for " + nuc->symbol
           + ", other results may be invalid to";
-          passMessage( msg, "", WarningWidget::WarningMsgHigh );
+          passMessage( msg, WarningWidget::WarningMsgHigh );
         }//if( we failed to set activity value. )
         
         
@@ -7541,14 +7537,14 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
             {
               const string msg = "Calculated activity uncertainty for " + nuc->symbol
               + " is invalid, other results may be invalid to.";
-              passMessage( msg, "", WarningWidget::WarningMsgHigh );
+              passMessage( msg, WarningWidget::WarningMsgHigh );
             }//if( IsNan(p.second) || IsInf(p.second) )
           }//if( activity uncert < 0 ) / else
         }catch( std::exception &e )
         {
           const string msg = "Unexpected error calculating activity uncertainty for " + nuc->symbol
           + ": " + string(e.what());
-          passMessage( msg, "", WarningWidget::WarningMsgHigh );
+          passMessage( msg, WarningWidget::WarningMsgHigh );
         }
       }else if( m_sourceModel->activityUncert(ison) >= 0.0 )
       {
@@ -7563,8 +7559,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
   }catch( std::exception &e )
   {
     passMessage( "Programming issue - caught exception: " + string(e.what())
-                 + "<br />Application state may be suspect!", "",
-                 WarningWidget::WarningMsgHigh );
+                 + "<br />Application state may be suspect!", WarningWidget::WarningMsgHigh );
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, ("Programming Issue - caught exception: " + string(e.what())).c_str() );
 #endif
@@ -7962,7 +7957,7 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
     checkAndWarnZeroMassFraction();
   }catch( std::exception &e )
   {
-    passMessage( e.what() + string("<br />Fit not performed."), "", WarningWidget::WarningMsgHigh );
+    passMessage( e.what() + string("<br />Fit not performed."), WarningWidget::WarningMsgHigh );
     return nullptr;
   }
     
@@ -7971,7 +7966,7 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
     checkForMultipleGenericMaterials();
   }catch( exception &e )
   {
-    passMessage( e.what() + string("<br />Fit not performed."), "", WarningWidget::WarningMsgHigh );
+    passMessage( e.what() + string("<br />Fit not performed."), WarningWidget::WarningMsgHigh );
     return nullptr;
   }//try / catch
   
@@ -7982,7 +7977,7 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
     checkDistanceAndThicknessConsistent();
   }catch( exception &e )
   {
-    passMessage( e.what() + string("<br />Before the fit."), "", WarningWidget::WarningMsgHigh );
+    passMessage( e.what() + string("<br />Before the fit."), WarningWidget::WarningMsgHigh );
   }//try / catch
   
   Chi2FcnShrdPtr chi2Fcn;
@@ -7999,7 +7994,7 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
   }catch( std::exception &e )
   {
     passMessage( e.what() + string("<br />Fit not performed (couldnt make Chi2Fcn)."),
-                "", WarningWidget::WarningMsgHigh );
+                WarningWidget::WarningMsgHigh );
     return nullptr;
   }//try / catch
   

@@ -2014,7 +2014,7 @@ void DecayActivityDiv::handleAppUrl( std::string path, std::string query_str )
   
   // Display up to the first 5 (arbitrary) error messages
   for( size_t i = 0; (i < 5) && (i < error_messages.size()); ++i )
-    passMessage( error_messages[i], "", WarningWidget::WarningMsgHigh );
+    passMessage( error_messages[i], WarningWidget::WarningMsgHigh );
 }//void handleAppUrl( std::string path, std::string query_str )
 
 
