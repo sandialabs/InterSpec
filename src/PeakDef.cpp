@@ -4573,6 +4573,7 @@ void PeakContinuum::eqn_from_offsets( size_t lowchannel,
   const shared_ptr<const SpecUtils::EnergyCalibration> cal = data->energy_calibration();
   assert( cal && cal->valid() );
   const size_t nchannel = cal->num_channels();
+  const size_t last_channel = nchannel ? nchannel - 1 : size_t(0);
   
   if( (num_upper_channels >= nchannel) || (num_lower_channels >= nchannel) )
     throw runtime_error( "PeakContinuum::eqn_from_offsets: number of above/below channels is to large" );
@@ -4596,11 +4597,11 @@ void PeakContinuum::eqn_from_offsets( size_t lowchannel,
   const double lower_count_sum = data->gamma_channels_sum( lower_cont_first_channel, lower_cont_last_channel );
   const double upper_count_sum = data->gamma_channels_sum( upper_cont_first_channel, upper_cont_last_channel );
   
-  const double lower_low_energy = cal->energy_for_channel( lower_cont_first_channel );
-  const double lower_up_energy = cal->energy_for_channel( lower_cont_last_channel + 1 );
+  const double lower_low_energy = cal->energy_for_channel( std::min(lower_cont_first_channel, last_channel) );
+  const double lower_up_energy = cal->energy_for_channel( std::min(lower_cont_last_channel + 1, last_channel) );
   
-  const double upper_low_energy = cal->energy_for_channel( upper_cont_first_channel );
-  const double upper_up_energy = cal->energy_for_channel( upper_cont_last_channel + 1 );
+  const double upper_low_energy = cal->energy_for_channel( std::min(upper_cont_first_channel, last_channel) );
+  const double upper_up_energy = cal->energy_for_channel( std::min(upper_cont_last_channel + 1, last_channel) );
   
   
   const double lower_dx = lower_up_energy - lower_low_energy;
