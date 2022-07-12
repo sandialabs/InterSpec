@@ -357,14 +357,14 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //pageVisibilityBasedProcessSuppressionEnabled
   
   
-//#if( PERFORM_DEVELOPER_CHECKS )
+#if( PERFORM_DEVELOPER_CHECKS )
   [prefs setValue:@YES forKey:@"developerExtrasEnabled"];
   
   //Note: currently I disable right click in InterSpecApp using javascript if
   //      no PERFORM_DEVELOPER_CHECKS.  However, could also do:
   //https://stackoverflow.com/questions/28801032/how-can-the-context-menu-in-wkwebview-on-the-mac-be-modified-or-overridden#28981319
   //[_InterSpecWebView willOpenMenu:<#(nonnull NSMenu *)#> withEvent:<#(nonnull NSEvent *)#>];
-//#endif
+#endif
 
   //To allow deep integration, could
   //[_webConfig setURLSchemeHandler:<#(nullable id<WKURLSchemeHandler>)#> forURLScheme: @"helloworld://"];
@@ -518,6 +518,25 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
       [NSDistributedNotificationCenter.defaultCenter addObserver:self selector:@selector(themeChanged:) name:@"AppleInterfaceThemeChangedNotification" object: nil];
     }
   }
+  
+  // Try adding a popover, to eventually display a map
+  //  See https://developer.apple.com/documentation/appkit/nspopover
+  /*
+   //  Need to implement https://developer.apple.com/documentation/appkit/nsviewcontroller?language=objc
+   //  note need to override -loadView method
+  NSRect bounds = [[self.window contentView] bounds];
+  
+  self.myPopover = [[NSPopover alloc] init];
+  
+  [self.myPopover setContentSize:NSMakeSize(0.85*bounds.size.width, 0.85*bounds.size.height)];
+  [self.myPopover setBehavior: NSPopoverBehaviorTransient]; //change to NSPopoverBehaviorApplicationDefined
+  [self.myPopover setAnimates:YES];
+  [self.myPopover setContentViewController: self.popoverViewController];
+  
+  [self.myPopover showRelativeToRect: bounds
+                            ofView:[[NSApp mainWindow] contentView]
+                     preferredEdge:NSMinYEdge];
+   */
 }//applicationDidFinishLaunching:(NSNotification *)aNotification
 
 

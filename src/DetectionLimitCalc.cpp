@@ -291,9 +291,9 @@ std::ostream &print_summary( std::ostream &strm, const CurieMdaResult &result, c
   
   strm << "Critical Limit (decision threshold) in Peak Region: "<< result.decision_threshold << " counts";
   if( w > 0 )
-    strm << " or " << PhysicalUnits::printToBestActivityUnits(w*result.decision_threshold) << endl;
+    strm << " or " << PhysicalUnits::printToBestActivityUnits(w*result.decision_threshold);
   
-  strm << "Detection limit: " << result.detection_limit << " counts";
+  strm << "\nDetection limit: " << result.detection_limit << " counts";
   if( w > 0 )
     strm << ", or " << PhysicalUnits::printToBestActivityUnits(w*result.detection_limit) << endl;
   

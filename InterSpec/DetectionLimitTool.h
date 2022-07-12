@@ -46,6 +46,9 @@
  - [ ] Check numerical accuracies of calculations
  - [ ] Report mass as well as activity
  - [ ] Make sure when presence is reported on Currie style limit (e.g., both lower and upper limits given), the coverage is actually correct; e.g. 95% of tims in given interval, and not 97.5% or 90% or something.
+ - [ ] Allow volumetric sources; either trace or self-attenuating.
+ - [ ] Add in pass-by (e.g., at a fixed speed/distance) calculation
+  - [ ] Have C-api to call from node/python
  
  - [x] Switch to using  a CSS grid layout for the options section
  - [x] put in BR (after DRF and shield) to limit total number of peaks; have it be zero by default if less than 10 peaks, or 0.1 or something otherwise

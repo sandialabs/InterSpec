@@ -186,6 +186,8 @@ public:
       
       const DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
       
+      //print_summary( cout, result, -1.0f );
+      
       m_simple_excess_counts = result.source_counts;
       m_simple_mda = result.upper_limit / gammas_per_bq;
       
@@ -1162,12 +1164,14 @@ void DetectionLimitTool::handleNuclideChange( const bool update_to_default_age )
     m_ageEdit->setText( "0y" );
     m_ageEdit->disable();
     
-    if( nuc->isStable() )
+    if( !nuc || nuc->isStable() )
     {
       nuc = nullptr;
       m_ageEdit->setText( "" );
       m_nuclideEdit->setText( "" );
-      passMessage( isotxt + " is stable", "", WarningWidget::WarningMsgHigh );
+      
+      if( nuc )
+        passMessage( isotxt + " is stable", "", WarningWidget::WarningMsgHigh );
     }
   }else if( update_to_default_age )
   {
@@ -1336,7 +1340,7 @@ void DetectionLimitTool::calcAndSetDefaultMinRelativeIntensity()
   }
   
   
-  const shared_ptr<const DetectorPeakResponse> drf = m_our_meas->detector();
+  const shared_ptr<const DetectorPeakResponse> drf = m_our_meas ? m_our_meas->detector() : nullptr;
   
   if( !drf || !drf->isValid() )
   {
