@@ -116,12 +116,16 @@ public:
     virtual ~EditWidget();
 
     Wt::WLineEdit *edit();
-  
+
+    void handleBlur();
+    void handleBlurWorker( boost::function<void()> worker );
+    
     static void replacerJs( std::string &js );
     static void nuclideNameMatcherJs( std::string &js );
     static void gammaEnergyMatcherJs( std::string &js );
 
   protected:
+    PhotopeakDelegate *m_parent;
     Wt::WLineEdit *m_edit;
     Wt::WSuggestionPopup *m_suggestions;
   };//class EditWidget

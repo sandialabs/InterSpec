@@ -29,6 +29,7 @@
 #include <boost/regex.hpp>
 
 #include <Wt/WText>
+#include <Wt/WServer>
 #include <Wt/WLineEdit>
 #include <Wt/WHBoxLayout>
 #include <Wt/WModelIndex>
@@ -279,6 +280,7 @@ PhotopeakDelegate::EditWidget::EditWidget( const Wt::WModelIndex& index,
               const PhotopeakDelegate::DelegateType delegateType,
               PhotopeakDelegate *parent )
   : WContainerWidget(),
+    m_parent( parent ),
     m_edit( NULL ),
     m_suggestions( NULL )
 {
@@ -313,9 +315,10 @@ PhotopeakDelegate::EditWidget::EditWidget( const Wt::WModelIndex& index,
   m_edit->escapePressed().connect
     (boost::bind(&PhotopeakDelegate::doCloseEditor, parent, this, false, false ));
   m_edit->escapePressed().preventPropagation();
+  
   if( closeOnBlur )
     m_edit->blurred().connect
-      (boost::bind(&PhotopeakDelegate::doCloseEditor, parent, this, true, true ));
+      (boost::bind(&PhotopeakDelegate::EditWidget::handleBlur, this ));
 
   if( flags & RenderFocused )
     m_edit->setFocus();
@@ -446,6 +449,31 @@ WLineEdit *PhotopeakDelegate::EditWidget::edit()
 {
   return m_edit;
 }
+
+void PhotopeakDelegate::EditWidget::handleBlurWorker( boost::function<void()> worker )
+{
+  if( worker )
+  {
+    worker();
+    wApp->triggerUpdate();
+  }
+}
+
+
+void PhotopeakDelegate::EditWidget::handleBlur()
+{
+  // We need to introduce a delay to handling the blur, incase the user clicked on an item in
+  //  the suggestion popup, in which case the blur signal will be processed before the click
+  //  signal, which will result in the clicked on entry *not* filling out the cell
+  PhotopeakDelegate *parent = m_parent;
+  PhotopeakDelegate::EditWidget *self = this;
+  
+  // We will protect against either this function, or m_parent getting deleted
+  boost::function<void()> parent_closer = wApp->bind( boost::bind( &PhotopeakDelegate::doCloseEditor, parent, self, true, true ) );
+  boost::function<void()> self_closer = wApp->bind( boost::bind( &PhotopeakDelegate::EditWidget::handleBlurWorker, this, parent_closer ) );
+  
+  WServer::instance()->schedule( 250, wApp->sessionId(), self_closer );
+}//void PhotopeakDelegate::EditWidget::handleBlur()
 
 
 
