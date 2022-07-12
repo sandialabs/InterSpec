@@ -1,3 +1,8 @@
+.ShieldingSourceDisplay
+{
+  
+}
+
 
 .ShieldingSelectContainer
 {
@@ -39,15 +44,10 @@
 }
 
 
-.ShieldingSourceDisplay_m_peakView
+.ShieldingSourceDisplay .PeakView,
+.ShieldingSourceDisplay .SourceView
 {
-   height: 100%;
-   border:2px solid #e1e1e1; 
-}
-
-.ShieldingSourceDisplay_m_sourceView
-{
-   height: 100%;
+/*   height: 100%; */
    border:2px solid #e1e1e1; 
 }
 
@@ -79,3 +79,12 @@
 .RoundMenuIcon{        opacity: 0.6; }
 .RoundMenuIcon:hover{  opacity: 0.9; }
 .RoundMenuIcon.active{ opacity: 1.0; }
+
+
+.ShieldingSourceDisplay .ChartMouseOverInfo
+{
+  position: absolute;
+  display: inline-block;
+  top: 0px;
+  left: 75px;
+}

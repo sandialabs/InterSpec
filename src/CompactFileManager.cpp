@@ -193,6 +193,10 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     edit->addStyleClass( "SampleNumInput" );
     edit->setValidator( validator );
     edit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+    edit->setAttributeValue( "autocorrect", "off" );
+    edit->setAttributeValue( "spellcheck", "off" );
+#endif
     edit->setTextSize( 6 );
     
     const char *tooltip = "Enter the sample number you'de like displayed here"

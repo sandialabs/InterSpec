@@ -201,6 +201,10 @@ void MakeDrfSrcDef::create()
   m_distanceEdit = new WLineEdit( cell );
   m_distanceEdit->setTextSize( 16 );
   m_distanceEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_distanceEdit->setAttributeValue( "autocorrect", "off" );
+  m_distanceEdit->setAttributeValue( "spellcheck", "off" );
+#endif
   label->setBuddy( m_distanceEdit );
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
@@ -216,6 +220,10 @@ void MakeDrfSrcDef::create()
   cell = m_table->elementAt(sm_activity_row,1);
   m_activityEdit = new WLineEdit( cell );
   m_activityEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_activityEdit->setAttributeValue( "autocorrect", "off" );
+  m_activityEdit->setAttributeValue( "spellcheck", "off" );
+#endif
   m_activityEdit->setTextSize( 16 );
   label->setBuddy( m_activityEdit );
   
@@ -233,6 +241,10 @@ void MakeDrfSrcDef::create()
   m_activityUncertainty->setValue( 0.0 );
   m_activityUncertainty->setTextSize( 14 );
   m_activityUncertainty->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_activityUncertainty->setAttributeValue( "autocorrect", "off" );
+  m_activityUncertainty->setAttributeValue( "spellcheck", "off" );
+#endif
   m_activityUncertainty->setSuffix( " %" );
   label->setBuddy( m_activityUncertainty );
   
@@ -270,6 +282,10 @@ void MakeDrfSrcDef::create()
   cell = m_table->elementAt(sm_age_at_assay_row,1);
   m_sourceAgeAtAssay = new WLineEdit( cell );
   m_sourceAgeAtAssay->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_sourceAgeAtAssay->setAttributeValue( "autocorrect", "off" );
+  m_sourceAgeAtAssay->setAttributeValue( "spellcheck", "off" );
+#endif
   label->setBuddy( m_sourceAgeAtAssay );
   m_sourceAgeAtAssay->changed().connect( this, &MakeDrfSrcDef::handleUserChangedAgeAtAssay );
   m_sourceAgeAtAssay->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedAgeAtAssay );
