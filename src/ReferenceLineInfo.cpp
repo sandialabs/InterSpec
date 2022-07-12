@@ -33,10 +33,10 @@
 #include "rapidxml/rapidxml_utils.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
+#include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -572,14 +572,20 @@ void ReferenceLineInfo::deSerialize( const rapidxml::xml_node<char> *base_node )
     for( node = lines_node->first_node( "Line", 4 );
         node; node = node->next_sibling( "Line", 4 ) )
     {
-      double energy, intensity;
+      double energy = 0.0, intensity = 0.0;
       energy_node = node->first_node( "Energy", 6 );
       br_node = node->first_node( "Intensity", 9 );
-      if( !energy_node || !br_node
-         || !energy_node->value() || !br_node->value()
-         || !(stringstream(energy_node->value()) >> energy)
-         || !(stringstream(br_node->value()) >> intensity) )
+      
+      if( !energy_node || !br_node || !energy_node->value() || !br_node->value() )
         throw runtime_error( "Invalid line element" );
+      
+      if( !(stringstream(energy_node->value()) >> energy) )
+        throw runtime_error( "Invalid line element energy" );
+        
+      // Some intensities can (what I presume to be) non-normal (i.e, like 1.0E-312), so we'll
+      //  just set it to zero
+      if( !(stringstream(br_node->value()) >> intensity) )
+        intensity = 0.0;
       
       string partstr, decaystr, elstr;
       str_node = node->first_node( "Particle", 8 );

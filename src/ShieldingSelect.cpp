@@ -171,6 +171,10 @@ public:
     m_activityInput = new WLineEdit( this );
     m_activityInput->addStyleClass( "GridSecondCol GridStretchCol GridThirdRow" );
     m_activityInput->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+    m_activityInput->setAttributeValue( "autocorrect", "off" );
+    m_activityInput->setAttributeValue( "spellcheck", "off" );
+#endif
     
     WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, m_activityInput );
     val->setFlags( Wt::MatchCaseInsensitive );
@@ -1195,6 +1199,10 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
   m_massFraction = new NativeFloatSpinBox( this );
   label->setBuddy( m_massFraction );
   m_massFraction->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_massFraction->setAttributeValue( "autocorrect", "off" );
+  m_massFraction->setAttributeValue( "spellcheck", "off" );
+#endif
   //m_massFraction->setDecimals( 3 );
   //m_massFraction->setSingleStep( 0.01 );
   m_massFraction->setRange( 0.0, 1.0 );
@@ -1815,6 +1823,10 @@ void ShieldingSelect::init()
   
   m_materialEdit = new WLineEdit( "" );
   m_materialEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_materialEdit->setAttributeValue( "autocorrect", "off" );
+  m_materialEdit->setAttributeValue( "spellcheck", "off" );
+#endif
 
   m_materialEdit->changed().connect( this, &ShieldingSelect::handleMaterialChange );
   m_materialEdit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
@@ -1964,6 +1976,10 @@ void ShieldingSelect::init()
     edit = new WLineEdit( "1.0 cm" );
     edit->setValidator( distValidator );
     edit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+    edit->setAttributeValue( "autocorrect", "off" );
+    edit->setAttributeValue( "spellcheck", "off" );
+#endif
     label->setBuddy( edit );
     
     //From a very brief experiment, it looks like the below JS would remove the uncertainty text,

@@ -355,6 +355,13 @@ void DecaySelectNuclide::initActivityAgeSelects()
   
   m_nuclideActivityEdit->setAutoComplete( false );
   m_nuclideAgeEdit->setAutoComplete( false );
+  
+#if( BUILD_AS_OSX_APP || IOS )
+  m_nuclideActivityEdit->setAttributeValue( "autocorrect", "off" );
+  m_nuclideAgeEdit->setAttributeValue( "autocorrect", "off" );
+  m_nuclideActivityEdit->setAttributeValue( "spellcheck", "off" );
+  m_nuclideAgeEdit->setAttributeValue( "spellcheck", "off" );
+#endif
 }//void initActivityAgeSelects()
 
 

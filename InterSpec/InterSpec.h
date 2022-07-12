@@ -68,7 +68,6 @@ class DetectorPeakResponse;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
-class SimpleNuclideAssistPopup;
 class ReferencePhotopeakDisplay;
 class LicenseAndDisclaimersWindow;
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }

@@ -1676,6 +1676,11 @@ void MakeDrf::startSaveAs()
   name->setTextSize( 32 );
   name->setMaxLength( 255 );
   name->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  name->setAttributeValue( "autocorrect", "off" );
+  name->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   //const char *valid_file_name_regex = "(^(?!\\.)(?!com[0-9]$)(?!con$)(?!lpt[0-9]$)(?!nul$)(?!prn$)[^\\|*\\?\\\\:<>/$\"]*[^\\.\\|*\\?\\\\:<>/$\"]+$";
   const char *valid_file_name_regex = R"MyRegexDelim(^[^\\\/\:\*\?\"\'\,\;\<\>\|]+$)MyRegexDelim";
   WRegExpValidator *validator = new WRegExpValidator( valid_file_name_regex, name );

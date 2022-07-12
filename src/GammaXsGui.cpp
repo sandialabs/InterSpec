@@ -88,6 +88,10 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
 
   m_energyEdit = new WLineEdit( "100" );
   m_energyEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_energyEdit->setAttributeValue( "autocorrect", "off" );
+  m_energyEdit->setAttributeValue( "spellcheck", "off" );
+#endif
   m_energyValidator = new WDoubleValidator( 1.0, 10000.0, m_energyEdit );
   m_energyEdit->setValidator( m_energyValidator );
   m_energyEdit->addStyleClass( "numberValidator"); //used to detect mobile keyboard
@@ -117,6 +121,10 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_materialEdit = new WLineEdit( "C0.5H0.2Ni0.3" );
   m_materialEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_materialEdit->setAttributeValue( "autocorrect", "off" );
+  m_materialEdit->setAttributeValue( "spellcheck", "off" );
+#endif
   m_materialEdit->changed().connect( this, &GammaXsGui::handleMaterialChange );
   m_materialEdit->enterPressed().connect( this, &GammaXsGui::handleMaterialChange );
 //  m_materialEdit->focussed().connect( this, &GammaXsGui::handleMaterialChange );
@@ -208,6 +216,10 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_density = new WLineEdit();
   m_density->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_density->setAttributeValue( "autocorrect", "off" );
+  m_density->setAttributeValue( "spellcheck", "off" );
+#endif
   WDoubleValidator *doubValidator = new WDoubleValidator( m_density );
   m_density->setValidator( doubValidator );
   m_density->addStyleClass( "numberValidator" ); //used to detect mobile keyboard
@@ -231,6 +243,10 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_distance = new WLineEdit( "1 cm" );
   m_distance->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_distance->setAttributeValue( "autocorrect", "off" );
+  m_distance->setAttributeValue( "spellcheck", "off" );
+#endif
     
   WRegExpValidator *distValidator
                 = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
@@ -272,6 +288,10 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout->addWidget( m_detectorLabel[detectorCount] , row, 0, 1, 1, AlignLeft );
   m_detectorDistance = new WLineEdit("2 cm");
   m_detectorDistance->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detectorDistance->setAttributeValue( "autocorrect", "off" );
+  m_detectorDistance->setAttributeValue( "spellcheck", "off" );
+#endif
   m_detectorDistance->setValidator( distValidator );
   m_layout->addWidget( m_detectorDistance, row, 1, 1, 2 );
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"This is the distance of the selected detector.", showToolTips );
