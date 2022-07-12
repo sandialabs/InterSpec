@@ -727,8 +727,20 @@ void RelActManualGui::init()
   WMenuItem *item = new WMenuItem( "Results", m_results );
   m_resultMenu->addItem( item );
   
+  // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
+  item->clicked().connect( std::bind([this,item](){
+    m_resultMenu->select( item );
+    item->triggered().emit( item );
+  }) );
+  
   m_chart = new RelEffChart();
   item = new WMenuItem( "Chart", m_chart );
+  
+  item->clicked().connect( std::bind([this,item](){
+    m_resultMenu->select( item );
+    item->triggered().emit( item );
+  }) );
+  
   m_resultMenu->addItem( item );
   
   displayedSpectrumChanged();
@@ -835,8 +847,20 @@ void RelActManualGui::calculateSolution()
       
     const double match_tol_sigma = 2.35482 * m_matchTolerance->value();
     
-    
     const RelActCalcManual::PeakCsvInput::NucDataSrc srcData = nucDataSrc();
+    
+    map<const SandiaDecay::Nuclide *,double> nuclide_ages;
+    for( auto w : m_nuclidesDisp->children() )
+    {
+      ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
+      if( rr && rr->m_nuc )
+        nuclide_ages[rr->m_nuc] = rr->m_current_age;
+    }//for( auto w : m_nuclidesDisp->children() )
+    
+    
+    
+    // I *think* (but worth a second check) everything below here, until results are updated to the
+    //  GUI could be done off the main thread, and then post'd to update the gui at the end
     
     set<pair<float,float>> energy_cal_match_warning_energies;
     
@@ -929,12 +953,11 @@ void RelActManualGui::calculateSolution()
           nuc.nuclide = p->parentNuclide();
           nuc.age = -1.0;
           
-          for( auto w : m_nuclidesDisp->children() )
-          {
-            ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
-            if( rr && (rr->m_nuc == nuc.nuclide) )
-              nuc.age = rr->m_current_age;
-          }//for( auto w : m_nuclidesDisp->children() )
+          const auto age_pos = nuclide_ages.find(nuc.nuclide);
+          assert( age_pos != end(nuclide_ages) );
+          
+          if( age_pos != end(nuclide_ages) )
+            nuc.age = age_pos->second;
           
           assert( nuc.age >= 0.0 );
           if( nuc.age < 0.0 )

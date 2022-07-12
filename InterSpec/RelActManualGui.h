@@ -75,6 +75,7 @@ namespace RelActCalcManual
  Future work on this tool:
  - Add Pu240/U236 by correlation.  Also, group Am241 into Pu-mass
  - Add in Pu gamma BR from ICRP/FRAM/etc, as user selectable options
+ - If only two nuclides, or U, or Pu, then put mass/activity fraction on Rel. Eff. chart
  - Indicate effect of background subtraction somehow (maybe list this in a table).
  - Add capability to fix ratios of nuclide/masses - this way you can easily show data is
  inconsistent with a particular hypothesis; although when something is fixed, it needs to be
