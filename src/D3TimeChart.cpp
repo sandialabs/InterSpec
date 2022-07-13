@@ -1513,7 +1513,7 @@ void D3TimeChart::setHighlightRegionsToClient()
   }//for( loop over highlight regions )
   js << "] );";
   
-  cout << "\n\nWill set highlight regions with JSON=" + js.str() + "\n\n" << endl;
+  // cout << "\n\nWill set highlight regions with JSON=" + js.str() + "\n\n" << endl;
   doJavaScript( js.str() );
 }//setHighlightRegionsToClient()
 
