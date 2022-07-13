@@ -1179,6 +1179,15 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   {
     m_shieldingSourceModel.reset();
   }
+  
+  node = interspecnode->first_node( "FileName", 8 );
+  if( node )
+  {
+    const string filename = SpecUtils::xml_value_str(node);
+    if( !filename.empty() )
+      filename_ = filename;
+  }//if( !filename_.empty() )
+  
 }//void decodeSpecMeasStuffFromXml( ::rapidxml::xml_node<char> *parent )
 
 
@@ -1282,6 +1291,12 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
     clone_node_deep( m_shieldingSourceModel->first_node(), modelnode );
   }//if( m_shieldingSourceModel && m_shieldingSourceModel->first_node() )
   
+  if( !filename_.empty() )
+  {
+    const char *val = doc->allocate_string( filename_.c_str(), filename_.size()+1 );
+    xml_node<char> *node = doc->allocate_node( node_element, "FileName", val );
+    interspec_node->append_node( node );
+  }//if( !filename_.empty() )
   
   return interspec_node;
 }//appendSpecMeasStuffToXml(...);
