@@ -1144,8 +1144,13 @@ D3TimeChart.prototype.updateChart = function (
   }
 
   /** UPDATE HIGHLIGHT REGIONS RENDERING */
-  if (this.state.regions && this.state.data.sampleNumberToIndexMap) {
-    // console.log(this.state.regions);
+  if ( this.state.data.sampleNumberToIndexMap && (this.state.regions || this.pendingHighlightRegions) ) {
+    
+    // this.pendingHighlightRegions are highlight regions that were set before the chart was sized
+    //  or before data was set
+    if( this.pendingHighlightRegions )
+      this.setHighlightRegions( this.pendingHighlightRegions );
+    
     var chart = this;
     this.highlightRegionsG.selectAll("rect").each(function (d, i) {
       var startSample = chart.state.regions[i].startSample;
@@ -3506,84 +3511,89 @@ D3TimeChart.prototype.compress = function (data, n) {
  * }
  */
 D3TimeChart.prototype.setHighlightRegions = function (regions) {
+  
+  this.pendingHighlightRegions = null;
+  
   if (
-    !this.state.height ||
-    !this.state.width ||
-    this.state.height <= 0 ||
-    this.state.width <= 0
+    !this.state.height
+    || !this.state.width
+    || this.state.height <= 0
+    || this.state.width <= 0
+    || !this.state.data.formatted
+    || !this.state.data.formatted.length
+    || !this.state.data.sampleNumberToIndexMap
   ) {
+    // We either havent gotten a size yet, or the data hasnt been set, but the rest of
+    //  the code in this function assumes those two things, so we'll stash the data,
+    //  and then check in the updateChart() function if it is stashed, and if so,
+    //  call this function again, will will properly draw the rects.
+    this.pendingHighlightRegions = regions;
     return;
   }
-
+  
   if (!regions || !Array.isArray(regions)) regions = [];
 
-  if (
-    this.state.data.formatted &&
-    this.state.data.formatted.length &&
-    this.state.data.sampleNumberToIndexMap
-  ) {
-    this.state.regions = regions;
-    this.highlightRegionsG.selectAll("rect").remove();
+  this.state.regions = regions;
+  this.highlightRegionsG.selectAll("rect").remove();
 
-    //See the c++ function D3TimeChart::setHighlightRegionsToClient() for format of data
-    for (var i = 0; i < regions.length; i++) {
-      // get index from sample number
-      var startSample = regions[i].startSample;
-      var endSample = regions[i].endSample;
-      var fillColor = regions[i].fillColor;
+  //See the c++ function D3TimeChart::setHighlightRegionsToClient() for format of data
+  for (var i = 0; i < regions.length; i++) {
+    // get index from sample number
+    var startSample = regions[i].startSample;
+    var endSample = regions[i].endSample;
+    var fillColor = regions[i].fillColor;
 
-      // Protect against invalid sample numbers specified in the regions
-      if (
-        !(startSample in this.state.data.sampleNumberToIndexMap) ||
-        !(endSample in this.state.data.sampleNumberToIndexMap)
-      )
-        continue;
+    // Protect against invalid sample numbers specified in the regions
+    if (
+      !(startSample in this.state.data.sampleNumberToIndexMap) ||
+      !(endSample in this.state.data.sampleNumberToIndexMap)
+    )
+      continue;
 
-      var lIdx = this.state.data.sampleNumberToIndexMap[startSample];
-      var rIdx = this.state.data.sampleNumberToIndexMap[endSample];
+    var lIdx = this.state.data.sampleNumberToIndexMap[startSample];
+    var rIdx = this.state.data.sampleNumberToIndexMap[endSample];
 
-      if (
-        !this.state.data.formatted[0].realTimeIntervals ||
-        this.state.data.formatted[0].realTimeIntervals.length <= rIdx ||
-        this.state.data.formatted[0].realTimeIntervals.length <= lIdx ||
-        !Array.isArray(this.state.data.formatted[0].realTimeIntervals[lIdx]) ||
-        !Array.isArray(this.state.data.formatted[0].realTimeIntervals[rIdx]) ||
-        this.state.data.formatted[0].realTimeIntervals[lIdx].length < 2 ||
-        this.state.data.formatted[0].realTimeIntervals[rIdx].length < 2
-      ) {
-        // don't draw anything
-        continue;
-      }
+    if (
+      !this.state.data.formatted[0].realTimeIntervals ||
+      this.state.data.formatted[0].realTimeIntervals.length <= rIdx ||
+      this.state.data.formatted[0].realTimeIntervals.length <= lIdx ||
+      !Array.isArray(this.state.data.formatted[0].realTimeIntervals[lIdx]) ||
+      !Array.isArray(this.state.data.formatted[0].realTimeIntervals[rIdx]) ||
+      this.state.data.formatted[0].realTimeIntervals[lIdx].length < 2 ||
+      this.state.data.formatted[0].realTimeIntervals[rIdx].length < 2
+    ) {
+      // don't draw anything
+      continue;
+    }
 
       // look up the corresponding time of the sample number using the index
-      var startTime = this.state.data.formatted[0].realTimeIntervals[lIdx][0];
-      var endTime = this.state.data.formatted[0].realTimeIntervals[rIdx][1];
-      // draw a rectangle starting at the time and ending at the time with given height and fill color
-      // console.log([startTime, endTime]);
+    var startTime = this.state.data.formatted[0].realTimeIntervals[lIdx][0];
+    var endTime = this.state.data.formatted[0].realTimeIntervals[rIdx][1];
+    // draw a rectangle starting at the time and ending at the time with given height and fill color
+    // console.log([startTime, endTime]);
 
-      var scales = this.state.selection
-        ? this.getScales({
-            x: this.state.selection.domain,
-            yGamma: this.state.data.formatted[0].domains.yGamma,
-            yNeutron: this.state.data.formatted[0].domains.yNeutron,
-          })
-        : this.getScales(this.state.data.formatted[0].domains);
-      var lPixel = scales.xScale(startTime);
-      var rPixel = scales.xScale(endTime);
+    var scales = this.state.selection
+      ? this.getScales({
+          x: this.state.selection.domain,
+          yGamma: this.state.data.formatted[0].domains.yGamma,
+          yNeutron: this.state.data.formatted[0].domains.yNeutron,
+        })
+      : this.getScales(this.state.data.formatted[0].domains);
+    var lPixel = scales.xScale(startTime);
+    var rPixel = scales.xScale(endTime);
 
-      var highlightWidth = rPixel - lPixel > 2 ? rPixel - lPixel : 2;
-      this.highlightRegionsG
-        .append("rect")
-        .attr(
-          "height",
-          this.state.height - this.margin.top - this.margin.bottom
-        )
-        .attr("x", lPixel)
-        .attr("y", this.margin.top)
-        .attr("width", highlightWidth)
-        .attr("fill", fillColor)
-        .attr("fill-opacity", 0.5);
-    }
+    var highlightWidth = rPixel - lPixel > 2 ? rPixel - lPixel : 2;
+    this.highlightRegionsG
+      .append("rect")
+      .attr(
+        "height",
+        this.state.height - this.margin.top - this.margin.bottom
+      )
+      .attr("x", lPixel)
+      .attr("y", this.margin.top)
+      .attr("width", highlightWidth)
+      .attr("fill", fillColor)
+      .attr("fill-opacity", 0.5);
   }
 };
 
