@@ -53,7 +53,7 @@ public:
   
 protected:
   FeatureMarkerWidget *m_feature;
-};//class DoseCalcWindow
+};//class FeatureMarkerWindow
 
 
 
@@ -66,6 +66,8 @@ public:
   
 protected:
   void init();
+  
+  void handleComptonAngleChanged();
   
   InterSpec *m_viewer;
   
