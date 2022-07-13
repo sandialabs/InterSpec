@@ -79,6 +79,7 @@ public:
     LandauSigma        = PeakDef::LandauSigma,
     Chi2DOF            = PeakDef::Chi2DOF,
     ContinuumInfoField = PeakDef::NumCoefficientTypes,
+    SkewInfoField,
     RangeStartEnergy,
     RangeEndEnergy,
     OffsetEnergyRelativeTo,
