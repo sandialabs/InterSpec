@@ -9,8 +9,6 @@
   box-shadow: 0 1px 6px rgba(0,0,0,.06),0 2px 32px rgba(0,0,0,.16) !important;
   max-width: 50vw;
   max-height: 95vh;
-  padding-left: 15px;
-  padding-right: 15px;
 }
 
 .simple-dialog .title
@@ -48,6 +46,11 @@ dialog
   /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
   max-height: calc( 95vh - 90px );
   overflow-y: auto;
+  
+  margin-left: 15px;
+  margin-right: 15px;
+  
+  max-width: calc( 50vw - 30px );
 }
 
 .simple-dialog .content
