@@ -291,9 +291,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       button->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
 #if( USE_DB_TO_STORE_SPECTRA )
       WPushButton *button2 = new WPushButton( "Previous...", buttons );
-      button2->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
-                                              m_interspec->fileManager(),
-                                              SpecUtils::SpectrumType::Foreground ) );
+      button2->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::browsePrevSpectraAndStatesDb );
 #endif
     break;
     }//case LeftToRight:
@@ -304,9 +302,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
 #if( USE_DB_TO_STORE_SPECTRA )
       WContainerWidget *buttons = new WContainerWidget( this );
       WPushButton *button = new WPushButton( "Prev. Saved Spectra", buttons );
-        button->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
-                                               fileManager,
-                                               SpecUtils::SpectrumType::Foreground ) );
+      button->clicked().connect( fileManager, &SpecMeasManager::browsePrevSpectraAndStatesDb );
 #endif
       break;
     }//case Tabbed:

@@ -5135,9 +5135,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     m_fileMenuPopup->addSeparator();
     
     item = m_fileMenuPopup->addMenuItem( "Previous..." , "InterSpec_resources/images/db_small.png");
-    item->triggered().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
-                                            m_fileManager,
-                                            SpecUtils::SpectrumType::Foreground ) );
+    item->triggered().connect( m_fileManager, &SpecMeasManager::browsePrevSpectraAndStatesDb );
     HelpSystem::attachToolTipOn(item, "Opens previously saved states", showToolTips );
     
     m_fileMenuPopup->addSeparator();

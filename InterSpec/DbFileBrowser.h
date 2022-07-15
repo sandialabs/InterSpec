@@ -42,9 +42,7 @@ namespace SpecUtils{ enum class SpectrumType : int; }
  load dialog and welcome dialog).
  
  ToDo:
-   - make this class inherit from WContainerWidget
    - add signals when there is an error, or a selection is made
-   - Implement deleting a snapshot and renaming it
  
  */
 class SnapshotBrowser : public Wt::WContainerWidget
@@ -52,7 +50,6 @@ class SnapshotBrowser : public Wt::WContainerWidget
 public:
   SnapshotBrowser( SpecMeasManager *manager,
                    InterSpec *viewer,
-                   const SpecUtils::SpectrumType type,
                    std::shared_ptr<SpectraFileHeader> header,
                    Wt::WContainerWidget *buttonBar = nullptr,
                    Wt::WContainerWidget *parent = nullptr );
@@ -63,6 +60,27 @@ public:
   void loadSpectraSelected();
 
   int numSnaphots() const;
+  
+  /**  Returns query to find user states.
+   
+   @param user A pointer to the user the state must belong to
+   @param session The DbSession to use
+   @param header If a non-null (i.e., valid) header is passed in, then the query returns all of the
+          snapshots that contain that specific spectrum. If a header is nullptr, then query returns
+          all saved states for the user (just the upper level states, not their snapshots).
+   @returns All states belonging to the user that contained the specified spectrum file, or if no
+          spectrum file was specified, all user saved states.
+   
+   
+   Note, I'm pretty sure you need an active transaction before calling this function - e.g.,
+   \code
+   DataBaseUtils::DbTransaction transaction( *m_session );
+   \endcode
+   */
+  static Wt::Dbo::collection<Wt::Dbo::ptr<UserState> >
+  get_user_states_collection( Wt::Dbo::ptr<InterSpecUser> user,
+                              std::shared_ptr<DataBaseUtils::DbSession> &session,
+                              std::shared_ptr<const SpectraFileHeader> header );
   
   /** Returns the number of saved states available. */
   static size_t num_saved_states( InterSpec *viewer,
@@ -96,7 +114,6 @@ protected:
   Wt::WText        *m_descriptionLabel;
   Wt::WText        *m_timeLabel;
   Wt::WGridLayout  *m_relatedSpectraLayout;
-  SpecUtils::SpectrumType     m_type;
   std::shared_ptr<SpectraFileHeader> m_header;
   
   Wt::Signal<> m_finished;
@@ -106,15 +123,44 @@ protected:
 };//class SnapshotBrowser
 
 
+/** Widget that displays the passed-in spectra in the database, so the user can choose if
+ they want to load any of them.
+ 
+ @param modifiedFiles The files in the database to display
+ @param type How to load the selected spectrum as (foreground, background, secondary)
+ @param model The SpectraFileModel to use for performing operations
+ @param manager The SpecMeasManager to use for performing operations
+ @param header The optional SpectraFileHeader to remove when loading a database entry file.
+ @param parent The Wt parent of this widget
+ 
+ TODO: Make this a MVC widget (e.g., a WTableView) so we can potentially display all users spectra files in the database, without putting a million things into the DOM.  Not sure if we should then make it backed by a DB query, or a vector holding all informations.  This would let us have it be sortable, etc.  Would need to implement a custom delegate, at least for the load column.  After doing this we should make DbFileBrowser have the same imlementation as SpecMeasManager::showPreviousSpecFileUsesDialog(), so users can browse all their auto-saved spectra.  Then we should also maybe let users filter thier selection and such.
+ */
+class AutosavedSpectrumBrowser : public Wt::WContainerWidget
+{
+public:
+  AutosavedSpectrumBrowser( const std::vector<Wt::Dbo::ptr<UserFileInDb>> &modifiedFiles,
+                            SpecUtils::SpectrumType type,
+                            SpectraFileModel *model,
+                            SpecMeasManager *manager,
+                            std::shared_ptr<SpectraFileHeader> header,
+                            WContainerWidget *parent = nullptr );
+  
+  Wt::Signal<> &loadedASpectrum();
+  
+protected:
+  void entryWasLoaded();
+  
+  Wt::Signal<> m_loadedASpectrum;
+};//class AutosavedSpectrumBrowser
+
+
 /**
  Main class to load snapshot/spectra.  Uses SnapshotBrowser to fill in the UI
  */
 class DbFileBrowser : public AuxWindow
 {
 public:
-  DbFileBrowser( SpecMeasManager *manager,
-                 InterSpec *viewer,
-                 SpecUtils::SpectrumType type,
+  DbFileBrowser( SpecMeasManager *manager, InterSpec *viewer,
                  std::shared_ptr<SpectraFileHeader> header );
   
   int numSnapshots() const;

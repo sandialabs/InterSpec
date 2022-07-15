@@ -56,32 +56,16 @@
 }
 
 
-.PreviousDbEntry
-{
-  padding-left: 5px;
-  padding-right: 3px;
-  padding-top: 3px;
-  margin-top: 10px;
-  width: 95%;
-  height: 1.8em;
-  border:1px solid #e1e1e1;
-}
 
-
-.PreviousDbEntryTxt
-{
-  font-size:100%;
-  font-family:"Times New Roman", Times, serif;
-  position:absolute; 
-}
-
-
-.PreviousDbEntryButton
-{
-float: right;
-}
 
 .CALp label
 {
   margin-left: 10px;
+}
+
+
+
+.ShowPrevSpecFileUses .PrefCb
+{
+  margin-left: 20px;
 }
