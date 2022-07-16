@@ -6690,10 +6690,15 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
   const bool autoStore = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
-  WCheckBox *cb = new WCheckBox( " Automatically store session" );
+  WCheckBox *cb = new WCheckBox( " Auto store your work" );
   cb->setChecked( autoStore );
   item = subPopup->addWidget( cb );
-  HelpSystem::attachToolTipOn( item, "Automatically stores app state", showToolTips );
+  HelpSystem::attachToolTipOn( item, "Automatically stores application state if you are working in"
+                              " a stored state, or else if you are not, it will store your spectra"
+                              " and your work (e.g., peaks fit, energy cal changes, etc) into"
+                              " InterSpecs internal database and prompt you if you want to resume"
+                              " where you left off next time you load the same spectrum.",
+                              showToolTips );
   InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this, false );
   
 
