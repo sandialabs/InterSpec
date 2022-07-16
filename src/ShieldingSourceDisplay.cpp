@@ -2619,7 +2619,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     const char *lbl = "";
     switch( GeometryType(type) )
     {
-      case GeometryType::Spherical:      lbl = "Spherical";            break;
+      case GeometryType::Spherical:      lbl = "Point/Spherical";      break;
       case GeometryType::CylinderEndOn:  lbl = "Cylindrical: end-on";  break;
       case GeometryType::CylinderSideOn: lbl = "Cylindrical: side-on"; break;
       case GeometryType::Rectangular:    lbl = "Rectangular";          break;
@@ -2887,7 +2887,21 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   smallLayout->setContentsMargins(0,5,0,5);
   smallerContainer->setPadding(0);
   
-  
+  //geometryLabel->setText( "Shield Geometry" );
+  HelpSystem::attachToolTipOn( m_geometrySelect,
+    "Geometry to use for modeling \"trace\" sources, or self-attenuating sources.<br />"
+    "<br />"
+    "By default, all sources are point sources at the specified distance from the detector, for all geometries.<br />"
+    "However, if you make a nuclide a \"trace\" source (by clicking on a shielding's &CirclePlus; button"
+    " and selecting \"<em>Add Trace Source</em>\"), or a self-attenuating source (by selecting the"
+    " \"<em>Source for:</em>\" checkbox when a shielding has the same element as a nuclide you are"
+    " fitting), then the source isotope will be modeled as distributed throughout the shielding,"
+    " and ray-tracing will be used to account for different attenuations at each location within"
+    " the shielding.<br />"
+    "<br />"
+    "To keep things simple, choose \"Point/Spherical\" geometry unless you will perform a fit to a"
+    " \"trace\" or self-attenuating source",
+    showToolTips );
   
   //---------------
   
