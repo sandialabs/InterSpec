@@ -148,7 +148,9 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
     m_nuclideLabel->setText( "Non-specified Nuclide" );
     m_useAgeInfo->setUnChecked();
     m_distanceEdit->setValueText( "25 cm" );
-    m_activityEdit->setValueText( "1 uCi" );
+    
+    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    m_activityEdit->setValueText( useCi ? "1 uCi" : "37 kBq" );
     m_useAgeInfo->hide();
   }
   
@@ -230,7 +232,8 @@ void MakeDrfSrcDef::create()
   WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, this );
   val->setFlags( Wt::MatchCaseInsensitive );
   m_activityEdit->setValidator( val );
-  m_activityEdit->setText( "100 uCi" );
+  const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  m_activityEdit->setText( useCi ? "100 uCi" : "3.7 MBq" );
   m_activityEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
   m_activityEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
 
@@ -456,7 +459,8 @@ void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
   double age = 0.0;
   if( agestr.empty() || (agestr.find_first_not_of("+-0.")==string::npos) )
   {
-    m_sourceAgeAtAssay->setText( "0 uCi" );
+    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    m_sourceAgeAtAssay->setText( useCi ? "0 uCi" : "0 bq" );
   }else
   {
     try
