@@ -44,14 +44,13 @@
 #include <Wt/Dbo/collection>
 #include <Wt/Dbo/WtSqlTraits>
 
-
 #include "InterSpec/DataBaseUtils.h"
 
 class SpecMeas;
-struct UserState;
-class UserFileInDb;
 class InterSpec;
+struct UserState;
 struct UseDrfPref;
+class UserFileInDb;
 class ColorThemeInfo;
 class UserFileInDbData;
 struct ShieldingSourceModel;
@@ -269,13 +268,33 @@ public:
   static void setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
                                   const std::string &name, const T &value,
                                   InterSpec *viewer );
- 
   
-  /** Sets the in-memmory, and in-database values of the named preference to the
+  /** Specialization of #setPreferenceValue for boolean preference; does same as other variant
+   of the function, but also calls functions in m_onBoolChangeSignals.
+   */
+  static void setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
+                                 const std::string &name,
+                                 const bool &value,
+                                 InterSpec *viewer );
+  
+  /** Just a convenience function to call above variant, for binding to signals. */
+  static void setBoolPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
+                                 const std::string &name,
+                                 const bool &value,
+                                 InterSpec *viewer );
+  
+protected:
+  template<typename T>
+  static void setPreferenceValueWorker( Wt::Dbo::ptr<InterSpecUser> user,
+                                 const std::string &name, const T &value,
+                                 InterSpec *viewer );
+
+public:
+  
+  /** Sets the in-memory, and in-database values of the named preference to the
    value passed in.  Will also call any functions associated with the named
-   preference set by #associateFunction, which typically will take care of
-   setting GUI widget states to coorespond to the new preference value, as well
-   as any other necassary internal states.
+   preference set by #addCallbackWhenChanged function, as well as set the GUI
+   state of any elements set to this preference with #associateWidget.
    
    @param name The preference name to be set.
    @param value New value of the preference.  May be cast via boost::any_cast
@@ -287,78 +306,51 @@ public:
                                    InterSpec *viewer,
                                    Wt::WApplication *app );
   
-  /** Associate a function with a named preference, such that the function will
-   get called by #pushPreferenceValue whenever application state is changed.
+  /** Add a function to callback when the preference changes, either through loading  a new state,
+   or toggling the preference checkbox or whatever.
    
-   The function accepts a single argument that can be cast, via boost::any_cast
-   to a an int, double, std::string, or bool, according to datatype of the
-   preference.  The function should set all widgets to the appropriate state,
-   and take care of calling any relevant side-effects (e.g., set any variables
-   within the InterSpec class that effect application behaviour).  You should
-   also appropriately guard the function from calling any methods on a widget
-   that has gotten deleted.
+   This variant of #addCallbackWhenChanged is useful to book a slot (member function) of a
+   Wt::WObject up to, so the callback lifetime will be limited to the lifetime of the WObject.
    
-   You may set multiple functions for each named preference.
-   
-   Note: the function passed in is only called, essentially when a new state is loaded - it is not called whenthe user changes a preference
-      value, for this see #addCallbackWhenChanged.
-   */
-  static void associateFunction( Wt::Dbo::ptr<InterSpecUser> user,
-                                const std::string &name,
-                                std::function<void(boost::any)> fcn,
-                                InterSpec *viewer );
-  
-  /** Add a function to callback when the preference changes, either through loading  a new state, or toggling the preference checkbox
-   or whatever.
-   
-   This function must be called from the application thread such that InterSpec::instance() will be non-void
-   
-   The target object must derive from WObject, and the member function passed in must take a boost::any as a parameter; this
-   boost::any will be the new preference value that things are changed too.  If the target object is deleted, then the callback will also be
-   removed from the list of callbacks next time the preference is changed.
-      
-   TODO: Should override things so that the target member function can take a bool, etc to make to
-         avoid the boost::any_cast that could (but shouldnt!) potentially throw.
+   This function must be called from the application thread such that InterSpec::instance() will be
+   non-void.
    */
   template<class T, class V>
-  static void addCallbackWhenChanged( const std::string &name,
-                                      T *target, void (V::*method)(boost::any) );
+  static void addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
+                                      const std::string &name, T *target,
+                                      void (V::*method)(bool) );
   
-  /** Adds a function to callback when the preference changes, either through loading  a new state, or toggling the preference checkbox
-   or whatever.
+  /** Adds a function to callback when the preference changes, either through loading
+   a new state, or toggling the preference checkbox or whatever.
    
-   This function must be called from the application thread such that InterSpec::instance() will be non-void
+   This function must be called from the application thread such that InterSpec::instance() will be
+   non-void
    
-   If the Wt::Signals::connection pointer is null, then callback will never be removed from the list of callbacks when the value changes.
-   If the Wt::Signals::connection pointer is non-null, then the callback will be  removed from the list of callbacks when the connection is
-   disconnected.
+   Note, the function passed in must be sure that it will be safe to call until the end of the users
+   session.  If you need limit lifetime of callbacks, either make sure your caller connects to
+   a slot of a Wt::WObject, or is otherwise somehow safe for the entirety of the InterSpec class
+   lifetime.
    */
-  static void addCallbackWhenChanged( const std::string &name,
-                                      boost::function<void(boost::any)> fcn,
-                                      std::shared_ptr<Wt::Signals::connection> conn );
+  template<class T>
+  static void addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
+                                     const std::string &name,
+                                     const T &fcn );
   
-  /** Hooks up the necessary signals so that the database values will stay
-   inline with what the user enters via the GUI.  Also, when
-   #pushPreferenceValue function is called, the widget state will be set
-   appropriately, and signal emitted as-if the user had changed things via the
-   GUI.
+  /** Makes it so if the user changes the value via this GUI element, the value of the preference
+   stored in memory and in the database will be correspondingly updated.  Also makes it so if
+   a different GUI element updates this preference value, or #pushPreferenceValue is called for
+   this preference, this widgets state will be correspondingly updated as well.
    
-   Note: call this function after the widget has been added to the widget tree,
-   as its #WWebWidget::id may change; currently the id is used to make sure
-   the widget passed in hasnt been deleted, so if the id changes, then during
-   a call to #pushPreferenceValue, then it will be thought the widget was
-   deleted.
+   However, and signals you have hooked up to this widget wont be called when the value changes by
+   another widget or #pushPreferenceValue, to handle this case, use the #addCallbackWhenChanged
+   function to add a callback for whenever the value of the preference changes.
    */
   static void associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                                const std::string &name,
                                Wt::WCheckBox *cb,
-                               InterSpec *viewer,
-                               bool reverseValue = false );
-  static void associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
-                              const std::string &name,
-                              Wt::WRadioButton *trueButton,
-                              Wt::WRadioButton *falseButton,
-                              InterSpec *viewer );
+                               InterSpec *viewer );
+  
+  /*
   static void associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                                const std::string &name,
                                Wt::WSpinBox *spinner,
@@ -367,6 +359,7 @@ public:
                                const std::string &name,
                                Wt::WDoubleSpinBox *spinner,
                                InterSpec *viewer );
+   */
   
   
   
@@ -459,8 +452,6 @@ protected:
                                                const int type );
  
   typedef std::map<std::string,boost::any> PreferenceMap;
-  typedef std::map<std::string,std::vector<std::function<void(boost::any)> > > PreferenceFunctionMap;
-  typedef std::map<std::string,std::vector<std::pair<boost::function<void(boost::any)>,std::shared_ptr<Wt::Signals::connection>>> > CallbackFunctionMap;
   
   std::string m_userName;
   int m_deviceType;
@@ -473,8 +464,24 @@ protected:
   
   //These are mutable so Dbo::ptr<t>.modify() dont need to be called
   mutable PreferenceMap m_preferences;
-  mutable PreferenceFunctionMap m_preferenceFunctions;
-  mutable CallbackFunctionMap m_onChangeCallbacks;
+  
+  /** Holds callbacks set from #addCallbackWhenChanged, for boolean preferences.
+   
+   I believe using a Wt::Signals::signal allows makes it so we can connect widget slots (function
+   calls), and then the connection will automatically get deleted when the widget is deleted, making
+   things safe.
+   
+   Note that these function may be "safe" for widgets getting deleted (e.g., signals automatically
+   disconnected), if the signal is connected to an object deriving from Wt::WObject.
+   
+   Currently only boolean preferences require callbacks in InterSpec; in the future, if other
+   preference types (string, int, doubles) need callbacks, we will have to re-factor things, or
+   add in analogous member variables.
+   
+   Mutable so Dbo::ptr<t>.modify() doesnt need to be called
+   */
+  mutable std::map<std::string,std::shared_ptr<Wt::Signals::signal<void(bool)>>> m_onBoolChangeSignals;
+  
   
   Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDb> >         m_userFiles;
   Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> >           m_dbPreferences;
@@ -492,8 +499,6 @@ protected:
       "default_preferences.xml".
    */
   static const std::string sm_defaultPreferenceFile;
-  
-  static void EmitBindSignal( const std::shared_ptr<Wt::Signals::signal<void(boost::any)>> &, boost::any );
   
   friend class InterSpec;
 };//struct UserOption
@@ -1067,7 +1072,7 @@ T InterSpecUser::preferenceValue( const std::string &name ) const
 
 
 template<typename T>
-void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
+void InterSpecUser::setPreferenceValueWorker( Wt::Dbo::ptr<InterSpecUser> user,
                                        const std::string &name, const T &value,
                                        InterSpec *viewer )
 {
@@ -1171,64 +1176,58 @@ void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
   }//end interacting with the database
   
   user->m_preferences[name] = option->value();
-  
-  
-  const auto callbackIter = user->m_onChangeCallbacks.find(name);
-  if( callbackIter != std::end(user->m_onChangeCallbacks) )
-  {
-    bool any_disconnected = false;
-    auto &callbacks = callbackIter->second;
-    for( const auto &fcn_conn : callbacks )
-    {
-      try
-      {
-        if( fcn_conn.second && !fcn_conn.second->connected() )
-        {
-          any_disconnected = true;
-        }else
-        {
-          //std::cout << "Calling callback for pref '" << name << "'" << std::endl;
-          fcn_conn.first( boost::any(value) );
-        }
-      }catch(...)
-      {
-        std::cerr << "setPreferenceValue: caught exception calling m_onChangeCallbacks for '"
-                  << name << "' - you should check into this!" << std::endl;
-      }//try / catch
-    }//for( loop over callbacks
-    
-    //Cleanup any connections no longer needed
-    if( any_disconnected )
-    {
-      //std::cerr << "Will remove dead connections: pre_size=" << callbacks.size() << std::endl;
-      callbacks.erase( std::remove_if( std::begin(callbacks), std::end(callbacks),
-                         []( std::pair<boost::function<void(boost::any)>,
-                             std::shared_ptr<Wt::Signals::connection>> &a ){
-                           return a.second && !a.second->connected();
-                         }),
-                       std::end(callbacks) );
-      
-      //std::cerr << "post_size=" << callbacks.size() << std::endl;
-    }//if( any_disconnected )
-  }//if( we have any callbacks for this preference )
-}//setPreferenceValue//(...)
 
+}//setPreferenceValueWorker(...)
+
+
+
+
+template<typename T>
+void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
+                                       const std::string &name, const T &value,
+                                       InterSpec *viewer )
+{
+  setPreferenceValueWorker( user, name, value, viewer );
+}
+
+
+template<class T>
+void InterSpecUser::addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
+                                           const std::string &name, const T &fcn )
+{
+  assert( user );
+  if( !user ) //shouldnt ever happen
+    return;
+  
+  //Make sure a valid bool preference
+  user->preferenceValue<bool>( name );
+  
+  std::shared_ptr<Wt::Signals::signal<void(bool)>> &signal = user->m_onBoolChangeSignals[name];
+  if( !signal )
+    signal = std::make_shared<Wt::Signals::signal<void(bool)>>();
+  signal->connect( fcn );
+}//addCallbackWhenChanged(...)
 
 
 template<class T, class V>
-void InterSpecUser::addCallbackWhenChanged( const std::string &name,
-                                            T *target, void (V::*method)(boost::any) )
+void InterSpecUser::addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
+                                            const std::string &name,
+                                            T *target, void (V::*method)(bool) )
 {
+  assert( user );
+  if( !user ) //shouldnt ever happen
+    return;
   
-  auto s = std::make_shared<Wt::Signals::signal<void(boost::any)>>();
-  Wt::Signals::connection conn = s->connect( boost::bind(method, target, boost::placeholders::_1) );
-  auto conn_ptr = std::make_shared<Wt::Signals::connection>( std::move(conn) );
-  boost::function<void(boost::any)> fcn = boost::bind( &InterSpecUser::EmitBindSignal, s,
-                                                      boost::placeholders::_1 );
+  //Make sure a valid bool preference
+  user->preferenceValue<bool>( name );
   
-  addCallbackWhenChanged( name, fcn, conn_ptr );
-}//InterSpecUser::addCallbackWhenChanged(...)
-
+  // Retrieve (or create) the signal, and connect things up
+  std::shared_ptr<Wt::Signals::signal<void(bool)>> &signal = user->m_onBoolChangeSignals[name];
+  if( !signal )
+    signal = std::make_shared<Wt::Signals::signal<void(bool)>>();
+  
+  signal->connect( boost::bind(method, target, boost::placeholders::_1) );
+}//addCallbackWhenChanged(...)
 
 #endif //InterSpecUser_h
 

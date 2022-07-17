@@ -265,7 +265,7 @@ void WarningWidget::createContent()
     m_description = new WText(desc);
     m_description->setWordWrap(true);
     m_layout->addWidget(desc,1,0, 4,1);
-    WLabel *label = new WLabel("Record log types:");
+    WLabel *label = new WLabel("Don't log:");
     m_layout->addWidget(label,3,1, AlignRight);
     
     int i = 2;
@@ -277,13 +277,13 @@ void WarningWidget::createContent()
       m_layout->addWidget(warnToggle,3,i++, AlignCenter);
       
       const char *str = tostr( level );
-      InterSpecUser::associateWidget( m_user, str, warnToggle, m_hostViewer, true );
+      InterSpecUser::associateWidget( m_user, str, warnToggle, m_hostViewer );
       
       warnToggle->checked().connect( boost::bind( &WarningWidget::setActivity, this,  level, true ) );
       warnToggle->unChecked().connect( boost::bind( &WarningWidget::setActivity, this,  level, false ) );
     }//for( loop over
     
-    label = new WLabel("Show popup notification types:");
+    label = new WLabel("Hide notifications:");
     
     m_layout->addWidget(label,4,1, AlignRight);
     
@@ -296,7 +296,7 @@ void WarningWidget::createContent()
       m_layout->addWidget(warnToggle,4,i++, AlignCenter);
       
       const char *str  = popupToStr( level );
-      InterSpecUser::associateWidget( m_user, str, warnToggle, m_hostViewer , true);
+      InterSpecUser::associateWidget( m_user, str, warnToggle, m_hostViewer );
       
       warnToggle->checked().connect( boost::bind( &WarningWidget::setPopupActivity, this,  level, true ) );
       warnToggle->unChecked().connect( boost::bind( &WarningWidget::setPopupActivity, this,  level, false ) );
