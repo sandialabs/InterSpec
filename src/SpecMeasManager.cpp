@@ -3903,7 +3903,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   layout->addWidget( cb, 1, 0 );
   layout->setRowStretch( 0, 1 );
   
-  InterSpecUser::associateWidget( m_viewer->m_user, "AutoSaveSpectraToDb", cb, m_viewer, false );
+  InterSpecUser::associateWidget( m_viewer->m_user, "AutoSaveSpectraToDb", cb, m_viewer );
   
   
   const int width = std::min( 500, static_cast<int>(0.95*m_viewer->renderedWidth()) );

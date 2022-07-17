@@ -232,9 +232,7 @@ SourceFitModel::SourceFitModel( PeakModel *peakModel,
   }else
   {
     m_displayCurries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
-    //auto callback = wApp->bind( boost::bind( &SourceFitModel::displayUnitsChanged, this) );
-    //InterSpecUser::addCallbackWhenChanged( interspec->m_user, "DisplayBecquerel", callback, interspec );
-    InterSpecUser::addCallbackWhenChanged( "DisplayBecquerel", this, &SourceFitModel::displayUnitsChanged );
+    InterSpecUser::addCallbackWhenChanged( interspec->m_user, "DisplayBecquerel", this, &SourceFitModel::displayUnitsChanged );
   }//if( !interspec ) / else
   
   peakModel->rowsAboutToBeRemoved().connect( this, &SourceFitModel::peakModelRowsRemovedCallback );
@@ -251,14 +249,11 @@ SourceFitModel::~SourceFitModel()
 }//~SourceFitModel()
 
 
-void SourceFitModel::displayUnitsChanged( boost::any value )
+void SourceFitModel::displayUnitsChanged( bool useBq )
 {
   //cout << "in SourceFitModel::displayUnitsChanged" << endl;
   try
   {
-    //const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
-    const bool useBq = boost::any_cast<bool>(value);
-    
     if( useBq == m_displayCurries )
     {
       m_displayCurries = !useBq;
