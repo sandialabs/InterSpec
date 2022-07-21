@@ -361,9 +361,15 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         assert( peak.m_base_rel_eff_uncert <= 1.0 );
         
         const double pred_counts = curve_val * rel_src_counts;
-        const double pred_count_uncert = sqrt( pow(peak.m_counts_uncert,2.0)
-                                              + pow(rel_src_counts*peak.m_base_rel_eff_uncert,2.0) );
-        residuals[index] = (peak.m_counts - pred_counts) / pred_count_uncert;
+        // Note: for `add_uncert` below, we are using peak.m_counts, but it *could* also be
+        //       reasonable to use `rel_src_counts` (which I was doing pre 20220720) or
+        //       even `pred_counts`.  This is maybe worth revisiting.  Note that if you change
+        //       how things are calculated here, you should also be consistent with
+        //       #fit_rel_eff_eqn_lls.
+        const double add_uncert = peak.m_counts * peak.m_base_rel_eff_uncert;
+        const double uncert = sqrt( pow(peak.m_counts_uncert,2.0) + pow(add_uncert,2.0) );
+        
+        residuals[index] = (peak.m_counts - pred_counts) / uncert;
       }
       
       //cout << "Energy: " << peak.m_energy << " = " << peak.m_source_gammas[0].m_isotope
@@ -641,9 +647,22 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
   for( size_t row = 0; row < num_peaks; ++row )
   {
     const GenericPeakInfo &peak = peak_infos[row];
+    
+    // A basic sanity check that the uncertainty in counts isnt garbage.
+    if( peak.m_counts_uncert < 0.0 )
+      throw runtime_error( "fit_rel_eff_eqn_lls: peak counts uncertainty can not be <0" );
+    
+    // Check there is a non-zero peak counts uncertainty; if its zero, we'll (arbitrarily) restrict
+    //  to doing an un-weighted fit.  We could accept any non-zero peak.m_base_rel_eff_uncert
+    //  and compute things just fine, but this would be highly suspect that the user has messed
+    //  up filling out peak information, so we'll throw an exception.
+    if( (peak.m_counts_uncert == 0.0) && (peak.m_base_rel_eff_uncert != -1.0) )
+      throw runtime_error( "fit_rel_eff_eqn_lls: you must either provide a non-zero peak counts"
+                          " uncertainty, or perform a unweighted fit" );
+    
     const double energy = peak.m_energy;
     const double counts = peak.m_counts;
-    double counts_uncert = peak.m_counts_uncert > 0.0 ? peak.m_counts_uncert : sqrt(peak.m_counts);
+    const double counts_uncert = peak.m_counts_uncert;
     
     double raw_rel_counts = 0.0;
     
@@ -694,9 +713,14 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
       
       if( peak.m_base_rel_eff_uncert > 0.0 )
       {
-        measured_rel_eff_uncert = sqrt( counts_uncert*counts_uncert
-                                        + peak.m_base_rel_eff_uncert*peak.m_base_rel_eff_uncert );
-      }
+        // We should to be consistent with #ManualGenericRelActFunctor::eval in how we compute the
+        // uncertainty
+        
+        const double add_uncert = counts * peak.m_base_rel_eff_uncert;
+        measured_rel_eff_uncert = sqrt( pow(counts_uncert,2.0) + pow(add_uncert, 2.0) );
+        measured_rel_eff_uncert /= raw_rel_counts;
+      }//if( peak.m_base_rel_eff_uncert > 0.0 )
+      
       // else keep as counts_uncert / raw_rel_counts
     }//if( do unweighted fit ) / else
     

@@ -196,14 +196,6 @@ public:
   void findAndSetExcludedSamples( std::set<int> definetly_keep_samples );
 
 #if( SpecUtils_ENABLE_D3_CHART )
-  //print_d3_json(): Output data from current user chart data to JSON
-  //  format to be used for running D3.js HTML files.
-  std::string print_d3_json() const;
-  
-  //print_d3_reference_gammas(): Output data from current reference gammas
-  //  displayed on the chart to JSON format to be used for rendering
-  //  reference gammas in D3.js HTML files.
-  std::string print_d3_reference_gammas() const;
   
   //getD3SpectrumOptions(): Output current chart options to a struct
   //  to provide the same "state" of the current user session to

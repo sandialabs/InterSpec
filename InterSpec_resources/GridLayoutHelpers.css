@@ -1,0 +1,79 @@
+.GridFirstCol
+{
+  grid-column-start: 1;
+}
+
+.GridSecondCol
+{
+  grid-column-start: 2;
+}
+
+.GridStretchCol
+{
+  justify-self: stretch;
+}
+
+.GridThirdCol
+{
+  grid-column-start: 3;
+}
+
+.GridFourthCol
+{
+  grid-column-start: 4;
+}
+
+.GridFifthCol
+{
+  grid-column-start: 5;
+}
+
+.GridSixthCol
+{
+  grid-column-start: 6;
+}
+
+.GridSeventhCol
+{
+  grid-column-start: 7;
+}
+
+.GridEighthCol
+{
+  grid-column-start: 8; 
+}
+
+.GridFirstRow
+{
+  grid-row-start: 1;
+}
+
+.GridSecondRow
+{
+  grid-row-start: 2;
+}
+
+.GridThirdRow
+{
+  grid-row-start: 3;
+}
+
+.GridFourthRow
+{
+  grid-row-start: 4;
+}
+
+.GridFifthRow
+{
+  grid-row-start: 5;
+}
+
+.GridSpanTwoCol
+{
+  grid-column-end: span 2;
+}
+
+.GridSpanThreeCol
+{
+  grid-column-end: span 3;
+}

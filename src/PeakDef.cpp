@@ -3143,7 +3143,7 @@ bool PeakDef::ageFitNotAllowed( const SandiaDecay::Nuclide *nuc )
   if( !nuc || nuc->decaysToStableChildren() )
     return true;
   
-  //now check for cases like Cs137 where the isotope reqches prompt and
+  //now check for cases like Cs137 where the isotope reaches prompt and
   //  secular equilibrium very quickly (half life for these less than a day)
   //  and these time spans are less than the parents half life
   const double hl = nuc->halfLife;

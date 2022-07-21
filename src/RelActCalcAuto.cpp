@@ -3179,7 +3179,7 @@ void FloatingPeak::fromXml( const ::rapidxml::xml_node<char> *parent )
 }//void fromXml(...)
 
 
-void Options::toXml( ::rapidxml::xml_node<char> *parent ) const
+rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) const
 {
   using namespace rapidxml;
   
@@ -3206,7 +3206,9 @@ void Options::toXml( ::rapidxml::xml_node<char> *parent ) const
   append_attrib( fwhm_node, "remark", "Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6" );
   
   append_string_node( base_node, "Title", spectrum_title );
-}//void Options::toXml(...)
+  
+  return base_node;
+}//rapidxml::xml_node<char> *Options::toXml(...)
 
 
 void Options::fromXml( const ::rapidxml::xml_node<char> *parent )

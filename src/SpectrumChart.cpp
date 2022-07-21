@@ -2119,7 +2119,7 @@ void SpectrumChart::setAutoXAxisRange()
   
   if( theModel )
   {
-    std::shared_ptr<Measurement> axisH = theModel->histUsedForXAxis();
+    std::shared_ptr<const Measurement> axisH = theModel->histUsedForXAxis();
     if( axisH )
     {
       float xmin = min( 0.0f, axisH->gamma_energy_min() );

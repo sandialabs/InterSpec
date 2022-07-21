@@ -2539,8 +2539,6 @@ void DownloadSpectrumResource::write_file( std::ostream &output,
         
         write_d3_html( output, measurements, viewer->getD3SpectrumOptions() );
       }//if( viewer )
-      //      if( viewer != 0 )
-      //        measurement->write_d3_html( output, viewer->getD3SpectrumOptions(), samplenums, detectornums );
     }
       break;
 #endif //#if( USE_D3_EXPORTING )

@@ -256,7 +256,7 @@ struct Options
   std::string spectrum_title;
   
   static const int sm_xmlSerializationVersion = 0;
-  void toXml( ::rapidxml::xml_node<char> *parent ) const;
+  rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
 };//struct Options
 

@@ -23,6 +23,7 @@
 class SpecMeas;
 class PeakModel;
 class InterSpec;
+class ColorTheme;
 class SpectrumDataModel;
 namespace Wt
 {
@@ -55,6 +56,7 @@ class D3SpectrumDisplayDiv : public Wt::WContainerWidget
 public:
   D3SpectrumDisplayDiv( Wt::WContainerWidget *parent = 0 );
   virtual ~D3SpectrumDisplayDiv();
+  
   
   //setTextInMiddleOfChart(...): draws some large text over the middle of the
   //  chart - used int the spectrum quizzer for text based questions.
@@ -90,9 +92,9 @@ public:
   
   void setPeakModel( PeakModel *model );
   
-  void setData( std::shared_ptr<SpecUtils::Measurement> data_hist, const bool keep_curent_xrange );
-  void setSecondData( std::shared_ptr<SpecUtils::Measurement> hist );
-  void setBackground( std::shared_ptr<SpecUtils::Measurement> background );
+  void setData( std::shared_ptr<const SpecUtils::Measurement> data_hist, const bool keep_curent_xrange );
+  void setSecondData( std::shared_ptr<const SpecUtils::Measurement> hist );
+  void setBackground( std::shared_ptr<const SpecUtils::Measurement> background );
   
   void scheduleUpdateForeground();
   void scheduleUpdateBackground();
@@ -103,6 +105,8 @@ public:
    next call to #render (which Wt takes care of calling).
    */
   void scheduleForegroundPeakRedraw();
+  
+  void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
   
   void setForegroundSpectrumColor( const Wt::WColor &color );
   void setBackgroundSpectrumColor( const Wt::WColor &color );
@@ -115,11 +119,8 @@ public:
   
   
   // These 8 functions retrieve the corresponding info from the model.
-  std::shared_ptr<SpecUtils::Measurement> data();
   std::shared_ptr<const SpecUtils::Measurement> data()       const;
-  std::shared_ptr<SpecUtils::Measurement> secondData();
   std::shared_ptr<const SpecUtils::Measurement> secondData() const;
-  std::shared_ptr<SpecUtils::Measurement> background();
   std::shared_ptr<const SpecUtils::Measurement> background() const;
   
   float foregroundLiveTime() const;
@@ -178,6 +179,7 @@ public:
   size_t addDecorativeHighlightRegion( const float lowerx,
                                       const float upperx,
                                       const Wt::WColor &color );
+  void removeAllDecorativeHighlightRegions();
   
   //For the case of auto-ranging x-axis, the below _may_ return 0 when auto
   //  range is set, but chart hasnt been rendered  (although maybe +-DBL_MAX)
@@ -290,7 +292,9 @@ protected:
     UpdateBackgroundSpectrum = 0x04,
     UpdateSecondarySpectrum = 0x08,
     
-    ResetXDomain = 0x10
+    ResetXDomain = 0x10,
+    
+    UpdateHighlightRegions = 0x20
     
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions

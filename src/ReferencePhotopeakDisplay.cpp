@@ -93,7 +93,7 @@ const int DecayParticleModel::RowData::NormGammaDecayMode = 1002;
 namespace
 {
   //See: https://sashat.me/2017/01/11/list-of-20-simple-distinct-colors/
-  //  for a pallete of distint colors
+  //  for a pallet of distint colors
   //Or http://artshacker.com/wp-content/uploads/2014/12/Kellys-22-colour-chart.jpg
   const static vector<Wt::WColor> ns_def_line_colors{
     {"#0000FF"}, {"#006600"}, {"#0099FF"}, {"#9933FF"},

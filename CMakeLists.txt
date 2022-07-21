@@ -576,6 +576,7 @@ if( USE_REL_ACT_TOOL )
         src/RelActCalcManual.cpp
         src/RelActAutoGui.cpp
         src/RelActManualGui.cpp
+        src/RelActTxtResults.cpp
         src/RelEffChart.cpp
   )
   
@@ -586,6 +587,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActCalcManual.h
         InterSpec/RelActAutoGui.h
         InterSpec/RelActManualGui.h
+        InterSpec/RelActTxtResults.h
         InterSpec/RelEffChart.h
   )
   

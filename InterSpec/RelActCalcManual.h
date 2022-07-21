@@ -376,7 +376,9 @@ struct RelEffSolution
    */
   double relative_activity( const std::string &nuclide ) const;
   
-  /** The relative efficiency at a given energy. */
+  /** The fit relative efficiency curve value; the curve is shifted so its centered around 1
+   over all your input points.
+   */
   double relative_efficiency( const double energy ) const;
   
 
@@ -391,8 +393,8 @@ struct RelEffSolution
    */
   double activity_ratio( const std::string &iso1, const std::string &iso2 ) const;
   
-  /** Returns the activity ratio uncertainty between the two isotopes at index \p iso1 and index \p iso2, taking into account
-   correlations.
+  /** Returns the activity ratio uncertainty between the two isotopes at index \p iso1 and index
+   \p iso2, taking into account correlations of the relative activities.
    
    Will throw exception if covariances were not computed, or invalid indexes.
    

@@ -143,6 +143,8 @@ public:
     m_activityUpdated( this ),
     m_nucChangedSignal( this )
   {
+    wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
+    
     const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     
     assert( !parent->isGenericMaterial() );

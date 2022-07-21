@@ -1273,119 +1273,6 @@ InterSpec::~InterSpec() noexcept(true)
 
 #if( SpecUtils_ENABLE_D3_CHART )
 
-string InterSpec::print_d3_reference_gammas() const
-{
-  string result;
-  
-  if( m_referencePhotopeakLines )
-  {
-    result = m_referencePhotopeakLines->jsonReferenceLinesArray();
-  }else
-  {
-    result = "[]";
-  }//if( m_referencePhotopeakLines ) / else
-  
-  return result;
-}//string InterSpec::print_d3_reference_gammas() const
-
-//Temporary function (20160224) to aid in development of d3.js spectrum rendering
-string InterSpec::print_d3_json() const
-{
-  std::ostringstream ostr;
-  const char *q = "\"";  // for creating valid json format
-    
-  std::shared_ptr<const SpecUtils::Measurement> foreground = m_spectrum->data();
-  std::shared_ptr<const SpecUtils::Measurement> background = m_spectrum->background();
-  std::shared_ptr<const SpecUtils::Measurement> secondary  = m_spectrum->secondData();
-    
-  std::shared_ptr<SpecUtils::Measurement> data = m_spectrum->data();
-  std::shared_ptr<SpecUtils::Measurement> back = m_spectrum->background();
-  std::shared_ptr<SpecUtils::Measurement> second = m_spectrum->secondData();
-    
-  typedef deque< PeakModel::PeakShrdPtr > PeakDeque;
-  string peakstring;
-  
-  // Update time
-  ostr << "{\n\t" << q << "updateTime" << q << ":" << q << SpecUtils::to_iso_string(boost::posix_time::second_clock::local_time()) << q;
-  
-  // spectrum values
-  ostr << ",\n\t" << q << "spectra" << q << ": [";
-  
-
-  if( data )
-  {
-    string title = Wt::WWebWidget::escapeText(data->title()).toUTF8();
-    if( title != data->title() )
-      data->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
-    
-    D3SpectrumExport::D3SpectrumOptions options;
-    options.line_color = "black";
-    options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Foreground);
-    
-    std::shared_ptr<const PeakDeque > peaks = m_dataMeasurement->peaks(m_displayedSamples);
-    if( peaks )
-    {
-      vector<PeakModel::PeakShrdPtr> inpeaks( peaks->begin(), peaks->end() );
-      options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
-    }
-    
-    D3SpectrumExport::write_spectrum_data_js( ostr, *data, options, 0, 1 );
-  }
-
-  if( back )
-  {
-    if( data )
-      ostr << ",";
-    
-    string title = Wt::WWebWidget::escapeText(back->title()).toUTF8();
-    if( title != back->title() )
-      back->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
-    
-    D3SpectrumExport::D3SpectrumOptions options;
-    options.line_color = "steelblue";
-    options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Background);
-    
-    std::shared_ptr<const PeakDeque > peaks = m_backgroundMeasurement->peaks(m_backgroundSampleNumbers);
-    if( peaks )
-    {
-      vector<PeakModel::PeakShrdPtr> inpeaks( peaks->begin(), peaks->end() );
-      options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
-    }
-    
-    D3SpectrumExport::write_spectrum_data_js( ostr, *back, options, 1, -1 );
-  }
-  
-  
-  if( second )
-  {
-    if( data || back )
-      ostr << ",";
-    
-    string title = Wt::WWebWidget::escapeText(second->title()).toUTF8();
-    if( title != second->title() )
-      second->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
-    
-    D3SpectrumExport::D3SpectrumOptions options;
-    options.line_color = "green";
-    options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::SecondForeground);
-    
-    std::shared_ptr<const PeakDeque > peaks = m_backgroundMeasurement->peaks(m_sectondForgroundSampleNumbers);
-    if( peaks )
-    {
-      vector<PeakModel::PeakShrdPtr> inpeaks( peaks->begin(), peaks->end() );
-      options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
-    }
-    
-    D3SpectrumExport::write_spectrum_data_js( ostr, *second, options, 2, 1 );
-  }
-  
-  // end of spectrum json
-  ostr << "\n\t]";
-  // end of json
-  ostr << "\n}\n";
-  return ostr.str();
-}//std::string InterSpec::print_d3_json() const
-
 
 D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
 {
@@ -3822,16 +3709,7 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
 
   m_colorPeaksBasedOnReferenceLines = theme->peaksTakeOnReferenceLineColor;
   
-  m_spectrum->setForegroundSpectrumColor( theme->foregroundLine );
-  m_spectrum->setBackgroundSpectrumColor( theme->backgroundLine );
-  m_spectrum->setSecondarySpectrumColor( theme->secondaryLine );
-  m_spectrum->setDefaultPeakColor( theme->defaultPeakLine );
-  
-  m_spectrum->setAxisLineColor( theme->spectrumAxisLines );
-  m_spectrum->setChartMarginColor( theme->spectrumChartMargins );
-  m_spectrum->setChartBackgroundColor( theme->spectrumChartBackground );
-  m_spectrum->setTextColor( theme->spectrumChartText );
-  
+  m_spectrum->applyColorTheme( theme );
   m_timeSeries->applyColorTheme( theme );
   
   setReferenceLineColors( theme );
@@ -7447,7 +7325,10 @@ void InterSpec::showRelActAutoWindow()
 {
   if( !m_relActAutoGui )
   {
-    auto widgets = RelActAutoGui::createWindow( this );
+    const std::pair<RelActAutoGui *,AuxWindow *> widgets = RelActAutoGui::createWindow( this );
+    if( !widgets.first || !widgets.second )
+      return;
+      
     m_relActAutoGui = widgets.first;
     m_relActAutoWindow  = widgets.second;
     
@@ -9713,7 +9594,7 @@ void InterSpec::searchForSinglePeak( const double x )
     throw runtime_error( "InterSpec::searchForSinglePeak(...): "
                         "shoudnt be called if peak model isnt set.");
   
-  std::shared_ptr<SpecUtils::Measurement> data = m_spectrum->data();
+  std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
   
   if( !m_dataMeasurement || !data )
     return;

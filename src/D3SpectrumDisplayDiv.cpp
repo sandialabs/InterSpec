@@ -45,6 +45,7 @@
 #include "SpecUtils/DateTime.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/ColorTheme.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
@@ -683,6 +684,9 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   if( m_renderFlags.testFlag(UpdateForegroundPeaks) )
     setForegroundPeaksToClient();
   
+  if( m_renderFlags.testFlag(UpdateHighlightRegions) )
+    setHighlightRegionsToClient();
+  
   m_renderFlags = 0;
   
   WContainerWidget::render( flags );
@@ -882,7 +886,7 @@ void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
     if( peaks )
     {
       vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-      std::shared_ptr<Measurement> foreground = m_model->getData();
+      std::shared_ptr<const Measurement> foreground = m_model->getData();
       js = PeakDef::peak_json( inpeaks, foreground );
     }
   }
@@ -906,8 +910,7 @@ void D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw()
 }//void scheduleForegroundPeakRedraw()
 
 
-
-void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist, const bool keep_curent_xrange )
+void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist, const bool keep_curent_xrange )
 {
   const float oldBackSF = m_model->backgroundScaledBy();
   const float oldSecondSF = m_model->secondDataScaledBy();
@@ -928,13 +931,7 @@ void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist, cons
   const float newSecondSF = m_model->secondDataScaledBy();
   if( m_model->getSecondData() && (fabs(newSecondSF-oldSecondSF)>0.000001f*std::max(newSecondSF,oldSecondSF)) )
     scheduleUpdateSecondData();
-}//void setData( std::shared_ptr<Measurement> data_hist )
-
-
-std::shared_ptr<Measurement> D3SpectrumDisplayDiv::data()
-{
-  return m_model->getData();
-}//std::shared_ptr<Measurement> data()
+}//void setData( std::shared_ptr<const Measurement> data_hist )
 
 
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::data() const
@@ -943,22 +940,10 @@ std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::data() const
 }//std::shared_ptr<const Measurement> data() const
 
 
-std::shared_ptr<Measurement> D3SpectrumDisplayDiv::secondData()
-{
-  return m_model->getSecondData();
-}//std::shared_ptr<Measurement> secondData()
-
-
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::secondData() const
 {
   return m_model->getSecondData();
 }//std::shared_ptr<const Measurement> secondData() const
-
-
-std::shared_ptr<Measurement> D3SpectrumDisplayDiv::background()
-{
-  return m_model->getBackground();
-}//std::shared_ptr<Measurement> background()
 
 
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::background() const
@@ -972,25 +957,30 @@ float D3SpectrumDisplayDiv::foregroundLiveTime() const
   return m_model->dataLiveTime();
 }
 
+
 float D3SpectrumDisplayDiv::foregroundRealTime() const
 {
   return m_model->dataRealTime();
 }
+
 
 float D3SpectrumDisplayDiv::backgroundLiveTime() const
 {
   return m_model->backgroundLiveTime();
 }
 
+
 float D3SpectrumDisplayDiv::backgroundRealTime() const
 {
   return m_model->backgroundRealTime();
 }
 
+
 float D3SpectrumDisplayDiv::secondForegroundLiveTime() const
 {
   return m_model->secondDataLiveTime();
 }
+
 
 float D3SpectrumDisplayDiv::secondForegroundRealTime() const
 {
@@ -1025,8 +1015,6 @@ void D3SpectrumDisplayDiv::setDisplayScaleFactor( const float sf,
 }//void setDisplayScaleFactor(...)
 
 
-
-
 float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType spectrum_type ) const
 {
   switch( spectrum_type )
@@ -1046,7 +1034,7 @@ float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType sp
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
 
 
-void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background )
+void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> background )
 {
   m_model->setBackgroundHistogram( background );
   
@@ -1057,12 +1045,12 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> backgroun
 }//void D3SpectrumDisplayDiv::setBackground(...);
 
 
-void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist )
+void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> hist )
 {
   m_model->setSecondDataHistogram( hist, false );
   
   scheduleUpdateSecondData();
-}//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> background );
+}//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> background );
 
 
 void D3SpectrumDisplayDiv::visibleRange( double &xmin, double &xmax,
@@ -1147,7 +1135,9 @@ bool D3SpectrumDisplayDiv::removeDecorativeHighlightRegion( size_t uniqueid )
     if( m_highlights[i].hash == uniqueid )
     {
       m_highlights.erase( m_highlights.begin() + i );
-      setHighlightRegionsToClient();
+      
+      m_renderFlags |= UpdateHighlightRegions;
+      scheduleRender();
       return true;
     }
   }
@@ -1159,6 +1149,17 @@ bool D3SpectrumDisplayDiv::removeDecorativeHighlightRegion( size_t uniqueid )
   
   return false;
 }//void removeDecorativeHighlightRegions()
+
+
+void D3SpectrumDisplayDiv::removeAllDecorativeHighlightRegions()
+{
+  if( m_highlights.empty() )
+    return;
+  
+  m_highlights.clear();
+  m_renderFlags |= UpdateHighlightRegions;
+  scheduleRender();
+}//void removeAllDecorativeHighlightRegions()
 
 
 size_t D3SpectrumDisplayDiv::addDecorativeHighlightRegion( const float lowerx,
@@ -1184,7 +1185,8 @@ size_t D3SpectrumDisplayDiv::addDecorativeHighlightRegion( const float lowerx,
   
   m_highlights.push_back( region );
   
-  setHighlightRegionsToClient();
+  m_renderFlags |= UpdateHighlightRegions;
+  scheduleRender();
   
   return region.hash;
 }//void addDecorativeHighlightRegion(...)
@@ -1245,7 +1247,7 @@ void D3SpectrumDisplayDiv::scheduleUpdateSecondData()
 
 void D3SpectrumDisplayDiv::renderForegroundToClient()
 {
-  const std::shared_ptr<Measurement> data_hist = m_model->getData();
+  const std::shared_ptr<const Measurement> data_hist = m_model->getData();
   
   string js;
   
@@ -1268,7 +1270,10 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
     // Set the peak data for the spectrum
     if ( m_peakModel ) {
       std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
-      vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
+      vector< std::shared_ptr<const PeakDef> > inpeaks;
+      if( peaks )
+        inpeaks.insert( end(inpeaks), peaks->begin(), peaks->end() );
+      
       foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks, data_hist );
     }
     
@@ -1297,7 +1302,7 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
 void D3SpectrumDisplayDiv::renderBackgroundToClient()
 {
   string js;
-  const std::shared_ptr<Measurement> background = m_model->getBackground();
+  const std::shared_ptr<const Measurement> background = m_model->getBackground();
   
   // Set the data for the chart
   if ( background ) {
@@ -1343,7 +1348,7 @@ void D3SpectrumDisplayDiv::renderBackgroundToClient()
 void D3SpectrumDisplayDiv::renderSecondDataToClient()
 {
   string js;
-  const std::shared_ptr<Measurement> hist = m_model->getSecondData();
+  const std::shared_ptr<const Measurement> hist = m_model->getSecondData();
   
   // Set the data for the chart
   if ( hist ) {
@@ -1376,6 +1381,26 @@ void D3SpectrumDisplayDiv::renderSecondDataToClient()
   else
     m_pendingJs.push_back( js );
 }//void D3SpectrumDisplayDiv::updateSecondData()
+
+
+void D3SpectrumDisplayDiv::applyColorTheme( std::shared_ptr<const ColorTheme> theme )
+{
+  if( !theme )
+    return;
+  
+  setForegroundSpectrumColor( theme->foregroundLine );
+  setBackgroundSpectrumColor( theme->backgroundLine );
+  setSecondarySpectrumColor( theme->secondaryLine );
+  setDefaultPeakColor( theme->defaultPeakLine );
+  
+  setAxisLineColor( theme->spectrumAxisLines );
+  setChartMarginColor( theme->spectrumChartMargins );
+  setChartBackgroundColor( theme->spectrumChartBackground );
+  setTextColor( theme->spectrumChartText );
+  
+  m_renderFlags |= UpdateForegroundPeaks;
+  scheduleRender();
+}//void applyColorTheme( std::shared_ptr<const ColorTheme> theme )
 
 
 void D3SpectrumDisplayDiv::setForegroundSpectrumColor( const Wt::WColor &color )
@@ -1734,7 +1759,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
         m_peakModel->addPeaks( peaks_to_add );
       }else
       {
-        std::shared_ptr<Measurement> foreground = m_model->getData();
+        std::shared_ptr<const Measurement> foreground = m_model->getData();
         string adjustRoiJson = PeakDef::gaus_peaks_to_json( new_roi_initial_peaks, foreground );
         doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + adjustRoiJson + ");" );
       }
@@ -1743,7 +1768,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
       //Need to check that all peaks are Gaussian.
       //  Actually should make sure a ROI can only have data defined or Gausian peaks only (what happens now)
       std::shared_ptr<const DetectorPeakResponse> detector;
-      std::shared_ptr<Measurement> foreground = m_model->getData();
+      std::shared_ptr<const Measurement> foreground = m_model->getData();
       vector<shared_ptr<const PeakDef>> refitpeaks
                   = refitPeaksThatShareROI( foreground, detector, new_roi_initial_peaks, 3.0 );
       
@@ -1761,7 +1786,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
         m_peakModel->addPeaks( peaks_to_add );
       }else
       {
-        std::shared_ptr<Measurement> foreground = m_model->getData();
+        std::shared_ptr<const Measurement> foreground = m_model->getData();
         string adjustRoiJson = PeakDef::gaus_peaks_to_json( newpeaks, foreground );
         doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + adjustRoiJson + ");" );
       }
@@ -1822,7 +1847,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallbackWorker( double lower_energy, d
   std::shared_ptr<const SpecMeas> meas = viewer ? viewer->measurment(SpecUtils::SpectrumType::Foreground) : nullptr;
   std::shared_ptr<const DetectorPeakResponse> detector = meas ? meas->detector() : nullptr;
   
-  std::shared_ptr<Measurement> foreground = m_model->getData();
+  std::shared_ptr<const Measurement> foreground = m_model->getData();
   
   auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,this](){
   
@@ -2203,7 +2228,7 @@ void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1, dou
     return;
   }
   
-  cout << "chartXRangeChangedCallback{" << x0 << "," << x1 << "," << chart_width_px << "," << chart_height_px << "}" << endl;
+  //cout << "chartXRangeChangedCallback{" << x0 << "," << x1 << "," << chart_width_px << "," << chart_height_px << "}" << endl;
   m_xAxisMinimum = x0;
   m_xAxisMaximum = x1;
   m_chartWidthPx = chart_width_px;
