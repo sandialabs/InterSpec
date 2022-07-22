@@ -936,12 +936,6 @@ public:
                      std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks );
   
   
-  //findPeakFromUserRange(): Depreciated 20150204 by wcjohns in favor of calling
-  // InterSpec::findPeakFromControlDrag().  Keeping around JIC for a little
-  // while.
-  //void findPeakFromUserRange( double x0, double x1 );
-  
-  
   void excludePeaksFromRange( double x0, double x1 );
   
   //guessIsotopesForPeaks(): makes a best guess for which isotopes are

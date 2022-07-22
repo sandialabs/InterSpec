@@ -32,9 +32,12 @@
 #include <Wt/WMenu>
 #include <Wt/WText>
 #include <Wt/WLabel>
+#include <Wt/WPoint>
+#include <Wt/WServer>
 #include <Wt/WMenuItem>
 #include <Wt/WCheckBox>
 #include <Wt/WComboBox>
+#include <Wt/WIOService>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WStackedWidget>
@@ -47,6 +50,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
+#include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
@@ -65,6 +69,7 @@
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
@@ -74,6 +79,23 @@ using namespace std;
 
 namespace
 {
+  //DeleteOnClosePopupMenu - same class as from D3SpectrumDisplayDiv... should refactor
+  class DeleteOnClosePopupMenu : public PopupDivMenu
+  {
+    bool m_deleteWhenHidden;
+  public:
+    DeleteOnClosePopupMenu( WPushButton *p, const PopupDivMenu::MenuType t )
+      : PopupDivMenu( p, t ), m_deleteWhenHidden( false ) {}
+    virtual ~DeleteOnClosePopupMenu(){}
+    void markForDelete(){ m_deleteWhenHidden = true; }
+    virtual void setHidden( bool hidden, const WAnimation &a = WAnimation() )
+    {
+      PopupDivMenu::setHidden( hidden, a );
+      if( hidden && m_deleteWhenHidden )
+        delete this;
+    }
+  };//class PeakRangePopupMenu
+
   class RelActAutoEnergyRange : public WContainerWidget
   {
     RelActAutoGui *m_gui;
@@ -202,6 +224,31 @@ namespace
       
       m_updated.emit();
     }//void setEnergyRange( float lower, float upper )
+    
+    
+    void setForceFullRange( const bool force_full )
+    {
+      m_force_full_range->setChecked( force_full );
+      m_updated.emit();
+    }
+    
+    
+    void setContinuumType( const PeakContinuum::OffsetType type )
+    {
+      const int type_index = static_cast<int>( type );
+      if( (type_index < 0)
+         || (type_index >= static_cast<int>(PeakContinuum::OffsetType::External)) )
+      {
+        assert( 0 );
+        return;
+      }
+      
+      if( type_index == m_continuum_type->currentIndex() )
+        return;
+      
+      m_continuum_type->setCurrentIndex( type_index );
+      m_updated.emit();
+    }//void setContinuumType( PeakContinuum::OffsetType type )
     
     
     void setHighlightRegionId( const size_t chart_id )
@@ -690,7 +737,7 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     
     AuxWindow::addHelpInFooter( window->footer(), "rel-act-dialog" );
     
-    window->rejectWhenEscapePressed();
+    //window->rejectWhenEscapePressed();
     
     // TODO: Similar to activity shielding fit, should store the current widget state in the SpecMeas
     
@@ -778,6 +825,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_u_pu_data_source( nullptr ),
   m_nuclides( nullptr ),
   m_energy_ranges( nullptr ),
+  m_is_calculating( false ),
   m_cancel_calc{},
   m_solution{}
 {
@@ -814,7 +862,13 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_spectrum->applyColorTheme( m_interspec->getColorTheme() );
   
   m_peak_model = new PeakModel( m_spectrum );
+  m_peak_model->setNoSpecMeasBacking();
+  
   m_spectrum->setPeakModel( m_peak_model );
+  
+  m_spectrum->existingRoiEdgeDragUpdate().connect( this, &RelActAutoGui::handleRoiDrag );
+  m_spectrum->dragCreateRoiUpdate().connect( this, &RelActAutoGui::handleCreateRoiDrag );
+  m_spectrum->rightClicked().connect( this, &RelActAutoGui::handleRightClick );
   
   m_rel_eff_chart = new RelEffChart();
   m_txt_results = new RelActTxtResults();
@@ -1149,6 +1203,11 @@ void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
     m_render_flags |= RenderActions::UpdateCalculations;
   }
   
+  if( m_render_flags.testFlag(RenderActions::ChartToDefaultRange) )
+  {
+    updateSpectrumToDefaultEnergyRange();
+  }
+  
   if( m_render_flags.testFlag(RenderActions::UpdateCalculations) )
   {
     startUpdatingCalculation();
@@ -1183,6 +1242,16 @@ void RelActAutoGui::handleDisplayedSpectrumChange( SpecUtils::SpectrumType type 
   
   if( (fore == m_foreground) && (back == m_background) && (!back || (backsf == m_background_sf)) )
     return;
+  
+  
+  if( fore != m_foreground )
+  {
+    m_cached_drf.reset();
+    m_cached_all_peaks.clear();
+    
+    m_render_flags |= RenderActions::ChartToDefaultRange;
+  }//if( fore != m_foreground )
+  
   
   m_render_flags |= RenderActions::UpdateSpectra;
   scheduleRender();
@@ -1275,6 +1344,249 @@ vector<RelActCalcAuto::FloatingPeak> RelActAutoGui::getFloatingPeaks() const
   // TODO: floating_peaks not implemented
   return {};
 }//RelActCalcAuto::FloatingPeak getFloatingPeaks() const
+
+
+void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
+                   double new_roi_upper_energy,
+                   double new_roi_lower_px,
+                   double new_roi_upper_px,
+                   const double original_roi_lower_energy,
+                   const bool is_final_range )
+{
+  //cout << "RelActAutoGui::handleRoiDrag: original_roi_lower_energy=" << original_roi_lower_energy
+  //<< ", new_roi_lower_energy=" << new_roi_lower_energy << ", new_roi_upper_energy=" << new_roi_upper_energy
+  //<< ", is_final_range=" << is_final_range << endl;
+  
+  double min_de = 999999.9;
+  RelActAutoEnergyRange *range = nullptr;
+  
+  const vector<WWidget *> &kids = m_energy_ranges->children();
+  for( WWidget *w : kids )
+  {
+    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    assert( roi );
+    if( !roi || roi->isEmpty() )
+      continue;
+    
+    RelActCalcAuto::RoiRange roi_range = roi->toRoiRange();
+    
+    const double de = fabs(roi_range.lower_energy - original_roi_lower_energy);
+    if( de < min_de )
+    {
+      min_de = de;
+      range = roi;
+    }
+  }//for( WWidget *w : kids )
+
+  if( !range || min_de > 1.0 )  //0.001 would probably be fine instead of 1.0
+  {
+    cerr << "Unexpectedly couldnt find ROI in getRoiRanges()!" << endl;
+    return;
+  }//if( failed to find continuum )
+  
+  if( is_final_range && (new_roi_upper_px < new_roi_lower_px) )
+  {
+    handleRemoveEnergy( range );
+    return;
+  }//if( the user
+  
+  // We will only set RelActAutoEnergyRange energies when its final, otherwise the lower energy wont
+  //  match on later updates
+  if( is_final_range )
+  {
+    range->setEnergyRange( new_roi_lower_energy, new_roi_upper_energy );
+    
+    handleEnergyRangeChange();
+  }else
+  {
+    shared_ptr<const deque<PeakModel::PeakShrdPtr>> origpeaks = m_peak_model->peaks();
+    if( !origpeaks )
+      return;
+    
+    double minDe = 999999.9;
+    std::shared_ptr<const PeakContinuum> continuum;
+    for( auto p : *origpeaks )
+    {
+      const double de = fabs( p->continuum()->lowerEnergy() - original_roi_lower_energy );
+      if( de < min_de )
+      {
+        min_de = de;
+        continuum = p->continuum();
+      }
+    }//for( auto p : *origpeaks )
+    
+    if( !continuum || min_de > 1.0 )  //0.001 would probably be fine instead of 1.0
+    {
+      m_spectrum->updateRoiBeingDragged( {} );
+      return;
+    }//if( failed to find continuum )
+    
+    
+    auto new_continuum = std::make_shared<PeakContinuum>( *continuum );
+    
+    // re-use the c++ ROI value that we arent dragging, to avoid rounding or whatever
+    const bool dragginUpperEnergy = (fabs(new_roi_lower_energy - continuum->lowerEnergy())
+                                      < fabs(new_roi_upper_energy - continuum->upperEnergy()));
+    
+    if( dragginUpperEnergy )
+      new_roi_lower_energy = continuum->lowerEnergy();
+    else
+      new_roi_upper_energy = continuum->upperEnergy();
+    
+    new_continuum->setRange( new_roi_lower_energy, new_roi_upper_energy );
+    
+    vector< shared_ptr<const PeakDef>> new_roi_initial_peaks;
+    for( auto p : *origpeaks )
+    {
+      if( p->continuum() == continuum )
+      {
+        auto newpeak = make_shared<PeakDef>(*p);
+        newpeak->setContinuum( new_continuum );
+        new_roi_initial_peaks.push_back( newpeak );
+      }
+    }//for( auto p : *origpeaks )
+    
+    m_spectrum->updateRoiBeingDragged( new_roi_initial_peaks );
+  }//if( is_final_range )
+}//void handleRoiDrag(...)
+
+
+void RelActAutoGui::handleCreateRoiDrag( const double lower_energy,
+                         const double upper_energy,
+                         const int num_peaks_to_force,
+                         const bool is_final_range )
+{
+  //cout << "RelActAutoGui::handleCreateRoiDrag: lower_energy=" << lower_energy
+  //<< ", upper_energy=" << upper_energy << ", num_peaks_to_force=" << num_peaks_to_force
+  //<< ", is_final_range=" << is_final_range << endl;
+  
+  if( !m_foreground )
+  {
+    m_spectrum->updateRoiBeingDragged( {} );
+    return;
+  }
+  
+  const double roi_lower = std::min( lower_energy, upper_energy );
+  const double roi_upper = std::max( lower_energy, upper_energy );
+  
+  if( is_final_range )
+  {
+    m_spectrum->updateRoiBeingDragged( {} );
+    
+    RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
+    
+    energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
+    
+    energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
+                                                this, static_cast<WWidget *>(energy_range) ) );
+    
+    energy_range->setEnergyRange( roi_lower, roi_upper );
+    energy_range->setForceFullRange( true );
+    
+    handleEnergyRangeChange();
+    
+    return;
+  }//if( is_final_range )
+  
+  
+  try
+  {
+    // Make a single peak with zero amplitude to at least give feedback (the continuum range line)
+    //  to the user about where they have dragged.
+    const double mean = 0.5*(roi_lower + roi_upper);
+    const double sigma = 0.5*fabs( roi_upper - roi_lower );
+    const double amplitude = 0.0;
+    
+    auto peak = make_shared<PeakDef>(mean, sigma, amplitude );
+    
+    peak->continuum()->setRange( roi_lower, roi_upper );
+    peak->continuum()->calc_linear_continuum_eqn( m_foreground, mean, roi_lower, roi_upper, 3, 3 );
+    
+    m_spectrum->updateRoiBeingDragged( vector< shared_ptr<const PeakDef>>{peak} );
+  }catch( std::exception &e )
+  {
+    m_spectrum->updateRoiBeingDragged( {} );
+    cerr << "RelActAutoGui::handleCreateRoiDrag caught exception: " << e.what() << endl;
+    return;
+  }//try / catch
+}//void handleCreateRoiDrag(...)
+
+
+void RelActAutoGui::handleRightClick( const double energy, const double counts,
+                      const int page_x_px, const int page_y_px )
+{
+  RelActAutoEnergyRange *range = nullptr;
+  
+  const vector<WWidget *> &kids = m_energy_ranges->children();
+  for( WWidget *w : kids )
+  {
+    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    assert( roi );
+    if( !roi || roi->isEmpty() )
+      continue;
+    
+    RelActCalcAuto::RoiRange roi_range = roi->toRoiRange();
+    
+    if( (energy >= roi_range.lower_energy) && (energy < roi_range.upper_energy) )
+      range = roi;
+  }//for( WWidget *w : kids )
+  
+  if( !range )  //0.001 would probably be fine instead of 1.0
+  {
+    cerr << "Right-click is not in an ROI" << endl;
+    return;
+  }//if( failed to find continuum )
+  
+  
+  DeleteOnClosePopupMenu *menu = new DeleteOnClosePopupMenu( nullptr, PopupDivMenu::TransientMenu );
+  menu->aboutToHide().connect( menu, &DeleteOnClosePopupMenu::markForDelete );
+  menu->setPositionScheme( Wt::Absolute );
+  
+  PopupDivMenuItem *item = nullptr;
+  
+  const bool is_phone = false; //isPhone();
+  if( is_phone )
+    item = menu->addPhoneBackItem( nullptr );
+  
+  item = menu->addMenuItem( "ROI options:" );
+  item->disable();
+  item->setSelectable( false );
+  menu->addSeparator();
+  
+  const auto roi = range->toRoiRange();
+  
+  PopupDivMenu *continuum_menu = menu->addPopupMenuItem( "Set Continuum Type" );
+  for( auto type = PeakContinuum::OffsetType(0);
+      type < PeakContinuum::External; type = PeakContinuum::OffsetType(type+1) )
+  {
+    WMenuItem *item = continuum_menu->addItem( PeakContinuum::offset_type_label(type) );
+    item->triggered().connect( boost::bind( &RelActAutoEnergyRange::setContinuumType, range, type ) );
+    if( type == roi.continuum_type )
+      item->setDisabled( true );
+  }//for( loop over PeakContinuum::OffsetTypes )
+  
+  item = menu->addMenuItem( "Remove ROI" );
+  item->triggered().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy, this, static_cast<WWidget *>(range) ) );
+  
+  char buffer[128] = { '\0' };
+  snprintf( buffer, sizeof(buffer), "Split ROI at %.1f keV", energy );
+  item = menu->addMenuItem( buffer );
+  item->triggered().connect( boost::bind( &RelActAutoGui::handleSplitEnergyRange, this, static_cast<WWidget *>(range), energy ) );
+  
+  // Force full-range
+  // If near another ROI, join ROIs
+  // Add floating peak
+  
+  if( is_phone )
+  {
+    menu->addStyleClass( " Wt-popupmenu Wt-outset" );
+    menu->showMobile();
+  }else
+  {
+    menu->addStyleClass( " Wt-popupmenu Wt-outset NumPeakSelect" );
+    menu->popup( WPoint(page_x_px - 30, page_y_px - 30) );
+  }
+}//void handleRightClick(...)
 
 
 void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
@@ -1555,6 +1867,7 @@ void RelActAutoGui::handlePresetChange()
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::ChartToDefaultRange;
   scheduleRender();
   
   if( m_current_preset_index >= static_cast<int>(m_preset_paths.size()) )
@@ -1768,12 +2081,21 @@ void RelActAutoGui::handleAddNuclide()
 
 void RelActAutoGui::handleAddEnergy()
 {
+  const int nprev = m_energy_ranges->count();
+  
   RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
   
   energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
   
   energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                       this, static_cast<WWidget *>(energy_range) ) );
+  
+  if( nprev == 0 )
+  {
+    const auto cal = m_foreground ? m_foreground->energy_calibration() : nullptr;
+    const float upper_energy = (cal && cal->valid()) ? cal->upper_energy() : 3000.0f;
+    energy_range->setEnergyRange( 125.0f, upper_energy );
+  }//if( this is the first energy range )
   
   checkIfInUserConfigOrCreateOne();
   m_render_flags |= RenderActions::UpdateEnergyRanges;
@@ -1805,6 +2127,57 @@ void RelActAutoGui::handleRemoveEnergy( WWidget *w )
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleRemoveEnergy( Wt::WContainerWidget *w )
+
+
+void RelActAutoGui::handleSplitEnergyRange( Wt::WWidget *w, const double energy )
+{
+  if( !w )
+    return;
+  
+  const std::vector<WWidget *> &kids = m_energy_ranges->children();
+  const auto pos = std::find( begin(kids), end(kids), w );
+  if( pos == end(kids) )
+  {
+    cerr << "Failed to find a RelActAutoEnergyRange in m_energy_ranges (handleSplitEnergyRange)!" << endl;
+    assert( 0 );
+    return;
+  }
+  
+  RelActAutoEnergyRange *range = dynamic_cast<RelActAutoEnergyRange *>( w );
+  assert( range );
+  if( !range )
+    return;
+  
+  RelActCalcAuto::RoiRange roi = range->toRoiRange();
+  assert( (energy >= roi.lower_energy) && (energy <= roi.upper_energy) );
+  
+  if( (energy <= roi.lower_energy) || (energy >= roi.upper_energy) )
+    return;
+  
+  delete w;
+  
+  const int orig_w_index = pos - begin(kids);
+  
+  RelActAutoEnergyRange *left_range = new RelActAutoEnergyRange( this );
+  left_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
+  left_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
+                                              this, static_cast<WWidget *>(left_range) ) );
+  
+  RelActAutoEnergyRange *right_range = new RelActAutoEnergyRange( this );
+  right_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
+  right_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
+                                            this, static_cast<WWidget *>(right_range) ) );
+  
+  left_range->setFromRoiRange( roi );
+  right_range->setFromRoiRange( roi );
+  left_range->setEnergyRange( roi.lower_energy, energy );
+  right_range->setEnergyRange( energy, roi.upper_energy );
+  
+  m_energy_ranges->insertWidget( orig_w_index, right_range );
+  m_energy_ranges->insertWidget( orig_w_index, left_range );
+  
+  handleEnergyRangeChange();
+}//void handleSplitEnergyRange( Wt::WWidget *energy_range, const double energy )
 
 
 void RelActAutoGui::handleRemoveNuclide( Wt::WWidget *w )
@@ -1856,6 +2229,50 @@ void RelActAutoGui::updateForSpectrumChange()
 }//void updateForSpectrumChange()
 
 
+void RelActAutoGui::updateSpectrumToDefaultEnergyRange()
+{
+  if( !m_foreground || (m_foreground->gamma_energy_max() < 1.0f) )
+  {
+    m_spectrum->setXAxisRange( 0, 3000 );
+    return;
+  }
+  
+  const double spec_min = m_foreground->gamma_energy_min();
+  const double spec_max = m_foreground->gamma_energy_max();
+  
+  const vector<RelActCalcAuto::RoiRange> rois = getRoiRanges();
+  if( rois.empty() )
+  {
+    m_spectrum->setXAxisRange( spec_min, spec_max );
+    return;
+  }
+  
+  double min_energy = 3000, max_energy = 0;
+  for( const RelActCalcAuto::RoiRange &roi : rois )
+  {
+    min_energy = std::min( min_energy, roi.lower_energy );
+    max_energy = std::max( max_energy, roi.upper_energy );
+  }
+  
+  //Make sure max energy is greater than min energy by at least ~10 keV; this is arbitrary, but we
+  //  dont ant the spectrum hyper-zoomed-in to like a single channel
+  if( (max_energy > min_energy) && ((max_energy - min_energy) > 10.0) )
+  {
+    const double range = max_energy - min_energy;
+    min_energy -= 0.1*range;
+    max_energy += 0.1*range;
+    
+    min_energy = std::max( min_energy, spec_min );
+    max_energy = std::min( max_energy, spec_max );
+    
+    m_spectrum->setXAxisRange( min_energy, max_energy );
+  }else
+  {
+    m_spectrum->setXAxisRange( spec_min, spec_max );
+  }
+}//void updateSpectrumToDefaultEnergyRange()
+
+
 void RelActAutoGui::updateForNuclidesChange()
 {
   // Check if we need to show/hide
@@ -1895,13 +2312,198 @@ void RelActAutoGui::updateForEnergyRangeChange()
 
 void RelActAutoGui::startUpdatingCalculation()
 {
-  // Clear Rel Eff chart
-  // Clear Txt Results
-  // Set m_status_indicator text and visibility
-  
-  
   m_error_msg->setText("");
   m_error_msg->hide();
+  m_status_indicator->hide();
+  
+  shared_ptr<const SpecUtils::Measurement> foreground = m_foreground;
+  shared_ptr<const SpecUtils::Measurement> background = m_background;
+  RelActCalcAuto::Options options;
+  vector<RelActCalcAuto::RoiRange> rois;
+  vector<RelActCalcAuto::NucInputInfo> nuclides;
+  vector<RelActCalcAuto::FloatingPeak> floating_peaks;
+  
+  try
+  {
+    if( !foreground )
+      throw runtime_error( "No foreground spectrum is displayed." );
+    
+    if( m_background_subtract->isChecked() )
+      background = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
+    
+    options = getCalcOptions();
+    rois = getRoiRanges();
+    nuclides = getNucInputInfo();
+    floating_peaks = getFloatingPeaks();
+    
+    if( nuclides.empty() && rois.empty() )
+      throw runtime_error( "No energy ranges or nuclides defined." );
+    else if( nuclides.empty() )
+      throw runtime_error( "No nuclides defined." );
+    else if( rois.empty() )
+      throw runtime_error( "No energy ranges defined." );
+    
+  }catch( std::exception &e )
+  {
+    m_is_calculating = false;
+    m_error_msg->setText( e.what() );
+    m_error_msg->show();
+    
+    return;
+  }//try / catch
+  
   m_status_indicator->setText( "Calculating..." );
   m_status_indicator->show();
+  
+  if( m_cancel_calc )
+    m_cancel_calc->store( true );
+  
+  const string sessionid = wApp->sessionId();
+  m_is_calculating = true;
+  m_cancel_calc = make_shared<std::atomic_bool>();
+  m_cancel_calc->store( false );
+  shared_ptr<atomic_bool> cancel_calc = m_cancel_calc;
+  
+  shared_ptr<const DetectorPeakResponse> cached_drf = m_cached_drf;
+  if( !cached_drf )
+  {
+    auto m = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    if( m && m->detector() && m->detector()->isValid() && m->detector()->hasResolutionInfo() )
+      cached_drf = m->detector();
+  }
+  
+  WApplication *app = WApplication::instance();
+  
+  vector<shared_ptr<const PeakDef>> cached_all_peaks = m_cached_all_peaks;
+  
+  auto solution = make_shared<RelActCalcAuto::RelActAutoSolution>();
+  auto error_msg = make_shared<string>();
+  
+  auto gui_update_callback = wApp->bind( boost::bind( &RelActAutoGui::updateFromCalc, this, solution, cancel_calc) );
+  auto error_callback = wApp->bind( boost::bind( &RelActAutoGui::handleCalcException, this, error_msg, cancel_calc) );
+  
+  
+  auto worker = [=](){
+    try
+    {
+      RelActCalcAuto::RelActAutoSolution answer
+        = RelActCalcAuto::solve( options, rois, nuclides, floating_peaks,
+                                foreground, background, cached_drf,
+                                cached_all_peaks, cancel_calc );
+      
+      WApplication::UpdateLock lock( app );
+      if( lock )
+      {
+        *solution = answer;
+        gui_update_callback();
+        app->triggerUpdate();
+      }else
+      {
+        cerr << "Failed to get WApplication::UpdateLock for worker in RelActAutoGui::startUpdatingCalculation" << endl;
+        assert( 0 );
+      }//if( lock ) / else
+    }catch( std::exception &e )
+    {
+      WApplication::UpdateLock lock( app );
+      if( lock )
+      {
+        *error_msg = e.what();
+        error_callback();
+        app->triggerUpdate();
+      }else
+      {
+        cerr << "Failed to get WApplication::UpdateLock for worker in RelActAutoGui::startUpdatingCalculation" << endl;
+        assert( 0 );
+      }//if( lock ) / else
+    }//try / catch
+  };//auto worker
+  
+  WServer::instance()->ioService().boost::asio::io_service::post( worker );
 }//void startUpdatingCalculation()
+
+
+void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer,
+                                    std::shared_ptr<std::atomic_bool> cancel_flag )
+{
+  assert( answer );
+  if( !answer )
+    return;
+  
+  // If we started a new calculation between when this one was started, and right now, dont
+  //  do anything to the GUI state.
+  if( cancel_flag != m_cancel_calc )
+    return;
+  
+  m_is_calculating = false;
+  m_status_indicator->hide();
+  
+  switch( answer->m_status )
+  {
+    case RelActCalcAuto::RelActAutoSolution::Status::Success:
+      break;
+      
+    case RelActCalcAuto::RelActAutoSolution::Status::NotInitiated:
+    case RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem:
+    case RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem:
+    case RelActCalcAuto::RelActAutoSolution::Status::UserCanceled:
+    {
+      string msg = "Calculation didn't complete.";
+      if( !answer->m_error_message.empty() )
+        msg += ": " + answer->m_error_message;
+      
+      m_error_msg->setText( msg );
+      m_error_msg->show();
+      m_txt_results->setNoResults();
+      
+      // TODO: we need to set ROIs to the chart so the user can drag them...
+      
+      return;
+    }//if( calculation wasnt successful )
+  }//switch( answer->m_status )
+  
+  if( answer->m_drf )
+    m_cached_drf = answer->m_drf;
+  
+  if( !answer->m_spectrum_peaks.empty() )
+    m_cached_all_peaks = answer->m_spectrum_peaks;
+  
+  m_solution = answer;
+  
+  m_txt_results->updateResults( *answer );
+  
+  m_peak_model->setPeaks( answer->m_fit_peaks );
+  
+  cout << "\n\n\nCalc finished: \n";
+  answer->print_summary( std::cout );
+  cout << "\n\n\n";
+  
+  const string rel_eff_eqn_js = RelActCalc::rel_eff_eqn_js_function( answer->m_rel_eff_form,
+                                                                  answer->m_rel_eff_coefficients );
+  
+  const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
+  
+  m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities, rel_eff_eqn_js );
+}//void updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer )
+
+
+void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
+                                        std::shared_ptr<std::atomic_bool> cancel_flag )
+{
+  assert( message );
+  if( !message )
+    return;
+  
+  // If we started a new calculation between when this one was started, and right now, dont
+  //  do anything to the GUI state.
+  if( cancel_flag != m_cancel_calc )
+    return;
+  
+  m_is_calculating = false;
+  m_status_indicator->hide();
+  
+  string msg = "Calculation error: ";
+  msg += *message;
+  
+  m_error_msg->setText( msg );
+  m_error_msg->show();
+}//void handleCalcException( std::shared_ptr<std::string> message )

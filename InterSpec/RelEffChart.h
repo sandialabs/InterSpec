@@ -8,6 +8,8 @@
 
 #include <Wt/WContainerWidget>
 
+#include "InterSpec/PeakDef.h"
+#include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/RelActCalcManual.h"
 
 //Forward declarations
@@ -24,6 +26,13 @@ public:
   RelEffChart( Wt::WContainerWidget *parent = 0 );
   virtual ~RelEffChart();
   
+  /** Set data from an "auto" relative efficiency fit. */
+  void setData( const double live_time,
+               const std::vector<PeakDef> &fit_peaks,
+               const std::vector<RelActCalcAuto::NuclideRelAct> &rel_acts,
+               const std::string &jsRelEffEqn );
+  
+  /** Set data from an "manual" relative efficiency fit. */
   void setData( const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,
                const std::map<std::string,std::pair<double,std::string>> &relActsColors,
                std::string relEffEqn );

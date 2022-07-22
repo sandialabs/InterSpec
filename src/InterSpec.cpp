@@ -527,13 +527,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_peakModel = new PeakModel( this );
   m_spectrum   = new D3SpectrumDisplayDiv();
   m_timeSeries = new D3TimeChart();
-  
-  m_peakModel->dataChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->rowsRemoved().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->rowsInserted().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->layoutChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->modelReset().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  
+      
   
   if( isPhone() )
   {
@@ -564,7 +558,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   }//if( isPhone() )
   
   m_spectrum->setPeakModel( m_peakModel );
-  
+  m_spectrum->existingRoiEdgeDragUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork );
+  m_spectrum->dragCreateRoiUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performDragCreateRoiWork );
+      
   m_nuclideSearch = new IsotopeSearchByEnergy( this, m_spectrum );
   m_nuclideSearch->setLoadLaterWhenInvisible(true);
 
@@ -1004,8 +1000,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->chartClicked().connect( boost::bind( &InterSpec::handleLeftClick, this,
                                                   boost::placeholders::_1, boost::placeholders::_2,
                                                   boost::placeholders::_3, boost::placeholders::_4 ) );
-  
-//  m_spectrum->controlKeyDragged().connect( boost::bind( &InterSpec::findPeakFromUserRange, this, boost::placeholders::_1, boost::placeholders::_2 ) );
   
   m_spectrum->shiftKeyDragged().connect( boost::bind( &InterSpec::excludePeaksFromRange, this,
                                                      boost::placeholders::_1,
@@ -9869,66 +9863,6 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
 //  existing
 }//void setHintPeaks(...)
 
-
-
-
-/*
- //Depreciated 20150204 by wcjohns in favor of calling 
- //  InterSpec::findPeakFromControlDrag()
-void InterSpec::findPeakFromUserRange( double x0, double x1 )
-{
-  if( !m_peakModel )
-    throw runtime_error( "SpectrumDisplayDiv::findPeakFromUserRange(...): "
-                        "shoudnt be called if peak model isnt set.");
-  
-  std::shared_ptr<SpecUtils::Measurement> data = m_spectrum->data();
-  
-  if( !data )
-  {
-    passMessage( "No spectrum data", "", WarningWidget::WarningMsgMedium );
-    return;
-  }
-    
-  if( x0 > x1 )
-    swap( x0, x1 );
-  
-  //round to the edges of the bins the drag action was from
-  const size_t lowerchannel = data->find_gamma_channel( x0 );
-  const size_t upperchannel = data->find_gamma_channel( x1 );
-  x0 = data->gamma_channel_lower( lowerchannel );
-  x1 = data->gamma_channel_upper( upperchannel );
-  
-  PeakDef peak( 0.0, 0.0, 0.0 );
-  peak.setMean( 0.5*(x0+x1) );
-  peak.setSigma( (x1-x0)/8.0 );
-  std::shared_ptr<PeakContinuum> continuum = peak.continuum();
-  
-  continuum->calc_linear_continuum_eqn( data, x0, x1, 1 );
-  
-  const double data_area = data->gamma_channels_sum( lowerchannel, upperchannel );
-  const double continuum_area = peak.offset_integral( x0, x1 );
-  peak.setAmplitude( data_area - continuum_area );
-  
-  std::vector<PeakDef> peakV;
-  peakV.push_back( peak );
-  
-  const double stat_threshold = 0.5;
-  const double hypothesis_threshold = 0.5;
-  
-  //XXX - we promised the user to use a given continuum, however the below only
-  //      uses this as a starting point
-  peakV = fitPeaksInRange( x0+0.00001, x1-0.00001, 0,
-                           stat_threshold, hypothesis_threshold,
-                           peakV, data, m_peakModel->peakVec() );
-  
-  for( size_t i = 0; i < peakV.size(); ++i )
-    addPeak( peakV[i], true );
-    
-  if( peakV.size()==0 )
-    passMessage( "No peaks were found. You might try a slighlty changed ROI "
-                 "region.", "", WarningWidget::WarningMsgLow );
-}//void findPeakFromUserRange( const double x0, const double x1 )
-*/
 
 void InterSpec::excludePeaksFromRange( double x0, double x1 )
 {

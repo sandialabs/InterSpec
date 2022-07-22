@@ -268,11 +268,11 @@ void SpectrumDataModel::setBackgroundSubtract( const bool subtract )
 
 
 
-// The following 8 functions will return empty std::shared_ptr<Measurement> variables if the
+// The following functions will return empty std::shared_ptr<Measurement> variables if the
 // corresponding data histogram was not set.
-std::shared_ptr<const Measurement> SpectrumDataModel::getData() const       { return m_data;       }
-std::shared_ptr<const Measurement> SpectrumDataModel::getSecondData() const { return m_secondData; }
-std::shared_ptr<const Measurement> SpectrumDataModel::getBackground() const { return m_background; }
+const std::shared_ptr<const Measurement> &SpectrumDataModel::getData() const       { return m_data;       }
+const std::shared_ptr<const Measurement> &SpectrumDataModel::getSecondData() const { return m_secondData; }
+const std::shared_ptr<const Measurement> &SpectrumDataModel::getBackground() const { return m_background; }
 
 float SpectrumDataModel::dataRealTime() const
 {

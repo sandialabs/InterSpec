@@ -27,6 +27,9 @@
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
 
+#include "SpecUtils/StringAlgo.h"
+
+#include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/RelActTxtResults.h"
 
 using namespace Wt;
@@ -41,3 +44,32 @@ RelActTxtResults::RelActTxtResults( Wt::WContainerWidget *parent )
   addStyleClass( "RelActTxtResults" );
   new WText( "Hello Results!", this );
 }
+
+
+void RelActTxtResults::setNoResults()
+{
+  clear();
+  new WText( "No current results", this );
+}
+
+
+void RelActTxtResults::updateResults( const RelActCalcAuto::RelActAutoSolution &solution )
+{
+  clear();
+  
+  try
+  {
+    stringstream strm;
+    solution.print_summary( strm );
+    
+    string res = strm.str();
+    
+    SpecUtils::ireplace_all( res, "\n", "<br />" );
+  
+    WText *txt = new WText( res, this );
+    txt->setInline( false );
+  }catch( std::exception &e )
+  {
+    new WText( "Error displaying results", this );
+  }
+}//void updateResults( const RelActCalcAuto::RelActAutoSolution &solution );

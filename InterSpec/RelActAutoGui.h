@@ -33,11 +33,14 @@
 
 #include "InterSpec/RelActCalcAuto.h"
 
+
+class PeakDef;
 class PeakModel;
 class AuxWindow;
 class InterSpec;
 class RelEffChart;
 class RelActTxtResults;
+class DetectorPeakResponse;
 class D3SpectrumDisplayDiv;
 
 namespace SpecUtils
@@ -75,9 +78,15 @@ public:
   static std::pair<RelActAutoGui *,AuxWindow *> createWindow( InterSpec *viewer  );
   
   void updateForSpectrumChange();
+  void updateSpectrumToDefaultEnergyRange();
   void updateForNuclidesChange();
   void updateForEnergyRangeChange();
   void startUpdatingCalculation();
+  void updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer,
+                      std::shared_ptr<std::atomic_bool> cancel_flag );
+  void handleCalcException( std::shared_ptr<std::string> message,
+                           std::shared_ptr<std::atomic_bool> cancel_flag );
+  
   
   void handleDisplayedSpectrumChange( SpecUtils::SpectrumType );
   void handlePresetChange();
@@ -92,6 +101,7 @@ public:
   void handleAddEnergy();
   void handleRemoveEnergy( Wt::WWidget *w );
   void handleRemoveNuclide( Wt::WWidget *w );
+  void handleSplitEnergyRange( Wt::WWidget *energy_range, const double energy );
   
   /** Called when a nuclide is added or removed (or changed from one to another) */
   void handleNuclidesChanged();
@@ -125,6 +135,22 @@ public:
   
   
 protected:
+  void handleRoiDrag( double new_roi_lower_energy,
+                     double new_roi_upper_energy,
+                     double new_roi_lower_px,
+                     double new_roi_upper_px,
+                     const double original_roi_lower_energy,
+                     const bool is_final_range );
+  
+  void handleCreateRoiDrag( const double lower_energy,
+                            const double upper_energy,
+                            const int num_peaks_to_force,
+                           const bool is_final_range );
+  
+  void handleRightClick( const double energy, const double counts,
+                        const int page_x_px, const int page_y_px );
+  
+protected:
   
   enum RenderActions
   {
@@ -132,6 +158,7 @@ protected:
     UpdateNuclidesPresent = 0x02,
     UpdateEnergyRanges    = 0x04,
     UpdateCalculations    = 0x08,
+    ChartToDefaultRange   = 0x10
   };//enum D3RenderActions
   
   Wt::WFlags<RenderActions> m_render_flags;
@@ -207,9 +234,15 @@ protected:
   // - HTML Report
   
   
+  bool m_is_calculating;
   std::shared_ptr<std::atomic_bool> m_cancel_calc;
   std::shared_ptr<RelActCalcAuto::RelActAutoSolution> m_solution;
   
+  /** A good amount of calculation time is spent determining all the "auto-searched" peaks
+   and consequently the FWHM DRF, so we will cache these so we only compute them
+   */
+  std::shared_ptr<const DetectorPeakResponse> m_cached_drf;
+  std::vector<std::shared_ptr<const PeakDef>> m_cached_all_peaks;
 };//class RelActAutoGui
 
 

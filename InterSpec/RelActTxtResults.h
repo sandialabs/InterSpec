@@ -31,12 +31,19 @@
 
 #include <Wt/WContainerWidget>
 
+namespace RelActCalcAuto
+{
+  class RelActAutoSolution;
+}
 
 class RelActTxtResults : public Wt::WContainerWidget
 {
 public:
   RelActTxtResults( Wt::WContainerWidget *parent = nullptr );
   
+  void setNoResults();
+  
+  void updateResults( const RelActCalcAuto::RelActAutoSolution &solution );
 };//class RelActTxtResults
 
 

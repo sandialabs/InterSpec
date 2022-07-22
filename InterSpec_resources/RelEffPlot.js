@@ -21,7 +21,7 @@ RelEffPlot = function (elem,options) {
     const chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom;
 
     // Setup the tooltip
-    this.tooltip = d3.select("body").append("div")
+    this.tooltip = d3.select(this.chart).append("div")
         .attr("class", "RelEffPlotTooltip")
         .style("opacity", 0);
 

@@ -32,7 +32,7 @@
 }
 
 div.RelEffPlotTooltip {
-    position: absolute;
+    position: fixed;
     padding: 6px;
     font: 12px sans-serif;
     background: lightsteelblue;

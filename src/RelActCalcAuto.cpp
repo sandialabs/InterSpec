@@ -324,8 +324,27 @@ struct RoiRangeChannels : public RelActCalcAuto::RoiRange
         }
       }else
       {
-        // We need to subtract `diff` channels to our channel range
-        if( first_fractional < last_fractional )
+        // We need to subtract `diff` channels to our channel range; diff will usually be 1, but maybe it could be 2
+        //
+        //  Example case
+        //    first_channel_f = 4910.48
+        //    last_channel_f  = 5366.53
+        //    wanted_nchan    = 457
+        //    -->
+        //      first_channel_i=4910, first_fractional=0.48,  (i.e., we'll be off by 1+0.48=1.48 if we subtract 1 from first_channel_i)
+        //      last_channel_i=5367, last_fractional=-0.47    (i.e., we'll be off by 1-0.47=0.53 if we subtract 1 from last_channel_f)
+        //      In this case niave_nchan=458, so we want to subtract 1 channel from the range
+        //
+        //    Second case
+        //    first_channel_f = 4910.45
+        //    last_channel_f  = 5366.48
+        //    wanted_nchan    = 457
+        //    -->
+        //      first_channel_i=4910, first_fractional=0.45,  (i.e., we'll be off by 1+0.45=1.45 if we subtract 1 from first_channel_i)
+        //      last_channel_i=5367, last_fractional=-0.52    (i.e., we'll be off by 1-0.52=0.48 if we subtract 1 from last_channel_f)
+        //      In this case niave_nchan=458, so we want to subtract 1 channel from the range
+        
+        if( (diff + last_fractional) < (diff + first_fractional) )
         {
           last_channel -= diff;
         }else if( first_channel >= diff )
@@ -403,7 +422,7 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
     annihilationInfo.transition = nullptr;
     annihilationInfo.transition_index = 0;
     annihilationInfo.gamma_type = PeakDef::SourceGammaType::AnnihilationGamma;
-    
+    size_t num_annih_trans = 0;
     
     for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
     {
@@ -443,7 +462,8 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
           }else if( particle.type == SandiaDecay::ProductType::PositronParticle )
           {
             annihilationInfo.yield += 2.0 * activity * particle.intensity * transition->branchRatio;
-            
+           
+            num_annih_trans += 1;
             annihilationInfo.transition_index = productNum;
             annihilationInfo.transition = transition;
           }//if( particle.type is gamma ) / else if( position )
@@ -457,6 +477,12 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
       bool exclude = false;
       for( const double exclude_energy : gammas_to_exclude )
         exclude = (exclude || (fabs(annihilationInfo.energy - exclude_energy) < 0.001));
+      
+      if( num_annih_trans != 1 )
+      {
+        annihilationInfo.transition = nullptr;
+        annihilationInfo.transition_index = 0;
+      }
       
       if( !exclude )
         all_gamma_transitions.push_back( annihilationInfo );
@@ -556,8 +582,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   /** Will either be null, or have FWHM info. */
   std::shared_ptr<const DetectorPeakResponse> m_drf;
   
+  std::shared_ptr<std::atomic_bool> m_cancel_calc;
+  
   /** just for debug purposes, we'll keep track of how many times the eval function gets called. */
   mutable std::atomic<size_t> m_ncalls;
+  
+  
+  // If class to implement cancelling a calculation
+  class CheckCeresTerminateCallback : public ceres::IterationCallback
+  {
+    shared_ptr<atomic_bool> m_cancel;
+    
+  public:
+    CheckCeresTerminateCallback( shared_ptr<atomic_bool> &cancel_calc ) : m_cancel( cancel_calc ) {}
+    
+    virtual ceres::CallbackReturnType operator()(const ceres::IterationSummary & )
+    {
+      return (m_cancel && m_cancel->load()) ? ceres::CallbackReturnType::SOLVER_ABORT
+                                            : ceres::CallbackReturnType::SOLVER_CONTINUE;
+    }
+  };//class CheckCeresTerminateCallback
   
   
   RelActAutoCostFcn( RelActCalcAuto::Options options,
@@ -567,7 +611,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                      shared_ptr<const SpecUtils::Measurement> spectrum,
                      const vector<float> &channel_counts_uncert,
                      std::shared_ptr<const DetectorPeakResponse> drf,
-                     std::vector<std::shared_ptr<const PeakDef>> all_peaks
+                     std::vector<std::shared_ptr<const PeakDef>> all_peaks,
+                     std::shared_ptr<std::atomic_bool> cancel_calc
                            )
   : m_options( options ),
   m_nuclides{},
@@ -580,6 +625,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_energy_cal( spectrum ? spectrum->energy_calibration() : nullptr ),
   m_rel_eff_anchor_enhancement( 1000.0 ),
   m_drf( nullptr ),
+  m_cancel_calc( cancel_calc ),
   m_ncalls( 0 )
   {
     if( !spectrum || (spectrum->num_gamma_channels() < 128) )
@@ -593,6 +639,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( nuclides.empty() )
       throw runtime_error( "RelActAutoCostFcn: no nuclides specified." );
+    
+    if( energy_ranges.empty() )
+      throw runtime_error( "RelActAutoCostFcn: no energy ranges specified." );
     
     for( const auto &n : nuclides )
     {
@@ -608,6 +657,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       m_nuclides.emplace_back( n );
     }//for( const auto &n : nuclides )
     
+    if( cancel_calc && cancel_calc->load() )
+      throw runtime_error( "User cancelled calculation." );
     
     if( !drf || !drf->hasResolutionInfo() )
     {
@@ -687,6 +738,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         m_energy_ranges.emplace_back( m_energy_cal, roi_range );
         continue;
       }//if( roi_range.force_full_range )
+      
+      if( cancel_calc && cancel_calc->load() )
+        throw runtime_error( "User cancelled calculation." );
       
       //We'll try to limit/break-up energy ranges
       const double min_br = numeric_limits<double>::min();  //arbitrary
@@ -769,6 +823,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }//for( loop over gammas_in_range )
     }//for( const RelActCalcAuto::RoiRange &input : energy_ranges )
     
+    if( cancel_calc && cancel_calc->load() )
+      throw runtime_error( "User cancelled calculation." );
     
     // Check to make sure the floating peak is in a ROI range
     for( const RelActCalcAuto::FloatingPeak &peak : m_extra_peaks )
@@ -838,7 +894,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                                         std::shared_ptr<const SpecUtils::Measurement> foreground,
                                                         std::shared_ptr<const SpecUtils::Measurement> background,
                                                         const std::shared_ptr<const DetectorPeakResponse> input_drf,
-                                                        std::vector<std::shared_ptr<const PeakDef>> all_peaks
+                                                        std::vector<std::shared_ptr<const PeakDef>> all_peaks,
+                                                        std::shared_ptr<std::atomic_bool> cancel_calc
                                                         )
   {
     const auto start_time = std::chrono::high_resolution_clock::now();
@@ -915,7 +972,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     solution.m_channel_counts_uncerts = channel_count_uncerts;
     
     
-    if( all_peaks.empty() )
+    if( (!cancel_calc || !cancel_calc->load()) && all_peaks.empty() )
       all_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, nullptr, {}, false );
     solution.m_spectrum_peaks = all_peaks;
     
@@ -940,12 +997,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     RelActAutoCostFcn *cost_functor = nullptr;
     try
     {
+      if( cancel_calc && cancel_calc->load() )
+        throw runtime_error( "User cancelled calculation." );
+      
       cost_functor = new RelActAutoCostFcn( options, energy_ranges, nuclides,
                                            extra_peaks, spectrum, channel_count_uncerts,
-                                           input_drf, all_peaks );
+                                           input_drf, all_peaks, cancel_calc );
     }catch( std::exception &e )
     {
-      solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+      if( cancel_calc && cancel_calc->load() )
+        solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::UserCanceled;
+      else
+        solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+      
       solution.m_error_message = "Error initializing problem: " + string(e.what());
       
       return solution;
@@ -1660,25 +1724,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     // TODO: there are a ton of ceres::Solver::Options that might be useful for us to set
     
-    /*
-     // If we to implement cancelling a calculation, we could do something like:
-    class CheckTerminateCallback : public ceres::IterationCallback
+    std::unique_ptr<CheckCeresTerminateCallback> terminate_callback;
+    if( cancel_calc )
     {
-      std::function<bool()> m_check_terminate;
-    public:
-      CheckTerminateCallback( std::function<bool()> fcn ) : m_check_terminate(fcn){};
-      
-      virtual CallbackReturnType operator()(const IterationSummary& summary)
-      {
-        return (!m_check_terminate || !m_check_terminate())
-               ? ceres::CallbackReturnType::SOLVER_CONTINUE
-               : ceres::CallbackReturnType::SOLVER_ABORT; //CallbackReturnType::SOLVER_TERMINATE_SUCCESSFULLY
-      }
-    };//CheckTerminateCallback
-     
-     CheckTerminateCallback callback( [](){ return false; } );
-     ceres_options.callbacks.push_back( &callback );
-     */
+      terminate_callback.reset( new CheckCeresTerminateCallback(cancel_calc) );
+      ceres_options.callbacks.push_back( terminate_callback.get() );
+    }
+    
     
     // Setting ceres_options.num_threads >1 doesnt seem to do much (any?) good - so instead we do
     //  some multiple threaded computations in RelActAutoSolution::eval(...)
@@ -1704,12 +1756,31 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         break;
         
       case ceres::NO_CONVERGENCE:
+        solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
+        solution.m_error_message += "The L-M solving failed - no convergence.";
+        break;
+        
       case ceres::FAILURE:
-      case ceres::USER_FAILURE:
         solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
         solution.m_error_message += "The L-M solving failed.";
         break;
+        
+      case ceres::USER_FAILURE:
+        if( cancel_calc && cancel_calc->load() )
+        {
+          solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::UserCanceled;
+          solution.m_error_message += "Calculation was cancelled.";
+        }else
+        {
+          // I dont think we should get here.
+          assert( 0 );
+          solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
+          solution.m_error_message += "The L-M solving failed.";
+        }
+        break;
     }//switch( summary.termination_type )
+    
+    const bool success = (solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success);
     
     solution.m_num_function_eval_solution = cost_functor->m_ncalls;
     
@@ -1719,56 +1790,58 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     vector<double> uncertainties( num_pars, 0.0 ), uncerts_squared( num_pars, 0.0 );
     
-    ceres::Covariance covariance(cov_options);
-    vector<pair<const double*, const double*> > covariance_blocks;
-    for( size_t i = 0; i < num_pars; ++i )
-      covariance_blocks.push_back( make_pair( pars + i, pars + i ) );
-    
-    auto add_cov_block = [&covariance_blocks, &pars]( size_t start, size_t num ){
-      for( size_t i = start; i < num; ++i )
-        for( size_t j = start; j < i; ++j )
-          covariance_blocks.push_back( make_pair( pars + i, pars + j ) );
-    };
-    
-    add_cov_block( rel_eff_start, num_rel_eff_par );
-    add_cov_block( acts_start, num_acts_par );
-    add_cov_block( fwhm_start, num_fwhm_pars );
-    
-    if( !covariance.Compute(covariance_blocks, &problem) )
+    if( success )
     {
-      cerr << "Failed to compute final covariances!" << endl;
-      solution.m_warnings.push_back( "Failed to compute final covariances." );
-    }else
-    {
+      ceres::Covariance covariance(cov_options);
+      vector<pair<const double*, const double*> > covariance_blocks;
       for( size_t i = 0; i < num_pars; ++i )
-      {
-        covariance.GetCovarianceBlock( pars + i, pars + i, &(uncerts_squared[i]) );
-        if( uncerts_squared[i] >= 0.0 )
-          uncertainties[i] = sqrt( uncerts_squared[i] );
-        else
-          uncertainties[i] = std::numeric_limits<double>::quiet_NaN();
-      }
+        covariance_blocks.push_back( make_pair( pars + i, pars + i ) );
       
-      // TODO: check the covariance is actually defined right (like not swapping row/col, calling the right places, etc).
-      auto get_cov_block = [&pars,&covariance]( const size_t start, const size_t num, vector<vector<double>> &cov ){
-        cov.clear();
-        cov.resize( num, vector<double>(num,0.0) );
-        
+      auto add_cov_block = [&covariance_blocks, &pars]( size_t start, size_t num ){
         for( size_t i = start; i < num; ++i )
-        {
           for( size_t j = start; j < i; ++j )
-          {
-            covariance.GetCovarianceBlock( pars + i, pars + j, &(cov[i][j]) );
-            cov[j][i] = cov[i][j];
-          }
-        }
+            covariance_blocks.push_back( make_pair( pars + i, pars + j ) );
       };
       
-      get_cov_block( rel_eff_start, num_rel_eff_par, solution.m_rel_eff_covariance );
-      get_cov_block( acts_start, num_acts_par, solution.m_rel_act_covariance );
-      get_cov_block( fwhm_start, num_fwhm_pars, solution.m_fwhm_covariance );
-    }//if( we failed to get covariance ) / else
-    
+      add_cov_block( rel_eff_start, num_rel_eff_par );
+      add_cov_block( acts_start, num_acts_par );
+      add_cov_block( fwhm_start, num_fwhm_pars );
+      
+      if( !covariance.Compute(covariance_blocks, &problem) )
+      {
+        cerr << "Failed to compute final covariances!" << endl;
+        solution.m_warnings.push_back( "Failed to compute final covariances." );
+      }else
+      {
+        for( size_t i = 0; i < num_pars; ++i )
+        {
+          covariance.GetCovarianceBlock( pars + i, pars + i, &(uncerts_squared[i]) );
+          if( uncerts_squared[i] >= 0.0 )
+            uncertainties[i] = sqrt( uncerts_squared[i] );
+          else
+            uncertainties[i] = std::numeric_limits<double>::quiet_NaN();
+        }
+        
+        // TODO: check the covariance is actually defined right (like not swapping row/col, calling the right places, etc).
+        auto get_cov_block = [&pars,&covariance]( const size_t start, const size_t num, vector<vector<double>> &cov ){
+          cov.clear();
+          cov.resize( num, vector<double>(num,0.0) );
+          
+          for( size_t i = start; i < num; ++i )
+          {
+            for( size_t j = start; j < i; ++j )
+            {
+              covariance.GetCovarianceBlock( pars + i, pars + j, &(cov[i][j]) );
+              cov[j][i] = cov[i][j];
+            }
+          }
+        };
+        
+        get_cov_block( rel_eff_start, num_rel_eff_par, solution.m_rel_eff_covariance );
+        get_cov_block( acts_start, num_acts_par, solution.m_rel_act_covariance );
+        get_cov_block( fwhm_start, num_fwhm_pars, solution.m_fwhm_covariance );
+      }//if( we failed to get covariance ) / else
+    }//if( solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success )
     
     solution.m_num_function_eval_total = cost_functor->m_ncalls;
   
@@ -1778,7 +1851,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     solution.m_energy_cal_adjustments[1] = parameters[1];
     
     shared_ptr<const SpecUtils::EnergyCalibration> new_cal = cost_functor->m_energy_cal;
-    if( options.fit_energy_cal )
+    if( success && options.fit_energy_cal )
     {
       auto new_cal = make_shared<SpecUtils::EnergyCalibration>( *cost_functor->m_energy_cal );
       
@@ -1962,7 +2035,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     solution.m_warnings.push_back( "Not currently calculating DOF - need to implement" );
     //solution.m_dof = residuals.size() - ;
     
-    solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::Success;
+    //solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::Success;
     
     return solution;
   }//RelActCalcAuto::RelActAutoSolution solve_ceres( ceres::Problem &problem )
@@ -2432,6 +2505,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( residuals );
     assert( !m_energy_ranges.empty() );
     
+    const auto do_cancel = [this,residuals](){
+      const size_t n = number_residuals();
+      for( size_t i = 0; i < n; ++i )
+        residuals[i] = 0.0;
+    };
+    
+    if( m_cancel_calc && m_cancel_calc->load() )
+    {
+      do_cancel();
+      return;
+    }//if( m_cancel_calc && m_cancel_calc->load() )
+    
     // We'll do the simplest parallelization we can by computing peaks in multiple threads; this
     //  actually seems to be reasonably effective in filling up the CPU cores during fitting.
     //  (setting ceres_options.num_threads >1 doesnt seem to do much (any?) good)
@@ -2444,6 +2529,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       } );
     }//
     pool.join();
+    
+    
+    if( m_cancel_calc && m_cancel_calc->load() )
+    {
+      do_cancel();
+      return;
+    }//if( m_cancel_calc && m_cancel_calc->load() )
     
     
     size_t residual_index = 0;
@@ -3336,6 +3428,10 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
     case Status::FailToSolveProblem:
       out << "Failed to solve problem.\n";
       break;
+      
+    case Status::UserCanceled:
+      out << "User cancelled calculation.\n";
+      break;
   }//switch( m_status )
   
   if( m_error_message.size() )
@@ -3417,6 +3513,8 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
   
   return out;
 }//RelActAutoSolution::print_summary(...)
+
+
 
 
 void RelActAutoSolution::print_html_report( std::ostream &out ) const
@@ -3675,105 +3773,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   
   // TODO: figure out how to reasonably plot RelEff values
   stringstream rel_eff_plot_values, add_rel_eff_plot_css;
-  
-  rel_eff_plot_values << "[";
-  //rel_eff_plot_values << "{energy: 185, counts: 100, counts_uncert: 10, eff: 1.0, eff_uncert: 0.1, nuc_info: [{nuc: \"U235\", br: 0.2, rel_act: 300}]}"
-  //", {energy: 1001, counts: 10, counts_uncert: 3, eff: 0.1, eff_uncert: 0.1, nuc_info: [{nuc: \"U238\", br: 0.1, rel_act: 100}]}";
-  
-  set<const SandiaDecay::Nuclide *> nuclides_with_colors, all_nuclides;
-  
-  size_t num_rel_eff_data_points = 0;
-  for( const PeakDef &peak : m_fit_peaks )
-  {
-    // Skip peaks that are essentially zero amplitide
-    if( peak.amplitude() < 0.1 )
-      continue;
-  
-    const SandiaDecay::Nuclide *nuc = peak.parentNuclide();
-    if( !nuc )
-      continue;
-    
-    const NuclideRelAct *nuc_info = nullptr;
-    for( const auto &rel_act : m_rel_activities )
-      nuc_info = (rel_act.nuclide == nuc) ? &rel_act : nuc_info;
-    
-    assert( nuc_info );
-    if( !nuc_info )
-      continue;
-    
-    all_nuclides.insert( nuc );
-    if( !nuclides_with_colors.count(nuc) && !peak.lineColor().isDefault() )
-    {
-      add_rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol << "{ fill: " << peak.lineColor().cssText() << "; }\n";
-      nuclides_with_colors.insert( nuc );
-    }
-    
-    double yield = 0;
-    for( const pair<double,double> &energy_br : nuc_info->gamma_energy_br )
-    {
-      if( fabs(energy_br.first - peak.gammaParticleEnergy()) < 1.0E-6 )
-        yield += energy_br.second;
-    }
-      
-    snprintf( buffer, sizeof(buffer), "{nuc: \"%s\", br: %1.6G, rel_act: %1.6G}",
-                nuc_info->nuclide->symbol.c_str(), yield, nuc_info->rel_activity );
-
-    const string isotopes_json = buffer;
-    
-    const double src_counts = nuc_info->rel_activity * yield * live_time;
-    //if( src_counts < 1.0E-6 )
-    //  continue;
-    
-    //if( peak.amplitude() < 1.0E-6 )
-    //  continue;
-    
-    const double eff = peak.amplitude() / src_counts;
-    
-    //TODO: need to use proper uncertainty
-    const double eff_uncert = 0; //peak.amplitudeUncert() / src_counts;
-    
-    snprintf( buffer, sizeof(buffer),
-             "%s{energy: %.2f, counts: %1.7g, counts_uncert: %1.7g,"
-             " eff: %1.6g, eff_uncert: %1.6g, nuc_info: [%s]}",
-             (num_rel_eff_data_points ? ", " : ""),
-             peak.mean(), peak.amplitude(), peak.amplitudeUncert(),
-             eff, eff_uncert, isotopes_json.c_str() );
-    
-    //cout << "peak rel_eff: " << buffer << endl;
-    
-    if( IsNan(eff) || IsInf(eff)
-       || IsNan(eff_uncert) || IsInf(eff_uncert)
-       || IsNan(peak.amplitude()) || IsInf(peak.amplitude())
-       || IsNan(peak.amplitudeUncert()) || IsInf(peak.amplitudeUncert())
-       )
-    {
-      cerr << "Skipping Rel Eff plot point: " << buffer << endl;
-    }else
-    {
-      rel_eff_plot_values << buffer;
-      num_rel_eff_data_points += 1;
-    }
-  }//for( const PeakDef &peak : m_fit_peaks )
-  
-  rel_eff_plot_values << "]";
-  
-  
-  // Incase user didnt associate color with a nuclide, assign some (pretty much randomly chosen)
-  //  default colors.
-  size_t unseen_nuc_index = 0;
-  const vector<string> default_nuc_colors{ "#003f5c", "#ffa600", "#7a5195", "#ff764a", "#ef5675", "#374c80" };
-  for( const auto *nuc : all_nuclides )
-  {
-    if( nuclides_with_colors.count(nuc) )
-      continue;
-    
-    add_rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol << "{ fill: "
-                     << default_nuc_colors[unseen_nuc_index % default_nuc_colors.size()]
-                     << "; }\n";
-    
-    unseen_nuc_index += 1;
-  }//for( const auto *nuc : all_nuclides )
-  
+  rel_eff_json_data( rel_eff_plot_values, add_rel_eff_plot_css );
 
   auto load_file_contents = []( string filename ) -> string {
     string filepath = wApp ? wApp->docRoot() : "InterSpec_resources";
@@ -3910,6 +3910,114 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
 }//void print_html_report( std::ostream &out ) const
 
 
+void RelActAutoSolution::rel_eff_json_data( std::ostream &rel_eff_plot_values,
+                                            std::ostream &add_rel_eff_plot_css ) const
+{
+  // TODO: refactor RelEffChart::setData to take care of all this functionality, and just call it their
+  
+  rel_eff_plot_values << "[";
+  //rel_eff_plot_values << "{energy: 185, counts: 100, counts_uncert: 10, eff: 1.0, eff_uncert: 0.1, nuc_info: [{nuc: \"U235\", br: 0.2, rel_act: 300}]}"
+  //", {energy: 1001, counts: 10, counts_uncert: 3, eff: 0.1, eff_uncert: 0.1, nuc_info: [{nuc: \"U238\", br: 0.1, rel_act: 100}]}";
+  char buffer[1024] = { '\0' };
+  const float live_time = m_spectrum ? m_spectrum->live_time() : 1.0f;
+  
+  set<const SandiaDecay::Nuclide *> nuclides_with_colors, all_nuclides;
+  
+  size_t num_rel_eff_data_points = 0;
+  for( const PeakDef &peak : m_fit_peaks )
+  {
+    // Skip peaks that are essentially zero amplitide
+    if( peak.amplitude() < 0.1 )
+      continue;
+    
+    const SandiaDecay::Nuclide *nuc = peak.parentNuclide();
+    if( !nuc )
+      continue;
+    
+    const NuclideRelAct *nuc_info = nullptr;
+    for( const auto &rel_act : m_rel_activities )
+      nuc_info = (rel_act.nuclide == nuc) ? &rel_act : nuc_info;
+    
+    assert( nuc_info );
+    if( !nuc_info )
+      continue;
+    
+    all_nuclides.insert( nuc );
+    if( !nuclides_with_colors.count(nuc) && !peak.lineColor().isDefault() )
+    {
+      add_rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol << "{ fill: " << peak.lineColor().cssText() << "; }\n";
+      nuclides_with_colors.insert( nuc );
+    }
+    
+    double yield = 0;
+    for( const pair<double,double> &energy_br : nuc_info->gamma_energy_br )
+    {
+      if( fabs(energy_br.first - peak.gammaParticleEnergy()) < 1.0E-6 )
+        yield += energy_br.second;
+    }
+    
+    snprintf( buffer, sizeof(buffer), "{nuc: \"%s\", br: %1.6G, rel_act: %1.6G}",
+             nuc_info->nuclide->symbol.c_str(), yield, nuc_info->rel_activity );
+    
+    const string isotopes_json = buffer;
+    
+    const double src_counts = nuc_info->rel_activity * yield * live_time;
+    //if( src_counts < 1.0E-6 )
+    //  continue;
+    
+    //if( peak.amplitude() < 1.0E-6 )
+    //  continue;
+    
+    const double eff = peak.amplitude() / src_counts;
+    
+    //TODO: need to use proper uncertainty
+    const double eff_uncert = 0; //peak.amplitudeUncert() / src_counts;
+    
+    snprintf( buffer, sizeof(buffer),
+             "%s{energy: %.2f, counts: %1.7g, counts_uncert: %1.7g,"
+             " eff: %1.6g, eff_uncert: %1.6g, nuc_info: [%s]}",
+             (num_rel_eff_data_points ? ", " : ""),
+             peak.mean(), peak.amplitude(), peak.amplitudeUncert(),
+             eff, eff_uncert, isotopes_json.c_str() );
+    
+    //cout << "peak rel_eff: " << buffer << endl;
+    
+    if( IsNan(eff) || IsInf(eff)
+       || IsNan(eff_uncert) || IsInf(eff_uncert)
+       || IsNan(peak.amplitude()) || IsInf(peak.amplitude())
+       || IsNan(peak.amplitudeUncert()) || IsInf(peak.amplitudeUncert())
+       )
+    {
+      cerr << "Skipping Rel Eff plot point: " << buffer << endl;
+    }else
+    {
+      rel_eff_plot_values << buffer;
+      num_rel_eff_data_points += 1;
+    }
+  }//for( const PeakDef &peak : m_fit_peaks )
+  
+  rel_eff_plot_values << "]";
+  
+  
+  // Incase user didnt associate color with a nuclide, assign some (pretty much randomly chosen)
+  //  default colors.
+  size_t unseen_nuc_index = 0;
+  const vector<string> default_nuc_colors{ "#003f5c", "#ffa600", "#7a5195", "#ff764a", "#ef5675", "#374c80" };
+  for( const auto *nuc : all_nuclides )
+  {
+    if( nuclides_with_colors.count(nuc) )
+      continue;
+    
+    add_rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol << "{ fill: "
+    << default_nuc_colors[unseen_nuc_index % default_nuc_colors.size()]
+    << "; }\n";
+    
+    unseen_nuc_index += 1;
+  }//for( const auto *nuc : all_nuclides )
+  
+}//std::string rel_eff_json_data() const
+
+
 
 double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide ) const
 {
@@ -3986,7 +4094,8 @@ RelActAutoSolution solve( Options options,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> input_drf,
-                         std::vector<std::shared_ptr<const PeakDef>> all_peaks
+                         std::vector<std::shared_ptr<const PeakDef>> all_peaks,
+                         std::shared_ptr<std::atomic_bool> cancel_calc
                          )
 {
   return RelActAutoCostFcn::solve_ceres(
@@ -3997,7 +4106,8 @@ RelActAutoSolution solve( Options options,
                      foreground,
                      background,
                      input_drf,
-                     all_peaks );
+                     all_peaks,
+                     cancel_calc );
 }//RelActAutoSolution
 
 

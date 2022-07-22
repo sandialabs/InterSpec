@@ -98,9 +98,9 @@ public:
 
   // The following functions will return an empty std::shared_ptr<SpecUtils::Measurement> if the data histogram
   // was not previously set.
-  std::shared_ptr<const SpecUtils::Measurement> getData()       const;
-  std::shared_ptr<const SpecUtils::Measurement> getSecondData() const;
-  std::shared_ptr<const SpecUtils::Measurement> getBackground() const;
+  const std::shared_ptr<const SpecUtils::Measurement> &getData()       const;
+  const std::shared_ptr<const SpecUtils::Measurement> &getSecondData() const;
+  const std::shared_ptr<const SpecUtils::Measurement> &getBackground() const;
 
   float dataRealTime() const;
   float dataLiveTime() const;

@@ -39,6 +39,9 @@
 #include <Wt/WContainerWidget>
 
 
+#include "SandiaDecay/SandiaDecay.h"
+
+
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/RelEffChart.h"
@@ -109,6 +112,66 @@ void RelEffChart::render( Wt::WFlags<Wt::RenderFlag> flags )
   if( renderFull )
     defineJavaScript();
 }
+
+
+
+void RelEffChart::setData( const double live_time,
+                          const vector<PeakDef> &fit_peaks,
+                          const std::vector<RelActCalcAuto::NuclideRelAct> &rel_acts,
+                          const std::string &relEffEqn )
+{
+  std::vector<RelActCalcManual::GenericPeakInfo> peaks;
+  map<string,pair<double,string>> relActsColors;
+  
+  for( const PeakDef &p : fit_peaks )
+  {
+    const SandiaDecay::Nuclide *nuc = p.parentNuclide();
+    
+    assert( nuc );
+    if( !nuc )
+      continue;
+    
+    RelActCalcManual::GenericPeakInfo peak;
+    peak.m_energy = p.mean();
+    peak.m_fwhm = p.fwhm();
+    peak.m_counts = p.amplitude();
+    
+    // Amplitude uncertainties arent accurate/relevant, so set to zero.
+    peak.m_counts_uncert = 0.0; //p.amplitudeUncert();
+    //peak.m_base_rel_eff_uncert = ...;
+    
+    RelActCalcManual::GenericLineInfo line;
+    line.m_isotope = nuc->symbol;
+    line.m_yield = 0.0;
+    
+    const RelActCalcAuto::NuclideRelAct *nuc_info = nullptr;
+    for( const auto &rel_act : rel_acts )
+      nuc_info = (rel_act.nuclide == nuc) ? &rel_act : nuc_info;
+    
+    assert( nuc_info );
+    if( !nuc_info )
+      continue;
+    
+    for( const pair<double,double> &energy_br : nuc_info->gamma_energy_br )
+    {
+      if( fabs(energy_br.first - p.gammaParticleEnergy()) < 1.0E-6 )
+        line.m_yield += live_time * energy_br.second; 
+    }
+    
+    peak.m_source_gammas.push_back( line );
+    
+    const auto pos = relActsColors.find(nuc->symbol);
+    if( pos == std::end(relActsColors) )
+    {
+      const string css_color = p.lineColor().isDefault() ? string() : p.lineColor().cssText();
+      relActsColors[nuc->symbol] = std::make_pair(nuc_info->rel_activity, css_color);
+    }
+      
+    peaks.push_back( peak );
+  }//for( const PeakDef &p : fit_peaks )
+  
+  setData( peaks, relActsColors, relEffEqn );
+}//void setData( std::vector<PeakDef> m_fit_peaks, std::string relEffEqn )
 
 
 void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,
@@ -228,7 +291,7 @@ void RelEffChart::setCssRules()
   
   rulename = "div.RelEffPlotTooltip";
   if( !m_cssRules.count(rulename) )
-    m_cssRules[rulename] = style.addRule( "div.RelEffPlotTooltip", "position: absolute; padding: 6px; font: 12px sans-serif; background: #ffffcc; border: 0px; border-radius: 8px; pointer-events: none; color: #444422;" );
+    m_cssRules[rulename] = style.addRule( "div.RelEffPlotTooltip", "position: fixed; padding: 6px; font: 12px sans-serif; background: #ffffcc; border: 0px; border-radius: 8px; pointer-events: none; color: #444422;" );
   
   setLineColor( theme->foregroundLine );
   setDefaultMarkerColor( theme->backgroundLine );

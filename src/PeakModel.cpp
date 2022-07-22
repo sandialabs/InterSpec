@@ -928,6 +928,25 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
 }//void setPeakFromSpecMeas(...)
 
 
+void PeakModel::setNoSpecMeasBacking()
+{
+  if( m_peaks && !m_peaks->empty() )
+  {
+    beginRemoveRows( WModelIndex(), 0, static_cast<int>(m_peaks->size()-1) );
+    m_peaks = std::make_shared< deque<std::shared_ptr<const PeakDef> > >();
+    m_sortedPeaks.clear();
+    endRemoveRows();
+  }else
+  {
+    m_peaks = std::make_shared< deque<std::shared_ptr<const PeakDef> > >();
+  }//if( !m_peaks->empty() )
+  
+  m_measurment.reset();
+  
+  layoutAboutToBeChanged().emit();
+  layoutChanged().emit();
+}//void setNoSpecMeasBacking()
+
 
 size_t PeakModel::npeaks() const
 {
@@ -1081,8 +1100,6 @@ void PeakModel::notifySpecMeasOfPeakChange()
   std::shared_ptr<SpecMeas> meas = m_measurment.lock();
   if( meas )
     meas->setModified();
-  else  //JIC, probably wont happen ever
-    cerr << "\n\nnotifySpecMeasOfPeakChange: couldnt get lock" << endl;
 }//void notifySpeakMeasOfPeakChange();
 
 
@@ -3025,7 +3042,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
   {
     const PeakDef &peak = *peaks[peakn];
     
-    float live_time = 0.0;
+    float live_time = 1.0f;
     boost::posix_time::ptime meastime;
     double region_area = 0.0, xlow = 0.0, xhigh = 0.0;
     if( data )

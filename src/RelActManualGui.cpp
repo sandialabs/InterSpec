@@ -783,7 +783,7 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 void RelActManualGui::calculateSolution()
 {
   m_currentSolution.reset();
-  m_chart->setData( {}, {}, "" );
+  m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "" );
   m_results->clear();
   
   // TODO: should do the actual computation not on the GUI thread!
@@ -1175,7 +1175,7 @@ void RelActManualGui::updateGuiWithResults()
     case RelActCalcManual::ManualSolutionStatus::ErrorFindingSolution:
     case RelActCalcManual::ManualSolutionStatus::ErrorGettingSolution:
     {
-      m_chart->setData( {}, {}, "" );
+      m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "" );
       break;
     }
       

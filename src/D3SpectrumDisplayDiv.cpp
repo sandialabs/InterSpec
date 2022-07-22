@@ -30,6 +30,7 @@
 #include <Wt/WPoint>
 #include <Wt/WServer>
 #include <Wt/WLength>
+#include <Wt/WIOService>
 #include <Wt/WJavaScript>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
@@ -383,21 +384,22 @@ void D3SpectrumDisplayDiv::defineJavaScript()
                                          boost::placeholders::_1, boost::placeholders::_2,
                                          boost::placeholders::_3, boost::placeholders::_4 ) );
     
-    m_roiDraggedJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
-    m_roiDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRoiDragedCallback, this,
-                                         boost::placeholders::_1, boost::placeholders::_2,
-                                         boost::placeholders::_3, boost::placeholders::_4,
-                                         boost::placeholders::_5, boost::placeholders::_6 ) );
-    
-    m_fitRoiDragJS.reset( new JSignal<double,double,int,bool,double,double>( this, "fitRoiDrag", true ) );
-    m_fitRoiDragJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartFitRoiDragCallback, this,
-                                         boost::placeholders::_1, boost::placeholders::_2,
-                                         boost::placeholders::_3, boost::placeholders::_4,
-                                         boost::placeholders::_5, boost::placeholders::_6 ) );
-    
     m_yAxisDraggedJS.reset( new Wt::JSignal<double,std::string>( this, "yscaled", true ) );
     m_yAxisDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisScaled, this,
                                            boost::placeholders::_1, boost::placeholders::_2 ) );
+    
+     
+    m_existingRoiEdgeDragJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
+    m_existingRoiEdgeDragJS->connect( boost::bind( &D3SpectrumDisplayDiv::existingRoiEdgeDragCallback, this,
+                                         boost::placeholders::_1, boost::placeholders::_2,
+                                         boost::placeholders::_3, boost::placeholders::_4,
+                                         boost::placeholders::_5, boost::placeholders::_6 ) );
+    
+    m_dragCreateRoiJS.reset( new JSignal<double,double,int,bool,double,double>( this, "fitRoiDrag", true ) );
+    m_dragCreateRoiJS->connect( boost::bind( &D3SpectrumDisplayDiv::dragCreateRoiCallback, this,
+                                         boost::placeholders::_1, boost::placeholders::_2,
+                                         boost::placeholders::_3, boost::placeholders::_4,
+                                         boost::placeholders::_5, boost::placeholders::_6 ) );
     
     //need legend closed signal.
     m_legendClosedJS.reset( new JSignal<>( this, "legendClosed", true ) );
@@ -454,7 +456,13 @@ void D3SpectrumDisplayDiv::setPeakModel( PeakModel *model )
     throw runtime_error( "setPeakModel(...): invalid input model" );
   
   model->setDataModel( m_model );
+  
   m_peakModel = model;
+  m_peakModel->dataChanged().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->rowsRemoved().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->rowsInserted().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->layoutChanged().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->modelReset().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
 }//void setPeakModel( PeakModel *model );
 
 
@@ -553,14 +561,14 @@ Wt::Signal<double,double,int,int> &D3SpectrumDisplayDiv::rightClicked()
   return m_rightClick;
 }
 
-Wt::Signal<double,double,double,double,double,bool> &D3SpectrumDisplayDiv::roiDragUpdate()
+Wt::Signal<double,double,double,double,double,bool> &D3SpectrumDisplayDiv::existingRoiEdgeDragUpdate()
 {
-  return m_roiDrag;
+  return m_existingRoiEdgeDrag;
 }
 
-Wt::Signal<double, double, int, bool> &D3SpectrumDisplayDiv::fitRoiDragUpdate()
+Wt::Signal<double, double, int, bool, double, double> &D3SpectrumDisplayDiv::dragCreateRoiUpdate()
 {
-  return m_fitRoiDrag;
+  return m_dragCreateRoi;
 }
 
 
@@ -572,11 +580,6 @@ Wt::Signal<double,SpecUtils::SpectrumType> &D3SpectrumDisplayDiv::yAxisScaled()
 Wt::Signal<double,double> &D3SpectrumDisplayDiv::doubleLeftClick()
 {
   return m_doubleLeftClick;
-}
-
-Wt::Signal<double,double> &D3SpectrumDisplayDiv::controlKeyDragged()
-{
-  return m_controlKeyDragg;
 }
 
 Wt::Signal<double,double> &D3SpectrumDisplayDiv::shiftKeyDragged()
@@ -1620,55 +1623,72 @@ bool D3SpectrumDisplayDiv::yAxisScalersIsVisible() const
 
 void D3SpectrumDisplayDiv::chartShiftKeyDragCallback( double x0, double x1 )
 {
-  cout << "chartShiftKeyDragCallback" << endl;
+  //cout << "chartShiftKeyDragCallback" << endl;
   m_shiftKeyDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartShiftKeyDragCallback(...)
 
 void D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback( double x0, double x1 )
 {
-  cout << "chartShiftAltKeyDragCallback" << endl;
+  //cout << "chartShiftAltKeyDragCallback" << endl;
   m_shiftAltKeyDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback(...)
 
 void D3SpectrumDisplayDiv::chartRightMouseDragCallback( double x0, double x1 )
 {
-  cout << "chartRightMouseDragCallback" << endl;
+  //cout << "chartRightMouseDragCallback" << endl;
   m_rightMouseDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartRightMouseDragCallback(...)
 
 void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, double pageX, double pageY )
 {
-  cout << "chartLeftClickCallback" << endl;
+  //cout << "chartLeftClickCallback" << endl;
   m_leftClick.emit( x, y, pageX, pageY );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
 void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y )
 {
-  cout << "chartDoubleLeftClickCallback" << endl;
+  //cout << "chartDoubleLeftClickCallback" << endl;
   m_doubleLeftClick.emit( x, y );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
 void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double pageX, double pageY )
 {
-  cout << "chartRightClickCallback" << endl;
+  //cout << "chartRightClickCallback" << endl;
   m_rightClick.emit( x, y, pageX, pageY );
 }//void D3SpectrumDisplayDiv::chartRightClickCallback(...)
 
 
-void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, double new_upper_energy,
+void D3SpectrumDisplayDiv::existingRoiEdgeDragCallback( double new_lower_energy, double new_upper_energy,
+                                                  double new_lower_px, double new_upper_px,
+                                                  double original_lower_energy, bool isfinal )
+{
+  m_existingRoiEdgeDrag.emit( new_lower_energy, new_upper_energy, new_lower_px, new_upper_px,
+                                             original_lower_energy, isfinal );
+}//void D3SpectrumDisplayDiv::chartRoiDragedCallback(...)
+
+
+void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
+                                                  double new_lower_energy, double new_upper_energy,
                                                   double new_lower_px, double new_upper_px,
                                                   double original_lower_energy, bool isfinal )
 {
 //  cout << "chartRoiDragedCallback: energy={" << new_lower_energy << "," << new_upper_energy << "}, "
 //       << "newPx={" << new_lower_px << "," << new_upper_px << "}, original_lower_energy=" << original_lower_energy
 //       << ", isfinal=" << isfinal << endl;
+  D3SpectrumDisplayDiv *spectrum = this;
+  
+  //if( !spectrum )
+  //  return;
+  
+  PeakModel *peakModel = spectrum->m_peakModel;
+  shared_ptr<const Measurement> foreground = spectrum->data();
   
   try
   {
-    if( !m_peakModel || !m_model )  //Shouldnt ever happen
+    if( !peakModel || !foreground )  //Shouldnt ever happen
       return;
     
-    shared_ptr<const deque<PeakModel::PeakShrdPtr>> origpeaks = m_peakModel->peaks();
+    shared_ptr<const deque<PeakModel::PeakShrdPtr>> origpeaks = peakModel->peaks();
     if( !origpeaks )
       return;  //shouldnt ever happen
     
@@ -1686,7 +1706,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
     
     if( !continuum || minDe > 1.0 )  //0.001 would probably be fine instead of 1.0
     {
-      doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(null);}catch(error){}" );
+      spectrum->updateRoiBeingDragged( {} );
       
       throw runtime_error( "Couldnt find a continuum with lower energy " + std::to_string(original_lower_energy)
                           + " (de=" + std::to_string(minDe) + ")" );
@@ -1750,25 +1770,22 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
     {
       if( isfinal )
       {
-        m_peakModel->removePeaks( orig_roi_peaks );
+        peakModel->removePeaks( orig_roi_peaks );
         
         std::vector<PeakDef> peaks_to_add;
         for( auto p : new_roi_initial_peaks )
           peaks_to_add.push_back( *p );
         
-        m_peakModel->addPeaks( peaks_to_add );
+        peakModel->addPeaks( peaks_to_add );
       }else
       {
-        std::shared_ptr<const Measurement> foreground = m_model->getData();
-        string adjustRoiJson = PeakDef::gaus_peaks_to_json( new_roi_initial_peaks, foreground );
-        doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + adjustRoiJson + ");" );
+        spectrum->updateRoiBeingDragged( new_roi_initial_peaks );
       }
     }else if( new_upper_px >= (new_lower_px+10) )  //perhaps this should be by percentage of ROI?
     {
       //Need to check that all peaks are Gaussian.
       //  Actually should make sure a ROI can only have data defined or Gausian peaks only (what happens now)
       std::shared_ptr<const DetectorPeakResponse> detector;
-      std::shared_ptr<const Measurement> foreground = m_model->getData();
       vector<shared_ptr<const PeakDef>> refitpeaks
                   = refitPeaksThatShareROI( foreground, detector, new_roi_initial_peaks, 3.0 );
       
@@ -1777,57 +1794,45 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
       
       if( isfinal )
       {
-        m_peakModel->removePeaks( orig_roi_peaks );
+        peakModel->removePeaks( orig_roi_peaks );
         
         std::vector<PeakDef> peaks_to_add;
         for( auto p : newpeaks )
           peaks_to_add.push_back( *p );
         
-        m_peakModel->addPeaks( peaks_to_add );
+        peakModel->addPeaks( peaks_to_add );
       }else
       {
-        std::shared_ptr<const Measurement> foreground = m_model->getData();
-        string adjustRoiJson = PeakDef::gaus_peaks_to_json( newpeaks, foreground );
-        doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + adjustRoiJson + ");" );
+        spectrum->updateRoiBeingDragged( newpeaks );
       }
       
     }else
     {
       cout << "User wants to erase peaks" << endl;
-      doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(null);}catch(error){}" );
+      spectrum->updateRoiBeingDragged( {} );
       
       if( isfinal )
-        m_peakModel->removePeaks( orig_roi_peaks );
+        peakModel->removePeaks( orig_roi_peaks );
     }//if( not narrow region ) / else
   }catch( std::exception &e )
   {
     cerr << "Caught exception: " << e.what() << endl;
   }//try / catch
   
-  m_roiDrag.emit( new_lower_energy, new_upper_energy, new_lower_px, new_upper_px,
-                  original_lower_energy,  isfinal );
-}//chartRoiDragedCallback(...)
+}//performExistingRoiEdgeDragWork(...)
 
 
-void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double upper_energy,
+void D3SpectrumDisplayDiv::dragCreateRoiCallback( double lower_energy, double upper_energy,
                                                     int nForcedPeaks, bool isfinal,
                                                     double window_xpx, double window_ypx )
-{
-  if( !m_model || !m_model->getData() )
-  {
-    doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(null);}catch(error){}" );
-    return;
-  }
-  const bool allowAsync = true;
-  
-  chartFitRoiDragCallbackWorker( lower_energy, upper_energy, nForcedPeaks, isfinal, window_xpx,
-                                window_ypx, allowAsync );
-}//chartFitRoiDragCallback(...)
+{  
+  m_dragCreateRoi.emit( lower_energy, upper_energy, nForcedPeaks, isfinal, window_xpx, window_ypx );
+}//dragCreateRoiCallback(...)
 
 
-void D3SpectrumDisplayDiv::chartFitRoiDragCallbackWorker( double lower_energy, double upper_energy,
-                                   int nForcedPeaks, bool isfinal,
-                                   double window_xpx, double window_ypx, const bool allowAsync )
+void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double upper_energy,
+                                                          int nForcedPeaks, bool isfinal,
+                                                          double window_xpx, double window_ypx )
 {
   /* ToDo:
      - try to use RSP if available (need to figure out how to get it here).
@@ -1835,21 +1840,35 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallbackWorker( double lower_energy, d
      - maybe keep state between calls to speed up subsequent calls
      - Really punish peaks being close together with no dip in-between to avoid the tendency to fit lots of peaks.
    */
+  D3SpectrumDisplayDiv *spectrum = this;
+  const bool allowAsync = true;
   
-  
+  assert( spectrum && spectrum->m_peakModel );
+  if( !spectrum || !spectrum->m_peakModel )
+  {
+    updateRoiBeingDragged( {} );
+    return;
+  }
   
   if( upper_energy < lower_energy )
     std::swap( lower_energy, upper_energy );
   
-  
+
   InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
   InterSpec *viewer = app ? app->viewer() : nullptr;
+  PeakModel *peakModel = spectrum->m_peakModel;
   std::shared_ptr<const SpecMeas> meas = viewer ? viewer->measurment(SpecUtils::SpectrumType::Foreground) : nullptr;
   std::shared_ptr<const DetectorPeakResponse> detector = meas ? meas->detector() : nullptr;
   
-  std::shared_ptr<const Measurement> foreground = m_model->getData();
+  std::shared_ptr<const Measurement> foreground = spectrum->data();
   
-  auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,this](){
+  if( !foreground )
+  {
+    updateRoiBeingDragged( {} );
+    return;
+  }
+  
+  auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,spectrum,peakModel](){
   
     const bool isHpge = PeakFitUtils::is_high_res( foreground );
     const float erange = upper_energy - lower_energy;
@@ -2008,7 +2027,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallbackWorker( double lower_energy, d
       
       if( !lock )
       {
-        cerr << "Failed to get WApplication::UpdateLock in D3SpectrumDisplayDiv::chartFitRoiDragCallback(...)" << endl;
+        cerr << "Failed to get WApplication::UpdateLock in D3SpectrumDisplayDiv::dragCreateRoiCallback(...)" << endl;
         return;
       }
       
@@ -2017,8 +2036,8 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallbackWorker( double lower_energy, d
       if( isfinal )
       {
         deque< PeakModel::PeakShrdPtr > preaddpeaks, postaddpeaks;
-        if( m_peakModel->peaks() ) //should always be true, but JIC
-          preaddpeaks = *m_peakModel->peaks();
+        if( peakModel->peaks() ) //should always be true, but JIC
+          preaddpeaks = *peakModel->peaks();
         
         std::vector<PeakDef> peaks_to_add;
         for( auto p : results[best_choice] )
@@ -2031,17 +2050,17 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallbackWorker( double lower_energy, d
             const bool showingEscape = viewer->showingFeatureMarker(FeatureMarkerType::EscapePeakMarker);
             const auto refwidget = viewer->referenceLinesWidget();
             const bool colorFromRefLines = viewer->colorPeaksBasedOnReferenceLines();
-            PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,
+            PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, peakModel,
                             foreground, refwidget, colorFromRefLines, showingEscape );
           }//if( viewer )
           
           peaks_to_add.emplace_back( std::move(peak) );
         }//for( loop over fit peaks and add them to peaks_to_add and assign nuclides )
         
-        m_peakModel->addPeaks( peaks_to_add );
+        peakModel->addPeaks( peaks_to_add );
           
-        if( m_peakModel->peaks() ) //should always be true, but JIC
-          postaddpeaks = *m_peakModel->peaks();
+        if( peakModel->peaks() ) //should always be true, but JIC
+          postaddpeaks = *peakModel->peaks();
         
         vector< PeakModel::PeakShrdPtr > added_peaks;
         for( const auto &p : postaddpeaks )
@@ -2100,7 +2119,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallbackWorker( double lower_energy, d
               
               try
               {
-                m_peakModel->removePeaks( added_peaks );
+                peakModel->removePeaks( added_peaks );
               }catch(std::exception &e)
               {
                 cerr << "Unexpected error removing peaks - must not be a valid peak any more...: "
@@ -2108,7 +2127,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallbackWorker( double lower_energy, d
               }
                 
               if( i > 0 )
-                chartFitRoiDragCallback( lower_energy, upper_energy, static_cast<int>(i), true, window_xpx, window_ypx );
+                spectrum->dragCreateRoiCallback( lower_energy, upper_energy, static_cast<int>(i), true, window_xpx, window_ypx );
             }) );
           }//for( size_t i = 0; i < (peaks_to_add.size() + 3); ++i )
           
@@ -2126,17 +2145,12 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallbackWorker( double lower_energy, d
             //menu->popup( WPoint(200,200) );
           }
         }
-        
-        //pop-up the menu to let the user select how many peaks... see comments bellow
-        m_controlKeyDragg.emit( lower_energy, upper_energy );
       }else
       {
-        std::vector<std::shared_ptr<const PeakDef> > peaks( begin(results[best_choice]), end(results[best_choice]) );
-        const string roiJson = PeakDef::gaus_peaks_to_json( peaks, foreground );
-        doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + roiJson + ");" );
+        vector<shared_ptr<const PeakDef> > peaks( begin(results[best_choice]), end(results[best_choice]) );
+        spectrum->updateRoiBeingDragged( peaks );
       }
       
-      m_fitRoiDrag.emit( lower_energy, upper_energy, nForcedPeaks, isfinal );
       app->triggerUpdate();
     }catch( std::exception &e )
     {
@@ -2144,11 +2158,11 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallbackWorker( double lower_energy, d
       
       if( !lock )
       {
-        cerr << "Failed to get WApplication::UpdateLock in (2) D3SpectrumDisplayDiv::chartFitRoiDragCallback(...)" << endl;
+        cerr << "Failed to get WApplication::UpdateLock in (2) D3SpectrumDisplayDiv::dragCreateRoiCallback(...)" << endl;
         return;
       }
       
-      cerr << "D3SpectrumDisplayDiv::chartFitRoiDragCallback: caught exception  " << e.what() << endl;
+      cerr << "D3SpectrumDisplayDiv::dragCreateRoiCallback: caught exception  " << e.what() << endl;
       
       // If the user hasnt dragged at least 1 keV, dont try to fit things
       if( (lower_energy + 1.0) < upper_energy )
@@ -2160,33 +2174,39 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallbackWorker( double lower_energy, d
           cont->calc_linear_continuum_eqn( foreground, midenergy, lower_energy, upper_energy, 2, 2 );
           
           std::vector<std::shared_ptr<const PeakDef> > peaks{ make_shared<const PeakDef>(tmppeak) };
-          const string roiJson = PeakDef::gaus_peaks_to_json( peaks, foreground );
           
-          doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + roiJson + ");" );
+          spectrum->updateRoiBeingDragged( peaks );
         }catch( std::exception &e )
         {
-          cerr << "D3SpectrumDisplayDiv::chartFitRoiDragCallback: couldnt ." << endl;
+          cerr << "D3SpectrumDisplayDiv::dragCreateRoiCallback: couldnt ." << endl;
         }//try / catch
       }else
       {
-        doJavaScript( m_jsgraph + ".updateRoiBeingDragged(null);" );
-        
+        spectrum->updateRoiBeingDragged( {} );
       }
       
-      m_fitRoiDrag.emit( lower_energy, upper_energy, nForcedPeaks, isfinal );
       app->triggerUpdate();
     }//try / catch
   };//fcnworker
   
   if( allowAsync )
   {
-    Wt::WServer::instance()->post( wApp->sessionId(), fcnworker );
+    //Wt::WServer::instance()->post( wApp->sessionId(), fcnworker );
+    WServer::instance()->ioService().boost::asio::io_service::post( fcnworker );
   }else
   {
     fcnworker();
   }
-}//void chartFitRoiDragCallbackWorker(...)
+}//void performDragCreateRoiWork(...)
 
+
+void D3SpectrumDisplayDiv::updateRoiBeingDragged( const vector<shared_ptr<const PeakDef> > &peaks )
+{
+  const shared_ptr<const Measurement> fore = m_model->getData();
+  const string json = peaks.empty() ? string("null") : PeakDef::gaus_peaks_to_json( peaks, fore );
+  
+  doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(" + json + ");}catch(error){}" );
+}//void updateRoiBeingDragged( vector<shared_ptr<const PeakDef> > &roiBeingDragged )
 
 
 void D3SpectrumDisplayDiv::yAxisScaled( const double scale, const std::string &spectrum )

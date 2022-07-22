@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <atomic>
 #include <string>
 #include <memory>
 #include <vector>
@@ -295,6 +296,12 @@ struct RelActAutoSolution
   
   void print_html_report( std::ostream &strm ) const;
   
+  /** Prints out the JSON data the JS the RelEff chart accepts.
+   
+   Note: currently this code largely duplicates #RelEffChart::setData, so need to refactor.
+   */
+  void rel_eff_json_data( std::ostream &json, std::ostream &css ) const;
+  
   /** Returns the fractional amount of an element (by mass), the nuclide composes.
    
    Throws exception if \c nuclide was not in the problem.
@@ -333,7 +340,8 @@ struct RelActAutoSolution
     Success,
     NotInitiated,
     FailedToSetupProblem,
-    FailToSolveProblem
+    FailToSolveProblem,
+    UserCanceled
   };//
   
   RelActAutoSolution::Status m_status;
@@ -422,7 +430,8 @@ RelActAutoSolution solve( Options options,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> drf,
-                         std::vector<std::shared_ptr<const PeakDef>> all_peaks
+                         std::vector<std::shared_ptr<const PeakDef>> all_peaks,
+                         std::shared_ptr<std::atomic_bool> cancel_calc = nullptr
                          );
 
 
