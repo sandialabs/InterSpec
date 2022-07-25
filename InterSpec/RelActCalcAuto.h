@@ -193,7 +193,12 @@ enum class FwhmForm : int
    */
   Gadras,
   
-  /** The linear polynomial: e.g. FWHM = sqrt(A_0 + A_1*1/1000) */
+  /** The equation FWHM = sqrt( A_0 + A_1*Energy + A_2/Energy ).
+   This is what FRAM uses.
+   */
+  SqrtEnergyPlusInverse,
+  
+  /** The linear polynomial: e.g. FWHM = sqrt(A_0 + A_1*1*0.001*Energy) */
   Polynomial_2,
   
   /** The quadratic polynomial: e.g. FWHM = sqrt(A_0 + A_1*0.001*Energy + A_2*0.000001*Energy*Energy */
@@ -385,6 +390,16 @@ struct RelActAutoSolution
   std::vector<PeakDef> m_fit_peaks;
   
   std::vector<RoiRange> m_input_roi_ranges;
+  
+  /** When a ROI is #RoiRange::force_full_range is false, independent energy ranges will
+   be assessed based on peak localities and expected counts; this variable holds the ROI
+   ranges that were assessed and used to compute final answer.
+   If all input RoiRanges had #RoiRange::force_full_range as true, and computation was
+   successful then this variable will be equal to #m_input_roi_ranges.
+   If computation is not successful, this variable may, or may not, be empty.
+   */
+  std::vector<RelActCalcAuto::RoiRange> m_final_roi_ranges;
+  
   
   /** This DRF will be the input DRF you passed in, if it was valid and had energy resolution info.
    Otherwise, this will be a "FLAT" DRF with a rough energy resolution function fit from the

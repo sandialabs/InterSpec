@@ -92,6 +92,7 @@ public:
   void handlePresetChange();
   void handleRelEffEqnFormChanged();
   void handleRelEffEqnOrderChanged();
+  void handleFwhmFormChanged();
   void handleFitEnergyCalChanged();
   void handleBackgroundSubtractChanged();
   void handleSameAgeChanged();
@@ -101,6 +102,9 @@ public:
   void handleAddEnergy();
   void handleRemoveEnergy( Wt::WWidget *w );
   void handleRemoveNuclide( Wt::WWidget *w );
+  void handleRemovePartOfEnergyRange( Wt::WWidget *energy_range,
+                                      double lower_energy,
+                                     double upper_energy );
   void handleSplitEnergyRange( Wt::WWidget *energy_range, const double energy );
   
   /** Called when a nuclide is added or removed (or changed from one to another) */
@@ -111,6 +115,8 @@ public:
   
   /** Called when energy ranges are added, removed, or edited. */
   void handleEnergyRangeChange();
+  
+  void makeZeroAmplitudeRoisToChart();
   
   /** Checks if the m_presets is in a "custom" state, and if not, puts it there
    
@@ -147,8 +153,13 @@ protected:
                             const int num_peaks_to_force,
                            const bool is_final_range );
   
+  void handleShiftDrag( const double lower_energy, const double upper_energy );
+  
   void handleRightClick( const double energy, const double counts,
                         const int page_x_px, const int page_y_px );
+  
+  void handleToggleForceFullRange( Wt::WWidget *w );
+  void handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
   
 protected:
   
@@ -221,7 +232,7 @@ protected:
   Wt::WCheckBox *m_same_z_age;
   Wt::WCheckBox *m_u_pu_by_correlation;
   
-  Wt::WComboBox *m_u_pu_data_source;
+  // Wt::WComboBox *m_u_pu_data_source;
   
   Wt::WContainerWidget *m_nuclides;
   Wt::WContainerWidget *m_energy_ranges;

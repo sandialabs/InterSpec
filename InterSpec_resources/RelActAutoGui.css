@@ -229,6 +229,12 @@
   justify-self: end;
 }
 
+
+.RelActAutoGuiContextMenu
+{
+  
+}
+
 .RelActAutoEnergyRange > label
 {
   justify-self: end;
@@ -290,3 +296,4 @@
   flex: 1 1 auto;
   align-items: center;
 }
+

@@ -57,8 +57,9 @@ namespace MakeDrfFit
   
   /** Fits the FWHM as a sqrt( Sum_i {A_i *pow(x,i)} )
    */
-  double fit_fwhm_least_linear_squares( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
+  double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
                                        const int order,
+                                       const bool include_inv_term,
                                        std::vector<float> &coeffs,
                                        std::vector<float> &coeff_uncerts );
   

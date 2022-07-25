@@ -559,6 +559,8 @@ bool DetectorPeakResponse::hasResolutionInfo() const
   {
     case kGadrasResolutionFcn:
       return (m_resolutionCoeffs.size() == 3);
+    case kSqrtEnergyPlusInverse:
+      return (m_resolutionCoeffs.size() == 3);
     case kSqrtPolynomial:
       return (m_resolutionCoeffs.size() > 1);
     case kNumResolutionFnctForm:
@@ -1252,7 +1254,9 @@ std::string DetectorPeakResponse::toAppUrl() const
     case ResolutionFnctForm::kGadrasResolutionFcn:
       parts["FWHMT"] = "GAD";
       break;
-      
+    case kSqrtEnergyPlusInverse:
+      parts["FWHMT"] = "FRAM";
+      break;
     case ResolutionFnctForm::kSqrtPolynomial:
       parts["FWHMT"] = "SQRTPOLY";
       break;
@@ -1525,6 +1529,9 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     if( parts["FWHMT"] == "GAD" )
     {
       resolutionForm = ResolutionFnctForm::kGadrasResolutionFcn;
+    }else if( parts["FWHMT"] == "FRAM" )
+    {
+      resolutionForm = ResolutionFnctForm::kSqrtEnergyPlusInverse;
     }else if( parts["FWHMT"] == "SQRTPOLY" )
     {
       resolutionForm = ResolutionFnctForm::kSqrtPolynomial;
@@ -1544,6 +1551,7 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     switch( resolutionForm )
     {
       case ResolutionFnctForm::kGadrasResolutionFcn:
+      case ResolutionFnctForm::kSqrtEnergyPlusInverse:
        if( resolutionCoeffs.size() != 3 )
          throw runtime_error( "fromAppUrl: invalid number resolution coefs" );
         break;
@@ -1673,6 +1681,11 @@ void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
         throw runtime_error( "setFwhmCoefficients: GADRAS equation must have three coefficients." );
       break;
       
+    case ResolutionFnctForm::kSqrtEnergyPlusInverse:
+      if( coefs.size() != 3 )
+        throw runtime_error( "setFwhmCoefficients: sqrt(A0+A1*E+A2/E) equation must have three coefficients." );
+      break;
+      
     case ResolutionFnctForm::kNumResolutionFnctForm:
       if( !coefs.empty() )
         throw runtime_error( "setFwhmCoefficients: NumResolutionFnctForm must not have any coefficients." );
@@ -1739,9 +1752,10 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   
   switch( m_resolutionForm )
   {
-    case kGadrasResolutionFcn:   val = "GadrasResolutionFcn"; break;
-    case kSqrtPolynomial:        val = "SqrtPolynomial";      break;
-    case kNumResolutionFnctForm: val = "Undefined";           break;
+    case kGadrasResolutionFcn:   val = "GadrasResolutionFcn";   break;
+    case kSqrtEnergyPlusInverse: val = "SqrtEnergyPlusInverse"; break;
+    case kSqrtPolynomial:        val = "SqrtPolynomial";        break;
+    case kNumResolutionFnctForm: val = "Undefined";             break;
   }//switch( m_resolutionForm )
 
   node = doc->allocate_node( node_element, "ResolutionForm", val );
@@ -1943,12 +1957,15 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   
   if( compare(node->value(),node->value_size(),"GadrasResolutionFcn",19,false) )
     m_resolutionForm = kGadrasResolutionFcn;
+  else if( compare(node->value(),node->value_size(),"SqrtEnergyPlusInverse",21,false) )
+    m_resolutionForm = kSqrtEnergyPlusInverse;
   else if( compare(node->value(),node->value_size(),"SqrtPolynomial",14,false) )
     m_resolutionForm = kSqrtPolynomial;
   else if( compare(node->value(),node->value_size(),"Undefined",9,false) )
     m_resolutionForm = kNumResolutionFnctForm;
   else
-    throw runtime_error( "DetectorPeakResponse: invalid ResolutionForm value" );
+    m_resolutionForm = kNumResolutionFnctForm;
+    //throw runtime_error( "DetectorPeakResponse: invalid ResolutionForm value" );
   
   
   node = parent->first_node( "EfficiencyForm", 14 );
@@ -1967,9 +1984,12 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "DetectorPeakResponse: invalid EfficiencyForm value" );
   
   m_resolutionCoeffs.clear();
-  node = parent->first_node( "ResolutionCoefficients", 22 );
-  if( node && node->value() )
-    SpecUtils::split_to_floats( node->value(), node->value_size(), m_resolutionCoeffs );
+  if( m_resolutionForm != kNumResolutionFnctForm )
+  {
+    node = parent->first_node( "ResolutionCoefficients", 22 );
+    if( node && node->value() )
+      SpecUtils::split_to_floats( node->value(), node->value_size(), m_resolutionCoeffs );
+  }//if( m_resolutionForm != kNumResolutionFnctForm )
   
   m_energyEfficiencies.clear();
   node = parent->first_node( "EnergyEfficiencies", 18 );
@@ -2540,6 +2560,16 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
       const float A7 = sqrt( pow(float(6.61f*b), float(2.0f))-a*a )/6.61f;
       return sqrt(a*a + pow(float(6.61f * A7 * pow(energy/661.0f, c)), 2.0f));
     }//case kGadrasResolutionFcn:
+    
+    case kSqrtEnergyPlusInverse:
+    {
+      if( pars.size() != 3 )
+        throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
+                                 " pars not defined" );
+      energy /= PhysicalUnits::keV;
+      
+      return sqrt(pars[0] + pars[1]*energy + pars[2]/energy);
+    }//case kSqrtEnergyPlusInverse:
       
     case kSqrtPolynomial:
     {

@@ -819,6 +819,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         // TODO: its possible the the channels of the ranges could overlap - right now the overlapping channel will be double counted; should fix.
         
+        cout << "Adding energy range [" << this_range.lower_energy << ", " << this_range.upper_energy << "]\n";
+        
         m_energy_ranges.emplace_back( m_energy_cal, this_range );
       }//for( loop over gammas_in_range )
     }//for( const RelActCalcAuto::RoiRange &input : energy_ranges )
@@ -915,9 +917,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     solution.m_rel_eff_form     = options.rel_eff_eqn_type;
     solution.m_fwhm_form        = options.fwhm_form;
     solution.m_input_roi_ranges = energy_ranges;
+    
+    
     if( input_drf && input_drf->isValid() && input_drf->hasResolutionInfo() )
       solution.m_drf = input_drf;
-    
     
     // We will make a (potentially background subtracted) spectrum - we also need to track the
     //  uncertainties in each channel
@@ -1023,6 +1026,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     solution.m_drf = cost_functor->m_drf;
     solution.m_spectrum = make_shared<SpecUtils::Measurement>( *spectrum );
     
+    solution.m_final_roi_ranges.clear();
+    for( const auto &roi : cost_functor->m_energy_ranges )
+      solution.m_final_roi_ranges.push_back( roi );
+    
     const size_t num_pars = cost_functor->number_parameters();
     
     for( size_t i = 0; i < num_pars; ++i )
@@ -1125,6 +1132,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           break;
         }//case we want GADRAS formGadras:
           
+          
+        case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+          needToFitOtherType = true;
+          break;
+          
         case RelActCalcAuto::FwhmForm::Polynomial_2:
         case RelActCalcAuto::FwhmForm::Polynomial_3:
         case RelActCalcAuto::FwhmForm::Polynomial_4:
@@ -1174,22 +1186,32 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           fake_peaks->push_back( p );
         }
       
-        const bool haveGadras = (res_drf->resolutionFcnType() == DetectorPeakResponse::kGadrasResolutionFcn);
-        const bool wantGadras = (cost_functor->m_options.fwhm_form == RelActCalcAuto::FwhmForm::Gadras);
-        assert( haveGadras != wantGadras );
-        assert( !haveGadras || (drfpars.size() == 3) );
-        
-        const auto formToFit = wantGadras
-                               ? DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn
-                               : DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
-                                
+        DetectorPeakResponse::ResolutionFnctForm formToFit;
+        switch( cost_functor->m_options.fwhm_form )
+        {
+          case RelActCalcAuto::FwhmForm::Gadras:
+            assert( num_fwhm_pars == 3 );
+            formToFit = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+            break;
+            
+          case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+            assert( num_fwhm_pars == 3 );
+            formToFit = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
+            break;
+         
+          case RelActCalcAuto::FwhmForm::Polynomial_2:
+          case RelActCalcAuto::FwhmForm::Polynomial_3:
+          case RelActCalcAuto::FwhmForm::Polynomial_4:
+          case RelActCalcAuto::FwhmForm::Polynomial_5:
+          case RelActCalcAuto::FwhmForm::Polynomial_6:
+            formToFit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+            break;
+        }//switch( cost_functor->m_options.fwhm_form )
         
         vector<float> new_sigma_coefs, sigma_coef_uncerts;
         MakeDrfFit::performResolutionFit( fake_peaks, formToFit,
                                        highres, num_fwhm_pars, new_sigma_coefs, sigma_coef_uncerts );
       
-        assert( new_sigma_coefs.size() == num_fwhm_pars );
-        assert( haveGadras || (new_sigma_coefs.size() == 3) );
         assert( new_sigma_coefs.size() == num_fwhm_pars );
         
         drfpars = new_sigma_coefs;
@@ -1218,6 +1240,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           parameters[fwhm_start + 1] = 7.5;
           parameters[fwhm_start + 2] = 0.55;
         }
+      }else if( cost_functor->m_options.fwhm_form == RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse )
+      {
+        static_assert( 0, "Need to get simple fit of GADRAS coefficients to SqrtEnergyPlusInverse" );
       }else
       {
         // The below coefficient values are from a simple fit to the GADRAS coefficients above
@@ -2048,9 +2073,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const vector<float> drfx( drf_start, drf_start + num_drf_par );
     
-    const auto fctntype = (m_options.fwhm_form == RelActCalcAuto::FwhmForm::Gadras)
-                          ? DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn
-                          : DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+    DetectorPeakResponse::ResolutionFnctForm fctntype;
+    switch( m_options.fwhm_form )
+    {
+      case RelActCalcAuto::FwhmForm::Gadras:
+        fctntype = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+        break;
+      
+      case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+        fctntype = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
+        break;
+        
+      case RelActCalcAuto::FwhmForm::Polynomial_2:
+      case RelActCalcAuto::FwhmForm::Polynomial_3:
+      case RelActCalcAuto::FwhmForm::Polynomial_4:
+      case RelActCalcAuto::FwhmForm::Polynomial_5:
+      case RelActCalcAuto::FwhmForm::Polynomial_6:
+        fctntype = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+        break;
+    }//switch( m_options.fwhm_form )
     
     return DetectorPeakResponse::peakResolutionFWHM( energy, fctntype, drfx );
   }//float fwhm(...)
@@ -3040,6 +3081,7 @@ const char *to_str( const FwhmForm form )
   switch( form )
   {
     case FwhmForm::Gadras:       return "Gadras";
+    case FwhmForm::SqrtEnergyPlusInverse: return "SqrtEnergyPlusInverse";
     case FwhmForm::Polynomial_2: return "Polynomial_2";
     case FwhmForm::Polynomial_3: return "Polynomial_3";
     case FwhmForm::Polynomial_4: return "Polynomial_4";
@@ -3350,6 +3392,7 @@ size_t num_parameters( const FwhmForm eqn_form )
   switch( eqn_form )
   {
     case FwhmForm::Gadras:       return 3;
+    case FwhmForm::SqrtEnergyPlusInverse: return 3;
     case FwhmForm::Polynomial_2: return 2;
     case FwhmForm::Polynomial_3: return 3;
     case FwhmForm::Polynomial_4: return 4;
@@ -3384,7 +3427,7 @@ RelActAutoSolution::RelActAutoSolution()
   m_rel_eff_covariance{},
   m_rel_activities{},
   m_rel_act_covariance{},
-  m_fwhm_form( FwhmForm::Gadras ),
+  m_fwhm_form( FwhmForm::SqrtEnergyPlusInverse ),
   m_fwhm_coefficients{},
   m_fwhm_covariance{},
   m_floating_peaks{},
@@ -3445,9 +3488,22 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
   
   // Rake code from RelEff
   out << "Rel. Eff. Eqn.: y = "
-  << RelActCalc::rel_eff_eqn_text(m_rel_eff_form,m_rel_eff_coefficients) << "\n"
-  << "Activity ratios:\n";
+  << RelActCalc::rel_eff_eqn_text(m_rel_eff_form,m_rel_eff_coefficients) << "\n";
   
+  
+  if( m_fit_energy_cal[0] || m_fit_energy_cal[1] )
+  {
+    out << "Energy calibration was fit for: ";
+    if( m_fit_energy_cal[0] )
+      out << "offset=" << m_energy_cal_adjustments[0] << " keV"
+          << (m_fit_energy_cal[1] ? ", " : "");
+    if( m_fit_energy_cal[1] )
+      out << "gain-multiple=" << m_energy_cal_adjustments[1];
+    out << "\n";
+  }//if( m_fit_energy_cal[0] || m_fit_energy_cal[1] )
+  
+  
+  out << "Activity ratios:\n";
   for( size_t i = 1; i < m_rel_activities.size(); ++i )
   {
     const NuclideRelAct &nuc_i = m_rel_activities[i];
@@ -4098,7 +4154,7 @@ RelActAutoSolution solve( Options options,
                          std::shared_ptr<std::atomic_bool> cancel_calc
                          )
 {
-  return RelActAutoCostFcn::solve_ceres(
+  const RelActAutoSolution orig_sol = RelActAutoCostFcn::solve_ceres(
                      options,
                      energy_ranges,
                      nuclides,
@@ -4108,6 +4164,48 @@ RelActAutoSolution solve( Options options,
                      input_drf,
                      all_peaks,
                      cancel_calc );
+  
+  bool all_roi_full_range = true;
+  for( const auto &roi : energy_ranges )
+    all_roi_full_range = (all_roi_full_range && roi.force_full_range && !roi.allow_expand_for_peak_width);
+  
+  if( all_roi_full_range || (orig_sol.m_status != RelActAutoSolution::Status::Success) )
+    return orig_sol;
+  
+  // If we are here there was at least one ROI that didnt have force_full_range set, or had
+  //  allow_expand_for_peak_width set.
+  // So we will go through and adjust these ROIs based on peaks that are statistically significant,
+  //  based on initial solution, and then re-fit. 
+  
+  // TODO: Go through and estimate counts for each gamma using `orig_sol`, and discard and non-significant regions and combine other gammas into appropriate regions, and refit (using the determined DRF and check to see if its worthwhile replacing all_peaks with the peaks from previous solution - with maybe an options flag set to use those peaks to estimate starting values - or maybe make some way to pass in starting values....).  We may elect to do this p to a few times, or until the ROIs stop changing.
+  
+  assert( orig_sol.m_foreground );
+  const float live_time = orig_sol.m_foreground ? orig_sol.m_foreground->live_time() : 1.0f;
+  vector<RoiRange> updated_energy_ranges;
+  RelActAutoSolution prev_sol = orig_sol;
+  for( const RoiRange &roi : energy_ranges )
+  {
+    if( roi.force_full_range )
+    {
+      updated_energy_ranges.push_back( roi );
+      continue;
+    }//if( roi.force_full_range )
+    
+    // Estimate
+    for( const NuclideRelAct &rel_act : prev_sol.m_rel_activities )
+    {
+      rel_act.nuclide;
+      rel_act.rel_activity;
+    
+      for( const pair<double,double> &energy_br : rel_act.gamma_energy_br )
+      {
+       blah blah blah
+      }
+    }
+  }//for( const RoiRange &roi : energy_ranges )
+  
+  
+  return orig_sol;
 }//RelActAutoSolution
 
 

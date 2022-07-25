@@ -226,8 +226,17 @@ namespace
     }//void setEnergyRange( float lower, float upper )
     
     
+    bool forceFullRange() const
+    {
+      return m_force_full_range->isChecked();
+    }
+    
+    
     void setForceFullRange( const bool force_full )
     {
+      if( force_full == m_force_full_range->isChecked() )
+        return;
+      
       m_force_full_range->setChecked( force_full );
       m_updated.emit();
     }
@@ -262,6 +271,17 @@ namespace
       return m_highlight_region_id;
     }
   
+    float lowerEnergy() const
+    {
+      return m_lower_energy->value();
+    }
+    
+    
+    float upperEnergy() const
+    {
+      return m_upper_energy->value();
+    }
+    
     
     void setFromRoiRange( const RelActCalcAuto::RoiRange &roi )
     {
@@ -822,7 +842,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_background_subtract( nullptr ),
   m_same_z_age( nullptr ),
   m_u_pu_by_correlation( nullptr ),
-  m_u_pu_data_source( nullptr ),
+//  m_u_pu_data_source( nullptr ),
   m_nuclides( nullptr ),
   m_energy_ranges( nullptr ),
   m_is_calculating( false ),
@@ -869,6 +889,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_spectrum->existingRoiEdgeDragUpdate().connect( this, &RelActAutoGui::handleRoiDrag );
   m_spectrum->dragCreateRoiUpdate().connect( this, &RelActAutoGui::handleCreateRoiDrag );
   m_spectrum->rightClicked().connect( this, &RelActAutoGui::handleRightClick );
+  m_spectrum->shiftKeyDragged().connect( this, &RelActAutoGui::handleShiftDrag );
+  
   
   m_rel_eff_chart = new RelEffChart();
   m_txt_results = new RelActTxtResults();
@@ -1061,11 +1083,12 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     switch( RelActCalcAuto::FwhmForm(i) )
     {
       case RelActCalcAuto::FwhmForm::Gadras:       name = "Gadras"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_2: name = "Poly. Linear"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_3: name = "Poly. Quadratic"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_4: name = "Poly. Cubic"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_5: name = "Poly. 4th Order"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_6: name = "Poly. 5th Order"; break;
+      case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:  name = "sqrt(A0 + A1*E + A2/E)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_2: name = "sqrt(A0 + A1*E)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_3: name = "sqrt(A0 + A1*E + A2*E*E)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_4: name = "sqrt(A0 + A1*E^1...A3*E^3)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_5: name = "sqrt(A0 + A1*E^1...A4*E^4)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_6: name = "sqrt(A0 + A1*E^1...A5*E^5)"; break;
     }//switch( RelActCalcAuto::FwhmForm(i) )
     
     m_fwhm_eqn_form->addItem( name );
@@ -1077,8 +1100,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   // TODO: need to set m_fwhm_eqn_form based on energy ranges selected
   m_fwhm_eqn_form->setCurrentIndex( 1 );
+  m_fwhm_eqn_form->changed().connect( this, &RelActAutoGui::handleFwhmFormChanged );
   
-  
+/*
   label = new WLabel( "Yield Info", optionsDiv );
   label->addStyleClass( "GridSeventhCol GridFirstRow" );
   
@@ -1090,7 +1114,6 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   tooltip = "The nuclear data source for gamma branching ratios of uranium and plutonium.";
   HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
   HelpSystem::attachToolTipOn( m_u_pu_data_source, tooltip, showToolTips );
-  
   
   using RelActCalcManual::PeakCsvInput::NucDataSrc;
   for( NucDataSrc src = NucDataSrc(0); src < NucDataSrc::Undefined; src = NucDataSrc(static_cast<int>(src) + 1) )
@@ -1109,7 +1132,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   }//for( loop over sources )
   
   m_u_pu_data_source->setCurrentIndex( static_cast<int>(NucDataSrc::SandiaDecay) );
-  
+  m_u_pu_data_source->changed().connect( this, &RelActAutoGui::handleDataSrcChanged );
+ */
   
   m_fit_energy_cal = new WCheckBox( "Fit Energy Cal.", optionsDiv );
   m_fit_energy_cal->addStyleClass( "GridFirstCol GridSecondRow GridSpanTwoCol" );
@@ -1512,12 +1536,9 @@ void RelActAutoGui::handleCreateRoiDrag( const double lower_energy,
 }//void handleCreateRoiDrag(...)
 
 
-void RelActAutoGui::handleRightClick( const double energy, const double counts,
-                      const int page_x_px, const int page_y_px )
+void RelActAutoGui::handleShiftDrag( const double lower_energy, const double upper_energy )
 {
-  RelActAutoEnergyRange *range = nullptr;
-  
-  const vector<WWidget *> &kids = m_energy_ranges->children();
+  const vector<WWidget *> kids = m_energy_ranges->children();
   for( WWidget *w : kids )
   {
     RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
@@ -1525,13 +1546,54 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
     if( !roi || roi->isEmpty() )
       continue;
     
-    RelActCalcAuto::RoiRange roi_range = roi->toRoiRange();
+    const double roi_lower = roi->lowerEnergy();
+    const double roi_upper = roi->upperEnergy();
     
-    if( (energy >= roi_range.lower_energy) && (energy < roi_range.upper_energy) )
-      range = roi;
+    // If the ranges intersect, deal with it
+    if( (upper_energy >= roi_lower) && (lower_energy <= roi_upper) )
+      handleRemovePartOfEnergyRange( w, lower_energy, upper_energy );
+  }//for( WWidget *w : kids )
+}//void handleShiftDrag( const double lower_energy, const double upper_energy )
+
+
+void RelActAutoGui::handleRightClick( const double energy, const double counts,
+                      const int page_x_px, const int page_y_px )
+{
+  vector<RelActAutoEnergyRange *> ranges;
+  const vector<WWidget *> &kids = m_energy_ranges->children();
+  for( WWidget *w : kids )
+  {
+    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    assert( roi );
+    if( roi && !roi->isEmpty() )
+       ranges.push_back( roi );
   }//for( WWidget *w : kids )
   
-  if( !range )  //0.001 would probably be fine instead of 1.0
+  std::sort( begin(ranges), end(ranges),
+             []( const RelActAutoEnergyRange *lhs, const RelActAutoEnergyRange *rhs) -> bool{
+    return lhs->lowerEnergy() < rhs->lowerEnergy();
+  } );
+  
+  
+  RelActAutoEnergyRange *range = nullptr, *range_to_left = nullptr, *range_to_right = nullptr;
+  for( size_t i = 0; i < ranges.size(); ++i )
+  {
+    RelActAutoEnergyRange *roi = ranges[i];
+    RelActCalcAuto::RoiRange roi_range = roi->toRoiRange();
+  
+    if( (energy >= roi_range.lower_energy) && (energy < roi_range.upper_energy) )
+    {
+      range = roi;
+      if( i > 0 )
+        range_to_left = ranges[i-1];
+      if( (i + 1) < ranges.size() )
+        range_to_right = ranges[i+1];
+      
+      break;
+    }//
+  }//for( RelActAutoEnergyRange *roi : ranges )
+  
+  if( !range )
   {
     cerr << "Right-click is not in an ROI" << endl;
     return;
@@ -1573,9 +1635,33 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   item = menu->addMenuItem( buffer );
   item->triggered().connect( boost::bind( &RelActAutoGui::handleSplitEnergyRange, this, static_cast<WWidget *>(range), energy ) );
   
-  // Force full-range
-  // If near another ROI, join ROIs
-  // Add floating peak
+  const char *item_label = "";
+  if( roi.force_full_range )
+    item_label = "Don't force full-range";
+  else
+    item_label = "Force full-range";
+  item = menu->addMenuItem( item_label );
+  item->triggered().connect( boost::bind( &RelActAutoGui::handleToggleForceFullRange, this, static_cast<WWidget *>(range) ) );
+  
+  // TODO: we could be a little more intelligent about when offering to combine ROIs
+  if( range_to_left )
+  {
+    item = menu->addMenuItem( "Combine with ROI to left" );
+    item->triggered().connect( boost::bind( &RelActAutoGui::handleCombineRoi, this,
+                                           static_cast<WWidget *>(range_to_left),
+                                           static_cast<WWidget *>(range) ) );
+  }//if( range_to_left )
+  
+  if( range_to_right )
+  {
+    item = menu->addMenuItem( "Combine with ROI to right" );
+    item->triggered().connect( boost::bind( &RelActAutoGui::handleCombineRoi, this,
+                                           static_cast<WWidget *>(range),
+                                           static_cast<WWidget *>(range_to_right) ) );
+  }//if( range_to_right )
+  
+  // TODO: Add floating peak item
+  
   
   if( is_phone )
   {
@@ -1583,7 +1669,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
     menu->showMobile();
   }else
   {
-    menu->addStyleClass( " Wt-popupmenu Wt-outset NumPeakSelect" );
+    menu->addStyleClass( " Wt-popupmenu Wt-outset RelActAutoGuiContextMenu" );
     menu->popup( WPoint(page_x_px - 30, page_y_px - 30) );
   }
 }//void handleRightClick(...)
@@ -1602,6 +1688,81 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void setCalcOptionsGui( const RelActCalcAuto::Options &options )
+
+
+void RelActAutoGui::handleToggleForceFullRange( Wt::WWidget *w )
+{
+  if( !w )
+    return;
+  
+  const std::vector<WWidget *> &kids = m_energy_ranges->children();
+  const auto pos = std::find( begin(kids), end(kids), w );
+  if( pos == end(kids) )
+  {
+    cerr << "Failed to find a RelActAutoEnergyRange in m_energy_ranges!" << endl;
+    assert( 0 );
+    return;
+  }
+  
+  assert( dynamic_cast<RelActAutoEnergyRange *>(w) );
+  
+  RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>(w);
+  assert( roi );
+  if( !roi )
+    return;
+  
+  roi->setForceFullRange( !roi->forceFullRange() );
+}//void handleToggleForceFullRange( Wt::WWidget *w )
+
+
+void RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi )
+{
+  if( !left_roi || !right_roi || (left_roi == right_roi) )
+  {
+    assert( 0 );
+    return;
+  }
+  
+  const std::vector<WWidget *> &kids = m_energy_ranges->children();
+  const auto left_pos = std::find( begin(kids), end(kids), left_roi );
+  const auto right_pos = std::find( begin(kids), end(kids), right_roi );
+  if( (left_pos == end(kids)) || (right_pos == end(kids)) )
+  {
+    cerr << "Failed to find left or right RelActAutoEnergyRange in m_energy_ranges!" << endl;
+    assert( 0 );
+    return;
+  }
+  
+  RelActAutoEnergyRange *left_range = dynamic_cast<RelActAutoEnergyRange *>(left_roi);
+  RelActAutoEnergyRange *right_range = dynamic_cast<RelActAutoEnergyRange *>(right_roi);
+  
+  assert( left_range && right_range );
+  if( !left_range || !right_range )
+    return;
+  
+  const RelActCalcAuto::RoiRange lroi = left_range->toRoiRange();
+  const RelActCalcAuto::RoiRange rroi = right_range->toRoiRange();
+  
+  RelActCalcAuto::RoiRange new_roi = lroi;
+  new_roi.lower_energy = std::min( lroi.lower_energy, rroi.lower_energy );
+  new_roi.upper_energy = std::max( lroi.upper_energy, rroi.upper_energy );
+  if( rroi.force_full_range )
+    new_roi.force_full_range = true;
+  if( rroi.allow_expand_for_peak_width )
+    new_roi.allow_expand_for_peak_width = true;
+  new_roi.continuum_type = std::max( lroi.continuum_type, rroi.continuum_type );
+  
+  delete right_range;
+  right_roi = nullptr;
+  right_range = nullptr;
+  
+  left_range->setFromRoiRange( new_roi );
+  
+  checkIfInUserConfigOrCreateOne();
+  m_render_flags |= RenderActions::UpdateEnergyRanges;
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
 
 
 rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent_node ) const
@@ -1642,6 +1803,7 @@ rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *pa
       options_node->append_node( node );
     }//if( we have U or Pu in the problem )
     
+    /*
     if( m_u_pu_data_source->isVisible() )
     {
       const int src_index = m_u_pu_data_source->currentIndex();
@@ -1654,6 +1816,7 @@ rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *pa
         options_node->append_node( node );
       }//if( a valid index )
     }//if( we hav eU or Pu in the problem )
+     */
   
   
     if( m_background_subtract->isEnabled() )
@@ -1733,6 +1896,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
     val = SpecUtils::xml_value_str( opt_node );
     const bool back_sub = SpecUtils::iequals_ascii(val, "true");
     
+    /*
     opt_node = XML_FIRST_NODE(node, "UPuDataSrc");
     val = SpecUtils::xml_value_str( opt_node );
     if( !val.empty() )
@@ -1755,6 +1919,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
       if( !set_src )
         cerr << "Failed to convert '" << val << "' into a NucDataSrc" << endl;
     }//if( UPuDataSrc not empty )
+     */
   }// End get extra options
   
 
@@ -1823,6 +1988,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   
   
   // TODO: floating_peaks not implemented
+  // TODO: remove peaks from PeakModel here, and set zero-amplitude ROIs to show during computation
   
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateEnergyRanges;
@@ -1975,6 +2141,14 @@ void RelActAutoGui::handleRelEffEqnOrderChanged()
 }//void handleRelEffEqnOrderChanged();
 
 
+void handleFwhmFormChanged()
+{
+  checkIfInUserConfigOrCreateOne();
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleFwhmFormChanged()
+
+
 void RelActAutoGui::handleFitEnergyCalChanged()
 {
   checkIfInUserConfigOrCreateOne();
@@ -2040,6 +2214,41 @@ void RelActAutoGui::handleEnergyRangeChange()
 }//void handleEnergyRangeChange()
 
 
+void RelActAutoGui::makeZeroAmplitudeRoisToChart()
+{
+  m_peak_model->setPeaks( vector<PeakDef>{} );
+  const vector<RelActCalcAuto::RoiRange> rois = getRoiRanges();
+  
+  if( !m_foreground )
+    return;
+  
+  vector<shared_ptr<const PeakDef>> peaks;
+  for( const auto &roi : rois )
+  {
+    try
+    {
+      const double mean = 0.5*(roi.lower_energy + roi.upper_energy);
+      const double sigma = 0.5*fabs( roi.upper_energy - roi.lower_energy );
+      const double amplitude = 0.0;
+      
+      auto peak = make_shared<PeakDef>(mean, sigma, amplitude );
+      
+      peak->continuum()->setRange( roi.lower_energy, roi.upper_energy );
+      peak->continuum()->calc_linear_continuum_eqn( m_foreground, mean, roi.lower_energy, roi.upper_energy, 3, 3 );
+      
+      peaks.push_back( peak );
+    }catch( std::exception &e )
+    {
+      m_spectrum->updateRoiBeingDragged( {} );
+      cerr << "RelActAutoGui::makeZeroAmplitudeRoisToChart caught exception: " << e.what() << endl;
+      return;
+    }//try / catch
+  }//for( const auto &roi : rois )
+  
+  m_peak_model->setPeaks( peaks );
+}//void RelActAutoGui::makeZeroAmplitudeRoisToChart()
+
+
 void RelActAutoGui::handleAddNuclide()
 {
   const vector<WWidget *> prev_kids = m_nuclides->children();
@@ -2095,7 +2304,10 @@ void RelActAutoGui::handleAddEnergy()
     const auto cal = m_foreground ? m_foreground->energy_calibration() : nullptr;
     const float upper_energy = (cal && cal->valid()) ? cal->upper_energy() : 3000.0f;
     energy_range->setEnergyRange( 125.0f, upper_energy );
-  }//if( this is the first energy range )
+  }else
+  {
+    energy_range->setForceFullRange( true );
+  }//if( this is the first energy range ) / else
   
   checkIfInUserConfigOrCreateOne();
   m_render_flags |= RenderActions::UpdateEnergyRanges;
@@ -2109,8 +2321,6 @@ void RelActAutoGui::handleRemoveEnergy( WWidget *w )
   if( !w )
     return;
   
-  assert( dynamic_cast<RelActAutoEnergyRange *>(w) );
-  
   const std::vector<WWidget *> &kids = m_energy_ranges->children();
   const auto pos = std::find( begin(kids), end(kids), w );
   if( pos == end(kids) )
@@ -2119,6 +2329,8 @@ void RelActAutoGui::handleRemoveEnergy( WWidget *w )
     assert( 0 );
     return;
   }
+  
+  assert( dynamic_cast<RelActAutoEnergyRange *>(w) );
   
   delete w;
   
@@ -2131,14 +2343,25 @@ void RelActAutoGui::handleRemoveEnergy( WWidget *w )
 
 void RelActAutoGui::handleSplitEnergyRange( Wt::WWidget *w, const double energy )
 {
+  handleRemovePartOfEnergyRange( w, energy, energy );
+}
+
+
+void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
+                                                  double lower_energy,
+                                                  double upper_energy )
+{
   if( !w )
     return;
+ 
+  if( upper_energy < lower_energy )
+    std::swap( lower_energy, upper_energy );
   
   const std::vector<WWidget *> &kids = m_energy_ranges->children();
   const auto pos = std::find( begin(kids), end(kids), w );
   if( pos == end(kids) )
   {
-    cerr << "Failed to find a RelActAutoEnergyRange in m_energy_ranges (handleSplitEnergyRange)!" << endl;
+    cerr << "Failed to find a RelActAutoEnergyRange in m_energy_ranges (handleRemovePartOfEnergyRange)!" << endl;
     assert( 0 );
     return;
   }
@@ -2149,32 +2372,77 @@ void RelActAutoGui::handleSplitEnergyRange( Wt::WWidget *w, const double energy 
     return;
   
   RelActCalcAuto::RoiRange roi = range->toRoiRange();
-  assert( (energy >= roi.lower_energy) && (energy <= roi.upper_energy) );
   
-  if( (energy <= roi.lower_energy) || (energy >= roi.upper_energy) )
+  if( (upper_energy < roi.lower_energy) || (lower_energy > roi.upper_energy) )
+  {
+    assert( 0 );
     return;
+  }
   
   delete w;
   
+  // Check if we want the whole energy range removed
+  if( (lower_energy <= roi.lower_energy) && (upper_energy >= roi.upper_energy) )
+  {
+    // TODO: remove peaks from ROI from PeakModel
+    handleEnergyRangeChange();
+    return;
+  }
+  
+  const bool is_in_middle = ((upper_energy < roi.upper_energy) && (lower_energy > roi.lower_energy));
+  const bool is_left = ((upper_energy > roi.lower_energy) && (lower_energy <= roi.lower_energy));
+  const bool is_right = ((lower_energy > roi.lower_energy) && (upper_energy >= roi.upper_energy));
+  
+  assert( is_in_middle || is_left || is_right );
+  assert( (int(is_in_middle) + int(is_left) + int(is_right)) == 1 );
+  
+  
   const int orig_w_index = pos - begin(kids);
   
-  RelActAutoEnergyRange *left_range = new RelActAutoEnergyRange( this );
-  left_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-  left_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
+  if( is_in_middle )
+  {
+    RelActAutoEnergyRange *left_range = new RelActAutoEnergyRange( this );
+    left_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
+    left_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                               this, static_cast<WWidget *>(left_range) ) );
-  
-  RelActAutoEnergyRange *right_range = new RelActAutoEnergyRange( this );
-  right_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-  right_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
-                                            this, static_cast<WWidget *>(right_range) ) );
-  
-  left_range->setFromRoiRange( roi );
-  right_range->setFromRoiRange( roi );
-  left_range->setEnergyRange( roi.lower_energy, energy );
-  right_range->setEnergyRange( energy, roi.upper_energy );
-  
-  m_energy_ranges->insertWidget( orig_w_index, right_range );
-  m_energy_ranges->insertWidget( orig_w_index, left_range );
+    
+    RelActAutoEnergyRange *right_range = new RelActAutoEnergyRange( this );
+    right_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
+    right_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
+                                               this, static_cast<WWidget *>(right_range) ) );
+    
+    left_range->setFromRoiRange( roi );
+    right_range->setFromRoiRange( roi );
+    left_range->setEnergyRange( roi.lower_energy, lower_energy );
+    right_range->setEnergyRange( upper_energy, roi.upper_energy );
+    
+    m_energy_ranges->insertWidget( orig_w_index, right_range );
+    m_energy_ranges->insertWidget( orig_w_index, left_range );
+    
+    // TODO: we could split PeakModels ROI peaks here and set them to provide instant feedback during computation
+  }else if( is_left )
+  {
+    RelActAutoEnergyRange *right_range = new RelActAutoEnergyRange( this );
+    right_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
+    right_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
+                                               this, static_cast<WWidget *>(right_range) ) );
+    right_range->setEnergyRange( upper_energy, roi.upper_energy );
+    right_range->setFromRoiRange( roi );
+    m_energy_ranges->insertWidget( orig_w_index, right_range );
+    
+    // TODO: we could update PeakModels peaks/range here and set them to provide instant feedback during computation
+  }else if( is_right )
+  {
+    RelActAutoEnergyRange *left_range = new RelActAutoEnergyRange( this );
+    left_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
+    left_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
+                                              this, static_cast<WWidget *>(left_range) ) );
+    left_range->setFromRoiRange( roi );
+    left_range->setEnergyRange( roi.lower_energy, lower_energy );
+    m_energy_ranges->insertWidget( orig_w_index, left_range );
+    
+    // TODO: we could update PeakModels peaks/range here and set them to provide instant feedback during computation
+  }
   
   handleEnergyRangeChange();
 }//void handleSplitEnergyRange( Wt::WWidget *energy_range, const double energy )
@@ -2328,6 +2596,9 @@ void RelActAutoGui::startUpdatingCalculation()
     if( !foreground )
       throw runtime_error( "No foreground spectrum is displayed." );
     
+    if( !m_solution || !m_peak_model->rowCount() )
+      makeZeroAmplitudeRoisToChart();
+    
     if( m_background_subtract->isChecked() )
       background = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
     
@@ -2348,6 +2619,8 @@ void RelActAutoGui::startUpdatingCalculation()
     m_is_calculating = false;
     m_error_msg->setText( e.what() );
     m_error_msg->show();
+    
+    makeZeroAmplitudeRoisToChart();
     
     return;
   }//try / catch
@@ -2455,7 +2728,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       m_error_msg->show();
       m_txt_results->setNoResults();
       
-      // TODO: we need to set ROIs to the chart so the user can drag them...
+      makeZeroAmplitudeRoisToChart();
       
       return;
     }//if( calculation wasnt successful )
@@ -2506,4 +2779,6 @@ void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
   
   m_error_msg->setText( msg );
   m_error_msg->show();
+  
+  makeZeroAmplitudeRoisToChart();
 }//void handleCalcException( std::shared_ptr<std::string> message )

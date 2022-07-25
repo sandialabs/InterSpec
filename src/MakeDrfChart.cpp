@@ -483,6 +483,7 @@ void MakeDrfChart::updateFwhmEquationToModel()
   assert( m->rowCount() >= sm_num_eqn_energy_rows );
   
   if( ((m_fwhmEqnType==FwhmCoefType::Gadras) && m_fwhmCoefs.size() != 3)
+     || ((m_fwhmEqnType==FwhmCoefType::SqrtEnergyPlusInverse) && m_fwhmCoefs.size() != 3)
      || (m_fwhmEqnType==FwhmCoefType::SqrtEqn && m_fwhmCoefs.size() < 1) )
   {
     if( m->data(0, sm_equation_fwhm_col).empty() )  //
@@ -494,9 +495,21 @@ void MakeDrfChart::updateFwhmEquationToModel()
   }//if( no equation )
   
   const float units = 1.0f; //For the moment always using keV  ((m_fwhmEnergyUnits==EqnEnergyUnits::keV) ? 1.0f : 0.001f);
-  const auto eqnType = ((m_fwhmEqnType==FwhmCoefType::Gadras)
-                       ? DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn
-                       : DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial);
+  DetectorPeakResponse::ResolutionFnctForm eqnType;
+  switch( m_fwhmEqnType )
+  {
+    case FwhmCoefType::Gadras:
+      eqnType = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+      break;
+      
+    case FwhmCoefType::SqrtEnergyPlusInverse:
+      eqnType = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
+      break;
+      
+    case FwhmCoefType::SqrtEqn:
+      eqnType = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+      break;
+  }//switch( m_fwhmEqnType )
 
   for( int row = 0; row < sm_num_eqn_energy_rows; ++row )
   {
