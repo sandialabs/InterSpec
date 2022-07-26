@@ -198,7 +198,9 @@ enum class FwhmForm : int
    */
   SqrtEnergyPlusInverse,
   
-  /** The linear polynomial: e.g. FWHM = sqrt(A_0 + A_1*1*0.001*Energy) */
+  /** The linear polynomial: e.g. FWHM = sqrt(A_0 + A_1*1*0.001*Energy)
+   The "2" refers to how many parameters are being fit
+   */
   Polynomial_2,
   
   /** The quadratic polynomial: e.g. FWHM = sqrt(A_0 + A_1*0.001*Energy + A_2*0.000001*Energy*Energy */

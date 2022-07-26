@@ -233,6 +233,142 @@ const rapidxml::xml_node<char> *get_required_node( const rapidxml::xml_node<char
   
   return child_node;
 }//get_required_node(...)
+  
+  
+  /*
+   /// Function used to convert parameters of one FWHM type, to another.
+   ///  Currently it goes from GADRAS to all other types, for a set of
+   ///  nominal high and low resolution parameters.
+  void fit_nominal_gadras_pars()
+  {
+    auto fitFromGadras = []( const vector<float> &gadras_coefs, const bool highres, const RelActCalcAuto::FwhmForm form_to_fit ){
+      assert( gadras_coefs.size() == 3 );
+      
+      const float lower_energy = 50;
+      const float upper_energy = 3000;
+      const float delta_energy = 0.05*(upper_energy - lower_energy);
+      
+      const auto fwhm_fcn = [gadras_coefs]( float energy ) -> float {
+        return DetectorPeakResponse::peakResolutionFWHM( energy,
+                                                        DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn,
+                                                        gadras_coefs ) / 2.35482f;
+      };//fwhm_fcn lamda
+      
+      
+      auto fake_peaks = make_shared<std::deque< std::shared_ptr<const PeakDef> > >();
+      for( float ene = lower_energy; ene <=(1.001*upper_energy); ene += delta_energy )
+      {
+        const auto sigma = fwhm_fcn(ene);
+        auto p = make_shared<PeakDef>( ene, sigma, 1000.0 );
+        p->setSigmaUncert( 0.1*sigma );
+        fake_peaks->push_back( p );
+      }
+      
+      DetectorPeakResponse::ResolutionFnctForm drf_form_to_fit;
+      int fit_order;
+      switch( form_to_fit )
+      {
+        case RelActCalcAuto::FwhmForm::Gadras:
+          fit_order = 3;
+          drf_form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+          break;
+          
+        case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+          fit_order = 3;
+          drf_form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
+          break;
+          
+        case RelActCalcAuto::FwhmForm::Polynomial_2:
+        case RelActCalcAuto::FwhmForm::Polynomial_3:
+        case RelActCalcAuto::FwhmForm::Polynomial_4:
+        case RelActCalcAuto::FwhmForm::Polynomial_5:
+        case RelActCalcAuto::FwhmForm::Polynomial_6:
+          drf_form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+          fit_order = num_parameters(form_to_fit);
+          break;
+      }//switch( rel_act_fwhm_form )
+      
+      vector<float> answer, uncerts;
+      MakeDrfFit::performResolutionFit( fake_peaks, drf_form_to_fit, highres, fit_order, answer, uncerts );
+      
+      for( size_t i = 0; i < answer.size(); ++i )
+        cout << "          parameters[fwhm_start + " << i << "] = " << answer[i] << endl;
+    };//fitFromGadras lamda
+    
+    const vector<float> highres_pars{1.54f,0.264f,0.33f};
+    const vector<float> lowres_pars{-6.5f,7.5f,0.55f};
+    
+    cout << "        if( highres )" << endl;
+    cout << "        {" << endl;
+    cout << "          switch( cost_functor->m_options.fwhm_form )" << endl;
+    cout << "          {" << endl;
+    cout << "            case RelActCalcAuto::FwhmForm::Gadras:" << endl;
+    fitFromGadras( highres_pars, true, RelActCalcAuto::FwhmForm::Gadras );
+    cout << "            break;" << endl;
+    
+    cout << "            case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:" << endl;
+    fitFromGadras( highres_pars, true, RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse );
+    cout << "            break;" << endl;
+    
+    cout << "            case RelActCalcAuto::FwhmForm::Polynomial_2:" << endl;
+    fitFromGadras( highres_pars, true, RelActCalcAuto::FwhmForm::Polynomial_2 );
+    cout << "            break;" << endl;
+    
+    cout << "            case RelActCalcAuto::FwhmForm::Polynomial_3:" << endl;
+    fitFromGadras( highres_pars, true, RelActCalcAuto::FwhmForm::Polynomial_3 );
+    cout << "            break;" << endl;
+    
+    cout << "            case RelActCalcAuto::FwhmForm::Polynomial_4:" << endl;
+    fitFromGadras( highres_pars, true, RelActCalcAuto::FwhmForm::Polynomial_4 );
+    cout << "            break;" << endl;
+    
+    cout << "            case RelActCalcAuto::FwhmForm::Polynomial_5:" << endl;
+    fitFromGadras( highres_pars, true, RelActCalcAuto::FwhmForm::Polynomial_5 );
+    cout << "            break;" << endl;
+    
+    cout << "            case RelActCalcAuto::FwhmForm::Polynomial_6:" << endl;
+    fitFromGadras( highres_pars, true, RelActCalcAuto::FwhmForm::Polynomial_6 );
+    cout << "            break;" << endl;
+    cout << "          }" << endl;
+    cout << "        }else" << endl;
+    cout << "        {" << endl;
+    cout << "          switch( cost_functor->m_options.fwhm_form )" << endl;
+    cout << "          {" << endl;
+    cout << "            case RelActCalcAuto::FwhmForm::Gadras:" << endl;
+    fitFromGadras( lowres_pars, false, RelActCalcAuto::FwhmForm::Gadras );
+    cout << "            break;" << endl;
+    
+    cout << "            case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:" << endl;
+    fitFromGadras( lowres_pars, false, RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse );
+    cout << "            break;" << endl;
+    
+    cout << "            case RelActCalcAuto::FwhmForm::Polynomial_2:" << endl;
+    fitFromGadras( lowres_pars, false, RelActCalcAuto::FwhmForm::Polynomial_2 );
+    cout << "            break;" << endl;
+    
+    cout << "            case RelActCalcAuto::FwhmForm::Polynomial_3:" << endl;
+    fitFromGadras( lowres_pars, false, RelActCalcAuto::FwhmForm::Polynomial_3 );
+    cout << "            break;" << endl;
+    
+    cout << "            case RelActCalcAuto::FwhmForm::Polynomial_4:" << endl;
+    fitFromGadras( lowres_pars, false, RelActCalcAuto::FwhmForm::Polynomial_4 );
+    cout << "            break;" << endl;
+    
+    cout << "            case RelActCalcAuto::FwhmForm::Polynomial_5:" << endl;
+    fitFromGadras( lowres_pars, false, RelActCalcAuto::FwhmForm::Polynomial_5 );
+    cout << "            break;" << endl;
+    
+    cout << "            case RelActCalcAuto::FwhmForm::Polynomial_6:" << endl;
+    fitFromGadras( lowres_pars, false, RelActCalcAuto::FwhmForm::Polynomial_6 );
+    cout << "            break;" << endl;
+    cout << "          }" << endl;
+    cout << "        }" << endl;
+    cout << "Serach for '----Blah Blah Blah----' and put these values there" << endl;
+    cout << endl;
+    assert( 0 );
+  }//void fit_nominal_gadras_pars()
+*/
+  
 
 
 struct RoiRangeChannels : public RelActCalcAuto::RoiRange
@@ -1094,81 +1230,45 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     try
     {
+      // We'll convert from one FWHM type to another here; throwing an exception if we fail
       if( !res_drf || !res_drf->hasResolutionInfo() )
         throw runtime_error( "No starting FWHM info was passed in, or derived from the spectrum;"
                              " please select a DRF with FWHM information." );
     
-      //assert( cost_functor->m_options.fwhm_form ==
+      const RelActCalcAuto::FwhmForm rel_act_fwhm_form = cost_functor->m_options.fwhm_form;
+      const DetectorPeakResponse::ResolutionFnctForm drf_fwhm_type = res_drf->resolutionFcnType();
       vector<float> drfpars = res_drf->resolutionFcnCoefficients();
+      
+      assert( drf_fwhm_type != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm );
+      
+      
       bool needToFitOtherType = false;
       
-      switch( cost_functor->m_options.fwhm_form )
+      switch( rel_act_fwhm_form )
       {
         case RelActCalcAuto::FwhmForm::Gadras:
-        {
           // We are fitting to the GADRAS functional form
-          assert( num_parameters( options.fwhm_form ) ==3 );
-          
-          switch( res_drf->resolutionFcnType() )
-          {
-            case DetectorPeakResponse::kGadrasResolutionFcn:
-            {
-              assert( drfpars.size() == 3 );
-              needToFitOtherType = false;
-              break;
-            }//case drf FWHM is of form DetectorPeakResponse::kGadrasResolutionFcn:
-              
-            case DetectorPeakResponse::kSqrtPolynomial:
-            {
-              needToFitOtherType = true;
-              break;
-            }//case DetectorPeakResponse::kSqrtPolynomial:
-              
-            case DetectorPeakResponse::kNumResolutionFnctForm:
-              assert( 0 );
-              break;
-          }//switch( cost_functor->m_drf->resolutionFcnType() )
-          
-          break;
-        }//case we want GADRAS formGadras:
-          
+          assert( num_parameters(options.fwhm_form) == 3 );
+          needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kGadrasResolutionFcn);
+        break;
           
         case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
-          needToFitOtherType = true;
-          break;
+          needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kSqrtEnergyPlusInverse);
+        break;
           
         case RelActCalcAuto::FwhmForm::Polynomial_2:
         case RelActCalcAuto::FwhmForm::Polynomial_3:
         case RelActCalcAuto::FwhmForm::Polynomial_4:
         case RelActCalcAuto::FwhmForm::Polynomial_5:
         case RelActCalcAuto::FwhmForm::Polynomial_6:
-        {
-          assert( num_parameters( cost_functor->m_options.fwhm_form ) == (1 + static_cast<int>(cost_functor->m_options.fwhm_form)) );
+          assert( num_parameters(rel_act_fwhm_form) == static_cast<size_t>(rel_act_fwhm_form) );
           
-          switch( res_drf->resolutionFcnType() )
-          {
-            case DetectorPeakResponse::kGadrasResolutionFcn:
-            {
-              assert( drfpars.size() == 3 );
-              needToFitOtherType = true;
-              break;
-            }//kGadrasResolutionFcn
-              
-            case DetectorPeakResponse::kSqrtPolynomial:
-            {
-              needToFitOtherType = false;
-              break;
-            }
-              
-            case DetectorPeakResponse::kNumResolutionFnctForm:
-              assert( 0 );
-              break;
-          }//switch( cost_functor->m_drf->resolutionFcnType() )
-          
-          break;
-        }//case: we want polynomial form
+          needToFitOtherType = ((drf_fwhm_type != DetectorPeakResponse::kSqrtPolynomial)
+                                || (drfpars.size() != num_parameters(rel_act_fwhm_form)) );
+        break;
       }//switch( m_options.fwhm_form )
     
+          
       if( needToFitOtherType )
       {
         // Make a vector of ~10 equally spaced peaks, with uncert 10% that peaks width -
@@ -1187,7 +1287,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }
       
         DetectorPeakResponse::ResolutionFnctForm formToFit;
-        switch( cost_functor->m_options.fwhm_form )
+        switch( rel_act_fwhm_form )
         {
           case RelActCalcAuto::FwhmForm::Gadras:
             assert( num_fwhm_pars == 3 );
@@ -1206,7 +1306,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           case RelActCalcAuto::FwhmForm::Polynomial_6:
             formToFit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
             break;
-        }//switch( cost_functor->m_options.fwhm_form )
+        }//switch( rel_act_fwhm_form )
         
         vector<float> new_sigma_coefs, sigma_coef_uncerts;
         MakeDrfFit::performResolutionFit( fake_peaks, formToFit,
@@ -1218,57 +1318,128 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }//if( needToFitOtherType )
       
       if( drfpars.size() != num_fwhm_pars )
+      {
+        assert( 0 );
         throw logic_error( "Unexpected num parameters from fit to FWHM function (logic error)." );
+      }
       
       for( size_t i = 0; i < drfpars.size(); ++i )
         parameters[fwhm_start + i] = drfpars[i];
     }catch( std::exception &e )
     {
+      // We failed to convert from one FWHM type to another - we'll just use some default values
+      //  (I dont expect this to happen very often at all)
       solution.m_warnings.push_back( "Failed to create initial FWHM estimation, but will continue anyway: " + string(e.what()) );
-     
-      if( cost_functor->m_options.fwhm_form == RelActCalcAuto::FwhmForm::Gadras )
+      
+      if( highres )
       {
-        // These values are from an arbitrary HPGe and NaI hand-held detector
-        if( highres )
+        // The following parameters fit from the GADRAS parameters {1.54f, 0.264f, 0.33f}, using the
+        // fit_nominal_gadras_pars() commented out above.
+        switch( cost_functor->m_options.fwhm_form )
         {
-          parameters[fwhm_start + 0] = 1.54;
-          parameters[fwhm_start + 1] = 0.264;
-          parameters[fwhm_start + 2] = 0.33;
-        }else
-        {
-          parameters[fwhm_start + 0] = -6.5;
-          parameters[fwhm_start + 1] = 7.5;
-          parameters[fwhm_start + 2] = 0.55;
-        }
-      }else if( cost_functor->m_options.fwhm_form == RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse )
-      {
-        static_assert( 0, "Need to get simple fit of GADRAS coefficients to SqrtEnergyPlusInverse" );
+          case RelActCalcAuto::FwhmForm::Gadras:
+            parameters[fwhm_start + 0] = 1.54;
+            parameters[fwhm_start + 1] = 0.264;
+            parameters[fwhm_start + 2] = 0.33;
+          break;
+            
+          case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+            parameters[fwhm_start + 0] = 1.86745;
+            parameters[fwhm_start + 1] = 0.00216761;
+            parameters[fwhm_start + 2] = 27.9835;
+          break;
+            
+          case RelActCalcAuto::FwhmForm::Polynomial_2:
+            parameters[fwhm_start + 0] = 2.10029;
+            parameters[fwhm_start + 1] = 2.03657;
+          break;
+            
+          case RelActCalcAuto::FwhmForm::Polynomial_3:
+            parameters[fwhm_start + 0] = 2.26918;
+            parameters[fwhm_start + 1] = 1.54837;
+            parameters[fwhm_start + 2] = 0.192;
+          break;
+            
+          case RelActCalcAuto::FwhmForm::Polynomial_4:
+            parameters[fwhm_start + 0] = 2.49021;
+            parameters[fwhm_start + 1] = 0.346357;
+            parameters[fwhm_start + 2] = 1.3902;
+            parameters[fwhm_start + 3] = -0.294974;
+          break;
+            
+          case RelActCalcAuto::FwhmForm::Polynomial_5:
+            parameters[fwhm_start + 0] = 2.5667;
+            parameters[fwhm_start + 1] = -0.333729;
+            parameters[fwhm_start + 2] = 2.59812;
+            parameters[fwhm_start + 3] = -0.991013;
+            parameters[fwhm_start + 4] = 0.124209;
+          break;
+            
+          case RelActCalcAuto::FwhmForm::Polynomial_6:
+            parameters[fwhm_start + 0] = 2.51611;
+            parameters[fwhm_start + 1] = 0.318145;
+            parameters[fwhm_start + 2] = 0.838887;
+            parameters[fwhm_start + 3] = 0.734524;
+            parameters[fwhm_start + 4] = -0.568632;
+            parameters[fwhm_start + 5] = 0.0969217;
+          break;
+        }//switch( cost_functor->m_options.fwhm_form )
       }else
       {
-        // The below coefficient values are from a simple fit to the GADRAS coefficients above
-        vector<double> fwhm_pars( num_fwhm_pars, 0.0 );
-        if( highres )
+        // The following parameters fit from the GADRAS parameters {-6.5f, 7.5f, 0.55f}, using the
+        // fit_nominal_gadras_pars() commented out above.
+        switch( cost_functor->m_options.fwhm_form )
         {
-          if( num_fwhm_pars >= 1 )
-            parameters[fwhm_start + 0] = 2.4083;
-          if( num_fwhm_pars >= 2 )
-            parameters[fwhm_start + 1] = 0.00113706;
-          if( num_fwhm_pars >= 3 )
-            parameters[fwhm_start + 2] = 3.36758e-07;
-        }else
-        {
-          // Valid above ~20 keV, which low res would never go down this far anyway
-          if( num_fwhm_pars >= 1 )
-            parameters[fwhm_start + 0] = -19.7642;
-          if( num_fwhm_pars >= 2 )
-            parameters[fwhm_start + 1] = 1.73526;
-          if( num_fwhm_pars >= 3 )
-            parameters[fwhm_start + 2] = 0.00283492;
-          if( num_fwhm_pars >= 4 )
-            parameters[fwhm_start + 3] = -7.18936e-07;
-        }//if( highres ) / else
-      }//if( we want GADRAS FWHM function ) / else
-    }//if( has DRF resolution info ) / else
+          case RelActCalcAuto::FwhmForm::Gadras:
+            parameters[fwhm_start + 0] = -6.5;
+            parameters[fwhm_start + 1] = 7.5;
+            parameters[fwhm_start + 2] = 0.55;
+          break;
+            
+          case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+            parameters[fwhm_start + 0] = -592.865;
+            parameters[fwhm_start + 1] = 4.44776;
+            parameters[fwhm_start + 2] = 21173.6;
+          break;
+            
+          case RelActCalcAuto::FwhmForm::Polynomial_2:
+            parameters[fwhm_start + 0] = -146.632;
+            parameters[fwhm_start + 1] = 3928.7;
+          break;
+            
+          case RelActCalcAuto::FwhmForm::Polynomial_3:
+            parameters[fwhm_start + 0] = -101.518;
+            parameters[fwhm_start + 1] = 3037.91;
+            parameters[fwhm_start + 2] = 555.973;
+          break;
+            
+          case RelActCalcAuto::FwhmForm::Polynomial_4:
+            parameters[fwhm_start + 0] = -68.9708;
+            parameters[fwhm_start + 1] = 2334.29;
+            parameters[fwhm_start + 2] = 1873.59;
+            parameters[fwhm_start + 3] = -428.651;
+          break;
+            
+          case RelActCalcAuto::FwhmForm::Polynomial_5:
+            parameters[fwhm_start + 0] = -37.7014;
+            parameters[fwhm_start + 1] = 1605.68;
+            parameters[fwhm_start + 2] = 4201.01;
+            parameters[fwhm_start + 3] = -2230.26;
+            parameters[fwhm_start + 4] = 383.314;
+          break;
+            
+          case RelActCalcAuto::FwhmForm::Polynomial_6:
+            parameters[fwhm_start + 0] = -11.4349;
+            parameters[fwhm_start + 1] = 947.497;
+            parameters[fwhm_start + 2] = 7088.34;
+            parameters[fwhm_start + 3] = -5991.02;
+            parameters[fwhm_start + 4] = 2192.23;
+            parameters[fwhm_start + 5] = -286.53;
+          break;
+        }//switch( cost_functor->m_options.fwhm_form )
+      }//if( highres ) / else
+    }//try / catch
+    
     
     assert( options.rel_eff_eqn_order != 0 );
     if( options.rel_eff_eqn_order == 0 )
@@ -1533,19 +1704,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
  
     }//try / catch
-    
-    
-/*
-    cerr << "\n\n\n\nSetting RelEff eqn to canned initial values!\n\n\n";
-#warning "Setting RelEff eqn to preset values for debugging!"
-    assert( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramEmpirical );
-    assert( options.rel_eff_eqn_order == 3 );
-    
-    parameters[rel_eff_start + 0] = -39.549338;
-    parameters[rel_eff_start + 1] = 5208.317658;
-    parameters[rel_eff_start + 2] = 12.714142;
-    parameters[rel_eff_start + 3] = -0.970901;
-*/
     
     
     for( size_t nuc_num = 0; nuc_num < nuclides.size(); ++nuc_num )
@@ -3389,6 +3547,8 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
 
 size_t num_parameters( const FwhmForm eqn_form )
 {
+  static_assert( static_cast<int>(RelActCalcAuto::FwhmForm::Polynomial_2) == 2, "FwhmForm enum needs updating" );
+  
   switch( eqn_form )
   {
     case FwhmForm::Gadras:       return 3;
@@ -4199,7 +4359,7 @@ RelActAutoSolution solve( Options options,
     
       for( const pair<double,double> &energy_br : rel_act.gamma_energy_br )
       {
-       blah blah blah
+       //blah blah blah
       }
     }
   }//for( const RoiRange &roi : energy_ranges )

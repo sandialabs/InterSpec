@@ -3121,27 +3121,50 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   if( fwhmCoefs.size() )
   {
     out << "# Full width half maximum (FWHM) follows equation: ";
-    if( fwhmIsGadrasEqn )
+    switch( resFcnForm )
     {
-      out << "GadrasEqn" << endline
-          << "# P6 -> resolution @ E=0 (keV)" << endline
-          << "# P7 -> % FWHM @ 661 keV" << endline
-          << "# P8 -> resolution power" << endline
-          << "# if( energy >= 661 or P6=0 ) FWHM = 6.61×P7×(energy/661)^P8" << endline
-          << "# else if( P6 < 0.0 ) FWHM = 6.61 x P7 x (energy/661)^(P8^(1.0/log(1.0-P6))" << endline
-          << "# else if( P6 > 6.61×P7 ) FWHM = P6" << endline
-          << "# else FWHM = sqrt(P6^2 + (6.61 x (sqrt((6.61×P7)^2 - P6^2)/6.61) x (energy/661)^P8)^2)" << endline
-          << "# Energy in keV"<< endline
-          << "# ,P6,P7,P8" << endline;
-    }else
-    {
-      out << "FWHM = sqrt( A0 + A1*(energy/1000) + A2*(energy/1000)^2 + A3*(energy/1000)^3 + ...)" << endline
-           << "# Energy in keV" << endline
-           << "# ";
-      for( size_t i = 0; i < fwhmCoefs.size(); ++i )
-        out << ",A" << i;
-      out << endline;
-    }
+      case DetectorPeakResponse::kGadrasResolutionFcn:
+      {
+        out << "GadrasEqn" << endline
+            << "# P6 -> resolution @ E=0 (keV)" << endline
+            << "# P7 -> % FWHM @ 661 keV" << endline
+            << "# P8 -> resolution power" << endline
+            << "# if( energy >= 661 or P6=0 ) FWHM = 6.61×P7×(energy/661)^P8" << endline
+            << "# else if( P6 < 0.0 ) FWHM = 6.61 x P7 x (energy/661)^(P8^(1.0/log(1.0-P6))" << endline
+            << "# else if( P6 > 6.61×P7 ) FWHM = P6" << endline
+            << "# else FWHM = sqrt(P6^2 + (6.61 x (sqrt((6.61×P7)^2 - P6^2)/6.61) x (energy/661)^P8)^2)" << endline
+            << "# Energy in keV"<< endline
+            << "# ,P6,P7,P8" << endline;
+        break;
+      }//case DetectorPeakResponse::kGadrasResolutionFcn:
+        
+      case DetectorPeakResponse::kSqrtPolynomial:
+      {
+        out << "FWHM = sqrt( A0 + A1*(energy/1000) + A2*(energy/1000)^2 + A3*(energy/1000)^3 + ...)" << endline
+            << "# Energy in keV" << endline
+            << "# ";
+        for( size_t i = 0; i < fwhmCoefs.size(); ++i )
+          out << ",A" << i;
+        out << endline;
+        break;
+      }//case DetectorPeakResponse::kSqrtPolynomial:
+        
+      case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+      {
+        out << "FWHM = sqrt( A0 + A1*energy + A2/energy )" << endline
+        << "# Energy in keV" << endline
+        << "# ";
+        for( size_t i = 0; i < fwhmCoefs.size(); ++i )
+          out << ",A" << i;
+        out << endline;
+        
+        break;
+      }//case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+        
+      case DetectorPeakResponse::kNumResolutionFnctForm:
+        assert( 0 );
+        break;
+    }//switch( resFcnForm )
     
     out << "Values";
     for( size_t i = 0; i < fwhmCoefs.size(); ++i )

@@ -574,6 +574,10 @@ namespace
       m_age_edit->setValueText( WString::fromUTF8(age) );
     }
     
+    void setNuclideEditFocus()
+    {
+      m_nuclide_edit->setFocus();
+    }
     
     void handleAgeChange()
     {
@@ -2141,7 +2145,7 @@ void RelActAutoGui::handleRelEffEqnOrderChanged()
 }//void handleRelEffEqnOrderChanged();
 
 
-void handleFwhmFormChanged()
+void RelActAutoGui::handleFwhmFormChanged()
 {
   checkIfInUserConfigOrCreateOne();
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -2257,6 +2261,7 @@ void RelActAutoGui::handleAddNuclide()
   nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
   nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
                                               this, static_cast<WWidget *>(nuc_widget) ) );
+  nuc_widget->setNuclideEditFocus();
   
   shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
   if( theme )
