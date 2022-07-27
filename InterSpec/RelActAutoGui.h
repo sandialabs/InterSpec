@@ -77,10 +77,11 @@ public:
   
   static std::pair<RelActAutoGui *,AuxWindow *> createWindow( InterSpec *viewer  );
   
-  void updateForSpectrumChange();
+  void updateDuringRenderForSpectrumChange();
   void updateSpectrumToDefaultEnergyRange();
-  void updateForNuclidesChange();
-  void updateForEnergyRangeChange();
+  void updateDuringRenderForNuclideChange();
+  void updateDuringRenderForEnergyRangeChange();
+  void updateDuringRenderForFreePeakChange();
   void startUpdatingCalculation();
   void updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer,
                       std::shared_ptr<std::atomic_bool> cancel_flag );
@@ -100,8 +101,14 @@ public:
   void handleNucDataSrcChanged();
   void handleAddNuclide();
   void handleAddEnergy();
+  void handleShowFreePeaks();
+  void handleHideFreePeaks();
+  void handleAddFreePeak( const double energy,
+                          const bool constrain_fwhm,
+                          const bool apply_energy_cal );
   void handleRemoveEnergy( Wt::WWidget *w );
   void handleRemoveNuclide( Wt::WWidget *w );
+  void handleRemoveFreePeak( Wt::WWidget *w );
   void handleRemovePartOfEnergyRange( Wt::WWidget *energy_range,
                                       double lower_energy,
                                      double upper_energy );
@@ -115,6 +122,9 @@ public:
   
   /** Called when energy ranges are added, removed, or edited. */
   void handleEnergyRangeChange();
+  
+  /** Called when free peaks are added, removed, or edited. */
+  void handleFreePeakChange();
   
   void makeZeroAmplitudeRoisToChart();
   
@@ -169,7 +179,9 @@ protected:
     UpdateNuclidesPresent = 0x02,
     UpdateEnergyRanges    = 0x04,
     UpdateCalculations    = 0x08,
-    ChartToDefaultRange   = 0x10
+    ChartToDefaultRange   = 0x10,
+    UpdateFreePeaks       = 0x20,
+    UpdateFitEnergyCal    = 0x40
   };//enum D3RenderActions
   
   Wt::WFlags<RenderActions> m_render_flags;
@@ -234,8 +246,12 @@ protected:
   
   // Wt::WComboBox *m_u_pu_data_source;
   
+  Wt::WPushButton *m_show_free_peak;
+  Wt::WContainerWidget *m_free_peaks_container;
+  
   Wt::WContainerWidget *m_nuclides;
   Wt::WContainerWidget *m_energy_ranges;
+  Wt::WContainerWidget *m_free_peaks;
   
   // For the future
   // - Free peaks

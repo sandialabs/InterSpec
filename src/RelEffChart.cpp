@@ -126,8 +126,8 @@ void RelEffChart::setData( const double live_time,
   for( const PeakDef &p : fit_peaks )
   {
     const SandiaDecay::Nuclide *nuc = p.parentNuclide();
-    
-    assert( nuc );
+  
+    // A free-floating peak wont have a nuclide associated
     if( !nuc )
       continue;
     

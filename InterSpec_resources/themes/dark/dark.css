@@ -34,6 +34,12 @@ button[disabled] {
   filter: grayscale(0%);
 }
 
+button.Wt-btn.with-label.LightButton
+{
+  border-color: rgb(106,107,109);
+  color: rgb(18,101,200);
+}
+
 input[type="text"], input[type="number"], numbertextarea, textarea {
   background-color: rgb(59,60,63) !important; 
   border-top: solid 1px rgb(61,62,64) !important; 

@@ -467,8 +467,8 @@ struct RoiRangeChannels : public RelActCalcAuto::RoiRange
         //    last_channel_f  = 5366.53
         //    wanted_nchan    = 457
         //    -->
-        //      first_channel_i=4910, first_fractional=0.48,  (i.e., we'll be off by 1+0.48=1.48 if we subtract 1 from first_channel_i)
-        //      last_channel_i=5367, last_fractional=-0.47    (i.e., we'll be off by 1-0.47=0.53 if we subtract 1 from last_channel_f)
+        //      first_channel_i=4910, first_fractional=0.48, (i.e., we'll be off by 1 -  0.48 =0.52 if we add 1 to first_channel_i)
+        //      last_channel_i=5367,  last_fractional=-0.47  (i.e., we'll be off by 1 + -0.47 =1.53 if we subtract 1 from last_channel_f)
         //      In this case niave_nchan=458, so we want to subtract 1 channel from the range
         //
         //    Second case
@@ -476,21 +476,20 @@ struct RoiRangeChannels : public RelActCalcAuto::RoiRange
         //    last_channel_f  = 5366.48
         //    wanted_nchan    = 457
         //    -->
-        //      first_channel_i=4910, first_fractional=0.45,  (i.e., we'll be off by 1+0.45=1.45 if we subtract 1 from first_channel_i)
-        //      last_channel_i=5367, last_fractional=-0.52    (i.e., we'll be off by 1-0.52=0.48 if we subtract 1 from last_channel_f)
+        //      first_channel_i=4910, first_fractional=0.45,  (i.e., we'll be off by 1 - 0.45 =0.55 if we add 1 from first_channel_i)
+        //      last_channel_i=5367, last_fractional=-0.52    (i.e., we'll be off by 1 + -0.52=0.48 if we subtract 1 from last_channel_f)
         //      In this case niave_nchan=458, so we want to subtract 1 channel from the range
         
-        if( (diff + last_fractional) < (diff + first_fractional) )
+        if( (diff - first_fractional) < (diff + last_fractional) )
+        {
+          first_channel += diff;
+        }else if( last_channel >= diff )
         {
           last_channel -= diff;
-        }else if( first_channel >= diff )
-        {
-          first_channel -= diff;
         }else
         {
-          assert( diff > first_channel );
-          last_channel += diff - first_channel;
           first_channel = 0;
+          last_channel = wanted_nchan - 1;
         }
       }// if( niave_nchan < wanted_nchan ) / else
       
@@ -880,12 +879,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       //We'll try to limit/break-up energy ranges
       const double min_br = numeric_limits<double>::min();  //arbitrary
-      const double num_fwhm_roi = 2.5; // arbitrary...
+      const double num_sigma_half_roi = 5.0; // arbitrary...
       
       vector<pair<double,double>> gammas_in_range;
       
       // Define a helper function to add a gamma at an energy into \c gammas_in_range
-      auto add_peak_to_range = [&gammas_in_range, this, highres, &roi_range, num_fwhm_roi]( const double energy ){
+      auto add_peak_to_range = [&gammas_in_range, this, highres, &roi_range, num_sigma_half_roi]( const double energy ){
         double energy_sigma;
         float min_sigma, max_sigma;
         expected_peak_width_limits( energy, highres, min_sigma, max_sigma );
@@ -904,8 +903,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           energy_sigma = max_sigma;
         }
         
-        double gamma_row_lower = energy - num_fwhm_roi*energy_sigma;
-        double gamma_row_upper = energy + num_fwhm_roi*energy_sigma;
+        double gamma_row_lower = energy - num_sigma_half_roi*energy_sigma;
+        double gamma_row_upper = energy + num_sigma_half_roi*energy_sigma;
         
         if( !roi_range.allow_expand_for_peak_width )
         {
@@ -1185,7 +1184,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     ceres::LossFunction *lossfcn = nullptr;
     problem.AddResidualBlock( cost_function, lossfcn, parameter_blocks );
     
-    
+    parameters[0] = 0.0;
+    parameters[1] = 1.0;
     if( options.fit_energy_cal )
     {
       assert( !cost_functor->m_energy_ranges.empty() );
@@ -1193,23 +1193,47 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const double lowest_energy = cost_functor->m_energy_ranges.front().lower_energy;
       const double highest_energy = cost_functor->m_energy_ranges.back().upper_energy;
       
-      // We'll allow changing the gain by 1% (limit chosen fairly arbitrarily)
-      problem.SetParameterLowerBound(pars + 1, 0, -0.01 );
-      problem.SetParameterUpperBound(pars + 1, 0, +0.01 );
       
-      if( (lowest_energy < 200) && (highest_energy > 600) )
+      // Completely arbitrary
+      if( ((lowest_energy < 200) && (highest_energy > 600))
+         || ((lowest_energy < 120) && (highest_energy > 250)) )
+      {
+        solution.m_fit_energy_cal[0] = true;
+        solution.m_fit_energy_cal[1] = true; 
+      }else if( highest_energy < 200 )
+      {
+        //We'll only fit offset
+        solution.m_fit_energy_cal[0] = true;
+      }else
+      {
+        // We'll only fit gain
+        solution.m_fit_energy_cal[1] = true;
+      }
+      
+      if( solution.m_fit_energy_cal[0] )
       {
         //We'll allow changing the offset by 5 keV (limit chosen fairly arbitrarily)
-        solution.m_fit_energy_cal[0] = true;
-        solution.m_fit_energy_cal[1] = true;
         problem.SetParameterLowerBound(pars + 0, 0, -5.0 );
         problem.SetParameterUpperBound(pars + 0, 0, +5.0 );
       }else
       {
-        //We'll only fit offset
-        solution.m_fit_energy_cal[0] = true;
+        problem.SetParameterBlockConstant( pars + 0 );
+      }//if( solution.m_fit_energy_cal[0] ) / else
+      
+      
+      if( solution.m_fit_energy_cal[1] )
+      {
+        // We'll allow changing the gain by 1.5% (limit chosen fairly arbitrarily);
+        //  we'll also multiple by 100 to keep the parameter ranging from +-1.
+        //
+        //  TODO: for some reason gain doesnt seem to adjust!
+        problem.SetParameterLowerBound(pars + 1, 0, 0.985 );
+        problem.SetParameterUpperBound(pars + 1, 0, 1.015 );
+      }else
+      {
         problem.SetParameterBlockConstant( pars + 1 );
-      }
+      }//if( solution.m_fit_energy_cal[1] ) / else
+      
     }else
     {
       problem.SetParameterBlockConstant( pars + 0 );
@@ -1329,7 +1353,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       // We failed to convert from one FWHM type to another - we'll just use some default values
       //  (I dont expect this to happen very often at all)
-      solution.m_warnings.push_back( "Failed to create initial FWHM estimation, but will continue anyway: " + string(e.what()) );
+      solution.m_warnings.push_back( "Failed to create initial FWHM estimation, but will continue anyway: "
+                                    + string(e.what()) );
       
       if( highres )
       {
@@ -2275,6 +2300,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     return nuc_index;
   }
   
+  
   double relative_activity( const SandiaDecay::Nuclide * const nuc, const std::vector<double> &x ) const
   {
     const size_t nuc_index = nuclide_index( nuc );
@@ -2286,6 +2312,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( x.size() == number_parameters() );
     return x[act_start_index + 2*nuc_index];
   }//double relative_activity(...)
+  
   
   /** Returns the nuclide that is responsible for setting the passed in nuclides age.
    Will return the input nuclide if it controls its own age.
@@ -2352,18 +2379,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   double apply_energy_cal_adjustment( double energy, const std::vector<double> &x ) const
   {
     assert( x.size() > 2 );
+
+    
+    if( fabs(1.0 - x[1]) > 0.00001 )
+      cout << "x[0]=" + to_string(x[0]) + ", x[1]=" + to_string(x[1]) << endl;
     
     if( !m_options.fit_energy_cal )
     {
       assert( fabs(x[0]) < std::numeric_limits<float>::epsilon() );
-      assert( fabs(x[1]) < std::numeric_limits<float>::epsilon() );
+      assert( fabs(1.0 - x[1]) < std::numeric_limits<float>::epsilon() );
       
       return energy;
     }//if( we arent fitting energy cal )
     
-    // Check adjustments are near the limits we placed (which was [-5,5], and [-0.01,0.01])
+    if( (x[0] == 0.0) && (x[1] == 1.0) )
+      return energy;
+    
+    // Check adjustments are near the limits we placed (which was [-5,5], and [0.985,1.015])
     assert( fabs(x[0]) <= 5.1 );
-    assert( fabs(x[1]) <= 0.011 );
+    assert( (x[1] >= 0.984) && (x[1] <= 1.016) );
       
     // TODO: implement and try out optimization so that if there is no adjustment to be made, skip doing the energy cal adjustment.
     //       Note: we do need to be careful we dont make the cuts so large that the steps of the
@@ -2381,7 +2415,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         vector<float> coefs = m_energy_cal->coefficients();
         assert( coefs.size() >= 2 );
         coefs[0] += x[0];
-        coefs[1] *= (1.0 + x[1]);
+        coefs[1] *= x[1];
         
         const auto &dev_pairs = m_energy_cal->deviation_pairs();
         const double channel = m_energy_cal->channel_for_energy( energy );
@@ -2395,7 +2429,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
         
       case SpecUtils::EnergyCalType::LowerChannelEdge:
-        return x[0] + ((1.0 + x[1]) * energy);
+        return x[0] + (x[1] * energy);
         
       case SpecUtils::EnergyCalType::InvalidEquationType:
         break;
@@ -2418,17 +2452,54 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( !m_options.fit_energy_cal )
     {
       assert( fabs(x[0]) < std::numeric_limits<float>::epsilon() );
-      assert( fabs(x[1]) < std::numeric_limits<float>::epsilon() );
+      assert( fabs(1.0 - x[1]) < std::numeric_limits<float>::epsilon() );
       
       return adjusted_energy;
     }//if( we arent fitting energy cal )
     
-    // Check adjustments are near the limits we placed (which was [-5,5], and [-0.01,0.01])
-    assert( fabs(x[0]) <= 5.1 );
-    assert( fabs(x[1]) <= 0.011 );
+    if( (x[0] == 0.0) && (x[1] == 1.0) )
+      return adjusted_energy;
     
-    // TODO: is this the best way to apply corrections?
-    return (adjusted_energy / (1.0 + x[1])) - x[0];
+    // Check adjustments are near the limits we placed (which was [-5,5], and [0.985,1.015])
+    assert( fabs(x[0]) <= 5.1 );
+    assert( (x[1] >= 0.984) && (x[1] <= 1.016) );
+    
+    switch( m_energy_cal->type() )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      {
+        vector<float> coefs = m_energy_cal->coefficients();
+        assert( coefs.size() >= 2 );
+        coefs[0] += x[0];
+        coefs[1] *= x[1];
+        
+        const auto &dev_pairs = m_energy_cal->deviation_pairs();
+        
+        // TODO: is there a cheaper way to do this?
+        double channel;
+        if( m_energy_cal->type() == SpecUtils::EnergyCalType::FullRangeFraction )
+          channel = SpecUtils::find_fullrangefraction_channel( adjusted_energy, coefs, m_energy_cal->num_channels(), dev_pairs );
+        else
+          channel = SpecUtils::find_polynomial_channel( adjusted_energy, coefs, m_energy_cal->num_channels(), dev_pairs );
+        
+        return m_energy_cal->energy_for_channel( channel );
+        break;
+      }//case polynomial or FRF
+        
+        
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+        return (adjusted_energy - x[0]) / x[1];
+        
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+        break;
+    }//switch( m_energy_cal->type() )
+    
+    assert( 0 );
+    throw runtime_error( "Energy cal must be valid" );
+    
+    return adjusted_energy;
   }//double un_apply_energy_cal_adjustment( double energy, const std::vector<double> &x ) const
   
   
@@ -2615,20 +2686,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       num_free_peak_pars += 1;
       const double peak_amp = x[amp_index];
-      double peak_fwhm = x[fwhm_index];
       
-      if( !peak.release_fwhm )
-      {
-        const double true_energy = un_apply_energy_cal_adjustment( peak.energy, x );
-        peak_fwhm = fwhm( true_energy, x );
-      }else
-      {
-        num_free_peak_pars += 1;
-      }
+      double peak_mean = peak.energy;
+      if( peak.apply_energy_cal_correction )
+        peak_mean = apply_energy_cal_adjustment( peak.energy, x );
+      
+      if( IsInf(peak_mean) || IsNan(peak_mean) )
+        throw runtime_error( "peaks_for_energy_range: inf or NaN peak mean for "
+                            + std::to_string(peak.energy) + " keV.");
+      
+      const double peak_fwhm = x[fwhm_index] * fwhm(peak_mean, x);
+      
+      assert( peak.release_fwhm || (fabs(x[fwhm_index] - 1.0) < 1.0E-5) );
+      
+      num_free_peak_pars += peak.release_fwhm;
       
       //cout << "peaks_for_energy_range: free peak at " << peak.energy << " has a FWHM=" << peak_fwhm << " and AMP=" << peak_amp << endl;
       
-      peaks.emplace_back( peak.energy, peak_fwhm/2.35482, peak_amp );
+      peaks.emplace_back( peak_mean, peak_fwhm/2.35482, peak_amp );
     }//for( const RelActCalcAuto::FloatingPeak &peak : m_extra_peaks )
 
     if( peaks.empty() )
@@ -3444,6 +3519,7 @@ void FloatingPeak::toXml( ::rapidxml::xml_node<char> *parent ) const
   append_version_attrib( base_node, FloatingPeak::sm_xmlSerializationVersion );
   append_float_node( base_node, "Energy", energy );
   append_bool_node( base_node, "ReleaseFwhm", release_fwhm );
+  append_bool_node( base_node, "ApplyEnergyCalCorrection", apply_energy_cal_correction );
 }//void FloatingPeak::toXml(...)
 
 
@@ -3464,6 +3540,15 @@ void FloatingPeak::fromXml( const ::rapidxml::xml_node<char> *parent )
     check_xml_version( parent, FloatingPeak::sm_xmlSerializationVersion );
     energy = get_float_node_value( parent, "Energy" );
     release_fwhm = get_bool_node_value( parent, "ReleaseFwhm" );
+    
+    try
+    {
+      // Dont require there to be a <ApplyEnergyCalCorrection> node
+      apply_energy_cal_correction = get_bool_node_value( parent, "ApplyEnergyCalCorrection" );
+    }catch( ... )
+    {
+      apply_energy_cal_correction = true;
+    }
   }catch( std::exception &e )
   {
     throw runtime_error( "FloatingPeak::fromXml(): " + string(e.what()) );
@@ -3658,7 +3743,11 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       out << "offset=" << m_energy_cal_adjustments[0] << " keV"
           << (m_fit_energy_cal[1] ? ", " : "");
     if( m_fit_energy_cal[1] )
-      out << "gain-multiple=" << m_energy_cal_adjustments[1];
+    {
+      char buffer[32] = { '\0' };
+      snprintf( buffer, sizeof(buffer), "%1.6G", m_energy_cal_adjustments[1] );
+      out << "gain-multiple=" << buffer;
+    }
     out << "\n";
   }//if( m_fit_energy_cal[0] || m_fit_energy_cal[1] )
   

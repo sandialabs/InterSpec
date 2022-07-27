@@ -164,7 +164,9 @@
   overflow-y: hidden;
 }
 
-.RelActAutoGui .NuclidesHolder, .RelActAutoGui .EnergiesHolder
+.RelActAutoGui .NuclidesHolder,
+.RelActAutoGui .EnergiesHolder,
+.RelActAutoGui .FreePeaksHolder
 {
   flex-grow: 1;
   flex-shrink: 1;
@@ -174,6 +176,13 @@
   display: flex;
   flex-direction: column;
   flex-wrap: nowrap;
+}
+
+
+.RelActAutoGui .FreePeaksHolder
+{
+  flex-grow: 0;
+  flex-basis: 200px;
 }
 
 
@@ -224,6 +233,16 @@
 }
 
 
+.RelActAutoGui .ShowFreePeaks,
+.RelActAutoGui .HideFreePeaks
+{
+  font-size: 80%;
+  height: 21px;
+  float: right;
+  margin-right: 5px;
+  margin-top: 2px;
+}
+
 .RelActAutoGui .DeleteEnergyRangeOrNuc, .RelActAutoGui .DeleteEnergyRangeOrNuc:hover
 {
   justify-self: end;
@@ -240,12 +259,25 @@
   justify-self: end;
 }
 
-.RelActAutoGui .RelActAutoEnergyRange
+
+.RelActAutoGui .RelActAutoEnergyRange,
+.RelActAutoGui .RelActAutoNuclide,
+.RelActAutoGui .RelActFreePeak
 {
-  display: grid;
   border: 1px solid #e1e1e1;
   margin: 5px;
   padding: 5px;
+}
+
+.RelActAutoGui .RelActFreePeak > input
+{
+  width: 55px;
+  /* justify-self: stretch; */
+}
+
+.RelActAutoGui .RelActAutoEnergyRange
+{
+  display: grid;
   
   row-gap: 5px;
   column-gap: 5px;
@@ -255,17 +287,15 @@
   grid-template-columns: min-content min-content min-content 2fr min-content 1fr;
 }
 
+
 .RelActAutoEnergyRange > input
 {
   width: 8ex;
 }
 
 
-.RelActAutoNuclide
+.RelActAutoGui .RelActAutoNuclide
 {
-  border: 1px solid #e1e1e1;
-  margin: 5px;
-  padding: 5px;
   padding-left: 0px;
   
   display: flex;
@@ -274,22 +304,26 @@
   align-items: center;
 }
 
-.RelActAutoNuclide > label
+
+.RelActAutoGui .RelActAutoNuclide > label
 {
   margin-left: 10px;
 }
 
-.RelActAutoNuclide > input[type="text"]
+
+.RelActAutoGui .RelActAutoNuclide > input[type="text"]
 {
   margin-right: 5px;
   margin-left: 5px;
   width: 8ex;
 }
 
-.RelActAutoNuclide > input[type="color"]
+
+.RelActAutoGui .RelActAutoNuclide > input[type="color"]
 {
   margin-right: 5px;
 }
+
 
 .RelActAutoNuclide .RelActAutoNuclideSpacer
 {
@@ -297,3 +331,26 @@
   align-items: center;
 }
 
+
+.RelActAutoGui .RelActFreePeak
+{
+  display: grid;
+  
+  column-gap: 5px;
+  row-gap: 5px;
+  justify-items: start;
+  align-items: center;
+  justify-content: start;
+}
+
+.RelActAutoGui RelActFreePeak .FreePeakConstrain
+{
+  /* justify-self: end; */
+  margin-left: 10px;
+}
+
+.RelActAutoGui .InvalidFreePeakEnergy
+{
+  color: red;
+  place-self: center;
+}

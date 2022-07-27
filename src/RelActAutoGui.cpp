@@ -336,7 +336,7 @@ namespace
     ColorSelect *m_color_select;
     
     Wt::Signal<> m_updated;
-    Wt::Signal<> m_remove_nuclide;
+    Wt::Signal<> m_remove;
     
   public:
     RelActAutoNuclide( RelActAutoGui *gui, WContainerWidget *parent = nullptr )
@@ -348,7 +348,7 @@ namespace
     m_fit_age( nullptr ),
     m_color_select( nullptr ),
     m_updated( this ),
-    m_remove_nuclide( this )
+    m_remove( this )
     {
       addStyleClass( "RelActAutoNuclide" );
       
@@ -429,7 +429,7 @@ namespace
       
       WPushButton *removeEnergyRange = new WPushButton( this );
       removeEnergyRange->setStyleClass( "DeleteEnergyRangeOrNuc Wt-icon" );
-      removeEnergyRange->setIcon("InterSpec_resources/images/minus_min_black.svg");
+      removeEnergyRange->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
       removeEnergyRange->clicked().connect( this, &RelActAutoNuclide::handleRemoveSelf );
     }//RelActAutoNuclide
     
@@ -710,7 +710,7 @@ namespace
     
     void handleRemoveSelf()
     {
-      m_remove_nuclide.emit();
+      m_remove.emit();
     }
     
     
@@ -722,10 +722,172 @@ namespace
     
     Wt::Signal<> &remove()
     {
-      return m_remove_nuclide;
+      return m_remove;
     }
   };//class RelActAutoNuclide
 
+  
+  
+  
+  class RelActFreePeak : public WContainerWidget
+  {
+    RelActAutoGui *m_gui;
+    NativeFloatSpinBox *m_energy;
+    WCheckBox *m_fwhm_constrained;
+    WCheckBox *m_apply_energy_cal;
+    WText *m_invalid;
+    
+    Wt::Signal<> m_updated;
+    Wt::Signal<> m_remove;
+    
+  public:
+    RelActFreePeak( RelActAutoGui *gui, WContainerWidget *parent = nullptr )
+    : WContainerWidget( parent ),
+    m_gui( gui ),
+    m_energy( nullptr ),
+    m_fwhm_constrained( nullptr ),
+    m_apply_energy_cal( nullptr ),
+    m_updated( this ),
+    m_remove( this )
+    {
+      addStyleClass( "RelActFreePeak" );
+      
+      const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+      
+      WLabel *label = new WLabel( "Energy", this );
+      label->addStyleClass( "GridFirstCol GridFirstRow" );
+      
+      m_energy = new NativeFloatSpinBox( this );
+      label->setBuddy( m_energy );
+      m_energy->valueChanged().connect( this, &RelActFreePeak::handleEnergyChange );
+      m_energy->addStyleClass( "GridSecondCol GridFirstRow" );
+      
+      // Things are a little cramped if we include the keV
+      //label = new WLabel( "keV", this );
+      //label->addStyleClass( "GridThirdCol GridFirstRow" );
+      
+      WPushButton *removeFreePeak = new WPushButton( this );
+      removeFreePeak->setStyleClass( "DeleteEnergyRangeOrNuc Wt-icon" );
+      removeFreePeak->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
+      removeFreePeak->clicked().connect( this, &RelActFreePeak::handleRemoveSelf );
+      removeFreePeak->addStyleClass( "GridThirdCol GridFirstRow" );
+      
+      m_fwhm_constrained = new WCheckBox( "Constrain FWHM", this );
+      m_fwhm_constrained->setChecked( true );
+      m_fwhm_constrained->checked().connect( this, &RelActFreePeak::handleFwhmConstrainChanged );
+      m_fwhm_constrained->unChecked().connect( this, &RelActFreePeak::handleFwhmConstrainChanged );
+      m_fwhm_constrained->addStyleClass( "FreePeakConstrain GridFirstCol GridSecondRow GridSpanThreeCol" );
+      
+      const char *tooltip = "When checked, this peak will be constrained to the FWHM functional form gamma and x-ray"
+      "peaks are normally constrained to.<br />"
+      "When un-checked, the FWHM for this peak will be fit from the data, independent of all other peak widths.<br />"
+      "Un-checking this option is useful for annihilation and reaction photopeaks.";
+      HelpSystem::attachToolTipOn( m_fwhm_constrained, tooltip, showToolTips );
+      
+      
+      m_apply_energy_cal = new WCheckBox( "True Energy", this );
+      m_apply_energy_cal->setChecked( true );
+      m_apply_energy_cal->checked().connect( this, &RelActFreePeak::handleApplyEnergyCalChanged );
+      m_apply_energy_cal->unChecked().connect( this, &RelActFreePeak::handleApplyEnergyCalChanged );
+      m_apply_energy_cal->addStyleClass( "FreePeakConstrain GridFirstCol GridThirdRow GridSpanThreeCol" );
+      tooltip = "Check this option if the peak is for a gamma of known energy.<br />"
+      "Un-check this option if this peak is an observed peak in the spectrum with unknown true energy.";
+      HelpSystem::attachToolTipOn( m_apply_energy_cal, tooltip, showToolTips );
+      
+      
+      m_invalid = new WText( "Not in a ROI.", this );
+      m_invalid->addStyleClass( "InvalidFreePeakEnergy GridFirstCol GridFourthRow GridSpanThreeCol" );
+      m_invalid->hide();
+    }//RelActFreePeak constructor
+    
+    
+    float energy() const
+    {
+      return m_energy->value();
+    }
+    
+    
+    float setEnergy( const float energy )
+    {
+      m_energy->setValue( energy );
+      m_updated.emit();
+    }
+    
+    
+    bool fwhmConstrained() const
+    {
+      return m_fwhm_constrained->isChecked();
+    }
+    
+    
+    void setFwhmConstrained( const bool constrained )
+    {
+      m_fwhm_constrained->setChecked( constrained );
+      m_updated.emit();
+    }
+    
+    
+    bool applyEnergyCal() const
+    {
+      return (m_apply_energy_cal->isVisible() && m_apply_energy_cal->isChecked());
+    }
+    
+    
+    void setApplyEnergyCal( const bool apply )
+    {
+      m_apply_energy_cal->setChecked( apply );
+    }
+    
+    
+    void setInvalidEnergy( const bool invalid )
+    {
+      if( invalid != m_invalid->isVisible() )
+        m_invalid->setHidden( !invalid );
+    }
+    
+    
+    void handleRemoveSelf()
+    {
+      m_remove.emit();
+    }
+    
+    
+    void handleEnergyChange()
+    {
+      m_updated.emit();
+    }//
+    
+    
+    void handleFwhmConstrainChanged()
+    {
+      m_updated.emit();
+    }
+    
+    
+    void handleApplyEnergyCalChanged()
+    {
+      m_updated.emit();
+    }
+    
+    
+    void setApplyEnergyCalVisible( const bool visible )
+    {
+      if( m_apply_energy_cal->isVisible() != visible )
+        m_apply_energy_cal->setHidden( !visible );
+    }
+    
+    
+    Wt::Signal<> &updated()
+    {
+      return m_updated;
+    }
+    
+    
+    Wt::Signal<> &remove()
+    {
+      return m_remove;
+    }
+  };//RelActFreePeak
 }//namespace
 
 
@@ -846,9 +1008,12 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_background_subtract( nullptr ),
   m_same_z_age( nullptr ),
   m_u_pu_by_correlation( nullptr ),
+  m_show_free_peak( nullptr ),
+  m_free_peaks_container( nullptr ),
 //  m_u_pu_data_source( nullptr ),
   m_nuclides( nullptr ),
   m_energy_ranges( nullptr ),
+  m_free_peaks( nullptr ),
   m_is_calculating( false ),
   m_cancel_calc{},
   m_solution{}
@@ -1176,6 +1341,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   WContainerWidget *energiesHolder = new WContainerWidget( bottomArea );
   energiesHolder->addStyleClass( "EnergiesHolder" );
   
+  m_free_peaks_container = new WContainerWidget( bottomArea );
+  m_free_peaks_container->addStyleClass( "FreePeaksHolder" );
+  m_free_peaks_container->hide();
+  
   WText *nuc_header = new WText( "Nuclides", nuclidesHolder );
   nuc_header->addStyleClass( "EnergyNucHeader" );
   
@@ -1189,7 +1358,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   add_nuc_icon->setStyleClass( "AddEnergyRangeOrNuc Wt-icon" );
   add_nuc_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
   add_nuc_icon->clicked().connect( this, &RelActAutoGui::handleAddNuclide );
-  
+  tooltip = "Add a nuclide.";
+  HelpSystem::attachToolTipOn( add_nuc_icon, tooltip, showToolTips );
   
   WText *energy_header = new WText( "Energy Ranges", energiesHolder );
   energy_header->addStyleClass( "EnergyNucHeader" );
@@ -1205,6 +1375,42 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   add_energy_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
   add_energy_icon->clicked().connect( this, &RelActAutoGui::handleAddEnergy );
   
+  tooltip = "Add an energy range.";
+  HelpSystem::attachToolTipOn( add_energy_icon, tooltip, showToolTips );
+  
+  m_show_free_peak = new WPushButton( "add free peaks", energies_footer );
+  m_show_free_peak->addStyleClass( "ShowFreePeaks LightButton" );
+  m_show_free_peak->clicked().connect( this, &RelActAutoGui::handleShowFreePeaks );
+  
+  
+  WText *free_peaks_header = new WText( "Free Peaks", m_free_peaks_container );
+  free_peaks_header->addStyleClass( "EnergyNucHeader" );
+  m_free_peaks = new WContainerWidget( m_free_peaks_container );
+  m_free_peaks->addStyleClass( "EnergyNucContent" );
+  
+  WContainerWidget *free_peaks_footer = new WContainerWidget( m_free_peaks_container );
+  free_peaks_footer->addStyleClass( "EnergyNucFooter" );
+  
+  WPushButton *add_free_peak_icon = new WPushButton( free_peaks_footer );
+  add_free_peak_icon->setStyleClass( "AddEnergyRangeOrNuc Wt-icon" );
+  add_free_peak_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
+  add_free_peak_icon->clicked().connect( boost::bind( &RelActAutoGui::handleAddFreePeak, this, 0.0, true, true ) );
+  
+  WPushButton *hide_free_peak = new WPushButton( "Close", free_peaks_footer );
+  hide_free_peak->addStyleClass( "HideFreePeaks LightButton" );
+  hide_free_peak->clicked().connect( this, &RelActAutoGui::handleHideFreePeaks );
+  
+  tooltip = "Remove all free peaks, and hide the free peaks input.";
+  HelpSystem::attachToolTipOn( hide_free_peak, tooltip, showToolTips );
+  
+  
+  tooltip = "&quot;Free peaks&quot; are peaks with a specific energy, that are not associated with any nuclide,"
+  " and their amplitude is fit to the best value for the data.  The peaks may optionally be released from the"
+  " functional FWHM constraint as well.<br />"
+  "Free peaks are useful to handle peaks from reactions, or from unidentified nuclides.";
+  HelpSystem::attachToolTipOn( m_free_peaks_container, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( m_show_free_peak, tooltip, showToolTips );
+  
   
   m_render_flags |= RenderActions::UpdateSpectra;
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -1213,21 +1419,29 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
 
 void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
+  if( m_render_flags.testFlag(RenderActions::UpdateSpectra) )
+  {
+    updateDuringRenderForSpectrumChange();
+    m_render_flags |= RenderActions::UpdateCalculations;
+  }
+  
+  if( m_render_flags.testFlag(RenderActions::UpdateFreePeaks)
+     || m_render_flags.testFlag(RenderActions::UpdateEnergyRanges)
+     || m_render_flags.testFlag(RenderActions::UpdateFitEnergyCal) )
+  {
+    updateDuringRenderForFreePeakChange();
+    m_render_flags |= RenderActions::UpdateCalculations;
+  }
+  
   if( m_render_flags.testFlag(RenderActions::UpdateNuclidesPresent) )
   {
-    updateForNuclidesChange();
+    updateDuringRenderForNuclideChange();
     m_render_flags |= RenderActions::UpdateCalculations;
   }
   
   if( m_render_flags.testFlag(RenderActions::UpdateEnergyRanges) )
   {
-    updateForEnergyRangeChange();
-    m_render_flags |= RenderActions::UpdateCalculations;
-  }
-  
-  if( m_render_flags.testFlag(RenderActions::UpdateSpectra) )
-  {
-    updateForSpectrumChange();
+    updateDuringRenderForEnergyRangeChange();
     m_render_flags |= RenderActions::UpdateCalculations;
   }
   
@@ -1369,8 +1583,44 @@ vector<RelActCalcAuto::RoiRange> RelActAutoGui::getRoiRanges() const
 
 vector<RelActCalcAuto::FloatingPeak> RelActAutoGui::getFloatingPeaks() const
 {
-  // TODO: floating_peaks not implemented
-  return {};
+  // We will only return peaks within defined ROIs.
+  vector<pair<float,float>> rois;
+  const vector<WWidget *> &roi_widgets = m_energy_ranges->children();
+  for( WWidget *w : roi_widgets )
+  {
+    const RelActAutoEnergyRange *roi = dynamic_cast<const RelActAutoEnergyRange *>( w );
+    assert( roi );
+    if( roi && !roi->isEmpty() )
+      rois.emplace_back( roi->lowerEnergy(), roi->upperEnergy() );
+  }//for( WWidget *w : kids )
+  
+  
+  vector<RelActCalcAuto::FloatingPeak> answer;
+  const std::vector<WWidget *> &kids = m_free_peaks->children();
+  for( WWidget *w : kids )
+  {
+    RelActFreePeak *free_peak = dynamic_cast<RelActFreePeak *>(w);
+    assert( free_peak );
+    if( !free_peak )
+      continue;
+    
+    const float energy = free_peak->energy();
+    bool in_roi = false;
+    for( const auto &roi : rois )
+      in_roi = (in_roi || ((energy >= roi.first) && (energy <= roi.second)));
+    
+    if( !in_roi )
+      continue;
+    
+    RelActCalcAuto::FloatingPeak peak;
+    peak.energy = energy;
+    peak.release_fwhm = !free_peak->fwhmConstrained();
+    peak.apply_energy_cal_correction = free_peak->applyEnergyCal();
+    
+    answer.push_back( peak );
+  }//for( loop over RelActFreePeak widgets )
+  
+  return answer;
 }//RelActCalcAuto::FloatingPeak getFloatingPeaks() const
 
 
@@ -1665,6 +1915,9 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   }//if( range_to_right )
   
   // TODO: Add floating peak item
+  snprintf( buffer, sizeof(buffer), "Add free peak at %.1f keV", energy );
+  item = menu->addMenuItem( buffer );
+  item->triggered().connect( boost::bind( &RelActAutoGui::handleAddFreePeak, this, energy, true, true ) );
   
   
   if( is_phone )
@@ -1991,12 +2244,24 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   }//for( const RelActCalcAuto::RoiRange &roi : rois )
   
   
-  // TODO: floating_peaks not implemented
-  // TODO: remove peaks from PeakModel here, and set zero-amplitude ROIs to show during computation
+  // Free Peaks
+  m_free_peaks->clear();
+  if( floating_peaks.empty() && !m_free_peaks_container->isHidden() )
+    handleHideFreePeaks();
+  
+  if( !floating_peaks.empty() && m_free_peaks_container->isHidden() )
+    handleShowFreePeaks();
+  
+  for( const RelActCalcAuto::FloatingPeak &peak : floating_peaks )
+    handleAddFreePeak( peak.energy, !peak.release_fwhm, peak.apply_energy_cal_correction );
+  
+  m_solution.reset();
+  m_peak_model->setPeaks( vector<PeakDef>{} );
   
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::UpdateFreePeaks;
   scheduleRender();
 }//void deSerialize( const rapidxml::xml_node<char> *base_node )
 
@@ -2156,6 +2421,7 @@ void RelActAutoGui::handleFwhmFormChanged()
 void RelActAutoGui::handleFitEnergyCalChanged()
 {
   checkIfInUserConfigOrCreateOne();
+  m_render_flags |= RenderActions::UpdateFitEnergyCal;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleFitEnergyCalChanged();
@@ -2216,6 +2482,15 @@ void RelActAutoGui::handleEnergyRangeChange()
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleEnergyRangeChange()
+
+
+void RelActAutoGui::handleFreePeakChange()
+{
+  checkIfInUserConfigOrCreateOne();
+  m_render_flags |= RenderActions::UpdateFreePeaks;
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleFreePeakChange()
 
 
 void RelActAutoGui::makeZeroAmplitudeRoisToChart()
@@ -2321,6 +2596,55 @@ void RelActAutoGui::handleAddEnergy()
 }//void handleAddEnergy()
 
 
+void RelActAutoGui::handleShowFreePeaks()
+{
+  m_show_free_peak->hide();
+  m_free_peaks_container->show();
+}//void handleShowFreePeaks()
+
+
+void RelActAutoGui::handleHideFreePeaks()
+{
+  const int nfree_peaks = m_free_peaks->count();
+  m_free_peaks->clear();
+  m_show_free_peak->show();
+  m_free_peaks_container->hide();
+  
+  if( nfree_peaks )
+  {
+    checkIfInUserConfigOrCreateOne();
+    m_render_flags |= RenderActions::UpdateCalculations;
+    m_render_flags |= RenderActions::UpdateFreePeaks;
+    scheduleRender();
+  }
+}//void handleHideFreePeaks()
+
+
+void RelActAutoGui::handleRemoveFreePeak( Wt::WWidget *w )
+{
+  if( !w )
+    return;
+  
+  const std::vector<WWidget *> &kids = m_free_peaks->children();
+  const auto pos = std::find( begin(kids), end(kids), w );
+  if( pos == end(kids) )
+  {
+    cerr << "Failed to find a RelActFreePeak in m_free_peaks!" << endl;
+    assert( 0 );
+    return;
+  }
+  
+  assert( dynamic_cast<RelActFreePeak *>(w) );
+  
+  delete w;
+  
+  checkIfInUserConfigOrCreateOne();
+  m_render_flags |= RenderActions::UpdateEnergyRanges;
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleRemoveFreePeak( Wt::WWidget *w )
+
+
 void RelActAutoGui::handleRemoveEnergy( WWidget *w )
 {
   if( !w )
@@ -2350,6 +2674,24 @@ void RelActAutoGui::handleSplitEnergyRange( Wt::WWidget *w, const double energy 
 {
   handleRemovePartOfEnergyRange( w, energy, energy );
 }
+
+
+void RelActAutoGui::handleAddFreePeak( const double energy, const bool constrain_fwhm, const bool apply_cal )
+{
+  if( m_free_peaks_container->isHidden() )
+    handleShowFreePeaks();
+  
+  RelActFreePeak *peak = new RelActFreePeak( this, m_free_peaks );
+  peak->updated().connect( this, &RelActAutoGui::handleFreePeakChange );
+  peak->remove().connect( boost::bind( &RelActAutoGui::handleRemoveFreePeak, this, static_cast<WWidget *>(peak) ) );
+  peak->setEnergy( static_cast<float>(energy) );
+  peak->setFwhmConstrained( constrain_fwhm );
+  peak->setApplyEnergyCal( apply_cal );
+  
+  checkIfInUserConfigOrCreateOne();
+  m_render_flags |= UpdateFreePeaks;
+  scheduleRender();
+}//void handleAddFreePeak( const double energy, const bool constrain_fwhm )
 
 
 void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
@@ -2478,7 +2820,7 @@ void RelActAutoGui::handleRemoveNuclide( Wt::WWidget *w )
 }//void handleRemoveNuclide( Wt::WWidget *w )
 
 
-void RelActAutoGui::updateForSpectrumChange()
+void RelActAutoGui::updateDuringRenderForSpectrumChange()
 {
   const shared_ptr<const SpecUtils::Measurement> fore
                    = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
@@ -2499,7 +2841,7 @@ void RelActAutoGui::updateForSpectrumChange()
   m_spectrum->setDisplayScaleFactor( m_background_sf, SpecUtils::SpectrumType::Background );
   
   m_spectrum->removeAllDecorativeHighlightRegions();
-}//void updateForSpectrumChange()
+}//void updateDuringRenderForSpectrumChange()
 
 
 void RelActAutoGui::updateSpectrumToDefaultEnergyRange()
@@ -2546,7 +2888,7 @@ void RelActAutoGui::updateSpectrumToDefaultEnergyRange()
 }//void updateSpectrumToDefaultEnergyRange()
 
 
-void RelActAutoGui::updateForNuclidesChange()
+void RelActAutoGui::updateDuringRenderForNuclideChange()
 {
   // Check if we need to show/hide
   //  - m_same_z_age
@@ -2559,14 +2901,50 @@ void RelActAutoGui::updateForNuclidesChange()
   //  - make sure if each nuclide *could* have ages fit, that there is peaks from at least two progeny in the used energy ranges
   //  - make sure "Same El Same Age" is checked, then all nuclide ages for an element have same age and same m_fit_age value
   
-  checkIfInUserConfigOrCreateOne();
-  m_render_flags |= RenderActions::UpdateNuclidesPresent;
-  m_render_flags |= RenderActions::UpdateCalculations;
-  scheduleRender();
-}//void updateForNuclidesChange()
+  
+}//void updateDuringRenderForNuclideChange()
 
 
-void RelActAutoGui::updateForEnergyRangeChange()
+void RelActAutoGui::updateDuringRenderForFreePeakChange()
+{
+  // Check that free peaks are within ROIs, and if not, mark them as such
+
+  if( m_free_peaks_container->isHidden() )
+    return;
+  
+  vector<pair<float,float>> rois;
+  const vector<WWidget *> &roi_widgets = m_energy_ranges->children();
+  for( WWidget *w : roi_widgets )
+  {
+    const RelActAutoEnergyRange *roi = dynamic_cast<const RelActAutoEnergyRange *>( w );
+    assert( roi );
+    if( roi && !roi->isEmpty() )
+      rois.emplace_back( roi->lowerEnergy(), roi->upperEnergy() );
+  }//for( WWidget *w : kids )
+  
+  
+  const bool fit_energy_cal = m_fit_energy_cal->isChecked();
+  
+  const std::vector<WWidget *> &kids = m_free_peaks->children();
+  for( WWidget *w : kids )
+  {
+    RelActFreePeak *free_peak = dynamic_cast<RelActFreePeak *>(w);
+    assert( free_peak );
+    if( !free_peak )
+      continue;
+    
+    const float energy = free_peak->energy();
+    bool in_roi = false;
+    for( const auto &roi : rois )
+      in_roi = (in_roi || ((energy >= roi.first) && (energy <= roi.second)));
+    
+    free_peak->setInvalidEnergy( !in_roi );
+    free_peak->setApplyEnergyCalVisible( fit_energy_cal );
+  }//for( loop over RelActFreePeak widgets )
+}//void updateDuringRenderForFreePeakChange()
+
+
+void RelActAutoGui::updateDuringRenderForEnergyRangeChange()
 {
   // Check if we need to show/hide/edit:
   // - m_presets
@@ -2575,12 +2953,7 @@ void RelActAutoGui::updateForEnergyRangeChange()
   //
   // Need to make sure energy ranges arent overlapping tooo much
   
-  
-  checkIfInUserConfigOrCreateOne();
-  m_render_flags |= RenderActions::UpdateEnergyRanges;
-  m_render_flags |= RenderActions::UpdateCalculations;
-  scheduleRender();
-}//void updateForEnergyRangeChange()
+}//void updateDuringRenderForEnergyRangeChange()
 
 
 void RelActAutoGui::startUpdatingCalculation()

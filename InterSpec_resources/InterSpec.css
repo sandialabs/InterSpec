@@ -225,6 +225,15 @@ width:100%;
 }
 
 
+/* A lighter-appearing button, with no background color, and text matching border. */
+button.Wt-btn.with-label.LightButton
+{
+  font-weight: normal;
+  background-color: rgba(0,0,0,0);
+  color: rgb(86,88,90);
+}
+
+
 .Wt-icon {
   display: inline-block;
   padding: 0px 8px;

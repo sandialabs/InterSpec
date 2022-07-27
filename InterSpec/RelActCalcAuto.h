@@ -167,7 +167,21 @@ struct FloatingPeak
    */
   double energy = -1.0;
   
+  /** If true, the FWHM of the peak will be allowed to freely vary from 0.25 to 4.0 times (both
+   numbers arbitrarily chosen) the FWHM that would be predicted by the functional FWHM
+   for the energy.
+   */
   bool release_fwhm = false;
+  
+  /** Whether the energy correction should be applied while performing the fit for the answer.
+ 
+   That is, if #FloatingPeak::energy represents a known true gamma energy, set this value to true;
+   if this peak represents an observed peak in the spectrum (maybe from unknown origins), set
+   this value to false.
+   
+   Only has an effect when the energy calibration is being fit for as well.
+   */
+  bool apply_energy_cal_correction = true;
   
   // TODO: should maybe have a max-width in FloatingPeak
   
