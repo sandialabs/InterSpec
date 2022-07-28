@@ -414,7 +414,7 @@ struct RelActAutoSolution
    successful then this variable will be equal to #m_input_roi_ranges.
    If computation is not successful, this variable may, or may not, be empty.
    */
-  std::vector<RelActCalcAuto::RoiRange> m_final_roi_ranges;
+  std::vector<RoiRange> m_final_roi_ranges;
   
   
   /** This DRF will be the input DRF you passed in, if it was valid and had energy resolution info.

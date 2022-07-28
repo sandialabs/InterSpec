@@ -212,11 +212,12 @@
 
 
 .RelActAutoGui .AddEnergyRangeOrNuc, .RelActAutoGui .AddEnergyRangeOrNuc:hover,
-.RelActAutoGui .DeleteEnergyRangeOrNuc, .RelActAutoGui .DeleteEnergyRangeOrNuc:hover
+.RelActAutoGui .DeleteEnergyRangeOrNuc, .RelActAutoGui .DeleteEnergyRangeOrNuc:hover,
+.RelActAutoGui .ToIndividualRois, .RelActAutoGui .ToIndividualRois:hover
 {
   opacity: 0.6;
   
-  cursor:pointer;
+  cursor: pointer;
   background: none;
   border: 0;
   padding: 0px;
@@ -227,11 +228,36 @@
 }
 
 .RelActAutoGui .AddEnergyRangeOrNuc:hover,
-.RelActAutoGui .DeleteEnergyRangeOrNuc:hover
+.RelActAutoGui .DeleteEnergyRangeOrNuc:hover,
+.RelActAutoGui .ToIndividualRois:hover
 {
   opacity: 1.0;
 }
 
+.RelActAutoGui .ToIndividualRois,
+.RelActAutoGui .ToIndividualRois:hover
+{
+  height: 18px;
+  width: 18px;
+  
+  justify-self: end;
+  align-self: end;
+  margin: 0px;
+}
+
+
+.RelActAutoGui .ToIndividualRois.Wt-disabled,
+.RelActAutoGui .ToIndividualRois.Wt-disabled:hover
+{
+  opacity: 0.15;
+  cursor: not-allowed;
+}
+
+
+.RelActAutoGui .ToIndividualRois img
+{
+  
+}
 
 .RelActAutoGui .ShowFreePeaks,
 .RelActAutoGui .HideFreePeaks

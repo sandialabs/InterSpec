@@ -114,6 +114,8 @@ public:
                                      double upper_energy );
   void handleSplitEnergyRange( Wt::WWidget *energy_range, const double energy );
   
+  void handleConvertEnergyRangeToIndividuals( Wt::WWidget *energy_range );
+  
   /** Called when a nuclide is added or removed (or changed from one to another) */
   void handleNuclidesChanged();
   
@@ -126,6 +128,8 @@ public:
   /** Called when free peaks are added, removed, or edited. */
   void handleFreePeakChange();
   
+  void setOptionsForNoSolution();
+  void setOptionsForValidSolution();
   void makeZeroAmplitudeRoisToChart();
   
   /** Checks if the m_presets is in a "custom" state, and if not, puts it there
@@ -170,6 +174,7 @@ protected:
   
   void handleToggleForceFullRange( Wt::WWidget *w );
   void handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
+  
   
 protected:
   

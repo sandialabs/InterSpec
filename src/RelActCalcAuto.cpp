@@ -363,7 +363,7 @@ const rapidxml::xml_node<char> *get_required_node( const rapidxml::xml_node<char
     cout << "            break;" << endl;
     cout << "          }" << endl;
     cout << "        }" << endl;
-    cout << "Serach for '----Blah Blah Blah----' and put these values there" << endl;
+    cout << "Search for '----fit_nominal_gadras_pars----' and put these values there" << endl;
     cout << endl;
     assert( 0 );
   }//void fit_nominal_gadras_pars()
@@ -1360,6 +1360,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         // The following parameters fit from the GADRAS parameters {1.54f, 0.264f, 0.33f}, using the
         // fit_nominal_gadras_pars() commented out above.
+        // ----fit_nominal_gadras_pars----
         switch( cost_functor->m_options.fwhm_form )
         {
           case RelActCalcAuto::FwhmForm::Gadras:

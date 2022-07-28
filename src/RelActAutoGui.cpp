@@ -61,6 +61,7 @@
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/RelEffChart.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActAutoGui.h"
 #include "InterSpec/WarningWidget.h"
@@ -106,6 +107,7 @@ namespace
     NativeFloatSpinBox *m_upper_energy;
     WComboBox *m_continuum_type;
     WCheckBox *m_force_full_range;
+    WPushButton *m_to_individual_rois;
     
     /// Used to track the Highlight region this energy region corresponds to in D3SpectrumDisplayDiv
     size_t m_highlight_region_id;
@@ -116,11 +118,18 @@ namespace
       m_gui( gui ),
       m_updated( this ),
       m_remove_energy_range( this ),
+      m_lower_energy( nullptr ),
+      m_upper_energy( nullptr ),
+      m_continuum_type( nullptr ),
+      m_force_full_range( nullptr ),
+      m_to_individual_rois( nullptr ),
       m_highlight_region_id( 0 )
     {
       addStyleClass( "RelActAutoEnergyRange" );
       
       wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
+      
+      const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
       
       WLabel *label = new WLabel( "Lower Energy", this );
       label->addStyleClass( "GridFirstCol GridFirstRow" );
@@ -168,8 +177,20 @@ namespace
       
       WPushButton *removeEnergyRange = new WPushButton( this );
       removeEnergyRange->setStyleClass( "DeleteEnergyRangeOrNuc GridSixthCol GridFirstRow Wt-icon" );
-      removeEnergyRange->setIcon("InterSpec_resources/images/minus_min_black.svg");
+      removeEnergyRange->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
       removeEnergyRange->clicked().connect( this, &RelActAutoEnergyRange::handleRemoveSelf );
+      
+      m_to_individual_rois = new WPushButton( this );
+      m_to_individual_rois->setStyleClass( "ToIndividualRois GridSixthCol GridSecondRow Wt-icon" );
+      m_to_individual_rois->setIcon( "InterSpec_resources/images/expand_list.svg" );
+      m_to_individual_rois->clicked().connect( boost::bind( &RelActAutoGui::handleConvertEnergyRangeToIndividuals,
+                                                           m_gui, static_cast<WWidget *>(this) ) );
+      m_to_individual_rois->setHidden( m_force_full_range->isChecked() );
+      
+      const char *tooltip = "Converts this energy range into individual ROIs, based on which gammas should be"
+      " grouped together vs apart (e.g., leaves gammas with overlapping peaks in a single ROI, while if two gammas"
+      " are far apart, they will be split into seperate ROIs.";
+      HelpSystem::attachToolTipOn( m_to_individual_rois, tooltip, showToolTips );
     }//RelActAutoEnergyRange constructor
     
     
@@ -194,7 +215,16 @@ namespace
     
     void handleForceFullRangeChange()
     {
+      m_to_individual_rois->setHidden( m_to_individual_rois->isDisabled() || m_force_full_range->isChecked() );
+      
       m_updated.emit();
+    }
+    
+    
+    void enableSplitToIndividualRanges( const bool enable )
+    {
+      m_to_individual_rois->setHidden( !enable || m_force_full_range->isChecked() );
+      m_to_individual_rois->setEnabled( enable );
     }
     
     
@@ -374,7 +404,7 @@ namespace
       "}";
       m_nuclide_edit->keyWentDown().connect( keyDownJs );
       
-      const char *tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>,"
+      const char *tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>"
       ", <b>U-235m</b> (meta stable state)"
       ", <b>Cs137</b>, etc.";
       HelpSystem::attachToolTipOn( m_nuclide_edit, tooltip, showToolTips );
@@ -2493,6 +2523,51 @@ void RelActAutoGui::handleFreePeakChange()
 }//void handleFreePeakChange()
 
 
+void RelActAutoGui::setOptionsForNoSolution()
+{
+  makeZeroAmplitudeRoisToChart();
+  
+  for( WWidget *w : m_energy_ranges->children() )
+  {
+    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    assert( roi );
+    if( roi )
+      roi->enableSplitToIndividualRanges( false );
+  }//for( WWidget *w : kids )
+  
+}//void setOptionsForNoSolution()
+
+
+void RelActAutoGui::setOptionsForValidSolution()
+{
+  assert( m_solution && (m_solution->m_status == RelActCalcAuto::RelActAutoSolution::Status::Success) );
+  if( !m_solution || (m_solution->m_status != RelActCalcAuto::RelActAutoSolution::Status::Success) )
+    return;
+    
+  for( WWidget *w : m_energy_ranges->children() )
+  {
+    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    assert( roi );
+    if( !roi )
+      continue;
+    
+    const float lower_energy = roi->lowerEnergy();
+    const float upper_energy = roi->upperEnergy();
+    
+    // Only enable splitting the energy range if it will split into more than one sub-range
+    size_t num_sub_ranges = 0;
+    for( const RelActCalcAuto::RoiRange &range : m_solution->m_final_roi_ranges )
+    {
+      const double mid_energy = 0.5*(range.lower_energy + range.upper_energy);
+      num_sub_ranges += ((mid_energy > lower_energy) && (mid_energy < upper_energy));
+    }
+    
+    roi->enableSplitToIndividualRanges( (num_sub_ranges > 1) );
+  }//for( WWidget *w : kids )
+  
+}//void setOptionsForValidSolution()
+
+
 void RelActAutoGui::makeZeroAmplitudeRoisToChart()
 {
   m_peak_model->setPeaks( vector<PeakDef>{} );
@@ -2676,6 +2751,121 @@ void RelActAutoGui::handleSplitEnergyRange( Wt::WWidget *w, const double energy 
 }
 
 
+void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
+{
+  RelActAutoEnergyRange *energy_range = dynamic_cast<RelActAutoEnergyRange *>(w);
+  assert( energy_range );
+  
+  const shared_ptr<const RelActCalcAuto::RelActAutoSolution> solution = m_solution;
+  if( !solution || (solution->m_status != RelActCalcAuto::RelActAutoSolution::Status::Success) )
+  {
+    // TODO: just hide/disable the button untill we have a valid solution
+    SimpleDialog *dialog = new SimpleDialog( "Can't perform this action.",
+                                            "Sorry, a valid solution is needed before an energy range can be split." );
+    dialog->addButton( "Continue" );
+    
+    return;
+  }//if( !solution || (solution->m_status != RelActCalcAuto::RelActAutoSolution::Status::Success) )
+  
+  if( !energy_range || energy_range->isEmpty() )
+  {
+    SimpleDialog *dialog = new SimpleDialog( "Can't perform this action.",
+                                            "Sorry, energy range is currently not valid." );
+    dialog->addButton( "Continue" );
+    return;
+  }
+  
+  const float lower_energy = energy_range->lowerEnergy();
+  const float upper_energy = energy_range->upperEnergy();
+  
+  vector<RelActCalcAuto::RoiRange> to_ranges;
+  for( const RelActCalcAuto::RoiRange &range : solution->m_final_roi_ranges )
+  {
+    // If the center of `range` falls between `lower_energy` and `upper_energy`, we'll
+    //  assume its a match.  This is strictly true, as `range.allow_expand_for_peak_width`
+    //  could be true, and/or another ROI can slightly overlap the original one we are
+    //  interested in.
+    //  TODO: improve the robustness of the matching between the initial ROI, and auto-split ROIs
+    
+    const double mid_energy = 0.5*(range.lower_energy + range.upper_energy);
+    //range.continuum_type = PeakContinuum::OffsetType::;
+    //range.force_full_range = false;
+    //range.allow_expand_for_peak_width = false;
+    
+    if( (mid_energy > lower_energy) && (mid_energy < upper_energy) )
+      to_ranges.push_back( range );
+  }//for( loop over m_final_roi_ranges )
+  
+  
+  // We'll sort the ranges into reverse energy order so when we insert them at a fixed index,
+  //  they will be in increasing energy order.
+  std::sort( begin(to_ranges), end(to_ranges), []( const RelActCalcAuto::RoiRange &lhs, const RelActCalcAuto::RoiRange &rhs ) -> bool {
+    return (lhs.lower_energy + lhs.upper_energy) > (rhs.lower_energy + rhs.upper_energy);
+  } );
+  
+  
+  char buffer[512] = { '\0' };
+  if( to_ranges.empty() )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "The energy range %.1f keV to %.1f keV did not contain any significant gamma contributions.",
+             lower_energy, upper_energy);
+    SimpleDialog *dialog = new SimpleDialog( "Can't perform this action.", buffer );
+    dialog->addButton( "Continue" );
+    return;
+  }//if( to_ranges.empty() )
+  
+
+  
+  snprintf( buffer, sizeof(buffer),
+           "This action will divide the energy range from %.1f keV to %.1f keV into %i seperate energy ranges.<br />"
+           "<p>Would you like to continue?</p>",
+           lower_energy, upper_energy, static_cast<int>(to_ranges.size()) );
+  
+  SimpleDialog *dialog = new SimpleDialog( "Divide Energy Range Up?", buffer );
+  WPushButton *yes_button = dialog->addButton( "Yes" );
+  dialog->addButton( "No" );
+  
+  
+  const auto on_yes = [this,w,to_ranges](){
+    
+    const std::vector<WWidget *> &kids = m_energy_ranges->children();
+    const auto pos = std::find( begin(kids), end(kids), w );
+    if( pos == end(kids) )
+    {
+      SimpleDialog *dialog = new SimpleDialog( "Error", "There was an unexpected error finding the original"
+                                              " energy range - sorry, cant complete operation." );
+      dialog->addButton( "Continue" );
+      return;
+    }//
+    
+    const int orig_w_index = pos - begin(kids);
+    
+    delete w;
+    
+    for( const RelActCalcAuto::RoiRange &range : to_ranges )
+    {
+      RelActAutoEnergyRange *roi = new RelActAutoEnergyRange( this );
+      roi->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
+      roi->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy, this, static_cast<WWidget *>(roi) ) );
+      
+      roi->setFromRoiRange( range );
+      roi->setForceFullRange( true );
+      
+      m_energy_ranges->insertWidget( orig_w_index, roi );
+    }//for( const RelActCalcAuto::RoiRange &range : to_ranges )
+    
+    checkIfInUserConfigOrCreateOne();
+    m_render_flags |= RenderActions::UpdateEnergyRanges;
+    m_render_flags |= RenderActions::UpdateCalculations;
+    scheduleRender();
+  };//on_yes lamda
+  
+  
+  yes_button->clicked().connect( std::bind(on_yes) );
+}//void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
+
+
 void RelActAutoGui::handleAddFreePeak( const double energy, const bool constrain_fwhm, const bool apply_cal )
 {
   if( m_free_peaks_container->isHidden() )
@@ -2841,6 +3031,8 @@ void RelActAutoGui::updateDuringRenderForSpectrumChange()
   m_spectrum->setDisplayScaleFactor( m_background_sf, SpecUtils::SpectrumType::Background );
   
   m_spectrum->removeAllDecorativeHighlightRegions();
+  
+  m_background_subtract->setHidden( !m_background );
 }//void updateDuringRenderForSpectrumChange()
 
 
@@ -2894,7 +3086,6 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
   //  - m_same_z_age
   //  - m_u_pu_by_correlation - and also update its text
   //  - m_u_pu_data_source
-  //  - m_presets
   //
   // Need to check nuclides arent duplicated
   // Make sure "Fit Age" checkbox is in a correct state.  I.e.
@@ -2902,6 +3093,28 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
   //  - make sure "Same El Same Age" is checked, then all nuclide ages for an element have same age and same m_fit_age value
   
   
+  // For a first go, we'll show #m_same_z_age if we hadve more than one nuclide for a given Z.
+  //   However, we really need to be more complex about this, and also hide "Fit Age" and disable age input if this option is selected, on all but the first entry of this Z
+  bool has_multiple_nucs_of_z = false;
+  map<short,int> z_to_num_isotopes;
+  const vector<RelActCalcAuto::NucInputInfo> nuclides = getNucInputInfo();
+  for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+  {
+    if( !nuc.nuclide )
+      continue;
+    
+    const short z = nuc.nuclide->atomicNumber;
+    if( !z_to_num_isotopes.count(z) )
+      z_to_num_isotopes[z] = 0;
+    
+    int &num_this_z = z_to_num_isotopes[z];
+    num_this_z += 1;
+    
+    has_multiple_nucs_of_z = has_multiple_nucs_of_z || (num_this_z > 1);
+  }//for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+  
+  if( m_same_z_age->isVisible() != has_multiple_nucs_of_z )
+    m_same_z_age->setHidden( !has_multiple_nucs_of_z );
 }//void updateDuringRenderForNuclideChange()
 
 
@@ -2998,7 +3211,7 @@ void RelActAutoGui::startUpdatingCalculation()
     m_error_msg->setText( e.what() );
     m_error_msg->show();
     
-    makeZeroAmplitudeRoisToChart();
+    setOptionsForNoSolution();
     
     return;
   }//try / catch
@@ -3106,7 +3319,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       m_error_msg->show();
       m_txt_results->setNoResults();
       
-      makeZeroAmplitudeRoisToChart();
+      setOptionsForNoSolution();
       
       return;
     }//if( calculation wasnt successful )
@@ -3134,6 +3347,8 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
   
   m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities, rel_eff_eqn_js );
+  
+  setOptionsForValidSolution();
 }//void updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer )
 
 
@@ -3158,5 +3373,5 @@ void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
   m_error_msg->setText( msg );
   m_error_msg->show();
   
-  makeZeroAmplitudeRoisToChart();
+  setOptionsForNoSolution();
 }//void handleCalcException( std::shared_ptr<std::string> message )
