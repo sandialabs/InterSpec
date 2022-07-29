@@ -305,8 +305,13 @@ public:
 #if( USE_REL_ACT_TOOL )
   rapidxml::xml_document<char> *relActManualGuiState();
   
-  /** Sets the XML for the GUI state*/
+  /** Sets the XML for the GUI state of the maual Rel. Act. widget. */
   void setRelActManualGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model );
+  
+  rapidxml::xml_document<char> *relActAutoGuiState();
+  
+  /** Sets the XML for the GUI state of the auto Rel. Act. widget. */
+  void setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model );
 #endif //#if( USE_REL_ACT_TOOL )
 
 protected:
@@ -351,6 +356,7 @@ protected:
   
 #if( USE_REL_ACT_TOOL )
   std::unique_ptr<rapidxml::xml_document<char>> m_relActManualGuiState;
+  std::unique_ptr<rapidxml::xml_document<char>> m_relActAutoGuiState;
 #endif
   
   Wt::Signal<> m_aboutToBeDeleted;

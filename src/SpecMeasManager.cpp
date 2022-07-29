@@ -3241,6 +3241,7 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
     newspec->setShieldingSourceModel( nullptr );
 #if( USE_REL_ACT_TOOL )
     newspec->setRelActManualGuiState( nullptr );
+    newspec->setRelActAutoGuiState( nullptr );
 #endif
     newspec->displayedSpectrumChangedCallback( SpecUtils::SpectrumType::Foreground, newspec, {}, {} );
     

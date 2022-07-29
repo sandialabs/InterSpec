@@ -2277,6 +2277,7 @@ void DownloadCurrentSpectrumResource::handleRequest(
     m_viewer->saveShieldingSourceModelToForegroundSpecMeas();
 #if( USE_REL_ACT_TOOL )
     m_viewer->saveRelActManualStateToForegroundSpecMeas();
+    m_viewer->saveRelActAutoStateToForegroundSpecMeas();
 #endif
   }
 

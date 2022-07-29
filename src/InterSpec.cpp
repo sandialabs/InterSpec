@@ -2685,7 +2685,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
   try
   {
     saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
     saveRelActManualStateToForegroundSpecMeas();
+    saveRelActAutoStateToForegroundSpecMeas();
+#endif
     
     DataBaseUtils::DbTransaction transaction( *m_sql );
     entry.modify()->serializeTime = WDateTime::currentDateTime();
@@ -2853,6 +2856,9 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
     if( m_relActManualGui )
       entry.modify()->shownDisplayFeatures |= UserState::kShowingRelActManual;
+    
+    if( m_relActAutoGui )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingRelActAuto;
 #endif
     
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
@@ -3420,6 +3426,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
     if( (entry->shownDisplayFeatures & UserState::kShowingRelActManual) )
       createRelActManualWidget();
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingRelActAuto) )
+      showRelActAutoWindow();
 #endif
     
     if( wasDocked )
@@ -4674,7 +4683,10 @@ void InterSpec::stateSave()
   {
     //TODO: Should check if can save?
     saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
     saveRelActManualStateToForegroundSpecMeas();
+    saveRelActAutoStateToForegroundSpecMeas();
+#endif
     startStoreStateInDb( false, false, false, false ); //save snapshot
   }else
   {
@@ -5695,6 +5707,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
         m_toolsTabs->removeTab( m_energyCalTool );
       handleRelActManualClose();
     }//if( m_relActManualGui )
+    
+    if( m_relActAutoGui )
+      handleRelActAutoClose();
     
 #if( USE_TERMINAL_WIDGET )
     if( m_terminal )
@@ -7340,6 +7355,26 @@ void InterSpec::showRelActAutoWindow()
   
   assert( m_relActAutoMenuItem );
   m_relActAutoMenuItem->disable();
+  
+  
+  try
+  {
+    rapidxml::xml_document<char> *relActState = m_dataMeasurement
+                                               ? m_dataMeasurement->relActAutoGuiState()
+                                               : nullptr;
+    if( relActState && relActState->first_node() )
+      m_relActAutoGui->deSerialize( relActState->first_node() );
+  }catch( std::exception &e )
+  {
+    passMessage( "Error setting &quot;Isotopics from nuclides&quot; state to previously used state: "
+                + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
+#endif
+    
+    assert( 0 );
+  }//try / catch
 }//void showRelActAutoWindow()
 
 
@@ -7347,6 +7382,9 @@ void InterSpec::handleRelActAutoClose()
 {
   assert( m_relActAutoMenuItem );
   m_relActAutoMenuItem->enable();
+  
+  if( m_relActAutoGui )
+    saveRelActAutoStateToForegroundSpecMeas();
   
   assert( m_relActAutoWindow );
   if( !m_relActAutoWindow )
@@ -7460,6 +7498,21 @@ void InterSpec::saveRelActManualStateToForegroundSpecMeas()
   
   m_dataMeasurement->setRelActManualGuiState( std::move(doc) );
 }//void saveRelActManualStateToForegroundSpecMeas()
+
+
+void InterSpec::saveRelActAutoStateToForegroundSpecMeas()
+{
+  if( !m_relActAutoGui || !m_dataMeasurement )
+    return;
+  
+  string xml_data;
+  std::unique_ptr<rapidxml::xml_document<char>> doc( new rapidxml::xml_document<char>() );
+  
+  m_relActAutoGui->serialize( doc.get() );
+  
+  m_dataMeasurement->setRelActAutoGuiState( std::move(doc) );
+}//void saveRelActAutoStateToForegroundSpecMeas()
+
 #endif //#if( USE_REL_ACT_TOOL )
 
 

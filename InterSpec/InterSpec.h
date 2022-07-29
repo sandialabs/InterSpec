@@ -670,6 +670,7 @@ public:
   void handleRelActManualClose();
   
   void saveRelActManualStateToForegroundSpecMeas();
+  void saveRelActAutoStateToForegroundSpecMeas();
 #endif
   
 #if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )

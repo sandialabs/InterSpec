@@ -889,6 +889,7 @@ struct UserState
 #endif
 #if( USE_REL_ACT_TOOL )
   , kShowingRelActManual    = 0x0200
+  , kShowingRelActAuto      = 0x0400
 #endif
   };//enum ShownDisplayFeatures
   

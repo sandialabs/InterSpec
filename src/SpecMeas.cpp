@@ -416,6 +416,34 @@ void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
       throw runtime_error( msg.str() );
     }
   }
+  
+  
+  if( (!lhs.m_relActAutoGuiState) != (!rhs.m_relActAutoGuiState) )
+  {
+    stringstream msg;
+    msg << "SpecMeas: availability of relActAutoGuiState of LHS ("
+    << (lhs.m_relActAutoGuiState ? "" : "not ") << "available)"
+    << "doesnt match RHS (" << (rhs.m_relActAutoGuiState ? "" : "not ")
+    << "available)";
+    throw runtime_error( msg.str() );
+  }
+  
+  if( lhs.m_relActAutoGuiState )
+  {
+    //ToDo: make a proper comparison by traversing nodes and comparing values.
+    string lhsdata, rhsdata;
+    rapidxml::print( std::back_inserter(lhsdata), *lhs.m_relActAutoGuiState, 0 );
+    rapidxml::print( std::back_inserter(rhsdata), *rhs.m_relActAutoGuiState, 0 );
+    if( lhsdata != rhsdata )
+    {
+      stringstream msg;
+      msg << "The RelActAutoGuiState of the LHS does not exactly match RHS;"
+      " this could be a harmless error, or an actual issue - Will has not"
+      " implemented a proper comparison yet:\n\tLHS=" << lhsdata << "\n\tRHS="
+      << rhsdata << "\n";
+      throw runtime_error( msg.str() );
+    }
+  }
 #endif //#if( USE_REL_ACT_TOOL )
 }//void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
@@ -498,6 +526,16 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
   }else
   {
     m_relActManualGuiState.reset();
+  }
+  
+  
+  if( rhs.m_relActAutoGuiState && rhs.m_relActAutoGuiState->first_node() )
+  {
+    m_relActAutoGuiState.reset( new rapidxml::xml_document<char>() );
+    clone_node_deep( rhs.m_relActAutoGuiState.get(), m_relActAutoGuiState.get() );
+  }else
+  {
+    m_relActAutoGuiState.reset();
   }
 #endif
   
@@ -913,6 +951,13 @@ rapidxml::xml_document<char> *SpecMeas::relActManualGuiState()
 }
 
 
+rapidxml::xml_document<char> *SpecMeas::relActAutoGuiState()
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  return m_relActAutoGuiState.get();
+}//rapidxml::xml_document<char> *relActAutoGuiState()
+
+
 void SpecMeas::setRelActManualGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model )
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
@@ -935,7 +980,33 @@ void SpecMeas::setRelActManualGuiState( std::unique_ptr<rapidxml::xml_document<c
   
   if( is_diff )
     modified_ = modifiedSinceDecode_ = true;
-}//void setShieldingSourceModel( std::unique_ptr<rapidxml::xml_document<char>> &&model )
+}//void setRelActManualGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model )
+
+
+void SpecMeas::setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model )
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  
+  if( !model && !m_relActAutoGuiState )
+    return;
+  
+  bool is_diff = true;
+  if( m_relActAutoGuiState && model && !modified_ )
+  {
+    //TODO: go through and compare nodes to see if they are actually different.
+    //      for now, just do a string compare
+    string lhsdata, rhsdata;
+    rapidxml::print( std::back_inserter(lhsdata), *m_relActAutoGuiState, 0 );
+    rapidxml::print( std::back_inserter(rhsdata), *model, 0 );
+    is_diff = (lhsdata != rhsdata);
+  }//
+  
+  m_relActAutoGuiState = std::move( model );
+  
+  if( is_diff )
+    modified_ = modifiedSinceDecode_ = true;
+}//void setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model )
+
 #endif //#if( USE_REL_ACT_TOOL )
 
 bool SpecMeas::write_2006_N42( std::ostream &ostr ) const
@@ -1276,6 +1347,27 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   {
     m_relActManualGuiState.reset();
   }
+  
+  
+  node = interspecnode->first_node( "RelActAutoGui", 13 );
+  if( node )
+  {
+    try
+    {
+      m_relActAutoGuiState.reset( new rapidxml::xml_document<char>() );
+      auto model_node = m_relActAutoGuiState->allocate_node(rapidxml::node_element);
+      m_relActAutoGuiState->append_node( model_node );
+      clone_node_deep( node, model_node );
+    }catch( std::exception &e )
+    {
+      m_relActAutoGuiState.reset();
+      parse_warnings_.push_back( "Could not decode InterSpec specific Rel. Act. Auto state in N42 file: "
+                                + std::string(e.what()) );
+    }// try / catch
+  }else
+  {
+    m_relActAutoGuiState.reset();
+  }
 #endif
 }//void decodeSpecMeasStuffFromXml( ::rapidxml::xml_node<char> *parent )
 
@@ -1386,6 +1478,13 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
     auto modelnode = doc->allocate_node( node_element );
     interspec_node->append_node( modelnode );
     clone_node_deep( m_relActManualGuiState->first_node(), modelnode );
+  }
+  
+  if( m_relActAutoGuiState )
+  {
+    auto modelnode = doc->allocate_node( node_element );
+    interspec_node->append_node( modelnode );
+    clone_node_deep( m_relActAutoGuiState->first_node(), modelnode );
   }
 #endif
   
