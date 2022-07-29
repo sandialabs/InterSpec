@@ -2290,6 +2290,10 @@ rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *pa
       peak.toXml( node );
   }//if( !floating_peaks.empty() )
   
+  
+  // TODO: put in display options, such as spectrum energy range, log/lin (also, make our spectrum obey this pref value),
+  
+  
   return parent_node;
 }//rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent )
 

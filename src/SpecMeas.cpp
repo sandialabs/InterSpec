@@ -1349,7 +1349,7 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   }
   
   
-  node = interspecnode->first_node( "RelActAutoGui", 13 );
+  node = interspecnode->first_node( "RelActCalcAuto", 14 );
   if( node )
   {
     try
