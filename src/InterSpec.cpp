@@ -9614,7 +9614,7 @@ void InterSpec::searchForSinglePeak( const double x )
   }//if( m_peakModel->peaks() )
   
   pair< PeakShrdVec, PeakShrdVec > foundPeaks;
-  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, m_dataMeasurement->detector() );
+  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, det );
   
   //cerr << "Found " << foundPeaks.first.size() << " peaks to add, and "
   //     << foundPeaks.second.size() << " peaks to remove" << endl;

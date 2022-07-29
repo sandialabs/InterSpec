@@ -834,9 +834,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     
     //Need to initialize m_energy_ranges
-    if( energy_ranges.empty() )
-      throw runtime_error( "RelActAutoCostFcn: no energy ranges defined." );
-    
     const bool highres = PeakFitUtils::is_high_res( spectrum );
     
     for( size_t roi_index = 0; roi_index < energy_ranges.size(); ++roi_index )
@@ -959,6 +956,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         m_energy_ranges.emplace_back( m_energy_cal, this_range );
       }//for( loop over gammas_in_range )
     }//for( const RelActCalcAuto::RoiRange &input : energy_ranges )
+    
+    if( m_energy_ranges.empty() )
+      throw runtime_error( "RelActAutoCostFcn: no gammas in the defined energy ranges." );
     
     if( cancel_calc && cancel_calc->load() )
       throw runtime_error( "User cancelled calculation." );
@@ -2687,6 +2687,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       num_free_peak_pars += 1;
       const double peak_amp = x[amp_index];
+      if( IsInf(peak_amp) || IsNan(peak_amp) )
+        throw runtime_error( "peaks_for_energy_range: inf or NaN peak amplitude for "
+                            + std::to_string(peak.energy) + " keV extra peak.");
       
       double peak_mean = peak.energy;
       if( peak.apply_energy_cal_correction )
@@ -2694,9 +2697,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       if( IsInf(peak_mean) || IsNan(peak_mean) )
         throw runtime_error( "peaks_for_energy_range: inf or NaN peak mean for "
-                            + std::to_string(peak.energy) + " keV.");
+                            + std::to_string(peak.energy) + " keV extra peak.");
       
       const double peak_fwhm = x[fwhm_index] * fwhm(peak_mean, x);
+      
+      if( IsInf(peak_fwhm) || IsNan(peak_fwhm) )
+        throw runtime_error( "peaks_for_energy_range: inf or NaN peak FWHM for "
+                            + std::to_string(peak.energy) + " keV extra peak.");
       
       assert( peak.release_fwhm || (fabs(x[fwhm_index] - 1.0) < 1.0E-5) );
       
@@ -2717,7 +2724,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       answer.no_gammas_in_range = true;
       
       const double middle_energy = 0.5*(adjusted_lower_energy + adjusted_upper_energy);
-      const double middle_fwhm = fwhm( middle_energy, x );
+      double middle_fwhm = fwhm( middle_energy, x );
+      if( IsInf(middle_fwhm) || IsNan(middle_fwhm) )
+        middle_fwhm = 1.0; //arbitrary
+      
       const double amplitude = 0.0;
       peaks.emplace_back( middle_energy, middle_fwhm/2.35482, amplitude );
     }//if( peaks.empty() )
@@ -2743,16 +2753,27 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     vector<double> dummy_amps, continuum_coeffs, dummy_amp_uncert, continuum_uncerts;
     
+    // TODO: -- improve speed of fit_amp_and_offset
     // The #fit_amp_and_offset function is taking most of the time for calculations - and in fact
     //  the PeakDef::gauss_integral is taking all of its time
     const double chi2 = fit_amp_and_offset( energies, data, num_channels, num_polynomial_terms,
                                            is_step_continuum, ref_energy, {}, {}, peaks, dummy_amps,
                                            continuum_coeffs, dummy_amp_uncert, continuum_uncerts );
     
+    for( const double &val : continuum_coeffs )
+    {
+      if( IsInf(val) || IsNan(val) )
+        throw runtime_error( "peaks_for_energy_range: inf or NaN continuum coeificient for range "
+                            + std::to_string(range.lower_energy) + " to "
+                            + std::to_string(range.upper_energy) + " keV" );
+    }//for( const double &val : continuum_coeffs )
+    
     // TODO: - currently not defining degrees of freedom well - not using number of relative efficiency terms, or FWHM terms at all, and just blindly using all activity and free peak terms.
     const double approx_dof = 1.0*range.num_channels - nuclides_used.size() - num_polynomial_terms - num_free_peak_pars;
     
-    const double chi2Dof = chi2 / approx_dof;
+    double chi2Dof = chi2 / approx_dof;
+    if( IsInf(chi2Dof) || IsNan(chi2Dof) )
+      chi2Dof = 0.0;
     
     peaks[0].continuum()->setType( range.continuum_type );
     peaks[0].continuum()->setParameters( ref_energy, continuum_coeffs, continuum_uncerts );

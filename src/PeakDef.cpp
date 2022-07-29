@@ -4442,7 +4442,7 @@ void PeakContinuum::calc_linear_continuum_eqn( const std::shared_ptr<const SpecU
   assert( data );
   assert( reference_energy >= roi_start );
   assert( reference_energy <= roi_end );
-  assert( roi_end > roi_start );
+  assert( roi_end >= roi_start );
   assert( num_lower_channels > 0 );
   assert( num_upper_channels > 0 );
   

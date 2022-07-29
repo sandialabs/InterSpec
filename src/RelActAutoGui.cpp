@@ -50,6 +50,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
@@ -61,6 +62,7 @@
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/RelEffChart.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActAutoGui.h"
@@ -1089,7 +1091,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_spectrum->dragCreateRoiUpdate().connect( this, &RelActAutoGui::handleCreateRoiDrag );
   m_spectrum->rightClicked().connect( this, &RelActAutoGui::handleRightClick );
   m_spectrum->shiftKeyDragged().connect( this, &RelActAutoGui::handleShiftDrag );
-  
+  m_spectrum->doubleLeftClick().connect( this, &RelActAutoGui::handleDoubleLeftClick );
   
   m_rel_eff_chart = new RelEffChart();
   m_txt_results = new RelActTxtResults();
@@ -1840,6 +1842,153 @@ void RelActAutoGui::handleShiftDrag( const double lower_energy, const double upp
 }//void handleShiftDrag( const double lower_energy, const double upper_energy )
 
 
+void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* counts */ )
+{
+  try
+  {
+    char buffer[256] = { '\0' };
+    
+    // Check if click was in a ROI, and if so ignore it
+    const vector<RelActCalcAuto::RoiRange> orig_rois = getRoiRanges();
+    for( const RelActCalcAuto::RoiRange &roi : orig_rois )
+    {
+      if( (energy > roi.lower_energy) && (energy < roi.upper_energy) )
+      {
+        snprintf( buffer, sizeof(buffer),
+                 "%.1f keV is already in the energy range [%.1f, %.1f] keV - no action will be taken.",
+                 energy, roi.lower_energy, roi.upper_energy );
+        
+        passMessage( buffer, "", WarningWidget::WarningMsgMedium );
+        return;
+      }
+    }//for( const RelActCalcAuto::RoiRange &roi : orig_rois )
+    
+    // If we're here, the double-click was not in an existing ROI.
+    if( !m_foreground )
+      return;
+    
+    const double xmin = m_spectrum->xAxisMinimum();
+    const double xmax = m_spectrum->xAxisMaximum();
+    
+    const double specWidthPx = m_spectrum->chartWidthInPixels();
+    const double pixPerKeV = (xmax > xmin && xmax > 0.0 && specWidthPx > 10.0) ? std::max(0.001,(specWidthPx/(xmax - xmin))): 0.001;
+    
+    // We'll prefer the DRF from m_solution, to what the user has picked
+    shared_ptr<const DetectorPeakResponse> det = m_solution ? m_solution->m_drf : nullptr;
+    
+    if( !det || !det->hasResolutionInfo()  )
+    {
+      shared_ptr<const SpecMeas> meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+      det = meas ? meas->detector() : nullptr;
+    }//if( solution didnt have DRF )
+    
+    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det );
+    
+    // If we didnt fit a peak, and we dont
+    double lower_energy = energy - 10;
+    double upper_energy = energy + 10;
+    shared_ptr<const PeakDef> peak = found_peaks.first.empty() ? nullptr : found_peaks.first.front();
+    if( peak )
+    {
+      // Found a peak
+      lower_energy = peak->lowerX();
+      upper_energy = peak->upperX();
+    }else if( det && det->hasResolutionInfo() )
+    {
+      // No peak found, but we have a DRF with FWHM info
+      const float fwhm = std::max( 1.0f, det->peakResolutionFWHM(energy) );
+      
+      // We'll make a ROI that is +-4 FWHM (arbitrary choice)
+      lower_energy = energy - 4*fwhm;
+      upper_energy = energy + 4*fwhm;
+    }else
+    {
+      // If we're here, were desperate - lets pluck some values out of the air
+      //  (We could check on auto-searched peaks and estimate from those, but
+      //   really, at this point, its not worth the effort as things are probably
+      //   low quality)
+      const bool highres = PeakFitUtils::is_high_res(m_foreground);
+      if( highres )
+      {
+        lower_energy = energy - 5;
+        upper_energy = energy + 5;
+      }else
+      {
+        lower_energy = 0.8*energy;
+        upper_energy = 1.2*energy;
+      }
+    }//if( peak ) / else if( det ) / else
+    
+    RelActCalcAuto::RoiRange new_roi;
+    new_roi.lower_energy = lower_energy;
+    new_roi.upper_energy = upper_energy;
+    new_roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    new_roi.force_full_range = true;
+    new_roi.allow_expand_for_peak_width = false;
+    
+    
+    // Now check if we overlap with a ROI, or perhaps we need to expand an existing ROI
+    
+    const vector<WWidget *> prev_roi_widgets = m_energy_ranges->children();
+    
+    RelActAutoEnergyRange *new_roi_w = new RelActAutoEnergyRange( this, m_energy_ranges );
+    new_roi_w->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
+    new_roi_w->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy, this, static_cast<WWidget *>(new_roi_w) ) );
+    new_roi_w->setFromRoiRange( new_roi );
+    
+    vector<RelActAutoEnergyRange *> overlapping_rois;
+    for( WWidget *w : prev_roi_widgets )
+    {
+      RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+      assert( roi );
+      if( !roi )
+        continue;
+      if( (new_roi.upper_energy > roi->lowerEnergy()) && (new_roi.lower_energy < roi->upperEnergy()) )
+        overlapping_rois.push_back( roi );
+    }
+    
+    bool combined_an_roi = false;
+    for( RelActAutoEnergyRange *roi : overlapping_rois )
+    {
+      WWidget *w = handleCombineRoi( roi, new_roi_w );
+      RelActAutoEnergyRange *combined_roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+      
+      assert( combined_roi );
+      if( !combined_roi )
+        break;
+      
+      combined_an_roi = true;
+      new_roi_w = combined_roi;
+    }
+    
+    lower_energy = new_roi_w->lowerEnergy();
+    upper_energy = new_roi_w->upperEnergy();
+    
+    if( combined_an_roi )
+    {
+      snprintf( buffer, sizeof(buffer),
+               "Extended existing energy range to [%.1f, %.1f] keV.",
+               lower_energy, upper_energy );
+    }else
+    {
+      snprintf( buffer, sizeof(buffer),
+               "Added a new new energy range from %.1f to %.1f keV.",
+               lower_energy, upper_energy );
+    }//if( combined_an_roi ) / else
+        
+    passMessage( buffer, "", WarningWidget::WarningMsgLow );
+    
+    checkIfInUserConfigOrCreateOne();
+    m_render_flags |= RenderActions::UpdateEnergyRanges;
+    m_render_flags |= RenderActions::UpdateCalculations;
+    scheduleRender();
+  }catch( std::exception &e )
+  {
+    passMessage( "handleDoubleLeftClick error: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
+  }//try / catch
+}//void handleDoubleLeftClick( const double energy, const double counts )
+
+
 void RelActAutoGui::handleRightClick( const double energy, const double counts,
                       const int page_x_px, const int page_y_px )
 {
@@ -2002,12 +2151,12 @@ void RelActAutoGui::handleToggleForceFullRange( Wt::WWidget *w )
 }//void handleToggleForceFullRange( Wt::WWidget *w )
 
 
-void RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi )
+Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi )
 {
   if( !left_roi || !right_roi || (left_roi == right_roi) )
   {
     assert( 0 );
-    return;
+    return nullptr;
   }
   
   const std::vector<WWidget *> &kids = m_energy_ranges->children();
@@ -2017,7 +2166,7 @@ void RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_
   {
     cerr << "Failed to find left or right RelActAutoEnergyRange in m_energy_ranges!" << endl;
     assert( 0 );
-    return;
+    return nullptr;
   }
   
   RelActAutoEnergyRange *left_range = dynamic_cast<RelActAutoEnergyRange *>(left_roi);
@@ -2025,7 +2174,7 @@ void RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_
   
   assert( left_range && right_range );
   if( !left_range || !right_range )
-    return;
+    return nullptr;
   
   const RelActCalcAuto::RoiRange lroi = left_range->toRoiRange();
   const RelActCalcAuto::RoiRange rroi = right_range->toRoiRange();
@@ -2049,6 +2198,8 @@ void RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
+  
+  return left_range;
 }//void handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
 
 

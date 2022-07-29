@@ -168,12 +168,17 @@ protected:
                            const bool is_final_range );
   
   void handleShiftDrag( const double lower_energy, const double upper_energy );
-  
+  void handleDoubleLeftClick( const double energy, const double counts );
   void handleRightClick( const double energy, const double counts,
                         const int page_x_px, const int page_y_px );
   
   void handleToggleForceFullRange( Wt::WWidget *w );
-  void handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
+  
+  /** Combines the two RelActAutoEnergyRange's into a single range, and returns the resulting RelActAutoEnergyRange.
+   
+   Will only return nullptr if one/both of the inputs is not a RelActAutoEnergyRange, or not in #m_energy_ranges.
+   */
+  Wt::WWidget *handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
   
   
 protected:
