@@ -1157,7 +1157,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   {
     string dispname = SpecUtils::filename(filename);
     if( dispname.size() > 4 )
-      dispname = dispname.substr(0, filename.size() - 4);
+      dispname = dispname.substr(0, dispname.size() - 4);
     
     m_presets->addItem( WString::fromUTF8(dispname) );
     m_preset_paths.push_back( filename );
