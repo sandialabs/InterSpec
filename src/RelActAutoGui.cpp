@@ -1040,6 +1040,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_background_subtract( nullptr ),
   m_same_z_age( nullptr ),
   m_u_pu_by_correlation( nullptr ),
+  m_clear_energy_ranges( nullptr ),
   m_show_free_peak( nullptr ),
   m_free_peaks_container( nullptr ),
 //  m_u_pu_data_source( nullptr ),
@@ -1414,6 +1415,12 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_show_free_peak->addStyleClass( "ShowFreePeaks LightButton" );
   m_show_free_peak->clicked().connect( this, &RelActAutoGui::handleShowFreePeaks );
   
+  m_clear_energy_ranges = new WPushButton( "clear all ranges", energies_footer );
+  m_clear_energy_ranges->addStyleClass( "ClearEnergyRanges LightButton" );
+  m_clear_energy_ranges->clicked().connect( this, &RelActAutoGui::handleClearAllEnergyRanges );
+  tooltip = "Removes all energy ranges.";
+  HelpSystem::attachToolTipOn( m_clear_energy_ranges, tooltip, showToolTips );
+  m_clear_energy_ranges->hide();
   
   WText *free_peaks_header = new WText( "Free Peaks", m_free_peaks_container );
   free_peaks_header->addStyleClass( "EnergyNucHeader" );
@@ -2826,6 +2833,26 @@ void RelActAutoGui::handleAddEnergy()
 }//void handleAddEnergy()
 
 
+void RelActAutoGui::handleClearAllEnergyRanges()
+{
+  SimpleDialog *dialog = new SimpleDialog( "Remove all energy ranges?", "" );
+  WPushButton *yes = dialog->addButton( "Yes" );
+  dialog->addButton( "No" );
+  yes->clicked().connect( this, &RelActAutoGui::removeAllEnergyRanges );
+}//void handleClearAllEnergyRanges()
+
+
+void RelActAutoGui::removeAllEnergyRanges()
+{
+  m_energy_ranges->clear();
+  
+  checkIfInUserConfigOrCreateOne();
+  m_render_flags |= RenderActions::UpdateEnergyRanges;
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void removeAllEnergyRanges()
+
+
 void RelActAutoGui::handleShowFreePeaks()
 {
   m_show_free_peak->hide();
@@ -3321,6 +3348,9 @@ void RelActAutoGui::updateDuringRenderForEnergyRangeChange()
   //
   // Need to make sure energy ranges arent overlapping tooo much
   
+  const bool show_clear_ranges = (m_energy_ranges->count() > 0);
+  if( m_clear_energy_ranges->isVisible() != show_clear_ranges )
+    m_clear_energy_ranges->setHidden( !show_clear_ranges );
 }//void updateDuringRenderForEnergyRangeChange()
 
 

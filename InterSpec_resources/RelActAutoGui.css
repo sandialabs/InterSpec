@@ -260,7 +260,8 @@
 }
 
 .RelActAutoGui .ShowFreePeaks,
-.RelActAutoGui .HideFreePeaks
+.RelActAutoGui .HideFreePeaks,
+.RelActAutoGui .ClearEnergyRanges
 {
   font-size: 80%;
   height: 21px;
@@ -269,7 +270,8 @@
   margin-top: 2px;
 }
 
-.RelActAutoGui .DeleteEnergyRangeOrNuc, .RelActAutoGui .DeleteEnergyRangeOrNuc:hover
+.RelActAutoGui .DeleteEnergyRangeOrNuc,
+.RelActAutoGui .DeleteEnergyRangeOrNuc:hover
 {
   justify-self: end;
 }

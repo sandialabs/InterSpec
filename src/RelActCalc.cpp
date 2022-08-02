@@ -559,6 +559,12 @@ Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelation
   
   Pu242ByCorrelationOutput answer;
   
+  // We need to correct for the Pu242 mass fraction.
+  //  See equation 8-14 (page 249) in:
+  //    "Plutonium Isotopic Composition by Gamma-Ray Spectroscopy"
+  //    T. E. Sampson
+  // https://www.lanl.gov/org/ddste/aldgs/sst-training/_assets/docs/PANDA/Plutonium%20Isotopic%20Composition%20by%20Gamma-Ray%20Spectroscopy%20Ch.%208%20p.%20221-272.pdf
+  
   answer.pu238_mass_frac = input.pu238_rel_mass * (1.0 - pu242_mass_frac);
   answer.pu239_mass_frac = input.pu239_rel_mass * (1.0 - pu242_mass_frac);
   answer.pu240_mass_frac = input.pu240_rel_mass * (1.0 - pu242_mass_frac);

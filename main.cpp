@@ -62,7 +62,7 @@ void getUtf8Args( int &argc, char ** &argv );
 
 void processCustomArgs( int argc, char **argv );
 
-//#include "InterSpec/RelActCalcAuto.h"
+//#include "InterSpec/RelActCalc.h"
 //#include "InterSpec/RelActCalcManual.h"
 
 int main( int argc, char **argv )
@@ -72,7 +72,8 @@ int main( int argc, char **argv )
 #endif
 
   //return RelActCalcAuto::run_test();
-  
+  //RelActCalc::test_pu242_by_correlation();
+  //return 1;
   
 #if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
   return developcode::run_development_code();

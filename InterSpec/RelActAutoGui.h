@@ -101,6 +101,7 @@ public:
   void handleNucDataSrcChanged();
   void handleAddNuclide();
   void handleAddEnergy();
+  void handleClearAllEnergyRanges();
   void handleShowFreePeaks();
   void handleHideFreePeaks();
   void handleAddFreePeak( const double energy,
@@ -180,6 +181,7 @@ protected:
    */
   Wt::WWidget *handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
   
+  void removeAllEnergyRanges();
   
 protected:
   
@@ -256,6 +258,7 @@ protected:
   
   // Wt::WComboBox *m_u_pu_data_source;
   
+  Wt::WPushButton *m_clear_energy_ranges;
   Wt::WPushButton *m_show_free_peak;
   Wt::WContainerWidget *m_free_peaks_container;
   
