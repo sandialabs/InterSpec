@@ -7573,12 +7573,15 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   PopupDivMenuItem *item = NULL;
 
   item = popup->addMenuItem( "Activity/Shielding Fit" );
-  HelpSystem::attachToolTipOn( item,"Allows advanced input of shielding material and activity around source isotopes to improve the fit." , showToolTips );
+  HelpSystem::attachToolTipOn( item,
+                              "Tool to fit for the activity and shielding of nuclides in the spectrum.<br />"
+                              "Also contains capabilities to determine nuclide ages, contamination"
+                              " concentrations, or enrichments.", showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showShieldingSourceFitWindow, this ) );
  
 #if( USE_REL_ACT_TOOL )
   m_relActAutoMenuItem = popup->addMenuItem( "Isotopics by nuclides" );
-  HelpSystem::attachToolTipOn( item,
+  HelpSystem::attachToolTipOn( m_relActAutoMenuItem,
                               "UNDER DEVELOPMENT."
                               " Automatically fits nuclides peaks to allow determining the relative"
                               " activities of nuclides.  Does not require knowing the detector"
@@ -7586,7 +7589,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::showRelActAutoWindow, this ) );
   
   m_relActManualMenuItem = popup->addMenuItem( "Isotopics from peaks" );
-  HelpSystem::attachToolTipOn( item,
+  HelpSystem::attachToolTipOn( m_relActManualMenuItem,
                               "UNDER DEVELOPMENT."
                               " Uses the peaks you have fit to determine the relative activities of"
                               " nuclides.  Does not require knowing the detector response or"

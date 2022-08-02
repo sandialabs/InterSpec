@@ -2915,7 +2915,8 @@ const Material *ShieldingSelect::material( const std::string &text )
   {
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
     const Material *mat = m_materialDB->parseChemicalFormula( text, db );
-    m_materialSuggest->addSuggestion( mat->name, mat->name );
+    if( m_materialSuggest )
+      m_materialSuggest->addSuggestion( mat->name, mat->name );
     return mat;
   }catch(...)
   {

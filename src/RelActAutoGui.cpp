@@ -64,6 +64,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActAutoGui.h"
 #include "InterSpec/WarningWidget.h"
@@ -1040,6 +1041,11 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_background_subtract( nullptr ),
   m_same_z_age( nullptr ),
   m_u_pu_by_correlation( nullptr ),
+  m_more_options_menu( nullptr ),
+  m_apply_energy_cal_item( nullptr ),
+  m_show_ref_lines_item( nullptr ),
+  m_hide_ref_lines_item( nullptr ),
+  m_photopeak_widget(),
   m_clear_energy_ranges( nullptr ),
   m_show_free_peak( nullptr ),
   m_free_peaks_container( nullptr ),
@@ -1082,6 +1088,22 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_spectrum->setYAxisTitle( "Counts" );
   m_interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
   m_spectrum->applyColorTheme( m_interspec->getColorTheme() );
+  
+  const bool logypref = InterSpecUser::preferenceValue<bool>( "LogY", m_interspec );
+  m_spectrum->setYAxisLog( logypref );
+  
+  auto set_log_y = wApp->bind( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_spectrum, true ) );
+  auto set_lin_y = wApp->bind( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_spectrum, false ) );
+  std::function<void (boost::any)> logy_fcn = [=](boost::any value){
+    if( boost::any_cast<bool>(value) )
+      set_log_y();
+    else
+      set_lin_y();
+  };
+  InterSpecUser::associateFunction( m_interspec->m_user, "LogY", logy_fcn, m_interspec );
+  
+  // When we merge in the master, we can replace the above with:
+  //InterSpecUser::addCallbackWhenChanged( m_interspec->m_user, "LogY", m_spectrum, &D3SpectrumDisplayDiv::setYAxisLog );
   
   m_peak_model = new PeakModel( m_spectrum );
   m_peak_model->setNoSpecMeasBacking();
@@ -1365,6 +1387,29 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   HelpSystem::attachToolTipOn( m_u_pu_by_correlation, tooltip, showToolTips );
   
   
+  
+  WPushButton *more_btn = new WPushButton( optionsDiv );
+  more_btn->setIcon( "InterSpec_resources/images/more_menu_icon.svg" );
+  more_btn->addStyleClass( "MoreMenuIcon Wt-icon" );
+  
+  m_more_options_menu = new PopupDivMenu( more_btn, PopupDivMenu::TransientMenu );
+  const bool is_phone = false; //isPhone();
+  if( is_phone )
+    m_more_options_menu->addPhoneBackItem( nullptr );
+  
+  m_apply_energy_cal_item = m_more_options_menu->addMenuItem( "Apply Energy Cal" );
+  m_apply_energy_cal_item->triggered().connect( this, &RelActAutoGui::startApplyFitEnergyCalToSpecFile );
+  
+  m_show_ref_lines_item = m_more_options_menu->addMenuItem( "Show Ref. Gamma Lines" );
+  m_show_ref_lines_item->triggered().connect( boost::bind( &RelActAutoGui::handleShowRefLines, this, true ) );
+  
+  m_hide_ref_lines_item = m_more_options_menu->addMenuItem( "Hide Ref. Gamma Lines" );
+  m_hide_ref_lines_item->triggered().connect( boost::bind( &RelActAutoGui::handleShowRefLines, this, false ) );
+  m_hide_ref_lines_item->setHidden( true );
+  m_hide_ref_lines_item->setDisabled( true );
+  
+  // TODO: add item to account for Rel Eff, and Rel Acts
+  
   WContainerWidget *bottomArea = new WContainerWidget( this );
   bottomArea->addStyleClass( "EnergiesAndNuclidesHolder" );
   
@@ -1456,6 +1501,15 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
 }//RelActAutoGui constructor
   
 
+RelActAutoGui::~RelActAutoGui()
+{
+  // We need to manually manage any WPopupMenu's we create.
+  if( m_more_options_menu && wApp && wApp->domRoot() )
+    delete m_more_options_menu;
+  m_more_options_menu = nullptr;
+}//~RelActAutoGui();
+
+
 void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   if( m_render_flags.testFlag(RenderActions::UpdateSpectra) )
@@ -1476,6 +1530,12 @@ void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
   {
     updateDuringRenderForNuclideChange();
     m_render_flags |= RenderActions::UpdateCalculations;
+  }
+  
+  if( m_render_flags.testFlag(RenderActions::UpdateNuclidesPresent)
+     || m_render_flags.testFlag(RenderActions::UpdateRefGammaLines) )
+  {
+    updateDuringRenderForRefGammaLineChange();
   }
   
   if( m_render_flags.testFlag(RenderActions::UpdateEnergyRanges) )
@@ -2298,7 +2358,30 @@ rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *pa
   }//if( !floating_peaks.empty() )
   
   
-  // TODO: put in display options, such as spectrum energy range, log/lin (also, make our spectrum obey this pref value),
+  {
+    const bool show_ref_lines = m_hide_ref_lines_item->isEnabled();
+    const char *val = show_ref_lines ? "true" : "false";
+    xml_node<char> *node = doc->allocate_node( node_element, "ShowRefGammaLines", val );
+    options_node->append_node( node );
+  }//if( !refline_cb )
+  
+  const double lower_display_energy = m_spectrum->xAxisMinimum();
+  const double upper_display_energy = m_spectrum->xAxisMaximum();
+  
+  if( lower_display_energy < upper_display_energy )
+  {
+    const string lower_energy_str = std::to_string( lower_display_energy );
+    const string upper_energy_str = std::to_string( upper_display_energy );
+    
+    const char *val = doc->allocate_string( lower_energy_str.c_str() );
+    xml_node<char> *node = doc->allocate_node( node_element, "LowerDisplayEnergy", val );
+    options_node->append_node( node );
+    
+    val = doc->allocate_string( upper_energy_str.c_str() );
+    node = doc->allocate_node( node_element, "UpperDisplayEnergy", val );
+    options_node->append_node( node );
+  }//if( lower_display_energy < upper_display_energy )
+  
   
   
   return parent_node;
@@ -2327,6 +2410,8 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   if( !node )
     throw runtime_error( "RelActAutoGui::deSerialize: No <Options> node." );
   
+  bool loaded_display_energy_range = false;
+  
   RelActCalcAuto::Options options;
   vector<RelActCalcAuto::RoiRange> rois;
   vector<RelActCalcAuto::NucInputInfo> nuclides;
@@ -2344,6 +2429,34 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
     opt_node = XML_FIRST_NODE(node, "BackgroundSubtract");
     val = SpecUtils::xml_value_str( opt_node );
     const bool back_sub = SpecUtils::iequals_ascii(val, "true");
+    
+    
+    opt_node = XML_FIRST_NODE(node, "ShowRefGammaLines");
+    val = SpecUtils::xml_value_str( opt_node );
+    const bool show_ref_lines = SpecUtils::iequals_ascii(val, "true");
+    m_show_ref_lines_item->setHidden( show_ref_lines );
+    m_hide_ref_lines_item->setHidden( !show_ref_lines );
+    m_show_ref_lines_item->setDisabled( show_ref_lines );
+    m_hide_ref_lines_item->setDisabled( !show_ref_lines );
+    
+    opt_node = XML_FIRST_NODE(node, "LowerDisplayEnergy");
+    const string lower_display_energy_str = SpecUtils::xml_value_str( opt_node );
+    opt_node = XML_FIRST_NODE(node, "UpperDisplayEnergy");
+    const string upper_display_energy_str = SpecUtils::xml_value_str( opt_node );
+    
+    double lower_display_energy, upper_display_energy;
+    if( !lower_display_energy_str.empty() && !upper_display_energy_str.empty()
+       && (stringstream(lower_display_energy_str) >> lower_display_energy)
+       && (stringstream(upper_display_energy_str) >> upper_display_energy)
+       && (upper_display_energy > lower_display_energy)
+       && !IsInf(lower_display_energy) && !IsNan(lower_display_energy)
+       && !IsInf(upper_display_energy) && !IsNan(upper_display_energy)
+       )
+    {
+      loaded_display_energy_range = true;
+      m_spectrum->setXAxisRange( lower_display_energy, upper_display_energy );
+    }
+    
     
     /*
     opt_node = XML_FIRST_NODE(node, "UPuDataSrc");
@@ -2454,6 +2567,10 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateFreePeaks;
+  m_render_flags |= RenderActions::UpdateRefGammaLines;
+  if( !loaded_display_energy_range )
+    m_render_flags |= RenderActions::ChartToDefaultRange;
+  
   scheduleRender();
 }//void deSerialize( const rapidxml::xml_node<char> *base_node )
 
@@ -2706,6 +2823,11 @@ void RelActAutoGui::setOptionsForValidSolution()
   if( !m_solution || (m_solution->m_status != RelActCalcAuto::RelActAutoSolution::Status::Success) )
     return;
     
+  // Check if we should allow setting energy calibration from fit solution
+  const bool fit_energy_cal = (m_solution->m_fit_energy_cal[0] || m_solution->m_fit_energy_cal[1]);
+  m_apply_energy_cal_item->setDisabled( !fit_energy_cal );
+  
+  
   for( WWidget *w : m_energy_ranges->children() )
   {
     RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
@@ -2835,7 +2957,7 @@ void RelActAutoGui::handleAddEnergy()
 
 void RelActAutoGui::handleClearAllEnergyRanges()
 {
-  SimpleDialog *dialog = new SimpleDialog( "Remove all energy ranges?", "" );
+  SimpleDialog *dialog = new SimpleDialog( "Clear energy ranges?", "&nbsp;" );
   WPushButton *yes = dialog->addButton( "Yes" );
   dialog->addButton( "No" );
   yes->clicked().connect( this, &RelActAutoGui::removeAllEnergyRanges );
@@ -3192,6 +3314,188 @@ void RelActAutoGui::handleRemoveNuclide( Wt::WWidget *w )
 }//void handleRemoveNuclide( Wt::WWidget *w )
 
 
+void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
+{
+  const bool fit_offset = (m_solution && m_solution->m_fit_energy_cal[0]);
+  const bool fit_gain = (m_solution && m_solution->m_fit_energy_cal[1]);
+  if( !fit_offset && !fit_gain )
+    return;
+  
+  string msg = "This will";
+  
+  char buffer[128] = { '\0' };
+  
+  if( fit_offset )
+  {
+    const double offset = -m_solution->m_energy_cal_adjustments[0];
+    snprintf( buffer, sizeof(buffer), " add an offset of %.2f keV", offset );
+    msg += buffer;
+  }
+  
+  if( fit_gain )
+  {
+    const double gain = 1.0 / m_solution->m_energy_cal_adjustments[1];
+    snprintf( buffer, sizeof(buffer), "%s multiple the gain by %.5f", (fit_offset ? " and" : ""), gain );
+    msg += buffer;
+  }//if( fit_gain )
+  
+  msg += " for the primary foreground";
+  const bool has_back = !!m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+  if( has_back )
+    msg += " and background";
+  msg += has_back ? " files" : " file";
+  msg += ".<br />Would you like to do this?";
+  
+  
+  SimpleDialog *dialog = new SimpleDialog( "Apply fit energy calibration?", msg );
+  WPushButton *yes = dialog->addButton( "Yes" );
+  dialog->addButton( "No" );
+  yes->clicked().connect( this, &RelActAutoGui::applyFitEnergyCalToSpecFile );
+}//void startApplyFitEnergyCalToSpecFile();
+
+
+void RelActAutoGui::applyFitEnergyCalToSpecFile()
+{
+  // We will apply to currently displayed spectra; its too complicated to
+  //  give the user all the options of what to apply it to, like the
+  //  energy calibration tool
+  bool ownEnergyCal = false;
+  EnergyCalTool *tool = nullptr;
+  try
+  {
+    assert( m_solution->m_foreground );
+    if( !m_solution->m_foreground )
+      throw runtime_error( "Solution foreground not set???" );
+    
+    const auto orig_cal = m_solution->m_foreground->energy_calibration();
+    assert( orig_cal && orig_cal->valid() );
+    if( !orig_cal || !orig_cal->valid() )
+      throw runtime_error( "Solution foreground energy calibration invalid???" );
+    
+    const size_t nchannel = orig_cal->num_channels();
+    
+    shared_ptr<SpecUtils::EnergyCalibration> new_cal = make_shared<SpecUtils::EnergyCalibration>();
+    
+    const double offset = m_solution->m_energy_cal_adjustments[0];
+    const double gain_mult = m_solution->m_energy_cal_adjustments[1];
+    
+    switch( orig_cal->type() )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      {
+        vector<float> coefs = orig_cal->coefficients();
+        assert( coefs.size() >= 2 );
+        coefs[0] -= offset;
+        coefs[1] /= gain_mult;
+        
+        const auto &dev_pairs = orig_cal->deviation_pairs();
+        if( orig_cal->type() == SpecUtils::EnergyCalType::FullRangeFraction )
+          new_cal->set_full_range_fraction( nchannel, coefs, dev_pairs );
+        else
+          new_cal->set_polynomial( nchannel, coefs, dev_pairs );
+        break;
+      }//case polynomial or FRF
+        
+        
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+      {
+        assert( orig_cal->channel_energies() );
+        if( !orig_cal->channel_energies() || orig_cal->channel_energies()->empty() )
+          throw runtime_error( "Invalid lower channel energies???" );
+        
+        vector<float> lower_energies = *orig_cal->channel_energies();
+        for( float &x : lower_energies )
+          x = (x - offset) / gain_mult;
+        
+        new_cal->set_lower_channel_energy( nchannel, std::move(lower_energies) );
+      }//case SpecUtils::EnergyCalType::LowerChannelEdge:
+        
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+        assert( 0 );
+        throw runtime_error( "Solution foreground energy calibration invalid equation???" );
+        break;
+    }//switch( m_energy_cal->type() )
+    
+    assert( new_cal && new_cal->valid() );
+    if( !new_cal || !new_cal->valid() ) //shouldnt ever happen
+      throw runtime_error( "Updated energy calibration is invalid - not applying" );
+    
+    tool = m_interspec->energyCalTool();
+    if( !tool )
+    {
+      ownEnergyCal = true;
+      tool = new EnergyCalTool( m_interspec, m_interspec->peakModel(), nullptr );
+    }
+    
+    MeasToApplyCoefChangeTo fore, back;
+    fore.meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    fore.sample_numbers = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+    const auto fore_dets = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+    fore.detectors = set<string>( begin(fore_dets), end(fore_dets) );
+    
+    back.meas = m_interspec->measurment(SpecUtils::SpectrumType::Background);
+    back.sample_numbers = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+    const auto back_dets = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Background);
+    back.detectors = set<string>( begin(back_dets), end(back_dets) );
+    
+    // Should we apply it to the secondary spectrum?
+    
+    vector<MeasToApplyCoefChangeTo> change_meas;
+    if( fore.meas )
+      change_meas.push_back( fore );
+    if( back.meas )
+      change_meas.push_back( back );
+    
+    if( change_meas.empty() ) // never expect to happe
+      throw runtime_error( "Somehow invalid foreground or background SpecMeas?" );
+    
+    tool->applyCalChange( orig_cal, new_cal, change_meas, false );
+    
+    string msg = "Have updated energy calibration for displayed foreground";
+    if( back.meas )
+      msg += " and background.";
+    
+    passMessage( msg, "", WarningWidget::WarningMsgInfo );
+    m_fit_energy_cal->setChecked( false );
+  }catch( std::exception &e )
+  {
+    passMessage( "Error applying energy calibration: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
+  }// try / catch
+  
+  if( ownEnergyCal && tool )
+  {
+    delete tool;
+    tool = nullptr;
+  }
+  
+  m_render_flags |= RenderActions::UpdateSpectra;
+  m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::ChartToDefaultRange;
+  scheduleRender();
+}//void applyFitEnergyCalToSpecFile()
+
+
+void RelActAutoGui::handleShowRefLines( const bool show )
+{
+  if( show == m_hide_ref_lines_item->isEnabled() )
+    return;
+  
+  m_show_ref_lines_item->setHidden( show );
+  m_hide_ref_lines_item->setHidden( !show );
+  
+  // We will use the enabled/disabled state to track which option
+  //  the user wants.  The isHidden() state is affected by the popup
+  //  menu status, so we cant use it.
+  m_show_ref_lines_item->setDisabled( show );
+  m_hide_ref_lines_item->setDisabled( !show );
+  
+  m_render_flags |= RenderActions::UpdateRefGammaLines;
+  scheduleRender();
+}//void RelActAutoGui::handleShowRefLines()
+
+
 void RelActAutoGui::updateDuringRenderForSpectrumChange()
 {
   const shared_ptr<const SpecUtils::Measurement> fore
@@ -3279,6 +3583,7 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
   //   However, we really need to be more complex about this, and also hide "Fit Age" and disable age input if this option is selected, on all but the first entry of this Z
   bool has_multiple_nucs_of_z = false;
   map<short,int> z_to_num_isotopes;
+  
   const vector<RelActCalcAuto::NucInputInfo> nuclides = getNucInputInfo();
   for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
   {
@@ -3297,7 +3602,63 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
   
   if( m_same_z_age->isVisible() != has_multiple_nucs_of_z )
     m_same_z_age->setHidden( !has_multiple_nucs_of_z );
+  
 }//void updateDuringRenderForNuclideChange()
+
+
+void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
+{
+  // Determine if we should show/hide the reference lines.
+  const bool show_ref_lines = m_hide_ref_lines_item->isEnabled();
+  const vector<RelActCalcAuto::NucInputInfo> nuclides = getNucInputInfo();
+  
+  if( !show_ref_lines || nuclides.empty() )
+  {
+    if( m_photopeak_widget )
+      m_photopeak_widget->clearAllLines();
+  }else
+  {
+    if( !m_photopeak_widget )
+    {
+      MaterialDB *materialDb = m_interspec->materialDataBase();
+      Wt::WSuggestionPopup *materialSuggest = nullptr;
+      WContainerWidget *parent = nullptr;
+      m_photopeak_widget.reset( new ReferencePhotopeakDisplay( m_spectrum, materialDb, materialSuggest,
+                                                              m_interspec, parent ) );
+      
+      // We need to set peaks getting assigned ref. line color, or else our call to
+      //  #setColorsForSpecificSources will be useless.
+      m_photopeak_widget->setPeaksGetAssignedRefLineColor( true );
+    }//if( !m_photopeak_widget )
+    
+    assert( m_photopeak_widget );
+    
+    // First, clear out all the old lines
+    m_photopeak_widget->clearAllLines();
+    
+    
+    map<std::string,Wt::WColor> nuclide_colors;
+    for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+    {
+      if( nuc.nuclide && !nuc.peak_color_css.empty() )
+        nuclide_colors[nuc.nuclide->symbol] = WColor( nuc.peak_color_css );
+    }
+    
+    // If the user has a ColorTheme preference to assign a specific color to a nuclide, that
+    //  will over-ride the colors we are about to set, but this is a minor detail to ignore at
+    //  the moment.
+    m_photopeak_widget->setColorsForSpecificSources( nuclide_colors );
+    
+    for( size_t i = 0; i < nuclides.size(); ++i )
+    {
+      const RelActCalcAuto::NucInputInfo &nuc = nuclides[i];
+      
+      if( i )
+        m_photopeak_widget->persistCurentLines();
+      m_photopeak_widget->setIsotope( nuc.nuclide, nuc.age );
+    }//
+  }//if( !show_ref_lines ) / else
+}//void updateDuringRenderForRefGammaLineChange()
 
 
 void RelActAutoGui::updateDuringRenderForFreePeakChange()
@@ -3359,6 +3720,10 @@ void RelActAutoGui::startUpdatingCalculation()
   m_error_msg->setText("");
   m_error_msg->hide();
   m_status_indicator->hide();
+  
+  // Disable being able to apply energy calibration fit from solution, until we get a new solution
+  if( !m_apply_energy_cal_item->isDisabled() )
+    m_apply_energy_cal_item->disable();
   
   shared_ptr<const SpecUtils::Measurement> foreground = m_foreground;
   shared_ptr<const SpecUtils::Measurement> background = m_background;
@@ -3533,7 +3898,38 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities, rel_eff_eqn_js );
   
+  
+  bool any_nucs_updated = false;
+  for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities )
+  {
+    if( !fit_nuc.age_was_fit || (fit_nuc.age < 0.0) )
+      continue;
+    
+    any_nucs_updated = true;
+    for( WWidget *w : m_nuclides->children() )
+    {
+      RelActAutoNuclide *nuc = dynamic_cast<RelActAutoNuclide *>( w );
+      assert( nuc );
+      if( !nuc || !nuc->nuclide() )
+        continue;
+      
+      if( fit_nuc.nuclide == nuc->nuclide() )
+      {
+        const string agestr = PhysicalUnits::printToBestTimeUnits( fit_nuc.age, 3 );
+        nuc->setAge( agestr );
+        break;
+      }//if( this is the widget for this nuclide )
+    }//for( WWidget *w : kids )
+  }//for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities )
+  
+  
   setOptionsForValidSolution();
+  
+  if( any_nucs_updated )
+  {
+    m_render_flags |= RenderActions::UpdateRefGammaLines;
+    scheduleRender();
+  }
 }//void updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer )
 
 

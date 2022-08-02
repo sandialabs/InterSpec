@@ -144,11 +144,40 @@
   justify-items: start;
   align-items: center;
   justify-content: start;
+  
+  position: relative;
 }
 
-.RelActAutoGui .RelActAutoOptions > label {
+.RelActAutoGui .RelActAutoOptions > label
+{
   margin-left: 10px;
   justify-self: end;
+}
+
+
+.RelActAutoGui .MoreMenuIcon,
+.RelActAutoGui .MoreMenuIcon:hover
+{
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: none;
+  position: absolute;
+  top: 0px;
+  right: 0px;
+  padding: 0;
+  margin: 0;
+}
+
+.RelActAutoGui .MoreMenuIcon
+{
+  opacity: 0.55;
+}
+
+.RelActAutoGui .MoreMenuIcon:hover,
+.RelActAutoGui .MoreMenuIcon 
+{
+  opacity: 1;
 }
 
 .RelActAutoGui .EnergiesAndNuclidesHolder

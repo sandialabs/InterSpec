@@ -2380,10 +2380,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   double apply_energy_cal_adjustment( double energy, const std::vector<double> &x ) const
   {
     assert( x.size() > 2 );
-
-    
-    if( fabs(1.0 - x[1]) > 0.00001 )
-      cout << "x[0]=" + to_string(x[0]) + ", x[1]=" + to_string(x[1]) << endl;
     
     if( !m_options.fit_energy_cal )
     {

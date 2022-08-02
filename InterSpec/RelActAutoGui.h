@@ -39,6 +39,8 @@ class PeakModel;
 class AuxWindow;
 class InterSpec;
 class RelEffChart;
+class PopupDivMenu;
+class PopupDivMenuItem;
 class RelActTxtResults;
 class DetectorPeakResponse;
 class D3SpectrumDisplayDiv;
@@ -75,11 +77,14 @@ class RelActAutoGui : public Wt::WContainerWidget
 public:
   RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent = nullptr );
   
+  ~RelActAutoGui();
+  
   static std::pair<RelActAutoGui *,AuxWindow *> createWindow( InterSpec *viewer  );
   
   void updateDuringRenderForSpectrumChange();
   void updateSpectrumToDefaultEnergyRange();
   void updateDuringRenderForNuclideChange();
+  void updateDuringRenderForRefGammaLineChange();
   void updateDuringRenderForEnergyRangeChange();
   void updateDuringRenderForFreePeakChange();
   void startUpdatingCalculation();
@@ -182,6 +187,9 @@ protected:
   Wt::WWidget *handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
   
   void removeAllEnergyRanges();
+  void startApplyFitEnergyCalToSpecFile();
+  void applyFitEnergyCalToSpecFile();
+  void handleShowRefLines( const bool show );
   
 protected:
   
@@ -193,7 +201,8 @@ protected:
     UpdateCalculations    = 0x08,
     ChartToDefaultRange   = 0x10,
     UpdateFreePeaks       = 0x20,
-    UpdateFitEnergyCal    = 0x40
+    UpdateFitEnergyCal    = 0x40,
+    UpdateRefGammaLines   = 0x80
   };//enum D3RenderActions
   
   Wt::WFlags<RenderActions> m_render_flags;
@@ -257,6 +266,19 @@ protected:
   Wt::WCheckBox *m_u_pu_by_correlation;
   
   // Wt::WComboBox *m_u_pu_data_source;
+  PopupDivMenu *m_more_options_menu;
+  PopupDivMenuItem *m_apply_energy_cal_item;
+  PopupDivMenuItem *m_show_ref_lines_item;
+  PopupDivMenuItem *m_hide_ref_lines_item;
+  
+  /** If the user wants to show reference gamma lines, we'll use a #ReferencePhotopeakDisplay
+   widget to calculate them and load them to m_spectrum; this is primarily for code re-use
+   until I bother to refactor #ReferencePhotopeakDisplay to more easily generate reference
+   lines.
+   This #ReferencePhotopeakDisplay wont be inserted into the Wt widget hierarchy.
+   */
+  std::unique_ptr<ReferencePhotopeakDisplay> m_photopeak_widget;
+
   
   Wt::WPushButton *m_clear_energy_ranges;
   Wt::WPushButton *m_show_free_peak;
