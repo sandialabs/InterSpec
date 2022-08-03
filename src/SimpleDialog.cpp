@@ -63,14 +63,10 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   Wt::WDialog::render( flags );
   
-  /*
   if( flags & RenderFull )
   {
     // WDialog::setMaximumSize will silently not use dimensions if WLength::Percentage
     //  Note that page dimensions wont be available during initial rendering of the webapp
-    Wt::WDialog::render( flags );
-    
-    // Override some WDialog settings
     
     // The below seems to be necessary or else sometimes the window doesnt resize to fit its content
     doJavaScript( "let a = function(ms){"
@@ -79,11 +75,7 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
                   "};"
                   "a(0); a(50); a(250);"
     );
-  }else
-  {
-    Wt::WDialog::render( flags );
   }//if( flags & RenderFull )
-   */
 }//render( flags )
 
 
@@ -124,8 +116,10 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
   show();
   finished().connect( this, &SimpleDialog::startDeleteSelf );
   
-  // TODO: Wt 3.3.4 doesnt have WDialog::raiseToFront(), should simulate, or fix AuxWindow to
-  //       better respect the DialogCover stuff defined in 
+#if( WT_VERSION > 0x3040000 )
+  // I havent checked version of Wt that does include `raiseToFront()`, but 3.3.4 doesnt.
+  raiseToFront();
+#endif
 }//init(...)
 
 

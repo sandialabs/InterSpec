@@ -2089,21 +2089,18 @@ ShieldingSelect::~ShieldingSelect()
   {
     WApplication *app = wApp;
     
-    WContainerWidget *root = (app ? app->domRoot() : (WContainerWidget *)0);
+    WContainerWidget *root = (app ? app->domRoot() : nullptr);
     
     if( root )
     {
-      //Testing for root apears to be enough, and m_materialSuggestName does not
+      //Testing for root appears to be enough, and m_materialSuggestName does not
       //  need to be done for our current specific use case, but leaving in the
-      //  checking of the name for the futire, JIC.
+      //  checking of the name for the future, JIC.
       WWidget *w = app->findWidget( m_materialSuggestName );
       if( w || m_materialSuggestName.empty() )
         m_materialSuggest->removeEdit( m_materialEdit );
       else
        cerr << "~ShieldingSelect(): Suggest not in DOM, not removing form from suggestion" << endl;
-    }else
-    {
-      cerr << "~ShieldingSelect(): no DOM root, not removing form from suggestion" << endl;
     }
   }//if( m_materialSuggest && m_materialEdit )
   
