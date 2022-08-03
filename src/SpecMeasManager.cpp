@@ -3817,8 +3817,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   AuxWindow *window = new AuxWindow( "Previously Stored States",
                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
                                      | AuxWindowProperties::EnableResize
-                                     | AuxWindowProperties::TabletNotFullScreen
-                                     | AuxWindowProperties::IsModal) );
+                                     | AuxWindowProperties::TabletNotFullScreen) );
   window->rejectWhenEscapePressed();
   window->addStyleClass( "ShowPrevSpecFileUses" );
   
