@@ -1804,10 +1804,14 @@ void InterSpec::addPeakFromRightClick()
   
   
   const auto origContinumm = peak->continuum();
-  const std::shared_ptr<const deque<PeakModel::PeakShrdPtr>> allOrigPeaks = m_peakModel->peaks();
+  const std::shared_ptr<const deque<PeakModel::PeakShrdPtr>> allOrigPeaksDeque = m_peakModel->peaks();
+  
+  // We need to make a copy of all the shared pointers because we modify the deque that
+  //  allOrigPeaksDeque points at.
+  const deque<PeakModel::PeakShrdPtr> allOrigPeaks( begin(*allOrigPeaksDeque), end(*allOrigPeaksDeque) );
   
   ContToPeakMap contToPeaks;
-  for( const PeakModel::PeakShrdPtr &thispeak : *allOrigPeaks )
+  for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
   {
     if( thispeak )
       contToPeaks[thispeak->continuum()].push_back( *thispeak );
@@ -1937,7 +1941,7 @@ void InterSpec::addPeakFromRightClick()
   
   
   std::map<std::shared_ptr<PeakDef>,PeakModel::PeakShrdPtr> new_to_orig_peaks;
-  for( const PeakModel::PeakShrdPtr &thispeak : *allOrigPeaks )
+  for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
   {
     if( !thispeak || (thispeak->continuum() != origContinumm) )
       continue;
@@ -1961,7 +1965,7 @@ void InterSpec::addPeakFromRightClick()
       nearest_new->inheritUserSelectedOptions( *thispeak, true );
       new_to_orig_peaks[nearest_new] = thispeak;
     }
-  }//for( const PeakModel::PeakShrdPtr &thispeak : *allOrigPeaks )
+  }//for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
   
   
   for( size_t i = 0; i < answer.size(); ++i )
