@@ -1418,7 +1418,7 @@ function delegate(selector, events, method) {
 // Event trigger
 PROTOTYPE._trigger = function(type, args, event) {
 	var callback = new $.Event('tooltip'+type);
-	callback.originalEvent = event && $.extend({}, event) || this.cache.event || NULL;
+	callback.originalEvent = event && $.extend({}, event) || this.cache && this.cache.event || NULL;  //wcjohns modified because this.cache can apparently be null
 
 	this.triggering = type;
 	this.tooltip.trigger(callback, [this].concat(args || []));
