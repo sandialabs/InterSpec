@@ -532,9 +532,8 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     console.error( "Dimensions of D3TimeChart div element are not set." );
     console.trace();
     
-    throw new ValidationError(
-      "dimensions of D3TimeChart div element are not set."
-    );
+    //throw new ValidationError( "dimensions of D3TimeChart div element are not set." );
+    return;
   }
   // console.log("Re-initializing...");
 
@@ -2009,6 +2008,10 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
         } else {
           // use livetimes for cps if available; realtimes otherwise
           var dt = det.liveTimes ? det.liveTimes[i] : data.realTimes[i];
+          
+          // dt could be zero - in this case we'll just set the time to 1 ... not really sure how to handle this properly
+          dt = ((dt <= 0) || isNaN(dt)) ? 1 : dt;
+            
           var cps = det.counts[i] / dt;
 
           // push line segment start
@@ -2037,6 +2040,10 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
         } else {
           // use livetimes for cps if available; realtimes otherwise
           var dt = det.liveTimes ? det.liveTimes[i] : data.realTimes[i];
+          
+          // dt could be zero - in this case we'll just set the time to 1 ... not really sure how to handle this properly
+          dt = ((dt <= 0) || isNaN(dt)) ? 1 : dt;
+          
           var cps = det.counts[i] / dt;
           detectors[det.detName].counts[2 * i].setGammaCPS(cps);
           detectors[det.detName].counts[2 * i + 1].setGammaCPS(cps);
@@ -2092,6 +2099,9 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
             // use livetimes for cps if available; realtimes otherwise
             var dt = det.liveTimes ? det.liveTimes[i] : data.realTimes[i];
             
+            // dt could be zero - in this case we'll just set the time to 1 ... not really sure how to handle this properly
+            dt = ((dt <= 0) || isNaN(dt)) ? 1 : dt;
+            
             var cps = det.counts[i] / dt;
             
             //push line segment start
@@ -2130,6 +2140,10 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
           } else {
             // use livetimes for cps if available; realtimes otherwise
             var dt = det.liveTimes ? det.liveTimes[i] : data.realTimes[i];
+            
+            // dt could be zero - in this case we'll just set the time to 1 ... not really sure how to handle this properly
+            dt = ((dt <= 0) || isNaN(dt)) ? 1 : dt;
+            
             var cps = det.counts[i] / dt;
             detectors[det.detName].counts[2 * i].setNeutronCPS(cps);
             detectors[det.detName].counts[2 * i + 1].setNeutronCPS(cps);
@@ -2194,6 +2208,10 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
   for (var i = 0; i < rawData.gammaCounts.length; i++) {
     for (var j = 0; j < nSamples; j++) {
       var dt = rawData.gammaCounts[i].liveTimes ? rawData.gammaCounts[i].liveTimes[j] : rawData.realTimes[j];
+      
+      // dt could be zero - in this case we'll just set the time to 1 ... not really sure how to handle this properly
+      dt = ((dt <= 0) || isNaN(dt)) ? 1 : dt;
+      
       var cps = dontRebin ? rawData.gammaCounts[i].maxCps[j] : (rawData.gammaCounts[i].counts[j] / dt);
       yMaxGamma = Math.max(yMaxGamma, cps );
     }
@@ -2204,6 +2222,10 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
     for (var i = 0; i < rawData.neutronCounts.length; i++) {
       for (var j = 0; j < nSamples; j++) {
         var dt = rawData.neutronCounts[i].liveTimes ? rawData.neutronCounts[i].liveTimes[j] : rawData.realTimes[j];
+        
+        // dt could be zero - in this case we'll just set the time to 1 ... not really sure how to handle this properly
+        dt = ((dt <= 0) || isNaN(dt)) ? 1 : dt;
+        
         var cps = dontRebin ? rawData.neutronCounts[i].maxCps[j] : (rawData.neutronCounts[i].counts[j] / dt);
         yMaxNeutron = Math.max( yMaxNeutron, cps );
       }
@@ -3320,6 +3342,9 @@ D3TimeChart.prototype.compress = function (data, n) {
             detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] += detector.liveTimes[i + j];
           }// (detector.hasOwnProperty("liveTimes"))
           
+          // dt could be zero - in this case we'll just set the time to 1 ... not really sure how to handle this properly
+          dt = ((dt <= 0) || isNaN(dt)) ? 1 : dt;
+          
           if( dontRebin ) {
             var cps = detector.counts[i + j] / dt;
             if ( detectorsAccumulator[detector.detName].minGammaCps[outIdx] == null ) {
@@ -3410,6 +3435,9 @@ D3TimeChart.prototype.compress = function (data, n) {
               detectorsAccumulator[detector.detName].neutronLiveTimes[outIdx] +=
                 detector.liveTimes[i + j];
             }
+            
+            // dt could be zero - in this case we'll just set the time to 1 ... not really sure how to handle this properly
+            dt = ((dt <= 0) || isNaN(dt)) ? 1 : dt;
             
             if( dontRebin ){
               var cps = detector.counts[i + j] / dt;
