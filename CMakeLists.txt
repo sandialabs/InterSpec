@@ -113,7 +113,7 @@ option(
     "Use MySQL database to store user preferences and spectra"
     OFF
 )
-option(USE_GOOGLE_MAP "Use google maps widget" ON)
+option(USE_GOOGLE_MAP "Use google maps widget" OFF)
 
 option(
     USE_CSS_FLEX_LAYOUT
@@ -245,7 +245,6 @@ if(IOS)
     SET(CMAKE_MODULE_PATH ${Boost_DIR} ${CMAKE_MODULE_PATH} )
     set(SHARED_LIBS OFF)
     set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${Boost_DIR})
-    set(USE_GOOGLE_MAP OFF)
 
     #if you change this IPHONEOS_DEPLOYMENT_TARGET also change the variable in
     # iosbuild.rb everywhere, and in the Xcode project.
@@ -284,7 +283,6 @@ if(BUILD_FOR_WEB_DEPLOYMENT)
     #    set( USE_SQLITE3_DB ON )
     #    set( USE_MYSQL_DB OFF )
     set(DATABASE_PASSWORD_FILE "/path/to/passwords/databases.xml")
-    set(USE_GOOGLE_MAP OFF)
     set(PERFORM_DEVELOPER_CHECKS OFF)
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
     set(USE_TERMINAL_WIDGET OFF)

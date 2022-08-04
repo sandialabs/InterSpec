@@ -4673,7 +4673,6 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
     labels.push_back( new WText( descriptionText( SpecUtils::SpectrumType(i) ) ) );
     dbs.push_back( dbentry );
     specs.push_back( m );
-    
   }//for( int i = 0; i < 3; ++i )
   
   if( specs.empty() )

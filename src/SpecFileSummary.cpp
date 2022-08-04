@@ -425,6 +425,12 @@ void SpecFileSummary::init()
   m_prevSampleNumButton->clicked().connect( boost::bind( &SpecFileSummary::handleUserIncrementSampleNum, this, false) );
   m_displayedPreText = new WText( m_displaySampleDiv );
   m_displaySampleNumEdit = new WLineEdit( m_displaySampleDiv );
+  m_displaySampleNumEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_displaySampleNumEdit->setAttributeValue( "autocorrect", "off" );
+  m_displaySampleNumEdit->setAttributeValue( "spellcheck", "off" );
+#endif
+
   m_displaySampleNumValidator = new WIntValidator( m_displaySampleDiv );
   m_displaySampleNumEdit->setValidator( m_displaySampleNumValidator );
   m_displaySampleNumEdit->addStyleClass( "numberValidator"); //used to detect mobile keyboard

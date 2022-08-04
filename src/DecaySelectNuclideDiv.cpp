@@ -209,11 +209,21 @@ void DecaySelectNuclide::init()
   WLabel *label = 0;
   m_elementSelection         = new WSelectionBox();
   m_massSelection            = new WSelectionBox();
-  m_nuclideActivityEdit      = new WLineEdit();//WSpinBox() try WDoubleSpinBox?
-  m_nuclideAgeEdit           = new WLineEdit();//WSpinBox(); try WDoubleSpinBox?
+  m_nuclideActivityEdit      = new WLineEdit();
+  m_nuclideAgeEdit           = new WLineEdit();
   m_selectedIsotopeHalfLife  = new WText( "&lambda;<sub>&frac12;</sub>=",
                                           Wt::XHTMLUnsafeText );
   m_isotopeSearch            = new WLineEdit();
+
+#if( BUILD_AS_OSX_APP || IOS )
+  m_nuclideActivityEdit->setAttributeValue( "autocorrect", "off" );
+  m_nuclideActivityEdit->setAttributeValue( "spellcheck", "off" );
+  m_nuclideAgeEdit->setAttributeValue( "autocorrect", "off" );
+  m_nuclideAgeEdit->setAttributeValue( "spellcheck", "off" );
+  m_isotopeSearch->setAttributeValue( "autocorrect", "off" );
+  m_isotopeSearch->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   m_isoSearchFilterModel     = new SimpleIsotopeNameFilterModel( this );
   string matcherJS, replaceJS;
   SimpleIsotopeNameFilterModel::nuclideNameMatcherJs( matcherJS );

@@ -308,6 +308,11 @@ PhotopeakDelegate::EditWidget::EditWidget( const Wt::WModelIndex& index,
   m_suggestions->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
 
   m_edit = new WLineEdit();
+#if( BUILD_AS_OSX_APP || IOS )
+  m_edit->setAttributeValue( "autocorrect", "off" );
+  m_edit->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   m_edit->setTextSize( 7 );
 
   m_edit->enterPressed().connect

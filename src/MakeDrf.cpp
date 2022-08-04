@@ -1416,7 +1416,10 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_detDiameter->setText( "2.54 cm" );
   m_detDiameter->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   m_detDiameter->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
-  
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detDiameter->setAttributeValue( "autocorrect", "off" );
+  m_detDiameter->setAttributeValue( "spellcheck", "off" );
+#endif
   
   m_effOptionGroup = new WGroupBox( "Intrinsic Eff.", fitOptionsDiv );
   m_effEqnOrder = new WComboBox( m_effOptionGroup );

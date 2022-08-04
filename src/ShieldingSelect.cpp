@@ -203,6 +203,10 @@ public:
     label->addStyleClass( "GridFirstCol GridFirstRow" );
     
     m_relaxationDistance = new WLineEdit( m_relaxationDiv );
+#if( BUILD_AS_OSX_APP || IOS )
+    m_relaxationDistance->setAttributeValue( "autocorrect", "off" );
+    m_relaxationDistance->setAttributeValue( "spellcheck", "off" );
+#endif
     m_relaxationDistance->setText( "1.0 cm" );
     m_relaxationDistance->setValidator( distValidator );
     m_relaxationDistance->addStyleClass( "GridSecondCol GridStretchCol GridFirstRow" );
