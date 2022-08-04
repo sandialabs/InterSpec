@@ -2591,6 +2591,10 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   WLabel *distanceLabel = new WLabel( "Distance:" );
   
   m_distanceEdit = new WLineEdit( "100 cm" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_distanceEdit->setAttributeValue( "autocorrect", "off" );
+  m_distanceEdit->setAttributeValue( "spellcheck", "off" );
+#endif
   m_distanceEdit->setTextSize( 5 );
 
   distanceLabel->setBuddy( m_distanceEdit );
@@ -3218,8 +3222,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
       if( fitAct )
       {
         const int row = table->rowCount();
-        new WLabel( nuc->symbol + " Activity", table->elementAt(row, 0) );
+        WLabel *label = new WLabel( nuc->symbol + " Activity", table->elementAt(row, 0) );
         WLineEdit *value = new WLineEdit( table->elementAt(row, 1) );
+        label->setBuddy( value );
         value->setAutoComplete( false );
 #if( BUILD_AS_OSX_APP || IOS )
         value->setAttributeValue( "autocorrect", "off" );
@@ -3476,6 +3481,12 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           value->enterPressed().connect( std::bind(updateVal) );
           
           WLineEdit *tolerance = new WLineEdit( table->elementAt(row, 2) );
+          tolerance->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+          tolerance->setAttributeValue( "autocorrect", "off" );
+          tolerance->setAttributeValue( "spellcheck", "off" );
+#endif
+
           validator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, tolerance );
           validator->setFlags( Wt::MatchCaseInsensitive );
           tolerance->setValidator( validator );

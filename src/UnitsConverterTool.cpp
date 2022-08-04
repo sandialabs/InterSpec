@@ -184,6 +184,12 @@ UnitsConverterTool::UnitsConverterTool()
   //label->addStyleClass( "UnitsConverterToolLabel" );
   
   m_input = new WLineEdit();
+  m_input->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_input->setAttributeValue( "autocorrect", "off" );
+  m_input->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   layout->addWidget(m_input,1,1);
 
   string regex = string("((") + PhysicalUnits::sm_absorbedDoseRegex
@@ -213,6 +219,11 @@ UnitsConverterTool::UnitsConverterTool()
   //label->addStyleClass( "UnitsConverterToolLabel" );
   
   m_output = new WLineEdit( );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_output->setAttributeValue( "autocorrect", "off" );
+  m_output->setAttributeValue( "spellcheck", "off" );
+#endif
+
   //layout->addWidget(m_output,2,1,1,2);
   layout->addWidget( m_output, 2, 1 );
   //m_output->addStyleClass( "UnitsConverterToolInput" );

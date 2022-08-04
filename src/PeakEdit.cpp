@@ -204,6 +204,12 @@ void PeakEdit::init()
     label = new WLabel( rowLabel(t), m_valueTable->elementAt(t+1,0) );
     m_values[t] = new WLineEdit( m_valueTable->elementAt(t+1,1) );
     m_uncertainties[t] = new WLineEdit( m_valueTable->elementAt(t+1,2) );
+#if( BUILD_AS_OSX_APP || IOS )
+    m_values[t]->setAttributeValue( "autocorrect", "off" );
+    m_values[t]->setAttributeValue( "spellcheck", "off" );
+    m_uncertainties[t]->setAttributeValue( "autocorrect", "off" );
+    m_uncertainties[t]->setAttributeValue( "spellcheck", "off" );
+#endif
     
     
     switch( t )
@@ -317,6 +323,10 @@ void PeakEdit::init()
   label = new WLabel( "Nuclide", row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_nuclide = new WLineEdit( row->elementAt(1) );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_nuclide->setAttributeValue( "autocorrect", "off" );
+  m_nuclide->setAttributeValue( "spellcheck", "off" );
+#endif
   
   string replacerJs, matcherJs;
   PhotopeakDelegate::EditWidget::replacerJs( replacerJs );
@@ -356,12 +366,17 @@ void PeakEdit::init()
   label = new WLabel( "Label", row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_userLabel = new WLineEdit( row->elementAt(1) );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_userLabel->setAttributeValue( "autocorrect", "off" );
+  m_userLabel->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   m_userLabel->setWidth( WLength(100,WLength::Percentage) );
   m_userLabel->blurred()
               .connect( boost::bind( &PeakEdit::checkIfUserLabelDirty, this ) );
   m_userLabel->enterPressed()
               .connect( boost::bind( &PeakEdit::checkIfUserLabelDirty, this ) );
-
+  
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+4 );
   label = new WLabel( "Peak Color", row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(1);

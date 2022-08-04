@@ -532,6 +532,10 @@ class DateLengthCalculator : public WContainerWidget
     m_layout->addWidget( label, 2, 0, AlignMiddle );
     
     m_duration = new WLineEdit();
+#if( BUILD_AS_OSX_APP || IOS )
+    m_duration->setAttributeValue( "autocorrect", "off" );
+    m_duration->setAttributeValue( "spellcheck", "off" );
+#endif
     label->setBuddy( m_duration );
     
     WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalPosOrNegRegex, m_duration );
@@ -857,6 +861,10 @@ class DateLengthCalculator : public WContainerWidget
       
       cell = nuctbl->elementAt(1 + rowOffset, 1);
       WLineEdit *activityEdit = new WLineEdit(cell);
+#if( BUILD_AS_OSX_APP || IOS )
+      activityEdit->setAttributeValue( "autocorrect", "off" );
+      activityEdit->setAttributeValue( "spellcheck", "off" );
+#endif
       
       WRegExpValidator *actvalidator = new WRegExpValidator( PhysicalUnits::sm_activityRegex, activityEdit );
       actvalidator->setFlags(Wt::MatchCaseInsensitive);
@@ -920,7 +928,11 @@ class DateLengthCalculator : public WContainerWidget
       
       cell = nuctbl->elementAt(2 + rowOffset, 1);
       WLineEdit *ageEdit = new WLineEdit(cell);
-      
+#if( BUILD_AS_OSX_APP || IOS )
+      ageEdit->setAttributeValue( "autocorrect", "off" );
+      ageEdit->setAttributeValue( "spellcheck", "off" );
+#endif
+
       WRegExpValidator *agevalidator = new WRegExpValidator( PhysicalUnits::sm_timeDurationRegex, ageEdit );
       agevalidator->setFlags(Wt::MatchCaseInsensitive);
       ageEdit->setValidator( agevalidator );
@@ -1474,6 +1486,10 @@ public:
     
     el = table->elementAt(0,1);
     m_ageEdit = new WLineEdit( timeSpanStr, el );
+#if( BUILD_AS_OSX_APP || IOS )
+    m_ageEdit->setAttributeValue( "autocorrect", "off" );
+    m_ageEdit->setAttributeValue( "spellcheck", "off" );
+#endif
     label->setToolTip( "Enter time period you would like decay data for."
                        " Ex. '5.2 y', '52.3 s', '00:01:2.1', or '3.2d 15h'"
                        " would al be valid time periods."
@@ -1678,6 +1694,11 @@ void DecayActivityDiv::init()
   //Initialize all member widgets; will assign parentage later on
 //  m_nuclides( 0 ),
   m_displayTimeLength      = new WLineEdit( "" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_displayTimeLength->setAttributeValue( "autocorrect", "off" );
+  m_displayTimeLength->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_displayTimeLength );
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_displayTimeLength->setValidator(validator);
