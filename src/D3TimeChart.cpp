@@ -528,11 +528,16 @@ public:
 D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
  : WContainerWidget( parent ),
   m_renderFlags( 0 ),
+  m_layoutWidth( 0 ),
+  m_layoutHeight( 0 ),
+  m_chartWidthPx( 0.0 ),
   m_compactXAxis( false ),
   m_showVerticalLines( false ),
   m_showHorizontalLines( false ),
   m_dontRebin( false ),
+  m_hideNeutrons( false ),
   m_spec( nullptr ),
+  m_detectors_to_display(),
   m_highlights(),
   m_xAxisTitle( "Time of Measurement (seconds)"),
   m_compactXAxisTitle( "Time (seconds)" ),
@@ -1508,7 +1513,7 @@ void D3TimeChart::setHighlightRegionsToClient()
   }//for( loop over highlight regions )
   js << "] );";
   
-  cout << "\n\nWill set highlight regions with JSON=" + js.str() + "\n\n" << endl;
+  // cout << "\n\nWill set highlight regions with JSON=" + js.str() + "\n\n" << endl;
   doJavaScript( js.str() );
 }//setHighlightRegionsToClient()
 

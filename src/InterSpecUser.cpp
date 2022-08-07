@@ -318,6 +318,28 @@ UserState::UserState()
 {
 }
 
+void InterSpecUser::setBoolPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
+                                       const std::string &name,
+                                       const bool &value,
+                                       InterSpec *viewer )
+{
+  setPreferenceValue( user, name, value, viewer );
+}
+
+
+void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
+                                   const std::string &name,
+                                   const bool &value,
+                                   InterSpec *viewer )
+{
+  setPreferenceValueWorker( user, name, value, viewer );
+  
+  const auto callback_pos = user->m_onBoolChangeSignals.find(name);
+  if( (callback_pos != end(user->m_onBoolChangeSignals)) && callback_pos->second )
+    (*callback_pos->second)(value);
+}//setPreferenceValue(...)
+
+
 boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec *viewer )
 {
   using namespace Wt;
@@ -447,94 +469,42 @@ void InterSpecUser::pushPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
     setPreferenceValue<int>( user, name, boost::any_cast<long long>(valueAny), viewer );
   }else if( valueAny.type() == typeid(bool) )
   {
-    setPreferenceValue<bool>( user, name, boost::any_cast<bool>(valueAny), viewer );
+    setPreferenceValue( user, name, boost::any_cast<bool>(valueAny), viewer );
   }else
   {
     throw std::runtime_error( "pushPreferenceValue(...): invalid type: "
                              + std::string(valueAny.type().name()) );
   }
-  
-
-  auto fctniter = user->m_preferenceFunctions.find(name);
-  
-  if( fctniter != end(user->m_preferenceFunctions) )
-  {
-    for( auto &fcn : fctniter->second )
-    {
-      //cerr << "pushPreferenceValue: Calling function for pref '" << name << "'" << endl;
-      fcn( valueAny );
-    }//
-  }//if( there are any function to call )
 }//void InterSpecUser::pushPreferenceValue(...)
-
-
-
-void InterSpecUser::associateFunction( Wt::Dbo::ptr<InterSpecUser> user,
-                              const std::string &name,
-                              std::function<void(boost::any)> fcn,
-                              InterSpec *viewer )
-{
-  boost::any value = preferenceValueAny( name, viewer );
-  
-  if( fcn )
-  {
-    vector<function<void(boost::any)> > &fctns = user->m_preferenceFunctions[name];
-    fctns.push_back( fcn );
-    fcn( value );
-  }
-}//associateFunction
-
- 
-void InterSpecUser::addCallbackWhenChanged( const std::string &name,
-                                            boost::function<void(boost::any)> fcn,
-                                            std::shared_ptr<Wt::Signals::connection> conn )
-{
-  InterSpec *viewer = InterSpec::instance();
-  assert( viewer );
-  
-  Wt::Dbo::ptr<InterSpecUser> &user = viewer->m_user;
-  assert( user );
-  
-  boost::any value = preferenceValueAny( name, viewer ); //call to make sure a valid preference
-  if( value.empty() )  //just to make sure the call isnt optimized away
-    std::cout << "Unexpected failure of preference '" << name << "' to not have a value" << std::endl;
-  
-  user->m_onChangeCallbacks[name].emplace_back( std::move(fcn), std::move(conn) );
-}//addCallbackWhenChanged(...)
 
 
 void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                                      const std::string &name,
                                      Wt::WCheckBox *cb,
-                                     InterSpec *viewer,
-                                     bool reverseValue )
+                                     InterSpec *viewer )
 {
-  //We need to emit the checked() and unChecked() signals so that any side-effect
-  //  can happen from the change.  For actually changing the state of the widget
-  //  we can safely do this (incase 'cb' gets deleted at some point) using
-  //  WApplication::bind, but to call the emit functions I couldnt think of a
-  //  safe way to do this, other than searching the widget tree and making sure
-  //  that we can find the widget (hence, know it hasnt been deleted) before
-  //  de-referening the 'cb' passed into this function; this is a bit of a hack
-  //  but it works for now.
-  const string cbid = cb->id();
-  
   const bool value = preferenceValue<bool>( name, viewer );
-  if( !reverseValue )
-    cb->setChecked( value );
-  else
-    cb->setChecked( !value );
+  cb->setChecked( value );
   
-  boost::function<void()> setchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setChecked, cb ) );
-  boost::function<void()> setunchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setUnChecked, cb ) );
+  InterSpecUser::addCallbackWhenChanged( user, name, cb, &WCheckBox::setChecked );
+
+  cb->checked().connect( boost::bind( &InterSpecUser::setBoolPreferenceValue, user, name, true, viewer ) );
+  cb->unChecked().connect( boost::bind( &InterSpecUser::setBoolPreferenceValue, user, name, false, viewer ) );
   
+  /*
+   //We need to emit the checked() and unChecked() signals so that any side-effect
+   //  can happen from the change.  For actually changing the state of the widget
+   //  we can safely do this (incase 'cb' gets deleted at some point) using
+   //  WApplication::bind, but to call the emit functions I couldnt think of a
+   //  safe way to do this, other than searching the widget tree and making sure
+   //  that we can find the widget (hence, know it hasnt been deleted) before
+   //  de-referening the 'cb' passed into this function; this is a bit of a hack
+   //  but it works for now.
+   const string cbid = cb->id();
+   
   std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
     const bool value = boost::any_cast<bool>(valueAny);
     const bool setCbChecked = reverseValue ? !value : value;
-    if( setCbChecked )
-      setchecked();
-    else
-      setunchecked();
     
     auto w = wApp->domRoot()->findById(cbid);
     if( !w && wApp->domRoot2() )
@@ -555,76 +525,11 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
   };//fcn
   
   InterSpecUser::associateFunction( user, name, fcn, viewer );
-  
-  cb->checked().connect( boost::bind( &InterSpecUser::setPreferenceValue<bool>, user, name, !reverseValue, viewer ) );
-  cb->unChecked().connect( boost::bind( &InterSpecUser::setPreferenceValue<bool>, user, name, reverseValue, viewer ) );
+   */
 }//void associateWidget( )
 
 
-void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
-                            const std::string &name,
-                            Wt::WRadioButton *trueButton,
-                            Wt::WRadioButton *falseButton,
-                            InterSpec *viewer )
-{
-  const string trueid = trueButton->id();
-  const string falseid = falseButton->id();
-  
-  const bool value = preferenceValue<bool>( name, viewer );
-  
-  trueButton->setChecked( value );
-  falseButton->setChecked( !value );
-  
-  //We will use WApllication::bind to create functions that will check and uncheck
-  //  the widgets; this should be safe if the widgets are deleted,
-  boost::function<void()> setTrueChecked = wApp->bind( boost::bind( &Wt::WRadioButton::setChecked, trueButton, true ) );
-  boost::function<void()> setTrueUnchecked = wApp->bind( boost::bind( &Wt::WRadioButton::setChecked, trueButton, false ) );
-  
-  boost::function<void()> setFalseChecked = wApp->bind( boost::bind( &Wt::WRadioButton::setChecked, falseButton, true ) );
-  boost::function<void()> setFalseUnchecked = wApp->bind( boost::bind( &Wt::WRadioButton::setChecked, falseButton, false ) );
-  
-  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
-    const bool value = boost::any_cast<bool>(valueAny);
-    
-    if( value )
-    {
-      setTrueChecked();
-      setFalseUnchecked();
-    }else
-    {
-      setTrueUnchecked();
-      setFalseChecked();
-    }
-    
-    //So far this is the best way I have found to check that the widget hasnt
-    //  been deleted... I'm sure there is a better way.
-    auto truew = wApp->domRoot()->findById(trueid);
-    if( !truew && wApp->domRoot2() )
-      truew = wApp->domRoot2()->findById(trueid);
-    
-    auto falsew = wApp->domRoot()->findById(falseid);
-    if( !falsew && wApp->domRoot2() )
-      falsew = wApp->domRoot2()->findById(falseid);
-    
-    if( truew && value )
-      trueButton->checked().emit();
-    else if( falsew && !value )
-      falseButton->checked().emit();
-    else
-    {
-      cerr << "Couldnt find WRadioButton with trueid='" << trueid << "' and/or falseid='"
-           << falseid << "', so wont call any side-effect functions" << endl;
-    }
-  };//fcn
-  
-  InterSpecUser::associateFunction( user, name, fcn, viewer );
-  
-  trueButton->checked().connect( boost::bind( &InterSpecUser::setPreferenceValue<bool>, user, name, true, viewer ) );
-  falseButton->checked().connect( boost::bind( &InterSpecUser::setPreferenceValue<bool>, user, name, false, viewer ) );
-}//InterSpecUser::associateWidget(...)
-
-
-
+/*
 void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                                           const std::string &name,
                                           Wt::WDoubleSpinBox *sb,
@@ -694,6 +599,7 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
   
   InterSpecUser::associateFunction( user, name, fcn, viewer );
 }//void InterSpecUser::associateWidget(...)
+*/
 
 
 void UserFileInDbData::setFileData( const std::string &path,
@@ -1646,9 +1552,3 @@ void InterSpecUser::setPreviousAccessTime( const boost::posix_time::ptime &utcTi
 {
   m_previousAccessUTC = utcTime;
 }//void setPreviousAccessTime( const boost::posix_time::ptime &utcTime );
-
-
-void InterSpecUser::EmitBindSignal( const std::shared_ptr< Wt::Signals::signal<void(boost::any)> > &s, boost::any value )
-{
-  (*s)(value); //equivalent to emit
-}

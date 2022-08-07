@@ -46,6 +46,11 @@ dialog
   /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
   max-height: calc( 95vh - 90px );
   overflow-y: auto;
+  
+  margin-left: 15px;
+  margin-right: 15px;
+  
+  max-width: calc( 50vw - 30px );
 }
 
 .simple-dialog .content

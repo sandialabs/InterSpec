@@ -41,6 +41,7 @@
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/DbFileBrowser.h"
@@ -64,23 +65,143 @@ namespace
 }//namespace
 
 
+namespace
+{
+/** A class representing a spectrum file in the database; it displays very basic information
+ about the spectrum file, and allows the user the ability to load it into InterSpec
+ */
+class DbSpecFileItem : public WContainerWidget
+{
+public:
+  DbSpecFileItem( SpecUtils::SpectrumType type,
+                  SpectraFileModel *model,
+                  SpecMeasManager *manager,
+                  Dbo::ptr<UserFileInDb> dbentry,
+                  std::shared_ptr<SpectraFileHeader> header,
+                  WContainerWidget *parent = nullptr )
+  : WContainerWidget( parent ),
+  m_type( type ),
+  m_model( model ),
+  m_manager( manager ),
+  m_dbentry( dbentry ),
+  m_header( header ),
+  m_loadedASelection( this )
+  {
+    if( !m_dbentry || !m_model )
+      throw runtime_error( "DbSpecFileItem: invalid input or no wApp" );
+    
+    addStyleClass( "DbSpecFileItem" );
+    
+    string msg = "Uploaded: " + dbentry->uploadTime.toString( DATE_TIME_FORMAT_STR ).toUTF8();
+    if( dbentry->userHasModified )
+      msg += ", was modified";
+    
+    WText *txt = new WText( msg, this );
+    txt->addStyleClass( "DbSpecFileItemTxt" );
+    
+    WPushButton *button = new WPushButton( "Resume From", this );
+    button->addStyleClass( "DbSpecFileItemButton" );
+    button->clicked().connect( this, &DbSpecFileItem::dorevert );
+    button->setFocus();
+  }//DbSpecFileItem(...)
+  
+  
+  void dorevert()
+  {
+    assert( wApp );
+    
+    if( !m_header || m_dbentry->userHasModified )
+    {
+      if( m_header )
+      {
+        m_header->setNotACandiateForSavingToDb();
+        Wt::WModelIndex index = m_model->index( m_header );
+        m_model->removeRows( index.row(), 1 );
+      }//if( m_header )
+      
+      std::shared_ptr< SpectraFileHeader > header;
+      std::shared_ptr< SpecMeas >  measurement;
+      
+      //go through and make sure file isnt already open
+      for( int row = 0; row < m_model->rowCount(); ++row )
+      {
+        std::shared_ptr<SpectraFileHeader> header = m_model->fileHeader( row );
+        Wt::Dbo::ptr<UserFileInDb> entry = header->dbEntry();
+        
+        if( entry && entry.id() == m_dbentry.id() )
+        {
+          measurement = header->parseFile();
+          m_manager->displayFile( row, measurement, m_type, false, false, SpecMeasManager::VariantChecksToDo::None );
+          m_loadedASelection.emit();
+          
+          return;
+        }//if( entry.id() == m_dbentry.id() )
+      }//for( int row = 0; row < m_model->rowCount(); ++row )
+      
+      try
+      {
+        const int modelRow = m_manager->setDbEntry( m_dbentry, header, measurement, true );
+        m_manager->displayFile( modelRow, measurement, m_type, false, false, SpecMeasManager::VariantChecksToDo::None );
+        m_loadedASelection.emit();
+      }catch( exception &e )
+      {
+        cerr << "\n\nDbSpecFileItem::dorevert()\n\tCaught: " << e.what() << "\n\n";
+        passMessage( "Error displaying previous measurement, things may not be as expected" ,
+                    "", WarningWidget::WarningMsgHigh );
+      }//try / catch
+    }else
+    {
+      m_header->setDbEntry( m_dbentry );
+    }//if( m_dbentry->userHasModified )
+  }//void dorevert()
+  
+  ~DbSpecFileItem() noexcept(true)
+  {
+    try
+    {
+      m_dbentry.reset();
+    }catch(...)
+    {
+      cerr << "DbSpecFileItem destructo caught exception doing m_dbentry.reset()" << endl;
+    }
+    
+    try
+    {
+      m_header.reset();
+    }catch(...)
+    {
+      cerr << "DbSpecFileItem destructo caught exception doing m_header.reset()" << endl;
+    }
+  }//~DbSpecFileItem()
+  
+  SpecUtils::SpectrumType m_type;
+  SpectraFileModel *m_model;
+  SpecMeasManager *m_manager;
+  Dbo::ptr<UserFileInDb> m_dbentry;
+  std::shared_ptr<SpectraFileHeader> m_header;
+  Wt::Signal<> m_loadedASelection;
+};//class DbSpecFileItem
+
+}//namespace
+
+
 
 DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
                               InterSpec *viewer,
-                              SpecUtils::SpectrumType type,
                               std::shared_ptr<SpectraFileHeader> header)
 : AuxWindow( "Previously Stored States",
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
                                              | AuxWindowProperties::EnableResize) ),
   m_factory( nullptr )
 {
+  wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
+  
   WGridLayout *layout = stretcher();
   layout->setContentsMargins(0, 0, 0, 0);
   
-  
   try
   {
-    m_factory = new SnapshotBrowser( manager, viewer, type, header, footer(), nullptr );
+    m_factory = new SnapshotBrowser( manager, viewer, header, footer(), nullptr );
     layout->addWidget( m_factory, 0, 0 );
     
     m_factory->finished().connect( this, &AuxWindow::deleteSelf );
@@ -118,15 +239,10 @@ int DbFileBrowser::numSnapshots() const
 }
 
 
-/** Returns query to find user states.
- If a valid header is passed in, then the query returns all of the snapshots for that specific spectrum.
- If a header is not passed in, then query returns all saved states for the user (just the upper level states, not their snapshots)/
- 
- Note, I'm pretty sure you need an active transaction before calling this function - e.g.,
- 
- DataBaseUtils::DbTransaction transaction( *m_session );
- */
-Dbo::collection< Dbo::ptr<UserState> > get_user_states_collection( Dbo::ptr<InterSpecUser> user, std::shared_ptr<DataBaseUtils::DbSession> &session, std::shared_ptr<const SpectraFileHeader> header )
+Dbo::collection< Dbo::ptr<UserState> >
+SnapshotBrowser::get_user_states_collection( Dbo::ptr<InterSpecUser> user,
+                                             std::shared_ptr<DataBaseUtils::DbSession> &session,
+                                             std::shared_ptr<const SpectraFileHeader> header )
 {
   Dbo::collection< Dbo::ptr<UserState> > query;
   
@@ -173,7 +289,7 @@ size_t SnapshotBrowser::num_saved_states( InterSpec *viewer,
   {
     DataBaseUtils::DbTransaction transaction( *session );
     
-    Dbo::collection< Dbo::ptr<UserState> > query = get_user_states_collection( viewer->m_user, session, header );
+    Dbo::collection< Dbo::ptr<UserState> > query = SnapshotBrowser::get_user_states_collection( viewer->m_user, session, header );
     
     num_states = query.size();
     
@@ -192,7 +308,6 @@ SnapshotBrowser is the refactored class to create the UI for loading snapshot/sp
 */
 SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
                                   InterSpec *viewer,
-                                  const SpecUtils::SpectrumType type,
                                   std::shared_ptr<SpectraFileHeader> header,
                                   Wt::WContainerWidget *buttonBar,
                                   Wt::WContainerWidget *parent )
@@ -209,7 +324,6 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_descriptionLabel( nullptr ),
     m_timeLabel( nullptr ),
     m_relatedSpectraLayout( nullptr ),
-    m_type( type ),
     m_header( header ),
     m_finished( this ),
     m_editWindow( nullptr ),
@@ -225,6 +339,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   
   WGridLayout *layout = new WGridLayout();
   layout->setContentsMargins( 0, 0, 0, 0 );
+  layout->setVerticalSpacing( 0 );
   setLayout( layout );
   
   //We have to create a independent Dbo::Session for this class since the
@@ -235,7 +350,10 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   int row = 0;
   if( m_header && !m_header->m_uuid.empty() )
   {
-    auto txt = new WText("It looks like you have previously loaded and modified this spectrum file, would you like to resume your previous work?");
+    auto txt = new WText("It looks like you have saved this spectrum file as part of a save-state;"
+                         " would you like to resume your previous work?");
+    txt->addStyleClass( "ResumeWorkTxt" );
+    
     layout->addWidget( txt, row++, 0);
   }//if( we want to load a specific state )
   
@@ -249,18 +367,14 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
 
     
     WGridLayout *tablelayout = new WGridLayout();
-    //tablelayout->setContentsMargins(2, 2, 2, 2);
-    tablelayout->setContentsMargins(0,0,0,0);
+    tablelayout->setContentsMargins( 0, 0, 0, 0 );
+    tablelayout->setVerticalSpacing( 0 );
     tablelayout->addWidget(m_snapshotTable, 0, 0);
     tablelayout->setRowStretch(0, 1);
     tablelayout->setColumnStretch(0, 1);
     tablecontainer->setLayout( tablelayout );
-    tablecontainer->setMargin(0);
-    tablecontainer->setOffsets(0);
     
-    //m_snapshotTable->resize(400,WLength(WLength::Auto));
-    
-    m_snapshotTable->itemSelectionChanged().connect(boost::bind( &SnapshotBrowser::selectionChanged, this ) );
+    m_snapshotTable->itemSelectionChanged().connect( this, &SnapshotBrowser::selectionChanged );
     
     Wt::WTreeNode *root = new Wt::WTreeNode( "Root" );
     root->expand();
@@ -271,7 +385,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     
     DataBaseUtils::DbTransaction transaction( *m_session );
     
-    Dbo::collection< Dbo::ptr<UserState> > query = get_user_states_collection( m_viewer->m_user, m_session, m_header );
+    Dbo::collection< Dbo::ptr<UserState> > query = SnapshotBrowser::get_user_states_collection( m_viewer->m_user, m_session, m_header );
     
     m_nrows = query.size(); //save for future query
     
@@ -297,10 +411,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     //  wApp->styleSheet().addRule( "ul.Wt-root > li.SnapshotRow:nth-child(odd)", "background: rgb(30,32,34) !important;" );
     //}
     
-    for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator snapshotIterator = query.begin();
-        snapshotIterator != query.end(); ++snapshotIterator )
+    for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator snapshot_iter = query.begin();
+        snapshot_iter != query.end(); ++snapshot_iter )
     {
-      Wt::WTreeNode *snapshotNode = new Wt::WTreeNode((*snapshotIterator)->name, 0, root);
+      const Dbo::ptr<UserState> &snapshot = *snapshot_iter;
+      Wt::WTreeNode *snapshotNode = new Wt::WTreeNode( snapshot->name, 0, root );
     
       //snapshotNode->addStyleClass( "SnapshotRow" );
       
@@ -359,66 +474,76 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       
       //snapshotNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
       snapshotNode->setChildCountPolicy(Wt::WTreeNode::Disabled);
-      snapshotNode->setToolTip((*snapshotIterator)->serializeTime.toString()
-                               + (((*snapshotIterator)->description).empty() ? "" : (" -- " + (*snapshotIterator)->description)));
+      WString tooltip = snapshot->serializeTime.toString()
+                        + (snapshot->description.empty() ? "" : " -- ")
+                        + snapshot->description;
+      snapshotNode->setToolTip( tooltip );
       
       //Add to lookup table (the HEAD)
-      m_UserStateLookup[snapshotNode] = *snapshotIterator;
+      m_UserStateLookup[snapshotNode] = snapshot;
       
       //If not root, then return how many versions
       typedef Dbo::collection< Dbo::ptr<UserState> > Snapshots;
       Snapshots snapshots;
       
-      if( *snapshotIterator )
-      {
-        //Create HEAD
-        auto headIcons = new Wt::WIconPair("InterSpec_resources/images/time.svg","InterSpec_resources/images/time.svg");
-        headIcons->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
-        headIcons->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
+      //Create HEAD
+      auto headIcons = new Wt::WIconPair("InterSpec_resources/images/time.svg","InterSpec_resources/images/time.svg");
+      headIcons->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
+      headIcons->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
       
-        Wt::WTreeNode *versionNode = new Wt::WTreeNode("HEAD", headIcons, snapshotNode);
-        
-        versionNode->setToolTip((*snapshotIterator)->serializeTime.toString() + (((*snapshotIterator)->description).empty()?"":(" -- " + (*snapshotIterator)->description)));
-        
-        //versionNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
-        versionNode->setChildCountPolicy(Wt::WTreeNode::Disabled);
-        
-        //Add to lookup table (also the HEAD)
-        m_UserStateLookup[versionNode] = *snapshotIterator;
-        addSpectraNodes(snapshotIterator, versionNode);
-        
-        snapshots = m_session->session()->find<UserState>()
-                             .where( "SnapshotTagParent_id = ? AND StateType = ? " )
-                             .bind( snapshotIterator->id() )
-                             .bind(int(UserState::kUserSaved))
-                             .orderBy( "id desc" );
-        
-        for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator versionIterator = snapshots.begin();
-            versionIterator != snapshots.end(); ++versionIterator )
-        {
-          const Wt::WString &name = (*versionIterator)->name;
-          auto tagIcon = new Wt::WIconPair("InterSpec_resources/images/time.svg","InterSpec_resources/images/time.svg");
-          tagIcon->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
-          tagIcon->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
-          
-          versionNode = new Wt::WTreeNode( name, tagIcon, snapshotNode );
-          
-          auto tooltip = (*versionIterator)->serializeTime.toString()
-                         + (((*versionIterator)->description).empty() ? "" : (" -- " + (*versionIterator)->description));
-          versionNode->setToolTip( tooltip );
-          
-          //versionNode->setChildCountPolicy( Wt::WTreeNode::Enabled );
-          versionNode->setChildCountPolicy( Wt::WTreeNode::Disabled );
-          
-          m_UserStateLookup[versionNode] = *versionIterator;
-          
-          addSpectraNodes( versionIterator, versionNode );
-        } //for
-      } //*snapshotIterator
+      Wt::WTreeNode *head_node = new Wt::WTreeNode("HEAD", headIcons, snapshotNode);
+      
+      tooltip = snapshot->serializeTime.toString()
+                + (snapshot->description.empty() ? "" : " -- ")
+                + snapshot->description;
+      head_node->setToolTip( tooltip );
+      
+      head_node->setChildCountPolicy(Wt::WTreeNode::Disabled);
+      
+      //Add to lookup table (also the HEAD)
+      m_UserStateLookup[head_node] = snapshot;
+      addSpectraNodes( snapshot_iter, head_node );
       
       if( m_header && !m_header->m_uuid.empty())
         snapshotNode->expand();
-    } //for
+      
+      snapshots = m_session->session()->find<UserState>()
+        .where( "SnapshotTagParent_id = ? AND StateType = ? " )
+        .bind( snapshot.id() )
+        .bind(int(UserState::kUserSaved))
+        .orderBy( "id desc" );
+      
+      for( Dbo::collection<Dbo::ptr<UserState>>::const_iterator version_iter = snapshots.begin();
+          version_iter != snapshots.end(); ++version_iter )
+      {
+        const Dbo::ptr<UserState> &version = *version_iter;
+        
+        const Wt::WString &name = version->name;
+        auto tagIcon = new Wt::WIconPair("InterSpec_resources/images/time.svg","InterSpec_resources/images/time.svg");
+        tagIcon->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
+        tagIcon->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
+        
+        Wt::WTreeNode *versionNode = new Wt::WTreeNode( name, tagIcon, snapshotNode );
+        
+        tooltip = version->serializeTime.toString()
+                  + (version->description.empty() ? "" : " -- ")
+                  + version->description;
+        versionNode->setToolTip( tooltip );
+        
+        versionNode->setChildCountPolicy( Wt::WTreeNode::Disabled );
+        
+        m_UserStateLookup[versionNode] = *version_iter;
+        
+        addSpectraNodes( version_iter, versionNode );
+      }//for( loop over snapshots )
+      
+      
+      if( m_header && !m_header->m_uuid.empty() )
+      {
+        snapshotNode->expand();
+        head_node->expand();
+      }
+    }//for( loop over query )
     
     transaction.commit();
     layout->addWidget( tablecontainer, ++row, 0 );
@@ -432,7 +557,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_descriptionLabel->addStyleClass( "SnapshotDesc" );
     layout->addWidget(m_descriptionLabel, ++row,0);
     
-    m_buttonbox = new WGroupBox( "Open Related Spectrum As:" );
+    m_buttonbox = new WGroupBox( "Open selected spectrum as:" );
     m_buttonbox->setOffsets(10);
     m_buttonGroup = new WButtonGroup( m_buttonbox );
     
@@ -499,7 +624,6 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_descriptionLabel = nullptr;
     m_timeLabel = nullptr;
     m_relatedSpectraLayout = nullptr;
-    //m_type = type;
     //m_header = header ),
     //m_finished( this ),
     m_editWindow = nullptr;
@@ -595,7 +719,7 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
       if( m_header && !m_header->m_uuid.empty() )
       {
         //disable all child spectra tree nodes, so the user can only select the snapshot
-        spectraNode->disable();
+        //spectraNode->disable();
       } //!m_uuid.empty()
       
       spectraNode->setToolTip((*spectraIterator)->serializeTime.toString()  + (((*spectraIterator)->description).empty()?"":(" -- " + (*spectraIterator)->description)));
@@ -638,11 +762,9 @@ void SnapshotBrowser::selectionChanged()
     
     if( m_editWindow )
     {
-      bool isDelDialog = (m_editWindow->windowTitle().toUTF8().find("Delete") != string::npos);
-      AuxWindow::deleteAuxWindow(m_editWindow);
+      if( m_editWindow )
+        AuxWindow::deleteAuxWindow(m_editWindow);
       m_editWindow = nullptr;
-      if( isDelDialog )
-        startDeleteSelected();
       //else //is edit dialog, in which case just delete the dialog
     }
   }else if( dbfile ) //UserFileDB clicked
@@ -684,52 +806,32 @@ void SnapshotBrowser::startDeleteSelected()
   if( selection.empty() )
   {
     if( m_editWindow )
-    {
       AuxWindow::deleteAuxWindow(m_editWindow);
-      m_editWindow = nullptr;
-    }
+    m_editWindow = nullptr;
+        
     return;
   }//if( selection.size() != 1 )
   
   const char *title = "Confirm Delete";
-  if( m_editWindow )
-    AuxWindow::deleteAuxWindow( m_editWindow );
-  
-  m_editWindow = new AuxWindow( title,
-                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                                  | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneNotFullScreen) );
   
   WTreeNode *node = *begin(selection);
   WText *label = node->label();
   const string name = label ? label->text().toUTF8() : string("");
   
-  WText *txt = new WText( "<div style=\"white-space:nowrap;\">Are you sure you want to delete:</div>"
-                         "<div style=\"white-space:nowrap;text-align:center;\"><span style=\"font-weight:bold;\">" + name + "</span>?</div>" );
-  m_editWindow->contents()->addWidget( txt );
-  m_editWindow->contents()->setPadding( 12, Wt::Side::Left | Wt::Side::Right );
-  m_editWindow->contents()->setPadding( 18, Wt::Side::Top | Wt::Side::Bottom );
+  const string msg =
+  "<div>Are you sure you want to delete:</div>"
+  "<div style=\"white-space: nowrap; text-align: center; text-overflow: ellipsis; overflow: hidden; font-weight: bold; max-width:98%;\">" + name + "</div>"
+  "<div>?</div>";
   
-  WContainerWidget *foot = m_editWindow->footer();
+  // We will rely on the SimpleDialog covering everything else to know that the selection didnt change or anything...
+  SimpleDialog *dialog = new SimpleDialog( title, msg );
   
-  WPushButton *cancel = new WPushButton( "No", foot );
-  cancel->addStyleClass( "DialogClose" );
-  cancel->setFloatSide( Wt::Side::Right );
-  
-  WPushButton *yes = new WPushButton( "Yes", foot );
-  yes->addStyleClass( "DialogClose" );
-  yes->setFloatSide( Wt::Side::Right );
-  
-  cancel->clicked().connect( m_editWindow, &AuxWindow::hide );
+  dialog->addButton( "No" );
+  WPushButton *yes = dialog->addButton( "Yes" );
   yes->clicked().connect( this, &SnapshotBrowser::deleteSelected );
   
   //Need to update text when selection changes, currently relying on modal underlay to protect against this.
   //m_snapshotTable->itemSelectionChanged().connect(<#WObject *target#>, <#WObject::Method method#>)
-  
-  auto deleter = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, m_editWindow ) );
-  m_editWindow->finished().connect( std::bind( [deleter,this](){ deleter(); m_editWindow = nullptr; } ) );
-  
-  m_editWindow->show();
-  m_editWindow->centerWindow();
 }//void startDeleteSelected()
 
 
@@ -1088,7 +1190,7 @@ void SnapshotBrowser::loadSpectraSelected()
         //dorevert() is only called from within the application loop
         SpectraFileModel *m_model = m_manager->model();
         if( !dbfile || !m_header || !m_model || !wApp )
-            throw runtime_error( "PreviousDbEntry: invalid input or no wApp" );
+            throw runtime_error( "DbSpecFileItem: invalid input or no wApp" );
         
         if( dbfile->userHasModified )
         {
@@ -1140,3 +1242,60 @@ int SnapshotBrowser::numSnaphots() const
 {
   return m_nrows;
 };
+
+
+AutosavedSpectrumBrowser::AutosavedSpectrumBrowser(
+                           const std::vector<Wt::Dbo::ptr<UserFileInDb>> &modifiedFiles,
+                           SpecUtils::SpectrumType type,
+                           SpectraFileModel *fileModel,
+                           SpecMeasManager *manager,
+                           std::shared_ptr<SpectraFileHeader> header,
+                           WContainerWidget *parent )
+: WContainerWidget( parent ),
+  m_loadedASpectrum( this )
+{
+  wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
+  
+  addStyleClass( "AutosavedSpectrumBrowser" );
+  WGridLayout *layout = new WGridLayout( this );
+  layout->setContentsMargins( 0, 0, 0, 0 );
+  layout->setVerticalSpacing( 0 );
+  
+  const char *msg = "";
+  if( header )
+    msg = "It looks like you have previously loaded and modified this spectrum file, would you like"
+          " to resume your previous work?";
+  else
+    msg = "Select your previously used spectrum file to continue from.";
+  
+  WText *txt = new WText( msg, Wt::XHTMLText);
+  txt->addStyleClass( "ResumeWorkTxt" );
+  txt->setInline( false );
+  
+  layout->addWidget(txt,0,0);
+  
+  WContainerWidget *container = new WContainerWidget();
+  container->addStyleClass( "AutosavedSpectra" );
+  layout->addWidget( container, 1, 0 );
+  layout->setRowStretch( 1, 1 );
+  
+  for( size_t i = 0; i < modifiedFiles.size(); ++i )
+  {
+    if( !!modifiedFiles[i] )
+    {
+      auto entry = new DbSpecFileItem( type, fileModel, manager, modifiedFiles[i], header, container );
+      entry->m_loadedASelection.connect( this, &AutosavedSpectrumBrowser::entryWasLoaded );
+    }
+  }//for( size_t i = 0; i < unModifiedFiles.size(); ++i )
+}//AutosavedSpectrumBrowser
+ 
+
+void AutosavedSpectrumBrowser::entryWasLoaded()
+{
+  m_loadedASpectrum.emit();
+}
+
+Wt::Signal<> &AutosavedSpectrumBrowser::loadedASpectrum()
+{
+  return m_loadedASpectrum;
+}

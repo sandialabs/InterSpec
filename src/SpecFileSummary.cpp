@@ -375,6 +375,7 @@ void SpecFileSummary::init()
   addField( m_title, measTable, "Description:", 4, 0, 1, 5 );
   
   addField( m_source, measTable, "Source Type:", 4, 6 );
+  m_source->setNoSelectionEnabled( true );
   
   for( SpecUtils::SourceType i = SpecUtils::SourceType(0);
        i <= SpecUtils::SourceType::Unknown;
@@ -424,6 +425,12 @@ void SpecFileSummary::init()
   m_prevSampleNumButton->clicked().connect( boost::bind( &SpecFileSummary::handleUserIncrementSampleNum, this, false) );
   m_displayedPreText = new WText( m_displaySampleDiv );
   m_displaySampleNumEdit = new WLineEdit( m_displaySampleDiv );
+  m_displaySampleNumEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_displaySampleNumEdit->setAttributeValue( "autocorrect", "off" );
+  m_displaySampleNumEdit->setAttributeValue( "spellcheck", "off" );
+#endif
+
   m_displaySampleNumValidator = new WIntValidator( m_displaySampleDiv );
   m_displaySampleNumEdit->setValidator( m_displaySampleNumValidator );
   m_displaySampleNumEdit->addStyleClass( "numberValidator"); //used to detect mobile keyboard

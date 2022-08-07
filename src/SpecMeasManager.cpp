@@ -57,6 +57,7 @@
 #include <Wt/WServer>
 #include <Wt/WTextArea>
 #include <Wt/WIconPair>
+#include <Wt/WTabWidget>
 #include <Wt/WTableCell>
 #include <Wt/WIOService>
 
@@ -164,131 +165,16 @@ int toint( const SpectrumType type ){ return static_cast<int>(type); }
 int toint( const SaveSpectrumAsType type ){ return static_cast<int>(type); }
 SpectrumType typeFromInt( int id ){ return SpectrumType(id); }
 
-#if( USE_DB_TO_STORE_SPECTRA )
-namespace
-{
-  class PreviousDbEntry : public WContainerWidget
-  {
-    //a class to display, and then select a previous database entry.  This class
-    //  gets displayed in a AuxWindow when the user uploads a spectrum they
-    //  have previously used and modified.  This class represents the
-    //  previous session with the spectrum
-  public:
-    PreviousDbEntry( AuxWindow *dialog, WContainerWidget* container, SpecUtils::SpectrumType type,
-                     SpectraFileModel *model, SpecMeasManager *manager,
-                     Dbo::ptr<UserFileInDb> dbentry,
-                     std::shared_ptr<SpectraFileHeader> header )
-    : WContainerWidget(), m_dialog( dialog ), m_type( type ),
-      m_model( model ), m_manager( manager ), m_dbentry( dbentry ),
-      m_header( header )
-    {
-      addStyleClass( "PreviousDbEntry" );
-      if( dialog )
-        container->addWidget( this );
-      string msg = "Uploaded: "
-                + dbentry->uploadTime.toString( DATE_TIME_FORMAT_STR ).toUTF8();
-      if( dbentry->userHasModified )
-        msg += ", was modified";
-      WText *txt = new WText( msg, this );
-      txt->addStyleClass( "PreviousDbEntryTxt" );
-      WPushButton *button = new WPushButton( "Resume From", this );
-      button->addStyleClass( "PreviousDbEntryButton" );
-      button->clicked().connect( this, &PreviousDbEntry::dorevert );
-      button->setFocus();
-    }//PreviousDbEntry(...)
-    
-    void dorevert()
-    {
-      //dorevert() is only called from within the application loop
-      
-      if( !m_dbentry || !m_header || !m_model || !wApp )
-        throw runtime_error( "PreviousDbEntry: invalid input or no wApp" );
-      
-      if( m_dbentry->userHasModified )
-      {
-        m_header->setNotACandiateForSavingToDb();
-        Wt::WModelIndex index = m_model->index( m_header );
-        m_model->removeRows( index.row(), 1 );
-        
-        std::shared_ptr< SpectraFileHeader > header;
-        std::shared_ptr< SpecMeas >  measurement;
-        
-        //go through and make sure file isnt already open
-        for( int row = 0; row < m_model->rowCount(); ++row )
-        {
-          std::shared_ptr<SpectraFileHeader> header
-                                                  = m_model->fileHeader( row );
-          Wt::Dbo::ptr<UserFileInDb> entry = header->dbEntry();
-          if( entry && entry.id() == m_dbentry.id() )
-          {
-            measurement = header->parseFile();
-            m_manager->displayFile( row, measurement, m_type, false, false, SpecMeasManager::VariantChecksToDo::None );
-            m_dialog->hide();
-            
-            return;
-          }//if( entry.id() == m_dbentry.id() )
-        }//for( int row = 0; row < m_model->rowCount(); ++row )
-        
-        try
-        {
-          const int modelRow = m_manager->setDbEntry( m_dbentry, header,
-                                                     measurement, true );
-          m_manager->displayFile( modelRow, measurement, m_type, false, false, SpecMeasManager::VariantChecksToDo::None );
-          m_dialog->hide();
-        }catch( exception &e )
-        {
-          cerr << "\n\nPreviousDbEntry::dorevert()\n\tCaught: " << e.what() << "\n\n";
-          passMessage( "Error displaying previous measurment, things may not"
-                      " be as expected" , "", WarningWidget::WarningMsgHigh );
-        }//try / catch
-      }else
-      {
-        m_header->setDbEntry( m_dbentry );
-      }//if( m_dbentry->userHasModified )
-      
-      //      if( m_dialog )
-      //        delete m_dialog;
-    }//void dorevert()
-    
-    ~PreviousDbEntry() noexcept(true)
-    {
-      try
-      {
-        m_dbentry.reset();
-      }catch(...)
-      {
-        cerr << "PreviousDbEntry destructo caught exception doing m_dbentry.reset()" << endl;
-      }
-      
-      try
-      {
-        m_header.reset();
-      }catch(...)
-      {
-        cerr << "PreviousDbEntry destructo caught exception doing m_header.reset()" << endl;
-      }
-      
-    }//~PreviousDbEntry()
-    
-    AuxWindow *m_dialog;
-    SpecUtils::SpectrumType m_type;
-    SpectraFileModel *m_model;
-    SpecMeasManager *m_manager;
-    Dbo::ptr<UserFileInDb> m_dbentry;
-    std::shared_ptr<SpectraFileHeader> m_header;
-  };//class PreviousDbEntry
-  
 
-  void setHeadersDbEntry( std::shared_ptr<SpectraFileHeader> header, Wt::Dbo::ptr<UserFileInDb> entry )
-  {
-    header->setDbEntry( entry );
-    wApp->triggerUpdate();
-  }
-}//namespace
-#endif //#if( USE_DB_TO_STORE_SPECTRA )
 
 namespace
 {
+void setHeadersDbEntry( std::shared_ptr<SpectraFileHeader> header, Wt::Dbo::ptr<UserFileInDb> entry )
+{
+  header->setDbEntry( entry );
+  wApp->triggerUpdate();
+}
+
   class FileUploadDialog : public AuxWindow
   {
     //Class used to upload spectrum files.  Specialization of AuxWindow
@@ -623,7 +509,7 @@ void  SpecMeasManager::startSpectrumManager()
     
 #if( USE_DB_TO_STORE_SPECTRA )
     Wt::WPushButton* importButton = new Wt::WPushButton( "Previous...", uploadDiv );
-  importButton->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles, this, SpecUtils::SpectrumType::Foreground ) );
+    importButton->clicked().connect( boost::bind( &SpecMeasManager::browsePrevSpectraAndStatesDb, this ) );
     HelpSystem::attachToolTipOn(importButton, "Imports previously saved spectrum", showToolTips , HelpSystem::ToolTipPosition::Bottom);
     importButton->setIcon( "InterSpec_resources/images/db_small_white.png" );
     importButton->setMargin(2,Wt::Left);
@@ -3894,93 +3780,167 @@ void SpecMeasManager::userCanceledResumeFromPreviousOpened( AuxWindow *window,
 }//userCanceledResumeFromPreviousOpened(..)
 
 
-void SpecMeasManager::createPreviousSpectraDialog( const std::string sessionID,
-                                                  std::shared_ptr<SpectraFileHeader> header,
-                                                  const SpecUtils::SpectrumType type,
-                                                  const std::vector< Wt::Dbo::ptr<UserFileInDb> > modifiedFiles,
-                                                  const std::vector< Wt::Dbo::ptr<UserFileInDb> > unModifiedFiles )
-{
-  AuxWindow *message = new AuxWindow( "File Viewed Before",
-                          (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                           | AuxWindowProperties::TabletNotFullScreen
-                           | AuxWindowProperties::DisableCollapse) );
-  message->setResizable( false );
-  message->rejectWhenEscapePressed();
-  //      message->setMaximumSize( WLength::Auto,
-  //                               WLength( 85.0, WLength::Percentage ) );
-  message->contents()->addStyleClass( "PreviousDbDialogContents" );
-  WGridLayout *layout = new WGridLayout(message->contents());
-  layout->setContentsMargins(5,5,0,0);
-  message->contents()->setOverflow(WContainerWidget::OverflowHidden);
-  const char *msg = "It looks like you have previously loaded and modified "
-  "this spectrum file, would you like to resume "
-  "your previous work?";
-  WText *txt = new WText( msg, Wt::XHTMLText);
-  layout->addWidget(txt,0,0);
-  txt->setAttributeValue( "style", "font-size:125%;font-weight:bold;"
-                         "font-family:\"Times New Roman\", Times, serif;" );
-  txt->setInline( false );
 
-  WContainerWidget* container = new WContainerWidget();
-  container->setOverflow(WContainerWidget::OverflowAuto);
-  layout->addWidget(container,1,0);
-  layout->setRowStretch(1, 1);
-  for( size_t i = 0; i < modifiedFiles.size(); ++i )
-  {
-    if( !!modifiedFiles[i] )
-      new PreviousDbEntry( message, container, type, m_fileModel, this,
-                           modifiedFiles[i], header );
-  }//for( size_t i = 0; i < unModifiedFiles.size(); ++i )
+void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFileHeader> header,
+                                    const SpecUtils::SpectrumType type,
+                                    const std::vector<Wt::Dbo::ptr<UserFileInDb>> &modifiedFiles,
+                                    const std::vector<Wt::Dbo::ptr<UserFileInDb>> &unModifiedFiles,
+                                    const std::vector<Wt::Dbo::ptr<UserState>> &userStatesWithFile )
+{
+  assert( header );
+  if( !header )
+    return;
   
+  // The only place we call this function from has already taken care of the case where
+  //  both modifiedFiles and userStatesWithFile are empty.
+  assert( !modifiedFiles.empty() || !userStatesWithFile.empty() );
+  
+  if( modifiedFiles.empty() && unModifiedFiles.empty() && userStatesWithFile.empty() )
+    return;
+
   if( unModifiedFiles.size() )
   {
-    Dbo::ptr<UserFileInDb> f = unModifiedFiles.front();
-    cerr << "Setting file with UUID=" << header->m_uuid << ", and filename "
-    << header->m_displayName << " to be connected to DB entry from "
-    << "upload at "
-    << f->uploadTime.toString(DATE_TIME_FORMAT_STR).toUTF8()
-    << " until user determines if they want to resume from a modified"
-    << " session" << endl;
-    header->setDbEntry( f );
+    try
+    {
+      Dbo::ptr<UserFileInDb> f = unModifiedFiles.front();
+      cerr << "Setting file with UUID=" << header->m_uuid << ", and filename "
+      << header->m_displayName << " to be connected to DB entry from "
+      << "upload at "
+      << f->uploadTime.toString(DATE_TIME_FORMAT_STR).toUTF8()
+      << " until user determines if they want to resume from a modified"
+      << " session" << endl;
+      header->setDbEntry( f );
+    }catch( std::exception &e )
+    {
+      cerr << "Failed to set DB entry to SpectraFileHeader: " << e.what() << endl;
+      
+      assert( 0 );
+    }//try / catch
   }//if( unModifiedFiles.size() )
+
+  AuxWindow *window = new AuxWindow( "Previously Stored States",
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
+                                     | AuxWindowProperties::EnableResize
+                                     | AuxWindowProperties::TabletNotFullScreen) );
+  window->rejectWhenEscapePressed();
+  window->addStyleClass( "ShowPrevSpecFileUses" );
   
- 
-//  message->footer()->resize( WLength::Auto, WLength(50.0) );
+  //bool auto_save_states = false;
+  SnapshotBrowser *snapshots = nullptr;
+  AutosavedSpectrumBrowser *auto_saved = nullptr;
   
-  WPushButton *cancel = message->addCloseButtonToFooter();
-  
-  if( unModifiedFiles.empty() )
+  try
   {
-    //        int backid = -1;
-    Dbo::ptr<UserFileInDb> dpback;
-    std::shared_ptr<SpecMeas>  old_back;
-    if( type == SpecUtils::SpectrumType::Foreground )
-      old_back = m_viewer->measurment( SpecUtils::SpectrumType::Background );
-    //        if( old_back )
-    //          backid = m_fileModel->dbEntry( old_back ).id();
+    //auto_save_states = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
     
-    cancel->clicked().connect( message, &AuxWindow::hide );
-    //          boost::bind( &SpecMeasManager::userCanceledResumeFromPreviousOpened,
-    //                       this, message, header ) );
-    message->finished().connect(
-                                boost::bind( &SpecMeasManager::userCanceledResumeFromPreviousOpened,
-                                            this, message, header ) );
+    if( userStatesWithFile.size() )
+    {
+      // TODO: pass userStatesWithFile into SnapshotBrowser
+      snapshots = new SnapshotBrowser( this, m_viewer, header, nullptr, nullptr );
+      snapshots->finished().connect( boost::bind( &AuxWindow::deleteSelf, window) );
+    }//if( userStatesWithFile.size() )
+    
+    
+    if( !modifiedFiles.empty() )
+    {
+      auto_saved = new AutosavedSpectrumBrowser( modifiedFiles, type, m_fileModel, this, header );
+      auto_saved->loadedASpectrum().connect( window, &AuxWindow::deleteSelf );
+      
+      WPushButton *cancel = window->addCloseButtonToFooter();
+      cancel->clicked().connect( window, &AuxWindow::hide );
+      window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+      
+      if( unModifiedFiles.empty() )
+      {
+        window->finished().connect( boost::bind( &SpecMeasManager::userCanceledResumeFromPreviousOpened,
+                                                this, nullptr, header ) );
+      }else
+      {
+        window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+      }//if( unModifiedFiles.empty() ) / else
+      
+    }//if( !modifiedFiles.empty() )
+  }catch( std::exception &e )
+  {
+    if( snapshots )
+      delete snapshots;
+    if( auto_saved )
+      delete auto_saved;
+    if( window )
+      delete window;
+    
+    snapshots = nullptr;
+    auto_saved = nullptr;
+    window = nullptr;
+    
+    string msg = "Unexpected issue displaying available save-states: " + string( e.what() );
+    passMessage( msg, "", WarningWidget::WarningMsgLevel::WarningMsgHigh)
+    return;
+  }// try / catch
+    
+  if( !snapshots && !auto_saved )
+  {
+    assert( 0 );
+    delete window;
+    return;
+  }
+  
+  WGridLayout *layout = window->stretcher();
+  if( snapshots && auto_saved )
+  {
+    WTabWidget *tabbed = new WTabWidget();
+    layout->addWidget( tabbed, 0, 0 );
+    
+    tabbed->addTab( snapshots, "Saved States", WTabWidget::LoadPolicy::PreLoading );
+    tabbed->addTab( auto_saved, "Auto-saved Spectra", WTabWidget::LoadPolicy::PreLoading );
   }else
   {
-    cancel->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, message ) );
-    message->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, message ) );
-  }//if( unModifiedFiles.empty() ) / else
+    if( snapshots )
+      layout->addWidget( snapshots, 0, 0 );
+    else
+      layout->addWidget( auto_saved, 0, 0 );
+  }//if( snapshots && auto_saved ) / else
   
-  //It would be nice to make it so that the created dialog will go away if
-  //  another spectrum file is loaded
-//  m_viewer
+  WCheckBox *cb = new WCheckBox( "Automatically store and check for prev. work." );
+  cb->addStyleClass( "PrefCb" );
+  layout->addWidget( cb, 1, 0 );
+  layout->setRowStretch( 0, 1 );
   
-  message->show();
-  message->resize(WLength(500), WLength(80,WLength::Percentage));
-  message->centerWindow();
-  message->refresh();
+  InterSpecUser::associateWidget( m_viewer->m_user, "AutoSaveSpectraToDb", cb, m_viewer );
+  
+  
+  const int width = std::min( 500, static_cast<int>(0.95*m_viewer->renderedWidth()) );
+  const int height = std::min( 475, static_cast<int>(0.95*m_viewer->renderedHeight()) );
+  window->resize( WLength(width), WLength(height) );
+  
+  window->centerWindow();
+  window->show();
+  
   wApp->triggerUpdate();
-}//void createPreviousSpectraDialog(...)
+}//void showPreviousSpecFileUsesDialog(..)
+
+
+void SpecMeasManager::showDatabaseStatesHavingSpectrumFile( std::shared_ptr<SpectraFileHeader> header )
+{
+  const size_t num_states = SnapshotBrowser::num_saved_states( m_viewer, m_viewer->sql(), header );
+  
+  if( !num_states )
+    return;
+  
+  DbFileBrowser *browser = new DbFileBrowser( this, m_viewer, header );
+  
+  // \TODO: come up with a way to check if there are any states before going through and creating
+  //        the widget and everything.
+  if( browser->numSnapshots() <= 0 )
+  {
+    assert( 0 );
+    delete browser;
+    browser = nullptr;
+  }
+  
+  wApp->triggerUpdate();
+}
+
 
 void postErrorMessage( const string msg, const WarningWidget::WarningMsgLevel level )
 {
@@ -3999,7 +3959,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
   
   if( *destructed )
   {
-    cerr << "checkIfPreviouslyOpened(): mamnager destructed before I could do ish" << endl;
+    cerr << "checkIfPreviouslyOpened(): manager destructed before I could do ish" << endl;
     return;
   }
   
@@ -4017,6 +3977,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
     if( !m_viewer || !m_viewer->m_user )
       throw runtime_error( "Invalid InterSpec or user pointer" );
     
+    vector<Dbo::ptr<UserState>> userStatesWithFile;
     vector< Wt::Dbo::ptr<UserFileInDb> > modifiedFiles, unModifiedFiles;
     
     {//begin interaction with database
@@ -4042,12 +4003,21 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
           unModifiedFiles.push_back( *i );
       }//for( loop over matching files in DB )
    
+      
+      // Now get user-saved states with this spectrum file in them
+      Dbo::collection< Dbo::ptr<UserState> > states_query
+                    = SnapshotBrowser::get_user_states_collection( m_viewer->m_user, sql, header );
+      
+      for( auto iter = states_query.begin(); iter != states_query.end(); ++iter )
+        userStatesWithFile.push_back( *iter );
+      
       m_viewer->m_user.modify()->incrementSpectraFileOpened();
+      
       transaction.commit();
     }//end interaction with database
     
-
-    if( modifiedFiles.empty() && unModifiedFiles.empty() )
+    
+    if( modifiedFiles.empty() && unModifiedFiles.empty() && userStatesWithFile.empty() )
     {
       cerr << "File with UUID=" << header->m_uuid << ", and filename "
            << header->m_displayName << " has not been saved to DB before"
@@ -4072,9 +4042,10 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
         passMessage( msg, "", WarningWidget::WarningMsgInfo );
       }
       return;
-    }//if( !files.size() )
+    }//if( this is a new-to-us file )
 
-    if( modifiedFiles.empty() )
+    
+    if( modifiedFiles.empty() && userStatesWithFile.empty() )
     {
       Dbo::ptr<UserFileInDb> dbentry = unModifiedFiles.front();
       cerr << "Setting file with UUID=" << header->m_uuid << ", and filename "
@@ -4082,25 +4053,24 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
            << "upload at "
            << dbentry->uploadTime.toString(DATE_TIME_FORMAT_STR).toUTF8()
            << endl;
+      
       WServer::instance()->post( sessionID, boost::bind( &setHeadersDbEntry, header, dbentry) );
       
       return;
-    }else if( !!header )
-    {
-      WServer::instance()->post( sessionID,
-                                  boost::bind( &SpecMeasManager::showPreviousDatabaseSpectrumFiles,
-                                              this, type, header) );
-
-        
-      /*
-       Old way shows "File Viewed Before" dialog:
-       
-      WServer::instance()->post( sessionID,
-                    boost::bind( &SpecMeasManager::createPreviousSpectraDialog,
-                                 this, sessionID, header, type, modifiedFiles,
-                                 unModifiedFiles ) );
-       */
-    }
+    }//if( user has opened the file, but didnt modify or save it )
+    
+    
+    // If we are here, the user has either modified the file, or has it as part of the save-state.
+    //WServer::instance()->post( sessionID,
+    //                            boost::bind( &SpecMeasManager::showDatabaseStatesHavingSpectrumFile,
+    //                                        this, header) );
+      
+    
+    WServer::instance()->post( sessionID,
+                              boost::bind( &SpecMeasManager::showPreviousSpecFileUsesDialog,
+                                          this, header, type, modifiedFiles, unModifiedFiles,
+                                          userStatesWithFile ) );
+    
   }catch( std::exception &e )
   {
     cerr << "Error checking if this file had been opened previously: " << e.what() << endl;
@@ -4439,32 +4409,14 @@ void SpecMeasManager::uploadSpectrum() {
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
-void SpecMeasManager::browseDatabaseSpectrumFiles( SpecUtils::SpectrumType type )
+void SpecMeasManager::browsePrevSpectraAndStatesDb()
 {
-  new DbFileBrowser( this, m_viewer, type, nullptr );
-}//void browseDatabaseSpectrumFiles()
+  // TODO: Make this be the same implementation as SpecMeasManager::showPreviousSpecFileUsesDialog; but to do that, need to make AutosavedSpectrumBrowser be a MVC widget so we dont put like a million elements into the DOM
+  new DbFileBrowser( this, m_viewer, nullptr );
+}//void browsePrevSpectraAndStatesDb()
 
 
-void SpecMeasManager::showPreviousDatabaseSpectrumFiles( SpecUtils::SpectrumType type, std::shared_ptr<SpectraFileHeader> header )
-{
-  const size_t num_states = SnapshotBrowser::num_saved_states( m_viewer, m_viewer->sql(), header );
-  
-  if( !num_states )
-    return;
-  
-  
-  DbFileBrowser *browser = new DbFileBrowser( this, m_viewer, type, header );
-  
-  // \TODO: come up with a way to check if there are any states before going through and creating
-  //        the widget and everything.
-  if( browser->numSnapshots() <= 0 )
-  {
-    delete browser;
-    browser = nullptr;
-  }
-  
-  wApp->triggerUpdate();
-}
+
 
 void SpecMeasManager::finishStoreAsSpectrumInDb( Wt::WLineEdit *nameWidget,
                                                Wt::WTextArea *descWidget,
@@ -4725,7 +4677,6 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
     labels.push_back( new WText( descriptionText( SpecUtils::SpectrumType(i) ) ) );
     dbs.push_back( dbentry );
     specs.push_back( m );
-    
   }//for( int i = 0; i < 3; ++i )
   
   if( specs.empty() )

@@ -487,11 +487,11 @@ void suggestNuclides(
   
   std::sort( candidates.begin(), candidates.end(), &more_than_by_weight );
   
-  cerr << "For mean=" << peak->mean() << "keV, top candiates are:" << endl;
-  for( size_t i = 0; i < candidates.size() && i < 10; ++i  )
-    cerr << "\t" << i << "\t" << candidates[i].nuclide->symbol
-         << "\tw=" << candidates[i].weight << endl;
-  cerr << endl << endl;
+  // cerr << "For mean=" << peak->mean() << "keV, top candiates are:" << endl;
+  // for( size_t i = 0; i < candidates.size() && i < 10; ++i  )
+  //   cerr << "\t" << i << "\t" << candidates[i].nuclide->symbol
+  //        << "\tw=" << candidates[i].weight << endl;
+  // cerr << endl << endl;
   
   answer.nuclideWeightPairs.swap( candidates );
 }//suggestNuclides(...)

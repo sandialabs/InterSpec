@@ -56,7 +56,7 @@ function()
       }
       
       function removeUploading(){
-        console.log( 'removeUploading' );
+        //console.log( 'removeUploading' );
         $('#Uploading').remove();
       };
       
@@ -170,8 +170,8 @@ function()
         //  If server does not send response, then this function will not be called until
         //   xhr.timeout/xhr.ontimeout get triggered.
         xhr.addEventListener('loadend', function() {
-          console.log( 'onloadend called: ' + ', readyState=' + xhr.readyState
-          + ', status=' + status + ', responseTxt=' + xhr.responseText );
+          //console.log( 'onloadend called: ' + ', readyState=' + xhr.readyState
+          //+ ', status=' + status + ', responseTxt=' + xhr.responseText );
           removeUploading();
         } );//
         
@@ -179,7 +179,7 @@ function()
         // This next function will be called once data is sent to server, but the server doesnt
         //  have to send the repsonce.
         xhr.upload.addEventListener('loadend', function() {
-          console.log( 'xhr.upload.loadend called' );
+          //console.log( 'xhr.upload.loadend called' );
           removeUploading();
         });
         

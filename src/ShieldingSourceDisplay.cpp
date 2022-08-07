@@ -164,7 +164,7 @@ WT_DECLARE_WT_MEMBER
 (ShowChi2Info, Wt::JavaScriptFunction, "ShowChi2Info",
 function(id,info)
 {
-  $("<div id=\"" + id + "inf\" class=\"PointInfo\"></div>").html(info).appendTo($('#'+id));
+  $("<div id=\"" + id + "inf\" class=\"ChartMouseOverInfo\"></div>").html(info).appendTo($('#'+id));
 }
 );
 
@@ -232,9 +232,7 @@ SourceFitModel::SourceFitModel( PeakModel *peakModel,
   }else
   {
     m_displayCurries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
-    //auto callback = wApp->bind( boost::bind( &SourceFitModel::displayUnitsChanged, this) );
-    //InterSpecUser::addCallbackWhenChanged( interspec->m_user, "DisplayBecquerel", callback, interspec );
-    InterSpecUser::addCallbackWhenChanged( "DisplayBecquerel", this, &SourceFitModel::displayUnitsChanged );
+    InterSpecUser::addCallbackWhenChanged( interspec->m_user, "DisplayBecquerel", this, &SourceFitModel::displayUnitsChanged );
   }//if( !interspec ) / else
   
   peakModel->rowsAboutToBeRemoved().connect( this, &SourceFitModel::peakModelRowsRemovedCallback );
@@ -251,14 +249,11 @@ SourceFitModel::~SourceFitModel()
 }//~SourceFitModel()
 
 
-void SourceFitModel::displayUnitsChanged( boost::any value )
+void SourceFitModel::displayUnitsChanged( bool useBq )
 {
   //cout << "in SourceFitModel::displayUnitsChanged" << endl;
   try
   {
-    //const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
-    const bool useBq = boost::any_cast<bool>(value);
-    
     if( useBq == m_displayCurries )
     {
       m_displayCurries = !useBq;
@@ -2477,6 +2472,9 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 {
   wApp->useStyleSheet( "InterSpec_resources/ShieldingSourceDisplay.css" );
   
+  addStyleClass( "ShieldingSourceDisplay" );
+  
+  
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
   
   setLayoutSizeAware( true );
@@ -2488,7 +2486,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_peakView->setAlternatingRowColors( true );
   m_peakView->setEditTriggers( WAbstractItemView::SingleClicked | WAbstractItemView::DoubleClicked );
   m_peakView->setModel( m_peakModel );
-//  m_peakView->addStyleClass( "ShieldingSourceDisplay_m_peakView" );
+  m_peakView->addStyleClass( "PeakView" );
 
   for( PeakModel::Columns col = PeakModel::Columns(0);
        col < PeakModel::kNumColumns;
@@ -2527,7 +2525,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_sourceView->setModel( m_sourceModel );
   m_sourceView->setSortingEnabled( true );
   m_sourceView->setAlternatingRowColors( true );
-  m_sourceView->addStyleClass( "ShieldingSourceDisplay_m_sourceView" );
+  m_sourceView->addStyleClass( "SourceView" );
 
   for( SourceFitModel::Columns col = SourceFitModel::Columns(0);
        col < SourceFitModel::kNumColumns;
@@ -2593,6 +2591,10 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   WLabel *distanceLabel = new WLabel( "Distance:" );
   
   m_distanceEdit = new WLineEdit( "100 cm" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_distanceEdit->setAttributeValue( "autocorrect", "off" );
+  m_distanceEdit->setAttributeValue( "spellcheck", "off" );
+#endif
   m_distanceEdit->setTextSize( 5 );
 
   distanceLabel->setBuddy( m_distanceEdit );
@@ -2616,7 +2618,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     const char *lbl = "";
     switch( GeometryType(type) )
     {
-      case GeometryType::Spherical:      lbl = "Spherical";            break;
+      case GeometryType::Spherical:      lbl = "Point/Spherical";      break;
       case GeometryType::CylinderEndOn:  lbl = "Cylindrical: end-on";  break;
       case GeometryType::CylinderSideOn: lbl = "Cylindrical: side-on"; break;
       case GeometryType::Rectangular:    lbl = "Rectangular";          break;
@@ -2884,7 +2886,21 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   smallLayout->setContentsMargins(0,5,0,5);
   smallerContainer->setPadding(0);
   
-  
+  //geometryLabel->setText( "Shield Geometry" );
+  HelpSystem::attachToolTipOn( m_geometrySelect,
+    "Geometry to use for modeling \"trace\" sources, or self-attenuating sources.<br />"
+    "<br />"
+    "By default, all sources are point sources at the specified distance from the detector, for all geometries.<br />"
+    "However, if you make a nuclide a \"trace\" source (by clicking on a shielding's &CirclePlus; button"
+    " and selecting \"<em>Add Trace Source</em>\"), or a self-attenuating source (by selecting the"
+    " \"<em>Source for:</em>\" checkbox when a shielding has the same element as a nuclide you are"
+    " fitting), then the source isotope will be modeled as distributed throughout the shielding,"
+    " and ray-tracing will be used to account for different attenuations at each location within"
+    " the shielding.<br />"
+    "<br />"
+    "To keep things simple, choose \"Point/Spherical\" geometry unless you will perform a fit to a"
+    " \"trace\" or self-attenuating source",
+    showToolTips );
   
   //---------------
   
@@ -3206,9 +3222,14 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
       if( fitAct )
       {
         const int row = table->rowCount();
-        new WLabel( nuc->symbol + " Activity", table->elementAt(row, 0) );
+        WLabel *label = new WLabel( nuc->symbol + " Activity", table->elementAt(row, 0) );
         WLineEdit *value = new WLineEdit( table->elementAt(row, 1) );
+        label->setBuddy( value );
         value->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+        value->setAttributeValue( "autocorrect", "off" );
+        value->setAttributeValue( "spellcheck", "off" );
+#endif
         setFieldValue( value, SourceFitModel::Columns::kTruthActivity );
         
         auto valueUpdate = [fieldUpdate,value](){
@@ -3221,6 +3242,10 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         
         WLineEdit *tolerance = new WLineEdit( table->elementAt(row, 2) );
         tolerance->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+        tolerance->setAttributeValue( "autocorrect", "off" );
+        tolerance->setAttributeValue( "spellcheck", "off" );
+#endif
         setFieldValue( tolerance, SourceFitModel::Columns::kTruthActivityTolerance );
         auto toleranceUpdate = [fieldUpdate,tolerance](){
           fieldUpdate( tolerance, SourceFitModel::Columns::kTruthActivityTolerance );
@@ -3237,6 +3262,10 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         new WLabel( nuc->symbol + " Age", table->elementAt(row, 0) );
         WLineEdit *value = new WLineEdit( table->elementAt(row, 1) );
         value->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+        value->setAttributeValue( "autocorrect", "off" );
+        value->setAttributeValue( "spellcheck", "off" );
+#endif
         setFieldValue( value, SourceFitModel::Columns::kTruthAge );
         
         auto valueUpdate = [fieldUpdate,value](){
@@ -3249,6 +3278,10 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         
         WLineEdit *tolerance = new WLineEdit( table->elementAt(row, 2) );
         tolerance->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+        tolerance->setAttributeValue( "autocorrect", "off" );
+        tolerance->setAttributeValue( "spellcheck", "off" );
+#endif
         setFieldValue( tolerance, SourceFitModel::Columns::kTruthAgeTolerance );
         auto toleranceUpdate = [fieldUpdate,tolerance](){
           fieldUpdate( tolerance, SourceFitModel::Columns::kTruthAgeTolerance );
@@ -3274,6 +3307,10 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLabel *label = new WLabel( "Areal Density", table->elementAt(row, 0) );
           WLineEdit *value = new WLineEdit( table->elementAt(row, 1) );
           value->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+          value->setAttributeValue( "autocorrect", "off" );
+          value->setAttributeValue( "spellcheck", "off" );
+#endif
           WDoubleValidator *dblValidator = new WDoubleValidator( 0, 500, value );
           value->setValidator( dblValidator );
           value->addStyleClass( "numberValidator"); //used to detect mobile keyboard
@@ -3297,6 +3334,10 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           
           WLineEdit *tolerance = new WLineEdit( table->elementAt(row, 2) );
           tolerance->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+          tolerance->setAttributeValue( "autocorrect", "off" );
+          tolerance->setAttributeValue( "spellcheck", "off" );
+#endif
           dblValidator = new WDoubleValidator( 0, 100, tolerance );
           tolerance->setValidator( dblValidator );
           tolerance->addStyleClass( "numberValidator"); //used to detect mobile keyboard
@@ -3324,6 +3365,10 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLabel *label = new WLabel( "Atomic Number", table->elementAt(row, 0) );
           WLineEdit *value = new WLineEdit( table->elementAt(row, 1) );
           value->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+          value->setAttributeValue( "autocorrect", "off" );
+          value->setAttributeValue( "spellcheck", "off" );
+#endif
           WDoubleValidator *dblValidator = new WDoubleValidator( MassAttenuation::sm_min_xs_atomic_number,
                                                                  MassAttenuation::sm_max_xs_atomic_number, value );
           value->setValidator( dblValidator );
@@ -3348,6 +3393,10 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           
           WLineEdit *tolerance = new WLineEdit( table->elementAt(row, 2) );
           tolerance->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+          tolerance->setAttributeValue( "autocorrect", "off" );
+          tolerance->setAttributeValue( "spellcheck", "off" );
+#endif
           dblValidator = new WDoubleValidator( 0, 100, tolerance );
           tolerance->setValidator( dblValidator );
           tolerance->addStyleClass( "numberValidator"); //used to detect mobile keyboard
@@ -3396,6 +3445,10 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLabel *label = new WLabel( "Thickness", table->elementAt(row, 0) );
           WLineEdit *value = new WLineEdit( table->elementAt(row, 1) );
           value->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+          value->setAttributeValue( "autocorrect", "off" );
+          value->setAttributeValue( "spellcheck", "off" );
+#endif
           WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, value );
           validator->setFlags( Wt::MatchCaseInsensitive );
           value->setValidator( validator );
@@ -3428,6 +3481,12 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           value->enterPressed().connect( std::bind(updateVal) );
           
           WLineEdit *tolerance = new WLineEdit( table->elementAt(row, 2) );
+          tolerance->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+          tolerance->setAttributeValue( "autocorrect", "off" );
+          tolerance->setAttributeValue( "spellcheck", "off" );
+#endif
+
           validator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, tolerance );
           validator->setFlags( Wt::MatchCaseInsensitive );
           tolerance->setValidator( validator );
@@ -6990,6 +7049,10 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
           const bool fitWidth = mat ? select->fitRectangularWidthThickness() : false;
           const bool fitHeight = mat ? select->fitRectangularHeightThickness() : false;
           const bool fitDepth = mat ? select->fitRectangularDepthThickness() : false;
+          
+          num_fit_params += fitWidth;
+          num_fit_params += fitHeight;
+          num_fit_params += fitDepth;
           
           if( fitWidth )
             inputPrams.Add( name + "_dx", width, std::max(2.5*PhysicalUnits::mm,0.25*width), 0, 1000.0*PhysicalUnits::m );

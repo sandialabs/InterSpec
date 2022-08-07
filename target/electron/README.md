@@ -130,6 +130,53 @@ cd release-builds/InterSpec-linux-x64/
 
 
 
+## Using Docker to build Electron-based InterSpec package
+These are the instructions for building the Electron-based InterSpec package for Linux, using the Python Many Linux docker image, and the `FetchContent` option of the CMake build system to compile boost and Wt.
+
+### Building using a manylinux container
+```bash
+# From your host OS terminal, run the following commands
+git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_linux_electron_build
+cd InterSpec_linux_electron_build/
+
+# Grab the the oldest (currently) supported manylinux image to your machine
+docker pull quay.io/pypa/manylinux2014_x86_64:latest
+
+# Start a shell session within the image, mapping the InterSpec source 
+#  directory to /interspec.  We'll also map port 8081 for testing.
+docker run --rm -it -v `pwd`:/interspec quay.io/pypa/manylinux2014_x86_64:latest sh
+
+# Get the dependancies we need to build InterSpec
+yum update
+yum install npm
+
+# Make and cd into build directory - note this is in host filesystem incase we  
+#  want to come back to things, but dont want to rebuild everything from scratch
+cd /interspec/target/electron/
+mkdir build_manylinux_electron
+cd build_manylinux_electron
+
+# Install the NPM dependancies we need
+npm install uglify-js -g
+npm install uglifycss -g
+npm install cmake-js -g
+npm install --save-dev node-addon-api --arch=x64
+npm install electron --arch=x64
+npm install electron-packager
+
+
+# This next command will take like 10 or 20 minutes to clone into the boost and Wt repositories
+#  Since we are are building a shared library Electron will load, we will compile shared libraries
+#  to link against the static gcc libraries.
+#  This command may take a long time to run.
+CMAKE_BUILD_PARALLEL_LEVEL=12 cmake-js --architecture x64 --arch=x64 --CDCMAKE_BUILD_TYPE="Release" --CDInterSpec_FETCH_DEPENDENCIES=ON --CDBUILD_AS_LOCAL_SERVER=OFF --CDCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++" --out=build_manylinux_electron --target install
+
+npm run package-manylinux
+cp ../../NOTICE.html ./release-builds/InterSpec-linux-x64/
+
+```
+
+
 ## Linux Considerations
 The `InterSpec` module is really a shared library that node.js loads, therefore you need the `-fPIC` C/C++ compiler flag enabled not just for the `InterSpec` code, but for all of the static libraries you link it against, including boost, Wt, and zlib - which isnt the default when compiling static libraries for any of them, so when building them you may want to add `-fPIC -std=c++11` flags to the flags.
 

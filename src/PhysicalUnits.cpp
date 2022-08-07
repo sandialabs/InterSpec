@@ -98,15 +98,21 @@ const char * const sm_activityUnitOptionalRegex
 const char * const sm_timeDurationRegex
   = "\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)|(" DURATION_REGEX "\\s*)\\s*)|(" ISO_8601_DURATION_REGEX "\\s*)+";
   
+// Note: (at least as of Wt 3.7.1) the RegEx validator expects the first match group to match the
+//       entire string, not just a subset - so fir example with an input string of "2.5 hl", we need
+//       to keep this from matching with "2.5 h" (which given the half-live optional component is
+//       last in the regex, will happen), so we force the the regex to have start at beginning of
+//       input string, and go to the end of the string, which I guess we should do for any of the
+//       WRegExpValidator's.
 const char * const sm_timeDurationHalfLiveOptionalRegex
-   = "\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
-     "|(" DURATION_REGEX "\\s*)"
-     "|(" POS_DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*))+";
+= "^\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
+  "|(" DURATION_REGEX "\\s*)"
+  "|(" POS_DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*))+$";
 
 const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex
-   = "\\s*((" DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
+   = "^\\s*((" DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
      "|(" DURATION_REGEX_POS_NEG "\\s*)"
-     "|(" DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*))+";
+     "|(" DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*))+$";
 
 
 

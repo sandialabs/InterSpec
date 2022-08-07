@@ -231,7 +231,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
     SpecMeasManager *manager = m_viewer->fileManager();
     
-    m_snapshotModel = new SnapshotBrowser( manager, m_viewer, SpecUtils::SpectrumType::Foreground, nullptr );
+    m_snapshotModel = new SnapshotBrowser( manager, m_viewer, nullptr );
     spectrumLayout->addWidget( m_snapshotModel, 0, 0 );
 #endif
     

@@ -173,6 +173,10 @@ public:
     m_activityInput = new WLineEdit( this );
     m_activityInput->addStyleClass( "GridSecondCol GridStretchCol GridThirdRow" );
     m_activityInput->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+    m_activityInput->setAttributeValue( "autocorrect", "off" );
+    m_activityInput->setAttributeValue( "spellcheck", "off" );
+#endif
     
     WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, m_activityInput );
     val->setFlags( Wt::MatchCaseInsensitive );
@@ -201,6 +205,10 @@ public:
     label->addStyleClass( "GridFirstCol GridFirstRow" );
     
     m_relaxationDistance = new WLineEdit( m_relaxationDiv );
+#if( BUILD_AS_OSX_APP || IOS )
+    m_relaxationDistance->setAttributeValue( "autocorrect", "off" );
+    m_relaxationDistance->setAttributeValue( "spellcheck", "off" );
+#endif
     m_relaxationDistance->setText( "1.0 cm" );
     m_relaxationDistance->setValidator( distValidator );
     m_relaxationDistance->addStyleClass( "GridSecondCol GridStretchCol GridFirstRow" );
@@ -1197,6 +1205,10 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
   m_massFraction = new NativeFloatSpinBox( this );
   label->setBuddy( m_massFraction );
   m_massFraction->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_massFraction->setAttributeValue( "autocorrect", "off" );
+  m_massFraction->setAttributeValue( "spellcheck", "off" );
+#endif
   //m_massFraction->setDecimals( 3 );
   //m_massFraction->setSingleStep( 0.01 );
   m_massFraction->setRange( 0.0, 1.0 );
@@ -1817,6 +1829,10 @@ void ShieldingSelect::init()
   
   m_materialEdit = new WLineEdit( "" );
   m_materialEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_materialEdit->setAttributeValue( "autocorrect", "off" );
+  m_materialEdit->setAttributeValue( "spellcheck", "off" );
+#endif
 
   m_materialEdit->changed().connect( this, &ShieldingSelect::handleMaterialChange );
   m_materialEdit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
@@ -1966,6 +1982,10 @@ void ShieldingSelect::init()
     edit = new WLineEdit( "1.0 cm" );
     edit->setValidator( distValidator );
     edit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+    edit->setAttributeValue( "autocorrect", "off" );
+    edit->setAttributeValue( "spellcheck", "off" );
+#endif
     label->setBuddy( edit );
     
     //From a very brief experiment, it looks like the below JS would remove the uncertainty text,
@@ -2075,21 +2095,18 @@ ShieldingSelect::~ShieldingSelect()
   {
     WApplication *app = wApp;
     
-    WContainerWidget *root = (app ? app->domRoot() : (WContainerWidget *)0);
+    WContainerWidget *root = (app ? app->domRoot() : nullptr);
     
     if( root )
     {
-      //Testing for root apears to be enough, and m_materialSuggestName does not
+      //Testing for root appears to be enough, and m_materialSuggestName does not
       //  need to be done for our current specific use case, but leaving in the
-      //  checking of the name for the futire, JIC.
+      //  checking of the name for the future, JIC.
       WWidget *w = app->findWidget( m_materialSuggestName );
       if( w || m_materialSuggestName.empty() )
         m_materialSuggest->removeEdit( m_materialEdit );
       else
        cerr << "~ShieldingSelect(): Suggest not in DOM, not removing form from suggestion" << endl;
-    }else
-    {
-      cerr << "~ShieldingSelect(): no DOM root, not removing form from suggestion" << endl;
     }
   }//if( m_materialSuggest && m_materialEdit )
   

@@ -173,6 +173,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     m_selects[typeindex] = new WComboBox( wrapper );
     m_selects[typeindex]->setInline( false );
     m_selects[typeindex]->addStyleClass( "SpecFileSelect" );
+    m_selects[typeindex]->setNoSelectionEnabled( true );
     m_selects[typeindex]->setCurrentIndex( -1 );
     m_selects[typeindex]->activated().connect( boost::bind( &CompactFileManager::handleFileChangeRequest,
                                                         this, boost::placeholders::_1, type ) );
@@ -192,6 +193,10 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     edit->addStyleClass( "SampleNumInput" );
     edit->setValidator( validator );
     edit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+    edit->setAttributeValue( "autocorrect", "off" );
+    edit->setAttributeValue( "spellcheck", "off" );
+#endif
     edit->setTextSize( 6 );
     
     const char *tooltip = "Enter the sample number you'de like displayed here"
@@ -286,9 +291,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       button->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
 #if( USE_DB_TO_STORE_SPECTRA )
       WPushButton *button2 = new WPushButton( "Previous...", buttons );
-      button2->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
-                                              m_interspec->fileManager(),
-                                              SpecUtils::SpectrumType::Foreground ) );
+      button2->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::browsePrevSpectraAndStatesDb );
 #endif
     break;
     }//case LeftToRight:
@@ -299,9 +302,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
 #if( USE_DB_TO_STORE_SPECTRA )
       WContainerWidget *buttons = new WContainerWidget( this );
       WPushButton *button = new WPushButton( "Prev. Saved Spectra", buttons );
-        button->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
-                                               fileManager,
-                                               SpecUtils::SpectrumType::Foreground ) );
+      button->clicked().connect( fileManager, &SpecMeasManager::browsePrevSpectraAndStatesDb );
 #endif
       break;
     }//case Tabbed:
@@ -680,9 +681,7 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
   }//if( !meas )
 
   if( m_scaleValueTxt[typeindex] )
-  {
     m_scaleValueTxt[typeindex]->enable();
-  }
   
   if( m_rescaleByLiveTime[typeindex] )
     m_rescaleByLiveTime[typeindex]->hide();
@@ -695,9 +694,6 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
     return;
   }//if( !index.isValid() )
 
-  //if( meas )
-  //  cout << "There are " << meas->sample_numbers().size() << " sample numbers, " << meas->measurements().size() << " meas" << endl;
-  
   select->setCurrentIndex( index.row() );
 
   const set<int> total_sample_nums = meas->sample_numbers();

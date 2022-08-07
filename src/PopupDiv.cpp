@@ -1113,6 +1113,14 @@ void PopupDivMenu::setupDesktopMenuStuff()
   //implementStateless( &PopupDivMenu::parentClicked );
   //implementStateless( &PopupDivMenu::parentMouseWentOver );
   
+  // TODO: checkout using WObject::implementJavaScript
+  //    WStatelessSlot * Wt::WObject::implementJavaScript  (  void(T::*)()   method, const std::string &   jsCode )
+  //    From the Wt documentation:
+  //      Provides a JavaScript implementation for a method.
+  //  	  This method sets the JavaScript implementation for a method. As a result, if JavaScript is available, the JavaScript version will be used on the client side and the visual effect of the C++ implementation will be ignored.
+    
+
+  
   m_menuParent->clicked().connect( this, &PopupDivMenu::parentClicked );
   
   

@@ -216,6 +216,10 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
     }//switch( i )
     
     auto coefval = new WLineEdit();
+#if( BUILD_AS_OSX_APP || IOS )
+    coefval->setAttributeValue( "autocorrect", "off" );
+    coefval->setAttributeValue( "spellcheck", "off" );
+#endif
     auto fitcb = new WCheckBox( "Fit" );
     
     m_coefvals.push_back( coefval );

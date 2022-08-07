@@ -798,6 +798,10 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 //  m_nuclideEdit->setMinimumSize( WLength(10,WLength::FontEx), WLength::Auto );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
   m_nuclideEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_nuclideEdit->setAttributeValue( "autocorrect", "off" );
+  m_nuclideEdit->setAttributeValue( "spellcheck", "off" );
+#endif
   nucInputLabel->setBuddy( m_nuclideEdit );
   
   
@@ -859,6 +863,10 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_ageEdit->setValidator(validator);
   m_ageEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_ageEdit->setAttributeValue( "autocorrect", "off" );
+  m_ageEdit->setAttributeValue( "spellcheck", "off" );
+#endif
   ageInputLabel->setBuddy( m_ageEdit );
 
   m_ageEdit->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );

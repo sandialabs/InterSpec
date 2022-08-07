@@ -1416,10 +1416,14 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_detDiameter->setText( "2.54 cm" );
   m_detDiameter->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   m_detDiameter->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
-  
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detDiameter->setAttributeValue( "autocorrect", "off" );
+  m_detDiameter->setAttributeValue( "spellcheck", "off" );
+#endif
   
   m_effOptionGroup = new WGroupBox( "Intrinsic Eff.", fitOptionsDiv );
   m_effEqnOrder = new WComboBox( m_effOptionGroup );
+  m_effEqnOrder->setNoSelectionEnabled( true );
   m_effEqnOrder->setInline( false );
   m_effEqnOrder->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   
@@ -1433,6 +1437,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   
   m_fwhmOptionGroup = new WGroupBox( "FWHM Eqn.", fitOptionsDiv );
   m_fwhmEqnType = new WComboBox( m_fwhmOptionGroup );
+  m_fwhmEqnType->setNoSelectionEnabled( true );
   m_fwhmEqnType->setInline( false );
   
   for( auto i = DetectorPeakResponse::ResolutionFnctForm(0);
@@ -1460,6 +1465,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_fwhmEqnType->changed().connect( this, &MakeDrf::handleFwhmTypeChanged );
   
   m_sqrtEqnOrder = new WComboBox( m_fwhmOptionGroup );
+  m_sqrtEqnOrder->setNoSelectionEnabled( true );
   m_sqrtEqnOrder->setInline( false );
   m_sqrtEqnOrder->hide();
   m_sqrtEqnOrder->changed().connect( this, &MakeDrf::handleSqrtEqnOrderChange );
@@ -1693,6 +1699,11 @@ void MakeDrf::startSaveAs()
   name->setTextSize( 32 );
   name->setMaxLength( 255 );
   name->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  name->setAttributeValue( "autocorrect", "off" );
+  name->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   //const char *valid_file_name_regex = "(^(?!\\.)(?!com[0-9]$)(?!con$)(?!lpt[0-9]$)(?!nul$)(?!prn$)[^\\|*\\?\\\\:<>/$\"]*[^\\.\\|*\\?\\\\:<>/$\"]+$";
   const char *valid_file_name_regex = R"MyRegexDelim(^[^\\\/\:\*\?\"\'\,\;\<\>\|]+$)MyRegexDelim";
   WRegExpValidator *validator = new WRegExpValidator( valid_file_name_regex, name );

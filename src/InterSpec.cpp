@@ -1743,10 +1743,14 @@ void InterSpec::addPeakFromRightClick()
   
   
   const auto origContinumm = peak->continuum();
-  const std::shared_ptr<const deque<PeakModel::PeakShrdPtr>> allOrigPeaks = m_peakModel->peaks();
+  const std::shared_ptr<const deque<PeakModel::PeakShrdPtr>> allOrigPeaksDeque = m_peakModel->peaks();
+  
+  // We need to make a copy of all the shared pointers because we modify the deque that
+  //  allOrigPeaksDeque points at.
+  const deque<PeakModel::PeakShrdPtr> allOrigPeaks( begin(*allOrigPeaksDeque), end(*allOrigPeaksDeque) );
   
   ContToPeakMap contToPeaks;
-  for( const PeakModel::PeakShrdPtr &thispeak : *allOrigPeaks )
+  for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
   {
     if( thispeak )
       contToPeaks[thispeak->continuum()].push_back( *thispeak );
@@ -1876,7 +1880,7 @@ void InterSpec::addPeakFromRightClick()
   
   
   std::map<std::shared_ptr<PeakDef>,PeakModel::PeakShrdPtr> new_to_orig_peaks;
-  for( const PeakModel::PeakShrdPtr &thispeak : *allOrigPeaks )
+  for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
   {
     if( !thispeak || (thispeak->continuum() != origContinumm) )
       continue;
@@ -1900,7 +1904,7 @@ void InterSpec::addPeakFromRightClick()
       nearest_new->inheritUserSelectedOptions( *thispeak, true );
       new_to_orig_peaks[nearest_new] = thispeak;
     }
-  }//for( const PeakModel::PeakShrdPtr &thispeak : *allOrigPeaks )
+  }//for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
   
   
   for( size_t i = 0; i < answer.size(); ++i )
@@ -5111,9 +5115,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     m_fileMenuPopup->addSeparator();
     
     item = m_fileMenuPopup->addMenuItem( "Previous..." , "InterSpec_resources/images/db_small.png");
-    item->triggered().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
-                                            m_fileManager,
-                                            SpecUtils::SpectrumType::Foreground ) );
+    item->triggered().connect( m_fileManager, &SpecMeasManager::browsePrevSpectraAndStatesDb );
     HelpSystem::attachToolTipOn(item, "Opens previously saved states", showToolTips );
     
     m_fileMenuPopup->addSeparator();
@@ -5846,11 +5848,8 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_logYItems[0]->triggered().connect( boost::bind( &InterSpec::setLogY, this, true  ) );
   m_logYItems[1]->triggered().connect( boost::bind( &InterSpec::setLogY, this, false ) );
   m_spectrum->setYAxisLog( logypref );
-  std::function<void (boost::any)> logy_fcn = [=](boost::any value){
-    this->setLogY( boost::any_cast<bool>(value) );
-  };
-  InterSpecUser::associateFunction( m_user, "LogY", logy_fcn, this );
-
+  InterSpecUser::addCallbackWhenChanged( m_user, "LogY", this, &InterSpec::setLogY );
+  
   
   const bool verticleLines = InterSpecUser::preferenceValue<bool>( "ShowVerticalGridlines", this );
   m_verticalLinesItems[0] = chartmenu->addMenuItem( "Show Vertical Lines" , "InterSpec_resources/images/sc_togglegridvertical.png");
@@ -5861,10 +5860,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_verticalLinesItems[1]->setHidden( !verticleLines );
   m_spectrum->showVerticalLines( verticleLines );
   m_timeSeries->showVerticalLines( verticleLines );
-  std::function<void (boost::any)> vl_fcn = [=](boost::any value){
-    this->setVerticalLines( boost::any_cast<bool>(value) );
-  };
-  InterSpecUser::associateFunction( m_user, "ShowVerticalGridlines", vl_fcn, this );
+  InterSpecUser::addCallbackWhenChanged( m_user, "ShowVerticalGridlines", this, &InterSpec::setVerticalLines );
   
   const bool horizontalLines = InterSpecUser::preferenceValue<bool>( "ShowHorizontalGridlines", this );
   m_horizantalLinesItems[0] = chartmenu->addMenuItem( "Show Horizontal Lines" , "InterSpec_resources/images/sc_togglegridhorizontal.png");
@@ -5875,10 +5871,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_horizantalLinesItems[1]->setHidden( !horizontalLines );
   m_spectrum->showHorizontalLines( horizontalLines );
   m_timeSeries->showHorizontalLines( horizontalLines );
-  std::function<void (boost::any)> hl_fcn = [=](boost::any value){
-    this->setHorizantalLines( boost::any_cast<bool>(value) );
-  };
-  InterSpecUser::associateFunction( m_user, "ShowHorizontalGridlines", hl_fcn, this );
+  InterSpecUser::addCallbackWhenChanged( m_user, "ShowHorizontalGridlines", this, &InterSpec::setHorizantalLines );
   
   
   if( isPhone() )
@@ -5894,10 +5887,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     m_compactXAxisItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisCompact, this, false ) );
     m_compactXAxisItems[0]->setHidden( makeCompact );
     m_compactXAxisItems[1]->setHidden( !makeCompact );
-    std::function<void (boost::any)> cxa_fcn = [=](boost::any value){
-      this->setXAxisCompact( boost::any_cast<bool>(value) );
-    };
-    InterSpecUser::associateFunction( m_user, "CompactXAxis", cxa_fcn, this );
+    InterSpecUser::addCallbackWhenChanged( m_user, "CompactXAxis", this, &InterSpec::setXAxisCompact );
   }
   
   //What we should do here is have a dialog that pops up that lets users  select
@@ -5935,10 +5925,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false ) );
   m_showXAxisSliderItems[0]->setHidden( showSlider );
   m_showXAxisSliderItems[1]->setHidden( !showSlider );
-  std::function<void (boost::any)> xas_fcn = [=](boost::any value){
-    this->setXAxisSlider( boost::any_cast<bool>(value) );
-  };
-  InterSpecUser::associateFunction( m_user, "ShowXAxisSlider", xas_fcn, this );
+  InterSpecUser::addCallbackWhenChanged( m_user, "ShowXAxisSlider", this, &InterSpec::setXAxisSlider );
   
   
   const bool showScalers = InterSpecUser::preferenceValue<bool>( "ShowYAxisScalers", this );
@@ -5951,12 +5938,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_showYAxisScalerItems[0]->setHidden( showScalers );
   m_showYAxisScalerItems[1]->setHidden( !showScalers );
   m_showYAxisScalerItems[(showScalers ? 1 : 0)]->disable();
-  
-  std::function<void (boost::any)> fcnt = [=](boost::any value){
-    this->setShowYAxisScalers( boost::any_cast<bool>(value) );
-  };
-  
-  InterSpecUser::associateFunction( m_user, "ShowYAxisScalers", fcnt, this );
+  InterSpecUser::addCallbackWhenChanged( m_user, "ShowYAxisScalers", this, &InterSpec::setShowYAxisScalers );
   
   m_displayOptionsPopupDiv->addSeparator();
   
@@ -6693,11 +6675,16 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
   const bool autoStore = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
-  WCheckBox *cb = new WCheckBox( " Automatically store session" );
+  WCheckBox *cb = new WCheckBox( " Auto store your work" );
   cb->setChecked( autoStore );
   item = subPopup->addWidget( cb );
-  HelpSystem::attachToolTipOn( item, "Automatically stores app state", showToolTips );
-  InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this, false );
+  HelpSystem::attachToolTipOn( item, "Automatically stores application state if you are working in"
+                              " a stored state, or else if you are not, it will store your spectra"
+                              " and your work (e.g., peaks fit, energy cal changes, etc) into"
+                              " InterSpecs internal database and prompt you if you want to resume"
+                              " where you left off next time you load the same spectrum.",
+                              showToolTips );
+  InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this );
   
 
   if( !isMobile() )
@@ -6710,7 +6697,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                 , true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
-    InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this, false );
+    InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this );
   }//if( !isMobile() )
   
   {//begin add "AskPropagatePeaks" to menu
@@ -6727,7 +6714,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                  true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
-    InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this, false );
+    InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this );
   }//end add "AskPropagatePeaks" to menu
   
   
@@ -6736,7 +6723,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, "Display activity in units of becquerel, rather than curie.",
                                  true, HelpSystem::ToolTipPosition::Right );
-    InterSpecUser::associateWidget( m_user, "DisplayBecquerel", checkbox, this, false );
+    InterSpecUser::associateWidget( m_user, "DisplayBecquerel", checkbox, this );
   }//end add "DisplayBecquerel"
   
   {//begin add "LoadDefaultDrf"
@@ -6747,7 +6734,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                 " detector the spectrum is from, whether a default DRF should try"
                                 " to be found and loaded automatically.",
                                 true, HelpSystem::ToolTipPosition::Right );
-    InterSpecUser::associateWidget( m_user, "LoadDefaultDrf", checkbox, this, false );
+    InterSpecUser::associateWidget( m_user, "LoadDefaultDrf", checkbox, this );
   }//end add "LoadDefaultDrf"
   
 	item = subPopup->addMenuItem("Color Themes...");
@@ -6759,13 +6746,13 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   item = subPopup->addWidget( promptOnLoad );
   const char *prompttext = "At application start, ask to load previous state.";
   HelpSystem::attachToolTipOn( item, prompttext, showToolTips );
-  InterSpecUser::associateWidget( m_user, "PromptStateLoadOnStart", promptOnLoad, this, false );
+  InterSpecUser::associateWidget( m_user, "PromptStateLoadOnStart", promptOnLoad, this );
   
   WCheckBox *doLoad = new WCheckBox( "Load prev state on start" );
   item = subPopup->addWidget( doLoad );
   const char *doloadtext = "At application start, automatically load previous state, if not set to be prompted";
   HelpSystem::attachToolTipOn( item, doloadtext, showToolTips );
-  InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this, false );
+  InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this );
 #endif
   
   
@@ -7719,11 +7706,12 @@ void InterSpec::initMaterialDbAndSuggestions()
     WSuggestionPopup::Options popupOptions;
     popupOptions.highlightBeginTag  = "<b>";          //Open tag to highlight a match in a suggestion.
     popupOptions.highlightEndTag    = "</b>";         //Close tag to highlight a match in a suggestion.
-    popupOptions.listSeparator      = ',';            //(char) When editing a list of values, the separator used for different items.
-    popupOptions.whitespace         = " \\t()";       //When editing a value, the whitespace characters ignored before the current value.
-    popupOptions.wordSeparators     = "-_., ;()";     //To show suggestions based on matches of the edited value with parts of the suggestion.
-    popupOptions.appendReplacedText = "";             //When replacing the curr
-    m_shieldingSuggestion = new WSuggestionPopup( popupOptions );
+    popupOptions.listSeparator      = '\0';            //(char) When editing a list of values, the separator used for different items.
+    popupOptions.whitespace         = "";       //When editing a value, the whitespace characters ignored before the current value.
+    //popupOptions.wordSeparators     = "-_., ;()";     //To show suggestions based on matches of the edited value with parts of the suggestion.
+    popupOptions.wordStartRegexp = "\\s|^|\\(|\\<";       // Instead of using .wordSeparators, we will use the regex option to start matching at whitespaces, start of line, open-paren, and boundaries of words (probably a bit duplicative).
+    popupOptions.appendReplacedText = "";             //
+    m_shieldingSuggestion = new WSuggestionPopup( popupOptions, this );
     m_shieldingSuggestion->addStyleClass("suggestion");
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
     m_shieldingSuggestion->setJavaScriptMember("wtNoReparent", "true");

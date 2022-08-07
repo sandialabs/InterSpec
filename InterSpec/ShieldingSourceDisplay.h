@@ -349,7 +349,7 @@ public:
   static bool compare( const IsoFitStruct &lhs, const IsoFitStruct &rhs,
                        Columns sortColumn, Wt::SortOrder order );
 
-  void displayUnitsChanged( boost::any value );
+  void displayUnitsChanged( bool displayBq );
   
 protected:
   Wt::SortOrder m_sortOrder;

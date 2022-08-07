@@ -51,3 +51,47 @@
 {
   display: inline;
 }
+
+
+.DbSpecFileItem
+{
+  padding-left: 5px;
+  padding-right: 3px;
+  padding-top: 3px;
+  margin-bottom: 7px;
+  width: 95%;
+  height: 1.8em;
+  border:1px solid #e1e1e1;
+}
+
+
+.DbSpecFileItemTxt
+{
+  font-size:100%;
+  font-family:"Times New Roman", Times, serif;
+  position:absolute;
+}
+
+
+.DbSpecFileItemButton
+{
+  float: right;
+}
+
+.ResumeWorkTxt
+{
+  font-size:125%;
+  font-weight:bold;
+  font-family: "Times New Roman", Times, serif;
+  margin: 5px 10px 5px 10px;
+}
+
+.AutosavedSpectrumBrowser
+{
+  overflow: hidden;
+}
+
+.AutosavedSpectrumBrowser .AutosavedSpectra
+{
+  overflow: auto;
+}

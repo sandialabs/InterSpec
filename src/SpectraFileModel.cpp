@@ -279,10 +279,10 @@ SpectraFileHeader::~SpectraFileHeader() noexcept(true)
         if( memObj )
         {
           saveToDatabase( memObj );
-            WString msg = "Autosaved previously opened spectra '";
-            msg += (!!memObj ? memObj->filename() : fileSystemLocation);
-            msg += "'";
-            passMessage( msg, "", WarningWidget::WarningMsgSave );
+          //  WString msg = "Autosaved previously opened spectra '";
+          //  msg += (!!memObj ? memObj->filename() : fileSystemLocation);
+          //  msg += "'";
+          //  passMessage( msg, "", WarningWidget::WarningMsgSave );
         }
         else if( fileSystemLocation.size() )
         {

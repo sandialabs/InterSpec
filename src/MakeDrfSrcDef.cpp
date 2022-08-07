@@ -148,7 +148,9 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
     m_nuclideLabel->setText( "Non-specified Nuclide" );
     m_useAgeInfo->setUnChecked();
     m_distanceEdit->setValueText( "25 cm" );
-    m_activityEdit->setValueText( "1 uCi" );
+    
+    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    m_activityEdit->setValueText( useCi ? "1 uCi" : "37 kBq" );
     m_useAgeInfo->hide();
   }
   
@@ -201,6 +203,10 @@ void MakeDrfSrcDef::create()
   m_distanceEdit = new WLineEdit( cell );
   m_distanceEdit->setTextSize( 16 );
   m_distanceEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_distanceEdit->setAttributeValue( "autocorrect", "off" );
+  m_distanceEdit->setAttributeValue( "spellcheck", "off" );
+#endif
   label->setBuddy( m_distanceEdit );
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
@@ -216,13 +222,18 @@ void MakeDrfSrcDef::create()
   cell = m_table->elementAt(sm_activity_row,1);
   m_activityEdit = new WLineEdit( cell );
   m_activityEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_activityEdit->setAttributeValue( "autocorrect", "off" );
+  m_activityEdit->setAttributeValue( "spellcheck", "off" );
+#endif
   m_activityEdit->setTextSize( 16 );
   label->setBuddy( m_activityEdit );
   
   WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, this );
   val->setFlags( Wt::MatchCaseInsensitive );
   m_activityEdit->setValidator( val );
-  m_activityEdit->setText( "100 uCi" );
+  const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  m_activityEdit->setText( useCi ? "100 uCi" : "3.7 MBq" );
   m_activityEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
   m_activityEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
 
@@ -233,6 +244,10 @@ void MakeDrfSrcDef::create()
   m_activityUncertainty->setValue( 0.0 );
   m_activityUncertainty->setTextSize( 14 );
   m_activityUncertainty->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_activityUncertainty->setAttributeValue( "autocorrect", "off" );
+  m_activityUncertainty->setAttributeValue( "spellcheck", "off" );
+#endif
   m_activityUncertainty->setSuffix( " %" );
   label->setBuddy( m_activityUncertainty );
   
@@ -270,6 +285,10 @@ void MakeDrfSrcDef::create()
   cell = m_table->elementAt(sm_age_at_assay_row,1);
   m_sourceAgeAtAssay = new WLineEdit( cell );
   m_sourceAgeAtAssay->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_sourceAgeAtAssay->setAttributeValue( "autocorrect", "off" );
+  m_sourceAgeAtAssay->setAttributeValue( "spellcheck", "off" );
+#endif
   label->setBuddy( m_sourceAgeAtAssay );
   m_sourceAgeAtAssay->changed().connect( this, &MakeDrfSrcDef::handleUserChangedAgeAtAssay );
   m_sourceAgeAtAssay->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedAgeAtAssay );
@@ -440,7 +459,8 @@ void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
   double age = 0.0;
   if( agestr.empty() || (agestr.find_first_not_of("+-0.")==string::npos) )
   {
-    m_sourceAgeAtAssay->setText( "0 uCi" );
+    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    m_sourceAgeAtAssay->setText( useCi ? "0 uCi" : "0 bq" );
   }else
   {
     try

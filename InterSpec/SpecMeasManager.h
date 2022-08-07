@@ -335,11 +335,16 @@ public:
                                 std::shared_ptr< std::mutex > mutex,
                                 std::shared_ptr<bool> destructed );
   
-  void createPreviousSpectraDialog( const std::string sessionID,
-                                    std::shared_ptr<SpectraFileHeader> header,
-                                    const SpecUtils::SpectrumType type,
-                                    const std::vector< Wt::Dbo::ptr<UserFileInDb> > modifiedFiles,
-                                   const std::vector< Wt::Dbo::ptr<UserFileInDb> > unModifiedFiles );
+  void showDatabaseStatesHavingSpectrumFile( std::shared_ptr<SpectraFileHeader> header );
+  
+  
+  void showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFileHeader> header,
+                                   const SpecUtils::SpectrumType type,
+                                   const std::vector<Wt::Dbo::ptr<UserFileInDb>> &modifiedFiles,
+                                   const std::vector<Wt::Dbo::ptr<UserFileInDb>> &unModifiedFiles,
+                                   const std::vector<Wt::Dbo::ptr<UserState>> &userStatesWithFile );
+  
+  
   
   void userCanceledResumeFromPreviousOpened( AuxWindow *window,
                                  std::shared_ptr<SpectraFileHeader> header );
@@ -362,8 +367,8 @@ public:
                       const std::vector< Wt::WCheckBox * > cbs,
                                AuxWindow *window );
   void startStoreSpectraAsInDb();
-  void browseDatabaseSpectrumFiles( SpecUtils::SpectrumType type );
-  void showPreviousDatabaseSpectrumFiles( SpecUtils::SpectrumType type, std::shared_ptr<SpectraFileHeader> header );
+  
+  void browsePrevSpectraAndStatesDb();
 #endif
   
 #if( !ANDROID && !IOS )

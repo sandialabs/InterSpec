@@ -342,6 +342,13 @@ void PeakFitChi2Fcn::parametersToPeaks( std::vector<PeakDef> &peaks,
       else if( (offset==PeakContinuum::External) && m_continium )
         continuum->setExternalContinuum( m_continium );
     }//if( shares a continuum ) / else
+    
+    
+    assert( (these_params[SkewInfoField] == 0.0) || (these_params[SkewInfoField] == 1.0) );
+    PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
+    if( std::round(these_params[SkewInfoField]) == 1.0 )
+      skew_type = PeakDef::SkewType::LandauSkew;
+    candidate_peak.setSkewType( skew_type );
   }//for( int peakn = 0; peakn < npeak; ++peakn )
 }//parametersToPeak(...)
 
@@ -486,6 +493,7 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
   
   if( m_useReducedChi2 )
   {
+    // TODO: this is wrong number of fit parameters; doesnt account for parameters never fit, or parameters that are fixed
     const int nfitpar = m_npeaks * NumFitPars;
     const int ndof = ((num_effective_bins - nfitpar)>0)
                      ? (num_effective_bins - nfitpar)
@@ -747,29 +755,27 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
         case PeakDef::LandauAmplitude:
         case PeakDef::LandauMode:
         case PeakDef::LandauSigma:
-          if( (peak.skewType() == PeakDef::LandauSkew) && peak.fitFor(type) )
+        {
+          if( !peak.fitFor(type) || (peak.skewType() != PeakDef::LandauSkew) )
+          {
+            params.Add( name,  peak.coefficient(type) );
+          }else
           {
             switch( method )
             {
               case kFitForPeakParameters:
               case kFitUserIndicatedPeak:
+              case kRefitPeakParameters:
                 params.Add( name,  startval, stepsize, minval, maxval );
                 break;
               case kFixPeakParameters:
                 params.Add( name,  startval );
                 break;
-              case kRefitPeakParameters:
-                params.Add( name,  startval, stepsize, minval, maxval );
-                break;
             }//switch(method)
-          }else if( !peak.fitFor(type) )
-          {
-            params.Add( name,  startval );
-          }else
-          {
-            params.Add( name, 0.0 );
-          }//if( using_landau_skew ) / else
+          }//if( not fitting skew value ) / else
+          
           break;
+        }//case PeakDef::LandauAmplitude/LandauMode/LandauSigma
           
           
         case PeakDef::Chi2DOF:
@@ -790,7 +796,7 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
       continuumMap[continuum] = static_cast<int>(peaknum + numStartPeaks);
     
     
-    {
+    {// Begin set ContinuumInfoField
       double contInfo = 0.0;
       setSharedIndexToContinuumInfo( contInfo, sharedContinuumIndex );
       setOffsetTypeToContinuumInfo( contInfo, continuum->type() );
@@ -808,7 +814,25 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
       
       std::string name = "Peak" + std::to_string(peakn) + "ContInfo";
       params.Add( name,  contInfo );
-    }
+    }// End set ContinuumInfoField
+    
+    
+    {// Begin set SkewInfoField
+      double type = 0.0;
+      switch( peak.skewType() )
+      {
+        case PeakDef::NoSkew:
+          type = 0.0;
+          break;
+        
+        case PeakDef::LandauSkew:
+          type = 1.0;
+          break;
+      }
+    
+      std::string name = "Peak" + std::to_string(peakn) + "SkewType";
+      params.Add( name,  type );
+    }// End set SkewInfoField
     
     if( sharedContinuumIndex >= 0 )
     {

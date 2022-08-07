@@ -166,7 +166,8 @@ ColorTheme::ColorTheme()
   
   theme_name = "Default";
   theme_description = "Default InterSpec color scheme.";
-  modified_time = creation_time = WDateTime( WDate(2018,11,1), WTime(22,56) );  //when I originally created this class
+  creation_time = WDateTime( WDate(2018,11,1), WTime(22,56) );  //when I originally created this class
+  modified_time = WDateTime( WDate(2022,8,3), WTime(14,00) );   //when I slightly modified it
   
   foregroundLine = Wt::WColor(0x00, 0x00, 0x00); //Wt::GlobalColor::black
   backgroundLine = Wt::WColor(0x00, 0xff, 0xff); //Wt::GlobalColor::cyan
@@ -194,14 +195,23 @@ ColorTheme::ColorTheme()
   occupancyIndicatorLines = WColor( 128, 128, 128 ); //alpha channel of 75
   
   peaksTakeOnReferenceLineColor = true;
-  referenceLineColor = std::vector<Wt::WColor>{ {"#0000FF"},{"#006600"},
-      {"#0099FF"},{"#9933FF"},{"#FF66FF"},{"#CC3333"},{"#FF6633"},{"#F1C232"},
-      {"#CCFFCC"},{"#0000CC"},{"#666666"},{"#003333"} };
+  referenceLineColor = std::vector<Wt::WColor>{
+    {"#00b9ff"},
+    {"#006600"},
+    {"#cc3333"},
+    {"#9933FF"},
+    {"#FF66FF"},
+    {"#830808"},
+    {"#FF6633"},
+    {"#F1C232"},
+    {"#CCFFCC"},
+    {"#0000CC"},
+    {"#666666"},
+    {"#003333"}
+  };
   
-  referenceLineColorForSources["U235"] = WColor( Wt::GlobalColor::darkMagenta );
-  referenceLineColorForSources["Ba133"] = WColor( Wt::GlobalColor::lightGray );
+  referenceLineColorForSources["U235"] = WColor( "#800080" );
   referenceLineColorForSources["background"] = WColor( "#967f55" );  //brownish
-  referenceLineColorForSources["Th232"] = WColor( "#4abfb9" );  //turquoise-ish
 }//ColorTheme() constructor
 
 

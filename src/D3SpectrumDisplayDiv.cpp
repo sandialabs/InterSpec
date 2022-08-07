@@ -1623,37 +1623,37 @@ bool D3SpectrumDisplayDiv::yAxisScalersIsVisible() const
 
 void D3SpectrumDisplayDiv::chartShiftKeyDragCallback( double x0, double x1 )
 {
-  //cout << "chartShiftKeyDragCallback" << endl;
+  // cout << "chartShiftKeyDragCallback" << endl;
   m_shiftKeyDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartShiftKeyDragCallback(...)
 
 void D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback( double x0, double x1 )
 {
-  //cout << "chartShiftAltKeyDragCallback" << endl;
+  // cout << "chartShiftAltKeyDragCallback" << endl;
   m_shiftAltKeyDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback(...)
 
 void D3SpectrumDisplayDiv::chartRightMouseDragCallback( double x0, double x1 )
 {
-  //cout << "chartRightMouseDragCallback" << endl;
+  // cout << "chartRightMouseDragCallback" << endl;
   m_rightMouseDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartRightMouseDragCallback(...)
 
 void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, double pageX, double pageY )
 {
-  //cout << "chartLeftClickCallback" << endl;
+  // cout << "chartLeftClickCallback" << endl;
   m_leftClick.emit( x, y, pageX, pageY );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
 void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y )
 {
-  //cout << "chartDoubleLeftClickCallback" << endl;
+  // cout << "chartDoubleLeftClickCallback" << endl;
   m_doubleLeftClick.emit( x, y );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
 void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double pageX, double pageY )
 {
-  //cout << "chartRightClickCallback" << endl;
+  // cout << "chartRightClickCallback" << endl;
   m_rightClick.emit( x, y, pageX, pageY );
 }//void D3SpectrumDisplayDiv::chartRightClickCallback(...)
 
@@ -2248,7 +2248,7 @@ void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1, dou
     return;
   }
   
-  //cout << "chartXRangeChangedCallback{" << x0 << "," << x1 << "," << chart_width_px << "," << chart_height_px << "}" << endl;
+  // cout << "chartXRangeChangedCallback{" << x0 << "," << x1 << "," << chart_width_px << "," << chart_height_px << "}" << endl;
   m_xAxisMinimum = x0;
   m_xAxisMaximum = x1;
   m_chartWidthPx = chart_width_px;
