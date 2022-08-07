@@ -7050,6 +7050,10 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
           const bool fitHeight = mat ? select->fitRectangularHeightThickness() : false;
           const bool fitDepth = mat ? select->fitRectangularDepthThickness() : false;
           
+          num_fit_params += fitWidth;
+          num_fit_params += fitHeight;
+          num_fit_params += fitDepth;
+          
           if( fitWidth )
             inputPrams.Add( name + "_dx", width, std::max(2.5*PhysicalUnits::mm,0.25*width), 0, 1000.0*PhysicalUnits::m );
           else
