@@ -69,6 +69,13 @@
 
 using namespace std;
 
+/** Right now if the user specifies a peak energy, we will just multiple the peak sigma (i.e.
+ FWHM/2.35482) by the following value to define the ROI on either side of the mean.
+ This value is arbitrary, and this is a very niave way to do things, but good enough for
+ development purposes, at the moment.
+ */
+#define DEFAULT_PEAK_HALF_WIDTH_SIGMA 5.0
+
 namespace
 {
 const double ns_decay_act_mult = SandiaDecay::MBq;
@@ -80,6 +87,14 @@ struct DoWorkOnDestruct
   ~DoWorkOnDestruct(){ if(m_worker) m_worker(); }
 };//struct DoWorkOnDestruct
 
+
+void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
+{
+  std::sort( begin(rois), end(rois), []( const RelActCalcAuto::RoiRange &lhs,
+                                        const RelActCalcAuto::RoiRange &rhs ) -> bool {
+    return lhs.lower_energy < rhs.lower_energy;
+  });
+}//void sort_rois( vector<RoiRange> &rois )
 
 // We'll define some XML helper functions for serializing to/from XML
 //  (we should probably put these in a header somewhere and use through the code to minimize
@@ -876,7 +891,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       //We'll try to limit/break-up energy ranges
       const double min_br = numeric_limits<double>::min();  //arbitrary
-      const double num_sigma_half_roi = 5.0; // arbitrary...
+      const double num_sigma_half_roi = DEFAULT_PEAK_HALF_WIDTH_SIGMA;
       
       vector<pair<double,double>> gammas_in_range;
       
@@ -2249,7 +2264,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     return solution;
   }//RelActCalcAuto::RelActAutoSolution solve_ceres( ceres::Problem &problem )
   
-  
+
   float fwhm( const float energy, const std::vector<double> &x ) const
   {
     const auto drf_start = begin(x) + 2;
@@ -2257,27 +2272,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const vector<float> drfx( drf_start, drf_start + num_drf_par );
     
-    DetectorPeakResponse::ResolutionFnctForm fctntype;
-    switch( m_options.fwhm_form )
-    {
-      case RelActCalcAuto::FwhmForm::Gadras:
-        fctntype = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
-        break;
-      
-      case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
-        fctntype = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
-        break;
-        
-      case RelActCalcAuto::FwhmForm::Polynomial_2:
-      case RelActCalcAuto::FwhmForm::Polynomial_3:
-      case RelActCalcAuto::FwhmForm::Polynomial_4:
-      case RelActCalcAuto::FwhmForm::Polynomial_5:
-      case RelActCalcAuto::FwhmForm::Polynomial_6:
-        fctntype = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
-        break;
-    }//switch( m_options.fwhm_form )
-    
-    return DetectorPeakResponse::peakResolutionFWHM( energy, fctntype, drfx );
+    return eval_fwhm( energy, m_options.fwhm_form, drfx );
   }//float fwhm(...)
   
   
@@ -2513,6 +2508,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     size_t first_channel;
     size_t last_channel;
     bool no_gammas_in_range;
+    bool forced_full_range;
   };//struct PeaksForEnergyRange
   
   
@@ -2558,6 +2554,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     answer.first_channel = first_channel;
     answer.last_channel = last_channel;
     answer.no_gammas_in_range = false;
+    answer.forced_full_range = range.force_full_range;
     
     vector<PeakDef> &peaks = answer.peaks;
     
@@ -2628,6 +2625,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           
           throw runtime_error( msg.str() );
         }//if( IsInf(peak_fwhm) || IsNan(peak_fwhm) )
+        
+        const double nchannel = m_energy_cal->channel_for_energy(gamma.energy + 0.5*peak_fwhm)
+                                  - m_energy_cal->channel_for_energy(gamma.energy - 0.5*peak_fwhm);
+        if( nchannel < 1.5 )
+          throw runtime_error( "peaks_for_energy_range: for peak at " + std::to_string(gamma.energy)
+                              + " keV, FWHM=" + std::to_string(peak_fwhm) + " which is only "
+                              + std::to_string(nchannel) + "channels - too small." );
         
         if( peak_fwhm < 0.001 )
           throw runtime_error( "peaks_for_energy_range: for peak at " + std::to_string(gamma.energy)
@@ -2829,22 +2833,103 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       return;
     }//if( m_cancel_calc && m_cancel_calc->load() )
     
+    assert( SpecUtilsAsync::num_logical_cpu_cores() > 0 );
+    const size_t nthreads_to_use = static_cast<size_t>( SpecUtilsAsync::num_logical_cpu_cores() );
+    
+    // If there are a bunch of ROIs, we'll evaluate each ROI in their own thread, or else, we'll
+    //  break each ROI up into `nthreads_to_use` chunks and evaluate all those in parallel and each
+    //  ROI in parallel.
+    //
+    // TODO: None of this multithreading of computation has been benchmarked, so for all I know it might actually slow things down!
+    //       (maybe we should just parallelize over both, unless there are a ton of ROI, in which case we parallelize over just the ROIs)
+    const bool parallelize_over_rois_only = (m_energy_ranges.size() >= 4*nthreads_to_use);
+    
+    assert( peaks_in_ranges.size() == m_energy_ranges.size() );
     
     size_t residual_index = 0;
-    for( size_t i = 0; i < m_energy_ranges.size(); ++i )
+    for( size_t roi_index = 0; roi_index < m_energy_ranges.size(); ++roi_index )
     {
-      const RoiRangeChannels &energy_range = m_energy_ranges[i];
-      const PeaksForEnergyRange &info = peaks_in_ranges[i];
+      const RoiRangeChannels &energy_range = m_energy_ranges[roi_index];
+      const PeaksForEnergyRange &info = peaks_in_ranges[roi_index];
       
       assert( info.peaks.size() );
       assert( info.first_channel < m_channel_counts.size() );
       assert( info.last_channel < m_channel_counts.size() );
+      assert( info.last_channel >= info.first_channel );
       assert( m_channel_counts.size() == m_channel_count_uncerts.size() );
       
-      shared_ptr<const PeakContinuum> continuum = info.peaks.at(0).continuum();
-      
+      const shared_ptr<const PeakContinuum> continuum = info.peaks.at(0).continuum();
       assert( continuum );
       
+      const size_t residual_start_index = residual_index;
+      
+      const size_t nchannels_roi = (info.last_channel - info.first_channel) + 1;
+      residual_index += nchannels_roi;
+      
+      // Define a lamda to evaluate the residuals for every n'th channel in ROI, after an initial
+      //  offset.  This allows us to evaluate a ROI using multiple threads, or evaluate an entire
+      //  ROI in a single thread by setting offset to 0, and skip to 1.
+      const auto eval_nth_channels = [this, residuals, residual_start_index, continuum]
+                                  ( const size_t channel_offset,
+                                    const size_t channel_skip,
+                                   const PeaksForEnergyRange &range ){
+        assert( channel_skip != 0 );
+        const size_t start_channel = range.first_channel + channel_offset;
+        for( size_t channel = start_channel; channel <= range.last_channel; channel += channel_skip )
+        {
+          const double data_counts = m_channel_counts[channel];
+          const double data_uncert = m_channel_count_uncerts[channel];
+          const double lower_energy = m_energy_cal->energy_for_channel(channel);
+          const double upper_energy = m_energy_cal->energy_for_channel(channel + 1);
+          const double continuum_counts = continuum->offset_integral(lower_energy, upper_energy, m_spectrum);
+          
+          double gaussian_area = 0.0;
+          for( const PeakDef &peak : range.peaks )
+          {
+            // The gauss integral is actually pretty expensive, so we'll avoid it if we are just
+            //  really outside the area where peaks could contribute; 8 sigma chosen arbitrarily.
+            //  I'm sure there is a better way to do this.
+            if( !range.forced_full_range
+               || ((upper_energy >= (peak.mean() - 8*peak.sigma()))
+                   && (lower_energy <= (peak.mean() + 8*peak.sigma()))) )
+            {
+              // TODO: the gauss_integral calls `boost_erf_imp` twice, one of which could be avoided if we fill-out the channels sequentially for each peak; this would require some re-factoring, so we'll do it later.  This also needs to be done for `fit_amp_and_offset`
+              gaussian_area += peak.gauss_integral( lower_energy, upper_energy );
+            }
+          }
+          
+          const size_t index = residual_start_index + (channel - range.first_channel);
+          
+          residuals[index] = (data_counts - continuum_counts - gaussian_area) / data_uncert;
+        }//for( loop over channels in ROI )
+      };//eval_nth_channels
+      
+      
+      if( parallelize_over_rois_only )
+      {
+        pool.post( [eval_nth_channels,roi_index,&peaks_in_ranges](){
+          eval_nth_channels( 0, 1, peaks_in_ranges[roi_index] );
+        } );
+      }else
+      {
+        // TODO: figure out a rough break-even point for submitting a job, vs just doing it on the current thread.
+        //if( (info.last_channel - info.first_channel) < 10*nthreads_to_use )
+        //{
+        //  eval_nth_channels( 0, 1, peaks_in_ranges[roi_index] );
+        //}else
+        //{
+          for( size_t thread_num = 0; thread_num < nthreads_to_use; ++thread_num )
+          {
+            pool.post( [eval_nth_channels,thread_num,roi_index,&peaks_in_ranges,nthreads_to_use](){
+              eval_nth_channels( thread_num, nthreads_to_use, peaks_in_ranges[roi_index] );
+            } );
+          }
+        //}//if( (info.last_channel - info.first_channel) < 10*nthreads_to_use )
+      }//if( parallelize_over_rois ) / else
+      
+      /*
+       //Original non-parallel implementation - leaving commented out until parrallel implementation
+       //  is fully tested.
       for( size_t channel = info.first_channel; channel <= info.last_channel; ++channel )
       {
         const double data_counts = m_channel_counts[channel];
@@ -2866,8 +2951,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         ++residual_index;
       }//for( loop over channels )
+       */
     }//for( loop over m_energy_ranges )
     
+    pool.join();
     
     // Now make sure the relative efficiency curve is anchored to 1.0 (this removes the degeneracy
     //  between the relative efficiency amplitude, and the relative activity amplitudes).
@@ -3134,10 +3221,7 @@ int run_test()
       }
     }//if( extract_info_from_n42 )
     
-    
-    std::sort( begin(energy_ranges), end(energy_ranges), []( const RoiRange &lhs, const RoiRange &rhs ) -> bool {
-      return lhs.lower_energy < rhs.lower_energy;
-    });
+    sort_rois_by_energy( energy_ranges );
     
     std::sort( begin(extra_peaks), end(extra_peaks), []( const FloatingPeak &lhs, const FloatingPeak &rhs ) -> bool {
       return lhs.energy < rhs.energy;
@@ -3363,6 +3447,35 @@ FwhmForm fwhm_form_from_str( const char *str )
   return FwhmForm::Gadras;
 }//FwhmForm fwhm_form_from_str(str)
 
+
+float eval_fwhm( const float energy, const FwhmForm form, const vector<float> &drfx )
+{
+  DetectorPeakResponse::ResolutionFnctForm fctntype = DetectorPeakResponse::kNumResolutionFnctForm;
+  switch( form )
+  {
+    case RelActCalcAuto::FwhmForm::Gadras:
+      fctntype = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+      break;
+      
+    case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+      fctntype = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
+      break;
+      
+    case RelActCalcAuto::FwhmForm::Polynomial_2:
+    case RelActCalcAuto::FwhmForm::Polynomial_3:
+    case RelActCalcAuto::FwhmForm::Polynomial_4:
+    case RelActCalcAuto::FwhmForm::Polynomial_5:
+    case RelActCalcAuto::FwhmForm::Polynomial_6:
+      fctntype = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+      break;
+  }//switch( m_options.fwhm_form )
+  
+  assert( fctntype != DetectorPeakResponse::kNumResolutionFnctForm );
+  if( fctntype == DetectorPeakResponse::kNumResolutionFnctForm )
+    throw runtime_error( "eval_fwhm: invalid FwhmForm" );
+  
+  return DetectorPeakResponse::peakResolutionFWHM( energy, fctntype, drfx );
+}//float eval_fwhm( const float energy, const FwhmForm form, const vector<float> &drfx )
 
 
 void RoiRange::toXml( ::rapidxml::xml_node<char> *parent ) const
@@ -4410,10 +4523,11 @@ size_t RelActAutoSolution::nuclide_index( const SandiaDecay::Nuclide *nuclide ) 
   return m_rel_activities.size();
 }//nuclide_index(...)
 
-RelActAutoSolution solve( Options options,
-                         std::vector<RoiRange> energy_ranges,
-                         std::vector<NucInputInfo> nuclides,
-                         std::vector<FloatingPeak> extra_peaks,
+
+RelActAutoSolution solve( const Options options,
+                         const std::vector<RoiRange> energy_ranges,
+                         const std::vector<NucInputInfo> nuclides,
+                         const std::vector<FloatingPeak> extra_peaks,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> input_drf,
@@ -4436,43 +4550,352 @@ RelActAutoSolution solve( Options options,
   for( const auto &roi : energy_ranges )
     all_roi_full_range = (all_roi_full_range && roi.force_full_range && !roi.allow_expand_for_peak_width);
   
-  if( all_roi_full_range || (orig_sol.m_status != RelActAutoSolution::Status::Success) )
+  if( all_roi_full_range
+     || (orig_sol.m_status != RelActAutoSolution::Status::Success)
+     || !orig_sol.m_spectrum )
+  {
     return orig_sol;
+  }
   
   // If we are here there was at least one ROI that didnt have force_full_range set, or had
   //  allow_expand_for_peak_width set.
   // So we will go through and adjust these ROIs based on peaks that are statistically significant,
-  //  based on initial solution, and then re-fit. 
+  //  based on initial solution, and then re-fit.
+    
+  RelActAutoSolution current_sol = orig_sol;
   
-  // TODO: Go through and estimate counts for each gamma using `orig_sol`, and discard and non-significant regions and combine other gammas into appropriate regions, and refit (using the determined DRF and check to see if its worthwhile replacing all_peaks with the peaks from previous solution - with maybe an options flag set to use those peaks to estimate starting values - or maybe make some way to pass in starting values....).  We may elect to do this p to a few times, or until the ROIs stop changing.
+  int num_function_eval_solution = orig_sol.m_num_function_eval_solution;
+  int num_function_eval_total = orig_sol.m_num_function_eval_total;
+  int num_microseconds_eval = orig_sol.m_num_microseconds_eval;
   
-  assert( orig_sol.m_foreground );
-  const float live_time = orig_sol.m_foreground ? orig_sol.m_foreground->live_time() : 1.0f;
-  vector<RoiRange> updated_energy_ranges;
-  RelActAutoSolution prev_sol = orig_sol;
-  for( const RoiRange &roi : energy_ranges )
+  
+  bool stop_iterating = false, errored_out_of_iterating = false;
+  const size_t max_roi_adjust_iterations = 2;
+  size_t num_roi_iters = 0;
+  for( ; !stop_iterating && (num_roi_iters < max_roi_adjust_iterations); ++num_roi_iters )
   {
-    if( roi.force_full_range )
-    {
-      updated_energy_ranges.push_back( roi );
-      continue;
-    }//if( roi.force_full_range )
+    assert( current_sol.m_spectrum
+           && current_sol.m_spectrum->energy_calibration()
+           && current_sol.m_spectrum->energy_calibration()->valid() );
     
-    // Estimate
-    for( const NuclideRelAct &rel_act : prev_sol.m_rel_activities )
+    if( !current_sol.m_spectrum
+       || !current_sol.m_spectrum->energy_calibration()
+       || !current_sol.m_spectrum->energy_calibration()->valid() )
     {
-      rel_act.nuclide;
-      rel_act.rel_activity;
-    
-      for( const pair<double,double> &energy_br : rel_act.gamma_energy_br )
-      {
-       //blah blah blah
-      }
+      return orig_sol;
     }
-  }//for( const RoiRange &roi : energy_ranges )
+    
+    vector<RoiRange> fixed_energy_ranges;
+    for( const RoiRange &roi : energy_ranges )
+    {
+      if( roi.force_full_range )
+        fixed_energy_ranges.push_back( roi );
+    }//for( const RoiRange &roi : energy_ranges )
+    
+    
+    /** `orig_sol.m_spectrum` is background subtracted, and energy corrected, of those options were
+     selected.
+     */
+    const auto spectrum = current_sol.m_spectrum;
+    const float live_time = spectrum->live_time();
+    const double num_sigma_half_roi = DEFAULT_PEAK_HALF_WIDTH_SIGMA;
+    
+    // We need to convert fwhm_coefs to floats, just to call the `eval_fwhm(...)` function
+    const vector<float> fwhm_coefs( begin(current_sol.m_fwhm_coefficients),
+                                   end(current_sol.m_fwhm_coefficients) );
+    
+    // We'll collect all the individual
+    vector<RoiRange> significant_peak_ranges;
+    
+    /** Updates the passed in ROI to have limits for the peak mean energy passed in, and adds ROI
+     to `significant_peak_ranges`.
+     */
+    auto add_updated_roi = [&significant_peak_ranges,
+                             &current_sol,
+                             &fwhm_coefs,
+                             &fixed_energy_ranges,
+                             num_sigma_half_roi]( RoiRange roi, const float energy ){
+      const float fwhm = eval_fwhm( energy, current_sol.m_fwhm_form, fwhm_coefs );
+      const float sigma = fwhm / 2.35482f;
+      
+      double roi_lower = energy - (num_sigma_half_roi * sigma);
+      double roi_upper = energy + (num_sigma_half_roi * sigma);
+      
+      bool keep_roi = true;
+      if( !roi.allow_expand_for_peak_width )
+      {
+        roi_lower = std::max( roi_lower, roi.lower_energy );
+        roi_upper = std::min( roi_upper, roi.upper_energy );
+      }else
+      {
+        // Make sure we havent expanded into the range of any ROIs with forced widths
+        for( const RoiRange &fixed : fixed_energy_ranges )
+        {
+          const bool overlaps = ((roi.upper_energy > fixed.lower_energy)
+                                 && (roi.lower_energy < fixed.upper_energy));
+          if( overlaps )
+          {
+            // Do some development checks about bounds of ROI
+            if( (roi_lower >= fixed.lower_energy) && (roi_upper <= fixed.upper_energy) )
+            {
+              // This ROI is completely within a fixed ROI - this shouldnt happen!
+              assert( 0 );
+              keep_roi = false;
+              break;
+            }//if( this peaks ROI is completely within a fixed ROI )
+            
+            if( (fixed.lower_energy >= roi_lower) && (fixed.upper_energy <= roi_upper) )
+            {
+              // This fixed ROI is completely within a the peaks ROI - this shouldnt happen!
+              assert( 0 );
+              keep_roi = false;
+              break;
+            }//if( the fixed ROI is completely within this peaks ROI )
+            
+            if( roi.upper_energy > fixed.upper_energy )
+            {
+              assert( roi_lower <= fixed.upper_energy );
+              assert( roi_upper > fixed.upper_energy );
+              roi_lower = std::max( roi_lower, fixed.upper_energy );
+            }else
+            {
+              assert( roi_upper >= fixed.lower_energy );
+              assert( roi_lower < fixed.lower_energy );
+              roi_upper = std::min( roi_upper, fixed.lower_energy );
+            }
+            
+            assert( roi_lower < roi_upper );
+          }//if( overlaps )
+        }//for( const RoiRange &fixed : fixed_energy_ranges )
+      }//if( !roi.allow_expand_for_peak_width ) / else
+      
+      
+      if( !keep_roi || (roi_lower >= roi_upper) )
+      {
+        // SHouldnt ever get here
+        assert( 0 );
+        return;
+      }
+      
+      roi.force_full_range = true;
+      roi.allow_expand_for_peak_width = false;
+      roi.lower_energy = roi_lower;
+      roi.upper_energy = roi_upper;
+      
+      significant_peak_ranges.push_back( roi );
+    };//add_updated_roi
+    
+    
+    // Note: we loop over original energy_ranges, not the energy ranges from the solution,
+    //       (to avoid the ROIs from expanding continuously, and also we've marked the
+    //        updated ROIs as force full-range)
+    for( const RoiRange &roi : energy_ranges )
+    {
+      if( roi.force_full_range )
+        continue;
+      
+      // Estimate
+      for( const NuclideRelAct &rel_act : current_sol.m_rel_activities )
+      {
+        assert( rel_act.nuclide );
+        if( !rel_act.nuclide )
+          continue;
+        
+        for( const pair<double,double> &energy_br : rel_act.gamma_energy_br )
+        {
+          const double &energy = energy_br.first;
+          const double &br = energy_br.second;
+          if( (energy < roi.lower_energy) || (energy > roi.upper_energy) )
+            continue;
+          
+          const double rel_eff = RelActCalc::eval_eqn( energy, current_sol.m_rel_eff_form,
+                                                      current_sol.m_rel_eff_coefficients );
+          const double expected_counts = live_time * br * rel_eff * rel_act.rel_activity;
+          const float fwhm = eval_fwhm( energy, current_sol.m_fwhm_form, fwhm_coefs );
+          const float sigma = fwhm / 2.35482f;
+          
+          const float peak_width_nsigma = 3.0f;
+          const float lower_energy = static_cast<float>(energy) - (peak_width_nsigma * sigma);
+          const float upper_energy = static_cast<float>(energy) + (peak_width_nsigma * sigma);
+          const double data_counts = spectrum->gamma_integral(lower_energy, upper_energy);
+          
+          // We'll use a very simple requirement that the expected peak area should be at least 3
+          //  times the sqrt of the data area for the peak; this is of course just a coarse FOM
+          //  TODO: the value of 3.0 was chosen "by eye" from only a couple example spectra - need to re-evaluate
+          const double significance_limit = 3.0;
+          const bool significant = (expected_counts > significance_limit*sqrt(data_counts));
+          
+          cout << "For " << energy << " keV " << rel_act.nuclide->symbol
+          << " expect counts=" << expected_counts
+          << ", and FWHM=" << fwhm
+          << ", with data_counts=" << data_counts
+          << ", is_significant=" << significant
+          << endl;
+          
+          if( !significant )
+            continue;
+          
+          add_updated_roi( roi, energy );
+        }//for( const pair<double,double> &energy_br : rel_act.gamma_energy_br )
+      }//for( const NuclideRelAct &rel_act : current_sol.m_rel_activities )
+    }//for( const RoiRange &roi : energy_ranges )
+    
+    // Now make sure all `extra_peaks` are in an energy range; if not add an energy range for them
+    for( const FloatingPeak &peak : extra_peaks )
+    {
+      bool in_energy_range = false;
+      for( const RoiRange &roi : significant_peak_ranges )
+      {
+        in_energy_range = ((peak.energy >= roi.lower_energy) && (peak.energy <= roi.upper_energy));
+        if( in_energy_range )
+        {
+          add_updated_roi( roi, peak.energy );
+          break;
+        }
+      }//for( const RoiRange &roi : significant_peak_ranges )
+      
+      if( !in_energy_range )
+      {
+        for( const RoiRange &roi : fixed_energy_ranges )
+        {
+          in_energy_range = ((peak.energy >= roi.lower_energy) && (peak.energy <= roi.upper_energy));
+          if( in_energy_range )
+            break;
+        }//for( const RoiRange &roi : fixed_energy_ranges )
+      }//if( we needed to check if the floating peak is in a fixed range )
+      
+      //If the fixed peak isnt in any of the ROI's from significant gammas, or forced-full-range
+      //  ROIs, create a ROI for it
+      if( !in_energy_range )
+      {
+        bool found_roi = false;
+        for( const RoiRange &roi : energy_ranges )
+        {
+          found_roi = ((peak.energy >= roi.lower_energy) && (peak.energy <= roi.upper_energy));
+          if( found_roi )
+          {
+            add_updated_roi( roi, peak.energy );
+            break;
+          }//
+        }//for( const RoiRange &roi : energy_ranges )
+        
+        assert( found_roi );
+      }//if( the fixed-peak isnt in any of the ROI's
+    }//for( const FloatingPeak &peak : extra_peaks )
+    
+    //  Sort ROIs first so they are in increasing energy
+    sort_rois_by_energy( significant_peak_ranges );
+    
+    // Now combine overlapping ranges in significant_peak_ranges
+    vector<RoiRange> combined_sig_peak_ranges;
+    for( size_t index = 0; index < significant_peak_ranges.size(); ++index )
+    {
+      RoiRange range = significant_peak_ranges[index];
+      
+      // We'll loop over remaining ROIs until there is not an overlap; note that
+      //  `index` is incremented if we combine with a ROI.
+      for( size_t j = index + 1; j < significant_peak_ranges.size(); ++j, ++index )
+      {
+        const RoiRange &next_range = significant_peak_ranges[j];
+        
+        if( next_range.lower_energy > range.upper_energy )
+          break; // note: doesnt increment `index`
+        
+        range.upper_energy = next_range.upper_energy;
+        const int cont_type_int = std::max( static_cast<int>(range.continuum_type),
+                                           static_cast<int>(next_range.continuum_type) );
+        range.continuum_type = PeakContinuum::OffsetType(cont_type_int);
+      }//for( loop over the next peaks, until they shouldnt be combined )
+      
+      combined_sig_peak_ranges.push_back( range );
+    }//for( size_t i = 0; i < significant_peak_ranges.size(); ++i )
+    
+    // Put all the ROIs into one vector, and sort them
+    vector<RoiRange> updated_energy_ranges = fixed_energy_ranges;
+    
+    updated_energy_ranges.insert( end(updated_energy_ranges),
+                                 begin(combined_sig_peak_ranges),
+                                 end(combined_sig_peak_ranges) );
+    
+    sort_rois_by_energy( updated_energy_ranges );
+    
+    cout << "\nFor iteration " << num_roi_iters << ", the energy ranges being are going from the"
+    " original:\n\t{";
+    for( size_t i = 0; i < energy_ranges.size(); ++i )
+      cout << (i ? ", " : "") << "{" << energy_ranges[i].lower_energy
+           << ", " << energy_ranges[i].upper_energy << "}";
+    cout << "}\nTo:\n\t{";
+    for( size_t i = 0; i < updated_energy_ranges.size(); ++i )
+      cout << (i ? ", " : "") << "{" << updated_energy_ranges[i].lower_energy
+      << ", " << updated_energy_ranges[i].upper_energy << "}";
+    cout << "}\n\n";
+    
+    
+    try
+    {
+      const RelActAutoSolution updated_sol
+      = RelActAutoCostFcn::solve_ceres( options, updated_energy_ranges, nuclides, extra_peaks,
+                                       foreground, background, input_drf, all_peaks, cancel_calc );
+      
+      switch( updated_sol.m_status )
+      {
+        case RelActAutoSolution::Status::Success:
+          break;
+          
+        case RelActAutoSolution::Status::NotInitiated:
+          throw runtime_error( "After breaking up energy ranges, could not initialize finding solution." );
+          
+        case RelActAutoSolution::Status::FailedToSetupProblem:
+          throw runtime_error( "After breaking up energy ranges, the setup for finding a solution became invalid." );
+          
+        case RelActAutoSolution::Status::FailToSolveProblem:
+          throw runtime_error( "After breaking up energy ranges, failed to solve the problem." );
+          
+        case RelActAutoSolution::Status::UserCanceled:
+          return updated_sol;
+      }//switch( updated_sol.m_status )
+      
+      // If the number of ROIs didnt change for this iteration, we'll assume we're done - this is
+      //  totally ignoring that the actual ranges of the ROIs could have significantly changed, and
+      //  could change a little more
+      //  TODO: evaluate if ROI ranges have changed enough to warrant another iteration of finding a solution
+      const size_t num_prev_rois = current_sol.m_final_roi_ranges.size();
+      stop_iterating = (updated_sol.m_final_roi_ranges.size() == num_prev_rois);
+      
+      current_sol = updated_sol;
+      
+      // Update tally of function calls and eval time (eval time will be slightly off, but oh well)
+      num_function_eval_solution += current_sol.m_num_function_eval_solution;
+      num_function_eval_total += current_sol.m_num_function_eval_total;
+      num_microseconds_eval += current_sol.m_num_microseconds_eval;
+    }catch( std::exception &e )
+    {
+      stop_iterating = errored_out_of_iterating = true;
+      current_sol.m_warnings.push_back( "Failed to break up energy ranges to ROIs with significant"
+                                    " gamma counts: " + string(e.what())
+                                    + " - the current solution is from before final ROI divisions" );
+    }//try / catch
+  }//for( size_t roi_iteration = 0; roi_iteration < max_roi_adjust_iterations; ++roi_iteration )
   
   
-  return orig_sol;
+  current_sol.m_num_function_eval_solution = num_function_eval_solution;
+  current_sol.m_num_function_eval_total = num_function_eval_total;
+  current_sol.m_num_microseconds_eval = num_microseconds_eval;
+  
+  
+  if( !errored_out_of_iterating && !stop_iterating )
+    current_sol.m_warnings.push_back( "Final ROIs based on gamma line significances may not have been found." );
+  
+  cout << "It took " << num_roi_iters << " iterations (of max " << max_roi_adjust_iterations
+  << ") to find final ROIs to use;";
+  if( errored_out_of_iterating )
+    cout << " an error prevented finding final ROIs." << endl;
+  else if( stop_iterating )
+    cout << " final ROIs were found." << endl;
+  else
+    cout << " final ROIs were NOT found." << endl;
+  
+  return current_sol;
 }//RelActAutoSolution
 
 

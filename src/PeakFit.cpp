@@ -6328,7 +6328,15 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     for( size_t i = 0; i < npeaks; ++i )
     {
       const size_t col = npoly + i;
-      A(row,col) = PeakDef::gaus_integral( means[i], sigmas[i], 1.0, x0, x1 ) / uncert;
+      
+      // TODO: PeakDef::gaus_integral calls calls `boost_erf_imp` twice (which is the main cost of this function seemingly), one of which can be eliminated if we accumulate the channels sequentially for each peak, but this will require some refactoring, so not doing it for now.  We could also parallelize this computation (1 thread per peak)
+      
+      // To niavely *attempt* to save CPU time, we'll only assume peak contributions between -8 and
+      //  +8 sigma; 8 arbitrarily chosen.
+      if( ((x1 >= (means[i] - 8*sigmas[i])) && (x0 <= (means[i] + 8*sigmas[i]))) )
+        A(row,col) = PeakDef::gaus_integral( means[i], sigmas[i], 1.0, x0, x1 ) / uncert;
+      else
+        A(row,col) = 0.0;
     }
   }//for( size_t row = 0; row < nbin; ++row )
   

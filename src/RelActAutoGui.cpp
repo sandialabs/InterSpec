@@ -1507,6 +1507,9 @@ RelActAutoGui::~RelActAutoGui()
   if( m_more_options_menu && wApp && wApp->domRoot() )
     delete m_more_options_menu;
   m_more_options_menu = nullptr;
+  
+  if( m_cancel_calc )
+    m_cancel_calc->store( true );
 }//~RelActAutoGui();
 
 
@@ -2454,6 +2457,11 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
        )
     {
       loaded_display_energy_range = true;
+      
+      // Note: this next line only works when creating this widget and then loading its state
+      //       because #updateDuringRenderForSpectrumChange checks if the widget has rendered
+      //       yet, and if not, and it looks like a custom range has been set, then it wont
+      //       reset the range.
       m_spectrum->setXAxisRange( lower_display_energy, upper_display_energy );
     }
     
@@ -3503,7 +3511,21 @@ void RelActAutoGui::updateDuringRenderForSpectrumChange()
   const shared_ptr<const SpecUtils::Measurement> back
                    = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
   
-  const bool foreground_same = (fore == m_foreground);
+  bool foreground_same = (fore == m_foreground);
+  
+  // If we are creating this widget, and deSerializing, we have already set the energy range we
+  //  want to display, so dont overwrite that, if it looks like it has been set.
+  if( !foreground_same
+     && !m_spectrum->data()
+     && fore
+     && !m_spectrum->isRendered()
+     && (m_spectrum->xAxisMaximum() > (5.0 + m_spectrum->xAxisMinimum()))
+     && (m_spectrum->xAxisMinimum() >= fore->gamma_energy_min())
+     && (m_spectrum->xAxisMaximum() <= fore->gamma_energy_max())
+     )
+  {
+    foreground_same = true;
+  }
   
   m_foreground = fore;
   m_background = back;

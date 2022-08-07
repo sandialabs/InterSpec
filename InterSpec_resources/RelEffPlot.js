@@ -125,8 +125,15 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
     let min_x = d3.min(data_vals, function (d) { return d.energy; });
     let max_x = d3.max(data_vals, function (d) { return d.energy; });
     const initial_x_range = max_x - min_x;
-    min_x -= ((min_x >=0 && min_x < (0.05*initial_x_range)) ? min_x : (0.05*initial_x_range));
-    max_x += 0.05 * initial_x_range;
+    
+    let lower_padding = 0.025*initial_x_range;
+    if( Math.abs(initial_x_range) < 1.0 )
+      lower_padding = 1.0;
+    else if( ((min_x - lower_padding) < 50.0) || (lower_padding > 0.2*min_x) )
+      lower_padding = 0.2 * min_x;
+    
+    min_x -= lower_padding;
+    max_x += 0.025 * initial_x_range;
 
 
     let fit_eqn_points = [];

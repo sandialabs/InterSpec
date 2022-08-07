@@ -1247,6 +1247,12 @@ void RelActManualGui::updateGuiWithResults()
   << RelActCalc::rel_eff_eqn_text( solution.m_rel_eff_eqn_form, solution.m_rel_eff_eqn_coefficients )
   << "</div>\n";
   
+  results_html << "<div class=\"ToolAlphaWarning\">"
+  "Errors are statistical only, and have not been validated.<br />"
+  "The tool is is in an alpha-preview state only."
+  "</div>\n";
+  
+  
   solution.get_mass_fraction_table( results_html );
   solution.get_mass_ratio_table( results_html );
   

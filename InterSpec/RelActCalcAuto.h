@@ -235,6 +235,9 @@ const char *to_str( const FwhmForm form );
  */
 FwhmForm fwhm_form_from_str( const char *str );
 
+/** Evaluates the FWHM equation for the input energy, returning the FWHM. */
+float eval_fwhm( const float energy, const FwhmForm form, const std::vector<float> &coeffs );
+
 size_t num_parameters( const FwhmForm eqn_form );
 
 
@@ -454,10 +457,10 @@ struct RelActAutoSolution
  @param rel_eff_order The number of energy dependent terms to have in the relative efficiency
         equation (e.g., one more parameter than this will be fit for).
  */
-RelActAutoSolution solve( Options options,
-                         std::vector<RoiRange> energy_ranges,
-                         std::vector<NucInputInfo> nuclides,
-                         std::vector<FloatingPeak> extra_peaks,
+RelActAutoSolution solve( const Options options,
+                         const std::vector<RoiRange> energy_ranges,
+                         const std::vector<NucInputInfo> nuclides,
+                         const std::vector<FloatingPeak> extra_peaks,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> drf,
