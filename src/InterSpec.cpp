@@ -7467,11 +7467,12 @@ void InterSpec::initMaterialDbAndSuggestions()
     WSuggestionPopup::Options popupOptions;
     popupOptions.highlightBeginTag  = "<b>";          //Open tag to highlight a match in a suggestion.
     popupOptions.highlightEndTag    = "</b>";         //Close tag to highlight a match in a suggestion.
-    popupOptions.listSeparator      = ',';            //(char) When editing a list of values, the separator used for different items.
-    popupOptions.whitespace         = " \\t()";       //When editing a value, the whitespace characters ignored before the current value.
-    popupOptions.wordSeparators     = "-_., ;()";     //To show suggestions based on matches of the edited value with parts of the suggestion.
-    popupOptions.appendReplacedText = "";             //When replacing the curr
-    m_shieldingSuggestion = new WSuggestionPopup( popupOptions );
+    popupOptions.listSeparator      = '\0';            //(char) When editing a list of values, the separator used for different items.
+    popupOptions.whitespace         = "";       //When editing a value, the whitespace characters ignored before the current value.
+    //popupOptions.wordSeparators     = "-_., ;()";     //To show suggestions based on matches of the edited value with parts of the suggestion.
+    popupOptions.wordStartRegexp = "\\s|^|\\(|\\<";       // Instead of using .wordSeparators, we will use the regex option to start matching at whitespaces, start of line, open-paren, and boundaries of words (probably a bit duplicative).
+    popupOptions.appendReplacedText = "";             //
+    m_shieldingSuggestion = new WSuggestionPopup( popupOptions, this );
     m_shieldingSuggestion->addStyleClass("suggestion");
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
     m_shieldingSuggestion->setJavaScriptMember("wtNoReparent", "true");
