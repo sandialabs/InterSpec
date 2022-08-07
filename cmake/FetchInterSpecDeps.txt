@@ -16,6 +16,24 @@ set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "Build SHARED libraries")
 
 # TODO: set BOOST libraries to not build, like wave, beast, wserialization, etc
 
+# CMAKE_CURRENT_SOURCE_DIR could either be project base directory, or a target 
+#  directory, so we will search for the patch files to apply
+find_file( WT_PATCH_FILE "wt/3.7.1/FetchContent/wt_3.7.1_FetchContent.git.patch"  
+  PATHS "${CMAKE_CURRENT_SOURCE_DIR}/target/patches"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../target/patches"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../target/patches"
+  REQUIRED NO_DEFAULT_PATH
+) 
+
+find_file( ZLIB_PATCH_FILE "zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch"  
+  PATHS "${CMAKE_CURRENT_SOURCE_DIR}/target/patches"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../target/patches"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../target/patches"
+  REQUIRED NO_DEFAULT_PATH
+)
+
+
+
 FetchContent_Declare(
   boost
   #URL /Users/wcjohns/install/wt_fetch_contents/boost-5df8086b733798c8e08e316626a16babe11bd0d2.zip
@@ -38,8 +56,8 @@ FetchContent_Declare(
   GIT_SHALLOW    ON
 
   #The '|| true' is in next command is due to bug in cmake I think: https://gitlab.kitware.com/cmake/cmake/-/issues/21146
-  #PATCH_COMMAND ${GIT_EXECUTABLE} apply --ignore-space-change --ignore-whitespace ${CMAKE_CURRENT_SOURCE_DIR}/../patches/wt/3.7.1/FetchContent/wt_3.7.1_FetchContent.git.patch || true
-  PATCH_COMMAND patch -p1 < ${CMAKE_CURRENT_SOURCE_DIR}/target/patches/wt/3.7.1/FetchContent/wt_3.7.1_FetchContent.git.patch || true
+  PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${WT_PATCH_FILE} || ${GIT_EXECUTABLE} apply --ignore-space-change --ignore-whitespace ${WT_PATCH_FILE}
+  #PATCH_COMMAND patch -p1 < ${WT_PATCH_FILE} || true
 )
 
 # We will explicitly populate Wt and boost, rather than using this next line, so this way when the user
@@ -83,8 +101,8 @@ if( NOT APPLE AND NOT ANDROID )
     GIT_SHALLOW    ON
 
     #The '|| true' is in next command is due to bug in cmake I think: https://gitlab.kitware.com/cmake/cmake/-/issues/21146
-    #PATCH_COMMAND ${GIT_EXECUTABLE} apply --ignore-space-change --ignore-whitespace ${CMAKE_CURRENT_SOURCE_DIR}/../patches/zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch || true
-    PATCH_COMMAND patch -p1 < ${CMAKE_CURRENT_SOURCE_DIR}/target/patches/zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch || true
+    PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${ZLIB_PATCH_FILE} || ${GIT_EXECUTABLE} apply --ignore-space-change --ignore-whitespace ${ZLIB_PATCH_FILE}
+    #PATCH_COMMAND patch -p1 < ${ZLIB_PATCH_FILE} || true
   )
 
   FetchContent_GetProperties(zlib)
