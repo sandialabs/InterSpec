@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RelActCalcAuto version="0">
+  <Options version="0">
+    <Title>Spectrum20_U235_1750</Title>
+    <FitEnergyCal>false</FitEnergyCal>
+    <NucsOfElSameAge>true</NucsOfElSameAge>
+    <RelEffEqnType remark="Possible values: LnX, LnY, LnXLnY, FRAM Empirical">FRAM Empirical</RelEffEqnType> 
+    <RelEffEqnOrder>3</RelEffEqnOrder>
+    <FwhmForm>Polynomial_4</FwhmForm> <!-- Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6 -->
+  </Options>
+
+  <RoiRangeList>
+    <RoiRange version="0">
+      <LowerEnergy>180</LowerEnergy>
+      <UpperEnergy>190</UpperEnergy>
+      <ContinuumType remark="Possible values: NoOffset, Constant, Linear, Quardratic, Cubic, FlatStep, LinearStep, BiLinearStep, External">Linear</ContinuumType>
+      <ForceFullRange>true</ForceFullRange>
+      <AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+    </RoiRange>
+
+  </RoiRangeList>
+  
+  <NucInputInfoList>
+    <NucInputInfo version="0">
+      <Nuclide>U235</Nuclide>
+      <Age>20y</Age>
+      <FitAge>false</FitAge>
+      <GammasToExclude>
+        <Energy>84.22</Energy>
+      </GammasToExclude>
+      <PeakColorCss>rgb(209, 55, 17)</PeakColorCss>
+    </NucInputInfo>
+  </NucInputInfoList>
+
+<!--
+  <FloatingPeakList>
+    <FloatingPeak>
+      <Energy>1460</Energy>
+      <ReleaseFwhm>true</ReleaseFwhm>
+    </FloatingPeak>
+  </FloatingPeakList>
+-->
+
+</RelActCalcAuto>

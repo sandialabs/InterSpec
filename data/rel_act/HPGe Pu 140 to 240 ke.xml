@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RelActCalcAuto version="0">
+  <ForegroundFileName>FramTestspec/n42/cbnm9375.n42</ForegroundFileName>
+  <BackgroundFileName></BackgroundFileName>
+  <OutputHtmlFileName>cbnm9375_results.html</OutputHtmlFileName>
+
+  <Options version="0">
+    <Title>cbnm9375 Truth: 0.0104 Pu238, 93.58% Pu239, 6.3136% Pu240, 0.1079% Pu241, 0.03957% Pu242, 0.2168% Am241, 6.4063% Pu240 Eff</Title>
+    <FitEnergyCal>false</FitEnergyCal>
+    <NucsOfElSameAge>false</NucsOfElSameAge>
+    <RelEffEqnType remark="Possible values: LnX, LnY, LnXLnY, FRAM Empirical">FRAM Empirical</RelEffEqnType> 
+    <RelEffEqnOrder>4</RelEffEqnOrder>
+    <FwhmForm>Polynomial_5</FwhmForm> <!-- Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6 -->
+  </Options>
+  
+  <!-- Optionally, we can extract ROI and Nuclide information from N42 files saved by InterSpec. -->
+  <RoiAndNucsFromFile>false</RoiAndNucsFromFile>
+
+
+<!-- FRAM parameter sets: Pu_Plnr_060-230 or Pu_Plnr_120-420 -->
+
+<!-- 
+GePlnr_Pu_240-420:
+127.9, 131.8 linear-step
+124.2 127.8  linear-step
+183.7 187.5  flat-step
+145.1 151    linear
+150.9 153.8  linear
+162.6 166.2  linear
+158.9 163.2  linear
+223.1 230.40 linear
+200.9 204.9  linear
+204.9 211    linear-step
+253.1 257.1  linear
+309.5 314.3  linear
+338.9 348.6  linear-step
+330.2 339.2  flat-step
+363.2 386.4  flat-step
+408.1 417.9 flat-step
+-->
+
+<RoiRangeList>
+  <RoiRange version="0">
+    <LowerEnergy>127.9</LowerEnergy>
+    <UpperEnergy>131.8</UpperEnergy>
+    <ContinuumType remark="Possible values: NoOffset, Constant, , Quardratic, Cubic, FlatStep, LinearStep, BiLinearStep, External">LinearStep</ContinuumType>
+    <ForceFullRange>true</ForceFullRange>
+    <AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  <RoiRange version="0">
+    <LowerEnergy>124.2</LowerEnergy><UpperEnergy>127.8</UpperEnergy><ContinuumType>LinearStep</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  <!--
+    Removing this because ther are no Pu peaks?
+  <RoiRange version="0">
+    <LowerEnergy>183.7</LowerEnergy><UpperEnergy>187.5</UpperEnergy><ContinuumType>FlatStep</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  -->
+  <RoiRange version="0">
+    <!-- Changed upper energy from 151 to 150.9 -->
+    <LowerEnergy>145.1</LowerEnergy><UpperEnergy>150.9</UpperEnergy><ContinuumType>Linear</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  <RoiRange version="0">
+    <LowerEnergy>150.9</LowerEnergy><UpperEnergy>153.8</UpperEnergy><ContinuumType>Linear</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  <RoiRange version="0">
+    <!-- Changed upper energy from 162.6 to 163.2 -->
+    <LowerEnergy>163.2</LowerEnergy><UpperEnergy>166.2</UpperEnergy><ContinuumType>Linear</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  <RoiRange version="0">
+    <LowerEnergy>158.9</LowerEnergy><UpperEnergy>163.2</UpperEnergy><ContinuumType>Linear</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  <RoiRange version="0">
+    <LowerEnergy>223.1</LowerEnergy><UpperEnergy>230.40</UpperEnergy><ContinuumType>Linear</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  <RoiRange version="0">
+    <LowerEnergy>200.9</LowerEnergy><UpperEnergy>204.9</UpperEnergy><ContinuumType>Linear</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  <RoiRange version="0">
+    <LowerEnergy>204.9</LowerEnergy><UpperEnergy>211</UpperEnergy><ContinuumType>LinearStep</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  <RoiRange version="0">
+    <LowerEnergy>253.1</LowerEnergy><UpperEnergy>257.1</UpperEnergy><ContinuumType>Linear</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+    <!-- The Pu239 311 keV peak might be totally whack -->
+  <RoiRange version="0">
+    <LowerEnergy>309.5</LowerEnergy><UpperEnergy>314.3</UpperEnergy><ContinuumType>Linear</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  <RoiRange version="0">
+    <LowerEnergy>338.9</LowerEnergy><UpperEnergy>348.6</UpperEnergy><ContinuumType>LinearStep</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+
+  <RoiRange version="0">
+    <!-- Upper energy of 339.2 changed to 338.9 to prevent overlap -->
+    <LowerEnergy>330.2</LowerEnergy><UpperEnergy>338.9</UpperEnergy><ContinuumType>LinearStep</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  
+  
+  <RoiRange version="0">
+    <LowerEnergy>363.2</LowerEnergy><UpperEnergy>386.4</UpperEnergy><ContinuumType >FlatStep</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  <!--
+  <RoiRange version="0">
+    <LowerEnergy>408.1</LowerEnergy><UpperEnergy>417.9</UpperEnergy><ContinuumType>FlatStep</ContinuumType>
+    <ForceFullRange>true</ForceFullRange><AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+  </RoiRange>
+  -->
+</RoiRangeList>
+
+
+  <NucInputInfoList>
+    <NucInputInfo version="0"><Nuclide>Pu238</Nuclide><Age>23y</Age><FitAge>false</FitAge><PeakColorCss>rgb(0,0,255)</PeakColorCss></NucInputInfo>
+    <NucInputInfo version="0"><Nuclide>Pu239</Nuclide><Age>23y</Age><FitAge>false</FitAge><PeakColorCss>rgb(255,69,0)</PeakColorCss></NucInputInfo>
+    <NucInputInfo version="0"><Nuclide>Pu240</Nuclide><Age>23y</Age><FitAge>false</FitAge><PeakColorCss>rgb(34,139,34)</PeakColorCss></NucInputInfo>
+    <NucInputInfo version="0"><Nuclide>Pu241</Nuclide><Age>23y</Age><FitAge>false</FitAge><PeakColorCss>rgb(204,204,0)</PeakColorCss></NucInputInfo>
+    <!-- <NucInputInfo version="0"><Nuclide>Am241</Nuclide><Age>23y</Age><FitAge>false</FitAge><PeakColorCss>rgb(220,20,60)</PeakColorCss></NucInputInfo> -->
+    <!-- <NucInputInfo version="0"><Nuclide>Np237</Nuclide><Age>23y</Age><FitAge>false</FitAge><PeakColorCss>rgb(128,128,0)</PeakColorCss></NucInputInfo> -->
+  </NucInputInfoList>
+
+<!-- Sandia decay looks to be missing the following lines:
+  - Pu239: 
+    - Energy=414.8 keV, br=1.5E-7
+    - Energy=410.99 keV, br=3.713E-8
+-->
+<!--
+  <FloatingPeakList>
+    <FloatingPeak>
+      <Energy>414.8</Energy>
+      <ReleaseFwhm>false</ReleaseFwhm>
+    </FloatingPeak>
+    <FloatingPeak>
+      <Energy>410.99</Energy>
+      <ReleaseFwhm>false</ReleaseFwhm>
+    </FloatingPeak>
+  </FloatingPeakList>
+-->
+</RelActCalcAuto>
