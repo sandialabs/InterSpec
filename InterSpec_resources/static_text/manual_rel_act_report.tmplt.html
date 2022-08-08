@@ -1,0 +1,185 @@
+<html>
+
+<head>
+    <title>${TITLE}</title>
+
+    
+    <!-- <script src="https://d3js.org/d3.v3.min.js"></script> -->
+    <script>
+    ${D3_SCRIPT}
+    </script>
+    
+    <script>
+    ${SPECTRUM_CHART_JS}
+    </script>
+
+  
+
+    <style>
+        /* set the CSS */
+
+        body {
+            font: Arial;
+        }
+
+        .title {
+            padding: 10px;
+            text-align: center;
+        }
+
+        .results {
+            padding: 10px;
+            font-size: medium;
+        }
+
+        .nuctable, .peaktable, .massratiotable {
+        }
+
+        .resulttable {
+            margin-top: 15px;
+            table-layout: fixed;
+            border-collapse: collapse;
+            border: 1px solid black;
+        }
+
+        .resulttable th, .resulttable td {
+            padding-left: 5px;
+            padding-right: 5px;
+            border: 1px solid black;
+        }
+
+        .releffeqn {
+            margin: 10px;
+        }
+
+        .warnings {
+          margin-top: 15px;
+          margin-left: 10px;
+          margin-right: 10px;
+          padding: 5px;
+          border: 1px solid yellow;
+        }
+        
+        .warningline {
+          margin-top: 5px;
+        }
+
+        .anatime {
+            padding-top: 10px;
+            text-align: center;
+            font: 12px Arial;
+        }
+    </style>
+
+
+    <!-- Some additional styling for the D3-based spectrum chart -->
+    <style>
+    ${SPECTRUM_CHART_CSS}
+    </style>
+
+    <style>
+      .SpecChart .chartarea{
+        fill: white;
+      }
+
+      .SpecChart .xaxistitle, .SpecChart .yaxistitle, .SpecChart .yaxis, .SpecChart .xaxis{
+        /* stroke: black; */
+      }
+
+
+      .xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick {
+        /* stroke: black; */
+      }
+
+      .xgrid > .tick, .ygrid > .tick{
+        stroke: #b3b3b3;
+      }
+
+      .minorgrid{
+        stroke: #e6e6e6;
+      }
+    </style>
+
+    <style>
+      ${REL_EFF_PLOT_CSS}
+
+      ${REL_EFF_PLOT_ADDITIONAL_CSS}
+    </style>
+
+    <script>
+      ${REL_EFF_PLOT_JS}
+    </script>
+</head>
+
+<body>
+    <h1 class="title">
+    ${TITLE}
+    </h1>
+
+    <div id="chartsdiv" style="display: flex; flex-direction: row; justify-content: space-around; overflow: none;">
+        ${CHART_SPACER_LEFT}
+        ${SPECTRUM_CHART_DIV}
+        <div id="releffchart" style="height: 30vw; flex: 1 2; overflow: hidden;"></div>
+        ${CHART_SPACER_RIGHT}
+    </div>
+
+    <div class="results">
+    ${RESULTS_TXT}
+    </div>
+
+    <script>
+        const data_vals = ${REL_EFF_DATA_VALS};
+        const fit_eqn = ${FIT_REL_EFF_EQUATION};
+
+        let chart = new RelEffPlot("releffchart");
+        chart.setRelEffData(data_vals, fit_eqn);
+
+        var olddivhight = 0;
+        let divobserver = new ResizeObserver(entries => {
+          for (let entry of entries) {
+            if (entry.target && (entry.target.id === "chartsdiv")) {
+              // We'll adjust the height based on width
+              let w, h;
+              if (entry.contentBoxSize) {
+                // Firefox implements `contentBoxSize` as a single content rect, rather than an array
+                const contentBoxSize = Array.isArray(entry.contentBoxSize) ? entry.contentBoxSize[0] : entry.contentBoxSize;
+                w = contentBoxSize.width;
+                h = contentBoxSize.height;
+              } else {
+                w = entry.contentRect.width;
+                h = entry.contentRect.height;
+              }
+      
+              let new_height = Math.max( 100, Math.min( 0.5*window.innerHeight, 0.75*w ) );
+              if( Math.abs(new_height - olddivhight) > 2 )
+              {
+                olddivhight = new_height;
+                //entry.target.style.height = h + "px";
+                let el = document.getElementById("chartsdiv");
+                el.style.height = new_height + "px";
+                for (let i = 0; i < el.children.length; i++) {
+                  el.children[i].style.height = new_height + "px";
+                }
+              }
+            }
+          }
+        });
+        divobserver.observe( document.getElementById("chartsdiv") );
+
+
+        let rel_eff_observer = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                if (entry.target && (entry.target.id === "releffchart")) {
+                    chart.handleResize();
+                }
+            }
+        });
+        rel_eff_observer.observe(chart.chart);
+    </script>
+
+    <script>
+      ${SPECTRUM_CHART_INIT_JS}
+    </script>
+
+</body>
+<html>

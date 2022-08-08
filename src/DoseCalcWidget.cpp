@@ -251,6 +251,10 @@ public:
     label->addStyleClass( "DoseFieldLabel" );
     m_nuclideEdit = new WLineEdit();
     m_nuclideEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+    m_nuclideEdit->setAttributeValue( "autocorrect", "off" );
+    m_nuclideEdit->setAttributeValue( "spellcheck", "off" );
+#endif
     layout->addWidget( m_nuclideEdit, 0, 1 );
     m_nuclideEdit->addStyleClass( "DoseEnterTxt" );
     m_nuclideEdit->setAttributeValue( "spellcheck", "false" );
@@ -261,6 +265,10 @@ public:
     label->addStyleClass( "DoseFieldLabel" );
     m_nuclideAgeEdit = new WLineEdit();
     m_nuclideAgeEdit->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+    m_nuclideAgeEdit->setAttributeValue( "autocorrect", "off" );
+    m_nuclideAgeEdit->setAttributeValue( "spellcheck", "off" );
+#endif
     m_nuclideAgeEdit->setPlaceholderText( "NA" );
     layout->addWidget( m_nuclideAgeEdit, 1, 1 );
     label->setBuddy( m_nuclideAgeEdit );
@@ -964,6 +972,10 @@ void DoseCalcWidget::init()
         
         m_doseEnter = new WLineEdit( m_enterWidgets[i] );
         m_doseEnter->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+        m_doseEnter->setAttributeValue( "autocorrect", "off" );
+        m_doseEnter->setAttributeValue( "spellcheck", "off" );
+#endif
         m_doseEnter->addStyleClass( "DoseEnterTxt" );
         m_doseEnter->setText( "100" );
         if( isPhone )
@@ -1011,7 +1023,10 @@ void DoseCalcWidget::init()
         m_activityEnter = new WLineEdit( m_enterWidgets[i] );
         m_activityEnter->addStyleClass( "DoseEnterTxt" );
         m_activityEnter->setAutoComplete( false );
-        
+#if( BUILD_AS_OSX_APP || IOS )
+        m_activityEnter->setAttributeValue( "autocorrect", "off" );
+        m_activityEnter->setAttributeValue( "spellcheck", "off" );
+#endif
         if( isPhone )
           m_activityEnter->setWidth( 50 );
         
@@ -1082,6 +1097,10 @@ void DoseCalcWidget::init()
         
         m_distanceEnter = new WLineEdit( "100 cm" );
         m_distanceEnter->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+        m_distanceEnter->setAttributeValue( "autocorrect", "off" );
+        m_distanceEnter->setAttributeValue( "spellcheck", "off" );
+#endif
         m_distanceEnter->addStyleClass( "DoseEnterTxt" );
         
         if( isPhone )

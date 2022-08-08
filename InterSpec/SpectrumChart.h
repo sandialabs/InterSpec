@@ -208,7 +208,7 @@ public:
                                      const Wt::WModelIndex &bottomRight );
 
   //peakYVal(...): returns the y-value to paint for the center of the bin, for
-  //  given the peak; includes the backgorund value
+  //  given the peak; includes the background value
   static double peakYVal( const int bin, const PeakDef &peak,
                           const SpectrumDataModel *th1Model,
                           std::shared_ptr<const PeakDef> prevPeak,

@@ -46,6 +46,10 @@ NativeFloatSpinBox::NativeFloatSpinBox( Wt::WContainerWidget *parent )
 {
   addStyleClass( "FloatInput" );
   setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  setAttributeValue( "autocorrect", "off" );
+  setAttributeValue( "spellcheck", "off" );
+#endif
   setAttributeValue( "type", "number" );
   setAttributeValue( "step", "any" ); //For FF
   setValue( 0.0f );

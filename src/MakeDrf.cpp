@@ -1416,7 +1416,10 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_detDiameter->setText( "2.54 cm" );
   m_detDiameter->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   m_detDiameter->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
-  
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detDiameter->setAttributeValue( "autocorrect", "off" );
+  m_detDiameter->setAttributeValue( "spellcheck", "off" );
+#endif
   
   m_effOptionGroup = new WGroupBox( "Intrinsic Eff.", fitOptionsDiv );
   m_effEqnOrder = new WComboBox( m_effOptionGroup );
@@ -1436,8 +1439,28 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_fwhmEqnType = new WComboBox( m_fwhmOptionGroup );
   m_fwhmEqnType->setNoSelectionEnabled( true );
   m_fwhmEqnType->setInline( false );
-  m_fwhmEqnType->addItem( "Gadras Eqation" );
-  m_fwhmEqnType->addItem( "Sqrt Power Series" );
+  
+  for( auto i = DetectorPeakResponse::ResolutionFnctForm(0);
+      i < DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm;
+      i = DetectorPeakResponse::ResolutionFnctForm(i+1) )
+  {
+    switch( i )
+    {
+      case DetectorPeakResponse::kGadrasResolutionFcn:
+        m_fwhmEqnType->addItem( "Gadras Equation" );
+        break;
+      case DetectorPeakResponse::kSqrtPolynomial:
+        m_fwhmEqnType->addItem( "sqrt(A + B*E + C/E)" );
+        break;
+      case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+        m_fwhmEqnType->addItem( "Sqrt Power Series" );
+        break;
+      case DetectorPeakResponse::kNumResolutionFnctForm:
+        assert( 0 );
+        break;
+    }//switch( i )
+  }//for( loop over DetectorPeakResponse::ResolutionFnctForm )
+  
   m_fwhmEqnType->setCurrentIndex( 0 );
   m_fwhmEqnType->changed().connect( this, &MakeDrf::handleFwhmTypeChanged );
   
@@ -1676,6 +1699,11 @@ void MakeDrf::startSaveAs()
   name->setTextSize( 32 );
   name->setMaxLength( 255 );
   name->setAutoComplete( false );
+#if( BUILD_AS_OSX_APP || IOS )
+  name->setAttributeValue( "autocorrect", "off" );
+  name->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   //const char *valid_file_name_regex = "(^(?!\\.)(?!com[0-9]$)(?!con$)(?!lpt[0-9]$)(?!nul$)(?!prn$)[^\\|*\\?\\\\:<>/$\"]*[^\\.\\|*\\?\\\\:<>/$\"]+$";
   const char *valid_file_name_regex = R"MyRegexDelim(^[^\\\/\:\*\?\"\'\,\;\<\>\|]+$)MyRegexDelim";
   WRegExpValidator *validator = new WRegExpValidator( valid_file_name_regex, name );
@@ -2407,16 +2435,18 @@ void MakeDrf::handleSourcesUpdates()
 
 void MakeDrf::handleFwhmTypeChanged()
 {
-  switch( m_fwhmEqnType->currentIndex() )
+  switch( DetectorPeakResponse::ResolutionFnctForm(m_fwhmEqnType->currentIndex()) )
   {
-    case 0:
+    case DetectorPeakResponse::kGadrasResolutionFcn:
+    case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+    case DetectorPeakResponse::kNumResolutionFnctForm:
       m_sqrtEqnOrder->hide();
       break;
       
-    case 1:
+    case DetectorPeakResponse::kSqrtPolynomial:
       m_sqrtEqnOrder->show();
       break;
-  }//switch( m_fwhmEqnType->currentIndex() )
+  }//switch( DetectorPeakResponse::ResolutionFnctForm(m_fwhmEqnType->currentIndex()) )
   
   //We could update *just* the FWHM equation like:
   //size_t numchan = 0;
@@ -2492,22 +2522,21 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
                                 MakeDrfChart::EqnEnergyUnits::keV );
 
   int sqrtEqnOrder = -1;
-  DetectorPeakResponse::ResolutionFnctForm fnctnlForm;
+  const auto fnctnlForm = DetectorPeakResponse::ResolutionFnctForm(m_fwhmEqnType->currentIndex());
   
-  switch( m_fwhmEqnType->currentIndex() )
+  
+  switch( fnctnlForm )
   {
-    case 0:
-      fnctnlForm = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
-      break;
-      
-    case 1:
-      fnctnlForm = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
-      sqrtEqnOrder = m_sqrtEqnOrder->currentIndex() + 1;
+    case DetectorPeakResponse::kGadrasResolutionFcn:
+    case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+    case DetectorPeakResponse::kNumResolutionFnctForm:
+    case DetectorPeakResponse::kSqrtPolynomial:
       break;
       
     default:
+      assert( 0 );
       return;
-  }//switch( m_fwhmEqnType->currentIndex() )
+  }//switch( DetectorPeakResponse::ResolutionFnctForm(m_fwhmEqnType->currentIndex()) )
   
   
   //ToDo: I'm not entirely sure the next line protects against updateFwhmEqn()
@@ -2570,9 +2599,14 @@ void MakeDrf::updateFwhmEqn( std::vector<float> coefs,
       m_fwhmEqnType->setCurrentIndex( 0 );
       break;
     
+    case DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse:
+      eqnType = MakeDrfChart::FwhmCoefType::SqrtEnergyPlusInverse;
+      m_fwhmEqnType->setCurrentIndex( 1 );
+      break;
+      
     case DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial:
       eqnType = MakeDrfChart::FwhmCoefType::SqrtEqn;
-      m_fwhmEqnType->setCurrentIndex( 1 );
+      m_fwhmEqnType->setCurrentIndex( 2 );
       break;
       
     case DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm:
@@ -2948,14 +2982,25 @@ shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const
   
   if( !m_fwhmCoefs.empty() )
   {
-    switch( m_fwhmEqnType->currentIndex() )
+    const auto fwhmForm = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );
+    switch( fwhmForm )
     {
-      case 0:
+      case DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn:
         drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn );
         break;
         
-      case 1:
+      case DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse:
+        drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse );
+        break;
+        
+      case DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial:
         drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+        break;
+        
+      case DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm:
+      default:
+        assert( 0 );
+        throw runtime_error( "Invalid DRF type selection" );
         break;
     }//switch( m_fwhmEqnType->currentIndex() )
   }//if( !m_fwhmCoefs.empty() )
@@ -2993,10 +3038,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   const int fwhmDof = static_cast<int>(data.size()) - fwhmCoefs.size();
   
   const bool effInMeV = isEffEqnInMeV();
-  const bool fwhmIsGadrasEqn = isGadrasFwhmEqnType();
-  const DetectorPeakResponse::ResolutionFnctForm resFcnForm = (fwhmIsGadrasEqn
-                                                               ? DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn
-                                                               : DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial);
+  const auto resFcnForm = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );
   
   double diam;
   try
@@ -3090,27 +3132,50 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   if( fwhmCoefs.size() )
   {
     out << "# Full width half maximum (FWHM) follows equation: ";
-    if( fwhmIsGadrasEqn )
+    switch( resFcnForm )
     {
-      out << "GadrasEqn" << endline
-          << "# P6 -> resolution @ E=0 (keV)" << endline
-          << "# P7 -> % FWHM @ 661 keV" << endline
-          << "# P8 -> resolution power" << endline
-          << "# if( energy >= 661 or P6=0 ) FWHM = 6.61×P7×(energy/661)^P8" << endline
-          << "# else if( P6 < 0.0 ) FWHM = 6.61 x P7 x (energy/661)^(P8^(1.0/log(1.0-P6))" << endline
-          << "# else if( P6 > 6.61×P7 ) FWHM = P6" << endline
-          << "# else FWHM = sqrt(P6^2 + (6.61 x (sqrt((6.61×P7)^2 - P6^2)/6.61) x (energy/661)^P8)^2)" << endline
-          << "# Energy in keV"<< endline
-          << "# ,P6,P7,P8" << endline;
-    }else
-    {
-      out << "FWHM = sqrt( A0 + A1*(energy/1000) + A2*(energy/1000)^2 + A3*(energy/1000)^3 + ...)" << endline
-           << "# Energy in keV" << endline
-           << "# ";
-      for( size_t i = 0; i < fwhmCoefs.size(); ++i )
-        out << ",A" << i;
-      out << endline;
-    }
+      case DetectorPeakResponse::kGadrasResolutionFcn:
+      {
+        out << "GadrasEqn" << endline
+            << "# P6 -> resolution @ E=0 (keV)" << endline
+            << "# P7 -> % FWHM @ 661 keV" << endline
+            << "# P8 -> resolution power" << endline
+            << "# if( energy >= 661 or P6=0 ) FWHM = 6.61×P7×(energy/661)^P8" << endline
+            << "# else if( P6 < 0.0 ) FWHM = 6.61 x P7 x (energy/661)^(P8^(1.0/log(1.0-P6))" << endline
+            << "# else if( P6 > 6.61×P7 ) FWHM = P6" << endline
+            << "# else FWHM = sqrt(P6^2 + (6.61 x (sqrt((6.61×P7)^2 - P6^2)/6.61) x (energy/661)^P8)^2)" << endline
+            << "# Energy in keV"<< endline
+            << "# ,P6,P7,P8" << endline;
+        break;
+      }//case DetectorPeakResponse::kGadrasResolutionFcn:
+        
+      case DetectorPeakResponse::kSqrtPolynomial:
+      {
+        out << "FWHM = sqrt( A0 + A1*(energy/1000) + A2*(energy/1000)^2 + A3*(energy/1000)^3 + ...)" << endline
+            << "# Energy in keV" << endline
+            << "# ";
+        for( size_t i = 0; i < fwhmCoefs.size(); ++i )
+          out << ",A" << i;
+        out << endline;
+        break;
+      }//case DetectorPeakResponse::kSqrtPolynomial:
+        
+      case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+      {
+        out << "FWHM = sqrt( A0 + A1*energy + A2/energy )" << endline
+        << "# Energy in keV" << endline
+        << "# ";
+        for( size_t i = 0; i < fwhmCoefs.size(); ++i )
+          out << ",A" << i;
+        out << endline;
+        
+        break;
+      }//case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+        
+      case DetectorPeakResponse::kNumResolutionFnctForm:
+        assert( 0 );
+        break;
+    }//switch( resFcnForm )
     
     out << "Values";
     for( size_t i = 0; i < fwhmCoefs.size(); ++i )
@@ -3248,6 +3313,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   
 
   const bool effInMeV = isEffEqnInMeV();
+  const auto fwhmForm = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );
   const float cs137Energy = (effInMeV ? 0.661657f : 661.657f);
   const float intrinsicEffAt661 = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( cs137Energy, m_effEqnCoefs );
   const float relEffPercent = 100.0 * intrinsicEffAt661 / ns_NaI3x3IntrinsicEff;
@@ -3258,9 +3324,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     snprintf( rel_eff_txt, sizeof(rel_eff_txt), "%.1f%% eff. (rel. to 3x3 NaI) @661 keV", relEffPercent );
   }else
   {
-    const auto form = isGadrasFwhmEqnType() ? DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn
-                                            : DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
-    const float fwhm661 = DetectorPeakResponse::peakResolutionSigma( 661.7, form, m_fwhmCoefs );
+    const float fwhm661 = DetectorPeakResponse::peakResolutionSigma( 661.7, fwhmForm, m_fwhmCoefs );
     const float relResolution = 100 * fwhm661 / 661.7;
     
     snprintf( rel_eff_txt, sizeof(rel_eff_txt),
@@ -3271,57 +3335,93 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   string fwhm_eqn;
   if( m_fwhmCoefs.size() )
   {
-    if( isGadrasFwhmEqnType() )
+    switch( fwhmForm )
     {
-      const float P6 = m_fwhmCoefs[0];
-      const float P7 = (m_fwhmCoefs.size() > 1) ? m_fwhmCoefs[1] : 0.0f;
-      const float P8 = (m_fwhmCoefs.size() > 2) ? m_fwhmCoefs[2] : 0.0f;
-      
-      char case1_buffer[256] = { '\0' }, case2_buffer[256] = { '\0' };
-      char case3_buffer[256] = { '\0' }, case4_buffer[512] = { '\0' };
-      snprintf( case1_buffer, sizeof(case1_buffer), "FWHM(keV) = 6.61 * %.5g * (x/661)<sup>%.5g</sup>", P7, P8 );
-      snprintf( case2_buffer, sizeof(case2_buffer), "FWHM(keV) = 6.61 * %.5g * (x/661)^(%.5g^(1.0/log(1.0-%.5g))", P7, P8, P6 );
-      snprintf( case3_buffer, sizeof(case3_buffer), "FWHM(keV) = %.5g", P6 );
-      snprintf( case4_buffer, sizeof(case4_buffer), "FWHM(keV) = sqrt(%.5g<sup>2</sup>"
-               " + (6.61 *"
-               " (sqrt((6.61 * %.5g)<sup>2</sup> - %.5g<sup>2</sup>)/6.61)"
-               " * (x/661)<sup>%.5g</sup>)<sup>2</sup>)", P6, P7, P6, P8 );
-      
-      if( fabs(P6) < 1.0E-8 )
+      case DetectorPeakResponse::kGadrasResolutionFcn:
       {
-        fwhm_eqn = case1_buffer;
-      }else if( P6 < 0.0 )
-      {
-        fwhm_eqn = case2_buffer;
-      }else if( P6 > 6.61*P7 )
-      {
-        fwhm_eqn = case3_buffer;
-      }else
-      {
-        fwhm_eqn = "<div class=\"gadras-fcn\">E &lt; 661: " + string(case1_buffer) +  "</div>"
-                   "<div class=\"gadras-fcn\">E &gt; 661: " + string(case4_buffer) +  "</div>";
-      }
-    }else
-    {
-      fwhm_eqn = "FWHM(keV) = sqrt(";
-      for( size_t i = 0; i < m_fwhmCoefs.size(); ++i )
-      {
-        if( i == 0 )
-          fwhm_eqn += ((m_fwhmCoefs[i] < 0.0) ? " -" : "");
-        else
-          fwhm_eqn += ((m_fwhmCoefs[i] < 0.0) ? " - " : " + ");
+        const float P6 = m_fwhmCoefs[0];
+        const float P7 = (m_fwhmCoefs.size() > 1) ? m_fwhmCoefs[1] : 0.0f;
+        const float P8 = (m_fwhmCoefs.size() > 2) ? m_fwhmCoefs[2] : 0.0f;
         
-        char buffer[64] = { '\0' };
-        snprintf( buffer, sizeof(buffer), "%.4g", 0.001*fabs(m_fwhmCoefs[i]) );
-        fwhm_eqn += buffer;
+        char case1_buffer[256] = { '\0' }, case2_buffer[256] = { '\0' };
+        char case3_buffer[256] = { '\0' }, case4_buffer[512] = { '\0' };
+        snprintf( case1_buffer, sizeof(case1_buffer), "FWHM(keV) = 6.61 * %.5g * (x/661)<sup>%.5g</sup>", P7, P8 );
+        snprintf( case2_buffer, sizeof(case2_buffer), "FWHM(keV) = 6.61 * %.5g * (x/661)^(%.5g^(1.0/log(1.0-%.5g))", P7, P8, P6 );
+        snprintf( case3_buffer, sizeof(case3_buffer), "FWHM(keV) = %.5g", P6 );
+        snprintf( case4_buffer, sizeof(case4_buffer), "FWHM(keV) = sqrt(%.5g<sup>2</sup>"
+                 " + (6.61 *"
+                 " (sqrt((6.61 * %.5g)<sup>2</sup> - %.5g<sup>2</sup>)/6.61)"
+                 " * (x/661)<sup>%.5g</sup>)<sup>2</sup>)", P6, P7, P6, P8 );
         
-        if( i == 1 )
-          fwhm_eqn += "*x";
-        else if( i > 1 )
-          fwhm_eqn += "*x<sup>" + std::to_string(i) + "</sup>";
-      }
-      fwhm_eqn += ")";
-    }//if( isGadrasFwhmEqnType() ) / else
+        if( fabs(P6) < 1.0E-8 )
+        {
+          fwhm_eqn = case1_buffer;
+        }else if( P6 < 0.0 )
+        {
+          fwhm_eqn = case2_buffer;
+        }else if( P6 > 6.61*P7 )
+        {
+          fwhm_eqn = case3_buffer;
+        }else
+        {
+          fwhm_eqn = "<div class=\"gadras-fcn\">E &lt; 661: " + string(case1_buffer) +  "</div>"
+          "<div class=\"gadras-fcn\">E &gt; 661: " + string(case4_buffer) +  "</div>";
+        }
+        break;
+      }//case DetectorPeakResponse::kGadrasResolutionFcn:
+        
+      case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+      {
+        fwhm_eqn = "FWHM(keV) = sqrt(";
+        for( size_t i = 0; i < m_fwhmCoefs.size(); ++i )
+        {
+          if( i == 0 )
+            fwhm_eqn += ((m_fwhmCoefs[i] < 0.0) ? " -" : "");
+          else
+            fwhm_eqn += ((m_fwhmCoefs[i] < 0.0) ? " - " : " + ");
+          
+          char buffer[64] = { '\0' };
+          snprintf( buffer, sizeof(buffer), "%.4g", fabs(m_fwhmCoefs[i]) );
+          fwhm_eqn += buffer;
+          
+          if( i == 1 )
+            fwhm_eqn += "*x";
+          else if( i == 2 )
+            fwhm_eqn += "/x";
+        }
+        fwhm_eqn += ")";
+        break;
+      }//case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+        
+      case DetectorPeakResponse::kSqrtPolynomial:
+      {
+        fwhm_eqn = "FWHM(keV) = sqrt(";
+        for( size_t i = 0; i < m_fwhmCoefs.size(); ++i )
+        {
+          if( i == 0 )
+            fwhm_eqn += ((m_fwhmCoefs[i] < 0.0) ? " -" : "");
+          else
+            fwhm_eqn += ((m_fwhmCoefs[i] < 0.0) ? " - " : " + ");
+          
+          char buffer[64] = { '\0' };
+          snprintf( buffer, sizeof(buffer), "%.4g", 0.001*fabs(m_fwhmCoefs[i]) );
+          fwhm_eqn += buffer;
+          
+          if( i == 1 )
+            fwhm_eqn += "*x";
+          else if( i > 1 )
+            fwhm_eqn += "*x<sup>" + std::to_string(i) + "</sup>";
+        }
+        fwhm_eqn += ")";
+        
+        break;
+      }//case DetectorPeakResponse::kSqrtPolynomial:
+        
+        
+      case DetectorPeakResponse::kNumResolutionFnctForm:
+        assert( 0 );
+        break;
+    }//switch( fwhmForm )
   }//if( m_fwhmCoefs.size() )
   
   stringstream efftable;
@@ -3396,10 +3496,24 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
                                 : MakeDrfChart::EqnEnergyUnits::keV;
     
     MakeDrfChart::FwhmCoefType fwhmEqnType = MakeDrfChart::FwhmCoefType::Gadras;
-    switch( m_fwhmEqnType->currentIndex() )
+    
+    switch( DetectorPeakResponse::ResolutionFnctForm(m_fwhmEqnType->currentIndex()) )
     {
-      case 0: fwhmEqnType = MakeDrfChart::FwhmCoefType::Gadras; break;
-      case 1: fwhmEqnType = MakeDrfChart::FwhmCoefType::SqrtEqn; break;
+      case DetectorPeakResponse::kGadrasResolutionFcn:
+        fwhmEqnType = MakeDrfChart::FwhmCoefType::Gadras;
+        break;
+        
+      case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+        fwhmEqnType = MakeDrfChart::FwhmCoefType::SqrtEnergyPlusInverse;
+        break;
+        
+      case DetectorPeakResponse::kSqrtPolynomial:
+        fwhmEqnType = MakeDrfChart::FwhmCoefType::SqrtEqn;
+        break;
+      
+      case DetectorPeakResponse::kNumResolutionFnctForm:
+        assert( 0 );
+        break;
     }//switch( m_fwhmEqnType->currentIndex() )
     
     chart.setFwhmCoefficients( m_fwhmCoefs, m_fwhmCoefUncerts, fwhmEqnType, units );
@@ -3456,18 +3570,6 @@ bool MakeDrf::isEffEqnInMeV() const
 {
   return (m_effEqnUnits->currentIndex() == 1);
 }//bool isEffEqnInMeV() const
-
-
-bool MakeDrf::isGadrasFwhmEqnType() const
-{
-  switch( m_fwhmEqnType->currentIndex() )
-  {
-    case 0: return true;
-    case 1: return false;
-  }//switch( m_fwhmEqnType->currentIndex() )
-  
-  return false;
-}//bool isGadrasFwhmEqnType() const
 
 
 double MakeDrf::detectorDiameter() const

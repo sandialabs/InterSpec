@@ -67,14 +67,16 @@ const int PeakContinuum::sm_xmlSerializationVersion = 1;
 namespace
 {
   /** 20191230: wcjohns extracted the boost::math::erf() function implementation
-   from boost 1.65.1 for double precision (53 bit mantessa) into this function,
+   from boost 1.65.1 for double precision (53 bit mantissa) into this function,
    boost_erf_imp(). Removing some of the supporting code structure, and
    explicitly writing out the polynomial equation evaluation seems to speed
    things up by about a factor of ~3 over calling boost::math::erf().
    
-   Suprisingly, the erf() function is a bottlneck for peak fitting.
+   Using the commented out erf_approx() function looks to be about 25% faster than
+   this boost version, but I havent carefully checked out the precision implications
+   so not switching to it yet.
    
-   
+   Surprisingly, the erf() function is the major bottleneck for peak fitting.
    */
   double boost_erf_imp( double z )
   {
@@ -199,7 +201,7 @@ namespace
   
   
   /*
-  double erf_approx( const double x )
+  double erf_approx( double x )
   {
     //https://stackoverflow.com/questions/457408/is-there-an-easily-available-implementation-of-erf-for-python#answer-457805
     // Error is less than 1.5 * 10-7 for all inputs
@@ -211,6 +213,7 @@ namespace
     return sign * y;
   }
    */
+   
   
   //clones 'source' into the document that 'result' is a part of.
   //  'result' is cleared and set lexically equal to 'source'.
@@ -1275,6 +1278,14 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   }
   
   
+  if( lhs.m_useForManualRelEff != rhs.m_useForManualRelEff )
+  {
+    snprintf(buffer, sizeof(buffer),
+             "PeakDef use for rel act from peaks of LHS (%i) vs RHS (%i) doesnt match.",
+             int(lhs.m_useForManualRelEff), int(rhs.m_useForManualRelEff) );
+    throw runtime_error( buffer );
+  }
+  
   if( lhs.m_useForDrfIntrinsicEffFit != rhs.m_useForDrfIntrinsicEffFit )
   {
     snprintf(buffer, sizeof(buffer),
@@ -1436,6 +1447,7 @@ void PeakDef::reset()
   m_sourceGammaType           = NormalGamma;
   m_useForEnergyCal           = true;
   m_useForShieldingSourceFit  = false;
+  m_useForManualRelEff        = true;
   
   m_useForDrfIntrinsicEffFit       = PeakDef::sm_defaultUseForDrfIntrinsicEffFit;
   m_useForDrfFwhmFit               = PeakDef::sm_defaultUseForDrfFwhmFit;
@@ -2007,6 +2019,9 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   att = doc->allocate_attribute( "source", (m_useForShieldingSourceFit ? "true" : "false") );
   peak_node->append_attribute( att );
   
+  att = doc->allocate_attribute( "useForManualRelEff", (m_useForManualRelEff ? "true" : "false") );
+  peak_node->append_attribute( att );
+  
   // Dont bother writing useForDrfIntrinsicEffFit, useForDrfFwhmFit, useForDrfDepthOfInteractionFit,
   //  unless their values have been set to true (when de-serializing them we will set to false
   //  if the attributes arent found)
@@ -2170,6 +2185,18 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
   m_useForShieldingSourceFit = compare(att->value(),att->value_size(),"true",4,false);
   if( !m_useForShieldingSourceFit && !compare(att->value(),att->value_size(),"false",5,false) )
     throw runtime_error( "invalid source value" );
+  
+  // useForManualRelEff was added June 2022, so for backward compatibility, dont require it
+  att = peak_node->first_attribute( "useForManualRelEff", 18 );
+  if( att )
+  {
+    m_useForManualRelEff = compare(att->value(),att->value_size(),"true",4,false);
+    if( !m_useForManualRelEff && !compare(att->value(),att->value_size(),"false",5,false) )
+      throw runtime_error( "invalid useForManualRelEff value" );
+  }else
+  {
+    m_useForManualRelEff = true;
+  }
   
   m_useForDrfIntrinsicEffFit = PeakDef::sm_defaultUseForDrfIntrinsicEffFit;
   att = peak_node->first_attribute( "useForDrfIntrinsicEffFit", 24 );
@@ -2554,7 +2581,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       
       answer << "," << q << "referenceEnergy" << q << ":" << continuum->referenceEnergy();
       const vector<double> &values = continuum->parameters();
-      const vector<double> &uncerts = continuum->unertainties();
+      const vector<double> &uncerts = continuum->uncertainties();
       answer << "," << q << "coeffs" << q << ":[";
       for (size_t i = 0; i < values.size(); ++i)
       {
@@ -3116,7 +3143,7 @@ bool PeakDef::ageFitNotAllowed( const SandiaDecay::Nuclide *nuc )
   if( !nuc || nuc->decaysToStableChildren() )
     return true;
   
-  //now check for cases like Cs137 where the isotope reqches prompt and
+  //now check for cases like Cs137 where the isotope reaches prompt and
   //  secular equilibrium very quickly (half life for these less than a day)
   //  and these time spans are less than the parents half life
   const double hl = nuc->halfLife;
@@ -3166,8 +3193,6 @@ bool PeakDef::ageFitNotAllowed( const SandiaDecay::Nuclide *nuc )
 
 double PeakDef::defaultDecayTime( const SandiaDecay::Nuclide *nuclide, string *stranswer )
 {
-  //Same logic as defaultDecayTime(...), just returns string. If you change
-  // the logic in this funcion, you should also change defaultDecayTime(...).
   string decayTimeStr = "";
   double decaytime = 0;
   if( nuclide->canObtainSecularEquilibrium() )
@@ -3190,7 +3215,11 @@ double PeakDef::defaultDecayTime( const SandiaDecay::Nuclide *nuclide, string *s
     decayTimeStr = "0 s";
   }
   
-  if( nuclide->halfLife > 100.0*SandiaDecay::year )
+  // If half-life is great than 100 years, or if U or Pu isotope, and half-life is greater than 2
+  //  years, set default decay time to 20 years.
+  if( (nuclide->halfLife > 100.0*SandiaDecay::year)
+     || ( (nuclide->halfLife > 2.0*SandiaDecay::year)
+         && ((nuclide->atomicNumber == 92) || (nuclide->atomicNumber == 94))) )
   {
     decaytime = 20.0 * SandiaDecay::year;
     decayTimeStr = "20 y";
@@ -3198,7 +3227,7 @@ double PeakDef::defaultDecayTime( const SandiaDecay::Nuclide *nuclide, string *s
   
   //I *think* promptEquilibriumHalfLife() can maybe give a large value for an
   //  isotope (although I dont know of any examples of this) with a small half
-  //  life, so we'll preotect against it.
+  //  life, so we'll protect against it.
   if( decaytime > 100.0*nuclide->halfLife )
   {
     decaytime = 7.0 * nuclide->halfLife;
@@ -3334,7 +3363,16 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
           
           double intensity = activity.activity * trans->branchRatio * product.intensity;
           const double fracIntensity = intensity / max_intensity;
-          const double minRelativeBr = 1.0E-10;
+          
+          // Previous to 20220617, a value of 1E-10 was used for the minimum BR, however, this fails
+          //  for some non-user defined peaks (specifically in the Relative Activity calculations);
+          //  so when search window is not being used (i.e., probably an automated process), the
+          //  value is now small enough it seems to work well, but I also decreased the value when
+          //  there is a window being used
+          //  However, we could probably just eliminate this check, as all it really is for is to
+          //  reduce the chances of using a gamma with a small BR, that just happens to be really
+          //  close to our wanted energy.
+          const double minRelativeBr = (windowHalfWidth <= 0.0) ? 1.0E-20 : 1.0E-12;
           
           if( fracIntensity < minRelativeBr )
             continue;
@@ -3433,7 +3471,8 @@ const PeakDef &PeakDef::operator=( const PeakDef &rhs )
   m_radparticleIndex         = rhs.m_radparticleIndex;
   m_useForEnergyCal        = rhs.m_useForEnergyCal;
   m_useForShieldingSourceFit = rhs.m_useForShieldingSourceFit;
-
+  m_useForManualRelEff = rhs.m_useForManualRelEff;
+ 
   m_useForDrfIntrinsicEffFit = rhs.m_useForDrfIntrinsicEffFit;
   m_useForDrfFwhmFit = rhs.m_useForDrfFwhmFit;
   m_useForDrfDepthOfInteractionFit = rhs.m_useForDrfDepthOfInteractionFit;
@@ -3461,6 +3500,7 @@ bool PeakDef::operator==( const PeakDef &rhs ) const
       && m_radparticleIndex==rhs.m_radparticleIndex
       && m_useForEnergyCal==rhs.m_useForEnergyCal
       && m_useForShieldingSourceFit==rhs.m_useForShieldingSourceFit
+      && m_useForManualRelEff==rhs.m_useForManualRelEff
       && m_useForDrfIntrinsicEffFit == rhs.m_useForDrfIntrinsicEffFit
       && m_useForDrfFwhmFit == rhs.m_useForDrfFwhmFit
       && m_useForDrfDepthOfInteractionFit == rhs.m_useForDrfDepthOfInteractionFit
@@ -3491,11 +3531,10 @@ void PeakDef::setNuclearTransition( const SandiaDecay::Nuclide *parentNuclide,
                                     const int index,
                                     const SourceGammaType sourceType )
 {
-  const size_t ind = static_cast<size_t>( index );
   m_transition = transition;
   m_sourceGammaType = sourceType;
   
-  if( m_transition && (ind<m_transition->products.size()) && (index>=0) )
+  if( m_transition && (index >= 0) && (index < static_cast<int>(m_transition->products.size())) )
     m_radparticleIndex = index;
   else
     m_radparticleIndex = -1;
@@ -3719,6 +3758,7 @@ void PeakDef::inheritUserSelectedOptions( const PeakDef &parent,
   m_userLabel = parent.m_userLabel;
   m_useForEnergyCal = parent.m_useForEnergyCal;
   m_useForShieldingSourceFit = parent.m_useForShieldingSourceFit;
+  m_useForManualRelEff = parent.m_useForManualRelEff;
   m_useForDrfIntrinsicEffFit = parent.m_useForDrfIntrinsicEffFit;
   m_useForDrfFwhmFit = parent.m_useForDrfFwhmFit;
   m_useForDrfDepthOfInteractionFit = parent.m_useForDrfDepthOfInteractionFit;
@@ -3794,7 +3834,7 @@ void PeakDef::inheritUserSelectedOptions( const PeakDef &parent,
             if( inheritNonFitForValues && !rhs_fit_fors[i] )
             {
               const vector<double> &rhs_pars = rhs_cont->parameters();
-              const vector<double> &rhs_uncerts = rhs_cont->unertainties();
+              const vector<double> &rhs_uncerts = rhs_cont->uncertainties();
               assert( rhs_pars.size() == rhs_fit_fors.size() );
               assert( rhs_pars.size() == rhs_uncerts.size() );
               
@@ -4031,6 +4071,55 @@ const char *PeakContinuum::offset_type_str( const PeakContinuum::OffsetType type
   return "InvalidOffsetType";
 }
 
+
+size_t PeakContinuum::num_parameters( const PeakContinuum::OffsetType type )
+{
+  switch( type )
+  {
+    case OffsetType::NoOffset:
+    case OffsetType::External:
+      return 0;
+      
+    case OffsetType::Constant:
+    case OffsetType::Linear:
+    case OffsetType::Quadratic:
+    case OffsetType::Cubic:
+      return static_cast<size_t>(type);
+      
+    case OffsetType::FlatStep:
+    case OffsetType::LinearStep:
+    case OffsetType::BiLinearStep:
+      return 2 + (type - FlatStep);
+  }//switch( type )
+  
+  assert( 0 );
+  throw std::runtime_error( "Somehow invalid continuum polynomial type." );
+  
+  return 0;
+}//size_t num_parameters( const OffsetType type );
+
+
+bool PeakContinuum::is_step_continuum( const OffsetType type )
+{
+  switch( type )
+  {
+    case PeakContinuum::NoOffset: case PeakContinuum::External:
+    case PeakContinuum::Constant: case PeakContinuum::Linear:
+    case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+      return false;
+      
+    case PeakContinuum::FlatStep:
+    case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep:
+      return true;
+  }//switch( cont->type() )
+  
+  assert( 0 );
+  throw std::runtime_error( "Somehow invalid continuum polynomial type." );
+  return false;
+}//bool is_step_continuum( const OffsetType type );
+
+
 PeakContinuum::OffsetType PeakContinuum::str_to_offset_type_str( const char * const str, const size_t len )
 {
   using ::rapidxml::internal::compare;
@@ -4107,34 +4196,13 @@ void PeakContinuum::setParameters( double referenceEnergy,
                                    const std::vector<double> &uncertainties )
 {
   // First check size of inputs are valid
-  switch( m_type )
-  {
-    case NoOffset: case External:
-      throw runtime_error( "PeakContinuum::setParameters invalid m_type" );
-      
-    case Constant:   case Linear:
-    case Quadratic:  case Cubic:
-      if( x.size() != static_cast<size_t>(m_type) )
-        throw runtime_error( "PeakContinuum::setParameters invalid parameter size" );
-      
-      if( !uncertainties.empty() && (uncertainties.size() != static_cast<size_t>(m_type)) )
-        throw runtime_error( "PeakContinuum::setParameters invalid uncert size" );
-    break;
-      
-    case FlatStep:
-    case LinearStep:
-    case BiLinearStep:
-    {
-      const size_t numpars = 2 + (m_type - FlatStep);
-      if( x.size() != numpars )
-        throw runtime_error( "PeakContinuum::setParameters invalid parameter size for stepped continuum" );
-      
-      if( !uncertainties.empty() && (uncertainties.size() != numpars) )
-        throw runtime_error( "PeakContinuum::setParameters invalid uncert size for stepped continuum" );
-    
-      break;
-    }//case Flat/Linear/BiLinear-step
-  };//switch( m_type )
+  const size_t num_expected_pars = PeakContinuum::num_parameters( m_type );
+  
+  if( x.size() != num_expected_pars )
+    throw runtime_error( "PeakContinuum::setParameters invalid parameter size" );
+  
+  if( !uncertainties.empty() && (uncertainties.size() != num_expected_pars) )
+    throw runtime_error( "PeakContinuum::setParameters invalid uncert size" );
   
   m_values = x;
   m_referenceEnergy = referenceEnergy;
@@ -4182,6 +4250,7 @@ void PeakContinuum::setParameters( double referenceEnergy,
     throw runtime_error( "PeakContinuum::setParameters invalid parameters" );
   
   vector<double> uncerts, values;
+  
   switch( m_type )
   {
     case NoOffset: case External:
@@ -4189,19 +4258,15 @@ void PeakContinuum::setParameters( double referenceEnergy,
       
     case Constant:   case Linear:
     case Quadratic: case Cubic:
-      values.insert( end(values), parameters, parameters + m_type );
-      if( uncertainties )
-        uncerts.insert( end(uncerts), uncertainties, uncertainties+m_type );
-      break;
-      
     case FlatStep:
     case LinearStep:
     case BiLinearStep:
     {
-      const size_t npars = 2 + (m_type - FlatStep);
-      values.insert( end(values), parameters, parameters + npars );
+      const size_t npar = num_parameters(m_type);
+      values.insert( end(values), parameters, parameters + npar );
       if( uncertainties )
-        uncerts.insert( end(uncerts), uncertainties, uncertainties + npars );
+        uncerts.insert( end(uncerts), uncertainties, uncertainties + npar );
+      
       break;
     }
   };//switch( m_type )
@@ -4377,7 +4442,7 @@ void PeakContinuum::calc_linear_continuum_eqn( const std::shared_ptr<const SpecU
   assert( data );
   assert( reference_energy >= roi_start );
   assert( reference_energy <= roi_end );
-  assert( roi_end > roi_start );
+  assert( roi_end >= roi_start );
   assert( num_lower_channels > 0 );
   assert( num_upper_channels > 0 );
   
@@ -4573,6 +4638,7 @@ void PeakContinuum::eqn_from_offsets( size_t lowchannel,
   const shared_ptr<const SpecUtils::EnergyCalibration> cal = data->energy_calibration();
   assert( cal && cal->valid() );
   const size_t nchannel = cal->num_channels();
+  const size_t last_channel = nchannel ? nchannel - 1 : size_t(0);
   
   if( (num_upper_channels >= nchannel) || (num_lower_channels >= nchannel) )
     throw runtime_error( "PeakContinuum::eqn_from_offsets: number of above/below channels is to large" );
@@ -4596,11 +4662,11 @@ void PeakContinuum::eqn_from_offsets( size_t lowchannel,
   const double lower_count_sum = data->gamma_channels_sum( lower_cont_first_channel, lower_cont_last_channel );
   const double upper_count_sum = data->gamma_channels_sum( upper_cont_first_channel, upper_cont_last_channel );
   
-  const double lower_low_energy = cal->energy_for_channel( lower_cont_first_channel );
-  const double lower_up_energy = cal->energy_for_channel( lower_cont_last_channel + 1 );
+  const double lower_low_energy = cal->energy_for_channel( std::min(lower_cont_first_channel, last_channel) );
+  const double lower_up_energy = cal->energy_for_channel( std::min(lower_cont_last_channel + 1, last_channel) );
   
-  const double upper_low_energy = cal->energy_for_channel( upper_cont_first_channel );
-  const double upper_up_energy = cal->energy_for_channel( upper_cont_last_channel + 1 );
+  const double upper_low_energy = cal->energy_for_channel( std::min(upper_cont_first_channel, last_channel) );
+  const double upper_up_energy = cal->energy_for_channel( std::min(upper_cont_last_channel + 1, last_channel) );
   
   
   const double lower_dx = lower_up_energy - lower_low_energy;

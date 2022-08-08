@@ -59,8 +59,8 @@ namespace rapidxml
  
  TODO: When PeakDefs are copied, their continuum still points to the same PeakContinuum object,
        meaning if the copies modify their continuum, the originals continuum also gets modified.
-       This is currently necassary since multiple PeakDefs can share a PeakContinuum.  To fix this
-       a ROI (e.g., contimuum) should own the peaks, not the other way around
+       This is currently necessary since multiple PeakDefs can share a PeakContinuum.  To fix this
+       a ROI (e.g., continuum) should own the peaks, not the other way around
  */
 struct PeakContinuum
 {
@@ -115,6 +115,12 @@ struct PeakContinuum
   /** Returns string to be used for XML or JSON identification of continuum type. */
   static const char *offset_type_str( const OffsetType type );
   
+  /** Returns the number of parameters for a specified offset type. */
+  static size_t num_parameters( const OffsetType type );
+  
+  /** Returns true if continuum type is FlatStep, LinearStep, or BiLinearStep and otherwise false */
+  static bool is_step_continuum( const OffsetType type );
+  
   /** Throws exception if string does not match a string returned by #offset_type_str.
    @param str String to be tested.  Must not be a null pointer, but string does not need to be null terminated.
    @param len The length of the string to be tested.
@@ -138,8 +144,8 @@ struct PeakContinuum
                      const std::vector<double> &parameters,
                      const std::vector<double> &uncertainties );
 
-  //setParameters: a convienience function which actually calls other form of
-  //  this member function.  This funtion assumes both passed in arrays are
+  //setParameters: a convenience function which actually calls other form of
+  //  this member function.  This function assumes both passed in arrays are
   //  of a length equal to OffsetType; uncertainties may be a null pointer.
   void setParameters( double referenceEnergy,
                       const double *parameters,
@@ -159,7 +165,7 @@ struct PeakContinuum
   
   double referenceEnergy() const { return m_referenceEnergy; }
   const std::vector<double> &parameters() const { return m_values; }
-  const std::vector<double> &unertainties() const { return m_uncertainties; }
+  const std::vector<double> &uncertainties() const { return m_uncertainties; }
   std::vector<bool> fitForParameter() const { return m_fitForValue; }
   std::shared_ptr<const SpecUtils::Measurement> externalContinuum() const { return m_externalContinuum; }
   
@@ -521,6 +527,9 @@ public:
   inline bool useForShieldingSourceFit() const;
   inline void useForShieldingSourceFit( const bool use );
   
+  inline bool useForManualRelEff() const;
+  inline void useForManualRelEff( const bool use );
+  
   /** Returns if should use for DRF intrinsic efficiency fit.  Note that this does not check that the nuclide and transition has actually
    been defined.
    */
@@ -735,14 +744,14 @@ public:
                                      const double ncausality,
                                      const bool useRoiAsWell );
   
-  /** Use hyristics to guess at a reasonable age a nuclide might be if
+  /** Use heuristics to guess at a reasonable age a nuclide might be if
    * encountered in the real world.  
    *
    * \param nuc Nuclide to return the age for.
    * \param strAnswer If provided, will assign a suggested string for the age
-   *        to this string.  May yeild either a actual unit of time (ex. 
-   *        "2.31 years") or a mutliple of half lives (ex. "3.5 HL").
-   * Is set to have a maximum of 2 decimal points.
+   *        to this string.  May yield either an actual unit of time (ex.
+   *        "2.31 years") or a multiple of half lives (ex. "3.5 HL").
+   *        Will have a maximum of 2 decimal points.
    * \returns Suggested age= value in PhysicalUnits units.
    *
    * \sa defaultDecayTimeString
@@ -882,7 +891,8 @@ public:
   
   bool m_useForEnergyCal;
   bool m_useForShieldingSourceFit;
-
+  bool m_useForManualRelEff;
+  
   
   /** Fif this peak should be used in the detector response function model fit for intrinsic efficiency */
   bool m_useForDrfIntrinsicEffFit;
@@ -1116,6 +1126,33 @@ void PeakDef::useForShieldingSourceFit( const bool use )
 {
   m_useForShieldingSourceFit = use;
 }//void useForShieldingSourceFit( const bool use )
+
+
+bool PeakDef::useForManualRelEff() const
+{
+  if( !m_useForManualRelEff || !m_parentNuclide )
+    return false;
+  
+  switch( m_sourceGammaType )
+  {
+    case PeakDef::NormalGamma:
+      return m_useForManualRelEff;
+      
+    case PeakDef::XrayGamma:
+    case PeakDef::AnnihilationGamma:
+    case PeakDef::SingleEscapeGamma:
+    case PeakDef::DoubleEscapeGamma:
+      break;
+  }//switch( srcType )
+  
+  return false;
+}//bool useForManualRelEff() const
+
+
+void PeakDef::useForManualRelEff( const bool use )
+{
+  m_useForManualRelEff = use;
+}//void useForManualRelEff( const bool use )
 
 
 bool PeakDef::useForDrfIntrinsicEffFit() const

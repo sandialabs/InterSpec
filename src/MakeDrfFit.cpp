@@ -211,7 +211,7 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
   if( !peaks || peaks->empty() )
     throw runtime_error( "MakeDrfFit::performResolutionFit(...): no input peaks" );
   
-  bool sqrtSeriesLLS = false;
+  bool fit_using_lls = false;
   double a_initial, b_initial, c_initial, d_initial;
   double lowerA, upperA, lowerB, upperB, lowerC, upperC;
   
@@ -260,6 +260,61 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
       break;
     }//case kGadrasResolutionFcn:
       
+    case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+    {
+      if( highres )
+      {
+        //Based on pretty much nothing
+        a_initial = 2.6;
+        lowerA = -2.5;
+        upperA = 7.5;
+        
+        b_initial = 1.0;
+        lowerB = -5.0;
+        upperB = 5.0;
+        
+        c_initial = 0;
+        lowerC = -5.0;
+        upperC = 5.0;
+      }else
+      {
+        //Based on zero detectors so far
+        a_initial = 100;
+        lowerA = -100;
+        upperA = 400;
+        
+        b_initial = 3600.0 / 0.661;
+        lowerB = 0.0;
+        upperB = 180*180 / 0.661;
+        
+        c_initial = 0;
+        lowerC = -10000.0;
+        upperC = 10000.0;
+      }//if( highres ) / else
+      
+      try
+      {
+        double chi2 = MakeDrfFit::fit_sqrt_poly_fwhm_lls( *peaks, sqrtEqnOrder, true, answer, uncerts );
+        
+        assert( answer.size() == static_cast<int>(sqrtEqnOrder) );
+        
+        //cout << "MakeDrfFit::fit_sqrt_poly_fwhm_lls got {";
+        //for( size_t i = 0; i < answer.size(); ++i )
+        //  cout << answer[i] << "+-" << uncerts[i] << ", ";
+        //cout << "}.  Chi2=" << chi2 << endl;
+        
+        fit_using_lls = true;
+      }catch( std::exception &e )
+      {
+        cerr << "MakeDrfFit::fit_sqrt_poly_fwhm_lls threw exception: " << e.what() << endl;
+        
+      }//try / catch
+      
+      d_initial = 0.0;
+      break;
+    }//case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+      
+      
     case DetectorPeakResponse::kSqrtPolynomial:
     {
       if( sqrtEqnOrder < 1 )
@@ -297,19 +352,19 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
       
       try
       {
-        double chi2 = MakeDrfFit::fit_fwhm_least_linear_squares( *peaks, sqrtEqnOrder, answer, uncerts );
+        double chi2 = MakeDrfFit::fit_sqrt_poly_fwhm_lls( *peaks, sqrtEqnOrder, false, answer, uncerts );
         
         assert( answer.size() == static_cast<int>(sqrtEqnOrder) );
         
-        //cout << "MakeDrfFit::fit_fwhm_least_linear_squares got {";
+        //cout << "MakeDrfFit::fit_sqrt_poly_fwhm_lls got {";
         //for( size_t i = 0; i < answer.size(); ++i )
         //  cout << answer[i] << "+-" << uncerts[i] << ", ";
         //cout << "}.  Chi2=" << chi2 << endl;
         
-        sqrtSeriesLLS = true;
+        fit_using_lls = true;
       }catch( std::exception &e )
       {
-        cerr << "MakeDrfFit::fit_fwhm_least_linear_squares threw exception: " << e.what() << endl;
+        cerr << "MakeDrfFit::fit_sqrt_poly_fwhm_lls threw exception: " << e.what() << endl;
         
       }//try / catch
       
@@ -337,6 +392,7 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
   switch( fnctnlForm )
   {
     case DetectorPeakResponse::kGadrasResolutionFcn:
+    {
       if( peaks->size() == 1 )
       {
         inputPrams.Add( "A", a_initial );
@@ -355,10 +411,45 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
         inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
       }//if( all_peaks.size() == 1 )
       break;
+    }//case DetectorPeakResponse::kGadrasResolutionFcn:
+      
+      
+    case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+    {
+      if( fit_using_lls )
+      {
+        for( int order = 0; order < 3; ++order )
+        {
+          const string name = string("") + char('A' + order);
+          inputPrams.Add( name, answer[order], uncerts[order] );
+        }//for( int order = 0; order < sqrtEqnOrder; ++order )
+      }else
+      {
+        if( peaks->size() == 1 )
+        {
+          inputPrams.Add( "A", 0.0 );
+          inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
+          inputPrams.Add( "C", 0.0 );
+        }if( peaks->size() == 2 )
+        {
+          inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
+          inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
+          inputPrams.Add( "C", 0.0 );
+        }else if( peaks->size() >= 3 )
+        {
+          inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
+          inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
+          inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
+        }
+      }//if( fit_using_lls )
+      
+      break;
+    }//case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+      
       
     case DetectorPeakResponse::kSqrtPolynomial:
     {
-      if( sqrtSeriesLLS )
+      if( fit_using_lls )
       {
         for( int order = 0; order < sqrtEqnOrder; ++order )
         {
@@ -379,11 +470,12 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
             inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
           //inputPrams.Add( "D", 0.5, 0.05, 0.25, 0.75 );
         }
-      }//if( sqrtSeriesLLS )
+      }//if( fit_using_lls )
       break;
     }//case kSqrtPolynomial:
       
     case DetectorPeakResponse::kNumResolutionFnctForm:
+      assert( 0 );
       break;
   }//switch
   
@@ -459,7 +551,7 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
   const double final_chi2 = fitness.DoEval( fitParams.Params() );
   
   //cout << "FWHM final chi2=" << final_chi2 << endl;
-  if( sqrtSeriesLLS )
+  if( fit_using_lls )
   {
     const double pre_chi2 = fitness.DoEval( vector<double>( begin(answer), end(answer) ) );
     //cout << "FWHM LLS chi2=" << pre_chi2 << endl;
@@ -519,21 +611,22 @@ bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
 }//matrix_invert
   
   
-double fit_fwhm_least_linear_squares( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
-                                      const int order,
-                                      std::vector<float> &coeffs,
-                                      std::vector<float> &coeff_uncerts )
+double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
+                               const int order,
+                               const bool include_inv_term,
+                               std::vector<float> &coeffs,
+                               std::vector<float> &coeff_uncerts )
 {
   const size_t nbin = peaks.size();
   
   if( order < 1 )
-    throw runtime_error( "fit_fwhm_least_linear_squares: order must be >= 1" );
+    throw runtime_error( "fit_sqrt_poly_fwhm_lls: order must be >= 1" );
   
   if( !nbin )
-    throw runtime_error( "fit_fwhm_least_linear_squares: must have at least 1 input peak" );
+    throw runtime_error( "fit_sqrt_poly_fwhm_lls: must have at least 1 input peak" );
   
   if( nbin < static_cast<size_t>(order) )
-    throw runtime_error( "fit_fwhm_least_linear_squares: must have at least as many peaks as orders to fit to" );
+    throw runtime_error( "fit_sqrt_poly_fwhm_lls: must have at least as many peaks as orders to fit to" );
   
   //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3, where x is energy in MeV
   vector<float> x, widths, widths_uncert;
@@ -544,7 +637,7 @@ double fit_fwhm_least_linear_squares( const std::deque< std::shared_ptr<const Pe
   {
     if( peaks[i]->gausPeak() )
     {
-      x[i] = peaks[i]->mean() / 1000.0f;
+      x[i] = peaks[i]->mean() / (include_inv_term ? 1.0f : 1000.0f);
       widths[i] = peaks[i]->fwhm();
       widths_uncert[i] = 2.35482*((peaks[i]->sigmaUncert() > 0.0) ? std::max( peaks[i]->sigmaUncert(), 0.01*widths[i]) : 0.05*widths[i]);
     }
@@ -558,14 +651,38 @@ double fit_fwhm_least_linear_squares( const std::deque< std::shared_ptr<const Pe
   ublas::matrix<double> A( nbin, order );
   ublas::vector<double> b( nbin );
   
+  
   for( size_t row = 0; row < nbin; ++row )
   {
     const double data_y = widths[row] * widths[row];
     const double data_y_uncert = widths_uncert[row] * widths_uncert[row];
     
     b(row) = data_y / data_y_uncert;
-    for( int col = 0; col < order; ++col )
-      A(row,col) = std::pow( x[row], double(col)) / data_y_uncert;
+    
+    if( include_inv_term )
+    {
+      // Nominally we will only ever call this function to fit for the FRAM style FWHM  when order == 3,
+      //  but we'll go ahead and code in possibility to fit for different order.  For order==1, we'll
+      //  fit the energy dependent term, for order==2, the constant + energy dependient, and order==3
+      //  the inverse term as well.  Higher order terms we'll do as power series in energy.
+      //  Before we return, we'll swap the zeroth and first coefficients so things are as expected.
+      assert( order == 3 );
+      for( int col = 0; col < order; ++col )
+      {
+        if( col == 0 )
+          A(row,col) = x[row] / data_y_uncert;
+        else if( col == 1 )
+          A(row,col) = 1.0 / data_y_uncert;
+        else if( col == 2 )
+          A(row,col) = (1.0/x[row]) / data_y_uncert;
+        else
+          A(row,col) = std::pow( x[row], double(col-1)) / data_y_uncert;
+      }
+    }else
+    {
+      for( int col = 0; col < order; ++col )
+        A(row,col) = std::pow( x[row], double(col)) / data_y_uncert;
+    }
   }//for( int col = 0; col < order; ++col )
   
   const ublas::matrix<double> A_transpose = ublas::trans( A );
@@ -573,7 +690,7 @@ double fit_fwhm_least_linear_squares( const std::deque< std::shared_ptr<const Pe
   ublas::matrix<double> C( alpha.size1(), alpha.size2() );
   const bool success = matrix_invert( alpha, C );
   if( !success )
-    throw runtime_error( "fit_fwhm_least_linear_squares(...): trouble inverting matrix" );
+    throw runtime_error( "fit_sqrt_poly_fwhm_lls(...): trouble inverting matrix" );
   
   const ublas::vector<double> beta = prod( A_transpose, b );
   const ublas::vector<double> a = prod( C, beta );
@@ -590,14 +707,38 @@ double fit_fwhm_least_linear_squares( const std::deque< std::shared_ptr<const Pe
   for( size_t bin = 0; bin < nbin; ++bin )
   {
     double y_pred = 0.0;
-    for( int i = 0; i < order; ++i )
-      y_pred += a(i) * std::pow( x[bin], static_cast<double>(i) );
+    if( include_inv_term )
+    {
+      for( int i = 0; i < order; ++i )
+      {
+        if( i == 0 )
+          y_pred += a(i) * x[bin];
+        else if( i == 1 )
+          y_pred += a(i);
+        else if( i == 2 )
+          y_pred += a(i) / x[bin];
+        else
+          y_pred += a(i) * std::pow( x[bin], static_cast<double>(i-1) );
+      }
+    }else
+    {
+      for( int i = 0; i < order; ++i )
+        y_pred += a(i) * std::pow( x[bin], static_cast<double>(i) );
+    }//if( include_inv_term ) / else
+    
     y_pred = sqrt( y_pred );
     chi2 += std::pow( (y_pred - widths[bin]) / widths_uncert[bin], 2.0 );
   }//for( int bin = 0; bin < nbin; ++bin )
   
+  if( include_inv_term && (coeffs.size() > 1) )
+  {
+    // Swap the zeroth and first coefficients so things are as expected.
+    //  (i.e., constant term is zeroth, and energy dependant term is at index==1)
+    std::swap( coeffs[0], coeffs[1] );
+  }
+  
   return chi2;
-}//double fit_fwhm_least_linear_squares(...)
+}//double fit_sqrt_poly_fwhm_lls(...)
   
   
 double fit_intrinsic_eff_least_linear_squares( const std::vector<DetEffDataPoint> data,

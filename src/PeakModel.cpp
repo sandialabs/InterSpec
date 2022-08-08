@@ -123,29 +123,30 @@ void testSetNuclideXrayRctn()
   
   nuc = db->nuclide( "Th232" );
   peak = PeakDef( 2614-511, 5, 1.8E6 );
+  assert( !peak.useForShieldingSourceFit() );
+  assert( !peak.useForManualRelEff() );
   result = PeakModel::setNuclide( peak, PeakDef::SourceGammaType::SingleEscapeGamma, nuc, 2614, 4.0 );
-  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
-  assert( peak.parentNuclide() == nuc );
-  assert( fabs(peak.gammaParticleEnergy() - (2614-511)) < 1.0 );
-  
-  nuc = db->nuclide( "Th232" );
-  peak = PeakDef( 2614-511, 5, 1.8E6 );
-  result = PeakModel::setNuclide( peak, PeakDef::SourceGammaType::SingleEscapeGamma, nuc, 2614, 4.0 );
-  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
+  assert( !peak.useForShieldingSourceFit() );
+  assert( !peak.useForManualRelEff() );
   assert( peak.parentNuclide() == nuc );
   assert( fabs(peak.gammaParticleEnergy() - (2614-511)) < 1.0 );
   assert( peak.sourceGammaType() == PeakDef::SourceGammaType::SingleEscapeGamma );
   
+  
   nuc = db->nuclide( "Th232" );
   peak = PeakDef( 2614-511-511, 5, 1.8E6 );
   result = PeakModel::setNuclide( peak, PeakDef::SourceGammaType::DoubleEscapeGamma, nuc, 2614, -1 );
-  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
   assert( peak.parentNuclide() == nuc );
+  assert( !peak.useForShieldingSourceFit() );
+  assert( !peak.useForManualRelEff() );
   assert( fabs(peak.gammaParticleEnergy() - (2614 - 511 - 511)) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::DoubleEscapeGamma );
   
   peak = PeakDef( 2614-511, 5, 1.8E6 );
   result = PeakModel::setNuclideXrayReaction( peak, "Th232 S.E.", -1.0 );
-  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
   assert( peak.parentNuclide() != nullptr );
   assert( fabs(peak.gammaParticleEnergy() - (2614-511)) < 1.0 );
   assert( peak.sourceGammaType() == PeakDef::SourceGammaType::SingleEscapeGamma );
@@ -153,14 +154,14 @@ void testSetNuclideXrayRctn()
   
   peak = PeakDef( 2614 - 511 - 511, 5, 1.8E6 );
   result = PeakModel::setNuclideXrayReaction( peak, "Th232 D.E.", -1.0 );
-  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
   assert( peak.parentNuclide() != nullptr );
   assert( fabs(peak.gammaParticleEnergy() - (2614 - 511 - 511)) < 1.0 );
   assert( peak.sourceGammaType() == PeakDef::SourceGammaType::DoubleEscapeGamma );
   
   peak = PeakDef( 2614 - 511 - 100, 5, 1.8E6 );
   result = PeakModel::setNuclideXrayReaction( peak, "Th232 2614 keV D.E.", -1.0 );
-  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
   assert( peak.parentNuclide() != nullptr );
   assert( fabs(peak.gammaParticleEnergy() - (2614 - 511 - 511)) < 1.0 );
   assert( peak.sourceGammaType() == PeakDef::SourceGammaType::DoubleEscapeGamma );
@@ -250,7 +251,7 @@ void testSetNuclideXrayRctn()
   
   peak = PeakDef( 84.9, 5, 1.8E6 );
   result = PeakModel::setNuclideXrayReaction( peak, "Pb212 84.9 kev", -1. );
-  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
   assert( peak.parentNuclide() );
   assert( peak.parentNuclide()->symbol == "Pb212" );
   assert( fabs(peak.gammaParticleEnergy() - 84.865) < 1.0 );
@@ -261,7 +262,7 @@ void testSetNuclideXrayRctn()
 #endif
 
 
-bool PeakModel::recomendUseForFit( const SandiaDecay::Nuclide *nuc,
+bool PeakModel::recommendUseForFit( const SandiaDecay::Nuclide *nuc,
                                    const float energy )
 {
   //These are the lines that should be recomended to users to use in a
@@ -396,10 +397,43 @@ bool PeakModel::recomendUseForFit( const SandiaDecay::Nuclide *nuc,
 //  if( fabs(511.0-energy) < 1.0 )
 //    return false;
   
-  
-  
   return true;
-}//recomendUseForFit( const SandiaDecay::Nuclide *nuc )
+}//recommendUseForFit( const SandiaDecay::Nuclide *nuc )
+
+
+bool PeakModel::recommendUseForManualRelEff( const SandiaDecay::Nuclide *n, const float energy )
+{
+  if( !n || (n->atomicNumber != 92) )
+    return (energy > 90.0f);
+  
+  // Recommended values for uranium taken from chapter 14 of FRMAC Gamma Spectroscopist Knowledge Guide
+  const float u232_energies[] = { 238.625f, 583.187f, 727.3f, 860.56f };
+  const float u234_energies[] = { 120.905f };
+  const float u235_energies[] = { 143.76f, 163.36f, 185.715f, 202.11f, 205.311f, 221.38f, 246.84f, 345.9f };
+  const float u238_energies[] = { 258.26f, 569.3173913f, 742.83f, 766.4f, 880.47f, 883.24f, 945.95f, 1001.03f };
+  
+  const auto use_gamma = [energy]( const float * const start, const float * const end ) -> bool {
+    for( auto iter = start; iter != end; ++iter )
+    {
+      if( fabs(energy - *iter) < 0.1 ) // 0.1 is arbitrary
+        return true;
+    }
+    return false;
+  };// use_gamma lamda
+  
+  
+  switch( n->massNumber )
+  {
+    case 232: return use_gamma( begin(u232_energies), end(u232_energies) );
+    case 234: return use_gamma( begin(u234_energies), end(u234_energies) );
+    case 235: return use_gamma( begin(u235_energies), end(u235_energies) );
+    case 238: return use_gamma( begin(u238_energies), end(u238_energies) );
+    default:
+      break;
+  }//switch( n->massNumber )
+  
+  return (energy > 122.0f);
+}//bool recommendUseForManualRelEff( const SandiaDecay::Nuclide *n, const float energy )
 
 
 std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
@@ -894,6 +928,25 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
 }//void setPeakFromSpecMeas(...)
 
 
+void PeakModel::setNoSpecMeasBacking()
+{
+  if( m_peaks && !m_peaks->empty() )
+  {
+    beginRemoveRows( WModelIndex(), 0, static_cast<int>(m_peaks->size()-1) );
+    m_peaks = std::make_shared< deque<std::shared_ptr<const PeakDef> > >();
+    m_sortedPeaks.clear();
+    endRemoveRows();
+  }else
+  {
+    m_peaks = std::make_shared< deque<std::shared_ptr<const PeakDef> > >();
+  }//if( !m_peaks->empty() )
+  
+  m_measurment.reset();
+  
+  layoutAboutToBeChanged().emit();
+  layoutChanged().emit();
+}//void setNoSpecMeasBacking()
+
 
 size_t PeakModel::npeaks() const
 {
@@ -1047,8 +1100,6 @@ void PeakModel::notifySpecMeasOfPeakChange()
   std::shared_ptr<SpecMeas> meas = m_measurment.lock();
   if( meas )
     meas->setModified();
-  else  //JIC, probably wont happen ever
-    cerr << "\n\nnotifySpecMeasOfPeakChange: couldnt get lock" << endl;
 }//void notifySpeakMeasOfPeakChange();
 
 
@@ -1502,9 +1553,14 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     throw std::runtime_error( msg.str() );
   }//if( m_sortedPeaks.size() != m_peaks->size() )
 
-  //should consider impementing ToolTipRole
-  if( role != Wt::DisplayRole && role != Wt::EditRole
-      && !((role==Wt::CheckStateRole) && ((index.column()==kUseForCalibration) || (index.column()==kUseForShieldingSourceFit)))
+  //should consider implementing ToolTipRole
+  if( (role != Wt::DisplayRole)
+     && (role != Wt::EditRole)
+     && !((role==Wt::CheckStateRole)
+            && ((index.column()==kUseForCalibration)
+            || (index.column()==kUseForShieldingSourceFit)
+            || (index.column()==kUseForManualRelEff))
+          )
       )
     return any();
 
@@ -1713,6 +1769,13 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     case kUseForCalibration:
       return peak->useForEnergyCalibration();
       
+    case kUseForManualRelEff:
+    {
+      if( !peak->parentNuclide() || (peak->sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) )
+        return boost::any();
+      return peak->useForManualRelEff();
+    }
+      
     case kPeakLineColor:
     {
       if( peak->lineColor().isDefault() )
@@ -1850,16 +1913,17 @@ PeakModel::SetGammaSource PeakModel::setNuclide( PeakDef &peak,
   }
   
   
-  bool changedFit = false, shouldFit = false;
+  bool changedFit = false, shouldFit = false, shouldUseForRe = false;
   
   switch( sourceGammaType )
   {
     case PeakDef::NormalGamma:
-      shouldFit = recomendUseForFit( nuclide, transition->products[transition_index].energy );
+      shouldFit = recommendUseForFit( nuclide, transition->products[transition_index].energy );
+      shouldUseForRe = recommendUseForManualRelEff( nuclide, transition->products[transition_index].energy );
       break;
       
     case PeakDef::AnnihilationGamma:
-      shouldFit = recomendUseForFit( nuclide, 510.99891f );
+      shouldFit = recommendUseForFit( nuclide, 510.99891f );
       break;
       
     case PeakDef::SingleEscapeGamma:
@@ -1870,10 +1934,14 @@ PeakModel::SetGammaSource PeakModel::setNuclide( PeakDef &peak,
   }//switch( src_type )
   
   
-  changedFit |= (shouldFit == peak.useForShieldingSourceFit());
+  changedFit |= (shouldFit != peak.useForShieldingSourceFit());
   changedFit |= (shouldFit && !peak.nuclearTransition());
+  changedFit |= (shouldUseForRe != peak.useForManualRelEff());
+  changedFit |= (shouldUseForRe && !peak.nuclearTransition());
+  
   
   peak.useForShieldingSourceFit( shouldFit );
+  peak.useForManualRelEff( shouldUseForRe );
   peak.setNuclearTransition( nuclide, transition, int(transition_index), sourceGammaType );
   
   return (changedFit ? SourceAndUseChanged : SourceChange);
@@ -1907,9 +1975,10 @@ PeakModel::SetGammaSource PeakModel::setXray( PeakDef &peak,
   if( !nearXray && !hadSource )
     return NoSourceChange;
   
-  if( peak.useForShieldingSourceFit() )
+  if( peak.useForShieldingSourceFit() || peak.useForManualRelEff() )
   {
     peak.useForShieldingSourceFit( false );
+    peak.useForManualRelEff( false );
     return SourceAndUseChanged;
   }
   
@@ -2004,7 +2073,7 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
      || SpecUtils::contains( label, "undef" )
      || label == "na" )
   {
-    const bool use = peak.useForShieldingSourceFit();
+    const bool use = (peak.useForShieldingSourceFit() || peak.useForManualRelEff());
     peak.clearSources();
     
     if( !hadSource )
@@ -2162,6 +2231,7 @@ bool PeakModel::setData( const WModelIndex &index,
       case kPhotoPeakEnergy:
       case kCandidateIsotopes:
       case kUseForCalibration:
+      case kUseForManualRelEff:
       case kUseForShieldingSourceFit:
       case kUserLabel:
       case kPeakLineColor:
@@ -2386,14 +2456,15 @@ bool PeakModel::setData( const WModelIndex &index,
           new_peak.setNuclearTransition( new_peak.parentNuclide(), transition,
                                          int(trans_index), sourceGammaType );
           
-          bool shouldFit = false;
+          bool shouldFit = false, shouldUseForRe = false;
           switch( srcType )
           {
             case PeakDef::NormalGamma:
-              shouldFit = recomendUseForFit( nuclide, transition->products[trans_index].energy );
+              shouldFit = recommendUseForFit( nuclide, transition->products[trans_index].energy );
+              shouldUseForRe = recommendUseForManualRelEff( nuclide, transition->products[trans_index].energy );
               break;
             case PeakDef::AnnihilationGamma:
-              shouldFit = recomendUseForFit( nuclide, 510.99891f );
+              shouldFit = recommendUseForFit( nuclide, 510.99891f );
               break;
             case PeakDef::SingleEscapeGamma:
             case PeakDef::DoubleEscapeGamma:
@@ -2404,7 +2475,10 @@ bool PeakModel::setData( const WModelIndex &index,
           }//switch( srcType )
           
           changedFit |= (shouldFit != old_peak->useForShieldingSourceFit());
+          changedFit |= (shouldUseForRe != old_peak->useForManualRelEff());
+          
           new_peak.useForShieldingSourceFit( shouldFit );
+          new_peak.useForManualRelEff( shouldUseForRe );
         }else if( el )
         {
           double nearestE = -999.9;
@@ -2509,6 +2583,30 @@ bool PeakModel::setData( const WModelIndex &index,
         break;
       }//case kUseForCalibration:
 
+         
+      case kUseForManualRelEff:
+      {
+        try
+        {
+          const bool use = boost::any_cast<bool>( value );
+          if( use && (!new_peak.parentNuclide()
+                      || (new_peak.sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) ) )
+            passMessage( "Only peaks associated with a nuclides gamma can be used for relative"
+                        " activity analysis.", "", WarningWidget::WarningMsgHigh );
+          
+          if( use == new_peak.useForManualRelEff() )
+            return false;
+          new_peak.useForManualRelEff( use );
+        }catch(...)
+        {
+          cerr << "\n\tFailed in casting checkbox" << endl;
+          return false;
+        }
+        
+        break;
+      }//case kUseForManualRelEff:
+        
+        
       case kPeakLineColor:
       {
         const string css_color = txt_val.toUTF8();
@@ -2547,7 +2645,7 @@ bool PeakModel::setData( const WModelIndex &index,
     }else if( column == kPhotoPeakEnergy )
     {
       if( changedFit )
-        dataChanged().emit( index, PeakModel::index(row, kUseForShieldingSourceFit) );
+        dataChanged().emit( PeakModel::index(row, kIsotope), PeakModel::index(row, kNumColumns) ); //just update whole row, jic
       else
         dataChanged().emit( index, PeakModel::index(row, kDifference) );
     }else if( column == kMean )
@@ -2587,6 +2685,7 @@ WFlags<ItemFlag> PeakModel::flags( const WModelIndex &index ) const
 
     case kUseForShieldingSourceFit:
     case kUseForCalibration:
+    case kUseForManualRelEff:
       return ItemIsUserCheckable | ItemIsSelectable;
 
     case kHasSkew: case kSkewAmount: case kType:
@@ -2632,8 +2731,9 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
       case kPhotoPeakEnergy:return boost::any( WString("Photopeak") );
       case kDifference:     return boost::any( WString("Difference") );
       case kUseForShieldingSourceFit: return boost::any( WString("Use") );
-      case kCandidateIsotopes: return boost::any();
-      case kUseForCalibration: return boost::any( WString("Calib. Peak") );
+      case kCandidateIsotopes:  return boost::any();
+      case kUseForCalibration:  return boost::any( WString("Calib. Peak") );
+      case kUseForManualRelEff: return boost::any( WString("Rel Act") );
       case kUserLabel:      return boost::any( WString("Label") );
       case kPeakLineColor:  return boost::any( WString("Color") );
       case kHasSkew:        return boost::any( WString("Skew") );
@@ -2658,8 +2758,9 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
       case kPhotoPeakEnergy:return boost::any( WString("Photopeak Energy") );
       case kDifference:     return boost::any( WString("Difference between photopeak and mean energy") );
       case kUseForShieldingSourceFit: return boost::any();
-      case kCandidateIsotopes: return boost::any();
-      case kUseForCalibration: return boost::any();
+      case kCandidateIsotopes:  return boost::any();
+      case kUseForCalibration:  return boost::any();
+      case kUseForManualRelEff: return boost::any( WString("Use for &quot;Isotopics from peaks&quot; analysis.") );
       case kPeakLineColor:     return boost::any( WString("Peak color") );
       case kUserLabel:         return boost::any( WString("User specified label") );
       case kRoiCounts:         return boost::any( WString("Integral of gamma counts over the region of interest") );
@@ -2903,6 +3004,12 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       const bool thisorder = lhs->useForEnergyCalibration() < rhs->useForEnergyCalibration();
       return (asscend ? thisorder : (!thisorder));
     }//case kUseForCalibration:
+      
+    case kUseForManualRelEff:
+    {
+      const bool thisorder = lhs->useForManualRelEff() < rhs->useForManualRelEff();
+      return (asscend ? thisorder : (!thisorder));
+    }//case kUseForManualRelEff:
 
     case kCandidateIsotopes:
     case kNumColumns:
@@ -2935,7 +3042,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
   {
     const PeakDef &peak = *peaks[peakn];
     
-    float live_time = 0.0;
+    float live_time = 1.0f;
     boost::posix_time::ptime meastime;
     double region_area = 0.0, xlow = 0.0, xhigh = 0.0;
     if( data )

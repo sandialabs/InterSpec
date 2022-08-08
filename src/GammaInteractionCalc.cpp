@@ -4482,7 +4482,7 @@ void ShieldingSourceChi2Fcn::setBackgroundPeaks(
     {
       stringstream msg;
       msg << "The non-gaussian background peak at " << p.mean() << " keV "
-          << " will not be used for backgorund peak area subtraction;"
+          << " will not be used for background peak area subtraction;"
           << " non-gaussian peaks may be supported for this in the future";
       passMessage( msg.str(), WarningWidget::WarningMsgHigh );
     }//if( p.gausPeak() ) / else

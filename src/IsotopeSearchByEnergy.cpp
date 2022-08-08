@@ -321,6 +321,10 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
 //    HelpSystem::attachToolTipOn( label, tip, showToolTips , HelpSystem::ToolTipPosition::Top);
 
   m_minHalfLife = new WLineEdit( "6000 s", optionDiv );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_minHalfLife->setAttributeValue( "autocorrect", "off" );
+  m_minHalfLife->setAttributeValue( "spellcheck", "off" );
+#endif
   HelpSystem::attachToolTipOn( m_minHalfLife, tip, showToolTips , HelpSystem::ToolTipPosition::Top );
 
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationRegex, this );

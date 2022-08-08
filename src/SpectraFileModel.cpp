@@ -279,10 +279,10 @@ SpectraFileHeader::~SpectraFileHeader() noexcept(true)
         if( memObj )
         {
           saveToDatabase( memObj );
-            WString msg = "Autosaved previously opened spectra '";
-            msg += (!!memObj ? memObj->filename() : fileSystemLocation);
-            msg += "'";
-            passMessage( msg, WarningWidget::WarningMsgSave );
+          //  WString msg = "Autosaved previously opened spectra '";
+          //  msg += (!!memObj ? memObj->filename() : fileSystemLocation);
+          //  msg += "'";
+          //  passMessage( msg, "", WarningWidget::WarningMsgSave );
         }
         else if( fileSystemLocation.size() )
         {
@@ -2273,7 +2273,13 @@ void DownloadCurrentSpectrumResource::handleRequest(
   
   if( m_format == SpecUtils::SaveSpectrumAsType::N42_2012
      || m_format == SpecUtils::SaveSpectrumAsType::N42_2006 )
+  {
     m_viewer->saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
+    m_viewer->saveRelActManualStateToForegroundSpecMeas();
+    m_viewer->saveRelActAutoStateToForegroundSpecMeas();
+#endif
+  }
 
   shared_ptr<const SpecMeas> measurement = m_viewer->measurment( m_spectrum );
   if( !measurement )
@@ -2534,8 +2540,6 @@ void DownloadSpectrumResource::write_file( std::ostream &output,
         
         write_d3_html( output, measurements, viewer->getD3SpectrumOptions() );
       }//if( viewer )
-      //      if( viewer != 0 )
-      //        measurement->write_d3_html( output, viewer->getD3SpectrumOptions(), samplenums, detectornums );
     }
       break;
 #endif //#if( USE_D3_EXPORTING )

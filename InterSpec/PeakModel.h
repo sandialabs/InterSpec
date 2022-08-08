@@ -69,6 +69,7 @@ public:
   {
     kIsotope,           //The isotope to display as the isotope responsible for this gamma line
     kUseForCalibration,
+    kUseForManualRelEff,
     kMean, kFwhm, kAmplitude,
     kCps,
     kPhotoPeakEnergy,
@@ -99,11 +100,27 @@ public:
   void setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
                             const std::set<int> &samplenums );
 
-  //recomendUseForFit(...): determines whether or not the specified photopeak
+  /** Normally we keep the peaks added/removed up to date with the #SpecMeas passed into
+   #setPeakFromSpecMeas (i.e., the #SpecMeas "owns" the peaks), but if you dont want to do
+   this (i.e., you dont want the #SpecMeas to "own", or even know about the peaks), you
+   can call this function.
+   */
+  void setNoSpecMeasBacking();
+  
+  
+  //recommendUseForFit(...): determines whether or not the specified photopeak
   //  should be used for activity/shielding fit.
-  static bool recomendUseForFit( const SandiaDecay::Nuclide *n,
+  static bool recommendUseForFit( const SandiaDecay::Nuclide *n,
                                  const float energy );
 
+  /** Returns a niave suggestion of if a peak should be used for the manual relative efficiency
+   calculations.
+   
+   Currently uses some hard-coded values for uranium, and otherwise returns true if above 90 keV
+   (roughly above the Pb absorption edge)
+   */
+  static bool recommendUseForManualRelEff( const SandiaDecay::Nuclide *n, const float energy );
+  
   //Functions add/delete/access peaks from - from these functions peaks will
   //  always be sorted by mean, in an increasing fashion
   size_t npeaks() const;

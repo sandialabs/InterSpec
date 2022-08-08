@@ -42,7 +42,7 @@ public:
   /** Fwhm equation type; equivalent to DetectorPeakResponse::ResolutionFnctForm
    but redifined here to not have to include that header.
    */
-  enum class FwhmCoefType{ Gadras, SqrtEqn };
+  enum class FwhmCoefType{ Gadras, SqrtEnergyPlusInverse, SqrtEqn };
   
   /** Information from the calibration data for a specific peak.  Used to draw
      data points on the chart.

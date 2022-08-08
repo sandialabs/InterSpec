@@ -118,9 +118,6 @@ public:
   /** Access the user input widget to check if equation is in MeV or keV. */
   bool isEffEqnInMeV() const;
   
-  /** Access the user input widget to check FWHM equation form. */
-  bool isGadrasFwhmEqnType() const;
-  
   /** Get the user-entered detector diameter.
    Will throw if user input is invalid.
    */

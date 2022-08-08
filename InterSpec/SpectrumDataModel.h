@@ -80,15 +80,15 @@ public:
   
   //setDataHistogram(): also sets m_secondSF and m_backgroundSF to
   //  m_dataLiveTime/m_{Second|Background}LiveTime
-  void setDataHistogram( std::shared_ptr<SpecUtils::Measurement> hist );
+  void setDataHistogram( std::shared_ptr<const SpecUtils::Measurement> hist );
   
   //setSecondDataHistogram(): also sets m_secondSF to m_dataLiveTime/m_secondDataLiveTime
-  void setSecondDataHistogram( std::shared_ptr<SpecUtils::Measurement> hist,
+  void setSecondDataHistogram( std::shared_ptr<const SpecUtils::Measurement> hist,
                                       const bool ownAxis );
   
   //setBackgroundHistogram(): also sets m_backgroundSF to
   //  m_dataLiveTime/m_backgroundLiveTime
-  void setBackgroundHistogram( std::shared_ptr<SpecUtils::Measurement> hist );
+  void setBackgroundHistogram( std::shared_ptr<const SpecUtils::Measurement> hist );
   
   // Flags for whether the background are getting subtracted.
   void setBackgroundSubtract( const bool subtract = true );
@@ -98,13 +98,9 @@ public:
 
   // The following functions will return an empty std::shared_ptr<SpecUtils::Measurement> if the data histogram
   // was not previously set.
-  std::shared_ptr<SpecUtils::Measurement>      getData();
-  std::shared_ptr<SpecUtils::Measurement>      getSecondData();
-  std::shared_ptr<SpecUtils::Measurement>      getBackground();
-
-  std::shared_ptr<const SpecUtils::Measurement> getData()       const;
-  std::shared_ptr<const SpecUtils::Measurement> getSecondData() const;
-  std::shared_ptr<const SpecUtils::Measurement> getBackground() const;
+  const std::shared_ptr<const SpecUtils::Measurement> &getData()       const;
+  const std::shared_ptr<const SpecUtils::Measurement> &getSecondData() const;
+  const std::shared_ptr<const SpecUtils::Measurement> &getBackground() const;
 
   float dataRealTime() const;
   float dataLiveTime() const;
@@ -155,7 +151,6 @@ public:
   bool secondDataOwnAxis() const;
 
   // Find which histogram is defining the x-axis by moving through priorities.
-  std::shared_ptr<SpecUtils::Measurement>      histUsedForXAxis();
   std::shared_ptr<const SpecUtils::Measurement> histUsedForXAxis() const;
 
   // The functions that follow are convenience functions that take m_rebinFactor into
@@ -196,15 +191,15 @@ public:
   bool columnHasData( int column ) const;
 
   
-  //dataSet(): emitted when a foreground, backgorund, or secondary spectrum is
+  //dataSet(): emitted when a foreground, background, or secondary spectrum is
   //  changed.
   Wt::Signal<ColumnType> &dataSet();
   
 protected:
   int        m_rebinFactor;
-  std::shared_ptr<SpecUtils::Measurement> m_data;
-  std::shared_ptr<SpecUtils::Measurement> m_secondData;
-  std::shared_ptr<SpecUtils::Measurement> m_background;
+  std::shared_ptr<const SpecUtils::Measurement> m_data;
+  std::shared_ptr<const SpecUtils::Measurement> m_secondData;
+  std::shared_ptr<const SpecUtils::Measurement> m_background;
   
   float m_dataLiveTime, m_dataRealTime, m_dataNeutronCounts;
   float m_backgroundLiveTime, m_backgroundRealTime, m_backgroundNeutronCounts;

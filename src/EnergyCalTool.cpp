@@ -1206,7 +1206,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
   //Create the more actions column...
   m_moreActionsColumn = new WContainerWidget();
-  m_moreActionsColumn->addStyleClass( "CalColumn MoreActionCol" );
+  m_moreActionsColumn->addStyleClass( "ToolTabTitledColumn MoreActionCol" );
   if( wide )
     m_layout->addWidget( m_moreActionsColumn, 0, 1 );
   else
@@ -1219,13 +1219,13 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   collayout->setRowStretch( 1, 1 );
   
   WText *header = new WText( "More Actions" );
-  header->addStyleClass( "ColHeader" );
+  header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
   
   //We will put the apply-to list inside a div so we can style consistently with other rows
   // (a <ul> element doesnt accept same css as <div>, apparently).
   WContainerWidget *moreActionsDiv = new WContainerWidget();
-  moreActionsDiv->addStyleClass( "CalColContent MoreActionsMenuContent" );
+  moreActionsDiv->addStyleClass( "ToolTabTitledColumnContent MoreActionsMenuContent" );
   collayout->addWidget( moreActionsDiv, 1, 0 );
   collayout->setRowStretch( 1, 1 );
   
@@ -1354,7 +1354,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
   // Create the "Apply To" column that determines what to apply changes to
   m_applyToColumn = new WContainerWidget();
-  m_applyToColumn->addStyleClass( "CalColumn ApplyToCol" );
+  m_applyToColumn->addStyleClass( "ToolTabTitledColumn ApplyToCol" );
   if( wide )
     m_layout->addWidget( m_applyToColumn, 0, 2 );
   else
@@ -1367,13 +1367,13 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   collayout->setRowStretch( 1, 1 );
   
   header = new WText( "Apply Changes To" );
-  header->addStyleClass( "ColHeader" );
+  header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
   
   //We will put the apply-to list inside a div so we can style consistently with other rows
   // (a <ul> element doesnt accept same css as <div>, apparently).
   WContainerWidget *applyToDiv = new WContainerWidget();
-  applyToDiv->addStyleClass( "CalColContent ApplyToMenuContent" );
+  applyToDiv->addStyleClass( "ToolTabTitledColumnContent ApplyToMenuContent" );
   collayout->addWidget( applyToDiv, 1, 0 );
   
   WContainerWidget *applyToList = new WContainerWidget( applyToDiv );
@@ -1436,7 +1436,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
   // Create the "Coefficients" column that show the polynomial/FRF coefficents.
   m_calColumn = new WContainerWidget();
-  m_calColumn->addStyleClass( "CalColumn CoefColumn" );
+  m_calColumn->addStyleClass( "ToolTabTitledColumn CoefColumn" );
   if( wide )
     m_layout->addWidget( m_calColumn, 0, 3 );
   else
@@ -1453,7 +1453,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
     collayout->setColumnStretch( 1, 1 );
   
   header = new WText( "Calibration Coefficients" );
-  header->addStyleClass( "ColHeader" );
+  header->addStyleClass( "ToolTabColumnTitle" );
   
   collayout->addWidget( header, 0, 0, 1, 2 );
   //collayout->addWidget( m_calInfoDisplayStack, 1, 0 );
@@ -1479,7 +1479,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
   // Create the "Cal Peaks" table
   m_peakTableColumn = new WContainerWidget();
-  m_peakTableColumn->addStyleClass( "CalColumn PeakTableCol" );
+  m_peakTableColumn->addStyleClass( "ToolTabTitledColumn PeakTableCol" );
   if( wide )
   {
     m_layout->addWidget( m_peakTableColumn, 0, 4 );
@@ -1497,11 +1497,11 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
     collayout->setRowStretch( 1, 1 );
   
   header = new WText( "Calibration Peaks" );
-  header->addStyleClass( "ColHeader" );
+  header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
   
   m_peakTable = new RowStretchTreeView();
-  m_peakTable->addStyleClass( "CalColContent PeakTable" );
+  m_peakTable->addStyleClass( "ToolTabTitledColumnContent PeakTable" );
   collayout->addWidget( m_peakTable, 1, 0 );
   collayout->setRowStretch( 1, 1 );
   
@@ -4050,7 +4050,7 @@ void EnergyCalTool::doRefreshFromFiles()
     if( m_calInfoDisplayStack )
       delete m_calInfoDisplayStack;
     m_calInfoDisplayStack = new WStackedWidget();
-    m_calInfoDisplayStack->addStyleClass( "CalColContent CalStack" );
+    m_calInfoDisplayStack->addStyleClass( "ToolTabTitledColumnContent CalStack" );
     m_calInfoDisplayStack->setTransitionAnimation( animation );
     callayout->addWidget( m_calInfoDisplayStack, 1, 1 );
     

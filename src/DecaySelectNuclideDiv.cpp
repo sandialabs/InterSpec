@@ -209,11 +209,21 @@ void DecaySelectNuclide::init()
   WLabel *label = 0;
   m_elementSelection         = new WSelectionBox();
   m_massSelection            = new WSelectionBox();
-  m_nuclideActivityEdit      = new WLineEdit();//WSpinBox() try WDoubleSpinBox?
-  m_nuclideAgeEdit           = new WLineEdit();//WSpinBox(); try WDoubleSpinBox?
+  m_nuclideActivityEdit      = new WLineEdit();
+  m_nuclideAgeEdit           = new WLineEdit();
   m_selectedIsotopeHalfLife  = new WText( "&lambda;<sub>&frac12;</sub>=",
                                           Wt::XHTMLUnsafeText );
   m_isotopeSearch            = new WLineEdit();
+
+#if( BUILD_AS_OSX_APP || IOS )
+  m_nuclideActivityEdit->setAttributeValue( "autocorrect", "off" );
+  m_nuclideActivityEdit->setAttributeValue( "spellcheck", "off" );
+  m_nuclideAgeEdit->setAttributeValue( "autocorrect", "off" );
+  m_nuclideAgeEdit->setAttributeValue( "spellcheck", "off" );
+  m_isotopeSearch->setAttributeValue( "autocorrect", "off" );
+  m_isotopeSearch->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   m_isoSearchFilterModel     = new SimpleIsotopeNameFilterModel( this );
   string matcherJS, replaceJS;
   SimpleIsotopeNameFilterModel::nuclideNameMatcherJs( matcherJS );
@@ -341,10 +351,9 @@ void DecaySelectNuclide::initActivityAgeSelects()
   actvalidator->setFlags(Wt::MatchCaseInsensitive);
   m_nuclideActivityEdit->setValidator( actvalidator );
   m_nuclideActivityEdit->setTextSize( 10 );
-  if( !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() ) )
-    m_nuclideActivityEdit->setText( "1 uCi" );
-  else
-    m_nuclideActivityEdit->setText( "37 kBq" );
+  
+  const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  m_nuclideActivityEdit->setText( useCi ? "1 uCi" : "37 kBq" );
 
   m_nuclideAgeEdit->setText( "0.0 us" );
   m_nuclideAgeEdit->setTextSize( 10 );
@@ -355,6 +364,13 @@ void DecaySelectNuclide::initActivityAgeSelects()
   
   m_nuclideActivityEdit->setAutoComplete( false );
   m_nuclideAgeEdit->setAutoComplete( false );
+  
+#if( BUILD_AS_OSX_APP || IOS )
+  m_nuclideActivityEdit->setAttributeValue( "autocorrect", "off" );
+  m_nuclideAgeEdit->setAttributeValue( "autocorrect", "off" );
+  m_nuclideActivityEdit->setAttributeValue( "spellcheck", "off" );
+  m_nuclideAgeEdit->setAttributeValue( "spellcheck", "off" );
+#endif
 }//void initActivityAgeSelects()
 
 

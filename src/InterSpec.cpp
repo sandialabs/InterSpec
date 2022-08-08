@@ -193,8 +193,14 @@
 #include "js/AppHtmlMenu.js"
 #endif
 
+
 #if( USE_REMOTE_RID )
 #include "InterSpec/RemoteRid.h"
+#endif
+
+#if( USE_REL_ACT_TOOL )
+#include "InterSpec/RelActAutoGui.h"
+#include "InterSpec/RelActManualGui.h"
 #endif
 
 #include "js/InterSpec.js"
@@ -228,7 +234,13 @@ namespace
   static const char * const CalibrationTabTitle   = "Energy Calibration";
   static const char * const NuclideSearchTabTitle = "Nuclide Search";
   static const char * const FileTabTitle          = "Spectrum Files";
-  
+#if( USE_TERMINAL_WIDGET )
+  static const char * const TerminalTabTitle      = "Terminal";
+#endif
+#if( USE_REL_ACT_TOOL )
+  static const char * const RelActManualTitle     = "Isotopics";
+#endif
+
 //#if( !BUILD_FOR_WEB_DEPLOYMENT )
 //  const WTabWidget::LoadPolicy TabLoadPolicy = WTabWidget::LazyLoading;
 //#else
@@ -349,6 +361,14 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_shieldingSuggestion( 0 ),
     m_shieldingSourceFit( 0 ),
     m_shieldingSourceFitWindow( 0 ),
+#if( USE_REL_ACT_TOOL )
+    m_relActAutoGui( nullptr ),
+    m_relActAutoWindow( nullptr ),
+    m_relActAutoMenuItem( nullptr ),
+    m_relActManualGui( nullptr ),
+    m_relActManualWindow( nullptr ),
+    m_relActManualMenuItem( nullptr ),
+#endif
     m_materialDB( nullptr ),
     m_nuclideSearchWindow( 0 ),
     m_nuclideSearchContainer(0),
@@ -509,13 +529,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_peakModel = new PeakModel( this );
   m_spectrum   = new D3SpectrumDisplayDiv();
   m_timeSeries = new D3TimeChart();
-  
-  m_peakModel->dataChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->rowsRemoved().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->rowsInserted().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->layoutChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->modelReset().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  
+      
   
   if( isPhone() )
   {
@@ -546,7 +560,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   }//if( isPhone() )
   
   m_spectrum->setPeakModel( m_peakModel );
-  
+  m_spectrum->existingRoiEdgeDragUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork );
+  m_spectrum->dragCreateRoiUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performDragCreateRoiWork );
+      
   m_nuclideSearch = new IsotopeSearchByEnergy( this, m_spectrum );
   m_nuclideSearch->setLoadLaterWhenInvisible(true);
 
@@ -805,6 +821,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
     //                          "branching ratio, and half life.";
     //    HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
     
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+    // Handle when the user closes the tab for the Math/Command terminal and the Manual Relative
+    //  Activity tool
+    m_toolsTabs->tabClosed().connect( boost::bind( &InterSpec::handleToolTabClosed, this, boost::placeholders::_1 ) );
+#endif
+    
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
     
@@ -980,8 +1002,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->chartClicked().connect( boost::bind( &InterSpec::handleLeftClick, this,
                                                   boost::placeholders::_1, boost::placeholders::_2,
                                                   boost::placeholders::_3, boost::placeholders::_4 ) );
-  
-//  m_spectrum->controlKeyDragged().connect( boost::bind( &InterSpec::findPeakFromUserRange, this, boost::placeholders::_1, boost::placeholders::_2 ) );
   
   m_spectrum->shiftKeyDragged().connect( boost::bind( &InterSpec::excludePeaksFromRange, this,
                                                      boost::placeholders::_1,
@@ -1249,119 +1269,6 @@ InterSpec::~InterSpec() noexcept(true)
 
 #if( SpecUtils_ENABLE_D3_CHART )
 
-string InterSpec::print_d3_reference_gammas() const
-{
-  string result;
-  
-  if( m_referencePhotopeakLines )
-  {
-    result = m_referencePhotopeakLines->jsonReferenceLinesArray();
-  }else
-  {
-    result = "[]";
-  }//if( m_referencePhotopeakLines ) / else
-  
-  return result;
-}//string InterSpec::print_d3_reference_gammas() const
-
-//Temporary function (20160224) to aid in development of d3.js spectrum rendering
-string InterSpec::print_d3_json() const
-{
-  std::ostringstream ostr;
-  const char *q = "\"";  // for creating valid json format
-    
-  std::shared_ptr<const SpecUtils::Measurement> foreground = m_spectrum->data();
-  std::shared_ptr<const SpecUtils::Measurement> background = m_spectrum->background();
-  std::shared_ptr<const SpecUtils::Measurement> secondary  = m_spectrum->secondData();
-    
-  std::shared_ptr<SpecUtils::Measurement> data = m_spectrum->data();
-  std::shared_ptr<SpecUtils::Measurement> back = m_spectrum->background();
-  std::shared_ptr<SpecUtils::Measurement> second = m_spectrum->secondData();
-    
-  typedef deque< PeakModel::PeakShrdPtr > PeakDeque;
-  string peakstring;
-  
-  // Update time
-  ostr << "{\n\t" << q << "updateTime" << q << ":" << q << SpecUtils::to_iso_string(boost::posix_time::second_clock::local_time()) << q;
-  
-  // spectrum values
-  ostr << ",\n\t" << q << "spectra" << q << ": [";
-  
-
-  if( data )
-  {
-    string title = Wt::WWebWidget::escapeText(data->title()).toUTF8();
-    if( title != data->title() )
-      data->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
-    
-    D3SpectrumExport::D3SpectrumOptions options;
-    options.line_color = "black";
-    options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Foreground);
-    
-    std::shared_ptr<const PeakDeque > peaks = m_dataMeasurement->peaks(m_displayedSamples);
-    if( peaks )
-    {
-      vector<PeakModel::PeakShrdPtr> inpeaks( peaks->begin(), peaks->end() );
-      options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
-    }
-    
-    D3SpectrumExport::write_spectrum_data_js( ostr, *data, options, 0, 1 );
-  }
-
-  if( back )
-  {
-    if( data )
-      ostr << ",";
-    
-    string title = Wt::WWebWidget::escapeText(back->title()).toUTF8();
-    if( title != back->title() )
-      back->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
-    
-    D3SpectrumExport::D3SpectrumOptions options;
-    options.line_color = "steelblue";
-    options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Background);
-    
-    std::shared_ptr<const PeakDeque > peaks = m_backgroundMeasurement->peaks(m_backgroundSampleNumbers);
-    if( peaks )
-    {
-      vector<PeakModel::PeakShrdPtr> inpeaks( peaks->begin(), peaks->end() );
-      options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
-    }
-    
-    D3SpectrumExport::write_spectrum_data_js( ostr, *back, options, 1, -1 );
-  }
-  
-  
-  if( second )
-  {
-    if( data || back )
-      ostr << ",";
-    
-    string title = Wt::WWebWidget::escapeText(second->title()).toUTF8();
-    if( title != second->title() )
-      second->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
-    
-    D3SpectrumExport::D3SpectrumOptions options;
-    options.line_color = "green";
-    options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::SecondForeground);
-    
-    std::shared_ptr<const PeakDeque > peaks = m_backgroundMeasurement->peaks(m_sectondForgroundSampleNumbers);
-    if( peaks )
-    {
-      vector<PeakModel::PeakShrdPtr> inpeaks( peaks->begin(), peaks->end() );
-      options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
-    }
-    
-    D3SpectrumExport::write_spectrum_data_js( ostr, *second, options, 2, 1 );
-  }
-  
-  // end of spectrum json
-  ostr << "\n\t]";
-  // end of json
-  ostr << "\n}\n";
-  return ostr.str();
-}//std::string InterSpec::print_d3_json() const
-
 
 D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
 {
@@ -1571,7 +1478,7 @@ void InterSpec::initHotkeySignal()
     if( e.ctrlKey )
     {
       switch( e.key ){
-        case '1': case '2': case '3': case '4': case '5': //Shortcuts to switch to the various tabs
+        case '1': case '2': case '3': case '4': case '5': case '6': case '7': //Shortcuts to switch to the various tabs
         case 'h': // Help dialog
         case 'i': // Info about InterSpec
         case 'k': // Clear showing reference photopeak lines
@@ -1618,15 +1525,44 @@ void InterSpec::hotKeyPressed( const unsigned int value )
 {
   if( m_toolsTabs )
   {
-    string expectedTxt;
+    //string expectedTxt;
     switch( value )
     {
-      case '1': expectedTxt = FileTabTitle;          break;
-      case '2': expectedTxt = PeakInfoTabTitle;      break;
-      case '3': expectedTxt = GammaLinesTabTitle;    break;
-      case '4': expectedTxt = CalibrationTabTitle;   break;
-      case '5': expectedTxt = NuclideSearchTabTitle; break;
-      
+      //case '1': expectedTxt = FileTabTitle;          break;
+      //case '2': expectedTxt = PeakInfoTabTitle;      break;
+      //case '3': expectedTxt = GammaLinesTabTitle;    break;
+      //case '4': expectedTxt = CalibrationTabTitle;   break;
+      //case '5': expectedTxt = NuclideSearchTabTitle; break;
+      //case '6':
+#if( USE_TERMINAL_WIDGET )
+      //  if( m_terminal && !m_terminalWindow )
+      //  {
+      //blah blah blah fix up terminal tab name, etc
+      //  }
+#endif
+#if( USE_REL_ACT_TOOL )
+      //  if( m_relActManualGui && !m_relActManualWindow )
+      //  {
+      //    blah blah blah hcekc if this or terminal tab
+      //    expectedTxt = RelActManualTitle;
+      //  }
+#endif
+      //  break;
+        
+      case '1': case '2': case '3': case '4': case '5': case '6': case '7':
+      {
+        const int tabIndex = value - '1';
+        
+        if( tabIndex < m_toolsTabs->count() )
+        {
+          m_toolsTabs->setCurrentIndex( tabIndex );
+          handleToolTabChanged( tabIndex );
+        }
+        
+        break;
+      }// case '1' through '7'
+        
+        
       case 'h': case 'H':
         HelpSystem::createHelpWindow( "getting-started" );
         break;
@@ -1655,6 +1591,9 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         break;
     }//switch( value )
   
+    
+    
+    /*
     if( expectedTxt.empty() )
       return;
   
@@ -1667,6 +1606,7 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         break;
       }
     }//for( int i = 0; i < m_toolsTabs->count(); ++i )
+     */
   }else
   {
     switch( value )
@@ -1804,10 +1744,14 @@ void InterSpec::addPeakFromRightClick()
   
   
   const auto origContinumm = peak->continuum();
-  const std::shared_ptr<const deque<PeakModel::PeakShrdPtr>> allOrigPeaks = m_peakModel->peaks();
+  const std::shared_ptr<const deque<PeakModel::PeakShrdPtr>> allOrigPeaksDeque = m_peakModel->peaks();
+  
+  // We need to make a copy of all the shared pointers because we modify the deque that
+  //  allOrigPeaksDeque points at.
+  const deque<PeakModel::PeakShrdPtr> allOrigPeaks( begin(*allOrigPeaksDeque), end(*allOrigPeaksDeque) );
   
   ContToPeakMap contToPeaks;
-  for( const PeakModel::PeakShrdPtr &thispeak : *allOrigPeaks )
+  for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
   {
     if( thispeak )
       contToPeaks[thispeak->continuum()].push_back( *thispeak );
@@ -1937,7 +1881,7 @@ void InterSpec::addPeakFromRightClick()
   
   
   std::map<std::shared_ptr<PeakDef>,PeakModel::PeakShrdPtr> new_to_orig_peaks;
-  for( const PeakModel::PeakShrdPtr &thispeak : *allOrigPeaks )
+  for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
   {
     if( !thispeak || (thispeak->continuum() != origContinumm) )
       continue;
@@ -1961,7 +1905,7 @@ void InterSpec::addPeakFromRightClick()
       nearest_new->inheritUserSelectedOptions( *thispeak, true );
       new_to_orig_peaks[nearest_new] = thispeak;
     }
-  }//for( const PeakModel::PeakShrdPtr &thispeak : *allOrigPeaks )
+  }//for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
   
   
   for( size_t i = 0; i < answer.size(); ++i )
@@ -2599,7 +2543,7 @@ void InterSpec::setIsotopeSearchEnergy( double energy )
   if( !!peak )
   {
     const double width = peak->gausPeak() ? peak->fwhm() : 0.5*peak->roiWidth();
-    if( (fabs(peak->mean()-energy) < (3.0/2.634)*width) )
+    if( (fabs(peak->mean()-energy) < (3.0/2.35482)*width) )
     {
       energy = peak->mean();
       sigma = width;
@@ -2745,6 +2689,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
   try
   {
     saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
+    saveRelActManualStateToForegroundSpecMeas();
+    saveRelActAutoStateToForegroundSpecMeas();
+#endif
     
     DataBaseUtils::DbTransaction transaction( *m_sql );
     entry.modify()->serializeTime = WDateTime::currentDateTime();
@@ -2899,13 +2847,23 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     }
     
     if( m_spectrum->legendIsEnabled() )
-    {
-      cerr << "Legend enabled" << endl;
       entry.modify()->shownDisplayFeatures |= UserState::kSpectrumLegend;
-    }else cerr << "Legend NOT enabled" << endl;
     
     if( m_shieldingSourceFit )
       entry.modify()->shownDisplayFeatures |= UserState::kShowingShieldSourceFit;
+    
+#if( USE_TERMINAL_WIDGET )
+    if( m_terminal )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingTerminalWidget;
+#endif
+    
+#if( USE_REL_ACT_TOOL )
+    if( m_relActManualGui )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingRelActManual;
+    
+    if( m_relActAutoGui )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingRelActAuto;
+#endif
     
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
@@ -2925,6 +2883,14 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         entry.modify()->currentTab = UserState::kIsotopeSearch;
       else if( txt == FileTabTitle )
         entry.modify()->currentTab = UserState::kFileTab;
+#if( USE_TERMINAL_WIDGET )
+      else if( txt == TerminalTabTitle )
+        entry.modify()->currentTab = UserState::kTerminalTab;
+#endif
+#if( USE_REL_ACT_TOOL )
+      else if( txt == RelActManualTitle )
+        entry.modify()->currentTab = UserState::kRelActManualTab;
+#endif
     }//if( m_toolsTabs )
     
     entry.modify()->showingMarkers = 0x0;
@@ -3453,17 +3419,39 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     
 //  SpectrumSubtractMode backgroundSubMode;
     
+    if( (entry->shownDisplayFeatures & UserState::kShowingShieldSourceFit) )
+      showShieldingSourceFitWindow();
+    
+#if( USE_TERMINAL_WIDGET )
+    if( (entry->shownDisplayFeatures & UserState::kShowingTerminalWidget) )
+      createTerminalWidget();
+#endif
+    
+#if( USE_REL_ACT_TOOL )
+    if( (entry->shownDisplayFeatures & UserState::kShowingRelActManual) )
+      createRelActManualWidget();
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingRelActAuto) )
+      showRelActAutoWindow();
+#endif
+    
     if( wasDocked )
     {
       WString title;
       switch( entry->currentTab )
       {
-        case UserState::kPeakInfo:      title = PeakInfoTabTitle;      break;
-        case UserState::kGammaLines:    title = GammaLinesTabTitle;    break;
-        case UserState::kCalibration:   title = CalibrationTabTitle;   break;
-        case UserState::kIsotopeSearch: title = NuclideSearchTabTitle; break;
-        case UserState::kFileTab:       title = FileTabTitle;          break;
-        case UserState::kNoTabs:                                       break;
+        case UserState::kPeakInfo:        title = PeakInfoTabTitle;      break;
+        case UserState::kGammaLines:      title = GammaLinesTabTitle;    break;
+        case UserState::kCalibration:     title = CalibrationTabTitle;   break;
+        case UserState::kIsotopeSearch:   title = NuclideSearchTabTitle; break;
+        case UserState::kFileTab:         title = FileTabTitle;          break;
+#if( USE_TERMINAL_WIDGET )
+        case UserState::kTerminalTab:     title = TerminalTabTitle;      break;
+#endif
+#if( USE_REL_ACT_TOOL )
+        case UserState::kRelActManualTab: title = RelActManualTitle;     break;
+#endif
+        case UserState::kNoTabs:                                         break;
       };//switch( entry->currentTab )
       
       for( int tab = 0; tab < m_toolsTabs->count(); ++tab )
@@ -3479,7 +3467,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     }//if( wasDocked )
     
     
-    //Should take care of entry->showingWindows here, so we can relie on it below
+    //Should take care of entry->showingWindows here, so we can rely on it below
     if( entry->gammaLinesXml.size() )
     {
       bool toolTabsHidden = false;
@@ -3581,8 +3569,6 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }//try / catch
     }//if( entry->userOptionsJson.size() )
     
-    if( (entry->shownDisplayFeatures & UserState::kShowingShieldSourceFit) )
-      showShieldingSourceFitWindow();
     
     if( entry->colorThemeJson.size() > 32 )  //32 is arbitrary
     {
@@ -3730,16 +3716,7 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
 
   m_colorPeaksBasedOnReferenceLines = theme->peaksTakeOnReferenceLineColor;
   
-  m_spectrum->setForegroundSpectrumColor( theme->foregroundLine );
-  m_spectrum->setBackgroundSpectrumColor( theme->backgroundLine );
-  m_spectrum->setSecondarySpectrumColor( theme->secondaryLine );
-  m_spectrum->setDefaultPeakColor( theme->defaultPeakLine );
-  
-  m_spectrum->setAxisLineColor( theme->spectrumAxisLines );
-  m_spectrum->setChartMarginColor( theme->spectrumChartMargins );
-  m_spectrum->setChartBackgroundColor( theme->spectrumChartBackground );
-  m_spectrum->setTextColor( theme->spectrumChartText );
-  
+  m_spectrum->applyColorTheme( theme );
   m_timeSeries->applyColorTheme( theme );
   
   setReferenceLineColors( theme );
@@ -4708,6 +4685,10 @@ void InterSpec::stateSave()
   {
     //TODO: Should check if can save?
     saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
+    saveRelActManualStateToForegroundSpecMeas();
+    saveRelActAutoStateToForegroundSpecMeas();
+#endif
     startStoreStateInDb( false, false, false, false ); //save snapshot
   }else
   {
@@ -5131,9 +5112,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     m_fileMenuPopup->addSeparator();
     
     item = m_fileMenuPopup->addMenuItem( "Previous..." , "InterSpec_resources/images/db_small.png");
-    item->triggered().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
-                                            m_fileManager,
-                                            SpecUtils::SpectrumType::Foreground ) );
+    item->triggered().connect( m_fileManager, &SpecMeasManager::browsePrevSpectraAndStatesDb );
     HelpSystem::attachToolTipOn(item, "Opens previously saved states", showToolTips );
     
     m_fileMenuPopup->addSeparator();
@@ -5700,6 +5679,12 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 //    if( m_nuclideSearch )
 //      m_nuclideSearch->loadSearchEnergiesToClient();
     
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+    // Handle when the user closes the tab for the Math/Command terminal and the Manual Relative
+    //  Activity tool
+    m_toolsTabs->tabClosed().connect( boost::bind( &InterSpec::handleToolTabClosed, this, boost::placeholders::_1 ) );
+#endif
+    
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
     
@@ -5714,6 +5699,25 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_layout->removeWidget( m_menuDiv );
     m_toolsTabs->removeTab( m_peakInfoDisplay );
     m_toolsTabs->removeTab( m_energyCalTool );
+    
+    if( m_relActManualGui )
+    {
+      if( !m_relActManualWindow )
+        m_toolsTabs->removeTab( m_energyCalTool );
+      handleRelActManualClose();
+    }//if( m_relActManualGui )
+    
+    if( m_relActAutoGui )
+      handleRelActAutoClose();
+    
+#if( USE_TERMINAL_WIDGET )
+    if( m_terminal )
+    {
+      if( !m_terminalWindow )
+        m_toolsTabs->removeTab( m_terminal );
+      handleTerminalWindowClose();
+    }
+#endif
     
     m_nuclideSearch->clearSearchEnergiesOnClient();
     m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
@@ -5841,11 +5845,8 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_logYItems[0]->triggered().connect( boost::bind( &InterSpec::setLogY, this, true  ) );
   m_logYItems[1]->triggered().connect( boost::bind( &InterSpec::setLogY, this, false ) );
   m_spectrum->setYAxisLog( logypref );
-  std::function<void (boost::any)> logy_fcn = [=](boost::any value){
-    this->setLogY( boost::any_cast<bool>(value) );
-  };
-  InterSpecUser::associateFunction( m_user, "LogY", logy_fcn, this );
-
+  InterSpecUser::addCallbackWhenChanged( m_user, "LogY", this, &InterSpec::setLogY );
+  
   
   const bool verticleLines = InterSpecUser::preferenceValue<bool>( "ShowVerticalGridlines", this );
   m_verticalLinesItems[0] = chartmenu->addMenuItem( "Show Vertical Lines" , "InterSpec_resources/images/sc_togglegridvertical.png");
@@ -5856,10 +5857,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_verticalLinesItems[1]->setHidden( !verticleLines );
   m_spectrum->showVerticalLines( verticleLines );
   m_timeSeries->showVerticalLines( verticleLines );
-  std::function<void (boost::any)> vl_fcn = [=](boost::any value){
-    this->setVerticalLines( boost::any_cast<bool>(value) );
-  };
-  InterSpecUser::associateFunction( m_user, "ShowVerticalGridlines", vl_fcn, this );
+  InterSpecUser::addCallbackWhenChanged( m_user, "ShowVerticalGridlines", this, &InterSpec::setVerticalLines );
   
   const bool horizontalLines = InterSpecUser::preferenceValue<bool>( "ShowHorizontalGridlines", this );
   m_horizantalLinesItems[0] = chartmenu->addMenuItem( "Show Horizontal Lines" , "InterSpec_resources/images/sc_togglegridhorizontal.png");
@@ -5870,10 +5868,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_horizantalLinesItems[1]->setHidden( !horizontalLines );
   m_spectrum->showHorizontalLines( horizontalLines );
   m_timeSeries->showHorizontalLines( horizontalLines );
-  std::function<void (boost::any)> hl_fcn = [=](boost::any value){
-    this->setHorizantalLines( boost::any_cast<bool>(value) );
-  };
-  InterSpecUser::associateFunction( m_user, "ShowHorizontalGridlines", hl_fcn, this );
+  InterSpecUser::addCallbackWhenChanged( m_user, "ShowHorizontalGridlines", this, &InterSpec::setHorizantalLines );
   
   
   if( isPhone() )
@@ -5889,10 +5884,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     m_compactXAxisItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisCompact, this, false ) );
     m_compactXAxisItems[0]->setHidden( makeCompact );
     m_compactXAxisItems[1]->setHidden( !makeCompact );
-    std::function<void (boost::any)> cxa_fcn = [=](boost::any value){
-      this->setXAxisCompact( boost::any_cast<bool>(value) );
-    };
-    InterSpecUser::associateFunction( m_user, "CompactXAxis", cxa_fcn, this );
+    InterSpecUser::addCallbackWhenChanged( m_user, "CompactXAxis", this, &InterSpec::setXAxisCompact );
   }
   
   //What we should do here is have a dialog that pops up that lets users  select
@@ -5930,10 +5922,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false ) );
   m_showXAxisSliderItems[0]->setHidden( showSlider );
   m_showXAxisSliderItems[1]->setHidden( !showSlider );
-  std::function<void (boost::any)> xas_fcn = [=](boost::any value){
-    this->setXAxisSlider( boost::any_cast<bool>(value) );
-  };
-  InterSpecUser::associateFunction( m_user, "ShowXAxisSlider", xas_fcn, this );
+  InterSpecUser::addCallbackWhenChanged( m_user, "ShowXAxisSlider", this, &InterSpec::setXAxisSlider );
   
   
   const bool showScalers = InterSpecUser::preferenceValue<bool>( "ShowYAxisScalers", this );
@@ -5946,12 +5935,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_showYAxisScalerItems[0]->setHidden( showScalers );
   m_showYAxisScalerItems[1]->setHidden( !showScalers );
   m_showYAxisScalerItems[(showScalers ? 1 : 0)]->disable();
-  
-  std::function<void (boost::any)> fcnt = [=](boost::any value){
-    this->setShowYAxisScalers( boost::any_cast<bool>(value) );
-  };
-  
-  InterSpecUser::associateFunction( m_user, "ShowYAxisScalers", fcnt, this );
+  InterSpecUser::addCallbackWhenChanged( m_user, "ShowYAxisScalers", this, &InterSpec::setShowYAxisScalers );
   
   m_displayOptionsPopupDiv->addSeparator();
   
@@ -6688,11 +6672,16 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
   const bool autoStore = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
-  WCheckBox *cb = new WCheckBox( " Automatically store session" );
+  WCheckBox *cb = new WCheckBox( " Auto store your work" );
   cb->setChecked( autoStore );
   item = subPopup->addWidget( cb );
-  HelpSystem::attachToolTipOn( item, "Automatically stores app state", showToolTips );
-  InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this, false );
+  HelpSystem::attachToolTipOn( item, "Automatically stores application state if you are working in"
+                              " a stored state, or else if you are not, it will store your spectra"
+                              " and your work (e.g., peaks fit, energy cal changes, etc) into"
+                              " InterSpecs internal database and prompt you if you want to resume"
+                              " where you left off next time you load the same spectrum.",
+                              showToolTips );
+  InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this );
   
 
   if( !isMobile() )
@@ -6705,7 +6694,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                 , true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
-    InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this, false );
+    InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this );
   }//if( !isMobile() )
   
   {//begin add "AskPropagatePeaks" to menu
@@ -6722,7 +6711,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                  true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
-    InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this, false );
+    InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this );
   }//end add "AskPropagatePeaks" to menu
   
   
@@ -6731,7 +6720,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, "Display activity in units of becquerel, rather than curie.",
                                  true, HelpSystem::ToolTipPosition::Right );
-    InterSpecUser::associateWidget( m_user, "DisplayBecquerel", checkbox, this, false );
+    InterSpecUser::associateWidget( m_user, "DisplayBecquerel", checkbox, this );
   }//end add "DisplayBecquerel"
   
   {//begin add "LoadDefaultDrf"
@@ -6742,7 +6731,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                 " detector the spectrum is from, whether a default DRF should try"
                                 " to be found and loaded automatically.",
                                 true, HelpSystem::ToolTipPosition::Right );
-    InterSpecUser::associateWidget( m_user, "LoadDefaultDrf", checkbox, this, false );
+    InterSpecUser::associateWidget( m_user, "LoadDefaultDrf", checkbox, this );
   }//end add "LoadDefaultDrf"
   
 	item = subPopup->addMenuItem("Color Themes...");
@@ -6754,13 +6743,13 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   item = subPopup->addWidget( promptOnLoad );
   const char *prompttext = "At application start, ask to load previous state.";
   HelpSystem::attachToolTipOn( item, prompttext, showToolTips );
-  InterSpecUser::associateWidget( m_user, "PromptStateLoadOnStart", promptOnLoad, this, false );
+  InterSpecUser::associateWidget( m_user, "PromptStateLoadOnStart", promptOnLoad, this );
   
   WCheckBox *doLoad = new WCheckBox( "Load prev state on start" );
   item = subPopup->addWidget( doLoad );
   const char *doloadtext = "At application start, automatically load previous state, if not set to be prompted";
   HelpSystem::attachToolTipOn( item, doloadtext, showToolTips );
-  InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this, false );
+  InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this );
 #endif
   
   
@@ -7270,15 +7259,17 @@ void InterSpec::createTerminalWidget()
   
   if( m_toolsTabs )
   {
-    WMenuItem *item = m_toolsTabs->addTab( m_terminal, "Terminal" );
+    WMenuItem *item = m_toolsTabs->addTab( m_terminal, TerminalTabTitle );
     item->setCloseable( true );
     m_toolsTabs->setCurrentWidget( m_terminal );
     const int index = m_toolsTabs->currentIndex();
     m_toolsTabs->setTabToolTip( index, "Numeric, algebraic, and text-based spectrum interaction terminal." );
-    m_toolsTabs->tabClosed().connect( this, &InterSpec::handleTerminalWindowClose );
+    
+    // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
+    //  handleToolTabClosed(), which will delete m_terminal when the user closes the tab.
   }else
   {
-    m_terminalWindow = new AuxWindow( "Terminal",
+    m_terminalWindow = new AuxWindow( TerminalTabTitle,
                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
                                       | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
     
@@ -7308,7 +7299,7 @@ void InterSpec::handleTerminalWindowClose()
   
   if( m_terminalWindow )
   {
-    delete m_terminalWindow;
+    AuxWindow::deleteAuxWindow( m_terminalWindow );
   }else
   {
     delete m_terminal;
@@ -7362,6 +7353,222 @@ void InterSpec::handleRemoteRidClose()
 #endif  //#if( USE_REMOTE_RID )
 
 
+#if( USE_REL_ACT_TOOL )
+void InterSpec::showRelActAutoWindow()
+{
+  if( !m_relActAutoGui )
+  {
+    const std::pair<RelActAutoGui *,AuxWindow *> widgets = RelActAutoGui::createWindow( this );
+    if( !widgets.first || !widgets.second )
+      return;
+      
+    m_relActAutoGui = widgets.first;
+    m_relActAutoWindow  = widgets.second;
+    
+    m_relActAutoWindow->finished().connect( boost::bind( &InterSpec::handleRelActAutoClose, this ) );
+  }else
+  {
+    const double windowWidth = 0.95 * renderedWidth();
+    const double windowHeight = 0.95 * renderedHeight();
+    m_relActAutoWindow->resizeWindow( windowWidth, windowHeight );
+    
+    m_relActAutoWindow->resizeToFitOnScreen();
+    m_relActAutoWindow->show();
+    m_relActAutoWindow->centerWindow();
+  }//if( !m_shieldingSourceFit )
+  
+  assert( m_relActAutoMenuItem );
+  m_relActAutoMenuItem->disable();
+  
+  
+  try
+  {
+    rapidxml::xml_document<char> *relActState = m_dataMeasurement
+                                               ? m_dataMeasurement->relActAutoGuiState()
+                                               : nullptr;
+    if( relActState && relActState->first_node() )
+      m_relActAutoGui->deSerialize( relActState->first_node() );
+  }catch( std::exception &e )
+  {
+    passMessage( "Error setting &quot;Isotopics from nuclides&quot; state to previously used state: "
+                + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
+#endif
+    
+    assert( 0 );
+  }//try / catch
+}//void showRelActAutoWindow()
+
+
+void InterSpec::handleRelActAutoClose()
+{
+  assert( m_relActAutoMenuItem );
+  m_relActAutoMenuItem->enable();
+  
+  if( m_relActAutoGui )
+    saveRelActAutoStateToForegroundSpecMeas();
+  
+  assert( m_relActAutoWindow );
+  if( !m_relActAutoWindow )
+    return;
+  
+  delete m_relActAutoWindow;
+  m_relActAutoGui = nullptr;
+  m_relActAutoWindow = nullptr;
+}//void handleRelActAutoClose()
+
+
+void InterSpec::createRelActManualWidget()
+{
+  assert( m_relActManualMenuItem );
+  m_relActManualMenuItem->disable();
+  
+  if( m_relActManualGui )
+    return;
+  
+  m_relActManualGui = new RelActManualGui( this );
+  
+  if( m_toolsTabs )
+  {
+    WMenuItem *item = m_toolsTabs->addTab( m_relActManualGui, RelActManualTitle );
+    item->setCloseable( true );
+    m_toolsTabs->setCurrentWidget( m_relActManualGui );
+    const int index = m_toolsTabs->currentIndex();
+    m_toolsTabs->setTabToolTip( index, "Numeric, algebraic, and text-based spectrum interaction terminal." );
+    
+    // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
+    //  handleToolTabClosed(), which will delete m_relActManualGui when the user closes the tab.
+  }else
+  {
+    m_relActManualWindow = new AuxWindow( "Isotopics from user-fit peaks",
+                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                      | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
+    
+    m_relActManualWindow->rejectWhenEscapePressed();
+    m_relActManualWindow->finished().connect( this, &InterSpec::handleRelActManualClose );
+    
+    m_relActManualWindow->show();
+    if( (m_renderedWidth > 100) && (m_renderedHeight > 100) && !isPhone() )
+    {
+      m_terminalWindow->resizeWindow( 0.95*m_renderedWidth, 0.25*m_renderedHeight );
+      m_terminalWindow->centerWindow();
+    }
+    
+    m_relActManualWindow->stretcher()->addWidget( m_relActManualGui, 0, 0 );
+  }//if( toolTabsVisible() )
+  
+  assert( m_relActManualMenuItem );
+  m_relActManualMenuItem->disable();
+  
+  try
+  {
+    rapidxml::xml_document<char> *relActSate = m_dataMeasurement
+                                                 ? m_dataMeasurement->relActManualGuiState()
+                                                 : nullptr;
+    if( relActSate && relActSate->first_node() )
+      m_relActManualGui->deSerialize( relActSate->first_node() );
+  }catch( std::exception &e )
+  {
+    passMessage( "Error setting &quot;Isotopics from peaks&quot; state to previously used state: "
+                 + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
+#endif
+    
+    assert( 0 );
+  }//try / catch
+}//void InterSpec::createRelActManualWidget()
+
+
+void InterSpec::handleRelActManualClose()
+{
+  assert( m_relActManualGui );
+  
+  if( m_relActManualGui )
+    saveRelActManualStateToForegroundSpecMeas();
+  
+  if( m_relActManualWindow )
+  {
+    AuxWindow::deleteAuxWindow( m_relActManualWindow );
+  }else
+  {
+    if( m_relActManualGui )
+      delete m_relActManualGui;
+    
+    if( m_toolsTabs )
+      m_toolsTabs->setCurrentIndex( 2 );
+  }//if( m_relActManualWindow ) / else
+  
+  m_relActManualGui = nullptr;
+  m_relActManualWindow = nullptr;
+
+  assert( m_relActManualMenuItem );
+  m_relActManualMenuItem->enable();
+}//void InterSpec::handleRelActManualClose()
+
+
+void InterSpec::saveRelActManualStateToForegroundSpecMeas()
+{
+  if( !m_relActManualGui || !m_dataMeasurement )
+    return;
+  
+  string xml_data;
+  std::unique_ptr<rapidxml::xml_document<char>> doc( new rapidxml::xml_document<char>() );
+  
+  m_relActManualGui->serialize( doc.get() );
+  
+  m_dataMeasurement->setRelActManualGuiState( std::move(doc) );
+}//void saveRelActManualStateToForegroundSpecMeas()
+
+
+void InterSpec::saveRelActAutoStateToForegroundSpecMeas()
+{
+  if( !m_relActAutoGui || !m_dataMeasurement )
+    return;
+  
+  string xml_data;
+  std::unique_ptr<rapidxml::xml_document<char>> doc( new rapidxml::xml_document<char>() );
+  
+  m_relActAutoGui->serialize( doc.get() );
+  
+  m_dataMeasurement->setRelActAutoGuiState( std::move(doc) );
+}//void saveRelActAutoStateToForegroundSpecMeas()
+
+#endif //#if( USE_REL_ACT_TOOL )
+
+
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+void InterSpec::handleToolTabClosed( const int tabnum )
+{
+  assert( m_toolsTabs );
+  if( !m_toolsTabs )
+    return;
+  
+  WWidget *w = m_toolsTabs->widget( tabnum );
+  
+#if( USE_TERMINAL_WIDGET && USE_REL_ACT_TOOL )
+  if( w == m_relActManualGui )
+  {
+    handleRelActManualClose();
+  }else if( w == m_terminal )
+  {
+    handleTerminalWindowClose();
+  }else
+  {
+    assert( 0 );
+  }
+#elif( USE_TERMINAL_WIDGET )
+  handleTerminalWindowClose();
+#elif( USE_REL_ACT_TOOL )
+  handleRelActManualClose();
+  static_assert( 0, "Need to update handleToolTabClosed logic" );
+#endif
+}//void handleToolTabClosed( const int tabnum )
+#endif
+
 
 void InterSpec::addToolsMenu( Wt::WWidget *parent )
 {
@@ -7391,8 +7598,29 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   PopupDivMenuItem *item = NULL;
 
   item = popup->addMenuItem( "Activity/Shielding Fit" );
-  HelpSystem::attachToolTipOn( item,"Allows advanced input of shielding material and activity around source isotopes to improve the fit." , showToolTips );
+  HelpSystem::attachToolTipOn( item,
+                              "Tool to fit for the activity and shielding of nuclides in the spectrum.<br />"
+                              "Also contains capabilities to determine nuclide ages, contamination"
+                              " concentrations, or enrichments.", showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showShieldingSourceFitWindow, this ) );
+ 
+#if( USE_REL_ACT_TOOL )
+  m_relActAutoMenuItem = popup->addMenuItem( "Isotopics by nuclides" );
+  HelpSystem::attachToolTipOn( m_relActAutoMenuItem,
+                              "UNDER DEVELOPMENT."
+                              " Automatically fits nuclides peaks to allow determining the relative"
+                              " activities of nuclides.  Does not require knowing the detector"
+                              " response or shielding information." , showToolTips );
+  m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::showRelActAutoWindow, this ) );
+  
+  m_relActManualMenuItem = popup->addMenuItem( "Isotopics from peaks" );
+  HelpSystem::attachToolTipOn( m_relActManualMenuItem,
+                              "UNDER DEVELOPMENT."
+                              " Uses the peaks you have fit to determine the relative activities of"
+                              " nuclides.  Does not require knowing the detector response or"
+                              " shielding information." , showToolTips );
+  m_relActManualMenuItem->triggered().connect( boost::bind( &InterSpec::createRelActManualWidget, this ) );
+#endif
   
   item = popup->addMenuItem( "Gamma XS Calc", "" );
   HelpSystem::attachToolTipOn( item,"Allows user to determine the cross section for gammas of arbitrary energy though any material in <code>InterSpec</code>'s library. Efficiency estimates for detection of the gamma rays inside the full energy peak and the fraction of gamma rays that will make it through the material without interacting with it can be provided with the input of additional information.", showToolTips );
@@ -7526,11 +7754,12 @@ void InterSpec::initMaterialDbAndSuggestions()
     WSuggestionPopup::Options popupOptions;
     popupOptions.highlightBeginTag  = "<b>";          //Open tag to highlight a match in a suggestion.
     popupOptions.highlightEndTag    = "</b>";         //Close tag to highlight a match in a suggestion.
-    popupOptions.listSeparator      = ',';            //(char) When editing a list of values, the separator used for different items.
-    popupOptions.whitespace         = " \\t()";       //When editing a value, the whitespace characters ignored before the current value.
-    popupOptions.wordSeparators     = "-_., ;()";     //To show suggestions based on matches of the edited value with parts of the suggestion.
-    popupOptions.appendReplacedText = "";             //When replacing the curr
-    m_shieldingSuggestion = new WSuggestionPopup( popupOptions );
+    popupOptions.listSeparator      = '\0';            //(char) When editing a list of values, the separator used for different items.
+    popupOptions.whitespace         = "";       //When editing a value, the whitespace characters ignored before the current value.
+    //popupOptions.wordSeparators     = "-_., ;()";     //To show suggestions based on matches of the edited value with parts of the suggestion.
+    popupOptions.wordStartRegexp = "\\s|^|\\(|\\<";       // Instead of using .wordSeparators, we will use the regex option to start matching at whitespaces, start of line, open-paren, and boundaries of words (probably a bit duplicative).
+    popupOptions.appendReplacedText = "";             //
+    m_shieldingSuggestion = new WSuggestionPopup( popupOptions, this );
     m_shieldingSuggestion->addStyleClass("suggestion");
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
     m_shieldingSuggestion->setJavaScriptMember("wtNoReparent", "true");
@@ -7722,11 +7951,10 @@ void InterSpec::saveShieldingSourceModelToForegroundSpecMeas()
   
   m_shieldingSourceFit->serialize( doc.get() );
   
-  //rapidxml::print(std::back_inserter(xml_data), *doc, 0);
-  //cout << "\n\nsaveShieldingSourceModelToForegroundSpecMeas Model: " << xml_data << endl << endl;
-  
   m_dataMeasurement->setShieldingSourceModel( std::move(doc) );
 }//void saveShieldingSourceModelToForegroundSpecMeas()
+
+
 
 void InterSpec::closeShieldingSourceFitWindow()
 {
@@ -9467,7 +9695,7 @@ void InterSpec::searchForSinglePeak( const double x )
     throw runtime_error( "InterSpec::searchForSinglePeak(...): "
                         "shoudnt be called if peak model isnt set.");
   
-  std::shared_ptr<SpecUtils::Measurement> data = m_spectrum->data();
+  std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
   
   if( !m_dataMeasurement || !data )
     return;
@@ -9493,7 +9721,7 @@ void InterSpec::searchForSinglePeak( const double x )
   }//if( m_peakModel->peaks() )
   
   pair< PeakShrdVec, PeakShrdVec > foundPeaks;
-  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks );
+  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, det );
   
   //cerr << "Found " << foundPeaks.first.size() << " peaks to add, and "
   //     << foundPeaks.second.size() << " peaks to remove" << endl;
@@ -9628,6 +9856,7 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
             = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
   
   std::weak_ptr<const SpecUtils::Measurement> weakdata = m_spectrum->data();
+  auto drf = data->detector();
   std::weak_ptr<SpecMeas> spectrum = data;
   
   boost::function<void(void)> callback = wApp->bind(
@@ -9635,10 +9864,15 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                 this, spectrum, samples, origPeaks, searchresults) );
   
   boost::function<void(void)> worker = boost::bind( &PeakSearchGuiUtils::search_for_peaks_worker,
-                                                   weakdata, origPeaks,
-                                                   vector<ReferenceLineInfo>(), false,
+                                                   weakdata,
+                                                   drf, 
+                                                   origPeaks,
+                                                   vector<ReferenceLineInfo>(),
+                                                   false,
                                                    searchresults,
-                                                   callback, wApp->sessionId(), true );
+                                                   callback,
+                                                   wApp->sessionId(),
+                                                   true );
 
   if( m_findingHintPeaks )
   {
@@ -9736,66 +9970,6 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
 //  existing
 }//void setHintPeaks(...)
 
-
-
-
-/*
- //Depreciated 20150204 by wcjohns in favor of calling 
- //  InterSpec::findPeakFromControlDrag()
-void InterSpec::findPeakFromUserRange( double x0, double x1 )
-{
-  if( !m_peakModel )
-    throw runtime_error( "SpectrumDisplayDiv::findPeakFromUserRange(...): "
-                        "shoudnt be called if peak model isnt set.");
-  
-  std::shared_ptr<SpecUtils::Measurement> data = m_spectrum->data();
-  
-  if( !data )
-  {
-    passMessage( "No spectrum data", WarningWidget::WarningMsgMedium );
-    return;
-  }
-    
-  if( x0 > x1 )
-    swap( x0, x1 );
-  
-  //round to the edges of the bins the drag action was from
-  const size_t lowerchannel = data->find_gamma_channel( x0 );
-  const size_t upperchannel = data->find_gamma_channel( x1 );
-  x0 = data->gamma_channel_lower( lowerchannel );
-  x1 = data->gamma_channel_upper( upperchannel );
-  
-  PeakDef peak( 0.0, 0.0, 0.0 );
-  peak.setMean( 0.5*(x0+x1) );
-  peak.setSigma( (x1-x0)/8.0 );
-  std::shared_ptr<PeakContinuum> continuum = peak.continuum();
-  
-  continuum->calc_linear_continuum_eqn( data, x0, x1, 1 );
-  
-  const double data_area = data->gamma_channels_sum( lowerchannel, upperchannel );
-  const double continuum_area = peak.offset_integral( x0, x1 );
-  peak.setAmplitude( data_area - continuum_area );
-  
-  std::vector<PeakDef> peakV;
-  peakV.push_back( peak );
-  
-  const double stat_threshold = 0.5;
-  const double hypothesis_threshold = 0.5;
-  
-  //XXX - we promised the user to use a given continuum, however the below only
-  //      uses this as a starting point
-  peakV = fitPeaksInRange( x0+0.00001, x1-0.00001, 0,
-                           stat_threshold, hypothesis_threshold,
-                           peakV, data, m_peakModel->peakVec() );
-  
-  for( size_t i = 0; i < peakV.size(); ++i )
-    addPeak( peakV[i], true );
-    
-  if( peakV.size()==0 )
-    passMessage( "No peaks were found. You might try a slighlty changed ROI "
-                 "region.", WarningWidget::WarningMsgLow );
-}//void findPeakFromUserRange( const double x0, const double x1 )
-*/
 
 void InterSpec::excludePeaksFromRange( double x0, double x1 )
 {

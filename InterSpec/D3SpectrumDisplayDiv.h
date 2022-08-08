@@ -23,6 +23,7 @@
 class SpecMeas;
 class PeakModel;
 class InterSpec;
+class ColorTheme;
 class SpectrumDataModel;
 namespace Wt
 {
@@ -56,6 +57,7 @@ public:
   D3SpectrumDisplayDiv( Wt::WContainerWidget *parent = 0 );
   virtual ~D3SpectrumDisplayDiv();
   
+  
   //setTextInMiddleOfChart(...): draws some large text over the middle of the
   //  chart - used int the spectrum quizzer for text based questions.
   void setTextInMiddleOfChart( const Wt::WString &s );
@@ -71,28 +73,69 @@ public:
   Wt::Signal<double/*keV*/,double/*counts*/,int/*pageX*/,int/*pageY*/> &chartClicked();
   Wt::Signal<double/*kev*/,double/*counts*/,int/*pageX*/,int/*pageY*/> &rightClicked();
   Wt::Signal<double/*keV*/,double/*counts*/> &doubleLeftClick();
-  Wt::Signal<double/*keV start*/,double/*keV end*/> &controlKeyDragged();
   Wt::Signal<double/*keV start*/,double/*keV end*/> &shiftKeyDragged();
   
+  /** When a previously existing ROI gets dragged by its edge, this signal will be emitted as it
+   is being dragged, as well as when the mouse is finally let up.
+   
+   Note that by default #performExistingRoiEdgeDragWork is not hooked up to this signal, which you
+   want to do for the primary spectrum display in InterSpec
+   
+   \sa performExistingRoiEdgeDragWork
+   */
   Wt::Signal<double /*new roi lower energy*/,
              double /*new roi upper energy*/,
              double /*new roi lower px*/,
              double /*new roi upper px*/,
              double /*original roi lower energy*/,
-             bool /*isFinalRange*/> &roiDragUpdate();
+             bool /*isFinalRange*/> &existingRoiEdgeDragUpdate();
   
+  /** When a ROI is being created by holding the ctrl-key and dragging, this signal is emitted as
+   as the user drags, and when the user lets up.
+   
+   Note that by default #performDragCreateRoiWork is not hooked up to the signal, which you want
+   to do for the primary spectrum display in InterSpec
+   
+   \sa performDragCreateRoiWork
+   */
   Wt::Signal<double /*lower energy*/,
              double /*upper energy*/,
              int    /*num peaks to force*/,
-             bool /*isFinalRange*/> &fitRoiDragUpdate();
+             bool /*isFinalRange*/,
+             double /*window_xpx*/,
+             double /*window_ypx*/> &dragCreateRoiUpdate();
   
   Wt::Signal<double,SpecUtils::SpectrumType> &yAxisScaled();
   
+  
+  /** Performs the work for the primary spectrum display in InterSpec that causes the peaks
+   in an existing ROI to get re-fit as the user drags the edge.  To get this behavior, you
+   need to hook this function up to the #existingRoiEdgeDragUpdate() signal.
+   */
+  void performExistingRoiEdgeDragWork( double new_lower_energy, double new_upper_energy,
+                                      double new_lower_px, double new_upper_px,
+                                      double original_lower_energy,
+                                      bool isfinal );
+  
+  /** Does the the work for the primary spectrum display in InterSpec that lets you ctrl-drag
+   to define a ROI with peaks in it.  To enable this functionality, you must hook this function
+   up to the #dragCreateRoiUpdate() signal.
+   
+   \sa dragCreateRoiUpdate
+   */
+  void performDragCreateRoiWork( double lower_energy, double upper_energy,
+                                int npeaks, bool isfinal,
+                                double window_xpx, double window_ypx );
+  
+  
+  
+  
+  
   void setPeakModel( PeakModel *model );
   
-  void setData( std::shared_ptr<SpecUtils::Measurement> data_hist, const bool keep_curent_xrange );
-  void setSecondData( std::shared_ptr<SpecUtils::Measurement> hist );
-  void setBackground( std::shared_ptr<SpecUtils::Measurement> background );
+  void setData( std::shared_ptr<const SpecUtils::Measurement> data_hist, const bool keep_curent_xrange );
+  void setSecondData( std::shared_ptr<const SpecUtils::Measurement> hist );
+  void setBackground( std::shared_ptr<const SpecUtils::Measurement> background );
   
   void scheduleUpdateForeground();
   void scheduleUpdateBackground();
@@ -103,6 +146,8 @@ public:
    next call to #render (which Wt takes care of calling).
    */
   void scheduleForegroundPeakRedraw();
+  
+  void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
   
   void setForegroundSpectrumColor( const Wt::WColor &color );
   void setBackgroundSpectrumColor( const Wt::WColor &color );
@@ -115,11 +160,8 @@ public:
   
   
   // These 8 functions retrieve the corresponding info from the model.
-  std::shared_ptr<SpecUtils::Measurement> data();
   std::shared_ptr<const SpecUtils::Measurement> data()       const;
-  std::shared_ptr<SpecUtils::Measurement> secondData();
   std::shared_ptr<const SpecUtils::Measurement> secondData() const;
-  std::shared_ptr<SpecUtils::Measurement> background();
   std::shared_ptr<const SpecUtils::Measurement> background() const;
   
   float foregroundLiveTime() const;
@@ -178,6 +220,7 @@ public:
   size_t addDecorativeHighlightRegion( const float lowerx,
                                       const float upperx,
                                       const Wt::WColor &color );
+  void removeAllDecorativeHighlightRegions();
   
   //For the case of auto-ranging x-axis, the below _may_ return 0 when auto
   //  range is set, but chart hasnt been rendered  (although maybe +-DBL_MAX)
@@ -245,6 +288,7 @@ public:
    */
   void highlightPeakAtEnergy( const double energy );
   
+  void updateRoiBeingDragged( const std::vector<std::shared_ptr<const PeakDef> > &roiBeingDragged );
   
   void removeAllPeaks();
   
@@ -290,7 +334,9 @@ protected:
     UpdateBackgroundSpectrum = 0x04,
     UpdateSecondarySpectrum = 0x08,
     
-    ResetXDomain = 0x10
+    ResetXDomain = 0x10,
+    
+    UpdateHighlightRegions = 0x20
     
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
@@ -324,23 +370,23 @@ protected:
   // JSignals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
   //  where x is in energy, and y is in counts.
-  boost::scoped_ptr<Wt::JSignal<double, double> > m_shiftKeyDraggJS;
-  boost::scoped_ptr<Wt::JSignal<double, double> > m_shiftAltKeyDraggJS;
-  boost::scoped_ptr<Wt::JSignal<double, double> > m_rightMouseDraggJS;
-  boost::scoped_ptr<Wt::JSignal<double, double> > m_doubleLeftClickJS;
-  boost::scoped_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_leftClickJS;
-  boost::scoped_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_rightClickJS;
+  std::unique_ptr<Wt::JSignal<double, double> > m_shiftKeyDraggJS;
+  std::unique_ptr<Wt::JSignal<double, double> > m_shiftAltKeyDraggJS;
+  std::unique_ptr<Wt::JSignal<double, double> > m_rightMouseDraggJS;
+  std::unique_ptr<Wt::JSignal<double, double> > m_doubleLeftClickJS;
+  std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_leftClickJS;
+  std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_rightClickJS;
   /** Currently including chart area in pixels in xRange changed from JS; this
       size in pixels is only approximate, since chart may not have been totally layed out
       and rendered when this signal was emmitted.
    ToDo: Should create dedicated signals for chart size in pixel, and also Y-range.
    */
-  boost::scoped_ptr<Wt::JSignal<double,double,double,double> > m_xRangeChangedJS;
-  boost::scoped_ptr<Wt::JSignal<double,double,double,double,double,bool> > m_roiDraggedJS;
-  boost::scoped_ptr<Wt::JSignal<double,double,int,bool,double,double> > m_fitRoiDragJS;
-  boost::scoped_ptr<Wt::JSignal<double,std::string> > m_yAxisDraggedJS;
+  std::unique_ptr<Wt::JSignal<double,double,double,double> > m_xRangeChangedJS;
+  std::unique_ptr<Wt::JSignal<double,double,double,double,double,bool> > m_existingRoiEdgeDragJS;
+  std::unique_ptr<Wt::JSignal<double,double,int,bool,double,double> > m_dragCreateRoiJS;
+  std::unique_ptr<Wt::JSignal<double,std::string> > m_yAxisDraggedJS;
   
-  boost::scoped_ptr<Wt::JSignal<> > m_legendClosedJS;
+  std::unique_ptr<Wt::JSignal<> > m_legendClosedJS;
   
   // Wt Signals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
@@ -361,12 +407,14 @@ protected:
              double /*new roi lower px*/,
              double /*new roi upper px*/,
              double /*original roi lower energy*/,
-             bool /*isFinalRange*/> m_roiDrag;
+             bool /*isFinalRange*/> m_existingRoiEdgeDrag;
   
   Wt::Signal<double /*lower energy*/,
              double /*upper energy*/,
              int /*force n peaks*/,
-             bool /*isFinalRange*/> m_fitRoiDrag;
+             bool /*isFinalRange*/,
+             double /*window_xpx*/,
+             double /*window_ypx*/> m_dragCreateRoi;
   
   Wt::Signal<double,SpecUtils::SpectrumType> m_yAxisScaled;
   
@@ -378,21 +426,15 @@ protected:
   void chartDoubleLeftClickCallback( double x, double y );
   void chartRightClickCallback( double x, double y, double pageX,
                                 double pageY );
-  void chartRoiDragedCallback( double new_lower_energy, double new_upper_energy,
-                               double new_lower_px, double new_upper_px,
-                               double original_lower_energy,
-                               bool isfinal );
-  void chartFitRoiDragCallback( double lower_energy, double upper_energy,
+  
+  void existingRoiEdgeDragCallback( double new_lower_energy, double new_upper_energy,
+                                           double new_lower_px, double new_upper_px,
+                                           double original_lower_energy,
+                                           bool isfinal );
+  
+  void dragCreateRoiCallback( double lower_energy, double upper_energy,
                                 int npeaks, bool isfinal,
                                 double window_xpx, double window_ypx );
-  
-  /** Does the real work of #chartFitRoiDragCallback, but has extra argument to control if work is done synchronously or
-   asynchronously.  For normal gui operations you want asynchronously, but for testing you want synchronously.
-   */
-  void chartFitRoiDragCallbackWorker( double lower_energy, double upper_energy,
-                               int npeaks, bool isfinal,
-                               double window_xpx, double window_ypx, const bool allowAsync );
-  
   
   void yAxisScaled( const double scale, const std::string &spectrum );
   

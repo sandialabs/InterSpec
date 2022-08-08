@@ -113,7 +113,7 @@ option(
     "Use MySQL database to store user preferences and spectra"
     OFF
 )
-option(USE_GOOGLE_MAP "Use google maps widget" ON)
+option(USE_GOOGLE_MAP "Use google maps widget" OFF)
 
 option(
     USE_CSS_FLEX_LAYOUT
@@ -122,6 +122,7 @@ option(
 )
 
 option(USE_REMOTE_RID "Enables using remote RID tool" OFF)
+option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
 if(MSVC)
   option(${PROJECT_NAME}_USE_MSVC_MultiThreadDLL "Use dynamically-link runtime library." OFF)
@@ -247,7 +248,6 @@ if(IOS)
     SET(CMAKE_MODULE_PATH ${Boost_DIR} ${CMAKE_MODULE_PATH} )
     set(SHARED_LIBS OFF)
     set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${Boost_DIR})
-    set(USE_GOOGLE_MAP OFF)
 
     #if you change this IPHONEOS_DEPLOYMENT_TARGET also change the variable in
     # iosbuild.rb everywhere, and in the Xcode project.
@@ -286,7 +286,6 @@ if(BUILD_FOR_WEB_DEPLOYMENT)
     #    set( USE_SQLITE3_DB ON )
     #    set( USE_MYSQL_DB OFF )
     set(DATABASE_PASSWORD_FILE "/path/to/passwords/databases.xml")
-    set(USE_GOOGLE_MAP OFF)
     set(PERFORM_DEVELOPER_CHECKS OFF)
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
     set(USE_TERMINAL_WIDGET OFF)
@@ -575,6 +574,66 @@ if( USE_REMOTE_RID )
 endif( USE_REMOTE_RID )
 
 
+if( USE_REL_ACT_TOOL )
+  list( APPEND sources
+        src/PeakFitLM.cpp
+        src/RelActCalc.cpp
+        src/RelActCalcAuto.cpp
+        src/RelActCalcManual.cpp
+        src/RelActAutoGui.cpp
+        src/RelActManualGui.cpp
+        src/RelActTxtResults.cpp
+        src/RelEffChart.cpp
+  )
+  
+  list( APPEND headers
+        InterSpec/PeakFitLM.h
+        InterSpec/RelActCalc.h
+        InterSpec/RelActCalcAuto.h
+        InterSpec/RelActCalcManual.h
+        InterSpec/RelActAutoGui.h
+        InterSpec/RelActManualGui.h
+        InterSpec/RelActTxtResults.h
+        InterSpec/RelEffChart.h
+  )
+  
+  include(FetchContent)
+  
+  # Make sure we use only MPL2 licensed (Mozillas non-copyleft) Eigen code (not LGPL-2.1)
+  add_compile_options( -DEIGEN_MPL2_ONLY )
+  
+  # Set some eigen options
+  set( EIGEN_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" )
+  set( EIGEN_BUILD_DOC OFF CACHE INTERNAL "" )
+  set( EIGEN_BUILD_TESTING OFF CACHE INTERNAL "" )
+  #set( Eigen3_DIR "${FETCHCONTENT_BASE_DIR}/..." CACHE INTERNAL "" )
+  
+  FetchContent_Declare(
+    eigen
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG        3147391d946bb4b6c68edd901f2add6ac1f31f8c # release-3.4.0
+  )
+  
+  # Set some Google Ceres options; both to allow compiling without further dependancies, and
+  #  avoid some things we dont need
+  set( MINIGLOG ON CACHE INTERNAL "" )
+  set( GFLAGS OFF CACHE INTERNAL "" )
+  set( CXSPARSE OFF CACHE INTERNAL "" )
+  set( ACCELERATESPARSE OFF CACHE INTERNAL "" )
+  set( CUDA OFF CACHE INTERNAL "" )
+  set( EXPORT_BUILD_DIR ON CACHE INTERNAL "" )
+  set( BUILD_TESTING OFF CACHE INTERNAL "" )
+  set( BUILD_EXAMPLES OFF CACHE INTERNAL "" )
+  set( PROVIDE_UNINSTALL_TARGET OFF CACHE INTERNAL "" )
+  FetchContent_Declare(
+    ceres-solver
+    GIT_REPOSITORY https://ceres-solver.googlesource.com/ceres-solver
+    GIT_TAG        783637a6ed285abc6c57b16ccd968c594a91b35f # release-2.1.0
+  )
+  FetchContent_MakeAvailable(eigen ceres-solver)
+endif( USE_REL_ACT_TOOL )
+
+
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)
 
@@ -589,6 +648,7 @@ list( APPEND OTHER_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources
 
 deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
          "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js"
+         
 )
 
 set(CSS_RESOURCES_TO_COPY
@@ -742,6 +802,12 @@ if(INCLUDE_ANALYSIS_TEST_SUITE)
   target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
 endif(INCLUDE_ANALYSIS_TEST_SUITE)
 
+
+if( USE_REL_ACT_TOOL )
+  target_link_libraries(InterSpecLib PUBLIC Eigen3::Eigen Ceres::ceres )
+endif( USE_REL_ACT_TOOL )
+
+
 if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
     # Setting Xcode working directory requires cmake 3.17
     if( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
@@ -892,6 +958,7 @@ list(
     APPEND
     OTHER_SUPPORT_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DecayChainChart.js
+    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/RelEffPlot.js
 )
 
 FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml)

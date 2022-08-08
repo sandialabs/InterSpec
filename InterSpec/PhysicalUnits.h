@@ -268,7 +268,7 @@ namespace PhysicalUnits
    - (1.23457, 0.897654, 4) -> '1.235 ± 0.898'
    - (1.23457, 8.97654e-06, 1) -> '1 ± 0'
    */
-  std::string printValueWithUncertainty( double value, double uncert, int nsigfig );
+  std::string printValueWithUncertainty( double value, double uncert, size_t nsigfig );
 
   /** Prints the most compact string representation of the value, with at least the specified
    number of significant figures; if more significant figures can be included without increasing

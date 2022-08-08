@@ -420,8 +420,13 @@ class ShieldingSourceChi2Fcn
 //  Mass fraction is then ...
   
 public:
-  //Inorder to keep numbers roughly where Minuit2 can handle them, we
-  //  have to work in units of 1.0E6 becquerel
+  /** In order to keep numbers roughly where Minuit2 can handle them, we have to work in units of
+   1.0E6 becquerel.  E.g., for like plutonium problems, some of the branching rations of 1E-11 are
+   still significant to the problem, so to avoid losing accuracy in decay calculations, we will
+   multiply things  a bit.
+   
+   \sa ns_decay_act_mult in RelActCalcAuto.cpp
+   */
   static const double sm_activityUnits;  //SandiaDecay::MBq
 
 
@@ -734,13 +739,9 @@ public:
 
   static void selfShieldingIntegration( DistributedSrcCalc &calculator );
 
-protected:
-  
-  void zombieCallback( const boost::system::error_code &ec );
-
   //observedPeakEnergyWidths(): get energy sorted pairs of peak means and widths
   static std::vector< std::pair<double,double> > observedPeakEnergyWidths(
-                                           const std::vector<PeakDef> &peaks );
+                                                              const std::vector<PeakDef> &peaks );
 
   //cluster_peak_activities(...): clusters the number of decays per second
   //  by energies.  If photopeakClusterSigma>0.0, then all gamma lines nearby
@@ -778,6 +779,9 @@ protected:
                               const std::vector<PeakDef> &backgroundPeaks,
                               const std::map<double,double> &energy_count_map,
                               std::vector<std::string> *info = 0 );
+protected:
+  
+  void zombieCallback( const boost::system::error_code &ec );
 
 
 protected:

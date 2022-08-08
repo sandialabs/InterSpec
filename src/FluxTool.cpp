@@ -943,6 +943,11 @@ void FluxToolWidget::init()
   m_distance = new WLineEdit( "100 cm", distCell );
   m_distance->addStyleClass( "FluxDistanceEnter" );
   label->setBuddy(m_distance);
+#if( BUILD_AS_OSX_APP || IOS )
+  m_distance->setAttributeValue( "autocorrect", "off" );
+  m_distance->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   validator->setFlags( Wt::MatchCaseInsensitive );
   m_distance->setValidator( validator );

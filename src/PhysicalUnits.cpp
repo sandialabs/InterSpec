@@ -98,15 +98,21 @@ const char * const sm_activityUnitOptionalRegex
 const char * const sm_timeDurationRegex
   = "\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)|(" DURATION_REGEX "\\s*)\\s*)|(" ISO_8601_DURATION_REGEX "\\s*)+";
   
+// Note: (at least as of Wt 3.7.1) the RegEx validator expects the first match group to match the
+//       entire string, not just a subset - so fir example with an input string of "2.5 hl", we need
+//       to keep this from matching with "2.5 h" (which given the half-live optional component is
+//       last in the regex, will happen), so we force the the regex to have start at beginning of
+//       input string, and go to the end of the string, which I guess we should do for any of the
+//       WRegExpValidator's.
 const char * const sm_timeDurationHalfLiveOptionalRegex
-   = "\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
-     "|(" DURATION_REGEX "\\s*)"
-     "|(" POS_DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*))+";
+= "^\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
+  "|(" DURATION_REGEX "\\s*)"
+  "|(" POS_DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*))+$";
 
 const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex
-   = "\\s*((" DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
+   = "^\\s*((" DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
      "|(" DURATION_REGEX_POS_NEG "\\s*)"
-     "|(" DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*))+";
+     "|(" DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*))+$";
 
 
 
@@ -1177,11 +1183,11 @@ double stringToEquivalentDose( const std::string &str, const double sievert_defi
 }//double stringToEquivalentDose( std::string str, double gray_definition )
 
 
-std::string printValueWithUncertainty( double value, double uncert, int nsigfig )
+std::string printValueWithUncertainty( double value, double uncert, size_t unsigfig )
 {
   // We will explicitly round value/uncert, 
   //cout << "Value=" << value << ", uncert=" << uncert << ", nsigfig=" << nsigfig << endl;
-  nsigfig = std::max(1,nsigfig);
+  const int nsigfig = std::max(1,static_cast<int>(unsigfig));
   
   //Get the exponent
   double valorder = std::floor( std::log10(value) );  //1.2345E-06 will give value -6

@@ -293,15 +293,26 @@ public:
 #endif
   
   
-  /** Returns the shielding source model associated with thsi SpecMeas
-      Be carefule, as you should take a lock on this SpecMeass mutex to
-      make sure another thread doesnt change the model on you.
+  /** Returns the shielding source model associated with this SpecMeas
+      Be careful, as you should take a lock on this SpecMeas mutex to
+      make sure another thread doesn't change the model on you.
    */
   rapidxml::xml_document<char> *shieldingSourceModel();
   
   /** Sets the shielding source model that was serialized by the gui. */
   void setShieldingSourceModel( std::unique_ptr<rapidxml::xml_document<char>> &&model );
   
+#if( USE_REL_ACT_TOOL )
+  rapidxml::xml_document<char> *relActManualGuiState();
+  
+  /** Sets the XML for the GUI state of the maual Rel. Act. widget. */
+  void setRelActManualGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model );
+  
+  rapidxml::xml_document<char> *relActAutoGuiState();
+  
+  /** Sets the XML for the GUI state of the auto Rel. Act. widget. */
+  void setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model );
+#endif //#if( USE_REL_ACT_TOOL )
 
 protected:
   //m_peaks: is only accessed by the PeakModel class - it shouldnt be set or
@@ -342,6 +353,11 @@ protected:
 //  SampleNumsToPeakMap m_autoSearchInitialPeaks;
   
   std::unique_ptr<rapidxml::xml_document<char>> m_shieldingSourceModel;
+  
+#if( USE_REL_ACT_TOOL )
+  std::unique_ptr<rapidxml::xml_document<char>> m_relActManualGuiState;
+  std::unique_ptr<rapidxml::xml_document<char>> m_relActAutoGuiState;
+#endif
   
   Wt::Signal<> m_aboutToBeDeleted;
   

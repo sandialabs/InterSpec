@@ -67,7 +67,6 @@ class DetectorPeakResponse;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
-class SimpleNuclideAssistPopup;
 class ReferencePhotopeakDisplay;
 class LicenseAndDisclaimersWindow;
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
@@ -82,6 +81,11 @@ class RemoteRid;
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 class SpectrumViewerTester;
+#endif
+
+#if( USE_REL_ACT_TOOL )
+class RelActAutoGui;
+class RelActManualGui;
 #endif
 
 namespace SpecUtils{ class SpecFile; }
@@ -192,14 +196,6 @@ public:
   void findAndSetExcludedSamples( std::set<int> definetly_keep_samples );
 
 #if( SpecUtils_ENABLE_D3_CHART )
-  //print_d3_json(): Output data from current user chart data to JSON
-  //  format to be used for running D3.js HTML files.
-  std::string print_d3_json() const;
-  
-  //print_d3_reference_gammas(): Output data from current reference gammas
-  //  displayed on the chart to JSON format to be used for rendering
-  //  reference gammas in D3.js HTML files.
-  std::string print_d3_reference_gammas() const;
   
   //getD3SpectrumOptions(): Output current chart options to a struct
   //  to provide the same "state" of the current user session to
@@ -310,7 +306,7 @@ public:
 
   //addPeak(): Adds a new peak to the peak model, and returns the models index
   //  of the new peak. If associateShownNucXrayRctn is specified true _and_ the
-  //  user is showwing some reference gamma lines, than the new peak will be
+  //  user is showing some reference gamma lines, than the new peak will be
   //  assigned to be from the shown lines if and are reasonably close.
   //  If the returned WModelIndex is not valid, then the peak was not added.
   Wt::WModelIndex addPeak( PeakDef peak, const bool associateShownNucXrayRctn );
@@ -669,10 +665,28 @@ public:
   void handleTerminalWindowClose();
 #endif
   
+
 #if( USE_REMOTE_RID )
   void createRemoteRidWindow();
   void handleRemoteRidClose();
 #endif
+
+
+#if( USE_REL_ACT_TOOL )
+  void showRelActAutoWindow();
+  void handleRelActAutoClose();
+  
+  void createRelActManualWidget();
+  void handleRelActManualClose();
+  
+  void saveRelActManualStateToForegroundSpecMeas();
+  void saveRelActAutoStateToForegroundSpecMeas();
+#endif
+  
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+  void handleToolTabClosed( const int tabnum );
+#endif
+  
 
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
@@ -934,12 +948,6 @@ public:
                      std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks );
   
   
-  //findPeakFromUserRange(): Depreciated 20150204 by wcjohns in favor of calling
-  // InterSpec::findPeakFromControlDrag().  Keeping around JIC for a little
-  // while.
-  //void findPeakFromUserRange( double x0, double x1 );
-  
-  
   void excludePeaksFromRange( double x0, double x1 );
   
   //guessIsotopesForPeaks(): makes a best guess for which isotopes are
@@ -1149,6 +1157,16 @@ protected:
   ShieldingSourceDisplay *m_shieldingSourceFit;
   AuxWindow              *m_shieldingSourceFitWindow;
   std::shared_ptr<MaterialDB> m_materialDB;
+  
+#if( USE_REL_ACT_TOOL )
+  RelActAutoGui          *m_relActAutoGui;
+  AuxWindow              *m_relActAutoWindow;
+  PopupDivMenuItem       *m_relActAutoMenuItem;
+  
+  RelActManualGui        *m_relActManualGui;
+  AuxWindow              *m_relActManualWindow;
+  PopupDivMenuItem       *m_relActManualMenuItem;
+#endif
 
   //m_nuclideSearchWindow: only valid when in tool tabs are hidden, and the user
   //  currently has the window nuclide search window open.

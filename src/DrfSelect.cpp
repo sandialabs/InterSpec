@@ -1870,6 +1870,12 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_directoryEdit->setText( directory );
   m_directoryEdit->setTextSize( 48 );
   
+#if( BUILD_AS_OSX_APP || IOS )
+  m_directoryEdit->setAttributeValue( "autocorrect", "off" );
+  m_directoryEdit->setAttributeValue( "spellcheck", "off" );
+#endif
+
+  
   topdiv->addWidget( m_setDirectoryButton );
   m_setDirectoryButton->setMargin( 5, Wt::Left );
   m_setDirectoryButton->disable();
@@ -2405,8 +2411,14 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   WLabel *label = new WLabel( "Enter detector diameter or upload Detector.dat file:", m_detectrDiameterDiv );
   label->setInline( false );
 
-  new WLabel( "Detector Diameter:", m_detectrDiameterDiv );
+  label = new WLabel( "Detector Diameter:", m_detectrDiameterDiv );
   m_detectorDiameter = new WLineEdit( "0 cm", m_detectrDiameterDiv );
+  label->setBuddy( m_detectorDiameter );
+
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detectorDiameter->setAttributeValue( "autocorrect", "off" );
+  m_detectorDiameter->setAttributeValue( "spellcheck", "off" );
+#endif
   
   m_detectorDiameter->setValidator( distValidator );
   m_detectorDiameter->setTextSize( 10 );
@@ -2416,8 +2428,15 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   
   m_uploadedDetNameDiv = new WContainerWidget( m_detectrDiameterDiv );
-  new WLabel( "Name:", m_uploadedDetNameDiv );
+  label = new WLabel( "Name:", m_uploadedDetNameDiv );
   m_uploadedDetName = new WLineEdit( m_uploadedDetNameDiv );
+  label->setBuddy( m_uploadedDetName );
+  
+#if( BUILD_AS_OSX_APP || IOS )
+  m_uploadedDetName->setAttributeValue( "autocorrect", "off" );
+  m_uploadedDetName->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   m_uploadedDetName->textInput().connect( this, &DrfSelect::handleUserChangedUploadedDrfName );
   m_uploadedDetName->setTextSize( 30 );
   
@@ -2457,9 +2476,16 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   WTable *formulaTable = new WTable( formulaDiv );
   formulaTable->addStyleClass( "FormulaDrfTbl" );
   WTableCell *cell = formulaTable->elementAt( 0, 0 );
-  new WLabel("Detector name ", cell );
+  label = new WLabel("Detector name ", cell );
   cell = formulaTable->elementAt( 0, 1 );
   m_detectorManualFunctionName = new WLineEdit( cell );
+  label->setBuddy( m_detectorManualFunctionName );
+
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detectorManualFunctionName->setAttributeValue( "autocorrect", "off" );
+  m_detectorManualFunctionName->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   m_detectorManualFunctionName->setStyleClass("DrfSelectFunctionalFormText");
   m_detectorManualFunctionName->setText( manualdetname );
   m_detectorManualFunctionName->setEmptyText("Unique Detector Name");
@@ -2467,11 +2493,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualFunctionName->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
 
   cell = formulaTable->elementAt( 1, 0 );
-  new WLabel("Efficiency f(x) = ", cell );
+  label = new WLabel("Efficiency f(x) = ", cell );
   cell = formulaTable->elementAt( 1, 1 );
   cell->setRowSpan( 2 );
   m_detectorManualFunctionText = new WTextArea( cell );
   //m_detectorManualFunctionText->setColumns(60);
+  label->setBuddy( m_detectorManualFunctionText );
   
   m_detectorManualFunctionText->setRows(3);
   m_detectorManualFunctionText->setStyleClass("DrfSelectFunctionalFormText");
@@ -2496,23 +2523,33 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
                               showToolTips, HelpSystem::ToolTipPosition::Top );
 
   cell = formulaTable->elementAt( 3, 0 );
-  new WLabel("Description", cell );
+  label = new WLabel("Description", cell );
   cell = formulaTable->elementAt( 3, 1 );
   m_detectorManualDescription = new WLineEdit( cell );
+  label->setBuddy( m_detectorManualDescription );
   m_detectorManualDescription->setWidth( WLength(100,WLength::Percentage) );
   m_detectorManualDescription->setEmptyText( "Description of this detector response" );
   m_detectorManualDescription->changed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detectorManualDescription->setAttributeValue( "autocorrect", "off" );
+  m_detectorManualDescription->setAttributeValue( "spellcheck", "off" );
+#endif
   
   cell = formulaTable->elementAt( 4, 0 );
-  new WLabel("Detector diameter ", cell );
+  label = new WLabel("Detector diameter ", cell );
   cell = formulaTable->elementAt( 4, 1 );
   m_detectorManualDiameterText = new WLineEdit( cell );
+  label->setBuddy( m_detectorManualDiameterText );
   m_detectorManualDiameterText->setValidator( distValidator );
   m_detectorManualDiameterText->setText( diamtxt );
   m_detectorManualDiameterText->setEmptyText( diamtxt );
   m_detectorManualDiameterText->setValidator( distValidator );
   m_detectorManualDiameterText->blurred().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_detectorManualDiameterText->enterPressed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detectorManualDiameterText->setAttributeValue( "autocorrect", "off" );
+  m_detectorManualDiameterText->setAttributeValue( "spellcheck", "off" );
+#endif
   
   cell = formulaTable->elementAt( 5, 0 );
   cell->setColumnSpan( 2 );

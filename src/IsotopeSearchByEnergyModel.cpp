@@ -1339,7 +1339,7 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
       const auto data = workingspace->displayed_measurement;
       auto userpeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>( begin(user_peaks), end(user_peaks) );
       const bool singleThreaded = false;
-      auto_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, userpeaksdeque, singleThreaded );
+      auto_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, workingspace->detector_response_function, userpeaksdeque, singleThreaded );
       
       
       const std::set<int> samplenums = workingspace->foreground_samplenums;

@@ -332,7 +332,7 @@ void InterSpecApp::setupDomEnvironment()
   // Pre-load some CSS we will likely encounter anyway; avoids some glitching when loading new
   //  widgets.
   //  (The CSS wont be re-loaded later, so maybe we dont hurt anything doing it here too - maybe)
-  WServer::instance()->schedule( 500, sessionId(), [](){
+  WServer::instance()->schedule( 100, sessionId(), [](){
     wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
     
@@ -450,6 +450,10 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   
   m_layout->addWidget( m_viewer, 0, 0, 1, 1 );
   m_layout->setRowStretch( 0, 10 );
+  
+  // TODO: It seems sometimes when closing a AuxWindow that is modal, the grey background doesnt actually get hidden... not totally sure why, but we *could* maybe help this with the below - but I havent tested it doesnt have odd side-effects, so not currently enabling, but should consider
+  //globalEscapePressed().connect( "function(){$('.Wt-dialogcover').hide();}" );
+  
   
   bool loadedSpecFile = false;
   const Http::ParameterMap &parmap = environment().getParameterMap();

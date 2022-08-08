@@ -1,0 +1,413 @@
+.RelActAutoGui
+{
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+
+.RelActAutoGui .RelActAutoUpperArea
+{
+  height: 35%;
+  min-height: 225px;
+  
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+}
+
+.RelActAutoGui .UpperStack
+{
+  flex: 1 1 auto;
+  height: 100%;
+}
+
+.RelActAutoGui .D3SpectrumDisplayDiv, .RelActAutoGui .RelEffChart,  .RelActAutoGui .RelActTxtResults
+{
+  height: 100%;
+}
+
+.RelActAutoGui .UpperMenu
+{
+  padding-left: 2px;
+  padding-right:2px;
+  font-size: 13px;
+  overflow-y: auto;
+  
+  flex: 0 1 auto;
+}
+
+
+
+.RelActAutoGui .UpperMenu a
+{
+  /*
+   padding-left: 10px;
+   padding-right: 5px;
+   */
+}
+
+
+.RelActAutoGui ul.UpperMenu
+{
+  padding-inline-start: 0px;
+  list-style-type: none;
+  max-width: 40px;
+}
+
+.RelActAutoGui ul.UpperMenu li
+{
+  display: inline-block;
+  -webkit-writing-mode: vertical-lr;
+  writing-mode: vertical-rl;
+  writing-mode: tb-lr;
+  transform: scale(-1, -1);
+  white-space: nowrap;
+  height: 50px;
+  
+  font-weight: bold;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+  
+  text-align: center;
+}
+
+
+.RelActAutoGui .PresetsRow
+{
+  margin-top: 10px;
+  margin-bottom: 5px;
+  margin-left: 5px;
+  padding-left: 3px;
+}
+
+.RelActAutoGui .PresetsRow > label
+{
+  margin-right: 5px;
+}
+
+
+.RelActAutoGui .RelActAutoErrMsg, .RelActAutoGui .RelActAutoStatusMsg
+{
+  float: right;
+  display: inline-block;
+}
+
+.RelActAutoGui .RelActAutoErrMsg
+{
+  color: red;
+}
+
+.RelActAutoGui .RelActAutoStatusMsg
+{
+  background: red;
+  color: white;
+ 
+ /*
+  padding-right: 5px;
+  padding-left: 5px;
+  position: absolute;
+  right: 50%;
+  top: 40%;
+  height: 30px;
+  line-height: 30px;
+  padding-left: 8px;
+  padding-right: 8px;
+  text-align: center;
+  vertical-align: middle;
+  */
+}
+
+
+
+.RelActAutoGui .RelActAutoOptions
+{
+  margin-top: 5px;
+  margin-bottom: 5px;
+  margin-left: 5px;
+  margin-right: 5px;
+  
+  border: 1px solid #e1e1e1;
+  padding: 2px;
+  
+  display: grid;
+  
+  column-gap: 5px;
+  row-gap: 5px;
+  justify-items: start;
+  align-items: center;
+  justify-content: start;
+  
+  position: relative;
+}
+
+.RelActAutoGui .RelActAutoOptions > label
+{
+  margin-left: 10px;
+  justify-self: end;
+}
+
+
+.RelActAutoGui .MoreMenuIcon,
+.RelActAutoGui .MoreMenuIcon:hover
+{
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: none;
+  position: absolute;
+  top: 0px;
+  right: 0px;
+  padding: 0;
+  margin: 0;
+}
+
+.RelActAutoGui .MoreMenuIcon
+{
+  opacity: 0.55;
+}
+
+.RelActAutoGui .MoreMenuIcon:hover,
+.RelActAutoGui .MoreMenuIcon 
+{
+  opacity: 1;
+}
+
+.RelActAutoGui .EnergiesAndNuclidesHolder
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  
+  flex: 1 1 auto;
+  gap: 10px;
+  padding: 5px;
+  
+  overflow-y: hidden;
+}
+
+.RelActAutoGui .NuclidesHolder,
+.RelActAutoGui .EnergiesHolder,
+.RelActAutoGui .FreePeaksHolder
+{
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 50%;
+  
+  
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+
+.RelActAutoGui .FreePeaksHolder
+{
+  flex-grow: 0;
+  flex-basis: 200px;
+}
+
+
+.RelActAutoGui .EnergyNucHeader
+{
+  font-weight: bold;
+  display: block;
+  text-align: center;
+}
+
+
+.RelActAutoGui .EnergyNucContent
+{
+  flex: 1 1 auto;
+  
+  border: 1px solid #e1e1e1;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.RelActAutoGui .EnergyNucFooter
+{
+  border-left: 1px solid #e1e1e1;
+  border-right: 1px solid #e1e1e1;
+  border-bottom: 1px solid #e1e1e1;
+}
+
+
+.RelActAutoGui .AddEnergyRangeOrNuc, .RelActAutoGui .AddEnergyRangeOrNuc:hover,
+.RelActAutoGui .DeleteEnergyRangeOrNuc, .RelActAutoGui .DeleteEnergyRangeOrNuc:hover,
+.RelActAutoGui .ToIndividualRois, .RelActAutoGui .ToIndividualRois:hover
+{
+  opacity: 0.6;
+  
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0px;
+  margin: 2px;
+  margin-left: 5px;
+  width: 16px;
+  height: 21px;
+}
+
+.RelActAutoGui .AddEnergyRangeOrNuc:hover,
+.RelActAutoGui .DeleteEnergyRangeOrNuc:hover,
+.RelActAutoGui .ToIndividualRois:hover
+{
+  opacity: 1.0;
+}
+
+.RelActAutoGui .ToIndividualRois,
+.RelActAutoGui .ToIndividualRois:hover
+{
+  height: 18px;
+  width: 18px;
+  
+  justify-self: end;
+  align-self: end;
+  margin: 0px;
+}
+
+
+.RelActAutoGui .ToIndividualRois.Wt-disabled,
+.RelActAutoGui .ToIndividualRois.Wt-disabled:hover
+{
+  opacity: 0.15;
+  cursor: not-allowed;
+}
+
+
+.RelActAutoGui .ToIndividualRois img
+{
+  
+}
+
+.RelActAutoGui .ShowFreePeaks,
+.RelActAutoGui .HideFreePeaks,
+.RelActAutoGui .ClearEnergyRanges
+{
+  font-size: 80%;
+  height: 21px;
+  float: right;
+  margin-right: 5px;
+  margin-top: 2px;
+}
+
+.RelActAutoGui .DeleteEnergyRangeOrNuc,
+.RelActAutoGui .DeleteEnergyRangeOrNuc:hover
+{
+  justify-self: end;
+}
+
+
+.RelActAutoGuiContextMenu
+{
+  
+}
+
+.RelActAutoEnergyRange > label
+{
+  justify-self: end;
+}
+
+
+.RelActAutoGui .RelActAutoEnergyRange,
+.RelActAutoGui .RelActAutoNuclide,
+.RelActAutoGui .RelActFreePeak
+{
+  border: 1px solid #e1e1e1;
+  margin: 5px;
+  padding: 5px;
+}
+
+.RelActAutoGui .RelActFreePeak > input
+{
+  width: 55px;
+  /* justify-self: stretch; */
+}
+
+.RelActAutoGui .RelActAutoEnergyRange
+{
+  display: grid;
+  
+  row-gap: 5px;
+  column-gap: 5px;
+  align-items: center;
+  justify-content: left;
+  
+  grid-template-columns: min-content min-content min-content 2fr min-content 1fr;
+}
+
+
+.RelActAutoEnergyRange > input
+{
+  width: 8ex;
+}
+
+
+.RelActAutoGui .RelActAutoNuclide
+{
+  padding-left: 0px;
+  
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+
+.RelActAutoGui .RelActAutoNuclide > label
+{
+  margin-left: 10px;
+}
+
+
+.RelActAutoGui .RelActAutoNuclide > input[type="text"]
+{
+  margin-right: 5px;
+  margin-left: 5px;
+  width: 8ex;
+}
+
+
+.RelActAutoGui .RelActAutoNuclide > input[type="color"]
+{
+  margin-right: 5px;
+}
+
+
+.RelActAutoNuclide .RelActAutoNuclideSpacer
+{
+  flex: 1 1 auto;
+  align-items: center;
+}
+
+
+.RelActAutoGui .RelActFreePeak
+{
+  display: grid;
+  
+  column-gap: 5px;
+  row-gap: 5px;
+  justify-items: start;
+  align-items: center;
+  justify-content: start;
+}
+
+.RelActAutoGui RelActFreePeak .FreePeakConstrain
+{
+  /* justify-self: end; */
+  margin-left: 10px;
+}
+
+.RelActAutoGui .InvalidFreePeakEnergy
+{
+  color: red;
+  place-self: center;
+}
