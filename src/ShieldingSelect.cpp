@@ -1520,6 +1520,22 @@ WLineEdit *ShieldingSelect::materialEdit()
 }
 
 
+const WLineEdit *ShieldingSelect::materialEdit() const
+{
+  return m_materialEdit;
+}
+
+
+Wt::WLineEdit *ShieldingSelect::thicknessEdit()
+{
+  return m_thicknessEdit;
+}
+
+
+const Wt::WLineEdit *ShieldingSelect::thicknessEdit() const
+{
+  return m_thicknessEdit;
+}
 
 void ShieldingSelect::setSphericalThickness( const double thickness )
 {

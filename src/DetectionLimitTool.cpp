@@ -69,14 +69,15 @@
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/ColorTheme.h"
-#include "InterSpec/DetectorEdit.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/SwitchCheckbox.h"
+#include "InterSpec/ShieldingSelect.h"
 #include "SpecUtils/D3SpectrumExport.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/ReferenceLineInfo.h"
@@ -720,7 +721,8 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
              adjust the ROI, and re-due our fit - we should probably do something more intuitive
              so the user knows whats going on.
    */
-  m_chart->roiDragUpdate().connect( boost::bind( &DetectionLimitTool::roiDraggedCallback, this, _1, _2, _3, _4, _5, _6 ) );
+  m_chart->existingRoiEdgeDragUpdate().connect( boost::bind( &DetectionLimitTool::roiDraggedCallback, this, _1, _2, _3, _4, _5, _6 ) );
+  
   
   m_chart->setCompactAxis( true );
   m_chart->setXAxisTitle( "Energy (keV)" );
@@ -839,7 +841,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   viewer->detectorModified().connect( boost::bind( &DetectionLimitTool::handleInputChange, this ) );
   
   
-  m_shieldingSelect = new ShieldingSelect( m_materialDB, NULL, m_materialSuggest, false, inputTable );
+  m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest, inputTable );
   m_shieldingSelect->addStyleClass( "ThirdCol SecondRow SpanTwoRows" );
   m_shieldingSelect->materialEdit()->setEmptyText( "<shielding material>" );
   m_shieldingSelect->materialChanged().connect( this, &DetectionLimitTool::handleInputChange );
@@ -1171,7 +1173,7 @@ void DetectionLimitTool::handleNuclideChange( const bool update_to_default_age )
       m_nuclideEdit->setText( "" );
       
       if( nuc )
-        passMessage( isotxt + " is stable", "", WarningWidget::WarningMsgHigh );
+        passMessage( isotxt + " is stable", WarningWidget::WarningMsgHigh );
     }
   }else if( update_to_default_age )
   {
@@ -1197,7 +1199,7 @@ void DetectionLimitTool::handleNuclideChange( const bool update_to_default_age )
       string def_age_str;
       age = PeakDef::defaultDecayTime( nuc, &def_age_str );
       passMessage( "Changed age to a more reasonable value for " + nuc->symbol
-            + " from '" + agestr + "' to '" + def_age_str + "'", "", WarningWidget::WarningMsgLow );
+            + " from '" + agestr + "' to '" + def_age_str + "'", WarningWidget::WarningMsgLow );
       
       m_ageEdit->setText( def_age_str );
     }//try / catch

@@ -135,7 +135,6 @@
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/LocalTimeDelegate.h"
-#include "InterSpec/DetectionLimitTool.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/CompactFileManager.h"
 #include "InterSpec/UnitsConverterTool.h"
@@ -179,6 +178,10 @@
 
 #if( USE_TERMINAL_WIDGET )
 #include "InterSpec/TerminalWidget.h"
+#endif
+
+#if( USE_DETECTION_LIMIT_TOOL )
+#include "InterSpec/DetectionLimitTool.h"
 #endif
 
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
@@ -7070,11 +7073,12 @@ void InterSpec::createDecayInfoWindow()
 }//void createDecayInfoWindow()
 
 
+#if( USE_DETECTION_LIMIT_TOOL )
 void InterSpec::createDetectionLimitTool()
 {
   new DetectionLimitWindow( this, m_materialDB.get(), m_shieldingSuggestion );
 }
-
+#endif
 
 void InterSpec::deleteDecayInfoWindow()
 {
@@ -7664,9 +7668,11 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and daughter nuclides." , showToolTips );
   item->triggered().connect( this, &InterSpec::createDecayInfoWindow );
 
+#if( USE_DETECTION_LIMIT_TOOL )
   item = popup->addMenuItem( "Detection Confidence Tool" );
   HelpSystem::attachToolTipOn( item, "Provides an upper activity estimate for nuclides" , showToolTips );
   item->triggered().connect( this, &InterSpec::createDetectionLimitTool );
+#endif
   
   item = popup->addMenuItem( "Detector Response Select" );
   HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTips );

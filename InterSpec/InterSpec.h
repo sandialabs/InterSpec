@@ -766,9 +766,12 @@ protected:
   void createUnitsConverterTool();
   void createFluxTool();
   void createDecayInfoWindow();
-  void createDetectionLimitTool();
   void deleteDecayInfoWindow();
   void createFileParameterWindow();
+  
+#if( USE_DETECTION_LIMIT_TOOL )
+  void createDetectionLimitTool();
+#endif
   
   void updateGuiForPrimarySpecChange( std::set<int> display_sample_nums );
   

@@ -329,6 +329,10 @@ public:
   
   //Simple accessors
   Wt::WLineEdit *materialEdit();
+  Wt::WLineEdit *thicknessEdit();
+  
+  const Wt::WLineEdit *materialEdit() const;
+  const Wt::WLineEdit *thicknessEdit() const;
 
   /** Sets the spherical thickness value.
    

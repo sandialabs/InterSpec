@@ -101,6 +101,8 @@ option(
 )
 option(USE_TERMINAL_WIDGET "Enables use of terminal widget" ON)
 
+option(USE_DETECTION_LIMIT_TOOL "Enables under-development detection limit tool" OFF)
+
 option(USE_QR_CODES "Enables generating QR codes for like DRFs" ON)
 
 option(
@@ -398,8 +400,6 @@ set(sources
     src/FluxTool.cpp
     src/NativeFloatSpinBox.cpp
     src/SwitchCheckbox.cpp
-    src/DetectionLimitCalc.cpp
-    src/DetectionLimitTool.cpp
     src/EnergyCalTool.cpp
     src/EnergyCal.cpp
     src/EnergyCalGraphical.cpp
@@ -490,8 +490,6 @@ set(headers
     InterSpec/FluxTool.h
     InterSpec/NativeFloatSpinBox.h
     InterSpec/SwitchCheckbox.h
-    InterSpec/DetectionLimitCalc.h
-    InterSpec/DetectionLimitTool.h
     InterSpec/EnergyCalTool.h
     InterSpec/EnergyCal.h
     InterSpec/EnergyCalGraphical.h
@@ -555,6 +553,10 @@ if(USE_TERMINAL_WIDGET)
     list( APPEND headers InterSpec/TerminalModel.h InterSpec/TerminalWidget.h )
 endif(USE_TERMINAL_WIDGET)
 
+if(USE_DETECTION_LIMIT_TOOL)
+    list( APPEND sources src/DetectionLimitCalc.cpp src/DetectionLimitTool.cpp )
+    list( APPEND headers InterSpec/DetectionLimitCalc.h InterSpec/DetectionLimitTool.h  )
+endif(USE_DETECTION_LIMIT_TOOL)
 
 if(USE_QR_CODES)
   list( APPEND sources external_libs/QR-Code-generator/cpp/qrcodegen.cpp src/QrCode.cpp )
