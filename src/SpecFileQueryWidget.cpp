@@ -1690,7 +1690,7 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
     {
       if( !jsonfilename.empty() && !SpecUtils::icontains(jsonfilename,"ouo") )
         passMessage( "Unable to open JSON file '" + jsonfilename + "' defining fields to search in Event XML.",
-                   "", WarningWidget::WarningMsgHigh );
+                   WarningWidget::WarningMsgHigh );
       continue;
     }//if( couldnt open file )
   
@@ -1703,14 +1703,14 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
     if( filelen < 2 )
     {
       passMessage( "JSON file '" + jsonfilename + "' defining fields to search in Event XML is empty.",
-                  "", WarningWidget::WarningMsgHigh );
+                  WarningWidget::WarningMsgHigh );
       continue;
     }
   
     if( filelen > 256*1024 )
     {
       passMessage( "JSON file '" + jsonfilename + "' defining fields to search in Event XML is larger than allowed 256 kb - not using.",
-                  "", WarningWidget::WarningMsgHigh );
+                  WarningWidget::WarningMsgHigh );
       continue;
     }
   
@@ -1732,7 +1732,7 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
       these_filters = EventXmlFilterInfo::parseJsonString( jsonsourcestr );
     }catch( std::exception &e )
     {
-      passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+      passMessage( e.what(), WarningWidget::WarningMsgHigh );
       continue;
     }
   
@@ -1892,7 +1892,7 @@ void SpecFileQueryWidget::doPersistCacheChanged()
       map_iter->second->set_persist( persist );
     }catch( std::exception &e )
     {
-      passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+      passMessage( e.what(), WarningWidget::WarningMsgHigh );
       m_cacheParseResults->setChecked( false );
       m_persistCacheResults->setChecked( false );
       m_persistCacheResults->disable();
@@ -2356,7 +2356,7 @@ void SpecFileQueryWidget::searchRequestedCallback( const std::string &queryJson 
                                                       m_widgetDeleted ) );
   }catch( std::runtime_error &e )
   {
-    passMessage( "Current query is invalid: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
+    passMessage( "Current query is invalid: " + string(e.what()), WarningWidget::WarningMsgHigh );
   }//try /catch
 }//void searchRequestedCallback( std::string queryJson )
 
@@ -2808,7 +2808,7 @@ void SpecFileQueryWidget::loadSelected()
   
   if( !SpecUtils::is_file(filenameandy) )
   {
-    passMessage( "Sorry, '" + filenameandy + "' file appears to no longer be accessable", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Sorry, '" + filenameandy + "' file appears to no longer be accessible.", WarningWidget::WarningMsgHigh );
     m_resultview->setSelectedIndexes( WModelIndexSet() );
     return;
   }
@@ -2817,6 +2817,6 @@ void SpecFileQueryWidget::loadSelected()
   const bool loaded = m_viewer->fileManager()->loadFromFileSystem( filenameandy, SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::Auto );
   
   if( !loaded )
-    passMessage( "Sorry, '" + filenameandy + "' can not be displayed", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Sorry, '" + filenameandy + "' can not be displayed", WarningWidget::WarningMsgHigh );
 }//loadSelected()
   

@@ -148,13 +148,11 @@ docker run --rm -it -v `pwd`:/interspec quay.io/pypa/manylinux2014_x86_64:latest
 
 # Get the dependancies we need to build InterSpec
 yum update
-yum install npm
+yum install -y npm
 
 # Make and cd into build directory - note this is in host filesystem incase we  
 #  want to come back to things, but dont want to rebuild everything from scratch
 cd /interspec/target/electron/
-mkdir build_manylinux_electron
-cd build_manylinux_electron
 
 # Install the NPM dependancies we need
 npm install uglify-js -g

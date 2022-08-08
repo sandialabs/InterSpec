@@ -1361,7 +1361,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testAutomatedPeakSearch()
   try
   {
     //This will take a minute, and app will look paused, but whatever.
-    auto resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, nullptr, false );
+    auto resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, nullptr, nullptr, false );
     
     for( const auto &p : resultpeaks )
       testpeaks.push_back( *p );
@@ -2116,7 +2116,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
     upperx = upperx + upperXChangeFrac*energydelta;
     
     D3SpectrumDisplayDiv *specchart = m_viewer->spectrum();
-    specchart->chartFitRoiDragCallbackWorker( lowerx, upperx, npeaks, true, -1, -1, false );
+    specchart->performDragCreateRoiWork( lowerx, upperx, npeaks, true, -1.0, -1.0 );
     
     vector<PeakDef> foundpeaks, refitOrigPeaks, allPostFitPeaks;
     for( const PeakModel::PeakShrdPtr &peak : *peakModel->peaks() )
