@@ -274,6 +274,7 @@ const std::shared_ptr<const Measurement> &SpectrumDataModel::getData() const    
 const std::shared_ptr<const Measurement> &SpectrumDataModel::getSecondData() const { return m_secondData; }
 const std::shared_ptr<const Measurement> &SpectrumDataModel::getBackground() const { return m_background; }
 
+
 float SpectrumDataModel::dataRealTime() const
 {
   return m_dataRealTime;
@@ -910,7 +911,7 @@ vector< Chart::WDataSeries > SpectrumDataModel::suggestDataSeries() const
 std::shared_ptr<const Measurement> SpectrumDataModel::histUsedForXAxis() const
 {
   // Go through the priorities.
-  if( !!m_data )
+  if( m_data )
     return m_data;
 
 /*

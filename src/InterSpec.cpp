@@ -135,6 +135,7 @@
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/LocalTimeDelegate.h"
+#include "InterSpec/DetectionLimitTool.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/CompactFileManager.h"
 #include "InterSpec/UnitsConverterTool.h"
@@ -529,7 +530,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_peakModel = new PeakModel( this );
   m_spectrum   = new D3SpectrumDisplayDiv();
   m_timeSeries = new D3TimeChart();
-      
   
   if( isPhone() )
   {
@@ -3715,6 +3715,7 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
   m_colorTheme = theme;
 
   m_colorPeaksBasedOnReferenceLines = theme->peaksTakeOnReferenceLineColor;
+
   
   m_spectrum->applyColorTheme( theme );
   m_timeSeries->applyColorTheme( theme );
@@ -7069,6 +7070,12 @@ void InterSpec::createDecayInfoWindow()
 }//void createDecayInfoWindow()
 
 
+void InterSpec::createDetectionLimitTool()
+{
+  new DetectionLimitWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+}
+
+
 void InterSpec::deleteDecayInfoWindow()
 {
   if( m_decayInfoWindow )
@@ -7657,6 +7664,9 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and daughter nuclides." , showToolTips );
   item->triggered().connect( this, &InterSpec::createDecayInfoWindow );
 
+  item = popup->addMenuItem( "Detection Confidence Tool" );
+  HelpSystem::attachToolTipOn( item, "Provides an upper activity estimate for nuclides" , showToolTips );
+  item->triggered().connect( this, &InterSpec::createDetectionLimitTool );
   
   item = popup->addMenuItem( "Detector Response Select" );
   HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTips );
@@ -10723,9 +10733,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
   if( dataH )
     dataH->set_title( "Foreground" );
 
-  const float lt = dataH ? dataH->live_time() : 0.0f;
-  const float rt = dataH ? dataH->real_time() : 0.0f;
-  const float sum_neut = dataH ? dataH->neutron_counts_sum() : 0.0f;
+  m_spectrum->setData( dataH, current_energy_range );
   
   m_spectrum->setData( dataH, current_energy_range );
   

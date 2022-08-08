@@ -2675,6 +2675,12 @@ void ReferencePhotopeakDisplay::setShieldingMaterialAndThickness( const string &
 }//void setShieldingMaterialAndThickness(...)
 
 
+const ShieldingSelect *ReferencePhotopeakDisplay::shieldingSelect()
+{
+  return m_shieldingSelect;
+}//const ShieldingSelect *shieldingSelect()
+
+
 void ReferencePhotopeakDisplay::setElement( const SandiaDecay::Element *el )
 {
   if( el )

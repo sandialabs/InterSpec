@@ -546,15 +546,16 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
       throw runtime_error( "Invalid logic adding parameters to fit" );
     
     const double sigma = peak.gausPeak() ? peak.sigma() : 0.25*peak.roiWidth();
-    
-    if( IsInf(peak.mean()) || IsNan(peak.mean())
-       || IsInf(sigma) || IsNan(sigma)
-       || IsInf(peak.amplitude())  || IsNan(peak.amplitude()) )
+    const double mean = peak.mean();
+    const double amp = peak.amplitude();
+    if( IsInf(mean) || IsNan(mean) || IsInf(sigma) || IsNan(sigma) || IsInf(amp)  || IsNan(amp) )
     {
       cerr << "\n\naddPeaksToFitter(): Peak with invalid mean, sigma, or amp"
            << endl;
       continue;
     }//if( problem with input peak )
+    
+    
     
     size_t lower_channel, upper_channel;
     estimatePeakFitRange( peak, data, lower_channel, upper_channel );
@@ -632,8 +633,8 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
           
         case PeakDef::GaussAmplitude:
           startval = peak.coefficient(type);
-          stepsize = 0.1*peak.coefficient(type);
-          minval = 5.0;
+          stepsize = std::max( 0.1*peak.coefficient(type), sqrt(data->gamma_integral( mean-sigma, mean+sigma)) );
+          minval = 0.0;
           maxval = data->gamma_count_sum();
           
           if( method == kFitUserIndicatedPeak )

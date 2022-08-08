@@ -48,6 +48,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
 #include "SpecUtils/StringAlgo.h"
+#include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SpectrumChart.h"
@@ -458,6 +459,7 @@ void D3SpectrumDisplayDiv::setPeakModel( PeakModel *model )
   model->setDataModel( m_model );
   
   m_peakModel = model;
+
   m_peakModel->dataChanged().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
   m_peakModel->rowsRemoved().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
   m_peakModel->rowsInserted().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
@@ -1257,7 +1259,8 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
   const string resetDomain = m_renderFlags.testFlag(ResetXDomain) ? "true" : "false";
   
   // Set the data for the chart
-  if ( data_hist ) {
+  if ( data_hist )
+  {
     // Create the measurement array (should only have one measurement)
     std::ostringstream ostr;
     std::vector< std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
@@ -1271,7 +1274,8 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
     foregroundOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Foreground );  //will always be 1.0f
     
     // Set the peak data for the spectrum
-    if ( m_peakModel ) {
+    if ( m_peakModel )
+    {
       std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
       vector< std::shared_ptr<const PeakDef> > inpeaks;
       if( peaks )
@@ -1388,22 +1392,30 @@ void D3SpectrumDisplayDiv::renderSecondDataToClient()
 
 void D3SpectrumDisplayDiv::applyColorTheme( std::shared_ptr<const ColorTheme> theme )
 {
-  if( !theme )
-    return;
-  
-  setForegroundSpectrumColor( theme->foregroundLine );
-  setBackgroundSpectrumColor( theme->backgroundLine );
-  setSecondarySpectrumColor( theme->secondaryLine );
-  setDefaultPeakColor( theme->defaultPeakLine );
-  
-  setAxisLineColor( theme->spectrumAxisLines );
-  setChartMarginColor( theme->spectrumChartMargins );
-  setChartBackgroundColor( theme->spectrumChartBackground );
-  setTextColor( theme->spectrumChartText );
-  
-  m_renderFlags |= UpdateForegroundPeaks;
-  scheduleRender();
-}//void applyColorTheme( std::shared_ptr<const ColorTheme> theme )
+  if( theme )
+  {
+    setForegroundSpectrumColor( theme->foregroundLine );
+    setBackgroundSpectrumColor( theme->backgroundLine );
+    setSecondarySpectrumColor( theme->secondaryLine );
+    setDefaultPeakColor( theme->defaultPeakLine );
+    
+    setAxisLineColor( theme->spectrumAxisLines );
+    setChartMarginColor( theme->spectrumChartMargins );
+    setChartBackgroundColor( theme->spectrumChartBackground );
+    setTextColor( theme->spectrumChartText );
+  }else
+  {
+    setForegroundSpectrumColor( {} );
+    setBackgroundSpectrumColor( {} );
+    setSecondarySpectrumColor( {} );
+    setDefaultPeakColor( {} );
+    
+    setAxisLineColor( {} );
+    setChartMarginColor( {} );
+    setChartBackgroundColor( {} );
+    setTextColor( {} );
+  }
+}//void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
 
 
 void D3SpectrumDisplayDiv::setForegroundSpectrumColor( const Wt::WColor &color )
@@ -1434,7 +1446,9 @@ void D3SpectrumDisplayDiv::setTextColor( const Wt::WColor &color )
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "fill: " + c );
+  
+  // TODO: place all y-axis labels/ticks under the .yaxis "g" element, and get rid of .yaxislabel style class
+  m_cssRules[rulename] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis, .xaxis > .tick > text, .yaxis > .tick > text", "fill: " + c );
 }
 
 
@@ -1859,7 +1873,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
   PeakModel *peakModel = spectrum->m_peakModel;
   std::shared_ptr<const SpecMeas> meas = viewer ? viewer->measurment(SpecUtils::SpectrumType::Foreground) : nullptr;
   std::shared_ptr<const DetectorPeakResponse> detector = meas ? meas->detector() : nullptr;
-  
+
   std::shared_ptr<const Measurement> foreground = spectrum->data();
   
   if( !foreground )

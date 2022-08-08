@@ -1561,9 +1561,8 @@ bool SpecMeas::load_N42_file( const std::string &filename )
       throw runtime_error( "!loaded" );
     
     filename_ = filename;
-  }catch( std::exception & /*e*/ )
+  }catch( std::exception & )
   {
-    //cout << endl << e.what() << endl;
     reset();
     return false;
   }//try/catch

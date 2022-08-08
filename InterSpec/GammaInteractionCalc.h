@@ -102,6 +102,7 @@ double transmition_length_coefficient( const Material *material, float energy );
 double transmition_coefficient_material( const Material *material, float energy,
                                 float length );
 
+
 /** A convenience call to #transmition_coefficient_material that uses a static (compile-time defined) definition of air.
  
  Example use of this function:

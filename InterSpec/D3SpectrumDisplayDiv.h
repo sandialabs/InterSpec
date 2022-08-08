@@ -23,7 +23,7 @@
 class SpecMeas;
 class PeakModel;
 class InterSpec;
-class ColorTheme;
+struct ColorTheme;
 class SpectrumDataModel;
 namespace Wt
 {
@@ -147,6 +147,9 @@ public:
    */
   void scheduleForegroundPeakRedraw();
   
+  /** Applies the current color theme.
+   if nullptr, then sets to default colors.
+   */
   void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
   
   void setForegroundSpectrumColor( const Wt::WColor &color );
@@ -159,7 +162,7 @@ public:
   void setDefaultPeakColor( const Wt::WColor &color );
   
   
-  // These 8 functions retrieve the corresponding info from the model.
+  // These 3 functions retrieve the corresponding info from the model.
   std::shared_ptr<const SpecUtils::Measurement> data()       const;
   std::shared_ptr<const SpecUtils::Measurement> secondData() const;
   std::shared_ptr<const SpecUtils::Measurement> background() const;

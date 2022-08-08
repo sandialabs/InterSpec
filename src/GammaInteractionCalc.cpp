@@ -143,7 +143,7 @@ const double ShieldingSourceChi2Fcn::sm_activityUnits = SandiaDecay::MBq;
 double transmition_length_coefficient( const Material *material, float energy )
 {
   double mu = 0.0;
-
+  
   for( const Material::ElementFractionPair &p : material->elements )
   {
     const SandiaDecay::Element *el = p.first;
@@ -179,6 +179,7 @@ double transmition_coefficient_material( const Material *material, float energy,
 {
   return length * transmition_length_coefficient( material, energy );
 }
+
 
 double transmission_length_coefficient_air( float energy )
 {

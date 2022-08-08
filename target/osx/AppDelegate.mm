@@ -553,6 +553,25 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
       [NSDistributedNotificationCenter.defaultCenter addObserver:self selector:@selector(themeChanged:) name:@"AppleInterfaceThemeChangedNotification" object: nil];
     }
   }
+  
+  // Try adding a popover, to eventually display a map
+  //  See https://developer.apple.com/documentation/appkit/nspopover
+  /*
+   //  Need to implement https://developer.apple.com/documentation/appkit/nsviewcontroller?language=objc
+   //  note need to override -loadView method
+  NSRect bounds = [[self.window contentView] bounds];
+  
+  self.myPopover = [[NSPopover alloc] init];
+  
+  [self.myPopover setContentSize:NSMakeSize(0.85*bounds.size.width, 0.85*bounds.size.height)];
+  [self.myPopover setBehavior: NSPopoverBehaviorTransient]; //change to NSPopoverBehaviorApplicationDefined
+  [self.myPopover setAnimates:YES];
+  [self.myPopover setContentViewController: self.popoverViewController];
+  
+  [self.myPopover showRelativeToRect: bounds
+                            ofView:[[NSApp mainWindow] contentView]
+                     preferredEdge:NSMinYEdge];
+   */
 }//applicationDidFinishLaunching:(NSNotification *)aNotification
 
 

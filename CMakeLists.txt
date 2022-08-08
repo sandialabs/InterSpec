@@ -398,6 +398,8 @@ set(sources
     src/FluxTool.cpp
     src/NativeFloatSpinBox.cpp
     src/SwitchCheckbox.cpp
+    src/DetectionLimitCalc.cpp
+    src/DetectionLimitTool.cpp
     src/EnergyCalTool.cpp
     src/EnergyCal.cpp
     src/EnergyCalGraphical.cpp
@@ -488,6 +490,8 @@ set(headers
     InterSpec/FluxTool.h
     InterSpec/NativeFloatSpinBox.h
     InterSpec/SwitchCheckbox.h
+    InterSpec/DetectionLimitCalc.h
+    InterSpec/DetectionLimitTool.h
     InterSpec/EnergyCalTool.h
     InterSpec/EnergyCal.h
     InterSpec/EnergyCalGraphical.h
@@ -959,6 +963,7 @@ list(
     OTHER_SUPPORT_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DecayChainChart.js
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/RelEffPlot.js
+    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DetectionLimitTool.js
 )
 
 FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml)

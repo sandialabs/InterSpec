@@ -4668,7 +4668,6 @@ void PeakContinuum::eqn_from_offsets( size_t lowchannel,
   const double upper_low_energy = cal->energy_for_channel( std::min(upper_cont_first_channel, last_channel) );
   const double upper_up_energy = cal->energy_for_channel( std::min(upper_cont_last_channel + 1, last_channel) );
   
-  
   const double lower_dx = lower_up_energy - lower_low_energy;
   const double upper_dx = upper_up_energy - upper_low_energy;
   

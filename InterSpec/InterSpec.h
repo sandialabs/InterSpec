@@ -766,6 +766,7 @@ protected:
   void createUnitsConverterTool();
   void createFluxTool();
   void createDecayInfoWindow();
+  void createDetectionLimitTool();
   void deleteDecayInfoWindow();
   void createFileParameterWindow();
   

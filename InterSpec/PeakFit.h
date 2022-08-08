@@ -357,11 +357,18 @@ double fit_amp_and_offset( const float *energies, const float *data, const size_
                            std::vector<double> &amplitudes_uncerts,
                            std::vector<double> &continuum_coeffs_uncerts );
 
+/** Get the chi2 and degrees of freedom for a peaks that share a ROI.
+ All peaks in 'peaks' _must_ share the same continuum (or else assert will happen).
+ */
+void get_chi2_and_dof_for_roi( double &chi2, double &dof,
+                               const std::shared_ptr<const SpecUtils::Measurement> &data,
+                               const std::vector<PeakDef *> &peaks );
 
 //set_chi2_dof(): computes and sets the Chi2/Dof for gaussian peaks with index
 // 'startpeakindex' through 'startpeakindex + npeaks'.
 //  Takes into account sharing of ROI between peaks.
-void set_chi2_dof( std::shared_ptr<const SpecUtils::Measurement> data,
+//  returns the total number of degrees of freed, of all ROIs
+double set_chi2_dof( std::shared_ptr<const SpecUtils::Measurement> data,
                    std::vector<PeakDef> &fitpeaks,
                    const size_t startpeakindex, const size_t npeaks );
 
