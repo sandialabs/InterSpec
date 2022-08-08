@@ -147,7 +147,7 @@ public:
       {
         cerr << "\n\nDbSpecFileItem::dorevert()\n\tCaught: " << e.what() << "\n\n";
         passMessage( "Error displaying previous measurement, things may not be as expected" ,
-                    "", WarningWidget::WarningMsgHigh );
+                    WarningWidget::WarningMsgHigh );
       }//try / catch
     }else
     {
@@ -162,7 +162,7 @@ public:
       m_dbentry.reset();
     }catch(...)
     {
-      cerr << "DbSpecFileItem destructo caught exception doing m_dbentry.reset()" << endl;
+      cerr << "DbSpecFileItem destructor caught exception doing m_dbentry.reset()" << endl;
     }
     
     try

@@ -2592,7 +2592,7 @@ bool PeakModel::setData( const WModelIndex &index,
           if( use && (!new_peak.parentNuclide()
                       || (new_peak.sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) ) )
             passMessage( "Only peaks associated with a nuclides gamma can be used for relative"
-                        " activity analysis.", "", WarningWidget::WarningMsgHigh );
+                        " activity analysis.", WarningWidget::WarningMsgHigh );
           
           if( use == new_peak.useForManualRelEff() )
             return false;

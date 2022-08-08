@@ -478,7 +478,7 @@ namespace
         m_fit_age->hide();
         
         if( !nucstr.empty() )
-          passMessage( nucstr + " is not a valid nuclide.", "", WarningWidget::WarningMsgHigh );
+          passMessage( nucstr + " is not a valid nuclide.", WarningWidget::WarningMsgHigh );
         
         m_updated.emit();
         return;
@@ -487,7 +487,7 @@ namespace
       if( IsInf(nuc->halfLife) )
       {
         const string nucstr = m_nuclide_edit->text().toUTF8();
-        passMessage( nucstr + " is a stable nuclide.", "", WarningWidget::WarningMsgHigh );
+        passMessage( nucstr + " is a stable nuclide.", WarningWidget::WarningMsgHigh );
         
         m_nuclide_edit->setText( "" );
         m_nuclide_edit->validate();
@@ -998,7 +998,7 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
   }catch( std::exception &e )
   {
     passMessage( "Error creating Relative Act. Isotopics tool: " + string(e.what()),
-                "", WarningWidget::WarningMsgHigh );
+                WarningWidget::WarningMsgHigh );
     
     if( disp )
       delete disp;
@@ -1926,7 +1926,7 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
                  "%.1f keV is already in the energy range [%.1f, %.1f] keV - no action will be taken.",
                  energy, roi.lower_energy, roi.upper_energy );
         
-        passMessage( buffer, "", WarningWidget::WarningMsgMedium );
+        passMessage( buffer, WarningWidget::WarningMsgMedium );
         return;
       }
     }//for( const RelActCalcAuto::RoiRange &roi : orig_rois )
@@ -2044,7 +2044,7 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
                lower_energy, upper_energy );
     }//if( combined_an_roi ) / else
         
-    passMessage( buffer, "", WarningWidget::WarningMsgLow );
+    passMessage( buffer, WarningWidget::WarningMsgLow );
     
     checkIfInUserConfigOrCreateOne();
     m_render_flags |= RenderActions::UpdateEnergyRanges;
@@ -2052,7 +2052,7 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     scheduleRender();
   }catch( std::exception &e )
   {
-    passMessage( "handleDoubleLeftClick error: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
+    passMessage( "handleDoubleLeftClick error: " + string(e.what()), WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void handleDoubleLeftClick( const double energy, const double counts )
 
@@ -2645,7 +2645,7 @@ void RelActAutoGui::handlePresetChange()
     if( iter == std::end(m_previous_presets) )
     {
       passMessage( "Expected state information for '" + m_presets->currentText().toUTF8()
-                   + "' is not available - this is not expected - sorry!", "", WarningWidget::WarningMsgHigh );
+                   + "' is not available - this is not expected - sorry!", WarningWidget::WarningMsgHigh );
       
       return;
     }//if( iter == std::end(m_previous_presets) )
@@ -2654,7 +2654,7 @@ void RelActAutoGui::handlePresetChange()
     {
       passMessage( "State information was not previously able to be saved for '"
                   + m_presets->currentText().toUTF8() + "' - this is not expected - sorry!",
-                  "", WarningWidget::WarningMsgHigh );
+                  WarningWidget::WarningMsgHigh );
       
       return;
     }//if( !iter->second )
@@ -2665,7 +2665,7 @@ void RelActAutoGui::handlePresetChange()
     }catch( std::exception &e )
     {
       passMessage( "Error de-serializing tool state: " + string(e.what()),
-                  "", WarningWidget::WarningMsgHigh );
+                  WarningWidget::WarningMsgHigh );
     }
     
     return;
@@ -2697,10 +2697,10 @@ void RelActAutoGui::handlePresetChange()
       msg += "<br />&nbsp;&nbsp;At: " + std::string(position, end_pos);
     }//if( position )
     
-    passMessage( msg, "", WarningWidget::WarningMsgHigh );
+    passMessage( msg, WarningWidget::WarningMsgHigh );
   }catch( std::exception &e )
   {
-    passMessage( "Error loading preset: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error loading preset: " + string(e.what()), WarningWidget::WarningMsgHigh );
   }//try / cat to read the XML
 }//void RelActAutoGui::handlePresetChange()
 
@@ -3463,11 +3463,11 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
     if( back.meas )
       msg += " and background.";
     
-    passMessage( msg, "", WarningWidget::WarningMsgInfo );
+    passMessage( msg, WarningWidget::WarningMsgInfo );
     m_fit_energy_cal->setChecked( false );
   }catch( std::exception &e )
   {
-    passMessage( "Error applying energy calibration: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
+    passMessage( "Error applying energy calibration: " + string(e.what()), WarningWidget::WarningMsgHigh );
   }// try / catch
   
   if( ownEnergyCal && tool )

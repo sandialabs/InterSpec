@@ -166,9 +166,9 @@ int toint( const SaveSpectrumAsType type ){ return static_cast<int>(type); }
 SpectrumType typeFromInt( int id ){ return SpectrumType(id); }
 
 
-#if( USE_DB_TO_STORE_SPECTRA )
 namespace
 {
+#if( USE_DB_TO_STORE_SPECTRA )
   class PreviousDbEntry : public WContainerWidget
   {
     //a class to display, and then select a previous database entry.  This class
@@ -281,13 +281,12 @@ namespace
   };//class PreviousDbEntry
 
 
-namespace
-{
-void setHeadersDbEntry( std::shared_ptr<SpectraFileHeader> header, Wt::Dbo::ptr<UserFileInDb> entry )
-{
-  header->setDbEntry( entry );
-  wApp->triggerUpdate();
-}
+  void setHeadersDbEntry( std::shared_ptr<SpectraFileHeader> header, Wt::Dbo::ptr<UserFileInDb> entry )
+  {
+    header->setDbEntry( entry );
+    wApp->triggerUpdate();
+  }
+#endif // USE_DB_TO_STORE_SPECTRA
 
   class FileUploadDialog : public AuxWindow
   {
@@ -3988,7 +3987,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     window = nullptr;
     
     string msg = "Unexpected issue displaying available save-states: " + string( e.what() );
-    passMessage( msg, "", WarningWidget::WarningMsgLevel::WarningMsgHigh)
+    passMessage( msg, WarningWidget::WarningMsgLevel::WarningMsgHigh)
     return;
   }// try / catch
     

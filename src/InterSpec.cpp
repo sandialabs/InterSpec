@@ -7391,7 +7391,7 @@ void InterSpec::showRelActAutoWindow()
   }catch( std::exception &e )
   {
     passMessage( "Error setting &quot;Isotopics from nuclides&quot; state to previously used state: "
-                + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+                + std::string(e.what()), WarningWidget::WarningMsgHigh );
     
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
@@ -7472,7 +7472,7 @@ void InterSpec::createRelActManualWidget()
   }catch( std::exception &e )
   {
     passMessage( "Error setting &quot;Isotopics from peaks&quot; state to previously used state: "
-                 + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+                 + std::string(e.what()), WarningWidget::WarningMsgHigh );
     
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
