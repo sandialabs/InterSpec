@@ -1100,10 +1100,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     else
       set_lin_y();
   };
-  InterSpecUser::associateFunction( m_interspec->m_user, "LogY", logy_fcn, m_interspec );
   
-  // When we merge in the master, we can replace the above with:
-  //InterSpecUser::addCallbackWhenChanged( m_interspec->m_user, "LogY", m_spectrum, &D3SpectrumDisplayDiv::setYAxisLog );
+  InterSpecUser::addCallbackWhenChanged( m_interspec->m_user, "LogY", m_spectrum, &D3SpectrumDisplayDiv::setYAxisLog );
   
   m_peak_model = new PeakModel( m_spectrum );
   m_peak_model->setNoSpecMeasBacking();
