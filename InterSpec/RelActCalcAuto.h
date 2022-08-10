@@ -54,8 +54,12 @@ namespace SandiaDecay
 
 namespace RelActCalc
 {
+  enum class PuCorrMethod : int;
   enum class RelEffEqnForm : int;
-}
+  struct Pu242ByCorrelationOutput;
+}//namespace RelActCalc
+
+
 
 /*
  We need to take in:
@@ -280,6 +284,19 @@ struct Options
   /** Optional title of the spectrum; used as title in HTML and text summaries. */
   std::string spectrum_title;
   
+  /** The method to use for Pu-242 mass-enrichment estimation (all methods use correlation to other
+   Pu isotopics).
+   
+   When specified #RelActAutoSolution::m_corrected_pu will be filled-out (unless an error occurred
+   while doing the correction - which shouldnt really ever happen); this will then be used by the
+   #RelActAutoSolution::mass_enrichment_fraction function, and activity ratio function.
+   
+   Defaults to #PuCorrMethod::NotApplicable; if any other value is specified, and sufficient
+   plutonium isotopes for that method are not in the problem, then finding the solution will
+   fail.
+   */
+  RelActCalc::PuCorrMethod pu242_correlation_method;
+  
   static const int sm_xmlSerializationVersion = 0;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
@@ -397,7 +414,13 @@ struct RelActAutoSolution
   std::vector<double> m_rel_eff_coefficients;
   std::vector<std::vector<double>> m_rel_eff_covariance;
   
+  /** The relative activities of each of the input nuclides.
+   
+   If a Pu242 correlation method was specified in #Options::pu242_correlation_method, then Pu242
+   will NOT be in this variable, see #m_corrected_pu.
+   */
   std::vector<NuclideRelAct> m_rel_activities;
+  
   std::vector<std::vector<double>> m_rel_act_covariance;
   
   FwhmForm m_fwhm_form;
@@ -427,6 +450,14 @@ struct RelActAutoSolution
    */
   std::shared_ptr<const DetectorPeakResponse> m_drf;
   
+  
+  /** If #Options::pu242_correlation_method is not #PuCorrMethod::NotApplicable, then
+   the result of the correction for Pu242 will be stored here.
+   
+   Note: this is a shared ptr just to avoid creating a copy constructor that would be needed
+         if we make it a unique ptr...
+   */
+  std::shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> m_corrected_pu;
   
   double m_energy_cal_adjustments[2];
   bool m_fit_energy_cal[2];

@@ -102,7 +102,7 @@ public:
   void handleFitEnergyCalChanged();
   void handleBackgroundSubtractChanged();
   void handleSameAgeChanged();
-  void handleUPuByCorrelationChanged();
+  void handlePuByCorrelationChanged();
   void handleNucDataSrcChanged();
   void handleAddNuclide();
   void handleAddEnergy();
@@ -263,7 +263,8 @@ protected:
   Wt::WCheckBox *m_background_subtract;
   
   Wt::WCheckBox *m_same_z_age;
-  Wt::WCheckBox *m_u_pu_by_correlation;
+  
+  Wt::WComboBox *m_pu_corr_method;
   
   // Wt::WComboBox *m_u_pu_data_source;
   PopupDivMenu *m_more_options_menu;

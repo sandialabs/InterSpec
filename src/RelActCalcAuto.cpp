@@ -1142,9 +1142,95 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }//for( const RelActCalcAuto::RoiRange &range : energy_ranges )
     }//for( const shared_ptr<const PeakDef> &p : peaks_in_roi )
     
+    
+    // Check that the specified Pu242 by correlation method is valid.
+    
+    // Make a lamda that returns the mass-number of Plutonium nuclides; or if Am241 is present,
+    //  will insert 241
+    try
+    {
+      auto pu_iso_present = [&]() -> set<short> {
+        set<short> answer;
+        for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+        {
+          if( nuc.nuclide
+             && ((nuc.nuclide->atomicNumber == 94)
+                 || ((nuc.nuclide->atomicNumber == 95) && (nuc.nuclide->massNumber == 241) ) ) )
+          {
+            answer.insert(nuc.nuclide->massNumber);
+          }
+        }//for( loop over input nucldies )
+        
+        return answer;
+      };//pu_iso_present
+      
+      switch( options.pu242_correlation_method )
+      {
+        case RelActCalc::PuCorrMethod::Bignan95_PWR:
+        case RelActCalc::PuCorrMethod::Bignan95_BWR:
+        {
+          // Need Pu238, Pu239, and Pu240
+          const set<short> punucs = pu_iso_present();
+          
+          if( punucs.count(242) )
+            throw runtime_error( "You can not specify a Pu242 correction method AND include Pu242"
+                                " in the nuclides you are fitting in the spectrum." );
+          
+          if( !punucs.count(238) || !punucs.count(239) || !punucs.count(240) )
+          {
+            string msg = "Pu242 correction method of Bignan95 was specified, but problem did not"
+            " contain";
+            if( !punucs.count(238) )
+              msg += " Pu238";
+            if( !punucs.count(239) )
+              msg += string(punucs.count(238) ? "" : ",") + " Pu239";
+            if( !punucs.count(240) )
+              msg += string((punucs.count(238) && punucs.count(239)) ? "" : ",") + " Pu240";
+            msg += ", as required.";
+            
+            return solution;
+          }//if( !have_pu238 || !have_pu239 || !have_pu240 )
+          
+          break;
+        }// Bignan95_PWR or Bignan95_BWR
+          
+        case RelActCalc::PuCorrMethod::ByPu239Only:
+        {
+          // Need Pu239, plus one other Pu isotope, or I guess we'll accept Am241
+          const set<short> punucs = pu_iso_present();
+          
+          if( punucs.count(242) )
+            throw runtime_error( "You can not specify a Pu242 correction method AND include Pu242"
+                                " in the nuclides you are fitting in the spectrum." );
+          
+          if( !punucs.count(239) || (punucs.size() < 2) )
+          {
+            string msg = "Pu242 correction method  using Pu239-only was specified, but problem did"
+            " not contain";
+            
+            if( punucs.count(239) )
+              msg += " any other Pu nuclides or Am241.";
+            else
+              msg += " Pu239.";
+            
+            throw runtime_error( msg );
+          }//if( !have_pu238 || !have_pu239 || !have_pu240 )
+          break;
+        }//case RelActCalc::PuCorrMethod::ByPu239Only:
+          
+        case RelActCalc::PuCorrMethod::NotApplicable:
+          break;
+      }//switch( options.pu242_correlation_method )
+    }catch( std::exception &e )
+    {
+      solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+      solution.m_error_message = "Error initializing problem: " + string(e.what());
+      
+      return solution;
+    }// try / catch to
+    
+    
     // Now use peaks_in_rois and manual stuff to try and estimate initial RelEff and activities
-    
-    
     
     
     RelActAutoCostFcn *cost_functor = nullptr;
@@ -2201,6 +2287,73 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
       solution.m_rel_activities.push_back( nuc_output );
     }//for( size_t act_index = 0; act_index < cost_functor->m_nuclides.size(); ++ act_index )
+    
+    
+    // If we want to correct for Pu242, we wont alter solution.m_rel_activities, but place the
+    //  corrected Pu mass fractions in solution.m_corrected_pu
+    if( options.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable )
+    {
+      try
+      {
+        RelActCalc::Pu242ByCorrelationInput raw_rel_masses;
+        
+        double pu_total_mass = 0.0, raw_rel_mass = 0.0;
+        for( const RelActCalcAuto::NuclideRelAct &nuc : solution.m_rel_activities )
+        {
+          assert( nuc.nuclide );
+          if( !nuc.nuclide || (nuc.nuclide->atomicNumber < 94) )
+            continue;
+          
+          const double rel_mass = nuc.rel_activity / nuc.nuclide->activityPerGram();
+        
+          if( nuc.nuclide->atomicNumber == 94 )
+          {
+            pu_total_mass += rel_mass;
+            switch( nuc.nuclide->massNumber )
+            {
+              case 238: raw_rel_masses.pu238_rel_mass = rel_mass; break;
+              case 239: raw_rel_masses.pu239_rel_mass = rel_mass; break;
+              case 240: raw_rel_masses.pu240_rel_mass = rel_mass; break;
+              case 241: raw_rel_masses.pu241_rel_mass = rel_mass; break;
+              case 242:
+                assert( 0 );
+                throw std::logic_error( "Pu242 shouldnt be in the input nuclides if a Pu242"
+                                       " correlation correction method was specified." );
+                break;
+              default:  raw_rel_masses.other_pu_mass = rel_mass;  break;
+            }//switch( nuc.nuclide->massNumber )
+          }else if( (nuc.nuclide->atomicNumber == 95) && (nuc.nuclide->massNumber == 241 ) )
+          {
+            // TODO: need to account for half-life of Am-241 and back decay the equivalent Pu241 mass
+            pu_total_mass += (242.0/241.0) * rel_mass;
+            raw_rel_masses.am241_rel_mass = rel_mass;
+          }
+        }//for( const NuclideRelAct &nuc : m_rel_activities )
+        
+        // We dont have to divide by `pu_total_mass`, but we will, just for debuging.
+        raw_rel_mass /= pu_total_mass;
+        raw_rel_masses.pu238_rel_mass /= pu_total_mass;
+        raw_rel_masses.pu239_rel_mass /= pu_total_mass;
+        raw_rel_masses.pu240_rel_mass /= pu_total_mass;
+        raw_rel_masses.pu241_rel_mass /= pu_total_mass;
+        raw_rel_masses.am241_rel_mass /= pu_total_mass;
+        raw_rel_masses.other_pu_mass  /= pu_total_mass;
+        
+        const RelActCalc::Pu242ByCorrelationOutput corr_output
+               = RelActCalc::correct_pu_mass_fractions_for_pu242( raw_rel_masses,
+                                                                 options.pu242_correlation_method );
+        
+        if( !corr_output.is_within_range )
+          solution.m_warnings.push_back( "The fit Pu enrichment is outside range validated in the"
+                                         " literature for the Pu242 correction by correlation." );
+        
+        solution.m_corrected_pu.reset( new RelActCalc::Pu242ByCorrelationOutput(corr_output) );
+      }catch( std::exception &e )
+      {
+        solution.m_warnings.push_back( "Correcting for Pu242 content failed: " + string(e.what()) );
+      }//try / catch
+    }//if( options.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable )
+    
     
     solution.m_fwhm_form = options.fwhm_form;
     solution.m_fwhm_coefficients.clear();
@@ -3715,6 +3868,12 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   
   append_string_node( base_node, "Title", spectrum_title );
   
+  if( pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable )
+  {
+    const string &method_str = RelActCalc::to_str( pu242_correlation_method );
+    append_string_node( base_node, "PuCorrelationMethod", method_str );
+  }
+  
   return base_node;
 }//rapidxml::xml_node<char> *Options::toXml(...)
 
@@ -3754,6 +3913,27 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     
     const rapidxml::xml_node<char> *title_node = XML_FIRST_NODE( parent, "Title" );
     spectrum_title = SpecUtils::xml_value_str( title_node );
+    
+    pu242_correlation_method = RelActCalc::PuCorrMethod::NotApplicable;
+    const rapidxml::xml_node<char> *pu242_corr_node = XML_FIRST_NODE( parent, "PuCorrelationMethod" );
+    const string pu242_corr_str = SpecUtils::xml_value_str( pu242_corr_node );
+    if( !pu242_corr_str.empty() )
+    {
+      bool found = false;
+      for( int i = 0; i < static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
+      {
+        const auto method = RelActCalc::PuCorrMethod(i);
+        const std::string &method_str = RelActCalc::to_str( method );
+        if( SpecUtils::iequals_ascii(pu242_corr_str, method_str) )
+        {
+          pu242_correlation_method = method;
+          found = true;
+          break;
+        }
+      }//for( loop over RelActCalc::PuCorrMethod types )
+      
+      assert( found );
+    }//if( !pu242_corr_str.empty() )
   }catch( std::exception &e )
   {
     throw runtime_error( "Options::fromXml(): " + string(e.what()) );
@@ -3788,7 +3968,8 @@ Options::Options()
   rel_eff_eqn_type( RelActCalc::RelEffEqnForm::LnX ),
   rel_eff_eqn_order( 3 ),
   fwhm_form( FwhmForm::Polynomial_2 ),
-  spectrum_title( "" )
+  spectrum_title( "" ),
+  pu242_correlation_method( RelActCalc::PuCorrMethod::NotApplicable )
 {
 }
 
@@ -3983,16 +4164,28 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
                   " <th scope=\"col\">Enrichment</th>"
                   " </tr></thead>\n";
   results_html << "  <tbody>\n";
+  
   for( const auto &act : m_rel_activities )
   {
     const double rel_mass = act.rel_activity / act.nuclide->activityPerGram();
     
-    results_html << "  <tr><td>" << act.nuclide->symbol << "</td>"
+    results_html << "  <tr><td>" << act.nuclide->symbol;
+    
+    if( act.nuclide
+       && (act.nuclide->atomicNumber == 94)
+       && (act.nuclide->massNumber == 242)
+       && (m_options.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable) )
+    {
+      results_html << " (by corr)";
+    }
+    
+    results_html << "</td>"
     << "<td>" << act.rel_activity << " &plusmn; " << act.rel_activity_uncertainty << "</td>"
     << "<td>" << (100.0*rel_mass/sum_rel_mass) << "%</td>"
     << "<td>" << (100.0*mass_enrichment_fraction(act.nuclide)) << "%</td>"
     << "</tr>\n";
-  }
+  }//for( const auto &act : m_rel_activities )
+  
   results_html << "  </tbody>\n"
   << "</table>\n\n";
   
@@ -4457,31 +4650,50 @@ void RelActAutoSolution::rel_eff_json_data( std::ostream &rel_eff_plot_values,
 
 double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide ) const
 {
+  if( !nuclide )
+    throw runtime_error( "RelActAutoSolution::mass_enrichment_fraction: null nuclide." );
+  
+  // We will consider this to by Pu if either Pu or Am241
+  const bool is_pu = ((nuclide->atomicNumber == 94)
+                      || ((nuclide->atomicNumber == 95) && (nuclide->massNumber == 241)));
+  
+  auto is_wanted_element = [is_pu,nuclide]( const SandiaDecay::Nuclide *test ) -> bool {
+    if( test->atomicNumber == nuclide->atomicNumber )
+      return true;
+    
+    return is_pu
+            && ((test->atomicNumber == 94)
+                || ((test->atomicNumber == 95) && (test->massNumber == 241)));
+  };//is_wanted_element lamda
+  
+  
   const size_t nuc_index = nuclide_index( nuclide );
   const double rel_mass = m_rel_activities[nuc_index].rel_activity / nuclide->activityPerGram();
-  
+    
   double el_total_mass = 0.0;
   for( const NuclideRelAct &nuc : m_rel_activities )
   {
-    if( nuc.nuclide->atomicNumber == nuclide->atomicNumber )
+    if( is_wanted_element(nuc.nuclide) )
       el_total_mass += nuc.rel_activity / nuc.nuclide->activityPerGram();
   }
-  
-  // TODO: - For Pu or U, need to account for Pu242 and/or U236 by using something like by correlation
-  //         Some potential papers to use to do this are:
-  //         - Determination of 242Pu by correlation with 239Pu only, M.T.Swinhoe, T.Iwamoto, T.Tamura
-  //           https://www.sciencedirect.com/science/article/pii/S0168900210000045
-  //           (uses only U239 and has R.M.S deviation of 1.2% between 55 and 64% Pu239)
-  //           Pu242 = 9.66E−3 * pow(Pu239,−3.83)  //I think - need to check if its mass fractions, or percentages, or relative activities, or what
-  //           This paper also gives the values FRAM uses
-  //        - Isotopic correlation for 242Pu composition prediction: Multivariate regression approach, Arnab Sarkar, et al
-  //          https://www.sciencedirect.com/science/article/pii/S0969804314003820?via%3Dihub
-  //          65.9 to 76% Pu239 - although actual values of coefficients dont seem to be given (???), and maybe only applicable to similar things as the samples used
-  //        - Gunnink, R., 1982 (info in FRAM manual I think)
-  //        - Bignan, G., et all 1998, ESARDA Bull. 28, 1-9
-  //          https://esarda.jrc.ec.europa.eu/esarda-bulletin-n28_en#files
-  //        - LA14018FRAMApplicationGuide.pdf
-  
+    
+  if( is_pu && m_corrected_pu )
+  {
+    if( (nuclide->atomicNumber == 95) && (nuclide->massNumber == 241) )
+      return m_corrected_pu->am241_mass_frac;
+    
+    switch( nuclide->massNumber )
+    {
+      case 238: return m_corrected_pu->pu238_mass_frac; break;
+      case 239: return m_corrected_pu->pu239_mass_frac; break;
+      case 240: return m_corrected_pu->pu240_mass_frac; break;
+      case 241: return m_corrected_pu->pu241_mass_frac; break;
+      case 242: return m_corrected_pu->pu242_mass_frac; break;
+      default: return (1.0 - m_corrected_pu->pu242_mass_frac) * rel_mass / el_total_mass;
+    }//switch( nuclide->massNumber )
+    
+    assert( 0 );
+  }//if( is_pu && m_corrected_pu )
   
   return rel_mass / el_total_mass;
 }//mass_enrichment_fraction
@@ -4499,16 +4711,34 @@ double RelActAutoSolution::mass_ratio( const SandiaDecay::Nuclide *numerator,
 double RelActAutoSolution::activity_ratio( const SandiaDecay::Nuclide *numerator,
                                           const SandiaDecay::Nuclide *denominator ) const
 {
-  const size_t i = nuclide_index(numerator);
-  const size_t j = nuclide_index(denominator);
+  auto get_act = [this]( const SandiaDecay::Nuclide *nuc ) -> double {
+    if( !nuc )
+      throw runtime_error( "RelActAutoSolution::activity_ratio null input" );
+    
+    // If Pu242, we will use the corrected mass ratio to Pu239 to get activity relative
+    //  to Pu239, and return the multiple of this.
+    //  The other Pu isotopes dont need a correction, I dont think
+    const bool is_pu = ((nuc->atomicNumber == 94)
+                        || ((nuc->atomicNumber == 95) && (nuc->massNumber == 241)));
+    if( (nuc->atomicNumber == 94) && (nuc->massNumber == 242) && m_corrected_pu )
+    {
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      assert( db );
+      const SandiaDecay::Nuclide * const pu239 = db->nuclide("Pu239");
+      const SandiaDecay::Nuclide * const pu242 = db->nuclide("Pu242");
+      assert( pu239 && pu242 );
+      
+      const double corr_rel_pu239_act = pu239->activityPerGram() * m_corrected_pu->pu239_mass_frac;
+      const double corr_rel_pu242_act = pu242->activityPerGram() * m_corrected_pu->pu242_mass_frac;
+      
+      const double raw_pu239_activity = m_rel_activities[nuclide_index(pu239)].rel_activity;
+      return raw_pu239_activity * corr_rel_pu242_act / corr_rel_pu242_act;
+    }//if( Pu242, and make correction )
+    
+    return m_rel_activities[nuclide_index(nuc)].rel_activity;
+  };//get_act lambda
   
-  const NuclideRelAct &nuc_i = m_rel_activities[i];
-  const NuclideRelAct &nuc_j = m_rel_activities[j];
-  
-  const double act_i = nuc_i.rel_activity;
-  const double act_j = nuc_j.rel_activity;
-  
-  return act_i / act_j;
+  return get_act(numerator) / get_act(denominator);
 }//double activity_ratio(...)
 
 
@@ -4700,6 +4930,14 @@ RelActAutoSolution solve( const Options options,
         assert( rel_act.nuclide );
         if( !rel_act.nuclide )
           continue;
+        
+        if( (options.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable)
+           && (rel_act.nuclide->atomicNumber == 94)
+           && (rel_act.nuclide->massNumber == 242) )
+        {
+          continue;
+        }
+        
         
         for( const pair<double,double> &energy_br : rel_act.gamma_energy_br )
         {

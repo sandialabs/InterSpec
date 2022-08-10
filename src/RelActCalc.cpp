@@ -504,6 +504,50 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
 }//double eval_eqn_uncertainty(...)
 
 
+const std::string &to_str( const PuCorrMethod method )
+{
+  const static std::string s_Bignan95_PWR{ "Bignan95_PWR" };
+  const static std::string s_Bignan95_BWR{ "Bignan95_BWR" };
+  const static std::string s_ByPu239Only{ "ByPu239Only" };
+  const static std::string s_NotApplicable{ "NotApplicable" };
+  
+  switch( method )
+  {
+    case PuCorrMethod::Bignan95_PWR:  return s_Bignan95_PWR;
+    case PuCorrMethod::Bignan95_BWR:  return s_Bignan95_BWR;
+    case PuCorrMethod::ByPu239Only:   return s_ByPu239Only;
+    case PuCorrMethod::NotApplicable: return s_NotApplicable;
+  }//switch( method )
+  
+  assert( 0 );
+  throw std::logic_error( "invalid PuCorrMethod" );
+  
+  return s_NotApplicable;
+}//const std::string &to_str( const PuCorrMethod method )
+
+
+const std::string &to_description( const PuCorrMethod method )
+{
+  const static std::string s_desc_Bignan95_PWR{ "By 238,239,240 ratio PWR" };
+  const static std::string s_desc_Bignan95_BWR{ "By 238,239,240 ratio BWR" };
+  const static std::string s_desc_ByPu239Only{ "By Pu239 Frac." };
+  const static std::string s_desc_NotApplicable{ "None" };
+  
+  switch( method )
+  {
+    case PuCorrMethod::Bignan95_PWR:  return s_desc_Bignan95_PWR;
+    case PuCorrMethod::Bignan95_BWR:  return s_desc_Bignan95_BWR;
+    case PuCorrMethod::ByPu239Only:   return s_desc_ByPu239Only;
+    case PuCorrMethod::NotApplicable: return s_desc_NotApplicable;
+  }//switch( method )
+  
+  assert( 0 );
+  throw std::logic_error( "invalid PuCorrMethod" );
+  
+  return s_desc_NotApplicable;
+}
+
+
 Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput input, PuCorrMethod method )
 {
   // First, lets normalize the the input relative mass, jic it isnt already
@@ -512,6 +556,7 @@ Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelation
   sum_input_mass += input.pu239_rel_mass;
   sum_input_mass += input.pu240_rel_mass;
   sum_input_mass += input.pu241_rel_mass;
+  sum_input_mass += input.other_pu_mass;
   
   // TODO: in principle we want to account for the decay of Am241 and Pu241 better, but for now we'll just be really gross about it and equate the two nuclides
   sum_input_mass += input.am241_rel_mass;
@@ -521,6 +566,7 @@ Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelation
   input.pu240_rel_mass /= sum_input_mass;
   input.pu241_rel_mass /= sum_input_mass;
   input.am241_rel_mass /= sum_input_mass;
+  input.other_pu_mass  /= sum_input_mass;
   
   double pu242_mass_frac = 0.0, fractional_uncert = 0.0;
   switch( method )

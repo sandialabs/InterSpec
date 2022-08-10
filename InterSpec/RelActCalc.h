@@ -93,16 +93,6 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
                              const std::vector<std::vector<double>> &covariance );
 
 
-/** The Plutonium source being measured. */
-enum class PuCorrSrcBignan95
-{
-  /** Pressurized Water Reactor */
-  PWR,
-  
-  /** Boiling Water Reactor */
-  BWR
-};//enum class PuCorrSrcBignan95
-
 
 /** A struct to specify the relative masses of the Pu and Am241 nuclides that
  are observable by gamma spec.
@@ -117,6 +107,8 @@ struct Pu242ByCorrelationInput
   float pu240_rel_mass = 0.0f;
   float pu241_rel_mass = 0.0f;
   float am241_rel_mass = 0.0f;
+  /** A value to capture all other non-Pu242 plutonium isotopes (I dont expect to ever be used) */
+  float other_pu_mass  = 0.0f;
 };//struct Pu242ByCorrelationInput
 
 
@@ -147,8 +139,30 @@ struct Pu242ByCorrelationOutput
 
 
 /** Different methods of determining Pu-242 from correlations with the other plutonium nuclides. */
-enum class PuCorrMethod
+enum class PuCorrMethod : int
 {
+  /** Pu242 estimator based on correlation with Pu239 only
+   
+   The fitted power function can be used to predict the 242Pu
+   content of the samples with an r.m.s. deviation of 1.2% over the
+   range 55–64% 239Pu.
+   Tests on other miscellaneous plutonium isotopic compositions
+   indicate that the correlation works well (1% relative) for 239Pu
+   content less than 70% and moderately well (4% relative) up to
+   80% 239Pu
+   
+   From paper referenced below:
+   In FRAM, this function is the equivalent of setting ‘‘Pu242-correlation’’ value to  9.66E-03 and
+   the ‘‘Pu239_exponent’’ to -3.83 and the other coefficients to zero.
+   
+   See:
+   M.T. Swinhoe, T. Iwamoto, T. Tamura
+   'Determination of 242Pu by correlation with 239Pu only',
+   Nuclear Instruments and Methods in Physics Research A 615 (2010) 136–137
+   https://www.sciencedirect.com/science/article/pii/S0168900210000045#bib2
+   */
+  ByPu239Only,
+  
   /** Bignan 95 Pressurized Water Reactor
    
    Bignan 95, referenced below, uses Pu238/Pu239 and Pu240/Pu239 mass ratios, to estimate
@@ -171,35 +185,14 @@ enum class PuCorrMethod
    */
   Bignan95_BWR,
   
-  /** Pu242 estimator based on correlation with Pu239 only
-   
-   The fitted power function can be used to predict the 242Pu
-   content of the samples with an r.m.s. deviation of 1.2% over the
-   range 55–64% 239Pu.
-   Tests on other miscellaneous plutonium isotopic compositions
-   indicate that the correlation works well (1% relative) for 239Pu
-   content less than 70% and moderately well (4% relative) up to
-   80% 239Pu
-   
-   From paper referenced below:
-   In FRAM, this function is the equivalent of setting ‘‘Pu242-correlation’’ value to  9.66E-03 and
-   the ‘‘Pu239_exponent’’ to -3.83 and the other coefficients to zero.
-   
-   See:
-   M.T. Swinhoe, T. Iwamoto, T. Tamura
-   'Determination of 242Pu by correlation with 239Pu only',
-   Nuclear Instruments and Methods in Physics Research A 615 (2010) 136–137
-   https://www.sciencedirect.com/science/article/pii/S0168900210000045#bib2 
-   */
-  ByPu239Only,
-  
   // TODO: implement Gunnink80, or values from FRAM (at least for comparison)
   
-  
+  /** Not applicable. */
   NotApplicable
 };//enum class PuCorrMethod
 
-
+const std::string &to_str( const PuCorrMethod method );
+const std::string &to_description( const PuCorrMethod method );
 /** Given the isotopics determined from gamma-spec, returns mass fractions of those
  isotopes, as well as Pu242, as determined from the specified correlation estimate
  method.

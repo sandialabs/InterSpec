@@ -1040,7 +1040,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_fit_energy_cal( nullptr ),
   m_background_subtract( nullptr ),
   m_same_z_age( nullptr ),
-  m_u_pu_by_correlation( nullptr ),
+  m_pu_corr_method( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -1374,17 +1374,20 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_same_z_age->checked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   m_same_z_age->unChecked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   
-  m_u_pu_by_correlation = new WCheckBox( "Pu242/U236 by cor", optionsDiv );
-  m_u_pu_by_correlation->addStyleClass( "GridSeventhCol GridSecondRow GridSpanTwoCol" );
-  m_u_pu_by_correlation->checked().connect( this, &RelActAutoGui::handleUPuByCorrelationChanged );
-  m_u_pu_by_correlation->unChecked().connect( this, &RelActAutoGui::handleUPuByCorrelationChanged );
-  tooltip = "Pu-242 and U-236 are often not directly observable in gamma spectra.  However, to"
-  " correct for these isotopes when calculating enrichment, the expected contributions of these"
-  " isotopes can be inferred from the other isotopes.  Checking this box will enable this.";
+  label = new WLabel( "Pu242 corr", optionsDiv );
+  label->addStyleClass( "GridSeventhCol GridSecondRow" );
+  m_pu_corr_method = new WComboBox( optionsDiv );
+  m_pu_corr_method->addStyleClass( "GridEighthCol GridSecondRow" );
+  label->setBuddy( m_pu_corr_method );
+  m_pu_corr_method->activated().connect( this, &RelActAutoGui::handlePuByCorrelationChanged );
+  tooltip = "Pu-242 is often not directly observable in gamma spectra.  However, to"
+  " correct for this isotope when calculating enrichment, the expected contributions of this"
+  " isotope can be inferred from the other Pu isotopes."
+  "  This form allows you to select the correction method.";
   HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( m_u_pu_by_correlation, tooltip, showToolTips );
-  
-  
+  HelpSystem::attachToolTipOn( m_pu_corr_method, tooltip, showToolTips );
+  m_pu_corr_method->hide();
+  label->hide();
   
   WPushButton *more_btn = new WPushButton( optionsDiv );
   more_btn->setIcon( "InterSpec_resources/images/more_menu_icon.svg" );
@@ -1643,6 +1646,23 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     options.spectrum_title = fore->title();
   else if( meas && !meas->filename().empty() )
     options.spectrum_title = meas->filename();
+  
+  
+  if( m_pu_corr_method->isVisible() )
+  {
+    const string currtxt = m_pu_corr_method->currentText().toUTF8();
+    for( int i = 0; i <= static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
+    {
+      const auto method = RelActCalc::PuCorrMethod(i);
+      const string &desc = RelActCalc::to_description( method );
+      if( desc == currtxt )
+      {
+        options.pu242_correlation_method = method;
+        break;
+      }
+    }//for( loop over RelActCalc::PuCorrMethod )
+  }//if( m_pu_corr_method->isVisible() )
+  
   
   return options;
 }//RelActCalcAuto::Options getCalcOptions() const
@@ -2302,12 +2322,7 @@ rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *pa
   
   {// Begin put extra options
     //options_node
-    if( m_u_pu_by_correlation->isVisible() )
-    {
-      const char *val = m_u_pu_by_correlation->isChecked() ? "true" : "false";
-      xml_node<char> *node = doc->allocate_node( node_element, "UPuByCorrelation", val );
-      options_node->append_node( node );
-    }//if( we have U or Pu in the problem )
+    
     
     /*
     if( m_u_pu_data_source->isVisible() )
@@ -2331,6 +2346,31 @@ rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *pa
       xml_node<char> *node = doc->allocate_node( node_element, "BackgroundSubtract", val );
       options_node->append_node( node );
     }//if( we have a background to subtract )
+    
+    if( m_pu_corr_method->isVisible() && m_pu_corr_method->count() )
+    {
+      string valstr;
+      const string currtxt = m_pu_corr_method->currentText().toUTF8();
+      for( int i = 0; i <= static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
+      {
+        const auto method = RelActCalc::PuCorrMethod(i);
+        const string &desc = RelActCalc::to_description( method );
+        if( desc == currtxt )
+        {
+          valstr = RelActCalc::to_str(method);
+          break;
+        }
+      }//for( loop over RelActCalc::PuCorrMethod )
+      
+      assert( !valstr.empty() );
+      
+      if( !valstr.empty() )
+      {
+        const char *val = doc->allocate_string( valstr.c_str() );
+        xml_node<char> *node = doc->allocate_node( node_element, "Pu242CorrMethod", val );
+        options_node->append_node( node );
+      }
+    }//if( we have U or Pu in the problem )
   }// End put extra options
   
   
@@ -2422,14 +2462,34 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   
   
   {// Begin get extra options
-    const xml_node<char> *opt_node = XML_FIRST_NODE(node, "UPuByCorrelation");
+    const xml_node<char> *opt_node = XML_FIRST_NODE(node, "BackgroundSubtract");
     string val = SpecUtils::xml_value_str( opt_node );
-    const bool by_correlation = !SpecUtils::iequals_ascii(val, "false");
-    m_u_pu_by_correlation->setChecked(by_correlation);
-    
-    opt_node = XML_FIRST_NODE(node, "BackgroundSubtract");
-    val = SpecUtils::xml_value_str( opt_node );
     const bool back_sub = SpecUtils::iequals_ascii(val, "true");
+    m_background_subtract->setChecked( back_sub );
+    
+
+    if( m_pu_corr_method->label() )
+      m_pu_corr_method->label()->hide();
+    opt_node = XML_FIRST_NODE(node, "Pu242CorrMethod");
+    val = SpecUtils::xml_value_str( opt_node );
+    
+    // Start off assuming we will hide this option
+    m_pu_corr_method->clear();
+    m_pu_corr_method->hide();
+      
+    for( int i = 0; i <= static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
+    {
+      const auto method = RelActCalc::PuCorrMethod(i);
+      if( val == RelActCalc::to_str(method) )
+      {
+        m_pu_corr_method->addItem( RelActCalc::to_description( method ) );
+        m_pu_corr_method->setCurrentIndex( 0 );
+        m_pu_corr_method->show();
+        if( m_pu_corr_method->label() )
+          m_pu_corr_method->label()->show();
+        break;
+      }
+    }//for( loop over RelActCalc::PuCorrMethod )
     
     
     opt_node = XML_FIRST_NODE(node, "ShowRefGammaLines");
@@ -2757,7 +2817,7 @@ void RelActAutoGui::handleSameAgeChanged()
   scheduleRender();
 }
 
-void RelActAutoGui::handleUPuByCorrelationChanged()
+void RelActAutoGui::handlePuByCorrelationChanged()
 {
   checkIfInUserConfigOrCreateOne();
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -3605,10 +3665,13 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
   map<short,int> z_to_num_isotopes;
   
   const vector<RelActCalcAuto::NucInputInfo> nuclides = getNucInputInfo();
+  set<string> nuc_names;
   for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
   {
     if( !nuc.nuclide )
       continue;
+    
+    nuc_names.insert( nuc.nuclide->symbol );
     
     const short z = nuc.nuclide->atomicNumber;
     if( !z_to_num_isotopes.count(z) )
@@ -3623,6 +3686,62 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
   if( m_same_z_age->isVisible() != has_multiple_nucs_of_z )
     m_same_z_age->setHidden( !has_multiple_nucs_of_z );
   
+  
+  // We need Pu238, Pu239, and Pu240 for Bignan95_PWR and Bignan95_BWR.
+  // We need Pu239 and at least one other isotope for ByPu239Only.
+  const bool can_bignan = (nuc_names.count("Pu238") && nuc_names.count("Pu239")
+                           && nuc_names.count("Pu240"));
+  const bool can_239only = (nuc_names.count("Pu239")
+                             && (nuc_names.count("Pu238") || nuc_names.count("Pu240")
+                                  || nuc_names.count("Pu241") || nuc_names.count("Am241")) );
+  
+  const bool show_pu_corr = (can_bignan || can_239only);
+  m_pu_corr_method->setHidden( !show_pu_corr );
+  WLabel *combo_label = m_pu_corr_method->label();
+  if( combo_label )
+    combo_label->setHidden( !show_pu_corr );
+  
+
+  if( show_pu_corr )
+  {
+    const int nentries = m_pu_corr_method->count();
+    const int nentries_needed = 1 + (can_239only ? 1 : 0) + (can_bignan ? 2 : 0);
+    if( nentries != nentries_needed )
+    {
+      string current_txt;
+      if( !m_pu_corr_method->count() )
+        current_txt = m_pu_corr_method->currentText().toUTF8();
+      
+      m_pu_corr_method->clear();
+      
+      const string &none = RelActCalc::to_description( RelActCalc::PuCorrMethod::NotApplicable );
+      const string &byPu239Only = RelActCalc::to_description( RelActCalc::PuCorrMethod::ByPu239Only );
+      const string &bignanBwr = RelActCalc::to_description( RelActCalc::PuCorrMethod::Bignan95_BWR );
+      const string &bignanPwr = RelActCalc::to_description( RelActCalc::PuCorrMethod::Bignan95_PWR );
+      
+      m_pu_corr_method->addItem( WString::fromUTF8(none) );
+      int next_index = 0;
+      if( can_239only )
+      {
+        if( current_txt == byPu239Only )
+          next_index = m_pu_corr_method->count();
+        m_pu_corr_method->addItem( WString::fromUTF8(byPu239Only) );
+      }//if( can_239only )
+      
+      if( can_bignan )
+      {
+        if( current_txt == bignanPwr )
+          next_index = m_pu_corr_method->count();
+        m_pu_corr_method->addItem( WString::fromUTF8(bignanPwr) );
+        
+        if( current_txt == bignanBwr )
+          next_index = m_pu_corr_method->count();
+        m_pu_corr_method->addItem( WString::fromUTF8(bignanBwr) );
+      }//if( can_bignan )
+      
+      m_pu_corr_method->setCurrentIndex( next_index );
+    }//if( nentries != nentries_needed )
+  }//if( show_pu_corr )
 }//void updateDuringRenderForNuclideChange()
 
 
