@@ -3926,6 +3926,32 @@ double PeakDef::gauss_integral( const double x0, const double x1 ) const
 }//double gauss_integral( const double x0, const double x1 ) const;
 
 
+void PeakDef::gauss_integral( const float *energies, double *channels, const size_t nchannel ) const 
+{
+  const double mean = m_coefficients[PeakDef::Mean];
+  const double sigma = m_coefficients[PeakDef::Sigma];
+  const double amp = m_coefficients[PeakDef::GaussAmplitude];
+  gaus_integral( mean, sigma, amp, energies, channels, nchannel );
+  
+  switch( m_skewType )
+  {
+    case PeakDef::NoSkew:
+      break;
+      
+    case PeakDef::LandauSkew:
+    {
+      // We dont use the current peak skew model often (at all?), so we wont bother to optimize it
+      for( size_t i = 0; i < nchannel; ++i )
+      {
+        const float x0 = energies[i];
+        const float x1 = energies[i+1];
+        channels[i] += skew_integral( x0, x1 );
+      }
+      break;
+    }
+  };//enum SkewType
+}//void gauss_integral( const float * const energies, double *channels, const size_t nchannel )
+
 
 double PeakDef::offset_integral( const double x0, const double x1,
                                  const std::shared_ptr<const SpecUtils::Measurement> &data ) const
@@ -4030,6 +4056,48 @@ double PeakDef::gaus_integral( const double peak_mean, const double peak_sigma,
   
   return 0.5 * peak_amplitude * (boost_erf_imp(erfhigharg) - boost_erf_imp(erflowarg));
 }//double gaus_integral(...)
+
+
+void PeakDef::gaus_integral( const double peak_mean,
+                            const double peak_sigma,
+                            const double peak_amplitude,
+                            const float * const energies,
+                            double *channels,
+                            const size_t nchannel )
+{
+  if( peak_sigma==0.0 || peak_amplitude==0.0 )
+    return;
+  
+  const double zero_amp_point_nsigma = 8.0;
+  const float start_energy = static_cast<float>( peak_mean - zero_amp_point_nsigma*peak_sigma );
+  const float stop_energy = static_cast<float>( peak_mean + zero_amp_point_nsigma*peak_sigma );
+  
+  size_t channel = 0;
+  while( (channel < nchannel) && (energies[channel+1] < start_energy) )
+  {
+    channel += 1;
+  }
+  
+  if( channel == nchannel )
+    return;
+  
+  const double sqrt2 = boost::math::constants::root_two<double>();
+  
+  // We will keep track of the channels lower value of erf, so we dont have to re-compute
+  //  it for each channel (this is the who advantage of )
+  double erflow = boost_erf_imp( (energies[channel] - peak_mean)/(sqrt2*peak_sigma) );
+  
+  while( (channel < nchannel) && (energies[channel] < stop_energy) )
+  {
+    const double erfhigharg = (energies[channel+1] - peak_mean)/(sqrt2*peak_sigma);
+    const double erfhigh = boost_erf_imp( erfhigharg );
+    
+    channels[channel] += 0.5 * peak_amplitude * (erfhigh - erflow);
+    channel += 1;
+    erflow = erfhigh;
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+}//gaus_integral(...)
+
 
 
 ////////////////////////////////////////////////////////////////////////////////

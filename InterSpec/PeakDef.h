@@ -660,9 +660,26 @@ public:
   double upperX() const;
   inline double roiWidth() const;
   
-  //gauss_integral(): gives the area of the Gaussian and Skew (if applicable)
-  //  components of the peak, between x0 and x1.
+  /** Returns the the area of the Gaussian and Skew (if applicable) components of the peak,
+   between x0 and x1.
+   */
   double gauss_integral( const double x0, const double x1 ) const;
+  
+  /** Adds each channels contribution from the Gaussian and Skew (if applicable) into a channel
+   array.
+   
+   The computation of the Gaussian integral calls the `erf` function twice (once for lower energy,
+   and once for upper energy of each channel), which even when using an optimized function, takes
+   up much of the CPU time of fitting peaks.  This call to get the peak area contributions to each
+   channel effectively cuts the number of calls to the `erf` function in half.
+   
+   \param energies Array of lower channel energies; must have at least one more entry than
+          `nchannel`
+   \param channels Channel count array integrals of Gaussian and Skew will be _added_ to (e.g.,
+          will not be zeroed); must have at least `nchannel` entries
+   \param nchannel The number of channels to do the integration over.
+   */
+  void gauss_integral( const float *energies, double *channels, const size_t nchannel ) const;
   
   
   //offset_integral(): gives area of the continuum component between x0 and x1.
@@ -729,6 +746,28 @@ public:
                                const double peak_sigma,
                                const double peak_amplitude,
                                const double x0, const double x1 );
+  
+  /** Slightly CPU optimized method of computing the Gaussian integral over a number of channels.
+   
+   Cuts the number of calls to the `erf` function (which is what takes the longest in the
+   function) in half.
+   Also, only calculates values between +-8 sigma of the mean (which is 1 - 1E-15 the total counts).
+   
+   @param peak_mean
+   @param peak_sigma
+   @param peak_amplitude
+   @param energies Array of lower channel energies; must have at least one more entry than
+          `nchannel`
+   @param channels Channel count array integrals of Gaussian and Skew will be _added_ to (e.g.,
+          will not be zeroed); must have at least `nchannel` entries
+   @param nchannel The number of channels to do the integration over.
+   */
+  static void gaus_integral( const double peak_mean,
+                              const double peak_sigma,
+                              const double peak_amplitude,
+                              const float * const energies,
+                              double *channels,
+                              const size_t nchannel );
 
   static bool causilyConnected( const PeakDef &lower_peak,
                                 const PeakDef &upper_peak,

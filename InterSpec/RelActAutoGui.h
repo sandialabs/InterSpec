@@ -140,9 +140,12 @@ public:
   
   /** Checks if the m_presets is in a "custom" state, and if not, puts it there
    
+   @param force_create if true, will create a new state, even if in a user created/modified state,
+          if false, will only create a new state if not already in a custom state.
+   
    TODO: save the previous user to allow going back to them
    */
-  void checkIfInUserConfigOrCreateOne();
+  void checkIfInUserConfigOrCreateOne( const bool force_create );
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
   
@@ -154,11 +157,14 @@ public:
   
   void setCalcOptionsGui( const RelActCalcAuto::Options &options );
   
+  
   RelActCalcAuto::Options getCalcOptions() const;
   std::vector<RelActCalcAuto::NucInputInfo> getNucInputInfo() const;
   std::vector<RelActCalcAuto::RoiRange> getRoiRanges() const;
   std::vector<RelActCalcAuto::FloatingPeak> getFloatingPeaks() const;
   
+  
+  std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> getCurrentSolution() const;
   
 protected:
   void handleRoiDrag( double new_roi_lower_energy,
@@ -191,6 +197,19 @@ protected:
   void applyFitEnergyCalToSpecFile();
   void handleShowRefLines( const bool show );
   
+  /** Calculation has been started. */
+  Wt::Signal<> &calculationStarted();
+  
+  /** Calculation finished and the solution is valid. */
+  Wt::Signal<> &calculationSuccessful();
+  
+  /** Calculation failed, and m_solution is nullptr. */
+  Wt::Signal<> &calculationFailed();
+  
+  /** Calculation is finished. */
+  Wt::Signal< std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> > &solutionUpdated();
+  
+  void addDownloadAndUploadLinks( Wt::WContainerWidget *parent );
 protected:
   
   enum RenderActions
@@ -306,6 +325,22 @@ protected:
    */
   std::shared_ptr<const DetectorPeakResponse> m_cached_drf;
   std::vector<std::shared_ptr<const PeakDef>> m_cached_all_peaks;
+  
+  /** Emitted when a new calculation is started, even if there was already one running. */
+  Wt::Signal<> m_calc_started;
+  
+  /** Calculation finished and the solution is valid. */
+  Wt::Signal<> m_calc_successful;
+  
+  /** Emitted when calculation failed (m_solution is nullptr), or failed to find solution. */
+  Wt::Signal<> m_calc_failed;
+  
+  /** Emitted whenever m_solution is set. */
+  Wt::Signal< std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> > m_solution_updated;
+  
+  Wt::WResource *m_html_download_rsc;
+  
+  Wt::WResource *m_xml_download_rsc;
 };//class RelActAutoGui
 
 

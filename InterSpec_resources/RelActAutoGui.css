@@ -411,3 +411,18 @@
   color: red;
   place-self: center;
 }
+
+.DownloadBtn.RelActDownload
+{
+  float: left;
+  padding-left: 2px;
+  flex-direction: row-reverse;
+}
+
+a.DownloadLink.RelActDownload > span
+{
+  padding-right: 24px;
+  background-position: bottom 0px right 0px;
+  margin-top: 7px;
+}
+

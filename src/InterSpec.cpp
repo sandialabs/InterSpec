@@ -7398,7 +7398,10 @@ void InterSpec::showRelActAutoWindow()
                                                ? m_dataMeasurement->relActAutoGuiState()
                                                : nullptr;
     if( relActState && relActState->first_node() )
+    {
       m_relActAutoGui->deSerialize( relActState->first_node() );
+      m_relActAutoGui->checkIfInUserConfigOrCreateOne( true );
+    }
   }catch( std::exception &e )
   {
     passMessage( "Error setting &quot;Isotopics from nuclides&quot; state to previously used state: "

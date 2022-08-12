@@ -6292,6 +6292,52 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   }
   
   
+  // For the RelACtAuto calcs, there can easily be 100 peaks, so for this case we'll calculate
+  //  their contribution multithreaded.
+  //  I have no idea if this is the optimal way to do the calculation, but better than not using
+  //  threads at all.
+  //  If we dont have many fixed peaks, we'll avoid the extra allocation (totally unchecked if
+  //  this actually saves anything perceptible)
+  //  We'll divide the channels into nthread ranges, and then inside each thread,
+  //  compute its range for each peak - this way we can cut the number of calls to the `erf`
+  //  function in half by calling a more optimized version of the peak integral function
+  //
+  const size_t nfixedpeak = fixedAmpPeaks.size();
+  const bool do_mt_fixed_peak = (nfixedpeak > 4); // 4 chosen arbitrarily
+  vector<double> mt_fixed_peak_contrib( do_mt_fixed_peak ? nbin : size_t(0), 0.0f );
+  
+  //peak.gauss_integral( const float * const energies, double *channels, const size_t nchannel )
+  if( do_mt_fixed_peak )
+  {
+    const size_t nthread = std::thread::hardware_concurrency();
+    double * const fixed_contrib = &(mt_fixed_peak_contrib[0]);
+    
+    SpecUtilsAsync::ThreadPool pool;
+    
+    const size_t nbin_per_thread = 1 + (nbin / nthread);
+    
+    for( size_t start_channel = 0; start_channel < nbin; start_channel += nbin_per_thread )
+    {
+      const float *this_x = x + start_channel;
+      double *this_contribs = fixed_contrib + start_channel;
+      const size_t end_channel = start_channel + nbin_per_thread;
+      const size_t this_nchannel = std::min( end_channel, nbin ) - start_channel; //make sure we dont go out of range
+      
+      assert( (this_nchannel > 0) && (this_nchannel <= nbin_per_thread) );
+      
+      pool.post( [this_x, this_contribs, this_nchannel, &fixedAmpPeaks](){
+        for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
+        {
+          const PeakDef &peak = fixedAmpPeaks[peak_index];
+          peak.gauss_integral( this_x, this_contribs, this_nchannel );
+        }
+      } );
+    }//for( size_t start_channel = 0; start_channel < nbin; start_channel += nbin_per_thread )
+    
+    pool.join();
+  }//if( do_mt_fixed_peak )
+  
+  
   for( size_t row = 0; row < nbin; ++row )
   {
     double dataval = data[row];
@@ -6337,11 +6383,23 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     }//if( dataval < FLT_EPSILON )
 */
     
-
-    //TODO: I havent actually reasoned through the algorithm to see if this is the
-    //      correct way to subtract off fixed-amplitude peaks.
-    for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
-      dataval -= fixedAmpPeaks[i].gauss_integral( x0, x1 );
+    if( do_mt_fixed_peak )
+    {
+      assert( mt_fixed_peak_contrib.size() == nbin );
+      dataval -= mt_fixed_peak_contrib[row];
+    }else if( !fixedAmpPeaks.empty() )
+    {
+      for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
+      {
+        // See multithreaded implementation above for reasoning; the logic and width should
+        //  match above.
+        const PeakDef &peak = fixedAmpPeaks[i];
+        const double mean = peak.mean();
+        const double integration_width = 8*peak.sigma();
+        if( (x1 >= (mean - integration_width)) && (x0 <= (mean + integration_width)) )
+          dataval -= fixedAmpPeaks[i].gauss_integral( x0, x1 );
+      }
+    }//if( do_mt_fixed_peak )
     
     b(row) = ((dataval > 0.0 ? dataval : 0.0) / uncert);
     

@@ -2018,10 +2018,14 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
     
     solution.m_dof = cost_functor->m_peak_infos.size() - (eqn_order+1) - (cost_functor->m_isotopes.size() - 1);
     
+    bool used_unweighted = false, used_add_uncert = false;
     for( const GenericPeakInfo &peak : cost_functor->m_peak_infos )
     {
       const vector<double> &rel_eff_coefs = solution.m_rel_eff_eqn_coefficients;
       const double curve_val = RelActCalc::eval_eqn( peak.m_energy, eqn_form, rel_eff_coefs );
+      
+      used_add_uncert |= (peak.m_base_rel_eff_uncert > 1.0E-9);
+      used_unweighted |= (peak.m_base_rel_eff_uncert < -1.0E-9);
       
       double expected_src_counts = 0.0;
       for( const GenericLineInfo &line : peak.m_source_gammas )
@@ -2033,6 +2037,12 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
       const double expected_counts = expected_src_counts * curve_val;
       solution.m_chi2 += std::pow( (expected_counts - peak.m_counts) / peak.m_counts_uncert, 2.0 );
     }//for( loop over energies to evaluate at )
+    
+    if( used_add_uncert )
+      solution.m_warnings.push_back( "Additional uncertainties were applied to peaks - the result uncertainties include these, so may not be reliable to interpret." );
+    
+    if( used_unweighted )
+      solution.m_warnings.push_back( "Fit to rel. eff. was unweighted, so uncertainties may not have a straightforward interpretation." );
     
     
     solution.m_status = ManualSolutionStatus::Success;

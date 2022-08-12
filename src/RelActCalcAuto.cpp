@@ -972,6 +972,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }//for( loop over gammas_in_range )
     }//for( const RelActCalcAuto::RoiRange &input : energy_ranges )
     
+    
+    std::sort( begin(m_energy_ranges), end(m_energy_ranges),
+              []( const RoiRangeChannels &lhs, const RoiRangeChannels &rhs ) -> bool {
+      return lhs.lower_energy < rhs.lower_energy;
+    } );
+    
+    
     if( m_energy_ranges.empty() )
       throw runtime_error( "RelActAutoCostFcn: no gammas in the defined energy ranges." );
     
@@ -2987,15 +2994,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//if( m_cancel_calc && m_cancel_calc->load() )
     
     assert( SpecUtilsAsync::num_logical_cpu_cores() > 0 );
-    const size_t nthreads_to_use = static_cast<size_t>( SpecUtilsAsync::num_logical_cpu_cores() );
+    const size_t nthreads_to_use = static_cast<size_t>( SpecUtilsAsync::num_physical_cpu_cores() );
     
     // If there are a bunch of ROIs, we'll evaluate each ROI in their own thread, or else, we'll
     //  break each ROI up into `nthreads_to_use` chunks and evaluate all those in parallel and each
     //  ROI in parallel.
     //
-    // TODO: None of this multithreading of computation has been benchmarked, so for all I know it might actually slow things down!
-    //       (maybe we should just parallelize over both, unless there are a ton of ROI, in which case we parallelize over just the ROIs)
-    const bool parallelize_over_rois_only = (m_energy_ranges.size() >= 4*nthreads_to_use);
+    // TODO: None of this multithreading of computation has been carefully benchmarked, so for all I know it might actually slow things down!
+    //
+    // TODO: the slight numerical rounding differences between the methods yields slightly different end results, and different number of required iterations.  If you cast each residual to a 32-bit float, and then back to a double, both methods yield the exact same answer.  This instability makes me nervous, but it should also maybe be corrected for
+    const bool parallelize_over_rois_only = (m_energy_ranges.size() >= nthreads_to_use);
+    
     
     assert( peaks_in_ranges.size() == m_energy_ranges.size() );
     
@@ -3019,95 +3028,148 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const size_t nchannels_roi = (info.last_channel - info.first_channel) + 1;
       residual_index += nchannels_roi;
       
-      // Define a lamda to evaluate the residuals for every n'th channel in ROI, after an initial
-      //  offset.  This allows us to evaluate a ROI using multiple threads, or evaluate an entire
-      //  ROI in a single thread by setting offset to 0, and skip to 1.
-      const auto eval_nth_channels = [this, residuals, residual_start_index, continuum]
-                                  ( const size_t channel_offset,
-                                    const size_t channel_skip,
-                                   const PeaksForEnergyRange &range ){
-        assert( channel_skip != 0 );
-        const size_t start_channel = range.first_channel + channel_offset;
-        for( size_t channel = start_channel; channel <= range.last_channel; channel += channel_skip )
-        {
-          const double data_counts = m_channel_counts[channel];
-          const double data_uncert = m_channel_count_uncerts[channel];
-          const double lower_energy = m_energy_cal->energy_for_channel(channel);
-          const double upper_energy = m_energy_cal->energy_for_channel(channel + 1);
-          const double continuum_counts = continuum->offset_integral(lower_energy, upper_energy, m_spectrum);
-          
-          double gaussian_area = 0.0;
-          for( const PeakDef &peak : range.peaks )
-          {
-            // The gauss integral is actually pretty expensive, so we'll avoid it if we are just
-            //  really outside the area where peaks could contribute; 8 sigma chosen arbitrarily.
-            //  I'm sure there is a better way to do this.
-            if( !range.forced_full_range
-               || ((upper_energy >= (peak.mean() - 8*peak.sigma()))
-                   && (lower_energy <= (peak.mean() + 8*peak.sigma()))) )
-            {
-              // TODO: the gauss_integral calls `boost_erf_imp` twice, one of which could be avoided if we fill-out the channels sequentially for each peak; this would require some re-factoring, so we'll do it later.  This also needs to be done for `fit_amp_and_offset`
-              gaussian_area += peak.gauss_integral( lower_energy, upper_energy );
-            }
-          }
-          
-          const size_t index = residual_start_index + (channel - range.first_channel);
-          
-          residuals[index] = (data_counts - continuum_counts - gaussian_area) / data_uncert;
-        }//for( loop over channels in ROI )
-      };//eval_nth_channels
-      
-      
       if( parallelize_over_rois_only )
       {
-        pool.post( [eval_nth_channels,roi_index,&peaks_in_ranges](){
-          eval_nth_channels( 0, 1, peaks_in_ranges[roi_index] );
+        // Define a lamda to evaluate the residuals for an entire ROI
+        const auto eval_for_roi = [this, residuals, residual_start_index, continuum]( const PeaksForEnergyRange &range ) {
+          
+          const shared_ptr<const vector<float>> &energies_ptr = m_energy_cal->channel_energies();
+          if( !energies_ptr || ((range.last_channel+1) >= energies_ptr->size()) )
+            throw runtime_error( "RelActAutoCostFcn::eval(): somehow invalid energy cal." );
+          
+          const vector<float> &energies = *energies_ptr;
+          
+          // We will use the `residual` array to do our computation in
+          const size_t this_nchannel = 1 + range.last_channel - range.first_channel;
+          
+          double * const this_residual = residuals + residual_start_index;
+          const float * const this_energies = &(energies[range.first_channel]);
+          
+          // I think the memset call is valid...
+          memset( this_residual, 0, sizeof(double) * this_nchannel );
+          //for( size_t i = 0; i < this_nchannel; ++i )
+          //  this_residual[i] = 0.0;
+          
+          // Fill in gaussian values
+          for( const PeakDef &peak : range.peaks )
+            peak.gauss_integral( this_energies, this_residual, this_nchannel );
+          
+          // Fill the continuum values
+          //  TODO: optimize call to computing continuum to take in array for range of energy, or at least combine this loop and the next
+          for( size_t index = 0; index < this_nchannel; ++index )
+          {
+            const double x0 = this_energies[index];
+            const double x1 = this_energies[index + 1];
+            this_residual[index] += continuum->offset_integral( x0, x1, m_spectrum );
+          }
+          
+          
+          for( size_t index = 0; index < this_nchannel; ++index )
+          {
+            const size_t data_index = range.first_channel + index;
+            const double data_counts = m_channel_counts[data_index];
+            const double data_uncert = m_channel_count_uncerts[data_index];
+            const double peak_area = this_residual[index];
+            
+            this_residual[index] = (data_counts - peak_area) / data_uncert;
+          }
+        };//eval_for_roi
+        
+        pool.post( [eval_for_roi,roi_index,&peaks_in_ranges](){
+          eval_for_roi( peaks_in_ranges[roi_index] );
         } );
       }else
       {
-        // TODO: figure out a rough break-even point for submitting a job, vs just doing it on the current thread.
-        //if( (info.last_channel - info.first_channel) < 10*nthreads_to_use )
-        //{
-        //  eval_nth_channels( 0, 1, peaks_in_ranges[roi_index] );
-        //}else
-        //{
-          for( size_t thread_num = 0; thread_num < nthreads_to_use; ++thread_num )
+        // Define a lamda to evaluate the residuals for every n'th channel in ROI, after an initial
+        //  offset.  This allows us to evaluate a ROI using multiple threads, or evaluate an entire
+        //  ROI in a single thread by setting offset to 0, and skip to 1.
+        const auto eval_nth_channels = [this, residuals, residual_start_index, continuum]
+        ( const size_t channel_offset,
+         const size_t channel_skip,
+         const PeaksForEnergyRange &range ){
+          assert( channel_skip != 0 );
+          const size_t start_channel = range.first_channel + channel_offset;
+          
+          const shared_ptr<const vector<float>> &energies_ptr = m_energy_cal->channel_energies();
+          if( !energies_ptr || ((range.last_channel+1) >= energies_ptr->size()) )
+            throw runtime_error( "RelActAutoCostFcn::eval(): somehow invalid energy cal." );
+          
+          const vector<float> &energies = *energies_ptr;
+          
+          for( size_t channel = start_channel; channel <= range.last_channel; channel += channel_skip )
           {
-            pool.post( [eval_nth_channels,thread_num,roi_index,&peaks_in_ranges,nthreads_to_use](){
-              eval_nth_channels( thread_num, nthreads_to_use, peaks_in_ranges[roi_index] );
-            } );
-          }
-        //}//if( (info.last_channel - info.first_channel) < 10*nthreads_to_use )
+            const double data_counts = m_channel_counts[channel];
+            const double data_uncert = m_channel_count_uncerts[channel];
+            const double lower_energy = energies[channel];
+            const double upper_energy = energies[channel + 1];
+            const double continuum_counts = continuum->offset_integral(lower_energy, upper_energy, m_spectrum);
+            
+            double gaussian_area = 0.0;
+            for( const PeakDef &peak : range.peaks )
+            {
+              // The gauss integral is actually pretty expensive, so we'll avoid it if we are just
+              //  really outside the area where peaks could contribute; 8 sigma chosen arbitrarily.
+              //  I'm sure there is a better way to do this.
+              if( (upper_energy >= (peak.mean() - 8*peak.sigma()))
+                     && (lower_energy <= (peak.mean() + 8*peak.sigma())) )
+              {
+                // TODO: the gauss_integral calls `boost_erf_imp` twice, one of which could be avoided if we fill-out the channels sequentially for each peak; this would require some re-factoring, so we'll do it later.  This also needs to be done for `fit_amp_and_offset`
+                gaussian_area += peak.gauss_integral( lower_energy, upper_energy );
+              }
+            }
+            
+            const size_t index = residual_start_index + (channel - range.first_channel);
+            
+            residuals[index] = (data_counts - continuum_counts - gaussian_area) / data_uncert;
+          }//for( loop over channels in ROI )
+        };//eval_nth_channels
+        
+        for( size_t thread_num = 0; thread_num < nthreads_to_use; ++thread_num )
+        {
+          pool.post( [eval_nth_channels,thread_num,roi_index,&peaks_in_ranges,nthreads_to_use](){
+            eval_nth_channels( thread_num, nthreads_to_use, peaks_in_ranges[roi_index] );
+          } );
+        }
       }//if( parallelize_over_rois ) / else
       
-      /*
-       //Original non-parallel implementation - leaving commented out until parrallel implementation
-       //  is fully tested.
+/*
+       //Original non-parallel implementation
+      const shared_ptr<const vector<float>> &energies_ptr = m_energy_cal->channel_energies();
+      const vector<float> &energies = *energies_ptr;
       for( size_t channel = info.first_channel; channel <= info.last_channel; ++channel )
       {
         const double data_counts = m_channel_counts[channel];
         const double data_uncert = m_channel_count_uncerts[channel];
-        const double lower_energy = m_energy_cal->energy_for_channel(channel);
-        const double upper_energy = m_energy_cal->energy_for_channel(channel + 1);
+        const double lower_energy = energies[channel];
+        const double upper_energy = energies[channel + 1];
         const double continuum_counts = continuum->offset_integral(lower_energy, upper_energy, m_spectrum);
         
         double gaussian_area = 0.0;
         for( const PeakDef &peak : info.peaks )
-          gaussian_area += peak.gauss_integral( lower_energy, upper_energy );
+        {
+          if( (upper_energy >= (peak.mean() - 8*peak.sigma()))
+                 && (lower_energy <= (peak.mean() + 8*peak.sigma())) )
+          {
+            gaussian_area += peak.gauss_integral( lower_energy, upper_energy );
+          }
+        }
           
-        residuals[residual_index] = (data_counts - continuum_counts - gaussian_area) / data_uncert;
-        
-        //cout << "eval: For channel " << channel << " (" << lower_energy << " to " << upper_energy
-        //<< " keV) there are " << data_counts << " data counts, and currently fitting for "
-        //<< gaussian_area << " gaussian counts, and " << continuum_counts
-        //<< " continuum counts (total fit: " << (gaussian_area + continuum_counts) << ")" << endl;
-        
-        ++residual_index;
+        const size_t res_index = residual_start_index + channel - info.first_channel;
+        debug_residuals[res_index] = (data_counts - continuum_counts - gaussian_area) / data_uncert;
       }//for( loop over channels )
-       */
+*/
     }//for( loop over m_energy_ranges )
     
     pool.join();
+    
+    // See TODO above about calculations methods giving slightly different end-results, unless be
+    //  truncate the accuracy of the residuals to be floats.
+    //cerr << "\n\nRounding residuals to floats for debug\n\n" << endl;
+    //const size_t nresid = number_residuals();
+    //for( size_t i = 0; (i+1) < nresid; ++i )
+    //  residuals[i] = static_cast<float>(residuals[i]);
+    
+    assert( (residual_index + 1) == number_residuals() );
     
     // Now make sure the relative efficiency curve is anchored to 1.0 (this removes the degeneracy
     //  between the relative efficiency amplitude, and the relative activity amplitudes).
@@ -4110,6 +4172,38 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
   if( pu240 )
     out << "\nEnrichment " << 100.0*mass_enrichment_fraction(pu240) << "% Pu240\n";
   
+  
+  // For Pu, print a corrected enrichment table
+  if( m_corrected_pu )
+  {
+    out << "Plutonium Enrichment:\n";
+    
+    set<string> nuclides;
+    for( const auto &act : m_rel_activities )
+    {
+      if( act.nuclide
+         && ((act.nuclide->atomicNumber == 94)
+             || ((act.nuclide->atomicNumber == 95) && (act.nuclide->massNumber == 241))) )
+      {
+        nuclides.insert( act.nuclide->symbol );
+      }
+    }//for( const auto &act : m_rel_activities )
+    
+    if( nuclides.count( "Pu238" ) )
+      out << "\tPu238: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu238_mass_frac, 4) << "\n";
+    if( nuclides.count( "Pu239" ) )
+      out << "\tPu239: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu239_mass_frac, 4) << "\n";
+    if( nuclides.count( "Pu240" ) )
+      out << "\tPu40: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu240_mass_frac, 4) << "\n";
+    if( nuclides.count( "Pu241" ) )
+      out << "\tPu241: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu241_mass_frac, 4) << "\n";
+    out << "\tPu242 (by corr): " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu242_mass_frac, 4) << "\n";
+    if( nuclides.count( "Am241" ) )
+      out << "\tAm241: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->am241_mass_frac, 4) << "\n";
+    out << "\n";
+  }//if( m_corrected_pu )
+  
+  
   for( auto &v : nucs_of_element )
   {
     vector<const SandiaDecay::Nuclide *> nucs = v.second;
@@ -4120,6 +4214,9 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
     
     const SandiaDecay::Element * const el = db->element( nucs.front()->atomicNumber );
     assert( el );
+    
+    if( m_corrected_pu && (el->atomicNumber == 94) )
+      continue;
     
     out << "For " << el->name << ":\n";
     for( const SandiaDecay::Nuclide *nuc : nucs )
@@ -4151,10 +4248,61 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
                << RelActCalc::rel_eff_eqn_text( m_rel_eff_form, m_rel_eff_coefficients )
                << "</div>\n";
   
+  // For Pu, print a corrected enrichment table
+  if( m_corrected_pu )
+  {
+    results_html << "<table class=\"nuctable resulttable\">\n";
+    results_html << "  <caption>Plutonium mass fractions</caption>\n";
+    results_html << "  <thead><tr>"
+    " <th scope=\"col\">Nuclide</th>"
+    " <th scope=\"col\">% Pu Mass</th>"
+    " </tr></thead>\n";
+    results_html << "  <tbody>\n";
+    
+    set<string> nuclides;
+    for( const auto &act : m_rel_activities )
+    {
+      if( act.nuclide
+         && ((act.nuclide->atomicNumber == 94)
+             || ((act.nuclide->atomicNumber == 95) && (act.nuclide->massNumber == 241))) )
+      {
+        nuclides.insert( act.nuclide->symbol );
+      }
+    }//for( const auto &act : m_rel_activities )
+    
+    if( nuclides.count( "Pu238" ) )
+      results_html << "  <tr><td>Pu238</td><td>"
+                   << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu238_mass_frac, 4)
+                   << "</td></tr>\n";
+    if( nuclides.count( "Pu239" ) )
+      results_html << "  <tr><td>Pu239</td><td>"
+      << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu239_mass_frac, 4)
+      << "</td></tr>\n";
+    if( nuclides.count( "Pu240" ) )
+      results_html << "  <tr><td>Pu40</td><td>"
+      << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu240_mass_frac, 4)
+      << "</td></tr>\n";
+    if( nuclides.count( "Pu241" ) )
+      results_html << "  <tr><td>Pu241</td><td>"
+      << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu241_mass_frac, 4)
+      << "</td></tr>\n";
+    results_html << "  <tr><td>Pu242 (by corr)</td><td>"
+      << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu242_mass_frac, 4)
+      << "</td></tr>\n";
+    if( nuclides.count( "Am241" ) )
+      results_html << "  <tr><td>Am241</td><td>"
+      << PhysicalUnits::printCompact(100.0*m_corrected_pu->am241_mass_frac, 4)
+      << "</td></tr>\n";
+    results_html << "  </tbody>\n"
+    << "</table>\n\n";
+  }//if( m_corrected_pu )
+  
+  
   double sum_rel_mass = 0.0;
   for( const auto &act : m_rel_activities )
     sum_rel_mass += act.rel_activity / act.nuclide->activityPerGram();
   
+
   results_html << "<table class=\"nuctable resulttable\">\n";
   results_html << "  <caption>Isotope relative activities and mass fractions</caption>\n";
   results_html << "  <thead><tr>"
@@ -4164,6 +4312,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
                   " <th scope=\"col\">Enrichment</th>"
                   " </tr></thead>\n";
   results_html << "  <tbody>\n";
+  
   
   for( const auto &act : m_rel_activities )
   {
@@ -4405,8 +4554,10 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   rel_eff_json_data( rel_eff_plot_values, add_rel_eff_plot_css );
 
   auto load_file_contents = []( string filename ) -> string {
-    string filepath = wApp ? wApp->docRoot() : "InterSpec_resources";
-    filepath = SpecUtils::append_path(filepath, filename );
+    Wt::WApplication *app = Wt::WApplication::instance();
+    const string docroot = app ? app->docRoot() : ".";
+    const string resource_path = SpecUtils::append_path( docroot, "InterSpec_resources" );
+    const string filepath = SpecUtils::append_path( resource_path, filename );
     
     vector<char> file_data;
     try

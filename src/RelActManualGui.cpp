@@ -575,7 +575,7 @@ void RelActManualGui::init()
   m_downloadHtmlReport = new WAnchor( WLink(m_htmlResource), btndiv );
   m_downloadHtmlReport->setTarget( AnchorTarget::TargetNewWindow );
   m_downloadHtmlReport->setStyleClass( "LinkBtn DownloadLink CALp" );
-  m_downloadHtmlReport->setText( "CALp" );
+  m_downloadHtmlReport->setText( "HTML Report" );
 #else
   m_downloadHtmlReport = new WPushButton( "HTML Report", btndiv );
   m_downloadHtmlReport->setIcon( "InterSpec_resources/images/download_small.svg" );

@@ -34,12 +34,15 @@
 #include <Wt/WLabel>
 #include <Wt/WPoint>
 #include <Wt/WServer>
-#include <Wt/WMenuItem>
 #include <Wt/WCheckBox>
 #include <Wt/WComboBox>
+#include <Wt/WMenuItem>
+#include <Wt/WResource>
 #include <Wt/WIOService>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
+#include <Wt/Http/Request>
+#include <Wt/Http/Response>
 #include <Wt/WStackedWidget>
 #include <Wt/WContainerWidget>
 #include <Wt/WRegExpValidator>
@@ -99,6 +102,156 @@ namespace
         delete this;
     }
   };//class PeakRangePopupMenu
+
+
+  class RelActAutoReportResource : public Wt::WResource
+  {
+    Wt::WApplication *m_app;
+    RelActAutoGui *m_tool;
+    std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> m_solution;
+    
+  public:
+    RelActAutoReportResource( RelActAutoGui *tool, WObject* parent = nullptr )
+    : WResource( parent ), m_app( WApplication::instance() ), m_tool( tool ), m_solution( nullptr )
+    {
+      assert( m_app );
+      assert( m_tool );
+    }
+  
+    virtual ~RelActAutoReportResource()
+    {
+      beingDeleted();
+    }
+  
+    void updateSolution( const shared_ptr<const RelActCalcAuto::RelActAutoSolution> &solution )
+    {
+      m_solution = solution;
+    }
+    
+    virtual void handleRequest( const Wt::Http::Request &request, Wt::Http::Response &response )
+    {
+      assert( m_app );
+      
+      try
+      {
+        WApplication::UpdateLock lock( m_app );
+        
+        if( !lock )
+          throw std::runtime_error( "Error grabbing application lock to from RelActAutoReportResource resource." );
+        
+        //const shared_ptr<const RelActCalcAuto::RelActAutoSolution> solution = m_tool->getCurrentSolution();
+        
+        if( !m_solution )
+        {
+          response.out() << "<!DOCTYPE html>\n"
+          "\t<head><meta charset=\"utf-8\"><title>No <em>Isotopics by nuclide</em> solution available</title></head>"
+          "\t<body>"
+          "\t\tSorry - no solution currently available."
+          "\t</body>"
+          "</html>";
+          
+          return;
+        }//if( !m_solution )
+        
+        string filename;
+        InterSpec *viewer = InterSpec::instance();
+        shared_ptr<SpecMeas> meas = viewer ? viewer->measurment(SpecUtils::SpectrumType::Foreground) : nullptr;
+        
+        if( meas )
+          filename = meas->filename();
+        
+        if( filename.empty() )
+          filename = "rel_act_from_nuc";
+        const string orig_extension = SpecUtils::file_extension(filename);
+        if( orig_extension.size() && (orig_extension.size() < filename.size()) )
+          filename = filename.substr(0,filename.size() - orig_extension.size());
+        filename += ".html";
+        
+        //Remove bad filename characters
+        const string notallowed = "\\/:?\"<>|*";
+        for( auto it = begin(filename) ; it < end(filename) ; ++it )
+        {
+          if( notallowed.find(*it) != string::npos )
+            *it = ' ';
+        }
+        
+        suggestFileName( filename, WResource::Attachment );
+        response.setMimeType( "application/octet-stream" );
+              
+        m_solution->print_html_report( response.out() );
+      }catch( std::exception &e )
+      {
+        log("error") << "Error handling request for RelActAutoReportResource: " << e.what();
+        response.out() << "Error creating HTML file: " << e.what()
+        << "\n\nPlease report to InterSpec@sandia.gov.";
+      }//try / catch
+    }//void handleRequest(...)
+  };//class RelActAutoReportResource
+
+
+  class RelActAutoParamsResource : public Wt::WResource
+  {
+    Wt::WApplication *m_app;
+    RelActAutoGui *m_tool;
+    
+  public:
+    RelActAutoParamsResource( RelActAutoGui *tool, WObject* parent = nullptr )
+    : WResource( parent ), m_app( WApplication::instance() ), m_tool( tool )
+    {
+      assert( m_app );
+      assert( m_tool );
+    }
+    
+    virtual ~RelActAutoParamsResource()
+    {
+      beingDeleted();
+    }
+    
+    virtual void handleRequest( const Wt::Http::Request &request, Wt::Http::Response &response )
+    {
+      assert( m_app );
+      
+      try
+      {
+        WApplication::UpdateLock lock( m_app );
+        
+        if( !lock )
+          throw std::runtime_error( "Error grabbing application lock to from RelActAutoReportResource resource." );
+        
+        //const shared_ptr<const RelActCalcAuto::RelActAutoSolution> solution = m_tool->getCurrentSolution();
+        string filename = "isotopics_by_nuclides";
+        InterSpec *viewer = InterSpec::instance();
+        shared_ptr<SpecMeas> meas = viewer ? viewer->measurment(SpecUtils::SpectrumType::Foreground) : nullptr;
+        
+        if( meas && !meas->filename().empty() )
+          filename += "_" + meas->filename();
+        
+        const string orig_extension = SpecUtils::file_extension(filename);
+        if( orig_extension.size() && (orig_extension.size() < filename.size()) )
+          filename = filename.substr(0,filename.size() - orig_extension.size());
+        filename += ".xml";
+        
+        suggestFileName( filename, WResource::Attachment );
+        response.setMimeType( "application/xml" );
+        
+        std::unique_ptr<rapidxml::xml_document<char>> xml = m_tool->guiStateToXml();
+        
+        if( !xml )
+        {
+          response.out() << "Error getting XML state.\n";
+          return;
+        }
+        
+        rapidxml::print( response.out(), *xml, 0 );
+      }catch( std::exception &e )
+      {
+        log("error") << "Error handling request for RelActAutoReportResource: " << e.what();
+        response.out() << "Error creating XML parameter file: " << e.what()
+        << "\n\nPlease report to InterSpec@sandia.gov.";
+      }//try / catch
+    }//void handleRequest(...)
+  };//class RelActAutoReportResource
+
 
   class RelActAutoEnergyRange : public WContainerWidget
   {
@@ -328,6 +481,8 @@ namespace
       m_upper_energy->setValue( roi.upper_energy );
       m_continuum_type->setCurrentIndex( static_cast<int>(roi.continuum_type) );
       m_force_full_range->setChecked( roi.force_full_range );
+      
+      enableSplitToIndividualRanges( !roi.force_full_range );
     }//setFromRoiRange(...)
     
     
@@ -956,6 +1111,8 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     
     AuxWindow::addHelpInFooter( window->footer(), "rel-act-dialog" );
     
+    disp->addDownloadAndUploadLinks( window->footer() );
+    
     //window->rejectWhenEscapePressed();
     
     // TODO: Similar to activity shielding fit, should store the current widget state in the SpecMeas
@@ -1055,7 +1212,13 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_free_peaks( nullptr ),
   m_is_calculating( false ),
   m_cancel_calc{},
-  m_solution{}
+  m_solution{},
+  m_calc_started( this ),
+  m_calc_successful( this ),
+  m_calc_failed( this ),
+  m_solution_updated( this ),
+  m_html_download_rsc( new RelActAutoReportResource( this, this ) ),
+  m_xml_download_rsc( new RelActAutoParamsResource( this, this ) )
 {
   assert( m_interspec );
   if( !m_interspec )
@@ -1496,6 +1659,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   HelpSystem::attachToolTipOn( m_free_peaks_container, tooltip, showToolTips );
   HelpSystem::attachToolTipOn( m_show_free_peak, tooltip, showToolTips );
   
+    
+  auto html_rsc = dynamic_cast<RelActAutoReportResource *>( m_html_download_rsc );
+  m_solution_updated.connect( boost::bind( &RelActAutoReportResource::updateSolution,
+                                          html_rsc, boost::placeholders::_1 ) );
   
   m_render_flags |= RenderActions::UpdateSpectra;
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -1603,20 +1770,22 @@ void RelActAutoGui::handleDisplayedSpectrumChange( SpecUtils::SpectrumType type 
 }//void handleDisplayedSpectrumChange( SpecUtils::SpectrumType )
 
 
-void RelActAutoGui::checkIfInUserConfigOrCreateOne()
+void RelActAutoGui::checkIfInUserConfigOrCreateOne( const bool force_create )
 {
   if( m_loading_preset )
     return;
   
   const int index = m_presets->currentIndex();
-  if( m_current_preset_index >= static_cast<int>(m_preset_paths.size()) )
+  if( !force_create && (m_current_preset_index >= static_cast<int>(m_preset_paths.size())) )
   {
     // We are in a user-modified state, go ahead and return
     return;
   }
   
   string name;
-  if( m_current_preset_index == 0 )
+  if( force_create )
+    name = "Custom";
+  else if( m_current_preset_index == 0 )
     name = "User Created";
   else
     name = "Modified " + m_presets->itemText(m_current_preset_index).toUTF8();
@@ -1742,6 +1911,12 @@ vector<RelActCalcAuto::FloatingPeak> RelActAutoGui::getFloatingPeaks() const
   
   return answer;
 }//RelActCalcAuto::FloatingPeak getFloatingPeaks() const
+
+
+shared_ptr<const RelActCalcAuto::RelActAutoSolution> RelActAutoGui::getCurrentSolution() const
+{
+  return m_solution;
+}
 
 
 void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
@@ -2066,7 +2241,7 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
         
     passMessage( buffer, WarningWidget::WarningMsgLow );
     
-    checkIfInUserConfigOrCreateOne();
+    checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateEnergyRanges;
     m_render_flags |= RenderActions::UpdateCalculations;
     scheduleRender();
@@ -2282,7 +2457,7 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
   
   left_range->setFromRoiRange( new_roi );
   
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -2629,6 +2804,9 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   m_solution.reset();
   m_peak_model->setPeaks( vector<PeakDef>{} );
   
+  m_solution_updated.emit( m_solution );
+  m_calc_failed.emit();
+  
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -2767,9 +2945,7 @@ void RelActAutoGui::handlePresetChange()
 
 void RelActAutoGui::handleRelEffEqnFormChanged()
 {
-  // blah blah blah
-  
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleRelEffEqnFormChanged();
@@ -2777,9 +2953,7 @@ void RelActAutoGui::handleRelEffEqnFormChanged()
 
 void RelActAutoGui::handleRelEffEqnOrderChanged()
 {
-  // blah blah blah
-  
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleRelEffEqnOrderChanged();
@@ -2787,7 +2961,7 @@ void RelActAutoGui::handleRelEffEqnOrderChanged()
 
 void RelActAutoGui::handleFwhmFormChanged()
 {
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleFwhmFormChanged()
@@ -2795,7 +2969,7 @@ void RelActAutoGui::handleFwhmFormChanged()
 
 void RelActAutoGui::handleFitEnergyCalChanged()
 {
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateFitEnergyCal;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -2804,7 +2978,7 @@ void RelActAutoGui::handleFitEnergyCalChanged()
 
 void RelActAutoGui::handleBackgroundSubtractChanged()
 {
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }
@@ -2812,14 +2986,14 @@ void RelActAutoGui::handleBackgroundSubtractChanged()
 
 void RelActAutoGui::handleSameAgeChanged()
 {
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }
 
 void RelActAutoGui::handlePuByCorrelationChanged()
 {
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }
@@ -2827,7 +3001,7 @@ void RelActAutoGui::handlePuByCorrelationChanged()
 
 void RelActAutoGui::handleNucDataSrcChanged()
 {
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleNucDataSrcChanged()
@@ -2835,7 +3009,7 @@ void RelActAutoGui::handleNucDataSrcChanged()
 
 void RelActAutoGui::handleNuclidesChanged()
 {
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -2844,7 +3018,7 @@ void RelActAutoGui::handleNuclidesChanged()
 
 void RelActAutoGui::handleNuclidesInfoEdited()
 {
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleNuclidesInfoEdited()
@@ -2852,7 +3026,7 @@ void RelActAutoGui::handleNuclidesInfoEdited()
 
 void RelActAutoGui::handleEnergyRangeChange()
 {
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -2861,7 +3035,7 @@ void RelActAutoGui::handleEnergyRangeChange()
 
 void RelActAutoGui::handleFreePeakChange()
 {
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateFreePeaks;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -2986,7 +3160,7 @@ void RelActAutoGui::handleAddNuclide()
   }//if( theme )
   
   
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3014,7 +3188,7 @@ void RelActAutoGui::handleAddEnergy()
     energy_range->setForceFullRange( true );
   }//if( this is the first energy range ) / else
   
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3034,7 +3208,7 @@ void RelActAutoGui::removeAllEnergyRanges()
 {
   m_energy_ranges->clear();
   
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3057,7 +3231,7 @@ void RelActAutoGui::handleHideFreePeaks()
   
   if( nfree_peaks )
   {
-    checkIfInUserConfigOrCreateOne();
+    checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateCalculations;
     m_render_flags |= RenderActions::UpdateFreePeaks;
     scheduleRender();
@@ -3083,7 +3257,7 @@ void RelActAutoGui::handleRemoveFreePeak( Wt::WWidget *w )
   
   delete w;
   
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3108,7 +3282,7 @@ void RelActAutoGui::handleRemoveEnergy( WWidget *w )
   
   delete w;
   
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3225,7 +3399,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
       m_energy_ranges->insertWidget( orig_w_index, roi );
     }//for( const RelActCalcAuto::RoiRange &range : to_ranges )
     
-    checkIfInUserConfigOrCreateOne();
+    checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateEnergyRanges;
     m_render_flags |= RenderActions::UpdateCalculations;
     scheduleRender();
@@ -3248,7 +3422,7 @@ void RelActAutoGui::handleAddFreePeak( const double energy, const bool constrain
   peak->setFwhmConstrained( constrain_fwhm );
   peak->setApplyEnergyCal( apply_cal );
   
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= UpdateFreePeaks;
   scheduleRender();
 }//void handleAddFreePeak( const double energy, const bool constrain_fwhm )
@@ -3373,7 +3547,7 @@ void RelActAutoGui::handleRemoveNuclide( Wt::WWidget *w )
   
   delete w;
   
-  checkIfInUserConfigOrCreateOne();
+  checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3560,6 +3734,83 @@ void RelActAutoGui::handleShowRefLines( const bool show )
   m_render_flags |= RenderActions::UpdateRefGammaLines;
   scheduleRender();
 }//void RelActAutoGui::handleShowRefLines()
+
+
+Wt::Signal<> &RelActAutoGui::calculationStarted()
+{
+  return m_calc_started;
+}
+
+Wt::Signal<> &RelActAutoGui::calculationSuccessful()
+{
+  return m_calc_successful;
+}
+
+
+Wt::Signal<> &RelActAutoGui::calculationFailed()
+{
+  return m_calc_failed;
+}
+
+
+Signal<shared_ptr<const RelActCalcAuto::RelActAutoSolution> > &RelActAutoGui::solutionUpdated()
+{
+  return m_solution_updated;
+}
+
+
+void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
+{
+  if( !parent )
+    return;
+  
+#if( BUILD_AS_OSX_APP )
+  WAnchor *btn = new WAnchor( WLink(m_html_download_rsc), parent );
+  btn->setTarget( AnchorTarget::TargetNewWindow );
+  btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
+  btn->setText( "HTML Report" );
+#else
+  WPushButton *btn = new WPushButton( "HTML Report", parent );
+  btn->setIcon( "InterSpec_resources/images/download_small.svg" );
+  btn->setLinkTarget( Wt::TargetNewWindow );
+  btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
+  btn->setLink( WLink(m_html_download_rsc) );
+  
+#if( ANDROID )
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  m_downloadHtmlReport->clicked().connect( std::bind([this](){
+    android_download_workaround( m_calpResource, "isotopics_by_nuclide.html");
+  }) );
+#endif //ANDROID
+  
+#endif
+  
+  m_calc_started.connect( btn, &WWidget::disable );
+  m_calc_failed.connect( btn, &WWidget::disable );
+  m_calc_successful.connect( btn, &WWidget::enable );
+  
+#if( BUILD_AS_OSX_APP )
+  btn = new WAnchor( WLink(m_xml_download_rsc), parent );
+  btn->setTarget( AnchorTarget::TargetNewWindow );
+  btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
+  btn->setText( "XML Config" );
+#else
+  btn = new WPushButton( "XML Config", parent );
+  btn->setIcon( "InterSpec_resources/images/download_small.svg" );
+  btn->setLinkTarget( Wt::TargetNewWindow );
+  btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
+  btn->setLink( WLink(m_xml_download_rsc) );
+  
+#if( ANDROID )
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  m_downloadHtmlReport->clicked().connect( std::bind([this](){
+    android_download_workaround( m_calpResource, "isotopics_by_nuclide_config.html");
+  }) );
+#endif //ANDROID
+  
+#endif
+
+}//void addDownloadAndUploadLinks( Wt::WContainerWidet *parent )
 
 
 void RelActAutoGui::updateDuringRenderForSpectrumChange()
@@ -3971,6 +4222,8 @@ void RelActAutoGui::startUpdatingCalculation()
     }//try / catch
   };//auto worker
   
+  m_calc_started.emit();
+  
   WServer::instance()->ioService().boost::asio::io_service::post( worker );
 }//void startUpdatingCalculation()
 
@@ -4064,6 +4317,12 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   setOptionsForValidSolution();
   
+  m_solution_updated.emit( m_solution );
+  if( m_solution && (m_solution->m_status == RelActCalcAuto::RelActAutoSolution::Status::Success) )
+    m_calc_successful.emit();
+  else
+    m_calc_failed.emit();
+  
   if( any_nucs_updated )
   {
     m_render_flags |= RenderActions::UpdateRefGammaLines;
@@ -4093,5 +4352,10 @@ void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
   m_error_msg->setText( msg );
   m_error_msg->show();
   
+  m_solution.reset();
+  
   setOptionsForNoSolution();
+  
+  m_solution_updated.emit( m_solution );
+  m_calc_failed.emit();
 }//void handleCalcException( std::shared_ptr<std::string> message )
