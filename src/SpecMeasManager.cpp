@@ -132,6 +132,10 @@
 #include "InterSpec/FileDragUploadResource.h"
 #endif
 
+#if( USE_REL_ACT_TOOL )
+#include "InterSpec/RelActAutoGui.h"
+#endif
+
 using namespace Wt;
 using namespace std;
 
@@ -1373,6 +1377,13 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return true;
   }
   
+  if( currdata
+     && header_contains( "<RelActCalcAuto " )
+     && handleRelActAutoXmlFile(infile, dialog) )
+  {
+    return true;
+  }
+  
   delete dialog;
   
   return false;
@@ -1808,6 +1819,78 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   return true;
 }//void handleCALpFile( std::istream &input )
 
+
+#if( USE_REL_ACT_TOOL )
+bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog *dialog )
+{
+  string error_msg;
+  try
+  {
+    input.seekg(0, ios::end);
+    const size_t filesize = input.tellg();
+    input.seekg(0);
+    
+    if( filesize > 10*1024*1024 )
+      throw runtime_error( "Input file larger than expected." );
+    
+    vector<char> data( filesize + 1, 0x0 );
+    
+    if( !input.read( &(data[0]), filesize ) )
+      throw runtime_error( "Failed to read file data." );
+      
+    rapidxml::xml_document<char> doc;
+    doc.parse<rapidxml::parse_trim_whitespace>( &(data[0]) );
+    
+    
+    RelActAutoGui *tool = m_viewer->showRelActAutoWindow();
+    if( !tool )
+      throw runtime_error( "Could not create <em>Isotopics by nuclide</em> tool." );
+    
+    tool->setGuiStateFromXml( &doc );
+    
+    dialog->done( Wt::WDialog::DialogCode::Accepted );
+    return true;
+  }catch( rapidxml::parse_error &e )
+  {
+    error_msg = "Error parsing config XML: " + string(e.what());
+    const char * const position = e.where<char>();
+    if( position && *position )
+    {
+      const char *end_pos = position;
+      for( size_t i = 0; (*end_pos) && (i < 80); ++i )
+        end_pos += 1;
+      error_msg += "<br />&nbsp;&nbsp;At: " + std::string(position, end_pos);
+    }//if( position )
+  }catch( std::exception &e )
+  {
+    error_msg = "Error loading <em>Isotopics by nuclide</em> XML config file: "
+                  + string(e.what());
+  }//try / cat to read the XML
+  
+  
+  dialog->contents()->clear();
+  dialog->footer()->clear();
+    
+  WPushButton *closeButton = dialog->addButton( "Close" );
+  WGridLayout *stretcher = new WGridLayout();
+    
+  // If we set the contents margins to 0, then scroll-bars may appear.
+  //  However doing just the below looks okay, and the scroll bars dont seem to appear
+  stretcher->setContentsMargins( 9, 2, 9, 2 );
+  //dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
+    
+  dialog->contents()->setLayout( stretcher );
+  WText *title = new WText( "Invalid <em>Isotopics by nuclide</em> XML config file." );
+  title->addStyleClass( "title" );
+  stretcher->addWidget( title, 0, 0 );
+  
+  WText *content = new WText( error_msg );
+  content->addStyleClass( "content" );
+  stretcher->addWidget( content, 1, 0 );
+  
+  return true;
+}//bool handleRelActAutoXmlFile( std::istream &input, SimpleDialog *dialog );
+#endif
 
 
 void SpecMeasManager::handleFileDropWorker( const std::string &name,

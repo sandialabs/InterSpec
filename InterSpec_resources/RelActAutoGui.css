@@ -412,17 +412,26 @@
   place-self: center;
 }
 
-.DownloadBtn.RelActDownload
+.DownloadBtn.RelActDownload, .DownloadBtn.RelActDownload:hover
 {
   float: left;
   padding-left: 2px;
   flex-direction: row-reverse;
+  margin-right: 0px;
 }
 
 a.DownloadLink.RelActDownload > span
 {
-  padding-right: 24px;
+  padding-right: 20px;
   background-position: bottom 0px right 0px;
   margin-top: 7px;
+  margin-right: 0px;
 }
 
+
+.UploadBtn.RelActDownload, .UploadBtn.RelActDownload:hover
+{
+  float: left;
+  padding-left: 0px;
+  margin-left: 0px;
+}

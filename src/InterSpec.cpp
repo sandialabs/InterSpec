@@ -7365,18 +7365,40 @@ void InterSpec::handleRemoteRidClose()
 
 
 #if( USE_REL_ACT_TOOL )
-void InterSpec::showRelActAutoWindow()
+RelActAutoGui *InterSpec::showRelActAutoWindow()
 {
   if( !m_relActAutoGui )
   {
     const std::pair<RelActAutoGui *,AuxWindow *> widgets = RelActAutoGui::createWindow( this );
     if( !widgets.first || !widgets.second )
-      return;
+      return m_relActAutoGui;
       
     m_relActAutoGui = widgets.first;
     m_relActAutoWindow  = widgets.second;
     
     m_relActAutoWindow->finished().connect( boost::bind( &InterSpec::handleRelActAutoClose, this ) );
+    
+    try
+    {
+      rapidxml::xml_document<char> *relActState = m_dataMeasurement
+                                                  ? m_dataMeasurement->relActAutoGuiState()
+                                                  : nullptr;
+      if( relActState && relActState->first_node() )
+      {
+        m_relActAutoGui->deSerialize( relActState->first_node() );
+        m_relActAutoGui->checkIfInUserConfigOrCreateOne( true );
+      }
+    }catch( std::exception &e )
+    {
+      passMessage( "Error setting &quot;Isotopics from nuclides&quot; state to previously used state: "
+                  + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
+#endif
+      
+      assert( 0 );
+    }//try / catch
   }else
   {
     const double windowWidth = 0.95 * renderedWidth();
@@ -7392,28 +7414,8 @@ void InterSpec::showRelActAutoWindow()
   m_relActAutoMenuItem->disable();
   
   
-  try
-  {
-    rapidxml::xml_document<char> *relActState = m_dataMeasurement
-                                               ? m_dataMeasurement->relActAutoGuiState()
-                                               : nullptr;
-    if( relActState && relActState->first_node() )
-    {
-      m_relActAutoGui->deSerialize( relActState->first_node() );
-      m_relActAutoGui->checkIfInUserConfigOrCreateOne( true );
-    }
-  }catch( std::exception &e )
-  {
-    passMessage( "Error setting &quot;Isotopics from nuclides&quot; state to previously used state: "
-                + std::string(e.what()), WarningWidget::WarningMsgHigh );
-    
-#if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
-#endif
-    
-    assert( 0 );
-  }//try / catch
-}//void showRelActAutoWindow()
+  return m_relActAutoGui;
+}//RelActAutoGui *showRelActAutoWindow()
 
 
 void InterSpec::handleRelActAutoClose()

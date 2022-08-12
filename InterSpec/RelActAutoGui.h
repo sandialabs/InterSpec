@@ -210,6 +210,7 @@ protected:
   Wt::Signal< std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> > &solutionUpdated();
   
   void addDownloadAndUploadLinks( Wt::WContainerWidget *parent );
+  void handleRequestToUploadXmlConfig();
 protected:
   
   enum RenderActions

@@ -39,6 +39,7 @@
 #include <Wt/WMenuItem>
 #include <Wt/WResource>
 #include <Wt/WIOService>
+#include <Wt/WFileUpload>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/Http/Request>
@@ -3810,7 +3811,117 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   
 #endif
 
+  // TODO: add XML upload...
+  WPushButton *uploadbtn = new WPushButton( parent );
+  uploadbtn->setIcon( "InterSpec_resources/images/upload_small.svg" );
+  uploadbtn->setStyleClass( "LinkBtn UploadBtn RelActDownload" );
+  uploadbtn->clicked().connect( this, &RelActAutoGui::handleRequestToUploadXmlConfig );
 }//void addDownloadAndUploadLinks( Wt::WContainerWidet *parent )
+
+
+void RelActAutoGui::handleRequestToUploadXmlConfig()
+{
+  SimpleDialog *dialog = new SimpleDialog();
+  WPushButton *closeButton = dialog->addButton( "Cancel" );
+  WGridLayout *stretcher = new WGridLayout();
+  stretcher->setContentsMargins( 0, 0, 0, 0 );
+  dialog->contents()->setLayout( stretcher );
+  dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowVisible,
+                                  Wt::Horizontal | Wt::Vertical );
+  WText *title = new WText( "Import XML config file" );
+  title->addStyleClass( "title" );
+  stretcher->addWidget( title, 0, 0 );
+  
+  WText *t = new WText( "<p>Select the <em>Isotopics by nuclide</em> XML file to use</p>" );
+  stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+  t->setTextAlignment( Wt::AlignCenter );
+  
+  
+  WFileUpload *upload = new WFileUpload();
+  upload->fileTooLarge().connect( std::bind( [=](){
+    dialog->contents()->clear();
+    dialog->footer()->clear();
+    
+    WPushButton *closeButton = dialog->addButton( "Close" );
+    WGridLayout *stretcher = new WGridLayout();
+    stretcher->setContentsMargins( 0, 0, 0, 0 );
+    dialog->contents()->setLayout( stretcher );
+    WText *title = new WText( "File to large to upload" );
+    title->addStyleClass( "title" );
+    stretcher->addWidget( title, 0, 0 );
+  }) );
+  
+  upload->changed().connect( upload, &WFileUpload::upload );
+  upload->uploaded().connect( std::bind( [this,dialog,upload](){
+    
+    try
+    {
+      const string xml_path = upload->spoolFileName();
+      rapidxml::file<char> input_file( xml_path.c_str() );;
+      rapidxml::xml_document<char> doc;
+      doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
+      
+      setGuiStateFromXml( &doc );
+    }catch( rapidxml::parse_error &e )
+    {
+      string msg = "Error parsing config XML: " + string(e.what());
+      const char * const position = e.where<char>();
+      if( position && *position )
+      {
+        const char *end_pos = position;
+        for( size_t i = 0; (*end_pos) && (i < 80); ++i )
+          end_pos += 1;
+        msg += "<br />&nbsp;&nbsp;At: " + std::string(position, end_pos);
+      }//if( position )
+      
+      passMessage( msg, WarningWidget::WarningMsgHigh );
+    }catch( std::exception &e )
+    {
+      passMessage( "Error loading <em>Isotopics by nuclide</em> XML config file: "
+                  + string(e.what()), WarningWidget::WarningMsgHigh );
+    }//try / cat to read the XML
+    
+    dialog->accept();
+    
+    //wApp->doJavaScript( "$('.Wt-dialogcover').hide();" ); // JIC
+    //dialog->done( Wt::WDialog::DialogCode::Accepted );
+  } ) );
+  
+  stretcher->addWidget( upload, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+  
+  InterSpec *interspec = InterSpec::instance();
+  if( interspec && !interspec->isPhone() )
+  {
+    t = new WText( "<p style=\"font-size: small;\">Note: you can also drag-n-drop the XML config files onto InterSpec<br /></p>" );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+    t->setTextAlignment( Wt::AlignCenter );
+  }
+  
+  /*
+   //In case we want to use AuxWindow instead of SimpleDialog
+   AuxWindow *window = new AuxWindow( "Import CALp file",
+   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+   | AuxWindowProperties::PhoneNotFullScreen
+   | AuxWindowProperties::DisableCollapse
+   | AuxWindowProperties::SetCloseable) );
+   
+   //...
+   
+   window->rejectWhenEscapePressed();
+   window->show();
+   window->resizeToFitOnScreen();
+   window->centerWindow();
+   
+   WPushButton *close = window->addCloseButtonToFooter( "Cancel" );
+   close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
+   
+   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+   
+   // TODO: add link to relevant section of documentation
+   //AuxWindow::addHelpInFooter( window->footer(), "energy-cal-CALp" );
+   */
+}//void handleRequestToUploadCALp();
+
 
 
 void RelActAutoGui::updateDuringRenderForSpectrumChange()
@@ -4177,6 +4288,7 @@ void RelActAutoGui::startUpdatingCalculation()
   }
   
   WApplication *app = WApplication::instance();
+  const string sessionId = app->sessionId();
   
   vector<shared_ptr<const PeakDef>> cached_all_peaks = m_cached_all_peaks;
   
@@ -4195,30 +4307,36 @@ void RelActAutoGui::startUpdatingCalculation()
                                 foreground, background, cached_drf,
                                 cached_all_peaks, cancel_calc );
       
-      WApplication::UpdateLock lock( app );
-      if( lock )
-      {
-        *solution = answer;
-        gui_update_callback();
-        app->triggerUpdate();
-      }else
-      {
-        cerr << "Failed to get WApplication::UpdateLock for worker in RelActAutoGui::startUpdatingCalculation" << endl;
-        assert( 0 );
-      }//if( lock ) / else
+      WServer::instance()->post( sessionId, [=](){
+        WApplication *app = WApplication::instance();
+        
+        if( app )
+        {
+          *solution = answer;
+          gui_update_callback();
+          app->triggerUpdate();
+        }else
+        {
+          cerr << "Failed to get WApplication::instance() for worker in RelActAutoGui::startUpdatingCalculation" << endl;
+          assert( 0 );
+        }//if( lock ) / else
+      } );
     }catch( std::exception &e )
     {
-      WApplication::UpdateLock lock( app );
-      if( lock )
-      {
-        *error_msg = e.what();
-        error_callback();
-        app->triggerUpdate();
-      }else
-      {
-        cerr << "Failed to get WApplication::UpdateLock for worker in RelActAutoGui::startUpdatingCalculation" << endl;
-        assert( 0 );
-      }//if( lock ) / else
+      WServer::instance()->post( sessionId, [=](){
+        WApplication *app = WApplication::instance();
+        
+        if( app )
+        {
+          *error_msg = e.what();
+          error_callback();
+          app->triggerUpdate();
+        }else
+        {
+          cerr << "Failed to get WApplication::UpdateLock for worker in RelActAutoGui::startUpdatingCalculation" << endl;
+          assert( 0 );
+        }//if( lock ) / else
+      } );
     }//try / catch
   };//auto worker
   

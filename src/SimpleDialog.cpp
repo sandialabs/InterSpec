@@ -69,11 +69,11 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
     //  Note that page dimensions wont be available during initial rendering of the webapp
     
     // The below seems to be necessary or else sometimes the window doesnt resize to fit its content
-    doJavaScript( "let a = function(ms){"
+    doJavaScript( "{let a = function(ms){"
                   + wApp->javaScriptClass() + ".layouts2.scheduleAdjust();"
                   " setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, ms );"
                   "};"
-                  "a(0); a(50); a(250);"
+                  "a(0); a(50); a(250);}"
     );
   }//if( flags & RenderFull )
 }//render( flags )

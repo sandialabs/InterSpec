@@ -673,7 +673,7 @@ public:
 
 
 #if( USE_REL_ACT_TOOL )
-  void showRelActAutoWindow();
+  RelActAutoGui *showRelActAutoWindow();
   void handleRelActAutoClose();
   
   void createRelActManualWidget();

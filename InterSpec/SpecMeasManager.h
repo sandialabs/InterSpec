@@ -221,6 +221,9 @@ public:
    */
   bool handleCALpFile( std::istream &input, SimpleDialog *dialog, bool autoApply );
   
+#if( USE_REL_ACT_TOOL )
+  bool handleRelActAutoXmlFile( std::istream &input, SimpleDialog *dialog );
+#endif
   
   enum class VariantChecksToDo
   {
