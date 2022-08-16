@@ -203,6 +203,7 @@ SpecFileSummary::SpecFileSummary( InterSpec *specViewer )
     m_laneNumber( NULL ),
     m_measurement_location_name( NULL ),
     m_ana_button( NULL ),
+    m_multimedia_button( nullptr ),
     m_inspection( NULL ),
     m_instrument_type( NULL ),
     m_manufacturer( NULL ),
@@ -305,11 +306,16 @@ void SpecFileSummary::init()
   addField( m_laneNumber, fileInfoLayout, "Lane:", 1, 2 );
   addField( m_measurement_location_name, fileInfoLayout, "Location:", 1, 4, 1, 1 );
   
-  m_ana_button = new WPushButton( "No RIID Analysis" );
+  m_ana_button = new WPushButton( "No Det. ID" );
   m_ana_button->disable();
   m_ana_button->clicked().connect( this, &SpecFileSummary::showRiidAnalysis );
-  fileInfoLayout->addWidget( m_ana_button, 1, 6, 1, 2, AlignLeft );
-    
+  fileInfoLayout->addWidget( m_ana_button, 1, 6, 1, 1, AlignLeft );
+  
+  m_multimedia_button = new WPushButton( "Show Pics" );
+  m_multimedia_button->hide();
+  m_multimedia_button->clicked().connect( this, &SpecFileSummary::showMultimedia );
+  fileInfoLayout->addWidget( m_multimedia_button, 1, 7, 1, 1, AlignLeft );
+  
   addField( m_instrument_type, fileInfoLayout, "Instru. Type:", 2, 0 );
   addField( m_manufacturer, fileInfoLayout, "Manufacturer:", 2, 2 );
   addField( m_instrument_model, fileInfoLayout, "Model:", 2, 4, 1, 3 );
@@ -580,6 +586,13 @@ void SpecFileSummary::showRiidAnalysis()
 }//void showRiidAnalysis()
 
 
+void SpecFileSummary::showMultimedia()
+{
+  const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
+  m_specViewer->showMultimedia( type );
+}//void showMultimedia();
+
+
 #if( USE_GOOGLE_MAP )
 void SpecFileSummary::showGoogleMap()
 {
@@ -846,13 +859,15 @@ void SpecFileSummary::updateDisplayFromMemory()
     
     if( meas && meas->detectors_analysis() && !m_ana_button->isEnabled() )
     {
-      m_ana_button->setText( "Show RIID Analysis" );
+      m_ana_button->setText( "Show Det. ID" );
       m_ana_button->enable();
     }else if( m_ana_button->isEnabled() )
     {
-      m_ana_button->setText( "No RIID Analysis" );
+      m_ana_button->setText( "No Det. ID" );
       m_ana_button->disable();
     }
+    
+    m_multimedia_button->setHidden( !meas || meas->multimedia_data().empty() );
     
     m_inspection->setText( meas->inspection() );
     m_instrument_type->setText( meas->instrument_type() );

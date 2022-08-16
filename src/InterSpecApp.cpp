@@ -1250,6 +1250,7 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
     return;
   }
   
+ 
   if( SpecUtils::istarts_with( signal, "showMsg-" ) )
   {
     string msg = signal.substr(8);
@@ -1289,6 +1290,19 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
     return;
   }//if( signal == "showRemoteRidRefLines-" )
 #endif
+  
+  if( SpecUtils::istarts_with( signal, "showMultimedia-" ) )
+  {
+    SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
+    if( SpecUtils::icontains(signal, "background") )  //SpecUtils::descriptionText(SpecUtils::SpectrumType::Background)
+      type = SpecUtils::SpectrumType::Background;
+    else if( SpecUtils::icontains(signal, "secondary") )  //SpecUtils::descriptionText(SpecUtils::SpectrumType::SecondForeground)
+      type = SpecUtils::SpectrumType::SecondForeground;
+    
+    m_viewer->showMultimedia( type );
+    
+    return;
+  }//if( SpecUtils::istarts_with( signal, "showMultimedia" ) )
   
   
   // shouldnt ever make it here..

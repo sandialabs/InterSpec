@@ -135,6 +135,7 @@
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/LocalTimeDelegate.h"
+#include "InterSpec/MultimediaDisplay.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/CompactFileManager.h"
 #include "InterSpec/UnitsConverterTool.h"
@@ -408,35 +409,36 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_featureMarkersShown{false},
   m_featureMarkers( nullptr ),
   m_featureMarkerMenuItem( nullptr ),
+  m_multimedia( nullptr ),
 #if( USE_GOOGLE_MAP )
-    m_mapMenuItem( 0 ),
+  m_mapMenuItem( 0 ),
 #endif
 #if( USE_SEARCH_MODE_3D_CHART )
-    m_searchMode3DChart( 0 ),
+  m_searchMode3DChart( 0 ),
 #endif
-    m_showRiidResults( nullptr ),
+  m_showRiidResults( nullptr ),
+  m_showMultimedia( nullptr ),
 #if( USE_TERMINAL_WIDGET )
-    m_terminalMenuItem( 0 ),
-    m_terminal( 0 ),
-    m_terminalWindow( 0 ),
+  m_terminalMenuItem( 0 ),
+  m_terminal( 0 ),
+  m_terminalWindow( 0 ),
 #endif
 #if( USE_REMOTE_RID )
-    m_remoteRidMenuItem( nullptr ),
-    m_remoteRid( nullptr ),
-    m_remoteRidWindow( nullptr ),
+  m_remoteRidMenuItem( nullptr ),
+  m_remoteRid( nullptr ),
+  m_remoteRidWindow( nullptr ),
 #endif
-
-    m_clientDeviceType( 0x0 ),
-    m_referencePhotopeakLines( 0 ),
-    m_referencePhotopeakLinesWindow( 0 ),
-    m_licenseWindow( nullptr ),
-    m_useInfoWindow( 0 ),
-    m_decayInfoWindow( nullptr ),
-    m_preserveCalibWindow( 0 ),
-    m_renderedWidth( 0 ),
-    m_renderedHeight( 0 ),
-    m_colorPeaksBasedOnReferenceLines( true ),
-    m_findingHintPeaks( false )
+  m_clientDeviceType( 0x0 ),
+  m_referencePhotopeakLines( 0 ),
+  m_referencePhotopeakLinesWindow( 0 ),
+  m_licenseWindow( nullptr ),
+  m_useInfoWindow( 0 ),
+  m_decayInfoWindow( nullptr ),
+  m_preserveCalibWindow( 0 ),
+  m_renderedWidth( 0 ),
+  m_renderedHeight( 0 ),
+  m_colorPeaksBasedOnReferenceLines( true ),
+  m_findingHintPeaks( false )
 {
   //Initialization of the app (this function) takes about 11ms on my 2.6 GHz
   //  Intel Core i7, as of (20150316).
@@ -2868,6 +2870,9 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       entry.modify()->shownDisplayFeatures |= UserState::kShowingRelActAuto;
 #endif
     
+    if( m_multimedia )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingMultimedia;
+    
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
       entry.modify()->backgroundSubMode = UserState::kBackgorundSubtract;
@@ -3389,6 +3394,10 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     }//if( xmin != xmax )
         
     
+    if( m_multimedia )
+      m_multimedia->done( Wt::WDialog::DialogCode::Accepted );
+    assert( !m_multimedia );
+    
     if( foreground )
     {
       // If we have a state without a foreground, then for the spectrum chart, changing the legend
@@ -3437,6 +3446,10 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->shownDisplayFeatures & UserState::kShowingRelActAuto) )
       showRelActAutoWindow();
 #endif
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
+      showMultimedia( SpecUtils::SpectrumType::Foreground );
+    
     
     if( wasDocked )
     {
@@ -5998,11 +6011,18 @@ void InterSpec::addDisplayMenu( WWidget *parent )
                         "Shows Time vs. Energy vs. Counts view for search mode or RPM data.", showToolTips );
 #endif
   
-  m_showRiidResults = m_displayOptionsPopupDiv->addMenuItem( "Show RIID Results","" );
+  m_showRiidResults = m_displayOptionsPopupDiv->addMenuItem( "Show ID Results","" );
   m_showRiidResults->triggered().connect( boost::bind( &InterSpec::showRiidResults, this, SpecUtils::SpectrumType::Foreground ) );
   HelpSystem::attachToolTipOn( m_showRiidResults,
-                              "Shows the detectors RIID analysis results included in the spectrum file.", showToolTips );
+                              "Shows the detectors ID analysis results included in the spectrum file.", showToolTips );
   m_showRiidResults->disable();
+  
+  
+  m_showMultimedia = m_displayOptionsPopupDiv->addMenuItem( "Show Images","" );
+  m_showMultimedia->triggered().connect( boost::bind( &InterSpec::showMultimedia, this, SpecUtils::SpectrumType::Foreground ) );
+  HelpSystem::attachToolTipOn( m_showMultimedia,
+                              "Shows images included in the spectrum file.", showToolTips );
+  m_showMultimedia->disable();
   
   
   {
@@ -7257,6 +7277,32 @@ void InterSpec::showRiidResults( const SpecUtils::SpectrumType type )
 {
   showRiidInstrumentsAna( measurment(type) );
 }//void showRiidResults( const SpecUtils::SpectrumType type )
+
+
+void InterSpec::showMultimedia( const SpecUtils::SpectrumType type )
+{
+  if( m_multimedia )
+  {
+    m_multimedia->done( Wt::WDialog::DialogCode::Accepted );
+    m_multimedia = nullptr;
+  }
+  
+  m_multimedia = displayMultimedia( measurment(type) );
+  m_multimedia->finished().connect( boost::bind( &InterSpec::handleMultimediaClose, this, m_multimedia) );
+}//void showMultimedia( const SpecUtils::SpectrumType type )
+
+
+void InterSpec::handleMultimediaClose( SimpleDialog *dialog )
+{
+  if( dialog != m_multimedia )
+  {
+    cerr << "InterSpec::handleMultimediaClose: dialog being closed is not m_multimedia; not doing anything" << endl;
+    assert( 0 );
+    return;
+  }
+  
+  m_multimedia = nullptr;
+}//void handleMultimediaClose( SimpleDialog *dialog )
 
 
 #if( USE_TERMINAL_WIDGET )
@@ -9095,6 +9141,12 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     m_showRiidResults->setDisabled( !showRiid );
   }
   
+  if( m_showMultimedia )
+  {
+    const bool showPics = m_dataMeasurement && (m_dataMeasurement->multimedia_data().size() > 0);
+    m_showMultimedia->setDisabled( !showPics );
+  }
+  
   //Right now, we will only search for hint peaks for foreground
 #if( !ANDROID && !IOS )
   switch( spec_type )
@@ -9201,7 +9253,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
            "try{$(this.parentElement.parentElement).remove();}catch(e){}"
            "return false;\" "
            "class=\"clearsession\">"
-         "<span class=\"clearsessiontxt\">Show full RIID results</span></div>";
+         "<span class=\"clearsessiontxt\">Show full ID results</span></div>";
       
       m_warnings->addMessageUnsafe( js.str(), WarningWidget::WarningMsgShowOnBoardRiid, 20000 );
     }//if( nusedfor == 1 )
@@ -9275,6 +9327,51 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       passMessage( "Warning, no energy calibration for the selected samples",
                    WarningWidget::WarningMsgMedium );
   }//if( spec_type == SpecUtils::SpectrumType::Foreground && m_dataMeasurement && !sameSpecFile )
+  
+  
+  if( m_dataMeasurement
+     && (spec_type == SpecUtils::SpectrumType::Foreground)
+     && !sameSpecFile
+     && !m_dataMeasurement->multimedia_data().empty() )
+  {
+    // Close the multimedia dialog if we open a new spectrum file
+    if( m_multimedia )
+      m_multimedia->done( Wt::WDialog::DialogCode::Accepted );
+    assert( !m_multimedia );
+    
+    bool show_notification = false;
+    for( const shared_ptr<const SpecUtils::MultimediaData> &mmd : m_dataMeasurement->multimedia_data() )
+    {
+      if( mmd && (mmd->data_.size() > 25) )
+      {
+        //const string mime = Wt::Utils::guessImageMimeTypeData( )
+        show_notification = true;
+      }
+    }//for( const shared_ptr<const SpecUtils::MultimediaData> &mmd : m_dataMeasurement->multimedia_data() )
+    
+    if( show_notification )
+    {
+      const bool show = InterSpecUser::preferenceValue<bool>( "AutoShowSpecMultimedia", this );
+      if( show )
+      {
+        showMultimedia( SpecUtils::SpectrumType::Foreground );
+      }else
+      {
+        const std::string type = SpecUtils::descriptionText(spec_type);
+        WStringStream js;
+        js << "Spectrum file contained embedded images: "
+        << "<div onclick="
+        "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showMultimedia-" << type << "');"
+        //"$('.qtip.jgrowl:visible:last').remove();"
+        "try{$(this.parentElement.parentElement).remove();}catch(e){}"
+        "return false;\" "
+        "class=\"clearsession\">"
+        "<span class=\"clearsessiontxt\">Show Images</span></div>";
+        
+        m_warnings->addMessageUnsafe( js.str(), WarningWidget::WarningMsgShowOnBoardRiid, 20000 );
+      }
+    }//if( show_notification )
+  }//if( m_dataMeasurement && (spec_type == SpecUtils::SpectrumType::Foreground) )
   
 
   //Display a notice to the user about how they can select different portions of

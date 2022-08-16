@@ -1,0 +1,68 @@
+.MultimediaDialogTitle 
+{ 
+  white-space: nowrap;
+}
+
+.MultimediaDisplay
+{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.MultimediaDisplay .NoContentTxt
+{
+
+}
+
+.MultimediaDisplay .AddInfo
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.MultimediaDisplay .Remark
+{
+
+}
+
+.MultimediaDisplay .Description
+{
+
+}
+
+.MultimediaDisplay .Time
+{
+
+}
+
+
+.MultimediaDisplay .Nav, .MultimediaDisplay .PrefAndDownload
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.MultimediaDisplay .Nav .Prev, .MultimediaDisplay .Nav .Next
+{
+}
+
+.MultimediaDisplay .Nav .NavPos
+{
+
+}
+
+.MultimediaDisplay .SpecImage
+{
+  max-width: 50vw;
+  max-height: 50vh;
+}

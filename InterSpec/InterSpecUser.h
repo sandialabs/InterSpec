@@ -898,6 +898,7 @@ struct UserState
   , kShowingRelActManual    = 0x0200
   , kShowingRelActAuto      = 0x0400
 #endif
+  , kShowingMultimedia      = 0x0800
   };//enum ShownDisplayFeatures
   
   //UserState(): default constructor, initializes values to reasonable defaults

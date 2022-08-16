@@ -93,6 +93,7 @@ protected:
   void init();
 
   void showRiidAnalysis();
+  void showMultimedia();
   
   void handleUserChangeSampleNum();
   void handleUserIncrementSampleNum( bool increment );
@@ -168,6 +169,7 @@ protected:
   Wt::WLineEdit   *m_laneNumber;
   Wt::WLineEdit   *m_measurement_location_name;
   Wt::WPushButton *m_ana_button;
+  Wt::WPushButton *m_multimedia_button;
   Wt::WLineEdit   *m_inspection;
   Wt::WLineEdit   *m_instrument_type;
   Wt::WLineEdit   *m_manufacturer;

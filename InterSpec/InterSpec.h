@@ -49,6 +49,7 @@ class DecayWindow;
 struct ColorTheme;
 class UserFileInDb;
 class PopupDivMenu;
+class SimpleDialog;
 class EnergyCalTool;
 class SpectrumChart;
 class UseInfoWindow;
@@ -659,6 +660,11 @@ public:
 
   /** Show the RIID results included in the spectrum file. */
   void showRiidResults( const SpecUtils::SpectrumType type );
+  
+  /** Show images included in the spectrum file. */
+  void showMultimedia( const SpecUtils::SpectrumType type );
+  
+  void handleMultimediaClose( SimpleDialog *dialog );
   
 #if( USE_TERMINAL_WIDGET )
   void createTerminalWidget();
@@ -1290,6 +1296,7 @@ protected:
   
   PopupDivMenuItem *m_featureMarkerMenuItem;
 
+  SimpleDialog *m_multimedia;
   
 #if( USE_GOOGLE_MAP )
   PopupDivMenuItem *m_mapMenuItem;
@@ -1300,6 +1307,7 @@ protected:
 #endif
 
   PopupDivMenuItem *m_showRiidResults;
+  PopupDivMenuItem *m_showMultimedia;
   
 #if( USE_TERMINAL_WIDGET )
   PopupDivMenuItem *m_terminalMenuItem;

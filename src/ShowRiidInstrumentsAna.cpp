@@ -382,7 +382,7 @@ void showRiidInstrumentsAna( const std::shared_ptr<const SpecMeas> &spec )
   dialog->addButton( "Close" );
   
   WContainerWidget *contents = dialog->contents();
-  WText *dialogTitle = new WText( "The Detectors RIID Results", contents );
+  WText *dialogTitle = new WText( "The Detectors ID Results", contents );
   dialogTitle->addStyleClass( "title RiidDialogTitle" );
   dialogTitle->setInline( false );
   

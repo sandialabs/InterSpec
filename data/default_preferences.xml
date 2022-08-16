@@ -41,4 +41,5 @@
  <pref name="ExternalRidUrl" type="String"></pref>
  <pref name="ExternalRidExe" type="String"></pref>
  <pref name="AlwaysCallExternalRid" type="Integer">0</pref>
+ <pref name="AutoShowSpecMultimedia" type="Boolean">false</pref>
 </preferences>
