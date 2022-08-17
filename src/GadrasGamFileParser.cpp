@@ -57,7 +57,7 @@ void GadrasGamFile::parse_data( std::istream &strm )
   if( fields.size() < 2 )
     throw runtime_error( "Invalid first line" );
   
-  if( (fields[0] == "0") && (fields[0] == "0") )
+  if( (fields[0] == "0") && (fields[1] == "0") )
   {
     //Pre GADRAS version 18.6.0.  Nothing to do here
     version = GadrasGamFile::GamFileVersion::Version_1;
