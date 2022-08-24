@@ -6899,12 +6899,6 @@ Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpecUtils::SpectrumType 
     answer = header->dbEntry();
     if( answer && !meas->modified() )
       return answer;
-  
-    bool savePref = false;
-    try{ savePref = m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ); }catch(...){}
-    
-    if( !savePref )
-      return answer;
     
     Dbo::ptr<UserFileInDb> dbback;
     
@@ -6931,7 +6925,7 @@ Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpecUtils::SpectrumType 
       }//if( bheader )
     }//if( type == SpecUtils::SpectrumType::Foreground )
     
-    if( update && savePref )
+    if( update )
       header->saveToDatabase( meas );
     
     return header->dbEntry();
