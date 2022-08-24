@@ -1405,18 +1405,24 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
     return;
   
   results_html << "<table class=\"nuctable resulttable\">\n";
-  results_html << "  <caption>Isotope relative activities and mass fractions</caption>\n";
-  results_html << "  <thead><tr> <th scope=\"col\">Nuclide</th> <th scope=\"col\">Rel. Act</th> <th scope=\"col\">Mass Fraction</th> </tr></thead>\n";
+  results_html << "  <caption>Relative activities and mass fractions</caption>\n";
+  results_html << "  <thead><tr>"
+                 " <th scope=\"col\">Nuclide</th>"
+                 " <th scope=\"col\">Rel. Act.</th>"
+                 " <th scope=\"col\">Mass Frac.</th>"
+                 " <th scope=\"col\">Uncert.</th>"
+                 " </tr></thead>\n";
   results_html << "  <tbody>\n";
   for( size_t index = 0; index < m_rel_activities.size(); ++index )
   {
     const IsotopeRelativeActivity &act = m_rel_activities[index];
     const double frac_mass = mass_fraction(act.m_isotope);
+    const double uncert_percent = 100.0 * act.m_rel_activity_uncert / act.m_rel_activity;
     
     results_html << "  <tr><td>" << act.m_isotope << "</td>"
-    << "<td>" << PhysicalUnits::printValueWithUncertainty( act.m_rel_activity, act.m_rel_activity_uncert, nsigfig )
-    << "</td>"
-    << "<td>" << PhysicalUnits::printCompact(100.0*frac_mass, nsigfig) << "%</td>"
+    << "<td>" << PhysicalUnits::printCompact( act.m_rel_activity, nsigfig ) << "</td>"
+    << "<td>" << PhysicalUnits::printCompact(100.0*frac_mass, nsigfig)      << "%</td>"
+    << "<td>" << PhysicalUnits::printCompact(uncert_percent, nsigfig-1)       << "%</td>"
     << "</tr>\n";
   }
   results_html << "  </tbody>\n"
@@ -2039,10 +2045,13 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
     }//for( loop over energies to evaluate at )
     
     if( used_add_uncert )
-      solution.m_warnings.push_back( "Additional uncertainties were applied to peaks - the result uncertainties include these, so may not be reliable to interpret." );
+      solution.m_warnings.push_back( "Additional uncertainties were applied to peaks"
+                                     " - the result uncertainties include these, so may not be"
+                                     " reliable to interpret. The &chi;<sup>2</sup>/DOF does"
+                                     " not include the add. uncerts." );
     
     if( used_unweighted )
-      solution.m_warnings.push_back( "Fit to rel. eff. was unweighted, so uncertainties may not have a straightforward interpretation." );
+      solution.m_warnings.push_back( "Fit to rel. eff. was unweighted, so uncertainties may not have much meaning." );
     
     
     solution.m_status = ManualSolutionStatus::Success;

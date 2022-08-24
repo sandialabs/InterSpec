@@ -2415,7 +2415,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_chi2 += v*v;
     
     // TODO: need to setup the DOF
-    solution.m_dof = -1.0;
+    solution.m_dof = 0;
     solution.m_warnings.push_back( "Not currently calculating DOF - need to implement" );
     //solution.m_dof = residuals.size() - ;
     
@@ -4103,7 +4103,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
     out << "Warning: " << warning << "\n";
   
   if( m_status != Status::Success )
-    return;
+    return out;
   
   // Rake code from RelEff
   out << "Rel. Eff. Eqn.: y = "
@@ -4304,10 +4304,10 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   
 
   results_html << "<table class=\"nuctable resulttable\">\n";
-  results_html << "  <caption>Isotope relative activities and mass fractions</caption>\n";
+  results_html << "  <caption>Relative activities and mass fractions</caption>\n";
   results_html << "  <thead><tr>"
                   " <th scope=\"col\">Nuclide</th>"
-                  " <th scope=\"col\">Rel. Act</th>"
+                  " <th scope=\"col\">Rel. Act.</th>"
                   " <th scope=\"col\">Total Mas Frac.</th>"
                   " <th scope=\"col\">Enrichment</th>"
                   " </tr></thead>\n";

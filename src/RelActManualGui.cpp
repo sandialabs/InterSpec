@@ -23,6 +23,8 @@
 
 #include "InterSpec_config.h"
 
+#include "rapidxml/rapidxml.hpp"
+
 #include <Wt/WMenu>
 #include <Wt/WLabel>
 #include <Wt/WPanel>
@@ -1239,22 +1241,54 @@ void RelActManualGui::updateGuiWithResults()
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   char buffer[2048] = {'\0'};
   stringstream results_html;
-  results_html << "<div>&chi;<sup>2</sup>=" << PhysicalUnits::printCompact( solution.m_chi2, 4)
-  << " and there were " << solution.m_dof << " DOF (&chi;<sup>2</sup>/<sub>DOF</sub>="
-  << PhysicalUnits::printCompact(solution.m_chi2/solution.m_dof, 4) << ")</div>\n";
   
-  results_html << "<div class=\"releffeqn\">Rel. Eff. Eqn: y = "
+  solution.get_mass_fraction_table( results_html );
+  results_html << "<br />";
+  solution.get_mass_ratio_table( results_html );
+  results_html << "<br />";
+  
+  results_html << "<div class=\"releffeqn\">Rel. Eff.: y = "
   << RelActCalc::rel_eff_eqn_text( solution.m_rel_eff_eqn_form, solution.m_rel_eff_eqn_coefficients )
   << "</div>\n";
   
-  results_html << "<div class=\"ToolAlphaWarning\">"
-  "Errors are statistical only, and have not been validated.<br />"
+  results_html << "<br /> <div>&chi;<sup>2</sup>=" << PhysicalUnits::printCompact( solution.m_chi2, 4)
+  << " and there were " << solution.m_dof << " DOF (&chi;<sup>2</sup>/<sub>DOF</sub>="
+  << PhysicalUnits::printCompact(solution.m_chi2/solution.m_dof, 4) << ")</div>\n";
+  
+  
+  results_html << "<div class=\"ToolAlphaWarning\">";
+  
+  switch( AddUncert(m_addUncertainty->currentIndex()) )
+  {
+    case AddUncert::Unweighted:
+      results_html << "Fit was unweighted; uncertainties may not make sense.";
+      break;
+      
+    case AddUncert::StatOnly:
+      results_html << "Uncertainties are statistical only.";
+      break;
+      
+    case AddUncert::OnePercent:
+    case AddUncert::FivePercent:
+    case AddUncert::TenPercent:
+    case AddUncert::TwentyFivePercent:
+    case AddUncert::FiftyPercent:
+    case AddUncert::SeventyFivePercent:
+    case AddUncert::OneHundredPercent:
+      results_html << "Uncertainties artificially increased by &quot;Add. Uncert&quot;.";
+      break;
+      
+    case AddUncert::NumAddUncert:
+      assert( 0 );
+      break;
+  }//switch( add_uncert_type )
+  
+  results_html << "<br />"
   "The tool is is in an alpha-preview state only."
   "</div>\n";
   
   
-  solution.get_mass_fraction_table( results_html );
-  solution.get_mass_ratio_table( results_html );
+  
   
   new WText( results_html.str(), m_results );
 }//void updateGuiWithResults( const RelActCalcManual::RelEffSolution &solution );
@@ -1552,13 +1586,13 @@ shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolut
 }
 
 
-rapidxml::xml_node<char> *RelActManualGui::serialize( rapidxml::xml_node<char> *parent_node )
+::rapidxml::xml_node<char> *RelActManualGui::serialize( ::rapidxml::xml_node<char> *parent_node )
 {
-  rapidxml::xml_document<char> *doc = parent_node->document();
+  ::rapidxml::xml_document<char> *doc = parent_node->document();
   assert( doc );
   
   const char *name = "RelActManualGui";
-  rapidxml::xml_node<> * const base_node = doc->allocate_node( rapidxml::node_element, name );
+  ::rapidxml::xml_node<char> * const base_node = doc->allocate_node( ::rapidxml::node_element, name );
   parent_node->append_node( base_node );
   
   //If you change the available options or formatting or whatever, increment the
@@ -1566,38 +1600,38 @@ rapidxml::xml_node<char> *RelActManualGui::serialize( rapidxml::xml_node<char> *
   const string versionstr = std::to_string(RelActManualGui::sm_xmlSerializationMajorVersion)
                             + "." + std::to_string(RelActManualGui::sm_xmlSerializationMinorVersion);
   const char *value = doc->allocate_string( versionstr.c_str() );
-  rapidxml::xml_attribute<> *attr = doc->allocate_attribute( "version", value );
+  ::rapidxml::xml_attribute<> *attr = doc->allocate_attribute( "version", value );
   base_node->append_attribute( attr );
   
   const RelActCalc::RelEffEqnForm eqn_form = relEffEqnForm();
   value = RelActCalc::to_str( eqn_form );
-  rapidxml::xml_node<> *node = doc->allocate_node( rapidxml::node_element, "RelEffEqnForm", value );
+  ::rapidxml::xml_node<char> *node = doc->allocate_node( ::rapidxml::node_element, "RelEffEqnForm", value );
   base_node->append_node( node );
   
   const size_t eqn_order = relEffEqnOrder();
   value = doc->allocate_string( std::to_string(eqn_order).c_str() );
-  node = doc->allocate_node( rapidxml::node_element, "RelEffEqnOrder", value );
+  node = doc->allocate_node( ::rapidxml::node_element, "RelEffEqnOrder", value );
   base_node->append_node( node );
   
   const RelActCalcManual::PeakCsvInput::NucDataSrc srcData = nucDataSrc();
   
   value = RelActCalcManual::PeakCsvInput::to_str( srcData );
-  node = doc->allocate_node( rapidxml::node_element, "NucDataSrc", value );
+  node = doc->allocate_node( ::rapidxml::node_element, "NucDataSrc", value );
   base_node->append_node( node );
   
   const float match_tolerance = m_matchTolerance->value();
   const string match_tolerance_str = PhysicalUnits::printCompact(match_tolerance, 7);
   value = doc->allocate_string( match_tolerance_str.c_str() );
-  node = doc->allocate_node( rapidxml::node_element, "MatchTolerance", value );
+  node = doc->allocate_node( ::rapidxml::node_element, "MatchTolerance", value );
   base_node->append_node( node );
   
   value = RelActManualGui::to_str( AddUncert(m_addUncertainty->currentIndex()) );
-  node = doc->allocate_node( rapidxml::node_element, "AddUncertainty", value );
+  node = doc->allocate_node( ::rapidxml::node_element, "AddUncertainty", value );
   base_node->append_node( node );
   
   
   value = m_resultMenu->currentIndex() ? "1" : "0";
-  node = doc->allocate_node( rapidxml::node_element, "ResultTabShowing", value );
+  node = doc->allocate_node( ::rapidxml::node_element, "ResultTabShowing", value );
   base_node->append_node( node );
   
   
@@ -1611,19 +1645,19 @@ rapidxml::xml_node<char> *RelActManualGui::serialize( rapidxml::xml_node<char> *
   }//for( auto w : m_nuclidesDisp->children() )
   
   
-  rapidxml::xml_node<> *nuc_ages_node = doc->allocate_node( rapidxml::node_element, "NuclideAges" );
+  ::rapidxml::xml_node<char> *nuc_ages_node = doc->allocate_node( ::rapidxml::node_element, "NuclideAges" );
   base_node->append_node( nuc_ages_node );
   for( const auto &n : nuc_age_cache )
   {
-    rapidxml::xml_node<> *nuc_node = doc->allocate_node( rapidxml::node_element, "Nuclide" );
+    ::rapidxml::xml_node<char> *nuc_node = doc->allocate_node( ::rapidxml::node_element, "Nuclide" );
     nuc_ages_node->append_node( nuc_node );
     
     value = doc->allocate_string( n.first.c_str() );
-    rapidxml::xml_node<> *name_node = doc->allocate_node( rapidxml::node_element, "Name", value );
+    ::rapidxml::xml_node<char> *name_node = doc->allocate_node( ::rapidxml::node_element, "Name", value );
     nuc_node->append_node(name_node);
     
     value = doc->allocate_string( PhysicalUnits::printCompact(n.second,8).c_str() );
-    rapidxml::xml_node<> *age_node = doc->allocate_node( rapidxml::node_element, "Age", value );
+    ::rapidxml::xml_node<char> *age_node = doc->allocate_node( ::rapidxml::node_element, "Age", value );
     nuc_node->append_node(age_node);
   }
   
@@ -1631,14 +1665,14 @@ rapidxml::xml_node<char> *RelActManualGui::serialize( rapidxml::xml_node<char> *
 }//serialize(...)
 
 
-void RelActManualGui::deSerialize( const rapidxml::xml_node<char> *base_node )
+void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
 {
   if( SpecUtils::xml_name_str(base_node) != "RelActManualGui" )
     throw runtime_error( "RelActManualGui::deSerialize: invalid base node passed in: '"
                         + SpecUtils::xml_name_str(base_node) + "'" );
     
   int version;
-  const rapidxml::xml_attribute<char> *attr = XML_FIRST_ATTRIB(base_node, "version");
+  const ::rapidxml::xml_attribute<char> *attr = XML_FIRST_ATTRIB(base_node, "version");
   if( !attr || !attr->value() || !(stringstream(attr->value()) >> version) )
     throw runtime_error( "Deserializing requires a version" );
   
@@ -1648,13 +1682,13 @@ void RelActManualGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   m_nuclidesDisp->clear();
   //m_nucAge.clear();
   
-  const rapidxml::xml_node<char> *RelEffEqnForm_node = XML_FIRST_NODE(base_node, "RelEffEqnForm");
-  const rapidxml::xml_node<char> *RelEffEqnOrder_node = XML_FIRST_NODE(base_node, "RelEffEqnOrder");
-  const rapidxml::xml_node<char> *NucDataSrc_node = XML_FIRST_NODE(base_node, "NucDataSrc");
-  const rapidxml::xml_node<char> *MatchTolerance_node = XML_FIRST_NODE(base_node, "MatchTolerance");
-  const rapidxml::xml_node<char> *AddUncertainty_node = XML_FIRST_NODE(base_node, "AddUncertainty");
-  const rapidxml::xml_node<char> *ResultTabShowing_node = XML_FIRST_NODE(base_node, "ResultTabShowing");
-  const rapidxml::xml_node<char> *NuclideAges_node = XML_FIRST_NODE(base_node, "NuclideAges");
+  const ::rapidxml::xml_node<char> *RelEffEqnForm_node = XML_FIRST_NODE(base_node, "RelEffEqnForm");
+  const ::rapidxml::xml_node<char> *RelEffEqnOrder_node = XML_FIRST_NODE(base_node, "RelEffEqnOrder");
+  const ::rapidxml::xml_node<char> *NucDataSrc_node = XML_FIRST_NODE(base_node, "NucDataSrc");
+  const ::rapidxml::xml_node<char> *MatchTolerance_node = XML_FIRST_NODE(base_node, "MatchTolerance");
+  const ::rapidxml::xml_node<char> *AddUncertainty_node = XML_FIRST_NODE(base_node, "AddUncertainty");
+  const ::rapidxml::xml_node<char> *ResultTabShowing_node = XML_FIRST_NODE(base_node, "ResultTabShowing");
+  const ::rapidxml::xml_node<char> *NuclideAges_node = XML_FIRST_NODE(base_node, "NuclideAges");
   
   
   if( !RelEffEqnForm_node || !RelEffEqnOrder_node || !NucDataSrc_node || !MatchTolerance_node
@@ -1750,8 +1784,8 @@ void RelActManualGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   
   XML_FOREACH_DAUGHTER( nuc_node, NuclideAges_node, "Nuclide" )
   {
-    rapidxml::xml_node<> *name_node = XML_FIRST_NODE(nuc_node, "Name");
-    rapidxml::xml_node<> *age_node = XML_FIRST_NODE(nuc_node, "Age");
+    ::rapidxml::xml_node<char> *name_node = XML_FIRST_NODE(nuc_node, "Name");
+    ::rapidxml::xml_node<char> *age_node = XML_FIRST_NODE(nuc_node, "Age");
     
     const string nuc = SpecUtils::xml_value_str(name_node);
     const string age_str = SpecUtils::xml_value_str(age_node);
