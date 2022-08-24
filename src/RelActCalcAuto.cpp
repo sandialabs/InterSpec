@@ -42,6 +42,13 @@
 #include "Wt/WApplication"
 #include "Wt/WLocalDateTime"
 
+#ifdef _MSC_VER
+#undef isinf
+#undef isnan
+#undef isfinite
+#undef isnormal
+#endif
+
 #include "ceres/ceres.h"
 
 #include "SandiaDecay/SandiaDecay.h"
@@ -4103,7 +4110,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
     out << "Warning: " << warning << "\n";
   
   if( m_status != Status::Success )
-    return;
+    return out;
   
   // Rake code from RelEff
   out << "Rel. Eff. Eqn.: y = "

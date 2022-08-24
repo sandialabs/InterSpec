@@ -32,6 +32,13 @@
 
 #include <Wt/WApplication>
 
+#ifdef _MSC_VER
+#undef isinf
+#undef isnan
+#undef isfinite
+#undef isnormal
+#endif
+
 #include "Eigen/Dense"
 #include "ceres/ceres.h"
 
@@ -687,8 +694,8 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
     // We will clamp rel eff to zero or above ... this is a workaround since Eigens LM doesnt
     //  seem to allow constraining parameter ranges.
     if( (measured_rel_eff <= std::numeric_limits<float>::epsilon())
-       || std::isinf(measured_rel_eff)
-       || std::isnan(measured_rel_eff) )
+       || IsInf(measured_rel_eff)
+       || IsNan(measured_rel_eff) )
     {
       measured_rel_eff = 0.0;
       if( peak.m_base_rel_eff_uncert > std::numeric_limits<float>::epsilon() )
@@ -1047,7 +1054,7 @@ void fit_act_to_rel_eff( const RelActCalc::RelEffEqnForm eqn_form,
     
     for( const GenericLineInfo &line : info.m_source_gammas )
     {
-      if( line.m_yield <= 0.0 || std::isinf(line.m_yield) || std::isnan(line.m_yield) )
+      if( line.m_yield <= 0.0 || IsInf(line.m_yield) || IsNan(line.m_yield) )
         throw runtime_error( "fit_act_to_rel_eff: invalid yield." );
       
       const auto pos = find( begin(isotopes), end(isotopes), line.m_isotope );
