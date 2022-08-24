@@ -26,6 +26,7 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <assert.h>
 #include <iostream> //for cout, only for debug
 #include <cstring>
 #include <stdexcept>

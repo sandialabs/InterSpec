@@ -42,6 +42,13 @@
 #include "Wt/WApplication"
 #include "Wt/WLocalDateTime"
 
+#ifdef _MSC_VER
+#undef isinf
+#undef isnan
+#undef isfinite
+#undef isnormal
+#endif
+
 #include "ceres/ceres.h"
 
 #include "SandiaDecay/SandiaDecay.h"

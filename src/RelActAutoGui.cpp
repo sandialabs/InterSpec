@@ -996,7 +996,7 @@ namespace
     }
     
     
-    float setEnergy( const float energy )
+    void setEnergy( const float energy )
     {
       m_energy->setValue( energy );
       m_updated.emit();
