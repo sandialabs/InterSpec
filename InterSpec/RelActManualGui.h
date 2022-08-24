@@ -48,9 +48,8 @@ namespace Wt
   class WComboBox;
   class WResource;
   class WGridLayout;
-}
+}//namespace Wt
 
-//A Forward declaration
 namespace rapidxml
 {
   template<class Ch> class xml_node;

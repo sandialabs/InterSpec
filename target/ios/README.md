@@ -1,3 +1,26 @@
+Try 20220819
+cd InterSpec
+mkdir build-iphoneos; cd build-iphoneos
+git clone git@github.com:leetal/ios-cmake.git
+
+unset MACOSX_DEPLOYMENT_TARGET
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../3rd_party/ios-cmake/ios.toolchain.cmake -DPLATFORM=OS64 -DIOS_DEPLOYMENT_TARGET=11.0 -DDEPLOYMENT_TARGET=11.0 -DENABLE_BITCODE_INT=OFF -DENABLE_BITCODE=OFF ..
+# Note that ceres-solver-src/CMakeLists.txt by default defines -mllvm, which is not compatible with bitcode, unless you set ENABLE_BITCODE=ON , which is probably worth a try, since I'm not sure if -mllvm is actually going through to the final executable abd being used (so if we do use it, maybe define it upfront in our CMakeLists.txt)
+
+cmake --build . --config Release -j8
+# Note: working on doing a locla build folder install... see CMAKE_INSTALL_PREFIX
+cmake --build . --config Release -j8 --target install
+cp -R _deps/wt-src/resources ./WtsRsrcs
+
+
+# I think I would like to do a minimal CMake project that uses FetchContent to grab boost, and see if I can get it to install in al build folder prefix that way; and if so, port that back over.
+# Also need to modify Wts CMakeLists.txt to not set the install directory
+# Also, should add a "-G Xcode" to the above, and then try integrating into iOS project, like at https://blog.tomtasche.at/2019/05/how-to-include-cmake-project-in-xcode.html - probably much cleaner that what I did now; also, it does build
+
+
+
+
+
 # Building Boost and Wt for iOS
 
 ## Building Boost for iOS
@@ -128,3 +151,8 @@ cp -r ./target/ios/prefix/share/Wt/resources ./XcodeFiles/WtsRsrcs
 ```
 
 Now you can open the `InterSpec/target/ios/InterSpec/InterSpec.xcodeproj` and when you compile, it will run the `make` command for either the `build-iphoneos` or `build-iphonesimulator` target, depending on your build target.
+
+
+
+
+

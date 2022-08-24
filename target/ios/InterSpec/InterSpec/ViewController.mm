@@ -49,7 +49,6 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecServer.h"
-#include "InterSpec/DbToFilesystemLink.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
 #define IS_IPAD() (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad)
@@ -284,7 +283,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   _appComminFromBackground = NO;
   
   
-  _UrlUniqueId = [this generateSessionToken];
+  _UrlUniqueId = [self generateSessionToken];
   InterSpecServer::add_allowed_session_token( [_UrlUniqueId UTF8String], InterSpecServer::SessionType::PrimaryAppInstance );
   
   NSString *actualURL = [NSString stringWithFormat:@"%@?apptoken=%@", _UrlServingOn, _UrlUniqueId];
@@ -293,7 +292,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   if( _fileNeedsOpening )
   {
     InterSpecServer::set_file_to_open_on_load( [_UrlUniqueId UTF8String], [_fileNeedsOpening UTF8String] );
-    _fileNeedsOpening = nill;
+    _fileNeedsOpening = nil;
   }
   
   //See if we should specify orientation and safe area in the URL, so it will be
@@ -415,7 +414,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   _isServing = NO;
   _UrlUniqueId = @"";
   _UrlServingOn = @"";
-  _fileNeedsOpening = nill;
+  _fileNeedsOpening = nil;
   _appHasGoneIntoBackground = NO;
   _appComminFromBackground = YES;
   
@@ -482,23 +481,13 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 
   [self fixPermissions: writableDBPath];
   
-   NSString *fileNumToFilePathToDBPath = [documentsDirectory stringByAppendingPathComponent:@"FileNumToFilePath.sqlite"];
-  [self fixPermissions: fileNumToFilePathToDBPath];
-  
-  const boost::filesystem::path dbpath = [documentsDirectory UTF8String];
-  const bool validdir = DbToFilesystemLink::setFileNumToFilePathDBNameBasePath( dbpath.string<std::string>() );
-  if( !validdir )
-    NSLog( @"viewDidLoad: Error setting FileNumToFilePathDBNameBasePath: %@", documentsDirectory );
-  
-  [self fixPermissions: fileNumToFilePathToDBPath];
-  
-  NSLog( @"Done in viewDidLoad" );
+   NSLog( @"Done in viewDidLoad" );
 }
 
 
 - (void)onKeyboardHide
 {
-  //This function is vestigiual from debugging an issue with the keyboard hiding
+  //This function is vestigial from debugging an issue with the keyboard hiding
   //  NSLog(@"Triggering screen resize" );
   //  NSString *jsstring = [NSString stringWithFormat:@"setTimeout( function(){$('.Wt-domRoot').height(window.innerHeight); window.scrollTo(0,0);}, 0 );" ];
   //  [_webView stringByEvaluatingJavaScriptFromString: jsstring];

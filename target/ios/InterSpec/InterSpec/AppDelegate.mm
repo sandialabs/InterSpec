@@ -415,7 +415,7 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
 //********** ORIENTATION CHANGED **********
 - (void)orientationChanged:(NSNotification *)note
 {
-  NSLog(@"Orientation  has changed: %ld", [[note object] orientation]);
+  //NSLog(@"Orientation  has changed: %ld", [[note object] orientation]);
   
   if( _viewController )
     [_viewController setSafeAreasToClient];

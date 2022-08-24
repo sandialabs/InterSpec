@@ -338,7 +338,7 @@ index 15aab351..1e618bf1 100644
  IF(WIN32)
    IF(BOOST_DYNAMIC)
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index c65812e1..7730f3c2 100644
+index c65812e1..baf5f9aa 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -4,11 +4,11 @@ INCLUDE_DIRECTORIES(
@@ -355,7 +355,7 @@ index c65812e1..7730f3c2 100644
  
  MACRO (FILE_TO_STRING infile outfile var)
  ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${outfile}
-@@ -457,18 +457,33 @@ ENDIF(WIN32)
+@@ -457,24 +457,44 @@ ENDIF(WIN32)
  ADD_LIBRARY(wt ${libsources})
  TARGET_LINK_LIBRARIES(wt
    PUBLIC
@@ -368,6 +368,9 @@ index c65812e1..7730f3c2 100644
      ${RT_LIBRARY}
      )
  
++IF(UNIX AND NOT APPLE)
++  TARGET_LINK_LIBRARIES(wt PUBLIC ${RT_LIBRARY})
++ENDIF(UNIX AND NOT APPLE)
 +#set_property( TARGET wt PROPERTY CXX_STANDARD 14 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
 +
 +message( "boost_SOURCE_DIR=${boost_SOURCE_DIR}" )
@@ -390,6 +393,16 @@ index c65812e1..7730f3c2 100644
    TARGET_LINK_LIBRARIES(wttest
      PUBLIC
        wt
+-    PRIVATE
+-      ${RT_LIBRARY}
+       )
++  
++  IF(UNIX AND NOT APPLE)
++    TARGET_LINK_LIBRARIES(wttest PRIVATE ${RT_LIBRARY})
++  ENDIF(UNIX AND NOT APPLE)
+ 
+   INSTALL(TARGETS wttest
+ 	  RUNTIME DESTINATION bin
 diff --git a/src/Wt/Dbo/CMakeLists.txt b/src/Wt/Dbo/CMakeLists.txt
 index 70b56636..5480cf76 100644
 --- a/src/Wt/Dbo/CMakeLists.txt
@@ -571,10 +584,23 @@ index cefbf2a7..53ae4ece 100644
    IF(BOOST_WT_MT_FOUND)
      TARGET_LINK_LIBRARIES(wthttp PRIVATE ${CMAKE_THREAD_LIBS_INIT})
 diff --git a/test/CMakeLists.txt b/test/CMakeLists.txt
-index 23117e87..f5c47959 100644
+index 23117e87..76237466 100644
 --- a/test/CMakeLists.txt
 +++ b/test/CMakeLists.txt
-@@ -146,12 +146,13 @@ IF(ENABLE_LIBWTTEST)
+@@ -51,7 +51,11 @@ IF(ENABLE_LIBWTTEST)
+ 	SET_TARGET_PROPERTIES(test.wt PROPERTIES FOLDER "test")
+   ENDIF(MSVC)
+ 
+-  TARGET_LINK_LIBRARIES(test.wt wt wttest ${BOOST_FS_LIB} ${CMAKE_THREAD_LIBS_INIT} ${RT_LIBRARY})
++  TARGET_LINK_LIBRARIES(test.wt wt wttest ${BOOST_FS_LIB} ${CMAKE_THREAD_LIBS_INIT})
++
++  IF(UNIX AND NOT APPLE)
++    TARGET_LINK_LIBRARIES(test.wt ${RT_LIBRARY})
++  ENDIF(UNIX AND NOT APPLE)
+ 
+   IF(ENABLE_LIBWTDBO)
+     # Test all dbo backends
+@@ -146,12 +150,17 @@ IF(ENABLE_LIBWTTEST)
      )
  
      ADD_EXECUTABLE(test.http ${HTTP_TEST_SOURCES})
@@ -584,7 +610,11 @@ index 23117e87..f5c47959 100644
      ENDIF(MSVC)  
    ENDIF(CONNECTOR_HTTP)
  
-+  TARGET_LINK_LIBRARIES(test.http PUBLIC wt wthttp ${CMAKE_THREAD_LIBS_INIT} ${RT_LIBRARY} Boost::unit_test )
++  TARGET_LINK_LIBRARIES(test.http PUBLIC wt wthttp ${CMAKE_THREAD_LIBS_INIT} Boost::unit_test )
++
++  IF(UNIX AND NOT APPLE)
++    TARGET_LINK_LIBRARIES(test.http PUBLIC ${RT_LIBRARY})
++  ENDIF(UNIX AND NOT APPLE)
 +
  ELSE (ENABLE_LIBWTTEST)
    MESSAGE("** libwttest disabled, not building tests")

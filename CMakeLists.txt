@@ -202,73 +202,6 @@ if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
     set(PERFORM_DEVELOPER_CHECKS ON)
 endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
-    #get rid of a million warnings by Wt/Dbo/ptr_impl.h in VS2015
-#    add_definitions("/wd4297")
-#    add_definitions("/wd4244")
-    #set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/ignore:4099")
-endif()
-
-if(ANDROID)
-    set(BUILD_AS_LOCAL_SERVER OFF)
-    set(TRY_TO_STATIC_LINK ON)
-    set(MAX_SPECTRUM_MEMMORY_SIZE_MB 32)
-    set(USE_DB_TO_STORE_SPECTRA ON)
-    set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
-endif(ANDROID)
-
-if(IOS)
-    set(CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "10.2"
-        CACHE STRING "Set the minimum deployment target value."
-        FORCE
-    )
-
-    #For iOS we have to use libtool instead of ar so that the platform (armv7, armv7s, arm64, etc) are kept track of in the archive
-    SET(CMAKE_AR "libtool" )
-
-    #CMake adds a cq after the archive command by default, we need to change this to "-static -o"
-    SET(CMAKE_CXX_ARCHIVE_CREATE   "<CMAKE_AR> -static -o <TARGET> <LINK_FLAGS> <OBJECTS>")
-    SET(CMAKE_C_ARCHIVE_CREATE   "<CMAKE_AR> -static -o <TARGET> <LINK_FLAGS> <OBJECTS>")
-
-    set(BUILD_AS_LOCAL_SERVER OFF)
-    set(PERFORM_DEVELOPER_CHECKS OFF)
-    set(TRY_TO_STATIC_LINK ON)
-    set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
-    set(MAX_SPECTRUM_MEMMORY_SIZE_MB "32")
-    set(FRAMEWORKDIR "${CMAKE_CURRENT_SOURCE_DIR}/target/ios")
-    set(CMAKE_SYSTEM_FRAMEWORK_PATH "${FRAMEWORKDIR}")
-    set(USE_BOOST_FRAMEWORK OFF)
-    set(DEFAULT_WT_BOOST_DISCOVERY TRUE)
-    set(CMAKE_FRAMEWORK_PATH "${FRAMEWORKDIR}")
-    set(BOOST_FRAMEWORK_PATH "${CMAKE_FRAMEWORK_PATH}/framework/boost.framework")
-    set(BOOST_PREFIX "${FRAMEWORKDIR}/prefix")
-    set(Boost_DIR "${FRAMEWORKDIR}/prefix")
-    set(Boost_INCLUDE_DIR "${Boost_DIR}/include")
-    set(Boost_LIBRARY_DIRS "${Boost_DIR}/lib")
-    set(BOOST_LIBRARYDIR "${Boost_DIR}/lib")
-    set(BOOST_ROOT "${Boost_DIR}")
-    SET(CMAKE_MODULE_PATH ${Boost_DIR} ${CMAKE_MODULE_PATH} )
-    set(SHARED_LIBS OFF)
-    set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${Boost_DIR})
-
-    #if you change this IPHONEOS_DEPLOYMENT_TARGET also change the variable in
-    # iosbuild.rb everywhere, and in the Xcode project.
-    set(ENV{IPHONEOS_DEPLOYMENT_TARGET} 10.2)
-
-    #We know where Wt is for iOS, so just force it
-    if(NOT Wt_INCLUDE_DIR)
-        SET(Wt_DIR "${CMAKE_CURRENT_SOURCE_DIR}/target/ios/prefix")
-        SET(Wt_INCLUDE_DIR "${Wt_DIR}/include")
-    endif(NOT Wt_INCLUDE_DIR)
-endif(IOS)
-
-
-if(BUILD_AS_ELECTRON_APP)
-    set(BUILD_AS_LOCAL_SERVER OFF)
-    set(USE_OSX_NATIVE_MENU OFF)
-    set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
-endif(BUILD_AS_ELECTRON_APP)
-
 
 if(BUILD_AS_UNIT_TEST_SUITE)
     set(BUILD_AS_LOCAL_SERVER OFF)
@@ -535,10 +468,10 @@ if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
 
-if(IOS)
-    list(APPEND sources target/ios/InterSpec/FileHandling.mm)
-    list(APPEND headers target/ios/InterSpec/FileHandling.h)
-endif(IOS)
+#if(IOS)
+#    list(APPEND sources target/ios/InterSpec/FileHandling.mm)
+#    list(APPEND headers target/ios/InterSpec/FileHandling.h)
+#endif(IOS)
 
 if(USE_GOOGLE_MAP)
     list(APPEND sources src/GoogleMap.cpp)
@@ -875,14 +808,14 @@ if(TRY_TO_STATIC_LINK)
         target_link_libraries(InterSpecLib PUBLIC ${SSL_LIBRARIES})
     endif(SSL_FOUND)
 
-    if("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID)
+    if(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))
         find_library( RT_LIB rt REQUIRES )
         target_link_libraries(InterSpecLib PUBLIC ${RT_LIB})
 
         #target_link_libraries( InterSpecExe -static-libgcc -static-libstdc++)
         #Next line statically links to pthread, copying whole archive into exe
         #set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} "-static -pthread -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
-    endif("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID)
+    endif(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))
 endif(TRY_TO_STATIC_LINK)
 
 if(BUILD_AS_UNIT_TEST_SUITE)
@@ -903,21 +836,6 @@ if(Wt_MYSQL_LIBRARY)
     find_file( HAS_WT_DBO_MYSQL "MySQL" PATHS "${Wt_INCLUDE_DIR}/Wt/Dbo/backend/" NO_DEFAULT_PATH )
 endif(Wt_MYSQL_LIBRARY)
 
-
-#if(SUPPORT_ZIPPED_SPECTRUM_FILES)
-#    #CMake seems to fail to find zlib on ios/android (even using find_package(ZLIB REQUIRED)), but we know it will be in
-#    #  the systems path anyway, so just blindly link to zlib
-#    if(NOT (IOS OR ANDROID))
-#        if(NOT ZLIB_FOUND)
-#            MESSAGE(FATAL_ERROR       "ZLIB required to enable SUPPORT_ZIPPED_SPECTRUM_FILES, but it wasnt found")
-#        else(NOT ZLIB_FOUND)
-#            target_include_directories(InterSpecLib PUBLIC ${ZLIB_INCLUDE_DIRS})
-#            target_link_libraries(InterSpecLib PUBLIC ${ZLIB_LIBRARIES})
-#        endif(NOT ZLIB_FOUND)
-#    else(NOT (IOS OR ANDROID))
-#        target_link_libraries(InterSpecLib PUBLIC z)
-#    endif(NOT (IOS OR ANDROID))
-#endif(SUPPORT_ZIPPED_SPECTRUM_FILES)
 
 if(Wt_MYSQL_LIBRARY AND BUILD_FOR_WEB_DEPLOYMENT AND USE_MYSQL_DB)
     set(DATABASE_PASSWORD_FILE "/path/to/passwords/databases.xml"
