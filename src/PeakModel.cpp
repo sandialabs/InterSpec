@@ -473,7 +473,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   int mean_index = -1, area_index = -1, fwhm_index = -1;
   
   //Columns that may or not be in file, in whcih case will be >= 0.
-  int roi_lower_index = -1, roi_upper_index = -1, nuc_index = -1, nuc_energy_index = -1, color_index = -1;
+  int roi_lower_index = -1, roi_upper_index = -1, nuc_index = -1, nuc_energy_index = -1, color_index = -1, label_index = -1;
   
   {//begin to get field_pos
     vector<string> headers;
@@ -490,6 +490,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     const auto roi_start_pos = std::find( begin(headers), end(headers), "roi_lower_energy");
     const auto roi_end_pos = std::find( begin(headers), end(headers), "roi_upper_energy");
     const auto color_pos = std::find( begin(headers), end(headers), "color");
+    const auto label_pos = std::find( begin(headers), end(headers), "user_label");
     
     if( centroid_pos == end(headers) )
       throw runtime_error( "Header did not contain 'Centroid'" );
@@ -517,6 +518,9 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     
     if( color_pos != end(headers) )
       color_index = static_cast<int>( color_pos - begin(headers) );
+    
+    if( label_pos != end(headers) )
+      label_index = static_cast<int>( label_pos - begin(headers) );
   }//end to get field_pos
   
   
@@ -530,8 +534,14 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     
     vector<string> fields;
     Tokeniser t( line, separator );
-    for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
-      fields.push_back( to_lower_ascii_copy( trim_copy(*it) ) );
+    int token_col = 0;
+    for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it, ++token_col )
+    {
+      string val = trim_copy(*it);
+      if( token_col != label_index )
+        val = to_lower_ascii_copy( val );
+      fields.push_back( val );
+    }
     
     const int nfields = static_cast<int>( fields.size() );
     
@@ -586,13 +596,17 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
         {
           // I dont think WColor will throw, but we'll wrap in try/catch, just in case
           //  Also, we need to remove leading/trailing quotes
-          SpecUtils::ireplace_all( fields[color_index], "'", "" );
-          SpecUtils::ireplace_all( fields[color_index], "\"", "" );
           peak.setLineColor( WColor( WString::fromUTF8( fields[color_index] ) ) );
         }catch( std::exception & )
         {
         }
       }//if( we have color index )
+      
+      if( (label_index >= 0) && (label_index < nfields) && !fields[label_index].empty() )
+      {
+        // TODO: it looks like all double quote characters never make it here, even if they are in the file correctly
+        peak.setUserLabel( fields[label_index] );
+      }
       
       //Go through existing peaks and if the new peak should share a ROI, do that here
       if( peak.continuum()->energyRangeDefined() )
@@ -3049,10 +3063,10 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
   const string eol_char = "\r\n"; //for windows - could potentially customize this for the users operating system
   
   outstrm << "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
-  "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color"
+  "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color, User_Label"
   << eol_char
   << "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
-  "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV, (css)"
+  "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV, (css),           "
   << eol_char;
   
   
@@ -3203,8 +3217,25 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
       }
     }//if( !meastime.is_special() )
     
+    
+    auto csvEscape = []( string &s ){
+      if( s.empty() )
+        return;
+      
+      SpecUtils::ireplace_all( s, "\"", "\"\"" );
+      if( (s.find_first_of(",\n\r\"\t") != string::npos)
+         || (s.front() == ' ')
+         || (s.back() == ' ') )
+        s = "\"" + s + "\"";
+    };
+    
+    
     const Wt::WColor &color = peak.lineColor();
-    const string color_str = color.isDefault() ? string("") : ("'" + color.cssText(false) + "'");
+    string color_str = color.isDefault() ? string("") : color.cssText(false);
+    string user_label = peak.userLabel();
+    csvEscape( color_str );
+    csvEscape( user_label );
+
     
     outstrm << meanstr
     << ',' << areastr
@@ -3224,6 +3255,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     << ',' << xlow
     << ',' << xhigh
     << ',' << color_str
+    << ',' << user_label
     << eol_char;
   }//for( loop over peaks, peakn )
 }//void PeakModel::write_peak_csv(...)
