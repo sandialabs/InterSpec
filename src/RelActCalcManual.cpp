@@ -1260,9 +1260,8 @@ double RelEffSolution::mass_fraction( const std::string &nuclide ) const
   {
     const IsotopeRelativeActivity &act = m_rel_activities[index];
     const SandiaDecay::Nuclide * nuc = db->nuclide( act.m_isotope );
-    assert( nuc );
     if( !nuc )
-      throw logic_error( act.m_isotope + " is somehow not a valid nuclide" );
+      continue;
     
     const double rel_mass = act.m_rel_activity / nuc->activityPerGram();
     sum_rel_mass += rel_mass;
@@ -1472,7 +1471,7 @@ void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
       const string &nuc_j_str = m_rel_activities[j].m_isotope;
       const SandiaDecay::Nuclide * const nuc_i = db->nuclide( nuc_i_str );
       const SandiaDecay::Nuclide * const nuc_j = db->nuclide( nuc_j_str );
-      assert( nuc_i && nuc_j );
+      
       if( !nuc_i || !nuc_j )
       {
         results_html << "<tr><td>" << nuc_i_str << "/" << nuc_j_str << "</td><td>--</td><td>--</td></tr>\n";

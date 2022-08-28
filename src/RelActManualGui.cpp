@@ -1477,7 +1477,7 @@ void RelActManualGui::updateNuclides()
   for( auto w : m_nuclidesDisp->children() )
   {
     ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
-    assert( rr && rr->m_nuc && !current_nucs.count(rr->m_nuc) );
+    assert( rr && (rr->m_nuc || rr->m_reaction) && !current_nucs.count(rr->m_nuc) && !current_rctns.count(rr->m_reaction) );
     if( rr && rr->m_nuc )
       current_nucs[rr->m_nuc] = rr;
     else if( rr && rr->m_reaction )
