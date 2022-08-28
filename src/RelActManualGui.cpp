@@ -30,12 +30,14 @@
 #include <Wt/WPanel>
 #include <Wt/WTable>
 #include <Wt/WLabel>
+#include <Wt/WServer>
 #include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WMenuItem>
 #include <Wt/WResource>
 #include <Wt/WTableRow>
 #include <Wt/WCheckBox>
+#include <Wt/WIOService>
 #include <Wt/WTableCell>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
@@ -64,6 +66,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/ReactionGamma.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/RelActManualGui.h"
@@ -81,6 +84,14 @@ const int RelActManualGui::sm_xmlSerializationMinorVersion = 1;
 
 namespace
 {
+struct DoWorkOnDestruct
+{
+  std::function<void()> m_worker;
+  DoWorkOnDestruct( std::function<void()> &&worker ) : m_worker( std::move(worker) ){}
+  ~DoWorkOnDestruct(){ if(m_worker) m_worker(); }
+};//struct DoWorkOnDestruct
+
+
 class RelActManualReportResource : public Wt::WResource
 {
   Wt::WApplication *m_app;
@@ -202,104 +213,138 @@ class ManRelEffNucDisp : public Wt::WPanel
 {
 public:
   const SandiaDecay::Nuclide * const m_nuc;
+  const ReactionGamma::Reaction * const m_reaction = nullptr;
   double m_current_age;
   const bool m_age_is_settable;
   Wt::WLineEdit *m_age_edit;
   Wt::WTableRow *m_age_row;
   
 public:
-  ManRelEffNucDisp( const SandiaDecay::Nuclide * const nuc, double age, WContainerWidget *parent = nullptr )
+  ManRelEffNucDisp( const SandiaDecay::Nuclide * const nuc,
+                   const ReactionGamma::Reaction * const reaction,
+                   double age, WContainerWidget *parent = nullptr )
   : WPanel( parent ),
    m_nuc( nuc ),
+   m_reaction( reaction ),
    m_current_age( (nuc && (age < 0.0)) ? PeakDef::defaultDecayTime(nuc) : age ),
    m_age_is_settable( nuc ? !PeakDef::ageFitNotAllowed(nuc) : false ),
    m_age_edit( nullptr ),
    m_age_row( nullptr )
   {
-    assert( m_nuc );
+    assert( m_nuc || m_reaction );
     
-    if( !m_nuc )
-      throw runtime_error( "ManRelEffNucDisp: null nuc." );
+    if( !m_nuc && !m_reaction )
+      throw runtime_error( "ManRelEffNucDisp: null nuclide and reaction" );
     
     addStyleClass( "ManRelEffNucDisp" );
     
-    setTitle( m_nuc->symbol );
+    setTitle( m_nuc ? m_nuc->symbol : m_reaction->name() );
     setCollapsible( true );
     setCollapsed( true );
     setAnimation( { WAnimation::AnimationEffect::SlideInFromTop,
       WAnimation::TimingFunction::Linear, 250 } );
     
-    WTable *content = new WTable();
-    content->addStyleClass( "NucInfoTable" );
-    setCentralWidget( content );
-    
-    WTableCell *cell = content->elementAt(0, 0);
-    WLabel *label = new WLabel( "Age", cell );
-  
-    m_age_row = content->rowAt(0);
-    
-    cell = content->elementAt(0, 1);
-    
-    string agestr;
-    if( nuc->decaysToStableChildren() )
+    if( m_nuc )
     {
-      m_current_age = 0.0;
-      agestr = "0y";
+      WTable *content = new WTable();
+      content->addStyleClass( "NucInfoTable" );
+      setCentralWidget( content );
+      
+      WTableCell *cell = content->elementAt(0, 0);
+      WLabel *label = new WLabel( "Age", cell );
+      
+      m_age_row = content->rowAt(0);
+      
+      cell = content->elementAt(0, 1);
+      
+      string agestr;
+      if( !nuc || nuc->decaysToStableChildren() )
+      {
+        m_current_age = 0.0;
+        agestr = "0y";
+      }else
+      {
+        m_current_age = PeakDef::defaultDecayTime( nuc, &agestr );
+      }//if( decay to stable only ) / else
+      
+      cout << "PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex='" << PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex << "'" << endl;
+      
+      if( m_age_is_settable )
+      {
+        m_age_edit = new WLineEdit( agestr, cell );
+        
+        WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_age_edit );
+        validator->setFlags(Wt::MatchCaseInsensitive);
+        m_age_edit->setValidator(validator);
+        m_age_edit->setAutoComplete( false );
+        label->setBuddy( m_age_edit );
+        m_age_edit->addStyleClass( "AgeEdit" );
+        
+        m_age_edit->changed().connect( this, &ManRelEffNucDisp::handleAgeChange );
+        m_age_edit->blurred().connect( this, &ManRelEffNucDisp::handleAgeChange );
+        m_age_edit->enterPressed().connect( this, &ManRelEffNucDisp::handleAgeChange );
+      }else
+      {
+        label = new WLabel( agestr, cell );
+        label->addStyleClass( "FixedAge" );
+      }//if( m_age_is_settable ) / else
+      
+      
+      cell = content->elementAt(1, 0);
+      //label = new WLabel( "Half Life", cell );
+      label = new WLabel( "<span style=\"font-size: small;\">&lambda;<sub>&frac12;</sub></span>", cell );
+      
+      cell = content->elementAt(1, 1);
+      WText *txt = new WText( PhysicalUnits::printToBestTimeUnits(nuc->halfLife), cell );
+      
+      cell = content->elementAt(2, 0);
+      label = new WLabel( "Spec. Act.", cell );
+      
+      cell = content->elementAt(2, 1);
+      const bool useCurrie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
+      const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurrie );
+      txt = new WText( sa, cell );
+      
+      // We could maybe list which gammas are currently being used
     }else
     {
-      m_current_age = PeakDef::defaultDecayTime( nuc, &agestr );
-    }//if( decay to stable only ) / else
-    
-    cout << "PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex='" << PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex << "'" << endl;
-    
-    if( m_age_is_settable )
-    {
-      m_age_edit = new WLineEdit( agestr, cell );
+      string target;
+      if( reaction->targetElement )
+        target = reaction->targetElement->name;
+      else if( reaction->targetNuclide )
+        target = reaction->targetNuclide->symbol;
       
-      WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_age_edit );
-      validator->setFlags(Wt::MatchCaseInsensitive);
-      m_age_edit->setValidator(validator);
-      m_age_edit->setAutoComplete( false );
-      label->setBuddy( m_age_edit );
-      m_age_edit->addStyleClass( "AgeEdit" );
+      string infostr;
+      switch( m_reaction->type )
+      {
+        case AlphaNeutron:            infostr = "Alphas on " + target + " creating neutrons"; break;
+        case NeutronAlpha:            infostr = "Neutrons on " + target + " creating alphas"; break;
+        case AlphaProton:             infostr = "Alphas on " + target + " creating protons";  break;
+        case NeutronCapture:          infostr = "Slow neutrons on " + target + " being captured";  break;
+        case NeutronInelasticScatter: infostr = "Fast neutrons inelastically scattering off " + target; break;
+        case AnnihilationReaction:    infostr = "Annihilation gammas";                        break;
+        case NumReactionType:         infostr = "Unknown reaction";                           break;
+      }//switch( m_reaction->type )
       
-      m_age_edit->changed().connect( this, &ManRelEffNucDisp::handleAgeChange );
-      m_age_edit->blurred().connect( this, &ManRelEffNucDisp::handleAgeChange );
-      m_age_edit->enterPressed().connect( this, &ManRelEffNucDisp::handleAgeChange );
-    }else
-    {
-      label = new WLabel( agestr, cell );
-      label->addStyleClass( "FixedAge" );
-    }//if( m_age_is_settable ) / else
-    
-    cell = content->elementAt(1, 0);
-    //label = new WLabel( "Half Life", cell );
-    label = new WLabel( "<span style=\"font-size: small;\">&lambda;<sub>&frac12;</sub></span>", cell );
-    
-    cell = content->elementAt(1, 1);
-    WText *txt = new WText( PhysicalUnits::printToBestTimeUnits(nuc->halfLife), cell );
-    
-    
-    cell = content->elementAt(2, 0);
-    label = new WLabel( "Spec. Act.", cell );
-    
-    cell = content->elementAt(2, 1);
-    const bool useCurrie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
-    const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
-    const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurrie );
-    txt = new WText( sa, cell );
-    
-    // We could maybe list which gammas are currently being used
+      WText *content = new WText( infostr );
+      content->setInline( false );
+      content->addStyleClass( "NucInfoTable" );
+      setCentralWidget( content );
+    }//if( m_nuc ) / else ( m_reaction )
   }//ManRelEffNucDisp(...)
   
   void handleAgeChange()
   {
-    assert( m_age_edit );
+    assert( m_age_edit || m_reaction );
   }//void handleAgeChange()
   
   void setAgeHidden( const bool hidden )
   {
-    m_age_row->setHidden( hidden );
+    assert( m_age_row || m_reaction );
+    
+    if( m_age_row )
+      m_age_row->setHidden( hidden );
   }
   
 };//class ManRelEffNucDisp
@@ -792,6 +837,7 @@ void RelActManualGui::calculateSolution()
   try
   {
     using namespace RelActCalcManual;
+    bool has_reaction = false;
     vector<string> prep_warnings;
     vector<GenericPeakInfo> peak_infos;
     
@@ -874,7 +920,7 @@ void RelActManualGui::calculateSolution()
     set<string> unique_isotopes;
     for( const PeakModel::PeakShrdPtr &p : peaks )
     {
-      if( p && p->parentNuclide() && p->useForManualRelEff() )
+      if( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() )
       {
         GenericPeakInfo peak;
         peak.m_energy = p->mean();
@@ -942,7 +988,8 @@ void RelActManualGui::calculateSolution()
         bool hadNuclide = false;
         for( const auto &existing : nuclides_to_match_to )
         {
-          if( existing.nuclide == p->parentNuclide() )
+          if( (p->parentNuclide() && (existing.nuclide == p->parentNuclide()))
+             || (p->reaction() && (existing.reaction == p->reaction())) )
           {
             nuc = existing;
             hadNuclide = true;
@@ -952,18 +999,26 @@ void RelActManualGui::calculateSolution()
         
         if( !hadNuclide )
         {
-          nuc.nuclide = p->parentNuclide();
           nuc.age = -1.0;
+          if( p->parentNuclide() )
+          {
+            nuc.nuclide = p->parentNuclide();
+            const auto age_pos = nuclide_ages.find(nuc.nuclide);
+            assert( age_pos != end(nuclide_ages) );
           
-          const auto age_pos = nuclide_ages.find(nuc.nuclide);
-          assert( age_pos != end(nuclide_ages) );
+            if( age_pos != end(nuclide_ages) )
+              nuc.age = age_pos->second;
           
-          if( age_pos != end(nuclide_ages) )
-            nuc.age = age_pos->second;
+            assert( nuc.age >= 0.0 );
+            if( nuc.age < 0.0 )
+              throw runtime_error( "Error finding age for " + nuc.nuclide->symbol );
+          }else
+          {
+            has_reaction = true;
+            nuc.reaction = p->reaction();
+          }
           
-          assert( nuc.age >= 0.0 );
-          if( nuc.age < 0.0 )
-            throw runtime_error( "Error finding age for " + nuc.nuclide->symbol );
+          assert( nuc.nuclide || nuc.reaction );
           
           nuclides_to_match_to.push_back( nuc );
         }//if( pos != end(nuclides_to_match_to) ) / else
@@ -998,13 +1053,25 @@ void RelActManualGui::calculateSolution()
         
         peak_infos.push_back( peak );
         
-        has_U_or_Pu |= (p->parentNuclide()->atomicNumber == 92);
-        has_U_or_Pu |= (p->parentNuclide()->atomicNumber == 94);
-        
-        unique_isotopes.insert( p->parentNuclide()->symbol );
+        if( p->parentNuclide() )
+        {
+          has_U_or_Pu |= (p->parentNuclide()->atomicNumber == 92);
+          has_U_or_Pu |= (p->parentNuclide()->atomicNumber == 94);
+          
+          unique_isotopes.insert( p->parentNuclide()->symbol );
+        }else
+        {
+          assert( p->reaction() );
+          unique_isotopes.insert( p->reaction()->name() );
+        }
       }//
     }//for( const PeakModel::PeakShrdPtr &p : *m_peakModel->peaks() )
     
+    if( has_reaction )
+    {
+      prep_warnings.push_back( "Using reaction photopeaks is likely not valid, unless the gammas"
+                              " are emitted homogeneously from a single object." );
+    }//if( user is using reactions )
     
     if( background_sub && !num_peaks_back_sub )
     {
@@ -1092,7 +1159,14 @@ void RelActManualGui::calculateSolution()
     {// Begin code to fill in nuclide information
       vector<RelActCalcManual::PeakCsvInput::NucAndAge> isotopes;
       for( const auto &n : nuclides_to_match_to )
-        isotopes.emplace_back( n.nuclide->symbol, n.age );
+      {
+        assert( n.nuclide || n.reaction );
+        
+        if( n.nuclide )
+          isotopes.emplace_back( n.nuclide->symbol, n.age );
+        else
+          isotopes.emplace_back( n.reaction->name(), -1.0 );
+      }//for( const auto &n : nuclides_to_match_to )
       
       // Make sure the match tolerance is ever so slightly above zero, for practical purposes
       const double tol = std::max( match_tol_sigma, 0.0001 );
@@ -1129,35 +1203,72 @@ void RelActManualGui::calculateSolution()
       //});
     }// End code to fill in nuclide information
     
-  
+
+    // We'll do the actual calculation off of the main thread; in order to make sure the widget
+    //  still exists at the end of computations, we'll use WApplication::bind(), in combination
+    //  with shared_ptrs's to make sure everythign is okay
     const RelActCalc::RelEffEqnForm eqn_form = relEffEqnForm();
     const size_t eqn_order = relEffEqnOrder();
     
+    const string sessionId = wApp->sessionId();
+    auto solution = make_shared<RelActCalcManual::RelEffSolution>();
+    auto updater = wApp->bind( boost::bind( &RelActManualGui::updateGuiWithResults, this, solution ) );
     
-    RelEffSolution solution = solve_relative_efficiency( peak_infos, eqn_form, eqn_order );
+    auto errmsg = make_shared<string>();
+    auto err_updater = wApp->bind( boost::bind( &RelActManualGui::updateGuiWithError, this, boost::cref(*errmsg) ) );
     
-    solution.m_warnings.insert(begin(solution.m_warnings), begin(prep_warnings), end(prep_warnings));
-    
-    m_currentSolution = make_shared<RelEffSolution>( solution );
-    
-    updateGuiWithResults();
+    WServer::instance()->ioService().boost::asio::io_service::post( std::bind(
+      [peak_infos, eqn_form, eqn_order, sessionId, solution, updater, prep_warnings, errmsg, err_updater](){
+        try
+        {
+          *solution = solve_relative_efficiency( peak_infos, eqn_form, eqn_order );
+          solution->m_warnings.insert(begin(solution->m_warnings), begin(prep_warnings), end(prep_warnings));
+          WServer::instance()->post( sessionId, updater );
+        }catch( std::exception &e )
+        {
+          *errmsg = "Error performing Relative Efficiency calculation: " + string(e.what());
+          WServer::instance()->post( sessionId, err_updater );
+        }
+    } ) );
   }catch( std::exception &e )
   {
-    cout << "Error doing calc: " << e.what() << endl;
-    
-    //Set error to results TXT and show results TXT tab.
-    
-    string errormsg = "Error calculating relative activity/efficiency: " + string(e.what());
-    WText *error = new WText( errormsg, m_results );
-    error->setInline( false );
-    error->addStyleClass( "CalcError" );
-    m_resultMenu->select( 0 );
+    cout << "Error setting up RelActManualGui calc: " << e.what() << endl;
+    string errormsg = "Error setting up Relative Efficiency calculation: " + string(e.what());
+    updateGuiWithError( errormsg );
   }//try / catch
 }//void calculateSolution()
 
 
-void RelActManualGui::updateGuiWithResults()
+void RelActManualGui::updateGuiWithError( const std::string &error_msg )
 {
+  //Set error to results TXT and show results TXT tab.
+  m_currentSolution = nullptr;
+  m_results->clear();
+  
+  WText *error = new WText( error_msg, m_results );
+  error->setInline( false );
+  error->addStyleClass( "CalcError" );
+  m_resultMenu->select( 0 );
+  
+  WApplication *app = WApplication::instance();
+  assert( app );
+  if( app )
+    app->triggerUpdate();
+}//void updateGuiWithError( std::string error_msg )
+
+
+void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffSolution> answer )
+{
+  //Lets make sure we trigger an update, no matter which path we take to leave this function
+  DoWorkOnDestruct triggerUpdate( [](){
+    WApplication *app = WApplication::instance();
+    assert( app );
+    if( app )
+      app->triggerUpdate();
+  });//triggerUpdate
+  
+  m_currentSolution = answer;
+  
   m_results->clear();
   
   if( !m_currentSolution )
@@ -1288,8 +1399,6 @@ void RelActManualGui::updateGuiWithResults()
   "</div>\n";
   
   
-  
-  
   new WText( results_html.str(), m_results );
 }//void updateGuiWithResults( const RelActCalcManual::RelEffSolution &solution );
 
@@ -1363,6 +1472,7 @@ void RelActManualGui::updateNuclides()
   }//switch( srcData )
   
   map<const SandiaDecay::Nuclide *,ManRelEffNucDisp *> current_nucs;
+  map<const ReactionGamma::Reaction *,ManRelEffNucDisp *> current_rctns;
   
   for( auto w : m_nuclidesDisp->children() )
   {
@@ -1370,18 +1480,26 @@ void RelActManualGui::updateNuclides()
     assert( rr && rr->m_nuc && !current_nucs.count(rr->m_nuc) );
     if( rr && rr->m_nuc )
       current_nucs[rr->m_nuc] = rr;
+    else if( rr && rr->m_reaction )
+      current_rctns[rr->m_reaction] = rr;
   }//for( auto w : m_nuclidesDisp->children() )
   
   set<const SandiaDecay::Nuclide *> nucs_in_peaks;
+  set<const ReactionGamma::Reaction *> reactions_in_peaks;
   PeakModel *peakModel = m_interspec->peakModel();
   const auto peaks = peakModel ? peakModel->peaks() : nullptr;
   if( peaks )
   {
     for( const auto &p : *peaks )
     {
-      if( p->parentNuclide() && p->useForManualRelEff() )
-        nucs_in_peaks.insert( p->parentNuclide() );
-    }//
+      if( p->useForManualRelEff() )
+      {
+        if( p->parentNuclide() )
+          nucs_in_peaks.insert( p->parentNuclide() );
+        else if( p->reaction() )
+          reactions_in_peaks.insert( p->reaction() );
+      }//if( p->useForManualRelEff() )
+    }//for( const auto &p : *peaks )
   }//if( peaks )
   
   // Go through and add any new nuclide from peaks
@@ -1421,7 +1539,61 @@ void RelActManualGui::updateNuclides()
       }
     }//for( loop over existing displays to find position )
     
-    ManRelEffNucDisp *rr = new ManRelEffNucDisp( nuc, age );
+    ManRelEffNucDisp *rr = new ManRelEffNucDisp( nuc, nullptr, age );
+    m_nuclidesDisp->insertWidget( insert_index, rr );
+  }//for( loop over to add displays for new nuclides )
+  
+  
+  // Go through and add any new nuclide from peaks
+  for( const ReactionGamma::Reaction *reaction : reactions_in_peaks )
+  {
+    auto pos = current_rctns.find( reaction );
+    if( pos != end(current_rctns) )
+      continue;
+    
+    const SandiaDecay::Element *current_el = reaction->targetElement;
+    if( !current_el && reaction->productNuclide )
+    {
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      current_el = db->element( reaction->productNuclide->atomicNumber );
+    }
+    
+    // We'll insert the display sorted by {atomicNumber, alphabetical}
+    int insert_index = 0;
+    const auto kids = m_nuclidesDisp->children();
+    for( size_t index = 0; index < kids.size(); ++index )
+    {
+      ManRelEffNucDisp *prev = dynamic_cast<ManRelEffNucDisp *>( kids[index] );
+      assert( prev );
+      if( !prev || !prev->m_reaction )
+        continue;
+      
+      const SandiaDecay::Element *prev_el = prev->m_reaction->targetElement;
+      if( !prev_el && prev->m_reaction->productNuclide )
+      {
+        const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+        prev_el = db->element( prev->m_reaction->productNuclide->atomicNumber );
+      }
+        
+      if( prev_el && current_el )
+      {
+        if( (prev_el->atomicNumber > current_el->atomicNumber)
+           || ((prev_el->atomicNumber == current_el->atomicNumber)
+               && (prev->m_reaction->name() > reaction->name())) )
+        {
+          insert_index = static_cast<int>( index );
+          break;
+        }
+      }else if( prev->m_reaction->name() > reaction->name() )
+      {
+        insert_index = static_cast<int>( index );
+        break;
+      }
+      
+      insert_index = static_cast<int>( index + 1 );
+    }//for( loop over existing displays to find position )
+    
+    ManRelEffNucDisp *rr = new ManRelEffNucDisp( nullptr, reaction, 0.0 );
     m_nuclidesDisp->insertWidget( insert_index, rr );
   }//for( loop over to add displays for new nuclides )
   
@@ -1437,21 +1609,28 @@ void RelActManualGui::updateNuclides()
     delete nuc_widget.second;
   }//for( loop over to remove any nuclides )
   
-  // We may have deleted some of current_nucs, so lets clear it, just to make sure we dont access
+  // Loop over and remove displays for any reaction we no longer need
+  for( const auto nuc_widget : current_rctns )
+  {
+    if( !reactions_in_peaks.count(nuc_widget.first) )
+      delete nuc_widget.second;
+  }//for( loop over to remove any nuclides )
+  
+  // We may have deleted some of current_nucs or current_rctns, so lets clear it,
+  //  just to make sure we dont access
   current_nucs.clear();
+  current_rctns.clear();
   
   bool has_uranium = false;
   for( auto w : m_nuclidesDisp->children() )
   {
     ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
-    if( rr )
+    assert( rr );
+    if( rr && rr->m_nuc )
     {
       const bool isU = (rr->m_nuc->atomicNumber == 92);
       has_uranium |= isU;
       rr->setAgeHidden( isU ? !showAge : false );
-    }else
-    {
-      assert( 0 );
     }
   }//for( auto w : m_nuclidesDisp->children() )
   

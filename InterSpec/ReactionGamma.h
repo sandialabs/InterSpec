@@ -114,8 +114,10 @@ public:
 
   struct Reaction
   {
+    // TODO: make constructor private so only ReactionGamma can create it
     Reaction();
 
+    // TODO: pre-populate the name when reacting the Reaction object.
     std::string name() const;
 
     ReactionType type;
@@ -147,13 +149,13 @@ public:
 
   //gammas(...): fills 'answer' out w/ reactions described by names similar to
   //  Fe(n,g), Al(a,p), Al(n,g), Ge(n,n'), O(a,n), Annihilation (also Ann, Ann.)
-  //Returns a comma seperated list of the reaction names.
+  //Returns a comma separated list of the reaction names.
   //Note that if you specify only the element, and not specific isotope, then
   //  you probably would want intensities normalized according to natural
   //  material fractions - however the code does not explicitly due this and
   //  instead relies on the fact data has at most one isotope per element, so
   //  things _currently_ work out okay.
-  //An exception will be thrown if the input is mal-formed (eg invalid element
+  //An exception will be thrown if the input is ill-formed (eg invalid element
   //  or isotope, non enclosing parenthesis, or invalid reaction types).
   //(a,n) is alphaneutron   : Be9, C13, O17, O18, F19,
   //(n,a) is neutronalpha   : B10
@@ -163,6 +165,8 @@ public:
   std::string gammas( const std::string &name,
                       std::vector<ReactionPhotopeak> &answer ) const;
 
+  // TODO: need to implement retrieving a Reaction by name
+  
   //reactions(...): gives all reactions which initial element is
   //  specified by first argument; note reaction may be defined for specific
   //  isotopes as well.

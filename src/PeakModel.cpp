@@ -1803,7 +1803,8 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
     case kUseForManualRelEff:
     {
-      if( !peak->parentNuclide() || (peak->sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) )
+      if( (!peak->parentNuclide() && !peak->reaction())
+         || (peak->sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) )
         return boost::any();
       return peak->useForManualRelEff();
     }
@@ -2621,7 +2622,7 @@ bool PeakModel::setData( const WModelIndex &index,
         try
         {
           const bool use = boost::any_cast<bool>( value );
-          if( use && (!new_peak.parentNuclide()
+          if( use && ((!new_peak.parentNuclide() && !new_peak.reaction())
                       || (new_peak.sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) ) )
             passMessage( "Only peaks associated with a nuclides gamma can be used for relative"
                         " activity analysis.", WarningWidget::WarningMsgHigh );

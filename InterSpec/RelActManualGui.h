@@ -112,7 +112,8 @@ protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   void calculateSolution();
-  void updateGuiWithResults();
+  void updateGuiWithError( const std::string &error_msg );
+  void updateGuiWithResults( std::shared_ptr<RelActCalcManual::RelEffSolution> answer );
   
   void relEffEqnFormChanged();
   void relEffEqnOrderChanged();
