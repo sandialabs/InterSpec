@@ -3,7 +3,7 @@
 In order to create the [Electron]([https://electronjs.org/](https://electronjs.org/) packaged version of `InterSpec`, we create a node add-on that contains all the C++ code, and then request to start the `InterSpec` server from [main.js](app/main.js).  To create the add-on we use [cmake-js](https://www.npmjs.com/package/cmake-js) to build things, and [node-addon-api](https://www.npmjs.com/package/node-addon-api) to actually interface the C++ to JS.
 
 
-You can either manually build the InterSpec dependencies (boost, Wt, zlib, and for macOS libpng and libharu), or you can have CMake fetch and build these dependencies.  Having CMake fetch and build the dependencies takes maybe an hour to build things the first time (however, only a couple minutes of this requires your attention) and then subsequent builds are a couple minutes; if you plan to make a substantual number of changes and re-compilations, then the manually built dependencies will yield a slightly faster compile time after each change.
+You can either manually build the InterSpec dependencies (boost, Wt, zlib, and for macOS libpng and libharu), or you can have CMake fetch and build these dependencies.  Having CMake fetch and build the dependencies takes maybe an hour to build things the first time (however, only a couple minutes of this requires your attention) and then subsequent builds are a couple minutes; if you plan to make a substantial number of changes and re-compilations, then the manually built dependencies will yield a slightly faster compile time after each change.
 
 ## Building with manually compiled dependencies
 To compile the InterSpec code, and package the Electron app, with the manually compiled dependencies (see [patches/README.md](../patches/README.md) for instructions), the following commands are a good base to start with:
@@ -172,6 +172,10 @@ CMAKE_BUILD_PARALLEL_LEVEL=12 cmake-js --architecture x64 --arch=x64 --CDCMAKE_B
 npm run package-manylinux
 cp ../../NOTICE.html ./release-builds/InterSpec-linux-x64/
 
+# The "InterSpec-linux-x64" directory contains the InterSpec package.
+#  To transfer to another machine just zip this directory up and copy over.
+# Or to run the program, run:
+./release-builds/InterSpec-linux-x64/InterSpec
 ```
 
 
