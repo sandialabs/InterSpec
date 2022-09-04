@@ -442,53 +442,6 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name ) const
 }//boost::any preferenceValueAny( const std::string &name ) const;
 
 
-
-void InterSpecUser::pushPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                         const std::string &name,
-                                         boost::any valueAny,
-                                         InterSpec *viewer,
-                                         Wt::WApplication *app )
-{
-  if( !app || !viewer || !user )
-    throw runtime_error( "pushPreferenceValue(): Invalid input" );
-  
-  const boost::any oldValueAny = user->preferenceValueAny( name );
-  
-  if( boost_any_equal(oldValueAny, valueAny) )
-  {
-    //cerr << "Preference '" << name << "' is equal before and after - not changing." << endl;
-    return;
-  }
-  
-  if( valueAny.type() == typeid(std::string) )
-  {
-    setPreferenceValue<std::string>( user, name, boost::any_cast<std::string>(valueAny), viewer );
-  }else if( valueAny.type() == typeid(double) )
-  {
-    setPreferenceValue<double>( user, name, boost::any_cast<double>(valueAny), viewer );
-  }else if( valueAny.type() == typeid(float) )
-  {
-    setPreferenceValue<double>( user, name, boost::any_cast<float>(valueAny), viewer );
-  }else if( valueAny.type() == typeid(int) )
-  {
-    setPreferenceValue<int>( user, name, boost::any_cast<int>(valueAny), viewer );
-  }else if( valueAny.type() == typeid(unsigned int) )
-  {
-    setPreferenceValue<int>( user, name, boost::any_cast<unsigned int>(valueAny), viewer );
-  }else if( valueAny.type() == typeid(long long) )
-  {
-    setPreferenceValue<int>( user, name, boost::any_cast<long long>(valueAny), viewer );
-  }else if( valueAny.type() == typeid(bool) )
-  {
-    setPreferenceValue( user, name, boost::any_cast<bool>(valueAny), viewer );
-  }else
-  {
-    throw std::runtime_error( "pushPreferenceValue(...): invalid type: "
-                             + std::string(valueAny.type().name()) );
-  }
-}//void InterSpecUser::pushPreferenceValue(...)
-
-
 void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                                      const std::string &name,
                                      Wt::WCheckBox *cb,
@@ -1407,8 +1360,6 @@ void InterSpecUser::restoreUserPrefsFromXml(
         {
           const string value = boost::any_cast<string>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
-          InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                             boost::any(value), viewer, wApp );
           break;
         }//case String
           
@@ -1416,8 +1367,6 @@ void InterSpecUser::restoreUserPrefsFromXml(
         {
           const double value = boost::any_cast<double>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
-          InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                             boost::any(value), viewer, wApp );
           break;
         }//case Decimal
           
@@ -1425,8 +1374,6 @@ void InterSpecUser::restoreUserPrefsFromXml(
         {
           const int value = boost::any_cast<int>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
-          InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                             boost::any(value), viewer, wApp );
           break;
         }//case Integer
           
@@ -1434,8 +1381,6 @@ void InterSpecUser::restoreUserPrefsFromXml(
         {
           const bool value = boost::any_cast<bool>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
-          InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                             boost::any(value), viewer, wApp );
           break;
         }//case Boolean
       }//switch( datatype )

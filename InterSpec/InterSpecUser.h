@@ -293,21 +293,6 @@ protected:
 
 public:
   
-  /** Sets the in-memory, and in-database values of the named preference to the
-   value passed in.  Will also call any functions associated with the named
-   preference set by #addCallbackWhenChanged function, as well as set the GUI
-   state of any elements set to this preference with #associateWidget.
-   
-   @param name The preference name to be set.
-   @param value New value of the preference.  May be cast via boost::any_cast
-          to std::string, int, double, or bool according to the value type of
-          the preference.
-   */
-  static void pushPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                   const std::string &name, boost::any value,
-                                   InterSpec *viewer,
-                                   Wt::WApplication *app );
-  
   /** Add a function to callback when the preference changes, either through loading  a new state,
    or toggling the preference checkbox or whatever.
    
@@ -340,11 +325,11 @@ public:
   
   /** Makes it so if the user changes the value via this GUI element, the value of the preference
    stored in memory and in the database will be correspondingly updated.  Also makes it so if
-   a different GUI element updates this preference value, or #pushPreferenceValue is called for
+   a different GUI element updates this preference value, or #setPreferenceValue is called for
    this preference, this widgets state will be correspondingly updated as well.
    
-   However, and signals you have hooked up to this widget wont be called when the value changes by
-   another widget or #pushPreferenceValue, to handle this case, use the #addCallbackWhenChanged
+   However, the signals you have hooked up to this widget wont be called when the value changes by
+   another widget or #setPreferenceValue, to handle this case, use the #addCallbackWhenChanged
    function to add a callback for whenever the value of the preference changes.
    */
   static void associateWidget( Wt::Dbo::ptr<InterSpecUser> user,

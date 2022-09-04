@@ -3546,33 +3546,29 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           {
             case UserOption::String:
             {
-              std::string value = obj.get("value");
-              InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
-                                                 boost::any(value), this, wApp );
+              const std::string value = obj.get("value");
+              InterSpecUser::setPreferenceValue( m_user, name.toUTF8(), value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Decimal:
             {
-              double value = obj.get("value");
-              InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
-                                                 boost::any(value), this, wApp );
+              const double value = obj.get("value");
+              InterSpecUser::setPreferenceValue( m_user, name.toUTF8(), value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Integer:
             {
-              int value = obj.get("value");
-              InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
-                                                 boost::any(value), this, wApp );
+              const int value = obj.get("value");
+              InterSpecUser::setPreferenceValue( m_user, name.toUTF8(), value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Boolean:
             {
-              bool value = obj.get("value");
-              InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
-                                                  boost::any(value), this, wApp );
+              const bool value = obj.get("value");
+              InterSpecUser::setPreferenceValue( m_user, name.toUTF8(), value, this );
             }//case UserOption::Boolean:
           }//switch( datatype )
         }//for( size_t i = 0; i < userOptions.size(); ++i )
