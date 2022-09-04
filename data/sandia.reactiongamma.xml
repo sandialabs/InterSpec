@@ -306,7 +306,7 @@
     wcjohns put this neutroncapture data in from the IAEA Prompt Gamma Activation
     Analysis (PGAA) database: http://www-nds.iaea.org/pgaa/databases.htm
     Prompt and decay data was combined (according to cross-section), as well
-    as each isotope corss-section being weighted by the nuclides relative
+    as each isotope cross-section being weighted by the nuclides relative
     natural abundance, then the elemental cross-sections foreach gamma energy
     normalized to 1.0
     I would like to improve the structure of this data base to include a little
@@ -70986,20 +70986,14 @@
 
 
   <neutroninelasticscatter>
-    <!-- wcjohns modified these to match PeakEasy since neutron absorption 
-    previously covered some of the lines 
-    -->
-    <!-- According to http://prola.aps.org/pdf/PR/v102/i3/p767_1, we are
-    missing, at a minimum, Boron, Carbon, Nitrogen, Oxygen, Flourine, Magnesium,
-    Sulfur, Calcium, Nickel, Copper, Tantalum, and Bismuth.
-    However, I couldnt find a good source for this data.
-    Carbon, Nitrogen, and Oxygen may be able to be partially gotten from:
-    http://www.sciencedirect.com/science/article/pii/0029558259900148#
-    Some further energies are listed on Pg 26 of
-    http://cdn.intechopen.com/pdfs/32835/InTech-Material_analysis_using_characteristic_gamma_rays_induced_by_neutrons.pdf
-    -->
+<!-- The inelastic neutron scatter information was added by K.Furutaka from:
+      A.M. Demidov, L.I. Govor, Yu.K. Cherepantsev, M.R. Ahmed, S. Al-Najjar, M.A. Al-Amili, N. Al-Assafi, and N. Rammo, "Atlas of Gamma-Ray Spectra from the Inelastic Scattering of Reactor Fast Neutrons", Nuclear Research Institute, Baghdad, Iraq (Moscow, Atomizdat 1978).
+  
+Using the CSV data provided at https://nucleardata.berkeley.edu/atlas/download.html
+[A.M. Hurst, L.A. Bernstein, and K. Song, arXiv:2001.11140v2 [physics.app-ph]]
+https://arxiv.org/abs/2001.11140
+-->
     <target>
-<!--From ATLAS of Gamma-Ray Spectra From The Inelastic Scattering of Reactor Fast Neutrons, pg. 40-->
       <nuclide>Al26</nuclide>
       <product>Al26</product>
       <energies>
@@ -71059,128 +71053,9 @@
     </target>
     
      <target>
-    <!-- Added in from PeakEasy Library by wcjohns -->
+     <!-- the ATLAS (CSV_DATA/Z032.csv), by K.Furutaka -->
       <nuclide>Ge</nuclide>
       <product>Ge</product>
-<!--
-From ATLAS of Gamma-Ray Spectra From The Inelastic Scattering of Reactor Fast Neutrons
-175.47	6.5	Ge70
-233.2	0.55	Ge72
-264.2	0.25	Ge73
-284.8	3.4	Ge73
-297.28	1.7	Ge73
-325.85	1.9	Ge73
-335.7	0.35	Ge72
-340.0	0.6
-388.2	1.0
-430.6	1.8	Ge76
-492.93	4.0	Ge74
-531.1	1.4	
-545.49	3.1	Ge76
-562.89	20	Ge76
-595.88	100	Ge74
-608.4	16	Ge74
-629.92	13	Ge72
-645.9	0.5
-658.8	1.9
-668.21	4.5	Ge70
-701.3	0.75	Ge74
-735.3	0.45	Ge74
-743.25	20	Ge70
-763.4	0.75
-771.9	0.65	Ge72
-776.6	1.9
-785.5	0.9	Ge72
-799.0	1.1
-808.8	0.4
-826.2	4.3
-834.03	36	Ge72
-867.92	10	Ge74
-886.98	3.9	Ge74
-894.33	5.0	Ge72
-906.5	0.7
-940.4	0.9
-961.1	1.7	Ge74
-975.9	1.0	Ge76
-993.4	1.1	Ge74
-999.7	0.8	Ge74
-1039.48	32	Ge70
-1050.5	1.5	Ge72
-1063.3	0.7
-1085.3	0.25
-1101.3	4.6	Ge74
-1108	2.5	Ge76
-1131.5	0.9
-1178.8	0.2
-1193.61	0.85
-1204.3	7.8	Ge74
-1230.3	0.9	Ge72
-1249.26	0.15
-1293.4	1.6	In116?
-1301.8	0.25
-1332.6	0.7
-1337.4	0.3
-1348.3	0.3	Ge76
-1383.5	0.2
-1398.6	0.3
-1412.3	0.75	Ge70
-1429.6	0.25
-1463.7	2.4	Ge72
-1471.6	0.9
-1482.3	0.3	Ge72
-1489.2	0.8	Ge74
-1495.2	0.6	Ge70
-1510.3	0.35	Ge74
-1522.4	2.1	Ge70
-1569.5	0.45	Ge74
-1602.6	0.35	Ge74
-1669.3	0.35
-1676.4	0.3
-1697.6	0.25
-1707.8	3.1	Ge70
-1710.8	1.1	Ge72
-1724.6	0.3
-1920.8	0.5	Ge72
-1940.7	2.1	Ge74
-2004.6	0.8
-2071.2	0.8
-2105.3	0.4	Ge72
-2110.3	0.3	Ge72
-2116.6	0.5	Ge72
-2129.7	0.3
-2139.5	0.2
-2156.3	0.5
-2197.2	0.8	Ge74
-2202.5	0.8	Ge72
-2213.8	0.6
-2237.0	0.95
-2277.3	0.6
-2343.8	0.35
--->
-<!-- The data from PeakEasy Library by wcjohns were replace by
-     the data from the ATLAS (CSV_DATA/Z032.csv), by K.Furutaka
-      <energies>
-        <energy>430</energy>
-        <energy>488</energy>
-        <energy>562</energy>
-        <energy>596</energy>
-        <energy>630</energy>
-        <energy>691</energy>
-        <energy>834</energy>
-        <energy>1039.6</energy>
-      </energies>
-      <yields>
-        <yield>1.0</yield>
-        <yield>1.0</yield>
-        <yield>1.0</yield>
-        <yield>1.0</yield>
-        <yield>1.0</yield>
-        <yield>1.0</yield>
-        <yield>1.0</yield>
-        <yield>1.0</yield>
-      </yields>
-    </target>
--->
       <energies>
         <energy>175.47</energy>
         <energy>233.2</energy>
@@ -71384,9 +71259,6 @@ From ATLAS of Gamma-Ray Spectra From The Inelastic Scattering of Reactor Fast Ne
         <yield>0.25</yield>
       </yields>
     </target>
-    <!-- Added in from PeakEasy Library by wcjohns -->
-    <!--- The above removed and added the data below -->
-    <!-- Added in from THE ATLAS (pg. 305) by K.Furutaka (from CSV_DATA/Z082.csv) -->
     <target>
       <nuclide>Pb</nuclide>
       <product>Pb</product>
