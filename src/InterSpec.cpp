@@ -4082,7 +4082,7 @@ void InterSpec::logMessage( const Wt::WString& message, int priority )
   {//begin codeblock to logg message
     std::lock_guard<std::mutex> file_gaurd( s_message_mutex );
     ofstream output( "interspec_messages_to_users.txt", ios::out | ios::app );
-    const boost::posix_time::ptime now = WDateTime::currentDateTime().toPosixTime();
+    auto now = std::chrono::system_clock::now();
     output << "Message " << SpecUtils::to_iso_string( now ) << " ";
     output << "[" << priority << "]: ";
     output << message.toUTF8() << endl << endl;
@@ -4095,7 +4095,7 @@ void InterSpec::logMessage( const Wt::WString& message, int priority )
 //    wApp->triggerUpdate();
   }else
   {
-    const boost::posix_time::ptime now = WDateTime::currentDateTime().toPosixTime();
+    auto now = std::chrono::system_clock::now();
     cerr << "Message " << SpecUtils::to_iso_string( now ) << " ";
     cerr << "[" << priority << "]: ";
     cerr << message.toUTF8() << endl << endl;
@@ -4279,7 +4279,9 @@ void InterSpec::finishStoreStateInDb( WLineEdit *nameedit,
     if( !SpecUtils::is_directory( filepath ) )
       throw runtime_error( "CWD didnt contain a 'analysis_tests' folder as expected" );
     
-    const boost::posix_time::ptime localtime = boost::posix_time::second_clock::local_time();
+    const int offset = wApp->environment().timeZoneOffset();
+    auto localtime = std::chrono::system_clock::now();
+    localtime += std::chrono::seconds(60*offset);
     
     string timestr = SpecUtils::to_iso_string( localtime );
     string::size_type period_pos = timestr.find_last_of( '.' );
@@ -4419,7 +4421,10 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
       cerr << "\n\nThe shielding/source fit model was NOT changed for current foreground" << endl;
     }
     
-    const boost::posix_time::ptime localtime = boost::posix_time::second_clock::local_time();
+    const int offset = wApp->environment().timeZoneOffset();
+    auto localtime = std::chrono::system_clock::now();
+    localtime += std::chrono::seconds(60*offset);
+    
     const string timestr = SpecUtils::to_iso_string( localtime );
     
     const char *val = n42doc->allocate_string( timestr.c_str(), timestr.size()+1 );
@@ -6965,7 +6970,12 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
     filename = "spectrum";
   if( !spectrum )
     filename += "_timechart";
-  std::string timestr = SpecUtils::to_iso_string( boost::posix_time::second_clock::local_time() );
+  
+  const int offset = wApp->environment().timeZoneOffset();
+  auto localtime = std::chrono::system_clock::now();
+  localtime += std::chrono::seconds(60*offset);
+  
+  std::string timestr = SpecUtils::to_iso_string( localtime );
   auto ppos = timestr.find('.');
   if( ppos != string::npos )
     timestr = timestr.substr(0,ppos);

@@ -25,6 +25,7 @@
 
 #include <map>
 #include <regex>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -170,8 +171,8 @@ namespace
           string valstr;
           if( val > 0 )
           {
-            auto ptt = boost::posix_time::from_time_t( time_t(val) );
-            ptt += boost::posix_time::seconds( 60*m_timeZoneOffset );
+            SpecUtils::time_point_t ptt = std::chrono::system_clock::from_time_t( time_t(val) );
+            ptt += std::chrono::seconds( 60*m_timeZoneOffset );
             valstr = SpecUtils::to_common_string(ptt, true);
           }
           
@@ -1050,7 +1051,8 @@ void RelEffFile::handleSaveFileForLater()
       filename = filename.substr( 0, filename.size() - orig_extension.size() );
     
     const int offset = wApp->environment().timeZoneOffset();
-    const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
+    auto now = std::chrono::system_clock::now();
+    now += std::chrono::seconds(60*offset);
     string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
     const string::size_type pos = timestr.find( ' ' );
     //std::string timestr = SpecUtils::to_extended_iso_string( now ); //"2014-04-14T14:12:01.621543"
@@ -3166,7 +3168,8 @@ void DrfSelect::handleUserChangedUploadedDrfName()
   if( value.empty() )
   {
     const int offset = wApp->environment().timeZoneOffset();
-    const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
+    auto now = std::chrono::system_clock::now();
+    now += std::chrono::seconds(60*offset);
     value = SpecUtils::to_vax_string(now);
     m_uploadedDetName->setText( WString::fromUTF8(value) );
   }//if( value.empty() )
@@ -3695,7 +3698,8 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
     if( userDrfFilename.size() < 15 )
     {
       const int offset = wApp->environment().timeZoneOffset();
-      const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
+      auto now = std::chrono::system_clock::now();
+      now += std::chrono::seconds(60*offset);
       userDrfFilename += " " + SpecUtils::to_vax_string(now);
     }
     

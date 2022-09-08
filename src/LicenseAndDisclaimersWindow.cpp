@@ -365,12 +365,15 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
       {
         totalSessions = std::to_string( user->accessCount() );
         totalFilesOpened = std::to_string( user->numSpectraFilesOpened() );
-        boost::posix_time::time_duration totaltime = user->totalTimeInApp();
+        chrono::steady_clock::time_point::duration totaltime = user->totalTimeInApp();
         // Note that if user has multiple sessions going, this next line wont be exactly correct, but close enough.
         totaltime += app->activeTimeInCurrentSession();
-        totalUserTime = PhysicalUnits::printToBestTimeUnits( totaltime.total_seconds() );
+        const chrono::seconds numsecs = chrono::duration_cast<chrono::seconds>(totaltime);
         
-        const WDateTime utcStartTime = WDateTime::fromPosixTime( user->firstAccessUTC() );
+        totalUserTime = PhysicalUnits::printToBestTimeUnits( numsecs.count() );
+        
+        
+        const WDateTime utcStartTime = WDateTime::fromPosixTime( to_ptime(user->firstAccessUTC()) );
         const int offset = app->environment().timeZoneOffset();
         firstAccess = utcStartTime.addSecs(60*offset).toString( "dd-MMM-yyyy" ).toUTF8();
         

@@ -63,11 +63,12 @@
 #include <Wt/Chart/WCartesianChart>
 #include <Wt/WMessageResourceBundle>
 
+#include "SpecUtils/DateTime.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
-#include "SpecUtils/Filesystem.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -126,8 +127,8 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   :  WApplication( env ),
      m_viewer( 0 ),
      m_layout( nullptr ),
-     m_lastAccessTime( boost::posix_time::microsec_clock::local_time() ),
-     m_activeTimeInSession( 0, 0, 0 )
+     m_lastAccessTime( std::chrono::steady_clock::now() ),
+     m_activeTimeInSession{ std::chrono::seconds(0) }
 #if( IOS )
     , m_orientation( InterSpecApp::DeviceOrientation::Unknown )
     , m_safeAreas{ 0.0f }
@@ -871,7 +872,7 @@ InterSpec *InterSpecApp::viewer()
 }//InterSpec* viewer()
 
 
-boost::posix_time::time_duration InterSpecApp::activeTimeInCurrentSession() const
+std::chrono::steady_clock::time_point::duration InterSpecApp::activeTimeInCurrentSession() const
 {
   return m_activeTimeInSession;
 }
@@ -1023,10 +1024,9 @@ void InterSpecApp::notify( const Wt::WEvent& event )
     const bool userEvent = (event.eventType() == Wt::UserEvent);
     if( userEvent )
     {
-      using namespace boost::posix_time;
-      const ptime thistime = microsec_clock::local_time();
-      time_duration duration = thistime - m_lastAccessTime;
-      if( duration < minutes(5) )
+      const auto thistime = std::chrono::steady_clock::now();
+      const auto duration = thistime - m_lastAccessTime;
+      if( duration < std::chrono::seconds(300) )
         m_activeTimeInSession += duration;
       m_lastAccessTime = thistime;
     }//if( userEvent )
@@ -1086,22 +1086,24 @@ void InterSpecApp::prepareForEndOfSession()
       {
         DataBaseUtils::DbTransaction transaction( *sql );
         
-        //If the user has mutliple sessions going on, the below will quash
-        //  eachother out.  Could probably be fixed by
+        //If the user has multiple sessions going on, the below will quash
+        //  each other out.  Could probably be fixed by
         //  m_viewer->m_user.reread();
         
         m_viewer->m_user.modify()->addUsageTimeDuration( m_activeTimeInSession );
-        cerr << "Added " << m_activeTimeInSession << " usage time for user "
-        << m_viewer->m_user->userName() << endl;
-        m_activeTimeInSession = boost::posix_time::time_duration(0,0,0,0);
+        
+        const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
+        cout << "Added " << nmilli.count() << " ms usage time for user "
+             << m_viewer->m_user->userName() << endl;
+        
+        m_activeTimeInSession = std::chrono::seconds(0);
         transaction.commit();
       }
       
 #if( USE_DB_TO_STORE_SPECTRA )
       //Check to see if we should save the apps state
       const bool saveSpectra = true; //InterSpecUser::preferenceValue<bool>( "SaveSpectraToDb", m_viewer );
-      const bool saveState = InterSpecUser::preferenceValue<bool>(
-                                                                  "AutoSaveSpectraToDb" /*"SaveStateToDbOnExit"*/, m_viewer );
+      const bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb" /*"SaveStateToDbOnExit"*/, m_viewer );
         
         //Clean up the kEndOfSessions from before
         bool cleanupStates = true;
@@ -1142,7 +1144,8 @@ void InterSpecApp::prepareForEndOfSession()
       {
         const int offset = environment().timeZoneOffset();
         WString desc = "End of Session";
-        WString name = WDateTime::currentDateTime().addSecs(60*offset).toString( DATE_TIME_FORMAT_STR );
+        const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
+        WString name = SpecUtils::to_common_string( now, true ); //"9-Sep-2014 15:02:15"
         
         Wt::Dbo::ptr<UserState> dbstate;
         std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();

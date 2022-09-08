@@ -295,7 +295,7 @@ public:
     
     
     bool have_add_info = false;
-    if( data->capture_start_time_.is_special() )
+    if( SpecUtils::is_special( data->capture_start_time_ ) )
     {
       m_time->setText( "" );
       m_time->hide();

@@ -58,6 +58,7 @@
 #include <Wt/WPushButton>
 #include <Wt/Http/Request>
 #include <Wt/WApplication>
+#include <Wt/WEnvironment>
 #include <Wt/WStandardItem>
 #include <Wt/Http/Response>
 #include <Wt/Json/Serializer>
@@ -199,7 +200,7 @@ namespace
               if( !from_string(operator_str, type) )
                 throw runtime_error( "Couldnt not map '" + Wt::Utils::htmlEncode(operator_str) + "' to a NumericFieldMatchType." );
               
-              const boost::posix_time::ptime test_time = SpecUtils::time_from_string( value_str.c_str() );
+              const boost::posix_time::ptime test_time = to_ptime( SpecUtils::time_from_string( value_str.c_str() ) );
               if( test_time.is_special() )
                 throw runtime_error( "Could not convert string '" + Wt::Utils::htmlEncode(value_str) + "' to a time" );
               
@@ -362,11 +363,11 @@ namespace
             if( !from_string(operator_str, matchtype) ) //shouldnt ever happen!
               throw runtime_error( "Could not map '" + operator_str + "' to a NumericFieldMatchType for time comparison" );
             
-            boost::posix_time::ptime comptime = SpecUtils::time_from_string( value_str.c_str() );
-            if( comptime.is_special() ) //Can definetly happen!
+            SpecUtils::time_point_t comptime = SpecUtils::time_from_string( value_str.c_str() );
+            if( SpecUtils::is_special(comptime) ) //Can definetly happen!
               throw runtime_error( "The string '" + value_str + "' is not a valid date/time string." );
             
-            testitem.set_time_test( field, comptime, matchtype );
+            testitem.set_time_test( field, to_ptime(comptime), matchtype );
             break;
           }//case StartTime
             
@@ -735,7 +736,7 @@ namespace
           for( const auto &st : meas.start_times )
           {
             const boost::posix_time::ptime epoch(boost::gregorian::date(1970,1,1));
-            row[f] += (row[f].size()?";":"") + SpecUtils::to_iso_string( epoch + boost::posix_time::seconds(st) );
+            row[f] += (row[f].size()?";":"") + SpecUtils::to_iso_string( to_time_point(epoch + boost::posix_time::seconds(st)) );
             if( row[f].size() > max_cell_size )
               break;
           }
@@ -948,8 +949,8 @@ protected:
           const string lhsstr = ((lhssemi==string::npos) ? lhs[m_column] : lhs[m_column].substr(0,lhssemi));
           const string rhsstr = ((rhssemi==string::npos) ? rhs[m_column] : rhs[m_column].substr(0,lhssemi));
           
-          const boost::posix_time::ptime l = SpecUtils::time_from_string( lhsstr.c_str() );
-          const boost::posix_time::ptime r = SpecUtils::time_from_string( rhsstr.c_str() );
+          const auto l = SpecUtils::time_from_string( lhsstr.c_str() );
+          const auto r = SpecUtils::time_from_string( rhsstr.c_str() );
           
           lesthan = (l < r);
           
@@ -2493,11 +2494,24 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
   const double startcpu = SpecUtils::get_cpu_time();
   
   stringstream description;
-  boost::posix_time::ptime utctime = boost::posix_time::second_clock::universal_time();
-  boost::posix_time::ptime localtime = boost::posix_time::second_clock::local_time();
-  description << "Search performed at " << SpecUtils::to_extended_iso_string( localtime )
-              << " local (" << SpecUtils::to_extended_iso_string( utctime )
-              << " UTC)\r\n";
+  const chrono::system_clock::time_point utctime = chrono::system_clock::now();
+  
+  int offset = 0;
+  if( wApp )
+  {
+    const int offset = wApp->environment().timeZoneOffset();
+    const chrono::system_clock::time_point localtime = utctime + std::chrono::seconds(60*offset);
+    
+    description << "Search performed at " << SpecUtils::to_extended_iso_string( localtime )
+    << " local (" << SpecUtils::to_extended_iso_string( utctime )
+    << " UTC)\r\n";
+  }else
+  {
+    description << "Search performed at " << SpecUtils::to_extended_iso_string( utctime )
+    << " UTC\r\n";
+  }
+  
+  
   if( recursive )
     output_csv_field( description, "Recursive search of \"" + basedir + "\"" );
   else

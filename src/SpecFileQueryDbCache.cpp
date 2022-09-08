@@ -39,6 +39,7 @@
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
+#include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/SpecFileQuery.h"
@@ -981,12 +982,8 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
     
     contained_dev_pairs = (contained_dev_pairs || !m->deviation_pairs().empty());
     
-    if( !m->start_time().is_special() )
-    {
-      const boost::posix_time::ptime epoch(boost::gregorian::date(1970,1,1));
-      boost::posix_time::time_duration::sec_type x = (m->start_time() - epoch).total_seconds();
-      start_times.insert( static_cast<time_t>(x) );
-    }
+    if( !SpecUtils::is_special(m->start_time()) )
+      start_times.insert( chrono::system_clock::to_time_t( m->start_time() ) );
   }
 }//void fill_info_from_file( const std::string filepath )
 

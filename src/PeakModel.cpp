@@ -3076,7 +3076,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     const PeakDef &peak = *peaks[peakn];
     
     float live_time = 1.0f;
-    boost::posix_time::ptime meastime;
+    SpecUtils::time_point_t meastime{};
     double region_area = 0.0, xlow = 0.0, xhigh = 0.0;
     
     if( data )
@@ -3207,7 +3207,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     }
     
     string datestr, timestr;
-    if( !meastime.is_special() )
+    if( !SpecUtils::is_special(meastime) )
     {
       const string tstr = SpecUtils::to_common_string( meastime, true );
       const auto pos = tstr.find(' ');

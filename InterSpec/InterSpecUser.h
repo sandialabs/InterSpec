@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <chrono>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -130,6 +131,23 @@ namespace Wt
   }//namespace Dbo
 }//namespace Wt
 
+
+/** Converts from std::chrono to boost ptime.
+ 
+ A (temporary?) function to help smooth converting the code from using boost::posix_time to
+ std::chrono.
+ */
+boost::posix_time::ptime to_ptime( const std::chrono::system_clock::time_point &rhs );
+
+
+/** Converts from boost ptime to std::chrono.
+ 
+ A (temporary?) function to help smooth converting the code from using boost::posix_time to
+ std::chrono.
+ */
+std::chrono::system_clock::time_point to_time_point( const boost::posix_time::ptime &rhs );
+
+
 //mapDbClasses(...) Maps the database classes to Dbo::Session
 void mapDbClasses( Wt::Dbo::Session *session );
 
@@ -214,7 +232,7 @@ public:
    
    This value is only incremented #InterSpecApp::prepareForEndOfSession, so it does not include time from the current session.
    */
-  boost::posix_time::time_duration totalTimeInApp() const;
+  std::chrono::steady_clock::time_point::duration totalTimeInApp() const;
   
   /** Approximate number of spectrum files opened.
    
@@ -225,7 +243,7 @@ public:
   int numSpectraFilesOpened() const;
   
   /** The UTC time when this user was first created in the database. */
-  boost::posix_time::ptime firstAccessUTC() const;
+  std::chrono::system_clock::time_point firstAccessUTC() const;
   
   //userFromViewer: a simple helper function to return the user from a
   //  spectrum viewer pointer; necessary to break a "Member access into
@@ -357,7 +375,7 @@ public:
  
   //addUsageTimeDuration(): add a access time duration.
   //  Should only be called from within an active transaction.
-  void addUsageTimeDuration( const boost::posix_time::time_duration &duration );
+  void addUsageTimeDuration( const std::chrono::steady_clock::time_point::duration &duration );
  
   //incrementSpectraFileOpened(): increments m_spectraFilesOpened, and is
   //  intended to be called whenever a new spectrum file is opened.
@@ -407,7 +425,7 @@ public:
     Wt::Dbo::hasMany( a, m_drfPref, Wt::Dbo::ManyToOne,"InterSpecUser");
   }//void persist( Action &a )
   
-  inline const boost::posix_time::ptime &currentAccessStartUTC() const;
+  std::chrono::system_clock::time_point currentAccessStartUTC() const;
   
   const Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > &shieldSrcModels() const;
   const Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > &userStates() const;
@@ -416,8 +434,8 @@ public:
   
 protected:
   void incrementAccessCount();
-  void setCurrentAccessTime( const boost::posix_time::ptime &utcTime );
-  void setPreviousAccessTime( const boost::posix_time::ptime &utcTime );
+  void setCurrentAccessTime( const std::chrono::system_clock::time_point &utcTime );
+  void setPreviousAccessTime( const std::chrono::system_clock::time_point &utcTime );
  
   //initFromDefaultValues(...): Set prefernces will be set to default values.
   //  There must be an active transaction associated with the session passed in.
@@ -1049,11 +1067,6 @@ struct UseDrfPref
 #include <stdexcept>
 #include <Wt/Dbo/Session>
 #include <Wt/Dbo/Transaction>
-
-const boost::posix_time::ptime &InterSpecUser::currentAccessStartUTC() const
-{
-  return m_currentAccessStartUTC;
-}
 
 
 template<typename T>

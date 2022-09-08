@@ -1441,7 +1441,9 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
         filename = filename.substr( 0, filename.size() - orig_extension.size() );
       
       const int offset = wApp->environment().timeZoneOffset();
-      const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
+      auto now = std::chrono::system_clock::now();
+      now += std::chrono::seconds(60*offset);
+      
       string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
       const string::size_type pos = timestr.find( ' ' );
       //std::string timestr = SpecUtils::to_extended_iso_string( now ); //"2014-04-14T14:12:01.621543"

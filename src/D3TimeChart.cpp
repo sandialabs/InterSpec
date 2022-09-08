@@ -31,6 +31,8 @@
 
 #include <boost/optional.hpp>
 
+#include "3rdparty/date/include/date/date.h"
+
 #include <Wt/WLabel>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
@@ -828,7 +830,7 @@ void D3TimeChart::setDataToClient()
   vector<double> realTimes;
   vector<int> sampleNumbers;
   vector<SpecUtils::SourceType> sourceTypes;
-  vector<std::tuple<double,double,boost::posix_time::ptime>> gpsCoordinates;
+  vector<std::tuple<double,double,SpecUtils::time_point_t>> gpsCoordinates;
   int64_t startTimesOffset = 0;
   vector<int64_t> startTimes;
   bool allUnknownSourceType = true, anyStartTimeKnown = false;
@@ -873,9 +875,9 @@ void D3TimeChart::setDataToClient()
     /// \TODO: check that all Measurements have same real times; right now we'll just use the max
     ///        value for each sample
     float realTime = 0.0f;
-    boost::posix_time::ptime startTime;
+    SpecUtils::time_point_t startTime;
     SpecUtils::SourceType sourcetype = SpecUtils::SourceType::Unknown;
-    tuple<double,double,boost::posix_time::ptime> coords{ Q_DBL_NaN, Q_DBL_NaN, {} };
+    tuple<double,double,SpecUtils::time_point_t> coords{ Q_DBL_NaN, Q_DBL_NaN, {} };
     
     // Lets make sure this sample number has data from any of the currently selected data, and if
     //  not, we wont include this sample.
@@ -914,7 +916,7 @@ void D3TimeChart::setDataToClient()
       }//if( !m )
       
       realTime = std::max( realTime, m->real_time() );
-      if( startTime.is_special() )
+      if( SpecUtils::is_special(startTime) )
         startTime = m->start_time();
       
       auto gammas = m->gamma_counts();
@@ -974,23 +976,17 @@ void D3TimeChart::setDataToClient()
     sourceTypes.push_back( sourcetype );
     allUnknownSourceType = (allUnknownSourceType && (sourcetype == SpecUtils::SourceType::Unknown));
     
-    if( startTime.is_special() )
+    if( SpecUtils::is_special(startTime) )
     {
       startTimes.push_back( std::numeric_limits<int64_t>::min() );
     }else
     {
       anyStartTimeKnown = true;
        
-      static const boost::posix_time::ptime epoch(boost::gregorian::date(1970,1,1));
+      static const date::sys_days epoch_days = date::year_month_day( date::year(1970), date::month(1u), date::day(1u) );
       
-      // std::time_t (what boost uses for seconds type) may be 32-bit, so convert to int64_t to
-      //  avoid overflow.
-      int64_t nmilli = (startTime - epoch).total_seconds();
-      nmilli *= 1000;
-      
-      const double frac = startTime.time_of_day().fractional_seconds()
-                        / static_cast<double>(boost::posix_time::time_duration::ticks_per_second());
-      nmilli += static_cast<int64_t>( std::round(1000*frac) );
+      const chrono::milliseconds millisecs = date::round<chrono::milliseconds>(startTime - epoch_days);
+      int64_t nmilli = millisecs.count();
       
       if( startTimesOffset <= 0 && nmilli > 0 )
         startTimesOffset = nmilli;

@@ -26,6 +26,7 @@
 #include <set>
 #include <deque>
 #include <tuple>
+#include <chrono>
 #include <thread>
 #include <limits>
 #include <fstream>
@@ -4537,10 +4538,22 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     local_time = Wt::WLocalDateTime::currentDateTime().toString("yyyyMMdd hh:mm:ss").toUTF8();
   }else
   {
-    const auto utc_ts = boost::posix_time::second_clock::universal_time();
-    const auto local_ts = boost::posix_time::second_clock::local_time();
-    utc_time = SpecUtils::to_common_string( utc_ts, true);
-    local_time = SpecUtils::to_common_string( local_ts, true );
+    const auto utc_ts = chrono::system_clock::now();
+    utc_time = SpecUtils::to_common_string( utc_ts, true );
+    
+    
+    std::time_t current_time = std::chrono::system_clock::to_time_t(utc_ts);
+    struct tm current_local_time;
+    localtime_r( &current_time, &current_local_time );
+    char buffer[64] = { '\0' };
+    
+    //"9-Sep-2014 03:02:15 PM"
+    std::strftime( buffer, sizeof(buffer), "%e-%b-%Y %r", &current_local_time );
+    local_time = buffer;
+    SpecUtils::trim(local_time); //"%e" can be precedded by a space
+    
+    //const auto local_ts = to_time_point( boost::posix_time::second_clock::local_time() );
+    //local_time = SpecUtils::to_common_string( local_ts, true );
   }
   
   const double nsec_eval = 1.0E-6*m_num_microseconds_eval;

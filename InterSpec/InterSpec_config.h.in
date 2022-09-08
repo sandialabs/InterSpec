@@ -129,8 +129,10 @@
 void log_developer_error( const char *location, const char *error );
 #endif
 
-
-#define DATE_TIME_FORMAT_STR "dd/MM/yy hh:mm:ss"
+// Define a date/time format to print WDateTime values to for display to the user.
+//  Will use the format that is the same as `SpecUtils::to_common_string(time_point)`,
+//  Ex, "9-Sep-2014 15:02:15"
+#define DATE_TIME_FORMAT_STR "d-MMM-yyyy hh:mm:ss"
 
 /** Define a number of channels where if the spectrum has more than this, we'll assume this is high-resolution.
  

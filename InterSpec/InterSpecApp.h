@@ -27,9 +27,8 @@
 
 #include <set>
 #include <mutex>
+#include <chrono>
 #include <string>
-
-#include <boost/date_time.hpp>
 
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
@@ -97,7 +96,7 @@ public:
 
   InterSpec *viewer();
 
-  boost::posix_time::time_duration activeTimeInCurrentSession() const;
+  std::chrono::steady_clock::time_point::duration activeTimeInCurrentSession() const;
   
   
   //userNameFromOS(): Caution, will return 'apache' if being served, from
@@ -264,8 +263,8 @@ protected:
   Wt::Signal<const InterSpecApp *> m_destructing;
 #endif
   
-  boost::posix_time::ptime m_lastAccessTime;
-  boost::posix_time::time_duration m_activeTimeInSession;
+  std::chrono::steady_clock::time_point m_lastAccessTime;
+  std::chrono::steady_clock::time_point::duration m_activeTimeInSession;
   
 #define OPTIMISTICALLY_SAVE_USER_STATE 0
   //If OPTIMISTICALLY_SAVE_USER_STATE is enabled, then the users state will
