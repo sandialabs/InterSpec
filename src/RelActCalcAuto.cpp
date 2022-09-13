@@ -4538,13 +4538,17 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     local_time = Wt::WLocalDateTime::currentDateTime().toString("yyyyMMdd hh:mm:ss").toUTF8();
   }else
   {
-    const auto utc_ts = chrono::system_clock::now();
+    const auto utc_ts = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
     utc_time = SpecUtils::to_common_string( utc_ts, true );
     
     
     std::time_t current_time = std::chrono::system_clock::to_time_t(utc_ts);
     struct tm current_local_time;
+#if( defined( WIN32 ) )
+    localtime_s( &current_local_time, &current_time );
+#else
     localtime_r( &current_time, &current_local_time );
+#endif
     char buffer[64] = { '\0' };
     
     //"9-Sep-2014 03:02:15 PM"

@@ -75,14 +75,17 @@
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
-#include "SpecUtils/SpecFile.h"
+
 #include "SpecUtils/DateTime.h"
-#include "InterSpec/DrfSelect.h"
-#include "InterSpec/InterSpec.h"
-#include "InterSpec/AuxWindow.h"
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+
+#include "InterSpec/DrfSelect.h"
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/AuxWindow.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
@@ -90,7 +93,6 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
-#include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -171,7 +173,7 @@ namespace
           string valstr;
           if( val > 0 )
           {
-            SpecUtils::time_point_t ptt = std::chrono::system_clock::from_time_t( time_t(val) );
+            SpecUtils::time_point_t ptt = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::from_time_t( time_t(val) ) );
             ptt += std::chrono::seconds( 60*m_timeZoneOffset );
             valstr = SpecUtils::to_common_string(ptt, true);
           }
@@ -1051,7 +1053,7 @@ void RelEffFile::handleSaveFileForLater()
       filename = filename.substr( 0, filename.size() - orig_extension.size() );
     
     const int offset = wApp->environment().timeZoneOffset();
-    auto now = std::chrono::system_clock::now();
+    auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
     now += std::chrono::seconds(60*offset);
     string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
     const string::size_type pos = timestr.find( ' ' );
@@ -3168,7 +3170,7 @@ void DrfSelect::handleUserChangedUploadedDrfName()
   if( value.empty() )
   {
     const int offset = wApp->environment().timeZoneOffset();
-    auto now = std::chrono::system_clock::now();
+    auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
     now += std::chrono::seconds(60*offset);
     value = SpecUtils::to_vax_string(now);
     m_uploadedDetName->setText( WString::fromUTF8(value) );
@@ -3698,8 +3700,8 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
     if( userDrfFilename.size() < 15 )
     {
       const int offset = wApp->environment().timeZoneOffset();
-      auto now = std::chrono::system_clock::now();
-      now += std::chrono::seconds(60*offset);
+      auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+      now += chrono::seconds(60*offset);
       userDrfFilename += " " + SpecUtils::to_vax_string(now);
     }
     

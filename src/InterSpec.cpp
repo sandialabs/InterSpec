@@ -4095,7 +4095,7 @@ void InterSpec::logMessage( const Wt::WString& message, int priority )
 //    wApp->triggerUpdate();
   }else
   {
-    auto now = std::chrono::system_clock::now();
+    auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
     cerr << "Message " << SpecUtils::to_iso_string( now ) << " ";
     cerr << "[" << priority << "]: ";
     cerr << message.toUTF8() << endl << endl;
@@ -6972,8 +6972,8 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
     filename += "_timechart";
   
   const int offset = wApp->environment().timeZoneOffset();
-  auto localtime = std::chrono::system_clock::now();
-  localtime += std::chrono::seconds(60*offset);
+  auto localtime = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+  localtime += chrono::seconds(60*offset);
   
   std::string timestr = SpecUtils::to_iso_string( localtime );
   auto ppos = timestr.find('.');

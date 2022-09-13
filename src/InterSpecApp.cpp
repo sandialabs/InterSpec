@@ -1145,7 +1145,7 @@ void InterSpecApp::prepareForEndOfSession()
         const int offset = environment().timeZoneOffset();
         WString desc = "End of Session";
         const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
-        WString name = SpecUtils::to_common_string( now, true ); //"9-Sep-2014 15:02:15"
+        WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
         
         Wt::Dbo::ptr<UserState> dbstate;
         std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();

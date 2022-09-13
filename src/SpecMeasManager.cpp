@@ -1441,8 +1441,8 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
         filename = filename.substr( 0, filename.size() - orig_extension.size() );
       
       const int offset = wApp->environment().timeZoneOffset();
-      auto now = std::chrono::system_clock::now();
-      now += std::chrono::seconds(60*offset);
+      auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+      now += chrono::seconds(60*offset);
       
       string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
       const string::size_type pos = timestr.find( ' ' );
