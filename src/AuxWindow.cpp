@@ -39,8 +39,10 @@
 #include <Wt/WStringStream>
 #include <Wt/WContainerWidget>
 
-#include "InterSpec/WarningWidget.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/WarningWidget.h"
+
 
 using namespace std;
 using namespace Wt;
@@ -578,6 +580,12 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
 {
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
   
+  // We need to set make sure the lifetime of this AuxWindow is no longer than the
+  //  current InterSpec, or else some assumptions of the various tools go out the window.
+  InterSpec *interspec = InterSpec::instance();
+  if( interspec )
+    interspec->addPopupWindow( this );
+  
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCollapse);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowExpand);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowBringToFront);
@@ -883,7 +891,11 @@ AuxWindow::~AuxWindow()
 //         << m_titleText->text().toUTF8() << "'" << endl;
   
   m_destructing = true;
-} //~AuxWindow()
+  
+  InterSpec *interspec = InterSpec::instance();
+  if( interspec )
+    interspec->removePopupWindow( this );
+}//~AuxWindow()
 
 
 void AuxWindow::emitReject()

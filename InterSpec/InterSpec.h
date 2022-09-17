@@ -105,6 +105,7 @@ namespace Wt
 {
   class WText;
   class WMenu;
+  class WDialog;
   class WMenuItem;
   class WTextArea;
   class WLineEdit;
@@ -294,6 +295,24 @@ public:
    */
   void handleAppUrl( std::string url );
   
+  /** Adds a AuxWindow or SimpleDialog to have their lifetimes managed by the current
+   instance of InterSpec - that is, make sure they wont live longer than the instance
+   of InterSpec.
+   
+   WPopupWidgets are children of the DOM root; so if we do a "Clear Session..."
+   with a AuxWindow or SimpleDialog showing, who the InterSpec class doesnt explicitly
+   delete, then the AuxWindow/SimpleDialog will still be around in the next session,
+   allowing bad things to happen.
+   */
+  void addPopupWindow( Wt::WDialog *w );
+  
+  /** Remove a AuxWindow or SimpleDialog from being managed by this instance of InterSpec.
+   
+   AuxWindow and SimpleDialog do this in their destructor.
+   
+   @returns if the WDialog was removed from being managed; this should usually be true.
+   */
+  bool removePopupWindow( Wt::WDialog *w );
   
   
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
@@ -1443,6 +1462,8 @@ protected:
   
   bool m_findingHintPeaks;
   std::deque<boost::function<void()> > m_hintQueue;
+  
+  std::vector<Wt::WDialog *> m_alive_dialogs;
   
   static std::mutex sm_staticDataDirectoryMutex;
   static std::string sm_staticDataDirectory;

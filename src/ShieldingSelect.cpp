@@ -1819,8 +1819,17 @@ void ShieldingSelect::init()
   
   if( m_materialSuggest )
   {
-    if( m_materialSuggest->objectName().empty() )
-      m_materialSuggest->setObjectName( "ShieldingSuggest" + id() );
+    try
+    {
+      cout << "Throwing here for debugging" << endl;
+      throw std::runtime_error("");
+    }catch( std::exception &e )
+    {
+#warning("Remove this debug exception")
+    }
+// hmm: iOS doesnt seem to like setting the object name.... perhaps just make different suggests for everywhere..., or accept the memory leak
+    //if( m_materialSuggest->objectName().empty() )
+    //  m_materialSuggest->setObjectName( "ShieldingSuggest" + id() );
     m_materialSuggestName = m_materialSuggest->objectName();
   }//if( m_materialSuggest )
   
@@ -2109,20 +2118,27 @@ ShieldingSelect::~ShieldingSelect()
 {
   if( m_materialSuggest && m_materialEdit )
   {
-    WApplication *app = wApp;
+    // We will double check that m_materialSuggest is still owned by the InterSpec instance.
+    //  If this ShieldingSelect is in a WDialog, it may be destructing after the InterSpec instance
+    //  destructs!  In that case, we shouldnt access `m_materialSuggest`, as its already been
+    //  deleted.
     
-    WContainerWidget *root = (app ? app->domRoot() : nullptr);
-    
-    if( root )
+    InterSpec *interspec = InterSpec::instance();
+    if( interspec )
     {
-      //Testing for root appears to be enough, and m_materialSuggestName does not
-      //  need to be done for our current specific use case, but leaving in the
-      //  checking of the name for the future, JIC.
-      WWidget *w = app->findWidget( m_materialSuggestName );
-      if( w || m_materialSuggestName.empty() )
+      const vector<Wt::WObject *> &kids = interspec->Wt::WObject::children();
+      auto pos = std::find( begin(kids), end(kids), static_cast<WObject *>(m_materialSuggest) );
+      if( pos != end(kids) )
+      {
         m_materialSuggest->removeEdit( m_materialEdit );
-      else
-       cerr << "~ShieldingSelect(): Suggest not in DOM, not removing form from suggestion" << endl;
+        cerr << "~ShieldingSelect(): removing m_materialEdit" << endl;
+      }else
+      {
+        cerr << "~ShieldingSelect(): Suggest not in DOM, not removing form from suggestion" << endl;
+      }
+    }else
+    {
+      cerr << "~ShieldingSelect(): No InterSpec instance available" << endl;
     }
   }//if( m_materialSuggest && m_materialEdit )
   

@@ -1123,9 +1123,11 @@ std::string InterSpec::writableDataDirectory()
 
 InterSpec::~InterSpec() noexcept(true)
 {
-  //The deletion of the DOM root node will destroy all the AuxWindows we
-  //  have open, but I am manually taking care of them below due to a crash
-  //  I have been getting in the WApplication destructor for Wt 3.3.1-rc1
+  // The DOM root may not actually being deleted, most likely if the "Clear Session..." option
+  //  was invoked.  All of the WPopupWidget descendants are actually parented by the DOM root
+  //  (even if we passed *this into the constructors...), so we will do some manual cleanup.
+  //  We are currently doing more cleanup than necessary (especially as of 20220917 we use
+  //  m_alive_dialogs to track AuxWindow and SimpleDialogs), but thats okay for the moment.
 
   cerr << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'" << endl;
 
@@ -1208,7 +1210,7 @@ InterSpec::~InterSpec() noexcept(true)
     m_referencePhotopeakLinesWindow = nullptr;
   }//if( m_referencePhotopeakLinesWindow )
   
-  if( m_warnings )  //WarningWidget isnt necassarily parented, so we do have to manually delete it
+  if( m_warnings )  //WarningWidget isnt necessarily parented, so we do have to manually delete it
   {
     if( m_warningsWindow )
       m_warningsWindow->stretcher()->removeWidget( m_warnings );
@@ -1222,11 +1224,8 @@ InterSpec::~InterSpec() noexcept(true)
     m_warningsWindow = nullptr;
   }//if( m_warningsWindow )
   
-  if( m_peakEditWindow )
-  {
-    delete m_peakEditWindow;
-    m_peakEditWindow = nullptr;
-  }//if( m_peakEditWindow )
+  deletePeakEdit();
+  deleteGammaCountDialog();
   
   if( m_mobileMenuButton )
     delete m_mobileMenuButton;
@@ -1243,16 +1242,21 @@ InterSpec::~InterSpec() noexcept(true)
   if( m_fileManager )
     delete m_fileManager;
 
-  if( m_shieldingSuggestion )
-    delete m_shieldingSuggestion;
-  m_shieldingSuggestion = NULL;
-
   if( m_menuDiv )
   {
     delete m_menuDiv;
     m_menuDiv = nullptr;
   }//if( m_menuDiv )
 
+  // And finally, delete any remaining AuxWindow or SimpleDialogs, just in case we are here
+  //  because of a "Clear Session..." command.
+  while( m_alive_dialogs.size() )
+  {
+    WDialog *dialog = m_alive_dialogs[m_alive_dialogs.size() - 1];
+    m_alive_dialogs.erase( end(m_alive_dialogs) - 1 );
+    delete dialog;
+  }//while( m_alive_dialogs.size() )
+  
   try
   {
     m_user.reset();
@@ -2519,7 +2523,7 @@ void InterSpec::deletePeakEdit()
   if( m_peakEditWindow )
   {
     delete m_peakEditWindow;
-    m_peakEditWindow = NULL;
+    m_peakEditWindow = nullptr;
   }
 }//void deletePeakEdit()
 
@@ -4015,7 +4019,7 @@ void InterSpec::deleteGammaCountDialog()
   if( m_gammaCountDialog )
     delete m_gammaCountDialog;
 
-  m_gammaCountDialog = 0;
+  m_gammaCountDialog = nullptr;
 }//void deleteGammaCountDialog()
 
 
@@ -7826,7 +7830,18 @@ void InterSpec::initMaterialDbAndSuggestions()
     //popupOptions.wordSeparators     = "-_., ;()";     //To show suggestions based on matches of the edited value with parts of the suggestion.
     popupOptions.wordStartRegexp = "\\s|^|\\(|\\<";       // Instead of using .wordSeparators, we will use the regex option to start matching at whitespaces, start of line, open-paren, and boundaries of words (probably a bit duplicative).
     popupOptions.appendReplacedText = "";             //
+    
+    // We may want to parent `m_shieldingSuggestion...
+    
     m_shieldingSuggestion = new WSuggestionPopup( popupOptions, this );
+    try
+    {
+      cout << "Throwing here for debugging" << endl;
+      throw std::runtime_error("");
+    }catch( std::exception &e )
+    {
+#warning("Remove this debug exception")
+    }
     m_shieldingSuggestion->addStyleClass("suggestion");
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
     m_shieldingSuggestion->setJavaScriptMember("wtNoReparent", "true");
@@ -9603,6 +9618,24 @@ void InterSpec::handleAppUrl( std::string url )
   }
 }//void handleAppUrl( std::string url )
 
+
+void InterSpec::addPopupWindow( Wt::WDialog *w )
+{
+  if( w )
+    m_alive_dialogs.push_back( w );
+}//
+
+
+bool InterSpec::removePopupWindow( Wt::WDialog *w )
+{
+  const auto pos = std::find( begin(m_alive_dialogs), end(m_alive_dialogs), w );
+  
+  if( pos == end(m_alive_dialogs) )
+    return false;
+  
+  m_alive_dialogs.erase( pos );
+  return true;
+}//
 
 
 void InterSpec::detectorsToDisplayChanged()

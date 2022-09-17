@@ -31,7 +31,7 @@
 
 #include <string>
 
-#include "InterSpec/InterSpec.h"  //to get rendered width/height
+#include "InterSpec/InterSpec.h"  //to get rendered width/height, and InterSpec::instance()
 #include "InterSpec/SimpleDialog.h"
 
 using namespace std;
@@ -81,9 +81,19 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
 
 void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
 {
+  InterSpec *interspec = InterSpec::instance();
+  if( interspec )
+    interspec->addPopupWindow( this );
+  
   wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
   
   addStyleClass( "simple-dialog" );
+  
+  // We need to set the InterSpec instance as a the WPopupWidget::fakeParent_ or else when
+  //  we "Clear Session...", any showing AuxWindow that isnt explicitly deleted by
+  //  InterSpec would stick around in the new session.
+  //InterSpec *interspec = InterSpec::instance();
+  //setParent( interspec );
   
   setModal( true );
   
@@ -125,7 +135,9 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
 
 SimpleDialog::~SimpleDialog()
 {
-  //cerr << "Deleting simpledialog" << endl;
+  InterSpec *interspec = InterSpec::instance();
+  if( interspec )
+    interspec->removePopupWindow( this );
 }
 
 
