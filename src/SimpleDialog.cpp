@@ -40,20 +40,20 @@ using namespace Wt;
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
 SimpleDialog::SimpleDialog()
-: Wt::WDialog( nullptr ), m_title( nullptr ), m_msgContents( nullptr )
+: Wt::WDialog( InterSpec::instance() ), m_title( nullptr ), m_msgContents( nullptr )
 {
   init( "", "" );
 }
 
 SimpleDialog::SimpleDialog( const Wt::WString &title )
- : Wt::WDialog( nullptr ), m_title( nullptr ), m_msgContents( nullptr )
+ : Wt::WDialog( InterSpec::instance() ), m_title( nullptr ), m_msgContents( nullptr )
 {
   init( title, "" );
 }
 
 
 SimpleDialog::SimpleDialog( const Wt::WString &title, const Wt::WString &content )
- : Wt::WDialog( nullptr ), m_title( nullptr ), m_msgContents( nullptr )
+ : Wt::WDialog( InterSpec::instance() ), m_title( nullptr ), m_msgContents( nullptr )
 {
   init( title, content );
 }
@@ -81,10 +81,6 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
 
 void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
 {
-  InterSpec *interspec = InterSpec::instance();
-  if( interspec )
-    interspec->addPopupWindow( this );
-  
   wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
   
   addStyleClass( "simple-dialog" );
@@ -135,9 +131,6 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
 
 SimpleDialog::~SimpleDialog()
 {
-  InterSpec *interspec = InterSpec::instance();
-  if( interspec )
-    interspec->removePopupWindow( this );
 }
 
 

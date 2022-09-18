@@ -407,7 +407,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   }catch( std::exception &e )
   {
 #if( BUILD_AS_UNIT_TEST_SUITE )
-    cerr << "There was an expection initializing a InterSpec: " << e.what() << endl;
+    cerr << "There was an exception initializing a InterSpec: " << e.what() << endl;
     throw e;
 #endif //#if( BUILD_AS_UNIT_TEST_SUITE )
     
@@ -1212,6 +1212,9 @@ void InterSpecApp::prepareForEndOfSession()
 
 void InterSpecApp::clearSession()
 {
+  // Just in case there are any modal dialogs showing - the cover thing can be a little sticky
+  doJavaScript( "$('.Wt-dialogcover').hide();" );
+  
 #if( BUILD_AS_ELECTRON_APP )
   // As a workaround setup a function ElectronUtils::requestNewCleanSession() that
   //  sends websocket message to node land to clear menus, and load a new session

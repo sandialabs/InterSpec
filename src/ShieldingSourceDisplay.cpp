@@ -6622,7 +6622,7 @@ void ShieldingSourceDisplay::removeShielding( ShieldingSelect *select )
   }//for( WWidget *widget : children )
   
   assert( foundShielding );
-  if( foundShielding )
+  if( !foundShielding )
     cerr << "\n\nCouldnt finding select to delete" << endl;
 }//void removeShielding( ShieldingSelect *select )
 

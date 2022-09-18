@@ -554,7 +554,7 @@ WT_DECLARE_WT_MEMBER
 
 
 AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProperties> properties  )
-  : WDialog(),
+  : WDialog( InterSpec::instance() ),
     m_auxIsHidden( true ),
     m_modalOrig( false ),
     m_titleText( NULL ),
@@ -579,12 +579,6 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
     m_footer(NULL)
 {
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-  
-  // We need to set make sure the lifetime of this AuxWindow is no longer than the
-  //  current InterSpec, or else some assumptions of the various tools go out the window.
-  InterSpec *interspec = InterSpec::instance();
-  if( interspec )
-    interspec->addPopupWindow( this );
   
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCollapse);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowExpand);
@@ -891,10 +885,6 @@ AuxWindow::~AuxWindow()
 //         << m_titleText->text().toUTF8() << "'" << endl;
   
   m_destructing = true;
-  
-  InterSpec *interspec = InterSpec::instance();
-  if( interspec )
-    interspec->removePopupWindow( this );
 }//~AuxWindow()
 
 

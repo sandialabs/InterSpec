@@ -70986,6 +70986,37 @@
 
 
   <neutroninelasticscatter>
+      
+    <!-- This "HPGe(n,n)" pseudo-reaction represents the "saw-teeth" observed when 
+      there is a significant flux of neutron on a HPGe detector
+    -->
+    <!--
+    <target>
+      <nuclide>HPGe</nuclide>
+      <product>HPGe</product>
+      <energies>
+        <energy>430</energy>
+        <energy>488</energy>
+        <energy>562</energy>
+        <energy>596</energy>
+        <energy>630</energy>
+        <energy>691</energy>
+        <energy>834</energy>
+        <energy>1039.6</energy>
+      </energies>
+      <yields>
+        <yield>1.0</yield>
+        <yield>1.0</yield>
+        <yield>1.0</yield>
+        <yield>1.0</yield>
+        <yield>1.0</yield>
+        <yield>1.0</yield>
+        <yield>1.0</yield>
+        <yield>1.0</yield>
+      </yields>
+    </target>
+    -->
+    
 <!-- The inelastic neutron scatter information was added by K.Furutaka from:
       A.M. Demidov, L.I. Govor, Yu.K. Cherepantsev, M.R. Ahmed, S. Al-Najjar, M.A. Al-Amili, N. Al-Assafi, and N. Rammo, "Atlas of Gamma-Ray Spectra from the Inelastic Scattering of Reactor Fast Neutrons", Nuclear Research Institute, Baghdad, Iraq (Moscow, Atomizdat 1978).
   

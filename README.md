@@ -64,26 +64,29 @@ may be useful for you:
 
 
 ### Prerequisites
+At a minimum, you will need a C++14 compiler, and [cmake](https://cmake.org/).
 
-To compile, you need a C++14 compiler, and:
-* [Wt](https://www.webtoolkit.eu/wt) version 3.3.4 or 3.7.1.  Some patches are included in the [patches](https://github.com/sandialabs/InterSpec/tree/master/target/patches/wt/3.3.4) directory.
-* [boost](https://www.boost.org/) For Wt 3.3.4, boost version 1.65.1 is used for development, and for Wt 3.7.1 boost 1.78 is used.
-* [cmake](https://cmake.org/) 
+Then to build, you can choose one of two methods to build the code:
+1. Use [cmake](https://cmake.org/) to fetch and build the prerequisites for you, by specifying the `InterSpec_FETCH_DEPENDENCIES` CMake option to `ON`.  This option requires having [git](https://git-scm.com) installed, but is generally the easier of the two options.
+2. Build the prerequisites yourself.  This option is faster if you plan to rebuild the code many times, as CMake will have less libraries to deal with internally,.  You will need to build the following libraries from source (see the instructions in the [patches](/target/patches/) directory):
+      * [Wt](https://www.webtoolkit.eu/wt) version 3.7.1.  Some patches are included in the [patches](https://github.com/sandialabs/InterSpec/tree/master/target/patches/) directory.
+      * [boost](https://www.boost.org/) version 1.78 is
+      * The macOS app also requires [libharu](https://github.com/libharu/libharu), and [libpng](http://www.libpng.org/pub/png/libpng.html).
 
-To make building a little easier, other required libraries, including
+
+Included in this repository are some additional C++ libraries that will be built as part of building InterSpecs code.  
+These libraries include
 [Cuba](http://www.feynarts.de/cuba), 
 [Minuit2](https://github.com/root-project/root/tree/master/math/minuit2), 
-[muparserx](https://github.com/beltoforion/muparserx), 
-and [rapidxml](http://rapidxml.sourceforge.net/), are included in this git repository already in the
+[muparserx](https://github.com/beltoforion/muparserx), [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library), [pugixml](https://pugixml.org)
+and [rapidxml](http://rapidxml.sourceforge.net/), which are in the
 [external_libs](https://github.com/sandialabs/interspec/tree/master/external_libs) directory, while 
 the [js](https://github.com/sandialabs/interspec/tree/master/js) directory contains some ECMAScript libraries, including
 [jQuery](https://jquery.org),
 [qTip2](https://github.com/qTip2/qTip2), and
 [D3](https://d3js.org).
 
-You can use your package manager or a downloaded installer to install cmake, but you must build
-Wt and boost from source on your computer.  There are some detailed instructions in the
-[patches](/target/patches/) directory for building the dependancies (namely boost and Wt)
+Additionally for the Windows or Electron application build, you will need [npm](http://npmjs.com) installed to create the application package (see the [electron](/target/electron/) directory for build instructions).
 
 ### Building
 

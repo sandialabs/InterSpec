@@ -1124,10 +1124,10 @@ std::string InterSpec::writableDataDirectory()
 InterSpec::~InterSpec() noexcept(true)
 {
   // The DOM root may not actually being deleted, most likely if the "Clear Session..." option
-  //  was invoked.  All of the WPopupWidget descendants are actually parented by the DOM root
-  //  (even if we passed *this into the constructors...), so we will do some manual cleanup.
-  //  We are currently doing more cleanup than necessary (especially as of 20220917 we use
-  //  m_alive_dialogs to track AuxWindow and SimpleDialogs), but thats okay for the moment.
+  //  was invoked.  WPopupWidget descendants, except for AuxWindow, SimpleDialog, and any
+  //  WPopupWidget-derived widget explicitly given a parent, will not be deleted, so we'll do
+  //  some manual cleanup here (as of 20220917 when AuxWindow and SimpleDialog where explicitly
+  //  parented by the current InterSpec instance, we are doing much more cleanup than necessary).
 
   cerr << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'" << endl;
 
@@ -1247,15 +1247,6 @@ InterSpec::~InterSpec() noexcept(true)
     delete m_menuDiv;
     m_menuDiv = nullptr;
   }//if( m_menuDiv )
-
-  // And finally, delete any remaining AuxWindow or SimpleDialogs, just in case we are here
-  //  because of a "Clear Session..." command.
-  while( m_alive_dialogs.size() )
-  {
-    WDialog *dialog = m_alive_dialogs[m_alive_dialogs.size() - 1];
-    m_alive_dialogs.erase( end(m_alive_dialogs) - 1 );
-    delete dialog;
-  }//while( m_alive_dialogs.size() )
   
   try
   {
@@ -7834,14 +7825,7 @@ void InterSpec::initMaterialDbAndSuggestions()
     // We may want to parent `m_shieldingSuggestion...
     
     m_shieldingSuggestion = new WSuggestionPopup( popupOptions, this );
-    try
-    {
-      cout << "Throwing here for debugging" << endl;
-      throw std::runtime_error("");
-    }catch( std::exception &e )
-    {
-#warning("Remove this debug exception")
-    }
+    
     m_shieldingSuggestion->addStyleClass("suggestion");
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
     m_shieldingSuggestion->setJavaScriptMember("wtNoReparent", "true");
@@ -9617,25 +9601,6 @@ void InterSpec::handleAppUrl( std::string url )
     throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );
   }
 }//void handleAppUrl( std::string url )
-
-
-void InterSpec::addPopupWindow( Wt::WDialog *w )
-{
-  if( w )
-    m_alive_dialogs.push_back( w );
-}//
-
-
-bool InterSpec::removePopupWindow( Wt::WDialog *w )
-{
-  const auto pos = std::find( begin(m_alive_dialogs), end(m_alive_dialogs), w );
-  
-  if( pos == end(m_alive_dialogs) )
-    return false;
-  
-  m_alive_dialogs.erase( pos );
-  return true;
-}//
 
 
 void InterSpec::detectorsToDisplayChanged()

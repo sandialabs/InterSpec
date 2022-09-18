@@ -1817,22 +1817,6 @@ void ShieldingSelect::init()
   
   addStyleClass( "ShieldingSelect" );
   
-  if( m_materialSuggest )
-  {
-    try
-    {
-      cout << "Throwing here for debugging" << endl;
-      throw std::runtime_error("");
-    }catch( std::exception &e )
-    {
-#warning("Remove this debug exception")
-    }
-// hmm: iOS doesnt seem to like setting the object name.... perhaps just make different suggests for everywhere..., or accept the memory leak
-    //if( m_materialSuggest->objectName().empty() )
-    //  m_materialSuggest->setObjectName( "ShieldingSuggest" + id() );
-    m_materialSuggestName = m_materialSuggest->objectName();
-  }//if( m_materialSuggest )
-  
 //  int voidIndex = -1;
   WContainerWidget *materialDiv = new WContainerWidget( this );
   WGridLayout* materialDivLayout = new WGridLayout();
@@ -2122,23 +2106,27 @@ ShieldingSelect::~ShieldingSelect()
     //  If this ShieldingSelect is in a WDialog, it may be destructing after the InterSpec instance
     //  destructs!  In that case, we shouldnt access `m_materialSuggest`, as its already been
     //  deleted.
-    
     InterSpec *interspec = InterSpec::instance();
     if( interspec )
     {
       const vector<Wt::WObject *> &kids = interspec->Wt::WObject::children();
+      // kids.size() is usually just 2 or 3, so this isnt that heavy of an operation.
       auto pos = std::find( begin(kids), end(kids), static_cast<WObject *>(m_materialSuggest) );
       if( pos != end(kids) )
       {
+        // We get here, for example, when you manually close the Activity/Shielding fit window (or
+        //  remove a shielding from within it).
         m_materialSuggest->removeEdit( m_materialEdit );
-        cerr << "~ShieldingSelect(): removing m_materialEdit" << endl;
       }else
       {
-        cerr << "~ShieldingSelect(): Suggest not in DOM, not removing form from suggestion" << endl;
+        // I dont think we get here - but I'll leave the assert in, just to see
+        cerr << "~ShieldingSelect(): Suggest not in DOM, not removing edit from suggestion" << endl;
+        assert( 0 );
       }
     }else
     {
-      cerr << "~ShieldingSelect(): No InterSpec instance available" << endl;
+      // We get here when you close a tab, or the window or whatever (e.g., WApplication is being
+      //  destructed); I think because WApplication::instance() is nullptr, so so is `interspec`
     }
   }//if( m_materialSuggest && m_materialEdit )
   
