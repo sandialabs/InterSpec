@@ -577,7 +577,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
             name = [NSString stringWithFormat:@"interspec_export.%@", parts[1]];
         }
         
-        //NSLog( @"completionHandlerBlock: mimetype '%@', name: '%@'", mimetype, name );
+        NSLog( @"completionHandlerBlock: mimetype '%@', name: '%@'", mimetype, name );
       }//if( response )
       
       if( name == nil )
@@ -823,6 +823,54 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     }));
   }
 }//setSafeAreasToClient
+
+
+-(BOOL)handleURL:(NSURL *)url
+{
+  if( !url )
+  {
+    NSLog( @"handleURL: null url" );
+    return NO;
+  }
+  
+  NSLog( @"handleURL: handling url '%@' whose scheme is '%@'", [url absoluteString], [url scheme] );
+  
+  if( [url isFileURL] )
+    return [self openSpectrumFile: url];
+  
+  InterSpecApp *specapp = nullptr;
+  
+  if( _UrlUniqueId )
+    specapp = InterSpecApp::instanceFromExtenalToken( [_UrlUniqueId UTF8String] );
+  
+  std::unique_ptr<Wt::WApplication::UpdateLock> lock = specapp ? std::make_unique<Wt::WApplication::UpdateLock>(specapp) : nullptr;
+  
+  if( !lock || !(*lock) )
+  {
+    _fileNeedsOpening = [url absoluteString];
+    NSLog( @"\thandleURL: unable to get app or lock for apptoken='%@' - not handling URL! ", _UrlUniqueId );
+    return YES;
+  }
+  
+  std::string urlcontent;
+  NSString *absStr = [url absoluteString];
+  if( !absStr )
+  {
+    NSLog( @"openURLs: null absoluteString" );
+    return NO;
+  }
+    
+  
+  NSString *normalStr = [absStr stringByRemovingPercentEncoding];
+  urlcontent = normalStr ? [normalStr UTF8String] : [absStr UTF8String];
+    
+  NSLog( @"openURLs: Will pass '%s' in InterSpec!", urlcontent.c_str() );
+  
+  specapp->handleAppUrl( urlcontent );
+  specapp->triggerUpdate();
+  
+  return YES;
+}//handleURL
 
 
 - (void)viewDidLayoutSubviews

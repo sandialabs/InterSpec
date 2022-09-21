@@ -132,8 +132,19 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
            openURL:(NSURL *)url
            options:(NSDictionary<UIApplicationOpenURLOptionsKey, id> *)options
 {
-  NSLog(@"Will see if we should open file in place for URL %@", url );
+  //Will see if we should open
+  if( ![url isFileURL] ){
+    NSLog(@"Try to handle non-file URL with scheme '%@'.", [url scheme] );
+    
+    if ([[url scheme] caseInsensitiveCompare:@"interspec"] == NSOrderedSame) {
+      return [_viewController handleURL: url];
+    }
+    
+    NSLog(@"URL passed in is not a file and not 'interspec' scheme" );
+    return NO;
+  }//if( not a file URL )
   
+  NSLog(@"Will see if we should open file in place for URL %@", url );
   BOOL openInPlace = false;
   
   if( options && ([options objectForKey: UIApplicationOpenURLOptionsOpenInPlaceKey] != nil) )
@@ -391,12 +402,43 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
 
 -(void)sendSpectrumFileToOtherApp: (NSString *) filename;
 {
-  NSLog(@"Begining sendSpectrumFileToOtherApp" );
+  if( !filename )
+  {
+    NSLog(@"sendSpectrumFileToOtherApp: No file-name passed in." );
+    return;
+  }
+  
+  NSLog(@"sendSpectrumFileToOtherApp: Starting for '%@'.", filename );
+  
+  NSString *ext = [filename pathExtension];
+  NSLog(@"sendSpectrumFileToOtherApp: fileextension '%@'.", ext );
   
   _documentController = [UIDocumentInteractionController interactionControllerWithURL:[NSURL fileURLWithPath:filename]];
   _documentController.delegate = _viewController;
 //  [_documentController retain];
-  _documentController.UTI = @"sandia.InterSpec.spectrum";
+  if( _documentController.UTI == nil )
+  {
+    NSLog(@"The UTI type is unknown, we'll try to fix this up." );
+    
+    // To get the UTI, on macOS use command `mdls -name kMDItemContentType myfile.txt`
+    if ([ext caseInsensitiveCompare:@"CSV"] == NSOrderedSame)
+      _documentController.UTI = @"public.comma-separated-values-text"; //kUTTypeCommaSeparatedText;
+    else if ([ext caseInsensitiveCompare:@"XML"] == NSOrderedSame)
+      _documentController.UTI = @"public.xml";
+    else if ([ext caseInsensitiveCompare:@"PNG"] == NSOrderedSame)
+      _documentController.UTI = @"public.png";
+    else if ([ext caseInsensitiveCompare:@"SVG"] == NSOrderedSame)
+      _documentController.UTI = @"public.svg-image";
+    else if ([ext caseInsensitiveCompare:@"HTML"] == NSOrderedSame)
+      _documentController.UTI = @"public.html";
+    else if ([ext caseInsensitiveCompare:@"CALp"] == NSOrderedSame)
+      _documentController.UTI = @"sandia.InterSpec.spectrum";
+    else // Assume a spectrum file
+      _documentController.UTI = @"sandia.InterSpec.spectrum"; // on macOS this is "gov.sandia.interspec.gamma-spectrum"
+  }else
+  {
+    NSLog(@"The UTI type is '%@'.", _documentController.UTI );
+  }
   
   //CGRect navRect = _viewController.view.frame;  //CGRectZero
   //On the iPad the dialog doesnt show up, so lets just hack it for the moment.
@@ -422,5 +464,15 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
 }//orientationChanged
 
 
+- (void)openURL:(NSURL *)url
+          options:(NSDictionary<UIApplicationOpenExternalURLOptionsKey, id> *)options
+          completionHandler:(void (^)(BOOL success))completion
+//-(BOOL)application:(UIApplication *)app openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenURLOptionsKey, id> *)options;
+{
+  NSLog(@"url received: %@", url);
+  
+  const BOOL status = [_viewController handleURL: url];
+  completion( status );
+}
 
 @end

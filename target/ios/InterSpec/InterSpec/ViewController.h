@@ -86,6 +86,8 @@
 
 - (void)setSafeAreasToClient;
 
+-(BOOL)handleURL:(NSURL *)url;
+
 /*
 //implemented UIDocumentInteractionControllerDelegate methods
 //  Commented out as they dont seem to ever be called...
