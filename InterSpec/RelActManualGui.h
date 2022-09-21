@@ -181,7 +181,7 @@ protected:
   Wt::WCheckBox *m_backgroundSubtract;
   Wt::WTableRow *m_backgroundSubtractHolder;
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   Wt::WAnchor *m_downloadHtmlReport;
 #else
   Wt::WPushButton *m_downloadHtmlReport;

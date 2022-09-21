@@ -1153,7 +1153,7 @@ border: solid 1px #909090;
 
 .closeicon-wtdefault
 {
-background: transparent url(../resources/themes/default/closeicons-tab.png) no-repeat scroll right top;
+background: transparent url(images/closeicons-tab.png) no-repeat scroll right top;
 margin: 2px 4px 0px 0px;
 height: 13px;
 width: 13px;
@@ -1425,7 +1425,7 @@ body.Wt-rtl .Wt-tabs a {
 }
 
 .Wt-tabs .closeicon {
-  background: transparent url(../resources/themes/default/closeicons-tab.png) no-repeat scroll right top;
+  background: transparent url(images/closeicons-tab.png) no-repeat scroll right top;
   margin: 6px 4px 0px 0px;
   height: 13px;
   width: 13px;

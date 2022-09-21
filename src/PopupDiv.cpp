@@ -36,6 +36,7 @@
 #include <Wt/WContainerWidget>
 
 #include "InterSpec/PopupDiv.h"
+#include "InterSpec/InterSpec.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
 
@@ -664,8 +665,10 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
 #endif
   
   InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+  InterSpec *viewer = InterSpec::instance();
   
-  m_mobile = (app && app->isMobile());
+  //m_mobile = (app && app->isMobile());
+  m_mobile = (viewer && viewer->isMobile());
   
   if( m_mobile )
   {
@@ -1028,6 +1031,26 @@ void PopupDivMenu::undoParentHoveredOver()
 }//void undoParentHoveredOver()
 
 
+void PopupDivMenu::parentTouchStarted()
+{
+  if( !m_menuParent )
+    return;
+    
+  popup( WPoint( -10000, -10000 ) );
+    
+  const string parent_clicked_js =
+    "const btn = $('#" + m_menuParent->id() + "');"
+    "const wasActive = btn.hasClass('active');"
+    "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
+    "if( !wasActive) $('#" + m_menuParent->id() + "').removeClass('active');"
+    "setTimeout( function(){"
+    "Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
+    "}, 0 );"
+    ;
+  doJavaScript( parent_clicked_js );
+}
+
+
 bool PopupDivMenu::isMobile() const
 {
   return m_mobile;
@@ -1104,6 +1127,7 @@ void PopupDivMenu::setupDesktopMenuStuff()
   //       to be more sane.
   implementStateless( &PopupDivMenu::parentClicked, &PopupDivMenu::undoParentClicked );
   implementStateless( &PopupDivMenu::parentMouseWentOver, &PopupDivMenu::undoParentHoveredOver );
+  // TODO: parentTouchStarted is not currently implemented as stateless - should do, at least for iOS and Android builds
   
   // If we instead implement the statelessness using the following, the first invocation to show
   //  menu may take up to ~100 ms (when run locally), but then after that showing the menus are
@@ -1118,22 +1142,15 @@ void PopupDivMenu::setupDesktopMenuStuff()
   //    From the Wt documentation:
   //      Provides a JavaScript implementation for a method.
   //  	  This method sets the JavaScript implementation for a method. As a result, if JavaScript is available, the JavaScript version will be used on the client side and the visual effect of the C++ implementation will be ignored.
-    
-
   
   m_menuParent->clicked().connect( this, &PopupDivMenu::parentClicked );
+  m_menuParent->mouseWentOver().connect( this, &PopupDivMenu::parentMouseWentOver );
   
   
-  m_menuParent->touchStarted().connect( std::bind( [this](){
-    popup( WPoint( -10000, -10000 ) );
-    doJavaScript(
-      "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
-      "Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");" );
-  }));
   m_menuParent->touchStarted().preventPropagation();
   m_menuParent->touchStarted().preventDefaultAction();
+  m_menuParent->touchStarted().connect( this, &PopupDivMenu::parentTouchStarted );
 
-  m_menuParent->mouseWentOver().connect( this, &PopupDivMenu::parentMouseWentOver );
   
   // TODO: see if we can connect to the 'cancel' signal in JS, so we can just do this there
   //       (but for the moment I dont see how to do this since WPopupMenu::cancel_ is private and

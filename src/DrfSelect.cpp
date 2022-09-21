@@ -2774,7 +2774,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   AuxWindow::addHelpInFooter( m_footer, "detector-edit-dialog" );
   
   DrfDownloadResource *xmlResource = new DrfDownloadResource( this );
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   m_xmlDownload = new WAnchor( WLink(xmlResource), m_footer );
   m_xmlDownload->setTarget( AnchorTarget::TargetNewWindow );
   m_xmlDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );

@@ -296,6 +296,7 @@ void InterSpecApp::setupDomEnvironment()
   
   if( isMobile() )
   {
+    // if isTablet(), then these css files may later get unloaded in setupWidgets().
     useStyleSheet( "InterSpec_resources/InterSpecMobileCommon.css" );
     if( isAndroid() )
       useStyleSheet( "InterSpec_resources/InterSpecMobileDroid.css" );
@@ -791,6 +792,35 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   m_sucessfullyLoadedSignal->connect( this, &InterSpecApp::loadSuccesfullCallback );
   doJavaScript( "setTimeout(function(){" + m_sucessfullyLoadedSignal->createCall() + "}, 250);" );
 #endif
+  
+  // The user can override the mobile setting for tablets, so we'll fix-up what CSS we load here.
+  //  I think we could delay loading the CSS for mobile from setupDomEnvironment() to here, without
+  //  any effect, but I havent tested yet - and I dont feel totally great about how things are
+  //  structured w.r.t. the "TabletUseDesktopMenus" user preference yet.
+  if( isTablet() )
+  {
+    // The user could have changed the "TabletUseDesktopMenus" preference, and done a
+    //  "Clear Session...".
+    //  InterSpecApp::isTablet() does not account for the user preference, while
+    //  InterSpec::isTablet() does.
+    if( m_viewer->isTablet() )
+    {
+      // WApplication::useStyleSheet will essentially be a no-op if the file has already been loaded
+      useStyleSheet( "InterSpec_resources/InterSpecMobileCommon.css" );
+      if( isAndroid() )
+        useStyleSheet( "InterSpec_resources/InterSpecMobileDroid.css" );
+      else
+        useStyleSheet( "InterSpec_resources/InterSpecMobileApple.css" );
+    }else
+    {
+      // WApplication::useStyleSheet will essentially be a no-op if the file has not been loaded
+      removeStyleSheet( "InterSpec_resources/InterSpecMobileCommon.css" );
+      if( isAndroid() )
+        removeStyleSheet( "InterSpec_resources/InterSpecMobileDroid.css" );
+      else
+        removeStyleSheet( "InterSpec_resources/InterSpecMobileApple.css" );
+    }//
+  }//if( isTablet() )
 }//void setupWidgets()
 
 
@@ -1390,6 +1420,12 @@ bool InterSpecApp::isMobile() const
 
 bool InterSpecApp::isAndroid() const
 {
+#if( ANDROID )
+  return true;
+#elif( BUILD_AS_ELECTRON_APP || IOS || BUILD_AS_OSX_APP )
+  return false;
+#endif
+  
   const WEnvironment &env = environment();
   const bool isDroid = ( env.agent()==WEnvironment::MobileWebKitAndroid
                       || env.userAgent().find("Android") != std::string::npos
@@ -1401,9 +1437,6 @@ bool InterSpecApp::isAndroid() const
 
 bool InterSpecApp::isPhone() const
 {
-  //see: (iOS) http://www.enterpriseios.com/wiki/UserAgent
-  //     (Android) http://www.gtrifonov.com/2011/04/15/google-android-user-agent-strings-2/
-  
   const WEnvironment &env = environment();
   return ( env.userAgent().find("iPhone") != std::string::npos
            || env.userAgent().find("iPod") != std::string::npos
@@ -1411,6 +1444,7 @@ bool InterSpecApp::isPhone() const
                && env.userAgent().find("Mobile") != std::string::npos)
            || env.userAgent().find("RIM ") != std::string::npos);
 }//bool InterSpecApp::isPhone()
+
 
 bool InterSpecApp::isTablet() const
 {

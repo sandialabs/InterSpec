@@ -80,6 +80,9 @@ namespace
       m_text = new WText( this );
       m_load = new WPushButton( "Load", this );
       
+      // We need this, or else by the time we get to loadSampleSelected(), no row will be
+      this->touchStarted().preventPropagation();
+      
       addStyleClass( "SampleSpecRow" );
       m_text->addStyleClass( "SampleSpecText" );
       m_load->addStyleClass( "SampleSpecLoadBtn" );
@@ -1025,7 +1028,10 @@ void UseInfoWindow::loadSampleSelected()
 {
   WModelIndexSet indices = m_tableSample->selectedIndexes();
   if( indices.empty() )
+  {
+    cout << "UseInfoWindow::loadSampleSelected(): No selected indices." << endl;
     return;
+  }
   
   loadSample( *indices.begin() );
 }//void loadSampleSelected( )

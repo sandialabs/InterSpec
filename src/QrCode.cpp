@@ -200,9 +200,10 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     const vector<unsigned char> svg_data( svg_begin, svg_end );
     WMemoryResource *svgResource = new WMemoryResource( "image/svg+xml", svg_data, window );
     if( title.size() )
-      svgResource->suggestFileName( title + ".svg" );
+      svgResource->suggestFileName( title + ".svg", WResource::Attachment );
     else
-      svgResource->suggestFileName( "qr.svg" );
+      svgResource->suggestFileName( "qr.svg", WResource::Attachment );
+    
     
     WImage *qrImage = new WImage( WLink(svgResource), window->contents() );
     //WText *qrImage = new WText( qr_svg.first, window->contents() );
@@ -222,7 +223,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     
     WContainerWidget *btndiv = new WContainerWidget( window->contents() );
     
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
     WAnchor *svgDownload = new WAnchor( WLink(svgResource), btndiv );
     svgDownload->setTarget( AnchorTarget::TargetNewWindow );
     svgDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );

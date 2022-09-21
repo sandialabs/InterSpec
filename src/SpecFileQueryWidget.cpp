@@ -91,8 +91,9 @@
 #include "target/electron/ElectronUtils.h"
 #endif
 
-#if( !BUILD_AS_ELECTRON_APP && defined(WIN32) && BUILD_AS_LOCAL_SERVER )
+#if( defined(WIN32) )
 #include <shellapi.h>  //for ShellExecute
+#include <shlobj_core.h> //for ILCreateFromPath and SHOpenFolderAndSelectItems
 #endif
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
@@ -1582,7 +1583,7 @@ void SpecFileQueryWidget::init()
   
   ResultCsvResource *csvresource = new ResultCsvResource( m_resultmodel, this );
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   m_csv = new WAnchor( WLink(csvresource) );
   m_csv->setTarget( Wt::TargetNewWindow );
 #else
@@ -2575,15 +2576,15 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     double lastupdate = SpecUtils::get_wall_time();
     
     //We could choose something like 100 for nfile_at_a_time with the only
-    //  dowsides being N42 files would parse any faster due to not enough
+    //  downsides being N42 files would parse any faster due to not enough
     //  threads being available, and also the fact that when parsing multiple
     //  file, hard drive bandwidth is probably the main limiting factor.
-#if( defined(WIN32) )
-    //The penalty of multiple seeks is redicuolous on spinning drives - just use a single thread...
-    const int nfile_at_a_time = 1;
-#else
+    //
+    // Note: the penalty of multiple seeks is ridiculous on spinning drives
+    //  so I think the better solution would be to have SpecFileInfoToQuery::fill_info_from_file
+    //  read files into a std::stringstream (in memory), and then try to parse from there.  This
+    //  would really reduce the number of accesses, and speed things up.
     const int nfile_at_a_time = SpecUtilsAsync::num_physical_cpu_cores();
-#endif
     
     SpecUtilsAsync::ThreadPool pool;
     
@@ -2762,6 +2763,8 @@ void SpecFileQueryWidget::selectionChanged()
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 void SpecFileQueryWidget::openSelectedFilesParentDir()
 {
+  //Opens the directory and highlights file in operating system file manager
+  
   const WModelIndexSet selected = m_resultview->selectedIndexes();
   if(selected.size() != 1 )
     return;
@@ -2775,32 +2778,39 @@ void SpecFileQueryWidget::openSelectedFilesParentDir()
   if( !SpecUtils::is_directory(parentdir) )
     return;
   
-#if( BUILD_AS_ELECTRON_APP )
-  //Opens the directory in the operating system
-  //doJavaScript( "const {shell} = require('electron'); shell.openItem('" + parentdir + "');" );  //Works on macOS.  Need to test on WIndows.
+//#if( BUILD_AS_ELECTRON_APP )
+  //  TODO: we could (should?) implement this as an electron specific function in InterSpecAddOn.cpp/.h or ElectronUtils.h/.cpp; either as dedicated function, or via InterSpecAddOn::send_nodejs_message - probably dedicated function would be best
+  // In node.js, we can do this via:
+  // const {shell} = require('electron'); shell.showItemInFolder('" + filenameandy + "');" );
+//#endif
   
-  //Opens the directory and highlights file in oeprating system file manager
-  //For windows need to ecape '\'.
-
 #if( defined(WIN32) )
-  //SpecUtils::ireplace_all( filenameandy, "\\\\", "[%%%%%%%%]" );
+  //For windows need to escape '\'.
+  static_assert( 0, "Totally untested on Windows" );
+  
   SpecUtils::ireplace_all( filenameandy, "\\", "\\\\" );
-  //SpecUtils::ireplace_all( filenameandy, "[%%%%%%%%]", "\\\\\\\\" );
-  //ToDo: Check into compilation optimization 
-  //      Add time it took for a search to result text
-#endif
-
-  doJavaScript( "const {shell} = require('electron'); shell.showItemInFolder('" + filenameandy + "');" );  //Works on macOS.  Need to test on WIndows.
-#elif( BUILD_AS_LOCAL_SERVER || __APPLE__ )
-#if( __APPLE__ )
+  
+  // For similar implementation, see: https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_win.cc
+  
+  ITEMIDLIST *item_list = ILCreateFromPath(filename);
+  if( item_list )
+  {
+    //Do we need to call: CoInitializeEx ?
+    
+    HRESULT hr = SHOpenFolderAndSelectItems( item_list,0 , 0, 0 );
+    if( hr == ERROR_FILE_NOT_FOUND )
+      ShellExecute(NULL, L"open", parentdir.c_str(), NULL, NULL, SW_SHOW);
+    
+    ILFree( item_list );
+  }//if( item_list )
+#elif( __APPLE__ )
+  // Doesnt highlight the specific file
+  //  See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_mac.mm for how this could/should be implemented, at least for BUILD_AS_OSX_APP
   const string command = "open '" + parentdir + "'";
-  system( command.c_str() );  //Havent tested with macOS Sandboxing yet.
-#elif( BUILD_AS_LOCAL_SERVER && defined(WIN32) )
-  ShellExecute(NULL, NULL, parentdir.c_str(), NULL, NULL,  SW_SHOWNORMAL);
-  //static_assert( 0, "You need to implement opening a Explorer window or something" );
+  system( command.c_str() );
 #else
-  static_assert( 0, "You need to implement opening a Finder window or something" );
-#endif
+  static_assert( 0, "No implementation for showing files in Linux for Electron build" );
+  // See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_linux.cc
 #endif
 }//void SpecFileQueryWidget::openSelectedFilesParentDir()
 #endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )

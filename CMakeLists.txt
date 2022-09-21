@@ -311,6 +311,7 @@ set(sources
     src/PeakEdit.cpp
     src/UseInfoWindow.cpp
     src/LicenseAndDisclaimersWindow.cpp
+    src/FileDragUploadResource.cpp
     src/LocalTimeDelegate.cpp
     src/RowStretchTreeView.cpp
     src/DataBaseVersionUpgrade.cpp
@@ -402,6 +403,7 @@ set(headers
     InterSpec/PeakEdit.h
     InterSpec/UseInfoWindow.h
     InterSpec/LicenseAndDisclaimersWindow.h
+    InterSpec/FileDragUploadResource.h
     InterSpec/LocalTimeDelegate.h
     InterSpec/RowStretchTreeView.h
     InterSpec/DataBaseVersionUpgrade.h
@@ -451,10 +453,6 @@ if(USE_DB_TO_STORE_SPECTRA)
     list(APPEND headers InterSpec/DbStateBrowser.h InterSpec/DbFileBrowser.h)
 endif(USE_DB_TO_STORE_SPECTRA)
 
-if(NOT ANDROID AND NOT IOS)
-    list(APPEND sources src/FileDragUploadResource.cpp)
-    list(APPEND headers InterSpec/FileDragUploadResource.h)
-endif(NOT ANDROID AND NOT IOS)
 
 if(INCLUDE_ANALYSIS_TEST_SUITE)
     list(APPEND sources src/SpectrumViewerTester.cpp)

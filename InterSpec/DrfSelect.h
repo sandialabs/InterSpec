@@ -348,7 +348,7 @@ protected:
   Wt::WPushButton *m_cancelButton;
   Wt::WPushButton *m_noDrfButton;
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   Wt::WAnchor *m_xmlDownload;
 #else
   Wt::WPushButton *m_xmlDownload;

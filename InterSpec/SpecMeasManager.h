@@ -76,9 +76,7 @@ class SpectraFileModel;
 class PopupDivMenuItem;
 class SpectraFileHeader;
 class RowStretchTreeView;
-#if( !ANDROID && !IOS )
 class FileDragUploadResource;
-#endif
 class DownloadSpectrumResource;
 class SpecificSpectrumResource;
 
@@ -374,7 +372,6 @@ public:
   void browsePrevSpectraAndStatesDb();
 #endif
   
-#if( !ANDROID && !IOS )
   //Some resources to enable drag-n-drop of spectrum files to various widgets.
   //  Call FileDragUploadResource::addDragNDropToWidget( WWebWidget * ) to
   //  enable a widgets drag-n-drop support.
@@ -382,8 +379,6 @@ public:
   FileDragUploadResource *foregroundDragNDrop();
   FileDragUploadResource *secondForegroundDragNDrop();
   FileDragUploadResource *backgroundDragNDrop();
-#endif
-  
 
   //handleZippedFile:  presents the user with a dialog to extract and use one
   //  of the spectrum files in a zip archive.  Returns true if a valid zip file.
@@ -489,11 +484,9 @@ protected:
   DownloadSpectrumResource *m_downloadResources[static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes)];
   SpecificSpectrumResource *m_specificResources[static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes)];
   
-#if( !ANDROID && !IOS )
   FileDragUploadResource *m_foregroundDragNDrop;
   FileDragUploadResource *m_secondForegroundDragNDrop;
   FileDragUploadResource *m_backgroundDragNDrop;
-#endif
   
   //m_sql same as m_viewer->sql();
   std::shared_ptr<DataBaseUtils::DbSession> m_sql;

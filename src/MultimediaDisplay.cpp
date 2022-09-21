@@ -66,7 +66,7 @@ class MultimediaDisplay : public WContainerWidget
   WPushButton *m_prev;
   WText *m_pos_txt;
   WPushButton *m_next;
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   WAnchor *m_download;
 #else
   WPushButton *m_download;
@@ -142,7 +142,7 @@ public:
     if( interspec )
       InterSpecUser::associateWidget( interspec->m_user, "AutoShowSpecMultimedia", cb, interspec );
     
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
     m_download = new WAnchor( WLink(m_resource), footer );
     m_download->setTarget( AnchorTarget::TargetNewWindow );
     m_download->setStyleClass( "LinkBtn DownloadLink" );

@@ -23,7 +23,6 @@
 #include "InterSpec_config.h"
 
 #include "InterSpec/AuxWindow.h"
-#include "InterSpec/InterSpecApp.h"
 #include <Wt/WText>
 #include <Wt/WTheme>
 #include <Wt/WPanel>
@@ -578,7 +577,7 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
     m_isAndroid( false ),
     m_footer(NULL)
 {
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
+  InterSpec *viewer = InterSpec::instance();
   
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCollapse);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowExpand);
@@ -597,8 +596,8 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
 #endif
   
   
-  const bool isPhone = app ? app->isPhone() : false;
-  const bool isTablet = app ? app->isTablet() : false;
+  const bool isPhone = viewer ? viewer->isPhone() : false;
+  const bool isTablet = viewer ? viewer->isTablet() : false;
   
   const bool isPhoneNotFullScreen = properties.testFlag(AuxWindowProperties::PhoneNotFullScreen);
   const bool isTabletNotFullScreen = properties.testFlag(AuxWindowProperties::TabletNotFullScreen);
@@ -620,7 +619,7 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   if( isTablet && !isTabletNotFullScreen && !isPhoneNotFullScreen )
     m_isTablet = true;
   
-  m_isAndroid = app && app->isAndroid();
+  m_isAndroid = (viewer && viewer->isAndroid());
 
   
 //  setJavaScriptMember( "wtResize", "function(ignored,w,h){console.log('In My wtResize');}" );
@@ -1387,13 +1386,13 @@ JSignal<> &AuxWindow::expanded()
 
 void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
 {
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
+  InterSpec *viewer = InterSpec::instance();
   
   Wt::WImage *image = nullptr;
   
   image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/help_minimal.svg"), footer);
   image->setStyleClass("Wt-icon FooterHelpBtn");
-  image->setFloatSide( (app && app->isMobile()) ? Wt::Right : Wt::Left );
+  image->setFloatSide( (viewer && viewer->isMobile()) ? Wt::Right : Wt::Left );
   
   image->setAlternateText("Help");
   image->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, page ) );

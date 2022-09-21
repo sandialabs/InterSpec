@@ -545,7 +545,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   if( navigationAction.navigationType == WKNavigationTypeLinkActivated )
   {
-    //CSVs from decay widget get here
+    //CSVs from decay widget get here, as do PNG images
     NSLog( @"WKNavigationTypeLinkActivated" );
     
     //To open the URL in safari, you can do:
@@ -569,7 +569,16 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
       {
         mimetype = [response MIMEType];
         name = [response suggestedFilename];
-      }
+        
+        // The PNG/SVG image savings dont seem to get the filename... so we'll do a poor hack to get _something_
+        if( mimetype && name && ([name caseInsensitiveCompare:@"Unknown"] == NSOrderedSame) ) {
+          NSArray<NSString *> *parts = [mimetype componentsSeparatedByString:@"/"];
+          if( parts && ([parts count] == 2) )
+            name = [NSString stringWithFormat:@"interspec_export.%@", parts[1]];
+        }
+        
+        //NSLog( @"completionHandlerBlock: mimetype '%@', name: '%@'", mimetype, name );
+      }//if( response )
       
       if( name == nil )
         name = @"download.txt";
@@ -624,6 +633,15 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   decisionHandler( WKNavigationActionPolicyAllow );
 }//decidePolicyForNavigationAction
+
+// Could implement the below:
+//- (void)webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse
+//    decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler
+//{
+//  NSLog( @"decidePolicyForNavigationResponse" );
+//  decisionHandler( WKNavigationResponsePolicyAllow ); //WKNavigationResponsePolicyDownload
+//}//decidePolicyForNavigationResponse
+
 
 
 /*

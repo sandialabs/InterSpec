@@ -3765,7 +3765,7 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   if( !parent )
     return;
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   WAnchor *btn = new WAnchor( WLink(m_html_download_rsc), parent );
   btn->setTarget( AnchorTarget::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
@@ -3790,7 +3790,7 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   m_calc_failed.connect( btn, &WWidget::disable );
   m_calc_successful.connect( btn, &WWidget::enable );
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   btn = new WAnchor( WLink(m_xml_download_rsc), parent );
   btn->setTarget( AnchorTarget::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );

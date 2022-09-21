@@ -681,7 +681,7 @@ public:
 #if( IMP_CALp_BTN_NEAR_COEFS )
     
     WResource *csv = m_model->peakCsvResource();
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
     m_downloadCALp = new WAnchor( WLink(m_tool->calpResources()), btndiv );
     m_downloadCALp->setTarget( AnchorTarget::TargetNewWindow );
     m_downloadCALp->setStyleClass( "LinkBtn DownloadLink" );
@@ -1303,7 +1303,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_uploadCALp->setStyleClass( "LinkBtn UploadBtn CALp" );
   m_uploadCALp->clicked().connect( this, &EnergyCalTool::handleRequestToUploadCALp );
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   m_downloadCALp = new WAnchor( WLink(m_calpResource), btndiv );
   m_downloadCALp->setTarget( AnchorTarget::TargetNewWindow );
   m_downloadCALp->setStyleClass( "LinkBtn DownloadLink CALp" );

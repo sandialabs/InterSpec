@@ -896,6 +896,8 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
   file_size = SpecUtils::file_size(filepath);
   file_path_hash = std::hash<std::string>()(filepath);
   
+  // TODO: For files that are not N42 or XML files (as determined by filename), and less than a number of MB, read the file into memory, and then parse.  This will minimize hard-drive seeks (for spinning drives), and allow multithreaded searches to work better - hopefully.
+  
   SpecUtils::SpecFile meas;
   const bool loaded = meas.load_file(filepath, SpecUtils::ParserType::Auto, filepath);
   if( !loaded )

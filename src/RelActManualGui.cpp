@@ -618,7 +618,7 @@ void RelActManualGui::init()
   
   m_htmlResource = new RelActManualReportResource( this, m_interspec, btndiv );
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   m_downloadHtmlReport = new WAnchor( WLink(m_htmlResource), btndiv );
   m_downloadHtmlReport->setTarget( AnchorTarget::TargetNewWindow );
   m_downloadHtmlReport->setStyleClass( "LinkBtn DownloadLink CALp" );

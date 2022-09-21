@@ -186,6 +186,7 @@ namespace
       
       filename += ".csv";
       suggestFileName( filename, WResource::Attachment );
+      response.setMimeType( "text/csv" );
       
       std::ostream &out = response.out();
       
@@ -1108,7 +1109,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   RefGammaCsvResource *csv = new RefGammaCsvResource( this );
   csv->setTakesUpdateLock( true );
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   WAnchor *csvButton = new WAnchor( WLink(csv), bottomRow );
   csvButton->setTarget( AnchorTarget::TargetNewWindow );
   csvButton->setStyleClass( "LinkBtn DownloadLink RefGammaCsv" );

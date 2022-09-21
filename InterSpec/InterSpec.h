@@ -970,12 +970,34 @@ public:
   //  DetectorPeakResponse.
   void guessIsotopesForPeaks( Wt::WApplication *app );
   
-    
+  /** Returns if detected this is a mobile device, based on user-agent string, or compile-time
+   options.
+   
+   The function will return false on tablets when the "TabletUseDesktopMenus" preference is true.
+   If you want to know the true detected value, call InterSpecApp::isMobile(), which does not
+   account for the user preference.
+   */
   bool isMobile() const;
+  
+  /** Returns if detected this is a mobile device, based on user-agent string. */
   bool isPhone() const;
+  
+  /** Returns if detected this is a tablet, based on user-agent string.
+   
+   The function will return false on tablets when the "TabletUseDesktopMenus" preference is true.
+   If you want to know the true detected value, call InterSpecApp::isMobile(), which does not
+   account for the user preference.
+   */
   bool isTablet() const;
+  
+  /** Returns true id this is not detected to be a mobile device. */
   bool isDesktop() const;
+  
+  /** Returns !BUILD_FOR_WEB_DEPLOYMENT */
   bool isDedicatedApp() const;
+  
+  /** Returns true if built for Android, or "Android" found in user-agent string. */
+  bool isAndroid() const;
   
   
   //Some functions that effect the display options
@@ -1084,9 +1106,7 @@ protected:
   /** Creates the ColorThemeWidget Window that allows users to alter themes/colors. */
   void showColorThemeWindow();
   
-#if( !ANDROID && !IOS )
   void initDragNDrop();
-#endif //#if( !ANDROID && !IOS )
   
   void initHotkeySignal();
   void hotKeyPressed( const unsigned int value );
@@ -1334,8 +1354,8 @@ protected:
     PhoneClient          = 0x02,
     TabletClient         = 0x04,
     MobileClient         = 0x08,
-    HighBandwithClient   = 0x10,
-    DedicatedAppClient   = 0x20,
+    DedicatedAppClient   = 0x10,
+    AndroidClient        = 0x20,
     NumClientDeviceType  = 0x40
   };//enum ClientDeviceType
   

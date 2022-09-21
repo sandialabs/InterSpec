@@ -638,6 +638,8 @@ void IsotopeSearchByEnergy::resultSelectionChanged()
   if( !display && !m_viewer->toolTabsVisible() )
   {
     m_viewer->showGammaLinesWindow();
+    if( m_viewer->isPhone() )
+      m_viewer->closeGammaLinesWindow();
     display = m_viewer->referenceLinesWidget();
   }
   

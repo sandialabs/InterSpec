@@ -775,7 +775,7 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   WContainerWidget *buttonDiv = footer();
   
   WResource *csv = new FluxToolImp::FluxCsvResource( m_fluxTool );
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   WAnchor *csvButton = new WAnchor( WLink(csv), buttonDiv );
   csvButton->setTarget( AnchorTarget::TargetNewWindow );
   csvButton->setStyleClass( "LinkBtn" );

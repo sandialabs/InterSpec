@@ -144,6 +144,7 @@
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
+#include "InterSpec/FileDragUploadResource.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
 #include "InterSpec/EnergyCalPreserveWindow.h"
@@ -155,10 +156,6 @@
 
 #if( USE_DB_TO_STORE_SPECTRA )
 #include "InterSpec/DbStateBrowser.h"
-#endif
-
-#if( !ANDROID && !IOS )
-#include "InterSpec/FileDragUploadResource.h"
 #endif
 
 #if( IOS )
@@ -490,13 +487,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
       wApp->setCookie( "SpectrumViewerUUID", username, 3600*24*365 );
     }//try / catch
   }//if( no username )
-  
-  detectClientDeviceType();
 
   
-  if( isPhone() )
+  if( app->isPhone() )
     username += "_phone";
-  else if( isTablet() )
+  else if( app->isTablet() )
     username += "_tablet";
 
 // Set up the session; open the database.
@@ -515,9 +510,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
     }else
     {
       InterSpecUser::DeviceType type = InterSpecUser::Desktop;
-      if( isPhone() )
+      if( app->isPhone() )
         type = InterSpecUser::PhoneDevice;
-      else if( isTablet() )
+      else if( app->isTablet() )
         type = InterSpecUser::TabletDevice;
     
       InterSpecUser *newuser = new InterSpecUser( username, type );
@@ -531,6 +526,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     transaction.commit();
   }//end interacting with DB
   
+  detectClientDeviceType();
 
   m_peakModel = new PeakModel( this );
   m_spectrum   = new D3SpectrumDisplayDiv();
@@ -596,6 +592,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   
   WWidget *menuWidget = NULL;
+  if( isMobile() )
+  {
+    
+  }
+    
   if( isMobile() )
   {
     m_mobileMenuButton = new WPushButton( "", wApp->domRoot() );
@@ -1034,9 +1035,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     addToolsTabToMenuItems();
   }//If( start with tool tabs showing ) / else
  
-#if( !ANDROID && !IOS )
   initDragNDrop();
-#endif
   
 #if( USE_DB_TO_STORE_SPECTRA )
   updateSaveWorkspaceMenu();
@@ -1374,6 +1373,11 @@ bool InterSpec::isDedicatedApp() const
   return (m_clientDeviceType & DedicatedAppClient);
 }
 
+bool InterSpec::isAndroid() const
+{
+  return (m_clientDeviceType & ClientDeviceType::AndroidClient);
+}
+
 void InterSpec::detectClientDeviceType()
 {
   m_clientDeviceType= 0x0;
@@ -1382,10 +1386,11 @@ void InterSpec::detectClientDeviceType()
   if( !app )
     return;
 
-
-  const bool phone= app->isPhone();
-  const bool tablet= app->isTablet();
-  const bool mobile= app->isMobile();
+  const bool phone  = app->isPhone();
+  bool tablet = app->isTablet();
+  bool mobile = app->isMobile();
+  if( mobile && !phone && tablet )
+    tablet = mobile = !InterSpecUser::preferenceValue<bool>("TabletUseDesktopMenus", this);
 
   for( ClientDeviceType type= ClientDeviceType( 0x1 );
        type < NumClientDeviceType; type= ClientDeviceType( type << 1 ) )
@@ -1412,34 +1417,24 @@ void InterSpec::detectClientDeviceType()
           m_clientDeviceType |= type;
         break;
 
-      case HighBandwithClient:
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
-        m_clientDeviceType|= type;
-#else
-        if( app->environment().clientAddress().find( "127.0.0" ) != string::npos )
-          m_clientDeviceType|= type;
-// should probably do some other testing here....
-#endif
-        //        std::cerr << "env.clientAddress()=" << env.clientAddress() <<
-        //        std::endl;
-        //        env.clientAddress() //134.252.17.78 (from anothother
-        //        computer), 127.0.0.1 from same computer
-        break;
-
       case DedicatedAppClient:
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
-        m_clientDeviceType|= type;
+        m_clientDeviceType |= type;
 #endif
         break;
 
+      case AndroidClient:
+        if( app->isAndroid() )
+          m_clientDeviceType |= type;
+        break;
+        
       case NumClientDeviceType:
         break;
-    } // switch( type )
-  } // for( loop over ClientDeviceType enums )
-} // void detectClientDeviceType()
+    }// switch( type )
+  }// for( loop over ClientDeviceType enums )
+}// void detectClientDeviceType()
 
 
-#if( !ANDROID && !IOS )
 void InterSpec::initDragNDrop()
 {
   LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsFileUploadFcn);
@@ -1455,7 +1450,6 @@ void InterSpec::initDragNDrop()
   
   doJavaScript( "Wt.WT.FileUploadFcn();" );
 }//void InterSpec::initDragNDrop()
-#endif //#if( !ANDROID && !IOS )
 
 
 void InterSpec::initHotkeySignal()
@@ -6753,6 +6747,31 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                 true, HelpSystem::ToolTipPosition::Right );
     InterSpecUser::associateWidget( m_user, "LoadDefaultDrf", checkbox, this );
   }//end add "LoadDefaultDrf"
+  
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+  if( app && app->isTablet() )
+  {
+    WCheckBox *checkbox = new WCheckBox( " Desktop Interface" );
+    item = subPopup->addWidget( checkbox );
+    HelpSystem::attachToolTipOn( item, "Selects to use either a more mobile or desktop style"
+                                " application interface.  The primary difference is use of a"
+                                " \"Hamburger\" style menu, or a menu bar.\n"
+                                "Changing this preference wont take effect until the app is"
+                                " restarted, or the \"Clear Session...\" option is chosen.",
+                                true, HelpSystem::ToolTipPosition::Right );
+    
+    const string msg = "Changes will not take effect until app is restarted or refreshed."
+    "<div onclick=\"Wt.emit('" + wApp->root()->id() + "',{name:'miscSignal'}, 'clearSession');"
+    "try{$(this.parentElement.parentElement).remove();}catch(e){}return false;\" "
+    "class=\"clearsession\"><span class=\"clearsessiontxt\">Refresh Session</span></div>";
+    const WString wmsg = WString::fromUTF8( msg );
+    checkbox->checked().connect( boost::bind( &WarningWidget::addMessageUnsafe,
+      m_warnings, wmsg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ) );
+    checkbox->unChecked().connect( boost::bind( &WarningWidget::addMessageUnsafe,
+      m_warnings, wmsg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ) );
+    
+    InterSpecUser::associateWidget( m_user, "TabletUseDesktopMenus", checkbox, this );
+  }//if( is tablet )
   
 	item = subPopup->addMenuItem("Color Themes...");
 	item->triggered().connect(boost::bind(&InterSpec::showColorThemeWindow, this));

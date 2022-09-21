@@ -219,7 +219,7 @@ m_apply( nullptr )
   
   JsonDownloadResource *downloadResource = new JsonDownloadResource( this );
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   WAnchor *download = new WAnchor( WLink(downloadResource), adSubDiv );
   download->setTarget( AnchorTarget::TargetNewWindow );
   download->setStyleClass( "LinkBtn DownloadLink DownloadColorTheme" );

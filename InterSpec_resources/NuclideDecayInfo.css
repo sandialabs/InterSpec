@@ -3,7 +3,7 @@
 
 .mycloseicon, .mycloseicon:hover
 {
-background: transparent url(../resources/themes/default/closeicons-tab.png) no-repeat scroll right top;
+background: transparent url(images/closeicons-tab.png) no-repeat scroll right top;
 margin: 0px 4px 0px 0px;
 height: 13px;
 width: 13px;

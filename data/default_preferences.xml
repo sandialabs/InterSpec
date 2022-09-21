@@ -42,4 +42,5 @@
  <pref name="ExternalRidExe" type="String"></pref>
  <pref name="AlwaysCallExternalRid" type="Integer">0</pref>
  <pref name="AutoShowSpecMultimedia" type="Boolean">false</pref>
+ <pref name="TabletUseDesktopMenus" type="Boolean">false</pref>
 </preferences>
