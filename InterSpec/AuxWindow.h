@@ -68,6 +68,7 @@ enum AuxWindowProperties
   /** Dont allow the window to be collapsed.  TODO: invert this to default to not allowing collapse. */
   DisableCollapse = 0x10,
   
+  /** TODO: SetCloseable not actually implemented - actually the opposite should be implemented - e.g., NotCloseable. */
   SetCloseable = 0x20,
   
   /** Enables resize.
@@ -271,6 +272,9 @@ public:
   /** Returns if dialog is customized for phones. */
   bool isPhone() const;
   
+protected:
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
+
 protected:
   bool m_auxIsHidden;
   bool m_modalOrig;  //original modal value

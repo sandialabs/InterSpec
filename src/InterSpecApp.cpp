@@ -294,10 +294,31 @@ void InterSpecApp::setupDomEnvironment()
   root()->setAttributeValue( "oncontextmenu", "return false;" );
 #endif
   
+  // Define some javascript to artificially trigger a resize event; this is a hack used a few
+  //  places to invoke the Wt layout stuff, when its needed, but not being triggered automatically.
+  //  To call this code, use something like:
+  //    wApp->doJavaScript(wApp->javaScriptClass() + ".TriggerResizeEvent();");
+  declareJavaScriptFunction( "TriggerResizeEvent",
+  "function(){"
+    "const a = function(ms){"
+      "setTimeout( function(){ "
+        + wApp->javaScriptClass() + ".layouts2.scheduleAdjust();"
+        "window.dispatchEvent(new Event('resize')); "
+      "}, ms );"
+    "};"
+    // The number of calls, or when the calls are made to trigger resizes has not been investigated
+    "a(0); a(50); a(500); a(2500);"
+  "}"
+  );
+  cout << "wApp->javaScriptClass()='" << wApp->javaScriptClass() << "'" << endl;
+  
+  
   if( isMobile() )
   {
     // if isTablet(), then these css files may later get unloaded in setupWidgets().
+    useStyleSheet( "InterSpec_resources/InterSpecSafeArea.css" );
     useStyleSheet( "InterSpec_resources/InterSpecMobileCommon.css" );
+    
     if( isAndroid() )
       useStyleSheet( "InterSpec_resources/InterSpecMobileDroid.css" );
     else
@@ -351,24 +372,26 @@ void InterSpecApp::setupDomEnvironment()
   {
     //Try to parse out an integer followed by four floats
     int orientation;
-    float vals[4];
+    float top, right, bottom, left;
     const int nargscanned = sscanf( iter->second[0].c_str(), "%i,%f,%f,%f,%f",
-                              &orientation, &(vals[0]), &(vals[1]), &(vals[2]), &(vals[3]) );
+                              &orientation, &top, &right, &bottom, &left );
     
     if( nargscanned == 5 )
     {
       const DeviceOrientation orient = DeviceOrientation(orientation);
       cout << "Received initial orientation: " << orientation
-           << " and SafeAreas={" << vals[0] << ", " << vals[1] << ", " << vals[2] << ", " << vals[3] << "}" << endl;
-      if( (orient!=DeviceOrientation::LandscapeLeft && orient!=DeviceOrientation::LandscapeRight)
-         || vals[0] < 0 || vals[0] > 50 || vals[1] < 0 || vals[1] > 75 || vals[2] < 0 || vals[2] > 50 || vals[3] < 0 || vals[3] > 75 )
+           << " and SafeAreas={" << top << ", " << right << ", " << bottom << ", " << left << "}" << endl;
+      if( ((orient != DeviceOrientation::LandscapeLeft)
+           && (orient != DeviceOrientation::LandscapeRight))
+         || (top < 0)    || (top > 50)
+         || (right < 0)  || (right > 75)
+         || (bottom < 0) || (bottom > 50)
+         || (left < 0)   || (left > 75) )
       {
-        cerr << "Intial device orientations invalid!" << endl;
+        cerr << "Initial device orientations invalid!" << endl;
       }else
       {
-        m_orientation = orient;
-        for( size_t i = 0; i < 4; ++i )
-          m_safeAreas[i] = vals[i];
+        setSafeAreaInsets( orientation, top, right, bottom, left );
       }
     }else
     {
@@ -436,6 +459,15 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   }//try / catch to create a InterSpec object
   
   root()->addStyleClass( "specviewer" );
+  
+  // TODO: we could add an explicit CSS class 
+  // @media screen and (max-device-width: 640px) { ... }
+  //if( isPhone() )
+  //  root()->addStyleClass( "is-phone" );  //see also LandscapeRight and LandscapeLeft CSS classes
+  //else if( isTablet() )
+  //  root()->addStyleClass( "is-tablet" );
+  //if( isMobile() )
+  //  root()->addStyleClass( "is-mobile" );
   
   if( !m_miscSignal )
   {
@@ -706,10 +738,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       
 #if( IOS || ANDROID )
       //For iPhoneX* devices we should trigger a resize once
-      auto fcn = boost::bind( &InterSpec::doJavaScript, m_viewer, "window.dispatchEvent(new Event('resize'));" );
-      WTimer::singleShot( 250, fcn );
-      WTimer::singleShot( 500, fcn );
-      WTimer::singleShot( 1000, fcn );
+      doJavaScript( javaScriptClass() + ".TriggerResizeEvent();" );
 #endif
       
     }else
@@ -803,6 +832,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     //  "Clear Session...".
     //  InterSpecApp::isTablet() does not account for the user preference, while
     //  InterSpec::isTablet() does.
+    //  Note that we are not unloading InterSpecSafeArea.css, even if user has requested "Desktop"
+    //   version of app
     if( m_viewer->isTablet() )
     {
       // WApplication::useStyleSheet will essentially be a no-op if the file has already been loaded
@@ -1025,8 +1056,11 @@ void InterSpecApp::setSafeAreaInsets( const int orientation, const float top,
   m_safeAreas[2] = bottom;
   m_safeAreas[3] = left;
   
-  //ToDo: see if triggering a resize event is ever necassary
-  //doJavaScript( "setTimeout(function(){window.dispatchEvent(new Event('resize'));},0);" );
+  //ToDo: see if triggering a resize event is ever necessary
+  //  doJavaScript( javaScriptClass() + ".TriggerResizeEvent();" );
+  
+  // Note that CSS takes care of insets, mostly by detecting the LandscapeLeft and LandscapeRight
+  //  CSS classes, which are set by the `DoOrientationChange` javascript function
   
   cout << "Set safe area insets: orientation=" << orientation
        << ", safeAreas={" << top << ", " << right << ", "
@@ -1046,7 +1080,6 @@ void InterSpecApp::getSafeAreaInsets( InterSpecApp::DeviceOrientation &orientati
 
 void InterSpecApp::notify( const Wt::WEvent& event )
 {
-//  cout << "InterSpecApp::notify starting" << endl;
 #if( !BUILD_AS_UNIT_TEST_SUITE )
   try
   {
@@ -1062,22 +1095,6 @@ void InterSpecApp::notify( const Wt::WEvent& event )
     }//if( userEvent )
 
      WApplication::notify( event );
-    
-    //Note that event.eventType() may have change (although I dont know how/why)
-//    if( userEvent )
-//    {
-//      std::shared_ptr<const SpecMeas> meas = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
-//      std::shared_ptr<const SpecMeas> back = m_viewer->measurment(SpecUtils::SpectrumType::Background);
-//      std::shared_ptr<const SpecMeas> secn = m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
-//      
-//      if( (meas&&meas->modified())
-//          || (back&&back->modified()) || (secn&&secn->modified())
-//         //or the spectrum for any of these changed
-//         )
-//      {
-//        //save the incremental difference to the database
-//      }//
-//    }//if( userEvent )
 #if( !BUILD_AS_UNIT_TEST_SUITE )
   }catch( std::exception &e )
   {
@@ -1085,16 +1102,14 @@ void InterSpecApp::notify( const Wt::WEvent& event )
     msg += e.what();
     svlog( msg, WarningWidget::WarningMsgHigh );
     
+    char message[512];
+    snprintf( message, sizeof(message), "Uncaught exception in event loop: %s", e.what() );
+    cerr << message << endl;
 #if( PERFORM_DEVELOPER_CHECKS )
-    char message[1024];
-    snprintf(message, sizeof(message), "Uncaught exception in event loop: %s", e.what() );
     log_developer_error( __func__, message );
 #endif
-    
   }//try/catch
 #endif //#if( !BUILD_AS_UNIT_TEST_SUITE )
-
-//  cout << "\tending InterSpecApp::notify" << endl;
 }//void notify( const Wt::WEvent& event )
 
 
@@ -1400,6 +1415,10 @@ void InterSpecApp::svlog( const std::string& message, int priority )
 
 bool InterSpecApp::isMobile() const
 {
+#if( IOS || ANDROID )
+  return true;
+#endif
+
   const WEnvironment &env = environment();
   const bool isMob = (   env.agentIsMobileWebKit()
                       || env.agentIsIEMobile()
@@ -1438,6 +1457,15 @@ bool InterSpecApp::isAndroid() const
 bool InterSpecApp::isPhone() const
 {
   const WEnvironment &env = environment();
+  
+#if( IOS )
+  // TODO: we could enable this for all builds, to help with testing; if we do, add this equiv code to isMobile()
+  const Http::ParameterMap &parmap = environment().getParameterMap();
+  const Http::ParameterMap::const_iterator iter = parmap.find( "isphone" );
+  if( (iter != parmap.end()) && iter->second.size() && (iter->second[0] == "1") )
+    return true;
+#endif
+  
   return ( env.userAgent().find("iPhone") != std::string::npos
            || env.userAgent().find("iPod") != std::string::npos
            || (env.userAgent().find("Android") != std::string::npos
@@ -1448,10 +1476,19 @@ bool InterSpecApp::isPhone() const
 
 bool InterSpecApp::isTablet() const
 {
-    const WEnvironment &env = environment();
-    const string &agent = env.userAgent();
+  const WEnvironment &env = environment();
+  
+#if( IOS )
+  // TODO: we could enable this for all builds, to help with testing; if we do, add this equiv code to isMobile()
+  const Http::ParameterMap &parmap = environment().getParameterMap();
+  const Http::ParameterMap::const_iterator iter = parmap.find( "istablet" );
+  if( (iter != parmap.end()) && iter->second.size() && (iter->second[0] == "1") )
+    return true;
+#endif
+  
+  const string &agent = env.userAgent();
     
-    return (agent.find("iPad") != string::npos
+  return (agent.find("iPad") != string::npos
             || (agent.find("Android") != string::npos
                 && agent.find("Mobile") == string::npos)
             );

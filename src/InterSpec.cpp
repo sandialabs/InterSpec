@@ -532,28 +532,18 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum   = new D3SpectrumDisplayDiv();
   m_timeSeries = new D3TimeChart();
   
-  if( isPhone() )
+  if( app->isMobile() )
   {
-    //TODO: layoutSizeChanged(...) will trigger the compact axis anyway, but
-    //      I should check if doing it here saves a roundtrip
+    //TODO: layoutSizeChanged(...) will trigger the compact axis anyway, but need to check if doing it here saves a roundtrip
     m_spectrum->setCompactAxis( true );
     m_timeSeries->setCompactAxis( true );
-    
-    //For iPhoneX we need to:
-    //  X - adjust padding for safe area
-    //  X - Add padding to mobile menu to cover the notch area.
-    //  X - Change position of hamburger menu
-    //  - set .Wt-domRoot background color to match the charts
-    //  X - Detect orientation changes, and respond appropriately
-    //  X - Get the Wt area to fill the entire width (and height)
-    //  -Initial AuxWindow width/height correct
     
     LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsDoOrientationChange);
     
     const char *js = INLINE_JAVASCRIPT(
       window.addEventListener("orientationchange", Wt.WT.DoOrientationChange );
       setTimeout( Wt.WT.DoOrientationChange, 0 );
-      setTimeout( Wt.WT.DoOrientationChange, 250 );  //JIC - doesnt look necassary
+      setTimeout( Wt.WT.DoOrientationChange, 250 );  //JIC - doesnt look necessary
       setTimeout( Wt.WT.DoOrientationChange, 1000 );
     );
     
@@ -778,6 +768,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
     
     m_toolsTabs = new WTabWidget( this );
+    m_toolsTabs->addStyleClass( "ToolsTabs" );
     
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
@@ -795,7 +786,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
     //PreLoading is necessary on the m_referencePhotopeakLines widget, so that the
     //  "Isotope Search" widget will work properly when a nuclide is clicked
-    //  on to display its photpeaks
+    //  on to display its photopeaks
     //XXX In Wt 3.3.4 at least, the contents of m_referencePhotopeakLines
     //  are not actually loaded to the client until the tab is clicked, and I
     //  cant seem to get this to actually happen.
@@ -5579,7 +5570,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     }//if( m_energyCalWindow )
     
     m_toolsTabs = new WTabWidget();
-    //m_toolsTabs->addStyleClass( "ToolsTabs" );
+    m_toolsTabs->addStyleClass( "ToolsTabs" );
     
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
@@ -5706,7 +5697,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_layout->removeWidget( m_menuDiv );
     m_toolsTabs->removeTab( m_peakInfoDisplay );
     m_toolsTabs->removeTab( m_energyCalTool );
-    
+
+#if( USE_REL_ACT_TOOL )
     if( m_relActManualGui )
     {
       if( !m_relActManualWindow )
@@ -5716,6 +5708,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
     if( m_relActAutoGui )
       handleRelActAutoClose();
+#endif
     
 #if( USE_TERMINAL_WIDGET )
     if( m_terminal )
@@ -7343,6 +7336,11 @@ void InterSpec::createTerminalWidget()
     m_terminalWindow = new AuxWindow( TerminalTabTitle,
                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
                                       | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
+    
+    WPushButton *closeButton = m_terminalWindow->addCloseButtonToFooter();
+    closeButton->clicked().connect(m_terminalWindow, &AuxWindow::hide);
+    
+    AuxWindow::addHelpInFooter( m_terminalWindow->footer(), "terminal-dialog" );
     
     m_terminalWindow->rejectWhenEscapePressed();
     m_terminalWindow->finished().connect( this, &InterSpec::handleTerminalWindowClose );

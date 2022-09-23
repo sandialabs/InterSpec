@@ -921,7 +921,7 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
   
   is_spectrum_file = true;
   
-  meas.set_filename( filepath );
+  meas.set_filename( SpecUtils::filename(filepath) );
   
   filename = meas.filename();
   

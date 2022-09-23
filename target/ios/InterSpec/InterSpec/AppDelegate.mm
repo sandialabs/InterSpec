@@ -331,7 +331,7 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
       
       double timeleft = getTimeRemainingBlock();
       
-      NSLog(@"Initial background time: %f", timeleft);
+      //NSLog(@"Initial background time: %f", timeleft);
       while(timeleft > 15)  //well give ourselves 15 seconds to save the current InterSpec apps states
       {
         if( !self.isInBackground )

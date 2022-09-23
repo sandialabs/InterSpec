@@ -1364,12 +1364,14 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return true;
   }
   
+#if( USE_REL_ACT_TOOL )
   if( currdata
      && header_contains( "<RelActCalcAuto " )
      && handleRelActAutoXmlFile(infile, dialog) )
   {
     return true;
   }
+#endif
   
   delete dialog;
   

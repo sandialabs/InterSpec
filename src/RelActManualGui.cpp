@@ -195,6 +195,7 @@ public:
       solution->print_html_report( response.out(), title, foreground, display_peaks );
     }catch( std::exception &e )
     {
+      cerr << "Error handling request for RelActManualReportResource: " << e.what() << endl;
       log("error") << "Error handling request for RelActManualReportResource: " << e.what();
       response.out() << "Error creating HTML                           file: " << e.what()
       << "\n\nPlease report to InterSpec@sandia.gov.";

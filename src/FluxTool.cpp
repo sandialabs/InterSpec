@@ -774,11 +774,14 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   
   WContainerWidget *buttonDiv = footer();
   
+  WPushButton *closeButton = addCloseButtonToFooter();
+  closeButton->clicked().connect( this, &AuxWindow::hide );
+  
   WResource *csv = new FluxToolImp::FluxCsvResource( m_fluxTool );
 #if( BUILD_AS_OSX_APP || IOS )
   WAnchor *csvButton = new WAnchor( WLink(csv), buttonDiv );
   csvButton->setTarget( AnchorTarget::TargetNewWindow );
-  csvButton->setStyleClass( "LinkBtn" );
+  csvButton->setStyleClass( "LinkBtn DownloadLink" );
 #else
   WPushButton *csvButton = new WPushButton( buttonDiv );
   csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
@@ -806,9 +809,7 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   m_fluxTool->m_tableUpdated.connect( std::bind(enableDisableCsv) );
   csvButton->disable();
   
-  
-  WPushButton *closeButton = addCloseButtonToFooter();
-  closeButton->clicked().connect( this, &AuxWindow::hide );
+
   
   finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
   

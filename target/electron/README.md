@@ -71,6 +71,8 @@ npm install electron-packager
 npm run package-mac
 npm run package-win
 npm run package-linux
+
+cp ../../NOTICE.html ./release-builds/InterSpec-PLATFORM-x64/
 ```
 
 The resulting Electron package seems to run fine on a number of Linux distributions, but to run on the (now out of date) Ubuntu 12.04, you may need to install a couple packages from the package manager on the end-user system:
@@ -90,7 +92,7 @@ npm --target_arch=x64 --target_platform=linux run package-linux
 ## Building with CMake fetched and compiled dependencies
 The following commands will compile and package the InterSpec code, starting from the Fedora 35 Docker image; there is nothing special about Fedora, and any of the distributions compatible with npm, node.js, and Electron should work.
 
-Using the CMake FetchContent has not been tested on Windows, and will fail on macOS because it currently doesnt fetch/build libpng and libharu.
+Using the CMake FetchContent will fail on macOS because it currently doesnt fetch/build libpng and libharu, but otherwise it seems to work well on Windows, and various flavors of Linux.
 
 ```bash
 # From host OS terminal - grab InterSpec source code

@@ -686,8 +686,9 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
 {
   rejectWhenEscapePressed( true );
 
+  contents()->setOverflow( Wt::WContainerWidget::OverflowAuto, Wt::Orientation::Vertical );
+  
   new GammaXsGui( materialDB, materialSuggestion, viewer, contents() );
-  //gui->setHeight( WLength(100,WLength::Percentage) );
   
   AuxWindow::addHelpInFooter( footer(), "gamma-xs-dialog" );
   
@@ -695,30 +696,29 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
   closeButton->clicked().connect( this, &AuxWindow::hide );
   finished().connect( boost::bind( &GammaXsWindow::deleteWindow, this ) );
   
-  show();
-  
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
-  
-  if( app && app->isPhone() )
-  {
+  if( viewer->isPhone() )
     titleBar()->hide();
   
-    if( viewer )
-    {
-      float safeAreas[4] = { 0.0f };
+  show();
+  
+  if( viewer && (viewer->renderedHeight() > 100) )
+  {
+    float safeAreas[4] = { 0.0f };
+    
+    InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
 #if( IOS )
+    if( app )
+    {
       InterSpecApp::DeviceOrientation orientation = InterSpecApp::DeviceOrientation::Unknown;
       app->getSafeAreaInsets( orientation, safeAreas[0], safeAreas[1], safeAreas[2], safeAreas[3] );
+    }//if( app )
 #endif
-      repositionWindow( -32768, static_cast<int>(std::max(3.0f,0.5f*safeAreas[0])) );
-      setMaximumSize( WLength::Auto, viewer->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f) );
-    }
-  }else
-  {
-    resizeToFitOnScreen();
-    centerWindowHeavyHanded();
-  }//if( isPhone ) / else
-
+    //repositionWindow( -32768, static_cast<int>(std::max(3.0f,0.5f*safeAreas[0])) );
+    setMaximumSize( WLength::Auto, viewer->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f) );
+  }//if( we know the screens size )
+  
+  resizeToFitOnScreen();
+  centerWindowHeavyHanded();
   
   //If mobile take focus away from text field so the keyboard doesnt
   //  automatically show - doesnt always work

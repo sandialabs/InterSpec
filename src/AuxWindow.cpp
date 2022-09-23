@@ -745,6 +745,11 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   
   if( !m_isPhone )
   {
+    // TODO: actually respect/use the AuxWindowProperties::SetCloseable option!
+    if( !properties.testFlag(AuxWindowProperties::SetCloseable) )
+      cout << "Warning: !AuxWindowProperties::SetCloseable not currently being respected for '"
+           << windowTitle.toUTF8() << "' window." << endl;
+  
     AuxWindow::setClosable( true );
     title->touchStarted().connect( "function(s,e){ Wt.WT.AuxWindowTitlebarTouchStart(s,e,'" + id()+ "'); }" );
     title->touchMoved().connect( "function(s,e){ Wt.WT.AuxWindowTitlebarHandleMove(s,e,'" + id()+ "'); }" );
@@ -794,7 +799,7 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   }//helpWindow
   
   
-  if( properties.testFlag(AuxWindowProperties::EnableResize) )
+  if( !m_isPhone && properties.testFlag(AuxWindowProperties::EnableResize) )
   {
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum
@@ -826,6 +831,18 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
 
   show();
 }//AuxWindow()
+
+
+void AuxWindow::render( Wt::WFlags<Wt::RenderFlag> flags )
+{
+  WDialog::render( flags );
+  
+  // Sometimes the contents of the AuxWindow will not get the contents laid out correctly, so we'll
+  //  just always trigger a rather heavy handed resize event.
+  // Definitely a hack
+  if( flags & Wt::RenderFlag::RenderFull )
+    wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
+}
 
 void AuxWindow::setResizable(bool resizable)
 {

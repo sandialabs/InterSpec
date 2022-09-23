@@ -331,11 +331,7 @@ public:
     m_add_info->setHidden( !have_add_info );
     
     // Just in case the image changes the dialogs size, trigger it to resize.
-    doJavaScript( "{let a = function(ms){"
-                 + wApp->javaScriptClass() + ".layouts2.scheduleAdjust();"
-                 " setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, ms );"
-                 "};"
-                 "a(0); a(100); a(1000); a(5000);}" );
+    wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
   }//void setIndex( size_t index )
   
   

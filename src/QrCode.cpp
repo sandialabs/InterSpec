@@ -180,10 +180,13 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     InterSpec *interspec = InterSpec::instance();
     if( interspec && (interspec->renderedWidth() > 100) && (interspec->renderedHeight() > 100) )
     {
-      int wdim = std::min( interspec->renderedWidth(), interspec->renderedHeight() ) / 3;
-      if( wdim > 2*qr_size )
-        svg_size = std::min( wdim, 500 );
+      int wdim = interspec->renderedWidth() / 3;
+      wdim = std::min( wdim, (interspec->renderedHeight() - 175) );
+      wdim = std::max( wdim, 125 );
+      svg_size = std::min( wdim, svg_size );
     }//if( InterSpec knows the window size )
+    
+    svg_size = std::min( svg_size, 640 );
     
     if( qr_svg_str.empty() )
     {

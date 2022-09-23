@@ -62,8 +62,7 @@ FeatureMarkerWindow::FeatureMarkerWindow( InterSpec *viewer )
   
   // This next call seems to help resize the window to show all the contents, otherwise "Sum Peak"
   //  will hang-off the bottom of the window.  Definitely a hack.
-  doJavaScript( "setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 0 );"
-                "setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 50 );" );
+  wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
   
   if( viewer->isMobile() )
     setModal( false );

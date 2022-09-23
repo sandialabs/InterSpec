@@ -21,6 +21,11 @@
   opacity: 1;
 }
 
+.AuxWindow-content .MobileModal
+{
+  padding: 0px 4px 4px 4px;
+}
+
 .PhoneAuxWindowHeader
 {
   white-space:nowrap;
@@ -260,7 +265,6 @@ table.RecalibCoefTable
   margin-right: 9px;
   margin-top: 5px;
 }
-
 
 .PeakInfoDisplayTable
 {
