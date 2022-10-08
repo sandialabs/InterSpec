@@ -3570,15 +3570,15 @@ void DecayActivityDiv::updateMouseOver( const Wt::WMouseEvent& event )
                               = m_currentMixture->decayedToNuclidesEvolutions();
 
 
-  const size_t nDaughter = evolutions.size();
-  for( size_t i = 0; i < nDaughter; ++i )
+  const size_t nChildren = evolutions.size();
+  for( size_t i = 0; i < nChildren; ++i )
   {
-    const size_t index = nDaughter - i - 1;
+    const size_t index = nChildren - i - 1;
     const SandiaDecay::Nuclide *el = evolutions[index].nuclide;
     const double activity = evolutions[index].activity( mouseTime );
     totalActivity += activity;
     tip << "\n  " << el->symbol << " " << activity/actunit << " " << actUnitStr;
-  }//for( loop over population daughters )
+  }//for( loop over population children )
 
   tip << "\n  Total Activity: " << totalActivity/actunit << " " << actUnitStr;
 

@@ -167,7 +167,7 @@ SET(MYSQL_DATABASE_TO_USE "dev" CACHE STRING "Which mysql database to use (if ap
 
 # I think requiring c++14 will require GCC>=5, but we'll double check anyway
 if( CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0 )
-  message( fatal, "GCC less than 5 not supported." )
+  message( FATAL_ERROR, "GCC less than 5 not supported." )
 endif()
 
 
@@ -199,7 +199,8 @@ if(INCLUDE_ANALYSIS_TEST_SUITE)
 endif(INCLUDE_ANALYSIS_TEST_SUITE)
 
 if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    set(PERFORM_DEVELOPER_CHECKS ON)
+    set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
+    set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
 endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
 
@@ -209,7 +210,8 @@ if(BUILD_AS_UNIT_TEST_SUITE)
     set(USE_DB_TO_STORE_SPECTRA ON)
     set(INCLUDE_ANALYSIS_TEST_SUITE ON)
     set(TRY_TO_STATIC_LINK ON)
-    set(PERFORM_DEVELOPER_CHECKS ON)
+    set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
+    set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
 endif(BUILD_AS_UNIT_TEST_SUITE)
 
@@ -221,18 +223,20 @@ if(BUILD_FOR_WEB_DEPLOYMENT)
     #    set( USE_SQLITE3_DB ON )
     #    set( USE_MYSQL_DB OFF )
     set(DATABASE_PASSWORD_FILE "/path/to/passwords/databases.xml")
-    set(PERFORM_DEVELOPER_CHECKS OFF)
+    set(PERFORM_DEVELOPER_CHECKS OFF CACHE INTERNAL "")
+    set(SpecUtils_ENABLE_EQUALITY_CHECKS OFF CACHE INTERNAL "")
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
     set(USE_TERMINAL_WIDGET OFF)
 endif(BUILD_FOR_WEB_DEPLOYMENT)
 
 if(BUILD_AS_LOCAL_SERVER)
-    set(PERFORM_DEVELOPER_CHECKS ON)
+    set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
+    set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
 endif(BUILD_AS_LOCAL_SERVER)
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT AND BUILD_AS_LOCAL_SERVER )
-  message( FATAL "You can not buildfor both local webserver and web deployment" )
+  message( FATAL_ERROR "You can not buildfor both local webserver and web deployment" )
 endif()
 
 
@@ -687,7 +691,7 @@ if( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE OR BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS
 endif()
 
 if(USE_MYSQL_DB EQUAL USE_SQLITE3_DB)
-    MESSAGE(FATAL_ERROR   "Exactly one type of database (MySQL or SQLITE3) must be chosen")
+    MESSAGE(FATAL_ERROR "Exactly one type of database (MySQL or SQLITE3) must be chosen")
 endif()
 
 set( RAPID_XML_INC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/3rdparty )
@@ -770,7 +774,7 @@ else()
     target_link_libraries(InterSpecLib PUBLIC ${HPDF_LIBRARY})
     FIND_LIBRARY( PNG_LIBRARY NAME png HINTS ${Wt_INCLUDE_DIR}/../lib )
     if(NOT PNG_LIBRARY)
-        message(FATAL "Could not find libpng - requred for libharu")
+        message(FATAL_ERROR "Could not find libpng - requred for libharu")
     else()
         target_link_libraries(InterSpecLib PUBLIC ${PNG_LIBRARY})
     endif()
@@ -864,6 +868,9 @@ if( WIN32 )
   target_link_libraries( InterSpecLib PRIVATE opengl32.lib d2d1.lib windowscodecs.lib Dwrite.lib )
 endif( WIN32 )
 
+#if( ${PERFORM_DEVELOPER_CHECKS} EQUAL ${SpecUtils_ENABLE_EQUALITY_CHECKS} )
+#  MESSAGE(FATAL_ERROR "PERFORM_DEVELOPER_CHECKS (${PERFORM_DEVELOPER_CHECKS}) must be equal to SpecUtils_ENABLE_EQUALITY_CHECKS (${SpecUtils_ENABLE_EQUALITY_CHECKS})")
+#endif()
 
 
 list( APPEND OTHER_SUPPORT_FILES

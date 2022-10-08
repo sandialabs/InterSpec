@@ -3174,7 +3174,7 @@ bool PeakDef::ageFitNotAllowed( const SandiaDecay::Nuclide *nuc )
   const double secular = nuc->secularEquilibriumHalfLife();
   
   //simpleFast: will catch cases like Cs137 where the element decays to
-  //  very short lived daughters
+  //  very short lived descendants
   const bool simpleFast = ( (prompt > DBL_MIN)    //can obtain prompt equilibrium
                            && (prompt < 0.01*hl) //prompt half life less than 1% parents half life
                            && (secular < hl)     //can obtain secular equilibrium

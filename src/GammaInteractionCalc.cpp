@@ -746,7 +746,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
     {
       memcpy( source_point, exit_point, 3*sizeof(double) );
       trans += (srcTransCoef * dist_in_src);
-    }//if( line actually goes into daughter sphere ) / else
+    }//if( line actually goes into child sphere ) / else
   }//end codeblock to compute distance through source
   
   for( size_t i = m_sourceIndex+1; i < m_dimensionsTransLenAndType.size(); ++i )

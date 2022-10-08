@@ -2730,7 +2730,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   node = XML_FIRST_NODE(base_node, "RoiRangeList");
   if( node )
   {
-    XML_FOREACH_DAUGHTER( roi_node, node, "RoiRange" )
+    XML_FOREACH_CHILD( roi_node, node, "RoiRange" )
     {
       RelActCalcAuto::RoiRange roi;
       roi.fromXml( roi_node );
@@ -2742,7 +2742,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   node = XML_FIRST_NODE(base_node, "NucInputInfoList");
   if( node )
   {
-    XML_FOREACH_DAUGHTER( nuc_node, node, "NucInputInfo" )
+    XML_FOREACH_CHILD( nuc_node, node, "NucInputInfo" )
     {
       RelActCalcAuto::NucInputInfo nuc;
       nuc.fromXml( nuc_node );
@@ -2754,7 +2754,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   node = XML_FIRST_NODE(base_node, "FloatingPeakList");
   if( node )
   {
-    XML_FOREACH_DAUGHTER( peak_node, node, "FloatingPeak" )
+    XML_FOREACH_CHILD( peak_node, node, "FloatingPeak" )
     {
       RelActCalcAuto::FloatingPeak peak;
       peak.fromXml( peak_node );

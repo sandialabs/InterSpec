@@ -404,6 +404,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
         
         // We will use NSFileCoordinator to synchronously read the file - or really just grab the
         //  updated URL that will then point to the local version of the file.
+        //
+        //  TODO: this synchronous read is bad style; should make reading asynchronous.
         NSFileCoordinator *coordinator = [[NSFileCoordinator alloc] initWithFilePresenter:nil];
         [coordinator coordinateReadingItemAtURL:url options:0 error:&error byAccessor:^(NSURL *newURL) {
           NSLog(@"Will update URL from '%@' to '%@'.", [url absoluteURL], [newURL absoluteURL] );

@@ -588,7 +588,7 @@ public:
     
     if( maxHalfLife < nuclide->halfLife )
     {
-      age = log(10000.0)/log(2.0) * maxHalfLife; // 99.99% of longest-lived daughter activity reached
+      age = log(10000.0)/log(2.0) * maxHalfLife; // 99.99% of longest-lived descendant activity reached
       return true;
     }
     return false;
@@ -617,7 +617,7 @@ public:
     
     if( maxHalfLife < nuclide->halfLife )
     {
-      age = log(10000.0) * maxHalfLife; // 99.99% of longest-lived daughter activity reached
+      age = log(10000.0) * maxHalfLife; // 99.99% of longest-lived descendants activity reached
       return true;
     }
     

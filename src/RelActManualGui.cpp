@@ -1962,7 +1962,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   if( (tab_showing != 0) && (tab_showing != 1) )
     tab_showing = 0;
   
-  XML_FOREACH_DAUGHTER( nuc_node, NuclideAges_node, "Nuclide" )
+  XML_FOREACH_CHILD( nuc_node, NuclideAges_node, "Nuclide" )
   {
     ::rapidxml::xml_node<char> *name_node = XML_FIRST_NODE(nuc_node, "Name");
     ::rapidxml::xml_node<char> *age_node = XML_FIRST_NODE(nuc_node, "Age");

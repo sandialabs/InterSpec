@@ -3420,7 +3420,7 @@ int run_test()
     }else
     {
       const auto roi_ranges_node = get_required_node(base_node, "RoiRangeList");
-      XML_FOREACH_DAUGHTER(roi_range_node, roi_ranges_node, "RoiRange")
+      XML_FOREACH_CHILD(roi_range_node, roi_ranges_node, "RoiRange")
       {
         RoiRange range;
         range.fromXml( roi_range_node );
@@ -3428,7 +3428,7 @@ int run_test()
       }
       
       const auto nucs_node = get_required_node(base_node, "NucInputInfoList");
-      XML_FOREACH_DAUGHTER(nuc_node, nucs_node, "NucInputInfo")
+      XML_FOREACH_CHILD(nuc_node, nucs_node, "NucInputInfo")
       {
         NucInputInfo nuc;
         nuc.fromXml( nuc_node );
@@ -3436,7 +3436,7 @@ int run_test()
       }
       
       auto float_peak_node = XML_FIRST_NODE(base_node, "FloatingPeakList");
-      XML_FOREACH_DAUGHTER(float_peak_node, nucs_node, "FloatingPeak")
+      XML_FOREACH_CHILD(float_peak_node, nucs_node, "FloatingPeak")
       {
         FloatingPeak peak;
         peak.fromXml( float_peak_node );
@@ -3839,7 +3839,7 @@ void NucInputInfo::fromXml( const ::rapidxml::xml_node<char> *nuc_info_node )
     
     gammas_to_exclude.clear();
     const rapidxml::xml_node<char> *exclude_node = XML_FIRST_NODE( nuc_info_node, "GammasToExclude" );
-    XML_FOREACH_DAUGHTER( energy_node, exclude_node, "Energy" ) //ok if exclude_node is nullptr
+    XML_FOREACH_CHILD( energy_node, exclude_node, "Energy" ) //ok if exclude_node is nullptr
     {
       const string strval = SpecUtils::xml_value_str(energy_node);
       double energy;

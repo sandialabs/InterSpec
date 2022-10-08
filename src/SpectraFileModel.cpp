@@ -704,7 +704,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     return;
   }//if( !allowsave )
   
-#if( PERFORM_DEVELOPER_CHECKS )
+#if( PERFORM_DEVELOPER_CHECKS && SpecUtils_ENABLE_EQUALITY_CHECKS )
   {//begin code block to do check
     string filepath = SpecUtils::temp_file_name("DevTestSaveToDb", InterSpecApp::tempDirectory() );
     const string filename = filepath + ".n42";

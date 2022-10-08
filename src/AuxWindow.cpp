@@ -774,7 +774,7 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   // By default it'll just spawn at 50% width and height of the host
 //  resizeScaledWindow( 0.5, 0.5 );
   
-  //so the signals of all the daughter widgets will be connected
+  //so the signals of all the descendant widgets will be connected
   WDialog::setHidden( false, WAnimation() );
 //  m_hideSlot->exec( "null", "{quietly:true, delay:5}" );
   if( m_expandIcon )

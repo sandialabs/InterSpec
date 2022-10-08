@@ -926,7 +926,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_promptLinesOnly = new WCheckBox( "Prompt Only" );  //ɣ
   m_promptLinesOnly->setMargin( 5, Wt::Left );
 
-  tooltip = "Gammas from only the original nuclide, and the daughters until one"
+  tooltip = "Gammas from only the original nuclide, and the descendants until one"
             " of them has a longer half-life than the original nuclide; the"
             " decay chain is in equilirium till that point.";
   HelpSystem::attachToolTipOn( m_promptLinesOnly, tooltip, showToolTips );
