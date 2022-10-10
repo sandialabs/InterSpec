@@ -1011,7 +1011,7 @@ namespace SpecFileQuery
         break;
         
       case StartTime:
-        summary += " is " + string(to_string(m_compareType)) + " " + SpecUtils::to_iso_string(to_time_point(m_time));
+        summary += " is " + string(to_string(m_compareType)) + " " + SpecUtils::to_iso_string( std::chrono::time_point_cast<std::chrono::microseconds>(to_time_point(m_time)));
         break;
         
       case NumFileDataFields:
@@ -1267,7 +1267,7 @@ namespace SpecFileQuery
     switch( m_testType )
     {
       case TestType::Date:
-        return "Event XML with comparing '" + m_test_label + "' " + to_string(m_dateTestType) + " '" + SpecUtils::to_common_string(to_time_point(m_test_time),true) + "'";
+        return "Event XML with comparing '" + m_test_label + "' " + to_string(m_dateTestType) + " '" + SpecUtils::to_common_string(std::chrono::time_point_cast<std::chrono::microseconds>(to_time_point(m_test_time)),true) + "'";
         break;
         
       case TestType::String:

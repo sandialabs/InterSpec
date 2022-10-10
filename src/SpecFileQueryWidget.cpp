@@ -737,7 +737,7 @@ namespace
           for( const auto &st : meas.start_times )
           {
             const boost::posix_time::ptime epoch(boost::gregorian::date(1970,1,1));
-            row[f] += (row[f].size()?";":"") + SpecUtils::to_iso_string( to_time_point(epoch + boost::posix_time::seconds(st)) );
+            row[f] += (row[f].size()?";":"") + SpecUtils::to_iso_string(std::chrono::time_point_cast<std::chrono::microseconds>(to_time_point(epoch + boost::posix_time::seconds(st))) );
             if( row[f].size() > max_cell_size )
               break;
           }
@@ -2503,12 +2503,12 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     const int offset = wApp->environment().timeZoneOffset();
     const chrono::system_clock::time_point localtime = utctime + std::chrono::seconds(60*offset);
     
-    description << "Search performed at " << SpecUtils::to_extended_iso_string( localtime )
-    << " local (" << SpecUtils::to_extended_iso_string( utctime )
+    description << "Search performed at " << SpecUtils::to_extended_iso_string(std::chrono::time_point_cast<std::chrono::microseconds>(localtime) )
+    << " local (" << SpecUtils::to_extended_iso_string(std::chrono::time_point_cast<std::chrono::microseconds>(utctime) )
     << " UTC)\r\n";
   }else
   {
-    description << "Search performed at " << SpecUtils::to_extended_iso_string( utctime )
+    description << "Search performed at " << SpecUtils::to_extended_iso_string(std::chrono::time_point_cast<std::chrono::microseconds>(utctime) )
     << " UTC\r\n";
   }
   

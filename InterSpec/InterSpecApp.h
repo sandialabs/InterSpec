@@ -53,7 +53,7 @@ class SpectrumViewerTester;
 // Could make this always true for anything but mobile devices...
 // Still deciding if I like this or not... laoding the state doesnt seem to be
 //   a huge slowdown in the startup.
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
 #define PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE 0
 #else
 #define PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE 0
@@ -124,7 +124,7 @@ public:
   //  other not-super-fast actions.
   static std::string tempDirectory();
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP)
   /** Returns the token passed as part of url using parameter 'externalid' or 'apptoken'.
    e.g., if url looked like "localhost:8080?externalid=blah", then this function would return "blah"
    
@@ -162,7 +162,7 @@ public:
 #endif
   
 
-#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   static void osThemeChange( std::string name );
 #endif
   
@@ -236,7 +236,7 @@ protected:
   virtual void prepareForEndOfSession();
   
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP )
   /** Checks for URL argument "externalid", or equivalently "apptoken", and if found sets m_externalToken to it.
    
    Returns true if session should continue to be loaded; also notifies InterSpecServer we have loaded this token.
@@ -281,7 +281,7 @@ protected:
   std::unique_ptr<Wt::JSignal<> > m_thinkingLeaveSignal;
 #endif
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP )
   /** App token specified using the URL "externalid" or "apptoken" arguments. */
   std::string m_externalToken;
   
@@ -298,7 +298,7 @@ protected:
   
   //iOS version of app handles not reloading app state through the iOS restore
   //  stuff.
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || BUILD_AS_WX_WIDGETS_APP )
   void loadSuccesfullCallback();
   std::unique_ptr<Wt::JSignal<> > m_sucessfullyLoadedSignal;
 #endif

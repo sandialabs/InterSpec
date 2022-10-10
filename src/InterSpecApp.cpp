@@ -83,13 +83,15 @@
 #include "target/electron/ElectronUtils.h"
 #endif
 
-
 #if( BUILD_AS_OSX_APP )
 #include "target/osx/macOsUtils.h"
 #endif
 
+#if( BUILD_AS_WX_WIDGETS_APP )
+#include "target/wxWidgets/InterSpecWxUtils.h"
+#endif
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP )
 #include "InterSpec/InterSpecServer.h"
 #endif
 
@@ -134,7 +136,7 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
     , m_safeAreas{ 0.0f }
 #endif
 {
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP  )
   if( !checkExternalTokenFromUrl() )
   {
     setTitle( "Error loading" );
@@ -156,7 +158,7 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
 
 InterSpecApp::~InterSpecApp()
 {
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
   if( !m_externalToken.empty() )
     InterSpecServer::set_session_destructing( m_externalToken.c_str() );
 #endif
@@ -170,7 +172,7 @@ InterSpecApp::~InterSpecApp()
 }//~InterSpecApp()
 
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
 bool InterSpecApp::checkExternalTokenFromUrl()
 {
   m_primaryApp = false;
@@ -211,7 +213,7 @@ bool InterSpecApp::checkExternalTokenFromUrl()
   
   return allow_untokened;
 }//bool checkExternalTokenFromUrl()
-#endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
 
 
 void InterSpecApp::setupDomEnvironment()
@@ -492,7 +494,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   bool loadedSpecFile = false;
   const Http::ParameterMap &parmap = environment().getParameterMap();
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
   if( !m_externalToken.empty() )
   {
     const string initial_file = InterSpecServer::file_to_open_on_load( m_externalToken );
@@ -788,7 +790,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
 #endif
   
-#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP  || BUILD_AS_WX_WIDGETS_APP  )
   auto themeiter = parmap.find( "colortheme" );
   if( themeiter != parmap.end() && themeiter->second.size() )
     m_viewer->osThemeChange( themeiter->second[0] );
@@ -814,7 +816,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   }//if( !m_externalToken.empty() )
 #endif
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || BUILD_AS_WX_WIDGETS_APP  )
   // TODO 20220405: in macOS app I see the error "Wt: decodeSignal(): signal 'of7g69f.SucessfullyLoadedConf' not exposed"
   //                Not sure how to fix this, atm
   m_sucessfullyLoadedSignal.reset( new Wt::JSignal<>( m_viewer, "SucessfullyLoadedConf", false ) );
@@ -938,7 +940,7 @@ std::chrono::steady_clock::time_point::duration InterSpecApp::activeTimeInCurren
   return m_activeTimeInSession;
 }
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS|| BUILD_AS_WX_WIDGETS_APP )
 std::string InterSpecApp::externalToken()
 {
   WApplication::UpdateLock lock( this );
@@ -990,7 +992,7 @@ InterSpecApp *InterSpecApp::instanceFromExtenalToken( const std::string &idstr )
   
   return nullptr;
 }//InterSpecApp *instanceFromExtenalToken( const std::string &idstr )
-#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP  )
 
 
 
@@ -1027,7 +1029,7 @@ void InterSpecApp::dragEventWithFileContentsFinished()
 
 
 
-#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
 void InterSpecApp::osThemeChange( std::string name )
 {
   auto server = WServer::instance();
@@ -1441,7 +1443,7 @@ bool InterSpecApp::isAndroid() const
 {
 #if( ANDROID )
   return true;
-#elif( BUILD_AS_ELECTRON_APP || IOS || BUILD_AS_OSX_APP )
+#elif( BUILD_AS_ELECTRON_APP || IOS || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
   return false;
 #endif
   
@@ -1495,7 +1497,7 @@ bool InterSpecApp::isTablet() const
 }//bool isTablet() const
 
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID  || BUILD_AS_WX_WIDGETS_APP )
 void InterSpecApp::loadSuccesfullCallback()
 {
   m_sucessfullyLoadedSignal.reset();
@@ -1509,6 +1511,8 @@ void InterSpecApp::loadSuccesfullCallback()
     macOsUtils::sessionSuccessfullyLoaded();
 #elif( ANDROID )
 #warning "Need to implement notifying for parent process for Android"
+#elif( BUILD_AS_WX_WIDGETS_APP )
+    InterSpecWxUtils::sessionSuccessfullyLoaded();
 #else
     static_assert( 0, "Something messed up with pre-processor setup" );
 #endif

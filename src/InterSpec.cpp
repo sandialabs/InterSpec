@@ -195,6 +195,10 @@
 #include "js/AppHtmlMenu.js"
 #endif
 
+#if( BUILD_AS_WX_WIDGETS_APP )
+#include "target/wxWidgets/InterSpecWxUtils.h"
+#endif 
+
 
 #if( USE_REMOTE_RID )
 #include "InterSpec/RemoteRid.h"
@@ -222,7 +226,7 @@ extern void android_download_workaround( Wt::WResource *resource, std::string de
 std::mutex InterSpec::sm_staticDataDirectoryMutex;
 std::string InterSpec::sm_staticDataDirectory = "data";
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 std::mutex InterSpec::sm_writableDataDirectoryMutex;
 std::string InterSpec::sm_writableDataDirectory = "";
 #endif  //if( not a webapp )
@@ -1079,7 +1083,7 @@ std::string InterSpec::staticDataDirectory()
   return sm_staticDataDirectory;
 }
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 void InterSpec::setWritableDataDirectory( const std::string &dir )
 {
   std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
@@ -3755,7 +3759,7 @@ Wt::Signal< std::shared_ptr<const ColorTheme> > &InterSpec::colorThemeChanged()
 }
 
 
-#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS || IOS || BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS || IOS || BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
 void InterSpec::osThemeChange( std::string name )
 {
   cout << "InterSpec::osThemeChange('" << name << "');" << endl;
@@ -4062,7 +4066,7 @@ void InterSpec::logMessage( const Wt::WString& message, int priority )
   {//begin codeblock to logg message
     std::lock_guard<std::mutex> file_gaurd( s_message_mutex );
     ofstream output( "interspec_messages_to_users.txt", ios::out | ios::app );
-    auto now = std::chrono::system_clock::now();
+    auto now = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
     output << "Message " << SpecUtils::to_iso_string( now ) << " ";
     output << "[" << priority << "]: ";
     output << message.toUTF8() << endl << endl;
@@ -6026,25 +6030,25 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
   }//if( overlay )
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
-  if( InterSpecApp::isPrimaryWindowInstance() )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
+  if (InterSpecApp::isPrimaryWindowInstance())
   {
     m_displayOptionsPopupDiv->addSeparator();
-    
+
 #if( BUILD_AS_ELECTRON_APP )
-    auto newWindowItem = m_displayOptionsPopupDiv->addMenuItem( "New app window" );
-    newWindowItem->triggered().connect( std::bind( [](){
+    auto newWindowItem = m_displayOptionsPopupDiv->addMenuItem("New app window");
+    newWindowItem->triggered().connect(std::bind([]() {
       ElectronUtils::send_nodejs_message("NewAppWindow", "");
-    } ) );
+      }));
 #endif
-    
-    auto browserItem = m_displayOptionsPopupDiv->addMenuItem( "Use in external browser" );
+
+    auto browserItem = m_displayOptionsPopupDiv->addMenuItem("Use in external browser");
 #if( BUILD_AS_ELECTRON_APP )
-    browserItem->triggered().connect( std::bind( [](){
+    browserItem->triggered().connect(std::bind([]() {
       ElectronUtils::send_nodejs_message("OpenInExternalBrowser", "");
-    } ) );
+      }));
 #endif
-    
+
 #if( BUILD_AS_OSX_APP )
     // A brief attempt at using javascript to open a browser window failed (probably because I wasnt
     //  doing it right or something), so I just implemented calling back to obj-c; see the
@@ -6058,15 +6062,20 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     //    after calling the following c++
     //      browserItem->setLink( WLink("http://localhost:port?restore=no&primary=no") );
     //      browserItem->setLinkTarget( AnchorTarget::TargetNewWindow );
-    browserItem->triggered().connect( std::bind([=](){
-      doJavaScript( "console.log('Will try to call back to obj-c');"
-                    "try{"
-                      "window.webkit.messageHandlers.interOp.postMessage({\"action\": \"ExternalInstance\"});"
-                     "}catch(error){"
-                       "console.warn('Failed to callback to the obj-c: ' + error );"
-                     "}" );
-    }) );
+    browserItem->triggered().connect(std::bind([=]() {
+      doJavaScript("console.log('Will try to call back to obj-c');"
+        "try{"
+        "window.webkit.messageHandlers.interOp.postMessage({\"action\": \"ExternalInstance\"});"
+        "}catch(error){"
+        "console.warn('Failed to callback to the obj-c: ' + error );"
+        "}");
+      }));
 #endif //BUILD_AS_OSX_APP
+
+#if( BUILD_AS_WX_WIDGETS_APP )
+    browserItem->triggered().connect(std::bind([]() {InterSpecWxUtils::openSessionInExternalBrowser(); }));
+#endif
+
   }//if( useNativeMenu )
 #endif //BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP
   

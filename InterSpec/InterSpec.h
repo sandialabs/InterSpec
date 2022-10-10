@@ -174,7 +174,7 @@ public:
    */
   static std::string staticDataDirectory();
  
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP  )
   /** Sets the directory were we can write write the user preference database
    file (if using sqlite3); also the location will search for extra detector
    response functions.
@@ -1061,7 +1061,7 @@ public:
   void initOsColorThemeChangeDetect();
 #endif
   
-#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS || IOS || BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS || IOS || BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP  )
   /** Notification that the operating system changed themes (e.g., macOS went
    into dark mode, or light mode).
    
@@ -1468,7 +1468,7 @@ protected:
   static std::mutex sm_staticDataDirectoryMutex;
   static std::string sm_staticDataDirectory;
   
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP  )
   static std::mutex sm_writableDataDirectoryMutex;
   static std::string sm_writableDataDirectory;
 #endif  //if( not a webapp )

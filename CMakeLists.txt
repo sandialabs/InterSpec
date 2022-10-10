@@ -21,6 +21,11 @@ option(
     OFF
 )
 option(
+    BUILD_AS_WX_WIDGETS_APP
+    "Configures executable to be ran as a wxWidgets-based app"
+    OFF
+)
+option(
     BUILD_FOR_WEB_DEPLOYMENT
     "Selects options appropriate for the web in the future"
     OFF
@@ -673,14 +678,9 @@ target_link_libraries(
     Boost::regex
     Boost::random
     ZLIB::ZLIB
-    ${Wt_LIBRARIES}
-    ${Wt_LIBRARY}
-    ${Wt_HTTP_LIBRARY}
-    ${Wt_DBO_LIBRARY}
-    ${Wt_DBOSQLITE3_LIBRARY}
     ${CMAKE_DL_LIBS}
 )
-
+message( "Wt_HTTP_LIBRARY=$<$<CONFIG:Wt_HTTP_DEBUG_LIBRARY>:Debug> ")
 if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
     add_subdirectory(external_libs/pugixml-1.9)
     target_link_libraries(InterSpecLib PUBLIC pugixml)
@@ -737,6 +737,14 @@ if(WIN32)
     endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
 
     target_link_directories(InterSpecLib PUBLIC ${Boost_LIBRARY_DIR})
+else(WIN32)
+    target_link_libraries(InterSpecLib PUBLIC
+        ${Wt_LIBRARIES}
+        ${Wt_LIBRARY}
+        ${Wt_HTTP_LIBRARY}
+        ${Wt_DBO_LIBRARY}
+        ${Wt_DBOSQLITE3_LIBRARY}
+    )
 endif(WIN32)
 
 
