@@ -192,6 +192,9 @@
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"
+#endif
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP)
 #include "js/AppHtmlMenu.js"
 #endif
 
@@ -580,6 +583,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #else
   const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
 #endif
+#elif( BUILD_AS_WX_WIDGETS_APP )
+  const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
 #else
   const bool isAppTitlebar = false; // !isMobile()
 #endif
@@ -643,7 +648,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
       //  development purposes (i.e., there are redundant nested #if statements we can clear up once AppHtmlMenu.js
       //  development is more clear).
       
-#if( BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
       app->useStyleSheet( "InterSpec_resources/AppHtmlMenu.css" );
       m_menuDiv->addStyleClass( "app-titlebar" );
       m_menuDiv->setHeight( 30 );
@@ -695,32 +700,51 @@ InterSpec::InterSpec( WContainerWidget *parent )
       
       doJavaScript( "Wt.WT.SetupAppTitleBar();" );
       
-      auto toggleMaximize = [](){
-        const char *js =
-        "let elem = document.querySelector(\".Wt-domRoot\");"
-        "if (!document.fullscreenElement) {"
-        "  elem.requestFullscreen().catch(err => {"
-        "    console.log( 'Error attempting to enable full-screen mode' );"
-        "  });"
-        "} else {"
-        "  document.exitFullscreen();"
-        "}";
-        
+     
+      
+      
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP)
+      if (InterSpecApp::isPrimaryWindowInstance())
+      {
 #if( BUILD_AS_ELECTRON_APP )
-        if( InterSpecApp::isPrimaryWindowInstance() )
-          ElectronUtils::send_nodejs_message( "ToggleMaximizeWindow", "" );
-        else
-          wApp->doJavaScript( js );
-#else
-        wApp->doJavaScript( js );
+        auto toggleMaximize = []() {
+            ElectronUtils::send_nodejs_message("ToggleMaximizeWindow", "");
+        };//doMaximize
+
+        maximizeIcon->clicked().connect(std::bind(toggleMaximize));
+        appIcon->doubleClicked().connect(std::bind(toggleMaximize));
+        dragRegion->doubleClicked().connect(std::bind(toggleMaximize));
+        menuTitle->doubleClicked().connect(std::bind(toggleMaximize));
+#elif( BUILD_AS_WX_WIDGETS_APP )
+        const string js = "function(){window.wx.postMessage('ToggleMaximizeWindow');}";
+        maximizeIcon->clicked().connect(js);
+        appIcon->doubleClicked().connect(js);
+        dragRegion->doubleClicked().connect(js);
+        menuTitle->doubleClicked().connect(js);
 #endif
-      };//doMaximize
-      
-      maximizeIcon->clicked().connect( std::bind( toggleMaximize ) );
-      appIcon->doubleClicked().connect( std::bind( toggleMaximize )  );
-      dragRegion->doubleClicked().connect( std::bind( toggleMaximize )  );
-      menuTitle->doubleClicked().connect( std::bind( toggleMaximize )  );
-      
+      }
+      else
+      {
+#endif
+        const char* toggleMaxJs =
+          "function(){let elem = document.querySelector(\".Wt-domRoot\");"
+          "if (!document.fullscreenElement) {"
+          "  elem.requestFullscreen().catch(err => {"
+          "    console.log( 'Error attempting to enable full-screen mode' );"
+          "  });"
+          "} else {"
+          "  document.exitFullscreen();"
+          "}"
+          "}";
+
+        maximizeIcon->clicked().connect(toggleMaxJs);
+        appIcon->doubleClicked().connect(toggleMaxJs);
+        dragRegion->doubleClicked().connect(toggleMaxJs);
+        menuTitle->doubleClicked().connect(toggleMaxJs);
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP)
+      }
+#endif
+
 #if( BUILD_AS_ELECTRON_APP )
       minimizeIcon->clicked().connect( std::bind([](){
         ElectronUtils::send_nodejs_message( "MinimizeWindow", "" );
@@ -730,6 +754,13 @@ InterSpec::InterSpec( WContainerWidget *parent )
         ElectronUtils::send_nodejs_message( "CloseWindow", "" );
       }) );
 #endif //BUILD_AS_ELECTRON_APP
+
+#if( BUILD_AS_WX_WIDGETS_APP )
+      minimizeIcon->clicked().connect( "function(){ window.wx.postMessage('MinimizeWindow'); }" );
+      closeIcon->clicked().connect( "function(){ window.wx.postMessage('CloseWindow'); }" );
+#endif //BUILD_AS_WX_WIDGETS_APP
+
+
 #else //#if( BUILD_AS_ELECTRON_APP - for dev purposes )
       assert( 0 );
 #endif //#if( BUILD_AS_ELECTRON_APP - for dev pupropses )
@@ -6073,7 +6104,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 #endif //BUILD_AS_OSX_APP
 
 #if( BUILD_AS_WX_WIDGETS_APP )
-    browserItem->triggered().connect(std::bind([]() {InterSpecWxUtils::openSessionInExternalBrowser(); }));
+    browserItem->triggered().connect(std::bind([=]() {doJavaScript("window.wx.postMessage('OpenInExternalBrowser');"); }));
 #endif
 
   }//if( useNativeMenu )

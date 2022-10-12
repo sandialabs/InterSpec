@@ -141,8 +141,25 @@ InterSpecWxApp::InterSpecWxApp() :
   void InterSpecWxApp::handle_open_file_message(const std::string& message)
   {
     wxMessageBox(message, "File to Open");
+
+    // m_active_frame
+    // or
+    // wxWindow* wxGetActiveWindow()
+
     //int InterSpecServer::open_file_in_session(const char* session_token, const char* files_json);
   }
+
+
+  void InterSpecWxApp::handle_frame_closing(InterSpecWebFrame* frame)
+  {
+    const auto iter = std::find(std::begin(m_frames), std::end(m_frames), frame);
+    assert(iter != std::end(m_frames));
+    if (iter != std::end(m_frames))
+      m_frames.erase(iter);
+    if (m_active_frame == frame)
+      m_active_frame = nullptr;
+  }
+
 
   bool InterSpecWxApp::OnInit()
   {
@@ -263,7 +280,7 @@ InterSpecWxApp::InterSpecWxApp() :
     m_url = InterSpecServer::urlBeingServedOn();
 
     InterSpecServer::set_require_tokened_sessions(true);
-    
+    //InterSpecServer::set_require_tokened_sessions(false);
     
     wxConfigBase* config = wxConfigBase::Get(true);
     const long num_load_attempts = config->ReadLong("/NumLoadAttempts", 0);
@@ -285,7 +302,11 @@ InterSpecWxApp::InterSpecWxApp() :
     }
 
     InterSpecWebFrame* frame = new InterSpecWebFrame(m_url, no_restore, file_to_open);
+    m_frames.push_back(frame);
+    m_active_frame = frame;
     frame->Show();
+
+    wxLogMessage("Serving InterSpec at: %s", m_url.c_str());
 
     return true;
   }

@@ -27,6 +27,13 @@
 #include <random>
 #include <numeric>
 
+#include <boost/system/error_code.hpp>
+
+#include <Wt/WServer>
+#include <Wt/WIOService>
+#include <Wt/Http/Client>
+#include <Wt/Http/Message>
+
 #include "wx/fileconf.h"
 #include "wx/artprov.h"
 #include "wx/cmdline.h"
@@ -35,12 +42,17 @@
 #include "wx/settings.h"
 #include <wx/sizer.h>
 #include "wx/webview.h"
+#include <wx/utils.h>
 
 #include "wx/numdlg.h"
 #include "wx/infobar.h"
 #include "wx/fs_arc.h"
 #include "wx/fs_mem.h"
 #include "wx/stdpaths.h"
+#include "wx/uri.h"
+#include "wx/url.h"
+#include "wx/filedlg.h"
+#include "wx/wfstream.h"
 
 #ifdef _WIN32
 #if wxUSE_WEBVIEW_EDGE
@@ -55,30 +67,24 @@
 
 #include "InterSpec/InterSpecServer.h"
 
+#include "InterSpecWxApp.h"
 #include "InterSpecWebFrame.h"
 
 
 
 
-
 InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore, const wxString& file_to_open) :
-  wxFrame(NULL, wxID_ANY, "InterSpec Frame"),
+  wxFrame(NULL, wxID_ANY, "InterSpec Frame", wxDefaultPosition, wxDefaultSize /*, wxRESIZE_BORDER */),
   m_url( url ),
   m_token( "" )
 {
   // set the frame icon
   //SetIcon(wxICON(sample));
   
-  {
-    std::random_device dev;
-    std::mt19937 rng(dev());
-    std::uniform_int_distribution<unsigned int> dist;
-    const unsigned int token = dist(rng);
-    m_token = std::to_string(token);
+  m_token = generate_token();
     
-    const int status = InterSpecServer::add_allowed_session_token(m_token.c_str(), InterSpecServer::SessionType::PrimaryAppInstance);
-    assert(status == 0);
-  }
+  const int add_token_status = InterSpecServer::add_allowed_session_token(m_token.c_str(), InterSpecServer::SessionType::PrimaryAppInstance);
+  assert(add_token_status == 0);
 
   if (!file_to_open.empty())
     InterSpecServer::set_file_to_open_on_load(m_token.c_str(), file_to_open.utf8_string());
@@ -88,10 +94,6 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   EnableFullScreenView(); // Enable native fullscreen API on macOS
 
   wxBoxSizer* topsizer = new wxBoxSizer(wxVERTICAL);
-
-  // Create the info panel
-  m_info = new wxInfoBar(this);
-  topsizer->Add(m_info, wxSizerFlags().Expand());
 
   // Create a log window
   new wxLogWindow(this, _("Logging"), true, false);
@@ -107,20 +109,50 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
     wxWebViewEdge::MSWSetBrowserExecutableDir(edgeFixedDir.GetFullPath());
     wxLogMessage("Using fixed edge version");
   }
+
+  //void* wxWebViewEdge::GetNativeBackend() const
 #endif
   // Create the webview
   m_browser = wxWebView::New();
+
+  // TO be able to drag the window around by the menu bar, need to implement something like:
+  //https://github.com/MicrosoftEdge/WebView2Feedback/issues/200
 
   
   wxString app_url = m_url + "?apptoken=" + m_token;
   if (no_restore)
     app_url += "&restore=no";
 
+  // The user agent isnt terrible important for us, so we'll just use a default Chrome one on windows
+  //  TODO: customize for macOS
+  wxString user_agent = "Mozilla / 5.0 (Windows NT 10.0; Win64; x64) AppleWebKit / 537.36 (KHTML, like Gecko) Chrome / 106.0.0.0 Safari / 537.36";
+
+#ifdef __VISUALC__
+  // If the users computer is configured to use a proxy, or auto-detect a proxy, the initial load may
+  //  take quite a while, especially if they arent on a proxy (I'm guessing for things to time out).  
+  // However, all content is local, (the exception to this is the google maps feature, which currently 
+  // isnt supported) so we never need a proxy, so we'll just not use one.
+  // To achieve this, we'll hijack the user agent string, becuase in the wxWidgets source file webview_edge.cpp,
+  // the user agent is set via:
+  //   options->put_AdditionalBrowserArguments( wxString::Format("--user-agent=\"%s\"", m_customUserAgent).wc_str());
+  // So we'll just hijack the quotes, since I dont see another way to set browser arguments.
+  user_agent += "\" --no-proxy-server";
+  
+  // I briefly tried using a proxy bypass list, but it didnt seem to work.
+  //user_agent += "\" --proxy-bypass-list=\"127.0.0.1;localhost\"";
+  //user_agent += "\" --proxy-auto-detect --proxy-bypass-list=\"127.0.0.1;localhost\"";
+  //user_agent += "\" --proxy-server=direct://"; //not tested
+  //user_agent += "\" --proxy-pac-url=..."; //not tested
+#endif
+
+
+  m_browser->SetUserAgent(user_agent);
+
+
   m_browser->Create(this, wxID_ANY, app_url, wxDefaultPosition, wxDefaultSize);
   topsizer->Add(m_browser, wxSizerFlags().Expand().Proportion(1));
 
-  m_browser->SetUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36");
-
+  
   // Log backend information
   wxLogMessage("Backend: %s Version: %s", m_browser->GetClassInfo()->GetClassName(),
     wxWebView::GetBackendVersionInfo().ToString());
@@ -152,15 +184,19 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   long wx = config->ReadLong("/WindowX", static_cast<long>(0.025 * screen_x));
   long wy = config->ReadLong("/WindowY", static_cast<long>(0.025 * screen_y));
   
-  ww = std::min( std::max(ww, 800l), static_cast<long>(0.85 * screen_x) );
-  wh = std::min( std::max(wh, 600l), static_cast<long>(0.85 * screen_y) );
-  wx = std::max( 10l, std::min(wx, screen_x / 2) );
-  wy = std::max( 10l, std::min(wy, screen_y / 2) );
+  wxLogMessage("Prev window: %i x %i at %i,%i", ww, wh, wx, wy);
+  
+  ww = std::min( std::max(ww, static_cast<long>(min_win_size.x)), static_cast<long>(screen_x) );
+  wh = std::min( std::max(wh, static_cast<long>(min_win_size.y)), static_cast<long>(screen_y) );
+  wx = std::max( 0l, std::min(wx, screen_x / 2) );
+  wy = std::max( 0l, std::min(wy, screen_y / 2) );
+
+  wxLogMessage("Will set window tp: %i x %i at %i,%i", ww, wh, wx, wy);
 
   //I'm not sure how/if screen_x and screen_y take into account GetDPIScaleFactor()
   //SetSize(FromDIP(wxSize(0.85*screen_x, 0.85*screen_y)));
   SetSize( wxSize(ww, wh) );
-  SetPosition(wxPoint(wx, wy) );
+  SetPosition( wxPoint(wx, wy) );
     
 
   // Allow the right-click context menu on web page contents
@@ -258,16 +294,34 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   //Connect the idle events
   Bind(wxEVT_IDLE, &InterSpecWebFrame::OnIdle, this);
 
-  Bind(wxEVT_CLOSE_WINDOW, &InterSpecWebFrame::OnClose, this);
+
+  Bind(wxEVT_CLOSE_WINDOW, &InterSpecWebFrame::handleOnClose, this);
+  
+  // TODO: The set/kill focus events dont seem to trigger - we can probably remove these callbacks anyway, as the JS handles this anyway
+  //Bind(wxEVT_SET_FOCUS, &InterSpecWebFrame::handleOnFocus, this);
+  //Bind(wxEVT_KILL_FOCUS, &InterSpecWebFrame::handleFocusLost, this);t
+  // 
+  // The EVT_CHILD_FOCUS does seem to reliably trigger
+  //Bind(wxEVT_CHILD_FOCUS, &InterSpecWebFrame::handleChildFocus, this);
 }
+
 
 InterSpecWebFrame::~InterSpecWebFrame()
 {
 }
 
 
+wxString InterSpecWebFrame::generate_token()
+{
+  std::random_device dev;
+  std::mt19937 rng(dev());
+  std::uniform_int_distribution<unsigned int> dist;
+  const unsigned int token = dist(rng);
+  return std::to_string(token);
+}//wxString InterSpecWebFrame::generate_token()
 
-void InterSpecWebFrame::OnClose(wxCloseEvent& event)
+
+void InterSpecWebFrame::handleOnClose(wxCloseEvent& event)
 {
   // We'll save the window position so the next time we open a window 
   //  it will be in same pos/size.
@@ -284,10 +338,41 @@ void InterSpecWebFrame::OnClose(wxCloseEvent& event)
   config->Write("/WindowY", static_cast<long>(win_pos.y));
   config->Flush();
 
+  auto app = dynamic_cast<InterSpecWxApp*>(wxApp::GetInstance());
+  if (app)
+    app->handle_frame_closing(this);
+
   Destroy();
 }//OnClose
 
 
+/*
+void InterSpecWebFrame::handleOnFocus(wxFocusEvent& event)
+{
+  wxLogMessage("Got Focus");
+  event.Skip();
+
+  RunScript("$('.app-titlebar').removeClass('inactive');");
+}//void handleOnFocus(wxFocusEvent& event);
+
+void InterSpecWebFrame::handleFocusLost(wxFocusEvent& event)
+{
+  // We dont seem to ever really get here, except when we programitacly call minimize, 
+  // or whatever - so detecting window losing/getting focus in the JS must work okay enough
+  wxLogMessage("Lost Focus");
+  event.Skip();
+
+  RunScript("$('.app-titlebar').addClass('inactive');");
+}//void handleFocusLost(wxFocusEvent& event);
+
+void InterSpecWebFrame::handleChildFocus(wxChildFocusEvent& evt)
+{
+  wxLogMessage("handleChildFocus");
+
+  // This next line doesnt appear to be necassary, but we'll do it anyway
+  RunScript("$('.app-titlebar').removeClass('inactive');");
+}//void handleChildFocus(wxChildFocusEvent& evt);
+*/
 
 
 /**
@@ -306,16 +391,16 @@ void InterSpecWebFrame::UpdateState()
 
 void InterSpecWebFrame::OnIdle(wxIdleEvent& WXUNUSED(evt))
 {
+  /*x
   if (m_browser->IsBusy())
   {
     wxSetCursor(wxCURSOR_ARROWWAIT);
-    // blah blah blah
   }
   else
   {
     wxSetCursor(wxNullCursor);
-    // blah blah blah
   }
+  */
 }
 
 
@@ -368,18 +453,236 @@ void InterSpecWebFrame::OnDocumentLoaded(wxWebViewEvent& evt)
   UpdateState();
 }
 
+
+void InterSpecWebFrame::handle_download_response(Wt::Http::Client* client, const boost::system::error_code &err, const Wt::Http::Message& response) {
+  // TODO: should we be in a the MAIN thread here?  Cause I think we're in a Wt owned Asio thread, I would guess 
+
+  //
+  std::unique_ptr<Wt::Http::Client> client_ptr(client);
+
+  if (!err) 
+  {
+    if (response.status() == 200) 
+    {
+      std::string filename = "filename";
+      const std::string *disposition_value = response.getHeader("Content-Disposition");
+      if(disposition_value )
+      {
+        //attachment;filename="Ba133_gammas.csv";filename*=UTF-8''Ba133_gammas.csv
+
+        std::vector<std::string> fields;
+        SpecUtils::split(fields, *disposition_value, ";");
+        for (std::string val : fields)
+        {
+          SpecUtils::trim(val);
+          if (SpecUtils::istarts_with(val, "filename="))
+          {
+            filename = val.substr(9);
+            SpecUtils::erase_any_character(filename, "'\\/:?\"<>|");
+          }
+        }//for (std::string val : fields)
+      
+      }//if(disposition_value )
+
+      const std::string* type_value = response.getHeader("Content-Type");
+      if (type_value)
+      {
+        // "text/csv"
+      }
+      
+      wxString ext = SpecUtils::file_extension(filename);
+      if (!ext.empty())
+        ext = "*" + ext;
+
+      
+      wxConfigBase* config = wxConfigBase::Get(true);
+      wxString defaultDir = config->Read("/LastSaveDir", wxString(""));
+      if( !defaultDir.empty() )
+      {
+        wxFileName defDirFile(defaultDir);
+        if (!defDirFile.IsOk() || !defDirFile.DirExists() || !defDirFile.IsDirWritable())
+          defaultDir = "";
+      }
+
+      wxFileDialog saveFileDialog(this, _("Save file"), defaultDir, filename,
+        ext, wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+      if (saveFileDialog.ShowModal() == wxID_CANCEL)
+      {
+        return;     // the user changed idea...
+      }
+
+      // save the current contents in the file;
+      // this can be done with e.g. wxWidgets output streams:
+      const wxString savePath = saveFileDialog.GetPath();
+      wxFileOutputStream output_stream(savePath );
+      if (!output_stream.IsOk())
+      {
+        wxLogError("Cannot save current contents in file '%s'.", saveFileDialog.GetPath());
+        return;
+      }
+
+      std::string body = response.body();
+      output_stream.Write(body.c_str(), body.size());
+      
+      if (!output_stream.IsOk())
+      {
+        wxLogError("Error writing output stream." );
+      }
+      else
+      {
+        wxFileName lastSaveName(savePath);
+        wxString lastSavePath = lastSaveName.GetPath();
+        config->Write("/LastSaveDir", lastSavePath);
+        wxLogMessage("Saved file: %s", saveFileDialog.GetPath().c_str() );
+      }
+      output_stream.Close();
+    }
+    else
+    {
+      wxLogMessage("Http::Client invalis response code: %i", response.status());
+    }//if (response.status() == 200)  / else
+  }
+  else {
+    Wt::log("error") << "Http::Client error: " << err.message();
+    wxLogMessage("Http::Client error: %s", err.message().c_str());
+  }
+
+}
+
 /**
   * On new window, we veto to stop extra windows appearing
   */
 void InterSpecWebFrame::OnNewWindow(wxWebViewEvent& evt)
 {
   // I guess we would handle downloads and stuff here?
+  
+  const wxString url_str = evt.GetURL();
+  wxURI uri(url_str);
+
+  const wxString& server = uri.GetServer(); //"http://<server>/mypath"
+  const wxString& path = uri.GetPath();//"http://mysite.com<path>"
+  const wxString& port = uri.GetPort();//"http://mysite.com:<port>"
+  const wxString& query = uri.GetQuery();//"http://mysite.com/mypath?<query>"
+  const wxString& scheme = uri.GetScheme(); //e.x., http, "<scheme>://mysite.com"
+
+  wxLogMessage("OnNewWindow type=%i, url=%s", int(evt.GetNavigationAction()), url_str.c_str());
 
   if (evt.GetNavigationAction() == wxWEBVIEW_NAV_ACTION_USER)
   {
+    // This logic is roughly the same as for the macOS app, see AppDelegate.mm
+    if ((path.find("request=redirect&url=http") != wxString::npos)
+      || (scheme == "mailto")
+      || (uri.HasServer() && (server != "127.0.0.1") && (server != "localhost"))
+      )
+    {
+      //external url or email
+      const bool launched = wxLaunchDefaultBrowser(url_str);
+      if (launched)
+        wxLogMessage("Launched '%s' in other application.", url_str.utf8_string().c_str());
+      else
+        wxLogMessage("Failed to launch '%s' in other application.", url_str.utf8_string().c_str());
+    }
+    else if ( uri.HasServer() && (server == "127.0.0.1" || server == "localhost"))
+    {
+      //CSV, spectrum file, JSON file, etc
+      wxLogMessage("%s", "File to save; url='" + evt.GetURL() + "', target='" + evt.GetTarget() + "'");
+      
+      auto server = Wt::WServer::instance();
+      assert(server);
+      Wt::Http::Client* client = new Wt::Http::Client( server->ioService() );
+      client->setTimeout(10);
+      client->setMaximumResponseSize(512 * 1024 * 1024);
+
+      client->done().connect( boost::bind(&InterSpecWebFrame::handle_download_response, this, client, boost::placeholders::_1, boost::placeholders::_2) );
+
+      if (client->get(url_str.utf8_string()))
+      {
+        wxLogMessage("Have started GET for download");
+      }
+      else
+      {
+        wxLogMessage("Error calling Get for download URL");
+      }
+
+      /*
+      wxFileDialog
+        saveFileDialog(this, _("Save XYZ file"), "", "",
+          "XYZ files (*.xyz)|*.xyz", wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+      if (saveFileDialog.ShowModal() == wxID_CANCEL)
+        return;     // the user changed idea...
+
+      // save the current contents in the file;
+      // this can be done with e.g. wxWidgets output streams:
+      wxFileOutputStream output_stream(saveFileDialog.GetPath());
+      if (!output_stream.IsOk())
+      {
+        wxLogError("Cannot save current contents in file '%s'.", saveFileDialog.GetPath());
+        return;
+      }
+      */
+      
+      /*
+      wxHTTP get;
+      get.SetHeader(_T("Content-type"), _T("text/html; charset=utf-8"));
+      get.SetTimeout(10); // 10 seconds of timeout instead of 10 minutes ...
+      while (!get.Connect( m_url ))
+      {
+        wxLogMessage("Error connecting." );
+        wxSleep(5);
+      }
+   -  wxInputStream *httpStream = get.GetInputStream(path);
+
+      if (get.GetError() == wxPROTO_NOERR)
+      {
+        wxString res;
+        wxStringOutputStream out_stream(&res);
+        httpStream->Read(out_stream);
+
+        wxString summary = "File size: " + std::to_string(res.size()) + ", headers:\n";
+       
+        wxMessageBox(res);
+      }
+      else
+      {
+        wxMessageBox(_T("Unable to connect!"));
+      }
+
+      wxDELETE(httpStream);
+      get.Close();
+      */
+      
+
+      /*
+      wxURL url(url_str);
+      if (url.GetError() == wxURL_NOERR)
+      {
+        wxString htmldata;
+        wxInputStream* in = url.GetInputStream();
+
+        if (in && in->IsOk())
+        {
+          wxStringOutputStream html_stream(&htmldata);
+          in->Read(html_stream);
+          wxLogMessage(htmldata);
+        }
+        delete in;
+      }
+      */
+    }
+    else if ((!uri.HasServer() && (url_str.find("data:application/octet-stream") != wxString::npos))
+      || (!uri.HasServer() && (url_str.find("data:image/svg+xml") != wxString::npos)))
+    {
+      // Edge seems to automatically download these to the Downloads directory. 
+      wxLogMessage("Got a data:image/svg+xml or data:application/octet-stream URL we're not handling atm" );
+    }
+
+  }
+  else
+  {
+    wxLogMessage("%s", "Unknown OnNewWindow event: url='" + evt.GetURL() + "', target='" + evt.GetTarget() + "', NavAction: "+ std::to_string(evt.GetNavigationAction()) );
   }// etc
 
- // wxLogMessage("%s", "New window; url='" + evt.GetURL() + "'" + flag);
+  
 
 
   UpdateState();
@@ -391,16 +694,66 @@ void InterSpecWebFrame::OnTitleChanged(wxWebViewEvent& evt)
   wxLogMessage("%s", "Title changed; title='" + evt.GetString() + "'");
 }
 
+
 void InterSpecWebFrame::OnFullScreenChanged(wxWebViewEvent& evt)
 {
   wxLogMessage("Full screen changed; status = %d", evt.GetInt());
   ShowFullScreen(evt.GetInt() != 0);
+
+  const bool isMax = IsMaximized();
+  if (isMax)
+  {
+    RunScript("Wt.WT.TitleBarChangeMaximized(true);");
+  }
+  else
+  {
+    RunScript("Wt.WT.TitleBarChangeMaximized(false);");
+  }
 }
 
 void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
 {
   wxLogMessage("Script message received; value = %s, handler = %s", evt.GetString(), evt.GetMessageHandler());
-}
+  wxString msg = evt.GetString();
+  if (msg == "MinimizeWindow")
+  {
+    Iconize();
+  }
+  else if (msg == "ToggleMaximizeWindow")
+  {
+    const bool wasMax = IsMaximized();
+    Maximize(!wasMax);
+  }
+  else if (msg == "CloseWindow")
+  {
+    Close();
+  } else if(msg == "SessionFinishedLoading")
+  {
+    wxConfigBase* config = wxConfigBase::Get(true);
+    config->Write("/NumLoadAttempts", 0);
+  }
+  else if (msg == "OpenInExternalBrowser")
+  {
+    const wxString token = generate_token();
+
+    const int add_token_status = InterSpecServer::add_allowed_session_token(token.c_str(), InterSpecServer::SessionType::ExternalBrowserInstance);
+    assert(add_token_status == 0);
+
+    const wxString url_str = m_url + "?apptoken=" + token + "&restore=no";
+
+    const bool launched = wxLaunchDefaultBrowser(url_str);
+    if (launched)
+      wxLogMessage("Launched '%s' in default browser.", url_str.utf8_string().c_str());
+    else
+      wxLogMessage("Failed to launch '%s' in default browser.", url_str.utf8_string().c_str());
+  }
+  else
+  {
+    wxLogMessage("Unrocgnized message from JS: '%s'.", msg.utf8_string().c_str());
+  }
+}//void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
+
+
 
 void InterSpecWebFrame::OnScriptResult(wxWebViewEvent& evt)
 {
@@ -454,8 +807,14 @@ void InterSpecWebFrame::OnError(wxWebViewEvent& evt)
   wxLogMessage("%s", "Error; url='" + evt.GetURL() + "', error='" + category + " (" + evt.GetString() + ")'");
 
   //Show the info bar with an error
-  m_info->ShowMessage(_("An error occurred loading ") + evt.GetURL() + "\n" +
-    "'" + category + "'", wxICON_ERROR);
+  //m_info->ShowMessage(_("An error occurred loading ") + evt.GetURL() + "\n" +
+  //  "'" + category + "'", wxICON_ERROR);
 
   UpdateState();
+}
+
+
+const wxString& InterSpecWebFrame::app_token() const
+{
+  return m_token;
 }

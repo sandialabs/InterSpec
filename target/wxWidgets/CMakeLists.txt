@@ -40,8 +40,12 @@ add_subdirectory(3rd_party/wxWidgets-3.2.1)
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
 
+add_definitions( -DwxUSE_RC_MANIFEST=1 -DwxUSE_DPI_AWARE_MANIFEST=2 )
+ 
 add_executable(${PROJECT_NAME}  
-  WIN32   ../electron/windows/InterSpec.rc
+  WIN32  
+  ../electron/windows/InterSpec.rc 
+  windows/InterSpec.manifest
   InterSpecWxUtils.h 
   InterSpecWxUtils.cpp
   InterSpecWxApp.h 

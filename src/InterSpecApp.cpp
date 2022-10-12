@@ -1512,7 +1512,7 @@ void InterSpecApp::loadSuccesfullCallback()
 #elif( ANDROID )
 #warning "Need to implement notifying for parent process for Android"
 #elif( BUILD_AS_WX_WIDGETS_APP )
-    InterSpecWxUtils::sessionSuccessfullyLoaded();
+    doJavaScript("window.wx.postMessage('SessionFinishedLoading');");
 #else
     static_assert( 0, "Something messed up with pre-processor setup" );
 #endif

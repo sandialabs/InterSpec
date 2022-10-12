@@ -25,12 +25,13 @@
 
 #include "InterSpec_config.h"
 
+#include <string>
+
 namespace InterSpecWxUtils
 {
 
-  void sessionSuccessfullyLoaded();
-
   void openSessionInExternalBrowser();
+
 }//namespace InterSpecWxUtils
 
 

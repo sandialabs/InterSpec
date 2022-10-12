@@ -29,13 +29,32 @@
 #include <wx/frame.h>
 
 
+
+
 class wxString;
-class wxInfoBar;
 class wxWebView;
 class wxIdleEvent;
 class wxCloseEvent;
+class wxFocusEvent;
 class wxWebViewEvent;
+class wxChildFocusEvent;
 
+
+namespace Wt
+{
+  namespace Http
+  {
+    class Client;
+    class Message;
+  }
+}
+namespace boost
+{
+  namespace system
+  {
+    class error_code;
+  }
+}
 
 
 class InterSpecWebFrame : public wxFrame
@@ -58,11 +77,20 @@ public:
 
   void RunScript(const wxString& javascript);
 
-  void OnClose(wxCloseEvent& event);
+  void handleOnClose(wxCloseEvent& evt);
+  //void handleOnFocus(wxFocusEvent& evt);
+  //void handleFocusLost(wxFocusEvent& evt);
+  //void handleChildFocus(wxChildFocusEvent& evt);
+  const wxString& app_token() const;
+
+
+  void handle_download_response(Wt::Http::Client* client, const boost::system::error_code& err, const Wt::Http::Message& response);
+
+protected:
+  static wxString generate_token();
+
 private:
   wxWebView* m_browser;
-
-  wxInfoBar* m_info;
 
   wxString m_url;
   wxString m_token;

@@ -35,6 +35,8 @@ class wxSingleInstanceChecker;
 
 
 class IpcServer;
+class InterSpecWebFrame;
+
 
 #if !wxUSE_CMDLINE_PARSER
 #error "ex command line parsing must be enabled"
@@ -51,12 +53,15 @@ public:
   virtual void OnInitCmdLine(wxCmdLineParser& parser) override;
   virtual bool OnCmdLineParsed(wxCmdLineParser& parser) override;
 
-
+  void handle_frame_closing(InterSpecWebFrame* frame);
   void handle_open_file_message(const std::string& message);
 
 private:
   wxString m_url;
   std::vector<wxString> m_command_line_args;
+
+  std::vector<InterSpecWebFrame*> m_frames;
+  InterSpecWebFrame* m_active_frame;
 
   wxSingleInstanceChecker* m_checker;
 
