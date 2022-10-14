@@ -39,6 +39,9 @@
 #include "wx/snglinst.h"
 #include "wx/stdpaths.h"
 
+#include <Wt/Json/Array>
+#include <Wt/Json/Value>
+#include <Wt/Json/Serializer>
 
 #include "InterSpecWxApp.h"
 #include "InterSpecWebFrame.h"
@@ -62,9 +65,24 @@ public:
   {
     // Server gets messages here when client uses the Execute
     //  TODO: send this information on to wxApp to actually use the information
-    assert(topic == "FileToOpen");
+    wxLogMessage("Have recieved message on server topic='%s', data='%s'", topic, data);
+
+
+    assert( (topic == "FileToOpen") || (topic == "OpenNewWindow"));
     auto app = dynamic_cast<InterSpecWxApp*>(wxApp::GetInstance());
-    app->handle_open_file_message(data.utf8_string());
+
+    if (topic == "FileToOpen")
+    {
+      app->handle_open_file_message(data.utf8_string());
+    }
+    else if (topic == "OpenNewWindow")
+    {
+      app->new_app_window();
+    }
+    else
+    {
+      assert(0);
+    }
 
     return true;
   }
@@ -140,14 +158,38 @@ InterSpecWxApp::InterSpecWxApp() :
 
   void InterSpecWxApp::handle_open_file_message(const std::string& message)
   {
-    wxMessageBox(message, "File to Open");
+    wxLogMessage("Will try to open file '%s'",message.c_str());
 
-    // m_active_frame
-    // or
-    // wxWindow* wxGetActiveWindow()
+    // wxGetActiveWindow() doesnt usually work
+    InterSpecWebFrame* active_frame = dynamic_cast<InterSpecWebFrame *>( wxGetActiveWindow() );
+    
+    if (!active_frame)
+      active_frame = m_active_frame;
 
-    //int InterSpecServer::open_file_in_session(const char* session_token, const char* files_json);
-  }
+    if (!active_frame && !m_frames.empty())
+      active_frame = m_frames.back();
+
+    if (!active_frame)
+    {
+      wxMessageBox("Sorry, there was an issue finding an issue to open the spectrum file - sorry!", "Error Opening File");
+      return;
+    }
+
+    const wxString& token = active_frame->app_token();
+
+    //["/path/to/some/file","/some/other/file","interspec://drf/define?..."]
+    // TODO: use Wt::JSON to make sure this message is proper JSON, etc
+    const int status = InterSpecServer::open_file_in_session(token.utf8_string().c_str(), message.c_str());
+
+    active_frame->Show();
+    active_frame->Raise();
+
+    if (status < 0)
+    {
+      wxLogMessage("Error opening spectrum file in session, code: %i", status);
+      wxMessageBox("There may have been an issue opening the requested resource - sorry!", "Error Opening File/URI");
+    }
+  }//void handle_open_file_message(const std::string& message)
 
 
   void InterSpecWxApp::handle_frame_closing(InterSpecWebFrame* frame)
@@ -161,8 +203,108 @@ InterSpecWxApp::InterSpecWxApp() :
   }
 
 
+  void InterSpecWxApp::handle_frame_focus(InterSpecWebFrame* frame)
+  {
+    assert(frame);
+    assert(std::find(std::begin(m_frames), std::end(m_frames), frame) != std::end(m_frames));
+    m_active_frame = frame;
+  }//void handle_frame_focus(InterSpecWebFrame* frame);
+
+
+  void InterSpecWxApp::new_app_window()
+  {
+    wxLogMessage("Creating new app window" );
+    InterSpecWebFrame* frame = new InterSpecWebFrame(m_url, true, "");
+    m_frames.push_back(frame);
+    m_active_frame = frame;
+    frame->Show();
+    frame->Raise();
+  }//void new_app_window()
+
+
+  namespace
+  {
+    /*
+    class androidbuf : public std::streambuf
+    {
+      //A utility to redirect cout/cerr to the Android logging system so it can be
+      // seen using 'adb logcat'
+    public:
+      enum Source { FromCout, FromCerr };
+      enum { bufsize = 128 }; // ... or some other suitable buffer size
+      androidbuf(Source src)
+        : m_type(src), m_origSrc(nullptr)
+      {
+        this->setp(buffer, buffer + bufsize - 1);
+
+        switch (m_type)
+        {
+        case FromCout:
+          m_source = "cout";
+          m_origSrc = std::cout.rdbuf(this);
+          break;
+
+        case FromCerr:
+          m_source = "cerr";
+          m_origSrc = std::cerr.rdbuf(this);
+          break;
+        }//switch( src )
+      }//androidbuf( Source src )
+
+      ~androidbuf()
+      {
+        //cout/cerr must be given back there original rdbufs or else there can be a
+        //  problems with freeing resources
+        if (!m_origSrc)
+          return;
+        switch (m_type)
+        {
+        case FromCout: std::cout.rdbuf(m_origSrc); break;
+        case FromCerr: std::cerr.rdbuf(m_origSrc); break;
+        }
+      }//~androidbuf()
+
+    private:
+      int overflow(int c) override
+      {
+        if (c == traits_type::eof()) {
+          *this->pptr() = traits_type::to_char_type(c);
+          this->sbumpc();
+        }
+        return this->sync() ? traits_type::eof() : traits_type::not_eof(c);
+      }//int overflow(int c)
+
+      int sync() override
+      {
+        int rc = 0;
+        if (this->pbase() != this->pptr())
+        {
+          rc = __android_log_write(ANDROID_LOG_INFO, m_source,
+            std::string(this->pbase(), this->pptr()).c_str());
+          this->setp(buffer, buffer + bufsize - 1);
+        }
+        return rc;
+      }//int sync()
+      char buffer[bufsize];
+      const char* m_source;
+      const Source m_type;
+      std::streambuf* m_origSrc;
+    };//class androidbuf
+
+    */
+    
+  }
+//#include <fstream>
+//  std::unique_ptr<std::ofstream> g_stdbuf, g_errbuf;
+
+
   bool InterSpecWxApp::OnInit()
   {
+   //   g_stdbuf.reset( new std::ofstream( "from_cout.txt") );
+   //   g_errbuf.reset(new std::ofstream("from_cerr.txt") );
+   //   std::cout.rdbuf(g_stdbuf->rdbuf());
+   //   std::cerr.rdbuf(g_errbuf->rdbuf());
+
     if (!wxApp::OnInit())
       return false;
 
@@ -178,39 +320,49 @@ InterSpecWxApp::InterSpecWxApp() :
     if (m_checker->IsAnotherRunning())
     {
       // Here is where we would request the existing instance to open a file, or open a new window.
-      wxLogError(_("Another program instance is already running, aborting."));
+      //wxLogError(_("Another program instance is already running, aborting."));
 
       // Use https://docs.wxwidgets.org/3.0/overview_ipc.html to message other session
 
       delete m_checker; // OnExit() won't be called if we return false
       m_checker = NULL;
 
-
-      IpcClient client;
-      IpcConnection* connection = (IpcConnection*)client.MakeConnection("localhost", serverName, "FileToOpen");
-
-      // TODO: replace this JSON encoding with using Wt::JSON or something.
-      std::string message = "[";
+      size_t n_valid_args = 0;
+      Wt::Json::Array msg_json;
       for (size_t i = 0; i < m_command_line_args.size(); ++i)
       {
-        if (i)
-          message += ",";
-
         std::string arg = m_command_line_args[i].utf8_string();
-        if (!SpecUtils::make_canonical_path(arg))
+ 
+        if (SpecUtils::istarts_with(arg, "interspec:"))
         {
-          arg = m_command_line_args[i].utf8_string();
+          n_valid_args += 1;
+        }else
+        {
+          // We could use SpecUtils to make canonical, but we'll use the wx stuff, just to try it out
+          // arg = SpecUtils::make_canonical_path(arg)
+          
+          wxFileName fname(m_command_line_args[i]);
+          if( fname.IsOk() && fname.IsFileReadable() )
+            n_valid_args += 1;
 
-          //std::string exe_path = ...
-          //if (!make_canonical_path(arg, ))
-          //  arg = m_command_line_args[i];
-        }
+          if (fname.IsOk() && fname.IsFileReadable() && !fname.IsAbsolute())
+            arg = fname.GetAbsolutePath().utf8_string();
+        }//if( not a interspec:// URI )
+          
+        msg_json.push_back(Wt::Json::Value(Wt::WString::fromUTF8(arg)));
+      }//for (size_t i = 0; i < m_command_line_args.size(); ++i)
 
-        message += "\"" + arg + "\"";
-      }
-      message += "]";
+      // Right now we will open a new Window if there are no file or URI arguments,
+      //  or we will open the files and/or URI.
+      //  TODO: we should probably allow some command line arguments to avoid this single application stuff, or maybe some other options.
 
-      connection->Execute(message.c_str(), message.size());
+      const char* topic = n_valid_args ? "FileToOpen" : "OpenNewWindow";
+      std::string message = Wt::Json::serialize(msg_json, 0);
+
+      IpcClient client;
+      IpcConnection* connection = (IpcConnection*)client.MakeConnection("localhost", serverName, topic);
+
+      connection->Execute(message.c_str(), message.size() + 1);
       connection->Disconnect();
       delete connection;
 
@@ -260,8 +412,7 @@ InterSpecWxApp::InterSpecWxApp() :
 
     //bool InterSpecServer::changeToBaseDir(int argc, char* argv[]);
 
-    std::string xml_config_path = SpecUtils::append_path(base_dir, "data/config/wt_config_electron.xml" );
-
+    std::string xml_config_path = SpecUtils::append_path(base_dir, "data/config/wt_config_wx.xml" );
 
     const int host_port = InterSpecServer::start_server("InterSpec", user_data_dir.c_str(), base_dir.c_str(), xml_config_path.c_str());
 

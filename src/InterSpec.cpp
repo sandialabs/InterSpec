@@ -73,6 +73,7 @@
 #include <Wt/WBorderLayout>
 #include <Wt/WSelectionBox>
 #include <Wt/WCssStyleSheet>
+#include <Wt/Json/Serializer>
 #include <Wt/WSuggestionPopup>
 #include <Wt/WContainerWidget>
 #include <Wt/WDefaultLoadingIndicator>
@@ -700,7 +701,26 @@ InterSpec::InterSpec( WContainerWidget *parent )
       
       doJavaScript( "Wt.WT.SetupAppTitleBar();" );
       
-     
+#if( BUILD_AS_WX_WIDGETS_APP )
+      if(InterSpecApp::isPrimaryWindowInstance())
+      {
+        //The Edge WebView2 doesnt respect the "-webkit-app-region: drag" property, so we will
+        //  do a workaround to have wxWidgets capture the mouse when titlebar is clicked on
+        const char* js = "function(el,evt){"
+          // Make sure its left mouse button, and for `m_menuDiv`, make sure element clicked on was not a descendant (like a menu button)
+          "if( (evt.button!==0) || (el.id !== evt.target.id)) return;"
+          "window.wx.postMessage('MouseDownInTitleBar');"
+          "evt.stopPropagation();"
+          "evt.preventDefault();"
+          "}";
+
+        //titleStretcher doesnt work for this since it is all margin, and no actual width
+        dragRegion->mouseWentDown().connect(js); //Doesnt seem to be useful; havent checked out why
+        menuTitle->mouseWentDown().connect(js);
+        appIcon->mouseWentDown().connect(js);
+        m_menuDiv->mouseWentDown().connect(js);
+      }//if( primary wxWidgets instance )
+#endif
       
       
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP)
@@ -3821,15 +3841,18 @@ void InterSpec::osThemeChange( std::string name )
       if( m_colorTheme && SpecUtils::icontains( m_colorTheme->theme_name.toUTF8(), "Dark") )
         return;
      
-      cerr << "Will set to dark" << endl;
+      cout << "Will set to dark" << endl;
       theme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme::DarkColorTheme );
     }else if( name == "light" || name == "default" || name == "no-preference" || name == "no-support" )
     {
       //Check to see if we already have light applied
-      if( m_colorTheme && SpecUtils::icontains( m_colorTheme->theme_name.toUTF8(), "Default") )
+      if (m_colorTheme && SpecUtils::icontains(m_colorTheme->theme_name.toUTF8(), "Default"))
+      {
+        cout << "Already have light color theme applied." << endl;
         return;
-      
-      cerr << "Will set to default" << endl;
+      }
+
+      cout << "Will set to default" << endl;
       theme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme::DefaultColorTheme );
     }
     
@@ -3840,6 +3863,7 @@ void InterSpec::osThemeChange( std::string name )
     cerr << "InterSpec::osThemeChange() caught exception - not doing anything" << endl;
   }
   
+  cout << "Done applying color theme" << endl;
 }//void osThemeChange( std::string name )
 #endif
 
@@ -3938,12 +3962,17 @@ void InterSpec::deleteLicenseAndDisclaimersWindow()
 
 void InterSpec::showWelcomeDialog( bool force )
 {
+  cout << "In showWelcomeDialog" << endl;
   try
   {
-    if( !force && !m_user->preferenceValue<bool>( "ShowSplashScreen" ) )
+    if (!force && !m_user->preferenceValue<bool>("ShowSplashScreen"))
+    {
+      cout << "showWelcomeDialog: user doesnt want us to show screen; returning." << endl;
       return;
+    }
   }catch(...)
   {
+    assert(0);
     //m_user didnt have preference "ShowSplashScreen" for some reason
     if( !force )
       return;
@@ -3951,10 +3980,12 @@ void InterSpec::showWelcomeDialog( bool force )
   
   if( m_useInfoWindow )
   {
+    cout << "showWelcomeDialog: window already showing." << endl;
     m_useInfoWindow->show();
     return;
   }
   
+  cout << "showWelcomeDialog: will post to show." << endl;
   WServer::instance()->post( wApp->sessionId(), std::bind( [this](){
     /*
      For Android, showing this useInfoWindow at startup causes some exceptions
@@ -3964,6 +3995,9 @@ void InterSpec::showWelcomeDialog( bool force )
      
      Havent checked if creating this window via "posting" helps
      */
+
+    cout << "Now finally in function to showWelcomeDialog." << endl;
+
     if( m_useInfoWindow )
       return;
     
@@ -3975,6 +4009,7 @@ void InterSpec::showWelcomeDialog( bool force )
     m_useInfoWindow->finished().connect( this, &InterSpec::deleteWelcomeDialog );
     
     wApp->triggerUpdate();
+    cout << "You should now see Welcome Dialog." << endl;
   } ) );
 }//void showWelcomeDialog()
 
@@ -5428,7 +5463,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     m_fileMenuPopup->addSeparator();
 #endif
 
-#if( BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP)
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
 #if( USING_ELECTRON_NATIVE_MENU )
@@ -5440,9 +5475,15 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   exitItem->triggered().connect( std::bind( []{
     ElectronUtils::send_nodejs_message( "CloseWindow", "" );
   }) );
+#elif(BUILD_AS_WX_WIDGETS_APP)
+    m_fileMenuPopup->addSeparator();
+    PopupDivMenuItem* exitItem = m_fileMenuPopup->addMenuItem("Exit");
+    exitItem->triggered().connect(std::bind([] {
+      wApp->doJavaScript("window.wx.postMessage('CloseWindow');");
+    }));
 #endif
   }//if( InterSpecApp::isPrimaryWindowInstance() )
-#endif // BUILD_AS_ELECTRON_APP
+#endif //  || BUILD_AS_WX_WIDGETS_APP
 } // void InterSpec::addFileMenu( WContainerWidget *menuDiv, bool show_examples )
 
 
@@ -6073,6 +6114,13 @@ void InterSpec::addDisplayMenu( WWidget *parent )
       }));
 #endif
 
+#if( BUILD_AS_WX_WIDGETS_APP )
+    auto newWindowItem = m_displayOptionsPopupDiv->addMenuItem("New app window");
+    newWindowItem->triggered().connect(std::bind([]() {
+      wApp->doJavaScript("window.wx.postMessage('NewAppWindow');");
+      }));
+#endif
+
     auto browserItem = m_displayOptionsPopupDiv->addMenuItem("Use in external browser");
 #if( BUILD_AS_ELECTRON_APP )
     browserItem->triggered().connect(std::bind([]() {
@@ -6122,7 +6170,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_displayOptionsPopupDiv->addSeparator();
   m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleDevTools );
 #endif
-#elif( BUILD_AS_ELECTRON_APP )
+#elif( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
 
   m_displayOptionsPopupDiv->addSeparator();
   PopupDivMenuItem *fullScreenItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Full Screen" );  //F11
@@ -6135,11 +6183,17 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
   LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsDecreasePageZoom);
   
+#if( BUILD_AS_ELECTRON_APP )
   // Note: the triggered() signal a Wt::Signal, which is C++ only, so we cant just hook it up to
   //       javascript for it to run - we have to make the round-trip JS -> C++ -> JS
   fullScreenItem->triggered().connect( std::bind( []{
     ElectronUtils::send_nodejs_message( "ToggleMaximizeWindow", "" );
   }) );
+#else
+  fullScreenItem->triggered().connect(std::bind([] {
+    wApp->doJavaScript("window.wx.postMessage('ToggleMaximizeWindow');");
+    }));
+#endif
   
   resetZoomItem->triggered().connect( std::bind( []{
     wApp->doJavaScript( "Wt.WT.ResetPageZoom();" );
@@ -6165,7 +6219,6 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   }//if( InterSpecApp::isPrimaryWindowInstance() )
 #endif
 #endif
-  
 #endif
 }//void addDisplayMenu( menuParentDiv )
 

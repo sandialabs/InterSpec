@@ -36,6 +36,8 @@ class wxWebView;
 class wxIdleEvent;
 class wxCloseEvent;
 class wxFocusEvent;
+class wxMouseEvent;
+class wxThreadEvent;
 class wxWebViewEvent;
 class wxChildFocusEvent;
 
@@ -80,11 +82,28 @@ public:
   void handleOnClose(wxCloseEvent& evt);
   //void handleOnFocus(wxFocusEvent& evt);
   //void handleFocusLost(wxFocusEvent& evt);
-  //void handleChildFocus(wxChildFocusEvent& evt);
+  void handleChildFocus(wxChildFocusEvent& evt);
   const wxString& app_token() const;
 
 
   void handle_download_response(Wt::Http::Client* client, const boost::system::error_code& err, const Wt::Http::Message& response);
+  void handle_self_event(wxThreadEvent& evt);
+
+
+  /* Stop hack to use HTML titlebar to move window around when #m_dragging_window is true. */
+  void handle_mouse_up(wxMouseEvent& evt);
+
+  /* Hack to use HTML titlebar to move window around, when #m_dragging_window is true. */
+  void handle_mouse_move(wxMouseEvent& evt);
+
+
+#ifdef _WIN32
+  /* We need to overide MSWWindowProc to make a frameless window, otherwise there will be a few pixel
+  white-area at the top of the window that looks terrible.
+  */
+  WXLRESULT MSWWindowProc(WXUINT nMsg, WXWPARAM wParam, WXLPARAM lParam) wxOVERRIDE;
+#endif
+
 
 protected:
   static wxString generate_token();
@@ -94,6 +113,14 @@ private:
 
   wxString m_url;
   wxString m_token;
+
+  /** The Edge WebView2 doesnt respect the "-webkit-app-region: drag" property, meaning we would need 
+  the "native" header bar to allow dragging window around, taking up an extra 30 pixels or so.  So 
+  intead we will detect when the user clicks on the titlebar, in JS, and then capture the mouse in
+  c++, and move the window around until the user lets go.
+  */
+  bool m_dragging_window;
+  wxPoint m_mouse_down_pos;
 };//class InterSpecWebFrame
 
 

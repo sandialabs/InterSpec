@@ -70,13 +70,14 @@
 #include "InterSpecWxApp.h"
 #include "InterSpecWebFrame.h"
 
-
-
+ 
 
 InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore, const wxString& file_to_open) :
-  wxFrame(NULL, wxID_ANY, "InterSpec Frame", wxDefaultPosition, wxDefaultSize /*, wxRESIZE_BORDER */),
+  wxFrame(NULL, wxID_ANY, "InterSpec", wxDefaultPosition, wxDefaultSize, wxRESIZE_BORDER | wxSYSTEM_MENU),
   m_url( url ),
-  m_token( "" )
+  m_token( "" ),
+  m_dragging_window( false ),
+  m_mouse_down_pos( 0, 0 )
 {
   // set the frame icon
   //SetIcon(wxICON(sample));
@@ -90,7 +91,7 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
     InterSpecServer::set_file_to_open_on_load(m_token.c_str(), file_to_open.utf8_string());
 
   
-  SetTitle("wxInterSpec");
+  //SetTitle("InterSpec");
   EnableFullScreenView(); // Enable native fullscreen API on macOS
 
   wxBoxSizer* topsizer = new wxBoxSizer(wxVERTICAL);
@@ -120,8 +121,13 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
 
   
   wxString app_url = m_url + "?apptoken=" + m_token;
-  if (no_restore)
-    app_url += "&restore=no";
+
+  // Currently there is a bug, when we DONT restore state, the UI freezes about half the time; doesnt seem to ever happen when we restore a state... I have no idea
+  wxLogMessage("Not restoring state for debug purposes" );
+  app_url += "&restore=no";
+
+  //if (no_restore)
+  //  app_url += "&restore=no";
 
   // The user agent isnt terrible important for us, so we'll just use a default Chrome one on windows
   //  TODO: customize for macOS
@@ -302,13 +308,60 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   //Bind(wxEVT_KILL_FOCUS, &InterSpecWebFrame::handleFocusLost, this);t
   // 
   // The EVT_CHILD_FOCUS does seem to reliably trigger
-  //Bind(wxEVT_CHILD_FOCUS, &InterSpecWebFrame::handleChildFocus, this);
-}
+  Bind(wxEVT_CHILD_FOCUS, &InterSpecWebFrame::handleChildFocus, this);
+  Bind(wxEVT_THREAD, &InterSpecWebFrame::handle_self_event, this);
+
+  //
+  Bind(wxEVT_MOTION, &InterSpecWebFrame::handle_mouse_move, this);
+  Bind(wxEVT_LEFT_UP, &InterSpecWebFrame::handle_mouse_up, this);
+ }
 
 
 InterSpecWebFrame::~InterSpecWebFrame()
 {
 }
+
+
+#ifdef _WIN32
+WXLRESULT InterSpecWebFrame::MSWWindowProc(WXUINT nMsg, WXWPARAM wParam, WXLPARAM lParam)
+{
+  //Adapted from https://stackoverflow.com/questions/41179437/wxwidgets-wxborder-none-and-wxresize-border-makes-white-area
+
+  switch (nMsg)
+  {
+  case WM_NCACTIVATE:
+  {
+    lParam = -1;
+    break;
+  }
+  case WM_NCCALCSIZE:
+    if (wParam)
+    {
+      HWND hWnd = (HWND)this->GetHandle();
+      WINDOWPLACEMENT wPos;
+      wPos.length = sizeof(wPos);
+      GetWindowPlacement(hWnd, &wPos);
+      if (wPos.showCmd != SW_SHOWMAXIMIZED)
+      {
+        RECT borderThickness;
+        SetRectEmpty(&borderThickness);
+        AdjustWindowRectEx(&borderThickness,
+          GetWindowLongPtr(hWnd, GWL_STYLE) & ~WS_CAPTION, FALSE, NULL);
+        borderThickness.left *= -1;
+        borderThickness.top *= -1;
+        NCCALCSIZE_PARAMS* sz = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
+        sz->rgrc[0].top += 1;
+        sz->rgrc[0].left += borderThickness.left;
+        sz->rgrc[0].right -= borderThickness.right;
+        sz->rgrc[0].bottom -= borderThickness.bottom;
+        return 0;
+      }
+    }
+    break;
+  }
+  return wxFrame::MSWWindowProc(nMsg, wParam, lParam);
+}
+#endif //#ifdef _WIN32
 
 
 wxString InterSpecWebFrame::generate_token()
@@ -364,15 +417,22 @@ void InterSpecWebFrame::handleFocusLost(wxFocusEvent& event)
 
   RunScript("$('.app-titlebar').addClass('inactive');");
 }//void handleFocusLost(wxFocusEvent& event);
+*/
+
 
 void InterSpecWebFrame::handleChildFocus(wxChildFocusEvent& evt)
 {
   wxLogMessage("handleChildFocus");
 
-  // This next line doesnt appear to be necassary, but we'll do it anyway
-  RunScript("$('.app-titlebar').removeClass('inactive');");
+  // This next line doesnt appear to be necassary
+  //RunScript("$('.app-titlebar').removeClass('inactive');");
+
+  const auto app = dynamic_cast<InterSpecWxApp*>(wxApp::GetInstance());
+  assert(app);
+  if (app)
+    app->handle_frame_focus(this);
 }//void handleChildFocus(wxChildFocusEvent& evt);
-*/
+
 
 
 /**
@@ -454,6 +514,104 @@ void InterSpecWebFrame::OnDocumentLoaded(wxWebViewEvent& evt)
 }
 
 
+void InterSpecWebFrame::handle_self_event(wxThreadEvent& evt)
+{
+  wxLogMessage("In handle_self_event" );
+  const wxString str_val = evt.GetString();
+
+  if (str_val != "Wt::Http::Message")
+  {
+    wxLogError("InterSpecWebFrame::handle_self_event: Unrecognized event type: %s", str_val );
+    return;
+  }
+
+  Wt::Http::Message* response_ptr = evt.GetPayload< Wt::Http::Message*>();
+  assert(response_ptr);
+  if (!response_ptr)
+  {
+    wxLogError("InterSpecWebFrame::handle_self_event: unexpected nullptr msg" );
+    return;
+  }
+
+  std::unique_ptr<Wt::Http::Message> response_owner(response_ptr);
+  const Wt::Http::Message& response = *response_ptr;
+
+  std::string filename = "filename";
+  const std::string* disposition_value = response.getHeader("Content-Disposition");
+  if (disposition_value)
+  {
+    //attachment;filename="Ba133_gammas.csv";filename*=UTF-8''Ba133_gammas.csv
+
+    std::vector<std::string> fields;
+    SpecUtils::split(fields, *disposition_value, ";");
+    for (std::string val : fields)
+    {
+      SpecUtils::trim(val);
+      if (SpecUtils::istarts_with(val, "filename="))
+      {
+        filename = val.substr(9);
+        SpecUtils::erase_any_character(filename, "'\\/:?\"<>|");
+      }
+    }//for (std::string val : fields)
+
+  }//if(disposition_value )
+
+  const std::string* type_value = response.getHeader("Content-Type");
+  if (type_value)
+  {
+    // "text/csv"
+  }
+
+  wxString ext = SpecUtils::file_extension(filename);
+  if (!ext.empty())
+    ext = "*" + ext;
+
+  wxConfigBase* config = wxConfigBase::Get(true);
+  wxString defaultDir = config->Read("/LastSaveDir", wxString(""));
+  if (!defaultDir.empty())
+  {
+    wxFileName defDirFile(defaultDir);
+    if (!defDirFile.IsOk() || !defDirFile.DirExists() || !defDirFile.IsDirWritable())
+      defaultDir = "";
+  }
+
+  wxFileDialog saveFileDialog(this, _("Save file"), defaultDir, filename,
+    ext, wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+  if (saveFileDialog.ShowModal() == wxID_CANCEL)
+  {
+    wxLogMessage("User canceled saving file");
+    return;     // the user changed idea...
+  }
+
+  // save the current contents in the file;
+  // this can be done with e.g. wxWidgets output streams:
+  const wxString savePath = saveFileDialog.GetPath();
+  wxFileOutputStream output_stream(savePath);
+  if (!output_stream.IsOk())
+  {
+    wxLogError("Cannot save current contents in file '%s'.", saveFileDialog.GetPath());
+    return;
+  }
+
+  std::string body = response.body();
+  output_stream.Write(body.c_str(), body.size());
+
+  if (!output_stream.IsOk())
+  {
+    wxLogError("Error writing output stream.");
+  }
+  else
+  {
+    wxFileName lastSaveName(savePath);
+    wxString lastSavePath = lastSaveName.GetPath();
+    config->Write("/LastSaveDir", lastSavePath);
+    wxLogMessage("Saved file: %s", saveFileDialog.GetPath().c_str());
+  }
+  output_stream.Close();
+}//void handle_self_event(wxThreadEvent& evt)
+
+
+
 void InterSpecWebFrame::handle_download_response(Wt::Http::Client* client, const boost::system::error_code &err, const Wt::Http::Message& response) {
   // TODO: should we be in a the MAIN thread here?  Cause I think we're in a Wt owned Asio thread, I would guess 
 
@@ -464,78 +622,14 @@ void InterSpecWebFrame::handle_download_response(Wt::Http::Client* client, const
   {
     if (response.status() == 200) 
     {
-      std::string filename = "filename";
-      const std::string *disposition_value = response.getHeader("Content-Disposition");
-      if(disposition_value )
-      {
-        //attachment;filename="Ba133_gammas.csv";filename*=UTF-8''Ba133_gammas.csv
-
-        std::vector<std::string> fields;
-        SpecUtils::split(fields, *disposition_value, ";");
-        for (std::string val : fields)
-        {
-          SpecUtils::trim(val);
-          if (SpecUtils::istarts_with(val, "filename="))
-          {
-            filename = val.substr(9);
-            SpecUtils::erase_any_character(filename, "'\\/:?\"<>|");
-          }
-        }//for (std::string val : fields)
-      
-      }//if(disposition_value )
-
-      const std::string* type_value = response.getHeader("Content-Type");
-      if (type_value)
-      {
-        // "text/csv"
-      }
-      
-      wxString ext = SpecUtils::file_extension(filename);
-      if (!ext.empty())
-        ext = "*" + ext;
-
-      
-      wxConfigBase* config = wxConfigBase::Get(true);
-      wxString defaultDir = config->Read("/LastSaveDir", wxString(""));
-      if( !defaultDir.empty() )
-      {
-        wxFileName defDirFile(defaultDir);
-        if (!defDirFile.IsOk() || !defDirFile.DirExists() || !defDirFile.IsDirWritable())
-          defaultDir = "";
-      }
-
-      wxFileDialog saveFileDialog(this, _("Save file"), defaultDir, filename,
-        ext, wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
-      if (saveFileDialog.ShowModal() == wxID_CANCEL)
-      {
-        return;     // the user changed idea...
-      }
-
-      // save the current contents in the file;
-      // this can be done with e.g. wxWidgets output streams:
-      const wxString savePath = saveFileDialog.GetPath();
-      wxFileOutputStream output_stream(savePath );
-      if (!output_stream.IsOk())
-      {
-        wxLogError("Cannot save current contents in file '%s'.", saveFileDialog.GetPath());
-        return;
-      }
-
-      std::string body = response.body();
-      output_stream.Write(body.c_str(), body.size());
-      
-      if (!output_stream.IsOk())
-      {
-        wxLogError("Error writing output stream." );
-      }
-      else
-      {
-        wxFileName lastSaveName(savePath);
-        wxString lastSavePath = lastSaveName.GetPath();
-        config->Write("/LastSaveDir", lastSavePath);
-        wxLogMessage("Saved file: %s", saveFileDialog.GetPath().c_str() );
-      }
-      output_stream.Close();
+      // Doing the Save As dialog here in this thread seems to work, but it isnt the proper thing 
+      //  to do (we should be in wxWidgets main thread), so we'll post an event to be handled in
+      //  the main thread.
+      wxThreadEvent* evt = new wxThreadEvent();
+      Wt::Http::Message* msg_copy = new Wt::Http::Message(response);
+      evt->SetString("Wt::Http::Message");
+      evt->SetPayload(msg_copy);
+      this->QueueEvent(evt);
     }
     else
     {
@@ -690,7 +784,7 @@ void InterSpecWebFrame::OnNewWindow(wxWebViewEvent& evt)
 
 void InterSpecWebFrame::OnTitleChanged(wxWebViewEvent& evt)
 {
-  SetTitle(evt.GetString());
+  //SetTitle(evt.GetString());
   wxLogMessage("%s", "Title changed; title='" + evt.GetString() + "'");
 }
 
@@ -726,6 +820,7 @@ void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
   }
   else if (msg == "CloseWindow")
   {
+    wxLogMessage("Closing window");
     Close();
   } else if(msg == "SessionFinishedLoading")
   {
@@ -747,12 +842,64 @@ void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
     else
       wxLogMessage("Failed to launch '%s' in default browser.", url_str.utf8_string().c_str());
   }
+  else if (msg == "NewAppWindow")
+  {
+    wxLogMessage("Opening a new app window");
+    auto app = dynamic_cast<InterSpecWxApp*>(wxApp::GetInstance());
+    assert(app);
+    if (app)
+      app->new_app_window();
+  }
+  else if (msg == "MouseDownInTitleBar")
+  {
+    wxLogMessage("MouseDownInTitleBar");
+    CaptureMouse();
+    m_dragging_window = true;
+    wxPoint pos = wxGetMousePosition();
+    wxPoint origin = GetPosition();
+    int dx = pos.x - origin.x;
+    int dy = pos.y - origin.y;
+    m_mouse_down_pos = wxPoint(dx, dy);
+  }
   else
   {
     wxLogMessage("Unrocgnized message from JS: '%s'.", msg.utf8_string().c_str());
   }
 }//void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
 
+
+void InterSpecWebFrame::handle_mouse_up(wxMouseEvent& evt)
+{
+  wxLogMessage("handle_mouse_up" );
+ 
+  if (m_dragging_window && HasCapture() )
+  {
+    wxLogMessage("handle_mouse_up: Had Capture");
+    ReleaseMouse();
+  }
+  else
+  {
+    evt.Skip();
+  }
+
+  m_dragging_window = false;
+}//handle_mouse_up
+
+void InterSpecWebFrame::handle_mouse_move(wxMouseEvent& evt)
+{
+  if (!m_dragging_window)
+  {
+    evt.Skip();
+    return;
+  }
+
+  wxPoint pt = evt.GetPosition();
+  if (evt.Dragging() && evt.LeftIsDown())
+  {
+    wxPoint pos = ClientToScreen(pt);
+    Move(wxPoint(pos.x - m_mouse_down_pos.x, pos.y - m_mouse_down_pos.y));
+  }
+}//void handle_mouse_move(wxMouseEvent& evt)
 
 
 void InterSpecWebFrame::OnScriptResult(wxWebViewEvent& evt)

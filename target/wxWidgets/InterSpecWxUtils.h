@@ -30,8 +30,6 @@
 namespace InterSpecWxUtils
 {
 
-  void openSessionInExternalBrowser();
-
 }//namespace InterSpecWxUtils
 
 

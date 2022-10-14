@@ -54,7 +54,9 @@ public:
   virtual bool OnCmdLineParsed(wxCmdLineParser& parser) override;
 
   void handle_frame_closing(InterSpecWebFrame* frame);
+  void handle_frame_focus(InterSpecWebFrame* frame);
   void handle_open_file_message(const std::string& message);
+  void new_app_window();
 
 private:
   wxString m_url;

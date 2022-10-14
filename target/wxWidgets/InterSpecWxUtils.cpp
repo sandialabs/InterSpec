@@ -27,22 +27,4 @@
 
 namespace InterSpecWxUtils
 {
-
-  //void sessionSuccessfullyLoaded()
-  //{
-    // TODO: need to implement posting to main thread, I'm guesing
-    // 
-    //  wxCommandEvent e( wxEVT_COMMAND_TEXT_UPDATED, NUMBER_UPDATE_ID );
-    // e.SetPayload(d1);  
-    // e.wxCommandEvent("SuccesfullyLoaded");
-    // frmParent->GetEventHandler()->AddPendingEvent(e);
-    //wxConfigBase* config = wxConfigBase::Get(true);
-    //config->Write("/NumLoadAttempts", 0);
-  //}//void sessionSuccessfullyLoaded()
-
-
-  void openSessionInExternalBrowser()
-  {
-    // TODO: need to implement
-  }//void openSessionInExternalBrowser()
 }//namespace wxInterSpecUtils

@@ -153,11 +153,15 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
    
   setupDomEnvironment();
   setupWidgets( true );
+
+  Wt::log("debug") << "Done in InterSpecApp constructor.";
 }//InterSpecApp constructor
 
 
 InterSpecApp::~InterSpecApp()
 {
+  Wt::log("debug") << "Entering ~InterSpecApp() destructor.";
+
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
   if( !m_externalToken.empty() )
     InterSpecServer::set_session_destructing( m_externalToken.c_str() );
@@ -312,7 +316,9 @@ void InterSpecApp::setupDomEnvironment()
     "a(0); a(50); a(500); a(2500);"
   "}"
   );
-  cout << "wApp->javaScriptClass()='" << wApp->javaScriptClass() << "'" << endl;
+  
+  
+  //cout << "wApp->javaScriptClass()='" << wApp->javaScriptClass() << "'" << endl; //Prints "Wt"
   
   
   if( isMobile() )
@@ -335,8 +341,6 @@ void InterSpecApp::setupDomEnvironment()
                          padding-right: inherit  !important; }")
                   .appendTo("head");
     );
-    
-    //cerr << "prevent_spinner_js='" << prevent_spinner_js << "'" << endl;
     
     //Prevent mobile from hovering white
     const char *prevent_hovering_white = INLINE_JAVASCRIPT(
@@ -381,8 +385,8 @@ void InterSpecApp::setupDomEnvironment()
     if( nargscanned == 5 )
     {
       const DeviceOrientation orient = DeviceOrientation(orientation);
-      cout << "Received initial orientation: " << orientation
-           << " and SafeAreas={" << top << ", " << right << ", " << bottom << ", " << left << "}" << endl;
+      Wt::log("debug") << "Received initial orientation: " << orientation
+           << " and SafeAreas={" << top << ", " << right << ", " << bottom << ", " << left << "}";
       if( ((orient != DeviceOrientation::LandscapeLeft)
            && (orient != DeviceOrientation::LandscapeRight))
          || (top < 0)    || (top > 50)
@@ -390,14 +394,14 @@ void InterSpecApp::setupDomEnvironment()
          || (bottom < 0) || (bottom > 50)
          || (left < 0)   || (left > 75) )
       {
-        cerr << "Initial device orientations invalid!" << endl;
+        Wt::log("error") << "Initial device orientations invalid!";
       }else
       {
         setSafeAreaInsets( orientation, top, right, bottom, left );
       }
     }else
     {
-      cerr << "Failed to parse SafeAreas='" << iter->second[0] << "'" << endl;
+      Wt::log("error") << "Failed to parse SafeAreas='" << iter->second[0] << "'";
     }
   }
 #endif
@@ -519,11 +523,11 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       
       if( loadedSpecFile )
       {
-        cout << "Opened file/url from initial request: '" << initial_file << "'" << endl;
+        Wt::log("debug") << "Opened file/url from initial request: '" << initial_file << "'";
       }else
       {
         //userOpenFileFromFilesystem will call SpecMeasManager::displayInvalidFileMsg for us
-        cerr << "Invalid file/url from initial request: '" << initial_file << "'" << endl;
+        Wt::log("error") << "Invalid file/url from initial request: '" << initial_file << "'";
       }
     }//if( !initial_file.empty() )
   }//if( !m_externalToken.empty() )
@@ -580,8 +584,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         transaction.commit();
       }catch( std::exception &e )
       {
-        cerr << "Failed to commit transaction while loading state, caught: "
-        << e.what() << endl;
+        Wt::log("error") << "Failed to commit transaction while loading state, caught: "
+        << e.what();
       }//try / catch
       
       if( state )
@@ -610,7 +614,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
               InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user,
                               "PromptStateLoadOnStart", dont_ask, m_viewer );
             }catch( std::exception &e ) {
-              cerr << "Failed setting 'PromptStateLoadOnStart' user prefrence" << endl;
+              Wt::log("error") << "Failed setting 'PromptStateLoadOnStart' user prefrence/";
             }
           };
         
@@ -619,7 +623,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
               InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user,
                                     "LoadPrevStateOnStart", load, m_viewer );
             }catch( std::exception &e ) {
-              cerr << "Failed setting 'LoadPrevStateOnStart' user prefrence" << endl;
+              Wt::log("error") << "Failed setting 'LoadPrevStateOnStart' user prefrence.";
             }
           };
         
@@ -676,12 +680,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
       }else
       {
-        cerr << "Could not load previously saved state" << endl;
+        Wt::log("error") << "Could not load previously saved state.";
       }
     }//if( saveSpectra && saveState )
   }catch( std::exception &e )
   {
-    cerr << "Failed to load app state, caught: " << e.what() << endl;
+    Wt::log("error") << "Failed to load app state, caught: '" << e.what() << "'.";
   }//try / catch
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
   
@@ -709,8 +713,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     
     Dbo::ptr<UserState> state = sql->session()->find<UserState>().where( query );
     transaction.commit();
-    std::cerr << "SpecViewerApp: Will try to open test state ID="
-    << id << " (" << id << ")" << std::endl;
+    Wt::log("info") << "SpecViewerApp: Will try to open test state ID="
+    << id << " (" << id << ").";
     
     if( state )
     {
@@ -718,7 +722,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       loadedSpecFile = true;
     }else
     {
-      cerr << "Could not load test state" << endl;
+      Wt::log("error") << "Could not load test state.";
     }//if( state ) / else
   }//if( (stateiter != parmap.end()) && stateiter->second.size() )
 #endif  //#if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -727,9 +731,11 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   auto showWelcomeCallback = [this,loadedSpecFile](){
     //If we already loaded a spectrum, then dont show welcome dialog (or IE
     //  warning dialog)
-    if( loadedSpecFile )
+    if (loadedSpecFile)
+    {
       return;
-    
+    }
+
     //If client is internet explorer, show a warning before the welcome dialog
     if( !environment().agentIsIE() )
     {
@@ -804,8 +810,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
   
   if( m_viewer->m_user )
-    cerr << "Have started session " << sessionId() << " for user "
-    << m_viewer->m_user->userName() << endl;
+    Wt::log("debug") << "Have started session " << sessionId() << " for user "
+    << m_viewer->m_user->userName() << ".";
   
 #if( USING_ELECTRON_NATIVE_MENU )
   if( isPrimaryWindowInstance() )
@@ -981,11 +987,11 @@ InterSpecApp *InterSpecApp::instanceFromExtenalToken( const std::string &idstr )
     return (InterSpecApp *)0;
   
   std::lock_guard<std::mutex> lock( AppInstancesMutex );
-  //cout << "THere are AppInstances=" << AppInstances.size() << "; we want session: '" << idstr << "'" << std::endl;
+  //Wt::log("debug") << "There are AppInstances=" << AppInstances.size() << "; we want session: '" << idstr << "'";
   for( InterSpecApp *app : AppInstances )
   {
     Wt::WApplication::UpdateLock lock( app );
-    //cout << "\t An instance=" << app->externalToken() << std::endl;
+    //Wt::log("debug") << "\tSession '" << idstr << "' An instance=" << app->externalToken();
     if( app->externalToken() == idstr )
       return app;
   }
@@ -1064,9 +1070,9 @@ void InterSpecApp::setSafeAreaInsets( const int orientation, const float top,
   // Note that CSS takes care of insets, mostly by detecting the LandscapeLeft and LandscapeRight
   //  CSS classes, which are set by the `DoOrientationChange` javascript function
   
-  cout << "Set safe area insets: orientation=" << orientation
+  Wt::log("debug") << "Set safe area insets: orientation=" << orientation
        << ", safeAreas={" << top << ", " << right << ", "
-       << bottom << ", " << left << "}" << endl;
+       << bottom << ", " << left << "}";
 }//setSafeAreaInsets(...)
 
 void InterSpecApp::getSafeAreaInsets( InterSpecApp::DeviceOrientation &orientation,
@@ -1105,8 +1111,8 @@ void InterSpecApp::notify( const Wt::WEvent& event )
     svlog( msg, WarningWidget::WarningMsgHigh );
     
     char message[512];
-    snprintf( message, sizeof(message), "Uncaught exception in event loop: %s", e.what() );
-    cerr << message << endl;
+    snprintf( message, sizeof(message), "Uncaught exception in event loop: '%s'.", e.what() );
+    Wt::log("error") << message;
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, message );
 #endif
@@ -1117,7 +1123,7 @@ void InterSpecApp::notify( const Wt::WEvent& event )
 
 void InterSpecApp::unload()
 {
-  cerr << "\n\nReceived unload from " << sessionId() << endl;
+  Wt::log("info") << "Received unload from " << sessionId() << ".";
   WApplication::unload();
 }//void unload()
 
@@ -1140,8 +1146,8 @@ void InterSpecApp::prepareForEndOfSession()
         m_viewer->m_user.modify()->addUsageTimeDuration( m_activeTimeInSession );
         
         const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
-        cout << "Added " << nmilli.count() << " ms usage time for user "
-             << m_viewer->m_user->userName() << endl;
+        Wt::log("info") << "Added " << nmilli.count() << " ms usage time for user "
+             << m_viewer->m_user->userName();
         
         m_activeTimeInSession = std::chrono::seconds(0);
         transaction.commit();
@@ -1229,7 +1235,7 @@ void InterSpecApp::prepareForEndOfSession()
                   } //no UserState
               }catch( std::exception &e )
               {
-                  cerr << "Could not access current Snapshot State ID while EndOfSession " << e.what() << endl;
+                Wt::log("error") << "Could not access current Snapshot State ID while EndOfSession " << e.what();
               }//try / catch
           }
           
@@ -1238,10 +1244,10 @@ void InterSpecApp::prepareForEndOfSession()
         try
         {
           m_viewer->saveStateToDb( dbstate );
-          cout << "Saved end of session app state to database" << endl;
+          Wt::log("debug") << "Saved end of session app state to database";
         }catch( std::exception &e )
         {
-          cerr << "InterSpecApp::prepareForEndOfSession(): " << e.what() << endl;
+          Wt::log("error") << "InterSpecApp::prepareForEndOfSession() error: " << e.what();
         }
         transaction.commit();
       }//if( saveSpectra && saveState )
@@ -1250,10 +1256,10 @@ void InterSpecApp::prepareForEndOfSession()
     
   }catch( std::exception &e )
   {
-    cerr << "InterSpecApp::prepareForEndOfSession() caught: " << e.what() << endl;
+    Wt::log("error") << "InterSpecApp::prepareForEndOfSession() caught: " << e.what();
   }//try / catch
   
-  cerr << "Have prepared for end of session " << sessionId() << endl;
+  Wt::log("debug") << "Have prepared for end of session " << sessionId() << ".";
 }//void InterSpecApp::prepareForEndOfSession()
 
 
@@ -1364,7 +1370,7 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
 #if( PERFORM_DEVELOPER_CHECKS )
   log_developer_error( __func__, errmsg.c_str() );
 #endif
-  cerr << errmsg << endl;
+  Wt::log("error") << errmsg;
 }//void miscSignalHandler( const std::string &signal )
 
 
@@ -1392,8 +1398,8 @@ void InterSpecApp::finalize()
   prepareForEndOfSession();
   
   if( m_viewer && m_viewer->m_user )
-    cerr << "Have finalized session " << sessionId() << " for user "
-         << m_viewer->m_user->userName() << endl;
+    Wt::log("info") << "Have finalized session " << sessionId() << " for user "
+         << m_viewer->m_user->userName();
 }//void InterSpecApp::finalize()
 
 
@@ -1500,6 +1506,8 @@ bool InterSpecApp::isTablet() const
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID  || BUILD_AS_WX_WIDGETS_APP )
 void InterSpecApp::loadSuccesfullCallback()
 {
+  Wt::log("debug") << "Succesfully loaded session.";
+
   m_sucessfullyLoadedSignal.reset();
   
   if( InterSpecApp::isPrimaryWindowInstance() )
