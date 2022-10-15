@@ -90,8 +90,7 @@ def local_props(key) { // reads ~ value from local.properties
     properties.load(project.rootProject.file('local.properties').newDataInputStream())
     def val = properties.getProperty(key, null)
     if (val == null)
-        throw new GradleException("""\
-                cant find value '${key}' in file 'local.properties'.  """)
+        throw new GradleException("""cant find value '${key}' in file 'local.properties'.  """)
 
     return val
 }

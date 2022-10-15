@@ -12,24 +12,28 @@ set( BOOST_IOSTREAMS_ENABLE_ZSTD OFF CACHE INTERNAL ""  )
 set( BOOST_IOSTREAMS_ENABLE_ZLIB OFF CACHE INTERNAL ""  )
 set( BOOST_IOSTREAMS_ENABLE_LZMA OFF CACHE INTERNAL ""  )
 set( BOOST_IOSTREAMS_ENABLE_BZIP2 OFF CACHE INTERNAL ""  )
-set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "Build SHARED libraries")
+set( BUILD_SHARED_LIBS OFF CACHE INTERNAL "Build SHARED libraries")
 
 # TODO: set BOOST libraries to not build, like wave, beast, wserialization, etc
 
 # CMAKE_CURRENT_SOURCE_DIR could either be project base directory, or a target 
 #  directory, so we will search for the patch files to apply
-find_file( WT_PATCH_FILE "wt/3.7.1/FetchContent/wt_3.7.1_FetchContent.git.patch"  
+find_file( WT_PATCH_FILE "wt/3.7.1/FetchContent/wt_3.7.1_FetchContent.git.patch"
   PATHS "${CMAKE_CURRENT_SOURCE_DIR}/target/patches"
         "${CMAKE_CURRENT_SOURCE_DIR}/../target/patches"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../target/patches"
-  REQUIRED NO_DEFAULT_PATH
+  REQUIRED
+  NO_DEFAULT_PATH
+  NO_CMAKE_FIND_ROOT_PATH
 ) 
 
 find_file( ZLIB_PATCH_FILE "zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch"  
   PATHS "${CMAKE_CURRENT_SOURCE_DIR}/target/patches"
         "${CMAKE_CURRENT_SOURCE_DIR}/../target/patches"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../target/patches"
-  REQUIRED NO_DEFAULT_PATH
+  REQUIRED
+  NO_DEFAULT_PATH
+  NO_CMAKE_FIND_ROOT_PATH
 )
 
 
