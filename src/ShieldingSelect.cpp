@@ -1817,13 +1817,6 @@ void ShieldingSelect::init()
   
   addStyleClass( "ShieldingSelect" );
   
-  if( m_materialSuggest )
-  {
-    if( m_materialSuggest->objectName().empty() )
-      m_materialSuggest->setObjectName( "ShieldingSuggest" + id() );
-    m_materialSuggestName = m_materialSuggest->objectName();
-  }//if( m_materialSuggest )
-  
 //  int voidIndex = -1;
   WContainerWidget *materialDiv = new WContainerWidget( this );
   WGridLayout* materialDivLayout = new WGridLayout();
@@ -2109,20 +2102,31 @@ ShieldingSelect::~ShieldingSelect()
 {
   if( m_materialSuggest && m_materialEdit )
   {
-    WApplication *app = wApp;
-    
-    WContainerWidget *root = (app ? app->domRoot() : nullptr);
-    
-    if( root )
+    // We will double check that m_materialSuggest is still owned by the InterSpec instance.
+    //  If this ShieldingSelect is in a WDialog, it may be destructing after the InterSpec instance
+    //  destructs!  In that case, we shouldnt access `m_materialSuggest`, as its already been
+    //  deleted.
+    InterSpec *interspec = InterSpec::instance();
+    if( interspec )
     {
-      //Testing for root appears to be enough, and m_materialSuggestName does not
-      //  need to be done for our current specific use case, but leaving in the
-      //  checking of the name for the future, JIC.
-      WWidget *w = app->findWidget( m_materialSuggestName );
-      if( w || m_materialSuggestName.empty() )
+      const vector<Wt::WObject *> &kids = interspec->Wt::WObject::children();
+      // kids.size() is usually just 2 or 3, so this isnt that heavy of an operation.
+      auto pos = std::find( begin(kids), end(kids), static_cast<WObject *>(m_materialSuggest) );
+      if( pos != end(kids) )
+      {
+        // We get here, for example, when you manually close the Activity/Shielding fit window (or
+        //  remove a shielding from within it).
         m_materialSuggest->removeEdit( m_materialEdit );
-      else
-       cerr << "~ShieldingSelect(): Suggest not in DOM, not removing form from suggestion" << endl;
+      }else
+      {
+        // I dont think we get here - but I'll leave the assert in, just to see
+        cerr << "~ShieldingSelect(): Suggest not in DOM, not removing edit from suggestion" << endl;
+        assert( 0 );
+      }
+    }else
+    {
+      // We get here when you close a tab, or the window or whatever (e.g., WApplication is being
+      //  destructed); I think because WApplication::instance() is nullptr, so so is `interspec`
     }
   }//if( m_materialSuggest && m_materialEdit )
   

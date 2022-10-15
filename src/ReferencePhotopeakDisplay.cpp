@@ -186,6 +186,7 @@ namespace
       
       filename += ".csv";
       suggestFileName( filename, WResource::Attachment );
+      response.setMimeType( "text/csv" );
       
       std::ostream &out = response.out();
       
@@ -925,7 +926,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_promptLinesOnly = new WCheckBox( "Prompt Only" );  //ɣ
   m_promptLinesOnly->setMargin( 5, Wt::Left );
 
-  tooltip = "Gammas from only the original nuclide, and the daughters until one"
+  tooltip = "Gammas from only the original nuclide, and the descendants until one"
             " of them has a longer half-life than the original nuclide; the"
             " decay chain is in equilirium till that point.";
   HelpSystem::attachToolTipOn( m_promptLinesOnly, tooltip, showToolTips );
@@ -1108,7 +1109,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   RefGammaCsvResource *csv = new RefGammaCsvResource( this );
   csv->setTakesUpdateLock( true );
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   WAnchor *csvButton = new WAnchor( WLink(csv), bottomRow );
   csvButton->setTarget( AnchorTarget::TargetNewWindow );
   csvButton->setStyleClass( "LinkBtn DownloadLink RefGammaCsv" );

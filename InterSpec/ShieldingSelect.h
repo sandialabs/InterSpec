@@ -536,10 +536,6 @@ protected:
   
   GammaInteractionCalc::GeometryType m_geometry;
 
-  //To help safely remove m_materialSuggest from m_materialEdit when this
-  // ShieldingSelect is in a WDialog, and hence getting destroyed after the DOM,
-  // and hence after m_materialSuggest has already been deleted.
-  std::string m_materialSuggestName;
   Wt::WSuggestionPopup *m_materialSuggest;  //Not owned by this object
   
   Wt::WLineEdit *m_materialEdit;

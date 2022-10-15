@@ -80,6 +80,9 @@ namespace
       m_text = new WText( this );
       m_load = new WPushButton( "Load", this );
       
+      // We need this, or else by the time we get to loadSampleSelected(), no row will be
+      this->touchStarted().preventPropagation();
+      
       addStyleClass( "SampleSpecRow" );
       m_text->addStyleClass( "SampleSpecText" );
       m_load->addStyleClass( "SampleSpecLoadBtn" );
@@ -167,7 +170,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   WGridLayout *layout = stretcher();
   layout->setContentsMargins( 9, 0, 9, 0 );
   layout->addWidget( m_menu, 0, 0, AlignLeft );
-  const int nstack_rows = m_viewer->isMobile() ? 1 : 3;  //"License and Terms" and "More in depth information" links for non-mombile users
+  const int nstack_rows = m_viewer->isMobile() ? 1 : 3;  //"License and Terms" and "More in depth information" links for non-mobile users
   layout->addWidget( stack, 0, 1, nstack_rows, 1 );
   layout->setRowStretch( 0, 1 );
   
@@ -1025,7 +1028,10 @@ void UseInfoWindow::loadSampleSelected()
 {
   WModelIndexSet indices = m_tableSample->selectedIndexes();
   if( indices.empty() )
+  {
+    cout << "UseInfoWindow::loadSampleSelected(): No selected indices." << endl;
     return;
+  }
   
   loadSample( *indices.begin() );
 }//void loadSampleSelected( )

@@ -211,7 +211,7 @@ void SpectraHeader::init( const std::vector<std::shared_ptr<const SpecUtils::Mea
     snprintf( buffer, sizeof(buffer), "%.1f m/s", m->speed() );
     speed_ = buffer;
     sample_number = m->sample_number();
-    start_time = WDateTime::fromPosixTime( m->start_time() );
+    start_time = WDateTime::fromPosixTime( to_ptime( m->start_time() ) );
   }//for( std::shared_ptr<const SpecUtils::Measurement> &m : measurements )
 
   live_time /= measurements.size();
@@ -704,7 +704,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     return;
   }//if( !allowsave )
   
-#if( PERFORM_DEVELOPER_CHECKS )
+#if( PERFORM_DEVELOPER_CHECKS && SpecUtils_ENABLE_EQUALITY_CHECKS )
   {//begin code block to do check
     string filepath = SpecUtils::temp_file_name("DevTestSaveToDb", InterSpecApp::tempDirectory() );
     const string filename = filepath + ".n42";
@@ -1289,7 +1289,7 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
       //This next line is not necessary, as long as we properly initialized 'info'
       m_hasNeutronDetector |= (meas && meas->contained_neutron());
       if( meas && (sample == (*sample_numbers.begin())) )
-        m_spectrumTime = WDateTime::fromPosixTime( meas->start_time() );
+        m_spectrumTime = WDateTime::fromPosixTime( to_ptime( meas->start_time() ) );
     }//for( const int detector : detector_numbers )
   }//for( const int sample : sample_numbers )
 

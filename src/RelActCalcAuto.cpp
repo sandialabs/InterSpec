@@ -26,6 +26,7 @@
 #include <set>
 #include <deque>
 #include <tuple>
+#include <chrono>
 #include <thread>
 #include <limits>
 #include <fstream>
@@ -41,6 +42,13 @@
 #include "Wt/WDateTime"
 #include "Wt/WApplication"
 #include "Wt/WLocalDateTime"
+
+#ifdef _MSC_VER
+#undef isinf
+#undef isnan
+#undef isfinite
+#undef isnormal
+#endif
 
 #include "ceres/ceres.h"
 
@@ -2415,7 +2423,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_chi2 += v*v;
     
     // TODO: need to setup the DOF
-    solution.m_dof = -1.0;
+    solution.m_dof = 0;
     solution.m_warnings.push_back( "Not currently calculating DOF - need to implement" );
     //solution.m_dof = residuals.size() - ;
     
@@ -3412,7 +3420,7 @@ int run_test()
     }else
     {
       const auto roi_ranges_node = get_required_node(base_node, "RoiRangeList");
-      XML_FOREACH_DAUGHTER(roi_range_node, roi_ranges_node, "RoiRange")
+      XML_FOREACH_CHILD(roi_range_node, roi_ranges_node, "RoiRange")
       {
         RoiRange range;
         range.fromXml( roi_range_node );
@@ -3420,7 +3428,7 @@ int run_test()
       }
       
       const auto nucs_node = get_required_node(base_node, "NucInputInfoList");
-      XML_FOREACH_DAUGHTER(nuc_node, nucs_node, "NucInputInfo")
+      XML_FOREACH_CHILD(nuc_node, nucs_node, "NucInputInfo")
       {
         NucInputInfo nuc;
         nuc.fromXml( nuc_node );
@@ -3428,7 +3436,7 @@ int run_test()
       }
       
       auto float_peak_node = XML_FIRST_NODE(base_node, "FloatingPeakList");
-      XML_FOREACH_DAUGHTER(float_peak_node, nucs_node, "FloatingPeak")
+      XML_FOREACH_CHILD(float_peak_node, nucs_node, "FloatingPeak")
       {
         FloatingPeak peak;
         peak.fromXml( float_peak_node );
@@ -3831,7 +3839,7 @@ void NucInputInfo::fromXml( const ::rapidxml::xml_node<char> *nuc_info_node )
     
     gammas_to_exclude.clear();
     const rapidxml::xml_node<char> *exclude_node = XML_FIRST_NODE( nuc_info_node, "GammasToExclude" );
-    XML_FOREACH_DAUGHTER( energy_node, exclude_node, "Energy" ) //ok if exclude_node is nullptr
+    XML_FOREACH_CHILD( energy_node, exclude_node, "Energy" ) //ok if exclude_node is nullptr
     {
       const string strval = SpecUtils::xml_value_str(energy_node);
       double energy;
@@ -4103,7 +4111,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
     out << "Warning: " << warning << "\n";
   
   if( m_status != Status::Success )
-    return;
+    return out;
   
   // Rake code from RelEff
   out << "Rel. Eff. Eqn.: y = "
@@ -4304,10 +4312,10 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   
 
   results_html << "<table class=\"nuctable resulttable\">\n";
-  results_html << "  <caption>Isotope relative activities and mass fractions</caption>\n";
+  results_html << "  <caption>Relative activities and mass fractions</caption>\n";
   results_html << "  <thead><tr>"
                   " <th scope=\"col\">Nuclide</th>"
-                  " <th scope=\"col\">Rel. Act</th>"
+                  " <th scope=\"col\">Rel. Act.</th>"
                   " <th scope=\"col\">Total Mas Frac.</th>"
                   " <th scope=\"col\">Enrichment</th>"
                   " </tr></thead>\n";
@@ -4530,10 +4538,26 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     local_time = Wt::WLocalDateTime::currentDateTime().toString("yyyyMMdd hh:mm:ss").toUTF8();
   }else
   {
-    const auto utc_ts = boost::posix_time::second_clock::universal_time();
-    const auto local_ts = boost::posix_time::second_clock::local_time();
-    utc_time = SpecUtils::to_common_string( utc_ts, true);
-    local_time = SpecUtils::to_common_string( local_ts, true );
+    const auto utc_ts = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+    utc_time = SpecUtils::to_common_string( utc_ts, true );
+    
+    
+    std::time_t current_time = std::chrono::system_clock::to_time_t(utc_ts);
+    struct tm current_local_time;
+#if( defined( WIN32 ) )
+    localtime_s( &current_local_time, &current_time );
+#else
+    localtime_r( &current_time, &current_local_time );
+#endif
+    char buffer[64] = { '\0' };
+    
+    //"9-Sep-2014 03:02:15 PM"
+    std::strftime( buffer, sizeof(buffer), "%e-%b-%Y %r", &current_local_time );
+    local_time = buffer;
+    SpecUtils::trim(local_time); //"%e" can be precedded by a space
+    
+    //const auto local_ts = to_time_point( boost::posix_time::second_clock::local_time() );
+    //local_time = SpecUtils::to_common_string( local_ts, true );
   }
   
   const double nsec_eval = 1.0E-6*m_num_microseconds_eval;

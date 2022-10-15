@@ -77,7 +77,7 @@ const BackgroundLine BackgroundReactionLines[28] =
   BackgroundLine( 174.95f,  0.0f,   "Ge(n,g)", BackgroundReaction, "Ge70(n,g) activation" ),
   BackgroundLine( 198.39f,  0.0f,   "Ge71m",   BackgroundReaction, "Sum peak Ge70(n,g)" ),
   BackgroundLine( 278.26f,  0.0f,   "Cu64",    BackgroundReaction, "Cu63(n,g), Cu65(n,2n) prompt gamma" ),
-  BackgroundLine( 336.24f,  0.459f,  "Cd115m,In115m", BackgroundReaction, "Activation of Cd (daughter of Cd115)" ),
+  BackgroundLine( 336.24f,  0.459f,  "Cd115m,In115m", BackgroundReaction, "Activation of Cd (descendant of Cd115)" ),
   BackgroundLine( 416.86f,  0.277f,  "In116m",  BackgroundReaction, "In115(n,g) activation of In metal seal" ),
   BackgroundLine( 527.90f,  0.275f,  "Cd115",   BackgroundReaction, "Cd114(n,g) activation" ),
   BackgroundLine( 558.46f,  0.0f,   "Cd114",   BackgroundReaction, "Cd113(n,g) prompt gamma" ),

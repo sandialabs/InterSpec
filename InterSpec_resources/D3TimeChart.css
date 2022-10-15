@@ -59,6 +59,7 @@
   border-radius: 3px;
 }
 
+
 .D3TimeInteractMenu a {
   cursor:pointer;
 }
@@ -69,6 +70,7 @@
   /* margin-left: 2px; */
 }
 
+
 .D3TimeInteractSpecTypeText {
   margin-top: 3px;
 }
@@ -78,6 +80,32 @@
 {
   font-size: smaller;
   margin-top: 3px;
+}
+
+/* Make the "Normal", "Zoom", "Pan", etc menus smaller to fit on the screen for phones
+ Note: instead of using a media query, we could have used the CSS classes .LandscapeRight and .LandscapeLeft that should be defined on phones
+ */
+@media screen and (max-device-width: 640px) {
+  .D3TimeInteractMenu li {
+    font-size: xx-small;
+    height: 11px;
+  }
+  
+  .D3TimeInteractSpecTypeText, .D3TimeInteractInst, .D3TimeInteractModeText, .D3TimeInteractSpecTypeText {
+    font-size: xx-small;
+  }
+  
+  .D3TimeChartFilters .Wt-tabs ul, {
+    height: 16px;
+  }
+  
+  .D3TimeChartFilters .Wt-tabs li {
+    font-size: x-small;
+  }
+  
+  .D3TimeChartFilters .Wt-tabs a {
+    padding: 2px 9px 0px;
+  }
 }
 
 

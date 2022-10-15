@@ -48,9 +48,8 @@ namespace Wt
   class WComboBox;
   class WResource;
   class WGridLayout;
-}
+}//namespace Wt
 
-//A Forward declaration
 namespace rapidxml
 {
   template<class Ch> class xml_node;
@@ -113,7 +112,8 @@ protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   void calculateSolution();
-  void updateGuiWithResults();
+  void updateGuiWithError( const std::string &error_msg );
+  void updateGuiWithResults( std::shared_ptr<RelActCalcManual::RelEffSolution> answer );
   
   void relEffEqnFormChanged();
   void relEffEqnOrderChanged();
@@ -181,7 +181,7 @@ protected:
   Wt::WCheckBox *m_backgroundSubtract;
   Wt::WTableRow *m_backgroundSubtractHolder;
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   Wt::WAnchor *m_downloadHtmlReport;
 #else
   Wt::WPushButton *m_downloadHtmlReport;

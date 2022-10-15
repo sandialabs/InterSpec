@@ -42,7 +42,7 @@ RelActTxtResults::RelActTxtResults( Wt::WContainerWidget *parent )
   wApp->useStyleSheet( "InterSpec_resources/RelActTxtResults.css" );
   
   addStyleClass( "RelActTxtResults" );
-  new WText( "Hello Results!", this );
+  new WText( "No current results", this );
 }
 
 

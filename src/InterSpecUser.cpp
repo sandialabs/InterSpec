@@ -35,6 +35,7 @@
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/device/back_inserter.hpp>
 
+
 #include <Wt/Dbo/Dbo>
 #include <Wt/WSpinBox>
 #include <Wt/WCheckBox>
@@ -57,6 +58,8 @@
 #if( HAS_WTDBOFIREBIRD )
 #include "Wt/Dbo/backend/Firebird"
 #endif
+
+#include "3rdparty/date/include/date/date.h"
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
@@ -300,6 +303,65 @@ namespace
 }//namespace
 
 
+boost::posix_time::ptime to_ptime( const std::chrono::system_clock::time_point &rhs )
+{
+  auto dp = ::date::floor<::date::days>(rhs);
+  auto ymd = ::date::year_month_day{dp};
+  auto time = ::date::make_time(rhs - dp);
+  
+  boost::posix_time::time_duration td( time.hours().count(),
+                                      time.minutes().count(),
+                                      time.seconds().count(),
+                                      date::floor<chrono::microseconds>(time.subseconds()).count()
+                                      );
+  
+  const unsigned month_num = static_cast<unsigned>(ymd.month());
+  boost::gregorian::greg_month month = boost::date_time::months_of_year( month_num );
+  /*
+   switch( static_cast<unsigned>(ymd.month()) )
+  {
+    case 1: month = boost::gregorian::Jan; break;
+    case 2: month = boost::gregorian::Feb; break;
+    case 3: month = boost::gregorian::Mar; break;
+    case 4: month = boost::gregorian::Apr; break;
+    case 5: month = boost::gregorian::May; break;
+    case 6: month = boost::gregorian::Jun; break;
+    case 7: month = boost::gregorian::Jul; break;
+    case 8: month = boost::gregorian::Aug; break;
+    case 9: month = boost::gregorian::Sep; break;
+    case 10: month = boost::gregorian::Oct; break;
+    case 11: month = boost::gregorian::Nov; break;
+    case 12: month = boost::gregorian::Dec; break;
+    default: assert( 0 ); throw runtime_error( "wth: invalid month?" ); break;
+  }
+   */
+  
+  const boost::gregorian::date d( static_cast<int>(ymd.year()), month, (unsigned)ymd.day() );
+  
+  return boost::posix_time::ptime( d, td );
+}//to_ptime(...)
+
+
+std::chrono::system_clock::time_point to_time_point( const boost::posix_time::ptime &rhs )
+{
+  if( rhs.is_special() )
+    return {};
+  
+  unsigned short year = static_cast<unsigned short>( rhs.date().year() );
+  const unsigned month = rhs.date().month().as_number();
+  const unsigned day = rhs.date().day().as_number();
+  
+  const int64_t nmicro = rhs.time_of_day().total_microseconds();
+  date::year_month_day ymd{ date::year(year), date::month(month), date::day(day) };
+  
+  date::sys_days days = ymd;
+  std::chrono::system_clock::time_point tp = days;
+  tp += chrono::microseconds(nmicro);
+  
+  return tp;
+}
+
+
 void mapDbClasses( Wt::Dbo::Session *session )
 {
   session->mapClass<InterSpecUser>( "InterSpecUser" );
@@ -440,53 +502,6 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name ) const
                              " calling other InterSpecUser::preferenceValue(...) function" );
   return pos->second;
 }//boost::any preferenceValueAny( const std::string &name ) const;
-
-
-
-void InterSpecUser::pushPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                         const std::string &name,
-                                         boost::any valueAny,
-                                         InterSpec *viewer,
-                                         Wt::WApplication *app )
-{
-  if( !app || !viewer || !user )
-    throw runtime_error( "pushPreferenceValue(): Invalid input" );
-  
-  const boost::any oldValueAny = user->preferenceValueAny( name );
-  
-  if( boost_any_equal(oldValueAny, valueAny) )
-  {
-    //cerr << "Preference '" << name << "' is equal before and after - not changing." << endl;
-    return;
-  }
-  
-  if( valueAny.type() == typeid(std::string) )
-  {
-    setPreferenceValue<std::string>( user, name, boost::any_cast<std::string>(valueAny), viewer );
-  }else if( valueAny.type() == typeid(double) )
-  {
-    setPreferenceValue<double>( user, name, boost::any_cast<double>(valueAny), viewer );
-  }else if( valueAny.type() == typeid(float) )
-  {
-    setPreferenceValue<double>( user, name, boost::any_cast<float>(valueAny), viewer );
-  }else if( valueAny.type() == typeid(int) )
-  {
-    setPreferenceValue<int>( user, name, boost::any_cast<int>(valueAny), viewer );
-  }else if( valueAny.type() == typeid(unsigned int) )
-  {
-    setPreferenceValue<int>( user, name, boost::any_cast<unsigned int>(valueAny), viewer );
-  }else if( valueAny.type() == typeid(long long) )
-  {
-    setPreferenceValue<int>( user, name, boost::any_cast<long long>(valueAny), viewer );
-  }else if( valueAny.type() == typeid(bool) )
-  {
-    setPreferenceValue( user, name, boost::any_cast<bool>(valueAny), viewer );
-  }else
-  {
-    throw std::runtime_error( "pushPreferenceValue(...): invalid type: "
-                             + std::string(valueAny.type().name()) );
-  }
-}//void InterSpecUser::pushPreferenceValue(...)
 
 
 void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
@@ -1327,9 +1342,14 @@ int InterSpecUser::accessCount() const
 }
 
 
-boost::posix_time::time_duration InterSpecUser::totalTimeInApp() const
+std::chrono::steady_clock::time_point::duration InterSpecUser::totalTimeInApp() const
 {
-  return m_totalTimeInApp;
+  return chrono::microseconds( m_totalTimeInApp.total_microseconds() );
+}
+
+std::chrono::system_clock::time_point InterSpecUser::currentAccessStartUTC() const
+{
+  return to_time_point( m_currentAccessStartUTC );
 }
 
 
@@ -1339,9 +1359,9 @@ int InterSpecUser::numSpectraFilesOpened() const
 }
 
 
-boost::posix_time::ptime InterSpecUser::firstAccessUTC() const
+std::chrono::system_clock::time_point InterSpecUser::firstAccessUTC() const
 {
-  return m_firstAccessUTC;
+  return to_time_point( m_firstAccessUTC );
 }
 
 
@@ -1363,14 +1383,14 @@ std::shared_ptr<DataBaseUtils::DbSession> InterSpecUser::sqlFromViewer( InterSpe
 void InterSpecUser::startingNewSession()
 {
   incrementAccessCount();
-  setPreviousAccessTime( m_currentAccessStartUTC );
-  setCurrentAccessTime( boost::posix_time::second_clock::universal_time() );
+  setPreviousAccessTime( to_time_point( m_currentAccessStartUTC ) );
+  setCurrentAccessTime( chrono::system_clock::now() );
 }//void startingNewSession()
   
 
-void InterSpecUser::addUsageTimeDuration( const boost::posix_time::time_duration &duration )
+void InterSpecUser::addUsageTimeDuration( const std::chrono::steady_clock::time_point::duration &duration )
 {
-  m_totalTimeInApp += duration;
+  m_totalTimeInApp += boost::posix_time::microseconds( chrono::duration_cast<chrono::microseconds>(duration).count() );
 }//void addUsageTimeDuration(...)
 
 
@@ -1407,8 +1427,6 @@ void InterSpecUser::restoreUserPrefsFromXml(
         {
           const string value = boost::any_cast<string>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
-          InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                             boost::any(value), viewer, wApp );
           break;
         }//case String
           
@@ -1416,8 +1434,6 @@ void InterSpecUser::restoreUserPrefsFromXml(
         {
           const double value = boost::any_cast<double>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
-          InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                             boost::any(value), viewer, wApp );
           break;
         }//case Decimal
           
@@ -1425,8 +1441,6 @@ void InterSpecUser::restoreUserPrefsFromXml(
         {
           const int value = boost::any_cast<int>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
-          InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                             boost::any(value), viewer, wApp );
           break;
         }//case Integer
           
@@ -1434,8 +1448,6 @@ void InterSpecUser::restoreUserPrefsFromXml(
         {
           const bool value = boost::any_cast<bool>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
-          InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                             boost::any(value), viewer, wApp );
           break;
         }//case Boolean
       }//switch( datatype )
@@ -1556,13 +1568,13 @@ void InterSpecUser::incrementAccessCount()
 }//void incrementAccessCount();
 
 
-void InterSpecUser::setCurrentAccessTime( const boost::posix_time::ptime &utcTime )
+void InterSpecUser::setCurrentAccessTime( const std::chrono::system_clock::time_point &utcTime )
 {
-  m_currentAccessStartUTC = utcTime;
+  m_currentAccessStartUTC = to_ptime( utcTime );
 }//void setCurrentAccessTime( const boost::posix_time::ptime &utcTime )
 
 
-void InterSpecUser::setPreviousAccessTime( const boost::posix_time::ptime &utcTime )
+void InterSpecUser::setPreviousAccessTime( const std::chrono::system_clock::time_point &utcTime )
 {
-  m_previousAccessUTC = utcTime;
+  m_previousAccessUTC = to_ptime( utcTime );
 }//void setPreviousAccessTime( const boost::posix_time::ptime &utcTime );

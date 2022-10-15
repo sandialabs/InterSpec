@@ -31,7 +31,10 @@
 #include <boost/math/special_functions/erf.hpp>
 #include <boost/math/distributions/poisson.hpp>
 
+#include <Wt/Json/Value>
+#include <Wt/Json/Object>
 #include <Wt/WApplication>
+#include <Wt/Json/Serializer>
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
@@ -2723,8 +2726,28 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 			throw runtime_error("gaus_peaks_to_json: peaks all must share same continuum");
 		answer << (i ? "," : "") << "{";
 
-		if (p.userLabel().size())
-			answer << q << "userLabel" << q << ":" << q << Wt::WWebWidget::escapeText(p.userLabel()) << q << ",";
+		if( !p.userLabel().empty() )
+    {
+      string label = p.userLabel();
+      
+      // TODO: Implement better JSON escaping with a custom function, or move to using nlohmann JSON (which is now in SpecUtils anyway).  See also https://stackoverflow.com/questions/7724448/simple-json-string-escape-for-c
+      if( label.find_first_of( "\"\\\b\f\n\r\t" ) != string::npos ) //not exact, but close enough
+      {
+        Wt::Json::Object val( {{"userLabel", Wt::Json::Value( Wt::WString::fromUTF8(label) )} } );
+        label = Wt::Json::serialize( val );
+        SpecUtils::trim(label);
+        if( label.size() && label.front() == '{' )
+          label = label.substr(1);
+        if( label.size() && label.back() == '}' )
+          label = label.substr(0,label.size()-1);
+        SpecUtils::trim(label);
+        
+        answer << label << ",";
+      }else
+      {
+        answer << q << "userLabel" << q << ":" << q << label << q << ",";
+      }
+    }
 
 		if (!p.lineColor().isDefault())
 			answer << q << "lineColor" << q << ":" << q << p.lineColor().cssText(false) << q << ",";
@@ -3151,7 +3174,7 @@ bool PeakDef::ageFitNotAllowed( const SandiaDecay::Nuclide *nuc )
   const double secular = nuc->secularEquilibriumHalfLife();
   
   //simpleFast: will catch cases like Cs137 where the element decays to
-  //  very short lived daughters
+  //  very short lived descendants
   const bool simpleFast = ( (prompt > DBL_MIN)    //can obtain prompt equilibrium
                            && (prompt < 0.01*hl) //prompt half life less than 1% parents half life
                            && (secular < hl)     //can obtain secular equilibrium

@@ -28,6 +28,7 @@
 #include <math.h>
 #include <iostream>
 
+#include <Wt/WServer>
 #include <Wt/WCheckBox>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
@@ -92,18 +93,45 @@ DecayWindow::DecayWindow( InterSpec *viewer )
   }) );
 #endif //USE_QR_CODES
 
-  
-  
   rejectWhenEscapePressed();
 
-  if( !viewer || !viewer->isPhone() )
-    m_activityDiv->setMinimumSize( 450, 500 );
-  
   show();
-  setMinimumSize( 460, 580 );
-  resizeWindow( 800, 600 );
-  resizeToFitOnScreen();
-  centerWindow();
+  
+  if( viewer && !viewer->isPhone() && (viewer->renderedWidth() > 100) && (viewer->renderedHeight() > 100) )
+  {
+    const int w = std::min( 800, viewer->renderedWidth() - 20 );
+    const int h = std::min( 600, viewer->renderedHeight() );
+    
+    m_activityDiv->setMinimumSize( 450, std::min(450, h - 20) );
+    resizeWindow( w, h );
+    
+    resizeToFitOnScreen();
+    centerWindow();
+  }else
+  {
+    // We get here if we are like opening a URL (e.g., "deep link") on application start
+    //  On an iPhone, the AuxWindow is larger than the screen, and some of the contents are not
+    //  visible.  The below tries to fix it, but it doesnt seem to work.
+    //
+    // As a note: iPhone 13 has about 812 x 375
+    // TODO: check if we could use wApp->environment().screenWidth() // screenHeight()
+    if( !viewer )
+    {
+      // good luck - we really shouldnt be here
+    }else if( (viewer->renderedWidth() <= 100) || (viewer->renderedHeight() <= 100) )
+    {
+      if( !viewer->isPhone() )
+        m_activityDiv->setMinimumSize( 450, 500 );
+    }//
+    
+    // On phones, the below doesnt seem to work
+    const bool wasPhone = m_isPhone;
+    m_isPhone = false;
+    if( wasPhone )
+      resizeScaledWindow( 1.0, 1.0 ); //wouldnt have an effect if m_isPhone is true
+    centerWindowHeavyHanded();        //wouldnt have an effect if m_isPhone is true
+    m_isPhone = wasPhone;
+  }//if( we know the screens width ) / else
 }//Decay constructor
 
 

@@ -105,6 +105,7 @@ namespace Wt
 {
   class WText;
   class WMenu;
+  class WDialog;
   class WMenuItem;
   class WTextArea;
   class WLineEdit;
@@ -173,7 +174,7 @@ public:
    */
   static std::string staticDataDirectory();
  
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP  )
   /** Sets the directory were we can write write the user preference database
    file (if using sqlite3); also the location will search for extra detector
    response functions.
@@ -293,7 +294,6 @@ public:
    As of 20220405: Implementation and scope of use still being fleshed out.
    */
   void handleAppUrl( std::string url );
-  
   
   
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
@@ -970,12 +970,34 @@ public:
   //  DetectorPeakResponse.
   void guessIsotopesForPeaks( Wt::WApplication *app );
   
-    
+  /** Returns if detected this is a mobile device, based on user-agent string, or compile-time
+   options.
+   
+   The function will return false on tablets when the "TabletUseDesktopMenus" preference is true.
+   If you want to know the true detected value, call InterSpecApp::isMobile(), which does not
+   account for the user preference.
+   */
   bool isMobile() const;
+  
+  /** Returns if detected this is a mobile device, based on user-agent string. */
   bool isPhone() const;
+  
+  /** Returns if detected this is a tablet, based on user-agent string.
+   
+   The function will return false on tablets when the "TabletUseDesktopMenus" preference is true.
+   If you want to know the true detected value, call InterSpecApp::isMobile(), which does not
+   account for the user preference.
+   */
   bool isTablet() const;
+  
+  /** Returns true id this is not detected to be a mobile device. */
   bool isDesktop() const;
+  
+  /** Returns !BUILD_FOR_WEB_DEPLOYMENT */
   bool isDedicatedApp() const;
+  
+  /** Returns true if built for Android, or "Android" found in user-agent string. */
+  bool isAndroid() const;
   
   
   //Some functions that effect the display options
@@ -1039,7 +1061,7 @@ public:
   void initOsColorThemeChangeDetect();
 #endif
   
-#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS || IOS || BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS || IOS || BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP  )
   /** Notification that the operating system changed themes (e.g., macOS went
    into dark mode, or light mode).
    
@@ -1084,9 +1106,7 @@ protected:
   /** Creates the ColorThemeWidget Window that allows users to alter themes/colors. */
   void showColorThemeWindow();
   
-#if( !ANDROID && !IOS )
   void initDragNDrop();
-#endif //#if( !ANDROID && !IOS )
   
   void initHotkeySignal();
   void hotKeyPressed( const unsigned int value );
@@ -1334,8 +1354,8 @@ protected:
     PhoneClient          = 0x02,
     TabletClient         = 0x04,
     MobileClient         = 0x08,
-    HighBandwithClient   = 0x10,
-    DedicatedAppClient   = 0x20,
+    DedicatedAppClient   = 0x10,
+    AndroidClient        = 0x20,
     NumClientDeviceType  = 0x40
   };//enum ClientDeviceType
   
@@ -1444,10 +1464,11 @@ protected:
   bool m_findingHintPeaks;
   std::deque<boost::function<void()> > m_hintQueue;
   
+  
   static std::mutex sm_staticDataDirectoryMutex;
   static std::string sm_staticDataDirectory;
   
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP  )
   static std::mutex sm_writableDataDirectoryMutex;
   static std::string sm_writableDataDirectory;
 #endif  //if( not a webapp )

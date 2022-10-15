@@ -122,14 +122,10 @@
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/RowStretchTreeView.h"
-
+#include "InterSpec/FileDragUploadResource.h"
 
 #if( USE_DB_TO_STORE_SPECTRA )
 #include "InterSpec/DbFileBrowser.h"
-#endif
-  
-#if( !ANDROID && !IOS )
-#include "InterSpec/FileDragUploadResource.h"
 #endif
 
 #if( USE_REL_ACT_TOOL )
@@ -542,13 +538,11 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_deleteButton ( NULL),
     m_removeForeButton ( NULL),
     m_removeBackButton ( NULL),
-    m_removeFore2Button ( NULL)
-#if( !ANDROID && !IOS )
-    , m_foregroundDragNDrop( new FileDragUploadResource(this) ),
+    m_removeFore2Button ( NULL),
+    m_foregroundDragNDrop( new FileDragUploadResource(this) ),
     m_secondForegroundDragNDrop( new FileDragUploadResource(this) ),
-    m_backgroundDragNDrop( new FileDragUploadResource(this) )
-#endif
-    , m_destructMutex( new std::mutex() ),
+    m_backgroundDragNDrop( new FileDragUploadResource(this) ),
+    m_destructMutex( new std::mutex() ),
     m_destructed( new bool(false) )
 {
   wApp->useStyleSheet( "InterSpec_resources/SpecMeasManager.css" );
@@ -576,7 +570,6 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
        i = SpecUtils::SaveSpectrumAsType(static_cast<int>(i)+1) )
     m_specificResources[static_cast<int>(i)] = (SpecificSpectrumResource *)0;
   
-#if( !ANDROID && !IOS )
   m_foregroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this,
                                                          boost::placeholders::_1,
                                                          boost::placeholders::_2,
@@ -589,9 +582,6 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
                                                          boost::placeholders::_1,
                                                          boost::placeholders::_2,
                                                          SpectrumType::Background ) );
-#endif
-
-
 }// SpecMeasManager
 
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
@@ -677,7 +667,6 @@ SpecMeasManager::~SpecMeasManager()
 } // SpecMeasManager::~SpecMeasManager()
 
 
-#if( !ANDROID && !IOS )
 FileDragUploadResource *SpecMeasManager::dragNDrop( SpecUtils::SpectrumType type )
 {
   switch( type )
@@ -708,8 +697,6 @@ FileDragUploadResource *SpecMeasManager::backgroundDragNDrop()
 {
   return m_backgroundDragNDrop;
 }
-#endif  //if( !ANDROID && !IOS )
-
 
 
 void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
@@ -1377,12 +1364,14 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return true;
   }
   
+#if( USE_REL_ACT_TOOL )
   if( currdata
      && header_contains( "<RelActCalcAuto " )
      && handleRelActAutoXmlFile(infile, dialog) )
   {
     return true;
   }
+#endif
   
   delete dialog;
   
@@ -1441,7 +1430,9 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
         filename = filename.substr( 0, filename.size() - orig_extension.size() );
       
       const int offset = wApp->environment().timeZoneOffset();
-      const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
+      auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+      now += chrono::seconds(60*offset);
+      
       string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
       const string::size_type pos = timestr.find( ' ' );
       //std::string timestr = SpecUtils::to_extended_iso_string( now ); //"2014-04-14T14:12:01.621543"
@@ -3818,7 +3809,7 @@ WContainerWidget *SpecMeasManager::createButtonBar()
 #if( ANDROID )
     // Using hacked saving to temporary file in Android, instead of via network download of file.
     temp->clicked().connect( std::bind([resource](){
-      android_download_workaround(resource, "spewc_download");
+      android_download_workaround(resource, "spec_download");
     }) );
 #endif //ANDROID
   }//for( loop over save-as spectrum file types )

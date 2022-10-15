@@ -124,7 +124,14 @@ public:
   void docreate()
   {
     if( !m_loaded )
+    {
       m_f( this );
+      
+      // On phone "Welcome" screen, at least, lazily loading content that needs to scroll, wont
+      //  trigger the layout code give the loaded widget a height, so the widget wont be scrollable,
+      //  so we'll do this
+      wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
+    }//if( !m_loaded )
     m_loaded = true;
   }//void docreate()
   

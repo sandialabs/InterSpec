@@ -54,6 +54,9 @@ using namespace std;
 const int SpecMeas::sm_specMeasSerializationVersion = 1;
 const int SpecMeas::sm_peakXmlSerializationVersion = 2;
 
+static_assert( PERFORM_DEVELOPER_CHECKS == SpecUtils_ENABLE_EQUALITY_CHECKS,
+              "PERFORM_DEVELOPER_CHECKS must have same value as SpecUtils_ENABLE_EQUALITY_CHECKS" );
+
 namespace
 {
   /** source is node to clone, and target is the node that will become

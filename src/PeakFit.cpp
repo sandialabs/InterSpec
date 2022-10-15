@@ -4780,7 +4780,11 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
    
    */
 #if( USE_REL_ACT_TOOL )
+#ifdef _MSC_VER
+#pragma message( "Not using L-M peak fit, even though USE_REL_ACT_TOOL defined." )
+#else
 #warning "Not using L-M peak fit, even though USE_REL_ACT_TOOL defined."
+#endif
 #define USE_LM_PEAK_FIT 0
 #else
 #define USE_LM_PEAK_FIT 0

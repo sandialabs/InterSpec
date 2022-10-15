@@ -25,6 +25,7 @@
 
 #include <map>
 #include <regex>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -74,14 +75,17 @@
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
-#include "SpecUtils/SpecFile.h"
+
 #include "SpecUtils/DateTime.h"
-#include "InterSpec/DrfSelect.h"
-#include "InterSpec/InterSpec.h"
-#include "InterSpec/AuxWindow.h"
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+
+#include "InterSpec/DrfSelect.h"
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/AuxWindow.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
@@ -89,7 +93,6 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
-#include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -170,8 +173,8 @@ namespace
           string valstr;
           if( val > 0 )
           {
-            auto ptt = boost::posix_time::from_time_t( time_t(val) );
-            ptt += boost::posix_time::seconds( 60*m_timeZoneOffset );
+            SpecUtils::time_point_t ptt = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::from_time_t( time_t(val) ) );
+            ptt += std::chrono::seconds( 60*m_timeZoneOffset );
             valstr = SpecUtils::to_common_string(ptt, true);
           }
           
@@ -475,15 +478,41 @@ public:
     auto theme = viewer ? viewer->getColorTheme() : nullptr;
     handleColorThemeChange( theme );
     
+    const bool is_phone = (!viewer || viewer->isPhone() || (viewer->renderedHeight() < 500 ));
+    
     //setAutoLayoutEnabled(); //Leaves a lot of room at the top, but maybe because font-metrics not available?
     setPlotAreaPadding(5, Wt::Top);
-    setPlotAreaPadding(60, Wt::Bottom);
-    setPlotAreaPadding(55, Wt::Right | Wt::Left);
     
-    setMinimumSize(WLength(350), WLength(200));
-    
-    axis(Wt::Chart::XAxis).setVisible(true);
-    axis(Wt::Chart::XAxis).setTitle("Energy (keV)");
+    if( is_phone )
+    {
+      setPlotAreaPadding(20, Wt::Bottom);
+      setPlotAreaPadding(50, Wt::Right | Wt::Left);
+      
+      WFont labelFont = axis(Wt::Chart::XAxis).labelFont();
+      labelFont.setSize( WFont::Size::XXSmall );
+      axis(Wt::Chart::XAxis).setLabelFont( labelFont );
+      axis(Wt::Chart::Y1Axis).setLabelFont( labelFont );
+      axis(Wt::Chart::Y2Axis).setLabelFont( labelFont );
+      
+      WFont titleFont = axis(Wt::Chart::XAxis).titleFont();
+      titleFont.setSize( WFont::Size::XSmall );
+      axis(Wt::Chart::XAxis).setTitleFont( titleFont );
+      axis(Wt::Chart::Y1Axis).setTitleFont( titleFont );
+      axis(Wt::Chart::Y2Axis).setTitleFont( titleFont );
+      
+      // titleOffset doesnt seem to have an effect, so leaving commented out (would be nice to make title closer to labels)
+      // axis(Wt::Chart::Y1Axis).setTitleOffset( 1 );
+      // axis(Wt::Chart::Y2Axis).setTitleOffset( 1 );
+      
+      setMinimumSize(WLength(200), WLength(100));
+    }else
+    {
+      setPlotAreaPadding(55, Wt::Right | Wt::Left);
+      setPlotAreaPadding(60, Wt::Bottom);
+      axis(Wt::Chart::XAxis).setTitle("Energy (keV)");
+      
+      setMinimumSize(WLength(350), WLength(200));
+    }//if( is_phone ) / else
     
     axis(Wt::Chart::Y1Axis).setVisible(true);
     axis(Wt::Chart::Y1Axis).setTitle("Efficiency");
@@ -1050,7 +1079,8 @@ void RelEffFile::handleSaveFileForLater()
       filename = filename.substr( 0, filename.size() - orig_extension.size() );
     
     const int offset = wApp->environment().timeZoneOffset();
-    const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
+    auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+    now += std::chrono::seconds(60*offset);
     string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
     const string::size_type pos = timestr.find( ' ' );
     //std::string timestr = SpecUtils::to_extended_iso_string( now ); //"2014-04-14T14:12:01.621543"
@@ -2304,8 +2334,22 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   setLayout( mainLayout );
   mainLayout->setContentsMargins(0, 0, 0, 0);
-  mainLayout->setVerticalSpacing( 5 ); //so the chart resizer handle will show up
   mainLayout->setHorizontalSpacing( 0 );
+  
+#if( IOS )
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+  if( app )
+  {
+    float safeAreas[4] = { 0.0f };
+    InterSpecApp::DeviceOrientation orientation = InterSpecApp::DeviceOrientation::Unknown;
+    app->getSafeAreaInsets( orientation, safeAreas[0], safeAreas[1], safeAreas[2], safeAreas[3] );
+    if( safeAreas[3] > 1 )
+      setPadding( WLength(safeAreas[3], WLength::Pixel), Side::Left );
+  }//if( app )
+#endif
+  
+  const bool is_mobile = (!specViewer || specViewer->isMobile());
+  mainLayout->setVerticalSpacing( is_mobile ? 15 : 5 ); //so the chart resizer handle will show up
   
   specViewer->detectorChanged().connect( this, &DrfSelect::setDetector );
   specViewer->detectorModified().connect( this, &DrfSelect::setDetector );
@@ -2321,7 +2365,16 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_previousEmmittedDetector = m_detector;
   
   m_chart = new DrfChart();
-  mainLayout->addWidget( m_chart, 0, 0 );
+  
+  const bool is_phone = (!specViewer || specViewer->isPhone() || (specViewer->renderedHeight() < 500 ));
+  if( is_phone )
+  {
+    m_chart->resize( 325, 125 );
+    mainLayout->addWidget( m_chart, 0, 0, AlignCenter );
+  }else
+  {
+    mainLayout->addWidget( m_chart, 0, 0 );
+  }//if( we are on a phone ) / else
   
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
@@ -2358,7 +2411,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   mainLayout->addWidget( defaultOptions, 2, 0 );
   //lowerLayout->addWidget( defaultOptions, 1, 1 );
   
-  mainLayout->setRowResizable( 0, true, WLength(250, WLength::Unit::Pixel) );
+  mainLayout->setRowResizable( 0, true, WLength(is_phone ? 125 : 250, WLength::Unit::Pixel) );
+  
   mainLayout->setRowStretch( 1, 1 );
   
   lowerLayout->setColumnStretch( 1, 1 );
@@ -2769,8 +2823,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   AuxWindow::addHelpInFooter( m_footer, "detector-edit-dialog" );
   
+  // Add cancel button first on phones, so it will stay all the way to the left
+  if( auxWindow && auxWindow->isPhone() )
+    m_cancelButton = auxWindow->addCloseButtonToFooter( "Cancel" );
+  
   DrfDownloadResource *xmlResource = new DrfDownloadResource( this );
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   m_xmlDownload = new WAnchor( WLink(xmlResource), m_footer );
   m_xmlDownload->setTarget( AnchorTarget::TargetNewWindow );
   m_xmlDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );
@@ -2823,13 +2881,13 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   if( specViewer && !specViewer->isPhone() )
     m_noDrfButton->addStyleClass( "NoDrfBtn" );
   
-  if( auxWindow )
+  if( auxWindow && !auxWindow->isPhone() )
   {
     m_cancelButton = auxWindow->addCloseButtonToFooter( "Cancel" );
-  }else
+  }else if( !auxWindow )
   {
-    WPushButton *close = new WPushButton( "Close" );
-    m_footer->insertWidget( m_footer->count(), close );
+    m_cancelButton = new WPushButton( "Close" );
+    m_footer->insertWidget( m_footer->count(), m_cancelButton );
   }
   
   m_cancelButton->clicked().connect( this, &DrfSelect::cancelAndFinish );
@@ -3119,8 +3177,14 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
     dialog->setMaximumSize( 0.5*interspec->renderedWidth(), 0.95*interspec->renderedHeight() );
   }else
   {
-    chart->setHeight( 250 );
-    dialog->setWidth( 640 );
+    // TODO: have some kind of a callback to resize the dialog, and/or call into wApp->environment().screenWidth() and wApp->environment().screenHeight(), for phones/tablets (untested if this works).
+    
+    // We get here like on iOS if opening a deep-link url is what opened the application.
+    // A iPhone 13 has about 812 x 375 pixels root DOM (including past the notch), and max-width
+    //  of a SimpleDialog is 50% width, so we'll resize the chart to a kinda small, but good-enough
+    //  area of 350 x 200, which makes the SimpleDialog about 376 x 323 px
+    chart->resize( 350, 200 );
+    //dialog->setWidth( 640 );
   }
   
   dialog->rejectWhenEscapePressed();
@@ -3166,7 +3230,8 @@ void DrfSelect::handleUserChangedUploadedDrfName()
   if( value.empty() )
   {
     const int offset = wApp->environment().timeZoneOffset();
-    const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
+    auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+    now += std::chrono::seconds(60*offset);
     value = SpecUtils::to_vax_string(now);
     m_uploadedDetName->setText( WString::fromUTF8(value) );
   }//if( value.empty() )
@@ -3695,7 +3760,8 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
     if( userDrfFilename.size() < 15 )
     {
       const int offset = wApp->environment().timeZoneOffset();
-      const boost::posix_time::ptime now = WDateTime::currentDateTime().addSecs(60*offset).toPosixTime();
+      auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+      now += chrono::seconds(60*offset);
       userDrfFilename += " " + SpecUtils::to_vax_string(now);
     }
     
@@ -4756,11 +4822,17 @@ DrfSelectWindow::DrfSelectWindow( std::shared_ptr<DetectorPeakResponse> det,
   finished().connect( boost::bind( &DrfSelectWindow::acceptAndDelete, this ) );
   rejectWhenEscapePressed();
   
-  resize( WLength(650,WLength::Pixel), WLength(610,WLength::Pixel));
-  centerWindow();
   show();
-  resizeToFitOnScreen();
-  centerWindowHeavyHanded();
+  
+  if( !m_isPhone )
+  {
+    // None this would have effect for phone
+    resize( WLength(650,WLength::Pixel), WLength(610,WLength::Pixel));
+    centerWindow();
+    
+    resizeToFitOnScreen();
+    centerWindowHeavyHanded();
+  }//
 }//DrfSelectWindow constructor
 
 

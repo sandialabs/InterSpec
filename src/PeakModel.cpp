@@ -473,7 +473,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   int mean_index = -1, area_index = -1, fwhm_index = -1;
   
   //Columns that may or not be in file, in whcih case will be >= 0.
-  int roi_lower_index = -1, roi_upper_index = -1, nuc_index = -1, nuc_energy_index = -1;
+  int roi_lower_index = -1, roi_upper_index = -1, nuc_index = -1, nuc_energy_index = -1, color_index = -1, label_index = -1;
   
   {//begin to get field_pos
     vector<string> headers;
@@ -489,6 +489,8 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     const auto nuc_energy_pos = std::find( begin(headers), end(headers), "photopeak_energy");
     const auto roi_start_pos = std::find( begin(headers), end(headers), "roi_lower_energy");
     const auto roi_end_pos = std::find( begin(headers), end(headers), "roi_upper_energy");
+    const auto color_pos = std::find( begin(headers), end(headers), "color");
+    const auto label_pos = std::find( begin(headers), end(headers), "user_label");
     
     if( centroid_pos == end(headers) )
       throw runtime_error( "Header did not contain 'Centroid'" );
@@ -513,6 +515,12 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     
     if( roi_end_pos != end(headers) )
       roi_upper_index = static_cast<int>( roi_end_pos - begin(headers) );
+    
+    if( color_pos != end(headers) )
+      color_index = static_cast<int>( color_pos - begin(headers) );
+    
+    if( label_pos != end(headers) )
+      label_index = static_cast<int>( label_pos - begin(headers) );
   }//end to get field_pos
   
   
@@ -526,8 +534,14 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     
     vector<string> fields;
     Tokeniser t( line, separator );
-    for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
-      fields.push_back( to_lower_ascii_copy( trim_copy(*it) ) );
+    int token_col = 0;
+    for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it, ++token_col )
+    {
+      string val = trim_copy(*it);
+      if( token_col != label_index )
+        val = to_lower_ascii_copy( val );
+      fields.push_back( val );
+    }
     
     const int nfields = static_cast<int>( fields.size() );
     
@@ -575,6 +589,24 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
           cerr << "csv_to_candidate_fit_peaks: could not assign src txt '"
           << nuctxt << "' as a nuc/xray/rctn" << endl;
       }//if( nuc_index >= 0 || nuc_energy_index >= 0 )
+      
+      if( (color_index >= 0) && (color_index < nfields) && !fields[color_index].empty() )
+      {
+        try
+        {
+          // I dont think WColor will throw, but we'll wrap in try/catch, just in case
+          //  Also, we need to remove leading/trailing quotes
+          peak.setLineColor( WColor( WString::fromUTF8( fields[color_index] ) ) );
+        }catch( std::exception & )
+        {
+        }
+      }//if( we have color index )
+      
+      if( (label_index >= 0) && (label_index < nfields) && !fields[label_index].empty() )
+      {
+        // TODO: it looks like all double quote characters never make it here, even if they are in the file correctly
+        peak.setUserLabel( fields[label_index] );
+      }
       
       //Go through existing peaks and if the new peak should share a ROI, do that here
       if( peak.continuum()->energyRangeDefined() )
@@ -1771,7 +1803,8 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
     case kUseForManualRelEff:
     {
-      if( !peak->parentNuclide() || (peak->sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) )
+      if( (!peak->parentNuclide() && !peak->reaction())
+         || (peak->sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) )
         return boost::any();
       return peak->useForManualRelEff();
     }
@@ -2589,7 +2622,7 @@ bool PeakModel::setData( const WModelIndex &index,
         try
         {
           const bool use = boost::any_cast<bool>( value );
-          if( use && (!new_peak.parentNuclide()
+          if( use && ((!new_peak.parentNuclide() && !new_peak.reaction())
                       || (new_peak.sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) ) )
             passMessage( "Only peaks associated with a nuclides gamma can be used for relative"
                         " activity analysis.", WarningWidget::WarningMsgHigh );
@@ -3031,10 +3064,10 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
   const string eol_char = "\r\n"; //for windows - could potentially customize this for the users operating system
   
   outstrm << "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
-  "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy"
+  "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color, User_Label"
   << eol_char
   << "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
-  "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV"
+  "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV, (css),           "
   << eol_char;
   
   
@@ -3043,8 +3076,9 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     const PeakDef &peak = *peaks[peakn];
     
     float live_time = 1.0f;
-    boost::posix_time::ptime meastime;
+    SpecUtils::time_point_t meastime{};
     double region_area = 0.0, xlow = 0.0, xhigh = 0.0;
+    
     if( data )
     {
       live_time = data->live_time();
@@ -3076,6 +3110,28 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
         {
           nuclide = peak.xrayElement()->symbol + "-xray";
         }
+        
+        if( peak.parentNuclide() || peak.reaction() )
+        {
+          switch( peak.sourceGammaType() )
+          {
+            case PeakDef::SourceGammaType::NormalGamma:
+            case PeakDef::SourceGammaType::AnnihilationGamma:
+              break;
+              
+            case PeakDef::SourceGammaType::XrayGamma:
+              nuclide += " (x-ray)";
+              break;
+              
+            case PeakDef::SourceGammaType::SingleEscapeGamma:
+              nuclide += " (S.E.)";
+              break;
+              
+            case PeakDef::SourceGammaType::DoubleEscapeGamma:
+              nuclide += " (D.E.)";
+              break;
+          }//switch( peak.sourceGammaType() )
+        }//if( peak.parentNuclide() || peak.reaction() )
       }catch( std::exception & )
       {
       }//try / catch
@@ -3151,7 +3207,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     }
     
     string datestr, timestr;
-    if( !meastime.is_special() )
+    if( !SpecUtils::is_special(meastime) )
     {
       const string tstr = SpecUtils::to_common_string( meastime, true );
       const auto pos = tstr.find(' ');
@@ -3162,6 +3218,25 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
       }
     }//if( !meastime.is_special() )
     
+    
+    auto csvEscape = []( string &s ){
+      if( s.empty() )
+        return;
+      
+      SpecUtils::ireplace_all( s, "\"", "\"\"" );
+      if( (s.find_first_of(",\n\r\"\t") != string::npos)
+         || (s.front() == ' ')
+         || (s.back() == ' ') )
+        s = "\"" + s + "\"";
+    };
+    
+    
+    const Wt::WColor &color = peak.lineColor();
+    string color_str = color.isDefault() ? string("") : color.cssText(false);
+    string user_label = peak.userLabel();
+    csvEscape( color_str );
+    csvEscape( user_label );
+
     
     outstrm << meanstr
     << ',' << areastr
@@ -3180,6 +3255,8 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     << ',' << energy
     << ',' << xlow
     << ',' << xhigh
+    << ',' << color_str
+    << ',' << user_label
     << eol_char;
   }//for( loop over peaks, peakn )
 }//void PeakModel::write_peak_csv(...)

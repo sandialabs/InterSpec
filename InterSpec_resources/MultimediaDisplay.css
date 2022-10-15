@@ -1,5 +1,6 @@
 .MultimediaDialogTitle 
-{ 
+{
+  /* If the InterSpec window is really narrow, the title could cause scroll-bars to appear, but oh well for now */
   white-space: nowrap;
 }
 
@@ -63,6 +64,7 @@
 
 .MultimediaDisplay .SpecImage
 {
-  max-width: 50vw;
+  /* Without subtracting the 50px for the width, we will get horizontal scroll bars if the InterSpec window is too narrow */
+  max-width: calc(50vw - 50px);
   max-height: 50vh;
 }

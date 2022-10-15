@@ -1248,10 +1248,10 @@ void PeakInfoDisplay::init()
 //  doJavaScript( "try{$('#" + txt->id() + "').show();}catch(e){}" );
   mouseWentOver().connect( "function(object, event){try{$('#" + txt->id() + "').show();}catch(e){}}" );
   mouseWentOut().connect( "function(object, event){try{$('#" + txt->id() + "').hide();}catch(e){}}" );
-  
+#endif
   
   WResource *csv = m_model->peakCsvResource();
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   WAnchor *csvButton = new WAnchor( WLink(csv), buttonDiv );
   csvButton->setTarget( AnchorTarget::TargetNewWindow );
   csvButton->setStyleClass( "LinkBtn DownloadLink" );
@@ -1268,8 +1268,7 @@ void PeakInfoDisplay::init()
     android_download_workaround(csv, "photopeak_ref.csv");
   }) );
 #endif //ANDROID
-  
-#endif
+#endif //#if( BUILD_AS_OSX_APP || IOS ) / else
   
   csvButton->setText( "CSV" );
   csvButton->disable();
@@ -1288,9 +1287,7 @@ void PeakInfoDisplay::init()
   m_model->layoutChanged().connect( std::bind(enableDisableCsv) );
   
   HelpSystem::attachToolTipOn( csvButton,"Export information about the identified peaks to a "
-                              "comma seperated format.", showToolTips );
-#endif
-  
+                              "comma separated format.", showToolTips );
 }//init()
 
 

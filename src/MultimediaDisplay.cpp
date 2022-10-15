@@ -66,7 +66,7 @@ class MultimediaDisplay : public WContainerWidget
   WPushButton *m_prev;
   WText *m_pos_txt;
   WPushButton *m_next;
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   WAnchor *m_download;
 #else
   WPushButton *m_download;
@@ -142,7 +142,7 @@ public:
     if( interspec )
       InterSpecUser::associateWidget( interspec->m_user, "AutoShowSpecMultimedia", cb, interspec );
     
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
     m_download = new WAnchor( WLink(m_resource), footer );
     m_download->setTarget( AnchorTarget::TargetNewWindow );
     m_download->setStyleClass( "LinkBtn DownloadLink" );
@@ -295,7 +295,7 @@ public:
     
     
     bool have_add_info = false;
-    if( data->capture_start_time_.is_special() )
+    if( SpecUtils::is_special( data->capture_start_time_ ) )
     {
       m_time->setText( "" );
       m_time->hide();
@@ -331,11 +331,7 @@ public:
     m_add_info->setHidden( !have_add_info );
     
     // Just in case the image changes the dialogs size, trigger it to resize.
-    doJavaScript( "{let a = function(ms){"
-                 + wApp->javaScriptClass() + ".layouts2.scheduleAdjust();"
-                 " setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, ms );"
-                 "};"
-                 "a(0); a(100); a(1000); a(5000);}" );
+    wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
   }//void setIndex( size_t index )
   
   

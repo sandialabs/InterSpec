@@ -66,6 +66,8 @@ struct SandiaDecayNuc
 {
   const SandiaDecay::Nuclide *nuclide = nullptr;
   double age = -1;
+  
+  const ReactionGamma::Reaction *reaction = nullptr;
 };//struct SandiaDecayNucRelAct
 
 
@@ -408,7 +410,10 @@ struct RelEffSolution
    */
   double activity_ratio_uncert( const std::string &iso1, const std::string &iso2 ) const;
   
-  /** Returns the mass fraction of the specified nuclide. */
+  /** Returns the mass fraction of the specified nuclide.
+   
+   Will throw exception if invalid nuclide name (e.g., a reaction), or negative mass fraction.
+   */
   double mass_fraction( const std::string &iso ) const;
   
   /** Prints out a summary of the results to the provided stream; for development/debug. */

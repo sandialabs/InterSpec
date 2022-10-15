@@ -33,7 +33,7 @@
 @property (nonatomic) BOOL isServing;
 @property (nonatomic) BOOL appHasGoneIntoBackground;
 @property (nonatomic) BOOL appComminFromBackground;
-@property (nonatomic) NSString *fileNeedsOpening;
+@property (nonatomic) NSURL *fileNeedsOpening;
 @property (nonatomic) NSString *UrlServingOn;
 @property (nonatomic) NSString *UrlUniqueId;
 
@@ -85,6 +85,8 @@
 - (void)viewDidLayoutSubviews;
 
 - (void)setSafeAreasToClient;
+
+-(BOOL)handleURL:(NSURL *)url;
 
 /*
 //implemented UIDocumentInteractionControllerDelegate methods

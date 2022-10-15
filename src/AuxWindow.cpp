@@ -23,7 +23,6 @@
 #include "InterSpec_config.h"
 
 #include "InterSpec/AuxWindow.h"
-#include "InterSpec/InterSpecApp.h"
 #include <Wt/WText>
 #include <Wt/WTheme>
 #include <Wt/WPanel>
@@ -39,8 +38,10 @@
 #include <Wt/WStringStream>
 #include <Wt/WContainerWidget>
 
-#include "InterSpec/WarningWidget.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/WarningWidget.h"
+
 
 using namespace std;
 using namespace Wt;
@@ -552,7 +553,7 @@ WT_DECLARE_WT_MEMBER
 
 
 AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProperties> properties  )
-  : WDialog(),
+  : WDialog( InterSpec::instance() ),
     m_auxIsHidden( true ),
     m_modalOrig( false ),
     m_titleText( NULL ),
@@ -576,7 +577,7 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
     m_isAndroid( false ),
     m_footer(NULL)
 {
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
+  InterSpec *viewer = InterSpec::instance();
   
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCollapse);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowExpand);
@@ -595,8 +596,8 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
 #endif
   
   
-  const bool isPhone = app ? app->isPhone() : false;
-  const bool isTablet = app ? app->isTablet() : false;
+  const bool isPhone = viewer ? viewer->isPhone() : false;
+  const bool isTablet = viewer ? viewer->isTablet() : false;
   
   const bool isPhoneNotFullScreen = properties.testFlag(AuxWindowProperties::PhoneNotFullScreen);
   const bool isTabletNotFullScreen = properties.testFlag(AuxWindowProperties::TabletNotFullScreen);
@@ -618,7 +619,7 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   if( isTablet && !isTabletNotFullScreen && !isPhoneNotFullScreen )
     m_isTablet = true;
   
-  m_isAndroid = app && app->isAndroid();
+  m_isAndroid = (viewer && viewer->isAndroid());
 
   
 //  setJavaScriptMember( "wtResize", "function(ignored,w,h){console.log('In My wtResize');}" );
@@ -744,6 +745,11 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   
   if( !m_isPhone )
   {
+    // TODO: actually respect/use the AuxWindowProperties::SetCloseable option!
+    if( !properties.testFlag(AuxWindowProperties::SetCloseable) )
+      cout << "Warning: !AuxWindowProperties::SetCloseable not currently being respected for '"
+           << windowTitle.toUTF8() << "' window." << endl;
+  
     AuxWindow::setClosable( true );
     title->touchStarted().connect( "function(s,e){ Wt.WT.AuxWindowTitlebarTouchStart(s,e,'" + id()+ "'); }" );
     title->touchMoved().connect( "function(s,e){ Wt.WT.AuxWindowTitlebarHandleMove(s,e,'" + id()+ "'); }" );
@@ -768,7 +774,7 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   // By default it'll just spawn at 50% width and height of the host
 //  resizeScaledWindow( 0.5, 0.5 );
   
-  //so the signals of all the daughter widgets will be connected
+  //so the signals of all the descendant widgets will be connected
   WDialog::setHidden( false, WAnimation() );
 //  m_hideSlot->exec( "null", "{quietly:true, delay:5}" );
   if( m_expandIcon )
@@ -793,7 +799,7 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   }//helpWindow
   
   
-  if( properties.testFlag(AuxWindowProperties::EnableResize) )
+  if( !m_isPhone && properties.testFlag(AuxWindowProperties::EnableResize) )
   {
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum
@@ -825,6 +831,18 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
 
   show();
 }//AuxWindow()
+
+
+void AuxWindow::render( Wt::WFlags<Wt::RenderFlag> flags )
+{
+  WDialog::render( flags );
+  
+  // Sometimes the contents of the AuxWindow will not get the contents laid out correctly, so we'll
+  //  just always trigger a rather heavy handed resize event.
+  // Definitely a hack
+  if( flags & Wt::RenderFlag::RenderFull )
+    wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
+}
 
 void AuxWindow::setResizable(bool resizable)
 {
@@ -883,7 +901,7 @@ AuxWindow::~AuxWindow()
 //         << m_titleText->text().toUTF8() << "'" << endl;
   
   m_destructing = true;
-} //~AuxWindow()
+}//~AuxWindow()
 
 
 void AuxWindow::emitReject()
@@ -1385,13 +1403,13 @@ JSignal<> &AuxWindow::expanded()
 
 void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
 {
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
+  InterSpec *viewer = InterSpec::instance();
   
   Wt::WImage *image = nullptr;
   
   image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/help_minimal.svg"), footer);
   image->setStyleClass("Wt-icon FooterHelpBtn");
-  image->setFloatSide( (app && app->isMobile()) ? Wt::Right : Wt::Left );
+  image->setFloatSide( (viewer && viewer->isMobile()) ? Wt::Right : Wt::Left );
   
   image->setAlternateText("Help");
   image->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, page ) );

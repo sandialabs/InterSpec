@@ -32,6 +32,8 @@
 
 #include <boost/regex.hpp>
 
+#include "3rdparty/date/include/date/date.h"
+
 #include "InterSpec/SpecMeas.h"
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
@@ -44,6 +46,51 @@
 #include "InterSpec/SpecFileQueryDbCache.h"
 
 using namespace std;
+
+
+// We *could* include InterSpecUser.h to get the to_ptime and to_time_point functions, or we
+//  could move these function to a common header.... but instead copy/pasting, for the moment.
+namespace
+{
+boost::posix_time::ptime to_ptime( const std::chrono::system_clock::time_point &rhs )
+{
+  auto dp = ::date::floor<::date::days>(rhs);
+  auto ymd = ::date::year_month_day{dp};
+  auto time = ::date::make_time(rhs - dp);
+  
+  boost::posix_time::time_duration td( time.hours().count(),
+                                      time.minutes().count(),
+                                      time.seconds().count(),
+                                      date::floor<chrono::microseconds>(time.subseconds()).count()
+                                      );
+  
+  const unsigned month_num = static_cast<unsigned>(ymd.month());
+  boost::gregorian::greg_month month = boost::date_time::months_of_year(month_num);
+  
+  const boost::gregorian::date d( static_cast<int>(ymd.year()), month, (unsigned)ymd.day() );
+  
+  return boost::posix_time::ptime( d, td );
+}//to_ptime(...)
+
+std::chrono::system_clock::time_point to_time_point( const boost::posix_time::ptime &rhs )
+{
+  if( rhs.is_special() )
+    return {};
+  
+  unsigned short year = static_cast<unsigned short>( rhs.date().year() );
+  const unsigned month = rhs.date().month().as_number();
+  const unsigned day = rhs.date().day().as_number();
+  
+  const int64_t nmicro = rhs.time_of_day().total_microseconds();
+  date::year_month_day ymd{ date::year(year), date::month(month), date::day(day) };
+  
+  date::sys_days days = ymd;
+  std::chrono::system_clock::time_point tp = days;
+  tp += chrono::microseconds(nmicro);
+  
+  return tp;
+}
+}//namespace
 
 namespace SpecFileQuery
 {
@@ -268,7 +315,7 @@ namespace SpecFileQuery
   
   bool SpecTest::test_date( const std::string &teststr, const NumericFieldMatchType &t, const boost::posix_time::ptime &dt )
   {
-    auto testdate = SpecUtils::time_from_string(teststr.c_str());
+    auto testdate = to_ptime( SpecUtils::time_from_string(teststr.c_str()) );
     if( testdate.is_special() )
       return false;
     
@@ -964,7 +1011,7 @@ namespace SpecFileQuery
         break;
         
       case StartTime:
-        summary += " is " + string(to_string(m_compareType)) + " " + SpecUtils::to_iso_string(m_time);
+        summary += " is " + string(to_string(m_compareType)) + " " + SpecUtils::to_iso_string( std::chrono::time_point_cast<std::chrono::microseconds>(to_time_point(m_time)));
         break;
         
       case NumFileDataFields:
@@ -1220,7 +1267,7 @@ namespace SpecFileQuery
     switch( m_testType )
     {
       case TestType::Date:
-        return "Event XML with comparing '" + m_test_label + "' " + to_string(m_dateTestType) + " '" + SpecUtils::to_common_string(m_test_time,true) + "'";
+        return "Event XML with comparing '" + m_test_label + "' " + to_string(m_dateTestType) + " '" + SpecUtils::to_common_string(std::chrono::time_point_cast<std::chrono::microseconds>(to_time_point(m_test_time)),true) + "'";
         break;
         
       case TestType::String:

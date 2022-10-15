@@ -996,7 +996,7 @@ namespace
     }
     
     
-    float setEnergy( const float energy )
+    void setEnergy( const float energy )
     {
       m_energy->setValue( energy );
       m_updated.emit();
@@ -2730,7 +2730,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   node = XML_FIRST_NODE(base_node, "RoiRangeList");
   if( node )
   {
-    XML_FOREACH_DAUGHTER( roi_node, node, "RoiRange" )
+    XML_FOREACH_CHILD( roi_node, node, "RoiRange" )
     {
       RelActCalcAuto::RoiRange roi;
       roi.fromXml( roi_node );
@@ -2742,7 +2742,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   node = XML_FIRST_NODE(base_node, "NucInputInfoList");
   if( node )
   {
-    XML_FOREACH_DAUGHTER( nuc_node, node, "NucInputInfo" )
+    XML_FOREACH_CHILD( nuc_node, node, "NucInputInfo" )
     {
       RelActCalcAuto::NucInputInfo nuc;
       nuc.fromXml( nuc_node );
@@ -2754,7 +2754,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   node = XML_FIRST_NODE(base_node, "FloatingPeakList");
   if( node )
   {
-    XML_FOREACH_DAUGHTER( peak_node, node, "FloatingPeak" )
+    XML_FOREACH_CHILD( peak_node, node, "FloatingPeak" )
     {
       RelActCalcAuto::FloatingPeak peak;
       peak.fromXml( peak_node );
@@ -3765,7 +3765,7 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   if( !parent )
     return;
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   WAnchor *btn = new WAnchor( WLink(m_html_download_rsc), parent );
   btn->setTarget( AnchorTarget::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
@@ -3790,7 +3790,7 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   m_calc_failed.connect( btn, &WWidget::disable );
   m_calc_successful.connect( btn, &WWidget::enable );
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   btn = new WAnchor( WLink(m_xml_download_rsc), parent );
   btn->setTarget( AnchorTarget::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );

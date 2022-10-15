@@ -716,7 +716,7 @@ void SpecFileSummary::updateMeasurmentFieldsFromMemory()
     m_showMapButton->setDisabled( nomap );
 #endif
     
-    if( sample->position_time().is_special() )
+    if( SpecUtils::is_special(sample->position_time()) )
     {
       m_gpsTimeStamp->setText( "" );
     }else
@@ -724,7 +724,7 @@ void SpecFileSummary::updateMeasurmentFieldsFromMemory()
       m_gpsTimeStamp->setText( SpecUtils::to_extended_iso_string(sample->position_time()) );
     }
     
-    if( sample->start_time().is_special() )
+    if( SpecUtils::is_special(sample->start_time()) )
     {
       m_timeStamp->setText( "" );
     }else
@@ -1006,15 +1006,13 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
     case kTimeStamp:
     {
       const string newDateStr = m_timeStamp->text().toUTF8();
-      boost::posix_time::ptime newDate = SpecUtils::time_from_string( newDateStr.c_str() );
+      SpecUtils::time_point_t newDate = SpecUtils::time_from_string( newDateStr.c_str() );
 
-      if( newDate.is_special() )
+      if( SpecUtils::is_special(newDate) )
       {
         passMessage( "Error converting '" + newDateStr + string("' to a date/time string"),
                     WarningWidget::WarningMsgHigh );
-        stringstream timeStampStrm;
-        timeStampStrm << sample->start_time();
-        m_timeStamp->setText( timeStampStrm.str() );
+        m_timeStamp->setText( SpecUtils::to_extended_iso_string( sample->start_time() ) );
         return;
       }//if( newDate.is_special() )
 
@@ -1074,16 +1072,14 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
       
       
       const string newDateStr = m_gpsTimeStamp->text().toUTF8();
-      boost::posix_time::ptime newDate = SpecUtils::time_from_string( newDateStr.c_str() );
+      SpecUtils::time_point_t newDate = SpecUtils::time_from_string( newDateStr.c_str() );
       
-      if( newDate.is_special() && newDateStr.size() )
+      if( SpecUtils::is_special(newDate) && newDateStr.size() )
       {
         passMessage( "Error converting '" + newDateStr + string("' to a date/time string"),
                      WarningWidget::WarningMsgHigh );
         newDate = sample->position_time();
-        stringstream timeStampStrm;
-        timeStampStrm << newDate;
-        m_timeStamp->setText( timeStampStrm.str() );
+        m_timeStamp->setText( SpecUtils::to_extended_iso_string(newDate) );
       }//if( newDate.is_special() )
 
 #if( USE_GOOGLE_MAP )

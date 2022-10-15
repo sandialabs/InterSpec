@@ -40,7 +40,6 @@
 #include <Wt/WServer>
 
 #include <boost/thread.hpp>
-#include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
 
 #include "AppDelegate.h"
@@ -49,10 +48,8 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecServer.h"
-#include "InterSpec/DbToFilesystemLink.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
-#define IS_IPAD() (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad)
 
 @interface ViewController () <UIWebViewDelegate,UIDocumentInteractionControllerDelegate>
 
@@ -242,14 +239,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //This function is called _after_ openSpectrumFile
   
   NSLog( @"In wakeupFromBackground" );
-  
-  boost::filesystem::path apppath = [[[NSBundle mainBundle] executablePath] UTF8String];
-  apppath = apppath.parent_path();
-  
-//  NSLog( @"Setting CWD=%s", apppath.string<std::string>().c_str() );
-//  boost::filesystem::current_path( apppath );
 
-  
   if( !_appComminFromBackground )
   {
     NSLog( @"App never went in background, skipping from wakeupFromBackground" );
@@ -265,11 +255,21 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
         
       if( applock )
       {
-        const bool success = app->userOpenFromFileSystem( [_fileNeedsOpening UTF8String] );
-        _fileNeedsOpening = nil;
-        app->triggerUpdate();
-        NSLog( @"Success opening file = %i", int(success) );
-        return YES;
+        if( [_fileNeedsOpening isFileURL] )
+        {
+          const bool success = app->userOpenFromFileSystem( [_fileNeedsOpening fileSystemRepresentation] );
+          _fileNeedsOpening = nil;
+          app->triggerUpdate();
+          NSLog( @"wakeupFromBackground: Success opening file = %i", int(success) );
+          return YES;
+        }else
+        {
+          const std::string urlcontent = [[_fileNeedsOpening absoluteString] UTF8String];
+          NSLog( @"wakeupFromBackground: Will pass '%s' in InterSpec!", urlcontent.c_str() );
+          app->handleAppUrl( urlcontent );
+          app->triggerUpdate();
+          NSLog( @"wakeupFromBackground: finished passing URL to application" );
+        }
       }//if( applock && wtapp )
     }//if( app )
     
@@ -284,7 +284,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   _appComminFromBackground = NO;
   
   
-  _UrlUniqueId = [this generateSessionToken];
+  _UrlUniqueId = [self generateSessionToken];
   InterSpecServer::add_allowed_session_token( [_UrlUniqueId UTF8String], InterSpecServer::SessionType::PrimaryAppInstance );
   
   NSString *actualURL = [NSString stringWithFormat:@"%@?apptoken=%@", _UrlServingOn, _UrlUniqueId];
@@ -292,9 +292,22 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //Check to see if we should open a spectrum file; if so append which on to URL
   if( _fileNeedsOpening )
   {
-    InterSpecServer::set_file_to_open_on_load( [_UrlUniqueId UTF8String], [_fileNeedsOpening UTF8String] );
-    _fileNeedsOpening = nill;
+    std::string urlcontent;
+    if( [_fileNeedsOpening isFileURL] )
+      urlcontent = [_fileNeedsOpening fileSystemRepresentation];
+    else
+      urlcontent = [[_fileNeedsOpening absoluteString] UTF8String];
+    
+    InterSpecServer::set_file_to_open_on_load( [_UrlUniqueId UTF8String], urlcontent );
+    _fileNeedsOpening = nil;
   }
+  
+  // In the c++ we can detect if its a phone or tablet from the user agent, but we'll also
+  //  just pass this in in the URL as well.
+  if( UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad )
+    actualURL = [NSString stringWithFormat:@"%@&istablet=1", actualURL];
+  else
+    actualURL = [NSString stringWithFormat:@"%@&isphone=1", actualURL];
   
   //See if we should specify orientation and safe area in the URL, so it will be
   //  known before the html/JS gets loaded.  We could do the same thing for initial
@@ -347,26 +360,83 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 
 -(BOOL)openSpectrumFile:(NSURL *)url
 {
-  std::string urlstr = [[url path] UTF8String];
-  //std::string urlstr = [url fileSystemRepresentation];
+  if( !url )
+  {
+    NSLog( @"openSpectrumFile: NULL url passed in." );
+    return NO;
+  }
+  
+  if( ![url isFileURL] )
+  {
+    if ([[url scheme] caseInsensitiveCompare:@"interspec"] == NSOrderedSame)
+    {
+      NSLog( @"openSpectrumFile: got passed in a 'interspec://' url, will pass to handleURL." );
+      return [self handleURL: url];
+    }else
+    {
+      NSLog( @"openSpectrumFile: got passed in a URL with scheme '%@'; not supported.", [url scheme] );
+      return NO;
+    }
+  }//if( ![url isFileURL] )
+  
   
   // I dont think we need this try /catch any more, but leaving in, because well, why not
   try
   {
-    NSLog( @"Will check to try and open %s", urlstr.c_str() );
+    NSLog( @"Will check to try and open %@", [url path] );
     
     NSFileManager *filemgr = [NSFileManager defaultManager];
-    if( ![filemgr isReadableFileAtPath: [url path]] ){
-      NSLog(@"Can NOT access file at path '%@'.", [url path]);
-      return NO;
-    }
     
-    NSLog( @"Can access, and will try to open '%s'", urlstr.c_str() );
+    if( [filemgr isReadableFileAtPath: [url path]] )
+    {
+      NSLog( @"Can directly access, and will try to open '%@'", [url path] );
+    }else
+    {
+      // We seem to get here for files "on the cloud"
+      NSLog(@"File at path '%@' is not a readable file; will try to copy locally.", [url path]);
+      
+      if( [filemgr isUbiquitousItemAtURL: url] )
+      {
+        NSLog(@"File is on iCloud; will sync to local and update URL to access at." );
+        
+        NSError *error = nil;
+        __block NSURL *updatedURL = nil;
+        
+        // We will use NSFileCoordinator to synchronously read the file - or really just grab the
+        //  updated URL that will then point to the local version of the file.
+        //
+        //  TODO: this synchronous read is bad style; should make reading asynchronous.
+        NSFileCoordinator *coordinator = [[NSFileCoordinator alloc] initWithFilePresenter:nil];
+        [coordinator coordinateReadingItemAtURL:url options:0 error:&error byAccessor:^(NSURL *newURL) {
+          NSLog(@"Will update URL from '%@' to '%@'.", [url absoluteURL], [newURL absoluteURL] );
+          updatedURL = newURL;
+        }];
+        
+        if( updatedURL == nil )
+        {
+          NSLog(@"Failed to copy the remote item locally from '%@'.", [url absoluteURL] );
+          if( error )
+            NSLog(@"\tError: '%@'.", error );
+          
+          return NO;
+        }//if( updatedURL == nil )
+        
+        url = updatedURL;
+        NSLog(@"URL of now local item is '%@'.", [url absoluteURL] );
+      }else
+      {
+        NSLog(@"File is NOT on iCloud - not sure why its not readable - we will probably fail in a few lines of code." );
+      }
+    }//if( a readable file ) / else
+    
+    
+    std::string urlstr = [[url path] UTF8String];
+    //std::string urlstr = [url fileSystemRepresentation];
     
     std::string path_json = "[\"" + urlstr + "\"]";
     int status = InterSpecServer::open_file_in_session( [_UrlUniqueId UTF8String], path_json.c_str() );
     if( status > 0 ){
-      NSLog( @"Opened file at '%@' directly via InterSpecServer.", [url path] );
+      NSLog( @"Opened file at '%@' via InterSpecServer.", [url path] );
       return YES;
     }
     
@@ -395,7 +465,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     //TODO - could try to see if file is a background file to the current spectrum, and if so load it as the background spectrum
 
     // Note: the extra call to '[[NSString alloc] initWithString...]' is due to crash in macOS app - not sure if this is needed here to, or if it indicates some other issue.
-    _fileNeedsOpening = [[NSString alloc] initWithString: [NSString stringWithUTF8String: urlstr.c_str()]];
+    //_fileNeedsOpening = [[NSString alloc] initWithString: [NSString stringWithUTF8String: urlstr.c_str()]];
+    _fileNeedsOpening = [NSURL fileURLWithPath: [NSString stringWithUTF8String: urlstr.c_str()]];
   }catch( std::exception &e )
   {
     NSLog( @"Caught exception trying to access file: %s", e.what() );
@@ -415,7 +486,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   _isServing = NO;
   _UrlUniqueId = @"";
   _UrlServingOn = @"";
-  _fileNeedsOpening = nill;
+  _fileNeedsOpening = nil;
   _appHasGoneIntoBackground = NO;
   _appComminFromBackground = YES;
   
@@ -482,23 +553,13 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 
   [self fixPermissions: writableDBPath];
   
-   NSString *fileNumToFilePathToDBPath = [documentsDirectory stringByAppendingPathComponent:@"FileNumToFilePath.sqlite"];
-  [self fixPermissions: fileNumToFilePathToDBPath];
-  
-  const boost::filesystem::path dbpath = [documentsDirectory UTF8String];
-  const bool validdir = DbToFilesystemLink::setFileNumToFilePathDBNameBasePath( dbpath.string<std::string>() );
-  if( !validdir )
-    NSLog( @"viewDidLoad: Error setting FileNumToFilePathDBNameBasePath: %@", documentsDirectory );
-  
-  [self fixPermissions: fileNumToFilePathToDBPath];
-  
-  NSLog( @"Done in viewDidLoad" );
+   NSLog( @"Done in viewDidLoad" );
 }
 
 
 - (void)onKeyboardHide
 {
-  //This function is vestigiual from debugging an issue with the keyboard hiding
+  //This function is vestigial from debugging an issue with the keyboard hiding
   //  NSLog(@"Triggering screen resize" );
   //  NSString *jsstring = [NSString stringWithFormat:@"setTimeout( function(){$('.Wt-domRoot').height(window.innerHeight); window.scrollTo(0,0);}, 0 );" ];
   //  [_webView stringByEvaluatingJavaScriptFromString: jsstring];
@@ -556,7 +617,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   if( navigationAction.navigationType == WKNavigationTypeLinkActivated )
   {
-    //CSVs from decay widget get here
+    //CSVs from decay widget get here, as do PNG images
     NSLog( @"WKNavigationTypeLinkActivated" );
     
     //To open the URL in safari, you can do:
@@ -580,7 +641,16 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
       {
         mimetype = [response MIMEType];
         name = [response suggestedFilename];
-      }
+        
+        // The PNG/SVG image savings dont seem to get the filename... so we'll do a poor hack to get _something_
+        if( mimetype && name && ([name caseInsensitiveCompare:@"Unknown"] == NSOrderedSame) ) {
+          NSArray<NSString *> *parts = [mimetype componentsSeparatedByString:@"/"];
+          if( parts && ([parts count] == 2) )
+            name = [NSString stringWithFormat:@"interspec_export.%@", parts[1]];
+        }
+        
+        NSLog( @"completionHandlerBlock: mimetype '%@', name: '%@'", mimetype, name );
+      }//if( response )
       
       if( name == nil )
         name = @"download.txt";
@@ -635,6 +705,15 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   decisionHandler( WKNavigationActionPolicyAllow );
 }//decidePolicyForNavigationAction
+
+// Could implement the below:
+//- (void)webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse
+//    decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler
+//{
+//  NSLog( @"decidePolicyForNavigationResponse" );
+//  decisionHandler( WKNavigationResponsePolicyAllow ); //WKNavigationResponsePolicyDownload
+//}//decidePolicyForNavigationResponse
+
 
 
 /*
@@ -816,6 +895,54 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     }));
   }
 }//setSafeAreasToClient
+
+
+-(BOOL)handleURL:(NSURL *)url
+{
+  if( !url )
+  {
+    NSLog( @"handleURL: null url" );
+    return NO;
+  }
+  
+  NSLog( @"handleURL: handling url '%@' whose scheme is '%@'", [url absoluteString], [url scheme] );
+  
+  if( [url isFileURL] )
+    return [self openSpectrumFile: url];
+  
+  InterSpecApp *specapp = nullptr;
+  
+  if( _UrlUniqueId )
+    specapp = InterSpecApp::instanceFromExtenalToken( [_UrlUniqueId UTF8String] );
+  
+  std::unique_ptr<Wt::WApplication::UpdateLock> lock = specapp ? std::make_unique<Wt::WApplication::UpdateLock>(specapp) : nullptr;
+  
+  if( !lock || !(*lock) )
+  {
+    _fileNeedsOpening = url;
+    NSLog( @"\thandleURL: unable to get app or lock for apptoken='%@' - not handling URL! ", _UrlUniqueId );
+    return YES;
+  }
+  
+  std::string urlcontent;
+  NSString *absStr = [url absoluteString];
+  if( !absStr )
+  {
+    NSLog( @"openURLs: null absoluteString" );
+    return NO;
+  }
+    
+  
+  NSString *normalStr = [absStr stringByRemovingPercentEncoding];
+  urlcontent = normalStr ? [normalStr UTF8String] : [absStr UTF8String];
+    
+  NSLog( @"openURLs: Will pass '%s' in InterSpec!", urlcontent.c_str() );
+  
+  specapp->handleAppUrl( urlcontent );
+  specapp->triggerUpdate();
+  
+  return YES;
+}//handleURL
 
 
 - (void)viewDidLayoutSubviews

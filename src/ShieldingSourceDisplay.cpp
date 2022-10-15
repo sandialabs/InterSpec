@@ -4556,7 +4556,7 @@ void ShieldingSourceDisplay::showCalcLog()
   // Add a link to download this log file
   m_logDiv->footer()->clear();
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   WAnchor *logDownload = new WAnchor( m_logDiv->footer() );
   logDownload->setStyleClass( "LinkBtn" );
   logDownload->setTarget( AnchorTarget::TargetNewWindow );
@@ -6622,7 +6622,7 @@ void ShieldingSourceDisplay::removeShielding( ShieldingSelect *select )
   }//for( WWidget *widget : children )
   
   assert( foundShielding );
-  if( foundShielding )
+  if( !foundShielding )
     cerr << "\n\nCouldnt finding select to delete" << endl;
 }//void removeShielding( ShieldingSelect *select )
 

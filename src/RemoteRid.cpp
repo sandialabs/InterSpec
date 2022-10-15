@@ -95,7 +95,14 @@ std::string run_external_command( const string &exe, const vector<string> &args 
   const auto pp = boost::filesystem::path(exe).parent_path();
   
   bp::ipstream proc_stdout, proc_stderr; //reading pipe-stream
+  
+  
+#ifdef _WIN32
+  // Keep from poping up a terminal window (also maybe try `bp::windows::hide`)
+  bp::child c( exe, bp::args(args), bp::start_dir(pp), bp::std_out > proc_stdout, bp::std_err > proc_stderr, bp::windows::create_no_window );
+#else
   bp::child c( exe, bp::args(args), bp::start_dir(pp), bp::std_out > proc_stdout, bp::std_err > proc_stderr );
+#endif
   
   c.wait();
 

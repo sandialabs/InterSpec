@@ -31,7 +31,7 @@
 
 #include <string>
 
-#include "InterSpec/InterSpec.h"  //to get rendered width/height
+#include "InterSpec/InterSpec.h"  //for InterSpec::instance()
 #include "InterSpec/SimpleDialog.h"
 
 using namespace std;
@@ -39,21 +39,47 @@ using namespace Wt;
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
+WT_DECLARE_WT_MEMBER
+ (SimpleDialogBringToFront, Wt::JavaScriptFunction, "SimpleDialogBringToFront",
+  function( id )
+  {
+   const maxz = $('.Wt-dialog,.MobileMenuButton').get().reduce( function(result, item){
+     if( item.id === id ) return result;
+     const z = parseInt( $(item).css('z-index') );
+     return isNaN(z) ? result : Math.max(result, z);
+    }, 0);
+   
+   const z = parseInt( $('#'+id).css('z-index') );
+   
+   if( isNaN(z) || maxz > z )
+     $('#'+id).css('z-index', maxz+1);
+   $('.suggestion').css('z-index', maxz+2);
+ }
+);
+
+
 SimpleDialog::SimpleDialog()
-: Wt::WDialog( nullptr ), m_title( nullptr ), m_msgContents( nullptr )
+: Wt::WDialog( InterSpec::instance() ),  //for lifetime purposes
+  m_title( nullptr ),
+  m_msgContents( nullptr )
 {
   init( "", "" );
 }
 
+
 SimpleDialog::SimpleDialog( const Wt::WString &title )
- : Wt::WDialog( nullptr ), m_title( nullptr ), m_msgContents( nullptr )
+ : Wt::WDialog( InterSpec::instance() ),  //for lifetime purposes
+  m_title( nullptr ),
+  m_msgContents( nullptr )
 {
   init( title, "" );
 }
 
 
 SimpleDialog::SimpleDialog( const Wt::WString &title, const Wt::WString &content )
- : Wt::WDialog( nullptr ), m_title( nullptr ), m_msgContents( nullptr )
+ : Wt::WDialog( InterSpec::instance() ),  //for lifetime purposes
+  m_title( nullptr ),
+  m_msgContents( nullptr )
 {
   init( title, content );
 }
@@ -69,12 +95,7 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
     //  Note that page dimensions wont be available during initial rendering of the webapp
     
     // The below seems to be necessary or else sometimes the window doesnt resize to fit its content
-    doJavaScript( "{let a = function(ms){"
-                  + wApp->javaScriptClass() + ".layouts2.scheduleAdjust();"
-                  " setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, ms );"
-                  "};"
-                  "a(0); a(50); a(250);}"
-    );
+    wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
   }//if( flags & RenderFull )
 }//render( flags )
 
@@ -82,6 +103,8 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
 void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
 {
   wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
+  
+  LOAD_JAVASCRIPT(wApp, "SimpleDialog.cpp", "SimpleDialog", wtjsSimpleDialogBringToFront);
   
   addStyleClass( "simple-dialog" );
   
@@ -119,13 +142,14 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
 #if( WT_VERSION > 0x3040000 )
   // I havent checked version of Wt that does include `raiseToFront()`, but 3.3.4 doesnt.
   raiseToFront();
+  
+  //This didnt appear to always work, at least on iOS.  See SimpleDialogBringToFront
 #endif
 }//init(...)
 
 
 SimpleDialog::~SimpleDialog()
 {
-  //cerr << "Deleting simpledialog" << endl;
 }
 
 
@@ -141,7 +165,7 @@ Wt::WPushButton *SimpleDialog::addButton( const Wt::WString &txt )
   
   b->clicked().connect( boost::bind( &WDialog::done, this, Wt::WDialog::DialogCode::Accepted ) );
   return b;
-}
+}//addButton(...)
 
 
 void SimpleDialog::startDeleteSelf()

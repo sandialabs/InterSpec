@@ -10,7 +10,7 @@
       <div>
          This tool allows you to obtain information about aged nuclides, such as
 activities or gamma/alpha/beta production rates, or the decay chain as well as
-further information about each of the daughter nuclides.  There are two main
+further information about each of the descendant nuclides.  There are two main
 portions of this tool used to extract information: the <b>Activity Chart</b> tab and
 <b>Decay Chain</b> tabs; usage information and hints are offered in the
 similarly named subsections.
@@ -29,13 +29,13 @@ displaying any reference gamma lines for nuclides, a default nuclide.
 </div>
 <div>The <b>Activity Chart</b> display can display the activity, or emission rate of gamma,
 beta, or alpha particles as a function of time for the chosen parent and
-daughter nuclides.</div>
+descendant nuclides.</div>
 <div style="padding-top: 10px"><u>Clicking</u> on the chart will bring up a text listing of nuclide activities
 and decay particle types, their energies and intensities, as well as some
 additional information, all for the time clicked.</div>
 <div style="padding-top: 10px">If the check-boxes in the legend are un-checked, then the nuclide listed next to
 it will not be displayed on the decay chart; this is useful when the activities
-of a number of daughter products overlap (hence hiding each other) and you wish
+of a number of descendant products overlap (hence hiding each other) and you wish
 to verify the location of the decay curve.</div>
 <div style="padding-top: 10px">
 <u>Adjusting</u> the

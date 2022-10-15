@@ -5,6 +5,9 @@ project( InterSpecAddOn )
 
 set( BUILD_AS_ELECTRON_APP ON CACHE BOOL "Set to build Electron target" )
 set( TRY_TO_STATIC_LINK ON CACHE BOOL "Lets statically link everything" )
+set( BUILD_AS_LOCAL_SERVER OFF CACHE BOOL "N/A" )
+set( USE_OSX_NATIVE_MENU OFF CACHE BOOL "N/A" )
+set( USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE BOOL "Enable Spectrum File Query Widget" )
 
 IF(WIN32)
   add_definitions(-DBOOST_ALL_NO_LIB) #Prevent boost auto-linking, which seems to call in vc141 boost libs instead of vc142

@@ -32,7 +32,7 @@
   padding-left: 2px;
   padding-right:2px;
   font-size: 13px;
-  overflow-y: auto;
+  overflow-y: visible; /* I'm a little conflicted about how to exactly treat this - sometimes unnecessary scroll-bars will show if set to 'auto' */
   
   flex: 0 1 auto;
 }

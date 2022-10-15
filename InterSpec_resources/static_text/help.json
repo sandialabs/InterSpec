@@ -140,7 +140,7 @@
         "id":"decay-dialog",
         "title":"Nuclide Decay Info",
         "help-xml":"nuclide_decay_dialog_help.xml",
-        "keywords":"Information Activity Chart Decay Chain Add Nuclides Aged Daughter Reference Photopeaks Gamma Beta Alpha Production Rates Graph Information Emission Emit Particles Time Span Y Axis Type Graph Log Linear Gives Off Branching Ratio"
+        "keywords":"Information Activity Chart Decay Chain Add Nuclides Aged Descendant Reference Photopeaks Gamma Beta Alpha Production Rates Graph Information Emission Emit Particles Time Span Y Axis Type Graph Log Linear Gives Off Branching Ratio"
       },
       {
         "id":"color-theme-dialog",

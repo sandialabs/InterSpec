@@ -207,6 +207,8 @@ public:
   void parentMouseWentOver();
   void undoParentHoveredOver();
   
+  void parentTouchStarted();
+  
   bool isMobile() const;
   
   Wt::WPushButton *parentButton();

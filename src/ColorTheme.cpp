@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <chrono>
 #include <vector>
 #include <string>
 #include <typeinfo>
@@ -326,13 +327,15 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
     const WString &createdstr = static_cast<const WString &>( base["created"] );
     //For some reason
     //info.creation_time = WDateTime::fromString( createdstr, "yyyy-MM-ddThh:mm:ssZ" );
-    info.creation_time = WDateTime::fromPosixTime( SpecUtils::time_from_string( createdstr.toUTF8().c_str() ) );
+    const SpecUtils::time_point_t created_time = SpecUtils::time_from_string( createdstr.toUTF8() );
+    info.creation_time = WDateTime::fromTime_t( chrono::system_clock::to_time_t( created_time ) );
   }
   if( base.contains("modified") )
   {
     const WString &modifiedstr = static_cast<const WString &>( base["modified"] );
     //info.modified_time = WDateTime::fromString( modifiedstr, "yyyy-MM-ddThh:mm:ssZ" );
-    info.modified_time = WDateTime::fromPosixTime( SpecUtils::time_from_string( modifiedstr.toUTF8().c_str() ) );
+    const SpecUtils::time_point_t mod_time = SpecUtils::time_from_string( modifiedstr.toUTF8() );
+    info.modified_time = WDateTime::fromTime_t( chrono::system_clock::to_time_t( mod_time ) );
   }
   
   

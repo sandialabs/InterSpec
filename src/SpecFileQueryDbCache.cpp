@@ -39,6 +39,7 @@
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
+#include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/SpecFileQuery.h"
@@ -895,6 +896,8 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
   file_size = SpecUtils::file_size(filepath);
   file_path_hash = std::hash<std::string>()(filepath);
   
+  // TODO: For files that are not N42 or XML files (as determined by filename), and less than a number of MB, read the file into memory, and then parse.  This will minimize hard-drive seeks (for spinning drives), and allow multithreaded searches to work better - hopefully.
+  
   SpecUtils::SpecFile meas;
   const bool loaded = meas.load_file(filepath, SpecUtils::ParserType::Auto, filepath);
   if( !loaded )
@@ -918,7 +921,7 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
   
   is_spectrum_file = true;
   
-  meas.set_filename( filepath );
+  meas.set_filename( SpecUtils::filename(filepath) );
   
   filename = meas.filename();
   
@@ -981,12 +984,8 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
     
     contained_dev_pairs = (contained_dev_pairs || !m->deviation_pairs().empty());
     
-    if( !m->start_time().is_special() )
-    {
-      const boost::posix_time::ptime epoch(boost::gregorian::date(1970,1,1));
-      boost::posix_time::time_duration::sec_type x = (m->start_time() - epoch).total_seconds();
-      start_times.insert( static_cast<time_t>(x) );
-    }
+    if( !SpecUtils::is_special(m->start_time()) )
+      start_times.insert( chrono::system_clock::to_time_t( m->start_time() ) );
   }
 }//void fill_info_from_file( const std::string filepath )
 

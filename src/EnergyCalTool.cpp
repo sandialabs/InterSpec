@@ -681,7 +681,7 @@ public:
 #if( IMP_CALp_BTN_NEAR_COEFS )
     
     WResource *csv = m_model->peakCsvResource();
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
     m_downloadCALp = new WAnchor( WLink(m_tool->calpResources()), btndiv );
     m_downloadCALp->setTarget( AnchorTarget::TargetNewWindow );
     m_downloadCALp->setStyleClass( "LinkBtn DownloadLink" );
@@ -700,13 +700,13 @@ public:
     }) );
 #endif //ANDROID
     
-#endif
+#endif //#if( BUILD_AS_OSX_APP || IOS ) / #else
     
     m_uploadCALp = new WPushButton( btndiv );
     m_uploadCALp->setIcon( "InterSpec_resources/images/upload_small.svg" );
     m_uploadCALp->setStyleClass( "LinkBtn UploadBtn CALp" );
     m_uploadCALp->clicked().connect( m_tool, &EnergyCalTool::handleRequestToUploadCALp );
-#endif
+#endif //#if( IMP_CALp_BTN_NEAR_COEFS )
     
     WContainerWidget *spacer = new WContainerWidget( btndiv );
     spacer->addStyleClass( "Spacer" );
@@ -718,7 +718,7 @@ public:
     
     layout->addWidget( btndiv, 1, 0 );
     layout->setRowStretch( 0, 1 );
-#endif
+#endif //#if( IMP_COEF_FIT_BTN_NEAR_COEFS || IMP_CALp_BTN_NEAR_COEFS )
     
     m_devPairs = new DeviationPairDisplay();
     
@@ -748,10 +748,10 @@ public:
     }else
     {
 #if( HIDE_EMPTY_DEV_PAIRS )
-      layout->addWidget( m_addPairs, 1, 0, AlignmentFlag::AlignCenter );
-      layout->addWidget( m_devPairs, 2, 0 );
+      layout->addWidget( m_addPairs, layout->rowCount(), 0, AlignmentFlag::AlignCenter );
+      layout->addWidget( m_devPairs, layout->rowCount(), 0 );
 #else
-      layout->addWidget( m_devPairs, 1, 0 );
+      layout->addWidget( m_devPairs, layout->rowCount(), 0 );
 #endif
       m_devPairs->setHeight( 100 );
     }
@@ -1303,7 +1303,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_uploadCALp->setStyleClass( "LinkBtn UploadBtn CALp" );
   m_uploadCALp->clicked().connect( this, &EnergyCalTool::handleRequestToUploadCALp );
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
   m_downloadCALp = new WAnchor( WLink(m_calpResource), btndiv );
   m_downloadCALp->setTarget( AnchorTarget::TargetNewWindow );
   m_downloadCALp->setStyleClass( "LinkBtn DownloadLink CALp" );

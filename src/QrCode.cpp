@@ -180,10 +180,13 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     InterSpec *interspec = InterSpec::instance();
     if( interspec && (interspec->renderedWidth() > 100) && (interspec->renderedHeight() > 100) )
     {
-      int wdim = std::min( interspec->renderedWidth(), interspec->renderedHeight() ) / 3;
-      if( wdim > 2*qr_size )
-        svg_size = std::min( wdim, 500 );
+      int wdim = interspec->renderedWidth() / 3;
+      wdim = std::min( wdim, (interspec->renderedHeight() - 175) );
+      wdim = std::max( wdim, 125 );
+      svg_size = std::min( wdim, svg_size );
     }//if( InterSpec knows the window size )
+    
+    svg_size = std::min( svg_size, 640 );
     
     if( qr_svg_str.empty() )
     {
@@ -200,9 +203,10 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     const vector<unsigned char> svg_data( svg_begin, svg_end );
     WMemoryResource *svgResource = new WMemoryResource( "image/svg+xml", svg_data, window );
     if( title.size() )
-      svgResource->suggestFileName( title + ".svg" );
+      svgResource->suggestFileName( title + ".svg", WResource::Attachment );
     else
-      svgResource->suggestFileName( "qr.svg" );
+      svgResource->suggestFileName( "qr.svg", WResource::Attachment );
+    
     
     WImage *qrImage = new WImage( WLink(svgResource), window->contents() );
     //WText *qrImage = new WText( qr_svg.first, window->contents() );
@@ -222,7 +226,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     
     WContainerWidget *btndiv = new WContainerWidget( window->contents() );
     
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS )
     WAnchor *svgDownload = new WAnchor( WLink(svgResource), btndiv );
     svgDownload->setTarget( AnchorTarget::TargetNewWindow );
     svgDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );

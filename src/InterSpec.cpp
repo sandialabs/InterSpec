@@ -73,6 +73,7 @@
 #include <Wt/WBorderLayout>
 #include <Wt/WSelectionBox>
 #include <Wt/WCssStyleSheet>
+#include <Wt/Json/Serializer>
 #include <Wt/WSuggestionPopup>
 #include <Wt/WContainerWidget>
 #include <Wt/WDefaultLoadingIndicator>
@@ -144,6 +145,7 @@
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
+#include "InterSpec/FileDragUploadResource.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
 #include "InterSpec/EnergyCalPreserveWindow.h"
@@ -155,10 +157,6 @@
 
 #if( USE_DB_TO_STORE_SPECTRA )
 #include "InterSpec/DbStateBrowser.h"
-#endif
-
-#if( !ANDROID && !IOS )
-#include "InterSpec/FileDragUploadResource.h"
 #endif
 
 #if( IOS )
@@ -195,8 +193,15 @@
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"
+#endif
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP)
 #include "js/AppHtmlMenu.js"
 #endif
+
+#if( BUILD_AS_WX_WIDGETS_APP )
+#include "target/wxWidgets/InterSpecWxUtils.h"
+#endif 
 
 
 #if( USE_REMOTE_RID )
@@ -225,7 +230,7 @@ extern void android_download_workaround( Wt::WResource *resource, std::string de
 std::mutex InterSpec::sm_staticDataDirectoryMutex;
 std::string InterSpec::sm_staticDataDirectory = "data";
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 std::mutex InterSpec::sm_writableDataDirectoryMutex;
 std::string InterSpec::sm_writableDataDirectory = "";
 #endif  //if( not a webapp )
@@ -490,13 +495,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
       wApp->setCookie( "SpectrumViewerUUID", username, 3600*24*365 );
     }//try / catch
   }//if( no username )
-  
-  detectClientDeviceType();
 
   
-  if( isPhone() )
+  if( app->isPhone() )
     username += "_phone";
-  else if( isTablet() )
+  else if( app->isTablet() )
     username += "_tablet";
 
 // Set up the session; open the database.
@@ -515,9 +518,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
     }else
     {
       InterSpecUser::DeviceType type = InterSpecUser::Desktop;
-      if( isPhone() )
+      if( app->isPhone() )
         type = InterSpecUser::PhoneDevice;
-      else if( isTablet() )
+      else if( app->isTablet() )
         type = InterSpecUser::TabletDevice;
     
       InterSpecUser *newuser = new InterSpecUser( username, type );
@@ -531,33 +534,24 @@ InterSpec::InterSpec( WContainerWidget *parent )
     transaction.commit();
   }//end interacting with DB
   
+  detectClientDeviceType();
 
   m_peakModel = new PeakModel( this );
   m_spectrum   = new D3SpectrumDisplayDiv();
   m_timeSeries = new D3TimeChart();
   
-  if( isPhone() )
+  if( app->isMobile() )
   {
-    //TODO: layoutSizeChanged(...) will trigger the compact axis anyway, but
-    //      I should check if doing it here saves a roundtrip
+    //TODO: layoutSizeChanged(...) will trigger the compact axis anyway, but need to check if doing it here saves a roundtrip
     m_spectrum->setCompactAxis( true );
     m_timeSeries->setCompactAxis( true );
-    
-    //For iPhoneX we need to:
-    //  X - adjust padding for safe area
-    //  X - Add padding to mobile menu to cover the notch area.
-    //  X - Change position of hamburger menu
-    //  - set .Wt-domRoot background color to match the charts
-    //  X - Detect orientation changes, and respond appropriately
-    //  X - Get the Wt area to fill the entire width (and height)
-    //  -Initial AuxWindow width/height correct
     
     LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsDoOrientationChange);
     
     const char *js = INLINE_JAVASCRIPT(
       window.addEventListener("orientationchange", Wt.WT.DoOrientationChange );
       setTimeout( Wt.WT.DoOrientationChange, 0 );
-      setTimeout( Wt.WT.DoOrientationChange, 250 );  //JIC - doesnt look necassary
+      setTimeout( Wt.WT.DoOrientationChange, 250 );  //JIC - doesnt look necessary
       setTimeout( Wt.WT.DoOrientationChange, 1000 );
     );
     
@@ -590,12 +584,19 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #else
   const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
 #endif
+#elif( BUILD_AS_WX_WIDGETS_APP )
+  const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
 #else
   const bool isAppTitlebar = false; // !isMobile()
 #endif
   
   
   WWidget *menuWidget = NULL;
+  if( isMobile() )
+  {
+    
+  }
+    
   if( isMobile() )
   {
     m_mobileMenuButton = new WPushButton( "", wApp->domRoot() );
@@ -648,7 +649,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
       //  development purposes (i.e., there are redundant nested #if statements we can clear up once AppHtmlMenu.js
       //  development is more clear).
       
-#if( BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
       app->useStyleSheet( "InterSpec_resources/AppHtmlMenu.css" );
       m_menuDiv->addStyleClass( "app-titlebar" );
       m_menuDiv->setHeight( 30 );
@@ -700,32 +701,70 @@ InterSpec::InterSpec( WContainerWidget *parent )
       
       doJavaScript( "Wt.WT.SetupAppTitleBar();" );
       
-      auto toggleMaximize = [](){
-        const char *js =
-        "let elem = document.querySelector(\".Wt-domRoot\");"
-        "if (!document.fullscreenElement) {"
-        "  elem.requestFullscreen().catch(err => {"
-        "    console.log( 'Error attempting to enable full-screen mode' );"
-        "  });"
-        "} else {"
-        "  document.exitFullscreen();"
-        "}";
-        
-#if( BUILD_AS_ELECTRON_APP )
-        if( InterSpecApp::isPrimaryWindowInstance() )
-          ElectronUtils::send_nodejs_message( "ToggleMaximizeWindow", "" );
-        else
-          wApp->doJavaScript( js );
-#else
-        wApp->doJavaScript( js );
+#if( BUILD_AS_WX_WIDGETS_APP )
+      if(InterSpecApp::isPrimaryWindowInstance())
+      {
+        //The Edge WebView2 doesnt respect the "-webkit-app-region: drag" property, so we will
+        //  do a workaround to have wxWidgets capture the mouse when titlebar is clicked on
+        const char* js = "function(el,evt){"
+          // Make sure its left mouse button, and for `m_menuDiv`, make sure element clicked on was not a descendant (like a menu button)
+          "if( (evt.button!==0) || (el.id !== evt.target.id)) return;"
+          "window.wx.postMessage('MouseDownInTitleBar');"
+          "evt.stopPropagation();"
+          "evt.preventDefault();"
+          "}";
+
+        //titleStretcher doesnt work for this since it is all margin, and no actual width
+        dragRegion->mouseWentDown().connect(js); //Doesnt seem to be useful; havent checked out why
+        menuTitle->mouseWentDown().connect(js);
+        appIcon->mouseWentDown().connect(js);
+        m_menuDiv->mouseWentDown().connect(js);
+      }//if( primary wxWidgets instance )
 #endif
-      };//doMaximize
       
-      maximizeIcon->clicked().connect( std::bind( toggleMaximize ) );
-      appIcon->doubleClicked().connect( std::bind( toggleMaximize )  );
-      dragRegion->doubleClicked().connect( std::bind( toggleMaximize )  );
-      menuTitle->doubleClicked().connect( std::bind( toggleMaximize )  );
       
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP)
+      if (InterSpecApp::isPrimaryWindowInstance())
+      {
+#if( BUILD_AS_ELECTRON_APP )
+        auto toggleMaximize = []() {
+            ElectronUtils::send_nodejs_message("ToggleMaximizeWindow", "");
+        };//doMaximize
+
+        maximizeIcon->clicked().connect(std::bind(toggleMaximize));
+        appIcon->doubleClicked().connect(std::bind(toggleMaximize));
+        dragRegion->doubleClicked().connect(std::bind(toggleMaximize));
+        menuTitle->doubleClicked().connect(std::bind(toggleMaximize));
+#elif( BUILD_AS_WX_WIDGETS_APP )
+        const string js = "function(){window.wx.postMessage('ToggleMaximizeWindow');}";
+        maximizeIcon->clicked().connect(js);
+        appIcon->doubleClicked().connect(js);
+        dragRegion->doubleClicked().connect(js);
+        menuTitle->doubleClicked().connect(js);
+#endif
+      }
+      else
+      {
+#endif
+        const char* toggleMaxJs =
+          "function(){let elem = document.querySelector(\".Wt-domRoot\");"
+          "if (!document.fullscreenElement) {"
+          "  elem.requestFullscreen().catch(err => {"
+          "    console.log( 'Error attempting to enable full-screen mode' );"
+          "  });"
+          "} else {"
+          "  document.exitFullscreen();"
+          "}"
+          "}";
+
+        maximizeIcon->clicked().connect(toggleMaxJs);
+        appIcon->doubleClicked().connect(toggleMaxJs);
+        dragRegion->doubleClicked().connect(toggleMaxJs);
+        menuTitle->doubleClicked().connect(toggleMaxJs);
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP)
+      }
+#endif
+
 #if( BUILD_AS_ELECTRON_APP )
       minimizeIcon->clicked().connect( std::bind([](){
         ElectronUtils::send_nodejs_message( "MinimizeWindow", "" );
@@ -735,6 +774,13 @@ InterSpec::InterSpec( WContainerWidget *parent )
         ElectronUtils::send_nodejs_message( "CloseWindow", "" );
       }) );
 #endif //BUILD_AS_ELECTRON_APP
+
+#if( BUILD_AS_WX_WIDGETS_APP )
+      minimizeIcon->clicked().connect( "function(){ window.wx.postMessage('MinimizeWindow'); }" );
+      closeIcon->clicked().connect( "function(){ window.wx.postMessage('CloseWindow'); }" );
+#endif //BUILD_AS_WX_WIDGETS_APP
+
+
 #else //#if( BUILD_AS_ELECTRON_APP - for dev purposes )
       assert( 0 );
 #endif //#if( BUILD_AS_ELECTRON_APP - for dev pupropses )
@@ -777,6 +823,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
     
     m_toolsTabs = new WTabWidget( this );
+    m_toolsTabs->addStyleClass( "ToolsTabs" );
     
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
@@ -794,7 +841,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
     //PreLoading is necessary on the m_referencePhotopeakLines widget, so that the
     //  "Isotope Search" widget will work properly when a nuclide is clicked
-    //  on to display its photpeaks
+    //  on to display its photopeaks
     //XXX In Wt 3.3.4 at least, the contents of m_referencePhotopeakLines
     //  are not actually loaded to the client until the tab is clicked, and I
     //  cant seem to get this to actually happen.
@@ -1034,9 +1081,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     addToolsTabToMenuItems();
   }//If( start with tool tabs showing ) / else
  
-#if( !ANDROID && !IOS )
   initDragNDrop();
-#endif
   
 #if( USE_DB_TO_STORE_SPECTRA )
   updateSaveWorkspaceMenu();
@@ -1089,7 +1134,7 @@ std::string InterSpec::staticDataDirectory()
   return sm_staticDataDirectory;
 }
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 void InterSpec::setWritableDataDirectory( const std::string &dir )
 {
   std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
@@ -1123,9 +1168,11 @@ std::string InterSpec::writableDataDirectory()
 
 InterSpec::~InterSpec() noexcept(true)
 {
-  //The deletion of the DOM root node will destroy all the AuxWindows we
-  //  have open, but I am manually taking care of them below due to a crash
-  //  I have been getting in the WApplication destructor for Wt 3.3.1-rc1
+  // The DOM root may not actually being deleted, most likely if the "Clear Session..." option
+  //  was invoked.  WPopupWidget descendants, except for AuxWindow, SimpleDialog, and any
+  //  WPopupWidget-derived widget explicitly given a parent, will not be deleted, so we'll do
+  //  some manual cleanup here (as of 20220917 when AuxWindow and SimpleDialog where explicitly
+  //  parented by the current InterSpec instance, we are doing much more cleanup than necessary).
 
   cerr << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'" << endl;
 
@@ -1208,7 +1255,7 @@ InterSpec::~InterSpec() noexcept(true)
     m_referencePhotopeakLinesWindow = nullptr;
   }//if( m_referencePhotopeakLinesWindow )
   
-  if( m_warnings )  //WarningWidget isnt necassarily parented, so we do have to manually delete it
+  if( m_warnings )  //WarningWidget isnt necessarily parented, so we do have to manually delete it
   {
     if( m_warningsWindow )
       m_warningsWindow->stretcher()->removeWidget( m_warnings );
@@ -1222,11 +1269,8 @@ InterSpec::~InterSpec() noexcept(true)
     m_warningsWindow = nullptr;
   }//if( m_warningsWindow )
   
-  if( m_peakEditWindow )
-  {
-    delete m_peakEditWindow;
-    m_peakEditWindow = nullptr;
-  }//if( m_peakEditWindow )
+  deletePeakEdit();
+  deleteGammaCountDialog();
   
   if( m_mobileMenuButton )
     delete m_mobileMenuButton;
@@ -1243,16 +1287,12 @@ InterSpec::~InterSpec() noexcept(true)
   if( m_fileManager )
     delete m_fileManager;
 
-  if( m_shieldingSuggestion )
-    delete m_shieldingSuggestion;
-  m_shieldingSuggestion = NULL;
-
   if( m_menuDiv )
   {
     delete m_menuDiv;
     m_menuDiv = nullptr;
   }//if( m_menuDiv )
-
+  
   try
   {
     m_user.reset();
@@ -1379,6 +1419,11 @@ bool InterSpec::isDedicatedApp() const
   return (m_clientDeviceType & DedicatedAppClient);
 }
 
+bool InterSpec::isAndroid() const
+{
+  return (m_clientDeviceType & ClientDeviceType::AndroidClient);
+}
+
 void InterSpec::detectClientDeviceType()
 {
   m_clientDeviceType= 0x0;
@@ -1387,10 +1432,11 @@ void InterSpec::detectClientDeviceType()
   if( !app )
     return;
 
-
-  const bool phone= app->isPhone();
-  const bool tablet= app->isTablet();
-  const bool mobile= app->isMobile();
+  const bool phone  = app->isPhone();
+  bool tablet = app->isTablet();
+  bool mobile = app->isMobile();
+  if( mobile && !phone && tablet )
+    tablet = mobile = !InterSpecUser::preferenceValue<bool>("TabletUseDesktopMenus", this);
 
   for( ClientDeviceType type= ClientDeviceType( 0x1 );
        type < NumClientDeviceType; type= ClientDeviceType( type << 1 ) )
@@ -1417,34 +1463,24 @@ void InterSpec::detectClientDeviceType()
           m_clientDeviceType |= type;
         break;
 
-      case HighBandwithClient:
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
-        m_clientDeviceType|= type;
-#else
-        if( app->environment().clientAddress().find( "127.0.0" ) != string::npos )
-          m_clientDeviceType|= type;
-// should probably do some other testing here....
-#endif
-        //        std::cerr << "env.clientAddress()=" << env.clientAddress() <<
-        //        std::endl;
-        //        env.clientAddress() //134.252.17.78 (from anothother
-        //        computer), 127.0.0.1 from same computer
-        break;
-
       case DedicatedAppClient:
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
-        m_clientDeviceType|= type;
+        m_clientDeviceType |= type;
 #endif
         break;
 
+      case AndroidClient:
+        if( app->isAndroid() )
+          m_clientDeviceType |= type;
+        break;
+        
       case NumClientDeviceType:
         break;
-    } // switch( type )
-  } // for( loop over ClientDeviceType enums )
-} // void detectClientDeviceType()
+    }// switch( type )
+  }// for( loop over ClientDeviceType enums )
+}// void detectClientDeviceType()
 
 
-#if( !ANDROID && !IOS )
 void InterSpec::initDragNDrop()
 {
   LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsFileUploadFcn);
@@ -1460,7 +1496,6 @@ void InterSpec::initDragNDrop()
   
   doJavaScript( "Wt.WT.FileUploadFcn();" );
 }//void InterSpec::initDragNDrop()
-#endif //#if( !ANDROID && !IOS )
 
 
 void InterSpec::initHotkeySignal()
@@ -2519,7 +2554,7 @@ void InterSpec::deletePeakEdit()
   if( m_peakEditWindow )
   {
     delete m_peakEditWindow;
-    m_peakEditWindow = NULL;
+    m_peakEditWindow = nullptr;
   }
 }//void deletePeakEdit()
 
@@ -3546,33 +3581,29 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           {
             case UserOption::String:
             {
-              std::string value = obj.get("value");
-              InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
-                                                 boost::any(value), this, wApp );
+              const std::string value = obj.get("value");
+              InterSpecUser::setPreferenceValue( m_user, name.toUTF8(), value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Decimal:
             {
-              double value = obj.get("value");
-              InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
-                                                 boost::any(value), this, wApp );
+              const double value = obj.get("value");
+              InterSpecUser::setPreferenceValue( m_user, name.toUTF8(), value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Integer:
             {
-              int value = obj.get("value");
-              InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
-                                                 boost::any(value), this, wApp );
+              const int value = obj.get("value");
+              InterSpecUser::setPreferenceValue( m_user, name.toUTF8(), value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Boolean:
             {
-              bool value = obj.get("value");
-              InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
-                                                  boost::any(value), this, wApp );
+              const bool value = obj.get("value");
+              InterSpecUser::setPreferenceValue( m_user, name.toUTF8(), value, this );
             }//case UserOption::Boolean:
           }//switch( datatype )
         }//for( size_t i = 0; i < userOptions.size(); ++i )
@@ -3779,7 +3810,7 @@ Wt::Signal< std::shared_ptr<const ColorTheme> > &InterSpec::colorThemeChanged()
 }
 
 
-#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS || IOS || BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS || IOS || BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
 void InterSpec::osThemeChange( std::string name )
 {
   cout << "InterSpec::osThemeChange('" << name << "');" << endl;
@@ -3810,15 +3841,18 @@ void InterSpec::osThemeChange( std::string name )
       if( m_colorTheme && SpecUtils::icontains( m_colorTheme->theme_name.toUTF8(), "Dark") )
         return;
      
-      cerr << "Will set to dark" << endl;
+      cout << "Will set to dark" << endl;
       theme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme::DarkColorTheme );
     }else if( name == "light" || name == "default" || name == "no-preference" || name == "no-support" )
     {
       //Check to see if we already have light applied
-      if( m_colorTheme && SpecUtils::icontains( m_colorTheme->theme_name.toUTF8(), "Default") )
+      if (m_colorTheme && SpecUtils::icontains(m_colorTheme->theme_name.toUTF8(), "Default"))
+      {
+        cout << "Already have light color theme applied." << endl;
         return;
-      
-      cerr << "Will set to default" << endl;
+      }
+
+      cout << "Will set to default" << endl;
       theme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme::DefaultColorTheme );
     }
     
@@ -3829,6 +3863,7 @@ void InterSpec::osThemeChange( std::string name )
     cerr << "InterSpec::osThemeChange() caught exception - not doing anything" << endl;
   }
   
+  cout << "Done applying color theme" << endl;
 }//void osThemeChange( std::string name )
 #endif
 
@@ -3927,12 +3962,17 @@ void InterSpec::deleteLicenseAndDisclaimersWindow()
 
 void InterSpec::showWelcomeDialog( bool force )
 {
+  cout << "In showWelcomeDialog" << endl;
   try
   {
-    if( !force && !m_user->preferenceValue<bool>( "ShowSplashScreen" ) )
+    if (!force && !m_user->preferenceValue<bool>("ShowSplashScreen"))
+    {
+      cout << "showWelcomeDialog: user doesnt want us to show screen; returning." << endl;
       return;
+    }
   }catch(...)
   {
+    assert(0);
     //m_user didnt have preference "ShowSplashScreen" for some reason
     if( !force )
       return;
@@ -3940,10 +3980,12 @@ void InterSpec::showWelcomeDialog( bool force )
   
   if( m_useInfoWindow )
   {
+    cout << "showWelcomeDialog: window already showing." << endl;
     m_useInfoWindow->show();
     return;
   }
   
+  cout << "showWelcomeDialog: will post to show." << endl;
   WServer::instance()->post( wApp->sessionId(), std::bind( [this](){
     /*
      For Android, showing this useInfoWindow at startup causes some exceptions
@@ -3953,6 +3995,9 @@ void InterSpec::showWelcomeDialog( bool force )
      
      Havent checked if creating this window via "posting" helps
      */
+
+    cout << "Now finally in function to showWelcomeDialog." << endl;
+
     if( m_useInfoWindow )
       return;
     
@@ -3964,6 +4009,7 @@ void InterSpec::showWelcomeDialog( bool force )
     m_useInfoWindow->finished().connect( this, &InterSpec::deleteWelcomeDialog );
     
     wApp->triggerUpdate();
+    cout << "You should now see Welcome Dialog." << endl;
   } ) );
 }//void showWelcomeDialog()
 
@@ -4019,7 +4065,7 @@ void InterSpec::deleteGammaCountDialog()
   if( m_gammaCountDialog )
     delete m_gammaCountDialog;
 
-  m_gammaCountDialog = 0;
+  m_gammaCountDialog = nullptr;
 }//void deleteGammaCountDialog()
 
 
@@ -4086,7 +4132,7 @@ void InterSpec::logMessage( const Wt::WString& message, int priority )
   {//begin codeblock to logg message
     std::lock_guard<std::mutex> file_gaurd( s_message_mutex );
     ofstream output( "interspec_messages_to_users.txt", ios::out | ios::app );
-    const boost::posix_time::ptime now = WDateTime::currentDateTime().toPosixTime();
+    auto now = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
     output << "Message " << SpecUtils::to_iso_string( now ) << " ";
     output << "[" << priority << "]: ";
     output << message.toUTF8() << endl << endl;
@@ -4099,7 +4145,7 @@ void InterSpec::logMessage( const Wt::WString& message, int priority )
 //    wApp->triggerUpdate();
   }else
   {
-    const boost::posix_time::ptime now = WDateTime::currentDateTime().toPosixTime();
+    auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
     cerr << "Message " << SpecUtils::to_iso_string( now ) << " ";
     cerr << "[" << priority << "]: ";
     cerr << message.toUTF8() << endl << endl;
@@ -4283,7 +4329,9 @@ void InterSpec::finishStoreStateInDb( WLineEdit *nameedit,
     if( !SpecUtils::is_directory( filepath ) )
       throw runtime_error( "CWD didnt contain a 'analysis_tests' folder as expected" );
     
-    const boost::posix_time::ptime localtime = boost::posix_time::second_clock::local_time();
+    const int offset = wApp->environment().timeZoneOffset();
+    auto localtime = std::chrono::system_clock::now();
+    localtime += std::chrono::seconds(60*offset);
     
     string timestr = SpecUtils::to_iso_string( localtime );
     string::size_type period_pos = timestr.find_last_of( '.' );
@@ -4423,7 +4471,10 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
       cerr << "\n\nThe shielding/source fit model was NOT changed for current foreground" << endl;
     }
     
-    const boost::posix_time::ptime localtime = boost::posix_time::second_clock::local_time();
+    const int offset = wApp->environment().timeZoneOffset();
+    auto localtime = std::chrono::system_clock::now();
+    localtime += std::chrono::seconds(60*offset);
+    
     const string timestr = SpecUtils::to_iso_string( localtime );
     
     const char *val = n42doc->allocate_string( timestr.c_str(), timestr.size()+1 );
@@ -5412,7 +5463,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     m_fileMenuPopup->addSeparator();
 #endif
 
-#if( BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP)
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
 #if( USING_ELECTRON_NATIVE_MENU )
@@ -5424,9 +5475,15 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   exitItem->triggered().connect( std::bind( []{
     ElectronUtils::send_nodejs_message( "CloseWindow", "" );
   }) );
+#elif(BUILD_AS_WX_WIDGETS_APP)
+    m_fileMenuPopup->addSeparator();
+    PopupDivMenuItem* exitItem = m_fileMenuPopup->addMenuItem("Exit");
+    exitItem->triggered().connect(std::bind([] {
+      wApp->doJavaScript("window.wx.postMessage('CloseWindow');");
+    }));
 #endif
   }//if( InterSpecApp::isPrimaryWindowInstance() )
-#endif // BUILD_AS_ELECTRON_APP
+#endif //  || BUILD_AS_WX_WIDGETS_APP
 } // void InterSpec::addFileMenu( WContainerWidget *menuDiv, bool show_examples )
 
 
@@ -5589,7 +5646,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     }//if( m_energyCalWindow )
     
     m_toolsTabs = new WTabWidget();
-    //m_toolsTabs->addStyleClass( "ToolsTabs" );
+    m_toolsTabs->addStyleClass( "ToolsTabs" );
     
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
@@ -5716,7 +5773,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_layout->removeWidget( m_menuDiv );
     m_toolsTabs->removeTab( m_peakInfoDisplay );
     m_toolsTabs->removeTab( m_energyCalTool );
-    
+
+#if( USE_REL_ACT_TOOL )
     if( m_relActManualGui )
     {
       if( !m_relActManualWindow )
@@ -5726,6 +5784,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
     if( m_relActAutoGui )
       handleRelActAutoClose();
+#endif
     
 #if( USE_TERMINAL_WIDGET )
     if( m_terminal )
@@ -6043,25 +6102,32 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
   }//if( overlay )
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
-  if( InterSpecApp::isPrimaryWindowInstance() )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
+  if (InterSpecApp::isPrimaryWindowInstance())
   {
     m_displayOptionsPopupDiv->addSeparator();
-    
+
 #if( BUILD_AS_ELECTRON_APP )
-    auto newWindowItem = m_displayOptionsPopupDiv->addMenuItem( "New app window" );
-    newWindowItem->triggered().connect( std::bind( [](){
+    auto newWindowItem = m_displayOptionsPopupDiv->addMenuItem("New app window");
+    newWindowItem->triggered().connect(std::bind([]() {
       ElectronUtils::send_nodejs_message("NewAppWindow", "");
-    } ) );
+      }));
 #endif
-    
-    auto browserItem = m_displayOptionsPopupDiv->addMenuItem( "Use in external browser" );
+
+#if( BUILD_AS_WX_WIDGETS_APP )
+    auto newWindowItem = m_displayOptionsPopupDiv->addMenuItem("New app window");
+    newWindowItem->triggered().connect(std::bind([]() {
+      wApp->doJavaScript("window.wx.postMessage('NewAppWindow');");
+      }));
+#endif
+
+    auto browserItem = m_displayOptionsPopupDiv->addMenuItem("Use in external browser");
 #if( BUILD_AS_ELECTRON_APP )
-    browserItem->triggered().connect( std::bind( [](){
+    browserItem->triggered().connect(std::bind([]() {
       ElectronUtils::send_nodejs_message("OpenInExternalBrowser", "");
-    } ) );
+      }));
 #endif
-    
+
 #if( BUILD_AS_OSX_APP )
     // A brief attempt at using javascript to open a browser window failed (probably because I wasnt
     //  doing it right or something), so I just implemented calling back to obj-c; see the
@@ -6075,15 +6141,20 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     //    after calling the following c++
     //      browserItem->setLink( WLink("http://localhost:port?restore=no&primary=no") );
     //      browserItem->setLinkTarget( AnchorTarget::TargetNewWindow );
-    browserItem->triggered().connect( std::bind([=](){
-      doJavaScript( "console.log('Will try to call back to obj-c');"
-                    "try{"
-                      "window.webkit.messageHandlers.interOp.postMessage({\"action\": \"ExternalInstance\"});"
-                     "}catch(error){"
-                       "console.warn('Failed to callback to the obj-c: ' + error );"
-                     "}" );
-    }) );
+    browserItem->triggered().connect(std::bind([=]() {
+      doJavaScript("console.log('Will try to call back to obj-c');"
+        "try{"
+        "window.webkit.messageHandlers.interOp.postMessage({\"action\": \"ExternalInstance\"});"
+        "}catch(error){"
+        "console.warn('Failed to callback to the obj-c: ' + error );"
+        "}");
+      }));
 #endif //BUILD_AS_OSX_APP
+
+#if( BUILD_AS_WX_WIDGETS_APP )
+    browserItem->triggered().connect(std::bind([=]() {doJavaScript("window.wx.postMessage('OpenInExternalBrowser');"); }));
+#endif
+
   }//if( useNativeMenu )
 #endif //BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP
   
@@ -6099,7 +6170,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_displayOptionsPopupDiv->addSeparator();
   m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleDevTools );
 #endif
-#elif( BUILD_AS_ELECTRON_APP )
+#elif( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
 
   m_displayOptionsPopupDiv->addSeparator();
   PopupDivMenuItem *fullScreenItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Full Screen" );  //F11
@@ -6112,11 +6183,17 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
   LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsDecreasePageZoom);
   
+#if( BUILD_AS_ELECTRON_APP )
   // Note: the triggered() signal a Wt::Signal, which is C++ only, so we cant just hook it up to
   //       javascript for it to run - we have to make the round-trip JS -> C++ -> JS
   fullScreenItem->triggered().connect( std::bind( []{
     ElectronUtils::send_nodejs_message( "ToggleMaximizeWindow", "" );
   }) );
+#else
+  fullScreenItem->triggered().connect(std::bind([] {
+    wApp->doJavaScript("window.wx.postMessage('ToggleMaximizeWindow');");
+    }));
+#endif
   
   resetZoomItem->triggered().connect( std::bind( []{
     wApp->doJavaScript( "Wt.WT.ResetPageZoom();" );
@@ -6142,7 +6219,6 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   }//if( InterSpecApp::isPrimaryWindowInstance() )
 #endif
 #endif
-  
 #endif
 }//void addDisplayMenu( menuParentDiv )
 
@@ -6758,6 +6834,31 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     InterSpecUser::associateWidget( m_user, "LoadDefaultDrf", checkbox, this );
   }//end add "LoadDefaultDrf"
   
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+  if( app && app->isTablet() )
+  {
+    WCheckBox *checkbox = new WCheckBox( " Desktop Interface" );
+    item = subPopup->addWidget( checkbox );
+    HelpSystem::attachToolTipOn( item, "Selects to use either a more mobile or desktop style"
+                                " application interface.  The primary difference is use of a"
+                                " \"Hamburger\" style menu, or a menu bar.\n"
+                                "Changing this preference wont take effect until the app is"
+                                " restarted, or the \"Clear Session...\" option is chosen.",
+                                true, HelpSystem::ToolTipPosition::Right );
+    
+    const string msg = "Changes will not take effect until app is restarted or refreshed."
+    "<div onclick=\"Wt.emit('" + wApp->root()->id() + "',{name:'miscSignal'}, 'clearSession');"
+    "try{$(this.parentElement.parentElement).remove();}catch(e){}return false;\" "
+    "class=\"clearsession\"><span class=\"clearsessiontxt\">Refresh Session</span></div>";
+    const WString wmsg = WString::fromUTF8( msg );
+    checkbox->checked().connect( boost::bind( &WarningWidget::addMessageUnsafe,
+      m_warnings, wmsg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ) );
+    checkbox->unChecked().connect( boost::bind( &WarningWidget::addMessageUnsafe,
+      m_warnings, wmsg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ) );
+    
+    InterSpecUser::associateWidget( m_user, "TabletUseDesktopMenus", checkbox, this );
+  }//if( is tablet )
+  
 	item = subPopup->addMenuItem("Color Themes...");
 	item->triggered().connect(boost::bind(&InterSpec::showColorThemeWindow, this));
 
@@ -6899,12 +7000,6 @@ Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpecUtils::SpectrumType 
     answer = header->dbEntry();
     if( answer && !meas->modified() )
       return answer;
-  
-    bool savePref = false;
-    try{ savePref = m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ); }catch(...){}
-    
-    if( !savePref )
-      return answer;
     
     Dbo::ptr<UserFileInDb> dbback;
     
@@ -6931,7 +7026,7 @@ Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpecUtils::SpectrumType 
       }//if( bheader )
     }//if( type == SpecUtils::SpectrumType::Foreground )
     
-    if( update && savePref )
+    if( update )
       header->saveToDatabase( meas );
     
     return header->dbEntry();
@@ -6975,7 +7070,12 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
     filename = "spectrum";
   if( !spectrum )
     filename += "_timechart";
-  std::string timestr = SpecUtils::to_iso_string( boost::posix_time::second_clock::local_time() );
+  
+  const int offset = wApp->environment().timeZoneOffset();
+  auto localtime = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+  localtime += chrono::seconds(60*offset);
+  
+  std::string timestr = SpecUtils::to_iso_string( localtime );
   auto ppos = timestr.find('.');
   if( ppos != string::npos )
     timestr = timestr.substr(0,ppos);
@@ -7329,6 +7429,11 @@ void InterSpec::createTerminalWidget()
     m_terminalWindow = new AuxWindow( TerminalTabTitle,
                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
                                       | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
+    
+    WPushButton *closeButton = m_terminalWindow->addCloseButtonToFooter();
+    closeButton->clicked().connect(m_terminalWindow, &AuxWindow::hide);
+    
+    AuxWindow::addHelpInFooter( m_terminalWindow->footer(), "terminal-dialog" );
     
     m_terminalWindow->rejectWhenEscapePressed();
     m_terminalWindow->finished().connect( this, &InterSpec::handleTerminalWindowClose );
@@ -7716,7 +7821,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( this, &InterSpec::createFluxTool );
   
   item = popup->addMenuItem( "Nuclide Decay Info" );
-  HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and daughter nuclides." , showToolTips );
+  HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and descendant nuclides." , showToolTips );
   item->triggered().connect( this, &InterSpec::createDecayInfoWindow );
 
 #if( USE_DETECTION_LIMIT_TOOL )
@@ -7826,7 +7931,11 @@ void InterSpec::initMaterialDbAndSuggestions()
     //popupOptions.wordSeparators     = "-_., ;()";     //To show suggestions based on matches of the edited value with parts of the suggestion.
     popupOptions.wordStartRegexp = "\\s|^|\\(|\\<";       // Instead of using .wordSeparators, we will use the regex option to start matching at whitespaces, start of line, open-paren, and boundaries of words (probably a bit duplicative).
     popupOptions.appendReplacedText = "";             //
+    
+    // We may want to parent `m_shieldingSuggestion...
+    
     m_shieldingSuggestion = new WSuggestionPopup( popupOptions, this );
+    
     m_shieldingSuggestion->addStyleClass("suggestion");
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
     m_shieldingSuggestion->setJavaScriptMember("wtNoReparent", "true");
@@ -9602,7 +9711,6 @@ void InterSpec::handleAppUrl( std::string url )
     throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );
   }
 }//void handleAppUrl( std::string url )
-
 
 
 void InterSpec::detectorsToDisplayChanged()

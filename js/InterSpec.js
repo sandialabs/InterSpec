@@ -369,8 +369,10 @@ WT_DECLARE_WT_MEMBER
 (DoOrientationChange, Wt::JavaScriptFunction, "DoOrientationChange",
 function()
 {
-  if( CSS && (CSS.supports('padding-bottom: env(safe-area-inset-left)')
-     || CSS.supports('padding-bottom: constant(safe-area-inset-left)')) ) {
+  if( (typeof window.orientation === "number")
+    && CSS
+    && (CSS.supports('padding-bottom: env(safe-area-inset-left)')
+        || CSS.supports('padding-bottom: constant(safe-area-inset-left)')) ) {
     
     switch( window.orientation ) {
       case 0:
@@ -386,7 +388,7 @@ function()
       break;
     }
     
-    window.dispatchEvent(new Event('resize'));
+    window.dispatchEvent(new Event('resize')); //see also Wt.TriggerResizeEvent()
   }
 }
 );

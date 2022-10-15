@@ -63,11 +63,12 @@
 #include <Wt/Chart/WCartesianChart>
 #include <Wt/WMessageResourceBundle>
 
+#include "SpecUtils/DateTime.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
-#include "SpecUtils/Filesystem.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -82,13 +83,15 @@
 #include "target/electron/ElectronUtils.h"
 #endif
 
-
 #if( BUILD_AS_OSX_APP )
 #include "target/osx/macOsUtils.h"
 #endif
 
+#if( BUILD_AS_WX_WIDGETS_APP )
+#include "target/wxWidgets/InterSpecWxUtils.h"
+#endif
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP )
 #include "InterSpec/InterSpecServer.h"
 #endif
 
@@ -126,14 +129,14 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   :  WApplication( env ),
      m_viewer( 0 ),
      m_layout( nullptr ),
-     m_lastAccessTime( boost::posix_time::microsec_clock::local_time() ),
-     m_activeTimeInSession( 0, 0, 0 )
+     m_lastAccessTime( std::chrono::steady_clock::now() ),
+     m_activeTimeInSession{ std::chrono::seconds(0) }
 #if( IOS )
     , m_orientation( InterSpecApp::DeviceOrientation::Unknown )
     , m_safeAreas{ 0.0f }
 #endif
 {
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP  )
   if( !checkExternalTokenFromUrl() )
   {
     setTitle( "Error loading" );
@@ -150,12 +153,16 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
    
   setupDomEnvironment();
   setupWidgets( true );
+
+  Wt::log("debug") << "Done in InterSpecApp constructor.";
 }//InterSpecApp constructor
 
 
 InterSpecApp::~InterSpecApp()
 {
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  Wt::log("debug") << "Entering ~InterSpecApp() destructor.";
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
   if( !m_externalToken.empty() )
     InterSpecServer::set_session_destructing( m_externalToken.c_str() );
 #endif
@@ -169,7 +176,7 @@ InterSpecApp::~InterSpecApp()
 }//~InterSpecApp()
 
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
 bool InterSpecApp::checkExternalTokenFromUrl()
 {
   m_primaryApp = false;
@@ -210,7 +217,7 @@ bool InterSpecApp::checkExternalTokenFromUrl()
   
   return allow_untokened;
 }//bool checkExternalTokenFromUrl()
-#endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
 
 
 void InterSpecApp::setupDomEnvironment()
@@ -293,9 +300,33 @@ void InterSpecApp::setupDomEnvironment()
   root()->setAttributeValue( "oncontextmenu", "return false;" );
 #endif
   
+  // Define some javascript to artificially trigger a resize event; this is a hack used a few
+  //  places to invoke the Wt layout stuff, when its needed, but not being triggered automatically.
+  //  To call this code, use something like:
+  //    wApp->doJavaScript(wApp->javaScriptClass() + ".TriggerResizeEvent();");
+  declareJavaScriptFunction( "TriggerResizeEvent",
+  "function(){"
+    "const a = function(ms){"
+      "setTimeout( function(){ "
+        + wApp->javaScriptClass() + ".layouts2.scheduleAdjust();"
+        "window.dispatchEvent(new Event('resize')); "
+      "}, ms );"
+    "};"
+    // The number of calls, or when the calls are made to trigger resizes has not been investigated
+    "a(0); a(50); a(500); a(2500);"
+  "}"
+  );
+  
+  
+  //cout << "wApp->javaScriptClass()='" << wApp->javaScriptClass() << "'" << endl; //Prints "Wt"
+  
+  
   if( isMobile() )
   {
+    // if isTablet(), then these css files may later get unloaded in setupWidgets().
+    useStyleSheet( "InterSpec_resources/InterSpecSafeArea.css" );
     useStyleSheet( "InterSpec_resources/InterSpecMobileCommon.css" );
+    
     if( isAndroid() )
       useStyleSheet( "InterSpec_resources/InterSpecMobileDroid.css" );
     else
@@ -310,8 +341,6 @@ void InterSpecApp::setupDomEnvironment()
                          padding-right: inherit  !important; }")
                   .appendTo("head");
     );
-    
-    //cerr << "prevent_spinner_js='" << prevent_spinner_js << "'" << endl;
     
     //Prevent mobile from hovering white
     const char *prevent_hovering_white = INLINE_JAVASCRIPT(
@@ -349,28 +378,30 @@ void InterSpecApp::setupDomEnvironment()
   {
     //Try to parse out an integer followed by four floats
     int orientation;
-    float vals[4];
+    float top, right, bottom, left;
     const int nargscanned = sscanf( iter->second[0].c_str(), "%i,%f,%f,%f,%f",
-                              &orientation, &(vals[0]), &(vals[1]), &(vals[2]), &(vals[3]) );
+                              &orientation, &top, &right, &bottom, &left );
     
     if( nargscanned == 5 )
     {
       const DeviceOrientation orient = DeviceOrientation(orientation);
-      cout << "Received initial orientation: " << orientation
-           << " and SafeAreas={" << vals[0] << ", " << vals[1] << ", " << vals[2] << ", " << vals[3] << "}" << endl;
-      if( (orient!=DeviceOrientation::LandscapeLeft && orient!=DeviceOrientation::LandscapeRight)
-         || vals[0] < 0 || vals[0] > 50 || vals[1] < 0 || vals[1] > 75 || vals[2] < 0 || vals[2] > 50 || vals[3] < 0 || vals[3] > 75 )
+      Wt::log("debug") << "Received initial orientation: " << orientation
+           << " and SafeAreas={" << top << ", " << right << ", " << bottom << ", " << left << "}";
+      if( ((orient != DeviceOrientation::LandscapeLeft)
+           && (orient != DeviceOrientation::LandscapeRight))
+         || (top < 0)    || (top > 50)
+         || (right < 0)  || (right > 75)
+         || (bottom < 0) || (bottom > 50)
+         || (left < 0)   || (left > 75) )
       {
-        cerr << "Intial device orientations invalid!" << endl;
+        Wt::log("error") << "Initial device orientations invalid!";
       }else
       {
-        m_orientation = orient;
-        for( size_t i = 0; i < 4; ++i )
-          m_safeAreas[i] = vals[i];
+        setSafeAreaInsets( orientation, top, right, bottom, left );
       }
     }else
     {
-      cerr << "Failed to parse SafeAreas='" << iter->second[0] << "'" << endl;
+      Wt::log("error") << "Failed to parse SafeAreas='" << iter->second[0] << "'";
     }
   }
 #endif
@@ -406,7 +437,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   }catch( std::exception &e )
   {
 #if( BUILD_AS_UNIT_TEST_SUITE )
-    cerr << "There was an expection initializing a InterSpec: " << e.what() << endl;
+    cerr << "There was an exception initializing a InterSpec: " << e.what() << endl;
     throw e;
 #endif //#if( BUILD_AS_UNIT_TEST_SUITE )
     
@@ -435,6 +466,15 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   
   root()->addStyleClass( "specviewer" );
   
+  // TODO: we could add an explicit CSS class 
+  // @media screen and (max-device-width: 640px) { ... }
+  //if( isPhone() )
+  //  root()->addStyleClass( "is-phone" );  //see also LandscapeRight and LandscapeLeft CSS classes
+  //else if( isTablet() )
+  //  root()->addStyleClass( "is-tablet" );
+  //if( isMobile() )
+  //  root()->addStyleClass( "is-mobile" );
+  
   if( !m_miscSignal )
   {
     m_miscSignal.reset( new JSignal<std::string>(root(), "miscSignal", false) );
@@ -458,7 +498,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   bool loadedSpecFile = false;
   const Http::ParameterMap &parmap = environment().getParameterMap();
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
   if( !m_externalToken.empty() )
   {
     const string initial_file = InterSpecServer::file_to_open_on_load( m_externalToken );
@@ -483,11 +523,11 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       
       if( loadedSpecFile )
       {
-        cout << "Opened file/url from initial request: '" << initial_file << "'" << endl;
+        Wt::log("debug") << "Opened file/url from initial request: '" << initial_file << "'";
       }else
       {
         //userOpenFileFromFilesystem will call SpecMeasManager::displayInvalidFileMsg for us
-        cerr << "Invalid file/url from initial request: '" << initial_file << "'" << endl;
+        Wt::log("error") << "Invalid file/url from initial request: '" << initial_file << "'";
       }
     }//if( !initial_file.empty() )
   }//if( !m_externalToken.empty() )
@@ -544,8 +584,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         transaction.commit();
       }catch( std::exception &e )
       {
-        cerr << "Failed to commit transaction while loading state, caught: "
-        << e.what() << endl;
+        Wt::log("error") << "Failed to commit transaction while loading state, caught: "
+        << e.what();
       }//try / catch
       
       if( state )
@@ -574,7 +614,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
               InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user,
                               "PromptStateLoadOnStart", dont_ask, m_viewer );
             }catch( std::exception &e ) {
-              cerr << "Failed setting 'PromptStateLoadOnStart' user prefrence" << endl;
+              Wt::log("error") << "Failed setting 'PromptStateLoadOnStart' user prefrence/";
             }
           };
         
@@ -583,7 +623,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
               InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user,
                                     "LoadPrevStateOnStart", load, m_viewer );
             }catch( std::exception &e ) {
-              cerr << "Failed setting 'LoadPrevStateOnStart' user prefrence" << endl;
+              Wt::log("error") << "Failed setting 'LoadPrevStateOnStart' user prefrence.";
             }
           };
         
@@ -640,12 +680,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
       }else
       {
-        cerr << "Could not load previously saved state" << endl;
+        Wt::log("error") << "Could not load previously saved state.";
       }
     }//if( saveSpectra && saveState )
   }catch( std::exception &e )
   {
-    cerr << "Failed to load app state, caught: " << e.what() << endl;
+    Wt::log("error") << "Failed to load app state, caught: '" << e.what() << "'.";
   }//try / catch
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
   
@@ -673,8 +713,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     
     Dbo::ptr<UserState> state = sql->session()->find<UserState>().where( query );
     transaction.commit();
-    std::cerr << "SpecViewerApp: Will try to open test state ID="
-    << id << " (" << id << ")" << std::endl;
+    Wt::log("info") << "SpecViewerApp: Will try to open test state ID="
+    << id << " (" << id << ").";
     
     if( state )
     {
@@ -682,7 +722,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       loadedSpecFile = true;
     }else
     {
-      cerr << "Could not load test state" << endl;
+      Wt::log("error") << "Could not load test state.";
     }//if( state ) / else
   }//if( (stateiter != parmap.end()) && stateiter->second.size() )
 #endif  //#if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -691,9 +731,11 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   auto showWelcomeCallback = [this,loadedSpecFile](){
     //If we already loaded a spectrum, then dont show welcome dialog (or IE
     //  warning dialog)
-    if( loadedSpecFile )
+    if (loadedSpecFile)
+    {
       return;
-    
+    }
+
     //If client is internet explorer, show a warning before the welcome dialog
     if( !environment().agentIsIE() )
     {
@@ -704,10 +746,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       
 #if( IOS || ANDROID )
       //For iPhoneX* devices we should trigger a resize once
-      auto fcn = boost::bind( &InterSpec::doJavaScript, m_viewer, "window.dispatchEvent(new Event('resize'));" );
-      WTimer::singleShot( 250, fcn );
-      WTimer::singleShot( 500, fcn );
-      WTimer::singleShot( 1000, fcn );
+      doJavaScript( javaScriptClass() + ".TriggerResizeEvent();" );
 #endif
       
     }else
@@ -757,7 +796,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
 #endif
   
-#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP  || BUILD_AS_WX_WIDGETS_APP  )
   auto themeiter = parmap.find( "colortheme" );
   if( themeiter != parmap.end() && themeiter->second.size() )
     m_viewer->osThemeChange( themeiter->second[0] );
@@ -771,8 +810,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
   
   if( m_viewer->m_user )
-    cerr << "Have started session " << sessionId() << " for user "
-    << m_viewer->m_user->userName() << endl;
+    Wt::log("debug") << "Have started session " << sessionId() << " for user "
+    << m_viewer->m_user->userName() << ".";
   
 #if( USING_ELECTRON_NATIVE_MENU )
   if( isPrimaryWindowInstance() )
@@ -783,13 +822,44 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   }//if( !m_externalToken.empty() )
 #endif
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || BUILD_AS_WX_WIDGETS_APP  )
   // TODO 20220405: in macOS app I see the error "Wt: decodeSignal(): signal 'of7g69f.SucessfullyLoadedConf' not exposed"
   //                Not sure how to fix this, atm
   m_sucessfullyLoadedSignal.reset( new Wt::JSignal<>( m_viewer, "SucessfullyLoadedConf", false ) );
   m_sucessfullyLoadedSignal->connect( this, &InterSpecApp::loadSuccesfullCallback );
   doJavaScript( "setTimeout(function(){" + m_sucessfullyLoadedSignal->createCall() + "}, 250);" );
 #endif
+  
+  // The user can override the mobile setting for tablets, so we'll fix-up what CSS we load here.
+  //  I think we could delay loading the CSS for mobile from setupDomEnvironment() to here, without
+  //  any effect, but I havent tested yet - and I dont feel totally great about how things are
+  //  structured w.r.t. the "TabletUseDesktopMenus" user preference yet.
+  if( isTablet() )
+  {
+    // The user could have changed the "TabletUseDesktopMenus" preference, and done a
+    //  "Clear Session...".
+    //  InterSpecApp::isTablet() does not account for the user preference, while
+    //  InterSpec::isTablet() does.
+    //  Note that we are not unloading InterSpecSafeArea.css, even if user has requested "Desktop"
+    //   version of app
+    if( m_viewer->isTablet() )
+    {
+      // WApplication::useStyleSheet will essentially be a no-op if the file has already been loaded
+      useStyleSheet( "InterSpec_resources/InterSpecMobileCommon.css" );
+      if( isAndroid() )
+        useStyleSheet( "InterSpec_resources/InterSpecMobileDroid.css" );
+      else
+        useStyleSheet( "InterSpec_resources/InterSpecMobileApple.css" );
+    }else
+    {
+      // WApplication::useStyleSheet will essentially be a no-op if the file has not been loaded
+      removeStyleSheet( "InterSpec_resources/InterSpecMobileCommon.css" );
+      if( isAndroid() )
+        removeStyleSheet( "InterSpec_resources/InterSpecMobileDroid.css" );
+      else
+        removeStyleSheet( "InterSpec_resources/InterSpecMobileApple.css" );
+    }//
+  }//if( isTablet() )
 }//void setupWidgets()
 
 
@@ -871,12 +941,12 @@ InterSpec *InterSpecApp::viewer()
 }//InterSpec* viewer()
 
 
-boost::posix_time::time_duration InterSpecApp::activeTimeInCurrentSession() const
+std::chrono::steady_clock::time_point::duration InterSpecApp::activeTimeInCurrentSession() const
 {
   return m_activeTimeInSession;
 }
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS|| BUILD_AS_WX_WIDGETS_APP )
 std::string InterSpecApp::externalToken()
 {
   WApplication::UpdateLock lock( this );
@@ -917,18 +987,18 @@ InterSpecApp *InterSpecApp::instanceFromExtenalToken( const std::string &idstr )
     return (InterSpecApp *)0;
   
   std::lock_guard<std::mutex> lock( AppInstancesMutex );
-  //cout << "THere are AppInstances=" << AppInstances.size() << "; we want session: '" << idstr << "'" << std::endl;
+  //Wt::log("debug") << "There are AppInstances=" << AppInstances.size() << "; we want session: '" << idstr << "'";
   for( InterSpecApp *app : AppInstances )
   {
     Wt::WApplication::UpdateLock lock( app );
-    //cout << "\t An instance=" << app->externalToken() << std::endl;
+    //Wt::log("debug") << "\tSession '" << idstr << "' An instance=" << app->externalToken();
     if( app->externalToken() == idstr )
       return app;
   }
   
   return nullptr;
 }//InterSpecApp *instanceFromExtenalToken( const std::string &idstr )
-#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP  )
 
 
 
@@ -965,7 +1035,7 @@ void InterSpecApp::dragEventWithFileContentsFinished()
 
 
 
-#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
 void InterSpecApp::osThemeChange( std::string name )
 {
   auto server = WServer::instance();
@@ -994,12 +1064,15 @@ void InterSpecApp::setSafeAreaInsets( const int orientation, const float top,
   m_safeAreas[2] = bottom;
   m_safeAreas[3] = left;
   
-  //ToDo: see if triggering a resize event is ever necassary
-  //doJavaScript( "setTimeout(function(){window.dispatchEvent(new Event('resize'));},0);" );
+  //ToDo: see if triggering a resize event is ever necessary
+  //  doJavaScript( javaScriptClass() + ".TriggerResizeEvent();" );
   
-  cout << "Set safe area insets: orientation=" << orientation
+  // Note that CSS takes care of insets, mostly by detecting the LandscapeLeft and LandscapeRight
+  //  CSS classes, which are set by the `DoOrientationChange` javascript function
+  
+  Wt::log("debug") << "Set safe area insets: orientation=" << orientation
        << ", safeAreas={" << top << ", " << right << ", "
-       << bottom << ", " << left << "}" << endl;
+       << bottom << ", " << left << "}";
 }//setSafeAreaInsets(...)
 
 void InterSpecApp::getSafeAreaInsets( InterSpecApp::DeviceOrientation &orientation,
@@ -1015,7 +1088,6 @@ void InterSpecApp::getSafeAreaInsets( InterSpecApp::DeviceOrientation &orientati
 
 void InterSpecApp::notify( const Wt::WEvent& event )
 {
-//  cout << "InterSpecApp::notify starting" << endl;
 #if( !BUILD_AS_UNIT_TEST_SUITE )
   try
   {
@@ -1023,31 +1095,14 @@ void InterSpecApp::notify( const Wt::WEvent& event )
     const bool userEvent = (event.eventType() == Wt::UserEvent);
     if( userEvent )
     {
-      using namespace boost::posix_time;
-      const ptime thistime = microsec_clock::local_time();
-      time_duration duration = thistime - m_lastAccessTime;
-      if( duration < minutes(5) )
+      const auto thistime = std::chrono::steady_clock::now();
+      const auto duration = thistime - m_lastAccessTime;
+      if( duration < std::chrono::seconds(300) )
         m_activeTimeInSession += duration;
       m_lastAccessTime = thistime;
     }//if( userEvent )
 
      WApplication::notify( event );
-    
-    //Note that event.eventType() may have change (although I dont know how/why)
-//    if( userEvent )
-//    {
-//      std::shared_ptr<const SpecMeas> meas = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
-//      std::shared_ptr<const SpecMeas> back = m_viewer->measurment(SpecUtils::SpectrumType::Background);
-//      std::shared_ptr<const SpecMeas> secn = m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
-//      
-//      if( (meas&&meas->modified())
-//          || (back&&back->modified()) || (secn&&secn->modified())
-//         //or the spectrum for any of these changed
-//         )
-//      {
-//        //save the incremental difference to the database
-//      }//
-//    }//if( userEvent )
 #if( !BUILD_AS_UNIT_TEST_SUITE )
   }catch( std::exception &e )
   {
@@ -1055,22 +1110,20 @@ void InterSpecApp::notify( const Wt::WEvent& event )
     msg += e.what();
     svlog( msg, WarningWidget::WarningMsgHigh );
     
+    char message[512];
+    snprintf( message, sizeof(message), "Uncaught exception in event loop: '%s'.", e.what() );
+    Wt::log("error") << message;
 #if( PERFORM_DEVELOPER_CHECKS )
-    char message[1024];
-    snprintf(message, sizeof(message), "Uncaught exception in event loop: %s", e.what() );
     log_developer_error( __func__, message );
 #endif
-    
   }//try/catch
 #endif //#if( !BUILD_AS_UNIT_TEST_SUITE )
-
-//  cout << "\tending InterSpecApp::notify" << endl;
 }//void notify( const Wt::WEvent& event )
 
 
 void InterSpecApp::unload()
 {
-  cerr << "\n\nReceived unload from " << sessionId() << endl;
+  Wt::log("info") << "Received unload from " << sessionId() << ".";
   WApplication::unload();
 }//void unload()
 
@@ -1086,22 +1139,24 @@ void InterSpecApp::prepareForEndOfSession()
       {
         DataBaseUtils::DbTransaction transaction( *sql );
         
-        //If the user has mutliple sessions going on, the below will quash
-        //  eachother out.  Could probably be fixed by
+        //If the user has multiple sessions going on, the below will quash
+        //  each other out.  Could probably be fixed by
         //  m_viewer->m_user.reread();
         
         m_viewer->m_user.modify()->addUsageTimeDuration( m_activeTimeInSession );
-        cerr << "Added " << m_activeTimeInSession << " usage time for user "
-        << m_viewer->m_user->userName() << endl;
-        m_activeTimeInSession = boost::posix_time::time_duration(0,0,0,0);
+        
+        const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
+        Wt::log("info") << "Added " << nmilli.count() << " ms usage time for user "
+             << m_viewer->m_user->userName();
+        
+        m_activeTimeInSession = std::chrono::seconds(0);
         transaction.commit();
       }
       
 #if( USE_DB_TO_STORE_SPECTRA )
       //Check to see if we should save the apps state
       const bool saveSpectra = true; //InterSpecUser::preferenceValue<bool>( "SaveSpectraToDb", m_viewer );
-      const bool saveState = InterSpecUser::preferenceValue<bool>(
-                                                                  "AutoSaveSpectraToDb" /*"SaveStateToDbOnExit"*/, m_viewer );
+      const bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb" /*"SaveStateToDbOnExit"*/, m_viewer );
         
         //Clean up the kEndOfSessions from before
         bool cleanupStates = true;
@@ -1142,7 +1197,8 @@ void InterSpecApp::prepareForEndOfSession()
       {
         const int offset = environment().timeZoneOffset();
         WString desc = "End of Session";
-        WString name = WDateTime::currentDateTime().addSecs(60*offset).toString( DATE_TIME_FORMAT_STR );
+        const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
+        WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
         
         Wt::Dbo::ptr<UserState> dbstate;
         std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
@@ -1179,7 +1235,7 @@ void InterSpecApp::prepareForEndOfSession()
                   } //no UserState
               }catch( std::exception &e )
               {
-                  cerr << "Could not access current Snapshot State ID while EndOfSession " << e.what() << endl;
+                Wt::log("error") << "Could not access current Snapshot State ID while EndOfSession " << e.what();
               }//try / catch
           }
           
@@ -1188,10 +1244,10 @@ void InterSpecApp::prepareForEndOfSession()
         try
         {
           m_viewer->saveStateToDb( dbstate );
-          cout << "Saved end of session app state to database" << endl;
+          Wt::log("debug") << "Saved end of session app state to database";
         }catch( std::exception &e )
         {
-          cerr << "InterSpecApp::prepareForEndOfSession(): " << e.what() << endl;
+          Wt::log("error") << "InterSpecApp::prepareForEndOfSession() error: " << e.what();
         }
         transaction.commit();
       }//if( saveSpectra && saveState )
@@ -1200,15 +1256,18 @@ void InterSpecApp::prepareForEndOfSession()
     
   }catch( std::exception &e )
   {
-    cerr << "InterSpecApp::prepareForEndOfSession() caught: " << e.what() << endl;
+    Wt::log("error") << "InterSpecApp::prepareForEndOfSession() caught: " << e.what();
   }//try / catch
   
-  cerr << "Have prepared for end of session " << sessionId() << endl;
+  Wt::log("debug") << "Have prepared for end of session " << sessionId() << ".";
 }//void InterSpecApp::prepareForEndOfSession()
 
 
 void InterSpecApp::clearSession()
 {
+  // Just in case there are any modal dialogs showing - the cover thing can be a little sticky
+  doJavaScript( "$('.Wt-dialogcover').hide();" );
+  
 #if( BUILD_AS_ELECTRON_APP )
   // As a workaround setup a function ElectronUtils::requestNewCleanSession() that
   //  sends websocket message to node land to clear menus, and load a new session
@@ -1311,7 +1370,7 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
 #if( PERFORM_DEVELOPER_CHECKS )
   log_developer_error( __func__, errmsg.c_str() );
 #endif
-  cerr << errmsg << endl;
+  Wt::log("error") << errmsg;
 }//void miscSignalHandler( const std::string &signal )
 
 
@@ -1339,8 +1398,8 @@ void InterSpecApp::finalize()
   prepareForEndOfSession();
   
   if( m_viewer && m_viewer->m_user )
-    cerr << "Have finalized session " << sessionId() << " for user "
-         << m_viewer->m_user->userName() << endl;
+    Wt::log("info") << "Have finalized session " << sessionId() << " for user "
+         << m_viewer->m_user->userName();
 }//void InterSpecApp::finalize()
 
 
@@ -1364,6 +1423,10 @@ void InterSpecApp::svlog( const std::string& message, int priority )
 
 bool InterSpecApp::isMobile() const
 {
+#if( IOS || ANDROID )
+  return true;
+#endif
+
   const WEnvironment &env = environment();
   const bool isMob = (   env.agentIsMobileWebKit()
                       || env.agentIsIEMobile()
@@ -1384,6 +1447,12 @@ bool InterSpecApp::isMobile() const
 
 bool InterSpecApp::isAndroid() const
 {
+#if( ANDROID )
+  return true;
+#elif( BUILD_AS_ELECTRON_APP || IOS || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
+  return false;
+#endif
+  
   const WEnvironment &env = environment();
   const bool isDroid = ( env.agent()==WEnvironment::MobileWebKitAndroid
                       || env.userAgent().find("Android") != std::string::npos
@@ -1395,10 +1464,16 @@ bool InterSpecApp::isAndroid() const
 
 bool InterSpecApp::isPhone() const
 {
-  //see: (iOS) http://www.enterpriseios.com/wiki/UserAgent
-  //     (Android) http://www.gtrifonov.com/2011/04/15/google-android-user-agent-strings-2/
-  
   const WEnvironment &env = environment();
+  
+#if( IOS )
+  // TODO: we could enable this for all builds, to help with testing; if we do, add this equiv code to isMobile()
+  const Http::ParameterMap &parmap = environment().getParameterMap();
+  const Http::ParameterMap::const_iterator iter = parmap.find( "isphone" );
+  if( (iter != parmap.end()) && iter->second.size() && (iter->second[0] == "1") )
+    return true;
+#endif
+  
   return ( env.userAgent().find("iPhone") != std::string::npos
            || env.userAgent().find("iPod") != std::string::npos
            || (env.userAgent().find("Android") != std::string::npos
@@ -1406,21 +1481,33 @@ bool InterSpecApp::isPhone() const
            || env.userAgent().find("RIM ") != std::string::npos);
 }//bool InterSpecApp::isPhone()
 
+
 bool InterSpecApp::isTablet() const
 {
-    const WEnvironment &env = environment();
-    const string &agent = env.userAgent();
+  const WEnvironment &env = environment();
+  
+#if( IOS )
+  // TODO: we could enable this for all builds, to help with testing; if we do, add this equiv code to isMobile()
+  const Http::ParameterMap &parmap = environment().getParameterMap();
+  const Http::ParameterMap::const_iterator iter = parmap.find( "istablet" );
+  if( (iter != parmap.end()) && iter->second.size() && (iter->second[0] == "1") )
+    return true;
+#endif
+  
+  const string &agent = env.userAgent();
     
-    return (agent.find("iPad") != string::npos
+  return (agent.find("iPad") != string::npos
             || (agent.find("Android") != string::npos
                 && agent.find("Mobile") == string::npos)
             );
 }//bool isTablet() const
 
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID  || BUILD_AS_WX_WIDGETS_APP )
 void InterSpecApp::loadSuccesfullCallback()
 {
+  Wt::log("debug") << "Succesfully loaded session.";
+
   m_sucessfullyLoadedSignal.reset();
   
   if( InterSpecApp::isPrimaryWindowInstance() )
@@ -1432,6 +1519,8 @@ void InterSpecApp::loadSuccesfullCallback()
     macOsUtils::sessionSuccessfullyLoaded();
 #elif( ANDROID )
 #warning "Need to implement notifying for parent process for Android"
+#elif( BUILD_AS_WX_WIDGETS_APP )
+    doJavaScript("window.wx.postMessage('SessionFinishedLoading');");
 #else
     static_assert( 0, "Something messed up with pre-processor setup" );
 #endif
