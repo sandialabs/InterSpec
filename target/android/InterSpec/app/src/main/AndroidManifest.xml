@@ -50,50 +50,100 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <intent-filter>
+
+            <intent-filter
+                android:icon='@mipmap/ic_launcher'
+                android:label='Gamma Spectrum File'
+                android:priority='1'>
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <action android:name="android.intent.action.PICK" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="file" />
-                <data android:host="*" />
-                <data android:mimeType="*/*" />
-                <data android:pathPattern=".*\\.n42" />
-                <data android:pathPattern=".*\\.spc" />
-                <data android:pathPattern=".*\\.dat" />
-                <data android:pathPattern=".*\\.pcf" />
-                <data android:pathPattern=".*\\.chn" />
-                <data android:pathPattern=".*\\.iaea" />
-                <data android:pathPattern=".*\\.cnf" />
-                <data android:pathPattern=".*\\.spe" />
-                <data android:pathPattern=".*\\.N42" />
-                <data android:pathPattern=".*\\.SPC" />
-                <data android:pathPattern=".*\\.DAT" />
-                <data android:pathPattern=".*\\.PCF" />
-                <data android:pathPattern=".*\\.CHN" />
-                <data android:pathPattern=".*\\.IAEA" />
-                <data android:pathPattern=".*\\.CNF" />
-                <data android:pathPattern=".*\\.SPE" />
-            </intent-filter>
-
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.SELECTED_ALTERNATIVE" />
-                <data android:scheme="file" />
-                <data android:host="*" />
-                <data android:mimeType="*/*" />
-                <data android:pathPattern=".*\\.txt" />
-                <data android:pathPattern=".*\\.csv" />
-                <data android:pathPattern=".*\\.xml" />
-                <data android:pathPattern=".*\\.TXT" />
-                <data android:pathPattern=".*\\.CSV" />
-                <data android:pathPattern=".*\\.XML" />
-                <data android:pathPattern=".*\\.zip" />
-            </intent-filter>
-
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="*/*" />
+                <data android:scheme="file" android:pathPattern="*.n42" />
+                <data android:scheme="content" android:pathPattern="*.n42" />
+
+                <data android:scheme="file" android:pathPattern="*.spc" />
+                <data android:scheme="content" android:pathPattern="*.spc" />
+
+                <data android:scheme="file" android:pathPattern="*.dat" />
+                <data android:scheme="content" android:pathPattern="*.dat" />
+
+                <data android:scheme="file" android:pathPattern="*.pcf" />
+                <data android:scheme="content" android:pathPattern="*.pcf" />
+
+                <data android:scheme="file" android:pathPattern="*.chn" />
+                <data android:scheme="content" android:pathPattern="*.chn" />
+
+                <data android:scheme="file" android:pathPattern="*.iaea" />
+                <data android:scheme="content" android:pathPattern="*.iaea" />
+
+                <data android:scheme="file" android:pathPattern="*.cnf" />
+                <data android:scheme="content" android:pathPattern="*.cnf" />
+
+                <data android:scheme="file" android:pathPattern="*.spe" />
+                <data android:scheme="content" android:pathPattern="*.spe" />
+
+                <data android:scheme="file" android:pathPattern="*.tka" />
+                <data android:scheme="content" android:pathPattern="*.tka" />
+
+                <data android:scheme="file" android:pathPattern="*.spm" />
+                <data android:scheme="content" android:pathPattern="*.spm" />
+
+                <data android:scheme="file" android:pathPattern="*.mps" />
+                <data android:scheme="content" android:pathPattern="*.mps" />
+
+                <data android:scheme="file" android:pathPattern="*.gam" />
+                <data android:scheme="content" android:pathPattern="*.gam" />
+
+                <data android:scheme="file" android:pathPattern="*.lis" />
+                <data android:scheme="content" android:pathPattern="*.lis" />
+
+                <data android:scheme="file" android:pathPattern="*.mca" />
+                <data android:scheme="content" android:pathPattern="*.mca" />
+
+                <data android:scheme="file" android:pathPattern="*.lzs" />
+                <data android:scheme="content" android:pathPattern="*.lzs" />
+
+                <data android:scheme="file" android:pathPattern="*.icd" />
+                <data android:scheme="content" android:pathPattern="*.icd" />
+
+                <data android:scheme="file" android:pathPattern="*.icd1" />
+                <data android:scheme="content" android:pathPattern="*.icd1" />
+            </intent-filter>
+
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <action android:name="android.intent.action.PICK" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="interspec" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <category android:name="android.intent.category.SELECTED_ALTERNATIVE" />
+                <data android:mimeType="*/*" />
+
+                <data android:scheme="file" android:pathPattern="*.txt" />
+                <data android:scheme="content" android:pathPattern="*.txt" />
+
+                <data android:scheme="file" android:pathPattern="*.csv" />
+                <data android:scheme="content" android:pathPattern="*.csv" />
+
+                <data android:scheme="file" android:pathPattern="*.xml" />
+                <data android:scheme="content" android:pathPattern="*.xml" />
+
+                <data android:scheme="file" android:pathPattern="*.zip" />
+                <data android:scheme="content" android:pathPattern="*.zip" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <action android:name="android.intent.action.PICK" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="interspec" android:host="drf" android:pathPrefix="/" />
+                <data android:scheme="interspec" android:host="decay" android:pathPrefix="/" />
             </intent-filter>
 
             <!-- Splash screen -->

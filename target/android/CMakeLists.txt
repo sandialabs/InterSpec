@@ -19,6 +19,8 @@ set(TRY_TO_STATIC_LINK ON CACHE INTERNAL "" )
 set(MAX_SPECTRUM_MEMMORY_SIZE_MB 32 CACHE INTERNAL "" )
 set(USE_DB_TO_STORE_SPECTRA ON CACHE INTERNAL "" )
 set(USE_SPECRUM_FILE_QUERY_WIDGET OFF CACHE INTERNAL "" )
+# Building the RelAct tool currently fails for Android because of erroring finding Eigen (which should be fetched) - I didnt spend time trying to fix. 
+set(USE_REL_ACT_TOOL OFF CACHE INTERNAL "" )
 
 
 message( "ANDROID_NDK_SYSROOT=${ANDROID_NDK_SYSROOT}")

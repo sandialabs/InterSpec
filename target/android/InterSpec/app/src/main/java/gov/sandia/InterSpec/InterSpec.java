@@ -626,7 +626,12 @@ public class InterSpec extends AppCompatActivity
 
 
 
-      if( Intent.ACTION_VIEW.equals(action) )
+      if( Intent.ACTION_VIEW.equals(action)
+              || Intent.ACTION_EDIT.equals(action)
+              || Intent.ACTION_PICK.equals(action)
+              || Intent.ACTION_DEFAULT.equals(action)
+              //|| Intent.ACTION_BROWSABLE.equals(action)
+       )
       {
         Log.d("onCreate", "ACTION_VIEW: Will set initial file to load at start");
         Uri fileUri = (Uri) intent.getData();
@@ -759,7 +764,12 @@ public class InterSpec extends AppCompatActivity
     String action = intent.getAction();
     String type = intent.getType();
 
-    if( Intent.ACTION_VIEW.equals(action) )
+    if( Intent.ACTION_VIEW.equals(action)
+            || Intent.ACTION_EDIT.equals(action)
+            || Intent.ACTION_PICK.equals(action)
+            || Intent.ACTION_DEFAULT.equals(action)
+    //|| Intent.ACTION_BROWSABLE.equals(action)
+      )
     {
       Uri fileUri = (Uri) intent.getData();
 
