@@ -87,6 +87,10 @@
 
 #include "js/SpecFileQueryWidget.js"
 
+#ifdef _WIN32
+#include "SpecUtils/StringAlgo.h"
+#endif
+
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"
 #endif
@@ -497,7 +501,7 @@ namespace
         case FileDataField::ParentPath:
           try
           {
-            row[f] = SpecUtils::fs_relative( base_search_dir, SpecUtils::parent_path(meas.filename) );
+            row[f] = SpecUtils::fs_relative( base_search_dir, SpecUtils::parent_path(meas.file_path) );
           }catch(...)
           {
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -510,7 +514,7 @@ namespace
           break;
           
         case FileDataField::Filename:
-          row[f] = meas.filename;
+          row[f] = meas.file_path;
           break;
           
         case FileDataField::DetectorName:
@@ -2770,36 +2774,37 @@ void SpecFileQueryWidget::openSelectedFilesParentDir()
     return;
   
   const int row = selected.begin()->row();
-  WModelIndex findex = m_resultmodel->index( row, SpecFileQuery::Filename );
-  boost::any fnany = m_resultmodel->data( findex, Wt::UserRole );
-  std::string filenameandy = asString(fnany).toUTF8();
-  
-  const string parentdir = SpecUtils::parent_path(filenameandy);
+  const WModelIndex fn_index = m_resultmodel->index( row, SpecFileQuery::Filename );
+  // SpecFileQuery::Filename, with role=UserRole, returns full-path (DisplayRole returns just the name)
+  const boost::any fn_any = m_resultmodel->data( fn_index, Wt::UserRole );
+  const std::string filepath = asString(fn_any).toUTF8();
+  const string parentdir = SpecUtils::parent_path(filepath);
   if( !SpecUtils::is_directory(parentdir) )
     return;
   
 //#if( BUILD_AS_ELECTRON_APP )
   //  TODO: we could (should?) implement this as an electron specific function in InterSpecAddOn.cpp/.h or ElectronUtils.h/.cpp; either as dedicated function, or via InterSpecAddOn::send_nodejs_message - probably dedicated function would be best
   // In node.js, we can do this via:
-  // const {shell} = require('electron'); shell.showItemInFolder('" + filenameandy + "');" );
+  // const {shell} = require('electron'); shell.showItemInFolder('" + filename + "');" );
 //#endif
   
 #if( defined(WIN32) )
   //For windows need to escape '\'.
-  static_assert( 0, "Totally untested on Windows" );
-  
-  SpecUtils::ireplace_all( filenameandy, "\\", "\\\\" );
+  //SpecUtils::ireplace_all( filename, "\\", "\\\\" );
   
   // For similar implementation, see: https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_win.cc
-  
-  ITEMIDLIST *item_list = ILCreateFromPath(filename);
+  const wstring filepathw = SpecUtils::convert_from_utf8_to_utf16(filepath);
+  PIDLIST_ABSOLUTE item_list = ILCreateFromPathW(filepathw.c_str());
   if( item_list )
   {
     //Do we need to call: CoInitializeEx ?
     
     HRESULT hr = SHOpenFolderAndSelectItems( item_list,0 , 0, 0 );
     if( hr == ERROR_FILE_NOT_FOUND )
-      ShellExecute(NULL, L"open", parentdir.c_str(), NULL, NULL, SW_SHOW);
+    {
+      const wstring dirw = SpecUtils::convert_from_utf8_to_utf16(parentdir);
+      ShellExecuteW(NULL, L"open", dirw.c_str(), NULL, NULL, SW_SHOW);
+    }
     
     ILFree( item_list );
   }//if( item_list )
