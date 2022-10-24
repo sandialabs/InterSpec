@@ -492,13 +492,14 @@ void RelActManualGui::init()
   m_relEffEqnOrder = new WComboBox( optionsList->elementAt(1, 1) );
   m_relEffEqnOrder->activated().connect( this, &RelActManualGui::relEffEqnOrderChanged );
   
+  m_relEffEqnOrder->addItem( "0" );
   m_relEffEqnOrder->addItem( "1" );
   m_relEffEqnOrder->addItem( "2" );
   m_relEffEqnOrder->addItem( "3" );
   m_relEffEqnOrder->addItem( "4" );
   m_relEffEqnOrder->addItem( "5" );
   m_relEffEqnOrder->addItem( "6" );
-  m_relEffEqnOrder->setCurrentIndex( 2 );
+  m_relEffEqnOrder->setCurrentIndex( 3 );
   
   
   tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
@@ -598,7 +599,7 @@ void RelActManualGui::init()
     m_addUncertainty->addItem( WString::fromUTF8(uncert_txt) );
   }//for( loop over AddUncert )
   
-  m_addUncertainty->setCurrentIndex( static_cast<int>(AddUncert::FiftyPercent) );
+  m_addUncertainty->setCurrentIndex( static_cast<int>(AddUncert::StatOnly) );
   
   
   m_backgroundSubtract = new WCheckBox( "Background Subtract", optionsList->elementAt(5, 0) );
@@ -1677,6 +1678,43 @@ void RelActManualGui::displayedSpectrumChanged()
   m_renderFlags |= RenderActions::UpdateNuclides;
   m_renderFlags |= RenderActions::UpdateSpectrumOptions;
   
+  
+  // Lets give a friendly reminder of "Add. Uncert" wrt if Uranium is present
+  auto spec = m_interspec ? m_interspec->measurment(SpecUtils::SpectrumType::Foreground) : nullptr;
+  if( spec )
+  {
+    const bool stat_only = (m_addUncertainty->currentIndex() == static_cast<int>(AddUncert::StatOnly));
+    const set<int> &displayed = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+    const auto peaks = spec->peaks( displayed );
+    
+    if( peaks )
+    {
+      bool have_u = false;
+      for( size_t i = 0; !have_u && (i < peaks->size()); ++i )
+        have_u = ((*peaks)[i]->parentNuclide() && ((*peaks)[i]->parentNuclide()->atomicNumber == 92) );
+      
+      const char *msg = nullptr;
+      if( have_u )
+      {
+        if( stat_only )
+          msg = "You may want to consider adding &quot;Add. Uncert&quot; for Uranium problems.";
+        else
+          msg = "You are adding &quot;Add. Uncert&quot; interpret computed uncertainties with care.";
+      }else if( !have_u && !stat_only )
+      {
+        msg = "You are currently adding &quot;Add. Uncert&quot;, which will"
+              " cause computed uncertainties to not be correct.";
+      }
+      
+      if( msg )
+        m_interspec->logMessage( msg, 2 );
+    }//if( !peaks || peaks->empty() )
+  }//if( spec )
+  
+  
+  m_addUncertainty->setCurrentIndex( static_cast<int>(AddUncert::StatOnly) );
+  
+  
   scheduleRender();
 }//void displayedSpectrumChanged()
 
@@ -1708,7 +1746,7 @@ size_t RelActManualGui::relEffEqnOrder() const
   if( (orderIndex < 0) || (orderIndex > 7) )
     throw runtime_error( "Invalid RelEffEqnOrder" );
   
-  return static_cast<size_t>(orderIndex) + 1;
+  return static_cast<size_t>(orderIndex);
 }//size_t relEffEqnOrder() const
 
 
@@ -1989,7 +2027,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   
   // Now need to set state of widgets
   m_relEffEqnForm->setCurrentIndex( static_cast<int>(eqn_form) );
-  m_relEffEqnOrder->setCurrentIndex( eqn_order - 1 );
+  m_relEffEqnOrder->setCurrentIndex( eqn_order );
   m_nucDataSrc->setCurrentIndex( static_cast<int>(data_src) );
   m_matchTolerance->setValue( match_tolerance );
   m_addUncertainty->setCurrentIndex( static_cast<int>(add_uncert) );
