@@ -719,6 +719,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
         menuTitle->mouseWentDown().connect(js);
         appIcon->mouseWentDown().connect(js);
         m_menuDiv->mouseWentDown().connect(js);
+
+        // Should we also send wxWidgets a mouse up signal, e.g., ` m_menuDiv->mouseWentUp().connect(...)`?
       }//if( primary wxWidgets instance )
 #endif
       
@@ -738,9 +740,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #elif( BUILD_AS_WX_WIDGETS_APP )
         const string js = "function(){window.wx.postMessage('ToggleMaximizeWindow');}";
         maximizeIcon->clicked().connect(js);
+        // None of the below double-click events seem to work
         appIcon->doubleClicked().connect(js);
         dragRegion->doubleClicked().connect(js);
         menuTitle->doubleClicked().connect(js);
+        m_menuDiv->doubleClicked().connect(js);
 #endif
       }
       else
@@ -6171,9 +6175,23 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleDevTools );
 #endif
 #elif( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
+  if (InterSpecApp::isPrimaryWindowInstance())
+  {
+    m_displayOptionsPopupDiv->addSeparator();
+    PopupDivMenuItem *fullScreenItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Full Screen" );  //F11
+#if( BUILD_AS_ELECTRON_APP )
+    // Note: the triggered() signal a Wt::Signal, which is C++ only, so we cant just hook it up to
+    //       javascript for it to run - we have to make the round-trip JS -> C++ -> JS
+    fullScreenItem->triggered().connect(std::bind([] {
+      ElectronUtils::send_nodejs_message("ToggleMaximizeWindow", "");
+    }));
+#else
+    fullScreenItem->triggered().connect(std::bind([] {
+      wApp->doJavaScript("window.wx.postMessage('ToggleMaximizeWindow');");
+    }));
+#endif
+  }//if (InterSpecApp::isPrimaryWindowInstance())
 
-  m_displayOptionsPopupDiv->addSeparator();
-  PopupDivMenuItem *fullScreenItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Full Screen" );  //F11
   m_displayOptionsPopupDiv->addSeparator();
   PopupDivMenuItem *resetZoomItem = m_displayOptionsPopupDiv->addMenuItem( "Actual Size" ); //Ctrl+0
   PopupDivMenuItem *zoomInItem = m_displayOptionsPopupDiv->addMenuItem( "Zoom In" ); //Ctrl+Shift+=
@@ -6182,18 +6200,6 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsResetPageZoom);
   LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
   LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsDecreasePageZoom);
-  
-#if( BUILD_AS_ELECTRON_APP )
-  // Note: the triggered() signal a Wt::Signal, which is C++ only, so we cant just hook it up to
-  //       javascript for it to run - we have to make the round-trip JS -> C++ -> JS
-  fullScreenItem->triggered().connect( std::bind( []{
-    ElectronUtils::send_nodejs_message( "ToggleMaximizeWindow", "" );
-  }) );
-#else
-  fullScreenItem->triggered().connect(std::bind([] {
-    wApp->doJavaScript("window.wx.postMessage('ToggleMaximizeWindow');");
-    }));
-#endif
   
   resetZoomItem->triggered().connect( std::bind( []{
     wApp->doJavaScript( "Wt.WT.ResetPageZoom();" );
