@@ -10957,8 +10957,6 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
 
   m_spectrum->setData( dataH, current_energy_range );
   
-  m_spectrum->setData( dataH, current_energy_range );
-  
   if( !m_timeSeries->isHidden() )
     m_timeSeries->setHighlightedIntervals( sample_nums, SpecUtils::SpectrumType::Foreground );
 }//void displayForegroundData()

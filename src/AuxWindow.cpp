@@ -46,46 +46,97 @@
 using namespace std;
 using namespace Wt;
 
+
+// An experiment to handle adjusting window position/size when browser window changes
+//  So far seems to work decently, but still being tested.
+#define AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE 1
+
+
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
-namespace
+
+WT_DECLARE_WT_MEMBER
+(AuxWindowResizeToFitOnScreen, Wt::JavaScriptFunction, "AuxWindowResizeToFitOnScreen",
+function(id)
 {
-  const std::string ns_resize_to_fit_on_screen_js = INLINE_JAVASCRIPT
-  (
-   function(id,cid)
-   {
-     try
-     {
-     var el = $('#'+id);
-     var cel = $('#'+cid);
-     if( !el || !cel )
-     {
-       console.log( 'Error in resizeToFitOnScreen' );
-       return;
-     }
-     
-     var ws = Wt.WT.windowSize();
-     if(el.height() > ws.y)
-     {
-       el.height(ws.y-10);
-       //       el.css('max-height',ws.y-10);
-       el.get(0).style.top = '5px';
-       el.get(0).style.bottom = "";
-       cel.get(0).style.overflowY = "auto";
-     }
-       
-     if(el.width() > ws.x)
-     {
-       el.width(ws.x-10);
-       //el.css('max-width',ws.x-10);
-       el.get(0).style.left = '5px';
-       el.get(0).style.right = "";
-       cel.get(0).style.overflowX = "auto";
-     }
-     }catch(err){ }
-   }
-   );
+  try
+  {
+    const el = $("#" + id);
+    const cel = $("#" + id + " .body.AuxWindow-content");
+    if( !el || !cel )
+    {
+      console.log( 'Error in resizeToFitOnScreen' );
+      return;
+    }
+    
+    const eel = el.get(0);
+    const ecel = cel.get(0);
+    const ws = Wt.WT.windowSize();
+    
+    let h = el.height();
+    let w = el.width();
+    const do_resize = ((h > ws.y) || (w > ws.x));
+    if(h > ws.y)
+    {
+      h = ws.y - 10;
+      eel.style.top = '5px';
+      eel.style.bottom = "";
+      ecel.style.overflowY = "auto";
+    }
+    
+    if(w > ws.x)
+    {
+      w = ws.x - 10;
+      eel.style.left = '5px';
+      eel.style.right = "";
+      ecel.style.overflowX = "auto";
+    }
+    
+    if( do_resize )
+    {
+      const was_centered = el.data('centered');
+      eel.wtObj.onresize(w, h, true);
+      
+      if( was_centered )
+        Wt.WT.AuxWindowCenter( el.get(0) );
+      
+      el.data('centered', was_centered);
+    }
+  }catch(err){
+    console.error( 'AuxWindowResizeToFitOnScreen error:', err );
+  }
 }
+ );//WT_DECLARE_WT_MEMBER( AuxWindowResizeToFitOnScreen )
+
+
+#if( !USE_NEW_AUXWINDOW_ISH )
+WT_DECLARE_WT_MEMBER
+(AuxWindowCenter, Wt::JavaScriptFunction, "AuxWindowCenter",
+function( el )
+{
+  try
+  {
+    const jsthis = $(el);
+    const olddispl = el.style.display;
+    el.style.display = "";
+    const ws = Wt.WT.windowSize();
+    const hh = Math.max(0,Math.round( ( ws.y - jsthis.height() ) / 2 ));
+    const hw = Math.max(0,Math.round( ( ws.x - jsthis.width() ) / 2 ));
+    
+    el.style.top = hh+'px';
+    el.style.left = hw+'px';
+    el.style.display = olddispl;
+    $(el).data('centered', true);
+  }catch(err)
+  {
+    console.log( "Failed in AuxWindowCenter: " + err );
+  }
+}
+);
+#endif //#if( !USE_NEW_AUXWINDOW_ISH )
+
+
+
 
 WT_DECLARE_WT_MEMBER
 (AuxWindowBringToFront, Wt::JavaScriptFunction, "AuxWindowBringToFront",
@@ -141,6 +192,7 @@ function( sender, e, id )
 );
 
 
+
 WT_DECLARE_WT_MEMBER
 (AuxWindowTitlebarHandleMove, Wt::JavaScriptFunction, "AuxWindowTitlebarHandleMove",
 function( sender, event, id )
@@ -174,6 +226,7 @@ function( sender, event, id )
     el.style.bottom = "";
     $(el).data('dsx', nowxy.x);
     $(el).data('dsy', nowxy.y);
+    $(el).data('centered', false);
   }
 }
 );
@@ -442,6 +495,88 @@ WT_DECLARE_WT_MEMBER
  );
 
 
+#if( AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE )
+/** This JavaScript function sets a listener (only the first time it is called), that
+ when the user stops adjusting the the window size, it will make sure the AuxWindow
+ is visible, and if necessary's centered.
+ */
+WT_DECLARE_WT_MEMBER
+(AuxWindowOnDomResize, Wt::JavaScriptFunction, "AuxWindowOnDomResize",
+function()
+{
+  if( $('.Wt-domRoot').data('AWDomResize') )
+    return;
+  $('.Wt-domRoot').data('AWDomResize', true);
+  
+  window.addEventListener('resize', function(event) {
+    
+    // If we created this resize event, via like Wt.WT.TriggerResizeEvent(), then return,
+    //  there is nothing we should do here.
+    if( !event.isTrusted )
+      return;
+    
+    // We will set a timeout to fire 500 ms after the last window resize event; this is a feeble
+    //  rate-limiting attempt.  I didnt actually check that this is needed.  COuld probably be a
+    //  little smarter and instead only fire every tenth of a second or so, so things will seem
+    //  smoother.
+    let resizeTO = $('.Wt-domRoot').data('ResizeTO');
+    if(resizeTO)
+      clearTimeout(resizeTO);
+    
+    resizeTO = setTimeout(function() {
+      $('.Wt-domRoot').data('ResizeTO',null);
+      
+      const matches = document.querySelectorAll(".Wt-dialog.AuxWindow");
+      matches.forEach( function(dialog){
+        
+        // Skip dealing with hidden AuxWindows
+        if( (dialog.style.display === 'none') || (dialog.style.visibility === 'hidden') )
+          return;
+        
+        const ws = Wt.WT.windowSize();
+        const was_centered = $(dialog).data('centered');
+        //console.log( 'Dialog id ', dialog.id, ' centered:', was_centered );
+        
+        // Make sure window isnt bigger than our screen.
+        //  Note that we are calling the Wt WDialog resize utility so this way the change will
+        //  be propagated and scroll bars or whatever is needed will show up
+        const h = $(dialog).height();
+        const w = $(dialog).width();
+        if( (h > ws.y) || (w > ws.x) )
+          dialog.wtObj.onresize( Math.min(w, ws.x), Math.min(h, ws.y), true);
+        
+        // And finally, center the window, if it was centered before
+        if( was_centered )
+        {
+          Wt.WT.AuxWindowCenter(dialog);
+        }else
+        {
+          // Make sure the window is somewhat visible - and if not, bring it back visible,
+          //  before resizing or centering
+          //
+          // TODO: track if user has it part way off screen, and if not, reposition so whole window is visible
+          const pos = $(dialog).position();
+          
+          if( pos.top > (ws.y - 25) ) //Title bar is approx 25 px
+          {
+            dialog.style.top = (ws.y - 25) + 'px';
+            dialog.style.bottom = null;
+          }
+          
+          if( pos.left > (ws.x - 35) ) //Use 35px since the collapse icon could be blocking the first ~20 px of titlebar
+          {
+            dialog.style.left = (ws.x - 35) + 'px';
+            dialog.style.right = null;
+          }
+        }
+      });
+    }, 500);
+    $('.Wt-domRoot').data('ResizeTO',resizeTO);
+  });
+}
+);//WT_DECLARE_WT_MEMBER( AuxWindowOnDomResize )
+#endif //#if( AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE )
+
 
 #if( USE_NEW_AUXWINDOW_ISH )
 WT_DECLARE_WT_MEMBER
@@ -581,17 +716,23 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCollapse);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowExpand);
+  LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowResizeToFitOnScreen);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowBringToFront);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowTitlebarHandleMove);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowTitlebarTouchEnd);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowTitlebarTouchStart);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowShow);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowHide);
+  LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCenter);
+  
+#if( AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE )
+  addStyleClass( "AuxWindow" );
+  LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowOnDomResize);
+#endif
   
 #if( USE_NEW_AUXWINDOW_ISH )
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowScaleResize);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowResize);
-  LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCenter);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowReposition);
 #endif
   
@@ -828,8 +969,37 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
     resizeToFitOnScreen();
     centerWindowHeavyHanded();
   }
-
+  
   show();
+
+#if( AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE )
+  doJavaScript( "Wt.WT.AuxWindowOnDomResize();" );
+  
+  // Now make a little code to set the 'centered' variable to false, once user moves or resizes
+  //  this AuxWindow.
+  if( !m_isPhone )
+  {
+    // moved().canAutoLearn() and resized().canAutoLearn() are both false, meaning we cant
+    //  connect them to JS functions or even JSlot, so we have to go through the C++.
+    
+    // Note that this JS will be called a number (maybe even 6) when window is first created,
+    // but since the centering code is done via setTimeout(...), the 'centered' data will be
+    // end up being true, if the window is centered.
+    //
+    // However, it is also called when the whole window is resized, so we cant actually rely on this
+    //const string js = "$('#" + id() + "').data('centered',false); console.log('AuxWindow Resized or moved');"; //
+    //moved().connect( std::bind([js](){ wApp->doJavaScript( js ); }) );
+    //resized().connect( std::bind([js](){ wApp->doJavaScript( js ); }) );
+    
+    const string js = "$('#" + title->id() + "').mousedown( function(){"
+    "$('#" + id() + "').data('centered',false);"
+    "console.log('setting AuxWindow moved');"
+    "} );";
+    doJavaScript( js );
+    
+    title->touchMoved().connect( "function(){$('#" + id() + "').data('centered',false);}" ); //untested
+  }
+#endif //AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE
 }//AuxWindow()
 
 
@@ -1029,13 +1199,14 @@ void AuxWindow::resizeToFitOnScreen()
   if( m_isPhone )
     return; //disable running calls after AuxWindow initialized to be mobile
   
-  const string js = "var fcn = " + ns_resize_to_fit_on_screen_js + ";";
-  
   //We will put in a setTimeout to call the resize function to first give Wts
   //  layout a chance to shrink things into appropriate sizes.
   //TODO: A timeout of 0 ms seems to work, but using 50 JIC - revisit.
-  doJavaScript( js + string("setTimeout( function(){fcn('") + id() + "','"
-               + WDialog::contents()->id() + "');},50);" );
+  const string js = "setTimeout( function(){ "
+    "Wt.WT.AuxWindowResizeToFitOnScreen('" + id() + "');"
+  "},50);";
+  
+  doJavaScript( js );
 }//void AuxWindow::resizeToFitOnScreen()
 
 
@@ -1047,16 +1218,7 @@ void AuxWindow::centerWindow()
 #if( USE_NEW_AUXWINDOW_ISH )
   m_centerSlot->exec(id(),"null");
 #else
-  const string jsthis = "$('#" + id() + "')";
-  WStringStream moveJs;
-  moveJs << "var el = " << this->jsRef() << ";"
-         << "var olddispl = el.style.display; el.style.display='';"
-         << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();"
-//         << "if(" << jsthis << ".height() > ws.y)" << jsthis << ".height(ws.y-5);"
-         << "el.style.top = Math.max(0,Math.round( ( ws.y - " << jsthis << ".height() ) / 2 ))+'px';"
-         << "el.style.left = Math.max(0,Math.round( ( ws.x - " << jsthis << ".width() ) / 2 ))+'px';"
-         << "el.style.display = olddispl;";
-  doJavaScript( moveJs.str() );
+  doJavaScript( "Wt.WT.AuxWindowCenter(" + this->jsRef() + ");" );
 #endif
 }
 
@@ -1065,20 +1227,16 @@ void AuxWindow::centerWindowHeavyHanded()
   if( m_isPhone )
     return;
   
-  const string jsthis = "$('#" + id() + "')";
-  WStringStream moveJs;
-  moveJs << "var cntrfcn = function(){ try{ var el = " << this->jsRef() << ";"
-  << "var olddispl = el.style.display; el.style.display='';"
-  << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();"
-  //         << "if(" << jsthis << ".height() > ws.y)" << jsthis << ".height(ws.y-5);"
-  << "el.style.top = Math.max(0,Math.round( ( ws.y - " << jsthis << ".height() ) / 2 ))+'px';"
-  << "el.style.left = Math.max(0,Math.round( ( ws.x - " << jsthis << ".width() ) / 2 ))+'px';"
-  << "el.style.display = olddispl; }catch(err){}};"
-  << "var resizefcn = " + ns_resize_to_fit_on_screen_js + ";"
-  << "cntrfcn();setTimeout(cntrfcn,0); setTimeout(cntrfcn,100); setTimeout(cntrfcn,500);"
-  << "setTimeout(function(){resizefcn('" << id() << "','" << WDialog::contents()->id() << "');},500);";
-  doJavaScript( moveJs.str() );
-}
+  const string js = "var cntrfcn = function(){Wt.WT.AuxWindowCenter(" + this->jsRef() + ");};"
+  "cntrfcn();"
+  "setTimeout(cntrfcn,0);"
+  "setTimeout(cntrfcn,100);"
+  "setTimeout(cntrfcn,500);"
+  "setTimeout(function(){Wt.WT.AuxWindowResizeToFitOnScreen('" + id() + "');},500);";
+  
+  doJavaScript( js );
+}//void centerWindowHeavyHanded()
+
 
 std::string AuxWindow::repositionWindowJs( int x, int y )
 {
@@ -1094,7 +1252,8 @@ std::string AuxWindow::repositionWindowJs( int x, int y )
   "var olddispl = el.style.display; el.style.display='';"
   + ((y==-32768) ? string() : "el.style.top = '"  + std::to_string(y) + "px';")
   + ((x==-32768) ? string() :  "el.style.left = '" + std::to_string(x) + "px';")
-  + "el.style.display = olddispl;";
+  + "el.style.display = olddispl;"
+  "$(el).data('centered', false);";
 #endif //#if( USE_NEW_AUXWINDOW_ISH )
 }//std::string repositionWindowJs( int x, int y )
 
