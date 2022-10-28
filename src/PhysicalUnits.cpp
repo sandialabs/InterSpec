@@ -897,8 +897,11 @@ double stringToActivity( std::string str, double bq_def )
     else if( SpecUtils::starts_with(letters, "m" )
              || SpecUtils::istarts_with(letters, "milli" ) )
       unit = 1.0E-3;
-    else if( SpecUtils::istarts_with(letters, "b" )
-             || SpecUtils::istarts_with(letters, "c" ) )
+    else if( ((letters.size() == 1) && (letters[0]=='b' || letters[0]=='B' || letters[0]=='c' || letters[0]=='C'))
+            || SpecUtils::istarts_with(letters, "bq")
+            || SpecUtils::istarts_with(letters, "becq")
+            || SpecUtils::istarts_with(letters, "ci")
+            || SpecUtils::istarts_with(letters, "cu") )
       unit = 1.0;
     else if( SpecUtils::istarts_with(letters, "k" ) )
       unit = 1.0E+3;
@@ -909,7 +912,9 @@ double stringToActivity( std::string str, double bq_def )
       unit = 1.0E+9;
     else if( SpecUtils::starts_with(letters, "T" ) )
       unit = 1.0E+12;
-
+    else
+      throw std::runtime_error( "'" + letters + "' is not a recognized activity unit" );
+    
     //There is no need for a prefix
     //else
     //{
