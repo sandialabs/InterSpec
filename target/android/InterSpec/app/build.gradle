@@ -24,7 +24,7 @@ android {
         // Android 4 (Kit Kat) is level 19.  Android 6 (Marshmallow - e.x., Nexus 7) is level 23.
         minSdkVersion 19
         targetSdkVersion 32
-        versionCode 9
+        versionCode 13
         versionName "1.0.10"
  //       testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
 
@@ -50,7 +50,7 @@ android {
     externalNativeBuild {
         cmake {
             path "../../CMakeLists.txt"
-            version "3.23.0"
+            version "3.24.2"
         }
     }
 
