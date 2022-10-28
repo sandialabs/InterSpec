@@ -463,8 +463,13 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
           + result.continuum_eqn[1] * 0.5 * (peak_end_eq*peak_end_eq - peak_start_eq*peak_start_eq);
     const double upper_cont_eq = result.continuum_eqn[0] + (upper_cont_mid_energy - input.gamma_energy)*result.continuum_eqn[1];
     
-    assert( fabs(upper_cont_eq - upper_cont_density) < 0.1 ); //arbitrary precision test, for development
-    assert( fabs(peak_cont_eq_integral - peak_cont_sum) < 0.1 ); //arbitrary precision test, for development
+    // Arbitrary chosen precision tests, for development
+    const double eq_dens = fabs(peak_cont_eq_integral - peak_cont_sum);
+    assert( (eq_dens < 0.1)
+           || (eq_dens < 1.0E-5*std::max(peak_cont_eq_integral, peak_cont_sum)) );
+    
+    const double eq_diff = fabs(peak_cont_eq_integral - peak_cont_sum);
+    assert( eq_diff < 0.1 || eq_diff < 1.0E-5*std::max(peak_cont_eq_integral, peak_cont_sum) );
   }// end sanity check on continuum eqn
 #endif //PERFORM_DEVELOPER_CHECKS
   
@@ -713,7 +718,9 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   if( inputPeaks.empty() )
     throw runtime_error( "decon_compute_peaks: No peaks given in ROI(s)" );
     
-#warning "TOtally not computing things yet"
+#warning "Totally not computing things yet"
+  throw runtime_error( "decon_compute_peaks: computations not implemented" );
+  
   /*
   ROOT::Minuit2::MnUserParameters inputFitPars;
   PeakFitChi2Fcn::addPeaksToFitter( inputFitPars, inputPeaks, spec, PeakFitChi2Fcn::kFitForPeakParameters );

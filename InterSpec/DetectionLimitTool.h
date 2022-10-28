@@ -34,8 +34,11 @@
 
 /** TODO:
  - [x] Every update seems to trigger a layout resize that causes the chart to grow.
+ - [ ] The MdaPeakRow (i.e., each gamma) should probably be like a WPanel that has just the "Use for Likilihood" checkbox in the title, as well as the currie MDA summary text, but then can be expanded to show the other settings
  - [ ] Could allow entering a scale factor for spectrum; this is like you have a 5 minute background, but are interested in a 60s dwell
- - [ ]The likelihood based estimate does not seem to be reliable yet
+ - [ ] Have a little pop-up window or something that gives full information for Curie calculation
+ - [ ] Add in a Curie style MDA calculator where you enter limits, BR, and stuff and get out counts and such
+ - [ ] The likelihood based estimate does not seem to be reliable yet
  - [x] Add in checkbox to allow accounting for attenuation in the air (or just always do this)
  - [ ] Add in allowing to calculate the maximum detection distance; not sure if this should be individual peaks, or all peaks; maybe a toggle for the whole screen
  - [x] Add a drop-box to allow selecting confidence for limit (e.g., 80%, 90%, 95%, 99%, etc)
