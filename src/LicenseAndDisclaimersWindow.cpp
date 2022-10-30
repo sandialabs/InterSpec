@@ -41,7 +41,7 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WCssDecorationStyle>
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 #include <Wt/WServer>
 #endif
 
@@ -174,7 +174,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   makeLgplLicenseItem();
   makeItem( "Credits", "credits" );
   makeItem( "Contact", "contact" );
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   makeDataStorageItem();
 #endif
   m_menu->select( 0 );
@@ -321,7 +321,7 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeLgplLicenseItem()
   return item;
 }//SideMenuItem *makeItem( const WString &title, const string &resource)
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *parent )
 {
   auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
@@ -486,4 +486,4 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeDataStorageItem()
   
   return item;
 }//SideMenuItem *makeDataStorageItem()
-#endif //#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#endif //#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )

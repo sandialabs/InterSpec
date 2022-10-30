@@ -1119,16 +1119,19 @@ void PopupDivMenu::setupDesktopMenuStuff()
   m_menuParent->clicked().preventPropagation();
   m_menuParent->clicked().preventDefaultAction();
   
+#if( !BUILD_AS_WX_WIDGETS_APP )
   // Note: when WebSocket are used instead of Ajax and long-polling, implementing the below will
   //       cause the JS to be emitted twice (once when event originates in JS, and I think second
   //       time after going back to c++ then it issuing the JS).  We are currently relying on the JS
   //       only being emitted once - so make sure you arent using WebSockets.
   //       This seems fragile, and relying on a bug either way - should eventually improve all this
   //       to be more sane.
+  //  We are using websockets for the wxWidgets target of InterSpec to avoid another issue... so we 
+  //  will just accept the delay on wxWidgets target for the moment, until the other issue is fixed
   implementStateless( &PopupDivMenu::parentClicked, &PopupDivMenu::undoParentClicked );
   implementStateless( &PopupDivMenu::parentMouseWentOver, &PopupDivMenu::undoParentHoveredOver );
   // TODO: parentTouchStarted is not currently implemented as stateless - should do, at least for iOS and Android builds
-  
+
   // If we instead implement the statelessness using the following, the first invocation to show
   //  menu may take up to ~100 ms (when run locally), but then after that showing the menus are
   //  instant.  But the glitch on first menu usage disappears, although maybe there are some other
@@ -1136,7 +1139,8 @@ void PopupDivMenu::setupDesktopMenuStuff()
   //  Whereas using the above makes even first invocation instant.
   //implementStateless( &PopupDivMenu::parentClicked );
   //implementStateless( &PopupDivMenu::parentMouseWentOver );
-  
+#endif
+
   // TODO: checkout using WObject::implementJavaScript
   //    WStatelessSlot * Wt::WObject::implementJavaScript  (  void(T::*)()   method, const std::string &   jsCode )
   //    From the Wt documentation:

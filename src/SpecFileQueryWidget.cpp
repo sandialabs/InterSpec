@@ -1235,7 +1235,7 @@ SpecFileQueryWidget::SpecFileQueryWidget( InterSpec *viewer, Wt::WContainerWidge
     m_update( nullptr ),
     m_cancelUpdate( nullptr ),
     m_loadSelectedFile( nullptr ),
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
     m_openSelectedDir( nullptr ),
 #endif
     m_resultmodel( nullptr ),
@@ -1606,7 +1606,7 @@ void SpecFileQueryWidget::init()
   m_loadSelectedFile->clicked().connect( this, &SpecFileQueryWidget::loadSelected );
   m_loadSelectedFile->disable();
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 #if( __APPLE__ )
   const char *show_msg = "Show in Finder...";
 #else
@@ -2764,7 +2764,7 @@ void SpecFileQueryWidget::selectionChanged()
 
 
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP)
 void SpecFileQueryWidget::openSelectedFilesParentDir()
 {
   //Opens the directory and highlights file in operating system file manager

@@ -77,7 +77,8 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   m_url( url ),
   m_token( "" ),
   m_dragging_window( false ),
-  m_mouse_down_pos( 0, 0 )
+  m_mouse_down_pos( 0, 0 ),
+  m_currently_maximized( false )
 {
   // set the frame icon
   //SetIcon(wxICON(sample));
@@ -96,9 +97,6 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
 
   wxBoxSizer* topsizer = new wxBoxSizer(wxVERTICAL);
 
-  // Create a log window
-  new wxLogWindow(this, _("Logging"), true, false);
-
 #if wxUSE_WEBVIEW_EDGE
   // Check if a fixed version of edge is present in
   // $executable_path/edge_fixed and use it
@@ -115,19 +113,15 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
 #endif
   // Create the webview
   m_browser = wxWebView::New();
-
-  // TO be able to drag the window around by the menu bar, need to implement something like:
-  //https://github.com/MicrosoftEdge/WebView2Feedback/issues/200
-
   
   wxString app_url = m_url + "?apptoken=" + m_token;
 
-  // Currently there is a bug, when we DONT restore state, the UI freezes about half the time; doesnt seem to ever happen when we restore a state... I have no idea
-  wxLogMessage("Not restoring state for debug purposes" );
-  app_url += "&restore=no";
+  // There is a bug if we dont use WebSockets, when we DONT restore state, the UI freezes about half the time; doesnt seem to ever happen when we restore a state... I have no idea
+  //wxLogMessage("Not restoring state for debug purposes" );
+  //app_url += "&restore=no";
 
-  //if (no_restore)
-  //  app_url += "&restore=no";
+  if (no_restore)
+    app_url += "&restore=no";
 
   // The user agent isnt terrible important for us, so we'll just use a default Chrome one on windows
   //  TODO: customize for macOS
@@ -291,7 +285,7 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   Bind(wxEVT_WEBVIEW_ERROR, &InterSpecWebFrame::OnError, this, m_browser->GetId());
   Bind(wxEVT_WEBVIEW_NEWWINDOW, &InterSpecWebFrame::OnNewWindow, this, m_browser->GetId());
   Bind(wxEVT_WEBVIEW_TITLE_CHANGED, &InterSpecWebFrame::OnTitleChanged, this, m_browser->GetId());
-  Bind(wxEVT_WEBVIEW_FULLSCREEN_CHANGED, &InterSpecWebFrame::OnFullScreenChanged, this, m_browser->GetId());
+  //Bind(wxEVT_WEBVIEW_FULLSCREEN_CHANGED, &InterSpecWebFrame::OnFullScreenChanged, this, m_browser->GetId()); // Doesnt seem to ever get called, instead wxEVT_MAXIMIZE cused
   // OnScriptMessage will recieve messages from JS from code like:
   //  window.wx.postMessage('This is a message from JS to C++ land');
   Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, &InterSpecWebFrame::OnScriptMessage, this, m_browser->GetId());
@@ -300,9 +294,11 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   //Connect the idle events
   Bind(wxEVT_IDLE, &InterSpecWebFrame::OnIdle, this);
 
-
   Bind(wxEVT_CLOSE_WINDOW, &InterSpecWebFrame::handleOnClose, this);
-  
+  Bind(wxEVT_MAXIMIZE, &InterSpecWebFrame::handleWindowMaximizeChange, this); // Only sent when maximized, not when restored
+  Bind(wxEVT_SIZE, &InterSpecWebFrame::handleWinowSizeChange, this); //Listen to this for restore
+
+
   // TODO: The set/kill focus events dont seem to trigger - we can probably remove these callbacks anyway, as the JS handles this anyway
   //Bind(wxEVT_SET_FOCUS, &InterSpecWebFrame::handleOnFocus, this);
   //Bind(wxEVT_KILL_FOCUS, &InterSpecWebFrame::handleFocusLost, this);t
@@ -433,6 +429,32 @@ void InterSpecWebFrame::handleChildFocus(wxChildFocusEvent& evt)
     app->handle_frame_focus(this);
 }//void handleChildFocus(wxChildFocusEvent& evt);
 
+
+void InterSpecWebFrame::handleWindowMaximizeChange(wxMaximizeEvent& evt)
+{
+  evt.Skip();
+
+  const bool isMax = IsMaximized();
+  assert(isMax == true);
+
+  m_currently_maximized = isMax;
+  wxLogMessage("Screen maximized changed; max=%s", isMax ? "true" : "false");
+  m_browser->RunScriptAsync("Wt.WT.TitleBarChangeMaximized(" + wxString(isMax ? "true" : "false") + ");");
+}//handleWindowMaximizeChange(...)
+
+
+void InterSpecWebFrame::handleWinowSizeChange(wxSizeEvent& evt)
+{
+  evt.Skip();
+
+  const bool isMax = IsMaximized();
+  if (isMax != m_currently_maximized)
+  {
+    m_currently_maximized = isMax;
+    wxLogMessage("Screen sized changed; max=%s", isMax ? "true" : "false");
+    m_browser->RunScriptAsync("Wt.WT.TitleBarChangeMaximized(" + wxString(isMax ? "true" : "false") + ");");
+  }
+}//handleWinowSizeChange(...)
 
 
 /**
@@ -788,9 +810,10 @@ void InterSpecWebFrame::OnTitleChanged(wxWebViewEvent& evt)
   wxLogMessage("%s", "Title changed; title='" + evt.GetString() + "'");
 }
 
-
+/*
 void InterSpecWebFrame::OnFullScreenChanged(wxWebViewEvent& evt)
 {
+  // Doesnt seem to get called for us
   wxLogMessage("Full screen changed; status = %d", evt.GetInt());
   ShowFullScreen(evt.GetInt() != 0);
 
@@ -804,6 +827,8 @@ void InterSpecWebFrame::OnFullScreenChanged(wxWebViewEvent& evt)
     RunScript("Wt.WT.TitleBarChangeMaximized(false);");
   }
 }
+*/
+
 
 void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
 {
@@ -893,8 +918,15 @@ void InterSpecWebFrame::handle_mouse_move(wxMouseEvent& evt)
     return;
   }
 
+  if (!evt.LeftIsDown())
+  {
+    m_dragging_window = false;
+    evt.Skip();
+    return;
+  }
+
   wxPoint pt = evt.GetPosition();
-  if (evt.Dragging() && evt.LeftIsDown())
+  if (evt.Dragging())
   {
     wxPoint pos = ClientToScreen(pt);
     Move(wxPoint(pos.x - m_mouse_down_pos.x, pos.y - m_mouse_down_pos.y));

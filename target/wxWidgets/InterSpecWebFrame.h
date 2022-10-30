@@ -33,12 +33,14 @@
 
 class wxString;
 class wxWebView;
+class wxSizeEvent;
 class wxIdleEvent;
 class wxCloseEvent;
 class wxFocusEvent;
 class wxMouseEvent;
 class wxThreadEvent;
 class wxWebViewEvent;
+class wxMaximizeEvent;
 class wxChildFocusEvent;
 
 
@@ -72,7 +74,7 @@ public:
   void OnDocumentLoaded(wxWebViewEvent& evt);
   void OnNewWindow(wxWebViewEvent& evt);
   void OnTitleChanged(wxWebViewEvent& evt);
-  void OnFullScreenChanged(wxWebViewEvent& evt);
+  //void OnFullScreenChanged(wxWebViewEvent& evt);
   void OnScriptMessage(wxWebViewEvent& evt);
   void OnScriptResult(wxWebViewEvent& evt);
   void OnError(wxWebViewEvent& evt);
@@ -83,6 +85,9 @@ public:
   //void handleOnFocus(wxFocusEvent& evt);
   //void handleFocusLost(wxFocusEvent& evt);
   void handleChildFocus(wxChildFocusEvent& evt);
+  void handleWindowMaximizeChange(wxMaximizeEvent& evt);
+  void handleWinowSizeChange(wxSizeEvent& evt);
+
   const wxString& app_token() const;
 
 
@@ -121,6 +126,8 @@ private:
   */
   bool m_dragging_window;
   wxPoint m_mouse_down_pos;
+
+  bool m_currently_maximized;
 };//class InterSpecWebFrame
 
 

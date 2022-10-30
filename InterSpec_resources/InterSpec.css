@@ -1060,46 +1060,40 @@ input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner
   border:2px solid blue;
 }
 
-
-.ReferencePhotopeakDisplay
-{
-  margin-top: 5px;
-  margin-left: 5px;
-  margin-right: 4px;
-  margin-bottom: 3px;
+.RoundMenuIcon, .RoundMenuIcon:hover, button.RoundMenuIcon, button.RoundMenuIcon:hover {
+    /* background-image: url('../InterSpec_resources/images/menu_icon_round.svg'); */
+    background-image: url('../InterSpec_resources/images/more_menu_icon.svg');
+    background-repeat: no-repeat;
+    width: 24px;
+    height: 24px;
+    background-color: rgba(0,0,0,0);
+    border: none;
+    cursor: pointer;
+    border-radius: 12px;
+    background-position: 0.25px;
 }
 
-.ParticleViewTable, .FilesInZipTable
-{
-/*  width:37.5em; */
-/*  height: 15.2em; */
-  border: 2px solid #e1e1e1;
+.RoundMenuIcon {
+  opacity: 0.6;
 }
 
-
-
-.RefGammaHelp
-{
-  position: absolute;
-  left: 0px;
-  bottom: 0px;
+.RoundMenuIcon:hover {
+  opacity: 0.9;
 }
 
-.RefGammaCsv
-{
-  position: absolute;
-  right: 0px;
-  bottom: 0px;
+.RoundMenuIcon.active {
+  opacity: 1.0;
 }
 
 
-.legend
-{
-border: none;
-background: none;
--webkit-border-radius: 5px;
--moz-border-radius: 5px;
-border-radius: 5px;
+
+
+.legend {
+    border: none;
+    background: none;
+    -webkit-border-radius: 5px;
+    -moz-border-radius: 5px;
+    border-radius: 5px;
 }
 
 
