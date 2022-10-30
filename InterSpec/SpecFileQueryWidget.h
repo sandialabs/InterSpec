@@ -163,7 +163,7 @@ protected:
   
   void selectionChanged();
   void loadSelected();
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   void openSelectedFilesParentDir();
 #endif
   

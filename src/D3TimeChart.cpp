@@ -585,7 +585,7 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_options->hide();
   
   m_showOptionsIcon = new WContainerWidget( this );
-  m_showOptionsIcon->setStyleClass( "ShowD3TimeChartFilters Wt-icon" );
+  m_showOptionsIcon->setStyleClass( "RoundMenuIcon ShowD3TimeChartFilters InvertInDark" ); //SHould have 'Wt-icon' style class too?
   m_showOptionsIcon->clicked().connect( boost::bind( &D3TimeChart::showFilters, this, true) );
 }//D3TimeChart(...)
 

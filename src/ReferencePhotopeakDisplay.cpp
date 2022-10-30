@@ -742,6 +742,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_clearLines( NULL ),
     //m_fitPeaks( NULL ),
     m_showGammas( NULL ),
+    m_options_icon( NULL ),
+    m_options( NULL ),
     m_showXrays( NULL ),
     m_showAlphas( NULL ),
     m_showBetas( NULL ),
@@ -758,6 +760,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_peaksGetAssignedRefLineColor( false ),
     m_lineColors{ ns_def_line_colors }
 {
+  wApp->useStyleSheet("InterSpec_resources/ReferencePhotopeakDisplay.css");
+  
+
   const char *tooltip = nullptr;
   
   m_currentlyShowingNuclide.reset();
@@ -923,20 +928,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   HelpSystem::attachToolTipOn( m_clearLines, tooltip, showToolTips );
   
   
-  m_promptLinesOnly = new WCheckBox( "Prompt Only" );  //ɣ
-  m_promptLinesOnly->setMargin( 5, Wt::Left );
-
-  tooltip = "Gammas from only the original nuclide, and the descendants until one"
-            " of them has a longer half-life than the original nuclide; the"
-            " decay chain is in equilirium till that point.";
-  HelpSystem::attachToolTipOn( m_promptLinesOnly, tooltip, showToolTips );
-//m_promptLinesOnly->setHiddenKeepsGeometry( true );  // causes display to function badly; why?
-  m_promptLinesOnly->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_promptLinesOnly->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_promptLinesOnly->hide();
-  
-  //m_layout->addWidget( m_promptLinesOnly, 3, 2, AlignMiddle );
-  
   //If we use a single layout for all the input elements, it seems when we enter
   //  a shielding, then the "Add Another" button will be shortened and layout
   //  messed up.  This must somehow be the layout for the shielding widget
@@ -949,14 +940,14 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   lowerInput->setLayout( lowerInputLayout );
   
   WContainerWidget *hlRow = new WContainerWidget();
+  hlRow->addStyleClass("HlOptRow");
   lowerInputLayout->addWidget( hlRow, 0, 0 );
   
   m_halflife = new WText( hlRow );
-  //Hack to make the text roughly vertically align in middle due to increased color input size...
-  m_halflife->setAttributeValue( "style", "display: inline-block; margin-top: 5px" );
+  m_halflife->addStyleClass("Hl");
+
   //m_layout->addWidget( m_halflife, 2, 0, 1, 2, AlignMiddle | AlignCenter );
-  hlRow->addWidget( m_promptLinesOnly );
-  //should add a slider here
+  
 
   //should add prompt and 'bare' only lines options
 //  label = new WLabel( "Lowest I:" );
@@ -1009,14 +1000,16 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   if( ColorSelect::willUseNativeColorPicker() )
   {
-    m_colorSelect->setFloatSide( Wt::Right );
+    //m_colorSelect->setFloatSide( Wt::Right );
+    m_colorSelect->addStyleClass("RefLinColorPick");
     hlRow->addWidget( m_colorSelect );
   }else
   {
     WContainerWidget *w = new WContainerWidget();
     w->addWidget( m_colorSelect );
     hlRow->addWidget( w );
-    w->setFloatSide( Wt::Right );
+    //w->setFloatSide( Wt::Right );
+    w->addStyleClass("RefLinColorPick");
   }
   
   m_colorSelect->cssColorChanged().connect( boost::bind(
@@ -1024,17 +1017,45 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
                                                this, boost::placeholders::_1 ) );
   m_currentlyShowingNuclide.lineColor = m_lineColors[0];
   
-  WContainerWidget *whatToShow = new WContainerWidget();
-  m_showGammas = new WCheckBox( "gammas", whatToShow );
-  m_showXrays = new WCheckBox( "x-rays", whatToShow );
-  m_showAlphas = new WCheckBox( "alphas", whatToShow );
-  m_showBetas = new WCheckBox( "betas", whatToShow );
-  HelpSystem::attachToolTipOn( whatToShow, "If checked, selection will be shown.  Gammas and "
+  m_options_icon = new WPushButton();
+  m_options_icon->setStyleClass("RoundMenuIcon InvertInDark RefLinesOptMenu");
+  m_options_icon->clicked().preventPropagation();
+  //m_options_icon->setFloatSide(Wt::Right);
+  m_options_icon->clicked().connect(this, &ReferencePhotopeakDisplay::toggleShowOptions);
+
+  hlRow->addWidget(m_options_icon);
+
+  m_options = new WContainerWidget();
+  m_options->addStyleClass("RefLinesOptions");
+  m_options->hide();
+
+  WContainerWidget* closerow = new WContainerWidget(m_options);
+  WContainerWidget* closeIcon = new WContainerWidget(closerow);
+  closeIcon->addStyleClass("closeicon-wtdefault");
+  closeIcon->clicked().connect(this, &ReferencePhotopeakDisplay::toggleShowOptions);
+
+
+  m_promptLinesOnly = new WCheckBox("Prompt Only", m_options);  //ɣ
+  
+  tooltip = "Gammas from only the original nuclide, and the descendants until one"
+    " of them has a longer half-life than the original nuclide; the"
+    " decay chain is in equilibrium till that point.";
+  HelpSystem::attachToolTipOn(m_promptLinesOnly, tooltip, showToolTips);
+  m_promptLinesOnly->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+  m_promptLinesOnly->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+  m_promptLinesOnly->hide();
+
+  m_showGammas = new WCheckBox( "Show Gammas", m_options);
+  m_showXrays = new WCheckBox( "Show X-rays", m_options);
+  m_showAlphas = new WCheckBox( "Show Alphas", m_options);
+  m_showBetas = new WCheckBox( "Show Betas", m_options);
+  HelpSystem::attachToolTipOn(m_options, "If checked, selection will be shown.  Gammas and "
                           "x-rays are shown in the table and on the chart, "
                           "alphas and betas only in the table.",
                               showToolTips );
-  whatToShow->hide(); //(20190408): Ehh, not sure these are actually useful, btu not sure, so keeping around, just hidden for a while, and then we can delete them
+
   
+
   m_showGammas->setChecked();
   m_showXrays->setChecked();
   
@@ -1050,18 +1071,14 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showBetas->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_showBetas->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   
-  lowerInputLayout->addWidget( whatToShow, 3, 0 );
-
-  
-  m_showAlphas->checked().connect( std::bind([](){
-    passMessage( "Alphas are only be shown in the table, not on the spectrum.",
-                WarningWidget::WarningMsgInfo );
-  }) );
-  m_showBetas->checked().connect( std::bind([](){
-    passMessage( "Betas are only be shown in the table, not on the spectrum.",
-                WarningWidget::WarningMsgInfo );
-  }) );
-  
+  //m_showAlphas->checked().connect( std::bind([](){
+  //  passMessage( "Alphas are only be shown in the table, not on the spectrum.",
+  //              WarningWidget::WarningMsgInfo );
+  //}) );
+  //m_showBetas->checked().connect( std::bind([](){
+  //  passMessage( "Betas are only be shown in the table, not on the spectrum.",
+  //              WarningWidget::WarningMsgInfo );
+  //}) );
   
   m_particleView = new RowStretchTreeView();
   
@@ -1095,7 +1112,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     
   overallLayout->addWidget( inputDiv, 0, 0 );
   overallLayout->addWidget( lowerInput, 1, 0 );
-  overallLayout->addWidget( m_particleView, 0, 1, 3, 1 );
+  overallLayout->addWidget( m_options, 0, 1, 3, 1 );
+  overallLayout->addWidget( m_particleView, 0, 2, 3, 1 );
   
   auto bottomRow = new WContainerWidget();
   overallLayout->addWidget( bottomRow, 2, 0 );
@@ -1140,7 +1158,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   
   overallLayout->setRowStretch( 2, 1 );
-  overallLayout->setColumnStretch( 1, 1 );
+  overallLayout->setColumnStretch( 2, 1 );
 }//ReferencePhotopeakDisplay constructor
 
 
@@ -1367,12 +1385,30 @@ std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::current
 }//currentlyUsedPeakColors()
 
 
+void ReferencePhotopeakDisplay::toggleShowOptions()
+{
+  if (m_options->isHidden())
+  {
+    m_options->show();
+    //m_options->animateShow(WAnimation(WAnimation::AnimationEffect::Pop, WAnimation::TimingFunction::Linear, 250) );
+    m_options_icon->addStyleClass("active");
+  }else
+  {
+    m_options->hide();
+    //m_options->animateHide(WAnimation(WAnimation::AnimationEffect::Pop, WAnimation::TimingFunction::Linear, 250));
+    m_options_icon->removeStyleClass("active");
+  }
+}//void toggleShowOptions()
+
+
 void ReferencePhotopeakDisplay::updateDisplayChange()
 {
   /** The gamma or xray energy below which we wont show lines for.
    x-rays for nuclides were limited at above 10 keV, so we'll just impose this as a lower limit to show to be consistent.
    */
   const float lower_photon_energy = 10.0f;
+
+  const bool hasNonDefaultStyle = m_options_icon->hasStyleClass("non-default");
   
   bool show = true;
   show = (show && (!m_lowerBrCuttoff || m_lowerBrCuttoff->validate()==WValidator::Valid));
@@ -1449,50 +1485,51 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     WString hlstr = PhysicalUnits::printToBestTimeUnits( nuc->halfLife,
                                                       2, SandiaDecay::second );
     //hlstr = L" \x03BB=" + hlstr;
-    hlstr = "<span style=\"font-size: small;\">&lambda;<sub>&frac12;</sub>=" + hlstr + "</span>";
+    hlstr = "&lambda;<sub>&frac12;</sub>=" + hlstr;
     m_halflife->setText( hlstr );
-  }else
-  {
-    m_halflife->setText( "" );
-  }//if( nuc ) / else
 
-  if( nuc )
-  {
+
     try
     {
       const string agestr = m_ageEdit->text().toUTF8();
-      if( canHavePromptEquil && m_promptLinesOnly->isChecked() )
+      if (canHavePromptEquil && m_promptLinesOnly->isChecked())
       {
         age = 0.0;
-      }else
+      }
+      else
       {
         const double hl = (nuc ? nuc->halfLife : -1.0);
-        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
-        
-        if( age > 100.0*nuc->halfLife || age < 0.0 )
+        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife(agestr, hl);
+
+        if (age > 100.0 * nuc->halfLife || age < 0.0)
         {
           string defagestr;
-          age = PeakDef::defaultDecayTime( nuc, &defagestr );
+          age = PeakDef::defaultDecayTime(nuc, &defagestr);
           passMessage("Changed age to a more reasonable value for " + nuc->symbol
-                      + " from '" + agestr + "' to " + defagestr,
-                      WarningWidget::WarningMsgLow );
-          m_ageEdit->setText( defagestr );
+            + " from '" + agestr + "' to " + defagestr,
+            WarningWidget::WarningMsgLow);
+          m_ageEdit->setText(defagestr);
         }
       }//if( prompt ) / else
-    }catch(...)
+    }
+    catch (...)
     {
-      if( m_ageEdit->text().toUTF8() == "" )
+      if (m_ageEdit->text().toUTF8() == "")
       {
         string agestr;
-        age = PeakDef::defaultDecayTime( nuc, &agestr );
-        m_ageEdit->setText( agestr );
-      }else
+        age = PeakDef::defaultDecayTime(nuc, &agestr);
+        m_ageEdit->setText(agestr);
+      }
+      else
       {
         show = false;
       }
     }//try /catch to get the age
-  }//if( !el )
-  
+  }else
+  {
+    m_halflife->setText( "" );
+    m_promptLinesOnly->hide();
+  }//if( nuc ) / else
   
   //m_fitPeaks->setDisabled( !show );
   
@@ -1657,7 +1694,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     {
       for( const BackgroundLine &bl : BackgroundLines )
       {
-        if( std::get<3>(bl)!=BackgroundXRay || (!m_showXrays || m_showXrays->isChecked()) )
+        const bool isXray = (std::get<3>(bl) == BackgroundXRay);
+        if( (isXray && showXrayChecked) || (!isXray && showGammaChecked) )
           m_currentlyShowingNuclide.backgroundLines.push_back( &bl );
       }//for( const BackgroundLine &bl : BackgroundLines )
     }//if( isBackground )
@@ -1680,12 +1718,34 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     
     m_particleModel->clear();
         
+    if( hasNonDefaultStyle )
+      m_options_icon->removeStyleClass("non-default");
+
     if( age < 0.0 || !nuc )
     {
       m_particleModel->clear();
       return;
     }//if( age < 0.0 || !nuc )
   }//if( !show )
+
+
+  bool showGammaCB = true, showXrayCb = true, showAplhaCb = true, showBetaCb = true;
+  if (nuc) // Show everything
+  {}
+  else if (el) // For x-ray only show Show x-ray option  
+    showGammaCB = showAplhaCb = showBetaCb = false;
+  else if (!rctnGammas.empty()) // For reactions only show Show Gamma option
+    showXrayCb = showAplhaCb = showBetaCb = false;
+  else if (isBackground)
+    showAplhaCb = showBetaCb = false;
+  else // Show all options, otherwise whole area will be blank 
+  {}
+
+  m_showXrays->setHidden(!showXrayCb);
+  m_showGammas->setHidden(!showGammaCB);
+  m_showAlphas->setHidden(!showAplhaCb);
+  m_showBetas->setHidden(!showBetaCb);
+
 
   vector<DecayParticleModel::RowData> inforows;
 
@@ -1716,7 +1776,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   vector<const ReactionGamma::Reaction *> reactionPeaks;
   std::vector<const BackgroundLine *> backgroundLines;
 
-  if( !m_showGammas || m_showGammas->isChecked() )
+  if(showGammaChecked)
   {
     types.push_back( SandiaDecay::GammaParticle );
     types.push_back( SandiaDecay::PositronParticle );
@@ -1895,6 +1955,9 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     if( eip.energy < lower_photon_energy )
       continue;
     
+    if (!showGammaChecked)
+      continue;
+
     transistions.push_back( NULL );
     energies.push_back( eip.energy );
     branchratios.push_back( eip.abundance );
@@ -2178,6 +2241,22 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   else
     m_chart->setReferncePhotoPeakLines( ReferenceLineInfo() );
   
+
+  // Now check if m_options_icon should have a red background (non-default options) or not
+  bool nonDefaultOpts = false;
+
+  if (show && (nuc || el || !rctnGammas.empty() || isBackground))
+  {
+    nonDefaultOpts |= ((nuc && canHavePromptEquil) && m_promptLinesOnly->isChecked());
+    nonDefaultOpts |= (showGammaCB && !m_showGammas->isChecked());
+    nonDefaultOpts |= (showXrayCb  && !m_showXrays->isChecked());
+    nonDefaultOpts |= (showAplhaCb &&  m_showAlphas->isChecked());
+    nonDefaultOpts |= (showBetaCb  &&  m_showBetas->isChecked());
+  }//if( we are actually showing any lines )
+
+  // Add or remove the .non-default style class, if necassary
+  if (nonDefaultOpts != hasNonDefaultStyle)
+    m_options_icon->toggleStyleClass("non-default", nonDefaultOpts);
 
   if( show )
   {
