@@ -6099,11 +6099,14 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     //    js = can + ".data('compangle',null);";
     //    checkbox->checked().connect( boost::bind( &WApplication::doJavaScript, wApp, js, true ) );
     
+#if( !ANDROID )
+    // TODO: On Android we dont currently catch the download for these downloads with the content encoded in the URI, so we will just disable these for now there.
     m_displayOptionsPopupDiv->addSeparator();
     auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
     saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, true) );
     saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as SVG" );
     saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
+#endif
   }//if( overlay )
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
@@ -8289,7 +8292,9 @@ void InterSpec::handleToolTabChanged( int tab )
   const int calibtab = m_toolsTabs->indexOf(m_energyCalTool);
   const int searchTab = m_toolsTabs->indexOf(m_nuclideSearchContainer);
   
-  if( m_referencePhotopeakLines && (tab == refTab) && !isMobile() )
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+  
+  if( m_referencePhotopeakLines && (tab == refTab) && app && !app->isMobile() )
     m_referencePhotopeakLines->setFocusToIsotopeEdit();
     
   if( m_nuclideSearch && (m_currentToolsTab==searchTab) )

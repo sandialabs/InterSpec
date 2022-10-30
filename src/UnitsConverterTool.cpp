@@ -147,10 +147,35 @@ string convertDistance( string val )
   try
   {
     const double dbvalue = PhysicalUnits::stringToDistance(val);
-    //const bool to_metric = (SpecUtils::icontains(val, "ft") || SpecUtils::icontains(val, "feet")
-    //                        || SpecUtils::icontains(val, "in") || SpecUtils::icontains(val, "'")
-    //                        || SpecUtils::icontains(val, "\"") );
-    return PhysicalUnits::printToBestLengthUnits( dbvalue, num_sig_figs(val) );
+    const bool to_metric = (SpecUtils::icontains(val, "ft") || SpecUtils::icontains(val, "feet")
+                            || SpecUtils::icontains(val, "in") || SpecUtils::icontains(val, "'")
+                            || SpecUtils::icontains(val, "\"") );
+    
+    if( to_metric )
+      return PhysicalUnits::printToBestLengthUnits( dbvalue, num_sig_figs(val) + 1 );
+    
+    // Else, to inches, ft, etc.
+    //  (we wont sully PhysicalUnits with outputting English units)
+    double unitval = dbvalue / (2.54 * PhysicalUnits::cm);
+    const char *unit = "inch";
+    if( unitval < 36*2.54 )
+    {
+      // Already taken care of
+    }else if( unitval < 12*5280 )
+    {
+      unitval = dbvalue / 12;
+      unit = "feet";
+    }else
+    {
+      unitval = dbvalue / (12*5280);
+      unit = "miles";
+    }
+    
+    char formatflag[32], buffer[64];
+    snprintf(formatflag, sizeof(formatflag), "%%.%if %%s", num_sig_figs(val) );
+    snprintf(buffer, sizeof(buffer), formatflag, unitval, unit );
+    
+    return buffer;
   }catch(...)
   {
   }
