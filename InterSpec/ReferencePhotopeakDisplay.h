@@ -86,6 +86,7 @@ public:
     static const int XRayDecayMode;
     static const int ReactionToGammaMode;
     static const int NormGammaDecayMode;
+    static const int CascadeSumMode;
 
     float energy, branchRatio;
     int decayMode;
@@ -294,7 +295,8 @@ protected:
   Wt::WCheckBox *m_showXrays;
   Wt::WCheckBox *m_showAlphas;
   Wt::WCheckBox *m_showBetas;
-
+  Wt::WCheckBox* m_showCascadeSums;
+  Wt::WText* m_cascadeWarn;
 
   DetectorDisplay *m_detectorDisplay;
   MaterialDB *m_materialDB;                 //not owned by this object
