@@ -2311,6 +2311,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     // There can be tons of cascade sums (4834 for U238), we'll limit the number 
     //   we draw to an arbitrary 350, because this is even more than I expect to 
     //   be relevant (although I didnt actually check this).
+    //  TODO: limit based on importance, and not a flat limit, e.g., use something like
+    //        yield(i)*sqrt(energy(i))/sum(yield*sqrt(energy))
     const size_t max_cascade_sums = 350;
     if (cascade_info.size() > max_cascade_sums)
     {

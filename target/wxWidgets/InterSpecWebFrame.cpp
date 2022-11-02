@@ -55,6 +55,9 @@
 #include "wx/wfstream.h"
 
 #ifdef _WIN32
+#include <wx/mimetype.h>
+#include "wx/msw/registry.h"
+
 #if wxUSE_WEBVIEW_EDGE
 #include "wx/msw/webview_edge.h"
 #else
@@ -71,6 +74,127 @@
 #include "InterSpecWebFrame.h"
 
  
+namespace
+{
+#ifdef _WIN32
+  void check_url_association()
+  {
+    // We want to associate "interspec://" URLs with the application; we'll
+    //  do this through editing the registry.
+    
+    // For files, we would use the wxFileType, and wxMimeTypesManager classes, similar to:
+    //wxFileTypeInfo fti("", app_path, "", "Gamma Radiation Spectrum File", "n42", "pcf");
+    //fti.SetShortDesc("Spectrum file"));
+    //wxFileType* ft = wxTheMimeTypesManager->Associate(fti);
+    //ft->SetDefaultIcon(app_path, 1);
+    //delete ft;
+
+    // Only do this function the first time an application loads
+    static bool s_already_called = false;
+    if (s_already_called)
+      return;
+    s_already_called = true;
+
+    //wxFileName exe_filename(wxStandardPaths::Get().GetExecutablePath());
+    //wxString app_path(exe_filename.GetFullPath());
+    const wxString app_path = wxStandardPaths::Get().GetExecutablePath();
+    
+    const wxString open_command = wxString::Format("\"%s\" \"%%1\"", app_path);
+
+    /*
+    {// begin play around with file extensions
+    // Right now this all kinda-sorta-seems to do something, about right, but
+    //  I'm not sure of the correctness, or if it messes up other 
+    //  programs/user-preferences, or whatever, so not bringing out to the
+    //  user at the moment, pending further looking into other ways to do
+    //  this, better (maybe the solution is to just use an installer, and
+    //  have a seperate portable distribution that includes a script or 
+    //  something)
+      wxMimeTypesManager manager;
+      wxFileType* ft = manager.GetFileTypeFromExtension("n42");
+      if (!ft)
+      {
+        wxLogMessage("Failed to get file type information from extension.");
+      }else
+      {
+        wxString mimeType;
+        ft->GetMimeType(&mimeType);
+        const wxString open_cmd = ft->GetOpenCommand("MyFile.n42");
+        wxLogMessage("Command for openeing files was: '%s', mimetype -> '%s'", open_cmd, mimeType);
+        if( manager.Unassociate(ft) )
+          wxLogMessage("Unassociated previous file type association");
+        else
+          wxLogMessage("Failed to unassociate previous file type association");
+
+        delete ft;
+        ft = nullptr;
+      }
+      
+      wxFileTypeInfo type_info("application/x.gamma-spectrum");
+      type_info.SetOpenCommand(open_command);
+      type_info.SetShortDesc("N42");
+      type_info.SetDescription("Gamma energy spectrum files");
+      type_info.AddExtension("n42");
+      type_info.AddExtension("cnf"); //"pcf", ...
+      
+      ft = manager.Associate(type_info);
+      if (ft)
+        wxLogMessage("Added file type association; command for opening files: '%s'", ft->GetOpenCommand("myfile.n42"));
+      else
+        wxLogMessage("Failed to add ");
+
+      delete ft;
+      ft = nullptr;
+    }// end play around with file extensions
+    */
+
+    wxRegKey interspec_key(wxRegKey::HKCU, "SOFTWARE\\Classes\\interspec");
+    if (!interspec_key.Exists() && !interspec_key.Create(true))
+    {
+      wxLogError("Failed to create InterSpec key - aboring");
+      return;
+    }
+
+    wxString def_value, proto_value, command_value;
+    interspec_key.QueryValue("", def_value); //Its okay if this fails
+
+    if( (def_value != "URL:interspec") && !interspec_key.SetValue("", "URL:interspec") )
+    {
+      wxLogError("Failed to set Reg key default value - arborting");
+      return;
+    }
+
+    if (!interspec_key.QueryValue("URL Protocol", proto_value) 
+        && !interspec_key.SetValue("URL Protocol", "") )
+    {
+      wxLogError("Failed to set Reg key 'URL Protocol' value");
+      return;
+    }      
+    
+    wxRegKey command_key(wxRegKey::HKCU, "SOFTWARE\\Classes\\interspec\\shell\\open\\command");
+    if (!command_key.Exists() && !command_key.Create(true))
+    {
+      wxLogMessage("Failed to create 'command' Reg key");
+      return;
+    }
+
+    command_key.QueryValue("", command_value); //Its okay if this fails
+    
+    if (command_value == open_command)
+    {
+      wxLogMessage("No need to update registry URL command value");
+      return;
+    }
+    
+
+    if( !command_key.SetValue("", open_command) )
+      wxLogMessage("Failed to update URL command Reg key def value");
+    else
+      wxLogMessage("Updated URL 'command' Reg key def value to '%s'", open_command);
+  }//void check_url_association()
+#endif
+}//namespace
+
 
 InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore, const wxString& file_to_open) :
   wxFrame(NULL, wxID_ANY, "InterSpec", wxDefaultPosition, wxDefaultSize, wxRESIZE_BORDER | wxSYSTEM_MENU),
@@ -851,6 +975,11 @@ void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
   {
     wxConfigBase* config = wxConfigBase::Get(true);
     config->Write("/NumLoadAttempts", 0);
+
+
+#ifdef _WIN32
+    check_url_association();
+#endif
   }
   else if (msg == "OpenInExternalBrowser")
   {

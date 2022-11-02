@@ -116,17 +116,17 @@ public:
 };
 
 
-
-
-
-
 InterSpecWxApp::InterSpecWxApp() :
     wxApp(),
     m_url(""),
+    m_command_line_args{},
+    m_frames{},
+    m_active_frame(nullptr),
     m_checker(nullptr),
     m_ipc_server(nullptr)
   {
   }
+
 
   void InterSpecWxApp::OnInitCmdLine(wxCmdLineParser& parser)
   {
@@ -222,78 +222,7 @@ InterSpecWxApp::InterSpecWxApp() :
   }//void new_app_window()
 
 
-  namespace
-  {
-    /*
-    class androidbuf : public std::streambuf
-    {
-      //A utility to redirect cout/cerr to the Android logging system so it can be
-      // seen using 'adb logcat'
-    public:
-      enum Source { FromCout, FromCerr };
-      enum { bufsize = 128 }; // ... or some other suitable buffer size
-      androidbuf(Source src)
-        : m_type(src), m_origSrc(nullptr)
-      {
-        this->setp(buffer, buffer + bufsize - 1);
 
-        switch (m_type)
-        {
-        case FromCout:
-          m_source = "cout";
-          m_origSrc = std::cout.rdbuf(this);
-          break;
-
-        case FromCerr:
-          m_source = "cerr";
-          m_origSrc = std::cerr.rdbuf(this);
-          break;
-        }//switch( src )
-      }//androidbuf( Source src )
-
-      ~androidbuf()
-      {
-        //cout/cerr must be given back there original rdbufs or else there can be a
-        //  problems with freeing resources
-        if (!m_origSrc)
-          return;
-        switch (m_type)
-        {
-        case FromCout: std::cout.rdbuf(m_origSrc); break;
-        case FromCerr: std::cerr.rdbuf(m_origSrc); break;
-        }
-      }//~androidbuf()
-
-    private:
-      int overflow(int c) override
-      {
-        if (c == traits_type::eof()) {
-          *this->pptr() = traits_type::to_char_type(c);
-          this->sbumpc();
-        }
-        return this->sync() ? traits_type::eof() : traits_type::not_eof(c);
-      }//int overflow(int c)
-
-      int sync() override
-      {
-        int rc = 0;
-        if (this->pbase() != this->pptr())
-        {
-          rc = __android_log_write(ANDROID_LOG_INFO, m_source,
-            std::string(this->pbase(), this->pptr()).c_str());
-          this->setp(buffer, buffer + bufsize - 1);
-        }
-        return rc;
-      }//int sync()
-      char buffer[bufsize];
-      const char* m_source;
-      const Source m_type;
-      std::streambuf* m_origSrc;
-    };//class androidbuf
-
-    */
-    
-  }
 //#include <fstream>
 //  std::unique_ptr<std::ofstream> g_stdbuf, g_errbuf;
 
