@@ -1096,6 +1096,14 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #endif
   
   applyColorTheme( nullptr );
+
+#if( APP_MENU_STATELESS_FIX )
+  // Make sure the menus get pre-loaded
+  PopupDivMenu::pre_render(m_fileMenuPopup);
+  PopupDivMenu::pre_render(m_toolsMenuPopup);
+  PopupDivMenu::pre_render(m_helpMenuPopup);
+  PopupDivMenu::pre_render(m_displayOptionsPopupDiv);
+#endif
 }//InterSpec( constructor )
 
 InterSpec *InterSpec::instance()
