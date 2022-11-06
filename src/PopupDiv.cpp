@@ -1090,6 +1090,10 @@ void PopupDivMenu::setupDesktopMenuStuff()
        make it function like that (e.g., maybe no timeout at all)
      - [ ] See https://css-tricks.com/in-praise-of-the-unambiguous-click-menu/#building-click-menus
      - [x] Check behaviour of mousing over parent button when no menus are open, for Electron build, and mirror that
+     - [ ] Enable using arrows to change menus, and go up/down in the menu, with enter selecting an element
+          - `InterSpec::arrowKeyPressed()` currently cant really work - should implement in JS; maybe need to set a reference between the menu and the button in JS, so we can handle arrow keys in just JS
+     - [ ] When you hit Alt (on windows at least), it underlines the first leter of each menu button, and also maybe 
+           select the menu, so you can use the arrows to select and display menus
      
      
    Electron titlebar notes:

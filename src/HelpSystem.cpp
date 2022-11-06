@@ -59,111 +59,6 @@
 using namespace std;
 using namespace Wt;
 
-//TODO: Remove pNotify/javascript usage below if we are to move fully to new qTip2 method
-
-//HelpPopupOnMouseOver, HelpPopupMouseOutOfPopup, and HelpPopupMouseOverPopup
-//  all share most of their code and could be refactored a bit.
-//
-//Note, could replace instances of p.data('focus') with somethign like:
-//  "Wt.WT.hasFocus(" + widget->jsRef() + ")"
-//
-//Note: Line to hide all other popups could be replaced with:
-//      "$(" + wApp->domRoot()->jsRef() + ").children('.helpPopupMainContainer').each(...)"
-//      or "$('.helpPopupMainContainer').each(function(i,el){jQuery.data(el,'popup').hide();});"
-WT_DECLARE_WT_MEMBER
-(HelpPopupOnFocus, Wt::JavaScriptFunction, "HelpPopupOnFocus",
- function(a,s)
-{
-  var p=$(a);
-  var pp=jQuery.data(a,'popup');
-  p.data('focus',true);
-  if(pp&&!p.data('StayHidden'))
-  {
-    p.parent().children('.helpPopupMainContainer').each(function(i,el){if(a.id!=el.id)jQuery.data(el,'popup').hide();});
-    pp.show(s,Wt.WT.Horizontal);
-  }
-}
- );
-
-
-WT_DECLARE_WT_MEMBER
-(HelpPopupOnBlurr, Wt::JavaScriptFunction, "HelpPopupOnBlurr",
- function(a)
-{
-  var p=$(a);
-  var pp=jQuery.data(a,'popup');
-  p.data('focus',false);
-  p.data('StayHidden',false);
-  var fcn=function(){if(!p.data('override')&&!p.data('focus')&&!p.data('mouse'))pp.hide();};
-  setTimeout(fcn,500);
-}
- );
-
-
-WT_DECLARE_WT_MEMBER
-(HelpPopupOnMouseOver, Wt::JavaScriptFunction, "HelpPopupOnMouseOver",
- function(a,s)
-{
-  var p=$(a);
-  var pp=jQuery.data(a,'popup');
-  p.data('mouse',true);
-  if(pp&&!p.data('StayHidden'))
-  {
-    p.parent().children('.helpPopupMainContainer').each(function(i,el){if(a.id!=el.id)jQuery.data(el,'popup').hide();});
-    pp.show(s,Wt.WT.Horizontal);
-  }
-}
- );
-
-
-WT_DECLARE_WT_MEMBER
-(HelpPopupOnMouseOut, Wt::JavaScriptFunction, "HelpPopupOnMouseOut",
- function(a)
-{
-  var p=$(a);
-  var pp=jQuery.data(a,'popup');
-  p.data('mouse',false);
-  var fcn=function(){if(!p.data('override')&&!p.data('focus')&&!p.data('mouse'))pp.hide();};
-  setTimeout(fcn,500);
-}
- );
-
-WT_DECLARE_WT_MEMBER
-(HelpPopupOnKeyPress, Wt::JavaScriptFunction, "HelpPopupOnKeyPress",
- function(a)
-{
-  var p=$(a);
-  var pp=jQuery.data(a,'popup');
-  p.data('StayHidden',true);
-  pp.hide();
-}
- );
-
-
-WT_DECLARE_WT_MEMBER
-(HelpPopupMouseOverPopup, Wt::JavaScriptFunction, "HelpPopupMouseOverPopup",
- function(a)
-{
-  var p=$(a);
-  var pp=jQuery.data(a,'popup');
-  p.data('override',true);
-  var fcn=function(){if(!p.data('override')&&!p.data('focus')&&!p.data('mouse'))pp.hide();};
-  setTimeout(fcn,500);
-}
- );
-
-WT_DECLARE_WT_MEMBER
-(HelpPopupMouseOutOfPopup, Wt::JavaScriptFunction, "HelpPopupMouseOutOfPopup",
- function(a)
-{
-  var p=$(a);
-  var pp=jQuery.data(a,'popup');
-  p.data('override',false);
-  var fcn=function(){if(!p.data('override')&&!p.data('focus')&&!p.data('mouse'))pp.hide();};
-  setTimeout(fcn,500);
-}
- );
-
 
 namespace
 {
@@ -758,54 +653,6 @@ namespace HelpSystem
       setPathVisible(parent->parentNode());
   }//  void HelpWindow::setPathVisible(WTreeNode* parent)
   
-  //@Deprecated -- no longer using this if we move to qTip2
-  void addToolTipToWidget( Wt::WPopupWidget *popup,
-                                      Wt::WFormWidget *widget,
-                                      const bool closeOnType,
-                                      const bool openOnMouseOver )
-  {
-    WApplication *app = WApplication::instance();
-    LOAD_JAVASCRIPT(app, "src/HelpSystem.cpp", "HelpSystem", wtjsHelpPopupOnFocus);
-    LOAD_JAVASCRIPT(app, "src/HelpSystem.cpp", "HelpSystem", wtjsHelpPopupOnBlurr);
-    LOAD_JAVASCRIPT(app, "src/HelpSystem.cpp", "HelpSystem", wtjsHelpPopupOnMouseOver);
-    LOAD_JAVASCRIPT(app, "src/HelpSystem.cpp", "HelpSystem", wtjsHelpPopupOnMouseOut);
-    LOAD_JAVASCRIPT(app, "src/HelpSystem.cpp", "HelpSystem", wtjsHelpPopupOnKeyPress);
-    LOAD_JAVASCRIPT(app, "src/HelpSystem.cpp", "HelpSystem", wtjsHelpPopupMouseOverPopup);
-    LOAD_JAVASCRIPT(app, "src/HelpSystem.cpp", "HelpSystem", wtjsHelpPopupMouseOutOfPopup);
-    
-    WWidget *w = popup->find( "ToolTip" );
-    WContainerWidget *helpPopup = dynamic_cast<WContainerWidget *>( w );
-    if( !helpPopup )
-      throw std::logic_error( "HelpSystem::addToolTipToWidget called with invalid widget" );
-    
-    string js = "function(s){Wt.WT.HelpPopupOnFocus("+popup->jsRef()+",s);}";
-    widget->focussed().connect( js );
-    
-    if( openOnMouseOver )
-    {
-      js = "function(s){Wt.WT.HelpPopupOnMouseOver("+popup->jsRef()+",s);}";
-      widget->mouseWentOver().connect( js );
-    }
-    
-    js = "function(){Wt.WT.HelpPopupOnBlurr("+popup->jsRef()+");}";
-    widget->blurred().connect( js );
-    
-    
-    if( closeOnType )
-    {
-      js = "function(){Wt.WT.HelpPopupOnKeyPress("+popup->jsRef()+");}";
-      widget->keyPressed().connect( js );
-    }//if( closeOnType )
-    
-    js = "function(){Wt.WT.HelpPopupOnMouseOut("+popup->jsRef()+");}";
-    widget->mouseWentOut().connect( js );
-    
-    js = "function(){Wt.WT.HelpPopupMouseOverPopup("+popup->jsRef()+");}";
-    helpPopup->mouseWentOver().connect( js );
-    
-    js = "function(){Wt.WT.HelpPopupMouseOutOfPopup("+popup->jsRef()+");}";
-    helpPopup->mouseWentOut().connect( js );
-  }//void addToolTipToWidget...)
   
 
   /*
@@ -870,7 +717,7 @@ namespace HelpSystem
                         "x:5} "
                     "},"
         "show:  {  event: '" << string(enableShowing ? "mouseenter focus" : "") << "', delay: 500 },"
-        "hide:  {  fixed: true, event: 'mouseleave focusout keypress'  },"
+        "hide:  {  fixed: true, event: 'mouseleave focusout keypress click'  },"
         "style: { classes: 'qtip-rounded qtip-shadow" << string(overrideShow ? "" : " canDisableTt") << "',"
                   "tip: {"
                         "corner: true, "

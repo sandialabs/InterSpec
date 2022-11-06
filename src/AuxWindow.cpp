@@ -1019,14 +1019,15 @@ void AuxWindow::render( Wt::WFlags<Wt::RenderFlag> flags )
   {
     wApp->doJavaScript(wApp->javaScriptClass() + ".TriggerResizeEvent();");
 
-#if(  BUILD_AS_WX_WIDGETS_APP )
+#if(  BUILD_AS_WX_WIDGETS_APP || (BUILD_AS_ELECTRON_APP && !USING_ELECTRON_NATIVE_MENU) )
     // For wxWidgets, we have a bit of a hack to allow dragging the application window around
     //  by the titlebar - but when the dialog cover is being shown (i.e., a modal WDialog),
     //  the the titlebar cant be clicked.  So here we'll add a listener to the dialog cover
     //  to do the same hack, if the user clicks the titlebar region.
     if (InterSpecApp::isPrimaryWindowInstance())
     {
-      // TODO: a similar thing for BUILD_AS_ELECTRON_APP    
+#if(  BUILD_AS_WX_WIDGETS_APP )
+      // TODO: a similar thing for BUILD_AS_ELECTRON_APP, but probably need to add something like ".app-titlebar" to the dialog-cover
       WWidget* coverw = wApp->findWidget("dialog-cover");
       WContainerWidget* dialog_cover = dynamic_cast<WContainerWidget*>(coverw);
       if (dialog_cover && !dialog_cover->mouseWentDown().isConnected())
@@ -1050,6 +1051,7 @@ void AuxWindow::render( Wt::WFlags<Wt::RenderFlag> flags )
       );
       doJavaScript(js);
       */
+#endif
 
       // Raise windows controls (minimize, maximize, close), to above the dialog-cover, so we 
       //  dont block people from being able to close the app.

@@ -4784,7 +4784,10 @@ void InterSpec::stateSaveAs()
 {
   const bool forTesting = false;
     
-  AuxWindow *window = new AuxWindow( "Store State As", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen) );
+  AuxWindow *window = new AuxWindow( "Store State As", 
+    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) 
+      | AuxWindowProperties::TabletNotFullScreen
+      | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );

@@ -103,16 +103,18 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
     // The below seems to be necessary or else sometimes the window doesnt resize to fit its content
     wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
 
-#if( BUILD_AS_WX_WIDGETS_APP )
+#if(  BUILD_AS_WX_WIDGETS_APP || (BUILD_AS_ELECTRON_APP && !USING_ELECTRON_NATIVE_MENU) )
     // To allow moving window around when dialog showing; see note in AuxWindow::render 
     //  for the same code snippet
     if( InterSpecApp::isPrimaryWindowInstance() )
     {
+#if( BUILD_AS_WX_WIDGETS_APP )
       WWidget* coverw = wApp->findWidget("dialog-cover");
       WContainerWidget* dialog_cover = dynamic_cast<WContainerWidget*>(coverw);
       if (dialog_cover && !dialog_cover->mouseWentDown().isConnected())
         dialog_cover->mouseWentDown().connect(wApp->javaScriptClass() + ".MouseDownOnDialogCover");
-      
+#endif
+
       // Raise windows controls (minimize, maximize, close), to above the dialog-cover.
       wApp->doJavaScript(wApp->javaScriptClass() + ".RaiseWinCntrlsAboveCover();");
     }

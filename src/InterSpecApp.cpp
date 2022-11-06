@@ -317,11 +317,13 @@ void InterSpecApp::setupDomEnvironment()
   "}"
   );
   
-#if(  BUILD_AS_WX_WIDGETS_APP )
+
+#if(  BUILD_AS_WX_WIDGETS_APP || (BUILD_AS_ELECTRON_APP && !USING_ELECTRON_NATIVE_MENU) )
   // A workaround to allow moving the app window around by the titlebar area, when a 
   //  AuxWindow or SimpleDialog is showing
   if (isPrimaryWindowInstance())
   {
+#if(  BUILD_AS_WX_WIDGETS_APP )
     declareJavaScriptFunction("MouseDownOnDialogCover",
       "function(el, evt) {"
         "if( (evt.button!==0) || (el.id !== evt.target.id) || evt.pageY > 30) return;"
@@ -330,6 +332,7 @@ void InterSpecApp::setupDomEnvironment()
         "evt.preventDefault();"
       "}"
     );
+#endif
 
     // Setup a function to raise windows controls (minimize, maximize, close), 
     // to above the dialog-cover, so we dont block people from being able to 
