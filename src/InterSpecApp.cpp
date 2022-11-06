@@ -317,6 +317,34 @@ void InterSpecApp::setupDomEnvironment()
   "}"
   );
   
+#if(  BUILD_AS_WX_WIDGETS_APP )
+  // A workaround to allow moving the app window around by the titlebar area, when a 
+  //  AuxWindow or SimpleDialog is showing
+  if (isPrimaryWindowInstance())
+  {
+    declareJavaScriptFunction("MouseDownOnDialogCover",
+      "function(el, evt) {"
+        "if( (evt.button!==0) || (el.id !== evt.target.id) || evt.pageY > 30) return;"
+        "if(window.wx) window.wx.postMessage('MouseDownInTitleBar');"
+        "evt.stopPropagation();"
+        "evt.preventDefault();"
+      "}"
+    );
+
+    // Setup a function to raise windows controls (minimize, maximize, close), 
+    // to above the dialog-cover, so we dont block people from being able to 
+    // close the app.  I dont think the setTimeout(...) is needed, but JIC
+    //usage: wApp->doJavaScript(wApp->javaScriptClass() + ".RaiseWinCntrlsAboveCover();");
+    declareJavaScriptFunction("RaiseWinCntrlsAboveCover",
+      "function(){ "
+        "setTimeout(function(){"
+          "const z = $('.Wt-dialogcover').css('z-index');"
+          "if(z) $('.window-controls-container').css('z-index',z+1);"
+        "},250);"
+      "}"
+    );
+  }//if (isPrimaryWindowInstance())
+#endif
   
   //cout << "wApp->javaScriptClass()='" << wApp->javaScriptClass() << "'" << endl; //Prints "Wt"
   

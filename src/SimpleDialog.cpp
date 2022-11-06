@@ -34,11 +34,16 @@
 #include "InterSpec/InterSpec.h"  //for InterSpec::instance()
 #include "InterSpec/SimpleDialog.h"
 
+#if( BUILD_AS_WX_WIDGETS_APP )
+#include "InterSpec/InterSpecApp.h"  //for InterSpecApp::isPrimaryWindowInstance()
+#endif
+
 using namespace std;
 using namespace Wt;
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
+/*
 WT_DECLARE_WT_MEMBER
  (SimpleDialogBringToFront, Wt::JavaScriptFunction, "SimpleDialogBringToFront",
   function( id )
@@ -53,10 +58,11 @@ WT_DECLARE_WT_MEMBER
    
    if( isNaN(z) || maxz > z )
      $('#'+id).css('z-index', maxz+1);
+   $('.window-controls-container').css('z-index', maxz + 2); //for wxWidgets and Electron builds
    $('.suggestion').css('z-index', maxz+2);
  }
 );
-
+*/
 
 SimpleDialog::SimpleDialog()
 : Wt::WDialog( InterSpec::instance() ),  //for lifetime purposes
@@ -96,6 +102,21 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
     
     // The below seems to be necessary or else sometimes the window doesnt resize to fit its content
     wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
+
+#if( BUILD_AS_WX_WIDGETS_APP )
+    // To allow moving window around when dialog showing; see note in AuxWindow::render 
+    //  for the same code snippet
+    if( InterSpecApp::isPrimaryWindowInstance() )
+    {
+      WWidget* coverw = wApp->findWidget("dialog-cover");
+      WContainerWidget* dialog_cover = dynamic_cast<WContainerWidget*>(coverw);
+      if (dialog_cover && !dialog_cover->mouseWentDown().isConnected())
+        dialog_cover->mouseWentDown().connect(wApp->javaScriptClass() + ".MouseDownOnDialogCover");
+      
+      // Raise windows controls (minimize, maximize, close), to above the dialog-cover.
+      wApp->doJavaScript(wApp->javaScriptClass() + ".RaiseWinCntrlsAboveCover();");
+    }
+#endif
   }//if( flags & RenderFull )
 }//render( flags )
 
@@ -104,7 +125,7 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
 {
   wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
   
-  LOAD_JAVASCRIPT(wApp, "SimpleDialog.cpp", "SimpleDialog", wtjsSimpleDialogBringToFront);
+  //LOAD_JAVASCRIPT(wApp, "SimpleDialog.cpp", "SimpleDialog", wtjsSimpleDialogBringToFront);
   
   addStyleClass( "simple-dialog" );
   
