@@ -59,7 +59,9 @@
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
+#include "InterSpec/ReactionGamma.h"
 #include "InterSpec/InterSpecServer.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "SpecUtils/SerialToDetectorModel.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
@@ -449,6 +451,31 @@ int start_server( const char *process_name, const char *userdatadir,
     cerr << e.what() << endl;
     return -8;
   }
+
+  try
+  {
+    const string user_decay = SpecUtils::append_path(userdatadir, "sandia.decay.xml");
+    if( SpecUtils::is_file(user_decay) )
+      DecayDataBaseServer::setDecayXmlFile(user_decay);
+  }catch (std::exception& e)
+  {
+    cerr << e.what() << endl;
+    return -9;
+  }
+
+
+  try
+  {
+    const string user_reaction = SpecUtils::append_path(userdatadir, "sandia.reactiongamma.xml");
+    if( SpecUtils::is_file(user_reaction) )
+      ReactionGammaServer::set_xml_file_location(user_reaction);
+  }catch (std::exception& e)
+  {
+    cerr << e.what() << endl;
+    return -10;
+  }
+  
+
     //ToDo: should look into using '--approot' Wt Argument.
     
     //try
@@ -467,7 +494,7 @@ int start_server( const char *process_name, const char *userdatadir,
   {
     std::cerr << "\n\nCaught exception trying to start InterSpec server:\n\t"
     << e.what() << std::endl << std::endl;
-    return -9;
+    return -11;
   }
   
   return InterSpecServer::portBeingServedOn();
