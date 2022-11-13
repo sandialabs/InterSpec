@@ -55,11 +55,12 @@
 #include "wx/wfstream.h"
 
 #ifdef _WIN32
-#include <wx/mimetype.h>
+//#include <wx/mimetype.h>
 #include "wx/msw/registry.h"
 
 #if wxUSE_WEBVIEW_EDGE
 #include "wx/msw/webview_edge.h"
+//#include <WebView2.h> // currently dont have this in our include path.
 #else
 #error "Must use Edge web-view for compiling on windows"
 #endif
@@ -235,9 +236,12 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
 
   //void* wxWebViewEdge::GetNativeBackend() const
 #endif
+  
+  
   // Create the webview
   m_browser = wxWebView::New();
   
+
   wxString app_url = m_url + "?apptoken=" + m_token;
 
   // There is a bug if we dont use WebSockets, when we DONT restore state, the UI freezes about half the time; doesnt seem to ever happen when we restore a state... I have no idea
@@ -275,6 +279,18 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
 
   m_browser->Create(this, wxID_ANY, app_url, wxDefaultPosition, wxDefaultSize);
   topsizer->Add(m_browser, wxSizerFlags().Expand().Proportion(1));
+
+
+#if wxUSE_WEBVIEW_EDGE
+  //  IF we wanted further customizations, we could do something like the below:
+  //wxWebViewEdge* edgeWebView = dynamic_cast<wxWebViewEdge*>(m_browser);
+  //if(edgeWebView)
+  //{
+  //  ICoreWebView2 *native_backend = (ICoreWebView2 *)m_browser->GetNativeBackend();
+  //  auto newer_api_backend = dynamic_cast<ICoreWebView2_12 *>(native_backend);
+  //  ...
+  //}
+#endif
 
   
   // Log backend information
