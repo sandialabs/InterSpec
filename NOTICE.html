@@ -93,11 +93,25 @@ of additional open-source libraries.
 
     <li><b><a href="https://electronjs.org/" target="_blank">Electron</a></b> (version 17.4.11): Package based on the Chromium web browser to build cross platform desktop apps with JavaScript, HTML, and CSS.
       <div style="margin-left: 1em; font-size: small;">
-        <b>Electron</b> is used to display app contents on standalone Windows and Linux versions of <b>InterSpec</b>.
+        <b>Electron</b> is used to display app contents for the Electron-based Windows and Linux versions of <b>InterSpec</b>.
         <b>Electron</b> is licensed under the <a href="#mit">MIT License</a>,
         but libraries it uses may be licensed under other terms; see <b>Electron</b>s
         <a href="https://github.com/electron/electron" target="_blank">git repository</a>
         for more information.
+      </div>
+    </li>
+
+    <li><b><a href="https://www.nuget.org/packages/Microsoft.Web.WebView2" target="_blank">Microsoft.Web.WebView2</a></b> (version 1.0.705.50): Embed web content (HTML, CSS, and JavaScript) in your native applications with Microsoft Edge WebView2.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>Microsoft.Web.WebView2</b> is used to display app contents for the &quot;Edge&quot; version of <b>InterSpec</b> on Windows (starting from <b>InterSpec</b> version 1.0.11).
+        <b>Microsoft.Web.WebView2</b> is licensed under the <a href="#edge">Microsoft software licensing terms</a>.
+      </div>
+    </li>
+
+    <li><b><a href="https://www.wxwidgets.org/" target="_blank">wxWidgets</a></b> (version 3.2.1): Cross-Platform GUI Library.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>wxWidgets</b> is used by the &quot;Edge&quot; version of <b>InterSpec</b> on Windows to handle application-level events like GUI window creation.
+        <b>wxWidgets</b> is licensed under the <a href="#wxWidgets">wxWindows Library Licence, Version 3.1</a>.
       </div>
     </li>
 
@@ -1661,6 +1675,99 @@ to the following restrictions:
         <p>This Source Code Form is “Incompatible With Secondary Licenses”, as defined by the Mozilla Public License, v. 2.0.</p>
         </blockquote>
 </div>
+
+<div>
+  <div id="edge" class="license">
+  <pre>
+    Copyright (C) Microsoft Corporation. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * The name of Microsoft Corporation, or the names of its contributors 
+may not be used to endorse or promote products derived from this
+software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  </pre>
+  </div>
+  </div>
+
+  <div>
+    <div id="wxWidgets" class="license">
+    <pre>
+  wxWindows Library Licence, Version 3.1
+  ======================================
+
+Copyright (c) 1998-2005 Julian Smart, Robert Roebling et al
+
+Everyone is permitted to copy and distribute verbatim copies
+of this licence document, but changing it is not allowed.
+
+         WXWINDOWS LIBRARY LICENCE
+TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+This library is free software; you can redistribute it and/or modify it
+under the terms of the GNU Library General Public Licence as published by
+the Free Software Foundation; either version 2 of the Licence, or (at
+your option) any later version.
+
+This library is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Library
+General Public Licence for more details.
+
+You should have received a copy of the GNU Library General Public Licence
+along with this software, usually in a file named COPYING.LIB.  If not,
+write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+Boston, MA 02110-1301 USA.
+
+EXCEPTION NOTICE
+
+1. As a special exception, the copyright holders of this library give
+permission for additional uses of the text contained in this release of
+the library as licenced under the wxWindows Library Licence, applying
+either version 3.1 of the Licence, or (at your option) any later version of
+the Licence as published by the copyright holders of version
+3.1 of the Licence document.
+
+2. The exception is that you may use, copy, link, modify and distribute
+under your own terms, binary object code versions of works based
+on the Library.
+
+3. If you copy code from files distributed under the terms of the GNU
+General Public Licence or the GNU Library General Public Licence into a
+copy of this library, as this licence permits, the exception does not
+apply to the code that you add in this way.  To avoid misleading anyone as
+to the status of such modified files, you must delete this exception
+notice from such code and/or adjust the licensing conditions notice
+accordingly.
+
+4. If you write modifications of your own for this library, it is your
+choice whether to permit this exception to apply to your modifications.
+If you do not wish that, you must delete the exception notice from such
+code and/or adjust the licensing conditions notice accordingly.
+</pre>
+</div>
+</div>
+
 
 </body>
 </html>
