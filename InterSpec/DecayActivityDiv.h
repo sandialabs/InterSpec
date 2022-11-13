@@ -161,7 +161,7 @@ public:
     I think is currently kept consistent with `age`, but not 100% on this (their are some asserts that never seem 
     to trip), and also may be empty.
     
-    TODO: remove the `double age` variable, and just always use this `string activityStr` so its a little easier to ensure things are kept consistent.
+    TODO: remove the `double age` variable, and just always use this `string activityStr` so its a little easier to ensure things are kept consistent; or make the variables private, and use setters/getters.
     */
     std::string activityStr;
     

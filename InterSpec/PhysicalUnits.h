@@ -148,7 +148,8 @@ namespace PhysicalUnits
   //printToBest____Units(...): makes an attempt to turn the input into a user
   //  readable string.  The optional defineitions of units are convience
   //  variables for when you're working in units that are not from this
-  //  namespace
+  //  namespace.
+  //  TODO: instead of specifying number of digits past the decimal, should convert to using number of significant figures.
   std::string printToBestLengthUnits( double length,
                                       int maxNpostDecimal = 2,
                                       double cm_definition = cm );
