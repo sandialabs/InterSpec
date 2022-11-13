@@ -84,7 +84,7 @@ public:
   
   void addNuclide( const int z, const int a, const int iso,
                   const double activity, const bool useCurrie,
-                  const double age );
+                  const double age, const std::string &activityStr );
   
   void clearAllNuclides();
   
@@ -154,6 +154,18 @@ public:
     double age;
     double activity;
     bool useCurrie;
+
+    /* The user input activity string; used for round-tripping to put back into user inputs, and tracking number of 
+    significant figures.
+    
+    I think is currently kept consistent with `age`, but not 100% on this (their are some asserts that never seem 
+    to trip), and also may be empty.
+    
+    TODO: remove the `double age` variable, and just always use this `string activityStr` so its a little easier to ensure things are kept consistent.
+    */
+    std::string activityStr;
+    
+    
     Wt::WContainerWidget *display;
     Wt::WText *txt;
     

@@ -39,7 +39,8 @@ public:
   void clearAllNuclides();
   void addNuclide( const int z, const int a, const int iso,
                   const double activity, const bool useCurries,
-                  const double age, const double maxtime = -1.0 );
+                  const double age, std::string activityStr, 
+                  const double maxtime = -1.0 );
   
   void handleAppUrl( const std::string &path, const std::string &query_str );
   

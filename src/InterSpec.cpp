@@ -7203,11 +7203,15 @@ void InterSpec::createDecayInfoWindow()
       //\todo We could do a little better and check the Shielding/Source Fit
       //  widget and grab those activities (and ages) if they match
       
+      const bool useBq = InterSpecUser::preferenceValue<bool>("DisplayBecquerel", InterSpec::instance());
+      const double act = useBq ? PhysicalUnits::MBq : (1.0E-6 * PhysicalUnits::curie);
+      const string actStr = useBq ? "1 MBq" : "1 uCi";
+
       m_decayInfoWindow->addNuclide( nuc.nuclide->atomicNumber,
                          nuc.nuclide->massNumber,
                          nuc.nuclide->isomerNumber,
-                         1.0*PhysicalUnits::microCi, true,
-                         0.0, 5.0*nuc.age );
+                         1.0*PhysicalUnits::microCi, !useBq,
+                         0.0, actStr, 5.0*nuc.age );
     }//if( nuc.nuclide )
   }//if( m_referencePhotopeakLines )
 }//void createDecayInfoWindow()

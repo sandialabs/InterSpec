@@ -136,7 +136,8 @@ void DecaySelectNuclide::setAddButtonToAccept()
 
 
 void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
-                                       double age, double activity, bool useCurrie )
+                                       double age, double activity, 
+                                       bool useCurrie, std::string activityStr )
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   
@@ -147,8 +148,18 @@ void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
   const string agestr = PhysicalUnits::printToBestTimeUnits( age );
   m_nuclideAgeEdit->setText( agestr );
 
-  const string actstr = PhysicalUnits::printToBestActivityUnits( activity, 2, useCurrie );
-  m_nuclideActivityEdit->setText( actstr );
+  string actstr = activityStr;
+  if (actstr.empty())
+  {
+    actstr = PhysicalUnits::printToBestActivityUnits(activity, 2, useCurrie);
+  }
+  else
+  {
+    assert((activity < 1.0E-6)
+      || (fabs(activity - PhysicalUnits::stringToActivity(activityStr) < 0.001 * activity)) );
+  }
+
+   m_nuclideActivityEdit->setText( actstr );
   
   
   bool foundElement = false;
@@ -471,6 +482,7 @@ void DecaySelectNuclide::emitAccepted()
     selected.a = a;
     selected.metasable = meta;
     selected.activity = activity;
+    selected.activityStr = activityTxt;
     selected.initialAge = age;
 
     //units activity regex can accept: (bq|becquerel|ci|cu|curie|c)

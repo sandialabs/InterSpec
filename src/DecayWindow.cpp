@@ -68,7 +68,8 @@ DecayWindow::DecayWindow( InterSpec *viewer )
 
   const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   const double actUnits = useBq ? PhysicalUnits::MBq : PhysicalUnits::microCi;
-  m_activityDiv->addNuclide( 53, 135, 0, 1.0*actUnits, !useBq, 0.0 );
+  const string actStr = useBq ? "1 MBq" : "1 uCi";
+  m_activityDiv->addNuclide( 53, 135, 0, 1.0*actUnits, !useBq, 0.0, actStr);
 
   AuxWindow::addHelpInFooter( footer(), "decay-dialog" );
   Wt::WPushButton *closeButton = addCloseButtonToFooter();
@@ -150,11 +151,20 @@ void DecayWindow::clearAllNuclides()
 
 void DecayWindow::addNuclide( const int z, const int a, const int iso,
                         const double activity, const bool useCurries,
-                        const double age, const double maxtime )
+                        const double age, std::string activityStr, const double maxtime )
 {
   if( m_activityDiv )
   {
-    m_activityDiv->addNuclide( z, a, iso, activity, useCurries, age );
+    if (activityStr.empty())
+    {
+      activityStr = PhysicalUnits::printToBestActivityUnits(activity, 3, useCurries);
+    }else
+    {
+      assert((activity < 1.0E-6)
+        || (fabs(activity - PhysicalUnits::stringToActivity(activityStr)) < 0.001 * activity));
+    }
+
+    m_activityDiv->addNuclide( z, a, iso, activity, useCurries, age, activityStr);
     if( maxtime > 0.0 )
       m_activityDiv->setDecayChartTimeRange( maxtime );
   }//if( m_activityDiv )
