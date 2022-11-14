@@ -42,10 +42,12 @@
 #include <Wt/WStringStream>
 #include <Wt/WContainerWidget>
 
-#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
-#include "InterSpec/InterSpec.h"
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
+
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/D3TimeChart.h"
 
@@ -99,7 +101,12 @@ class D3TimeChartFilters : public WContainerWidget
   WCheckBox *m_dontRebin;
   WCheckBox *m_hideNeutrons;
   NativeFloatSpinBox *m_gammaNeutRelEmphasis;
+  WCheckBox* m_normalizeCb;
+  WContainerWidget *m_normBox;
+  NativeFloatSpinBox *m_normLowerEnergy;
+  NativeFloatSpinBox* m_normUpperEnergy;
   
+
 public:
   D3TimeChartFilters( D3TimeChart *parent )
     : WContainerWidget( parent ),
@@ -112,7 +119,11 @@ public:
       m_clearEnergyFilterBtn( nullptr ),
       m_dontRebin( nullptr ),
       m_hideNeutrons( nullptr ),
-      m_gammaNeutRelEmphasis( nullptr )
+      m_gammaNeutRelEmphasis( nullptr ),
+      m_normalizeCb(nullptr),
+      m_normBox(nullptr),
+      m_normLowerEnergy(nullptr),
+      m_normUpperEnergy(nullptr)
   {
     assert( parent );
     
@@ -129,8 +140,12 @@ public:
     
     WContainerWidget *interact = new WContainerWidget();
     interact->addStyleClass( "D3TimeInteractTab" );
-    tabs->addTab(interact, "Interact"); //Returns a
-    
+    tabs->addTab(interact, "Int"); //Returns a
+    // If we want to add an icon, we could:
+    //WMenuItem* tab = tabs->addTab(interact, "");
+    //tab->setIcon("InterSpec_resources/images/interact.svg");
+    //  But then we need to adjust the ".D3TimeChartFilters .Wt-tabs li.item .Wt-icon" CSS selector to make thigns look okay
+
     WStackedWidget *instructionsStack = new WStackedWidget();
     instructionsStack->addStyleClass( "D3TimeInteractInst" );
     
@@ -228,16 +243,22 @@ public:
     
     WContainerWidget *filterContents = new WContainerWidget();
     filterContents->addStyleClass( "D3TimeFilterTab" );
-    WMenuItem *filterTabItem = tabs->addTab(filterContents, "Filter");
+    WMenuItem *filterTabItem = tabs->addTab(filterContents, "Filt");
     
-    title = new WText( "Lower energy limit:", filterContents );
-    title->addStyleClass( "D3TimeInteractModeText" );
-    m_lowerEnergy = new NativeFloatSpinBox( filterContents );
+    WText *filterTitle = new WText("Filter energy range:", filterContents);
+    filterTitle->addStyleClass("FilterTitle");
+
+    WContainerWidget* row = new WContainerWidget(filterContents);
+    row->addStyleClass("FilterRow");
+
+    m_lowerEnergy = new NativeFloatSpinBox(row);
+    m_lowerEnergy->addStyleClass("FiltRangeInput");
     
-    title = new WText( "Upper energy limit:", filterContents );
-    title->addStyleClass( "D3TimeInteractModeText" );
-    m_upperEnergy = new NativeFloatSpinBox( filterContents );
-    
+    WText *txt = new WText("to", row);
+    txt->addStyleClass("FilterEnergyLabel");
+    m_upperEnergy = new NativeFloatSpinBox(row);
+    m_upperEnergy->addStyleClass("FiltRangeInput");
+
     m_lowerEnergy->setSpinnerHidden( true );
     m_upperEnergy->setSpinnerHidden( true );
     
@@ -252,32 +273,80 @@ public:
     
     m_lowerEnergy->valueChanged().connect( m_parentChart, &D3TimeChart::userChangedEnergyRangeFilterCallback );
     m_lowerEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChangedCallback );
+    
     m_upperEnergy->valueChanged().connect( m_parentChart, &D3TimeChart::userChangedEnergyRangeFilterCallback );
     m_upperEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChangedCallback );
     
-    
+    // Add a checkbox, and additional energy ranges, etc
+    m_normalizeCb = new WCheckBox("Normalize to energy range", filterContents);
+    m_normalizeCb->addStyleClass("DoNormCb");
+
+    const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
+    const char* tooltip = "Allows you to select an energy to normalize the filtered energy range of interest to. <br />"
+      "i.e., the sum of gammas in the filtered range becomes the numerator, and the sum of gammas in"
+      " the normalize range becomes the denominator.</br />"
+      "Usually you will select the normalization range to be energies above the range of interest."
+      ;
+    HelpSystem::attachToolTipOn(m_normalizeCb, tooltip, showToolTips);
+
+
+    m_normBox = new WContainerWidget(filterContents);
+    m_normBox->addStyleClass("NormRangeInput");
+    row = new WContainerWidget(m_normBox);
+    row->addStyleClass("FilterRow");
+    m_normLowerEnergy = new NativeFloatSpinBox(row);
+    m_normLowerEnergy->addStyleClass("FiltRangeInput");
+    txt = new WText("to", row);
+    txt->addStyleClass("FilterEnergyLabel");
+    m_normUpperEnergy = new NativeFloatSpinBox(row);
+    m_normUpperEnergy->addStyleClass("FiltRangeInput");
+    txt = new WText("Recomend: use energies above range of interest.", m_normBox);
+    txt->addStyleClass("NormRangeSuggest");
+
+    m_normLowerEnergy->setSpinnerHidden(true);
+    m_normUpperEnergy->setSpinnerHidden(true);
+
+    m_normLowerEnergy->setPlaceholderText("Lower keV");
+    m_normUpperEnergy->setPlaceholderText("Upper keV");
+
+    m_normLowerEnergy->setText("");
+    m_normUpperEnergy->setText("");
+
+    m_normBox->disable();
+    m_normalizeCb->checked().connect(this, &D3TimeChartFilters::normRangeEnabledChange);
+    m_normalizeCb->unChecked().connect(this, &D3TimeChartFilters::normRangeEnabledChange);
+
+    m_normLowerEnergy->valueChanged().connect(this, &D3TimeChartFilters::userChangedNormEnergyRange);
+    m_normUpperEnergy->valueChanged().connect(this, &D3TimeChartFilters::userChangedNormEnergyRange);
+
     m_clearEnergyFilterBtn = new WPushButton( "Clear Energies", filterContents );
     m_clearEnergyFilterBtn->addStyleClass( "D3TimeFilterClear" );
     m_clearEnergyFilterBtn->clicked().connect( this, &D3TimeChartFilters::clearFilterEnergiesCallback );
     m_clearEnergyFilterBtn->hide();
     m_clearEnergyFilterBtn->setHiddenKeepsGeometry( true );
     
+
+
+    WContainerWidget* optContents = new WContainerWidget();
+    optContents->addStyleClass("D3TimeOptTab");
+    WMenuItem* optTabItem = tabs->addTab(optContents, "Opt");
+
     
-    m_dontRebin = new WCheckBox( "Don't rebin", filterContents );
+    m_dontRebin = new WCheckBox( "Don't rebin", optContents);
     m_dontRebin->addStyleClass( "D3TimeDontRebin" );
     m_dontRebin->setToolTip( "Disable combining time samples on the chart when there are more time samples than pixels." );
     m_dontRebin->checked().connect( this, &D3TimeChartFilters::dontRebinChanged );
     m_dontRebin->unChecked().connect( this, &D3TimeChartFilters::dontRebinChanged );
     
     
-    m_hideNeutrons = new WCheckBox( "Hide neutrons", filterContents );
+    m_hideNeutrons = new WCheckBox( "Hide neutrons", optContents);
     m_hideNeutrons->addStyleClass( "D3TimeHideNeutrons" );
     m_hideNeutrons->setToolTip( "Do not show neutrons on chart" );
     m_hideNeutrons->checked().connect( this, &D3TimeChartFilters::hideNeutronsChanged );
     m_hideNeutrons->unChecked().connect( this, &D3TimeChartFilters::hideNeutronsChanged );
     
     
-    WContainerWidget *sfDiv = new WContainerWidget( filterContents );
+    WContainerWidget *sfDiv = new WContainerWidget(optContents);
     sfDiv->addStyleClass( "D3TimeYAxisRelScale" );
     
     sfDiv->setToolTip( "This value allows emphasizing either the gamma or neutron data by scaling"
@@ -422,7 +491,31 @@ public:
     m_clearEnergyFilterBtn->hide();
   }
   
+
+  void normRangeEnabledChange()
+  {
+    m_normBox->setDisabled(!m_normalizeCb->isChecked());
+
+    if (m_normalizeCb->isChecked())
+    {
+      //blah blah blah, fill in some default values
+    }
+
+    m_parentChart->userChangedEnergyRangeFilterCallback();
+  }//void normRangeEnabledChange()
   
+
+  void userChangedNormEnergyRange()
+  {
+   //blah blah blah, do some stuff like in energyFilterChangedCallback
+
+     //And then also implement stuff in userChangedEnergyRangeFilterCallback
+
+    m_parentChart->userChangedEnergyRangeFilterCallback();
+  }//void userChangedNormEnergyRange()
+
+
+
   void energyFilterChangedCallback()
   {
     if( !m_lowerEnergy->text().empty() && !m_upperEnergy->text().empty() )

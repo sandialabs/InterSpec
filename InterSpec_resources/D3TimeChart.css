@@ -65,9 +65,10 @@
 }
 
 .D3TimeInteractModeText, .D3TimeInteractSpecTypeText {
-  display: block;
-  font-size: smaller;
-  /* margin-left: 2px; */
+    display: block;
+    font-size: 10px;
+    /* font-size: smaller; */
+    /* margin-left: 2px; */
 }
 
 
@@ -134,33 +135,93 @@
 }
 
 .D3TimeInteractTab {
-  overflow: hidden;
-  padding-top: 3px;
-  padding-left: 3px;
+    overflow: hidden;
+    padding-top: 3px;
+    padding-left: 3px;
+    font-size: 12px;
+}
+
+.D3TimeOptTab {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding: 5px;
 }
 
 .D3TimeFilterTab {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  padding: 5px;
+    padding: 3px;
+    font-size: 10px;
+    display: flex;
+    flex-direction: column;
 }
 
-
-.D3TimeFilterTab > input {
-  margin-left: 40px;
-  margin-bottom: 5px;
+.D3TimeFilterTab input {
+  font-size: 10px;
 }
 
-.D3TimeFilterClear {
-  margin-top: 2px;
-  margin-left: auto;
-  margin-right: auto;
-}
+    .D3TimeFilterTab .FilterTitle {
+        font-size: 10px;
+        margin-bottom: 5px;
+    }
+
+    .D3TimeFilterTab .FilterRow {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        column-gap: 5px;
+        margin-left: 5px
+    }
+
+    .D3TimeFilterTab .FilterEnergyLabel {
+        /* margin-right: 6px; */
+        /* margin-left: 10px; */
+        /* margin-bottom: 40x; */
+    }
+
+    .D3TimeFilterTab .FiltRangeInput {
+        width: 50px; /* The width will end up being adjusted by flex-layout, but we still need this here, or else the width will run-away to like 150px, not sure why. */
+        flex: 1 1;
+    }
+
+    .D3TimeFilterTab label.DoNormCb {
+        display: flex;
+        align-items: center;
+        margin-top: 5px;
+    }
+
+
+    .D3TimeFilterTab .NormRangeInput {
+        display: flex;
+        flex-direction: column;
+        padding-left: 5px;
+        /* border: 1px solid gray; 
+        padding-top: 5px;
+        padding-bottom: 5px; */
+    }
+
+    .D3TimeFilterTab .NormRangeSuggest {
+        font-size: xx-small;
+        margin-left: 5px;
+    }
+
+        .D3TimeFilterTab .Wt-disabled {
+            display: none;
+        }
+
+
+    .D3TimeFilterTab button.D3TimeFilterClear[type="button"] {
+        font-size: 10px;
+        flex: 0 1;
+        padding-top: 2.5px;
+        padding-bottom: 2px;
+        margin-top: 5px;
+        margin-left: auto;
+        margin-right: auto;
+    }
 
 
 .D3TimeDontRebin, .D3TimeHideNeutrons {
-  margin-top: 5px;
+    margin-top: 5px;
 }
 
 .D3TimeYAxisRelScale {

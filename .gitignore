@@ -49,6 +49,8 @@ README.txt
 *.log
 
 CMakeSettings.json
+interspec_messages_to_users.txt
+rebin_by_lower_edge_error.txt
 
 # Xcode spefic (for iOS)
 build/
