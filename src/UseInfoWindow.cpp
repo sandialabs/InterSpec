@@ -157,7 +157,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   
   WStackedWidget *stack = new WStackedWidget();
   stack->addStyleClass( "UseInfoStack" );
-  stack->setOverflow( WContainerWidget::OverflowAuto );
+  //stack->setOverflow( WContainerWidget::OverflowAuto );
   
   WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
   stack->setTransitionAnimation( animation, true );
@@ -180,7 +180,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   
   initVideoInfoMap();
   WContainerWidget* welcomeContainer = new WContainerWidget();
-  welcomeContainer->setOverflow(WContainerWidget::OverflowAuto);
+  //welcomeContainer->setOverflow(WContainerWidget::OverflowAuto);
   welcomeContainer->setOffsets(WLength(0,WLength::Pixel));
   welcomeContainer->setMargin(WLength(0,WLength::Pixel));
   
