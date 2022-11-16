@@ -519,16 +519,21 @@ function()
     if( !event.isTrusted )
       return;
     
-    // We will set a timeout to fire 500 ms after the last window resize event; this is a feeble
-    //  rate-limiting attempt.  I didnt actually check that this is needed.  COuld probably be a
-    //  little smarter and instead only fire every tenth of a second or so, so things will seem
-    //  smoother.
+    // We will rate-limit this function to a max of every 100ms (a number pulled out of the air)
     let resizeTO = $('.Wt-domRoot').data('ResizeTO');
-    if(resizeTO)
-      clearTimeout(resizeTO);
+    if(resizeTO) //If there is a pending event, dont disrupt it, let it keep ticking down
+      return;
+    
+    const timenow = new Date();
+    let lastTO = $('.Wt-domRoot').data('LastResizeTO');
+    if( typeof lastTO === 'undefined' ) // No previous resize event
+      lastTO = 0; //Would also be reasonable to set lastTO = timenow;
+    
+    const dt = Math.max(0, 100 - (timenow - lastTO)); //
     
     resizeTO = setTimeout(function() {
-      $('.Wt-domRoot').data('ResizeTO',null);
+      $('.Wt-domRoot').data('ResizeTO',null);  //Mark that there is not a pending event
+      $('.Wt-domRoot').data('LastResizeTO', new Date()); // Note when the event was processed
       
       const matches = document.querySelectorAll(".Wt-dialog.AuxWindow");
       matches.forEach( function(dialog){
@@ -574,7 +579,7 @@ function()
           }
         }
       });
-    }, 500);
+    }, dt);
     $('.Wt-domRoot').data('ResizeTO',resizeTO);
   });
 }
