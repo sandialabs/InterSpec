@@ -36,6 +36,15 @@ namespace Wt
   class WPushButton;
 }
 
+/* We want the application-level menus (i.e., "File", "View", "Tools", and "Help")
+to appear instantly when you click on the buttons, but by default Wt needs a 
+round-trip to C++ and back to JS, causing a slight (>100 ms), but perceptable delay.
+So instead if `APP_MENU_STATELESS_FIX` is defined, we'll fix things up so the
+menu will be shown using just JS, so the delay isnt perceptable.  However, because
+of the design of the WMenu stuff, there are quite a bit of work-arounds needed so
+the menus still behave well.
+*/
+#define APP_MENU_STATELESS_FIX 1
 
 //Limitations of enabling USE_OSX_NATIVE_MENU or USING_ELECTRON_NATIVE_MENU:
 //  -disabling the closing of the menu when an item is selected isn't supported.
@@ -79,6 +88,10 @@ public:
   virtual ~PopupDivMenu();
   
     
+#if( APP_MENU_STATELESS_FIX )
+  static void pre_render(PopupDivMenu* menu);
+#endif
+
   //Add separator; returns pointer to the sperator
   Wt::WMenuItem *addSeparator();
   
@@ -202,10 +215,8 @@ public:
   void setupDesktopMenuStuff();
   
   void parentClicked();
-  void undoParentClicked();
-  
+
   void parentMouseWentOver();
-  void undoParentHoveredOver();
   
   void parentTouchStarted();
   

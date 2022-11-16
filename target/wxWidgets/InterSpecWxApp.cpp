@@ -116,17 +116,17 @@ public:
 };
 
 
-
-
-
-
 InterSpecWxApp::InterSpecWxApp() :
     wxApp(),
     m_url(""),
+    m_command_line_args{},
+    m_frames{},
+    m_active_frame(nullptr),
     m_checker(nullptr),
     m_ipc_server(nullptr)
   {
   }
+
 
   void InterSpecWxApp::OnInitCmdLine(wxCmdLineParser& parser)
   {
@@ -222,78 +222,7 @@ InterSpecWxApp::InterSpecWxApp() :
   }//void new_app_window()
 
 
-  namespace
-  {
-    /*
-    class androidbuf : public std::streambuf
-    {
-      //A utility to redirect cout/cerr to the Android logging system so it can be
-      // seen using 'adb logcat'
-    public:
-      enum Source { FromCout, FromCerr };
-      enum { bufsize = 128 }; // ... or some other suitable buffer size
-      androidbuf(Source src)
-        : m_type(src), m_origSrc(nullptr)
-      {
-        this->setp(buffer, buffer + bufsize - 1);
 
-        switch (m_type)
-        {
-        case FromCout:
-          m_source = "cout";
-          m_origSrc = std::cout.rdbuf(this);
-          break;
-
-        case FromCerr:
-          m_source = "cerr";
-          m_origSrc = std::cerr.rdbuf(this);
-          break;
-        }//switch( src )
-      }//androidbuf( Source src )
-
-      ~androidbuf()
-      {
-        //cout/cerr must be given back there original rdbufs or else there can be a
-        //  problems with freeing resources
-        if (!m_origSrc)
-          return;
-        switch (m_type)
-        {
-        case FromCout: std::cout.rdbuf(m_origSrc); break;
-        case FromCerr: std::cerr.rdbuf(m_origSrc); break;
-        }
-      }//~androidbuf()
-
-    private:
-      int overflow(int c) override
-      {
-        if (c == traits_type::eof()) {
-          *this->pptr() = traits_type::to_char_type(c);
-          this->sbumpc();
-        }
-        return this->sync() ? traits_type::eof() : traits_type::not_eof(c);
-      }//int overflow(int c)
-
-      int sync() override
-      {
-        int rc = 0;
-        if (this->pbase() != this->pptr())
-        {
-          rc = __android_log_write(ANDROID_LOG_INFO, m_source,
-            std::string(this->pbase(), this->pptr()).c_str());
-          this->setp(buffer, buffer + bufsize - 1);
-        }
-        return rc;
-      }//int sync()
-      char buffer[bufsize];
-      const char* m_source;
-      const Source m_type;
-      std::streambuf* m_origSrc;
-    };//class androidbuf
-
-    */
-    
-  }
 //#include <fstream>
 //  std::unique_ptr<std::ofstream> g_stdbuf, g_errbuf;
 
@@ -308,6 +237,15 @@ InterSpecWxApp::InterSpecWxApp() :
     if (!wxApp::OnInit())
       return false;
 
+
+#ifdef NDEBUG
+    wxLog::EnableLogging(false);
+#else
+    // Create a log window
+    new wxLogWindow( nullptr, _("Logging"), true, false);
+#endif
+
+
     // Under Unix, the service name may be either an integer port identifier in which case an Internet domain socket will be used for the communications, or a valid file name (which shouldn't exist and will be deleted afterwards) in which case a Unix domain socket is created.
     wxString serverName = "InterSpecIPC";
 #ifndef _WIN32
@@ -317,7 +255,16 @@ InterSpecWxApp::InterSpecWxApp() :
     // Make sure were the only instance running
     //  (is this per user, or per computer? Double check)
     m_checker = new wxSingleInstanceChecker();
-    if (m_checker->IsAnotherRunning())
+
+    // By default wxWidgets uses the name `GetAppName() + '-' + wxGetUserId()` - however, 
+    // I'm uncertain, but strongly suspect, the Electron version of the app might use the same thing
+    // So we'll modify this one a little by appending "-wx"
+    const bool did_create = m_checker->Create(GetAppName() + '-' + wxGetUserId() + "-wx");
+    // `did_create` will be true, even if another instance of the program is running; it only indicated
+    //  a failure to allocate a Windows named mutex or whatever (which I assume is excedingly rare to
+    //  happen, but I didnt actually check)
+
+    if (did_create && m_checker->IsAnotherRunning())
     {
       // Here is where we would request the existing instance to open a file, or open a new window.
       //wxLogError(_("Another program instance is already running, aborting."));

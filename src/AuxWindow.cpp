@@ -42,6 +42,10 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/WarningWidget.h"
 
+#if(  BUILD_AS_WX_WIDGETS_APP )
+#include "InterSpec/InterSpecApp.h"
+#endif
+
 
 using namespace std;
 using namespace Wt;
@@ -150,7 +154,7 @@ WT_DECLARE_WT_MEMBER
   } );
   if( maxz > $('#'+id).css('z-index') )
     $('#'+id).css('z-index',maxz+1);
-    
+  $('.window-controls-container').css('z-index', maxz+1); //for wxWidgets and Electron builds
   $('.suggestion').css('z-index',maxz+2); //This is for InterSpec::m_shieldingSuggestion
 }
 );
@@ -692,33 +696,33 @@ WT_DECLARE_WT_MEMBER
 #endif
 
 
-AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProperties> properties  )
-  : WDialog( InterSpec::instance() ),
-    m_auxIsHidden( true ),
-    m_modalOrig( false ),
-    m_titleText( NULL ),
-    m_collapseIcon( NULL ),
-    m_expandIcon( NULL ),
-    m_closeIcon( NULL ),
-    m_collapseSlot(),
-    m_expandSlot(),
-    m_showSlot(),
-    m_hideSlot(),
-    m_toggleExpandedStatusSlot(),
-    m_closedSignal(),
-    m_openedSignal(),
-    m_collapsedSignal(),
-    m_expandedSignal(),
-    m_contentStretcher( NULL ),
-    m_destructing( false ),
-    m_escapeIsReject( false ),
-    m_isPhone( false ),
-    m_isTablet( false ),
-    m_isAndroid( false ),
-    m_footer(NULL)
+AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProperties> properties)
+  : WDialog(InterSpec::instance()),
+  m_auxIsHidden(true),
+  m_modalOrig(false),
+  m_titleText(NULL),
+  m_collapseIcon(NULL),
+  m_expandIcon(NULL),
+  m_closeIcon(NULL),
+  m_collapseSlot(),
+  m_expandSlot(),
+  m_showSlot(),
+  m_hideSlot(),
+  m_toggleExpandedStatusSlot(),
+  m_closedSignal(),
+  m_openedSignal(),
+  m_collapsedSignal(),
+  m_expandedSignal(),
+  m_contentStretcher(NULL),
+  m_destructing(false),
+  m_escapeIsReject(false),
+  m_isPhone(false),
+  m_isTablet(false),
+  m_isAndroid(false),
+  m_footer(NULL)
 {
-  InterSpec *viewer = InterSpec::instance();
-  
+  InterSpec* viewer = InterSpec::instance();
+
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCollapse);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowExpand);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowResizeToFitOnScreen);
@@ -729,223 +733,224 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowShow);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowHide);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCenter);
-  
+
 #if( AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE )
-  addStyleClass( "AuxWindow" );
+  addStyleClass("AuxWindow");
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowOnDomResize);
 #endif
-  
+
 #if( USE_NEW_AUXWINDOW_ISH )
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowScaleResize);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowResize);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowReposition);
 #endif
-  
-  
+
+
   const bool isPhone = viewer ? viewer->isPhone() : false;
   const bool isTablet = viewer ? viewer->isTablet() : false;
-  
+
   const bool isPhoneNotFullScreen = properties.testFlag(AuxWindowProperties::PhoneNotFullScreen);
   const bool isTabletNotFullScreen = properties.testFlag(AuxWindowProperties::TabletNotFullScreen);
-  
+
   const bool phoneFullScreen = (isPhone && !isPhoneNotFullScreen)
-                               || (isTablet && !isTabletNotFullScreen && !isPhoneNotFullScreen);
-  
+    || (isTablet && !isTabletNotFullScreen && !isPhoneNotFullScreen);
+
   m_modalOrig = properties.testFlag(AuxWindowProperties::IsModal);
-  if( phoneFullScreen )
+  if (phoneFullScreen)
   {
     m_modalOrig = false;  //Sometimes the Welcome screen modal underlay seems a bit sticky.
-    setResizable( false );
-    resizeScaledWindow( 1.0, 1.0 );
+    setResizable(false);
+    resizeScaledWindow(1.0, 1.0);
     m_isPhone = true; //disables any of future AuxWindow calls to change behavior
   }
-  
-  setModal( m_modalOrig );
-  
-  if( isTablet && !isTabletNotFullScreen && !isPhoneNotFullScreen )
+
+  setModal(m_modalOrig);
+
+  if (isTablet && !isTabletNotFullScreen && !isPhoneNotFullScreen)
     m_isTablet = true;
-  
+
   m_isAndroid = (viewer && viewer->isAndroid());
 
-  
-//  setJavaScriptMember( "wtResize", "function(ignored,w,h){console.log('In My wtResize');}" );
-  
-  WContainerWidget *title = titleBar();
-  WContainerWidget *content = contents();
+
+  //  setJavaScriptMember( "wtResize", "function(ignored,w,h){console.log('In My wtResize');}" );
+
+  WContainerWidget* title = titleBar();
+  WContainerWidget* content = contents();
   title->clear();
   title->setContentAlignment(AlignMiddle);
   title->setPadding(WLength(0));
 
   content->clear();
-  
-  content->addStyleClass( "AuxWindow-content" );
 
-  if( isPhone || isTablet )
-    content->addStyleClass( phoneFullScreen ? "MobileFullScreen" : "MobileModal" );
-  
+  content->addStyleClass("AuxWindow-content");
+
+  if (isPhone || isTablet)
+    content->addStyleClass(phoneFullScreen ? "MobileFullScreen" : "MobileModal");
+
   string fcntcall;
   std::string resources = WApplication::resourcesUrl();
-  
-  m_closedSignal.reset( new JSignal<void>( this, "closed", true ) );
-  m_openedSignal.reset( new JSignal<void>( this, "opened", true ) );
-  
-  m_collapsedSignal.reset( new JSignal<void>( this, "collapsed", true ) );
-  m_expandedSignal.reset( new JSignal<void>( this, "expanded", true ) );
 
-  if( m_isPhone
-      || properties.testFlag(AuxWindowProperties::DisableCollapse)
-      || ((isPhone || isTablet) && (isTabletNotFullScreen || isPhoneNotFullScreen) ) )
+  m_closedSignal.reset(new JSignal<void>(this, "closed", true));
+  m_openedSignal.reset(new JSignal<void>(this, "opened", true));
+
+  m_collapsedSignal.reset(new JSignal<void>(this, "collapsed", true));
+  m_expandedSignal.reset(new JSignal<void>(this, "expanded", true));
+
+  if (m_isPhone
+    || properties.testFlag(AuxWindowProperties::DisableCollapse)
+    || ((isPhone || isTablet) && (isTabletNotFullScreen || isPhoneNotFullScreen)))
   {
-    m_collapseSlot.reset( new JSlot("function(){}",this) );
-    m_expandSlot.reset( new JSlot("function(){}",this) );
-    m_toggleExpandedStatusSlot.reset( new JSlot("function(){}",this) );
-  }else
+    m_collapseSlot.reset(new JSlot("function(){}", this));
+    m_expandSlot.reset(new JSlot("function(){}", this));
+    m_toggleExpandedStatusSlot.reset(new JSlot("function(){}", this));
+  }
+  else
   {
-    m_collapseIcon = new WImage( resources + "collapse.gif" );
+    m_collapseIcon = new WImage(resources + "collapse.gif");
     m_collapseIcon->setMinimumSize(WLength(16), WLength(16));
     m_collapseIcon->setStyleClass("HeaderIcon");
     m_collapseIcon->addStyleClass("titleVertMiddle");
-      
-    m_expandIcon = new WImage( resources + "expand.gif" );
+
+    m_expandIcon = new WImage(resources + "expand.gif");
     m_expandIcon->setMinimumSize(WLength(16), WLength(16));
     m_expandIcon->setStyleClass("HeaderIcon");
     m_expandIcon->addStyleClass("titleVertMiddle");
     m_collapseIcon->decorationStyle().setCursor(PointingHandCursor);
     m_expandIcon->decorationStyle().setCursor(PointingHandCursor);
-  
-    title->insertWidget( 0, m_collapseIcon );
-    title->insertWidget( 0, m_expandIcon );
-    
+
+    title->insertWidget(0, m_collapseIcon);
+    title->insertWidget(0, m_expandIcon);
+
     const string jsthis = "$('#" + id() + "')";
     const string jscontent = "$('#" + content->id() + "')";
 
     fcntcall = "function(){"
-                    + m_collapsedSignal->createEventCall( id(), "null" ) + "}";
-    m_collapseSlot.reset( new JSlot( "function(s,e){ Wt.WT.AuxWindowCollapse(s,e,'"
-                              + id() + "','" + content->id() + "','"
-                              + m_collapseIcon->id() + "','"
-                              + m_expandIcon->id() + "',"
-                              + fcntcall
-                              + ");}", this ) );
-  
-    m_collapseIcon->clicked().connect( *m_collapseSlot );
-    m_collapsedSignal->connect( *m_collapseSlot );
+      + m_collapsedSignal->createEventCall(id(), "null") + "}";
+    m_collapseSlot.reset(new JSlot("function(s,e){ Wt.WT.AuxWindowCollapse(s,e,'"
+      + id() + "','" + content->id() + "','"
+      + m_collapseIcon->id() + "','"
+      + m_expandIcon->id() + "',"
+      + fcntcall
+      + ");}", this));
+
+    m_collapseIcon->clicked().connect(*m_collapseSlot);
+    m_collapsedSignal->connect(*m_collapseSlot);
 
     fcntcall = "function(){"
-              + m_expandedSignal->createEventCall( id(), "null" ) + "}";
-    m_expandSlot.reset( new JSlot( "function(s,e){ Wt.WT.AuxWindowExpand(s,e,'"
-                            + id() + "','" + content->id() + "','"
-                           + m_collapseIcon->id() + "','"
-                           + m_expandIcon->id() + "',"
-                            + fcntcall
-                            + ");}", this ) );
-  
-    m_expandIcon->clicked().connect( *m_expandSlot );
-    m_expandIcon->clicked().connect(boost::bind(&AuxWindow::refresh,this));
-    m_expandedSignal->connect( *m_expandSlot );
-    
+      + m_expandedSignal->createEventCall(id(), "null") + "}";
+    m_expandSlot.reset(new JSlot("function(s,e){ Wt.WT.AuxWindowExpand(s,e,'"
+      + id() + "','" + content->id() + "','"
+      + m_collapseIcon->id() + "','"
+      + m_expandIcon->id() + "',"
+      + fcntcall
+      + ");}", this));
+
+    m_expandIcon->clicked().connect(*m_expandSlot);
+    m_expandIcon->clicked().connect(boost::bind(&AuxWindow::refresh, this));
+    m_expandedSignal->connect(*m_expandSlot);
+
     stringstream toggleExpandJs;
     toggleExpandJs << "function(s,e)"
-                      "{"
-                      ""  "if(" << jscontent << ".is(':hidden') )"
-                      ""   "{"
-                      ""      << m_expandSlot->execJs( "s", "e" ) << ";"
-                      ""   "}"
-                      ""  "else"
-                      ""  "{"
-                      ""  "" << m_collapseSlot->execJs( "s", "e" ) << ";"
-                      ""  "}"
-                      "}";
-    m_toggleExpandedStatusSlot.reset( new JSlot( toggleExpandJs.str(), this ) );
-    title->doubleClicked().connect( *m_toggleExpandedStatusSlot );
-    title->doubleClicked().connect(boost::bind(&AuxWindow::refresh,this));
+      "{"
+      ""  "if(" << jscontent << ".is(':hidden') )"
+      ""   "{"
+      "" << m_expandSlot->execJs("s", "e") << ";"
+      ""   "}"
+      ""  "else"
+      ""  "{"
+      ""  "" << m_collapseSlot->execJs("s", "e") << ";"
+      ""  "}"
+      "}";
+    m_toggleExpandedStatusSlot.reset(new JSlot(toggleExpandJs.str(), this));
+    title->doubleClicked().connect(*m_toggleExpandedStatusSlot);
+    title->doubleClicked().connect(boost::bind(&AuxWindow::refresh, this));
   }//if( m_isPhone ) ' else
-  
-  m_titleText = new WText( windowTitle, XHTMLText, title );
+
+  m_titleText = new WText(windowTitle, XHTMLText, title);
   m_titleText->addStyleClass("titleVertMiddle");
 
-  fcntcall = "function(){"+m_closedSignal->createEventCall( id(), "null" )+"}";
-  m_hideSlot.reset( new JSlot( "function(s,e){ Wt.WT.AuxWindowHide(s,e,'"+id()
-                          +"'," +fcntcall + ");}", this ) );
+  fcntcall = "function(){" + m_closedSignal->createEventCall(id(), "null") + "}";
+  m_hideSlot.reset(new JSlot("function(s,e){ Wt.WT.AuxWindowHide(s,e,'" + id()
+    + "'," + fcntcall + ");}", this));
 
 
-  fcntcall = "function(){"+m_openedSignal->createEventCall( id(), "null" )+"}";
-  m_showSlot.reset( new JSlot( "function(s,e){ Wt.WT.AuxWindowShow(s,e,'"
-                         +id()+"'," +fcntcall + ");}", this ) );
+  fcntcall = "function(){" + m_openedSignal->createEventCall(id(), "null") + "}";
+  m_showSlot.reset(new JSlot("function(s,e){ Wt.WT.AuxWindowShow(s,e,'"
+    + id() + "'," + fcntcall + ");}", this));
 
 #if( USE_NEW_AUXWINDOW_ISH )
-  m_repositionSlot.reset( new JSlot( "function(s,e){Wt.WT.AuxWindowReposition(s,e);}", this ) );
-  m_centerSlot.reset( new JSlot( "function(s,e){Wt.WT.AuxWindowCenter(s,e);}", this ) );
-  m_resizeSlot.reset( new JSlot( "function(s,e){Wt.WT.AuxWindowResize(s,e);}", this ) );
-  m_resizeScaledSlot.reset( new JSlot( "function(s,e){Wt.WT.AuxWindowScaleResize(s,e);}", this ) );
+  m_repositionSlot.reset(new JSlot("function(s,e){Wt.WT.AuxWindowReposition(s,e);}", this));
+  m_centerSlot.reset(new JSlot("function(s,e){Wt.WT.AuxWindowCenter(s,e);}", this));
+  m_resizeSlot.reset(new JSlot("function(s,e){Wt.WT.AuxWindowResize(s,e);}", this));
+  m_resizeScaledSlot.reset(new JSlot("function(s,e){Wt.WT.AuxWindowScaleResize(s,e);}", this));
 #endif
 
   // Centering is done using either centerWindow() or repositionWindow()
-  m_closedSignal->connect( boost::bind( &AuxWindow::setHidden, this, true, WAnimation() ) );
-  m_openedSignal->connect( boost::bind( &AuxWindow::setHidden, this, false, WAnimation() ) );
-  
+  m_closedSignal->connect(boost::bind(&AuxWindow::setHidden, this, true, WAnimation()));
+  m_openedSignal->connect(boost::bind(&AuxWindow::setHidden, this, false, WAnimation()));
+
   const string bringToFront = "function(){Wt.WT.AuxWindowBringToFront('" + id() + "');}";
-  title->clicked().connect( bringToFront );
-  title->mouseWentDown().connect( bringToFront ); //XXX - doesnt seem to work
-  doJavaScript( "$('#" + title->id() + "').mousedown(" + bringToFront + ");" );
-  
-  if( !m_isPhone )
+  title->clicked().connect(bringToFront);
+  title->mouseWentDown().connect(bringToFront); //XXX - doesnt seem to work
+  doJavaScript("$('#" + title->id() + "').mousedown(" + bringToFront + ");");
+
+  if (!m_isPhone)
   {
     // TODO: actually respect/use the AuxWindowProperties::SetCloseable option!
-    if( !properties.testFlag(AuxWindowProperties::SetCloseable) )
+    if (!properties.testFlag(AuxWindowProperties::SetCloseable))
       cout << "Warning: !AuxWindowProperties::SetCloseable not currently being respected for '"
-           << windowTitle.toUTF8() << "' window." << endl;
-  
-    AuxWindow::setClosable( true );
-    title->touchStarted().connect( "function(s,e){ Wt.WT.AuxWindowTitlebarTouchStart(s,e,'" + id()+ "'); }" );
-    title->touchMoved().connect( "function(s,e){ Wt.WT.AuxWindowTitlebarHandleMove(s,e,'" + id()+ "'); }" );
-    title->touchEnded().connect( "function(s,e){ Wt.WT.AuxWindowTitlebarTouchEnd(s,e,'" + id()+ "'); }" );
+      << windowTitle.toUTF8() << "' window." << endl;
+
+    AuxWindow::setClosable(true);
+    title->touchStarted().connect("function(s,e){ Wt.WT.AuxWindowTitlebarTouchStart(s,e,'" + id() + "'); }");
+    title->touchMoved().connect("function(s,e){ Wt.WT.AuxWindowTitlebarHandleMove(s,e,'" + id() + "'); }");
+    title->touchEnded().connect("function(s,e){ Wt.WT.AuxWindowTitlebarTouchEnd(s,e,'" + id() + "'); }");
   }
-  
+
   //so we can just call show from javascript
-  WWidget *impw = implementation();
-  WTemplate *impl = dynamic_cast<WTemplate *>( impw );
-  if( impl )
+  WWidget* impw = implementation();
+  WTemplate* impl = dynamic_cast<WTemplate*>(impw);
+  if (impl)
   {
-    impl->setLoadLaterWhenInvisible( false );
-    content->setLoadLaterWhenInvisible( false );
-//    impl->setHiddenKeepsGeometry( true );
+    impl->setLoadLaterWhenInvisible(false);
+    content->setLoadLaterWhenInvisible(false);
+    //    impl->setHiddenKeepsGeometry( true );
   }
 
   //footer()->setStyleClass("");
   //footer()->setHeight( 0 );
-  
-  setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
+
+  setOffsets(WLength(0, WLength::Pixel), Wt::Left | Wt::Top);
 
   // By default it'll just spawn at 50% width and height of the host
 //  resizeScaledWindow( 0.5, 0.5 );
-  
-  //so the signals of all the descendant widgets will be connected
-  WDialog::setHidden( false, WAnimation() );
-//  m_hideSlot->exec( "null", "{quietly:true, delay:5}" );
-  if( m_expandIcon )
-    doJavaScript( "$('#" + m_expandIcon->id() + "').hide();" );
-  
 
-  if( properties.testFlag(AuxWindowProperties::IsHelpWIndow) )
+  //so the signals of all the descendant widgets will be connected
+  WDialog::setHidden(false, WAnimation());
+  //  m_hideSlot->exec( "null", "{quietly:true, delay:5}" );
+  if (m_expandIcon)
+    doJavaScript("$('#" + m_expandIcon->id() + "').hide();");
+
+
+  if (properties.testFlag(AuxWindowProperties::IsHelpWIndow))
   {
-    if( !m_isPhone )
+    if (!m_isPhone)
     {
-      m_collapseIcon->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+      m_collapseIcon->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg"));
       m_collapseIcon->setStyleClass("helpIconTitleBar Wt-icon");
-      
-      if( m_expandIcon )
+
+      if (m_expandIcon)
       {
-        m_expandIcon->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+        m_expandIcon->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg"));
         m_expandIcon->setStyleClass("helpIconTitleBar Wt-icon");
       }
     }//if( !m_isPhone )
-    
+
     title->setStyleClass("helptitlebar");
   }//helpWindow
-  
-  
-  if( !m_isPhone && properties.testFlag(AuxWindowProperties::EnableResize) )
+
+
+  if (!m_isPhone && properties.testFlag(AuxWindowProperties::EnableResize))
   {
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum
@@ -957,36 +962,36 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
     const WLength mh = minimumWidth();
     double mw_px = mw.isAuto() ? 0.0 : mw.toPixels();
     double mh_px = mh.isAuto() ? 0.0 : mh.toPixels();
-    
-    if( (mw_px < 1.0) || (mh_px < 1.0) )
+
+    if ((mw_px < 1.0) || (mh_px < 1.0))
     {
       mw_px = (mw_px < 1.0) ? 200.0 : mw_px;
       mh_px = (mh_px < 1.0) ? 50.0 : mh_px;
-      setMinimumSize( mw_px, mh_px );
+      setMinimumSize(mw_px, mh_px);
     }//if( either min height or width is not defined )
-    
-    setResizable( true );
+
+    setResizable(true);
   }
 
-  if( (isPhone && isPhoneNotFullScreen)
-      || (isTablet && isTabletNotFullScreen) )
+  if ((isPhone && isPhoneNotFullScreen)
+    || (isTablet && isTabletNotFullScreen))
   {
     resizeToFitOnScreen();
     centerWindowHeavyHanded();
   }
-  
+
   show();
 
 #if( AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE )
-  doJavaScript( "Wt.WT.AuxWindowOnDomResize();" );
-  
+  doJavaScript("Wt.WT.AuxWindowOnDomResize();");
+
   // Now make a little code to set the 'centered' variable to false, once user moves or resizes
   //  this AuxWindow.
-  if( !m_isPhone )
+  if (!m_isPhone)
   {
     // moved().canAutoLearn() and resized().canAutoLearn() are both false, meaning we cant
     //  connect them to JS functions or even JSlot, so we have to go through the C++.
-    
+
     // Note that this JS will be called a number (maybe even 6) when window is first created,
     // but since the centering code is done via setTimeout(...), the 'centered' data will be
     // end up being true, if the window is centered.
@@ -995,14 +1000,14 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
     //const string js = "$('#" + id() + "').data('centered',false); console.log('AuxWindow Resized or moved');"; //
     //moved().connect( std::bind([js](){ wApp->doJavaScript( js ); }) );
     //resized().connect( std::bind([js](){ wApp->doJavaScript( js ); }) );
-    
+
     const string js = "$('#" + title->id() + "').mousedown( function(){"
-    "$('#" + id() + "').data('centered',false);"
-    "console.log('setting AuxWindow moved');"
-    "} );";
-    doJavaScript( js );
-    
-    title->touchMoved().connect( "function(){$('#" + id() + "').data('centered',false);}" ); //untested
+      "$('#" + id() + "').data('centered',false);"
+      "console.log('setting AuxWindow moved');"
+      "} );";
+    doJavaScript(js);
+
+    title->touchMoved().connect("function(){$('#" + id() + "').data('centered',false);}"); //untested
   }
 #endif //AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE
 }//AuxWindow()
@@ -1015,9 +1020,51 @@ void AuxWindow::render( Wt::WFlags<Wt::RenderFlag> flags )
   // Sometimes the contents of the AuxWindow will not get the contents laid out correctly, so we'll
   //  just always trigger a rather heavy handed resize event.
   // Definitely a hack
-  if( flags & Wt::RenderFlag::RenderFull )
-    wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
-}
+  if (flags & Wt::RenderFlag::RenderFull)
+  {
+    wApp->doJavaScript(wApp->javaScriptClass() + ".TriggerResizeEvent();");
+
+#if(  BUILD_AS_WX_WIDGETS_APP || (BUILD_AS_ELECTRON_APP && !USING_ELECTRON_NATIVE_MENU) )
+    // For wxWidgets, we have a bit of a hack to allow dragging the application window around
+    //  by the titlebar - but when the dialog cover is being shown (i.e., a modal WDialog),
+    //  the the titlebar cant be clicked.  So here we'll add a listener to the dialog cover
+    //  to do the same hack, if the user clicks the titlebar region.
+    if (InterSpecApp::isPrimaryWindowInstance())
+    {
+#if(  BUILD_AS_WX_WIDGETS_APP )
+      // TODO: a similar thing for BUILD_AS_ELECTRON_APP, but probably need to add something like ".app-titlebar" to the dialog-cover
+      WWidget* coverw = wApp->findWidget("dialog-cover");
+      WContainerWidget* dialog_cover = dynamic_cast<WContainerWidget*>(coverw);
+      if (dialog_cover && !dialog_cover->mouseWentDown().isConnected())
+        dialog_cover->mouseWentDown().connect(wApp->javaScriptClass() + ".MouseDownOnDialogCover");
+
+      /*
+      // This next bit of JS accomplishes the same thing as the above, and being left commented
+      //  out until
+      const char* js = INLINE_JAVASCRIPT(
+        setTimeout(function() {
+        let c = $('.Wt-dialogcover');
+        if (!c.length || c.data('ClickConnected')) return;
+        c.data('ClickConnected', true);
+        c.on('mousedown', function(evt){
+          if ((evt.button != = 0) || (c[0].id != = evt.target.id) || (evt.pageY > 30)) return;
+          window.wx.postMessage('MouseDownInTitleBar');
+          evt.stopPropagation();
+          evt.preventDefault();
+        });
+      }, 100);
+      );
+      doJavaScript(js);
+      */
+#endif
+
+      // Raise windows controls (minimize, maximize, close), to above the dialog-cover, so we 
+      //  dont block people from being able to close the app.
+      wApp->doJavaScript( wApp->javaScriptClass() + ".RaiseWinCntrlsAboveCover();" );
+    }//if (InterSpecApp::isPrimaryWindowInstance())
+#endif
+  }//if (flags & Wt::RenderFlag::RenderFull)
+}//render( flags )
 
 void AuxWindow::setResizable(bool resizable)
 {

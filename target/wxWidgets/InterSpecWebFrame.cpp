@@ -55,6 +55,9 @@
 #include "wx/wfstream.h"
 
 #ifdef _WIN32
+#include <wx/mimetype.h>
+#include "wx/msw/registry.h"
+
 #if wxUSE_WEBVIEW_EDGE
 #include "wx/msw/webview_edge.h"
 #else
@@ -71,13 +74,135 @@
 #include "InterSpecWebFrame.h"
 
  
+namespace
+{
+#ifdef _WIN32
+  void check_url_association()
+  {
+    // We want to associate "interspec://" URLs with the application; we'll
+    //  do this through editing the registry.
+    
+    // For files, we would use the wxFileType, and wxMimeTypesManager classes, similar to:
+    //wxFileTypeInfo fti("", app_path, "", "Gamma Radiation Spectrum File", "n42", "pcf");
+    //fti.SetShortDesc("Spectrum file"));
+    //wxFileType* ft = wxTheMimeTypesManager->Associate(fti);
+    //ft->SetDefaultIcon(app_path, 1);
+    //delete ft;
+
+    // Only do this function the first time an application loads
+    static bool s_already_called = false;
+    if (s_already_called)
+      return;
+    s_already_called = true;
+
+    //wxFileName exe_filename(wxStandardPaths::Get().GetExecutablePath());
+    //wxString app_path(exe_filename.GetFullPath());
+    const wxString app_path = wxStandardPaths::Get().GetExecutablePath();
+    
+    const wxString open_command = wxString::Format("\"%s\" \"%%1\"", app_path);
+
+    /*
+    {// begin play around with file extensions
+    // Right now this all kinda-sorta-seems to do something, about right, but
+    //  I'm not sure of the correctness, or if it messes up other 
+    //  programs/user-preferences, or whatever, so not bringing out to the
+    //  user at the moment, pending further looking into other ways to do
+    //  this, better (maybe the solution is to just use an installer, and
+    //  have a seperate portable distribution that includes a script or 
+    //  something)
+      wxMimeTypesManager manager;
+      wxFileType* ft = manager.GetFileTypeFromExtension("n42");
+      if (!ft)
+      {
+        wxLogMessage("Failed to get file type information from extension.");
+      }else
+      {
+        wxString mimeType;
+        ft->GetMimeType(&mimeType);
+        const wxString open_cmd = ft->GetOpenCommand("MyFile.n42");
+        wxLogMessage("Command for openeing files was: '%s', mimetype -> '%s'", open_cmd, mimeType);
+        if( manager.Unassociate(ft) )
+          wxLogMessage("Unassociated previous file type association");
+        else
+          wxLogMessage("Failed to unassociate previous file type association");
+
+        delete ft;
+        ft = nullptr;
+      }
+      
+      wxFileTypeInfo type_info("application/x.gamma-spectrum");
+      type_info.SetOpenCommand(open_command);
+      type_info.SetShortDesc("N42");
+      type_info.SetDescription("Gamma energy spectrum files");
+      type_info.AddExtension("n42");
+      type_info.AddExtension("cnf"); //"pcf", ...
+      
+      ft = manager.Associate(type_info);
+      if (ft)
+        wxLogMessage("Added file type association; command for opening files: '%s'", ft->GetOpenCommand("myfile.n42"));
+      else
+        wxLogMessage("Failed to add ");
+
+      delete ft;
+      ft = nullptr;
+    }// end play around with file extensions
+    */
+
+    wxRegKey interspec_key(wxRegKey::HKCU, "SOFTWARE\\Classes\\interspec");
+    if (!interspec_key.Exists() && !interspec_key.Create(true))
+    {
+      wxLogError("Failed to create InterSpec key - aboring");
+      return;
+    }
+
+    wxString def_value, proto_value, command_value;
+    interspec_key.QueryValue("", def_value); //Its okay if this fails
+
+    if( (def_value != "URL:interspec") && !interspec_key.SetValue("", "URL:interspec") )
+    {
+      wxLogError("Failed to set Reg key default value - arborting");
+      return;
+    }
+
+    if (!interspec_key.QueryValue("URL Protocol", proto_value) 
+        && !interspec_key.SetValue("URL Protocol", "") )
+    {
+      wxLogError("Failed to set Reg key 'URL Protocol' value");
+      return;
+    }      
+    
+    wxRegKey command_key(wxRegKey::HKCU, "SOFTWARE\\Classes\\interspec\\shell\\open\\command");
+    if (!command_key.Exists() && !command_key.Create(true))
+    {
+      wxLogMessage("Failed to create 'command' Reg key");
+      return;
+    }
+
+    command_key.QueryValue("", command_value); //Its okay if this fails
+    
+    if (command_value == open_command)
+    {
+      wxLogMessage("No need to update registry URL command value");
+      return;
+    }
+    
+
+    if( !command_key.SetValue("", open_command) )
+      wxLogMessage("Failed to update URL command Reg key def value");
+    else
+      wxLogMessage("Updated URL 'command' Reg key def value to '%s'", open_command);
+  }//void check_url_association()
+#endif
+}//namespace
+
 
 InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore, const wxString& file_to_open) :
   wxFrame(NULL, wxID_ANY, "InterSpec", wxDefaultPosition, wxDefaultSize, wxRESIZE_BORDER | wxSYSTEM_MENU),
   m_url( url ),
   m_token( "" ),
   m_dragging_window( false ),
-  m_mouse_down_pos( 0, 0 )
+  m_mouse_down_pos( 0, 0 ),
+  m_currently_maximized( false )
 {
   // set the frame icon
   //SetIcon(wxICON(sample));
@@ -96,9 +221,6 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
 
   wxBoxSizer* topsizer = new wxBoxSizer(wxVERTICAL);
 
-  // Create a log window
-  new wxLogWindow(this, _("Logging"), true, false);
-
 #if wxUSE_WEBVIEW_EDGE
   // Check if a fixed version of edge is present in
   // $executable_path/edge_fixed and use it
@@ -115,19 +237,15 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
 #endif
   // Create the webview
   m_browser = wxWebView::New();
-
-  // TO be able to drag the window around by the menu bar, need to implement something like:
-  //https://github.com/MicrosoftEdge/WebView2Feedback/issues/200
-
   
   wxString app_url = m_url + "?apptoken=" + m_token;
 
-  // Currently there is a bug, when we DONT restore state, the UI freezes about half the time; doesnt seem to ever happen when we restore a state... I have no idea
-  wxLogMessage("Not restoring state for debug purposes" );
-  app_url += "&restore=no";
+  // There is a bug if we dont use WebSockets, when we DONT restore state, the UI freezes about half the time; doesnt seem to ever happen when we restore a state... I have no idea
+  //wxLogMessage("Not restoring state for debug purposes" );
+  //app_url += "&restore=no";
 
-  //if (no_restore)
-  //  app_url += "&restore=no";
+  if (no_restore)
+    app_url += "&restore=no";
 
   // The user agent isnt terrible important for us, so we'll just use a default Chrome one on windows
   //  TODO: customize for macOS
@@ -291,7 +409,7 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   Bind(wxEVT_WEBVIEW_ERROR, &InterSpecWebFrame::OnError, this, m_browser->GetId());
   Bind(wxEVT_WEBVIEW_NEWWINDOW, &InterSpecWebFrame::OnNewWindow, this, m_browser->GetId());
   Bind(wxEVT_WEBVIEW_TITLE_CHANGED, &InterSpecWebFrame::OnTitleChanged, this, m_browser->GetId());
-  Bind(wxEVT_WEBVIEW_FULLSCREEN_CHANGED, &InterSpecWebFrame::OnFullScreenChanged, this, m_browser->GetId());
+  //Bind(wxEVT_WEBVIEW_FULLSCREEN_CHANGED, &InterSpecWebFrame::OnFullScreenChanged, this, m_browser->GetId()); // Doesnt seem to ever get called, instead wxEVT_MAXIMIZE cused
   // OnScriptMessage will recieve messages from JS from code like:
   //  window.wx.postMessage('This is a message from JS to C++ land');
   Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, &InterSpecWebFrame::OnScriptMessage, this, m_browser->GetId());
@@ -300,9 +418,11 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   //Connect the idle events
   Bind(wxEVT_IDLE, &InterSpecWebFrame::OnIdle, this);
 
-
   Bind(wxEVT_CLOSE_WINDOW, &InterSpecWebFrame::handleOnClose, this);
-  
+  Bind(wxEVT_MAXIMIZE, &InterSpecWebFrame::handleWindowMaximizeChange, this); // Only sent when maximized, not when restored
+  Bind(wxEVT_SIZE, &InterSpecWebFrame::handleWinowSizeChange, this); //Listen to this for restore
+
+
   // TODO: The set/kill focus events dont seem to trigger - we can probably remove these callbacks anyway, as the JS handles this anyway
   //Bind(wxEVT_SET_FOCUS, &InterSpecWebFrame::handleOnFocus, this);
   //Bind(wxEVT_KILL_FOCUS, &InterSpecWebFrame::handleFocusLost, this);t
@@ -433,6 +553,32 @@ void InterSpecWebFrame::handleChildFocus(wxChildFocusEvent& evt)
     app->handle_frame_focus(this);
 }//void handleChildFocus(wxChildFocusEvent& evt);
 
+
+void InterSpecWebFrame::handleWindowMaximizeChange(wxMaximizeEvent& evt)
+{
+  evt.Skip();
+
+  const bool isMax = IsMaximized();
+  assert(isMax == true);
+
+  m_currently_maximized = isMax;
+  wxLogMessage("Screen maximized changed; max=%s", isMax ? "true" : "false");
+  m_browser->RunScriptAsync("Wt.WT.TitleBarChangeMaximized(" + wxString(isMax ? "true" : "false") + ");");
+}//handleWindowMaximizeChange(...)
+
+
+void InterSpecWebFrame::handleWinowSizeChange(wxSizeEvent& evt)
+{
+  evt.Skip();
+
+  const bool isMax = IsMaximized();
+  if (isMax != m_currently_maximized)
+  {
+    m_currently_maximized = isMax;
+    wxLogMessage("Screen sized changed; max=%s", isMax ? "true" : "false");
+    m_browser->RunScriptAsync("Wt.WT.TitleBarChangeMaximized(" + wxString(isMax ? "true" : "false") + ");");
+  }
+}//handleWinowSizeChange(...)
 
 
 /**
@@ -788,9 +934,10 @@ void InterSpecWebFrame::OnTitleChanged(wxWebViewEvent& evt)
   wxLogMessage("%s", "Title changed; title='" + evt.GetString() + "'");
 }
 
-
+/*
 void InterSpecWebFrame::OnFullScreenChanged(wxWebViewEvent& evt)
 {
+  // Doesnt seem to get called for us
   wxLogMessage("Full screen changed; status = %d", evt.GetInt());
   ShowFullScreen(evt.GetInt() != 0);
 
@@ -804,6 +951,8 @@ void InterSpecWebFrame::OnFullScreenChanged(wxWebViewEvent& evt)
     RunScript("Wt.WT.TitleBarChangeMaximized(false);");
   }
 }
+*/
+
 
 void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
 {
@@ -826,6 +975,11 @@ void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
   {
     wxConfigBase* config = wxConfigBase::Get(true);
     config->Write("/NumLoadAttempts", 0);
+
+
+#ifdef _WIN32
+    check_url_association();
+#endif
   }
   else if (msg == "OpenInExternalBrowser")
   {
@@ -893,8 +1047,15 @@ void InterSpecWebFrame::handle_mouse_move(wxMouseEvent& evt)
     return;
   }
 
+  if (!evt.LeftIsDown())
+  {
+    m_dragging_window = false;
+    evt.Skip();
+    return;
+  }
+
   wxPoint pt = evt.GetPosition();
-  if (evt.Dragging() && evt.LeftIsDown())
+  if (evt.Dragging())
   {
     wxPoint pos = ClientToScreen(pt);
     Move(wxPoint(pos.x - m_mouse_down_pos.x, pos.y - m_mouse_down_pos.y));

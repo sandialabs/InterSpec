@@ -86,6 +86,7 @@ public:
     static const int XRayDecayMode;
     static const int ReactionToGammaMode;
     static const int NormGammaDecayMode;
+    static const int CascadeSumMode;
 
     float energy, branchRatio;
     int decayMode;
@@ -267,6 +268,8 @@ protected:
    */
   std::map<std::string,std::vector<Wt::WColor>> currentlyUsedPeakColors();
   
+  void toggleShowOptions();
+
   D3SpectrumDisplayDiv *m_chart;
 
   InterSpec *m_spectrumViewer;
@@ -285,11 +288,15 @@ protected:
   Wt::WPushButton *m_clearLines;
   //Wt::WPushButton *m_fitPeaks;
 
+  Wt::WPushButton *m_options_icon;
+  Wt::WContainerWidget *m_options;
+
   Wt::WCheckBox *m_showGammas;
   Wt::WCheckBox *m_showXrays;
   Wt::WCheckBox *m_showAlphas;
   Wt::WCheckBox *m_showBetas;
-
+  Wt::WCheckBox* m_showCascadeSums;
+  Wt::WText* m_cascadeWarn;
 
   DetectorDisplay *m_detectorDisplay;
   MaterialDB *m_materialDB;                 //not owned by this object

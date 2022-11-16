@@ -110,31 +110,16 @@
 
 
 .ShowD3TimeChartFilters {
-  position: absolute;
-  right: 5px;
-  /* top: 5px; If we specify this, the filter icon goes to the top of parent div, so instead well use a margin. */
-  margin-top: 5px;
-  padding: 0px 0px;
-  width: 24px;
-  height: 24px;
-  background-size: 24px 24px;
-  background-image: url("../InterSpec_resources/images/filter.svg");
-  background-position: 0px center;
-  background-repeat: no-repeat;
-    
-  opacity: 0.8;
-  cursor: pointer;
+    position: absolute;
+    right: 5px;
+    /* top: 5px; If we specify this, the filter icon goes to the top of parent div, so instead well use a margin. */
+    margin-top: 5px;
 }
 
 .ShowD3TimeChartFilters.HasNeutrons {
   right: 60px;
 }
 
-.ShowD3TimeChartFilters:hover {
-  opacity: 1.0;
-  background-color: rgba(255,255,255,0.75);
-  border-radius: 12px;
-}
 
 .D3TimeChartFilters .closeicon-wtdefault {
   position: absolute;

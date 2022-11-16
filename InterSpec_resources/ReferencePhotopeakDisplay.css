@@ -1,0 +1,95 @@
+.ReferencePhotopeakDisplay
+{
+  margin-top: 5px;
+  margin-left: 5px;
+  margin-right: 4px;
+  margin-bottom: 3px;
+}
+
+.ReferencePhotopeakDisplay .HlOptRow
+{
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+}
+
+.ReferencePhotopeakDisplay .Hl
+{
+    /* Hack to make the text roughly vertically align in middle due to increased color input size... */
+    /* display: inline-block; */
+    /* margin-top: 5px; */
+    flex: 1 1;
+    margin-left: 10px;
+    font-size: small;
+    text-overflow: ellipsis;
+}
+
+.RefLinColorPick
+{
+    margin-right: 5px;
+}
+
+.RefLinesOptMenu
+{
+    
+}
+
+.RoundMenuIcon.InvertInDark.Wt-btn.RefLinesOptMenu.non-default
+{
+    
+    background-color: red;
+}
+
+.RefLinesOptions
+{
+  /* width: 200px; */
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  overflow-y: auto;
+}
+
+.CascadeGammaWarn
+{
+    font-size: smaller;
+    font-style: italic;
+    margin-left: 20px;
+    width: 100px;
+}
+
+.RefLinesOptions > label
+{
+    margin-right: 5px;
+}
+
+.RefLinesOptions .closeicon-wtdefault
+{
+    float: right;
+    /* margin-right: 5px; */
+    /* margin-top: 5px; */
+}
+
+
+.ParticleViewTable, .RefLinesOptions
+{
+  border: 2px solid #e1e1e1;
+}
+
+
+
+.RefGammaHelp
+{
+  position: absolute;
+  left: 0px;
+  bottom: 0px;
+}
+
+.RefGammaCsv
+{
+  position: absolute;
+  right: 0px;
+  bottom: 0px;
+}
+
+

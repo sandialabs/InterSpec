@@ -65,20 +65,6 @@
   flex: 1 1 content;
 }
 
-.RoundMenuIcon,.RoundMenuIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/menu_icon_round.svg');
-  /* background-position: 3px center; */
-  background-repeat: no-repeat;
-  /* padding-left: 23px; */ /* width of the image plus a little extra padding */
-  width: 26px;
-  background-color: rgba(0,0,0,0) !important;
-  border: none;
-}
-
-.RoundMenuIcon{        opacity: 0.6; }
-.RoundMenuIcon:hover{  opacity: 0.9; }
-.RoundMenuIcon.active{ opacity: 1.0; }
 
 
 .ShieldingSourceDisplay .ChartMouseOverInfo

@@ -764,13 +764,24 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
   try
   {
     WApplication *app = WApplication::instance();
-    std::unique_ptr< WApplication::UpdateLock > lock;
     
     if( !app )
       app = dynamic_cast<WApplication *>( m_viewer->parent() );
-    if( app )
-      lock.reset( new WApplication::UpdateLock( app ) );
     
+    assert(app);
+
+    WApplication::UpdateLock lock(app);
+
+    if (!lock)
+    {
+      cerr << "SpecMeasManager::handleZippedFile: failed to get app lock." << endl;
+      return false;
+    }
+
+    // Make sure we have the CSS we need
+    app->useStyleSheet("InterSpec_resources/SpecMeasManager.css");
+
+
     ifstream zipfilestrm( spoolName.c_str(), ios::in | ios::binary );
     
     ZipArchive::FilenameToZipHeaderMap headers = ZipArchive::open_zip_file( zipfilestrm );

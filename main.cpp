@@ -53,6 +53,17 @@
 #include "testing/developcode.h"
 #endif
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN 1
+#include <windows.h>
+#include <stdio.h>
+#include <direct.h>
+#include <shellapi.h>
+
+#include "SpecUtils/StringAlgo.h"
+#endif
+
+
 //Forward declaration
 Wt::WApplication *createApplication( const Wt::WEnvironment &env );
 
@@ -119,10 +130,34 @@ int main( int argc, char **argv )
     
     argc = static_cast<int>( default_argc );
     argv = default_argv;
+
+#if(_WIN32)
+    // I cant get MSVC to set CWD to anywhere besides InterSpec/out/build/x64-Debug/,
+    //  so we'll look for our resources up to three levels up
+    const std::string targetfile = "InterSpec_resources/InterSpec.css";
+    std::string pardir = "";
+    while (pardir.size() < 9)
+    {
+      const std::string testfile = SpecUtils::append_path(pardir, targetfile);
+      if (SpecUtils::is_file(testfile))
+      {
+        if(!pardir.empty())
+        {
+          std::cout << "Will change cwd to '" << pardir << "'." << std::endl;
+          if (_chdir(pardir.c_str()))
+            std::cerr << "Failed to change CWD to '" << pardir << "'" << std::endl;
+        }
+        break;
+      }
+      pardir = SpecUtils::append_path(pardir, "..");
+    }//while (pardir.size() < 6)
+#endif
     
     // If there is a "user_data" directory in the CWD, we'll set this as the writeable data
     //  directory to simulate desktop app behavior of saving DRFs and similar
     const std::string cwd = SpecUtils::get_working_path();
+    std::cout << "cwd='" << cwd << "'" << std::endl;
+
     const std::string dev_user_data = SpecUtils::append_path( cwd, "user_data" );
     if( SpecUtils::is_directory( dev_user_data ) )
       InterSpec::setWritableDataDirectory( dev_user_data );
@@ -146,15 +181,8 @@ Wt::WApplication *createApplication( const Wt::WEnvironment &env )
   return new InterSpecApp( env );
 }// Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 
+
 #ifdef _WIN32
-
-#define WIN32_LEAN_AND_MEAN 1
-#include <windows.h>
-#include <stdio.h>
-#include <shellapi.h>
-
-#include "SpecUtils/StringAlgo.h"
-
 /** Get command line arguments encoded as UTF-8.
     This function just leaks the memory
  

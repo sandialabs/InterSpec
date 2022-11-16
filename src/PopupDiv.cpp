@@ -230,7 +230,7 @@ WT_DECLARE_WT_MEMBER
   
   if( showing ){
     // Fixup 'popup( WPoint(-10000,-10000) );' call from C++  ...
-    //  TODO: users may see small glitch... should fix eventually
+    if (obj) obj.setHidden(0); //jic
     wtapp.positionAtWidget(el.id,btn.id,wtapp.Vertical);
     Wt.WT.BringAboveDialogs(el.id);
     return; //Nothing more to do
@@ -271,6 +271,30 @@ WT_DECLARE_WT_MEMBER
 
 
 WT_DECLARE_WT_MEMBER
+(ParentClickedCleanupFromCpp, Wt::JavaScriptFunction, "ParentClickedCleanupFromCpp",
+  function(elId, btnId, wtapp)
+{
+  const el = document.getElementById(elId);
+  let obj = jQuery.data(el, "obj"); //Wt 3.3.4
+  if (!obj) obj = el.wtObj;  // Wt 3.7.1
+  if (!obj) console.error("ParentClickedCleanupFromCpp: !obj");
+
+  const showing = $(el).hasClass("current");
+  if (showing && obj) {
+    obj.setHidden(0);
+    wtapp.positionAtWidget(el.id, btnId, wtapp.Vertical);
+    Wt.WT.BringAboveDialogs(el.id);
+    //console.log("Was SHowing");
+  }
+  else
+  {
+    //console.log("Not Showing");
+    if (obj) obj.setHidden(1);
+  }
+});
+
+
+WT_DECLARE_WT_MEMBER
  (ParentClicked, Wt::JavaScriptFunction, "ParentClicked",
   function( elId, btnId, wtapp )
 {
@@ -282,7 +306,7 @@ WT_DECLARE_WT_MEMBER
   
   let obj = jQuery.data(el, 'obj'); //Wt 3.3.4
   if( !obj ) obj = el.wtObj;  // Wt 3.7.1
-  if( !obj ) console.log('ParentClicked: !obj');
+  if( !obj ) console.error('ParentClicked: !obj');
   
   const showing = $(btn).hasClass('active');  //el.style.display !== 'block'
   if( !showing ){
@@ -315,23 +339,6 @@ WT_DECLARE_WT_MEMBER
   }
 });
 
-WT_DECLARE_WT_MEMBER
- (UndoParentClicked, Wt::JavaScriptFunction, "UndoParentClicked",
-  function( elId, btnId, wtapp )
-{
-  const el = document.getElementById(elId);
-  const btn = document.getElementById(btnId);
-  
-  if( !el || !btn || !wtapp )
-    return; //shouldnt ever happen
-  
-  let obj = jQuery.data(el, 'obj'); //Wt 3.3.4
-  if( !obj ) obj = el.wtObj; //Wt 3.7.1
-  if( !obj ) console.log( 'UndoParentClicked: !obj' );
-  if(obj) obj.setHidden(1);
-  $(el).removeClass('current');
-  $(btn).removeClass('active');
-});
 
 
 #if( USING_ELECTRON_NATIVE_MENU )
@@ -762,8 +769,8 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
       doJavaScript( "console.log('Not implemented: Adding PopupDivMenu (no parent) id="
                    + id() + (menutype==AppLevelMenu?" AppLevelMenu":" TransientMenu") + "');" );
 #endif
-    
-    setAutoHide( true, 500 );
+    if( menutype != AppLevelMenu )
+      setAutoHide( true, 500 );
   }//if( menuParent ) / else
 }//PopupDivMenu( constructor )
 
@@ -790,6 +797,28 @@ PopupDivMenu::~PopupDivMenu()
   }//if(  m_hasElectronCounterpart )
 #endif
 }
+
+#if( APP_MENU_STATELESS_FIX )
+void PopupDivMenu::pre_render(PopupDivMenu* menu)
+{
+  menu->popup(WPoint(-10000, -10000));
+
+  /*
+  // This next loop doesnt seem to do anything
+  for (WMenuItem* item : menu->items())
+  {
+    auto submenu = dynamic_cast<PopupDivMenu*>(item->menu());
+    assert(!item->menu() || submenu);
+    if (submenu)
+    {
+      submenu->popup(WPoint(-10000, -10000));
+      submenu->doJavaScript("Wt.WT.BringAboveDialogs('" + submenu->id() + "')");
+    }
+  }
+  */
+}//void pre_render(PopupDivMenu* menu)
+#endif
+
 
 Wt::WMenuItem *PopupDivMenu::addSeparatorAt( int index )
 {
@@ -979,56 +1008,33 @@ void PopupDivMenu::parentClicked()
   if( !m_menuParent )
     return;
   
-  // We need this function to be stateless, so we'll always popup the menu, even if we actually
+  // We need this function to be ~stateless, so we'll always popup the menu, even if we actually
   //  want to close it, and then we'll use the JS to close the menu if we dont actually want it open
-  popup( WPoint(-10000,-10000) );
-  
-  // We need this setTimeout(...) or else sometimes when we open it, it will immediately close,
-  //  although after setting preventPropagation(); on parent button, the timeout doesnt seem to
-  //  be needed
-  const string parent_clicked_js =
-  "setTimeout( function(){"
-    "Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
-  "}, 0 );"
-  ;
+  popup(WPoint(-10000, -10000));
 
-  doJavaScript( parent_clicked_js );
+#if( APP_MENU_STATELESS_FIX )
+  // All this stuff and JS still seemingly gets executed on the client side, even though
+  //  we `implementJavaScript(...)` for this function (maybe Wt is catching that its not
+  //  stateless somewhere?)
+  
+  doJavaScript("Wt.WT.ParentClickedCleanupFromCpp('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");");
+#else
+  doJavaScript("Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");");
+#endif
 }//void parentClicked()
-
-
-
-void PopupDivMenu::undoParentClicked()
-{
-  // The below JS doesnt seem to get called client-side ever
-  const string undo_js = "setTimeout( function(){"
-    "Wt.WT.UndoParentClicked('" + id() + "','" + m_menuParent->id() + "');"
-  "}, 0 );";
-  
-  doJavaScript( undo_js );
-  hide();
-}
-
 
 
 
 void PopupDivMenu::parentMouseWentOver()
 {
+#if( APP_MENU_STATELESS_FIX )
+  show();
+#else
   popup( WPoint(-10000,-10000) );
-  
-  const string parent_hovered_over_js =
-  // We need this setTimeout(...) or else sometimes when we open it, it will immediately close
-  "setTimeout(function(){"
-    "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
-  "}, 0 );";
-  
-  doJavaScript( parent_hovered_over_js );
+  doJavaScript("Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");");
+#endif
 }//void parentHoveredOver()
 
-
-void PopupDivMenu::undoParentHoveredOver()
-{
-  undoParentClicked();
-}//void undoParentHoveredOver()
 
 
 void PopupDivMenu::parentTouchStarted()
@@ -1043,9 +1049,7 @@ void PopupDivMenu::parentTouchStarted()
     "const wasActive = btn.hasClass('active');"
     "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
     "if( !wasActive) $('#" + m_menuParent->id() + "').removeClass('active');"
-    "setTimeout( function(){"
     "Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
-    "}, 0 );"
     ;
   doJavaScript( parent_clicked_js );
 }
@@ -1086,6 +1090,10 @@ void PopupDivMenu::setupDesktopMenuStuff()
        make it function like that (e.g., maybe no timeout at all)
      - [ ] See https://css-tricks.com/in-praise-of-the-unambiguous-click-menu/#building-click-menus
      - [x] Check behaviour of mousing over parent button when no menus are open, for Electron build, and mirror that
+     - [ ] Enable using arrows to change menus, and go up/down in the menu, with enter selecting an element
+          - `InterSpec::arrowKeyPressed()` currently cant really work - should implement in JS; maybe need to set a reference between the menu and the button in JS, so we can handle arrow keys in just JS
+     - [ ] When you hit Alt (on windows at least), it underlines the first leter of each menu button, and also maybe 
+           select the menu, so you can use the arrows to select and display menus
      
      
    Electron titlebar notes:
@@ -1103,7 +1111,8 @@ void PopupDivMenu::setupDesktopMenuStuff()
   
   LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsParentMouseWentOver);
   LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsParentClicked);
-  LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsUndoParentClicked);
+  LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsParentClickedCleanupFromCpp);
+  
   
   //menuParent->setMenu( this );  //adds/removes active class to menuParent, etc
   
@@ -1119,33 +1128,25 @@ void PopupDivMenu::setupDesktopMenuStuff()
   m_menuParent->clicked().preventPropagation();
   m_menuParent->clicked().preventDefaultAction();
   
-  // Note: when WebSocket are used instead of Ajax and long-polling, implementing the below will
-  //       cause the JS to be emitted twice (once when event originates in JS, and I think second
-  //       time after going back to c++ then it issuing the JS).  We are currently relying on the JS
-  //       only being emitted once - so make sure you arent using WebSockets.
-  //       This seems fragile, and relying on a bug either way - should eventually improve all this
-  //       to be more sane.
-  implementStateless( &PopupDivMenu::parentClicked, &PopupDivMenu::undoParentClicked );
-  implementStateless( &PopupDivMenu::parentMouseWentOver, &PopupDivMenu::undoParentHoveredOver );
-  // TODO: parentTouchStarted is not currently implemented as stateless - should do, at least for iOS and Android builds
-  
-  // If we instead implement the statelessness using the following, the first invocation to show
-  //  menu may take up to ~100 ms (when run locally), but then after that showing the menus are
-  //  instant.  But the glitch on first menu usage disappears, although maybe there are some other
-  //  glitches.
-  //  Whereas using the above makes even first invocation instant.
-  //implementStateless( &PopupDivMenu::parentClicked );
-  //implementStateless( &PopupDivMenu::parentMouseWentOver );
-  
-  // TODO: checkout using WObject::implementJavaScript
-  //    WStatelessSlot * Wt::WObject::implementJavaScript  (  void(T::*)()   method, const std::string &   jsCode )
-  //    From the Wt documentation:
-  //      Provides a JavaScript implementation for a method.
-  //  	  This method sets the JavaScript implementation for a method. As a result, if JavaScript is available, the JavaScript version will be used on the client side and the visual effect of the C++ implementation will be ignored.
-  
+
+#if( APP_MENU_STATELESS_FIX )
+  // We could probably directly do the following JS from the clicked().connect( js here ), but the
+  //  below seems to work, so I'll leave it alone for them moment
+  implementJavaScript(&PopupDivMenu::parentClicked, "Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");");
+  implementJavaScript(&PopupDivMenu::parentMouseWentOver, "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");");
+
+  // We need to 'popup' this menu before the user opens it, so the menu will be fully loaded
+  // and jsObj set and stuff - however, we dont want to just call 'popup' now, because then
+  // sub-menus wont work (the JS will miss setting them up, so we have to wait until after
+  // all the sub-menus are set to call 'popup').
+  // We could do something like the below, but instead we are currently just having
+  // the InterSpec class constructor call `PopupDivMenu::pre_render(...)`.
+  //auto fcn = wApp->bind(boost::bind(&PopupDivMenu::popup, this, WPoint(-10000, -10000))); //need to trigger update, etc
+  //WServer::instance()->schedule(500, wApp->sessionId(), fcn);
+#endif
+
   m_menuParent->clicked().connect( this, &PopupDivMenu::parentClicked );
   m_menuParent->mouseWentOver().connect( this, &PopupDivMenu::parentMouseWentOver );
-  
   
   m_menuParent->touchStarted().preventPropagation();
   m_menuParent->touchStarted().preventDefaultAction();
@@ -1378,8 +1379,8 @@ PopupDivMenuItem *PopupDivMenu::addPhoneBackItem( PopupDivMenu *parent )
 PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
                                               const std::string &iconPath )
 {
-  PopupDivMenu *menu = new PopupDivMenu( nullptr, m_type );
-  
+  PopupDivMenu* menu = new PopupDivMenu(nullptr, m_type );
+
   if( m_mobile )
   {
     menu->m_menuParent = m_menuParent;
@@ -1406,9 +1407,10 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
 #endif
     
     menu->m_parentItem = addMenu( iconPath, text, menu );
+    
     menu->m_parentItem->clicked().preventPropagation();
     menu->m_parentItem->clicked().preventDefaultAction();
-    
+
     string js;
     js = "function(){Wt.WT.BringAboveDialogs('" + menu->id() + "');"
          "Wt.WT.AdjustTopPos('" + menu->id() + "');}";

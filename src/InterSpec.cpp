@@ -719,6 +719,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
         menuTitle->mouseWentDown().connect(js);
         appIcon->mouseWentDown().connect(js);
         m_menuDiv->mouseWentDown().connect(js);
+
+        // Should we also send wxWidgets a mouse up signal, e.g., ` m_menuDiv->mouseWentUp().connect(...)`?
       }//if( primary wxWidgets instance )
 #endif
       
@@ -738,9 +740,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #elif( BUILD_AS_WX_WIDGETS_APP )
         const string js = "function(){window.wx.postMessage('ToggleMaximizeWindow');}";
         maximizeIcon->clicked().connect(js);
+        // None of the below double-click events seem to work
         appIcon->doubleClicked().connect(js);
         dragRegion->doubleClicked().connect(js);
         menuTitle->doubleClicked().connect(js);
+        m_menuDiv->doubleClicked().connect(js);
 #endif
       }
       else
@@ -1092,6 +1096,14 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #endif
   
   applyColorTheme( nullptr );
+
+#if( APP_MENU_STATELESS_FIX )
+  // Make sure the menus get pre-loaded
+  PopupDivMenu::pre_render(m_fileMenuPopup);
+  PopupDivMenu::pre_render(m_toolsMenuPopup);
+  PopupDivMenu::pre_render(m_helpMenuPopup);
+  PopupDivMenu::pre_render(m_displayOptionsPopupDiv);
+#endif
 }//InterSpec( constructor )
 
 InterSpec *InterSpec::instance()
@@ -4772,7 +4784,10 @@ void InterSpec::stateSaveAs()
 {
   const bool forTesting = false;
     
-  AuxWindow *window = new AuxWindow( "Store State As", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen) );
+  AuxWindow *window = new AuxWindow( "Store State As", 
+    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) 
+      | AuxWindowProperties::TabletNotFullScreen
+      | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );
@@ -6095,11 +6110,14 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     //    js = can + ".data('compangle',null);";
     //    checkbox->checked().connect( boost::bind( &WApplication::doJavaScript, wApp, js, true ) );
     
+#if( !ANDROID )
+    // TODO: On Android we dont currently catch the download for these downloads with the content encoded in the URI, so we will just disable these for now there.
     m_displayOptionsPopupDiv->addSeparator();
     auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
     saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, true) );
     saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as SVG" );
     saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
+#endif
   }//if( overlay )
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
@@ -6171,9 +6189,23 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleDevTools );
 #endif
 #elif( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
+  if (InterSpecApp::isPrimaryWindowInstance())
+  {
+    m_displayOptionsPopupDiv->addSeparator();
+    PopupDivMenuItem *fullScreenItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Full Screen" );  //F11
+#if( BUILD_AS_ELECTRON_APP )
+    // Note: the triggered() signal a Wt::Signal, which is C++ only, so we cant just hook it up to
+    //       javascript for it to run - we have to make the round-trip JS -> C++ -> JS
+    fullScreenItem->triggered().connect(std::bind([] {
+      ElectronUtils::send_nodejs_message("ToggleMaximizeWindow", "");
+    }));
+#else
+    fullScreenItem->triggered().connect(std::bind([] {
+      wApp->doJavaScript("window.wx.postMessage('ToggleMaximizeWindow');");
+    }));
+#endif
+  }//if (InterSpecApp::isPrimaryWindowInstance())
 
-  m_displayOptionsPopupDiv->addSeparator();
-  PopupDivMenuItem *fullScreenItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Full Screen" );  //F11
   m_displayOptionsPopupDiv->addSeparator();
   PopupDivMenuItem *resetZoomItem = m_displayOptionsPopupDiv->addMenuItem( "Actual Size" ); //Ctrl+0
   PopupDivMenuItem *zoomInItem = m_displayOptionsPopupDiv->addMenuItem( "Zoom In" ); //Ctrl+Shift+=
@@ -6182,18 +6214,6 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsResetPageZoom);
   LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
   LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsDecreasePageZoom);
-  
-#if( BUILD_AS_ELECTRON_APP )
-  // Note: the triggered() signal a Wt::Signal, which is C++ only, so we cant just hook it up to
-  //       javascript for it to run - we have to make the round-trip JS -> C++ -> JS
-  fullScreenItem->triggered().connect( std::bind( []{
-    ElectronUtils::send_nodejs_message( "ToggleMaximizeWindow", "" );
-  }) );
-#else
-  fullScreenItem->triggered().connect(std::bind([] {
-    wApp->doJavaScript("window.wx.postMessage('ToggleMaximizeWindow');");
-    }));
-#endif
   
   resetZoomItem->triggered().connect( std::bind( []{
     wApp->doJavaScript( "Wt.WT.ResetPageZoom();" );
@@ -8283,7 +8303,9 @@ void InterSpec::handleToolTabChanged( int tab )
   const int calibtab = m_toolsTabs->indexOf(m_energyCalTool);
   const int searchTab = m_toolsTabs->indexOf(m_nuclideSearchContainer);
   
-  if( m_referencePhotopeakLines && (tab == refTab) && !isMobile() )
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+  
+  if( m_referencePhotopeakLines && (tab == refTab) && app && !app->isMobile() )
     m_referencePhotopeakLines->setFocusToIsotopeEdit();
     
   if( m_nuclideSearch && (m_currentToolsTab==searchTab) )

@@ -48,6 +48,8 @@ README.txt
 *.bz2
 *.log
 
+CMakeSettings.json
+
 # Xcode spefic (for iOS)
 build/
 DerivedData/
@@ -85,3 +87,5 @@ InterSpec_resources/SpectrumChartD3.css
 InterSpecUserData.db
 InterSpec_resources/d3.v3.min.js
 target/macOsQuickLook/SpecFilePreview/SpecFilePreview.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+target/wxWidgets/3rd_party

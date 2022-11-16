@@ -769,7 +769,9 @@ if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
     endif( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
 endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
 
-
+if(MSVC AND (NOT hasParent))
+  set_target_properties( InterSpecExe PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+endif(MSVC AND (NOT hasParent))
 
 #20180104: on my mac I tried compiling Wt with support for PDF (libharu), but only
 #  had the static libhpdfs, so I had to add bellow to link to this

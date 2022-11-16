@@ -903,7 +903,7 @@ public class InterSpec extends AppCompatActivity
   }//public static int startWt(...)
 
 
-  private static void copyWtAssets(String wtAssetsDir, AssetManager am) throws IOException
+  private static void copyWtAssets(String wtAssetsDir, AssetManager am) throws IOException, SecurityException
   {
     //We need to know if the assets have been updated since we last ran things to see if we need to
     // re-extract things (takes ~6 seconds to extract).  So as a hack for doing this, we will see
@@ -952,19 +952,19 @@ public class InterSpec extends AppCompatActivity
     if( needToExtract )
     {
       Log.d("copyWtAssets", "We do need to extract" );
-
-      if( new File(wtAssetsDir).exists() ) {
+      File parent_dir = new File(wtAssetsDir);
+      if( parent_dir.exists() ) {
         try{
-          new File(wtAssetsDir + "/data").delete();
-          new File(wtAssetsDir + "/InterSpec_resources").delete();
-          new File(wtAssetsDir + "/resources").delete();
-          new File(wtAssetsDir + "/example_spectra").delete();
+          new File(parent_dir, "data").delete();
+          new File(parent_dir, "InterSpec_resources").delete();
+          new File(parent_dir, "resources").delete();
+          new File(parent_dir, "example_spectra").delete();
         }catch( Exception e ){
           //Only happens when security manager deinfined - i guess.
           Log.d("copyWtAssets", "Caught exception trying delete previous resource directory" );
         }
       }else {
-        new File(wtAssetsDir).mkdir();
+        parent_dir.mkdir();
       }
 
       long ziplen = 0;
@@ -984,6 +984,8 @@ public class InterSpec extends AppCompatActivity
       ZipInputStream zis = new ZipInputStream(bis);
       try
       {
+        String parent_canonical = parent_dir.getCanonicalPath();
+
         byte[] buffer = new byte[1024];
         int count;
 
@@ -991,10 +993,18 @@ public class InterSpec extends AppCompatActivity
 
         while ((ze = zis.getNextEntry()) != null)
         {
-          String file = wtAssetsDir + ze.getName();
+          String filename = wtAssetsDir + ze.getName();
+          File file = new File(parent_dir, ze.getName());
+
+          // Implement a check required by google Play, even though we know this zip file is safe
+          String canonicalPath = file.getCanonicalPath();
+          if (!canonicalPath.startsWith(parent_canonical)) {
+            throw new SecurityException("Zip-file contains path traversal issue; path='" + canonicalPath + "', for parent='" + parent_canonical + "'");
+          }
+
           if (ze.isDirectory())
           {
-            new File(file).mkdirs();
+            file.mkdirs();
           } else
           {
             FileOutputStream fos = new FileOutputStream(file);

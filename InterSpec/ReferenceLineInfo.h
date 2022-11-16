@@ -109,7 +109,7 @@ struct ReferenceLineInfo
   
   //The following variables are necassarry to help serialize the state of the
   //  widget for loading later
-  bool showGammas, showXrays, showAlphas, showBetas;
+  bool showGammas, showXrays, showAlphas, showBetas, showCascades;
   bool showLines, promptLinesOnly, isBackground, isReaction, displayLines;
   double age, lowerBrCuttoff;
   

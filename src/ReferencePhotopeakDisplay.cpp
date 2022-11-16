@@ -89,6 +89,7 @@ const int ReferencePhotopeakDisplay::sm_xmlSerializationVersion = 0;
 const int DecayParticleModel::RowData::XRayDecayMode = 1000;
 const int DecayParticleModel::RowData::ReactionToGammaMode = 1001;
 const int DecayParticleModel::RowData::NormGammaDecayMode = 1002;
+const int DecayParticleModel::RowData::CascadeSumMode = 1003;
 
 namespace
 {
@@ -378,6 +379,7 @@ namespace
             case DecayParticleModel::RowData::XRayDecayMode:       return "xray";
             case DecayParticleModel::RowData::ReactionToGammaMode: return "Reaction";
             case DecayParticleModel::RowData::NormGammaDecayMode:  return "NORM";
+            case DecayParticleModel::RowData::CascadeSumMode:      return "cascade sum";
           }//switch( dataRow.decayMode )
 
           return "";
@@ -547,6 +549,7 @@ boost::any DecayParticleModel::data( const WModelIndex &index, int role ) const
         case RowData::XRayDecayMode:                return WString( "xray" );
         case RowData::ReactionToGammaMode:          return WString( "Reaction" );
         case RowData::NormGammaDecayMode:           return WString( "NORM" );
+        case RowData::CascadeSumMode:               return WString( "Cascade Sum" );
       }//switch( dataRow.decayMode )
 
       return boost::any();
@@ -742,9 +745,13 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_clearLines( NULL ),
     //m_fitPeaks( NULL ),
     m_showGammas( NULL ),
+    m_options_icon( NULL ),
+    m_options( NULL ),
     m_showXrays( NULL ),
     m_showAlphas( NULL ),
     m_showBetas( NULL ),
+    m_showCascadeSums( NULL ),
+    m_cascadeWarn( NULL ),
     m_detectorDisplay( NULL ),
     m_materialDB( materialDB ),
     m_materialSuggest( materialSuggest ),
@@ -758,6 +765,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_peaksGetAssignedRefLineColor( false ),
     m_lineColors{ ns_def_line_colors }
 {
+  wApp->useStyleSheet("InterSpec_resources/ReferencePhotopeakDisplay.css");
+  
+
   const char *tooltip = nullptr;
   
   m_currentlyShowingNuclide.reset();
@@ -923,20 +933,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   HelpSystem::attachToolTipOn( m_clearLines, tooltip, showToolTips );
   
   
-  m_promptLinesOnly = new WCheckBox( "Prompt Only" );  //ɣ
-  m_promptLinesOnly->setMargin( 5, Wt::Left );
-
-  tooltip = "Gammas from only the original nuclide, and the descendants until one"
-            " of them has a longer half-life than the original nuclide; the"
-            " decay chain is in equilirium till that point.";
-  HelpSystem::attachToolTipOn( m_promptLinesOnly, tooltip, showToolTips );
-//m_promptLinesOnly->setHiddenKeepsGeometry( true );  // causes display to function badly; why?
-  m_promptLinesOnly->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_promptLinesOnly->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_promptLinesOnly->hide();
-  
-  //m_layout->addWidget( m_promptLinesOnly, 3, 2, AlignMiddle );
-  
   //If we use a single layout for all the input elements, it seems when we enter
   //  a shielding, then the "Add Another" button will be shortened and layout
   //  messed up.  This must somehow be the layout for the shielding widget
@@ -949,14 +945,14 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   lowerInput->setLayout( lowerInputLayout );
   
   WContainerWidget *hlRow = new WContainerWidget();
+  hlRow->addStyleClass("HlOptRow");
   lowerInputLayout->addWidget( hlRow, 0, 0 );
   
   m_halflife = new WText( hlRow );
-  //Hack to make the text roughly vertically align in middle due to increased color input size...
-  m_halflife->setAttributeValue( "style", "display: inline-block; margin-top: 5px" );
+  m_halflife->addStyleClass("Hl");
+
   //m_layout->addWidget( m_halflife, 2, 0, 1, 2, AlignMiddle | AlignCenter );
-  hlRow->addWidget( m_promptLinesOnly );
-  //should add a slider here
+  
 
   //should add prompt and 'bare' only lines options
 //  label = new WLabel( "Lowest I:" );
@@ -1009,14 +1005,16 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   if( ColorSelect::willUseNativeColorPicker() )
   {
-    m_colorSelect->setFloatSide( Wt::Right );
+    //m_colorSelect->setFloatSide( Wt::Right );
+    m_colorSelect->addStyleClass("RefLinColorPick");
     hlRow->addWidget( m_colorSelect );
   }else
   {
     WContainerWidget *w = new WContainerWidget();
     w->addWidget( m_colorSelect );
     hlRow->addWidget( w );
-    w->setFloatSide( Wt::Right );
+    //w->setFloatSide( Wt::Right );
+    w->addStyleClass("RefLinColorPick");
   }
   
   m_colorSelect->cssColorChanged().connect( boost::bind(
@@ -1024,17 +1022,46 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
                                                this, boost::placeholders::_1 ) );
   m_currentlyShowingNuclide.lineColor = m_lineColors[0];
   
-  WContainerWidget *whatToShow = new WContainerWidget();
-  m_showGammas = new WCheckBox( "gammas", whatToShow );
-  m_showXrays = new WCheckBox( "x-rays", whatToShow );
-  m_showAlphas = new WCheckBox( "alphas", whatToShow );
-  m_showBetas = new WCheckBox( "betas", whatToShow );
-  HelpSystem::attachToolTipOn( whatToShow, "If checked, selection will be shown.  Gammas and "
-                          "x-rays are shown in the table and on the chart, "
-                          "alphas and betas only in the table.",
-                              showToolTips );
-  whatToShow->hide(); //(20190408): Ehh, not sure these are actually useful, btu not sure, so keeping around, just hidden for a while, and then we can delete them
+  m_options_icon = new WPushButton();
+  m_options_icon->setStyleClass("RoundMenuIcon InvertInDark RefLinesOptMenu");
+  m_options_icon->clicked().preventPropagation();
+  //m_options_icon->setFloatSide(Wt::Right);
+  m_options_icon->clicked().connect(this, &ReferencePhotopeakDisplay::toggleShowOptions);
+
+  hlRow->addWidget(m_options_icon);
+
+  m_options = new WContainerWidget();
+  m_options->addStyleClass("RefLinesOptions");
+  m_options->hide();
+
+  WContainerWidget* closerow = new WContainerWidget(m_options);
+  WContainerWidget* closeIcon = new WContainerWidget(closerow);
+  closeIcon->addStyleClass("closeicon-wtdefault");
+  closeIcon->clicked().connect(this, &ReferencePhotopeakDisplay::toggleShowOptions);
+
+
+  m_promptLinesOnly = new WCheckBox("Prompt Only", m_options);  //ɣ
   
+  tooltip = "Gammas from only the original nuclide, and the descendants until one"
+    " of them has a longer half-life than the original nuclide; the"
+    " decay chain is in equilibrium till that point.";
+  HelpSystem::attachToolTipOn(m_promptLinesOnly, tooltip, showToolTips);
+  m_promptLinesOnly->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+  m_promptLinesOnly->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+  m_promptLinesOnly->hide();
+
+  m_showGammas = new WCheckBox( "Show Gammas", m_options);
+  m_showXrays = new WCheckBox( "Show X-rays", m_options);
+  m_showAlphas = new WCheckBox( "Show Alphas", m_options);
+  m_showBetas = new WCheckBox( "Show Betas", m_options);
+  m_showCascadeSums = new WCheckBox("Cascade Sums", m_options);
+  m_showCascadeSums->hide();
+  
+  //HelpSystem::attachToolTipOn(m_options, "If checked, selection will be shown.",
+  //                            showToolTips );
+
+  
+
   m_showGammas->setChecked();
   m_showXrays->setChecked();
   
@@ -1050,18 +1077,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showBetas->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_showBetas->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   
-  lowerInputLayout->addWidget( whatToShow, 3, 0 );
-
-  
-  m_showAlphas->checked().connect( std::bind([](){
-    passMessage( "Alphas are only be shown in the table, not on the spectrum.",
-                WarningWidget::WarningMsgInfo );
-  }) );
-  m_showBetas->checked().connect( std::bind([](){
-    passMessage( "Betas are only be shown in the table, not on the spectrum.",
-                WarningWidget::WarningMsgInfo );
-  }) );
-  
+  m_showCascadeSums->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+  m_showCascadeSums->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   
   m_particleView = new RowStretchTreeView();
   
@@ -1095,7 +1112,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     
   overallLayout->addWidget( inputDiv, 0, 0 );
   overallLayout->addWidget( lowerInput, 1, 0 );
-  overallLayout->addWidget( m_particleView, 0, 1, 3, 1 );
+  overallLayout->addWidget( m_options, 0, 1, 3, 1 );
+  overallLayout->addWidget( m_particleView, 0, 2, 3, 1 );
   
   auto bottomRow = new WContainerWidget();
   overallLayout->addWidget( bottomRow, 2, 0 );
@@ -1140,7 +1158,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   
   overallLayout->setRowStretch( 2, 1 );
-  overallLayout->setColumnStretch( 1, 1 );
+  overallLayout->setColumnStretch( 2, 1 );
 }//ReferencePhotopeakDisplay constructor
 
 
@@ -1367,12 +1385,30 @@ std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::current
 }//currentlyUsedPeakColors()
 
 
+void ReferencePhotopeakDisplay::toggleShowOptions()
+{
+  if (m_options->isHidden())
+  {
+    m_options->show();
+    //m_options->animateShow(WAnimation(WAnimation::AnimationEffect::Pop, WAnimation::TimingFunction::Linear, 250) );
+    m_options_icon->addStyleClass("active");
+  }else
+  {
+    m_options->hide();
+    //m_options->animateHide(WAnimation(WAnimation::AnimationEffect::Pop, WAnimation::TimingFunction::Linear, 250));
+    m_options_icon->removeStyleClass("active");
+  }
+}//void toggleShowOptions()
+
+
 void ReferencePhotopeakDisplay::updateDisplayChange()
 {
   /** The gamma or xray energy below which we wont show lines for.
    x-rays for nuclides were limited at above 10 keV, so we'll just impose this as a lower limit to show to be consistent.
    */
   const float lower_photon_energy = 10.0f;
+
+  const bool hasNonDefaultStyle = m_options_icon->hasStyleClass("non-default");
   
   bool show = true;
   show = (show && (!m_lowerBrCuttoff || m_lowerBrCuttoff->validate()==WValidator::Valid));
@@ -1418,6 +1454,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   
   const bool showGammaChecked = (!m_showGammas || m_showGammas->isChecked());
   const bool showXrayChecked = (!m_showXrays || m_showXrays->isChecked());
+  const bool showCascadesChecked = (m_showCascadeSums && m_showCascadeSums->isChecked());
   
   show = (show && (nuc || (el && showXrayChecked) || isBackground
                    || (!rctnGammas.empty() && showGammaChecked)) );
@@ -1449,50 +1486,51 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     WString hlstr = PhysicalUnits::printToBestTimeUnits( nuc->halfLife,
                                                       2, SandiaDecay::second );
     //hlstr = L" \x03BB=" + hlstr;
-    hlstr = "<span style=\"font-size: small;\">&lambda;<sub>&frac12;</sub>=" + hlstr + "</span>";
+    hlstr = "&lambda;<sub>&frac12;</sub>=" + hlstr;
     m_halflife->setText( hlstr );
-  }else
-  {
-    m_halflife->setText( "" );
-  }//if( nuc ) / else
 
-  if( nuc )
-  {
+
     try
     {
       const string agestr = m_ageEdit->text().toUTF8();
-      if( canHavePromptEquil && m_promptLinesOnly->isChecked() )
+      if (canHavePromptEquil && m_promptLinesOnly->isChecked())
       {
         age = 0.0;
-      }else
+      }
+      else
       {
         const double hl = (nuc ? nuc->halfLife : -1.0);
-        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
-        
-        if( age > 100.0*nuc->halfLife || age < 0.0 )
+        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife(agestr, hl);
+
+        if (age > 100.0 * nuc->halfLife || age < 0.0)
         {
           string defagestr;
-          age = PeakDef::defaultDecayTime( nuc, &defagestr );
+          age = PeakDef::defaultDecayTime(nuc, &defagestr);
           passMessage("Changed age to a more reasonable value for " + nuc->symbol
-                      + " from '" + agestr + "' to " + defagestr,
-                      WarningWidget::WarningMsgLow );
-          m_ageEdit->setText( defagestr );
+            + " from '" + agestr + "' to " + defagestr,
+            WarningWidget::WarningMsgLow);
+          m_ageEdit->setText(defagestr);
         }
       }//if( prompt ) / else
-    }catch(...)
+    }
+    catch (...)
     {
-      if( m_ageEdit->text().toUTF8() == "" )
+      if (m_ageEdit->text().toUTF8() == "")
       {
         string agestr;
-        age = PeakDef::defaultDecayTime( nuc, &agestr );
-        m_ageEdit->setText( agestr );
-      }else
+        age = PeakDef::defaultDecayTime(nuc, &agestr);
+        m_ageEdit->setText(agestr);
+      }
+      else
       {
         show = false;
       }
     }//try /catch to get the age
-  }//if( !el )
-  
+  }else
+  {
+    m_halflife->setText( "" );
+    m_promptLinesOnly->hide();
+  }//if( nuc ) / else
   
   //m_fitPeaks->setDisabled( !show );
   
@@ -1610,10 +1648,11 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     m_currentlyShowingNuclide.age             = age;
     m_currentlyShowingNuclide.labelTxt        = m_nuclideEdit->text().toUTF8();
     m_currentlyShowingNuclide.lowerBrCuttoff  = (m_lowerBrCuttoff ? m_lowerBrCuttoff->value() : 0.0);
-    m_currentlyShowingNuclide.showGammas      = (!m_showGammas || m_showGammas->isChecked());
-    m_currentlyShowingNuclide.showXrays       = (!m_showXrays || m_showXrays->isChecked());
+    m_currentlyShowingNuclide.showGammas      = m_showGammas->isChecked();
+    m_currentlyShowingNuclide.showXrays       = m_showXrays->isChecked();
     m_currentlyShowingNuclide.showAlphas      = m_showAlphas->isChecked();
     m_currentlyShowingNuclide.showBetas       = m_showBetas->isChecked();
+    m_currentlyShowingNuclide.showCascades    = m_showCascadeSums->isChecked();
     m_currentlyShowingNuclide.showLines       = true;
     m_currentlyShowingNuclide.promptLinesOnly
                        = (canHavePromptEquil && m_promptLinesOnly->isChecked());
@@ -1657,7 +1696,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     {
       for( const BackgroundLine &bl : BackgroundLines )
       {
-        if( std::get<3>(bl)!=BackgroundXRay || (!m_showXrays || m_showXrays->isChecked()) )
+        const bool isXray = (std::get<3>(bl) == BackgroundXRay);
+        if( (isXray && showXrayChecked) || (!isXray && showGammaChecked) )
           m_currentlyShowingNuclide.backgroundLines.push_back( &bl );
       }//for( const BackgroundLine &bl : BackgroundLines )
     }//if( isBackground )
@@ -1680,12 +1720,34 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     
     m_particleModel->clear();
         
+    if( hasNonDefaultStyle )
+      m_options_icon->removeStyleClass("non-default");
+
     if( age < 0.0 || !nuc )
     {
       m_particleModel->clear();
       return;
     }//if( age < 0.0 || !nuc )
   }//if( !show )
+
+
+  bool showGammaCB = true, showXrayCb = true, showAplhaCb = true, showBetaCb = true;
+  if (nuc) // Show everything
+  {}
+  else if (el) // For x-ray only show Show x-ray option  
+    showGammaCB = showAplhaCb = showBetaCb = false;
+  else if (!rctnGammas.empty()) // For reactions only show Show Gamma option
+    showXrayCb = showAplhaCb = showBetaCb = false;
+  else if (isBackground)
+    showAplhaCb = showBetaCb = false;
+  else // Show all options, otherwise whole area will be blank 
+  {}
+
+  m_showXrays->setHidden(!showXrayCb);
+  m_showGammas->setHidden(!showGammaCB);
+  m_showAlphas->setHidden(!showAplhaCb);
+  m_showBetas->setHidden(!showBetaCb);
+
 
   vector<DecayParticleModel::RowData> inforows;
 
@@ -1714,14 +1776,14 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   vector<const SandiaDecay::Transition *> transistions;
   vector<SandiaDecay::ProductType> types;
   vector<const ReactionGamma::Reaction *> reactionPeaks;
-  std::vector<const BackgroundLine *> backgroundLines;
+  vector<const BackgroundLine *> backgroundLines;
+  bool hasCascades = false;
+  vector<tuple<const SandiaDecay::Transition*, double, float, float, float, double>> cascades; //transition, first gamma BR, first gamma energy, second gamma energy, coincidence fraction, second gamma BR (just for debug)
 
-  if( !m_showGammas || m_showGammas->isChecked() )
-  {
+  if(showGammaChecked || showCascadesChecked)
     types.push_back( SandiaDecay::GammaParticle );
+  if (showGammaChecked )
     types.push_back( SandiaDecay::PositronParticle );
-  }
-  
   if( m_showAlphas->isChecked() )
     types.push_back( SandiaDecay::AlphaParticle );
   if( m_showBetas->isChecked() )
@@ -1760,6 +1822,11 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
           switch( particle.type )
           {
             case SandiaDecay::GammaParticle:
+              hasCascades |= !particle.coincidences.empty();
+              if (particle.energy < lower_photon_energy)
+                continue;
+              break;
+
             case SandiaDecay::XrayParticle:
               if( particle.energy < lower_photon_energy )
                 continue;
@@ -1772,7 +1839,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
               break;
           }//switch( particle.type )
           
-          
+
           if( type == SandiaDecay::PositronParticle && particle.type == SandiaDecay::PositronParticle )
           {
             const double br = activity * particle.intensity
@@ -1817,13 +1884,41 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
             }
           }else if( particle.type == type )
           {
+            const double br = activity * particle.intensity
+              * transition->branchRatio / parent_activity;
+
+            if (showCascadesChecked && transition && (type == SandiaDecay::GammaParticle) && (particle.type == type))
+            {
+              for (size_t coinc_index = 0; coinc_index < particle.coincidences.size(); ++coinc_index)
+              {
+                const unsigned short int part_ind = particle.coincidences[coinc_index].first;
+                const float fraction = particle.coincidences[coinc_index].second;
+                assert(part_ind < transition->products.size());
+                if (part_ind < transition->products.size())
+                {
+                  const SandiaDecay::RadParticle& coinc_part = transition->products[part_ind];
+
+                  // The BR of second gamma is just for debugging
+                  const double second_br = activity * coinc_part.intensity
+                                               * transition->branchRatio / parent_activity;
+
+
+                  if (coinc_part.type == SandiaDecay::ProductType::GammaParticle)
+                    cascades.emplace_back(transition, br, particle.energy, coinc_part.energy, fraction, second_br);
+                }//if (part_ind < transition->products.size())
+              }//for( loop over coincidences )
+            }//if( show cascade gammas )
+
+            // If type is GammaParticle, we could be here if user selected to show cascade, but
+            //  not actual gammas, so we need to check for this, and if so not add this gamma 
+            //  in to be shown
+            if ((type == SandiaDecay::GammaParticle) && !showGammaChecked)
+              continue;
+
             transistions.push_back( transition );
             energies.push_back( particle.energy );
-            const double br = activity * particle.intensity
-                                   * transition->branchRatio / parent_activity;
             branchratios.push_back( br );
-            particle_type.push_back( type );
-            
+            particle_type.push_back( type );           
             reactionPeaks.push_back( NULL );
             backgroundLines.push_back( NULL );
 
@@ -1895,6 +1990,9 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     if( eip.energy < lower_photon_energy )
       continue;
     
+    if (!showGammaChecked)
+      continue;
+
     transistions.push_back( NULL );
     energies.push_back( eip.energy );
     branchratios.push_back( eip.abundance );
@@ -1949,21 +2047,6 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     inforows.push_back( row );
   }//for( m_currentlyShowingNuclide.backgroundLines )
 
-//  double maxOrigbr = 0.0;
-//  for( size_t i = 0; i < inforows.size(); ++i )
-//    maxOrigbr = max( double(inforows[i].branchRatio), maxOrigbr );
-//  for( size_t i = 0; i < inforows.size(); ++i )
-//    inforows[i].branchRatio /= maxOrigbr;
-
-  //Lets get rid of branching ratios that are incredible close to zero
-  const float abs_min_br = FLT_MIN; //FLT_MIN is minimum, normalized, positive value of floats.
-  vector<DecayParticleModel::RowData> inforowstouse;
-  for( size_t i = 0; i < inforows.size(); ++i )
-    if( inforows[i].branchRatio > abs_min_br && inforows[i].branchRatio >= brCutoff )
-      inforowstouse.push_back( inforows[i] );
-
-  m_particleModel->setRowData( inforowstouse );
-
   //fold in detector response
   std::shared_ptr<DetectorPeakResponse> det = m_detectorDisplay->detector();
 
@@ -1972,16 +2055,15 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   {
     for( size_t i = 0; i < branchratios.size(); ++i )
       if( (particle_type[i] == SandiaDecay::GammaParticle) || (particle_type[i] == SandiaDecay::XrayParticle) )
-        branchratios[i] *= det->efficiency( energies[i], PhysicalUnits::m );
+        branchratios[i] *= det->intrinsicEfficiency( energies[i] );
   }//if( detector )
 
   
-  //fold in shielding here....
+  //fold in shielding here; we'll also use atten. function later of for cascade decays
+  std::shared_ptr<const Material> material;
+  boost::function<double(float)> att_coef_fcn;
   try
   {
-    std::shared_ptr<const Material> material;
-    boost::function<double(float)> att_coef_fcn;
-
     if( m_shieldingSelect->isGenericMaterial() )
     {
       const float atomic_number = static_cast<float>(m_shieldingSelect->atomicNumber());
@@ -2020,9 +2102,14 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 #endif
   }
 
-  
+  /*
   //Peak height is: area*(1/(sigma*sqrt(2*pi)))*exp( -(x-mean)^2 / (2*sigma^2) ),
   //  therefore peak height is proportianal to area/sigma, lets correct for this
+  //
+  //Note 20221031: This correction is only useful visually, but other factors 
+  //  would overwelm it - AND people wont expect it, so they may use number
+  //  from the mouseover info, and this would be a source of error, so removing
+  //  this "correction" - pending further thought.
   if( det && det->isValid() && det->hasResolutionInfo() )
   {
     const vector<double> origbr = branchratios;
@@ -2043,6 +2130,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
            << "resolution into account, sorry :(" << endl;
     }//try / catch
   }//if( detector->hasResolutionInfo() )
+  */
 
   //Some decays may not produce gammas, but do produce xrays (not verified) so
   //  we want to normalize gammas and xrays relative to the largest branching
@@ -2057,10 +2145,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     
     if( !maxbrs.count(type) )
       maxbrs[type] = 0.0;
-//    if( (transistions[i]
-//         || inforows[i].decayMode==DecayParticleModel::RowData::ReactionToGammaMode
-//         || backgroundLines[i]) )
-      maxbrs[type] = max(maxbrs[type],branchratios[i]);
+    maxbrs[type] = max(maxbrs[type],branchratios[i]);
 
     if( type == SandiaDecay::GammaParticle || type == SandiaDecay::XrayParticle )
       max_gamma_xray = std::max( max_gamma_xray, branchratios[i] );
@@ -2149,8 +2234,119 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     if( iter->first == SandiaDecay::GammaParticle || iter->first == SandiaDecay::XrayParticle )
       m_currentlyShowingNuclide.particle_sf[typestr] = max_gamma_xray;
   }
+
+
+  double maxCascadeBr = 0.0;
+  vector<tuple<float, double, string>> cascade_info;
+  for (const auto& casc : cascades)
+  {
+    const SandiaDecay::Transition* const &trans = get<0>(casc);
+    const double &first_br = get<1>(casc);
+    const float &first_energy = get<2>(casc);
+    const float &second_energy = get<3>(casc);
+    const float &coinc_frac = get<4>(casc);
+    const double &second_br = get<5>(casc);
+    
+    const float energy = first_energy + second_energy;
+
+
+    DecayParticleModel::RowData row;
+    row.energy = energy;
+    row.branchRatio = first_br * coinc_frac;
+    row.particle = SandiaDecay::ProductType::GammaParticle;
+    row.decayMode = DecayParticleModel::RowData::CascadeSumMode;
+    row.responsibleNuc = trans ? trans->parent : nullptr;
+
+    inforows.push_back(row);
+
+    //if (trans && trans->parent)
+    //  cout << "For " << trans->parent->symbol << " the " << first_energy << " keV gamma (br=" << first_br 
+    //  << "), is coincident with "  << second_energy << " keV (br=" << second_br 
+    //  << "), coinc_frac=" << coinc_frac << " of the time (first_br*coinc_frac=" << first_br*coinc_frac << ")" << endl;
+
+    double eff = 1.0;
+    if (!att_coef_fcn.empty())
+    {
+      try
+      {
+        eff *= exp(-1.0 * att_coef_fcn(first_energy));
+        eff *= exp(-1.0 * att_coef_fcn(second_energy));
+      }
+      catch (std::exception&e)
+      {
+        cerr << "Unexpected exception computing attenuation for cascades: " << e.what() << endl;
+      }
+    }//if (!att_coef_fcn.empty())
+
+    if (det && det->isValid())
+    {
+      eff *= det->intrinsicEfficiency(first_energy);
+      eff *= det->intrinsicEfficiency(second_energy);
+    }
+
+    const double amp = eff * first_br * coinc_frac;
+    if (IsNan(amp) || IsInf(amp) )
+    {
+      cout << "Cascade amp to NaN or inf (" << amp << ") for energy " << energy << " keV" << endl;
+      continue;
+    }
+
+    string decaystr = "Cascade sum";
+    if (trans && trans->parent)
+      decaystr += " " + trans->parent->symbol;
+    if (trans && trans->child)
+      decaystr += " to " + trans->child->symbol;
+
+    char buffer[128];
+    snprintf(buffer, sizeof(buffer), " (%.1f + %.1f keV, coinc=%.3g)", first_energy, second_energy, coinc_frac);
+    decaystr += buffer;
+
+    maxCascadeBr = std::max(maxCascadeBr, amp);
+    cascade_info.emplace_back(energy, amp, decaystr);
+  }//for( loop over cascades )
   
+
+  if (!cascade_info.empty())
+  {
+    // There can be tons of cascade sums (4834 for U238), we'll limit the number 
+    //   we draw to an arbitrary 350, because this is even more than I expect to 
+    //   be relevant (although I didnt actually check this).
+    //  TODO: limit based on importance, and not a flat limit, e.g., use something like
+    //        yield(i)*sqrt(energy(i))/sum(yield*sqrt(energy))
+    const size_t max_cascade_sums = 350;
+    if (cascade_info.size() > max_cascade_sums)
+    {
+      std::sort( begin(cascade_info), end(cascade_info), 
+        [](const tuple<float, double, string>& lhs, const tuple<float, double, string>& rhs) -> bool {
+          return get<1>(lhs) > get<1>(rhs);
+      });
+
+      cout << "Resizing cascade sums from " << cascade_info.size() << " to " << max_cascade_sums << endl;
+      cascade_info.resize(max_cascade_sums);
+    }//if (cascade_info.size() > 250)
+
+    m_currentlyShowingNuclide.particle_sf["cascade-sum"] = maxCascadeBr;
+
+    for (const auto& info : cascade_info)
+    {
+      //cout << "cascade: " << get<0>(info) << " keV rel_br=" << get<1>(info) / maxCascadeBr << ", " << get<2>(info) << endl;
+
+      const double amp = get<1>(info) / maxCascadeBr;
+      if (IsNan(amp) || IsInf(amp) || (amp < std::numeric_limits<float>::min()))
+      {
+        cout << "Cascade amp to small (" << amp << ") for energy " << get<0>(info) << " keV" << endl;
+        continue;
+      }
+
+      m_currentlyShowingNuclide.energies.push_back( get<0>(info) );
+      m_currentlyShowingNuclide.intensities.push_back( get<1>(info) / maxCascadeBr );
+      m_currentlyShowingNuclide.particlestrs.push_back("cascade-sum");
+      m_currentlyShowingNuclide.decaystrs.push_back(get<2>(info));
+      m_currentlyShowingNuclide.elementstrs.push_back("");
+    }//for( loop over cascade decays )
+  }//if (cascade_info.size())
   
+
 #if( PERFORM_DEVELOPER_CHECKS )
   for( const string &s : m_currentlyShowingNuclide.particlestrs )
   {
@@ -2164,7 +2360,18 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   }
 #endif
   
-  
+
+  // Lets set the table data, but first remove BRs really close to zero
+  const float abs_min_br = FLT_MIN; //FLT_MIN is minimum, normalized, positive value of floats.
+  vector<DecayParticleModel::RowData> inforowstouse;
+  for (size_t i = 0; i < inforows.size(); ++i)
+  {
+    if (inforows[i].branchRatio > abs_min_br && inforows[i].branchRatio >= brCutoff)
+      inforowstouse.push_back(inforows[i]);
+  }//for( loop over inforows )
+
+  m_particleModel->setRowData(inforowstouse);
+
   
   //Clientside javascript currently doesnt know about this garuntee that gamma
   //  lines will be sorted by energy.
@@ -2179,10 +2386,52 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     m_chart->setReferncePhotoPeakLines( ReferenceLineInfo() );
   
 
+  // Now check if m_options_icon should have a red background (non-default options) or not
+  bool nonDefaultOpts = false;
+
+  if (show && (nuc || el || !rctnGammas.empty() || isBackground))
+  {
+    nonDefaultOpts |= ((nuc && canHavePromptEquil) && m_promptLinesOnly->isChecked());
+    nonDefaultOpts |= (showGammaCB && !m_showGammas->isChecked());
+    nonDefaultOpts |= (showXrayCb  && !m_showXrays->isChecked());
+    nonDefaultOpts |= (showAplhaCb &&  m_showAlphas->isChecked());
+    nonDefaultOpts |= (showBetaCb  &&  m_showBetas->isChecked());
+    nonDefaultOpts |= (hasCascades && m_showCascadeSums->isChecked());
+  }//if( we are actually showing any lines )
+
+  // Add or remove the .non-default style class, if necassary
+  if (nonDefaultOpts != hasNonDefaultStyle)
+    m_options_icon->toggleStyleClass("non-default", nonDefaultOpts);
+
+  // We'll only show Coincidence checkbox if there are actually coincidence gammas
+  m_showCascadeSums->setHidden(!hasCascades);
+  if (hasCascades)
+  {
+    if (m_showCascadeSums->isChecked())
+    {
+      if (!m_cascadeWarn)
+      {
+        m_cascadeWarn = new WText("x-rays are not included in cascades");
+        m_cascadeWarn->addStyleClass("CascadeGammaWarn");
+        m_options->insertWidget(m_options->indexOf(m_showCascadeSums) + 1, m_cascadeWarn);
+      }
+      if (m_cascadeWarn->isHidden())
+        m_cascadeWarn->show();
+    }
+    else if(m_cascadeWarn && !m_cascadeWarn->isHidden())
+    {
+      m_cascadeWarn->hide();
+    }
+  }
+  else
+  {
+    if (m_cascadeWarn && !m_cascadeWarn->isHidden())
+      m_cascadeWarn->hide();
+  }//if (hasCascades) / else
+
+
   if( show )
   {
-    string json;
-    
     if( m_persistLines->isDisabled() )
       m_persistLines->enable();
     if( m_clearLines->isDisabled() )
@@ -2194,9 +2443,6 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
       m_clearLines->setText( m_persisted.empty() ? "Remove" : "Remove All" );
     else
       m_clearLines->setText( m_persisted.empty() ? "Clear" : "Clear All" );
-    
-    if( json.size() )
-      doJavaScript( json );
   }//if( show )
 }//void updateDisplayChange()
 
@@ -2349,6 +2595,11 @@ void ReferencePhotopeakDisplay::serialize(
     value = (m_showBetas->isChecked() ? "1" : "0");
     element = doc->allocate_node( rapidxml::node_element, name, value );
     node->append_node( element );
+
+    name = "ShowCascades";
+    value = (m_showCascadeSums->isChecked() ? "1" : "0");
+    element = doc->allocate_node(rapidxml::node_element, name, value);
+    node->append_node(element);
   }else
   {
     node = doc->allocate_node( rapidxml::node_element, "CurrentLines" );
@@ -2520,6 +2771,10 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
       node = gui_node->first_node( "ShowBetas", 9 );
       if( node && node->value() && strlen(node->value()))
         m_showBetas->setChecked( (node->value()[0] == '1') );
+
+      node = gui_node->first_node("ShowCascades", 12);
+      if (node && node->value() && strlen(node->value()))
+        m_showCascadeSums->setChecked((node->value()[0] == '1'));
     }//if( gui_node )
     
     if( showing_node )

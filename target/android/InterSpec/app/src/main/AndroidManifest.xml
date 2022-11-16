@@ -43,6 +43,7 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
             android:roundIcon="@mipmap/ic_launcher_round"
             android:hardwareAccelerated="true"
             android:exported="true"
+            android:windowSoftInputMode="adjustResize|stateHidden"
             android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|locale|fontScale|keyboard|keyboardHidden|navigation"
             android:screenOrientation="sensorLandscape"
             android:launchMode="singleTask">

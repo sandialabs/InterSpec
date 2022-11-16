@@ -5969,6 +5969,16 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
       if( !peak->fitFor(PeakDef::GaussAmplitude) )
         continue;
       
+      // Dont enforce a significance test if we are reftting the peak, and 
+      //  Sigma and Mean are fixed - the user probably probably what they  
+      //  are are doing.
+      if( (method == PeakFitChi2Fcn::kRefitPeakParameters)
+        && !peak->fitFor(PeakDef::Sigma)
+        && !peak->fitFor(PeakDef::Mean) )
+      {
+        continue;
+      }
+
       const bool significant = chi2_significance_test( *peak, stat_threshold, hypothesis_threshold,
                                                           *all_peaks, data );
       if( !significant )

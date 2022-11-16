@@ -4046,8 +4046,7 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
 
 void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
 {
-  const char * const contained_err_msg = "Updated shielding dimensions so inner shieldings"
-                                         " will be contained by outer shieldings.";
+  const char * const contained_err_msg = "Updated shielding dimension to be a minimum thickness.";
   const char * const scaled_err_msg = "Shielding thicknesses have been scaled to be less"
                                       " then detector distance.";
  

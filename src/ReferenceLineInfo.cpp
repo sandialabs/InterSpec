@@ -217,7 +217,7 @@ void ReferenceLineInfo::reset()
   labelTxt.clear();
   reactionsTxt.clear();
   lineColor = Wt::WColor();
-  showGammas = showXrays = showAlphas = showBetas = false;
+  showGammas = showXrays = showAlphas = showBetas = showCascades = false;
   promptLinesOnly = showLines = isBackground = displayLines = false;
   lowerBrCuttoff = age = 0.0;
 }//void ReferenceLineInfo::reset()
@@ -301,6 +301,10 @@ void ReferenceLineInfo::toJson( string &json ) const
     // We will assume entries are sorted by energy, which is only guaranteed when
     //  ReferencePhotopeakDisplay::updateDisplayChange() sets the data - but also, I think this
     //  is the only place that sets the data!
+
+    // TODO: This current way of doing things wil sum a Cascade sum with a gamma (e.g., the 387.8 
+    //       keV of U235), which is probably not the right thing to do because it then shows up as
+    //       giant gamma on the chart, which is deceptive
     const bool next_gamma_close = (((i+1) < energies.size()) && (round_energy(energies[i+1]) == energy) );
     
     if( next_gamma_close )
@@ -503,6 +507,10 @@ void ReferenceLineInfo::deSerialize( const rapidxml::xml_node<char> *base_node )
   node = base_node->first_node( "ShowBetas", 9 );
   if( node && node->value_size() )
     showBetas = (node->value()[0] == '1');
+
+  node = base_node->first_node("ShowCascades", 12);
+  if (node && node->value_size())
+    showCascades = (node->value()[0] == '1');
   
   node = base_node->first_node( "ShowLines", 9 );
   if( node && node->value_size() )
@@ -769,6 +777,11 @@ void ReferenceLineInfo::serialize( rapidxml::xml_node<char> *parent_node ) const
   node = doc->allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( node );
   
+  name = "ShowCascades";
+  value = (showCascades ? "1" : "0");
+  node = doc->allocate_node(rapidxml::node_element, name, value);
+  base_node->append_node(node);
+
   name = "PromptLinesOnly";
   value = (promptLinesOnly ? "1" : "0");
   node = doc->allocate_node( rapidxml::node_element, name, value );
