@@ -1,5 +1,10 @@
 # Tutorials
 
+## Relative Efficiency Analysis 
+* [20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf](rel_eff_peaks/20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf).
+Relative efficiency analyis allows you to determine enrichments and relative activities of nuclides in a spectrum, without knowing the detector response function, shielding, geometry, or distances.
+
+
 ## InterSpec familiarization Apr 2022
 * Part 1: Initial Familiarization (1 hour)
   * Presentation: [InterSpec_familiarization.pdf](familiarization_Apr2022/20220420_InterSpec_familiarization.pdf).
