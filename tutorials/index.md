@@ -1,8 +1,9 @@
 # Tutorials
 
 ## Relative Efficiency Analysis 
+Relative efficiency analyis allows you to determine enrichments and relative activities of nuclides in a spectrum, without knowing the detector response function, shielding, geometry, or distances.  This presentation provides an overview of one of InterSpecs relative efficiency tools.
 * [20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf](rel_eff_peaks/20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf).
-Relative efficiency analyis allows you to determine enrichments and relative activities of nuclides in a spectrum, without knowing the detector response function, shielding, geometry, or distances.
+
 
 
 ## InterSpec familiarization Apr 2022
