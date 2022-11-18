@@ -317,7 +317,9 @@ D3TimeChart = function (elem, options) {
   };
 
   /** SVG COMPONENT REFERENCES */
-  this.svg = d3.select(this.chart).append("svg");
+  this.svg = d3.select(this.chart).append("svg")
+               .attr("class", "D3TimeChart InterSpecD3Chart" );
+
   this.verticalGridG = this.svg.append("g").attr("class", "grid xgrid");
   this.horizontalLeftGridG = this.svg.append("g").attr("class", "grid ygrid");
   this.horizontalRightGridG = this.svg.append("g").attr("class", "grid ygrid");
@@ -1569,6 +1571,9 @@ D3TimeChart.prototype.updateChart = function (
           Math.pow(2, compressionIndex) +
           " Samples";
 
+    if( this.state.data.raw && this.state.data.raw.isCountsRatio )
+      axisLabelY1Text = "\u0263 Range Ratio";
+
     // if title already drawn, just update
     if (!axisLabelY1.empty()) {
       // reposition
@@ -1597,8 +1602,7 @@ D3TimeChart.prototype.updateChart = function (
             ") rotate(-90)"
         )
         .style("text-anchor", "middle")
-        .text(axisLabelY1Text)
-        .attr("font-size", "0.9em");
+        .text(axisLabelY1Text);
     } // if (!axisLabelY1.empty())
 
     // format minor axis labels:
@@ -1682,8 +1686,7 @@ D3TimeChart.prototype.updateChart = function (
             ") rotate(90)"
         )
         .style("text-anchor", "middle")
-        .text(axisLabelY2Text)
-        .attr("font-size", "0.9em");
+        .text(axisLabelY2Text);
     } // if (!axisLabelY2.empty())
   } else {
     this.axisRightG.selectAll("*").remove();
@@ -1699,9 +1702,13 @@ D3TimeChart.prototype.updateFilterInfo = function () {
   /* If there is a gamma energy range sum applied, make some text to notify user of this */
   if (this.state.data && this.state.data.raw) {
     const haveLowFilter =
-      typeof this.state.data.raw.filterLowerEnergy === "number";
+          typeof this.state.data.raw.filterLowerEnergy === "number";
     const haveHighFilter =
-      typeof this.state.data.raw.filterUpperEnergy === "number";
+          typeof this.state.data.raw.filterUpperEnergy === "number";
+    const haveLowFilterDenom =
+          typeof this.state.data.raw.filterNormLowerEnergy === "number";
+    const haveHighFilterDenom =
+          typeof this.state.data.raw.filterNormUpperEnergy === "number";
 
     if (haveLowFilter || haveHighFilter) {
       if (!this.filterInfo) {
@@ -1719,23 +1726,30 @@ D3TimeChart.prototype.updateFilterInfo = function () {
       }
 
       let txt = "";
+      if (haveLowFilter || haveHighFilter) {
+          if (haveLowFilterDenom || haveHighFilterDenom)
+              txt = "Gamma ratio of ";
+          else
+              txt = "Gammas summed from ";
+        }
+
       if (haveLowFilter && haveHighFilter) {
-        txt =
-          "Gammas summed from " +
-          this.state.data.raw.filterLowerEnergy +
-          " keV to " +
-          this.state.data.raw.filterUpperEnergy +
-          " keV";
+        txt += this.state.data.raw.filterLowerEnergy + " to " + this.state.data.raw.filterUpperEnergy + " keV";
       } else if (haveLowFilter) {
-        txt =
-          "Gammas summed above " +
-          this.state.data.raw.filterLowerEnergy +
-          " keV";
+        txt += "above " + this.state.data.raw.filterLowerEnergy + " keV";
       } else if (haveHighFilter) {
-        txt =
-          "Gammas summed below " +
-          this.state.data.raw.filterUpperEnergy +
-          " keV";
+        txt = "below " + this.state.data.raw.filterUpperEnergy + " keV";
+      }
+
+      if ((haveLowFilter || haveHighFilter) && (haveLowFilterDenom || haveHighFilterDenom)) {
+          txt += " norm. by ";
+          if (haveLowFilterDenom && haveHighFilterDenom) {
+              txt += this.state.data.raw.filterNormLowerEnergy + " to " + this.state.data.raw.filterNormUpperEnergy + " keV";
+          } else if (haveLowFilterDenom) {
+              txt += "above " + this.state.data.raw.filterNormLowerEnergy + " keV";
+          } else if (haveHighFilterDenom) {
+              txt = "below " + this.state.data.raw.filterNormUpperEnergy + " keV";
+          }
       }
 
       let xmmsglen = this.filterInfoTxt.text(txt).node().getBBox().width;
@@ -1940,6 +1954,11 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
   if( meanIntervalTime < 0 )
     meanIntervalTime = -meanIntervalTime;
 
+  let isCountsRatio = false;
+  if( typeof rawData.isCountsRatio === "boolean" )
+    isCountsRatio = rawData.isCountsRatio;
+
+    
   // format occupied array:
   var occupied;
   if (rawData.hasOwnProperty("occupancies")) {
@@ -1988,6 +2007,8 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
     if (!detectors[det.detName].hasOwnProperty("counts")) {
       detectors[det.detName].counts = [];
 
+      console.assert( !isCountsRatio || (det.gammaNormCounts.length >= nSamples));
+      
       for (var i = 0; i < nSamples; i++) {
         if( dontRebin ) {
           
@@ -2007,8 +2028,12 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
           );
         } else {
           // use livetimes for cps if available; realtimes otherwise
-          var dt = det.liveTimes ? det.liveTimes[i] : data.realTimes[i];
-          
+          let dt = det.liveTimes ? det.liveTimes[i] : data.realTimes[i];
+
+          if (isCountsRatio) {
+            dt = det.gammaNormCounts[i];
+          }
+
           // dt could be zero - in this case we'll just set the time to 1 ... not really sure how to handle this properly
           dt = ((dt <= 0) || isNaN(dt)) ? 1 : dt;
             
@@ -2040,7 +2065,11 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
         } else {
           // use livetimes for cps if available; realtimes otherwise
           var dt = det.liveTimes ? det.liveTimes[i] : data.realTimes[i];
-          
+
+          if (isCountsRatio) {
+            dt = det.gammaNormCounts[i];
+          }
+
           // dt could be zero - in this case we'll just set the time to 1 ... not really sure how to handle this properly
           dt = ((dt <= 0) || isNaN(dt)) ? 1 : dt;
           
@@ -2164,12 +2193,13 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
     this.margin.right = 10;
   } else {
     this.margin.right = 60;
-  }
+    }
 
   return {
     sampleNumbers: rawData.sampleNumbers,
     realTimeIntervals: realTimeIntervals,
     meanIntervalTime: meanIntervalTime,
+    isCountsRatio: isCountsRatio,
     occupied: occupied,
     sourceTypes: rawData.sourceTypes,
     startTimeStamps: startTimeStamps,
@@ -2206,9 +2236,20 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
   var nSamples = rawData.sampleNumbers.length;
 
   for (var i = 0; i < rawData.gammaCounts.length; i++) {
+
+    if(rawData.isCountsRatio) {
+      console.assert( rawData.gammaCounts[i].hasOwnProperty("gammaNormCounts") );
+      console.assert( rawData.gammaCounts[i].gammaNormCounts.length >= nSamples );
+    }
+
     for (var j = 0; j < nSamples; j++) {
       var dt = rawData.gammaCounts[i].liveTimes ? rawData.gammaCounts[i].liveTimes[j] : rawData.realTimes[j];
       
+      if(rawData.isCountsRatio) {
+        dt = rawData.gammaCounts[i].gammaNormCounts[j];
+        console.log( dt, rawData.gammaCounts[i].counts[j] );
+      }
+
       // dt could be zero - in this case we'll just set the time to 1 ... not really sure how to handle this properly
       dt = ((dt <= 0) || isNaN(dt)) ? 1 : dt;
       
@@ -3069,7 +3110,10 @@ D3TimeChart.prototype.setMouseInfoText = function (time, data, optargs) {
     }
     s += "<\n>";
 
-    s += "G CPS: " + data[i].gammaCPS[0].toPrecision(6);
+    if( this.state.data.raw && this.state.data.raw.isCountsRatio )
+      s += "G ratio: " + data[i].gammaCPS[0].toPrecision(6);
+    else
+      s += "G CPS: " + data[i].gammaCPS[0].toPrecision(6);
     
     if( data[i].gammaCPS.length > 1 ) {
       s += " - " + data[i].gammaCPS[1].toPrecision(6);
@@ -3186,14 +3230,17 @@ D3TimeChart.prototype.compress = function (data, n) {
   
   // If option is to not rebin counts, then we will still compress the time samples, but we will
   //  also calculate min/max CPS for each compressed time interval, which is what will be plotted
-  var dontRebin = this.options.dontRebin; //TODO: could add requirement of (n > 1) too, but I didnt test
+  const dontRebin = this.options.dontRebin; //TODO: could add requirement of (n > 1) too, but I didnt test
   
+  console.assert( data.hasOwnProperty("isCountsRatio") );
+
   // Create output array template
   var out = {
     gammaCounts: [],
     realTimes: [],
     sampleNumbers: [],
-    compression: n
+    compression: n,
+    isCountsRatio: data.isCountsRatio
   };
 
   // init flags
@@ -3232,7 +3279,16 @@ D3TimeChart.prototype.compress = function (data, n) {
   }
 
   // iterate over array with window of size n
-  var length = data.sampleNumbers.length;
+  const length = data.sampleNumbers.length;
+
+
+  console.assert( data.hasOwnProperty("isCountsRatio") );
+  if(data.isCountsRatio) {
+    data.gammaCounts.forEach(function (detector) {
+      console.assert( detector.gammaNormCounts.length >= length );
+    } );
+  }//if(data.isCountsRatio)
+
 
   // create occupied array:
   var occupied;
@@ -3318,6 +3374,13 @@ D3TimeChart.prototype.compress = function (data, n) {
             detectorsAccumulator[detector.detName].gammaLiveTimes = [];
           } // if (detector.hasOwnProperty("liveTimes") && !detectorsAccumulator[detector.detName].hasOwnProperty("gammaLiveTimes"))
 
+
+          if (data.isCountsRatio &&
+                   !detectorsAccumulator[detector.detName].hasOwnProperty("gammaNormCounts")
+          ) {
+            detectorsAccumulator[detector.detName].gammaNormCounts = [];
+          }
+
           // gammaCounts[outIdx] will begin accumulating. So add to it the i + jth count.
           if (
             detectorsAccumulator[detector.detName].gammaCounts[outIdx] == null
@@ -3341,7 +3404,17 @@ D3TimeChart.prototype.compress = function (data, n) {
             
             detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] += detector.liveTimes[i + j];
           }// (detector.hasOwnProperty("liveTimes"))
-          
+
+          if (data.isCountsRatio) {
+            dt = detector.gammaNormCounts[i + j];
+
+            if (detectorsAccumulator[detector.detName].gammaNormCounts[outIdx] == null) {
+              detectorsAccumulator[detector.detName].gammaNormCounts[outIdx] = 0;
+            } // if (detectorsAccumulator[detector.detName].gammaNormCounts[outIdx] == null)
+
+            detectorsAccumulator[detector.detName].gammaNormCounts[outIdx] += detector.gammaNormCounts[i + j];
+          }//if (isCountsRatio)
+
           // dt could be zero - in this case we'll just set the time to 1 ... not really sure how to handle this properly
           dt = ((dt <= 0) || isNaN(dt)) ? 1 : dt;
           
@@ -3500,6 +3573,12 @@ D3TimeChart.prototype.compress = function (data, n) {
     // optional fields:
     if (detectorsAccumulator[detName].hasOwnProperty("gammaLiveTimes")) {
       gammaCount.liveTimes = detectorsAccumulator[detName].gammaLiveTimes;
+    }
+
+
+    if( data.isCountsRatio ) {
+      console.assert( detectorsAccumulator[detName].hasOwnProperty("gammaNormCounts") );
+      gammaCount.gammaNormCounts = detectorsAccumulator[detName].gammaNormCounts;
     }
 
     out.gammaCounts.push(gammaCount);

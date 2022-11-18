@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <array>
 #include <tuple>
 #include <limits>
 #include <memory>
@@ -481,14 +482,27 @@ public:
     m_lowerEnergy->setText( "" );
     m_upperEnergy->setText( "" );
     
+    m_normLowerEnergy->setText("");
+    m_normUpperEnergy->setText("");
+    if( m_normalizeCb->isChecked() )
+    {
+      m_normalizeCb->setUnChecked();
+      m_normBox->setDisabled( true );
+    }
+
     m_parentChart->userChangedEnergyRangeFilterCallback();
-  }
+  }//void clearFilterEnergiesCallback()
+
   
   void resetFilterEnergies()
   {
     m_lowerEnergy->setText( "" );
     m_upperEnergy->setText( "" );
+    m_normLowerEnergy->setText("");
+    m_normUpperEnergy->setText("");
     m_clearEnergyFilterBtn->hide();
+    m_normalizeCb->setUnChecked();
+    m_normBox->setDisabled(true);
   }
   
 
@@ -498,7 +512,11 @@ public:
 
     if (m_normalizeCb->isChecked())
     {
-      //blah blah blah, fill in some default values
+      if (m_normLowerEnergy->text().empty())
+      {
+        if (!m_upperEnergy->text().empty())
+          m_normLowerEnergy->setValue( m_upperEnergy->value() );
+      }
     }
 
     m_parentChart->userChangedEnergyRangeFilterCallback();
@@ -541,18 +559,30 @@ public:
   }//void energyFilterChanged()
   
   
-  pair<boost::optional<float>,boost::optional<float>> energyRangeFilters() const
+  std::array<boost::optional<float>,4> energyRangeFilters() const
   {
-    pair<boost::optional<float>,boost::optional<float>> answer;
+    array<boost::optional<float>, 4> answer;
     if( !m_lowerEnergy->text().empty() )
-      answer.first = m_lowerEnergy->value();
+      answer[0] = m_lowerEnergy->value();
     
     if( !m_upperEnergy->text().empty() )
-      answer.second = m_upperEnergy->value();
+      answer[1] = m_upperEnergy->value();
     
-    if( answer.first && answer.second && ((*answer.first) > (*answer.second)) )
-      std::swap( answer.first, answer.second );
+    if( answer[0] && answer[1] && ((*answer[0]) > (*answer[1])) )
+      std::swap( answer[0], answer[1]);
     
+    if (m_normalizeCb->isChecked())
+    {
+      if( !m_normLowerEnergy->text().empty() )
+        answer[2] = m_normLowerEnergy->value();
+
+      if (!m_normUpperEnergy->text().empty())
+        answer[3] = m_normUpperEnergy->value();
+
+      if (answer[2] && answer[3] && ((*answer[2]) > (*answer[3])))
+        std::swap(answer[2], answer[3]);
+    }//if (m_normalizeCb->isChecked())
+
     return answer;
   }//energyRangeFilters()
   
@@ -668,7 +698,7 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   initChangeableCssRules();
   
   m_chart = new WContainerWidget( this );
-  m_chart->addStyleClass( "D3TimeChart" );
+  m_chart->addStyleClass( "D3TimeChartHolder" );
   
   // Cancel right-click events for the div, we handle it all in JS
   m_chart->setAttributeValue( "oncontextmenu",
@@ -930,7 +960,7 @@ void D3TimeChart::setDataToClient()
   bool haveAnyGps = false, plottingNeutrons = false;
   
   map<string,bool> hasGamma, hasNuetron;
-  map<string,vector<double>> gammaCounts, neutronCounts, liveTimes;  //maps from detector name to counts
+  map<string,vector<double>> gammaCounts, neutronCounts, liveTimes, gammaNormCounts;  //maps from detector name to counts
   
   const set<int> &sample_numbers = m_spec->sample_numbers();
   //const vector<string> &detNames = m_spec->detector_names();
@@ -953,14 +983,18 @@ void D3TimeChart::setDataToClient()
 #endif
   
 
-  boost::optional<float> lowerEnergy, upperEnergy;
+  boost::optional<float> lowerEnergy, upperEnergy, normLowerEnergy, normUpperEnergy;
   if( m_options )
   {
     const auto energyRange = m_options->energyRangeFilters();
-    lowerEnergy = energyRange.first;
-    upperEnergy = energyRange.second;
+    lowerEnergy = energyRange[0];
+    upperEnergy = energyRange[1];
+    normLowerEnergy = energyRange[2];
+    normUpperEnergy = energyRange[3];
   }//if( m_options )
-  
+
+  const bool isCps = ((!lowerEnergy && !upperEnergy) || (!normLowerEnergy && !normUpperEnergy));
+
 #define Q_DBL_NaN std::numeric_limits<double>::quiet_NaN()
   
   for( const int sample_num : sample_numbers )
@@ -996,8 +1030,11 @@ void D3TimeChart::setDataToClient()
       if( !m )
       {
         liveTimes[detName].push_back( Q_DBL_NaN );
-        gammaCounts[detName].push_back( Q_DBL_NaN );
+        gammaCounts[detName].push_back( Q_DBL_NaN ); 
         neutronCounts[detName].push_back( Q_DBL_NaN );
+
+        if( !isCps )
+          gammaNormCounts[detName].push_back(Q_DBL_NaN);
         
         if( !hasGamma.count(detName) )
           hasGamma[detName] = false;
@@ -1047,8 +1084,28 @@ void D3TimeChart::setDataToClient()
         {
           gamma_sum = m->gamma_integral( specMinEnergy - 1000, *upperEnergy);
         }
-        
+
         gammaCounts[detName].push_back( gamma_sum );
+
+        if (normLowerEnergy || normUpperEnergy)
+        {
+          double denominator = 1.0;
+          if (normLowerEnergy && normUpperEnergy)
+          {
+            denominator = m->gamma_integral(*normLowerEnergy, *normUpperEnergy);
+          }else if (normLowerEnergy)
+          {
+            denominator = m->gamma_integral(*normLowerEnergy, specMaxEnergy + 1000);
+          }else if (normUpperEnergy)
+          {
+            denominator = m->gamma_integral(specMinEnergy - 1000, *normUpperEnergy);
+          }else
+          {
+            assert(0);
+          }
+
+          gammaNormCounts[detName].push_back(denominator);
+        }//if (normLowerEnergy || normUpperEnergy)
       }else
       {
         gammaCounts[detName].push_back( m->gamma_count_sum() );
@@ -1091,6 +1148,8 @@ void D3TimeChart::setDataToClient()
   }//for( loop over sample numbers )
   
   const size_t numSamples = sampleNumbers.size();
+
+#ifndef NDEBUG
   //A quick sanity check all the arrays will be the same length.
   assert( numSamples == realTimes.size() );
   assert( numSamples == sourceTypes.size() );
@@ -1102,6 +1161,18 @@ void D3TimeChart::setDataToClient()
     assert( p.second.size() == numSamples );
   }
   
+  if (!isCps)
+  {
+    for (const auto& p : gammaNormCounts)
+    {
+      assert(p.second.size() == numSamples);
+    }
+  }
+  else
+  {
+    assert(gammaNormCounts.empty());
+  }
+
   for( const auto &p : neutronCounts )
   {
     assert( p.second.size() == numSamples );
@@ -1117,7 +1188,9 @@ void D3TimeChart::setDataToClient()
     doJavaScript( m_jsgraph +  ".setData( null );" );
     return;
   }//if( !numSamples )
-  
+#endif //#ifndef NDEBUG
+
+
   const char jssep[] = { '[', ',' };
   
   auto printNumberArray = [&jssep]( WStringStream &js, const vector<double> &arr ){
@@ -1184,6 +1257,19 @@ void D3TimeChart::setDataToClient()
   if( upperEnergy )
     js << ",\n\t\"filterUpperEnergy\": " << static_cast<double>(*upperEnergy);
     
+  
+  if (lowerEnergy || upperEnergy)
+  {
+    if (normLowerEnergy)
+      js << ",\n\t\"filterNormLowerEnergy\": " << static_cast<double>(*normLowerEnergy);
+
+    if (normUpperEnergy)
+      js << ",\n\t\"filterNormUpperEnergy\": " << static_cast<double>(*normUpperEnergy);
+  }//if (isCps)
+
+  
+  js << ",\n\t\"isCountsRatio\": " << jsbool(!isCps);
+
   if( haveAnyGps )
   {
     js << ",\n\t\"gpsCoordinates\": ";
@@ -1201,6 +1287,10 @@ void D3TimeChart::setDataToClient()
     js << "]";
   }//if( haveAnyGps )
   
+
+   //blah blah blah: Now need to add `gammaNormCounts` to JSON and then modify JS so it doesnt divide by LT (if it even does), and insteda if gammaNormCounts exitst, it , and also so that it gets the y - axis title, and mouse - overs right.
+   //   or maybe the denominator should be tracked seperately and divided later(maybe in JS), after summing all detectors(especuaially for plotDetectorsSeparate == false)
+   //  Also, maybe change some names of filter ranges, etc....
   
   if( plotDetectorsSeparate )
   {
@@ -1224,6 +1314,15 @@ void D3TimeChart::setDataToClient()
       js << ",\n\t\"liveTimes\": ";
       printNumberArray( js, lts );
       
+      if( !isCps ) 
+      {
+        const auto& norms = gammaNormCounts[detName];
+        assert(norms.size() == numSamples);
+        js << ",\n\t\"gammaNormCounts\": ";
+        printNumberArray(js, norms);
+      }//if( !isCps )
+
+
       js << "}";
     }//for( const auto &detName : detNames )
     
@@ -1281,18 +1380,6 @@ void D3TimeChart::setDataToClient()
           }
         }//for( const auto &p : gammaCounts )
         
-        double liveTime = 0.0;
-        bool haveLiveTime = false;
-        for( const auto &p : liveTimes )
-        {
-          if( !IsNan(p.second[i]) )
-          {
-            haveLiveTime = true;
-            liveTime += p.second[i];
-          }
-        }
-        
-        
         js << string(i ? "," : "");
         if( anyNonNan )
           js << sum;
@@ -1322,6 +1409,32 @@ void D3TimeChart::setDataToClient()
           js << "null";
       }//for( size_t i = 0; i < numSamples; ++i )
       js << "]";
+
+      
+      if( !isCps )
+      {
+        js << ",\n\t\t\"gammaNormCounts\": [";
+        for( size_t i = 0; i < numSamples; ++i )
+        {
+          double normCounts = 0.0;
+          bool haveNormCounts = false;
+          for( const auto &p : gammaNormCounts )
+          {
+            if( !IsNan(p.second[i]) )
+            {
+              haveNormCounts = true;
+              normCounts += p.second[i];
+            }
+          }
+
+          js << string(i ? "," : "");
+          if( haveNormCounts )
+            js << ((normCounts > numeric_limits<float>::epsilon()) ? normCounts : 1.0);
+          else
+            js << "null";
+        }//for( size_t i = 0; i < numSamples; ++i )
+        js << "]";
+      }//if( !isCps )
       
       js << "\n\t}]";
     }//if( haveAnyGamma )

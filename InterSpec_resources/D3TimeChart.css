@@ -3,7 +3,7 @@
   flex-wrap: nowrap;
 }
 
-.D3TimeChart {
+.D3TimeChartHolder {
   flex-grow: 4;
   height: 100%;
   overflow: hidden;
@@ -238,28 +238,13 @@
   width: 0px; /* appears to be needed so flex will adjust the width. */
 }
 
-
-.axis > path,
-.axis line {
-  fill: none;
-}
-
-.axis text {
-  font-family: sans-serif;
-  font-size: 0.9em;
-}
-
-.axis_label {
-  fill: rgb(0, 0, 0);
-}
-
-.grid path {
-  fill: none;
+.D3TimeChart {
+    /* the actual <svg> element itself. */
 }
 
 .interaction_area .selection {
-  fill-opacity: 0.25;
-  shape-rendering: crispEdges;
+    fill-opacity: 0.25;
+    shape-rendering: crispEdges;
 }
 
 .occupancy_start_line_group line,
