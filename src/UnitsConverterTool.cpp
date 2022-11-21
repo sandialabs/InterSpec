@@ -37,11 +37,17 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WRegExpValidator>
 
-#include "InterSpec/AuxWindow.h"
 #include "SpecUtils/StringAlgo.h"
+
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "InterSpec/AuxWindow.h"
+#include "InterSpec/InterSpec.h"      // Only for preferenceValue<bool>("DisplayBecquerel")
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/InterSpecUser.h"  // Only for preferenceValue<bool>("DisplayBecquerel")
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UnitsConverterTool.h"
+#include "InterSpec/DecayDataBaseServer.h"
 
 using namespace Wt;
 using namespace std;
@@ -51,34 +57,43 @@ namespace
 
 int num_sig_figs( const string &val )
 {
-  // \TODO: this isnt necassilry correct, because it is being used to determine number of places
-  //        after a decimal... we'll worry about this later.
-  boost::smatch mtch;
-  boost::regex expr( PhysicalUnits::sm_positiveDecimalRegex + string(".*"));
+  // We'll loop over matches, and take the one with the most sig-figs (but at least 2)
+  int num_sig_figs = 2;
+  bool found_match = false;
   
-  if( boost::regex_match( val, mtch, expr ) )
+  const char *dec_regex = "[\\+-]?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?";
+  boost::regex expr( dec_regex );
+  boost::sregex_iterator match_iter(begin(val), end(val), expr);
+  const boost::sregex_iterator match_end{};
+  
+  //boost::smatch mtch;
+  //if( boost::regex_match( val, mtch, expr ) )
+  for( ; match_iter != match_end; ++match_iter )
   {
+    found_match = true;
+    
+    boost::smatch mtch = *match_iter;
     assert( mtch.size() == 5 );
     //cout << "Matching fields: " << endl;
     //for( size_t i = 0; i < mtch.size(); ++i )
     //  cout << "\tField " << i << ": " << string( mtch[i].first, mtch[i].second ) << endl;
     
+    // Get the number field
     string numberfield( mtch[1].first, mtch[1].second );
-    auto dec_pos = numberfield.find(".");
-    if( dec_pos == string::npos )
-    {
-      while( numberfield.size() && numberfield.back()=='0' )
-        numberfield = numberfield.substr(0,numberfield.size()-1);
-    }
+    
+    // remove leading zeros
+    while( !numberfield.empty() && (numberfield[0] == '0') )
+      numberfield = numberfield.substr(1);
     
     int nnum = 0;
     for( auto ch : numberfield )
       nnum += isdigit(ch);
     
-    return std::min( nnum, 2 );
-  }
+    num_sig_figs = std::max( nnum, num_sig_figs );
+  }//for( ; match_iter != boost::sregex_iterator{}; ++match_iter )
   
-  return 3;
+  //cout << "'" << val << "' --> " << (found_match ? num_sig_figs : 3) << endl;
+  return found_match ? num_sig_figs : 3;
 }//num_sig_figs( const string &val )
 
 
@@ -142,6 +157,7 @@ string convertEquivalentDose( const string &val )
   return "";
 }//string convertEquivalentDose( string val )
 
+
 string convertDistance( string val )
 {
   try
@@ -182,6 +198,249 @@ string convertDistance( string val )
   
   return "";
 }//string convertDistance( string val )
+
+
+string convertMass( string val )
+{
+  try
+  {
+    const double dbvalue = PhysicalUnits::stringToMass(val);
+    
+    const bool to_metric = (SpecUtils::icontains(val, "ounce") || SpecUtils::icontains(val, "oz")
+                            || SpecUtils::icontains(val, "pound") || SpecUtils::icontains(val, "lb")
+                            || SpecUtils::icontains(val, "stone") || SpecUtils::icontains(val, "grain") );
+    
+    if( to_metric )
+      return PhysicalUnits::printToBestMassUnits( dbvalue, num_sig_figs(val) + 1 );
+    
+    
+    const double unitval = 2.20462 * dbvalue / PhysicalUnits::kilogram;
+    const char *unit = "lbs";
+    
+    char formatflag[32], buffer[64];
+    snprintf(formatflag, sizeof(formatflag), "%%.%if %%s", num_sig_figs(val) );
+    snprintf(buffer, sizeof(buffer), formatflag, unitval, unit );
+    
+    return buffer;
+  }catch(...)
+  {
+  }
+  
+  return "";
+}//string convertMass( string val )
+
+
+/** Returns pointer for detected nuclide, as well as input string with nuclide portion of it removed.
+ 
+ On failure to find a nuclide, retunrs nullptr, and original input string.
+ 
+ Will throw exception if multiple nuclides input.
+ */
+pair<const SandiaDecay::Nuclide *, std::string> detect_nuclide( std::string val )
+{
+  const SandiaDecay::Nuclide *nuc = nullptr;
+  
+  const auto db = DecayDataBaseServer::database();
+  vector<string> parts;
+  SpecUtils::split( parts, val, " \t\n\r" );
+  
+  // Try single words, Like "U238", "Co-60", etc
+  for( size_t i = 0; i < parts.size(); ++i )
+  {
+    const string &nucstr = parts[i];
+    auto nucptr = db->nuclide( nucstr );
+    if( nucptr && !nucptr->isStable() )
+    {
+      // Do a feeble check to make sure the user didnt input multiple nuclides
+      if( nuc )
+        throw runtime_error( "Multiple nuclides (" + nuc->symbol + " + " + nucptr->symbol + ")" );
+      
+      nuc = nucptr;
+      
+      // Reconstruct `val` with the parts we used removed; we arent simply removing all `nucstr`
+      //  substrings, jic they are repeated
+      val = "";
+      for( size_t j = 0; j < parts.size(); ++j )
+      {
+        if( j != i )
+          val += (val.empty() ? "" : " ") + parts[j];
+      }
+    }//if( nucptr && !nucptr->isStable() )
+  }//for( const string &nucstr : parts )
+  
+  // Try successive works, like "U 238", "60 Cobalt", etc
+  //  TODO: not super robust or extensive (but we mostly expect single word input to specify nuclides)
+  if( !nuc )
+  {
+    for( size_t i = 0; (i + 1) < parts.size(); ++i )
+    {
+      const string &first_word = parts[i];
+      const string &second_word = parts[i+1];
+      
+      auto nucptr = db->nuclide( first_word + " " + second_word );
+      if( nucptr && !nucptr->isStable() )
+      {
+        //Check for "meta", "meta-2", etc - not currently a very robust check
+        string meta_str;
+        for( const auto &n : parts )
+        {
+          if( SpecUtils::istarts_with(n, "meta") )
+            meta_str = n;
+        }
+        
+        if( !meta_str.empty() )
+        {
+          auto metaptr = db->nuclide( first_word + " " + second_word + " " + meta_str );
+          if( metaptr )
+            nucptr = metaptr;
+          else
+            meta_str.clear();
+        }
+        
+        nuc = nucptr;
+        
+        // Reconstruct `val` with the parts we used removed
+        val = "";
+        for( size_t j = 0; j < parts.size(); ++j )
+        {
+          if( (j != i) && (j != (i+1)) && (meta_str.empty() || (j != (i+2))) )
+            val += (val.empty() ? "" : " ") + parts[j];
+        }
+        
+        // Not currently checking the user only inputed a single nuclide here - more hassle than worth
+        break;
+      }//
+    }//for( size_t i = 0; (i + 1) < parts.size(); ++i )
+  }//if( !nuc )
+  
+  SpecUtils::trim( val );
+  
+  return {nuc, val};
+}//detect_nuclide(..)
+
+
+/** Validate user input server-side, by just seeing if #UnitsConverterTool::convert works for it.
+ 
+ Note: included further down is a WRegExpValidator implementation for units-only conversion, i.e., without a nuclide.
+ */
+class UnitsInputValidator : public Wt::WValidator
+{
+public:
+  UnitsInputValidator( WObject *parent = nullptr )
+    : WValidator( parent )
+  {
+    
+  }
+  
+  virtual Wt::WValidator::Result validate( const WString &input ) const
+  {
+    string utfstr = input.toUTF8();
+    if( utfstr.empty() )
+      return Wt::WValidator::Result( Wt::WValidator::State::InvalidEmpty, "Empty" );
+    
+    try
+    {
+      const string result = UnitsConverterTool::convert( utfstr );
+      if( result.empty() )//shouldnt happen, but JIC
+        throw exception();
+      
+      return Wt::WValidator::Result( Wt::WValidator::State::Valid, WString::fromUTF8(result) );
+    }catch(std::exception &e )
+    {
+      const string msg = e.what();
+      return Wt::WValidator::Result( Wt::WValidator::State::Invalid, WString::fromUTF8(msg) );
+    }
+    
+    return Wt::WValidator::Result( Wt::WValidator::State::Valid );
+  }//validate()
+};//UnitsInputValidator
+
+
+#ifndef NDEBUG
+void run_tests()
+{
+  // TODO: move these to the unit tests, and also probably move num_sig_figs to PhysicalUnits.
+  
+  assert( num_sig_figs("") == 3 );
+  assert( num_sig_figs("asdas") == 3 );
+  
+  assert( num_sig_figs("0") == 2 );
+  assert( num_sig_figs("01") == 2 );
+  assert( num_sig_figs("00001") == 2 );
+  assert( num_sig_figs("1") == 2 );
+  assert( num_sig_figs("1.2") == 2 );
+  assert( num_sig_figs("1.20") == 3 );
+  assert( num_sig_figs("0.2000") == 4 );
+  assert( num_sig_figs("1.2000") == 5 );
+  assert( num_sig_figs(".2000") == 4 );
+  assert( num_sig_figs(".20001") == 5 );
+  assert( num_sig_figs("10.2000") == 6 );
+  assert( num_sig_figs("010.2000") == 6 );
+  assert( num_sig_figs("1.0E-6") == 2 );
+  assert( num_sig_figs("1.00E-6") == 3 );
+  assert( num_sig_figs("1.01E-6") == 3 );
+  assert( num_sig_figs("1.010E-6") == 4 );
+  assert( num_sig_figs("01.010E+007") == 4 );
+  assert( num_sig_figs("1E+007") == 2 );
+  
+  assert( num_sig_figs("Co60 1.034 ug") == 4 );
+  assert( num_sig_figs("Co60 1. uCi") == 2 );
+  assert( num_sig_figs("Co60 1.01 ug") == 3 );
+  
+  
+  auto test_string_to_mass = []( const string str, const double expected_value ){
+    try
+    {
+      const double converted_value = PhysicalUnits::stringToMass( str );
+      const double diff = fabs(converted_value - expected_value);
+      if( diff > (1.0E-7*expected_value) ) //1.0E-7 is arbitrary
+      {
+        cerr << "Unexpected value converting '" << str << "' to grams - got " << converted_value
+             << ", but expected " << expected_value << " (diff: " << diff << ")" << endl;
+        assert( converted_value == expected_value );
+      }
+    }catch( std::exception &e )
+    {
+      cerr << "Unexpected failure converting '" << str
+           << "' to mass (expected " << expected_value << ")" << endl;
+      assert( 0 );
+    }
+  };//test_string_to_mass(...)
+  
+  auto test_string_to_mass_fails = []( const string str ){
+    try
+    {
+      const double converted_value = PhysicalUnits::stringToMass( str );
+      cerr << "stringToMass eroneously converted '" << str << "' to " << converted_value
+           << " - it should not have." << endl;
+      assert( 0 );
+    }catch(...)
+    {
+    }
+  };//auto test_string_to_mass_fails = []( const string str ){
+  
+  test_string_to_mass("1g", 1.0*PhysicalUnits::gram );
+  test_string_to_mass("1.0 gram", 1.0*PhysicalUnits::gram );
+  test_string_to_mass("1.0 kg", 1000.0*PhysicalUnits::gram );
+  test_string_to_mass("1.0 kilog", 1000.0*PhysicalUnits::gram );
+  test_string_to_mass("1.0 kilogram", 1000.0*PhysicalUnits::gram );
+  test_string_to_mass("1.0 kilo-gram", 1000.0*PhysicalUnits::gram );
+  test_string_to_mass("1.0 oz", 28.3495*PhysicalUnits::gram );
+  test_string_to_mass("0.2E1 lb", 2.0*453.592*PhysicalUnits::gram );
+  test_string_to_mass("1.2 stone", 1.2*6350.29*PhysicalUnits::gram );
+  test_string_to_mass("5 grain", 5.0*0.0647989*PhysicalUnits::gram );
+  test_string_to_mass_fails( "lb" );
+  test_string_to_mass_fails( "kg" );
+  test_string_to_mass_fails( "1 mCi" );
+  test_string_to_mass_fails( "1 ps" );
+  test_string_to_mass_fails( "1 gr" );
+  test_string_to_mass_fails( "1 gr" );
+  test_string_to_mass_fails( "1" );
+  test_string_to_mass_fails( "1E-3" );
+  test_string_to_mass_fails( "1mm" );
+}//void run_tests()
+#endif //#ifndef NDEBUG
+
 }//namespace
 
 
@@ -194,6 +453,10 @@ UnitsConverterTool::UnitsConverterTool()
     m_output( NULL ),
     m_message( NULL )
 {
+#ifndef NDEBUG
+  run_tests();
+#endif
+  
   //addStyleClass( "UnitsConverterTool" );
   
   WGridLayout *layout = stretcher();
@@ -217,14 +480,36 @@ UnitsConverterTool::UnitsConverterTool()
   
   layout->addWidget(m_input,1,1);
 
-  string regex = string("((") + PhysicalUnits::sm_absorbedDoseRegex
-                      + ")|(" + PhysicalUnits::sm_activityRegex
-                      + ")|(" + PhysicalUnits::sm_equivalentDoseRegex
-                      + ")|(" + PhysicalUnits::sm_distanceRegex
-                      + "))";
+
+  /*
+  // To validate just unit conversions, we can use a regular expression
+  //  pretty easily, but to validate the more complex input that inlcudes
+  //  a nuclide, we have to do that server-side; but left in this comment
+  //  is the client side units-only conversion; there is also a start to a
+  //  regex to match nuclides, but its likely not worth considering.
+  //
+  //A regex to match a nuclide input like:
+  //  Co60, cobalt-60, Co 60, Co-60, Co 60m, Co60m, Co60m2, Co60 meta, Co 60 meta
+  //But not input like
+  //  60-Co meta, 60Co, 60-Co
+  //  (because then "5uC" would match a nuclide)
+  //is:
+  //const char *possible_nuc_regex = "(([a-zA-Z]{1,10})(\\s|-)*([0-9]{1,3})(\\s|-)*(m2|m3|m-2|m-3|meta|meta2|meta-2|m2|m){0,1})";
+  
+  const string regex = string("(") + ""
+    "(" + PhysicalUnits::sm_absorbedDoseRegex + ")"
+    "|(" + PhysicalUnits::sm_activityRegex + ")"
+    "|(" + PhysicalUnits::sm_equivalentDoseRegex + ")"
+    "|(" + PhysicalUnits::sm_distanceRegex + ")"
+  ")";
+  
   WRegExpValidator *validator = new WRegExpValidator( regex, this );
   validator->setFlags( Wt::MatchCaseInsensitive );
   m_input->setValidator(validator);
+  */
+  
+  m_input->setValidator( new UnitsInputValidator(this) );
+  
   
   //m_input->addStyleClass( "UnitsConverterToolInput" );
   m_input->setTextSize( 15 );
@@ -295,6 +580,88 @@ UnitsConverterTool::~UnitsConverterTool()
 }//UnitsConverterTool destructor
 
 
+std::string UnitsConverterTool::convert( std::string val )
+{
+  SpecUtils::trim( val );
+  
+  if( val.empty() )
+    throw runtime_error( "Empty input" );
+  
+  pair<const SandiaDecay::Nuclide *, std::string> nuc_res = detect_nuclide( val );
+  const SandiaDecay::Nuclide *nuc = nuc_res.first;
+  	
+  
+  if( nuc )
+  {
+    val = nuc_res.second;
+    
+    // TODO: could specialize things to detect dose or activity, as well as distance to return activity or dose...
+    //       (but for the moment we'll just convert activity <---> masses
+    
+    // Detect activity, to return mass
+    try
+    {
+      const double dbvalue = PhysicalUnits::stringToActivity(val);
+      const double grams = dbvalue / nuc->activityPerGram();
+      
+      return PhysicalUnits::printToBestMassUnits(grams * PhysicalUnits::gram, num_sig_figs(val) + 1 );
+    }catch(...)
+    {
+    }
+    
+    // Detect mass, to return activity
+    try
+    {
+      const double grams = PhysicalUnits::stringToMass( val ) / PhysicalUnits::gram;
+      const double actPerGram = PhysicalUnits::bq * nuc->activityPerGram() / SandiaDecay::Bq;
+      const double activity = actPerGram * grams;
+      
+      bool useCurries = false;
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer)
+        useCurries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", viewer );
+      
+      return PhysicalUnits::printToBestActivityUnits( activity, num_sig_figs(val), useCurries );
+    }catch(...)
+    {
+    }
+    
+    if( val.empty() )
+    {
+      // Return some basic info, half life, specificActivity, anything else
+    }
+    
+    throw runtime_error( "Couldnt do anything with " + nuc->symbol + " '" + val + "'" );
+  }//if( nuc )
+  
+  
+  string ans = convertActivity( val );
+  
+  if( ans.empty() )
+    ans = convertAbsorbedDose( val );
+  
+  if( ans.empty() )
+    ans = convertEquivalentDose( val );
+  
+  if( ans.empty() )
+    ans = convertDistance( val );
+  
+  if( ans.empty() )
+    ans = convertMass( val );
+  
+  if( ans.empty() )
+  {
+    boost::smatch mtch;
+    boost::regex expr( PhysicalUnits::sm_positiveDecimalRegex );
+    if( !boost::regex_match( val, mtch, expr ) )
+      throw runtime_error( "Couldnt determine units" );
+    throw runtime_error( "Couldnt convert number" );
+  }//if( ans.empty() )
+  
+  return ans;
+}//static std::string convert( std::string input );
+
+
 void UnitsConverterTool::convert()
 {
   try
@@ -311,31 +678,10 @@ void UnitsConverterTool::convert()
         break;
     }//switch( m_input->validate() )
     
+    // TODO: make this function static, so we can call from terminal widget, and then add in converting mass, and detecting if a nulcide was specified, and if so, if alone print out summary, but if with another quantity convert for that
+      
     std::string val = m_input->text().toUTF8();
-    SpecUtils::trim( val );
-    
-    if( val.empty() )
-      throw runtime_error( "Empty input" );
-    
-    string ans = convertActivity( val );
-    
-    if( ans.empty() )
-      ans = convertAbsorbedDose( val );
-    
-    if( ans.empty() )
-      ans = convertEquivalentDose( val );
-    
-    if( ans.empty() )
-      ans = convertDistance( val );
-    
-    if( ans.empty() )
-    {
-      boost::smatch mtch;
-      boost::regex expr( PhysicalUnits::sm_positiveDecimalRegex );
-      if( !boost::regex_match( val, mtch, expr ) )
-        throw runtime_error( "Couldnt determine units" );
-      throw runtime_error( "Couldnt convert number" );
-    }//if( ans.empty() )
+    std::string ans = convert( val );
     
     m_output->setText( Wt::WString::fromUTF8(ans) );
     

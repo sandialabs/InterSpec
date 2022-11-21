@@ -243,6 +243,17 @@ namespace PhysicalUnits
    */
   double stringToEquivalentDose( const std::string &str, const double sievert_def = sievert );
 
+  /** Converts a string into a mass.
+   
+   Currently only accepts units of grams (g), pounds (lb, lbs), ounces (oz), and grains, with prefixes of pico (p), nano (n), micro (u),
+   milli (m), and kilo (k).
+   
+   Example valid input: "1.2 gram", "1.2 grams", "3g", "5 kg", "5 kilogram", "5 kilo-gram", "2lb".
+   
+   Throws std::runtime_exception on failure.
+   */
+  double stringToMass( const std::string &str, const double gram_def = gram );
+
   /** Prints the passed in value and uncertainty in a form like "1.23 \xC2\xB1 0.123", where \xC2\xB1 is the plus-or-minus character.
    Output will use scientific notation decimals, depending on fewest number of characters (i.e., the '%g' printf flag).
      

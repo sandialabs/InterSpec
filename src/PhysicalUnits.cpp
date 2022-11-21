@@ -976,7 +976,7 @@ double stringToDistance( std::string str, double cm_definition )
   {
     char msg[128];
     snprintf(msg, sizeof(msg), "'%s' is an invalid distance", str.c_str() );
-    cerr << endl << msg << endl;
+    //cerr << endl << msg << endl;
     throw std::runtime_error( msg );
   }//if( we dont have a match )
 
@@ -1067,7 +1067,7 @@ double stringToAbsorbedDose( const std::string &str, const double gray_definitio
   {
     char msg[128];
     snprintf(msg, sizeof(msg), "'%s' is not an absorbed dose", str.c_str() );
-    cerr << endl << msg << endl;
+    //cerr << endl << msg << endl;
     throw std::runtime_error( msg );
   }//if( we dont have a match )
 
@@ -1141,7 +1141,7 @@ double stringToEquivalentDose( const std::string &str, const double sievert_defi
   {
     char msg[128];
     snprintf(msg, sizeof(msg), "'%s' is not an equivalent dose", str.c_str() );
-    cerr << endl << msg << endl;
+    //cerr << endl << msg << endl;
     throw std::runtime_error( msg );
   }//if( we dont have a match )
 
@@ -1186,6 +1186,58 @@ double stringToEquivalentDose( const std::string &str, const double sievert_defi
 
   return dose;
 }//double stringToEquivalentDose( std::string str, double gray_definition )
+
+
+double stringToMass( const std::string &str, const double gram_def )
+{
+  const string regex_str = "\\s*\\+?(\\d+(\\.\\d*)?(?:[Ee][+\\-]?\\d+)?)"
+                             "\\s*(" METRIC_PREFIX_UNITS ")*?"
+                             "\\s*\\-*\\s*"
+                             "(gram|grams|g|ounces|ounce|oz|grain|grains|pounds|pound|lbs|lb|stone|stones)"
+                             "\\s*(\\d.+)?";
+  
+  boost::smatch matches;
+  boost::regex expression( regex_str, boost::regex::ECMAScript|boost::regex::icase );
+
+  if( !boost::regex_match( str, matches, expression ) )
+  {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "'%s' is not a mass", str.c_str() );
+    //cerr << endl << msg << endl;
+    throw std::runtime_error( msg );
+  }//if( we dont have a match )
+
+  
+  string floatstr( matches[1].first, matches[1].second );
+  string prefix( matches[3].first, matches[3].second );
+  string unitstr( matches[4].first, matches[4].second );
+  string trailingstr( matches[5].first, matches[5].second );
+  SpecUtils::trim( floatstr );  //These trims may not be necassary, but whatever
+  SpecUtils::trim( prefix );
+  SpecUtils::trim( unitstr );
+  SpecUtils::to_lower_ascii( unitstr );
+  
+  double unitval = 0.0;
+  if( unitstr == "gram" || unitstr == "grams" || unitstr == "g" )
+    unitval = gram;
+  else if( unitstr == "ounce" || unitstr == "ounces" || unitstr == "oz" )
+    unitval = 28.3495*gram;
+  else if( unitstr == "pounds" || unitstr == "pound" || unitstr == "lbs" || unitstr == "lb" )
+    unitval = 453.592*gram;
+  else if( unitstr == "stone" || unitstr == "stones" )
+    unitval = 6350.29*gram;
+  else if( unitstr == "grain" || unitstr == "grains" )
+    unitval = 0.0647989*gram;
+  else
+    throw runtime_error( "Unexpeced mass unit: '" + unitstr + "'" );
+
+  double mass = unitval * std::stod( floatstr );  //shouldnt ever throw, right?
+  
+  mass *= metrix_prefix_value( prefix );
+  mass *= (gram_def / gram);
+  
+  return mass;
+}//double stringToMass( const std::string &str, const double gram_def )
 
 
 std::string printValueWithUncertainty( double value, double uncert, size_t unsigfig )

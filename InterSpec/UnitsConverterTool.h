@@ -41,6 +41,12 @@ public:
   UnitsConverterTool();
   virtual ~UnitsConverterTool();
   
+  /** Performs the actual conversion.
+   
+   Throws exception if a sucessful conversion couldnt be done.
+   */
+  static std::string convert( std::string input );
+  
 protected:
   void convert();
   
