@@ -1475,6 +1475,11 @@ body.Wt-rtl .Wt-tabs a {
 }
 
 
+.ToolTabSection 
+{
+  border: 2px solid #e1e1e1;
+}
+
 .ToolTabTitledColumn
 {
   border-right: 1px solid #e1e1e1;

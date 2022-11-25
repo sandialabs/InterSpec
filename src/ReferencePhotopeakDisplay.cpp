@@ -752,6 +752,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_showBetas( NULL ),
     m_showCascadeSums( NULL ),
     m_cascadeWarn( NULL ),
+    m_showRiidNucs( NULL ),
+    m_showPrevNucs( NULL ),
+    m_showAssocNucs( NULL ),
     m_detectorDisplay( NULL ),
     m_materialDB( materialDB ),
     m_materialSuggest( materialSuggest ),
@@ -982,6 +985,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   specViewer->detectorChanged().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, true ) );
   specViewer->detectorModified().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, true ) );
   
+  // If foreground spectrum _file_ changes, then the RIID analysis results of the siggested  
+  //  nuclides may need updating.  However, for simplicity, we'll update suggested nuclides 
+  //  whenever the foreground gets updated
+  specViewer->displayedSpectrumChanged().connect(this, &ReferencePhotopeakDisplay::handleSpectrumChange);
+
   lowerInputLayout->addWidget( m_detectorDisplay, 1, 0 );
 
   m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest );
@@ -1031,7 +1039,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   hlRow->addWidget(m_options_icon);
 
   m_options = new WContainerWidget();
-  m_options->addStyleClass("RefLinesOptions");
+  m_options->addStyleClass("RefLinesOptions ToolTabSection");
   m_options->hide();
 
   WContainerWidget* closerow = new WContainerWidget(m_options);
@@ -1057,10 +1065,27 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showCascadeSums = new WCheckBox("Cascade Sums", m_options);
   m_showCascadeSums->hide();
   
+  m_showPrevNucs = new WCheckBox("Prev Nucs", m_options);
+  m_showRiidNucs = new WCheckBox("Det RID Nucs", m_options);
+  m_showAssocNucs = new WCheckBox("Assoc. Nucs", m_options);
+
+  m_showPrevNucs->checked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
+  m_showPrevNucs->unChecked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
+  m_showRiidNucs->checked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
+  m_showRiidNucs->unChecked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
+  m_showAssocNucs->checked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
+  m_showAssocNucs->unChecked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
+
+
+  //const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", this);
+  //HelpSystem::attachToolTipOn(m_showPrevNucs, "Show ", showToolTips);
+  InterSpecUser::associateWidget( specViewer->m_user, "RefLineShowPrev", m_showPrevNucs, specViewer );
+  InterSpecUser::associateWidget( specViewer->m_user, "RefLineShowRiid", m_showRiidNucs, specViewer );
+  InterSpecUser::associateWidget( specViewer->m_user, "RefLineShowAssoc", m_showAssocNucs, specViewer );
+
+
   //HelpSystem::attachToolTipOn(m_options, "If checked, selection will be shown.",
   //                            showToolTips );
-
-  
 
   m_showGammas->setChecked();
   m_showXrays->setChecked();
@@ -1080,11 +1105,23 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showCascadeSums->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_showCascadeSums->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   
+  m_otherNucsColumn = new WContainerWidget();
+
+  m_otherNucsColumn->addStyleClass("OtherNucs ToolTabSection ToolTabTitledColumn");
+
+  WText *otherNucTitle = new WText("Suggestions", m_otherNucsColumn);
+  otherNucTitle->addStyleClass("ToolTabColumnTitle");
+
+  m_otherNucs = new WContainerWidget(m_otherNucsColumn);
+  m_otherNucs->addStyleClass( "OtherNucsContent ToolTabTitledColumnContent" );
+
+
+
   m_particleView = new RowStretchTreeView();
   
   m_particleView->setRootIsDecorated(	false ); //makes the tree look like a table! :)
   
-  m_particleView->addStyleClass( "ParticleViewTable" );
+  m_particleView->addStyleClass( "ParticleViewTable ToolTabSection" );
   
   m_particleModel = new DecayParticleModel( this );
   m_particleView->setModel( m_particleModel );
@@ -1110,10 +1147,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   overallLayout->setContentsMargins( 0, 0, 0, 0 );
   setLayout( overallLayout );
     
-  overallLayout->addWidget( inputDiv, 0, 0 );
-  overallLayout->addWidget( lowerInput, 1, 0 );
-  overallLayout->addWidget( m_options, 0, 1, 3, 1 );
-  overallLayout->addWidget( m_particleView, 0, 2, 3, 1 );
+  overallLayout->addWidget( inputDiv,         0, 0 );
+  overallLayout->addWidget( lowerInput,       1, 0 );
+  overallLayout->addWidget( m_options,        0, 1, 3, 1 );
+  overallLayout->addWidget(m_otherNucsColumn, 0, 2, 3, 1 );
+  overallLayout->addWidget( m_particleView,   0, 3, 3, 1 );
   
   auto bottomRow = new WContainerWidget();
   overallLayout->addWidget( bottomRow, 2, 0 );
@@ -1158,7 +1196,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   
   overallLayout->setRowStretch( 2, 1 );
-  overallLayout->setColumnStretch( 2, 1 );
+  overallLayout->setColumnStretch( overallLayout->columnCount() - 1, 1);
 }//ReferencePhotopeakDisplay constructor
 
 
@@ -1401,6 +1439,182 @@ void ReferencePhotopeakDisplay::toggleShowOptions()
 }//void toggleShowOptions()
 
 
+void ReferencePhotopeakDisplay::handleSpectrumChange(SpecUtils::SpectrumType type)
+{
+  // For simplicity we'll update the suggested nuclides whenever foreground gets
+  //  changed, even if its only because of sample number change (which will have
+  //  same RIID results, as they are file-spoecific, not sample specific)
+  if( type == SpecUtils::SpectrumType::Foreground )
+    updateOtherNucsDisplay();
+}//handleSpectrumChange();
+
+
+void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
+{
+  m_otherNucs->clear();
+
+  const bool showRiid = m_showRiidNucs->isChecked();
+  const bool showPrev = m_showPrevNucs->isChecked();
+  const bool showAssoc = m_showAssocNucs->isChecked();
+
+  if( !showRiid && !showPrev && !showAssoc )
+  {
+    m_otherNucsColumn->hide();
+    return;
+  }
+
+  m_otherNucsColumn->show();
+
+  vector<OtherNuc> prev_nucs;
+  const string &currentInput = m_currentlyShowingNuclide.labelTxt;
+
+  if( showPrev )
+  {
+    for( const auto &prev : m_prevNucs )
+    {
+      if( prev.m_nuclide != currentInput )
+        prev_nucs.push_back(prev);
+    }
+  }//if( showPrev )
+
+
+  vector<pair<string, string>> riid_nucs;  //<description, nuclide>
+  shared_ptr<const SpecUtils::DetectorAnalysis> riid_ana;
+  shared_ptr<const SpecMeas> m = m_spectrumViewer->measurment(SpecUtils::SpectrumType::Foreground);
+  if( m )
+    riid_ana = m->detectors_analysis();
+
+  if( showRiid && riid_ana )
+  {
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+
+    for( const SpecUtils::DetectorAnalysisResult &res : riid_ana->results_ )
+    {
+      if( res.nuclide_.empty() || res.isEmpty() )
+        continue;
+
+      bool already_have = false;
+      for( const auto &v : riid_nucs )
+        already_have |= (v.first == res.nuclide_);
+      if( already_have )
+        continue;
+
+      string nuc_name = res.nuclide_;
+
+      const SandiaDecay::Nuclide *nuc = db->nuclide(nuc_name);
+      if( !nuc )
+      {
+        vector<string> fields;
+        SpecUtils::split(fields, nuc_name, " \t,");
+        for( const auto &v : fields )
+        {
+          nuc = db->nuclide(v);
+          if( nuc )
+          {
+            nuc_name = v;
+            break;
+          }
+        }//for( const auto &v : fields )
+      }//if( !nuc )
+
+      if( nuc )
+        riid_nucs.push_back( {res.nuclide_, nuc->symbol} );
+      else 
+        riid_nucs.push_back( {res.nuclide_, ""} );
+    }//for( loop over RIID results )
+  }//if( riid_ana )
+
+
+  // TODO: Need to implement option to show or not show suggestion catagories, and if show none, then hide the column
+  if( !currentInput.empty() )
+  {
+    // TODO: need to implement related nuclides getting, and parsing and setting
+    //  (should probably not do initual parsing here, but instead do it in a worker thread, and then update the widgets) 
+    // See also showAssoc
+  }//if( !currentInput.empty() )
+
+
+  if( !riid_nucs.empty() )
+  {
+    // Protect against a detector having a ton of results
+    const size_t max_riid_res = 10;
+    if( riid_nucs.size() > max_riid_res )
+      riid_nucs.resize( max_riid_res );
+
+    WText *header = new WText("Detector ID", m_otherNucs);
+    header->addStyleClass("OtherNucTypeHeader");
+    
+    for( const auto &riid : riid_nucs )
+    {
+      WPushButton *btn = new WPushButton(riid.first, m_otherNucs);
+      btn->addStyleClass( "LinkBtn" );
+      
+      if( !riid.second.empty() )
+      {
+        OtherNuc nuc;
+        nuc.m_nuclide = riid.second;
+        btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::setFromOtherNuc, this, nuc));
+      } else
+      {
+        btn->disable();
+      }
+    }//for( const auto &riid : riid_nucs )
+  }//if( !prev_nucs.empty() )
+
+
+  if( !prev_nucs.empty() )
+  {
+    WText *header = new WText("Previous", m_otherNucs);
+    header->addStyleClass("OtherNucTypeHeader");
+    for( const auto &prev : prev_nucs )
+    {
+      WPushButton *btn = new WPushButton(prev.m_nuclide, m_otherNucs);
+      btn->addStyleClass( "LinkBtn" );
+
+      btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::setFromOtherNuc, this, prev));
+    }
+  }//if( !prev_nucs.empty() )
+}//void updateOtherNucsDisplay()
+
+
+void ReferencePhotopeakDisplay::setFromOtherNuc(const ReferencePhotopeakDisplay::OtherNuc &nuc)
+{
+  m_nuclideEdit->setText(WString::fromUTF8(nuc.m_nuclide));
+  const bool useCurrentAge = (nuc.m_age >= 0.0);
+  if( useCurrentAge )
+    m_ageEdit->setText(PhysicalUnits::printToBestTimeUnits(nuc.m_age, 3) );
+  
+  if( nuc.m_shielding.empty() )
+  {
+    m_shieldingSelect->setMaterialNameAndThickness("", "");
+  }else
+  {
+    try
+    {
+      if( nuc.m_shieldThickness > 0.0 )
+      {
+        const string thickness = PhysicalUnits::printToBestLengthUnits(nuc.m_shieldThickness);
+        m_shieldingSelect->setMaterialNameAndThickness(nuc.m_shielding, thickness);
+      } else
+      {
+        double an, ad;
+        const int nconvert = sscanf(nuc.m_shielding.c_str(), "%f, %f g/cm2", &an, &ad);
+        if( nconvert != 2 )
+          throw runtime_error("Failed to convert '" + nuc.m_shielding + "' to AN and AD." );
+
+        m_shieldingSelect->setAtomicNumberAndArealDensity(an, ad);
+      }
+    } catch( std::exception &e )
+    {
+      m_shieldingSelect->setMaterialNameAndThickness("", "");
+    }
+  }
+
+  handleIsotopeChange( useCurrentAge );
+}//void setFromOtherNuc(const OtherNuc &nuc)
+
+
+
 void ReferencePhotopeakDisplay::updateDisplayChange()
 {
   /** The gamma or xray energy below which we wont show lines for.
@@ -1540,6 +1754,32 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   //Default to using the old color, unless we find a reason to change it.
   WColor color = m_currentlyShowingNuclide.lineColor;
   
+
+  if( !m_currentlyShowingNuclide.labelTxt.empty() )
+  {
+    OtherNuc prev;
+    prev.m_nuclide = m_currentlyShowingNuclide.labelTxt;
+    if( m_currentlyShowingNuclide.nuclide )
+      prev.m_age = m_currentlyShowingNuclide.age;
+    prev.m_shielding = m_currentlyShowingNuclide.shieldingName;
+    prev.m_shieldThickness = m_currentlyShowingNuclide.shieldingThickness; //Will be zero if no shielding or generic
+
+    // Remove any other previous nuclides that have same `prev.m_nuclide` as what
+    //  we are about to push on
+    m_prevNucs.erase(std::remove_if(begin(m_prevNucs), end(m_prevNucs),
+      [&prev](const OtherNuc &val) -> bool {
+        return (val.m_nuclide == prev.m_nuclide);
+      }), end(m_prevNucs));
+
+    // Push new value onto front of history
+    m_prevNucs.push_front( std::move(prev) );
+
+    // Check history length, and truncate if needed
+    if( m_prevNucs.size() > m_max_prev_nucs )
+      m_prevNucs.resize( m_max_prev_nucs );
+  }//if( !m_currentlyShowingNuclide.labelTxt.empty() )
+
+
   //Mar
   m_currentlyShowingNuclide.reset();
   //cout << "Ref line widget has isSameSrc=" << isSameSrc << ", show=" << show << endl;
@@ -2444,6 +2684,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     else
       m_clearLines->setText( m_persisted.empty() ? "Clear" : "Clear All" );
   }//if( show )
+
+  updateOtherNucsDisplay();
 }//void updateDisplayChange()
 
 

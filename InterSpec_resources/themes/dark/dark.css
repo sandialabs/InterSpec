@@ -207,8 +207,8 @@ ul.HeavyNavMenu > li.item:hover  {
   border-color: rgb(136, 136, 136);
 }
 
-.ParticleViewTable, .IsotopeSearchResultTable {
-  border-color: rgb(136, 136, 136);
+.ToolTabSection {
+    border-color: rgb(136, 136, 136);
 }
 
 .DevPairTitle, .DevPairEnergyHeader, .DevPairOffsetHeader {

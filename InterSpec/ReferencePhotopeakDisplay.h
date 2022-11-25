@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -270,6 +271,35 @@ protected:
   
   void toggleShowOptions();
 
+  /** A simple struct to store previous, or other nuclides to 
+  potentually show if the user clicks on them.
+
+The other options would be to keep a copy of ReferenceLineInfo around
+or to go all-in and keep a XML state of widget via
+ReferencePhotopeakDisplay::serialize(...) - but for now we'll just keep
+things simple
+*/
+  struct OtherNuc
+  {
+    std::string m_nuclide;
+    double m_age = -1.0;
+    std::string m_shielding;
+    double m_shieldThickness = -1.0;
+  };//struct OtherNuc
+
+  void updateOtherNucsDisplay();
+
+  /** Function that will be called whenever any displayed spectrum
+  gets changed (different file, or sample numbers).
+
+  If foreground spectrum _file_ changes, then the RIID analysis results
+  of the siggested nuclides may need updating.  However, for simplicity, 
+   we'll update suggested nuclides whenever the foreground gets updated
+  */
+  void handleSpectrumChange(SpecUtils::SpectrumType type);
+
+  void setFromOtherNuc( const OtherNuc &nuc );
+
   D3SpectrumDisplayDiv *m_chart;
 
   InterSpec *m_spectrumViewer;
@@ -297,6 +327,16 @@ protected:
   Wt::WCheckBox *m_showBetas;
   Wt::WCheckBox* m_showCascadeSums;
   Wt::WText* m_cascadeWarn;
+  Wt::WCheckBox *m_showRiidNucs;
+  Wt::WCheckBox *m_showPrevNucs;
+  Wt::WCheckBox *m_showAssocNucs;
+
+  Wt::WContainerWidget *m_otherNucsColumn;
+  Wt::WContainerWidget *m_otherNucs;
+
+  const size_t m_max_prev_nucs = 8; //arbitrary
+  
+  std::deque<OtherNuc> m_prevNucs;
 
   DetectorDisplay *m_detectorDisplay;
   MaterialDB *m_materialDB;                 //not owned by this object

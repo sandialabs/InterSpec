@@ -350,7 +350,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_results->setRootIsDecorated(false); //makes the tree look like a table! :)
   
   m_results->setModel( m_model );
-  m_results->addStyleClass( "IsotopeSearchResultTable" );
+  m_results->addStyleClass( "IsotopeSearchResultTable ToolTabSection" );
   m_results->setAlternatingRowColors( true );
   //m_results->sortByColumn( IsotopeSearchByEnergyModel::Distance, Wt::AscendingOrder );
   m_results->sortByColumn( IsotopeSearchByEnergyModel::Column::ProfileDistance, Wt::DescendingOrder );
