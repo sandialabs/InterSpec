@@ -288,6 +288,8 @@ things simple
   };//struct OtherNuc
 
   void updateOtherNucsDisplay();
+  void updateAssociatedNuclides();
+  void showMoreInfoWindow();
 
   /** Function that will be called whenever any displayed spectrum
   gets changed (different file, or sample numbers).
@@ -313,6 +315,7 @@ things simple
   Wt::WCheckBox *m_promptLinesOnly;
 
   Wt::WText *m_halflife;
+  Wt::WPushButton *m_moreInfoBtn;
     
   Wt::WPushButton *m_persistLines;
   Wt::WPushButton *m_clearLines;

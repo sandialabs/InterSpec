@@ -111,6 +111,11 @@
     text-overflow: ellipsis;
 }
 
+.HlOptRow button.Wt-btn.with-label.LinkBtn.MoreInfoBtn {
+    height: 100%;
+    font-size: 12px;
+}
+
 .RefGammaHelp {
     position: absolute;
     left: 0px;

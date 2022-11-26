@@ -34,8 +34,10 @@
 
 #include <Wt/WText>
 #include <Wt/WLabel>
+#include <Wt/WServer>
 #include <Wt/WCheckBox>
 #include <Wt/WLineEdit>
+#include <Wt/WIOService>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
@@ -47,22 +49,27 @@
 #include <Wt/WSuggestionPopup>
 #include <Wt/WRegExpValidator>
 
+#include "SpecUtils/StringAlgo.h"
+
+#include "SandiaDecay/SandiaDecay.h"
+
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpectrumChart.h"
-#include "SandiaDecay/SandiaDecay.h"
+#include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/ReferenceLineInfo.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -741,6 +748,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_lowerBrCuttoff( NULL ),
     m_promptLinesOnly( NULL ),
     m_halflife( NULL ),
+    m_moreInfoBtn( NULL ),
     m_persistLines( NULL ),
     m_clearLines( NULL ),
     //m_fitPeaks( NULL ),
@@ -954,24 +962,19 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_halflife = new WText( hlRow );
   m_halflife->addStyleClass("Hl");
 
-  //m_layout->addWidget( m_halflife, 2, 0, 1, 2, AlignMiddle | AlignCenter );
-  
+  m_moreInfoBtn = new WPushButton( "more info", hlRow );
+  m_moreInfoBtn->addStyleClass( "LinkBtn MoreInfoBtn" );
+  m_moreInfoBtn->clicked().connect( this, &ReferencePhotopeakDisplay::showMoreInfoWindow );
+  m_moreInfoBtn->hide();
 
-  //should add prompt and 'bare' only lines options
-//  label = new WLabel( "Lowest I:" );
-  //WLabel *minAmpLabel = new WLabel(   "Min Amp:" );
-
-  //tooltip = "The minimum relative gamma amplitude to display; the most intense"
-  //          " gamma ray will have value 1.0.  Amplitude is calculated after"
-  //          " the optional shielding and detector effects are applied.";
-  //HelpSystem::attachToolTipOn( minAmpLabel, tooltip, showToolTips );
+  // Couls add prompt and 'bare' only lines options
+  //label = new WLabel( "Lowest I:" );
   //m_lowerBrCuttoff = new WDoubleSpinBox();
   //HelpSystem::attachToolTipOn( m_lowerBrCuttoff, tooltip, showToolTips );
   //m_lowerBrCuttoff->setValue( 0.0 );
   //m_lowerBrCuttoff->setSingleStep( 0.01 );
   //m_lowerBrCuttoff->setRange( 0.0, 1.0 );
   //m_lowerBrCuttoff->valueChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-
   //m_layout->addWidget( minAmpLabel, 3, 0, AlignMiddle );
   //m_layout->addWidget( m_lowerBrCuttoff, 3, 1 );
   
@@ -1138,29 +1141,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_particleView->setColumnWidth( DecayParticleModel::kParticleType,
                                  WLength(5,WLength::FontEm) );
   
-  //added overflow to prevent scroll bars
-  //setOverflow( Wt::WContainerWidget::OverflowHidden );
-  //if( !isPhone )
-  //  setOverflow( WContainerWidget::OverflowAuto, Wt::Vertical );
-      
-  WGridLayout *overallLayout = new WGridLayout();
-  overallLayout->setContentsMargins( 0, 0, 0, 0 );
-  setLayout( overallLayout );
-    
-  overallLayout->addWidget( inputDiv,         0, 0 );
-  overallLayout->addWidget( lowerInput,       1, 0 );
-  overallLayout->addWidget( m_options,        0, 1, 3, 1 );
-  overallLayout->addWidget(m_otherNucsColumn, 0, 2, 3, 1 );
-  overallLayout->addWidget( m_particleView,   0, 3, 3, 1 );
-  
   auto bottomRow = new WContainerWidget();
-  overallLayout->addWidget( bottomRow, 2, 0 );
-  
-  auto helpBtn = new WContainerWidget( bottomRow );
-  helpBtn->addStyleClass( "Wt-icon ContentHelpBtn RefGammaHelp" );
-  helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "reference-gamma-lines-dialog" ) );
-  //overallLayout->addWidget( helpBtn, 2, 0, Wt::AlignLeft | Wt::AlignBottom );
-    
+  auto helpBtn = new WContainerWidget(bottomRow);
+  helpBtn->addStyleClass("Wt-icon ContentHelpBtn RefGammaHelp");
+  helpBtn->clicked().connect(boost::bind(&HelpSystem::createHelpWindow, "reference-gamma-lines-dialog"));
+
   
   RefGammaCsvResource *csv = new RefGammaCsvResource( this );
   csv->setTakesUpdateLock( true );
@@ -1193,10 +1178,21 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   csvButton->setText( "CSV" );
   csvButton->disable();
   m_csvDownload = csvButton;
-  
-  
+
+
+  WGridLayout *overallLayout = new WGridLayout();
+  overallLayout->setContentsMargins( 0, 0, 0, 0 );
+  setLayout( overallLayout );
+
+  overallLayout->addWidget( inputDiv,          0, 0 );
+  overallLayout->addWidget( lowerInput,        1, 0 );
+  overallLayout->addWidget( m_options,         0, 1, 3, 1 );
+  overallLayout->addWidget( m_otherNucsColumn, 0, 2, 3, 1 );
+  overallLayout->addWidget( m_particleView,    0, 3, 3, 1 );
+  overallLayout->addWidget( bottomRow,         2, 0 );
+
   overallLayout->setRowStretch( 2, 1 );
-  overallLayout->setColumnStretch( overallLayout->columnCount() - 1, 1);
+  overallLayout->setColumnStretch( 3, 1 );
 }//ReferencePhotopeakDisplay constructor
 
 
@@ -1449,6 +1445,95 @@ void ReferencePhotopeakDisplay::handleSpectrumChange(SpecUtils::SpectrumType typ
 }//handleSpectrumChange();
 
 
+void ReferencePhotopeakDisplay::updateAssociatedNuclides()
+{
+  const string &currentInput = m_currentlyShowingNuclide.labelTxt;
+  
+  const MoreNuclideInfo::InfoStatus status = MoreNuclideInfo::more_nuc_info_db_status();
+  if( status == MoreNuclideInfo::InfoStatus::FailedToInit )
+    return;
+
+  if( status != MoreNuclideInfo::InfoStatus::Inited )
+    cerr << "\n\n\nWarning, updateAssociatedNuclides called before MoreNuclideInfo initualized.\n\n";
+
+  const auto infoDb = MoreNuclideInfo::MoreNucInfoDb::instance();
+  if( !infoDb )
+  {
+    assert( MoreNuclideInfo::more_nuc_info_db_status() == MoreNuclideInfo::InfoStatus::FailedToInit );
+    return;
+  }//if( !infoDb )
+
+  const MoreNuclideInfo::NucInfo *info = nullptr;
+  if( m_currentlyShowingNuclide.nuclide )
+    info = infoDb->info( m_currentlyShowingNuclide.nuclide );
+  else
+    info = infoDb->info( currentInput );
+
+  if( !info || info->m_associated.empty() )
+    return;
+
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+
+  WText *header = new WText( "Assoc. Nucs" );
+  header->addStyleClass( "OtherNucTypeHeader" );
+
+  m_otherNucs->insertWidget( 0, header );
+
+  for( size_t index = 0; index < info->m_associated.size(); ++index )
+  {
+    const string &nucstr = info->m_associated[index];
+
+    WPushButton *btn = new WPushButton( nucstr );
+    btn->addStyleClass( "LinkBtn" );
+
+    m_otherNucs->insertWidget( 1 + index, btn );
+
+    // If text is a valid Nuclide, Element, or Reaction, we'll make this
+    //  button clickable to display; otherwise we'll show the text, but
+    //  disable the button.
+    const SandiaDecay::Nuclide *const nuc = db->nuclide( nucstr );
+    const SandiaDecay::Element *const el = nuc ? nullptr : db->element( nucstr );
+
+    std::vector<ReactionGamma::ReactionPhotopeak> reactions;
+    if( !nuc && !el )
+    {
+      const ReactionGamma *rctnDb = ReactionGammaServer::database();
+      if( rctnDb )
+        rctnDb->gammas( nucstr, reactions );
+    }//if( !nuc && !el )
+
+    if( nuc || el || !reactions.empty() )
+    {
+      OtherNuc nuc;
+      nuc.m_nuclide = nucstr;
+      btn->clicked().connect( boost::bind( &ReferencePhotopeakDisplay::setFromOtherNuc, this, nuc ) );
+    }else
+    {
+      btn->disable();
+    }
+  }//for( const auto &riid : riid_nucs )
+}//void updateAssociatedNuclides()
+
+
+void ReferencePhotopeakDisplay::showMoreInfoWindow()
+{
+  const SandiaDecay::Nuclide * const nuc = m_currentlyShowingNuclide.nuclide;
+  assert( nuc );
+  if( !nuc )
+    return;
+  
+  // TODO: call out to MoreNuclideInfo to actually form the HTML, and then display in the Dialog
+  //       - In MoreNuclideInfo add clickable links to show decay diagram, and to show decays through; implement these through InterSpecApp::miscSignalHandler
+  //         e.g., "Wt.emit('" + wApp->root()->id() + "',{name:'miscSignal'}, 'decayChain-" + nuc->symbol  + "');"
+  //               ...
+
+  SimpleDialog *dialog = new SimpleDialog( "More Info on " + nuc->symbol, "More information not implemented yet." );
+  dialog->addButton( "Close" );
+
+  
+}//void showMoreInfoWindow()
+
+
 void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 {
   m_otherNucs->clear();
@@ -1528,11 +1613,46 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
   // TODO: Need to implement option to show or not show suggestion catagories, and if show none, then hide the column
   if( !currentInput.empty() )
   {
-    // TODO: need to implement related nuclides getting, and parsing and setting
-    //  (should probably not do initual parsing here, but instead do it in a worker thread, and then update the widgets) 
-    // See also showAssoc
+    const MoreNuclideInfo::InfoStatus status = MoreNuclideInfo::more_nuc_info_db_status();
+
+    switch( status )
+    {
+      case MoreNuclideInfo::InfoStatus::Inited:
+        updateAssociatedNuclides();
+        break;
+
+      case MoreNuclideInfo::InfoStatus::FailedToInit:
+        break;
+
+      case MoreNuclideInfo::InfoStatus::NotInited:
+      {
+        const string sessionid = wApp->sessionId();
+        boost::function<void()> update_gui = wApp->bind( boost::bind(&ReferencePhotopeakDisplay::updateAssociatedNuclides, this) );
+       
+        auto worker = [update_gui, sessionid](){
+          const auto infoDb = MoreNuclideInfo::MoreNucInfoDb::instance();
+          if( !infoDb )
+          {
+            assert( MoreNuclideInfo::more_nuc_info_db_status() == MoreNuclideInfo::InfoStatus::FailedToInit );
+            return;
+          }
+
+          auto inner_worker = [update_gui]{
+            update_gui();
+            wApp->triggerUpdate();
+          };
+
+          Wt::WServer::instance()->post( sessionid, inner_worker );
+        };//worker
+
+        Wt::WServer::instance()->ioService().boost::asio::io_service::post( worker );
+        break;
+      }//case MoreNuclideInfo::InfoStatus::NotInited:
+    }//switch( status )
   }//if( !currentInput.empty() )
 
+
+  // TODO: Need to deal the "more info" button
 
   if( !riid_nucs.empty() )
   {
@@ -1598,7 +1718,7 @@ void ReferencePhotopeakDisplay::setFromOtherNuc(const ReferencePhotopeakDisplay:
       } else
       {
         double an, ad;
-        const int nconvert = sscanf(nuc.m_shielding.c_str(), "%f, %f g/cm2", &an, &ad);
+        const int nconvert = sscanf(nuc.m_shielding.c_str(), "%lf, %lf g/cm2", &an, &ad);
         if( nconvert != 2 )
           throw runtime_error("Failed to convert '" + nuc.m_shielding + "' to AN and AD." );
 
@@ -1678,6 +1798,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 
   if( nuc )
   {
+    m_moreInfoBtn->show();
+
     canHavePromptEquil = nuc->canObtainPromptEquilibrium();
     if( canHavePromptEquil == m_promptLinesOnly->isHidden() )
       m_promptLinesOnly->setHidden( !canHavePromptEquil );
@@ -1742,6 +1864,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     }//try /catch to get the age
   }else
   {
+    m_moreInfoBtn->hide();
     m_halflife->setText( "" );
     m_promptLinesOnly->hide();
   }//if( nuc ) / else
@@ -1904,18 +2027,36 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     {
       if( m_shieldingSelect->isGenericMaterial() )
       {
-        const double an = m_shieldingSelect->atomicNumber();
-        const double ad = m_shieldingSelect->arealDensity()
-                          / (PhysicalUnits::gram/PhysicalUnits::cm2);
-        char buffer[128];
-        snprintf( buffer, sizeof(buffer), "%.2f, %.2f g/cm2", an, ad );
-        m_currentlyShowingNuclide.shieldingName = buffer;
-      }else
+        NativeFloatSpinBox *anEdit = m_shieldingSelect->atomicNumberEdit();
+        NativeFloatSpinBox *adEdit = m_shieldingSelect->arealDensityEdit();
+        assert( adEdit && adEdit );
+
+        if( adEdit && adEdit )
+        {
+          //Make sure AN and AD are valid, by reading thier numerical value
+          //  (they will throw if not)
+          m_shieldingSelect->atomicNumber();
+          m_shieldingSelect->arealDensity();
+
+          string an = anEdit->text().toUTF8();
+          string ad = adEdit->text().toUTF8();
+          SpecUtils::trim( an );
+          SpecUtils::trim( ad );
+          
+          // We could double check that the string only contains a number by using
+          //  PhysicalUnits::sm_positiveDecimalRegex to extract the numbers, but
+          //  we dont really need to go crazy for this validation
+
+          if( !an.empty() && !ad.empty() )
+            m_currentlyShowingNuclide.shieldingName = an + ", " + ad + " g/cm2";
+        }
+      }else if( m_shieldingSelect->thicknessEdit() 
+        && !m_shieldingSelect->thicknessEdit()->text().empty() )
       {
         std::shared_ptr<Material> m = m_shieldingSelect->material();
-        const double thickness = m_shieldingSelect->thickness();
-        if( !!m )
+        if( m )
         {
+          const double thickness = m_shieldingSelect->thickness();
           m_currentlyShowingNuclide.shieldingName = m->name;
           m_currentlyShowingNuclide.shieldingThickness = thickness;
         }
@@ -3252,7 +3393,7 @@ void ReferencePhotopeakDisplay::clearAllLines()
   
   m_currentlyShowingNuclide.lineColor = m_lineColors[0];
   m_colorSelect->setColor( m_lineColors[0] );
-  
+
   m_nuclideEdit->setText( "" );
   m_persistLines->disable();
   m_clearLines->disable();
@@ -3267,6 +3408,9 @@ void ReferencePhotopeakDisplay::clearAllLines()
     m_clearLines->setText( "Clear" );
   else
     m_clearLines->setText( "Remove" );
+
+  m_moreInfoBtn->hide();
+  updateOtherNucsDisplay();
 
   m_chart->clearAllReferncePhotoPeakLines();
   

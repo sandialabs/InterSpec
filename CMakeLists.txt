@@ -359,6 +359,7 @@ set(sources
     src/D3TimeChart.cpp
     src/ZipArchive.cpp
     src/MultimediaDisplay.cpp
+    src/MoreNuclideInfo.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -448,6 +449,7 @@ set(headers
     InterSpec/D3TimeChart.h
     InterSpec/ZipArchive.h
     InterSpec/MultimediaDisplay.h
+    InterSpec/MoreNuclideInfo.h
 )
 
 
