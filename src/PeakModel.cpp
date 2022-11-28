@@ -256,6 +256,16 @@ void testSetNuclideXrayRctn()
   assert( peak.parentNuclide()->symbol == "Pb212" );
   assert( fabs(peak.gammaParticleEnergy() - 84.865) < 1.0 );
   assert( peak.sourceGammaType() == PeakDef::SourceGammaType::XrayGamma );
+
+  peak = PeakDef( 511, 5, 1.8E6 );
+  assert( !peak.hasSourceGammaAssigned() );
+  result = PeakModel::setNuclideXrayReaction( peak, "Na22 511 kev", -1. );
+  assert( result == PeakModel::SetGammaSource::SourceChange );
+  assert( peak.parentNuclide() );
+  assert( peak.parentNuclide()->symbol == "Na22" );
+  assert( fabs( peak.gammaParticleEnergy() - 511 ) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma );
+  assert( peak.hasSourceGammaAssigned() );
 }//void testSetNuclideXrayRctn()
 
 }//namespace

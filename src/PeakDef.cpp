@@ -3546,7 +3546,9 @@ void PeakDef::clearSources()
 
 bool PeakDef::hasSourceGammaAssigned() const
 {
-  return ((m_parentNuclide && m_transition && m_radparticleIndex>=0) || m_xrayElement || m_reaction);
+  return ((m_parentNuclide && m_transition && m_radparticleIndex>=0) 
+    || (m_parentNuclide && (m_sourceGammaType == PeakDef::SourceGammaType::AnnihilationGamma))
+    || m_xrayElement || m_reaction);
 }
 
 void PeakDef::setNuclearTransition( const SandiaDecay::Nuclide *parentNuclide,
