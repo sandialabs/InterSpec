@@ -266,6 +266,15 @@ void testSetNuclideXrayRctn()
   assert( fabs( peak.gammaParticleEnergy() - 511 ) < 1.0 );
   assert( peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma );
   assert( peak.hasSourceGammaAssigned() );
+
+  peak = PeakDef( 511, 5, 1.8E6 );
+  result = PeakModel::setNuclideXrayReaction( peak, "Na22 511 kev, I=1.8E+02%", -1. ); //e.g., from "Search for Peaks" dialog
+  assert( result == PeakModel::SetGammaSource::SourceChange );
+  assert( peak.parentNuclide() );
+  assert( peak.parentNuclide()->symbol == "Na22" );
+  assert( fabs( peak.gammaParticleEnergy() - 511 ) < 1.0 );
+  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma );
+  assert( peak.hasSourceGammaAssigned() );
 }//void testSetNuclideXrayRctn()
 
 }//namespace
@@ -2129,12 +2138,10 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
   }//if( getting rid of source )
   
   
-  const SandiaDecay::Nuclide *nuclide = NULL;
-  
   PeakDef::SourceGammaType srcType;
   PeakDef::gammaTypeFromUserInput( label, srcType );
   
-  
+  // This next line removes the reference energy text from `label`
   double ref_energy = PeakDef::extract_energy_from_peak_source_string( label );
   if( ref_energy < std::numeric_limits<float>::epsilon() )
   {
@@ -2159,50 +2166,65 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
   }//if( input string didnt contain energy )
   
   
-  //If there are 2 non-connected strings of numbers, and the second one is
-  //  not followed by a m or meta, but rather nothing or ev, kev, or MeV,
-  //  then we will assume the second one is an energy
-  // "hf178m2 574.219971 kev"
-  size_t number_start, number_stop = string::npos;
-  number_start = label.find_first_of( "0123456789" );
-  if( number_start != string::npos )
-    number_stop = label.find_first_not_of( "0123456789", number_start );
-  if( number_stop != string::npos )
-  {
-    // If label[number_stop] is 'm', then let '1 ' or '2 ' or '3 ' come after it (to indicate meta
-    //   stable state).
-    if( ((number_stop+1) < label.size())
-       && (label[number_stop] == 'm')
-       && (label[number_stop+1] == '1' || label[number_stop+1] == '2' || label[number_stop+1] == '3')
-       && ((label.size() > (number_stop + 2) && std::isspace( static_cast<unsigned char>(label[number_stop+2])) )
-           || ((number_stop + 2) == label.size()) )
-       )
-    {
-      number_stop += 2;
-    }
-    
-    number_start = label.find_first_of( "0123456789", number_stop );
+   string nuclabel = label;
+
+  {//begin manipulation of nuclabel
+    // We are assuming the first set of numbers is atomic number, but
+    // then there may be more numbers that indicate meta-level, or 
+    // they could just be something we dont care about.
+    // Example inputs might be:
+    //   "hf178m2 574.219971 kev", or "hf178m2 , I=1.8E-6%", 
+    //   "Hf178-meta2", "Hf178-meta-2", "Hf178 meta-2", "Hf178 meta 2", etc
+    // 
+    //  However, note that the energy string *should* have already been removed
+    //  by the call to extract_energy_from_peak_source_string(...)
+
+    //SandiaDecay doesnt care about spacing, so get rid of spaces, and similar
+    //SpecUtils::ireplace_all( nuclabel, " \t-\n\r", "" );
+
+    size_t number_start = nuclabel.find_first_of( "0123456789" );
+    size_t number_stop = string::npos;
     if( number_start != string::npos )
+      number_stop = nuclabel.find_first_not_of( "0123456789", number_start );
+
+    if( number_stop != string::npos )
     {
-      number_stop = label.find_first_not_of( ".0123456789", number_start );
-      if( number_stop == string::npos )
-        number_stop = label.size();
-    }//if( number_start != string::npos )
-  }//if( number_stop != string::npos )
-  
-  if( (number_start == string::npos) || (number_stop == string::npos) )
-  {
-    nuclide = db->nuclide( label );
-  }else
-  {
-    const string nuclabel = SpecUtils::trim_copy( label.substr( 0, number_start ) );
-    nuclide = db->nuclide( nuclabel );
-  }//if( number_start == string::npos )
-  
-  
+      vector<string> after_words;
+      const string afterstr = nuclabel.substr( number_stop );
+      SpecUtils::split( after_words, afterstr, " \t-\n\r" );
+      nuclabel = nuclabel.substr( 0, number_stop );
+      
+      string meta = "";
+      if( after_words.size() >= 1 )
+      {
+        const string &first_word = after_words[0];
+        if( SpecUtils::iequals_ascii( first_word, "m" )
+          || SpecUtils::iequals_ascii( first_word, "meta" ) )
+        {
+          nuclabel += "m";
+          if( after_words.size() >= 2 )
+          {
+            const string &second_word = after_words[1];
+            if( (second_word == "1") || (second_word == "2") || (second_word == "3") )
+              nuclabel += second_word;
+          }
+        }else if( SpecUtils::iequals_ascii( first_word, "m1" ) 
+          || SpecUtils::iequals_ascii( first_word, "m2" )
+          || SpecUtils::iequals_ascii( first_word, "m3" ) 
+          || SpecUtils::iequals_ascii( first_word, "meta1" )
+          || SpecUtils::iequals_ascii( first_word, "meta2" )
+          || SpecUtils::iequals_ascii( first_word, "meta3" )
+          )
+        {
+          nuclabel += first_word;
+        }
+      }//if( after_words.size() >= 1 )
+    }//if( number_stop != string::npos )
+  }//end manipulation of nuclabel
+
+  const SandiaDecay::Nuclide *nuclide = db->nuclide( nuclabel );
   if( nuclide )
     return setNuclide( peak, srcType, nuclide, ref_energy, nsigma_window );
-  
   
   //lets check for a reaction
   const size_t paren_pos = label.find_first_of( ')' );

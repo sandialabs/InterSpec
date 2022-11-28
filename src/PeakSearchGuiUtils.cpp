@@ -1160,11 +1160,12 @@ public:
     
     //shared_ptr<PeakDef> &oldpeak = m_old_to_new_peaks[i].first;
     shared_ptr<PeakDef> &newpeak = m_old_to_new_peaks[i].second;
-    
+    assert( newpeak );
     if( !newpeak )  //shouldnt ever happen!
       return;
     
     WComboBox *combo = m_nuc_select_combos[i];
+    assert( combo );
     if( !combo ) //shouldnt ever happen!
       return;
     
@@ -1189,8 +1190,11 @@ public:
       return;
     }//if( no source )
     
-    const string newnucstr = combo->currentText().toUTF8();
-    
+    string newnucstr = combo->currentText().toUTF8();
+    const size_t intens_pos = newnucstr.find( ", I=" );
+    if( intens_pos != string::npos )
+      newnucstr = newnucstr.substr( 0, intens_pos );
+
     const auto result = PeakModel::setNuclideXrayReaction( *newpeak, newnucstr, 0.0 );
     
     switch( result )
@@ -1285,10 +1289,13 @@ public:
       if( p->xrayElement() || p->reaction() )
       {
         energy = p->gammaParticleEnergy();
-      }else if( p->parentNuclide() && p->decayParticle() )
+      }else if( p->parentNuclide() )
       {
         gammatype = p->sourceGammaType();
-        energy = p->decayParticle()->energy;
+        if( p->decayParticle() )
+          energy = p->decayParticle()->energy;  // Use this so the 511 or 1022 keV wont be subtracted off for S.E. or D.E.
+        else
+          energy = p->gammaParticleEnergy();    //Annihilation gammas make it here
       }
       
       
