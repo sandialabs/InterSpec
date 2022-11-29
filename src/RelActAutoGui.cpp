@@ -3448,6 +3448,7 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     return;
   }
   
+  const int orig_w_index = pos - begin( kids );
   RelActAutoEnergyRange *range = dynamic_cast<RelActAutoEnergyRange *>( w );
   assert( range );
   if( !range )
@@ -3477,9 +3478,6 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
   
   assert( is_in_middle || is_left || is_right );
   assert( (int(is_in_middle) + int(is_left) + int(is_right)) == 1 );
-  
-  
-  const int orig_w_index = pos - begin(kids);
   
   if( is_in_middle )
   {

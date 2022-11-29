@@ -51,12 +51,15 @@
 #include <boost/any.hpp>
 #include <boost/bind.hpp>
 
+#include "SpecUtils/StringAlgo.h"
+
+#include "SandiaDecay/SandiaDecay.h"
+
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
-#include "SpecUtils/StringAlgo.h"
+#include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayChainChart.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -153,6 +156,62 @@ DecayChainChart::DecayChainChart( WContainerWidget *parent  )
   m_showDecaysThrough.connect( boost::bind( &DecayChainChart::showDecaysThrough, this,
                                            boost::placeholders::_1 ) );
 }//DecayChainChart constructor
+
+
+pair<AuxWindow *, DecayChainChart *>
+  DecayChainChart::show_decay_chart_window( const SandiaDecay::Nuclide *const nuc,
+         const DecayChainChart::DecayChainType type )
+{
+  if( !nuc )
+    return pair<AuxWindow *, DecayChainChart *>( nullptr, nullptr );
+
+  
+  string title;
+  switch( type )
+  {
+    case DecayChainChart::DecayChainType::DecayFrom:
+      title = nuc->symbol + " Decay Chain";
+      break;
+
+    case DecayChainChart::DecayChainType::DecayThrough:
+      title = "Decays through " + nuc->symbol;
+      break;
+  }//switch( type )
+  
+  DecayChainChart *chart = new DecayChainChart();
+
+  AuxWindow *window = new AuxWindow( title,
+      (Wt::WFlags<AuxWindowProperties>( AuxWindowProperties::DisableCollapse ) 
+         | AuxWindowProperties::EnableResize) );
+  
+  WGridLayout *layout = window->stretcher();
+  layout->addWidget( chart, 0, 0 );
+  layout->setContentsMargins( 0, 0, 0, 0 );
+  layout->setVerticalSpacing( 0 );
+  layout->setHorizontalSpacing( 0 );
+  layout->setRowStretch( 0, 1 );
+
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", viewer );
+
+  viewer->colorThemeChanged();
+  viewer->colorThemeChanged().connect( chart, &DecayChainChart::colorThemeChanged );
+
+  chart->setNuclide( nuc, !useBq, type );
+
+  if( viewer && (viewer->renderedWidth() > 100) && (viewer->renderedHeight() > 100) )
+  {
+    const int w = std::min( 800, viewer->renderedWidth() - 20 );
+    const int h = std::min( 600, viewer->renderedHeight() );
+    window->resizeWindow( w, h );
+
+    window->resizeToFitOnScreen();
+    window->centerWindowHeavyHanded();
+  }//if( we know the window size )
+
+  return make_pair( window, chart );
+}//show_decay_chart_window
 
 
 void DecayChainChart::doJavaScript( const std::string &js )

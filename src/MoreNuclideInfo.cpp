@@ -39,6 +39,7 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -54,6 +55,93 @@ namespace
 
 namespace MoreNuclideInfo
 {
+  std::string more_info_html( const SandiaDecay::Nuclide *const nuc, const bool useBq )
+  {
+  // TODO: Actually form the HTML, and then display in the Dialog
+  //       - In MoreNuclideInfo add clickable links to show decay diagram, and to show decays through; implement these through InterSpecApp::miscSignalHandler
+  //         e.g., "Wt.emit('" + wApp->root()->id() + "',{name:'miscSignal'}, 'decayChain-" + nuc->symbol  + "');"
+  //               "Wt.emit('" + wApp->root()->id() + "',{name:'miscSignal'}, 'decaysThrough-" + nuc->symbol  + "');"
+    if( !nuc || nuc->isStable() )
+      return "Invalid Nuclide";
+    
+    const auto more_info_db = MoreNucInfoDb::instance();
+    if( more_info_db )
+    {
+      const NucInfo * const more_info = more_info_db->info( nuc );
+
+      if( more_info )
+      {
+        string notes = more_info->m_notes;
+        SpecUtils::ireplace_all( notes, "\r", "" );
+        SpecUtils::ireplace_all( notes, "\n\n\n", "\n\n" );
+        // blah blah blah
+      }//if( more_info )
+    }//if( more_info_db )
+
+    char buffer[512];
+    vector<string> information;
+    information.push_back( nuc->symbol );
+    snprintf( buffer, sizeof( buffer ), "Atomic Number: %i", nuc->atomicNumber );
+    information.push_back( buffer );
+    snprintf( buffer, sizeof( buffer ), "Atomic Mass: %.2f amu", nuc->atomicMass );
+    information.push_back( buffer );
+
+      if( nuc->canObtainSecularEquilibrium() )
+        information.push_back( "Can reach secular equilibrium" );
+      else
+        information.push_back( "Cannot reach secular equilibrium" );
+
+    
+      const string hl = PhysicalUnits::printToBestTimeUnits( nuc->halfLife );
+      information.push_back( "Half Life: " + hl );
+
+      for( const SandiaDecay::Transition *parentTrans : nuc->decaysFromParents )
+      {
+        const SandiaDecay::Nuclide *parentNuclide = parentTrans->parent;
+
+        if( parentNuclide && (nuc != parentNuclide) )
+        {
+          const float br_from = parentNuclide->branchRatioFromForebear( nuc );  //will be >0 when we are plotting decays through a nuclide
+          const float br_to = parentNuclide->branchRatioToDecendant( nuc );     //will be >0 when plotting decays from a nuclide
+
+          if( br_from <= 0.0 || br_to > 0.0 )
+            snprintf( buffer, sizeof( buffer ), "Branch Ratio from %s: %.5g", parentNuclide->symbol.c_str(), br_to );
+          else
+            snprintf( buffer, sizeof( buffer ), "Branch Ratio through %s: %.5g", parentNuclide->symbol.c_str(), br_from );
+
+          information.push_back( buffer );
+        }
+      }
+
+      const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
+      const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, !useBq );
+      information.push_back( "Specific Act: " + sa );
+ 
+
+    for( const SandiaDecay::Transition *transition : nuc->decaysToChildren )
+    {
+      if( transition->child )
+      {
+        snprintf( buffer, sizeof( buffer ),
+          "Decays to %s by %s decay, BR %.5f",
+          transition->child->symbol.c_str(),
+          SandiaDecay::to_str( transition->mode ),
+          transition->branchRatio );
+
+ //strip off dangling zeros...
+        string val = buffer;
+        while( val.length() > 2 && val[val.length() - 1] == '0' && val[val.length() - 2] != '.' )
+          val = val.substr( 0, val.length() - 1 );
+
+        information.push_back( val );
+      }//if( transition->child )
+    }//for( const SandiaDecay::Transition * transition : nuc->decaysToChildren)
+
+
+    return "MoreNuclideInfo::more_info_html not implemented yet.";
+  }//std::string more_info_html( const SandiaDecay::Nuclide *const nuc );
+
+
   InfoStatus more_nuc_info_db_status()
   {
     std::lock_guard<std::mutex> lock(sm_mutex);
@@ -151,6 +239,10 @@ namespace MoreNuclideInfo
 
   void MoreNucInfoDb::init()
   {
+    // This function seemingly only takes:
+    //  "Took 2112 micro-seconds to initualize MoreNucInfoDb, and it takes up 43.6357 kb memory."
+    // To go through, but will leave debug metric printing out till I try it on a few more
+    //  computers.
     const auto start_time = std::chrono::steady_clock::now();
     
     m_nuc_infos.clear();
@@ -305,7 +397,7 @@ namespace MoreNuclideInfo
     const auto finish_time = std::chrono::steady_clock::now();
     const auto total_time = chrono::duration_cast<chrono::microseconds>(finish_time - start_time);
 
-    cout << "Took " << total_time.count() << " micro-seconds to initualize MoreNucInfoDb, and it takes up"
+    cout << "Took " << total_time.count() << " micro-seconds to initualize MoreNucInfoDb, and it takes up "
       << (memsize()/1024.0) << " kb memory." << endl;
   }//void init()
 

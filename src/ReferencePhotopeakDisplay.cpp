@@ -1522,15 +1522,18 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
   if( !nuc )
     return;
   
-  // TODO: call out to MoreNuclideInfo to actually form the HTML, and then display in the Dialog
-  //       - In MoreNuclideInfo add clickable links to show decay diagram, and to show decays through; implement these through InterSpecApp::miscSignalHandler
-  //         e.g., "Wt.emit('" + wApp->root()->id() + "',{name:'miscSignal'}, 'decayChain-" + nuc->symbol  + "');"
-  //               ...
+  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
 
-  SimpleDialog *dialog = new SimpleDialog( "More Info on " + nuc->symbol, "More information not implemented yet." );
+  string title = "More Info on " + nuc->symbol;
+  string content = MoreNuclideInfo::more_info_html( nuc, useBq );
+
+  SimpleDialog *dialog = new SimpleDialog( title, "" );
+
+  WText *contentsHtml = new WText( content, TextFormat::XHTMLUnsafeText, dialog->contents() );
+  contentsHtml->addStyleClass( "content" );
+  contentsHtml->setInline( false );
+
   dialog->addButton( "Close" );
-
-  
 }//void showMoreInfoWindow()
 
 

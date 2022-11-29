@@ -102,7 +102,7 @@
     }
 
 .OtherNucsContent.ToolTabTitledColumnContent > button.Wt-btn.with-label.LinkBtn {
-    height: 17px;
+    flex: 0 0 17px;
     font-size: 12px;
     font-weight: normal;
     float: none;

@@ -73,6 +73,20 @@ public:
   
   DecayChainChart( WContainerWidget *parent = nullptr );
   
+  /** Show the decay chain, or decay-through chart for a specified
+  nuclide, as a AuxWindow.
+
+   @param nuc Nuclide to show chart for. 
+   @param type The type (decay-chain, or decay-through) of chart to show.
+
+   @returns Pointers to the created AuxWindow and DecayChainChart; they could
+            be nullptr.
+  */
+  static std::pair<AuxWindow *, DecayChainChart *>
+    show_decay_chart_window( const SandiaDecay::Nuclide *const nuc,
+      const DecayChainType type );
+
+
   virtual void doJavaScript( const std::string &js ) override;
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
   void setNuclide( const SandiaDecay::Nuclide * const nuc, const bool useCurrie, const DecayChainType decayType );
