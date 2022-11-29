@@ -692,6 +692,10 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
 {
   addStyleClass( "D3TimeChartParent" );
     
+  // TODO: wait until the chart is visible before defining any of this JS
+  //       (niavely trying this for RenderFull didnt seem to work, but also 
+  //        RenderFull was being called before D3TimeChart was visible, so 
+  //        there is a little more to investigate)
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
   wApp->require( "InterSpec_resources/D3TimeChart.js" );
   wApp->useStyleSheet( "InterSpec_resources/D3TimeChart.css" );
@@ -735,7 +739,7 @@ void D3TimeChart::defineJavaScript()
   options += ", gridx: " + jsbool(m_showVerticalLines);
   options += ", gridy: " + jsbool(m_showHorizontalLines);
   options += ", chartLineWidth: 1.0";  //ToDo: Let this be specified in C++
-  options += ", dontRebin: false"; 
+  options += ", dontRebin: " + jsbool(m_dontRebin);
   options += "}";
   
   setJavaScriptMember( "chart", "new D3TimeChart(" + m_chart->jsRef() + "," + options + ");");
@@ -2015,7 +2019,9 @@ void D3TimeChart::setDontRebin( const bool dontRebin )
   m_dontRebin = dontRebin;
   if( m_options )
     m_options->setDontRebin( dontRebin );
-  doJavaScript( m_jsgraph + ".setDontRebin(" + jsbool(dontRebin) +  ");" );
+  
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setDontRebin(" + jsbool(dontRebin) +  ");" );
 }
 
 
