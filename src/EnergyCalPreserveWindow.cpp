@@ -160,22 +160,34 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
       return "";
     }; //cal_type(...) lambda
     
-    
-    string msg;
-    msg += "<table class=\"RecalibCoefTable\">"
-             "<tr>"
-               "<th>Order</th>"
-               "<th>Previous (" + cal_type(oldcal->type()) + ")</th>"
-               "<th>New (" + cal_type(newcal->type()) + ")</th>"
-             "</tr>";
   
     const auto &oldcoefs = oldcal->coefficients();
     const auto &newcoefs = newcal->coefficients();
     
     const size_t ncoefs = std::max( oldcoefs.size(), newcoefs.size() );
     
+    const bool isLowerEnergy = (oldcal->type() == SpecUtils::EnergyCalType::LowerChannelEdge);
+
+    string msg;
+    msg += "<table class=\"RecalibCoefTable\">"
+      "<tr>"
+      "<th>"+ string(isLowerEnergy ? "Channel" : "Order") + "</th>"
+      "<th>Previous (" + cal_type( oldcal->type() ) + ")</th>"
+      "<th>New (" + cal_type( newcal->type() ) + ")</th>"
+      "</tr>";
+
+    const size_t max_coeffs = 10;
     for( size_t i = 0; i < ncoefs; ++i )
     {
+      // Skip printing coefficiants above `max_coeffs`, except the very last channel.
+      if( i == max_coeffs )
+      {
+        msg += "<tr><td>...</td><td>...</td></tr>";
+        i = std::max( i, ncoefs - 2 );
+        
+        continue;
+      }//if( i == max_coeffs )
+
       char buffer[64];
       snprintf( buffer, sizeof(buffer), "<tr><td>%i</td>", static_cast<int>(i) );
       msg += buffer;
@@ -195,7 +207,7 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
         msg += "<td></td>";
       msg += "</tr>";
     }//for( size_t i = 0; i < ncoefs; ++i )
-    
+
     msg += "</table>";
     
     const auto &olddev = oldcal->deviation_pairs();
