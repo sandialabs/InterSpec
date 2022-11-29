@@ -266,7 +266,7 @@ D3TimeChart = function (elem, options) {
     top: 5,
     right: 60, /* This gets overridden in formatDataFromRaw based on if there is neutrons or not */
     bottom: 50, /* overridden in reinitializeChart based on compact x-axis or not */
-    left: 60,
+    left: 58,
   };
 
   /** CONSTANTS */
