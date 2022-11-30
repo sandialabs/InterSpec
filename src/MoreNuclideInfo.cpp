@@ -26,11 +26,16 @@
 #include <chrono> // just for timing things
 #include <string>
 #include <fstream>
+#include <sstream>
 #include <iostream>
 #include <algorithm>
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
+
+#include <Wt/WString>
+#include <Wt/WTemplate>
+#include <Wt/WApplication>
 
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -57,88 +62,209 @@ namespace MoreNuclideInfo
 {
   std::string more_info_html( const SandiaDecay::Nuclide *const nuc, const bool useBq )
   {
-  // TODO: Actually form the HTML, and then display in the Dialog
-  //       - In MoreNuclideInfo add clickable links to show decay diagram, and to show decays through; implement these through InterSpecApp::miscSignalHandler
-  //         e.g., "Wt.emit('" + wApp->root()->id() + "',{name:'miscSignal'}, 'decayChain-" + nuc->symbol  + "');"
-  //               "Wt.emit('" + wApp->root()->id() + "',{name:'miscSignal'}, 'decaysThrough-" + nuc->symbol  + "');"
+    using namespace Wt;
+
     if( !nuc || nuc->isStable() )
       return "Invalid Nuclide";
-    
-    const auto more_info_db = MoreNucInfoDb::instance();
-    if( more_info_db )
+
+    const SandiaDecay::SandiaDecayDataBase *const db = DecayDataBaseServer::database();
+    assert( db );
+    if( !db )
+      throw runtime_error( "Error getting DecayDataBaseServer" );
+
+
+    try
     {
-      const NucInfo * const more_info = more_info_db->info( nuc );
+      WTemplate tmplt;
 
-      if( more_info )
+      {// begin reading in more_nuc_info_tmplt.xml
+        assert( wApp );
+        const string filename = "InterSpec_resources/static_text/more_nuc_info_tmplt.xml";
+        const string docroot = wApp ? wApp->docRoot() : "";
+        const string file_path = SpecUtils::append_path( docroot, filename );
+
+#ifdef _WIN32
+        ifstream infile( SpecUtils::convert_from_utf8_to_utf16( file_path ).c_str(), ios::in | ios::binary );
+#else
+        ifstream infile( file_path.c_str(), ios::in | ios::binary );
+#endif
+        assert( infile.is_open() );
+        if( !infile.is_open() )
+          throw runtime_error( "Failed to open more_nuc_info_tmplt.xml" );
+
+        std::stringstream buffer;
+        buffer << infile.rdbuf();
+        WString tmplt_txt = WString::fromUTF8( buffer.str() );
+        tmplt.setTemplateText( tmplt_txt, Wt::TextFormat::XHTMLText );
+      }// end reading in more_nuc_info_tmplt.xml
+
+      const SandiaDecay::Element *el = db->element( nuc->atomicNumber );
+      assert( el );
+      string elname = el ? el->name : string();
+      if( !elname.empty() )
+        elname[0] = static_cast<char>(std::toupper( static_cast<unsigned char>(elname[0]) ));
+
+      tmplt.bindString( "symbol", nuc->symbol, Wt::TextFormat::XHTMLText );
+      tmplt.bindString( "element", elname, Wt::TextFormat::XHTMLText );
+      tmplt.bindInt( "mass-number", nuc->massNumber );
+      
+      const string halflife = PhysicalUnits::printToBestTimeUnits( nuc->halfLife, 4, SandiaDecay::second );
+      tmplt.bindString( "half-life", halflife, Wt::TextFormat::XHTMLText );
+
+      const string amu = PhysicalUnits::printCompact( nuc->atomicMass, 6 ) + " amu";
+      tmplt.bindString( "atomic-mass", amu, Wt::TextFormat::PlainText );
+
+      const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
+      const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, !useBq );
+      tmplt.bindString( "specific-activity", sa, Wt::TextFormat::XHTMLText );
+
+      double natural_abundance = -1;
+      if( el )
       {
-        string notes = more_info->m_notes;
-        SpecUtils::ireplace_all( notes, "\r", "" );
-        SpecUtils::ireplace_all( notes, "\n\n\n", "\n\n" );
-        // blah blah blah
-      }//if( more_info )
-    }//if( more_info_db )
+        for( const auto &n : el->isotopes )
+        {
+          if( n.nuclide == nuc )
+          {
+            natural_abundance = n.abundance;
+            break;
+          }
+        }
+      }//if( el )
 
-    char buffer[512];
-    vector<string> information;
-    information.push_back( nuc->symbol );
-    snprintf( buffer, sizeof( buffer ), "Atomic Number: %i", nuc->atomicNumber );
-    information.push_back( buffer );
-    snprintf( buffer, sizeof( buffer ), "Atomic Mass: %.2f amu", nuc->atomicMass );
-    information.push_back( buffer );
+      tmplt.setCondition( "if-is-natural", (natural_abundance > 0.0) );
+      const string natabun = PhysicalUnits::printCompact( natural_abundance, 4 );
+      tmplt.bindString( "natural-abundance", natabun, Wt::TextFormat::XHTMLText );
 
-      if( nuc->canObtainSecularEquilibrium() )
-        information.push_back( "Can reach secular equilibrium" );
-      else
-        information.push_back( "Cannot reach secular equilibrium" );
+      // I think we need to bind in the JS as XHTMLUnsafeText so it doesnt get stripped out
+      tmplt.bindString( "decay-chain-btn",
+        "<button type=\"button\" "
+          "class=\"Wt-btn with-label\" "
+          "onclick=\"Wt.emit($('.specviewer')[0].id,{name:'miscSignal'}, 'decayChain-" + nuc->symbol + "');\""
+          ">Show Decay Chain</button>",
+        Wt::TextFormat::XHTMLUnsafeText );
 
-    
-      const string hl = PhysicalUnits::printToBestTimeUnits( nuc->halfLife );
-      information.push_back( "Half Life: " + hl );
+      
 
+      tmplt.setCondition( "if-has-parents", !nuc->decaysFromParents.empty() );
+      if( !nuc->decaysFromParents.empty() )
+      {
+        tmplt.bindString( "decay-through-btn",
+          "<button type=\"button\" "
+          "class=\"Wt-btn with-label\" "
+          "onclick=\"Wt.emit($('.specviewer')[0].id,{name:'miscSignal'}, 'decaysThrough-" + nuc->symbol + "');\""
+          ">Show Decays Through</button>",
+          Wt::TextFormat::XHTMLUnsafeText );
+      }
+
+      string decaysToHtml;
+      for( const SandiaDecay::Transition *transition : nuc->decaysToChildren )
+      {
+        if( transition->child )
+        {
+          decaysToHtml += 
+            "<div>Decays to " + transition->child->symbol
+            + " by "
+            + SandiaDecay::to_str( transition->mode )
+            + " decay, BR=" + PhysicalUnits::printCompact( transition->branchRatio, 5 )
+            + "</div>";
+        }//if( transition->child )
+      }//for( const SandiaDecay::Transition * transition : nuc->decaysToChildren)
+
+      tmplt.bindString( "decays-to-html", decaysToHtml, Wt::TextFormat::XHTMLText );
+      
+
+      string decaysFromHtml;
       for( const SandiaDecay::Transition *parentTrans : nuc->decaysFromParents )
       {
         const SandiaDecay::Nuclide *parentNuclide = parentTrans->parent;
 
         if( parentNuclide && (nuc != parentNuclide) )
         {
-          const float br_from = parentNuclide->branchRatioFromForebear( nuc );  //will be >0 when we are plotting decays through a nuclide
-          const float br_to = parentNuclide->branchRatioToDecendant( nuc );     //will be >0 when plotting decays from a nuclide
+          const float br_from = parentNuclide->branchRatioFromForebear( nuc );
+          const float br_to = parentNuclide->branchRatioToDecendant( nuc );
 
           if( br_from <= 0.0 || br_to > 0.0 )
-            snprintf( buffer, sizeof( buffer ), "Branch Ratio from %s: %.5g", parentNuclide->symbol.c_str(), br_to );
+            decaysFromHtml += "<div>Branch Ratio from " + parentNuclide->symbol + ": " + PhysicalUnits::printCompact( br_to, 5 ) + "</div>";
           else
-            snprintf( buffer, sizeof( buffer ), "Branch Ratio through %s: %.5g", parentNuclide->symbol.c_str(), br_from );
-
-          information.push_back( buffer );
+            decaysFromHtml += "<div>Branch Ratio through " + parentNuclide->symbol + ": " + PhysicalUnits::printCompact( br_from, 5 ) + "</div>";
         }
-      }
+      }//for( const SandiaDecay::Transition *parentTrans : nuc->decaysFromParents )
 
-      const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
-      const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, !useBq );
-      information.push_back( "Specific Act: " + sa );
- 
+      tmplt.bindString( "decays-from-html", decaysFromHtml, Wt::TextFormat::XHTMLText );
 
-    for( const SandiaDecay::Transition *transition : nuc->decaysToChildren )
-    {
-      if( transition->child )
+      const auto more_info_db = MoreNucInfoDb::instance();
+      if( more_info_db )
       {
-        snprintf( buffer, sizeof( buffer ),
-          "Decays to %s by %s decay, BR %.5f",
-          transition->child->symbol.c_str(),
-          SandiaDecay::to_str( transition->mode ),
-          transition->branchRatio );
+        const NucInfo *const more_info = more_info_db->info( nuc );
 
- //strip off dangling zeros...
-        string val = buffer;
-        while( val.length() > 2 && val[val.length() - 1] == '0' && val[val.length() - 2] != '.' )
-          val = val.substr( 0, val.length() - 1 );
+        if( more_info )
+        { 
+          string related;
+          for( size_t i = 0; i < more_info->m_associated.size(); ++i )
+          {
+            related += (i ? ", " : "") + more_info->m_associated[i];
+            const SandiaDecay::Nuclide *associated = db->nuclide( more_info->m_associated[i] );
+            if( associated )
+              related += " (hl=" + PhysicalUnits::printToBestTimeUnits( associated->halfLife, 2 ) + ")";
+          }
+          tmplt.setCondition( "if-has-related", !related.empty() );
+          tmplt.bindString( "related-nucs", related, Wt::TextFormat::PlainText );
 
-        information.push_back( val );
-      }//if( transition->child )
-    }//for( const SandiaDecay::Transition * transition : nuc->decaysToChildren)
+          string notes = more_info->m_notes;
+          SpecUtils::trim( notes ); //just to make sure (although I think the XML parser already did this)
 
+          tmplt.setCondition( "if-has-more-info", !notes.empty() );
+          SpecUtils::ireplace_all( notes, "\r", "" );
+          vector<string> more_info_lines;
+      
+          boost::algorithm::split( more_info_lines, notes, 
+            boost::algorithm::is_any_of( "\n" ),
+            boost::algorithm::token_compress_off );
 
-    return "MoreNuclideInfo::more_info_html not implemented yet.";
+          notes = "<p>";
+          for( size_t i = 0; i < more_info_lines.size(); ++i )
+          {
+            string line = more_info_lines[i];
+            SpecUtils::trim( line );
+            
+            notes += line;
+
+            if( line.empty() )
+            {
+              notes += "</p><p>";
+
+              // Skip all the next empty lines
+              for( ; (i+1) < more_info_lines.size(); ++i )
+              {
+                string nextline = more_info_lines[i+1];
+                SpecUtils::trim( nextline );
+                if( !nextline.empty() )
+                  break;
+              }//for( skip consequitive empty lines )
+            }//if( line.empty() )
+          }//for( size_t i = 0; i < more_info_lines.size(); ++i )
+          
+          notes += "</p>";
+          tmplt.bindString( "more-info", notes, Wt::TextFormat::XHTMLText );
+        }//if( more_info )
+      }//if( more_info_db )
+
+      //if( nuc->canObtainSecularEquilibrium() )
+      //  information.push_back( "Can reach secular equilibrium" );
+      //else
+      //  information.push_back( "Cannot reach secular equilibrium" );
+      
+
+      std::stringstream output;
+      tmplt.renderTemplate( output );
+      
+      return output.str();
+    }catch( std::exception &e )
+    {
+      return "Error creating nuclide information: " + string( e.what() );
+    }//try / catch
+
+    return "Logic Error";
   }//std::string more_info_html( const SandiaDecay::Nuclide *const nuc );
 
 
@@ -242,7 +368,7 @@ namespace MoreNuclideInfo
     // This function seemingly only takes:
     //  "Took 2112 micro-seconds to initualize MoreNucInfoDb, and it takes up 43.6357 kb memory."
     // To go through, but will leave debug metric printing out till I try it on a few more
-    //  computers.
+    //  computers.  Debug mode takes 24 ms to initualize.
     const auto start_time = std::chrono::steady_clock::now();
     
     m_nuc_infos.clear();
@@ -298,7 +424,6 @@ namespace MoreNuclideInfo
     if( !infile.is_open() )
       throw runtime_error( "MoreNucInfoDb::init: couldnt open '" + filename + "'" );
 
-
     rapidxml::file<char> input_data( infile );
     rapidxml::xml_document<char> doc;
 
@@ -339,7 +464,9 @@ namespace MoreNuclideInfo
     XML_FOREACH_CHILD(ref_node, references_node, "Ref")
     {
       const rapidxml::xml_attribute<char> *const key_att = XML_FIRST_ATTRIB( ref_node, "key");
+      // The following assert is for developing the XML, not coding logic
       assert( key_att && key_att->value_size() );
+
       if( !key_att || !key_att->value_size() )
         continue;
       
@@ -351,6 +478,7 @@ namespace MoreNuclideInfo
       std::string url = SpecUtils::xml_value_str( url_node );
       std::string desc = SpecUtils::xml_value_str( desc_node );
 
+      // The following assert is for developing the XML, not coding logic
       assert( !(url.empty() && desc.empty()) );
 
       m_references.emplace( move(key), RefInfo{move(key_cpy), move(url), move(desc)} );
@@ -360,7 +488,10 @@ namespace MoreNuclideInfo
     XML_FOREACH_CHILD( nuc_node, nuclides_node, "Nuc" )
     {
       const rapidxml::xml_attribute<char> *const name_att = XML_FIRST_ATTRIB( nuc_node, "name" );
+      
+      // The following assert is for developing the XML, not coding logic
       assert( name_att && name_att->value_size() );
+
       if( !name_att || !name_att->value_size() )
         continue;
 
@@ -376,6 +507,7 @@ namespace MoreNuclideInfo
       for( std::string &val : info.m_associated )
         SpecUtils::trim( val );
 
+      // The following assert is for developing the XML, not coding logic
       assert( !info.m_notes.empty() || !info.m_associated.empty() );
 
       const SandiaDecay::Nuclide * nuc = db->nuclide( info.m_nuclide );

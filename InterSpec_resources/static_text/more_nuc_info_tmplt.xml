@@ -1,0 +1,45 @@
+<div>
+${element} ${mass-number} 
+<br />
+
+${symbol} 
+<br />
+
+${half-life} 
+<br />
+
+${atomic-mass} 
+<br />
+
+${specific-activity} 
+<br />
+
+${<if-is-natural>} 
+    Natural Abund: ${natural-abundance} 
+    <br />
+${</if-is-natural>}
+
+${decays-to-html}
+<br />
+${decay-chain-btn}
+<br />
+
+${<if-has-parents>} 
+    ${decays-from-html} 
+    <br />
+    ${decay-through-btn}
+    <br />
+${</if-has-parents>}
+
+${<if-has-related>}
+    Also consider checking for: ${related-nucs} 
+    <br />
+${</if-has-related>}
+
+${<if-has-more-info>} 
+  More Info:
+  ${more-info}
+  <br />
+${</if-has-more-info>}
+
+</div>
