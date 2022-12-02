@@ -56,16 +56,6 @@ namespace MoreNuclideInfo
 */
 namespace MoreNuclideInfo
 {
-  /** Returns HTML containing more information of the specified nuclide.
-  
-  Combines information from both MoreNucInfoDb (if available) and SandiaDecay.
-
-  This is the content in the window shown when the "more info" button is 
-  clicked on the "Reference Photopeaks" tab.
-  */
-  std::string more_info_html( const SandiaDecay::Nuclide *const nuc, 
-                              const bool useBq );
-
   /** An enum to give the state of the database.  This is primarily useful
   for deciding if you want to use the information from the primary GUI 
   thread, or instead inualize things in a worker thread, and then update 

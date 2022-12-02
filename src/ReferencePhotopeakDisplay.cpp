@@ -78,6 +78,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
+#include "InterSpec/MoreNuclideInfoDisplay.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 using namespace std;
@@ -1497,9 +1498,14 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
     std::vector<ReactionGamma::ReactionPhotopeak> reactions;
     if( !nuc && !el )
     {
-      const ReactionGamma *rctnDb = ReactionGammaServer::database();
-      if( rctnDb )
-        rctnDb->gammas( nucstr, reactions );
+      try
+      {
+        const ReactionGamma *rctnDb = ReactionGammaServer::database();
+        if( rctnDb )
+          rctnDb->gammas( nucstr, reactions );
+      }catch( std::exception &e)
+      {
+      }
     }//if( !nuc && !el )
 
     if( nuc || el || !reactions.empty() )
@@ -1517,23 +1523,13 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
 
 void ReferencePhotopeakDisplay::showMoreInfoWindow()
 {
+
   const SandiaDecay::Nuclide * const nuc = m_currentlyShowingNuclide.nuclide;
   assert( nuc );
   if( !nuc )
     return;
-  
-  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
 
-  string title = "More Info on " + nuc->symbol;
-  string content = MoreNuclideInfo::more_info_html( nuc, useBq );
-
-  SimpleDialog *dialog = new SimpleDialog( title, "" );
-
-  WText *contentsHtml = new WText( content, TextFormat::XHTMLUnsafeText, dialog->contents() );
-  contentsHtml->addStyleClass( "content" );
-  contentsHtml->setInline( false );
-
-  dialog->addButton( "Close" );
+  new MoreNuclideInfoWindow( nuc );
 }//void showMoreInfoWindow()
 
 

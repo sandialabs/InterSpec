@@ -1,4 +1,9 @@
-<div>
+<div class="MoreNuclideInfoDisplay">
+${<if-invalid>} 
+    ${error-message}
+${</if-invalid>}
+
+${<if-valid>}  
 ${element} ${mass-number} 
 <br />
 
@@ -41,5 +46,5 @@ ${<if-has-more-info>}
   ${more-info}
   <br />
 ${</if-has-more-info>}
-
+${</if-valid>}
 </div>

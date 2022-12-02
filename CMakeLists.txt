@@ -360,6 +360,7 @@ set(sources
     src/ZipArchive.cpp
     src/MultimediaDisplay.cpp
     src/MoreNuclideInfo.cpp
+    src/MoreNuclideInfoDisplay.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -450,6 +451,7 @@ set(headers
     InterSpec/ZipArchive.h
     InterSpec/MultimediaDisplay.h
     InterSpec/MoreNuclideInfo.h
+    InterSpec/MoreNuclideInfoDisplay.h
 )
 
 

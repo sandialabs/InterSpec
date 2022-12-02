@@ -75,7 +75,6 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/ReactionGamma.h"
-#include "InterSpec/DecayChainChart.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
@@ -1395,22 +1394,7 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
     return;
   }//if( SpecUtils::istarts_with( signal, "showMultimedia" ) )
 
-  const bool decayChain = SpecUtils::istarts_with( signal, "decayChain-" );
-  const bool decaysThrough = SpecUtils::istarts_with( signal, "decaysThrough-" );
-  if( decayChain || decaysThrough )
-  {
-    const string nucstr = signal.substr( decayChain ? 11 : 14 );
-    const SandiaDecay::SandiaDecayDataBase *const db = DecayDataBaseServer::database();
-    const SandiaDecay::Nuclide *const nuc = db->nuclide( nucstr );
-    assert( nuc );
-    const auto type = decayChain ? DecayChainChart::DecayChainType::DecayFrom
-                                 : DecayChainChart::DecayChainType::DecayThrough;
-    if( nuc )
-      DecayChainChart::show_decay_chart_window( nuc, type );
 
-    return;
-  }//if( SpecUtils::istarts_with( signal, "decayChain-" ) )
-  
   // shouldnt ever make it here..
   const string errmsg = "InterSpecApp::miscSignalHandler: unhandled signal '" + signal + "'";
   passMessage( errmsg, WarningWidget::WarningMsgHigh );
