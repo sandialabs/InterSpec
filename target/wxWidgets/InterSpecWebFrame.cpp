@@ -338,12 +338,16 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   SetSize( wxSize(ww, wh) );
   SetPosition( wxPoint(wx, wy) );
     
-
+#ifdef NDEBUG
+  m_browser->EnableContextMenu( false );
+  m_browser->EnableAccessToDevTools( false );
+#else
   // Allow the right-click context menu on web page contents
   m_browser->EnableContextMenu(true);
 
   // Enable the "Inspect" option in the right-click context menu
   m_browser->EnableAccessToDevTools(true);
+#endif
 
   //wxString customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 13_1_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.1 Mobile/15E148 Safari/604.1";
   //if (!m_browser->SetUserAgent(customUserAgent))
@@ -406,19 +410,19 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   //RunScript("function f(a){return a;}f(false);");
   //RunScript("function f(){var person = new Object();person.name = 'Foo'; person.lastName = 'Bar';return person;}f();");
   // For dates, we neet to take into account tize zone; below will return "2017-10-08T21:30:40.000Z"
-  //RunScript("function f(){var d = new Date('10/08/2017 21:30:40'); \
-        var tzoffset = d.getTimezoneOffset() * 60000; \
-        return new Date(d.getTime() - tzoffset);}f();");
-    //
-    // To run script asynchonously
-    //   `m_browser->RunScriptAsync("function f(a){return a;}f('Hello World!');");`
-    // Will then cause `InterSpecWebFrame::OnScriptResult` to recieve the result, when its done
-    //
-    // Note:
-    // To call C++ from JS, `window.wx.postMessage('This is a message from JS to C++ land');` will then call &InterSpecWebFrame::OnScriptMessage(..)
-    // 
+  //RunScript("function f(){var d = new Date('10/08/2017 21:30:40'); 
+  //      var tzoffset = d.getTimezoneOffset() * 60000; 
+  //      return new Date(d.getTime() - tzoffset);}f();");
+  //
+  // To run script asynchonously
+  //   `m_browser->RunScriptAsync("function f(a){return a;}f('Hello World!');");`
+  // Will then cause `InterSpecWebFrame::OnScriptResult` to recieve the result, when its done
+  //
+  // Note:
+  // To call C++ from JS, `window.wx.postMessage('This is a message from JS to C++ land');` will then call &InterSpecWebFrame::OnScriptMessage(..)
+  // 
 
-    // Connect the webview events
+  // Connect the webview events
   Bind(wxEVT_WEBVIEW_NAVIGATING, &InterSpecWebFrame::OnNavigationRequest, this, m_browser->GetId());
   Bind(wxEVT_WEBVIEW_NAVIGATED, &InterSpecWebFrame::OnNavigationComplete, this, m_browser->GetId());
   Bind(wxEVT_WEBVIEW_LOADED, &InterSpecWebFrame::OnDocumentLoaded, this, m_browser->GetId());
@@ -635,23 +639,58 @@ void InterSpecWebFrame::OnIdle(wxIdleEvent& WXUNUSED(evt))
   */
 void InterSpecWebFrame::OnNavigationRequest(wxWebViewEvent& evt)
 {
-  // Here we would 
-  wxLogMessage("%s", "Navigation request to '" + evt.GetURL() + "' (target='" +
-    evt.GetTarget() + "')");
+   wxLogMessage("Navigation request to '%s' (target='%s'), CurrentUrl=%s", 
+    evt.GetURL(), evt.GetTarget(), m_browser->GetCurrentURL() );
+  
+   const wxString &new_url = evt.GetURL();
 
   //If we don't want to handle navigation then veto the event and navigation
   //will not take place, we also need to stop the loading animation
-  bool handle_request = true; //... 
-  if (handle_request)
+  const bool is_reload = (new_url == m_browser->GetCurrentURL());
+  if( is_reload )
   {
-    // blah blah bl;ah
-  }
-  else
-  {
+    // We get here if the user presses ctrl-R; I havent investigated removing 
+    //  that key binding in too much detail, but it doesnt look to be through 
+    //  the wxWidgets window
+    wxLogMessage( "Recieved reload request" );
     evt.Veto();
-    // blah blah blah
+
+    if( !m_token.empty() )
+    {
+      const int status = InterSpecServer::remove_allowed_session_token( m_token.c_str() );
+      assert( status == 0 );
+      if( (status != 0) && (status != 1) )
+      {
+        wxLogError( "Recieved reload request while token was not recognized - not honouring." );
+        return;
+      }
+    }//if( !m_token.empty() )
+    
+    m_token = generate_token();
+
+    const int status = InterSpecServer::add_allowed_session_token( m_token.c_str(), InterSpecServer::SessionType::PrimaryAppInstance );
+    assert( status == 0 );
+
+    wxLogMessage( "Creating new session for navigation request" );
+
+    wxString app_url = m_url + "?apptoken=" + m_token + "&restore=no";
+    m_browser->LoadURL( app_url );
+    
+    return;
+  }//if( is_reload )
+
+  // If we are here, it is probably the initial load, but jic we'll check to make 
+  //  sure its not some other URL (I dont think this can happen, but jic).
+  //  (this check makes me a little uneasy, as it seems highly probable it will
+  //  trip a false positive at some point, and make the app unusuable...)
+  if( !SpecUtils::starts_with( new_url.utf8_string(), m_url.utf8_string().c_str() ) )
+  {
+    wxLogError( "Recieved navigation request to '%s', which doesnt begin with expected URL '%s'.", 
+      new_url, m_url );
+    evt.Veto();
   }
-}
+  
+}//void OnNavigationRequest(wxWebViewEvent& evt)
 
 /**
   * Callback invoked when a navigation request was accepted
