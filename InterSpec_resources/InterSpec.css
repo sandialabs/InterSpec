@@ -964,9 +964,15 @@ input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner
 }
 
 /* Add a drop-shadow for the app-level menus. */
-.PopupDivMenu.AppMenu
+.PopupDivMenu.AppMenu 
 {
   box-shadow: 0 5px 5px -3px rgba(0,0,0,.2), 0 8px 10px 1px rgba(0,0,0,.14), 0 3px 14px 2px rgba(0,0,0,.12);
+  
+  /* If vertical scroll-bars show, then sub-menus will be inside the parent 
+      (this is due, I think, to positionAtWidget JS function in Wt/src/web/skeleton/Wt.js), 
+      so we will just disable vertical scroll-bars, for the moment. 
+  */
+  overflow-y: hidden;
 }
 
 /* Add a slightly more petite drop shadow for sub-menus.
