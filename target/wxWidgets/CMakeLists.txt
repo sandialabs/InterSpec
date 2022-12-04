@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
-
 project( wxInterSpec )
 
 set( BUILD_AS_WX_WIDGETS_APP ON CACHE BOOL "Set to build wxWidget target" )
@@ -9,11 +8,12 @@ set( BUILD_AS_LOCAL_SERVER OFF CACHE BOOL "N/A" )
 set( USE_OSX_NATIVE_MENU OFF CACHE BOOL "N/A" )
 set( USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE BOOL "Enable Spectrum File Query Widget" )
 
+
 IF(WIN32)
   add_definitions(-DBOOST_ALL_NO_LIB) #Prevent boost auto-linking, which seems to call in vc141 boost libs instead of vc142
   add_definitions(-D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS ) #0x0601==Win7
 ENDIF(WIN32)
-
+ 
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,18 +29,30 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   endif()
   message(STATUS "Using CMAKE_MSVC_RUNTIME_LIBRARY ${CMAKE_MSVC_RUNTIME_LIBRARY}")
+
+  add_definitions( -DwxUSE_RC_MANIFEST=1 -DwxUSE_DPI_AWARE_MANIFEST=2 )
 endif()
 
-set(wxUSE_WEBVIEW_EDGE ON CACHE BOOL "")
-set(wxUSE_WEBVIEW_EDGE_STATIC ON CACHE BOOL "")
-set(wxBUILD_USE_STATIC_RUNTIME ON CACHE BOOL "")
-set(wxBUILD_SHARED OFF CACHE BOOL "")
 
-add_subdirectory(3rd_party/wxWidgets-3.2.1)
+if( NOT InterSpec_FETCH_DEPENDENCIES )
+  #find_package( wxWidgets REQUIRED core base webview stc )
+  
+  # I havent gotten the above to find_package(...) call to actually work yet
+  # with wxWidgets I compile with CMake on WIndows, so we'll keep compiling
+  # as a subdirectory for now... 
+  set(wxBUILD_SHARED OFF CACHE BOOL "")
+  if(WIN32)
+    set(wxUSE_WEBVIEW_EDGE ON CACHE BOOL "")
+    set(wxUSE_WEBVIEW_EDGE_STATIC ON CACHE BOOL "")
+    # TODO: tatic runtime should be set off of wxInterSpec_USE_MSVC_MultiThreadDLL
+    set(wxBUILD_USE_STATIC_RUNTIME ON CACHE BOOL "")
+  endif(WIN32)
+
+  add_subdirectory(3rd_party/wxWidgets-3.2.1 EXCLUDE_FROM_ALL)
+endif( NOT InterSpec_FETCH_DEPENDENCIES )
+
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
-
-add_definitions( -DwxUSE_RC_MANIFEST=1 -DwxUSE_DPI_AWARE_MANIFEST=2 )
  
 add_executable(${PROJECT_NAME}  
   WIN32  
@@ -62,3 +74,62 @@ set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_RE
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "InterSpec")
 
 
+set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
+
+#install(TARGETS 
+#  ${PROJECT_NAME} 
+#  RUNTIME DESTINATION 
+#    "."
+#)
+install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION "bin/.." )
+
+
+#install(DIRECTORY 
+#  ${CMAKE_CURRENT_SOURCE_DIR}/../../InterSpec_resources
+#  ${CMAKE_CURRENT_SOURCE_DIR}/../../data
+#  ${WT_RESOURCES_DIRECTORY}
+#DESTINATION 
+#  ${CMAKE_INSTALL_PREFIX} 
+#)
+
+
+#install(FILES 
+#  ${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSE.txt
+#  ${CMAKE_CURRENT_SOURCE_DIR}/../../NOTICE.html
+#DESTINATION 
+#  ${CMAKE_INSTALL_PREFIX} 
+#)
+
+#install(FILES 
+#  ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
+#  ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
+#  ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
+#DESTINATION 
+#  ${CMAKE_INSTALL_PREFIX}/InterSpec_resources
+#)
+
+#install(FILES 
+#  ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml
+#DESTINATION 
+#  ${CMAKE_INSTALL_PREFIX}/data/sandia.decay.xml
+#)
+
+
+set(CPACK_BINARY_ZIP ON)
+set(CPACK_BINARY_NSIS OFF)
+set(CPACK_SOURCE_ZIP ON)
+set(CPACK_SOURCE_TGZ ON) #linux
+
+set(CPACK_PACKAGE_NAME "InterSpec")
+set(CPACK_PACKAGE_VENDOR "Sandia National Laboratories")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+    "InterSpec assists in analyzing spectral nuclear radiation data, using a peak-based methodology.")
+set(CPACK_PACKAGE_VERSION "${INTERSPEC_VERSION}")
+#set(CPACK_PACKAGE_VERSION_MAJOR "1")
+#set(CPACK_PACKAGE_VERSION_MINOR "0")
+#set(CPACK_PACKAGE_VERSION_PATCH "0")
+#CPACK_INSTALL_PREFIX
+#set(CPACK_PACKAGE_INSTALL_DIRECTORY "release_builds/InterSpec-${CMAKE_SYSTEM_NAME}-x64")
+
+
+include(CPack)

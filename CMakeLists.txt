@@ -175,7 +175,8 @@ if( CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0 )
   message( FATAL_ERROR, "GCC less than 5 not supported." )
 endif()
 
-
+# Make a cached variable avaiable to parent cmake projects
+set( INTERSPEC_VERSION "${PROJECT_VERSION}" CACHE STRING "InterSpec version" )
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     #Default to debug
@@ -268,6 +269,11 @@ else( InterSpec_FETCH_DEPENDENCIES )
   set(Boost_USE_STATIC_LIBS ON)
   set(Boost_USE_MULTITHREADED ON)
   find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
+
+  if( USE_REL_ACT_TOOL )
+    find_package( Eigen3 3.4 REQUIRED NO_MODULE )
+    find_package( Ceres REQUIRED )
+  endif( USE_REL_ACT_TOOL ) 
 endif( InterSpec_FETCH_DEPENDENCIES )
 
 
@@ -548,41 +554,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActTxtResults.h
         InterSpec/RelEffChart.h
   )
-  
-  include(FetchContent)
-  
-  # Make sure we use only MPL2 licensed (Mozillas non-copyleft) Eigen code (not LGPL-2.1)
-  add_compile_options( -DEIGEN_MPL2_ONLY )
-  
-  # Set some eigen options
-  set( EIGEN_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" )
-  set( EIGEN_BUILD_DOC OFF CACHE INTERNAL "" )
-  set( EIGEN_BUILD_TESTING OFF CACHE INTERNAL "" )
-  #set( Eigen3_DIR "${FETCHCONTENT_BASE_DIR}/..." CACHE INTERNAL "" )
-  
-  FetchContent_Declare(
-    eigen
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG        3147391d946bb4b6c68edd901f2add6ac1f31f8c # release-3.4.0
-  )
-  
-  # Set some Google Ceres options; both to allow compiling without further dependancies, and
-  #  avoid some things we dont need
-  set( MINIGLOG ON CACHE INTERNAL "" )
-  set( GFLAGS OFF CACHE INTERNAL "" )
-  set( CXSPARSE OFF CACHE INTERNAL "" )
-  set( ACCELERATESPARSE OFF CACHE INTERNAL "" )
-  set( CUDA OFF CACHE INTERNAL "" )
-  set( EXPORT_BUILD_DIR ON CACHE INTERNAL "" )
-  set( BUILD_TESTING OFF CACHE INTERNAL "" )
-  set( BUILD_EXAMPLES OFF CACHE INTERNAL "" )
-  set( PROVIDE_UNINSTALL_TARGET OFF CACHE INTERNAL "" )
-  FetchContent_Declare(
-    ceres-solver
-    GIT_REPOSITORY https://ceres-solver.googlesource.com/ceres-solver
-    GIT_TAG        783637a6ed285abc6c57b16ccd968c594a91b35f # release-2.1.0
-  )
-  FetchContent_MakeAvailable(eigen ceres-solver)
+
 endif( USE_REL_ACT_TOOL )
 
 

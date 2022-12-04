@@ -113,7 +113,7 @@ The Windows release build of InterSpec uses Electron (https://electronjs.org/) t
 During the installation of Node.js, you can choose to install the [Chocolatey](https://chocolatey.org/) package manager; this will install the necessary Visual Studio command line compiler tools to install things (i.e., you dont need a full install of MSVC).
 You also need to install CMake, most easily from https://cmake.org/download/.
 
-The InterSpec build files are setup to use the MSVC static runtime - it is highly suggested to compile boost, Wt, zlib from from source, following these instructions.
+The InterSpec build files are setup to use the MSVC static runtime - it is highly suggested to compile boost, Wt, zlib and optionally Ceres Solver and Eigen, from from source, following these instructions.
 
 
 From the Visual Studio 2019 "x64 Native Tools Command Prompt":
@@ -140,7 +140,7 @@ using msvc : 14.2 : "C:\Program Files (x86)\Microsoft Visual Studio\2019\Profess
 Then compile and install:
 
 ```bash
-set MY_PREFIX=C:\install\msvc2019\x64\wt_3.7.1_prefix
+set MY_PREFIX=C:\install\msvc2022\x64\wt_3.7.1_prefix
 
 .\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 architecture=x86 --prefix=%MY_PREFIX% --build-dir=win_build -j8 install
 ```
@@ -162,13 +162,14 @@ cmake --build . --config Release --target install
 To build Wt, you must patch the Wt source code as described above, and then you can use the cmake GUI to configure Wt, and Visual Studio to build and install it.
 You can use the following command from the command line to initiate the CMake config, but you also need to change all "MD" compiler flags to "MT", which its easiest to do this in the CMake gui.
 ```bash
-mkdir build_msvc2019
-
 # Note: I'm not sure how to patch things from the command prompt, so I just used 
 #       an Ubuntu WSL shell to run the following two patch commands; you could probably
 #       also use your command line version of git
 patch -u src/Wt/Render/CssParser.C -i ${PATCH_DIR}/wt/3.7.1/CssParser.C.patch
 patch -u CMakeLists.txt -i ${PATCH_DIR}/wt/3.7.1/CMakeLists.txt.patch  # Only if linking to static runtime
+
+mkdir build_msvc2022
+cd build_msvc2022
 
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DBoost_INCLUDE_DIR=%MY_PREFIX%/include -DBOOST_PREFIX=%MY_PREFIX% -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++11" -DCONFIGURATION=data/config/wt_config_electron.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR=%MY_PREFIX%/etc/wt ..
 
@@ -183,6 +184,52 @@ cmake --build . --config Release --target install
 If you plan to package InterSpec as an Electron application (e.g., normal desktop app), see the instructions in [patches](/target/electron/) for building the InterSpec code and packaging the application.
 
 
+
+If you plan to compile InterSpec with the relative activity tools enabled (CMake option `USE_REL_ACT_TOOL` - default is on), then you will also need to compile/install 
+
+http://ceres-solver.org/installation.html#section-windows
+
+```bash
+# Build Eigen, which is required by ceres-solver, and used a few other places
+# in InterSpec if its avaiable
+curl -L https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz --output eigen-3.4.0.tar.gz
+tar -xzvf eigen-3.4.0.tar.gz
+cd eigen-3.4.0
+mkdir build
+cd build
+cmake -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DCMAKE_BUILD_TYPE=Release -DEIGEN_MPL2_ONLY=1 -DEIGEN_BUILD_SHARED_LIBS=OFF -DEIGEN_BUILD_DOC=OFF -DEIGEN_BUILD_TESTING=OFF ..
+cmake --build . --config Release --target install
+
+
+# Build ceres-solver; this is the optimizer used for the relative efficiency
+# tool, and a small amount of the peak fitting.
+curl -L http://ceres-solver.org/ceres-solver-2.1.0.tar.gz --output ceres-solver-2.1.0.tar.gz
+tar -xzvf ceres-solver-2.1.0.tar.gz
+cd ceres-solver-2.1.0
+mkdir build_msvc
+cd build_msvc
+
+cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebug -DMSVC_USE_STATIC_CRT=ON ..
+cmake --build . --config Debug --target install -j 16
+
+cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DMSVC_USE_STATIC_CRT=ON ..
+cmake --build . --config Release --target install -j 16
+```
+
+If you wish to build the wxWidgets target of InterSpec, then you will need wxWidgets:
+```bash
+# Note: as of 20221203 I havent gotten linking to pre-build wxWidgets totally working; I think the error is somewhere in the cmake stuff called by find_package(...) in our cmake stuff
+mkdir wxWidgets-3.2.1
+cd wxWidgets-3.2.1
+curl -L https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.1/wxWidgets-3.2.1.zip --output wxWidgets-3.2.1.zip
+tar -xzvf wxWidgets-3.2.1.zip
+
+mkdir build_msvc
+# TODO: we could/should turn off a lot of wxWidgets components
+cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DwxUSE_WEBVIEW_EDGE=ON -DwxUSE_WEBVIEW_EDGE_STATIC=ON -DwxBUILD_USE_STATIC_RUNTIME=ON -DwxBUILD_SHARED=OFF ..
+cmake --build . --config Debug --target install -j 16
+cmake --build . --config Release --target install -j 16
+```
 
 # Building dependencies on Linux 
 The commands to build both the prerequists and InterSpec on Ubuntu 18.04 are below.
