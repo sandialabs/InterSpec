@@ -23,7 +23,7 @@ set(MUPARSERX_VERSION ${CMAKE_MATCH_1})
 # Defaults to static, set BUILD_SHARED_LIBS=ON for shared
 ########################################################################
 file(GLOB MUPARSERX_SOURCES "${MUPARSERX_SOURCE_DIR}/*.cpp")
-add_library(muparserx ${MUPARSERX_SOURCES})
+add_library(muparserx "STATIC" ${MUPARSERX_SOURCES})
 set_target_properties(muparserx PROPERTIES VERSION ${MUPARSERX_VERSION})
 set_property(TARGET muparserx PROPERTY POSITION_INDEPENDENT_CODE TRUE)
 set_target_properties(muparserx PROPERTIES SOVERSION ${MUPARSERX_VERSION})
