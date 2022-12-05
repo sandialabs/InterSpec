@@ -80,7 +80,7 @@ FetchContent_Declare(
   # GIT_PROGRESS TRUE # Also need FETCHCONTENT_QUIET 
 
   # First check if the patch has already been applied, and if not, then do the patch
-  PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${WT_PATCH_FILE} || ${GIT_EXECUTABLE} apply --ignore-space-change --ignore-whitespace ${WT_PATCH_FILE}
+  PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${WT_PATCH_FILE} || ${GIT_EXECUTABLE} apply --reject --ignore-space-change --ignore-whitespace ${WT_PATCH_FILE}
 
   #The '|| true' is in next command is due to bug in cmake I think: https://gitlab.kitware.com/cmake/cmake/-/issues/21146
   #PATCH_COMMAND patch -p1 < ${WT_PATCH_FILE} || true
@@ -129,8 +129,7 @@ if( NOT APPLE AND NOT ANDROID )
     GIT_TAG        21767c654d31d2dccdde4330529775c6c5fd5389 # 1.2.12
     GIT_SHALLOW    ON
 
-    #The '|| true' is in next command is due to bug in cmake I think: https://gitlab.kitware.com/cmake/cmake/-/issues/21146
-    PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${ZLIB_PATCH_FILE} || ${GIT_EXECUTABLE} apply --ignore-space-change --ignore-whitespace ${ZLIB_PATCH_FILE}
+    PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${ZLIB_PATCH_FILE} || ${GIT_EXECUTABLE} apply --reject --ignore-space-change --ignore-whitespace ${ZLIB_PATCH_FILE}
     #PATCH_COMMAND patch -p1 < ${ZLIB_PATCH_FILE} || true
   )
 

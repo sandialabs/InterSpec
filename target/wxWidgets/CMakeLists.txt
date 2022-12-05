@@ -35,20 +35,39 @@ endif()
 
 
 if( NOT InterSpec_FETCH_DEPENDENCIES )
-  #find_package( wxWidgets REQUIRED core base webview stc )
+  
   
   # I havent gotten the above to find_package(...) call to actually work yet
-  # with wxWidgets I compile with CMake on WIndows, so we'll keep compiling
+  # with wxWidgets I compile with CMake on Windows, so we'll keep compiling
   # as a subdirectory for now... 
+  #
+  #find_package( wxWidgets REQUIRED core base webview stc )
+
   set(wxBUILD_SHARED OFF CACHE BOOL "")
   if(WIN32)
     set(wxUSE_WEBVIEW_EDGE ON CACHE BOOL "")
     set(wxUSE_WEBVIEW_EDGE_STATIC ON CACHE BOOL "")
-    # TODO: tatic runtime should be set off of wxInterSpec_USE_MSVC_MultiThreadDLL
+    # TODO: static runtime should be set off of wxInterSpec_USE_MSVC_MultiThreadDLL
     set(wxBUILD_USE_STATIC_RUNTIME ON CACHE BOOL "")
   endif(WIN32)
 
-  add_subdirectory(3rd_party/wxWidgets-3.2.1 EXCLUDE_FROM_ALL)
+  # We could pre-download the source code add add it, like:
+  #add_subdirectory(3rd_party/wxWidgets-3.2.1 EXCLUDE_FROM_ALL)
+
+  # But for the moment we'll use CMake FetchContent to simplify other build scripts
+  message( "Using FetchContent to retrieve wxWidgets" )
+  include(FetchContent)
+  FetchContent_Declare( wxWidgets
+    GIT_REPOSITORY https://github.com/wxWidgets/wxWidgets.git
+    GIT_TAG        97e99707c5d2271a70cb686720b48dbf34ced496 # release-3.2.1
+    GIT_SHALLOW    ON
+  )
+
+  FetchContent_GetProperties(wxWidgets)
+  if(NOT wxWidgets_POPULATED)
+    FetchContent_Populate(wxWidgets)
+    add_subdirectory(${wxWidgets_SOURCE_DIR} ${wxWidgets_BINARY_DIR} EXCLUDE_FROM_ALL)
+  endif(NOT wxWidgets_POPULATED)
 endif( NOT InterSpec_FETCH_DEPENDENCIES )
 
 
@@ -76,43 +95,41 @@ set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "InterSpec")
 
 set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
 
-#install(TARGETS 
-#  ${PROJECT_NAME} 
-#  RUNTIME DESTINATION 
-#    "."
-#)
+# We get an error if the destination is empty, or just ".", but the following seems to work
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION "bin/.." )
 
 
-#install(DIRECTORY 
-#  ${CMAKE_CURRENT_SOURCE_DIR}/../../InterSpec_resources
-#  ${CMAKE_CURRENT_SOURCE_DIR}/../../data
-#  ${WT_RESOURCES_DIRECTORY}
-#DESTINATION 
-#  ${CMAKE_INSTALL_PREFIX} 
-#)
+install(DIRECTORY 
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../InterSpec_resources
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../data
+  ${WT_RESOURCES_DIRECTORY}
+DESTINATION 
+  "bin/.." 
+)
 
 
-#install(FILES 
-#  ${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSE.txt
-#  ${CMAKE_CURRENT_SOURCE_DIR}/../../NOTICE.html
-#DESTINATION 
-#  ${CMAKE_INSTALL_PREFIX} 
-#)
+install(FILES 
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSE.txt
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../NOTICE.html
+DESTINATION 
+  "bin/.." 
+)
 
-#install(FILES 
-#  ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
-#  ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
-#  ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
-#DESTINATION 
-#  ${CMAKE_INSTALL_PREFIX}/InterSpec_resources
-#)
+install(FILES 
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
+DESTINATION 
+  "InterSpec_resources"
+)
 
-#install(FILES 
-#  ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml
-#DESTINATION 
-#  ${CMAKE_INSTALL_PREFIX}/data/sandia.decay.xml
-#)
+install(FILES 
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml
+DESTINATION 
+  "data"
+RENAME 
+  "sandia.decay.xml"
+)
 
 
 set(CPACK_BINARY_ZIP ON)

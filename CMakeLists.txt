@@ -656,7 +656,7 @@ target_link_libraries(
     ZLIB::ZLIB
     ${CMAKE_DL_LIBS}
 )
-message( "Wt_HTTP_LIBRARY=$<$<CONFIG:Wt_HTTP_DEBUG_LIBRARY>:Debug> ")
+
 if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
     add_subdirectory(external_libs/pugixml-1.9)
     target_link_libraries(InterSpecLib PUBLIC pugixml)
@@ -693,7 +693,7 @@ if( InterSpec_FETCH_DEPENDENCIES )
       wthttp
       wtdbosqlite3
       wtdbo
-)
+  )
 
   target_include_directories( InterSpecLib
     PUBLIC
@@ -706,12 +706,13 @@ endif( InterSpec_FETCH_DEPENDENCIES )
 
 
 if(WIN32)
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        target_link_libraries(InterSpecLib PUBLIC ${Wt_DEBUG_LIBRARIES})
-    else(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        target_link_libraries(InterSpecLib PUBLIC ${Wt_LIBRARIES})
-    endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-
+    if( NOT InterSpec_FETCH_DEPENDENCIES )
+        target_link_libraries(InterSpecLib PUBLIC 
+            debug "${Wt_DEBUG_LIBRARIES}"
+            optimized "${Wt_LIBRARIES}"
+        )
+    endif( NOT InterSpec_FETCH_DEPENDENCIES )
+    
     target_link_directories(InterSpecLib PUBLIC ${Boost_LIBRARY_DIR})
 else(WIN32)
     target_link_libraries(InterSpecLib PUBLIC
