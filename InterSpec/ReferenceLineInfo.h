@@ -105,11 +105,19 @@ struct ReferenceLineInfo
   //  redundant
   std::vector<ReactionGamma::ReactionPhotopeak> reactionGammas;
   
-  //otherRefLines: either background, or custom energy, reference lines displayed
+  /* either background, or custom energy, reference lines displayed.
+  
+  Used by PeakSearchGuiUtils when setting nuc ID of peaks, when showing 
+  background or other ref lines.
+  */
   std::vector<OtherRefLine> otherRefLines;
   
   //TODO: place energies, intensities, particlestrs, decaystrs, and
-  //      elementstrs into a tuple.
+  //      elementstrs into a tuple; also include pointers to Element, Nuclide, 
+  //      or Reaction that the peak should be assigned to.  And also unify
+  //      this struct to be shared by DecayParticleModel::RowData.  And once
+  //      this happens we can get rid of #reactionGammas and #otherRefLines.
+  // 
   //energy and intesities of displayed lines, should always be same size.
   //intensities is normalied to be between 0 and 1 for each particle type
   //  (e.g. gammas get a different SF than alphas, etc.  Xrays and gammas share
@@ -138,7 +146,7 @@ struct ReferenceLineInfo
   //reactionsTxt: a CSV list of reactions giving rise to reactionGammas
   std::string reactionsTxt;
   
-  //shieldingName: name of shieding applied to tamplitudes of lines; empty
+  //shieldingName: name of shieding applied to amplitudes of lines; empty
   //  if none.  Will have format "AN=23, AD=53.1 g/cm2" if generic shielding.
   std::string shieldingName;
   

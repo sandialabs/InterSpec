@@ -184,9 +184,11 @@ namespace
         filename = refinfo.nuclide->symbol + "_gammas";
       else if( !refinfo.reactionGammas.empty() )
         filename = refinfo.reactionsTxt + "_lines";
-      else if( !refinfo.otherRefLines.empty() )
+      else if( refinfo.isOtherRef && SpecUtils::icontains(refinfo.labelTxt, "background" ) )
         filename =  "background_lines";
-      
+      else if( refinfo.isOtherRef )
+        filename = "custom_lines";
+
       SpecUtils::ireplace_all( filename, "(", "_" );
       SpecUtils::ireplace_all( filename, ")", "_" );
       SpecUtils::ireplace_all( filename, ",", "-" );
@@ -202,12 +204,12 @@ namespace
       if( row_data.empty() )
       {
         //refinfo.element could be non-null, and the element just not have x-rays
-        assert( !refinfo.nuclide && refinfo.reactionGammas.empty() && refinfo.otherRefLines.empty() );
+        assert( !refinfo.nuclide && refinfo.reactionGammas.empty() && !refinfo.isOtherRef );
       }//if( row_data.empty() )
       
       
       if( (!refinfo.element && !refinfo.nuclide
-         && refinfo.reactionGammas.empty() && refinfo.otherRefLines.empty()) )
+         && refinfo.reactionGammas.empty() && !refinfo.isOtherRef) )
       {
         assert( row_data.empty() );
         
@@ -238,9 +240,9 @@ namespace
       }else if( !refinfo.reactionGammas.empty() )
       {
         out << "Reactions," << refinfo.reactionsTxt << eol_char;
-      }else if( !refinfo.otherRefLines.empty() )
+      }else if( refinfo.isOtherRef )
       {
-        out << "Source,CommonBackgroundGammas" << eol_char;
+        out << "Source,Gammas" << eol_char;
       }
       
       assert( shielding );
@@ -340,7 +342,7 @@ namespace
         out << eol_char << rel_amp_note << eol_char << eol_char;
         
         out << "Energy (keV),Rel. Yield" << eol_char;
-      }else if( !refinfo.otherRefLines.empty() )
+      }else if( refinfo.isOtherRef )
       {
         out << eol_char << rel_amp_note << eol_char << eol_char;
         
@@ -1792,26 +1794,42 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     }//try / catch
   }//if( isotxt.find("(") != string::npos )
   
+  bool isCustomEnergy = false;
   const bool isBackground = SpecUtils::icontains( isotxt, "background" );
   const bool showGammaChecked = (!m_showGammas || m_showGammas->isChecked());
   const bool showXrayChecked = (!m_showXrays || m_showXrays->isChecked());
   const bool showCascadesChecked = (m_showCascadeSums && m_showCascadeSums->isChecked());
   
+  vector<OtherRefLine> otherRefLinesToShow;
+  
+  if( isBackground && !nuc && !el && rctnGammas.empty() )
+  {
+    for( const OtherRefLine &bl : BackgroundLines )
+    {
+      const bool isXray = (std::get<3>( bl ) == OtherRefLineType::BackgroundXRay);
+      if( (isXray && showXrayChecked) || (!isXray && showGammaChecked) )
+        otherRefLinesToShow.push_back( bl );
+    }//for( const BackgroundLine &bl : BackgroundLines )
+  }//if( isBackground )
 
-  float customEnergy = -1.0f;
-  if( !nuc && !el && rctnGammas.empty() )
+  if( !nuc && !el && rctnGammas.empty() && otherRefLinesToShow.empty() )
   {
     try
     {
-      customEnergy = static_cast<float>(PhysicalUnits::stringToEnergy( isotxt ));
-    } catch( std::exception & )
+      const float energy = static_cast<float>(PhysicalUnits::stringToEnergy( isotxt ));
+      
+      //BackgroundLine<Energy, RelBranchRatio, "Symbol", OtherRefLineType, "Description">
+      OtherRefLine line{energy, 1.0f, "", OtherRefLineType::OtherBackground, isotxt};
+      otherRefLinesToShow.push_back( line );
+      isCustomEnergy = true;
+    }catch( std::exception & )
     {
     }
   }//if( !nuc && !el && rctnGammas.empty() )
 
 
-  show = (show && (nuc || (el && showXrayChecked) || isBackground
-                   || (customEnergy > 0.0f)
+  show = (show && (nuc || (el && showXrayChecked)
+                   || (!otherRefLinesToShow.empty())
                    || (!rctnGammas.empty() && showGammaChecked)) );
 
   double age = -1.0;
@@ -2026,7 +2044,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     m_currentlyShowingNuclide.element         = el;
     m_currentlyShowingNuclide.reactionGammas  = rctnGammas;
     m_currentlyShowingNuclide.reactionsTxt    = reactions;
-    m_currentlyShowingNuclide.isOtherRef      = (isBackground || (customEnergy > 0.0f));
+    m_currentlyShowingNuclide.isOtherRef      = !otherRefLinesToShow.empty();
     m_currentlyShowingNuclide.isReaction      = !rctnGammas.empty();
     m_currentlyShowingNuclide.age             = age;
     m_currentlyShowingNuclide.labelTxt        = m_nuclideEdit->text().toUTF8();
@@ -2091,22 +2109,6 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     std::shared_ptr<DetectorPeakResponse> det = m_detectorDisplay->detector();
     if( !!det )
       m_currentlyShowingNuclide.detectorName = det->name();
-    
-    
-    if( isBackground )
-    {
-      for( const OtherRefLine &bl : BackgroundLines )
-      {
-        const bool isXray = (std::get<3>(bl) == OtherRefLineType::BackgroundXRay);
-        if( (isXray && showXrayChecked) || (!isXray && showGammaChecked) )
-          m_currentlyShowingNuclide.otherRefLines.push_back( bl );
-      }//for( const BackgroundLine &bl : BackgroundLines )
-    }else if( (customEnergy > 0.0f) )
-    {
-      //BackgroundLine<Energy, RelBranchRatio, "Symbol", OtherRefLineType, "Description">
-      OtherRefLine line{customEnergy, 1.0f, "", OtherRefLineType::OtherBackground, isotxt};
-      m_currentlyShowingNuclide.otherRefLines.push_back( line );
-    }//if( isBackground )// else( isCustom )
   }else
   {
     //m_currentlyShowingNuclide is already reset.
@@ -2154,7 +2156,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   m_showAlphas->setHidden(!showAplhaCb);
   m_showBetas->setHidden(!showBetaCb);
 
-
+  // TODO: unify info held by DecayParticleModel::RowData and ReferenceLineInfo, so they can share the same struct, and we can just set the data once
   vector<DecayParticleModel::RowData> inforows;
 
   const double brCutoff = (m_lowerBrCuttoff ? m_lowerBrCuttoff->value() : 0.0);
@@ -2182,7 +2184,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   vector<const SandiaDecay::Transition *> transistions;
   vector<SandiaDecay::ProductType> types;
   vector<const ReactionGamma::Reaction *> reactionPeaks;
-  vector<std::unique_ptr<const OtherRefLine>> otherRefLines;
+  vector<std::unique_ptr<const OtherRefLine>> otherRefLines; //Will be filtered for energy range, like the other variables around here
   bool hasCascades = false;
   vector<tuple<const SandiaDecay::Transition*, double, float, float, float, double>> cascades; //transition, first gamma BR, first gamma energy, second gamma energy, coincidence fraction, second gamma BR (just for debug)
 
@@ -2417,8 +2419,10 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   }//for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
 
 
-  for( const OtherRefLine &bl : m_currentlyShowingNuclide.otherRefLines )
+  for( const OtherRefLine &bl : otherRefLinesToShow )
   {
+    assert( !nuc && !el && rctnGammas.empty() );
+
     if( std::get<0>(bl) < lower_photon_energy )
       continue;
     
@@ -2455,7 +2459,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     row.responsibleNuc = db->nuclide( std::get<2>(bl) );
     
     inforows.push_back( row );
-  }//for( m_currentlyShowingNuclide.otherRefLines )
+  }//for( otherRefLinesToShow )
 
   //fold in detector response
   std::shared_ptr<DetectorPeakResponse> det = m_detectorDisplay->detector();
@@ -2800,6 +2804,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 
   m_particleModel->setRowData(inforowstouse);
 
+  // set otherRefLines for setting peak nuclude ID in PeakSearchGuiUtils.
+  m_currentlyShowingNuclide.otherRefLines = otherRefLinesToShow;
   
   //Clientside javascript currently doesnt know about this garuntee that gamma
   //  lines will be sorted by energy.

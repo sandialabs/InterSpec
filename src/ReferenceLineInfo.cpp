@@ -597,6 +597,7 @@ void ReferenceLineInfo::deSerialize( const rapidxml::xml_node<char> *base_node )
   if( node && node->value_size() )
     labelTxt = node->value();
   
+
   if( isOtherRef )
   {
     node = base_node->first_node( "OtherRefLines", 13 );

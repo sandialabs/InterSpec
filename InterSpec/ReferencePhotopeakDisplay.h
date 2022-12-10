@@ -75,6 +75,7 @@ class IsotopeNameFilterModel;
 class DecayParticleModel : public  Wt::WAbstractItemModel
 {
   //Model to display
+  // TODO: unify info held by DecayParticleModel::RowData and ReferenceLineInfo, so they can share the same struct, and we can just set the data once
 
 public:
   enum Column

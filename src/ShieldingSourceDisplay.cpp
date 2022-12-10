@@ -4555,29 +4555,28 @@ void ShieldingSourceDisplay::showCalcLog()
   // Add a link to download this log file
   m_logDiv->footer()->clear();
   
+  auto downloadResource = new WMemoryResource( "text/plain", m_logDiv->footer() );
+  downloadResource->setData( totaldata );
+  const int offset = wApp->environment().timeZoneOffset();
+  const auto nowTime = WDateTime::currentDateTime().addSecs( 60 * offset );
+  string filename = "act_shield_fit_" + nowTime.toString( "yyyyMMdd_hhmmss" ).toUTF8() + ".txt";
+  downloadResource->suggestFileName( filename, WResource::DispositionType::Attachment );
+
 #if( BUILD_AS_OSX_APP || IOS )
-  WAnchor *logDownload = new WAnchor( m_logDiv->footer() );
+  WAnchor *logDownload = new WAnchor( WLink( downloadResource ), m_logDiv->footer() );
   logDownload->setStyleClass( "LinkBtn" );
   logDownload->setTarget( AnchorTarget::TargetNewWindow );
 #else
   WPushButton *logDownload = new WPushButton( m_logDiv->footer() );
   logDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
+  logDownload->setLink( WLink( downloadResource ) );
+  logDownload->setLinkTarget( Wt::TargetNewWindow );  //Note: we need to set new window after setLink, or else this wont actually get set
   logDownload->setStyleClass( "LinkBtn DownloadBtn" );
-  logDownload->setLinkTarget( Wt::TargetNewWindow );
 #endif
   
   logDownload->setText( "TXT file" );
   logDownload->setFloatSide( Wt::Side::Left );
     
-  auto downloadResource = new WMemoryResource( "text/plain", logDownload );
-  downloadResource->setData( totaldata );
-  const int offset = wApp->environment().timeZoneOffset();
-  const auto nowTime = WDateTime::currentDateTime().addSecs(60*offset);
-  string filename = "act_shield_fit_" + nowTime.toString("yyyyMMdd_hhmmss").toUTF8() + ".txt";
-  downloadResource->suggestFileName( filename, WResource::DispositionType::Attachment );
-  
-  logDownload->setLink( WLink(downloadResource) );
-  
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   logDownload->clicked().connect( std::bind([downloadResource](){

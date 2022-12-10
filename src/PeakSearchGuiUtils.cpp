@@ -2225,7 +2225,7 @@ void automated_search_for_peaks( InterSpec *viewer,
     displayed = refLineDisp->persistedNuclides();
   
     if( currentNuclide.nuclide || currentNuclide.reactionGammas.size()
-       || currentNuclide.element || currentNuclide.otherRefLines.size() )
+       || currentNuclide.element || currentNuclide.isOtherRef )
       displayed.insert( displayed.begin(), currentNuclide );
   }
   
@@ -2320,7 +2320,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
     displayed = refLineDisp->persistedNuclides();
     
     if( currentNuclide.nuclide || currentNuclide.reactionGammas.size()
-       || currentNuclide.element || currentNuclide.otherRefLines.size() )
+       || currentNuclide.element || currentNuclide.isOtherRef )
       displayed.insert( displayed.begin(), currentNuclide );
   }
   
@@ -2399,7 +2399,7 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
   vector<ReferenceLineInfo> displayed = refLineDisp->persistedNuclides();
   
   if( currentNuclide.nuclide || currentNuclide.reactionGammas.size()
-     || currentNuclide.element || currentNuclide.otherRefLines.size() )
+     || currentNuclide.element || currentNuclide.isOtherRef )
     displayed.insert( displayed.begin(), currentNuclide );
   
   if( displayed.empty() )
