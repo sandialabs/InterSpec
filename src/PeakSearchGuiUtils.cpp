@@ -970,7 +970,7 @@ public:
       return "---";
     
     const ReferenceLineInfo *refline = nullptr;
-    const BackgroundLine *backgroundLine = nullptr;
+    const OtherRefLine *backgroundLine = nullptr;
     
     const char *gamtype = "";
     switch( type )
@@ -990,34 +990,34 @@ public:
         break;
       }else
       {
-        for( const auto &b : d->backgroundLines )
+        for( const auto &b : d->otherRefLines )
         {
           bool matches = true;
-          const BackgroundLineType type = get<3>(*b);
+          const OtherRefLineType type = get<3>(b);
           switch( type )
           {
-            case U238Series:    matches = nuc->symbol == "U238"; break;
-            case U235Series:    matches = nuc->symbol == "U235"; break;
-            case Th232Series:   matches = nuc->symbol == "Th232"; break;
-            case Ra226Series:   matches = nuc->symbol == "Ra226"; break;
-            case K40Background: matches = nuc->symbol == "K40"; break;
-            case BackgroundXRay:
-            case BackgroundReaction:
-            case OtherBackground:
+            case OtherRefLineType::U238Series:    matches = nuc->symbol == "U238"; break;
+            case OtherRefLineType::U235Series:    matches = nuc->symbol == "U235"; break;
+            case OtherRefLineType::Th232Series:   matches = nuc->symbol == "Th232"; break;
+            case OtherRefLineType::Ra226Series:   matches = nuc->symbol == "Ra226"; break;
+            case OtherRefLineType::K40Background: matches = nuc->symbol == "K40"; break;
+            case OtherRefLineType::BackgroundXRay:
+            case OtherRefLineType::BackgroundReaction:
+            case OtherRefLineType::OtherBackground:
               break;
           }//switch( type )
           
           if( matches )
           {
-            const float energy = get<0>(*b);
+            const float energy = get<0>(b);
             if( fabs(energy - particle->energy) < 0.1 )
             {
               refline = d.get();
-              backgroundLine = b;
+              backgroundLine = &b;
               break;
             }
           }
-        }//for( const auto &b : d.backgroundLines )
+        }//for( const auto &b : d.otherRefLines )
       }//if ( nuc matches ) / else
     }//for( const auto &d : m_displayed )
     
@@ -1219,22 +1219,22 @@ public:
             //A quick labmda to test if a peak nuclide matches a BackgroundLine
             //  nuclide.
             auto isBackgroundNuc = [&l,&newpeak,db]() -> bool {
-              if( !newpeak->parentNuclide() || l->backgroundLines.empty() )
+              if( !newpeak->parentNuclide() || l->otherRefLines.empty() )
                 return false;
-              for( const auto b : l->backgroundLines )
+              for( const OtherRefLine &b : l->otherRefLines )
               {
                 string refnuc;
-                const BackgroundLineType type = std::get<3>(*b);
+                const OtherRefLineType type = std::get<3>(b);
                 switch( type )
                 {
-                  case U238Series:         refnuc = "U238";  break;
-                  case U235Series:         refnuc = "U235";  break;
-                  case Th232Series:        refnuc = "Th232"; break;
-                  case Ra226Series:        refnuc = "Ra226"; break;
-                  case K40Background:      refnuc = "K40";   break;
-                  case BackgroundXRay:
-                  case BackgroundReaction:
-                  case OtherBackground:    refnuc = std::get<2>(*b); break;
+                  case OtherRefLineType::U238Series:         refnuc = "U238";  break;
+                  case OtherRefLineType::U235Series:         refnuc = "U235";  break;
+                  case OtherRefLineType::Th232Series:        refnuc = "Th232"; break;
+                  case OtherRefLineType::Ra226Series:        refnuc = "Ra226"; break;
+                  case OtherRefLineType::K40Background:      refnuc = "K40";   break;
+                  case OtherRefLineType::BackgroundXRay:
+                  case OtherRefLineType::BackgroundReaction:
+                  case OtherRefLineType::OtherBackground:    refnuc = std::get<2>(b); break;
                 }//switch( type )
               
                 cout << refnuc << endl;
@@ -1361,35 +1361,35 @@ public:
           
           bool backgroundLineMatchedRef = false;
           
-          if( !ref->backgroundLines.empty() )
+          if( !ref->otherRefLines.empty() )
           {
             //Find the background line that cooresponds to `refenergy`
-            for( const auto b : ref->backgroundLines )
+            for( const auto &b : ref->otherRefLines )
             {
-              const float lineenergy = std::get<0>(*b);
-              const string &srcstr = std::get<2>(*b);
-              const BackgroundLineType type = std::get<3>(*b);
+              const float lineenergy = std::get<0>(b);
+              const string &srcstr = std::get<2>(b);
+              const OtherRefLineType type = std::get<3>(b);
               
               if( fabs(lineenergy - refenergy) < 0.001 )
               {
                 switch( type )
                 {
-                  case BackgroundLineType::U238Series:         label = "U238";  break;
-                  case BackgroundLineType::U235Series:         label = "U235";  break;
-                  case BackgroundLineType::Th232Series:        label = "Th232"; break;
-                  case BackgroundLineType::Ra226Series:        label = "Ra226"; break;
-                  case BackgroundLineType::K40Background:      label = "K40";   break;
-                  case BackgroundLineType::BackgroundXRay:
-                  case BackgroundLineType::BackgroundReaction:
-                  case BackgroundLineType::OtherBackground:    label = srcstr;  break;
+                  case OtherRefLineType::U238Series:         label = "U238";  break;
+                  case OtherRefLineType::U235Series:         label = "U235";  break;
+                  case OtherRefLineType::Th232Series:        label = "Th232"; break;
+                  case OtherRefLineType::Ra226Series:        label = "Ra226"; break;
+                  case OtherRefLineType::K40Background:      label = "K40";   break;
+                  case OtherRefLineType::BackgroundXRay:
+                  case OtherRefLineType::BackgroundReaction:
+                  case OtherRefLineType::OtherBackground:    label = srcstr;  break;
                 }//switch( type )
                 
                 backgroundLineMatchedRef = true;
                 break;
               }//if( we found the background line with the correct energy )
-            }//for( const auto b : ref.backgroundLines )
+            }//for( const auto b : ref.otherRefLines )
             
-          }//if( !ref.backgroundLines.empty() )
+          }//if( !ref.otherRefLines.empty() )
           
           
           char buffer[128];
@@ -1790,12 +1790,12 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         }//for( const double energy : nuc.energies )
       }//if( nuc.nuclide )
       
-      for( const BackgroundLine *line : nuc.backgroundLines )
+      for( const OtherRefLine &line : nuc.otherRefLines )
       {
-        float energy = std::get<0>(*line);
-        const float intensity = std::get<1>(*line);
-        const string &isotope = std::get<2>(*line);
-        const BackgroundLineType type = std::get<3>(*line);
+        float energy = std::get<0>(line);
+        const float intensity = std::get<1>(line);
+        const string &isotope = std::get<2>(line);
+        const OtherRefLineType type = std::get<3>(line);
         
         if( intensity < FLT_MIN )
           continue;
@@ -1812,12 +1812,12 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
           
           switch( type )
           {
-            case U238Series:      thisnuclide = db->nuclide( "U238" );  break;
-            case U235Series:      thisnuclide = db->nuclide( "U235" );  break;
-            case Th232Series:     thisnuclide = db->nuclide( "Th232" ); break;
-            case Ra226Series:     thisnuclide = db->nuclide( "Ra226" ); break;
-            case K40Background:   thisnuclide = db->nuclide( "K40" );   break;
-            case OtherBackground:
+            case OtherRefLineType::U238Series:      thisnuclide = db->nuclide( "U238" );  break;
+            case OtherRefLineType::U235Series:      thisnuclide = db->nuclide( "U235" );  break;
+            case OtherRefLineType::Th232Series:     thisnuclide = db->nuclide( "Th232" ); break;
+            case OtherRefLineType::Ra226Series:     thisnuclide = db->nuclide( "Ra226" ); break;
+            case OtherRefLineType::K40Background:   thisnuclide = db->nuclide( "K40" );   break;
+            case OtherRefLineType::OtherBackground:
             {
               // S.E. and D.E. escape peaks are all labeled as OtherBackground::BackgroundLineType
               //  and isotope will look like "Th232 D.E. 2614 keV", but the energy will be after
@@ -1851,13 +1851,13 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
               }
               break;
             }
-            case BackgroundXRay:
+            case OtherRefLineType::BackgroundXRay:
               thiselement = db->element( isotope.substr(0,isotope.find(' ')) );
               if( thiselement )
                 gammaType = PeakDef::XrayGamma;
               break;
               
-            case BackgroundReaction:
+            case OtherRefLineType::BackgroundReaction:
               break;
           }//switch( type )
           
@@ -1897,7 +1897,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
             thisGammaType = gammaType;
           }//if( !currentlyused )
         }//if( we should possible associate this peak with this line )
-      }//for( const BackgroundLine &line : nuc.backgroundLines )
+      }//for( const OtherRefLines &line : nuc.otherRefLines )
     }//for( ReferenceLineInfo & )
     
     if( nuclide || reaction || element )
@@ -2225,7 +2225,7 @@ void automated_search_for_peaks( InterSpec *viewer,
     displayed = refLineDisp->persistedNuclides();
   
     if( currentNuclide.nuclide || currentNuclide.reactionGammas.size()
-       || currentNuclide.element || currentNuclide.backgroundLines.size() )
+       || currentNuclide.element || currentNuclide.otherRefLines.size() )
       displayed.insert( displayed.begin(), currentNuclide );
   }
   
@@ -2320,7 +2320,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
     displayed = refLineDisp->persistedNuclides();
     
     if( currentNuclide.nuclide || currentNuclide.reactionGammas.size()
-       || currentNuclide.element || currentNuclide.backgroundLines.size() )
+       || currentNuclide.element || currentNuclide.otherRefLines.size() )
       displayed.insert( displayed.begin(), currentNuclide );
   }
   
@@ -2399,7 +2399,7 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
   vector<ReferenceLineInfo> displayed = refLineDisp->persistedNuclides();
   
   if( currentNuclide.nuclide || currentNuclide.reactionGammas.size()
-     || currentNuclide.element || currentNuclide.backgroundLines.size() )
+     || currentNuclide.element || currentNuclide.otherRefLines.size() )
     displayed.insert( displayed.begin(), currentNuclide );
   
   if( displayed.empty() )

@@ -1194,7 +1194,7 @@ double stringToMass( const std::string &str, const double gram_def )
                              "\\s*(" METRIC_PREFIX_UNITS ")*?"
                              "\\s*\\-*\\s*"
                              "(gram|grams|g|ounces|ounce|oz|grain|grains|pounds|pound|lbs|lb|stone|stones)"
-                             "\\s*(\\d.+)?";
+                             "\\s*(" DECIMAL_REGEX ".+)?";
   
   boost::smatch matches;
   boost::regex expression( regex_str, boost::regex::ECMAScript|boost::regex::icase );
@@ -1212,11 +1212,13 @@ double stringToMass( const std::string &str, const double gram_def )
   string prefix( matches[3].first, matches[3].second );
   string unitstr( matches[4].first, matches[4].second );
   string trailingstr( matches[5].first, matches[5].second );
+  
   SpecUtils::trim( floatstr );  //These trims may not be necassary, but whatever
   SpecUtils::trim( prefix );
   SpecUtils::trim( unitstr );
   SpecUtils::to_lower_ascii( unitstr );
-  
+  SpecUtils::trim( trailingstr );
+
   double unitval = 0.0;
   if( unitstr == "gram" || unitstr == "grams" || unitstr == "g" )
     unitval = gram;
@@ -1236,8 +1238,73 @@ double stringToMass( const std::string &str, const double gram_def )
   mass *= metrix_prefix_value( prefix );
   mass *= (gram_def / gram);
   
+  if( !trailingstr.empty() )
+    mass += stringToMass( trailingstr, gram_def );
+
   return mass;
 }//double stringToMass( const std::string &str, const double gram_def )
+
+
+double stringToEnergy( const std::string &str, const double keV_def )
+{
+  const string regex_str = "(" DECIMAL_REGEX ")"
+                           "\\s*(k|M|killo|mega)?"
+                           "\\s*\\-*\\s*"
+                           "(eV|electron-volts|electronvolts)"
+                           "\\s*(" DECIMAL_REGEX ".+)?";
+
+  boost::smatch matches;
+  boost::regex expression( regex_str, boost::regex::ECMAScript | boost::regex::icase );
+
+  if( !boost::regex_match( str, matches, expression ) )
+  {
+    char msg[128];
+    snprintf( msg, sizeof( msg ), "'%s' is not an energy", str.c_str() );
+    throw std::runtime_error( msg );
+  }//if( we dont have a match )
+
+  //cout << "matches.size() = " << matches.size() << endl;
+  //for( size_t i = 0; i < matches.size(); ++i )
+  //  cout << "matches[" << i << "]:\t'" << string( matches[i].first, matches[i].second ) << "'" << endl;
+  //matches[0] : '511 keV -11 keV'
+  //matches[1] : '511 '
+  //matches[2] : '511'
+  //matches[3] : '511'
+  //matches[4] : ''
+  //matches[5] : ''
+  //matches[6] : 'k'
+  //matches[7] : 'eV'
+  //matches[8] : '-11 keV'
+    
+  assert( matches.size() == 13 );
+
+  string floatstr( matches[1].first, matches[1].second );
+  string prefix( matches[6].first, matches[6].second );
+  SpecUtils::trim( floatstr );
+  SpecUtils::trim( prefix );
+  
+#if( !defined(NDEBUG) )
+  string unitstr( matches[7].first, matches[7].second );
+  SpecUtils::trim( unitstr );
+  SpecUtils::to_lower_ascii( unitstr );
+  assert( unitstr == "ev" );
+#endif
+
+  double energy = std::stod( floatstr );  //shouldnt ever throw, right?
+  energy *= metrix_prefix_value( prefix ) * 0.001;
+  energy *= (keV_def / keV);
+
+  string trailingstr( matches[8].first, matches[8].second );
+  SpecUtils::trim( trailingstr );
+  if( !trailingstr.empty() )
+  {
+    //remove spaces so like "2614 keV - 511keV" will work (the "- 511keV" doesnt work)
+    SpecUtils::ireplace_all( trailingstr, " ", "" ); 
+    energy += stringToEnergy( trailingstr, keV_def );
+  }
+
+  return energy;
+}//stringToEnergy(...)
 
 
 std::string printValueWithUncertainty( double value, double uncert, size_t unsigfig )

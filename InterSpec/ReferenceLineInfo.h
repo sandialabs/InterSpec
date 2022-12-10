@@ -46,7 +46,7 @@ namespace rapidxml
 }//namespace rapidxml
 
 
-enum BackgroundLineType
+enum class OtherRefLineType
 {
   U238Series,    //"U238 series"
   U235Series,    //"U235 series"
@@ -56,15 +56,34 @@ enum BackgroundLineType
   BackgroundXRay,
   BackgroundReaction,
   OtherBackground
-};//enum BackgroundLineType
+};//enum OtherRefLineType
 
-typedef std::tuple<float,float,std::string,BackgroundLineType,std::string> BackgroundLine;
+/* Returns simple string representation of OtherRefLineType enum. */
+const char *to_str( const OtherRefLineType type );
+
+/* Returns OtherRefLineType from string; input must exactly match what is 
+  return by #to_str(OtherRefLineType), or else will return 
+  #OtherRefLineType::OtherBackground.
+*/
+OtherRefLineType other_ref_line_type_from_str( const std::string &str );
+
+/** Used to describe a custom-source reference line.
+
+  Currently used to represent background lines (e.g., user enters "background"), and 
+  if the user enters a single energy (e.x., "185 keV").  May be expanded to other use
+  cases in the future.
+
+  <Energy, RelBranchRatio, "Symbol", OtherRefLineType, "Description">
+
+  \sa otherRefLines  
+*/
+typedef std::tuple<float,float,std::string, OtherRefLineType,std::string> OtherRefLine;
 
 //BackgroundLines and BackgroundReactionLines need to be renamed; however, I'm
 //  expecting to switch to a different mechanism to suppliment the nuclide and
 //  reaction databases, so I'll leave these alone for now.
-extern const BackgroundLine BackgroundLines[89];
-extern const BackgroundLine BackgroundReactionLines[28];
+extern const OtherRefLine BackgroundLines[89];
+extern const OtherRefLine BackgroundReactionLines[28];
 
 struct ReferenceLineInfo
 {
@@ -86,8 +105,8 @@ struct ReferenceLineInfo
   //  redundant
   std::vector<ReactionGamma::ReactionPhotopeak> reactionGammas;
   
-  //backgroundLines: background lines displayed (will be non null)
-  std::vector<const BackgroundLine *> backgroundLines;
+  //otherRefLines: either background, or custom energy, reference lines displayed
+  std::vector<OtherRefLine> otherRefLines;
   
   //TODO: place energies, intensities, particlestrs, decaystrs, and
   //      elementstrs into a tuple.
@@ -110,7 +129,7 @@ struct ReferenceLineInfo
   //The following variables are necassarry to help serialize the state of the
   //  widget for loading later
   bool showGammas, showXrays, showAlphas, showBetas, showCascades;
-  bool showLines, promptLinesOnly, isBackground, isReaction, displayLines;
+  bool showLines, promptLinesOnly, isOtherRef, isReaction, displayLines;
   double age, lowerBrCuttoff;
   
   //labelTxt: what the user enetered to get this set of gammas

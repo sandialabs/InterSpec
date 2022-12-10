@@ -184,7 +184,7 @@ namespace
         filename = refinfo.nuclide->symbol + "_gammas";
       else if( !refinfo.reactionGammas.empty() )
         filename = refinfo.reactionsTxt + "_lines";
-      else if( !refinfo.backgroundLines.empty() )
+      else if( !refinfo.otherRefLines.empty() )
         filename =  "background_lines";
       
       SpecUtils::ireplace_all( filename, "(", "_" );
@@ -202,12 +202,12 @@ namespace
       if( row_data.empty() )
       {
         //refinfo.element could be non-null, and the element just not have x-rays
-        assert( !refinfo.nuclide && refinfo.reactionGammas.empty() && refinfo.backgroundLines.empty() );
+        assert( !refinfo.nuclide && refinfo.reactionGammas.empty() && refinfo.otherRefLines.empty() );
       }//if( row_data.empty() )
       
       
       if( (!refinfo.element && !refinfo.nuclide
-         && refinfo.reactionGammas.empty() && refinfo.backgroundLines.empty()) )
+         && refinfo.reactionGammas.empty() && refinfo.otherRefLines.empty()) )
       {
         assert( row_data.empty() );
         
@@ -238,7 +238,7 @@ namespace
       }else if( !refinfo.reactionGammas.empty() )
       {
         out << "Reactions," << refinfo.reactionsTxt << eol_char;
-      }else if( !refinfo.backgroundLines.empty() )
+      }else if( !refinfo.otherRefLines.empty() )
       {
         out << "Source,CommonBackgroundGammas" << eol_char;
       }
@@ -340,7 +340,7 @@ namespace
         out << eol_char << rel_amp_note << eol_char << eol_char;
         
         out << "Energy (keV),Rel. Yield" << eol_char;
-      }else if( !refinfo.backgroundLines.empty() )
+      }else if( !refinfo.otherRefLines.empty() )
       {
         out << eol_char << rel_amp_note << eol_char << eol_char;
         
@@ -1281,7 +1281,7 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
   
   try
   {
-  if( nuc && !IsInf(nuc->halfLife) && !nuc->decaysToChildren.empty() && !useCurrentAge )
+  if( nuc && !nuc->isStable() && !nuc->decaysToChildren.empty() && !useCurrentAge )
   {
     
     if( nuc->decaysToStableChildren() )
@@ -1342,11 +1342,20 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
       }catch(...)
       {}
       
+     
+
       if( isotopeLabel.size() && reactions.empty()
           && !SpecUtils::icontains( isotopeLabel, "background") )
       {
-        passMessage( isotopeLabel + " is not a valid isotope, element, or reaction",
-                     WarningWidget::WarningMsgHigh );
+        try
+        {
+          PhysicalUnits::stringToEnergy( isotopeLabel );
+        }catch( std::exception & )
+        {
+          // We've run out of ideas - no hope left
+          passMessage( isotopeLabel + " is not a valid isotope, element, or reaction",
+            WarningWidget::WarningMsgHigh );
+        }
       }
     }
   }//if( nuc && !IsInf(nuc->halfLife) ) / else
@@ -1783,13 +1792,26 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     }//try / catch
   }//if( isotxt.find("(") != string::npos )
   
-  bool isBackground = SpecUtils::icontains( isotxt, "background" );
-  
+  const bool isBackground = SpecUtils::icontains( isotxt, "background" );
   const bool showGammaChecked = (!m_showGammas || m_showGammas->isChecked());
   const bool showXrayChecked = (!m_showXrays || m_showXrays->isChecked());
   const bool showCascadesChecked = (m_showCascadeSums && m_showCascadeSums->isChecked());
   
+
+  float customEnergy = -1.0f;
+  if( !nuc && !el && rctnGammas.empty() )
+  {
+    try
+    {
+      customEnergy = static_cast<float>(PhysicalUnits::stringToEnergy( isotxt ));
+    } catch( std::exception & )
+    {
+    }
+  }//if( !nuc && !el && rctnGammas.empty() )
+
+
   show = (show && (nuc || (el && showXrayChecked) || isBackground
+                   || (customEnergy > 0.0f)
                    || (!rctnGammas.empty() && showGammaChecked)) );
 
   double age = -1.0;
@@ -1847,8 +1869,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
           m_ageEdit->setText(defagestr);
         }
       }//if( prompt ) / else
-    }
-    catch (...)
+    }catch (...)
     {
       if (m_ageEdit->text().toUTF8() == "")
       {
@@ -2005,7 +2026,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     m_currentlyShowingNuclide.element         = el;
     m_currentlyShowingNuclide.reactionGammas  = rctnGammas;
     m_currentlyShowingNuclide.reactionsTxt    = reactions;
-    m_currentlyShowingNuclide.isBackground    = isBackground;
+    m_currentlyShowingNuclide.isOtherRef      = (isBackground || (customEnergy > 0.0f));
     m_currentlyShowingNuclide.isReaction      = !rctnGammas.empty();
     m_currentlyShowingNuclide.age             = age;
     m_currentlyShowingNuclide.labelTxt        = m_nuclideEdit->text().toUTF8();
@@ -2074,13 +2095,18 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     
     if( isBackground )
     {
-      for( const BackgroundLine &bl : BackgroundLines )
+      for( const OtherRefLine &bl : BackgroundLines )
       {
-        const bool isXray = (std::get<3>(bl) == BackgroundXRay);
+        const bool isXray = (std::get<3>(bl) == OtherRefLineType::BackgroundXRay);
         if( (isXray && showXrayChecked) || (!isXray && showGammaChecked) )
-          m_currentlyShowingNuclide.backgroundLines.push_back( &bl );
+          m_currentlyShowingNuclide.otherRefLines.push_back( bl );
       }//for( const BackgroundLine &bl : BackgroundLines )
-    }//if( isBackground )
+    }else if( (customEnergy > 0.0f) )
+    {
+      //BackgroundLine<Energy, RelBranchRatio, "Symbol", OtherRefLineType, "Description">
+      OtherRefLine line{customEnergy, 1.0f, "", OtherRefLineType::OtherBackground, isotxt};
+      m_currentlyShowingNuclide.otherRefLines.push_back( line );
+    }//if( isBackground )// else( isCustom )
   }else
   {
     //m_currentlyShowingNuclide is already reset.
@@ -2156,7 +2182,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   vector<const SandiaDecay::Transition *> transistions;
   vector<SandiaDecay::ProductType> types;
   vector<const ReactionGamma::Reaction *> reactionPeaks;
-  vector<const BackgroundLine *> backgroundLines;
+  vector<std::unique_ptr<const OtherRefLine>> otherRefLines;
   bool hasCascades = false;
   vector<tuple<const SandiaDecay::Transition*, double, float, float, float, double>> cascades; //transition, first gamma BR, first gamma energy, second gamma energy, coincidence fraction, second gamma BR (just for debug)
 
@@ -2251,7 +2277,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
               branchratios.push_back( br );
               particle_type.push_back( SandiaDecay::XrayParticle );
               reactionPeaks.push_back( NULL );
-              backgroundLines.push_back( NULL );
+              otherRefLines.push_back( nullptr );
             
               DecayParticleModel::RowData row;
               row.energy      = particle.energy;
@@ -2300,7 +2326,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
             branchratios.push_back( br );
             particle_type.push_back( type );           
             reactionPeaks.push_back( NULL );
-            backgroundLines.push_back( NULL );
+            otherRefLines.push_back( nullptr );
 
             DecayParticleModel::RowData row;
             row.energy      = particle.energy;
@@ -2328,7 +2354,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     branchratios.push_back( positronrow.branchRatio );
     particle_type.push_back( SandiaDecay::GammaParticle );
     reactionPeaks.push_back( NULL );
-    backgroundLines.push_back( NULL );
+    otherRefLines.push_back( nullptr );
     
     inforows.push_back( positronrow );
   }//if( positronrow.branchRatio > 0.0 )
@@ -2351,7 +2377,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
       branchratios.push_back( eip.intensity );
       particle_type.push_back( SandiaDecay::XrayParticle );
       reactionPeaks.push_back( NULL );
-      backgroundLines.push_back( NULL );
+      otherRefLines.push_back( nullptr );
 
       DecayParticleModel::RowData row;
       row.energy      = eip.energy;
@@ -2378,7 +2404,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     branchratios.push_back( eip.abundance );
     particle_type.push_back( SandiaDecay::GammaParticle );
     reactionPeaks.push_back( eip.reaction );
-    backgroundLines.push_back( NULL );
+    otherRefLines.push_back( nullptr );
 
     DecayParticleModel::RowData row;
     row.energy      = eip.energy;
@@ -2391,41 +2417,45 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   }//for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
 
 
-  for( const BackgroundLine *bl : m_currentlyShowingNuclide.backgroundLines )
+  for( const OtherRefLine &bl : m_currentlyShowingNuclide.otherRefLines )
   {
-    if( std::get<0>(*bl) < lower_photon_energy )
+    if( std::get<0>(bl) < lower_photon_energy )
       continue;
     
     transistions.push_back( NULL );
-    energies.push_back( std::get<0>(*bl) );
-    branchratios.push_back( std::get<1>(*bl) );
+    energies.push_back( std::get<0>(bl) );
+    branchratios.push_back( std::get<1>(bl) );
     particle_type.push_back( SandiaDecay::GammaParticle );
     reactionPeaks.push_back( NULL );
-    backgroundLines.push_back( bl );
-    
+    otherRefLines.push_back( std::make_unique<OtherRefLine>(bl) );
+
     DecayParticleModel::RowData row;
-    row.energy      = std::get<0>(*bl);
-    row.branchRatio = std::get<1>(*bl);
+    row.energy      = std::get<0>(bl);
+    row.branchRatio = std::get<1>(bl);
     row.particle    = SandiaDecay::GammaParticle;
     
-    switch( std::get<3>(*bl) )
+    switch( std::get<3>(bl) )
     {
-      case U238Series: case U235Series: case Th232Series: case Ra226Series:
-      case K40Background: case OtherBackground:
+      case OtherRefLineType::U238Series: 
+      case OtherRefLineType::U235Series: 
+      case OtherRefLineType::Th232Series: 
+      case OtherRefLineType::Ra226Series:
+      case OtherRefLineType::K40Background: 
+      case OtherRefLineType::OtherBackground:
         row.decayMode = DecayParticleModel::RowData::NormGammaDecayMode;
         break;
-      case BackgroundXRay:
+      case OtherRefLineType::BackgroundXRay:
         row.decayMode   = DecayParticleModel::RowData::XRayDecayMode;
       break;
-      case BackgroundReaction:
+      case OtherRefLineType::BackgroundReaction:
         row.decayMode   = DecayParticleModel::RowData::ReactionToGammaMode;
       break;
     }//switch( get<3>(*bl) )
     
-    row.responsibleNuc = db->nuclide( std::get<2>(*bl) );
+    row.responsibleNuc = db->nuclide( std::get<2>(bl) );
     
     inforows.push_back( row );
-  }//for( m_currentlyShowingNuclide.backgroundLines )
+  }//for( m_currentlyShowingNuclide.otherRefLines )
 
   //fold in detector response
   std::shared_ptr<DetectorPeakResponse> det = m_detectorDisplay->detector();
@@ -2544,7 +2574,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     const double br = branchratios[i] / (is_decay_xray_gamma ? max_gamma_xray : maxbrs[particle_type[i]]);
     
     const SandiaDecay::Transition *transition = transistions[i];
-    const BackgroundLine *backLine = backgroundLines.at(i);
+    std::unique_ptr<const OtherRefLine> &backLine = otherRefLines.at(i);
     
     if( (transition || backLine) && (br <= brCutoff || IsInf(br) || IsNan(br)) )
       continue;
@@ -2574,14 +2604,32 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
         
         switch( std::get<3>(*backLine) )
         {
-          case U238Series:    decaystr += "U238 series";         break;
-          case U235Series:    decaystr += "U235 series";         break;
-          case Th232Series:   decaystr += "Th232 series";        break;
-          case Ra226Series:   decaystr += "U238 (Ra226) series"; break;
-          case K40Background: decaystr += "Primordial";          break;
-          case OtherBackground: case BackgroundXRay: case BackgroundReaction:
-            decaystr += std::get<4>(*backLine);    break;
-        }//switch( get<3>(backgroundLines[i]) )
+          case OtherRefLineType::U238Series:    
+            decaystr += "U238 series";         
+            break;
+
+          case OtherRefLineType::U235Series:    
+            decaystr += "U235 series";         
+            break;
+
+          case OtherRefLineType::Th232Series:   
+            decaystr += "Th232 series";        
+            break;
+
+          case OtherRefLineType::Ra226Series:   
+            decaystr += "U238 (Ra226) series"; 
+            break;
+
+          case OtherRefLineType::K40Background: 
+            decaystr += "Primordial";          
+            break;
+
+          case OtherRefLineType::OtherBackground: 
+          case OtherRefLineType::BackgroundXRay: 
+          case OtherRefLineType::BackgroundReaction:
+            decaystr += std::get<4>(*backLine);    
+            break;
+        }//switch( get<3>(otherRefLines[i]) )
       }//if( transition ) / else ...
     }else
     {
