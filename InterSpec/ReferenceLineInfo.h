@@ -45,6 +45,7 @@ namespace rapidxml
   template<class Ch> class xml_document;
 }//namespace rapidxml
 
+class DetectorPeakResponse;
 
 enum class OtherRefLineType
 {
@@ -112,6 +113,138 @@ struct ReferenceLineInfo
   */
   std::vector<OtherRefLine> otherRefLines;
   
+  #define DEV_REF_LINE_UPGRADE_20221212 1
+#if( DEV_REF_LINE_UPGRADE_20221212 )
+  struct RefLineInput
+  {
+    RefLineInput();
+    std::string m_input_txt;
+    std::string m_age;  //
+
+    Wt::WColor m_color;
+    double m_lower_br_cutt_off;
+    bool m_promptLinesOnly;
+
+    bool m_showGammas;
+    bool m_showXrays;
+    bool m_showAlphas;
+    bool m_showBetas;
+    bool m_showCascades;
+
+
+    // Name of detector the amplitude of lines has been modulated with, if any
+    std::string m_detector_name;
+
+    // The intrinsic efficiency, as a function of energy, for the DRF; mayb be null
+    std::function<float(float)> m_det_intrinsic_eff;
+
+    std::string m_shielding_name;
+    //Thickness of shielding.  Will be zero if no shielding or generic shielding
+    double m_shieldingThickness;
+    std::function<double( float )> m_shielding_att;
+  };//struct RefLineInput
+
+
+  struct RefLine
+  {
+    RefLine();
+
+    /** Energy, in keV of the particle. */
+    double m_energy;
+
+    /** The relative intensity of this line, after shielding attenuation, DRF,
+     scaling for particle type, and overall normalization.
+     I.e., between 0 and 1, and what to use for displaying ref line on chart.
+    */
+    double m_normalized_intensity;
+
+    float m_drf_factor;
+    float m_shield_atten;
+
+    /** The scale factor applied so that the largest amplitude particle of this 
+    type will have a #m_normalized_intensity value of 1.0.  Note decay x-rays 
+    are grouped together with gammas to get this factor.
+    Ex, if largest gamma BR is 0.7, and no DRF or shielding, then this SF 
+      would be 1.0/0.7 = 1.428
+    */
+    float m_particle_sf_applied;
+
+    std::string m_particlestr;
+    std::string m_decaystr;
+    std::string m_elementstr;
+
+    /** The original branching ratio of the process, to this energy. 
+    This is what the "Reference Photopeaks" table displays as the intensity.
+    */
+    double m_decay_intensity;
+
+    /* Particle type enum so we dont have to include SandiaDecay here... */
+    enum class Particle : int
+    {
+      Alpha,
+      Beta, 
+      Gamma,
+      Xray
+    };//enum Particle
+
+    /** Decay particle type.  I.e., Gamma, Beta, alpha, capture-e, x-ray. */
+    Particle m_particle_type;
+
+    /** This is the ultimate parent nuclide to assign the peak to. 
+    Will be nullptr if source is not a nuclide. 
+
+    At most one of {m_parent_nuclide, m_element, m_reaction} will be non-null
+    */
+    const SandiaDecay::Nuclide *m_parent_nuclide;
+
+    /* The transition actually responsible for the gamma.
+     Will be nullptr if source is not a nuclide. 
+    */
+    const SandiaDecay::Transition *m_transition;
+
+    enum class RefGammaType : int 
+    {
+      Normal,
+      Annihilation,
+      SingleEscape,
+      DoubleEscape,
+      CoincidenceSumPeak,
+      SumGammaPeak
+    };
+    
+    /** The gamma type (Normal, Annih., S.E., D.E., x-ray).
+    
+    Used both for nuclides, as well as reactions.
+    */
+    RefGammaType m_source_type;
+
+    /** Element giving rise to this flourescent x-ray.  
+    Will be element peak is assigned to, if non-null. 
+    */
+    const SandiaDecay::Element *m_element;
+
+    /** The reaction giving rise to this gamma.
+    
+    Will be reaction peak is assigned to, if non-null. 
+    */
+    const ReactionGamma::Reaction *m_reaction;
+  };//struct RefLine
+
+  enum class InputValidity : int
+  {
+    Blank,
+    InvalidSource,
+    InvalidAge,
+    Valid
+  };
+
+  InputValidity m_validity;
+  RefLineInput m_input;
+  std::vector<RefLine> m_ref_lines;
+
+  std::vector<std::string> m_input_warnings;
+#endif //#if( DEV_REF_LINE_UPGRADE_20221212 )
+
   //TODO: place energies, intensities, particlestrs, decaystrs, and
   //      elementstrs into a tuple; also include pointers to Element, Nuclide, 
   //      or Reaction that the peak should be assigned to.  And also unify

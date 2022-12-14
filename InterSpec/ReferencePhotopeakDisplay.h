@@ -256,6 +256,17 @@ public:
   
 protected:
   void updateDisplayChange();
+
+ 
+ #if( DEV_REF_LINE_UPGRADE_20221212 )
+  ReferenceLineInfo::RefLineInput userInput() const;
+  static std::shared_ptr<ReferenceLineInfo> generateRefLineInfo( ReferenceLineInfo::RefLineInput input );
+
+  std::shared_ptr<ReferenceLineInfo> refLineForUserInput();
+
+  static std::vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
+#endif
+
   void handleIsotopeChange( const bool useCurrentAge );
 
   //refreshLinesDisplayedToGui(): makes setting and re-sends to client the lines

@@ -229,6 +229,48 @@ OtherRefLineType other_ref_line_type_from_str( const std::string &str )
   return OtherRefLineType::OtherBackground;
 }
 
+
+#if( DEV_REF_LINE_UPGRADE_20221212 )
+ReferenceLineInfo::RefLineInput::RefLineInput()
+  : m_input_txt(),
+  m_age(),
+  m_color(),
+  m_lower_br_cutt_off( 0.0 ),
+  m_promptLinesOnly( false ),
+  m_showGammas( false ),
+  m_showXrays( false ),
+  m_showAlphas( false ),
+  m_showBetas( false ),
+  m_showCascades( false ),
+  m_detector_name(),
+  m_det_intrinsic_eff(),
+  m_shielding_name(),
+  m_shieldingThickness( 0.0 ),
+  m_shielding_att()
+{
+}
+
+
+ReferenceLineInfo::RefLine::RefLine()
+  : m_energy( 0.0 ),
+  m_normalized_intensity( 0.0 ),
+  m_drf_factor( 1.0f ),
+  m_shield_atten( 1.0f ),
+  m_particle_sf_applied( 1.0f ),
+  m_particlestr(),
+  m_decaystr(),
+  m_elementstr(),
+  m_decay_intensity( 0.0 ),
+  m_particle_type( ReferenceLineInfo::RefLine::Particle::Gamma ),
+  m_parent_nuclide( nullptr ),
+  m_transition( nullptr ),
+  m_source_type( ReferenceLineInfo::RefLine::RefGammaType::Normal ),
+  m_element( nullptr ),
+  m_reaction( nullptr )
+{
+}
+#endif //#if( DEV_REF_LINE_UPGRADE_20221212 )
+
 ReferenceLineInfo::ReferenceLineInfo()
 {
   reset();
@@ -238,6 +280,12 @@ void ReferenceLineInfo::reset()
 {
   nuclide = NULL;
   element = NULL;
+#if( DEV_REF_LINE_UPGRADE_20221212 )
+  m_ref_lines.clear();
+  m_input_warnings.clear();
+  m_validity = InputValidity::Blank;
+  m_input = RefLineInput();
+#endif
   energies.clear();
   intensities.clear();
   particlestrs.clear();
@@ -430,7 +478,11 @@ void ReferenceLineInfo::sortByEnergy()
   
   if( len != energies.size() || len != intensities.size()
      || len != particlestrs.size() || len != decaystrs.size()
-     || len != elementstrs.size() )
+     || len != elementstrs.size()
+#if( DEV_REF_LINE_UPGRADE_20221212 )
+    || len != m_ref_lines.size() 
+#endif
+    )
     throw runtime_error( "ReferenceLineInfo::sortByEnergy(): inconsistent input size" );
   
   vector<size_t> sort_indices( energies.size() );
@@ -451,6 +503,12 @@ void ReferenceLineInfo::sortByEnergy()
     elementstrs[i]  = tmp.elementstrs[index];
   }//for( size_t i = 0; i < len; ++i )
   
+#if( DEV_REF_LINE_UPGRADE_20221212 )
+  std::sort( begin( m_ref_lines ), end( m_ref_lines ), 
+    []( const RefLine &lhs, const RefLine &rhs ) -> bool {
+    return lhs.m_energy < rhs.m_energy;
+    } );
+#endif
   
 #if( PERFORM_DEVELOPER_CHECKS )
   for( size_t i = 1; i < len; ++i )
