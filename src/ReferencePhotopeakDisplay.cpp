@@ -764,6 +764,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_showGammas( NULL ),
     m_options_icon( NULL ),
     m_options( NULL ),
+    m_optionsContent( NULL ),
     m_showXrays( NULL ),
     m_showAlphas( NULL ),
     m_showBetas( NULL ),
@@ -1051,16 +1052,20 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   hlRow->addWidget(m_options_icon);
 
   m_options = new WContainerWidget();
-  m_options->addStyleClass("RefLinesOptions ToolTabSection");
+  m_options->addStyleClass("RefLinesOptions ToolTabSection ToolTabTitledColumn");
   m_options->hide();
 
   WContainerWidget* closerow = new WContainerWidget(m_options);
+  closerow->addStyleClass( "ToolTabColumnTitle" );
+  WText *txt = new WText( "Options", closerow );
   WContainerWidget* closeIcon = new WContainerWidget(closerow);
   closeIcon->addStyleClass("closeicon-wtdefault");
   closeIcon->clicked().connect(this, &ReferencePhotopeakDisplay::toggleShowOptions);
 
+  m_optionsContent = new WContainerWidget( m_options );
+  m_optionsContent->addStyleClass( "ToolTabTitledColumnContent" );
 
-  m_promptLinesOnly = new WCheckBox("Prompt Only", m_options);  //ɣ
+  m_promptLinesOnly = new WCheckBox("Prompt Only", m_optionsContent );  //ɣ
   
   tooltip = "Gammas from only the original nuclide, and the descendants until one"
     " of them has a longer half-life than the original nuclide; the"
@@ -1070,16 +1075,25 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_promptLinesOnly->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_promptLinesOnly->hide();
 
-  m_showGammas = new WCheckBox( "Show Gammas", m_options);
-  m_showXrays = new WCheckBox( "Show X-rays", m_options);
-  m_showAlphas = new WCheckBox( "Show Alphas", m_options);
-  m_showBetas = new WCheckBox( "Show Betas", m_options);
-  m_showCascadeSums = new WCheckBox("Cascade Sums", m_options);
+  m_showGammas = new WCheckBox( "Show Gammas", m_optionsContent );
+  m_showXrays = new WCheckBox( "Show X-rays", m_optionsContent );
+  m_showAlphas = new WCheckBox( "Show Alphas", m_optionsContent );
+  m_showBetas = new WCheckBox( "Show Betas", m_optionsContent );
+  m_showCascadeSums = new WCheckBox("Cascade Sums", m_optionsContent );
   m_showCascadeSums->hide();
   
-  m_showPrevNucs = new WCheckBox("Prev Nucs", m_options);
-  m_showRiidNucs = new WCheckBox("Det RID Nucs", m_options);
-  m_showAssocNucs = new WCheckBox("Assoc. Nucs", m_options);
+  m_showPrevNucs = new WCheckBox("Prev Nucs", m_optionsContent );
+  m_showRiidNucs = new WCheckBox("Det RID Nucs", m_optionsContent );
+  m_showAssocNucs = new WCheckBox("Assoc. Nucs", m_optionsContent );
+
+  m_showGammas->setWordWrap( false );
+  m_showXrays->setWordWrap( false );
+  m_showAlphas->setWordWrap( false );
+  m_showBetas->setWordWrap( false );
+  m_showCascadeSums->setWordWrap( false );
+  m_showPrevNucs->setWordWrap( false );
+  m_showRiidNucs->setWordWrap( false );
+  m_showAssocNucs->setWordWrap( false );
 
   m_showPrevNucs->checked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
   m_showPrevNucs->unChecked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
@@ -1627,7 +1641,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
 
   // TODO: Need to implement option to show or not show suggestion catagories, and if show none, then hide the column
-  if( !currentInput.empty() )
+  if( !currentInput.empty() && showAssoc )
   {
     const MoreNuclideInfo::InfoStatus status = MoreNuclideInfo::more_nuc_info_db_status();
 
@@ -1844,10 +1858,13 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
 
   // We want to set the final _modified_ version of input to the answer, before
   // returning, so we'll just use a helper for this.
-  on_scope_exit on_exit( [&answer_ptr, &input](){
-    answer_ptr->m_input = input;
-    answer_ptr->lineColor = input.m_color;
-    } );
+  //on_scope_exit on_exit( [&answer_ptr, &input](){
+  //  answer_ptr->m_input = input;
+  //  answer_ptr->lineColor = input.m_color;
+  //  } );
+  answer_ptr->m_input = input;
+  answer_ptr->lineColor = input.m_color;
+
 
   if( input.m_input_txt.empty() )
   {
@@ -1883,6 +1900,8 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
       {
         answer.m_input_warnings.push_back( "Invalid nuclide age input." );
         answer.m_validity = ReferenceLineInfo::InputValidity::InvalidAge;
+
+        answer_ptr->m_input = input;
 
         return answer_ptr;
       }//try /catch to get the age
@@ -1978,6 +1997,8 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
   {
     answer.m_validity = ReferenceLineInfo::InputValidity::InvalidSource;
 
+    answer_ptr->m_input = input;
+
     return answer_ptr;
   }//if( we couldnt match input text to a source )
 
@@ -1986,6 +2007,7 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
   if( !nuc )
     input.m_showCascades = false;
 
+  answer_ptr->m_input = input;
 
   // We've already set the relevant values, but temporarily doing it below for 
   //  testing with old code - this next number of lines can eventually be removed after testing
@@ -2156,6 +2178,9 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
           }//if( particle.type == SandiaDecay::XrayParticle )
 
 
+          if( !answer.m_has_coincidences && (particle.type == SandiaDecay::GammaParticle) )
+            answer.m_has_coincidences = !particle.coincidences.empty();
+
           const double br = activity * particle.intensity
             * transition->branchRatio / parent_activity;
 
@@ -2315,7 +2340,9 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
         case OtherRefLineType::BackgroundXRay:
         {
           //std::get<2>( bl ) will be like "Pb xray"
-          line.m_decaystr = std::get<4>( bl );
+          line.m_decaystr = std::get<2>( bl );
+          if( !std::get<4>( bl ).empty() )
+            line.m_decaystr += (line.m_decaystr.empty() ? "" : ", ") + std::get<4>( bl );
           line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Xray;
           vector<string> parts;
           SpecUtils::split( parts, std::get<2>( bl ), " " );
@@ -2326,9 +2353,12 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
 
         case OtherRefLineType::OtherBackground:
         case OtherRefLineType::BackgroundReaction:
-          line.m_decaystr = std::get<4>( bl );
+          line.m_decaystr = std::get<2>( bl );
+          if( !std::get<4>( bl ).empty() )
+            line.m_decaystr += (line.m_decaystr.empty() ? "" : ", ") + std::get<4>( bl );
           break;
       }//switch( get<3>(*bl) )
+
 
       lines.push_back( line );
     }//for( otherRefLinesToShow )
@@ -2336,7 +2366,7 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
 
 
   // Now calc detector response and shielding
-  //  Up to no, we shouldnt have any escape or sum gammas in answer.m_ref_lines
+  //  Up to now, we shouldnt have any escape or sum gammas in answer.m_ref_lines
   double max_alpha_br = 0.0, max_beta_br = 0.0, max_photon_br = 0.0;
   for( ReferenceLineInfo::RefLine &line : lines )
   {
@@ -2394,31 +2424,40 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
     }//switch( line.m_particle_type )
 
     // We wont filter out lines smaller than wanted here
-    if( (line.m_transition || is_background)
-      && (line.m_normalized_intensity <= input.m_lower_br_cutt_off
-        || IsInf( line.m_normalized_intensity )
-        || IsNan( line.m_normalized_intensity )) )
-    {
-      continue;
-    }
+
+#if _MSC_VER
+#pragma message("Disabling lower BR cutoff for comparison")
+#else
+#warning "Disabling lower BR cutoff for comparison"
+#endif
+    //if( (line.m_transition || is_background)
+    //  && (line.m_normalized_intensity <= input.m_lower_br_cutt_off
+    //    || IsInf( line.m_normalized_intensity )
+    //    || IsNan( line.m_normalized_intensity )) )
+    //{
+    //  continue;
+    //}
 
 
     // Now lets fill out line.m_decaystr, line.m_particlestr, and line.m_elementstr
     if( line.m_decaystr.empty() )
     {
-      if( (line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Gamma)
+      if( (line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Xray)
         && line.m_transition )
       {
         if( line.m_transition->parent )
           line.m_decaystr = line.m_transition->parent->symbol;
         if( line.m_transition->child )
           line.m_decaystr += " to " + line.m_transition->child->symbol;
+
+        // TODO: for alphas and betas its pretty rudundant to have this next line (I guess its redundant no matter what actually)
         line.m_decaystr += string( " via " ) + SandiaDecay::to_str( line.m_transition->mode );
       }//if( line.m_transition )
 
       if( line.m_reaction )
         line.m_decaystr = line.m_reaction->name();
 
+      // TODO: DEV_REF_LINE_UPGRADE_20221212 The xrays also come from certain decays - there is now reason to exclude them from the above logic, after comparison with old code
       if( line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Xray )
         line.m_decaystr = "xray";
     }//if( line.m_decaystr.empty() )
@@ -2491,11 +2530,14 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
 
       if( input.m_shielding_att )
         line.m_shield_atten = input.m_shielding_att( first_energy ) * input.m_shielding_att( second_energy );
-     
+
       const double amp = line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten;
-      assert( !IsNan(amp) && !IsInf(amp) );
-      if( IsNan( amp ) || IsInf( amp ) || (amp <= 0.0) )
+      assert( !IsNan( amp ) && !IsInf( amp ) );
+      if( IsNan( amp ) || IsInf( amp ) )
+      {
+        cerr << "Unexpected NaN or Inf coincidence amp." << endl;
         continue;
+      }
 
       line.m_decaystr = "Cascade sum";
       if( trans && trans->parent )
@@ -2504,23 +2546,31 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
         line.m_decaystr += " to " + trans->child->symbol;
 
       char buffer[128];
-      snprintf( buffer, sizeof( buffer ), 
-        " (%.1f + %.1f keV, coinc=%.3g)", 
+      snprintf( buffer, sizeof( buffer ),
+        " (%.1f + %.1f keV, coinc=%.3g)",
         first_energy, second_energy, coinc_frac );
 
       line.m_decaystr += buffer;
       line.m_particlestr = "cascade-sum";
 
-      coinc_ref_lines.push_back( std::move(line) );
+      coinc_ref_lines.push_back( std::move( line ) );
 
       max_coincidence_br = std::max( max_coincidence_br, amp );
     }//for( loop over cascades )
 
-    assert( coinc_ref_lines.empty() 
+    assert( coinc_ref_lines.empty()
       || ((max_coincidence_br > 0.0) && !IsNan( max_coincidence_br )) );
-    
 
-    // There can be tons of cascade sums (4834 for U238), we'll limit the number 
+    // Scale the coincidence line amplitudes to be between 0
+    for( ReferenceLineInfo::RefLine &line : coinc_ref_lines )
+    {
+      const double sf = 1.0 / max_coincidence_br;
+      line.m_particle_sf_applied = sf;
+      const double amp = line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten * sf;
+      line.m_normalized_intensity = amp;
+    }//for( ReferenceLineInfo::RefLine &line : coinc_ref_lines )
+
+     // There can be tons of cascade sums (4834 for U238), we'll limit the number 
     //   we draw to an arbitrary 350, because this is even more than I expect to 
     //   be relevant (although I didnt actually check this).
     //  TODO: limit based on importance, and not a flat limit, e.g., use something like
@@ -2530,30 +2580,48 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
     {
       std::sort( begin( coinc_ref_lines ), end( coinc_ref_lines ),
         []( const ReferenceLineInfo::RefLine &lhs, const ReferenceLineInfo::RefLine &rhs ) -> bool {
-          return lhs.m_decay_intensity > rhs.m_decay_intensity;
+          if( lhs.m_normalized_intensity == rhs.m_normalized_intensity )
+            return lhs.m_energy > rhs.m_energy;
+          return lhs.m_normalized_intensity > rhs.m_normalized_intensity;
         } );
 
       cout << "Resizing cascade sums from " << coinc_ref_lines.size() << " to " << max_cascade_sums << endl;
       coinc_ref_lines.resize( max_cascade_sums );
     }//if( coinc_ref_lines.size() > 350 )
 
-    for( ReferenceLineInfo::RefLine &line : coinc_ref_lines )
-    {
-      const double sf = 1.0 / max_coincidence_br;
-      line.m_particle_sf_applied = sf;
-      const double amp = line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten / sf;
-      line.m_normalized_intensity = amp;
+    answer.m_ref_lines.reserve( answer.m_ref_lines.size() + coinc_ref_lines.size() );
 
-      if( !IsNan( amp ) && !IsInf( amp ) && (amp >= std::numeric_limits<float>::min()) 
-        && (line.m_normalized_intensity > input.m_lower_br_cutt_off)  )
-        answer.m_ref_lines.push_back( line );
+    for( const ReferenceLineInfo::RefLine &line : coinc_ref_lines )
+    {
+#if _MSC_VER
+#pragma message("Not limiting amplitude for comparisons sake")
+#else
+      #warning "Not limiting amplitude for comparisons sake"
+#endif
+      const double &amp = line.m_normalized_intensity;
+      if( !IsNan( amp ) && !IsInf( amp ) 
+          //&& (amp >= std::numeric_limits<float>::min())
+          //&& (amp > input.m_lower_br_cutt_off) 
+      )
+       answer.m_ref_lines.push_back( line );
     }//for( ReferenceLineInfo::RefLine &line : coinc_ref_lines )
   }//if( !gamma_coincidences.empty() )
+
+
 
 
   // Sort reference lines by energy
   std::sort( begin( answer.m_ref_lines ), end( answer.m_ref_lines ),
     []( const ReferenceLineInfo::RefLine &lhs, const ReferenceLineInfo::RefLine &rhs ) -> bool {
+      
+#if _MSC_VER
+#pragma message("Sorting by energy and intensity for comparison to old way only")
+#else
+      #warning "Sorting by energy and intensity for comparison to old way only"
+#endif
+      if( lhs.m_energy == rhs.m_energy )
+        return lhs.m_normalized_intensity < rhs.m_normalized_intensity;
+
       return lhs.m_energy < rhs.m_energy;
     } );
 
@@ -3443,7 +3511,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
             size_t index = 0;
             for( ; index < energies.size(); ++index )
             {
-              if( fabs(energies[index] - particle.energy) < 1.0E-6 )
+              if( (particle_type[index]== SandiaDecay::XrayParticle) 
+                && (fabs(energies[index] - particle.energy) < 1.0E-6) )
                 break;
             }
             
@@ -3452,6 +3521,10 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
             
             if( index < energies.size() )
             {
+#if( DEV_REF_LINE_UPGRADE_20221212 )
+              // If there are multiple x-rays with same energy in a decay chain, it will cause an 
+              //  issue comparing to new Reference photopeaks, since here we are combining them
+#endif
               branchratios[index] += br;
               inforows[index].branchRatio += br;
             }else
@@ -3611,14 +3684,15 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     transistions.push_back( NULL );
     energies.push_back( std::get<0>(bl) );
     branchratios.push_back( std::get<1>(bl) );
+    //particle_type.push_back( (std::get<3>( bl ) == OtherRefLineType::BackgroundXRay) ? SandiaDecay::XrayParticle : SandiaDecay::GammaParticle );
     particle_type.push_back( SandiaDecay::GammaParticle );
     reactionPeaks.push_back( NULL );
     otherRefLines.push_back( std::make_unique<OtherRefLine>(bl) );
-
+    
     DecayParticleModel::RowData row;
     row.energy      = std::get<0>(bl);
     row.branchRatio = std::get<1>(bl);
-    row.particle    = SandiaDecay::GammaParticle;
+    row.particle    = particle_type.back();
     
     switch( std::get<3>(bl) )
     {
@@ -3762,9 +3836,16 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     const SandiaDecay::Transition *transition = transistions[i];
     std::unique_ptr<const OtherRefLine> &backLine = otherRefLines.at(i);
     
+#if _MSC_VER
+#pragma message("Disabling lower BR cutoff for comparison")
+#else
+    #warning "Disabling lower BR cutoff for comparison"
+#endif
+#if( !DEV_REF_LINE_UPGRADE_20221212 )
     if( (transition || backLine) && (br <= brCutoff || IsInf(br) || IsNan(br)) )
       continue;
-    
+#endif
+
     string particlestr, decaystr, elstr;
     if( !is_xray )
     {
@@ -3785,42 +3866,47 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
       }else if( backLine )
       {
         const string &symbol = std::get<2>(*backLine);
-        if( symbol.size() )
-          decaystr += symbol + ", ";
-        
+        decaystr += symbol;
+
         switch( std::get<3>(*backLine) )
         {
           case OtherRefLineType::U238Series:    
-            decaystr += "U238 series";         
+            decaystr += string( decaystr.empty() ? "" : ", " ) + "U238 series";
             break;
 
           case OtherRefLineType::U235Series:    
-            decaystr += "U235 series";         
+            decaystr += string( decaystr.empty() ? "" : ", " ) + "U235 series";
             break;
 
           case OtherRefLineType::Th232Series:   
-            decaystr += "Th232 series";        
+            decaystr += string( decaystr.empty() ? "" : ", " ) + "Th232 series";
             break;
 
           case OtherRefLineType::Ra226Series:   
-            decaystr += "U238 (Ra226) series"; 
+            decaystr += string( decaystr.empty() ? "" : ", " ) + "U238 (Ra226) series";
             break;
 
           case OtherRefLineType::K40Background: 
-            decaystr += "Primordial";          
+            decaystr += string( decaystr.empty() ? "" : ", " ) + "Primordial";
             break;
 
-          case OtherRefLineType::OtherBackground: 
-          case OtherRefLineType::BackgroundXRay: 
+          case OtherRefLineType::BackgroundXRay:
+            particlestr = "xray";
+            if( !std::get<4>( *backLine ).empty() )
+              decaystr += string( decaystr.empty() ? "" : ", " ) + std::get<4>( *backLine );
+            break;
+
+          case OtherRefLineType::OtherBackground:  
           case OtherRefLineType::BackgroundReaction:
-            decaystr += std::get<4>(*backLine);    
+            if( !std::get<4>( *backLine ).empty() )
+              decaystr += string( decaystr.empty() ? "" : ", " ) + std::get<4>( *backLine );
             break;
         }//switch( get<3>(otherRefLines[i]) )
       }//if( transition ) / else ...
     }else
     {
       const SandiaDecay::Element *element = el;
-      if( !element )
+      if( !element && nuc )
         element = db->element( nuc->atomicNumber );
       
       particlestr = "xray";
@@ -3932,6 +4018,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     {
       std::sort( begin(cascade_info), end(cascade_info), 
         [](const tuple<float, double, string>& lhs, const tuple<float, double, string>& rhs) -> bool {
+          if( get<1>( lhs ) == get<1>( rhs ) )
+            return  get<0>( lhs ) > get<0>( rhs );
           return get<1>(lhs) > get<1>(rhs);
       });
 
@@ -3946,7 +4034,15 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
       //cout << "cascade: " << get<0>(info) << " keV rel_br=" << get<1>(info) / maxCascadeBr << ", " << get<2>(info) << endl;
 
       const double amp = get<1>(info) / maxCascadeBr;
-      if (IsNan(amp) || IsInf(amp) || (amp < std::numeric_limits<float>::min()))
+
+#if _MSC_VER
+#pragma message("Not limiting amplitude for comparisons sake")
+#else
+      #warning "Not limiting amplitude for comparisons sake"
+#endif
+      if (IsNan(amp) || IsInf(amp) 
+        //|| (amp < std::numeric_limits<float>::min())
+        )
       {
         cout << "Cascade amp to small (" << amp << ") for energy " << get<0>(info) << " keV" << endl;
         continue;
@@ -4029,7 +4125,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
       {
         m_cascadeWarn = new WText("x-rays are not included in cascades");
         m_cascadeWarn->addStyleClass("CascadeGammaWarn");
-        m_options->insertWidget(m_options->indexOf(m_showCascadeSums) + 1, m_cascadeWarn);
+        m_optionsContent->insertWidget( m_optionsContent->indexOf(m_showCascadeSums) + 1, m_cascadeWarn);
       }
       if (m_cascadeWarn->isHidden())
         m_cascadeWarn->show();
@@ -4060,6 +4156,88 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     else
       m_clearLines->setText( m_persisted.empty() ? "Clear" : "Clear All" );
   }//if( show )
+
+
+
+
+#if( DEV_REF_LINE_UPGRADE_20221212 )
+  //std::shared_ptr<ReferenceLineInfo> refLineForUserInput();
+
+  ReferenceLineInfo::RefLineInput user_input = userInput();
+  shared_ptr<ReferenceLineInfo> ref_lines = generateRefLineInfo( user_input );
+
+  std::vector<DecayParticleModel::RowData> table_rows;
+  if( ref_lines  && ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid )
+  table_rows = createTableRows( *ref_lines );
+
+  auto equal_ish = []( const double lhs, const double rhs ) -> bool {
+    return (fabs( lhs - rhs ) < 1.0E-7) || ((fabs( lhs - rhs ) / std::max( fabs( lhs ), fabs( rhs ) )) < 1.0E-6);
+  };
+
+
+  cout << "Start comparing ref lines\n\n";
+  if( !ref_lines )
+  {
+    cout << "No ref lines returned\n";
+  }else if( ref_lines->m_validity != ReferenceLineInfo::InputValidity::Valid )
+  {
+    cout << "Ref lines returned Invalid Input\n";
+  }else
+  {
+    const auto &old = m_currentlyShowingNuclide;
+    const auto &reflines = ref_lines->m_ref_lines;
+
+    if( reflines.size() != old.energies.size() )
+    {
+      cout << "New ref lines have " << ref_lines->m_ref_lines.size() << " entries - vs expected " << m_currentlyShowingNuclide.energies.size() << endl;
+    
+      for( size_t i = 0; i < std::min( reflines.size() , old.energies.size() ); ++i )
+      {
+        if( !equal_ish( reflines[i].m_energy, old.energies[i] ) )
+        {
+          cout << "Energies start to differ at old=" << old.energies[i] << ", new=" << reflines[i].m_energy 
+            << " (intensities: old=" << old.intensities[i] << ", new=" << reflines[i].m_normalized_intensity << ")" 
+            << ", partcile strs: old=" << old.particlestrs[i] << ", new=" << reflines[i].m_particlestr
+            << endl;
+          if( i )
+            cout << "\tPrevious energy was " << old.energies[i-1] 
+            << " with intisities: old=" << old.intensities[i-1] << ", new=" << reflines[i-1].m_normalized_intensity 
+            << " and partcle strs old=" << old.particlestrs[i-1] << ", new=" << reflines[i-1].m_particlestr
+            <<  endl;
+          break;
+        }
+      }
+    
+    }else
+    {
+      const auto &old = m_currentlyShowingNuclide;
+      const auto &reflines = ref_lines->m_ref_lines;
+      const size_t nrows = reflines.size();
+      for( size_t i = 0; i < nrows; ++i )
+      {
+        
+        const ReferenceLineInfo::RefLine &line = reflines[i];
+        if( !equal_ish( line.m_energy, old.energies[i] ) )
+          cout << "Energy of line " << i << " does match (new=" << line.m_energy << ", old=" << old.energies[i] << ")\n";
+        if( !equal_ish( line.m_normalized_intensity, old.intensities[i] ) )
+          cout << "Intensities of line " << i << " does match (new=" << line.m_normalized_intensity << ", old=" << old.intensities[i] << ")\n";
+      
+        if( old.particlestrs[i] != line.m_particlestr )
+          cout << "particlestrs of line " << i << " does match (new=" << line.m_particlestr << ", old=" << old.particlestrs[i] << ") at energy " << old.energies[i] << "\n";
+
+        if( old.decaystrs[i] != line.m_decaystr )
+          cout << "decaystrs of line " << i << " does match (new=" << line.m_decaystr << ", old=" << old.decaystrs[i] << ")\n";
+
+        if( old.elementstrs[i] != line.m_elementstr )
+          cout << "elementstrs of line " << i << " does match (new=" << line.m_elementstr << ", old=" << old.elementstrs[i] << ")\n";
+      }
+    }
+  }
+
+  cout << "Done comparing ref lines\n\n";
+  
+#endif
+
 
   updateOtherNucsDisplay();
 }//void updateDisplayChange()

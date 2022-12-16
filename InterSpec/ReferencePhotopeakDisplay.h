@@ -335,6 +335,7 @@ things simple
 
   Wt::WPushButton *m_options_icon;
   Wt::WContainerWidget *m_options;
+  Wt::WContainerWidget *m_optionsContent;
 
   Wt::WCheckBox *m_showGammas;
   Wt::WCheckBox *m_showXrays;

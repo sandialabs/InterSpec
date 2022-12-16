@@ -241,7 +241,7 @@ struct ReferenceLineInfo
   InputValidity m_validity;
   RefLineInput m_input;
   std::vector<RefLine> m_ref_lines;
-
+  bool m_has_coincidences; //Needed to decide if we should show this checkbox
   std::vector<std::string> m_input_warnings;
 #endif //#if( DEV_REF_LINE_UPGRADE_20221212 )
 

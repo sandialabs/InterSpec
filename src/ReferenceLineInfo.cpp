@@ -50,12 +50,15 @@ namespace
 {
   template<class T> struct index_compare_assend
   {
-    index_compare_assend(const T arr) : arr(arr) {} //pass the actual values you want sorted into here
+    index_compare_assend(const T arr, const T arr2) : m_arr(arr), m_arr2( arr2 ) {} //pass the actual values you want sorted into here
     bool operator()(const size_t a, const size_t b) const
     {
-      return arr[a] < arr[b];
+      if( m_arr[a] == m_arr[b] )
+        return m_arr2[a] < m_arr2[b];
+      return m_arr[a] < m_arr[b];
     }
-    const T arr;
+    const T m_arr;
+    const T m_arr2;
   };//struct index_compare
   
   std::string jsQuote( const std::string &str )
@@ -284,6 +287,7 @@ void ReferenceLineInfo::reset()
   m_ref_lines.clear();
   m_input_warnings.clear();
   m_validity = InputValidity::Blank;
+  m_has_coincidences = false;
   m_input = RefLineInput();
 #endif
   energies.clear();
@@ -480,7 +484,7 @@ void ReferenceLineInfo::sortByEnergy()
      || len != particlestrs.size() || len != decaystrs.size()
      || len != elementstrs.size()
 #if( DEV_REF_LINE_UPGRADE_20221212 )
-    || len != m_ref_lines.size() 
+ //   || len != m_ref_lines.size() 
 #endif
     )
     throw runtime_error( "ReferenceLineInfo::sortByEnergy(): inconsistent input size" );
@@ -489,8 +493,16 @@ void ReferenceLineInfo::sortByEnergy()
   for( size_t i = 0; i < len; ++i )
     sort_indices[i] = i;
   
+#if( DEV_REF_LINE_UPGRADE_20221212 )
+// THis is only necassary for comparing new and old values
+#if _MSC_VER
+#pragma message("Doing sort by energy and intensity for comparison only")
+#else
+  #warning "Doing sort by energy and intensity for comparison only"
+#endif
+#endif
   std::sort( sort_indices.begin(), sort_indices.end(),
-            index_compare_assend<vector<double>&>(energies) );
+            index_compare_assend<vector<double>&>(energies, intensities) );
   
   ReferenceLineInfo tmp = *this;
   for( size_t i = 0; i < len; ++i )
@@ -502,7 +514,7 @@ void ReferenceLineInfo::sortByEnergy()
     decaystrs[i]    = tmp.decaystrs[index];
     elementstrs[i]  = tmp.elementstrs[index];
   }//for( size_t i = 0; i < len; ++i )
-  
+
 #if( DEV_REF_LINE_UPGRADE_20221212 )
   std::sort( begin( m_ref_lines ), end( m_ref_lines ), 
     []( const RefLine &lhs, const RefLine &rhs ) -> bool {
