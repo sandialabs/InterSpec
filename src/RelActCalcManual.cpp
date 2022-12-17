@@ -1539,7 +1539,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   
   const size_t nsigfig = 4;
   
-  char buffer[8*1024] = { '\0' };
+  char buffer[512] = { '\0' };
   
   
   stringstream results_html;
@@ -1658,7 +1658,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       
       //const double meas_rel_eff = info.m_counts / (info.m_source_gammas[i].m_yield * rel_act);
       
-      snprintf( buffer, sizeof(buffer), "%s{nuc: \"%s\", br: %1.6G, rel_act: %1.6G}",
+      snprintf( buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G, \"rel_act\": %1.6G}",
                (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield, rel_act );
       
       isotopes_json += buffer;
@@ -1668,12 +1668,17 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
     const double eff_uncert = peak.m_counts_uncert / src_counts;
     
     snprintf( buffer, sizeof(buffer),
-             "%s{energy: %.2f, counts: %1.7g, counts_uncert: %1.7g,"
-             " eff: %1.6g, eff_uncert: %1.6g, nuc_info: [%s]}",
-             (index ? ", " : ""), peak.m_energy, peak.m_counts, peak.m_counts_uncert,
-             eff, eff_uncert, isotopes_json.c_str() );
+             "%s"
+             "{\"energy\": %.2f, \"counts\": %1.7g,"
+             " \"counts_uncert\": %1.7g, \"eff\": %1.6g,"
+             " \"eff_uncert\": %1.6g",
+             (index ? ", " : ""), 
+             peak.m_energy, peak.m_counts, 
+             peak.m_counts_uncert, eff, 
+             eff_uncert );
     
     rel_eff_plot_values << buffer;
+    rel_eff_plot_values << ", \"nuc_info\": [" << isotopes_json << "]}";
   }//for( size_t index = 0; index < input_peaks.size(); ++index )
   
   rel_eff_plot_values << "]";
