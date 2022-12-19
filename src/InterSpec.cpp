@@ -4791,6 +4791,7 @@ void InterSpec::stateSaveAs()
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );
+  window->disableCollapse(); //Not sure why the property flags dont get this
   WGridLayout *layout = window->stretcher();
     
   WLineEdit *edit = new WLineEdit();

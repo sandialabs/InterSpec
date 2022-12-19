@@ -652,9 +652,14 @@ void InterSpecWebFrame::OnNavigationRequest(wxWebViewEvent& evt)
     // We get here if the user presses ctrl-R; I havent investigated removing 
     //  that key binding in too much detail, but it doesnt look to be through 
     //  the wxWidgets window
-    wxLogMessage( "Recieved reload request" );
+    wxLogMessage( "Recieved reload request - rejecting" );
     evt.Veto();
 
+    // Right now the ctrl-R is unexpected, so we'll just veto all reloads.
+    //  However, it would be nice to create a new session if the JS dies for
+    //  some reason, so if we wnat to enable this, uncomment out this next 
+    //  bit of code.
+    /*
     if( !m_token.empty() )
     {
       const int status = InterSpecServer::remove_allowed_session_token( m_token.c_str() );
@@ -675,7 +680,8 @@ void InterSpecWebFrame::OnNavigationRequest(wxWebViewEvent& evt)
 
     wxString app_url = m_url + "?apptoken=" + m_token + "&restore=no";
     m_browser->LoadURL( app_url );
-    
+    */
+
     return;
   }//if( is_reload )
 

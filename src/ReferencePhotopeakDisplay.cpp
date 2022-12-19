@@ -2685,310 +2685,68 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::refLineForUserInpu
 std::vector<DecayParticleModel::RowData> ReferencePhotopeakDisplay::createTableRows( const ReferenceLineInfo &refLine )
 {
   vector<DecayParticleModel::RowData> inforows;
-  /*
-  const double brCutoff = (m_lowerBrCuttoff ? m_lowerBrCuttoff->value() : 0.0);
 
-//  bool islogy = m_chart->yAxisIsLog();
-//  double chartMaxSf = (islogy ? log(2.5) : 1.0/1.1);
-
-  SandiaDecay::NuclideMixture mixture;
-
-  if( nuc && canHavePromptEquil && m_promptLinesOnly->isChecked() )
+  for( const ReferenceLineInfo::RefLine &r : refLine.m_ref_lines )
   {
-    age = 0.0;
-    mixture.addNuclideInPromptEquilibrium( nuc, 1.0E-3 * SandiaDecay::curie );
-  } else if( nuc )
-  {
-    mixture.addNuclideByActivity( nuc, 1.0E-3 * SandiaDecay::curie );
-  }//if( we want promt only ) / else
-
-  const vector<SandiaDecay::NuclideActivityPair> activities
-    = mixture.activity( age );
-  const double parent_activity = nuc ? mixture.activity( age, nuc ) : 0.0;
-
-  vector<double> energies, branchratios;
-  vector<SandiaDecay::ProductType> particle_type;
-  vector<const SandiaDecay::Transition *> transistions;
-  vector<SandiaDecay::ProductType> types;
-  vector<const ReactionGamma::Reaction *> reactionPeaks;
-  vector<std::unique_ptr<const OtherRefLine>> otherRefLines; //Will be filtered for energy range, like the other variables around here
-  bool hasCascades = false;
-  vector<tuple<const SandiaDecay::Transition *, double, float, float, float, double>> cascades; //transition, first gamma BR, first gamma energy, second gamma energy, coincidence fraction, second gamma BR (just for debug)
-
-  if( showGammaChecked || showCascadesChecked )
-    types.push_back( SandiaDecay::GammaParticle );
-  if( showGammaChecked )
-    types.push_back( SandiaDecay::PositronParticle );
-  if( m_showAlphas->isChecked() )
-    types.push_back( SandiaDecay::AlphaParticle );
-  if( m_showBetas->isChecked() )
-    types.push_back( SandiaDecay::BetaParticle );
-  if( (!m_showXrays || m_showXrays->isChecked()) )
-    types.push_back( SandiaDecay::XrayParticle );
-
-  DecayParticleModel::RowData positronrow;
-  positronrow.energy = static_cast<float>(510.9989 * PhysicalUnits::keV);
-  positronrow.branchRatio = 0.0f;
-  positronrow.particle = SandiaDecay::GammaParticle; //SandiaDecay::positron
-  positronrow.responsibleNuc = 0;
-  std::set<const SandiaDecay::Nuclide *> positronparents;
-  std::set<const SandiaDecay::Transition *> positrontrans;
-
-  for( SandiaDecay::ProductType type : types )
-  {
-    for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
-    {
-      const SandiaDecay::Nuclide *nuclide = activities[nucIndex].nuclide;
-      const double activity = activities[nucIndex].activity;
-
-      const size_t n_decaysToChildren = nuclide->decaysToChildren.size();
-
-      for( size_t decayIndex = 0; decayIndex < n_decaysToChildren; ++decayIndex )
-      {
-        const SandiaDecay::Transition *transition
-          = nuclide->decaysToChildren[decayIndex];
-        const size_t n_products = transition->products.size();
-
-        for( size_t productNum = 0; productNum < n_products; ++productNum )
-        {
-          const SandiaDecay::RadParticle &particle
-            = transition->products[productNum];
-
-          switch( particle.type )
-          {
-            case SandiaDecay::GammaParticle:
-              hasCascades |= !particle.coincidences.empty();
-              if( particle.energy < lower_photon_energy )
-                continue;
-              break;
-
-            case SandiaDecay::XrayParticle:
-              if( particle.energy < lower_photon_energy )
-                continue;
-              break;
-
-            case SandiaDecay::PositronParticle:
-            case SandiaDecay::BetaParticle:
-            case SandiaDecay::AlphaParticle:
-            case SandiaDecay::CaptureElectronParticle:
-              break;
-          }//switch( particle.type )
-
-
-          if( type == SandiaDecay::PositronParticle && particle.type == SandiaDecay::PositronParticle )
-          {
-            const double br = activity * particle.intensity
-              * transition->branchRatio / parent_activity;
-            positronrow.branchRatio += 2.0 * br;
-            positronrow.decayMode = transition->mode;
-            positronparents.insert( transition->parent );
-            positrontrans.insert( transition );
-          } else if( (particle.type == type) && (particle.type == SandiaDecay::XrayParticle) )
-          {
-            size_t index = 0;
-            for( ; index < energies.size(); ++index )
-            {
-              if( fabs( energies[index] - particle.energy ) < 1.0E-6 )
-                break;
-            }
-
-            const double br = activity * particle.intensity
-              * transition->branchRatio / parent_activity;
-
-            if( index < energies.size() )
-            {
-              branchratios[index] += br;
-              inforows[index].branchRatio += br;
-            } else
-            {
-              transistions.push_back( NULL );
-              energies.push_back( particle.energy );
-              branchratios.push_back( br );
-              particle_type.push_back( SandiaDecay::XrayParticle );
-              reactionPeaks.push_back( NULL );
-              otherRefLines.push_back( nullptr );
-
-              DecayParticleModel::RowData row;
-              row.energy = particle.energy;
-              row.branchRatio = br;
-              row.particle = SandiaDecay::XrayParticle;
-              row.decayMode = DecayParticleModel::RowData::XRayDecayMode;
-              row.responsibleNuc = nuc;
-
-              inforows.push_back( row );
-            }
-          } else if( particle.type == type )
-          {
-            const double br = activity * particle.intensity
-              * transition->branchRatio / parent_activity;
-
-            if( showCascadesChecked && transition && (type == SandiaDecay::GammaParticle) && (particle.type == type) )
-            {
-              for( size_t coinc_index = 0; coinc_index < particle.coincidences.size(); ++coinc_index )
-              {
-                const unsigned short int part_ind = particle.coincidences[coinc_index].first;
-                const float fraction = particle.coincidences[coinc_index].second;
-                assert( part_ind < transition->products.size() );
-                if( part_ind < transition->products.size() )
-                {
-                  const SandiaDecay::RadParticle &coinc_part = transition->products[part_ind];
-
-                  // The BR of second gamma is just for debugging
-                  const double second_br = activity * coinc_part.intensity
-                    * transition->branchRatio / parent_activity;
-
-
-                  if( coinc_part.type == SandiaDecay::ProductType::GammaParticle )
-                    cascades.emplace_back( transition, br, particle.energy, coinc_part.energy, fraction, second_br );
-                }//if (part_ind < transition->products.size())
-              }//for( loop over coincidences )
-            }//if( show cascade gammas )
-
-            // If type is GammaParticle, we could be here if user selected to show cascade, but
-            //  not actual gammas, so we need to check for this, and if so not add this gamma 
-            //  in to be shown
-            if( (type == SandiaDecay::GammaParticle) && !showGammaChecked )
-              continue;
-
-            transistions.push_back( transition );
-            energies.push_back( particle.energy );
-            branchratios.push_back( br );
-            particle_type.push_back( type );
-            reactionPeaks.push_back( NULL );
-            otherRefLines.push_back( nullptr );
-
-            DecayParticleModel::RowData row;
-            row.energy = particle.energy;
-            row.branchRatio = br;
-            row.particle = particle.type;
-            row.decayMode = transition->mode;
-            row.responsibleNuc = transition->parent;
-            inforows.push_back( row );
-          }//if( particle.type == type )
-        }//for( size_t productNum = 0; productNum < n_products; ++productNum )
-      }//for( size_t decayIndex = 0; decayIndex < n_decaysToChildren; ++decayIndex )
-    }//for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
-  }//for( SandiaDecay::ProductType type : types )
-
-  if( positronrow.branchRatio > 0.0 )
-  {
-    if( positronparents.size() == 1 )
-      positronrow.responsibleNuc = *positronparents.begin();
-
-    if( positrontrans.size() == 1 )
-      transistions.push_back( *positrontrans.begin() );
-    else
-      transistions.push_back( NULL );
-    energies.push_back( positronrow.energy );
-    branchratios.push_back( positronrow.branchRatio );
-    particle_type.push_back( SandiaDecay::GammaParticle );
-    reactionPeaks.push_back( NULL );
-    otherRefLines.push_back( nullptr );
-
-    inforows.push_back( positronrow );
-  }//if( positronrow.branchRatio > 0.0 )
-
-  const bool showXrays = ((el && !nuc) && (!m_showXrays || m_showXrays->isChecked()));
-
-  if( showXrays )
-  {
-    const SandiaDecay::Element *element = el;
-    if( !element )
-      element = db->element( nuc->atomicNumber );
-
-    for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
-    {
-      if( eip.energy < lower_photon_energy )
-        continue;
-
-      transistions.push_back( NULL );
-      energies.push_back( eip.energy );
-      branchratios.push_back( eip.intensity );
-      particle_type.push_back( SandiaDecay::XrayParticle );
-      reactionPeaks.push_back( NULL );
-      otherRefLines.push_back( nullptr );
-
-      DecayParticleModel::RowData row;
-      row.energy = eip.energy;
-      row.branchRatio = eip.intensity;
-      row.particle = SandiaDecay::XrayParticle;
-      row.decayMode = DecayParticleModel::RowData::XRayDecayMode;
-      row.responsibleNuc = nuc;
-
-      inforows.push_back( row );
-    }//for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
-  }//if( m_showXrays->isChecked() )
-
-
-  for( const ReactionGamma::ReactionPhotopeak &eip : rctnGammas )
-  {
-    if( eip.energy < lower_photon_energy )
-      continue;
-
-    if( !showGammaChecked )
-      continue;
-
-    transistions.push_back( NULL );
-    energies.push_back( eip.energy );
-    branchratios.push_back( eip.abundance );
-    particle_type.push_back( SandiaDecay::GammaParticle );
-    reactionPeaks.push_back( eip.reaction );
-    otherRefLines.push_back( nullptr );
-
     DecayParticleModel::RowData row;
-    row.energy = eip.energy;
-    row.branchRatio = eip.abundance;
-    row.particle = SandiaDecay::GammaParticle;
-    row.decayMode = DecayParticleModel::RowData::ReactionToGammaMode;
-    row.responsibleNuc = nuc;
 
-    inforows.push_back( row );
-  }//for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
+    row.energy = r.m_energy;
+    row.branchRatio = r.m_decay_intensity;
+    row.responsibleNuc = nullptr;
 
+    row.decayMode = SandiaDecay::DecayMode::UndefinedDecay; //JIC
+    row.particle = SandiaDecay::ProductType::GammaParticle; //JIC
 
-  for( const OtherRefLine &bl : otherRefLinesToShow )
-  {
-    assert( !nuc && !el && rctnGammas.empty() );
-
-    if( std::get<0>( bl ) < lower_photon_energy )
-      continue;
-
-    transistions.push_back( NULL );
-    energies.push_back( std::get<0>( bl ) );
-    branchratios.push_back( std::get<1>( bl ) );
-    particle_type.push_back( SandiaDecay::GammaParticle );
-    reactionPeaks.push_back( NULL );
-    otherRefLines.push_back( std::make_unique<OtherRefLine>( bl ) );
-
-    DecayParticleModel::RowData row;
-    row.energy = std::get<0>( bl );
-    row.branchRatio = std::get<1>( bl );
-    row.particle = SandiaDecay::GammaParticle;
-
-    switch( std::get<3>( bl ) )
+    if( r.m_transition )
     {
-      case OtherRefLineType::U238Series:
-      case OtherRefLineType::U235Series:
-      case OtherRefLineType::Th232Series:
-      case OtherRefLineType::Ra226Series:
-      case OtherRefLineType::K40Background:
-      case OtherRefLineType::OtherBackground:
-        row.decayMode = DecayParticleModel::RowData::NormGammaDecayMode;
+      row.responsibleNuc = r.m_transition->parent;
+      row.decayMode = r.m_transition->mode;
+    }
+
+    switch( r.m_particle_type )
+    {
+      case ReferenceLineInfo::RefLine::Particle::Alpha:
+        row.particle = SandiaDecay::ProductType::AlphaParticle;
         break;
-      case OtherRefLineType::BackgroundXRay:
+
+      case ReferenceLineInfo::RefLine::Particle::Beta:
+        row.particle = SandiaDecay::ProductType::BetaParticle;
+        break;
+      
+      case ReferenceLineInfo::RefLine::Particle::Gamma:
+        row.particle = SandiaDecay::ProductType::GammaParticle;
+        break;
+
+      case ReferenceLineInfo::RefLine::Particle::Xray:
+        row.responsibleNuc = r.m_parent_nuclide; // TODO: this is only for comparison - not correct!
+        row.particle = SandiaDecay::ProductType::XrayParticle;
         row.decayMode = DecayParticleModel::RowData::XRayDecayMode;
         break;
-      case OtherRefLineType::BackgroundReaction:
-        row.decayMode = DecayParticleModel::RowData::ReactionToGammaMode;
-        break;
-    }//switch( get<3>(*bl) )
+    }//switch( r.m_particle_type )
 
-    row.responsibleNuc = db->nuclide( std::get<2>( bl ) );
+
+    switch( r.m_source_type )
+    {
+      case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+      case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+        if( r.m_reaction )
+          row.decayMode = DecayParticleModel::RowData::ReactionToGammaMode;
+        break;
+
+      case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+      case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
+        row.decayMode = DecayParticleModel::RowData::CascadeSumMode;
+        break;
+
+      case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+      case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+        // We dont want these making it into the table
+        continue;
+    }//switch( r.m_source_type )
 
     inforows.push_back( row );
-  }//for( otherRefLinesToShow )
-  
-  */
+  }//for( const ReferenceLineInfo::RefLine &r : refLine.m_ref_lines )
+
 
 return inforows;
 }// vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
@@ -4074,11 +3832,21 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   // Lets set the table data, but first remove BRs really close to zero
   const float abs_min_br = FLT_MIN; //FLT_MIN is minimum, normalized, positive value of floats.
   vector<DecayParticleModel::RowData> inforowstouse;
+
+#if( DEV_REF_LINE_UPGRADE_20221212 )
+#if _MSC_VER
+#pragma message("Disabling Table lower BR cutoff for comparison")
+#else
+  #warning "Disabling Table lower BR cutoff for comparison"
+#endif
+    inforowstouse = inforows;
+#else  //DEV_REF_LINE_UPGRADE_20221212
   for (size_t i = 0; i < inforows.size(); ++i)
   {
     if (inforows[i].branchRatio > abs_min_br && inforows[i].branchRatio >= brCutoff)
       inforowstouse.push_back(inforows[i]);
   }//for( loop over inforows )
+#endif
 
   m_particleModel->setRowData(inforowstouse);
 
@@ -4168,7 +3936,9 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 
   std::vector<DecayParticleModel::RowData> table_rows;
   if( ref_lines  && ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid )
-  table_rows = createTableRows( *ref_lines );
+    table_rows = createTableRows( *ref_lines );
+
+
 
   auto equal_ish = []( const double lhs, const double rhs ) -> bool {
     return (fabs( lhs - rhs ) < 1.0E-7) || ((fabs( lhs - rhs ) / std::max( fabs( lhs ), fabs( rhs ) )) < 1.0E-6);
@@ -4234,8 +4004,53 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     }
   }
 
-  cout << "Done comparing ref lines\n\n";
+  cout << "Done comparing ref lines\n";
   
+
+  cout << "Start comparing ref table rows\n";
+
+  auto do_sort = []( std::vector<DecayParticleModel::RowData> &d ){
+    std::sort( begin( d ), end( d ), []( const DecayParticleModel::RowData &lhs, const DecayParticleModel::RowData &rhs ) -> bool {
+      if( lhs.energy == rhs.energy )
+        return lhs.branchRatio < rhs.branchRatio;
+      return lhs.energy < rhs.energy;
+      } );
+  };//do_sort(...)
+
+  do_sort( table_rows );
+  do_sort( inforowstouse );
+
+
+  if( inforowstouse.size() != table_rows.size() )
+  {
+    cout << "Table rows size differ: new=" << table_rows.size() << ", old=" << inforowstouse.size() << endl;
+  }else
+  {
+    for( size_t i = 0; i < table_rows.size(); ++i )
+    {
+      const auto &o = inforowstouse[i];
+      const auto &n = table_rows[i];
+      if( !equal_ish( o.energy, n.energy ) )
+        cout << "Table row " << i << " has diff energy: new=" << n.energy << ", old=" << o.energy << endl;
+
+      if( !equal_ish( o.branchRatio, n.branchRatio ) )
+        cout << "Table row " << i << " has diff BR: new=" << n.branchRatio << ", old=" << o.branchRatio << endl;
+
+      if( o.decayMode != n.decayMode )
+        cout << "Table row " << i << " has diff DecayMode: new=" << n.decayMode << ", old=" << o.decayMode << endl;
+
+      if( o.particle != n.particle )
+        cout << "Table row " << i << " has diff particle: new=" << (int)n.particle << ", old=" << (int)o.particle << endl;
+
+      if( o.responsibleNuc != n.responsibleNuc )
+        cout << "Table row " << i << " has diff responsibleNuc: new=" 
+        << (n.responsibleNuc ? n.responsibleNuc->symbol : string("null")) 
+        << ", old=" << (o.responsibleNuc ? o.responsibleNuc->symbol : string("null")) 
+        << endl;
+    }
+  }
+  cout << "Done comparing ref table rows\n\n";
+
 #endif
 
 
