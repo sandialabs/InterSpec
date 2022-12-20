@@ -1878,7 +1878,10 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
   double age = 0.0;
   const SandiaDecay::Nuclide * const nuc = db->nuclide( input.m_input_txt );
 
-  if( nuc )
+  if( !nuc )
+  {
+    input.m_age = "";
+  }else
   {
     answer.nuclide = nuc;
     input.m_input_txt = nuc->symbol;
@@ -2004,10 +2007,28 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
 
   answer.m_validity = ReferenceLineInfo::InputValidity::Valid;
 
-  if( !nuc )
-    input.m_showCascades = false;
-
+  input.m_showGammas = input.m_showGammas;
+  input.m_showXrays = input.m_showXrays;
+  input.m_showAlphas = input.m_showAlphas;
+  input.m_showBetas  = input.m_showBetas;
+  // We will also update showing cascades later based on answer.m_has_coincidences
+  input.m_showCascades = input.m_showCascades;
+  
   answer_ptr->m_input = input;
+
+  
+  if( nuc )
+    answer.m_source_type = ReferenceLineInfo::SourceType::Nuclide;
+  else if( el )
+    answer.m_source_type = ReferenceLineInfo::SourceType::FluorescenceXray;
+  else if( !rctn_gammas.empty() )
+    answer.m_source_type = ReferenceLineInfo::SourceType::Reaction;
+  else if( is_background )
+    answer.m_source_type = ReferenceLineInfo::SourceType::Background;
+  else if( is_custom_energy )
+    answer.m_source_type = ReferenceLineInfo::SourceType::CustomEnergy;
+  else
+    answer.m_source_type = ReferenceLineInfo::SourceType::None;
 
   // We've already set the relevant values, but temporarily doing it below for 
   //  testing with old code - this next number of lines can eventually be removed after testing
@@ -2246,6 +2267,11 @@ std::shared_ptr<ReferenceLineInfo> ReferencePhotopeakDisplay::generateRefLineInf
       lines.push_back( positron_line );
   }//if( nuc )
 
+  // Update showing cascades based on if there are actually any present
+  input.m_showCascades = (answer.m_has_coincidences && input.m_showCascades);
+  answer.m_input.m_showCascades = (answer.m_has_coincidences && input.m_showCascades);
+  
+  
   
   if( el )
   {
@@ -2751,10 +2777,308 @@ std::vector<DecayParticleModel::RowData> ReferencePhotopeakDisplay::createTableR
 return inforows;
 }// vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
 
+
+Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src )
+{
+  WColor color = m_colorSelect->color();
+  
+  if( m_peaksGetAssignedRefLineColor )
+  {
+#ifndef _MSC_VER
+#warning "Need to test string comparison for sources always work.  E.g., need case-insensitive, etc."
+#endif
+    const map<string,vector<WColor>> usedColors = currentlyUsedPeakColors();
+    
+    auto hasBeenUsed = [&usedColors](const WColor &color)->bool{
+      for( const auto &s : usedColors )
+        for( const auto &c : s.second )
+          if( c == color )
+            return true;
+      return false;
+    };
+    
+    const auto usedIter = usedColors.find(src);
+    const auto previter = m_previouslyPickedSourceColors.find(src);
+    const auto specificiter = m_specificSourcelineColors.find(src);
+    
+    if( m_userHasPickedColor && !hasBeenUsed(color)
+       && (specificiter == end(m_specificSourcelineColors)) )
+    {
+      //If the user picked a color, but didnt fit any peaks, or persist, the
+      //  lines, and the color theme doesnt call out this current source
+      //  explicitly, then use the previous color.
+      //  This maybe seems a little more intuitive from the users perspective.
+      
+      //We also need to propagate m_userHasPickedColor==true forward for when
+      //  user keeps entering different sources.
+      m_userHasPickedColor = true;
+    }else if( usedIter != end(usedColors) && !usedIter->second.empty() )
+    {
+      color = usedIter->second[0];
+      //cout << "Source " << isotxt << " has color " << color.cssText() << " in the spectrum already" << endl;
+    }else if( previter != end(m_previouslyPickedSourceColors)
+             && !hasBeenUsed(previter->second) )
+    {
+      color = previter->second;
+      //cout << "Source " << isotxt << " has previously had color " << color.cssText() << " picked" << endl;
+    }else if( specificiter != end(m_specificSourcelineColors) )
+    {
+      color = specificiter->second;
+      //cout << "Source " << isotxt << " has a specific color, " << color.cssText() << ", in the ColorTheme" << endl;
+    }else
+    {
+      auto colorcopy = m_lineColors;
+      for( const auto &p : usedColors )
+      {
+        for( const auto &c : p.second )
+        {
+          auto pos = std::find( begin(colorcopy), end(colorcopy), c );
+          if( pos != end(colorcopy) )
+            colorcopy.erase(pos);
+        }
+      }//for( loop over colors used for peaks already )
+      
+      for( const auto &p : m_persisted )
+      {
+        auto pos = std::find( begin(colorcopy), end(colorcopy), p.lineColor );
+        if( pos != end(colorcopy) )
+          colorcopy.erase(pos);
+      }//for( const auto &p : m_persisted )
+      
+      if( colorcopy.empty() )
+        color = m_lineColors[m_persisted.size() % m_lineColors.size()];
+      else
+        color = colorcopy[0];
+      //cout << "Source " << isotxt << " will select color, " << color.cssText()
+      //     << ", from default list (len=" << colorcopy.size() << " of "
+      //     << m_lineColors.size() << ")" << endl;
+    }//if( src has been seen ) / else (user picked color previously)
+  }else
+  {
+    color = m_lineColors[m_persisted.size() % m_lineColors.size()];
+  }
+  
+  return color;
+}//Wt::WColor colorForNewSource( const std::string &src );
+
+
 #endif //DEV_REF_LINE_UPGRADE_20221212
 
 void ReferencePhotopeakDisplay::updateDisplayChange()
 {
+#if( DEV_REF_LINE_UPGRADE_20221212 )
+  ReferenceLineInfo::RefLineInput user_input = userInput();
+  shared_ptr<ReferenceLineInfo> ref_lines = generateRefLineInfo( user_input );
+  
+  {//begin DEV_REF_LINE_UPGRADE_20221212
+    const SandiaDecay::Nuclide * const nuclide = ref_lines ? ref_lines->nuclide : nullptr;
+    const SandiaDecay::Element * const element = ref_lines ? ref_lines->element : nullptr;
+    const std::string srcstr = ref_lines ? ref_lines->m_input.m_input_txt : string();
+    const ReferenceLineInfo::InputValidity validity = ref_lines ? ref_lines->m_validity
+                                              : ReferenceLineInfo::InputValidity::InvalidSource;
+    const ReferenceLineInfo::SourceType src_type = ref_lines ? ref_lines->m_source_type
+                                                 : ReferenceLineInfo::SourceType::None;
+    
+    const bool show_lines = ( (validity == ReferenceLineInfo::InputValidity::Valid)
+                             && (src_type != ReferenceLineInfo::SourceType::None) );
+    
+    m_moreInfoBtn->setHidden( !nuclide );
+    
+    const bool hasPromptEquilib = (nuclide && nuclide->canObtainPromptEquilibrium());
+    m_promptLinesOnly->setHidden( !hasPromptEquilib );
+    m_promptLinesOnly->setChecked( ref_lines && ref_lines->m_input.m_promptLinesOnly );
+    if( !hasPromptEquilib )
+      m_promptLinesOnly->setUnChecked();
+    
+    const string agestr = !ref_lines ? string() : ref_lines->m_input.m_age;
+    m_ageEdit->setText( WString::fromUTF8(agestr) );
+    m_ageEdit->setEnabled( nuclide && ref_lines && !ref_lines->m_input.m_promptLinesOnly );
+    
+    const string hlstr = !nuclide ? string()
+                   : ("&lambda;<sub>&frac12;</sub>="
+                        +  PhysicalUnits::printToBestTimeUnits( nuclide->halfLife, 2 ));
+    m_halflife->setText( WString::fromUTF8(hlstr) );
+    
+    m_persistLines->setEnabled( show_lines );
+    m_clearLines->setDisabled( m_persisted.empty() && !show_lines );
+    
+    if( m_csvDownload )
+      m_csvDownload->setDisabled( !show_lines );
+    
+  
+    const bool isPhone = ( m_spectrumViewer && m_spectrumViewer->isPhone() );
+    const WString clearLineTxt = isPhone ? (m_persisted.empty() ? "Remove" : "Remove All")
+                                         : ( m_persisted.empty() ? "Clear" : "Clear All" );
+    if( clearLineTxt != m_clearLines->text() )
+      m_clearLines->setText( clearLineTxt );
+    
+    
+    bool showGammaCB = true, showXrayCb = true, showAplhaCb = true, showBetaCb = true;
+    switch( src_type )
+    {
+      case ReferenceLineInfo::SourceType::Nuclide:
+        // Show everything
+        showGammaCB = showXrayCb = showAplhaCb = showBetaCb = true;
+        break;
+        
+      case ReferenceLineInfo::SourceType::FluorescenceXray:
+        // Only show x-ray option - but really we shouldnt show any of them
+        showGammaCB = showAplhaCb = showBetaCb = false;
+        break;
+        
+      case ReferenceLineInfo::SourceType::Reaction:
+        // For reactions only show Show Gamma option
+        showXrayCb = showAplhaCb = showBetaCb = false;
+        break;
+        
+      case ReferenceLineInfo::SourceType::Background:
+        showAplhaCb = showBetaCb = false;
+        break;
+        
+      case ReferenceLineInfo::SourceType::CustomEnergy:
+        // We treat custom energy as a gamma, so only show it - but really we shouldnt show any of them
+        showXrayCb = showAplhaCb = showBetaCb = false;
+        break;
+        
+      case ReferenceLineInfo::SourceType::None:
+        // Show all options, otherwise whole area will be blank
+        break;
+    }//switch( src_type )
+  
+    m_showXrays->setHidden( !showXrayCb );
+    m_showGammas->setHidden( !showGammaCB );
+    m_showAlphas->setHidden( !showAplhaCb );
+    m_showBetas->setHidden( !showBetaCb );
+    m_showCascadeSums->setHidden( !ref_lines || !ref_lines->m_has_coincidences );
+
+    if( ref_lines && (ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid) )
+    {
+      m_showXrays->setChecked( ref_lines->m_input.m_showXrays );
+      m_showGammas->setChecked( ref_lines->m_input.m_showGammas );
+      m_showAlphas->setChecked( ref_lines->m_input.m_showAlphas );
+      m_showBetas->setChecked( ref_lines->m_input.m_showBetas );
+      m_showCascadeSums->setChecked( ref_lines->m_input.m_showCascades );
+    }
+    
+    
+    // Add current nuclide to lis of previous nuclides
+    if( m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
+    {
+      OtherNuc prev;
+      prev.m_input = m_currentlyShowingNuclide.m_input;
+      
+      prev.m_nuclide = m_currentlyShowingNuclide.labelTxt;
+      if( m_currentlyShowingNuclide.nuclide )
+        prev.m_age = m_currentlyShowingNuclide.age;
+      prev.m_shielding = m_currentlyShowingNuclide.shieldingName;
+      prev.m_shieldThickness = m_currentlyShowingNuclide.shieldingThickness; //Will be zero if no shielding or generic
+      
+      // Remove any other previous nuclides that have same `prev.m_nuclide` as what
+      //  we are about to push on
+      m_prevNucs.erase(std::remove_if(begin(m_prevNucs), end(m_prevNucs),
+                                      [&prev](const OtherNuc &val) -> bool {
+        return (val.m_input.m_input_txt == prev.m_input.m_input_txt);
+      }), end(m_prevNucs));
+      
+      // Push new value onto front of history
+      m_prevNucs.push_front( std::move(prev) );
+      
+      // Check history length, and truncate if needed
+      if( m_prevNucs.size() > m_max_prev_nucs )
+        m_prevNucs.resize( m_max_prev_nucs );
+    }//if( !m_currentlyShowingNuclide.labelTxt.empty() )
+    
+  
+    //Default to using the old color, unless we find a reason to change it.
+    WColor color = ref_lines->m_input.m_color;
+    
+    // Note: this is strickly the source string, and not age, shielding, or other options.
+    const bool isSameSrc = (!srcstr.empty() && (srcstr == m_currentlyShowingNuclide.labelTxt));
+    if( !isSameSrc )
+    {
+      assert( ref_lines );
+      color = colorForNewSource( srcstr );
+    }//if( isSameSrc ) / else
+    
+    if( !isSameSrc )
+      m_userHasPickedColor = false;
+    ref_lines->m_input.m_color = color;
+    if( color != m_colorSelect->color() )
+      m_colorSelect->setColor( color );
+    
+    // Now check if m_options_icon should have a red background (non-default options) or not
+    bool nonDefaultOpts = false;
+    
+    if( show_lines )
+    {
+      nonDefaultOpts |= ref_lines->m_input.m_showAlphas;
+      nonDefaultOpts |= ref_lines->m_input.m_showBetas;
+      
+      switch( src_type )
+      {
+        case ReferenceLineInfo::SourceType::Nuclide:
+          nonDefaultOpts |= ref_lines->m_input.m_promptLinesOnly;
+          nonDefaultOpts |= !ref_lines->m_input.m_showXrays;
+          nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
+          nonDefaultOpts |= ref_lines->m_input.m_showCascades;
+          break;
+          
+        case ReferenceLineInfo::SourceType::FluorescenceXray:
+          nonDefaultOpts |= !ref_lines->m_input.m_showXrays;
+          break;
+          
+        case ReferenceLineInfo::SourceType::Reaction:
+          nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
+          break;
+          
+        case ReferenceLineInfo::SourceType::Background:
+          nonDefaultOpts |= !ref_lines->m_input.m_showXrays;
+          nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
+          break;
+          
+        case ReferenceLineInfo::SourceType::CustomEnergy:
+          nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
+          break;
+          
+        case ReferenceLineInfo::SourceType::None:
+          nonDefaultOpts |= ref_lines->m_input.m_promptLinesOnly;
+          nonDefaultOpts |= !ref_lines->m_input.m_showXrays;
+          nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
+          nonDefaultOpts |= ref_lines->m_input.m_showCascades;
+          break;
+      }//switch( src_type )
+      
+      const bool showCascades = (ref_lines->m_has_coincidences && ref_lines->m_input.m_showCascades);
+      if( showCascades && !m_cascadeWarn )
+      {
+        m_cascadeWarn = new WText("x-rays are not included in cascades");
+        m_cascadeWarn->addStyleClass("CascadeGammaWarn");
+        m_optionsContent->insertWidget( m_optionsContent->indexOf(m_showCascadeSums) + 1, m_cascadeWarn);
+      }//if( show coincidences )
+      
+      if( m_cascadeWarn )
+        m_cascadeWarn->setHidden( !showCascades );
+    }//if( we are actually showing any lines )
+    
+    const bool hasNonDefaultStyle = m_options_icon->hasStyleClass("non-default");
+    // Add or remove the .non-default style class, if necassary
+    if( nonDefaultOpts != hasNonDefaultStyle )
+      m_options_icon->toggleStyleClass("non-default", nonDefaultOpts);
+    
+    
+    if( !show_lines )
+    {
+      m_chart->setReferncePhotoPeakLines( {} );
+      m_particleModel->clear();
+      return;
+    }
+    
+    assert( ref_lines );
+    const vector<DecayParticleModel::RowData> table_rows = createTableRows( *ref_lines );
+    m_particleModel->setRowData( table_rows );
+  }//end DEV_REF_LINE_UPGRADE_20221212
+#endif
+  
   /** The gamma or xray energy below which we wont show lines for.
    x-rays for nuclides were limited at above 10 keV, so we'll just impose this as a lower limit to show to be consistent.
    */
@@ -2848,19 +3172,19 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     m_moreInfoBtn->show();
 
     canHavePromptEquil = nuc->canObtainPromptEquilibrium();
-    if( canHavePromptEquil == m_promptLinesOnly->isHidden() )
-      m_promptLinesOnly->setHidden( !canHavePromptEquil );
+    //if( canHavePromptEquil == m_promptLinesOnly->isHidden() )
+    //  m_promptLinesOnly->setHidden( !canHavePromptEquil );
 
-    if( !canHavePromptEquil )
-      m_promptLinesOnly->setUnChecked();
+    //if( !canHavePromptEquil )
+    //  m_promptLinesOnly->setUnChecked();
 
     if( canHavePromptEquil && m_promptLinesOnly->isChecked() )
     {
       //XXX - this next line doesnt have any effect, since the edit will be
       //      disabled anyway, or something...
-      m_ageEdit->setText( "" );
-      if( m_ageEdit->isEnabled() )
-        m_ageEdit->disable();
+      //m_ageEdit->setText( "" );
+      //if( m_ageEdit->isEnabled() )
+      //  m_ageEdit->disable();
     }else if( m_ageEdit->isDisabled() )
     {
       m_ageEdit->enable();
@@ -2870,7 +3194,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
                                                       2, SandiaDecay::second );
     //hlstr = L" \x03BB=" + hlstr;
     hlstr = "&lambda;<sub>&frac12;</sub>=" + hlstr;
-    m_halflife->setText( hlstr );
+    //m_halflife->setText( hlstr );
 
 
     try
@@ -2892,7 +3216,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
           passMessage("Changed age to a more reasonable value for " + nuc->symbol
             + " from '" + agestr + "' to " + defagestr,
             WarningWidget::WarningMsgLow);
-          m_ageEdit->setText(defagestr);
+          //m_ageEdit->setText(defagestr);
         }
       }//if( prompt ) / else
     }catch (...)
@@ -2901,7 +3225,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
       {
         string agestr;
         age = PeakDef::defaultDecayTime(nuc, &agestr);
-        m_ageEdit->setText(agestr);
+        //m_ageEdit->setText(agestr);
       }
       else
       {
@@ -2910,9 +3234,9 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     }//try /catch to get the age
   }else
   {
-    m_moreInfoBtn->hide();
-    m_halflife->setText( "" );
-    m_promptLinesOnly->hide();
+    //m_moreInfoBtn->hide();
+    //m_halflife->setText( "" );
+    //m_promptLinesOnly->hide();
   }//if( nuc ) / else
   
   //m_fitPeaks->setDisabled( !show );
@@ -3042,8 +3366,13 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     }
   }//if( isSameSrc ) / else
 
+  if( ref_lines )
+  {
+    color = ref_lines->m_input.m_color;
+  }
+  
   m_currentlyShowingNuclide.lineColor = color;
-  m_colorSelect->setColor( color );
+  //m_colorSelect->setColor( color );
   
   m_currentlyShowingNuclide.displayLines = show;
   if( show )
@@ -3124,26 +3453,26 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 
   if( !show )
   {
-    if( m_persistLines->isEnabled() )
-      m_persistLines->disable();
-    m_clearLines->setDisabled( m_persisted.empty() );
+    //if( m_persistLines->isEnabled() )
+    //  m_persistLines->disable();
+    //m_clearLines->setDisabled( m_persisted.empty() );
    
-    if( m_csvDownload && m_csvDownload->isEnabled() )
-      m_csvDownload->disable();
+    //if( m_csvDownload && m_csvDownload->isEnabled() )
+    //  m_csvDownload->disable();
     
-    ReferenceLineInfo emptylines;
-    m_chart->setReferncePhotoPeakLines( emptylines );
+    //ReferenceLineInfo emptylines;
+   // m_chart->setReferncePhotoPeakLines( emptylines );
     
-    m_particleModel->clear();
+   // m_particleModel->clear();
         
-    if( hasNonDefaultStyle )
-      m_options_icon->removeStyleClass("non-default");
+   // if( hasNonDefaultStyle )
+   //   m_options_icon->removeStyleClass("non-default");
 
-    if( age < 0.0 || !nuc )
-    {
-      m_particleModel->clear();
-      return;
-    }//if( age < 0.0 || !nuc )
+    //if( age < 0.0 || !nuc )
+   // {
+    //  m_particleModel->clear();
+    //  return;
+    //}//if( age < 0.0 || !nuc )
   }//if( !show )
 
 
@@ -3159,10 +3488,10 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   else // Show all options, otherwise whole area will be blank 
   {}
 
-  m_showXrays->setHidden(!showXrayCb);
-  m_showGammas->setHidden(!showGammaCB);
-  m_showAlphas->setHidden(!showAplhaCb);
-  m_showBetas->setHidden(!showBetaCb);
+  //m_showXrays->setHidden(!showXrayCb);
+  //m_showGammas->setHidden(!showGammaCB);
+  //m_showAlphas->setHidden(!showAplhaCb);
+  //m_showBetas->setHidden(!showBetaCb);
 
   // TODO: unify info held by DecayParticleModel::RowData and ReferenceLineInfo, so they can share the same struct, and we can just set the data once
   vector<DecayParticleModel::RowData> inforows;
@@ -3848,10 +4177,22 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   }//for( loop over inforows )
 #endif
 
-  m_particleModel->setRowData(inforowstouse);
+  //m_particleModel->setRowData(inforowstouse);
 
   // set otherRefLines for setting peak nuclude ID in PeakSearchGuiUtils.
   m_currentlyShowingNuclide.otherRefLines = otherRefLinesToShow;
+  
+#if( DEV_REF_LINE_UPGRADE_20221212 )
+  if( ref_lines )
+  {
+    m_currentlyShowingNuclide.m_validity = ref_lines->m_validity;
+    m_currentlyShowingNuclide.m_input = ref_lines->m_input;
+    m_currentlyShowingNuclide.m_ref_lines = ref_lines->m_ref_lines;
+    m_currentlyShowingNuclide.m_has_coincidences = ref_lines->m_has_coincidences;
+    m_currentlyShowingNuclide.m_input_warnings = ref_lines->m_input_warnings;
+    m_currentlyShowingNuclide.m_source_type = ref_lines->m_source_type;
+  }//if( ref_lines )
+#endif
   
   //Clientside javascript currently doesnt know about this garuntee that gamma
   //  lines will be sorted by energy.
@@ -3880,49 +4221,49 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   }//if( we are actually showing any lines )
 
   // Add or remove the .non-default style class, if necassary
-  if (nonDefaultOpts != hasNonDefaultStyle)
-    m_options_icon->toggleStyleClass("non-default", nonDefaultOpts);
+  //if (nonDefaultOpts != hasNonDefaultStyle)
+  //  m_options_icon->toggleStyleClass("non-default", nonDefaultOpts);
 
   // We'll only show Coincidence checkbox if there are actually coincidence gammas
-  m_showCascadeSums->setHidden(!hasCascades);
+  //m_showCascadeSums->setHidden(!hasCascades);
   if (hasCascades)
   {
     if (m_showCascadeSums->isChecked())
     {
       if (!m_cascadeWarn)
       {
-        m_cascadeWarn = new WText("x-rays are not included in cascades");
-        m_cascadeWarn->addStyleClass("CascadeGammaWarn");
-        m_optionsContent->insertWidget( m_optionsContent->indexOf(m_showCascadeSums) + 1, m_cascadeWarn);
+    //    m_cascadeWarn = new WText("x-rays are not included in cascades");
+    //    m_cascadeWarn->addStyleClass("CascadeGammaWarn");
+    //    m_optionsContent->insertWidget( m_optionsContent->indexOf(m_showCascadeSums) + 1, m_cascadeWarn);
       }
-      if (m_cascadeWarn->isHidden())
-        m_cascadeWarn->show();
+    //  if (m_cascadeWarn->isHidden())
+    //    m_cascadeWarn->show();
     }
     else if(m_cascadeWarn && !m_cascadeWarn->isHidden())
     {
-      m_cascadeWarn->hide();
+      //m_cascadeWarn->hide();
     }
   }
   else
   {
-    if (m_cascadeWarn && !m_cascadeWarn->isHidden())
-      m_cascadeWarn->hide();
+    //if (m_cascadeWarn && !m_cascadeWarn->isHidden())
+    //  m_cascadeWarn->hide();
   }//if (hasCascades) / else
 
 
   if( show )
   {
-    if( m_persistLines->isDisabled() )
-      m_persistLines->enable();
-    if( m_clearLines->isDisabled() )
-      m_clearLines->enable();
-    if( m_csvDownload && !m_csvDownload->isEnabled() )
-      m_csvDownload->enable();
+    //if( m_persistLines->isDisabled() )
+   //   m_persistLines->enable();
+   // if( m_clearLines->isDisabled() )
+   //   m_clearLines->enable();
+   // if( m_csvDownload && !m_csvDownload->isEnabled() )
+   //   m_csvDownload->enable();
     
-    if( m_spectrumViewer && m_spectrumViewer->isPhone() )
-      m_clearLines->setText( m_persisted.empty() ? "Remove" : "Remove All" );
-    else
-      m_clearLines->setText( m_persisted.empty() ? "Clear" : "Clear All" );
+   // if( m_spectrumViewer && m_spectrumViewer->isPhone() )
+   //   m_clearLines->setText( m_persisted.empty() ? "Remove" : "Remove All" );
+   // else
+    //  m_clearLines->setText( m_persisted.empty() ? "Clear" : "Clear All" );
   }//if( show )
 
 
@@ -3931,8 +4272,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 #if( DEV_REF_LINE_UPGRADE_20221212 )
   //std::shared_ptr<ReferenceLineInfo> refLineForUserInput();
 
-  ReferenceLineInfo::RefLineInput user_input = userInput();
-  shared_ptr<ReferenceLineInfo> ref_lines = generateRefLineInfo( user_input );
+  //ReferenceLineInfo::RefLineInput user_input = userInput();
+  //shared_ptr<ReferenceLineInfo> ref_lines = generateRefLineInfo( user_input );
 
   std::vector<DecayParticleModel::RowData> table_rows;
   if( ref_lines  && ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid )

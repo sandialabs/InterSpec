@@ -63,7 +63,7 @@ namespace
   
   std::string jsQuote( const std::string &str )
   {
-    return Wt::WWebWidget::jsStringLiteral(str,'\'');
+    return Wt::WWebWidget::jsStringLiteral(str,'\"');
   }
   
 }//namespace
@@ -289,6 +289,7 @@ void ReferenceLineInfo::reset()
   m_validity = InputValidity::Blank;
   m_has_coincidences = false;
   m_input = RefLineInput();
+  m_source_type = ReferenceLineInfo::SourceType::None;
 #endif
   energies.clear();
   intensities.clear();
@@ -324,22 +325,25 @@ bool ReferenceLineInfo::operator==( const ReferenceLineInfo &rhs ) const
 
 void ReferenceLineInfo::toJson( string &json ) const
 {
+  // For reference, for Th232, the JSON returned is about 32 kb, and U238 is 70.5 kb (just gamma and xray).
+  //  TODO: The "decay" for each line could be specified in a separate map, so like 'Ba133 to Cs133 via Electron Capture' isnt included in the JSON a bunch of times.  could also change "particle" to "p", "decay" to "d", and particle values from "gamma", "xray", etc, to "g", "x", etc.
+  
   //const size_t color_index = (num % ns_numColors);
   
   std::stringstream jsonstrm;
   
-  jsonstrm << "{color:'" << (lineColor.isDefault() ? "#0000FF" : lineColor.cssText(false) ) << "',"
-  << "parent:'" << parentLabel() << "',";
+  jsonstrm << "{\"color\":\"" << (lineColor.isDefault() ? "#0000FF" : lineColor.cssText(false) ) << "\","
+  << "\"parent\":\"" << parentLabel() << "\",";
   
   if( promptLinesOnly )
-    jsonstrm << "prompt:true,";
+    jsonstrm << "\"prompt\":true,";
   if( !otherRefLines.empty() )
-    jsonstrm << "age:'Primordial',";
+    jsonstrm << "\"age\":\"Primordial\",";
   else
-    jsonstrm << "age:" << jsQuote( PhysicalUnits::printToBestTimeUnits(age) ) << ",";
+    jsonstrm << "\"age\":" << jsQuote( PhysicalUnits::printToBestTimeUnits(age) ) << ",";
   
   if( !detectorName.empty() )
-    jsonstrm << "detector:" << jsQuote( detectorName ) << ",";
+    jsonstrm << "\"detector\":" << jsQuote( detectorName ) << ",";
   
   if( !shieldingName.empty() && (shieldingThickness > 0.1*PhysicalUnits::um ) )
   {
@@ -347,20 +351,20 @@ void ReferenceLineInfo::toJson( string &json ) const
     string thickness = PhysicalUnits::printToBestLengthUnits( shieldingThickness );
     thickness = jsQuote( thickness );
     
-    jsonstrm << "shielding:" << name << ",";
-    jsonstrm << "shieldingThickness:" << thickness << ",";
+    jsonstrm << "\"shielding\":" << name << ",";
+    jsonstrm << "\"shieldingThickness\":" << thickness << ",";
   }//if( !shieldingName.empty() )
   
-  jsonstrm << "particleSf:{";
+  //jsonstrm << "particleSf:{";
+  //for( map<string,double>::const_iterator iter = particle_sf.begin();
+  //     iter != particle_sf.end(); ++iter )
+ // {
+ //   jsonstrm << ((iter==particle_sf.begin()) ? "" : ",") << jsQuote(iter->first)
+ //            << ":" << iter->second;
+ // }
+ // jsonstrm << "},";
   
-  for( map<string,double>::const_iterator iter = particle_sf.begin();
-       iter != particle_sf.end(); ++iter )
-  {
-    jsonstrm << ((iter==particle_sf.begin()) ? "" : ",") << jsQuote(iter->first)
-             << ":" << iter->second;
-  }
-  
-  jsonstrm << "},lines:[";
+  jsonstrm << "\"lines\":[";
   
   bool printed = false;
   char intensity_buffer[32] = { '\0' };
@@ -428,24 +432,24 @@ void ReferenceLineInfo::toJson( string &json ) const
       
       auto combine_strs = []( const set<string> &strs ) -> string {
         if( strs.empty() )
-          return "";
+          return jsQuote("");
         
         if( strs.size() == 1 )
-          return *begin(strs);
+          return jsQuote( *begin(strs) );
         
         string answer;
         for( const auto &s : strs )
           answer += (answer.empty() ? "" : ", ") + s;
-        return answer;
+        return jsQuote( answer );
       };//combine_strs lambda
       
-      jsonstrm << (printed ? "," : "") << "{e:" << energy << ",h:" << intensity_buffer;
+      jsonstrm << (printed ? "," : "") << "{\"e\":" << energy << ",\"h\":" << intensity_buffer;
       if( !particles.empty() )
-        jsonstrm << ",particle:'" << combine_strs(particles) << "'";
+        jsonstrm << ",\"particle\":" << combine_strs(particles);
       if( !decays.empty() )
-        jsonstrm << ",decay:'" << combine_strs(decays) << "'";
+        jsonstrm << ",\"decay\":" << combine_strs(decays);
       if( !elements.empty() )
-        jsonstrm << ",el:'" << combine_strs(elements) << "'";
+        jsonstrm << ",\"el\":" << combine_strs(elements);
       
       // Now increment 'i' so we'll skip over these lines we've already covered.
       i += (num_combined >= 1) ? (num_combined - 1) : size_t(0);
@@ -456,13 +460,13 @@ void ReferenceLineInfo::toJson( string &json ) const
       else
         snprintf( intensity_buffer, sizeof(intensity_buffer), "%.3g", intensities[i] );
       
-      jsonstrm << (printed ? "," : "") << "{e:" << energy << ",h:" << intensity_buffer;
+      jsonstrm << (printed ? "," : "") << "{\"e\":" << energy << ",\"h\":" << intensity_buffer;
       if( !particlestrs[i].empty() )
-        jsonstrm << ",particle:'" << particlestrs[i] << "'";
+        jsonstrm << ",\"particle\":" << jsQuote(particlestrs[i]);
       if( !decaystrs[i].empty() )
-        jsonstrm << ",decay:'" << decaystrs[i] << "'";
+        jsonstrm << ",\"decay\":" << jsQuote(decaystrs[i]);
       if( !elementstrs[i].empty() )
-        jsonstrm << ",el:'" << elementstrs[i] << "'";
+        jsonstrm << ",\"el\":" << jsQuote(elementstrs[i]);
     }//if( next gamma line is close ) / else
     
     jsonstrm << "}";
@@ -473,6 +477,170 @@ void ReferenceLineInfo::toJson( string &json ) const
   jsonstrm <<"]}";
   
   json += jsonstrm.str();
+  
+#if( DEV_REF_LINE_UPGRADE_20221212 )
+  {
+    std::stringstream jsons;
+    
+    jsons << "{\"color\":\"" << (lineColor.isDefault() ? "#0000FF" : lineColor.cssText(false)) << "\","
+    << "\"parent\":\"" << parentLabel() << "\",";
+    
+    if( m_input.m_promptLinesOnly )
+      jsons << "\"prompt\":true,";
+    if( m_source_type == ReferenceLineInfo::SourceType::Background )
+      jsons << "\"age\":\"Primordial\",";
+    else // DEV_REF_LINE_UPGRADE_20221212 TODO: after comparison to old, only due age for nuclides
+      jsons << "\"age\":" << jsQuote( PhysicalUnits::printToBestTimeUnits(age) ) << ",";
+    
+    if( !detectorName.empty() )
+      jsons << "\"detector\":" << jsQuote( m_input.m_detector_name ) << ",";
+    
+    if( !m_input.m_shielding_name.empty() && (m_input.m_shieldingThickness > 0.1*PhysicalUnits::um ) )
+    {
+      const string name = jsQuote( m_input.m_shielding_name );
+      string thickness = PhysicalUnits::printToBestLengthUnits( m_input.m_shieldingThickness );
+      thickness = jsQuote( thickness );
+      
+      jsons << "\"shielding\":" << name << ",";
+      jsons << "\"shieldingThickness\":" << thickness << ",";
+    }//if( !shieldingName.empty() )
+    
+    //jsons << "particleSf:{";
+    //for( map<string,double>::const_iterator iter = particle_sf.begin();
+    //    iter != particle_sf.end(); ++iter )
+    //{
+    //  jsons << ((iter==particle_sf.begin()) ? "" : ",") << jsQuote(iter->first)
+    //  << ":" << iter->second;
+    //}
+    //jsons << "},"
+    
+    jsons << "\"lines\":[";
+    
+    bool printed = false;
+    char intensity_buffer[32] = { '\0' };
+    
+    // Round to the nearest 10 eV; probably the extent to which any data useful, or even good to
+    const auto round_energy = []( const double e ) -> double { return std::round(100.0*e)/100.0; };
+    
+    for( size_t index = 0; index < m_ref_lines.size(); ++index )
+    {
+      const RefLine &line = m_ref_lines[index];
+      if( line.m_normalized_intensity <= 0.0 )
+        continue;
+      
+      const double energy = round_energy( line.m_energy );
+      
+      // There are situations where two lines have either the exact same energies, or super-close
+      //  energies, and the spectrum chart is not particularly smart about this, so we effectively
+      //  lose some amplitude, so we'll combine them here.
+      // However, this additional munging has a overhead for a rare edge-case, so we'll split
+      //  the code-paths, even though this adds code...
+      // For U238, there are 39 pairs of lines that get combined, and 1 triplet of lines combined.
+      
+      // We will assume entries are sorted by energy, which is only guaranteed when
+      //  ReferencePhotopeakDisplay::updateDisplayChange() sets the data - but also, I think this
+      //  is the only place that sets the data!
+      
+      // TODO: This current way of doing things will sum a Cascade sum with a gamma (e.g., the 387.8
+      //       keV of U235), which is probably not the right thing to do because it then shows up as
+      //       giant gamma on the chart, which is deceptive
+      const bool next_gamma_close = (((index+1) < m_ref_lines.size())
+                                     && (round_energy(m_ref_lines[index+1].m_energy) == energy)
+                                     //&& (m_ref_lines[index+1].m_source_type == line.m_source_type)
+                                     //&& (m_ref_lines[index+1].m_particle_type == line.m_particle_type)
+                                     //&& (m_ref_lines[index+1].m_particle_type == RefLine::Particle::Gamma)
+                                     );
+      
+      if( next_gamma_close )
+      {
+        double intensity = 0.0;
+        size_t num_combined = 0;
+        // TODO: be a little more efficient than allocating strings in these sets...
+        set<string> particles, decays, elements;
+        for( size_t inner_index = index; inner_index < m_ref_lines.size(); ++inner_index )
+        {
+          const RefLine &inner_line = m_ref_lines[inner_index];
+          
+          const double this_energy = round_energy(inner_line.m_energy);
+          if( this_energy != energy )
+            break;
+          
+          // TODO: skip over zero intensity lines - leaving commented out for comparison
+          //if( inner_line.m_normalized_intensity <= 0.0 )
+          //{
+            //num_combined += 1;
+            //continue;
+          //}
+            
+          intensity += inner_line.m_normalized_intensity;
+          if( !inner_line.m_particlestr.empty() )
+            particles.insert( inner_line.m_particlestr );
+          if( !inner_line.m_decaystr.empty() )
+            decays.insert( inner_line.m_decaystr );
+          if( !inner_line.m_elementstr.empty() )
+            elements.insert( inner_line.m_elementstr );
+          
+          num_combined += 1;
+        }//for( loop over inner_index to find all energies to cluster together )
+        
+        assert( num_combined != 0 ); //could tighten this up to (num_combined > 1)
+        
+        if( IsNan(intensity) || IsInf(intensity) )
+          snprintf( intensity_buffer, sizeof(intensity_buffer), "0" );
+        else
+          snprintf( intensity_buffer, sizeof(intensity_buffer), "%.3g", intensity );
+        
+        auto combine_strs = []( const set<string> &strs ) -> string {
+          string answer;
+          for( const auto &s : strs )
+            answer += (answer.empty() ? "" : ", ") + s;
+          return answer;
+        };//combine_strs lambda
+        
+        jsons << (printed ? "," : "") << "{\"e\":" << energy << ",\"h\":" << intensity_buffer;
+        if( !particles.empty() )
+          jsons << ",\"particle\":" << jsQuote(combine_strs(particles));
+        if( !decays.empty() )
+          jsons << ",\"decay\":" << jsQuote(combine_strs(decays));
+        if( !elements.empty() )
+          jsons << ",\"el\":" << jsQuote(combine_strs(elements));
+        
+        // Now increment 'i' so we'll skip over these lines we've already covered.
+        index += (num_combined >= 1) ? (num_combined - 1) : size_t(0);
+      }else
+      {
+        if( IsNan(line.m_normalized_intensity) || IsInf(line.m_normalized_intensity) )
+          snprintf( intensity_buffer, sizeof(intensity_buffer), "0" );
+        else
+          snprintf( intensity_buffer, sizeof(intensity_buffer), "%.3g", line.m_normalized_intensity );
+        
+        jsons << (printed ? "," : "") << "{\"e\":" << energy << ",\"h\":" << intensity_buffer;
+        if( !line.m_particlestr.empty() )
+          jsons << ",\"particle\":" << jsQuote(line.m_particlestr);
+        if( !line.m_decaystr.empty() )
+          jsons << ",\"decay\":" << jsQuote(line.m_decaystr);
+        if( !line.m_elementstr.empty() )
+          jsons << ",\"el\":" << jsQuote(line.m_elementstr);
+      }//if( next gamma line is close ) / else
+      
+      jsons << "}";
+      
+      printed = true;
+    }//for( size_t index = 0; index < m_ref_lines.size(); ++index )
+    
+    jsons <<"]}";
+    
+    if( jsons.str() != jsonstrm.str() )
+    {
+      cout << "New and old JSON string dont match:\n\nNew: " << jsons.str()
+      << "\n\nOld: " << jsonstrm.str() << endl;
+    }else
+    {
+      cout << "\n\nNew and old JSON match! Len=" << jsonstrm.str().size() << "\n\n";
+    }
+    
+  }
+#endif
 }//std::string toJson( const ReferenceLineInfo &displnuc )
 
 
@@ -518,6 +686,8 @@ void ReferenceLineInfo::sortByEnergy()
 #if( DEV_REF_LINE_UPGRADE_20221212 )
   std::sort( begin( m_ref_lines ), end( m_ref_lines ), 
     []( const RefLine &lhs, const RefLine &rhs ) -> bool {
+    if( lhs.m_energy == rhs.m_energy )
+      return lhs.m_normalized_intensity < rhs.m_normalized_intensity;
     return lhs.m_energy < rhs.m_energy;
     } );
 #endif

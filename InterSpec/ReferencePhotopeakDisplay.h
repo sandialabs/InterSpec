@@ -265,6 +265,8 @@ protected:
   std::shared_ptr<ReferenceLineInfo> refLineForUserInput();
 
   static std::vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
+  
+  Wt::WColor colorForNewSource( const std::string &src );
 #endif
 
   void handleIsotopeChange( const bool useCurrentAge );
@@ -284,7 +286,7 @@ protected:
   void toggleShowOptions();
 
   /** A simple struct to store previous, or other nuclides to 
-  potentually show if the user clicks on them.
+  potentially show if the user clicks on them.
 
 The other options would be to keep a copy of ReferenceLineInfo around
 or to go all-in and keep a XML state of widget via
@@ -297,6 +299,8 @@ things simple
     double m_age = -1.0;
     std::string m_shielding;
     double m_shieldThickness = -1.0;
+    
+    ReferenceLineInfo::RefLineInput m_input;
   };//struct OtherNuc
 
   void updateOtherNucsDisplay();
