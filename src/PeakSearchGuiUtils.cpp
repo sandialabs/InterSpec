@@ -304,7 +304,7 @@ public:
                 msg + " or ";
               else if( i )
                 msg + ", ";
-              msg += m_displayed[i]->labelTxt;
+              msg += m_displayed[i]->m_input.m_input_txt;
             }
             m_keepRefLinePeaksOnly = new WCheckBox( msg, contents() );
             m_keepRefLinePeaksOnly->setInline( false );
@@ -752,20 +752,44 @@ public:
       
       for( const auto &refline : m_displayed )
       {
-        if( refline->nuclide == p->parentNuclide() )
+        if( refline->m_nuclide == p->parentNuclide() )
         {
           double intensity = 0.0;
-          for( size_t i = 0; i < refline->energies.size(); ++i )
+          for( const ReferenceLineInfo::RefLine &line : refline->m_ref_lines )
           {
-            const string &parttype = refline->particlestrs[i];
+            // We only want x-rays and gammas to make rel-eff chart from
+            switch( line.m_particle_type )
+            {
+              case ReferenceLineInfo::RefLine::Particle::Alpha:
+              case ReferenceLineInfo::RefLine::Particle::Beta:
+                continue;
+                break;
+                
+              case ReferenceLineInfo::RefLine::Particle::Gamma:
+              case ReferenceLineInfo::RefLine::Particle::Xray:
+                break;
+            }//switch( line.m_particle_type )
             
-            if( !SpecUtils::icontains(parttype,"gamma")
-               && !SpecUtils::icontains(parttype,"xray") )
-              continue;
+            // I guess we *could* be interested in Rel. Eff. line of sum or escape peaks,
+            //  but for the moment, we'll just use normal gammas and x-rays
+            switch( line.m_source_type )
+            {
+              case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+              case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+                break;
+              
+              case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+              case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+              case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+              case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
+                continue;
+                break;
+            }//switch( line.m_source_type )
             
-            const double refenergy = refline->energies[i];
-            const double br = refline->intensities[i];
-            if( fabs(refenergy-photopeakEnergy) < 1.25*peakSigma )
+            
+            const double refenergy = line.m_energy;
+            const double br = line.m_decay_intensity;
+            if( fabs(refenergy - photopeakEnergy) < 1.25*peakSigma )
               intensity += br;
           }
           
@@ -799,7 +823,6 @@ public:
       
       if( intensity > 0.0 )
         src_to_energy_eff[label].emplace_back( photopeakEnergy, (p->peakArea()/intensity) );
-      
     }//for( loop over peaks )
     
     vector<double> energies( begin(energiesset), end(energiesset) );
@@ -842,7 +865,10 @@ public:
         p.second /= maxintensity;
         auto pos = std::find( begin(energies), end(energies), p.first );
         if( pos != end(energies) )
-          m_relEffModel->setData( pos-begin(energies), col, p.second );
+        {
+          const int row = static_cast<int>( pos - begin(energies) );
+          m_relEffModel->setData( row, col, p.second );
+        }
       }
       
       Wt::Chart::WDataSeries series( col, Chart::PointSeries, Chart::Y1Axis );
@@ -906,7 +932,7 @@ public:
     {
       stringstream strm;
       svg->write( strm );
-      WTableCell *preview = m_table->elementAt( i+1, m_previewChartColumn );
+      WTableCell *preview = m_table->elementAt( static_cast<int>(i+1), m_previewChartColumn );
       preview->clear();
       if( !preview->hasStyleClass("PeakPreviewCell") )
         preview->addStyleClass( "PeakPreviewCell" );
@@ -970,12 +996,13 @@ public:
       return "---";
     
     const ReferenceLineInfo *refline = nullptr;
-    const OtherRefLine *backgroundLine = nullptr;
     
     const char *gamtype = "";
     switch( type )
     {
-      case PeakDef::NormalGamma: case PeakDef::XrayGamma:    break;
+      case PeakDef::NormalGamma:
+      case PeakDef::XrayGamma:
+        break;
       case PeakDef::AnnihilationGamma: gamtype = " Annih."; break;
       case PeakDef::DoubleEscapeGamma: gamtype = " D.E.";   break;
       case PeakDef::SingleEscapeGamma: gamtype = " S.E.";   break;
@@ -984,73 +1011,65 @@ public:
     
     for( const auto &d : m_displayed )
     {
-      if( nuc == d->nuclide )
+      if( nuc == d->m_nuclide )
       {
         refline = d.get();
-        break;
       }else
       {
-        for( const auto &b : d->otherRefLines )
+        
+        for( const ReferenceLineInfo::RefLine &b : d->m_ref_lines )
         {
-          bool matches = true;
-          const OtherRefLineType type = get<3>(b);
-          switch( type )
+          if( nuc == b.m_parent_nuclide )
           {
-            case OtherRefLineType::U238Series:    matches = nuc->symbol == "U238"; break;
-            case OtherRefLineType::U235Series:    matches = nuc->symbol == "U235"; break;
-            case OtherRefLineType::Th232Series:   matches = nuc->symbol == "Th232"; break;
-            case OtherRefLineType::Ra226Series:   matches = nuc->symbol == "Ra226"; break;
-            case OtherRefLineType::K40Background: matches = nuc->symbol == "K40"; break;
-            case OtherRefLineType::BackgroundXRay:
-            case OtherRefLineType::BackgroundReaction:
-            case OtherRefLineType::OtherBackground:
-              break;
-          }//switch( type )
-          
-          if( matches )
-          {
-            const float energy = get<0>(b);
-            if( fabs(energy - particle->energy) < 0.1 )
-            {
-              refline = d.get();
-              backgroundLine = &b;
-              break;
-            }
+            refline = d.get();
+            break;
           }
-        }//for( const auto &b : d.otherRefLines )
+        }//for( const ReferenceLineInfo::RefLine &b : d->m_ref_lines )
       }//if ( nuc matches ) / else
+      
+      if( refline )
+        break;
     }//for( const auto &d : m_displayed )
     
     char buffer[256] = { '\0' };
     if( refline )
     {
       double intensity = 0.0;
-      for( size_t i = 0; (i < refline->intensities.size()) && (i < refline->energies.size()) && (i < refline->particlestrs.size()); ++i )
+      for( const ReferenceLineInfo::RefLine &line : refline->m_ref_lines )
       {
-        if( fabs(refline->energies[i] - particle->energy) >= 0.01 )
+        if( fabs(line.m_energy - particle->energy) >= 0.01 )
           continue;
         
-        const string &parttype = refline->particlestrs[i];
-        if( !SpecUtils::icontains(parttype,"gamma")
-           && !SpecUtils::icontains(parttype,"xray") )
-          continue;
-        
-        double sf = 1.0;
-        auto sf_iter = refline->particle_sf.find(parttype);
-        if( sf_iter != std::end(refline->particle_sf) )
+        // We are only interested i ngammas and x-rays
+        switch( line.m_particle_type )
         {
-          sf = sf_iter->second;
-        }else
-        {
-          const string msg = "PeakSelectorWindow::nuclideDesc(): What - this shouldnt happen! - coudlnt find SF for '" + parttype + "'";
-#if( PERFORM_DEVELOPER_CHECKS )
-          log_developer_error( __func__, msg.c_str() );
-#else
-          cerr << msg << endl;
-#endif
-        }
+          case ReferenceLineInfo::RefLine::Particle::Alpha:
+          case ReferenceLineInfo::RefLine::Particle::Beta:
+            continue;
+            break;
+            
+          case ReferenceLineInfo::RefLine::Particle::Gamma:
+          case ReferenceLineInfo::RefLine::Particle::Xray:
+            break;
+        }//switch( line.m_particle_type )
         
-        intensity += refline->intensities[i] * sf;
+        // I guess we *could* be interested in Rel. Eff. line of sum or escape peaks,
+        //  but for the moment, we'll just use normal gammas and x-rays
+        switch( line.m_source_type )
+        {
+          case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+          case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+            break;
+            
+          case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+          case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+          case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+          case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
+            continue;
+            break;
+        }//switch( line.m_source_type )
+        
+        intensity += line.m_decay_intensity;
       }//for( loop over ref line particles )
       
       snprintf( buffer, sizeof(buffer), "%s %.1f keV%s, I=%.2g%%",
@@ -1179,7 +1198,7 @@ public:
       {
         for( const auto &l : m_displayed )
         {
-          if( l->lineColor == newpeak->lineColor() )
+          if( l->m_input.m_color == newpeak->lineColor() )
             newpeak->setLineColor( WColor() );
         }//
       }//if( m_viewer->colorPeaksBasedOnReferenceLines() )
@@ -1219,26 +1238,12 @@ public:
             //A quick labmda to test if a peak nuclide matches a BackgroundLine
             //  nuclide.
             auto isBackgroundNuc = [&l,&newpeak,db]() -> bool {
-              if( !newpeak->parentNuclide() || l->otherRefLines.empty() )
+              if( !newpeak->parentNuclide() || (l->m_source_type != ReferenceLineInfo::SourceType::Background) )
                 return false;
-              for( const OtherRefLine &b : l->otherRefLines )
-              {
-                string refnuc;
-                const OtherRefLineType type = std::get<3>(b);
-                switch( type )
-                {
-                  case OtherRefLineType::U238Series:         refnuc = "U238";  break;
-                  case OtherRefLineType::U235Series:         refnuc = "U235";  break;
-                  case OtherRefLineType::Th232Series:        refnuc = "Th232"; break;
-                  case OtherRefLineType::Ra226Series:        refnuc = "Ra226"; break;
-                  case OtherRefLineType::K40Background:      refnuc = "K40";   break;
-                  case OtherRefLineType::BackgroundXRay:
-                  case OtherRefLineType::BackgroundReaction:
-                  case OtherRefLineType::OtherBackground:    refnuc = std::get<2>(b); break;
-                }//switch( type )
               
-                cout << refnuc << endl;
-                if( db->nuclide(refnuc) == newpeak->parentNuclide() )
+              for( const ReferenceLineInfo::RefLine &b : l->m_ref_lines )
+              {
+                if( b.m_parent_nuclide && (b.m_parent_nuclide == newpeak->parentNuclide()) )
                   return true;
               }
               return false;
@@ -1246,12 +1251,12 @@ public:
             
             
             if( m_viewer->colorPeaksBasedOnReferenceLines()
-               && ((l->nuclide && (l->nuclide==newpeak->parentNuclide()))
-               || (l->element && (l->element==newpeak->xrayElement()))
-               || (newpeak->reaction() && l->reactionsTxt.size() && SpecUtils::icontains(l->reactionsTxt, newpeak->reaction()->name()))
+               && ((l->m_nuclide && (l->m_nuclide==newpeak->parentNuclide()))
+               || (l->m_element && (l->m_element==newpeak->xrayElement()))
+               || (newpeak->reaction() && l->m_reactions.count(newpeak->reaction()))
                || isBackgroundNuc()) )
             {
-              newpeak->setLineColor( l->lineColor );
+              newpeak->setLineColor( l->m_input.m_color );
             }
           }//for( const auto &l : m_displayed )
         }//if( we should set peak color based on reference lines )
@@ -1331,66 +1336,44 @@ public:
       map<double,set<string>> distToDescs;
       for( const auto &ref : m_displayed )
       {
-        for( size_t i = 0; i < ref->energies.size(); ++i )
+        // Make sure we can assign the peak to the source type.
+        switch( ref->m_source_type )
         {
-          const string &parttype = ref->particlestrs[i];
-          //SandiaDecay::to_str(SandiaDecay::BetaParticle)
+          case ReferenceLineInfo::SourceType::Nuclide:
+          case ReferenceLineInfo::SourceType::FluorescenceXray:
+          case ReferenceLineInfo::SourceType::Reaction:
+          case ReferenceLineInfo::SourceType::Background:
+            break;
           
-          if( !SpecUtils::icontains(parttype,"gamma")
-             && !SpecUtils::icontains(parttype,"xray") )
+          case ReferenceLineInfo::SourceType::CustomEnergy:
+          case ReferenceLineInfo::SourceType::None:
+            continue;
+            break;
+        }//switch( ref->m_source_type )
+        
+        for( const ReferenceLineInfo::RefLine &line : ref->m_ref_lines )
+        {
+          if( (line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Gamma)
+              && (line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Xray) )
             continue;
           
-          double sf = 1.0;
-          auto sf_iter = ref->particle_sf.find(parttype);
-          if( sf_iter != std::end(ref->particle_sf) )
+          const double refenergy = line.m_energy;
+          const double intensity = line.m_decay_intensity; //Before DRF and Shielding
+          
+          string label = ref->m_input.m_input_txt;
+          if( line.m_parent_nuclide )
           {
-            sf = sf_iter->second;
-          }else
+            label = line.m_parent_nuclide->symbol;
+          }else if( line.m_element )
           {
-            const string msg = "PeakSelectorWindow::populateNuclideSelects(): What - this shouldnt happen! - coudlnt find SF for '" + parttype + "'";
-#if( PERFORM_DEVELOPER_CHECKS )
-            log_developer_error( __func__, msg.c_str() );
-#else
-            cerr << msg << endl;
-#endif
+            label = line.m_element->symbol;
+          }else if( line.m_reaction )
+          {
+            //We wont set label to reaction, because the user may have input an element, but this
+            //  particular line might be an isotope of the element.
+            if( SpecUtils::icontains(label, "background") )
+              label = line.m_reaction->name();
           }
-          
-          string label = ref->labelTxt;
-          const double refenergy = ref->energies[i];
-          const double intensity = ref->intensities[i] * sf;
-          
-          bool backgroundLineMatchedRef = false;
-          
-          if( !ref->otherRefLines.empty() )
-          {
-            //Find the background line that cooresponds to `refenergy`
-            for( const auto &b : ref->otherRefLines )
-            {
-              const float lineenergy = std::get<0>(b);
-              const string &srcstr = std::get<2>(b);
-              const OtherRefLineType type = std::get<3>(b);
-              
-              if( fabs(lineenergy - refenergy) < 0.001 )
-              {
-                switch( type )
-                {
-                  case OtherRefLineType::U238Series:         label = "U238";  break;
-                  case OtherRefLineType::U235Series:         label = "U235";  break;
-                  case OtherRefLineType::Th232Series:        label = "Th232"; break;
-                  case OtherRefLineType::Ra226Series:        label = "Ra226"; break;
-                  case OtherRefLineType::K40Background:      label = "K40";   break;
-                  case OtherRefLineType::BackgroundXRay:
-                  case OtherRefLineType::BackgroundReaction:
-                  case OtherRefLineType::OtherBackground:    label = srcstr;  break;
-                }//switch( type )
-                
-                backgroundLineMatchedRef = true;
-                break;
-              }//if( we found the background line with the correct energy )
-            }//for( const auto b : ref.otherRefLines )
-            
-          }//if( !ref.otherRefLines.empty() )
-          
           
           char buffer[128];
           snprintf( buffer, sizeof(buffer), "%s %.1f keV, I=%.2g%%",
@@ -1400,9 +1383,9 @@ public:
           const double diff_from_assigned = fabs( refenergy - energy );
           
           if( (diff_from_assigned < 0.001)
-             && ((p->parentNuclide() && (ref->nuclide==p->parentNuclide()))
-                 || (p->xrayElement() && (ref->element==p->xrayElement()))
-                 || (p->reaction() && ref->reactionsTxt.size() && SpecUtils::icontains(ref->reactionsTxt, p->reaction()->name()))
+             && ((p->parentNuclide() && (line.m_parent_nuclide==p->parentNuclide()))
+                 || (p->xrayElement() && (line.m_element==p->xrayElement()))
+                 || (p->reaction() && (line.m_reaction ==p->reaction()))
              ))
           {
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -1410,7 +1393,8 @@ public:
               log_developer_error( __func__, ("PeakSelectorWindow::populateNuclideSelects(): Found mutliple matches of select strings for a nuclide: '" + string(buffer) + "'").c_str() );
 #endif
             currentstr = buffer;
-          }else if( backgroundLineMatchedRef && (diff_from_assigned < 0.1) )
+          }else if( (ref->m_source_type == ReferenceLineInfo::SourceType::Background)
+                   && (diff_from_assigned < 0.1) )
           {
             currentstr = buffer;
           }
@@ -1599,279 +1583,126 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
     
     for( const ReferenceLineInfo &nuc : displayed )
     {
-      for( const ReactionGamma::ReactionPhotopeak &rpp : nuc.reactionGammas )
+      // Make sure the source is a type we can potentially assign to a peak
+      switch( nuc.m_source_type )
       {
-        if( rpp.abundance <= 0.0 )
+        case ReferenceLineInfo::SourceType::Nuclide:
+        case ReferenceLineInfo::SourceType::FluorescenceXray:
+        case ReferenceLineInfo::SourceType::Reaction:
+        case ReferenceLineInfo::SourceType::Background:
+          break;
+          
+        case ReferenceLineInfo::SourceType::CustomEnergy:
+        case ReferenceLineInfo::SourceType::None:
           continue;
-        
-        double abundance = rpp.abundance;
-        double expectedPhotoPeakEnergy = rpp.energy;
-        const double delta_e = fabs( mean - rpp.energy );
-        double dist = (0.25*sigma + delta_e) / abundance;
+          break;
+      }//switch( nuc.m_source_type )
+      
+      
+      for( const ReferenceLineInfo::RefLine &line : nuc.m_ref_lines )
+      {
+        double energy = line.m_energy;
         PeakDef::SourceGammaType gammaType = PeakDef::SourceGammaType::NormalGamma;
         
-        if( ((isHPGe || showingEscapePeakFeature) && (rpp.energy > pair_prod_thresh))
-            || (rpp.energy > always_check_escape_thresh) )
+        switch( line.m_source_type )
+        {
+          case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+            //energy += 510.998950;
+            gammaType = PeakDef::SourceGammaType::SingleEscapeGamma;
+            break;
+            
+          case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+            //energy += 2.0*510.998950;
+            gammaType = PeakDef::SourceGammaType::DoubleEscapeGamma;
+            break;
+            
+          case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+            gammaType = PeakDef::SourceGammaType::AnnihilationGamma;
+            break;
+            
+          case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+          case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
+          case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+            gammaType = PeakDef::SourceGammaType::NormalGamma;
+            break;
+        }//switch( line.m_source_type )
+        
+        
+        double expectedPhotoPeakEnergy = energy;
+        double intensity = line.m_normalized_intensity;
+        
+        switch( line.m_particle_type )
+        {
+          case ReferenceLineInfo::RefLine::Particle::Gamma:
+            break;
+            
+          case ReferenceLineInfo::RefLine::Particle::Xray:
+            intensity *= xray_suppression_factor;
+            gammaType = PeakDef::SourceGammaType::XrayGamma;
+            break;
+            
+          case ReferenceLineInfo::RefLine::Particle::Alpha:
+          case ReferenceLineInfo::RefLine::Particle::Beta:
+            continue;
+            break;
+        }//switch( line.m_particle_type )
+        
+        if( IsInf(intensity) || IsNan(intensity) || (intensity < numeric_limits<float>::min()) )
+          continue;
+        
+        const double delta_e = fabs( mean - energy );
+        double dist = (0.25*sigma + delta_e) / intensity;
+        
+        if( (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal)
+           && ( ((isHPGe || showingEscapePeakFeature) && (energy > pair_prod_thresh))
+               || (energy > always_check_escape_thresh) ) )
         {
           const double suppress_sf = showingEscapePeakFeature ? 1.0 : escape_suppression_factor;
           
-          double se_abundance = rpp.abundance * single_escape_sf(rpp.energy) * suppress_sf;
-          const double se_delta_e = fabs( mean + 510.9989 - rpp.energy );
+          double se_abundance = intensity * single_escape_sf(energy) * suppress_sf;
+          const double se_delta_e = fabs( mean + 510.9989 - energy );
           const double se_dist = (0.25*sigma + se_delta_e) / se_abundance;
           
-          double de_abundance = rpp.abundance * double_escape_sf(rpp.energy) * suppress_sf;
-          const double de_delta_e = fabs( mean + (2*510.9989) - rpp.energy );
+          double de_abundance = intensity * double_escape_sf(energy) * suppress_sf;
+          const double de_delta_e = fabs( mean + (2*510.9989) - energy );
           const double de_dist = (0.25*sigma + de_delta_e) / de_abundance;
           
           if( se_dist < dist )
           {
             dist = se_dist;
-            abundance = se_abundance;
-            expectedPhotoPeakEnergy = rpp.energy - 510.9989;
+            intensity = se_abundance;
+            expectedPhotoPeakEnergy = energy - 510.9989;
             gammaType = PeakDef::SourceGammaType::SingleEscapeGamma;
           }
           
           if( de_dist < dist )
           {
             dist = de_dist;
-            abundance = de_abundance;
-            expectedPhotoPeakEnergy = rpp.energy - 2*510.9989;
+            intensity = de_abundance;
+            expectedPhotoPeakEnergy = energy - 2*510.9989;
             gammaType = PeakDef::SourceGammaType::DoubleEscapeGamma;
           }
         }//if( check for S.E. or D.E. )
         
+        
         if( (dist < mindist)
            && (expectedPhotoPeakEnergy >= minx) && (expectedPhotoPeakEnergy <= maxx) )
         {
-          //Check to see if this energy is already assigned to another
-          //  peak, if it is, ideally we would want to see which one is most
-          //  compatible and swap
-          
           bool currentlyused = false;
           for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
           {
-            if( pp->reaction() && (pp->reaction() == rpp.reaction)
-                && (fabs(pp->reactionEnergy() - rpp.energy) < 1.0)
-               && (pp->sourceGammaType() == gammaType) )
-            {
-              currentlyused = true;
-              if( dist < prevPeakDist )
-              {
-                prevpeak = pp;
-                prevPeakDist = dist;
-                prevIntensity = rpp.abundance;
-              }
-              break;
-            }//if( pp->reaction() == rpp.reaction )
-          }//for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
-          
-          if( !currentlyused )
-          {
-            prevpeak.reset();
-            mindist = dist;
-            nuclide = nullptr;
-            element = nullptr;
-            color = nuc.lineColor;
-            reaction = rpp.reaction;
-            nearestEnergy = rpp.energy;
-            thisIntensity = abundance;
-            thisGammaType = gammaType;
-          }
-        }//if( we should possible associate this peak with this line )
-      }//for( const ReactionGamma::ReactionPhotopeak &rpp : nuc.reactionGammas )
-      
-      if( nuc.nuclide || nuc.element )
-      {
-        for( size_t i = 0; i < nuc.energies.size(); ++i )
-        {
-          const double energy = nuc.energies[i];
-          double expectedPhotoPeakEnergy = energy;
-          double intensity = nuc.intensities.at(i);
-          PeakDef::SourceGammaType gammaType = PeakDef::SourceGammaType::NormalGamma;
-          
-          bool isXray = !nuc.nuclide;
-          if( nuc.nuclide && (energy < 120.0*SandiaDecay::keV) )
-          {
-            const SandiaDecay::Element *el = db->element( nuc.nuclide->atomicNumber );
-            for( const SandiaDecay::EnergyIntensityPair &e : el->xrays )
-              isXray |= (e.energy==energy);
-          }//if( this could possibly be an xray )
-          
-          if( isXray )
-            intensity *= xray_suppression_factor;
-          
-          const double delta_e = fabs( mean - energy );
-          double dist = (0.25*sigma + delta_e) / intensity;
-          
-          
-          if( ((isHPGe || showingEscapePeakFeature) && (energy > pair_prod_thresh))
-             || (energy > always_check_escape_thresh) )
-          {
-            const double suppress_sf = showingEscapePeakFeature ? 1.0 : escape_suppression_factor;
+            const bool sameNuc = (line.m_parent_nuclide
+                                  && pp->decayParticle()
+                                  && (pp->parentNuclide() == line.m_parent_nuclide)
+                                  && (fabs(pp->decayParticle()->energy - energy) < 0.01)
+                                  && (pp->sourceGammaType() == gammaType));
+            const bool sameXray = ((line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Xray)
+                                   && line.m_element
+                                   && (pp->xrayElement() == line.m_element)
+                                   && (fabs(pp->xrayEnergy() - energy) < 0.01)
+                                   && (pp->sourceGammaType() == gammaType));
             
-            double se_abundance = intensity * single_escape_sf(energy) * suppress_sf;
-            const double se_delta_e = fabs( mean + 510.9989 - energy );
-            const double se_dist = (0.25*sigma + se_delta_e) / se_abundance;
-            
-            double de_abundance = intensity * double_escape_sf(energy) * suppress_sf;
-            const double de_delta_e = fabs( mean + (2*510.9989) - energy );
-            const double de_dist = (0.25*sigma + de_delta_e) / de_abundance;
-            
-            if( se_dist < dist )
-            {
-              dist = se_dist;
-              intensity = se_abundance;
-              expectedPhotoPeakEnergy = energy - 510.9989;
-              gammaType = PeakDef::SourceGammaType::SingleEscapeGamma;
-            }
-            
-            if( de_dist < dist )
-            {
-              dist = de_dist;
-              intensity = de_abundance;
-              expectedPhotoPeakEnergy = energy - 2*510.9989;
-              gammaType = PeakDef::SourceGammaType::DoubleEscapeGamma;
-            }
-          }//if( check for S.E. or D.E. )
-          
-          
-          if( (dist < mindist)
-             && (expectedPhotoPeakEnergy >= minx) && (expectedPhotoPeakEnergy <= maxx) )
-          {
-            bool currentlyused = false;
-            for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
-            {
-              const bool sameNuc = (nuc.nuclide
-                                      && pp->decayParticle()
-                                      && (pp->parentNuclide() == nuc.nuclide)
-                                      && (fabs(pp->decayParticle()->energy - energy) < 0.01)
-                                      && (pp->sourceGammaType() == gammaType));
-              const bool sameXray = (isXray
-                                     && nuc.element
-                                     && (pp->xrayElement() == nuc.element)
-                                     &&  (fabs(pp->xrayEnergy() - energy) < 0.01)
-                                     && (pp->sourceGammaType() == gammaType));
-              
-              if( sameNuc || sameXray )
-              {
-                currentlyused = true;
-                if( dist < prevPeakDist )
-                {
-                  prevpeak = pp;
-                  prevPeakDist = dist;
-                  prevIntensity = intensity;
-                }
-                break;
-              }//if( pp->reaction() == rpp.reaction )
-            }//for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
-            
-            if( !currentlyused )
-            {
-              prevpeak.reset();
-              mindist = dist;
-              color = nuc.lineColor;
-              nuclide = nuc.nuclide;
-              element = nuc.element;
-              reaction = NULL;
-              nearestEnergy = energy;
-              thisIntensity = intensity;
-              thisGammaType = gammaType;
-              
-              if( isXray )
-              {
-                thisGammaType = PeakDef::SourceGammaType::XrayGamma;
-                nuclide = NULL;
-                if( !element && nuc.nuclide )
-                  element = db->element( nuc.nuclide->atomicNumber );
-              }//if( isXray )
-            }//if( !currentlyused )
-            
-          }//if( we should possible associate this peak with this line )
-        }//for( const double energy : nuc.energies )
-      }//if( nuc.nuclide )
-      
-      for( const OtherRefLine &line : nuc.otherRefLines )
-      {
-        float energy = std::get<0>(line);
-        const float intensity = std::get<1>(line);
-        const string &isotope = std::get<2>(line);
-        const OtherRefLineType type = std::get<3>(line);
-        
-        if( intensity < FLT_MIN )
-          continue;
-        
-        const double delta_e = fabs( mean - energy );
-        const double dist = (0.25*sigma + delta_e) / intensity;
-        PeakDef::SourceGammaType gammaType = PeakDef::NormalGamma;
-        
-        if( (dist < mindist) && (energy >= minx) && (energy <= maxx) )
-        {
-          const SandiaDecay::Nuclide *thisnuclide = NULL;
-          const SandiaDecay::Element *thiselement = NULL;
-          const ReactionGamma::Reaction *thisreaction = NULL;
-          
-          switch( type )
-          {
-            case OtherRefLineType::U238Series:      thisnuclide = db->nuclide( "U238" );  break;
-            case OtherRefLineType::U235Series:      thisnuclide = db->nuclide( "U235" );  break;
-            case OtherRefLineType::Th232Series:     thisnuclide = db->nuclide( "Th232" ); break;
-            case OtherRefLineType::Ra226Series:     thisnuclide = db->nuclide( "Ra226" ); break;
-            case OtherRefLineType::K40Background:   thisnuclide = db->nuclide( "K40" );   break;
-            case OtherRefLineType::OtherBackground:
-            {
-              // S.E. and D.E. escape peaks are all labeled as OtherBackground::BackgroundLineType
-              //  and isotope will look like "Th232 D.E. 2614 keV", but the energy will be after
-              //  the 511 or 1022 keV subtraction (e.g., 2103.51 for the 2614.51)
-              
-              auto pos = isotope.find( "S.E." );
-              if( pos != string::npos )
-              {
-                energy += 510.9989;
-                gammaType = PeakDef::SingleEscapeGamma;
-              }else
-              {
-                pos = isotope.find( "D.E." );
-                if( pos != string::npos )
-                {
-                  energy += 2*510.9989;
-                  gammaType = PeakDef::DoubleEscapeGamma;
-                }
-              }//if( found "S.E." ) else ( check for "D.E." )
-              
-              if( pos != string::npos )
-              {
-                string iso = isotope.substr(0,pos);
-                SpecUtils::trim( iso );
-                thisnuclide = db->nuclide( iso );
-                if( !thisnuclide )
-                  gammaType = PeakDef::NormalGamma;
-              }else
-              {
-                thisnuclide = db->nuclide( isotope );
-              }
-              break;
-            }
-            case OtherRefLineType::BackgroundXRay:
-              thiselement = db->element( isotope.substr(0,isotope.find(' ')) );
-              if( thiselement )
-                gammaType = PeakDef::XrayGamma;
-              break;
-              
-            case OtherRefLineType::BackgroundReaction:
-              break;
-          }//switch( type )
-          
-          if( !thisnuclide && !thiselement )
-            continue;
-          
-          bool currentlyused = false;
-          for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
-          {
-            if( ((thisnuclide && (pp->parentNuclide() == thisnuclide))
-                 && (fabs(pp->decayParticle()->energy - energy) < 0.1)
-                 && (pp->sourceGammaType() == gammaType))
-               || (thiselement && (pp->xrayElement() == thiselement)
-                   && (fabs(energy - pp->xrayEnergy()) < 0.1)) )
+            if( sameNuc || sameXray )
             {
               currentlyused = true;
               if( dist < prevPeakDist )
@@ -1881,24 +1712,25 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
                 prevIntensity = intensity;
               }
               break;
-            }//if( this nulcide or xray is already taken )
+            }//if( pp->reaction() == rpp.reaction )
           }//for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
           
           if( !currentlyused )
           {
             prevpeak.reset();
-            color    = nuc.lineColor;
-            nuclide  = thisnuclide;
-            element  = thiselement;
-            reaction = thisreaction;
-            mindist  = dist;
+            mindist = dist;
+            color = nuc.m_input.m_color;
+            nuclide = line.m_parent_nuclide;
+            element = line.m_element;
+            reaction = line.m_reaction;
             nearestEnergy = energy;
             thisIntensity = intensity;
             thisGammaType = gammaType;
           }//if( !currentlyused )
         }//if( we should possible associate this peak with this line )
-      }//for( const OtherRefLines &line : nuc.otherRefLines )
-    }//for( ReferenceLineInfo & )
+      }//for( const double energy : nuc.energies )
+    }//if( nuc.nuclide )
+    
     
     if( nuclide || reaction || element )
     {
@@ -1920,6 +1752,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
       
       if( !!prevpeak )
       {
+#warning "Need to clean up setting peak source, and also verify S.E., and D.E., are actually all correct"
         //There is an already existing peak, whos nuclide/xray/reaction gamma was
         //  "closer" (in terms of the distance metric used) than the
         //  nuclide/xray/reaction actually assigned to this new peak.  We need
@@ -1989,6 +1822,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
       snprintf( nuclide_label, sizeof(nuclide_label),
                "%s%s%s %.6f keV", prefix, src.c_str(), postfix, nearestEnergy );
       
+      // TODO: do we really need to use #PeakModel::setNuclideXrayReaction ?  We should be able to just directly set information
       PeakModel::setNuclideXrayReaction( peak, nuclide_label, -1.0 );
       
       if( colorPeaksBasedOnReferenceLines && peak.lineColor().isDefault() )
@@ -2057,12 +1891,14 @@ void set_peaks_from_search( InterSpec *viewer,
   if( refLineDisplay )
   {
     const ReferenceLineInfo &showingLines = refLineDisplay->currentlyShowingNuclide();
-    if( !showingLines.parentLabel().empty() )
-      showingRefLines.push_back( showingLines.parentLabel() );
+    if( !showingLines.m_input.m_input_txt.empty() )
+      showingRefLines.push_back( showingLines.m_input.m_input_txt );
     
     for( const ReferenceLineInfo &line : refLineDisplay->persistedNuclides() )
-      if( !line.parentLabel().empty() )
-        showingRefLines.push_back( line.parentLabel() );
+    {
+      if( !line.m_input.m_input_txt.empty() )
+        showingRefLines.push_back( line.m_input.m_input_txt );
+    }
   }//if( m_referenceNuclideLines )
   
   if( showingRefLines.empty() && viewer->isMobile() )
@@ -2224,8 +2060,7 @@ void automated_search_for_peaks( InterSpec *viewer,
     const ReferenceLineInfo &currentNuclide = refLineDisp->currentlyShowingNuclide();
     displayed = refLineDisp->persistedNuclides();
   
-    if( currentNuclide.nuclide || currentNuclide.reactionGammas.size()
-       || currentNuclide.element || currentNuclide.isOtherRef )
+    if( currentNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
       displayed.insert( displayed.begin(), currentNuclide );
   }
   
@@ -2319,8 +2154,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
     const ReferenceLineInfo &currentNuclide = refLineDisp->currentlyShowingNuclide();
     displayed = refLineDisp->persistedNuclides();
     
-    if( currentNuclide.nuclide || currentNuclide.reactionGammas.size()
-       || currentNuclide.element || currentNuclide.isOtherRef )
+    if( currentNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
       displayed.insert( displayed.begin(), currentNuclide );
   }
   
@@ -2398,8 +2232,7 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
   const ReferenceLineInfo &currentNuclide = refLineDisp->currentlyShowingNuclide();
   vector<ReferenceLineInfo> displayed = refLineDisp->persistedNuclides();
   
-  if( currentNuclide.nuclide || currentNuclide.reactionGammas.size()
-     || currentNuclide.element || currentNuclide.isOtherRef )
+  if( currentNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
     displayed.insert( displayed.begin(), currentNuclide );
   
   if( displayed.empty() )

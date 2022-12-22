@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <tuple>
 #include <vector>
 #include <string>
@@ -45,6 +46,7 @@ namespace rapidxml
   template<class Ch> class xml_document;
 }//namespace rapidxml
 
+class MaterialDB;
 class DetectorPeakResponse;
 
 enum class OtherRefLineType
@@ -86,75 +88,144 @@ typedef std::tuple<float,float,std::string, OtherRefLineType,std::string> OtherR
 extern const OtherRefLine BackgroundLines[89];
 extern const OtherRefLine BackgroundReactionLines[28];
 
+
+/** A struct that contains all the information needed to generate reference photopeak
+ lines (i.e. the #ReferenceLineInfo information) from.
+ 
+ This information is filled out either by the ReferencePhotopeakDisplay GUI state, or
+ from XML.
+ */
+struct RefLineInput
+{
+  RefLineInput();
+  void reset();
+  
+  std::string m_input_txt;
+  std::string m_age;  //
+  
+  /** Color to draw the line with.  Alpha not currently supported. */
+  Wt::WColor m_color;
+  
+  double m_lower_br_cutt_off;
+  bool m_promptLinesOnly;
+  
+  bool m_showGammas;
+  bool m_showXrays;
+  bool m_showAlphas;
+  bool m_showBetas;
+  bool m_showCascades;
+  
+  
+  // Name of detector the amplitude of lines has been modulated with, if any
+  std::string m_detector_name;
+  
+  // The intrinsic efficiency, as a function of energy, for the DRF; maybe be null
+  std::function<float(float)> m_det_intrinsic_eff;
+  
+  // TODO: I'm not super happy with shielding definition; I'm torn how to represent it everywhere...
+  
+  /** Shielding name, as can be retrieved from #MaterialDB::material(string).
+   Will be blank string if no shielding or a generic shielding.
+   
+   If this is non-empty, then #m_shielding_an and #m_shielding_ad must be empty.
+   */
+  std::string m_shielding_name;
+  
+  /** Thickness of shielding.
+   Will be empty if no shielding or generic shielding.
+   If non empty, will be a valid distance (like "1.2 cm") that can be interpreted  by
+   #PhysicalUnits::
+   
+   If this is non-empty, then #m_shielding_an and #m_shielding_ad must be empty.
+   
+   This is a string instead of a float or double to keep user input exact.
+   */
+  std::string m_shielding_thickness;
+  
+  /** The atomic number of the generic shielding.
+   Will be empty if no shielding or a material shielding.
+   
+   If this is non-empty, then #m_shielding_name and #m_shielding_thickness will must be empty.
+   
+   This is a string instead of a float or double to keep user input exact.
+   */
+  std::string m_shielding_an;
+  
+  /** The areal density, in units of g/cm2, of the generic shielding.
+   This string holds just a number (e.x, "7.2" or "1"), and does not contain the "g/cm2" units.
+   
+   Will be empty if no shielding or a material shielding.
+   
+   If this is non-empty, then #m_shielding_name and #m_shielding_thickness will must be empty.
+   
+   This is a string instead of a float or double to keep user input exact.
+   */
+  std::string m_shielding_ad;
+  
+  /** Function to return the shielding attenuation factor, as a function of energy.
+   
+   I.e., returns values between 0 (all gammas stopped), and 1.0 (no attenuation).
+   
+   May be nullptr.
+   */
+  std::function<double( float )> m_shielding_att;
+  
+  /** Serializes member variables to xml, appending a <RefLineInput> element onto the
+   passed in node.
+   
+   Note: #m_det_intrinsic_eff and #m_shielding_att do not get serialized.
+   */
+  void serialize( rapidxml::xml_node<char> *parent_node ) const;
+  
+  /** De-serializes member variables from xml.
+   
+   Note: #m_det_intrinsic_eff and #m_shielding_att do not get de-serialized, so you must
+         manually set these variables.  See
+   */
+  void deSerialize( const rapidxml::xml_node<char> *node );
+  
+  static const int sm_xmlSerializationVersion;
+  
+  /** Uses (#m_shielding_name and m_shielding_thickness) OR (#m_shielding_an and #m_shielding_ad)
+   to set #m_shielding_att.
+   
+   Throw std::exception on failure, in which case #m_shielding_att wont be changed. 
+   */
+  void setShieldingAttFcn( const MaterialDB *db );
+};//struct RefLineInput
+
+
+/** A struct to represent reference gamma/alpha/beta lines displayed on the spectrum.
+ 
+ It also defines the information the information the table in the "Reference Photopeaks"
+ tab displays; currently the #DecayParticleModel class uses its own #DecayParticleModel::RowData
+ struct to hold its information, but eventually it will use this same class.
+ */
 struct ReferenceLineInfo
 {
-  //A simple structure to keep in server (c++) memmorry what is being
-  //  displayed on the client side, and to allow serializing to the database
-  //  what is being displayed, and more-or-less the current state of the
-  //  widget (when there is a current line).
-  //  Note: some of the variables are probably vestigial by now, and could
-  //        stand to be removed.
-  
-  //nuclide displayed:
-  const SandiaDecay::Nuclide *nuclide;
-  
-  //If (the xrays for) an element is displayed, and no nuclides, then element
-  //  will be non-null
-  const SandiaDecay::Element *element;
-  
-  //If reactionGammas is defined, then energies/intensities will be
-  //  redundant
-  std::vector<ReactionGamma::ReactionPhotopeak> reactionGammas;
-  
-  /* either background, or custom energy, reference lines displayed.
-  
-  Used by PeakSearchGuiUtils when setting nuc ID of peaks, when showing 
-  background or other ref lines.
-  */
-  std::vector<OtherRefLine> otherRefLines;
-  
-  #define DEV_REF_LINE_UPGRADE_20221212 1
-#if( DEV_REF_LINE_UPGRADE_20221212 )
-  struct RefLineInput
-  {
-    RefLineInput();
-    std::string m_input_txt;
-    std::string m_age;  //
-
-    Wt::WColor m_color;
-    double m_lower_br_cutt_off;
-    bool m_promptLinesOnly;
-
-    bool m_showGammas;
-    bool m_showXrays;
-    bool m_showAlphas;
-    bool m_showBetas;
-    bool m_showCascades;
-
-
-    // Name of detector the amplitude of lines has been modulated with, if any
-    std::string m_detector_name;
-
-    // The intrinsic efficiency, as a function of energy, for the DRF; mayb be null
-    std::function<float(float)> m_det_intrinsic_eff;
-
-    std::string m_shielding_name;
-    //Thickness of shielding.  Will be zero if no shielding or generic shielding
-    double m_shieldingThickness;
-    std::function<double( float )> m_shielding_att;
-  };//struct RefLineInput
-
-
+  /** A struct to represent the information for a single reference line.  */
   struct RefLine
   {
     RefLine();
 
-    /** Energy, in keV of the particle. */
+    /** Energy, in keV of the particle.
+     
+     For gammas and x-rays, this is the energy of the photopeak that would be detected.
+     I.e., if #RefLine::m_source_type is #RefGammaType::SingleEscape, #RefGammaType::DoubleEscape,
+     then you would need to add 511 keV or 1022 keV to this energy to compute the attenuation
+     by the shielding.  If RefLine::m_source_type is #RefGammaType::CoincidenceSumPeak, or
+     #RefGammaType::SumGammaPeak, then this is the sum energy of the peaks.
+     
+     For alphas and betas, this is the end-point energy.
+     */
     double m_energy;
 
     /** The relative intensity of this line, after shielding attenuation, DRF,
      scaling for particle type, and overall normalization.
      I.e., between 0 and 1, and what to use for displaying ref line on chart.
+     
+     Lines less than or equal to this value will be filtered out (i.e., if set
+     to zero, then lines with zero amplitude will be filtered out).
     */
     double m_normalized_intensity;
 
@@ -230,20 +301,19 @@ struct ReferenceLineInfo
     const ReactionGamma::Reaction *m_reaction;
   };//struct RefLine
 
+  /** Enum to provide status of the validity of the #RefLineInput in generating reference lines */
   enum class InputValidity : int
   {
     Blank,
     InvalidSource,
     InvalidAge,
     Valid
-  };
-
-  InputValidity m_validity;
-  RefLineInput m_input;
-  std::vector<RefLine> m_ref_lines;
-  bool m_has_coincidences; //Needed to decide if we should show this checkbox
-  std::vector<std::string> m_input_warnings;
+  };//enum class InputValidity : int
   
+  /** Enum to specify what type of input was detected for creating reference lines from.
+   A few places in the code treat things a little differently, depending on the type of
+   reference lines the user would like displayed.
+   */
   enum class SourceType : int
   {
     Nuclide,
@@ -253,66 +323,63 @@ struct ReferenceLineInfo
     CustomEnergy,
     None
   };//enum class SourceType : int
+
+  /** THe status of generating reference lines from the given input. */
+  InputValidity m_validity;
   
+  /** The input used to generate the reference lines.
+   Note: this may not be just a copy of the input given to the function that generated the
+   reference lines (i.e. #generateRefLineInfo), but fields may have gotten modified.  For example,
+   #RefLineInput::m_input_txt would get changed from "U-238" to "U238", and if #RefLineInput::m_age
+   was blank, then it would be set to "20 y".
+   That is, the GUI state should be updated based on values in this struct that were changed from
+   the input.
+   */
+  RefLineInput m_input;
+  
+  /** The reference lines to use for display. */
+  std::vector<RefLine> m_ref_lines;
+  
+  /** If the source had cascade gamma coincidences in it, even if there were not selected to be
+   displayed.
+   This variable is needed to decide if we should show this cascade sum checkbox in the GUI.
+   */
+  bool m_has_coincidences;
+  
+  /** Warnings to give the user about the #RefLineInput.  For example, if the age given was
+   totally inappropriate and changed, a warning will be included here.
+   */
+  std::vector<std::string> m_input_warnings;
+  
+  /** What type of source was requested. The input source definition is essentially just a string,
+   so you can use this field to determine if the input is a nuclide, fluorescence x-ray, reaction,
+   etc.
+   */
   SourceType m_source_type;
-  
-#endif //#if( DEV_REF_LINE_UPGRADE_20221212 )
 
-  //TODO: place energies, intensities, particlestrs, decaystrs, and
-  //      elementstrs into a tuple; also include pointers to Element, Nuclide, 
-  //      or Reaction that the peak should be assigned to.  And also unify
-  //      this struct to be shared by DecayParticleModel::RowData.  And once
-  //      this happens we can get rid of #reactionGammas and #otherRefLines.
-  // 
-  //energy and intesities of displayed lines, should always be same size.
-  //intensities is normalied to be between 0 and 1 for each particle type
-  //  (e.g. gammas get a different SF than alphas, etc.  Xrays and gammas share
-  //  a scale factor).
-  std::vector<double> energies, intensities;
+  /** The nuclide the source corresponds to.
+   Non-nullptr only if m_source_type==SourceType::Nuclide.
+   */
+  const SandiaDecay::Nuclide *m_nuclide;
   
-  //Description of the displayed lines, should always be same size as
-  //  energies and intensities vectors
-  std::vector<std::string> particlestrs, decaystrs, elementstrs;
+  /** The element the source fluorescence x-rays correspond to.
+   Non-nullptr only if m_source_type==SourceType::FluorescenceXray.
+   */
+  const SandiaDecay::Element *m_element;
   
-  //Scale factors applied to intensities vector, for each particle type.
-  //To extract the original BR for a particle typ, you could do:
-  //  double br = this->intensities[i] * this->particle_sf[this->particlestrs[i]];
-  std::map<std::string,double> particle_sf;
-
+  /** The reaction(s) the source corresponds to.
+   There may be multiple reactions present for an input if, for example, the user
+   input an element, but the underlying data is available for isotopes of the element,
+   then the reference lines will normalized to natural abundance of the element.
+   
+   non-empty only if m_source_type==SourceType::Reaction.
+   */
+  std::set<const ReactionGamma::Reaction *> m_reactions;
   
-  //The following variables are necassarry to help serialize the state of the
-  //  widget for loading later
-  bool showGammas, showXrays, showAlphas, showBetas, showCascades;
-  bool showLines, promptLinesOnly, isOtherRef, isReaction, displayLines;
-  double age, lowerBrCuttoff;
-  
-  //labelTxt: what the user enetered to get this set of gammas
-  std::string labelTxt;
-  
-  //reactionsTxt: a CSV list of reactions giving rise to reactionGammas
-  std::string reactionsTxt;
-  
-  //shieldingName: name of shieding applied to amplitudes of lines; empty
-  //  if none.  Will have format "AN=23, AD=53.1 g/cm2" if generic shielding.
-  std::string shieldingName;
-  
-  //Thickness of shielding.  Will be zero if no shielding or generic shielding
-  double shieldingThickness;
-  
-  //detectorName: Name of detector the amplitude of lines has been modulated
-  //  with.
-  std::string detectorName;
-  
-  /** Color to draw the line with.  Alpha not currently supported. */
-  Wt::WColor lineColor;
   
   ReferenceLineInfo();
-  bool operator==( const ReferenceLineInfo &rhs ) const;
   void reset();
-  bool empty() const;
   
-  void serialize( rapidxml::xml_node<char> *parent_node ) const;
-  void deSerialize( const rapidxml::xml_node<char> *node );
   
   //toJson(...): appends the JS object necessary to draw this to 'json'.
   //  number_lines cooresponds to the which color series to draw.
@@ -320,11 +387,8 @@ struct ReferenceLineInfo
   //        doing it by hand
   void toJson( std::string &json ) const;
   
-  std::string parentLabel() const;
   
   void sortByEnergy();
-  
-  static const int sm_xmlSerializationVersion;
 };//struct ReferenceLineInfo
 
 

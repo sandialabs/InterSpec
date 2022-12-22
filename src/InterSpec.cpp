@@ -2194,7 +2194,7 @@ void InterSpec::setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
   const PeakModel::PeakShrdPtr &p = m_peakModel->peak(index);
   
   //Reactions not implemented yet.
-  if( !p || !p->hasSourceGammaAssigned() || p->reaction() )
+  if( !p || !p->hasSourceGammaAssigned() )
     return;
   
   //Check if source is same as showing reference line, if so, set peak color to that.
@@ -2202,16 +2202,44 @@ void InterSpec::setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
   vector<ReferenceLineInfo> refLines;
   if( m_referencePhotopeakLines )
     refLines = m_referencePhotopeakLines->showingNuclides();
+  
+  // Try for a simple match - that is if the ref lines were for a nuclide, element, or reaction
   for( const auto &lines : refLines )
   {
-    if( (lines.nuclide || lines.element )
-       && lines.nuclide==p->parentNuclide()
-       && lines.element==p->xrayElement() )
+    if( (lines.m_nuclide && (lines.m_nuclide==p->parentNuclide()))
+       || (lines.m_element && (lines.m_element==p->xrayElement()))
+       || (p->reaction() && lines.m_reactions.count(p->reaction()))
+      )
     {
       index = m_peakModel->index( index.row(), PeakModel::kPeakLineColor );
-      m_peakModel->setData( index, boost::any(WString(lines.lineColor.cssText())) );
+      m_peakModel->setData( index, boost::any(WString(lines.m_input.m_color.cssText())) );
+      
+      return;
     }
   }//for( const auto &lines : refLines )
+  
+  // Lets try check each of the lines
+  for( const auto &lines : refLines )
+  {
+    if( lines.m_nuclide || lines.m_element || !lines.m_reactions.empty() )
+      continue;
+    
+    for( const ReferenceLineInfo::RefLine &line : lines.m_ref_lines )
+    {
+      if( (line.m_parent_nuclide && (line.m_parent_nuclide == p->parentNuclide()))
+         || (line.m_element && (line.m_element == p->xrayElement()))
+         || (line.m_reaction && (line.m_reaction == p->reaction()))
+         )
+      {
+        index = m_peakModel->index( index.row(), PeakModel::kPeakLineColor );
+        m_peakModel->setData( index, boost::any(WString(lines.m_input.m_color.cssText())) );
+        
+        return;
+      }
+    }//for( const ReferenceLineInfo::RefLine &line : lines.m_ref_lines )
+      
+  }//for( const auto &lines : refLines )
+  
 }//void setPeakNuclide(...)
 
 
@@ -5646,7 +5674,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
     string refNucXmlState;
     if( m_referencePhotopeakLines
-        && (!m_referencePhotopeakLines->currentlyShowingNuclide().empty()
+        && ((m_referencePhotopeakLines->currentlyShowingNuclide().m_validity == ReferenceLineInfo::InputValidity::Valid)
              || m_referencePhotopeakLines->persistedNuclides().size()) )
     {
       m_referencePhotopeakLines->serialize( refNucXmlState );
@@ -7195,24 +7223,24 @@ void InterSpec::createDecayInfoWindow()
   
   if( m_referencePhotopeakLines )
   {
-    const ReferenceLineInfo &nuc
-                          = m_referencePhotopeakLines->currentlyShowingNuclide();
-    if( nuc.nuclide )
+    const ReferenceLineInfo &nuc = m_referencePhotopeakLines->currentlyShowingNuclide();
+    if( nuc.m_nuclide )
     {
       m_decayInfoWindow->clearAllNuclides();
       
-      //\todo We could do a little better and check the Shielding/Source Fit
-      //  widget and grab those activities (and ages) if they match
+      // TODO: We could do a little better and check the Shielding/Source Fit widget and grab those activities (and ages) if they match
       
       const bool useBq = InterSpecUser::preferenceValue<bool>("DisplayBecquerel", InterSpec::instance());
       const double act = useBq ? PhysicalUnits::MBq : (1.0E-6 * PhysicalUnits::curie);
       const string actStr = useBq ? "1 MBq" : "1 uCi";
-
-      m_decayInfoWindow->addNuclide( nuc.nuclide->atomicNumber,
-                         nuc.nuclide->massNumber,
-                         nuc.nuclide->isomerNumber,
+      double age = nuc.m_nuclide->halfLife;
+      try{ age = PhysicalUnits::stringToTimeDuration( nuc.m_input.m_age ); }catch(exception &){}
+      
+      m_decayInfoWindow->addNuclide( nuc.m_nuclide->atomicNumber,
+                         nuc.m_nuclide->massNumber,
+                         nuc.m_nuclide->isomerNumber,
                          1.0*PhysicalUnits::microCi, !useBq,
-                         0.0, actStr, 5.0*nuc.age );
+                         0.0, actStr, 5.0*age );
     }//if( nuc.nuclide )
   }//if( m_referencePhotopeakLines )
 }//void createDecayInfoWindow()
@@ -8190,9 +8218,13 @@ void InterSpec::showGammaLinesWindow()
   
   if( m_referencePhotopeakLines )
   {
-    if( !m_referencePhotopeakLines->currentlyShowingNuclide().empty()
+    const ReferenceLineInfo &lines = m_referencePhotopeakLines->currentlyShowingNuclide();
+    
+    if( (lines.m_validity == ReferenceLineInfo::InputValidity::Valid)
         || m_referencePhotopeakLines->persistedNuclides().size() )
-    m_referencePhotopeakLines->serialize( xml_state );
+    {
+      m_referencePhotopeakLines->serialize( xml_state );
+    }
     
     m_referencePhotopeakLines->clearAllLines();
     delete m_referencePhotopeakLines;
@@ -8267,7 +8299,8 @@ void InterSpec::closeGammaLinesWindow()
   string xmlstate;
   if( m_referencePhotopeakLines )
   {
-    if( !m_referencePhotopeakLines->currentlyShowingNuclide().empty()
+    const ReferenceLineInfo &lines = m_referencePhotopeakLines->currentlyShowingNuclide();
+    if( (lines.m_validity == ReferenceLineInfo::InputValidity::Valid)
          || m_referencePhotopeakLines->persistedNuclides().size() )
       m_referencePhotopeakLines->serialize( xmlstate );
     m_referencePhotopeakLines->clearAllLines();

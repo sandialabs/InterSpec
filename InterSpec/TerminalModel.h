@@ -88,7 +88,7 @@ public:  // Function methods (for parser, can combine with expressions)
     void addFunction( mup::ICallback* function, const std::string& tags="", const std::string& toolTip="" );
     
     double nuclideIntensity(  const double energy );
-    double nuclideIntensityForParticle(  const std::string& particle, const double energy );
+    double nuclideIntensityForParticle( std::string particle, const double energy );
     double nuclideEnergy( const double intensity );
     
     double liveTime( const std::string& argument );

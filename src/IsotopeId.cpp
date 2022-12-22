@@ -988,15 +988,28 @@ void peakCandidateSourceFromRefLines( std::shared_ptr<const PeakDef> peak, const
   for( const ReferenceLineInfo &ref : showingRefLines )
   {
     //Right now just look for nuclides
-    if( !ref.nuclide )
+    if( !ref.m_nuclide )
       continue;
     
     SandiaDecay::NuclideMixture mix;
-    mix.addNuclideByActivity( ref.nuclide, 1.0E6*SandiaDecay::becquerel );
-    const double age = ((ref.age >= 0.0) ? ref.age : PeakDef::defaultDecayTime(ref.nuclide) );
+    mix.addNuclideByActivity( ref.m_nuclide, 1.0E6*SandiaDecay::becquerel );
+    double age = 0.0;
+    if( !ref.m_input.m_age.empty() )
+    {
+      try
+      {
+        age = PhysicalUnits::stringToTimeDuration(ref.m_input.m_age);
+      }catch( std::exception & )
+      {
+        age = PeakDef::defaultDecayTime(ref.m_nuclide);
+      }
+    }else
+    {
+      age = PeakDef::defaultDecayTime(ref.m_nuclide);
+    }
     
     const vector<SandiaDecay::EnergyRatePair> gammas = mix.gammas( age, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
-    const vector<SandiaDecay::EnergyRatePair> xrays = (ref.showXrays ? mix.xrays( age ) : vector<SandiaDecay::EnergyRatePair>{});
+    const vector<SandiaDecay::EnergyRatePair> xrays = (ref.m_input.m_showXrays ? mix.xrays( age ) : vector<SandiaDecay::EnergyRatePair>{});
     
     vector<pair<string,double>> trials;
     
@@ -1014,7 +1027,7 @@ void peakCandidateSourceFromRefLines( std::shared_ptr<const PeakDef> peak, const
       const double weight = amp / (0.25*sigma + distance);
       
       snprintf( buffer, sizeof(buffer), "%s %.2f keV",
-                ref.nuclide->symbol.c_str(), gamma.energy );
+                ref.m_nuclide->symbol.c_str(), gamma.energy );
       
       trials.emplace_back( buffer, weight );
     }//for( const auto &gammas : gammas )

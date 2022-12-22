@@ -683,10 +683,10 @@ namespace
         
         for( const auto &refline : reflines )
         {
-          if( (refline.nuclide == nuc) && !refline.lineColor.isDefault() )
+          if( (refline.m_nuclide == nuc) && !refline.m_input.m_color.isDefault() )
           {
             haveFoundColor = true;
-            m_color_select->setColor( refline.lineColor );
+            m_color_select->setColor( refline.m_input.m_color );
             break;
           }//if( we found a match )
         }//for( const auto &refline : reflines )

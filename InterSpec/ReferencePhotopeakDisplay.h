@@ -210,11 +210,11 @@ public:
   //  serialize(...).
   void deSerialize( std::string &xml_data  );
   
-  /** returns a JSON array cooresponding to currently showing reference lines.
+  /** returns a JSON array corresponding to currently showing reference lines.
    Will be in the format: "[{},{},...]", where even if there are no showing
   lines you will get back "[]"
    */
-  std::string jsonReferenceLinesArray();
+  //std::string jsonReferenceLinesArray();
   
   /** Provides a map from the reference line label (e.x., "Ba133") to the
    actual lines JSON (ex. {...}).
@@ -254,27 +254,29 @@ public:
    */
   Wt::Signal<> &nuclidesCleared();
   
+  /** Return the material database this widget uses */
+  const MaterialDB *materialDB() const;
 protected:
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
+  
   void updateDisplayChange();
-
+  void updateDisplayFromInput( RefLineInput user_input );
  
- #if( DEV_REF_LINE_UPGRADE_20221212 )
-  ReferenceLineInfo::RefLineInput userInput() const;
-  static std::shared_ptr<ReferenceLineInfo> generateRefLineInfo( ReferenceLineInfo::RefLineInput input );
+  RefLineInput userInput() const;
+  static std::shared_ptr<ReferenceLineInfo> generateRefLineInfo( RefLineInput input );
 
   std::shared_ptr<ReferenceLineInfo> refLineForUserInput();
 
   static std::vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
   
   Wt::WColor colorForNewSource( const std::string &src );
-#endif
 
   void handleIsotopeChange( const bool useCurrentAge );
 
   //refreshLinesDisplayedToGui(): makes setting and re-sends to client the lines
   //  that should be displayed, based on m_currentlyShowingNuclide and
   //  m_persisted objects
-  void refreshLinesDisplayedToGui( int millisecdelay );
+  void refreshLinesDisplayedToGui();
   
   void userColorSelectCallback( const Wt::WColor &color );
   
@@ -296,11 +298,7 @@ things simple
   struct OtherNuc
   {
     std::string m_nuclide;
-    double m_age = -1.0;
-    std::string m_shielding;
-    double m_shieldThickness = -1.0;
-    
-    ReferenceLineInfo::RefLineInput m_input;
+    RefLineInput m_input;
   };//struct OtherNuc
 
   void updateOtherNucsDisplay();
@@ -321,6 +319,12 @@ things simple
   D3SpectrumDisplayDiv *m_chart;
 
   InterSpec *m_spectrumViewer;
+  
+  /** If we are setting the GUI state using a RefLineInput object, or serializing from XML,
+   we dont want to react to signals from shielding widget, or DRF, or whatever that they
+   have changed, otherwise we can get into an infinite recursive state.
+   */
+  bool m_currently_updating;
   
   Wt::WLineEdit *m_nuclideEdit;
   Wt::WSuggestionPopup *m_nuclideSuggest;

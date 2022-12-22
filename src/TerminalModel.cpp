@@ -875,66 +875,115 @@ double TerminalModel::backgroundRealTime() {
     return m_backgroundHistogram->real_time();
 }
 
-double TerminalModel::nuclideIntensity(  const double energy )
+double TerminalModel::nuclideIntensity( const double energy )
 {
-    ReferencePhotopeakDisplay *nuclideReference = m_viewer->referenceLinesWidget();
-    
-    if ( nuclideReference ) {
-        const ReferenceLineInfo& nuclideInfo = nuclideReference->currentlyShowingNuclide();
-        
-        if ( !nuclideInfo.empty() ) {
-          
-            for ( int i = 0; i < nuclideInfo.energies.size(); ++i ) {
-                if ( nuclideInfo.energies.at( i )-0.1 <= energy && energy <= nuclideInfo.energies.at( i )+0.1 )
-                    return nuclideInfo.intensities.at(i);
-            }
-            throw mup::ParserError( "Intensity value not found for nuclide at specified intensity." );
-        }
-        throw mup::ParserError( "No nuclide is currently being shown." );
-    }
+  ReferencePhotopeakDisplay *nuclideReference = m_viewer->referenceLinesWidget();
+  if( !nuclideReference )
     throw mup::ParserError( "ReferencePhotopeakDisplay is currently NULL." );
-}
+  
+  const ReferenceLineInfo& nuclideInfo = nuclideReference->currentlyShowingNuclide();
+        
+  if( nuclideInfo.m_validity != ReferenceLineInfo::InputValidity::Valid )
+    throw mup::ParserError( "No nuclide is currently being shown." );
+  
+  
+  double nearest_intensity = -1.0, nearest_distance = 1.0E6;
+  
+  for( const ReferenceLineInfo::RefLine &line : nuclideInfo.m_ref_lines )
+  {
+    const double dist = fabs(line.m_energy - energy);
+    if( dist < nearest_distance )
+    {
+      nearest_intensity = line.m_normalized_intensity; // TODO: do we want line.m_decay_intensity here?
+      nearest_distance = dist;
+    }
+  }//
+  
+  if( nearest_distance > 0.1 )
+    throw mup::ParserError( "Intensity value not found for nuclide at specified intensity." );
+  
+  return nearest_intensity;
+}//TerminalModel::nuclideIntensity(...)
 
-double TerminalModel::nuclideIntensityForParticle(  const std::string& particle, const double energy )
+
+double TerminalModel::nuclideIntensityForParticle(  std::string particle, const double energy )
 {
-    ReferencePhotopeakDisplay *nuclideReference = m_viewer->referenceLinesWidget();
-    const double energ = energy;
-    
-    if ( nuclideReference ) {
-        const ReferenceLineInfo& nuclideInfo = nuclideReference->currentlyShowingNuclide();
-        
-        if ( !nuclideInfo.empty() ) {
-            int i;
-            for ( i = 0; i < nuclideInfo.energies.size(); ++i ) {
-                if ( nuclideInfo.energies.at( i )-0.1 <= energ && energ <= nuclideInfo.energies.at( i )+0.1 && nuclideInfo.particlestrs.at(i) == particle )
-                    return nuclideInfo.intensities.at(i);
-            }
-            throw mup::ParserError( "Intensity value not found for nuclide at specified intensity." );
-        }
-        throw mup::ParserError( "No nuclide is currently being shown." );
-    }
+  ReferencePhotopeakDisplay *nuclideReference = m_viewer->referenceLinesWidget();
+  if( !nuclideReference )
     throw mup::ParserError( "ReferencePhotopeakDisplay is currently NULL." );
-}
+  
+  const ReferenceLineInfo& nuclideInfo = nuclideReference->currentlyShowingNuclide();
+  
+  if( nuclideInfo.m_validity != ReferenceLineInfo::InputValidity::Valid )
+    throw mup::ParserError( "No nuclide is currently being shown." );
+  
+  SpecUtils::to_lower_ascii( particle );
+  if( (particle == "x-ray") || (particle == "x ray") )
+    particle = "xray";
+  
+  ReferenceLineInfo::RefLine::Particle particle_type;
+  
+  if( particle == "xray" )
+    particle_type = ReferenceLineInfo::RefLine::Particle::Xray;
+  else if( particle == "alpha" )
+    particle_type = ReferenceLineInfo::RefLine::Particle::Alpha;
+  else if( particle == "beta" )
+    particle_type = ReferenceLineInfo::RefLine::Particle::Beta;
+  else if( particle == "gamma")
+    particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+  else
+    throw mup::ParserError( "Particle type must be one of {'xray', 'alpha', 'beta', 'gamma'}" );
+  
+  double nearest_intensity = -1.0, nearest_distance = 1.0E6;
+  
+  for( const ReferenceLineInfo::RefLine &line : nuclideInfo.m_ref_lines )
+  {
+    if( line.m_particle_type != particle_type )
+      continue;
+    
+    const double dist = fabs(line.m_energy - energy);
+    if( dist < nearest_distance )
+    {
+      nearest_intensity = line.m_normalized_intensity; // TODO: do we want line.m_decay_intensity here?
+      nearest_distance = dist;
+    }
+  }//
+  
+  if( nearest_distance > 0.1 )
+    throw mup::ParserError( "Intensity value not found for nuclide at specified intensity." );
+  
+  return nearest_intensity;
+}//nuclideIntensityForParticle(...)
+
 
 double TerminalModel::nuclideEnergy( const double intensity )
 {
-    ReferencePhotopeakDisplay *nuclideReference = m_viewer->referenceLinesWidget();
-    
-    if ( nuclideReference ) {
-        const ReferenceLineInfo& nuclideInfo = nuclideReference->currentlyShowingNuclide();
-        
-        if ( !nuclideInfo.empty() ) {
-            int i;
-            for ( i = 0; i < nuclideInfo.intensities.size(); ++i ) {
-                if ( nuclideInfo.intensities.at( i ) == intensity )
-                    return nuclideInfo.energies.at(i);
-            }
-            throw mup::ParserError( "Energy value not found for nuclide at specified intensity." );
-        }
-        throw mup::ParserError( "No nuclide is currently being shown." );
-    }
+  ReferencePhotopeakDisplay *nuclideReference = m_viewer->referenceLinesWidget();
+  if( !nuclideReference )
     throw mup::ParserError( "ReferencePhotopeakDisplay is currently NULL." );
-}
+  
+  const ReferenceLineInfo& nuclideInfo = nuclideReference->currentlyShowingNuclide();
+  
+  if( nuclideInfo.m_validity != ReferenceLineInfo::InputValidity::Valid )
+    throw mup::ParserError( "No nuclide is currently being shown." );
+  
+  double nearest_energy = -1.0, nearest_distance = 1.0E6;
+  for( const ReferenceLineInfo::RefLine &line : nuclideInfo.m_ref_lines )
+  {
+    const double dist = fabs(line.m_normalized_intensity - intensity); // TODO: do we want line.m_decay_intensity here?
+    if( dist < nearest_distance )
+    {
+      nearest_energy = line.m_energy;
+      nearest_distance = dist;
+    }
+  }//
+  
+  if( nearest_distance > 0.01 )
+    throw mup::ParserError( "Intensity value within 0.01 of " + std::to_string(intensity) + " not found." );
+  
+  return nearest_energy;
+}//nuclideEnergy(...)
+
 
 // Return the live time of either the foreground, background, or secondary foreground (determined in argument by user)
 // Throws error if invalid name is provided.

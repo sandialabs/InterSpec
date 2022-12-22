@@ -4320,16 +4320,21 @@ void SpectrumChart::setReferncePhotoPeakLines( const ReferenceLineInfo &nuc )
 
 void SpectrumChart::persistCurrentReferncePhotoPeakLines()
 {
-  if( m_referencePhotoPeakLines.energies.empty() )
+  if( m_referencePhotoPeakLines.m_validity != ReferenceLineInfo::InputValidity::Valid )
     return;
   
-  vector<ReferenceLineInfo>::iterator pos;
-  pos = std::find( m_persistedPhotoPeakLines.begin(),
-                   m_persistedPhotoPeakLines.end(),
-                   m_referencePhotoPeakLines );
+  const string current_input = m_referencePhotoPeakLines.m_input.m_input_txt;
   
-  if( pos == m_persistedPhotoPeakLines.end()
-      && m_referencePhotoPeakLines.displayLines )
+  ReferenceLineInfo *prev_line = nullptr;
+  for( size_t i = 0; !prev_line && (i < m_persistedPhotoPeakLines.size()); ++i )
+  {
+    if( m_persistedPhotoPeakLines[i].m_input.m_input_txt == current_input )
+      prev_line = &(m_persistedPhotoPeakLines[i]);
+  }
+  
+  if( prev_line )
+    *prev_line = m_referencePhotoPeakLines;
+  else if( m_referencePhotoPeakLines.m_validity == ReferenceLineInfo::InputValidity::Valid )
     m_persistedPhotoPeakLines.push_back( m_referencePhotoPeakLines );
   
   m_referencePhotoPeakLines.reset();
@@ -4357,52 +4362,44 @@ void SpectrumChart::renderReferncePhotoPeakLines( Wt::WPainter &painter,
   const double miny = axis(Chart::YAxis).minimum();
   const double maxy = axis(Chart::YAxis).maximum();
   
-  const vector<double> &x = nuc.energies;
-  const vector<double> &y = nuc.intensities;
-  
-  vector<double>::const_iterator startiter, enditer;
-  startiter = std::lower_bound( x.begin(), x.end(), minx );
-  enditer = std::upper_bound( x.begin(), x.end(), maxx );
-
-  if( startiter == enditer )
-    return;
-
-  const size_t startindex = startiter - x.begin();
-  const size_t endindex = enditer - x.begin();
-  
   double max_amp = -1.0;
   
-  for( size_t i = startindex; i < endindex; ++i )
+  for( size_t i = 0; i < nuc.m_ref_lines.size(); ++i )
   {
+    const ReferenceLineInfo::RefLine &line = nuc.m_ref_lines[i];
+    if( (line.m_energy >= minx) && (line.m_energy <= maxx) )
+    {
 #if(DRAW_GAMMA_LINES_LOG_AND_LIN)
-    max_amp = std::max( max_amp, miny + yrange*y[i] )
+      max_amp = std::max( max_amp, miny + yrange*line.m_normalized_intensity )
 #else
-    max_amp = std::max( y[i], max_amp );
+      max_amp = std::max( line.m_normalized_intensity, max_amp );
 #endif
+    }
   }//for( size_t i = startindex; i < endindex; ++i )
   
   if( max_amp <= 0.0 )
     return;
   
-  const bool isValidColor = !nuc.lineColor.isDefault();
-  const WColor color( isValidColor ? nuc.lineColor : WColor("#0000FF") );
+  const bool isValidColor = !nuc.m_input.m_color.isDefault();
+  const WColor color( isValidColor ? nuc.m_input.m_color : WColor("#0000FF") );
   
-  for( size_t i = startindex; i < endindex; ++i )
+  for( size_t i = 0; i < nuc.m_ref_lines.size(); ++i )
   {
-    if( y[i] <= 0.0 )
+    const ReferenceLineInfo::RefLine &line = nuc.m_ref_lines[i];
+    if( (line.m_energy < minx) || (line.m_energy > maxx) || (line.m_normalized_intensity <= 0.0) )
       continue;
     
 #if( DRAW_GAMMA_LINES_LOG_AND_LIN )
     cerr << "renderReferncePhotoPeakLines() Not tested for DRAW_GAMMA_LINES_LOG_AND_LIN=true!" << endl;
     const double yrange = maxy - miny;
-    const double yval = miny + yrange*(miny + yrange*y[i])/max_amp;
-    WPointF lower = mapToDevice( x[i], miny );
-    WPointF upper = mapToDevice( x[i], yval );
+    const double yval = miny + yrange*(miny + yrange*line.m_normalized_intensity)/max_amp;
+    WPointF lower = mapToDevice( line.m_energy, miny );
+    WPointF upper = mapToDevice( line.m_energy, yval );
 #else
-    WPointF lower = mapToDevice( x[i], miny );
-    WPointF upper = mapToDevice( x[i], maxy );
+    WPointF lower = mapToDevice( line.m_energy, miny );
+    WPointF upper = mapToDevice( line.m_energy, maxy );
     lower.setY( lower.y() + axisPadding() );
-    const double yvalpx = upper.y() + (1.0 - y[i]/max_amp)*(lower.y()-upper.y());
+    const double yvalpx = upper.y() + (1.0 - line.m_normalized_intensity/max_amp)*(lower.y()-upper.y());
     upper.setY( yvalpx );
 #endif
 
@@ -4413,7 +4410,7 @@ void SpectrumChart::renderReferncePhotoPeakLines( Wt::WPainter &painter,
     WPen pen;
     pen.setColor( color );
     pen.setWidth( 1 );
-    if( nuc.particlestrs[i] != "gamma" )
+    if( line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Gamma )
       pen.setStyle( Wt::DashLine );
     painter.setPen( pen );
         
@@ -4429,7 +4426,7 @@ void SpectrumChart::renderReferncePhotoPeakLines( Wt::WPainter &painter ) const
   for( auto iter = m_persistedPhotoPeakLines.rbegin(); iter != m_persistedPhotoPeakLines.rend(); ++iter )
     renderReferncePhotoPeakLines( painter, *iter );
   
-  if( m_referencePhotoPeakLines.energies.size() )
+  if( m_referencePhotoPeakLines.m_validity == ReferenceLineInfo::InputValidity::Valid )
     renderReferncePhotoPeakLines( painter, m_referencePhotoPeakLines );
 }//void renderReferncePhotoPeakLines( Wt::WPainter &painter );
 
