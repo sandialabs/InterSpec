@@ -35,7 +35,7 @@ enum ReactionType
   AlphaNeutron,    //gammas produced by alpha,n sources; X(a,n).  nucleus + alpha -> (nucleus+2p+1n) + n + gammas
   NeutronAlpha,    //gammas produced by n,alpha sources; X(n,a).  ex. B10 + neutron -> Li7 + alpha + gammas
   AlphaProton,     //gammas produced by alpha,p sources; X(a,p).  ex. N14 + alpha -> O17 + proton + gammas
-  NeutronCapture,  //neutron capture reactions; X(a,n).           nuclues + neutron -> (nucleus+1n) + gammas
+  NeutronCapture,  //neutron capture reactions; X(a,n).           nucleus + neutron -> (nucleus+1n) + gammas
   NeutronInelasticScatter, //inelastic scatters; X(a,n).          nucleus + neutron -> nucleus + neutron + gammas
   AnnihilationReaction,
   NumReactionType

@@ -27,7 +27,7 @@
 #include <string>
 #include <stdexcept>
 
-#include <Wt/WWebWidget>
+#include <Wt/WWebWidget>  //For quoting strings only
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
@@ -37,6 +37,7 @@
 
 #include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -179,6 +180,7 @@ const OtherRefLine BackgroundLines[89] =
   OtherRefLine( 1459.14f, 0.0083f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
   OtherRefLine( 1460.82f, 0.1066f,  "K40", OtherRefLineType::K40Background,      "" ),
   OtherRefLine( 1588.2f,  0.0322f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
+  //TODO: do some better way of indicating D.E. than a string match
   OtherRefLine( 1592.51f, 0.010f,   "Th232 D.E. 2614 keV", OtherRefLineType::OtherBackground,    "" ),
   OtherRefLine( 1620.74f, 0.0151f,  "Bi212", OtherRefLineType::Th232Series,        "" ),
   OtherRefLine( 1630.63f, 0.0151f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
@@ -188,6 +190,7 @@ const OtherRefLine BackgroundLines[89] =
   OtherRefLine( 1764.49f, 0.1528f,  "Bi214", OtherRefLineType::Ra226Series,        "" ),
   OtherRefLine( 1838.36f, 0.00346f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
   OtherRefLine( 1847.42f, 0.02023f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
+  //TODO: do some better way of indicating S.E. than a string match
   OtherRefLine( 2103.51f, 0.020f,   "Th232 S.E. 2614 keV", OtherRefLineType::OtherBackground,    "" ),
   OtherRefLine( 2118.55f, 0.00454f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
   OtherRefLine( 2204.21f, 0.04913f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
@@ -262,9 +265,7 @@ ReferenceLineInfo::RefLine::RefLine()
   m_drf_factor( 1.0f ),
   m_shield_atten( 1.0f ),
   m_particle_sf_applied( 1.0f ),
-  m_particlestr(),
   m_decaystr(),
-  m_elementstr(),
   m_decay_intensity( 0.0 ),
   m_particle_type( ReferenceLineInfo::RefLine::Particle::Gamma ),
   m_parent_nuclide( nullptr ),
@@ -274,6 +275,46 @@ ReferenceLineInfo::RefLine::RefLine()
   m_reaction( nullptr )
 {
 }
+
+
+const std::string &ReferenceLineInfo::RefLine::particlestr() const
+{
+  static const string cascade_sum = "cascade-sum";
+  static const string gamma_sum = "sum-gamma";
+  static const string single_escape = "S.E.";
+  static const string double_escape = "D.E.";
+  
+  static const string alpha = "alpha";
+  static const string beta = "beta";
+  static const string gamma = "gamma";
+  static const string xray = "xray";
+  static const string other = "invalid";
+  
+  
+  switch( m_source_type )
+  {
+    case RefGammaType::Normal:
+    case RefGammaType::Annihilation:
+      break;
+      
+    case RefGammaType::SingleEscape:        return single_escape;
+    case RefGammaType::DoubleEscape:        return double_escape;
+    case RefGammaType::CoincidenceSumPeak:  return cascade_sum;
+    case RefGammaType::SumGammaPeak:        return gamma_sum;
+  }//switch( m_source_type )
+  
+  
+  switch( m_particle_type )
+  {
+    case ReferenceLineInfo::RefLine::Particle::Alpha: return alpha;
+    case ReferenceLineInfo::RefLine::Particle::Beta:  return beta;
+    case ReferenceLineInfo::RefLine::Particle::Gamma: return gamma;
+    case ReferenceLineInfo::RefLine::Particle::Xray:  return xray;
+  }//switch( line.m_particle_type )
+  
+  assert( 0 );
+  return other;
+}//particlestr(...)
 
 ReferenceLineInfo::ReferenceLineInfo()
 {
@@ -301,6 +342,13 @@ void ReferenceLineInfo::toJson( string &json ) const
   //  TODO: The "decay" for each line could be specified in a separate map, so like 'Ba133 to Cs133 via Electron Capture' isnt included in the JSON a bunch of times.  could also change "particle" to "p", "decay" to "d", and particle values from "gamma", "xray", etc, to "g", "x", etc.
   
   std::stringstream jsons;
+  
+  // We will put individual lines descriptions in a separate array, and give the index into
+  //  the array that line should go; this is because decays like U238 have many gammas for
+  //  many of the transitions, so we can save a decent about of space.
+  //  For {U238,Th232,Ba133}, the JSON size goes from {71, 37, 1} kb, to {52,27,1} kb
+  vector<string> decay_strs;
+  map<string,size_t> decay_str_indexs;
   
   jsons << "{\"color\":\"" << (m_input.m_color.isDefault() ? "#0000FF" : m_input.m_color.cssText(false)) << "\","
   << "\"parent\":\"" << m_input.m_input_txt << "\",";
@@ -382,7 +430,7 @@ void ReferenceLineInfo::toJson( string &json ) const
       double intensity = 0.0;
       size_t num_combined = 0;
       // TODO: be a little more efficient than allocating strings in these sets...
-      set<string> particles, decays, elements;
+      set<string> particles, decays;
       for( size_t inner_index = index; inner_index < m_ref_lines.size(); ++inner_index )
       {
         const RefLine &inner_line = m_ref_lines[inner_index];
@@ -391,20 +439,16 @@ void ReferenceLineInfo::toJson( string &json ) const
         if( this_energy != energy )
           break;
         
-        // TODO: skip over zero intensity lines - leaving commented out for comparison
-        //if( inner_line.m_normalized_intensity <= 0.0 )
-        //{
-        //num_combined += 1;
-        //continue;
-        //}
+        if( inner_line.m_normalized_intensity <= 0.0 )
+        {
+          num_combined += 1;
+          continue;
+        }
         
         intensity += inner_line.m_normalized_intensity;
-        if( !inner_line.m_particlestr.empty() )
-          particles.insert( inner_line.m_particlestr );
+        particles.insert( inner_line.particlestr() );
         if( !inner_line.m_decaystr.empty() )
           decays.insert( inner_line.m_decaystr );
-        if( !inner_line.m_elementstr.empty() )
-          elements.insert( inner_line.m_elementstr );
         
         num_combined += 1;
       }//for( loop over inner_index to find all energies to cluster together )
@@ -427,9 +471,17 @@ void ReferenceLineInfo::toJson( string &json ) const
       if( !particles.empty() )
         jsons << ",\"particle\":" << jsQuote(combine_strs(particles));
       if( !decays.empty() )
-        jsons << ",\"decay\":" << jsQuote(combine_strs(decays));
-      if( !elements.empty() )
-        jsons << ",\"el\":" << jsQuote(combine_strs(elements));
+      {
+        const string decay_str = combine_strs(decays);
+        auto decay_str_iter = decay_str_indexs.find(decay_str);
+        if( decay_str_iter == end(decay_str_indexs) )
+        {
+          decay_str_iter = decay_str_indexs.insert( {decay_str, decay_strs.size()} ).first;
+          decay_strs.push_back(decay_str);
+        }
+        
+        jsons << ",\"decayind\":" << decay_str_iter->second;
+      }
       
       // Now increment 'i' so we'll skip over these lines we've already covered.
       index += (num_combined >= 1) ? (num_combined - 1) : size_t(0);
@@ -441,21 +493,32 @@ void ReferenceLineInfo::toJson( string &json ) const
         snprintf( intensity_buffer, sizeof(intensity_buffer), "%.3g", line.m_normalized_intensity );
       
       jsons << (printed ? "," : "") << "{\"e\":" << energy << ",\"h\":" << intensity_buffer;
-      if( !line.m_particlestr.empty() )
-        jsons << ",\"particle\":" << jsQuote(line.m_particlestr);
+      jsons << ",\"particle\":" << jsQuote( line.particlestr() );
+      
       if( !line.m_decaystr.empty() )
-        jsons << ",\"decay\":" << jsQuote(line.m_decaystr);
-      if( !line.m_elementstr.empty() )
-        jsons << ",\"el\":" << jsQuote(line.m_elementstr);
+      {
+        auto decay_str_iter = decay_str_indexs.find(line.m_decaystr);
+        if( decay_str_iter == end(decay_str_indexs) )
+        {
+          decay_str_iter = decay_str_indexs.insert( {line.m_decaystr, decay_strs.size()} ).first;
+          decay_strs.push_back(line.m_decaystr);
+        }
+        
+        jsons << ",\"desc_ind\":" << decay_str_iter->second;
+      }//if( !line.m_decaystr.empty() )
     }//if( next gamma line is close ) / else
     
     jsons << "}";
     
     printed = true;
   }//for( size_t index = 0; index < m_ref_lines.size(); ++index )
+  jsons <<"]";
+
   
+  jsons <<", \"desc_strs\":[";
+  for( size_t i = 0; i < decay_strs.size(); ++i )
+    jsons << (i ? "," : "") << jsQuote( decay_strs[i] );
   jsons <<"]}";
-  
   
   json += jsons.str();
 }//std::string toJson( const ReferenceLineInfo &displnuc )
@@ -873,3 +936,812 @@ void RefLineInput::setShieldingAttFcn( const MaterialDB *db )
   };
 }//void ReferenceLineInfo::setShieldingAttFcn( const MaterialDB *db )
 
+
+std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLineInput input )
+{
+  // The gamma or xray energy below which we wont show lines for.
+  //  x-rays for nuclides were limited at above 10 keV, so we'll just impose this
+  //  as a lower limit to show to be consistent.
+  const float lower_photon_energy = 10.0f;
+  
+  auto answer_ptr = make_shared<ReferenceLineInfo>();
+  ReferenceLineInfo &answer = *answer_ptr;
+  
+  
+  // We want to set the final _modified_ version of input to the answer, before
+  // returning, so we'll just use a helper for this.
+  //on_scope_exit on_exit( [&answer_ptr, &input](){
+  //  answer_ptr->m_input = input;
+  //  answer_ptr->lineColor = input.m_color;
+  //  } );
+  answer_ptr->m_input = input;
+  
+  if( input.m_input_txt.empty() )
+  {
+    answer.m_validity = ReferenceLineInfo::InputValidity::Blank; //Should already be this value, but being explicit
+    
+    return answer_ptr;
+  }
+  
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  
+  double age = 0.0;
+  const SandiaDecay::Nuclide * const nuc = db->nuclide( input.m_input_txt );
+  
+  if( !nuc )
+  {
+    input.m_age = "";
+  }else
+  {
+    input.m_input_txt = nuc->symbol;
+    input.m_promptLinesOnly = (input.m_promptLinesOnly && nuc->canObtainPromptEquilibrium());
+    
+    answer.m_nuclide = nuc;
+    
+    if( input.m_promptLinesOnly )
+    {
+      age = 5.0*nuc->promptEquilibriumHalfLife();
+      input.m_age = PhysicalUnits::printToBestTimeUnits(age, 2);
+    }else if( input.m_age == "" )
+    {
+      age = PeakDef::defaultDecayTime( nuc, &input.m_age );
+    }else if( nuc->isStable() )
+    {
+      age = 0;
+      input.m_age = "";
+      answer.m_input_warnings.push_back( nuc->symbol + " is a stable isotope." );
+      answer.m_validity = ReferenceLineInfo::InputValidity::InvalidSource;
+      answer_ptr->m_input = input;
+      
+      return answer_ptr;
+    }else
+    {
+      try
+      {
+        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( input.m_age, nuc->halfLife );
+      } catch( std::exception & )
+      {
+        answer.m_input_warnings.push_back( "Invalid nuclide age input." );
+        answer.m_validity = ReferenceLineInfo::InputValidity::InvalidAge;
+        
+        answer_ptr->m_input = input;
+        
+        return answer_ptr;
+      }//try /catch to get the age
+      
+      if( age > 100.0 * nuc->halfLife || age < 0.0 )
+      {
+        const string old_age_str = input.m_age;
+        age = PeakDef::defaultDecayTime( nuc, &input.m_age );
+        answer.m_input_warnings.push_back( "Changed age to a more reasonable value for "
+                                          + nuc->symbol + " from '" + old_age_str + "' to " + input.m_age );
+      }
+    }//if( prompt only ) / else
+  }//if( nuc )
+  
+  
+  const bool check_element = (!nuc && (input.m_input_txt.find_first_of( "0123456789" ) == string::npos));
+  const SandiaDecay::Element * const el = check_element ? db->element( input.m_input_txt ) : nullptr;
+  
+  if( el )
+  {
+    input.m_input_txt = el->symbol;
+    input.m_age = ""; //JIC
+    input.m_showXrays = true;
+    
+    answer.m_element = el;
+  }//if( !nuc )
+  
+  
+  string reaction_txt; //CSV list of reactions - I think for our context, only ever a single reaction
+  vector<ReactionGamma::ReactionPhotopeak> rctn_gammas;
+  if( !nuc && !el )
+  {
+    const size_t open_paren = input.m_input_txt.find( "(" );
+    const size_t close_paren = (open_paren == string::npos) ? string::npos
+    : input.m_input_txt.find( ")", open_paren );
+    
+    if( close_paren != string::npos )
+    {
+      try
+      {
+        const ReactionGamma *rctnDb = ReactionGammaServer::database();
+        if( rctnDb )
+        {
+          reaction_txt = rctnDb->gammas( input.m_input_txt, rctn_gammas );
+          SpecUtils::ireplace_all( reaction_txt, "'", "" );
+          
+          // We will fill in answer.m_reactions later on.
+          
+          // Note: we are-not setting the input to the reaction_txt, as we dont need to bother
+          //       the user that the underlying data is for the isotopics of the element, and also
+          //       we dont want to change the user input, because we want to keep contributions
+          //       normalized to natural abundance.
+          //input.m_input_txt = reaction_txt;
+          
+          input.m_age = "";
+          input.m_showGammas = true;
+        }
+      }catch( std::exception &e )
+      {
+        // Not a reaction
+      }//try / catch
+    }//if( (open_paren != string::npos) && (close_paren != string::npos) )
+  }//if( !nuc && !el )
+  
+  
+  vector<OtherRefLine> otherRefLinesToShow;
+  const bool is_background = (nuc || el || !rctn_gammas.empty()) ? false
+  : SpecUtils::icontains( input.m_input_txt, "background" );
+  if( is_background )
+  {
+    input.m_input_txt = "background";
+    
+    for( const OtherRefLine &bl : BackgroundLines )
+    {
+      const bool isXray = (std::get<3>(bl) == OtherRefLineType::BackgroundXRay);
+      if( (isXray && input.m_showXrays) || (!isXray && input.m_showGammas) )
+        otherRefLinesToShow.push_back( bl );
+    }//for( const BackgroundLine &bl : BackgroundLines )
+    
+    input.m_age = "";
+  }//if( is_background )
+  
+  bool is_custom_energy = false;
+  if( !nuc && !el && rctn_gammas.empty() && !is_background )
+  {
+    try
+    {
+      const float energy = static_cast<float>(PhysicalUnits::stringToEnergy( input.m_input_txt ));
+      
+      //BackgroundLine<Energy, RelBranchRatio, "Symbol", OtherRefLineType, "Description">
+      OtherRefLine line{energy, 1.0f, "", OtherRefLineType::OtherBackground, input.m_input_txt};
+      otherRefLinesToShow.push_back( line );
+      is_custom_energy = true;
+      input.m_age = "";
+    }catch( std::exception & )
+    {
+    }
+  }//if( !nuc && !el && rctnGammas.empty() )
+  
+  
+  if( !nuc && !el && rctn_gammas.empty() && !is_background && !is_custom_energy )
+  {
+    answer.m_validity = ReferenceLineInfo::InputValidity::InvalidSource;
+    answer.m_input_warnings.push_back( input.m_input_txt + " is not a valid isotope, element, reaction, or energy." );
+    
+    answer_ptr->m_input = input;
+    
+    return answer_ptr;
+  }//if( we couldnt match input text to a source )
+  
+  answer.m_validity = ReferenceLineInfo::InputValidity::Valid;
+  
+  input.m_showGammas = input.m_showGammas;
+  input.m_showXrays = input.m_showXrays;
+  input.m_showAlphas = input.m_showAlphas;
+  input.m_showBetas  = input.m_showBetas;
+  // We will also update showing cascades later based on answer.m_has_coincidences
+  input.m_showCascades = input.m_showCascades;
+  
+  answer_ptr->m_input = input;
+  
+  
+  if( nuc )
+    answer.m_source_type = ReferenceLineInfo::SourceType::Nuclide;
+  else if( el )
+    answer.m_source_type = ReferenceLineInfo::SourceType::FluorescenceXray;
+  else if( !rctn_gammas.empty() )
+    answer.m_source_type = ReferenceLineInfo::SourceType::Reaction;
+  else if( is_background )
+    answer.m_source_type = ReferenceLineInfo::SourceType::Background;
+  else if( is_custom_energy )
+    answer.m_source_type = ReferenceLineInfo::SourceType::CustomEnergy;
+  else
+    answer.m_source_type = ReferenceLineInfo::SourceType::None;
+  
+  bool use_particle[SandiaDecay::ProductType::XrayParticle + 1] = {false};
+  
+  // We'll loop + switch over SandiaDecay::ProductType so we'll at least get
+  //  a compiler warning if SandiaDecay::ProductType changes.
+  for( auto type = SandiaDecay::ProductType(0);
+      type <= SandiaDecay::ProductType::XrayParticle;
+      type = SandiaDecay::ProductType(type+1) )
+  {
+    switch( type )
+    {
+      case SandiaDecay::ProductType::BetaParticle:
+        use_particle[type] = input.m_showBetas;
+        break;
+        
+      case SandiaDecay::ProductType::GammaParticle:
+        use_particle[type] = (input.m_showGammas || input.m_showCascades);
+        break;
+        
+      case SandiaDecay::ProductType::AlphaParticle:
+        use_particle[type] = input.m_showAlphas;
+        break;
+        
+      case SandiaDecay::ProductType::PositronParticle:
+        use_particle[type] = input.m_showGammas;
+        break;
+        
+      case SandiaDecay::ProductType::CaptureElectronParticle:
+        break;
+        
+      case SandiaDecay::ProductType::XrayParticle:
+        use_particle[type] = (el || input.m_showXrays);
+        break;
+    }//switch(type)
+  }//for( loop over SandiaDecay::ProductType )
+  
+  
+  vector<ReferenceLineInfo::RefLine> lines;
+  
+  //transition, first gamma BR, first gamma energy, second gamma energy, coincidence fraction, second gamma BR (just for debug)
+  vector<tuple<const SandiaDecay::Transition *, double, float, float, float, double>> gamma_coincidences;
+  
+  if( nuc )
+  {
+    SandiaDecay::NuclideMixture mixture;
+    
+    if( input.m_promptLinesOnly )
+    {
+      age = 0.0;
+      mixture.addNuclideInPromptEquilibrium( nuc, 1.0E-3 * SandiaDecay::curie );
+    } else
+    {
+      mixture.addNuclideByActivity( nuc, 1.0E-3 * SandiaDecay::curie );
+    }//if( we want promt only ) / else
+    
+    
+    const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity( age );
+    
+    // x-rays are slightly problematic - we can *almost* treat them like gammas, but for
+    //  some decays they essentually get duplicated - so instead we'll be a little ineffient
+    //  and track them seperately.
+    vector<SandiaDecay::EnergyRatePair> xrays = use_particle[SandiaDecay::ProductType::XrayParticle]
+    ? mixture.xrays( age )
+    : vector<SandiaDecay::EnergyRatePair>{};
+    
+    const double parent_activity = nuc ? mixture.activity( age, nuc ) : 0.0;
+    
+    // We will accumulate positrons as a single line, and just assign the transition
+    //  as the first one we run into
+    //  TODO: should make sure the first transition we run into is the heaviest one.
+    ReferenceLineInfo::RefLine positron_line;
+    positron_line.m_energy = 510.9989 * PhysicalUnits::keV;
+    positron_line.m_decay_intensity = 0.0;
+    positron_line.m_parent_nuclide = nuc;
+    positron_line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+    positron_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Annihilation;
+    
+    
+    for( const SandiaDecay::NuclideActivityPair &nap : activities )
+    {
+      const SandiaDecay::Nuclide *nuclide = nap.nuclide;
+      const double activity = nap.activity;
+      
+      for( const SandiaDecay::Transition *transition : nuclide->decaysToChildren )
+      {
+        for( const SandiaDecay::RadParticle &particle : transition->products )
+        {
+          assert( particle.type <= SandiaDecay::ProductType::XrayParticle );
+          
+          if( !use_particle[particle.type] )
+            continue;
+          
+          if( ((particle.type == SandiaDecay::GammaParticle)
+               || (particle.type == SandiaDecay::XrayParticle))
+             && (particle.energy < lower_photon_energy) )
+          {
+            continue;
+          }
+          
+          if( particle.type == SandiaDecay::PositronParticle )
+          {
+            if( !positron_line.m_transition )
+              positron_line.m_transition = transition;
+            
+            const double br = activity * particle.intensity
+            * transition->branchRatio / parent_activity;
+            
+            positron_line.m_decay_intensity += 2.0 * br;
+            
+            continue;
+          }//if( particle.type == SandiaDecay::PositronParticle )
+          
+          
+          ReferenceLineInfo::RefLine line;
+          line.m_parent_nuclide = nuc;
+          line.m_energy = particle.energy;
+          line.m_transition = transition;
+          
+          if( particle.type == SandiaDecay::XrayParticle )
+          {
+            size_t index = 0;
+            for( ; index < xrays.size(); ++index )
+            {
+              if( fabs( xrays[index].energy - particle.energy ) < 1.0E-6 )
+                break;
+            }
+            
+            if( index < xrays.size() )
+            {
+              line.m_decay_intensity = xrays[index].numPerSecond / parent_activity;
+              line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Xray;
+              line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+              
+              lines.push_back( line );
+              
+              // Erase this x-ray so we dont double-count it
+              xrays.erase( begin( xrays ) + index );
+            } else
+            {
+              // We've already accounted for this energy.
+            }
+            
+            continue;
+          }//if( particle.type == SandiaDecay::XrayParticle )
+          
+          
+          if( !answer.m_has_coincidences && (particle.type == SandiaDecay::GammaParticle) )
+            answer.m_has_coincidences = !particle.coincidences.empty();
+          
+          const double br = activity * particle.intensity
+          * transition->branchRatio / parent_activity;
+          
+          if( input.m_showCascades && (particle.type == SandiaDecay::GammaParticle) )
+          {
+            for( size_t coinc_index = 0; coinc_index < particle.coincidences.size(); ++coinc_index )
+            {
+              const unsigned short int part_ind = particle.coincidences[coinc_index].first;
+              const float fraction = particle.coincidences[coinc_index].second;
+              assert( part_ind < transition->products.size() );
+              if( part_ind < transition->products.size() )
+              {
+                const SandiaDecay::RadParticle &coinc_part = transition->products[part_ind];
+                
+                // The BR of second gamma is just for debugging
+                const double second_br = activity * coinc_part.intensity
+                * transition->branchRatio / parent_activity;
+                
+                if( coinc_part.type == SandiaDecay::ProductType::GammaParticle )
+                  gamma_coincidences.emplace_back( transition, br, particle.energy, coinc_part.energy, fraction, second_br );
+              }//if (part_ind < transition->products.size())
+            }//for( loop over coincidences )
+          }//if( show cascade gammas )
+          
+          
+          // If type is GammaParticle, we could be here if user selected to show cascade, but
+          //  not actual gammas, so we need to check for this, and if so not add this gamma
+          //  in to be shown
+          if( (particle.type == SandiaDecay::GammaParticle) && !input.m_showGammas )
+            continue;
+          
+          line.m_decay_intensity = br;
+          line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+          
+          switch( particle.type )
+          {
+            case SandiaDecay::ProductType::BetaParticle:
+              line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Beta;
+              break;
+              
+            case SandiaDecay::ProductType::GammaParticle:
+              line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+              break;
+              
+            case SandiaDecay::ProductType::AlphaParticle:
+              line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Alpha;
+              break;
+              
+            case SandiaDecay::ProductType::PositronParticle:
+            case SandiaDecay::ProductType::CaptureElectronParticle:
+            case SandiaDecay::ProductType::XrayParticle:
+              assert( 0 );
+              continue;
+              break;
+          }//switch( particle.type )
+          
+          lines.push_back( line );
+        }//for( const SandiaDecay::RadParticle &particle : transition->products )
+      }//for( const SandiaDecay::Transition *transition : nuclide->decaysToChildren )
+    }//for( const SandiaDecay::NuclideActivityPair &nap : activities )
+    
+    if( positron_line.m_decay_intensity > 0.0 )
+      lines.push_back( positron_line );
+  }//if( nuc )
+  
+  // Update showing cascades based on if there are actually any present
+  input.m_showCascades = (answer.m_has_coincidences && input.m_showCascades);
+  answer.m_input.m_showCascades = (answer.m_has_coincidences && input.m_showCascades);
+  
+  
+  
+  if( el )
+  {
+    for( const SandiaDecay::EnergyIntensityPair &eip : el->xrays )
+    {
+      if( eip.energy < lower_photon_energy )
+        continue;
+      
+      ReferenceLineInfo::RefLine line;
+      line.m_element = el;
+      line.m_energy = eip.energy;
+      line.m_decay_intensity = eip.intensity;
+      line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Xray;
+      line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+      
+      lines.push_back( line );
+    }//for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
+  }//if( m_showXrays->isChecked() )
+  
+  
+  if( !rctn_gammas.empty() )
+  {
+    for( const ReactionGamma::ReactionPhotopeak &eip : rctn_gammas )
+    {
+      if( eip.reaction )
+        answer.m_reactions.insert( eip.reaction );
+      
+      if( eip.energy < lower_photon_energy )
+        continue;
+      
+      ReferenceLineInfo::RefLine line;
+      line.m_reaction = eip.reaction;
+      line.m_energy = eip.energy;
+      line.m_decay_intensity = eip.abundance;
+      line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+      line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+      
+      lines.push_back( line );
+    }//for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
+  }//if( !rctn_gammas.empty() )
+  
+  
+  if( !otherRefLinesToShow.empty() )
+  {
+    assert( is_background || is_custom_energy );
+    assert( !nuc && !el && rctn_gammas.empty() );
+    
+    const SandiaDecay::Nuclide *u238 = is_background ? db->nuclide( "U238" ) : nullptr;
+    const SandiaDecay::Nuclide *u235 = is_background ? db->nuclide( "U235" ) : nullptr;
+    const SandiaDecay::Nuclide *th232 = is_background ? db->nuclide( "Th232" ) : nullptr;
+    const SandiaDecay::Nuclide *ra226 = is_background ? db->nuclide( "Ra226" ) : nullptr;
+    const SandiaDecay::Nuclide *k40 = is_background ? db->nuclide( "K40" ) : nullptr;
+    
+    for( const OtherRefLine &bl : otherRefLinesToShow )
+    {
+      if( std::get<0>( bl ) < lower_photon_energy )
+        continue;
+      
+      ReferenceLineInfo::RefLine line;
+      line.m_energy = std::get<0>( bl );
+      line.m_decay_intensity = std::get<1>( bl );
+      line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+      line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+      
+      if( !std::get<2>(bl).empty() )
+        line.m_decaystr = std::get<2>(bl) + ", ";
+      
+      switch( std::get<3>( bl ) )
+      {
+        case OtherRefLineType::U238Series:
+          line.m_parent_nuclide = u238;
+          line.m_decaystr += "U238 series";
+          break;
+          
+        case OtherRefLineType::U235Series:
+          line.m_parent_nuclide = u235;
+          line.m_decaystr += "U235 series";
+          break;
+          
+        case OtherRefLineType::Th232Series:
+          line.m_parent_nuclide = th232;
+          line.m_decaystr += "Th232 series";
+          break;
+          
+        case OtherRefLineType::Ra226Series:
+          line.m_parent_nuclide = ra226;
+          line.m_decaystr += "U238 (Ra226) series";
+          break;
+          
+        case OtherRefLineType::K40Background:
+          line.m_parent_nuclide = k40;
+          line.m_decaystr += "Primordial";
+          break;
+          
+        case OtherRefLineType::BackgroundXRay:
+        {
+          //std::get<2>( bl ) will be like "Pb xray"
+          line.m_decaystr = std::get<2>( bl );
+          if( !std::get<4>( bl ).empty() )
+            line.m_decaystr += (line.m_decaystr.empty() ? "" : ", ") + std::get<4>( bl );
+          line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Xray;
+          vector<string> parts;
+          SpecUtils::split( parts, std::get<2>( bl ), " " );
+          if( !parts.empty() )
+            line.m_element = db->element( parts[0] );
+          break;
+        }//case OtherRefLineType::BackgroundXRay:
+          
+        case OtherRefLineType::OtherBackground:
+        case OtherRefLineType::BackgroundReaction:
+        {
+          line.m_decaystr = std::get<2>( bl );
+          
+          line.m_parent_nuclide = db->nuclide( std::get<2>( bl ) );
+          // TODO: try to get reaction if didnt get nuclide - also, nuclide list may be CSV, could split that
+          //const ReactionGamma *rctnDb = ReactionGammaServer::database();
+          //if( rctnDb )
+          //{
+          //  rctnDb->gammas( input.m_input_txt, rctn_gammas );
+          //...
+          //}
+          
+          if( !std::get<4>( bl ).empty() )
+            line.m_decaystr += (line.m_decaystr.empty() ? "" : ", ") + std::get<4>( bl );
+          
+          // TODO: We should probably do a little better than string matching to define as a single/double escape peak.
+          if( line.m_decaystr.find("S.E.") != string::npos )
+            line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::SingleEscape;
+          else if( line.m_decaystr.find("D.E.") != string::npos )
+            line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape;
+          
+          break;
+        }
+      }//switch( get<3>(*bl) )
+      
+      
+      lines.push_back( line );
+    }//for( otherRefLinesToShow )
+  }//if( !otherRefLinesToShow.empty() )
+  
+  
+  // Now calc detector response and shielding
+  //  Up to now, we shouldnt have any escape or sum gammas in answer.m_ref_lines
+  double max_alpha_br = 0.0, max_beta_br = 0.0, max_photon_br = 0.0;
+  for( ReferenceLineInfo::RefLine &line : lines )
+  {
+    assert( (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal)
+           || (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Annihilation)
+           || (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::SingleEscape)
+           || (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape) );
+    
+    switch( line.m_particle_type )
+    {
+      case ReferenceLineInfo::RefLine::Particle::Alpha:
+        max_alpha_br = std::max( max_alpha_br, line.m_decay_intensity );
+        break;
+        
+      case ReferenceLineInfo::RefLine::Particle::Beta:
+        max_beta_br = std::max( max_beta_br, line.m_decay_intensity );
+        break;
+        
+      case ReferenceLineInfo::RefLine::Particle::Gamma:
+      case ReferenceLineInfo::RefLine::Particle::Xray:
+      {
+        double energy = line.m_energy;
+        switch( line.m_source_type )
+        {
+          case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+          case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+            break;
+            
+          case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+            // TODO: Need to put in S.E. DRF factor here
+            energy += 510.998950;
+            break;
+            
+          case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+            // TODO: Need to put in D.E. DRF factor here
+            energy += 2.0*510.998950;
+            break;
+            
+          case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+          case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
+            assert( 0 );
+            break;
+        }//switch( line.m_source_type )
+        
+        if( input.m_det_intrinsic_eff )
+          line.m_drf_factor = input.m_det_intrinsic_eff( energy );
+        
+        if( input.m_shielding_att )
+          line.m_shield_atten = input.m_shielding_att( energy );
+        
+        max_photon_br = std::max( max_photon_br,
+                                 line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten );
+        break;
+      }
+    }//switch( line.m_particle_type )
+  }//for( ReferenceLineInfo::RefLine &line : lines )
+  
+  
+  const double alpha_sf = ((max_alpha_br > 0.0) && !IsNan(max_alpha_br)) ? (1.0 / max_alpha_br) : 1.0;
+  const double beta_sf = ((max_beta_br > 0.0) && !IsNan(max_beta_br)) ? (1.0 / max_beta_br) : 1.0;
+  const double photon_sf = ((max_photon_br > 0.0) && !IsNan(max_photon_br)) ? (1.0 / max_photon_br) : 1.0;
+  
+  for( ReferenceLineInfo::RefLine &line : lines )
+  {
+    switch( line.m_particle_type )
+    {
+      case ReferenceLineInfo::RefLine::Particle::Alpha:
+        line.m_particle_sf_applied = alpha_sf;
+        line.m_normalized_intensity = line.m_decay_intensity * alpha_sf;
+        break;
+        
+      case ReferenceLineInfo::RefLine::Particle::Beta:
+        line.m_particle_sf_applied = beta_sf;
+        line.m_normalized_intensity = line.m_decay_intensity * beta_sf;
+        break;
+        
+      case ReferenceLineInfo::RefLine::Particle::Gamma:
+      case ReferenceLineInfo::RefLine::Particle::Xray:
+        line.m_particle_sf_applied = photon_sf;
+        line.m_normalized_intensity = photon_sf * line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten;
+        break;
+    }//switch( line.m_particle_type )
+    
+    // We wont filter out lines smaller than wanted here
+    if( (line.m_transition || is_background)
+       && (line.m_normalized_intensity <= input.m_lower_br_cutt_off
+           || IsInf( line.m_normalized_intensity )
+           || IsNan( line.m_normalized_intensity )) )
+    {
+      continue;
+    }
+    
+    
+    // Now lets fill out line.m_decaystr
+    if( line.m_decaystr.empty() )
+    {
+      if( line.m_transition )
+      {
+        if( line.m_transition->parent )
+          line.m_decaystr = line.m_transition->parent->symbol;
+        if( line.m_transition->child )
+          line.m_decaystr += " to " + line.m_transition->child->symbol;
+        
+        // TODO: for alphas and betas its pretty redundant to have this next line (I guess its redundant no matter what actually)
+        line.m_decaystr += string( " via " ) + SandiaDecay::to_str( line.m_transition->mode );
+      }else if( line.m_reaction )
+      {
+        // TODO: we can probably come up with a better way to describe reactions
+        if( line.m_reaction->targetNuclide && line.m_reaction->targetElement )
+        {
+          switch( line.m_reaction->type )
+          {
+            case AlphaNeutron:   line.m_decaystr = "Alphas on "; break;
+            case NeutronAlpha:   line.m_decaystr = "Neutrons on "; break;
+            case AlphaProton:    line.m_decaystr = "Alphas on "; break;
+            case NeutronCapture: line.m_decaystr = "Neutron capture by "; break;
+            case NeutronInelasticScatter: line.m_decaystr = "Neutron inelastic scatter on "; break;
+            case AnnihilationReaction: break;
+            case NumReactionType:      break;
+          }//switch( line.m_reaction->type )
+          
+          line.m_decaystr += line.m_reaction->targetNuclide->symbol;
+          //if( line.m_reaction->productNuclide )
+          //  line.m_decaystr += " to give " + line.m_reaction->productNuclide->symbol;
+        }
+      }else if( line.m_element )
+      {
+        line.m_decaystr = line.m_element->name + " fluorescence";
+      }
+    }//if( line.m_decaystr.empty() )
+    
+    answer.m_ref_lines.push_back( line );
+  }//for( ReferenceLineInfo::RefLine &line : answer.m_ref_lines )
+  
+  
+  // If we add in escape peaks - we could put them in here
+  
+  // Add in coincident gammas
+  if( !gamma_coincidences.empty() )
+  {
+    double max_coincidence_br = 0.0;
+    vector<ReferenceLineInfo::RefLine> coinc_ref_lines;
+    for( const auto &casc : gamma_coincidences )
+    {
+      const SandiaDecay::Transition *const &trans = get<0>( casc );
+      const double &first_br = get<1>( casc );
+      const float &first_energy = get<2>( casc );
+      const float &second_energy = get<3>( casc );
+      const float &coinc_frac = get<4>( casc );
+      const double &second_br = get<5>( casc );
+      
+      const float energy = first_energy + second_energy;
+      
+      ReferenceLineInfo::RefLine line;
+      line.m_energy = energy;
+      line.m_decay_intensity = first_br * coinc_frac;
+      line.m_parent_nuclide = nuc;
+      line.m_transition = trans;
+      line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+      line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak;
+      
+      if( input.m_det_intrinsic_eff )
+        line.m_drf_factor = input.m_det_intrinsic_eff( first_energy ) * input.m_det_intrinsic_eff( second_energy );
+      
+      if( input.m_shielding_att )
+        line.m_shield_atten = input.m_shielding_att( first_energy ) * input.m_shielding_att( second_energy );
+      
+      const double amp = line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten;
+      assert( !IsNan( amp ) && !IsInf( amp ) );
+      if( IsNan( amp ) || IsInf( amp ) )
+      {
+        cerr << "Unexpected NaN or Inf coincidence amp." << endl;
+        continue;
+      }
+      
+      line.m_decaystr = "Cascade sum";
+      if( trans && trans->parent )
+        line.m_decaystr += " " + trans->parent->symbol;
+      if( trans && trans->child )
+        line.m_decaystr += " to " + trans->child->symbol;
+      
+      char buffer[128];
+      snprintf( buffer, sizeof( buffer ),
+               " (%.1f + %.1f keV, coinc=%.3g)",
+               first_energy, second_energy, coinc_frac );
+      
+      line.m_decaystr += buffer;
+      
+      coinc_ref_lines.push_back( std::move( line ) );
+      
+      max_coincidence_br = std::max( max_coincidence_br, amp );
+    }//for( loop over cascades )
+    
+    assert( coinc_ref_lines.empty()
+           || ((max_coincidence_br > 0.0) && !IsNan( max_coincidence_br )) );
+    
+    // Scale the coincidence line amplitudes to be between 0
+    for( ReferenceLineInfo::RefLine &line : coinc_ref_lines )
+    {
+      const double sf = 1.0 / max_coincidence_br;
+      line.m_particle_sf_applied = sf;
+      const double amp = line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten * sf;
+      line.m_normalized_intensity = amp;
+    }//for( ReferenceLineInfo::RefLine &line : coinc_ref_lines )
+    
+    // There can be tons of cascade sums (4834 for U238), we'll limit the number
+    //   we draw to an arbitrary 350, because this is even more than I expect to
+    //   be relevant (although I didnt actually check this).
+    //  TODO: limit based on importance, and not a flat limit, e.g., use something like
+    //        yield(i)*sqrt(energy(i))/sum(yield*sqrt(energy))
+    const size_t max_cascade_sums = 350;
+    if( coinc_ref_lines.size() > max_cascade_sums )
+    {
+      std::sort( begin( coinc_ref_lines ), end( coinc_ref_lines ),
+                []( const ReferenceLineInfo::RefLine &lhs, const ReferenceLineInfo::RefLine &rhs ) -> bool {
+        if( lhs.m_normalized_intensity == rhs.m_normalized_intensity )
+          return lhs.m_energy > rhs.m_energy;
+        return lhs.m_normalized_intensity > rhs.m_normalized_intensity;
+      } );
+      
+      cout << "Resizing cascade sums from " << coinc_ref_lines.size() << " to " << max_cascade_sums << endl;
+      coinc_ref_lines.resize( max_cascade_sums );
+    }//if( coinc_ref_lines.size() > 350 )
+    
+    answer.m_ref_lines.reserve( answer.m_ref_lines.size() + coinc_ref_lines.size() );
+    
+    for( const ReferenceLineInfo::RefLine &line : coinc_ref_lines )
+    {
+      const double &amp = line.m_normalized_intensity;
+      if( !IsNan( amp ) && !IsInf( amp )
+         && (amp >= std::numeric_limits<float>::min()) // numeric_limits<float>::min()==1.17549e-38
+         && (amp > input.m_lower_br_cutt_off)
+         )
+        answer.m_ref_lines.push_back( line );
+    }//for( ReferenceLineInfo::RefLine &line : coinc_ref_lines )
+  }//if( !gamma_coincidences.empty() )
+  
+  
+  //Clientside javascript currently doesnt know about this garuntee that gamma
+  //  lines will be sorted by energy.
+  answer.sortByEnergy();
+  
+  return answer_ptr;
+}//std::shared_ptr<ReferenceLineInfo> generateRefLineInfo()

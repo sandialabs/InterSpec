@@ -987,47 +987,92 @@ void peakCandidateSourceFromRefLines( std::shared_ptr<const PeakDef> peak, const
   
   for( const ReferenceLineInfo &ref : showingRefLines )
   {
-    //Right now just look for nuclides
-    if( !ref.m_nuclide )
-      continue;
-    
-    SandiaDecay::NuclideMixture mix;
-    mix.addNuclideByActivity( ref.m_nuclide, 1.0E6*SandiaDecay::becquerel );
-    double age = 0.0;
-    if( !ref.m_input.m_age.empty() )
+    switch( ref.m_source_type )
     {
-      try
-      {
-        age = PhysicalUnits::stringToTimeDuration(ref.m_input.m_age);
-      }catch( std::exception & )
-      {
-        age = PeakDef::defaultDecayTime(ref.m_nuclide);
-      }
-    }else
-    {
-      age = PeakDef::defaultDecayTime(ref.m_nuclide);
-    }
+      case ReferenceLineInfo::SourceType::Nuclide:
+      case ReferenceLineInfo::SourceType::FluorescenceXray:
+      case ReferenceLineInfo::SourceType::Reaction:
+      case ReferenceLineInfo::SourceType::Background:
+        break;
+        
+      case ReferenceLineInfo::SourceType::CustomEnergy:
+      case ReferenceLineInfo::SourceType::None:
+        continue;
+        break;
+    }//switch( ref.m_source_type )
     
-    const vector<SandiaDecay::EnergyRatePair> gammas = mix.gammas( age, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
-    const vector<SandiaDecay::EnergyRatePair> xrays = (ref.m_input.m_showXrays ? mix.xrays( age ) : vector<SandiaDecay::EnergyRatePair>{});
-    
+  
     vector<pair<string,double>> trials;
     
     //We will take the simeple approach and assume transmision and detection efficiency
     //  are about the same for all lines we care about, and create a simple
     //  weight of sf/(0.25*sigma + distance)
-    for( const auto &gamma : gammas )
+    for( const ReferenceLineInfo::RefLine &line : ref.m_ref_lines )
     {
-      const double distance = fabs( gamma.energy - mean );
+      double energy = line.m_energy;
+      const double distance = fabs( energy - mean );
       
       if( distance > 4.0*sigma )
         continue;
       
-      const double amp = gamma.numPerSecond;
+      const double amp = line.m_normalized_intensity;
       const double weight = amp / (0.25*sigma + distance);
       
-      snprintf( buffer, sizeof(buffer), "%s %.2f keV",
-                ref.m_nuclide->symbol.c_str(), gamma.energy );
+      string source = ref.m_input.m_input_txt;
+      
+      //if( ref.m_source_type == ReferenceLineInfo::SourceType::Background )
+      //{
+      if( line.m_parent_nuclide )
+        source = line.m_parent_nuclide->symbol;
+      else if( line.m_element )
+        source = line.m_element->symbol;
+      else if( line.m_reaction )
+        source = line.m_reaction->name();
+      else
+        continue; //We want to be able to assign peaks to a source
+      //}//if( ref.m_source_type == ReferenceLineInfo::SourceType::Background )
+      
+      string typestr;
+      
+      switch( line.m_particle_type )
+      {
+        case ReferenceLineInfo::RefLine::Particle::Alpha:
+        case ReferenceLineInfo::RefLine::Particle::Beta:
+          // We dont want alpha or beta particles
+          continue;
+          break;
+          
+        case ReferenceLineInfo::RefLine::Particle::Gamma:
+          break;
+          
+        case ReferenceLineInfo::RefLine::Particle::Xray:
+          typestr = " xray";
+          break;
+      }//switch( line.m_particle_type )
+      
+      
+      switch( line.m_source_type )
+      {
+        case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+        case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+          break;
+          
+        case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+          typestr = " S.E.";
+          energy += 510.99891;
+          break;
+        case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+          typestr = " D.E.";
+          energy += 2.0*510.99891;
+          break;
+          
+        case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+        case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
+          continue;
+      }//switch( line.m_source_type )
+      
+      snprintf( buffer, sizeof(buffer), "%s%s %.2f keV",
+               source.c_str(), typestr.c_str(), energy );
       
       trials.emplace_back( buffer, weight );
     }//for( const auto &gammas : gammas )
@@ -1193,7 +1238,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
   for( const std::string &nuc : otherpeaksnucs )
     nsources[nuc] = nsources.count(nuc) ? nsources[nuc] : 1;
   
-  //Aritifically bump up the rating for background and common sources; note that
+  //Artificially bump up the rating for background and common sources; note that
   //  this is put in just to play around with, we may not want to keep it, I
   //  really dont like hard coding any nuclides anywhere in InterSpec (20141120)
   for( map<string,int>::iterator i = nsources.begin(); i != nsources.end(); ++i )
@@ -1261,7 +1306,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
                   p->gammaParticleEnergy() );
       }else
       {
-        //The opening and closing paranthesis as first/last character will cause
+        //The opening and closing parenthesis as first/last character will cause
         //  InterSpec::updateRightClickNuclidesMenu(...) to disable the
         //  menu item in the right click menu
         snprintf( buffer, sizeof(buffer), "(%s of %.2f keV Peak)",

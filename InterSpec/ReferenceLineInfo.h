@@ -100,7 +100,19 @@ struct RefLineInput
   RefLineInput();
   void reset();
   
+  /** The text that defines the source, ex., "U238", "Pb", "background", "511 keV".
+   */
   std::string m_input_txt;
+  
+  /** The age of the nuclide.
+   
+   If it is a nuclide source, and the age string is empty, then the default age will
+   be used.
+   If it is a fluorescence x-ray, reaction, background, or custom energy, then this
+   string should be blank.
+   
+   If non-empty, this string may look like "1.2 y" (1.2 years), "5 HL" (5 half-lives), etc.
+   */
   std::string m_age;  //
   
   /** Color to draw the line with.  Alpha not currently supported. */
@@ -116,10 +128,19 @@ struct RefLineInput
   bool m_showCascades;
   
   
-  // Name of detector the amplitude of lines has been modulated with, if any
+  /** The name of the detector to display as having had the reference
+   lines modulated with.
+   */
   std::string m_detector_name;
   
-  // The intrinsic efficiency, as a function of energy, for the DRF; maybe be null
+  /** The intrinsic efficiency of the detector, as a function of energy.
+   
+   Maybe be nullptr.
+   
+   I'm not hugely crazy about having this defined here, because this
+   function will not be serialized to/from XML, which then leads to
+   a potentially inconsistent state.
+   */
   std::function<float(float)> m_det_intrinsic_eff;
   
   // TODO: I'm not super happy with shielding definition; I'm torn how to represent it everywhere...
@@ -203,6 +224,15 @@ struct RefLineInput
  */
 struct ReferenceLineInfo
 {
+  /** Generates the reference lines from the given input.
+   
+   The returned answer will always be non-null, and the function shouldnt
+   throw exception, however, you should check #ReferenceLineInfo::m_validity
+   to determine success status of the call.
+   */
+  static std::shared_ptr<ReferenceLineInfo> generateRefLineInfo( RefLineInput input );
+  
+  
   /** A struct to represent the information for a single reference line.  */
   struct RefLine
   {
@@ -229,7 +259,15 @@ struct ReferenceLineInfo
     */
     double m_normalized_intensity;
 
+    /** The detectors intrinsic efficiency.
+     Should be between in range [0,1], with it being 1.0 if no DRF is being used.
+     */
     float m_drf_factor;
+    
+    /** The efficiency of the gamma/x-ray to make it through the shielding with
+     interacting.
+     Should be between in range [0,1], with it being 1.0 if no shielding present.
+     */
     float m_shield_atten;
 
     /** The scale factor applied so that the largest amplitude particle of this 
@@ -240,9 +278,16 @@ struct ReferenceLineInfo
     */
     float m_particle_sf_applied;
 
-    std::string m_particlestr;
+    /** This is a string that describes to the user where this particle was generated.
+     Examples:
+     - "Cascade sum Pa234 to U234 (131.3 + 456.7 leV, coinc=0.0514) decay"
+     - "Th234 to Pa234m via Beta decay"
+     */
     std::string m_decaystr;
-    std::string m_elementstr;
+    
+    /** Returns one of: "cascade-sum", "sum-gamma", "S.E.", "D.E.", "alpha", "beta", "gamma", "xray"
+     */
+    const std::string &particlestr() const;
 
     /** The original branching ratio of the process, to this energy. 
     This is what the "Reference Photopeaks" table displays as the intensity.
@@ -257,7 +302,7 @@ struct ReferenceLineInfo
       Gamma,
       Xray
     };//enum Particle
-
+    
     /** Decay particle type.  I.e., Gamma, Beta, alpha, capture-e, x-ray. */
     Particle m_particle_type;
 
@@ -281,7 +326,7 @@ struct ReferenceLineInfo
       DoubleEscape,
       CoincidenceSumPeak,
       SumGammaPeak
-    };
+    };//enum class RefGammaType : int
     
     /** The gamma type (Normal, Annih., S.E., D.E., x-ray).
     

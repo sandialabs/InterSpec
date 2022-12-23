@@ -263,9 +263,6 @@ protected:
   void updateDisplayFromInput( RefLineInput user_input );
  
   RefLineInput userInput() const;
-  static std::shared_ptr<ReferenceLineInfo> generateRefLineInfo( RefLineInput input );
-
-  std::shared_ptr<ReferenceLineInfo> refLineForUserInput();
 
   static std::vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
   
