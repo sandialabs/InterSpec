@@ -81,6 +81,78 @@ namespace
     return a.first < b.first;
   }
   
+
+// We'll read CharacteristicGammas.txt in just once; if you want to access this files contents,
+//  just call the #characteristicGammas() function, and it will take care of everything for you.
+//  There are about 110 entries in "CharacteristicGammas.txt"
+std::mutex sm_CharacteristicGammas_mutex;
+bool sm_CharacteristicGammas_inited = false;
+vector<tuple<string, const SandiaDecay::Nuclide *, float>> sm_CharacteristicGammas;
+
+const vector<tuple<string, const SandiaDecay::Nuclide *, float>> &characteristicGammas()
+{
+  std::lock_guard<std::mutex> lock( sm_CharacteristicGammas_mutex );
+  if( sm_CharacteristicGammas_inited )
+    return sm_CharacteristicGammas;
+  
+  string line;
+  const string filename = SpecUtils::append_path( dataDirectory(), "CharacteristicGammas.txt" );
+  
+#ifdef _WIN32
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+  ifstream characteristicFile( filename.c_str(), ios_base::binary|ios_base::in );
+#else
+  ifstream characteristicFile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+  
+  sm_CharacteristicGammas_inited = true;
+  
+  if( !characteristicFile.is_open() )
+  {
+    cerr << "Failed to open '" << filename << "' - nuclide suggestions will not use it." << endl;
+    return sm_CharacteristicGammas;
+  }
+  
+  
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  if( !db )
+  {
+    assert( db );
+    cerr << "Failed to get SandiaDecayDataBase - nuclide suggestions will not use it." << endl;
+    return sm_CharacteristicGammas;
+  }
+  
+  
+  while( SpecUtils::safe_get_line( characteristicFile, line ) )
+  {
+    vector<string> fields;
+    SpecUtils::trim( line );
+    if( line.empty() )
+      continue;
+    
+    SpecUtils::split( fields, line, " \t" );
+    
+    double testenergy;
+    if( (fields.size() != 2) || !(stringstream(fields[1]) >> testenergy) )
+    {
+      cerr << "CharacteristicGammas.txt: Failed to read line '" << line << "' - skipping." << endl;
+      continue;
+    }
+    
+    const SandiaDecay::Nuclide *testnuc = db->nuclide( fields[0] );
+    
+    sm_CharacteristicGammas.push_back( {fields[0], testnuc, testenergy} );
+  }//while( getline( characteristicFile, line ) )
+  
+  std::sort( sm_CharacteristicGammas.begin(), sm_CharacteristicGammas.end(),
+            []( const tuple<string, const SandiaDecay::Nuclide *, float> &lhs,
+               const tuple<string, const SandiaDecay::Nuclide *, float> &rhs ) -> bool {
+    return get<2>(lhs) < get<2>(rhs);
+  } );
+  
+  return sm_CharacteristicGammas;
+}//const vector<...> &characteristicGammas()
+
 }//namespace
 
 
@@ -127,46 +199,11 @@ double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr
 }//double minDetectableCounts(...)
 
 
-
 map<const SandiaDecay::Nuclide *, int> characteristics(
       std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > all_peaks )
 {
   //Now go through CharacteristicGammas.txt, and possibly augment weights
-  typedef pair<double,const SandiaDecay::Nuclide*> EnergyNucPair;
-  vector<EnergyNucPair > characlines;
-  
-  {//begin codeblock to read characteristic gammas
-    string line;
-    const string filename = SpecUtils::append_path( dataDirectory(), "CharacteristicGammas.txt" );
-    
-#ifdef _WIN32
-    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-    ifstream characteristicFile( filename.c_str(), ios_base::binary|ios_base::in );
-#else
-    ifstream characteristicFile( filename.c_str(), ios_base::binary|ios_base::in );
-#endif
-    
-    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-    
-    while( SpecUtils::safe_get_line( characteristicFile, line ) )
-    {
-      vector<string> fields;
-      SpecUtils::trim( line );
-      SpecUtils::split( fields, line, " \t" );
-      if( fields.size() != 2 )
-        continue;
-      
-      const double testenergy = std::stod( fields[1] );
-      
-      const SandiaDecay::Nuclide *testnuc = db->nuclide( fields[0] );
-      
-      if( testnuc )
-        characlines.push_back( pair<double,const SandiaDecay::Nuclide*>(testenergy,testnuc) );
-    }//while( getline( characteristicFile, line ) )
-    
-    std::sort( characlines.begin(), characlines.end(), &less_than_by_first< pair<double,const SandiaDecay::Nuclide*> >  );
-  }//end codeblock to read characteristic gammas
-  
+  const vector<tuple<string, const SandiaDecay::Nuclide *, float>> &characlines = characteristicGammas();
   
   map<const SandiaDecay::Nuclide *, int> answer;
   
@@ -174,13 +211,16 @@ map<const SandiaDecay::Nuclide *, int> characteristics(
   {
     const double lowe = (peak->gausPeak() ? (peak->mean()-1.5*peak->sigma()) : peak->lowerX());
     const double highe = (peak->gausPeak() ? (peak->mean() + 1.5*peak->sigma()) : peak->upperX());
-    for( const EnergyNucPair &enp : characlines )
+    for( const tuple<string, const SandiaDecay::Nuclide *, float> &enp : characlines )
     {
-      if( (enp.first>=lowe) && (enp.first<=highe) )
+      const float energy = get<2>(enp);
+      const SandiaDecay::Nuclide *nuc = get<1>(enp);
+      
+      if( nuc && (energy >= lowe) && (energy <= highe) )
       {
-        if( answer.find(enp.second) == answer.end() )
-          answer[enp.second] = 0;
-        answer[enp.second] = answer[enp.second] + 1;
+        if( answer.find(nuc) == answer.end() )
+          answer[nuc] = 0;
+        answer[nuc] = answer[nuc] + 1;
       }
     }//for( const EnergyNucPair &enp : characlines )
   }//for( std::shared_ptr<const PeakDef> peak : all_peaks )
@@ -457,6 +497,9 @@ void suggestNuclides(
     candidates.push_back( nearNucs[i] );
   }//for( size_t i = 0; i < nearNucs.size(); ++i )
   
+  // The characteristics(...) gives weight based on number of peaks that
+  // nuclides in CharacteristicGammas.txt - it doesnt single out the single
+  // peak we are interested in.
   map<const SandiaDecay::Nuclide *, int> charclines = characteristics( peaks );
   for( NuclideStatWeightPair &n : candidates )
   {
@@ -464,10 +507,57 @@ void suggestNuclides(
       n.weight *= 2.0*charclines[n.nuclide];
   }
   
-  //Preffer isotopes with longer half lives
+  // Here we will check if our peak of interest matches one of the lines in CharacteristicGammas.txt
+  //  And if so, we'll double its weight, or at least make sure the nuclide is a candidate
+  //  TODO: move this logic to #characteristics(...), and maybe improve the logic to have better fractional weighting.
+  {// Begin check if `peak` corresponds to nuclide in CharacteristicGammas.txt, if so
+    double max_weight = 0.0;
+    for( NuclideStatWeightPair &n : candidates )
+      max_weight = std::max( max_weight, n.weight );
+    
+    const float lower_e = static_cast<float>(energy - 2.0*sigma);
+    const float upper_e = static_cast<float>(energy + 2.0*sigma);
+   
+    // We could use lower/upper_bound, since characteristicGammas() is sorted by energy,
+    //  but its few enough elements I wont bother with this at the moment.
+    map<const SandiaDecay::Nuclide *, size_t> n_times_nuc;
+    for( const tuple<string, const SandiaDecay::Nuclide *, float> &line : characteristicGammas() )
+    {
+      const SandiaDecay::Nuclide * const nuc = get<1>(line);
+      if( n_times_nuc.count(nuc) )
+        n_times_nuc[nuc] = 0;
+      n_times_nuc[nuc] += 1;
+      
+      const float line_energy = get<2>(line);
+      if( nuc && (line_energy >= lower_e) && (line_energy <= upper_e) )
+      {
+        bool found_candidate = false;
+        for( NuclideStatWeightPair &n : candidates )
+        {
+          if( n.nuclide == nuc )
+          {
+            found_candidate = true;
+            n.weight += 0.5*max_weight; //the 0.5 and max_weight are arbitrarily decided, without testing
+            break;
+          }
+        }
+        
+        if( !found_candidate )
+        {
+          NuclideStatWeightPair nuswp;
+          nuswp.nuclide = nuc;
+          nuswp.weight = 0.5*max_weight / n_times_nuc[nuc]; //Weight is arbitrarily decided, without testing
+          candidates.push_back( std::move(nuswp) );
+        }
+      }//if( our peak matches this characteristic line )
+    }//for( loop over CharacteristicGammas.txt )
+  }// End check if `peak` corresponds to nuclide in CharacteristicGammas.txt, if so
+  
+  
+  //Prefer isotopes with longer half lives
   //I want some thing like:
   //  n.weight *= (log(1.0 + n.nuclide->halfLife) / log(max_hl));
-  //but inorder to get Th232 instead of U232 when only the 2614 peak is
+  //but in order to get Th232 instead of U232 when only the 2614 peak is
   //  identified, I have to add a slight weight in....
   for( NuclideStatWeightPair &n : candidates )
     n.weight *= (1.0 - 1.2*(1.0-(log(1.0 + n.nuclide->halfLife) / log(max_hl))));
