@@ -153,6 +153,308 @@ const vector<tuple<string, const SandiaDecay::Nuclide *, float>> &characteristic
   return sm_CharacteristicGammas;
 }//const vector<...> &characteristicGammas()
 
+
+
+std::mutex sm_PhotPeakLis_mutex;
+bool sm_PhotPeakLis_inited = false;
+
+/** Similar to CharacteristicGammas.txt, we will parse PhotoPeak.lis a single time into memory.
+ 
+ Previously, we were looping over the file each time we wanted data from it, and stopping once we
+ found the energy we wanted; at an energy of ~1400 keV, it would take like 15ms to find the entry.
+ 
+ Now the upfront parsing into memory takes ~11 ms, but subsequent searches take no time.
+ We are not finding the Nuclide, Element, or Reaction pointers, because this then costs ~100ms
+ to initialize (although I'm not sure SandiaDecay was being compiled with -O3).
+ */
+enum class PhotopeakLisType
+{
+  Xray, Reaction, Nuclide
+};//
+
+vector<tuple<float, //Energy, in keV
+             float, //BR
+             string, //symbol, ex. "Co60", "Fe".  Xrays and reactions give just symbol (it looks like short string optimization always kicks in, so std::string is no cost).
+             PhotopeakLisType,
+             ReferenceLineInfo::RefLine::RefGammaType>> sm_PhotPeakLis;
+
+
+template<size_t n>
+const char *str_pos( const char *line, const size_t length, const char (&label)[n] )
+{
+  static_assert( n > 1, "You must call with a non-empty search string" );
+  
+  const char * const end = line + length;
+  const char * const pos = std::search( line, end, label, label + (n-1) );
+  
+  return (pos == end) ? nullptr : pos;
+}
+
+
+const vector<tuple<float,
+                   float,
+                   string,
+                   PhotopeakLisType,
+                   ReferenceLineInfo::RefLine::RefGammaType>> &photopeak_lis()
+{
+  // Single threaded: Took 10820.5 microseconds to parse PhotoPeak.lis; 367.693 microseconds of this was loading data
+                   
+  // There were 10567 total entries.
+  //const auto start_time = std::chrono::steady_clock::now();
+                     
+  std::lock_guard<std::mutex> lock( sm_PhotPeakLis_mutex );
+  if( sm_PhotPeakLis_inited )
+    return sm_PhotPeakLis;
+  
+  sm_PhotPeakLis_inited = true;
+  
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  assert( db );
+  if( !db )
+    return sm_PhotPeakLis;
+  
+  const ReactionGamma *reactionDb = nullptr;
+  try
+  {
+    reactionDb = ReactionGammaServer::database();
+  }catch(...)
+  {
+    cerr << "photopeak_lis(): Failed to open gamma reactions XML file" << endl;
+  }
+  
+  
+  const string filename = SpecUtils::append_path( dataDirectory(), "PhotoPeak.lis" );
+  
+#ifdef _WIN32
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+  ifstream input( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+  ifstream input( filename.c_str(), ios_base::binary | ios_base::in );
+#endif
+  
+  if( !input.good() )
+  {
+    cerr << "photopeak_lis(): Failed to open " << filename << endl;
+    return sm_PhotPeakLis;
+  }//if( !input.good() )
+  
+
+  input.unsetf(ios::skipws);
+  
+  // Determine stream size
+  input.seekg(0, ios::end);
+  const size_t size = static_cast<size_t>( input.tellg() );
+  input.seekg(0);
+  
+  if( size < 100*1024 )
+  {
+    cerr << "photopeak_lis(): Photopeak.lis file smaller than expected - only " << size << " bytes" << endl;
+    return sm_PhotPeakLis;
+  }
+                     
+  // Load data
+  string data;
+  data.resize(size);
+  if( !input.read(&data.front(), static_cast<streamsize>(size)) )
+  {
+    cerr << "photopeak_lis(): Failed to read " << filename << endl;
+    return sm_PhotPeakLis;
+  }
+  
+  // We expect 10974 entries, so we'll reserve this space upfront, plus a little
+  size_t line_num = 0;
+  sm_PhotPeakLis.resize( 10974 + 26 );
+                    
+#define VALIDATE_PHOTOPEAK_LIS_NUCS 0
+                     
+  //const auto data_load_time = std::chrono::steady_clock::now();
+                     
+  bool is_sorted = true;
+  float last_energy = -1000;
+                     
+  // TODO: we could break parsing this file up into multiple threads without much difficulty.
+  size_t line_start = 0, line_end = 0;
+  for( ; (line_start + 1) < size; line_start = line_end + 1 )
+  {
+    //Example lines:
+    //    "  955.34  AlCapture           0.476  9.2e-05"
+    //    "  954.55  I132               17.569  0.066"
+    //    " 7463.00  CrCapture de        8.664  3.3e-04"
+    //    " 7847.30  N16 de              0.076  1.2e-04"
+    //    " 1332.49  Co60               99.983  0.516"
+    //    "   57.98  W x-ray            57.838  0.263"
+    
+    line_end = data.find('\n', line_start + 1);
+    if( line_end == string::npos )
+      line_end = size;
+    
+    assert( line_end > line_start );
+    assert( (line_end - line_start) < 50 );
+    assert( ((line_end - line_start) < 5) || ((line_end - line_start) > 38) );
+    
+    const size_t line_len = (line_end > line_start) ? (line_end - line_start) : size_t(0);
+    if( line_len < 38 )
+    {
+      cerr << "photopeak_lis(): Found line of length " << line_len << endl;
+      continue;
+    }
+    
+    const char * const begin_energy = data.c_str() + line_start;
+    const char * const begin_nuc = begin_energy + 10;
+    const char * const begin_importance = begin_energy + 28;
+    const char * const begin_br = begin_energy + 36;
+    const char * const end_line = data.c_str() + line_end - 1; //-1 is for \r
+    
+    //cout << "Energy='" << string(begin_energy, begin_nuc) << "', nuc='" << string(begin_nuc, begin_importance)
+    //<< "', importance='" << string(begin_importance,begin_br) << "', br='" << string(begin_br,end_line) << "'" << endl;
+    
+    if( line_num >= sm_PhotPeakLis.size() )
+      sm_PhotPeakLis.resize( sm_PhotPeakLis.size() + 100 );
+    
+    auto &line_data = sm_PhotPeakLis[line_num];
+    
+    if( !SpecUtils::parse_float( begin_energy, 9, get<0>(line_data) ) )
+    {
+      cerr << "photopeak_lis(): Failed to parse float for line '" << std::string(begin_energy,end_line) << "'" << endl;
+      continue;
+    }
+    
+    if( !SpecUtils::parse_float( begin_br, line_len - 36, get<1>(line_data) ) )
+    {
+      cerr << "photopeak_lis(): Failed to parse BR for line '" << std::string(begin_energy,end_line) << "'" << endl;
+      continue;
+    }
+  
+    if( get<0>(line_data) < last_energy )
+      is_sorted = false;
+    last_energy = get<0>(line_data);
+    
+    const char * const xray_pos = str_pos( begin_nuc, 16, "x-ray" );
+    const char * const capture_pos = str_pos( begin_nuc, 16, "Capture" );
+    // There is one 'AlInelastic' and one 'FeInelastic' in the file, but no other 'Inelastic' - so we'll ignore them
+    const char * const se_pos = str_pos( begin_nuc, 16, " se" );
+    const char * const de_pos = str_pos( begin_nuc, 16, " de" );
+    
+    
+    if( se_pos )
+      get<4>(line_data) = ReferenceLineInfo::RefLine::RefGammaType::SingleEscape;
+    else if( de_pos )
+      get<4>(line_data) = ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape;
+    else
+      get<4>(line_data) = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+    
+    if( xray_pos )
+    {
+      assert( xray_pos >= begin_nuc );
+      
+      get<2>(line_data) = string(begin_nuc, xray_pos);
+      get<3>(line_data) = PhotopeakLisType::Xray;
+      
+#if( VALIDATE_PHOTOPEAK_LIS_NUCS )
+      
+      // For debug builds, check we do actually find the element
+      const SandiaDecay::Element *el = db->element( get<2>(line_data) );
+      // We could check the energy, but its not that important.
+      
+      if( !el )
+        cerr << "photopeak_lis(): Failed to get element for line '" << get<2>(line_data) << "'" << endl;
+       
+#endif
+    }else if( capture_pos )
+    {
+      if( !reactionDb )
+        continue;
+      
+      get<2>(line_data) = string(begin_nuc, capture_pos);
+      get<3>(line_data) = PhotopeakLisType::Reaction;
+      
+#if( VALIDATE_PHOTOPEAK_LIS_NUCS )
+      const SandiaDecay::Element * const el = db->element( string(begin_nuc, capture_pos) );
+      if( !el )
+      {
+        cerr << "photopeak_lis(): Failed to get element for line '" << std::string(begin_energy,end_line) << "'" << endl;
+        continue;
+      }
+
+      // Implementation to match the gamma up to the reaction
+      vector<const ReactionGamma::Reaction *> reactions;
+      reactionDb->reactions( el, reactions );
+      
+      const float energy = get<0>(line_data) + (se_pos ? 510.9989f : (de_pos ? 1021.998f : 0.0f));
+      const ReactionGamma::Reaction *rctn = nullptr;
+      
+      // TODO: Find the reaction with largest BR at this energy - there could be multiple reactions with this energy (e.g., slow and fast share an energy)
+      float nearest_de = 1000000.0f;
+      for( size_t rctn_index = 0; !rctn && (rctn_index < reactions.size()); ++rctn_index )
+      {
+        const ReactionGamma::Reaction * const r = reactions[rctn_index];
+        
+        for( size_t gamma_index = 0; gamma_index < r->gammas.size(); ++gamma_index )
+        {
+          const ReactionGamma::EnergyAbundance &ea = r->gammas[gamma_index];
+          const float de = fabs(ea.energy - energy);
+          if( (de < 1.0f) && (de < nearest_de) )
+          {
+            nearest_de = de;
+            rctn = r;
+          }
+        }
+      }//for( const ReactionGamma::Reaction *r : reactions )
+      
+      if( !rctn  || (nearest_de > 2.0f) )
+      {
+        // About 405 of 2073 'Capture' lines dont get matches... InterSpec really needs reaction data updated.
+        //cerr << "Failed to get reaction for line '" << std::string(begin_energy,end_line) << "'" << endl;
+        continue;
+      }
+      
+      //get<4>(line_data) = rctn;
+#endif
+    }else //if( is probably a nuclide )
+    {
+      const char * const end_nuc = se_pos ? se_pos : (de_pos ? de_pos : (begin_nuc + 9));
+      get<2>(line_data) = string(begin_nuc, end_nuc);
+      get<3>(line_data) = PhotopeakLisType::Nuclide;
+      
+#if( VALIDATE_PHOTOPEAK_LIS_NUCS )
+      string nuclide(begin_nuc, end_nuc);
+      const SandiaDecay::Nuclide *nuc = db->nuclide( nuclide );
+      
+      if( !nuc )
+      {
+        if( nuclide.find("Inelast") == string::npos ) //Dont print error message for the 'AlInelastic' and 'FeInelastic' lines
+          cerr << "photopeak_lis(): Failed to get nuclide for line '" << std::string(begin_energy,end_line) << "' - nuclide='" << nuclide << "'" << endl;
+      }//
+#endif
+    }//
+    
+    line_num += 1;
+  }//for( ; (line_start + 1) < size; line_start = line_end + 1 )
+  
+  sm_PhotPeakLis.resize( line_num );
+                     
+  assert( is_sorted );
+  if( !is_sorted )
+  {
+    cerr << "PhotoPeak.lis not sorted" << endl;
+    std::sort( begin(sm_PhotPeakLis), end(sm_PhotPeakLis),
+              []( const tuple<float,float,string,PhotopeakLisType,ReferenceLineInfo::RefLine::RefGammaType> &lhs,
+                 const tuple<float,float,string,PhotopeakLisType,ReferenceLineInfo::RefLine::RefGammaType> &rhs) -> bool {
+      
+    } );
+  }//if( !is_sorted )
+                     
+  //const auto end_time = std::chrono::steady_clock::now();
+  //cout << "Took " << std::chrono::duration<double, std::micro>(end_time - start_time).count()
+  //     << " microseconds to parse PhotoPeak.lis; "
+  //     << std::chrono::duration<double, std::micro>(data_load_time - start_time).count()
+  //     << " microseconds of this was loading data"
+  //     << endl;
+  //cout << "There were " << sm_PhotPeakLis.size() << " total entries." << endl;
+  
+  return sm_PhotPeakLis;
+}//photopeak_lis(...)
+
 }//namespace
 
 
@@ -711,6 +1013,8 @@ void findCandidates( vector<string> &suggestednucs,
 void findCharacteristics( vector<string> &characteristicnucs,
                          std::shared_ptr<const PeakDef> peak )
 {
+  const vector<tuple<float,float,string,PhotopeakLisType,ReferenceLineInfo::RefLine::RefGammaType>> &lines = photopeak_lis();
+ 
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   
   if( !peak || !peak->gausPeak() || !db )
@@ -722,7 +1026,6 @@ void findCharacteristics( vector<string> &characteristicnucs,
   {
     reactionDb = ReactionGammaServer::database();
   }catch(...){ cerr << "Failed to open gamma reactions XML file" << endl; }
-  
   
   //We could probably cache the parsed file into memorry, to save CPU, but
   //  whatever for now.
@@ -741,15 +1044,6 @@ void findCharacteristics( vector<string> &characteristicnucs,
     return;
   }//if( !input.good() )
   
-  //PhotoPeak.lis actually looks to be structured such that we could speed up
-  //  access to the line with the starting energy we care about, by fitting a
-  //  polynomial that gives the offset, or some offset below, the start of
-  //  the line for that energy.
-  //This would of course also require implementing a unit test to check this,
-  //  and possibly also a mechanism to account for if the user makes a change
-  //  such as deleting a line in the file.
-  
-  
   const double mean = peak->mean();
   const double sigma = peak->gausPeak() ? peak->sigma() : 0.125*peak->roiWidth();
   const double nsigma = (0.03 < (sigma/mean)) ? 1.25 : 2.5;
@@ -759,8 +1053,8 @@ void findCharacteristics( vector<string> &characteristicnucs,
   if( mean > 4500.0 )
     width = std::max( width, 30.0 );
   
-  const double minenergy = peak->mean() - width;
-  const double maxenergy = peak->mean() + width;
+  const float minenergy = static_cast<float>( peak->mean() - width );
+  const float maxenergy = static_cast<float>( peak->mean() + width );
   
   //First place the results into a map, keyed off of difference in energy from
   //  the peak mean, so this way results will be returned, ordered by how close
@@ -770,107 +1064,57 @@ void findCharacteristics( vector<string> &characteristicnucs,
   string line;
   char buff[64];
   
-  while( SpecUtils::safe_get_line( input, line ) )
+  auto compare = []( const tuple<float,float,string,PhotopeakLisType,ReferenceLineInfo::RefLine::RefGammaType> &line, const float energy ) ->bool {
+    return (get<0>(line) < energy);
+  };
+  
+  auto iter = std::lower_bound( begin(lines), end(lines), minenergy, compare );
+  
+  //cout << "Start val=" << std::get<0>(*iter) << " keV for " << minenergy << " keV - peak->mean()=" << peak->mean() << endl;
+  
+  for( ; (iter != end(lines)) && (get<0>(*iter) <= maxenergy); ++iter )
   {
-    //Example lines:
-    //    " 2836.35  Al n-gamma          1.851	1.548"
-    //    " 2002.15  125Sn               1.920	26.299"
-    //    " 1082.60  62Co de             0.164	0.225"
-    //    "  883.24  238Pu             7.7E-07	2.7E-02"
-    //    "  706.40  57Co                0.025	0.077"
-    //    "  152.00  Ta n-gamma         14.964	7.482"
-    //    "  184.40  166Hom             73.200	166.667"
-    //    "  185.80  245Cm               0.010	0.100"
-    if( line.size() < 25 )
-      continue;
+    const tuple<float,float,string,PhotopeakLisType,ReferenceLineInfo::RefLine::RefGammaType> &line = *iter;
     
-    try
+    const string nucstr = SpecUtils::trim_copy( get<2>(line) ); // I dont think the trim is really necassary, but whatever
+    const double diff = fabs( mean - get<0>(line) );
+    
+    double energy = get<0>(line);
+    const char *escape_str = "";
+    switch( get<4>(line) )
     {
-      string energystr = line.substr( 0, 9 );
-      SpecUtils::trim( energystr );
-      double energy = std::stod( energystr.c_str() );
-      
-      if( energy < minenergy )
-        continue;
-      
-      if( energy > maxenergy )
+      case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+      case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+      case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+      case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
         break;
-      
-      const double diff = fabs( mean - energy );
-      
-      string nucstr = line.substr( 10, 16 );
-      SpecUtils::trim( nucstr );
-      
-      if( nucstr.size() < 2 )
-        continue;
-      
-      const bool isReaction = (nucstr.find("n-gamma") != string::npos);
-      const bool isXRay = (nucstr.find("x-ray") != string::npos);
-      const bool isDoubleEscape = (nucstr.find(" de") != string::npos);
-      const bool isSingleEscape = (nucstr.find(" se") != string::npos);
-      
-      if( isXRay )
-      {
+      case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+        energy += 510.9989;
+        escape_str = "S.E. ";
+        break;
+        
+      case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+        energy += 1021.998f;
+        escape_str = "D.E. ";
+        break;
+    }//switch( get<4>(line) )
+    
+    
+    switch( get<3>(line) )
+    {
+      case PhotopeakLisType::Xray:
         results[diff].push_back( nucstr );
-      }else if( !isDoubleEscape && !isSingleEscape && !isReaction )
+        break;
+        
+      case PhotopeakLisType::Reaction:
       {
-        //166Hom
-        string::size_type pos = nucstr.find_first_not_of( "0123456789" );
-        if( pos == string::npos )
+        if( !reactionDb )
           continue;
-        
-        string anstr = nucstr.substr( 0, pos );
-        nucstr = nucstr.substr( pos );
-        if( nucstr.size() >= 3 && nucstr[2]=='m' )
-        {
-          nucstr = nucstr.substr( 0, 2 );
-          anstr += 'm';
-        }
-        nucstr += anstr;
-        
-        
-        const SandiaDecay::Nuclide *nuc = db->nuclide( nucstr );
-        if( !nuc )
-        {
-          cerr << "Couldnt find '" << nucstr << "' in SandiaDecay db" << endl;
-          continue;
-        }
-        
-        //Energies in PhotoPeak.lis may not exactly line up with the energies
-        //  in SandiaDecay, and since we are relying on text matching later on
-        //  to keep from giving duplicates to users, we have to match this gamma
-        //  energy from PhotoPeak.lis up to the one in SandiaDecay
-        size_t index = 0;
-        const SandiaDecay::Transition *trans = NULL;
-        PeakDef::SourceGammaType type;
-        PeakDef::findNearestPhotopeak( nuc, energy, -1.0, false, trans, index, type );
-        if( trans )
-        {
-          energy = trans->products[index].energy;
-        }else
-        {
-          cerr << "Couldnt find gamma at " << energy <<" keV for " << nucstr
-               << " in SandiaDecay database" << endl;
-          continue;
-        }
-        
-        if( type == PeakDef::NormalGamma )
-        {
-          snprintf( buff, sizeof(buff), "%s %.2f keV", nucstr.c_str(), energy );
-          results[diff].push_back( buff );
-        }
-      }else if( isReaction && reactionDb && !isSingleEscape && !isDoubleEscape )
-      {
-//        "  152.00  Ta n-gamma         14.964	7.482"
-        const string::size_type pos = nucstr.find( " " );
-        if( pos == string::npos )
-          continue;
-        
-        const SandiaDecay::Element *el = db->element( nucstr.substr(0,pos) );
+      
+        const SandiaDecay::Element *el = db->element( nucstr );
         if( !el )
         {
-          cerr << "Couldnt get element for element '" << nucstr.substr(0,pos)
-               << "'" << endl;
+          cerr << "Couldnt get element for element '" << nucstr << "'" << endl;
           continue;
         }//if( !el )
         
@@ -884,36 +1128,68 @@ void findCharacteristics( vector<string> &characteristicnucs,
           {
             if( fabs(g.energy - energy) < 2.0 )
             {
-              snprintf( buff, sizeof(buff), "%s %.2f keV",
-                        rctn->name().c_str(), g.energy );
+              snprintf( buff, sizeof(buff), "%s %s%.2f keV",
+                       rctn->name().c_str(), escape_str, g.energy );
               
               //due to the nested loops, and the non-uniquness of only matching
               //  down to 2 keV, the same reaction/gamma may be inserted into
               //  the result more than once; this is protected against the user
-              //  seing it when all results are collated together.
+              //  seeing it when all results are collated together.
               results[diff].push_back( buff );
             }//if( close enough energy )
           }//for( const ReactionGamma::EnergyAbundance &g : gammas )
         }//for( const ReactionGamma::Reaction *rctn : reactions )
-      }else if( !isReaction && (isSingleEscape || isDoubleEscape) )
+      
+        break;
+      }//case PhotopeakLisType::Reaction:
+        
+      case PhotopeakLisType::Nuclide:
       {
-        //Not implemented
-      }//if( isXRay ) / if else / else
-      
-    }catch( std::exception & )
-    {
-      
-    }//try / catch
-  }//while( SpecUtils::safe_get_line( input, line ) )
+        const SandiaDecay::Nuclide *nuc = db->nuclide( nucstr );
+        if( nuc )
+        {
+          //Energies in PhotoPeak.lis may not exactly line up with the energies in SandiaDecay
+          size_t index = 0;
+          const SandiaDecay::Transition *trans = NULL;
+          PeakDef::SourceGammaType type;
+          PeakDef::findNearestPhotopeak( nuc, energy, -1.0, false, trans, index, type );
+          if( trans )
+          {
+            energy = trans->products[index].energy;
+          }else
+          {
+#if( PERFORM_DEVELOPER_CHECKS )
+            //log_developer_error( __func__, "..." ); this is a bit more than is necassary - we know there will be missing reactions
+            cerr << "Couldnt find gamma at " << energy <<" keV for " << nucstr
+            << " in SandiaDecay database" << endl;
+#endif
+            continue;
+          }
+          
+          snprintf( buff, sizeof(buff), "%s %s%.2f keV", nucstr.c_str(), escape_str, energy );
+          results[diff].push_back( buff );
+        }
+        break;
+      }//case PhotopeakLisType::Nuclide:
+    }//switch( get<3>(line) )
+  }//for( ; (iter != end(lines)) && (get<0>(*iter) <= maxenergy); ++iter )
   
+  // We can easily get over 100 results, which after the first few, are mostly useless - so we
+  //  will arbitrary limit to about 25 results.
+  //  Alternatively we could limit by weight-value, but I havent investigated reasonable ways
+  //  to do this.
+  const size_t max_characteristic_nucs = 25;
   
-  for( map<double,vector<string> >::const_iterator i = results.begin();
-      i != results.end(); ++i )
+  for( const auto &val : results )
   {
-    for( const string &nuc : i->second )
+    for( const string &nuc : val.second )
       characteristicnucs.push_back( nuc );
-  }
-  
+    
+    // Note that if a nuclide had exact same weight, we could have a few more results
+    //  than max_characteristic_nucs
+    if( characteristicnucs.size() > max_characteristic_nucs )
+      break;
+  }//for( const auto &val : results )
 }//void findCharacteristics(...)
 
 

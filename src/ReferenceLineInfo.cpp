@@ -1606,6 +1606,23 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         
         // TODO: for alphas and betas its pretty redundant to have this next line (I guess its redundant no matter what actually)
         line.m_decaystr += string( " via " ) + SandiaDecay::to_str( line.m_transition->mode );
+        
+        switch( line.m_transition->mode )
+        {
+          case SandiaDecay::AlphaDecay:
+          case SandiaDecay::BetaDecay:
+          case SandiaDecay::BetaPlusDecay:
+          case SandiaDecay::ProtonDecay:
+            line.m_decaystr += " decay";
+            break;
+            
+          case SandiaDecay::IsometricTransitionDecay:
+            line.m_decaystr += " transition";
+            break;
+          
+          default:
+            break;
+        }//switch( line.m_transition->mode )
       }else if( line.m_reaction )
       {
         // TODO: we can probably come up with a better way to describe reactions
