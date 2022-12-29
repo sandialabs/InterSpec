@@ -45,10 +45,6 @@
 #endif
 
 
-#if( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE )
-#include "InterSpec/SpectrumViewerTester.h"
-#endif
-
 #if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
 #include "testing/developcode.h"
 #endif
@@ -83,11 +79,7 @@ int main( int argc, char **argv )
 #if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
   return developcode::run_development_code();
 #endif
-    
-#if( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE )
-  SpectrumViewerTester::doOfflineTesting();
-  return 1;
-#endif
+  
   
 #if( ANDROID )
   AndroidUtils::androidbuf stdbuf( AndroidUtils::androidbuf::FromCout );

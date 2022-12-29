@@ -39,21 +39,6 @@ endif( hasParent )
 
 
 option(
-    BUILD_AS_UNIT_TEST_SUITE
-    "Builds unit tests as well the analysis tests (aka end-to-end tests)"
-    OFF
-)
-option(
-    BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE
-    "Compiles so executable only does offline testing of the user test states in the database (e.g. end-to-end testing)"
-    OFF
-)
-set(TEST_SUITE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/testing"
-    CACHE STRING
-    "Path to directory that contains the \"analysis_tests\" directory for saving N42 test states.  Leave empty for CWD."
-)
-
-option(
     BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT
     "Build executable for use while testing new code, not running InterSpec"
     OFF
@@ -178,7 +163,7 @@ endif()
 # Make a cached variable avaiable to parent cmake projects
 set( INTERSPEC_VERSION "${PROJECT_VERSION}" CACHE STRING "InterSpec version" )
 
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+if(NOT CMAKE_BUILD_TYPE)
     #Default to debug
     SET(CMAKE_BUILD_TYPE Debug CACHE STRING
         "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel."
@@ -192,13 +177,6 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     )
 endif(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 
-if(BUILD_AS_UNIT_TEST_SUITE)
-    set(BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE ON)
-endif(BUILD_AS_UNIT_TEST_SUITE)
-
-if(BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE)
-    set(INCLUDE_ANALYSIS_TEST_SUITE ON)
-endif(BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE)
 
 if(INCLUDE_ANALYSIS_TEST_SUITE)
     set(USE_DB_TO_STORE_SPECTRA ON)
@@ -210,16 +188,6 @@ if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
 
-if(BUILD_AS_UNIT_TEST_SUITE)
-    set(BUILD_AS_LOCAL_SERVER OFF)
-    set(USE_ENERGY_VS_TIME_PLOTS OFF)
-    set(USE_DB_TO_STORE_SPECTRA ON)
-    set(INCLUDE_ANALYSIS_TEST_SUITE ON)
-    set(TRY_TO_STATIC_LINK ON)
-    set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
-    set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
-    set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
-endif(BUILD_AS_UNIT_TEST_SUITE)
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT)
@@ -662,7 +630,7 @@ if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
     target_link_libraries(InterSpecLib PUBLIC pugixml)
 endif()
 
-if( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE OR BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
+if( BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
     target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
 endif()
 

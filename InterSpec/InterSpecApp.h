@@ -124,7 +124,7 @@ public:
   //  other not-super-fast actions.
   static std::string tempDirectory();
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP)
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   /** Returns the token passed as part of url using parameter 'externalid' or 'apptoken'.
    e.g., if url looked like "localhost:8080?externalid=blah", then this function would return "blah"
    
@@ -236,7 +236,7 @@ protected:
   virtual void prepareForEndOfSession();
   
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   /** Checks for URL argument "externalid", or equivalently "apptoken", and if found sets m_externalToken to it.
    
    Returns true if session should continue to be loaded; also notifies InterSpecServer we have loaded this token.
@@ -281,7 +281,7 @@ protected:
   std::unique_ptr<Wt::JSignal<> > m_thinkingLeaveSignal;
 #endif
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   /** App token specified using the URL "externalid" or "apptoken" arguments. */
   std::string m_externalToken;
   

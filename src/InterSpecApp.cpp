@@ -91,7 +91,7 @@
 #include "target/wxWidgets/InterSpecWxUtils.h"
 #endif
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
 #include "InterSpec/InterSpecServer.h"
 #endif
 
@@ -136,7 +136,7 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
     , m_safeAreas{ 0.0f }
 #endif
 {
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP  )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE  )
   if( !checkExternalTokenFromUrl() )
   {
     setTitle( "Error loading" );
@@ -176,7 +176,7 @@ InterSpecApp::~InterSpecApp()
 }//~InterSpecApp()
 
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
 bool InterSpecApp::checkExternalTokenFromUrl()
 {
   m_primaryApp = false;
@@ -977,7 +977,7 @@ std::chrono::steady_clock::time_point::duration InterSpecApp::activeTimeInCurren
   return m_activeTimeInSession;
 }
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS|| BUILD_AS_WX_WIDGETS_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS|| BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
 std::string InterSpecApp::externalToken()
 {
   WApplication::UpdateLock lock( this );
@@ -1029,7 +1029,7 @@ InterSpecApp *InterSpecApp::instanceFromExtenalToken( const std::string &idstr )
   
   return nullptr;
 }//InterSpecApp *instanceFromExtenalToken( const std::string &idstr )
-#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP  )
+#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
 
 
 

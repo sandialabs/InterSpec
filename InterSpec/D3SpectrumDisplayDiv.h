@@ -270,7 +270,7 @@ public:
   void setShowPeakLabel( int peakLabel, bool show );
   bool showingPeakLabel( int peakLabel ) const;
   
-#if( BUILD_AS_UNIT_TEST_SUITE || BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE || BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
+#if( BUILD_AS_UNIT_TEST_SUITE || BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
   SpectrumDataModel *model(){ return m_model; }
 #endif
   

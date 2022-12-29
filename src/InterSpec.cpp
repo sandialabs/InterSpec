@@ -230,7 +230,7 @@ extern void android_download_workaround( Wt::WResource *resource, std::string de
 std::mutex InterSpec::sm_staticDataDirectoryMutex;
 std::string InterSpec::sm_staticDataDirectory = "data";
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
 std::mutex InterSpec::sm_writableDataDirectoryMutex;
 std::string InterSpec::sm_writableDataDirectory = "";
 #endif  //if( not a webapp )
@@ -1137,6 +1137,8 @@ void InterSpec::setStaticDataDirectory( const std::string &dir )
   if( !SpecUtils::is_file(decay_xml_file) )
     throw runtime_error( "InterSpec::setStaticDataDirectory(): " + dir + " does not contain a sandia.decay.xml file." );
   DecayDataBaseServer::setDecayXmlFile( decay_xml_file );
+  
+  IsotopeId::setDataDirectory( dir );
 }//void setStaticDataDirectory( const std::string &dir )
 
 
@@ -1146,7 +1148,7 @@ std::string InterSpec::staticDataDirectory()
   return sm_staticDataDirectory;
 }
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
 void InterSpec::setWritableDataDirectory( const std::string &dir )
 {
   std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );

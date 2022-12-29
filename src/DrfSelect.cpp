@@ -1668,7 +1668,7 @@ std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
       {
         WAbstractItemModel *m = d->m_detectorSelect->model();
         const string p = boost::any_cast<std::string>( m->data( currentIndex, 0, Wt::UserRole ) );
-        auto answer = DrfSelect::initAGadrasDetectorFromDirectory( p, m_interspec );
+        auto answer = DrfSelect::initAGadrasDetectorFromDirectory( p );
         
         if( p.find("GenericGadrasDetectors") != string::npos )
           answer->setDrfSource( DetectorPeakResponse::DrfSource::DefaultGadrasDrf );
@@ -4680,7 +4680,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const std:
     
     if( thiscsv.size() && thisdat.size() )
     {
-      auto det = initAGadrasDetectorFromDirectory( path, interspec );
+      auto det = initAGadrasDetectorFromDirectory( path );
       if( det )
       {
         if( SpecUtils::icontains( basepath, "GenericGadrasDetectors") )
@@ -4697,7 +4697,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const std:
 }//std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const std::string &name );
 
 
-std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetectorFromDirectory( const std::string &path, InterSpec *interspec )
+std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetectorFromDirectory( const std::string &path )
 {
   auto det = std::make_shared<DetectorPeakResponse>();
 
