@@ -662,7 +662,6 @@ void RefLineInput::deSerialize( const rapidxml::xml_node<char> *base_node )
         PhysicalUnits::stringToDistance(input.m_shielding_thickness);
       }catch( std::exception &e )
       {
-        input.m_shielding_name = "";
         input.m_shielding_thickness = "";
         cerr << "Unexpected invalid shielding thickness when deserializing: " << e.what() << endl;
       }
@@ -674,32 +673,40 @@ void RefLineInput::deSerialize( const rapidxml::xml_node<char> *base_node )
   {
     input.m_shielding_an = node->value();
   
-    node = base_node->first_node( "ShieldingAD", 11 );
-    if( node && node->value_size() )
+    double dummy;
+    if( !(stringstream(input.m_shielding_an) >> dummy) )
     {
-      input.m_shielding_ad = node->value();
-      double dummy;
-      if( !(stringstream(input.m_shielding_an) >> dummy)
-         || !(stringstream(input.m_shielding_ad) >> dummy) )
-      {
-        cerr << "Unexpected invalid AN (" << input.m_shielding_an
-             << ") or AD (" << input.m_shielding_ad << ")" << endl;
-        input.m_shielding_an = input.m_shielding_ad = "";
-      }else
-      {
-        assert( input.m_shielding_name.empty() );
-        assert( input.m_shielding_thickness.empty() );
-        
-        input.m_shielding_name = input.m_shielding_thickness = "";
-      }//
+      cerr << "Unexpected invalid AN (" << input.m_shielding_an << ")" << endl;
+      input.m_shielding_an = input.m_shielding_ad = "";
     }else
     {
-      cerr << "Unexpected missing <ShieldingAD>" << endl;
-      input.m_shielding_an = input.m_shielding_ad = "";
-    }
+      assert( input.m_shielding_name.empty() );
+      assert( input.m_shielding_thickness.empty() );
+      
+      input.m_shielding_name = input.m_shielding_thickness = "";
+    }//
   }//if( node && node->value_size() )
   
-  if( !input.m_shielding_an.empty() && !input.m_shielding_ad.empty() )
+  
+  node = base_node->first_node( "ShieldingAD", 11 );
+  if( node && node->value_size() )
+  {
+    input.m_shielding_ad = node->value();
+    double dummy;
+    if( !(stringstream(input.m_shielding_ad) >> dummy) )
+    {
+        cerr << "Unexpected invalid AD (" << input.m_shielding_ad << ")" << endl;
+        input.m_shielding_an = input.m_shielding_ad = "";
+    }else
+    {
+      assert( input.m_shielding_name.empty() );
+      assert( input.m_shielding_thickness.empty() );
+      input.m_shielding_name = input.m_shielding_thickness = "";
+    }//
+  }//if( node && node->value_size() )
+  
+  
+  if( !input.m_shielding_an.empty() || !input.m_shielding_ad.empty() )
   {
     assert( input.m_shielding_name.empty() );
     assert( input.m_shielding_thickness.empty() );
@@ -707,7 +714,7 @@ void RefLineInput::deSerialize( const rapidxml::xml_node<char> *base_node )
     input.m_shielding_thickness.clear();
   }
   
-  if( !input.m_shielding_name.empty() && !input.m_shielding_thickness.empty() )
+  if( !input.m_shielding_name.empty() || !input.m_shielding_thickness.empty() )
   {
     assert( input.m_shielding_an.empty() );
     assert( input.m_shielding_ad.empty() );
@@ -826,41 +833,53 @@ void RefLineInput::serialize( rapidxml::xml_node<char> *parent_node ) const
   
   if( !m_shielding_name.empty() )
   {
+    assert( m_shielding_an.empty() );
+    assert( m_shielding_ad.empty() );
+    
     name = "ShieldingName";
     value = doc->allocate_string( m_shielding_name.c_str() );
     node = doc->allocate_node( rapidxml::node_element, name, value );
     base_node->append_node( node );
-    
-    if( !m_shielding_thickness.empty() )
-    {
-      name = "ShieldingThickness";
-      value = doc->allocate_string( m_shielding_thickness.c_str() );
-      node = doc->allocate_node( rapidxml::node_element, name, value );
-      base_node->append_node( node );
-    }
   }//if( shieldingName.size() )
   
+  if( !m_shielding_thickness.empty() )
+  {
+    assert( m_shielding_an.empty() );
+    assert( m_shielding_ad.empty() );
+    
+    name = "ShieldingThickness";
+    value = doc->allocate_string( m_shielding_thickness.c_str() );
+    node = doc->allocate_node( rapidxml::node_element, name, value );
+    base_node->append_node( node );
+  }
   
-  if( !m_shielding_an.empty() && !m_shielding_ad.empty() )
+  
+  if( !m_shielding_an.empty() || !m_shielding_ad.empty() )
   {
     assert( m_shielding_name.empty() );
     assert( m_shielding_thickness.empty() );
     
 #ifndef NDEBUG
     double dummy;
-    assert( (stringstream(m_shielding_an) >> dummy) );
-    assert( (stringstream(m_shielding_ad) >> dummy) );
+    assert( m_shielding_an.empty() || (stringstream(m_shielding_an) >> dummy) );
+    assert( m_shielding_ad.empty() || (stringstream(m_shielding_ad) >> dummy) );
 #endif
     
-    name = "ShieldingAN";
-    value = doc->allocate_string( m_shielding_an.c_str() );
-    node = doc->allocate_node( rapidxml::node_element, name, value );
-    base_node->append_node( node );
+    if( !m_shielding_an.empty() )
+    {
+      name = "ShieldingAN";
+      value = doc->allocate_string( m_shielding_an.c_str() );
+      node = doc->allocate_node( rapidxml::node_element, name, value );
+      base_node->append_node( node );
+    }
     
-    name = "ShieldingAD";
-    value = doc->allocate_string( m_shielding_ad.c_str() );
-    node = doc->allocate_node( rapidxml::node_element, name, value );
-    base_node->append_node( node );
+    if( !m_shielding_ad.empty() )
+    {
+      name = "ShieldingAD";
+      value = doc->allocate_string( m_shielding_ad.c_str() );
+      node = doc->allocate_node( rapidxml::node_element, name, value );
+      base_node->append_node( node );
+    }
   }//if( !m_shielding_an.empty() && !m_shielding_ad.empty() )
   
   
@@ -910,6 +929,12 @@ void RefLineInput::setShieldingAttFcn( const MaterialDB *db )
   
   assert( m_shielding_an.empty() );
   assert( m_shielding_ad.empty() );
+  
+  if( m_shielding_name.empty() || m_shielding_thickness.empty() )
+  {
+    m_shielding_att = nullptr;
+    return;
+  }
   
   if( m_shielding_name.empty() )
   {
@@ -1649,7 +1674,14 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       }
     }//if( line.m_decaystr.empty() )
     
-    answer.m_ref_lines.push_back( line );
+    const double &amp = line.m_normalized_intensity;
+    if( !IsNan( amp ) && !IsInf( amp )
+       && (amp >= std::numeric_limits<float>::min()) // numeric_limits<float>::min()==1.17549e-38
+       && (amp > input.m_lower_br_cutt_off)
+       )
+    {
+      answer.m_ref_lines.push_back( line );
+    }
   }//for( ReferenceLineInfo::RefLine &line : answer.m_ref_lines )
   
   

@@ -1799,13 +1799,16 @@ RefLineInput ReferencePhotopeakDisplay::userInput() const
     }else
     {
       std::shared_ptr<const Material> material = m_shieldingSelect->material();
-      const float thick = static_cast<float>( m_shieldingSelect->thickness() );
+      if( material )
+        input.m_shielding_name = material->name;
+      
+      float thick = 0.0f;
+      input.m_shielding_thickness = m_shieldingSelect->thicknessEdit()->text().toUTF8();
+      if( !input.m_shielding_thickness.empty() )
+        thick = static_cast<float>( m_shieldingSelect->thickness() );
       
       if( material && (thick > 0.0) )
       {
-        input.m_shielding_name = material->name;
-        input.m_shielding_thickness = m_shieldingSelect->thicknessEdit()->text().toUTF8();
-        
         input.m_shielding_att = [material, thick]( float energy ) -> double {
           const double att_coef = GammaInteractionCalc::transmition_coefficient_material( material.get(), energy, thick );
           return exp( -1.0 * att_coef );
@@ -2158,7 +2161,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   
   
   {// Begin handling shielding
-    if( !user_input.m_shielding_name.empty() && !user_input.m_shielding_thickness.empty() )
+    if( !user_input.m_shielding_name.empty() || !user_input.m_shielding_thickness.empty() )
     {
       const string new_mat = SpecUtils::trim_copy( user_input.m_shielding_name );
       const string new_thick = SpecUtils::trim_copy( user_input.m_shielding_thickness );
@@ -2175,7 +2178,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
       {
         m_shieldingSelect->setMaterialNameAndThickness( new_mat, new_thick );
       }
-    }else if( !user_input.m_shielding_an.empty() && !user_input.m_shielding_ad.empty() )
+    }else if( !user_input.m_shielding_an.empty() || !user_input.m_shielding_ad.empty() )
     {
 #ifndef NDEBUG
       double dummy;

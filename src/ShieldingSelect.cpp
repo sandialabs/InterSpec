@@ -1515,7 +1515,7 @@ void ShieldingSelect::setAtomicNumberAndArealDensity( const double an, const dou
 
 void ShieldingSelect::setAtomicNumberAndArealDensity( const std::string &an, const std::string &ad )
 {
-  double an_value, ad_value;
+  double an_value = 1, ad_value = 0;
   if( !an.empty() && !(stringstream(an) >> an_value) )
     throw runtime_error( "setAtomicNumberAndArealDensity: Atomic number not valid number." );
   
