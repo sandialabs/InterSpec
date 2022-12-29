@@ -99,6 +99,37 @@ cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DBoost_INC
 make -j10 install
 ```
 
+## Install Eigen
+```bash
+# Build Eigen, which is required by ceres-solver, and used a few other places
+# in InterSpec if its available
+curl -L https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz --output eigen-3.4.0.tar.gz
+tar -xzvf eigen-3.4.0.tar.gz
+cd eigen-3.4.0
+mkdir build
+cd build
+cmake -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_BUILD_TYPE=Release -DEIGEN_MPL2_ONLY=1 -DEIGEN_BUILD_SHARED_LIBS=OFF -DEIGEN_BUILD_DOC=OFF -DEIGEN_BUILD_TESTING=OFF ..
+cmake --build . --config Release --target install
+cd ../..
+```
+
+## Build Ceres-Solver
+```bash
+# Build ceres-solver; this is the optimizer used for the relative efficiency
+# tool, and a small amount of the peak fitting.
+curl -L http://ceres-solver.org/ceres-solver-2.1.0.tar.gz --output ceres-solver-2.1.0.tar.gz
+tar -xzvf ceres-solver-2.1.0.tar.gz
+cd ceres-solver-2.1.0
+mkdir build_macos
+cd build_macos
+
+# (note: CMAKE_OSX_ARCHITECTURES argument untested on next command)
+cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
+cmake --build . --config Release --target install -j 16
+cd ../..
+```
+
+
 ## Build InterSpec as macOS app
 Note, not currently building as fat binary (have not tried)
 ```bash
