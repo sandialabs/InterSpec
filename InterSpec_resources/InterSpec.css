@@ -961,6 +961,12 @@ input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner
   border: solid 1px #e1e1e1;
   max-height: 90%;
   overflow-y: auto;
+  /* right click on a peak, then "Change Nuclide" submenu can overflow with a long list, which adding
+   the vertical scroll bar onto this list will cause the need for a horizontal scroll bar - which then
+   just looks bad - so we'll hide horizontal scroll, even though it would be better to just resize the
+   menu width, but I'm not immediately sure how to do that.
+   */
+  overflow-x: hidden;
 }
 
 /* Add a drop-shadow for the app-level menus. */
