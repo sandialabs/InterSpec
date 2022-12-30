@@ -1,0 +1,45 @@
+name: CMake Build Matrix
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config: 
+        - {
+            name: "Windows Latest MSVC-2022",
+            os: windows-latest,
+            artifact: "windows_msvc2022.7z",
+            build_type: "Release",
+            cc: "cl",
+            cxx: "cl",
+            archiver: "7z a",
+            generators: "Visual Studio 17 2022"
+          }
+
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+          vsversion: 2022
+
+      # Get CMake, see https://github.com/marketplace/actions/get-cmake
+      - name: get-cmake
+      - uses: lukka/get-cmake@3.24.3
+      
+      #Now go to using: https://github.com/marketplace/actions/run-cmake
+
+      - name: Build dependencies on windows
+        shell: cmd
+        if: matrix.os == 'windows-latest'
+        working-directory: ${{runner.workspace}}/build_deps
+        run: |
+          echo github.event.action: ${{ github.event.action }}
+          echo github.event_name: ${{ github.event_name }}
+          cmake --version
