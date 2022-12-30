@@ -26,18 +26,13 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v3
 
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: amd64
-          vsversion: 2022
-
       # Get CMake, see https://github.com/marketplace/actions/get-cmake
       - name: get-cmake
         uses: lukka/get-cmake@v3.24.3
       
       #Now go to using: https://github.com/marketplace/actions/run-cmake      
       - run: echo "The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo "This job is now running on a ${{ runner.os }} (from matrix ${{ matrix.os }}) server hosted by GitHub"
+      - run: echo "This job is now running on a ${{ runner.os }} server hosted by GitHub"
       - run: echo "Building branch ${{ github.ref }} of repository ${{ github.repository }}."
       - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
       - name: List files in the repository
@@ -46,13 +41,18 @@ jobs:
   
     
       - name: Build dependencies on windows
+        if: runner.os == 'Windows'
         shell: cmd
-        if: matrix.os == 'windows-latest'
-        working-directory: ${{runner.workspace}}/build_deps
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+          vsversion: 2022
+        working-directory: ${{runner.workspace}}
         run: |
           echo github.event.action: ${{ github.event.action }}
           echo github.event_name: ${{ github.event_name }}
           cmake --version
+          cl.exe
 
 
       - run: echo "Job status is ${{ job.status }}."
