@@ -4099,12 +4099,12 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
       layout->addWidget( auto_saved, 0, 0 );
   }//if( snapshots && auto_saved ) / else
   
-  WCheckBox *cb = new WCheckBox( "Automatically store and check for prev. work." );
+  WCheckBox *cb = new WCheckBox( "Automatically check for prev. work." );
   cb->addStyleClass( "PrefCb" );
   layout->addWidget( cb, 1, 0 );
   layout->setRowStretch( 0, 1 );
   
-  InterSpecUser::associateWidget( m_viewer->m_user, "AutoSaveSpectraToDb", cb, m_viewer );
+  InterSpecUser::associateWidget( m_viewer->m_user, "CheckForPrevOnSpecLoad", cb, m_viewer );
   
   
   const int width = std::min( 500, static_cast<int>(0.95*m_viewer->renderedWidth()) );
@@ -4164,7 +4164,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
   try
   {
     const bool storeInDb
-      = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+      = InterSpecUser::preferenceValue<bool>( "CheckForPrevOnSpecLoad", m_viewer );
 
     if( !storeInDb )
       return;

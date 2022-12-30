@@ -570,7 +570,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   try
   {
     const bool saveSpectra =  true; // InterSpecUser::preferenceValue<bool>("SaveSpectraToDb", m_viewer );
-    bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb" /* "SaveStateToDbOnExit"*/, m_viewer );
+    bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
     saveState = (saveState && attemptStateLoad);
     
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
@@ -1187,7 +1187,7 @@ void InterSpecApp::prepareForEndOfSession()
 #if( USE_DB_TO_STORE_SPECTRA )
       //Check to see if we should save the apps state
       const bool saveSpectra = true; //InterSpecUser::preferenceValue<bool>( "SaveSpectraToDb", m_viewer );
-      const bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb" /*"SaveStateToDbOnExit"*/, m_viewer );
+      const bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
         
         //Clean up the kEndOfSessions from before
         bool cleanupStates = true;

@@ -3256,7 +3256,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       //All of this is really ugly and horrible, and should be improved!
       
 //      const bool autosave
-//        = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
+//        = InterSpecUser::preferenceValue<bool>( "CheckForPrevOnSpecLoad", this );
 //      if( autosave )
 //      {
 //      Its actually to late, HEAD will be set to the tag version even if the
@@ -6835,6 +6835,16 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this );
   
 
+  const bool autoCheckOnLoad = InterSpecUser::preferenceValue<bool>( "CheckForPrevOnSpecLoad", this );
+  cb = new WCheckBox( " Check for prev work" );
+  cb->setChecked( autoStore );
+  item = subPopup->addWidget( cb );
+  HelpSystem::attachToolTipOn( item, "When a spectrum file is loaded, check if work (peak fits,"
+                               " activity fits, etc) has previously done on the same file.",
+                              showToolTips );
+  InterSpecUser::associateWidget( m_user, "CheckForPrevOnSpecLoad", cb, this );
+  
+  
   if( !isMobile() )
   {
     WCheckBox *checkbox = new WCheckBox( " Show tooltips" );
