@@ -26,6 +26,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v3
 
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+          vsversion: 2022
+
       # Get CMake, see https://github.com/marketplace/actions/get-cmake
       - name: get-cmake
         uses: lukka/get-cmake@v3.24.3
@@ -41,12 +46,8 @@ jobs:
   
     
       - name: Build dependencies on windows
-        if: runner.os == 'Windows'
         shell: cmd
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: amd64
-          vsversion: 2022
+        if: runner.os == 'Windows'
         working-directory: ${{runner.workspace}}
         run: |
           echo github.event.action: ${{ github.event.action }}
