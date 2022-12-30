@@ -1509,6 +1509,8 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
 }//appendSpecMeasStuffToXml(...);
 
 
+
+
 std::shared_ptr< ::rapidxml::xml_document<char> > SpecMeas::create_2012_N42_xml() const
 {
   using namespace rapidxml;
@@ -1849,7 +1851,10 @@ void SpecMeas::setAutomatedSearchPeaks( const std::set<int> &samplenums,
   m_autoSearchPeaks[samplenums] = peaks;
 //  m_autoSearchInitialPeaks;[samplenums] = intitalPeaks;
   
-  setModified();
+// We dont want to mark this spectrum file as modified just because we've set automated
+// peak search peaks - we only want to capture user-modifications (this way we dont get
+// "previous work" popup even on spectra that we just opened up, and didnt do anything with.
+//  setModified();
 }//setAutomatedSearchPeaks(...)
 
 
@@ -1899,6 +1904,19 @@ void SpecMeas::displayedSpectrumChangedCallback( SpecUtils::SpectrumType type,
     *m_displayedDetectors = detectors;
   }
 }
+
+
+void SpecMeas::set_energy_calibration( const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal,
+                                    const std::shared_ptr<const SpecUtils::Measurement> &meas )
+{
+  const shared_ptr<const SpecUtils::EnergyCalibration> oldcal = meas ? meas->energy_calibration() : nullptr;
+  
+  SpecFile::set_energy_calibration( cal, meas );
+  
+  if( (oldcal != cal) && oldcal && cal && ((*oldcal) != (*cal)) )
+    setModified();
+}//set_energy_calibration(...)
+
 
 SpecUtils::DetectorType SpecMeas::guessDetectorTypeFromFileName( std::string name )
 {
