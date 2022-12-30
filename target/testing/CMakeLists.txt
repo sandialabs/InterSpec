@@ -24,10 +24,12 @@ set(USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE BOOL "")
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
 
 # Set the common arguments that are interpreted by boost unit_test
-set( BOOST_TEST_CL_ARGS "--log_level=test_suite --catch_system_error=yes --report_level=detailed" )
+#  Note: not using quotes in next line; if we do, then all arguments will be passed as a quoted
+#        single argument, which isnt what we want.
+set( BOOST_TEST_CL_ARGS --log_level=test_suite --catch_system_error=yes --report_level=detailed )
 
 # The arguments passed to our code, so the code can know where static nuclear data is, as well spectra and such
-set( DATA_DIR_ARGS "--datadir=${CMAKE_CURRENT_SOURCE_DIR}/../../data --testfiledir=${CMAKE_CURRENT_SOURCE_DIR}/test_data" )
+set( DATA_DIR_ARGS --datadir=${CMAKE_CURRENT_SOURCE_DIR}/../../data --testfiledir=${CMAKE_CURRENT_SOURCE_DIR}/test_data )
 
 add_executable( test_PhysicalUnits test_PhysicalUnits.cpp )
 target_link_libraries( test_PhysicalUnits PRIVATE InterSpecLib )

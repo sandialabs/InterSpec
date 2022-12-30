@@ -1203,11 +1203,12 @@ double stringToEquivalentDose( const std::string &str, const double sievert_defi
 
 double stringToMass( const std::string &str, const double gram_def )
 {
-  const string regex_str = "\\s*\\+?(\\d+(\\.\\d*)?(?:[Ee][+\\-]?\\d+)?)"
-                             "\\s*(" METRIC_PREFIX_UNITS ")*?"
-                             "\\s*\\-*\\s*"
-                             "(gram|grams|g|ounces|ounce|oz|grain|grains|pounds|pound|lbs|lb|stone|stones)"
-                             "\\s*(" DECIMAL_REGEX ".+)?";
+  const string regex_str =
+  "(" DECIMAL_REGEX ")\\s*"
+  "(" METRIC_PREFIX_UNITS ")*?"
+  "\\s*\\-*\\s*"
+  "(gram|grams|g|ounces|ounce|oz|grain|grains|pounds|pound|lbs|lb|stone|stones)\\s*"
+  "(" DECIMAL_REGEX ".+)?";
   
   boost::smatch matches;
   boost::regex expression( regex_str, boost::regex::ECMAScript|boost::regex::icase );
@@ -1219,14 +1220,14 @@ double stringToMass( const std::string &str, const double gram_def )
     //cerr << endl << msg << endl;
     throw std::runtime_error( msg );
   }//if( we dont have a match )
-
-  
+    
   string floatstr( matches[1].first, matches[1].second );
-  string prefix( matches[3].first, matches[3].second );
-  string unitstr( matches[4].first, matches[4].second );
-  string trailingstr( matches[5].first, matches[5].second );
+  string prefix( matches[6].first, matches[6].second );
+  string unitstr( matches[7].first, matches[7].second );
+  string trailingstr( matches[8].first, matches[8].second );
   
-  SpecUtils::trim( floatstr );  //These trims may not be necassary, but whatever
+  SpecUtils::ireplace_all(floatstr, " ", ""); //The string could be like "+ 2.1", which will cause stod to throw
+  SpecUtils::trim( floatstr );  //These trims may not be necessary, but whatever
   SpecUtils::trim( prefix );
   SpecUtils::trim( unitstr );
   SpecUtils::to_lower_ascii( unitstr );
@@ -1244,7 +1245,7 @@ double stringToMass( const std::string &str, const double gram_def )
   else if( unitstr == "grain" || unitstr == "grains" )
     unitval = 0.0647989*gram;
   else
-    throw runtime_error( "Unexpeced mass unit: '" + unitstr + "'" );
+    throw runtime_error( "Unexpected mass unit: '" + unitstr + "'" );
 
   double mass = unitval * std::stod( floatstr );  //shouldnt ever throw, right?
   

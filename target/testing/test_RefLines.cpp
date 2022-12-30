@@ -776,7 +776,8 @@ BOOST_AUTO_TEST_CASE( testCascade )
   BOOST_CHECK( ref_lines->m_source_type == ReferenceLineInfo::SourceType::Nuclide );
   
   summary = get_part_summary( ref_lines->m_ref_lines );
-  BOOST_CHECK_EQUAL( summary.ngamma, 0 );
+  BOOST_CHECK_GT( summary.ngamma, 100 ); //The coincidence are gammas
+  BOOST_CHECK_EQUAL( summary.ngamma, summary.ncoinc );
   BOOST_CHECK_EQUAL( summary.nxray, 0 );
   BOOST_CHECK_EQUAL( summary.nalpha, 0 );
   BOOST_CHECK_EQUAL( summary.nbeta, 0 );

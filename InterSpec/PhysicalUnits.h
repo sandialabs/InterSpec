@@ -248,7 +248,7 @@ namespace PhysicalUnits
    Currently only accepts units of grams (g), pounds (lb, lbs), ounces (oz), and grains, with prefixes of pico (p), nano (n), micro (u),
    milli (m), and kilo (k).
    
-   Example valid input: "1.2 gram", "1.2 grams", "3g", "5 kg", "5 kilogram", "5 kilo-gram", "2lb", "2lb 3oz".
+   Example valid input: "1.2 gram", "1.2 grams", "3g", "5 kg", "5 kilogram", "5 kilo-gram", "2lb", "2lb 3oz", "2lb - 3oz".
 
    Throws std::runtime_exception on failure.
    */

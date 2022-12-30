@@ -522,6 +522,68 @@ BOOST_AUTO_TEST_CASE( userInputActivityRegexTest ) {
 }
 
 
+BOOST_AUTO_TEST_CASE( test_stringToMass )
+{
+  using PhysicalUnits::gram;
+  
+  const double ounce = 28.3495*gram;
+  const double pound = 453.592*gram;
+  const double stone = 6350.29*gram;
+  const double grain = 0.0647989*gram;
+  
+  const pair<string,double> valid_values[] = {
+    {"1.2 gram", 1.2*gram},
+    {"3g", 3*gram},
+    {"5 kg", 5000*gram},
+    {"5 mg", 0.005*gram},
+    {"5 kilogram", 5000*gram},
+    {"5.0E0 kilo-gram", 5000*gram},
+    {"2lb", 2*pound},
+    {"2.34 pounds", 2.34*pound},
+    {".1 oz", 0.1*ounce},
+    {"0.1 oz", 0.1*ounce},
+    {"+0.1 oz", 0.1*ounce},
+    {"+ 0.1 oz", 0.1*ounce},
+    {"2lb 3oz", 2*pound + 3*ounce},
+    {"2.1lb 3E-01oz", 2.1*pound + 0.3*ounce},
+    {"0oz", 0},
+    {"2kg - 1g", 2000*gram - gram},
+    {"-1.3E-01 kg + 10lbs", -130*gram + 10*pound},
+    {"-5kg", -5000*gram}
+  };
+  
+  
+  auto my_check_close = []( const double parsed, const double expected ) -> bool {
+    return (fabs(parsed - expected) <= (1.0E-6*fabs(expected)));
+  };
+  
+  for( const auto &val : valid_values )
+  {
+    const double expected = val.second;
+    double parsed;
+    BOOST_REQUIRE_NO_THROW( parsed = PhysicalUnits::stringToMass( val.first ) );
+    BOOST_CHECK_MESSAGE( my_check_close(parsed,expected), "Mass string '" << val.first
+                        << "' should have value " << expected << ", but stringToMass returned "
+                        << parsed << "\n");
+  }//for( const auto &val : valid_values )
+  
+  
+  const string invalid_values[] = {
+    "13.2 gams",
+    "13.2",
+    "oz 13.2",
+    "oz 1",
+    "1.a gram",
+    "1g 3",
+    ""
+  };
+  
+  for( const string &val : invalid_values )
+  {
+    BOOST_CHECK_THROW( PhysicalUnits::stringToMass(val), std::exception );
+  }
+}//BOOST_AUTO_TEST_CASE( test_stringToMass )
+
 
 BOOST_AUTO_TEST_CASE( test_printToBestSpecificActivityUnits ) {
 //Note 20200127: test cases are not exaustive, and output subject to change if string formatting 
