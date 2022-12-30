@@ -33,7 +33,7 @@ jobs:
 
       # Get CMake, see https://github.com/marketplace/actions/get-cmake
       - name: get-cmake
-      - uses: lukka/get-cmake@3.24.3
+        uses: lukka/get-cmake@3.24.3
       
       #Now go to using: https://github.com/marketplace/actions/run-cmake
 
