@@ -44,16 +44,21 @@ jobs:
         run: |
           ls ${{ github.workspace }}
   
+      - name: Cache Dependencies
+        id: cache-deps
+        uses: actions/cache@v3
+        with:
+          path: '${{runner.temp}/install'
+          key: ${{ runner.os }}-dependencies-win-${{ hashFiles('${{ github.workspace }}/target/patches/dep_build_msvc2022.bat') }}
     
       - name: Build dependencies on windows
         shell: cmd
-        if: runner.os == 'Windows'
-        working-directory: ${{runner.workspace}}
+        if: steps.cache-deps.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        working-directory: ${{runner.temp}}
         run: |
           echo github.event.action: ${{ github.event.action }}
           echo github.event_name: ${{ github.event_name }}
-          cmake --version
-          cl.exe
+          ${{ github.workspace }}\target\patches\dep_build_msvc2022.bat "${{runner.temp}}\dep_build" "${{runner.temp}}\install"
 
 
       - run: echo "Job status is ${{ job.status }}."
