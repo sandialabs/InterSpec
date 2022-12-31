@@ -147,7 +147,7 @@ You also need to install CMake, most easily from https://cmake.org/download/.
 The InterSpec build files are setup to use the MSVC static runtime - it is highly suggested to compile boost, Wt, zlib and optionally Ceres Solver and Eigen, from from source, following these instructions.
 
 
-From the Visual Studio 2019 "x64 Native Tools Command Prompt":
+From the Visual Studio 2022 "x64 Native Tools Command Prompt":
 ```bash
 cd C:\temp
 mkdir build
@@ -159,7 +159,7 @@ cd boost_1_78_0
 bootstrap.bat
 ```
 
-Edit project-config.jam to change
+It shouldnt be necassary, but if you have trouble building boost, you may need to edit project-config.jam to change
 ```bash
 using msvc ;
 ```
@@ -167,6 +167,7 @@ To something like
 ```bash
 using msvc : 14.2 : "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Tools\MSVC\14.29.30133\bin\Hostx64\x64\cl.exe";
 ```
+
 
 Then compile and install:
 
@@ -179,30 +180,30 @@ set MY_PREFIX=C:\install\msvc2022\x64\wt_3.7.1_prefix
 
 Build zlib
 ```bash
-curl -L https://zlib.net/zlib-1.2.11.tar.gz --output zlib-1.2.11.tar.gz
-tar -xzvf zlib-1.2.11.tar.gz
-cd zlib-1.2.11
+curl -L https://zlib.net/zlib-1.2.13.tar.gz --output zlib-1.2.13.tar.gz
+tar -xzvf zlib-1.2.13.tar.gz
+cd zlib-1.2.13
 mkdir build
 
-cmake -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DCMAKE_BUILD_TYPE=Release ..
-# NOTE - you need to manually change all "MD" compiler flags to "MT" - I used the CMake GUI for this
+cmake -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" ..
 cmake --build . --config Debug --target install
 cmake --build . --config Release --target install
 ```
 
-To build Wt, you must patch the Wt source code as described above, and then you can use the cmake GUI to configure Wt, and Visual Studio to build and install it.
-You can use the following command from the command line to initiate the CMake config, but you also need to change all "MD" compiler flags to "MT", which its easiest to do this in the CMake gui.
+To build Wt, you must patch the Wt source code, and then build it
 ```bash
-# Note: I'm not sure how to patch things from the command prompt, so I just used 
-#       an Ubuntu WSL shell to run the following two patch commands; you could probably
-#       also use your command line version of git
-patch -u src/Wt/Render/CssParser.C -i ${PATCH_DIR}/wt/3.7.1/CssParser.C.patch
-patch -u CMakeLists.txt -i ${PATCH_DIR}/wt/3.7.1/CMakeLists.txt.patch  # Only if linking to static runtime
+curl -L https://github.com/emweb/wt/archive/3.7.1.tar.gz --output wt-3.7.1.tar.gz
+tar -xzvf wt-3.7.1.tar.gz
+cd wt-3.7.1
+
+set WT_PATCH_FILE="%PATCH_DIR%\wt\3.7.1\NormalBuild\wt_3.7.1_git.patch"
+git apply --ignore-space-change --ignore-whitespace %WT_PATCH_FILE%
+
 
 mkdir build_msvc2022
 cd build_msvc2022
 
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DBoost_INCLUDE_DIR=%MY_PREFIX%/include -DBOOST_PREFIX=%MY_PREFIX% -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++11" -DCONFIGURATION=data/config/wt_config_electron.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR=%MY_PREFIX%/etc/wt ..
+cmake -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DBoost_INCLUDE_DIR=%MY_PREFIX%/include -DBOOST_PREFIX=%MY_PREFIX% -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++11" -DCONFIGURATION=data/config/wt_config_electron.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR=%MY_PREFIX%/etc/wt ..
 
 cmake --build . --config Release --target install
 
