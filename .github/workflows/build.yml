@@ -76,7 +76,7 @@ jobs:
         run: |
           mkdir build_${{ runner.os }}_wx_app
           cd build_${{ runner.os }}_wx_app
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_head -DCMAKE_PREFIX_PATH="${{runner.temp}}\install ${{ github.workspace }}/target/wxWidgets
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_head -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" "${{ github.workspace }}/target/wxWidgets"
           cmake --build . --config Release
 
       - name: Initial wxWidgets config/build
