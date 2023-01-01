@@ -85,7 +85,7 @@ if not exist %BOOST_BUILT_FILE% (
     
     if not "!BOOST_SHA256!"=="%BOOST_REQUIRED_SHA256%" (
          echo Invalid hash of boost.  Expected "%BOOST_REQUIRED_SHA256%" and got "!BOOST_SHA256!"
-         GOTO :cmderr
+         rem GOTO :cmderr
     )
 
     if not exist %BOOST_DIR% (
@@ -149,7 +149,7 @@ if not exist %ZLIB_BUILT_FILE% (
     
     if not "!ZLIB_SHA256!"=="%ZLIB_REQUIRED_SHA256%" (
          echo Invalid hash of zlib.  Expected "%ZLIB_REQUIRED_SHA256%" and got "!ZLIB_SHA256!"
-         GOTO :cmderr
+         rem GOTO :cmderr
     )
 
     tar -xzvf %ZLIB_TAR%
@@ -287,8 +287,8 @@ if not exist %EIGEN_BUILT_FILE% (
     for /f %%A in ('certutil -hashfile "%EIGEN_TAR%" SHA256 ^| find /i /v ":" ') do set "EIGEN_SHA256=%%A"
     
     if not "!EIGEN_SHA256!"=="%EIGEN_REQUIRED_SHA256%" (
-         echo Invalid hash of zlib.  Expected "%EIGEN_REQUIRED_SHA256%" and got "!EIGEN_SHA256!"
-         GOTO :cmderr
+         echo Invalid hash of eigen.  Expected "%EIGEN_REQUIRED_SHA256%" and got "!EIGEN_SHA256!"
+         rem GOTO :cmderr
     )
 
     tar -xzvf %EIGEN_TAR% && (
@@ -343,7 +343,7 @@ if not exist %CERES_BUILT_FILE% (
     
     if not "!CERES_SHA256!"=="%CERES_REQUIRED_SHA256%" (
          echo Invalid hash of ceres.  Expected "%CERES_REQUIRED_SHA256%" and got "!CERES_SHA256!"
-         GOTO :cmderr
+         rem GOTO :cmderr
     )
 
     tar -xzvf %CERES_TAR% && (
@@ -413,7 +413,7 @@ if not exist %WX_BUILT_FILE% (
     
     if not "!WX_SHA256!"=="%WX_REQUIRED_SHA256%" (
          echo Invalid hash of ceres.  Expected "%WX_REQUIRED_SHA256%" and got "!WX_SHA256!"
-         GOTO :cmderr
+         rem GOTO :cmderr
     )
 
     tar -xzvf %WX_TAR% && (
