@@ -48,7 +48,7 @@ jobs:
         id: cache-deps
         uses: actions/cache@v3
         with:
-          path: '${{runner.temp}/install'
+          path: '${{runner.temp}}/install'
           key: ${{ runner.os }}-dependencies-win-${{ hashFiles('${{ github.workspace }}/target/patches/dep_build_msvc2022.bat') }}
     
       - name: Build dependencies on windows
