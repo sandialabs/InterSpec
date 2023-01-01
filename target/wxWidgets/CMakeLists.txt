@@ -35,39 +35,40 @@ endif()
 
 
 if( NOT InterSpec_FETCH_DEPENDENCIES )
-  
-  
   # I havent gotten the above to find_package(...) call to actually work yet
   # with wxWidgets I compile with CMake on Windows, so we'll keep compiling
   # as a subdirectory for now... 
   #
-  #find_package( wxWidgets REQUIRED core base webview stc )
+  set( wxWidgets_USE_STATIC ON CACHE BOOL "" )
+  find_package( wxWidgets REQUIRED core base webview stc )
 
-  set(wxBUILD_SHARED OFF CACHE BOOL "")
-  if(WIN32)
-    set(wxUSE_WEBVIEW_EDGE ON CACHE BOOL "")
-    set(wxUSE_WEBVIEW_EDGE_STATIC ON CACHE BOOL "")
-    # TODO: static runtime should be set off of wxInterSpec_USE_MSVC_MultiThreadDLL
-    set(wxBUILD_USE_STATIC_RUNTIME ON CACHE BOOL "")
-  endif(WIN32)
+#  set(wxBUILD_SHARED OFF CACHE BOOL "")
+#  if(WIN32)
+#    set(wxUSE_WEBVIEW_EDGE ON CACHE BOOL "")
+#    set(wxUSE_WEBVIEW_EDGE_STATIC ON CACHE BOOL "")
+#    # TODO: static runtime should be set off of wxInterSpec_USE_MSVC_MultiThreadDLL
+#    set(wxBUILD_USE_STATIC_RUNTIME ON CACHE BOOL "")
+#  endif(WIN32)
 
   # We could pre-download the source code add add it, like:
   #add_subdirectory(3rd_party/wxWidgets-3.2.1 EXCLUDE_FROM_ALL)
 
-  # But for the moment we'll use CMake FetchContent to simplify other build scripts
-  message( "Using FetchContent to retrieve wxWidgets" )
-  include(FetchContent)
-  FetchContent_Declare( wxWidgets
-    GIT_REPOSITORY https://github.com/wxWidgets/wxWidgets.git
-    GIT_TAG        97e99707c5d2271a70cb686720b48dbf34ced496 # release-3.2.1
-    GIT_SHALLOW    ON
-  )
+#  # But for the moment we'll use CMake FetchContent to simplify other build scripts
+#  message( "Using FetchContent to retrieve wxWidgets" )
+#  include(FetchContent)
+#  FetchContent_Declare( wxWidgets
+#    GIT_REPOSITORY https://github.com/wxWidgets/wxWidgets.git
+#    GIT_TAG        97e99707c5d2271a70cb686720b48dbf34ced496 # release-3.2.1
+#    GIT_SHALLOW    ON
+#  )
 
-  FetchContent_GetProperties(wxWidgets)
-  if(NOT wxWidgets_POPULATED)
-    FetchContent_Populate(wxWidgets)
-    add_subdirectory(${wxWidgets_SOURCE_DIR} ${wxWidgets_BINARY_DIR} EXCLUDE_FROM_ALL)
-  endif(NOT wxWidgets_POPULATED)
+#  FetchContent_GetProperties(wxWidgets)
+#  if(NOT wxWidgets_POPULATED)
+#    FetchContent_Populate(wxWidgets)
+#    message( "wxWidgets_SOURCE_DIR=${wxWidgets_SOURCE_DIR}")
+#    message( "wxWidgets_BINARY_DIR=${wxWidgets_BINARY_DIR}")
+#    add_subdirectory( ${wxWidgets_SOURCE_DIR} ${wxWidgets_BINARY_DIR} EXCLUDE_FROM_ALL)
+#  endif(NOT wxWidgets_POPULATED)
 endif( NOT InterSpec_FETCH_DEPENDENCIES )
 
 
@@ -87,7 +88,21 @@ add_executable(${PROJECT_NAME}
 )
 
 
-target_link_libraries(${PROJECT_NAME} PUBLIC wx::core wx::base wx::webview wx::stc ${wxWidgets_LIBRARIES} )
+if( InterSpec_FETCH_DEPENDENCIES )
+  target_link_libraries(${PROJECT_NAME} PUBLIC wx::core wx::base wx::webview wx::stc ${wxWidgets_LIBRARIES} )
+else( InterSpec_FETCH_DEPENDENCIES )
+  # Not sure what wxWidgets_USE_FILE actually buys us 
+  include( ${wxWidgets_USE_FILE} )
+
+  # Not sure wx::core, wx::base, etc wont work in this case
+  target_link_libraries(${PROJECT_NAME} PUBLIC ${wxWidgets_LIBRARIES} )
+  target_include_directories( ${PROJECT_NAME} PUBLIC ${wxWidgets_INCLUDE_DIRS} )
+
+  # We need to let the linker know where to find WebView2LoaderStatic.lib
+  # TODO: use find file to find this better - for the moment we'll just assume we copied this file to the root lib directory
+  target_link_directories( ${PROJECT_NAME} PUBLIC "${wxWidgets_ROOT_DIR}/lib" )
+endif( InterSpec_FETCH_DEPENDENCIES )
+
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_JS_LIB} InterSpecLib )
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "InterSpec")

@@ -1,4 +1,5 @@
 @echo off
+setlocal enableDelayedExpansion
 
 rem This scripts builds the Boost, Wt, zlib, Eigen, Ceres-solver, and wxWidgets dependencies for InterSpec on Windows
 rem This script is meant to be used from within the "x64 Native Tools Command Prompt for VS 2022" terminal
@@ -64,7 +65,7 @@ rem Build/install boost
 set BOOST_TAR=boost_1_78_0.tar.gz
 set BOOST_DIR=boost_1_78_0
 set BOOST_BUILT_FILE=built_%BOOST_DIR%
-set BOOST_REQUIRED_MD5=e193e5089060ed6ce5145c8eb05e67e3
+set BOOST_REQUIRED_SHA256=f22143b5528e081123c3c5ed437e92f648fe69748e95fa6e2bd41484e2986cc3
 
 if not exist %BOOST_BUILT_FILE% (
 
@@ -78,15 +79,13 @@ if not exist %BOOST_BUILT_FILE% (
     ) else (
         echo %BOOST_TAR% already downloaded
     )
-
-    echo Im not sure boost hash checking is working
-    set "BOOST_MD5=" & for /F "skip=1 delims=" %%H in ('
-       2^> nul CertUtil -hashfile "%BOOST_TAR%" MD5
-    ') do if not defined BOOST_MD5 set "BOOST_MD5=%%H"
-
-    if not "%BOOST_MD5%"=="%BOOST_REQUIRED_MD5%" (
-        echo Invalid hash of boost.  Expected "%BOOST_REQUIRED_MD5%" and got "%BOOST_MD5%"
-        GOTO :cmderr
+    
+    set "BOOST_SHA256="
+    for /f %%A in ('certutil -hashfile "%BOOST_TAR%" SHA256 ^| find /i /v ":" ') do set "BOOST_SHA256=%%A"
+    
+    if not "!BOOST_SHA256!"=="%BOOST_REQUIRED_SHA256%" (
+         echo Invalid hash of boost.  Expected "%BOOST_REQUIRED_SHA256%" and got "!BOOST_SHA256!"
+         GOTO :cmderr
     )
 
     if not exist %BOOST_DIR% (
@@ -136,7 +135,7 @@ rem Build/install Zlib
 set ZLIB_TAR="zlib-1.2.13.tar.gz"
 set ZLIB_DIR="zlib-1.2.13"
 set ZLIB_BUILT_FILE=built_%ZLIB_DIR%
-set ZLIB_REQUIRED_MD5=9b8aa094c4e5765dabf4da391f00d15c
+set ZLIB_REQUIRED_SHA256=b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30
 
 if not exist %ZLIB_BUILT_FILE% (
     if not exist %ZLIB_TAR% (
@@ -145,13 +144,12 @@ if not exist %ZLIB_BUILT_FILE% (
         echo %ZLIB_TAR% already downloaded
     )
 
-    echo Im not sure zlib hash checking is working
-    set "ZLIB_MD5="
-    for /f "skip=1 delims=" %%a in ('certutil -hashfile %ZLIB_TAR% MD5') do if not defined ZLIB_MD5 set "ZLIB_MD5=%%a"
-
-    if not "%ZLIB_MD5%"=="%ZLIB_REQUIRED_MD5%" (
-        echo Invalid hash of ZLIB.  Expected "%ZLIB_REQUIRED_MD5%" and got "%ZLIB_MD5%"
-        GOTO :cmderr
+    set "ZLIB_SHA256="
+    for /f %%A in ('certutil -hashfile "%ZLIB_TAR%" SHA256 ^| find /i /v ":" ') do set "ZLIB_SHA256=%%A"
+    
+    if not "!ZLIB_SHA256!"=="%ZLIB_REQUIRED_SHA256%" (
+         echo Invalid hash of zlib.  Expected "%ZLIB_REQUIRED_SHA256%" and got "!ZLIB_SHA256!"
+         GOTO :cmderr
     )
 
     tar -xzvf %ZLIB_TAR%
@@ -182,6 +180,14 @@ if not exist %ZLIB_BUILT_FILE% (
         GOTO :cmderr
     )
 
+    rem Get rid of zlib dll's, otherwise CMake used to have InterSpec link
+    rem against those, instead of zlibstatic.lib and zlibstaticd.lib, although
+    rem I think I fixed this - but didnt test
+    del "%MY_PREFIX%\bin\zlib.dll"
+    del "%MY_PREFIX%\bin\zlibd.dll"
+    del "%MY_PREFIX%\lib\zlib.lib"
+    del "%MY_PREFIX%\lib\zlibd.lib"
+
     echo "Built zlib!"
     cd %BUILD_DIR%
     echo "Built zlib" > %ZLIB_BUILT_FILE%
@@ -193,7 +199,6 @@ if not exist %ZLIB_BUILT_FILE% (
 rem Build/install Wt 
 set WT_DIR=wt-3.7.1
 set WT_BUILT_FILE=built_%WT_DIR%
-set WT_REQUIRED_MD5=0f6635a213cc310fc4ec69ca48f2f46d
 
 rem git clone https://github.com/emweb/wt.git %WT_DIR%
 rem cd %WT_DIR%
@@ -219,8 +224,8 @@ if not exist %WT_BUILT_FILE% (
             GOTO :cmderr
         )
 
-        set WT_PATCH_FILE="%PATCH_DIR%\wt\3.7.1\NormalBuild\wt_3.7.1_git.patch"
-        git apply --reject --ignore-space-change --ignore-whitespace %WT_PATCH_FILE% && (
+        echo About to patch Wt
+        git apply --reject --ignore-space-change --ignore-whitespace "%PATCH_DIR%\wt\3.7.1\NormalBuild\wt_3.7.1_git.patch" && (
             echo Patched Wt
         ) || (
             echo "Failed to patch Wt"
@@ -242,6 +247,7 @@ if not exist %WT_BUILT_FILE% (
         GOTO :cmderr
     )
 
+    echo Will build Wt
     cmake --build . --config Release --target install && (
         echo Built and installed Wt Release
     ) || (
@@ -267,7 +273,7 @@ rem Build/install Eigen
 set EIGEN_TAR="eigen-3.4.0.tar.gz"
 set EIGEN_DIR="eigen-3.4.0"
 set EIGEN_BUILT_FILE=built_%EIGEN_DIR%
-set EIGEN_REQUIRED_MD5=9b8aa094c4e5765dabf4da391f00d15c
+set EIGEN_REQUIRED_SHA256=8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72
 
 if not exist %EIGEN_BUILT_FILE% (
     curl -L https://gitlab.com/libeigen/eigen/-/archive/3.4.0/%EIGEN_TAR% --output %EIGEN_TAR% && (
@@ -277,13 +283,12 @@ if not exist %EIGEN_BUILT_FILE% (
         GOTO :cmderr
     )
 
-    echo Im not sure Eigen hash checking is working
-    set "EIGEN_MD5="
-    for /f "skip=1 delims=" %%a in ('certutil -hashfile %EIGEN_MD5% MD5') do if not defined EIGEN_MD5 set "EIGEN_MD5=%%a"
-
-    if not "%EIGEN_MD5%"=="%EIGEN_REQUIRED_MD5%" (
-        echo Invalid hash of Eigen.  Expected "%EIGEN_REQUIRED_MD5%" and got "%EIGEN_MD5%"
-        GOTO :cmderr
+    set "EIGEN_SHA256="
+    for /f %%A in ('certutil -hashfile "%EIGEN_TAR%" SHA256 ^| find /i /v ":" ') do set "EIGEN_SHA256=%%A"
+    
+    if not "!EIGEN_SHA256!"=="%EIGEN_REQUIRED_SHA256%" (
+         echo Invalid hash of zlib.  Expected "%EIGEN_REQUIRED_SHA256%" and got "!EIGEN_SHA256!"
+         GOTO :cmderr
     )
 
     tar -xzvf %EIGEN_TAR% && (
@@ -322,7 +327,7 @@ rem Build/install Ceres Solver
 set CERES_TAR="ceres-solver-2.1.0.tar.gz"
 set CERES_DIR="ceres-solver-2.1.0"
 set CERES_BUILT_FILE=built_%CERES_DIR%
-set CERES_REQUIRED_MD5=9b8aa094c4e5765dabf4da391f00d15c
+set CERES_REQUIRED_SHA256=f7d74eecde0aed75bfc51ec48c91d01fe16a6bf16bce1987a7073286701e2fc6
 
 if not exist %CERES_BUILT_FILE% (
 
@@ -333,7 +338,13 @@ if not exist %CERES_BUILT_FILE% (
         GOTO :cmderr
     )
 
-    echo Need to check Ceres hash
+    set "CERES_SHA256="
+    for /f %%A in ('certutil -hashfile "%CERES_TAR%" SHA256 ^| find /i /v ":" ') do set "CERES_SHA256=%%A"
+    
+    if not "!CERES_SHA256!"=="%CERES_REQUIRED_SHA256%" (
+         echo Invalid hash of ceres.  Expected "%CERES_REQUIRED_SHA256%" and got "!CERES_SHA256!"
+         GOTO :cmderr
+    )
 
     tar -xzvf %CERES_TAR% && (
         echo Untarred Ceres
@@ -385,7 +396,7 @@ rem Build/install wxWidgets
 set WX_TAR="wxWidgets-3.2.1.zip"
 set WX_DIR="wxWidgets-3.2.1"
 set WX_BUILT_FILE=built_%WX_DIR%
-set WX_REQUIRED_MD5=9b8aa094c4e5765dabf4da391f00d15c
+set WX_REQUIRED_SHA256=cc8868c3c8ec4eddaf659a8b81589a3d83126d5afde012350f61031a607a56d8
 
 if not exist %WX_BUILT_FILE% (
     mkdir %WX_DIR%
@@ -397,8 +408,13 @@ if not exist %WX_BUILT_FILE% (
         GOTO :cmderr
     )
 
-    rem TODO: check hash
-    echo Need to check wxWidgets hash
+    set "WX_SHA256="
+    for /f %%A in ('certutil -hashfile "%WX_TAR%" SHA256 ^| find /i /v ":" ') do set "WX_SHA256=%%A"
+    
+    if not "!WX_SHA256!"=="%WX_REQUIRED_SHA256%" (
+         echo Invalid hash of ceres.  Expected "%WX_REQUIRED_SHA256%" and got "!WX_SHA256!"
+         GOTO :cmderr
+    )
 
     tar -xzvf %WX_TAR% && (
         echo Unzipped wxWidgets
@@ -410,7 +426,7 @@ if not exist %WX_BUILT_FILE% (
     mkdir build_msvc
     cd build_msvc
 
-    rem # TODO: we could/should turn off a lot of wxWidgets components
+    rem TODO: we could/should turn off a lot of wxWidgets components
     cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DwxUSE_WEBVIEW_EDGE=ON -DwxUSE_WEBVIEW_EDGE_STATIC=ON -DwxBUILD_USE_STATIC_RUNTIME=ON -DwxBUILD_SHARED=OFF .. && (
         echo Configured wxWidgets
     ) || (
@@ -431,6 +447,21 @@ if not exist %WX_BUILT_FILE% (
         echo Failed to install Release wxWidgets
         GOTO :cmderr
     )
+
+    rem wxWidgets doesnt also install WebView2 stuff, so we'll do it manually
+    copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\x64\WebView2LoaderStatic.lib "%MY_PREFIX%\lib" && (
+        echo Failed to copy WebView2LoaderStatic.lib to lib dir
+    ) || (
+        echo Failed to copy WebView2LoaderStatic.lib to lib dir
+        GOTO :cmderr
+    )
+
+    rem I dont think we actually need these next three things, so I wont bother doing error checking
+    copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\x64\WebView2Guid.lib "%MY_PREFIX%\lib"
+    copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\include\WebView2.h "%MY_PREFIX%\include"
+    copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\include\WebView2EnvironmentOptions.h "%MY_PREFIX%\include"
+
+    
 
     echo "Built wxWidgets!"
     cd %BUILD_DIR%
