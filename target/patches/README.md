@@ -188,6 +188,12 @@ mkdir build
 cmake -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" ..
 cmake --build . --config Debug --target install
 cmake --build . --config Release --target install
+
+# Optional: Get rid of zlib dll's, to avoid CMake possible always preffering them
+del "%MY_PREFIX%\bin\zlib.dll"
+del "%MY_PREFIX%\bin\zlibd.dll"
+del "%MY_PREFIX%\lib\zlib.lib"
+del "%MY_PREFIX%\lib\zlibd.lib"
 ```
 
 To build Wt, you must patch the Wt source code, and then build it
@@ -257,6 +263,12 @@ mkdir build_msvc
 cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DwxUSE_WEBVIEW_EDGE=ON -DwxUSE_WEBVIEW_EDGE_STATIC=ON -DwxBUILD_USE_STATIC_RUNTIME=ON -DwxBUILD_SHARED=OFF ..
 cmake --build . --config Debug --target install -j 16
 cmake --build . --config Release --target install -j 16
+
+# cmake doesnt seem to install WebView2Loader - so we'll manually copy its stuff
+copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\x64\WebView2LoaderStatic.lib "%MY_PREFIX%\lib"
+copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\x64\WebView2Guid.lib "%MY_PREFIX%\lib"
+copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\include\WebView2.h "%MY_PREFIX%\include"
+copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\include\WebView2EnvironmentOptions.h "%MY_PREFIX%\include"
 ```
 
 # Building dependencies on Linux 

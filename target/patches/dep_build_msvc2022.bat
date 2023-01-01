@@ -17,6 +17,7 @@ set PATCH_DIR=%~dp0
 
 set ORIG_DIR=%CD%
 
+echo Checking of tgz/zip file hashes is temporarily disabled
 
 if not exist "%1" (
   MKDIR "%1" && (
@@ -84,8 +85,8 @@ if not exist %BOOST_BUILT_FILE% (
     for /f %%A in ('certutil -hashfile "%BOOST_TAR%" SHA256 ^| find /i /v ":" ') do set "BOOST_SHA256=%%A"
     
     if not "!BOOST_SHA256!"=="%BOOST_REQUIRED_SHA256%" (
-         echo Invalid hash of boost.  Expected "%BOOST_REQUIRED_SHA256%" and got "!BOOST_SHA256!"
-         rem GOTO :cmderr
+        echo Invalid hash of boost.  Expected "%BOOST_REQUIRED_SHA256%" and got "!BOOST_SHA256!"
+rem     GOTO :cmderr
     )
 
     if not exist %BOOST_DIR% (
@@ -125,6 +126,13 @@ if not exist %BOOST_BUILT_FILE% (
     echo "Built boost!"
 
     cd %BUILD_DIR%
+
+    rmdir /s /q "%BOOST_DIR%" && (
+        echo Removed "%BOOST_DIR%" directory
+    ) || (
+        echo Failed to remove "%BOOST_DIR%" directory
+    )
+
     echo "Built boost" > %BOOST_BUILT_FILE%
 ) else (
     echo "Boost was already built (%BOOST_BUILT_FILE% existed)"
@@ -148,8 +156,8 @@ if not exist %ZLIB_BUILT_FILE% (
     for /f %%A in ('certutil -hashfile "%ZLIB_TAR%" SHA256 ^| find /i /v ":" ') do set "ZLIB_SHA256=%%A"
     
     if not "!ZLIB_SHA256!"=="%ZLIB_REQUIRED_SHA256%" (
-         echo Invalid hash of zlib.  Expected "%ZLIB_REQUIRED_SHA256%" and got "!ZLIB_SHA256!"
-         rem GOTO :cmderr
+        echo Invalid hash of zlib.  Expected "%ZLIB_REQUIRED_SHA256%" and got "!ZLIB_SHA256!"
+rem     GOTO :cmderr
     )
 
     tar -xzvf %ZLIB_TAR%
@@ -190,6 +198,14 @@ if not exist %ZLIB_BUILT_FILE% (
 
     echo "Built zlib!"
     cd %BUILD_DIR%
+
+    rmdir /s /q "%ZLIB_DIR%" && (
+        echo Removed "%ZLIB_DIR%" directory
+    ) || (
+        echo Failed to remove "%ZLIB_DIR%" directory
+    )
+
+
     echo "Built zlib" > %ZLIB_BUILT_FILE%
 ) else (
     echo "Zlib was already built (%ZLIB_BUILT_FILE% existed)"
@@ -264,6 +280,13 @@ if not exist %WT_BUILT_FILE% (
 
     echo "Built Wt!"
     cd %BUILD_DIR%
+
+    rmdir /s /q "%WT_DIR%" && (
+        echo Removed "%WT_DIR%" directory
+    ) || (
+        echo Failed to remove "%WT_DIR%" directory
+    )
+
     echo "Built Wt" > %WT_BUILT_FILE%
 ) else (
     echo Wt was already built (%WT_BUILT_FILE% existed)
@@ -288,7 +311,7 @@ if not exist %EIGEN_BUILT_FILE% (
     
     if not "!EIGEN_SHA256!"=="%EIGEN_REQUIRED_SHA256%" (
          echo Invalid hash of eigen.  Expected "%EIGEN_REQUIRED_SHA256%" and got "!EIGEN_SHA256!"
-         rem GOTO :cmderr
+rem     GOTO :cmderr
     )
 
     tar -xzvf %EIGEN_TAR% && (
@@ -318,6 +341,13 @@ if not exist %EIGEN_BUILT_FILE% (
 
     echo "Built Eigen!"
     cd %BUILD_DIR%
+
+    rmdir /s /q "%EIGEN_DIR%" && (
+        echo Removed "%EIGEN_DIR%" directory
+    ) || (
+        echo Failed to remove "%EIGEN_DIR%" directory
+    )
+
     echo "Built Eigen" > %EIGEN_BUILT_FILE%
 ) else (
     echo Eigen was already built (%EIGEN_BUILT_FILE% existed)
@@ -342,8 +372,8 @@ if not exist %CERES_BUILT_FILE% (
     for /f %%A in ('certutil -hashfile "%CERES_TAR%" SHA256 ^| find /i /v ":" ') do set "CERES_SHA256=%%A"
     
     if not "!CERES_SHA256!"=="%CERES_REQUIRED_SHA256%" (
-         echo Invalid hash of ceres.  Expected "%CERES_REQUIRED_SHA256%" and got "!CERES_SHA256!"
-         rem GOTO :cmderr
+          echo Invalid hash of ceres.  Expected "%CERES_REQUIRED_SHA256%" and got "!CERES_SHA256!"
+rem          GOTO :cmderr
     )
 
     tar -xzvf %CERES_TAR% && (
@@ -354,8 +384,8 @@ if not exist %CERES_BUILT_FILE% (
     )
 
     cd %CERES_DIR%
-    mkdir build_msvc
-    cd build_msvc
+    mkdir build_msvc_debug
+    cd build_msvc_debug
 
     cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebug -DMSVC_USE_STATIC_CRT=ON .. && (
         echo Configured Debug Ceres
@@ -370,6 +400,12 @@ if not exist %CERES_BUILT_FILE% (
         echo Failed to build Debug ceres-solver
         GOTO :cmderr
     )
+
+    cd ..
+    rmdir /s /q build_msvc_debug
+
+    mkdir build_msvc_rel
+    cd build_msvc_rel
 
     cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DMSVC_USE_STATIC_CRT=ON .. && (
         echo Configured Release Ceres
@@ -387,6 +423,13 @@ if not exist %CERES_BUILT_FILE% (
 
     echo "Built Ceres!"
     cd %BUILD_DIR%
+
+    rmdir /s /q "%CERES_DIR%" && (
+        echo Removed "%CERES_DIR%" directory
+    ) || (
+        echo Failed to remove "%CERES_DIR%" directory
+    )
+
     echo "Built Ceres" > %CERES_BUILT_FILE%
 ) else (
     echo Ceres-Solver was already built (%CERES_BUILT_FILE% existed)
@@ -411,10 +454,11 @@ if not exist %WX_BUILT_FILE% (
     set "WX_SHA256="
     for /f %%A in ('certutil -hashfile "%WX_TAR%" SHA256 ^| find /i /v ":" ') do set "WX_SHA256=%%A"
     
-    if not "!WX_SHA256!"=="%WX_REQUIRED_SHA256%" (
-         echo Invalid hash of ceres.  Expected "%WX_REQUIRED_SHA256%" and got "!WX_SHA256!"
-         rem GOTO :cmderr
-    )
+    echo Temporarily not checking hash
+    rem if not "!WX_SHA256!"=="%WX_REQUIRED_SHA256%" (
+    rem     echo Invalid hash of ceres.  Expected "%WX_REQUIRED_SHA256%" and got "!WX_SHA256!"
+    rem     GOTO :cmderr
+    rem )
 
     tar -xzvf %WX_TAR% && (
         echo Unzipped wxWidgets
@@ -461,10 +505,16 @@ if not exist %WX_BUILT_FILE% (
     copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\include\WebView2.h "%MY_PREFIX%\include"
     copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\include\WebView2EnvironmentOptions.h "%MY_PREFIX%\include"
 
-    
-
     echo "Built wxWidgets!"
     cd %BUILD_DIR%
+
+    rmdir /s /q "%WX_DIR%" && (
+        echo Removed "%WX_DIR%" directory
+    ) || (
+        echo Failed to remove "%WX_DIR%" directory
+    )
+
+    
     echo "Built wxWidgets" > %WX_BUILT_FILE%
 ) else (
     echo wxWidgets was already built (%WX_BUILT_FILE% existed)
