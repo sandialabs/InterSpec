@@ -63,7 +63,7 @@ jobs:
           echo github.event_name: ${{ github.event_name }}
           ${{ github.workspace }}\target\patches\dep_build_msvc2022.bat "${{runner.temp}}\dep_build" "${{runner.temp}}\install"
 
-# Well cache the InterSpec build directory so we dont have to build from scratch on every push
+# We'll cache the InterSpec build directory so we dont have to build from scratch (about a 20 or 25 minute process) on every push
       - name: Cache wxWidgets config/build
         id: cache-wx-build
         uses: actions/cache@v3
@@ -73,15 +73,15 @@ jobs:
     
       - name: Initial wxWidgets config/build
         shell: cmd
-        if: runner.os == 'Windows'
+        if: steps.cache-wx-build.outputs.cache-hit != 'true' && runner.os == 'Windows'
         working-directory: ${{runner.temp}}
         run: |
           mkdir build_${{ runner.os }}_wx_app
           cd build_${{ runner.os }}_wx_app
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_head -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" "${{ github.workspace }}/target/wxWidgets"
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_head -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DCMAKE_IGNORE_PATH="C:/Strawberry" "${{ github.workspace }}/target/wxWidgets"
           cmake --build . --config Release
 
-      - name: Initial wxWidgets config/build
+      - name: wxWidgets app build
         shell: cmd
         if: runner.os == 'Windows'
         working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
