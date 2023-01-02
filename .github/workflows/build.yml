@@ -93,9 +93,17 @@ jobs:
         uses: actions/upload-artifact@v3.1.1
         if: runner.os == 'Windows'
         with: 
-          path: |
-          '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_head'
-          '${{runner.temp}}/build_${{ runner.os }}_wx_app/CMakeCache.txt
+          name: InterSpec_app_${{ runner.os }}_WebView_head
+          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_head'
+
+      - name: Debug wxWidgets CMakeCache as GitHub Artifact
+        uses: actions/upload-artifact@v3.1.1
+        if: runner.os == 'Windows'
+        with: 
+          name: CMakeCache.txt
+          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/CMakeCache.txt
+
+
 
       - run: echo "Job status is ${{ job.status }}."
 
