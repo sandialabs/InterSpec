@@ -216,7 +216,7 @@ endif()
 
 
 #try to link to static libraries whenever possible
-if(TRY_TO_STATIC_LINK)
+if( TRY_TO_STATIC_LINK )
     if(WIN32)
         SET( ZLIB_USE_STATIC_LIBS "ON" )
         SET(CMAKE_FIND_LIBRARY_SUFFIXES .lib ${CMAKE_FIND_LIBRARY_SUFFIXES})
