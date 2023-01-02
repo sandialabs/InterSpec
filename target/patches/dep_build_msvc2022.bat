@@ -147,7 +147,8 @@ set ZLIB_REQUIRED_SHA256=b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac1374
 
 if not exist %ZLIB_BUILT_FILE% (
     if not exist %ZLIB_TAR% (
-        curl -L https://zlib.net/fossils/%ZLIB_TAR% --output %ZLIB_TAR%
+        rem curl -L https://zlib.net/fossils/zlib-1.2.13.tar.gz --output %ZLIB_TAR%
+        curl -L https://zlib.net/zlib-1.2.13.tar.gz --output %ZLIB_TAR%
     ) else (
         echo %ZLIB_TAR% already downloaded
     )
@@ -160,8 +161,9 @@ if not exist %ZLIB_BUILT_FILE% (
 rem     GOTO :cmderr
     )
 
-    tar -xzvf %ZLIB_TAR%
-    if %errorlevel% neq 0 (
+    tar -xzvf %ZLIB_TAR% && (
+        echo Untarred zlib
+    ) || (
         echo "Failed to untar zlib"
         GOTO :cmderr
     )
