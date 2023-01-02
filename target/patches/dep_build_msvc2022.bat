@@ -146,46 +146,65 @@ set ZLIB_BUILT_FILE=built_%ZLIB_DIR%
 set ZLIB_REQUIRED_SHA256=b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30
 
 if not exist %ZLIB_BUILT_FILE% (
-    if not exist %ZLIB_TAR% (
+    rem if not exist %ZLIB_TAR% (
         rem curl -L https://zlib.net/fossils/zlib-1.2.13.tar.gz --output %ZLIB_TAR%
-        curl -L https://zlib.net/zlib-1.2.13.tar.gz --output %ZLIB_TAR%
-    ) else (
-        echo %ZLIB_TAR% already downloaded
-    )
+    rem    curl -L https://zlib.net/zlib-1.2.13.tar.gz --output %ZLIB_TAR%
+    rem ) else (
+    rem    echo %ZLIB_TAR% already downloaded
+    rem )
 
-    set "ZLIB_SHA256="
-    for /f %%A in ('certutil -hashfile "%ZLIB_TAR%" SHA256 ^| find /i /v ":" ') do set "ZLIB_SHA256=%%A"
+    rem set "ZLIB_SHA256="
+    rem for /f %%A in ('certutil -hashfile "%ZLIB_TAR%" SHA256 ^| find /i /v ":" ') do set "ZLIB_SHA256=%%A"
     
-    if not "!ZLIB_SHA256!"=="%ZLIB_REQUIRED_SHA256%" (
-        echo Invalid hash of zlib.  Expected "%ZLIB_REQUIRED_SHA256%" and got "!ZLIB_SHA256!"
+    rem if not "!ZLIB_SHA256!"=="%ZLIB_REQUIRED_SHA256%" (
+    rem    echo Invalid hash of zlib.  Expected "%ZLIB_REQUIRED_SHA256%" and got "!ZLIB_SHA256!"
 rem     GOTO :cmderr
-    )
+    rem )
 
-    tar -xzvf %ZLIB_TAR% && (
-        echo Untarred zlib
+    rem tar -xzvf %ZLIB_TAR% && (
+    rem    echo Untarred zlib
+    rem ) || (
+    rem    echo "Failed to untar zlib"
+    rem    GOTO :cmderr
+    rem )
+
+    git clone https://github.com/madler/zlib.git %ZLIB_DIR% && (
+        echo Cloned into zlib
     ) || (
-        echo "Failed to untar zlib"
+        echo "Failed to clone into zlib"
         GOTO :cmderr
     )
 
     cd %ZLIB_DIR%
+
+    rem checkout zlib 1.2.13
+    git checkout 04f42ceca40f73e2978b50e93806c2a18c1281fc && (
+        echo Checked out zlib 1.2.13
+    ) || (
+        echo "Failed to checkout wanted zlib commit"
+        GOTO :cmderr
+    )
+
     mkdir build
     cd build
-    cmake -DCMAKE_INSTALL_PREFIX="%MY_PREFIX%" -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" ..
-    if %errorlevel% neq 0 (
+    cmake -DCMAKE_INSTALL_PREFIX="%MY_PREFIX%" -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" .. && (
+        echo Configured zlib Release
+    ) || (
         echo "Failed to cmake configure zlib"
         GOTO :cmderr
     )
 
-    cmake --build . --config Debug --target install
-    if %errorlevel% neq 0 (
+    cmake --build . --config Debug --target install && (
+        echo Built/installed zlib Debug
+    ) || (
         echo "Failed to build zlib debug"
         GOTO :cmderr
     )
 
 
-    cmake --build . --config Release --target install
-    if %errorlevel% neq 0 (
+    cmake --build . --config Release --target install && (
+        echo Built/installed zlib Release
+    ) || (
         echo "Failed to build zlib Release"
         GOTO :cmderr
     )
