@@ -78,7 +78,7 @@ jobs:
         run: |
           mkdir build_${{ runner.os }}_wx_app
           cd build_${{ runner.os }}_wx_app
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_head -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DCMAKE_IGNORE_PREFIX_PATH="C:/Strawberry;C:/Strawberry/c" -DCMAKE_IGNORE_PATH="C:/Strawberry;C:/Strawberry/c/lib;C:/Strawberry/c/;C:/Strawberry/c/share;C:/Strawberry/c/bin;C:/Strawberry/c/include" "${{ github.workspace }}/target/wxWidgets"
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_head -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DCMAKE_IGNORE_PREFIX_PATH="C:/Strawberry;C:/Strawberry/c" -DCMAKE_IGNORE_PATH="C:/Strawberry;C:/Strawberry/c/lib;C:/Strawberry/c/;C:/Strawberry/c/share;C:/Strawberry/c/bin;C:/Strawberry/c/include" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF "${{ github.workspace }}/target/wxWidgets"
           cmake --build . --config Release
 
       - name: wxWidgets app build
