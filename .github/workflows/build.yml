@@ -88,6 +88,7 @@ jobs:
         run: |
           cmake --build . --config Release
           cmake --build . --config Release --target install
+          copy CMakeCache.txt InterSpec_app_${{ runner.os }}_WebView_head
 
       - name: Upload wxWidgets app to as GitHub Artifact
         uses: actions/upload-artifact@v3.1.1
@@ -95,15 +96,6 @@ jobs:
         with: 
           name: InterSpec_app_${{ runner.os }}_WebView_head
           path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_head'
-
-      - name: Debug wxWidgets CMakeCache as GitHub Artifact
-        uses: actions/upload-artifact@v3.1.1
-        if: runner.os == 'Windows'
-        with: 
-          name: CMakeCache.txt
-          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/CMakeCache.txt
-
-
 
       - run: echo "Job status is ${{ job.status }}."
 
