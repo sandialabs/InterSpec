@@ -49,7 +49,7 @@ jobs:
   # TODO: the below needs an if to only run on windows
       - name: Cache Windows Dependencies
         if: runner.os == 'Windows'
-        id: cache-${{ runner.os }}-deps
+        id: cache-deps
         uses: actions/cache@v3
         with:
           path: '${{runner.temp}}/install'
@@ -58,7 +58,7 @@ jobs:
 # TODO: dep_build_msvc2022.bat seems to work just fine from PowerShell, so we should really switch to just always using that to be consistent across platforms
       - name: Build dependencies on windows
         shell: cmd
-        if: steps.cache-${{ runner.os }}-deps.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        if: steps.cache-deps.outputs.cache-hit != 'true' && runner.os == 'Windows'
         working-directory: ${{runner.temp}}
         run: |
           echo github.event.action: ${{ github.event.action }}
