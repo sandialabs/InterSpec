@@ -33,8 +33,6 @@ if(MSVC)
   add_definitions( -DwxUSE_RC_MANIFEST=1 -DwxUSE_DPI_AWARE_MANIFEST=2 )
 endif()
 
-message( )
-
 
 if( NOT InterSpec_FETCH_DEPENDENCIES )
   # I havent gotten the above to find_package(...) call to actually work yet
