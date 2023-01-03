@@ -2,11 +2,36 @@ cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
 project( InterSpecTests )
 
-
 set( CMAKE_CXX_STANDARD 14 )
 set( CMAKE_CXX_STANDARD_REQUIRED ON )
 
+if(MSVC)
+  option(${PROJECT_NAME}_USE_MSVC_MultiThreadDLL "Use dynamically-link runtime library." OFF)
+
+  if( ${PROJECT_NAME}_USE_MSVC_MultiThreadDLL)
+    set(Boost_USE_STATIC_RUNTIME OFF)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+  else()
+    set(Boost_USE_STATIC_RUNTIME ON)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  endif()
+  message(STATUS "Using CMAKE_MSVC_RUNTIME_LIBRARY ${CMAKE_MSVC_RUNTIME_LIBRARY}")
+endif()
+
 enable_testing()
+
+
+#if (WIN32)
+#  add_definitions( -DBOOST_ALL_NO_LIB )
+#  add_definitions( -DBOOST_ALL_DYN_LINK )
+#endif()
+#if(BUILD_AS_UNIT_TEST_SUITE)
+#    target_link_libraries(
+#        InterSpecLib
+#        PUBLIC
+#        ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+#    )
+#endif(BUILD_AS_UNIT_TEST_SUITE)
 
 
 set( BUILD_AS_UNIT_TEST_SUITE ON CACHE BOOL "" )
@@ -20,6 +45,10 @@ set(PERFORM_DEVELOPER_CHECKS ON CACHE BOOL "")
 set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE BOOL "")
 set(USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE BOOL "")
 
+set(TEST_SUITE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test_data"
+    CACHE STRING
+    "Path to directory that contains the \"analysis_tests\" directory for saving N42 test states."
+)
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
 
@@ -55,14 +84,11 @@ add_test( NAME TesRefLines
 )
 
 
-
-
-set(TEST_SUITE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/testing"
-    CACHE STRING
-    "Path to directory that contains the \"analysis_tests\" directory for saving N42 test states.  Leave empty for CWD."
-)
-
 # ./test_offlineAnalysis.cpp
+#target_link_libraries(test_offlineAnalysis PUBLIC 
+#            debug "${Wt_TEST_DEBUG_LIBRARY}"
+#            optimized "${Wt_TEST_LIBRARY}"
+#)
 
 
 # For some reason in Xcode, the RUN_TESTS target doesnt cause the executables to be built if there

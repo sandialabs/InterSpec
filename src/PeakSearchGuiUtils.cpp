@@ -1752,7 +1752,12 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
       
       if( !!prevpeak )
       {
+#ifdef _MSC_VER
+#pragma message("Need to clean up setting peak source, and also verify S.E., and D.E., are actually all correct")
+#else
 #warning "Need to clean up setting peak source, and also verify S.E., and D.E., are actually all correct"
+#endif
+
         //There is an already existing peak, whos nuclide/xray/reaction gamma was
         //  "closer" (in terms of the distance metric used) than the
         //  nuclide/xray/reaction actually assigned to this new peak.  We need

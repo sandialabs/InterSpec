@@ -440,7 +440,7 @@ const vector<tuple<float,
     std::sort( begin(sm_PhotPeakLis), end(sm_PhotPeakLis),
               []( const tuple<float,float,string,PhotopeakLisType,ReferenceLineInfo::RefLine::RefGammaType> &lhs,
                  const tuple<float,float,string,PhotopeakLisType,ReferenceLineInfo::RefLine::RefGammaType> &rhs) -> bool {
-      
+                  return get<0>( lhs ) < get<0>( rhs );
     } );
   }//if( !is_sorted )
                      
