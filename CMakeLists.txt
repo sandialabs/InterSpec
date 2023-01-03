@@ -178,10 +178,6 @@ if(NOT CMAKE_BUILD_TYPE)
 endif(NOT CMAKE_BUILD_TYPE)
 
 
-if(INCLUDE_ANALYSIS_TEST_SUITE)
-    set(USE_DB_TO_STORE_SPECTRA ON)
-endif(INCLUDE_ANALYSIS_TEST_SUITE)
-
 if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
     set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
     set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
@@ -631,9 +627,6 @@ if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
     target_link_libraries(InterSpecLib PUBLIC pugixml)
 endif()
 
-if( BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
-    target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
-endif()
 
 if(USE_MYSQL_DB EQUAL USE_SQLITE3_DB)
     MESSAGE(FATAL_ERROR "Exactly one type of database (MySQL or SQLITE3) must be chosen")
@@ -692,12 +685,6 @@ else(WIN32)
         ${Wt_DBOSQLITE3_LIBRARY}
     )
 endif(WIN32)
-
-
-
-if(INCLUDE_ANALYSIS_TEST_SUITE)
-  target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
-endif(INCLUDE_ANALYSIS_TEST_SUITE)
 
 
 if( USE_REL_ACT_TOOL )
@@ -775,15 +762,6 @@ if(TRY_TO_STATIC_LINK)
         #set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} "-static -pthread -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
     endif(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))
 endif(TRY_TO_STATIC_LINK)
-
-if(BUILD_AS_UNIT_TEST_SUITE)
-    target_link_libraries(
-        InterSpecLib
-        PUBLIC
-        ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
-    )
-endif(BUILD_AS_UNIT_TEST_SUITE)
-
 
 
 if(Wt_DBOSQLITE3_LIBRARY)
@@ -904,6 +882,7 @@ foreach(_dir ${SUPPORT_DIRECTORIES})
     endif(WIN32)
 endforeach()
 
+# TODO: I think we can get rid of this next part, but need to modify in the code a little bit probably
 if(INCLUDE_ANALYSIS_TEST_SUITE)
     if(WIN32)
         #        file(COPY ${PROJECT_SOURCE_DIR}/testing/analysis_tests DESTINATION ${PROJECT_BINARY_DIR}/analysis_tests )

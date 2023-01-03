@@ -180,9 +180,10 @@ set MY_PREFIX=C:\install\msvc2022\x64\wt_3.7.1_prefix
 
 Build zlib
 ```bash
-curl -L https://zlib.net/zlib-1.2.13.tar.gz --output zlib-1.2.13.tar.gz
-tar -xzvf zlib-1.2.13.tar.gz
-cd zlib-1.2.13
+git clone https://github.com/madler/zlib.git zlib-1.2.13
+# Checkout version 1.2.13
+git checkout 04f42ceca40f73e2978b50e93806c2a18c1281fc
+
 mkdir build
 
 cmake -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" ..

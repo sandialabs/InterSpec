@@ -4372,7 +4372,7 @@ void InterSpec::finishStoreStateInDb( WLineEdit *nameedit,
       throw runtime_error( "CWD didnt contain a 'analysis_tests' folder as expected" );
     
     const int offset = wApp->environment().timeZoneOffset();
-    auto localtime = std::chrono::system_clock::now();
+    auto localtime = chrono::time_point_cast<chrono::microseconds>(chrono::system_clock::now());
     localtime += std::chrono::seconds(60*offset);
     
     string timestr = SpecUtils::to_iso_string( localtime );
@@ -4514,7 +4514,7 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
     }
     
     const int offset = wApp->environment().timeZoneOffset();
-    auto localtime = std::chrono::system_clock::now();
+    auto localtime = chrono::time_point_cast<chrono::microseconds>(chrono::system_clock::now());
     localtime += std::chrono::seconds(60*offset);
     
     const string timestr = SpecUtils::to_iso_string( localtime );

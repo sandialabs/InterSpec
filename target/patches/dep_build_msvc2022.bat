@@ -115,11 +115,21 @@ rem     GOTO :cmderr
     )
 
 
-    echo "Building boost"
-    .\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build -j8 install && (
-        echo Done building boost
+    echo "Building boost release"
+    .\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build_release -j8 install && (
+        rmdir /s /q win_build_release
+        echo Done building boost release
     ) || (
-        echo "Failed to run build boost"
+        echo "Failed to run build boost release"
+        GOTO :cmderr
+    )
+
+    echo "Building boost release"
+    .\b2.exe runtime-link=static link=static threading=multi variant=debug address-model=64 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build_debug -j8 install && (
+        rmdir /s /q win_build_debug
+        echo Done building boost debug
+    ) || (
+        echo "Failed to run build boost debug"
         GOTO :cmderr
     )
 
@@ -515,7 +525,7 @@ if not exist %WX_BUILT_FILE% (
 
     rem wxWidgets doesnt also install WebView2 stuff, so we'll do it manually
     copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\x64\WebView2LoaderStatic.lib "%MY_PREFIX%\lib" && (
-        echo Failed to copy WebView2LoaderStatic.lib to lib dir
+        echo Successfully copied WebView2LoaderStatic.lib to lib dir
     ) || (
         echo Failed to copy WebView2LoaderStatic.lib to lib dir
         GOTO :cmderr

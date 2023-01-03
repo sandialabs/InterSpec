@@ -54,6 +54,7 @@ jobs:
           path: '${{runner.temp}}/install'
           key: ${{ runner.os }}-dependencies-win-${{ hashFiles('${{ github.workspace }}/target/patches/dep_build_msvc2022.bat') }}
     
+# TODO: dep_build_msvc2022.bat seems to work just fine from PowerShell, so we should really switch to just always using that to be consistent across platforms
       - name: Build dependencies on windows
         shell: cmd
         if: steps.cache-deps.outputs.cache-hit != 'true' && runner.os == 'Windows'
@@ -89,7 +90,7 @@ jobs:
         run: |
           mkdir build_${{ runner.os }}_wx_app
           cd build_${{ runner.os }}_wx_app
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_head -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DCMAKE_IGNORE_PREFIX_PATH="C:/Strawberry;C:/Strawberry/c" -DCMAKE_IGNORE_PATH="C:/Strawberry;C:/Strawberry/c/lib;C:/Strawberry/c/;C:/Strawberry/c/share;C:/Strawberry/c/bin;C:/Strawberry/c/include" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF "${{ github.workspace }}/target/wxWidgets"
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_head -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF "${{ github.workspace }}/target/wxWidgets"
           cmake --build . --config Release
 
       - name: wxWidgets app build
@@ -99,7 +100,9 @@ jobs:
         run: |
           cmake --build . --config Release
           cmake --build . --config Release --target install
-          copy CMakeCache.txt InterSpec_app_${{ runner.os }}_WebView_head
+          echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_head\build_info.txt
+          echo No testing has been performed on this build. >> InterSpec_app_${{ runner.os }}_WebView_head\build_info.txt
+          echo InterSpec code git has SHA: %GITHUB_SHA% >> InterSpec_app_${{ runner.os }}_WebView_head\build_info.txt
 
       - name: Upload wxWidgets app to as GitHub Artifact
         uses: actions/upload-artifact@v3.1.1
@@ -107,6 +110,37 @@ jobs:
         with: 
           name: InterSpec_app_${{ runner.os }}_WebView_head
           path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_head'
+
+
+      - name: Cache tests config/build
+        id: cache-tests-build
+        uses: actions/cache@v3
+        with:
+          path: '${{runner.temp}}/build_${{ runner.os }}_tests'
+          key: ${{ runner.os }}-tests-build-${{ hashFiles('**/CMakeLists.txt') }}
+    
+      - name: Initial tests config/build
+        shell: cmd
+        if: steps.cache-tests-build.outputs.cache-hit != 'true'
+        working-directory: ${{runner.temp}}
+        run: |
+          mkdir build_${{ runner.os }}_tests
+          cd build_${{ runner.os }}_tests
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_BUILD_TYPE=Debug "${{ github.workspace }}/target/testing"
+          cmake --build . --config Debug
+
+      - name: Run tests
+        shell: cmd
+        working-directory: ${{runner.temp}}/build_${{ runner.os }}_tests
+        run: |
+          cmake --build . --config Debug
+          cmake --build . --target RUN_TESTS
+
+      - name: Upload test log as GitHub Artifact
+        uses: actions/upload-artifact@v3.1.1
+        with: 
+          name: InterSpec_test_log
+          path: '${{runner.temp}}/build_${{ runner.os }}_tests/Testing/Temporary/LastTest.log'
 
       - run: echo "Job status is ${{ job.status }}."
 

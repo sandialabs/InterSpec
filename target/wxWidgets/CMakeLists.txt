@@ -33,6 +33,8 @@ if(MSVC)
   add_definitions( -DwxUSE_RC_MANIFEST=1 -DwxUSE_DPI_AWARE_MANIFEST=2 )
 endif()
 
+message( )
+
 
 if( NOT InterSpec_FETCH_DEPENDENCIES )
   # I havent gotten the above to find_package(...) call to actually work yet
@@ -130,7 +132,8 @@ DESTINATION
   "bin/.." 
 )
 
-install(FILES 
+install(FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/d3.v3.min.js 
   ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
   ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
   ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
