@@ -1,0 +1,64 @@
+name: CMake Build Matrix
+
+on: [push, pull_request]
+
+jobs:
+  call-build_dependancies:
+    uses: ./.github/workflows/build_dependancies.yml
+
+  build:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config: 
+        - {
+            name: "Windows Latest MSVC-2022",
+            os: windows-latest,
+            artifact: "windows_msvc2022.7z",
+            build_type: "Release",
+            cc: "cl",
+            cxx: "cl",
+            archiver: "7z a",
+            generators: "Visual Studio 17 2022"
+          }
+
+    steps:
+      - name: Cache tests config/build
+        id: cache-tests-build
+        uses: actions/cache@v3
+        with:
+          path: '${{runner.temp}}/build_${{ runner.os }}_tests'
+          key: ${{ runner.os }}-tests-build-${{ hashFiles('**/CMakeLists.txt') }}
+    
+      - name: Initial tests config/build
+        shell: cmd
+        if: steps.cache-tests-build.outputs.cache-hit != 'true'
+        working-directory: ${{runner.temp}}
+        run: |
+          mkdir build_${{ runner.os }}_tests
+          cd build_${{ runner.os }}_tests
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_BUILD_TYPE=Debug "${{ github.workspace }}/target/testing"
+          cmake --build . --config Debug
+
+      - name: Run tests
+        id: run-tests
+        shell: cmd
+        working-directory: ${{runner.temp}}/build_${{ runner.os }}_tests
+        run: |
+          copy /Y "${{ github.workspace }}\external_libs\SandiaDecay\sandia.decay.xml" "${{ github.workspace }}\data"
+          cmake --build . --config Debug
+          cmake --build . --target RUN_TESTS
+
+      - name: Upload test log as GitHub Artifact
+        uses: actions/upload-artifact@v3.1.1
+        if: ${{ failure() && steps.run-tests.conclusion == 'failure' }}
+        with: 
+          name: InterSpec_test_log
+          path: '${{runner.temp}}/build_${{ runner.os }}_tests/Testing/Temporary/LastTest.log'
+
+      - run: echo "Job status is ${{ job.status }}."
+
+
+
