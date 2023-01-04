@@ -3,7 +3,11 @@ name: Build Dependencies
 on:
   workflow_call:
 
+concurrency: ci-${{ github.ref }}
+cancel-in-progress: true
+
 jobs:  
+  build:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v2.6.0
