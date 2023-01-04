@@ -1,12 +1,16 @@
-name: CMake Build Matrix
+name: Run Tests
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
 
 jobs:
-  call-build_dependancies:
-    uses: ./.github/workflows/build_dependancies.yml
+  call-build_dependencies:
+    uses: ./.github/workflows/build_dependencies.yml
 
-  build:
+  run-tests:
+    needs: build-dependencies
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.os }}
     strategy:

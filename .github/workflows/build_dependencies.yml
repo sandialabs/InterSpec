@@ -6,7 +6,7 @@ on:
 concurrency: ci-${{ github.ref }}
 
 jobs:  
-  build:
+  build-dependencies:
     runs-on: windows-latest
     steps:
       - name: Check out repository code
