@@ -10,7 +10,7 @@ jobs:
     uses: ./.github/workflows/build_dependencies.yml
 
   run-tests:
-    needs: build-dependencies
+    needs: call-build_dependencies
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.os }}
     strategy:
