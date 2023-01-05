@@ -26,7 +26,6 @@ runs:
   
   # TODO: the below needs an if to only run on windows
     - name: Cache Windows Dependencies
-      shell: cmd
       if: runner.os == 'Windows'
       id: cache-deps
       uses: actions/cache@v3
