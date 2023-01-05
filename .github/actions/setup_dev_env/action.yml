@@ -1,6 +1,6 @@
 name: Build InterSpec Dependencies
 description: Sets up build environment, and builds InterSpec dependencies
-concurrency
+
 runs:
   using: "composite"
   steps:
