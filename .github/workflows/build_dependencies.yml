@@ -9,7 +9,11 @@ jobs:
   build-dependencies:
     runs-on: windows-latest
     steps:
-
+      - name: Check out repository code
+        uses: actions/checkout@v2.6.0
+        with:
+          submodules: 'true'
+      
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64
