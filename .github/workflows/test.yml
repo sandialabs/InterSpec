@@ -25,8 +25,28 @@ jobs:
           }
 
     steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2.6.0
+        with:
+          submodules: 'true'
+
       - name: call-build_dependencies
         uses: ./.github/workflows/build_dependencies.yml
+
+      - name: List files in prefix
+        run: |
+          echo "In repo"
+          ls '${{ github.workspace }}'
+          echo "In temp folder"
+          ls '${{runner.temp}}'
+          echo "In Install"
+          ls '${{runner.temp}}/install'
+          echo "In Install/lib"
+          ls '${{runner.temp}}/install/lib'
+          echo "In Install/include"
+          ls '${{runner.temp}}/install/include'
+          echo "In Install/bin"
+          ls '${{runner.temp}}/install/bin'
 
       - name: Cache tests config/build
         id: cache-tests-build
