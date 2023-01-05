@@ -1,0 +1,79 @@
+name: Build App
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency: ci-${{ github.ref }}
+
+jobs:
+  
+  build-app:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config: 
+        - {
+            name: "Windows Latest MSVC-2022",
+            os: windows-latest,
+            artifact: "windows_msvc2022.7z",
+            build_type: "Release",
+            cc: "cl",
+            cxx: "cl",
+            archiver: "7z a",
+            generators: "Visual Studio 17 2022"
+          }
+
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2.6.0
+        with:
+          submodules: 'true'
+
+      - name: Setup Dev Env 
+        uses: ./.github/actions/setup_dev_env
+
+# We'll cache the InterSpec build directory so we dont have to build from scratch (about a 20 or 25 minute process) on every push
+      - name: Cache wxWidgets config/build
+        id: cache-wx-build
+        uses: actions/cache@v3
+        with:
+          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app'
+          key: ${{ runner.os }}-wx-app-build-${{ hashFiles('**/CMakeLists.txt') }}
+    
+      - name: Initial wxWidgets config/build
+        shell: cmd
+        if: steps.cache-wx-build.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        working-directory: ${{runner.temp}}
+        run: |
+          mkdir build_${{ runner.os }}_wx_app
+          cd build_${{ runner.os }}_wx_app
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_head -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF "${{ github.workspace }}/target/wxWidgets"
+          cmake --build . --config Release
+
+      - name: wxWidgets app build
+        shell: cmd
+        if: runner.os == 'Windows'
+        working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
+        run: |
+          cmake --build . --config Release
+          cmake --build . --config Release --target install
+          echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_head\build_info.txt
+          echo No testing has been performed on this build. >> InterSpec_app_${{ runner.os }}_WebView_head\build_info.txt
+          echo InterSpec code git has SHA: %GITHUB_SHA% >> InterSpec_app_${{ runner.os }}_WebView_head\build_info.txt
+
+      - name: Upload wxWidgets app to as GitHub Artifact
+        uses: actions/upload-artifact@v3.1.1
+        if: runner.os == 'Windows'
+        with: 
+          name: InterSpec_app_${{ runner.os }}_WebView_head
+          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_head'
+
+      - run: echo "Job status is ${{ job.status }}."
+
+
+

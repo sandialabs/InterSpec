@@ -1,0 +1,92 @@
+name: Run Tests
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency: ci-${{ github.ref }}
+
+jobs:
+  run-tests:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config: 
+        - {
+            name: "Windows Latest MSVC-2022",
+            os: windows-latest,
+            artifact: "windows_msvc2022.7z",
+            build_type: "Release",
+            cc: "cl",
+            cxx: "cl",
+            archiver: "7z a",
+            generators: "Visual Studio 17 2022"
+          }
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2.6.0
+        with:
+          submodules: 'true'
+      
+      - name: Setup Dev Env 
+        uses: ./.github/actions/setup_dev_env
+
+      - name: List files in prefix
+        run: |
+          echo "In repo"
+          ls '${{ github.workspace }}'
+          echo "In temp folder"
+          ls '${{runner.temp}}'
+          echo "In Install"
+          ls '${{runner.temp}}/install'
+          echo "In Install/lib"
+          ls '${{runner.temp}}/install/lib'
+          echo "In Install/include"
+          ls '${{runner.temp}}/install/include'
+          echo "In Install/bin"
+          ls '${{runner.temp}}/install/bin'
+
+      - name: Cache tests config/build
+        id: cache-tests-build
+        uses: actions/cache@v3
+        with:
+          path: '${{runner.temp}}/build_${{ runner.os }}_tests'
+          key: ${{ runner.os }}-tests-build-${{ hashFiles('**/CMakeLists.txt') }}
+    
+      - name: Initial tests config/build
+        shell: cmd
+        if: steps.cache-tests-build.outputs.cache-hit != 'true'
+        working-directory: ${{runner.temp}}
+        run: |
+          mkdir build_${{ runner.os }}_tests
+          cd build_${{ runner.os }}_tests
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_BUILD_TYPE=Debug "${{ github.workspace }}/target/testing"
+          cmake --build . --config Debug
+
+      - name: Run tests
+        id: run-tests
+        shell: pwsh
+        working-directory: ${{runner.temp}}/build_${{ runner.os }}_tests
+        run: |
+          Copy-Item "${{ github.workspace }}\external_libs\SandiaDecay\sandia.decay.xml" -Destination "${{ github.workspace }}\data"
+          cmake --build . --config Debug
+          cmake --build . --target RUN_TESTS
+          New-Item -ItemType Directory -Force -Path TestLogs
+          Get-ChildItem -Path TestLogs -Include *.* -Recurse | foreach { $_.Delete()}
+          if (Test-Path "Testing/Temporary/LastTest.log") { Copy-Item "Testing/Temporary/LastTest.log" -Destination TestLogs } else { echo "No LastTest.log avaialable" >> TestLogs/LastTest.log }
+
+      - name: Upload test log as GitHub Artifact
+        uses: actions/upload-artifact@v3.1.1
+        if: ${{ failure() && steps.run-tests.conclusion == 'failure' }}
+        with: 
+          name: InterSpec_test_logs
+          path: '${{runner.temp}}/build_${{ runner.os }}_tests/TestLogs'
+
+      - run: echo "Job status is ${{ job.status }}."
+
+
+
