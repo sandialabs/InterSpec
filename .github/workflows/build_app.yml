@@ -10,7 +10,6 @@ concurrency: ci-${{ github.ref }}
 jobs:
   
   build-app:
-    needs: call-build_dependencies
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.os }}
     strategy:
