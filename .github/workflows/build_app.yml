@@ -5,8 +5,9 @@ on:
     branches:
       - master
 
+concurrency: ci-${{ github.ref }}
+
 jobs:
-  concurrency: ci-${{ github.ref }}
   
   build-app:
     needs: call-build_dependencies

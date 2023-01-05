@@ -5,9 +5,9 @@ on:
     branches:
       - master
 
-jobs:
-  concurrency: ci-${{ github.ref }}
+concurrency: ci-${{ github.ref }}
 
+jobs:
   run-tests:
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.os }}
