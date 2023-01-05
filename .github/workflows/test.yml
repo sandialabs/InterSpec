@@ -6,9 +6,6 @@ on:
       - master
 
 jobs:
-  call-build_dependencies:
-    uses: ./.github/workflows/build_dependencies.yml
-
   run-tests:
     needs: call-build_dependencies
     name: ${{ matrix.config.name }}
@@ -29,6 +26,9 @@ jobs:
           }
 
     steps:
+      - name: call-build_dependencies
+        uses: ./.github/workflows/build_dependencies.yml
+
       - name: Cache tests config/build
         id: cache-tests-build
         uses: actions/cache@v3

@@ -6,8 +6,6 @@ on:
       - master
 
 jobs:
-  call-build_dependencies:
-    uses: ./.github/workflows/build_dependencies.yml
 
   build-app:
     needs: call-build_dependencies
@@ -30,6 +28,9 @@ jobs:
 
 
     steps:
+      - name: call-build_dependencies
+        uses: ./.github/workflows/build_dependencies.yml
+
 # We'll cache the InterSpec build directory so we dont have to build from scratch (about a 20 or 25 minute process) on every push
       - name: Cache wxWidgets config/build
         id: cache-wx-build
