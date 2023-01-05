@@ -6,7 +6,11 @@ on:
       - master
 
 jobs:
+  call-build_dependencies:
+    uses: ./.github/workflows/build_dependencies.yml
+
   run-tests:
+    needs: call-build_dependencies
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.os }}
     strategy:
@@ -29,9 +33,6 @@ jobs:
         uses: actions/checkout@v2.6.0
         with:
           submodules: 'true'
-
-      - name: call-build_dependencies
-        uses: ./.github/workflows/build_dependencies.yml
 
       - name: List files in prefix
         run: |
