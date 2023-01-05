@@ -7,7 +7,6 @@ on:
 
 jobs:
   run-tests:
-    needs: call-build_dependencies
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.os }}
     strategy:
