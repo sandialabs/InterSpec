@@ -10,20 +10,22 @@ runs:
         vsversion: 2022
 
     # Get CMake, see https://github.com/marketplace/actions/get-cmake
-    - name: get-cmake
-      uses: lukka/get-cmake@v3.24.3
+    - uses: lukka/get-cmake@v3.24.3
       
-    #Now go to using: https://github.com/marketplace/actions/run-cmake      
-    - run: echo "The job was automatically triggered by a ${{ github.event_name }} event."
-    - run: echo "This job is now running on a ${{ runner.os }} server hosted by GitHub"
-    - run: echo "Building branch ${{ github.ref }} of repository ${{ github.repository }}."
-    - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
-    - name: List files in the repository
-      run: |
-          ls ${{ github.workspace }}
+    #Now go to using: https://github.com/marketplace/actions/run-cmake     
+    - name: Print some info
+      shell: cmd
+      run: | 
+        echo "The job was automatically triggered by a ${{ github.event_name }} event."
+        echo "This job is now running on a ${{ runner.os }} server hosted by GitHub"
+        echo "Building branch ${{ github.ref }} of repository ${{ github.repository }}."
+        echo "The ${{ github.repository }} repository has been cloned to the runner."
+        echo "The files in the repository:
+        ls ${{ github.workspace }}
   
   # TODO: the below needs an if to only run on windows
     - name: Cache Windows Dependencies
+      shell: cmd
       if: runner.os == 'Windows'
       id: cache-deps
       uses: actions/cache@v3
@@ -42,6 +44,7 @@ runs:
         ${{ github.workspace }}\target\patches\dep_build_msvc2022.bat "${{runner.temp}}\dep_build" "${{runner.temp}}\install"
 
     - name: List files in prefix
+      shell: cmd
       run: |
         echo "In Install"
         ls '${{runner.temp}}/install'
@@ -52,7 +55,6 @@ runs:
         echo "In Install/bin"
         ls '${{runner.temp}}/install/bin'
 
-    - run: echo "Job status is ${{ job.status }}."
 
 
 
