@@ -69,19 +69,22 @@ jobs:
 
       - name: Run tests
         id: run-tests
-        shell: cmd
+        shell: pwsh
         working-directory: ${{runner.temp}}/build_${{ runner.os }}_tests
         run: |
           copy /Y "${{ github.workspace }}\external_libs\SandiaDecay\sandia.decay.xml" "${{ github.workspace }}\data"
           cmake --build . --config Debug
           cmake --build . --target RUN_TESTS
+          New-Item -ItemType Directory -Force -Path TestLogs
+          Get-ChildItem -Path TestLogs -Include *.* -Recurse | foreach { $_.Delete()}
+          if (Test-Path "Testing/Temporary/LastTest.log") { Copy-Item "Testing/Temporary/LastTest.log" -Destination TestLogs } else { echo "No LastTest.log avaialable" >> TestLogs/LastTest.log }
 
       - name: Upload test log as GitHub Artifact
         uses: actions/upload-artifact@v3.1.1
         if: ${{ failure() && steps.run-tests.conclusion == 'failure' }}
         with: 
-          name: InterSpec_test_log
-          path: '${{runner.temp}}/build_${{ runner.os }}_tests/Testing/Temporary/LastTest.log'
+          name: InterSpec_test_logs
+          path: '${{runner.temp}}/build_${{ runner.os }}_tests/TestLogs'
 
       - run: echo "Job status is ${{ job.status }}."
 
