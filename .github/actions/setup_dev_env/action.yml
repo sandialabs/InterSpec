@@ -10,7 +10,8 @@ runs:
         vsversion: 2022
 
     # Get CMake, see https://github.com/marketplace/actions/get-cmake
-    - uses: lukka/get-cmake@v3.24.3
+    - name: get-cmake
+      uses: lukka/get-cmake@v3.24.3
       
     #Now go to using: https://github.com/marketplace/actions/run-cmake     
     - name: Print some info
@@ -54,6 +55,7 @@ runs:
         ls '${{runner.temp}}/install/include'
         echo "In Install/bin"
         ls '${{runner.temp}}/install/bin'
+
 
 
 
