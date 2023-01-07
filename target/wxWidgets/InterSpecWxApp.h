@@ -48,17 +48,28 @@ public:
   InterSpecWxApp();
 
   virtual bool OnInit() override;
+  virtual int OnRun() override;
   virtual int OnExit() override;
 
-  virtual void OnInitCmdLine(wxCmdLineParser& parser) override;
-  virtual bool OnCmdLineParsed(wxCmdLineParser& parser) override;
+  virtual void OnInitCmdLine( wxCmdLineParser &parser ) override;
+  virtual bool OnCmdLineParsed( wxCmdLineParser &parser ) override;
 
-  void handle_frame_closing(InterSpecWebFrame* frame);
-  void handle_frame_focus(InterSpecWebFrame* frame);
+  void handle_frame_closing( InterSpecWebFrame *frame );
+  void handle_frame_focus( InterSpecWebFrame *frame );
+  void session_loaded( InterSpecWebFrame *frame );
   void handle_open_file_message(const std::string& message);
   void new_app_window();
+  void close_all_windows_and_exit();
 
 private:
+  /** Checks if any other instances of the app are running, and
+   if so, messages them about what file(s) to open.
+   
+   @returns True if this is the only instance running.  
+            False if any other instance running.
+  */
+  bool check_single_instance();
+
   wxString m_url;
   std::vector<wxString> m_command_line_args;
 

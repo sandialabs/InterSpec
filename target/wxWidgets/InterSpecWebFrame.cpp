@@ -1037,10 +1037,13 @@ void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
     wxConfigBase* config = wxConfigBase::Get(true);
     config->Write("/NumLoadAttempts", 0);
 
-
 #ifdef _WIN32
     check_url_association();
 #endif
+
+    auto app = dynamic_cast<InterSpecWxApp *>(wxApp::GetInstance());
+    if( app )
+      app->session_loaded( this );
   }
   else if (msg == "OpenInExternalBrowser")
   {

@@ -37,7 +37,7 @@ jobs:
       - name: Setup Dev Env 
         uses: ./.github/actions/setup_dev_env
 
-# We'll cache the InterSpec build directory so we dont have to build from scratch (about a 20 or 25 minute process) on every push
+# Note: caching the build doesnt work - each checkout sets each files timestamps to current time, so it will all be rebuilt anyway
       - name: Cache wxWidgets config/build
         id: cache-wx-build
         uses: actions/cache@v3
@@ -65,6 +65,10 @@ jobs:
           echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_head\build_info.txt
           echo No testing has been performed on this build. >> InterSpec_app_${{ runner.os }}_WebView_head\build_info.txt
           echo InterSpec code git has SHA: %GITHUB_SHA% >> InterSpec_app_${{ runner.os }}_WebView_head\build_info.txt
+
+# TODO: test that the application actually loads
+# $p = Start-Process .\Release\InterSpec.exe -ArgumentList @("--test-load", "--mult-instance", "--no-restore") -PassThru
+# echo $p.ExitCode
 
       - name: Upload wxWidgets app to as GitHub Artifact
         uses: actions/upload-artifact@v3.1.1

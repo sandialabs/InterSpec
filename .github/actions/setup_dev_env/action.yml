@@ -44,7 +44,7 @@ runs:
         ${{ github.workspace }}\target\patches\dep_build_msvc2022.bat "${{runner.temp}}\dep_build" "${{runner.temp}}\install"
 
     - name: List files in prefix
-      shell: cmd
+      shell: pwsh
       run: |
         echo "In Install"
         ls '${{runner.temp}}/install'
