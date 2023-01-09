@@ -83,7 +83,7 @@ private:
   wxSingleInstanceChecker* m_checker;
 
   IpcServer* m_ipc_server;
-};
+};//class InterSpecWxApp
 
 
 #endif //INTERSPEC_WX_APP_h

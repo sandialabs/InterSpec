@@ -58,7 +58,7 @@ namespace
   // Some variable to hold command line switch options
   bool sm_single_instance = true;
   bool sm_try_restore = true;
-  bool sm_test_load_only = true;
+  bool sm_test_load_only = false;
   bool sm_require_session_token = true;
   long sm_server_port = 0;
   long sm_max_runtime_seconds = 0;
@@ -109,6 +109,7 @@ namespace
     }
   };//class CheckLoadTimer
 
+  // TODO: these timers should probably be member variables of InterSpecWxApp
   std::unique_ptr<MaxRuntimeTimer> sm_max_runtime_timer;
 
   std::unique_ptr<CheckLoadTimer> sm_check_load_timer;
@@ -375,21 +376,6 @@ InterSpecWxApp::InterSpecWxApp() :
   {
     if( sm_test_load_only )
     {
-      // We need to explicitly stop/get-rid-of these timers, or else 
-      //  an exception will be thrown during shutdown, and our return
-      //  value wont actually be returned.
-      if( sm_max_runtime_timer )
-      {
-        sm_max_runtime_timer->Stop();
-        sm_max_runtime_timer.reset();
-      }
-
-      if( sm_check_load_timer )
-      {
-        sm_check_load_timer->Stop();
-        sm_check_load_timer.reset();
-      }
-
       sm_overide_rc = true;
       sm_rc_override_value = -12;
       close_all_windows_and_exit();
@@ -689,13 +675,28 @@ InterSpecWxApp::InterSpecWxApp() :
 
   int InterSpecWxApp::OnExit()
   {
+    // We need to explicitly stop/get-rid-of these timers, or else 
+    //  an exception will be thrown during shutdown, and our return
+    //  value wont actually be returned.
+    if( sm_max_runtime_timer )
+    {
+      sm_max_runtime_timer->Stop();
+      sm_max_runtime_timer.reset();
+    }
+
+    if( sm_check_load_timer )
+    {
+      sm_check_load_timer->Stop();
+      sm_check_load_timer.reset();
+    }
+
     InterSpecServer::killServer();
 
-    if (m_checker)
+    if( m_checker )
       delete m_checker;
     m_checker = nullptr;
 
-    if (m_ipc_server)
+    if( m_ipc_server )
       delete m_ipc_server;
     m_ipc_server = nullptr;
 
