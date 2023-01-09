@@ -58,7 +58,7 @@ namespace
   // Some variable to hold command line switch options
   bool sm_single_instance = true;
   bool sm_try_restore = true;
-  bool sm_test_load_only = false;
+  bool sm_test_load_only = true;
   bool sm_require_session_token = true;
   long sm_server_port = 0;
   long sm_max_runtime_seconds = 0;
@@ -373,7 +373,30 @@ InterSpecWxApp::InterSpecWxApp() :
 
   void InterSpecWxApp::handle_javascript_error_internal( const std::string &error_msg, const std::string &app_token )
   {
-    //Create a dialog to reload, or somethign, after finding the frame
+    if( sm_test_load_only )
+    {
+      // We need to explicitly stop/get-rid-of these timers, or else 
+      //  an exception will be thrown during shutdown, and our return
+      //  value wont actually be returned.
+      if( sm_max_runtime_timer )
+      {
+        sm_max_runtime_timer->Stop();
+        sm_max_runtime_timer.reset();
+      }
+
+      if( sm_check_load_timer )
+      {
+        sm_check_load_timer->Stop();
+        sm_check_load_timer.reset();
+      }
+
+      sm_overide_rc = true;
+      sm_rc_override_value = -12;
+      close_all_windows_and_exit();
+
+      return;
+    }//if( sm_test_load_only )
+
 
     InterSpecWebFrame *frame = nullptr;
     for( InterSpecWebFrame *f : m_frames )
@@ -385,6 +408,7 @@ InterSpecWxApp::InterSpecWxApp() :
       }
     }//for( InterSpecWebFrame *f : m_frames )
 
+
     if( frame )
       frame->Raise();
     
@@ -392,7 +416,8 @@ InterSpecWxApp::InterSpecWxApp() :
     wxString message = "There was a Javascript error - the application will now close.";
     
     wxMessageDialog dialog( GetTopWindow(), message, caption, wxOK | wxICON_ERROR | wxSTAY_ON_TOP );
-    dialog.SetExtendedMessage( error_msg );
+    dialog.SetExtendedMessage( error_msg + 
+      "\n\nPlease report to InterSpec@sandia.gov, along with what you were doing when this error occured." );
     dialog.ShowModal();
 
     /*
