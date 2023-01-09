@@ -70,12 +70,12 @@ jobs:
         shell: pwsh
         working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest
         run: |
-        $p = Start-Process .\InterSpec.exe -ArgumentList @("--test-load", "--mult-instance", "--no-restore") -PassThru
-        $errTimedOut = $null
-        $p | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue -ErrorVariable errTimedOut
-        if ($errTimedOut) { Stop-Process -InputObject $p -Force }
-        echo "Exit code of InterSpec test load was was" $p.ExitCode
-        exit $p.ExitCode
+          $p = Start-Process .\InterSpec.exe -ArgumentList @("--test-load", "--mult-instance", "--no-restore") -PassThru
+          $errTimedOut = $null
+          $p | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue -ErrorVariable errTimedOut
+          if ($errTimedOut) { Stop-Process -InputObject $p -Force }
+          echo "Exit code of InterSpec test load was was" $p.ExitCode
+          exit $p.ExitCode
 #  If Stop-Process had to be used, the exit code will be -1.  If resources didnt load -12.  IF all was okay, 0
         
 # Then test file o
