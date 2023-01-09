@@ -39,6 +39,7 @@
 #include "wx/filename.h"
 #include "wx/snglinst.h"
 #include "wx/stdpaths.h"
+#include "wx/hyperlink.h"
 
 #include <Wt/Json/Array>
 #include <Wt/Json/Value>
@@ -341,6 +342,82 @@ InterSpecWxApp::InterSpecWxApp() :
   }
 
 
+  
+  void InterSpecWxApp::handle_javascript_error( const std::string error_msg, const std::string app_token )
+  {
+    // static functions
+    auto app = dynamic_cast<InterSpecWxApp *>(wxApp::GetInstance());
+    assert( app );
+    if( !app )
+    {
+      wxLogError( "InterSpecWxApp::handle_javascript_error: failed to get wxApp" );
+      return;
+    }
+
+
+    // Pass this call/info to main UI thread
+    wxWindow *topWindow = app->GetTopWindow();
+    assert( topWindow );
+    if( !topWindow )
+    {
+      wxLogError( "InterSpecWxApp::handle_javascript_error: failed to get top window" );
+      return;
+    }
+
+
+    topWindow->GetEventHandler()->CallAfter( [=](){ 
+      app->handle_javascript_error_internal( error_msg, app_token ); 
+    } ); 
+  }//void handle_javascript_error( const std::string &error_msg, const std::string app_token );
+
+
+  void InterSpecWxApp::handle_javascript_error_internal( const std::string &error_msg, const std::string &app_token )
+  {
+    //Create a dialog to reload, or somethign, after finding the frame
+
+    InterSpecWebFrame *frame = nullptr;
+    for( InterSpecWebFrame *f : m_frames )
+    {
+      if( f->app_token() == app_token )
+      {
+        frame = f;
+        break;
+      }
+    }//for( InterSpecWebFrame *f : m_frames )
+
+    if( frame )
+      frame->Raise();
+    
+    wxString caption = "Javascript application error";
+    wxString message = "There was a Javascript error - the application will now close.";
+    
+    wxMessageDialog dialog( GetTopWindow(), message, caption, wxOK | wxICON_ERROR | wxSTAY_ON_TOP );
+    dialog.SetExtendedMessage( error_msg );
+    dialog.ShowModal();
+
+    /*
+    // TODO: Make a custom dialog with a URL they can click on to send an email bug report.
+     wxHyperlinkCtrl *hyperlink = new wxHyperlinkCtrl( &dialog, -1,
+      "Click here to email",
+      "mailto:interspec@sandia.gov?subject=InterSpec%20bug:%20Fatal%20JS%20Error&body=" + Wt::Utils::urlEncode(error_msg)
+      );
+    wxDialog dialog( frame, -1, caption, wxDefaultPosition, wxDefaultSize, wxICON_ERROR | wxSTAY_ON_TOP, "dialogBox" );
+    wxSizer *btnSizer = dialog.CreateButtonSizer( wxOK );
+    wxSizer *txtSizer = dialog.CreateTextSizer( message )
+    ...
+    dialog.ShowModal();
+    */
+
+    if( frame )
+      frame->Close();
+    else
+      close_all_windows_and_exit();
+
+
+    wxLogMessage( "Have JS Error; msg='%s', session='%s'", error_msg, app_token );
+  }//void handle_javascript_error_internal( const std::string &error_msg, const std::string &app_token );
+
+
   void InterSpecWxApp::new_app_window()
   {
     wxLogMessage("Creating new app window" );
@@ -533,6 +610,7 @@ InterSpecWxApp::InterSpecWxApp() :
     const long num_load_attempts = config->ReadLong("/NumLoadAttempts", 0);
     config->Write("/NumLoadAttempts", num_load_attempts + 1);
     //wxLogMessage("Have attempted to load %i times.", static_cast<int>(num_load_attempts));
+
 
     const bool no_restore = ((!sm_try_restore) || (num_load_attempts >= 2));
 

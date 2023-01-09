@@ -61,6 +61,8 @@ public:
   void new_app_window();
   void close_all_windows_and_exit();
 
+  static void handle_javascript_error( const std::string error_msg, const std::string app_token );
+
 private:
   /** Checks if any other instances of the app are running, and
    if so, messages them about what file(s) to open.
@@ -69,6 +71,8 @@ private:
             False if any other instance running.
   */
   bool check_single_instance();
+
+  void handle_javascript_error_internal( const std::string &error_msg, const std::string &app_token );
 
   wxString m_url;
   std::vector<wxString> m_command_line_args;
