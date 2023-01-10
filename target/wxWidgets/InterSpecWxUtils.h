@@ -29,7 +29,7 @@
 
 namespace InterSpecWxUtils
 {
-
+  void handle_javascript_error( const std::string &error_msg, const std::string app_token );
 }//namespace InterSpecWxUtils
 
 

@@ -235,7 +235,10 @@ protected:
   //  state if their preferences ask for it
   virtual void prepareForEndOfSession();
   
-  
+#if(  BUILD_AS_WX_WIDGETS_APP )
+  virtual void handleJavaScriptError( const std::string &errorText );
+#endif
+
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   /** Checks for URL argument "externalid", or equivalently "apptoken", and if found sets m_externalToken to it.
    

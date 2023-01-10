@@ -37,7 +37,7 @@ jobs:
       - name: Setup Dev Env 
         uses: ./.github/actions/setup_dev_env
 
-# We'll cache the InterSpec build directory so we dont have to build from scratch (about a 20 or 25 minute process) on every push
+# Note: caching the build doesnt work - each checkout sets each files timestamps to current time, so it will all be rebuilt anyway
       - name: Cache wxWidgets config/build
         id: cache-wx-build
         uses: actions/cache@v3
@@ -52,7 +52,7 @@ jobs:
         run: |
           mkdir build_${{ runner.os }}_wx_app
           cd build_${{ runner.os }}_wx_app
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_head -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF "${{ github.workspace }}/target/wxWidgets"
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_latest -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF "${{ github.workspace }}/target/wxWidgets"
           cmake --build . --config Release
 
       - name: wxWidgets app build
@@ -62,16 +62,34 @@ jobs:
         run: |
           cmake --build . --config Release
           cmake --build . --config Release --target install
-          echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_head\build_info.txt
-          echo No testing has been performed on this build. >> InterSpec_app_${{ runner.os }}_WebView_head\build_info.txt
-          echo InterSpec code git has SHA: %GITHUB_SHA% >> InterSpec_app_${{ runner.os }}_WebView_head\build_info.txt
+          echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
+          echo No testing has been performed on this build. >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
+          echo InterSpec code git has SHA: %GITHUB_SHA% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
+
+      - name: Test app build worked
+        shell: pwsh
+        working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest
+        run: |
+          $p = Start-Process .\InterSpec.exe -ArgumentList @("--test-load", "--mult-instance", "--no-restore") -PassThru
+          $errTimedOut = $null
+          $p | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue -ErrorVariable errTimedOut
+          if ($errTimedOut) { Stop-Process -InputObject $p -Force }
+          echo "Exit code of InterSpec test load was was" $p.ExitCode
+          exit $p.ExitCode
+#  If Stop-Process had to be used, the exit code will be -1.  If resources didnt load -12.  IF all was okay, 0
+        
+# Then test file o
+#
+# Then maybe do a test with something like Puppeteer, by starting the app on a given port, like: 
+# $p = Start-Process .\Release\InterSpec.exe -ArgumentList @("--no-token", "--port=8088", "--mult-instance", "--no-restore") -PassThru
+
 
       - name: Upload wxWidgets app to as GitHub Artifact
         uses: actions/upload-artifact@v3.1.1
         if: runner.os == 'Windows'
         with: 
-          name: InterSpec_app_${{ runner.os }}_WebView_head
-          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_head'
+          name: InterSpec_app_${{ runner.os }}_WebView_latest
+          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest'
 
       - run: echo "Job status is ${{ job.status }}."
 

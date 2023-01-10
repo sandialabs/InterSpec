@@ -290,7 +290,8 @@ namespace InterSpecServer
   
   void startServerNodeAddon( string name,
                              std::string basedir,
-                             const std::string xml_config_path )
+                             const std::string xml_config_path,
+                             unsigned short int server_port_num )
   {
     std::lock_guard<std::mutex> serverlock( ns_servermutex );
     if( ns_server )
@@ -312,7 +313,12 @@ namespace InterSpecServer
     char httpaddr_param_name[]  = "--http-addr";
     char httpaddr_param_value[] = "127.0.0.1";
     char httpport_param_name[]  = "--http-port";
-    char httpport_param_value[] = "0";           //Assign port automatically
+    string port_str = std::to_string( static_cast<int>(server_port_num) );
+    assert( !port_str.empty() );
+    if( port_str.empty() )
+      port_str = "0";
+    char *httpport_param_value = &(port_str[0]);
+    //char httpport_param_value[] = "0";           //Assign port automatically
     char docroot_param_name[]   = "--docroot";
     char *docroot_param_value  = &(basedir[0]);
     //char approot_param_name[]   = "--approot";
@@ -335,6 +341,7 @@ namespace InterSpecServer
     if( ns_server->start() )
     {
       const int port = ns_server->httpPort();
+      assert( !server_port_num || (server_port_num == port) );
       std::string this_url = "http://127.0.0.1:" + boost::lexical_cast<string>(port);
       
       {
@@ -350,7 +357,8 @@ namespace InterSpecServer
   
 
 int start_server( const char *process_name, const char *userdatadir,
-                            const char *basedir, const char *xml_config_path )
+                  const char *basedir, const char *xml_config_path, 
+                  unsigned short int server_port )
 {
   //Using a relative path should get us in less trouble than an absolute path
   //  on Windows.  Although havent yet tested (20190902) with network drives and such on Windows.
@@ -489,7 +497,7 @@ int start_server( const char *process_name, const char *userdatadir,
 
   try
   {
-    InterSpecServer::startServerNodeAddon( process_name, relbasedir, xml_config_path );
+    InterSpecServer::startServerNodeAddon( process_name, relbasedir, xml_config_path, server_port );
   }catch( std::exception &e )
   {
     std::cerr << "\n\nCaught exception trying to start InterSpec server:\n\t"

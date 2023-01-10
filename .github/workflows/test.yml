@@ -50,41 +50,27 @@ jobs:
           echo "In Install/bin"
           ls '${{runner.temp}}/install/bin'
 
-      - name: Cache tests config/build
-        id: cache-tests-build
-        uses: actions/cache@v3
-        with:
-          path: '${{runner.temp}}/build_${{ runner.os }}_tests'
-          key: ${{ runner.os }}-tests-build-${{ hashFiles('**/CMakeLists.txt') }}
-    
-      - name: Initial tests config/build
-        shell: cmd
-        if: steps.cache-tests-build.outputs.cache-hit != 'true'
-        working-directory: ${{runner.temp}}
-        run: |
-          mkdir build_${{ runner.os }}_tests
-          cd build_${{ runner.os }}_tests
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_BUILD_TYPE=Debug "${{ github.workspace }}/target/testing"
-          cmake --build . --config Debug
-
+# Note: caching the build doesnt work - each checkout sets each files timestamps to current time, so it will all be rebuilt anyway 
       - name: Run tests
         id: run-tests
         shell: pwsh
-        working-directory: ${{runner.temp}}/build_${{ runner.os }}_tests
+        working-directory: ${{runner.temp}}
         run: |
-          Copy-Item "${{ github.workspace }}\external_libs\SandiaDecay\sandia.decay.xml" -Destination "${{ github.workspace }}\data"
+          mkdir build_tests
+          cd build_tests
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_BUILD_TYPE=Debug "${{ github.workspace }}/target/testing"
           cmake --build . --config Debug
+          Copy-Item "${{ github.workspace }}\external_libs\SandiaDecay\sandia.decay.xml" -Destination "${{ github.workspace }}\data"
           cmake --build . --target RUN_TESTS
           New-Item -ItemType Directory -Force -Path TestLogs
           Get-ChildItem -Path TestLogs -Include *.* -Recurse | foreach { $_.Delete()}
           if (Test-Path "Testing/Temporary/LastTest.log") { Copy-Item "Testing/Temporary/LastTest.log" -Destination TestLogs } else { echo "No LastTest.log avaialable" >> TestLogs/LastTest.log }
 
-      - name: Upload test log as GitHub Artifact
+      - name: Upload test logs as GitHub Artifact
         uses: actions/upload-artifact@v3.1.1
-        if: ${{ failure() && steps.run-tests.conclusion == 'failure' }}
         with: 
-          name: InterSpec_test_logs
-          path: '${{runner.temp}}/build_${{ runner.os }}_tests/TestLogs'
+          name: InterSpec_test_logs_${{ runner.os }}
+          path: '${{runner.temp}}/build_tests/TestLogs'
 
       - run: echo "Job status is ${{ job.status }}."
 

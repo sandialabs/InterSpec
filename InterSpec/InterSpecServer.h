@@ -38,18 +38,29 @@ namespace InterSpecServer
   
   void startServerNodeAddon( std::string proccessname,
                              std::string basedir,
-                             const std::string configpath );
+                             const std::string configpath,
+                             unsigned short int server_port_num = 0 );
   
   /** Starts the server, given the various options.
    Sets user data database directory; creates user data directory if needed and sets writable directory; looks for serial_to_model in user data directory; upgrades user data database if needed; sets static data directory (to be basedir + "/data").
    Then calls #startServerNodeAddon.
 
-   Returns port being served on, or a negative value on error.
+   @param process_name Name of the executable being ran - not sure if/why we actually need this 
+          TODO: check if we can just remove this
+   @param userdatadir The directory to store user data to.  
+          On Windows this might be "C:\Users\<user>\AppData\Roaming\InterSpec"
+   @param basedir The directory that contains the `InterSpec_resources` and `data` directories.
+   @param xml_config_path The path for the Wt XML config file
+   @param server_port_num The port to start the server on.  
+          If zero, then a random port above 1024 will be chosen.  
+          Ports below 1024 usually require admin privledges.
+   @returns port being served on, or a negative value on error.
 
    This function is currently used to start the server for the "Electron" version of the app.
    */
   int start_server( const char *process_name, const char *userdatadir,
-                            const char *basedir, const char *xml_config_path );
+                    const char *basedir, const char *xml_config_path,
+                    unsigned short int server_port_num = 0 );
   
 
   void killServer();

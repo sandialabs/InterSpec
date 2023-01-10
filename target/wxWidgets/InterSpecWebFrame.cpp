@@ -601,10 +601,7 @@ void InterSpecWebFrame::handleWinowSizeChange(wxSizeEvent& evt)
 }//handleWinowSizeChange(...)
 
 
-/**
-  * Method that retrieves the current state from the web control and updates the GUI
-  * the reflect this current state.
-  */
+
 void InterSpecWebFrame::UpdateState()
 {
   if (m_browser->IsBusy())
@@ -1037,10 +1034,13 @@ void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
     wxConfigBase* config = wxConfigBase::Get(true);
     config->Write("/NumLoadAttempts", 0);
 
-
 #ifdef _WIN32
     check_url_association();
 #endif
+
+    auto app = dynamic_cast<InterSpecWxApp *>(wxApp::GetInstance());
+    if( app )
+      app->session_loaded( this );
   }
   else if (msg == "OpenInExternalBrowser")
   {
@@ -1070,15 +1070,14 @@ void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
     wxLogMessage("MouseDownInTitleBar");
     CaptureMouse();
     m_dragging_window = true;
-    wxPoint pos = wxGetMousePosition();
-    wxPoint origin = GetPosition();
-    int dx = pos.x - origin.x;
-    int dy = pos.y - origin.y;
+    const wxPoint pos = wxGetMousePosition();
+    const wxPoint origin = GetPosition();
+    const int dx = pos.x - origin.x;
+    const int dy = pos.y - origin.y;
     m_mouse_down_pos = wxPoint(dx, dy);
-  }
-  else
+  }else
   {
-    wxLogMessage("Unrocgnized message from JS: '%s'.", msg.utf8_string().c_str());
+    wxLogMessage("Unrecognized message from JS: '%s'.", msg.utf8_string().c_str());
   }
 }//void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
 

@@ -241,7 +241,7 @@ void InterSpecApp::setupDomEnvironment()
   }//if( isPrimaryWindowInstance() )
   
 #endif //BUILD_AS_ELECTRON_APP
-  
+
   setTitle( "InterSpec" );
   
   //Call tempDirectory() to set global variable holding path to the temp file
@@ -1161,10 +1161,11 @@ void InterSpecApp::unload()
 
 void InterSpecApp::prepareForEndOfSession()
 {
+  if( !m_viewer || !m_viewer->m_user )
+    return;
+
   try
   {
-    if( m_viewer && m_viewer->m_user )
-    {
       std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
       
       {
@@ -1177,7 +1178,7 @@ void InterSpecApp::prepareForEndOfSession()
         m_viewer->m_user.modify()->addUsageTimeDuration( m_activeTimeInSession );
         
         const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
-        Wt::log("info") << "Added " << nmilli.count() << " ms usage time for user "
+        Wt::log("info") << "At session end, added " << nmilli.count() << " ms usage time for user "
              << m_viewer->m_user->userName();
         
         m_activeTimeInSession = std::chrono::seconds(0);
@@ -1186,7 +1187,6 @@ void InterSpecApp::prepareForEndOfSession()
       
 #if( USE_DB_TO_STORE_SPECTRA )
       //Check to see if we should save the apps state
-      const bool saveSpectra = true; //InterSpecUser::preferenceValue<bool>( "SaveSpectraToDb", m_viewer );
       const bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
         
         //Clean up the kEndOfSessions from before
@@ -1207,11 +1207,13 @@ void InterSpecApp::prepareForEndOfSession()
                 iter != states.end(); ++iter )
             {
                 if ((*iter)->stateType==UserState::kEndOfSessionTemp)
-                {   //delete temporary kEndOfSession
-                    (*iter).remove();
+                { 
+                  //delete temporary kEndOfSession
+                  iter->remove();
                 } else
-                {   //do not delete, but just change this HEAD to kUserSaved state (no longer kEndOfSession
-                    (*iter).modify()->stateType = UserState::kUserSaved;
+                {   
+                  //do not delete, but just change this HEAD to kUserSaved state (no longer kEndOfSession
+                   iter->modify()->stateType = UserState::kUserSaved;
                 }
             }
             
@@ -1221,11 +1223,11 @@ void InterSpecApp::prepareForEndOfSession()
         
       //Make sure there is at least a spectra valid in order to save this state
       std::shared_ptr<const SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
-      std::shared_ptr<const SpecMeas> second = m_viewer->measurment( SpecUtils::SpectrumType::SecondForeground );
-      std::shared_ptr<const SpecMeas> background = m_viewer->measurment( SpecUtils::SpectrumType::Background );
         
-      if( saveSpectra && saveState && (foreground || second || background))
+      if( saveState && foreground )
       {
+        Wt::log( "info" ) << "Will auto-save state for session-id:" << sessionId() << " at end of session.";
+
         const int offset = environment().timeZoneOffset();
         WString desc = "End of Session";
         const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
@@ -1281,10 +1283,8 @@ void InterSpecApp::prepareForEndOfSession()
           Wt::log("error") << "InterSpecApp::prepareForEndOfSession() error: " << e.what();
         }
         transaction.commit();
-      }//if( saveSpectra && saveState )
+      }//if( saveState )
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
-    }//if( we can accumulate usage stats )
-    
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpecApp::prepareForEndOfSession() caught: " << e.what();
@@ -1293,6 +1293,19 @@ void InterSpecApp::prepareForEndOfSession()
   Wt::log("debug") << "Have prepared for end of session " << sessionId() << ".";
 }//void InterSpecApp::prepareForEndOfSession()
 
+#if(  BUILD_AS_WX_WIDGETS_APP )
+void InterSpecApp::handleJavaScriptError( const std::string &errorText )
+{
+  // It doesnt look like we can call wxWidgets here via JS, so we will call into wxWidgets event loop
+  doJavaScript( "console.log('Here I am after error');", false );
+  
+  if( isPrimaryWindowInstance() )
+    InterSpecWxUtils::handle_javascript_error( errorText, m_externalToken );
+  
+  // Default WApplication implementation just logs error, and then calls WApplication:quit()
+  WApplication::handleJavaScriptError( errorText );
+}//void handleJavaScriptError( const std::string &errorText )
+#endif
 
 void InterSpecApp::clearSession()
 {
