@@ -42,7 +42,7 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
         run: |
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_latest -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF "${{ github.workspace }}/target/wxWidgets"
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_latest -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=scache -DCMAKE_CXX_COMPILER_LAUNCHER=scache "${{ github.workspace }}/target/wxWidgets"
           cmake --build . --config Release
           cmake --build . --config Release --target install
           echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
