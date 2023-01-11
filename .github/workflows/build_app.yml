@@ -50,7 +50,7 @@ jobs:
           echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
           echo No testing has been performed on this build. >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
           echo InterSpec code git has SHA: %GITHUB_SHA% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
-          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd)""
+          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd)"
 
       - name: Test app build worked
         shell: pwsh
