@@ -1637,7 +1637,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
       }//if( !nuc )
 
       if( nuc )
-        riid_nucs.push_back( {res.nuclide_, nuc->symbol} );
+        riid_nucs.push_back( {nuc->symbol, res.nuclide_} );
       else 
         riid_nucs.push_back( {res.nuclide_, ""} );
     }//for( loop over RIID results )
@@ -1710,6 +1710,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
         OtherNuc nuc;
         nuc.m_nuclide = riid.second;
         nuc.m_input = userInput();
+        nuc.m_input.m_input_txt = riid.first;
         btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::setFromOtherNuc, this, nuc));
       } else
       {
@@ -2038,6 +2039,12 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
                            && (src_type != ReferenceLineInfo::SourceType::None) );
   
   m_moreInfoBtn->setHidden( !nuclide );
+  
+  if( (validity == ReferenceLineInfo::InputValidity::Valid)
+     && (m_nuclideEdit->text().toUTF8() != ref_lines->m_input.m_input_txt ) )
+  {
+    m_nuclideEdit->setText( WString::fromUTF8(ref_lines->m_input.m_input_txt) );
+  }
   
   const bool hasPromptEquilib = (nuclide && nuclide->canObtainPromptEquilibrium());
   m_promptLinesOnly->setHidden( !hasPromptEquilib );
