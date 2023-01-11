@@ -12,8 +12,8 @@ runs:
 # Note: caching the build doesnt work - each checkout sets each files timestamps to current time, so we will use ccache action
     - name: Ccache for gh actions
       uses: hendrikmuhs/ccache-action@v1.2.7
-        with: 
-          key: ${{ github.workflow }}-${{ matrix.os }}
+      with: 
+        key: ${{ github.workflow }}-${{ matrix.os }}
 
     # Get CMake, see https://github.com/marketplace/actions/get-cmake
     - name: get-cmake
