@@ -13,7 +13,7 @@ runs:
     - name: Ccache for gh actions
       uses: hendrikmuhs/ccache-action@v1.2.7
         with: 
-        key: ${{ github.workflow }}-${{ matrix.os }}
+          key: ${{ github.workflow }}-${{ matrix.os }}
 
     # Get CMake, see https://github.com/marketplace/actions/get-cmake
     - name: get-cmake
