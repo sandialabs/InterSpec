@@ -37,34 +37,18 @@ jobs:
       - name: Setup Dev Env 
         uses: ./.github/actions/setup_dev_env
 
-# Note: caching the build doesnt work - each checkout sets each files timestamps to current time, so it will all be rebuilt anyway
-      - name: Cache wxWidgets config/build
-        id: cache-wx-build
-        uses: actions/cache@v3
-        with:
-          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app'
-          key: ${{ runner.os }}-wx-app-build-${{ hashFiles('**/CMakeLists.txt') }}
-    
-      - name: Initial wxWidgets config/build
-        shell: cmd
-        if: steps.cache-wx-build.outputs.cache-hit != 'true' && runner.os == 'Windows'
-        working-directory: ${{runner.temp}}
-        run: |
-          mkdir build_${{ runner.os }}_wx_app
-          cd build_${{ runner.os }}_wx_app
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_latest -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF "${{ github.workspace }}/target/wxWidgets"
-          cmake --build . --config Release
-
       - name: wxWidgets app build
-        shell: cmd
+        shell: pwsh
         if: runner.os == 'Windows'
         working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
         run: |
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_latest -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF "${{ github.workspace }}/target/wxWidgets"
           cmake --build . --config Release
           cmake --build . --config Release --target install
           echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
           echo No testing has been performed on this build. >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
           echo InterSpec code git has SHA: %GITHUB_SHA% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
+          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd)""
 
       - name: Test app build worked
         shell: pwsh
@@ -83,7 +67,6 @@ jobs:
 # Then maybe do a test with something like Puppeteer, by starting the app on a given port, like: 
 # $p = Start-Process .\Release\InterSpec.exe -ArgumentList @("--no-token", "--port=8088", "--mult-instance", "--no-restore") -PassThru
 
-
       - name: Upload wxWidgets app to as GitHub Artifact
         uses: actions/upload-artifact@v3.1.1
         if: runner.os == 'Windows'
@@ -91,6 +74,15 @@ jobs:
           name: InterSpec_app_${{ runner.os }}_WebView_latest
           path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest'
 
+      - name: Automatic Releases
+        uses: marvinpinto/action-automatic-releases@v1.2.1
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "latest"
+          prerelease: true
+          title: "Development Build"
+          files: |
+            InterSpec_app_${{ runner.os }}_WebView_latest_*.zip
       - run: echo "Job status is ${{ job.status }}."
 
 

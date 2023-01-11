@@ -9,9 +9,17 @@ runs:
         arch: amd64
         vsversion: 2022
 
+# Note: caching the build doesnt work - each checkout sets each files timestamps to current time, so we will use ccache action
+    - name: Ccache for gh actions
+      uses: hendrikmuhs/ccache-action@v1.2.7
+        with: 
+        key: ${{ github.workflow }}-${{ matrix.os }}
+
     # Get CMake, see https://github.com/marketplace/actions/get-cmake
     - name: get-cmake
       uses: lukka/get-cmake@v3.24.3
+      with:
+        cmakeAppendedArgs: '-D CMAKE_C_COMPILER_LAUNCHER=scache -D CMAKE_CXX_COMPILER_LAUNCHER=scache'
       
     #Now go to using: https://github.com/marketplace/actions/run-cmake     
     - name: Print some info
