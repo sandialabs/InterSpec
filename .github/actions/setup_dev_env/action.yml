@@ -51,6 +51,8 @@ runs:
       uses: hendrikmuhs/ccache-action@v1.2.7
       with: 
         key: ${{ github.workflow }}-${{ matrix.os }}
+        max-size: 10000M
+        variant: sccache
 
     - name: List files in prefix
       shell: pwsh
@@ -63,6 +65,9 @@ runs:
         ls '${{runner.temp}}/install/include'
         echo "In Install/bin"
         ls '${{runner.temp}}/install/bin'
+        echo github.event.action: ${{ github.event.action }}
+        echo github.event_name: ${{ github.event_name }}
+        echo github.workflow: ${{ github.workflow }}
 
 
 
