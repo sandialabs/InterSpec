@@ -41,6 +41,7 @@ runs:
       run: |
         echo github.event.action: ${{ github.event.action }}
         echo github.event_name: ${{ github.event_name }}
+        echo github.workflow: ${{ github.workflow }}
         ${{ github.workspace }}\target\patches\dep_build_msvc2022.bat "${{runner.temp}}\dep_build" "${{runner.temp}}\install"
 
 
