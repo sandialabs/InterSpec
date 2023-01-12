@@ -47,6 +47,7 @@ runs:
 
 # Note: caching the build doesnt work - each checkout sets each files timestamps to current time, so we will use ccache action
 #       but after building the dependencies
+# Currently it looks like There is an issue with SCCACHE_DIR... maybe.  See https://github.com/hendrikmuhs/ccache-action/blob/main/src/restore.ts will maybe need to set the `GITHUB_WORKSPACE` environment variable...
     - name: Ccache for gh actions
       uses: hendrikmuhs/ccache-action@v1.2.7
       with: 
@@ -54,6 +55,7 @@ runs:
         max-size: 10000M
         variant: sccache
         append-timestamp: false
+        verbose: 2
 
     - name: List files in prefix
       shell: pwsh
