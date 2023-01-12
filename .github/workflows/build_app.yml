@@ -69,14 +69,9 @@ jobs:
           Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest*.zip | foreach { Remove-Item -Path $_.FullName }
           echo "After removing old zip files"
           ls
-          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath InterSpec_app_Windows_WebView_latest.zip
-          $rel_zip="${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest.zip" 
-          echo "INTERSPEC_RELEASE_ZIP=$rel_zip" >> $GITHUB_ENV
-          ls 
+          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd).zip 
           echo "After zipping, files present for the build are:"
           ls
-          echo "ls Zip"
-          ls D:\a\_temp\build_Windows_wx_app\InterSpec_app_Windows_WebView_latest.zip
           echo "And files in base dir"
           ls ${{runner.temp}}
           ls ${{ github.workspace }}
@@ -85,30 +80,29 @@ jobs:
           if (Test-Path -Path 'D:\a\InterSpec\InterSpec'){ ls D:\a\InterSpec\InterSpec } else { echo "D:\a\InterSpec\InterSpec Does not exist"}
           if (Test-Path -Path 'D:\a\InterSpec\InterSpec\.sccache'){ ls D:\a\InterSpec\InterSpec\.sccache } else { echo "D:\a\InterSpec\InterSpec\.sccache Does not exist"}
 
+      - name: Upload wxWidgets app to as GitHub Artifact
+        uses: actions/upload-artifact@v3.1.1
+        if: runner.os == 'Windows'
+        with: 
+          name: InterSpec_app_${{ runner.os }}_WebView_latest
+          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest'
+
       - name: Test app build worked
         shell: pwsh
         working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest
         run: |
-          echo "Release ZIP=${{ env.INTERSPEC_RELEASE_ZIP }}"
           $p = Start-Process .\InterSpec.exe -ArgumentList @("--test-load", "--mult-instance", "--no-restore") -PassThru
           $errTimedOut = $null
           $p | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue -ErrorVariable errTimedOut
           if ($errTimedOut) { Stop-Process -InputObject $p -Force }
           echo "Exit code of InterSpec test load was was" $p.ExitCode
-#          exit $p.ExitCode
+          exit $p.ExitCode
 #  If Stop-Process had to be used, the exit code will be -1.  If resources didnt load -12.  IF all was okay, 0
         
 # Then test file o
 #
 # Then maybe do a test with something like Puppeteer, by starting the app on a given port, like: 
 # $p = Start-Process .\Release\InterSpec.exe -ArgumentList @("--no-token", "--port=8088", "--mult-instance", "--no-restore") -PassThru
-
-#      - name: Upload wxWidgets app to as GitHub Artifact
-#        uses: actions/upload-artifact@v3.1.1
-#        if: runner.os == 'Windows'
-#        with: 
-#          name: InterSpec_app_${{ runner.os }}_WebView_latest
-#          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest'
 
 #      - name: Upload sccache log as GitHub Artifact
 #        uses: actions/upload-artifact@v3.1.1
@@ -130,13 +124,14 @@ jobs:
       - name: Create Release
         uses: ncipollo/release-action@v1.12.0
         with:
-          artifacts: '${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_Windows_WebView_latest.zip'
+          artifacts: '${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_${{ runner.os }}_WebView_latest*.zip'
           draft: true
-          body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10."
+          body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10, or may work on WIndows 7 with the Edge browser runtime installed."
           allowUpdates: true
           generateReleaseNotes: false
           name: "Development Build"
-          prerelease: true
+          prerelease: false
+          removeArtifacts: true
           replacesArtifacts: true
           tag: 'latest'
           commit: ${{ github.sha }}
@@ -144,7 +139,7 @@ jobs:
 
       - name: "Cleanup and finish"
         run: |
-          # Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest*.zip | foreach { Remove-Item -Path $_.FullName }
+          Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest*.zip | foreach { Remove-Item -Path $_.FullName }
           echo "Job status is ${{ job.status }}."
 
 
