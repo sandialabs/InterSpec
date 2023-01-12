@@ -59,17 +59,17 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
         run: |
-          cmake --build . --config Release
-          cmake --build . --config Release --target install
-          echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
-          echo No testing has been performed on this build. >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
-          echo InterSpec code git has SHA: %GITHUB_SHA% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
-          echo "Before zipping, files present for the bbuild are:"
+#          cmake --build . --config Release
+#          cmake --build . --config Release --target install
+#          echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
+#          echo No testing has been performed on this build. >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
+#          echo InterSpec code git has SHA: %GITHUB_SHA% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
+#          echo "Before zipping, files present for the bbuild are:"
           ls
-          Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest_*.zip | foreach { Remove-Item -Path $_.FullName }
+          Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest*.zip | foreach { Remove-Item -Path $_.FullName }
           echo "After removing old zip files"
           ls
-          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest"
+          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath InterSpec_app_Windows_WebView_latest.zip
           $rel_zip="${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest.zip" 
           echo "INTERSPEC_RELEASE_ZIP=$rel_zip" >> $GITHUB_ENV
           ls 
@@ -124,11 +124,11 @@ jobs:
           prerelease: true
           title: "Development Build"
           files: |
-            "${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest.zip"
-      
+            ${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_Windows_WebView_latest.zip
+      s
       - name: "Cleanup and finish"
         run: |
-          Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest_*.zip | foreach { Remove-Item -Path $_.FullName }
+#          Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest*.zip | foreach { Remove-Item -Path $_.FullName }
           echo "Job status is ${{ job.status }}."
 
 

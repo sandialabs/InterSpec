@@ -51,8 +51,8 @@ runs:
     - name: Ccache for gh actions
       uses: hendrikmuhs/ccache-action@v1.2.7
       with: 
-        key: ${{ github.workflow }}-${{ matrix.os }}
-        max-size: 10000M
+        key: sccache-${{ matrix.os }}
+        max-size: 10G
         variant: sccache
         append-timestamp: false
         verbose: 2
