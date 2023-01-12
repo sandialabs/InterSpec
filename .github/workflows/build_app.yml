@@ -69,8 +69,10 @@ jobs:
           Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest_*.zip | foreach { Remove-Item -Path $_.FullName }
           echo "After removing old zip files"
           ls
-          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd)"
-          $rel_zip="${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd).zip"
+#          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd)"
+#          $rel_zip="${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd).zip"
+          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest"
+          $rel_zip="${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest.zip" 
           echo "INTERSPEC_RELEASE_ZIP=$rel_zip" >> $GITHUB_ENV
           ls 
           echo "After zipping, files present for the build are:"
@@ -88,6 +90,7 @@ jobs:
         shell: pwsh
         working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest
         run: |
+          echo "Release ZIP=${{ env.INTERSPEC_RELEASE_ZIP }}"
           $p = Start-Process .\InterSpec.exe -ArgumentList @("--test-load", "--mult-instance", "--no-restore") -PassThru
           $errTimedOut = $null
           $p | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue -ErrorVariable errTimedOut
@@ -123,7 +126,7 @@ jobs:
           prerelease: true
           title: "Development Build"
           files: |
-            ${{ env.INTERSPEC_RELEASE_ZIP }}
+            "${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest.zip"
       
       - name: "Cleanup and finish"
         run: |
