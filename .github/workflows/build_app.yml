@@ -119,13 +119,14 @@ jobs:
 
       - name: Automatic Releases
         uses: marvinpinto/action-automatic-releases@v1.2.1
+        working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app/
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           automatic_release_tag: "latest"
           prerelease: true
           title: "Development Build"
           files: |
-            ${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_Windows_WebView_latest.zip
+            InterSpec_app_Windows_WebView_latest.zip
 
       - name: "Cleanup and finish"
         run: |
