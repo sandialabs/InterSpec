@@ -126,7 +126,6 @@ jobs:
           allowUpdates: true
           generateReleaseNotes: false
           name: "Development Build"
-          prerelease: false
           removeArtifacts: true
           replacesArtifacts: true
           tag: 'latest'
