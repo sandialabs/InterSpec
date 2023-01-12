@@ -64,7 +64,20 @@ jobs:
           echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
           echo No testing has been performed on this build. >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
           echo InterSpec code git has SHA: %GITHUB_SHA% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
+          echo "Before zipping, files present for the bbuild are:"
+          ls
+          Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest_*.zip | foreach { Remove-Item -Path $_.FullName }
+          echo "After removing old zip files"
+          ls
           Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd)"
+          echo "After zipping, files present for the build are:"
+          ls
+          echo "And files in base dir"
+          ls ${{runner.temp}}
+          ls ${{ github.workspace }}
+          if (Test-Path -Path 'D:\a\InterSpec'){ ls D:\a\InterSpec } else { echo "D:\a\InterSpec Does not exist"}
+          if (Test-Path -Path 'D:\a\InterSpec\InterSpec'){ ls D:\a\InterSpec\InterSpec } else { echo "D:\a\InterSpec\InterSpec Does not exist"}
+          if (Test-Path -Path 'D:\a\InterSpec\InterSpec\.sccache'){ ls D:\a\InterSpec\InterSpec\.sccache } else { echo "D:\a\InterSpec\InterSpec\.sccache Does not exist"}
 
       - name: Test app build worked
         shell: pwsh
@@ -96,26 +109,6 @@ jobs:
         with: 
           name: sccache_log
           path: '${{runner.temp}}/sccache_log.txt'
-
-
-
-      - name: Create Release Zip
-        shell: pwsh
-        working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
-        run: |
-          echo "Before zipping, files present for the bbuild are:"
-          ls
-          Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest_*.zip | foreach { Remove-Item -Path $_.FullName }
-          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd)"
-          echo "After zipping, files present for the bbuild are:"
-          ls
-          echo "And files in base dir"
-          ls ${{runner.temp}}
-          ls D:\
-          ls D:\a
-          ls D:\a\InterSpec
-          ls D:\a\InterSpec\InterSpec
-          ls D:\a\InterSpec\InterSpec\.sccache
 
       - name: Automatic Releases
         uses: marvinpinto/action-automatic-releases@v1.2.1
