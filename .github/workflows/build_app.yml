@@ -75,8 +75,9 @@ jobs:
           ls 
           echo "After zipping, files present for the build are:"
           ls
+          echo "ls Zip"
+          ls D:\a\_temp\build_Windows_wx_app\InterSpec_app_Windows_WebView_latest.zip
           echo "And files in base dir"
-          sccache --stop-server
           ls ${{runner.temp}}
           ls ${{ github.workspace }}
           if (Test-Path -Path '${{runner.temp}}\.sccache'){ ls ${{runner.temp}}\.sccache } else { echo "${{runner.temp}}\.sccache Does not exist"}
