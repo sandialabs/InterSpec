@@ -57,13 +57,28 @@ runs:
         append-timestamp: false
         verbose: 2
         
+    - name: Cache sccache dir
+      id: cache-sccache-build
+      uses: actions/cache@v3
+      with:
+        path: '${{runner.temp}}/.sccache'
+        key: ${{ runner.os }}-build-wx-sccache-${{ hashFiles('**/CMakeLists.txt') }}
+    
+    - name: Create sccache dir
+      shell: pwsh
+      if: steps.cache-sccache-build.outputs.cache-hit != 'true' && runner.os == 'Windows'
+      working-directory: ${{runner.temp}}
+      run: |
+        mkdir .sccache
+        
+
 # Currently having some trouble getting sccache to work - so will try some debugging
     - name: Restart sccache
       shell: pwsh
       if: runner.os == 'Windows'
       run: |
         sccache --stop-server
-        $scachpath = "${{ github.workspace }}/.sccache"
+        $scachpath = "${{ runner.temp }}/.sccache"
         If(!(test-path -PathType container $scachpath)){ New-Item -ItemType Directory -Path $scachpath }
         $env:SCCACHE_DIR = $scachpath
         $env:SCCACHE_IDLE_TIMEOUT = 0
