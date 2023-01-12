@@ -53,6 +53,7 @@ runs:
         key: ${{ github.workflow }}-${{ matrix.os }}
         max-size: 10000M
         variant: sccache
+        append-timestamp: false
 
     - name: List files in prefix
       shell: pwsh

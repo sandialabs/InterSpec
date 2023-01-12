@@ -37,14 +37,28 @@ jobs:
       - name: Setup Dev Env 
         uses: ./.github/actions/setup_dev_env
 
-      - name: wxWidgets app build
-        shell: pwsh
-        if: runner.os == 'Windows'
-        working-directory: ${{runner.temp}}/
+# TODO: Caching the builds still isnt working
+      - name: Cache wxWidgets config/build
+        id: cache-wx-build
+        uses: actions/cache@v3
+        with:
+          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app'
+          key: ${{ runner.os }}-build-wx-app-${{ hashFiles('**/CMakeLists.txt') }}
+    
+      - name: Initial wxWidgets config/build
+        shell: cmd
+        if: steps.cache-wx-build.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        working-directory: ${{runner.temp}}
         run: |
           mkdir build_${{ runner.os }}_wx_app
           cd build_${{ runner.os }}_wx_app
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_latest -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=scache -DCMAKE_CXX_COMPILER_LAUNCHER=scache "${{ github.workspace }}/target/wxWidgets"
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_head -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=scache -DCMAKE_CXX_COMPILER_LAUNCHER=scache "${{ github.workspace }}/target/wxWidgets"
+
+      - name: wxWidgets app build
+        shell: pwsh
+        if: runner.os == 'Windows'
+        working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
+        run: |
           cmake --build . --config Release
           cmake --build . --config Release --target install
           echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
@@ -76,6 +90,23 @@ jobs:
           name: InterSpec_app_${{ runner.os }}_WebView_latest
           path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest'
 
+      - name: Create Release Zip
+        shell: pwsh
+        working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
+        run: |
+          echo "Before zipping, files present for the bbuild are:"
+          ls
+          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd)"
+          echo "After zipping, files present for the bbuild are:"
+          ls
+          echo "And files in base dir"
+          ls ${{runner.temp}}
+          ls D:\
+          ls D:\a
+          ls D:\a\InterSpec
+          ls D:\a\InterSpec\InterSpec
+          ls D:\a\InterSpec\InterSpec\.sccache
+
       - name: Automatic Releases
         uses: marvinpinto/action-automatic-releases@v1.2.1
         with:
@@ -84,7 +115,7 @@ jobs:
           prerelease: true
           title: "Development Build"
           files: |
-            ${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest_*.zip
+            "${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest_*"
       
       - name: "Cleanup and finish"
         run: |

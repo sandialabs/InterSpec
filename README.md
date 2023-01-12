@@ -1,3 +1,6 @@
+[![Tests](https://github.com/sandialabs/InterSpec/actions/workflows/test.yml/badge.svg)](https://github.com/sandialabs/InterSpec/actions/workflows/test.yml)
+[![App Build](https://github.com/sandialabs/InterSpec/actions/workflows/build_app.yml/badge.svg)](https://github.com/sandialabs/InterSpec/actions/workflows/build_app.yml)
+
 # InterSpec
 InterSpec is a native or web application to assist in analyzing spectral nuclear radiation data, using a peak-based methodology.
 Common uses include identifying nuclides present, determining source activity, shielding amounts, source age, or other nuclear reactions present.
