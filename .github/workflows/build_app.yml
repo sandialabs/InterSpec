@@ -87,7 +87,7 @@ jobs:
             ${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest_*.zip
       
       - name: "Cleanup and finish"
-      - run: |
+        run: |
           Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest_*.zip | foreach { Remove-Item -Path $_.FullName }
           echo "Job status is ${{ job.status }}."
 
