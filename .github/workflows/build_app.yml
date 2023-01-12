@@ -103,12 +103,12 @@ jobs:
 # Then maybe do a test with something like Puppeteer, by starting the app on a given port, like: 
 # $p = Start-Process .\Release\InterSpec.exe -ArgumentList @("--no-token", "--port=8088", "--mult-instance", "--no-restore") -PassThru
 
-      - name: Upload wxWidgets app to as GitHub Artifact
-        uses: actions/upload-artifact@v3.1.1
-        if: runner.os == 'Windows'
-        with: 
-          name: InterSpec_app_${{ runner.os }}_WebView_latest
-          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest'
+#      - name: Upload wxWidgets app to as GitHub Artifact
+#        uses: actions/upload-artifact@v3.1.1
+#        if: runner.os == 'Windows'
+#        with: 
+#          name: InterSpec_app_${{ runner.os }}_WebView_latest
+#          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest'
 
 #      - name: Upload sccache log as GitHub Artifact
 #        uses: actions/upload-artifact@v3.1.1
@@ -135,9 +135,11 @@ jobs:
           body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10."
           allowUpdates: true
           generateReleaseNotes: false
-          name: "latest"
+          name: "Development Build"
           prerelease: true
           replacesArtifacts: true
+          tag: 'latest'
+          commit: ${{ github.sha }}
 
 
       - name: "Cleanup and finish"
