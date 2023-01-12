@@ -77,8 +77,10 @@ jobs:
           echo "After zipping, files present for the build are:"
           ls
           echo "And files in base dir"
+          sccache --stop-server
           ls ${{runner.temp}}
           ls ${{ github.workspace }}
+          if (Test-Path -Path '${{runner.temp}}\.sccache'){ ls ${{runner.temp}}\.sccache } else { echo "${{runner.temp}}\.sccache Does not exist"}
           if (Test-Path -Path 'D:\a\InterSpec'){ ls D:\a\InterSpec } else { echo "D:\a\InterSpec Does not exist"}
           if (Test-Path -Path 'D:\a\InterSpec\InterSpec'){ ls D:\a\InterSpec\InterSpec } else { echo "D:\a\InterSpec\InterSpec Does not exist"}
           if (Test-Path -Path 'D:\a\InterSpec\InterSpec\.sccache'){ ls D:\a\InterSpec\InterSpec\.sccache } else { echo "D:\a\InterSpec\InterSpec\.sccache Does not exist"}
