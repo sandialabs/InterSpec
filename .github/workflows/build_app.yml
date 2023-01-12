@@ -59,6 +59,8 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
         run: |
+          $scachpath = "${{ github.workspace }}/.sccache"
+          If(!(test-path -PathType container $scachpath)){ New-Item -ItemType Directory -Path $scachpath }
           cmake --build . --config Release
           cmake --build . --config Release --target install
           echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
