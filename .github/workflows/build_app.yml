@@ -52,7 +52,7 @@ jobs:
         run: |
           mkdir build_${{ runner.os }}_wx_app
           cd build_${{ runner.os }}_wx_app
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{ runner.os }}_WebView_latest -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache "${{ github.workspace }}/target/wxWidgets"
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{runner.os}}_WebView_latest -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache "${{github.workspace}}/target/wxWidgets"
 
       - name: wxWidgets app build
         shell: pwsh
@@ -69,8 +69,6 @@ jobs:
           Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest_*.zip | foreach { Remove-Item -Path $_.FullName }
           echo "After removing old zip files"
           ls
-#          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd)"
-#          $rel_zip="${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd).zip"
           Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest"
           $rel_zip="${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest.zip" 
           echo "INTERSPEC_RELEASE_ZIP=$rel_zip" >> $GITHUB_ENV
