@@ -59,6 +59,7 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
         run: |
+          if (Test-Path 'InterSpec_app_Windows_WebView_latest'){ Remove-Item 'InterSpec_app_Windows_WebView_latest' -Recurse -Force }
           # cmake --build . --config Release
           # cmake --build . --config Release --target install
           # echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
@@ -97,36 +98,19 @@ jobs:
           if ($errTimedOut) { Stop-Process -InputObject $p -Force }
           echo "Exit code of InterSpec test load was was" $p.ExitCode
           exit $p.ExitCode
-#  If Stop-Process had to be used, the exit code will be -1.  If resources didnt load -12.  IF all was okay, 0
+#  If Stop-Process had to be used, the exit code will be -1.  If resources didnt load -12.  If timed out inside InterSpec -11. If all was okay, 0
         
 # Then test file o
 #
 # Then maybe do a test with something like Puppeteer, by starting the app on a given port, like: 
 # $p = Start-Process .\Release\InterSpec.exe -ArgumentList @("--no-token", "--port=8088", "--mult-instance", "--no-restore") -PassThru
 
-#      - name: Upload sccache log as GitHub Artifact
-#        uses: actions/upload-artifact@v3.1.1
-#        if: runner.os == 'Windows'
-#        with: 
-#          name: sccache_log
-#          path: '${{runner.temp}}/sccache_log.txt'
-
-#      - name: Automatic Releases
-#        uses: marvinpinto/action-automatic-releases@v1.2.1
-#        with:
-#          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-#          automatic_release_tag: "latest"
-#          prerelease: true
-#          title: "Development Build"
-#          files: |
-#            ${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_Windows_WebView_latest.zip
-
       - name: Create Release
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: '${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_${{ runner.os }}_WebView_latest*.zip'
-          draft: true
-          body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10, or may work on WIndows 7 with the Edge browser runtime installed."
+          draft: false
+          body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10, or may work on Windows 7 with the Edge browser runtime installed."
           allowUpdates: true
           generateReleaseNotes: false
           name: "Development Build"

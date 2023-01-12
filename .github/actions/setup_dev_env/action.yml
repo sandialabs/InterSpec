@@ -48,10 +48,11 @@ runs:
 # Note: caching the build doesnt work - each checkout sets each files timestamps to current time, so we will use ccache action
 #       but after building the dependencies
 # Currently it looks like There is an issue with SCCACHE_DIR... maybe.  See https://github.com/hendrikmuhs/ccache-action/blob/main/src/restore.ts will maybe need to set the `GITHUB_WORKSPACE` environment variable...
+# TODO: key should actually be: key: sccache-${{ github.job }}-${{ matrix.os }}
     - name: Ccache for gh actions
       uses: hendrikmuhs/ccache-action@v1.2.7
       with: 
-        key: sccache-${{ matrix.os }}
+        key: sccache-${{ github.job }}
         max-size: 10G
         variant: sccache
         append-timestamp: false
