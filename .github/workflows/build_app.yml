@@ -117,16 +117,28 @@ jobs:
 #          name: sccache_log
 #          path: '${{runner.temp}}/sccache_log.txt'
 
-      - name: Automatic Releases
-        uses: marvinpinto/action-automatic-releases@v1.2.1
-        working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app/
+#      - name: Automatic Releases
+#        uses: marvinpinto/action-automatic-releases@v1.2.1
+#        with:
+#          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+#          automatic_release_tag: "latest"
+#          prerelease: true
+#          title: "Development Build"
+#          files: |
+#            ${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_Windows_WebView_latest.zip
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1.12.0
         with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          automatic_release_tag: "latest"
+          artifacts: '${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_Windows_WebView_latest.zip'
+          draft: true
+          body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10."
+          allowUpdates: true
+          generateReleaseNotes: false
+          name: "latest"
           prerelease: true
-          title: "Development Build"
-          files: |
-            InterSpec_app_Windows_WebView_latest.zip
+          replacesArtifacts: true
+
 
       - name: "Cleanup and finish"
         run: |
