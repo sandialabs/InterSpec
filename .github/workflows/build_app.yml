@@ -62,9 +62,11 @@ jobs:
           if (Test-Path 'InterSpec_app_Windows_WebView_latest'){ Remove-Item 'InterSpec_app_Windows_WebView_latest' -Recurse -Force }
           cmake --build . --config Release
           cmake --build . --config Release --target install
-          echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
-          echo No testing has been performed on this build. >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
-          echo InterSpec code git has SHA: %GITHUB_SHA% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
+          $notes = "InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt"
+          echo "This is an automated build of InterSpec built on the github infrastruction at $(date)" >> $notes
+          echo "No testing has been performed on this build." >> $notes
+          echo "InterSpec code git has SHA: ${{ github.sha }}" >> $notes
+          echo "The Edge browser runtime is required to be installed to run; this will typically already be installed on Windows 10, and may be installed on Windows 7, but this hasnt been tested." >> $notes
           echo "Before zipping, files present for the bbuild are:"
           ls
           Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest*.zip | foreach { Remove-Item -Path $_.FullName }
@@ -80,6 +82,8 @@ jobs:
           if (Test-Path -Path 'D:\a\InterSpec'){ ls D:\a\InterSpec } else { echo "D:\a\InterSpec Does not exist"}
           if (Test-Path -Path 'D:\a\InterSpec\InterSpec'){ ls D:\a\InterSpec\InterSpec } else { echo "D:\a\InterSpec\InterSpec Does not exist"}
           if (Test-Path -Path 'D:\a\InterSpec\InterSpec\.sccache'){ ls D:\a\InterSpec\InterSpec\.sccache } else { echo "D:\a\InterSpec\InterSpec\.sccache Does not exist"}
+          sccache --show-stats || & { "ignore failure"; $global:LASTEXITCODE = 0 }
+          sccache --stop-server || & { "ignore failure"; $global:LASTEXITCODE = 0 }
 
       - name: Upload wxWidgets app to as GitHub Artifact
         uses: actions/upload-artifact@v3.1.1
@@ -87,6 +91,13 @@ jobs:
         with: 
           name: InterSpec_app_${{ runner.os }}_WebView_latest
           path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest'
+
+      - name: Upload sccache Artifact
+        uses: actions/upload-artifact@v3.1.1
+        if: runner.os == 'Windows'
+        with: 
+          name: sccache_log
+          path: '${{runner.temp}}/sccache_log.txt'
 
       - name: Test app build worked
         shell: pwsh
@@ -110,6 +121,7 @@ jobs:
         with:
           artifacts: '${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_${{ runner.os }}_WebView_latest*.zip'
           draft: false
+          prerelease: true
           body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10, or may work on Windows 7 with the Edge browser runtime installed."
           allowUpdates: true
           generateReleaseNotes: false
