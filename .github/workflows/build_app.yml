@@ -59,8 +59,6 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
         run: |
-          $scachpath = "${{ github.workspace }}/.sccache"
-          If(!(test-path -PathType container $scachpath)){ New-Item -ItemType Directory -Path $scachpath }
           cmake --build . --config Release
           cmake --build . --config Release --target install
           echo This is an automated build of InterSpec built on the github infrastruction at %date% %time% >> InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt
@@ -92,6 +90,15 @@ jobs:
           name: InterSpec_app_${{ runner.os }}_WebView_latest
           path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest'
 
+      - name: Upload sccache log as GitHub Artifact
+        uses: actions/upload-artifact@v3.1.1
+        if: runner.os == 'Windows'
+        with: 
+          name: sccache_log
+          path: '${{runner.temp}}/sccache_log.txt'
+
+
+
       - name: Create Release Zip
         shell: pwsh
         working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
@@ -118,7 +125,7 @@ jobs:
           prerelease: true
           title: "Development Build"
           files: |
-            "${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest_*"
+            ${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_${{ runner.os }}_WebView_latest_????-??-??.zip
       
       - name: "Cleanup and finish"
         run: |

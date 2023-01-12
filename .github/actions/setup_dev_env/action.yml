@@ -56,6 +56,21 @@ runs:
         variant: sccache
         append-timestamp: false
         verbose: 2
+        
+# Currently having some trouble getting sccache to work - so will try some debugging
+    - name: Restart sccache
+      shell: pwsh
+      if: runner.os == 'Windows'
+      run: |
+        sccache --stop-server
+        $scachpath = "${{ github.workspace }}/.sccache"
+        If(!(test-path -PathType container $scachpath)){ New-Item -ItemType Directory -Path $scachpath }
+        $env:SCCACHE_DIR = $scachpath
+        $env:SCCACHE_IDLE_TIMEOUT = 0
+        $env:SCCACHE_CACHE_SIZE = '10000MB'
+        $env:SCCACHE_ERROR_LOG = '${{runner.temp}}/sccache_log.txt'
+        $env:SCCACHE_LOG = 'debug'
+        sccache --start-server
 
     - name: List files in prefix
       shell: pwsh
