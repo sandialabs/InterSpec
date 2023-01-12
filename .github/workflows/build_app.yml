@@ -96,6 +96,7 @@ jobs:
         run: |
           echo "Before zipping, files present for the bbuild are:"
           ls
+          Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest_*.zip | foreach { Remove-Item -Path $_.FullName }
           Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath "InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd)"
           echo "After zipping, files present for the bbuild are:"
           ls
