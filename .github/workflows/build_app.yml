@@ -125,7 +125,7 @@ jobs:
           title: "Development Build"
           files: |
             ${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_Windows_WebView_latest.zip
-      s
+
       - name: "Cleanup and finish"
         run: |
           # Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest*.zip | foreach { Remove-Item -Path $_.FullName }
