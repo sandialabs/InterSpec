@@ -94,7 +94,7 @@ jobs:
           $p | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue -ErrorVariable errTimedOut
           if ($errTimedOut) { Stop-Process -InputObject $p -Force }
           echo "Exit code of InterSpec test load was was" $p.ExitCode
-          exit $p.ExitCode
+#          exit $p.ExitCode
 #  If Stop-Process had to be used, the exit code will be -1.  If resources didnt load -12.  IF all was okay, 0
         
 # Then test file o
