@@ -108,12 +108,12 @@ jobs:
           name: InterSpec_app_${{ runner.os }}_WebView_latest
           path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest'
 
-      - name: Upload sccache log as GitHub Artifact
-        uses: actions/upload-artifact@v3.1.1
-        if: runner.os == 'Windows'
-        with: 
-          name: sccache_log
-          path: '${{runner.temp}}/sccache_log.txt'
+#      - name: Upload sccache log as GitHub Artifact
+#        uses: actions/upload-artifact@v3.1.1
+#        if: runner.os == 'Windows'
+#        with: 
+#          name: sccache_log
+#          path: '${{runner.temp}}/sccache_log.txt'
 
       - name: Automatic Releases
         uses: marvinpinto/action-automatic-releases@v1.2.1
