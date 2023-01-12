@@ -58,7 +58,7 @@ jobs:
         run: |
           mkdir build_tests
           cd build_tests
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER_LAUNCHER=scache -DCMAKE_CXX_COMPILER_LAUNCHER=scache "${{ github.workspace }}/target/testing"
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache "${{ github.workspace }}/target/testing"
           cmake --build . --config Debug
           Copy-Item "${{ github.workspace }}\external_libs\SandiaDecay\sandia.decay.xml" -Destination "${{ github.workspace }}\data"
           cmake --build . --target RUN_TESTS
