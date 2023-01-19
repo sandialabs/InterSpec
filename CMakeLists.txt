@@ -476,8 +476,15 @@ if(USE_DETECTION_LIMIT_TOOL)
 endif(USE_DETECTION_LIMIT_TOOL)
 
 if(USE_QR_CODES)
-  list( APPEND sources external_libs/QR-Code-generator/cpp/qrcodegen.cpp src/QrCode.cpp )
-  list( APPEND headers external_libs/QR-Code-generator/cpp/qrcodegen.hpp InterSpec/QrCode.h )
+  list( APPEND sources external_libs/QR-Code-generator/cpp/qrcodegen.cpp 
+        src/QrCode.cpp 
+        src/QRSpectrum.cpp
+  )
+
+  list( APPEND headers external_libs/QR-Code-generator/cpp/qrcodegen.hpp 
+        InterSpec/QrCode.h 
+        InterSpec/QRSpectrum.h 
+  )
 endif(USE_QR_CODES)
 
 if(USE_SPECRUM_FILE_QUERY_WIDGET)
@@ -586,7 +593,6 @@ add_subdirectory(external_libs/Cuba-3.0)
 add_subdirectory(external_libs/SpecUtils)
 add_subdirectory(external_libs/SandiaDecay)
 add_subdirectory(external_libs/muparserx-4.0.7)
-
 
 add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers})
 

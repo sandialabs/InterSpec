@@ -37,7 +37,7 @@ namespace SpecUtils
 }
 
 
-namespace QRSpecDev
+namespace QRSpectrum
 {
   int dev_code();
 
@@ -88,6 +88,8 @@ struct UrlSpectrum
   
   std::string m_model;
   std::string m_title;
+  
+  // Maybe add serial number?
   
   // Use same time definition as SpecUtils.
   using time_point_t = std::chrono::time_point<std::chrono::system_clock,std::chrono::microseconds>;
@@ -215,6 +217,6 @@ but assumes data is prepended with uin16_t that gives the number of integer entr
  interface, is way, way slower, but is a safer in terms of buffer overflow.
  */
 size_t decode_stream_vbyte( const std::vector<uint8_t> &inbuff, std::vector<uint32_t> &answer );
-}//namespace QRSpecDev
+}//namespace QRSpectrum
 
 #endif  //QRSpecDev_H
