@@ -30,7 +30,13 @@
 #include <utility>
 #include <cstdint>
 
+// Forward declarations
 class SimpleDialog;
+namespace qrcodegen
+{
+  class QrCode;
+}
+
 
 namespace QrCode
 {
@@ -43,6 +49,10 @@ namespace QrCode
   std::pair<std::string,int> utf8_string_to_svg_qr( const std::string &input );
 
   std::pair<std::string,int> binary_to_svg_qr( const std::vector<std::uint8_t> &data );
+
+  /** Turns a QrCode result into a SVG with a viewBox of height/width of `qr.getSize()`.
+   */
+  std::string to_svg_string( const qrcodegen::QrCode &qr, int border = 1 );
 
 
   /** Returns nullptr if an error is encountered. */
