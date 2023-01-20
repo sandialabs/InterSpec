@@ -9666,6 +9666,48 @@ void InterSpec::promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
 }//void promptUserHowToOpenFile(...)
 
 
+void InterSpec::userOpenFile( std::shared_ptr<SpecMeas> meas, std::string displayFileName )
+{
+  assert( meas );
+  if( !meas )
+    throw runtime_error( "Invalid spectrum file." );
+  
+  if( !m_fileManager )  //shouldnt ever happen.
+    throw runtime_error( "Internal logic error, no valid m_fileManager" );
+   
+  auto header = std::make_shared<SpectraFileHeader>( m_user, true, this );
+  header->setFile( displayFileName, meas );
+  
+  bool couldBeBackground = true;
+  if( !m_dataMeasurement || !meas
+     || meas->uuid() == m_dataMeasurement->uuid() )
+  {
+    couldBeBackground = false;
+  }else
+  {
+    couldBeBackground &= (m_dataMeasurement->instrument_id() == meas->instrument_id());
+    couldBeBackground &= (m_dataMeasurement->num_gamma_channels() == meas->num_gamma_channels());
+  }//if( !m_dataMeasurement || !meas )
+  
+  //Should we check if this meas has the same UUID as the second of background?
+  
+  if( couldBeBackground )
+  {
+    promptUserHowToOpenFile( meas, header );
+    return;
+  }else
+  {
+    cout << "Will load file " << displayFileName << " requested to be loaded at "
+    << WDateTime::currentDateTime().toString(DATE_TIME_FORMAT_STR)
+    << endl;
+    
+    SpectraFileModel *fileModel = m_fileManager->model();
+    const int row = fileModel->addRow( header );
+    m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+    return;
+  }
+}//void InterSpec::userOpenFile( std::shared_ptr<SpecMeas> meas, std::string displayFileName )
+
 
 bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string displayFileName  )
 {
@@ -9674,47 +9716,21 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
     if( displayFileName.empty() )
       displayFileName = SpecUtils::filename(path);
     
+    assert( m_fileManager );
     if( !m_fileManager )  //shouldnt ever happen.
       throw runtime_error( "Internal logic error, no valid m_fileManager" );
     
     if( !SpecUtils::is_file(path) )
       throw runtime_error( "Could not access file '" + path + "'" );
   
-    auto header = std::make_shared<SpectraFileHeader>( m_user, true, this );
-    auto meas = header->setFile( displayFileName, path, SpecUtils::ParserType::Auto );
-  
-    if( !meas )
+    auto meas = make_shared<SpecMeas>();
+    const bool success = meas->load_file( path, SpecUtils::ParserType::Auto, displayFileName );
+    
+    if( !success )
       throw runtime_error( "Failed to decode file" );
     
-    bool couldBeBackground = true;
-    if( !m_dataMeasurement || !meas
-        || meas->uuid() == m_dataMeasurement->uuid() )
-    {
-      couldBeBackground = false;
-    }else
-    {
-      couldBeBackground &= (m_dataMeasurement->instrument_id() == meas->instrument_id());
-      couldBeBackground &= (m_dataMeasurement->num_gamma_channels() == meas->num_gamma_channels());
-    }//if( !m_dataMeasurement || !meas )
-
-    //Should we check if this meas has the same UUID as the second of background?
-    
-    if( couldBeBackground )
-    {
-      promptUserHowToOpenFile( meas, header );
-      return true;
-    }else
-    {
-//      return m_fileManager->loadFromFileSystem( path, SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::Auto );
-      cout << "Will load file " << path << " requested to be loaded at "
-      << WDateTime::currentDateTime().toString(DATE_TIME_FORMAT_STR)
-      << endl;
-      
-      SpectraFileModel *fileModel = m_fileManager->model();
-      const int row = fileModel->addRow( header );
-      m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
-      return true;
-    }
+    userOpenFile( meas, displayFileName );
+    return true;
   }catch( std::exception &e )
   {
     cerr << "Caught exception '" << e.what() << "' when trying to load '"

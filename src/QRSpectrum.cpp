@@ -936,7 +936,10 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
         boost::crc_16_type crc_computer;
         
         for( const string &v : trial_urls )
-          crc_computer.process_bytes( (void const *)v.data(), v.size() );
+        {
+          const string preUrlDecode = Wt::Utils::urlDecode( v );
+          crc_computer.process_bytes( (void const *)preUrlDecode.data(), preUrlDecode.size() );
+        }
         
         const uint16_t crc = crc_computer.checksum();
         crc16 = std::to_string( static_cast<unsigned int>(crc) );
@@ -1100,6 +1103,7 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
 EncodedSpectraInfo get_spectrum_url_info( std::string url )
 {
   EncodedSpectraInfo answer;
+  answer.m_orig_url = url;
   
   //"RADDATA://G0/111/[CRC-16 ex. 65535]/"
   if( SpecUtils::istarts_with(url, "RADDATA://G0/") )

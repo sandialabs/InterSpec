@@ -80,14 +80,15 @@ protected:
 private:
   void startDeleteSelf();
   void deleteSelf();
-  
-  // We dont need to keep a pointer around to the title or message contents right now, but as
-  //  the use of this class is still shaking out (as of 20210201), we will for the moment.
+
+protected:
   
   /** Holds the title text.
    Will have CSS style class "title".
    
    Will be null if no title text is passed in.
+   
+   This pointer is never accessed from this class, but may be updated by derived classes.
    */
   Wt::WText *m_title;
   
@@ -95,6 +96,8 @@ private:
    Will have CSS style class "content".
    
    Will be null if no contents text is passed in.
+   
+   This pointer is never accessed from this class, but may be updated by derived classes.
    */
   Wt::WText *m_msgContents;
 };//class SimpleDialog

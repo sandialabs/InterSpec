@@ -182,15 +182,21 @@ struct EncodedSpectraInfo
   
   uint16_t m_crc = 0;
 
-  /** The spectrum relevant data that will be URL encoded, and may be base-45 encoded, as well
+  /** The original URL, before any manipulation.
+   
+   Note: will not be URL encoded.
+   */
+  std::string m_orig_url;
+  
+  /** The spectrum relevant data that wont be URL encoded, but may be base-45 encoded, as well
    as Deflate compressed.
    
-   This is needed as the CRC-16 is computed from all the parts, after these steps.
+   This is needed as the CRC-16 is computed from all the parts, after these steps, but before
+   URL encoding (because URL encoding is not unique, and the OS may have .
    */
   std::string m_raw_data;
   
-  /** The spectrum relevant data, after un-URL encoded, un-base-45 encoded, and
-   un-Deflated, if applicable.
+  /** The spectrum relevant data, after un-base-45 encoded, and un-Deflated, if applicable.
    */
   std::string m_data;
 };//struct EncodedSpectraInfo

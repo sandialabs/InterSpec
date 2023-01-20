@@ -473,6 +473,118 @@ void displayQrDialog( const vector<QRSpectrum::UrlEncodedSpec> urls, const size_
     }) );
   }//if( (index + 1) < urls.size() )
 }//void displayQr( vector<QRSpectrum::UrlEncodedSpec> urls )
+
+class MultiUrlSpectrumDialog : public SimpleDialog
+{
+  SpecMeasManager *m_manager;
+  InterSpec *m_interspec;
+  vector<QRSpectrum::EncodedSpectraInfo> m_urls;
+  
+public:
+  MultiUrlSpectrumDialog( SpecMeasManager *manager, InterSpec *viewer )
+  : SimpleDialog( "Multi-part QR/URL Spectrum", "&nbsp;" ),
+    m_manager( manager ),
+    m_interspec( viewer )
+  {
+    assert( manager );
+    assert( viewer );
+    
+    addButton( "Cancel" );
+    finished().connect( m_manager, &SpecMeasManager::multiSpectrumDialogDone );
+  }//MultiUrlSpectrumDialog
+  
+  void addUrl( const string &url )
+  {
+    using QRSpectrum::EncodedSpectraInfo;
+    
+    try
+    {
+      const EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( url );
+      assert( info.m_number_urls > 1 );
+      
+      
+      // Check if incoming CRC-16 matches previous (i.e., is same spectrum)
+      if( !m_urls.empty() && (info.m_crc != m_urls[0].m_crc) )
+      {
+        passMessage( "URL/QR-code received was from a different spectrum than previous URL/QR-code",
+                    WarningWidget::WarningMsgMedium );
+        m_urls.clear();
+      }
+      
+      // Check to see if we have already received this URL
+      for( const QRSpectrum::EncodedSpectraInfo &i : m_urls )
+      {
+        if( i.m_spectrum_number == info.m_spectrum_number )
+        {
+          passMessage( "Have already received this URL/QR-code",
+                      WarningWidget::WarningMsgMedium );
+          return;
+        }
+      }//for( const QRSpectrum::EncodedSpectraInfo &i : m_urls )
+      
+      m_urls.push_back( info );
+      
+      std::sort( begin(m_urls), end(m_urls),
+          []( const EncodedSpectraInfo &lhs, const EncodedSpectraInfo &rhs ) -> bool {
+        return lhs.m_spectrum_number < rhs.m_spectrum_number;
+      } );
+      
+      if( m_urls.size() == info.m_number_urls )
+      {
+        vector<string> urls;
+        for( const auto &i : m_urls )
+          urls.push_back( i.m_orig_url );
+        
+        vector<QRSpectrum::UrlSpectrum> specs = QRSpectrum::decode_spectrum_urls( urls );
+        assert( specs.size() == 1 );
+        shared_ptr<SpecMeas> specfile = QRSpectrum::to_spec_file( specs );
+        
+        m_manager->multiSpectrumDialogDone();
+        
+        string display_name = "From QR-code/URL";
+        if( specs.size() && (specs[0].m_title.size() > 2) )
+          display_name = specs[0].m_title;
+        
+        m_interspec->userOpenFile( specfile, display_name );
+        accept();
+      }//if( m_urls.size() == info.m_number_urls )
+      
+      
+      // TODO: we could show a partial spectrum, or some of its information here.
+      //if( m_urls[0].m_spectrum_number == 0 )
+      //  vector<UrlSpectrum> spec = spectrum_decode_first_url( m_urls[0].m_data );
+      //std::shared_ptr<SpecUtils::SpecFile> to_spec_file( const std::vector<UrlSpectrum> &meas );
+      
+      string msg = "Have received urls ";
+      for( size_t i = 0; i < m_urls.size(); ++i )
+      {
+        if( i && (i+1)== m_urls.size() )
+          msg += " and ";
+        else if( i )
+          msg += ", ";
+        msg += std::to_string( 1 + m_urls[i].m_spectrum_number );
+      }
+      
+      msg += " of " + std::to_string(info.m_number_urls) + ".<p>Waiting on more URLS/QR-codes</p>";
+      assert( m_msgContents );
+      m_msgContents->setText( msg );
+    }catch( std::exception &e )
+    {
+      assert( m_title );
+      assert( m_msgContents );
+      m_msgContents->setText( "Error decoding URL: " + string(e.what()) );
+    }
+  }//void addUrl( const string &url )
+  
+  /*
+  m_multiUrlSpectrumDialog
+  
+  auto dialog = dynamic_cast<MultiUrlSpectrumDialog *>( m_multiUrlSpectrumDialog );
+  if( !dialog )
+    m_multiUrlSpectrumDialog = dialog = new MultiUrlSpectrumDialog( this, m_viewer );
+  dialog->addUrl( url );
+   */
+};//MultiUrlSpectrumDialog
 #endif //USE_QR_CODES
 }//namespace
 
@@ -568,6 +680,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_foregroundDragNDrop( new FileDragUploadResource(this) ),
     m_secondForegroundDragNDrop( new FileDragUploadResource(this) ),
     m_backgroundDragNDrop( new FileDragUploadResource(this) ),
+    m_multiUrlSpectrumDialog( nullptr ),
     m_destructMutex( new std::mutex() ),
     m_destructed( new bool(false) )
 {
@@ -2030,6 +2143,12 @@ void SpecMeasManager::handleSpectrumUrl( const std::string &url )
     const QRSpectrum::EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( url );
     if( info.m_number_urls == 1 )
     {
+      if( m_multiUrlSpectrumDialog )
+      {
+        m_multiUrlSpectrumDialog->accept();
+        multiSpectrumDialogDone();
+      }
+      
       vector<QRSpectrum::UrlSpectrum> spectra = QRSpectrum::spectrum_decode_first_url( url );
       if( spectra.empty() )
         throw runtime_error( "No gamma measurements in URL/QR code" );
@@ -2041,20 +2160,17 @@ void SpecMeasManager::handleSpectrumUrl( const std::string &url )
         throw runtime_error( "No gamma measurements in URL/QR code" );
       
       string display_name = spectra[0].m_title;
+      if( display_name.size() < 3 )
+        display_name = "From QR-code/URL";
       
-      shared_ptr<SpectraFileHeader> header = addFile( display_name, specfile );
-      if( !header )
-        throw runtime_error( "Error adding file." );
-      
-      const int row = m_fileModel->addRow( header );
-      displayFile( row, specfile, SpecUtils::SpectrumType::Foreground, true, true,
-                  SpecMeasManager::VariantChecksToDo::None );
+      m_viewer->userOpenFile( specfile, display_name );
     }else
     {
-      throw runtime_error( "Multi QR spectra not supported yet" );
+      auto dialog = dynamic_cast<MultiUrlSpectrumDialog *>( m_multiUrlSpectrumDialog );
+      if( !dialog )
+        m_multiUrlSpectrumDialog = dialog = new MultiUrlSpectrumDialog( this, m_viewer );
+      dialog->addUrl( url );
     }
-    //std::vector<UrlSpectrum> spectrum_decode_first_url( const std::string &url );
-    //std::shared_ptr<SpecUtils::SpecFile> to_spec_file( const std::vector<UrlSpectrum> &meas );
   }catch( std::exception &e )
   {
     auto dialog = new SimpleDialog( "Error", "Error decoding spectrum URL/QR code: " + string(e.what()) );
@@ -2136,6 +2252,11 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
     dialog->addButton( "Ok" );
   }//try catch
 }//void displaySpectrumQrCode( const SpecUtils::SpectrumType type )
+
+void SpecMeasManager::multiSpectrumDialogDone()
+{
+  m_multiUrlSpectrumDialog = nullptr;
+}//void SpecMeasManager::multiSpectrumDialogDone()
 #endif
 
 

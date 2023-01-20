@@ -422,6 +422,7 @@ public:
 #if( USE_QR_CODES )
   void handleSpectrumUrl( const std::string &url );
   void displaySpectrumQrCode( const SpecUtils::SpectrumType type );
+  void multiSpectrumDialogDone();
 #endif
   
 protected:
@@ -492,6 +493,8 @@ protected:
   FileDragUploadResource *m_foregroundDragNDrop;
   FileDragUploadResource *m_secondForegroundDragNDrop;
   FileDragUploadResource *m_backgroundDragNDrop;
+  
+  SimpleDialog *m_multiUrlSpectrumDialog;
   
   //m_sql same as m_viewer->sql();
   std::shared_ptr<DataBaseUtils::DbSession> m_sql;
