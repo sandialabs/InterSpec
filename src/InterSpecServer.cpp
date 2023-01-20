@@ -710,12 +710,24 @@ int start_server( const char *process_name, const char *userdatadir,
       for( const auto &val : jsonfiles )
       {
         const string valstr = val.orIfNull("");
-        if( SpecUtils::is_file(valstr) )
-          files.push_back(valstr);
-        else if( SpecUtils::istarts_with(valstr,"interspec://") )
-          appurls.push_back(valstr);
-        else
+        if( SpecUtils::is_file( valstr ) )
+        {
+          files.push_back( valstr );
+        }else if( SpecUtils::istarts_with( valstr, "interspec://" ) )
+        {
+          appurls.push_back( valstr );
+        }else if( SpecUtils::istarts_with( valstr, "raddata://g" ) )
+        {
+          // TODO: should try to detect if potentually url-encoded to help decide things; I'm really not sure if how we get URLs is consistent on the various platforms, or maybe I amd the one causing this problem on macOS
+#if __APPLE__
+          appurls.push_back( valstr );
+#else
+          appurls.push_back( Wt::Utils::urlDecode( valstr ) );
+#endif
+        }else
+        {
           cerr << "File '" << valstr << "' is not a file" << endl;
+        }
       }//for( const auto &val : jsonfiles )
     }catch( std::exception &e )
     {

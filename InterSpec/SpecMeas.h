@@ -35,8 +35,6 @@
 #include "SpecUtils/EnergyCalibration.h"
 
 
-//Temporary include - only used to get RAPIDXML_USE_SIZED_INPUT_WCJOHNS macro
-#include "external_libs/SpecUtils/3rdparty/rapidxml/rapidxml.hpp"
 
 class PeakDef;
 class PeakModel;

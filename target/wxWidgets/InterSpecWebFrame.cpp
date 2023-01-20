@@ -149,7 +149,7 @@ namespace
     }// end play around with file extensions
     */
 
-    auto set_reg_keys = [=]( const string urlscheme ) {
+    auto set_reg_keys = [=]( const std::string urlscheme ) {
 
       wxRegKey interspec_key(wxRegKey::HKCU, "SOFTWARE\\Classes\\" + urlscheme);
       if (!interspec_key.Exists() && !interspec_key.Create(true))

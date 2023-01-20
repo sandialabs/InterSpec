@@ -484,10 +484,11 @@ InterSpecWxApp::InterSpecWxApp() :
       {
         std::string arg = m_command_line_args[i].utf8_string();
 
-        if( SpecUtils::istarts_with( arg, "interspec:" ) )
+        if( SpecUtils::istarts_with( arg, "interspec:" ) 
+          || SpecUtils::istarts_with( arg, "raddata://g" ) )
         {
           n_valid_args += 1;
-        } else
+        }else
         {
           // We could use SpecUtils to make canonical, but we'll use the wx stuff, just to try it out
           // arg = SpecUtils::make_canonical_path(arg)
@@ -626,7 +627,7 @@ InterSpecWxApp::InterSpecWxApp() :
     const bool no_restore = ((!sm_try_restore) || (num_load_attempts >= 2));
 
     wxString file_to_open;
-    for (size_t i = 0; i < m_command_line_args.size(); ++i)
+    for( size_t i = 0; i < m_command_line_args.size(); ++i )
     {
       wxFileName fname = wxFileName::FileName(m_command_line_args[i]);
       if (fname.IsOk() && fname.FileExists())
@@ -635,7 +636,16 @@ InterSpecWxApp::InterSpecWxApp() :
         wxLogMessage("Will open file: '%s'", file_to_open.utf8_string().c_str() );
         break;
       }
-    }
+      
+      std::string arg = m_command_line_args[i].utf8_string();
+      if( SpecUtils::istarts_with( arg, "interspec://" )
+        || SpecUtils::istarts_with( arg, "raddata://g" ) )
+      {
+        file_to_open = m_command_line_args[i];
+          break;
+      }
+    }//for( size_t i = 0; i < m_command_line_args.size(); ++i )
+
 
     if( sm_test_load_only )
     {
