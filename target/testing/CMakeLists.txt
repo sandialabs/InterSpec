@@ -83,6 +83,12 @@ add_test( NAME TesRefLines
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_QrSpectrum test_QrSpectrum.cpp )
+target_link_libraries( test_QrSpectrum PRIVATE InterSpecLib )
+add_test( NAME TestQrSpectrum
+  COMMAND $<TARGET_FILE:test_QrSpectrum> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
 
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 

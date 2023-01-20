@@ -206,13 +206,21 @@ public:
 #endif //#if( SpecUtils_ENABLE_D3_CHART )
   
   
-  //userOpenFileFromFilesystem(): appropriate to call if the user opens a file
-  //  by double-clicking it in the finder.  Will check if the file might be
-  //  a background to the current foreground, and if so, prompt the user how
-  //  they would like to open it; if the file probably isnt a background to
-  //  the current foreground, then the files is opened as foreground.  Returns
-  //  status of if the file could be parsed or not.
+  /** Appropriate to call if the user opens a file by double-clicking it in the finder.
+  
+   Parses the file, and then calls #userOpenFile, so will behave as that function describes.
+  
+   */
   bool userOpenFileFromFilesystem( const std::string filepath, std::string displayFileName = "" );
+  
+  /** Function to call when the user opens a spectrum file using the operating system (e.g.,
+   double click on file, open a QR code or URL, etc).
+   
+   Checks if a background to the current foreground, and if so, prompt the user how
+   they would like to open it; if the file probably isnt a background to the current foreground,
+   then the files is opened as foreground. 
+   */
+  void userOpenFile( std::shared_ptr<SpecMeas> meas, std::string displayFileName = "" );
   
   //promptUserHowToOpenFile(): method called by userOpenFileFromFilesystem()
   //  and when the file could possibly be a background to the current foreground.

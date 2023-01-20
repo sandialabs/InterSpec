@@ -135,6 +135,8 @@ public:
 
   virtual ~SpectraFileHeader() noexcept(true);
 
+  void setFile( const std::string &displayFileName, std::shared_ptr<SpecMeas> meas );
+  
   //setFile thows std::runtime_error(..) on failure.  File passed in does
   //  not need to persist on the file system past calling this function.
   std::shared_ptr<SpecMeas> setFile( const std::string &displayFileName,

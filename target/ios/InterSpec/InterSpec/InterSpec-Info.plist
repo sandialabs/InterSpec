@@ -49,6 +49,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>interspec</string>
+				<string>raddata</string>
 			</array>
 		</dict>
 	</array>

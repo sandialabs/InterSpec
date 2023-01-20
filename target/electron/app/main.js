@@ -78,10 +78,12 @@ let windowNumber = 1;
 
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('interspec', process.execPath, [path.resolve(process.argv[1])])
+    app.setAsDefaultProtocolClient('interspec', process.execPath, [path.resolve(process.argv[1])]);
+    app.setAsDefaultProtocolClient('raddata', process.execPath, [path.resolve(process.argv[1])]);
   }
 } else {
-    app.setAsDefaultProtocolClient('interspec')
+    app.setAsDefaultProtocolClient('interspec');
+    app.setAsDefaultProtocolClient('raddata');
 }
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -136,7 +138,8 @@ if( !gotTheLock )
     // TODO: this function totally untested 
     console.log( `'open-url' totally untested: url: ${url}` );
 
-    if( path_string.startsWith("interspec://") )
+    if( path_string.toLowerCase().startsWith("interspec://") 
+        || path_string.toLowerCase().startsWith("raddata://g0/") )
     {
       let window = (openWindows.length ? openWindows.at(-1) : null);
 
@@ -161,7 +164,8 @@ function argvToPaths( argv_array, workingDir ) {
     
   for( let path_string of argv_array.slice(1) )
   {
-    if( path_string.startsWith("interspec://") )
+    if( path_string.toLowerCase().startsWith("interspec://") 
+        || path_string.toLowerCase().startsWith("raddata://g0/") )
     {
       infiles.push( path_string );
     }else

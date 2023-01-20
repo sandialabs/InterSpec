@@ -1363,6 +1363,25 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
 }//void setMeasurmentInfo( std::shared_ptr<SpecMeas> );
 
 
+void SpectraFileHeader::setFile( const std::string &displayFileName, std::shared_ptr<SpecMeas> info )
+{
+  if( !info )
+    throw runtime_error( "Not a valid spectrum file." );
+  
+  RecursiveLock lock( m_mutex );
+    
+  m_weakMeasurmentPtr = info;
+  
+  info->set_filename( displayFileName );
+  
+  info->reset_modified();
+  info->reset_modified_since_decode();
+  m_modifiedSinceDecode = false;
+  
+  setMeasurmentInfo( info );
+}//void setFile( const std::string &displayFileName, std::shared_ptr<SpecMeas> meas );
+
+
 std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
                                    const std::string &displayFileName,
                                    const std::string &filename,
@@ -1371,7 +1390,6 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
   cerr << "SpectraFileHeader::setFile" << endl;
   try
   {
-    
     if( !SpecUtils::is_file(filename) )
       throw runtime_error( "" );
   }catch(...)
@@ -1382,32 +1400,15 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
     throw runtime_error( "Could not access file '" + displayFileName + "'" );
   }//try / catch
   
-  RecursiveLock lock( m_mutex );
- 
-  string orig_file_ending;
-  const size_t pos = displayFileName.find_last_of( '.' );
-  if( pos != string::npos )
-    orig_file_ending = displayFileName.substr( pos+1 );
-
-  SpecUtils::to_lower_ascii( orig_file_ending );
-
-  std::shared_ptr<SpecMeas> info = initFile( filename, parseType, orig_file_ending );
-
+  string orig_file_ending = SpecUtils::file_extension(displayFileName);
+  shared_ptr<SpecMeas> info = initFile( filename, parseType, orig_file_ending );
   if( !info )
   {
-    stringstream msg;
-    msg << "Could not open '" << displayFileName
-        << "' with any of the available decoders, sorry.";
-    throw std::runtime_error( msg.str() );
-  }//if( !success )
-
-  info->set_filename( displayFileName );
+    throw std::runtime_error( "Could not open '" + displayFileName
+                             + "' with any of the available decoders, sorry." );
+  }
   
-  info->reset_modified();
-  info->reset_modified_since_decode();
-  m_modifiedSinceDecode = false;
-  
-  setMeasurmentInfo( info );
+  setFile( displayFileName, info );
 
   return info;
 }//setFile(...)

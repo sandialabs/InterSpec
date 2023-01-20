@@ -5386,7 +5386,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
           break;
           
         case SpecUtils::SaveSpectrumAsType::N42_2006:
-          tooltip = "A simple spectromiter style 2006 N42 XML file will be"
+          tooltip = "A simple spectrometer style 2006 N42 XML file will be"
           " produced which contains all records in the current file.";
           break;
           
@@ -5458,6 +5458,11 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
         HelpSystem::attachToolTipOn( item, tooltip, showInstantly,
                                     HelpSystem::ToolTipPosition::Right );
     }//for( loop over file types )
+    
+#if( USE_QR_CODES )
+    item = m_downloadMenus[static_cast<int>(i)]->addMenuItem( "QR Code / URL" );
+    item->triggered().connect( boost::bind( &SpecMeasManager::displaySpectrumQrCode, m_fileManager, i ) );
+#endif
     
     m_downloadMenus[static_cast<int>(i)]->disable();
     if( m_downloadMenus[static_cast<int>(i)]->parentItem() )
@@ -9661,6 +9666,48 @@ void InterSpec::promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
 }//void promptUserHowToOpenFile(...)
 
 
+void InterSpec::userOpenFile( std::shared_ptr<SpecMeas> meas, std::string displayFileName )
+{
+  assert( meas );
+  if( !meas )
+    throw runtime_error( "Invalid spectrum file." );
+  
+  if( !m_fileManager )  //shouldnt ever happen.
+    throw runtime_error( "Internal logic error, no valid m_fileManager" );
+   
+  auto header = std::make_shared<SpectraFileHeader>( m_user, true, this );
+  header->setFile( displayFileName, meas );
+  
+  bool couldBeBackground = true;
+  if( !m_dataMeasurement || !meas
+     || meas->uuid() == m_dataMeasurement->uuid() )
+  {
+    couldBeBackground = false;
+  }else
+  {
+    couldBeBackground &= (m_dataMeasurement->instrument_id() == meas->instrument_id());
+    couldBeBackground &= (m_dataMeasurement->num_gamma_channels() == meas->num_gamma_channels());
+  }//if( !m_dataMeasurement || !meas )
+  
+  //Should we check if this meas has the same UUID as the second of background?
+  
+  if( couldBeBackground )
+  {
+    promptUserHowToOpenFile( meas, header );
+    return;
+  }else
+  {
+    cout << "Will load file " << displayFileName << " requested to be loaded at "
+    << WDateTime::currentDateTime().toString(DATE_TIME_FORMAT_STR)
+    << endl;
+    
+    SpectraFileModel *fileModel = m_fileManager->model();
+    const int row = fileModel->addRow( header );
+    m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+    return;
+  }
+}//void InterSpec::userOpenFile( std::shared_ptr<SpecMeas> meas, std::string displayFileName )
+
 
 bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string displayFileName  )
 {
@@ -9669,47 +9716,21 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
     if( displayFileName.empty() )
       displayFileName = SpecUtils::filename(path);
     
+    assert( m_fileManager );
     if( !m_fileManager )  //shouldnt ever happen.
       throw runtime_error( "Internal logic error, no valid m_fileManager" );
     
     if( !SpecUtils::is_file(path) )
       throw runtime_error( "Could not access file '" + path + "'" );
   
-    auto header = std::make_shared<SpectraFileHeader>( m_user, true, this );
-    auto meas = header->setFile( displayFileName, path, SpecUtils::ParserType::Auto );
-  
-    if( !meas )
+    auto meas = make_shared<SpecMeas>();
+    const bool success = meas->load_file( path, SpecUtils::ParserType::Auto, displayFileName );
+    
+    if( !success )
       throw runtime_error( "Failed to decode file" );
     
-    bool couldBeBackground = true;
-    if( !m_dataMeasurement || !meas
-        || meas->uuid() == m_dataMeasurement->uuid() )
-    {
-      couldBeBackground = false;
-    }else
-    {
-      couldBeBackground &= (m_dataMeasurement->instrument_id() == meas->instrument_id());
-      couldBeBackground &= (m_dataMeasurement->num_gamma_channels() == meas->num_gamma_channels());
-    }//if( !m_dataMeasurement || !meas )
-
-    //Should we check if this meas has the same UUID as the second of background?
-    
-    if( couldBeBackground )
-    {
-      promptUserHowToOpenFile( meas, header );
-      return true;
-    }else
-    {
-//      return m_fileManager->loadFromFileSystem( path, SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::Auto );
-      cout << "Will load file " << path << " requested to be loaded at "
-      << WDateTime::currentDateTime().toString(DATE_TIME_FORMAT_STR)
-      << endl;
-      
-      SpectraFileModel *fileModel = m_fileManager->model();
-      const int row = fileModel->addRow( header );
-      m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
-      return true;
-    }
+    userOpenFile( meas, displayFileName );
+    return true;
   }catch( std::exception &e )
   {
     cerr << "Caught exception '" << e.what() << "' when trying to load '"
@@ -9724,6 +9745,13 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
 
 void InterSpec::handleAppUrl( std::string url )
 {
+  if( SpecUtils::istarts_with(url, "RADDATA://G0/")
+     || SpecUtils::istarts_with(url, "interspec://G0/") )
+  {
+    m_fileManager->handleSpectrumUrl( url );
+    return;
+  }
+  
   //Get rid of (optional) leading "interspec://", so URL will look like: 'drf/specify?v=1&n=MyName&"My other Par"'
   const string scheme = "interspec://";
   if( SpecUtils::istarts_with(url, scheme) )
