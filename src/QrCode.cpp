@@ -147,14 +147,34 @@ std::string to_svg_string( const qrcodegen::QrCode &qr, int border )
 
 pair<string,int> utf8_string_to_svg_qr( const std::string &input )
 {
-  // LOW (7% erroneous codewords), MEDIUM (15%), QUARTILE (25%), HIGH (30%).
-  const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText( input.c_str(), qrcodegen::QrCode::Ecc::MEDIUM );
+  const qrcodegen::QrCode::Ecc eccs[] = {
+    qrcodegen::QrCode::Ecc::HIGH,
+    qrcodegen::QrCode::Ecc::QUARTILE,
+    qrcodegen::QrCode::Ecc::MEDIUM,
+    qrcodegen::QrCode::Ecc::LOW
+  };
   
-  cout << "Qr code created has version: " << qr.getVersion() << ", size: " << qr.getSize()
-       << ", ErrorCorrectionLevel: " << static_cast<int>(qr.getErrorCorrectionLevel())
-       << endl;
+  for( const qrcodegen::QrCode::Ecc ecc : eccs )
+  {
+    try
+    {
+      // LOW (7% erroneous codewords), MEDIUM (15%), QUARTILE (25%), HIGH (30%).
+      qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText( input.c_str(), ecc );
+      
+      cout << "Qr code created has version: " << qr.getVersion() << ", size: " << qr.getSize()
+      << ", ErrorCorrectionLevel: " << static_cast<int>(qr.getErrorCorrectionLevel())
+      << endl;
+      
+      return { to_svg_string( qr, 1 ), qr.getSize() };
+    }catch( std::exception &e )
+    {
+      cerr << "Failed to encode QR code at level " << static_cast<int>(ecc) << endl;
+    }
+  }//for( const qrcodegen::QrCode::Ecc ecc : eccs )
   
-  return { to_svg_string( qr, 1 ), qr.getSize() };
+  throw runtime_error( "Failed to be able to encode URL to QR code" );
+  
+  return { "", 0 };
 }//utf8_string_to_svg_qr(...)
 
 pair<string,int> binary_to_svg_qr( const std::vector<std::uint8_t> &data )

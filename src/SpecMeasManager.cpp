@@ -132,6 +132,11 @@
 #include "InterSpec/RelActAutoGui.h"
 #endif
 
+#if( USE_QR_CODES )
+#include "InterSpec/QRCode.h"
+#include "InterSpec/QRSpectrum.h"
+#endif
+
 using namespace Wt;
 using namespace std;
 
@@ -448,6 +453,27 @@ namespace
     }//~FileUploadDialog()
     
   };//class FileUploadDialog
+
+#if( USE_QR_CODES )
+void displayQrDialog( const vector<QRSpectrum::UrlEncodedSpec> urls, const size_t index,
+                     const SpecUtils::SpectrumType type )
+{
+  string seqnum = "QR Code";
+  if( urls.size() > 1 )
+    seqnum += " " + to_string(index + 1) + " of " + to_string( urls.size() );
+  
+  SimpleDialog *dialog = QrCode::displayTxtAsQrCode( urls[index].m_url, "Spectrum File " + seqnum,
+                                                    seqnum + " for the " + string(SpecUtils::descriptionText(type)) + " spectrum." );
+  
+  if( (index + 1) < urls.size() )
+  {
+    WPushButton *btn = dialog->addButton( "Next QR code" );
+    btn->clicked().connect( std::bind([=](){
+      displayQrDialog( urls, index + 1, type );
+    }) );
+  }//if( (index + 1) < urls.size() )
+}//void displayQr( vector<QRSpectrum::UrlEncodedSpec> urls )
+#endif //USE_QR_CODES
 }//namespace
 
 
@@ -1994,6 +2020,125 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   WServer::instance()->ioService().boost::asio::io_service::post( boost::bind( &SpecMeasManager::handleFileDropWorker, this,
                                                     name, spoolName, type, dialog, wApp ) );
 }//handleFileDrop(...)
+
+
+#if( USE_QR_CODES )
+void SpecMeasManager::handleSpectrumUrl( const std::string &url )
+{
+  try
+  {
+    const QRSpectrum::EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( url );
+    if( info.m_number_urls == 1 )
+    {
+      vector<QRSpectrum::UrlSpectrum> spectra = QRSpectrum::spectrum_decode_first_url( url );
+      if( spectra.empty() )
+        throw runtime_error( "No gamma measurements in URL/QR code" );
+      
+      shared_ptr<SpecMeas> specfile = QRSpectrum::to_spec_file( spectra );
+      assert( specfile && specfile->num_measurements() );
+      
+      if( !specfile || (specfile->num_measurements() < 1) || (specfile->num_gamma_channels() < 7) )
+        throw runtime_error( "No gamma measurements in URL/QR code" );
+      
+      string display_name = spectra[0].m_title;
+      
+      shared_ptr<SpectraFileHeader> header = addFile( display_name, specfile );
+      if( !header )
+        throw runtime_error( "Error adding file." );
+      
+      const int row = m_fileModel->addRow( header );
+      displayFile( row, specfile, SpecUtils::SpectrumType::Foreground, true, true,
+                  SpecMeasManager::VariantChecksToDo::None );
+    }else
+    {
+      throw runtime_error( "Multi QR spectra not supported yet" );
+    }
+    //std::vector<UrlSpectrum> spectrum_decode_first_url( const std::string &url );
+    //std::shared_ptr<SpecUtils::SpecFile> to_spec_file( const std::vector<UrlSpectrum> &meas );
+  }catch( std::exception &e )
+  {
+    auto dialog = new SimpleDialog( "Error", "Error decoding spectrum URL/QR code: " + string(e.what()) );
+    dialog->addButton( "Ok" );
+  }//try /catch
+}//void handleSpectrumUrl( const std::string &url );
+
+
+void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type )
+{
+  const shared_ptr<SpecMeas> meas = m_viewer->measurment( type );
+  auto spec = m_viewer->displayedHistogram( type );
+  if( !meas || !spec || (spec->num_gamma_channels() < 1) )
+  {
+    passMessage( "Error, no " + string(SpecUtils::descriptionText(type)) + " displayed",
+                WarningWidget::WarningMsgHigh ) ;
+    return;
+  }//if( !spec )
+  
+  try
+  {
+    string model;
+    if( meas->detector_type() != SpecUtils::DetectorType::Unknown )
+      model = detectorTypeToString( meas->detector_type() );
+    if( model.empty() )
+      model = meas->instrument_model();
+  
+    vector<QRSpectrum::UrlSpectrum> urlspec = QRSpectrum::to_url_spectra( {spec}, model );
+    
+    const uint8_t encode_options = 0;
+    vector<QRSpectrum::UrlEncodedSpec> urls;
+    QRSpectrum::QrErrorCorrection ecc = QRSpectrum::QrErrorCorrection::High;
+    
+    // We'll try to only use a single QR-code, but also use highest error-correction we can.
+    //  I'm sure this trade-off can be better handled in some way.
+    if( spec->num_gamma_channels() < 5000 )
+    {
+      try
+      {
+        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+      }catch( std::exception & )
+      {
+      }//try / catch
+    }//if( spec->num_gamma_channels() < 5000 )
+    
+    if( urls.empty() || (urls.size() > 1) )
+    {
+      try
+      {
+        ecc = QRSpectrum::QrErrorCorrection::Medium;
+        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+      }catch( std::exception & )
+      {
+      }//try / catch
+    }//if( urls.empty() )
+    
+    if( urls.empty() || (urls.size() > 1) )
+    {
+      try
+      {
+        ecc = QRSpectrum::QrErrorCorrection::Low;
+        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+      }catch( std::exception & )
+      {
+      }//try / catch
+    }//if( urls.empty() )
+    
+    if( urls.empty() )
+    {
+      auto dialog = new SimpleDialog( "Error", "Spectrum could not be encoded to a QR code." );
+      dialog->addButton( "Ok" );
+      return;
+    }//if( urls.empty() )
+    
+    displayQrDialog( urls, 0, type );
+  }catch( std::exception &e )
+  {
+    auto dialog = new SimpleDialog( "Error", "Failed to encoded spectrum to a QR code: " + string(e.what()) );
+    dialog->addButton( "Ok" );
+  }//try catch
+}//void displaySpectrumQrCode( const SpecUtils::SpectrumType type )
+#endif
+
+
 
 void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string errormsg )
 {

@@ -5386,7 +5386,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
           break;
           
         case SpecUtils::SaveSpectrumAsType::N42_2006:
-          tooltip = "A simple spectromiter style 2006 N42 XML file will be"
+          tooltip = "A simple spectrometer style 2006 N42 XML file will be"
           " produced which contains all records in the current file.";
           break;
           
@@ -5458,6 +5458,11 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
         HelpSystem::attachToolTipOn( item, tooltip, showInstantly,
                                     HelpSystem::ToolTipPosition::Right );
     }//for( loop over file types )
+    
+#if( USE_QR_CODES )
+    item = m_downloadMenus[static_cast<int>(i)]->addMenuItem( "QR Code / URL" );
+    item->triggered().connect( boost::bind( &SpecMeasManager::displaySpectrumQrCode, m_fileManager, i ) );
+#endif
     
     m_downloadMenus[static_cast<int>(i)]->disable();
     if( m_downloadMenus[static_cast<int>(i)]->parentItem() )
@@ -9724,6 +9729,13 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
 
 void InterSpec::handleAppUrl( std::string url )
 {
+  if( SpecUtils::istarts_with(url, "RADDATA://G0/")
+     || SpecUtils::istarts_with(url, "interspec://G0/") )
+  {
+    m_fileManager->handleSpectrumUrl( url );
+    return;
+  }
+  
   //Get rid of (optional) leading "interspec://", so URL will look like: 'drf/specify?v=1&n=MyName&"My other Par"'
   const string scheme = "interspec://";
   if( SpecUtils::istarts_with(url, scheme) )

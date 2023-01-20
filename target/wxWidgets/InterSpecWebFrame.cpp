@@ -80,7 +80,7 @@ namespace
 #ifdef _WIN32
   void check_url_association()
   {
-    // We want to associate "interspec://" URLs with the application; we'll
+    // We want to associate "interspec://" and "raddata://" URLs with the application; we'll
     //  do this through editing the registry.
     
     // For files, we would use the wxFileType, and wxMimeTypesManager classes, similar to:
@@ -149,49 +149,54 @@ namespace
     }// end play around with file extensions
     */
 
-    wxRegKey interspec_key(wxRegKey::HKCU, "SOFTWARE\\Classes\\interspec");
-    if (!interspec_key.Exists() && !interspec_key.Create(true))
-    {
-      wxLogError("Failed to create InterSpec key - aboring");
-      return;
-    }
+    auto set_reg_keys = [=]( const string urlscheme ) {
 
-    wxString def_value, proto_value, command_value;
-    interspec_key.QueryValue("", def_value); //Its okay if this fails
+      wxRegKey interspec_key(wxRegKey::HKCU, "SOFTWARE\\Classes\\" + urlscheme);
+      if (!interspec_key.Exists() && !interspec_key.Create(true))
+      {
+        wxLogError("Failed to create InterSpec key - aboring");
+        return;
+      }
 
-    if( (def_value != "URL:interspec") && !interspec_key.SetValue("", "URL:interspec") )
-    {
-      wxLogError("Failed to set Reg key default value - arborting");
-      return;
-    }
+      wxString def_value, proto_value, command_value;
+      interspec_key.QueryValue("", def_value); //Its okay if this fails
 
-    if (!interspec_key.QueryValue("URL Protocol", proto_value) 
-        && !interspec_key.SetValue("URL Protocol", "") )
-    {
-      wxLogError("Failed to set Reg key 'URL Protocol' value");
-      return;
-    }      
+      if( (def_value != ("URL:" + urlscheme)) && !interspec_key.SetValue("", ("URL:" + urlscheme)) )
+      {
+        wxLogError("Failed to set Reg key default value - aborting");
+        return;
+      }
+
+      if (!interspec_key.QueryValue("URL Protocol", proto_value) 
+          && !interspec_key.SetValue("URL Protocol", "") )
+      {
+        wxLogError("Failed to set Reg key 'URL Protocol' value");
+        return;
+      }      
     
-    wxRegKey command_key(wxRegKey::HKCU, "SOFTWARE\\Classes\\interspec\\shell\\open\\command");
-    if (!command_key.Exists() && !command_key.Create(true))
-    {
-      wxLogMessage("Failed to create 'command' Reg key");
-      return;
-    }
+      wxRegKey command_key(wxRegKey::HKCU, "SOFTWARE\\Classes\\" + urlscheme + "\\shell\\open\\command");
+      if (!command_key.Exists() && !command_key.Create(true))
+      {
+        wxLogMessage("Failed to create 'command' Reg key");
+        return;
+      }
 
-    command_key.QueryValue("", command_value); //Its okay if this fails
+      command_key.QueryValue("", command_value); //Its okay if this fails
     
-    if (command_value == open_command)
-    {
-      wxLogMessage("No need to update registry URL command value");
-      return;
-    }
+      if (command_value == open_command)
+      {
+        wxLogMessage("No need to update registry URL command value");
+        return;
+      }
     
+      if( !command_key.SetValue("", open_command) )
+        wxLogMessage("Failed to update URL command Reg key def value");
+      else
+        wxLogMessage("Updated URL 'command' Reg key def value to '%s'", open_command);
+    };//auto set_reg_keys = []( const string urlscheme ) 
 
-    if( !command_key.SetValue("", open_command) )
-      wxLogMessage("Failed to update URL command Reg key def value");
-    else
-      wxLogMessage("Updated URL 'command' Reg key def value to '%s'", open_command);
+    set_reg_keys( "interspec" );
+    set_reg_keys( "raddata" );
   }//void check_url_association()
 #endif
 }//namespace

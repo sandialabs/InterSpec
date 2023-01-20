@@ -50,6 +50,7 @@ extern "C"{
 #include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/QrCode.h"
+#include "InterSpec/SpecMeas.h"
 #include "InterSpec/QRSpectrum.h"
 #include "InterSpec/PhysicalUnits.h"
 
@@ -118,7 +119,7 @@ namespace
       
       default:
         throw std::runtime_error( "Invalid base-45 character with decimal value "
-                               + std::to_string( static_cast<int>(i) ) );
+                               + std::to_string( (int)reinterpret_cast<const uint8_t &>(i) ) );
     }//switch( i )
   
     assert( 0 );
@@ -978,7 +979,13 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
     }//for( size_t num_parts = 0; num_parts < 10; ++num_parts )
     
     if( !success_encoding )
-      throw runtime_error( "url_encode_spectra: Failed to encode spectrum into less than 10 QR codes at the desired error correction level" );
+    {
+      const vector<string> urls = url_encode_spectrum( m, encode_options, 1, 0 );
+
+      throw runtime_error( "url_encode_spectra: Failed to encode spectrum into less than 10 QR"
+                           " codes at the desired error correction level (len(url)="
+                           + std::to_string( urls.empty() ? size_t(0) : urls[0].size() ) + ")" );
+    }//if( !success_encoding )
   }else //
   {
     // Multiple measurements to put in single URL
@@ -1164,8 +1171,8 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
   answer.m_raw_data = url;
   
   //cout << "Before being URL decoded: '" << to_hex_bytes_str(url.substr(0,60)) << "'" << endl << endl;
+  //url = Wt::Utils::urlDecode( url );
   
-  url = Wt::Utils::urlDecode( url );
   if( !(answer.m_encode_options & EncodeOptions::NoBase45) )
   {
     //cout << "Before being base-45 decoded: '" << to_hex_bytes_str(url.substr(0,60)) << "'" << endl << endl;
@@ -1550,9 +1557,9 @@ vector<UrlSpectrum> to_url_spectra( vector<shared_ptr<const SpecUtils::Measureme
 }//vector<UrlSpectrum> to_url_spectra( vector<shared_ptr<const SpecUtils::Measurement>> specs, string det_model )
 
 
-std::shared_ptr<SpecUtils::SpecFile> to_spec_file( const std::vector<UrlSpectrum> &spec_infos )
+std::shared_ptr<SpecMeas> to_spec_file( const std::vector<UrlSpectrum> &spec_infos )
 {
-  auto specfile = make_shared<SpecUtils::SpecFile>();
+  auto specfile = make_shared<SpecMeas>();
   specfile->set_instrument_model( spec_infos[0].m_model );
   
   shared_ptr<SpecUtils::EnergyCalibration> first_cal;
@@ -2071,7 +2078,7 @@ int dev_code()
         
         vector<string> urls;
         for( const auto &g : encoded )
-          urls.push_back( g.m_url );
+          urls.push_back( Wt::Utils::urlDecode( g.m_url ) );
         
 #define TEST_EQUAL_ENOUGH(lhs,rhs) \
           assert( (fabs((lhs) - (rhs)) < 1.0E-12) \
@@ -2113,8 +2120,15 @@ int dev_code()
             
             assert( orig.m_neut_sum == decoded.m_neut_sum );
             
-            TEST_EQUAL_ENOUGH( orig.m_live_time, decoded.m_live_time );
-            TEST_EQUAL_ENOUGH( orig.m_real_time, decoded.m_real_time );
+            if( orig.m_live_time > 0 )
+            {
+              TEST_EQUAL_ENOUGH( orig.m_live_time, decoded.m_live_time );
+            }
+            
+            if( orig.m_real_time > 0 )
+            {
+              TEST_EQUAL_ENOUGH( orig.m_real_time, decoded.m_real_time );
+            }
             
             assert( orig.m_channel_data.size() == decoded.m_channel_data.size() );
             for( size_t chan_index = 0; chan_index < decoded.m_channel_data.size(); ++chan_index )

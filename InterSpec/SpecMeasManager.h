@@ -419,6 +419,11 @@ public:
                        SimpleDialog *dialog,
                        Wt::WApplication *app );
 
+#if( USE_QR_CODES )
+  void handleSpectrumUrl( const std::string &url );
+  void displaySpectrumQrCode( const SpecUtils::SpectrumType type );
+#endif
+  
 protected:
   //Called from inside displayFile(...) to see if there are options for
   //  displaying the file the user should select before continuing.

@@ -25,6 +25,7 @@
 #include <string>
 #include <iostream>
 
+#include <Wt/Utils>
 
 //#define BOOST_TEST_DYN_LINK
 #define BOOST_TEST_MODULE QRSpectrum_suite
@@ -104,12 +105,12 @@ BOOST_AUTO_TEST_CASE( SimpleSpecEncode )
   const vector<UrlEncodedSpec> encoded = url_encode_spectra( {spec}, QrErrorCorrection::High, encode_options);
   BOOST_REQUIRE( encoded.size() == 1 );
 
-  const vector<UrlSpectrum> decoded = decode_spectrum_urls( { encoded[0].m_url } );
+  const vector<UrlSpectrum> decoded = decode_spectrum_urls( { Wt::Utils::urlDecode( encoded[0].m_url ) } );
   BOOST_REQUIRE( decoded.size() == 1 );
 
   test_equalish( spec, decoded[0], true );
 
-// TODO: add spectrum spanning multiple URLs, and multiple spectra in a URL.  Also, add in test for looping over data dir
+// TODO: add spectrum spanning multiple URLs, and multiple spectra in a URL.  Also, add in test for looping over data dir.  Then modify URL, and make sure it is not seen as valid, and then test all the different encoding options for each spectrum.  Also, need to test wonky characters for title/model.
 
 }//BOOST_AUTO_TEST_CASE( SimpleSpecEncode )
 

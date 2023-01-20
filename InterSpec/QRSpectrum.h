@@ -30,6 +30,7 @@
 #include <cstdint>
 
 // Forward declarations
+class SpecMeas;
 namespace SpecUtils
 {
   class Measurement;
@@ -108,13 +109,16 @@ std::vector<UrlSpectrum> to_url_spectra(
                                   std::vector<std::shared_ptr<const SpecUtils::Measurement>> specs,
                                   std::string detector_model );
 
-std::shared_ptr<SpecUtils::SpecFile> to_spec_file( const std::vector<UrlSpectrum> &meas );
+std::shared_ptr<SpecMeas> to_spec_file( const std::vector<UrlSpectrum> &meas );
 
 /** Encodes the specified measurements into one or more URL and QR codes.
  
  If a single spectrum is passed in, you may get back multiple urls/qr-codes.
  If multiple spectra are passed in, you will get back a single url/qr-code, if they can all fit
  in a single QR code (otherwise an exception will be thrown).
+ 
+ Note: URLs will be URL-encoded, while #get_spectrum_url_info, #decode_spectrum_urls, and similar
+       all expect non-URL-encoded URLs.
  
  @param measurements One or measurement to put in the result
  @param detector_model The detector model (e.x., "Detective-X") to include.  May be blank.
@@ -192,8 +196,11 @@ struct EncodedSpectraInfo
 };//struct EncodedSpectraInfo
 
 
-/** Breaks out the various information from the url, and un URL/base-45 encode, and un-Deflates,
+/** Breaks out the various information from the url, and un-base-45 encodes, and un-Deflates,
  if necessary.
+ 
+ Expects the URL has already been URL decoded, as it looks like this will be done by the
+ OS before passing the URL to the app.
  
  Throws exception on error.
  */
