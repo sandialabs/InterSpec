@@ -647,7 +647,7 @@ InterSpecWxApp::InterSpecWxApp() :
      //   void InterSpecApp::prepareForEndOfSession()
      //   void InterSpecApp::finalize()
      //   for possible hooks to check failure.
-      sm_check_load_timer.reset( new CheckLoadTimer( this, 15 ) );
+      sm_check_load_timer.reset( new CheckLoadTimer( this, 30 ) );
     }//if( sm_test_load_only )
 
     InterSpecWebFrame* frame = new InterSpecWebFrame(m_url, no_restore, file_to_open);
