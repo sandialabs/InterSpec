@@ -49,13 +49,14 @@ jobs:
         shell: pwsh
         if: steps.cache-wx-build.outputs.cache-hit != 'true' && runner.os == 'Windows'
         working-directory: ${{runner.temp}}
+
         run: |
           mkdir build_${{ runner.os }}_wx_app
           cd build_${{ runner.os }}_wx_app
           #cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{runner.os}}_WebView_latest -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache "${{github.workspace}}/target/wxWidgets"
           $prefix = "${{runner.temp}}/install"
           $install_dir = "InterSpec_app_Windows_WebView_latest"
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=$install_dir -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DwxWidgets_ROOT_DIR="$prefix" -DwxWidgets_LIB_DIR="$prefix/lib/vc_x64_lib" -DwxWidgets_CONFIGURATION="msw" -DBoost_INCLUDE_DIR="$prefix/include/boost-1_78" -DBOOST_ROOT="$prefix" -G "Ninja" "${{github.workspace}}/target/wxWidgets"
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX="$install_dir" -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DwxWidgets_ROOT_DIR="$prefix" -DwxWidgets_LIB_DIR="$prefix/lib/vc_x64_lib" -DwxWidgets_CONFIGURATION="msw" -G "Ninja" "${{github.workspace}}/target/wxWidgets"
 
 # The build -j1 is needed to avoid error  "fatal error C1041: cannot open program database...", which I think is happening, not because of the "/FS" flag, but because of multiple targets sharing an intermediate directory - maybe
       - name: wxWidgets app build
