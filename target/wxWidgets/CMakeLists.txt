@@ -130,7 +130,7 @@ DESTINATION
 )
 
 install(FILES
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.css 
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/d3.v3.min.js 
   ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
   ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
   ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
