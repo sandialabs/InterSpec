@@ -25,6 +25,7 @@
 
 #include <cstdio>
 #include <fstream>
+#include <iomanip>
 #include <numeric>
 #include <sstream>
 #include <iostream>
@@ -2361,6 +2362,8 @@ int dev_code()
     
     cout << endl;
   }//for( const auto &key : data_sizes_ascii )
+
+  return 1;
 }//int dev_code()
 
 
