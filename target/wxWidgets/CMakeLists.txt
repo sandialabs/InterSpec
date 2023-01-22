@@ -38,7 +38,6 @@ if( NOT InterSpec_FETCH_DEPENDENCIES )
   # I havent gotten the above to find_package(...) call to actually work yet
   # with wxWidgets I compile with CMake on Windows, so we'll keep compiling
   # as a subdirectory for now... 
-  #
   set( wxWidgets_USE_STATIC ON CACHE BOOL "" )
   find_package( wxWidgets REQUIRED core base webview stc )
 
