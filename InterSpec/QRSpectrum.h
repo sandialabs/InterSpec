@@ -61,11 +61,24 @@ enum class QrErrorCorrection
   High      // ~30% missing codewords
 };//enum class QrErrorCorrection
 
+/** Options for how the data can be encoded as a URL.*/
 enum EncodeOptions
 {
+  /** Do not apply zlib based DEFLATE compression. */
   NoDeflate = 0x01,
+  
+  /** Do not encode data (after optional DEFLATE) as base-45.
+   E.g., for clickable URLs, or if you will encode to a binary QR-code).
+   */
   NoBase45 = 0x02,
+  
+  /** Keep channel data as text-based numbers.  Will actually be separated by the '$'
+   sign, since this is a base-45 character and commas arent - but commas would be valid
+   to.
+   */
   CsvChannelData = 0x04,
+  
+  /** Do not zero-compress channel data. */
   NoZeroCompressCounts = 0x08
 };//enum EncodeOptions
 

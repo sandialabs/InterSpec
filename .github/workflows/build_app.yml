@@ -37,6 +37,113 @@ jobs:
       - name: Setup Dev Env 
         uses: ./.github/actions/setup_dev_env
 
-# Removed the rest of this to get a successful build to cache requirements.
+# TODO: Caching the builds still isnt working
+      - name: Cache wxWidgets config/build
+        id: cache-wx-build
+        uses: actions/cache@v3
+        with:
+          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app'
+          key: ${{ runner.os }}-build-wxapp-${{ hashFiles('**/CMakeLists.txt') }}
+    
+      - name: Initial wxWidgets config/build
+        shell: pwsh
+        if: steps.cache-wx-build.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        working-directory: ${{runner.temp}}
+        run: |
+          mkdir build_${{ runner.os }}_wx_app
+          cd build_${{ runner.os }}_wx_app
+          #cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{runner.os}}_WebView_latest -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache "${{github.workspace}}/target/wxWidgets"
+          $prefix = "${{runner.temp}}/install"
+          $install_dir = "InterSpec_app_Windows_WebView_latest"
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=$install_dir -DCMAKE_PREFIX_PATH=$prefix -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DwxWidgets_ROOT_DIR="$prefix" -DwxWidgets_LIB_DIR="$prefix/lib/vc_x64_lib" -DwxWidgets_CONFIGURATION="msw"  -G "Ninja" "${{github.workspace}}/target/wxWidgets"
+
+# The build -j1 is needed to avoid error  "fatal error C1041: cannot open program database...", which I think is happening, not because of the "/FS" flag, but because of multiple targets sharing an intermediate directory - maybe
+      - name: wxWidgets app build
+        shell: pwsh
+        if: runner.os == 'Windows'
+        working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app
+        run: |
+          if (Test-Path 'InterSpec_app_Windows_WebView_latest'){ Remove-Item 'InterSpec_app_Windows_WebView_latest' -Recurse -Force }
+          # There is some error where we need "/FS" when building with Ninja
+          cmake --build . --config Release -j1
+          cmake --build . --config Release --target install -j1
+          $notes = "InterSpec_app_${{ runner.os }}_WebView_latest\build_info.txt"
+          echo "This is an automated build of InterSpec built on the github infrastruction at $(date)" >> $notes
+          echo "No testing has been performed on this build." >> $notes
+          echo "InterSpec code git has SHA: ${{ github.sha }}" >> $notes
+          echo "The Edge browser runtime is required to be installed to run; this will typically already be installed on Windows 10, and may be installed on Windows 7, but this hasnt been tested." >> $notes
+          echo "Before zipping, files present for the bbuild are:"
+          ls
+          Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest*.zip | foreach { Remove-Item -Path $_.FullName }
+          echo "After removing old zip files"
+          ls
+          Compress-Archive -CompressionLevel Optimal -Path .\InterSpec_app_${{ runner.os }}_WebView_latest -DestinationPath InterSpec_app_${{ runner.os }}_WebView_latest_$(get-date -f yyyy-MM-dd).zip 
+          echo "After zipping, files present for the build are:"
+          ls
+          echo "And files in base dir"
+          ls ${{runner.temp}}
+          ls ${{ github.workspace }}
+          if (Test-Path -Path '${{runner.temp}}\.sccache'){ ls ${{runner.temp}}\.sccache } else { echo "${{runner.temp}}\.sccache Does not exist"}
+          if (Test-Path -Path 'D:\a\InterSpec'){ ls D:\a\InterSpec } else { echo "D:\a\InterSpec Does not exist"}
+          if (Test-Path -Path 'D:\a\InterSpec\InterSpec'){ ls D:\a\InterSpec\InterSpec } else { echo "D:\a\InterSpec\InterSpec Does not exist"}
+          if (Test-Path -Path 'D:\a\InterSpec\InterSpec\.sccache'){ ls D:\a\InterSpec\InterSpec\.sccache } else { echo "D:\a\InterSpec\InterSpec\.sccache Does not exist"}
+          # sccache --show-stats || & { "ignore failure"; $global:LASTEXITCODE = 0 }
+          # sccache --stop-server || & { "ignore failure"; $global:LASTEXITCODE = 0 }
+
+      - name: Upload wxWidgets app to as GitHub Artifact
+        uses: actions/upload-artifact@v3.1.1
+        if: runner.os == 'Windows'
+        with: 
+          name: InterSpec_app_${{ runner.os }}_WebView_latest
+          path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest'
+
+#      - name: Upload sccache Artifact
+#        uses: actions/upload-artifact@v3.1.1
+#        if: runner.os == 'Windows'
+#        with: 
+#          name: sccache_log
+#          path: '${{runner.temp}}/sccache_log.txt'
+
+#sccache doesnt appear to be actually being called - looks like we need to switch to -G "Ninja" or -G "NMake Makefiles", but then find wxWidgets doesnt seem to work
+#CMakeFiles/CMakeOutput.log
+
+      - name: Test app build worked
+        shell: pwsh
+        working-directory: ${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest
+        run: |
+          $p = Start-Process .\InterSpec.exe -ArgumentList @("--test-load", "--mult-instance", "--no-restore") -PassThru
+          $errTimedOut = $null
+          $p | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue -ErrorVariable errTimedOut
+          if ($errTimedOut) { Stop-Process -InputObject $p -Force }
+          echo "Exit code of InterSpec test load was was" $p.ExitCode
+          exit $p.ExitCode
+#  If Stop-Process had to be used, the exit code will be -1.  If resources didnt load -12.  If timed out inside InterSpec -11. If all was okay, 0
+        
+# Then test file o
+#
+# Then maybe do a test with something like Puppeteer, by starting the app on a given port, like: 
+# $p = Start-Process .\Release\InterSpec.exe -ArgumentList @("--no-token", "--port=8088", "--mult-instance", "--no-restore") -PassThru
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1.12.0
+        with:
+          artifacts: '${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_${{ runner.os }}_WebView_latest*.zip'
+          draft: false
+          prerelease: true
+          body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10, or may work on Windows 7 with the Edge browser runtime installed."
+          allowUpdates: true
+          generateReleaseNotes: false
+          name: "Development Build"
+          removeArtifacts: true
+          replacesArtifacts: true
+          tag: 'latest'
+          commit: ${{ github.sha }}
+
+
+      - name: "Cleanup and finish"
+        run: |
+          Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest*.zip | foreach { Remove-Item -Path $_.FullName }
+          echo "Job status is ${{ job.status }}."
+
 
 
