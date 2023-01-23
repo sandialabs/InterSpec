@@ -38,7 +38,6 @@ if( NOT InterSpec_FETCH_DEPENDENCIES )
   # I havent gotten the above to find_package(...) call to actually work yet
   # with wxWidgets I compile with CMake on Windows, so we'll keep compiling
   # as a subdirectory for now... 
-  #
   set( wxWidgets_USE_STATIC ON CACHE BOOL "" )
   find_package( wxWidgets REQUIRED core base webview stc )
 
@@ -131,7 +130,7 @@ DESTINATION
 )
 
 install(FILES
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.css 
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/d3.v3.min.js 
   ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
   ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
   ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
