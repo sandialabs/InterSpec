@@ -759,6 +759,15 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
   for( size_t msg_num = 0; msg_num < num_parts; ++msg_num )
   {
     string &url_data = answer[msg_num];
+    
+    //size_t num_chan_first = channel_counts.size() / num_parts;
+    //if( num_parts > 1 && (num_chan_first > 10) )
+    //{
+    //  //Assume two bytes per channel, and subtract off the number of channels all the front-matter will take ups
+    //  num_chan_first -= std::min( num_chan_first - 1, first_url.size() / 2 );
+    //  blah blah blah, split rest up evenly...
+    //}
+    
     const size_t num_channel_per_part = channel_counts.size() / num_parts;
     
     if( !num_channel_per_part )
@@ -1804,6 +1813,16 @@ int dev_code()
       }
     }//for( shared_ptr<const SpecUtils::Measurement> m : usable_spectra )
     
+    
+    //EncodeOptions::NoDeflate
+    //EncodeOptions::NoBase45
+    //EncodeOptions::CsvChannelData
+    //EncodeOptions::NoZeroCompressCounts
+    //SkipForEncoding::Encoding
+    //SkipForEncoding::EnergyCal
+    //SkipForEncoding::DetectorModel
+    //SkipForEncoding::Gps
+    //SkipForEncoding::Title
     
     for( shared_ptr<const SpecUtils::Measurement> m : usable_spectra )
     {
