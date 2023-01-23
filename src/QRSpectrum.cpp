@@ -63,7 +63,7 @@ namespace
   const char * const sm_hex_digits = "0123456789ABCDEF";
 
   // From: https://datatracker.ietf.org/doc/rfc9285/ , table 1
-  const char sm_base42_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+  const char sm_base45_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
   
   // Implement Table 1 in rfc9285 as a switch; should maybe just switch to using a lookup table
   uint8_t b45_to_dec( const char i )
@@ -179,7 +179,7 @@ string url_encode( const T &url )
 
 // If we arent gzipping, and not base-45 encoding, and using channel data as ascii, then
 //  we will make sure this URL can be encoded as a QR in ASCII mode, we will URL-encode
-//  all non-base-42 characters.
+//  all non-base-45 characters.
 // Note: The result of this encoding, will also get URL encoded, which is less than ideal
 //       but its just a few extra bytes.
 string url_encode_non_base45( const string &input )
@@ -187,7 +187,7 @@ string url_encode_non_base45( const string &input )
   string answer;
   for( const char val : input )
   {
-    if( std::find( begin(sm_base42_chars), end(sm_base42_chars), val ) == end(sm_base42_chars) )
+    if( std::find( begin(sm_base45_chars), end(sm_base45_chars), val ) == end(sm_base45_chars) )
     {
       unsigned char c = (unsigned char)val;
       answer += '%';
@@ -239,13 +239,13 @@ std::string base45_encode_bytes( const T &input )
       const uint8_t d = n / 45;
       const uint8_t c = n % 45;
       
-      assert( e < sizeof(sm_base42_chars) );
-      assert( c < sizeof(sm_base42_chars) );
-      assert( d < sizeof(sm_base42_chars) );
+      assert( e < sizeof(sm_base45_chars) );
+      assert( c < sizeof(sm_base45_chars) );
+      assert( d < sizeof(sm_base45_chars) );
       
-      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base42_chars[c] );
-      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base42_chars[d] );
-      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base42_chars[e] );
+      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base45_chars[c] );
+      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base45_chars[d] );
+      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base45_chars[e] );
       assert( out_pos <= dest_bytes );
     }else
     {
@@ -255,11 +255,11 @@ std::string base45_encode_bytes( const T &input )
       const uint8_t d = a / 45;
       const uint8_t c = a % 45;
       
-      assert( c < sizeof(sm_base42_chars) );
-      assert( d < sizeof(sm_base42_chars) );
+      assert( c < sizeof(sm_base45_chars) );
+      assert( d < sizeof(sm_base45_chars) );
       
-      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base42_chars[c] );
-      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base42_chars[d] );
+      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base45_chars[c] );
+      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base45_chars[d] );
       assert( out_pos <= dest_bytes );
     }
   }//for( size_t i = 0; i < input_size; i += 2 )
@@ -270,7 +270,7 @@ std::string base45_encode_bytes( const T &input )
   for( const auto val : answer )
   {
     const char c = static_cast<char>( val );
-    assert( std::find( begin(sm_base42_chars), end(sm_base42_chars), c ) != end(sm_base42_chars) );
+    assert( std::find( begin(sm_base45_chars), end(sm_base45_chars), c ) != end(sm_base45_chars) );
   }
 #endif
   
@@ -346,9 +346,7 @@ vector<uint32_t> compress_to_counted_zeros( const vector<uint32_t> &input )
   for( size_t bin = 0; bin < nBin; ++bin )
   {
     const bool isZero = (input[bin] == 0);
-    
-    if( !isZero ) results.push_back( input[bin] );
-    else          results.push_back( 0 );
+    results.push_back( input[bin] );
     
     if( isZero )
     {
@@ -881,7 +879,7 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     {
       for( const char val : url )
       {
-        assert( std::find( begin(sm_base42_chars), end(sm_base42_chars), val ) != end(sm_base42_chars) );
+        assert( std::find( begin(sm_base45_chars), end(sm_base45_chars), val ) != end(sm_base45_chars) );
       }
     }
   }//if( use_base45 || (!use_deflate && !use_bin_chan_data) )
@@ -1230,8 +1228,8 @@ std::vector<UrlSpectrum> spectrum_decode_first_url( const std::string &url, cons
   if( pos == string::npos )
     throw runtime_error( "spectrum_decode_first_url: No ' S:' marker (i.e. the channel counts) found" );
   
-  const string metainfo = " " + info.m_data.substr(0, pos);
-  string counts_str = info.m_data.substr( pos + 3 ); //may have additional meas after the counts
+  const string metainfo = " " + url.substr(0, pos);
+  string counts_str = url.substr( pos + 3 ); //may have additional meas after the counts
   
   // Check to make sure the metainfo doesnt have the between spectrum delimiter
   if( metainfo.find(":0A:") != string::npos ) //"/G\\d/"
@@ -1395,6 +1393,17 @@ std::vector<UrlSpectrum> spectrum_decode_first_url( const std::string &url, cons
     
     const size_t nread = decode_stream_vbyte( counts_str.data(), counts_str.size(), spec.m_channel_data );
     next_spec_info = counts_str.substr( nread );
+    
+    if( next_spec_info.size() > 4 )
+    {
+      if( !SpecUtils::istarts_with(next_spec_info, ":0A:") )
+        throw runtime_error( "Left-over bytes after channel data." );
+      
+      if( !info.m_num_spectra )
+        throw runtime_error( "Multiple spectra in URI when not specified as such" );
+      
+      next_spec_info = next_spec_info.substr(4);
+    }//if( next_spec_info.size() > 4 )
     
     //cout << "next_spec_info.len=" << next_spec_info.length() << endl;
   }//if( info.m_encode_options & EncodeOptions::CsvChannelData ) / else
@@ -1776,6 +1785,20 @@ int dev_code()
         vector<UrlSpectrum> urlspec = to_url_spectra( {foreground[0], background[0]}, model );
         vector<UrlEncodedSpec> encspecs = url_encode_spectra( urlspec, QrErrorCorrection::Low, 0 );
         num_qr_code_two_spec[key].push_back( encspecs.size() );
+        
+        assert( encspecs.size() == 1 );
+        //cout << "Fit two spectra in URL:\n\t" << encspecs[0].m_url << endl << endl << encspecs[0].m_qr_svg << endl << endl << endl;
+        
+        try
+        {
+          vector<UrlSpectrum> decoded = decode_spectrum_urls( { Wt::Utils::urlDecode(encspecs[0].m_url) } );
+          assert( decoded.size() == 2 );
+        }catch( std:: exception &e )
+        {
+          cerr << "Error decoding multiple URLs: " << e.what() << endl;
+          cerr << endl;
+        }
+        
       }catch( std::exception &e )
       {
         num_qr_code_two_spec[key].push_back( 0 );
@@ -1902,7 +1925,7 @@ int dev_code()
         // If we arent gzipping, and not base-45 encoding, and channel data as ascii, then we should make sure this is ascii so the QR code can be generated in ascii mode - however, URL encoding here is wont work, because we will URL encode things again later on...
         //for( const char val : operator_notes )
         //{
-        //  if( std::find( begin(sm_base42_chars), end(sm_base42_chars), val ) == end(sm_base42_chars) )
+        //  if( std::find( begin(sm_base45_chars), end(sm_base45_chars), val ) == end(sm_base45_chars) )
         //  {
         //    unsigned char c = (unsigned char)val;
         //    remark += '%';
