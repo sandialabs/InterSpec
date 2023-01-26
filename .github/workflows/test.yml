@@ -55,8 +55,8 @@ jobs:
         uses: actions/cache@v3
         with:
           path: '${{runner.temp}}/build_tests'
-          #key: ${{ runner.os }}-cmake-config-tests-${{ hashFiles('**/CMakeLists.txt') }}
-          key: ${{ runner.os }}-cmake-config-tests
+          key: ${{ runner.os }}-config-tests-release-${{ hashFiles('**/CMakeLists.txt') }}
+          #key: ${{ runner.os }}-cmake-config-tests
     
       - name: Initial tests cmake config/build
         shell: pwsh

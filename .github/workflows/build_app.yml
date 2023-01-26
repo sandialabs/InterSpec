@@ -42,8 +42,8 @@ jobs:
         uses: actions/cache@v3
         with:
           path: '${{runner.temp}}/build_${{ runner.os }}_wx_app'
-          #key: ${{ runner.os }}-build-wxapp-${{ hashFiles('**/CMakeLists.txt') }}
-          key: ${{ runner.os }}-build-wxapp
+          key: ${{ runner.os }}-build-wxapp-${{ hashFiles('**/CMakeLists.txt') }}
+          #key: ${{ runner.os }}-build-wxapp
     
       - name: Initial wxWidgets config/build
         shell: pwsh
