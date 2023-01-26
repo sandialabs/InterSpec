@@ -73,7 +73,7 @@ jobs:
         shell: pwsh
         working-directory: ${{runner.temp}}/build_tests
         run: |
-          cmake --build . --config Debug
+          cmake --build . --config Debug -j 1
           Copy-Item "${{ github.workspace }}\external_libs\SandiaDecay\sandia.decay.xml" -Destination "${{ github.workspace }}\data"
           cmake --build . --target RUN_TESTS
           New-Item -ItemType Directory -Force -Path TestLogs
