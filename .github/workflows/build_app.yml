@@ -37,19 +37,18 @@ jobs:
       - name: Setup Dev Env 
         uses: ./.github/actions/setup_dev_env
 
-# TODO: Caching the builds still isnt working
       - name: Cache wxWidgets config/build
         id: cache-wx-build
         uses: actions/cache@v3
         with:
           path: '${{runner.temp}}/build_${{ runner.os }}_wx_app'
-          key: ${{ runner.os }}-build-wxapp-${{ hashFiles('**/CMakeLists.txt') }}
+          #key: ${{ runner.os }}-build-wxapp-${{ hashFiles('**/CMakeLists.txt') }}
+          key: ${{ runner.os }}-build-wxapp
     
       - name: Initial wxWidgets config/build
         shell: pwsh
         if: steps.cache-wx-build.outputs.cache-hit != 'true' && runner.os == 'Windows'
         working-directory: ${{runner.temp}}
-
         run: |
           mkdir build_${{ runner.os }}_wx_app
           cd build_${{ runner.os }}_wx_app
