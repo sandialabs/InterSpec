@@ -374,6 +374,7 @@ InterSpecWxApp::InterSpecWxApp() :
 
   void InterSpecWxApp::handle_javascript_error_internal( const std::string &error_msg, const std::string &app_token )
   {
+    std::cout << "JS Error: " << error_msg << std::endl;
     if( sm_test_load_only )
     {
       sm_overide_rc = true;
