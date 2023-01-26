@@ -50,15 +50,29 @@ jobs:
           echo "In Install/bin"
           ls '${{runner.temp}}/install/bin'
 
-# Note: caching the build doesnt work - each checkout sets each files timestamps to current time, so it will all be rebuilt anyway 
-      - name: Run tests
-        id: run-tests
+      - name: Cache config/build
+        id: cache-test-build
+        uses: actions/cache@v3
+        with:
+          path: '${{runner.temp}}/build_tests'
+          #key: ${{ runner.os }}-cmake-config-tests-${{ hashFiles('**/CMakeLists.txt') }}
+          key: ${{ runner.os }}-cmake-config-tests
+    
+      - name: Initial tests cmake config/build
         shell: pwsh
+        if: steps.cache-test-build.outputs.cache-hit != 'true' && runner.os == 'Windows'
         working-directory: ${{runner.temp}}
         run: |
           mkdir build_tests
           cd build_tests
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache "${{ github.workspace }}/target/testing"
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH="${{runner.temp}}/install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_BUILD_TYPE="Debug -DCMAKE_CONFIGURATION_TYPES="Debug" -DCMAKE_CONFIGURATION_TYPES="Debug" -G "Ninja" "${{ github.workspace }}/target/testing"
+
+
+      - name: Run tests
+        id: run-tests
+        shell: pwsh
+        working-directory: ${{runner.temp}}/build_tests
+        run: |
           cmake --build . --config Debug
           Copy-Item "${{ github.workspace }}\external_libs\SandiaDecay\sandia.decay.xml" -Destination "${{ github.workspace }}\data"
           cmake --build . --target RUN_TESTS
