@@ -67,15 +67,14 @@ jobs:
           cd build_tests
           cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH="${{runner.temp}}/install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_BUILD_TYPE="Release" -DCMAKE_CONFIGURATION_TYPES="Release" -DCMAKE_CONFIGURATION_TYPES="Release" -G "Ninja" "${{ github.workspace }}/target/testing"
 
-
       - name: Run tests
         id: run-tests
         shell: pwsh
         working-directory: ${{runner.temp}}/build_tests
+  #      Ordinarily we would  `cmake --build . --target RUN_TESTS` to run tests, but this doesnt work with ninja generator
         run: |
           cmake --build . --config Release
           Copy-Item "${{ github.workspace }}\external_libs\SandiaDecay\sandia.decay.xml" -Destination "${{ github.workspace }}\data"
-#          cmake --build . --target RUN_TESTS
           ninja test
           New-Item -ItemType Directory -Force -Path TestLogs
           Get-ChildItem -Path TestLogs -Include *.* -Recurse | foreach { $_.Delete()}
