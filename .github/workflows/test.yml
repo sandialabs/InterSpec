@@ -75,7 +75,8 @@ jobs:
         run: |
           cmake --build . --config Release
           Copy-Item "${{ github.workspace }}\external_libs\SandiaDecay\sandia.decay.xml" -Destination "${{ github.workspace }}\data"
-          cmake --build . --target RUN_TESTS
+#          cmake --build . --target RUN_TESTS
+          ninja test
           New-Item -ItemType Directory -Force -Path TestLogs
           Get-ChildItem -Path TestLogs -Include *.* -Recurse | foreach { $_.Delete()}
           if (Test-Path "Testing/Temporary/LastTest.log") { Copy-Item "Testing/Temporary/LastTest.log" -Destination TestLogs } else { echo "No LastTest.log avaialable" >> TestLogs/LastTest.log }
