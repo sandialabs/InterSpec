@@ -346,9 +346,9 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   
   callJavaScriptMember( "resizeObserver.observe", jsRef() );
   
-  updateReferncePhotoPeakLines();
+  //updateReferncePhotoPeakLines();
   
-  setHighlightRegionsToClient();
+  //setHighlightRegionsToClient();
   
   setSearchEnergies( m_searchEnergies );
   
@@ -600,25 +600,32 @@ Wt::Signal<double,double> &D3SpectrumDisplayDiv::rightMouseDragg()
 void D3SpectrumDisplayDiv::setReferncePhotoPeakLines( const ReferenceLineInfo &nuc )
 {
   m_referencePhotoPeakLines = nuc;
-  updateReferncePhotoPeakLines();
+  m_renderFlags |= D3RenderActions::UpdateRefLines;
+  scheduleRender();
 }
 
 void D3SpectrumDisplayDiv::persistCurrentReferncePhotoPeakLines()
 {
-  if( m_referencePhotoPeakLines.energies.empty() )
+  const string input_txt = m_referencePhotoPeakLines.m_input.m_input_txt;
+  if( input_txt.empty() )
     return;
   
-  auto pos = std::find( m_persistedPhotoPeakLines.begin(),
-                  m_persistedPhotoPeakLines.end(),
-                  m_referencePhotoPeakLines );
+  ReferenceLineInfo *prev_line = nullptr;
+  for( size_t i = 0; !prev_line && (i < m_persistedPhotoPeakLines.size()); ++i )
+  {
+    if( m_persistedPhotoPeakLines[i].m_input.m_input_txt == input_txt )
+      prev_line = &(m_persistedPhotoPeakLines[i]);
+  }
   
-  if( pos == m_persistedPhotoPeakLines.end()
-     && m_referencePhotoPeakLines.displayLines )
+  if( prev_line )
+    *prev_line = m_referencePhotoPeakLines;
+  else if( m_referencePhotoPeakLines.m_validity == ReferenceLineInfo::InputValidity::Valid )
     m_persistedPhotoPeakLines.push_back( m_referencePhotoPeakLines );
   
   m_referencePhotoPeakLines.reset();
   
-  updateReferncePhotoPeakLines();
+  m_renderFlags |= D3RenderActions::UpdateRefLines;
+  scheduleRender();
 }
 
 void D3SpectrumDisplayDiv::clearAllReferncePhotoPeakLines()
@@ -630,18 +637,25 @@ void D3SpectrumDisplayDiv::clearAllReferncePhotoPeakLines()
     doJavaScript(m_jsgraph + ".clearReferenceLines();");
 }
 
-void D3SpectrumDisplayDiv::updateReferncePhotoPeakLines()
+
+void D3SpectrumDisplayDiv::setReferenceLinesToClient()
 {
   string result = "[";
   const ReferenceLineInfo &showingNuclide = m_referencePhotoPeakLines;
-  bool addComma = !showingNuclide.energies.empty();
   
-  if (addComma)
+  bool addComma = false;
+  if( !showingNuclide.m_ref_lines.empty() )
+  {
     showingNuclide.toJson(result);
+    addComma = true;
+  }
   
-  for (const ReferenceLineInfo &ref : m_persistedPhotoPeakLines) {
-    if (showingNuclide.energies.empty() || ref.parentLabel() != showingNuclide.parentLabel()) {
-      if ( addComma )
+  for (const ReferenceLineInfo &ref : m_persistedPhotoPeakLines)
+  {
+    if( showingNuclide.m_ref_lines.empty()
+        || (ref.m_input.m_input_txt != showingNuclide.m_input.m_input_txt) )
+    {
+      if( addComma )
         result += ",";
       addComma = true;
       ref.toJson(result);
@@ -649,9 +663,16 @@ void D3SpectrumDisplayDiv::updateReferncePhotoPeakLines()
   }
   result += "]";
   
+  const string js =
+  "try{"
+    + m_jsgraph + ".setReferenceLines(" + result + ");"
+  "}catch(e){ console.log('Exception setting ref lines: ' + e ); }";
+  
   if( isRendered() )
-    doJavaScript( "try{" + m_jsgraph + ".setReferenceLines(" + result + ")}catch(e){ console.log('Exception setting ref lines: ' + e ); }");
-}
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//void setReferenceLinesToClient()
 
 
 void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )
@@ -691,6 +712,9 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   if( m_renderFlags.testFlag(UpdateHighlightRegions) )
     setHighlightRegionsToClient();
+  
+  if( m_renderFlags.testFlag(D3RenderActions::UpdateRefLines) )
+    setReferenceLinesToClient();
   
   m_renderFlags = 0;
   

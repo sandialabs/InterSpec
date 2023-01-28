@@ -35,8 +35,6 @@
 #include "SpecUtils/EnergyCalibration.h"
 
 
-//Temporary include - only used to get RAPIDXML_USE_SIZED_INPUT_WCJOHNS macro
-#include "external_libs/SpecUtils/3rdparty/rapidxml/rapidxml.hpp"
 
 class PeakDef;
 class PeakModel;
@@ -134,6 +132,9 @@ public:
   
   virtual std::shared_ptr< ::rapidxml::xml_document<char> > create_2012_N42_xml() const;
   
+  /** Same as #SpecFile::set_energy_calibration, but marks this SpecMeas as modified. */
+  virtual void set_energy_calibration( const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal,
+                                      const std::shared_ptr<const SpecUtils::Measurement> &measurement );
   
   //guessDetectorTypeFromFileName(...): not called by default
   static SpecUtils::DetectorType guessDetectorTypeFromFileName( std::string name );

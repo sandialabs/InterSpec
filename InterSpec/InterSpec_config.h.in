@@ -60,7 +60,6 @@
 
 
 #cmakedefine01 BUILD_AS_UNIT_TEST_SUITE
-#cmakedefine01 BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE
 #cmakedefine01 INCLUDE_ANALYSIS_TEST_SUITE
 #cmakedefine TEST_SUITE_BASE_DIR "@TEST_SUITE_BASE_DIR@"
 #cmakedefine01 BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT
@@ -97,17 +96,15 @@
 #include <float.h>
 #define isnan(x) _isnan(x)
 #define isinf(x) (!_finite(x))
-#define fpu_error(x) (isinf(x) || isnan(x))
 #endif
 
-#if( __cplusplus > 199711L || defined(ANDROID) || defined(__APPLE__) )
-#define IsInf(x) std::isinf(x)
-#define IsNan(x) std::isnan(x)
-#else
-#define IsInf(x) isinf(x)
-#define IsNan(x) isnan(x)
+#ifndef IsInf
+#define IsInf(x) (std::isinf)(x)
 #endif
 
+#ifndef IsNan
+#define IsNan(x) (std::isnan)(x)
+#endif
 
 // Sets up the message handler, assuming it's standalone.
 #define passMessage(message,priority) \

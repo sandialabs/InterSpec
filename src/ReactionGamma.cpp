@@ -133,7 +133,7 @@ string ReactionGamma::Reaction::name() const
     case NeutronAlpha:            answer += "(n,a)";        break;
     case AlphaProton:             answer += "(a,p)";        break;
     case NeutronCapture:          answer += "(n,g)";        break;
-    case NeutronInelasticScatter: answer += "(n,n)";        break;  //XXX should be (n,n') but for web app display...
+    case NeutronInelasticScatter: answer += "(n,n)";        break; // TODO: Add a prime to the second n, the nuclide suggestion code will then need to be updated - the character to add is probably: "\xE2\x80\xB2", "&prime;", "&#8242;" 
     case AnnihilationReaction:    answer =  "Annihilation"; break;
     case NumReactionType:         break;
   }//switch( type )

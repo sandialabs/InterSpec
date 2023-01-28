@@ -1513,6 +1513,51 @@ void ShieldingSelect::setAtomicNumberAndArealDensity( const double an, const dou
 }//void setAtomicNumberAndArealDensity( const double an, const double ad )
 
 
+void ShieldingSelect::setAtomicNumberAndArealDensity( const std::string &an, const std::string &ad )
+{
+  double an_value = 1, ad_value = 0;
+  if( !an.empty() && !(stringstream(an) >> an_value) )
+    throw runtime_error( "setAtomicNumberAndArealDensity: Atomic number not valid number." );
+  
+  if( !ad.empty() && !(stringstream(ad) >> ad_value) )
+    throw runtime_error( "setAtomicNumberAndArealDensity: Areal density not valid number." );
+  
+  if( (an_value < 1.0) || (an_value > 100.0) )
+    throw runtime_error( "setAtomicNumberAndArealDensity: Atomic number value must be between 1 and 100." );
+  
+  if( ad_value < 0.0 || ad_value > GammaInteractionCalc::sm_max_areal_density_g_cm2 )
+    throw runtime_error( "setAtomicNumberAndArealDensity: Areal density value must be between 0 and "
+                        + std::to_string(GammaInteractionCalc::sm_max_areal_density_g_cm2)+ " g/cm2." );
+  
+  if( !m_isGenericMaterial )
+    handleToggleGeneric();
+  
+  m_atomicNumberEdit->setText( an );
+  m_arealDensityEdit->setText( ad );
+  
+  handleMaterialChange();
+}//setAtomicNumberAndArealDensity(...)
+
+
+void ShieldingSelect::setToNoShielding()
+{
+  bool wasEmpty = true;
+  if( m_isGenericMaterial )
+  {
+    wasEmpty = (m_atomicNumberEdit->text().empty() || m_arealDensityEdit->text().empty() || (m_arealDensityEdit->value() == 0.0));
+    
+    m_atomicNumberEdit->setText( "" );
+    m_arealDensityEdit->setText( "" );
+  }else
+  {
+    wasEmpty = m_materialEdit->text().empty();
+    m_materialEdit->setText( "" );
+  }
+  
+  if( !wasEmpty )
+    handleMaterialChange();
+}//void setToNoShielding()
+
 
 WLineEdit *ShieldingSelect::materialEdit()
 {
@@ -2939,7 +2984,7 @@ const Material *ShieldingSelect::material( const std::string &text )
     const Material *answer = m_materialDB->material( text );
     
     cerr << "ShieldingSelect::material(...)\n\tPotential err here, should account for"
-         << " possibly variaed mass fractions!" << endl;
+         << " possibly varied mass fractions!" << endl;
     
     return answer;
   }catch(...)

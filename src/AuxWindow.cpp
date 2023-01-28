@@ -936,10 +936,13 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   {
     if (!m_isPhone)
     {
-      m_collapseIcon->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg"));
-      m_collapseIcon->setStyleClass("helpIconTitleBar Wt-icon");
+      if( m_collapseIcon )
+      {
+        m_collapseIcon->setImageLink( Wt::WLink( "InterSpec_resources/images/help_minimal.svg" ) );
+        m_collapseIcon->setStyleClass( "helpIconTitleBar Wt-icon" );
+      }
 
-      if (m_expandIcon)
+      if( m_expandIcon )
       {
         m_expandIcon->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg"));
         m_expandIcon->setStyleClass("helpIconTitleBar Wt-icon");

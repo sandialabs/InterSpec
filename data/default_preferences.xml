@@ -16,9 +16,7 @@
  <pref name="LogY" type="Boolean">true</pref>
  <pref name="SaveSpectraToDb" type="Boolean">true</pref>
  <pref name="AutoSaveSpectraToDb" type="Boolean">true</pref>
- <pref name="SaveStateToDbOnExit" type="Boolean">false</pref>
- <pref name="SaveStateToDbOnExit_phone" type="Boolean">true</pref>
- <pref name="SaveStateToDbOnExit_tablet" type="Boolean">true</pref>
+ <pref name="CheckForPrevOnSpecLoad" type="Boolean">true</pref>
  <pref name="UseContinuumToHelpFindPeaks" type="Boolean">false</pref>
  <pref name="PeakWidthMinBins" type="Integer">1</pref>
  <pref name="ShowTooltips" type="Boolean">true</pref>

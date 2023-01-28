@@ -122,12 +122,12 @@ namespace PhysicalUnits
   static const double amu = amu_c2/c_squared;
 
 
-  // TODO: consider making user literals, for example to write somethign like 25.0_cm, define:
+  // TODO: consider making user literals, for example to write something like 25.0_cm, define:
   // long double operator"" _cm ( long double dist ){ return dist * PhysicalUnits::cm; }
 
 
   //sm_distanceRegex: a javascript regex string to validate user input distances
-  //  stringToDistance.  Allows only positive values.
+  //  stringToDistance.  Allows positive and negative values.
   extern const char * const sm_distanceRegex;
   extern const char * const sm_distanceUnitOptionalRegex;
   extern const char * const sm_distanceUncertaintyRegex;
@@ -248,11 +248,23 @@ namespace PhysicalUnits
    Currently only accepts units of grams (g), pounds (lb, lbs), ounces (oz), and grains, with prefixes of pico (p), nano (n), micro (u),
    milli (m), and kilo (k).
    
-   Example valid input: "1.2 gram", "1.2 grams", "3g", "5 kg", "5 kilogram", "5 kilo-gram", "2lb".
-   
+   Example valid input: "1.2 gram", "1.2 grams", "3g", "5 kg", "5 kilogram", "5 kilo-gram", "2lb", "2lb 3oz", "2lb - 3oz".
+
    Throws std::runtime_exception on failure.
    */
   double stringToMass( const std::string &str, const double gram_def = gram );
+
+
+  /** Converts a string into an energy in keV.
+    
+    Currently only accepts units of eV, keV, or MeV.
+
+    Example valid input: "185 keV", "1.011MeV", "2614 keV - 511 keV".
+
+    Throws std::runtime_exception on failure.
+  */
+  double stringToEnergy( const std::string &str, const double keV_def = keV );
+
 
   /** Prints the passed in value and uncertainty in a form like "1.23 \xC2\xB1 0.123", where \xC2\xB1 is the plus-or-minus character.
    Output will use scientific notation decimals, depending on fewest number of characters (i.e., the '%g' printf flag).

@@ -217,13 +217,13 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
       {
         //const double meas_rel_eff = info.m_counts / (info.m_source_gammas[i].m_yield * rel_act);
         
-        snprintf( buffer, sizeof(buffer), "%s{nuc: \"%s\", br: %1.6G}",
+        snprintf( buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G}",
                  (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield );
       }else
       {
         const double rel_act = pos->second.first;
         src_counts += rel_act * line.m_yield;
-        snprintf( buffer, sizeof(buffer), "%s{nuc: \"%s\", br: %1.6G, rel_act: %1.6G}",
+        snprintf( buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G, \"rel_act\": %1.6G}",
                  (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield, rel_act );
       }
       
@@ -250,12 +250,14 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
     }
     
     snprintf( buffer, sizeof(buffer),
-             "%s{energy: %.2f, counts: %1.7g, counts_uncert: %1.7g,"
-             " eff: %1.6g, eff_uncert: %1.6g, nuc_info: [%s]}",
+             "%s{\"energy\": %.2f, \"counts\": %1.7g, \"counts_uncert\": %1.7g,"
+             " \"eff\": %1.6g, \"eff_uncert\": %1.6g, \"nuc_info\": ",
              (njson_entries ? ", " : ""), peak.m_energy, peak.m_counts, peak.m_counts_uncert,
-             eff, eff_uncert, isotopes_json.c_str() );
+             eff, eff_uncert );
     
     rel_eff_plot_values << buffer;
+    rel_eff_plot_values << "[" << isotopes_json.c_str() << "]}";
+
     njson_entries += 1;
   }//for( size_t index = 0; index < input_peaks.size(); ++index )
   

@@ -39,21 +39,6 @@ endif( hasParent )
 
 
 option(
-    BUILD_AS_UNIT_TEST_SUITE
-    "Builds unit tests as well the analysis tests (aka end-to-end tests)"
-    OFF
-)
-option(
-    BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE
-    "Compiles so executable only does offline testing of the user test states in the database (e.g. end-to-end testing)"
-    OFF
-)
-set(TEST_SUITE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/testing"
-    CACHE STRING
-    "Path to directory that contains the \"analysis_tests\" directory for saving N42 test states.  Leave empty for CWD."
-)
-
-option(
     BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT
     "Build executable for use while testing new code, not running InterSpec"
     OFF
@@ -178,7 +163,7 @@ endif()
 # Make a cached variable avaiable to parent cmake projects
 set( INTERSPEC_VERSION "${PROJECT_VERSION}" CACHE STRING "InterSpec version" )
 
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+if(NOT CMAKE_BUILD_TYPE)
     #Default to debug
     SET(CMAKE_BUILD_TYPE Debug CACHE STRING
         "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel."
@@ -190,19 +175,8 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
         CACHE CMAKE_BUILD_TYPE
         PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo"
     )
-endif(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+endif(NOT CMAKE_BUILD_TYPE)
 
-if(BUILD_AS_UNIT_TEST_SUITE)
-    set(BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE ON)
-endif(BUILD_AS_UNIT_TEST_SUITE)
-
-if(BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE)
-    set(INCLUDE_ANALYSIS_TEST_SUITE ON)
-endif(BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE)
-
-if(INCLUDE_ANALYSIS_TEST_SUITE)
-    set(USE_DB_TO_STORE_SPECTRA ON)
-endif(INCLUDE_ANALYSIS_TEST_SUITE)
 
 if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
     set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
@@ -210,16 +184,6 @@ if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
 
-if(BUILD_AS_UNIT_TEST_SUITE)
-    set(BUILD_AS_LOCAL_SERVER OFF)
-    set(USE_ENERGY_VS_TIME_PLOTS OFF)
-    set(USE_DB_TO_STORE_SPECTRA ON)
-    set(INCLUDE_ANALYSIS_TEST_SUITE ON)
-    set(TRY_TO_STATIC_LINK ON)
-    set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
-    set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
-    set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
-endif(BUILD_AS_UNIT_TEST_SUITE)
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT)
@@ -248,9 +212,10 @@ endif()
 
 
 #try to link to static libraries whenever possible
-if(TRY_TO_STATIC_LINK)
+if( TRY_TO_STATIC_LINK )
     if(WIN32)
-        SET(CMAKE_FIND_LIBRARY_SUFFIXES .lib .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
+        SET( ZLIB_USE_STATIC_LIBS "ON" )
+        SET(CMAKE_FIND_LIBRARY_SUFFIXES .lib ${CMAKE_FIND_LIBRARY_SUFFIXES})
     else(WIN32)
         SET(CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
     endif(WIN32)
@@ -511,8 +476,15 @@ if(USE_DETECTION_LIMIT_TOOL)
 endif(USE_DETECTION_LIMIT_TOOL)
 
 if(USE_QR_CODES)
-  list( APPEND sources external_libs/QR-Code-generator/cpp/qrcodegen.cpp src/QrCode.cpp )
-  list( APPEND headers external_libs/QR-Code-generator/cpp/qrcodegen.hpp InterSpec/QrCode.h )
+  list( APPEND sources external_libs/QR-Code-generator/cpp/qrcodegen.cpp 
+        src/QrCode.cpp 
+        src/QRSpectrum.cpp
+  )
+
+  list( APPEND headers external_libs/QR-Code-generator/cpp/qrcodegen.hpp 
+        InterSpec/QrCode.h 
+        InterSpec/QRSpectrum.h 
+  )
 endif(USE_QR_CODES)
 
 if(USE_SPECRUM_FILE_QUERY_WIDGET)
@@ -622,7 +594,6 @@ add_subdirectory(external_libs/SpecUtils)
 add_subdirectory(external_libs/SandiaDecay)
 add_subdirectory(external_libs/muparserx-4.0.7)
 
-
 add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers})
 
 
@@ -662,9 +633,6 @@ if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
     target_link_libraries(InterSpecLib PUBLIC pugixml)
 endif()
 
-if( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE OR BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
-    target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
-endif()
 
 if(USE_MYSQL_DB EQUAL USE_SQLITE3_DB)
     MESSAGE(FATAL_ERROR "Exactly one type of database (MySQL or SQLITE3) must be chosen")
@@ -686,7 +654,7 @@ target_include_directories( InterSpecLib
 if( InterSpec_FETCH_DEPENDENCIES )
   target_link_libraries( InterSpecLib
     PUBLIC
-      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array
+      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc
       # Boost::signals2 Boost::asio Boost::multi_index
       wt
 #      wttest
@@ -723,12 +691,6 @@ else(WIN32)
         ${Wt_DBOSQLITE3_LIBRARY}
     )
 endif(WIN32)
-
-
-
-if(INCLUDE_ANALYSIS_TEST_SUITE)
-  target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
-endif(INCLUDE_ANALYSIS_TEST_SUITE)
 
 
 if( USE_REL_ACT_TOOL )
@@ -806,15 +768,6 @@ if(TRY_TO_STATIC_LINK)
         #set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} "-static -pthread -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
     endif(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))
 endif(TRY_TO_STATIC_LINK)
-
-if(BUILD_AS_UNIT_TEST_SUITE)
-    target_link_libraries(
-        InterSpecLib
-        PUBLIC
-        ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
-    )
-endif(BUILD_AS_UNIT_TEST_SUITE)
-
 
 
 if(Wt_DBOSQLITE3_LIBRARY)
@@ -935,6 +888,7 @@ foreach(_dir ${SUPPORT_DIRECTORIES})
     endif(WIN32)
 endforeach()
 
+# TODO: I think we can get rid of this next part, but need to modify in the code a little bit probably
 if(INCLUDE_ANALYSIS_TEST_SUITE)
     if(WIN32)
         #        file(COPY ${PROJECT_SOURCE_DIR}/testing/analysis_tests DESTINATION ${PROJECT_BINARY_DIR}/analysis_tests )

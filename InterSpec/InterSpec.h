@@ -174,7 +174,7 @@ public:
    */
   static std::string staticDataDirectory();
  
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP  )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   /** Sets the directory were we can write write the user preference database
    file (if using sqlite3); also the location will search for extra detector
    response functions.
@@ -206,13 +206,21 @@ public:
 #endif //#if( SpecUtils_ENABLE_D3_CHART )
   
   
-  //userOpenFileFromFilesystem(): appropriate to call if the user opens a file
-  //  by double-clicking it in the finder.  Will check if the file might be
-  //  a background to the current foreground, and if so, prompt the user how
-  //  they would like to open it; if the file probably isnt a background to
-  //  the current foreground, then the files is opened as foreground.  Returns
-  //  status of if the file could be parsed or not.
+  /** Appropriate to call if the user opens a file by double-clicking it in the finder.
+  
+   Parses the file, and then calls #userOpenFile, so will behave as that function describes.
+  
+   */
   bool userOpenFileFromFilesystem( const std::string filepath, std::string displayFileName = "" );
+  
+  /** Function to call when the user opens a spectrum file using the operating system (e.g.,
+   double click on file, open a QR code or URL, etc).
+   
+   Checks if a background to the current foreground, and if so, prompt the user how
+   they would like to open it; if the file probably isnt a background to the current foreground,
+   then the files is opened as foreground. 
+   */
+  void userOpenFile( std::shared_ptr<SpecMeas> meas, std::string displayFileName = "" );
   
   //promptUserHowToOpenFile(): method called by userOpenFileFromFilesystem()
   //  and when the file could possibly be a background to the current foreground.
@@ -1468,7 +1476,7 @@ protected:
   static std::mutex sm_staticDataDirectoryMutex;
   static std::string sm_staticDataDirectory;
   
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP  )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   static std::mutex sm_writableDataDirectoryMutex;
   static std::string sm_writableDataDirectory;
 #endif  //if( not a webapp )

@@ -230,7 +230,7 @@ extern void android_download_workaround( Wt::WResource *resource, std::string de
 std::mutex InterSpec::sm_staticDataDirectoryMutex;
 std::string InterSpec::sm_staticDataDirectory = "data";
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
 std::mutex InterSpec::sm_writableDataDirectoryMutex;
 std::string InterSpec::sm_writableDataDirectory = "";
 #endif  //if( not a webapp )
@@ -1137,6 +1137,8 @@ void InterSpec::setStaticDataDirectory( const std::string &dir )
   if( !SpecUtils::is_file(decay_xml_file) )
     throw runtime_error( "InterSpec::setStaticDataDirectory(): " + dir + " does not contain a sandia.decay.xml file." );
   DecayDataBaseServer::setDecayXmlFile( decay_xml_file );
+  
+  IsotopeId::setDataDirectory( dir );
 }//void setStaticDataDirectory( const std::string &dir )
 
 
@@ -1146,7 +1148,7 @@ std::string InterSpec::staticDataDirectory()
   return sm_staticDataDirectory;
 }
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
 void InterSpec::setWritableDataDirectory( const std::string &dir )
 {
   std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
@@ -2194,7 +2196,7 @@ void InterSpec::setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
   const PeakModel::PeakShrdPtr &p = m_peakModel->peak(index);
   
   //Reactions not implemented yet.
-  if( !p || !p->hasSourceGammaAssigned() || p->reaction() )
+  if( !p || !p->hasSourceGammaAssigned() )
     return;
   
   //Check if source is same as showing reference line, if so, set peak color to that.
@@ -2202,16 +2204,44 @@ void InterSpec::setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
   vector<ReferenceLineInfo> refLines;
   if( m_referencePhotopeakLines )
     refLines = m_referencePhotopeakLines->showingNuclides();
+  
+  // Try for a simple match - that is if the ref lines were for a nuclide, element, or reaction
   for( const auto &lines : refLines )
   {
-    if( (lines.nuclide || lines.element )
-       && lines.nuclide==p->parentNuclide()
-       && lines.element==p->xrayElement() )
+    if( (lines.m_nuclide && (lines.m_nuclide==p->parentNuclide()))
+       || (lines.m_element && (lines.m_element==p->xrayElement()))
+       || (p->reaction() && lines.m_reactions.count(p->reaction()))
+      )
     {
       index = m_peakModel->index( index.row(), PeakModel::kPeakLineColor );
-      m_peakModel->setData( index, boost::any(WString(lines.lineColor.cssText())) );
+      m_peakModel->setData( index, boost::any(WString(lines.m_input.m_color.cssText())) );
+      
+      return;
     }
   }//for( const auto &lines : refLines )
+  
+  // Lets try check each of the lines
+  for( const auto &lines : refLines )
+  {
+    if( lines.m_nuclide || lines.m_element || !lines.m_reactions.empty() )
+      continue;
+    
+    for( const ReferenceLineInfo::RefLine &line : lines.m_ref_lines )
+    {
+      if( (line.m_parent_nuclide && (line.m_parent_nuclide == p->parentNuclide()))
+         || (line.m_element && (line.m_element == p->xrayElement()))
+         || (line.m_reaction && (line.m_reaction == p->reaction()))
+         )
+      {
+        index = m_peakModel->index( index.row(), PeakModel::kPeakLineColor );
+        m_peakModel->setData( index, boost::any(WString(lines.m_input.m_color.cssText())) );
+        
+        return;
+      }
+    }//for( const ReferenceLineInfo::RefLine &line : lines.m_ref_lines )
+      
+  }//for( const auto &lines : refLines )
+  
 }//void setPeakNuclide(...)
 
 
@@ -3226,7 +3256,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       //All of this is really ugly and horrible, and should be improved!
       
 //      const bool autosave
-//        = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
+//        = InterSpecUser::preferenceValue<bool>( "CheckForPrevOnSpecLoad", this );
 //      if( autosave )
 //      {
 //      Its actually to late, HEAD will be set to the tag version even if the
@@ -4342,7 +4372,7 @@ void InterSpec::finishStoreStateInDb( WLineEdit *nameedit,
       throw runtime_error( "CWD didnt contain a 'analysis_tests' folder as expected" );
     
     const int offset = wApp->environment().timeZoneOffset();
-    auto localtime = std::chrono::system_clock::now();
+    auto localtime = chrono::time_point_cast<chrono::microseconds>(chrono::system_clock::now());
     localtime += std::chrono::seconds(60*offset);
     
     string timestr = SpecUtils::to_iso_string( localtime );
@@ -4484,7 +4514,7 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
     }
     
     const int offset = wApp->environment().timeZoneOffset();
-    auto localtime = std::chrono::system_clock::now();
+    auto localtime = chrono::time_point_cast<chrono::microseconds>(chrono::system_clock::now());
     localtime += std::chrono::seconds(60*offset);
     
     const string timestr = SpecUtils::to_iso_string( localtime );
@@ -4791,6 +4821,7 @@ void InterSpec::stateSaveAs()
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );
+  window->disableCollapse(); //Not sure why the property flags dont get this
   WGridLayout *layout = window->stretcher();
     
   WLineEdit *edit = new WLineEdit();
@@ -5355,7 +5386,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
           break;
           
         case SpecUtils::SaveSpectrumAsType::N42_2006:
-          tooltip = "A simple spectromiter style 2006 N42 XML file will be"
+          tooltip = "A simple spectrometer style 2006 N42 XML file will be"
           " produced which contains all records in the current file.";
           break;
           
@@ -5427,6 +5458,11 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
         HelpSystem::attachToolTipOn( item, tooltip, showInstantly,
                                     HelpSystem::ToolTipPosition::Right );
     }//for( loop over file types )
+    
+#if( USE_QR_CODES )
+    item = m_downloadMenus[static_cast<int>(i)]->addMenuItem( "QR Code / URL" );
+    item->triggered().connect( boost::bind( &SpecMeasManager::displaySpectrumQrCode, m_fileManager, i ) );
+#endif
     
     m_downloadMenus[static_cast<int>(i)]->disable();
     if( m_downloadMenus[static_cast<int>(i)]->parentItem() )
@@ -5645,7 +5681,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
     string refNucXmlState;
     if( m_referencePhotopeakLines
-        && (!m_referencePhotopeakLines->currentlyShowingNuclide().empty()
+        && ((m_referencePhotopeakLines->currentlyShowingNuclide().m_validity == ReferenceLineInfo::InputValidity::Valid)
              || m_referencePhotopeakLines->persistedNuclides().size()) )
     {
       m_referencePhotopeakLines->serialize( refNucXmlState );
@@ -6804,6 +6840,16 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this );
   
 
+  const bool autoCheckOnLoad = InterSpecUser::preferenceValue<bool>( "CheckForPrevOnSpecLoad", this );
+  cb = new WCheckBox( " Check for prev work" );
+  cb->setChecked( autoStore );
+  item = subPopup->addWidget( cb );
+  HelpSystem::attachToolTipOn( item, "When a spectrum file is loaded, check if work (peak fits,"
+                               " activity fits, etc) has previously done on the same file.",
+                              showToolTips );
+  InterSpecUser::associateWidget( m_user, "CheckForPrevOnSpecLoad", cb, this );
+  
+  
   if( !isMobile() )
   {
     WCheckBox *checkbox = new WCheckBox( " Show tooltips" );
@@ -7194,24 +7240,24 @@ void InterSpec::createDecayInfoWindow()
   
   if( m_referencePhotopeakLines )
   {
-    const ReferenceLineInfo &nuc
-                          = m_referencePhotopeakLines->currentlyShowingNuclide();
-    if( nuc.nuclide )
+    const ReferenceLineInfo &nuc = m_referencePhotopeakLines->currentlyShowingNuclide();
+    if( nuc.m_nuclide )
     {
       m_decayInfoWindow->clearAllNuclides();
       
-      //\todo We could do a little better and check the Shielding/Source Fit
-      //  widget and grab those activities (and ages) if they match
+      // TODO: We could do a little better and check the Shielding/Source Fit widget and grab those activities (and ages) if they match
       
       const bool useBq = InterSpecUser::preferenceValue<bool>("DisplayBecquerel", InterSpec::instance());
       const double act = useBq ? PhysicalUnits::MBq : (1.0E-6 * PhysicalUnits::curie);
       const string actStr = useBq ? "1 MBq" : "1 uCi";
-
-      m_decayInfoWindow->addNuclide( nuc.nuclide->atomicNumber,
-                         nuc.nuclide->massNumber,
-                         nuc.nuclide->isomerNumber,
+      double age = nuc.m_nuclide->halfLife;
+      try{ age = PhysicalUnits::stringToTimeDuration( nuc.m_input.m_age ); }catch(exception &){}
+      
+      m_decayInfoWindow->addNuclide( nuc.m_nuclide->atomicNumber,
+                         nuc.m_nuclide->massNumber,
+                         nuc.m_nuclide->isomerNumber,
                          1.0*PhysicalUnits::microCi, !useBq,
-                         0.0, actStr, 5.0*nuc.age );
+                         0.0, actStr, 5.0*age );
     }//if( nuc.nuclide )
   }//if( m_referencePhotopeakLines )
 }//void createDecayInfoWindow()
@@ -8189,9 +8235,13 @@ void InterSpec::showGammaLinesWindow()
   
   if( m_referencePhotopeakLines )
   {
-    if( !m_referencePhotopeakLines->currentlyShowingNuclide().empty()
+    const ReferenceLineInfo &lines = m_referencePhotopeakLines->currentlyShowingNuclide();
+    
+    if( (lines.m_validity == ReferenceLineInfo::InputValidity::Valid)
         || m_referencePhotopeakLines->persistedNuclides().size() )
-    m_referencePhotopeakLines->serialize( xml_state );
+    {
+      m_referencePhotopeakLines->serialize( xml_state );
+    }
     
     m_referencePhotopeakLines->clearAllLines();
     delete m_referencePhotopeakLines;
@@ -8266,7 +8316,8 @@ void InterSpec::closeGammaLinesWindow()
   string xmlstate;
   if( m_referencePhotopeakLines )
   {
-    if( !m_referencePhotopeakLines->currentlyShowingNuclide().empty()
+    const ReferenceLineInfo &lines = m_referencePhotopeakLines->currentlyShowingNuclide();
+    if( (lines.m_validity == ReferenceLineInfo::InputValidity::Valid)
          || m_referencePhotopeakLines->persistedNuclides().size() )
       m_referencePhotopeakLines->serialize( xmlstate );
     m_referencePhotopeakLines->clearAllLines();
@@ -9615,6 +9666,48 @@ void InterSpec::promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
 }//void promptUserHowToOpenFile(...)
 
 
+void InterSpec::userOpenFile( std::shared_ptr<SpecMeas> meas, std::string displayFileName )
+{
+  assert( meas );
+  if( !meas )
+    throw runtime_error( "Invalid spectrum file." );
+  
+  if( !m_fileManager )  //shouldnt ever happen.
+    throw runtime_error( "Internal logic error, no valid m_fileManager" );
+   
+  auto header = std::make_shared<SpectraFileHeader>( m_user, true, this );
+  header->setFile( displayFileName, meas );
+  
+  bool couldBeBackground = true;
+  if( !m_dataMeasurement || !meas
+     || meas->uuid() == m_dataMeasurement->uuid() )
+  {
+    couldBeBackground = false;
+  }else
+  {
+    couldBeBackground &= (m_dataMeasurement->instrument_id() == meas->instrument_id());
+    couldBeBackground &= (m_dataMeasurement->num_gamma_channels() == meas->num_gamma_channels());
+  }//if( !m_dataMeasurement || !meas )
+  
+  //Should we check if this meas has the same UUID as the second of background?
+  
+  if( couldBeBackground )
+  {
+    promptUserHowToOpenFile( meas, header );
+    return;
+  }else
+  {
+    cout << "Will load file " << displayFileName << " requested to be loaded at "
+    << WDateTime::currentDateTime().toString(DATE_TIME_FORMAT_STR)
+    << endl;
+    
+    SpectraFileModel *fileModel = m_fileManager->model();
+    const int row = fileModel->addRow( header );
+    m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+    return;
+  }
+}//void InterSpec::userOpenFile( std::shared_ptr<SpecMeas> meas, std::string displayFileName )
+
 
 bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string displayFileName  )
 {
@@ -9623,47 +9716,21 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
     if( displayFileName.empty() )
       displayFileName = SpecUtils::filename(path);
     
+    assert( m_fileManager );
     if( !m_fileManager )  //shouldnt ever happen.
       throw runtime_error( "Internal logic error, no valid m_fileManager" );
     
     if( !SpecUtils::is_file(path) )
       throw runtime_error( "Could not access file '" + path + "'" );
   
-    auto header = std::make_shared<SpectraFileHeader>( m_user, true, this );
-    auto meas = header->setFile( displayFileName, path, SpecUtils::ParserType::Auto );
-  
-    if( !meas )
+    auto meas = make_shared<SpecMeas>();
+    const bool success = meas->load_file( path, SpecUtils::ParserType::Auto, displayFileName );
+    
+    if( !success )
       throw runtime_error( "Failed to decode file" );
     
-    bool couldBeBackground = true;
-    if( !m_dataMeasurement || !meas
-        || meas->uuid() == m_dataMeasurement->uuid() )
-    {
-      couldBeBackground = false;
-    }else
-    {
-      couldBeBackground &= (m_dataMeasurement->instrument_id() == meas->instrument_id());
-      couldBeBackground &= (m_dataMeasurement->num_gamma_channels() == meas->num_gamma_channels());
-    }//if( !m_dataMeasurement || !meas )
-
-    //Should we check if this meas has the same UUID as the second of background?
-    
-    if( couldBeBackground )
-    {
-      promptUserHowToOpenFile( meas, header );
-      return true;
-    }else
-    {
-//      return m_fileManager->loadFromFileSystem( path, SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::Auto );
-      cout << "Will load file " << path << " requested to be loaded at "
-      << WDateTime::currentDateTime().toString(DATE_TIME_FORMAT_STR)
-      << endl;
-      
-      SpectraFileModel *fileModel = m_fileManager->model();
-      const int row = fileModel->addRow( header );
-      m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
-      return true;
-    }
+    userOpenFile( meas, displayFileName );
+    return true;
   }catch( std::exception &e )
   {
     cerr << "Caught exception '" << e.what() << "' when trying to load '"
@@ -9678,6 +9745,13 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
 
 void InterSpec::handleAppUrl( std::string url )
 {
+  if( SpecUtils::istarts_with(url, "RADDATA://G0/")
+     || SpecUtils::istarts_with(url, "interspec://G0/") )
+  {
+    m_fileManager->handleSpectrumUrl( url );
+    return;
+  }
+  
   //Get rid of (optional) leading "interspec://", so URL will look like: 'drf/specify?v=1&n=MyName&"My other Par"'
   const string scheme = "interspec://";
   if( SpecUtils::istarts_with(url, scheme) )

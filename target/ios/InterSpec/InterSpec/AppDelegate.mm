@@ -136,7 +136,8 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
   if( ![url isFileURL] ){
     NSLog(@"Try to handle non-file URL with scheme '%@'.", [url scheme] );
     
-    if ([[url scheme] caseInsensitiveCompare:@"interspec"] == NSOrderedSame) {
+    if( ([[url scheme] caseInsensitiveCompare:@"interspec"] == NSOrderedSame)
+       || ([[url scheme] caseInsensitiveCompare:@"raddata"] == NSOrderedSame) ) {
       return [_viewController handleURL: url];
     }
     

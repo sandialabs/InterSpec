@@ -2759,7 +2759,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const PeakDef::SourceGammaType gamma_type = gamma.gamma_type;
         
         assert( transition || (gamma_type == PeakDef::SourceGammaType::AnnihilationGamma) );
-        assert( !transition || (fabs(transition->products[transition_index].energy - energy) < 0.0001) );
+        assert( !transition || (gamma_type == PeakDef::SourceGammaType::AnnihilationGamma) || (fabs(transition->products[transition_index].energy - energy) < 0.0001) );
 
         // Filter out zero-amplitude gammas
         // TODO: - come up with more intelligent lower bound of gamma rate to bother wit

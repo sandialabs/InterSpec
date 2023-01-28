@@ -270,7 +270,7 @@ public:
   void setShowPeakLabel( int peakLabel, bool show );
   bool showingPeakLabel( int peakLabel ) const;
   
-#if( BUILD_AS_UNIT_TEST_SUITE || BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE || BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
+#if( BUILD_AS_UNIT_TEST_SUITE || BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
   SpectrumDataModel *model(){ return m_model; }
 #endif
   
@@ -278,7 +278,6 @@ public:
   void setReferncePhotoPeakLines( const ReferenceLineInfo &nuc );
   void persistCurrentReferncePhotoPeakLines();
   void clearAllReferncePhotoPeakLines();
-  void updateReferncePhotoPeakLines();
   
   //setShowRefLineInfoForMouseOver(): set wether or not the text information
   //  should be shown for the line that the mouse is currently over.  Default is
@@ -326,6 +325,9 @@ protected:
   
   void setForegroundPeaksToClient();
   
+  void setReferenceLinesToClient();
+  
+  
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   /** Flags */
@@ -339,7 +341,9 @@ protected:
     
     ResetXDomain = 0x10,
     
-    UpdateHighlightRegions = 0x20
+    UpdateHighlightRegions = 0x20,
+    
+    UpdateRefLines = 0x40
     
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions

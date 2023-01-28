@@ -327,6 +327,16 @@ public:
    */
   void setAtomicNumberAndArealDensity( const double an, const double ad );
   
+  /** Similar to other variant of this function, but sets the display string
+   to the value passed in so exact value is preserved.
+   
+   Strings must either be blank, or valid numbers.
+   Areal density is in units of g/cm2 (i.g., between 0 and 500).
+   */
+  void setAtomicNumberAndArealDensity( const std::string &an, const std::string &ad );
+  
+  void setToNoShielding();
+  
   //Simple accessors
   Wt::WLineEdit *materialEdit();
   Wt::WLineEdit *thicknessEdit();

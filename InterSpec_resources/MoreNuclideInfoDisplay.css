@@ -5,5 +5,127 @@
 
 .MoreNuclideInfoDisplay
 {
-    
+  text-align: left;
+  width: min(400px, 40vw);
+}
+
+.MoreNuclideInfoDisplay a
+{
+  color: blue;
+  cursor: pointer;
+} 
+
+.MoreNuclideInfoDisplay .MoreNucInfoTitle
+{
+  text-align: center;
+  font-weight: 700;
+  font-size: x-large;
+  user-select: none;
+  margin-top: 10px;
+}
+
+.MoreNuclideInfoDisplay .MoreNucInfoPrev
+{
+  margin-bottom: 5px;
+}
+
+.MoreNuclideInfoDisplay .MoreNucInfoTitle:first-letter
+{
+  text-transform: uppercase;
+}
+
+.MoreNuclideInfoDisplay .MoreNucInfoSection
+{
+  margin-top: 5px;
+  margin-bottom: 10px;
+}
+
+.MoreNuclideInfoDisplay .MoreNucInfoSection .MoreNucInfoSubTitle
+{
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.MoreNuclideInfoDisplay .MoreNucInfoSection .MoreNucInfoSectionContent
+{
+  padding-left: 15px;
+}
+
+.MoreNuclideInfoDisplay table
+{
+  white-space: nowrap;
+  /* border: 1px solid #e1e1e1; */
+}
+
+.MoreNuclideInfoDisplay table > thead
+{
+  /* border-bottom: 1px solid #e1e1e1; */
+}
+
+.MoreNuclideInfoDisplay table > tbody > tr > th,
+.MoreNuclideInfoDisplay table > thead > tr > th
+{
+  padding-right: 7px;
+  padding-bottom: 2px;
+  vertical-align: middle;
+}
+
+.MoreNuclideInfoDisplay table > tbody > tr > td
+{
+  vertical-align: middle;
+  padding-right: 7px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.MoreNuclideInfoDisplay .MoreNucInfoRelatedList
+{
+
+}
+
+/* Render unordered lists as CSV lines - this is for the associated nuclides list */
+.MoreNuclideInfoDisplay ul
+{
+  display: inline;
+  list-style: none;
+  padding-inline-start: 0px;
+}
+
+.MoreNuclideInfoDisplay ul > li
+{
+  display: inline;
+}
+
+.MoreNuclideInfoDisplay ul > li:after
+{
+  content: ", ";
+}
+
+.MoreNuclideInfoDisplay ul > li:last-child:after
+{
+  content: "";
+}
+
+/* Make half-life text in list of associated nuclides a little smaller*/
+.MoreNuclideInfoDisplay .HalfLife
+{
+  font-size: xx-small;
+  margin-left: 3px;
+}
+
+/* Get rid of large leading whitespace for analyst notes */
+.MoreNuclideInfoDisplay .MoreNucInfoSection .MoreNucInfoSectionContent > p:first-child 
+{
+  margin-block-start: 0px;
+}
+
+.MoreNuclideInfoDisplay button.with-label.Wt-btn.LightButton
+{
+  color: blue;
+}
+
+.MoreNuclideInfoDisplay button.DecayBtn
+{
+  margin-top: 5px;
+  margin-left: 15px;
 }

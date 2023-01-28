@@ -59,9 +59,12 @@ namespace PhysicalUnits
   
 const char * const sm_distanceRegex
     = "^(((\\s*[+\\-]?\\s*0\\s*)|((" POS_DECIMAL_REGEX ")\\s*" DIST_UNITS_REGEX ")+\\s*))+$";
-const char * const sm_distanceUnitOptionalRegex
-    = "^(((" POS_DECIMAL_REGEX ")\\s*(" DIST_UNITS_REGEX ")?)+\\s*)+$";
-  
+const char * const sm_distanceUnitOptionalRegex = "^("
+"(((\\s*" DECIMAL_REGEX ")\\s*" DIST_UNITS_REGEX ")+\\s*)"
+"|(\\s*" DECIMAL_REGEX "\\s*)"
+")$";
+
+
 const char * const sm_distanceUncertaintyRegex
    = "^\\s*((" POS_DECIMAL_REGEX "(\\(\\s*" PLUS_MINUS_REGEX POS_DECIMAL_REGEX "\\s*\\s*\\)\\s*)?" DIST_UNITS_REGEX ")"
      "|(" POS_DECIMAL_REGEX "(\\s*" PLUS_MINUS_REGEX POS_DECIMAL_REGEX "\\s*)?" DIST_UNITS_REGEX ")"
@@ -92,22 +95,22 @@ const char * const sm_activityUnitOptionalRegex
             = "^(\\s*" POS_DECIMAL_REGEX "\\s*"
               "(?:(?:" METRIC_PREFIX_UNITS ")?"
               "[\\s-]*"
-              "([Bb][Qq]|[Bb][Ee][Cc][Qq][Uu][Ee][Rr][Ee][Ll]|[Cc][Ii]|[Cc][Uu]|[Cc][Uu][Rr][Ii][Ee]))?)?"
+              "([Bb][Qq]|[Bb][Ee][Cc][Qq][Uu][Ee][Rr][Ee][Ll]|[Cc][Ii]|[Cc]|[Cc][Uu]|[Cc][Uu][Rr][Ii][Ee]))?)?"
               "\\s*$";
   
 const char * const sm_timeDurationRegex
-  = "\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)|(" DURATION_REGEX "\\s*)\\s*)|(" ISO_8601_DURATION_REGEX "\\s*)+";
+  = "^(\\s*\\+?\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)|(" DURATION_REGEX "\\s*)\\s*)|(" ISO_8601_DURATION_REGEX "\\s*))+$";
   
 // Note: (at least as of Wt 3.7.1) the RegEx validator expects the first match group to match the
-//       entire string, not just a subset - so fir example with an input string of "2.5 hl", we need
+//       entire string, not just a subset - so for example with an input string of "2.5 hl", we need
 //       to keep this from matching with "2.5 h" (which given the half-live optional component is
 //       last in the regex, will happen), so we force the the regex to have start at beginning of
 //       input string, and go to the end of the string, which I guess we should do for any of the
 //       WRegExpValidator's.
 const char * const sm_timeDurationHalfLiveOptionalRegex
-= "^\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
+= "^(\\s*\\+?\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
   "|(" DURATION_REGEX "\\s*)"
-  "|(" POS_DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*))+$";
+  "|(" POS_DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*)))+$";
 
 const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex
    = "^\\s*((" DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
@@ -667,8 +670,7 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
     
     string durstr = str.substr( startpos, endpos-startpos );
     str = str.substr(0,startpos) + str.substr(endpos);
-    
-    time_dur += SpecUtils::delimited_duration_string_to_seconds( str );
+    time_dur += SpecUtils::delimited_duration_string_to_seconds( durstr );
     
     //SpecUtils::trim( str );
     //boost::posix_time::time_duration dur;
@@ -868,7 +870,7 @@ double stringToActivity( std::string str, double bq_def )
     {
       char buffer[512];
       snprintf( buffer, sizeof(buffer),
-               "stringToActivity(..) regex yeilds %i matches instead of 6",
+               "stringToActivity(..) regex yields %i matches instead of 6",
                 static_cast<int>(mtch.size()) );
       log_developer_error( __func__, buffer );
     }
@@ -886,7 +888,7 @@ double stringToActivity( std::string str, double bq_def )
     
     const double value = std::stod( number );
     double unit = 0.0;
-
+    
     if( SpecUtils::istarts_with(letters, "n" ) )
       unit = 1.0E-9;
     else if( SpecUtils::istarts_with(letters, "u" )
@@ -955,10 +957,6 @@ double stringToDistance( std::string str, double cm_definition )
 {
   double distance = 0.0;
 
-  const string float_regex ="\\s*\\+?(\\d+(\\.\\d*)?(?:[Ee][+\\-]?\\d+)?)"
-                            "\\s*(meter|cm|km|mm|um|nm|m|ft|feet|'|inches|inch|in|\")"
-                            "\\s*(\\d.+)?";
-  
   string::size_type openParan = str.find( '(' );
   while( openParan != string::npos )
   {
@@ -969,8 +967,11 @@ double stringToDistance( std::string str, double cm_definition )
     openParan = str.find( '(', openParan );
   }//while( openParan != string::npos )
   
+  const char * const regex_str
+  = "\\s*(([+\\-]?\\s*0\\s*)|(((" POS_DECIMAL_REGEX ")\\s*(" DIST_UNITS_REGEX "))(\\s*" POS_DECIMAL_REGEX ".+)*\\s*))";
+  
   boost::smatch matches;
-  boost::regex expression( float_regex, boost::regex::ECMAScript|boost::regex::icase );
+  boost::regex expression( regex_str, boost::regex::ECMAScript|boost::regex::icase );
 
   if( !boost::regex_match( str, matches, expression ) )
   {
@@ -980,16 +981,28 @@ double stringToDistance( std::string str, double cm_definition )
     throw std::runtime_error( msg );
   }//if( we dont have a match )
 
+  //cout << "\nstringToDistance - str='" << str << "':\n";
+  //for( size_t i = 0; i < matches.size(); ++i )
+  //  cerr << "\tMatch " << i << " is '" << string( matches[i].first, matches[i].second ) << "'" << endl;
   
-//  for( size_t i = 0; i < matches.size(); ++i )
-//    cerr << "stringToDistance Match " << i << " is " << string( matches[i].first, matches[i].second ) << endl;
-
-  
-  string floatstr( matches[1].first, matches[1].second );
-  string unitstr( matches[3].first, matches[3].second );
+  string floatstr( matches[5].first, matches[5].second );
+  string unitstr( matches[10].first, matches[10].second );
+  const string leftover = SpecUtils::trim_copy( string(matches[12].first, matches[12].second) );
   SpecUtils::trim( floatstr );
+  SpecUtils::ireplace_all(floatstr, " ", "");
+  SpecUtils::ireplace_all(floatstr, "\t", "");
   SpecUtils::trim( unitstr );
   SpecUtils::to_lower_ascii( unitstr );
+  
+  // We will allow the input string of "0", with no units
+  if( (matches[2].first != matches[2].second) && unitstr.empty() && leftover.empty() )
+  {
+    assert( matches[4].second == matches[4].first );
+    assert( matches[5].second == matches[5].first );
+    assert( matches[6].second == matches[6].first );
+    //.... all the way through 16
+    return 0.0;
+  }
 
   double unitval = 0.0;
   if( unitstr == "meter" )       unitval = m;
@@ -1021,11 +1034,11 @@ double stringToDistance( std::string str, double cm_definition )
 
   //if there are characters past what we needed for a match, maybe they are
   //  another distance string, lets try to add them on
-  if( string(matches[4]).length() > 1 )
+  if( leftover.length() > 1 )
   {
     try
     {
-      distance += stringToDistance( matches[4], cm_definition );
+      distance += stringToDistance( leftover, cm_definition );
     }catch(...)
     {}
   }//if( string(matches[4]).length() )
@@ -1190,11 +1203,12 @@ double stringToEquivalentDose( const std::string &str, const double sievert_defi
 
 double stringToMass( const std::string &str, const double gram_def )
 {
-  const string regex_str = "\\s*\\+?(\\d+(\\.\\d*)?(?:[Ee][+\\-]?\\d+)?)"
-                             "\\s*(" METRIC_PREFIX_UNITS ")*?"
-                             "\\s*\\-*\\s*"
-                             "(gram|grams|g|ounces|ounce|oz|grain|grains|pounds|pound|lbs|lb|stone|stones)"
-                             "\\s*(\\d.+)?";
+  const string regex_str =
+  "(" DECIMAL_REGEX ")\\s*"
+  "(" METRIC_PREFIX_UNITS ")*?"
+  "\\s*\\-*\\s*"
+  "(gram|grams|g|ounces|ounce|oz|grain|grains|pounds|pound|lbs|lb|stone|stones)\\s*"
+  "(" DECIMAL_REGEX ".+)?";
   
   boost::smatch matches;
   boost::regex expression( regex_str, boost::regex::ECMAScript|boost::regex::icase );
@@ -1206,17 +1220,19 @@ double stringToMass( const std::string &str, const double gram_def )
     //cerr << endl << msg << endl;
     throw std::runtime_error( msg );
   }//if( we dont have a match )
-
-  
+    
   string floatstr( matches[1].first, matches[1].second );
-  string prefix( matches[3].first, matches[3].second );
-  string unitstr( matches[4].first, matches[4].second );
-  string trailingstr( matches[5].first, matches[5].second );
-  SpecUtils::trim( floatstr );  //These trims may not be necassary, but whatever
+  string prefix( matches[6].first, matches[6].second );
+  string unitstr( matches[7].first, matches[7].second );
+  string trailingstr( matches[8].first, matches[8].second );
+  
+  SpecUtils::ireplace_all(floatstr, " ", ""); //The string could be like "+ 2.1", which will cause stod to throw
+  SpecUtils::trim( floatstr );  //These trims may not be necessary, but whatever
   SpecUtils::trim( prefix );
   SpecUtils::trim( unitstr );
   SpecUtils::to_lower_ascii( unitstr );
-  
+  SpecUtils::trim( trailingstr );
+
   double unitval = 0.0;
   if( unitstr == "gram" || unitstr == "grams" || unitstr == "g" )
     unitval = gram;
@@ -1229,15 +1245,80 @@ double stringToMass( const std::string &str, const double gram_def )
   else if( unitstr == "grain" || unitstr == "grains" )
     unitval = 0.0647989*gram;
   else
-    throw runtime_error( "Unexpeced mass unit: '" + unitstr + "'" );
+    throw runtime_error( "Unexpected mass unit: '" + unitstr + "'" );
 
   double mass = unitval * std::stod( floatstr );  //shouldnt ever throw, right?
   
   mass *= metrix_prefix_value( prefix );
   mass *= (gram_def / gram);
   
+  if( !trailingstr.empty() )
+    mass += stringToMass( trailingstr, gram_def );
+
   return mass;
 }//double stringToMass( const std::string &str, const double gram_def )
+
+
+double stringToEnergy( const std::string &str, const double keV_def )
+{
+  const string regex_str = "(" DECIMAL_REGEX ")"
+                           "\\s*(k|M|killo|mega)?"
+                           "\\s*\\-*\\s*"
+                           "(eV|electron-volts|electronvolts)"
+                           "\\s*(" DECIMAL_REGEX ".+)?";
+
+  boost::smatch matches;
+  boost::regex expression( regex_str, boost::regex::ECMAScript | boost::regex::icase );
+
+  if( !boost::regex_match( str, matches, expression ) )
+  {
+    char msg[128];
+    snprintf( msg, sizeof( msg ), "'%s' is not an energy", str.c_str() );
+    throw std::runtime_error( msg );
+  }//if( we dont have a match )
+
+  //cout << "matches.size() = " << matches.size() << endl;
+  //for( size_t i = 0; i < matches.size(); ++i )
+  //  cout << "matches[" << i << "]:\t'" << string( matches[i].first, matches[i].second ) << "'" << endl;
+  //matches[0] : '511 keV -11 keV'
+  //matches[1] : '511 '
+  //matches[2] : '511'
+  //matches[3] : '511'
+  //matches[4] : ''
+  //matches[5] : ''
+  //matches[6] : 'k'
+  //matches[7] : 'eV'
+  //matches[8] : '-11 keV'
+    
+  assert( matches.size() == 13 );
+
+  string floatstr( matches[1].first, matches[1].second );
+  string prefix( matches[6].first, matches[6].second );
+  SpecUtils::trim( floatstr );
+  SpecUtils::trim( prefix );
+  
+#if( !defined(NDEBUG) )
+  string unitstr( matches[7].first, matches[7].second );
+  SpecUtils::trim( unitstr );
+  SpecUtils::to_lower_ascii( unitstr );
+  assert( unitstr == "ev" );
+#endif
+
+  double energy = std::stod( floatstr );  //shouldnt ever throw, right?
+  energy *= metrix_prefix_value( prefix ) * 0.001;
+  energy *= (keV_def / keV);
+
+  string trailingstr( matches[8].first, matches[8].second );
+  SpecUtils::trim( trailingstr );
+  if( !trailingstr.empty() )
+  {
+    //remove spaces so like "2614 keV - 511keV" will work (the "- 511keV" doesnt work)
+    SpecUtils::ireplace_all( trailingstr, " ", "" ); 
+    energy += stringToEnergy( trailingstr, keV_def );
+  }
+
+  return energy;
+}//stringToEnergy(...)
 
 
 std::string printValueWithUncertainty( double value, double uncert, size_t unsigfig )

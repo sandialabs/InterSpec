@@ -454,6 +454,12 @@ public:
   //  efficiency will return upper or lower efficiencies, respectively.
   float intrinsicEfficiency( const float energy ) const;
 
+  /** Returns a std::function that gives intrinsic efficiecny as a function
+  of energy.  Useful porimarily for places when you dont want to have this
+  class as a dependancy.
+  Returns null function if not avaiable.
+  */
+  std::function<float( float )> intrinsicEfficiencyFcn() const;
 
   //fractionalSolidAngle(...) returns the fraction of gamma rays from a point
   //  source that would strike the detector face of a detector with diameter

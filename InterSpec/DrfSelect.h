@@ -218,7 +218,7 @@ public:
   /** Inits adetector from a directory that has a Detector.dat and Efficiency.csv file in it
       Throws exception in error; returned detector should always be valid.
    */
-  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetectorFromDirectory( const std::string &directory, InterSpec *interspec );
+  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetectorFromDirectory( const std::string &directory );
 
   //Will init detector in the static and user data folders, and return the first DRF that matches
   //  DetectorType, or the manufacturer/model.

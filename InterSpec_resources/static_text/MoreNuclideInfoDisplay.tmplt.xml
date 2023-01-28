@@ -3,48 +3,98 @@ ${<if-invalid>}
     ${error-message}
 ${</if-invalid>}
 
-${<if-valid>}  
-${element} ${mass-number} 
-<br />
+${<if-valid>}
 
-${symbol} 
-<br />
+<div class="MoreNucInfoTitle">
+  More Info on ${element-symbol}${mass-number}${meta-state}
+</div>
 
-${half-life} 
-<br />
+${<if-have-prev>}
+<div class="MoreNucInfoPrev">
+${link-to-prev}
+</div>
+${</if-have-prev>}
 
-${atomic-mass} 
-<br />
+<div class="MoreNucInfoSection">
+  <div class="MoreNucInfoSubTitle">
+    General Information:
+  </div>
 
-${specific-activity} 
-<br />
+  <div class="MoreNucInfoSectionContent">
+    <table class="MoreNucInfoPropsTable">
+      <tr><td>Symbol</td><td><sup>${mass-number}${meta-state}</sup>${element-symbol}</td></tr>
+      <tr><td>Names</td><td> ${element}-${mass-number}${meta-state}, ${element-symbol}-${mass-number}${meta-state}</td></tr>
+      <tr><td>Half-life (t<sub>1/2</sub>)</td><td>${half-life}</td></tr>
+      <tr><td>Isotope mass</td><td>${atomic-mass}</td></tr>
+      <tr><td>Protons (Z)</td><td>${atomic-number}</td></tr>
+      <tr><td>Neutrons (N)</td><td>${num-neutrons}</td></tr>
+      ${<if-meta-stable>} 
+        <tr><td>Isomer Number</td><td>${meta-state-number}</td></tr>
+      ${</if-meta-stable>} 
+      <tr><td>Specific Act.</td><td>${specific-activity}</td></tr>
+      ${<if-is-natural>} 
+        <tr><td>Nat. Abundance</td><td>${natural-abundance}</td></tr>
+      ${</if-is-natural>}
+    </table>
+  </div>
+</div>
 
-${<if-is-natural>} 
-    Natural Abund: ${natural-abundance} 
-    <br />
-${</if-is-natural>}
-
-${decays-to-html}
-<br />
-${decay-chain-btn}
-<br />
-
-${<if-has-parents>} 
-    ${decays-from-html} 
-    <br />
-    ${decay-through-btn}
-    <br />
-${</if-has-parents>}
 
 ${<if-has-related>}
-    Also consider checking for: ${related-nucs} 
-    <br />
+<div class="MoreNucInfoSection">
+  <div class="MoreNucInfoSubTitle">
+    Also consider checking for:
+  </div> 
+
+  <div class="MoreNucInfoSectionContent">
+    <div class="MoreNucInfoRelatedList">
+      <!-- related-nucs will bind a ul widget -->
+      ${related-nucs} 
+    </div>
+  </div>
+</div>
 ${</if-has-related>}
 
+
 ${<if-has-more-info>} 
-  More Info:
-  ${more-info}
-  <br />
+<div class="MoreNucInfoSection">
+  <div class="MoreNucInfoSubTitle">
+    Analyst Notes:
+  </div>
+  
+  <div class="MoreNucInfoSectionContent">
+    ${more-info}
+  </div>
+</div>
 ${</if-has-more-info>}
+
+
+<div class="MoreNucInfoSection">
+  <div class="MoreNucInfoSubTitle">
+    Decay Modes:
+  </div>
+
+  <div class="MoreNucInfoSectionContent">
+    ${decays-to-table}
+    
+    ${decay-chain-btn}
+  </div>
+</div>
+
+
+${<if-has-parents>} 
+<div class="MoreNucInfoSection">
+  <div class="MoreNucInfoSubTitle">
+    Parent Isotopes:
+  </div>
+
+  <div class="MoreNucInfoSectionContent">
+    ${decays-from-table} 
+    
+    ${decay-through-btn}
+  </div>
+</div>
+${</if-has-parents>}
+
 ${</if-valid>}
 </div>

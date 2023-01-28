@@ -111,8 +111,21 @@ namespace
   };
   
   
+  //struct on_scope_exit
+  //{
+  //  on_scope_exit( std::function<void( void )> f ) : m_function( f ) {}
+  //  ~on_scope_exit( void ) { m_function(); }
+  //private:
+  //  std::function<void( void )> m_function;
+  //};//on_scope_exit
   
-  
+  struct UpdateGuard
+  {
+    bool &m_guard;
+    UpdateGuard( bool &guard ) : m_guard( guard ) { m_guard = true; }
+    ~UpdateGuard(){ m_guard = false; }
+  };
+
   class RefGammaCsvResource : public Wt::WResource
   {
   protected:
@@ -172,23 +185,42 @@ namespace
       } );
       
       
-      // Right now we'll just download the curernt nuclide/reaction/x-ray, and not any
+      // Right now we'll just download the current nuclide/reaction/x-ray, and not any
       //  of the "persisted" lines
-      //std::vector<ReferenceLineInfo> refinfos = m_display->showingNuclides() const;
       const ReferenceLineInfo &refinfo = m_display->currentlyShowingNuclide();
       
-      string filename = "empty";
-      if( refinfo.element )
-        filename = refinfo.element->name + "_xrays";
-      else if( refinfo.nuclide )
-        filename = refinfo.nuclide->symbol + "_gammas";
-      else if( !refinfo.reactionGammas.empty() )
-        filename = refinfo.reactionsTxt + "_lines";
-      else if( !refinfo.backgroundLines.empty() )
-        filename =  "background_lines";
+      string filename = refinfo.m_input.m_input_txt;
+      
+      switch( refinfo.m_source_type )
+      {
+        case ReferenceLineInfo::SourceType::Nuclide:
+          filename += "_lines";
+          break;
+          
+        case ReferenceLineInfo::SourceType::FluorescenceXray:
+          filename += "_xrays";
+          break;
+          
+        case ReferenceLineInfo::SourceType::Reaction:
+          filename += "_reaction";
+          break;
+          
+        case ReferenceLineInfo::SourceType::Background:
+          filename =  "background_lines";
+          break;
+          
+        case ReferenceLineInfo::SourceType::CustomEnergy:
+          filename += "_custom_energy";
+          break;
+          
+        case ReferenceLineInfo::SourceType::None:
+          filename = "empty";
+          break;
+      }//switch( refinfo.m_source_type )
       
       SpecUtils::ireplace_all( filename, "(", "_" );
       SpecUtils::ireplace_all( filename, ")", "_" );
+      SpecUtils::ireplace_all( filename, " ", "_" );
       SpecUtils::ireplace_all( filename, ",", "-" );
       if( !filename.empty() && ((filename.back() == '_') || (filename.back() == '-')) )
          filename = filename.substr( 0, filename.size()-1 );
@@ -199,119 +231,107 @@ namespace
       
       std::ostream &out = response.out();
       
-      if( row_data.empty() )
+      if( refinfo.m_ref_lines.empty()
+         || (refinfo.m_source_type == ReferenceLineInfo::SourceType::None))
       {
-        //refinfo.element could be non-null, and the element just not have x-rays
-        assert( !refinfo.nuclide && refinfo.reactionGammas.empty() && refinfo.backgroundLines.empty() );
-      }//if( row_data.empty() )
-      
-      
-      if( (!refinfo.element && !refinfo.nuclide
-         && refinfo.reactionGammas.empty() && refinfo.backgroundLines.empty()) )
-      {
-        assert( row_data.empty() );
+        assert( refinfo.m_ref_lines.empty() );
         
-        out << "No displayed photopeaks to output" << eol_char;
+        out << "No displayed reference lines to output" << eol_char;
         return;
       }
       
-      const DetectorDisplay *detDisp = m_display->detectorDisplay();
-      shared_ptr<const DetectorPeakResponse> det = detDisp ? detDisp->detector() : nullptr;
-      if( det && !det->isValid() )
-        det.reset();
-      
-      const ShieldingSelect *shielding = m_display->shieldingSelect();
-      
-      
-      if( refinfo.element )
+      switch( refinfo.m_source_type )
       {
-        out << "Element," << refinfo.element->name << eol_char;
-        out << "Florescent x-rays" << eol_char;
-      }else if( refinfo.nuclide )
-      {
-        out << "Nuclide," << refinfo.nuclide->symbol << eol_char;
-        out << "HalfLife," << PhysicalUnits::printToBestTimeUnits(refinfo.nuclide->halfLife,6) << eol_char;
-        out << "AgeDecayedTo," << PhysicalUnits::printToBestTimeUnits(refinfo.age,6);
-        if( refinfo.promptLinesOnly )
-          out << ",PromptEquilibriumNuclidesOnly";
-        out << eol_char;
-      }else if( !refinfo.reactionGammas.empty() )
-      {
-        out << "Reactions," << refinfo.reactionsTxt << eol_char;
-      }else if( !refinfo.backgroundLines.empty() )
-      {
-        out << "Source,CommonBackgroundGammas" << eol_char;
-      }
+        case ReferenceLineInfo::SourceType::Nuclide:
+        {
+          const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+          const SandiaDecay::Nuclide * const nuc = db->nuclide(refinfo.m_input.m_input_txt);
+          assert( nuc );
+          const string name = nuc ? nuc->symbol : string("null");
+          const string hl = nuc ? PhysicalUnits::printToBestTimeUnits(nuc->halfLife,6) : "null";
+          out << "Nuclide," << (nuc ? nuc->symbol : string()) << eol_char;
+          out << "HalfLife," << hl << eol_char;
+          out << "AgeDecayedTo," << refinfo.m_input.m_age;
+          if( refinfo.m_input.m_promptLinesOnly )
+            out << ",PromptEquilibriumNuclidesOnly";
+          out << eol_char;
+          break;
+        }
+          
+        case ReferenceLineInfo::SourceType::FluorescenceXray:
+          out << "Element," << refinfo.m_input.m_input_txt << eol_char;
+          out << "Florescent x-rays" << eol_char;
+          break;
+          
+        case ReferenceLineInfo::SourceType::Reaction:
+          out << "Reaction," << refinfo.m_input.m_input_txt << eol_char;
+          break;
+          
+        case ReferenceLineInfo::SourceType::Background:
+        case ReferenceLineInfo::SourceType::CustomEnergy:
+          out << "Source,Gammas" << eol_char;
+          break;
+          
+        case ReferenceLineInfo::SourceType::None:
+          assert( 0 );
+          break;
+      }//switch( refinfo.m_source_type )
       
-      assert( shielding );
-      boost::function<double(float)> att_coef_fcn;
-      //double transmision_frac *= exp( -1.0 * att_coef_fcn(energy) );
+      
+      boost::function<double(float)> att_fcn = refinfo.m_input.m_shielding_att;
       
       try
       {
-        if( !shielding )
-          throw runtime_error( "invalid shielding" );
-      
-        if( shielding->isGenericMaterial() )
+        if( !refinfo.m_input.m_shielding_name.empty() && !refinfo.m_input.m_shielding_thickness.empty() )
         {
-          const float an = static_cast<float>( shielding->atomicNumber() );
-          const float ad = static_cast<float>( shielding->arealDensity() );
-          const static double cm2PerG = PhysicalUnits::cm2 / PhysicalUnits::g;
+          assert( refinfo.m_input.m_shielding_an.empty() );
+          assert( refinfo.m_input.m_shielding_ad.empty() );
           
-          if( (ad < (0.0001f * cm2PerG) ) || (an < 1.0f) )
-            throw runtime_error( "no shielding" );
+          const Material *material = nullptr;
+          const MaterialDB *matDB = m_display->materialDB();
+          if( matDB )
+            material = matDB->material( refinfo.m_input.m_shielding_name );
           
-          snprintf( buffer, sizeof(buffer), "%.6f", an );
-          out << "Shielding Atomic Number," << buffer << eol_char;
+          if( !material )
+            throw runtime_error( "Invalid shielding '" + refinfo.m_input.m_shielding_name + "'" );
           
-          snprintf( buffer, sizeof(buffer), "%.6f", (ad*cm2PerG) );
-          out << "Shielding Areal Density (g/cm2)," << buffer << eol_char;
-          
-          
-          att_coef_fcn = [=]( float energy ) -> double {
-            return GammaInteractionCalc::transmition_coefficient_generic(an, ad, energy);
-          };
-          //= boost::bind( &GammaInteractionCalc::transmition_coefficient_generic,
-          //          atomic_number, areal_density, boost::placeholders::_1 );
-        }else
-        {
-          shared_ptr<const Material> material = shielding->currentMaterial();
-          const float thick = static_cast<float>(shielding->thickness());
-          
-          if( !material || (thick < (1.0E-11*PhysicalUnits::meter)) )
-            throw runtime_error( "no shielding" );
-            
           out << "Shielding Material," << material->name << eol_char;
           
           const static double cm3PerG = PhysicalUnits::cm3 / PhysicalUnits::g;
           snprintf( buffer, sizeof(buffer), "%.6g", (material->density * cm3PerG) );
           out << "Shielding Density (g/cm3)," << buffer << eol_char;
           
-          snprintf( buffer, sizeof(buffer), "%.6g", (thick / PhysicalUnits::cm) );
-          out << "Shielding Thickness (cm)," << buffer << eol_char;
+          out << "Shielding Thickness," << refinfo.m_input.m_shielding_thickness << eol_char;
           
           snprintf( buffer, sizeof(buffer), "%1.6g", material->massWeightedAtomicNumber() );
           out << "Shielding Mass Weighted Atomic Number," << buffer << eol_char;
           
           out << "Shielding Chemical Formula," << material->chemicalFormula() << eol_char;
+        }else if( !refinfo.m_input.m_shielding_an.empty() && !refinfo.m_input.m_shielding_ad.empty() )
+        {
+          assert( refinfo.m_input.m_shielding_name.empty() );
+          assert( refinfo.m_input.m_shielding_thickness.empty() );
+          out << "Shielding Atomic Number," << refinfo.m_input.m_shielding_an << eol_char;
+          out << "Shielding Areal Density (g/cm2)," << refinfo.m_input.m_shielding_ad << eol_char;
+        }else
+        {
+          assert( refinfo.m_input.m_shielding_an.empty() );
+          assert( refinfo.m_input.m_shielding_ad.empty() );
+          assert( refinfo.m_input.m_shielding_name.empty() );
+          assert( refinfo.m_input.m_shielding_thickness.empty() );
           
-          att_coef_fcn = [material,thick]( float energy ) -> double {
-            return GammaInteractionCalc::transmition_coefficient_material( material.get(), energy, thick );
-          };
-          //= boost::bind( &GammaInteractionCalc::transmition_coefficient_material,
-          //             material.get(), boost::placeholders::_1, thick ); //note: if you use this, make sure the lifetime of material is long-enough
-          
-        }//if( is generic material ) / else
+          out << "Shielding,None" << eol_char;
+        }//
       }catch( std::exception &e )
       {
         out << "Shielding,None" << eol_char;
       }//try / catch
       
-      
       out << "Detector Response Function (DRF),";
-      if( det )
+      auto det = refinfo.m_input.m_det_intrinsic_eff;
+      if( det && !refinfo.m_input.m_detector_name.empty() )
       {
-        string name = det->name();
+        string name = refinfo.m_input.m_detector_name;
         SpecUtils::ireplace_all( name, ",", "-" );
         out << name << eol_char;
       }else
@@ -319,38 +339,55 @@ namespace
         out << "None" << eol_char;
       }
       
-      const char *rel_amp_note = "Note,The Rel. Amp. column does not include effects of shielding or DRF";
-      
-      if( refinfo.element )
+      out << eol_char;
+      if( (refinfo.m_input.m_showBetas || refinfo.m_input.m_showAlphas)
+         && (refinfo.m_input.m_det_intrinsic_eff || refinfo.m_input.m_shielding_att) )
       {
-        out << eol_char << rel_amp_note << eol_char << eol_char;
-        
-        out << "Energy (keV),Rel. Yield" << eol_char;
-      }else if( refinfo.nuclide )
-      {
-        out << eol_char
-            << "Note,The g/Bq/second column is rate of gammas emitted per becquerel of "
-            << refinfo.nuclide->symbol << ", and does not include effects of shielding or DRF"
-            << eol_char
-            << eol_char;
-        
-        out << "Energy (keV),g/Bq/second";
-      }else if( !refinfo.reactionGammas.empty() )
-      {
-        out << eol_char << rel_amp_note << eol_char << eol_char;
-        
-        out << "Energy (keV),Rel. Yield" << eol_char;
-      }else if( !refinfo.backgroundLines.empty() )
-      {
-        out << eol_char << rel_amp_note << eol_char << eol_char;
-        
-        out << "Energy (keV),Rel. Yield";
+        out << eol_char << "Note,Alphas and Betas do not include effects of shielding or DRF" << eol_char;
       }
       
+      const char *rel_amp_note = "Note,The Rel. Amp. column does not include effects of shielding or DRF";
+      
+      switch( refinfo.m_source_type )
+      {
+        case ReferenceLineInfo::SourceType::Nuclide:
+          out << eol_char
+          << "Note,The g/Bq/second column is rate of gammas emitted per becquerel of "
+          << refinfo.m_input.m_input_txt << " and does not include effects of shielding or DRF"
+          << eol_char
+          << eol_char;
+          
+          out << "Energy (keV),g/Bq/second";
+          break;
+          
+        case ReferenceLineInfo::SourceType::FluorescenceXray:
+          out << eol_char << rel_amp_note << eol_char << eol_char;
+          out << "Energy (keV),Rel. Yield" << eol_char;
+          break;
+          
+        case ReferenceLineInfo::SourceType::Reaction:
+          out << eol_char << rel_amp_note << eol_char << eol_char;
+          out << "Energy (keV),Rel. Yield" << eol_char;
+          break;
+          
+        case ReferenceLineInfo::SourceType::Background:
+          out << eol_char << rel_amp_note << eol_char << eol_char;
+          out << "Energy (keV),Rel. Yield";
+          break;
+          
+        case ReferenceLineInfo::SourceType::CustomEnergy:
+          out << eol_char << rel_amp_note << eol_char << eol_char;
+          out << "Energy (keV),Rel. Yield";
+          break;
+          
+        case ReferenceLineInfo::SourceType::None:
+          assert( 0 );
+          break;
+      }//switch( refinfo.m_source_type )
       
       out << ",Parent,Mode,Particle";
       
-      if( att_coef_fcn )
+      if( att_fcn )
       {
         out << ",Shielding Transmission";
         if( !det )
@@ -359,69 +396,83 @@ namespace
       
       if( det )
       {
-        out << ",DRF Instrinsic Efficiency";
-        if( !att_coef_fcn )
+        out << ",DRF Intrinsic Efficiency";
+        if( !att_fcn )
           out << ",Yield*DRF";
       }
       
-      if( att_coef_fcn && det )
+      if( att_fcn && det )
         out << ",Yield*ShieldTrans*DRF";
       
-      out << eol_char;
+      out << ",Normalized Intensity" << eol_char;
       
-      for( const DecayParticleModel::RowData &row : row_data )
+      for( const ReferenceLineInfo::RefLine &line : refinfo.m_ref_lines )
       {
-        
-        auto decayModeTxt = []( const int decayMode ) -> const char * {
-          switch( decayMode )
-          {
-            case SandiaDecay::AlphaDecay:                          return "alpha" ;
-            case SandiaDecay::BetaDecay:                           return "beta-";
-            case SandiaDecay::BetaPlusDecay:                       return "beta+";
-            case SandiaDecay::DoubleBetaDecay:                     return "double beta;";
-            case SandiaDecay::IsometricTransitionDecay:            return "Iso";
-            case SandiaDecay::ElectronCaptureDecay:                return "e.c.";
-            case SandiaDecay::ProtonDecay:                         return "proton";
-            case SandiaDecay::SpontaneousFissionDecay:             return "s.f.";
-            case SandiaDecay::Carbon14Decay:                       return "C14";
-            case DecayParticleModel::RowData::XRayDecayMode:       return "xray";
-            case DecayParticleModel::RowData::ReactionToGammaMode: return "Reaction";
-            case DecayParticleModel::RowData::NormGammaDecayMode:  return "NORM";
-            case DecayParticleModel::RowData::CascadeSumMode:      return "cascade sum";
-          }//switch( dataRow.decayMode )
-
-          return "";
-        };//decayModeTxt
-        
-        auto particleType = []( SandiaDecay::ProductType particle ) -> const char * {
-          switch( particle )
-          {
-            case SandiaDecay::BetaParticle:            return "beta-";
-            case SandiaDecay::GammaParticle:           return "gamma";
-            case SandiaDecay::AlphaParticle:           return "alpha";
-            case SandiaDecay::PositronParticle:        return "e+";
-            case SandiaDecay::CaptureElectronParticle: return "ec";
-            case SandiaDecay::XrayParticle:            return "xray";
-          }//switch( dataRow.particle )
-          
-          return "";
-        };//particleType(...)
-        
-        
-        snprintf( buffer, sizeof(buffer), "%.3f,%1.6g", row.energy, row.branchRatio );
+        snprintf( buffer, sizeof(buffer), "%.3f,%1.6g", line.m_energy, line.m_decay_intensity );
         out << buffer;
         
-        if( row.responsibleNuc )
-          out << "," << row.responsibleNuc->symbol;
+        if( line.m_transition && line.m_transition->parent )
+          out << "," << line.m_transition->parent->symbol;
         else
           out << ",";
         
-        out << "," << decayModeTxt(row.decayMode) << "," << particleType(row.particle);
+        out << ",";
+        switch( line.m_source_type )
+        {
+          case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+            break;
+          case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+            out << "Annihilation";
+            break;
+          case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+            out << "Single Escape";
+            break;
+          case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+            out << "Double Escape";
+            break;
+          case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+            out << "cascade sum";
+            break;
+          case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
+            out << "sum";
+            break;
+        }//switch( line.m_source_type )
+        
+        if( line.m_transition )
+        {
+          out << " ";
+          if( line.m_transition->parent )
+            out << line.m_transition->parent->symbol;
+          
+          if( line.m_transition->child )
+            out << " to " << line.m_transition->child->symbol;
+          out << " via " << SandiaDecay::to_str(line.m_transition->mode);
+        }//if( line.m_transition )
+        
+        out << ",";
+        switch( line.m_particle_type )
+        {
+          case ReferenceLineInfo::RefLine::Particle::Alpha:
+            out << "alpha";
+            break;
+            
+          case ReferenceLineInfo::RefLine::Particle::Beta:
+            out << "beta-";
+            break;
+            
+          case ReferenceLineInfo::RefLine::Particle::Gamma:
+            out << "gamma";
+            break;
+            
+          case ReferenceLineInfo::RefLine::Particle::Xray:
+            out << "xray";
+            break;
+        }//switch( dataRow.particle )
         
         double shield_eff = 1.0, drf_eff = 1.0;
-        if( att_coef_fcn )
+        if( att_fcn )
         {
-          shield_eff = exp( -1.0 * att_coef_fcn( row.energy ) );
+          shield_eff = att_fcn( line.m_energy );
           snprintf( buffer, sizeof(buffer), "%1.7g", shield_eff );
           out << "," << buffer;
         }//if( att_coef_fcn )
@@ -429,19 +480,22 @@ namespace
         
         if( det )
         {
-          drf_eff = det->intrinsicEfficiency( row.energy );
+          drf_eff = det( line.m_energy );
           snprintf( buffer, sizeof(buffer), "%1.7g", drf_eff );
           out << "," << buffer;
         }//if( det )
         
-        if( att_coef_fcn || det )
+        if( att_fcn || det )
         {
-          snprintf( buffer, sizeof(buffer), "%1.7g,", row.branchRatio*shield_eff*drf_eff );
+          snprintf( buffer, sizeof(buffer), "%1.7g,", line.m_decay_intensity*shield_eff*drf_eff );
           out << "," << buffer;
         }
         
+        snprintf( buffer, sizeof(buffer), "%1.7g,", line.m_normalized_intensity );
+        out << "," << buffer;
+        
         out << eol_char;
-      }//for( const DecayParticleModel::RowData &row : row_data )
+      }//for( const ReferenceLineInfo::RefLine &line : refinfo.m_ref_lines )
       
       out << eol_char;
     }//handleRequest(...)
@@ -743,6 +797,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   : WContainerWidget( parent ),
     m_chart( chart ),
     m_spectrumViewer( specViewer ),
+    m_currently_updating( false ),
     m_nuclideEdit( NULL ),
     m_nuclideSuggest( NULL ),
     m_ageEdit( NULL ),
@@ -756,6 +811,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_showGammas( NULL ),
     m_options_icon( NULL ),
     m_options( NULL ),
+    m_optionsContent( NULL ),
     m_showXrays( NULL ),
     m_showAlphas( NULL ),
     m_showBetas( NULL ),
@@ -1032,7 +1088,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_colorSelect->cssColorChanged().connect( boost::bind(
                                                &ReferencePhotopeakDisplay::userColorSelectCallback,
                                                this, boost::placeholders::_1 ) );
-  m_currentlyShowingNuclide.lineColor = m_lineColors[0];
+  m_currentlyShowingNuclide.m_input.m_color = m_lineColors[0];
   
   m_options_icon = new WPushButton();
   m_options_icon->setStyleClass("RoundMenuIcon InvertInDark RefLinesOptMenu");
@@ -1043,16 +1099,20 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   hlRow->addWidget(m_options_icon);
 
   m_options = new WContainerWidget();
-  m_options->addStyleClass("RefLinesOptions ToolTabSection");
+  m_options->addStyleClass("RefLinesOptions ToolTabSection ToolTabTitledColumn");
   m_options->hide();
 
   WContainerWidget* closerow = new WContainerWidget(m_options);
+  closerow->addStyleClass( "ToolTabColumnTitle" );
+  WText *txt = new WText( "Options", closerow );
   WContainerWidget* closeIcon = new WContainerWidget(closerow);
   closeIcon->addStyleClass("closeicon-wtdefault");
   closeIcon->clicked().connect(this, &ReferencePhotopeakDisplay::toggleShowOptions);
 
+  m_optionsContent = new WContainerWidget( m_options );
+  m_optionsContent->addStyleClass( "ToolTabTitledColumnContent" );
 
-  m_promptLinesOnly = new WCheckBox("Prompt Only", m_options);  //ɣ
+  m_promptLinesOnly = new WCheckBox("Prompt Only", m_optionsContent );  //ɣ
   
   tooltip = "Gammas from only the original nuclide, and the descendants until one"
     " of them has a longer half-life than the original nuclide; the"
@@ -1062,16 +1122,25 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_promptLinesOnly->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_promptLinesOnly->hide();
 
-  m_showGammas = new WCheckBox( "Show Gammas", m_options);
-  m_showXrays = new WCheckBox( "Show X-rays", m_options);
-  m_showAlphas = new WCheckBox( "Show Alphas", m_options);
-  m_showBetas = new WCheckBox( "Show Betas", m_options);
-  m_showCascadeSums = new WCheckBox("Cascade Sums", m_options);
+  m_showGammas = new WCheckBox( "Show Gammas", m_optionsContent );
+  m_showXrays = new WCheckBox( "Show X-rays", m_optionsContent );
+  m_showAlphas = new WCheckBox( "Show Alphas", m_optionsContent );
+  m_showBetas = new WCheckBox( "Show Betas", m_optionsContent );
+  m_showCascadeSums = new WCheckBox("Cascade Sums", m_optionsContent );
   m_showCascadeSums->hide();
   
-  m_showPrevNucs = new WCheckBox("Prev Nucs", m_options);
-  m_showRiidNucs = new WCheckBox("Det RID Nucs", m_options);
-  m_showAssocNucs = new WCheckBox("Assoc. Nucs", m_options);
+  m_showPrevNucs = new WCheckBox("Prev Nucs", m_optionsContent );
+  m_showRiidNucs = new WCheckBox("Det RID Nucs", m_optionsContent );
+  m_showAssocNucs = new WCheckBox("Assoc. Nucs", m_optionsContent );
+
+  m_showGammas->setWordWrap( false );
+  m_showXrays->setWordWrap( false );
+  m_showAlphas->setWordWrap( false );
+  m_showBetas->setWordWrap( false );
+  m_showCascadeSums->setWordWrap( false );
+  m_showPrevNucs->setWordWrap( false );
+  m_showRiidNucs->setWordWrap( false );
+  m_showAssocNucs->setWordWrap( false );
 
   m_showPrevNucs->checked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
   m_showPrevNucs->unChecked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
@@ -1221,7 +1290,7 @@ std::vector<ReferenceLineInfo> ReferencePhotopeakDisplay::showingNuclides() cons
 {
   std::vector<ReferenceLineInfo> answer;
   
-  if( !m_currentlyShowingNuclide.labelTxt.empty() )
+  if( m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
     answer.push_back( m_currentlyShowingNuclide );
   answer.insert( answer.end(), m_persisted.begin(), m_persisted.end() );
   
@@ -1281,75 +1350,36 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
   
   try
   {
-  if( nuc && !IsInf(nuc->halfLife) && !nuc->decaysToChildren.empty() && !useCurrentAge )
-  {
     
-    if( nuc->decaysToStableChildren() )
+    if( nuc && !nuc->isStable() && !nuc->decaysToChildren.empty() && !useCurrentAge )
     {
-      m_ageEdit->setText( "0y" );
-    }else if( nuc->canObtainPromptEquilibrium() && m_promptLinesOnly->isChecked() )
-    {
-      WString hlstr = PhysicalUnits::printToBestTimeUnits(
+      if( nuc->decaysToStableChildren() )
+      {
+        m_ageEdit->setText( "0y" );
+      }else if( nuc->canObtainPromptEquilibrium() && m_promptLinesOnly->isChecked() )
+      {
+        WString hlstr = PhysicalUnits::printToBestTimeUnits(
                                           5.0*nuc->promptEquilibriumHalfLife(),
                                           2, SandiaDecay::second );
-      m_ageEdit->setText( hlstr );
-    }else if( m_currentlyShowingNuclide.nuclide != nuc )
+        m_ageEdit->setText( hlstr );
+      }else if( m_currentlyShowingNuclide.m_input.m_input_txt != nuc->symbol )
+      {
+        string agestr;
+        PeakDef::defaultDecayTime( nuc, &agestr );
+        m_ageEdit->setText( agestr );
+      }else
+      {
+        const double hl = (nuc ? nuc->halfLife : -1.0);
+        double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+        if( age > 100.0*nuc->halfLife || age < 0.0 )
+          throw std::runtime_error( "" );
+      }//if( nuc->decaysToStableChildren() ) / else
+    }else if( nuc && useCurrentAge )
     {
-//      const double age = PeakDef::defaultDecayTime( nuc );
-//      WString agestr = PhysicalUnits::printToBestTimeUnits( age, 2,
-//                                                          SandiaDecay::second );
-      
-      string agestr;
-      PeakDef::defaultDecayTime( nuc, &agestr );
-      m_ageEdit->setText( agestr );
-    }else
-    {
-      const double hl = (nuc ? nuc->halfLife : -1.0);
-      double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+      double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
       if( age > 100.0*nuc->halfLife || age < 0.0 )
         throw std::runtime_error( "" );
-    }//if( nuc->decaysToStableChildren() ) / else
-  }else if( nuc && useCurrentAge )
-  {
-    double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
-    if( age > 100.0*nuc->halfLife || age < 0.0 )
-      throw std::runtime_error( "" );
-  }else if( nuc )
-  {
-    if( IsInf(nuc->halfLife) )
-    {
-      passMessage( isotopeLabel + " is stable", WarningWidget::WarningMsgHigh );
-    }else
-    {
-      passMessage( isotopeLabel + " is missing decay data", WarningWidget::WarningMsgHigh );
     }
-    
-    m_nuclideEdit->setText( "" );
-  }else
-  {
-    if( isotopeLabel.find_first_of( "0123456789" ) == string::npos )
-      el = db->element( isotopeLabel );
-
-    if( !el && !isotopeLabel.empty() )
-    {
-      std::vector<ReactionGamma::ReactionPhotopeak> reactions;
-      
-      try
-      {
-        const ReactionGamma *rctnDb = ReactionGammaServer::database();
-        if( rctnDb )
-          rctnDb->gammas( isotopeLabel, reactions );
-      }catch(...)
-      {}
-      
-      if( isotopeLabel.size() && reactions.empty()
-          && !SpecUtils::icontains( isotopeLabel, "background") )
-      {
-        passMessage( isotopeLabel + " is not a valid isotope, element, or reaction",
-                     WarningWidget::WarningMsgHigh );
-      }
-    }
-  }//if( nuc && !IsInf(nuc->halfLife) ) / else
   }catch(...)
   {
     if( nuc )
@@ -1408,12 +1438,12 @@ std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::current
 
   for( const auto &p : m_persisted )
   {
-    if( p.lineColor.isDefault() )
+    if( p.m_input.m_color.isDefault() )
       continue;
     
-    vector<WColor> &colors = answer[p.labelTxt];
-    if( std::find(begin(colors), end(colors), p.lineColor) == end(colors) )
-      colors.push_back( p.lineColor );
+    vector<WColor> &colors = answer[p.m_input.m_input_txt];
+    if( std::find(begin(colors), end(colors), p.m_input.m_color) == end(colors) )
+      colors.push_back( p.m_input.m_color );
   }//for( const auto &p : m_persisted )
   
   return answer;
@@ -1448,7 +1478,10 @@ void ReferencePhotopeakDisplay::handleSpectrumChange(SpecUtils::SpectrumType typ
 
 void ReferencePhotopeakDisplay::updateAssociatedNuclides()
 {
-  const string &currentInput = m_currentlyShowingNuclide.labelTxt;
+  if( m_currentlyShowingNuclide.m_validity != ReferenceLineInfo::InputValidity::Valid )
+    return;
+  
+  const string &currentInput = m_currentlyShowingNuclide.m_input.m_input_txt;
   
   const MoreNuclideInfo::InfoStatus status = MoreNuclideInfo::more_nuc_info_db_status();
   if( status == MoreNuclideInfo::InfoStatus::FailedToInit )
@@ -1465,8 +1498,8 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
   }//if( !infoDb )
 
   const MoreNuclideInfo::NucInfo *info = nullptr;
-  if( m_currentlyShowingNuclide.nuclide )
-    info = infoDb->info( m_currentlyShowingNuclide.nuclide );
+  if( m_currentlyShowingNuclide.m_nuclide )
+    info = infoDb->info( m_currentlyShowingNuclide.m_nuclide );
   else
     info = infoDb->info( currentInput );
 
@@ -1487,7 +1520,7 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
     WPushButton *btn = new WPushButton( nucstr );
     btn->addStyleClass( "LinkBtn" );
 
-    m_otherNucs->insertWidget( 1 + index, btn );
+    m_otherNucs->insertWidget( static_cast<int>(1 + index), btn );
 
     // If text is a valid Nuclide, Element, or Reaction, we'll make this
     //  button clickable to display; otherwise we'll show the text, but
@@ -1511,7 +1544,10 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
     if( nuc || el || !reactions.empty() )
     {
       OtherNuc nuc;
+      nuc.m_input = userInput();
+      nuc.m_input.m_input_txt = nucstr;
       nuc.m_nuclide = nucstr;
+      
       btn->clicked().connect( boost::bind( &ReferencePhotopeakDisplay::setFromOtherNuc, this, nuc ) );
     }else
     {
@@ -1523,8 +1559,7 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
 
 void ReferencePhotopeakDisplay::showMoreInfoWindow()
 {
-
-  const SandiaDecay::Nuclide * const nuc = m_currentlyShowingNuclide.nuclide;
+  const SandiaDecay::Nuclide * const nuc = m_currentlyShowingNuclide.m_nuclide;
   assert( nuc );
   if( !nuc )
     return;
@@ -1550,13 +1585,13 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
   m_otherNucsColumn->show();
 
   vector<OtherNuc> prev_nucs;
-  const string &currentInput = m_currentlyShowingNuclide.labelTxt;
+  const string &currentInput = m_currentlyShowingNuclide.m_input.m_input_txt;
 
   if( showPrev )
   {
     for( const auto &prev : m_prevNucs )
     {
-      if( prev.m_nuclide != currentInput )
+      if( prev.m_input.m_input_txt != currentInput )
         prev_nucs.push_back(prev);
     }
   }//if( showPrev )
@@ -1602,7 +1637,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
       }//if( !nuc )
 
       if( nuc )
-        riid_nucs.push_back( {res.nuclide_, nuc->symbol} );
+        riid_nucs.push_back( {nuc->symbol, res.nuclide_} );
       else 
         riid_nucs.push_back( {res.nuclide_, ""} );
     }//for( loop over RIID results )
@@ -1610,7 +1645,9 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
 
   // TODO: Need to implement option to show or not show suggestion catagories, and if show none, then hide the column
-  if( !currentInput.empty() )
+  if( (m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid)
+     && !currentInput.empty()
+     && showAssoc )
   {
     const MoreNuclideInfo::InfoStatus status = MoreNuclideInfo::more_nuc_info_db_status();
 
@@ -1672,6 +1709,8 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
       {
         OtherNuc nuc;
         nuc.m_nuclide = riid.second;
+        nuc.m_input = userInput();
+        nuc.m_input.m_input_txt = riid.first;
         btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::setFromOtherNuc, this, nuc));
       } else
       {
@@ -1698,1132 +1737,561 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
 void ReferencePhotopeakDisplay::setFromOtherNuc(const ReferencePhotopeakDisplay::OtherNuc &nuc)
 {
-  m_nuclideEdit->setText(WString::fromUTF8(nuc.m_nuclide));
-  const bool useCurrentAge = (nuc.m_age >= 0.0);
-  if( useCurrentAge )
-    m_ageEdit->setText(PhysicalUnits::printToBestTimeUnits(nuc.m_age, 3) );
-  
-  if( nuc.m_shielding.empty() )
-  {
-    m_shieldingSelect->setMaterialNameAndThickness("", "");
-  }else
-  {
-    try
-    {
-      if( nuc.m_shieldThickness > 0.0 )
-      {
-        const string thickness = PhysicalUnits::printToBestLengthUnits(nuc.m_shieldThickness);
-        m_shieldingSelect->setMaterialNameAndThickness(nuc.m_shielding, thickness);
-      } else
-      {
-        double an, ad;
-        const int nconvert = sscanf(nuc.m_shielding.c_str(), "%lf, %lf g/cm2", &an, &ad);
-        if( nconvert != 2 )
-          throw runtime_error("Failed to convert '" + nuc.m_shielding + "' to AN and AD." );
-
-        m_shieldingSelect->setAtomicNumberAndArealDensity(an, ad);
-      }
-    } catch( std::exception &e )
-    {
-      m_shieldingSelect->setMaterialNameAndThickness("", "");
-    }
-  }
-
-  handleIsotopeChange( useCurrentAge );
+  updateDisplayFromInput( nuc.m_input );
 }//void setFromOtherNuc(const OtherNuc &nuc)
 
 
 
-void ReferencePhotopeakDisplay::updateDisplayChange()
+RefLineInput ReferencePhotopeakDisplay::userInput() const
 {
-  /** The gamma or xray energy below which we wont show lines for.
-   x-rays for nuclides were limited at above 10 keV, so we'll just impose this as a lower limit to show to be consistent.
-   */
-  const float lower_photon_energy = 10.0f;
+  RefLineInput input;
 
-  const bool hasNonDefaultStyle = m_options_icon->hasStyleClass("non-default");
-  
-  bool show = true;
-  show = (show && (!m_lowerBrCuttoff || m_lowerBrCuttoff->validate()==WValidator::Valid));
+  input.m_input_txt = m_nuclideEdit->text().toUTF8();
+  input.m_age = m_ageEdit->text().toUTF8();
+  input.m_color = m_colorSelect->color();
 
-  const string isotxt = m_nuclideEdit->text().toUTF8();
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  const SandiaDecay::Nuclide *nuc = db->nuclide( isotxt );
+  if( m_lowerBrCuttoff && (m_lowerBrCuttoff->validate() == WValidator::Valid) )
+    input.m_lower_br_cutt_off = m_lowerBrCuttoff->value();
 
-  const bool isSameSrc = (m_currentlyShowingNuclide.labelTxt == isotxt);
-  
-  const SandiaDecay::Element *el = NULL;
-  if( isotxt.find_first_of( "0123456789" ) == string::npos )
-    el = db->element( isotxt );
+  input.m_promptLinesOnly = (m_promptLinesOnly && m_promptLinesOnly->isChecked());
+  input.m_showGammas = (!m_showGammas || m_showGammas->isChecked());
+  input.m_showXrays = (!m_showXrays || m_showXrays->isChecked());
+  input.m_showAlphas = (m_showAlphas && m_showAlphas->isChecked());
+  input.m_showBetas = (m_showBetas && m_showBetas->isChecked());
+  input.m_showCascades = (m_showCascadeSums && m_showCascadeSums->isChecked());
 
-  string reactions;
-  vector<ReactionGamma::ReactionPhotopeak> rctnGammas;
-  const string::size_type open_paren = isotxt.find( "(" );
-  if( open_paren != string::npos )
+  if( m_detectorDisplay->detector() )
   {
-    try
-    {
-      const string::size_type close_paren = isotxt.find( ")", open_paren );
-      if( close_paren == string::npos )
-        throw runtime_error( "No closing paren" );
-
-      const ReactionGamma *rctnDb = ReactionGammaServer::database();
-      if( rctnDb )
-      {
-        reactions = rctnDb->gammas( isotxt, rctnGammas );
-        nuc = NULL;
-        el = NULL;
-        //XXX - should use regex below to properly escape Fe(n,n')
-        SpecUtils::ireplace_all( reactions, "'", "" );
-//        SpecUtils::replace_all( reactions, "'", "\'" );
-      }
-    }catch( std::exception &e )
-    {
-      cerr << "ReferencePhotopeakDisplay::updateDisplayChange(): " <<e.what()<< endl;
-    }//try / catch
-  }//if( isotxt.find("(") != string::npos )
-  
-  bool isBackground = SpecUtils::icontains( isotxt, "background" );
-  
-  const bool showGammaChecked = (!m_showGammas || m_showGammas->isChecked());
-  const bool showXrayChecked = (!m_showXrays || m_showXrays->isChecked());
-  const bool showCascadesChecked = (m_showCascadeSums && m_showCascadeSums->isChecked());
-  
-  show = (show && (nuc || (el && showXrayChecked) || isBackground
-                   || (!rctnGammas.empty() && showGammaChecked)) );
-
-  double age = -1.0;
-  bool canHavePromptEquil = false;
-
-  if( nuc )
-  {
-    m_moreInfoBtn->show();
-
-    canHavePromptEquil = nuc->canObtainPromptEquilibrium();
-    if( canHavePromptEquil == m_promptLinesOnly->isHidden() )
-      m_promptLinesOnly->setHidden( !canHavePromptEquil );
-
-    if( !canHavePromptEquil )
-      m_promptLinesOnly->setUnChecked();
-
-    if( canHavePromptEquil && m_promptLinesOnly->isChecked() )
-    {
-      //XXX - this next line doesnt have any effect, since the edit will be
-      //      disabled anyway, or something...
-      m_ageEdit->setText( "" );
-      if( m_ageEdit->isEnabled() )
-        m_ageEdit->disable();
-    }else if( m_ageEdit->isDisabled() )
-    {
-      m_ageEdit->enable();
-    }
-    
-    WString hlstr = PhysicalUnits::printToBestTimeUnits( nuc->halfLife,
-                                                      2, SandiaDecay::second );
-    //hlstr = L" \x03BB=" + hlstr;
-    hlstr = "&lambda;<sub>&frac12;</sub>=" + hlstr;
-    m_halflife->setText( hlstr );
+    input.m_det_intrinsic_eff = m_detectorDisplay->detector()->intrinsicEfficiencyFcn();
+    if( input.m_det_intrinsic_eff )
+      input.m_detector_name = m_detectorDisplay->detector()->name();
+  }//if( m_detectorDisplay->detector() )
 
 
-    try
-    {
-      const string agestr = m_ageEdit->text().toUTF8();
-      if (canHavePromptEquil && m_promptLinesOnly->isChecked())
-      {
-        age = 0.0;
-      }
-      else
-      {
-        const double hl = (nuc ? nuc->halfLife : -1.0);
-        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife(agestr, hl);
-
-        if (age > 100.0 * nuc->halfLife || age < 0.0)
-        {
-          string defagestr;
-          age = PeakDef::defaultDecayTime(nuc, &defagestr);
-          passMessage("Changed age to a more reasonable value for " + nuc->symbol
-            + " from '" + agestr + "' to " + defagestr,
-            WarningWidget::WarningMsgLow);
-          m_ageEdit->setText(defagestr);
-        }
-      }//if( prompt ) / else
-    }
-    catch (...)
-    {
-      if (m_ageEdit->text().toUTF8() == "")
-      {
-        string agestr;
-        age = PeakDef::defaultDecayTime(nuc, &agestr);
-        m_ageEdit->setText(agestr);
-      }
-      else
-      {
-        show = false;
-      }
-    }//try /catch to get the age
-  }else
-  {
-    m_moreInfoBtn->hide();
-    m_halflife->setText( "" );
-    m_promptLinesOnly->hide();
-  }//if( nuc ) / else
-  
-  //m_fitPeaks->setDisabled( !show );
-  
-  //const string oldLabel = m_currentlyShowingNuclide.labelTxt;
-  const bool userPickedOld = m_userHasPickedColor;
-  
-  //Default to using the old color, unless we find a reason to change it.
-  WColor color = m_currentlyShowingNuclide.lineColor;
-  
-
-  if( !m_currentlyShowingNuclide.labelTxt.empty() )
-  {
-    OtherNuc prev;
-    prev.m_nuclide = m_currentlyShowingNuclide.labelTxt;
-    if( m_currentlyShowingNuclide.nuclide )
-      prev.m_age = m_currentlyShowingNuclide.age;
-    prev.m_shielding = m_currentlyShowingNuclide.shieldingName;
-    prev.m_shieldThickness = m_currentlyShowingNuclide.shieldingThickness; //Will be zero if no shielding or generic
-
-    // Remove any other previous nuclides that have same `prev.m_nuclide` as what
-    //  we are about to push on
-    m_prevNucs.erase(std::remove_if(begin(m_prevNucs), end(m_prevNucs),
-      [&prev](const OtherNuc &val) -> bool {
-        return (val.m_nuclide == prev.m_nuclide);
-      }), end(m_prevNucs));
-
-    // Push new value onto front of history
-    m_prevNucs.push_front( std::move(prev) );
-
-    // Check history length, and truncate if needed
-    if( m_prevNucs.size() > m_max_prev_nucs )
-      m_prevNucs.resize( m_max_prev_nucs );
-  }//if( !m_currentlyShowingNuclide.labelTxt.empty() )
-
-
-  //Mar
-  m_currentlyShowingNuclide.reset();
-  //cout << "Ref line widget has isSameSrc=" << isSameSrc << ", show=" << show << endl;
-  
-  //What we need to do here is search through
-  if( isSameSrc && show && !color.isDefault() )
-  {
-    //dont need to do anything to the colors here I think
-  }else
-  {
-    if( !isSameSrc )
-      m_userHasPickedColor = false;
-    
-    if( m_peaksGetAssignedRefLineColor )
-    {
-#ifndef _MSC_VER
-#warning "Need to test string comparison for sources always work.  E.g., need case-insensitive, etc."
-#endif    
-//cout << "Peak will get assigned color from ref line" << endl;
-  
-      const string src = m_nuclideEdit->text().toUTF8();
-      const map<string,vector<WColor>> usedColors = currentlyUsedPeakColors();
-      
-      auto hasBeenUsed = [&usedColors](const WColor &color)->bool{
-        for( const auto &s : usedColors )
-          for( const auto &c : s.second )
-            if( c == color )
-              return true;
-        return false;
-      };
-      
-      const auto usedIter = usedColors.find(isotxt);
-      const auto previter = m_previouslyPickedSourceColors.find(isotxt);
-      const auto specificiter = m_specificSourcelineColors.find(isotxt);
-      
-      if( userPickedOld && !hasBeenUsed(color)
-          && (specificiter == end(m_specificSourcelineColors)) )
-      {
-        //If the user picked a color, but didnt fit any poeaks, or persist, the
-        //  lines, and the color theme doesnt call out this current source
-        //  explicitly, then use the previous color.
-        //  This maybe seems a little more intuitive from the users perspective.
-        
-        //We also need to propogate m_userHasPickedColor==true forward for when
-        //  user keeps entering different sources.
-        m_userHasPickedColor = true;
-      }else if( usedIter != end(usedColors) && !usedIter->second.empty() )
-      {
-        color = usedIter->second[0];
-        //cout << "Source " << isotxt << " has color " << color.cssText() << " in the spectrum already" << endl;
-      }else if( previter != end(m_previouslyPickedSourceColors)
-               && !hasBeenUsed(previter->second) )
-      {
-        color = previter->second;
-        //cout << "Source " << isotxt << " has previously had color " << color.cssText() << " picked" << endl;
-      }else if( specificiter != end(m_specificSourcelineColors) )
-      {
-        color = specificiter->second;
-        //cout << "Source " << isotxt << " has a specific color, " << color.cssText() << ", in the ColorTheme" << endl;
-      }else
-      {
-        auto colorcopy = m_lineColors;
-        for( const auto &p : usedColors )
-        {
-          for( const auto &c : p.second )
-          {
-            auto pos = std::find( begin(colorcopy), end(colorcopy), c );
-            if( pos != end(colorcopy) )
-              colorcopy.erase(pos);
-          }
-        }//for( loop over colors used for peaks already )
-        
-        for( const auto &p : m_persisted )
-        {
-          auto pos = std::find( begin(colorcopy), end(colorcopy), p.lineColor );
-          if( pos != end(colorcopy) )
-            colorcopy.erase(pos);
-        }//for( const auto &p : m_persisted )
-        
-        if( colorcopy.empty() )
-          color = m_lineColors[m_persisted.size() % m_lineColors.size()];
-        else
-          color = colorcopy[0];
-        //cout << "Source " << isotxt << " will select color, " << color.cssText()
-        //     << ", from default list (len=" << colorcopy.size() << " of "
-        //     << m_lineColors.size() << ")" << endl;
-      }//if( src has been seen ) / else (user picked color previously)
-    }else
-    {
-      color = m_lineColors[m_persisted.size() % m_lineColors.size()];
-    }
-  }//if( isSameSrc ) / else
-
-  m_currentlyShowingNuclide.lineColor = color;
-  m_colorSelect->setColor( color );
-  
-  m_currentlyShowingNuclide.displayLines = show;
-  if( show )
-  {
-    m_currentlyShowingNuclide.nuclide         = nuc;
-    m_currentlyShowingNuclide.element         = el;
-    m_currentlyShowingNuclide.reactionGammas  = rctnGammas;
-    m_currentlyShowingNuclide.reactionsTxt    = reactions;
-    m_currentlyShowingNuclide.isBackground    = isBackground;
-    m_currentlyShowingNuclide.isReaction      = !rctnGammas.empty();
-    m_currentlyShowingNuclide.age             = age;
-    m_currentlyShowingNuclide.labelTxt        = m_nuclideEdit->text().toUTF8();
-    m_currentlyShowingNuclide.lowerBrCuttoff  = (m_lowerBrCuttoff ? m_lowerBrCuttoff->value() : 0.0);
-    m_currentlyShowingNuclide.showGammas      = m_showGammas->isChecked();
-    m_currentlyShowingNuclide.showXrays       = m_showXrays->isChecked();
-    m_currentlyShowingNuclide.showAlphas      = m_showAlphas->isChecked();
-    m_currentlyShowingNuclide.showBetas       = m_showBetas->isChecked();
-    m_currentlyShowingNuclide.showCascades    = m_showCascadeSums->isChecked();
-    m_currentlyShowingNuclide.showLines       = true;
-    m_currentlyShowingNuclide.promptLinesOnly
-                       = (canHavePromptEquil && m_promptLinesOnly->isChecked());
-    
-    m_currentlyShowingNuclide.shieldingName = "";
-    m_currentlyShowingNuclide.shieldingThickness = 0.0;
-    
-    try
-    {
-      if( m_shieldingSelect->isGenericMaterial() )
-      {
-        NativeFloatSpinBox *anEdit = m_shieldingSelect->atomicNumberEdit();
-        NativeFloatSpinBox *adEdit = m_shieldingSelect->arealDensityEdit();
-        assert( adEdit && adEdit );
-
-        if( adEdit && adEdit )
-        {
-          //Make sure AN and AD are valid, by reading thier numerical value
-          //  (they will throw if not)
-          m_shieldingSelect->atomicNumber();
-          m_shieldingSelect->arealDensity();
-
-          string an = anEdit->text().toUTF8();
-          string ad = adEdit->text().toUTF8();
-          SpecUtils::trim( an );
-          SpecUtils::trim( ad );
-          
-          // We could double check that the string only contains a number by using
-          //  PhysicalUnits::sm_positiveDecimalRegex to extract the numbers, but
-          //  we dont really need to go crazy for this validation
-
-          if( !an.empty() && !ad.empty() )
-            m_currentlyShowingNuclide.shieldingName = an + ", " + ad + " g/cm2";
-        }
-      }else if( m_shieldingSelect->thicknessEdit() 
-        && !m_shieldingSelect->thicknessEdit()->text().empty() )
-      {
-        std::shared_ptr<Material> m = m_shieldingSelect->material();
-        if( m )
-        {
-          const double thickness = m_shieldingSelect->thickness();
-          m_currentlyShowingNuclide.shieldingName = m->name;
-          m_currentlyShowingNuclide.shieldingThickness = thickness;
-        }
-      }//if( m_shieldingSelect->isGenericMaterial() )
-    }catch( std::exception &e )
-    {
-      cerr << "Failed to get shielding defintion for reference gamma lines: "
-           << e.what() << endl;
-    }//try/ catch
-  
-    m_currentlyShowingNuclide.detectorName = "";
-    std::shared_ptr<DetectorPeakResponse> det = m_detectorDisplay->detector();
-    if( !!det )
-      m_currentlyShowingNuclide.detectorName = det->name();
-    
-    
-    if( isBackground )
-    {
-      for( const BackgroundLine &bl : BackgroundLines )
-      {
-        const bool isXray = (std::get<3>(bl) == BackgroundXRay);
-        if( (isXray && showXrayChecked) || (!isXray && showGammaChecked) )
-          m_currentlyShowingNuclide.backgroundLines.push_back( &bl );
-      }//for( const BackgroundLine &bl : BackgroundLines )
-    }//if( isBackground )
-  }else
-  {
-    //m_currentlyShowingNuclide is already reset.
-  }
-
-  if( !show )
-  {
-    if( m_persistLines->isEnabled() )
-      m_persistLines->disable();
-    m_clearLines->setDisabled( m_persisted.empty() );
-   
-    if( m_csvDownload && m_csvDownload->isEnabled() )
-      m_csvDownload->disable();
-    
-    ReferenceLineInfo emptylines;
-    m_chart->setReferncePhotoPeakLines( emptylines );
-    
-    m_particleModel->clear();
-        
-    if( hasNonDefaultStyle )
-      m_options_icon->removeStyleClass("non-default");
-
-    if( age < 0.0 || !nuc )
-    {
-      m_particleModel->clear();
-      return;
-    }//if( age < 0.0 || !nuc )
-  }//if( !show )
-
-
-  bool showGammaCB = true, showXrayCb = true, showAplhaCb = true, showBetaCb = true;
-  if (nuc) // Show everything
-  {}
-  else if (el) // For x-ray only show Show x-ray option  
-    showGammaCB = showAplhaCb = showBetaCb = false;
-  else if (!rctnGammas.empty()) // For reactions only show Show Gamma option
-    showXrayCb = showAplhaCb = showBetaCb = false;
-  else if (isBackground)
-    showAplhaCb = showBetaCb = false;
-  else // Show all options, otherwise whole area will be blank 
-  {}
-
-  m_showXrays->setHidden(!showXrayCb);
-  m_showGammas->setHidden(!showGammaCB);
-  m_showAlphas->setHidden(!showAplhaCb);
-  m_showBetas->setHidden(!showBetaCb);
-
-
-  vector<DecayParticleModel::RowData> inforows;
-
-  const double brCutoff = (m_lowerBrCuttoff ? m_lowerBrCuttoff->value() : 0.0);
-
-//  bool islogy = m_chart->yAxisIsLog();
-//  double chartMaxSf = (islogy ? log(2.5) : 1.0/1.1);
-
-  SandiaDecay::NuclideMixture mixture;
-
-  if( nuc && canHavePromptEquil && m_promptLinesOnly->isChecked() )
-  {
-    age = 0.0;
-    mixture.addNuclideInPromptEquilibrium( nuc, 1.0E-3 * SandiaDecay::curie );
-  }else if( nuc )
-  {
-    mixture.addNuclideByActivity( nuc, 1.0E-3 * SandiaDecay::curie );
-  }//if( we want promt only ) / else
-
-  const vector<SandiaDecay::NuclideActivityPair> activities
-                                                     = mixture.activity( age );
-  const double parent_activity = nuc ? mixture.activity( age, nuc ) : 0.0;
-
-  vector<double> energies, branchratios;
-  vector<SandiaDecay::ProductType> particle_type;
-  vector<const SandiaDecay::Transition *> transistions;
-  vector<SandiaDecay::ProductType> types;
-  vector<const ReactionGamma::Reaction *> reactionPeaks;
-  vector<const BackgroundLine *> backgroundLines;
-  bool hasCascades = false;
-  vector<tuple<const SandiaDecay::Transition*, double, float, float, float, double>> cascades; //transition, first gamma BR, first gamma energy, second gamma energy, coincidence fraction, second gamma BR (just for debug)
-
-  if(showGammaChecked || showCascadesChecked)
-    types.push_back( SandiaDecay::GammaParticle );
-  if (showGammaChecked )
-    types.push_back( SandiaDecay::PositronParticle );
-  if( m_showAlphas->isChecked() )
-    types.push_back( SandiaDecay::AlphaParticle );
-  if( m_showBetas->isChecked() )
-    types.push_back( SandiaDecay::BetaParticle );
-  if( (!m_showXrays || m_showXrays->isChecked()) )
-    types.push_back( SandiaDecay::XrayParticle );
-  
-  DecayParticleModel::RowData positronrow;
-  positronrow.energy      = static_cast<float>( 510.9989 * PhysicalUnits::keV );
-  positronrow.branchRatio = 0.0f;
-  positronrow.particle    = SandiaDecay::GammaParticle; //SandiaDecay::positron
-  positronrow.responsibleNuc = 0;
-  std::set<const SandiaDecay::Nuclide *> positronparents;
-  std::set<const SandiaDecay::Transition *> positrontrans;
-
-  for( SandiaDecay::ProductType type : types )
-  {
-    for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
-    {
-      const SandiaDecay::Nuclide *nuclide = activities[nucIndex].nuclide;
-      const double activity = activities[nucIndex].activity;
-
-      const size_t n_decaysToChildren = nuclide->decaysToChildren.size();
-      
-      for( size_t decayIndex = 0; decayIndex < n_decaysToChildren; ++decayIndex )
-      {
-        const SandiaDecay::Transition *transition
-                                       = nuclide->decaysToChildren[decayIndex];
-        const size_t n_products = transition->products.size();
-
-        for( size_t productNum = 0; productNum < n_products; ++productNum )
-        {
-          const SandiaDecay::RadParticle &particle
-                                            = transition->products[productNum];
-          
-          switch( particle.type )
-          {
-            case SandiaDecay::GammaParticle:
-              hasCascades |= !particle.coincidences.empty();
-              if (particle.energy < lower_photon_energy)
-                continue;
-              break;
-
-            case SandiaDecay::XrayParticle:
-              if( particle.energy < lower_photon_energy )
-                continue;
-              break;
-            
-            case SandiaDecay::PositronParticle:
-            case SandiaDecay::BetaParticle:
-            case SandiaDecay::AlphaParticle:
-            case SandiaDecay::CaptureElectronParticle:
-              break;
-          }//switch( particle.type )
-          
-
-          if( type == SandiaDecay::PositronParticle && particle.type == SandiaDecay::PositronParticle )
-          {
-            const double br = activity * particle.intensity
-                              * transition->branchRatio / parent_activity;
-            positronrow.branchRatio += 2.0*br;
-            positronrow.decayMode   = transition->mode;
-            positronparents.insert( transition->parent );
-            positrontrans.insert( transition );
-          }else if( (particle.type == type) && (particle.type == SandiaDecay::XrayParticle) )
-          {
-            size_t index = 0;
-            for( ; index < energies.size(); ++index )
-            {
-              if( fabs(energies[index] - particle.energy) < 1.0E-6 )
-                break;
-            }
-            
-            const double br = activity * particle.intensity
-                                   * transition->branchRatio / parent_activity;
-            
-            if( index < energies.size() )
-            {
-              branchratios[index] += br;
-              inforows[index].branchRatio += br;
-            }else
-            {
-              transistions.push_back( NULL );
-              energies.push_back( particle.energy );
-              branchratios.push_back( br );
-              particle_type.push_back( SandiaDecay::XrayParticle );
-              reactionPeaks.push_back( NULL );
-              backgroundLines.push_back( NULL );
-            
-              DecayParticleModel::RowData row;
-              row.energy      = particle.energy;
-              row.branchRatio = br;
-              row.particle    = SandiaDecay::XrayParticle;
-              row.decayMode   = DecayParticleModel::RowData::XRayDecayMode;
-              row.responsibleNuc = nuc;
-            
-              inforows.push_back( row );
-            }
-          }else if( particle.type == type )
-          {
-            const double br = activity * particle.intensity
-              * transition->branchRatio / parent_activity;
-
-            if (showCascadesChecked && transition && (type == SandiaDecay::GammaParticle) && (particle.type == type))
-            {
-              for (size_t coinc_index = 0; coinc_index < particle.coincidences.size(); ++coinc_index)
-              {
-                const unsigned short int part_ind = particle.coincidences[coinc_index].first;
-                const float fraction = particle.coincidences[coinc_index].second;
-                assert(part_ind < transition->products.size());
-                if (part_ind < transition->products.size())
-                {
-                  const SandiaDecay::RadParticle& coinc_part = transition->products[part_ind];
-
-                  // The BR of second gamma is just for debugging
-                  const double second_br = activity * coinc_part.intensity
-                                               * transition->branchRatio / parent_activity;
-
-
-                  if (coinc_part.type == SandiaDecay::ProductType::GammaParticle)
-                    cascades.emplace_back(transition, br, particle.energy, coinc_part.energy, fraction, second_br);
-                }//if (part_ind < transition->products.size())
-              }//for( loop over coincidences )
-            }//if( show cascade gammas )
-
-            // If type is GammaParticle, we could be here if user selected to show cascade, but
-            //  not actual gammas, so we need to check for this, and if so not add this gamma 
-            //  in to be shown
-            if ((type == SandiaDecay::GammaParticle) && !showGammaChecked)
-              continue;
-
-            transistions.push_back( transition );
-            energies.push_back( particle.energy );
-            branchratios.push_back( br );
-            particle_type.push_back( type );           
-            reactionPeaks.push_back( NULL );
-            backgroundLines.push_back( NULL );
-
-            DecayParticleModel::RowData row;
-            row.energy      = particle.energy;
-            row.branchRatio = br;
-            row.particle    = particle.type;
-            row.decayMode   = transition->mode;
-            row.responsibleNuc = transition->parent;
-            inforows.push_back( row );
-          }//if( particle.type == type )
-        }//for( size_t productNum = 0; productNum < n_products; ++productNum )
-      }//for( size_t decayIndex = 0; decayIndex < n_decaysToChildren; ++decayIndex )
-    }//for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
-  }//for( SandiaDecay::ProductType type : types )
-
-  if( positronrow.branchRatio > 0.0 )
-  {
-    if( positronparents.size() == 1 )
-      positronrow.responsibleNuc = *positronparents.begin();
-    
-    if( positrontrans.size() == 1 )
-      transistions.push_back( *positrontrans.begin() );
-    else
-      transistions.push_back( NULL );
-    energies.push_back( positronrow.energy );
-    branchratios.push_back( positronrow.branchRatio );
-    particle_type.push_back( SandiaDecay::GammaParticle );
-    reactionPeaks.push_back( NULL );
-    backgroundLines.push_back( NULL );
-    
-    inforows.push_back( positronrow );
-  }//if( positronrow.branchRatio > 0.0 )
-  
-  const bool showXrays = ((el && !nuc) && (!m_showXrays || m_showXrays->isChecked()));
-  
-  if( showXrays )
-  {
-    const SandiaDecay::Element *element = el;
-    if( !element )
-      element = db->element( nuc->atomicNumber );
-
-    for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
-    {
-      if( eip.energy < lower_photon_energy )
-        continue;
-        
-      transistions.push_back( NULL );
-      energies.push_back( eip.energy );
-      branchratios.push_back( eip.intensity );
-      particle_type.push_back( SandiaDecay::XrayParticle );
-      reactionPeaks.push_back( NULL );
-      backgroundLines.push_back( NULL );
-
-      DecayParticleModel::RowData row;
-      row.energy      = eip.energy;
-      row.branchRatio = eip.intensity;
-      row.particle    = SandiaDecay::XrayParticle;
-      row.decayMode   = DecayParticleModel::RowData::XRayDecayMode;
-      row.responsibleNuc = nuc;
-
-      inforows.push_back( row );
-    }//for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
-  }//if( m_showXrays->isChecked() )
-
-  
-  for( const ReactionGamma::ReactionPhotopeak &eip : rctnGammas )
-  {
-    if( eip.energy < lower_photon_energy )
-      continue;
-    
-    if (!showGammaChecked)
-      continue;
-
-    transistions.push_back( NULL );
-    energies.push_back( eip.energy );
-    branchratios.push_back( eip.abundance );
-    particle_type.push_back( SandiaDecay::GammaParticle );
-    reactionPeaks.push_back( eip.reaction );
-    backgroundLines.push_back( NULL );
-
-    DecayParticleModel::RowData row;
-    row.energy      = eip.energy;
-    row.branchRatio = eip.abundance;
-    row.particle    = SandiaDecay::GammaParticle;
-    row.decayMode   = DecayParticleModel::RowData::ReactionToGammaMode;
-    row.responsibleNuc = nuc;
-
-    inforows.push_back( row );
-  }//for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
-
-
-  for( const BackgroundLine *bl : m_currentlyShowingNuclide.backgroundLines )
-  {
-    if( std::get<0>(*bl) < lower_photon_energy )
-      continue;
-    
-    transistions.push_back( NULL );
-    energies.push_back( std::get<0>(*bl) );
-    branchratios.push_back( std::get<1>(*bl) );
-    particle_type.push_back( SandiaDecay::GammaParticle );
-    reactionPeaks.push_back( NULL );
-    backgroundLines.push_back( bl );
-    
-    DecayParticleModel::RowData row;
-    row.energy      = std::get<0>(*bl);
-    row.branchRatio = std::get<1>(*bl);
-    row.particle    = SandiaDecay::GammaParticle;
-    
-    switch( std::get<3>(*bl) )
-    {
-      case U238Series: case U235Series: case Th232Series: case Ra226Series:
-      case K40Background: case OtherBackground:
-        row.decayMode = DecayParticleModel::RowData::NormGammaDecayMode;
-        break;
-      case BackgroundXRay:
-        row.decayMode   = DecayParticleModel::RowData::XRayDecayMode;
-      break;
-      case BackgroundReaction:
-        row.decayMode   = DecayParticleModel::RowData::ReactionToGammaMode;
-      break;
-    }//switch( get<3>(*bl) )
-    
-    row.responsibleNuc = db->nuclide( std::get<2>(*bl) );
-    
-    inforows.push_back( row );
-  }//for( m_currentlyShowingNuclide.backgroundLines )
-
-  //fold in detector response
-  std::shared_ptr<DetectorPeakResponse> det = m_detectorDisplay->detector();
-
-  //Wider peaks mean not as large value of 'y' for the peaks
-  if( det && det->isValid() )
-  {
-    for( size_t i = 0; i < branchratios.size(); ++i )
-      if( (particle_type[i] == SandiaDecay::GammaParticle) || (particle_type[i] == SandiaDecay::XrayParticle) )
-        branchratios[i] *= det->intrinsicEfficiency( energies[i] );
-  }//if( detector )
-
-  
-  //fold in shielding here; we'll also use atten. function later of for cascade decays
-  std::shared_ptr<const Material> material;
-  boost::function<double(float)> att_coef_fcn;
   try
   {
     if( m_shieldingSelect->isGenericMaterial() )
     {
       const float atomic_number = static_cast<float>(m_shieldingSelect->atomicNumber());
       const float areal_density = static_cast<float>(m_shieldingSelect->arealDensity());
-      att_coef_fcn
-          = boost::bind( &GammaInteractionCalc::transmition_coefficient_generic,
-                         atomic_number, areal_density, boost::placeholders::_1 );
+      
+      if( areal_density > 0.0 )
+      {
+        input.m_shielding_att = [atomic_number, areal_density]( float energy ) -> double {
+          const double att_coef = GammaInteractionCalc::transmition_coefficient_generic( atomic_number, areal_density, energy );
+          return exp( -1.0 * att_coef );
+        };
+        
+        NativeFloatSpinBox *anEdit = m_shieldingSelect->atomicNumberEdit();
+        NativeFloatSpinBox *adEdit = m_shieldingSelect->arealDensityEdit();
+        assert( adEdit && adEdit );
+        
+        if( adEdit && adEdit )
+        {
+          const string an = SpecUtils::trim_copy( anEdit->text().toUTF8() );
+          const string ad = SpecUtils::trim_copy( adEdit->text().toUTF8() );
+          if( !an.empty() && !ad.empty() )
+          {
+            input.m_shielding_an = an;
+            input.m_shielding_ad = ad;
+          }
+        }//if( adEdit && adEdit )
+      }//if( areal_density > 0.0 )
     }else
     {
-      material = m_shieldingSelect->material();
-      if( !!material )
+      std::shared_ptr<const Material> material = m_shieldingSelect->material();
+      if( material )
+        input.m_shielding_name = material->name;
+      
+      float thick = 0.0f;
+      input.m_shielding_thickness = m_shieldingSelect->thicknessEdit()->text().toUTF8();
+      if( !input.m_shielding_thickness.empty() )
+        thick = static_cast<float>( m_shieldingSelect->thickness() );
+      
+      if( material && (thick > 0.0) )
       {
-        const float thick = static_cast<float>(m_shieldingSelect->thickness());
-        att_coef_fcn
-          = boost::bind( &GammaInteractionCalc::transmition_coefficient_material,
-                          material.get(), boost::placeholders::_1, thick );
-      }//if( !!material )
+        input.m_shielding_att = [material, thick]( float energy ) -> double {
+          const double att_coef = GammaInteractionCalc::transmition_coefficient_material( material.get(), energy, thick );
+          return exp( -1.0 * att_coef );
+        };
+      }//if( material && (thick > 0.0) )
     }//if( isGenericMaterial ) / else
-
-    if( !att_coef_fcn.empty() )
-    {
-      for( size_t i = 0; i < branchratios.size(); ++i )
-        if( (particle_type[i] == SandiaDecay::GammaParticle) || (particle_type[i] == SandiaDecay::XrayParticle) )
-          branchratios[i] *= exp( -1.0 * att_coef_fcn( energies[i] ) );
-    }//if( att_coef_fcn )
-  }catch( MassAttenuation::ErrorLoadingDataException & )
-  {
-    throw runtime_error( "Failed to open gamma XS data file" );
   }catch( std::exception &e )
   {
-    cerr << "ReferencePhotopeakDisplay::updateDisplayChange(): caught error " << e.what() << endl;
-#if( PERFORM_DEVELOPER_CHECKS )
-    char msg[512];
-    snprintf( msg, sizeof(msg), "Error caclulating attenuation: %s", e.what() );
-    log_developer_error( __func__, msg );
-#endif
-  }
+    cerr << "Exception getting shielding: " << e.what() << endl;
+  }//try / catch to get shielding
 
-  /*
-  //Peak height is: area*(1/(sigma*sqrt(2*pi)))*exp( -(x-mean)^2 / (2*sigma^2) ),
-  //  therefore peak height is proportianal to area/sigma, lets correct for this
-  //
-  //Note 20221031: This correction is only useful visually, but other factors 
-  //  would overwelm it - AND people wont expect it, so they may use number
-  //  from the mouseover info, and this would be a source of error, so removing
-  //  this "correction" - pending further thought.
-  if( det && det->isValid() && det->hasResolutionInfo() )
+  SpecUtils::trim( input.m_age );
+  SpecUtils::trim( input.m_input_txt );
+
+  return input;
+}//RefLineInput userInput();
+
+
+std::vector<DecayParticleModel::RowData> ReferencePhotopeakDisplay::createTableRows( const ReferenceLineInfo &refLine )
+{
+  vector<DecayParticleModel::RowData> inforows;
+
+  for( const ReferenceLineInfo::RefLine &r : refLine.m_ref_lines )
   {
-    const vector<double> origbr = branchratios;
-    
-    try
-    {
-      for( size_t i = 0; i < branchratios.size(); ++i )
-      {
-        const double sigma = det->peakResolutionSigma( energies[i] );
-        if( sigma <= 0.0 )
-          throw exception();
-        branchratios[i] /= sigma;
-      }//for( size_t i = 0; i < branchratios.size(); ++i )
-    }catch(...)
-    {
-      branchratios = origbr;
-      cerr << "Encountered a negative or zero peak width, not taking detector "
-           << "resolution into account, sorry :(" << endl;
-    }//try / catch
-  }//if( detector->hasResolutionInfo() )
-  */
+    DecayParticleModel::RowData row;
 
-  //Some decays may not produce gammas, but do produce xrays (not verified) so
-  //  we want to normalize gammas and xrays relative to the largest branching
-  //  ratio gamma or xray.
-  double max_gamma_xray = 0.0;
+    row.energy = r.m_energy;
+    row.branchRatio = r.m_decay_intensity;
+    row.responsibleNuc = nullptr;
 
-  map<SandiaDecay::ProductType,double> maxbrs;
-  
-  for( size_t i = 0; i < branchratios.size(); ++i )
-  {
-    const SandiaDecay::ProductType type = particle_type[i];
-    
-    if( !maxbrs.count(type) )
-      maxbrs[type] = 0.0;
-    maxbrs[type] = max(maxbrs[type],branchratios[i]);
+    row.decayMode = SandiaDecay::DecayMode::UndefinedDecay; //JIC
+    row.particle = SandiaDecay::ProductType::GammaParticle; //JIC
 
-    if( type == SandiaDecay::GammaParticle || type == SandiaDecay::XrayParticle )
-      max_gamma_xray = std::max( max_gamma_xray, branchratios[i] );
-  }//for( size_t i = 0; i < branchratios.size(); ++i )
-  
-  for( size_t i = 0; i < branchratios.size(); ++i )
-  {
-    const double energy = energies[i];
-    
-    //If this is an xray caused by a decay, lets normalize its amplitude relative
-    //  to the gamma amplitudes.  If we are displaying just the xrays of an
-    //  element, than we will normalize them to go between zero and one.
-    const bool is_gamma = (particle_type[i] == SandiaDecay::GammaParticle);
-    const bool is_xray = (particle_type[i] == SandiaDecay::XrayParticle);
-    const bool is_decay_xray_gamma = (nuc && (is_gamma || is_xray));
-    const double br = branchratios[i] / (is_decay_xray_gamma ? max_gamma_xray : maxbrs[particle_type[i]]);
-    
-    const SandiaDecay::Transition *transition = transistions[i];
-    const BackgroundLine *backLine = backgroundLines.at(i);
-    
-    if( (transition || backLine) && (br <= brCutoff || IsInf(br) || IsNan(br)) )
-      continue;
-    
-    string particlestr, decaystr, elstr;
-    if( !is_xray )
+    if( r.m_transition )
     {
-      const SandiaDecay::ProductType parttype
-                               = SandiaDecay::ProductType( particle_type[i] );
-      particlestr = SandiaDecay::to_str( parttype );
+      row.responsibleNuc = r.m_transition->parent;
+      row.decayMode = r.m_transition->mode;
+    }
+
+    switch( r.m_particle_type )
+    {
+      case ReferenceLineInfo::RefLine::Particle::Alpha:
+        row.particle = SandiaDecay::ProductType::AlphaParticle;
+        break;
+
+      case ReferenceLineInfo::RefLine::Particle::Beta:
+        row.particle = SandiaDecay::ProductType::BetaParticle;
+        break;
       
-      if( transition )
-      {
-        if( transition->parent )
-          decaystr = transition->parent->symbol;
-        if( transition->child )
-          decaystr += " to " + transition->child->symbol;
-        decaystr += string(" via ") + SandiaDecay::to_str(transition->mode);
-      }else if( reactionPeaks.at(i) )
-      {
-        decaystr = reactionPeaks[i]->name();
-      }else if( backLine )
-      {
-        const string &symbol = std::get<2>(*backLine);
-        if( symbol.size() )
-          decaystr += symbol + ", ";
-        
-        switch( std::get<3>(*backLine) )
-        {
-          case U238Series:    decaystr += "U238 series";         break;
-          case U235Series:    decaystr += "U235 series";         break;
-          case Th232Series:   decaystr += "Th232 series";        break;
-          case Ra226Series:   decaystr += "U238 (Ra226) series"; break;
-          case K40Background: decaystr += "Primordial";          break;
-          case OtherBackground: case BackgroundXRay: case BackgroundReaction:
-            decaystr += std::get<4>(*backLine);    break;
-        }//switch( get<3>(backgroundLines[i]) )
-      }//if( transition ) / else ...
+      case ReferenceLineInfo::RefLine::Particle::Gamma:
+        row.particle = SandiaDecay::ProductType::GammaParticle;
+        break;
+
+      case ReferenceLineInfo::RefLine::Particle::Xray:
+        row.responsibleNuc = r.m_parent_nuclide; // TODO: this is only for comparison - not correct!
+        row.particle = SandiaDecay::ProductType::XrayParticle;
+        row.decayMode = DecayParticleModel::RowData::XRayDecayMode;
+        break;
+    }//switch( r.m_particle_type )
+
+
+    switch( r.m_source_type )
+    {
+      case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+      case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+        if( r.m_reaction )
+          row.decayMode = DecayParticleModel::RowData::ReactionToGammaMode;
+        break;
+
+      case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+      case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
+        row.decayMode = DecayParticleModel::RowData::CascadeSumMode;
+        break;
+
+      case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+      case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+        // We dont want these making it into the table
+        continue;
+    }//switch( r.m_source_type )
+
+    inforows.push_back( row );
+  }//for( const ReferenceLineInfo::RefLine &r : refLine.m_ref_lines )
+
+
+return inforows;
+}// vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
+
+
+Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src )
+{
+  WColor color = m_colorSelect->color();
+  
+  if( m_peaksGetAssignedRefLineColor )
+  {
+#ifndef _MSC_VER
+#warning "Need to test string comparison for sources always work.  E.g., need case-insensitive, etc."
+#endif
+    const map<string,vector<WColor>> usedColors = currentlyUsedPeakColors();
+    
+    auto hasBeenUsed = [&usedColors](const WColor &color)->bool{
+      for( const auto &s : usedColors )
+        for( const auto &c : s.second )
+          if( c == color )
+            return true;
+      return false;
+    };
+    
+    const auto usedIter = usedColors.find(src);
+    const auto previter = m_previouslyPickedSourceColors.find(src);
+    const auto specificiter = m_specificSourcelineColors.find(src);
+    
+    if( m_userHasPickedColor && !hasBeenUsed(color)
+       && (specificiter == end(m_specificSourcelineColors)) )
+    {
+      //If the user picked a color, but didnt fit any peaks, or persist, the
+      //  lines, and the color theme doesnt call out this current source
+      //  explicitly, then use the previous color.
+      //  This maybe seems a little more intuitive from the users perspective.
+      
+      //We also need to propagate m_userHasPickedColor==true forward for when
+      //  user keeps entering different sources.
+      m_userHasPickedColor = true;
+    }else if( usedIter != end(usedColors) && !usedIter->second.empty() )
+    {
+      color = usedIter->second[0];
+      //cout << "Source " << isotxt << " has color " << color.cssText() << " in the spectrum already" << endl;
+    }else if( previter != end(m_previouslyPickedSourceColors)
+             && !hasBeenUsed(previter->second) )
+    {
+      color = previter->second;
+      //cout << "Source " << isotxt << " has previously had color " << color.cssText() << " picked" << endl;
+    }else if( specificiter != end(m_specificSourcelineColors) )
+    {
+      color = specificiter->second;
+      //cout << "Source " << isotxt << " has a specific color, " << color.cssText() << ", in the ColorTheme" << endl;
     }else
     {
-      const SandiaDecay::Element *element = el;
-      if( !element )
-        element = db->element( nuc->atomicNumber );
+      auto colorcopy = m_lineColors;
+      for( const auto &p : usedColors )
+      {
+        for( const auto &c : p.second )
+        {
+          auto pos = std::find( begin(colorcopy), end(colorcopy), c );
+          if( pos != end(colorcopy) )
+            colorcopy.erase(pos);
+        }
+      }//for( loop over colors used for peaks already )
       
-      particlestr = "xray";
-      decaystr = "xray";
-      if( element )
-        elstr = element->name;
-      else if( backLine )
-        elstr = std::get<4>(*backLine);
-    }//if( xray ) / else
-    
-    m_currentlyShowingNuclide.energies.push_back(     energy );
-    m_currentlyShowingNuclide.intensities.push_back(  br );
-    m_currentlyShowingNuclide.particlestrs.push_back( particlestr );
-    m_currentlyShowingNuclide.decaystrs.push_back(    decaystr );
-    m_currentlyShowingNuclide.elementstrs.push_back(  elstr );
-  }//for( size_t i = 0; i < branchratios.size(); ++i )
-  
-  typedef std::map<SandiaDecay::ProductType,double>::const_iterator MaxBrIter;
-  
-  for( MaxBrIter iter = maxbrs.begin(); iter != maxbrs.end(); ++iter )
+      for( const auto &p : m_persisted )
+      {
+        auto pos = std::find( begin(colorcopy), end(colorcopy), p.m_input.m_color );
+        if( pos != end(colorcopy) )
+          colorcopy.erase(pos);
+      }//for( const auto &p : m_persisted )
+      
+      if( colorcopy.empty() )
+        color = m_lineColors[m_persisted.size() % m_lineColors.size()];
+      else
+        color = colorcopy[0];
+      //cout << "Source " << isotxt << " will select color, " << color.cssText()
+      //     << ", from default list (len=" << colorcopy.size() << " of "
+      //     << m_lineColors.size() << ")" << endl;
+    }//if( src has been seen ) / else (user picked color previously)
+  }else
   {
-    const char *typestr = SandiaDecay::to_str( SandiaDecay::ProductType(iter->first) );
-    m_currentlyShowingNuclide.particle_sf[typestr] = iter->second;
-    
-    if( iter->first == SandiaDecay::GammaParticle || iter->first == SandiaDecay::XrayParticle )
-      m_currentlyShowingNuclide.particle_sf[typestr] = max_gamma_xray;
+    color = m_lineColors[m_persisted.size() % m_lineColors.size()];
   }
-
-
-  double maxCascadeBr = 0.0;
-  vector<tuple<float, double, string>> cascade_info;
-  for (const auto& casc : cascades)
-  {
-    const SandiaDecay::Transition* const &trans = get<0>(casc);
-    const double &first_br = get<1>(casc);
-    const float &first_energy = get<2>(casc);
-    const float &second_energy = get<3>(casc);
-    const float &coinc_frac = get<4>(casc);
-    const double &second_br = get<5>(casc);
-    
-    const float energy = first_energy + second_energy;
-
-
-    DecayParticleModel::RowData row;
-    row.energy = energy;
-    row.branchRatio = first_br * coinc_frac;
-    row.particle = SandiaDecay::ProductType::GammaParticle;
-    row.decayMode = DecayParticleModel::RowData::CascadeSumMode;
-    row.responsibleNuc = trans ? trans->parent : nullptr;
-
-    inforows.push_back(row);
-
-    //if (trans && trans->parent)
-    //  cout << "For " << trans->parent->symbol << " the " << first_energy << " keV gamma (br=" << first_br 
-    //  << "), is coincident with "  << second_energy << " keV (br=" << second_br 
-    //  << "), coinc_frac=" << coinc_frac << " of the time (first_br*coinc_frac=" << first_br*coinc_frac << ")" << endl;
-
-    double eff = 1.0;
-    if (!att_coef_fcn.empty())
-    {
-      try
-      {
-        eff *= exp(-1.0 * att_coef_fcn(first_energy));
-        eff *= exp(-1.0 * att_coef_fcn(second_energy));
-      }
-      catch (std::exception&e)
-      {
-        cerr << "Unexpected exception computing attenuation for cascades: " << e.what() << endl;
-      }
-    }//if (!att_coef_fcn.empty())
-
-    if (det && det->isValid())
-    {
-      eff *= det->intrinsicEfficiency(first_energy);
-      eff *= det->intrinsicEfficiency(second_energy);
-    }
-
-    const double amp = eff * first_br * coinc_frac;
-    if (IsNan(amp) || IsInf(amp) )
-    {
-      cout << "Cascade amp to NaN or inf (" << amp << ") for energy " << energy << " keV" << endl;
-      continue;
-    }
-
-    string decaystr = "Cascade sum";
-    if (trans && trans->parent)
-      decaystr += " " + trans->parent->symbol;
-    if (trans && trans->child)
-      decaystr += " to " + trans->child->symbol;
-
-    char buffer[128];
-    snprintf(buffer, sizeof(buffer), " (%.1f + %.1f keV, coinc=%.3g)", first_energy, second_energy, coinc_frac);
-    decaystr += buffer;
-
-    maxCascadeBr = std::max(maxCascadeBr, amp);
-    cascade_info.emplace_back(energy, amp, decaystr);
-  }//for( loop over cascades )
   
+  return color;
+}//Wt::WColor colorForNewSource( const std::string &src );
 
-  if (!cascade_info.empty())
-  {
-    // There can be tons of cascade sums (4834 for U238), we'll limit the number 
-    //   we draw to an arbitrary 350, because this is even more than I expect to 
-    //   be relevant (although I didnt actually check this).
-    //  TODO: limit based on importance, and not a flat limit, e.g., use something like
-    //        yield(i)*sqrt(energy(i))/sum(yield*sqrt(energy))
-    const size_t max_cascade_sums = 350;
-    if (cascade_info.size() > max_cascade_sums)
-    {
-      std::sort( begin(cascade_info), end(cascade_info), 
-        [](const tuple<float, double, string>& lhs, const tuple<float, double, string>& rhs) -> bool {
-          return get<1>(lhs) > get<1>(rhs);
-      });
 
-      cout << "Resizing cascade sums from " << cascade_info.size() << " to " << max_cascade_sums << endl;
-      cascade_info.resize(max_cascade_sums);
-    }//if (cascade_info.size() > 250)
-
-    m_currentlyShowingNuclide.particle_sf["cascade-sum"] = maxCascadeBr;
-
-    for (const auto& info : cascade_info)
-    {
-      //cout << "cascade: " << get<0>(info) << " keV rel_br=" << get<1>(info) / maxCascadeBr << ", " << get<2>(info) << endl;
-
-      const double amp = get<1>(info) / maxCascadeBr;
-      if (IsNan(amp) || IsInf(amp) || (amp < std::numeric_limits<float>::min()))
-      {
-        cout << "Cascade amp to small (" << amp << ") for energy " << get<0>(info) << " keV" << endl;
-        continue;
-      }
-
-      m_currentlyShowingNuclide.energies.push_back( get<0>(info) );
-      m_currentlyShowingNuclide.intensities.push_back( get<1>(info) / maxCascadeBr );
-      m_currentlyShowingNuclide.particlestrs.push_back("cascade-sum");
-      m_currentlyShowingNuclide.decaystrs.push_back(get<2>(info));
-      m_currentlyShowingNuclide.elementstrs.push_back("");
-    }//for( loop over cascade decays )
-  }//if (cascade_info.size())
+void ReferencePhotopeakDisplay::render( Wt::WFlags<Wt::RenderFlag> flags )
+{
+  // If we are here, we are done doing any updates, so lets make sure
+  //  #m_currently_updating is set to false (even though it already should be)
+  assert( !m_currently_updating );
+  m_currently_updating = false;
   
+  WContainerWidget::render( flags );
+}
 
-#if( PERFORM_DEVELOPER_CHECKS )
-  for( const string &s : m_currentlyShowingNuclide.particlestrs )
+
+void ReferencePhotopeakDisplay::updateDisplayChange()
+{
+  if( m_currently_updating )
+    return;
+  
+  RefLineInput user_input = userInput();
+  updateDisplayFromInput( user_input );
+}
+
+
+void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input )
+{
+  UpdateGuard guard( m_currently_updating );
+  
+  shared_ptr<ReferenceLineInfo> ref_lines = ReferenceLineInfo::generateRefLineInfo( user_input );
+  
+  if( ref_lines )
   {
-    if( !m_currentlyShowingNuclide.particle_sf.count(s) )
-    {
-      char msg[512];
-      snprintf( msg, sizeof(msg), "Missing particlestrs (%s) in particle_sf.", s.c_str() );
-//      throw runtime_error(msg);
-      log_developer_error( __func__, msg );
-    }
+    assert( (ref_lines->m_source_type == ReferenceLineInfo::SourceType::Nuclide) == (ref_lines->m_nuclide != nullptr) );
+    assert( (ref_lines->m_source_type == ReferenceLineInfo::SourceType::FluorescenceXray) == (ref_lines->m_element != nullptr) );
+    assert( (ref_lines->m_source_type == ReferenceLineInfo::SourceType::Reaction) == (!ref_lines->m_reactions.empty()) );
+    //ReferenceLineInfo::SourceType::Background
+    //ReferenceLineInfo::SourceType::CustomEnergy
+    //ReferenceLineInfo::SourceType::None
+  }//if( ref_lines - do some quick sanity checks )
+  
+  
+  const SandiaDecay::Nuclide * const nuclide = ref_lines ? ref_lines->m_nuclide : nullptr;
+  const SandiaDecay::Element * const element = ref_lines ? ref_lines->m_element : nullptr;
+  const std::string srcstr = ref_lines ? ref_lines->m_input.m_input_txt : string();
+  const ReferenceLineInfo::InputValidity validity = ref_lines ? ref_lines->m_validity
+  : ReferenceLineInfo::InputValidity::InvalidSource;
+  const ReferenceLineInfo::SourceType src_type = ref_lines ? ref_lines->m_source_type
+  : ReferenceLineInfo::SourceType::None;
+  
+  // Pass any warnings received from parsing the input
+  if( ref_lines && !ref_lines->m_input_warnings.empty() )
+  {
+    for( const string &warning : ref_lines->m_input_warnings )
+      passMessage( warning, WarningWidget::WarningMsgHigh );
   }
+  
+  const bool show_lines = ( (validity == ReferenceLineInfo::InputValidity::Valid)
+                           && (src_type != ReferenceLineInfo::SourceType::None) );
+  
+  m_moreInfoBtn->setHidden( !nuclide );
+  
+  if( (validity == ReferenceLineInfo::InputValidity::Valid)
+     && (m_nuclideEdit->text().toUTF8() != ref_lines->m_input.m_input_txt ) )
+  {
+    m_nuclideEdit->setText( WString::fromUTF8(ref_lines->m_input.m_input_txt) );
+  }
+  
+  const bool hasPromptEquilib = (nuclide && nuclide->canObtainPromptEquilibrium());
+  m_promptLinesOnly->setHidden( !hasPromptEquilib );
+  m_promptLinesOnly->setChecked( ref_lines && ref_lines->m_input.m_promptLinesOnly );
+  if( !hasPromptEquilib )
+    m_promptLinesOnly->setUnChecked();
+  
+  const bool enable_aging = (nuclide && !ref_lines->m_input.m_promptLinesOnly && !nuclide->decaysToStableChildren());
+  const string agestr = (!enable_aging || !ref_lines) ? string() : ref_lines->m_input.m_age;
+  
+  m_ageEdit->setText( WString::fromUTF8(agestr) );
+  m_ageEdit->setEnabled( enable_aging );
+  
+  const string hlstr = !nuclide ? string()
+  : ("&lambda;<sub>&frac12;</sub>="
+     +  PhysicalUnits::printToBestTimeUnits( nuclide->halfLife, 2 ));
+  m_halflife->setText( WString::fromUTF8(hlstr) );
+  
+  m_persistLines->setEnabled( show_lines );
+  m_clearLines->setDisabled( m_persisted.empty() && !show_lines );
+  
+  if( m_csvDownload )
+    m_csvDownload->setDisabled( !show_lines );
+  
+  
+  const bool isPhone = ( m_spectrumViewer && m_spectrumViewer->isPhone() );
+  const WString clearLineTxt = isPhone ? (m_persisted.empty() ? "Remove" : "Remove All")
+  : ( m_persisted.empty() ? "Clear" : "Clear All" );
+  if( clearLineTxt != m_clearLines->text() )
+    m_clearLines->setText( clearLineTxt );
+  
+  
+  bool showGammaCB = true, showXrayCb = true, showAplhaCb = true, showBetaCb = true;
+  switch( src_type )
+  {
+    case ReferenceLineInfo::SourceType::Nuclide:
+      // Show everything
+      showGammaCB = showXrayCb = showAplhaCb = showBetaCb = true;
+      break;
+      
+    case ReferenceLineInfo::SourceType::FluorescenceXray:
+      // Only show x-ray option - but really we shouldnt show any of them
+      showGammaCB = showAplhaCb = showBetaCb = false;
+      break;
+      
+    case ReferenceLineInfo::SourceType::Reaction:
+      // For reactions only show Show Gamma option
+      showXrayCb = showAplhaCb = showBetaCb = false;
+      break;
+      
+    case ReferenceLineInfo::SourceType::Background:
+      showAplhaCb = showBetaCb = false;
+      break;
+      
+    case ReferenceLineInfo::SourceType::CustomEnergy:
+      // We treat custom energy as a gamma, so only show it - but really we shouldnt show any of them
+      showXrayCb = showAplhaCb = showBetaCb = false;
+      break;
+      
+    case ReferenceLineInfo::SourceType::None:
+      // Show all options, otherwise whole area will be blank
+      break;
+  }//switch( src_type )
+  
+  m_showXrays->setHidden( !showXrayCb );
+  m_showGammas->setHidden( !showGammaCB );
+  m_showAlphas->setHidden( !showAplhaCb );
+  m_showBetas->setHidden( !showBetaCb );
+  m_showCascadeSums->setHidden( !ref_lines || !ref_lines->m_has_coincidences );
+  
+  if( ref_lines && (ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid) )
+  {
+    m_showXrays->setChecked( ref_lines->m_input.m_showXrays );
+    m_showGammas->setChecked( ref_lines->m_input.m_showGammas );
+    m_showAlphas->setChecked( ref_lines->m_input.m_showAlphas );
+    m_showBetas->setChecked( ref_lines->m_input.m_showBetas );
+    m_showCascadeSums->setChecked( ref_lines->m_input.m_showCascades );
+  }
+  
+  
+  // Add current nuclide to lis of previous nuclides
+  if( m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
+  {
+    OtherNuc prev;
+    prev.m_input = m_currentlyShowingNuclide.m_input;
+    prev.m_nuclide = m_currentlyShowingNuclide.m_input.m_input_txt;
+    
+    // Remove any other previous nuclides that have same `prev.m_nuclide` as what
+    //  we are about to push on
+    m_prevNucs.erase(std::remove_if(begin(m_prevNucs), end(m_prevNucs),
+                                    [&prev](const OtherNuc &val) -> bool {
+      return (val.m_input.m_input_txt == prev.m_input.m_input_txt);
+    }), end(m_prevNucs));
+    
+    // Push new value onto front of history
+    m_prevNucs.push_front( std::move(prev) );
+    
+    // Check history length, and truncate if needed
+    if( m_prevNucs.size() > m_max_prev_nucs )
+      m_prevNucs.resize( m_max_prev_nucs );
+  }//if( !m_currentlyShowingNuclide.labelTxt.empty() )
+  
+  
+  //Default to using the old color, unless we find a reason to change it.
+  WColor color = ref_lines->m_input.m_color;
+  
+  // Note: this is strictly the source string, and not age, shielding, or other options.
+  const bool isSameSrc = (!srcstr.empty() && (srcstr == m_currentlyShowingNuclide.m_input.m_input_txt));
+  if( !isSameSrc )
+  {
+    assert( ref_lines );
+    color = colorForNewSource( srcstr );
+  }//if( isSameSrc ) / else
+  
+  if( !isSameSrc )
+    m_userHasPickedColor = false;
+  ref_lines->m_input.m_color = color;
+  
+  if( color != m_colorSelect->color() )
+    m_colorSelect->setColor( color );
+  
+  
+  {// Begin handling shielding
+    if( !user_input.m_shielding_name.empty() || !user_input.m_shielding_thickness.empty() )
+    {
+      const string new_mat = SpecUtils::trim_copy( user_input.m_shielding_name );
+      const string new_thick = SpecUtils::trim_copy( user_input.m_shielding_thickness );
+      
+      WLineEdit *materialEdit = m_shieldingSelect->materialEdit();
+      WLineEdit *thicknessEdit = m_shieldingSelect->thicknessEdit();
+      string curr_mat = materialEdit ? materialEdit->text().toUTF8() : string();
+      string curr_thick = thicknessEdit ? thicknessEdit->text().toUTF8() : string();
+      SpecUtils::trim( curr_mat );
+      SpecUtils::trim( curr_thick );
+      
+      if( !SpecUtils::iequals_ascii(curr_mat, new_mat)
+          || !SpecUtils::iequals_ascii(curr_thick, new_thick) )
+      {
+        m_shieldingSelect->setMaterialNameAndThickness( new_mat, new_thick );
+      }
+    }else if( !user_input.m_shielding_an.empty() || !user_input.m_shielding_ad.empty() )
+    {
+#ifndef NDEBUG
+      double dummy;
+      assert( (std::stringstream(user_input.m_shielding_an) >> dummy) );
+      assert( (std::stringstream(user_input.m_shielding_ad) >> dummy) );
 #endif
+      const string new_an = SpecUtils::trim_copy(user_input.m_shielding_an);
+      const string new_ad = SpecUtils::trim_copy(user_input.m_shielding_ad);
+      NativeFloatSpinBox *anEdit = m_shieldingSelect->atomicNumberEdit();
+      NativeFloatSpinBox *adEdit = m_shieldingSelect->arealDensityEdit();
+      string curr_an = anEdit ? anEdit->text().toUTF8() : string();
+      string curr_ad = adEdit ? adEdit->text().toUTF8() : string();
+      SpecUtils::trim( curr_an );
+      SpecUtils::trim( curr_ad );
+      
+      if( !SpecUtils::iequals_ascii(curr_an, new_an)
+         || !SpecUtils::iequals_ascii(curr_ad, new_ad) )
+      {
+        try
+        {
+          m_shieldingSelect->setAtomicNumberAndArealDensity( new_an, new_ad );
+        }catch( std::exception &e )
+        {
+          cerr << "Error setting shielding: " << e.what() << endl;
+          assert( 0 );
+          m_shieldingSelect->setToNoShielding();
+        }
+      }//if( AN or AD needs changing )
+    }else
+    {
+      m_shieldingSelect->setToNoShielding();
+    }
+  }// End handling shielding
   
-
-  // Lets set the table data, but first remove BRs really close to zero
-  const float abs_min_br = FLT_MIN; //FLT_MIN is minimum, normalized, positive value of floats.
-  vector<DecayParticleModel::RowData> inforowstouse;
-  for (size_t i = 0; i < inforows.size(); ++i)
-  {
-    if (inforows[i].branchRatio > abs_min_br && inforows[i].branchRatio >= brCutoff)
-      inforowstouse.push_back(inforows[i]);
-  }//for( loop over inforows )
-
-  m_particleModel->setRowData(inforowstouse);
-
-  
-  //Clientside javascript currently doesnt know about this garuntee that gamma
-  //  lines will be sorted by energy.
-  m_currentlyShowingNuclide.sortByEnergy();
-  
-  //Also, we could play some tricks to eliminate some of the gamma lines that
-  //  are so small in amplitude, they would never impact the user
-  
-  if( show )
-    m_chart->setReferncePhotoPeakLines( m_currentlyShowingNuclide );
-  else
-    m_chart->setReferncePhotoPeakLines( ReferenceLineInfo() );
-  
-
   // Now check if m_options_icon should have a red background (non-default options) or not
   bool nonDefaultOpts = false;
-
-  if (show && (nuc || el || !rctnGammas.empty() || isBackground))
+  
+  if( show_lines )
   {
-    nonDefaultOpts |= ((nuc && canHavePromptEquil) && m_promptLinesOnly->isChecked());
-    nonDefaultOpts |= (showGammaCB && !m_showGammas->isChecked());
-    nonDefaultOpts |= (showXrayCb  && !m_showXrays->isChecked());
-    nonDefaultOpts |= (showAplhaCb &&  m_showAlphas->isChecked());
-    nonDefaultOpts |= (showBetaCb  &&  m_showBetas->isChecked());
-    nonDefaultOpts |= (hasCascades && m_showCascadeSums->isChecked());
-  }//if( we are actually showing any lines )
-
-  // Add or remove the .non-default style class, if necassary
-  if (nonDefaultOpts != hasNonDefaultStyle)
-    m_options_icon->toggleStyleClass("non-default", nonDefaultOpts);
-
-  // We'll only show Coincidence checkbox if there are actually coincidence gammas
-  m_showCascadeSums->setHidden(!hasCascades);
-  if (hasCascades)
-  {
-    if (m_showCascadeSums->isChecked())
-    {
-      if (!m_cascadeWarn)
-      {
-        m_cascadeWarn = new WText("x-rays are not included in cascades");
-        m_cascadeWarn->addStyleClass("CascadeGammaWarn");
-        m_options->insertWidget(m_options->indexOf(m_showCascadeSums) + 1, m_cascadeWarn);
-      }
-      if (m_cascadeWarn->isHidden())
-        m_cascadeWarn->show();
-    }
-    else if(m_cascadeWarn && !m_cascadeWarn->isHidden())
-    {
-      m_cascadeWarn->hide();
-    }
-  }
-  else
-  {
-    if (m_cascadeWarn && !m_cascadeWarn->isHidden())
-      m_cascadeWarn->hide();
-  }//if (hasCascades) / else
-
-
-  if( show )
-  {
-    if( m_persistLines->isDisabled() )
-      m_persistLines->enable();
-    if( m_clearLines->isDisabled() )
-      m_clearLines->enable();
-    if( m_csvDownload && !m_csvDownload->isEnabled() )
-      m_csvDownload->enable();
+    nonDefaultOpts |= ref_lines->m_input.m_showAlphas;
+    nonDefaultOpts |= ref_lines->m_input.m_showBetas;
     
-    if( m_spectrumViewer && m_spectrumViewer->isPhone() )
-      m_clearLines->setText( m_persisted.empty() ? "Remove" : "Remove All" );
-    else
-      m_clearLines->setText( m_persisted.empty() ? "Clear" : "Clear All" );
-  }//if( show )
+    switch( src_type )
+    {
+      case ReferenceLineInfo::SourceType::Nuclide:
+        nonDefaultOpts |= ref_lines->m_input.m_promptLinesOnly;
+        nonDefaultOpts |= !ref_lines->m_input.m_showXrays;
+        nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
+        nonDefaultOpts |= ref_lines->m_input.m_showCascades;
+        break;
+        
+      case ReferenceLineInfo::SourceType::FluorescenceXray:
+        nonDefaultOpts |= !ref_lines->m_input.m_showXrays;
+        break;
+        
+      case ReferenceLineInfo::SourceType::Reaction:
+        nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
+        break;
+        
+      case ReferenceLineInfo::SourceType::Background:
+        nonDefaultOpts |= !ref_lines->m_input.m_showXrays;
+        nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
+        break;
+        
+      case ReferenceLineInfo::SourceType::CustomEnergy:
+        nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
+        break;
+        
+      case ReferenceLineInfo::SourceType::None:
+        nonDefaultOpts |= ref_lines->m_input.m_promptLinesOnly;
+        nonDefaultOpts |= !ref_lines->m_input.m_showXrays;
+        nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
+        nonDefaultOpts |= ref_lines->m_input.m_showCascades;
+        break;
+    }//switch( src_type )
+    
+    const bool showCascades = (ref_lines->m_has_coincidences && ref_lines->m_input.m_showCascades);
+    if( showCascades && !m_cascadeWarn )
+    {
+      m_cascadeWarn = new WText("x-rays are not included in cascades");
+      m_cascadeWarn->addStyleClass("CascadeGammaWarn");
+      m_optionsContent->insertWidget( m_optionsContent->indexOf(m_showCascadeSums) + 1, m_cascadeWarn);
+    }//if( show coincidences )
+    
+    if( m_cascadeWarn )
+      m_cascadeWarn->setHidden( !showCascades );
+  }//if( we are actually showing any lines )
+  
+  const bool hasNonDefaultStyle = m_options_icon->hasStyleClass("non-default");
+  // Add or remove the .non-default style class, if necessary
+  if( nonDefaultOpts != hasNonDefaultStyle )
+    m_options_icon->toggleStyleClass("non-default", nonDefaultOpts);
+  
+  if( !show_lines )
+  {
+    m_currentlyShowingNuclide.reset();
+    m_chart->setReferncePhotoPeakLines( {} );
+    m_particleModel->clear();
+  }else
+  {
+    assert( ref_lines );
+    m_currentlyShowingNuclide = *ref_lines;
+    m_chart->setReferncePhotoPeakLines( m_currentlyShowingNuclide );
+    const vector<DecayParticleModel::RowData> table_rows = createTableRows( *ref_lines );
+    m_particleModel->setRowData( table_rows );
+  }
 
   updateOtherNucsDisplay();
 }//void updateDisplayChange()
@@ -2832,16 +2300,23 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 
 void ReferencePhotopeakDisplay::persistCurentLines()
 {
-  if( m_currentlyShowingNuclide.energies.empty() )
+  if( m_currentlyShowingNuclide.m_validity != ReferenceLineInfo::InputValidity::Valid )
     return;
 
   m_chart->persistCurrentReferncePhotoPeakLines();
   
-  vector<ReferenceLineInfo>::iterator pos;
-  pos = std::find( m_persisted.begin(), m_persisted.end(),
-                   m_currentlyShowingNuclide );
-
-  if( pos == m_persisted.end() && m_currentlyShowingNuclide.displayLines )
+  const string current_input = m_currentlyShowingNuclide.m_input.m_input_txt;
+  
+  ReferenceLineInfo *prev_ref = nullptr;
+  for( size_t i = 0; !prev_ref && (i < m_persisted.size()); ++i )
+  {
+    if( m_persisted[i].m_input.m_input_txt == current_input )
+      prev_ref = &(m_persisted[i]);
+  }
+  
+  if( prev_ref )
+    *prev_ref = m_currentlyShowingNuclide;
+  else if( m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
     m_persisted.push_back( m_currentlyShowingNuclide );
 
   m_currentlyShowingNuclide.reset();
@@ -2905,6 +2380,12 @@ Wt::Signal<> &ReferencePhotopeakDisplay::nuclidesCleared()
   return m_nuclidesCleared;
 }
 
+const MaterialDB *ReferencePhotopeakDisplay::materialDB() const
+{
+  return m_materialDB;
+}
+
+
 void ReferencePhotopeakDisplay::serialize( std::string &xml_data  ) const
 {
   rapidxml::xml_document<char> doc;
@@ -2933,7 +2414,7 @@ void ReferencePhotopeakDisplay::serialize(
   attr = doc->allocate_attribute( "version", value );
   base_node->append_attribute( attr );
 
-  if( m_currentlyShowingNuclide.empty() )
+  if( m_currentlyShowingNuclide.m_input.m_input_txt.empty() )
   {
     node = doc->allocate_node( rapidxml::node_element, "CurrentGuiState" );
     base_node->append_node( node );
@@ -2986,7 +2467,7 @@ void ReferencePhotopeakDisplay::serialize(
   {
     node = doc->allocate_node( rapidxml::node_element, "CurrentLines" );
     base_node->append_node( node );
-    m_currentlyShowingNuclide.serialize( node );
+    m_currentlyShowingNuclide.m_input.serialize( node );
   }//if( !m_currentlyShowingNuclide.empty() )
   
   if( !m_persisted.empty() )
@@ -2994,14 +2475,14 @@ void ReferencePhotopeakDisplay::serialize(
     node = doc->allocate_node( rapidxml::node_element, "PersistedLines" );
     base_node->append_node( node );
     for( const ReferenceLineInfo &n : m_persisted )
-      n.serialize( node );
+      n.m_input.serialize( node );
   }//if( !m_persisted.empty() )
   
   WColor color;
-  if( m_currentlyShowingNuclide.empty() )
+  if( m_currentlyShowingNuclide.m_input.m_input_txt.empty() )
     color = m_colorSelect->color();
   else
-    color = m_currentlyShowingNuclide.lineColor;
+    color = m_currentlyShowingNuclide.m_input.m_color;
   
   if( !color.isDefault() )
   {
@@ -3101,13 +2582,13 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
     if( !attr || !attr->value()
         || !(stringstream(attr->value()) >> version)
         || (version != sm_xmlSerializationVersion) )
-      throw runtime_error( "Mising or invalid ReferencePhotopeakDisplay version" );
+      throw runtime_error( "Missing or invalid ReferencePhotopeakDisplay version" );
     
     gui_node = base_node->first_node( "CurrentGuiState", 15 );
     showing_node = base_node->first_node( "CurrentLines", 12 );
     
     if( (gui_node && showing_node) || !(gui_node || showing_node) )
-      throw runtime_error( "Inconsistent saving of photpeak lines state" );
+      throw runtime_error( "Inconsistent saving of photopeak lines state" );
     
     if( showing_node && showing_node->first_node("DisplayedSource",15) )
       gui_node = showing_node->first_node("DisplayedSource",15);
@@ -3163,20 +2644,61 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
     {
       m_currentlyShowingNuclide.reset();
       node = showing_node->first_node( "DisplayedSource", 15 );
+      
+      if( !node )
+        node = showing_node->first_node( "RefLineInput", 12 );
+      
       if( node )
-        m_currentlyShowingNuclide.deSerialize( node );
+      {
+        RefLineInput input;
+        input.deSerialize( node );
+        
+        // Now we need to set DRF, and shielding att function
+        const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay
+                                                             ? m_detectorDisplay->detector()
+                                                             : nullptr;
+        if( drf && drf->isValid() )
+        {
+          input.m_detector_name = drf->name();
+          input.m_det_intrinsic_eff = drf->intrinsicEfficiencyFcn();
+        }else
+        {
+          input.m_detector_name = "";
+          input.m_det_intrinsic_eff = nullptr;
+        }
+        
+        if( (!input.m_shielding_name.empty() && !input.m_shielding_thickness.empty())
+           || (!input.m_shielding_an.empty() && !input.m_shielding_ad.empty()) )
+        {
+          input.setShieldingAttFcn( m_materialDB );
+        }
+        
+        shared_ptr<ReferenceLineInfo> ref_line = ReferenceLineInfo::generateRefLineInfo( input );
+        if( !ref_line || (ref_line->m_validity != ReferenceLineInfo::InputValidity::Valid) )
+          throw runtime_error( "Couldn't generate reference lines from source '" + input.m_input_txt + "'" );
+        
+        m_currentlyShowingNuclide = *ref_line;
+      }
     }//if( showing_node )
     
     m_persisted.clear();
     persisted_node = base_node->first_node( "PersistedLines", 14 );
+    
     if( persisted_node )
     {
-      for( node = persisted_node->first_node( "DisplayedSource", 15 );
-           node; node = node->next_sibling( "DisplayedSource", 15 ) )
+      node = persisted_node->first_node( "DisplayedSource", 15 );
+      if( !node )
+        node = persisted_node->first_node( "RefLineInput", 12 );
+      
+      for( ; node; node = node->next_sibling( node->name(), node->name_size() ) )
       {
-        ReferenceLineInfo nuc;
-        nuc.deSerialize( node );
-        m_persisted.push_back( nuc );
+        RefLineInput input;
+        input.deSerialize( node );
+        
+        shared_ptr<ReferenceLineInfo> ref_line = ReferenceLineInfo::generateRefLineInfo( input );
+        if( !ref_line || (ref_line->m_validity != ReferenceLineInfo::InputValidity::Valid) )
+          throw runtime_error( "Couldn't generate persisted reference lines from source '" + input.m_input_txt + "'" );
+        m_persisted.push_back( *ref_line );
       }//for( loop over DisplayedSource nodes )
     }//if( persisted_node )
     
@@ -3195,21 +2717,26 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
       auto pickedAttrib = currentColor->first_attribute( "UserSelected", 12 );
       if( pickedAttrib && pickedAttrib->value_size() )
         m_userHasPickedColor = (pickedAttrib->value()[0] == '1');
-    }else if( !m_currentlyShowingNuclide.lineColor.isDefault() )
+    }else if( !m_currentlyShowingNuclide.m_input.m_color.isDefault() )
     {
-      m_colorSelect->setColor( m_currentlyShowingNuclide.lineColor );
+      m_colorSelect->setColor( m_currentlyShowingNuclide.m_input.m_color );
     }
     
     //The quantities m_lineColors, m_peaksGetAssignedRefLineColor,
     //  m_previouslyPickedSourceColors, and m_specificSourcelineColors should
     //  get set by the color theme.
     
-    refreshLinesDisplayedToGui( 100 );
+    refreshLinesDisplayedToGui();
+    
 //    updateDisplayChange();
-    if( m_currentlyShowingNuclide.empty() && m_persisted.empty() )
+    if( (m_currentlyShowingNuclide.m_validity != ReferenceLineInfo::InputValidity::Valid)
+       && m_persisted.empty() )
+    {
       m_nuclidesCleared.emit();
-    else
+    }else
+    {
       m_displayingNuclide.emit();
+    }
   }catch( std::exception &e )
   {
     cerr << "ReferencePhotopeakDisplay::deSerialize() caught: " << e.what() << endl;
@@ -3220,49 +2747,49 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
 }//void deSerialize( std::string &xml_data  )
 
 
-std::string ReferencePhotopeakDisplay::jsonReferenceLinesArray()
-{
-  string answer = "[";
-  if( m_currentlyShowingNuclide.energies.size()
-      && m_currentlyShowingNuclide.displayLines )
-  {
-    m_currentlyShowingNuclide.toJson(answer);
-  }
-  
-  for( size_t i = 0; i < m_persisted.size(); ++i )
-  {
-    const ReferenceLineInfo &ref = m_persisted[i];
-    if (m_currentlyShowingNuclide.energies.empty()
-        || ref.parentLabel() != m_currentlyShowingNuclide.parentLabel())
-    {
-      answer += ",";
-      ref.toJson(answer);
-    }
-  }
-  answer += "]";
-  return answer;
-}//jsonReferenceLines()
+//std::string ReferencePhotopeakDisplay::jsonReferenceLinesArray()
+//{
+//  string answer = "[";
+//  const bool include_primary = ( (m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid)
+//                                && !m_currentlyShowingNuclide.m_ref_lines.empty() );
+//  if( include_primary )
+//    m_currentlyShowingNuclide.toJson(answer);
+//
+//  for( size_t i = 0; i < m_persisted.size(); ++i )
+//  {
+//    const ReferenceLineInfo &ref = m_persisted[i];
+//
+//    if( include_primary
+//        || ref.m_input.m_input_txt != m_currentlyShowingNuclide.m_input.m_input_txt )
+//    {
+//      answer += (answer.size() > 1) ? "," : "";
+//      ref.toJson(answer);
+//    }
+//  }
+//  answer += "]";
+//  return answer;
+//}//jsonReferenceLines()
 
 
 std::map<std::string,std::string> ReferencePhotopeakDisplay::jsonReferenceLinesMap()
 {
   std::map<std::string,std::string> answer;
   
-  if( m_currentlyShowingNuclide.parentLabel() != "" )
-    m_currentlyShowingNuclide.toJson( answer[m_currentlyShowingNuclide.parentLabel()] );
+  if( m_currentlyShowingNuclide.m_input.m_input_txt != "" )
+    m_currentlyShowingNuclide.toJson( answer[m_currentlyShowingNuclide.m_input.m_input_txt] );
     
   for( size_t i = 0; i < m_persisted.size(); ++i )
   {
     const ReferenceLineInfo &ref = m_persisted[i];
-    if( ref.parentLabel() != m_currentlyShowingNuclide.parentLabel() )
-      ref.toJson( answer[ref.parentLabel()] );
+    if( ref.m_input.m_input_txt != m_currentlyShowingNuclide.m_input.m_input_txt )
+      ref.toJson( answer[ref.m_input.m_input_txt] );
   }
   
   return answer;
 }//std::map<std::string,std::string> jsonReferenceLinesMap();
 
 
-void ReferencePhotopeakDisplay::refreshLinesDisplayedToGui( int millisecdelay )
+void ReferencePhotopeakDisplay::refreshLinesDisplayedToGui()
 {
   //Note that the millisecond delay _may_ be vestigulal (untested), from when
   //  this->doJavaScript() was being called instead of wApp->doJavaScript().
@@ -3390,7 +2917,7 @@ void ReferencePhotopeakDisplay::clearAllLines()
   m_currentlyShowingNuclide.reset();
   m_particleModel->clear();
   
-  m_currentlyShowingNuclide.lineColor = m_lineColors[0];
+  m_currentlyShowingNuclide.m_input.m_color = m_lineColors[0];
   m_colorSelect->setColor( m_lineColors[0] );
 
   m_nuclideEdit->setText( "" );
@@ -3427,13 +2954,13 @@ void ReferencePhotopeakDisplay::userColorSelectCallback( const WColor &color )
     log_developer_error( __func__, "Was passed an invalid color." );
 #endif
     m_userHasPickedColor = false;
-    m_colorSelect->setColor( m_currentlyShowingNuclide.lineColor );
+    m_colorSelect->setColor( m_currentlyShowingNuclide.m_input.m_color );
   }else
   {
     m_userHasPickedColor = true;
-    m_currentlyShowingNuclide.lineColor = color;
-    m_previouslyPickedSourceColors[m_currentlyShowingNuclide.labelTxt] = color;
-    refreshLinesDisplayedToGui( 0 );
+    m_currentlyShowingNuclide.m_input.m_color = color;
+    m_previouslyPickedSourceColors[m_currentlyShowingNuclide.m_input.m_input_txt] = color;
+    refreshLinesDisplayedToGui();
   }
 }//void userColorSelectCallback( const std::string &color )
 

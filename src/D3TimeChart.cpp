@@ -169,7 +169,11 @@ public:
         case InteracModeIndex::IM_Normal:
           instructions = new WText( "Left mouse: select<br />"
                                     "&nbsp;&nbsp;&nbsp;&nbsp;no modifiers: foreground<br />"
+#ifdef __APPLE__
                                     "&nbsp;&nbsp;&nbsp;&nbsp;Option-key: background<br />"
+#else
+                                    "&nbsp;&nbsp;&nbsp;&nbsp;Alt-key: background<br />"
+#endif
                                     "&nbsp;&nbsp;&nbsp;&nbsp;shift-key: add times<br />"
                                     "&nbsp;&nbsp;&nbsp;&nbsp;Ctrl-key: remove times<br />"
                                     "Right mouse: zoom in/out<br />"

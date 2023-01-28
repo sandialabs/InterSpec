@@ -37,18 +37,15 @@
 
 .RoundMenuIcon.InvertInDark.Wt-btn.RefLinesOptMenu.non-default
 {
-    
-    background-color: red;
+  background-color: red;
 }
 
-.RefLinesOptions
-{
-  /* width: 200px; */
+.RefLinesOptions.ToolTabSection.ToolTabTitledColumn {
+    /* width: 200px; */
   display: flex;
   flex-direction: column;
-  padding: 5px;
-  overflow-y: auto;
 }
+
 
 .CascadeGammaWarn
 {
@@ -58,21 +55,30 @@
     width: 100px;
 }
 
-.RefLinesOptions > label
-{
-    margin-right: 5px;
-}
 
-.RefLinesOptions .closeicon-wtdefault
-{
+.RefLinesOptions .ToolTabColumnTitle .closeicon-wtdefault {
     float: right;
     /* margin-right: 5px; */
     /* margin-top: 5px; */
 }
 
+.RefLinesOptions .ToolTabTitledColumnContent {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+    padding-left: 5px;
+    padding: 5px;
+    margin: 0px; /* Overide ToolTabTitledColumnContent */
+    overflow-y: auto;
+}
 
-.ParticleViewTable, .RefLinesOptions{
+.RefLinesOptions .ToolTabTitledColumnContent > label {
+  margin-right: 5px;
+}
 
+
+
+.ParticleViewTable, .RefLinesOptions {
 }
 
 

@@ -75,6 +75,7 @@ class IsotopeNameFilterModel;
 class DecayParticleModel : public  Wt::WAbstractItemModel
 {
   //Model to display
+  // TODO: unify info held by DecayParticleModel::RowData and ReferenceLineInfo, so they can share the same struct, and we can just set the data once
 
 public:
   enum Column
@@ -209,11 +210,11 @@ public:
   //  serialize(...).
   void deSerialize( std::string &xml_data  );
   
-  /** returns a JSON array cooresponding to currently showing reference lines.
+  /** returns a JSON array corresponding to currently showing reference lines.
    Will be in the format: "[{},{},...]", where even if there are no showing
   lines you will get back "[]"
    */
-  std::string jsonReferenceLinesArray();
+  //std::string jsonReferenceLinesArray();
   
   /** Provides a map from the reference line label (e.x., "Ba133") to the
    actual lines JSON (ex. {...}).
@@ -253,14 +254,26 @@ public:
    */
   Wt::Signal<> &nuclidesCleared();
   
+  /** Return the material database this widget uses */
+  const MaterialDB *materialDB() const;
 protected:
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
+  
   void updateDisplayChange();
+  void updateDisplayFromInput( RefLineInput user_input );
+ 
+  RefLineInput userInput() const;
+
+  static std::vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
+  
+  Wt::WColor colorForNewSource( const std::string &src );
+
   void handleIsotopeChange( const bool useCurrentAge );
 
   //refreshLinesDisplayedToGui(): makes setting and re-sends to client the lines
   //  that should be displayed, based on m_currentlyShowingNuclide and
   //  m_persisted objects
-  void refreshLinesDisplayedToGui( int millisecdelay );
+  void refreshLinesDisplayedToGui();
   
   void userColorSelectCallback( const Wt::WColor &color );
   
@@ -272,7 +285,7 @@ protected:
   void toggleShowOptions();
 
   /** A simple struct to store previous, or other nuclides to 
-  potentually show if the user clicks on them.
+  potentially show if the user clicks on them.
 
 The other options would be to keep a copy of ReferenceLineInfo around
 or to go all-in and keep a XML state of widget via
@@ -282,9 +295,7 @@ things simple
   struct OtherNuc
   {
     std::string m_nuclide;
-    double m_age = -1.0;
-    std::string m_shielding;
-    double m_shieldThickness = -1.0;
+    RefLineInput m_input;
   };//struct OtherNuc
 
   void updateOtherNucsDisplay();
@@ -306,6 +317,12 @@ things simple
 
   InterSpec *m_spectrumViewer;
   
+  /** If we are setting the GUI state using a RefLineInput object, or serializing from XML,
+   we dont want to react to signals from shielding widget, or DRF, or whatever that they
+   have changed, otherwise we can get into an infinite recursive state.
+   */
+  bool m_currently_updating;
+  
   Wt::WLineEdit *m_nuclideEdit;
   Wt::WSuggestionPopup *m_nuclideSuggest;
 
@@ -323,6 +340,7 @@ things simple
 
   Wt::WPushButton *m_options_icon;
   Wt::WContainerWidget *m_options;
+  Wt::WContainerWidget *m_optionsContent;
 
   Wt::WCheckBox *m_showGammas;
   Wt::WCheckBox *m_showXrays;

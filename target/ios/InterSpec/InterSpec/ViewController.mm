@@ -184,7 +184,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
       const int status = InterSpecServer::remove_allowed_session_token( [_UrlUniqueId UTF8String] );
       if( status != 0 )
       {
-        NSLog( @"InterSpecServer::remove_allowed_session_token gave unexpected status %ld for token '%@'.", _UrlUniqueId );
+        NSLog( @"InterSpecServer::remove_allowed_session_token gave unexpected status %d for token '%@'.", status, _UrlUniqueId );
       }
     }
     _UrlUniqueId = @"";

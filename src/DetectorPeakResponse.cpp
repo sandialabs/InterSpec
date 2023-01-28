@@ -2528,6 +2528,57 @@ float DetectorPeakResponse::intrinsicEfficiency( const float energy ) const
 
 
 
+std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() const
+{
+  const double energy_units = m_efficiencyEnergyUnits;
+
+  switch( m_efficiencyForm )
+  {
+    case kEnergyEfficiencyPairs:
+    {
+      if( m_energyEfficiencies.size() < 2 )
+        return nullptr;
+
+      const vector<EnergyEfficiencyPair> energy_effs = m_energyEfficiencies;
+
+      return [energy_units, energy_effs]( float energy ) -> float {
+        return akimaInterpolate( energy / energy_units, energy_effs );
+      };
+    }//case kEnergyEfficiencyPairs:
+
+    case kFunctialEfficienyForm:
+    {
+      const std::function<float( float )> eff_fcnt = m_efficiencyFcn;
+      if( !eff_fcnt )
+        return nullptr;
+
+      return [energy_units, eff_fcnt]( float energy ) -> float {
+        return eff_fcnt( energy / energy_units );
+      };
+    }//case kFunctialEfficienyForm:
+
+
+    case kExpOfLogPowerSeries:
+    {
+      if( m_expOfLogPowerSeriesCoeffs.empty() )
+        return nullptr;
+
+      const vector<float> coeffs = m_expOfLogPowerSeriesCoeffs;
+      return [energy_units, coeffs]( float energy ) -> float {
+        return expOfLogPowerSeriesEfficiency( energy / energy_units, coeffs );
+      };
+    }//case kExpOfLogPowerSeries:
+
+
+    case kNumEfficiencyFnctForms:
+      return nullptr;
+  }//switch( m_efficiencyForm )
+
+  return nullptr;
+}//std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() const
+
+
+
 float DetectorPeakResponse::peakResolutionFWHM( float energy,
                                                 ResolutionFnctForm fcnFrm,
                                                 const std::vector<float> &pars )

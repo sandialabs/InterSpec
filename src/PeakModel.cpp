@@ -492,7 +492,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   int mean_index = -1, area_index = -1, fwhm_index = -1;
   
   //Columns that may or not be in file, in whcih case will be >= 0.
-  int roi_lower_index = -1, roi_upper_index = -1, nuc_index = -1, nuc_energy_index = -1, color_index = -1, label_index = -1;
+  int roi_lower_index = -1, roi_upper_index = -1, nuc_index = -1, nuc_energy_index = -1, color_index = -1, label_index = -1, cont_type_index = -1;
   
   {//begin to get field_pos
     vector<string> headers;
@@ -510,6 +510,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     const auto roi_end_pos = std::find( begin(headers), end(headers), "roi_upper_energy");
     const auto color_pos = std::find( begin(headers), end(headers), "color");
     const auto label_pos = std::find( begin(headers), end(headers), "user_label");
+    const auto cont_type_pos = std::find( begin(headers), end(headers), "continuum_type");
     
     if( centroid_pos == end(headers) )
       throw runtime_error( "Header did not contain 'Centroid'" );
@@ -540,10 +541,14 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     
     if( label_pos != end(headers) )
       label_index = static_cast<int>( label_pos - begin(headers) );
+    
+    if( cont_type_pos != end(headers) )
+      cont_type_index = static_cast<int>( cont_type_pos - begin(headers) );
   }//end to get field_pos
   
   
   vector<PeakDef> answer;
+  set<std::shared_ptr<PeakContinuum>> continuums_with_type_set;
   
   while( SpecUtils::safe_get_line(csv, line, 2048) )
   {
@@ -597,6 +602,26 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
         peak.continuum()->calc_linear_continuum_eqn( meas, centroid, lowerEnengy, upperEnergy, 3, 3 );
       }//if( CSV five ROI extent ) / else( find from data )
       
+      if( cont_type_index >= 0 && cont_type_index < nfields )
+      {
+        const string &strval = fields[cont_type_index];
+        
+        try
+        {
+          const PeakContinuum::OffsetType type
+                          = PeakContinuum::str_to_offset_type_str( strval.c_str(), strval.size() );
+          peak.continuum()->setType( type );
+          continuums_with_type_set.insert( peak.continuum() );
+        }catch( std::exception & )
+        {
+          const string msg = "Failed to convert '" + strval + "' to a PeakContinuum::OffsetType.";
+          cerr << msg << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+          log_developer_error( __func__, msg.c_str() );
+#endif
+        }//try / catch
+      }//if( cont_type_index >= 0 && cont_type_index < nfields )
+      
       
       if( nuc_index >= 0 && nuc_energy_index >= 0
          && nuc_index < nfields && nuc_energy_index < nfields
@@ -638,8 +663,12 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
              && fabs(p.continuum()->upperEnergy() - peak.continuum()->upperEnergy()) < 0.0001 )
           {
             peak.setContinuum( p.continuum() );
-            //ToDo: determine if we need to make the continuum quadratic or higher...
-            //peak.setType( OffsetType::Quadratic );
+            
+            if( !continuums_with_type_set.count(p.continuum()) )
+            {
+              //ToDo: determine if we need to make the continuum quadratic or higher... before InterSpec v1.0.11, this info wasnt in the CSV, and from other programs it is never.  We also need to consider that that we may not yet have seen all the peaks sharing a continuum.
+              //peak.setType( OffsetType::Quadratic );
+            }//if( !continuums_with_type_set.count(p.continuum()) )
           }//if( ROI bounds are about same as another continuum )
         }//for( loop over peaks previously found to see if we should share continuum )
       }//if( new peak has a defined energy range )
@@ -3095,11 +3124,13 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
   const size_t npeaks = peaks.size();
   const string eol_char = "\r\n"; //for windows - could potentially customize this for the users operating system
   
-  outstrm << "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
-  "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color, User_Label"
+  outstrm <<
+  "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
+  "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color, User_Label, Continuum_Type"
   << eol_char
-  << "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
-  "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV, (css),           "
+  <<
+  "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
+  "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV, (css),           ,               "
   << eol_char;
   
   
@@ -3269,6 +3300,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     csvEscape( color_str );
     csvEscape( user_label );
 
+    const string continuum_type = PeakContinuum::offset_type_str( peak.continuum()->type() );
     
     outstrm << meanstr
     << ',' << areastr
@@ -3289,6 +3321,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     << ',' << xhigh
     << ',' << color_str
     << ',' << user_label
+    << ',' << continuum_type
     << eol_char;
   }//for( loop over peaks, peakn )
 }//void PeakModel::write_peak_csv(...)

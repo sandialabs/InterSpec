@@ -55,10 +55,16 @@ public:
 
   This is the content in the window shown when the "more info" button is
   clicked on the "Reference Photopeaks" tab.
+
+  @param nuc The nuclide to display information for.
+  @param history If non-emty, the option to go back to the previous nuclide
+         will be given to the user.
   */
-  void setNuclide( const SandiaDecay::Nuclide *const nuc );
+  void setNuclide( const SandiaDecay::Nuclide *const nuc,
+                   std::vector<const SandiaDecay::Nuclide *> history );
 
 protected:
+  void setTemplateTxt();
   void showDecayChainChart();
   void showDecayThroughChart();
 
