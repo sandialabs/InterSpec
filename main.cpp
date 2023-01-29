@@ -50,8 +50,6 @@
 #endif
 
 
-#include "InterSpec/QRSpecDev.h"
-
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN 1
 #include <windows.h>
@@ -75,8 +73,6 @@ void processCustomArgs( int argc, char **argv );
 
 int main( int argc, char **argv )
 {
-  return QRSpecDev::dev_code();
-  
 #ifdef _WIN32
   getUtf8Args( argc, argv );
 #endif

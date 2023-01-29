@@ -817,8 +817,16 @@ int start_server( const char *process_name, const char *userdatadir,
     InterSpecApp *app = InterSpecApp::instanceFromExtenalToken( session_token );
     if( app )
     {
+      // TODO: need to figure out which platforms go through here, and if they are encoded.
+#if( ANDROID )
+      const std::string unencoded = Wt::Utils::urlDecode(url);
+      const std::string &unecodedUrl = unencoded;
+#else
+      const std::string &unecodedUrl = url;
+#endif
+
       Wt::WApplication::UpdateLock applock( app );
-      used = app->handleAppUrl( url );
+      used = app->handleAppUrl( unecodedUrl );
       app->triggerUpdate();
     }else
     {

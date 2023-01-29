@@ -47,10 +47,6 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
             android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|locale|fontScale|keyboard|keyboardHidden|navigation"
             android:screenOrientation="sensorLandscape"
             android:launchMode="singleTask">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
 
             <intent-filter
                 android:icon='@mipmap/ic_launcher'
@@ -137,15 +133,34 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
                 <data android:scheme="content" android:pathPattern="*.zip" />
             </intent-filter>
 
-            <intent-filter>
+            <intent-filter
+                android:icon='@mipmap/ic_launcher'
+                android:label='InterSpec data URI'
+                android:priority='1'>
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.EDIT" />
                 <action android:name="android.intent.action.PICK" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="interspec" android:host="drf" android:pathPrefix="/" />
-                <data android:scheme="interspec" android:host="decay" android:pathPrefix="/" />
-                <data android:scheme="raddata" android:host="G0" android:pathPrefix="/" />
+                <data android:scheme="interspec" />
+            </intent-filter>
+
+            <intent-filter
+                android:icon='@mipmap/ic_launcher'
+                android:label='Gamma spectrum URI'
+                android:priority='1'>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <action android:name="android.intent.action.PICK" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="raddata" />
+                <data android:scheme="RADDATA" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
             <!-- Splash screen -->
