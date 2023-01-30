@@ -62,6 +62,11 @@ extern "C"{
 
 
 using namespace std;
+
+//Make sure assignment in UrlSpectrum definition is valid
+static_assert( static_cast<int>(SpecUtils::SourceType::Unknown) == 4,
+              "if SpecUtils::SourceType::Unknown is not four, please modify class definition" );
+
 namespace
 {
   const char * const sm_hex_digits = "0123456789ABCDEF";
@@ -694,12 +699,31 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     }//if( we have energy calibration info - that we can use )
   }//if( !skip_energy )
   
+  // Lamdba to remove parts of a string that would look like a field delimiter
+  //  i.e., a space, followed by a colon, followed by an upper-case letter
+  //  TODO: Just replaces colon with a space, for now - perhaps we should define some 'escape' sequence
+  auto remove_field_delimiters = []( string input ) -> string {
+    size_t pos = 0;
+    while( (pos + 1) < input.size() )
+    {
+      pos = input.find(":", pos + 1);
+      if( pos == string::npos)
+        break;
+      
+      const char prev_char = pos ? input[pos-1] : ' ';
+      const char next_char = ((pos+1) < input.size()) ? input[pos+1] : 'A';
+      
+      if( (prev_char == ' ') && (next_char >= 'A') && (next_char <= 'Z') )
+        input[pos] = ' ';
+    }//while( (pos + 1) < input.size() )
+    
+    return input;
+  };//remove_field_delimiters lambda
   
   if( !skip_model )
   {
     // Remove equal signs and quotes
-    string det_model = m.m_model;
-    SpecUtils::ireplace_all( det_model, ":", "" );
+    string det_model = remove_field_delimiters( m.m_model );
     if( det_model.size() > 30 )
       det_model = det_model.substr(0,30);
     
@@ -736,8 +760,7 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
   
   if( !skip_title && !m.m_title.empty() )
   {
-    string operator_notes = m.m_title;
-    SpecUtils::ireplace_all( operator_notes, ":", " " );
+    string operator_notes = remove_field_delimiters( m.m_title );
     if( operator_notes.size() > 60 )
       operator_notes.substr(0, 60);
     
@@ -1507,11 +1530,11 @@ std::vector<UrlSpectrum> decode_spectrum_urls( vector<string> urls )
         spec.m_model = first_spec.m_model;
       
       if( spec.m_energy_cal_coeffs.empty()
-         && (spec.m_channel_data.size() == first_spec.m_energy_cal_coeffs.size()) )
+         && (spec.m_channel_data.size() == first_spec.m_channel_data.size()) )
         spec.m_energy_cal_coeffs = first_spec.m_energy_cal_coeffs;
       
       if( spec.m_dev_pairs.empty()
-         && (spec.m_channel_data.size() == first_spec.m_energy_cal_coeffs.size()) )
+         && (spec.m_channel_data.size() == first_spec.m_channel_data.size()) )
         spec.m_dev_pairs = first_spec.m_dev_pairs;
       
       if( SpecUtils::valid_latitude(first_spec.m_latitude) && !SpecUtils::valid_latitude(spec.m_latitude) )
