@@ -1,3 +1,15 @@
+# Building dependencies for InterSpec
+When building InterSpec, you can either have CMake download and build all dependencies through the `InterSpec_FETCH_DEPENDENCIES` CMake option (e.g., `cmake -DInterSpec_FETCH_DEPENDENCIES=ON ..`), or you can manually build all dependencies.  Using package managers like `brew`, `pacman`, or `nuget` is very unlikely to work.  Having CMake download and build the dependencies is the easiest option, but for building on non-networked computers, or if you are having proxy or other issues, these instructions let you manually build the dependancies, and place them all in a common prefix.  The other scnerious where you might consider manually building the dependencies is if you plan to do heavy development on the InterSpec code; compiling is slightly faster with the pre-built dependancies as the build system has much less files to track and check if they have been changed. 
+
+
+Jump to:
+- [macOS](#Building-dependencies-on-macOS-Catalina)
+- [Windows](#Building-dependencies-on-Windows-10)
+- [Linux](#Building-dependencies-on-Linux) 
+
+For iOS and Android, only using `InterSpec_FETCH_DEPENDENCIES=ON` is supported.
+
+
 # Building dependencies on macOS Catalina
 First, lets set the directory we will install all the pre-requisites to:
 ```bash
@@ -118,6 +130,16 @@ cd ../..
 # Build ceres-solver; this is the optimizer used for the relative efficiency
 # tool, and a small amount of the peak fitting.
 curl -L http://ceres-solver.org/ceres-solver-2.1.0.tar.gz --output ceres-solver-2.1.0.tar.gz
+
+# Double check the hash of the tar file
+ceres_hash=`openssl SHA512 ceres-solver-2.1.0.tar.gz | cut -d' ' -f2`
+wanted_hash='db777c4a4b85a9972628c714413fe9ca1a92cc6c8b14d80401842a02c4d7e7df4e9d236775e231e8337e47f21e47cd82c1a0fbcfeffbd9b654e46a66262996f2'
+if [ "$ceres_hash" = "$wanted_hash" ]; then
+  echo "Ceres hash validated."
+else
+    echo "Ceres hash did not validate - you should not procede."
+fi
+
 tar -xzvf ceres-solver-2.1.0.tar.gz
 cd ceres-solver-2.1.0
 mkdir build_macos
@@ -129,13 +151,35 @@ cmake --build . --config Release --target install -j 16
 cd ../..
 ```
 
+## Build InterSpec to run on localhost
+This is most useful for development.
+```bash
+cd ${PATCH_DIR}/../..
+mkdir build_xcode
+cd build_xcode
+cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX}  -DTRY_TO_STATIC_LINK=ON -DUSE_SPECRUM_FILE_QUERY_WIDGET=ON -DUSE_TERMINAL_WIDGET=ON -G Xcode ..
+
+# Debug builds reference '/external_libs/SpecUtils/d3_resources/d3.min.js'
+# and similar for SpectrumChartD3.js/.css, so we can edit the files under
+# version control (rather than copies), so to do this we need to create a 
+# symbolic link
+cd external_libs/SpecUtils
+ln -s ../../../external_libs/SpecUtils/d3_resources .
+cd ../..
+
+# Open the generated project in Xcode
+open InterSpec.xcodeproj
+
+# Then after compiling, point your browser to http://localhost:8080
 
 ## Build InterSpec as macOS app
 Note, not currently building as fat binary (have not tried)
 ```bash
-cd ${PATCH_DIR}/../..
-cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DBUILD_AS_OSX_APP=ON -DTRY_TO_STATIC_LINK=ON -DUSE_SPECRUM_FILE_QUERY_WIDGET=ON -DUSE_TERMINAL_WIDGET=ON -G Xcode ..
-open InterSpec.xcodeproj
+cd ${PATCH_DIR}/../osx/
+mkdir build_macOS_app
+cd build_macOS_app
+cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -G Xcode ..
+open InterSpecApp.xcodeproj
 ```
 
 
@@ -178,7 +222,9 @@ set MY_PREFIX=C:\install\msvc2022\x64\wt_3.7.1_prefix
 ```
 
 
-Build zlib
+## Build zlib
+`zlib` is used by InterSpec to allow you read-in  (usually by dragging and dropping) zip files that contain spectrum files.
+
 ```bash
 git clone https://github.com/madler/zlib.git zlib-1.2.13
 # Checkout version 1.2.13
@@ -219,10 +265,8 @@ cmake --build . --config Debug --target install
 If you plan to package InterSpec as an Electron application (e.g., normal desktop app), see the instructions in [patches](/target/electron/) for building the InterSpec code and packaging the application.
 
 
-
-If you plan to compile InterSpec with the relative activity tools enabled (CMake option `USE_REL_ACT_TOOL` - default is on), then you will also need to compile/install 
-
-http://ceres-solver.org/installation.html#section-windows
+## Build Eigen and Ceres
+If you plan to compile InterSpec with the relative activity tools enabled (CMake option `USE_REL_ACT_TOOL` - default is on), then you will also need to compile/install http://ceres-solver.org/installation.html#section-windows
 
 ```bash
 # Build Eigen, which is required by ceres-solver, and used a few other places
@@ -329,6 +373,35 @@ cmake -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_BUILD_TYPE=Release -DCMAKE_
 cmake --build . --config Release --target install
 cd ../..
 ```
+
+## Build Eigen and Ceres
+If you plan to compile InterSpec with the relative activity tools enabled (CMake option `USE_REL_ACT_TOOL` - default is on), then you will also need to compile/install http://ceres-solver.org/installation.html#linux
+
+```bash
+# Build Eigen, which is required by ceres-solver, and used a few other places
+# in InterSpec if its avaiable.
+curl -L https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz --output eigen-3.4.0.tar.gz
+tar -xzvf eigen-3.4.0.tar.gz
+cd eigen-3.4.0
+mkdir build
+cd build
+cmake -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_BUILD_TYPE=Release -DEIGEN_MPL2_ONLY=1 -DEIGEN_BUILD_SHARED_LIBS=OFF -DEIGEN_BUILD_DOC=OFF -DEIGEN_BUILD_TESTING=OFF ..
+cmake --build . --config Release --target install
+
+
+# Build ceres-solver; this is the optimizer used for the relative efficiency
+# tool, and a small amount of the peak fitting.
+curl -L http://ceres-solver.org/ceres-solver-2.1.0.tar.gz --output ceres-solver-2.1.0.tar.gz
+tar -xzvf ceres-solver-2.1.0.tar.gz
+cd ceres-solver-2.1.0
+mkdir build_msvc
+cd build_msvc
+
+cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF ..
+cmake --build . --config Release --target install -j 16
+```
+
+
 
 You can now build a local web server:
 ```bash

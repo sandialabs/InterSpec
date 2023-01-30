@@ -3252,11 +3252,12 @@ void SpecMeasManager::displayQuickSaveAsDialog()
   if( second ) ++nspecs;
   if( background ) ++nspecs;
 
+  WButtonGroup *group = nullptr;
   if( nspecs > 1 )
   {
     WGroupBox *buttons = new WGroupBox( "Which file to save:",
                                         dialog->contents() );
-    WButtonGroup *group = new WButtonGroup( dialog->contents() );
+    group = new WButtonGroup( dialog->contents() );
     if( data )
     {
       WRadioButton *button = new WRadioButton( "Foreground", buttons );
@@ -3274,35 +3275,19 @@ void SpecMeasManager::displayQuickSaveAsDialog()
                                        m_specificResources[static_cast<int>(i)], data,
                                        samplenums, detnames ) );
       }
+      
+      group->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Foreground) );
     }//if( data )
-    
-    if( second )
-    {
-      WRadioButton *button = new WRadioButton( "Second Foreground", buttons );
-      button->setInline( false );
-      
-      samplenums = m_viewer->displayedSamples( SpectrumType::SecondForeground );
-      for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-          i < SaveSpectrumAsType::NumTypes;
-          i = SaveSpectrumAsType(static_cast<int>(i)+1) )
-      {
-        button->clicked().connect(
-                          boost::bind( &SpecificSpectrumResource::setSpectrum,
-                                       m_specificResources[toint(i)], second,
-                                       samplenums, detnames ) );
-      }
-      
-      if( !data )
-        button->setChecked();
-      group->addButton( button, -1 );
-    }//if( second )
 
     if( background )
     {
       WRadioButton *button = new WRadioButton( "Background", buttons );
       button->setInline( false );
+      group->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Background) );
+      if( !data )
+        button->setChecked();
       
-      samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::Background );
+      samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::SecondForeground );
       for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
           i < SaveSpectrumAsType::NumTypes;
           i = SaveSpectrumAsType(toint(i)+1) )
@@ -3312,9 +3297,25 @@ void SpecMeasManager::displayQuickSaveAsDialog()
                                        m_specificResources[toint(i)], background,
                                        samplenums, detnames ) );
       }
-      
-      group->addButton( button, -1 );
     } // if( background )
+    
+    if( second )
+    {
+      WRadioButton *button = new WRadioButton( "Secondary", buttons );
+      button->setInline( false );
+      group->addButton( button, static_cast<int>(SpecUtils::SpectrumType::SecondForeground) );
+      
+      samplenums = m_viewer->displayedSamples( SpectrumType::SecondForeground );
+      for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
+          i < SaveSpectrumAsType::NumTypes;
+          i = SaveSpectrumAsType(static_cast<int>(i)+1) )
+      {
+        button->clicked().connect(
+                                  boost::bind( &SpecificSpectrumResource::setSpectrum,
+                                              m_specificResources[toint(i)], second,
+                                              samplenums, detnames ) );
+      }
+    }//if( second )
   } // if( nspecs > 1 )
 
   WContainerWidget *linkDiv = new WContainerWidget( dialog->contents() );
@@ -3342,6 +3343,23 @@ void SpecMeasManager::displayQuickSaveAsDialog()
 #endif
   }//for( SaveSpectrumAsType i = ... )
   
+  
+#if( USE_QR_CODES )
+  {// begin add QR code display link
+    const string linktitle = "As QR code / URL";
+    WAnchor *a = new WAnchor( linktitle, linkDiv );
+    a->setInline( false );
+    a->setStyleClass( "LoadSpectrumSaveAsLink" );
+    
+    auto displayQr = [=](){
+      const int selindex = group ? group->checkedId() : static_cast<int>(SpecUtils::SpectrumType::Foreground);
+      SpecUtils::SpectrumType type = selindex >= 0 ? SpecUtils::SpectrumType(selindex) : SpecUtils::SpectrumType::Foreground;
+      displaySpectrumQrCode( type );
+      dialog->hide();
+    };
+    a->clicked().connect( std::bind( displayQr ) );
+  }// begin add QR code display link
+#endif
 
   WPushButton *cancel = new WPushButton( "Cancel", dialog->contents() );
   cancel->setInline( false );
