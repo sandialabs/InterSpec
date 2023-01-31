@@ -1,8 +1,82 @@
-<div style="text-align: right;">SAND2022-0432 O</div>
+<div style="text-align: right;">SAND2023-XXXX O</div>
+
+# v1.0.10 (Aug 07, 2022)
+InterSpec [version 1.0.10](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.10-1) fixes a number of smaller issues, improves some interfaces, makes using pre-defined detector response functions (DRFs) easier, adds a number of default DRFs for common portable detection systems, reduced app memory usage, and upgraded some underlying libraries.
+
+## Detailed changes for v1.0.10
+
+- If the "Auto store your work" preference is enabled, when you load a spectrum file, InterSpec will check if you have previously performed any work with the spectrum (fit for peaks, done energy calibration, fit for activities, etc), and if you have, present you with the option to resume where you previously left off, even if you did not explicitly save your work.<img alt="Example &quot;resume from&quot; dialog" src="v1.0.10/resume_from_dialog.png" style="float: right; width: 250px; margin: 5px;" />
+  - Currently, browsing for this "un-saved" work is not enabled; you must open the relevant spectrum file to trigger this, but browsing previous un-saved work may be enabled in the future.
+  - You can always explicitly save your work in InterSpecs internal database; this allows creating tagged versions, and allows easy browsing to view/resume the spectra and work
+  - Also, if you export your spectrum to the N42-2012, all your work (peaks, activity, energy calibration, etc) will be stored in the N42 file, and reloaded when you open the file back up in InterSpec (on the same or different computer)
+  - The "Auto store your work" preference was previously labeled "Automatically store session"
+- <div style="display: inline-block; width: 35%; float: right;">
+    <a href="v1.0.10/default_drfs.png">
+      <img alt="DRF selection dialog" src="v1.0.10/default_drfs.png" style="width: 100%; margin: 10px" />
+    </a>
+    <div>The DRF selection dialog, showing the &quot;Rel. Eff.&quot; tab where you can select from the included default DRFs.</div>
+    </div>
+    Added a number of common detector response functions into the application.  Now when data from one of these detector systems is loaded into InterSpec, if the detector type can be deduced, a default response function for that model will be automatically loaded.  This behavior can be prevented with the "Use default DRFs" preference, or instead a users-specified response function can be used for either a detector model, or a specific serial-numbered detector (see the "Detector Response Select" item under the "Tools" menu).
+- Made it so you can drag-n-drop detector response function files (CSV or XML files exported from the "Detector Response Select" or "Make Detector Response" tools, or a few other various formats are accepted) onto the application to load them.
+- For Windows and Linux, multiple instances of InterSpec windows are now all the same process, reducing memory usage.  You can open a new InterSpec window using the menus ("View" -> "New app window"), or by double clicking on InterSpec.exe again.
+    - If you have associated spectrum file types with InterSpec in the operating system, now when you double-click a spectrum file, it will be opened up in the InterSpec instance you already have running.  In addition to the speed/memory savings, this allows things like if the new file you are opening is from the same detector as your current file, you will be prompted if you want to open the new file up as foreground, background, or secondary.
+        - You can always use the "Spectrum Files" tab to toggle the displayed spectra to any that have been opened up in the current window.
+- <div style="display: inline-block; width: 350px; margin 10px; float: right">
+    <a href="v1.0.10/drf_qr_code.png">
+      <img alt="QR code of a DRF" src="v1.0.10/drf_qr_code.png" style="width: 100%;" />
+    </a>
+    <div>Example QR code of a DRF.  Equivalently this information can be represented in a hyperlink, like <a href="interspec://drf/specify?CREATED=1652742909&DIAM=39.894&EFFT=P&EFFX=10*15*20*25*30*35*40*45*50*55*60*70*80*90*100*120*150*180*200*220*240*260*280*300*330*370*400*450*500*550*600*650*700*760*830*910*1E3*1100*1200*1300*1400*1500*1600*1700*1800*1900*2E3*2200*2400*2600*2800*3E3*3500*4E3*4500*5E3*6E3*7E3*8E3*1E4*12000*2E4*5E4*1E5&EFFY=7E-6*0.030974*0.22089*0.43163*0.57454*0.57065*0.58436*0.62993*0.66554*0.69394*0.71702*0.75167*0.77581*0.7929*0.8051*0.81916*0.80656*0.74594*0.68757*0.62489*0.56132*0.5046*0.45376*0.40886*0.35186*0.29203*0.2567*0.21122*0.17768*0.15237*0.1327*0.11717*0.10463*0.092522*0.081387*0.071392*0.062605*0.054956*0.048937*0.044081*0.040082*0.036624*0.033617*0.030921*0.028521*0.026382*0.024458*0.021128*0.01835*0.015979*0.013843*0.012825*0.008685*0.005246*0.002248*0.001868*0.001657*0.001518*0.001427*0.001342*0.001333*0.001559*0.002526*0.003523&FWHMC=-2.47272*7.07225*0.48365&FWHMT=GAD&HASH=6259320852553123205&LASTUSED=1652742909&NAME=Kromek%20D3S&ORIGIN=5&VER=1">this one</a></div>
+    </div> Added a QR-code display for representing detector response functions, and nuclide decay information tool.
+    - Inside the QR code, the information is encoded in a "deep-link" with the prefix "interspec://", which means you can also embed DRFs, or decay tool information within normal hyperlinks on webpages or emails, and when the user clicks on them, your operating system will pass the information off to InterSpec to handle processing and importing.
+    - All information is embedded within the QR code or hyperlink itself.  No internet service or 3rd party is used, meaning the data remains entirely under your own control.
+- Added allowing the decay calculator to "back decay" nuclides by accepting end dates before the begin date; when this is done the nuclides activities entered by the user will be the end-activity, and the initial activities will be computed and given.
+- Updated a number of libraries InterSpec is built with:
+  - The [Wt](https://www.webtoolkit.eu/wt) library was updated from 3.3.4 to 3.7.1, the last in the 3.x series. This caused a number of regression in the graphical user interface, which we have hopefully fixed, but there still could be further minor issues discovered.
+  - The [boost](https://www.boost.org) library from 1.65.1 to 1.78.
+  - The [jQuery](https:....) library was updated to vX.X.X; previously, some automated cybersecurity scans would erroneously flag use of the older version as an issue.
+  - The [qToolTip](htpps:...), and [Electron](https://....) libraries were also update.
+- The Linux version of the application is now built using the "manylinux2014_x86_64" Docker image provided by the [Python Packaging Authority](https://github.com/pypa/manylinux). The `libgcc` and `libstdc++` are also now statically compiled into `InterSpecAddOn.node` library.  These changes should improve compatibility of distributions the application can run on.
+- Compiling for Linux, macOS, and Windows was made easier through using the CMake `FetchContent` capability to retrieve the code for, and build, the [boost](https://www.boost.org) and [Wt](https://www.webtoolkit.eu/wt) libraries; now just a C++ compiler, [CMake](htpss:....) and (for Windows and Linux) [npm](htpps://....) are needed to compile the application
+    - See https://github.com/sandialabs/InterSpec/tree/master/target/electron#building-with-cmake-fetched-and-compiled-dependencies
+    - Thank you to @furutaka for testing this capability and helping to greatly improve it.
+- Modified the default ColorTheme so the first reference line color isn't so close to the default color for peaks without nuclide/color assigned.
+- Clarified, and added some tool-tips.
+- Improve initial rendering of some dialogs within the application.
+- Fix issue that could cause a crash when deleting a peak from the "Peak Manager" tab.
+- Fixed a potential crash when rendering the time-chart, as well as improved display in some cases when input spectral data was was poorly specified, and fixed an issue where the correct time samples would potentially not be highlighted on the initial load of a file.
+- Fixed some issues with the user-preference displays not reflecting the currently applied preferences.
+- Fixed a few places where activities unit display (i.e., currie vs becquerel).
+- Fixed issue where the original spectrum file name was not being saved in saved states; now when exporting various CSVs, or spectrum files from a saved states, the suggested names will match the original filename better.
+- Fixed issue with peaks losing their use of landau skew when refit.  Please not though that the skew is not currently accounted for when rending the peak to the chart, and the plan is to remove landau skew in favor of a better skew model in the future.
+- Fixed issue on the "Feature Marker" tool where updates to the Compton angle wouldn't immediately take effect
+- On iOS and macOS, removed OS-level autocorrect and spellcheck suggestions, since these are nearly never relevant to input in InterSpec.
+- Added allowing multiple nuclides in the "RIID IDed nuclide" field of the spectrum file query tool.  If you enter a comma separated list of nuclides then they are OR'd together now.  This is useful if you have a long list of nuclides you want to search for.
+- Fixed a few smaller bugs in the energy calibration tool.
+- Add support for D3S being a recognized "DetectorType".
+- Fixed or improved a number of smaller things when combing spectra together in the "Spectrum Manager".
+- A C++14 compiler is now required, as is CMake >= 3.15, which has allowed removal of a number of workarounds, and some code cleanup.
+- Update build settings to more easily and reliably work for others
+- Work for iOS and Android was performed, and the code is currently compiling, but there is some remaining work to be done to make the functionality complete, due to changes in the operating system APIs and policies since InterSpec was last released on these platforms.
+- Changed internal mechanism for accepting files and URI from the operating system, that allows more reliable and flexible operations.
+- Fixed some issues issues in the &quot;Activity/Shielding Fit&quot; tool when multiple nuclides are tied to the same age, as well as sometime if a nuclide for a peak was changed, the change wasn't previously always detected.
+- Fix lat/long in legend of time-chart to be ordered lat/long, instead of long/lat.
+- Fix issues clearing session and doing file query in Windows and Linux builds.
+- Add ctrl-s shortcut to save state.
+- Make so peak selected in the &quot;Peak Manager&quot; table, is also outlined on the chart, and if the &quot;Peak Manager&quot; tab is showing, and you click on a peak on the chart, that row in the peak table will be highlighted.
+- Improve closing of number-editor in the &quot;Peak Manager&quot; table.
+- Fix issue combining spectrum files in the File Manager, as well as added ability to make a new file out of a sub-set of a single files samples, and added ability to sum selected spectra into a new single spectrum.
+- Fix incorrect assignment peak assignment for single and double escape peaks.
+- Fix issue associating "meta-2" nuclides to peaks, for example "hf178m2".
+- Fix potential time-chart issue that could caus the user interface to crash.
+- Fix time-zone issue on time-chart, and also display time in 24 hour format always.
+- Add CSV download to the "Reference Photopeak" tab.
+
+---
+<p style="font-weight: bold;">(Note to DC reviewers: everything below here was approved as SAND2022-0432 O)</p>
 
 # v1.0.9 (Feb 06, 2021)
-InterSpec version 1.0.9 adds a number of user requested features and user reported fixes.
-In particular, support volumetric trace sources and cylindrical and rectangular geometries; these are particularly useful for determining contamination levels, or activities of bulk materials.
+  InterSpec version 1.0.9 adds a number of user requested features and user reported fixes.
+  In particular, support for volumetric trace sources and cylindrical and rectangular geometries; these are particularly useful for determining contamination levels, or activities of bulk materials.
 
 ## Detailed changes for v1.0.9
 - Added support for end-on cylindrical, side-on cylindrical, and rectangular shielding/source geometries, in addition to the previously available spherical geometry.  
