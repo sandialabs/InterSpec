@@ -148,7 +148,11 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
  
   enableUpdates( true );
   
-  //Might as well initialize the DecayDataBaseServer, but in the background
+  // Lets get a jump on initializing DecayDataBaseServer.
+  // Note however, in InterSpecServer::startServer and InterSpecServer::startServerNodeAddon we have
+  //  already called DecayDataBaseServer::initialize() as soon as the thread pool was available, so
+  //  this call will be a waste.
+  //  TODO: once the localhost server is converted to using InterSpecServer, remove this next line
   WServer::instance()->ioService().boost::asio::io_service::post( &DecayDataBaseServer::initialize );
    
   setupDomEnvironment();

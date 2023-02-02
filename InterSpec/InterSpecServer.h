@@ -65,7 +65,8 @@ namespace InterSpecServer
 
   void killServer();
   
-  
+  /** Blocks current thread until the Wt server is stopped by some other means. */
+  int wait_for_shutdown();
   
   //portBeingServedOn(): will only be valid if this instance of the app is
   //  serving the webpages.  Will be -1 if not serving.

@@ -122,7 +122,7 @@ namespace InterSpecServer
   std::string sm_urlServedOn = "";
   std::mutex sm_servedOnMutex;
   
-  Wt::WServer *ns_server = 0;
+  Wt::WServer *ns_server = nullptr;
   std::mutex ns_servermutex;
   
   
@@ -272,6 +272,20 @@ namespace InterSpecServer
     
     if( ns_server->start() )
     {
+      // Start initializing DecayDataBaseServer.
+      //  Previous to 20230203, we did this in the beginning of InterSpecApp constructor.
+      //  On a 2019 macBook pro, release build of the native app, it took about 485 ms from the
+      //  start of starting the server, to when the decay database was done initializing.
+      //  The first request for the database had to wait about 120 ms for it to be ready; I
+      //  think this was another background thread (the InterSpec::fillMaterialDb() function),
+      //  but the second request for the database was a GUI render thread, which had to wait
+      //  40 to 80 ms.
+      //  If we do it here, its 260 ms of the equivalent timespan, and the GUI thread never has
+      //  to wait to access the database.
+      //  Using the minimized coincidence version of sandia.decay.xml increases parse time
+      //  by about 170 ms.
+      ns_server->ioService().boost::asio::io_service::post( &DecayDataBaseServer::initialize );
+      
       const int port = ns_server->httpPort();
       std::string this_url = "http://127.0.0.1:" + boost::lexical_cast<string>(port);
       
@@ -340,6 +354,9 @@ namespace InterSpecServer
     
     if( ns_server->start() )
     {
+      // See remarks in startServer() on performance and reason for this next call
+      ns_server->ioService().boost::asio::io_service::post( &DecayDataBaseServer::initialize );
+      
       const int port = ns_server->httpPort();
       assert( !server_port_num || (server_port_num == port) );
       std::string this_url = "http://127.0.0.1:" + boost::lexical_cast<string>(port);
@@ -517,11 +534,24 @@ int start_server( const char *process_name, const char *userdatadir,
       std::cerr << "About to stop server" << std::endl;
       ns_server->stop();
       delete ns_server;
-      ns_server = 0;
+      ns_server = nullptr;
       std::cerr << "Stopped and killed server" << std::endl;
     }
   }//void killServer()
   
+
+  int wait_for_shutdown()
+  {
+    {
+      std::lock_guard<std::mutex> serverlock( ns_servermutex );
+      
+      if( !ns_server )
+        return -1;
+    }
+    
+    return Wt::WServer::waitForShutdown();
+  }//int wait_for_shutdown()
+
   
   int add_allowed_session_token( const char *session_id, const SessionType session_type )
   {
