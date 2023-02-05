@@ -226,19 +226,18 @@ using namespace std;
 extern void android_download_workaround( Wt::WResource *resource, std::string description );
 #endif
 
-
-std::mutex InterSpec::sm_staticDataDirectoryMutex;
-std::string InterSpec::sm_staticDataDirectory = "data";
+namespace
+{
+  std::mutex ns_staticDataDirectoryMutex;
+  bool sm_haveSetStaticDataDirectory = false;
+  std::string ns_staticDataDirectory = "data";
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-std::mutex InterSpec::sm_writableDataDirectoryMutex;
-std::string InterSpec::sm_writableDataDirectory = "";
+  std::mutex ns_writableDataDirectoryMutex;
+  std::string ns_writableDataDirectory = "";
 #endif  //if( not a webapp )
 
 
-
-namespace
-{
   static const char * const PeakInfoTabTitle      = "Peak Manager";
   static const char * const GammaLinesTabTitle    = "Reference Photopeaks";
   static const char * const CalibrationTabTitle   = "Energy Calibration";
@@ -1116,12 +1115,13 @@ InterSpec *InterSpec::instance()
 
 void InterSpec::setStaticDataDirectory( const std::string &dir )
 {
-  std::lock_guard<std::mutex> lock( sm_staticDataDirectoryMutex );
+  std::lock_guard<std::mutex> lock( ns_staticDataDirectoryMutex );
   
   if( !SpecUtils::is_directory(dir) )
     throw runtime_error( "InterSpec::setStaticDataDirectory(): " + dir + " is not a directory." );
   
-  sm_staticDataDirectory = dir;
+  ns_staticDataDirectory = dir;
+  sm_haveSetStaticDataDirectory = true;
 
 #ifdef _WIN32
   MassAttenuation::set_data_directory( SpecUtils::convert_from_utf8_to_utf16(dir) );
@@ -1144,14 +1144,20 @@ void InterSpec::setStaticDataDirectory( const std::string &dir )
 
 std::string InterSpec::staticDataDirectory()
 {
-  std::lock_guard<std::mutex> lock( sm_staticDataDirectoryMutex );
-  return sm_staticDataDirectory;
+  std::lock_guard<std::mutex> lock( ns_staticDataDirectoryMutex );
+  return ns_staticDataDirectory;
+}
+
+bool InterSpec::haveSetStaticDataDirectory()
+{
+  std::lock_guard<std::mutex> lock( ns_staticDataDirectoryMutex );
+  return sm_haveSetStaticDataDirectory;
 }
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
 void InterSpec::setWritableDataDirectory( const std::string &dir )
 {
-  std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
+  std::lock_guard<std::mutex> lock( ns_writableDataDirectoryMutex );
   
   if( !dir.empty() && !SpecUtils::is_directory(dir) )
     throw runtime_error( "InterSpec::setWritableDataDirectory(): " + dir + " is not a directory." );
@@ -1164,17 +1170,17 @@ void InterSpec::setWritableDataDirectory( const std::string &dir )
   //if( !serial_db.empty() )
   //  SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
   
-  sm_writableDataDirectory = dir;
+  ns_writableDataDirectory = dir;
 }//setWritableDataDirectory( const std::string &dir )
 
 std::string InterSpec::writableDataDirectory()
 {
-  std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
+  std::lock_guard<std::mutex> lock( ns_writableDataDirectoryMutex );
   
-  if( sm_writableDataDirectory.empty() )
+  if( ns_writableDataDirectory.empty() )
     throw runtime_error( "writableDataDirectory hasnt been set." );
   
-  return sm_writableDataDirectory;
+  return ns_writableDataDirectory;
 }//string writableDataDirectory()
 #endif  //if( not a webapp )
 
@@ -4051,7 +4057,6 @@ void InterSpec::showWelcomeDialog( bool force )
     m_useInfoWindow->finished().connect( this, &InterSpec::deleteWelcomeDialog );
     
     wApp->triggerUpdate();
-    cout << "You should now see Welcome Dialog." << endl;
   } ) );
 }//void showWelcomeDialog()
 
@@ -7960,7 +7965,7 @@ void InterSpec::fillMaterialDb( std::shared_ptr<MaterialDB> materialDB,
   try
   {
     //materialDB can get destructed if the session ends immediately....
-    const string materialfile = SpecUtils::append_path(sm_staticDataDirectory, "MaterialDataBase.txt" );
+    const string materialfile = SpecUtils::append_path(ns_staticDataDirectory, "MaterialDataBase.txt" );
     materialDB->parseGadrasMaterialFile( materialfile, db, false );
     
     WServer::instance()->post( sessionid, update );
@@ -10489,9 +10494,9 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
     
       string drf_dir;
       if( PeakFitUtils::is_high_res(data) )
-        drf_dir = SpecUtils::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/HPGe 40%" );
+        drf_dir = SpecUtils::append_path(ns_staticDataDirectory, "GenericGadrasDetectors/HPGe 40%" );
       else
-        drf_dir = SpecUtils::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/NaI 1x1" );
+        drf_dir = SpecUtils::append_path(ns_staticDataDirectory, "GenericGadrasDetectors/NaI 1x1" );
       
       detPtr->fromGadrasDirectory( drf_dir );
     }//if( !detector || !detector->isValid() )

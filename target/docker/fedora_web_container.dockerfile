@@ -16,7 +16,7 @@ COPY build_fedora35/interspec_install /var/opt/interspec
 
 WORKDIR /var/opt/interspec
 
-ENTRYPOINT ["/var/opt/interspec/InterSpec", "--docroot=/var/opt/interspec/html_root/", "--http-address=0.0.0.0", "--http-port=8078", "--config=/var/opt/interspec/html_root/data/config/wt_config_localweb.xml", "--accesslog=-", "--no-compression", "--userdb /var/opt/interspec/user_data.sqlite3", "--static-data-dir", "/var/opt/interspec/html_root/data/"]
+ENTRYPOINT ["/var/opt/interspec/InterSpec", "--docroot=/var/opt/interspec/html_root/", "--http-address=0.0.0.0", "--http-port=8078", "--config=/var/opt/interspec/html_root/data/config/wt_config_localweb.xml", "--userdatadir /var/opt/interspec/", "--static-data-dir", "/var/opt/interspec/html_root/data/"]
 
 
 # If build fails, issue this command

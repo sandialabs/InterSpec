@@ -266,6 +266,7 @@ set(sources
     src/SpectrumDataModel.cpp
     src/HelpSystem.cpp
     src/InterSpec.cpp
+    src/InterSpecServer.cpp
     src/PopupDiv.cpp
     src/SpecMeas.cpp
     src/PeakFit.cpp
@@ -360,6 +361,7 @@ set(headers
     InterSpec/SpectrumDataModel.h
     InterSpec/HelpSystem.h
     InterSpec/InterSpec.h
+    InterSpec/InterSpecServer.h
     InterSpec/PopupDiv.h
     InterSpec/SpecMeas.h
     InterSpec/PeakFit.h
@@ -425,12 +427,6 @@ set(headers
     InterSpec/MoreNuclideInfoDisplay.h
 )
 
-
-if( hasParent)
-  # TODO: have even local-server use InterSpecServer.h
-  list(APPEND sources src/InterSpecServer.cpp)
-  list(APPEND headers InterSpec/InterSpecServer.h)
-endif( hasParent)
 
 if(USE_DB_TO_STORE_SPECTRA)
     list(APPEND sources src/DbStateBrowser.cpp src/DbFileBrowser.cpp)

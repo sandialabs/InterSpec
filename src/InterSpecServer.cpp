@@ -302,10 +302,14 @@ namespace InterSpecServer
   
 
   
-  void startServerNodeAddon( string name,
+  void startWebServer( string name,
                              std::string basedir,
                              const std::string xml_config_path,
-                             unsigned short int server_port_num )
+                             unsigned short int server_port_num
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+                             , string http_address = "127.0.0.1"
+#endif
+                             )
   {
     std::lock_guard<std::mutex> serverlock( ns_servermutex );
     if( ns_server )
@@ -325,7 +329,14 @@ namespace InterSpecServer
     ns_server = new Wt::WServer( name, xml_config_path );
     char *exe_param_name  = &(name[0]);
     char httpaddr_param_name[]  = "--http-addr";
+    
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+    char *httpaddr_param_value  = &(http_address[0]);
+#else
     char httpaddr_param_value[] = "127.0.0.1";
+#endif
+    
+    
     char httpport_param_name[]  = "--http-port";
     string port_str = std::to_string( static_cast<int>(server_port_num) );
     assert( !port_str.empty() );
@@ -359,7 +370,7 @@ namespace InterSpecServer
       
       const int port = ns_server->httpPort();
       assert( !server_port_num || (server_port_num == port) );
-      std::string this_url = "http://127.0.0.1:" + boost::lexical_cast<string>(port);
+      std::string this_url = "http://" + string(httpaddr_param_value) + ":" + boost::lexical_cast<string>(port);
       
       {
         std::lock_guard<std::mutex> lock( sm_servedOnMutex );
@@ -370,12 +381,18 @@ namespace InterSpecServer
     {
       throw std::runtime_error( "Failed to start Wt server" );
     }//if( server.start() )
-  }//startServerNodeAddon(...)
+  }//startWebServer(...)
   
 
-int start_server( const char *process_name, const char *userdatadir,
-                  const char *basedir, const char *xml_config_path, 
-                  unsigned short int server_port )
+int start_server( const char *process_name,
+                  const char *userdatadir,
+                  const char *basedir,
+                  const char *xml_config_path,
+                  unsigned short int server_port
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+                  , const char *http_address = "127.0.0.1"
+#endif
+                  )
 {
   //Using a relative path should get us in less trouble than an absolute path
   //  on Windows.  Although havent yet tested (20190902) with network drives and such on Windows.
@@ -470,7 +487,8 @@ int start_server( const char *process_name, const char *userdatadir,
   
   try
   {
-    InterSpec::setStaticDataDirectory( SpecUtils::append_path(relbasedir,"data") );
+    if( !InterSpec::haveSetStaticDataDirectory() )
+      InterSpec::setStaticDataDirectory( SpecUtils::append_path(relbasedir,"data") );
   }catch( std::exception &e )
   {
     cerr << e.what() << endl;
@@ -514,7 +532,7 @@ int start_server( const char *process_name, const char *userdatadir,
 
   try
   {
-    InterSpecServer::startServerNodeAddon( process_name, relbasedir, xml_config_path, server_port );
+    InterSpecServer::startWebServer( process_name, relbasedir, xml_config_path, server_port );
   }catch( std::exception &e )
   {
     std::cerr << "\n\nCaught exception trying to start InterSpec server:\n\t"
@@ -523,7 +541,7 @@ int start_server( const char *process_name, const char *userdatadir,
   }
   
   return InterSpecServer::portBeingServedOn();
-}//int interspec_start_server( int argc, char *argv[] )
+}//int start_server( ... )
   
   void killServer()
   {
@@ -720,12 +738,6 @@ int start_server( const char *process_name, const char *userdatadir,
 
   int open_file_in_session( const char *sessionToken, const char *files_json )
   {
-#ifndef _WIN32
-  #warning "Need to actually test interspec_open_file"
-#endif    
-    //Are we guaranteed to receeve the entire message at once?
-    cerr << "Opening files not tested!" << endl;
-    
     vector<string> files, appurls;
     
     try
