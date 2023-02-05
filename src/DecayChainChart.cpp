@@ -302,7 +302,7 @@ void DecayChainChart::jsonInfoForNuclide( const SandiaDecay::Nuclide * const nuc
     
   vector<string> info = getTextInfoForNuclide( nuc, m_nuclide, m_useCurrie );
     
-  const string hl = (IsInf(nuc->halfLife) ? std::string("stable") : PhysicalUnits::printToBestTimeUnits(nuc->halfLife));
+  const string hl = (IsInf(nuc->halfLife) ? std::string("stable") : PhysicalUnits::printToBestTimeUnits(nuc->halfLife, 2));
     
   js << "{ \"nuclide\": \"" << nuc->symbol << "\","
     << " \"massNumber\": " << static_cast<int>(nuc->massNumber) << ","
@@ -324,6 +324,9 @@ void DecayChainChart::jsonInfoForNuclide( const SandiaDecay::Nuclide * const nuc
     
     if( !trans->child )
       continue;  //Spontaneous Fission, skip for now.
+    
+    if( trans->branchRatio <= 0.0 )
+      continue;
     
     js << std::string(kidnum ? ", {" : " {")
     << " \"nuclide\": \"" << trans->child->symbol << "\","
@@ -453,20 +456,17 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
   
   for( const SandiaDecay::Transition * transition : nuc->decaysToChildren )
   {
-    if( transition->child )
+    if( transition->child && (transition->branchRatio > 0.0) )
     {
+      const char * const decay_mode = SandiaDecay::to_str( transition->mode );
+      const string br = PhysicalUnits::printCompact(transition->branchRatio, 4);
+      
       snprintf( buffer, sizeof(buffer),
-               "Decays to %s by %s decay, BR %.5f",
+               "Decays to %s by %s decay, BR %s",
                transition->child->symbol.c_str(),
-               SandiaDecay::to_str( transition->mode ),
-               transition->branchRatio );
+               decay_mode, br.c_str() );
       
-      //strip off dangling zeros...
-      string val = buffer;
-      while( val.length() > 2 && val[val.length()-1]=='0' && val[val.length()-2]!='.' )
-        val = val.substr(0,val.length()-1);
-      
-      information.push_back( val );
+      information.push_back( buffer );
     }//if( transition->child )
   }//for( const SandiaDecay::Transition * transition : nuc->decaysToChildren)
   

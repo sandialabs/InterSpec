@@ -36,6 +36,7 @@ DecayChainChart = function(elem, options) {
   if( (typeof this.options.rightPad) !== 'number' ) this.options.rightPad = 0;
   if( (typeof this.options.isMobile) !== 'boolean' ) this.options.isMobile = false;
   if( (typeof this.options.isDecayChain) !== 'boolean' ) this.options.isDecayChain = true;
+  if( (typeof this.options.showHalfLives) !== 'boolean' ) this.options.showHalfLives = true;
   
   if( (typeof this.options.lineColor) !== 'string' ) this.options.lineColor = "black";
   if( (typeof this.options.textColor) !== 'string' ) this.options.textColor = "black";
@@ -293,20 +294,41 @@ DecayChainChart.prototype.redraw = function() {
   //Right now we'll just loop over all elements and find the largest one; this
   //  can be improved if performance is an issue.
   let twenty_px_w = 1, twenty_px_h = 1;
-  let labeltxt = function(nuc){
-    /* return nuc.additionalIsos ? nuc.nuclide + "(m)" : nuc.nuclide; */
-     let s = nuc.nuclide;
-     if( !nuc.additionalIsos )
-      return s;
-    if( nuc.iso != 0 && s.includes('m') )
+  let labeltxt = function(nuc, xPosFnc){
+    let s = nuc.nuclide;
+    const is_meta = (nuc.additionalIsos && nuc.additionalIsos.length); // && (nuc.iso != 0) && s.includes('m'));
+    
+    if( is_meta )
+      console.log( s, ':', nuc.additionalIsos );
+    
+    if( is_meta && (nuc.iso != 0) && s.includes('m') )
       s = s.substring(0,s.lastIndexOf('m'));
-    return s + '<tspan dy="-0.5em" font-size="66%">(m)</tspan>';
-  };
+    
+    if( self.options.showHalfLives )
+    {
+      let hltxt = nuc.halfLive;
+      for( let i = 0; is_meta && i < nuc.additionalIsos.length; ++i )
+        hltxt += ", " + nuc.additionalIsos[i].halfLive;
+        
+      s = '<tspan x="' + xPosFnc(nuc) + '" dy="-0.57em">' + s + '</tspan>';
+      s += (is_meta ? '<tspan dy="-0.5em" font-size="66%">(m)</tspan>' : "");
+      s += '<tspan x="' + xPosFnc(nuc)
+            + '" dy="' + (is_meta ? '1.75' : '1.0') + 'em"'
+            + ' font-size="' + (is_meta ? '50' : '66') + '%">'
+            + hltxt + '</tspan>';
+    }else
+    {
+      if( is_meta )
+        s += '<tspan dy="-0.5em" font-size="66%">(m)</tspan>';
+    }
+    
+    return s;
+  };//labeltxt
   
   this.data.forEach( function(nuc){
     let tmptxt = self.decays
                      .append("text")
-                     .html( labeltxt(nuc) )
+                     .html( labeltxt( nuc, function(){return "0px";} ) )
                      //.text( nuc.nuclide )
                      .attr("font-size", "20px");
     twenty_px_w = Math.max( twenty_px_w, tmptxt.node().getBoundingClientRect().width );
@@ -320,7 +342,7 @@ DecayChainChart.prototype.redraw = function() {
   //At 20px we want the spacing to be {}
   
   //Define how much padding text should have inside each box.
-  const txt_frac_x = 0.9, txt_frac_y = 0.8;
+  const txt_frac_x = 0.9, txt_frac_y = (self.options.showHalfLives ? 1.0 : 0.8);
   const twenty_px_box_w = twenty_px_w / txt_frac_x;
   const twenty_px_box_h = twenty_px_h / txt_frac_y;
   
@@ -559,6 +581,7 @@ DecayChainChart.prototype.redraw = function() {
     return (0.5 + ind)*pad_y + ind*box_h + 0.35*font_height + 0.5*box_h;
   };
   
+  
   texts.attr("x", txtXPos )
        .attr("y", txtYPos )
        .attr("class", function (d) {
@@ -577,7 +600,7 @@ DecayChainChart.prototype.redraw = function() {
        } )
        .on("click", function(d){ self.nuclideClicked(d); } )
        .on("dblclick", function(d){ self.nuclideDoubleClicked(d); } )
-       .html( labeltxt )
+       .html( function(d){ return labeltxt(d,txtXPos); } )
        .attr("font-family", "sans-serif")
        .attr("font-size", function(){ return font_size + "px";} )
        .attr("fill", self.options.textColor );
