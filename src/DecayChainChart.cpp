@@ -37,12 +37,14 @@
 #include <Wt/WLength>
 #include <Wt/WPainter>
 #include <Wt/WRectArea>
+#include <Wt/WResource>
 #include <Wt/WTableCell>
 #include <Wt/WGridLayout>
 #include <Wt/Chart/WAxis>
 #include <Wt/WPushButton>
 #include <Wt/WPaintDevice>
 #include <Wt/WApplication>
+#include <Wt/Http/Response>
 #include <Wt/WStringStream>
 #include <Wt/WContainerWidget>
 #include <Wt/Chart/WCartesianChart>
@@ -51,7 +53,9 @@
 #include <boost/any.hpp>
 #include <boost/bind.hpp>
 
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/D3SpectrumExport.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -124,6 +128,158 @@ namespace
     
     return answer;
   }//decay_particle_info(...)
+
+
+  std::string file_contents( const string &filename )
+  {
+    //Copied from SpecUtils::load_file_data( const char * const filename, std::vector<char> &data );
+#ifdef _WIN32
+    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+    basic_ifstream<char> stream(wfilename.c_str(), ios::binary);
+#else
+    basic_ifstream<char> stream(filename.c_str(), ios::binary);
+#endif
+  
+    if (!stream)
+      throw runtime_error(string("cannot open file ") + filename);
+    stream.unsetf(ios::skipws);
+  
+    // Determine stream size
+    stream.seekg(0, ios::end);
+    size_t size = static_cast<size_t>( stream.tellg() );
+    stream.seekg(0);
+  
+    string data;
+    data.resize( size );
+    stream.read(&data.front(), static_cast<streamsize>(size));
+    
+    return data;
+  }//std::string file_contents( const std::string &filename, std::vector<char> &data )
+
+
+class DecayChainHtmlResource : public Wt::WResource
+{
+protected:
+  DecayChainChart *m_chart;
+  Wt::WApplication *m_app;
+  
+public:
+  DecayChainHtmlResource( DecayChainChart *parent )
+  : WResource( parent ),
+  m_chart( parent ),
+  m_app( WApplication::instance() )
+  {
+    assert( m_app );
+    assert( m_chart );
+  }
+  
+  virtual ~DecayChainHtmlResource()
+  {
+    beingDeleted();
+  }
+  
+private:
+  virtual void handleRequest( const Wt::Http::Request &, Wt::Http::Response &response )
+  {
+    WApplication::UpdateLock lock( m_app );
+    
+    if( !lock )
+    {
+      log("error") << "Failed to WApplication::UpdateLock in DecayChainHtmlResource.";
+      
+      response.out() << "Error grabbing application lock to form DecayChainHtmlResource resource; please report to InterSpec@sandia.gov.";
+      response.setStatus(500);
+      assert( 0 );
+      
+      return;
+    }//if( !lock )
+    
+    if( !m_app )
+      return;
+    
+    try
+    {
+      const SandiaDecay::Nuclide * const nuclide = m_chart->nuclide();
+      
+      const string filename = (nuclide ? nuclide->symbol : string("blank")) + "_decay_chain.html";
+      suggestFileName( filename, WResource::Attachment );
+      
+      
+      WStringStream js;
+      js
+      << "<script>"
+      << "  let chart = null;\n"
+      << "  let nuc_data = {};\n";
+      if( nuclide )
+      {
+        js << "  nuc_data[\"" << nuclide->symbol << "\"] = [";
+        
+        const vector<const SandiaDecay::Nuclide *> descendants = nuclide->descendants();
+        for( size_t i = 0; i < descendants.size(); ++i )
+        {
+          js << std::string(i ? "," : "");
+          m_chart->jsonInfoForNuclide( descendants[i], js );
+        }
+        js << "];\n\n";
+      }//if( nuclide )
+      
+      js << "  let default_options = {\n"
+      << "    lineColor: \"black\",\n"
+      << "    textColor: \"black\",\n"
+      << "    backgroundColor: \"white\",\n"
+      << "    linkColor: \"blue\"\n"
+      << "  };\n\n\n";
+      
+      const string docroot = SpecUtils::append_path( m_app->docRoot(), "InterSpec_resources" );
+      
+      string htmls = file_contents( SpecUtils::append_path( docroot, "DecayChartStandalone.tmplt.html") );
+      
+      //#if( SpecUtils_D3_SUPPORT_FILE_STATIC )
+      //      const string d3_js = (const char *)D3SpectrumExport::d3_js();
+      //#else
+      //      const string d3_js = file_contents( D3SpectrumExport::d3_js_filename() );
+      //#endif
+      
+      const string d3_js = file_contents( SpecUtils::append_path( docroot, "d3.v3.min.js") );
+      const string dcc_js = file_contents( SpecUtils::append_path( docroot, "DecayChainChart.js") );
+      const string dcc_css = file_contents( SpecUtils::append_path( docroot, "DecayChainChart.css") );
+      
+      js
+      << "/* ------ Begin d3.v3.js ------ */\n"
+      << d3_js
+      << "\n"
+      << "/* ------ End d3.v3.js ------ */\n"
+      << "\n\n"
+      << "/* ------ Begin DecayChainChart.js ------ */\n"
+      << dcc_js
+      << "\n"
+      << "/* ------ End DecayChainChart.js ------ */\n"
+      << "</script>"
+      << "\n\n"
+      << "<style>"
+      << "/* ------ Begin DecayChainChart.css ------ */\n"
+      << dcc_css
+      << "\n"
+      << "/* ------ End DecayChainChart.css ------ */\n"
+      << "</style>\n"
+      << "\n";
+      
+      SpecUtils::ireplace_all( htmls, "<!--HEADMATTER-->", js.str().c_str() );
+      
+      response.out() << htmls << "\n";
+    }catch( std::exception &e )
+    {
+      log("error") << "Error creating decay chain chart HTML: " << e.what();
+      
+      response.out() << "Error creating decay chain chart HTML: " << e.what();
+      response.setStatus(500);
+      assert( 0 );
+      
+      return;
+    }//try / catch
+  }//handleRequest(...)
+  
+};//class DecayChainHtmlResource
 }//namespace
 
 
@@ -155,6 +311,33 @@ DecayChainChart::DecayChainChart( WContainerWidget *parent  )
                                             boost::placeholders::_1 ) );
   m_showDecaysThrough.connect( boost::bind( &DecayChainChart::showDecaysThrough, this,
                                            boost::placeholders::_1 ) );
+  
+  
+  //////////////
+  WResource *csv = new DecayChainHtmlResource( this );
+#if( BUILD_AS_OSX_APP || IOS )
+  WAnchor *csvButton = new WAnchor( WLink(csv), this );
+  csvButton->setTarget( AnchorTarget::TargetNewWindow );
+  csvButton->setStyleClass( "LinkBtn DownloadLink DecayChainDnldBtn" );
+#else
+  WPushButton *csvButton = new WPushButton( this );
+  csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
+  csvButton->setLink( WLink(csv) );
+  csvButton->setLinkTarget( Wt::TargetNewWindow );
+  csvButton->setStyleClass( "LinkBtn DownloadBtn DecayChainDnldBtn" );
+  
+#if( ANDROID )
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  csvButton->clicked().connect( std::bind([csv](){
+    android_download_workaround(csv, "decay_chain.html");
+  }) );
+#endif //ANDROID
+#endif
+  
+  csvButton->setText( "HTML" );
+  
+  csvButton->setObjectName( "htmldownload" );
+  csvButton->hide();
 }//DecayChainChart constructor
 
 
@@ -255,6 +438,10 @@ void DecayChainChart::setNuclide( const SandiaDecay::Nuclide * const nuc, const 
   
   if( actuallyChanged )
     m_nuclideChanged.emit( m_nuclide );
+  
+  auto htmldnld = find( "htmldownload" );
+  if( htmldnld )
+    htmldnld->setHidden( !nuc );
 }//void setNuclide(...)
 
 
@@ -411,18 +598,18 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
   char buffer[512];
   
   information.push_back( nuc->symbol );
-  snprintf( buffer, sizeof(buffer), "Atomic Number: %i", nuc->atomicNumber );
+  snprintf( buffer, sizeof(buffer), "Protons: %i", nuc->atomicNumber );
   information.push_back( buffer );
-  snprintf( buffer, sizeof(buffer), "Atomic Mass: %.2f", nuc->atomicMass );
+  snprintf( buffer, sizeof(buffer), "Mass: %.1f Da", nuc->atomicMass );
   information.push_back( buffer );
   
-  if( nuc == parentNuclide )
-  {
-    if( parentNuclide->canObtainSecularEquilibrium() )
-      information.push_back( "Can reach secular equilibrium" );
-    else
-      information.push_back( "Cannot reach secular equilibrium" );
-  }
+  //if( nuc == parentNuclide )
+  //{
+  //  if( parentNuclide->canObtainSecularEquilibrium() )
+  //    information.push_back( "Can reach secular equilibrium" );
+  //  else
+  //    information.push_back( "Cannot reach secular equilibrium" );
+  //}
   
   if( IsInf(nuc->halfLife) )
   {
@@ -439,9 +626,9 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
     const float br_to = parentNuclide->branchRatioToDecendant(nuc);     //will be >0 when plotting decays from a nuclide
     
     if( br_from <= 0.0 || br_to > 0.0 )
-      snprintf( buffer, sizeof(buffer), "Branch Ratio from %s: %.5g", parentNuclide->symbol.c_str(), br_to );
+      snprintf( buffer, sizeof(buffer), "BR from %s: %.5g", parentNuclide->symbol.c_str(), br_to );
     else
-      snprintf( buffer, sizeof(buffer), "Branch Ratio through %s: %.5g", parentNuclide->symbol.c_str(), br_from );
+      snprintf( buffer, sizeof(buffer), "BR through %s: %.5g", parentNuclide->symbol.c_str(), br_from );
       
     information.push_back( buffer );
   }//if( nuc == parentNuclide )
@@ -458,15 +645,11 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
   {
     if( transition->child && (transition->branchRatio > 0.0) )
     {
-      const char * const decay_mode = SandiaDecay::to_str( transition->mode );
+      const string decay_mode = SandiaDecay::to_str( transition->mode );
       const string br = PhysicalUnits::printCompact(transition->branchRatio, 4);
+      const string txt = decay_mode + " decays to " + transition->child->symbol + ", BR " + br;
       
-      snprintf( buffer, sizeof(buffer),
-               "Decays to %s by %s decay, BR %s",
-               transition->child->symbol.c_str(),
-               decay_mode, br.c_str() );
-      
-      information.push_back( buffer );
+      information.push_back( txt );
     }//if( transition->child )
   }//for( const SandiaDecay::Transition * transition : nuc->decaysToChildren)
   
@@ -522,6 +705,12 @@ void DecayChainChart::showDecaysThrough( const std::string nuc )
   
   showPossibleParents( nucptr );
 }//void showDecaysThrough( const std::string nuc )
+
+
+const SandiaDecay::Nuclide *DecayChainChart::nuclide()
+{
+  return m_nuclide;
+}
 
 
 void DecayChainChart::showDecayParticleInfo( const std::string &csvIsotopeNames )
