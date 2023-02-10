@@ -1,4 +1,4 @@
-<div style="text-align: right;">SAND2023-XXXX O</div>
+<div style="text-align: right;">SAND2023-12207O</div>
 
 # v1.0.10 (Aug 07, 2022)
 InterSpec [version 1.0.10](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.10-1) fixes a number of smaller issues, improves some interfaces, makes using pre-defined detector response functions (DRFs) easier, adds a number of default DRFs for common portable detection systems, reduced app memory usage, and upgraded some underlying libraries.
@@ -72,8 +72,6 @@ InterSpec [version 1.0.10](https://github.com/sandialabs/InterSpec/releases/tag/
 - Add CSV download to the "Reference Photopeak" tab.
 
 ---
-<p style="font-weight: bold;">(Note to DC reviewers: everything below here was approved as SAND2022-0432 O)</p>
-
 # v1.0.9 (Feb 06, 2021)
   InterSpec version 1.0.9 adds a number of user requested features and user reported fixes.
   In particular, support for volumetric trace sources and cylindrical and rectangular geometries; these are particularly useful for determining contamination levels, or activities of bulk materials.
@@ -192,6 +190,7 @@ InterSpec [version 1.0.10](https://github.com/sandialabs/InterSpec/releases/tag/
 - Improved a few spectrum file format parsing, as well as added a few new format variants.
 
 
+---
 # v1.0.8 (Sep 26, 2021)
 InterSpec version 1.0.8 concentrates on improving application usability and bug fixes.
 
@@ -334,6 +333,7 @@ icon in the upper-right-hand portion of the time chart will display a widget tha
 - Improved a few spectrum file format parsing, as well as added a few new format variants.
 
 
+---
 # v1.0.7 (Feb 19, 2021)
 InterSpec version 1.0.7 includes a complete revamp of how energy calibration is handled, a number of new features, lots of bug fixes and smaller improvements.
 
@@ -448,6 +448,7 @@ This web-version of InterSpec can only be accessed on your computer (the server 
 - Lots of code quality and minor improvements
 
 
+---
 ## v1.0.6 (November 4, 2019)
 This release is mostly stability improvements, small UX improvements, and bug fixes.
 Download Windows, Linux, and macOS binaries from: [https://github.com/sandialabs/InterSpec/releases/tag/v1.0.6](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.6)
