@@ -87,7 +87,6 @@
 #include <Wt/Json/Value>
 #include <Wt/Json/Object>
 #include <Wt/Json/Parser>
-#include <Wt/Json/Serializer>
 #endif
 
 #include "rapidxml/rapidxml.hpp"
@@ -8889,6 +8888,144 @@ void InterSpec::doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
   }//end codeblock to access meas
 }//void InterSpec::doFinishupSetSpectrumWork( boost::function<void(void)> workers )
 
+// Development function to create JSON
+void printGeoLocationJson( std::shared_ptr<const SpecMeas> meas )
+{
+  if( !meas || !meas->has_gps_info() )
+  {
+    cout << "printGeoLocationJson: no measurement, or no GPS info" << endl;
+    return;
+  }
+  
+  Wt::Json::Object json;//( {{"userLabel", Wt::Json::Value( Wt::WString::fromUTF8(label) )} } );
+  json["fileName"] = Wt::WString::fromUTF8( meas->filename() );
+  
+  const vector<string> &det_names = meas->detector_names();
+  Wt::Json::Array detectors;
+  for( const auto det : det_names )
+    detectors.push_back( Wt::WString::fromUTF8(det) );
+  json["detectors"] = detectors;
+  
+  Wt::Json::Array samplesData;
+  
+  size_t numSamplesNoGps = 0;
+  SpecUtils::time_point_t start_times_offset{};
+  
+  for( const int sample : meas->sample_numbers() )
+  {
+    vector<shared_ptr<const SpecUtils::Measurement>> meass = meas->sample_measurements(sample);
+    
+    meass.erase( std::remove_if(meass.begin(), meass.end(),
+      [&](shared_ptr<const SpecUtils::Measurement> a){
+        return !a || (end(det_names) == find(begin(det_names), end(det_names), a->detector_name()));
+    }), meass.end() );
+    
+    
+    bool hadGps = false;
+    double latitude = -999.99, longitude = -999.99;
+    int numGammaDet = 0, numNeutDet = 0;
+    float realTime = 0.0f;
+    SpecUtils::SourceType source_type = SpecUtils::SourceType::Unknown;
+    double gammaRealTime = 0.0, gammaLiveTime = 0.0, gammaCounts = 0.0;
+    double neutronRealTime = 0.0, neutronCounts = 0.0;
+    
+    SpecUtils::time_point_t meas_start_time{};
+    
+    for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
+    {
+      if( m->has_gps_info() )
+      {
+        hadGps = true;
+        // TODO: we could average or something here... not sure it matters much
+        latitude = m->latitude();
+        longitude = m->longitude();
+      }
+      
+      if( SpecUtils::is_special(meas_start_time) && !SpecUtils::is_special(m->start_time()) )
+      {
+        meas_start_time = m->start_time();
+        if( SpecUtils::is_special(start_times_offset) )
+          start_times_offset = meas_start_time;
+      }
+      
+      if( m->num_gamma_channels() >= 1 )
+      {
+        numGammaDet += 1;
+        realTime = std::max( realTime, m->real_time() );
+        gammaLiveTime += m->live_time();
+        gammaRealTime += m->real_time();
+        gammaCounts += m->gamma_count_sum();
+      }
+      
+      if( m->contained_neutron() )
+      {
+        numNeutDet += 1;
+        neutronRealTime += m->real_time();
+        neutronCounts += m->neutron_counts_sum();
+      }
+      
+      realTime = std::max( realTime, m->real_time() );
+      
+      if( m->source_type() != SpecUtils::SourceType::Unknown )
+        source_type = m->source_type();
+    }//for( const auto m : meass )
+    
+    if( !hadGps )
+    {
+      numSamplesNoGps += 1;
+      continue;
+    }
+    
+    if( !numNeutDet && !numGammaDet )
+      continue;
+    
+    Wt::Json::Object sample_json;
+    if( !SpecUtils::is_special(meas_start_time) )
+    {
+      const auto duration = start_times_offset - meas_start_time;
+      const auto millisecs = chrono::duration_cast<chrono::milliseconds>(duration);
+      sample_json["timeOffset"] = millisecs.count();
+    }//if( SpecUtils::is_special(meas_start_time) )
+    
+    sample_json["nGDet"] = numGammaDet;
+    if( numGammaDet )
+    {
+      sample_json["gSum"] = gammaCounts;
+      sample_json["gRT"] = gammaRealTime;
+      sample_json["gLT"] = gammaLiveTime;
+    }
+    
+    sample_json["nNDet"] = numNeutDet;
+    if( numNeutDet )
+    {
+      sample_json["nSum"] = neutronCounts;
+      sample_json["nRT"] = neutronRealTime;
+    }
+    
+    sample_json["rt"] = realTime;
+    sample_json["src"] = static_cast<int>(source_type);
+    
+    Wt::Json::Array gps;
+    gps.push_back(latitude);
+    gps.push_back(longitude);
+    sample_json["gps"] = gps;
+    sample_json["sample"] = sample;
+    
+    samplesData.push_back( sample_json );
+  }//for( const int sample : meas->sample_numbers() )
+  
+  if( !SpecUtils::is_special(start_times_offset) )
+  {
+    const auto dur = start_times_offset.time_since_epoch();
+    const auto millisecs = chrono::duration_cast<chrono::milliseconds>(dur);
+    json["startTime"] = millisecs.count();
+  }//if( !SpecUtils::is_special(start_times_offset) )
+  
+  json["samples"] = samplesData;
+  
+  cout << "JSON: " << Wt::Json::serialize(json) << endl;
+}//void printGeoLocationJson( std::shared_ptr<SpecMeas> meas )
+
 
 void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
                              std::set<int> sample_numbers,
@@ -9471,6 +9608,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }//if( user selected to call either external REST API, or external EXE )
   }//if( meas )
 #endif //#if( USE_REMOTE_RID )
+  
+  
+  //For development, print out geolocation data
+  furtherworkers.push_back( boost::bind( &printGeoLocationJson, m_dataMeasurement ) );
   
   
   if( meas && furtherworkers.size() )

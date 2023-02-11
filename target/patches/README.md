@@ -123,7 +123,6 @@ cd ceres-solver-2.1.0
 mkdir build_macos
 cd build_macos
 
-# (note: CMAKE_OSX_ARCHITECTURES argument untested on next command)
 cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
 cmake --build . --config Release --target install -j 16
 cd ../..
@@ -253,7 +252,6 @@ cmake --build . --config Release --target install -j 16
 
 If you wish to build the wxWidgets target of InterSpec, then you will need wxWidgets:
 ```bash
-# Note: as of 20221203 I havent gotten linking to pre-build wxWidgets totally working; I think the error is somewhere in the cmake stuff called by find_package(...) in our cmake stuff
 mkdir wxWidgets-3.2.1
 cd wxWidgets-3.2.1
 curl -L https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.1/wxWidgets-3.2.1.zip --output wxWidgets-3.2.1.zip
