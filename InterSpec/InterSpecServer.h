@@ -33,17 +33,40 @@
 
 namespace InterSpecServer
 {
+  /** Used by iOS target to start the web-server.
+   
+   Only real difference from #startWebServer is that it allows specifying two arguments like:
+     "--tempdir /some/.../path/", that set the "TMPDIR" and "WT_TMP_DIR" environment variables
+     to the specified path for spooling uploads too.
+   
+   #TODO: Check if we can have the iOS target just use #startWebServer and set the environment variables itself (or using a dedicated function here)
+   */
   void startServer( int argc, char *argv[],
                                 Wt::WApplication::ApplicationCreator createApplication );
   
-  void startServerNodeAddon( std::string proccessname,
+  /** Starts the web-server, with specified options; primarily called from #start_server.
+   
+   Does not set any of the InterSpec configuration variables (#InterSpecServer::start_server does
+   all that), but does set the server-related static variables (i.e., port and url being served on).
+   
+   Also starts initializing DecayDataBaseServer as soon as the thread pool is available, so main
+   GUI thread wont block waiting for it to initialize (hopefully).
+   */
+  void startWebServer( std::string proccessname,
                              std::string basedir,
                              const std::string configpath,
-                             unsigned short int server_port_num = 0 );
+                             unsigned short int server_port_num = 0
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+                             , std::string http_address = "127.0.0.1"
+#endif
+                              );
   
   /** Starts the server, given the various options.
-   Sets user data database directory; creates user data directory if needed and sets writable directory; looks for serial_to_model in user data directory; upgrades user data database if needed; sets static data directory (to be basedir + "/data").
-   Then calls #startServerNodeAddon.
+   Sets user data database directory; creates user data directory if needed and sets writable
+   directory; looks for serial_to_model in user data directory; upgrades user data database if
+   needed; and if the static data directory hasnt already been explicitly set it will be set to
+   `basedir + "/data"`.
+   Then calls #startWebServer.
 
    @param process_name Name of the executable being ran - not sure if/why we actually need this 
           TODO: check if we can just remove this
@@ -54,18 +77,27 @@ namespace InterSpecServer
    @param server_port_num The port to start the server on.  
           If zero, then a random port above 1024 will be chosen.  
           Ports below 1024 usually require admin privledges.
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+   @param http_address The network adapter address to bind the web-server to.  "127.0.0.1" is
+          localhost, while "0.0.0.0" will bind so it is visible on the external network
+#endif
    @returns port being served on, or a negative value on error.
 
-   This function is currently used to start the server for the "Electron" version of the app.
+   This function is currently used to start the server for all versions of the app besides iOS.
    */
   int start_server( const char *process_name, const char *userdatadir,
                     const char *basedir, const char *xml_config_path,
-                    unsigned short int server_port_num = 0 );
+                    unsigned short int server_port_num = 0
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+                    , const char *http_address = "127.0.0.1"
+#endif
+                   );
   
 
   void killServer();
   
-  
+  /** Blocks current thread until the Wt server is stopped by some other means. */
+  int wait_for_shutdown();
   
   //portBeingServedOn(): will only be valid if this instance of the app is
   //  serving the webpages.  Will be -1 if not serving.

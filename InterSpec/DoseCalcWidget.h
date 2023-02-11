@@ -96,17 +96,17 @@ public:
   virtual ~DoseCalcWidget();
   
   
+  /** Performs some very basic runtime checks to make sure calculations are
+   half-way reasonable.
+   Throws exception with a descriptive message if there is an issue.
+   */
+  static void runtime_sanity_checks( const GadrasScatterTable * const scatter );
+  
 protected:
   
   enum Quantity{ Dose, Activity, Distance, Shielding, NumQuantity };
   
   void init();
-  
-  /** Performs some very basic runtime checks to make sure calculations are
-    half-way reasonable.
-    Throws exception with a descriptive message if there is an issue.
-   */
-  void runtime_sanity_checks();
   
   void handleQuantityClick( const Quantity q );
   void handleSourceTypeChange();

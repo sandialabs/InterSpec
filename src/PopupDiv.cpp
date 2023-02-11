@@ -801,7 +801,8 @@ PopupDivMenu::~PopupDivMenu()
 #if( APP_MENU_STATELESS_FIX )
 void PopupDivMenu::pre_render(PopupDivMenu* menu)
 {
-  menu->popup(WPoint(-10000, -10000));
+  if( !menu->m_mobile )
+    menu->popup(WPoint(-10000, -10000));
 
   /*
   // This next loop doesnt seem to do anything

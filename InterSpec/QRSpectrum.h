@@ -96,7 +96,7 @@ struct UrlEncodedSpec
 /** Struct that represents information that can be included in a spectrum URL. */
 struct UrlSpectrum
 {
-  SpecUtils::SourceType m_source_type;
+  SpecUtils::SourceType m_source_type = SpecUtils::SourceType(4); // There is static_assert in .cpp file to make sure SpecUtils::SourceType::Unknown == 4
   std::vector<float> m_energy_cal_coeffs;
   std::vector<std::pair<float,float>> m_dev_pairs;
   

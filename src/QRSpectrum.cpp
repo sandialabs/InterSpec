@@ -56,8 +56,17 @@ extern "C"{
 #include "InterSpec/PhysicalUnits.h"
 
 
+// Files only needed for `int dev_code();`
+#include <mutex>
+#include "SpecUtils/SpecUtilsAsync.h"
+
 
 using namespace std;
+
+//Make sure assignment in UrlSpectrum definition is valid
+static_assert( static_cast<int>(SpecUtils::SourceType::Unknown) == 4,
+              "if SpecUtils::SourceType::Unknown is not four, please modify class definition" );
+
 namespace
 {
   const char * const sm_hex_digits = "0123456789ABCDEF";
@@ -690,12 +699,31 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     }//if( we have energy calibration info - that we can use )
   }//if( !skip_energy )
   
+  // Lamdba to remove parts of a string that would look like a field delimiter
+  //  i.e., a space, followed by a colon, followed by an upper-case letter
+  //  TODO: Just replaces colon with a space, for now - perhaps we should define some 'escape' sequence
+  auto remove_field_delimiters = []( string input ) -> string {
+    size_t pos = 0;
+    while( (pos + 1) < input.size() )
+    {
+      pos = input.find(":", pos + 1);
+      if( pos == string::npos)
+        break;
+      
+      const char prev_char = pos ? input[pos-1] : ' ';
+      const char next_char = ((pos+1) < input.size()) ? input[pos+1] : 'A';
+      
+      if( (prev_char == ' ') && (next_char >= 'A') && (next_char <= 'Z') )
+        input[pos] = ' ';
+    }//while( (pos + 1) < input.size() )
+    
+    return input;
+  };//remove_field_delimiters lambda
   
   if( !skip_model )
   {
     // Remove equal signs and quotes
-    string det_model = m.m_model;
-    SpecUtils::ireplace_all( det_model, ":", "" );
+    string det_model = remove_field_delimiters( m.m_model );
     if( det_model.size() > 30 )
       det_model = det_model.substr(0,30);
     
@@ -732,8 +760,7 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
   
   if( !skip_title && !m.m_title.empty() )
   {
-    string operator_notes = m.m_title;
-    SpecUtils::ireplace_all( operator_notes, ":", " " );
+    string operator_notes = remove_field_delimiters( m.m_title );
     if( operator_notes.size() > 60 )
       operator_notes.substr(0, 60);
     
@@ -1503,11 +1530,11 @@ std::vector<UrlSpectrum> decode_spectrum_urls( vector<string> urls )
         spec.m_model = first_spec.m_model;
       
       if( spec.m_energy_cal_coeffs.empty()
-         && (spec.m_channel_data.size() == first_spec.m_energy_cal_coeffs.size()) )
+         && (spec.m_channel_data.size() == first_spec.m_channel_data.size()) )
         spec.m_energy_cal_coeffs = first_spec.m_energy_cal_coeffs;
       
       if( spec.m_dev_pairs.empty()
-         && (spec.m_channel_data.size() == first_spec.m_energy_cal_coeffs.size()) )
+         && (spec.m_channel_data.size() == first_spec.m_channel_data.size()) )
         spec.m_dev_pairs = first_spec.m_dev_pairs;
       
       if( SpecUtils::valid_latitude(first_spec.m_latitude) && !SpecUtils::valid_latitude(spec.m_latitude) )
@@ -1678,613 +1705,401 @@ int dev_code()
   // Now that URL encoding has solidified - this function should be cleaned up to use that code
   //  to compute statistics of how many QR codes it typically takes and such.
 #define DELETE_UNWANTED_FILES 0
-#define SAVE_ASCII_OUTPUT 0
-#define USE_ZSTDLIB_CL 0
 
   const char *base_dir = "/Users/wcjohns/rad_ana/qrspec_test_data";
-#if( SAVE_ASCII_OUTPUT )
-  const char *out_dir = "/Users/wcjohns/rad_ana/processed_qrspec";
-#endif
   
   const vector<string> files = SpecUtils::recursive_ls(base_dir);
   
+  std::mutex result_mutex;
   map<pair<size_t,string>,UrlSpectrum> prev_spec;
-  map<pair<size_t,string>, vector<size_t>> data_sizes_ascii, data_sizes_raw_bin,
-                                           data_sizes_zlib, data_sizes_zlib_url, data_sizes_ascii_zlib,
-                                           data_sizes_ascii_zlib_url, data_sizes_ascii_zlib_base_45_url,
-                                           data_sizes_bin_base45, data_sizes_bin_base45_url,
-                                           num_qr_code_single_spec, num_qr_code_two_spec;
   
-#if( USE_ZSTDLIB_CL )
-  map<pair<size_t,string>, vector<size_t>> data_sizes_zstdlib;
-#endif
-    
+  map<pair<size_t,string>, vector<size_t>>
+  data_sizes_bin_zlib_b45, data_sizes_bin_nozero, data_sizes_bin, data_sizes_csv, data_sizes_bin_zlib, data_sizes_csv_zlib_b45,
+  num_qr_code_single_spec, num_qr_code_two_spec, qr_code_level_single_spec, qr_code_version_single_spec, qr_code_error_level_single_spec;
+  
+  
+  SpecUtilsAsync::ThreadPool pool;
+  
+  // Processing to many spectra at a time is super inefficient, so we'll only do just enough to fill up the CPU.
+  const int batch_size = 6;
+  int thread_num = 0;
   
   for( string filename : files )
   {
-    if( SpecUtils::likely_not_spec_file(filename) )
-    {
-#if( DELETE_UNWANTED_FILES )
-      SpecUtils::remove_file( filename );
-#endif
-      continue;
-    }
-    
-    SpecUtils::SpecFile spec;
-    if( !spec.load_file( filename, SpecUtils::ParserType::Auto, filename) )
-    {
-#if( DELETE_UNWANTED_FILES )
-      SpecUtils::remove_file( filename );
-#endif
-      continue;
-    }
-    
-    vector<shared_ptr<const SpecUtils::Measurement>> foreground, background, usable_spectra;
-    for( shared_ptr<const SpecUtils::Measurement> m : spec.measurements() )
-    {
-      if( (m->gamma_count_sum() < 100) || (m->num_gamma_channels() < 255)
-         || ((m->live_time() <= 0.0) && (m->real_time() <= 0.0)) )
-        continue;
+    auto do_work = [&]( string filename ){
       
-      shared_ptr<const SpecUtils::EnergyCalibration> cal = m->energy_calibration();
-      if( !cal || !cal->valid() || (cal->type() != SpecUtils::EnergyCalType::Polynomial) )
-        continue;
-      
-      switch( m->source_type() )
+      if( SpecUtils::likely_not_spec_file(filename) )
       {
-        case SpecUtils::SourceType::IntrinsicActivity:
-        case SpecUtils::SourceType::Calibration:
-          break;
-          
-        case SpecUtils::SourceType::Background:
-          background.push_back( m );
-          usable_spectra.push_back( m );
-          break;
-          
-        case SpecUtils::SourceType::Foreground:
-          foreground.push_back( m );
-          usable_spectra.push_back( m );
-          break;
-          
-        case SpecUtils::SourceType::Unknown:
-          if( spec.detector_type() != SpecUtils::DetectorType::KromekD3S )
-          {
+#if( DELETE_UNWANTED_FILES )
+        SpecUtils::remove_file( filename );
+#endif
+        return;
+      }
+      
+      SpecUtils::SpecFile spec;
+      if( !spec.load_file( filename, SpecUtils::ParserType::Auto, filename) )
+      {
+#if( DELETE_UNWANTED_FILES )
+        SpecUtils::remove_file( filename );
+#endif
+        return;
+      }
+      
+      vector<shared_ptr<const SpecUtils::Measurement>> foreground, background, usable_spectra;
+      for( shared_ptr<const SpecUtils::Measurement> m : spec.measurements() )
+      {
+        if( (m->gamma_count_sum() < 100) || (m->num_gamma_channels() < 255)
+           || ((m->live_time() <= 0.0) && (m->real_time() <= 0.0)) )
+          continue;
+        
+        shared_ptr<const SpecUtils::EnergyCalibration> cal = m->energy_calibration();
+        if( !cal || !cal->valid() || (cal->type() != SpecUtils::EnergyCalType::Polynomial) )
+          continue;
+        
+        switch( m->source_type() )
+        {
+          case SpecUtils::SourceType::IntrinsicActivity:
+          case SpecUtils::SourceType::Calibration:
+            break;
+            
+          case SpecUtils::SourceType::Background:
+            background.push_back( m );
+            usable_spectra.push_back( m );
+            break;
+            
+          case SpecUtils::SourceType::Foreground:
             foreground.push_back( m );
             usable_spectra.push_back( m );
-          }
-          break;
-      }//switch( m->source_type() )
-    }//for( shared_ptr<const SpecUtils::Measurement> m : spec.measurements() )
-    
-    if( (foreground.size() > 1) || (background.size() > 1) || (usable_spectra.size() < 1) )
-    {
-#if( DELETE_UNWANTED_FILES )
-      SpecUtils::remove_file( filename );
-#endif
-      continue;
-    }
-    
-    string model;
-    if( spec.detector_type() != SpecUtils::DetectorType::Unknown )
-      model = detectorTypeToString( spec.detector_type() );
-    if( model.empty() )
-      model = spec.instrument_model();
-    
-    // Remove equal signs and quotes
-    SpecUtils::ireplace_all( model, ":", "" );
-    SpecUtils::ireplace_all( model, "\"", "" );
-    SpecUtils::ireplace_all( model, "'", "" );
-    
-    
-    const auto key = pair<size_t,string>( spec.num_gamma_channels(), model );
-    
-    if( (foreground.size() == 1) && (background.size() == 1) )
-    {
-      try
-      {
-        vector<UrlSpectrum> urlspec = to_url_spectra( {foreground[0], background[0]}, model );
-        vector<UrlEncodedSpec> encspecs = url_encode_spectra( urlspec, QrErrorCorrection::Low, 0 );
-        num_qr_code_two_spec[key].push_back( encspecs.size() );
-        
-        assert( encspecs.size() == 1 );
-        //cout << "Fit two spectra in URL:\n\t" << encspecs[0].m_url << endl << endl << encspecs[0].m_qr_svg << endl << endl << endl;
-        
-        try
-        {
-          vector<UrlSpectrum> decoded = decode_spectrum_urls( { Wt::Utils::urlDecode(encspecs[0].m_url) } );
-          assert( decoded.size() == 2 );
-        }catch( std:: exception &e )
-        {
-          cerr << "Error decoding multiple URLs: " << e.what() << endl;
-          cerr << endl;
-        }
-        
-      }catch( std::exception &e )
-      {
-        num_qr_code_two_spec[key].push_back( 0 );
-      }
-    }else if( usable_spectra.size() == 1 )
-    {
-      vector<UrlSpectrum> urlspec = to_url_spectra( {usable_spectra[0]}, model );
-      assert( urlspec.size() == 1 );
+            break;
+            
+          case SpecUtils::SourceType::Unknown:
+            if( spec.detector_type() != SpecUtils::DetectorType::KromekD3S )
+            {
+              foreground.push_back( m );
+              usable_spectra.push_back( m );
+            }
+            break;
+        }//switch( m->source_type() )
+      }//for( shared_ptr<const SpecUtils::Measurement> m : spec.measurements() )
       
-      if( prev_spec.count(key) )
+      if( (foreground.size() > 1) || (background.size() > 1) || (usable_spectra.size() < 1) )
+      {
+#if( DELETE_UNWANTED_FILES )
+        SpecUtils::remove_file( filename );
+#endif
+        return;
+      }
+      
+      string model;
+      if( spec.detector_type() != SpecUtils::DetectorType::Unknown )
+        model = detectorTypeToString( spec.detector_type() );
+      if( model.empty() )
+        model = spec.instrument_model();
+      
+      // Remove equal signs and quotes
+      SpecUtils::ireplace_all( model, ":", "" );
+      SpecUtils::ireplace_all( model, "\"", "" );
+      SpecUtils::ireplace_all( model, "'", "" );
+      
+      
+      const auto key = pair<size_t,string>( spec.num_gamma_channels(), model );
+      
+      if( (foreground.size() == 1) && (background.size() == 1) )
       {
         try
         {
-          vector<UrlSpectrum> urlspec{ urlspec[0], prev_spec[key] };
+          vector<UrlSpectrum> urlspec = to_url_spectra( {foreground[0], background[0]}, model );
           vector<UrlEncodedSpec> encspecs = url_encode_spectra( urlspec, QrErrorCorrection::Low, 0 );
-          num_qr_code_two_spec[key].push_back( encspecs.size() );
+          
+          {
+            std::lock_guard<std::mutex> lock( result_mutex );
+            num_qr_code_two_spec[key].push_back( encspecs.size() );
+          }
+          
+          assert( encspecs.size() == 1 );
+          //cout << "Fit two spectra in URL:\n\t" << encspecs[0].m_url << endl << endl << encspecs[0].m_qr_svg << endl << endl << endl;
+          
+          try
+          {
+            vector<UrlSpectrum> decoded = decode_spectrum_urls( { Wt::Utils::urlDecode(encspecs[0].m_url) } );
+            assert( decoded.size() == 2 );
+          }catch( std:: exception &e )
+          {
+            cerr << "Error decoding multiple URLs: " << e.what() << endl;
+            cerr << endl;
+          }
+          
         }catch( std::exception &e )
         {
+          std::lock_guard<std::mutex> lock( result_mutex );
           num_qr_code_two_spec[key].push_back( 0 );
         }
-      }
-      
-      prev_spec[key] = urlspec[0];
-    }
-    
-    for( shared_ptr<const SpecUtils::Measurement> m : usable_spectra )
-    {
-      try
+      }else if( usable_spectra.size() == 1 )
       {
-        vector<UrlSpectrum> urlspec = to_url_spectra( {m}, model );
-        vector<UrlEncodedSpec> encspecs = url_encode_spectra( urlspec, QrErrorCorrection::Low, 0 );
-        num_qr_code_single_spec[key].push_back( encspecs.size() );
-      }catch( std::exception &e )
-      {
-        num_qr_code_single_spec[key].push_back( 0 );
-      }
-    }//for( shared_ptr<const SpecUtils::Measurement> m : usable_spectra )
-    
-    
-    //EncodeOptions::NoDeflate
-    //EncodeOptions::NoBase45
-    //EncodeOptions::CsvChannelData
-    //EncodeOptions::NoZeroCompressCounts
-    //SkipForEncoding::Encoding
-    //SkipForEncoding::EnergyCal
-    //SkipForEncoding::DetectorModel
-    //SkipForEncoding::Gps
-    //SkipForEncoding::Title
-    
-    for( shared_ptr<const SpecUtils::Measurement> m : usable_spectra )
-    {
-      stringstream strm;
-      
-      switch( m->source_type() )
-      {
-        case SpecUtils::SourceType::IntrinsicActivity: strm << "I=I "; break;
-        case SpecUtils::SourceType::Calibration:       strm << "I=C "; break;
-        case SpecUtils::SourceType::Background:        strm << "I=B "; break;
-        case SpecUtils::SourceType::Foreground:        strm << "I=F "; break;
-        case SpecUtils::SourceType::Unknown:                           break;
-      }//switch( m->source_type() )
-      
-      const float lt = (m->live_time() > 0.0) ? m->live_time() : m->real_time();
-      const float rt = (m->real_time() > 0.0) ? m->real_time() : m->live_time();
-      strm << "T:" << PhysicalUnits::printCompact(rt,6) << "," << PhysicalUnits::printCompact(lt,6) << " ";
-      
-      shared_ptr<const SpecUtils::EnergyCalibration> cal = m->energy_calibration();
-      assert( cal->type() == SpecUtils::EnergyCalType::Polynomial );
-      strm << "C:";
-      for( size_t i = 0; i < cal->coefficients().size(); ++i )
-        strm << (i ? "," : "") << PhysicalUnits::printCompact(cal->coefficients()[i], i ? 4 : 7 );
-      strm << " ";
-      
-      const vector<pair<float,float>> &dev_pairs = cal->deviation_pairs();
-      if( !dev_pairs.empty() )
-      {
-        strm << "D:";
-        for( size_t i = 0; i < dev_pairs.size(); ++i )
-        {
-          strm << (i ? "," : "") << PhysicalUnits::printCompact(dev_pairs[i].first, 5 )
-          << "," << PhysicalUnits::printCompact(dev_pairs[i].second, 4 );
-        }
-        strm << " ";
-      }//if( !dev_pairs.empty() )
-      
-      
-      if( !model.empty() )
-        strm << "M:" << model << " ";
-      
-      if( !SpecUtils::is_special(m->start_time()) )
-      {
-        // TODO: ISO string takes up 15 characters - could represent as a double, a la Microsoft time
-        std::string t = SpecUtils::to_iso_string(m->start_time());
-        const size_t dec_pos = t.find( "." );
-        if( dec_pos != string::npos )
-          t = t.substr(0, dec_pos);
-        strm << "P:" << t << " ";
-      }//if( !SpecUtils::is_special(m->start_time()) )
-      
-      if( m->has_gps_info() )
-      {
-        strm << "G:" << PhysicalUnits::printCompact(m->latitude(), 7)
-             << "," << PhysicalUnits::printCompact(m->longitude(), 7) << " ";
-      }
-      
-      if( m->contained_neutron() )
-      {
-        const float neut_sum = static_cast<float>( m->neutron_counts_sum() );
-        const int ineut_sum = SpecUtils::float_to_integral<int>( neut_sum );
-        strm << "N:" << ineut_sum << " ";
-      }
-      
-      if( !m->title().empty() )
-      {
-        // TODO: look for this info in the "Remarks" - I think Ortec Detectives and some other models will end up getting user input to there maybe?
-        string operator_notes = m->title();
-        SpecUtils::ireplace_all( operator_notes, ":", " " );
-        if( operator_notes.size() > 60 )
-          operator_notes.substr(0, 60);
+        vector<UrlSpectrum> urlspec = to_url_spectra( {usable_spectra[0]}, model );
+        assert( urlspec.size() == 1 );
         
-        string remark;
-        remark = operator_notes;
+        bool had_prev = false;
+        UrlSpectrum prev;
         
-        // If we arent gzipping, and not base-45 encoding, and channel data as ascii, then we should make sure this is ascii so the QR code can be generated in ascii mode - however, URL encoding here is wont work, because we will URL encode things again later on...
-        //for( const char val : operator_notes )
-        //{
-        //  if( std::find( begin(sm_base45_chars), end(sm_base45_chars), val ) == end(sm_base45_chars) )
-        //  {
-        //    unsigned char c = (unsigned char)val;
-        //    remark += '%';
-        //    remark += sm_hex_digits[ ((c >> 4) & 0x0F) ];
-        //    remark += sm_hex_digits[ (c & 0x0F) ];
-        //  }else
-        //  {
-        //    remark += val;
-        //  }
-        //}
-        
-        strm << "O:" << remark << " ";
-      }//if( !m->title().empty() )
-      
-      strm << "S:";
-      const string data_up_to_spectrum = strm.str();
-      
-      vector<float> zero_compressed_counts;
-      SpecUtils::compress_to_counted_zeros( *m->gamma_counts(), zero_compressed_counts );
-      
-      for( size_t i = 0; i < zero_compressed_counts.size(); ++i )
-        strm << (i ? "," : "") << SpecUtils::float_to_integral<int>( zero_compressed_counts[i] );
-      
-      vector<int32_t> signed_compressed_integral_counts;
-      vector<uint32_t> compressed_integral_counts;
-      for( const float f : zero_compressed_counts )
-      {
-        compressed_integral_counts.push_back( SpecUtils::float_to_integral<uint32_t>( f ) );
-        signed_compressed_integral_counts.push_back( SpecUtils::float_to_integral<int32_t>( f ) );
-      }
-      
-      const string ascii_data = strm.str();
-      
-      if( model.empty() )
-        model = "other";
-      
-#if( SAVE_ASCII_OUTPUT )
-      const string save_dir = SpecUtils::append_path(out_dir, model);
-      if( !SpecUtils::is_directory(save_dir) )
-      {
-        if( !SpecUtils::create_directory(save_dir) )
-        {
-          cerr << "Failed to make directory '" << save_dir << "'" << endl;
-          assert( 0 );
-        }
-      }//if( !SpecUtils::is_directory(save_dir) )
-
-      const string data_hash = Wt::Utils::hexEncode( Wt::Utils::md5(ascii_data) );
-      const string save_file_name = SpecUtils::append_path(save_dir, data_hash + ".spec.txt" );
-      
-      ofstream output( save_file_name.c_str(), ios::out | ios::binary );
-      assert( output.is_open() );
-      output.write( ascii_data.c_str(), ascii_data.size() );
-      assert( output.good() );
-#endif
-      
-      if( compressed_integral_counts.size() > 65535 )
-        throw runtime_error( "A max of 65535 is supported." );
-      
-      const vector<uint8_t> encoded_bytes = encode_stream_vbyte( compressed_integral_counts );
-      
-      /*
-      auto print_test_case = [=](){
-        assert( encoded_bytes == encode_stream_vbyte( compressed_integral_counts ) );
-        
-        static int test_num = 1;
-        const auto inflags = cout.flags();
-        
-        cout << "\n\n\n  // Test case " << test_num << endl;
-        cout << "  const vector<uint32_t> test_" << test_num << "_chan_cnts{ ";
-        for( size_t i = 0; i < compressed_integral_counts.size(); ++i )
-        {
-          cout << (i ? ", " : "");
-          if( !(i % 20) )
-            cout << "\n    ";
-          cout << compressed_integral_counts[i];
-        }
-        cout << "  };\n";
-        cout << "  assert( test_" << test_num << "_chan_cnts.size() == " << compressed_integral_counts.size() << " );\n";
-        
-        cout << "  const vector<uint8_t> test_" << test_num << "_packed{ ";
-        
-        for( size_t i = 0; i < encoded_bytes.size(); ++i )
-        {
-          cout << (i ? ", " : "");
-          if( !(i % 50) )
-            cout << "\n    ";
+        {// begin lock on result_mutex
+          std::lock_guard<std::mutex> lock( result_mutex );
+          if( prev_spec.count(key) )
+          {
+            had_prev = true;
+            prev = prev_spec[key];
+          }
           
-          unsigned int val = encoded_bytes[i];
-          //cout << "0x" << ios::hex << ios::uppercase << val;
-          cout << val;
-        }
-        cout << "\n  };\n";
-        cout << "  assert( test_" << test_num << "_packed.size() == " << encoded_bytes.size() << " );\n";
+          prev_spec[key] = urlspec[0];
+        }// end lock on result_mutex
         
-        cout << "  const vector<uint8_t> test_" << test_num << "_encoded = QRSpectrum::encode_stream_vbyte( test_" << dec << test_num << "_chan_cnts );\n"
-        "  assert( test_" << dec << test_num << "_encoded == test_" << test_num << "_packed );\n"
-        "  vector<uint32_t> test_" << test_num << "_dec;\n"
-        "  const size_t test_"<< test_num << "_nbytedec = QRSpectrum::decode_stream_vbyte(test_" << test_num << "_encoded,test_" << test_num << "_dec);\n"
-        "  assert( test_" << test_num << "_nbytedec == test_" << test_num << "_packed.size() );\n"
-        "  assert( test_" << test_num << "_dec == test_" << dec << test_num << "_chan_cnts );\n"
-        << endl;
-        
-        cout.flags(inflags);
-        test_num += 1;
-      };
-      
-      if( m->gamma_counts()->size() == 512 )
-      {
-        static int nprinted512 = 0;
-        if( nprinted512++ < 5 )
-          print_test_case();
-      }else if( m->gamma_counts()->size() == 1024 )
-      {
-        static int nprinted1k = 0;
-        if( nprinted1k++ < 5 )
-          print_test_case();
-      }else if( m->gamma_counts()->size() == 8192 )
-      {
-        static int nprinted8k = 0;
-        if( nprinted8k++ < 5 )
-          print_test_case();
-      }else if( m->gamma_counts()->size() == 16384 )
-      {
-        static int nprinted16k = 0;
-        if( nprinted16k++ < 5 )
-          print_test_case();
-      }
-       */
-      
-      {// Begin quick check we can recover things
-        vector<uint32_t> recovdata;
-        const size_t nread = decode_stream_vbyte( encoded_bytes.data(), encoded_bytes.size(), recovdata );
-        assert( nread == encoded_bytes.size() );
-        assert( recovdata == compressed_integral_counts );
-      }// End quick check we can recover things
-      
-      
-      
-      /*
-      //No bitpacking
-      std::vector<uint8_t> encoded_bytes( 4*compressed_integral_counts.size() );
-      memcpy( (void *)encoded_bytes.data(), (void *)compressed_integral_counts.data(), 4*compressed_integral_counts.size() );
-      */
-      
-      /*
-#define ENCODE_BITS 7
-#define ENCODE_FREF 0
-      using codec = oroch::bitfor_codec<uint32_t>;
-      std::vector<uint8_t> encoded_bytes( codec::basic_codec::space(compressed_integral_counts.size(),ENCODE_BITS)  );
-      codec::parameters params(ENCODE_FREF, ENCODE_BITS);
-      oroch::dst_bytes_t enc_dest = (unsigned char *)encoded_bytes.data();
-      codec::encode( enc_dest, begin(compressed_integral_counts), end(compressed_integral_counts), params );
-      encoded_bytes.resize( enc_dest - (unsigned char *)encoded_bytes.data() );
-      
-      {// Begin quick check we can decode
-        codec::parameters params(ENCODE_FREF, ENCODE_BITS);
-        vector<uint32_t> output( compressed_integral_counts.size() );
-        
-        oroch::src_bytes_t b_it = encoded_bytes.data();
-        codec::decode( begin(output), end(output), b_it, params);
-        
-        for (int i = 0; i < compressed_integral_counts.size(); i++) {
-          if( compressed_integral_counts[i] != output[i] )
-       throw runtime_error(
-        }
-      }// End check we can decode
-      */
-      
-      
-      //TODO:
-      //  - Try https://github.com/lemire/LittleIntPacker
-      //  - try out lzma compression
-      vector<uint8_t> raw_bin_data( data_up_to_spectrum.size() + encoded_bytes.size() );
-      
-      
-      
-      memcpy( raw_bin_data.data(), data_up_to_spectrum.data(), data_up_to_spectrum.size() );
-      memcpy( raw_bin_data.data() + data_up_to_spectrum.size(), encoded_bytes.data(), encoded_bytes.size() );
-      
-#if( SAVE_ASCII_OUTPUT )
-      const string bin_save_file_name = SpecUtils::append_path(save_dir, data_hash + ".spec.bin" );
-      
-      {// Begin block to write bin output
-        ofstream bin_output( bin_save_file_name.c_str(), ios::out | ios::binary );
-        assert( bin_output.is_open() );
-        bin_output.write( (const char *)raw_bin_data.data(), raw_bin_data.size() );
-        assert( bin_output.good() );
-      }// End block to write bin output
-#endif
-      
-#if( USE_ZSTDLIB_CL )
-      vector<char> plain_zstdlib_data;
-      {// Begin block to do zstd compression, and read back in
-        const string out_stdzlib_name = bin_save_file_name + ".zstd";
-        const string cmd = "/usr/local/bin/zstd --ultra -22 -q -D '/Users/wcjohns/rad_ana/processed_qrspec/zstd_spec.dict' '" + bin_save_file_name + "' -o '" + out_stdzlib_name + "'";
-        const int rval = system( cmd.c_str() );
-        assert( rval == 0 );
-        SpecUtils::load_file_data( out_stdzlib_name.c_str(), plain_zstdlib_data );
-        SpecUtils::remove_file( out_stdzlib_name );
-      }// End block to do zstd compression, and read back in
-#endif
-      
-      // Need to generate a dictionary from all files
-      //vector<char> dict_zstdlib_data;
-      //system( ("cd '" + save_dir + "'; zstd --ultra -22 " + data_hash + ".spec.bin").c_str() );
-      //SpecUtils::load_file_data( (bin_save_file_name + ".zst").c_str(), dict_zstdlib_data );
-      //SpecUtils::remove_file( bin_save_file_name + ".zst" );
-      
-      
-      vector<uint8_t> zlib_data, ascii_zlib_data;
-      deflate_compress( raw_bin_data.data(), raw_bin_data.size(), zlib_data );
-      deflate_compress( (const void *)&(ascii_data[0]), ascii_data.size(), ascii_zlib_data );
-      
-      {
-        vector<uint8_t> decomp_out_data;
-        deflate_decompress( zlib_data.data(), zlib_data.size(), decomp_out_data );
-        assert( decomp_out_data == raw_bin_data );
-        
-        deflate_decompress( ascii_zlib_data.data(), ascii_zlib_data.size(), decomp_out_data );
-        vector<uint8_t> ascii_in( (uint8_t *)ascii_data.data(), (uint8_t *)(ascii_data.data() + ascii_data.size()) );
-        assert( decomp_out_data == ascii_in );
-      }
-      
-      
-      //Now add in base45 encoding, then URL encoding.
-      const string base45_data = base45_encode( zlib_data );
-      const string url_base45_data = url_encode( base45_data );
-      const string zlib_url = url_encode( zlib_data );
-      
-      const string ascii_base45_data = base45_encode( ascii_zlib_data );
-      const string ascii_url_base45_data = url_encode( ascii_base45_data );
-      
-      const string ascii_url = url_encode( ascii_data );
-      
-      const size_t nchannel = m->num_gamma_channels();
-      
-      data_sizes_ascii[key].push_back( ascii_url.size() );
-      data_sizes_raw_bin[key].push_back( raw_bin_data.size() );
-      data_sizes_zlib[key].push_back( zlib_data.size() );
-      data_sizes_zlib_url[key].push_back( zlib_url.size() );
-      
-#if( USE_ZSTDLIB_CL )
-      data_sizes_zstdlib[key].push_back( plain_zstdlib_data.size() );
-#endif
-      
-      data_sizes_ascii_zlib[key].push_back( ascii_zlib_data.size() );
-      data_sizes_bin_base45[key].push_back( base45_data.size() );
-      data_sizes_bin_base45_url[key].push_back( url_base45_data.size() );
-      data_sizes_ascii_zlib_url[key].push_back( ascii_zlib_data.size() );
-      data_sizes_ascii_zlib_base_45_url[key].push_back( ascii_url_base45_data.size() );
-      
-      
-      //Add in statistics for how much zero compress helps, then how much encoding helps
-      //data_up_to_spectrum
-      //vector<float> zero_compressed_counts;
-      //vector<uint32_t> compressed_integral_counts;
-
-      try
-      {
-        const vector<UrlSpectrum> start_meas = to_url_spectra( {m}, model );
-
-        uint8_t encode_options = 0;
-        const QrErrorCorrection ecc = QrErrorCorrection::Low;
-        
-        vector<UrlEncodedSpec> encoded = QRSpectrum::url_encode_spectra( start_meas, ecc, 0 );
-        assert( encoded.size() >= 1 );
-        
-        string eccstr;
-        switch( encoded[0].m_error_level )
+        if( had_prev )
         {
-          case QrErrorCorrection::Low:      eccstr = "Low";      break;
-          case QrErrorCorrection::Medium:   eccstr = "Medium";   break;
-          case QrErrorCorrection::Quartile: eccstr = "Quartile"; break;
-          case QrErrorCorrection::High:     eccstr = "High";     break;
-        }//switch( encoded[0].m_error_level )
+          try
+          {
+            vector<UrlSpectrum> urlsspec{ urlspec[0], prev };
+            vector<UrlEncodedSpec> encspecs = url_encode_spectra( urlsspec, QrErrorCorrection::Low, 0 );
+            
+            std::lock_guard<std::mutex> lock( result_mutex );
+            num_qr_code_two_spec[key].push_back( encspecs.size() );
+          }catch( std::exception &e )
+          {
+            std::lock_guard<std::mutex> lock( result_mutex );
+            num_qr_code_two_spec[key].push_back( 0 );
+          }
+        }//
+      }//if( (foreground.size() == 1) && (background.size() == 1) )
+      
+      
+      for( shared_ptr<const SpecUtils::Measurement> m : usable_spectra )
+      {
+        try
+        {
+          vector<UrlSpectrum> urlspec = to_url_spectra( {m}, model );
+          vector<UrlEncodedSpec> encspecs = url_encode_spectra( urlspec, QrErrorCorrection::Low, 0 );
+          
+          std::lock_guard<std::mutex> lock( result_mutex );
+          num_qr_code_single_spec[key].push_back( encspecs.size() );
+          
+          if( encspecs.size() == 1 )
+          {
+            qr_code_level_single_spec[key].push_back( encspecs[0].m_qr_size );
+            qr_code_version_single_spec[key].push_back( encspecs[0].m_qr_version );
+            qr_code_error_level_single_spec[key].push_back( static_cast<int>(encspecs[0].m_error_level) );
+          }//if( encspecs.size() == 1 )
+        }catch( std::exception &e )
+        {
+          std::lock_guard<std::mutex> lock( result_mutex );
+          num_qr_code_single_spec[key].push_back( 0 );
+        }
+      }//for( shared_ptr<const SpecUtils::Measurement> m : usable_spectra )
+      
+      
+      //EncodeOptions::NoDeflate
+      //EncodeOptions::NoBase45
+      //EncodeOptions::CsvChannelData
+      //EncodeOptions::NoZeroCompressCounts
+      //SkipForEncoding::Encoding
+      //SkipForEncoding::EnergyCal
+      //SkipForEncoding::DetectorModel
+      //SkipForEncoding::Gps
+      //SkipForEncoding::Title
+      
+      for( shared_ptr<const SpecUtils::Measurement> m : usable_spectra )
+      {
+
+        const vector<UrlSpectrum> url_specs = to_url_spectra( {m}, model );
+        assert( url_specs.size() == 1 );
         
-        //cout << "Encoded model: " << model << " nchannel: " << m->num_gamma_channels() << " to "
-        //<< encoded.size() << " URLS, with size=" << encoded[0].m_qr_size
-        //<< ", version=" << encoded[0].m_qr_version << " and ECC=" << eccstr << endl;
         
-        vector<string> urls;
-        for( const auto &g : encoded )
-          urls.push_back( Wt::Utils::urlDecode( g.m_url ) );
-        
-#define TEST_EQUAL_ENOUGH(lhs,rhs) \
-          assert( (fabs((lhs) - (rhs)) < 1.0E-12) \
-                 || (fabs((lhs) - (rhs)) < 1.0E-4*std::max(fabs(lhs), fabs(rhs))) );
+        uint8_t encode_options = 0;
+        const size_t num_urls = 1;
+        const unsigned int skip_encode_options = 0;
+        try
+        {
+          const vector<string> bin_zlib_b45_urls = url_encode_spectrum( url_specs[0], encode_options, num_urls, skip_encode_options );
+          assert( bin_zlib_b45_urls.size() == num_urls );
+          
+          std::lock_guard<std::mutex> lock( result_mutex );
+          data_sizes_bin_zlib_b45[key].push_back( bin_zlib_b45_urls[0].size() );
+        }catch( std::exception & )
+        {
+          assert(0);
+        }
         
         try
         {
-          const vector<UrlSpectrum> decoded_specs = decode_spectrum_urls( urls );
-          //cout << "Decoded URL!" << endl;
+          encode_options = EncodeOptions::NoZeroCompressCounts;
+          const vector<string> bin_nozero_urls = url_encode_spectrum( url_specs[0], encode_options, num_urls, skip_encode_options );
           
-          assert( decoded_specs.size() == start_meas.size() );
-          for( size_t i = 0; i < decoded_specs.size(); ++i )
+          std::lock_guard<std::mutex> lock( result_mutex );
+          data_sizes_bin_nozero[key].push_back( bin_nozero_urls[0].size() );
+        }catch( std::exception & )
+        {
+          assert(0);
+        }
+        
+        try
+        {
+          encode_options = (EncodeOptions::NoDeflate | EncodeOptions::NoBase45);
+          const vector<string> bin_urls = url_encode_spectrum( url_specs[0], encode_options, num_urls, skip_encode_options );
+          
+          std::lock_guard<std::mutex> lock( result_mutex );
+          data_sizes_bin[key].push_back( bin_urls[0].size() );
+        }catch( std::exception & )
+        {
+          assert(0);
+        }
+        
+        try
+        {
+          encode_options = (EncodeOptions::NoDeflate | EncodeOptions::NoBase45 | EncodeOptions::CsvChannelData);
+          const vector<string> csv_urls = url_encode_spectrum( url_specs[0], encode_options, num_urls, skip_encode_options );
+          
+          std::lock_guard<std::mutex> lock( result_mutex );
+          data_sizes_csv[key].push_back( csv_urls[0].size() );
+        }catch( std::exception & )
+        {
+          assert(0);
+        }
+        
+        try
+        {
+          encode_options = EncodeOptions::NoBase45;
+          const vector<string> bin_zlib_urls = url_encode_spectrum( url_specs[0], encode_options, num_urls, skip_encode_options );
+          
+          std::lock_guard<std::mutex> lock( result_mutex );
+          data_sizes_bin_zlib[key].push_back( bin_zlib_urls[0].size() );
+        }catch( std::exception & )
+        {
+          assert(0);
+        }
+        
+        try
+        {
+          encode_options = EncodeOptions::CsvChannelData;
+          const vector<string> csv_zlib_b45_urls = url_encode_spectrum( url_specs[0], encode_options, num_urls, skip_encode_options );
+          
+          std::lock_guard<std::mutex> lock( result_mutex );
+          data_sizes_csv_zlib_b45[key].push_back( csv_zlib_b45_urls[0].size() );
+        }catch( std::exception & )
+        {
+          assert(0);
+        }
+      
+        
+        try
+        {
+          const vector<UrlSpectrum> start_meas = to_url_spectra( {m}, model );
+          
+          uint8_t encode_options = 0;
+          const QrErrorCorrection ecc = QrErrorCorrection::Low;
+          
+          vector<UrlEncodedSpec> encoded = QRSpectrum::url_encode_spectra( start_meas, ecc, 0 );
+          assert( encoded.size() >= 1 );
+          
+          string eccstr;
+          switch( encoded[0].m_error_level )
           {
-            const auto &orig = start_meas[i];
-            const auto &decoded = decoded_specs[i];
-            
-            assert( orig.m_source_type == decoded.m_source_type );
-            assert( orig.m_energy_cal_coeffs.size() == decoded.m_energy_cal_coeffs.size() );
-            for( size_t cal_index = 0; cal_index < orig.m_energy_cal_coeffs.size(); ++cal_index )
-            {
-              TEST_EQUAL_ENOUGH( orig.m_energy_cal_coeffs[cal_index], decoded.m_energy_cal_coeffs[cal_index] );
-            }
-    
-            assert( orig.m_dev_pairs.size() == decoded.m_dev_pairs.size() );
-            for( size_t cal_index = 0; cal_index < orig.m_dev_pairs.size(); ++cal_index )
-            {
-              TEST_EQUAL_ENOUGH( orig.m_dev_pairs[cal_index].first, decoded.m_dev_pairs[cal_index].first );
-              TEST_EQUAL_ENOUGH( orig.m_dev_pairs[cal_index].second, decoded.m_dev_pairs[cal_index].second );
-            }
-            
-            //Temporarily displae below check - need to limit lengths and such
-            //assert( orig.m_model == decoded.m_model );
-            //assert( orig.m_title == decoded.m_title );
-            
-            const auto tdiff = orig.m_start_time - decoded.m_start_time;
-            assert( (tdiff < std::chrono::seconds(2)) && (tdiff > std::chrono::seconds(-2)) );
-            
-            TEST_EQUAL_ENOUGH( orig.m_latitude, decoded.m_latitude );
-            TEST_EQUAL_ENOUGH( orig.m_longitude, decoded.m_longitude );
-            
-            assert( orig.m_neut_sum == decoded.m_neut_sum );
-            
-            if( orig.m_live_time > 0 )
-            {
-              TEST_EQUAL_ENOUGH( orig.m_live_time, decoded.m_live_time );
-            }
-            
-            if( orig.m_real_time > 0 )
-            {
-              TEST_EQUAL_ENOUGH( orig.m_real_time, decoded.m_real_time );
-            }
-            
-            assert( orig.m_channel_data.size() == decoded.m_channel_data.size() );
-            for( size_t chan_index = 0; chan_index < decoded.m_channel_data.size(); ++chan_index )
-            {
-              assert( orig.m_channel_data[chan_index] == decoded.m_channel_data[chan_index] );
-            }
-          }//for( size_t i = 0; i < decoded_specs.size(); ++i )
+            case QrErrorCorrection::Low:      eccstr = "Low";      break;
+            case QrErrorCorrection::Medium:   eccstr = "Medium";   break;
+            case QrErrorCorrection::Quartile: eccstr = "Quartile"; break;
+            case QrErrorCorrection::High:     eccstr = "High";     break;
+          }//switch( encoded[0].m_error_level )
           
+          //cout << "Encoded model: " << model << " nchannel: " << m->num_gamma_channels() << " to "
+          //<< encoded.size() << " URLS, with size=" << encoded[0].m_qr_size
+          //<< ", version=" << encoded[0].m_qr_version << " and ECC=" << eccstr << endl;
           
-          // Implement testing blah blah blah
+          vector<string> urls;
+          for( const auto &g : encoded )
+            urls.push_back( Wt::Utils::urlDecode( g.m_url ) );
+          
+#define TEST_EQUAL_ENOUGH(lhs,rhs) \
+assert( (fabs((lhs) - (rhs)) < 1.0E-12) \
+|| (fabs((lhs) - (rhs)) < 1.0E-4*std::max(fabs(lhs), fabs(rhs))) );
+          
+          try
+          {
+            const vector<UrlSpectrum> decoded_specs = decode_spectrum_urls( urls );
+            //cout << "Decoded URL!" << endl;
+            
+            assert( decoded_specs.size() == start_meas.size() );
+            for( size_t i = 0; i < decoded_specs.size(); ++i )
+            {
+              const auto &orig = start_meas[i];
+              const auto &decoded = decoded_specs[i];
+              
+              assert( orig.m_source_type == decoded.m_source_type );
+              assert( orig.m_energy_cal_coeffs.size() == decoded.m_energy_cal_coeffs.size() );
+              for( size_t cal_index = 0; cal_index < orig.m_energy_cal_coeffs.size(); ++cal_index )
+              {
+                TEST_EQUAL_ENOUGH( orig.m_energy_cal_coeffs[cal_index], decoded.m_energy_cal_coeffs[cal_index] );
+              }
+              
+              assert( orig.m_dev_pairs.size() == decoded.m_dev_pairs.size() );
+              for( size_t cal_index = 0; cal_index < orig.m_dev_pairs.size(); ++cal_index )
+              {
+                TEST_EQUAL_ENOUGH( orig.m_dev_pairs[cal_index].first, decoded.m_dev_pairs[cal_index].first );
+                TEST_EQUAL_ENOUGH( orig.m_dev_pairs[cal_index].second, decoded.m_dev_pairs[cal_index].second );
+              }
+              
+              //Temporarily displae below check - need to limit lengths and such
+              //assert( orig.m_model == decoded.m_model );
+              //assert( orig.m_title == decoded.m_title );
+              
+              const auto tdiff = orig.m_start_time - decoded.m_start_time;
+              assert( (tdiff < std::chrono::seconds(2)) && (tdiff > std::chrono::seconds(-2)) );
+              
+              TEST_EQUAL_ENOUGH( orig.m_latitude, decoded.m_latitude );
+              TEST_EQUAL_ENOUGH( orig.m_longitude, decoded.m_longitude );
+              
+              assert( orig.m_neut_sum == decoded.m_neut_sum );
+              
+              if( orig.m_live_time > 0 )
+              {
+                TEST_EQUAL_ENOUGH( orig.m_live_time, decoded.m_live_time );
+              }
+              
+              if( orig.m_real_time > 0 )
+              {
+                TEST_EQUAL_ENOUGH( orig.m_real_time, decoded.m_real_time );
+              }
+              
+              assert( orig.m_channel_data.size() == decoded.m_channel_data.size() );
+              for( size_t chan_index = 0; chan_index < decoded.m_channel_data.size(); ++chan_index )
+              {
+                assert( orig.m_channel_data[chan_index] == decoded.m_channel_data[chan_index] );
+              }
+            }//for( size_t i = 0; i < decoded_specs.size(); ++i )
+            
+            
+            // Implement testing blah blah blah
+            
+          }catch( std::exception &e )
+          {
+            cerr << "Failed to decode UTR: " << e.what() << endl;
+          }
           
         }catch( std::exception &e )
         {
-          cerr << "Failed to decode UTR: " << e.what() << endl;
-        }
+          cerr << "Failed to encode model: " << model << " nchannel: " << m->num_gamma_channels() << " reason: " << e.what() << endl;
+        }//try / catch
         
-      }catch( std::exception &e )
-      {
-        cerr << "Failed to encode model: " << model << " nchannel: " << m->num_gamma_channels() << " reason: " << e.what() << endl;
-      }//try / catch
-      
-    }//for( shared_ptr<const SpecUtils::Measurement> m : usable_spectra )
+      }//for( shared_ptr<const SpecUtils::Measurement> m : usable_spectra )
+    };// do_work lamda
+    
+    pool.post( [=]{ do_work( filename ); } );
+    
+    thread_num += 1;
+    if( thread_num >= batch_size )
+    {
+      pool.join();
+      thread_num = 0;
+    }
   }//for( string filename : files )
   
+  pool.join();
   
   auto avrg_size = []( const vector<size_t> &sizes ) -> size_t {
     if( sizes.empty() )
@@ -2304,7 +2119,7 @@ int dev_code()
   
   // TODO: print out percentage that fit into max_ascii_chars_v25, max_ascii_chars_v40, max_ascii_chars_v40L
   
-  for( const auto &key : data_sizes_ascii )
+  for( const auto &key : data_sizes_bin_zlib_b45 )
   {
     if( key.second.size() < 20 )
       continue;
@@ -2350,41 +2165,29 @@ int dev_code()
     << setw(11) << "%<bin-v40L"
     << endl;
     
-    cout << setw(15) << model << "," << setw(7) << nchannel
-         << "," << setw(7) << data_sizes_ascii[key.first].size()
-         << endl;
+    
+    cout << setw(15) << model << "," << setw(7) << nchannel << "," << setw(7) << data_sizes_bin_zlib_b45[key.first].size() << endl;
+    
+    cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "BIN+DEF+ZC+B45";
+    print_stats( data_sizes_bin_zlib_b45[key.first] );
     
     
-    cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "ASCII URL";
-    print_stats( data_sizes_ascii[key.first] );
+    cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "BIN+DEF+B45";
+    print_stats( data_sizes_bin_nozero[key.first] );
     
-    //cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "RAW BIN";
-    //print_stats( data_sizes_raw_bin[key.first] );
+    cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "BIN";
+    print_stats( data_sizes_bin[key.first] );
     
-    //cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << ","<< setw(17) << "BIN ZLIB";
-    //print_stats( data_sizes_zlib[key.first] );
+    cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "CSV+DEF+ZC";
+    print_stats( data_sizes_csv[key.first] );
     
-#if( USE_ZSTDLIB_CL )
-    //cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << ","<< setw(17) << "ZSTDLIB";
-    //print_stats( data_sizes_zstdlib[key.first] );
-#endif
+    cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "BIN+DEF+ZC";
+    print_stats( data_sizes_bin_zlib[key.first] );
     
-    //cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "ASCII ZLIB";
-    //print_stats( data_sizes_ascii_zlib_url[key.first] );
+    cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "CSV+DEF+ZC+B45";
+    print_stats( data_sizes_csv_zlib_b45[key.first] );
     
-    //cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "BIN B45 ZLIB";
-    //print_stats( data_sizes_bin_base45[key.first] );
-    
-    cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "BIN B45URL ZLIB";
-    print_stats( data_sizes_bin_base45_url[key.first] );
-    
-    cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "ASCII B45URL ZLIB";
-    print_stats( data_sizes_ascii_zlib_base_45_url[key.first] );
-    
-    cout << setw(15) << "" << "," << setw(7) << "" << "," << setw(7) << "" << "," << setw(17) << "BIN ZLIB URL";
-    print_stats( data_sizes_zlib_url[key.first] );
-    
-    cout << endl << endl;
+    cout << endl;
     
     // Print out stats on how many spec fit in URL, or how many QR codes it took
     auto print_num_qr_stats = [=]( vector<size_t> sizes ){
@@ -2396,11 +2199,22 @@ int dev_code()
       cout << endl;
     };
     
-    cout << "\nPercentage of spectra to fit within a number of QR codes:\n";
+    cout << "\nFraction of spectra to fit within a number of QR codes:\n";
     print_num_qr_stats(num_qr_code_single_spec[key.first]);
     
-    cout << "\nPercentage of foreground+background in a single QR codes (" << num_qr_code_two_spec[key.first].size() << " files)" << ":\n";
+    cout << "\nFraction of foreground+background in a single QR codes (" << num_qr_code_two_spec[key.first].size() << " files)" << ":\n";
     print_num_qr_stats(num_qr_code_two_spec[key.first]);
+    
+    
+    cout << "\nFraction of single-spec-single-QR size: (" << qr_code_level_single_spec[key.first].size() << " files)" << ":\n";
+    print_num_qr_stats( qr_code_level_single_spec[key.first]);
+    
+    cout << "\nFraction of single-spec-single-QR version: (" << qr_code_level_single_spec[key.first].size() << " files)" << ":\n";
+    print_num_qr_stats( qr_code_version_single_spec[key.first]);
+    
+    cout << "\nFraction of single-spec-single-QR error-level: (" << qr_code_level_single_spec[key.first].size() << " files)" << ":\n";
+    print_num_qr_stats( qr_code_error_level_single_spec[key.first]);
+    
     
     cout << endl;
   }//for( const auto &key : data_sizes_ascii )

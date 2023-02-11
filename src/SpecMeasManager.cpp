@@ -99,9 +99,13 @@
 #include "rapidxml/rapidxml_utils.hpp"
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/DateTime.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/ParseUtils.h"
+
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
-#include "SpecUtils/DateTime.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
@@ -109,9 +113,6 @@
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/ZipArchive.h"
 #include "InterSpec/HelpSystem.h"
-#include "SpecUtils/Filesystem.h"
-#include "SpecUtils/StringAlgo.h"
-#include "SpecUtils/ParseUtils.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/EnergyCalTool.h"
@@ -133,7 +134,11 @@
 #endif
 
 #if( USE_QR_CODES )
-#include "InterSpec/QRCode.h"
+#include "rapidxml/rapidxml_print.hpp"
+
+#include "SpecUtils/RapidXmlUtils.hpp"
+
+#include "InterSpec/QrCode.h"
 #include "InterSpec/QRSpectrum.h"
 #endif
 
@@ -474,6 +479,12 @@ void displayQrDialog( const vector<QRSpectrum::UrlEncodedSpec> urls, const size_
   }//if( (index + 1) < urls.size() )
 }//void displayQr( vector<QRSpectrum::UrlEncodedSpec> urls )
 
+/** This dialog box gets shown when a multi-part QR code is received, but not all parts.
+ Once all parts are handed to this dialog, it will load the spectrum, and close.
+ 
+ TODO:
+ - When part-1 of a spectrum is received, we could display some of the information/spectrum
+ */
 class MultiUrlSpectrumDialog : public SimpleDialog
 {
   SpecMeasManager *m_manager;
@@ -489,9 +500,81 @@ public:
     assert( manager );
     assert( viewer );
     
-    addButton( "Cancel" );
+    Wt::WPushButton *btn = addButton( "Cancel" );
     finished().connect( m_manager, &SpecMeasManager::multiSpectrumDialogDone );
+    
+#if( IOS || ANDROID )
+    btn->clicked().connect( this, &MultiUrlSpectrumDialog::removePrevUrlsFile );
+    
+    try
+    {
+      rapidxml::file<char> input_file( prevUrlFile().c_str() ); //Will throw if doesnt exist
+      
+      rapidxml::xml_document<char> doc;
+      doc.parse<rapidxml::parse_default>( input_file.data() );
+      
+      XML_FOREACH_CHILD( url_node, &doc, "Url" )
+      {
+        addUrl( SpecUtils::xml_value_str(url_node) );
+      }
+    }catch( std::exception & )
+    {
+      removePrevUrlsFile();
+    }//try / catch get previous results
+#endif //#if( IOS || ANDROID )
   }//MultiUrlSpectrumDialog
+  
+  
+#if( IOS || ANDROID )
+  static std::string prevUrlFile()
+  {
+    const string datadir = InterSpec::writableDataDirectory();
+    return SpecUtils::append_path(datadir, "prev_spec_uri.xml");
+  }
+  
+  void updatePrevUrlsFile()
+  {
+    removePrevUrlsFile();
+    
+    if( m_urls.empty() )
+      return;
+    
+    try
+    {
+      rapidxml::xml_document<char> doc;
+      
+      for( const QRSpectrum::EncodedSpectraInfo &url : m_urls )
+      {
+        const char *value = doc.allocate_string( url.m_orig_url.c_str(), url.m_orig_url.size() + 1 );
+        rapidxml::xml_node<> *node = doc.allocate_node( rapidxml::node_element, "Url", value );
+        doc.append_node( node );
+      }//for( const QRSpectrum::EncodedSpectraInfo &url : m_urls )
+      
+      ofstream prev_url_file( prevUrlFile().c_str(), ios::out | ios::binary );
+      if( !prev_url_file.is_open() )
+        throw runtime_error( "Unable to open file for output ('" + prevUrlFile() + "')" );
+      
+      rapidxml::print( std::ostream_iterator<char>(prev_url_file), doc, 0 );
+    }catch( std::exception &e )
+    {
+      cerr << "Error writing prev_spec_uri.xml: " << e.what() << endl;
+    }//try / catch
+  }//void updatePrevUrlsFile()
+  
+  
+  void removePrevUrlsFile()
+  {
+    try
+    {
+      const string datafile = prevUrlFile();
+      
+      if( SpecUtils::is_file(datafile) )
+        SpecUtils::remove_file( datafile );
+    }catch( std::exception & )
+    {
+    }
+  }//void removePrevUrlsFile()
+#endif //#if( IOS || ANDROID )
   
   void addUrl( const string &url )
   {
@@ -545,6 +628,10 @@ public:
         if( specs.size() && (specs[0].m_title.size() > 2) )
           display_name = specs[0].m_title;
         
+#if( IOS || ANDROID )
+        removePrevUrlsFile();
+#endif
+        
         m_interspec->userOpenFile( specfile, display_name );
         accept();
       }//if( m_urls.size() == info.m_number_urls )
@@ -568,22 +655,21 @@ public:
       msg += " of " + std::to_string(info.m_number_urls) + ".<p>Waiting on more URLS/QR-codes</p>";
       assert( m_msgContents );
       m_msgContents->setText( msg );
+      
+#if( IOS || ANDROID )
+      updatePrevUrlsFile();
+#endif
     }catch( std::exception &e )
     {
       assert( m_title );
       assert( m_msgContents );
       m_msgContents->setText( "Error decoding URL: " + string(e.what()) );
+      
+#if( IOS || ANDROID )
+      removePrevUrlsFile();
+#endif
     }
   }//void addUrl( const string &url )
-  
-  /*
-  m_multiUrlSpectrumDialog
-  
-  auto dialog = dynamic_cast<MultiUrlSpectrumDialog *>( m_multiUrlSpectrumDialog );
-  if( !dialog )
-    m_multiUrlSpectrumDialog = dialog = new MultiUrlSpectrumDialog( this, m_viewer );
-  dialog->addUrl( url );
-   */
 };//MultiUrlSpectrumDialog
 #endif //USE_QR_CODES
 }//namespace
@@ -3166,11 +3252,12 @@ void SpecMeasManager::displayQuickSaveAsDialog()
   if( second ) ++nspecs;
   if( background ) ++nspecs;
 
+  WButtonGroup *group = nullptr;
   if( nspecs > 1 )
   {
     WGroupBox *buttons = new WGroupBox( "Which file to save:",
                                         dialog->contents() );
-    WButtonGroup *group = new WButtonGroup( dialog->contents() );
+    group = new WButtonGroup( dialog->contents() );
     if( data )
     {
       WRadioButton *button = new WRadioButton( "Foreground", buttons );
@@ -3188,35 +3275,19 @@ void SpecMeasManager::displayQuickSaveAsDialog()
                                        m_specificResources[static_cast<int>(i)], data,
                                        samplenums, detnames ) );
       }
+      
+      group->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Foreground) );
     }//if( data )
-    
-    if( second )
-    {
-      WRadioButton *button = new WRadioButton( "Second Foreground", buttons );
-      button->setInline( false );
-      
-      samplenums = m_viewer->displayedSamples( SpectrumType::SecondForeground );
-      for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-          i < SaveSpectrumAsType::NumTypes;
-          i = SaveSpectrumAsType(static_cast<int>(i)+1) )
-      {
-        button->clicked().connect(
-                          boost::bind( &SpecificSpectrumResource::setSpectrum,
-                                       m_specificResources[toint(i)], second,
-                                       samplenums, detnames ) );
-      }
-      
-      if( !data )
-        button->setChecked();
-      group->addButton( button, -1 );
-    }//if( second )
 
     if( background )
     {
       WRadioButton *button = new WRadioButton( "Background", buttons );
       button->setInline( false );
+      group->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Background) );
+      if( !data )
+        button->setChecked();
       
-      samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::Background );
+      samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::SecondForeground );
       for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
           i < SaveSpectrumAsType::NumTypes;
           i = SaveSpectrumAsType(toint(i)+1) )
@@ -3226,9 +3297,25 @@ void SpecMeasManager::displayQuickSaveAsDialog()
                                        m_specificResources[toint(i)], background,
                                        samplenums, detnames ) );
       }
-      
-      group->addButton( button, -1 );
     } // if( background )
+    
+    if( second )
+    {
+      WRadioButton *button = new WRadioButton( "Secondary", buttons );
+      button->setInline( false );
+      group->addButton( button, static_cast<int>(SpecUtils::SpectrumType::SecondForeground) );
+      
+      samplenums = m_viewer->displayedSamples( SpectrumType::SecondForeground );
+      for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
+          i < SaveSpectrumAsType::NumTypes;
+          i = SaveSpectrumAsType(static_cast<int>(i)+1) )
+      {
+        button->clicked().connect(
+                                  boost::bind( &SpecificSpectrumResource::setSpectrum,
+                                              m_specificResources[toint(i)], second,
+                                              samplenums, detnames ) );
+      }
+    }//if( second )
   } // if( nspecs > 1 )
 
   WContainerWidget *linkDiv = new WContainerWidget( dialog->contents() );
@@ -3256,6 +3343,23 @@ void SpecMeasManager::displayQuickSaveAsDialog()
 #endif
   }//for( SaveSpectrumAsType i = ... )
   
+  
+#if( USE_QR_CODES )
+  {// begin add QR code display link
+    const string linktitle = "As QR code / URL";
+    WAnchor *a = new WAnchor( linktitle, linkDiv );
+    a->setInline( false );
+    a->setStyleClass( "LoadSpectrumSaveAsLink" );
+    
+    auto displayQr = [=](){
+      const int selindex = group ? group->checkedId() : static_cast<int>(SpecUtils::SpectrumType::Foreground);
+      SpecUtils::SpectrumType type = selindex >= 0 ? SpecUtils::SpectrumType(selindex) : SpecUtils::SpectrumType::Foreground;
+      displaySpectrumQrCode( type );
+      dialog->hide();
+    };
+    a->clicked().connect( std::bind( displayQr ) );
+  }// begin add QR code display link
+#endif
 
   WPushButton *cancel = new WPushButton( "Cancel", dialog->contents() );
   cancel->setInline( false );

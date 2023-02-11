@@ -91,7 +91,7 @@
 #include "target/wxWidgets/InterSpecWxUtils.h"
 #endif
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
 #include "InterSpec/InterSpecServer.h"
 #endif
 
@@ -136,19 +136,23 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
     , m_safeAreas{ 0.0f }
 #endif
 {
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE  )
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
   if( !checkExternalTokenFromUrl() )
   {
     setTitle( "Error loading" );
     new WText( "Invalid 'apptoken' specified, not loading", root() );
-    WApplication::quit( "InterSpec is configured to not allow arbitary sessions" );
+    WApplication::quit( "InterSpec is configured to not allow arbitrary sessions" );
     return;
   }//if( !checkExternalTokenFromUrl() )
 #endif
  
   enableUpdates( true );
   
-  //Might as well initialize the DecayDataBaseServer, but in the background
+  // Lets get a jump on initializing DecayDataBaseServer.
+  // Note however, in InterSpecServer::startServer and InterSpecServer::startWebServer we have
+  //  already called DecayDataBaseServer::initialize() as soon as the thread pool was available, so
+  //  this call will be a waste.
+  //  TODO: once the localhost server is converted to using InterSpecServer, remove this next line
   WServer::instance()->ioService().boost::asio::io_service::post( &DecayDataBaseServer::initialize );
    
   setupDomEnvironment();
@@ -162,7 +166,7 @@ InterSpecApp::~InterSpecApp()
 {
   Wt::log("debug") << "Entering ~InterSpecApp() destructor.";
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
   if( !m_externalToken.empty() )
     InterSpecServer::set_session_destructing( m_externalToken.c_str() );
 #endif
@@ -176,7 +180,7 @@ InterSpecApp::~InterSpecApp()
 }//~InterSpecApp()
 
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
 bool InterSpecApp::checkExternalTokenFromUrl()
 {
   m_primaryApp = false;
@@ -217,7 +221,7 @@ bool InterSpecApp::checkExternalTokenFromUrl()
   
   return allow_untokened;
 }//bool checkExternalTokenFromUrl()
-#endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
+#endif  //#if( !BUILD_FOR_WEB_DEPLOYMENT )
 
 
 void InterSpecApp::setupDomEnvironment()
@@ -529,7 +533,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   bool loadedSpecFile = false;
   const Http::ParameterMap &parmap = environment().getParameterMap();
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS  || BUILD_AS_WX_WIDGETS_APP )
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
   if( !m_externalToken.empty() )
   {
     const string initial_file = InterSpecServer::file_to_open_on_load( m_externalToken );
@@ -977,7 +981,7 @@ std::chrono::steady_clock::time_point::duration InterSpecApp::activeTimeInCurren
   return m_activeTimeInSession;
 }
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS|| BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
 std::string InterSpecApp::externalToken()
 {
   WApplication::UpdateLock lock( this );
@@ -1029,11 +1033,8 @@ InterSpecApp *InterSpecApp::instanceFromExtenalToken( const std::string &idstr )
   
   return nullptr;
 }//InterSpecApp *instanceFromExtenalToken( const std::string &idstr )
-#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
 
 
-
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
 bool InterSpecApp::userOpenFromFileSystem( const std::string &path )
 {
   if( !m_viewer )

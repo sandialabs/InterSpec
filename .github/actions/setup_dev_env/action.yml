@@ -45,51 +45,18 @@ runs:
         ${{ github.workspace }}\target\patches\dep_build_msvc2022.bat "${{runner.temp}}\dep_build" "${{runner.temp}}\install"
 
 
-# Note: caching the build doesnt work - each checkout sets each files timestamps to current time, so we will use ccache action
+# Note: each checkout sets each files timestamps to current time, so we will use sccache action
 #       but after building the dependencies
-# Currently it looks like There is an issue with SCCACHE_DIR... maybe.  See https://github.com/hendrikmuhs/ccache-action/blob/main/src/restore.ts will maybe need to set the `GITHUB_WORKSPACE` environment variable...
     - name: Ccache for gh actions
       uses: hendrikmuhs/ccache-action@v1.2.7
       with: 
-        key: sccache-${{ github.job }}-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt') }}
+        key: sccache-${{ github.job }}-${{ runner.os }}
+        # key: sccache-${{ github.job }}-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt') }}
         max-size: 10G
         variant: sccache
         append-timestamp: false
         verbose: 2
         
-#    - name: Cache sccache dir
-#      id: cache-sccache-build
-#      uses: actions/cache@v3
-#      with:
-#        path: '${{runner.temp}}/.sccache'
-#        key: ${{ runner.os }}-build-wx-sccache-${{ hashFiles('**/CMakeLists.txt') }}
-    
-#    - name: Create sccache dir
-#      shell: pwsh
-#      if: steps.cache-sccache-build.outputs.cache-hit != 'true' && runner.os == 'Windows'
-#      working-directory: ${{ github.workspace}}
-#      run: |
-#        mkdir .sccache
-#        $scachpath = "${{ github.workspace }}/.sccache"
-#        If(!(test-path -PathType container $scachpath)){ New-Item -ItemType Directory -Path $scachpath }
-        
-
-# Currently having some trouble getting sccache to work - so will try some debugging
-#    - name: Restart sccache
-#      shell: pwsh
-#      if: runner.os == 'Windows'
-#      run: |
-#        sccache --stop-server || & { "ignore failure"; $global:LASTEXITCODE = 0 }
-#        $scachpath = "${{ github.workspace }}/.sccache"
-#        If(!(test-path -PathType container $scachpath)){ New-Item -ItemType Directory -Path $scachpath }
-#        $env:SCCACHE_DIR = $scachpath
-#        $env:SCCACHE_IDLE_TIMEOUT = 0
-#        $env:SCCACHE_CACHE_SIZE = '10G'
-#        $env:SCCACHE_ERROR_LOG = '${{runner.temp}}/sccache_log.txt'
-#        $env:SCCACHE_LOG = 'debug'
-#        sccache --start-server
-#        sccache --start-server || & { "ignore failure"; $global:LASTEXITCODE = 0 }
-
     - name: List files in prefix
       shell: pwsh
       run: |

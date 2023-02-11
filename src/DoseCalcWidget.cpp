@@ -793,7 +793,7 @@ void DoseCalcWidget::init()
     m_scatter.reset( new GadrasScatterTable( continuumData ) );
   }catch( std::exception &e )
   {
-    WString msg = "<div><b>Error iniitalizing resources:</b></div><div>";
+    WString msg = "<div><b>Error initializing resources:</b></div><div>";
 //    msg += Wt::Utils::htmlEncode( e.what(), Wt::Utils::EncodeNewLines );
     msg +=  Wt::WWebWidget::escapeText(	WString(e.what()), true );
     msg += "</div>";
@@ -896,7 +896,7 @@ void DoseCalcWidget::init()
     WRadioButton *neutronButton = new Wt::WRadioButton( "Neutron", buttonDiv );
     m_sourceType->addButton( neutronButton, 1 );
     neutronButton->disable();
-    neutronButton->setToolTip( "Neutron dose calc comming soon!" );
+    neutronButton->setToolTip( "Neutron dose calc not implemented yet." );
     neutronButton->setAttributeValue( "style", "color: grey;" );
     
     m_sourceType->setSelectedButtonIndex( 0 );
@@ -1183,7 +1183,7 @@ void DoseCalcWidget::init()
   
   try
   {
-    runtime_sanity_checks();
+    runtime_sanity_checks( m_scatter.get() );
   }catch( std::exception &e )
   {
     introDiv->clear();
@@ -1221,13 +1221,13 @@ DoseCalcWidget::~DoseCalcWidget()
 }//~DoseCalcWidget()
 
 
-void DoseCalcWidget::runtime_sanity_checks()
+void DoseCalcWidget::runtime_sanity_checks( const GadrasScatterTable * const scatter )
 {
-  if( !m_scatter )
+  if( !scatter )
     throw runtime_error( "Full spectrum transport source matrix not initiated." );
   
 
-  auto check_nuc = [=]( const string nuclabel, const double age, const float distance,
+  auto check_nuc = [scatter]( const string nuclabel, const double age, const float distance,
                         const float areal_density, const float atomic_number, const double expected ) {
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
     if( !db )
@@ -1249,7 +1249,7 @@ void DoseCalcWidget::runtime_sanity_checks()
 
     const double computed = DoseCalc::gamma_dose_with_shielding( energies, intensities,
                                             areal_density, atomic_number,
-                                                  distance, *m_scatter );
+                                                  distance, *scatter );
     
     //Check within 1% of expected (1% is arbitrary)
     if( fabs(computed - expected) > 0.02*std::max(computed,expected) )

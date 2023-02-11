@@ -109,10 +109,172 @@ BOOST_AUTO_TEST_CASE( SimpleSpecEncode )
   BOOST_REQUIRE( decoded.size() == 1 );
 
   test_equalish( spec, decoded[0], true );
-
-// TODO: add spectrum spanning multiple URLs, and multiple spectra in a URL.  Also, add in test for looping over data dir.  Then modify URL, and make sure it is not seen as valid, and then test all the different encoding options for each spectrum.  Also, need to test wonky characters for title/model.
-
 }//BOOST_AUTO_TEST_CASE( SimpleSpecEncode )
+
+
+BOOST_AUTO_TEST_CASE( TestEncodeOptions )
+{
+  UrlSpectrum spec;
+  
+  spec.m_source_type = SpecUtils::SourceType::Foreground;
+  spec.m_energy_cal_coeffs = {0.0f, 3.0f};
+  spec.m_dev_pairs = { {0.0f,0.0f}, {2.0f, 1.0f} };
+  
+  spec.m_model = "Identi";
+  spec.m_title = "My Title";
+  spec.m_start_time = SpecUtils::time_from_string( "2015-05-16T05:50:06" );
+  
+  spec.m_latitude = 37.675911;
+  spec.m_longitude = -121.758858;
+  spec.m_neut_sum = 100;
+  
+  spec.m_live_time = 300.0f;
+  spec.m_real_time = 301.1f;
+  spec.m_channel_data = { 0, 10 , 30, 80, 99, 3421231, 323, 0, 0, 0, 341134, 1, 1, 1 };
+  
+  // Catch at least likely combination of options
+  const uint8_t encode_opts[] = {
+    0x00,
+    EncodeOptions::NoDeflate,
+    EncodeOptions::NoBase45,
+    EncodeOptions::CsvChannelData,
+    EncodeOptions::NoZeroCompressCounts,
+    EncodeOptions::NoZeroCompressCounts | EncodeOptions::CsvChannelData,
+    EncodeOptions::NoDeflate | EncodeOptions::NoBase45,
+    EncodeOptions::NoDeflate | EncodeOptions::NoBase45 | EncodeOptions::CsvChannelData,
+    EncodeOptions::NoDeflate | EncodeOptions::NoBase45 | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts,
+  };
+  
+  for( const uint8_t encode_options : encode_opts )
+  {
+    const vector<UrlEncodedSpec> encoded = url_encode_spectra( {spec}, QrErrorCorrection::High, encode_options);
+    BOOST_REQUIRE( encoded.size() == 1 );
+    
+    const vector<UrlSpectrum> decoded = decode_spectrum_urls( { Wt::Utils::urlDecode( encoded[0].m_url ) } );
+    BOOST_REQUIRE( decoded.size() == 1 );
+    
+    test_equalish( spec, decoded[0], true );
+  }
+}//BOOST_AUTO_TEST_CASE( TestEncodeOptions )
+
+BOOST_AUTO_TEST_CASE( TestNonAsciiTitleAndModelStrings )
+{
+  UrlSpectrum spec;
+  
+  spec.m_source_type = SpecUtils::SourceType::Foreground;
+  spec.m_model = u8"Identiøラ\u0123";
+  spec.m_title = "My:Titleラ A\u0123";
+  
+  spec.m_live_time = 300.0f;
+  spec.m_real_time = 301.1f;
+  spec.m_channel_data = { 0, 10 , 30, 80, 99, 3421231, 323, 0, 0, 0, 341134, 1, 1, 1 };
+  
+  // Check standard encoding, and also when the strings should be URL encoded at time of forming URL (which will then be encoded again)
+  const uint8_t encode_opts[] = {
+    0x0,
+    EncodeOptions::NoDeflate | EncodeOptions::NoBase45 | EncodeOptions::CsvChannelData
+  };
+  
+  for( const uint8_t encode_options : encode_opts )
+  {
+    const vector<UrlEncodedSpec> encoded = url_encode_spectra( {spec}, QrErrorCorrection::High, encode_options);
+    BOOST_REQUIRE( encoded.size() == 1 );
+    
+    const vector<UrlSpectrum> decoded = decode_spectrum_urls( { Wt::Utils::urlDecode( encoded[0].m_url ) } );
+    BOOST_REQUIRE( decoded.size() == 1 );
+    
+    test_equalish( spec, decoded[0], true );
+  }
+}//BOOST_AUTO_TEST_CASE( TestNonAsciiTitleAndModelStrings )
+
+
+BOOST_AUTO_TEST_CASE( MultiUriSpectrum )
+{
+  UrlSpectrum spec;
+  
+  spec.m_source_type = SpecUtils::SourceType::Foreground;
+  spec.m_energy_cal_coeffs = {0.0f, 0.125f};
+  
+  spec.m_model = "HPGe";
+  spec.m_title = "A wonky spectrum";
+  spec.m_start_time = SpecUtils::time_from_string( "2015-05-16T05:50:06" );
+  
+  spec.m_latitude = 37.675911;
+  spec.m_longitude = -121.758858;
+  spec.m_neut_sum = 100;
+  
+  spec.m_live_time = 300.0f;
+  spec.m_real_time = 301.1f;
+  for( uint32_t i = 0; i < 4096; ++i )
+    spec.m_channel_data.push_back( i );
+  
+  const uint8_t encode_options = 0;
+  const vector<UrlEncodedSpec> encoded = url_encode_spectra( {spec}, QrErrorCorrection::High, encode_options);
+  
+  //encoded.size() == 7
+  BOOST_REQUIRE( encoded.size() > 1 );
+  
+  vector<string> urls;
+  for( const auto &enc : encoded )
+    urls.push_back( Wt::Utils::urlDecode( enc.m_url ) );
+  
+  const vector<UrlSpectrum> decoded = decode_spectrum_urls( urls );
+  BOOST_REQUIRE( decoded.size() == 1 );
+  
+  test_equalish( spec, decoded[0], true );
+}//BOOST_AUTO_TEST_CASE( SimpleSpecEncode )
+
+
+BOOST_AUTO_TEST_CASE( TwoSpectrumEncode )
+{
+  UrlSpectrum spec, back;
+  
+  spec.m_source_type = SpecUtils::SourceType::Foreground;
+  spec.m_energy_cal_coeffs = {0.0f, 3.0f};
+  spec.m_dev_pairs = { {0.0f,0.0f}, {2.0f, 1.0f} };
+  
+  spec.m_model = "Identi";
+  spec.m_title = "My Title";
+  spec.m_start_time = SpecUtils::time_from_string( "2015-05-16T05:50:06" );
+  
+  spec.m_latitude = 37.675911;
+  spec.m_longitude = -121.758858;
+  spec.m_neut_sum = 100;
+  
+  spec.m_live_time = 300.0f;
+  spec.m_real_time = 301.1f;
+  spec.m_channel_data = { 0, 10 , 30, 80, 99, 3421231, 323, 0, 0, 0, 0, 1, 0, 341134, 1, 1, 1 };
+  
+  
+  back.m_live_time = 100;
+  back.m_real_time = 100;
+  back.m_channel_data = { 0, 8 , 4, 7, 7, 90, 255, 13, 1, 0, 1, 15, 2, 2, 2, 1, 0 };
+  back.m_neut_sum = 5;
+  back.m_source_type = SpecUtils::SourceType::Background;
+  back.m_model = "Identi";
+  back.m_start_time = SpecUtils::time_from_string( "2015-05-16T04:45:06" );
+  
+  // Dont set the second spectrums energy calibration to same as first to check that its assigned during decode since same model detector
+  
+  BOOST_REQUIRE( spec.m_channel_data.size() == back.m_channel_data.size() );
+  
+  const uint8_t encode_options = 0;
+  const vector<UrlEncodedSpec> encoded = url_encode_spectra( {spec, back}, QrErrorCorrection::High, encode_options);
+  BOOST_REQUIRE( encoded.size() == 1 );
+  
+  const vector<UrlSpectrum> decoded = decode_spectrum_urls( { Wt::Utils::urlDecode( encoded[0].m_url ) } );
+  BOOST_REQUIRE( decoded.size() == 2 );
+  
+  // Now setup the values we expect decoded from background
+  UrlSpectrum expected_back = back;
+  expected_back.m_energy_cal_coeffs = spec.m_energy_cal_coeffs;
+  expected_back.m_dev_pairs = spec.m_dev_pairs;
+  expected_back.m_latitude = spec.m_latitude;
+  expected_back.m_longitude = spec.m_longitude;
+  
+  test_equalish( spec, decoded[0], true );
+  test_equalish( expected_back, decoded[1], false );
+}//BOOST_AUTO_TEST_CASE( TwoSpectrumEncode )
 
 
 

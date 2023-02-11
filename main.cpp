@@ -21,62 +21,56 @@
  License along with this library; if not, write to the Free Software
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
+
+/**
+ This file is for creating a InterSpec web-server; either localhost (primarily for development
+ purposes), or as a web-server (has only been superficially tested inside docker containers).
+ 
+ To build stand-alone "native" apps, see the sub-directories in the "target" directory.
+ */
+
 #include "InterSpec_config.h"
 
 #include <string>
 #include <iostream>
 
-#include <Wt/WString>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
+#include <boost/program_options.hpp>
+
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
 
 #include "InterSpec/InterSpec.h"
-#include "SpecUtils/Filesystem.h"
-#include "InterSpec/InterSpecApp.h"
-#include "SpecUtils/SerialToDetectorModel.h"
-#include "InterSpec/DataBaseVersionUpgrade.h"
-
-#if( ANDROID )
-#include "android/AndroidUtils.hpp"
-#endif
-
-#if( USE_SQLITE3_DB )
-#include "InterSpec/DataBaseUtils.h"
-#endif
-
+#include "InterSpec/InterSpecServer.h"
 
 #if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
 #include "testing/developcode.h"
 #endif
 
 
-#include "InterSpec/QRSpecDev.h"
-
-#ifdef _WIN32
+// Some includes to get terminal width (and UTF-8 cl arguments on WIndows)
+#if defined(__APPLE__) || defined(linux) || defined(unix) || defined(__unix) || defined(__unix__)
+#include <sys/ioctl.h>
+#include <unistd.h>
+#elif defined(_WIN32)
+#define NOMINMAX
 #define WIN32_LEAN_AND_MEAN 1
-#include <windows.h>
+#include <Windows.h>
 #include <stdio.h>
 #include <direct.h>
 #include <shellapi.h>
-
-#include "SpecUtils/StringAlgo.h"
 #endif
 
 
 //Forward declaration
-Wt::WApplication *createApplication( const Wt::WEnvironment &env );
-
+unsigned terminal_width();
 #ifdef _WIN32
 void getUtf8Args( int &argc, char ** &argv );
 #endif
 
-void processCustomArgs( int argc, char **argv );
 
 
 int main( int argc, char **argv )
 {
-  return QRSpecDev::dev_code();
-  
 #ifdef _WIN32
   getUtf8Args( argc, argv );
 #endif
@@ -85,98 +79,222 @@ int main( int argc, char **argv )
   return developcode::run_development_code();
 #endif
   
-  
-#if( ANDROID )
-  AndroidUtils::androidbuf stdbuf( AndroidUtils::androidbuf::FromCout );
-  AndroidUtils::androidbuf errbuf( AndroidUtils::androidbuf::FromCerr );
-  AndroidUtils::set_anrdoid_cwd( argc, argv );
-#endif //#if( ANDROID )
-  
   std::cout << std::showbase << std::hex << "Running with Wt version "
-            << WT_VERSION << std::dec << ", from executable compiled on "
-            << __DATE__ << std::endl;
+  << WT_VERSION << std::dec << ", from executable compiled on "
+  << __DATE__ << std::endl;
   
 #if( PERFORM_DEVELOPER_CHECKS )
   std::cout << "Developer tests are being performed" << std::endl;
 #endif
-
+  
   std::cout << std::endl;
   
-#if( WT_VERSION >= 0x3030300 )
-  //Make it so WString defaults to assuming std::string or char * are UTF8
-  //  encoded, rather than the system encoding.
-  Wt::WString::setDefaultEncoding( Wt::UTF8 );
+  int server_port_num;
+  std::string docroot, wt_config, user_data_dir;
+  
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  std::string http_address = "127.0.0.1";
+  static_assert( !BUILD_AS_LOCAL_SERVER, "Web and local server should not both be enabled");
 #endif
   
-#if( BUILD_AS_LOCAL_SERVER )
-  // For development we'll put in some default command line argument that assume the CWD is
-  //  either the base InterSpec code directory, or the CMake build directory.
-  std::string def_args[] = { argv[0], "--docroot=.", "--http-address=127.0.0.1",
-    "--http-port=8080", "--config=./data/config/wt_config_localweb.xml", "--accesslog=-",
-    "--no-compression"
-  };
-  const size_t default_argc = sizeof(def_args) / sizeof(def_args[0]);
-  char *default_argv[default_argc] = { nullptr };
+  namespace po = boost::program_options;
   
-  if( argc == 1 )
+  unsigned term_width = terminal_width();
+  unsigned min_description_length = ((term_width < 80u) ? term_width/2u : 40u);
+  
+  po::options_description cl_desc("Allowed options", term_width, min_description_length);
+  cl_desc.add_options()
+  ("help,h",  "produce this help message")
+  ("http-port", po::value<int>(&server_port_num)->default_value(8080),
+   "The HTTP port to bind the web-server too.  Ports below 1024 are not recommended, and require elevated privileges.")
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  ( "http-address", po::value<std::string>(&http_address),
+   "The network HTTP address to bind the web-server too; '127.0.0.1' is localhost, while '0.0.0.0' will serve the web-app to the external network."
+   )
+#endif
+  ("userdatadir", po::value<std::string>(&user_data_dir),
+   "The directory to store user data to, or to look in for custom user data (serial_to_model.csv, etc)."
+   )
+  ("config", po::value<std::string>(&wt_config),
+   "The Wt config XML file to use."
+   )
+  ("docroot", po::value<std::string>(&docroot),
+   "The directory that contains the 'InterSpec_resources' and 'data' directories.\n"
+   "All files in the docroot directory, and its subdirectories are available via HTTP.\n"
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+   "Defaults to current working directory."
+#endif
+   )
+  ("static-data-dir", "The static data directory (e.g., 'data' dir that holds cross-sections, "
+   "nuclear-data, etc) to use.  If not specified, uses 'data' in the `docroot` directory."
+   )
+  ;
+  
+  po::variables_map cl_vm;
+  try
   {
-    std::cout << "Using default set of command line arguments\n" << std::endl;
+    po::parsed_options parsed_opts
+    = po::command_line_parser(argc,argv)
+      //.allow_unregistered()
+      .options(cl_desc)
+      .run();
     
-    for( size_t i = 0; i < default_argc; ++i )
-      default_argv[i] = &(def_args[i].front());
-    
-    argc = static_cast<int>( default_argc );
-    argv = default_argv;
-
-#if(_WIN32)
+    po::store( parsed_opts, cl_vm );
+    po::notify( cl_vm );
+  }catch( std::exception &e )
+  {
+    std::cerr << "Command line argument error: " << e.what() << std::endl << std::endl;
+    std::cout << cl_desc << std::endl;
+    return 1;
+  }//try catch
+  
+  
+  if( cl_vm.count("help") )
+  {
+    std::cout << "Available command-line options for starting the InterSpec web-server are:\n";
+    std::cout << cl_desc << std::endl;
+    return 0;
+  }//if( cl_vm.count("help") )
+  
+  
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  if( cl_vm.count("config") )
+  {
+    std::cerr << "You must specify the Wt config file to use (the 'config' option)" << std::endl;
+    return -20;
+  }
+  
+  if( cl_vm.count("http-address") )
+  {
+    std::cerr << "You must specify the network adapter address to bind to"
+    << " (the 'http-address' option)." << std::endl;
+    return -21;
+  }
+  
+  if( cl_vm.count("docroot") )
+  {
+    std::cerr << "You must specify the HTTP document root directory to use (the 'docroot' option)" << std::endl;
+    return -22;
+  }
+#endif
+  
+  if( (server_port_num <= 0) || (server_port_num > 65535) )
+  {
+    std::cerr << "Invalid server port number: " << server_port_num
+    << ", must be between 1 and 65535" << std::endl;
+    return -23;
+  }
+  
+  
+  if( server_port_num <= 1024 )
+  {
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+    std::cerr << "Server port number below 1024 not allowed." << std::endl;
+    return -23;
+#else
+    std::cerr << "Warning: using a privileged port is not recommended." << std::endl;
+#endif
+  }//if( server_port_num <= 1024 )
+  
+  
+#if( _WIN32 && !BUILD_FOR_WEB_DEPLOYMENT && BUILD_AS_LOCAL_SERVER )
+  if( docroot.empty() )
+  {
     // I cant get MSVC to set CWD to anywhere besides InterSpec/out/build/x64-Debug/,
-    //  so we'll look for our resources up to three levels up
+    //  so we'll look for our resources up to three levels up.
+    //  However, we def dont want to do this for anything other than localhost development
     const std::string targetfile = "InterSpec_resources/InterSpec.css";
     std::string pardir = "";
-    while (pardir.size() < 9)
+    while( pardir.size() < 9 )
     {
       const std::string testfile = SpecUtils::append_path(pardir, targetfile);
-      if (SpecUtils::is_file(testfile))
+      if( SpecUtils::is_file(testfile) )
       {
-        if(!pardir.empty())
-        {
-          std::cout << "Will change cwd to '" << pardir << "'." << std::endl;
-          if (_chdir(pardir.c_str()))
-            std::cerr << "Failed to change CWD to '" << pardir << "'" << std::endl;
-        }
+        docroot = pardir;
         break;
-      }
+      }//if( SpecUtils::is_file(testfile) )
       pardir = SpecUtils::append_path(pardir, "..");
     }//while (pardir.size() < 6)
-#endif
     
+    if( !SpecUtils::is_file( SpecUtils::append_path(docroot, targetfile) ) )
+    {
+      std::cerr << "Unable to find base directory that contains 'InterSpec_resources' directory."
+      << std::endl;
+      return -24;
+    }
+  }//if( docroot.empty() )
+#endif //_WIN32 && !BUILD_FOR_WEB_DEPLOYMENT
+  
+  if( user_data_dir.empty() )
+  {
+#if( BUILD_AS_LOCAL_SERVER )
     // If there is a "user_data" directory in the CWD, we'll set this as the writeable data
     //  directory to simulate desktop app behavior of saving DRFs and similar
     const std::string cwd = SpecUtils::get_working_path();
-    std::cout << "cwd='" << cwd << "'" << std::endl;
-
     const std::string dev_user_data = SpecUtils::append_path( cwd, "user_data" );
     if( SpecUtils::is_directory( dev_user_data ) )
-      InterSpec::setWritableDataDirectory( dev_user_data );
-    else
-      std::cerr << "No '" << dev_user_data << "' - not setting writeable data directory.\n";
-  }//if( no command line arguments were given ).
-#endif //BUILD_AS_LOCAL_SERVER
+    {
+      user_data_dir = dev_user_data;
+    }else
+    {
+      std::cerr << "No '" << dev_user_data << "' - you must specify writeable data directory,"
+                << " or there must be a 'user_data' directory in the current working directory."
+                << std::endl;
+      return -25;
+    }
+#else
+    std::cerr << "You must specify the directory to store user data to (the 'userdatadir' option)."
+              << std::endl;
+    return -25;
+#endif
+  }//if( user_data_dir.empty() )
+
   
-  processCustomArgs( argc, argv );
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  if( docroot.empty() )
+    docroot = ".";
   
-  DataBaseVersionUpgrade::checkAndUpgradeVersion();
+  if( wt_config.empty() )
+    wt_config = SpecUtils::append_path( docroot, "data/config/wt_config_localweb.xml" );
+#endif
   
-  // TODO: switch to using InterSpecServer::startServer(), etc
-  return Wt::WRun( argc, argv, &createApplication );
+  if( cl_vm.count("static-data-dir") )
+  {
+    std::string datadir = cl_vm["static-data-dir"].as<std::string>();
+    if( !SpecUtils::is_directory(datadir) )
+      datadir = SpecUtils::append_path( docroot, datadir );
+    
+    if( !SpecUtils::is_directory(datadir) )
+    {
+      std::cerr << "Specified 'static-data-dir' ('" << cl_vm["static-data-dir"].as<std::string>()
+                << "') is not a directory." << std::endl;
+      return -26;
+    }//if( !SpecUtils::is_directory(datadir) )
+    
+    // We wont make datadir path absolute, to avoid possible long name hassles on Windows, and I
+    //  dont think the code changes current working directory anywhere.
+    //datadir = SpecUtils::make_canonical_path(datadir);
+    
+    InterSpec::setStaticDataDirectory( datadir );
+  }//if( cl_vm.count("static-data-dir") )
+  
+  
+  // Start the InterSpec server
+  const int rval = InterSpecServer::start_server( argv[0], user_data_dir.c_str(),
+                                                 docroot.c_str(),
+                                                 wt_config.c_str(),
+                                                 static_cast<short int>(server_port_num) );
+  if( rval < 0 )
+  {
+    std::cerr << "Failed to start server, val=" << rval << std::endl;
+    return rval;
+  }
+  
+  std::cout << "\nYou can now point your browser to: " << InterSpecServer::urlBeingServedOn()
+            << std::endl;
+  
+  return InterSpecServer::wait_for_shutdown();
 }//int main( int argc, const char * argv[] )
-
-
-
-Wt::WApplication *createApplication( const Wt::WEnvironment &env )
-{
-  return new InterSpecApp( env );
-}// Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 
 
 #ifdef _WIN32
@@ -214,73 +332,30 @@ void getUtf8Args( int &argc, char ** &argv )
 #endif
 
 
-void processCustomArgs( int argc, char **argv )
+
+
+#if defined(__APPLE__) || defined(unix) || defined(__unix) || defined(__unix__)
+unsigned terminal_width()
 {
-  bool set_serial_num_file = false;
-  for( int i = 1; i < (argc-1); ++i )
-  {
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
-    if( argv[i] == std::string("--userdatadir") )
-    {
-      try
-      {
-        InterSpec::setWritableDataDirectory( argv[i+1] );
-        const std::vector<std::string> serial_db = SpecUtils::ls_files_in_directory( argv[i+1], "serial_to_model.csv" );
-        if( !serial_db.empty() )
-        {
-          SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
-          set_serial_num_file = true;
-        }
-      }catch( std::exception & )
-      {
-        std::cerr << "Invalid userdatadir ('" << argv[i+1] << "') specified"
-                  << std::endl;
-      }
-    }//if( argv[i] == std::string("--userdatadir") )
-#endif  //if( not a webapp )
-
-#if( USE_SQLITE3_DB )
-    if( argv[i] == std::string("--userdb") )
-    {
-      try
-      {
-        // TODO: make sure the filename is valid and we can write to it, and also let using = sign
-        DataBaseUtils::setPreferenceDatabaseFile( argv[i+1] );
-      }catch( std::exception & )
-      {
-        std::cerr << "Invalid userdb ('" << argv[i+1] << "') specified" << std::endl;
-      }
-    }//if( argv[i] == std::string("--userdatadir") )
-#endif
-   
-    if( argv[i] == std::string("--static-data-dir") )
-    {
-      try
-      {
-        // Let user use the = sign
-        InterSpec::setStaticDataDirectory( argv[i+1] );
-      }catch( std::exception &e )
-      {
-        std::cerr << "Invalid static data directory ('" << argv[i+1] << "') specified: " << e.what() << std::endl;
-      }
-    }//if( argv[i] == std::string("--userdatadir") )
-
-  }//for( int i = 1; i < (argc-1); ++i )
+  winsize ws = {};
+  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) <= -1)
+    return 80;
+  unsigned w = (ws.ws_col);
+  return std::max( 40u, w );
+}
+#elif defined(_WIN32)
+unsigned terminal_width()
+{
+  HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
+  if( handle == INVALID_HANDLE_VALUE )
+    return 80;
   
+  CONSOLE_SCREEN_BUFFER_INFO info;
+  if( !GetConsoleScreenBufferInfo(handle, &info) )
+    return 80;
   
-#if( BUILD_AS_LOCAL_SERVER )
-  if( !set_serial_num_file )
-  {
-    const char * const searchdirs[] = { "data", "data_ouo" };
-    for( const char *dir : searchdirs )
-    {
-      const std::vector<std::string> serial_db = SpecUtils::ls_files_in_directory( dir, "serial_to_model.csv" );
-      if( !serial_db.empty() )
-      {
-        SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
-        break;
-      }
-    }
-  }//if( !set_serial_num_file )
+  return unsigned(info.srWindow.Right - info.srWindow.Left);
+}
+#else
+static_assert( 0, "Not unix and not win32?  Unsupported getting terminal width" );
 #endif
-}//void processCustomArgs( int argc, char **argv )

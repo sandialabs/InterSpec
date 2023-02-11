@@ -37,21 +37,20 @@ jobs:
       - name: Setup Dev Env 
         uses: ./.github/actions/setup_dev_env
 
-# TODO: Caching the builds still isnt working
       - name: Cache wxWidgets config/build
         id: cache-wx-build
         uses: actions/cache@v3
         with:
           path: '${{runner.temp}}/build_${{ runner.os }}_wx_app'
           key: ${{ runner.os }}-build-wxapp-${{ hashFiles('**/CMakeLists.txt') }}
+          #key: ${{ runner.os }}-build-wxapp
     
       - name: Initial wxWidgets config/build
         shell: pwsh
         if: steps.cache-wx-build.outputs.cache-hit != 'true' && runner.os == 'Windows'
         working-directory: ${{runner.temp}}
-
         run: |
-          mkdir build_${{ runner.os }}_wx_app
+          if (-Not (Test-Path 'build_${{ runner.os }}_wx_app')){ mkdir build_${{ runner.os }}_wx_app }
           cd build_${{ runner.os }}_wx_app
           #cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{runner.os}}_WebView_latest -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache "${{github.workspace}}/target/wxWidgets"
           $prefix = "${{runner.temp}}/install"

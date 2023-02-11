@@ -104,3 +104,10 @@ rect.DecayChartNuc.MousedOver
 {
   cursor: pointer;
 }
+
+.DecayChainDnldBtn
+{
+  position: absolute;
+  bottom: 0px;
+  right: 5px;
+}

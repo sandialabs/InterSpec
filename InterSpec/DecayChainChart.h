@@ -120,6 +120,9 @@ public:
   void showPossibleParents( const SandiaDecay::Nuclide *nuclide );
   void deleteMoreInfoDialog();
   
+  /** Get currently showing nuclide. */
+  const SandiaDecay::Nuclide *nuclide();
+  
 protected:
   /** Called during the first full render of the widget; loads all necassary
    javascript.
@@ -142,7 +145,7 @@ private:
   
   /** Until the widget is fully rendered, the JavaScript wont have been fully
    defined; this variable keeps track of this so we know if the JS can be
-   executated now, or stored in #m_pendingJs until things are rendered.
+   executed now, or stored in #m_pendingJs until things are rendered.
    */
   bool m_jsLoaded;
   

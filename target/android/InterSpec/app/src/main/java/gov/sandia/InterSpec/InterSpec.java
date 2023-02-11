@@ -272,9 +272,10 @@ public class InterSpec extends AppCompatActivity
     if( result == null )
       return;
 
-    if( result.getScheme().contentEquals("interspec") )
+    String scheme = result.getScheme().toLowerCase();
+    if( scheme.contentEquals("interspec") || scheme.contentEquals("raddata") )
     {
-      Log.d("openFileInInterSpec", "Got scheme of interspec, url: " + result.toString()  );
+      Log.d("openFileInInterSpec", "Got scheme of " + scheme + ", url: " + result.toString()  );
       openAppUrl( interspecID, result.toString() );
       return;
     }

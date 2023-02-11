@@ -50,18 +50,32 @@ jobs:
           echo "In Install/bin"
           ls '${{runner.temp}}/install/bin'
 
-# Note: caching the build doesnt work - each checkout sets each files timestamps to current time, so it will all be rebuilt anyway 
-      - name: Run tests
-        id: run-tests
+      - name: Cache config/build
+        id: cache-test-build
+        uses: actions/cache@v3
+        with:
+          path: '${{runner.temp}}/build_tests'
+          key: ${{ runner.os }}-config-tests-release-${{ hashFiles('**/CMakeLists.txt') }}
+          #key: ${{ runner.os }}-cmake-config-tests
+    
+      - name: Initial tests cmake config/build
         shell: pwsh
+        if: steps.cache-test-build.outputs.cache-hit != 'true' && runner.os == 'Windows'
         working-directory: ${{runner.temp}}
         run: |
           mkdir build_tests
           cd build_tests
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache "${{ github.workspace }}/target/testing"
-          cmake --build . --config Debug
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH="${{runner.temp}}/install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_BUILD_TYPE="Release" -DCMAKE_CONFIGURATION_TYPES="Release" -DCMAKE_CONFIGURATION_TYPES="Release" -G "Ninja" "${{ github.workspace }}/target/testing"
+
+      - name: Run tests
+        id: run-tests
+        shell: pwsh
+        working-directory: ${{runner.temp}}/build_tests
+  #      Ordinarily we would  `cmake --build . --target RUN_TESTS` to run tests, but this doesnt work with ninja generator
+        run: |
+          cmake --build . --config Release
           Copy-Item "${{ github.workspace }}\external_libs\SandiaDecay\sandia.decay.xml" -Destination "${{ github.workspace }}\data"
-          cmake --build . --target RUN_TESTS
+          ninja test
           New-Item -ItemType Directory -Force -Path TestLogs
           Get-ChildItem -Path TestLogs -Include *.* -Recurse | foreach { $_.Delete()}
           if (Test-Path "Testing/Temporary/LastTest.log") { Copy-Item "Testing/Temporary/LastTest.log" -Destination TestLogs } else { echo "No LastTest.log avaialable" >> TestLogs/LastTest.log }

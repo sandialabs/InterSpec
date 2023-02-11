@@ -174,6 +174,9 @@ public:
    */
   static std::string staticDataDirectory();
  
+  /** Returns if the staticDataDirectory has been explicitly set. */
+  static bool haveSetStaticDataDirectory();
+  
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   /** Sets the directory were we can write write the user preference database
    file (if using sqlite3); also the location will search for extra detector
@@ -1473,14 +1476,6 @@ protected:
   std::deque<boost::function<void()> > m_hintQueue;
   
   
-  static std::mutex sm_staticDataDirectoryMutex;
-  static std::string sm_staticDataDirectory;
-  
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-  static std::mutex sm_writableDataDirectoryMutex;
-  static std::string sm_writableDataDirectory;
-#endif  //if( not a webapp )
-
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;
   

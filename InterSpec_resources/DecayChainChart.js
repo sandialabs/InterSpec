@@ -36,6 +36,10 @@ DecayChainChart = function(elem, options) {
   if( (typeof this.options.rightPad) !== 'number' ) this.options.rightPad = 0;
   if( (typeof this.options.isMobile) !== 'boolean' ) this.options.isMobile = false;
   if( (typeof this.options.isDecayChain) !== 'boolean' ) this.options.isDecayChain = true;
+  if( (typeof this.options.showHalfLives) !== 'boolean' ) this.options.showHalfLives = true;
+  if( (typeof this.options.showInstructions) !== 'boolean' ) this.options.showInstructions = true;
+  if( (typeof this.options.hideSmallBrDecayLines) !== 'boolean' ) this.options.hideSmallBrDecayLines = false;
+  if( (typeof this.options.maxInfoTxtSize) !== 'number' ) this.options.maxInfoTxtSize = 22;
   
   if( (typeof this.options.lineColor) !== 'string' ) this.options.lineColor = "black";
   if( (typeof this.options.textColor) !== 'string' ) this.options.textColor = "black";
@@ -64,7 +68,7 @@ DecayChainChart = function(elem, options) {
   .attr("x", 0)
   .attr("y", 0);
 
-  const xaxislabel = '<tspan dy="-0.3em">Decreasing Atomic Mass</tspan>';
+  const xaxislabel = '<tspan dy="-0.45em">Decreasing Atomic Mass</tspan>';
   const yaxislabel = '<tspan dy="1.0em">Increasing Atomic Number</tspan>';
   self.xaxistxt = self.xaxis.append("text")
     .html(xaxislabel)
@@ -154,20 +158,44 @@ DecayChainChart.prototype.setColorOptions = function( options ){
 }//setColorOptions(...)
 
 
+DecayChainChart.prototype.setShowHalfLives = function( show ){
+  this.options.showHalfLives = show;
+  this.redraw();
+}
+
+
+DecayChainChart.prototype.setShowInstructions = function( show ){
+  this.options.showInstructions = show;
+  this.setDecayData( this.rawData );
+}
+
+DecayChainChart.prototype.setHideSmallBrDecayLines = function( hide ){
+  this.options.hideSmallBrDecayLines = hide;
+  this.redraw();
+}
+
 DecayChainChart.prototype.setDecayData = function( data, decayFrom ){
   //console.log( 'data=', data );
   
-  try
+  if( typeof data === 'string' )
   {
-    data = JSON.parse(data);
-  }catch(e)
-  {
-    console.log( 'DecayChainChart.setDecayData: Error parsing data ', e );
-    data = [];
-  }
+    // This is how InterSpec sends the JSON.
+    try
+    {
+      data = JSON.parse(data);
+    }catch(e)
+    {
+      console.log( 'DecayChainChart.setDecayData: Error parsing data ', e );
+      data = [];
+    }
+  }//if (typeof data === 'string' )
   
   if( !Array.isArray(data) )
     data = [];
+  
+  // Make a deep-copy of the input data so we can call this same function with
+  //  it later if needed
+  this.rawData = JSON.parse( JSON.stringify( data ) );
   
   //Massage data so that each combination of AN and MN are only in the data once
   //  no matter how many isomeric states there are
@@ -175,6 +203,9 @@ DecayChainChart.prototype.setDecayData = function( data, decayFrom ){
   
   //First, add the lowest isomeric state for each combination of {AN,MN}
   data.forEach( function(nuc){
+    // Make a deep copy of nuclide, so we dont modify input data
+    nuc = JSON.parse( JSON.stringify( nuc ) );
+    
     //Get number of entries with this AN and MN
     let numLessIso = data.reduce( function(acc, n){
       return acc + (n.atomicNumber==nuc.atomicNumber && n.massNumber==nuc.massNumber && n.iso < nuc.iso ? 1 : 0);
@@ -202,7 +233,7 @@ DecayChainChart.prototype.setDecayData = function( data, decayFrom ){
   
   
   this.options.isDecayChain = decayFrom;
-  if( data.length === 0 )
+  if( (data.length === 0) || !this.options.showInstructions )
   {
     this.instructions.html('');
   }else if( this.options.isMobile )
@@ -223,12 +254,12 @@ DecayChainChart.prototype.setDecayData = function( data, decayFrom ){
     );
   }//if( no data ) / else mobile / else
   
-  
   this.data = filteredData;
   this.selectedNuclide = null;
   this.chart.select(".NucInfoTxt").html('');
   
   this.redraw();
+  this.redraw(); // hack!: Iterate to get all the text spacings right
 }
 
 
@@ -289,24 +320,42 @@ DecayChainChart.prototype.redraw = function() {
   //  both how large the boxes/text are, and spacing between boxes.
   
   //Check how much space text will take up, and then assume this scales
-  //  lineraly with font size (ToDo: is this reasonable?)
+  //  linearly with font size (ToDo: is this reasonable?)
   //Right now we'll just loop over all elements and find the largest one; this
   //  can be improved if performance is an issue.
   let twenty_px_w = 1, twenty_px_h = 1;
-  let labeltxt = function(nuc){
-    /* return nuc.additionalIsos ? nuc.nuclide + "(m)" : nuc.nuclide; */
-     let s = nuc.nuclide;
-     if( !nuc.additionalIsos )
-      return s;
-    if( nuc.iso != 0 && s.includes('m') )
+  const labelTxtFcn = function(nuc, xPosFnc){
+    let s = nuc.nuclide;
+    const is_meta = (nuc.additionalIsos && nuc.additionalIsos.length);
+    
+    if( is_meta && (nuc.iso != 0) && s.includes('m') )
       s = s.substring(0,s.lastIndexOf('m'));
-    return s + '<tspan dy="-0.5em" font-size="66%">(m)</tspan>';
-  };
+    
+    if( self.options.showHalfLives )
+    {
+      let hltxt = nuc.halfLive;
+      for( let i = 0; is_meta && i < nuc.additionalIsos.length; ++i )
+        hltxt += ", " + nuc.additionalIsos[i].halfLive;
+        
+      s = '<tspan x="' + xPosFnc(nuc) + '" dy="-0.57em">' + s + '</tspan>';
+      s += (is_meta ? '<tspan dy="-0.5em" font-size="66%">(m)</tspan>' : "");
+      s += '<tspan x="' + xPosFnc(nuc)
+            + '" dy="' + (is_meta ? '1.75' : '1.0') + 'em"'
+            + ' font-size="' + (is_meta ? '50' : '66') + '%">'
+            + hltxt + '</tspan>';
+    }else
+    {
+      if( is_meta )
+        s += '<tspan dy="-0.5em" font-size="66%">(m)</tspan>';
+    }
+    
+    return s;
+  };//labelTxtFcn
   
   this.data.forEach( function(nuc){
     let tmptxt = self.decays
                      .append("text")
-                     .html( labeltxt(nuc) )
+                     .html( labelTxtFcn( nuc, function(){return "0px";} ) )
                      //.text( nuc.nuclide )
                      .attr("font-size", "20px");
     twenty_px_w = Math.max( twenty_px_w, tmptxt.node().getBoundingClientRect().width );
@@ -320,7 +369,7 @@ DecayChainChart.prototype.redraw = function() {
   //At 20px we want the spacing to be {}
   
   //Define how much padding text should have inside each box.
-  const txt_frac_x = 0.9, txt_frac_y = 0.8;
+  const txt_frac_x = 0.85, txt_frac_y = (self.options.showHalfLives ? 1.0 : 0.8);
   const twenty_px_box_w = twenty_px_w / txt_frac_x;
   const twenty_px_box_h = twenty_px_h / txt_frac_y;
   
@@ -367,8 +416,8 @@ DecayChainChart.prototype.redraw = function() {
   
   //We also will reduce the font-size so the X and Y axis labels dont take up more
   //  than 50% of their space.
-  self.yaxistxt.attr("font-size", Math.min(1.15*font_size,105));
-  self.xaxistxt.attr("font-size", Math.min(1.15*font_size,105));
+  self.yaxistxt.attr("font-size", Math.min(1.3*font_size,105));
+  self.xaxistxt.attr("font-size", Math.min(1.3*font_size,105));
   const prelim_xtxtw = self.xaxistxt.node().getBoundingClientRect().width;
   const prelim_ytxth = self.yaxistxt.node().getBoundingClientRect().height;
   font_size = Math.max( min_font_size, font_size*Math.min( 1, 0.75*w/prelim_xtxtw ) );
@@ -515,7 +564,11 @@ DecayChainChart.prototype.redraw = function() {
     .attr("x2", function(d){ return decayLineCoords(d)[2]; })
     .attr("y2", function(d){ return decayLineCoords(d)[3]; })
     .attr("stroke", self.options.lineColor )
-    .attr("stroke-width", function(d){ return (d.parent===self.selectedNuclide ? 1.35 : 1)*strokew;} )
+    .attr("stroke-width", function(d){
+      if( self.options.hideSmallBrDecayLines && (d.br < 1.0E-5) )
+        return 0;
+      return (d.parent===self.selectedNuclide ? 1.35 : 1)*strokew;
+    } )
     ;
   
   decaylines.exit().remove();
@@ -559,6 +612,7 @@ DecayChainChart.prototype.redraw = function() {
     return (0.5 + ind)*pad_y + ind*box_h + 0.35*font_height + 0.5*box_h;
   };
   
+  
   texts.attr("x", txtXPos )
        .attr("y", txtYPos )
        .attr("class", function (d) {
@@ -577,7 +631,7 @@ DecayChainChart.prototype.redraw = function() {
        } )
        .on("click", function(d){ self.nuclideClicked(d); } )
        .on("dblclick", function(d){ self.nuclideDoubleClicked(d); } )
-       .html( labeltxt )
+       .html( function(d){ return labelTxtFcn(d,txtXPos); } )
        .attr("font-family", "sans-serif")
        .attr("font-size", function(){ return font_size + "px";} )
        .attr("fill", self.options.textColor );
@@ -634,7 +688,8 @@ DecayChainChart.prototype.redraw = function() {
          + " L" + (yaxisx+0.5*triangleLen) + "," + yaxisendy
          + " Z");
   
-  let inst_font_size = font_size;
+  
+  let inst_font_size = Math.min(font_size, self.options.maxInfoTxtSize);
   self.instructions
       .attr("font-size", inst_font_size);
   let txtbb = self.instructions.node().getBoundingClientRect();
@@ -650,7 +705,8 @@ DecayChainChart.prototype.redraw = function() {
       .style("opacity", (atomicMasses.length===0 ? 0 : 1) );
   
   
-  let nucinfo_font_size = font_size;
+  let nucinfo_font_size = Math.min(font_size, self.options.maxInfoTxtSize);
+  
   let nucinfo = this.chart.select(".NucInfoTxt");
   nucinfo.attr("font-size", nucinfo_font_size );
   let nucinfobb = nucinfo.node().getBoundingClientRect();
@@ -660,7 +716,8 @@ DecayChainChart.prototype.redraw = function() {
     nucinfo.attr("font-size", nucinfo_font_size );
     nucinfobb = nucinfo.node().getBoundingClientRect();
   }
-  nucinfo.attr("transform", "translate(" + (yaxisx+triangleLen) + ", " + (xaxisy - triangleLen - nucinfobb.height + nucinfo_font_size) + ")");
+  nucinfo.attr("transform", "translate(" + (yaxisx+triangleLen) + ", "
+                            + (xaxisy - triangleLen - nucinfobb.height + nucinfo_font_size) + ")");
   
   //I cant decide if its better to underline the "Show Decays Through ..." text,
   //  or draw a box around it; currently underlineing, but I left the box
@@ -722,24 +779,14 @@ DecayChainChart.prototype.redraw = function() {
 
 
 DecayChainChart.prototype.nuclideClicked = function( d ) {
-  
   this.decays.selectAll('rect.DecayChartNuc').classed('selected',false);
   this.decays.selectAll('line.DecayLine').classed('selected',false);
-  
-  //.attr("fill", "#ffffff")
-  //.attr("fill-opacity", "0");
   
   if( this.selectedNuclide === d ){
     d = this.selectedNuclide = null;
   }else{
     this.selectedNuclide = d;
     this.decays.selectAll('rect.DecayChartNuc.' + d.nuclide).classed('selected',true);
-    
-    //
-    //this.decays.selectAll('line.DecayLine.' + d.nuclide).classed('selected',true);
-    
-    //.attr("fill", "#00ff00")
-    //.attr("fill-opacity", "0.5");
   }
   
   let html = '';
@@ -748,15 +795,19 @@ DecayChainChart.prototype.nuclideClicked = function( d ) {
     html += '<tspan x="0" ' + (index!==0 ? 'dy="1em"' : '') + '>' + value + '</tspan>';
   } );
   
-  ((d && d.additionalIsos) ? d.additionalIsos :  []).forEach( function(nuc,index){
-    (nuc ? nuc.txtinfo : []).forEach( function(value,index){
-      html += '<tspan x="0" ' + (index===0 ? 'dy="2em"' : 'dy="1em"') + '>' + value + '</tspan>';
+  ((d && d.additionalIsos) ? d.additionalIsos :  []).forEach( function(nuc,iso_index){
+    (nuc ? nuc.txtinfo : []).forEach( function(value,line_index){
+      html += '<tspan x="0" ' + (line_index===0 ? 'dy="2em"' : 'dy="1em"') + '>' + value + '</tspan>';
     } );
   } );
   
   this.chart.select(".NucInfoTxt").html(html);
   
   this.redraw();  //needed to reposition txt location
+  
+  // Iterate to get text spacing all right... its a hack!
+  this.redraw();
+  this.redraw();
 }
 
 
