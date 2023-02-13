@@ -899,7 +899,7 @@ if(INCLUDE_ANALYSIS_TEST_SUITE)
 endif()
 
 configure_file(
-    ${PROJECT_SOURCE_DIR}//external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml
+    ${PROJECT_SOURCE_DIR}//external_libs/SandiaDecay/sandia.decay.min.xml
     ${PROJECT_BINARY_DIR}/data/sandia.decay.xml
     COPYONLY
 )

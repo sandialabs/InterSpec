@@ -425,6 +425,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     tempDir = @"/tmp";
   static const std::string tmpdr = [tempDir UTF8String];  //static since I'm not sure how long the location pointed to by setenv has to last
   
+// TODO: Need to switch to just using `InterSpecServer::start_server`, and just set the temp dir env variable manually here; we can then remove some of the above prep code, like checking DB version and such
+
   const char *argv[] = { argv0.c_str(), "--forceserve", "--nobrowsertab", basedir.c_str(), "-c", "data/config/wt_config_osx.xml", "--tempdir", tmpdr.c_str() };
   int argc = sizeof(argv) / sizeof(argv[0]);
   

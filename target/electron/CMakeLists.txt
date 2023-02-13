@@ -76,7 +76,7 @@ install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/app/loading.html
 #Need to get {d3.v3.min.js, SpectrumChartD3.js, SpectrumChartD3.css} and related into InterSpec_resources as well.
 #  SHould be workin, but on Windows it doesnt look like it at the moment.
 
-install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml
+install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandia.decay.min.xml
         PERMISSIONS OWNER_READ GROUP_READ WORLD_READ
         DESTINATION ${PROJECT_BINARY_DIR}/app/data/
         RENAME sandia.decay.xml )

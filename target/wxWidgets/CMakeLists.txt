@@ -139,7 +139,7 @@ DESTINATION
 )
 
 install(FILES 
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandia.decay.min.xml
 DESTINATION 
   "data"
 RENAME 
