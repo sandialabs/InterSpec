@@ -168,6 +168,8 @@
 
 #if( USE_GOOGLE_MAP )
 #include "InterSpec/GoogleMap.h"
+#elif( USE_LEAFLET_MAP )
+#include "InterSpec/LeafletRadMap.h"
 #endif
 
 #if( USE_SEARCH_MODE_3D_CHART )
@@ -413,7 +415,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_featureMarkers( nullptr ),
   m_featureMarkerMenuItem( nullptr ),
   m_multimedia( nullptr ),
-#if( USE_GOOGLE_MAP )
+#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   m_mapMenuItem( 0 ),
 #endif
 #if( USE_SEARCH_MODE_3D_CHART )
@@ -6082,12 +6084,12 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_hardBackgroundSub->triggered().connect( this, &InterSpec::startHardBackgroundSub );
   m_hardBackgroundSub->disable();
   
-#if( USE_GOOGLE_MAP )
+#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   m_mapMenuItem = m_displayOptionsPopupDiv->addMenuItem( "Map","InterSpec_resources/images/map_small.png" );
   m_mapMenuItem->triggered().connect( boost::bind( &InterSpec::createMapWindow, this, SpecUtils::SpectrumType::Foreground ) );
   m_mapMenuItem->disable();
   HelpSystem::attachToolTipOn( m_mapMenuItem,
-                    "Show measurement(s) location on a Google Map. Only enabled"
+                    "Show measurement(s) location on a map. Only enabled"
                     " when GPS coordinates are available.", showToolTips );
 #endif
   
@@ -7414,6 +7416,12 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
   
 //  window->resizeToFitOnScreen();
 }//void createMapWindow()
+#elif( USE_LEAFLET_MAP )
+void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
+{
+  const shared_ptr<const SpecMeas> meas = measurment( spectrum_type );
+  LeafletRadMap::showForMeasurement( meas );
+}//void createMapWindow( SpecUtils::SpectrumType spectrum_type )
 #endif //#if( USE_GOOGLE_MAP )
 
 
@@ -9450,12 +9458,26 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       meas->reset_modified_since_decode();
   }//if( meas )
   
-#if( USE_GOOGLE_MAP )
-//  m_secondDataMeasurement && m_dataMeasurement m_backgroundMeasurement
+#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   const bool hasGps = (m_dataMeasurement && m_dataMeasurement->has_gps_info());
   if( m_mapMenuItem )
     m_mapMenuItem->setDisabled( !hasGps );
-#endif
+  
+  if( hasGps )
+  {
+    const std::string type = SpecUtils::descriptionText(spec_type);
+    WStringStream js;
+    js << "File contains GPS coordinates."
+    << "<div onclick="
+         "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showMap-" << type << "');"
+         "try{$(this.parentElement.parentElement).remove();}catch(e){}"
+         "return false;\" "
+         "class=\"clearsession\">"
+       "<span class=\"clearsessiontxt\">Show on map</span></div>";
+    
+    m_warnings->addMessageUnsafe( js.str(), WarningWidget::WarningMsgShowOnBoardRiid, 20000 );
+  }//if( hasGps )
+#endif //#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   
 #if( USE_SEARCH_MODE_3D_CHART )
   const bool isSearchData = (m_dataMeasurement && m_dataMeasurement->passthrough());
@@ -9613,11 +9635,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }//if( user selected to call either external REST API, or external EXE )
   }//if( meas )
 #endif //#if( USE_REMOTE_RID )
-  
-  
-  //For development, print out geolocation data
-  furtherworkers.push_back( boost::bind( &printGeoLocationJson, m_dataMeasurement ) );
-  
   
   if( meas && furtherworkers.size() )
   {

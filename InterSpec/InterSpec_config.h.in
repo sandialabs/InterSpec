@@ -71,6 +71,7 @@
 #cmakedefine01 USE_MYSQL_DB
 #cmakedefine01 USE_SQLITE3_DB
 #cmakedefine01 USE_GOOGLE_MAP
+#cmakedefine01 USE_LEAFLET_MAP
 #cmakedefine01 USE_SEARCH_MODE_3D_CHART
 #cmakedefine01 USE_TERMINAL_WIDGET
 #cmakedefine01 USE_DETECTION_LIMIT_TOOL
@@ -88,6 +89,8 @@
 #cmakedefine MYSQL_DATABASE_TO_USE "@MYSQL_DATABASE_TO_USE@"
 
 #cmakedefine GOOGLE_MAPS_KEY "@GOOGLE_MAPS_KEY@"
+
+#cmakedefine LEAFLET_MAPS_KEY "@LEAFLET_MAPS_KEY@"
 
 #if ( defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64) )
 #include <stdio.h>

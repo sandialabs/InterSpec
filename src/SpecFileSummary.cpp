@@ -64,6 +64,8 @@
 
 #if( USE_GOOGLE_MAP )
 #include "InterSpec/GoogleMap.h"
+#elif( USE_LEAFLET_MAP )
+#include "InterSpec/LeafletRadMap.h"
 #endif
 
 using namespace std;
@@ -190,7 +192,7 @@ SpecFileSummary::SpecFileSummary( InterSpec *specViewer )
     m_longitude( NULL ),
     m_latitude( NULL ),
     m_gpsTimeStamp( NULL ),
-#if( USE_GOOGLE_MAP )
+#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
     m_showMapButton( NULL ),
 #endif
     m_title( NULL ),
@@ -371,10 +373,15 @@ void SpecFileSummary::init()
   m_latitude->setEmptyText( "dec or deg min' sec\" N/S" );
   m_longitude->setEmptyText( "dec or deg min' sec\" E/W" );
   
-#if( USE_GOOGLE_MAP )
+#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   m_showMapButton = new WPushButton( "Show Map" );
   measTable->addWidget( m_showMapButton, 3, 6 );
+#if( USE_GOOGLE_MAP  )
   m_showMapButton->clicked().connect( this, &SpecFileSummary::showGoogleMap );
+#elif( USE_LEAFLET_MAP )
+  m_showMapButton->clicked().connect( this, &SpecFileSummary::showLeafletMap );
+#endif
+  
   m_showMapButton->disable();
 #endif
   
@@ -646,7 +653,26 @@ void SpecFileSummary::showGoogleMap()
 //  snprintf( buffer, sizeof(buffer), "(%.6f, %.6f)", latitude, longitude );
 //  coordTxt->setText( buffer );
 }//void showGoogleMap();
-#endif //#if( USE_GOOGLE_MAP )
+#elif( USE_LEAFLET_MAP ) //#if( USE_GOOGLE_MAP )
+void SpecFileSummary::showLeafletMap()
+{
+  if( !m_specViewer )
+    return;
+  
+  double longitude = coordVal( m_longitude->text() );
+  double latitude = coordVal( m_latitude->text() );
+  if( fabs(longitude) > 180.0 )
+    longitude = -999.9;
+  if( fabs(latitude) > 90.0 )
+    latitude = -999.9;
+  
+  if( fabs(latitude)>999.0 || fabs(longitude)>999.0 )
+    return;
+  
+  
+  LeafletRadMap::showForCoordinate( latitude, longitude );
+}//void showLeafletMap()
+#endif
 
 
 void SpecFileSummary::updateMeasurmentFieldsFromMemory()
@@ -711,7 +737,7 @@ void SpecFileSummary::updateMeasurmentFieldsFromMemory()
     }else
       m_longitude->setText( "" );
 
-#if( USE_GOOGLE_MAP )
+#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
     bool nomap = (fabs(sample->latitude())>999.0 || fabs(sample->longitude())>999.0);
     m_showMapButton->setDisabled( nomap );
 #endif
@@ -774,7 +800,7 @@ void SpecFileSummary::updateMeasurmentFieldsFromMemory()
     m_longitude->setText( "" );
     m_latitude->setText( "" );
     m_gpsTimeStamp->setText( "" );
-#if( USE_GOOGLE_MAP )
+#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
     m_showMapButton->disable();
 #endif
     
@@ -1082,7 +1108,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
         m_timeStamp->setText( SpecUtils::to_extended_iso_string(newDate) );
       }//if( newDate.is_special() )
 
-#if( USE_GOOGLE_MAP )
+#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
       if( fabs(latitude)<999.0 && fabs(longitude)<999.0 )
         m_showMapButton->enable();
 #endif

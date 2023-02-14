@@ -663,6 +663,8 @@ public:
   void displayOnlySamplesWithinView( GoogleMap *map,
                                      const SpecUtils::SpectrumType targetSamples,
                                      const SpecUtils::SpectrumType fromSamples );
+#elif( USE_LEAFLET_MAP )
+  void createMapWindow( SpecUtils::SpectrumType spectrum_type );
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
@@ -1329,7 +1331,7 @@ protected:
 
   SimpleDialog *m_multimedia;
   
-#if( USE_GOOGLE_MAP )
+#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   PopupDivMenuItem *m_mapMenuItem;
 #endif
   

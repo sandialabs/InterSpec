@@ -106,6 +106,10 @@ option(
     OFF
 )
 option(USE_GOOGLE_MAP "Use google maps widget" OFF)
+set(GOOGLE_MAPS_KEY "" CACHE STRING "Google maps api key.")
+
+option(USE_LEAFLET_MAP "Use leaflet-based maps widget" ON)
+set(LEAFLET_MAPS_KEY "" CACHE STRING "Leaflet maps api key.")
 
 option(
     USE_CSS_FLEX_LAYOUT
@@ -134,8 +138,6 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
     CACHE STRING
     "Amount of memory to allow spectra to take up before trying to offload them onto disk when not in use"
 )
-
-set(GOOGLE_MAPS_KEY "" CACHE STRING "Google maps api key.")
 
 set( INTERSPEC_LIB_TYPE "STATIC" )
 #set( INTERSPEC_LIB_TYPE "SHARED" )
@@ -455,6 +457,11 @@ if(USE_GOOGLE_MAP)
     list(APPEND sources src/GoogleMap.cpp)
     list(APPEND headers InterSpec/GoogleMap.h)
 endif(USE_GOOGLE_MAP)
+
+if(USE_LEAFLET_MAP)
+    list(APPEND sources src/LeafletRadMap.cpp)
+    list(APPEND headers InterSpec/LeafletRadMap.h)
+endif(USE_LEAFLET_MAP)
 
 if(USE_SEARCH_MODE_3D_CHART)
     list(APPEND sources src/SearchMode3DChart.cpp src/SearchMode3DDataModel.cpp)

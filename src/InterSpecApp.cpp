@@ -1354,6 +1354,19 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
     return;
   }
   
+#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
+  if( SpecUtils::istarts_with( signal, "showMap-" ) )
+  {
+    SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
+    if( SpecUtils::icontains(signal, "background") )
+      type = SpecUtils::SpectrumType::Background;
+    else if( SpecUtils::icontains(signal, "secondary") )
+      type = SpecUtils::SpectrumType::SecondForeground;
+    
+    m_viewer->createMapWindow( type );
+    return;
+  }//if( SpecUtils::istarts_with( signal, "showMap-" ) )
+#endif //#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
  
   if( SpecUtils::istarts_with( signal, "showMsg-" ) )
   {

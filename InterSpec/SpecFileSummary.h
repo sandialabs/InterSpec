@@ -117,7 +117,9 @@ protected:
   std::shared_ptr<const SpecUtils::Measurement> currentMeasurment() const;
 
 #if( USE_GOOGLE_MAP )
-  void showGoogleMap();
+  void showGoogleMap();  
+#elif( USE_LEAFLET_MAP )
+  void showLeafletMap();
 #endif
   
 protected:
@@ -152,7 +154,7 @@ protected:
   Wt::WLineEdit *m_longitude;
   Wt::WLineEdit *m_latitude;
   Wt::WLineEdit *m_gpsTimeStamp;
-#if( USE_GOOGLE_MAP )
+#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   Wt::WPushButton *m_showMapButton;
 #endif
   Wt::WLineEdit *m_title;

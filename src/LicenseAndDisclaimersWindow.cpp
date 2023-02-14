@@ -437,6 +437,9 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 #if( USE_GOOGLE_MAP )
     ", except when the Google Maps feature is used"
 #endif
+#if( USE_LEAFLET_MAP )
+    ", except when the Maps feature is used"
+#endif
     "."
     
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -450,6 +453,12 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 #if( USE_GOOGLE_MAP )
     "<br />When the Google Maps feature is used, the spectrum file location information is sent to"
     " Google in order to receive maps of the relevant location."
+#endif
+#if( USE_LEAFLET_MAP )
+    "<br />When the Maps tool is used, map tiles are requested from"
+    " <a href=\"https://arcgis.com\">https://arcgis.com</a>"
+    " for the area encompassing the GPS coordinates of the radiation measurements, but"
+    " marking/displaying of the radiation data on the maps is done on your device."
 #endif
     "</p></div>";
     
