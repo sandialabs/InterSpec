@@ -217,6 +217,12 @@
         "title":"External RIID",
         "help-xml":"external_rid_help.xml",
         "keywords":"RID RIID external isotope ID"
+      },
+      {
+        "id":"leaflet-rad-map",
+        "title":"Map Tool",
+        "help-xml":"nuclide_search_help.xml",
+        "keywords":"map geo gps plot lat lon latitude longitude heat"
       }
     ]
   },

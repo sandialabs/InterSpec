@@ -32,11 +32,14 @@
 
 #include <Wt/WContainerWidget>
 
+#include "InterSpec/AuxWindow.h"
+
 // Forward declarations
 class SpecMeas;
 class InterSpec;
 class SimpleDialog;
 namespace SpecUtils{ enum class SpectrumType : int; }
+
 
 class LeafletRadMap : public Wt::WContainerWidget
 {
@@ -53,7 +56,21 @@ public:
   void displayMeasurementOnMap( const std::shared_ptr<const SpecMeas> meas );
   void displayCoordinate( double latitude, double longitude );
   
+  
+  /** Override WWebWidget::doJavaScript() to wait until this widget has been rendered before
+   executing javascript so we can be sure all the JS objects we need are created.
+   */
+  virtual void doJavaScript( const std::string &js );
+  
+  static std::string createGeoLocationJson( std::shared_ptr<const SpecMeas> meas );
+  
 protected:
+  void defineJavaScript();
+  
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
+  
+  void handleLoadSamples( const std::string &samples, std::string meas_type );
+  
   std::shared_ptr<const SpecMeas> m_meas;
   
   
@@ -62,8 +79,32 @@ protected:
    */
   const std::string m_jsmap;
   
-  
+  Wt::JSignal<std::string,std::string> m_displaySamples;
   Wt::Signal<SpecUtils::SpectrumType, std::shared_ptr<const SpecMeas>, std::set<int>> m_loadSelected;
+  
+  
+  /** JS calls requested before the widget has been rendered, so wouldnt have
+     ended up doing anything are saved here, and then executed once the widget
+     is rendered.
+     Note that not all calls to the D3 chart before Wt's rendering need to go
+     here as they will be options set to the D3 chart during first rendering.
+   */
+  std::vector<std::string> m_pendingJs;
 };//class LeafletRadMap
+
+
+/** This class creates a popup window to display the LeafletRadMap. */
+class LeafletRadMapWindow : public AuxWindow
+{
+
+public:
+  LeafletRadMapWindow();
+  virtual ~LeafletRadMapWindow();
+  
+  LeafletRadMap *map();
+  
+protected:
+  LeafletRadMap *m_map;
+};//class GammaXsWindow
 
 #endif //LeafletRadMap_h

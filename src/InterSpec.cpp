@@ -9459,11 +9459,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   }//if( meas )
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
-  const bool hasGps = (m_dataMeasurement && m_dataMeasurement->has_gps_info());
+  const bool hasGps = (meas && meas->has_gps_info());
   if( m_mapMenuItem )
     m_mapMenuItem->setDisabled( !hasGps );
   
-  if( hasGps )
+  if( hasGps && (spec_type == SpecUtils::SpectrumType::Foreground) )
   {
     const std::string type = SpecUtils::descriptionText(spec_type);
     WStringStream js;
