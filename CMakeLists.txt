@@ -109,7 +109,7 @@ option(USE_GOOGLE_MAP "Use google maps widget" OFF)
 set(GOOGLE_MAPS_KEY "" CACHE STRING "Google maps api key.")
 
 option(USE_LEAFLET_MAP "Use leaflet-based maps widget" OFF)
-set(LEAFLET_MAPS_KEY "" CACHE STRING "Leaflet maps api key.")
+set(LEAFLET_MAPS_KEY "n/a" CACHE STRING "Leaflet maps api key.")
 
 option(
     USE_CSS_FLEX_LAYOUT
