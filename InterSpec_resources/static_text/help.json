@@ -221,7 +221,7 @@
       {
         "id":"leaflet-rad-map",
         "title":"Map Tool",
-        "help-xml":"nuclide_search_help.xml",
+        "help-xml":"leaflet_rad_map_help.xml",
         "keywords":"map geo gps plot lat lon latitude longitude heat"
       }
     ]

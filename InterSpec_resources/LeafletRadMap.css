@@ -1,27 +1,27 @@
 
 div.LeafletRadMap{
-    display: grid;
-    grid-template-columns: 1fr min-content;
-    grid-template-rows: 1fr min-content;
-    gap: 1px;
-    justify-items: stretch;
+  display: grid;
+  grid-template-columns: 1fr min-content;
+  grid-template-rows: 1fr min-content;
+  gap: 1px;
+  justify-items: stretch;
 }
 
 .LeafletRadMapMap{
-    grid-row: 1;
-    grid-column: 1;
-    justify-self: stretch;
+  grid-row: 1;
+  grid-column: 1;
+  justify-self: stretch;
 }
 
 .LeafletRadMapLegend{
-    grid-row: 1;
-    grid-column: 2;
-    width: 25px;
+  grid-row: 1;
+  grid-column: 2;
+  width: 25px;
 
-    display: flex;
-    flex-direction: column;
-    font-size: 9px;
-    text-align: center;
+  display: flex;
+  flex-direction: column;
+  font-size: 9px;
+  text-align: center;
 }
 
 .LegUpVal{
@@ -36,65 +36,117 @@ div.LeafletRadMap{
 
 }
 
-.LeafletRadMapBtnsDiv{
-    grid-row: 2;
-    grid-column: 1 / 3;
-    height: 25px;
+table.MapMousePopup td {
+  padding-left: 2.5px;
+  padding-right: 2.5px;
+}
 
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    padding-left: 10px;
+.LeafletRadMapBottomDiv {
+  margin-top: 3px;
+  
+  display: flex;
+  flex-direction: row;
+}
+
+.LeafletRadMapBtnsDiv {
+  grid-row: 2;
+  grid-column: 1 / 3;
+  height: 25px;
+
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding-left: 10px;
 }
 
 .LeafletRadMapBtnsDiv > button{
-    margin-left: 5px;
+  margin-left: 5px;
 }
 
 .NoSamplesSel{
-    text-align: center;
-    flex-grow: 1;
-    align-self: stretch;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+  text-align: center;
+  flex-grow: 1;
+  align-self: stretch;
+  
+  display: flex;
+  justify-content: center;
+  align-content: center;
+  flex-direction: column;
 }
 
-div.MapCircleMarker{
-    border: none;
-  }
+.LeafletRadMapMarkerLegend {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding-left: 10px;
+  flex-grow: 1;
+  flex-shrink: 1;
+  justify-content: flex-end;
+  column-gap: 7px;
+}
 
-  div.MapCircleMarkerInner {
-    border-color: black;
-    border-radius: 4px;
-    border-style: solid;
-    border-width: 1px;
-    width:8px;
-    height:8px;
-  }
+.LeafletRadMapMarkerLegend .LegEntry {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  column-gap: 3px;
+}
 
-  div.MapCircleMarkerMulti {
-    border-color: black;
-    border-radius: 10px;
-    border-style: solid;
-    border-width: 1px;
-    width:20px;
-    height:20px;
-    font-weight: bold;
-    text-align: center;
-    vertical-align: middle;
-    line-height: 20px;
-  }
+div.RadMapMarker{
+  border: none;
+}
 
-  .ShowHeatmapBtn, .RemoveHeatmapBtn {
-    width: 30px;
-    height: 30px;
-    display: inline-block;
-    background-repeat: no-repeat;
-    background-image: url("images/heatmap.svg");
-    background-position: -16.5px -11px;
-  }
+div.RadMapMarkerInner {
+  border-color: black;
+  border-radius: 5px;
+  border-style: solid;
+  border-width: 1px;
+  width: 8px;
+  height: 8px;
+}
 
-  .ShowHeatmapBtn {
-    opacity: 0.5;
-  }
+div.RadMapMarkerMulti {
+  border-radius: 11px;
+  border-style: solid;
+  border-width: 1px;
+  width:22px;
+  height:22px;
+  font-weight: bold;
+  text-align: center;
+  vertical-align: middle;
+  line-height: 20px;
+}
+
+div.RadMapMarkerInner.DispAsFore, div.RadMapMarkerMulti.DispAsFore {
+  border-color: black;
+  border-radius: 0px;
+}
+
+/* Make the markers into diamonds. */
+div.RadMapMarkerInner.DispAsBack, div.RadMapMarkerMulti.DispAsBack {
+  border-radius: 0px;
+  transform: rotate(45deg);
+}
+
+/* Rotate the text back to normal, for multi-markers. */
+div.RadMapMarkerMulti.DispAsBack > div {
+  transform: rotate(-45deg);
+}
+
+div.RadMapMarkerInner.DispAsSecond, div.RadMapMarkerMulti.DispAsSecond {
+  border-radius: 3px;
+  border-style: dotted;
+}
+
+.ShowHeatmapBtn, .RemoveHeatmapBtn {
+  width: 30px;
+  height: 30px;
+  display: inline-block;
+  background-repeat: no-repeat;
+  background-image: url("images/heatmap.svg");
+  background-position: -16.5px -11px;
+}
+
+.ShowHeatmapBtn {
+  opacity: 0.5;
+}

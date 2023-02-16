@@ -669,8 +669,42 @@ void SpecFileSummary::showLeafletMap()
   if( fabs(latitude)>999.0 || fabs(longitude)>999.0 )
     return;
   
+  const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
+  std::shared_ptr<const SpecMeas> meas = m_specViewer->measurment( type );
+  std::shared_ptr<const SpecUtils::Measurement> sample = currentMeasurment();
   
-  LeafletRadMap::showForCoordinate( latitude, longitude );
+  if( !meas || !sample )
+    return;
+  
+  
+  const set<int> sample_numbers{ sample->sample_number() };
+  const vector<string> det_names( 1, sample->detector_name() );
+  
+  const AllowModifyStatus status = AllowModifyStatus(m_allowEditGroup->checkedId());
+  if( status == AllowModifyStatus::kDontAllowModify )
+  {
+    LeafletRadMap::showForMeasurement(meas, sample_numbers, det_names);
+    return;
+  }
+  
+  
+  try
+  {
+    shared_ptr<SpecMeas> new_meas = make_shared<SpecMeas>();
+    new_meas->uniqueCopyContents( *meas );
+    
+    auto new_sample = meas->measurement( sample->sample_number(), sample->detector_name() );
+    if( !new_sample )
+      throw runtime_error( "failed to find measurement from copy of SpecFile." );
+    
+    new_meas->set_position(longitude, latitude, sample->position_time(), new_sample );
+    
+    LeafletRadMap::showForMeasurement(new_meas, sample_numbers, det_names);
+  }catch( std::exception &e )
+  {
+    passMessage( "Error trying to display coordinates: " + string(e.what()),
+                WarningWidget::WarningMsgHigh );
+  }
 }//void showLeafletMap()
 #endif
 

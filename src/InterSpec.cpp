@@ -7419,8 +7419,12 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
 #elif( USE_LEAFLET_MAP )
 void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
 {
+  // We will display for all sample numbers, but only include the displayed detectors
+  
   const shared_ptr<const SpecMeas> meas = measurment( spectrum_type );
-  LeafletRadMap::showForMeasurement( meas );
+  const vector<string> detectors = detectorsToDisplay( spectrum_type );
+  
+  LeafletRadMap::showForMeasurement( meas, {}, detectors );
 }//void createMapWindow( SpecUtils::SpectrumType spectrum_type )
 #endif //#if( USE_GOOGLE_MAP )
 
@@ -9459,24 +9463,27 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   }//if( meas )
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
-  const bool hasGps = (meas && meas->has_gps_info());
-  if( m_mapMenuItem )
-    m_mapMenuItem->setDisabled( !hasGps );
-  
-  if( hasGps && (spec_type == SpecUtils::SpectrumType::Foreground) )
+  if( spec_type == SpecUtils::SpectrumType::Foreground )
   {
-    const std::string type = SpecUtils::descriptionText(spec_type);
-    WStringStream js;
-    js << "File contains GPS coordinates."
-    << "<div onclick="
-         "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showMap-" << type << "');"
-         "try{$(this.parentElement.parentElement).remove();}catch(e){}"
-         "return false;\" "
-         "class=\"clearsession\">"
-       "<span class=\"clearsessiontxt\">Show on map</span></div>";
+    const bool hasGps = (meas && meas->has_gps_info());
+    if( m_mapMenuItem )
+      m_mapMenuItem->setDisabled( !hasGps );
     
-    m_warnings->addMessageUnsafe( js.str(), WarningWidget::WarningMsgShowOnBoardRiid, 20000 );
-  }//if( hasGps )
+    if( hasGps )
+    {
+      const std::string type = SpecUtils::descriptionText(spec_type);
+      WStringStream js;
+      js << "File contains GPS coordinates."
+      << "<div onclick="
+      "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showMap-" << type << "');"
+      "try{$(this.parentElement.parentElement).remove();}catch(e){}"
+      "return false;\" "
+      "class=\"clearsession\">"
+      "<span class=\"clearsessiontxt\">Show on map</span></div>";
+      
+      m_warnings->addMessageUnsafe( js.str(), WarningWidget::WarningMsgShowOnBoardRiid, 20000 );
+    }//if( hasGps )
+  }//if( spec_type == SpecUtils::SpectrumType::Foreground )
 #endif //#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   
 #if( USE_SEARCH_MODE_3D_CHART )

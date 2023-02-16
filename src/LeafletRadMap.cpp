@@ -41,13 +41,16 @@
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/ParseUtils.h"
+#include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/LeafletRadMap.h"
+#include "InterSpec/WarningWidget.h"
 
 #if( IOS )
 #include "InterSpec/InterSpecApp.h"
@@ -59,82 +62,69 @@ using namespace std;
 namespace
 {
   void showMapWindow( const std::shared_ptr<const SpecMeas> meas,
-                     double latitude, double longitude,
-                     std::function<void(LeafletRadMap *)> on_create )
+                     const set<int> &sample_numbers,
+                     const vector<string> &detector_names,
+                     std::function<void(LeafletRadMapWindow *)> on_create )
   {
     LeafletRadMapWindow *window = new LeafletRadMapWindow();
     
     LeafletRadMap *gpsmap = window->map();
-    if( meas )
-      gpsmap->displayMeasurementOnMap( meas );
-    else if( SpecUtils::valid_latitude(latitude) && SpecUtils::valid_longitude(longitude) )
-      gpsmap->displayCoordinate( latitude, longitude );
+    gpsmap->displayMeasurementOnMap( meas, sample_numbers, detector_names );
     
     if( on_create )
-      on_create( gpsmap );
+      on_create( window );
   }//void showMapWindow(...)
-  
-  
-  SimpleDialog *startShowMap( const std::shared_ptr<const SpecMeas> meas,
-                              double latitude, double longitude,
-                              std::function<void(LeafletRadMap *)> on_create )
-  {
-    InterSpec *viewer = InterSpec::instance();
-    
-    const bool showWarning = InterSpecUser::preferenceValue<bool>( "ShowMapDataWarning", viewer );
-    
-    if( !showWarning )
-    {
-      showMapWindow( meas, latitude, longitude, on_create );
-      return nullptr;
-    }//if( !showWarning )
-    
-    // Show a warning dialog about requesting the data, before proceeding
-    const char *title = "Before Proceeding";
-    const char *msg =
-    "Map tiles will be requested from <a href=\"https://arcgis.com\">https://arcgis.com</a>.<br />"
-    "No radiation data will leave your device, but requests for<br />"
-    "map tiles encompassing the measurements will be made to this service.";
-    SimpleDialog *dialog = new SimpleDialog( title );
-    
-    WText *message = new WText( msg, dialog->contents() );
-    message->addStyleClass( "content" );
-    message->setInline( false );
-    
-    WCheckBox *cb = new WCheckBox( "Dont ask again", dialog->contents() );
-    cb->setInline( false );
-    cb->checked().connect( std::bind([cb](){
-      InterSpec *viewer = InterSpec::instance();
-      if( viewer )
-        InterSpecUser::setPreferenceValue(viewer->m_user, "ShowMapDataWarning", !cb->isChecked(), viewer);
-    }) );
-    
-    WPushButton *accept = dialog->addButton( "Proceed" );
-    accept->clicked().connect( boost::bind( &showMapWindow, meas, latitude, longitude, on_create) );
-    WPushButton *cancel = dialog->addButton( "Cancel" );
-    cancel->clicked().connect( std::bind([](){
-      InterSpec *viewer = InterSpec::instance();
-      if( viewer )
-        InterSpecUser::setPreferenceValue(viewer->m_user, "ShowMapDataWarning", true, viewer);
-    }) );
-    
-    return dialog;
-  }//static LeafletRadMap::showForMeasurement
 }//namespace
 
 
 SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const SpecMeas> meas,
-                                  std::function<void(LeafletRadMap *)> on_create )
+                                                 const set<int> &sample_numbers,
+                                                 const vector<string> &detector_names,
+                                                 function<void(LeafletRadMapWindow *)> on_create )
 {
-  return startShowMap( meas, -999.9, -999.9, on_create );
+  InterSpec *viewer = InterSpec::instance();
+  
+  const bool showWarning = InterSpecUser::preferenceValue<bool>( "ShowMapDataWarning", viewer );
+  
+  if( !showWarning )
+  {
+    showMapWindow( meas, sample_numbers, detector_names, on_create );
+    return nullptr;
+  }//if( !showWarning )
+  
+  // Show a warning dialog about requesting the data, before proceeding
+  const char *title = "Before Proceeding";
+  const char *msg =
+  "Map tiles will be requested from <a href=\"https://arcgis.com\">https://arcgis.com</a>."
+  " No radiation data will leave your device, but requests for"
+  " map tiles encompassing the measurements will be made to this service.";
+  SimpleDialog *dialog = new SimpleDialog( title );
+  dialog->setWidth( 400 );
+  
+  WText *message = new WText( msg, dialog->contents() );
+  message->addStyleClass( "content" );
+  message->setInline( false );
+  
+  WCheckBox *cb = new WCheckBox( "Dont ask again", dialog->contents() );
+  cb->setInline( false );
+  cb->checked().connect( std::bind([cb](){
+    InterSpec *viewer = InterSpec::instance();
+    if( viewer )
+      InterSpecUser::setPreferenceValue(viewer->m_user, "ShowMapDataWarning", !cb->isChecked(), viewer);
+  }) );
+  
+  WPushButton *accept = dialog->addButton( "Proceed" );
+  accept->clicked().connect( boost::bind( &showMapWindow, meas, sample_numbers, detector_names, on_create) );
+  WPushButton *cancel = dialog->addButton( "Cancel" );
+  cancel->clicked().connect( std::bind([](){
+    InterSpec *viewer = InterSpec::instance();
+    if( viewer )
+      InterSpecUser::setPreferenceValue(viewer->m_user, "ShowMapDataWarning", true, viewer);
+  }) );
+  accept->setFocus();
+  
+  return dialog;
 }//
-
-
-SimpleDialog *LeafletRadMap::showForCoordinate( double latitude, double longitude,
-                                 std::function<void(LeafletRadMap *)> on_create )
-{
-  return startShowMap( nullptr, latitude, longitude, on_create );
-}//static SimpleDialog *showForCoordinate
 
 
 LeafletRadMapWindow::LeafletRadMapWindow()
@@ -287,7 +277,13 @@ void LeafletRadMap::render( Wt::WFlags<Wt::RenderFlag> flags )
 }//void render( Wt::WFlags<Wt::RenderFlag> flags )
 
 
-std::string LeafletRadMap::createGeoLocationJson( std::shared_ptr<const SpecMeas> meas )
+
+std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const SpecMeas> &meas,
+                                                 const std::set<int> &sample_to_include,
+                                                 const std::vector<std::string> &det_to_include,
+                                                 const std::set<int> &foreground_samples,
+                                                 const std::set<int> &background_samples,
+                                                 const std::set<int> &secondary_samples )
 {
   if( !meas || !meas->has_gps_info() )
   {
@@ -311,6 +307,9 @@ std::string LeafletRadMap::createGeoLocationJson( std::shared_ptr<const SpecMeas
   
   for( const int sample : meas->sample_numbers() )
   {
+    if( !sample_to_include.count(sample) && !sample_to_include.empty() )
+      continue;
+    
     vector<shared_ptr<const SpecUtils::Measurement>> meass = meas->sample_measurements(sample);
     
     meass.erase( std::remove_if(meass.begin(), meass.end(),
@@ -331,6 +330,11 @@ std::string LeafletRadMap::createGeoLocationJson( std::shared_ptr<const SpecMeas
     
     for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
     {
+      const string &det_name = m->detector_name();
+      if( !det_to_include.empty()
+         && std::find( begin(det_to_include), end(det_to_include), det_name ) == end(det_to_include) )
+        continue;
+        
       if( m->has_gps_info() )
       {
         hadGps = true;
@@ -403,6 +407,16 @@ std::string LeafletRadMap::createGeoLocationJson( std::shared_ptr<const SpecMeas
     sample_json["rt"] = realTime;
     sample_json["src"] = static_cast<int>(source_type);
     
+    int displ_type = 3;
+    if( foreground_samples.count(sample) )
+      displ_type = 0;
+    else if( secondary_samples.count(sample) )
+      displ_type = 1;
+    else if( background_samples.count(sample) )
+      displ_type = 2;
+    sample_json["disp"] = displ_type;
+    
+    
     Wt::Json::Array gps;
     gps.push_back(latitude);
     gps.push_back(longitude);
@@ -426,27 +440,105 @@ std::string LeafletRadMap::createGeoLocationJson( std::shared_ptr<const SpecMeas
 
 
 
-void LeafletRadMap::handleLoadSamples( const std::string &samples, std::string meas_type )
+void LeafletRadMap::handleLoadSamples( const std::string &samples, const std::string &meas_type )
 {
-  cout << "Handle load samples: '" << samples << "', meas_type=" << meas_type << endl;
+  try
+  {
+    SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
+    
+    if( meas_type == "foreground" )
+      type = SpecUtils::SpectrumType::Foreground;
+    else if( meas_type == "background" )
+      type = SpecUtils::SpectrumType::Background;
+    else if( meas_type == "secondary" )
+      type = SpecUtils::SpectrumType::SecondForeground;
+    else
+      throw runtime_error( "couldnt decode spectrum type '" + meas_type + "'." );
+    
+    vector<int> sample_numbers;
+    SpecUtils::split_to_ints( samples.c_str(), samples.length(), sample_numbers );
+    
+    if( sample_numbers.empty() )
+    {
+      string samples_str = samples;
+      if( samples_str.length() > 12 )
+        samples_str = samples_str.substr(0,12) + "...";
+      throw runtime_error( "couldnt decode sample numbers, invalid format? ('" + samples_str + "')" );
+    }//if( sample_numbers.empty() )
+    
+    const set<int> samplenums( begin(sample_numbers), end(sample_numbers) );
+    
+    InterSpec *viewer = InterSpec::instance();
+    assert( viewer );
+    if( !viewer )
+      throw logic_error( "No valid InterSpec instance" );
+    
+    const std::shared_ptr<SpecMeas> prev_meas = viewer->measurment( type );
+    
+    if( prev_meas && (prev_meas == m_meas) )
+    {
+      viewer->changeDisplayedSampleNums( samplenums, type );
+    }else
+    {
+      const std::shared_ptr<SpecMeas> fore_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
+      const std::shared_ptr<SpecMeas> back_meas = viewer->measurment( SpecUtils::SpectrumType::Background );
+      const std::shared_ptr<SpecMeas> second_meas = viewer->measurment( SpecUtils::SpectrumType::SecondForeground );
+      
+      std::shared_ptr<SpecMeas> non_const_meas;
+      if( m_meas == fore_meas )
+        non_const_meas = fore_meas;
+      else if( m_meas == back_meas )
+        non_const_meas = back_meas;
+      else if( m_meas == second_meas )
+        non_const_meas = second_meas;
+      
+      if( !non_const_meas )
+        throw runtime_error( "Spectrum file map was loaded from is not currently displayed." );
+      
+      viewer->setSpectrum( non_const_meas, samplenums, type );
+    }
+  }catch( std::exception &e )
+  {
+    passMessage( "Error loading map-selected samples: " + string(e.what()),
+                WarningWidget::WarningMsgLevel:: WarningMsgHigh );
+  }//try / catch
 }//void handleLoadSamples( const std::vector<int> &samples, std::string meas_type );
 
 
-void LeafletRadMap::displayMeasurementOnMap( const std::shared_ptr<const SpecMeas> meas )
+void LeafletRadMap::displayMeasurementOnMap( const std::shared_ptr<const SpecMeas> &meas,
+                                            std::set<int> sample_numbers,
+                                            std::vector<std::string> detector_names )
 {
+  if( sample_numbers.empty() && meas )
+    sample_numbers = meas->sample_numbers();
+  if( detector_names.empty() && meas )
+    detector_names = meas->detector_names();
   
-  const string json = createGeoLocationJson( meas );
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  if( !viewer )
+    return;
   
-  cout << "displayMeasurementOnMap --> " << json << endl;
+  m_meas = meas;
   
-  doJavaScript( m_jsmap +  ".setData( " + json + " );" );
+  const auto foremeas = viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  const auto backmeas = viewer->measurment(SpecUtils::SpectrumType::Background);
+  const auto secondmeas = viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
+  
+  set<int> fore_samples, back_samples, secon_samples;
+  if( meas == foremeas )
+    fore_samples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  if( meas == backmeas )
+    back_samples = viewer->displayedSamples(SpecUtils::SpectrumType::Background);
+  if( meas == secondmeas )
+    secon_samples = viewer->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
+  
+  const string json = createGeoLocationJson( meas, sample_numbers, detector_names,
+                                            fore_samples, back_samples, secon_samples );
+  
+  //cout << "displayMeasurementOnMap --> " << json << endl;
+  
+  doJavaScript( m_jsmap +  ".setData( " + json + ", false );" );
 }//void displayMeasurementOnMap(...)
-
-
-void LeafletRadMap::displayCoordinate( double latitude, double longitude )
-{
-  // blah blah blah
-}//void displayCoordinate( double latitude, double longitude );
-
 
 

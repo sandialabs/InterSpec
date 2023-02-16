@@ -43,15 +43,23 @@ LeafletRadMap = function (elem,options) {
   this.mapDiv.classList.add("LeafletRadMapMap");
   this.parent.appendChild( this.mapDiv );
 
-  this.legendDiv = document.createElement("div");
-  this.legendDiv.classList.add("LeafletRadMapLegend");
-  this.parent.appendChild( this.legendDiv );
+  this.gradientLegendDiv = document.createElement("div");
+  this.gradientLegendDiv.classList.add("LeafletRadMapLegend");
+  this.parent.appendChild( this.gradientLegendDiv );
 
+  this.bottomDiv = document.createElement("div");
+  this.bottomDiv.classList.add("LeafletRadMapBottomDiv");
+  this.parent.appendChild( this.bottomDiv );
+  
   this.btnsDiv = document.createElement("div");
   this.btnsDiv.classList.add("LeafletRadMapBtnsDiv");
-  this.parent.appendChild( this.btnsDiv );
+  this.bottomDiv.appendChild( this.btnsDiv );
 
 
+  this.markerLegendDiv = document.createElement("div");
+  this.markerLegendDiv.classList.add("LeafletRadMapMarkerLegend");
+  this.bottomDiv.appendChild( this.markerLegendDiv );
+  
 
   this.options = options ? options : {};
   if( typeof this.options.heatMap !== "boolean" )
@@ -105,15 +113,15 @@ LeafletRadMap = function (elem,options) {
   // Setup a legend for the color gradient
   this.legendLowerCps = document.createElement("div");
   this.legendLowerCps.classList.add("LeglowVal");
-  this.legendDiv.appendChild( this.legendLowerCps );
+  this.gradientLegendDiv.appendChild( this.legendLowerCps );
 
   this.legendCanvas = document.createElement('canvas');
   this.legendCanvas.classList.add("LegCanvas");
-  this.legendDiv.appendChild( this.legendCanvas );
+  this.gradientLegendDiv.appendChild( this.legendCanvas );
 
   this.legendUpperCps = document.createElement("div");
   this.legendUpperCps.classList.add("LegUpVal");
-  this.legendDiv.appendChild( this.legendUpperCps );
+  this.gradientLegendDiv.appendChild( this.legendUpperCps );
 
   this.map.on('pm:create', (e) => {
     e.layer.on('pm:edit', (e) => {
@@ -139,6 +147,53 @@ LeafletRadMap = function (elem,options) {
   });
 }//LeafletRadMap constructor
 
+LeafletRadMap.prototype.WtEmit = function(elem, event) {
+  if (!window.Wt) {
+    console.warn('Wt not found! Canceling "' + event.name + '" emit function...');
+    return;
+  }
+  
+  // To support ES5 syntax in IE11, we replace spread operator with this
+  let args = Array.prototype.slice.call(arguments, SpectrumChartD3.prototype.WtEmit.length);
+  
+  Wt.emit.apply(Wt, [elem, event].concat(args));
+}
+
+
+LeafletRadMap.prototype.updateMarkerLegend = function(){
+  const self = this;
+  
+  let have_fore = false, have_back = false, have_second = false, have_other = false;
+  for( const m of self.markers ){
+    if( m.displayType === 0 )
+      have_fore = true;
+    else if( m.displayType === 1 )
+      have_second = true;
+    else if( m.displayType === 2 )
+      have_back = true;
+    else
+      have_other = true;
+    if( have_fore && have_second && have_back && have_other )
+      break;
+  }//for( const m of self.markers )
+  
+  self.markerLegendDiv.innerHTML = '';
+  
+  // if we have only one type of marker, we dont need a legend
+  if( (0 + have_fore + have_back + have_second + have_other) <= 1 )
+    return;
+  
+  if( have_fore )
+    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner DispAsFore"></div><div>Foreground</div></div>';
+  if( have_back )
+    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner DispAsBack"></div><div>Background</div></div>';
+  if( have_second )
+    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner DispAsSecond"></div><div>Secondary</div></div>';
+  if( have_other )
+    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner"></div><div>Not Displayed</div></div>';
+  
+  //self.markerLegendDiv.style.display = 'none';
+}//updateMarkerLegend(...)
 
 LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   const self = this;
@@ -146,12 +201,12 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   const wantedSamples = this.getSelectedSampleNumbers();
   
   if( wantedSamples.length === 0 ){
-    self.btnsDiv.innerHTML = '<div class="NoSamplesSel">No measurements selected</div>';
+    self.btnsDiv.innerHTML = '<div class="NoSamplesSel"><p>No measurements selected</p></div>';
     return;
   }
 
-  function sendToInterSpec(spectype, samples){
-    console.log( 'Will send to InterSpec type:', spectype, ', samples:', samples );
+  function sendToInterSpec(evt, spectype, samples){
+    self.WtEmit( self.parent.id, {name: 'loadSamples', eventObject: evt}, samples, spectype );
   }
 
   self.btnsDiv.innerHTML = '';
@@ -164,24 +219,24 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   foreground.innerHTML = "Foreground";
   foreground.classList.add("Wt-btn");
   foreground.classList.add("with-label");
-  foreground.addEventListener("click", function(){
-    sendToInterSpec( 'foreground', wantedSamples );
+  foreground.addEventListener("click", function(evt){
+    sendToInterSpec( evt, 'foreground', wantedSamples );
   });
 
   const background = document.createElement('button');
   background.innerHTML = "Background";
   background.classList.add("Wt-btn");
   background.classList.add("with-label");
-  background.addEventListener("click", function(){
-    sendToInterSpec( 'background', wantedSamples );
+  background.addEventListener("click", function(evt){
+    sendToInterSpec( evt, 'background', wantedSamples );
   });
 
   const secondary = document.createElement('button');
   secondary.innerHTML = "Secondary";
   secondary.classList.add("Wt-btn");
   secondary.classList.add("with-label");
-  secondary.addEventListener("click", function(){
-    sendToInterSpec( 'secondary', wantedSamples );
+  secondary.addEventListener("click", function(evt){
+    sendToInterSpec( evt, 'secondary', wantedSamples );
   });
 
   self.btnsDiv.appendChild( foreground );
@@ -256,7 +311,6 @@ LeafletRadMap.prototype.getSelectedSampleNumbers = function(){
         exclude_polys.push( coordinates[i] );
 
       for (const poly of outline_polys ) {
-        //console.log('handleUserDrawingUpdate toGeoJSON feature poly', poly );
         const isIn = d3.polygonContains( poly, coords );
         if( isIn ){
           isInAnyOutline = true;
@@ -265,7 +319,6 @@ LeafletRadMap.prototype.getSelectedSampleNumbers = function(){
       }
 
       for (const poly of exclude_polys ) {
-        //console.log('handleUserDrawingUpdate toGeoJSON feature poly', poly );
         const isIn = d3.polygonContains( poly, coords );
         if( isIn ){
           isInAnyExclude = true;
@@ -320,13 +373,25 @@ LeafletRadMap.prototype.gradColorForFrac = function( frac, grad_colors ){
 };//LeafletRadMap.prototype.gradColorForFrac
 
 
-LeafletRadMap.prototype.setData = function( data ) {
-  this.data = data;
-  this.refresh();
+LeafletRadMap.prototype.displayTypeClass = function( disp ) {
+  if( disp === 0 )
+    return "DispAsFore";
+  if( disp === 1 )
+    return "DispAsSecond";
+  if( disp === 2 )
+    return "DispAsBack";
+  return "";
 }//LeafletRadMap.prototype.setData(...)
 
 
-LeafletRadMap.prototype.refresh = function(){
+
+LeafletRadMap.prototype.setData = function( data, dont_update_zoom ) {
+  this.data = data;
+  this.refresh( dont_update_zoom );
+}//LeafletRadMap.prototype.setData(...)
+
+
+LeafletRadMap.prototype.refresh = function( dont_update_zoom ){
   const self = this;
 
   const ndata = this.data && this.data.samples ? this.data.samples.length : 0;
@@ -356,7 +421,10 @@ LeafletRadMap.prototype.refresh = function(){
 
 
   // We will hide drawing controls if we only have 0 or 1 unique GPS coordinates.
-  const unique_coord = new Set();
+  //  Note that JS sets wont work if you insert arrays to them, as it will test
+  //  for unique object references in that case, instead of array equality, so
+  //  we will use seperate Sets for lat and lon
+  const unique_lat = new Set(), unique_lon = new Set();
 
   const measurements = this.data ? this.data.samples : [];
 
@@ -375,7 +443,8 @@ LeafletRadMap.prototype.refresh = function(){
     if( isNaN(sample.gps[0]) || isNaN(sample.gps[1]) )
       continue;
 
-    unique_coord.add( sample.gps );
+    unique_lat.add( sample.gps[0] );
+    unique_lon.add( sample.gps[1] );
 
     if( sample.nGDet > 0 )
     {
@@ -427,9 +496,13 @@ LeafletRadMap.prototype.refresh = function(){
 
     let marker = new L.marker( [lat_lon[0], lat_lon[1]], { 
       icon: L.divIcon({
-        className: 'MapCircleMarker',
+        className: 'RadMapMarker',
         iconSize: [8, 8],
-        html: '<div style="background-color: ' + self.gradColorForFrac(rel_gamma_rate, self.grad_colors) + '" class="MapCircleMarkerInner"/>'
+        html: '<div style="background-color: '
+                + self.gradColorForFrac(rel_gamma_rate, self.grad_colors)
+                + '" class="RadMapMarkerInner '
+                + self.displayTypeClass(sample.disp)
+                + '"/>'
       }),
       pmIgnore: true,  // without this geoman could delete the marker
       riseOnHover: true,
@@ -439,15 +512,31 @@ LeafletRadMap.prototype.refresh = function(){
     function onMarkerMouseover(m){
       let html = "";
       
-      html += "<table>";
+      html += "<table class=\"MapMousePopup\">";
       html += `<tr><td>Gamma CPS</td><td>${m.gammaCps.toFixed(2)}</td></tr>`;
       if( typeof m.neutronCps === "number" )
         html += `<tr><td>Neutron CPS</td><td>${m.neutronCps.toFixed(4)}</td></tr>`;
       html += `<tr><td>Real Time</td><td>${m.realTime.toFixed(3)}</td></tr>`;
       html += `<tr><td>Live Time</td><td>${m.gammaLiveTime.toFixed(3)}</td></tr>`;
       if( m.startTime )
-        html += `<tr><td>Time</td><td>${m.startTime.toISOString().slice(0, -1)}</td></tr>`;
+      {
+        const datetime = m.startTime.toISOString().slice(0, -1).split("T");
+        const date = datetime.length ? datetime[0] : "";
+        const time = datetime.length > 1 ? datetime[1] : "";
+        html += `<tr><td>Date</td><td>${date}</td></tr>`;
+        html += `<tr><td>Time</td><td>${time}</td></tr>`;
+      }
+      
+      if( m.displayType >= 0 && m.displayType < 3 ){
+        html += '<tr><td>Displayed as</td><td>';
+        if( m.displayType == 0 ) html += "Foreground";
+        else if( m.displayType == 1 ) html += "Secondary";
+        else if( m.displayType == 2 ) html += "Background";
+        html += '</td></tr>';
+      }
+      
       html += `<tr><td>Sample</td><td>${m.sampleNumber}</td></tr>`;
+      
       html += `</table>`;
 
       m.setPopupContent( html );
@@ -461,6 +550,7 @@ LeafletRadMap.prototype.refresh = function(){
     marker.sampleNumber = sample.sample;
     marker.realTime = sample.rt;
     marker.rateIntensity = rel_gamma_rate;
+    marker.displayType = (typeof sample.disp === "number") ? sample.disp : 3;
 
     if( sample.nGDet > 0 )
     {
@@ -481,10 +571,9 @@ LeafletRadMap.prototype.refresh = function(){
     
     self.markers.push( marker );
   }//for( sample of data.samples )
-
-
+  
   // Dont show drawing controls for 0 or 1 items.
-  if( (unique_coord.size > 1) != this.map.pm.controlsVisible() ){
+  if( ((unique_lat.size > 1) || (unique_lon.size > 1)) != this.map.pm.controlsVisible() ){
     this.map.pm.toggleControls();
   }
     
@@ -499,7 +588,7 @@ LeafletRadMap.prototype.refresh = function(){
   };
   
   
-  if( unique_coord.size > 1 ){
+  if( (unique_lat.size > 1) || (unique_lon.size > 1) ){
     self.heatMapButton = L.easyButton({
       leafletClasses: true,
   
@@ -537,20 +626,28 @@ LeafletRadMap.prototype.refresh = function(){
   }//if( unique_coord.size > 1 ){
 
   if( self.markers.length ){
+    self.map.invalidateSize();
+    
     // See the 'iconCreateFunction' option form https://github.com/Leaflet/Leaflet.markercluster#other-options
     self.markerLayer = L.markerClusterGroup({
       removeOutsideVisibleBounds: false,
       maxClusterRadius: 5,
       singleMarkerMode: false,
       iconCreateFunction: function(cluster) {
-        let maxClusterIntensity = 0;
-        for( m of cluster.getAllChildMarkers() )
+        let maxClusterIntensity = 0, displayType = 3;
+        for( m of cluster.getAllChildMarkers() ){
           maxClusterIntensity = Math.max( maxClusterIntensity, m.rateIntensity );
-    
+          displayType = Math.min( displayType, m.displayType )
+        }
+        
         return L.divIcon({
-          className: 'MapCircleMarker',
-          iconSize: [20, 20],
-          html: '<div style="background-color: ' + self.gradColorForFrac(maxClusterIntensity, self.grad_colors) + '" class="MapCircleMarkerMulti">' + cluster.getChildCount() + '</div>'
+          className: 'RadMapMarker',
+          iconSize: [22, 22],
+          html: '<div style="background-color: '
+                  + self.gradColorForFrac(maxClusterIntensity, self.grad_colors)
+                  + '" class="RadMapMarkerMulti ' + self.displayTypeClass(displayType) + '">'
+                  + '<div>' + cluster.getChildCount() + '</div>'
+                + '</div>'
         });
       }
     });
@@ -559,20 +656,31 @@ LeafletRadMap.prototype.refresh = function(){
       self.markerLayer.addLayer( m );
     self.map.addLayer(self.markerLayer);
 
-    const markerBounds = self.markerLayer.getBounds();
-    const diagMeters = markerBounds.getNorthWest().distanceTo( markerBounds.getSouthEast() );
-    if( diagMeters > 10 ){
-      self.map.fitBounds( markerBounds );
-    }else {
-      self.map.setView( markerBounds.getCenter(), 18 )
-    }
-  }else{
+    if( !dont_update_zoom ){
+      const markerBounds = self.markerLayer.getBounds();
+      const diagMeters = markerBounds.getNorthWest().distanceTo( markerBounds.getSouthEast() );
+      
+      //console.log( 'markerBounds', markerBounds, ' diagMeters', diagMeters, 'zoom', self.map.getZoom() );
+      
+      if( diagMeters > 10 ){
+        self.map.fitBounds( markerBounds );
+        
+        setTimeout( 1000, function(){
+          self.map.invalidateSize();
+          self.map.fitBounds( markerBounds );
+        });
+        
+      }else {
+        self.map.setView( markerBounds.getCenter(), 18 );
+      }
+    }//if( !dont_update_zoom )
+  }else if( !dont_update_zoom ){
     self.map.setView([37.67640130843344, -121.70667619429008], 15); 
   }
 
   if( (self.markers.length) > 1 && self.markerGradientStops ){
-    self.legendDiv.style.display = null;
-    self.btnsDiv.style.display = null;
+    self.gradientLegendDiv.style.display = null;
+    self.bottomDiv.style.display = null;
 
     let maxcps = self.maxGammaCps;
     let mincps = self.minGammaCps;
@@ -607,9 +715,10 @@ LeafletRadMap.prototype.refresh = function(){
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
   }else{
-    self.legendDiv.style.display = 'none';
-    self.btnsDiv.style.display = 'none';
+    self.gradientLegendDiv.style.display = 'none';
+    self.bottomDiv.style.display = 'none';
   }
 
   self.handleUserDrawingUpdate();
+  self.updateMarkerLegend();
 }//LeafletRadMap.prototype.refresh()

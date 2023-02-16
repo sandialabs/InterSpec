@@ -38,23 +38,35 @@
 class SpecMeas;
 class InterSpec;
 class SimpleDialog;
+class LeafletRadMapWindow;
 namespace SpecUtils{ enum class SpectrumType : int; }
 
 
 class LeafletRadMap : public Wt::WContainerWidget
 {
 public:
+  /** Shows the map dialog for the passed in measurement.
+   
+   Depending on the "ShowMapDataWarning" user preference, may show a warning dialog first, before the LeafletRadMapWindow
+   is shown.
+   
+   @param meas The SpecMeas to show GPS coordinates from
+   @param sample_numbers The sample numbers to show markers for on the map.  If empty, all sample numbers will be used.
+   @param detector_names The names of the detectors to include for ca=ounting CPS and such. If empty, all detectors will be used.
+   @param on_create Optional callback to get the pointer to the created `LeafletRadMapWindow`.  Callback is necassary as the LeafletRadMap may not be immediately created if the "ShowMapDataWarning" is true.
+   @returns Pointer to the warning dialog if user preferenence for "ShowMapDataWarning" is true.  If no warning dialog is shown, then will return nullptr.
+   */
   static SimpleDialog *showForMeasurement( const std::shared_ptr<const SpecMeas> meas,
-                                  std::function<void(LeafletRadMap *)> on_create = nullptr );
+                                          const std::set<int> &sample_numbers,
+                                          const std::vector<std::string> &detector_names,
+                                  std::function<void(LeafletRadMapWindow *)> on_create = nullptr );
   
-  static SimpleDialog *showForCoordinate( double latitude, double longitude,
-                                 std::function<void(LeafletRadMap *)> on_create = nullptr );
-
   LeafletRadMap( Wt::WContainerWidget *parent = nullptr );
   virtual ~LeafletRadMap();
   
-  void displayMeasurementOnMap( const std::shared_ptr<const SpecMeas> meas );
-  void displayCoordinate( double latitude, double longitude );
+  void displayMeasurementOnMap( const std::shared_ptr<const SpecMeas> &meas,
+                                std::set<int> sample_numbers,
+                                std::vector<std::string> detector_names );
   
   
   /** Override WWebWidget::doJavaScript() to wait until this widget has been rendered before
@@ -62,14 +74,20 @@ public:
    */
   virtual void doJavaScript( const std::string &js );
   
-  static std::string createGeoLocationJson( std::shared_ptr<const SpecMeas> meas );
+  
+  static std::string createGeoLocationJson( const std::shared_ptr<const SpecMeas> &meas,
+                                           const std::set<int> &sample_to_include,
+                                           const std::vector<std::string> &detector_names,
+                                           const std::set<int> &foreground_samples,
+                                           const std::set<int> &background_samples,
+                                           const std::set<int> &secondary_samples );
   
 protected:
   void defineJavaScript();
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
-  void handleLoadSamples( const std::string &samples, std::string meas_type );
+  void handleLoadSamples( const std::string &samples, const std::string &meas_type );
   
   std::shared_ptr<const SpecMeas> m_meas;
   
