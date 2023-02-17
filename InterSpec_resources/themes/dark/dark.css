@@ -40,7 +40,8 @@ button.Wt-btn.with-label.LightButton
   color: rgb(18,101,200);
 }
 
-input[type="text"], input[type="number"], numbertextarea, textarea {
+/* The `:not(.pm-textarea)` below is so this styling wont apply to text annotaions on the Leaflet maps. */
+input[type="text"], input[type="number"], numbertextarea, textarea :not(.pm-textarea) {
   background-color: rgb(59,60,63) !important; 
   border-top: solid 1px rgb(61,62,64) !important; 
   border-left: none !important; 

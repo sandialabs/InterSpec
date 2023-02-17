@@ -87,6 +87,8 @@ protected:
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
+  void handleDisplayedSpectrumChanged();
+  
   void handleLoadSamples( const std::string &samples, const std::string &meas_type );
   
   std::shared_ptr<const SpecMeas> m_meas;

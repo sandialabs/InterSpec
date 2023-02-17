@@ -224,6 +224,11 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
   
   m_displaySamples.connect( boost::bind( &LeafletRadMap::handleLoadSamples, this,
                                         boost::placeholders::_1, boost::placeholders::_2 ) );
+  
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  if( viewer )
+    viewer->displayedSpectrumChanged().connect( this, &LeafletRadMap::handleDisplayedSpectrumChanged );
 }//LeafletRadMap
 
 
@@ -436,8 +441,42 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
   json["samples"] = samplesData;
   
   return Wt::Json::serialize(json);
-}//void printGeoLocationJson( std::shared_ptr<SpecMeas> meas )
+}//void createGeoLocationJson(...)
 
+
+void LeafletRadMap::handleDisplayedSpectrumChanged()
+{
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  
+  if( !m_meas || !viewer )
+    return;
+  
+  const shared_ptr<const SpecMeas> fore_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
+  set<int> foreground_samples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  if( fore_meas != m_meas )
+    foreground_samples.clear();
+  
+  const shared_ptr<const SpecMeas> back_meas = viewer->measurment( SpecUtils::SpectrumType::Background );
+  set<int> background_samples = viewer->displayedSamples(SpecUtils::SpectrumType::Background);
+  if( back_meas != m_meas )
+    background_samples.clear();
+  
+  const shared_ptr<const SpecMeas> second_meas = viewer->measurment( SpecUtils::SpectrumType::SecondForeground );
+  set<int> secondary_samples = viewer->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
+  if( second_meas != m_meas )
+    secondary_samples.clear();
+  
+  vector<string> det_to_include = viewer->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+  if( fore_meas != m_meas )
+    det_to_include = m_meas->detector_names();
+  
+  const string json = createGeoLocationJson( m_meas, m_meas->sample_numbers(),
+                                             det_to_include, foreground_samples,
+                                             background_samples, secondary_samples );
+  
+  doJavaScript( m_jsmap +  ".setData( " + json + ", true );" );
+}//void handleDisplayedSpectrumChanged();
 
 
 void LeafletRadMap::handleLoadSamples( const std::string &samples, const std::string &meas_type )

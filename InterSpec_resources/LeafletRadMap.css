@@ -150,3 +150,26 @@ div.RadMapMarkerInner.DispAsSecond, div.RadMapMarkerMulti.DispAsSecond {
 .ShowHeatmapBtn {
   opacity: 0.5;
 }
+
+
+.pm-text-marker > textarea.pm-textarea {
+  /* Currently in dark.css we have a `textarea :not(.pm-textarea)` clause
+so dark styling wont be applied to the text annotation area; however,
+we could do something like below, as well as specifying the border
+  background-color: #fff !important;
+  color: #000 !important;
+  */
+
+  /* Making the font a little larger is both a bit nicer, and vertically centers the text in the textarea better. */
+  font-size: 14.5px;
+}
+
+/* Make sure the legend is always visible, even if using dark.css. */
+.LegEntry {
+  border-radius: 5px;
+  padding: 2px;
+  padding-left: 5px;
+  padding-right: 5px;
+  background-color: #fff;
+  color: #000 !important;
+}
