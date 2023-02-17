@@ -41,6 +41,11 @@ class SimpleDialog;
 class LeafletRadMapWindow;
 namespace SpecUtils{ enum class SpectrumType : int; }
 
+/*
+ TODO:
+   - [ ] Sometimes the initial zoom for a bunch of points is way more zoomed out than it should be
+   - [ ] When the foreground/background/secondary samples changes, the markers on the map should be updated
+ */
 
 class LeafletRadMap : public Wt::WContainerWidget
 {
