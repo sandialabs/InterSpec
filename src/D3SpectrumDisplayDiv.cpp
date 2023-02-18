@@ -245,7 +245,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   //  InterSpec_resources (not checked that Andorid build systems will
   //  grab these files); when developing note that CMake will only update
   //  files to InterSpec_resources when you run the "make" command.
-#if( defined(NDEBUG) || IOS || ANDROID || BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
+#if( defined(NDEBUG) || IOS || ANDROID || BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
   //THe NDEBUG should be enough, but just making sure
   const string resource_base = "InterSpec_resources/";
 #else

@@ -295,7 +295,7 @@ DecayChainChart::DecayChainChart( WContainerWidget *parent  )
   //To keep Wt from loading d3.js again, if it loaded it fo D3SpectrumDisplay, then
   //  it looks like (for Wt 3.3.4 anyway) we need the same URL, not just the same
   //  second argument - so the loading here matches D3SpectrumDisplay.
-#if( defined(NDEBUG) || IOS || ANDROID || BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
+#if( defined(NDEBUG) || IOS || ANDROID || BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
   //THe NDEBUG should be enough, but just making sure
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
 #else
