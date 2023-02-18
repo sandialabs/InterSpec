@@ -245,16 +245,6 @@ void LeafletRadMap::defineJavaScript()
   
   setJavaScriptMember( "map", "new LeafletRadMap(" + jsRef() + "," + options + ");");
   
-  //setJavaScriptMember( "resizeObserver",
-  //  "new ResizeObserver(entries => {"
-  //    "for (let entry of entries) {"
-  //      "if( entry.target && (entry.target.id === '" + id() + "') )"
-  //        + m_jsmap + ".handleResize();"
-  //    "}"
-  //  "});"
-  //);
-  //callJavaScriptMember( "resizeObserver.observe", m_chart->jsRef() );
-  
   for( const string &js : m_pendingJs )
     doJavaScript( js );
   m_pendingJs.clear();

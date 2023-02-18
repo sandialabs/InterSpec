@@ -41,11 +41,10 @@ class SimpleDialog;
 class LeafletRadMapWindow;
 namespace SpecUtils{ enum class SpectrumType : int; }
 
-/*
- TODO:
-   - [ ] Sometimes the initial zoom for a bunch of points is way more zoomed out than it should be
+/** Div containing the LeafletMap.
+ 
+ Almost all functionality is implemented in LeafletRadMap.js, except creating JSON to send the the JS.
  */
-
 class LeafletRadMap : public Wt::WContainerWidget
 {
 public:
@@ -79,6 +78,15 @@ public:
   virtual void doJavaScript( const std::string &js );
   
   
+  /** Function to create JSON for the GPS locations of a #SpecMeas.
+   
+   @param meas The #SpecMeas containing the GPS locations
+   @param sample_to_include The sample numbers, from the #SpecMeas, to include on the map
+   @param detector_names The detectors to include when defining GPS points, and the CPS and live time values
+   @param foreground_samples The sample numbers that were used to create the foreground spectrum displayed; these are only used to define the marker shapes on the map
+   @param background_samples The sample numbers that were used to create the background spectrum displayed; these are only used to define the marker shapes on the map
+   @param secondary_samples The sample numbers that were used to create the secondary spectrum displayed; these are only used to define the marker shapes on the map
+   */
   static std::string createGeoLocationJson( const std::shared_ptr<const SpecMeas> &meas,
                                            const std::set<int> &sample_to_include,
                                            const std::vector<std::string> &detector_names,
@@ -117,10 +125,9 @@ protected:
 };//class LeafletRadMap
 
 
-/** This class creates a popup window to display the LeafletRadMap. */
+/** This class creates a popup window to display the LeafletRadMap widget. */
 class LeafletRadMapWindow : public AuxWindow
 {
-
 public:
   LeafletRadMapWindow();
   virtual ~LeafletRadMapWindow();

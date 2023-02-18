@@ -145,7 +145,60 @@ LeafletRadMap = function (elem,options) {
     console.log('pm:globalremovalmodetoggled');
     self.markerLayer.pm.disable();
   });
+
+
+  // On initial map load, the `map.fitBounds(markerBounds)` is done before
+  //  the map resizes, and so it will not be valid.  So we will mark when
+  //  the autozoom (e.g., map.fitBounds()) should have set the size, using
+  //  the `isAutoZoomed` member variable, and then when the map resizes, 
+  //  if this variable is still set, we will re-auto-zoom.
+  //  Any mouse down, or zooming will unset this variable - note however,
+  //  that the zoomstart/zoomend callbacks will happen during data loading,
+  //  so this unmarking happens even when we wouldnt like
+  //  #TODO: Figure out how to set `this.isAutoZoomed` to false only when
+  //         the user changes zoom, or pans.
+  //         (but currently this mechanism works good-enough to get auto
+  //          zoom to work when we first show map in InterSpec)
+  this.isAutoZoomed = false;
+  
+  this.map.on('mousedown', (e) => { self.isAutoZoomed = false; });
+  this.map.on('zoomstart', (e) => { self.isAutoZoomed = false; });
+  this.map.on('zoomend',   (e) => { self.isAutoZoomed = false; });
+
+  this.map.on('resize', (e) => { self.handleResize(); });
+
+  // For debugging; it would be nice to display this somewhere maybe
+  this.map.on('click', (e) => {
+    console.log(`clicked at lat/lng: (${e.latlng.lat}, ${e.latlng.lng})` );
+  });
 }//LeafletRadMap constructor
+
+
+LeafletRadMap.prototype.handleResize = function() {
+  //console.log( 'handleResize, isAutoZoomed=', this.isAutoZoomed );
+
+  // FIXME: this.isAutoZoomed will be set to false during normal data
+  //        loading (unfortuanetly), not just when the the user changes
+  //        things.
+
+  if( !this.isAutoZoomed || !this.markerLayer )
+    return;
+
+  const markerBounds = this.markerLayer.getBounds();
+  if( !markerBounds )
+    return;
+
+  const diagMeters = markerBounds.getNorthWest().distanceTo( markerBounds.getSouthEast() );
+  
+  this.map.invalidateSize();
+  if( diagMeters > 10 ){
+    this.map.fitBounds( markerBounds );
+    //console.log( 'Set bounds to:', markerBounds );
+  }else {
+    this.map.setView( markerBounds.getCenter(), 18 );
+  }
+};//LeafletRadMap.prototype.handleResize = function() 
+
 
 LeafletRadMap.prototype.WtEmit = function(elem, event) {
   if (!window.Wt) {
@@ -660,21 +713,17 @@ LeafletRadMap.prototype.refresh = function( dont_update_zoom ){
       const markerBounds = self.markerLayer.getBounds();
       const diagMeters = markerBounds.getNorthWest().distanceTo( markerBounds.getSouthEast() );
       
-      //console.log( 'markerBounds', markerBounds, ' diagMeters', diagMeters, 'zoom', self.map.getZoom() );
-      
       if( diagMeters > 10 ){
         self.map.fitBounds( markerBounds );
-        
-        setTimeout( 1000, function(){
-          self.map.invalidateSize();
-          self.map.fitBounds( markerBounds );
-        });
-        
+        this.isAutoZoomed = true;
+        //console.log( "Setting isAutoZoomed to true;");
       }else {
+        this.isAutoZoomed = false;
         self.map.setView( markerBounds.getCenter(), 18 );
       }
     }//if( !dont_update_zoom )
   }else if( !dont_update_zoom ){
+    this.isAutoZoomed = false;
     self.map.setView([37.67640130843344, -121.70667619429008], 15); 
   }
 
