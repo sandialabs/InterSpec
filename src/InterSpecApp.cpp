@@ -540,7 +540,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     if( !initial_file.empty() )
     {
       
-      if( SpecUtils::istarts_with(initial_file, "interspec://") )
+      if( SpecUtils::istarts_with(initial_file, "interspec://")
+         || SpecUtils::istarts_with(initial_file, "RADDATA://G0/") )
       {
         try
         {

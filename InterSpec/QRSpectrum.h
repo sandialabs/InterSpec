@@ -218,8 +218,7 @@ struct EncodedSpectraInfo
 /** Breaks out the various information from the url, and un-base-45 encodes, and un-Deflates,
  if necessary.
  
- Expects the URL has already been URL decoded, as it looks like this will be done by the
- OS before passing the URL to the app.
+ Expects the input url to have already been url-decoded.
  
  Throws exception on error.
  */
@@ -229,6 +228,11 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url );
 std::vector<UrlSpectrum> spectrum_decode_first_url( const std::string &url );
 std::vector<uint32_t> spectrum_decode_not_first_url( std::string url );
 
+/** Decodes the given urls to a single spectrum (one or more input urls), or
+ multiple spectrum (a single input url).
+ 
+ Expects each urls to have already been url-decoded.
+ */
 std::vector<UrlSpectrum> decode_spectrum_urls( std::vector<std::string> urls );
 
 

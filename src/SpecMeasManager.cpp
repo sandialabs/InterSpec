@@ -576,13 +576,13 @@ public:
   }//void removePrevUrlsFile()
 #endif //#if( IOS || ANDROID )
   
-  void addUrl( const string &url )
+  void addUrl( const string &url_unencoded_url )
   {
     using QRSpectrum::EncodedSpectraInfo;
     
     try
     {
-      const EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( url );
+      const EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( url_unencoded_url );
       assert( info.m_number_urls > 1 );
       
       
@@ -2222,11 +2222,13 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
 
 
 #if( USE_QR_CODES )
-void SpecMeasManager::handleSpectrumUrl( const std::string &url )
+void SpecMeasManager::handleSpectrumUrl( const std::string &url_encoded_url )
 {
   try
   {
-    const QRSpectrum::EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( url );
+    const string unencoded = Wt::Utils::urlDecode( url_encoded_url );
+    
+    const QRSpectrum::EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( unencoded );
     if( info.m_number_urls == 1 )
     {
       if( m_multiUrlSpectrumDialog )
@@ -2235,7 +2237,7 @@ void SpecMeasManager::handleSpectrumUrl( const std::string &url )
         multiSpectrumDialogDone();
       }
       
-      vector<QRSpectrum::UrlSpectrum> spectra = QRSpectrum::spectrum_decode_first_url( url );
+      vector<QRSpectrum::UrlSpectrum> spectra = QRSpectrum::spectrum_decode_first_url( unencoded );
       if( spectra.empty() )
         throw runtime_error( "No gamma measurements in URL/QR code" );
       
@@ -2255,7 +2257,7 @@ void SpecMeasManager::handleSpectrumUrl( const std::string &url )
       auto dialog = dynamic_cast<MultiUrlSpectrumDialog *>( m_multiUrlSpectrumDialog );
       if( !dialog )
         m_multiUrlSpectrumDialog = dialog = new MultiUrlSpectrumDialog( this, m_viewer );
-      dialog->addUrl( url );
+      dialog->addUrl( unencoded );
     }
   }catch( std::exception &e )
   {

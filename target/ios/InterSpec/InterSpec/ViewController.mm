@@ -905,10 +905,27 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     return NO;
   }
   
-  NSLog( @"handleURL: handling url '%@' whose scheme is '%@'", [url absoluteString], [url scheme] );
-  
   if( [url isFileURL] )
+  {
+    NSLog( @"handleURL: handling file url '%@' whose scheme is '%@'", [url absoluteString], [url scheme] );
     return [self openSpectrumFile: url];
+  }
+  
+  std::string urlcontent;
+  NSString *absStr = [url absoluteString];
+  if( !absStr )
+  {
+    NSLog( @"openURLs: null absoluteString" );
+    return NO;
+  }
+  
+  NSLog( @"openURLs: Got URL (utf-16 len %i): '%@' in InterSpec!", int([absStr length]), absStr );
+  
+  //NSString *normalStr = [absStr stringByRemovingPercentEncoding];
+  //urlcontent = normalStr ? [normalStr UTF8String] : [absStr UTF8String];
+  urlcontent = [absStr UTF8String];
+  
+  NSLog( @"openURLs: After making UTF-8, url is len %i.", int(urlcontent.size())  );
   
   InterSpecApp *specapp = nullptr;
   
@@ -924,20 +941,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     return YES;
   }
   
-  std::string urlcontent;
-  NSString *absStr = [url absoluteString];
-  if( !absStr )
-  {
-    NSLog( @"openURLs: null absoluteString" );
-    return NO;
-  }
-    
-  
-  NSString *normalStr = [absStr stringByRemovingPercentEncoding];
-  urlcontent = normalStr ? [normalStr UTF8String] : [absStr UTF8String];
-    
-  NSLog( @"openURLs: Will pass '%s' in InterSpec!", urlcontent.c_str() );
-  
+  NSLog( @"openURLs: Passing URL to active session." );
   specapp->handleAppUrl( urlcontent );
   specapp->triggerUpdate();
   

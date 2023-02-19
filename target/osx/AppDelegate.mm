@@ -157,8 +157,7 @@
         continue;
       }
       
-      NSString *normalStr = [absStr stringByRemovingPercentEncoding];
-      urlcontent = normalStr ? [normalStr UTF8String] : [absStr UTF8String];
+      urlcontent = [absStr UTF8String];
       
       if( app_lock )
       {
