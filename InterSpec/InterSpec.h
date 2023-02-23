@@ -297,12 +297,11 @@ public:
    by the OS, like when a QR code is scanned.
    
    The prefix "interspec://" is optional, and may be omitted.
+   If a spectrum URL, the "RADDATA://G0/" prefix is required.
    
    An example URL is "interspec://drf/specify?v=1"
    
    Throws std::exception if url cant be used.
-   
-   As of 20220405: Implementation and scope of use still being fleshed out.
    */
   void handleAppUrl( std::string url );
   
