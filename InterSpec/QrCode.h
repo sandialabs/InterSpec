@@ -51,8 +51,11 @@ namespace QrCode
   std::pair<std::string,int> binary_to_svg_qr( const std::vector<std::uint8_t> &data );
 
   /** Turns a QrCode result into a SVG with a viewBox of height/width of `qr.getSize()`.
+   
+   The border size provides the "quiet zone" around the QR code.
+   At least a 4 module wide margin around the QR code is required; see https://www.qrcode.com/en/howto/code.html
    */
-  std::string to_svg_string( const qrcodegen::QrCode &qr, int border = 1 );
+  std::string to_svg_string( const qrcodegen::QrCode &qr, int border = 4 );
 
 
   /** Returns nullptr if an error is encountered. */

@@ -118,9 +118,10 @@ namespace QrCode
  */
 std::string to_svg_string( const qrcodegen::QrCode &qr, int border )
 {
-  if (border < 0)
+  if( border < 0 )
     throw std::domain_error("Border must be non-negative");
-  if (border > INT_MAX / 2 || border * 2 > INT_MAX - qr.getSize())
+  
+  if( border > 256 )
     throw std::overflow_error("Border too large");
   
   std::ostringstream sb;
@@ -165,7 +166,7 @@ pair<string,int> utf8_string_to_svg_qr( const std::string &input )
       << ", ErrorCorrectionLevel: " << static_cast<int>(qr.getErrorCorrectionLevel())
       << endl;
       
-      return { to_svg_string( qr, 1 ), qr.getSize() };
+      return { to_svg_string( qr, 5 ), qr.getSize() };
     }catch( std::exception &e )
     {
       cerr << "Failed to encode QR code at level " << static_cast<int>(ecc) << endl;
@@ -181,7 +182,7 @@ pair<string,int> binary_to_svg_qr( const std::vector<std::uint8_t> &data )
 {
   const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeBinary( data, qrcodegen::QrCode::Ecc::MEDIUM );
   
-  return { to_svg_string( qr, 1 ), qr.getSize() };
+  return { to_svg_string( qr, 5 ), qr.getSize() };
 }//binary_to_svg_qr(...)
 
 

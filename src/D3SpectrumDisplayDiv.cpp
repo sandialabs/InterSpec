@@ -1471,7 +1471,6 @@ void D3SpectrumDisplayDiv::setTextColor( const Wt::WColor &color )
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
-  // TODO: place all y-axis labels/ticks under the .yaxis "g" element, and get rid of .yaxislabel style class
   m_cssRules[rulename] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis, .xaxis > .tick > text, .yaxis > .tick > text", "fill: " + c );
 }
 
