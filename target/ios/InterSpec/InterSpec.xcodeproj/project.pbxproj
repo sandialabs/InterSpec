@@ -1,0 +1,567 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		3D4D11B718F85F550043773C /* data in Resources */ = {isa = PBXBuildFile; fileRef = 3D4D11B618F85F550043773C /* data */; };
+		3D4D11B918F85F610043773C /* example_spectra in Resources */ = {isa = PBXBuildFile; fileRef = 3D4D11B818F85F610043773C /* example_spectra */; };
+		3D4D11BB18F85F720043773C /* InterSpec_resources in Resources */ = {isa = PBXBuildFile; fileRef = 3D4D11BA18F85F720043773C /* InterSpec_resources */; };
+		881EB8F719CCBC06000AB0DF /* LoadScreenImages.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 881EB8F619CCBC06000AB0DF /* LoadScreenImages.xcassets */; };
+		9B026CE018075B1D00314635 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9B026CDF18075B1D00314635 /* UIKit.framework */; };
+		9B026CE218075B1D00314635 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9B026CE118075B1D00314635 /* Foundation.framework */; };
+		9B026CE418075B1D00314635 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9B026CE318075B1D00314635 /* CoreGraphics.framework */; };
+		9B026CEA18075B1D00314635 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 9B026CE818075B1D00314635 /* InfoPlist.strings */; };
+		9B026CEC18075B1D00314635 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 9B026CEB18075B1D00314635 /* main.mm */; };
+		9B026CF018075B1D00314635 /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 9B026CEF18075B1D00314635 /* AppDelegate.mm */; };
+		9B026CF918075B1D00314635 /* ViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = 9B026CF818075B1D00314635 /* ViewController.mm */; };
+		9B20B8E32251881900E56E93 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9B20B8E22251881900E56E93 /* WebKit.framework */; };
+		9B6A620B28B1361300443442 /* WtsRsrcs in Resources */ = {isa = PBXBuildFile; fileRef = 9B6A620A28B1361300443442 /* WtsRsrcs */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		3D4D11B618F85F550043773C /* data */ = {isa = PBXFileReference; lastKnownFileType = folder; name = data; path = ../../../data; sourceTree = SOURCE_ROOT; };
+		3D4D11B818F85F610043773C /* example_spectra */ = {isa = PBXFileReference; lastKnownFileType = folder; name = example_spectra; path = ../../../example_spectra; sourceTree = SOURCE_ROOT; };
+		3D4D11BA18F85F720043773C /* InterSpec_resources */ = {isa = PBXFileReference; lastKnownFileType = folder; name = InterSpec_resources; path = ../../../InterSpec_resources; sourceTree = SOURCE_ROOT; };
+		881EB8F619CCBC06000AB0DF /* LoadScreenImages.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = LoadScreenImages.xcassets; sourceTree = "<group>"; };
+		9B026CDC18075B1D00314635 /* InterSpec.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InterSpec.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9B026CDF18075B1D00314635 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		9B026CE118075B1D00314635 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		9B026CE318075B1D00314635 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		9B026CE718075B1D00314635 /* InterSpec-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "InterSpec-Info.plist"; sourceTree = "<group>"; };
+		9B026CE918075B1D00314635 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		9B026CEB18075B1D00314635 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		9B026CED18075B1D00314635 /* InterSpec-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "InterSpec-Prefix.pch"; sourceTree = "<group>"; };
+		9B026CEE18075B1D00314635 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
+		9B026CEF18075B1D00314635 /* AppDelegate.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AppDelegate.mm; sourceTree = "<group>"; };
+		9B026CF718075B1D00314635 /* ViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ViewController.h; sourceTree = "<group>"; };
+		9B026CF818075B1D00314635 /* ViewController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ViewController.mm; sourceTree = "<group>"; };
+		9B20B8E22251881900E56E93 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		9B6A620A28B1361300443442 /* WtsRsrcs */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WtsRsrcs; path = "build-iphoneos/WtsRsrcs"; sourceTree = "<group>"; };
+		9B6A620C28B139B400443442 /* libInterSpecAppLib.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libInterSpecAppLib.a; path = "build-iphoneos/libInterSpecAppLib.a"; sourceTree = "<group>"; };
+		9B6A620E28B139BC00443442 /* InterSpec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = InterSpec.a; path = "build-iphoneos/LibInterSpec/InterSpec.a"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		9B026CD918075B1D00314635 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9B20B8E32251881900E56E93 /* WebKit.framework in Frameworks */,
+				9B026CE018075B1D00314635 /* UIKit.framework in Frameworks */,
+				9B026CE218075B1D00314635 /* Foundation.framework in Frameworks */,
+				9B026CE418075B1D00314635 /* CoreGraphics.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		9B026CD318075B1D00314635 = {
+			isa = PBXGroup;
+			children = (
+				9B6A620A28B1361300443442 /* WtsRsrcs */,
+				3D4D11BA18F85F720043773C /* InterSpec_resources */,
+				3D4D11B818F85F610043773C /* example_spectra */,
+				3D4D11B618F85F550043773C /* data */,
+				9B026CE518075B1D00314635 /* InterSpec */,
+				9B026CDE18075B1D00314635 /* Frameworks */,
+				9B026CDD18075B1D00314635 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		9B026CDD18075B1D00314635 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9B026CDC18075B1D00314635 /* InterSpec.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9B026CDE18075B1D00314635 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				9B6A620E28B139BC00443442 /* InterSpec.a */,
+				9B6A620C28B139B400443442 /* libInterSpecAppLib.a */,
+				9B20B8E22251881900E56E93 /* WebKit.framework */,
+				9B026CDF18075B1D00314635 /* UIKit.framework */,
+				9B026CE118075B1D00314635 /* Foundation.framework */,
+				9B026CE318075B1D00314635 /* CoreGraphics.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		9B026CE518075B1D00314635 /* InterSpec */ = {
+			isa = PBXGroup;
+			children = (
+				9B026CEE18075B1D00314635 /* AppDelegate.h */,
+				9B026CEF18075B1D00314635 /* AppDelegate.mm */,
+				9B026CF718075B1D00314635 /* ViewController.h */,
+				9B026CF818075B1D00314635 /* ViewController.mm */,
+				881EB8F619CCBC06000AB0DF /* LoadScreenImages.xcassets */,
+				9B026CE618075B1D00314635 /* Supporting Files */,
+			);
+			path = InterSpec;
+			sourceTree = "<group>";
+		};
+		9B026CE618075B1D00314635 /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				9B026CE718075B1D00314635 /* InterSpec-Info.plist */,
+				9B026CE818075B1D00314635 /* InfoPlist.strings */,
+				9B026CEB18075B1D00314635 /* main.mm */,
+				9B026CED18075B1D00314635 /* InterSpec-Prefix.pch */,
+			);
+			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		9B026CDB18075B1D00314635 /* InterSpec */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9B026D0218075B1D00314635 /* Build configuration list for PBXNativeTarget "InterSpec" */;
+			buildPhases = (
+				9B0C59732260713A0041091D /* ShellScript */,
+				9B026CD818075B1D00314635 /* Sources */,
+				9B026CD918075B1D00314635 /* Frameworks */,
+				9B026CDA18075B1D00314635 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = InterSpec;
+			productName = InterSpec;
+			productReference = 9B026CDC18075B1D00314635 /* InterSpec.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9B026CD418075B1D00314635 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 0720;
+				ORGANIZATIONNAME = "Sandia National Laboratories";
+				TargetAttributes = {
+					9B026CDB18075B1D00314635 = {
+						DevelopmentTeam = G2VV85LMR5;
+						ProvisioningStyle = Automatic;
+						SystemCapabilities = {
+							com.apple.BackgroundModes = {
+								enabled = 0;
+							};
+						};
+					};
+				};
+			};
+			buildConfigurationList = 9B026CD718075B1D00314635 /* Build configuration list for PBXProject "InterSpec" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = 9B026CD318075B1D00314635;
+			productRefGroup = 9B026CDD18075B1D00314635 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				9B026CDB18075B1D00314635 /* InterSpec */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		9B026CDA18075B1D00314635 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3D4D11B918F85F610043773C /* example_spectra in Resources */,
+				881EB8F719CCBC06000AB0DF /* LoadScreenImages.xcassets in Resources */,
+				9B026CEA18075B1D00314635 /* InfoPlist.strings in Resources */,
+				3D4D11B718F85F550043773C /* data in Resources */,
+				3D4D11BB18F85F720043773C /* InterSpec_resources in Resources */,
+				9B6A620B28B1361300443442 /* WtsRsrcs in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		9B0C59732260713A0041091D /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\necho \"PROJECT_DIR=${PROJECT_DIR}\"\necho \"EFFECTIVE_PLATFORM_NAME=${EFFECTIVE_PLATFORM_NAME}\"\ncd \"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}\"\ncmake --build . --config ${CONFIGURATION} -j8\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		9B026CD818075B1D00314635 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9B026CEC18075B1D00314635 /* main.mm in Sources */,
+				9B026CF018075B1D00314635 /* AppDelegate.mm in Sources */,
+				9B026CF918075B1D00314635 /* ViewController.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		9B026CE818075B1D00314635 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				9B026CE918075B1D00314635 /* en */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		9B026D0018075B1D00314635 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "iPhone Distribution: William Johnson (G2VV85LMR5)";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
+				COPY_PHASE_STRIP = NO;
+				ENABLE_BITCODE = NO;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(SYMROOT)/../../../build_ios/",
+					"$(SYMROOT)/../../../build_ios/external_libs/SpecUtils/",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 10.2;
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_CFLAGS = (
+					"-mno-thumb",
+					"-DBOOST_SP_USE_SPINLOCK",
+				);
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"-mno-thumb",
+					"-DBOOST_SP_USE_SPINLOCK",
+				);
+				OTHER_LDFLAGS = "";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				USER_HEADER_SEARCH_PATHS = "$(SYMROOT)/../../../build_ios/ $(SYMROOT)/../../../build_ios/external_libs/SpecUtils/";
+				VALID_ARCHS = arm64;
+			};
+			name = Debug;
+		};
+		9B026D0118075B1D00314635 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "iPhone Distribution: William Johnson (G2VV85LMR5)";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
+				COPY_PHASE_STRIP = YES;
+				ENABLE_BITCODE = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(SYMROOT)/../../../build_ios/",
+					"$(SYMROOT)/../../../build_ios/external_libs/SpecUtils/",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 10.2;
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CFLAGS = (
+					"-mno-thumb",
+					"-DBOOST_SP_USE_SPINLOCK",
+				);
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"-mno-thumb",
+					"-DBOOST_SP_USE_SPINLOCK",
+				);
+				OTHER_LDFLAGS = "";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				USER_HEADER_SEARCH_PATHS = "$(SYMROOT)/../../../build_ios/ $(SYMROOT)/../../../build_ios/external_libs/SpecUtils/";
+				VALIDATE_PRODUCT = YES;
+				VALID_ARCHS = arm64;
+			};
+			name = Release;
+		};
+		9B026D0318075B1D00314635 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
+				DEVELOPMENT_TEAM = G2VV85LMR5;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = "InterSpec/InterSpec-Prefix.pch";
+				HEADER_SEARCH_PATHS = (
+					../prefix/include,
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/wt-src/src/",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/filesystem/include/",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/type_index/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/type_traits/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/any/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/**",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/static_assert/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/throw_exception/include/",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/integer/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/smart_ptr/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/signals2/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/optional/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/move/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/utility/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/preprocessor/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/variant/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/mpl/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/iterator/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/parameter/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/mp11/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/intrusive/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/lexical_cast/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/range/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/numeric/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/numeric/conversion/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/io/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/tokenizer/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/thread/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/filesystem/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/system/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/predef/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/ratio/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/tuple/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/multi_index/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/serialization/include",
+				);
+				INFOPLIST_FILE = "InterSpec/InterSpec-Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				IPHONEOS_DEPLOYMENT_TARGET = 11.0;
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/build-iphoneos",
+					"$(PROJECT_DIR)/build-iphoneos/LibInterSpec",
+				);
+				MARKETING_VERSION = 1.0.10;
+				OTHER_CFLAGS = "";
+				OTHER_CPLUSPLUSFLAGS = (
+					"-ftemplate-depth=512",
+					"-fvisibility=hidden",
+					"-DIOS=1",
+				);
+				OTHER_LDFLAGS = (
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/InterSpec.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SpecUtils/libSpecUtils.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SandiaDecay/libSandiaDecay.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/muparserx-4.0.7/libmuparserx.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/Minuit2/libminuit2.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/Cuba-3.0/libCuba-3.0.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/ceres-solver-build/lib/libceres.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/wt-build/src/libwt.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/wt-build/src/Wt/Dbo/libwtdbo.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/wt-build/src/Wt/Dbo/backend/libwtdbosqlite3.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/wt-build/src/http/libwthttp.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/chrono/libboost_chrono.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/date_time/libboost_date_time.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/exception/libboost_exception.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/filesystem/libboost_filesystem.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/iostreams/libboost_iostreams.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/program_options/libboost_program_options.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/random/libboost_random.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/thread/libboost_thread.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/atomic/libboost_atomic.a",
+					"-lz",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/libInterSpecAppLib.a",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = gov.Sandia.InterSpec;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE = "";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				USER_HEADER_SEARCH_PATHS = "${PROJECT_DIR}/../../.. ../../../external_libs/SpecUtils ${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME} ${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs ${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SpecUtils";
+				VALID_ARCHS = "arm64 x86_64";
+				WRAPPER_EXTENSION = app;
+			};
+			name = Debug;
+		};
+		9B026D0418075B1D00314635 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
+				DEVELOPMENT_TEAM = G2VV85LMR5;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = "InterSpec/InterSpec-Prefix.pch";
+				HEADER_SEARCH_PATHS = (
+					../prefix/include,
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/wt-src/src/",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/filesystem/include/",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/type_index/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/type_traits/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/any/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/**",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/static_assert/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/throw_exception/include/",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/integer/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/smart_ptr/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/signals2/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/optional/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/move/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/utility/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/preprocessor/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/variant/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/mpl/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/iterator/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/parameter/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/mp11/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/intrusive/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/lexical_cast/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/range/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/numeric/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/numeric/conversion/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/io/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/tokenizer/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/thread/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/filesystem/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/system/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/predef/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/ratio/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/tuple/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/multi_index/include",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-src/libs/serialization/include",
+				);
+				INFOPLIST_FILE = "InterSpec/InterSpec-Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				IPHONEOS_DEPLOYMENT_TARGET = 11.0;
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/build-iphoneos",
+					"$(PROJECT_DIR)/build-iphoneos/LibInterSpec",
+				);
+				MARKETING_VERSION = 1.0.10;
+				OTHER_CFLAGS = "";
+				OTHER_CPLUSPLUSFLAGS = (
+					"-ftemplate-depth=512",
+					"-fvisibility=hidden",
+					"-DIOS=1",
+				);
+				OTHER_LDFLAGS = (
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/InterSpec.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SpecUtils/libSpecUtils.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SandiaDecay/libSandiaDecay.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/muparserx-4.0.7/libmuparserx.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/Minuit2/libminuit2.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/Cuba-3.0/libCuba-3.0.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/ceres-solver-build/lib/libceres.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/wt-build/src/libwt.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/wt-build/src/Wt/Dbo/libwtdbo.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/wt-build/src/Wt/Dbo/backend/libwtdbosqlite3.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/wt-build/src/http/libwthttp.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/chrono/libboost_chrono.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/date_time/libboost_date_time.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/exception/libboost_exception.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/filesystem/libboost_filesystem.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/iostreams/libboost_iostreams.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/program_options/libboost_program_options.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/random/libboost_random.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/thread/libboost_thread.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/atomic/libboost_atomic.a",
+					"-lz",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/libInterSpecAppLib.a",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = gov.Sandia.InterSpec;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE = "";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				USER_HEADER_SEARCH_PATHS = "${PROJECT_DIR}/../../.. ../../../external_libs/SpecUtils ${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME} ${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs ${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SpecUtils";
+				VALID_ARCHS = "arm64 x86_64";
+				WRAPPER_EXTENSION = app;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		9B026CD718075B1D00314635 /* Build configuration list for PBXProject "InterSpec" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9B026D0018075B1D00314635 /* Debug */,
+				9B026D0118075B1D00314635 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9B026D0218075B1D00314635 /* Build configuration list for PBXNativeTarget "InterSpec" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9B026D0318075B1D00314635 /* Debug */,
+				9B026D0418075B1D00314635 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 9B026CD418075B1D00314635 /* Project object */;
+}
