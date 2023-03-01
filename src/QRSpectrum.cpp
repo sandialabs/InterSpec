@@ -60,6 +60,15 @@ extern "C"{
 #include <mutex>
 #include "SpecUtils/SpecUtilsAsync.h"
 
+/** Most for expository purposes, a compile time option to printout
+ the steps of creating a spectrum URL
+ */
+#define LOG_URL_ENCODING 1
+
+#if( LOG_URL_ENCODING && !defined(_WIN32) )
+#warning "Explicitly logging URL encoding steps to stdout"
+#endif //#if( LOG_URL_ENCODING && !defined(_WIN32) )
+
 
 using namespace std;
 
@@ -774,12 +783,13 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
   }//if( !skip_title && !m->title().empty() )
   
   first_url += "S:";
+
+#if( LOG_URL_ENCODING )
+  const std::string url_up_to_spectrum = first_url;
+#endif //#if( LOG_URL_ENCODING )
   
-  vector<uint32_t> channel_counts;
-  if( zero_compress )
-    channel_counts = compress_to_counted_zeros( m.m_channel_data );
-  else
-    channel_counts = m.m_channel_data;
+  const vector<uint32_t> channel_counts = zero_compress ? compress_to_counted_zeros( m.m_channel_data )
+                                                        : m.m_channel_data;
   
   // TODO: we could better split up the channel data, so the first URL gets fewer channels, since it carries the meta-information, so then the remaining QR codes could be better filled up.  Or we could try different lengths of channel data to come up with what is best to evenly distribute.
   for( size_t msg_num = 0; msg_num < num_parts; ++msg_num )
@@ -858,6 +868,10 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     }//for( size_t msg_num = 0; msg_num < num_parts; ++msg_num )
   }//if( use_deflate )
   
+#if( LOG_URL_ENCODING )
+  const vector<string> after_deflate = answer;
+#endif //#if( LOG_URL_ENCODING )
+  
   if( use_base45 && !skip_encoding )
   {
     for( size_t msg_num = 0; msg_num < num_parts; ++msg_num )
@@ -884,6 +898,10 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     }
   }//if( use_base45 )
   
+#if( LOG_URL_ENCODING )
+  const vector<string> after_base45 = answer;
+#endif //#if( LOG_URL_ENCODING )
+  
   if( !skip_encoding )
   {
     for( size_t msg_num = 0; msg_num < num_parts; ++msg_num )
@@ -899,6 +917,10 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     }//for( size_t msg_num = 0; msg_num < num_parts; ++msg_num )
   }//if( !skip_encoding )
   
+#if( LOG_URL_ENCODING )
+  const vector<string> after_urlencode = answer;
+#endif //#if( LOG_URL_ENCODING )
+  
 #ifndef NDEBUG
   if( !skip_encoding && (use_base45 || (!use_deflate && !use_bin_chan_data)) )
   {
@@ -911,6 +933,197 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     }
   }//if( use_base45 || (!use_deflate && !use_bin_chan_data) )
 #endif
+  
+  
+#if( LOG_URL_ENCODING )
+  const size_t max_nchannel_printout = 16;
+  const size_t max_bytes_printout = 48;
+  const size_t max_data_chars = 96;
+  
+  auto to_hex = []( uint8_t i ) -> std::string {
+    std::stringstream stream;
+    stream << "0x" << std::setfill ('0') << std::setw(2) << std::hex << static_cast<unsigned int>(i);
+    return stream.str();
+  };//to_hex
+  
+  cout << "--------------------------------------------------------------------------------\n";
+  cout << "URL start:\n\t";
+  const string url_start = string("RADDATA://G0/") + sm_hex_digits[encode_options & 0x0F];
+  cout << "\t" << url_start << endl;
+  cout << "--------------------------------------------------------------------------------\n";
+  
+  cout << "--------------------------------------------------------------------------------\n";
+  cout << "Input spectrum info:\n";
+  cout << "\tItem Type: ";
+  switch( m.m_source_type )
+  {
+    case SpecUtils::SourceType::IntrinsicActivity: cout << "Intrinsic\n"; break;
+    case SpecUtils::SourceType::Calibration:       cout << "Calibration\n"; break;
+    case SpecUtils::SourceType::Background:        cout << "Background\n"; break;
+    case SpecUtils::SourceType::Foreground:        cout << "Foreground\n"; break;
+    case SpecUtils::SourceType::Unknown:           cout << "Unspecified\n"; break;
+  }//switch( m.m_source_type )
+  
+  if( !skip_energy )
+  {
+    cout << "\tEnergy Calibration Coefficients: ";
+    for( size_t i = 0; i < m.m_energy_cal_coeffs.size(); ++i )
+      cout << (i ? ", " : "") << m.m_energy_cal_coeffs[i];
+    cout << endl;
+    
+    if( !m.m_dev_pairs.empty() )
+    {
+      cout << "\tDeviation Pairs: ";
+      for( size_t i = 0; i < m.m_dev_pairs.size(); ++i )
+        cout << (i ? ", (" : "(") << m.m_dev_pairs[i].first << ", " << m.m_dev_pairs[i].second << ")";
+      cout << endl;
+    }//if( !m.m_dev_pairs.empty() )
+  }//if( !skip_energy )
+  
+  if( !m.m_model.empty() && !skip_model )
+    cout << "\tDetector Model: " << m.m_model << endl;
+  
+  if( !m.m_title.empty() && !skip_title )
+    cout << "\tOperator Notes: " << m.m_title << endl;
+  
+  if( !SpecUtils::is_special(m.m_start_time) )
+  {
+    std::string t = SpecUtils::to_iso_string( m.m_start_time );
+    const size_t dec_pos = t.find( "." );
+    if( dec_pos != string::npos )
+      t = t.substr(0, dec_pos);
+    cout << "\tMeasurement Start Time: " << t << endl;
+  }//if( !SpecUtils::is_special(m.m_start_time) )
+  
+  if( !skip_gps
+     && SpecUtils::valid_longitude(m.m_longitude)
+     && SpecUtils::valid_latitude(m.m_latitude) )
+  {
+    cout << "\tGPS coordinates: " << m.m_latitude << ", " << m.m_longitude << endl;
+  }
+  
+  if( m.m_neut_sum >= 0 )
+    cout << "\tNeutron Counts: " << m.m_neut_sum << endl;
+  cout << "\tLive/Real Time: " << m.m_live_time << ", " << m.m_real_time << endl;
+  
+  cout << "\tChannel Counts: ";
+  std::vector<uint32_t> m_channel_data;
+  for( size_t i = 0; i < m.m_channel_data.size() && i < max_nchannel_printout; ++i )
+    cout << (i ? "," : "") << m.m_channel_data[i];
+  if( m.m_channel_data.size() > max_nchannel_printout )
+    cout << "... + " << (m.m_channel_data.size() - max_nchannel_printout) << " more";
+  cout << endl;
+  cout << "--------------------------------------------------------------------------------\n";
+  
+  cout << endl << endl;
+  
+  cout << "--------------------------------------------------------------------------------\n";
+  cout << "Initial textual representation:\n\t" << url_up_to_spectrum;
+  for( size_t i = 0; i < m.m_channel_data.size() && (i < max_nchannel_printout); ++i )
+    cout << (i ? "," : "") << m.m_channel_data[i];
+  if( m.m_channel_data.size() > max_nchannel_printout )
+    cout << "... + " << (m.m_channel_data.size() - max_nchannel_printout) << " more";
+  cout << "\n";
+  cout << "--------------------------------------------------------------------------------\n";
+  
+  if( zero_compress )
+  {
+    cout << endl << endl;
+    cout << "--------------------------------------------------------------------------------\n";
+    cout << "After zero compression:\n\t" << url_up_to_spectrum << endl;
+    for( size_t i = 0; i < channel_counts.size() && (i < max_nchannel_printout); ++i )
+      cout << (i ? "," : "") << channel_counts[i];
+    if( channel_counts.size() > max_nchannel_printout )
+      cout << "... + " << (channel_counts.size() - max_nchannel_printout) << " more";
+    cout << "\n";
+    cout << "--------------------------------------------------------------------------------\n";
+  }//if( zero_compress )
+  
+  
+  if( use_bin_chan_data )
+  {
+    const vector<uint8_t> encoded_bytes = encode_stream_vbyte( channel_counts );
+    
+    cout << endl << endl;
+    cout << "--------------------------------------------------------------------------------\n";
+    cout << "After Stream VByte bit-packing of channel counts:\n\t" << url_up_to_spectrum << "[";
+    for( size_t i = 0; i < encoded_bytes.size() && i < max_bytes_printout; ++i )
+      cout << (i ? "," : "") << to_hex( encoded_bytes[i] );
+    if( encoded_bytes.size() > max_bytes_printout )
+      cout << "... + " << (encoded_bytes.size() - max_bytes_printout) << " more bytes";
+    cout << "]\n";
+    cout << "--------------------------------------------------------------------------------\n";
+  }//if( use_bin_chan_data )
+  
+  
+  if( use_deflate )
+  {
+    cout << endl << endl;
+    cout << "--------------------------------------------------------------------------------\n";
+    cout << "After DEFLATE compression:" << endl;
+    for( size_t url_index = 0; url_index < after_deflate.size(); ++url_index )
+    {
+      const string &url = after_deflate[url_index];
+      
+      cout << "\t";
+      if( after_deflate.size() > 1 )
+        cout << "Part " << url_index << ": ";
+      cout << "[";
+      for( size_t i = 0; i < url.size() && i < max_data_chars; ++i )
+        cout << (i ? "," : "") << to_hex( static_cast<const uint8_t &>( url[i] ) );
+      
+      if( url.size() > max_data_chars )
+        cout << "... + " << (url.size() - max_data_chars) << " more bytes";
+      cout << "]\n";
+    }//for( size_t url_index = 0; url_index < after_deflate.size(); ++url_index )
+    cout << "--------------------------------------------------------------------------------\n";
+  }//if( use_deflate )
+  
+  if( use_base45 )
+  {
+    cout << endl << endl;
+    cout << "--------------------------------------------------------------------------------\n";
+    cout << "After base-45 encoding:\n\t";
+    for( size_t url_index = 0; url_index < after_base45.size(); ++url_index )
+    {
+      const string &url = after_base45[url_index];
+      
+      cout << "\t";
+      if( after_base45.size() > 1 )
+        cout << "Part " << url_index << ": ";
+      for( size_t i = 0; i < url.size() && i < max_data_chars; ++i )
+        cout << url[i];
+      
+      if( url.size() > max_data_chars )
+        cout << "... + " << (url.size() - max_data_chars) << " more characters";
+      cout << endl;
+    }//for( size_t url_index = 0; url_index < after_base45.size(); ++url_index )
+    cout << "--------------------------------------------------------------------------------\n";
+  }//if( use_base45 )
+  
+  if( !skip_encoding )
+  {
+    cout << endl << endl;
+    cout << "--------------------------------------------------------------------------------\n";
+    cout << "After URL encoding:\n\t" << endl;
+    for( size_t url_index = 0; url_index < after_urlencode.size(); ++url_index )
+    {
+      const string &url = after_urlencode[url_index];
+      
+      cout << "\t";
+      if( after_urlencode.size() > 1 )
+        cout << "Part " << url_index << ": ";
+      for( size_t i = 0; i < url.size() && i < max_data_chars; ++i )
+        cout << url[i];
+      
+      if( url.size() > max_data_chars )
+        cout << "... + " << (url.size() - max_data_chars) << " more characters";
+      cout << endl;
+    }//for( size_t url_index = 0; url_index < after_urlencode.size(); ++url_index )
+  }//if( !skip_encoding )
+  cout << "--------------------------------------------------------------------------------\n";
+#endif //#if( LOG_URL_ENCODING )
+  
   
   return answer;
 }//vector<string> url_encode_spectrum(...)
@@ -952,6 +1165,8 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
   
   const string url_start = string("RADDATA://G0/") + sm_hex_digits[encode_options & 0x0F];
   
+  const unsigned int skip_encode_options = 0x00;
+  
   if( measurements.size() == 1 )
   {
     const UrlSpectrum &m = measurements[0];
@@ -960,7 +1175,7 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
     bool success_encoding = false;
     for( size_t num_parts = 1; num_parts < 10; ++num_parts )
     {
-      vector<string> trial_urls = url_encode_spectrum( m, encode_options, num_parts, 0x00 );
+      vector<string> trial_urls = url_encode_spectrum( m, encode_options, num_parts, skip_encode_options );
       assert( trial_urls.size() == num_parts );
       
       urls.resize( trial_urls.size() );

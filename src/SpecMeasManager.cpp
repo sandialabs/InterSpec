@@ -2270,10 +2270,41 @@ void SpecMeasManager::handleSpectrumUrl( const std::string &url_encoded_url )
 void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type )
 {
   const shared_ptr<SpecMeas> meas = m_viewer->measurment( type );
-  auto spec = m_viewer->displayedHistogram( type );
-  if( !meas || !spec || (spec->num_gamma_channels() < 1) )
+  if( !meas )
   {
-    passMessage( "Error, no " + string(SpecUtils::descriptionText(type)) + " displayed",
+    passMessage( "Error, no " + string(SpecUtils::descriptionText(type)) + " measurement displayed",
+                WarningWidget::WarningMsgHigh ) ;
+    return;
+  }//if( !spec )
+  
+  shared_ptr<const SpecUtils::Measurement> spec;
+  const set<int> &sample_nums = m_viewer->displayedSamples(type);
+  const vector<string> detectors = m_viewer->detectorsToDisplay(type);
+  
+  // We `m_viewer->displayedHistogram( type )` may have some modifications we'll avoid if we can
+  if( (sample_nums.size() == 1) && (detectors.size() == 1 ) )
+    spec = meas->measurement( *begin(sample_nums), detectors.front() );
+  
+  if( !spec )
+  {
+    try
+    {
+      spec = meas->sum_measurements( sample_nums, detectors, nullptr );
+    }catch( std::exception &e )
+    {
+      cerr << "SpecMeasManager::displaySpectrumQrCode: failed to sum measurements: "
+           << e.what() << endl;
+    }
+  }//if( !spec )
+  
+  
+  if( !spec )
+    spec = m_viewer->displayedHistogram( type );
+  
+  if( !spec || (spec->num_gamma_channels() < 1) )
+  {
+    passMessage( "Sorry, the " + string(SpecUtils::descriptionText(type))
+                + " doesn't look to be displaying a spectrum.",
                 WarningWidget::WarningMsgHigh ) ;
     return;
   }//if( !spec )
