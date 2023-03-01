@@ -18,6 +18,12 @@ ENDIF(WIN32)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if( APPLE )
+  set( EXE_TYPE "MACOSX_BUNDLE" )
+elseif(WIN32)
+  set( EXE_TYPE "WIN32" )
+endif( APPLE )
+
 if(MSVC)
   option(${PROJECT_NAME}_USE_MSVC_MultiThreadDLL "Use dynamically-link runtime library." OFF)
 
@@ -73,19 +79,24 @@ endif( NOT InterSpec_FETCH_DEPENDENCIES )
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
  
-add_executable(${PROJECT_NAME}  
-  WIN32  
-  ../electron/windows/InterSpec.rc 
-  windows/InterSpec.manifest
-  InterSpecWxUtils.h 
+if(WIN32)
+  list(APPEND sources
+    ../electron/windows/InterSpec.rc
+    windows/InterSpec.manifest
+  )
+endif(WIN32)
+ 
+list(APPEND sources
+  InterSpecWxUtils.h
   InterSpecWxUtils.cpp
-  InterSpecWxApp.h 
+  InterSpecWxApp.h
   InterSpecWxApp.cpp
-  InterSpecWebFrame.h 
+  InterSpecWebFrame.h
   InterSpecWebFrame.cpp
   wxMain.cpp
 )
 
+add_executable(${PROJECT_NAME} ${EXE_TYPE} ${sources})
 
 if( InterSpec_FETCH_DEPENDENCIES )
   target_link_libraries(${PROJECT_NAME} PUBLIC wx::core wx::base wx::webview wx::stc ${wxWidgets_LIBRARIES} )
@@ -94,7 +105,12 @@ else( InterSpec_FETCH_DEPENDENCIES )
   include( ${wxWidgets_USE_FILE} )
 
   # Not sure wx::core, wx::base, etc wont work in this case
-  target_link_libraries(${PROJECT_NAME} PUBLIC ${wxWidgets_LIBRARIES} )
+  if( APPLE )
+    # macOS needs wx::net, I am guessing for wxSingleInstanceChecker
+    target_link_libraries(${PROJECT_NAME} PUBLIC ${wxWidgets_LIBRARIES} "-lwx_baseu_net-3.2")
+  else( APPLE )
+      target_link_libraries(${PROJECT_NAME} PUBLIC ${wxWidgets_LIBRARIES})
+  endif( APPLE )
   target_include_directories( ${PROJECT_NAME} PUBLIC ${wxWidgets_INCLUDE_DIRS} )
 
   # We need to let the linker know where to find WebView2LoaderStatic.lib
@@ -109,48 +125,79 @@ set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "InterSpec")
 
 set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
 
-# We get an error if the destination is empty, or just ".", but the following seems to work
-install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION "bin/.." )
+
+if( APPLE )
+  # TODO: for macOS
+  #  - Create proper Info.plist
+  #  - App icon doesnt seem to actually be set correctly
+  #  - Need to have CMake "package" target be dependant on the ${PROJECT_NAME} executable
+  #  - Remove the top os titlebar
+  
+  
+  set( CPACK_GENERATOR "ZIP;DragNDrop" )
+  set( CPACK_BINARY_ZIP ON )
+  set( CPACK_BINARY_DRAGNDROP, ON )
+  
+  set( CPACK_BUNDLE_NAME "InterSpec.app" )
+  set( CPACK_BUNDLE_ICON "${CMAKE_CURRENT_SOURCE_DIR}/../osx/InterSpec.icns" )
+  set( CPACK_BUNDLE_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/../osx/build_xcode//CMakeFiles/InterSpecApp.dir/Info.plist" )
+
+  set( RESOURCE_DEST_DIR "InterSpec.app/Contents/Resources" )
+
+  install(TARGETS ${PROJECT_NAME}
+    BUNDLE DESTINATION . COMPONENT Runtime
+    RUNTIME DESTINATION bin COMPONENT Runtime
+  )
+else( APPLE )
+  set( RESOURCE_DEST_DIR "bin/.." )
+  
+  set(CPACK_BINARY_ZIP ON)
+  set(CPACK_BINARY_NSIS OFF)
+  set(CPACK_SOURCE_ZIP ON)
+  set(CPACK_SOURCE_TGZ ON) #linux
+
+  # We get an error if the destination is empty, or just ".", but the following seems to work
+  install( TARGETS ${PROJECT_NAME} RUNTIME DESTINATION "bin/.." )
+endif( APPLE )
 
 
-install(DIRECTORY 
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../InterSpec_resources
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../data
-  ${WT_RESOURCES_DIRECTORY}
-DESTINATION 
-  "bin/.." 
+install(
+  DIRECTORY
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../InterSpec_resources
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../data
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../example_spectra
+    ${WT_RESOURCES_DIRECTORY}
+  DESTINATION
+    ${RESOURCE_DEST_DIR}
 )
 
-
-install(FILES 
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSE.txt
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../NOTICE.html
-DESTINATION 
-  "bin/.." 
+install(
+  FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSE.txt
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../NOTICE.html
+  DESTINATION
+    ${RESOURCE_DEST_DIR}
 )
 
-install(FILES
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/d3.v3.min.js 
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
-DESTINATION 
-  "InterSpec_resources"
+install(
+  FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/d3.v3.min.js
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
+  DESTINATION
+    "${RESOURCE_DEST_DIR}/InterSpec_resources"
 )
 
-install(FILES 
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandia.decay.min.xml
-DESTINATION 
-  "data"
-RENAME 
-  "sandia.decay.xml"
+install(
+  FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandia.decay.min.xml
+  DESTINATION
+    "${RESOURCE_DEST_DIR}/data"
+  RENAME
+    "sandia.decay.xml"
 )
 
-
-set(CPACK_BINARY_ZIP ON)
-set(CPACK_BINARY_NSIS OFF)
-set(CPACK_SOURCE_ZIP ON)
-set(CPACK_SOURCE_TGZ ON) #linux
 
 set(CPACK_PACKAGE_NAME "InterSpec")
 set(CPACK_PACKAGE_VENDOR "Sandia National Laboratories")

@@ -1343,7 +1343,7 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
   {
     UrlEncodedSpec spec;
     spec.m_url = urls[i];
-    spec.m_qr_svg = QrCode::to_svg_string( qrs[i], 1 );
+    spec.m_qr_svg = QrCode::to_svg_string( qrs[i], 5 );
     
     spec.m_qr_size = qrs[i].getSize();
     spec.m_qr_version = qrs[i].getVersion();

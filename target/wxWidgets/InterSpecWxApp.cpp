@@ -37,7 +37,9 @@
 #include "wx/msgdlg.h"
 #include "wx/cmdline.h"
 #include "wx/filename.h"
+#ifndef __APPLE__
 #include "wx/snglinst.h"
+#endif
 #include "wx/stdpaths.h"
 #include "wx/hyperlink.h"
 
@@ -56,7 +58,9 @@
 namespace 
 {
   // Some variable to hold command line switch options
+#ifndef __APPLE__
   bool sm_single_instance = true;
+#endif
   bool sm_try_restore = true;
   bool sm_test_load_only = false;
   bool sm_require_session_token = true;
@@ -115,6 +119,8 @@ namespace
   std::unique_ptr<CheckLoadTimer> sm_check_load_timer;
 }//namespace
 
+
+#ifndef __APPLE__
 class IpcServer;
 
 class IpcConnection : public wxConnection
@@ -151,7 +157,6 @@ public:
 };//IpcConnection
 
 
-
 class IpcServer : public wxServer
 {
 public:
@@ -166,7 +171,6 @@ public:
 };
 
 
-
 class IpcClient : public wxClient
 {
 public:
@@ -176,7 +180,7 @@ public:
     return new IpcConnection();
   }
 };
-
+#endif //#ifndef __APPLE__
 
 InterSpecWxApp::InterSpecWxApp() :
     wxApp(),
@@ -234,8 +238,10 @@ InterSpecWxApp::InterSpecWxApp() :
     if( parser.FoundSwitch( "test-load" ) == wxCMD_SWITCH_ON )
       sm_test_load_only = true;
 
+#ifndef __APPLE__
     if( parser.FoundSwitch("mult-instance") == wxCMD_SWITCH_ON )
       sm_single_instance = false;
+#endif
 
     if( parser.FoundSwitch( "no-restore" ) == wxCMD_SWITCH_ON )
       sm_try_restore = false;
@@ -446,6 +452,7 @@ InterSpecWxApp::InterSpecWxApp() :
 //  std::unique_ptr<std::ofstream> g_stdbuf, g_errbuf;
 
 
+#ifndef __APPLE__
   bool InterSpecWxApp::check_single_instance()
   {
     // Under Unix, the service name may be either an integer port identifier 
@@ -530,7 +537,7 @@ InterSpecWxApp::InterSpecWxApp() :
 
     return true;
   }//bool check_single_instance();
-
+#endif //#ifndef __APPLE__
 
   bool InterSpecWxApp::OnInit()
   {
@@ -550,11 +557,12 @@ InterSpecWxApp::InterSpecWxApp() :
     new wxLogWindow( nullptr, _("Logging"), true, false);
 #endif
 
+#ifndef __APPLE__
     // Check if any other instance is running.  
     //  If so, vmessage that instance and return from here.
     if( sm_single_instance && !check_single_instance() )
       return false; //OnExit wont be called.
-   
+#endif
 
     // Start Wt Server, etc
     const wxStandardPaths& paths = wxStandardPaths::Get();

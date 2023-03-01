@@ -1073,6 +1073,10 @@ D3TimeChart.prototype.updateChart = function (
       this.hideToolTip();
     });
 
+  console.assert( isFinite( compressionIndex )
+                  && (compressionIndex >= 0)
+                  && (compressionIndex < this.state.data.formatted.length) );
+
   /** PLOT DATA */
   for (var detName in this.state.data.formatted[compressionIndex].detectors) {
     var counts =
@@ -2581,7 +2585,14 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
   var plotWidth = this.state.width - this.margin.left - this.margin.right;
 
   var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
-
+  
+  //
+  console.assert( isFinite( compressionIndex )
+                  && (compressionIndex >= 0)
+                  && (compressionIndex < this.state.data.formatted.length) );
+  if( !isFinite( compressionIndex ) )
+    compressionIndex = 0;
+                  
   if (
     this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
       .x[0] === newLeftExtent &&
@@ -3181,15 +3192,21 @@ D3TimeChart.prototype.setMouseInfoText = function (time, data, optargs) {
  */
 D3TimeChart.prototype.findDataIndex = function (time, compressionIndex) {
   var cIdx =
-    compressionIndex != null
-      ? compressionIndex
-      : this.state.data.unzoomedCompressionIndex;
-  var highIdx = this.state.data.formatted[cIdx].realTimeIntervals.length - 1;
-  var lowIdx = 0;
+      (typeof compressionIndex === "undefined")
+      ? this.state.data.unzoomedCompressionIndex
+      : compressionIndex;
+   
+  const data = this.state.data.formatted[cIdx];
+  const lastIndex = data.realTimeIntervals.length - 1;
+  if( lastIndex < 0 )
+    return -1;
+  
+  let highIdx = lastIndex;
+  let lowIdx = 0;
 
   while (lowIdx <= highIdx) {
-    var midIdx = Math.floor((highIdx + lowIdx) / 2);
-    var interval = this.state.data.formatted[cIdx].realTimeIntervals[midIdx];
+    const midIdx = Math.floor((highIdx + lowIdx) / 2);
+    const interval = data.realTimeIntervals[midIdx];
     if (time >= interval[0] && time <= interval[1]) {
       return midIdx;
     } else if (time < interval[0]) {
@@ -3198,6 +3215,17 @@ D3TimeChart.prototype.findDataIndex = function (time, compressionIndex) {
       lowIdx = midIdx + 1;
     }
   }
+  
+  const lastInterval = data.realTimeIntervals[lastIndex];
+  if( time >= lastInterval[0] )
+    return lastIndex;
+  
+  if( time <= data.realTimeIntervals[0][0] )
+   return 0;
+  
+  console.error( 'Failed to find time interval for ', time, '; there were',
+                 lastIndex, ' intervals, of', data.realTimeIntervals[0], ' to ',
+                 data.realTimeIntervals[data.realTimeIntervals.length-1] );
   return -1;
 };
 
