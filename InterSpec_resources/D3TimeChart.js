@@ -980,6 +980,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   // mouse wheel behavior
   this.rect.node().onwheel = (evt) => {
     evt.preventDefault();
+    evt.stopPropagation();
     this.handleMouseWheel(evt.deltaX, evt.deltaY, evt.x);
   };
 
