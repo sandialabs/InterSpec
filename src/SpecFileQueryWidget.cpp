@@ -2814,8 +2814,10 @@ void SpecFileQueryWidget::openSelectedFilesParentDir()
   const string command = "open '" + parentdir + "'";
   system( command.c_str() );
 #else
-  static_assert( 0, "No implementation for showing files in Linux for Electron build" );
   // See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_linux.cc
+  #warning "xdg-open for parentdir has not been tested!"
+  const string command = "xdg-open '" + parentdir + "'";
+  system( command.c_str() );
 #endif
 }//void SpecFileQueryWidget::openSelectedFilesParentDir()
 #endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )

@@ -169,7 +169,7 @@ npm install electron-packager
 #  Since we are are building a shared library Electron will load, we will compile shared libraries
 #  to link against the static gcc libraries.
 #  This command may take a long time to run.
-CMAKE_BUILD_PARALLEL_LEVEL=12 cmake-js --architecture x64 --arch=x64 --CDCMAKE_BUILD_TYPE="Release" --CDInterSpec_FETCH_DEPENDENCIES=ON --CDBUILD_AS_LOCAL_SERVER=OFF --CDCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++" --out=build_manylinux_electron --target install
+CMAKE_BUILD_PARALLEL_LEVEL=12 cmake-js --architecture x64 --arch=x64 --CDCMAKE_BUILD_TYPE="Release" --CDInterSpec_FETCH_DEPENDENCIES=ON --CDBUILD_AS_LOCAL_SERVER=OFF --CDCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++" --CDUSE_LEAFLET_MAP=ON --CDLEAFLET_MAPS_KEY="..." --CDUSE_REL_ACT_TOOL=ON --out=build_manylinux_electron --target install
 
 npm run package-manylinux
 cp ../../NOTICE.html ./release-builds/InterSpec-linux-x64/
@@ -188,4 +188,3 @@ The `InterSpec` module is really a shared library that node.js loads, therefore 
 ## Future Work
 - In the future the build process may be improved to do the final packaging through CMake.  
 - launch_options.json is intended to allow users to customize behaviors (like allow multiple windows, or not), but is not actually implemented.
-- Need to look into having only a single instance of the application running when user wants multiple windows open.
