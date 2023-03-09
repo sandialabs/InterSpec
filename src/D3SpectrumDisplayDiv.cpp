@@ -425,12 +425,8 @@ void D3SpectrumDisplayDiv::initChangeableCssRules()
 {
   WCssStyleSheet &style = wApp->styleSheet();
 
-  //m_cssRules["TextColor"] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "stroke: blue" );
-  //m_cssRules["AxisColor"] = style.addRule( ".xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick", "stroke: red;" );
   m_cssRules["GridColor"] = style.addRule( ".xgrid > .tick, .ygrid > .tick", "stroke: #b3b3b3" );
-  m_cssRules["MinorGridColor"] = style.addRule( ".minorgrid", "stroke: #e6e6e6" );
-  //m_cssRules["FeatureLinesColor"] = style.addRule( ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine", "stroke: black" );
-  
+  m_cssRules["MinorGridColor"] = style.addRule( ".minorgrid", "stroke: #e6e6e6" );  
 }//void initChangeableCssRules()
 
 
