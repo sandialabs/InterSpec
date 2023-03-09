@@ -187,7 +187,13 @@ public:
   static void setWritableDataDirectory( const std::string &dir );
   
   /** Returns the location you can write files to, such as user preferences.
-      Will throw exception if hasnt been set (or set with empty string)
+      
+   For desktop and mobile apps, this will be the standard application data directory specified by the OS:
+   - macOS usually: /Users/username/Library/Containers/gov.sandia.macOS.InterSpec/Data/Library/Application Support/sandia.InterSpec
+   - Win32 usually: C:\Users\username\AppData\Roaming\InterSpec
+   For development builds, this may be the "${cwd}/user_data"
+   
+   Will throw exception if hasnt been set (or set with empty string)
    */
   static std::string writableDataDirectory();
 #endif  //if( not a webapp )
