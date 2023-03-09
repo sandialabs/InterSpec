@@ -159,6 +159,7 @@ foreach(RES_FILE ${DATA_RES_SOURCES})
     set_property( SOURCE ${RES_FILE}
         PROPERTY MACOSX_PACKAGE_LOCATION "Resources/data/${RES_PATH}"
     )
+    source_group("Resources/data/${RES_PATH}" FILES "${RES_FILE}")
 endforeach(RES_FILE)
 
 
@@ -168,6 +169,7 @@ foreach(RES_FILE ${WT_RES_SOURCES})
     set_property( SOURCE ${RES_FILE}
             PROPERTY MACOSX_PACKAGE_LOCATION "Resources/resources/${RES_PATH}"
     )
+    source_group("Resources/resources/${RES_PATH}" FILES "${RES_FILE}")
 endforeach(RES_FILE)
 
 
@@ -180,6 +182,7 @@ foreach(RES_FILE ${INTERSPEC_RES_SOURCES})
     set_property( SOURCE ${RES_FILE}
             PROPERTY MACOSX_PACKAGE_LOCATION "Resources/InterSpec_resources/${RES_PATH}"
     )
+    source_group("Resources/InterSpec_resources/${RES_PATH}" FILES "${RES_FILE}")
 endforeach(RES_FILE)
 
 
@@ -194,6 +197,7 @@ foreach(RES_FILE ${EXAMPLE_RES_SOURCES})
     set_property( SOURCE ${RES_FILE}
         PROPERTY MACOSX_PACKAGE_LOCATION "Resources/example_spectra/${RES_PATH}"
     )
+    source_group("Resources/example_spectra/${RES_PATH}" FILES "${RES_FILE}")
 endforeach(RES_FILE)
 
 

@@ -208,7 +208,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\necho \"PROJECT_DIR=${PROJECT_DIR}\"\necho \"EFFECTIVE_PLATFORM_NAME=${EFFECTIVE_PLATFORM_NAME}\"\ncd \"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}\"\ncmake --build . --config ${CONFIGURATION} -j8\n";
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\nexport PATH=$PATH:/opt/homebrew/bin/\necho \"PROJECT_DIR=${PROJECT_DIR}\"\necho \"EFFECTIVE_PLATFORM_NAME=${EFFECTIVE_PLATFORM_NAME}\"\ncd \"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}\"\ncmake --build . --config ${CONFIGURATION} -j8\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
