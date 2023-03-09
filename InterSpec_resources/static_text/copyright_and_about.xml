@@ -219,6 +219,56 @@ IT &quot;AS IS.&quot;
       </div>
     </li>
 
+    <li><b><a href="http://www.libpng.org/pub/png/libpng.html" target="_blank">libpng</a></b>: libpng is the official PNG reference library.
+      <div style="margin-left: 1em; font-size: small;">
+      <b>libpng</b> is only on the macOS app build as part of rendering spectrum file previews in the Finder.
+      <b>libpng</b> is <a href="https://spdx.org/licenses/libpng-2.0.html">PNG Reference Library License version 2</a> library.
+      </div>
+    </li>
+    <li><b><a href="http://ceres-solver.org" target="_blank">Ceres Solver</a></b> (version 2.1.0): Ceres Solver is an open source C++ library for modeling and solving large, complicated optimization problems.
+      <div style="margin-left: 1em; font-size: small;">
+      <b>Ceres Solver</b> is used, for the the <em>Relative Efficiency</em> tools (&quot;Isotopics by nuclides&quot; and &quot;Isotopics from peaks&quot;); it may be used for peak-fitting as well in the future.
+      <b>Ceres Solver</b> is <a href="https://opensource.org/licenses/BSD-3-Clause">BSD License</a> library.
+      </div>
+    </li>
+    <li><b><a href="https://eigen.tuxfamily.org/index.php" target="_blank">Eigen</a></b> (version 3.4.0): Eigen is a C++ template library for linear algebra: matrices, vectors, numerical solvers, and related algorithms.
+      <div style="margin-left: 1em; font-size: small;">
+      <b>Eigen</b> is used used by the <b>Ceres Solver</b> library, as well as a few places within the <em>Relative Efficiency</em> tools for some matrix operations.
+      <b>Eigen</b> is <a href="https://www.mozilla.org/en-US/MPL/2.0/">Mozilla Public License Version 2.0</a> library.
+      </div>
+    </li>
+
+    <li>The <a href="https://leafletjs.com/index.html" target="_blank">Leaflet</a>-based map feature uses a number of Javascript libraries to help display map data:
+      <ul>
+        <li>
+          <b><a href="https://leafletjs.com/index.html" target="_blank">Leaflet</a></b>: an open-source JavaScript library
+          for mobile-friendly interactive maps. <b>Leaflet</b> is <a href="https://opensource.org/license/bsd-2-clause/" target="_blank">BSD 2-Clause "Simplified" License</a> library.
+        </li>
+        <li>
+          <b><a href="https://github.com/Esri/esri-leaflet" target="_blank">Esri Leaflet</a></b>: Leaflet plugins for working with a handful of the most popular ArcGIS Service types. <b>Esri Leaflet</b> is <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank">Apache License 2.0</a> library.
+        </li>
+        <li>
+          <b><a href="https://github.com/Esri/esri-leaflet-vector" target="_blank">Esri Leaflet Vector Tile Plugin</a></b> (version 4.0.0): A plugin for Esri Leaflet to visualize Vector tiles from ArcGIS Online. <b>Esri Leaflet Vector Tile Plugin</b> is <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank">Apache License 2.0</a> library.
+        </li>
+        <li>
+          <b><a href="https://github.com/geoman-io/leaflet-geoman" target="_blank">Leaflet-Geoman</a></b> (version 2.14.1): Leaflet Plugin For Creating And Editing Geometry Layers. <b>Leaflet-Geoman</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> library.
+        </li>
+        <li>
+          <b><a href="https://github.com/d3/d3-polygon" target="_blank">d3-polygon</a></b> (version 3.0.1): This module provides a few basic geometric operations for two-dimensional polygons. <b>d3-polygon</b> is <a href="#isc" target="_blank">ISC licensed</a> library.
+        </li>
+        <li>
+          <b><a href="https://github.com/Leaflet/Leaflet.heat" target="_blank">Leaflet.heat</a></b> (version 0.2.0): A tiny, simple and fast Leaflet heatmap plugin. <b>Leaflet.heat</b> is <a href="https://opensource.org/license/bsd-2-clause/" target="_blank">BSD 2-Clause "Simplified" License</a> library.
+        </li>
+        <li>
+          <b><a href="https://github.com/Leaflet/Leaflet.markercluster" target="_blank">Leaflet.markercluster</a></b> (version 1.5.3): Provides Beautiful Animated Marker Clustering functionality for Leaflet, a JS library for interactive maps. <b>Leaflet.markercluster</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> library.
+        </li>
+        <li>
+          <b><a href="https://github.com/CliffCloud/Leaflet.EasyButton" target="_blank">Leaflet.EasyButton</a></b> (version 2.4.0): The easiest way to add buttons with Leaflet. <b>Leaflet.EasyButton</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> library.
+        </li>
+      </ul>
+    </li>
+
+    <li>&nbsp;</li>
     <li>In addition to the many libraries used within <b>InterSpec</b>, many open-source, or publicly available tools
         and resources are used to develop <b>InterSpec</b> including, but not limited to:
         <ul style="list-style-type: none; margin-left: 1em; padding: 0; font-size: small;">
@@ -229,8 +279,7 @@ IT &quot;AS IS.&quot;
                <a href="https://clang.llvm.org/" target="_blank">Clang/LLVM</a>,
                <a href="https://www.visualstudio.com/" target="_blank">Microsoft Visual Studio</a>,
                <a href="https://www.python.org/" target="_blank">Python</a>,
-               <a href="https://www.ruby-lang.org/en/" target="_blank">Ruby</a>,
-               <a href="https://subversion.apache.org/" target="_blank">SVN</a>, and many more have been used to develop, compile, link, or otherwise produce <b>InterSpec</b>.
+               <a href="https://git-scm.com" target="_blank">git</a>, and many more have been used to develop, compile, link, or otherwise produce <b>InterSpec</b>.
            </li>
            <li><a href="http://prod.sandia.gov/techlib/access-control.cgi/2014/1420625.pdf" target="_blank">GadrasDRF</a>: used to obtain detector response functions and create simulated data to test against.</li>
         </ul>
