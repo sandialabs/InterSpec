@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <regex>
 #include <string>
 #include <fstream>
 #include <sstream>
@@ -339,9 +340,23 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
       const auto more_info_db = MoreNucInfoDb::instance();
       if( more_info_db )
       {
+#ifndef NDEBUG
+#warning "Reseting MoreNucInfoDb for iterating purposes - remove this!"
+        cerr << "Reseting MoreNucInfoDb for iterating purposes - remove this!" << endl;
+        MoreNucInfoDb::remove_global_instance();
+#endif
+        
         const NucInfo *const more_info = more_info_db->info( nuc );
 
-        if( more_info )
+        if( !more_info )
+        {
+          // We need to fill these conditions out, incase we are setting a nuclide that doesnt have
+          //  them, but the previously displayed nuclide did.
+          tmplt.setCondition( "if-has-more-info", false );
+          tmplt.setCondition( "if-has-related", false );
+          tmplt.bindWidget( "related-nucs", nullptr );
+          tmplt.bindString( "more-info", "", Wt::TextFormat::XHTMLText );
+        }else
         {
           tmplt.setCondition( "if-has-related", !more_info->m_associated.empty() );
           if( !more_info->m_associated.empty() )
@@ -353,9 +368,9 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
             for( size_t i = 0; i < more_info->m_associated.size(); ++i )
             {
               const SandiaDecay::Nuclide *associated = db->nuclide( more_info->m_associated[i] );
+              WContainerWidget *li = new WContainerWidget( associatedList );
               if( associated )
               {
-                WContainerWidget *li = new WContainerWidget( associatedList );
                 WAnchor *anchor = new WAnchor( li );
                 anchor->setText( more_info->m_associated[i] );
                 anchor->clicked().connect( boost::bind( &MoreNuclideInfoDisplay::setNuclide, this, associated, history ) );
@@ -365,8 +380,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
                 t->addStyleClass( "HalfLife" );
               }else
               {
-                WText *txtw = new WText( more_info->m_associated[i], associatedList );
-                txtw->setInline( false );
+                new WText( more_info->m_associated[i], li );
               }
             }
 
@@ -380,11 +394,16 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
           SpecUtils::ireplace_all( notes, "\r", "" );
           vector<string> more_info_lines;
 
+          // Replace things like &lt;li&gt;Some List Item&lt;/li&gt;
+          //  to <li>Some List Item</li>
+          std::regex tag_regex( "&lt;([a-zA-Z/ ]{1,4})&gt;" );
+          notes = std::regex_replace( notes, tag_regex,"<$1>");
+          
           boost::algorithm::split( more_info_lines, notes,
             boost::algorithm::is_any_of( "\n" ),
             boost::algorithm::token_compress_off );
-
-          notes = "<p>";
+          
+          notes = "<div class=\"MoreNucInfoSubSec\">";
           for( size_t i = 0; i < more_info_lines.size(); ++i )
           {
             string line = more_info_lines[i];
@@ -394,7 +413,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
 
             if( line.empty() )
             {
-              notes += "</p><p>";
+              notes += "</div><div class=\"MoreNucInfoSubSec\">";
 
               // Skip all the next empty lines
               for( ; (i + 1) < more_info_lines.size(); ++i )
@@ -407,7 +426,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
             }//if( line.empty() )
           }//for( size_t i = 0; i < more_info_lines.size(); ++i )
 
-          notes += "</p>";
+          notes += "</div>";
           tmplt.bindString( "more-info", notes, Wt::TextFormat::XHTMLText );
         }//if( more_info )
       }//if( more_info_db )
