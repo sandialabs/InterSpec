@@ -983,13 +983,10 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   if( reflines )
   {
     const ReferenceLineInfo &current = reflines->currentlyShowingNuclide();
-    if( current.nuclide )
-      m_nuclideEdit->setText( current.nuclide->symbol );
+    if( current.m_nuclide )
+      m_nuclideEdit->setText( current.m_nuclide->symbol );
     
-    if( current.age <= 0.0 )
-      m_ageEdit->setText( "0y" );
-    else
-      m_ageEdit->setText( PhysicalUnits::printToBestTimeUnits(current.age) );
+    m_ageEdit->setText( current.m_input.m_age ); // I think this should be non-empty
     
     const ShieldingSelect *shielding = reflines->shieldingSelect();
     if( shielding )
@@ -2226,9 +2223,6 @@ void DetectionLimitTool::computeForActivity( const double activity,
 
 void DetectionLimitTool::setRefLinesAndGetLineInfo()
 {
-  // \TODO: this function is essentially the same as #ReferencePhotopeakDisplay::updateDisplayChange
-  //        and given its un-cleaness, it may be worth refactoring.
-  
   if( !m_currentNuclide )
     return;
   
@@ -2239,8 +2233,7 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   std::shared_ptr<DetectorPeakResponse> drf = m_our_meas->detector();
   if( !drf || !drf->hasResolutionInfo() || !drf->isValid() )
     return;
-    
-  
+
   
   double distance = 0.0, air_distance = 0.0;
   try
@@ -2276,330 +2269,61 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   
   auto theme = m_interspec->getColorTheme();
   
-  ReferenceLineInfo reflines;
-  reflines.nuclide = m_currentNuclide;
+  
+  
+  RefLineInput ref_input;
+  ref_input.m_input_txt = m_currentNuclide->symbol;
+  ref_input.m_age = m_ageEdit->text().toUTF8();
+    
   if( theme && theme->referenceLineColor.size() )
-    reflines.lineColor = theme->referenceLineColor[0];
+    ref_input.m_color = theme->referenceLineColor[0];
   
-  reflines.showGammas = true;
-  reflines.showXrays = false;
-  reflines.showAlphas = false;
-  reflines.showBetas = false;
-  reflines.showLines = true;
-  reflines.promptLinesOnly = false;
-  reflines.isBackground = false;
-  reflines.isReaction = false;
-  reflines.displayLines = true;
-  reflines.age = m_currentAge;
-  reflines.lowerBrCuttoff = 0.0;
+  ref_input.m_lower_br_cutt_off = 0.0;
+  ref_input.m_promptLinesOnly = false;
+    
+  ref_input.m_showGammas = true;
+  ref_input.m_showXrays = false;
+  ref_input.m_showAlphas = false;
+  ref_input.m_showBetas = false;
+  ref_input.m_showCascades = false;
+    
+  ref_input.m_detector_name = drf->name();
   
-  reflines.labelTxt = m_currentNuclide->symbol;
+  const std::function<float( float )> intrinsic_eff = drf->intrinsicEfficiencyFcn();
+  
+  if( m_attenuateForAir->isChecked() && (air_distance > 0.0) )
+  {
+    if( !m_materialDB )
+      throw std::runtime_error( "DetectionLimitTool::setRefLinesAndGetLineInfo(): no material DB" );
+    
+    const auto air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, air_distance );
+    
+    ref_input.m_det_intrinsic_eff = [intrinsic_eff,air_atten_fcn]( float energy ) -> float {
+      return intrinsic_eff(energy) * exp( -1.0 * air_atten_fcn( energy ) );
+    };
+  }else
+  {
+    ref_input.m_det_intrinsic_eff = intrinsic_eff;
+  }
+
   
   if( generic_shielding )
   {
-    const double an = m_shieldingSelect->atomicNumber();
-    const double ad = m_shieldingSelect->arealDensity();
-    reflines.shieldingName = "AN=" + std::to_string(an) + ", AD=" + std::to_string(ad) + " g.cm2";
-  }else if( shielding_material )
+    ref_input.m_shielding_an;
+    ref_input.m_shielding_ad;
+  }else
   {
-    reflines.shieldingName = shielding_material->name;
-  }
-  reflines.shieldingThickness = shielding_thickness;
-  reflines.detectorName = drf->name();
-  
-  
-  
-  SandiaDecay::NuclideMixture mixture;
-  mixture.addNuclideByActivity( m_currentNuclide, 1.0E-3 * SandiaDecay::curie );
-  
-  const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity( m_currentAge );
-  const double parent_activity = mixture.activity( m_currentAge, m_currentNuclide );
-  
-  vector<double> energies, branchratios;
-  vector<SandiaDecay::ProductType> particle_type;
-  vector<const SandiaDecay::Transition *> transistions;
-  vector<SandiaDecay::ProductType> types;
-  
-  
-  
-  types.push_back( SandiaDecay::GammaParticle );
-  types.push_back( SandiaDecay::PositronParticle );
-  types.push_back( SandiaDecay::XrayParticle );
-  
-  
-  const float positron_energy = static_cast<float>( 510.9989 * PhysicalUnits::keV );
-  int positiron_decayMode = 0;
-  float positron_branchRatio = 0.0f;
-  const SandiaDecay::Nuclide *positronNuc = 0;
-  
-  
-  std::set<const SandiaDecay::Nuclide *> positronparents;
-  std::set<const SandiaDecay::Transition *> positrontrans;
-  
-  for( SandiaDecay::ProductType type : types )
-  {
-    for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
-    {
-      const SandiaDecay::Nuclide *nuclide = activities[nucIndex].nuclide;
-      const double activity = activities[nucIndex].activity;
-      
-      const size_t n_decaysToChildren = nuclide->decaysToChildren.size();
-      
-      for( size_t decayIndex = 0; decayIndex < n_decaysToChildren; ++decayIndex )
-      {
-        const SandiaDecay::Transition *transition
-        = nuclide->decaysToChildren[decayIndex];
-        const size_t n_products = transition->products.size();
-        
-        for( size_t productNum = 0; productNum < n_products; ++productNum )
-        {
-          const SandiaDecay::RadParticle &particle
-          = transition->products[productNum];
-          if( type == SandiaDecay::PositronParticle && particle.type == SandiaDecay::PositronParticle )
-          {
-            const double br = activity * particle.intensity
-            * transition->branchRatio / parent_activity;
-            positron_branchRatio += 2.0*br;
-            positiron_decayMode   = transition->mode;
-            positronparents.insert( transition->parent );
-            positrontrans.insert( transition );
-          }else if( (particle.type == type) && (particle.type == SandiaDecay::XrayParticle) )
-          {
-            size_t index = 0;
-            for( ; index < energies.size(); ++index )
-            {
-              if( fabs(energies[index] - particle.energy) < 1.0E-6 )
-                break;
-            }
-            
-            const double br = activity * particle.intensity
-            * transition->branchRatio / parent_activity;
-            
-            if( index < energies.size() )
-            {
-              branchratios[index] += br;
-            }else
-            {
-              transistions.push_back( NULL );
-              energies.push_back( particle.energy );
-              branchratios.push_back( br );
-              particle_type.push_back( SandiaDecay::XrayParticle );
-            }
-          }else if( particle.type == type )
-          {
-            transistions.push_back( transition );
-            energies.push_back( particle.energy );
-            const double br = activity * particle.intensity
-            * transition->branchRatio / parent_activity;
-            branchratios.push_back( br );
-            particle_type.push_back( type );
-          }//if( particle.type == type )
-        }//for( size_t productNum = 0; productNum < n_products; ++productNum )
-      }//for( size_t decayIndex = 0; decayIndex < n_decaysToChildren; ++decayIndex )
-    }//for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
-  }//for( SandiaDecay::ProductType type : types )
-  
-  if( positron_branchRatio > 0.0 )
-  {
-    if( positronparents.size() == 1 )
-      positronNuc = *positronparents.begin();
-    
-    if( positrontrans.size() == 1 )
-      transistions.push_back( *positrontrans.begin() );
-    else
-      transistions.push_back( NULL );
-    energies.push_back( positron_energy );
-    branchratios.push_back( positron_branchRatio );
-    particle_type.push_back( SandiaDecay::GammaParticle );
-  }//if( positronrow.branchRatio > 0.0 )
-  
-  
-  
-  //fold in detector response
-  std::shared_ptr<DetectorPeakResponse> det = m_detectorDisplay->detector();
-  
-  //Wider peaks mean not as large value of 'y' for the peaks
-  if( det && det->isValid() )
-  {
-    for( size_t i = 0; i < branchratios.size(); ++i )
-      if( (particle_type[i] == SandiaDecay::GammaParticle) || (particle_type[i] == SandiaDecay::XrayParticle) )
-        branchratios[i] *= det->efficiency( energies[i], distance );
-  }//if( detector )
-  
-  
-  //fold in shielding here....
-  try
-  {
-    std::shared_ptr<const Material> material;
-    boost::function<double(float)> att_coef_fcn, air_atten_fcn;
-    
-    if( m_shieldingSelect->isGenericMaterial() )
-    {
-      const float atomic_number = static_cast<float>(m_shieldingSelect->atomicNumber());
-      const float areal_density = static_cast<float>(m_shieldingSelect->arealDensity());
-      att_coef_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_generic,
-                                 atomic_number, areal_density, _1 );
-    }else
-    {
-      material = m_shieldingSelect->material();
-      if( !!material )
-      {
-        const float thick = static_cast<float>(m_shieldingSelect->thickness());
-        att_coef_fcn
-        = boost::bind( &GammaInteractionCalc::transmition_coefficient_material,
-                      material.get(), _1, thick );
-      }//if( !!material )
-    }//if( isGenericMaterial ) / else
-    
-    if( !att_coef_fcn.empty() )
-    {
-      for( size_t i = 0; i < branchratios.size(); ++i )
-        if( (particle_type[i] == SandiaDecay::GammaParticle) || (particle_type[i] == SandiaDecay::XrayParticle) )
-          branchratios[i] *= exp( -1.0 * att_coef_fcn( energies[i] ) );
-    }//if( att_coef_fcn )
-    
-    
-    if( m_attenuateForAir->isChecked() && (air_distance > 0.0) )
-    {
-      if( !m_materialDB )
-        throw std::runtime_error( "DetectionLimitTool::setRefLinesAndGetLineInfo(): no material DB" );
-      
-      air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, air_distance );
-    }
-    
-    if( !air_atten_fcn )
-    {
-      for( size_t i = 0; i < branchratios.size(); ++i )
-        if( (particle_type[i] == SandiaDecay::GammaParticle) || (particle_type[i] == SandiaDecay::XrayParticle) )
-          branchratios[i] *= exp( -1.0 * air_atten_fcn( energies[i] ) );
-    }//
-  }catch( MassAttenuation::ErrorLoadingDataException & )
-  {
-    throw runtime_error( "Failed to open gamma XS data file" );
-  }catch( std::exception &e )
-  {
-    cerr << "ReferencePhotopeakDisplay::updateDisplayChange(): caught error " << e.what() << endl;
-#if( PERFORM_DEVELOPER_CHECKS )
-    char msg[512];
-    snprintf( msg, sizeof(msg), "Error caclulating attenuation: %s", e.what() );
-    log_developer_error( BOOST_CURRENT_FUNCTION, msg );
-#endif
+    ref_input.m_shielding_name = m_shieldingSelect->materialEdit()->text().toUTF8();
+    ref_input.m_shielding_thickness = m_shieldingSelect->thicknessEdit()->text().toUTF8();
   }
   
   
-  //Peak height is: area*(1/(sigma*sqrt(2*pi)))*exp( -(x-mean)^2 / (2*sigma^2) ),
-  //  therefore peak height is proportianal to area/sigma, lets correct for this
-  /*
-  if( det && det->isValid() && det->hasResolutionInfo() )
-  {
-    const vector<double> origbr = branchratios;
-    
-    try
-    {
-      for( size_t i = 0; i < branchratios.size(); ++i )
-      {
-        const double sigma = det->peakResolutionSigma( energies[i] );
-        if( sigma <= 0.0 )
-          throw exception();
-        branchratios[i] /= sigma;
-      }//for( size_t i = 0; i < branchratios.size(); ++i )
-    }catch(...)
-    {
-      branchratios = origbr;
-      cerr << "Encountered a negative or zero peak width, not taking detector "
-      << "resolution into account, sorry :(" << endl;
-    }//try / catch
-  }//if( detector->hasResolutionInfo() )
-   */
-  
-  //Some decays may not produce gammas, but do produce xrays (not verified) so
-  //  we want to normalize gammas and xrays relative to the largest branching
-  //  ratio gamma or xray.
-  double max_gamma_xray = 0.0;
-  
-  map<SandiaDecay::ProductType,double> maxbrs;
-  
-  for( size_t i = 0; i < branchratios.size(); ++i )
-  {
-    const SandiaDecay::ProductType type = particle_type[i];
-    
-    if( !maxbrs.count(type) )
-      maxbrs[type] = 0.0;
-    //    if( (transistions[i]
-    //         || inforows[i].decayMode==DecayParticleModel::RowData::ReactionToGammaMode) )
-    maxbrs[type] = max(maxbrs[type],branchratios[i]);
-    
-    if( type == SandiaDecay::GammaParticle || type == SandiaDecay::XrayParticle )
-      max_gamma_xray = std::max( max_gamma_xray, branchratios[i] );
-  }//for( size_t i = 0; i < branchratios.size(); ++i )
-  
-  for( size_t i = 0; i < branchratios.size(); ++i )
-  {
-    const double energy = energies[i];
-    
-    //If this is an xray caused by a decay, lets normalize its amplitude relative
-    //  to the gamma amplitudes.  If we are displaying just the xrays of an
-    //  element, than we will normalize them to go between zero and one.
-    const bool is_gamma = (particle_type[i] == SandiaDecay::GammaParticle);
-    const bool is_xray = (particle_type[i] == SandiaDecay::XrayParticle);
-    const bool is_decay_xray_gamma = (m_currentNuclide && (is_gamma || is_xray));
-    const double br = branchratios[i] / (is_decay_xray_gamma ? max_gamma_xray : maxbrs[particle_type[i]]);
-    
-    const SandiaDecay::Transition *transition = transistions[i];
-    
-    if( transition && (br <= brCutoff || IsInf(br) || IsNan(br)) )
-      continue;
-    
-    string particlestr, decaystr, elstr;
-    if( !is_xray )
-    {
-      const SandiaDecay::ProductType parttype
-      = SandiaDecay::ProductType( particle_type[i] );
-      particlestr = SandiaDecay::to_str( parttype );
-      
-      if( transition )
-      {
-        if( transition->parent )
-          decaystr = transition->parent->symbol;
-        if( transition->child )
-          decaystr += " to " + transition->child->symbol;
-        decaystr += string(" via ") + SandiaDecay::to_str(transition->mode);
-      }//if( transition ) / else ...
-    }else
-    {
-      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-      const SandiaDecay::Element *element = db->element( m_currentNuclide->atomicNumber );
-      
-      particlestr = "xray";
-      decaystr = "xray";
-      if( element )
-        elstr = element->name;
-    }//if( xray ) / else
-        
-    reflines.energies.push_back(     energy );
-    reflines.intensities.push_back(  br );
-    reflines.particlestrs.push_back( particlestr );
-    reflines.decaystrs.push_back(    decaystr );
-    reflines.elementstrs.push_back(  elstr );
-  }//for( size_t i = 0; i < branchratios.size(); ++i )
-  
-  typedef std::map<SandiaDecay::ProductType,double>::const_iterator MaxBrIter;
-  
-  for( MaxBrIter iter = maxbrs.begin(); iter != maxbrs.end(); ++iter )
-  {
-    const char *typestr = SandiaDecay::to_str( SandiaDecay::ProductType(iter->first) );
-    reflines.particle_sf[typestr] = iter->second;
-    
-    if( iter->first == SandiaDecay::GammaParticle || iter->first == SandiaDecay::XrayParticle )
-      reflines.particle_sf[typestr] = max_gamma_xray;
-  }
-  
-  
-  m_chart->setReferncePhotoPeakLines( reflines );
+  std::shared_ptr<ReferenceLineInfo> reflines = ReferenceLineInfo::generateRefLineInfo( ref_input );
+  if( reflines )
+    m_chart->setReferncePhotoPeakLines( *reflines );
+  else
+    m_chart->clearAllReferncePhotoPeakLines();
 }//std::vector<std::tuple<float,double,bool>> setRefLinesAndGetLineInfo();
-
-
-
 
 
 

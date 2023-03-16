@@ -68,6 +68,14 @@ DerivedData/
 xcuserdata/
 project.xcworkspace/
 
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/project.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+/*.gcno
+**/xcshareddata/WorkspaceSettings.xcsettings
+
 ## Other
 *.moved-aside
 *.xccheckout

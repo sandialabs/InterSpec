@@ -187,7 +187,13 @@ public:
   static void setWritableDataDirectory( const std::string &dir );
   
   /** Returns the location you can write files to, such as user preferences.
-      Will throw exception if hasnt been set (or set with empty string)
+      
+   For desktop and mobile apps, this will be the standard application data directory specified by the OS:
+   - macOS usually: /Users/username/Library/Containers/gov.sandia.macOS.InterSpec/Data/Library/Application Support/sandia.InterSpec
+   - Win32 usually: C:\Users\username\AppData\Roaming\InterSpec
+   For development builds, this may be the "${cwd}/user_data"
+   
+   Will throw exception if hasnt been set (or set with empty string)
    */
   static std::string writableDataDirectory();
 #endif  //if( not a webapp )
@@ -297,12 +303,11 @@ public:
    by the OS, like when a QR code is scanned.
    
    The prefix "interspec://" is optional, and may be omitted.
+   If a spectrum URL, the "RADDATA://G0/" prefix is required.
    
    An example URL is "interspec://drf/specify?v=1"
    
    Throws std::exception if url cant be used.
-   
-   As of 20220405: Implementation and scope of use still being fleshed out.
    */
   void handleAppUrl( std::string url );
   

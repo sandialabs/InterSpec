@@ -146,6 +146,21 @@ namespace MoreNuclideInfo
   }//std::shared_ptr<const MoreNucInfoDb> MoreNucInfoDb::instance()
 
   
+  void MoreNucInfoDb::remove_global_instance()
+  {
+    std::lock_guard<std::mutex> lock( sm_mutex );
+    if( sm_db )
+    {
+      assert( sm_status == MoreNuclideInfo::InfoStatus::Inited );
+      sm_db.reset();
+      sm_status = MoreNuclideInfo::InfoStatus::NotInited;
+    }else
+    {
+      assert( sm_status != MoreNuclideInfo::InfoStatus::Inited );
+    }
+  }//void MoreNucInfoDb::remove_global_instance()
+  
+  
   MoreNucInfoDb::MoreNucInfoDb()
   {
   }

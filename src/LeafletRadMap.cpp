@@ -52,6 +52,12 @@
 #include "InterSpec/LeafletRadMap.h"
 #include "InterSpec/WarningWidget.h"
 
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+#include <Wt/Utils>
+#include "SpecUtils/Filesystem.h"
+#endif
+
+
 #if( IOS )
 #include "InterSpec/InterSpecApp.h"
 #endif
@@ -94,10 +100,22 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
   
   // Show a warning dialog about requesting the data, before proceeding
   const char *title = "Before Proceeding";
-  const char *msg =
+  string msg =
   "Map tiles will be requested from <a href=\"https://arcgis.com\">https://arcgis.com</a>."
   " No radiation data will leave your device, but requests for"
   " map tiles encompassing the measurements will be made to this service.";
+  
+  const string user_key = LeafletRadMap::get_user_arcgis_key();
+  if( user_key.length() > 6 )
+  {
+    msg += "<p>Your custom arcgis key starting with '" + user_key.substr(0,6) + "' will be used"
+    "to request map tiles.</p>";
+  }else if( !user_key.empty() )
+  {
+    msg += "<p>An invalid arcgis key was specified in arcgis_key.txt, so the built-in key will"
+    " be used.</p>";
+  }
+  
   SimpleDialog *dialog = new SimpleDialog( title );
   dialog->setWidth( 400 );
   
@@ -237,11 +255,76 @@ LeafletRadMap::~LeafletRadMap()
 }//~LeafletRadMap()
   
 
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+std::string LeafletRadMap::get_user_arcgis_key()
+{
+  try
+  {
+    const string user_data_dir = InterSpec::writableDataDirectory();
+    const string user_key_file = SpecUtils::append_path(user_data_dir, "arcgis_key.txt" );
+    
+    if( !SpecUtils::is_file( user_key_file ) )
+      return "";
+      
+    std::vector<char> data;
+    SpecUtils::load_file_data( user_key_file.c_str(), data );
+    string user_key( begin(data), end(data) );
+    
+    // Remove characters we dont expect
+    while( !user_key.empty() )
+    {
+      const size_t pos = user_key.find_first_of( "\t\n \r\n{}'\"" );
+      if( pos == std::string::npos )
+        break;
+      user_key.erase( begin(user_key) + pos );
+    }//while( !user_key.empty() )
+      
+    SpecUtils::trim(user_key); //jic other white-space characters?
+      
+    // And to be super-careful
+    auto wkey = WString::fromUTF8(user_key);
+    Wt::Utils::removeScript(wkey);
+    user_key = wkey.toUTF8();
+      
+    //We could test the key starts with "AAPK", but we wont right now
+    //  Also, looks like it should just contain letters, numbers, _, and -  
+    
+    return user_key;
+  }catch( std::exception &e )
+  {
+    
+  }//
+  
+  return "empty";
+}//std::string LeafletRadMap::get_user_arcgis_key()
+#endif
+
+
 void LeafletRadMap::defineJavaScript()
 {
-  string options = "{"
-    "apiKey: '" LEAFLET_MAPS_KEY "'"
-  "}";
+  string key = LEAFLET_MAPS_KEY;
+  
+  // Look for a user specified maps key.
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+  key = LeafletRadMap::get_user_arcgis_key();
+  
+  if( key.length() > 6 )
+  {
+    passMessage( "Will use user-specified arcgis key, begining with '"
+                + key.substr(0,6)
+                + "' to request maps with.",
+                WarningWidget::WarningMsgLevel::WarningMsgInfo );
+  }else if( key.length() )
+  {
+    passMessage( "There was a arcgis_key.txt file, but it did not contain a valid key",
+                WarningWidget::WarningMsgLevel::WarningMsgHigh );
+  }
+#endif
+  
+  if( key.length() < 6 )
+    key = LEAFLET_MAPS_KEY;
+  
+  string options = "{apiKey: '" + key + "'}";
   
   setJavaScriptMember( "map", "new LeafletRadMap(" + jsRef() + "," + options + ");");
   
@@ -381,7 +464,7 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
     {
       const auto duration = start_times_offset - meas_start_time;
       const auto millisecs = chrono::duration_cast<chrono::milliseconds>(duration);
-      sample_json["timeOffset"] = millisecs.count();
+      sample_json["timeOffset"] = static_cast<long long int>( millisecs.count() );
     }//if( SpecUtils::is_special(meas_start_time) )
     
     sample_json["nGDet"] = numGammaDet;
@@ -425,7 +508,7 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
   {
     const auto dur = start_times_offset.time_since_epoch();
     const auto millisecs = chrono::duration_cast<chrono::milliseconds>(dur);
-    json["startTime"] = millisecs.count();
+    json["startTime"] = static_cast<long long int>( millisecs.count() );
   }//if( !SpecUtils::is_special(start_times_offset) )
   
   json["samples"] = samplesData;

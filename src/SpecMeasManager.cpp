@@ -576,13 +576,13 @@ public:
   }//void removePrevUrlsFile()
 #endif //#if( IOS || ANDROID )
   
-  void addUrl( const string &url )
+  void addUrl( const string &url_unencoded_url )
   {
     using QRSpectrum::EncodedSpectraInfo;
     
     try
     {
-      const EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( url );
+      const EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( url_unencoded_url );
       assert( info.m_number_urls > 1 );
       
       
@@ -2222,11 +2222,13 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
 
 
 #if( USE_QR_CODES )
-void SpecMeasManager::handleSpectrumUrl( const std::string &url )
+void SpecMeasManager::handleSpectrumUrl( const std::string &url_encoded_url )
 {
   try
   {
-    const QRSpectrum::EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( url );
+    const string unencoded = Wt::Utils::urlDecode( url_encoded_url );
+    
+    const QRSpectrum::EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( unencoded );
     if( info.m_number_urls == 1 )
     {
       if( m_multiUrlSpectrumDialog )
@@ -2235,7 +2237,7 @@ void SpecMeasManager::handleSpectrumUrl( const std::string &url )
         multiSpectrumDialogDone();
       }
       
-      vector<QRSpectrum::UrlSpectrum> spectra = QRSpectrum::spectrum_decode_first_url( url );
+      vector<QRSpectrum::UrlSpectrum> spectra = QRSpectrum::spectrum_decode_first_url( unencoded );
       if( spectra.empty() )
         throw runtime_error( "No gamma measurements in URL/QR code" );
       
@@ -2255,7 +2257,7 @@ void SpecMeasManager::handleSpectrumUrl( const std::string &url )
       auto dialog = dynamic_cast<MultiUrlSpectrumDialog *>( m_multiUrlSpectrumDialog );
       if( !dialog )
         m_multiUrlSpectrumDialog = dialog = new MultiUrlSpectrumDialog( this, m_viewer );
-      dialog->addUrl( url );
+      dialog->addUrl( unencoded );
     }
   }catch( std::exception &e )
   {
@@ -2268,10 +2270,41 @@ void SpecMeasManager::handleSpectrumUrl( const std::string &url )
 void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type )
 {
   const shared_ptr<SpecMeas> meas = m_viewer->measurment( type );
-  auto spec = m_viewer->displayedHistogram( type );
-  if( !meas || !spec || (spec->num_gamma_channels() < 1) )
+  if( !meas )
   {
-    passMessage( "Error, no " + string(SpecUtils::descriptionText(type)) + " displayed",
+    passMessage( "Error, no " + string(SpecUtils::descriptionText(type)) + " measurement displayed",
+                WarningWidget::WarningMsgHigh ) ;
+    return;
+  }//if( !spec )
+  
+  shared_ptr<const SpecUtils::Measurement> spec;
+  const set<int> &sample_nums = m_viewer->displayedSamples(type);
+  const vector<string> detectors = m_viewer->detectorsToDisplay(type);
+  
+  // We `m_viewer->displayedHistogram( type )` may have some modifications we'll avoid if we can
+  if( (sample_nums.size() == 1) && (detectors.size() == 1 ) )
+    spec = meas->measurement( *begin(sample_nums), detectors.front() );
+  
+  if( !spec )
+  {
+    try
+    {
+      spec = meas->sum_measurements( sample_nums, detectors, nullptr );
+    }catch( std::exception &e )
+    {
+      cerr << "SpecMeasManager::displaySpectrumQrCode: failed to sum measurements: "
+           << e.what() << endl;
+    }
+  }//if( !spec )
+  
+  
+  if( !spec )
+    spec = m_viewer->displayedHistogram( type );
+  
+  if( !spec || (spec->num_gamma_channels() < 1) )
+  {
+    passMessage( "Sorry, the " + string(SpecUtils::descriptionText(type))
+                + " doesn't look to be displaying a spectrum.",
                 WarningWidget::WarningMsgHigh ) ;
     return;
   }//if( !spec )

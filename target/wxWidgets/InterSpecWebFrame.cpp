@@ -321,7 +321,7 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   //  TODO: check if any other window is open, and if so size and position relative to it.
   const long screen_x = wxSystemSettings::GetMetric(wxSYS_SCREEN_X);
   const long screen_y = wxSystemSettings::GetMetric(wxSYS_SCREEN_Y);
-  wxLogMessage("Screen is: %i x %i", screen_x, screen_y);
+  wxLogMessage("Screen is: %ld x %ld", screen_x, screen_y);
 
   //wxFileName pref_file = wxFileConfig::GetLocalFile("InterSpec_app_state");
 //wxFileConfig config("InterSpec", "Sandia", pref_file.GetFullPath(), "", wxCONFIG_USE_LOCAL_FILE);
@@ -337,19 +337,19 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   long wx = config->ReadLong("/WindowX", static_cast<long>(0.025 * screen_x));
   long wy = config->ReadLong("/WindowY", static_cast<long>(0.025 * screen_y));
   
-  wxLogMessage("Prev window: %i x %i at %i,%i", ww, wh, wx, wy);
+  wxLogMessage("Prev window: %ld x %ld at %ld,%ld", ww, wh, wx, wy);
   
   ww = std::min( std::max(ww, static_cast<long>(min_win_size.x)), static_cast<long>(screen_x) );
   wh = std::min( std::max(wh, static_cast<long>(min_win_size.y)), static_cast<long>(screen_y) );
   wx = std::max( 0l, std::min(wx, screen_x / 2) );
   wy = std::max( 0l, std::min(wy, screen_y / 2) );
 
-  wxLogMessage("Will set window tp: %i x %i at %i,%i", ww, wh, wx, wy);
+  wxLogMessage("Will set window tp: %ld x %ld at %ld,%ld", ww, wh, wx, wy);
 
   //I'm not sure how/if screen_x and screen_y take into account GetDPIScaleFactor()
   //SetSize(FromDIP(wxSize(0.85*screen_x, 0.85*screen_y)));
-  SetSize( wxSize(ww, wh) );
-  SetPosition( wxPoint(wx, wy) );
+  SetSize( wxSize( static_cast<int>(ww), static_cast<int>(wh)) );
+  SetPosition( wxPoint(static_cast<int>(wx), static_cast<int>(wy)) );
     
 #ifdef NDEBUG
   m_browser->EnableContextMenu( false );

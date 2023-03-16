@@ -257,7 +257,7 @@ namespace
    
    vector<string> trial_paths;
    
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
    try
    {
      const string user_data_dir = InterSpec::writableDataDirectory();
@@ -758,7 +758,7 @@ public:
 class RelEffFile : public Wt::WContainerWidget
 {
   void init();
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   void handleUserAskedRemove();
 #endif
   
@@ -798,7 +798,7 @@ public:
   
   void handleFileUpload();
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   void handleSaveFileForLater();
 #endif
   
@@ -930,7 +930,7 @@ void RelEffFile::init()
   
   WContainerWidget *topdiv = new WContainerWidget( this );
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   WPushButton *closeIcon = new WPushButton( topdiv );
   closeIcon->addStyleClass( "closeicon-wtdefault" );
   closeIcon->setToolTip( "Remove file from list of files InterSpec will look for detector response functions in." );
@@ -980,7 +980,7 @@ void RelEffFile::init()
   initDetectors();
 }//void RelEffFile::init()
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 void RelEffFile::handleUserAskedRemove()
 {
   if( m_existingFilePath.empty() )
@@ -1108,7 +1108,7 @@ void RelEffFile::handleSaveFileForLater()
     passMessage( "Error saving DRF file for later use; sorry.", WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void handleSaveFileForLater();
-#endif  //#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#endif  //#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 
 
 void RelEffFile::handleFileUpload()
@@ -1124,7 +1124,7 @@ void RelEffFile::handleFileUpload()
     return;
   }//if( invalid file )
   
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   SimpleDialog *dialog = new SimpleDialog( "Save Detector Responses?",
                                 "Would you like to save these detector responses for later use?" );
   
@@ -1392,7 +1392,7 @@ void RelEffDetSelect::docreate()
   
   vector<string> user_data_paths;
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   try
   {
     const string userDir = InterSpec::writableDataDirectory();
@@ -1526,7 +1526,7 @@ void GadrasDetSelect::docreate()
   }
 #endif
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   try
   {
     //ToDo: do more testing and use only the Android implementation
@@ -1867,7 +1867,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 */
   
   string user_data_dir;
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   try
   {
     user_data_dir = InterSpec::writableDataDirectory();
@@ -4415,7 +4415,7 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
   
   vector<string> user_paths, default_paths;
   
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   try
   {
     const string userDir = InterSpec::writableDataDirectory();

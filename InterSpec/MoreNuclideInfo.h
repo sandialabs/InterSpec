@@ -130,6 +130,12 @@ namespace MoreNuclideInfo
       Returned pointer will be nullptr if XML file is missing, or invalid.
     */
     static std::shared_ptr<const MoreNucInfoDb> instance();
+    
+    /** For debug purposes, reset the pointer to the global instance of this class; any shared pointers you
+     have will remain valid, but the next call to `MoreNucInfoDb::instance()` will return a different
+     instance.
+     */
+    static void remove_global_instance();
   
     std::map<const SandiaDecay::Nuclide *, NucInfo> m_nuc_infos;
     std::map<std::string, NucInfo> m_other_infos;

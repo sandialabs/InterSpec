@@ -42,7 +42,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/WarningWidget.h"
 
-#if(  BUILD_AS_WX_WIDGETS_APP )
+#if( BUILD_AS_WX_WIDGETS_APP || (BUILD_AS_ELECTRON_APP && !USING_ELECTRON_NATIVE_MENU) )
 #include "InterSpec/InterSpecApp.h"
 #endif
 

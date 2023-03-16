@@ -4,26 +4,7 @@
    <hr />
 </div>
 <p>
-  Perfforms isotopics...
+Please see tutorial at
+<a target="_blank" href="https://sandialabs.github.io/InterSpec/tutorials/rel_eff_peaks/20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf">https://sandialabs.github.io/InterSpec/tutorials/rel_eff_peaks/20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf</a>
+for use instructions.
 </p>
-
-
-<div style="display:table-row">
-<h4>Basics of use</h4>
-<p>
-  blah blah blah ...
-</p>
-
-<div style="padding-top: 10px; text-align: center;">
-<img src="InterSpec_resources/static_text/images/CALp_down_up.png" class="imageBorder" style="" align="middle" />
-<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
-Icons to use for exporting or importing <b>CALp</b> energy calibration files.
-You can also drag-n-drop <b>CALp</b> files from your operating systems filesystem onto
-<b>InterSpec</b> to apply the <b>CALp</b> files.
-</div>
-</div>
-
-
-</div> <!-- end Basics of use -->
-
-

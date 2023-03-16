@@ -13,7 +13,7 @@ For iOS and Android, only using `InterSpec_FETCH_DEPENDENCIES=ON` is supported.
 # Building dependencies on macOS Catalina
 First, lets set the directory we will install all the pre-requisites to:
 ```bash
-export MACOSX_DEPLOYMENT_TARGET=10.12
+export MACOSX_DEPLOYMENT_TARGET=10.13 # MacOS High Sierra (2017, supported through 2020)
 export MY_WT_PREFIX=/path/to/install/prefix/to/macOS_wt3.7.1_prefix
 export PATCH_DIR=/path/to/InterSpec/target/patches/
 ```
@@ -27,16 +27,16 @@ unzip boost_1_78_0.zip
 cd boost_1_78_0
 
 # build the b2 executable
-./bootstrap.sh cxxflags="-arch x86_64 -arch arm64" cflags="-arch x86_64 -arch arm64" linkflags="-arch x86_64 -arch arm64" --prefix=${MY_WT_PREFIX}
+./bootstrap.sh cxxflags="-arch x86_64 -arch arm64 -mmacosx-version-min=10.13" cflags="-arch x86_64 -arch arm64 -mmacosx-version-min=10.13" linkflags="-arch x86_64 -arch arm64 -mmacosx-version-min=10.13" --prefix=${MY_WT_PREFIX}
 
 # build and stage boost for arm64
-./b2 toolset=clang-darwin target-os=darwin architecture=arm abi=aapcs cxxflags="-stdlib=libc++ -arch arm64 -std=c++14" cflags="-arch arm64" linkflags="-stdlib=libc++ -arch arm64 -std=c++14" link=static variant=release threading=multi --build-dir=macOS_arm64_build --prefix=${MY_WT_PREFIX} -a stage
+./b2 toolset=clang-darwin target-os=darwin architecture=arm abi=aapcs cxxflags="-stdlib=libc++ -arch arm64 -std=c++14 -mmacosx-version-min=10.13" cflags="-arch arm64  -mmacosx-version-min=10.13" linkflags="-stdlib=libc++ -arch arm64 -std=c++14 -mmacosx-version-min=10.13" link=static variant=release threading=multi --build-dir=macOS_arm64_build --prefix=${MY_WT_PREFIX} -a stage
 
 # copy arm libraries to a seperate directory
 mkdir -p arm64 && cp stage/lib/libboost_* arm64/
 
 # build boost for x86_64 and install it (we'll copy over the libraries later)
-./b2 toolset=clang-darwin target-os=darwin architecture=x86 cxxflags="-stdlib=libc++ -arch x86_64 -std=c++14" cflags="-arch x86_64" linkflags="-stdlib=libc++ -arch x86_64 -std=c++14" abi=sysv binary-format=mach-o link=static variant=release threading=multi --build-dir=macOS_x64_build --prefix=${MY_WT_PREFIX} -a install
+./b2 toolset=clang-darwin target-os=darwin architecture=x86 cxxflags="-stdlib=libc++ -arch x86_64 -std=c++14 -mmacosx-version-min=10.13" cflags="-arch x86_64 -mmacosx-version-min=10.13" linkflags="-stdlib=libc++ -arch x86_64 -std=c++14 -mmacosx-version-min=10.13" abi=sysv binary-format=mach-o link=static variant=release threading=multi --build-dir=macOS_x64_build --prefix=${MY_WT_PREFIX} -a install
 
 # move x86 libraries to a seperate directory
 mkdir x86_64 && mv ${MY_WT_PREFIX}/lib/libboost_* x86_64/
@@ -64,12 +64,12 @@ mkdir build
 cd build
 
 # First build for arm64 (-DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" doesnt seem to work)
-cmake -DCMAKE_BUILD_TYPE=Release -DPNG_SHARED=OFF -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_OSX_ARCHITECTURES="arm64" -DPNG_ARM_NEON=on ..
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="10.13" -DPNG_SHARED=OFF -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_OSX_ARCHITECTURES="arm64" -DPNG_ARM_NEON=on ..
 make -j10 install
 rm -rf ./*
 
 # Then build for x86_64
-cmake -DCMAKE_BUILD_TYPE=Release -DPNG_SHARED=OFF -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_OSX_ARCHITECTURES="x86_64" ..
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="10.13" -DPNG_SHARED=OFF -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_OSX_ARCHITECTURES="x86_64" ..
 make -j10
 
 # And now lipo the libraries together
@@ -89,7 +89,7 @@ mkdir build
 cd build
 
 # CMake will take care of building for x86_64 and arm64 at the same time
-cmake -DLIBHPDF_SHARED=OFF -DCMAKE_BUILD_TYPE=Release -DPNG_LIBRARY_RELEASE= -DPNG_LIBRARY_RELEASE=${MY_WT_PREFIX}/lib/libpng.a -DPNG_PNG_INCLUDE_DIR=${MY_WT_PREFIX}/include -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
+cmake -DLIBHPDF_SHARED=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="10.13" -DPNG_LIBRARY_RELEASE= -DPNG_LIBRARY_RELEASE=${MY_WT_PREFIX}/lib/libpng.a -DPNG_PNG_INCLUDE_DIR=${MY_WT_PREFIX}/include -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
 make -j10 install
 cd ../..
 ```
@@ -107,7 +107,7 @@ patch -u src/Wt/Render/CssParser.C -i ${PATCH_DIR}/wt/3.7.1/CssParser.C.patch
 mkdir build
 cd build
 
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DBoost_INCLUDE_DIR=${MY_WT_PREFIX}/include -DBOOST_PREFIX=${MY_WT_PREFIX} -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DHARU_PREFIX=${MY_WT_PREFIX} -DHARU_LIB=${MY_WT_PREFIX}/lib/libhpdfs.a -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++14" -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR=${MY_WT_PREFIX}/etc/wt -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="10.13" -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DBoost_INCLUDE_DIR=${MY_WT_PREFIX}/include -DBOOST_PREFIX=${MY_WT_PREFIX} -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DHARU_PREFIX=${MY_WT_PREFIX} -DHARU_LIB=${MY_WT_PREFIX}/lib/libhpdfs.a -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++14" -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR=${MY_WT_PREFIX}/etc/wt -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
 make -j10 install
 ```
 
@@ -145,9 +145,25 @@ cd ceres-solver-2.1.0
 mkdir build_macos
 cd build_macos
 
-cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
+cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DCMAKE_OSX_DEPLOYMENT_TARGET="10.13" -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
 cmake --build . --config Release --target install -j 16
 cd ../..
+```
+
+## Build wxWidgets (very optional)
+wxWidgets for macOS is only for development purposes
+```bash
+mkdir wxWidgets-3.2.1
+cd wxWidgets-3.2.1
+curl -L https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.1/wxWidgets-3.2.1.zip --output wxWidgets-3.2.1.zip
+tar -xzvf wxWidgets-3.2.1.zip
+
+
+mkdir build_macOS && cd build_macOS
+# TODO: we could/should turn off a lot of wxWidgets components
+#  Untested of both arm and x64 architectures are build
+cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DCMAKE_OSX_DEPLOYMENT_TARGET="10.13" -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DwxBUILD_SHARED=OFF -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
+cmake --build . --config Release --target install -j10
 ```
 
 ## Build InterSpec to run on localhost
@@ -156,7 +172,7 @@ This is most useful for development.
 cd ${PATCH_DIR}/../..
 mkdir build_xcode
 cd build_xcode
-cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX}  -DTRY_TO_STATIC_LINK=ON -DUSE_SPECRUM_FILE_QUERY_WIDGET=ON -DUSE_TERMINAL_WIDGET=ON -G Xcode ..
+cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DCMAKE_OSX_DEPLOYMENT_TARGET="10.13" -DTRY_TO_STATIC_LINK=ON -DUSE_SPECRUM_FILE_QUERY_WIDGET=ON -DUSE_TERMINAL_WIDGET=ON -G Xcode ..
 
 # Debug builds reference '/external_libs/SpecUtils/d3_resources/d3.min.js'
 # and similar for SpectrumChartD3.js/.css, so we can edit the files under

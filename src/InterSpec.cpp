@@ -5476,10 +5476,16 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   }//for( loop over spectrums )
   
   m_fileMenuPopup->setItemHidden(m_downloadMenu->parentItem(),true); //set as hidden first, will be visible when spectrum is added
-#elif( IOS )
+#elif( IOS ) // #if( USE_SAVEAS_FROM_MENU )
   PopupDivMenuItem *exportFile = m_fileMenuPopup->addMenuItem( "Export Spectrum..." );
   exportFile->triggered().connect( this, &InterSpec::exportSpecFile );
-#else
+
+#if( USE_QR_CODES )
+  PopupDivMenuItem *makeQr = m_fileMenuPopup->addMenuItem( "Spectrum as QR-code" );
+  makeQr->triggered().connect( boost::bind( &SpecMeasManager::displaySpectrumQrCode, m_fileManager, SpecUtils::SpectrumType::Foreground ) );
+#endif
+  
+#else        // #if( USE_SAVEAS_FROM_MENU ) / else IOS
   item = m_fileMenuPopup->addMenuItem( "Export..." );
   item->triggered().connect( m_fileManager, &SpecMeasManager::displayQuickSaveAsDialog );
 #endif //#if( USE_SAVEAS_FROM_MENU )
@@ -9001,7 +9007,7 @@ void printGeoLocationJson( std::shared_ptr<const SpecMeas> meas )
     {
       const auto duration = start_times_offset - meas_start_time;
       const auto millisecs = chrono::duration_cast<chrono::milliseconds>(duration);
-      sample_json["timeOffset"] = millisecs.count();
+      sample_json["timeOffset"] = static_cast<long long int>( millisecs.count() );
     }//if( SpecUtils::is_special(meas_start_time) )
     
     sample_json["nGDet"] = numGammaDet;
@@ -9035,7 +9041,7 @@ void printGeoLocationJson( std::shared_ptr<const SpecMeas> meas )
   {
     const auto dur = start_times_offset.time_since_epoch();
     const auto millisecs = chrono::duration_cast<chrono::milliseconds>(dur);
-    json["startTime"] = millisecs.count();
+    json["startTime"] = static_cast<long long int>( millisecs.count() );
   }//if( !SpecUtils::is_special(start_times_offset) )
   
   json["samples"] = samplesData;

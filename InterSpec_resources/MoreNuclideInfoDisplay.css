@@ -11,7 +11,7 @@
 
 .MoreNuclideInfoDisplay a
 {
-  color: blue;
+  /* color: blue; */
   cursor: pointer;
 } 
 
@@ -39,6 +39,7 @@
   margin-top: 5px;
   margin-bottom: 10px;
 }
+
 
 .MoreNuclideInfoDisplay .MoreNucInfoSection .MoreNucInfoSubTitle
 {
@@ -84,24 +85,24 @@
 }
 
 /* Render unordered lists as CSV lines - this is for the associated nuclides list */
-.MoreNuclideInfoDisplay ul
+.MoreNuclideInfoDisplay ul.MoreNucInfoRelated
 {
   display: inline;
   list-style: none;
   padding-inline-start: 0px;
 }
 
-.MoreNuclideInfoDisplay ul > li
+.MoreNuclideInfoDisplay ul.MoreNucInfoRelated > li
 {
   display: inline;
 }
 
-.MoreNuclideInfoDisplay ul > li:after
+.MoreNuclideInfoDisplay ul.MoreNucInfoRelated > li:after
 {
   content: ", ";
 }
 
-.MoreNuclideInfoDisplay ul > li:last-child:after
+.MoreNuclideInfoDisplay ul.MoreNucInfoRelated > li:last-child:after
 {
   content: "";
 }
@@ -119,13 +120,36 @@
   margin-block-start: 0px;
 }
 
-.MoreNuclideInfoDisplay button.with-label.Wt-btn.LightButton
+.MoreNuclideInfoDisplay button.with-label.Wt-btn.LightButton,
+.MoreNuclideInfoDisplay a
 {
-  color: blue;
+  color: rgb(18,101,200);
 }
+
+.MoreNuclideInfoDisplay button.with-label.Wt-btn.LightButton:hover,
+.MoreNuclideInfoDisplay a:hover
+{
+  color: rgb(99, 161, 236);
+}
+
 
 .MoreNuclideInfoDisplay button.DecayBtn
 {
   margin-top: 5px;
   margin-left: 15px;
+}
+
+
+/* This is each paragraph within analyst notes; i.e., where there was more than one blank lines
+ between writing in more_nuclide_info.xml
+ */
+.MoreNuclideInfoDisplay .MoreNucInfoSection .MoreNucInfoSubSec
+{
+  margin-top: 5px;
+  margin-bottom: 10px;
+}
+
+.MoreNuclideInfoDisplay .MoreNucInfoSection .MoreNucInfoSubSec > ul
+{
+  margin-block-start: 2px;
 }
