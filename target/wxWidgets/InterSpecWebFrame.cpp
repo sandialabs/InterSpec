@@ -261,10 +261,13 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   wxString user_agent = "Mozilla / 5.0 (Windows NT 10.0; Win64; x64) AppleWebKit / 537.36 (KHTML, like Gecko) Chrome / 106.0.0.0 Safari / 537.36";
 
 #ifdef __VISUALC__
+  // TODO: add command line switch for not disabling proxy; maybe look for a settings file in user data directory
+  // 
+  // 
   // If the users computer is configured to use a proxy, or auto-detect a proxy, the initial load may
   //  take quite a while, especially if they arent on a proxy (I'm guessing for things to time out).  
-  // However, all content is local, (the exception to this is the google maps feature, which currently 
-  // isnt supported) so we never need a proxy, so we'll just not use one.
+  // However, all content is local, (the exception to this is the maps feature is used) 
+  // so we never need a proxy, so we'll just not use one.
   // To achieve this, we'll hijack the user agent string, becuase in the wxWidgets source file webview_edge.cpp,
   // the user agent is set via:
   //   options->put_AdditionalBrowserArguments( wxString::Format("--user-agent=\"%s\"", m_customUserAgent).wc_str());
@@ -273,6 +276,11 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   
   // I briefly tried using a proxy bypass list, but it didnt seem to work.
   //user_agent += "\" --proxy-bypass-list=\"127.0.0.1;localhost\"";
+  //user_agent += "\" --proxy-bypass-list=\"" + m_url + ",127.0.0.1:*,localhost,localhost:*\"";
+  //std::string bypassurl = m_url;
+  //if( SpecUtils::istarts_with( bypassurl, "http://" ) )
+  //  bypassurl = bypassurl.substr( 7 );
+  //user_agent += "\" --proxy-bypass-list=\"" + bypassurl + ";" + m_url + ";127.0.0.1:*;127.0.0.1;http://127.0.0.1;localhost;http://127.0.0.1;localhost:*;*.microsoft.com\"";
   //user_agent += "\" --proxy-auto-detect --proxy-bypass-list=\"127.0.0.1;localhost\"";
   //user_agent += "\" --proxy-server=direct://"; //not tested
   //user_agent += "\" --proxy-pac-url=..."; //not tested
