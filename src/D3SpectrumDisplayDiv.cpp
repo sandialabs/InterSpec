@@ -99,9 +99,9 @@ namespace
 
 WT_DECLARE_WT_MEMBER
 (SvgToImgDownload, Wt::JavaScriptFunction, "SvgToImgDownload",
- function(chart,filename,asPng,toClipboard)
+ function(chart,filename,asPng)
 {
-  // TODO: look at being able to copy to the pasteboard; looks doable.
+  // To copy to the pasteboard, and use the Clipboard API, an https connection is required, so we would have to send the image blob back to C++-land, and then put it in the clipboard there; see git commit 0db92a30928a3d8 for the sketched out Clipboard API try.
   try
   {
     // 'chart' is the JS SpectrumChartD3 object
@@ -126,30 +126,8 @@ WT_DECLARE_WT_MEMBER
       }
     };// function simulateClick()
     
-    function copyToCliboard( blob, format ){
-      // This function only works for https connections, which we dont use for desktop...
-      const root = document.querySelector('.Wt-domRoot');
-      try{
-        // This method does not work with FireFox
-        const mime = 'image/' + format;
-        navigator.clipboard.write([ new ClipboardItem({ mime : blob }) ]);
-        Wt.emit( root.id, {name: 'miscSignal'}, 'showMsg-info-Copied ' + format + ' to clipboard' );
-      }catch( error ) {
-        console.error( error );
-        const message = format + ' to clipboard: ' + error.name + ': ' + error.message;
-        Wt.emit(root.id, {name: 'miscSignal'}, 'showMsg-info-Failed to copy ' + message );
-      }
-      return;
-    };//function copyToCliboard(...)
-    
-    
     if( !asPng )
     {
-      if( toClipboard ){
-        copyToCliboard( svgMarkup, "svg+xml" );
-        return;
-      }//if( toClipboard )
-      
       var dl = document.createElement("a");
       document.body.appendChild(dl);
       dl.target = "_blank";
@@ -194,20 +172,11 @@ WT_DECLARE_WT_MEMBER
         ctx.drawImage(img, 0, 0);
         window.URL.revokeObjectURL(url);
       
-        if( toClipboard ){
-          canvas.toBlob( function(blob){
-            canvas.remove();
-            copyToCliboard( blob, 'png' );
-          } );
-          
-          return;
-        }//if( toClipboard )
-          
         var dt = canvas.toDataURL('image/png');
         dt = dt.replace(/^data:image\\/[^;]*/, 'data:application/octet-stream');
         dt = dt.replace(/^data:application\\/octet-stream/, 'data:application/octet-stream;headers=Content-Disposition%3A%20attachment%3B%20filename='+filename);
         canvas.remove();
-        
+      
         var link = document.createElement("a");
         link.style.display = "none";
         document.body.appendChild(link);
@@ -1605,7 +1574,7 @@ void D3SpectrumDisplayDiv::saveChartToImg( const std::string &filename, const bo
   
   if( isRendered() )
     doJavaScript( "Wt.WT.SvgToImgDownload(" + m_jsgraph + ",'" + filename + "', "
-                  + string(asPng ? "true" : "false") + ", true);" );
+                  + string(asPng ? "true" : "false") + ");" );
 }//void saveChartToPng( const std::string &name )
 
 
