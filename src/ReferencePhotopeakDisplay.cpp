@@ -278,7 +278,7 @@ namespace
       }//switch( refinfo.m_source_type )
       
       
-      boost::function<double(float)> att_fcn = refinfo.m_input.m_shielding_att;
+      std::function<double( float )> att_fcn = refinfo.m_input.m_shielding_att;
       
       try
       {
@@ -318,7 +318,9 @@ namespace
           assert( refinfo.m_input.m_shielding_an.empty() );
           assert( refinfo.m_input.m_shielding_ad.empty() );
           assert( refinfo.m_input.m_shielding_name.empty() );
-          assert( refinfo.m_input.m_shielding_thickness.empty() );
+          
+          // We may have a shielding thickness, but no material
+          //assert( refinfo.m_input.m_shielding_thickness.empty() );
           
           out << "Shielding,None" << eol_char;
         }//
