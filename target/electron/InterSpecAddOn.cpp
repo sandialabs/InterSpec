@@ -172,10 +172,10 @@ namespace InterSpecAddOn
   {
     Napi::Env env = info.Env();
 
-    if( info.Length() < 4 || !info[0].IsString() || !info[1].IsString() 
-        || !info[2].IsString() || !info[3].IsString() ) 
+    if( info.Length() < 5 || !info[0].IsString() || !info[1].IsString() 
+        || !info[2].IsString() || !info[3].IsString() || !info[4].IsNumber() ) 
     {
-      Napi::TypeError::New(env, "startServingInterSpec: Expected 4 strings").ThrowAsJavaScriptException();
+      Napi::TypeError::New(env, "startServingInterSpec: Expected 4 strings and one short in port numbers").ThrowAsJavaScriptException();
       return Napi::Number();
     } 
 
@@ -183,9 +183,16 @@ namespace InterSpecAddOn
     std::string userdatadir = info[1].ToString();
     std::string basedir = info[2].ToString();
     std::string xml_config_path = info[3].ToString();
+    int32_t server_port_num = info[4].ToNumber().Int32Value();
+    if( server_port_num < 0 || server_port_num > std::numeric_limits<short int>::max() )
+    {
+      Napi::TypeError::New(env, "startServingInterSpec: port number out of range.").ThrowAsJavaScriptException();
+      return Napi::Number();
+    }
 
     int serverPort = interspec_start_server( process_name.c_str(), userdatadir.c_str(), 
-                                             basedir.c_str(), xml_config_path.c_str() );
+                                             basedir.c_str(), xml_config_path.c_str(),
+                                             static_cast<unsigned short int>(server_port_num) );
 
     if( serverPort <= 0 )
     {

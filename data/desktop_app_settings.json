@@ -1,0 +1,13 @@
+{
+  "ProxySetting": "",
+  "ProxySettingDocumentation": "Only applicable to Windows and Linux builds. Valid values are: empty (default), 'direct', 'auto_detect', 'system'; any other string will be interpreted as the 'proxyRules' setting documented at https://www.electronjs.org/docs/latest/api/session#sessetproxyconfig (an value might be 'http=proxy.somecompany.com:80,direct://'). This setting is only applicable if you use the map tool (the only part of InterSpec to use the internet); if map tiles wont load, and you are behind a proxy, you may need to set this setting; usually a value of 'system' will work.  If you set this settting, and you are not behind a proxy, InterSpec startup time may hang for ~30 seconds, usually with a white screen, while a proxy request times out.",
+  
+  "HttpPortToServeOn": 0,
+  "HttpPortToServeOnDocumentation": "The HTTP port to serve the application on; if zero (recomended!), will choose random port on startup.  Otherwise choose a port larger than 1024 (e.x., 8080) since ports below this may require admin privledges (never run InterSpec as admin!).",
+
+  "AllowTokenFreeSessions": false,
+  "AllowTokenFreeSessionsDocumentation": "Normally external sessions (i.e. 'View' -> 'Use in external browser') get assigned a one-time-use token that is required to load InterSpec into the browser.  Without a valid token, you cant load a session in the browser.  If you allow external sessions without tokens, then the token wont be needed - and any application that can access your localhost network can create a session and potentually access your data.  It is not recomended to to enable this setting.",
+
+  "OpenDevTools": false,
+  "OpenDevToolsDocumentation": "Opens the Chrome Dev Tools to allow debugging JavaScript errors you may run into (please report to InterSpec@sandia.gov if you dfind any)" 
+}

@@ -49,13 +49,14 @@ extern "C"
    All input paths should be UTF-8.
    \param basedir has only been tested to be a directory relative to CWD, i.e, "."
    \param xml_config_path has only been tested to be a directory relative to CWD, i.e, "./data/config/wt_config_electron.xml"
-   
+   \param server_port_num Port number to serve on; if 0, a random high-number port will be chosen
    ToDo: Make sure basedir and xml_config_path all work okay on Windows - maybe consider making them relative (in the JS probably)
    */
   LIB_INTERFACE(int) interspec_start_server( const char *process_name,
                                             const char *user_data_dir,
                                             const char *basedir,
-                                            const char *xml_config_path );
+                                            const char *xml_config_path,
+                                            const unsigned short int server_port_num );
   
   /** ToDo: also remove all session tokens
    */

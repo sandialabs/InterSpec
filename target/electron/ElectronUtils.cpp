@@ -247,9 +247,10 @@ bool browse_for_directory( const std::string &window_title,
 
 
 int interspec_start_server( const char *process_name, const char *userdatadir,
-                            const char *basedir, const char *xml_config_path )
+                            const char *basedir, const char *xml_config_path,
+                            const unsigned short int server_port_num )
 {
-  return InterSpecServer::start_server( process_name, userdatadir, basedir, xml_config_path );
+  return InterSpecServer::start_server( process_name, userdatadir, basedir, xml_config_path, server_port_num );
 }//int interspec_start_server( int argc, char *argv[] )
 
 
