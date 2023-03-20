@@ -350,6 +350,7 @@ function get_interspec_options(){
   const settings = {
     proxy: "",
     httpPort: 0,
+    restoreSession: true,
     requireToken: true,
     openDevTools: false
   };
@@ -371,6 +372,12 @@ function get_interspec_options(){
         if( !Number.isInteger(config.HttpPortToServeOn) || (config.HttpPortToServeOn < 0) )
           throw new Error("HttpPortToServeOn must be a non-negative integer");
         settings.httpPort = config.HttpPortToServeOn;
+      }
+
+      if( config.hasOwnProperty('RestorePreviousSession') ){
+        if( typeof config.RestorePreviousSession !== "boolean" )
+          throw new Error("RestorePreviousSession must be boolean");
+        settings.restoreSession = !config.RestorePreviousSession;
       }
 
       if( config.hasOwnProperty('AllowTokenFreeSessions') ){
@@ -395,7 +402,7 @@ function get_interspec_options(){
   const app_settings_file = path.join(userdata, "InterSpec_app_settings.json");
 
   const basedir = path.relative( process.cwd(), path.dirname(require.main.filename) );
-  const user_settings_file = path.join(basedir, "data/desktop_app_settings.json");
+  const user_settings_file = path.join(basedir, "data/config/InterSpec_app_settings.json");
   
   getOptionsFromFile( app_settings_file )
   getOptionsFromFile( user_settings_file );
@@ -565,7 +572,7 @@ function createWindow() {
       //Actually should use nativeTheme.shouldUseDarkColors
       //  see https://github.com/electron/electron/blob/master/docs/api/native-theme.md#nativethemeshouldusedarkcolors-readonly
       
-      if( !allowRestore )
+      if( !allowRestore || !app_options.restoreSession )
         url_to_load += "&restore=no";
       
       console.log('Will Load ' + url_to_load);
@@ -1035,7 +1042,7 @@ app.on('ready', function(){
   console.log( 'process.cwd()="' + process.cwd() + '"');
   console.log( 'path.dirname(require.main.filename)="' + path.dirname(require.main.filename) + '"');
   console.log( 'basedir="' + basedir + '"');
-
+  
   interspec.setRequireSessionToken( app_options.requireToken );
   interspec.setMessageToNodeJsCallback( messageToNodeJs );
   interspec.setBrowseForDirectoryCallback( browseForDirectory );

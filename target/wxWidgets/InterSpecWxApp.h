@@ -63,6 +63,16 @@ public:
 
   static void handle_javascript_error( const std::string error_msg, const std::string app_token );
 
+  /* Some function to retireive app-level config settings. 
+  Not valid until OnInit() has been called.
+  Also, should probably only be called from the wxWidgets main thread.
+  */
+  static const std::string &proxy_config();
+  static bool try_restore_session();
+  static bool require_session_token();
+  static bool open_dev_console();
+  static unsigned short int server_port();
+  
 private:
   /** Checks if any other instances of the app are running, and
    if so, messages them about what file(s) to open.

@@ -60,7 +60,7 @@
 
 #if wxUSE_WEBVIEW_EDGE
 #include "wx/msw/webview_edge.h"
-//#include <WebView2.h> // currently dont have this in our include path.
+//#include <WebView2.h> // causes some compilation errors (also copying this file into include path was a manual step in buildng wxWidgets)
 #else
 #error "Must use Edge web-view for compiling on windows"
 #endif
@@ -246,6 +246,7 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   // Create the webview
   m_browser = wxWebView::New();
   
+  wxLogMessage( "URL: " + m_url );
 
   wxString app_url = m_url + "?apptoken=" + m_token;
 
@@ -253,7 +254,7 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   //wxLogMessage("Not restoring state for debug purposes" );
   //app_url += "&restore=no";
 
-  if (no_restore)
+  if( no_restore )
     app_url += "&restore=no";
 
   // The user agent isnt terrible important for us, so we'll just use a default Chrome one on windows
@@ -261,49 +262,68 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   wxString user_agent = "Mozilla / 5.0 (Windows NT 10.0; Win64; x64) AppleWebKit / 537.36 (KHTML, like Gecko) Chrome / 106.0.0.0 Safari / 537.36";
 
 #ifdef __VISUALC__
-  // TODO: add command line switch for not disabling proxy; maybe look for a settings file in user data directory
-  // 
-  // 
   // If the users computer is configured to use a proxy, or auto-detect a proxy, the initial load may
   //  take quite a while, especially if they arent on a proxy (I'm guessing for things to time out).  
   // However, all content is local, (the exception to this is the maps feature is used) 
-  // so we never need a proxy, so we'll just not use one.
+  // so we never need a proxy, so we'll just not use one, by default - but let the user specify one in the 
+  // InterSpec_app_settings.json file.
   // To achieve this, we'll hijack the user agent string, becuase in the wxWidgets source file webview_edge.cpp,
   // the user agent is set via:
   //   options->put_AdditionalBrowserArguments( wxString::Format("--user-agent=\"%s\"", m_customUserAgent).wc_str());
   // So we'll just hijack the quotes, since I dont see another way to set browser arguments.
-  user_agent += "\" --no-proxy-server";
-  
-  // I briefly tried using a proxy bypass list, but it didnt seem to work.
-  //user_agent += "\" --proxy-bypass-list=\"127.0.0.1;localhost\"";
-  //user_agent += "\" --proxy-bypass-list=\"" + m_url + ",127.0.0.1:*,localhost,localhost:*\"";
-  //std::string bypassurl = m_url;
-  //if( SpecUtils::istarts_with( bypassurl, "http://" ) )
-  //  bypassurl = bypassurl.substr( 7 );
-  //user_agent += "\" --proxy-bypass-list=\"" + bypassurl + ";" + m_url + ";127.0.0.1:*;127.0.0.1;http://127.0.0.1;localhost;http://127.0.0.1;localhost:*;*.microsoft.com\"";
-  //user_agent += "\" --proxy-auto-detect --proxy-bypass-list=\"127.0.0.1;localhost\"";
-  //user_agent += "\" --proxy-server=direct://"; //not tested
-  //user_agent += "\" --proxy-pac-url=..."; //not tested
-#endif
+  user_agent += "\"";
 
+  // See https://learn.microsoft.com/en-us/deployedge/edge-learnmore-cmdline-options-proxy-settings#command-line-options-for-proxy-settings
+  //  for documentation on specifying proxies
+
+  //m_url will look something like "http://127.0.0.1:55793"
+  std::string bypassurl = m_url;
+  if( SpecUtils::istarts_with( bypassurl, "http://" ) )
+    bypassurl = bypassurl.substr( 7 );
+
+  bypassurl = " --proxy-bypass-list=\"" + bypassurl 
+    // We dont any of the following URLs, but throwing them in for the moment just to be really sure.
+    + ";" + m_url
+    + ";127.0.0.1:" + std::to_string( InterSpecWxApp::server_port() )
+    + ";http://127.0.0.1:" + std::to_string( InterSpecWxApp::server_port() )
+    + ";localhost;localhost:*;local;127.0.0.1:*;127.0.0.1;http://127.0.0.1;http://127.0.0.1:*"
+    + "\"";
+
+  user_agent += bypassurl;
+
+  const std::string &proxy_config = InterSpecWxApp::proxy_config();
+ 
+  if( proxy_config.empty() || SpecUtils::iequals_ascii( proxy_config, "none") )
+  {
+    user_agent += " --no-proxy-server";
+    wxLogMessage( "Setting option --no-proxy-server" );
+  }else if( SpecUtils::iequals_ascii( proxy_config, "direct" ) )
+  {
+    user_agent += " --proxy-server=\"direct://\"";
+    wxLogMessage( "Setting option --proxy-server=\"direct://\"" );
+  }else if( SpecUtils::iequals_ascii( proxy_config, "auto_detect" ) )
+  {
+    user_agent += " --proxy-auto-detect";
+    wxLogMessage( "Setting option --proxy-auto-detect" );
+  }else if( SpecUtils::iequals_ascii( proxy_config, "system" ) )
+  {
+    // From URL above: "The Microsoft Edge network stack uses the system
+    //   network settings by default."
+    wxLogMessage( "Setting option to use system proxy" );
+  }else 
+  {
+    std::string rule = proxy_config;
+    SpecUtils::ireplace_all( rule, "\"", "" );
+    SpecUtils::ireplace_all( rule, "'", "" );
+    user_agent += " --proxy-server=\"" + rule + "\"";
+    wxLogMessage( "Setting option --proxy-server=\"%s\"", rule.c_str() );
+  }
+#endif
 
   m_browser->SetUserAgent(user_agent);
 
-
   m_browser->Create(this, wxID_ANY, app_url, wxDefaultPosition, wxDefaultSize);
   topsizer->Add(m_browser, wxSizerFlags().Expand().Proportion(1));
-
-
-#if wxUSE_WEBVIEW_EDGE
-  //  IF we wanted further customizations, we could do something like the below:
-  //wxWebViewEdge* edgeWebView = dynamic_cast<wxWebViewEdge*>(m_browser);
-  //if(edgeWebView)
-  //{
-  //  ICoreWebView2 *native_backend = (ICoreWebView2 *)m_browser->GetNativeBackend();
-  //  auto newer_api_backend = dynamic_cast<ICoreWebView2_12 *>(native_backend);
-  //  ...
-  //}
-#endif
 
   
   // Log backend information
@@ -351,17 +371,31 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   SetSize( wxSize( static_cast<int>(ww), static_cast<int>(wh)) );
   SetPosition( wxPoint(static_cast<int>(wx), static_cast<int>(wy)) );
     
+  
 #ifdef NDEBUG
-  m_browser->EnableContextMenu( false );
-  m_browser->EnableAccessToDevTools( false );
+    const bool allowDevTool = (false || InterSpecWxApp::open_dev_console());
 #else
-  // Allow the right-click context menu on web page contents
-  m_browser->EnableContextMenu(true);
-
-  // Enable the "Inspect" option in the right-click context menu
-  m_browser->EnableAccessToDevTools(true);
+    const bool allowDevTool = true;
 #endif
 
+
+  // Allow the right-click context menu on web page contents
+  m_browser->EnableContextMenu( allowDevTool );
+  
+  // Enable the "Inspect" option in the right-click context menu
+  m_browser->EnableAccessToDevTools( allowDevTool );
+
+#if wxUSE_WEBVIEW_EDGE
+  //wxWebViewEdge* edgeWebView = dynamic_cast<wxWebViewEdge*>(m_browser);
+  //if( edgeWebView )
+  //{
+  //  ICoreWebView2 *native_backend = (ICoreWebView2 *)m_browser->GetNativeBackend();
+  //  if( InterSpecWxApp::open_dev_console() ) native_backend->OpenDevToolsWindow();
+  //  auto newer_api_backend = dynamic_cast<ICoreWebView2_12 *>(native_backend);
+  //  ...
+  //}
+#endif
+    
   //wxString customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 13_1_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.1 Mobile/15E148 Safari/604.1";
   //if (!m_browser->SetUserAgent(customUserAgent))
   //  wxLogError("Could not set custom user agent");

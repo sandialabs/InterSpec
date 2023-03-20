@@ -897,5 +897,127 @@ std::string file_to_open_on_load( const std::string &session_token )
   return pos->second.initial_file_to_open;
 }//file_to_open_on_load(...)
 
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
+
+  
+
+  DesktopAppConfig::DesktopAppConfig()
+    :
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
+    m_proxy{},
+#endif
+    m_http_port( 0 ),
+    m_require_token( true ),
+    m_allow_restore( true ),
+    m_open_dev_tools( true )
+  {
+  }
+
+  DesktopAppConfig DesktopAppConfig::init( const string &app_data_dir, 
+                                           const string &user_data_dir )
+  {
+    DesktopAppConfig config;
+
+    const string file_name = "InterSpec_app_settings.json";
+
+    // lamda function which will update `config` with just the properties
+    //  a file has in it.  If file not present, just returns.  Throws
+    //  exception if JSON invalid, or data type is incorrect.
+    auto update_config_from_json_file = [&config]( const string &filename ){
+      std::ifstream infile( filename.c_str(), ios::in | ios::binary );
+      if( !infile )
+        return;
+
+      infile.seekg( 0, std::ios::end );
+      const size_t len = infile.tellg();
+      std::string json( len, ' ' );
+      infile.seekg( 0 );
+      infile.read( &json[0], len );
+
+      Wt::Json::Value baseValue;
+      try
+      {
+        Wt::Json::parse( json, baseValue );  //Throws ParseError on failure
+      } catch( Wt::Json::ParseError &e )
+      {
+        throw runtime_error( "Invalid JSON: " + string( e.what() ) );
+      }
+
+      Wt::Json::Object &base = baseValue;
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
+      if( base.contains( "ProxySetting" ) )
+      {
+        const Wt::Json::Value &val = base.get( "ProxySetting" );
+        if( val.type() != Wt::Json::Type::StringType )
+          throw runtime_error( "ProxySetting must be a string value" );
+        config.m_proxy = val.toString();
+      }
+#endif
+
+      if( base.contains( "HttpPortToServeOn" ) )
+      {
+        const Wt::Json::Value &val = base.get( "HttpPortToServeOn" );
+        if( val.type() != Wt::Json::Type::NumberType )
+          throw runtime_error( "HttpPortToServeOn must be a non-negative integer" );
+        const int port = val.toNumber().orIfNull( 0 );
+        if( (port < 0) || (port > std::numeric_limits<unsigned short int>::max()) )
+          throw runtime_error( "HttpPortToServeOn out of range" );
+
+        config.m_http_port = static_cast<unsigned short int>(port);
+      }
+
+      if( base.contains( "AllowTokenFreeSessions" ) )
+      {
+        const Wt::Json::Value &val = base.get( "AllowTokenFreeSessions" );
+        if( val.type() != Wt::Json::Type::BoolType )
+          throw runtime_error( "AllowTokenFreeSessions must be boolean" );
+       
+        config.m_require_token = !val.toBool();
+      }
+
+      if( base.contains( "RestorePreviousSession" ) )
+      {
+        const Wt::Json::Value &val = base.get( "RestorePreviousSession" );
+        if( val.type() != Wt::Json::Type::BoolType )
+          throw runtime_error( "RestorePreviousSession must be boolean" );
+
+        config.m_allow_restore = val.toBool();
+      }
+
+      if( base.contains( "OpenDevTools" ) )
+      {
+        const Wt::Json::Value &val = base.get( "OpenDevTools" );
+        if( val.type() != Wt::Json::Type::BoolType )
+          throw runtime_error( "OpenDevTools must be boolean" );
+
+        config.m_open_dev_tools = val.toBool();
+      }
+    };// update_config_from_json_file lamda
+
+
+    if( !app_data_dir.empty() )
+    {
+      const string app_file = SpecUtils::append_path( app_data_dir, "config/InterSpec_app_settings.json" );
+      update_config_from_json_file( app_file );
+    }
+
+    if( !app_data_dir.empty() )
+    {
+      const string app_file = SpecUtils::append_path( SpecUtils::append_path(app_data_dir, "config"), file_name );
+      update_config_from_json_file( app_file );
+    }
+
+    if( !user_data_dir.empty() )
+    {
+      const string user_file = SpecUtils::append_path( user_data_dir, file_name );
+      update_config_from_json_file( user_file );
+    }
+      
+    return config;
+  }//
+#endif
+
 }//namespace InterSpecServer
 
