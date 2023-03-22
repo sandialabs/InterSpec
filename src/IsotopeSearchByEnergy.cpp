@@ -70,6 +70,37 @@ const int IsotopeSearchByEnergy::sm_xmlSerializationVersion = 0;
 namespace
 {
   const WString ActiveSearchEnergyClass = "ActiveSearchEnergy";
+  
+  /** Returns peaks that were likely used to enter serach energies from. */
+  vector<PeakModel::PeakShrdPtr> peaks_searched( const PeakModel * const pmodel,
+                                                 const vector<IsotopeSearchByEnergy::SearchEnergy *> &searches )
+  {
+    if( !pmodel )
+      return {};
+    
+    set<PeakModel::PeakShrdPtr> peaks;
+    for( const IsotopeSearchByEnergy::SearchEnergy *search : searches )
+    {
+      const double energy = search->energy();
+      const double window = search->window();
+      
+      PeakModel::PeakShrdPtr peak = pmodel->nearestPeak( energy );
+      if( !peak )
+        continue;
+      
+      const double mean = peak->mean();
+      const double fwhm = peak->fwhm();
+      const double diff = fabs( mean - energy );
+      
+      if( (diff < 0.5*fwhm) && (diff < window) )
+        peaks.insert( peak );
+    }//for( SearchEnergy *search : searches() )
+    
+    vector<PeakModel::PeakShrdPtr> answer( begin(peaks), end(peaks) );
+    std::sort( begin(answer), end(answer),  &PeakDef::lessThanByMeanShrdPtr );
+    
+    return answer;
+  }//peaks_searched()
 }//namespace
 
 
@@ -241,6 +272,8 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_viewer( viewer ),
   m_chart( chart ),
   m_searchEnergies( NULL ),
+  m_clearRefLines( nullptr ),
+  m_assignPeakToSelected( nullptr ),
   m_currentSearch( 0 ),
   m_searching( NULL ),
   m_results( NULL ),
@@ -263,6 +296,19 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_searchEnergies = new WContainerWidget( searchConditions );
   m_searchEnergies->setStyleClass( "IsotopeSearchEnergies" );
   
+  WContainerWidget *assignRow = new WContainerWidget( searchConditions );
+  assignRow->addStyleClass( "AssignToSelectedRow" );
+  
+  m_clearRefLines = new WPushButton( "Clear Ref. Photopeaks", assignRow );
+  m_clearRefLines->addStyleClass( "LightButton" );
+  m_clearRefLines->clicked().connect( this, &IsotopeSearchByEnergy::clearSelectionAndRefLines );
+  m_clearRefLines->hide();
+  
+  
+  m_assignPeakToSelected = new WPushButton( "&nbsp;", assignRow ); //Space is needed so Wt will add the ".with-label" style class
+  m_assignPeakToSelected->addStyleClass( "LightButton" );
+  m_assignPeakToSelected->clicked().connect( this, &IsotopeSearchByEnergy::assignPeaksToSelectedNuclide );
+  m_assignPeakToSelected->hide();
   
   WContainerWidget *sourceTypes = new WContainerWidget( searchConditions );
   sourceTypes->setStyleClass( "IsotopeSourceTypes" );
@@ -405,7 +451,6 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_results->setSelectionBehavior( Wt::SelectRows );
   m_results->selectionChanged().connect( this, &IsotopeSearchByEnergy::resultSelectionChanged );
   
-  
   m_searching = new WText( "Searching", this );
   m_searching->addStyleClass( "IsotopeSearchInProgress" );
   m_searching->setInline( false );
@@ -425,6 +470,19 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
 
 
   minBrOrHlChanged();
+  
+  // During normal desktop construction of this widget, the ReferencePhotopeakDisplay is still
+  //  nullptr at this point, but we'll check here, JIC
+  updateClearSelectionButton();
+  
+  ReferencePhotopeakDisplay *display = m_viewer ? m_viewer->referenceLinesWidget() : nullptr;
+  if( display )
+  {
+    m_refLineUpdateConnection
+      = display->displayingNuclide().connect( this, &IsotopeSearchByEnergy::updateClearSelectionButton );
+    m_refLineClearConnection
+      = display->nuclidesCleared().connect( this, &IsotopeSearchByEnergy::updateClearSelectionButton );
+  }//if( display )
 }//IsotopeSearchByEnergy constuctor
 
 
@@ -510,6 +568,8 @@ vector<IsotopeSearchByEnergy::SearchEnergy *> IsotopeSearchByEnergy::searches()
 
 void IsotopeSearchByEnergy::loadSearchEnergiesToClient()
 {
+  // We get here when user changes the current tools tab to this tool
+  
   vector<pair<double,double>> searchRegions;
   
   for( auto sw : searches() )
@@ -519,6 +579,21 @@ void IsotopeSearchByEnergy::loadSearchEnergiesToClient()
   }
   
   m_chart->setSearchEnergies( searchRegions );
+  
+  // Update the "Clear Ref. Lines" button
+  updateClearSelectionButton();
+  
+  // Listen for changes to display reference lines, and update "Clear Ref. Lines" button for those
+  ReferencePhotopeakDisplay *display = m_viewer ? m_viewer->referenceLinesWidget() : nullptr;
+  if( display )
+  {
+    if( !m_refLineUpdateConnection.connected() )
+      m_refLineUpdateConnection
+        = display->displayingNuclide().connect( this, &IsotopeSearchByEnergy::updateClearSelectionButton );
+    if( !m_refLineClearConnection.connected() )
+      m_refLineClearConnection
+        = display->nuclidesCleared().connect( this, &IsotopeSearchByEnergy::updateClearSelectionButton );
+  }//if( display )
 }//void loadSearchEnergiesToClient()
 
 
@@ -535,7 +610,14 @@ Wt::SortOrder IsotopeSearchByEnergyModel::sortOrder() const
 
 void IsotopeSearchByEnergy::clearSearchEnergiesOnClient()
 {
+  // Called when the user clicks off this tab.
   m_chart->setSearchEnergies( vector<pair<double,double>>() );
+  
+  if( m_refLineUpdateConnection.connected() )
+    m_refLineUpdateConnection.disconnect();
+  
+  if( m_refLineClearConnection.connected() )
+    m_refLineClearConnection.disconnect();
 }//void clearSearchEnergiesOnClient()
 
 
@@ -643,36 +725,180 @@ void IsotopeSearchByEnergy::resultSelectionChanged()
     display = m_viewer->referenceLinesWidget();
   }
   
-  if( !display )
-    return;
-  
-  
+  const int nPeaksSearched = numSearchEnergiesOnPeaks();
+ 
   WModelIndexSet selected = m_results->selectedIndexes();
   if( selected.empty() )
   {
-    display->setIsotope( NULL );
+    updateClearSelectionButton();
+    
+    m_assignPeakToSelected->hide();
+    
+    if( display )
+      display->setIsotope( NULL );
+    
     return;
   }//if( selected.empty() )
   
-
-  if( m_model->nuclide( *selected.begin() ) )
+  const WModelIndex index = *selected.begin();
+  
+  const SandiaDecay::Nuclide *nuc = m_model->nuclide( index );
+  const SandiaDecay::Element *el = m_model->xrayElement( index );
+  const ReactionGamma::Reaction *rctn = m_model->reaction( index );
+  
+  const bool showBtn = ((nuc || el || rctn) && (nPeaksSearched > 0));
+  m_assignPeakToSelected->setHidden( !showBtn );
+  if( showBtn )
   {
-    const SandiaDecay::Nuclide *nuc = m_model->nuclide( *selected.begin() );
-    const double age = m_model->assumedAge( *selected.begin() );
+    const string btntxt = "Assign peak" + string(nPeaksSearched > 1 ? "s to " : " to ")
+      + (nuc ? nuc->symbol : string())
+      + (el ? (el->symbol + " x-ray") : string())
+      + (rctn ? rctn->name() : string());
     
-    display->setIsotope( nuc, age );
-  }else if( m_model->xrayElement( *selected.begin() ) )
+    m_assignPeakToSelected->setText( btntxt );
+  }//if( showBtn )
+  
+  if( display )
   {
-    const SandiaDecay::Element *el = m_model->xrayElement( *selected.begin() );
-    
-    display->setElement( el );
-  }else if( m_model->reaction( *selected.begin() ) )
-  {
-    const ReactionGamma::Reaction *rctn = m_model->reaction( *selected.begin() );
-    
-    display->setReaction( rctn );
-  }//if( m_model->nuclide( *selected.begin() ) ) / else ...
+    if( nuc )
+      display->setIsotope( nuc, m_model->assumedAge(index) );
+    else if( el )
+      display->setElement( el );
+    else if( rctn )
+      display->setReaction( rctn );
+  }//if( display )
+  
+  updateClearSelectionButton();
 }//void resultSelectionChanged()
+
+
+int IsotopeSearchByEnergy::numSearchEnergiesOnPeaks()
+{
+  PeakModel *pmodel = m_viewer ? m_viewer->peakModel() : nullptr;
+  assert( pmodel );
+  
+  const vector<PeakModel::PeakShrdPtr> peaks = peaks_searched( pmodel, searches() );
+  
+  return static_cast<int>( peaks.size() );
+}//int numSearchEnergiesOnPeaks()
+
+
+void IsotopeSearchByEnergy::assignPeaksToSelectedNuclide()
+{
+  PeakModel *pmodel = m_viewer ? m_viewer->peakModel() : nullptr;
+  assert( pmodel );
+  if( !pmodel )
+    return;
+  
+  const vector<PeakModel::PeakShrdPtr> peaks = peaks_searched( pmodel, searches() );
+  if( peaks.empty() )
+    return;
+  
+  const WModelIndexSet selected = m_results->selectedIndexes();
+  if( selected.empty() )
+    return;
+  
+  const WModelIndex row_index = *selected.begin();
+  
+  const SandiaDecay::Nuclide *nuc = m_model->nuclide( row_index );
+  const SandiaDecay::Element *el = m_model->xrayElement( row_index );
+  const ReactionGamma::Reaction *rctn = m_model->reaction( row_index );
+   
+  assert( nuc || el || rctn );
+  
+  WString nucstr;
+  if( nuc )
+    nucstr = nuc->symbol;
+  else if( el )
+    nucstr = el->symbol + " x-ray";
+  else if( rctn )
+    nucstr = rctn->name();
+  else
+    return;
+  
+  for( const auto &peak : peaks )
+  {
+    // Dont set the nuclide, if it is already assigned to this nuc/el/rct
+    //  (the user may have set a specific gamma energy, and we dont want
+    //  change this by guessing which one it should be).
+    if( (nuc && (nuc == peak->parentNuclide()))
+       || (el && (el == peak->xrayElement()))
+       || (rctn && (rctn == peak->reaction())) )
+    {
+      continue;
+    }
+    
+    const WModelIndex peak_index = pmodel->indexOfPeak(peak);
+    assert( peak_index.isValid() );
+    const int peak_row = peak_index.row();
+    
+    const WModelIndex iso_index = pmodel->index( peak_row, PeakModel::Columns::kIsotope );
+    pmodel->setData( iso_index, boost::any(nucstr) );
+    
+    // PeakModel doesnt know about reference line color, so lets get the color of the reference
+    //  lines (which, if previous peaks have been assigned current nuc/el/rctn, then ref lines
+    //  color should match them), and change the peaks color to that.
+    ReferencePhotopeakDisplay *refLines = m_viewer->referenceLinesWidget();
+    if( refLines )
+    {
+      // We'll double-check that the current reference lines are the selected nuc/el/rctn,
+      //  but this should always be the case
+      const ReferenceLineInfo &current = refLines->currentlyShowingNuclide();
+      if( (nuc && (current.m_nuclide == nuc))
+         || (el && (current.m_element == el))
+         || (rctn && current.m_reactions.count(rctn)) )
+      {
+        const WColor &color = current.m_input.m_color;
+        if( !color.isDefault() )
+        {
+          const WModelIndex color_index = pmodel->index( peak_row, PeakModel::Columns::kPeakLineColor );
+          pmodel->setData( color_index, boost::any( WString(color.cssText()) ) );
+        }
+      }else
+      {
+        assert( 0 );
+      }
+    }
+  }//for( const auto &peak : peaks )
+  
+  // Hide the button, so the user knows something has happened.
+  if( m_assignPeakToSelected )
+    m_assignPeakToSelected->hide();
+}//void assignPeaksToSelectedNuclide()
+
+
+void IsotopeSearchByEnergy::clearSelectionAndRefLines()
+{
+  m_results->setSelectedIndexes( {} );
+  ReferencePhotopeakDisplay *refLines = m_viewer->referenceLinesWidget();
+  if( refLines )
+    refLines->clearAllLines();
+  
+  m_clearRefLines->hide();
+}//void clearSelectionAndRefLines()
+
+
+void IsotopeSearchByEnergy::updateClearSelectionButton()
+{
+  if( !m_clearRefLines )
+    return;
+  
+  WModelIndexSet selected = m_results->selectedIndexes();
+  if( !selected.empty() )
+  {
+    m_clearRefLines->show();
+    return;
+  }
+  
+  ReferencePhotopeakDisplay *refLines = m_viewer->referenceLinesWidget();
+  if( !refLines )
+  {
+    m_clearRefLines->hide();
+    return;
+  }
+  
+  m_clearRefLines->setHidden( refLines->showingNuclides().empty() );
+}//void updateClearSelectionButton();
 
 
 void IsotopeSearchByEnergy::deSerialize( std::string &xml_data,

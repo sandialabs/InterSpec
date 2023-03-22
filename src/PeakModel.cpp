@@ -2459,7 +2459,6 @@ bool PeakModel::setData( const WModelIndex &index,
           const auto newcolor = sameSrcColor(new_peak,old_peak);
           
           //If the old peak had a different color than its source - then dont change the color.
-          //If
           
           if( (!oldsrccolor.isDefault() && oldsrccolor==old_peak->lineColor()) || !newcolor.isDefault() )
           {

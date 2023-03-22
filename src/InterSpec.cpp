@@ -6784,16 +6784,21 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
           m_spectrum, SpectrumChart::kShowPeakNuclideLabel, false
   ) );
   
-  cb = new WCheckBox( "Show Nuclide Energies" );
-  cb->setChecked(false);
-  item = menu->addWidget( cb );
+  WCheckBox *nuc_energy_cb = new WCheckBox( "Show Nuclide Energies" );
+  nuc_energy_cb->setChecked(false);
+  item = menu->addWidget( nuc_energy_cb );
   
-  cb->checked().connect( boost::bind(
+  nuc_energy_cb->disable();
+  cb->checked().connect( nuc_energy_cb, &WCheckBox::enable );
+  cb->unChecked().connect( nuc_energy_cb, &WCheckBox::disable );
+  cb->unChecked().connect( nuc_energy_cb, &WCheckBox::setUnChecked );
+  
+  nuc_energy_cb->checked().connect( boost::bind(
           &D3SpectrumDisplayDiv::setShowPeakLabel,
           m_spectrum, SpectrumChart::kShowPeakNuclideEnergies, true
   ) );
   
-  cb->unChecked().connect( boost::bind(
+  nuc_energy_cb->unChecked().connect( boost::bind(
           &D3SpectrumDisplayDiv::setShowPeakLabel,
           m_spectrum, SpectrumChart::kShowPeakNuclideEnergies,  false
   ) );
