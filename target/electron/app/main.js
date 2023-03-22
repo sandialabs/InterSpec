@@ -22,19 +22,13 @@
  */
 
 /* ToDo list (partial):
-   - Finish setting up launch_options.json (see get_launch_options())
-   - Setup, or figure out, signing app on Windows
    - Handle fatal errors with dialog.showErrorBox(...)
    - Catch 'IntializeError' in stderr during startup, and handle
    - Look at creating a backup preferences file, and if the C++ fails to start
      2 or 3 times, go back to the previous preferences file (should be done for
      all targets maybe).
-   - Implement app.makeSingleInstance(...), see https://github.com/electron/electron/blob/master/docs/api/app.md
    - move checkWindowPosition() into its own file.
    - Test the window positon stuff with multiple displays.
-   - Setup to allow multiple windows (but dont actually allow yet)
-     - Make so a request for a new session is sent to C++, which then sends back
-       a URL (which includes the apptoken token) to connect to
  */
 
 const electron = require('electron')
@@ -150,6 +144,7 @@ if( !gotTheLock )
     }
   })
 }//if (!gotTheLock) /
+
 
 /** Loops over argv_array arguments to look for actual files or "deeplinks" (urls starting with "interspec://") to open.
  * 
@@ -346,20 +341,80 @@ app.on('open-url', function (event,url) {
 })
 
 
+/**
+ * @returns Returns object with options from; default options overriden first
+ * by what is specified in data/desktop_app_settings.json, then 
+ * ~user_data/InterSpec_app_settings.json
+ */
+function get_interspec_options(){
+  const settings = {
+    proxy: "",
+    httpPort: 0,
+    restoreSession: true,
+    requireToken: true,
+    openDevTools: false
+  };
+
+  const getOptionsFromFile = function( filepath ){
+    try{
+      if( !fs.existsSync(filepath) )
+        return;
+
+      const config = JSON.parse(fs.readFileSync(filepath, 'utf8'));
+
+      if( config.hasOwnProperty('ProxySetting') ){
+        if( typeof config.ProxySetting !== 'string' )
+          throw new Error("ProxySetting must be a string value");
+        settings.proxy = config.ProxySetting;
+      }
+
+      if( config.hasOwnProperty('HttpPortToServeOn') ){
+        if( !Number.isInteger(config.HttpPortToServeOn) || (config.HttpPortToServeOn < 0) )
+          throw new Error("HttpPortToServeOn must be a non-negative integer");
+        settings.httpPort = config.HttpPortToServeOn;
+      }
+
+      if( config.hasOwnProperty('RestorePreviousSession') ){
+        if( typeof config.RestorePreviousSession !== "boolean" )
+          throw new Error("RestorePreviousSession must be boolean");
+        settings.restoreSession = !config.RestorePreviousSession;
+      }
+
+      if( config.hasOwnProperty('AllowTokenFreeSessions') ){
+        if( typeof config.AllowTokenFreeSessions !== "boolean" )
+          throw new Error("AllowTokenFreeSessions must be boolean");
+        settings.requireToken = !config.AllowTokenFreeSessions;
+      }
+
+      if( config.hasOwnProperty('OpenDevTools') ){
+        if( typeof config.OpenDevTools !== "boolean" )
+          throw new Error("OpenDevTools must be boolean");
+        settings.openDevTools = config.OpenDevTools;
+      }
+    }catch( error ){
+      console.error( 'Error:', error );
+
+      dialog.showErrorBox( "Error", "Error in " + path.basename(filepath) + ":", error.message );
+    }
+  };//const getOptionsFromFile
+
+  const userdata = app.getPath('userData');
+  const app_settings_file = path.join(userdata, "InterSpec_app_settings.json");
+
+  const basedir = path.relative( process.cwd(), path.dirname(require.main.filename) );
+  const user_settings_file = path.join(basedir, "data/config/InterSpec_app_settings.json");
+  
+  getOptionsFromFile( app_settings_file )
+  getOptionsFromFile( user_settings_file );
+
+  return settings;
+};//function get_interspec_options()
+
 const userdata = app.getPath('userData');
 var guiOtionsPath = path.join(userdata, "init.json");
 let allowRestorePath = path.join(userdata, "do_restore");
+const app_options = get_interspec_options();
 
-function get_launch_options(){
-  //InterSpecResourceDir
-  //ServerExe
-  //UserDataDir
-  
-  //app.getPath('userData')
-  //app.getPath('temp')
-  //If previous states should be reloaded
-  //  Additional DRF directories
-}
 
 
 function doMenuStuff(currentwindow){
@@ -517,7 +572,7 @@ function createWindow() {
       //Actually should use nativeTheme.shouldUseDarkColors
       //  see https://github.com/electron/electron/blob/master/docs/api/native-theme.md#nativethemeshouldusedarkcolors-readonly
       
-      if( !allowRestore )
+      if( !allowRestore || !app_options.restoreSession )
         url_to_load += "&restore=no";
       
       console.log('Will Load ' + url_to_load);
@@ -537,9 +592,26 @@ function createWindow() {
   //      value, but I was too lazy to test out what will work (requires transfering over 
   //      remote desktop currently), and also I guess should actually do the loadUrl() call
   //      from the setback, but the current way seems to work right now...
+  
+  const proxy_options = {
+    proxyBypassRules: 'local,<local>,127.0.0.1,http://127.0.0.1,http://<local>,http://localhost'
+  };
+
+  if( !app_options.proxy || (app_options.proxy.length === 0) ){
+    // Nothing to do here
+  }else if( app_options.proxy.toLowerCase() == "direct" ){
+    proxy_options.mode = "direct";
+  }else if( app_options.proxy.toLowerCase() == "auto_detect" ){
+    proxy_options.mode = "auto_detect";
+  }else if( app_options.proxy.toLowerCase() == "system" ){
+    proxy_options.mode = "system";
+  }else{
+    proxy_options.proxyRules = app_options.proxy;
+  }
+
+  
   let ses = newWindow.webContents.session;
-  ses.setProxy( {proxyBypassRules: 'local,<local>,127.0.0.1,http://127.0.0.1,http://<local>,http://localhost'} ).then( 
-    function(){
+  ses.setProxy( proxy_options ).then( function(){
     console.log('Bypassing proxy for local');
     setInitialUrl();
   } );
@@ -555,7 +627,8 @@ function createWindow() {
   
   
   // Open the developer tools.
-  //newWindow.webContents.openDevTools({mode: "bottom"});
+  if( app_options.openDevTools )
+    newWindow.webContents.openDevTools({mode: "bottom"});
 
   // A nice way to have the renderes console.log show up on the command line
   //  when running for development.
@@ -889,15 +962,21 @@ function messageToNodeJs( token, msg_name, msg_data ){
     var timestamp = '[' + Date.now() + '] ';
     console.log( timestamp + msg_data );
   }else if( msg_name == 'OpenInExternalBrowser' ){
-    const ext_session_token_buf = crypto.randomBytes(16);
-    const ext_session_token = ext_session_token_buf.toString('hex');
-    interspec.addExternalSessionToken( ext_session_token );
+
+    if( app_options.requireToken ){
+      const ext_session_token_buf = crypto.randomBytes(16);
+      const ext_session_token = ext_session_token_buf.toString('hex');
+      interspec.addExternalSessionToken( ext_session_token );
     
-    const ext_url = interspec_url + "?apptoken=" + ext_session_token + "&restore=no"
+      const ext_url = interspec_url + "?apptoken=" + ext_session_token + "&restore=no"
     
-    console.log( `Will try to open ${ext_url} in external browser` );
+      console.log( `Will try to open ${ext_url} in external browser` );
     
-    electron.shell.openExternal(ext_url);
+      electron.shell.openExternal(ext_url);
+    }else{
+      electron.shell.openExternal( interspec_url + "?restore=no" );
+    }
+
     console.log( `Should have opened external URL...` );
   }else if( msg_name == 'NewAppWindow' ){
     createWindow();
@@ -963,17 +1042,17 @@ app.on('ready', function(){
   console.log( 'process.cwd()="' + process.cwd() + '"');
   console.log( 'path.dirname(require.main.filename)="' + path.dirname(require.main.filename) + '"');
   console.log( 'basedir="' + basedir + '"');
-
-  interspec.setRequireSessionToken( true );
+  
+  interspec.setRequireSessionToken( app_options.requireToken );
   interspec.setMessageToNodeJsCallback( messageToNodeJs );
   interspec.setBrowseForDirectoryCallback( browseForDirectory );
   
   const xml_config_path = path.join(basedir, "data/config/wt_config_electron.xml");
-  let portnum = 0;
+  let portnum = app_options.httpPort;
   
   try 
   {
-    portnum = interspec.startServingInterSpec( process_name, userdata, basedir, xml_config_path );
+    portnum = interspec.startServingInterSpec( process_name, userdata, basedir, xml_config_path, portnum );
   }catch( e ) 
   {
     let window = createWindow();

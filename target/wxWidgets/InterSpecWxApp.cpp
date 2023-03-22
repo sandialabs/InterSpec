@@ -57,6 +57,8 @@
 
 namespace 
 {
+  bool sm_command_line_parsed = false;  //just for debugging to make sure I understand program flow
+
   // Some variable to hold command line switch options
 #ifndef __APPLE__
   bool sm_single_instance = true;
@@ -64,11 +66,54 @@ namespace
   bool sm_try_restore = true;
   bool sm_test_load_only = false;
   bool sm_require_session_token = true;
+  bool sm_open_dev_console = false;
+  std::string sm_proxy_config;
   long sm_server_port = 0;
   long sm_max_runtime_seconds = 0;
 
+  std::string sm_base_dir = ".";
+  std::string sm_user_data_dir;
+
+
   bool sm_overide_rc = false;
   int sm_rc_override_value = 0;
+
+
+  void set_data_dirs()
+  {
+    const wxStandardPaths &paths = wxStandardPaths::Get();
+
+    sm_base_dir = ".";
+    sm_user_data_dir = paths.GetUserDataDir().utf8_string();
+
+    const std::string exe_path = paths.GetExecutablePath().utf8_string();
+    const std::string exe_parent = SpecUtils::parent_path( exe_path );
+
+    // TODO: use wxFileName to resolve links, etc
+
+    const std::string test_file = SpecUtils::append_path( "InterSpec_resources", "InterSpec.css" );
+    if( !SpecUtils::is_file( SpecUtils::append_path( sm_base_dir, test_file ) ) )
+      sm_base_dir = exe_parent;
+
+    if( !SpecUtils::is_file( SpecUtils::append_path( sm_base_dir, test_file ) ) )
+      sm_base_dir = paths.GetResourcesDir().utf8_string();
+
+    if( !SpecUtils::is_file( SpecUtils::append_path( sm_base_dir, test_file ) ) )
+      sm_base_dir = SpecUtils::parent_path( exe_parent );
+
+    if( !SpecUtils::is_file( SpecUtils::append_path( sm_base_dir, test_file ) ) )
+      sm_base_dir = SpecUtils::parent_path( sm_base_dir );
+
+    if( !SpecUtils::is_file( SpecUtils::append_path( sm_base_dir, test_file ) ) )
+      sm_base_dir = SpecUtils::parent_path( sm_base_dir );
+
+    if( !SpecUtils::is_file( SpecUtils::append_path( sm_base_dir, test_file ) ) )
+      sm_base_dir = SpecUtils::parent_path( sm_base_dir );
+
+    if( !SpecUtils::is_file( SpecUtils::append_path( sm_base_dir, test_file ) ) )
+      sm_base_dir = ".";
+  }//void set_data_dirs()
+
 
   class MaxRuntimeTimer : public wxTimer 
   {
@@ -223,6 +268,12 @@ InterSpecWxApp::InterSpecWxApp() :
       "Test that the applicaiton successfully loads and then exits.", 
       wxCMD_LINE_PARAM_OPTIONAL );
 
+    parser.AddLongOption( "proxy",
+      "Proxy configuration to use (only applicable to maps tool); valid values are:"
+      " empty (defualt), 'direct', 'auto_detect', 'system', "
+      "or any other string any other string will be interpreted as the 'proxyRules'.",
+      wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL );
+
     parser.AddParam("File or URI to open", wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL | wxCMD_LINE_PARAM_MULTIPLE);
   }
 
@@ -251,15 +302,22 @@ InterSpecWxApp::InterSpecWxApp() :
 
     if( parser.Found( "port", &sm_server_port ) )
     {
-      if( sm_server_port < 0 )
+      if( (sm_server_port < 0) 
+        || (sm_server_port > std::numeric_limits<unsigned short int>::max()) )
       {
         wxLogMessage( "Invalid negative server port number specified (%i); setting to zero.", sm_server_port );
         sm_server_port = 0;
       }
     }//if( parser.Found( "port", &port_val ) )
 
+    wxString proxy;
+    if( parser.Found( "proxy", &proxy ) )
+      sm_proxy_config = proxy.utf8_string();
+
     if( parser.Found( "max-run-time", &sm_max_runtime_seconds ) && (sm_max_runtime_seconds > 0) )
       sm_max_runtime_timer.reset( new MaxRuntimeTimer( this, sm_max_runtime_seconds ) );
+
+    sm_command_line_parsed = true;
 
     return true;
   }//bool OnCmdLineParsed(wxCmdLineParser& parser)
@@ -376,6 +434,31 @@ InterSpecWxApp::InterSpecWxApp() :
       app->handle_javascript_error_internal( error_msg, app_token ); 
     } ); 
   }//void handle_javascript_error( const std::string &error_msg, const std::string app_token );
+
+  const std::string &InterSpecWxApp::proxy_config()
+  {
+    return sm_proxy_config;
+  }
+
+  bool InterSpecWxApp::try_restore_session()
+  {
+    return sm_try_restore;
+  }
+
+  bool InterSpecWxApp::require_session_token()
+  {
+    return sm_require_session_token;
+  }
+
+  bool InterSpecWxApp::open_dev_console()
+  {
+    return sm_open_dev_console;
+  }
+
+  unsigned short int InterSpecWxApp::server_port()
+  {
+    return static_cast<unsigned short int>(sm_server_port);
+  }
 
 
   void InterSpecWxApp::handle_javascript_error_internal( const std::string &error_msg, const std::string &app_token )
@@ -539,23 +622,58 @@ InterSpecWxApp::InterSpecWxApp() :
   }//bool check_single_instance();
 #endif //#ifndef __APPLE__
 
+  
+
   bool InterSpecWxApp::OnInit()
   {
    //   g_stdbuf.reset( new std::ofstream( "from_cout.txt") );
    //   g_errbuf.reset(new std::ofstream("from_cerr.txt") );
    //   std::cout.rdbuf(g_stdbuf->rdbuf());
    //   std::cerr.rdbuf(g_errbuf->rdbuf());
+    
+    //
+    if( sm_command_line_parsed )
+      throw std::runtime_error( "InterSpecWxApp::OnInit(): command line was already parsed before this function????" );
 
-    if (!wxApp::OnInit())
+    set_data_dirs();
+
+    try
+    {
+      const std::string data_dir = SpecUtils::append_path( sm_base_dir, "data" );
+      const auto app_file_config = InterSpecServer::DesktopAppConfig::init( data_dir, sm_user_data_dir );
+      sm_server_port = app_file_config.m_http_port;
+      sm_proxy_config = app_file_config.m_proxy;
+      sm_try_restore = app_file_config.m_allow_restore;
+      sm_open_dev_console = app_file_config.m_open_dev_tools;
+      sm_require_session_token = app_file_config.m_require_token;
+    }catch( std::exception &e )
+    {
+      wxLogMessage( "Error parsing app configuration file: %s", e.what() );
+      wxMessageBox( e.what(), "Error parsing app configuration file" );
+    }// try / catch
+
+
+    if( !wxApp::OnInit() )
       return false; //OnExit wont be called.
 
+    if( !sm_command_line_parsed )
+      throw std::runtime_error( "InterSpecWxApp::OnInit(): command line not parsed after wxApp::OnInit()????" );
 
 #ifdef NDEBUG
-    wxLog::EnableLogging(false);
+    const bool enableLogging = InterSpecWxApp::open_dev_console();
 #else
-    // Create a log window
-    new wxLogWindow( nullptr, _("Logging"), true, false);
+    const bool enableLogging = true;
 #endif
+
+    if( enableLogging )
+    {
+      // Create a log window
+      new wxLogWindow( nullptr, _( "Logging" ), true, false );
+    }else
+    {
+      wxLog::EnableLogging( false );
+    }
+
 
 #ifndef __APPLE__
     // Check if any other instance is running.  
@@ -565,55 +683,25 @@ InterSpecWxApp::InterSpecWxApp() :
 #endif
 
     // Start Wt Server, etc
-    const wxStandardPaths& paths = wxStandardPaths::Get();
-
-    std::string base_dir = ".";
-    std::string user_data_dir = paths.GetUserDataDir().utf8_string();
-
-    const std::string exe_path = paths.GetExecutablePath().utf8_string();
-    const std::string exe_parent = SpecUtils::parent_path(exe_path);
-
-    // TODO: use wxFileName to resolve links, etc
-
-    const std::string test_file = SpecUtils::append_path("InterSpec_resources", "InterSpec.css");
-    if (!SpecUtils::is_file(SpecUtils::append_path(base_dir, test_file)) )
-      base_dir = exe_parent;
-
-    if (!SpecUtils::is_file(SpecUtils::append_path(base_dir, test_file)))
-      base_dir = paths.GetResourcesDir().utf8_string();
-    
-    if (!SpecUtils::is_file(SpecUtils::append_path(base_dir, test_file)))
-      base_dir = SpecUtils::parent_path(exe_parent);
-
-    if (!SpecUtils::is_file(SpecUtils::append_path(base_dir, test_file)))
-      base_dir = SpecUtils::parent_path(base_dir);
-
-    if (!SpecUtils::is_file(SpecUtils::append_path(base_dir, test_file)))
-      base_dir = SpecUtils::parent_path(base_dir);
-
-    if (!SpecUtils::is_file(SpecUtils::append_path(base_dir, test_file)))
-      base_dir = SpecUtils::parent_path(base_dir);
-
-    if (!SpecUtils::is_file(SpecUtils::append_path(base_dir, test_file)))
-      base_dir = ".";
-
     //bool InterSpecServer::changeToBaseDir(int argc, char* argv[]);
 
-    std::string xml_config_path = SpecUtils::append_path(base_dir, "data/config/wt_config_wx.xml" );
+    std::string xml_config_path = SpecUtils::append_path(sm_base_dir, "data/config/wt_config_wx.xml" );
 
     const int host_port = InterSpecServer::start_server( "InterSpec", 
-                                                         user_data_dir.c_str(), 
-                                                         base_dir.c_str(), 
+                                                         sm_user_data_dir.c_str(), 
+                                                         sm_base_dir.c_str(), 
                                                          xml_config_path.c_str(), 
                                                          sm_server_port );
 
 
-    if (host_port <= 0)
+    if( host_port <= 0 )
     {
+      const wxStandardPaths &paths = wxStandardPaths::Get();
+
       wxMessageBox("Error starting InterSpec (" + std::to_string(host_port) + ")\n"
       + "\tUserDataDir: " + paths.GetUserDataDir() + "\n"
         + "\tExePath: " + paths.GetExecutablePath() + "\n"
-        + "\tbase_dir: " + base_dir,
+        + "\tbase_dir: " + sm_user_data_dir,
         "Error"
       );
       return false;

@@ -227,6 +227,84 @@ namespace InterSpecServer
    Returns empty string if none.
    */
   std::string file_to_open_on_load( const std::string &session_token );
+
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
+  struct DesktopAppConfig
+  {
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
+    /**
+      @brief The proxy settings to use; only relevant when using the maps tool, 
+      and you are behind a proxy, and it is a Windows or Linux build. Defaults 
+      to empty string.
+     
+       Valid values are: empty (default), 'direct', 'auto_detect', 'system'; any other 
+       string will be interpreted as the 'proxyRules' setting documented at 
+       https://www.electronjs.org/docs/latest/api/session#sessetproxyconfig 
+       (a value might be 'http=proxy.somecompany.com:80,direct://')
+     
+       This setting is only applicable if you use the map tool (the only part of 
+       InterSpec to use the internet); if map tiles wont load, and you are behind a proxy, 
+       you _may_ need to set this setting; usually a value of 'system' will work.  
+       If you set this settting, and you are not behind a proxy, InterSpec startup 
+       time may hang for ~30 seconds, usually with a white screen, while a proxy 
+       request times out.
+    */
+    std::string m_proxy;
+#endif
+
+    /**
+     @brief The HTTP port to serve the application on; if zero (recomended!), 
+     will choose random port on startup.  Defaults to zero (i.e., random high
+     number port)/
+     
+     If non-zero, should be a port larger than 1024 (e.x., 8080) since ports 
+     below this may require admin privledges (never run InterSpec as admin!).
+    */
+    unsigned short int m_http_port;
+
+    /** 
+    @brief Wether to require browser sessions to have a one-use-only token in 
+    thier URL.  Defaults to true.
+
+    Normally external sessions (i.e. 'View' -> 'Use in external browser') get 
+    assigned a one-time-use token that is required to load InterSpec into the 
+    browser.  Without a valid token, you cant load a session in the browser.  
+    If you allow external sessions without tokens, then the token wont be 
+    needed - and any application that can access your localhost network can 
+    create a session and potentually access your data.  
+    
+    It is not recomended to to enable this setting.
+    */
+    bool m_require_token;
+
+    /** Allow restoring previous session, if applicable. */
+    bool m_allow_restore;
+
+    /** If true, will open the WebView inspector console on launch. */
+    bool m_open_dev_tools;
+
+    /** Returns application config, as determined from defaults and then 
+    InterSpec_app_settings.json files.
+
+    First looks in "`app_data_dir`/config/InterSpec_app_settings.json"
+    and modifies default values for settings found, then looks in 
+    "`user_data_dir`/InterSpec_app_settings.json" and further modifies
+    values.  
+    If a file doesnt exist, it is ignored.
+    IF a directory passed in is empty, it is skipped.
+
+    If there is an error in the file (invalid JSON or invalid data type)
+    then an exception is thrown.
+    */
+    static DesktopAppConfig init( const std::string &app_data_dir, 
+                                  const std::string &user_data_dir );
+
+  private:
+    DesktopAppConfig();
+  };//struct DesktopAppConfig
+#endif
+
 }//namespace InterSpecServer
 
 
