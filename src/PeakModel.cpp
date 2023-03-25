@@ -1614,7 +1614,10 @@ const PeakModel::PeakShrdPtr &PeakModel::peak( const Wt::WModelIndex &index ) co
   if( !index.isValid() )
     throw std::runtime_error( "PeakModel::peak(WModelIndex): invalid input index" );
 
-  return m_sortedPeaks.at( index.row() );
+  if( index.row() < 0 || index.row() >= static_cast<int>(m_sortedPeaks.size()) )
+    throw runtime_error( "PeakModel::peak(WModelIndex): requested index out of range" );
+  
+  return m_sortedPeaks[index.row()];
 }//PeakShrdPtr peak( const Wt::WModelIndex &index ) const
 
 boost::any PeakModel::data( const WModelIndex &index, int role ) const

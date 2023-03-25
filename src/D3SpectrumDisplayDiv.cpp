@@ -1803,6 +1803,7 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
     {
       if( isfinal )
       {
+        // TODO: add a `PeakModel::replacePeaks(orig,newer)` function to allow updating peak quanitites in one step, or allow setting kLowerX/kUpperX columns in setData(...) function
         peakModel->removePeaks( orig_roi_peaks );
         
         std::vector<PeakDef> peaks_to_add;
@@ -1827,6 +1828,7 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
       
       if( isfinal )
       {
+        // TODO: add a `PeakModel::replacePeaks(orig,newer)` function to allow updating peak quanitites in one step, or allow setting kLowerX/kUpperX columns in setData(...) function
         peakModel->removePeaks( orig_roi_peaks );
         
         std::vector<PeakDef> peaks_to_add;

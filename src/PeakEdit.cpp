@@ -710,14 +710,19 @@ void PeakEdit::peakModelRowsRemoved( WModelIndex, int firstRowToBeRemoved, int l
   // We might be here if the user right-clicked on the peak and asked for a re-fit, which we would
   //  then, in principle want to pick the new peak up to edit.
   const int currentRow = m_peakIndex.row();
+  const int nremoved = std::max( 1 + lastRowToBeRemoved - firstRowToBeRemoved, 1 );
   if( (currentRow >= firstRowToBeRemoved) && (currentRow <= lastRowToBeRemoved) )
+  {
     m_peakIndex = WModelIndex();
-  
-  refreshPeakInfo();
+    refreshPeakInfo();
+  }else if( (currentRow > lastRowToBeRemoved) && (currentRow > 0) )
+  {
+    m_peakIndex = m_peakModel->index( currentRow - nremoved, m_peakIndex.column() );
+  }
 }//void peakModelRowsRemoved()
 
 
-void PeakEdit::peakModelRowsAdded()
+void PeakEdit::peakModelRowsAdded( Wt::WModelIndex , int /* firstRowInserted */ , int /* lastRowInserted */ )
 {
   if( m_blockInfoRefresh )
     return;
@@ -725,6 +730,9 @@ void PeakEdit::peakModelRowsAdded()
   // We may be here if the user refit either the current peak, or any other peak by right-clicking
   //  on them (which causes all peaks to be removed, and then added back in).
   //  There are probably a number of other ways to get here.
+  
+  //const int nRowsInserted = std::max( 1 + (lastRowInserted - firstRowInserted), 1 );
+  
   
   float mean = m_currentPeak.mean();
   if( mean < 1.0 )
@@ -758,8 +766,34 @@ void PeakEdit::refreshPeakInfo()
     return;
   
   PeakModel::PeakShrdPtr updated_peak;
-  if( m_peakIndex.isValid() )
-    updated_peak = m_peakModel->peak( m_peakIndex );
+  
+  try
+  {
+    if( m_peakIndex.isValid() )
+      updated_peak = m_peakModel->peak( m_peakIndex );
+  }catch( std::exception &e )
+  {
+    // We can get here if m_peakIndex.row() is out of range.
+  }//try / catch
+  
+  
+  //Check if updated_peak is the same mean as m_currentPeak, and if not, if check if we can
+  //  find m_currentPeak in m_peakModel.  Some edge cases we are ignoring are: multiple peaks
+  //  with same, or close together means, or when its the mean value that changes, and theres
+  //  another nearby peak
+  const double prev_mean = m_currentPeak.mean() > 1.0 ? m_currentPeak.mean() : m_energy;
+  if( prev_mean >= 1.0 )
+  {
+    PeakModel::PeakShrdPtr nearest = m_peakModel->nearestPeak( prev_mean );
+    if( nearest && (nearest != updated_peak) && (fabs(nearest->mean() - prev_mean) < 0.001) )
+    {
+      updated_peak = nearest;
+    }
+  }//if( prev_mean >= 1.0 )
+  
+  if( updated_peak )
+    m_peakIndex = m_peakModel->indexOfPeak( updated_peak );
+  
   
   if( !updated_peak )
   {

@@ -54,15 +54,17 @@ namespace SandiaDecay
 
 class PeakModel: public Wt::WAbstractItemModel
 {
-  /****************************************************************************\
-  | This class is used for finding, storing, and analyzing PeakDef peaks.
-  | It can locate, flag, unflag, etc. It also has support for using a
-  | nuclide database to figure out what each peak is likely to be signifying.
-  |
-  | Each 'row' is a peak whose parent index is awlsy the default index,
-  | Wt::WModelIndex(), and columns represent the various peak values
-  | specified by the 'Columns' enum.
-  \****************************************************************************/
+  /**
+   This class stores the peaks of of the currently displayed foreground spectrum.
+   
+   Each 'row' is a peak whose parent index is always the default index.
+   That is, the row specifies the peak, and the column represents
+   various peak values, as specified by the 'Columns' enum.
+   
+   Incomplete TODO list:
+   - add a `replacePeaks(orig,newer)` function to allow updating peak quanitites in one step
+   - Or allow setting kLowerX/kUpperX columns in setData(...) function
+  */
 
 public:
   enum Columns
