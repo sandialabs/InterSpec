@@ -530,9 +530,11 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     throw new ValidationError("D3TimeChart data is not set.");
   }
   if (!this.state.height || !this.state.width) {
-    // I saw things get here once, but wasnt able to reproduce
-    console.error( "Dimensions of D3TimeChart div element are not set." );
-    console.trace();
+    // We get here from resizeObserver --> handleResize --> here, when the time-chart disapears
+    //  because you load a non-time-hostory spectrum.
+    //  TODO: We could clear the data, just to be explicit
+    console.log( "Dimensions of D3TimeChart div element are not set." );
+    //console.trace();
     
     //throw new ValidationError( "dimensions of D3TimeChart div element are not set." );
     return;
