@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <tuple>
 #include <string>
 #include <vector>
 #include <utility>
@@ -40,13 +41,34 @@ namespace qrcodegen
 
 namespace QrCode
 {
-  /**
+  /** The approximate error correction level to try for, or the actual level that was used.
+   The name of the enum gives the approcimate number of erroneous codewords the QR
+   code can tollerate.
+   */
+  enum class ErrorCorrLevel
+  {
+    About7Percent = 0,
+    About15Percent,
+    About25Percent,
+    About30Percent,
+  };//enum class ErrorCorrLevel
+  
+  /** Encordes the given UTF-8 string into a SVG image.
    
    Will succeed for strings that have 2953 or fewer UTF-8 code units.
    
+   @param input The URL to encode
+   @param prefferedECL Preffered error correction level; encoding at the requested level may fail, in which case lower ECL will be tried.
+   @param quietSpace The number of emty (or "quiet") QR code elements to place in the border around the actual QR code; the spec says this should be at least two elements.
+   
+   Returns a tuple with the SVG inamfe in the string, the integer number of elements (not including the border "quiet" space), as well
+   as the actual used error correction level.
+   
    Throws exception on error.
    */
-  std::pair<std::string,int> utf8_string_to_svg_qr( const std::string &input );
+  std::tuple<std::string,int,ErrorCorrLevel> utf8_string_to_svg_qr( const std::string &input,
+                                                                   ErrorCorrLevel prefferedECL,
+                                                                   const int quietSpace = 3 );
 
   std::pair<std::string,int> binary_to_svg_qr( const std::vector<std::uint8_t> &data );
 

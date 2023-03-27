@@ -3545,9 +3545,10 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     
     const string url = "interspec://drf/specify?" + drf->toAppUrl();
     
-    pair<std::string,int> qr_and_size = QrCode::utf8_string_to_svg_qr( url );
+    tuple<std::string,int,QrCode::ErrorCorrLevel> qr_and_size
+              = QrCode::utf8_string_to_svg_qr( url, QrCode::ErrorCorrLevel::About30Percent, 5 );
     
-    qr_code = qr_and_size.first;
+    qr_code = get<0>(qr_and_size);
   }catch(std::exception &e )
   {
     qr_code = "Error creating QR code: " + string(e.what());

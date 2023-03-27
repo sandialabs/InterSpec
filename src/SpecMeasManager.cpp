@@ -467,8 +467,12 @@ void displayQrDialog( const vector<QRSpectrum::UrlEncodedSpec> urls, const size_
   if( urls.size() > 1 )
     seqnum += " " + to_string(index + 1) + " of " + to_string( urls.size() );
   
-  SimpleDialog *dialog = QrCode::displayTxtAsQrCode( urls[index].m_url, "Spectrum File " + seqnum,
-                                                    seqnum + " for the " + string(SpecUtils::descriptionText(type)) + " spectrum." );
+  string title = "Spectrum File " + seqnum;
+  if( urls.size() == 1 )
+    title = "";
+  
+  string desc = seqnum + " for the " + string(SpecUtils::descriptionText(type)) + " spectrum.";
+  SimpleDialog *dialog = QrCode::displayTxtAsQrCode( urls[index].m_url, title, desc );
   
   if( (index + 1) < urls.size() )
   {
@@ -2359,7 +2363,9 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
     
     if( urls.empty() )
     {
-      auto dialog = new SimpleDialog( "Error", "Spectrum could not be encoded to a QR code." );
+      auto dialog = new SimpleDialog( "Error",
+                                     "Spectrum could not be encoded to a QR code.<br />"
+                                     "Likely due to requiring more than 9 QR codes." );
       dialog->addButton( "Ok" );
       return;
     }//if( urls.empty() )
