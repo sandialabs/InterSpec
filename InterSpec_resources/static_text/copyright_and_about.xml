@@ -215,29 +215,34 @@ IT &quot;AS IS.&quot;
     <li><b><a href="https://www.nayuki.io/page/qr-code-generator-library" target="_blank">QR Code generator library</a>:</b> Multiple programming language QR code generator.
       <div style="margin-left: 1em; font-size: small;">
         <b>QR Code generator library</b> is used to generate QR codes throughout InterSpec; notably to represent detector response functions.
-        <b>QR Code generator library</b> is <a href="https://opensource.org/licenses/MIT">MIT licensed</a> library.
+        <b>QR Code generator library</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> library.
       </div>
     </li>
 
     <li><b><a href="http://www.libpng.org/pub/png/libpng.html" target="_blank">libpng</a></b>: libpng is the official PNG reference library.
       <div style="margin-left: 1em; font-size: small;">
       <b>libpng</b> is only on the macOS app build as part of rendering spectrum file previews in the Finder.
-      <b>libpng</b> is <a href="https://spdx.org/licenses/libpng-2.0.html">PNG Reference Library License version 2</a> library.
+      <b>libpng</b> is <a href="https://spdx.org/licenses/libpng-2.0.html" target="_blank">PNG Reference Library License version 2</a> library.
       </div>
     </li>
     <li><b><a href="http://ceres-solver.org" target="_blank">Ceres Solver</a></b> (version 2.1.0): Ceres Solver is an open source C++ library for modeling and solving large, complicated optimization problems.
       <div style="margin-left: 1em; font-size: small;">
       <b>Ceres Solver</b> is used, for the the <em>Relative Efficiency</em> tools (&quot;Isotopics by nuclides&quot; and &quot;Isotopics from peaks&quot;); it may be used for peak-fitting as well in the future.
-      <b>Ceres Solver</b> is <a href="https://opensource.org/licenses/BSD-3-Clause">BSD License</a> library.
+      <b>Ceres Solver</b> is <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">BSD License</a> library.
       </div>
     </li>
     <li><b><a href="https://eigen.tuxfamily.org/index.php" target="_blank">Eigen</a></b> (version 3.4.0): Eigen is a C++ template library for linear algebra: matrices, vectors, numerical solvers, and related algorithms.
       <div style="margin-left: 1em; font-size: small;">
       <b>Eigen</b> is used used by the <b>Ceres Solver</b> library, as well as a few places within the <em>Relative Efficiency</em> tools for some matrix operations.
-      <b>Eigen</b> is <a href="https://www.mozilla.org/en-US/MPL/2.0/">Mozilla Public License Version 2.0</a> library.
+      <b>Eigen</b> is <a href="https://www.mozilla.org/en-US/MPL/2.0/" target="_blank">Mozilla Public License Version 2.0</a> library.
       </div>
     </li>
-
+    <li><b><a href="https://www.wxwidgets.org" target="_blank">wxWidgets</a></b> (version 3.2.1): wxWidgets is a C++ library that lets developers create applications for Windows, macOS, Linux and other platforms with a single code base.
+      <div style="margin-left: 1em; font-size: small;">
+      <b>wxWidgets</b> is used for displaying a WebView to render the application in, on some Windows and Linux builds.
+      <b>wxWidgets</b> is <a href="https://github.com/wxWidgets/wxWidgets/blob/master/docs/licence.txt" target="_blank">wxWindows Library Licence, Version 3.1</a> library.
+      </div>
+    </li>
     <li>The <a href="https://leafletjs.com/index.html" target="_blank">Leaflet</a>-based map feature uses a number of Javascript libraries to help display map data:
       <ul>
         <li>
