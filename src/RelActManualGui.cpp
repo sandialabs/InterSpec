@@ -214,11 +214,14 @@ class ManRelEffNucDisp : public Wt::WPanel
 {
 public:
   const SandiaDecay::Nuclide * const m_nuc;
-  const ReactionGamma::Reaction * const m_reaction = nullptr;
+  const ReactionGamma::Reaction * const m_reaction;
   double m_current_age;
   const bool m_age_is_settable;
   Wt::WLineEdit *m_age_edit;
   Wt::WTableRow *m_age_row;
+  
+  Wt::Signal<> m_updated;
+  
   
 public:
   ManRelEffNucDisp( const SandiaDecay::Nuclide * const nuc,
@@ -230,7 +233,8 @@ public:
    m_current_age( (nuc && (age < 0.0)) ? PeakDef::defaultDecayTime(nuc) : age ),
    m_age_is_settable( nuc ? !PeakDef::ageFitNotAllowed(nuc) : false ),
    m_age_edit( nullptr ),
-   m_age_row( nullptr )
+   m_age_row( nullptr ),
+   m_updated( this )
   {
     assert( m_nuc || m_reaction );
     
@@ -335,9 +339,46 @@ public:
     }//if( m_nuc ) / else ( m_reaction )
   }//ManRelEffNucDisp(...)
   
+  Wt::Signal<> &updated()
+  {
+    return m_updated;
+  }
+  
   void handleAgeChange()
   {
     assert( m_age_edit || m_reaction );
+   
+    if( m_reaction )
+      return;
+    
+    assert( m_nuc );
+    if( !m_nuc || !m_age_edit )
+      return;
+    
+    try
+    {
+      double age = 0;
+      const string agestr = m_age_edit->text().toUTF8();
+      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, m_nuc->halfLife );
+      if( age < 0 )
+        throw runtime_error( "Negative age not allowed." );
+      
+      m_current_age = age;
+    }catch( std::exception & )
+    {
+      if( m_current_age >= 0.0 )
+      {
+        string agestr = PhysicalUnits::printToBestTimeUnits( m_current_age, 5 );
+        m_age_edit->setText( WString::fromUTF8(agestr) );
+      }else
+      {
+        string agestr;
+        m_current_age = PeakDef::defaultDecayTime( m_nuc, &agestr );
+        m_age_edit->setText( WString::fromUTF8(agestr) );
+      }
+    }//try / catch
+    
+    m_updated.emit();
   }//void handleAgeChange()
   
   void setAgeHidden( const bool hidden )
@@ -1542,6 +1583,8 @@ void RelActManualGui::updateNuclides()
     }//for( loop over existing displays to find position )
     
     ManRelEffNucDisp *rr = new ManRelEffNucDisp( nuc, nullptr, age );
+    rr->updated().connect( this, &RelActManualGui::handlePeaksChanged );
+    
     m_nuclidesDisp->insertWidget( insert_index, rr );
   }//for( loop over to add displays for new nuclides )
   
@@ -1596,6 +1639,10 @@ void RelActManualGui::updateNuclides()
     }//for( loop over existing displays to find position )
     
     ManRelEffNucDisp *rr = new ManRelEffNucDisp( nullptr, reaction, 0.0 );
+    //ManRelEffNucDisp::updated() is only emitted for age changes; not relevant for reactions,
+    //  but we'll connect up JIC for the future.
+    rr->updated().connect( this, &RelActManualGui::handlePeaksChanged );
+    
     m_nuclidesDisp->insertWidget( insert_index, rr );
   }//for( loop over to add displays for new nuclides )
   
