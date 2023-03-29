@@ -4045,6 +4045,9 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
 {
   typedef pair<double,double> DoublePair;
 
+  if( energie_widths.empty() )
+    return;
+  
   if( energy_count_map.empty() )
   {
     for( const DoublePair &dp : energie_widths )
