@@ -7721,11 +7721,15 @@ void InterSpec::createRelActManualWidget()
     m_relActManualWindow->show();
     if( (m_renderedWidth > 100) && (m_renderedHeight > 100) && !isPhone() )
     {
-      m_terminalWindow->resizeWindow( 0.95*m_renderedWidth, 0.25*m_renderedHeight );
-      m_terminalWindow->centerWindow();
+      m_relActManualWindow->resizeWindow( 0.95*m_renderedWidth, 0.80*m_renderedHeight );
+      m_relActManualWindow->centerWindow();
     }
     
     m_relActManualWindow->stretcher()->addWidget( m_relActManualGui, 0, 0 );
+    
+    
+    WPushButton *closeButton = m_relActManualWindow->addCloseButtonToFooter();
+    closeButton->clicked().connect(m_relActManualWindow, &AuxWindow::hide);
   }//if( toolTabsVisible() )
   
   assert( m_relActManualMenuItem );
@@ -7874,21 +7878,25 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( boost::bind( &InterSpec::showShieldingSourceFitWindow, this ) );
  
 #if( USE_REL_ACT_TOOL )
-  m_relActAutoMenuItem = popup->addMenuItem( "Isotopics by nuclides" );
-  HelpSystem::attachToolTipOn( m_relActAutoMenuItem,
-                              "UNDER DEVELOPMENT."
-                              " Automatically fits nuclides peaks to allow determining the relative"
-                              " activities of nuclides.  Does not require knowing the detector"
-                              " response or shielding information." , showToolTips );
-  m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::showRelActAutoWindow, this ) );
-  
-  m_relActManualMenuItem = popup->addMenuItem( "Isotopics from peaks" );
-  HelpSystem::attachToolTipOn( m_relActManualMenuItem,
-                              "UNDER DEVELOPMENT."
-                              " Uses the peaks you have fit to determine the relative activities of"
-                              " nuclides.  Does not require knowing the detector response or"
-                              " shielding information." , showToolTips );
-  m_relActManualMenuItem->triggered().connect( boost::bind( &InterSpec::createRelActManualWidget, this ) );
+  // The Relative Efficiency tools are not specialized to display on phones yet.
+  if( !isPhone() )
+  {
+    m_relActAutoMenuItem = popup->addMenuItem( "Isotopics by nuclides" );
+    HelpSystem::attachToolTipOn( m_relActAutoMenuItem,
+                                "UNDER DEVELOPMENT."
+                                " Automatically fits nuclides peaks to allow determining the relative"
+                                " activities of nuclides.  Does not require knowing the detector"
+                                " response or shielding information." , showToolTips );
+    m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::showRelActAutoWindow, this ) );
+    
+    m_relActManualMenuItem = popup->addMenuItem( "Isotopics from peaks" );
+    HelpSystem::attachToolTipOn( m_relActManualMenuItem,
+                                "UNDER DEVELOPMENT."
+                                " Uses the peaks you have fit to determine the relative activities of"
+                                " nuclides.  Does not require knowing the detector response or"
+                                " shielding information." , showToolTips );
+    m_relActManualMenuItem->triggered().connect( boost::bind( &InterSpec::createRelActManualWidget, this ) );
+  }//if( !isPhone() )
 #endif
   
   item = popup->addMenuItem( "Gamma XS Calc", "" );

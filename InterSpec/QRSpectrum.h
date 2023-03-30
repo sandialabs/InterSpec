@@ -37,6 +37,39 @@ namespace SpecUtils
   enum class SourceType : int;
 }
 
+/** The \c QRSpectrum namespace provides functions to encode spectra into URLs and QR codes.
+ 
+ An example of using this library could be:
+ \code{.cpp}
+ QRSpectrum::UrlSpectrum foreground;
+ foreground.m_source_type = SpecUtils::SourceType::Foreground;
+ foreground.m_energy_cal_coeffs = {0.0f, 3.0f};
+ foreground.m_model = "SomeDetector";
+ foreground.m_title = "User entered Notes";
+ foreground.m_start_time = std::chrono::system_clock::now();
+ foreground.m_latitude = 10.1223;
+ foreground.m_longitude = -13.232;
+ foreground.m_neut_sum = 5;
+ foreground.m_live_time = 295.1f;
+ foreground.m_real_time = 300.0f;
+ foreground.m_channel_data = {0,0,0,5,6,22,15,... };
+ 
+ QRSpectrum::UrlSpectrum background;
+ // No need to set energy cal, model, or lat/lon for background - will assume same as foreground
+ background.m_source_type = SpecUtils::SourceType::Background;
+ background.m_neut_sum = 1;
+ background.m_live_time = 299.1;
+ background.m_real_time = 300.0f;
+ foreground.m_channel_data = {0,0,0,3,4,2,1,...};
+ 
+ const vector<UrlEncodedSpec> encoded = url_encode_spectra( {foreground, background}, QRSpectrum::QrErrorCorrection::Low );
+ assert( encoded.size() == 1 );
+ cout << "URL: " << encoded[0].m_url << endl;
+ cout << "SVG: " << encoded[0].m_qr_svg << endl;
+ cout << "Num Elements: " << encoded[0].m_qr_size << endl;
+ \endcode
+ 
+ */
 
 namespace QRSpectrum
 {

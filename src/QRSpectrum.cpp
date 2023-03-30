@@ -63,7 +63,7 @@ extern "C"{
 /** Most for expository purposes, a compile time option to printout
  the steps of creating a spectrum URL
  */
-#define LOG_URL_ENCODING 1
+#define LOG_URL_ENCODING 0
 
 #if( LOG_URL_ENCODING && !defined(_WIN32) )
 #warning "Explicitly logging URL encoding steps to stdout"
@@ -78,6 +78,8 @@ static_assert( static_cast<int>(SpecUtils::SourceType::Unknown) == 4,
 
 namespace
 {
+  const int sm_qr_quite_area = 3;
+  
   const char * const sm_hex_digits = "0123456789ABCDEF";
 
   // From: https://datatracker.ietf.org/doc/rfc9285/ , table 1
@@ -432,7 +434,180 @@ string to_hex_bytes_str( const string &input )
   return answer;
 }
 
-
+  /*
+  void make_example_qr_codes()
+  {
+   // This function recursively looks for N42 files in a given directory, and then encodes
+   //  a randomly selected 100 of them into QR codes, both as individual SVG files, as well
+   //  as them all into a single HTML file, that has a hyperlink and encodeing information as well.
+   //  The foreground is encoded alone into QR, then background, then if possible
+   //  foreground+background.
+   //
+   //  Assumes "`base_dir`/svgs/[Low|Medium|Quartile|High]/" directory exists.
+   //
+   //  Currently set up to pull the foreground and background "Derived" spectra from Verifinder
+   //  files and write those out.
+   //
+   
+    using namespace QRSpectrum;
+    
+    const char *base_dir = "/path/to/data/files";
+    const size_t wanted_num_files = 100;
+    const auto wanted_ecl = QrErrorCorrection::Low;
+    
+    auto ecl_str = []( QrErrorCorrection ecl ) -> string {
+      switch ( ecl )
+      {
+        case QrErrorCorrection::Low: return "Low";
+        case QrErrorCorrection::Medium: return "Medium";
+        case QrErrorCorrection::Quartile: return "Quartile";
+        case QrErrorCorrection::High: return "High";
+      }
+      return "invalid";
+    };
+    
+    const vector<string> files = SpecUtils::recursive_ls(base_dir, ".n42");
+    
+    set<int> files_tried;
+    size_t num_succes_files = 0;
+    
+    ofstream output_html( SpecUtils::append_path(base_dir, "qr_codes.html") );
+    output_html <<
+    R"delim(<!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <title>Example QR Codes for Verifinder SN20</title>
+      </head>
+      <body>
+    )delim";
+    
+    output_html << "Target error correction level: " << ecl_str(wanted_ecl) << "<br />";
+    output_html << "Quite area, num elements: " << sm_qr_quite_area << "<br />";
+    
+    while( (files_tried.size() != files.size()) && (num_succes_files < wanted_num_files) )
+    {
+      int index = rand() % files.size();
+      while( files_tried.count(index) )
+        index = rand() % files.size();
+      
+      files_tried.insert( index );
+      const string filename = files[index];
+      
+      SpecUtils::SpecFile spec;
+      if( !spec.load_file( filename, SpecUtils::ParserType::Auto, filename) )
+        continue;
+      
+      shared_ptr<const SpecUtils::Measurement> foreground, background;
+      for( const auto &m : spec.measurements() )
+      {
+        if( !m || !m->derived_data_properties() || m->num_gamma_channels() < 32 )
+          continue;
+        
+        const string title = m->title();
+        if( SpecUtils::icontains(title, "Analysis0Background") )
+          background = m;
+        else if( SpecUtils::icontains(title, "Analysis0Raw") )
+          foreground = m;
+      }//for( const auto &m : spec->measurements() )
+      
+      if( !foreground || !background )
+      {
+        cout << "Failed to get foreground or background\n";
+        continue;
+      }
+      
+      num_succes_files += 1;
+      
+      output_html << "<br /><br /><h1>" << SpecUtils::filename(filename) << "</h1>\n";
+      
+      std::vector<UrlSpectrum> fore_url_spec = to_url_spectra( {foreground}, spec.instrument_model() );
+      std::vector<UrlSpectrum> back_url_spec = to_url_spectra( {background}, spec.instrument_model() );
+      std::vector<UrlSpectrum> both_url_spec = to_url_spectra( {foreground, background}, spec.instrument_model() );
+      
+      auto toHtml = [&output_html,ecl_str,filename,base_dir,wanted_ecl]( const UrlEncodedSpec &urlspec, string tag ){
+        output_html << "<div style=\"width: 350px; height: 350px;\">\n" << urlspec.m_qr_svg << "\n</div>\n";
+        output_html << "Num elements: " << urlspec.m_qr_size << "x" << urlspec.m_qr_size << " (version " << urlspec.m_qr_version << ").<br />\n";
+        output_html << "Error Correction Level: " << ecl_str(urlspec.m_error_level) << "<br />\n";
+        output_html << "Link: <a href=\"" <<  urlspec.m_url << "\">here</a>" << "<br />\n";
+        
+        const string leaf = SpecUtils::filename(filename);
+        string svg_name = SpecUtils::append_path(
+                          SpecUtils::append_path(
+                          SpecUtils::append_path( base_dir, "svgs"), ecl_str(wanted_ecl) ), leaf + "." + tag + ".svg" );
+        ofstream svg( svg_name.c_str(), ios::out | ios:: binary );
+        svg << urlspec.m_qr_svg << endl;
+      };
+      
+      try
+      {
+        output_html << "<h3>Foreground</h3>\n";
+        const vector<UrlEncodedSpec> encoded = url_encode_spectra( fore_url_spec, wanted_ecl, 0 );
+        
+        if( encoded.size() != 1 )
+        {
+          cout << "Foreground larger than 1" << endl;
+          output_html << "Encoded to " << encoded.size() << " URLS - skipping\n<br />";
+        }else
+        {
+          toHtml( encoded[0], "fore" );
+        }
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to encode foreground to UrlSpectrum" << endl;
+        output_html << "Failed to encode foreground to UrlSpectrum: " << e.what() << "\n<br />";
+      }
+      
+      try
+      {
+        output_html << "<h3>Background</h3>\n";
+        const vector<UrlEncodedSpec> encoded = url_encode_spectra( back_url_spec, wanted_ecl, 0 );
+        
+        if( encoded.size() != 1 )
+        {
+          cout << "Background larger than 1" << endl;
+          output_html << "Encoded to " << encoded.size() << " URLS - skipping\n<br />";
+        }else
+        {
+          toHtml( encoded[0], "back" );
+        }
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to encode background to UrlSpectrum" << endl;
+        output_html << "Failed to encode background to UrlSpectrum: " << e.what() << "\n<br />";
+      }
+      
+      try
+      {
+        output_html << "<h3>Foreground + Background</h3>\n";
+        const vector<UrlEncodedSpec> encoded = url_encode_spectra( both_url_spec, wanted_ecl, 0 );
+        
+        if( encoded.size() != 1 )
+        {
+          cout << "Foreground + Background larger than 1" << endl;
+          output_html << "Encoded to " << encoded.size() << " URLS - skipping\n<br />";
+        }else
+        {
+          toHtml( encoded[0], "fore_back" );
+        }
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to encode foreground+background to UrlSpectrum" << endl;
+        output_html << "Failed to encode foreground+background to UrlSpectrum: " << e.what() << "\n<br />";
+      }
+      
+      //cout << "From '" << filename << "', got\n\tNumForeground: " << foregrounds.size() << ", \tNumBack: " << backgrounds.size() << endl;
+    }//for( const string filename : files )
+    
+    output_html <<
+    R"delim(
+    </body>
+    </html>
+    )delim";
+    
+    cout << "Done" << endl;
+  }//void make_example_qr_codes()
+  */
 }//namespace
 
 
@@ -1343,7 +1518,7 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
   {
     UrlEncodedSpec spec;
     spec.m_url = urls[i];
-    spec.m_qr_svg = QrCode::to_svg_string( qrs[i], 5 );
+    spec.m_qr_svg = QrCode::to_svg_string( qrs[i], sm_qr_quite_area );
     
     spec.m_qr_size = qrs[i].getSize();
     spec.m_qr_version = qrs[i].getVersion();
@@ -1915,8 +2090,12 @@ std::shared_ptr<SpecMeas> to_spec_file( const std::vector<UrlSpectrum> &spec_inf
 }//std::shared_ptr<SpecUtils::SpecFile> to_spec_file( const std::vector<UrlSpectrum> &meas );
 
 
+
 int dev_code()
 {
+  //make_example_qr_codes();
+  //return;
+  
   // Now that URL encoding has solidified - this function should be cleaned up to use that code
   //  to compute statistics of how many QR codes it typically takes and such.
 #define DELETE_UNWANTED_FILES 0
