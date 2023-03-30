@@ -229,6 +229,7 @@ table.RecalibCoefTable
   height: 100%;
   width: 220px;
   overflow-y: auto;
+  display: block; /* overide .Wt-popupmenu */
 }
 
 .PopupDivMenuPhone.Root

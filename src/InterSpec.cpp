@@ -1051,7 +1051,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
         break;
     }//switch( i )
   }//for( loop over right click menu items )
-  
+
+  // For touch devices, give an obvious way to close the right-click menu since they cant simply
+  //  leave with the mouse (although they could just tap somewhere).
+  if( app && app->isMobile() && !m_rightClickMenu->isMobile() )
+    m_rightClickMenu->addMenuItem( "Cancel" );
+    
   m_spectrum->rightClicked().connect( boost::bind( &InterSpec::handleRightClick, this,
                                                   boost::placeholders::_1, boost::placeholders::_2,
                                                   boost::placeholders::_3, boost::placeholders::_4 ) );

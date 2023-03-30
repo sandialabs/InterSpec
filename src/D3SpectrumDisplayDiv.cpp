@@ -2111,11 +2111,11 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
         {
           DeleteOnClosePopupMenu *menu = new DeleteOnClosePopupMenu( nullptr, PopupDivMenu::TransientMenu );
           menu->aboutToHide().connect( menu, &DeleteOnClosePopupMenu::markForDelete );
-          menu->setPositionScheme( Wt::Absolute );
-          
+
           PopupDivMenuItem *item = nullptr, *selecteditem = nullptr;
-          const bool ismobile = false; //isMobile();
-          if( ismobile )
+          
+          menu->setPositionScheme( Wt::Absolute );
+          if( menu->isMobile() )
             item = menu->addPhoneBackItem( NULL );
           
           item = menu->addMenuItem( "Peaks To Keep In ROI:" );
@@ -2169,7 +2169,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
           if( selecteditem )
             menu->select( selecteditem );
           
-          if( ismobile )
+          if( menu->isMobile() )
           {
             menu->addStyleClass( " Wt-popupmenu Wt-outset" );
             menu->showMobile();
