@@ -178,7 +178,7 @@ namespace MoreNuclideInfo
     m_other_infos.clear();
     m_references.clear();
 
-    const string filename = "OUO_more_nuclide_info.xml";
+    const string filename = "more_nuclide_info.xml";
 
     const SandiaDecay::SandiaDecayDataBase *const db = DecayDataBaseServer::database();
     assert( db );
@@ -223,7 +223,17 @@ namespace MoreNuclideInfo
 #endif
     }//if( try to open default more_nuclide_info.xml )
     
+    // Finally, try the CWD
+    if( !infile.is_open() )
+    {
+#ifdef _WIN32
+      infile.open( SpecUtils::convert_from_utf8_to_utf16( filename ).c_str(), ios::in | ios::binary );
+#else
+      infile.open( filename.c_str(), ios::in | ios::binary );
+#endif
+    }//if( try to open default more_nuclide_info.xml )
 
+    
     if( !infile.is_open() )
       throw runtime_error( "MoreNucInfoDb::init: couldnt open '" + filename + "'" );
 

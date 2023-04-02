@@ -55,6 +55,133 @@
 using namespace std;
 using namespace Wt;
 
+namespace
+{
+  /** Forms the notes into HTML by doing things  like replacing '&lt;' with '<', or multiple line breaks with <br />
+   as well as taking care of references.
+   */
+  std::string notes_html( const std::shared_ptr<const MoreNuclideInfo::MoreNucInfoDb> &db,
+                          const MoreNuclideInfo::NucInfo * const more_info )
+  {
+    if( !db || !more_info )
+      return "";
+    
+    string notes = more_info->m_notes;
+    SpecUtils::trim( notes ); //just to make sure (although I think the XML parser already did this)
+
+    if( notes.empty() )
+      return notes;
+    
+    SpecUtils::ireplace_all( notes, "\r", "" );
+    vector<string> more_info_lines;
+
+    // Replace things like &lt;li&gt;Some List Item&lt;/li&gt;
+    //  to <li>Some List Item</li>
+    std::regex tag_regex( "&lt;([a-zA-Z/ ]{1,4})&gt;" );
+    notes = std::regex_replace( notes, tag_regex,"<$1>");
+    
+    boost::algorithm::split( more_info_lines, notes,
+      boost::algorithm::is_any_of( "\n" ),
+      boost::algorithm::token_compress_off );
+    
+    vector<string> references;
+    
+    notes = "<div class=\"MoreNucInfoSubSec\">";
+    for( size_t i = 0; i < more_info_lines.size(); ++i )
+    {
+      string line = more_info_lines[i];
+      SpecUtils::trim( line );
+
+      std::regex ref_regex( "\\[(.+?)\\]" );
+      auto ref_begin = std::sregex_iterator(begin(line), end(line), ref_regex);
+      auto ref_end = std::sregex_iterator();
+      for( std::sregex_iterator i = ref_begin; i != ref_end; ++i )
+      {
+        const string match_str = i->str();
+        auto prev_pos = std::find( begin(references), end(references), match_str );
+        if( prev_pos != end(references) )
+        {
+          const auto index = 1 + (prev_pos - begin(references));
+          const string num_ref = "[" + std::to_string(index) + "]";
+          SpecUtils::ireplace_all( line, match_str.c_str(), num_ref.c_str() );
+        }else
+        {
+          references.push_back( match_str );
+          const auto index = references.size();
+          const string num_ref = "[" + std::to_string(index) + "]";
+          SpecUtils::ireplace_all( line, match_str.c_str(), num_ref.c_str() );
+        }
+      }//for( std::sregex_iterator i = ref_begin; i != ref_end; ++i )
+      
+      notes += line;
+
+      if( line.empty() )
+      {
+        notes += "</div><div class=\"MoreNucInfoSubSec\">";
+
+        // Skip all the next empty lines
+        for( ; (i + 1) < more_info_lines.size(); ++i )
+        {
+          string nextline = more_info_lines[i + 1];
+          SpecUtils::trim( nextline );
+          if( !nextline.empty() )
+            break;
+        }//for( skip consequitive empty lines )
+      }//if( line.empty() )
+    }//for( size_t i = 0; i < more_info_lines.size(); ++i )
+    
+    if( !references.empty() )
+    {
+      notes += "<div class=\"MoreNucReferences\">";
+      for( size_t index = 0; index < references.size(); ++index )
+      {
+        string ref = references[index];
+        
+        if( !ref.empty() && (ref.front() == '[') )
+          ref = ref.substr(1);
+        
+        if( !ref.empty() && (ref.back() == ']') )
+          ref = ref.substr(0, ref.size() - 1);
+        
+        assert( !ref.empty() );
+        if( ref.empty() )
+          continue;
+        
+        notes += "<div class=\"MoreNucRef\">";
+        
+        notes += "<div>[" + std::to_string(index + 1) + "]</div><div>";
+        
+        const auto pos = db->m_references.find(ref);
+        if( pos == end(db->m_references) )
+        {
+          notes += "Reference '" + ref + "' not found.";
+        }else
+        {
+          const MoreNuclideInfo::RefInfo &ref_info = pos->second;
+          
+          notes += "<ul>";
+          if( !ref_info.m_desc.empty() )
+            notes += "<li>" + ref_info.m_desc + "</li>";
+          
+          if( !ref_info.m_url.empty() )
+            notes += "<li><a href=\"" + ref_info.m_url + "\" target=\"_blank\">" + ref_info.m_url + "</a></li>";
+          
+          notes += "</ul>";
+        }//if( we didnt find refernce ) / else
+        
+        notes += "</div></div>";
+      }//for( string &ref : references )
+      
+      notes += "</div>";
+    }//if( !references.empty() )
+    
+    notes += "</div>";
+    
+    return notes;
+  }//string notes_html( MoreNucInfoDb &db, NucInfo * )
+  
+}//namespace
+
 
 MoreNuclideInfoDisplay::MoreNuclideInfoDisplay( const SandiaDecay::Nuclide *const nuc, Wt::WContainerWidget *parent )
   : WTemplate( parent ),
@@ -387,46 +514,11 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
             tmplt.bindWidget( "related-nucs", associatedList );
           }//if( !more_info->m_associated.empty() )
           
-          string notes = more_info->m_notes;
-          SpecUtils::trim( notes ); //just to make sure (although I think the XML parser already did this)
+          
+          
+          string notes = notes_html( more_info_db, more_info );
 
           tmplt.setCondition( "if-has-more-info", !notes.empty() );
-          SpecUtils::ireplace_all( notes, "\r", "" );
-          vector<string> more_info_lines;
-
-          // Replace things like &lt;li&gt;Some List Item&lt;/li&gt;
-          //  to <li>Some List Item</li>
-          std::regex tag_regex( "&lt;([a-zA-Z/ ]{1,4})&gt;" );
-          notes = std::regex_replace( notes, tag_regex,"<$1>");
-          
-          boost::algorithm::split( more_info_lines, notes,
-            boost::algorithm::is_any_of( "\n" ),
-            boost::algorithm::token_compress_off );
-          
-          notes = "<div class=\"MoreNucInfoSubSec\">";
-          for( size_t i = 0; i < more_info_lines.size(); ++i )
-          {
-            string line = more_info_lines[i];
-            SpecUtils::trim( line );
-
-            notes += line;
-
-            if( line.empty() )
-            {
-              notes += "</div><div class=\"MoreNucInfoSubSec\">";
-
-              // Skip all the next empty lines
-              for( ; (i + 1) < more_info_lines.size(); ++i )
-              {
-                string nextline = more_info_lines[i + 1];
-                SpecUtils::trim( nextline );
-                if( !nextline.empty() )
-                  break;
-              }//for( skip consequitive empty lines )
-            }//if( line.empty() )
-          }//for( size_t i = 0; i < more_info_lines.size(); ++i )
-
-          notes += "</div>";
           tmplt.bindString( "more-info", notes, Wt::TextFormat::XHTMLText );
         }//if( more_info )
       }//if( more_info_db )
