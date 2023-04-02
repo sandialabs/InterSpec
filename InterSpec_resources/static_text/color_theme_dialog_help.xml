@@ -14,7 +14,10 @@ This tool allows you to customize colors on the spectrum and time charts, as wel
   icon; you can also upload <em>JSON</em> color themes by using the &quot;<b>Upload...</b>&quot; button at the bottom of the tool.  The <em>JSON</em>
   representation is convienient if you would like to use the same color theme on multiple devices.
 </p>
-
+<p>
+When the '<em>Auto apply "Dark" from OS</em>' checkbox is checked, then whenever the operating system transitions into its "dark" color scheme, then <b>InterSpec</b> will automatically apply the default "<em>Dark</em>" color theme; when the operating system goes back to its default or "light" theme, then your selected color theme will be applied, or if you havent selected a color theme, the "Default" color theme will be used.
+There is currently no way to customize the auto-applied dark theme.
+</p>
 
 <div style="width: 100%">
   <img align="left" src="InterSpec_resources/static_text/images/color_theme_dialog_top.png"  class="imageBorder" style="width:55%; margin-top: 10px; "/>
@@ -38,7 +41,7 @@ This tool allows you to customize colors on the spectrum and time charts, as wel
 
 
 <div style="width: 100%">
-  <img align="left" src="InterSpec_resources/static_text/images/color_theme_dialog_reflines.svg"  class="imageBorder" style="width:55%; margin-top: 10px; "/>
+  <img align="left" src="InterSpec_resources/static_text/images/color_theme_dialog_reflines.png"  class="imageBorder" style="width:55%; margin-top: 10px; "/>
 
   <span style="float:right; width: 44%">
    <ul>

@@ -3876,45 +3876,41 @@ void InterSpec::osThemeChange( std::string name )
     return;
   }
   
+  //TODO: if( name == "no-support" ), then should hide widgets associated with "AutoDarkFromOs"
+  
   try
   {
-    const int colorThemIndex = m_user->preferenceValue<int>("ColorThemeIndex", this);
-    if( colorThemIndex >= 0 )
-      return;
+    const bool autoDark = InterSpecUser::preferenceValue<bool>( "AutoDarkFromOs", this );
     
-    const auto oldTheme = ColorTheme::PredefinedColorTheme(-colorThemIndex);
-    
-    if( oldTheme != ColorTheme::PredefinedColorTheme::DefaultColorTheme )
-      return;
-    
-    std::unique_ptr<ColorTheme> theme;
-    
-    if( name == "dark" )
+    if( autoDark && (name == "dark") )
     {
       //Check to see if we already have dark applied
       if( m_colorTheme && SpecUtils::icontains( m_colorTheme->theme_name.toUTF8(), "Dark") )
         return;
      
-      cout << "Will set to dark" << endl;
-      theme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme::DarkColorTheme );
-    }else if( name == "light" || name == "default" || name == "no-preference" || name == "no-support" )
+      cout << "Will set to dark color theme" << endl;
+      unique_ptr<ColorTheme> theme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme::DarkColorTheme );
+      assert( theme );
+      if( theme )
+        applyColorTheme( make_shared<ColorTheme>(*theme) );
+    }else if( !autoDark || name == "light" || name == "default" || name == "no-preference" || name == "no-support" )
     {
-      //Check to see if we already have light applied
-      if (m_colorTheme && SpecUtils::icontains(m_colorTheme->theme_name.toUTF8(), "Default"))
+      if( m_colorTheme
+         && (m_colorTheme->dbIndex < 0)
+         && (ColorTheme::PredefinedColorTheme(-m_colorTheme->dbIndex) == ColorTheme::PredefinedColorTheme::DarkColorTheme) )
       {
-        cout << "Already have light color theme applied." << endl;
-        return;
+        cout << "Will set to default or user specified color theme, from \"Dark\"." << endl;
+        
+        m_colorTheme = nullptr;
+        applyColorTheme( nullptr );
+      }else
+      {
+        cout << "Current theme is not \"Dark\", so not setting color theme." << endl;
       }
-
-      cout << "Will set to default" << endl;
-      theme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme::DefaultColorTheme );
     }
-    
-    if( theme )
-      applyColorTheme( make_shared<ColorTheme>(*theme) );
-  }catch(...)
+  }catch( std::exception &e )
   {
-    cerr << "InterSpec::osThemeChange() caught exception - not doing anything" << endl;
+    cerr << "InterSpec::osThemeChange() caught exception - not doing anything:" << e.what() << endl;
   }
   
   cout << "Done applying color theme" << endl;
@@ -6947,6 +6943,20 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     InterSpecUser::associateWidget( m_user, "TabletUseDesktopMenus", checkbox, this );
   }//if( is tablet )
   
+  WCheckBox *autoDarkCb = new WCheckBox( " Auto apply \"Dark\" theme" );
+  item = subPopup->addWidget( autoDarkCb );
+  HelpSystem::attachToolTipOn( item, "Applies the \"Dark\" color theme automatically according to"
+                              " the operating systems current value, or when it transisitions.",
+                              true, HelpSystem::ToolTipPosition::Right );
+  InterSpecUser::associateWidget( m_user, "AutoDarkFromOs", autoDarkCb, this );
+  
+  InterSpecUser::addCallbackWhenChanged( m_user, "AutoDarkFromOs", std::bind([](){
+    InterSpec *viewer = InterSpec::instance();
+    if( viewer )
+      viewer->doJavaScript( "try{ Wt.WT.DetectOsColorThemeJs('" + viewer->id() + "'); }"
+                            "catch(e){ console.error('Error with DetectOsColorThemeJs:',e); }" );
+  }) );
+  
 	item = subPopup->addMenuItem("Color Themes...");
 	item->triggered().connect(boost::bind(&InterSpec::showColorThemeWindow, this));
 
@@ -8800,12 +8810,14 @@ std::set<int> InterSpec::validForegroundSamples() const
 #if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS && !BUILD_AS_ELECTRON_APP )
 void InterSpec::initOsColorThemeChangeDetect()
 {
-  m_osColorThemeChange.reset( new JSignal<std::string>( this, "OsColorThemeChange", true ) );
+  m_osColorThemeChange.reset( new JSignal<std::string>( this, "OsColorThemeChange", false ) );
   m_osColorThemeChange->connect( boost::bind( &InterSpec::osThemeChange, this,
                                              boost::placeholders::_1 ) );
   
+  LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsDetectOsColorThemeJs);
   LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsSetupOsColorThemeChangeJs);
   
+  doJavaScript( "Wt.WT.DetectOsColorThemeJs('" + id() + "')" );
   doJavaScript( "Wt.WT.SetupOsColorThemeChangeJs('" + id() + "')" );
 }//void initOsColorThemeChangeDetect()
 #endif

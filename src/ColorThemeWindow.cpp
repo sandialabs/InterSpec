@@ -29,6 +29,7 @@
 #include <Wt/WText>
 #include <Wt/WAnchor>
 #include <Wt/WServer>
+#include <Wt/WCheckBox>
 #include <Wt/WResource>
 #include <Wt/WMenuItem>
 #include <Wt/WFileUpload>
@@ -253,6 +254,13 @@ m_apply( nullptr )
   
   WContainerWidget *foot = footer();
   AuxWindow::addHelpInFooter( foot, "color-theme-dialog" );
+  
+  WCheckBox *autoDarkCb = new WCheckBox( "Auto apply \"Dark\" from OS", foot );
+  autoDarkCb->setFloatSide( Wt::Side::Left );
+  autoDarkCb->setToolTip( "Apply the \"Dark\" color theme automatically according to"
+                          " the operating systems current value, or when it transisitions." );
+  
+  InterSpecUser::associateWidget(m_interspec->m_user, "AutoDarkFromOs", autoDarkCb, m_interspec);
   
   m_save = new WPushButton( "Save", foot );
   m_apply = new WPushButton( "Apply", foot );

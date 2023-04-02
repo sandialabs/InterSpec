@@ -395,28 +395,43 @@ function()
 
 
 //Requires {macOS 10.14, iOS 13.0, iPadOS 13.0, Windows 10} and {Chrome 76, Safari 12.1, Firefox 67}
+
+WT_DECLARE_WT_MEMBER
+(DetectOsColorThemeJs, Wt::JavaScriptFunction, "DetectOsColorThemeJs",
+function(id)
+{
+  try
+  {
+    const darkQ = window.matchMedia('(prefers-color-scheme: dark)');
+    const lightQ = window.matchMedia('(prefers-color-scheme: light)');
+    const noPrefQ = window.matchMedia('(prefers-color-scheme: no-preference)');
+    
+    if( darkQ.matches )
+      Wt.emit( id, {name: 'OsColorThemeChange' }, 'dark' );
+    else if( lightQ.matches )
+      Wt.emit( id, {name: 'OsColorThemeChange' }, 'light' );
+    else if( noPrefQ.matches )
+      Wt.emit( id, {name: 'OsColorThemeChange' }, 'no-preference' );
+    else
+      throw 'no-support';
+  }catch(error)
+  {
+    Wt.emit( id, {name: 'OsColorThemeChange' }, 'no-support' );
+  }
+});
+
 WT_DECLARE_WT_MEMBER
 (SetupOsColorThemeChangeJs, Wt::JavaScriptFunction, "SetupOsColorThemeChangeJs",
 function(id)
 {
   try
   {
-    var darkQ = window.matchMedia('(prefers-color-scheme: dark)');
-    var lightQ = window.matchMedia('(prefers-color-scheme: light)');
-    var noPrefQ = window.matchMedia('(prefers-color-scheme: no-preference)');
-    var isSupported = darkQ.matches || lightQ.matches || noPrefQ.matches;
+    const darkQ = window.matchMedia('(prefers-color-scheme: dark)');
+    const lightQ = window.matchMedia('(prefers-color-scheme: light)');
+    const noPrefQ = window.matchMedia('(prefers-color-scheme: no-preference)');
     
-    if( !isSupported )
-      throw 'no-support';
-    
-    if( darkQ.matches )
-      Wt.emit( id, {name: 'OsColorThemeChange' }, 'dark' );
-    
-    if( lightQ.matches )
-      Wt.emit( id, {name: 'OsColorThemeChange' }, 'light' );
-    
-    if( noPrefQ.matches )
-      Wt.emit( id, {name: 'OsColorThemeChange' }, 'no-preference' );
+    if( !darkQ.matches && !lightQ.matches && !noPrefQ.matches )
+      console.warn( 'No matches for color scheme found.' );
     
     darkQ.addListener( function(e){
       if( e && e.matches )
@@ -435,7 +450,7 @@ function(id)
     
   }catch(error)
   {
-    Wt.emit( id, {name: 'OsColorThemeChange' }, 'no-support' );
+    console.warn( 'Color theme not supported:', error );
   }
 }
 );
