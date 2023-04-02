@@ -1096,7 +1096,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   updateSaveWorkspaceMenu();
 #endif
   
-#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS && !BUILD_AS_ELECTRON_APP )
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
   initOsColorThemeChangeDetect();
 #endif
   
@@ -8807,7 +8807,7 @@ std::set<int> InterSpec::validForegroundSamples() const
 }//std::set<int> validForegroundSamples() const
 
 
-#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS && !BUILD_AS_ELECTRON_APP )
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
 void InterSpec::initOsColorThemeChangeDetect()
 {
   m_osColorThemeChange.reset( new JSignal<std::string>( this, "OsColorThemeChange", false ) );

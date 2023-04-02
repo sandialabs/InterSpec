@@ -302,6 +302,22 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     _fileNeedsOpening = nil;
   }
   
+  //Note: this bit of code does not seem to work from the themeChanged notification.
+  if( @available(iOS 13, *) )  //runtime check to run on older iOS
+  {
+    UITraitCollection *coll = [self traitCollection];
+    if( coll )
+    {
+      UIUserInterfaceStyle uistyle = [coll userInterfaceStyle];
+      if( uistyle == UIUserInterfaceStyleDark )
+      {
+        NSLog( @"requesting initial theme to dark" );
+        actualURL = [NSString stringWithFormat:@"%@&colortheme=dark", actualURL];
+      }
+    }
+  }//if( @available(iOS 13, *) )
+
+  
   // In the c++ we can detect if its a phone or tablet from the user agent, but we'll also
   //  just pass this in in the URL as well.
   if( UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad )
