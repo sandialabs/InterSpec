@@ -3780,7 +3780,6 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
     android_download_workaround( m_calpResource, "isotopics_by_nuclide.html");
   }) );
 #endif //ANDROID
-  
 #endif
 
   btn->setText( "HTML Report" );
