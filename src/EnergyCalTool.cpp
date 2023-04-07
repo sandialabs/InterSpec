@@ -1952,7 +1952,7 @@ void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<con
         throw runtime_error( "The number of new calibration channels ("
                             + std::to_string( new_cal->num_channels() )
                             + " doesnt match old calibration ("
-                            + std::to_string( old_disp_cal->num_channels() )
+                            + std::to_string( old_cal->num_channels() )
                             + ") for detector '" + det + "'." );
       
       MeasToApplyCoefChangeTo det_specific_tochange = tochange;
