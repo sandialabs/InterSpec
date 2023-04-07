@@ -425,6 +425,13 @@ RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *paren
   wApp->useStyleSheet( "InterSpec_resources/RelActManualGui.css" );
   
   addStyleClass( "EnergyCalTool RelActManualGui" );
+    
+  // If the widget gets to less than about 1145px wide, then Wt layout will start shrinking
+  //  the columns, even though they are fixed or minimum sized.  When this happens if we dont
+  //  set the vertical overflow to hidden, a useless horizantal scrollbar will show up on the
+  //  entire bottom of the widget (but it only will ever scroll for like 5 px - probably just
+  //  padding somewhere), even though each column will also get scrollbars or be squeezed.
+  setOverflow( Overflow::OverflowHidden, Wt::Orientation::Horizontal );
   
   init();
 }//RelActManualGui constructor
@@ -788,6 +795,7 @@ void RelActManualGui::init()
   
   WContainerWidget *resultContent = new WContainerWidget();
   resultContent->addStyleClass( "ToolTabTitledColumnContent ResultColumnContent" );
+  resultContent->setMinimumSize(350, WLength::Auto );
   collayout->addWidget( resultContent, 1, 0 );
   collayout->setRowStretch( 1, 1 );
   m_layout->addWidget( resCol, 0, 3 );

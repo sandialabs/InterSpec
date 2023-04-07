@@ -1775,7 +1775,15 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     return true;
   }//if( !currdata )
   
-  const size_t nchannel = currdata->num_gamma_channels();
+  set<string> fore_gamma_dets;
+  const shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+  const set<int> &fore_samples = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
+  const vector<string> fore_dets = m_viewer->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
+  
+  if( !foreground )
+    return false;
+  
+  const size_t num_display_channel = currdata->num_gamma_channels();
   map<string,shared_ptr<const SpecUtils::EnergyCalibration>> det_to_cal;
   
   const std::streampos start_pos = infile.tellg();
@@ -1783,7 +1791,11 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   while( infile.good() )
   {
     string name;
-    const auto cal = EnergyCal::energy_cal_from_CALp_file( infile, nchannel, name );
+    
+    // Note that num_display_channel is for the displayed data - the individual detectors may
+    //  have different numbers of channels - we'll fix this up after initially loading the cal
+    //  (we need to know the detectors name the cal is for in order to fix it up)
+    shared_ptr<SpecUtils::EnergyCalibration> cal = EnergyCal::energy_cal_from_CALp_file( infile, num_display_channel, name );
     
     if( !cal )
     {
@@ -1817,15 +1829,52 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       continue;
     }
     
+    // The calbiration may not be for the correct number of channels, for files that have detectors
+    //  with differnt num channels; we'll check for this here and fix the calibration up for this
+    //  case.
+    //  We could also do this for `name.empty()` case, but we shouldnt need to, I dont think.
+    if( !name.empty() )
+    {
+      for( const int sample_num : fore_samples )
+      {
+        const auto m = foreground->measurement(sample_num, name);
+        const size_t nchan = m ? m->num_gamma_channels() : size_t(0);
+        if( nchan > 3 )
+        {
+          if( nchan != num_display_channel )
+          {
+            try
+            {
+              switch( cal->type() )
+              {
+                case SpecUtils::EnergyCalType::Polynomial:
+                case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+                  cal->set_polynomial( nchan, cal->coefficients(), cal->deviation_pairs() );
+                  break;
+                  
+                case SpecUtils::EnergyCalType::FullRangeFraction:
+                  cal->set_full_range_fraction( nchan, cal->coefficients(), cal->deviation_pairs() );
+                  break;
+                  
+                case SpecUtils::EnergyCalType::LowerChannelEdge:
+                case SpecUtils::EnergyCalType::InvalidEquationType:
+                  break;
+              }//switch( cal->type() )
+            }catch( std::exception &e )
+            {
+              cerr << "Failed to change number of channels for energy calibration: " << e.what() << endl;
+            }
+          }//if( m->num_gamma_channels() != num_display_channel )
+          
+          break;
+        }//if( nchan > 3 )
+      }//for( const int sample_num : fore_samples )
+    }//if( !name.empty() )
+    
     det_to_cal[name] = cal;
   }//while( true )
   
-  set<string> fore_gamma_dets;
-  const shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
-  const set<int> &fore_samples = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
-  const vector<string> fore_dets = m_viewer->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
-  
-  if( det_to_cal.empty() || !foreground )
+  if( det_to_cal.empty() )
   {
     infile.seekg( start_pos, ios::beg );
     return false;
@@ -3197,6 +3246,7 @@ void SpecMeasManager::displayFile( int row,
     {
       options |= InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal;
       options |= InterSpec::SetSpectrumOptions::CheckForRiidResults;
+      options |= InterSpec::SetSpectrumOptions::SkipParseWarnings;
     }
     
     m_viewer->setSpectrum( measement_ptr, background_sample_numbers,

@@ -250,9 +250,8 @@ public:
   enum SetSpectrumOptions
   {
     CheckToPreservePreviousEnergyCal = 0x01,
-    CheckForRiidResults = 0x02
-    
-    // TODO: it seems both these options are the same everywhere - maybe go back and just use a bool
+    CheckForRiidResults = 0x02,
+    SkipParseWarnings = 0x04
   };//SetSpectrumOptions
   
   

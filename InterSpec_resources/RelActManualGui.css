@@ -1,13 +1,17 @@
+div.RelActManualGui
+{
+  overflow-x: hidden;
+}
 
 .RelActNucCol
 {
-  
+  /* Use a fixed width for now. */
+  width: 188px;
+  overflow-x: hidden;
 }
 
 .RelActNucCol .ToolTabColumnTitle
 {
-  /* Set the approx with for when no nuclides are inserted.*/
-  min-width: 175px;
 }
 
 .ManRelEffNucDisp.Wt-panel
@@ -165,6 +169,7 @@
 .RelActNucCol .ToolTabTitledColumnContent
 {
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 
