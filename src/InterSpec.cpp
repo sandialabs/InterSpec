@@ -9563,7 +9563,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   
   //Lets see if there are any parse warnings that we should give to the user.
-  if( meas && !sameSpecFile )
+  if( meas && !sameSpecFile && !(options & InterSpec::SetSpectrumOptions::SkipParseWarnings) )
   {
     Wt::WApplication *app = wApp;
     
