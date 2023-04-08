@@ -685,12 +685,11 @@ public:
     m_downloadCALp = new WAnchor( WLink(m_tool->calpResources()), btndiv );
     m_downloadCALp->setTarget( AnchorTarget::TargetNewWindow );
     m_downloadCALp->setStyleClass( "LinkBtn DownloadLink" );
-    m_downloadCALp->setText( "CALp" );
 #else
-    m_downloadCALp = new WPushButton( "CALp", btndiv );
+    m_downloadCALp = new WPushButton( btndiv );
     m_downloadCALp->setIcon( "InterSpec_resources/images/download_small.svg" );
-    m_downloadCALp->setLinkTarget( Wt::TargetNewWindow );
     m_downloadCALp->setLink( WLink( m_tool->calpResources() ) );
+    m_downloadCALp->setLinkTarget( Wt::TargetNewWindow );
     m_downloadCALp->setStyleClass( "LinkBtn DownloadBtn CALp" );
     
 #if( ANDROID )
@@ -701,6 +700,8 @@ public:
 #endif //ANDROID
     
 #endif //#if( BUILD_AS_OSX_APP || IOS ) / #else
+
+    m_downloadCALp->setText( "CALp" );
     
     m_uploadCALp = new WPushButton( btndiv );
     m_uploadCALp->setIcon( "InterSpec_resources/images/upload_small.svg" );
@@ -1307,13 +1308,12 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_downloadCALp = new WAnchor( WLink(m_calpResource), btndiv );
   m_downloadCALp->setTarget( AnchorTarget::TargetNewWindow );
   m_downloadCALp->setStyleClass( "LinkBtn DownloadLink CALp" );
-  m_downloadCALp->setText( "CALp" );
 #else
-  m_downloadCALp = new WPushButton( "CALp", btndiv );
+  m_downloadCALp = new WPushButton( btndiv );
   m_downloadCALp->setIcon( "InterSpec_resources/images/download_small.svg" );
+  m_downloadCALp->setLink( WLink( m_calpResource ) );
   m_downloadCALp->setLinkTarget( Wt::TargetNewWindow );
   m_downloadCALp->setStyleClass( "LinkBtn DownloadBtn CALp" );
-  m_downloadCALp->setLink( WLink(m_calpResource) );
   
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
@@ -1323,6 +1323,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
 #endif //ANDROID
   
 #endif
+  m_downloadCALp->setText( "CALp" );
   
   m_downloadCALp->clicked().connect( std::bind([this](){
     m_interspec->logMessage( "You can apply this CALp file later to a different spectrum by"

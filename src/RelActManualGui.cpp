@@ -246,8 +246,8 @@ public:
     setTitle( m_nuc ? m_nuc->symbol : m_reaction->name() );
     setCollapsible( true );
     setCollapsed( true );
-    setAnimation( { WAnimation::AnimationEffect::SlideInFromTop,
-      WAnimation::TimingFunction::Linear, 250 } );
+    //setAnimation( { WAnimation::AnimationEffect::SlideInFromTop,
+    //  WAnimation::TimingFunction::Linear, 250 } );
     
     if( m_nuc )
     {

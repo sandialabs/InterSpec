@@ -3770,22 +3770,22 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   WAnchor *btn = new WAnchor( WLink(m_html_download_rsc), parent );
   btn->setTarget( AnchorTarget::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
-  btn->setText( "HTML Report" );
 #else
-  WPushButton *btn = new WPushButton( "HTML Report", parent );
+  WPushButton *btn = new WPushButton( parent );
   btn->setIcon( "InterSpec_resources/images/download_small.svg" );
+  btn->setLink( WLink( m_html_download_rsc ) );
   btn->setLinkTarget( Wt::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
-  btn->setLink( WLink(m_html_download_rsc) );
-  
+
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   m_downloadHtmlReport->clicked().connect( std::bind([this](){
     android_download_workaround( m_calpResource, "isotopics_by_nuclide.html");
   }) );
 #endif //ANDROID
-  
 #endif
+
+  btn->setText( "HTML Report" );
   
   m_calc_started.connect( btn, &WWidget::disable );
   m_calc_failed.connect( btn, &WWidget::disable );
