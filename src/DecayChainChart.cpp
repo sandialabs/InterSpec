@@ -367,6 +367,9 @@ pair<AuxWindow *, DecayChainChart *>
       (Wt::WFlags<AuxWindowProperties>( AuxWindowProperties::DisableCollapse ) 
          | AuxWindowProperties::EnableResize) );
   
+  WPushButton *close = window->addCloseButtonToFooter();
+  close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
+    
   WGridLayout *layout = window->stretcher();
   layout->addWidget( chart, 0, 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
