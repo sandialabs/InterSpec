@@ -96,12 +96,13 @@ public:
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   /** Look in the users data directory for a file named "arcgis\_key.txt", whose contents is the arcgis access key.
+   If that file isnt present, will look in `InterSpec_app_settings.json` file for a "ArcGisKey" value to use.
    
    Newlines, whitespaces, and some other invalid characters are discarded.
    
-   If the file does not exist, an empty string is returned.
-   If the file exists, but after removing invalid characters, it is less than 6 characters, then "empty" is returned.
-   If the file exists, and has a somewhat valid seeming contents, will return those.
+   If the file(s) do not exist, an empty string is returned.
+   If a file exists, but after removing invalid characters, it is less than 6 characters, then "empty" is returned.
+   If a file exists, and has a somewhat valid seeming contents, will return those.
    
    \sa InterSpec::writableDataDirectory
    */

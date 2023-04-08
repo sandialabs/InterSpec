@@ -920,6 +920,9 @@ std::string file_to_open_on_load( const std::string &session_token )
     m_require_token( true ),
     m_allow_restore( true ),
     m_open_dev_tools( true )
+#if( USE_LEAFLET_MAP )
+    , m_arcgis_key("")
+#endif
   {
   }
 
@@ -1003,6 +1006,18 @@ std::string file_to_open_on_load( const std::string &session_token )
 
         config.m_open_dev_tools = val.toBool();
       }
+      
+#if( USE_LEAFLET_MAP )
+      if( base.contains( "ArcGisKey" ) )
+      {
+        const Wt::Json::Value &val = base.get( "ArcGisKey" );
+        if( val.type() != Wt::Json::Type::StringType )
+          throw runtime_error( "ArcGisKey must be string" );
+
+        config.m_arcgis_key = val.orIfNull("");
+      }
+#endif //USE_LEAFLET_MAP
+      
     };// update_config_from_json_file lamda
 
 
