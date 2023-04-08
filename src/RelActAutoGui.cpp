@@ -545,7 +545,9 @@ namespace
       
       WLabel *label = new WLabel( "Nuclide:", this );
       m_nuclide_edit = new WLineEdit( "", this );
+      
       m_nuclide_edit->setAutoComplete( false );
+      m_nuclide_edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
       m_nuclide_edit->setAttributeValue( "autocorrect", "off" );
       m_nuclide_edit->setAttributeValue( "spellcheck", "off" );
@@ -599,6 +601,7 @@ namespace
       validator->setFlags(Wt::MatchCaseInsensitive);
       m_age_edit->setValidator(validator);
       m_age_edit->setAutoComplete( false );
+      m_age_edit->setAttributeValue( "ondragstart", "return false" );
       m_age_edit->changed().connect( this, &RelActAutoNuclide::handleAgeChange );
       
       m_fit_age = new WCheckBox( "Fit Age", this );

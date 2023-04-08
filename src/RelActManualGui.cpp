@@ -281,9 +281,15 @@ public:
         WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_age_edit );
         validator->setFlags(Wt::MatchCaseInsensitive);
         m_age_edit->setValidator(validator);
-        m_age_edit->setAutoComplete( false );
         label->setBuddy( m_age_edit );
         m_age_edit->addStyleClass( "AgeEdit" );
+        
+        m_age_edit->setAutoComplete( false );
+        m_age_edit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+        m_age_edit->setAttributeValue( "autocorrect", "off" );
+        m_age_edit->setAttributeValue( "spellcheck", "off" );
+#endif
         
         m_age_edit->changed().connect( this, &ManRelEffNucDisp::handleAgeChange );
         m_age_edit->blurred().connect( this, &ManRelEffNucDisp::handleAgeChange );

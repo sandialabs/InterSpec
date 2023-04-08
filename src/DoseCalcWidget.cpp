@@ -251,6 +251,7 @@ public:
     label->addStyleClass( "DoseFieldLabel" );
     m_nuclideEdit = new WLineEdit();
     m_nuclideEdit->setAutoComplete( false );
+    m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_nuclideEdit->setAttributeValue( "autocorrect", "off" );
     m_nuclideEdit->setAttributeValue( "spellcheck", "off" );
@@ -264,7 +265,9 @@ public:
     layout->addWidget( label, 1, 0, AlignMiddle );
     label->addStyleClass( "DoseFieldLabel" );
     m_nuclideAgeEdit = new WLineEdit();
+    
     m_nuclideAgeEdit->setAutoComplete( false );
+    m_nuclideAgeEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_nuclideAgeEdit->setAttributeValue( "autocorrect", "off" );
     m_nuclideAgeEdit->setAttributeValue( "spellcheck", "off" );
@@ -971,7 +974,9 @@ void DoseCalcWidget::init()
 
         
         m_doseEnter = new WLineEdit( m_enterWidgets[i] );
+        
         m_doseEnter->setAutoComplete( false );
+        m_doseEnter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         m_doseEnter->setAttributeValue( "autocorrect", "off" );
         m_doseEnter->setAttributeValue( "spellcheck", "off" );
@@ -1022,7 +1027,9 @@ void DoseCalcWidget::init()
         
         m_activityEnter = new WLineEdit( m_enterWidgets[i] );
         m_activityEnter->addStyleClass( "DoseEnterTxt" );
+        
         m_activityEnter->setAutoComplete( false );
+        m_activityEnter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         m_activityEnter->setAttributeValue( "autocorrect", "off" );
         m_activityEnter->setAttributeValue( "spellcheck", "off" );
@@ -1096,7 +1103,9 @@ void DoseCalcWidget::init()
     
         
         m_distanceEnter = new WLineEdit( "100 cm" );
+        
         m_distanceEnter->setAutoComplete( false );
+        m_distanceEnter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         m_distanceEnter->setAttributeValue( "autocorrect", "off" );
         m_distanceEnter->setAttributeValue( "spellcheck", "off" );

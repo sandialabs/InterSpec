@@ -878,7 +878,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_nuclideEdit->setMargin( 2, Wt::Side::Top );
 //  m_nuclideEdit->setMinimumSize( WLength(10,WLength::FontEx), WLength::Auto );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
+  
   m_nuclideEdit->setAutoComplete( false );
+  m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_nuclideEdit->setAttributeValue( "autocorrect", "off" );
   m_nuclideEdit->setAttributeValue( "spellcheck", "off" );
@@ -943,7 +945,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_ageEdit->setValidator(validator);
+  
   m_ageEdit->setAutoComplete( false );
+  m_ageEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_ageEdit->setAttributeValue( "autocorrect", "off" );
   m_ageEdit->setAttributeValue( "spellcheck", "off" );

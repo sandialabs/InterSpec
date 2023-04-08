@@ -1776,6 +1776,8 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
 #else
+  m_directoryEdit->setAttributeValue( "ondragstart", "return false" );
+  
   WContainerWidget *topdiv = new WContainerWidget( this );
   m_deleteBtn = new WPushButton( topdiv );
   m_deleteBtn->addStyleClass( "closeicon-wtdefault" );
@@ -2469,6 +2471,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorDiameter = new WLineEdit( "0 cm", m_detectrDiameterDiv );
   label->setBuddy( m_detectorDiameter );
 
+  m_detectorDiameter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_detectorDiameter->setAttributeValue( "autocorrect", "off" );
   m_detectorDiameter->setAttributeValue( "spellcheck", "off" );
@@ -2486,6 +2489,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_uploadedDetName = new WLineEdit( m_uploadedDetNameDiv );
   label->setBuddy( m_uploadedDetName );
   
+  m_uploadedDetName->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_uploadedDetName->setAttributeValue( "autocorrect", "off" );
   m_uploadedDetName->setAttributeValue( "spellcheck", "off" );
@@ -2535,6 +2539,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualFunctionName = new WLineEdit( cell );
   label->setBuddy( m_detectorManualFunctionName );
 
+  m_detectorManualFunctionName->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_detectorManualFunctionName->setAttributeValue( "autocorrect", "off" );
   m_detectorManualFunctionName->setAttributeValue( "spellcheck", "off" );
@@ -2584,6 +2589,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDescription->setWidth( WLength(100,WLength::Percentage) );
   m_detectorManualDescription->setEmptyText( "Description of this detector response" );
   m_detectorManualDescription->changed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  
+  m_detectorManualDescription->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_detectorManualDescription->setAttributeValue( "autocorrect", "off" );
   m_detectorManualDescription->setAttributeValue( "spellcheck", "off" );
@@ -2600,6 +2607,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDiameterText->setValidator( distValidator );
   m_detectorManualDiameterText->blurred().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_detectorManualDiameterText->enterPressed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  
+  m_detectorManualDiameterText->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_detectorManualDiameterText->setAttributeValue( "autocorrect", "off" );
   m_detectorManualDiameterText->setAttributeValue( "spellcheck", "off" );

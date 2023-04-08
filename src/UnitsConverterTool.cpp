@@ -472,7 +472,9 @@ UnitsConverterTool::UnitsConverterTool()
   //label->addStyleClass( "UnitsConverterToolLabel" );
   
   m_input = new WLineEdit();
+  
   m_input->setAutoComplete( false );
+  m_input->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_input->setAttributeValue( "autocorrect", "off" );
   m_input->setAttributeValue( "spellcheck", "off" );
@@ -529,6 +531,8 @@ UnitsConverterTool::UnitsConverterTool()
   //label->addStyleClass( "UnitsConverterToolLabel" );
   
   m_output = new WLineEdit( );
+  
+  m_output->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_output->setAttributeValue( "autocorrect", "off" );
   m_output->setAttributeValue( "spellcheck", "off" );

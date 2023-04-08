@@ -438,7 +438,9 @@ void SpecFileSummary::init()
   m_prevSampleNumButton->clicked().connect( boost::bind( &SpecFileSummary::handleUserIncrementSampleNum, this, false) );
   m_displayedPreText = new WText( m_displaySampleDiv );
   m_displaySampleNumEdit = new WLineEdit( m_displaySampleDiv );
+  
   m_displaySampleNumEdit->setAutoComplete( false );
+  m_displaySampleNumEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_displaySampleNumEdit->setAttributeValue( "autocorrect", "off" );
   m_displaySampleNumEdit->setAttributeValue( "spellcheck", "off" );

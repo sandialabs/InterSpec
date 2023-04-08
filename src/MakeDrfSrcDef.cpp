@@ -202,7 +202,9 @@ void MakeDrfSrcDef::create()
   cell = m_table->elementAt(sm_distance_row,1);
   m_distanceEdit = new WLineEdit( cell );
   m_distanceEdit->setTextSize( 16 );
+  
   m_distanceEdit->setAutoComplete( false );
+  m_distanceEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distanceEdit->setAttributeValue( "autocorrect", "off" );
   m_distanceEdit->setAttributeValue( "spellcheck", "off" );
@@ -221,7 +223,9 @@ void MakeDrfSrcDef::create()
   
   cell = m_table->elementAt(sm_activity_row,1);
   m_activityEdit = new WLineEdit( cell );
+  
   m_activityEdit->setAutoComplete( false );
+  m_activityEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_activityEdit->setAttributeValue( "autocorrect", "off" );
   m_activityEdit->setAttributeValue( "spellcheck", "off" );
@@ -284,7 +288,9 @@ void MakeDrfSrcDef::create()
   label = new WLabel( "Age@Assay", cell );
   cell = m_table->elementAt(sm_age_at_assay_row,1);
   m_sourceAgeAtAssay = new WLineEdit( cell );
+  
   m_sourceAgeAtAssay->setAutoComplete( false );
+  m_sourceAgeAtAssay->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_sourceAgeAtAssay->setAttributeValue( "autocorrect", "off" );
   m_sourceAgeAtAssay->setAttributeValue( "spellcheck", "off" );
