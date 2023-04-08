@@ -518,6 +518,15 @@ int start_server( const char *process_name,
     return -10;
   }
   
+  // In case the Wt XML config file is relative to the base directory that contains "data"
+  //  but that isnt our CWD.
+  string wt_config_file = xml_config_path;
+  if( !SpecUtils::is_file(wt_config_file) )
+  {
+    const string trial = SpecUtils::append_path( relbasedir, wt_config_file );
+    if( SpecUtils::is_file(trial) )
+      wt_config_file = trial;
+  }
 
     //ToDo: should look into using '--approot' Wt Argument.
     
@@ -532,7 +541,7 @@ int start_server( const char *process_name,
 
   try
   {
-    InterSpecServer::startWebServer( process_name, relbasedir, xml_config_path, server_port );
+    InterSpecServer::startWebServer( process_name, relbasedir, wt_config_file, server_port );
   }catch( std::exception &e )
   {
     std::cerr << "\n\nCaught exception trying to start InterSpec server:\n\t"

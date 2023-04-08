@@ -15,5 +15,5 @@
   "AllowTokenFreeSessions_Documentation": "Normally external sessions (i.e. 'View' -> 'Use in external browser') get assigned a one-time-use token that is required to load InterSpec into the browser.  Without a valid token, you cant load a session in the browser.  If you allow external sessions without tokens, then the token wont be needed - and any application that can access your localhost network can create a session and potentually access your data.  It is not recomended to to enable this setting.",
 
   "OpenDevTools": false,
-  "OpenDevTools_Documentation": "Enables right-clicking on an element to open the WebView Dev Tools to allow debugging JavaScript errors you may run into (please report to InterSpec@sandia.gov if you find any)" 
+  "OpenDevTools_Documentation": "Enables right-clicking on an element to open the WebView Dev Tools to allow debugging JavaScript errors you may run into (please report to InterSpec@sandia.gov if you find any).  On macOS you will still need to select 'Edit' -> 'Enable Web Inspector'." 
 }

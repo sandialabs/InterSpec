@@ -31,7 +31,6 @@
 #include <thread>
 #include <chrono>
 #include <stdlib.h>
-#include <boost/filesystem.hpp>  //toso: get rid of using boost in this file
 
 //We gotta fix some wierd errors...
 #ifdef check
@@ -211,7 +210,6 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 - (void)applicationWillFinishLaunching:(NSNotification *)aNotification
 {
   NSLog(@"applicationWillFinishLaunching");
-  _PreferenceDbPath = nil;
   _fileNeedsOpening = nil;
   _isServing = NO;
   _UrlServingOn = @"";
@@ -219,59 +217,9 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 }
 
 
-- (void)setDbDirectory
-{
-  NSLog( @"setDbDirectory" );
-  if( _PreferenceDbPath )
-    return;
-  
-  NSLog( @"will get path" );
-  boost::filesystem::path datadir = [[[self applicationFilesDirectory] path] UTF8String];
-  
-  if( !boost::filesystem::exists( datadir ) )
-  {
-    try
-    {
-      boost::filesystem::create_directories( datadir );
-      NSLog( @"Created directory directory %s", datadir.c_str() );
-    }catch(...){}
-  }
-  
-  if( boost::filesystem::exists( datadir ) )
-  {
-    InterSpec::setWritableDataDirectory( datadir.string<std::string>() );
-    
-    const std::vector<std::string> serial_db = SpecUtils::ls_files_in_directory( datadir.string<std::string>(), "serial_to_model.csv" );
-    if( !serial_db.empty() )
-      SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
-    
-    
-    
-    datadir /= "InterSpecUserData.db";
-   
-    try
-    {
-      DataBaseUtils::setPreferenceDatabaseFile( datadir.string<std::string>() );
-    }catch( std::exception &e )
-    {
-      NSLog( @"Error: %s", e.what() );
-    }
-    
-    _PreferenceDbPath = [NSString stringWithFormat:@"%s", datadir.c_str()];
-    NSLog( @"Datadir=%s", datadir.c_str() );
-  }else
-    NSLog( @"Failed to creade directory %s", datadir.c_str() );
-}//- (void)setDbDirectory:(void);
-
-
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification
 {
-  NSLog(@"Finished Launching");
-
-  
-  Wt::WString::setDefaultEncoding( Wt::UTF8 );
-  
-  InterSpecServer::set_require_tokened_sessions( true );
+  NSLog(@"In applicationDidFinishLaunching");
   
   /*
    //Could maybe get rid of using XIB/NIB by manually creating a window like:
@@ -380,18 +328,61 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //hiddenPageDOMTimerThrottlingAutoIncreases
   //pageVisibilityBasedProcessSuppressionEnabled
   
-  
-#if( PERFORM_DEVELOPER_CHECKS )
-  [prefs setValue:@YES forKey:@"developerExtrasEnabled"];
-  
-  //Note: currently I disable right click in InterSpecApp using javascript if
-  //      no PERFORM_DEVELOPER_CHECKS.  However, could also do:
-  //https://stackoverflow.com/questions/28801032/how-can-the-context-menu-in-wkwebview-on-the-mac-be-modified-or-overridden#28981319
-  //[_InterSpecWebView willOpenMenu:<#(nonnull NSMenu *)#> withEvent:<#(nonnull NSEvent *)#>];
-#endif
 
-  //To allow deep integration, could
-  //[_webConfig setURLSchemeHandler:<#(nullable id<WKURLSchemeHandler>)#> forURLScheme: @"helloworld://"];
+  const std::string base_dir = [[[NSBundle mainBundle] resourcePath] UTF8String];
+  const std::string data_dir = [[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent: @"data"] UTF8String];
+  const std::string user_data_dir = [[[self applicationFilesDirectory] path] UTF8String];
+  
+  bool require_token = true;
+#if( PERFORM_DEVELOPER_CHECKS )
+  bool allow_dev_tools = true;
+#else
+  bool allow_dev_tools = false;
+#endif
+  unsigned short int server_port = 0;
+  try
+  {
+    const InterSpecServer::DesktopAppConfig app_config
+                   = InterSpecServer::DesktopAppConfig::init( data_dir, user_data_dir );
+    
+    if( !app_config.m_allow_restore )
+      doResume = NO;
+    allow_dev_tools = (allow_dev_tools || app_config.m_open_dev_tools);
+    server_port = app_config.m_http_port;
+    require_token = app_config.m_require_token;
+  }catch( std::exception &e )
+  {
+    NSString *error = [NSString stringWithUTF8String:e.what()];
+    
+    NSAlert *alert = [[NSAlert alloc] init];
+    [alert setMessageText:@"Error parsing application JSON options!"];
+    [alert setInformativeText: error ];
+    [alert addButtonWithTitle:@"Ok"];
+    [alert setAlertStyle:NSAlertStyleCritical];
+    [alert runModal];
+  }//try / catch get confiugurations
+
+  InterSpecServer::set_require_tokened_sessions( require_token );
+  
+  NSString *tempDir = NSTemporaryDirectory();
+  if( tempDir == nil ) //shouldnt ever fail, right
+    tempDir = @"/tmp";
+  static const std::string tmpdr = [tempDir UTF8String];  //static since I'm not sure how long the location pointed to by setenv has to last
+  
+  setenv( "TMPDIR", tmpdr.c_str(), 1);
+  setenv( "WT_TMP_DIR", tmpdr.c_str(), 1);
+  
+  
+  if( allow_dev_tools )
+  {
+    [prefs setValue:@YES forKey:@"developerExtrasEnabled"];
+    
+    //Note: currently I disable right click in InterSpecApp using javascript if
+    //      no PERFORM_DEVELOPER_CHECKS.  However, could also do:
+    //https://stackoverflow.com/questions/28801032/how-can-the-context-menu-in-wkwebview-on-the-mac-be-modified-or-overridden#28981319
+    //[_InterSpecWebView willOpenMenu:<#(nonnull NSMenu *)#> withEvent:<#(nonnull NSEvent *)#>];
+  }//if( allow_dev_tools )
+  
   
   //Create WKWebView manually, rather than in XIB to support macOS 10.10 and 10.11...
   self.InterSpecWebView = [[WKWebView alloc] initWithFrame: _window.contentView.frame configuration: webConfig];
@@ -411,36 +402,37 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   _InterSpecWebView.allowsBackForwardNavigationGestures = NO;  //default is NO anyway
   
   
-  [self setDbDirectory];
-  DataBaseVersionUpgrade::checkAndUpgradeVersion();
-
+  if( allow_dev_tools )
+  {
+    [prefs setValue:@YES forKey:@"developerExtrasEnabled"];
+    
+    NSMenu *menu = [[[NSApp mainMenu] itemAtIndex: 1] submenu]; //Get "Edit" menu
+    
+    if( menu )
+    {
+      NSMenuItem *itemnow = [[NSMenuItem alloc]
+                             initWithTitle:@"Enable Web Inspector"
+                             action:@selector(enableWebInspector)
+                             keyEquivalent:@""];
+      [itemnow setTarget:self];
+      [menu addItem:itemnow];
+      [itemnow setEnabled:YES];
+    }
+    
+    //Note: currently the right click in InterSpecApp is disabled using javascript if
+    //      unles PERFORM_DEVELOPER_CHECKS is true.  However, could also do:
+    //https://stackoverflow.com/questions/28801032/how-can-the-context-menu-in-wkwebview-on-the-mac-be-modified-or-overridden#28981319
+    //[_InterSpecWebView willOpenMenu:<#(nonnull NSMenu *)#> withEvent:<#(nonnull NSEvent *)#>];
+  }//if( allow_dev_tools )
   
-  static const std::string basedir = std::string("--basedir=")
-                            + [[[NSBundle mainBundle] resourcePath] UTF8String];
   static const std::string argv0 = [[[NSBundle mainBundle] executablePath] UTF8String];
+  const char *xml_config_path = "data/config/wt_config_osx.xml";
   
-  NSString *tempDir = NSTemporaryDirectory();
-  if( tempDir == nil ) //shouldnt ever fail, right
-    tempDir = @"/tmp";
-  static const std::string tmpdr = [tempDir UTF8String];  //static since I'm not sure how long the location pointed to by setenv has to last
-  
-// TODO: Need to switch to just using `InterSpecServer::start_server`, and just set the temp dir env variable manually here; we can then remove some of the above prep code, like checking DB version and such
-
-  const char *argv[] = { argv0.c_str(), "--forceserve", "--nobrowsertab", basedir.c_str(), "-c", "data/config/wt_config_osx.xml", "--tempdir", tmpdr.c_str() };
-  int argc = sizeof(argv) / sizeof(argv[0]);
-  
-  InterSpecServer::startServer( argc, (char **)argv, &createApplication );
+  InterSpecServer::start_server( argv0.c_str(), user_data_dir.c_str(),
+                                base_dir.c_str(), xml_config_path, server_port );
   
   //now we'll wait for the server to start
-  std::string url;
-  int running = -1;
-  int numtries = 0;
-  while( url.empty() && running<0 && numtries < 110 )  //110 sections of at least 10 ms, is 1.1 seconds
-  {
-    url = InterSpecServer::urlBeingServedOn(); //will be empty if not serving
-    if( url.empty() )
-      std::this_thread::sleep_for( std::chrono::milliseconds(10) );
-  }//while( numtries < 11 )
+  std::string url = InterSpecServer::urlBeingServedOn();
   
   if( url.empty() )
   {
@@ -554,25 +546,6 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
       [NSDistributedNotificationCenter.defaultCenter addObserver:self selector:@selector(themeChanged:) name:@"AppleInterfaceThemeChangedNotification" object: nil];
     }
   }
-  
-  // Try adding a popover, to eventually display a map
-  //  See https://developer.apple.com/documentation/appkit/nspopover
-  /*
-   //  Need to implement https://developer.apple.com/documentation/appkit/nsviewcontroller?language=objc
-   //  note need to override -loadView method
-  NSRect bounds = [[self.window contentView] bounds];
-  
-  self.myPopover = [[NSPopover alloc] init];
-  
-  [self.myPopover setContentSize:NSMakeSize(0.85*bounds.size.width, 0.85*bounds.size.height)];
-  [self.myPopover setBehavior: NSPopoverBehaviorTransient]; //change to NSPopoverBehaviorApplicationDefined
-  [self.myPopover setAnimates:YES];
-  [self.myPopover setContentViewController: self.popoverViewController];
-  
-  [self.myPopover showRelativeToRect: bounds
-                            ofView:[[NSApp mainWindow] contentView]
-                     preferredEdge:NSMinYEdge];
-   */
 }//applicationDidFinishLaunching:(NSNotification *)aNotification
 
 
@@ -1026,6 +999,27 @@ createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
   // Could call back into the WebView using
   //[_InterSpecWebView evaluateJavaScript: @"someJavascript" completionHandler:nil];
 }//didReceiveScriptMessage
+
+
+-(void)enableWebInspector
+{
+  NSLog( @"Will show WebInpector" );
+  
+  // For macOS build, the context menu is disabled on wApp->domRoot() using JavaScript, so we need
+  //  to over-ride this
+  NSString *js = @"document.querySelector('.Wt-domRoot').setAttribute('oncontextmenu','return true;');";
+  [_InterSpecWebView evaluateJavaScript:js completionHandler:nil];
+    
+  NSAlert *alert = [[NSAlert alloc] init];
+  [alert setMessageText:@"Web Inspector Enabled"];
+  [alert setInformativeText: @"Right click somewhere other than the spectrum or other chart, "
+                              "and select 'Inspect Element' from the contect menu" ];
+  [alert addButtonWithTitle:@"Ok"];
+  [alert setAlertStyle:NSAlertStyleInformational];
+  [alert runModal];
+  
+  // TODO: disable, or remove the "Enable Web Inspector" menu item.
+}//enableWebInspector
 
 
 -(NSString *)generateSessionToken

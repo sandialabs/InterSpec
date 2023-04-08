@@ -33,15 +33,12 @@
 @property (strong, nonatomic) NSString *fileNeedsOpening;
 @property (strong, nonatomic) NSString *UrlServingOn;
 @property (strong, nonatomic) NSString *UrlUniqueId;
-@property (strong, nonatomic) NSString *PreferenceDbPath;
 
 @property (assign) IBOutlet NSWindow *window;
 
 @property (readonly, strong, nonatomic) NSPersistentStoreCoordinator *persistentStoreCoordinator;
 @property (readonly, strong, nonatomic) NSManagedObjectModel *managedObjectModel;
 @property (readonly, strong, nonatomic) NSManagedObjectContext *managedObjectContext;
-
--(void)setDbDirectory;
 
 -(void) terminated: (NSNotification *)notification;
 -(void) application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls;
@@ -52,6 +49,7 @@
 -(void)application:(NSApplication *)app willEncodeRestorableState:(NSCoder *)coder;
 -(void)applicationWillTerminate:(NSNotification *)notification;
 
+-(void)enableWebInspector;
 
 -(NSString *)generateSessionToken;
 @end
