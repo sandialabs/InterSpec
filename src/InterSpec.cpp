@@ -4833,6 +4833,14 @@ void InterSpec::stateSaveAs()
     
   WLineEdit *edit = new WLineEdit();
   edit->setEmptyText( "(Name to store under)" );
+  
+  edit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  edit->setAttributeValue( "autocorrect", "off" );
+  edit->setAttributeValue( "spellcheck", "off" );
+#endif
+
+  
   WText *label = new WText( "Name" );
   layout->addWidget( label, 2, 0 );
   layout->addWidget( edit,  2, 1 );
@@ -4882,6 +4890,13 @@ void InterSpec::stateSaveTag()
   WGridLayout *layout = window->stretcher();
     
   WLineEdit *edit = new WLineEdit();
+  
+  edit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  edit->setAttributeValue( "autocorrect", "off" );
+  edit->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   if( !isMobile() )
     edit->setFocus(true);
   WText *label = new WText( "Name" );
@@ -5061,6 +5076,13 @@ void InterSpec::startStoreStateInDb( const bool forTesting,
   WGridLayout *layout = window->stretcher();
   WLineEdit *edit = new WLineEdit();
   edit->setEmptyText( "(Name to store under)" );
+  
+  edit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  edit->setAttributeValue( "autocorrect", "off" );
+  edit->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   WText *label = new WText( "Name" );
   layout->addWidget( label, 0, 0 );
   layout->addWidget( edit,  0, 1 );

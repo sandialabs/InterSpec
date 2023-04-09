@@ -87,7 +87,9 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
 
   m_energyEdit = new WLineEdit( "100" );
+  
   m_energyEdit->setAutoComplete( false );
+  m_energyEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_energyEdit->setAttributeValue( "autocorrect", "off" );
   m_energyEdit->setAttributeValue( "spellcheck", "off" );
@@ -120,7 +122,9 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_materialEdit = new WLineEdit( "C0.5H0.2Ni0.3" );
+  
   m_materialEdit->setAutoComplete( false );
+  m_materialEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_materialEdit->setAttributeValue( "autocorrect", "off" );
   m_materialEdit->setAttributeValue( "spellcheck", "off" );
@@ -215,7 +219,9 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   label = new WLabel( "Density:" );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_density = new WLineEdit();
+  
   m_density->setAutoComplete( false );
+  m_density->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_density->setAttributeValue( "autocorrect", "off" );
   m_density->setAttributeValue( "spellcheck", "off" );
@@ -242,7 +248,9 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   label = new WLabel( "Thickness:" );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_distance = new WLineEdit( "1 cm" );
+  
   m_distance->setAutoComplete( false );
+  m_distance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distance->setAttributeValue( "autocorrect", "off" );
   m_distance->setAttributeValue( "spellcheck", "off" );
@@ -287,7 +295,9 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_detectorLabel[detectorCount] = new WLabel( "Distance" );
   m_layout->addWidget( m_detectorLabel[detectorCount] , row, 0, 1, 1, AlignLeft );
   m_detectorDistance = new WLineEdit("2 cm");
+  
   m_detectorDistance->setAutoComplete( false );
+  m_detectorDistance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_detectorDistance->setAttributeValue( "autocorrect", "off" );
   m_detectorDistance->setAttributeValue( "spellcheck", "off" );

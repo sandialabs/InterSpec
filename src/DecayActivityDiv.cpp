@@ -532,6 +532,8 @@ class DateLengthCalculator : public WContainerWidget
     m_layout->addWidget( label, 2, 0, AlignMiddle );
     
     m_duration = new WLineEdit();
+    
+    m_duration->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_duration->setAttributeValue( "autocorrect", "off" );
     m_duration->setAttributeValue( "spellcheck", "off" );
@@ -875,6 +877,7 @@ class DateLengthCalculator : public WContainerWidget
       
       cell = nuctbl->elementAt(1 + rowOffset, 1);
       WLineEdit *activityEdit = new WLineEdit(cell);
+      activityEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
       activityEdit->setAttributeValue( "autocorrect", "off" );
       activityEdit->setAttributeValue( "spellcheck", "off" );
@@ -944,6 +947,7 @@ class DateLengthCalculator : public WContainerWidget
       
       cell = nuctbl->elementAt(2 + rowOffset, 1);
       WLineEdit *ageEdit = new WLineEdit(cell);
+      ageEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
       ageEdit->setAttributeValue( "autocorrect", "off" );
       ageEdit->setAttributeValue( "spellcheck", "off" );
@@ -1508,6 +1512,7 @@ public:
     
     el = table->elementAt(0,1);
     m_ageEdit = new WLineEdit( timeSpanStr, el );
+    m_ageEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_ageEdit->setAttributeValue( "autocorrect", "off" );
     m_ageEdit->setAttributeValue( "spellcheck", "off" );
@@ -1716,6 +1721,7 @@ void DecayActivityDiv::init()
   //Initialize all member widgets; will assign parentage later on
 //  m_nuclides( 0 ),
   m_displayTimeLength      = new WLineEdit( "" );
+  m_displayTimeLength->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_displayTimeLength->setAttributeValue( "autocorrect", "off" );
   m_displayTimeLength->setAttributeValue( "spellcheck", "off" );

@@ -226,6 +226,9 @@ void DecaySelectNuclide::init()
                                           Wt::XHTMLUnsafeText );
   m_isotopeSearch            = new WLineEdit();
 
+  m_nuclideActivityEdit->setAttributeValue( "ondragstart", "return false" );
+  m_nuclideAgeEdit->setAttributeValue( "ondragstart", "return false" );
+  m_isotopeSearch->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_nuclideActivityEdit->setAttributeValue( "autocorrect", "off" );
   m_nuclideActivityEdit->setAttributeValue( "spellcheck", "off" );

@@ -77,6 +77,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 	cell = table->elementAt(row, 1);
 	cell->setColumnSpan(2);
 	m_themeTitle = new WLineEdit("Title not assigned", cell);
+  m_themeTitle->setAttributeValue( "ondragstart", "return false" );
 	label->setBuddy(m_themeTitle);
 	m_themeTitle->setWidth(WLength(95, WLength::Percentage));
 
@@ -85,7 +86,8 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 	label = new WLabel("Description",cell);
 	cell = table->elementAt(row, 1);
 	cell->setColumnSpan(2);
-    m_themeDescription = new WLineEdit("Desc not assigned", cell);
+  m_themeDescription = new WLineEdit("Desc not assigned", cell);
+  m_themeDescription->setAttributeValue( "ondragstart", "return false" );
 	label->setBuddy(m_themeDescription);
 	m_themeDescription->setWidth(WLength(95, WLength::Percentage));
 	
@@ -456,6 +458,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   {
     cell = table->elementAt(i,0);
     m_specificRefLineName[i] = new WLineEdit( cell );
+    m_specificRefLineName[i]->setAttributeValue( "ondragstart", "return false" );
     nuclideSuggest->forEdit( m_specificRefLineName[i], WSuggestionPopup::Editing );
     m_specificRefLineName[i]->changed().connect( boost::bind( &ColorThemeWidget::specificRefLineSourceChangedCallback, this, i ) );
     m_specificRefLineName[i]->enterPressed().connect( boost::bind( &ColorThemeWidget::specificRefLineSourceChangedCallback, this, i ) );

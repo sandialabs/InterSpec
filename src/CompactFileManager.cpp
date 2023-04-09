@@ -190,6 +190,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     
     m_displayedPreTexts[typeindex] = new WText( m_sampleDivs[typeindex] );
     WLineEdit *edit = new WLineEdit( m_sampleDivs[typeindex] );
+    edit->setAttributeValue( "ondragstart", "return false" );
     edit->addStyleClass( "SampleNumInput" );
     edit->setValidator( validator );
     edit->setAutoComplete( false );

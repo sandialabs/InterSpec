@@ -1420,6 +1420,8 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_detDiameter->setText( "2.54 cm" );
   m_detDiameter->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   m_detDiameter->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
+  
+  m_detDiameter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_detDiameter->setAttributeValue( "autocorrect", "off" );
   m_detDiameter->setAttributeValue( "spellcheck", "off" );
@@ -1703,6 +1705,8 @@ void MakeDrf::startSaveAs()
   name->setTextSize( 32 );
   name->setMaxLength( 255 );
   name->setAutoComplete( false );
+  
+  name->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   name->setAttributeValue( "autocorrect", "off" );
   name->setAttributeValue( "spellcheck", "off" );

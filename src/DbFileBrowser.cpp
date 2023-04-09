@@ -881,6 +881,7 @@ void SnapshotBrowser::startEditSelected()
   
   WLabel *label = new WLabel( "Name" );
   WLineEdit *nameEdit = new WLineEdit();
+  nameEdit->setAttributeValue( "ondragstart", "return false" );
   nameEdit->setEmptyText( "(Name to store under)" );
   nameEdit->setText( state->name );
   layout->addWidget( label, 0, 0 );

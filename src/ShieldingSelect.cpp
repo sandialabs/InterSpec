@@ -172,7 +172,9 @@ public:
     
     m_activityInput = new WLineEdit( this );
     m_activityInput->addStyleClass( "GridSecondCol GridStretchCol GridThirdRow" );
+    
     m_activityInput->setAutoComplete( false );
+    m_activityInput->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_activityInput->setAttributeValue( "autocorrect", "off" );
     m_activityInput->setAttributeValue( "spellcheck", "off" );
@@ -205,6 +207,7 @@ public:
     label->addStyleClass( "GridFirstCol GridFirstRow" );
     
     m_relaxationDistance = new WLineEdit( m_relaxationDiv );
+    m_relaxationDistance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_relaxationDistance->setAttributeValue( "autocorrect", "off" );
     m_relaxationDistance->setAttributeValue( "spellcheck", "off" );
@@ -1882,7 +1885,9 @@ void ShieldingSelect::init()
   materialDivLayout->addWidget( m_toggleImage, 0, 0, AlignLeft );
   
   m_materialEdit = new WLineEdit( "" );
+  
   m_materialEdit->setAutoComplete( false );
+  m_materialEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_materialEdit->setAttributeValue( "autocorrect", "off" );
   m_materialEdit->setAttributeValue( "spellcheck", "off" );
@@ -2035,7 +2040,9 @@ void ShieldingSelect::init()
     
     edit = new WLineEdit( "1.0 cm" );
     edit->setValidator( distValidator );
+    
     edit->setAutoComplete( false );
+    edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     edit->setAttributeValue( "autocorrect", "off" );
     edit->setAttributeValue( "spellcheck", "off" );

@@ -98,7 +98,9 @@ TerminalWidget::TerminalWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
   layout->addWidget( m_enteredtxt, 0, 0, 1, 3 );
   
   m_edit = new WLineEdit();
+  
   m_edit->setAutoComplete( false );
+  m_edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_edit->setAttributeValue( "autocorrect", "off" );
   m_edit->setAttributeValue( "spellcheck", "off" );

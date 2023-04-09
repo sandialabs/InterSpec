@@ -5172,6 +5172,7 @@ void SpecMeasManager::startStoreSpectraAsInDb()
     WGridLayout *layout = window->stretcher();
     WLineEdit *edit = new WLineEdit();
     edit->setEmptyText( "(Name to store under)" );
+    edit->setAttributeValue( "ondragstart", "return false" );
     
     std::shared_ptr<SpectraFileHeader> header
                                = m_fileModel->fileHeader( meas );
