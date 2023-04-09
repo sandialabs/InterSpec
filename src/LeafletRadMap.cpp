@@ -55,6 +55,7 @@
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 #include <Wt/Utils>
 #include "SpecUtils/Filesystem.h"
+#include "InterSpec/InterSpecServer.h"
 #endif
 
 
@@ -260,15 +261,37 @@ std::string LeafletRadMap::get_user_arcgis_key()
 {
   try
   {
+    // A user specified arcgis 
     const string user_data_dir = InterSpec::writableDataDirectory();
     const string user_key_file = SpecUtils::append_path(user_data_dir, "arcgis_key.txt" );
     
+    string user_key;
+    
+    
     if( !SpecUtils::is_file( user_key_file ) )
-      return "";
-      
-    std::vector<char> data;
-    SpecUtils::load_file_data( user_key_file.c_str(), data );
-    string user_key( begin(data), end(data) );
+    {
+      try
+      {
+        const string app_data_dir = InterSpec::staticDataDirectory();
+        
+        const InterSpecServer::DesktopAppConfig app_config
+                      = InterSpecServer::DesktopAppConfig::init( app_data_dir, user_data_dir );
+        
+        if( app_config.m_arcgis_key.empty() )
+          return "";
+        
+        user_key = app_config.m_arcgis_key;
+      }catch( std::exception & )
+      {
+        // This error would have already been reported to the user on application startup.
+        return "";
+      }
+    }else
+    {
+      std::vector<char> data;
+      SpecUtils::load_file_data( user_key_file.c_str(), data );
+      user_key = string( begin(data), end(data) );
+    }//if( "arcgis_key.txt" not present ) / else ( "arcgis_key.txt" is present )
     
     // Remove characters we dont expect
     while( !user_key.empty() )

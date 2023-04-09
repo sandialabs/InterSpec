@@ -2591,6 +2591,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   WLabel *distanceLabel = new WLabel( "Distance:" );
   
   m_distanceEdit = new WLineEdit( "100 cm" );
+  
+  m_distanceEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distanceEdit->setAttributeValue( "autocorrect", "off" );
   m_distanceEdit->setAttributeValue( "spellcheck", "off" );
@@ -3225,7 +3227,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         WLabel *label = new WLabel( nuc->symbol + " Activity", table->elementAt(row, 0) );
         WLineEdit *value = new WLineEdit( table->elementAt(row, 1) );
         label->setBuddy( value );
+        
         value->setAutoComplete( false );
+        value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         value->setAttributeValue( "autocorrect", "off" );
         value->setAttributeValue( "spellcheck", "off" );
@@ -3241,7 +3245,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         
         
         WLineEdit *tolerance = new WLineEdit( table->elementAt(row, 2) );
+        
         tolerance->setAutoComplete( false );
+        tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         tolerance->setAttributeValue( "autocorrect", "off" );
         tolerance->setAttributeValue( "spellcheck", "off" );
@@ -3261,7 +3267,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         const int row = table->rowCount();
         new WLabel( nuc->symbol + " Age", table->elementAt(row, 0) );
         WLineEdit *value = new WLineEdit( table->elementAt(row, 1) );
+        
         value->setAutoComplete( false );
+        value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         value->setAttributeValue( "autocorrect", "off" );
         value->setAttributeValue( "spellcheck", "off" );
@@ -3277,7 +3285,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         
         
         WLineEdit *tolerance = new WLineEdit( table->elementAt(row, 2) );
+        
         tolerance->setAutoComplete( false );
+        tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         tolerance->setAttributeValue( "autocorrect", "off" );
         tolerance->setAttributeValue( "spellcheck", "off" );
@@ -3306,7 +3316,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           const int row = table->rowCount();
           WLabel *label = new WLabel( "Areal Density", table->elementAt(row, 0) );
           WLineEdit *value = new WLineEdit( table->elementAt(row, 1) );
+          
           value->setAutoComplete( false );
+          value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           value->setAttributeValue( "autocorrect", "off" );
           value->setAttributeValue( "spellcheck", "off" );
@@ -3333,7 +3345,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           value->enterPressed().connect( std::bind(updateVal) );
           
           WLineEdit *tolerance = new WLineEdit( table->elementAt(row, 2) );
+          
           tolerance->setAutoComplete( false );
+          tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           tolerance->setAttributeValue( "autocorrect", "off" );
           tolerance->setAttributeValue( "spellcheck", "off" );
@@ -3364,7 +3378,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           const int row = table->rowCount();
           WLabel *label = new WLabel( "Atomic Number", table->elementAt(row, 0) );
           WLineEdit *value = new WLineEdit( table->elementAt(row, 1) );
+          
           value->setAutoComplete( false );
+          value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           value->setAttributeValue( "autocorrect", "off" );
           value->setAttributeValue( "spellcheck", "off" );
@@ -3392,7 +3408,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           value->enterPressed().connect( std::bind(updateVal) );
           
           WLineEdit *tolerance = new WLineEdit( table->elementAt(row, 2) );
+          
           tolerance->setAutoComplete( false );
+          tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           tolerance->setAttributeValue( "autocorrect", "off" );
           tolerance->setAttributeValue( "spellcheck", "off" );
@@ -3444,7 +3462,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           const int row = table->rowCount();
           WLabel *label = new WLabel( "Thickness", table->elementAt(row, 0) );
           WLineEdit *value = new WLineEdit( table->elementAt(row, 1) );
+          
           value->setAutoComplete( false );
+          value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           value->setAttributeValue( "autocorrect", "off" );
           value->setAttributeValue( "spellcheck", "off" );
@@ -3481,7 +3501,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           value->enterPressed().connect( std::bind(updateVal) );
           
           WLineEdit *tolerance = new WLineEdit( table->elementAt(row, 2) );
+          
           tolerance->setAutoComplete( false );
+          tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           tolerance->setAttributeValue( "autocorrect", "off" );
           tolerance->setAttributeValue( "spellcheck", "off" );
@@ -5150,6 +5172,7 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   label->setInline( false );
 
   WLineEdit *nameEdit = new WLineEdit( contents );
+  nameEdit->setAttributeValue( "ondragstart", "return false" );
   nameEdit->setInline( false );
   if( m_modelInDb )
     nameEdit->setValueText( m_modelInDb->name );
@@ -5161,6 +5184,7 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   label->setInline( false );
   
   WLineEdit *descEdit = new WLineEdit( contents );
+  descEdit->setAttributeValue( "ondragstart", "return false" );
   descEdit->setInline( false );
   if( m_modelInDb )
     descEdit->setValueText( m_modelInDb->description );

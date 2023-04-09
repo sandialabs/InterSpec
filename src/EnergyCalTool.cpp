@@ -685,12 +685,11 @@ public:
     m_downloadCALp = new WAnchor( WLink(m_tool->calpResources()), btndiv );
     m_downloadCALp->setTarget( AnchorTarget::TargetNewWindow );
     m_downloadCALp->setStyleClass( "LinkBtn DownloadLink" );
-    m_downloadCALp->setText( "CALp" );
 #else
-    m_downloadCALp = new WPushButton( "CALp", btndiv );
+    m_downloadCALp = new WPushButton( btndiv );
     m_downloadCALp->setIcon( "InterSpec_resources/images/download_small.svg" );
-    m_downloadCALp->setLinkTarget( Wt::TargetNewWindow );
     m_downloadCALp->setLink( WLink( m_tool->calpResources() ) );
+    m_downloadCALp->setLinkTarget( Wt::TargetNewWindow );
     m_downloadCALp->setStyleClass( "LinkBtn DownloadBtn CALp" );
     
 #if( ANDROID )
@@ -701,6 +700,8 @@ public:
 #endif //ANDROID
     
 #endif //#if( BUILD_AS_OSX_APP || IOS ) / #else
+
+    m_downloadCALp->setText( "CALp" );
     
     m_uploadCALp = new WPushButton( btndiv );
     m_uploadCALp->setIcon( "InterSpec_resources/images/upload_small.svg" );
@@ -1307,13 +1308,12 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_downloadCALp = new WAnchor( WLink(m_calpResource), btndiv );
   m_downloadCALp->setTarget( AnchorTarget::TargetNewWindow );
   m_downloadCALp->setStyleClass( "LinkBtn DownloadLink CALp" );
-  m_downloadCALp->setText( "CALp" );
 #else
-  m_downloadCALp = new WPushButton( "CALp", btndiv );
+  m_downloadCALp = new WPushButton( btndiv );
   m_downloadCALp->setIcon( "InterSpec_resources/images/download_small.svg" );
+  m_downloadCALp->setLink( WLink( m_calpResource ) );
   m_downloadCALp->setLinkTarget( Wt::TargetNewWindow );
   m_downloadCALp->setStyleClass( "LinkBtn DownloadBtn CALp" );
-  m_downloadCALp->setLink( WLink(m_calpResource) );
   
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
@@ -1323,6 +1323,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
 #endif //ANDROID
   
 #endif
+  m_downloadCALp->setText( "CALp" );
   
   m_downloadCALp->clicked().connect( std::bind([this](){
     m_interspec->logMessage( "You can apply this CALp file later to a different spectrum by"
@@ -1847,7 +1848,7 @@ void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<con
     
     if( tochange.detectors.size() == 1 )
     {
-      setEnergyCal( new_cal, tochange );
+      setEnergyCal( new_cal, tochange, true );
     }else
     {
       // Check to see if all detectors are using the same energy calibration, and if so, set the
@@ -1877,7 +1878,7 @@ void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<con
         applyCalChange( old_disp_cal, new_cal, { tochange }, false );
       }else
       {
-        setEnergyCal( new_cal, tochange );
+        setEnergyCal( new_cal, tochange, true );
       }
     }//if( we are changing a single detector ) / else
   }else
@@ -1885,9 +1886,21 @@ void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<con
     // We will apply the input calibration on a detector-by-detector basis, requiring the
     //  input to have info for every relevant detector.
     //
-    // Note, I *think* it should be the case applyCalChange(...) will do the shifting of peaks
-    //  appropriately, if we apply the energy calibration detector by detector - but this also looks
-    //  a bit dicey, so need to be checked.
+    //  We will only adjust peak positions if the detectors energy calibration is the
+    //   `suggested_sum_energy_calibration`, and even then, only once.
+    //   (note: not trusting disp_spec->energy_calibration() to be same as
+    //          `suggested_sum_energy_calibration` - but I think we could).
+    bool adjusted_peaks = false;
+    shared_ptr<const SpecUtils::EnergyCalibration> display_cal;
+    try
+    {
+      display_cal = tochange.meas->suggested_sum_energy_calibration( disp_samples, disp_detectors );
+    }catch( std::exception & )
+    {
+    }
+    
+    if( !display_cal )
+      display_cal = old_disp_cal;
     
     string missing_dets, extra_dets;
     for( const auto &det : tochange.detectors )
@@ -1952,7 +1965,7 @@ void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<con
         throw runtime_error( "The number of new calibration channels ("
                             + std::to_string( new_cal->num_channels() )
                             + " doesnt match old calibration ("
-                            + std::to_string( old_disp_cal->num_channels() )
+                            + std::to_string( old_cal->num_channels() )
                             + ") for detector '" + det + "'." );
       
       MeasToApplyCoefChangeTo det_specific_tochange = tochange;
@@ -1960,7 +1973,12 @@ void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<con
       det_specific_tochange.detectors.clear();
       det_specific_tochange.detectors.insert( det );
       
-      setEnergyCal( new_cal, det_specific_tochange );
+      // We will adjust the peak energies, only if the calibrations being changed contain the
+      //  display energy calibration.
+      const bool adjust_peaks = !adjusted_peaks && (display_cal == old_cal);
+      adjusted_peaks |= adjust_peaks;
+      
+      setEnergyCal( new_cal, det_specific_tochange, adjust_peaks );
     }//for( const string &det : detectors_to_apply )
   }//if( det_to_cal.size() == 1 ) / else
   
@@ -2440,7 +2458,7 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
 
 
 void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration> new_cal,
-                   const MeasToApplyCoefChangeTo &changemeas )
+                   const MeasToApplyCoefChangeTo &changemeas, const bool adjust_peaks )
 {
   using namespace SpecUtils;
   
@@ -2477,7 +2495,7 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
   {
     assert( 0 );
     throw runtime_error( "EnergyCalTool::setEnergyCal: measurement to change must be foreground,"
-                         " background, or secondary spec displaye" );
+                         " background, or secondary spec displayed" );
   }
   
   
@@ -2485,13 +2503,6 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
   const vector<string> dispdets = m_interspec->detectorsToDisplay( spectype );
   const shared_ptr<const SpecUtils::EnergyCalibration> display_cal
                        = changemeas.meas->suggested_sum_energy_calibration( dispsamples, dispdets );
-  
-  // We will adjust the peak energies, only if the calibrations being changed contain the display
-  //  energy calibration.
-  //  Note that this does still leave some room for peaks to get adjusted multiple times if multiple
-  //  detectors share an energy calibration, and you call this function multiple times from a loop
-  //  in an order... maybe we should add some other mechanism
-  bool adjust_peaks = false;
   
   try
   {
@@ -2518,9 +2529,8 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
                               + " channels but calibration being set has "
                               + to_string(new_cal->num_channels()) );
         
-        
-        if( new_cal == display_cal )
-          adjust_peaks = true;
+        //if( display_cal == meas_old_cal )
+        //  adjust_peaks = true;
         
         old_to_new_cals[meas_old_cal] = new_cal;
       }//for( const string &detname : change.detectors )
@@ -2531,11 +2541,11 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
     
     throw runtime_error( msg );
   }//try catch
-    
   
   // Now go through and translate the peaks, but we wont actually update them to the SpecMeas
   //  until we know we can update all the peaks
-  const set<set<int>> peaksamples = changemeas.meas->sampleNumsWithPeaks();
+  const set<set<int>> peaksamples = adjust_peaks ? changemeas.meas->sampleNumsWithPeaks()
+                                                 : set<set<int>>();
     
   // The peaks position (i.e., mean channel number) is determined by
   //  #SpecFile::suggested_sum_energy_calibration, however we may be applying an energy

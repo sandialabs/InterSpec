@@ -101,7 +101,7 @@ WT_DECLARE_WT_MEMBER
 (SvgToImgDownload, Wt::JavaScriptFunction, "SvgToImgDownload",
  function(chart,filename,asPng)
 {
-  // TODO: look at being able to copy to the pasteboard; looks doable.
+  // To copy to the pasteboard, and use the Clipboard API, an https connection is required, so we would have to send the image blob back to C++-land, and then put it in the clipboard there; see git commit 0db92a30928a3d8 for the sketched out Clipboard API try.
   try
   {
     // 'chart' is the JS SpectrumChartD3 object
@@ -1803,6 +1803,7 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
     {
       if( isfinal )
       {
+        // TODO: add a `PeakModel::replacePeaks(orig,newer)` function to allow updating peak quanitites in one step, or allow setting kLowerX/kUpperX columns in setData(...) function
         peakModel->removePeaks( orig_roi_peaks );
         
         std::vector<PeakDef> peaks_to_add;
@@ -1827,6 +1828,7 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
       
       if( isfinal )
       {
+        // TODO: add a `PeakModel::replacePeaks(orig,newer)` function to allow updating peak quanitites in one step, or allow setting kLowerX/kUpperX columns in setData(...) function
         peakModel->removePeaks( orig_roi_peaks );
         
         std::vector<PeakDef> peaks_to_add;
@@ -2109,11 +2111,11 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
         {
           DeleteOnClosePopupMenu *menu = new DeleteOnClosePopupMenu( nullptr, PopupDivMenu::TransientMenu );
           menu->aboutToHide().connect( menu, &DeleteOnClosePopupMenu::markForDelete );
-          menu->setPositionScheme( Wt::Absolute );
-          
+
           PopupDivMenuItem *item = nullptr, *selecteditem = nullptr;
-          const bool ismobile = false; //isMobile();
-          if( ismobile )
+          
+          menu->setPositionScheme( Wt::Absolute );
+          if( menu->isMobile() )
             item = menu->addPhoneBackItem( NULL );
           
           item = menu->addMenuItem( "Peaks To Keep In ROI:" );
@@ -2167,7 +2169,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
           if( selecteditem )
             menu->select( selecteditem );
           
-          if( ismobile )
+          if( menu->isMobile() )
           {
             menu->addStyleClass( " Wt-popupmenu Wt-outset" );
             menu->showMobile();

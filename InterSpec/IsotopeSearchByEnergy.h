@@ -56,7 +56,7 @@ class IsotopeSearchByEnergyModel;
 */
 class IsotopeSearchByEnergy : public Wt::WContainerWidget
 {
-protected:
+public:
   /** Class that represents an energy (and its +-range) that a user wants
       to search on.  The IsotopeSearchByEnergy widget will always have at least
       one of these, but the user may add more, to require search results to
@@ -151,6 +151,18 @@ public:
   //resultSelectionChanged(): called when user selects a row of the results
   void resultSelectionChanged();
   
+  /** Returns how many search energies are reasonably intended to be on peaks. */
+  int numSearchEnergiesOnPeaks();
+  
+  /** Assigns peaks that are reasonably near search energies, to the selected rows nuclide. */
+  void assignPeaksToSelectedNuclide();
+  
+  /** Clears current reference lines, and selection in table. */
+  void clearSelectionAndRefLines();
+  
+  /** Shows/hides the clear Ref Lines/selection button. */
+  void updateClearSelectionButton();
+  
   //serialize(): serializes current search energies to xml
   void serialize( std::string &xml_data ) const;
   
@@ -172,6 +184,10 @@ protected:
   InterSpec *m_viewer;
   D3SpectrumDisplayDiv *m_chart;
   Wt::WContainerWidget *m_searchEnergies;
+  Wt::WPushButton *m_clearRefLines;
+  Wt::Signals::connection m_refLineUpdateConnection;
+  Wt::Signals::connection m_refLineClearConnection;
+  Wt::WPushButton *m_assignPeakToSelected;
   int m_currentSearch;
   Wt::WText *m_searching;
   RowStretchTreeView *m_results;

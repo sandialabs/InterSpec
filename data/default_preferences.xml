@@ -45,4 +45,5 @@
  <pref name="RefLineShowPrev" type="Boolean">true</pref>
  <pref name="RefLineShowAssoc" type="Boolean">true</pref>
  <pref name="ShowMapDataWarning" type="Boolean">true</pref>
+ <pref name="AutoDarkFromOs" type="Boolean">true</pref>
 </preferences>

@@ -301,7 +301,7 @@ void InterSpecApp::setupDomEnvironment()
 #endif
   
 #if( BUILD_AS_OSX_APP && !PERFORM_DEVELOPER_CHECKS )
-  root()->setAttributeValue( "oncontextmenu", "return false;" );
+  domRoot()->setAttributeValue( "oncontextmenu", "return false;" );
 #endif
   
   // Define some javascript to artificially trigger a resize event; this is a hack used a few

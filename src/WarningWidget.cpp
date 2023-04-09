@@ -527,6 +527,9 @@ void WarningWidget::addMessageUnsafe( const Wt::WString &msg,
     
     // Remove any script so we wont store that
     WString sanitized = msg;
+    // Wt::Utils::removeScript() will print out a message like
+    //  "[secure] "XSS: discarding invalid attribute: onclick:..."
+    // when it removes stuff.
     if( !Wt::Utils::removeScript(sanitized) )
       sanitized = Wt::Utils::htmlEncode( sanitized, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
     

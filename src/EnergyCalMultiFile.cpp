@@ -203,7 +203,7 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
   WGridLayout *fitForLayout = new WGridLayout( fitFor );
   
   
-  for( size_t i = 0; i < ns_min_num_coef; ++i )
+  for( int i = 0; i < static_cast<int>(ns_min_num_coef); ++i )
   {
     WLabel *label = 0;
     switch( i )
@@ -216,6 +216,8 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
     }//switch( i )
     
     auto coefval = new WLineEdit();
+    
+    coefval->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     coefval->setAttributeValue( "autocorrect", "off" );
     coefval->setAttributeValue( "spellcheck", "off" );

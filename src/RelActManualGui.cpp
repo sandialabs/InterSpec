@@ -214,11 +214,14 @@ class ManRelEffNucDisp : public Wt::WPanel
 {
 public:
   const SandiaDecay::Nuclide * const m_nuc;
-  const ReactionGamma::Reaction * const m_reaction = nullptr;
+  const ReactionGamma::Reaction * const m_reaction;
   double m_current_age;
   const bool m_age_is_settable;
   Wt::WLineEdit *m_age_edit;
   Wt::WTableRow *m_age_row;
+  
+  Wt::Signal<> m_updated;
+  
   
 public:
   ManRelEffNucDisp( const SandiaDecay::Nuclide * const nuc,
@@ -230,7 +233,8 @@ public:
    m_current_age( (nuc && (age < 0.0)) ? PeakDef::defaultDecayTime(nuc) : age ),
    m_age_is_settable( nuc ? !PeakDef::ageFitNotAllowed(nuc) : false ),
    m_age_edit( nullptr ),
-   m_age_row( nullptr )
+   m_age_row( nullptr ),
+   m_updated( this )
   {
     assert( m_nuc || m_reaction );
     
@@ -242,8 +246,8 @@ public:
     setTitle( m_nuc ? m_nuc->symbol : m_reaction->name() );
     setCollapsible( true );
     setCollapsed( true );
-    setAnimation( { WAnimation::AnimationEffect::SlideInFromTop,
-      WAnimation::TimingFunction::Linear, 250 } );
+    //setAnimation( { WAnimation::AnimationEffect::SlideInFromTop,
+    //  WAnimation::TimingFunction::Linear, 250 } );
     
     if( m_nuc )
     {
@@ -277,9 +281,15 @@ public:
         WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_age_edit );
         validator->setFlags(Wt::MatchCaseInsensitive);
         m_age_edit->setValidator(validator);
-        m_age_edit->setAutoComplete( false );
         label->setBuddy( m_age_edit );
         m_age_edit->addStyleClass( "AgeEdit" );
+        
+        m_age_edit->setAutoComplete( false );
+        m_age_edit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+        m_age_edit->setAttributeValue( "autocorrect", "off" );
+        m_age_edit->setAttributeValue( "spellcheck", "off" );
+#endif
         
         m_age_edit->changed().connect( this, &ManRelEffNucDisp::handleAgeChange );
         m_age_edit->blurred().connect( this, &ManRelEffNucDisp::handleAgeChange );
@@ -335,9 +345,46 @@ public:
     }//if( m_nuc ) / else ( m_reaction )
   }//ManRelEffNucDisp(...)
   
+  Wt::Signal<> &updated()
+  {
+    return m_updated;
+  }
+  
   void handleAgeChange()
   {
     assert( m_age_edit || m_reaction );
+   
+    if( m_reaction )
+      return;
+    
+    assert( m_nuc );
+    if( !m_nuc || !m_age_edit )
+      return;
+    
+    try
+    {
+      double age = 0;
+      const string agestr = m_age_edit->text().toUTF8();
+      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, m_nuc->halfLife );
+      if( age < 0 )
+        throw runtime_error( "Negative age not allowed." );
+      
+      m_current_age = age;
+    }catch( std::exception & )
+    {
+      if( m_current_age >= 0.0 )
+      {
+        string agestr = PhysicalUnits::printToBestTimeUnits( m_current_age, 5 );
+        m_age_edit->setText( WString::fromUTF8(agestr) );
+      }else
+      {
+        string agestr;
+        m_current_age = PeakDef::defaultDecayTime( m_nuc, &agestr );
+        m_age_edit->setText( WString::fromUTF8(agestr) );
+      }
+    }//try / catch
+    
+    m_updated.emit();
   }//void handleAgeChange()
   
   void setAgeHidden( const bool hidden )
@@ -384,6 +431,13 @@ RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *paren
   wApp->useStyleSheet( "InterSpec_resources/RelActManualGui.css" );
   
   addStyleClass( "EnergyCalTool RelActManualGui" );
+    
+  // If the widget gets to less than about 1145px wide, then Wt layout will start shrinking
+  //  the columns, even though they are fixed or minimum sized.  When this happens if we dont
+  //  set the vertical overflow to hidden, a useless horizantal scrollbar will show up on the
+  //  entire bottom of the widget (but it only will ever scroll for like 5 px - probably just
+  //  padding somewhere), even though each column will also get scrollbars or be squeezed.
+  setOverflow( Overflow::OverflowHidden, Wt::Orientation::Horizontal );
   
   init();
 }//RelActManualGui constructor
@@ -747,6 +801,7 @@ void RelActManualGui::init()
   
   WContainerWidget *resultContent = new WContainerWidget();
   resultContent->addStyleClass( "ToolTabTitledColumnContent ResultColumnContent" );
+  resultContent->setMinimumSize(350, WLength::Auto );
   collayout->addWidget( resultContent, 1, 0 );
   collayout->setRowStretch( 1, 1 );
   m_layout->addWidget( resCol, 0, 3 );
@@ -1542,6 +1597,8 @@ void RelActManualGui::updateNuclides()
     }//for( loop over existing displays to find position )
     
     ManRelEffNucDisp *rr = new ManRelEffNucDisp( nuc, nullptr, age );
+    rr->updated().connect( this, &RelActManualGui::handlePeaksChanged );
+    
     m_nuclidesDisp->insertWidget( insert_index, rr );
   }//for( loop over to add displays for new nuclides )
   
@@ -1596,6 +1653,10 @@ void RelActManualGui::updateNuclides()
     }//for( loop over existing displays to find position )
     
     ManRelEffNucDisp *rr = new ManRelEffNucDisp( nullptr, reaction, 0.0 );
+    //ManRelEffNucDisp::updated() is only emitted for age changes; not relevant for reactions,
+    //  but we'll connect up JIC for the future.
+    rr->updated().connect( this, &RelActManualGui::handlePeaksChanged );
+    
     m_nuclidesDisp->insertWidget( insert_index, rr );
   }//for( loop over to add displays for new nuclides )
   

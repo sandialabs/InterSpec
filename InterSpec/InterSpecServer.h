@@ -284,6 +284,13 @@ namespace InterSpecServer
     /** If true, will open the WebView inspector console on launch. */
     bool m_open_dev_tools;
 
+#if( USE_LEAFLET_MAP )
+    /** The key to use to access the https://arcgis.com server to get map tiles from.
+     This value overides the default one built into InterSpec, if specified.
+     */
+    std::string m_arcgis_key;
+#endif
+    
     /** Returns application config, as determined from defaults and then 
     InterSpec_app_settings.json files.
 

@@ -155,6 +155,7 @@ OneOverR2Calc::OneOverR2Calc()
   cell = layoutTable->elementAt( 5, 1 );
   m_answer  = new WLineEdit( cell );
   m_answer->setDisabled( true );
+  m_answer->setAttributeValue( "ondragstart", "return false" );
 
   m_backgroundMeasurment->setText( "" );
 

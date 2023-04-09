@@ -1420,6 +1420,8 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_detDiameter->setText( "2.54 cm" );
   m_detDiameter->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   m_detDiameter->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
+  
+  m_detDiameter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_detDiameter->setAttributeValue( "autocorrect", "off" );
   m_detDiameter->setAttributeValue( "spellcheck", "off" );
@@ -1703,6 +1705,8 @@ void MakeDrf::startSaveAs()
   name->setTextSize( 32 );
   name->setMaxLength( 255 );
   name->setAutoComplete( false );
+  
+  name->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   name->setAttributeValue( "autocorrect", "off" );
   name->setAttributeValue( "spellcheck", "off" );
@@ -3545,9 +3549,10 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     
     const string url = "interspec://drf/specify?" + drf->toAppUrl();
     
-    pair<std::string,int> qr_and_size = QrCode::utf8_string_to_svg_qr( url );
+    tuple<std::string,int,QrCode::ErrorCorrLevel> qr_and_size
+              = QrCode::utf8_string_to_svg_qr( url, QrCode::ErrorCorrLevel::About30Percent, 5 );
     
-    qr_code = qr_and_size.first;
+    qr_code = get<0>(qr_and_size);
   }catch(std::exception &e )
   {
     qr_code = "Error creating QR code: " + string(e.what());

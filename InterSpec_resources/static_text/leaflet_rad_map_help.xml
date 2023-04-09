@@ -1,12 +1,140 @@
+<!-- SAND2023-01080O -->
+
 <div align="center">
-  <h1 id="leaflet-rad-map">
-    <b>Map Tool</b>
-  </h1>
+  <h1 id="leaflet-rad-map"><b>Map Tool</b></h1>
   <hr />
-  </div>
-    <div align="center" style="padding-top: 10px">
-      <img src="InterSpec_resources/static_text/images/NucSearch.png"  class="imageBorder"  style="max-width:90%; max-height:300px;"/>
-    </div>
-  <div style="padding-top: 10px">Overview txt txt</div>
-  blah blah blah    
 </div>
+<div align="center" style="padding-top: 10px">
+  <img src="InterSpec_resources/static_text/images/leaflet_map_overview.png" class="imageBorder" style="max-width:90%; max-height:300px;"/>
+</div>
+<div style="padding-top: 10px">For radiation measurements that contain GPS location(s), the
+map tool will display the measurement(s) as markers on a map, as well as allow you to select geographic
+areas on the map to sum into a foreground, background, or secondary spectrum.</div>
+  
+<h2>Features of the Map Tool</h2>
+<div style="min-height:238px;">
+  <img src="InterSpec_resources/static_text/images/leaflet_map_marker.png"  class="imageBorder" style="float:left;display:block;margin-right:30px; height:238px;" />
+  <p>
+In addition to displaying the location measurements were taken, the map tool provides a
+few accommodations to help determine the relevancy of particular measurements, which is especially
+useful when the data is taken by a search system.
+  </p>
+
+  <p>
+As can be seen on the left, each marker on the map can be clicked/tapped to display further information
+about the gamma and/or neutron count rates, the time of measurement, and other available information.
+If there are multiple measurements at the same geographical location, or the map is zoomed out far enough
+to make the points indistinguishable, then the measured points will be clustered together, with the
+number of clustered points indicated in text; clicking on a clustered marker will either zoom into that
+location, or if the measurements are all at the same location, the markers will be expanded to allow you to
+click on each individual measurement.
+  </p>
+
+  <p>
+The markers are also color-coded, according to the gamma counts-per-second, with the scale shown
+on the right-side of the map.  The bottom button on the left-side of the map will display a
+heat-map that may help isolate hot-spots for particularly large or dense spectrum files.
+  </p>
+</div>
+
+<div style="min-height:265px;">
+  <img src="InterSpec_resources/static_text/images/leaflet_map_markers.png"  class="imageBorder"  style="float:right;display:block;margin-left:30px; height:265px;"/>
+  <p>
+    <br />
+    <br />
+    <br />
+    <br />
+The <em>shape</em> of the markers indicate if a particular measurement location is currently
+being displayed as part of the foreground, background, or secondary spectrum; the marker shape
+legend is below the map, on the right side, as can be seen in the figure to the right.
+  </p>
+</div>
+
+<div style="min-height:265px;">
+  <img src="InterSpec_resources/static_text/images/leaflet_map_select.png"  class="imageBorder"  style="float:left;display:block;margin-right:30px; height:265px;"/>
+  <p>
+    <br />
+    <br />
+    <br />
+You can also use the tools on the left-side of the map to draw shapes around given points, and then
+click on the button at the bottom of the map, to sum the measurements inside the drawn shapes
+and display as the foreground, background, or secondary spectra.  You can draw rectangles or polygons
+on the map, as well as use the scissor tool to cut polygons from inside of other drawn shapes; you may also
+draw multiple areas on the map - all of which will be summed when creating the desired spectrum.
+<br />The eraser tool will remove shapes from on the map, and there is also a tool to modify the points of
+drawn shapes, or change the shapes location.
+<br />You may also make text annotations on the map.  However, this text has no semantic meaning
+in InterSpec, and is just for display purposes.
+  </p>
+</div>
+
+<div style="min-height:214px;">
+  <img src="InterSpec_resources/static_text/images/leaflet_map_layers.png"  class="imageBorder"  style="float:right;display:block;margin-left:30px;margin-right:30px;height:214px;"/>
+  <p>
+    <br />
+    <br />
+    <br />
+On the upper-right portion of the map, there is a &quot;layers&quot; menu that allows you
+to choose the style of map base-tiles most appropriate for your situation.  The default is a streets
+view, but the Imagery (i.e., satellite images), topographic, or gray-scale views can sometimes be more useful.
+  </p>
+</div>
+
+
+<h2>Maps Source Data</h2>
+<div style="padding-top: 10px">
+  <img src="InterSpec_resources/static_text/images/leaflet_map_warning.png"  class="imageBorder"  style="float:left;display:block;margin-right:30px;height:213px;"/>
+Map tile data is provided by <a href="https://arcgis.com" target="_blank">https://arcgis.com</a>,
+and an attribution including source data for the maps is displayed in the lower-right of the maps,
+which will be dynamically updated as the displayed location changes.
+  <br />
+As part of retrieving the map-tile data, the geographic locations must, of course, be included in the
+requests to <a href="https://arcgis.com" target="_blank">https://arcgis.com</a> servers, as well as your IP
+address, and a key that associates the request with coming from the InterSpec application.
+  <br />
+However, no radiation data is sent to any remote server, instead all rendering of markers and other
+information is done locally on your device.
+  <br />
+A warning, similar to that displayed on the left, will be shown, and allow you to cancel the operation,
+before making any requests for map data; you may select to not show this warning again in the future.
+  <br />
+InterSpec is rendered using HTML and JavaScript, including the maps tool; the JavaScript libraries
+for the maps tool, as well as all other libraries for InterSpec, are provided as part of the InterSpec
+distribution, and <em>not</em> retrieved using network connections.
+  <br />
+The <a href="https://arcgis.com" target="_blank">https://arcgis.com</a> account used for the
+aforementioned access key is registered to Sandia National Laboratories, and to the best of the
+InterSpec developers knowledge, only aggregate usage information is available for Sandia National Laboratories
+to see, and not information on individual uses of the tool.
+  <br />
+But if you would like to use your own key (as of Feb 2023, free accounts are available on <a href="https://arcgis.com" target="_blank">https://arcgis.com</a>), or the built-in key becomes invalid - you can
+place a file named &quot;arcgis_key.txt&quot; into the apps user data directory (see
+&quot;<b>Help</b>&quot;&rarr;&quot;<b>About InterSpec...</b>&quot;&rarr;&quot;<b>Data</b>&quot; for this location),
+whose contents is your key, and that will be used to request map-tiles; you will be notified
+that your custom key is being used when loading the map.
+  <br />
+With the exception of this maps tool, InterSpec does not send or request information over the internet; please see
+&quot;<b>Help</b>&quot;&rarr;&quot;<b>About InterSpec...</b>&quot;&rarr;&quot;<b>Data</b>&quot;
+for full information about data management in InterSpec.
+</div>
+
+<h2>Known Issues</h2>
+Currently (March 2023), Windows and Linux builds of InterSpec may not load map tiles if you are
+behind a proxy; the map window will still load, and markers will be displayed, and you can use the
+various tools, but the underlying map images may not load.
+<br />
+There are two workarounds possible:
+<ul>
+  <li>
+    You can open an InterSpec instance in your browser
+    (&quot;<b>View</b>&quot;&rarr;&quot;<b>Use in external browser</b>&quot;),
+    load the spectrum file, and then use the map tool from there.
+  </li>
+  <li> You can specify the proxy, or proxy detection settings to use, in a file named 
+  '<code>InterSpec_app_settings.json</code>' placed into the apps user data
+  directory (see &quot;<b>Help</b>&quot;&rarr;&quot;<b>About InterSpec</b>&quot;&rarr;&quot;<b>Data</b>&quot; 
+  for this location); there is an example file with documentation you can find 
+    in the InterSpec application distribution at <code>(resources/app/)data/config/example_InterSpec_app_settings.json</code>.
+    <br />You will then need close all running instances of InterSpec before the change will take place.
+  </li>
+</ul>

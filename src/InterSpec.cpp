@@ -1051,7 +1051,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
         break;
     }//switch( i )
   }//for( loop over right click menu items )
-  
+
+  // For touch devices, give an obvious way to close the right-click menu since they cant simply
+  //  leave with the mouse (although they could just tap somewhere).
+  if( app && app->isMobile() && !m_rightClickMenu->isMobile() )
+    m_rightClickMenu->addMenuItem( "Cancel" );
+    
   m_spectrum->rightClicked().connect( boost::bind( &InterSpec::handleRightClick, this,
                                                   boost::placeholders::_1, boost::placeholders::_2,
                                                   boost::placeholders::_3, boost::placeholders::_4 ) );
@@ -1091,7 +1096,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   updateSaveWorkspaceMenu();
 #endif
   
-#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS && !BUILD_AS_ELECTRON_APP )
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
   initOsColorThemeChangeDetect();
 #endif
   
@@ -3871,45 +3876,41 @@ void InterSpec::osThemeChange( std::string name )
     return;
   }
   
+  //TODO: if( name == "no-support" ), then should hide widgets associated with "AutoDarkFromOs"
+  
   try
   {
-    const int colorThemIndex = m_user->preferenceValue<int>("ColorThemeIndex", this);
-    if( colorThemIndex >= 0 )
-      return;
+    const bool autoDark = InterSpecUser::preferenceValue<bool>( "AutoDarkFromOs", this );
     
-    const auto oldTheme = ColorTheme::PredefinedColorTheme(-colorThemIndex);
-    
-    if( oldTheme != ColorTheme::PredefinedColorTheme::DefaultColorTheme )
-      return;
-    
-    std::unique_ptr<ColorTheme> theme;
-    
-    if( name == "dark" )
+    if( autoDark && (name == "dark") )
     {
       //Check to see if we already have dark applied
       if( m_colorTheme && SpecUtils::icontains( m_colorTheme->theme_name.toUTF8(), "Dark") )
         return;
      
-      cout << "Will set to dark" << endl;
-      theme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme::DarkColorTheme );
-    }else if( name == "light" || name == "default" || name == "no-preference" || name == "no-support" )
+      cout << "Will set to dark color theme" << endl;
+      unique_ptr<ColorTheme> theme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme::DarkColorTheme );
+      assert( theme );
+      if( theme )
+        applyColorTheme( make_shared<ColorTheme>(*theme) );
+    }else if( !autoDark || name == "light" || name == "default" || name == "no-preference" || name == "no-support" )
     {
-      //Check to see if we already have light applied
-      if (m_colorTheme && SpecUtils::icontains(m_colorTheme->theme_name.toUTF8(), "Default"))
+      if( m_colorTheme
+         && (m_colorTheme->dbIndex < 0)
+         && (ColorTheme::PredefinedColorTheme(-m_colorTheme->dbIndex) == ColorTheme::PredefinedColorTheme::DarkColorTheme) )
       {
-        cout << "Already have light color theme applied." << endl;
-        return;
+        cout << "Will set to default or user specified color theme, from \"Dark\"." << endl;
+        
+        m_colorTheme = nullptr;
+        applyColorTheme( nullptr );
+      }else
+      {
+        cout << "Current theme is not \"Dark\", so not setting color theme." << endl;
       }
-
-      cout << "Will set to default" << endl;
-      theme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme::DefaultColorTheme );
     }
-    
-    if( theme )
-      applyColorTheme( make_shared<ColorTheme>(*theme) );
-  }catch(...)
+  }catch( std::exception &e )
   {
-    cerr << "InterSpec::osThemeChange() caught exception - not doing anything" << endl;
+    cerr << "InterSpec::osThemeChange() caught exception - not doing anything:" << e.what() << endl;
   }
   
   cout << "Done applying color theme" << endl;
@@ -4832,6 +4833,14 @@ void InterSpec::stateSaveAs()
     
   WLineEdit *edit = new WLineEdit();
   edit->setEmptyText( "(Name to store under)" );
+  
+  edit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  edit->setAttributeValue( "autocorrect", "off" );
+  edit->setAttributeValue( "spellcheck", "off" );
+#endif
+
+  
   WText *label = new WText( "Name" );
   layout->addWidget( label, 2, 0 );
   layout->addWidget( edit,  2, 1 );
@@ -4881,6 +4890,13 @@ void InterSpec::stateSaveTag()
   WGridLayout *layout = window->stretcher();
     
   WLineEdit *edit = new WLineEdit();
+  
+  edit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  edit->setAttributeValue( "autocorrect", "off" );
+  edit->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   if( !isMobile() )
     edit->setFocus(true);
   WText *label = new WText( "Name" );
@@ -5060,6 +5076,13 @@ void InterSpec::startStoreStateInDb( const bool forTesting,
   WGridLayout *layout = window->stretcher();
   WLineEdit *edit = new WLineEdit();
   edit->setEmptyText( "(Name to store under)" );
+  
+  edit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  edit->setAttributeValue( "autocorrect", "off" );
+  edit->setAttributeValue( "spellcheck", "off" );
+#endif
+  
   WText *label = new WText( "Name" );
   layout->addWidget( label, 0, 0 );
   layout->addWidget( edit,  0, 1 );
@@ -6784,16 +6807,21 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
           m_spectrum, SpectrumChart::kShowPeakNuclideLabel, false
   ) );
   
-  cb = new WCheckBox( "Show Nuclide Energies" );
-  cb->setChecked(false);
-  item = menu->addWidget( cb );
+  WCheckBox *nuc_energy_cb = new WCheckBox( "Show Nuclide Energies" );
+  nuc_energy_cb->setChecked(false);
+  item = menu->addWidget( nuc_energy_cb );
   
-  cb->checked().connect( boost::bind(
+  nuc_energy_cb->disable();
+  cb->checked().connect( nuc_energy_cb, &WCheckBox::enable );
+  cb->unChecked().connect( nuc_energy_cb, &WCheckBox::disable );
+  cb->unChecked().connect( nuc_energy_cb, &WCheckBox::setUnChecked );
+  
+  nuc_energy_cb->checked().connect( boost::bind(
           &D3SpectrumDisplayDiv::setShowPeakLabel,
           m_spectrum, SpectrumChart::kShowPeakNuclideEnergies, true
   ) );
   
-  cb->unChecked().connect( boost::bind(
+  nuc_energy_cb->unChecked().connect( boost::bind(
           &D3SpectrumDisplayDiv::setShowPeakLabel,
           m_spectrum, SpectrumChart::kShowPeakNuclideEnergies,  false
   ) );
@@ -6936,6 +6964,20 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     
     InterSpecUser::associateWidget( m_user, "TabletUseDesktopMenus", checkbox, this );
   }//if( is tablet )
+  
+  WCheckBox *autoDarkCb = new WCheckBox( " Auto apply \"Dark\" theme" );
+  item = subPopup->addWidget( autoDarkCb );
+  HelpSystem::attachToolTipOn( item, "Applies the \"Dark\" color theme automatically according to"
+                              " the operating systems current value, or when it transisitions.",
+                              true, HelpSystem::ToolTipPosition::Right );
+  InterSpecUser::associateWidget( m_user, "AutoDarkFromOs", autoDarkCb, this );
+  
+  InterSpecUser::addCallbackWhenChanged( m_user, "AutoDarkFromOs", std::bind([](){
+    InterSpec *viewer = InterSpec::instance();
+    if( viewer )
+      viewer->doJavaScript( "try{ Wt.WT.DetectOsColorThemeJs('" + viewer->id() + "'); }"
+                            "catch(e){ console.error('Error with DetectOsColorThemeJs:',e); }" );
+  }) );
   
 	item = subPopup->addMenuItem("Color Themes...");
 	item->triggered().connect(boost::bind(&InterSpec::showColorThemeWindow, this));
@@ -7711,11 +7753,15 @@ void InterSpec::createRelActManualWidget()
     m_relActManualWindow->show();
     if( (m_renderedWidth > 100) && (m_renderedHeight > 100) && !isPhone() )
     {
-      m_terminalWindow->resizeWindow( 0.95*m_renderedWidth, 0.25*m_renderedHeight );
-      m_terminalWindow->centerWindow();
+      m_relActManualWindow->resizeWindow( 0.95*m_renderedWidth, 0.80*m_renderedHeight );
+      m_relActManualWindow->centerWindow();
     }
     
     m_relActManualWindow->stretcher()->addWidget( m_relActManualGui, 0, 0 );
+    
+    
+    WPushButton *closeButton = m_relActManualWindow->addCloseButtonToFooter();
+    closeButton->clicked().connect(m_relActManualWindow, &AuxWindow::hide);
   }//if( toolTabsVisible() )
   
   assert( m_relActManualMenuItem );
@@ -7864,21 +7910,25 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( boost::bind( &InterSpec::showShieldingSourceFitWindow, this ) );
  
 #if( USE_REL_ACT_TOOL )
-  m_relActAutoMenuItem = popup->addMenuItem( "Isotopics by nuclides" );
-  HelpSystem::attachToolTipOn( m_relActAutoMenuItem,
-                              "UNDER DEVELOPMENT."
-                              " Automatically fits nuclides peaks to allow determining the relative"
-                              " activities of nuclides.  Does not require knowing the detector"
-                              " response or shielding information." , showToolTips );
-  m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::showRelActAutoWindow, this ) );
-  
-  m_relActManualMenuItem = popup->addMenuItem( "Isotopics from peaks" );
-  HelpSystem::attachToolTipOn( m_relActManualMenuItem,
-                              "UNDER DEVELOPMENT."
-                              " Uses the peaks you have fit to determine the relative activities of"
-                              " nuclides.  Does not require knowing the detector response or"
-                              " shielding information." , showToolTips );
-  m_relActManualMenuItem->triggered().connect( boost::bind( &InterSpec::createRelActManualWidget, this ) );
+  // The Relative Efficiency tools are not specialized to display on phones yet.
+  if( !isPhone() )
+  {
+    m_relActAutoMenuItem = popup->addMenuItem( "Isotopics by nuclides" );
+    HelpSystem::attachToolTipOn( m_relActAutoMenuItem,
+                                "UNDER DEVELOPMENT."
+                                " Automatically fits nuclides peaks to allow determining the relative"
+                                " activities of nuclides.  Does not require knowing the detector"
+                                " response or shielding information." , showToolTips );
+    m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::showRelActAutoWindow, this ) );
+    
+    m_relActManualMenuItem = popup->addMenuItem( "Isotopics from peaks" );
+    HelpSystem::attachToolTipOn( m_relActManualMenuItem,
+                                "UNDER DEVELOPMENT."
+                                " Uses the peaks you have fit to determine the relative activities of"
+                                " nuclides.  Does not require knowing the detector response or"
+                                " shielding information." , showToolTips );
+    m_relActManualMenuItem->triggered().connect( boost::bind( &InterSpec::createRelActManualWidget, this ) );
+  }//if( !isPhone() )
 #endif
   
   item = popup->addMenuItem( "Gamma XS Calc", "" );
@@ -8779,15 +8829,17 @@ std::set<int> InterSpec::validForegroundSamples() const
 }//std::set<int> validForegroundSamples() const
 
 
-#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS && !BUILD_AS_ELECTRON_APP )
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
 void InterSpec::initOsColorThemeChangeDetect()
 {
-  m_osColorThemeChange.reset( new JSignal<std::string>( this, "OsColorThemeChange", true ) );
+  m_osColorThemeChange.reset( new JSignal<std::string>( this, "OsColorThemeChange", false ) );
   m_osColorThemeChange->connect( boost::bind( &InterSpec::osThemeChange, this,
                                              boost::placeholders::_1 ) );
   
+  LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsDetectOsColorThemeJs);
   LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsSetupOsColorThemeChangeJs);
   
+  doJavaScript( "Wt.WT.DetectOsColorThemeJs('" + id() + "')" );
   doJavaScript( "Wt.WT.SetupOsColorThemeChangeJs('" + id() + "')" );
 }//void initOsColorThemeChangeDetect()
 #endif
@@ -9533,7 +9585,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   
   //Lets see if there are any parse warnings that we should give to the user.
-  if( meas && !sameSpecFile )
+  if( meas && !sameSpecFile && !(options & InterSpec::SetSpectrumOptions::SkipParseWarnings) )
   {
     Wt::WApplication *app = wApp;
     

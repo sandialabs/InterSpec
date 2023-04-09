@@ -545,7 +545,9 @@ namespace
       
       WLabel *label = new WLabel( "Nuclide:", this );
       m_nuclide_edit = new WLineEdit( "", this );
+      
       m_nuclide_edit->setAutoComplete( false );
+      m_nuclide_edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
       m_nuclide_edit->setAttributeValue( "autocorrect", "off" );
       m_nuclide_edit->setAttributeValue( "spellcheck", "off" );
@@ -599,6 +601,7 @@ namespace
       validator->setFlags(Wt::MatchCaseInsensitive);
       m_age_edit->setValidator(validator);
       m_age_edit->setAutoComplete( false );
+      m_age_edit->setAttributeValue( "ondragstart", "return false" );
       m_age_edit->changed().connect( this, &RelActAutoNuclide::handleAgeChange );
       
       m_fit_age = new WCheckBox( "Fit Age", this );
@@ -3767,22 +3770,22 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   WAnchor *btn = new WAnchor( WLink(m_html_download_rsc), parent );
   btn->setTarget( AnchorTarget::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
-  btn->setText( "HTML Report" );
 #else
-  WPushButton *btn = new WPushButton( "HTML Report", parent );
+  WPushButton *btn = new WPushButton( parent );
   btn->setIcon( "InterSpec_resources/images/download_small.svg" );
+  btn->setLink( WLink( m_html_download_rsc ) );
   btn->setLinkTarget( Wt::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
-  btn->setLink( WLink(m_html_download_rsc) );
-  
+
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   m_downloadHtmlReport->clicked().connect( std::bind([this](){
     android_download_workaround( m_calpResource, "isotopics_by_nuclide.html");
   }) );
 #endif //ANDROID
-  
 #endif
+
+  btn->setText( "HTML Report" );
   
   m_calc_started.connect( btn, &WWidget::disable );
   m_calc_failed.connect( btn, &WWidget::disable );

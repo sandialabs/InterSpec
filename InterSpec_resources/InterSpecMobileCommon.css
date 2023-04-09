@@ -229,6 +229,7 @@ table.RecalibCoefTable
   height: 100%;
   width: 220px;
   overflow-y: auto;
+  display: block; /* overide .Wt-popupmenu */
 }
 
 .PopupDivMenuPhone.Root
@@ -236,12 +237,17 @@ table.RecalibCoefTable
   box-shadow: 3px 3px 10px rgba(0,0,0,0.6);
 }
 
-.PopupDivMenuPhone > li > a
+.PopupDivMenuPhone > li
 {
   height: 30px;
   padding-top: 10px;
   padding-left: 10px;
   padding-right: 10px;
+}
+
+.PopupDivMenuPhone li.Wt-separator
+{
+  height: 0px;
 }
 
 

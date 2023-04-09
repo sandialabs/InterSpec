@@ -1192,6 +1192,8 @@ PopupDivMenuItem *PopupDivMenu::addWidget( Wt::WWidget *widget,
   
   item->addWidget( widget );
   
+  // We could `item->anchor()->hide();`, but we dont appear to need to.
+  
 #if(USE_OSX_NATIVE_MENU)
   if( m_nsmenu )
   {

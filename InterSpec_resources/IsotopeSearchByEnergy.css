@@ -27,6 +27,23 @@
   overflow-y: auto;
 }
 
+.AssignToSelectedRow
+{
+  height: 18px;
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: space-between;
+}
+
+.AssignToSelectedRow button.LightButton
+{
+  height: 18px;
+  margin-left: 2px;
+  margin-right: 2px;
+  font-size: 0.75em;
+  padding-top: 1px;
+}
+
 .IsotopeSourceTypes
 {
   /* This is the div that holds the "Gammas", "X-rays", and "Reaction" check boxes. */

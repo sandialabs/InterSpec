@@ -279,6 +279,7 @@ void *insertOsxMenuItem( void *voidmenu, PopupDivMenuItem *item, int position )
     if( nsiconpath )
     {
       NSImage *image = [[NSImage alloc] initByReferencingFile:nsiconpath];
+      // TODO: should resize the image to like 16x16px, if it isnt already
       [itemnow setImage:image];
     }
   } );

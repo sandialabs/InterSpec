@@ -250,9 +250,8 @@ public:
   enum SetSpectrumOptions
   {
     CheckToPreservePreviousEnergyCal = 0x01,
-    CheckForRiidResults = 0x02
-    
-    // TODO: it seems both these options are the same everywhere - maybe go back and just use a bool
+    CheckForRiidResults = 0x02,
+    SkipParseWarnings = 0x04
   };//SetSpectrumOptions
   
   
@@ -1072,7 +1071,7 @@ public:
 //  reason why not, other than I just havent checked it wont cause issues.
 #define APPLY_OS_COLOR_THEME_FROM_JS 1
   
-#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS && !BUILD_AS_ELECTRON_APP )
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
   /** Sets up client-side JS to detect the operating system color-theme.  Will
    trigger the signal to be emitted right after initial load.
    */
@@ -1458,7 +1457,7 @@ protected:
 
   std::unique_ptr< Wt::JSignal<unsigned int> > m_hotkeySignal;
   
-#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS )
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP )
   /** Signal emitted from JS when the operating systems color theme changes, or
       right after application starts.
    

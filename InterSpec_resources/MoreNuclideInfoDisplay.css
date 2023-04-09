@@ -153,3 +153,23 @@
 {
   margin-block-start: 2px;
 }
+
+
+.MoreNuclideInfoDisplay .MoreNucReferences
+{
+  margin-top: 10px;
+}
+
+.MoreNuclideInfoDisplay .MoreNucReferences .MoreNucRef
+{
+  margin-top: 10px;
+  display: flex;
+}
+
+.MoreNuclideInfoDisplay .MoreNucRef ul
+{
+  margin-block-start: 0px;
+  margin-block-end: 0px;
+  list-style-type: none;
+  padding-inline-start: 5px;
+}

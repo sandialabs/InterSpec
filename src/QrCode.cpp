@@ -29,7 +29,9 @@
 
 #include <Wt/WText>
 #include <Wt/WImage>
+#include <Wt/WLabel>
 #include <Wt/WAnchor>
+#include <Wt/WComboBox>
 #include <Wt/WApplication>
 #include <Wt/WPushButton>
 #include <Wt/WMemoryResource>
@@ -146,14 +148,55 @@ std::string to_svg_string( const qrcodegen::QrCode &qr, int border )
 }//std::string to_svg_string( const qrcodegen::QrCode &qr, int border )
 
 
-pair<string,int> utf8_string_to_svg_qr( const std::string &input )
+tuple<string,int,ErrorCorrLevel> utf8_string_to_svg_qr( const std::string &input,
+                                                        ErrorCorrLevel prefferedECL,
+                                                       const int quietSpace )
 {
-  const qrcodegen::QrCode::Ecc eccs[] = {
+  auto toOurEnum = []( qrcodegen::QrCode::Ecc ecc ) -> ErrorCorrLevel {
+    switch( ecc )
+    {
+      case qrcodegen::QrCode::Ecc::LOW:
+        return ErrorCorrLevel::About7Percent;
+
+      case qrcodegen::QrCode::Ecc::MEDIUM:
+        return ErrorCorrLevel::About15Percent;
+        
+      case qrcodegen::QrCode::Ecc::QUARTILE:
+        return ErrorCorrLevel::About25Percent;
+        
+      case qrcodegen::QrCode::Ecc::HIGH:
+        return ErrorCorrLevel::About30Percent;
+    }//switch( ecc )
+    
+    assert( 0 );
+    return ErrorCorrLevel::About30Percent;
+  };//auto toOurEnum
+  
+  vector<qrcodegen::QrCode::Ecc> eccs{
     qrcodegen::QrCode::Ecc::HIGH,
     qrcodegen::QrCode::Ecc::QUARTILE,
     qrcodegen::QrCode::Ecc::MEDIUM,
     qrcodegen::QrCode::Ecc::LOW
   };
+  
+  switch( prefferedECL )
+  {
+    case ErrorCorrLevel::About7Percent:
+      eccs = { qrcodegen::QrCode::Ecc::LOW };
+      break;
+      
+    case ErrorCorrLevel::About15Percent:
+      eccs = { qrcodegen::QrCode::Ecc::MEDIUM, qrcodegen::QrCode::Ecc::LOW };
+      break;
+      
+    case ErrorCorrLevel::About25Percent:
+      eccs = { qrcodegen::QrCode::Ecc::QUARTILE, qrcodegen::QrCode::Ecc::MEDIUM, qrcodegen::QrCode::Ecc::LOW };
+      break;
+      
+    case ErrorCorrLevel::About30Percent:
+      break;
+  }//switch( prefferedECL )
+  
   
   for( const qrcodegen::QrCode::Ecc ecc : eccs )
   {
@@ -166,7 +209,7 @@ pair<string,int> utf8_string_to_svg_qr( const std::string &input )
       << ", ErrorCorrectionLevel: " << static_cast<int>(qr.getErrorCorrectionLevel())
       << endl;
       
-      return { to_svg_string( qr, 5 ), qr.getSize() };
+      return { to_svg_string( qr, quietSpace ), qr.getSize(), toOurEnum(ecc) };
     }catch( std::exception &e )
     {
       cerr << "Failed to encode QR code at level " << static_cast<int>(ecc) << endl;
@@ -175,9 +218,10 @@ pair<string,int> utf8_string_to_svg_qr( const std::string &input )
   
   throw runtime_error( "Failed to be able to encode URL to QR code" );
   
-  return { "", 0 };
+  return { "", 0, ErrorCorrLevel::About30Percent };
 }//utf8_string_to_svg_qr(...)
 
+  
 pair<string,int> binary_to_svg_qr( const std::vector<std::uint8_t> &data )
 {
   const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeBinary( data, qrcodegen::QrCode::Ecc::MEDIUM );
@@ -192,16 +236,20 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
 {
   try
   {
-    const pair<string,int> qr_svg = utf8_string_to_svg_qr( url );
-    const string &qr_svg_str = qr_svg.first;
-    const int qr_size = qr_svg.second;  //A simple DRF is like 70, or so
+    const tuple<string,int,ErrorCorrLevel> qr_svg
+                                = utf8_string_to_svg_qr( url, ErrorCorrLevel::About30Percent, 3 );
+    const string &qr_svg_str = get<0>(qr_svg);
+    const int qr_size = get<1>(qr_svg);  //A simple DRF is like 70, or so
+    const ErrorCorrLevel ecl = get<2>(qr_svg);
     
     int svg_size = 5*(qr_size+1);
     InterSpec *interspec = InterSpec::instance();
     if( interspec && (interspec->renderedWidth() > 100) && (interspec->renderedHeight() > 100) )
     {
+      const int otherVertSpace = 205 + (title.empty() ? 0 : 15) + (description.empty() ? 0 : 20);
+      
       int wdim = interspec->renderedWidth() / 3;
-      wdim = std::min( wdim, (interspec->renderedHeight() - 175) );
+      wdim = std::min( wdim, (interspec->renderedHeight() - otherVertSpace) );
       wdim = std::max( wdim, 125 );
       svg_size = std::min( wdim, svg_size );
     }//if( InterSpec knows the window size )
@@ -232,9 +280,72 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     //WText *qrImage = new WText( qr_svg.first, window->contents() );
     qrImage->setInline( false );
     qrImage->resize( svg_size, svg_size );
-    qrImage->setMargin( 15, Wt::Side::Bottom );
+    qrImage->setMargin( 5, Wt::Side::Bottom );
+    if( title.empty() )
+      qrImage->setMargin( 15, Wt::Side::Top );
     qrImage->setMargin( WLength::Auto, Wt::Side::Left );
     qrImage->setMargin( WLength::Auto, Wt::Side::Right );
+    
+    WContainerWidget *eclRow = new WContainerWidget( window->contents() );
+    eclRow->setAttributeValue( "style",
+                              "margin-bottom: 10px;"
+                              " display: flex;"
+                              " flex-wrap: nowrap;"
+                              " align-items: center;"
+                              " gap: 3px;"
+                              " margin-left: 10px;"
+                              " margin-right: 10px;");
+    WLabel *eclLabel = new WLabel( "Error Tolerance:", eclRow );
+    WComboBox *eclSelect = new WComboBox( eclRow );
+    eclLabel->setBuddy( eclSelect );
+    eclSelect->setNoSelectionEnabled( false );
+    eclSelect->addItem( "Approx. 7% Loss" );
+    eclSelect->addItem( "Approx. 15% Loss" );
+    eclSelect->addItem( "Approx. 25% Loss" );
+    eclSelect->addItem( "Approx. 30% Loss" );
+    eclSelect->setCurrentIndex( static_cast<int>(ecl) );
+    
+    WText *spacer = new WText( "&nbsp;", eclRow );
+    spacer->setAttributeValue( "style", "flex: 1 1;" );
+    const string sizeDesc = to_string(qr_size) + "x" + to_string(qr_size) + " elements";
+    WText *sizeTxt = new WText( sizeDesc, eclRow );
+    
+    eclSelect->changed().connect( std::bind([eclSelect, sizeTxt, url, svgResource](){
+      const int ecl = eclSelect->currentIndex();
+      assert( ecl >= 0 && ecl <= 3 );
+      if( ecl < 0 || ecl > 4 )
+        return;
+      
+      try
+      {
+        const tuple<string,int,ErrorCorrLevel> qr_svg
+                                = utf8_string_to_svg_qr( url, static_cast<ErrorCorrLevel>(ecl), 3 );
+        
+        const string &qr_svg_str = get<0>(qr_svg);
+        if( qr_svg_str.empty() )
+          throw runtime_error( "Error creating SVG" );
+        
+        const unsigned char *svg_begin = (unsigned char *) &(qr_svg_str[0]);
+        const unsigned char *svg_end = svg_begin + qr_svg_str.size();
+        const vector<unsigned char> svg_data( svg_begin, svg_end );
+        
+        svgResource->setData( svg_data );
+        
+        const int actualEcl = static_cast<int>( get<2>(qr_svg) );
+        assert( actualEcl >= 0 && actualEcl <= 3 );
+        eclSelect->setCurrentIndex( actualEcl );
+        
+        const int qr_size = get<1>(qr_svg);
+        const string sizeDesc = to_string(qr_size) + "x" + to_string(qr_size) + " elements";
+        sizeTxt->setText( sizeDesc );
+      }catch( std::exception & )
+      {
+        // This shouldnt happen
+        eclSelect->setNoSelectionEnabled( true );
+        eclSelect->setCurrentIndex( -1 );
+        passMessage( "Sorry, error setting tolerance level.", 3 );
+      }//try / catch
+    }) );
     
     
     if( description.length() )
@@ -242,6 +353,9 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
       WText *message = new WText( description, window->contents() );
       message->addStyleClass( "content" );
       message->setInline( false );
+      // For a WText::setPadding() only supports left/right, so we will manually set bottom padding
+      //  CSS, from the default 20px for .content, to 5px
+      message->setAttributeValue( "style", "padding-bottom: 5px;" );
     }
     
     WContainerWidget *btndiv = new WContainerWidget( window->contents() );

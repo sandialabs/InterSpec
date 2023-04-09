@@ -204,7 +204,7 @@ public:
   
   /** Sets the energy calibration of the specified SpecMea/SampleNumber/Detector to the given energy calibration.
    
-   Updates peaks only if one of the calibrations being set corresponds to a calibration being set.
+   Updates peaks only if `adjust_peaks` is true, and one of the calibrations being set corresponds to a calibration being set.
    
    Note, does not call #EnergyCalTool::doRefreshFromFiles or #InterSpec::refreshDisplayedCharts (which #applyCalChange does),
    so you should call these functions after you call into this function all the times you currently will.
@@ -212,7 +212,8 @@ public:
    Throws std::exception on error.
    */
   void setEnergyCal( std::shared_ptr<const SpecUtils::EnergyCalibration> new_cal,
-                     const MeasToApplyCoefChangeTo &changemeas );
+                     const MeasToApplyCoefChangeTo &changemeas,
+                     const bool adjust_peaks );
   
   /** Adds a deviation pair from the graphical calibration.  Adds the deviation pair measurements
    the user has selected in the GUI (e.g., Back/For/Sec, visible detectors, entire file, etc).
