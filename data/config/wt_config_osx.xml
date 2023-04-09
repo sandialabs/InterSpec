@@ -424,7 +424,7 @@
 					 originates, and once after going back to C++) - but when
 					 WebSockets is false, the JS will only be emitted once.
 	  -->
-	<web-sockets>false</web-sockets>
+	<web-sockets>true</web-sockets>
 
 	<!-- Enables the detection of webgl-capabilites.
 
