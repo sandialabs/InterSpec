@@ -1023,7 +1023,7 @@ std::string file_to_open_on_load( const std::string &session_token )
 
     if( !app_data_dir.empty() )
     {
-      const string app_file = SpecUtils::append_path( app_data_dir, "config/InterSpec_app_settings.json" );
+      const string app_file = SpecUtils::append_path( app_data_dir, file_name );
       update_config_from_json_file( app_file );
     }
 
