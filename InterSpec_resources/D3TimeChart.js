@@ -509,6 +509,11 @@ D3TimeChart.prototype.handleResize = function () {
     this.state.height = this.chart.clientHeight;
     this.state.width = this.chart.clientWidth;
 
+    // TODO: switch to getting dimensions via the following; seems to work better
+    //const parentRect = this.chart.getBoundingClientRect();
+    //this.state.height = parentRect.width;
+    //this.state.width = parentRect.height;
+
     this.reinitializeChart();
   } catch (err) {
     if (err instanceof ValidationError) {
