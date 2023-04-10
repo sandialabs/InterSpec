@@ -1,6 +1,6 @@
 {
   "name": "InterSpecAddOn",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "Application for interactive gamma spectroscopy",
   "homepage": "https://github.com/sandialabs/InterSpec",
   "main": "main.js",
@@ -13,6 +13,7 @@
     "start": "electron ./build_osx/app/",
     "package-mac": "electron-packager ./build_macos/app --overwrite --platform=darwin --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --icon=macOS/InterSpec.icns --prune=true --out=release-builds --binaries=InterSpec.exe --extendInfo=macOS/Info.plist --entitlements=macOS/entitlements.mac.plist --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md",
     "package-win": "electron-packager ./build_win/app InterSpec --overwrite --platform=win32 --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --icon=windows/icon.ico --prune=true --out=release-builds --version-string.CompanyName=\"Sandia National Laboratories\" --version-string.FileDescription=\"nuclear spectroscopy analysis program\" --version-string.ProductName=\"InterSpec\" --ignore=LICENSE.md --ignore=README.md",
+    "package-win32": "electron-packager ./build_win_x86/app InterSpec --overwrite --platform=win32 --arch=ia32 --protocol=interspec --protocol-name=\"InterSpec\" --icon=windows/icon.ico --prune=true --out=release-builds --version-string.CompanyName=\"Sandia National Laboratories\" --version-string.FileDescription=\"nuclear spectroscopy analysis program\" --version-string.ProductName=\"InterSpec\" --ignore=LICENSE.md --ignore=README.md",
     "package-linux": "electron-packager ./build_linux/app InterSpec --overwrite --platform=linux --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --icon=linux/InterSpec_desktop_icon_256x256.png --prune=true --out=release-builds --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md",
     "package-manylinux": "electron-packager ./build_manylinux_electron/app InterSpec --overwrite --platform=linux --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --icon=linux/InterSpec_desktop_icon_256x256.png --prune=true --out=release-builds --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md"
   },
@@ -25,7 +26,7 @@
     "cmake-js": "^6.1.0"
   },
   "devDependencies": {
-    "electron": "^21.4.3",
+    "electron": "^21.4.4",
     "electron-packager": "^17.1.1",
     "node-addon-api": "^6.0.0"
   }

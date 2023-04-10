@@ -105,6 +105,7 @@ public:
     assert( m_app );
     assert( m_tool );
     assert( m_interspec );
+    setTakesUpdateLock( true );
   }
   
   virtual ~RelActManualReportResource()
@@ -197,11 +198,11 @@ public:
     {
       cerr << "Error handling request for RelActManualReportResource: " << e.what() << endl;
       log("error") << "Error handling request for RelActManualReportResource: " << e.what();
-      response.out() << "Error creating HTML                           file: " << e.what()
+      response.out() << "Error creating HTML file: " << e.what()
       << "\n\nPlease report to InterSpec@sandia.gov.";
       
-      //passMessage( "Error getting spectrum file currently being shown",
-      //              "", WarningWidget::WarningMsgHigh );
+      passMessage( "Error getting spectrum file currently being shown: " + string(e.what()),
+                   WarningWidget::WarningMsgHigh );
       
       response.setStatus(500);
       assert( 0 );
@@ -678,23 +679,23 @@ void RelActManualGui::init()
   m_downloadHtmlReport = new WAnchor( WLink(m_htmlResource), btndiv );
   m_downloadHtmlReport->setTarget( AnchorTarget::TargetNewWindow );
   m_downloadHtmlReport->setStyleClass( "LinkBtn DownloadLink CALp" );
-  m_downloadHtmlReport->setText( "HTML Report" );
 #else
-  m_downloadHtmlReport = new WPushButton( "HTML Report", btndiv );
+  m_downloadHtmlReport = new WPushButton( btndiv );
   m_downloadHtmlReport->setIcon( "InterSpec_resources/images/download_small.svg" );
+  m_downloadHtmlReport->setLink( WLink( m_htmlResource ) );
   m_downloadHtmlReport->setLinkTarget( Wt::TargetNewWindow );
   m_downloadHtmlReport->setStyleClass( "LinkBtn DownloadBtn CALp" );
-  m_downloadHtmlReport->setLink( WLink(m_htmlResource) );
-  
+ 
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   m_downloadHtmlReport->clicked().connect( std::bind([this](){
     android_download_workaround( m_calpResource, "rel_eff.html");
   }) );
 #endif //ANDROID
-  
 #endif
   
+  m_downloadHtmlReport->setText( "HTML Report" );
+
   WContainerWidget *nucCol = new WContainerWidget();
   nucCol->addStyleClass( "ToolTabTitledColumn RelActNucCol" );
   

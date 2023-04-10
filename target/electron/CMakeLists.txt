@@ -47,7 +47,6 @@ set( ELECTRON_SUPPORT_FILES
   app/loading.html
   README.md
   package.json
-  app/launch_options.json
 )
 
 add_custom_target( electron_resources SOURCES ${ELECTRON_SUPPORT_FILES} )
@@ -69,7 +68,6 @@ install( FILES ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/d3.v
 install( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../example_spectra DESTINATION ${PROJECT_BINARY_DIR}/app/ )
 install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/app/loading.html
         ${CMAKE_CURRENT_SOURCE_DIR}/app/main.js
-        ${CMAKE_CURRENT_SOURCE_DIR}/app/launch_options.json
         DESTINATION ${PROJECT_BINARY_DIR}/app/ 
 )
 

@@ -20,7 +20,7 @@ SET(MACOSX_BUNDLE_BUNDLE_VERSION "0" )
 SET(MACOSX_BUNDLE_COPYRIGHT "Sandia National Labs, Will Johnson" )
 SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.macOS.InterSpec" )
 #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate corresponding value in Xcode
-set(MACOS_BUNDLE_VERSION_NUMBER 30)
+set(MACOS_BUNDLE_VERSION_NUMBER 35)
 
 
 SET( ${PRODUCT_NAME} "InterSpec" )

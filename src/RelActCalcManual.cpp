@@ -1721,10 +1721,10 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   
   
   auto load_file_contents = []( string filename ) -> string {
-    //Wt::WApplication *app = Wt::WApplication::instance();
-    //string filepath = app ? app->docRoot() : "InterSpec_resources";
-    string filepath = "InterSpec_resources";
-    filepath = SpecUtils::append_path(filepath, filename );
+    Wt::WApplication *app = Wt::WApplication::instance();
+    string filepath = app ? app->docRoot() : string("");
+    filepath = SpecUtils::append_path( filepath, "InterSpec_resources" );
+    filepath = SpecUtils::append_path( filepath, filename );
     
     vector<char> file_data;
     try

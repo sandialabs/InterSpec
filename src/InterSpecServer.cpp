@@ -919,7 +919,7 @@ std::string file_to_open_on_load( const std::string &session_token )
     m_http_port( 0 ),
     m_require_token( true ),
     m_allow_restore( true ),
-    m_open_dev_tools( true )
+    m_open_dev_tools( false )
 #if( USE_LEAFLET_MAP )
     , m_arcgis_key("")
 #endif
@@ -964,7 +964,7 @@ std::string file_to_open_on_load( const std::string &session_token )
         const Wt::Json::Value &val = base.get( "ProxySetting" );
         if( val.type() != Wt::Json::Type::StringType )
           throw runtime_error( "ProxySetting must be a string value" );
-        config.m_proxy = val.toString();
+        config.m_proxy = val.orIfNull("");
       }
 #endif
 
