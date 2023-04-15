@@ -270,6 +270,7 @@ std::string LeafletRadMap::get_user_arcgis_key()
     
     if( !SpecUtils::is_file( user_key_file ) )
     {
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
       try
       {
         const string app_data_dir = InterSpec::staticDataDirectory();
@@ -286,6 +287,9 @@ std::string LeafletRadMap::get_user_arcgis_key()
         // This error would have already been reported to the user on application startup.
         return "";
       }
+#else
+      return "";
+#endif
     }else
     {
       std::vector<char> data;
