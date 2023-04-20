@@ -335,6 +335,7 @@ set(sources
     src/MultimediaDisplay.cpp
     src/MoreNuclideInfo.cpp
     src/MoreNuclideInfoDisplay.cpp
+    src/UndoRedoManager.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -427,6 +428,7 @@ set(headers
     InterSpec/MultimediaDisplay.h
     InterSpec/MoreNuclideInfo.h
     InterSpec/MoreNuclideInfoDisplay.h
+    InterSpec/UndoRedoManager.h
 )
 
 
