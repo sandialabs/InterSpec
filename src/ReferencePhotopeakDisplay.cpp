@@ -1356,7 +1356,6 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
   
   try
   {
-    
     if( nuc && !nuc->isStable() && !nuc->decaysToChildren.empty() && !useCurrentAge )
     {
       if( nuc->decaysToStableChildren() )
@@ -1370,8 +1369,8 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
         m_ageEdit->setText( hlstr );
       }else if( m_currentlyShowingNuclide.m_input.m_input_txt != nuc->symbol )
       {
-        string agestr;
-        PeakDef::defaultDecayTime( nuc, &agestr );
+        string defagestr;
+        PeakDef::defaultDecayTime( nuc, &defagestr );
         m_ageEdit->setText( agestr );
       }else
       {
@@ -1382,9 +1381,15 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
       }//if( nuc->decaysToStableChildren() ) / else
     }else if( nuc && useCurrentAge )
     {
-      double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
-      if( age > 100.0*nuc->halfLife || age < 0.0 )
-        throw std::runtime_error( "" );
+      if( agestr.empty() && nuc->decaysToStableChildren() )
+      {
+        // We dont need an age - we will set to zero - so dont throw exception from empty string
+      }else
+      {
+        double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
+        if( age > 100.0*nuc->halfLife || age < 0.0 )
+          throw std::runtime_error( "" );
+      }
     }
   }catch(...)
   {
