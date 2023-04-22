@@ -218,6 +218,9 @@ namespace InterSpecServer
    The file path must either be a file-system path to a spectrum file, or it can be a App URL with
    the schema "interspec://..."
    
+   Call #clear_file_to_open_on_load after you have succesfully handled the file, or else the "Clear Session..."
+   action will cause the session to load this same file again.
+   
    Throws exception if an invalid session token, or the session has already been loaded.
    */
   void set_file_to_open_on_load( const char *session_token, const std::string file_path );
@@ -227,6 +230,11 @@ namespace InterSpecServer
    Returns empty string if none.
    */
   std::string file_to_open_on_load( const std::string &session_token );
+  
+  /** Once you have loaded the file/url from #file_to_open_on_load, call this function to avoid
+   loading the spectrum again if "Clear Session..." action is taken by the user.
+   */
+  void clear_file_to_open_on_load( const std::string &session_token );
 
 
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )

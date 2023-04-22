@@ -556,6 +556,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       {
         loadedSpecFile = m_viewer->userOpenFileFromFilesystem( initial_file );
       }//if( SpecUtils::istarts_with(foregroundPath, "interspec://") )
+     
+      InterSpecServer::clear_file_to_open_on_load( m_externalToken );
       
       if( loadedSpecFile )
       {
