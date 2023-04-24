@@ -534,12 +534,13 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   const Http::ParameterMap &parmap = environment().getParameterMap();
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
-  if( !m_externalToken.empty() )
+  // The check of `attemptStateLoad` isnt strickly needed, as #file_to_open_on_load contents
+  //  will be cleared
+  if( attemptStateLoad && !m_externalToken.empty() )
   {
     const string initial_file = InterSpecServer::file_to_open_on_load( m_externalToken );
     if( !initial_file.empty() )
     {
-      
       if( SpecUtils::istarts_with(initial_file, "interspec://")
          || SpecUtils::istarts_with(initial_file, "RADDATA://G0/") )
       {
@@ -556,6 +557,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       {
         loadedSpecFile = m_viewer->userOpenFileFromFilesystem( initial_file );
       }//if( SpecUtils::istarts_with(foregroundPath, "interspec://") )
+     
+      InterSpecServer::clear_file_to_open_on_load( m_externalToken );
       
       if( loadedSpecFile )
       {

@@ -32,14 +32,17 @@
 #include <Wt/WLabel>
 #include <Wt/WImage>
 #include <Wt/WGridLayout>
+#include <Wt/WPushButton>
+#include <Wt/WEnvironment>
 #include <Wt/WApplication>
 #include <Wt/WSelectionBox>
 #include <Wt/WDoubleSpinBox>
-#include <Wt/WPushButton>
 #include <Wt/WContainerWidget>
 
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
+
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
@@ -196,8 +199,20 @@ void GammaCountDialog::init()
 
   if( m_specViewer && !m_specViewer->isMobile() )
   {
-    WLabel* temp = new WLabel("<center><i><small>You can also <b>Shift-Alt-Drag</b> on the chart"
+    string key_sequence = "Shift-Alt-Drag";  // Linux / Windows
+    const string &user_agent = wApp->environment().userAgent();
+    if( SpecUtils::icontains( user_agent, "macos")
+       || SpecUtils::icontains( user_agent, "macintel")
+       || SpecUtils::icontains( user_agent, "macintosh")
+       || SpecUtils::icontains( user_agent, "iphone")
+       || SpecUtils::icontains( user_agent, "ipad") )
+    {
+      key_sequence = "Shift-Option-Drag"; //Apple
+    }
+    
+    WLabel* temp = new WLabel("<center><i><small>You can also <b>" + key_sequence + "</b> on the chart"
                               " to select the energy range</small></i></center>");
+    
     temp->setWordWrap(true);
     layout->addWidget(temp,++row, 0 , 1 ,3,AlignCenter);
     temp->setStyleClass("line-below");
