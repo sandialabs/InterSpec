@@ -292,8 +292,6 @@ public:
   
   void updateRoiBeingDragged( const std::vector<std::shared_ptr<const PeakDef> > &roiBeingDragged );
   
-  void removeAllPeaks();
-  
   
   /** Executes appropriate javascript to generate and download a PNG or SVG based on
    the currently showing spectrum.  PNG or SVG generation is done client side.

@@ -71,7 +71,9 @@ protected:
   void handleSelectionChanged();
   void disablePeakDelete();
   void confirmRemoveAllPeaks();
+  void removeAllPeaks();
   void assignNuclidesFromRefLines();
+  
   
 protected:
   PeakModel *m_model;

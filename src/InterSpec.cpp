@@ -131,6 +131,7 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/SpecFileSummary.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -440,6 +441,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
   m_preserveCalibWindow( 0 ),
+  m_undo( nullptr ),
   m_renderedWidth( 0 ),
   m_renderedHeight( 0 ),
   m_colorPeaksBasedOnReferenceLines( true ),
@@ -471,7 +473,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   app->domRoot()->addWidget( m_notificationDiv );
   
-  initHotkeySignal();
+  app->hotkeySignal().connect( boost::bind( &InterSpec::hotKeyPressed, this, boost::placeholders::_1 ) );
   
   // Try to grab the username.
   string username = app->getUserNameFromEnvironment();
@@ -1102,6 +1104,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   applyColorTheme( nullptr );
 
+  m_undo = new UndoRedoManager( this );
+    
 #if( APP_MENU_STATELESS_FIX )
   // Make sure the menus get pre-loaded
   PopupDivMenu::pre_render(m_fileMenuPopup);
@@ -1524,69 +1528,6 @@ void InterSpec::initDragNDrop()
 }//void InterSpec::initDragNDrop()
 
 
-void InterSpec::initHotkeySignal()
-{
-  if( !!m_hotkeySignal )
-    return;
-  
-  //We are specifying for the javascript to not be collected since the response
-  //  will change if the tools tabs is shown or not.
-  m_hotkeySignal.reset( new JSignal<unsigned int>( this, "hotkey", false ) );
-  
-  //sender.id was undefined in the following js, so had to work around this a bit
-  const char *js = INLINE_JAVASCRIPT(
-  function(id,e){
-    
-    if( !e || !e.key || e.metaKey || e.altKey || e.shiftKey || (typeof e.keyCode === 'undefined') )
-      return;
-    
-    let code = 0;
-    if( e.ctrlKey )
-    {
-      switch( e.key ){
-        case '1': case '2': case '3': case '4': case '5': case '6': case '7': //Shortcuts to switch to the various tabs
-        case 'h': // Help dialog
-        case 'i': // Info about InterSpec
-        case 'k': // Clear showing reference photopeak lines
-        case 's': // Store
-        case 'l': // Log/Linear
-          if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
-            return;
-          code = e.key.charCodeAt(0);
-          break;
-        default:  //Unused - nothing to see here - let the event propagate up
-          return;
-      }//switch( e.key )
-    }else{
-      switch( e.key ){
-        case "Left":  case "ArrowLeft":  code = 37; break;
-        case "Up":    case "ArrowUp":    code = 38; break;
-        case "Right": case "ArrowRight": code = 39; break;
-        case "Down":  case "ArrowDown":  code = 40; break;
-        default:  //Unused - nothing to see here - let the event propagate up
-          return;
-      }//switch( e.key )
-    
-      // No menus are active - dont send the signal
-      if( $(".MenuLabel.PopupMenuParentButton.active").length === 0 )
-        return;
-    }//if( e.ctrlKey ) / else
-    
-    e.preventDefault();
-    e.stopPropagation();
-    Wt.emit( id, {name:'hotkey'}, code );
-  } );
-  
-  const string jsfcfn = string("function(e){var f=") + js + ";f('" + id() + "',e);}";
-  wApp->declareJavaScriptFunction( "appKeyDown", jsfcfn );
-  
-  const string jsfcn = "document.addEventListener('keydown'," + wApp->javaScriptClass() + ".appKeyDown);";
-  doJavaScript( jsfcn );
-  
-  m_hotkeySignal->connect( boost::bind( &InterSpec::hotKeyPressed, this, boost::placeholders::_1 ) );
-}//void initHotkeySignal()
-
-
 void InterSpec::hotKeyPressed( const unsigned int value )
 {
   if( m_toolsTabs )
@@ -1594,27 +1535,6 @@ void InterSpec::hotKeyPressed( const unsigned int value )
     //string expectedTxt;
     switch( value )
     {
-      //case '1': expectedTxt = FileTabTitle;          break;
-      //case '2': expectedTxt = PeakInfoTabTitle;      break;
-      //case '3': expectedTxt = GammaLinesTabTitle;    break;
-      //case '4': expectedTxt = CalibrationTabTitle;   break;
-      //case '5': expectedTxt = NuclideSearchTabTitle; break;
-      //case '6':
-#if( USE_TERMINAL_WIDGET )
-      //  if( m_terminal && !m_terminalWindow )
-      //  {
-      //blah blah blah fix up terminal tab name, etc
-      //  }
-#endif
-#if( USE_REL_ACT_TOOL )
-      //  if( m_relActManualGui && !m_relActManualWindow )
-      //  {
-      //    blah blah blah hcekc if this or terminal tab
-      //    expectedTxt = RelActManualTitle;
-      //  }
-#endif
-      //  break;
-        
       case '1': case '2': case '3': case '4': case '5': case '6': case '7':
       {
         const int tabIndex = value - '1';
@@ -1655,9 +1575,18 @@ void InterSpec::hotKeyPressed( const unsigned int value )
       case 37: case 38: case 39: case 40:
         arrowKeyPressed( value );
         break;
+        
+      case 'z':
+        if( m_undo )
+          m_undo->executeUndo();
+        break;
+        
+      case 'Z':
+        if( m_undo )
+          m_undo->executeRedo();
+        break;
     }//switch( value )
   
-    
     
     /*
     if( expectedTxt.empty() )
@@ -1786,12 +1715,16 @@ std::shared_ptr<const PeakDef> InterSpec::nearestPeak( const double energy ) con
 
 void InterSpec::refitPeakFromRightClick()
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   PeakSearchGuiUtils::refit_peaks_from_right_click( this, m_rightClickEnergy );
 }//void refitPeakFromRightClick()
 
 
 void InterSpec::addPeakFromRightClick()
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   std::shared_ptr<const SpecUtils::Measurement> dataH = m_spectrum->data();
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   if( !peak
@@ -1848,7 +1781,8 @@ void InterSpec::addPeakFromRightClick()
   double startingChi2, fitChi2;
   
   {//begin codeblock to evaluate startingChi2
-    MultiPeakFitChi2Fcn chi2fcn( origRoiPeaks.size(), dataH,
+    MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(origRoiPeaks.size()),
+                                dataH,
                                 peak->continuum()->type(),
                                 lower_channel, upper_channel );
     startingChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), origRoiPeaks );
@@ -1906,7 +1840,8 @@ void InterSpec::addPeakFromRightClick()
     for( size_t i = 0; i < answer.size(); ++i )
       newRoiPeaks.push_back( *answer[i] );
     
-    MultiPeakFitChi2Fcn chi2fcn( newRoiPeaks.size(), dataH,
+    MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(newRoiPeaks.size()),
+                                dataH,
                                  peak->continuum()->type(),
                                  lower_channel, upper_channel );
     fitChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), newRoiPeaks );
@@ -1984,6 +1919,8 @@ void InterSpec::addPeakFromRightClick()
 
 void InterSpec::makePeakFromRightClickHaveOwnContinuum()
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   const std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   if( !peak || !data
@@ -2054,6 +1991,8 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
 
 void InterSpec::handleChangeContinuumTypeFromRightClick( const int continuum_type )
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   PeakSearchGuiUtils::change_continuum_type_from_right_click( this, m_rightClickEnergy,
                                                              continuum_type );
 }//InterSpec::handleChangeContinuumTypeFromRightClick(...)
@@ -2061,6 +2000,8 @@ void InterSpec::handleChangeContinuumTypeFromRightClick( const int continuum_typ
 
 void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   if( !peak || m_rightClickEnergy < peak->lowerX() || m_rightClickEnergy > peak->upperX() )
   {
@@ -2168,6 +2109,8 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
 
 void InterSpec::deletePeakFromRightClick()
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   if( !peak )
   {
@@ -2184,6 +2127,8 @@ void InterSpec::deletePeakFromRightClick()
 void InterSpec::setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
                                      std::string nuclide )
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   //TODO: should probably add in some error logging or something
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   
@@ -2581,12 +2526,8 @@ void InterSpec::handleRightClick( double energy, double counts,
 
 void InterSpec::createPeakEdit( double energy )
 {
-  if( m_peakEditWindow )
-  {
-    m_peakEditWindow->peakEditor()->changePeak( energy );
-  }else
-  {
-    m_peakEditWindow = new PeakEditWindow( energy, m_peakModel, this );
+  auto create_editor = [this]( double ene ){
+    m_peakEditWindow = new PeakEditWindow( ene, m_peakModel, this );
     m_peakEditWindow->editingDone().connect( this, &InterSpec::deletePeakEdit );
     m_peakEditWindow->finished().connect( this, &InterSpec::deletePeakEdit );
     m_peakEditWindow->resizeToFitOnScreen();
@@ -2595,18 +2536,86 @@ void InterSpec::createPeakEdit( double energy )
     if( !editor->isEditingValidPeak() )
     {
       delete m_peakEditWindow;
-      m_peakEditWindow = 0;
+      m_peakEditWindow = nullptr;
+      return;
     }//if( !editor->isEditingValidPeak() )
+  };//
+  
+  auto change_peak = [this,create_editor]( double ene ){
+    if( m_peakEditWindow )
+    {
+      PeakEdit *editor = m_peakEditWindow->peakEditor();
+      editor->changePeak( ene );
+    }else
+    {
+      create_editor( ene );
+    }
+  };//change_peak
+  
+  
+  if( m_peakEditWindow )
+  {
+    PeakEdit *editor = m_peakEditWindow->peakEditor();
+    const double prev_energy = editor->currentPeakEnergy();
+    
+    change_peak( energy );
+    
+    auto undo = [prev_energy,change_peak](){ change_peak( prev_energy ); };
+    auto redo = [energy,change_peak](){ change_peak( energy ); };
+    if( m_undo )
+      m_undo->addUndoRedoStep( undo, redo, "Change peak editor peak." );
+  }else
+  {
+    create_editor( energy );
+    
+    auto undo = [this](){
+      if( m_peakEditWindow )
+      {
+        delete m_peakEditWindow;
+        m_peakEditWindow = nullptr;
+      }
+    };
+    
+    auto redo = [energy,change_peak](){ change_peak( energy ); };
+    if( m_undo )
+      m_undo->addUndoRedoStep( undo, redo, "Open peak editor." );
   }//if( m_peakEditWindow ) / else
   
-
 }//void createPeakEdit( Wt::WMouseEvent event )
+
+
+PeakEditWindow *InterSpec::peakEdit()
+{
+  return m_peakEditWindow;
+}
 
 
 void InterSpec::deletePeakEdit()
 {
   if( m_peakEditWindow )
   {
+    PeakEdit *editor = m_peakEditWindow->peakEditor();
+    assert( editor );
+    const double currentEnergy = editor ? editor->currentPeakEnergy() : 0.0;
+    
+    auto doClose = [this](){
+      if( m_peakEditWindow )
+      {
+        delete m_peakEditWindow;
+        m_peakEditWindow = nullptr;
+      }
+    };
+    
+    auto undo = [this, currentEnergy, doClose](){
+      m_peakEditWindow = new PeakEditWindow( currentEnergy, m_peakModel, this );
+      m_peakEditWindow->editingDone().connect( std::bind(doClose) );
+      m_peakEditWindow->finished().connect( std::bind(doClose) );
+      m_peakEditWindow->resizeToFitOnScreen();
+    };//auto undo
+    
+    if( m_undo )
+      m_undo->addUndoRedoStep( undo, doClose, "Close peak editor." );
+    
     delete m_peakEditWindow;
     m_peakEditWindow = nullptr;
   }
@@ -6371,6 +6380,13 @@ EnergyCalTool *InterSpec::energyCalTool()
   return m_energyCalTool;
 }
 
+
+UndoRedoManager *InterSpec::undoRedoManager()
+{
+  return m_undo;
+}//UndoRedoManager *undoRedoManager();
+
+
 void InterSpec::showEnergyCalWindow()
 {
   if( m_energyCalWindow && !m_toolsTabs )
@@ -6741,6 +6757,18 @@ ReferencePhotopeakDisplay *InterSpec::referenceLinesWidget()
 {
   return m_referencePhotopeakLines;
 }
+
+IsotopeSearchByEnergy *InterSpec::nuclideSearch()
+{
+  return m_nuclideSearch;
+}//IsotopeSearchByEnergy *nuclideSearch();
+
+
+PeakInfoDisplay *InterSpec::peakInfoDisplay()
+{
+  return m_peakInfoDisplay;
+}//PeakInfoDisplay *peakInfoDisplay();
+
 
 #if( defined(WIN32) && BUILD_AS_ELECTRON_APP )
   //When users drag files from Outlook on windows into the app
@@ -8426,30 +8454,67 @@ void InterSpec::handleToolTabChanged( int tab )
   if( !m_toolsTabs )
     return;
   
-  const int refTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
-  const int calibtab = m_toolsTabs->indexOf(m_energyCalTool);
-  const int searchTab = m_toolsTabs->indexOf(m_nuclideSearchContainer);
+  const int prev_tab = m_currentToolsTab;
   
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
-  
-  if( m_referencePhotopeakLines && (tab == refTab) && app && !app->isMobile() )
-    m_referencePhotopeakLines->setFocusToIsotopeEdit();
+  auto handle_change = [this]( const int current_tab, const bool focus  ){
+    const int refTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
+    const int calibtab = m_toolsTabs->indexOf(m_energyCalTool);
+    const int searchTab = m_toolsTabs->indexOf(m_nuclideSearchContainer);
     
-  if( m_nuclideSearch && (m_currentToolsTab==searchTab) )
-    m_nuclideSearch->clearSearchEnergiesOnClient();
+    InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+    
+    if( m_referencePhotopeakLines && focus && (current_tab == refTab) && app && !app->isMobile() )
+      m_referencePhotopeakLines->setFocusToIsotopeEdit();
+    
+    if( m_nuclideSearch && (m_currentToolsTab==searchTab) )
+      m_nuclideSearch->clearSearchEnergiesOnClient();
+    
+    if( m_nuclideSearch && (current_tab==searchTab) )
+      m_nuclideSearch->loadSearchEnergiesToClient();
+    
+    if( focus && (current_tab == calibtab) )
+    {
+      if( InterSpecUser::preferenceValue<bool>( "ShowTooltips", this ) )
+        passMessage( "You can also recalibrate graphically by right-clicking and "
+                    "dragging the spectrum to where you want",
+                    WarningWidget::WarningMsgInfo );
+    }//if( tab == calibtab )
+    
+    m_currentToolsTab = current_tab;
+  };//handle_change
   
-  if( m_nuclideSearch && (tab==searchTab) )
-    m_nuclideSearch->loadSearchEnergiesToClient();
+  handle_change( tab, true );
   
-  if( tab == calibtab )
-  {
-    if( InterSpecUser::preferenceValue<bool>( "ShowTooltips", this ) )
-      passMessage( "You can also recalibrate graphically by right-clicking and "
-                   "dragging the spectrum to where you want",
-                   WarningWidget::WarningMsgInfo );
-  }//if( tab == calibtab )
+  if( !m_undo )
+    return;
   
-  m_currentToolsTab = tab;
+  auto undo = [this, prev_tab, handle_change](){
+    if( m_toolsTabs && (prev_tab < m_toolsTabs->count()) )
+    {
+      //WTabWidget::currentChanged() is emited even when you programatically change the tab; we
+      //  need to block this here, or else the undo/redo history will get all messed up.
+      const bool orig_state = m_toolsTabs->currentChanged().isBlocked();
+      m_toolsTabs->currentChanged().setBlocked(true);
+      m_toolsTabs->setCurrentIndex(prev_tab);
+      m_toolsTabs->currentChanged().setBlocked(orig_state);
+    }
+    handle_change(prev_tab, false);
+  };//undo
+  
+  auto redo = [this, tab, handle_change](){
+    if( m_toolsTabs && (tab < m_toolsTabs->count()) )
+    {
+      // See note above on blocking the WTabWidget::currentChanged() signal
+      const bool orig_state = m_toolsTabs->currentChanged().isBlocked();
+      m_toolsTabs->currentChanged().setBlocked(true);
+      m_toolsTabs->setCurrentIndex(tab);
+      m_toolsTabs->currentChanged().setBlocked(orig_state);
+    }
+    
+    handle_change(tab, false);
+  };//redo
+  
+  m_undo->addUndoRedoStep( undo, redo, "Change tool tab." );
 }//void InterSpec::handleToolTabChanged( int tabSwitchedTo )
 
 
@@ -10245,6 +10310,8 @@ void InterSpec::handleShiftAltDrag( double lowEnergy, double upperEnergy )
 
 void InterSpec::searchForSinglePeak( const double x )
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   if( !m_peakModel )
     throw runtime_error( "InterSpec::searchForSinglePeak(...): "
                         "shoudnt be called if peak model isnt set.");
@@ -10527,6 +10594,8 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
 
 void InterSpec::excludePeaksFromRange( double x0, double x1 )
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   if( !m_peakModel )
     throw runtime_error( "InterSpec::excludePeaksFromRange(...): "
                         "shoudnt be called if peak model isnt set.");

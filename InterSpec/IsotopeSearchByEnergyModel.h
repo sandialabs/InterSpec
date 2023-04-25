@@ -124,6 +124,7 @@ public:
     std::string error_msg;
     Column sortColumn;
     Wt::SortOrder sortOrder;
+    std::shared_ptr<void> undoSentry;
     boost::function< void(void) > searchdoneCallback;
   };//struct SearchWorkingSpace
   

@@ -46,23 +46,26 @@
 #include <Wt/WStackedWidget>
 #include <Wt/WContainerWidget>
 
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/EnergyCalibration.h"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
-#include "SpecUtils/SpecFile.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
-#include "SpecUtils/StringAlgo.h"
-#include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/EnergyCalTool.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/EnergyCalGraphical.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -90,6 +93,15 @@ template<class T> struct index_compare_assend
   }
   const T arr;
 };//struct index_compare
+  
+  
+  struct MeasToApplyCoefChangeToWeak
+  {
+    std::weak_ptr<SpecMeas> meas;
+    std::set<int> sample_numbers;
+    std::set<std::string> detectors;
+  };//struct MeasToApplyCoefChangeToWeak
+  
 }// namepsace
 
 namespace EnergyCalImp
@@ -2385,7 +2397,7 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
 #endif
   }//if( old_to_new_cals.find(disp_prev_cal) == end(old_to_new_cals) )
   
-  
+  cout << "5) blah blah blah - undo/redo - when do we get here" << endl;
   
   // Now go through and actually set the energy calibrations; they should all be valid and computed,
   //  as should all the shifted peaks.
@@ -2600,6 +2612,7 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
     }//try / catch
   }//for( const set<int> &samples : peaksampels )
     
+  cout << "1) blah blah blah - undo/redo - when do we get here" << endl;
   
   // Now go through and actually set the energy calibrations; they should all be valid and computed,
   //  as should all the shifted peaks
@@ -2880,6 +2893,7 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
   
   
   // \TODO: Set an undu point for each measurement, etc.
+  cout << "2) blah blah blah - undo/redo - when do we get here" << endl;
   
   m_interspec->refreshDisplayedCharts();
   refreshGuiFromFiles();
@@ -2896,7 +2910,7 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
   shared_ptr<const EnergyCalibration> disp_prev_cal = display->lastSetCalibration();
   if( !disp_prev_cal )
   {
-    cerr << "unexpected error getting updaettd energy calibration coefficents" << endl;
+    cerr << "unexpected error getting updated energy calibration coefficents" << endl;
     m_interspec->logMessage( "Unexpected error retrieving previous calibration coefficients - not applying changes", 2 );
     doRefreshFromFiles();
     return;
@@ -3002,8 +3016,20 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
   
   try
   {
+    cout << "3) blah blah blah - undo/redo - when do we get here" << endl;
+    
     const vector<MeasToApplyCoefChangeTo> changemeas = measurementsToApplyCoeffChangeTo();
     applyCalChange( disp_prev_cal, new_disp_cal, changemeas, coefnum==0 );
+    
+    //UndoRedoManager
+    //struct MeasToApplyCoefChangeToWeak
+   // {
+   //   std::weak_ptr<SpecMeas> meas;
+   //   std::set<int> sample_numbers;
+   //   std::set<std::string> detectors;
+   // };//struct MeasToApplyCoefChangeToWeak
+
+    
   }catch( std::exception &e )
   {
     display->updateToGui( disp_prev_cal );
@@ -3177,6 +3203,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
   
   display->setDeviationPairsValid();
   
+  cout << "4) blah blah blah - undo/redo - when do we get here" << endl;
   
   size_t num_updated = 0;
   for( auto &m : specfile->measurements() )

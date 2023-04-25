@@ -130,7 +130,8 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
      m_viewer( 0 ),
      m_layout( nullptr ),
      m_lastAccessTime( std::chrono::steady_clock::now() ),
-     m_activeTimeInSession{ std::chrono::seconds(0) }
+     m_activeTimeInSession{ std::chrono::seconds(0) },
+     m_hotkeySignal( domRoot(), "hotkey", false )
 #if( IOS )
     , m_orientation( InterSpecApp::DeviceOrientation::Unknown )
     , m_safeAreas{ 0.0f }
@@ -354,6 +355,64 @@ void InterSpecApp::setupDomEnvironment()
 #endif
   
   //cout << "wApp->javaScriptClass()='" << wApp->javaScriptClass() << "'" << endl; //Prints "Wt"
+  
+  //Now setup a listener for the user to press Control + another button
+  //We are specifying for the javascript to not be collected since the response
+  //  will change if the tools tabs is shown or not.
+  
+  //sender.id was undefined in the following js, so had to work around this a bit
+  const char *hotkey_js = INLINE_JAVASCRIPT(
+  function(id,e){
+    if( !e || !e.key || e.metaKey || e.altKey || (e.shiftKey && (e.key != 'Z')) || (typeof e.keyCode === 'undefined') )
+      return;
+    
+    let code = 0;
+    if( e.ctrlKey )
+    {
+      switch( e.key ){
+        case '1': case '2': case '3': case '4': case '5': case '6': case '7': //Shortcuts to switch to the various tabs
+        case 'h': // Help dialog
+        case 'i': // Info about InterSpec
+        case 'k': // Clear showing reference photopeak lines
+        case 's': // Store
+        case 'l': // Log/Linear
+          if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
+            return;
+          code = e.key.charCodeAt(0);
+          break;
+        case 'z': case 'Z': //undo/redo
+          code = e.key.charCodeAt(0);
+          break;
+          
+        default:  //Unused - nothing to see here - let the event propagate up
+          return;
+      }//switch( e.key )
+    }else{
+      switch( e.key ){
+        case "Left":  case "ArrowLeft":  code = 37; break;
+        case "Up":    case "ArrowUp":    code = 38; break;
+        case "Right": case "ArrowRight": code = 39; break;
+        case "Down":  case "ArrowDown":  code = 40; break;
+        default:  //Unused - nothing to see here - let the event propagate up
+          return;
+      }//switch( e.key )
+    
+      // No menus are active - dont send the signal
+      if( $(".MenuLabel.PopupMenuParentButton.active").length === 0 )
+        return;
+    }//if( e.ctrlKey ) / else
+    
+    e.preventDefault();
+    e.stopPropagation();
+    Wt.emit( id, {name:'hotkey'}, code );
+  } );
+  
+  const string jsfcfn = string("function(e){var f=") + hotkey_js + ";f('" + domRoot()->id() + "',e);}";
+  wApp->declareJavaScriptFunction( "appKeyDown", jsfcfn );
+  
+  const string jsfcn = "document.addEventListener('keydown'," + wApp->javaScriptClass() + ".appKeyDown);";
+  doJavaScript( jsfcn );
+  
   
   
   if( isMobile() )
@@ -1085,6 +1144,11 @@ void InterSpecApp::osThemeChange( std::string name )
 }//osThemeChange(...)
 #endif
 
+
+Wt::JSignal<unsigned int> &InterSpecApp::hotkeySignal()
+{
+  return m_hotkeySignal;
+}
 
 #if( IOS )
 void InterSpecApp::setSafeAreaInsets( const int orientation, const float top,

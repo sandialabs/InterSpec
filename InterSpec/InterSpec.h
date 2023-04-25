@@ -58,6 +58,7 @@ class WarningMessage;
 class PeakEditWindow;
 class PeakInfoDisplay;
 class SpecMeasManager;
+class UndoRedoManager;
 class GammaCountDialog;
 class PopupDivMenuItem;
 class SpectraFileHeader;
@@ -655,6 +656,9 @@ public:
 
   EnergyCalTool *energyCalTool();
   
+  UndoRedoManager *undoRedoManager();
+  
+  PeakEditWindow *peakEdit();
   
   void showWarningsWindow();
   void handleWarningsWindowClose( bool closeWindowTo );
@@ -889,6 +893,8 @@ protected:
   
   void deletePeakEdit();
   void createPeakEdit( double energy );
+  
+  
   void handleRightClick( const double energy, const double counts,
                          const double pageX, const double pageY );
   void handleLeftClick( const double energy, const double counts,
@@ -1034,6 +1040,10 @@ public:
   void setShowYAxisScalers( bool show );
   
   ReferencePhotopeakDisplay *referenceLinesWidget();
+  
+  IsotopeSearchByEnergy *nuclideSearch();
+  
+  PeakInfoDisplay *peakInfoDisplay();
 
 #if( defined(WIN32) && BUILD_AS_ELECTRON_APP )
   //When users drag files from Outlook on windows into the app
@@ -1125,7 +1135,6 @@ protected:
   
   void initDragNDrop();
   
-  void initHotkeySignal();
   void hotKeyPressed( const unsigned int value );
   void arrowKeyPressed( const unsigned int value );
   
@@ -1409,6 +1418,7 @@ protected:
   //  they just uploaded is from the same detector as the previous one.
   EnergyCalPreserveWindow *m_preserveCalibWindow;
   
+  UndoRedoManager *m_undo;
   
   //Current width and height are set in layoutSizeChanged(...).
   int m_renderedWidth;
@@ -1454,8 +1464,6 @@ protected:
   //  dont care enough to make them member variables so we can be sure to delete
   //  them eventually.
   std::vector< std::shared_ptr<Wt::JSlot> > m_unNamedJSlots;
-
-  std::unique_ptr< Wt::JSignal<unsigned int> > m_hotkeySignal;
   
 #if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP )
   /** Signal emitted from JS when the operating systems color theme changes, or

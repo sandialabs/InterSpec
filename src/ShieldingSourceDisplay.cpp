@@ -89,6 +89,12 @@
 #include <Wt/Chart/WChartPalette>
 #include <Wt/Chart/WCartesianChart>
 
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
@@ -98,18 +104,15 @@
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
-#include "SpecUtils/StringAlgo.h"
-#include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SandiaDecay/SandiaDecay.h"
-#include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -3062,6 +3065,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 //When the button is triggered, update model
 void ShieldingSourceDisplay::toggleUseAll( Wt::WCheckBox *button )
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   const bool useForFit = button->isChecked();
   const size_t npeaks = m_peakModel->npeaks();
   

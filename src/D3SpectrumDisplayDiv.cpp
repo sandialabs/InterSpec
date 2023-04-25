@@ -37,23 +37,24 @@
 #include <Wt/WStringStream>
 #include <Wt/WContainerWidget>
 
+#include "SpecUtils/DateTime.h"
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+#include "SpecUtils/D3SpectrumExport.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
-#include "SpecUtils/SpecFile.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
-#include "SpecUtils/DateTime.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SpectrumChart.h"
-#include "SpecUtils/SpecUtilsAsync.h"
-#include "SpecUtils/D3SpectrumExport.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
@@ -1552,15 +1553,6 @@ void D3SpectrumDisplayDiv::setDefaultPeakColor( const Wt::WColor &color )
 }
 
 
-
-void D3SpectrumDisplayDiv::removeAllPeaks()
-{
-  if ( m_peakModel ) {
-    m_peakModel->removeAllPeaks();
-  }
-}
-
-
 void D3SpectrumDisplayDiv::saveChartToImg( const std::string &filename, const bool asPng )
 {
   // For now we grab CSS rules dynamically in the JS, which is tedious and error-prone, but we could
@@ -1705,6 +1697,10 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
                                                   double new_lower_px, double new_upper_px,
                                                   double original_lower_energy, bool isfinal )
 {
+  std::unique_ptr<UndoRedoManager::PeakModelChange> peak_undo_creator;
+  if( isfinal )
+    peak_undo_creator.reset( new UndoRedoManager::PeakModelChange() );
+  
 //  cout << "chartRoiDragedCallback: energy={" << new_lower_energy << "," << new_upper_energy << "}, "
 //       << "newPx={" << new_lower_px << "," << new_upper_px << "}, original_lower_energy=" << original_lower_energy
 //       << ", isfinal=" << isfinal << endl;
@@ -1875,6 +1871,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
      - maybe keep state between calls to speed up subsequent calls
      - Really punish peaks being close together with no dip in-between to avoid the tendency to fit lots of peaks.
    */
+  
   D3SpectrumDisplayDiv *spectrum = this;
   const bool allowAsync = true;
   
@@ -2070,6 +2067,8 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       
       if( isfinal )
       {
+        UndoRedoManager::PeakModelChange peak_undo_creator;
+        
         deque< PeakModel::PeakShrdPtr > preaddpeaks, postaddpeaks;
         if( peakModel->peaks() ) //should always be true, but JIC
           preaddpeaks = *peakModel->peaks();

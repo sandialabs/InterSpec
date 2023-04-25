@@ -49,13 +49,14 @@
 #include <Wt/WItemDelegate>
 #include <Wt/WDoubleSpinBox>
 
+#include "SpecUtils/Filesystem.h"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
-#include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/PeakFitUtils.h"
@@ -63,6 +64,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakInfoDisplay.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
@@ -426,12 +428,69 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
   if( m_model->rowCount() <= 0 )
     return;
   
+  /*
+  auto make_dialog = [this](){
+    InterSpec *viewer = InterSpec::instance();
+    PeakInfoDisplay *display = viewer ? viewer->peakInfoDisplay() : nullptr;
+    if( !display )
+      return;
+    
+    SimpleDialog *window = new SimpleDialog( "Erase All Peaks?", "" );
+    WPushButton *yes_button = window->addButton( "Yes" );
+    WPushButton *no_button = window->addButton( "No" );
+    
+    yes_button->clicked().connect( boost::bind( &PeakInfoDisplay::removeAllPeaks, display ) );
+  };
+  
+  make_dialog();
+   */
+  
+  
   SimpleDialog *window = new SimpleDialog( "Erase All Peaks?", "" );
   WPushButton *yes_button = window->addButton( "Yes" );
   WPushButton *no_button = window->addButton( "No" );
   
-  yes_button->clicked().connect( boost::bind( &D3SpectrumDisplayDiv::removeAllPeaks, m_spectrumDisplayDiv ) );
+  yes_button->clicked().connect( boost::bind( &PeakInfoDisplay::removeAllPeaks, this ) );
+  
+  
+  // We'll put an "undo" to close the dialog we just made - we could do a redu, but then making the
+  //  undo becomes a bit harder... good enough, I guess
+  auto closerfcn = wApp->bind( boost::bind( &WDialog::done, window, Wt::WDialog::DialogCode::Accepted ) );
+  UndoRedoManager *undoManager = m_viewer ? m_viewer->undoRedoManager() : nullptr;
+  if( undoManager )
+    undoManager->addUndoRedoStep( closerfcn, nullptr, "Click clear all peaks." );
 }//void confirmRemoveAllPeaks()
+
+
+void PeakInfoDisplay::removeAllPeaks()
+{
+  if( !m_model )
+    return;
+  
+  auto peaks_ptr = m_model->peaks();
+  vector<shared_ptr<const PeakDef>> orig_peaks;
+  if( peaks_ptr )
+    orig_peaks.insert( end(orig_peaks), begin(*peaks_ptr), end(*peaks_ptr) );
+  
+  m_model->removeAllPeaks();
+  
+  auto undo = [orig_peaks](){
+    InterSpec *viewer = InterSpec::instance();
+    PeakModel *pmodel = viewer ? viewer->peakModel() : nullptr;
+    if( pmodel )
+      pmodel->setPeaks( orig_peaks );
+  };
+  auto redo = [](){
+    InterSpec *viewer = InterSpec::instance();
+    PeakModel *pmodel = viewer ? viewer->peakModel() : nullptr;
+    if( pmodel )
+      pmodel->removeAllPeaks();
+  };
+  
+  UndoRedoManager *undoManager = m_viewer ? m_viewer->undoRedoManager() : nullptr;
+  if( undoManager )
+    undoManager->addUndoRedoStep( undo, redo, "Clear all peaks." );
+}//void PeakInfoDisplay::removeAllPeaks()
 
 
 void PeakInfoDisplay::assignNuclidesFromRefLines()
@@ -458,6 +517,8 @@ void PeakInfoDisplay::handleChartLeftClick( const double energy )
   Wt::WModelIndex index = m_model->indexOfPeak( peak );
   m_infoView->scrollTo( index, WTreeView::ScrollHint::EnsureVisible );
   m_infoView->select( index );
+  
+  enablePeakDelete( index );
 }//void handleChartLeftClick( const double energy )
 
 
@@ -903,6 +964,7 @@ void PeakInfoDisplay::createNewPeak()
   WPushButton *doAdd = new WPushButton( "Add" , window->footer() );
   
   doAdd->clicked().connect( std::bind( [=](){
+    UndoRedoManager::PeakModelChange peak_undo_creator;
     m_viewer->addPeak( *candidatePeak, false );
     window->hide();
   }) );
@@ -915,6 +977,16 @@ void PeakInfoDisplay::createNewPeak()
   window->show();
   window->resizeToFitOnScreen();
   window->centerWindowHeavyHanded();
+  
+  
+  // We'l' make it so "undo" will close the window.
+  //  Not implementing "redo", as it will get complicated, and not super useful
+  UndoRedoManager *undoManager = m_viewer->undoRedoManager();
+  if( undoManager )
+  {
+    auto closer = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+    undoManager->addUndoRedoStep( closer, nullptr , "Open add peak dialog." );
+  }//if( undoManager )
 }//void createNewPeak()
 
 
@@ -992,11 +1064,19 @@ void PeakInfoDisplay::handleSelectionChanged()
   
   const WModelIndexSet selected = m_infoView->selectedIndexes();
   if( selected.size() != 1 )
+  {
+    disablePeakDelete();
     return;
+  }
   
-  const auto peak = m_model->peak( *begin(selected) );
+  const WModelIndex index = *begin(selected);
+  
+  const auto peak = m_model->peak( index );
   if( peak )
+  {
     m_spectrumDisplayDiv->highlightPeakAtEnergy( peak->mean() );
+    enablePeakDelete( index );
+  }
 }//void handleSelectionChanged()
 
 
@@ -1102,10 +1182,10 @@ void PeakInfoDisplay::init()
 //  m_infoView->setSelectionMode( Wt::SingleSelection );
   m_infoView->setEditOptions( WAbstractItemView::SingleEditor );
 
-  m_infoView->clicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this,
-                                             boost::placeholders::_1 ) );
-  m_infoView->doubleClicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this,
-                                                   boost::placeholders::_1 ) );
+  //m_infoView->clicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this,
+  //                                           boost::placeholders::_1 ) );
+  //m_infoView->doubleClicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this,
+  //                                                 boost::placeholders::_1 ) );
 
   m_infoView->selectionChanged().connect( this, &PeakInfoDisplay::handleSelectionChanged );
   
