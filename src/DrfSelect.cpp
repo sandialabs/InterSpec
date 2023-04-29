@@ -94,6 +94,7 @@
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -245,10 +246,16 @@ namespace
  string find_valid_path( string pathstr, const bool isdir )
  {
 #if( BUILD_FOR_WEB_DEPLOYMENT )
+   if( SpecUtils::is_absolute_path(pathstr) )
+     return "";
+   
    SpecUtils::ireplace_all(pathstr, "..", "");
    pathstr = SpecUtils::lexically_normalize_path(pathstr);
    return pathstr;
 #endif
+   
+   if( SpecUtils::is_absolute_path(pathstr) )
+     return pathstr;
    
    const auto file_check = isdir ? &SpecUtils::is_directory : &SpecUtils::is_file;
    
@@ -715,6 +722,14 @@ public:
 
 class RelEffFile;
 
+enum class MatchDetectorStatus
+{
+  NotInited,
+  Match,
+  NoMatch
+};//
+
+
 /** This class represents potentially many CSV or TSV relative efficiency
     detector response files (that each may have multiple DRFs).
     Looks in the InterSpec::writableDataDirectory() and InterSpec::staticDataDirectory() directories for TSVs/CSVs
@@ -741,7 +756,7 @@ public:
   void addFile();
 #endif
   
-  void trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
+  MatchDetectorStatus trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
   
   void detectorSelected( RelEffFile *file, std::shared_ptr<DetectorPeakResponse> det );
   
@@ -791,7 +806,7 @@ public:
   
   void detectorSelectCallback();
   
-  bool trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
+  MatchDetectorStatus trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
   
   void initDetectors();
   void detectorSelected( const int index );
@@ -842,7 +857,7 @@ protected:
   
   void detectorSelectCallback();
   
-  bool trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
+  MatchDetectorStatus trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
   
   //parseDetector() returns null on error
   static std::shared_ptr<DetectorPeakResponse> parseDetector( const string directory );
@@ -868,7 +883,7 @@ public:
   
   virtual ~GadrasDetSelect(){}
   
-  bool trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
+  MatchDetectorStatus trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
   
   std::shared_ptr<DetectorPeakResponse> selectedDetector();
   
@@ -1164,25 +1179,29 @@ void RelEffFile::detectorSelectCallback()
 }//void detectorSelectCallback()
 
 
-bool RelEffFile::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
+MatchDetectorStatus RelEffFile::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
   if( !det )
   {
     m_detectorSelect->setCurrentIndex( 0 );
-    return false;
+    return MatchDetectorStatus::NoMatch;
   }//if( !det )
   
   for( size_t i = 0; i < m_responses.size(); ++i )
   {
     if( m_responses[i]->hashValue() == det->hashValue() )
     {
-      m_detectorSelect->setCurrentIndex( i+1 );
-      return true;
+      m_detectorSelect->setCurrentIndex( static_cast<int>(i) + 1 );
+      return MatchDetectorStatus::Match;
     }
   }//for( size_t i = 0; i < m_responses.size(); ++i )
-  
+    
   m_detectorSelect->setCurrentIndex( 0 );
-  return false;
+  
+  if( m_detectorSelect->count() <= 1 )
+    return MatchDetectorStatus::NotInited;
+  
+  return MatchDetectorStatus::NoMatch;
 }//void trySelectDetector(...)
 
 
@@ -1271,6 +1290,13 @@ void RelEffFile::initDetectors()
   
   m_credits->setText( creditHtml );
   
+  // Only call DrfSelect::detectorsWereInited() if we are updating from a worker thread
+  //  (e.g., we already rendered, and were just waiting to check if DrfSelect::m_detector
+  //   until after all the DRFs were inited) - otherwise if were in the main thread of
+  //   creating the DrfSelect, the DrfSelect will take care of this call later
+  if( isRendered() )
+    m_drfSelect->detectorsWereInited();
+  
   m_detectorSelect->setCurrentIndex( 0 );
 }//initDetectors()
 
@@ -1346,16 +1372,16 @@ void RelEffDetSelect::userSelectedRelEffDetSelect()
 }//void userSelectedRelEffDetSelect()
 
 
-void RelEffDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
+MatchDetectorStatus RelEffDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
   docreate();
   
   if( !m_files )
-    return;
+    return MatchDetectorStatus::NoMatch;
   
   auto children = m_files->children();
   
-  bool found = false;
+  bool anyNotInitied = false, found = false;
   for( auto w : children )
   {
     auto child = dynamic_cast<RelEffFile *>( w );
@@ -1363,10 +1389,20 @@ void RelEffDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> d
       continue;
     
     if( found )
+    {
       child->selectNone();
-    else
-      found = child->trySelectDetector(det);
+    }else
+    {
+      const MatchDetectorStatus status = child->trySelectDetector(det);
+      found = (status == MatchDetectorStatus::Match);
+      anyNotInitied |= (status == MatchDetectorStatus::NotInited);
+    }
   }//for( size_t i = 0; i < children.size(); ++i )
+  
+  if( found )
+    return MatchDetectorStatus::Match;
+  
+  return anyNotInitied ? MatchDetectorStatus::NotInited : MatchDetectorStatus::NoMatch;
 }//void trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 
 
@@ -1609,12 +1645,12 @@ void GadrasDetSelect::docreate()
 
 
 
-bool GadrasDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
+MatchDetectorStatus GadrasDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
   docreate();  //We need to initialize the widget in order for m_directories to be true
   
   if( !m_directories )
-    return false;
+    return MatchDetectorStatus::NoMatch;
   
   if( !det || det->name().empty() )
   {
@@ -1626,7 +1662,7 @@ bool GadrasDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> d
       d->m_detectorSelect->setCurrentIndex( -1 );
     }//for( auto w : m_directories->children() )
     
-    return false;
+    return MatchDetectorStatus::NoMatch;
   }//if( !det || det->name().empty() )
   
   for( auto w : m_directories->children() )
@@ -1639,18 +1675,18 @@ bool GadrasDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> d
     {
       auto response = d->m_responses[i];
       
-      if( response == det || det->hashValue()==response->hashValue() )
+      if( (response == det) || (det->hashValue() == response->hashValue()) )
       {
-        d->m_detectorSelect->setCurrentIndex( i+1 );
-        return true;
+        d->m_detectorSelect->setCurrentIndex( static_cast<int>(i) + 1 );
+        return MatchDetectorStatus::Match;
       }
     }//for( size_t i = 0; i < d->m_responses.size(); ++i )
     
     d->m_detectorSelect->setCurrentIndex( 0 );
   }//for( auto w : m_directories->children() )
   
-  return false;
-}//bool trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
+  return MatchDetectorStatus::NoMatch;
+}//MatchDetectorStatus trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 
 
 std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
@@ -1939,9 +1975,9 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 std::string GadrasDirectory::directory()
 {
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-  return m_directory;
+  return find_valid_path( m_directory, true );
 #else
-  return m_directoryEdit->text().toUTF8();
+  return find_valid_path( m_directoryEdit->text().toUTF8(), true );
 #endif
 }
 
@@ -1984,26 +2020,30 @@ void GadrasDirectory::detectorSelectCallback()
 }//void detectorSelectCallback()
 
   
-bool GadrasDirectory::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
+MatchDetectorStatus GadrasDirectory::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
   if( !det )
   {
     m_detectorSelect->setCurrentIndex( 0 );
-    return false;
+    return MatchDetectorStatus::NoMatch;
   }//if( !det )
   
   for( size_t i = 0; i < m_responses.size(); ++i )
   {
     if( m_responses[i]->hashValue() == det->hashValue() )
     {
-      m_detectorSelect->setCurrentIndex( i+1 );
-      return true;
+      m_detectorSelect->setCurrentIndex( static_cast<int>(i) + 1 );
+      return MatchDetectorStatus::Match;
     }
   }//for( size_t i = 0; i < m_responses.size(); ++i )
   
   m_detectorSelect->setCurrentIndex( 0 );
-  return false;
-}//bool trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
+  
+  if( m_detectorSelect->count() < 2 )
+    return MatchDetectorStatus::NotInited;
+  
+  return MatchDetectorStatus::NoMatch;
+}//MatchDetectorStatus trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 
 
 //parseDetector() returns null on error
@@ -2163,6 +2203,13 @@ void GadrasDirectory::initDetectors()
     
     this->enable();
     
+    // Only call DrfSelect::detectorsWereInited() if we are updating from a worker thread
+    //  (e.g., we already rendered, and were just waiting to check if DrfSelect::m_detector
+    //   until after all the DRFs were inited).
+    //  Not checking if rendered causes user to have to click on menu buttons mutliple times
+    //  to change detector.
+    if( isRendered() )
+      m_drfSelect->detectorsWereInited();
     
     wApp->triggerUpdate();
   };//updategui lambda
@@ -2277,10 +2324,13 @@ void DetectorDisplay::setDetector( std::shared_ptr<DetectorPeakResponse> det )
   }
 }//void setDetector( std::shared_ptr<DetectorPeakResponse> det )
 
+
 void DetectorDisplay::editDetector()
 {
-  new DrfSelectWindow( m_currentDetector.lock(), m_interspec, m_fileModel );
+  if( m_interspec )
+    m_interspec->showDrfSelectWindow();
 }//void editDetector()
+
 
 std::shared_ptr<DetectorPeakResponse> DrfSelect::detector()
 {
@@ -2297,6 +2347,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_fileModel( fileModel ),
     m_chart( 0 ),
     m_detector( currentDet ),
+    m_gui_select_matches_det( false ),
     m_tabs( nullptr ),
     m_detectorDiameter( nullptr ),
     m_uploadedDetNameDiv( nullptr ),
@@ -2925,7 +2976,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_drfTypeMenu->select( 0 );
   
-  init();
+  setGuiToCurrentDetector();
 }//DrfSelect constructor
 
 
@@ -3299,11 +3350,12 @@ void DrfSelect::dbTableSelectionChanged()
   }//try / catch
   
   m_detector = det;
+  m_gui_select_matches_det = true;
   setAcceptButtonEnabled( !failed );
   emitChangedSignal();
 }//void dbTableSelectionChanged()
 
-void DrfSelect::init()
+void DrfSelect::setGuiToCurrentDetector()
 {
   //----initialize
   
@@ -3317,12 +3369,25 @@ void DrfSelect::init()
       case DetectorPeakResponse::DefaultGadrasDrf:
       case DetectorPeakResponse::UserAddedGadrasDrf:
       {
-        const bool selected = m_gadrasDetSelect->trySelectDetector( m_detector );
+        m_drfTypeMenu->select( 0 );
         
-        if( selected )
-          m_drfTypeMenu->select( 0 );
-        else
-          m_drfTypeMenu->select( 2 );
+        // The issue here is that the GADRAS DRFs are probably not inialized here yet - we need to implement some way to do what we are doing in this function here, only after thigns are initialized in each of the detector types.
+        const MatchDetectorStatus status = m_gadrasDetSelect->trySelectDetector( m_detector );
+        
+        switch( status )
+        {
+          case MatchDetectorStatus::NotInited:
+            break;
+            
+          case MatchDetectorStatus::Match:
+            //m_drfTypeMenu->select( 0 );
+            break;
+            
+          case MatchDetectorStatus::NoMatch:
+            //m_drfTypeMenu->select( 2 );
+            break;
+        }//switch( status )
+        
         break;
       }
       
@@ -3375,6 +3440,7 @@ void DrfSelect::init()
               WModelIndexSet indexset;
               indexset.insert( m_model->index(row,0) );
               m_DBtable->setSelectedIndexes( indexset );
+              m_gui_select_matches_det = true;
               break;
             }
             
@@ -3395,7 +3461,14 @@ void DrfSelect::init()
   }//if( m_detector == NULL ) / else
   
   selectButton( m_drfTypeStack, m_drfTypeMenu, false );
-}// init()
+}// setGuiToCurrentDetector()
+
+
+void DrfSelect::detectorsWereInited()
+{
+  if( !m_gui_select_matches_det )
+    setGuiToCurrentDetector();
+}//void detectorsWereInited();
 
 
 DrfSelect::~DrfSelect()
@@ -3408,7 +3481,8 @@ void DrfSelect::setDetector( std::shared_ptr<DetectorPeakResponse> det )
   if( m_detector != det )
   {
     m_detector = det;
-    init();
+    m_gui_select_matches_det = false;
+    setGuiToCurrentDetector();
   }
 }//void setDetector( std::shared_ptr<DetectorPeakResponse> det )
 
@@ -3523,6 +3597,7 @@ void DrfSelect::setDefineDetector()
   
   m_manualSetButton->disable();
   m_detector = detec;
+  m_gui_select_matches_det = true;
   setAcceptButtonEnabled( true );
 
   emitChangedSignal();
@@ -3541,10 +3616,9 @@ void DrfSelect::selectButton( WStackedWidget *stack,
   
   if( activateCallBack )
   {
-    
     //clear the chart when we change, regardless
-    std::shared_ptr<DetectorPeakResponse> det;
-    m_detector = det;
+    m_detector = nullptr;
+    m_gui_select_matches_det = false;
     
     switch( menu->currentIndex() )
     {
@@ -3918,6 +3992,7 @@ void DrfSelect::gadrasDetectorSelectCallback()
   std::shared_ptr<DetectorPeakResponse> det = m_gadrasDetSelect->selectedDetector();
 
   m_detector = det;
+  m_gui_select_matches_det = true;
   setAcceptButtonEnabled( !!det );
   
   emitChangedSignal();
@@ -4145,7 +4220,7 @@ void DrfSelect::acceptAndFinish()
   updateLastUsedTimeOrAddToDb( m_detector, m_interspec->m_user.id(), m_sql );
   
   emitChangedSignal();
-  emitModifiedSignal();
+  //emitModifiedSignal();
   
   auto meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   auto sql = m_interspec->sql();
@@ -4180,7 +4255,7 @@ void DrfSelect::cancelAndFinish()
     (*m_detector) = (*m_originalDetectorCopy);
 
   emitChangedSignal();
-  emitModifiedSignal();
+  //emitModifiedSignal();
   done().emit();
 }//void cancelAndFinish()
 
@@ -4189,7 +4264,7 @@ void DrfSelect::finishWithNoDetector()
 {
   m_detector.reset();
   emitChangedSignal();
-  emitModifiedSignal();
+  //emitModifiedSignal();
   done().emit();
 }//void finishWithNoDetector()
 
@@ -4767,7 +4842,16 @@ void DrfSelect::emitChangedSignal()
   //Make sure this is a necessary signal to emit
   if( m_previousEmmittedDetector == m_detector )
     return;
+  
+  if( !m_detector && !m_previousDetectorDef.isValid() )
+    return;
+  
+  if( m_detector && ((*m_detector)==m_previousDetectorDef) )
+    return;
 
+  const auto prev = m_previousEmmittedDetector;
+  const auto current = m_detector;
+  
   //Now update m_previousDetectorDef and m_previousEmmittedDetector so we can
   //  appropriately filter out unecessary signal emits in the future
   if( m_detector )
@@ -4780,9 +4864,31 @@ void DrfSelect::emitChangedSignal()
   setAcceptButtonEnabled( !!m_detector );
   
   updateChart();
+  
+  
+  auto undo = [prev](){
+    InterSpec *viewer = InterSpec::instance();
+    
+    // This widget *should* (but as of 20230428, this looks broke) hear the
+    //  detectorChanged() signal, and update its state based on this; see
+    //  #DrfSelect::setDetector.
+    if( viewer )
+      viewer->detectorChanged().emit( prev );
+  };
+  
+  auto redo = [current](){
+    InterSpec *viewer = InterSpec::instance();
+    if( viewer )
+      viewer->detectorChanged().emit( current );
+  };
+  
+  UndoRedoManager *undoManager = m_interspec->undoRedoManager();
+  if( undoManager )
+    undoManager->addUndoRedoStep( undo, redo, "Change DRF" );
 }//void emitChangedSignal()
 
 
+/*
 void DrfSelect::emitModifiedSignal()
 {
   //Make sure this is a necessary signal to emit
@@ -4802,7 +4908,7 @@ void DrfSelect::emitModifiedSignal()
 
   m_interspec->detectorChanged().emit( m_detector );
 }//void emitModifiedSignal()
-
+*/
 
 Wt::Signal<> &DrfSelect::done()
 {
@@ -4810,17 +4916,27 @@ Wt::Signal<> &DrfSelect::done()
 }
 
 
-DrfSelectWindow::DrfSelectWindow( std::shared_ptr<DetectorPeakResponse> det,
-                                  InterSpec *specViewer,
-                                  SpectraFileModel *fileModel )
+DrfSelectWindow::DrfSelectWindow( InterSpec *viewer )
   : AuxWindow("Detector Response Function Select",
               Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse
                    | AuxWindowProperties::EnableResize ),
-    m_edit( NULL )
+    m_edit( NULL ),
+    m_interspec( viewer )
 {
-  m_edit = new DrfSelect( det, specViewer, fileModel, this );
+  assert( m_interspec );
+  if( !m_interspec )
+    m_interspec = InterSpec::instance(); //jic
+  if( !m_interspec )
+    throw runtime_error( "DrfSelectWindow: invalid ptr to InterSpec" );
+  
+  shared_ptr<SpecMeas> meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+  shared_ptr<DetectorPeakResponse> det = meas ? meas->detector() : nullptr;
+  SpecMeasManager *fileManager = m_interspec->fileManager();
+  SpectraFileModel *fileModel = fileManager ? fileManager->model() : nullptr;
+  
+  m_edit = new DrfSelect( det, m_interspec, fileModel, this );
   
   contents()->setPadding( 0 );
   contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
@@ -4850,9 +4966,18 @@ DrfSelectWindow::~DrfSelectWindow()
 }
 
 
+DrfSelect *DrfSelectWindow::widget()
+{
+  return m_edit;
+}
+
 void DrfSelectWindow::acceptAndDelete( DrfSelectWindow *window )
 {
   window->m_edit->emitChangedSignal();  //will only emit if necessary
-  window->m_edit->emitModifiedSignal(); //will only emit if necessary
-  AuxWindow::deleteAuxWindow( window );
+  //window->m_edit->emitModifiedSignal(); //will only emit if necessary
+  
+  if( window->m_interspec )
+    window->m_interspec->closeDrfSelectWindow();
+  else
+    AuxWindow::deleteAuxWindow( window );
 }//void acceptAndDelete( DrfSelectWindow *window )

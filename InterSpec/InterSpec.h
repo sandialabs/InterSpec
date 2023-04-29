@@ -56,6 +56,7 @@ class UseInfoWindow;
 class WarningWidget;
 class WarningMessage;
 class PeakEditWindow;
+class DrfSelectWindow;
 class PeakInfoDisplay;
 class SpecMeasManager;
 class UndoRedoManager;
@@ -568,7 +569,9 @@ public:
   bool toolTabsVisible() const;
   
   void showMakeDrfWindow();
-  void showDrfSelectWindow();
+  DrfSelectWindow *showDrfSelectWindow();
+  void closeDrfSelectWindow();
+  
   void showCompactFileManagerWindow();
   
   //Nuclide Search
@@ -1417,6 +1420,9 @@ protected:
   //  would like to use a calibration from a previously used spectrum if the one
   //  they just uploaded is from the same detector as the previous one.
   EnergyCalPreserveWindow *m_preserveCalibWindow;
+  
+  
+  DrfSelectWindow *m_drfSelectWindow;
   
   UndoRedoManager *m_undo;
   

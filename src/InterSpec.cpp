@@ -441,6 +441,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
   m_preserveCalibWindow( 0 ),
+  m_drfSelectWindow( nullptr ),
   m_undo( nullptr ),
   m_renderedWidth( 0 ),
   m_renderedHeight( 0 ),
@@ -8145,16 +8146,56 @@ void InterSpec::showMakeDrfWindow()
 }//void showDrfSelectWindow()
 
 
-void InterSpec::showDrfSelectWindow()
+DrfSelectWindow *InterSpec::showDrfSelectWindow()
 {
-  std::shared_ptr<DetectorPeakResponse> currentDet;
-  if( m_dataMeasurement )
-    currentDet = m_dataMeasurement->detector();
-  InterSpec *specViewer = this;
-  SpectraFileModel *fileModel = m_fileManager->model();
-
-  new DrfSelectWindow( currentDet, specViewer, fileModel );
+  auto redu = [this](){
+    if( !m_drfSelectWindow )
+      m_drfSelectWindow = new DrfSelectWindow( this );
+    else
+      m_drfSelectWindow->show();
+  };
+  
+  auto undo = [this](){
+    if( m_drfSelectWindow )
+    {
+      DrfSelectWindow *window = m_drfSelectWindow;
+      m_drfSelectWindow = nullptr;
+      AuxWindow::deleteAuxWindow( window );
+    }
+  };
+  
+  redu();
+  
+  if( m_undo )
+    m_undo->addUndoRedoStep( undo, redu, "Show DRF Select Window" );
+  
+  return m_drfSelectWindow;
 }//void showDrfSelectWindow()
+
+
+void InterSpec::closeDrfSelectWindow()
+{
+  auto undo = [this](){
+    if( !m_drfSelectWindow )
+      m_drfSelectWindow = new DrfSelectWindow( this );
+    else
+      m_drfSelectWindow->show();
+  };
+  
+  auto redo = [this](){
+    if( m_drfSelectWindow )
+    {
+      DrfSelectWindow *window = m_drfSelectWindow;
+      m_drfSelectWindow = nullptr;
+      AuxWindow::deleteAuxWindow( window );
+    }
+  };
+  
+  redo();
+  
+  if( m_undo )
+    m_undo->addUndoRedoStep( undo, redo, "Close DRF Select Window" );
+}//void closeDrfSelectWindow()
 
 
 void InterSpec::showCompactFileManagerWindow()
