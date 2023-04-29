@@ -56,6 +56,7 @@ class UseInfoWindow;
 class WarningWidget;
 class WarningMessage;
 class PeakEditWindow;
+class DrfSelectWindow;
 class PeakInfoDisplay;
 class SpecMeasManager;
 class GammaCountDialog;
@@ -567,7 +568,9 @@ public:
   bool toolTabsVisible() const;
   
   void showMakeDrfWindow();
-  void showDrfSelectWindow();
+  DrfSelectWindow *showDrfSelectWindow();
+  void closeDrfSelectWindow();
+  
   void showCompactFileManagerWindow();
   
   //Nuclide Search
