@@ -94,7 +94,6 @@
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
-#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -4864,27 +4863,6 @@ void DrfSelect::emitChangedSignal()
   setAcceptButtonEnabled( !!m_detector );
   
   updateChart();
-  
-  
-  auto undo = [prev](){
-    InterSpec *viewer = InterSpec::instance();
-    
-    // This widget *should* (but as of 20230428, this looks broke) hear the
-    //  detectorChanged() signal, and update its state based on this; see
-    //  #DrfSelect::setDetector.
-    if( viewer )
-      viewer->detectorChanged().emit( prev );
-  };
-  
-  auto redo = [current](){
-    InterSpec *viewer = InterSpec::instance();
-    if( viewer )
-      viewer->detectorChanged().emit( current );
-  };
-  
-  UndoRedoManager *undoManager = m_interspec->undoRedoManager();
-  if( undoManager )
-    undoManager->addUndoRedoStep( undo, redo, "Change DRF" );
 }//void emitChangedSignal()
 
 
