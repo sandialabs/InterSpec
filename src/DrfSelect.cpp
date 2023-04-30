@@ -4954,8 +4954,5 @@ void DrfSelectWindow::acceptAndDelete( DrfSelectWindow *window )
   window->m_edit->emitChangedSignal();  //will only emit if necessary
   //window->m_edit->emitModifiedSignal(); //will only emit if necessary
   
-  if( window->m_interspec )
-    window->m_interspec->closeDrfSelectWindow();
-  else
-    AuxWindow::deleteAuxWindow( window );
+  AuxWindow::deleteAuxWindow( window );
 }//void acceptAndDelete( DrfSelectWindow *window )

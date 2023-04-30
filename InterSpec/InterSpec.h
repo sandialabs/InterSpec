@@ -568,8 +568,7 @@ public:
   bool toolTabsVisible() const;
   
   void showMakeDrfWindow();
-  DrfSelectWindow *showDrfSelectWindow();
-  void closeDrfSelectWindow();
+  void showDrfSelectWindow();
   
   void showCompactFileManagerWindow();
   

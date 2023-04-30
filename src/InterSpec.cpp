@@ -8117,56 +8117,10 @@ void InterSpec::showMakeDrfWindow()
 }//void showDrfSelectWindow()
 
 
-DrfSelectWindow *InterSpec::showDrfSelectWindow()
+void InterSpec::showDrfSelectWindow()
 {
-  auto redu = [this](){
-    if( !m_drfSelectWindow )
-      m_drfSelectWindow = new DrfSelectWindow( this );
-    else
-      m_drfSelectWindow->show();
-  };
-  
-  auto undo = [this](){
-    if( m_drfSelectWindow )
-    {
-      DrfSelectWindow *window = m_drfSelectWindow;
-      m_drfSelectWindow = nullptr;
-      AuxWindow::deleteAuxWindow( window );
-    }
-  };
-  
-  redu();
-  
-  if( m_undo )
-    m_undo->addUndoRedoStep( undo, redu, "Show DRF Select Window" );
-  
-  return m_drfSelectWindow;
+  new DrfSelectWindow( this );
 }//void showDrfSelectWindow()
-
-
-void InterSpec::closeDrfSelectWindow()
-{
-  auto undo = [this](){
-    if( !m_drfSelectWindow )
-      m_drfSelectWindow = new DrfSelectWindow( this );
-    else
-      m_drfSelectWindow->show();
-  };
-  
-  auto redo = [this](){
-    if( m_drfSelectWindow )
-    {
-      DrfSelectWindow *window = m_drfSelectWindow;
-      m_drfSelectWindow = nullptr;
-      AuxWindow::deleteAuxWindow( window );
-    }
-  };
-  
-  redo();
-  
-  if( m_undo )
-    m_undo->addUndoRedoStep( undo, redo, "Close DRF Select Window" );
-}//void closeDrfSelectWindow()
 
 
 void InterSpec::showCompactFileManagerWindow()
