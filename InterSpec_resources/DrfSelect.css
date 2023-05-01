@@ -92,6 +92,13 @@ table.FormulaDrfTbl tr td:first-child
   margin-bottom: 3px;
 }
 
+div.RelEffFile select
+{
+  margin-top: 5px;
+  margin-bottom: 2px;
+  margin-left: 10px;
+}
+
 .NoDrfBtn
 {
   float: left;
