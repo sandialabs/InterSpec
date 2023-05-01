@@ -984,13 +984,17 @@ void RelEffFile::init()
   
   WContainerWidget *bottomDiv = new WContainerWidget( this );
   
+  m_detectorSelect = new WComboBox( bottomDiv );
+  m_detectorSelect->setInline( false );
+  m_detectorSelect->setNoSelectionEnabled( true );
+  m_detectorSelect->activated().connect( this, &RelEffFile::detectorSelectCallback );
+  
+  
+  
+  
   m_credits = new WText( "", Wt::XHTMLText, bottomDiv );
   m_credits->setInline( false );
   m_credits->addStyleClass( "RelEffFileCredits" );
-  
-  m_detectorSelect = new WComboBox( bottomDiv );
-  m_detectorSelect->setNoSelectionEnabled( true );
-  m_detectorSelect->activated().connect( this, &RelEffFile::detectorSelectCallback );
   
   initDetectors();
 }//void RelEffFile::init()
@@ -2150,8 +2154,9 @@ void GadrasDirectory::initDetectors()
   
   const std::string objname = objectName();
   const std::string sessid = wApp->sessionId();
+  const bool wasRendered = isRendered();
   
-  auto updategui = [this,objname]( std::vector<std::shared_ptr<DetectorPeakResponse> > drfs ){
+  auto updategui = [this,objname,wasRendered]( std::vector<std::shared_ptr<DetectorPeakResponse> > drfs ){
     
     //Lets make sure this widget hasnt been deleted, by looking for it in the DOM
     WWidget *w = wApp->findWidget(objname);
@@ -2208,7 +2213,7 @@ void GadrasDirectory::initDetectors()
     //   until after all the DRFs were inited).
     //  Not checking if rendered causes user to have to click on menu buttons mutliple times
     //  to change detector.
-    if( isRendered() )
+    if( wasRendered )
       m_drfSelect->detectorsWereInited();
     
     wApp->triggerUpdate();
