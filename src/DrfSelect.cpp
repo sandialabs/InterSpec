@@ -1294,12 +1294,9 @@ void RelEffFile::initDetectors()
   
   m_credits->setText( creditHtml );
   
-  // Only call DrfSelect::detectorsWereInited() if we are updating from a worker thread
-  //  (e.g., we already rendered, and were just waiting to check if DrfSelect::m_detector
-  //   until after all the DRFs were inited) - otherwise if were in the main thread of
-  //   creating the DrfSelect, the DrfSelect will take care of this call later
-  if( isRendered() )
-    m_drfSelect->detectorsWereInited();
+  // Call DrfSelect::detectorsWereInited() since we may be updating from a worker thread;
+  //  the main thread will call later anyway.
+  m_drfSelect->detectorsWereInited();
   
   m_detectorSelect->setCurrentIndex( 0 );
 }//initDetectors()
@@ -1491,8 +1488,8 @@ void RelEffDetSelect::docreate()
 }//void docreate()
 
 
-//Attempts to do a defered rednering, but it looks like thisisnt actually
-//  the case
+// Attempts to do a defered rendering.  Note that if trySelectDetector(...) has
+//  already been called, then so will have docreate().
 void RelEffDetSelect::load()
 {
   if( !loaded() )
@@ -2154,9 +2151,8 @@ void GadrasDirectory::initDetectors()
   
   const std::string objname = objectName();
   const std::string sessid = wApp->sessionId();
-  const bool wasRendered = isRendered();
   
-  auto updategui = [this,objname,wasRendered]( std::vector<std::shared_ptr<DetectorPeakResponse> > drfs ){
+  auto updategui = [this,objname]( std::vector<std::shared_ptr<DetectorPeakResponse> > drfs ){
     
     //Lets make sure this widget hasnt been deleted, by looking for it in the DOM
     WWidget *w = wApp->findWidget(objname);
@@ -2208,13 +2204,10 @@ void GadrasDirectory::initDetectors()
     
     this->enable();
     
-    // Only call DrfSelect::detectorsWereInited() if we are updating from a worker thread
-    //  (e.g., we already rendered, and were just waiting to check if DrfSelect::m_detector
-    //   until after all the DRFs were inited).
-    //  Not checking if rendered causes user to have to click on menu buttons mutliple times
-    //  to change detector.
-    if( wasRendered )
-      m_drfSelect->detectorsWereInited();
+    // Call DrfSelect::detectorsWereInited() since we are updating from a worker thread;
+    //  the main thread will check, and fail if m_detector is a GADRAS detector,
+    //  before we get here.
+    m_drfSelect->detectorsWereInited();
     
     wApp->triggerUpdate();
   };//updategui lambda
@@ -3376,23 +3369,9 @@ void DrfSelect::setGuiToCurrentDetector()
       {
         m_drfTypeMenu->select( 0 );
         
-        // The issue here is that the GADRAS DRFs are probably not inialized here yet - we need to implement some way to do what we are doing in this function here, only after thigns are initialized in each of the detector types.
         const MatchDetectorStatus status = m_gadrasDetSelect->trySelectDetector( m_detector );
         
-        switch( status )
-        {
-          case MatchDetectorStatus::NotInited:
-            break;
-            
-          case MatchDetectorStatus::Match:
-            //m_drfTypeMenu->select( 0 );
-            break;
-            
-          case MatchDetectorStatus::NoMatch:
-            //m_drfTypeMenu->select( 2 );
-            break;
-        }//switch( status )
-        
+        m_gui_select_matches_det = (status == MatchDetectorStatus::Match);
         break;
       }
       
@@ -3400,7 +3379,9 @@ void DrfSelect::setGuiToCurrentDetector()
       case DetectorPeakResponse::DefaultRelativeEfficiencyDrf:
       {
         m_drfTypeMenu->select( 1 );
-        m_relEffSelect->trySelectDetector( m_detector );
+        const MatchDetectorStatus status = m_relEffSelect->trySelectDetector( m_detector );
+        
+        m_gui_select_matches_det = (status == MatchDetectorStatus::Match);
         break;
       }
         
@@ -3419,12 +3400,15 @@ void DrfSelect::setGuiToCurrentDetector()
           energygrp = 1;
         m_eqnEnergyGroup->setSelectedButtonIndex( energygrp );
         m_absOrIntrinsicGroup->setSelectedButtonIndex( 0 );
+        
+        m_gui_select_matches_det = true;
         break;
       }//case kUserEfficiencyEquationSpecified:
         
       case DetectorPeakResponse::UserImportedIntrisicEfficiencyDrf:
       {
         m_drfTypeMenu->select( 2 );
+        m_gui_select_matches_det = true;
         break;
       }
       
@@ -3471,6 +3455,9 @@ void DrfSelect::setGuiToCurrentDetector()
 
 void DrfSelect::detectorsWereInited()
 {
+  // If we try to set the GUI state to match m_detector, it may cause the tab on the left
+  //  (i.e., "GADRAS", "Rel. Eff.", "Import", etc) to be changed, which may be overiding
+  //  what the user wants.
   if( !m_gui_select_matches_det )
     setGuiToCurrentDetector();
 }//void detectorsWereInited();
