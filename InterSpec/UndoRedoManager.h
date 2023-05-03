@@ -94,6 +94,10 @@ public:
   bool isInRedu() const;
   bool isInUndoOrRedo() const;
   
+  
+  /** Clears all undo/redo history. */
+  void clearUndoRedu();
+  
   /**
    
    TODO: add constructor with a function call for before applying changes, and after applying changes

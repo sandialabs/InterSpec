@@ -76,3 +76,11 @@
 {
   font-style: italic;
 }
+
+
+.NoUndoNote
+{
+  margin-top: 5px;
+  font-style: italic;
+  text-align: center;
+}

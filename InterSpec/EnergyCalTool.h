@@ -291,6 +291,11 @@ public:
   /** Makes a dialog the user can then use to upload a CALp file */
   void handleRequestToUploadCALp();
   
+  
+  void moreActionBtnClicked( const MoreActionsIndex index );
+  
+  void cancelMoreActionWindow();
+  
 protected:
   enum class LayoutType{ Tall, Wide };
   void initWidgets( LayoutType layout );
@@ -325,9 +330,6 @@ protected:
   
   void applyToCbChanged( const ApplyToCbIndex index );
   
-  void moreActionBtnClicked( const MoreActionsIndex index );
-  void cancelMoreActionWindow();
-  void moreActionWindowClosed();
   
   /** Returns the gamma detector names that are available for display, given the displayed samples.
    

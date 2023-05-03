@@ -4773,7 +4773,27 @@ void EnergyCalTool::moreActionBtnClicked( const MoreActionsIndex index )
   }
   
   m_addActionWindow = new EnergyCalAddActionsWindow( index, measToChange, this );
-  m_addActionWindow->finished().connect( this, &EnergyCalTool::moreActionWindowClosed );
+  m_addActionWindow->finished().connect( this, &EnergyCalTool::cancelMoreActionWindow );
+  
+  UndoRedoManager *undoManager = m_interspec->undoRedoManager();
+  if( !undoManager )
+    return;
+  
+  auto undo = [](){
+    InterSpec *viewer = InterSpec::instance();
+    EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+    if( tool )
+      tool->cancelMoreActionWindow();
+  };
+  
+  auto redo = [index](){
+    InterSpec *viewer = InterSpec::instance();
+    EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+    if( tool )
+      tool->moreActionBtnClicked(index);
+  };
+  
+  undoManager->addUndoRedoStep( undo, redo, "Show additional energy cal tool.");
 }//void moreActionBtnClicked( const MoreActionsIndex index )
 
 
@@ -4785,12 +4805,6 @@ void EnergyCalTool::cancelMoreActionWindow()
     m_addActionWindow = nullptr;
   }
 }//void cancelMoreActionWindow()
-
-
-void EnergyCalTool::moreActionWindowClosed()
-{
-  
-}//void moreActionWindowClosed();
 
 
 void EnergyCalTool::render( Wt::WFlags<Wt::RenderFlag> flags)
@@ -4811,6 +4825,7 @@ void EnergyCalTool::render( Wt::WFlags<Wt::RenderFlag> flags)
 
 void EnergyCalTool::applyToCbChanged( const EnergyCalTool::ApplyToCbIndex index )
 {
+  // We only get here if the user checked/unchecked a checkbox, or in a undo/redo step.
   assert( index >= 0 && index <= EnergyCalTool::NumApplyToCbIndex );
   WCheckBox *cb = m_applyToCbs[index];
   const bool isChecked = cb->isChecked();
@@ -4844,4 +4859,31 @@ void EnergyCalTool::applyToCbChanged( const EnergyCalTool::ApplyToCbIndex index 
     case EnergyCalTool::NumApplyToCbIndex:
       break;
   }//switch( index )
+  
+  UndoRedoManager *undoManager = m_interspec->undoRedoManager();
+  if( !undoManager || undoManager->isInUndoOrRedo() )
+    return;
+  
+  auto undo = [index,isChecked](){
+    InterSpec *viewer = InterSpec::instance();
+    EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+    if( tool && tool->m_applyToCbs[index] )
+    {
+      tool->m_applyToCbs[index]->setChecked( !isChecked );
+      tool->applyToCbChanged( index );
+    }
+  };
+  
+  auto redo = [index,isChecked](){
+    InterSpec *viewer = InterSpec::instance();
+    EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+    if( tool && tool->m_applyToCbs[index] )
+    {
+      tool->m_applyToCbs[index]->setChecked( isChecked );
+      tool->applyToCbChanged( index );
+    }
+  };
+  
+  const string label = cb->text().toUTF8();
+  undoManager->addUndoRedoStep( undo, redo, "Change " + label );
 }//void applyToCbChanged( const ApplyToCbIndex index )

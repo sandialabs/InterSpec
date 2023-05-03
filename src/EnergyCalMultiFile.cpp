@@ -35,20 +35,22 @@
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
-#include "SpecUtils/Filesystem.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ReactionGamma.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/EnergyCalMultiFile.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -288,8 +290,6 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
   
   if( parent )
   {
-    parent->finished().connect( this, &EnergyCalMultiFile::handleFinish );
-  
     const int w = 600 < viewer->renderedWidth() ? 600 : viewer->renderedWidth();
     const int h = static_cast<int>(0.8*viewer->renderedHeight());
     parent->resizeWindow( w, h );
@@ -738,19 +738,47 @@ void EnergyCalMultiFile::handleFinish( WDialog::DialogCode result )
   switch( result )
   {
     case WDialog::Rejected:
+    {
       cerr << "\nRejected EnergyCalMultiFile" << endl;
-    break;
+      
+      UndoRedoManager *undoManager = viewer->undoRedoManager();
+      if( m_parent && undoManager )
+      {
+        auto undo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+          if( tool )
+            tool->moreActionBtnClicked( MoreActionsIndex::MultipleFilesCal );
+        };
+        
+        auto redo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+          if( tool )
+            tool->cancelMoreActionWindow();
+        };
+        
+        undoManager->addUndoRedoStep( undo, redo, "Cancel multi-file energy cal" );
+      }//if( m_parent && undoManager )
+      
+      break;
+    }//case WDialog::Rejected:
       
     case WDialog::Accepted:
     {
       applyCurrentFit(); 
       cerr << "\nAccepted EnergyCalMultiFile" << endl;
+      
+      UndoRedoManager *undoManager = viewer->undoRedoManager();
+      if( undoManager )
+        undoManager->clearUndoRedu();
+      
       break;
     }//case WDialog::Accepted:
   }//switch( result )
   
   if( m_parent )
-    AuxWindow::deleteAuxWindow( m_parent );
+    m_parent->hide();
 }//void handleFinish(...)
 
 

@@ -368,6 +368,13 @@ bool UndoRedoManager::isInUndoOrRedo() const
 }
 
 
+void UndoRedoManager::clearUndoRedu()
+{
+  if( m_steps )
+    m_steps->clear();
+}//void clearUndoRedu()
+
+
 void UndoRedoManager::handleSpectrumChange( const SpecUtils::SpectrumType type,
                                            const shared_ptr<SpecMeas> &meas,
                                            const set<int> &sample_nums,

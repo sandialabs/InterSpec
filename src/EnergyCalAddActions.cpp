@@ -41,13 +41,15 @@
 #include <Wt/WRadioButton>
 #include <Wt/WContainerWidget>
 
+#include "SpecUtils/EnergyCalibration.h"
+
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/EnergyCalTool.h"
-#include "SpecUtils/EnergyCalibration.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/EnergyCalMultiFile.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/EnergyCalAddActions.h"
@@ -224,20 +226,14 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
   
   rejectWhenEscapePressed();
   AuxWindow::show();
-  setWidth( 400.0 );
   AuxWindow::resizeToFitOnScreen();
   AuxWindow::centerWindow();
-  
-  
 }//EnergyCalAddActionsWindow constructor
   
+
 EnergyCalAddActionsWindow::~EnergyCalAddActionsWindow()
 {
 }
- 
-
-
-
 
 
 ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetType,
@@ -404,6 +400,9 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
     break;
   }//switch( m_sourceType )
   
+  WText *noUndoNote = new WText( "This action cannot be undone.", this );
+  noUndoNote->addStyleClass( "NoUndoNote" );
+  noUndoNote->setInline( false );
   
   WContainerWidget *buttonDiv = nullptr;
   if( parent )
@@ -418,20 +417,6 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
   
   m_cancel->clicked().connect( boost::bind( &ConvertCalTypeTool::handleFinish, this, WDialog::Rejected ) );
   m_accept->clicked().connect( boost::bind( &ConvertCalTypeTool::handleFinish, this, WDialog::Accepted ) );
-  
-  if( parent )
-  {
-    parent->finished().connect( this, &ConvertCalTypeTool::handleFinish );
-    
-    const int w = 600 < viewer->renderedWidth() ? 600 : viewer->renderedWidth();
-    //const int h = static_cast<int>(0.8*viewer->renderedHeight());
-    //parent->resizeWindow( w, h );
-    parent->setWidth( w );
-    
-    parent->rejectWhenEscapePressed();
-    
-    parent->centerWindow();
-  }//if( parent )
 }//ConvertCalTypeTool(...)
   
 
@@ -675,8 +660,35 @@ void ConvertCalTypeTool::handleFinish( Wt::WDialog::DialogCode result )
   switch( result )
   {
     case WDialog::Rejected:
+    {
       cerr << "\nRejected ConvertCalTypeTool" << endl;
-    break;
+      
+      UndoRedoManager *undoManager = viewer->undoRedoManager();
+      if( m_parent && undoManager )
+      {
+        MoreActionsIndex index = (m_targetType == SpecUtils::EnergyCalType::FullRangeFraction)
+                                 ?  MoreActionsIndex::ConvertToFrf
+                                  : MoreActionsIndex::ConvertToPoly;
+        
+        auto undo = [index](){
+          InterSpec *viewer = InterSpec::instance();
+          EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+          if( tool )
+            tool->moreActionBtnClicked( index );
+        };
+        
+        auto redo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+          if( tool )
+            tool->cancelMoreActionWindow();
+        };
+        
+        undoManager->addUndoRedoStep( undo, redo, "Cancel energy calibration type converter" );
+      }//if( m_parent && undoManager )
+      
+      break;
+    }//case WDialog::Rejected:
       
     case WDialog::Accepted:
     {
@@ -850,12 +862,16 @@ void ConvertCalTypeTool::handleFinish( Wt::WDialog::DialogCode result )
       m_cal->refreshGuiFromFiles();
       viewer->refreshDisplayedCharts();
       
+      UndoRedoManager *undoManager = viewer->undoRedoManager();
+      if( undoManager )
+        undoManager->clearUndoRedu();
+      
       break;
     }//case WDialog::Accepted:
   }//switch( result )
   
   if( m_parent )
-    AuxWindow::deleteAuxWindow( m_parent );
+    m_parent->hide();
 }//void handleFinish(...)
 
 
@@ -1015,6 +1031,10 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
     msg->setInline( false );
   }//if( !applyToTxt.empty() )
   
+  WText *noUndoNote = new WText( "This action cannot be undone.", this );
+  noUndoNote->addStyleClass( "NoUndoNote" );
+  noUndoNote->setInline( false );
+      
   WContainerWidget *buttonDiv = nullptr;
   if( parent )
     buttonDiv = parent->footer();
@@ -1028,20 +1048,6 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
   
   m_cancel->clicked().connect( boost::bind( &LinearizeCalTool::handleFinish, this, WDialog::Rejected ) );
   m_accept->clicked().connect( boost::bind( &LinearizeCalTool::handleFinish, this, WDialog::Accepted ) );
-  
-  if( parent )
-  {
-    parent->finished().connect( this, &LinearizeCalTool::handleFinish );
-    
-    const int w = 600 < viewer->renderedWidth() ? 600 : viewer->renderedWidth();
-    //const int h = static_cast<int>(0.8*viewer->renderedHeight());
-    //parent->resizeWindow( w, h );
-    parent->setWidth( w );
-    
-    parent->rejectWhenEscapePressed();
-    
-    parent->centerWindow();
-  }//if( parent )
 }//ConvertCalTypeTool(...)
   
   
@@ -1104,8 +1110,31 @@ void LinearizeCalTool::handleFinish( Wt::WDialog::DialogCode result )
   switch( result )
   {
     case WDialog::Rejected:
+    {
       cerr << "\nRejected LinearizeCalTool" << endl;
+      UndoRedoManager *undoManager = viewer->undoRedoManager();
+      if( m_parent && undoManager )
+      {
+        auto undo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+          if( tool )
+            tool->moreActionBtnClicked( MoreActionsIndex::Linearize );
+        };
+        
+        auto redo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+          if( tool )
+            tool->cancelMoreActionWindow();
+        };
+        
+        undoManager->addUndoRedoStep( undo, redo, "Cancel linearization" );
+      }//if( m_parent && undoManager )
+      
+      
       break;
+    }
       
     case WDialog::Accepted:
     {
@@ -1170,7 +1199,7 @@ void LinearizeCalTool::handleFinish( Wt::WDialog::DialogCode result )
             }catch( std::exception &e )  //Shouldnt ever actually happen, but JIC
             {
               if( viewer )
-                viewer->logMessage( "Error rebinning whiel linearizing: " + string(e.what()), 3 );
+                viewer->logMessage( "Error rebinning while linearizing: " + string(e.what()), 3 );
             }//try / catch to create new calibration
           }//for( const int sample : toapplyto.sample_numbers )
         }//for( const auto &detname : toapplyto.detectors )
@@ -1179,12 +1208,16 @@ void LinearizeCalTool::handleFinish( Wt::WDialog::DialogCode result )
       m_cal->refreshGuiFromFiles();
       viewer->refreshDisplayedCharts();
       
+      UndoRedoManager *undoManager = viewer->undoRedoManager();
+      if( undoManager )
+        undoManager->clearUndoRedu();
+      
       break;
     }//case WDialog::Accepted:
   }//switch( result )
   
   if( m_parent )
-    AuxWindow::deleteAuxWindow( m_parent );
+    m_parent->hide();
 }//void handleFinish( WDialog::DialogCode result )
 
 
@@ -1236,7 +1269,7 @@ CombineChannelsTool::CombineChannelsTool( shared_ptr<vector<MeasToApplyCoefChang
   label->setMargin( 5, Wt::Side::Right );
   m_ncombine = new WSpinBox( this );
   m_ncombine->setValue( 1 );
-  m_ncombine->setRange( 1, maxcombine );
+  m_ncombine->setRange( 1, static_cast<int>(maxcombine) );
   m_ncombine->valueChanged().connect( this, &CombineChannelsTool::ncombineUpdatedCallback );
   
   string applyToTxt = cal->applyToSummaryTxt();
@@ -1247,6 +1280,10 @@ CombineChannelsTool::CombineChannelsTool( shared_ptr<vector<MeasToApplyCoefChang
     msg->addStyleClass( "ConvertToApplieTo" );
     msg->setInline( false );
   }//if( !applyToTxt.empty() )
+  
+  WText *noUndoNote = new WText( "This action cannot be undone.", this );
+  noUndoNote->addStyleClass( "NoUndoNote" );
+  noUndoNote->setInline( false );
   
   WContainerWidget *buttonDiv = nullptr;
   if( parent )
@@ -1261,26 +1298,13 @@ CombineChannelsTool::CombineChannelsTool( shared_ptr<vector<MeasToApplyCoefChang
   
   m_cancel->clicked().connect( boost::bind( &CombineChannelsTool::handleFinish, this, WDialog::Rejected ) );
   m_accept->clicked().connect( boost::bind( &CombineChannelsTool::handleFinish, this, WDialog::Accepted ) );
-  
-  if( parent )
-  {
-    parent->finished().connect( this, &CombineChannelsTool::handleFinish );
-    
-    const int w = 600 < viewer->renderedWidth() ? 600 : viewer->renderedWidth();
-    //const int h = static_cast<int>(0.8*viewer->renderedHeight());
-    //parent->resizeWindow( w, h );
-    parent->setWidth( w );
-    parent->rejectWhenEscapePressed();
-    parent->centerWindow();
-  }//if( parent )
 }//CombineChannelsTool constructor
   
-
-
 
 CombineChannelsTool::~CombineChannelsTool()
 {
 }
+
 
 void CombineChannelsTool::ncombineUpdatedCallback()
 {
@@ -1310,8 +1334,31 @@ void CombineChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
   switch( result )
   {
     case WDialog::Rejected:
+    {
       cerr << "\nRejected CombineChannelsTool" << endl;
+      
+      UndoRedoManager *undoManager = viewer->undoRedoManager();
+      if( m_parent && undoManager )
+      {
+        auto undo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+          if( tool )
+            tool->moreActionBtnClicked( MoreActionsIndex::CombineChannels );
+        };
+        
+        auto redo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+          if( tool )
+            tool->cancelMoreActionWindow();
+        };
+        
+        undoManager->addUndoRedoStep( undo, redo, "Cancel combine channels" );
+      }//if( m_parent && undoManager )
+      
       break;
+    }//case WDialog::Rejected:
       
     case WDialog::Accepted:
     {
@@ -1376,12 +1423,16 @@ void CombineChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
       m_cal->refreshGuiFromFiles();
       viewer->refreshDisplayedCharts();
       
+      UndoRedoManager *undoManager = viewer->undoRedoManager();
+      if( undoManager )
+        undoManager->clearUndoRedu();
+      
       break;
     }//case WDialog::Accepted:
   }//switch( result )
   
   if( m_parent )
-    AuxWindow::deleteAuxWindow( m_parent );
+    m_parent->hide();
 }//void handleFinish( Wt::WDialog::DialogCode result )
 
 
@@ -1534,6 +1585,10 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
     truncNote->addStyleClass( "TruncateApplyTo" );
   truncNote->setInline( false );
   
+  WText *noUndoNote = new WText( "This action cannot be undone.", this );
+  noUndoNote->addStyleClass( "NoUndoNote" );
+  noUndoNote->setInline( false );
+    
   validateInput();
   
   WContainerWidget *buttonDiv = nullptr;
@@ -1549,15 +1604,6 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
   
   m_cancel->clicked().connect( boost::bind( &TruncateChannelsTool::handleFinish, this, WDialog::Rejected ) );
   m_accept->clicked().connect( boost::bind( &TruncateChannelsTool::handleFinish, this, WDialog::Accepted ) );
-  
-  if( parent )
-  {
-    const int w = ((600 < viewer->renderedWidth()) ? 600 : viewer->renderedWidth());
-    parent->setWidth( w );
-    parent->rejectWhenEscapePressed();
-    parent->centerWindow();
-    parent->finished().connect( this, &TruncateChannelsTool::handleFinish );
-  }//if( parent )
 }//TruncateChannelsTool constructor
 
 
@@ -1669,8 +1715,31 @@ void TruncateChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
   switch( result )
   {
     case WDialog::Rejected:
+    {
       cerr << "\nRejected TruncateChannelsTool" << endl;
+      
+      UndoRedoManager *undoManager = viewer->undoRedoManager();
+      if( m_parent && undoManager )
+      {
+        auto undo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+          if( tool )
+            tool->moreActionBtnClicked( MoreActionsIndex::Truncate );
+        };
+        
+        auto redo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+          if( tool )
+            tool->cancelMoreActionWindow();
+        };
+        
+        undoManager->addUndoRedoStep( undo, redo, "Cancel truncate energy" );
+      }//if( m_parent && undoManager )
+      
       break;
+    }
       
     case WDialog::Accepted:
     {
@@ -1746,11 +1815,15 @@ void TruncateChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
       m_cal->refreshGuiFromFiles();
       viewer->refreshDisplayedCharts();
       
+      UndoRedoManager *undoManager = viewer->undoRedoManager();
+      if( undoManager )
+        undoManager->clearUndoRedu();
+      
       break;
     }//case WDialog::Accepted:
   }//switch( result )
   
   if( m_parent )
-    AuxWindow::deleteAuxWindow( m_parent );
+    m_parent->hide();
 };//handleFinish(...)
 
