@@ -39,6 +39,7 @@ class AuxWindow;
 class InterSpec;
 class PeakModel;
 class RowStretchTreeView;
+class EnergyCalAddActionsWindow;
 class EnergyCalGraphicalConfirm;
 
 namespace Wt
@@ -149,6 +150,8 @@ enum class MoreActionsIndex : int
   \TODO: if (or hopefully when) the InterSpec class allows selecting detectors seperately for
          foreground/back/sec., we will need to consider upgrading how we indicate things \
          because there is an edge-case where detectors wanted will differ by sample number
+ 
+ \sa MeasToApplyCoefChangeToWeak (for undo/redo)
  */
 struct MeasToApplyCoefChangeTo
 {
@@ -323,6 +326,8 @@ protected:
   void applyToCbChanged( const ApplyToCbIndex index );
   
   void moreActionBtnClicked( const MoreActionsIndex index );
+  void cancelMoreActionWindow();
+  void moreActionWindowClosed();
   
   /** Returns the gamma detector names that are available for display, given the displayed samples.
    
@@ -409,6 +414,7 @@ protected:
   std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
   std::set<int> m_currentSampleNumbers[3];
   
+  EnergyCalAddActionsWindow *m_addActionWindow;
   
   /*
    We could hook up to SpecMeas::aboutToBeDeleted() to know whene file is about to go-away, but this

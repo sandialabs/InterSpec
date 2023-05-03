@@ -227,6 +227,8 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
   setWidth( 400.0 );
   AuxWindow::resizeToFitOnScreen();
   AuxWindow::centerWindow();
+  
+  
 }//EnergyCalAddActionsWindow constructor
   
 EnergyCalAddActionsWindow::~EnergyCalAddActionsWindow()

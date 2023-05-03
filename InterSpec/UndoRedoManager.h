@@ -73,12 +73,12 @@ public:
    there wont be a seeming empty redo step later on (although, depending if use use WApplication::bind(...) to close a
    specific window, the undo slot will seem empty to the user).
    
+   If you are currently executing an undo or redo step, the new step passed in will not be added.
+   
    Be careful of:
    - If you capture any shared pointers, particularly to SpecMeas objects, keep in mind you could create dependency
       cycles that could cause the object to never destruct, even if all other shared pointers are gone.  Using std::weak_ptr<SpecMeas>
       can help with this.
-   - Do not create new undo/redo steps, from within the undo/redo functions, even incidentally - you'll create a undo/redo cycle
-      that will make previous history inaccessible.
    */
   void addUndoRedoStep( std::function<void()> undo,
                         std::function<void()> redo,
@@ -89,6 +89,10 @@ public:
   
   void executeUndo();
   void executeRedo();
+  
+  bool isInUndo() const;
+  bool isInRedu() const;
+  bool isInUndoOrRedo() const;
   
   /**
    
@@ -103,6 +107,13 @@ public:
     PeakModelChange &operator=( const PeakModelChange & ) = delete; // non copyable
   };//struct PeakModelChange
   
+  enum class State : int
+  {
+    Neither,
+    InUndo,
+    InRedo
+  };//enum class State
+  
 protected:
   void handleSpectrumChange( const SpecUtils::SpectrumType type,
                             const std::shared_ptr<SpecMeas> &meas,
@@ -110,6 +121,8 @@ protected:
                             const std::vector<std::string> &detector_names );
   
 protected:
+  
+  State m_state;
   
   struct UndoRedoStep
   {

@@ -37,6 +37,27 @@
 
 using namespace std;
 
+namespace
+{
+  struct ClearStateOnDestruct
+  {
+  protected:
+    UndoRedoManager::State &m_state;
+    
+  public:
+    ClearStateOnDestruct( UndoRedoManager::State &state, const UndoRedoManager::State new_state )
+      : m_state( state )
+    {
+      m_state = new_state;
+    }
+    
+    ~ClearStateOnDestruct()
+    {
+      m_state = UndoRedoManager::State::Neither;
+    }
+  };//struct DoWorkOnDestruct
+}//namespace
+
 
 bool UndoRedoManager::SpecKeyLess::operator()( const spec_key_t &lhs, const spec_key_t &rhs ) const noexcept
 {
@@ -54,6 +75,7 @@ bool UndoRedoManager::SpecKeyLess::operator()( const spec_key_t &lhs, const spec
 
 UndoRedoManager::UndoRedoManager( InterSpec *parent )
  : Wt::WObject( parent ),
+  m_state( UndoRedoManager::State::Neither ),
   m_steps{},
   m_step_offset{ 0 },
   m_current_spec{},
@@ -194,6 +216,13 @@ void UndoRedoManager::addUndoRedoStep( std::function<void()> undo,
   
   assert( m_step_offset <= m_steps->size() );
   
+  if( m_state != State::Neither )
+  {
+    Wt::log("debug") << "UndoRedoManager::addUndoRedoStep(): not adding undo/redo step"
+                        " - currently executing undo or redo.";
+    return;
+  }//if( m_state != State::Neither )
+  
   const size_t num_steps = m_steps->size();
   
   if( (m_step_offset != 0) && (m_step_offset <= num_steps) )
@@ -234,6 +263,8 @@ void UndoRedoManager::executeUndo()
     Wt::log("debug") << "No more undo steps to execute.";
     return;
   }
+  
+  ClearStateOnDestruct state_guard( m_state, UndoRedoManager::State::InUndo );
   
   //UndoRedoStep &step = (*m_steps)[m_steps->size() - 1 - m_step_offset];
   UndoRedoStep *step = nullptr;
@@ -279,6 +310,8 @@ void UndoRedoManager::executeRedo()
     return;
   }
   
+  ClearStateOnDestruct state_guard( m_state, UndoRedoManager::State::InRedo );
+  
   assert( m_step_offset <= m_steps->size() );
   if( m_step_offset > m_steps->size() )
     m_step_offset = m_steps->size();
@@ -316,6 +349,23 @@ void UndoRedoManager::executeRedo()
   }// try / catch
 }//void UndoRedoManager::executeRedo()
 
+
+bool UndoRedoManager::isInUndo() const
+{
+  return (m_state == State::InUndo);
+}
+
+
+bool UndoRedoManager::isInRedu() const
+{
+  return (m_state == State::InRedo);
+}
+
+
+bool UndoRedoManager::isInUndoOrRedo() const
+{
+  return (m_state != State::Neither);
+}
 
 
 void UndoRedoManager::handleSpectrumChange( const SpecUtils::SpectrumType type,
