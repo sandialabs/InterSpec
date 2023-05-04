@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <mutex>
 #include <vector>
 #include <string>
 #include <stdexcept>
@@ -35,9 +36,12 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "SpecUtils/DateTime.h" //only for debug timing
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/SpecUtilsAsync.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/Integrate.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -66,42 +70,281 @@ namespace
 }//namespace
 
 
-//I need practice/help memorizing background lines, so I typed the following in
-//  from "Practical gamma-ray spectrometry" pg 361
-const OtherRefLine BackgroundReactionLines[28] =
+const vector<OtherRefLine> &getBackgroundRefLines()
 {
-  OtherRefLine( 53.44f,   0.1034f, "Ge(n,g)", OtherRefLineType::BackgroundReaction, "Ge72(n,g), Ge74(n,2n)" ),
-  OtherRefLine( 68.75f,   0.001f,   "Ge(n,n)", OtherRefLineType::BackgroundReaction, "Ge73(n,n) broad antisymetric peak" ),
-  OtherRefLine( 139.68f,  0.390f,  "Ge75m", OtherRefLineType::BackgroundReaction, "Ge74(n,g), Ge76(n,2n)" ),
-  OtherRefLine( 159.7f,   0.1033f, "Ge(n,g)", OtherRefLineType::BackgroundReaction, "Ge76(n,g)" ),
-  OtherRefLine( 174.95f,  0.0f,   "Ge(n,g)", OtherRefLineType::BackgroundReaction, "Ge70(n,g) activation" ),
-  OtherRefLine( 198.39f,  0.0f,   "Ge71m", OtherRefLineType::BackgroundReaction, "Sum peak Ge70(n,g)" ),
-  OtherRefLine( 278.26f,  0.0f,   "Cu64", OtherRefLineType::BackgroundReaction, "Cu63(n,g), Cu65(n,2n) prompt gamma" ),
-  OtherRefLine( 336.24f,  0.459f,  "Cd115m,In115m", OtherRefLineType::BackgroundReaction, "Activation of Cd (descendant of Cd115)" ),
-  OtherRefLine( 416.86f,  0.277f,  "In116m", OtherRefLineType::BackgroundReaction, "In115(n,g) activation of In metal seal" ),
-  OtherRefLine( 527.90f,  0.275f,  "Cd115", OtherRefLineType::BackgroundReaction, "Cd114(n,g) activation" ),
-  OtherRefLine( 558.46f,  0.0f,   "Cd114", OtherRefLineType::BackgroundReaction, "Cd113(n,g) prompt gamma" ),
-  OtherRefLine( 569.7f,   0.9789f, "Pb207m", OtherRefLineType::BackgroundReaction, "Pb207(n,n)" ),
-  OtherRefLine( 579.2f,   0.0f,   "Pb207", OtherRefLineType::BackgroundReaction, "Pb207(n,n) prompt gamma" ),
-  OtherRefLine( 595.85f,  0.0f,   "Ge74", OtherRefLineType::BackgroundReaction, "Ge74(n,n) broad asymmetric peak" ),
-  OtherRefLine( 669.62f,  0.0f,   "Cu63", OtherRefLineType::BackgroundReaction, "Cu63(n,n) prompt gamma" ),
-  OtherRefLine( 689.6f,   0.0f,   "Ge72", OtherRefLineType::BackgroundReaction, "Ge72(n,n) broad asymetric peak" ),
-  OtherRefLine( 803.06f,  0.0f,   "Pb206", OtherRefLineType::BackgroundReaction, "Pb206(n,n) prompt gamma" ),
-  OtherRefLine( 843.76f,  0.718f,  "Mg27", OtherRefLineType::BackgroundReaction, "Mg26(n,g) or Al27(n,p) of encapsilation" ),
-  OtherRefLine( 846.77f,  0.0f,   "Fe56", OtherRefLineType::BackgroundReaction, "Fe56(n,n)" ),
-  OtherRefLine( 962.06f,  0.0f,   "Cu63", OtherRefLineType::BackgroundReaction, "Cu63(n,n) prompt gamma" ),
-  OtherRefLine( 1014.44f, 0.280f,  "Mg27", OtherRefLineType::BackgroundReaction, "Mg26(n,g) or Al27(n,p) of encapsilation" ),
-  OtherRefLine( 1063.66f, 0.885f,  "Pb207m", OtherRefLineType::BackgroundReaction, "Pb207(n,n)" ),
-  OtherRefLine( 1097.3f,  0.562f,  "In116", OtherRefLineType::BackgroundReaction, "In115(n,g) activation of In metal seal" ),
-  OtherRefLine( 1115.56f, 0.0f,   "Cu65", OtherRefLineType::BackgroundReaction, "Cu65(n,n)" ),
-  OtherRefLine( 1173.23f, 0.9985f, "Co60", OtherRefLineType::BackgroundReaction, "Activation" ),
-  OtherRefLine( 1293.54f, 0.844f,  "In116", OtherRefLineType::BackgroundReaction, "In115(n,g) activation of In metal seal" ),
-  OtherRefLine( 1332.49f, 0.9998f, "Co60", OtherRefLineType::BackgroundReaction, "Activation" ),
-  OtherRefLine( 2224.57f, 0.0f,   "H2", OtherRefLineType::BackgroundReaction, "H(n,g)" )
-};//BackgroundReactionLines[]
+  using namespace GammaInteractionCalc;
+  
+  const float lower_photon_energy = 10.0f;
+  
+  static std::mutex answer_mutex;
+  static vector<OtherRefLine> answer;
+  
+  std::lock_guard<std::mutex> lock( answer_mutex );
+  if( !answer.empty() )
+    return answer;
+  
+  // TODO:
+  //  - add in more cosmic
+  //  - Make integration go in parrallel; e.g., use SpecUtilsAsync::ThreadPool
+  //  - Add escape for 2614
+  //  - limit branching ratio; something like remove those below 1.0E-17
+  //  - Cache results, so is faster next time
+  //  - check effect of epsrel on speed of computation
+  //  - do we want to add in extra x-rays or anything?
+  
+  try
+  {
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    assert( db );
+    if( !db )
+      return answer;
+    
+    // The threshold, relative to most intense line, to not include intensities below.
+    const double rel_threshold = 1.0E-17;
+    
+    
+    
+    const char *soil_chem_formula = "H0.022019C0.009009O0.593577Al0.066067Si0.272289K0.01001Fe0.027029 d=1.6";
+    MaterialDB materialdb;
+    const Material * const soil = materialdb.parseChemicalFormula(soil_chem_formula, db);
+    assert( soil );
+    if( !soil )
+      return answer;
+    
+    std::mutex prelim_answer_mutex;
+    vector<OtherRefLine> prelim_answer;
+    prelim_answer.resize( 3000 ); //we actually need 2890
+    answer.reserve( 2100 ); //we actaully need 2062, when rel_threshold==1.0E-17;
+    
+    
+    // Computation timings on M1 macbook:
+    // - Single threaded, epsrel = 1e-5: wall=0.789006, cpu=0.787189
+    // - Single threaded, epsrel = 1e-4: wall=0.593146, cpu=0.59266
+    // - Single threaded, epsrel = 1e-3: wall=0.465307, cpu=0.464454
+    // - Multithreaded (nthreads=10), epsrel = 1e-4: wall=0.138786, cpu=0.685506
+    
+    //const double start_wall = SpecUtils::get_wall_time();
+    //const double start_cpu = SpecUtils::get_cpu_time();
+    
+    DistributedSrcCalc soil_sphere;
+    
+    soil_sphere.m_geometry = GeometryType::Spherical;
+    soil_sphere.m_sourceIndex = 0;
+    soil_sphere.m_attenuateForAir = false;
+    soil_sphere.m_airTransLenCoef = 0.0;
+    soil_sphere.m_isInSituExponential = false;
+    soil_sphere.m_inSituRelaxationLength = 0.0;
+    soil_sphere.m_detectorRadius  = 5.0 * PhysicalUnits::cm;
+    soil_sphere.m_observationDist = 200.0 * PhysicalUnits::cm;
+    
+    const double sphereRad = 100.0 * PhysicalUnits::cm;
+    soil_sphere.m_dimensionsTransLenAndType.push_back( {
+      {sphereRad,0.0,0.0},
+      0.0,
+      DistributedSrcCalc::ShellType::Material
+    } );
+    
+    
+    // The rel-activities below were just adjusted to match a representative background
+    //  and are otherwise arbitrary.
+    const SandiaDecay::Nuclide * const u238 = db->nuclide( "U238" );
+    const SandiaDecay::Nuclide * const ra226 = db->nuclide( "Ra226" );
+    const SandiaDecay::Nuclide * const u235 = db->nuclide( "U235" );
+    const SandiaDecay::Nuclide * const th232 = db->nuclide( "Th232" );
+    const SandiaDecay::Nuclide * const k40 = db->nuclide( "K40" );
+    
+    // All the denominators below were for observation distance of 200cm, 5cm detector radius, and
+    //  a 1 m radius sphere
+    const vector<tuple<const SandiaDecay::Nuclide *,double,OtherRefLineType, double>> nuc_activity{
+      //make the 1001 keV have amp 0.0004653, before norm
+      { u238,   0.0004653/410.2892, OtherRefLineType::U238Series, 5.0*u238->promptEquilibriumHalfLife() },
+      
+      //make 609 keV have amp 0.02515, before norm
+      { ra226,  0.02515/17990.5430, OtherRefLineType::Ra226Series, 5.0*ra226->promptEquilibriumHalfLife() },
+      
+      //make 185 keV have amp 0.001482, before norm
+      { u235,   0.001482/14603.0156, OtherRefLineType::U235Series, 5.0*u235->promptEquilibriumHalfLife() },
+      
+      //make 2614 keV have amp 0.02038, before norm
+      { th232,  0.02038/27897.2617, OtherRefLineType::Th232Series, 5.0*th232->secularEquilibriumHalfLife() },
+      
+      //make 1460 keV have amp 0.1066, before norm
+      { k40,    0.1066/6523.8994, OtherRefLineType::K40Background, 0.0 }
+    };//nuc_activity
+    
+    
+    
+    SandiaDecay::NuclideMixture mixture;
+    for( const auto &src : nuc_activity )
+    {
+      const SandiaDecay::Nuclide * const nuc = get<0>(src);
+      const double parent_activity = get<1>(src);
+      const double age = get<3>(src);
+      
+      mixture.addAgedNuclideByActivity( nuc, parent_activity, age );
+    }//for( const auto &src : nuc_activity )
+    
+    
+    const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity( 0.0 );
+    const size_t nthreads = static_cast<size_t>( std::max( 4, SpecUtilsAsync::num_logical_cpu_cores() ) );
+    
+    vector<DistributedSrcCalc> soil_spheres( nthreads, soil_sphere );
+    size_t calc_index = 0;
+    SpecUtilsAsync::ThreadPool pool;
+    
+    for( const SandiaDecay::NuclideActivityPair &nap : activities )
+    {
+      const SandiaDecay::Nuclide *nuclide = nap.nuclide;
+      const double activity = nap.activity;
+      
+      for( const SandiaDecay::Transition *transition : nuclide->decaysToChildren )
+      {
+        for( const SandiaDecay::RadParticle &particle : transition->products )
+        {
+          // For the moment we'll keep gammas and x-rays only - but should
+          switch( particle.type )
+          {
+            case SandiaDecay::BetaParticle:
+            case SandiaDecay::AlphaParticle:
+            case SandiaDecay::CaptureElectronParticle:
+            case SandiaDecay::PositronParticle: //Posititrons are super-small, and not worth adding in here
+              continue;
+              break;
+              
+            case SandiaDecay::GammaParticle:
+            case SandiaDecay::XrayParticle:
+              if( particle.energy < lower_photon_energy )
+                continue;
+              break;
+          };//switch( particle.type )
+          
+          
+          const double br = activity * particle.intensity * transition->branchRatio;
+          const double energy = particle.energy;
+          const SandiaDecay::ProductType part_type = particle.type;
+          
+          auto do_calc = [soil, energy, calc_index, transition, nthreads, part_type, br,
+                          k40, ra226, th232, u238,
+                          &prelim_answer, &soil_spheres](){
+            
+            const double transLenCoef = GammaInteractionCalc::transmition_length_coefficient( soil, energy );
+            
+            const size_t thread_num = calc_index % nthreads;
+            DistributedSrcCalc &sphere = soil_spheres[thread_num];
+            
+            assert( sphere.m_dimensionsTransLenAndType.size() == 1 );
+            get<1>( sphere.m_dimensionsTransLenAndType[0] ) = transLenCoef;
+            
+            int nregions, neval, fail;
+            double integral, error, prob;
+            void *userdata = (void *)&sphere;
+            
+            // Some constants for integration
+            const int ndim = 2;  //the number of dimensions of the integral.
+            const double epsrel = 1e-4, epsabs = -1.0; //the requested relative and absolute accuracies
+            const int mineval = 0, maxeval = 500000;   //the min and (approx) max number of integrand evaluations allowed.
+            
+            
+            Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
+                                      Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
+                                      fail, integral, error, prob );
+            
+            //printf("%s: %.1f keV -> br=%.4f.\n", nuc->symbol.c_str(), energy, br*integral );
+            
+            string desc;
+            if( transition->parent )
+              desc = transition->parent->symbol;
+            if( part_type == SandiaDecay::XrayParticle )
+              desc += " x-ray";
+            
+            OtherRefLineType type = OtherRefLineType::BackgroundXRay;
+            if( part_type == SandiaDecay::XrayParticle )
+            {
+              type = OtherRefLineType::BackgroundXRay;
+            }else if( transition->parent )
+            {
+              if( k40->branchRatioToDecendant(transition->parent) > 0 )
+                type = OtherRefLineType::K40Background;
+              else if( ra226->branchRatioToDecendant(transition->parent) > 0 )
+                type = OtherRefLineType::Ra226Series;
+              else if( th232->branchRatioToDecendant(transition->parent) > 0 )
+                type = OtherRefLineType::Th232Series;
+              else if( u238->branchRatioToDecendant(transition->parent) > 0 )
+                type = OtherRefLineType::U238Series;
+            }
+            
+            prelim_answer[calc_index] = { static_cast<float>(energy), static_cast<float>(br*integral), desc, type, "" };
+          };//do_calc
+          
+          assert( prelim_answer.size() > calc_index );
+          if( prelim_answer.size() < calc_index )
+            prelim_answer.resize( calc_index + 100 );
+          
+          pool.post( do_calc );
+          
+          if( ((calc_index + 1) % nthreads) == 0 )
+          {
+            pool.join();
+          }
+          
+          calc_index += 1;
+        }//for( const SandiaDecay::RadParticle &particle : transition->products )
+      }//for( const SandiaDecay::Transition *transition : nuclide->decaysToChildren )
+    }//for( const SandiaDecay::NuclideActivityPair &nap : activities )
+    
+    pool.join();
+    
+    prelim_answer.resize( calc_index );
+    
+    //const double end_wall = SpecUtils::get_wall_time();
+    //const double end_cpu = SpecUtils::get_cpu_time();
+    
+    //cout << "Background line computation took: wall=" << (end_wall - start_wall) << ", cpu=" << (end_cpu - start_cpu) << endl;
+    //cout << "prelim_answer.size=" << prelim_answer.size() << endl;
+    
+    float max_br = 0.0f;
+    for( const auto &i : prelim_answer )
+    {
+      // printf("prenorm %s: %.1f keV -> br=%.4f.\n", get<2>(i).c_str(), get<0>(i), get<1>(i) );
+      max_br = std::max( max_br, get<1>(i) );
+    }
+    
+    
+    for( auto &i : prelim_answer )
+    {
+      get<1>(i) /= max_br;
+      if( get<1>(i) > rel_threshold )
+        answer.push_back( i );
+      // printf("%s: %.1f keV -> br=%.4f.\n", get<2>(i).c_str(), get<0>(i), get<1>(i) );
+    }
+    
+    // Now take care of annihilation; for a single background spectrum I looked at, it was about 5%
+    //  the amplitude of the K40 line; didnt correct for DRF
+    answer.emplace_back( 511.0f, 0.052f, "", OtherRefLineType::OtherBackground, "Annihilation radiation (beta+)" ),
+    
+    
+    std::sort( begin(answer), end(answer), []( const OtherRefLine &lhs, const OtherRefLine &rhs ) -> bool {
+      return get<0>(lhs) < get<0>(rhs);
+    });
+    
+    cout << "answer.size=" << answer.size() << endl;
+    //size_t nbelow = 0, nabove = 0;
+    //for( auto &i : answer )
+    //  (get<1>(i) > rel_threshold ? nabove : nbelow) += 1;
+    //cout << "Got nabove=" << nabove << ", nbelow=" << nbelow << endl;
+    //for 1.-E17, get: "Got nabove=2062, nbelow=829"
+  }catch( std::exception &e )
+  {
+    assert( 0 );
+    
+    return vector<OtherRefLine>{};
+  }//try / catc
+  
+  
+  return answer;
+}//vector<OtherRefLine> getBackgroundRefLines()
 
-
-//BackgroundLines looks to be taking up ~14 kb of executable size on Win7
+//x` looks to be taking up ~14 kb of executable size on Win7
 const OtherRefLine BackgroundLines[89] =
 {
   /*xrays below 46 keV not inserted*/
@@ -1102,7 +1345,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   {
     input.m_input_txt = "background";
     
-    for( const OtherRefLine &bl : BackgroundLines )
+    for( const OtherRefLine &bl : getBackgroundRefLines() )
     {
       const bool isXray = (std::get<3>(bl) == OtherRefLineType::BackgroundXRay);
       if( (isXray && input.m_showXrays) || (!isXray && input.m_showGammas) )
