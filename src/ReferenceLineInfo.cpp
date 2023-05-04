@@ -70,6 +70,11 @@ namespace
 }//namespace
 
 
+/** Computes background lines by ageing K40, Th232, U235, U238, and Ra226, and then transporting,
+ as a trace source, through a 1m radius soil sphere.
+ 
+ Since this computation takes ~0.15 seconds, the results are cached and returned on subsequent calls.
+ */
 const vector<OtherRefLine> &getBackgroundRefLines()
 {
   using namespace GammaInteractionCalc;
@@ -83,15 +88,6 @@ const vector<OtherRefLine> &getBackgroundRefLines()
   if( !answer.empty() )
     return answer;
   
-  // TODO:
-  //  - add in more cosmic
-  //  - Make integration go in parrallel; e.g., use SpecUtilsAsync::ThreadPool
-  //  - Add escape for 2614
-  //  - limit branching ratio; something like remove those below 1.0E-17
-  //  - Cache results, so is faster next time
-  //  - check effect of epsrel on speed of computation
-  //  - do we want to add in extra x-rays or anything?
-  
   try
   {
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
@@ -100,34 +96,35 @@ const vector<OtherRefLine> &getBackgroundRefLines()
       return answer;
     
     // The threshold, relative to most intense line, to not include intensities below.
+    //  1.0E-17 gives 2064 lines
+    //  1.0E-16 gives 1927 lines
+    //  1.0E-15 gives 1851 lines
     const double rel_threshold = 1.0E-17;
     
-    
-    
     const char *soil_chem_formula = "H0.022019C0.009009O0.593577Al0.066067Si0.272289K0.01001Fe0.027029 d=1.6";
-    MaterialDB materialdb;
-    const Material * const soil = materialdb.parseChemicalFormula(soil_chem_formula, db);
-    assert( soil );
-    if( !soil )
-      return answer;
     
-    std::mutex prelim_answer_mutex;
+    const Material soilobj = MaterialDB::materialFromChemicalFormula( soil_chem_formula, db );
+    const Material * const soil = &soilobj;
+    
+    assert( soilobj.elements.size() == 7 );
+    assert( fabs(soilobj.density - 1.6*PhysicalUnits::g/PhysicalUnits::cm3) < 0.001*soilobj.density );
+    
     vector<OtherRefLine> prelim_answer;
     prelim_answer.resize( 3000 ); //we actually need 2890
     answer.reserve( 2100 ); //we actaully need 2062, when rel_threshold==1.0E-17;
-    
     
     // Computation timings on M1 macbook:
     // - Single threaded, epsrel = 1e-5: wall=0.789006, cpu=0.787189
     // - Single threaded, epsrel = 1e-4: wall=0.593146, cpu=0.59266
     // - Single threaded, epsrel = 1e-3: wall=0.465307, cpu=0.464454
-    // - Multithreaded (nthreads=10), epsrel = 1e-4: wall=0.138786, cpu=0.685506
+    // - Multithreaded (nthreads=10, batching in groups of 10), epsrel = 1e-4: wall=0.131257, cpu=0.669642
+    // - Multithreaded (nthreads=10, batching in groups of 100), epsrel = 1e-4: wall=0.087524, cpu=0.72624
+    // - Multithreaded (nthreads=10, no batching), epsrel = 1e-4: wall=0.09096, cpu=0.710744
     
     //const double start_wall = SpecUtils::get_wall_time();
     //const double start_cpu = SpecUtils::get_cpu_time();
     
     DistributedSrcCalc soil_sphere;
-    
     soil_sphere.m_geometry = GeometryType::Spherical;
     soil_sphere.m_sourceIndex = 0;
     soil_sphere.m_attenuateForAir = false;
@@ -153,8 +150,11 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     const SandiaDecay::Nuclide * const th232 = db->nuclide( "Th232" );
     const SandiaDecay::Nuclide * const k40 = db->nuclide( "K40" );
     
+    assert( u238 && ra226 && u235 && th232 && k40 );
+    
     // All the denominators below were for observation distance of 200cm, 5cm detector radius, and
     //  a 1 m radius sphere
+    // TODO: figure out the constants so components can be set as PPM, or % of soil, so it can be changed by looking up in a DB easily for a given location
     const vector<tuple<const SandiaDecay::Nuclide *,double,OtherRefLineType, double>> nuc_activity{
       //make the 1001 keV have amp 0.0004653, before norm
       { u238,   0.0004653/410.2892, OtherRefLineType::U238Series, 5.0*u238->promptEquilibriumHalfLife() },
@@ -173,7 +173,6 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     };//nuc_activity
     
     
-    
     SandiaDecay::NuclideMixture mixture;
     for( const auto &src : nuc_activity )
     {
@@ -186,9 +185,7 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     
     
     const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity( 0.0 );
-    const size_t nthreads = static_cast<size_t>( std::max( 4, SpecUtilsAsync::num_logical_cpu_cores() ) );
     
-    vector<DistributedSrcCalc> soil_spheres( nthreads, soil_sphere );
     size_t calc_index = 0;
     SpecUtilsAsync::ThreadPool pool;
     
@@ -223,17 +220,14 @@ const vector<OtherRefLine> &getBackgroundRefLines()
           const double energy = particle.energy;
           const SandiaDecay::ProductType part_type = particle.type;
           
-          auto do_calc = [soil, energy, calc_index, transition, nthreads, part_type, br,
-                          k40, ra226, th232, u238,
-                          &prelim_answer, &soil_spheres](){
-            
-            const double transLenCoef = GammaInteractionCalc::transmition_length_coefficient( soil, energy );
-            
-            const size_t thread_num = calc_index % nthreads;
-            DistributedSrcCalc &sphere = soil_spheres[thread_num];
-            
-            assert( sphere.m_dimensionsTransLenAndType.size() == 1 );
-            get<1>( sphere.m_dimensionsTransLenAndType[0] ) = transLenCoef;
+          // Creating a `DistributedSrcCalc` here doesnt seem any slower than trying to share them
+          //  between threads and such; so we'll just make a copy for each thread.
+          DistributedSrcCalc sphere = soil_sphere;
+          const double transLenCoef = GammaInteractionCalc::transmition_length_coefficient( soil, energy );
+          get<1>( sphere.m_dimensionsTransLenAndType[0] ) = transLenCoef;
+          
+          auto do_calc = [soil, energy, calc_index, transition, part_type, br, sphere,
+                          k40, ra226, th232, u238, &prelim_answer]() {
             
             int nregions, neval, fail;
             double integral, error, prob;
@@ -273,19 +267,25 @@ const vector<OtherRefLine> &getBackgroundRefLines()
                 type = OtherRefLineType::U238Series;
             }
             
-            prelim_answer[calc_index] = { static_cast<float>(energy), static_cast<float>(br*integral), desc, type, "" };
+            const float amplitude = static_cast<float>( br * integral );
+             
+            prelim_answer[calc_index] = { static_cast<float>(energy), amplitude, desc, type, "" };
           };//do_calc
+                    
           
-          assert( prelim_answer.size() > calc_index );
-          if( prelim_answer.size() < calc_index )
-            prelim_answer.resize( calc_index + 100 );
-          
-          pool.post( do_calc );
-          
-          if( ((calc_index + 1) % nthreads) == 0 )
+          // We dont want to bog the thread pool down with ~2k jobs, so we'll batch things in
+          //  groups of an arbitrarily selected number of 100
+          const size_t batch_size = 100;
+          if( (calc_index % batch_size) == 0 )
           {
             pool.join();
-          }
+          
+            assert( prelim_answer.size() > calc_index );
+            if( prelim_answer.size() < (calc_index + batch_size) )
+              prelim_answer.resize( calc_index + batch_size );
+          }//if( (calc_index % 100) == 0 )
+          
+          pool.post( do_calc );
           
           calc_index += 1;
         }//for( const SandiaDecay::RadParticle &particle : transition->products )
@@ -294,6 +294,7 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     
     pool.join();
     
+    assert( prelim_answer.size() >= calc_index );
     prelim_answer.resize( calc_index );
     
     //const double end_wall = SpecUtils::get_wall_time();
@@ -309,25 +310,46 @@ const vector<OtherRefLine> &getBackgroundRefLines()
       max_br = std::max( max_br, get<1>(i) );
     }
     
+    // Lets grab the amplitude of the 2614.5330 keV Th232 line
+    double th232_2614_amp = 0;
     
     for( auto &i : prelim_answer )
     {
       get<1>(i) /= max_br;
       if( get<1>(i) > rel_threshold )
         answer.push_back( i );
+      
+      if( (get<0>(i) > 2614.52)
+         && (get<0>(i) < 2614.55)
+         && (get<3>(i) == OtherRefLineType::Th232Series) )
+      {
+        th232_2614_amp += get<1>(i);
+      }
+      
       // printf("%s: %.1f keV -> br=%.4f.\n", get<2>(i).c_str(), get<0>(i), get<1>(i) );
-    }
+    }//for( auto &i : prelim_answer )
+    
+    // th232_2614_amp should be 0.19118185341358185 );
+    assert( (th232_2614_amp > 0.05) && (th232_2614_amp < 0.5) );
+    
+    // Use S.E. and D.E. numbers from a 40% HPGe detector
+    answer.emplace_back( 2614.533f - 510.9989f,      0.144*th232_2614_amp,
+                         "Th232 S.E. 2614 keV", OtherRefLineType::OtherBackground, "" );
+    answer.emplace_back( 2614.533f - 2.0f*510.9989f, 0.082*th232_2614_amp,
+                        "Th232 D.E. 2614 keV", OtherRefLineType::OtherBackground, "" );
     
     // Now take care of annihilation; for a single background spectrum I looked at, it was about 5%
     //  the amplitude of the K40 line; didnt correct for DRF
-    answer.emplace_back( 511.0f, 0.052f, "", OtherRefLineType::OtherBackground, "Annihilation radiation (beta+)" ),
+    answer.emplace_back( 510.9989f, 0.052f, "",
+                        OtherRefLineType::OtherBackground, "Annihilation radiation (beta+)" );
     
+    // TODO: Do we want to add in extra x-rays or anything?
     
     std::sort( begin(answer), end(answer), []( const OtherRefLine &lhs, const OtherRefLine &rhs ) -> bool {
       return get<0>(lhs) < get<0>(rhs);
     });
     
-    cout << "answer.size=" << answer.size() << endl;
+    //cout << "answer.size=" << answer.size() << endl;
     //size_t nbelow = 0, nabove = 0;
     //for( auto &i : answer )
     //  (get<1>(i) > rel_threshold ? nabove : nbelow) += 1;
@@ -336,111 +358,11 @@ const vector<OtherRefLine> &getBackgroundRefLines()
   }catch( std::exception &e )
   {
     assert( 0 );
-    
-    return vector<OtherRefLine>{};
+    answer.clear();
   }//try / catc
-  
   
   return answer;
 }//vector<OtherRefLine> getBackgroundRefLines()
-
-//x` looks to be taking up ~14 kb of executable size on Win7
-const OtherRefLine BackgroundLines[89] =
-{
-  /*xrays below 46 keV not inserted*/
-  OtherRefLine( 46.54f,   0.0425f,  "Pb210", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 53.23f,   0.01060f, "Pb214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 63.28f,   0.048f,   "Th234", OtherRefLineType::U238Series,         "" ),
-  OtherRefLine( 72.81f,   0.277f,   "Pb xray", OtherRefLineType::BackgroundXRay,     "Flourescence and Tl208 decay" ),
-  OtherRefLine( 74.82f,   0.277f,   "Bi xray", OtherRefLineType::BackgroundXRay,     "Pb212, Pb214 decay" ),
-  OtherRefLine( 74.97f,   0.462f,   "Pb xray", OtherRefLineType::BackgroundXRay,     "Flourescence and Tl208 decay" ),
-  OtherRefLine( 77.11f,   0.462f,   "Bi xray", OtherRefLineType::BackgroundXRay,     "Pb212, Pb214 decay" ),
-  OtherRefLine( 79.29f,   0.461f,   "Po xray", OtherRefLineType::BackgroundXRay,     "Fluorescence and Bi212, Bi214 decay" ),
-  OtherRefLine( 81.23f,   0.009f,   "Th231", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 84.94f,   0.107f,   "Pb xray", OtherRefLineType::BackgroundXRay,     "Flourescence and Tl208 decay" ),
-  OtherRefLine( 87.3f,    0.0391f,  "Pb xray", OtherRefLineType::BackgroundXRay,     "Flourescence and Tl208 decay" ),
-  OtherRefLine( 87.35f,   0.107f,   "Bi xray", OtherRefLineType::BackgroundXRay,     "Pb212, Pb214 decay" ),
-  OtherRefLine( 89.78f,   0.0393f,  "Bi xray", OtherRefLineType::BackgroundXRay,     "Pb212, Pb214 decay" ),
-  OtherRefLine( 89.96f,   0.281f,   "Th xray", OtherRefLineType::BackgroundXRay,     "U235 and Ac228 decay" ),
-  OtherRefLine( 92.58f,   0.0558f,  "Th234", OtherRefLineType::U238Series,         " - doublet" ),
-  OtherRefLine( 93.35f,   0.454f,   "Th xray", OtherRefLineType::BackgroundXRay,     "U235 and Ac228 decay" ),
-  OtherRefLine( 105.6f,   0.107f,   "Th xray", OtherRefLineType::BackgroundXRay,     "U235 and Ac228 decay" ),
-  OtherRefLine( 109.16f,  0.0154f,  "U235", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 112.81f,  0.0028f,  "Th234", OtherRefLineType::U238Series,         "" ),
-  OtherRefLine( 122.32f,  0.01192f, "Ra223", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 129.06f,  0.0242f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 143.76f,  0.1096f,  "U235", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 163.33f,  0.0508f,  "U235", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 185.72f,  0.572f,   "U235", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 186.21f,  0.03555f, "Ra226", OtherRefLineType::U238Series,         "" ),
-  OtherRefLine( 205.31f,  0.0501f,  "U235", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 209.26f,  0.0389f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 238.63f,  0.436f,   "Pb212", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 240.89f,  0.0412f,  "Ra224", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 242.0f,   0.07268f, "Pb214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 269.49f,  0.137f,   "Ra223", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 270.24f,  0.0346f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 277.37f,  0.0237f,  "Tl208", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 295.22f,  0.185f,   "Pb214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 299.98f,  0.0216f,  "Th227", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 300.07f,  0.0247f,  "Pa231", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 300.09f,  0.0318f,  "Pb212", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 328.0f,   0.0295f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 338.28f,  0.0279f,  "Ra223", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 338.32f,  0.1127f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 351.06f,  0.1291f,  "Bi211", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 351.93f,  0.3560f,  "Pb214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 409.46f,  0.0192f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 447.6f,   0.1044f,  "Be7", OtherRefLineType::OtherBackground,    "Cosmic" ),
-  OtherRefLine( 462.0f,   0.00213f, "Pb214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 463.0f,   0.0440f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 510.7f,   0.0629f,  "Tl208", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 511.0f,   0.010f,   "", OtherRefLineType::OtherBackground,    "Annihilation radiation (beta+)" ),
-  OtherRefLine( 570.82f,  0.00182f, "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 583.19f,  0.306f,   "Tl208", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 609.31f,  0.4549f,  "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 661.66f,  0.400f,   "Cs137", OtherRefLineType::OtherBackground,    "Fission" ),
-  OtherRefLine( 726.86f,  0.0062f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 727.33f,  0.0674f,  "Bi212", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 755.31f,  0.010f,   "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 768.36f,  0.04891f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 794.95f,  0.0425f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 806.17f,  0.01262f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 832.01f,  0.0352f,  "Pb211", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 835.71f,  0.0161f,  "AC228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 839.04f,  0.00587f, "Pb214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 860.56f,  0.0448f,  "Tl208", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 911.20f,  0.258f,   "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 934.06f,  0.03096f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 964.77f,  0.0499f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 968.97f,  0.158f,   "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 1001.03f, 0.01021f, "Pa234m", OtherRefLineType::U238Series,         "..." ),
-  OtherRefLine( 1120.29f, 0.1491f,  "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1155.19f, 0.01635f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1238.11f, 0.05827f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1377.67f, 0.03967f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1407.98f, 0.02389f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1459.14f, 0.0083f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 1460.82f, 0.1066f,  "K40", OtherRefLineType::K40Background,      "" ),
-  OtherRefLine( 1588.2f,  0.0322f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  //TODO: do some better way of indicating D.E. than a string match
-  OtherRefLine( 1592.51f, 0.010f,   "Th232 D.E. 2614 keV", OtherRefLineType::OtherBackground,    "" ),
-  OtherRefLine( 1620.74f, 0.0151f,  "Bi212", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 1630.63f, 0.0151f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 1686.09f, 0.00095f, "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 1661.28f, 0.0112f,  "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1729.6f,  0.02843f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1764.49f, 0.1528f,  "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1838.36f, 0.00346f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1847.42f, 0.02023f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  //TODO: do some better way of indicating S.E. than a string match
-  OtherRefLine( 2103.51f, 0.020f,   "Th232 S.E. 2614 keV", OtherRefLineType::OtherBackground,    "" ),
-  OtherRefLine( 2118.55f, 0.00454f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 2204.21f, 0.04913f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 2447.86f, 0.01518f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 2614.51f, 0.3585f,  "Tl208", OtherRefLineType::Th232Series,        "Th232 series; Pb208(n,p)" ),
-};//BackgroundLines
-
 
 
 const char *to_str( const OtherRefLineType type )
@@ -1350,7 +1272,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       const bool isXray = (std::get<3>(bl) == OtherRefLineType::BackgroundXRay);
       if( (isXray && input.m_showXrays) || (!isXray && input.m_showGammas) )
         otherRefLinesToShow.push_back( bl );
-    }//for( const BackgroundLine &bl : BackgroundLines )
+    }//for( const BackgroundLine &bl : getBackgroundRefLines() )
     
     input.m_age = "";
   }//if( is_background )
@@ -1737,9 +1659,24 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         case OtherRefLineType::OtherBackground:
         case OtherRefLineType::BackgroundReaction:
         {
-          line.m_decaystr = std::get<2>( bl );
+          const string &nucstr = std::get<2>( bl );
           
-          line.m_parent_nuclide = db->nuclide( std::get<2>( bl ) );
+          line.m_decaystr = nucstr;
+          
+          line.m_parent_nuclide = db->nuclide( nucstr );
+          
+          //A string like "Th232 S.E. 2614 keV" wont return a valid nuclide, so we'll fix this up
+          const size_t single_escape_pos = nucstr.find("S.E.");
+          const size_t double_escape_pos = nucstr.find("D.E.");
+          
+          if( !line.m_parent_nuclide )
+          {
+            const size_t pos = std::min( single_escape_pos, double_escape_pos );
+            if( pos != string::npos )
+              line.m_parent_nuclide = db->nuclide( nucstr.substr(0,pos) ); // Make like "Th232"
+          }//if( !line.m_parent_nuclide )
+          
+          
           // TODO: try to get reaction if didnt get nuclide - also, nuclide list may be CSV, could split that
           //const ReactionGamma *rctnDb = ReactionGammaServer::database();
           //if( rctnDb )
@@ -1752,10 +1689,13 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
             line.m_decaystr += (line.m_decaystr.empty() ? "" : ", ") + std::get<4>( bl );
           
           // TODO: We should probably do a little better than string matching to define as a single/double escape peak.
-          if( line.m_decaystr.find("S.E.") != string::npos )
+          if( single_escape_pos != string::npos )
+          {
             line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::SingleEscape;
-          else if( line.m_decaystr.find("D.E.") != string::npos )
+          }else if( double_escape_pos != string::npos )
+          {
             line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape;
+          }
           
           break;
         }

@@ -1607,12 +1607,12 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         switch( line.m_source_type )
         {
           case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
-            //energy += 510.998950;
+            energy += 510.998950;
             gammaType = PeakDef::SourceGammaType::SingleEscapeGamma;
             break;
             
           case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
-            //energy += 2.0*510.998950;
+            energy += 2.0*510.998950;
             gammaType = PeakDef::SourceGammaType::DoubleEscapeGamma;
             break;
             

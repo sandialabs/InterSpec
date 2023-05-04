@@ -188,6 +188,16 @@ public:
   const Material *parseChemicalFormula( std::string formula,
                                    const SandiaDecay::SandiaDecayDataBase *db );
 
+  /** Returns a Material from the given checmical formula.
+   
+   The new material is NOT added to the database.
+   
+   Useful for one-off uses in the code.
+   
+   Throws exception on error.
+   */
+  static Material materialFromChemicalFormula( const std::string &formula,
+                                              const SandiaDecay::SandiaDecayDataBase *db );
 
   //Performs a case-insensitive comparison (eg string::operator<) comparison
   //  of names
