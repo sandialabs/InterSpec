@@ -227,7 +227,7 @@ const vector<OtherRefLine> &getBackgroundRefLines()
           get<1>( sphere.m_dimensionsTransLenAndType[0] ) = transLenCoef;
           
           auto do_calc = [soil, energy, calc_index, transition, part_type, br, sphere,
-                          k40, ra226, th232, u238, &prelim_answer]() {
+                          k40, ra226, th232, u238, u235, &prelim_answer]() {
             
             int nregions, neval, fail;
             double integral, error, prob;
@@ -265,6 +265,9 @@ const vector<OtherRefLine> &getBackgroundRefLines()
                 type = OtherRefLineType::Th232Series;
               else if( u238->branchRatioToDecendant(transition->parent) > 0 )
                 type = OtherRefLineType::U238Series;
+              else if( u235->branchRatioToDecendant(transition->parent) > 0 )
+                type = OtherRefLineType::U235Series;
+              else{ assert( 0 ); }
             }
             
             const float amplitude = static_cast<float>( br * integral );
