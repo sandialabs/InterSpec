@@ -250,6 +250,7 @@ public:
   
   void setFeatureMarkerOption( FeatureMarkerType option, bool show );
   void setComptonPeakAngle( int angle );
+  int comptonPeakAngle() const;
   
   void showXAxisSliderChart( const bool show );
   bool xAxisSliderChartIsVisible() const;

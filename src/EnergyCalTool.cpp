@@ -4830,6 +4830,19 @@ void EnergyCalTool::applyToCbChanged( const EnergyCalTool::ApplyToCbIndex index 
   WCheckBox *cb = m_applyToCbs[index];
   const bool isChecked = cb->isChecked();
   
+  // Grab the starting state of all checkboxed
+  bool startingState[ApplyToCbIndex::NumApplyToCbIndex];
+  for( ApplyToCbIndex i = ApplyToCbIndex(0);
+      i < ApplyToCbIndex::NumApplyToCbIndex;
+      i = ApplyToCbIndex(i + 1) )
+  {
+    startingState[i] = m_applyToCbs[i]->isChecked();
+  }
+  
+  // Assume `index` was actually not what it is now.
+  startingState[index] = !startingState[index];
+  
+  
   switch( index )
   {
     case EnergyCalTool::ApplyToForeground:
@@ -4864,24 +4877,46 @@ void EnergyCalTool::applyToCbChanged( const EnergyCalTool::ApplyToCbIndex index 
   if( !undoManager || undoManager->isInUndoOrRedo() )
     return;
   
-  auto undo = [index,isChecked](){
+  
+  bool finalState[ApplyToCbIndex::NumApplyToCbIndex];
+  for( ApplyToCbIndex i = ApplyToCbIndex(0);
+      i < ApplyToCbIndex::NumApplyToCbIndex;
+      i = ApplyToCbIndex(i + 1) )
+  {
+    finalState[i] = m_applyToCbs[i]->isChecked();
+  }
+  
+  
+  auto undo = [index,isChecked,startingState](){
     InterSpec *viewer = InterSpec::instance();
     EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
-    if( tool && tool->m_applyToCbs[index] )
+    if( !tool )
+      return;
+    
+    for( ApplyToCbIndex i = ApplyToCbIndex(0);
+        i < ApplyToCbIndex::NumApplyToCbIndex;
+        i = ApplyToCbIndex(i + 1) )
     {
-      tool->m_applyToCbs[index]->setChecked( !isChecked );
-      tool->applyToCbChanged( index );
+      tool->m_applyToCbs[i]->setChecked( startingState[i] );
     }
+    
+    tool->applyToCbChanged( index );
   };
   
-  auto redo = [index,isChecked](){
+  auto redo = [index,isChecked,finalState](){
     InterSpec *viewer = InterSpec::instance();
     EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
-    if( tool && tool->m_applyToCbs[index] )
+    if( !tool )
+      return;
+    
+    for( ApplyToCbIndex i = ApplyToCbIndex(0);
+        i < ApplyToCbIndex::NumApplyToCbIndex;
+        i = ApplyToCbIndex(i + 1) )
     {
-      tool->m_applyToCbs[index]->setChecked( isChecked );
-      tool->applyToCbChanged( index );
+      tool->m_applyToCbs[i]->setChecked( finalState[i] );
     }
+    
+    tool->applyToCbChanged( index );
   };
   
   const string label = cb->text().toUTF8();

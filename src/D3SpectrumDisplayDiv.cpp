@@ -1611,6 +1611,12 @@ void D3SpectrumDisplayDiv::setComptonPeakAngle( int angle )
 }//void D3SpectrumDisplayDiv::setComptonPeakAngle( int angle )
 
 
+int D3SpectrumDisplayDiv::comptonPeakAngle() const
+{
+  return m_comptonPeakAngle;
+}//int comptonPeakAngle() const
+
+
 void D3SpectrumDisplayDiv::showXAxisSliderChart( const bool show )
 {
   if( m_showXAxisSliderChart == show )

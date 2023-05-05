@@ -78,18 +78,31 @@ UndoRedoManager::UndoRedoManager( InterSpec *parent )
   m_state( UndoRedoManager::State::Neither ),
   m_steps{},
   m_step_offset{ 0 },
-  m_current_spec{},
+  m_current_specs{ nullptr },
   m_current_samples{},
   m_prev{},
   m_interspec( parent ),
   m_PeakModelChange_counter( 0 ),
-  m_PeakModelChange_starting_peaks{}
+  m_PeakModelChange_starting_peaks{},
+  m_BlockUndoRedoInserts_counter( 0 )
 {
-  if( m_interspec )
+  assert( m_interspec );
+  if( !m_interspec )
+    throw logic_error( "UndoRedoManager must be initializes with valid InterSpec pointer." );
+  
+  const SpecUtils::SpectrumType types[] = {
+    SpecUtils::SpectrumType::Foreground,
+    SpecUtils::SpectrumType::Background,
+    SpecUtils::SpectrumType::SecondForeground
+  };
+  
+  for( const SpecUtils::SpectrumType type : types )
   {
-    m_current_spec = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
-    m_current_samples = m_interspec->displayedSamples( SpecUtils::SpectrumType::Foreground );
-  }//if( m_interspec )
+    const int index = static_cast<int>( type );
+    m_current_specs[index] = m_interspec->measurment( type );
+    m_current_samples[index] = m_interspec->displayedSamples( type );
+    m_current_detectors[index] = m_interspec->detectorsToDisplay( type );
+  }
     
   m_interspec->displayedSpectrumChanged().connect(
                 boost::bind( &UndoRedoManager::handleSpectrumChange, this,
@@ -188,6 +201,28 @@ UndoRedoManager::PeakModelChange::~PeakModelChange()
 }//~PeakModelChange()
 
 
+UndoRedoManager::BlockUndoRedoInserts::BlockUndoRedoInserts()
+{
+  UndoRedoManager *manager = UndoRedoManager::instance();
+  assert( manager );
+  if( manager )
+    manager->m_BlockUndoRedoInserts_counter += 1;
+}//BlockUndoRedoInserts constructor
+
+
+UndoRedoManager::BlockUndoRedoInserts::~BlockUndoRedoInserts()
+{
+  UndoRedoManager *manager = UndoRedoManager::instance();
+  assert( manager );
+  if( manager )
+  {
+    assert( manager->m_BlockUndoRedoInserts_counter > 0 );
+    if( manager->m_BlockUndoRedoInserts_counter > 0 )
+      manager->m_BlockUndoRedoInserts_counter -= 1;
+  }
+}//~BlockUndoRedoInserts()
+
+
 UndoRedoManager *UndoRedoManager::instance()
 {
   InterSpec *viewer = InterSpec::instance();
@@ -222,6 +257,13 @@ void UndoRedoManager::addUndoRedoStep( std::function<void()> undo,
                         " - currently executing undo or redo.";
     return;
   }//if( m_state != State::Neither )
+  
+  if( m_BlockUndoRedoInserts_counter > 0 )
+  {
+    Wt::log("debug") << "UndoRedoManager::addUndoRedoStep(): not adding undo/redo step"
+                        " - currently an active BlockUndoRedoInserts.";
+    return;
+  }
   
   const size_t num_steps = m_steps->size();
   
@@ -378,47 +420,100 @@ void UndoRedoManager::clearUndoRedu()
 void UndoRedoManager::handleSpectrumChange( const SpecUtils::SpectrumType type,
                                            const shared_ptr<SpecMeas> &meas,
                                            const set<int> &sample_nums,
-                                           const vector<std::string> &detector_names )
+                                           const vector<string> &detector_names )
 {
-  // TODO: perhaps we should track back/secondary spectra, so we can undo changing background/secondary
-  if( type != SpecUtils::SpectrumType::Foreground )
+  const int type_index = static_cast<int>( type );
+  if( (meas == m_current_specs[type_index]) && (sample_nums == m_current_samples[type_index]) )
     return;
+ 
+  const shared_ptr<SpecMeas> prev_meas = std::move( m_current_specs[type_index] );
+  const set<int> prev_samples = std::move( m_current_samples[type_index] );
+  const vector<string> prev_dets = std::move( m_current_detectors[type_index] );
+  const weak_ptr<SpecMeas> prev_weak = prev_meas;
   
-  if( (meas == m_current_spec) && (sample_nums == m_current_samples) )
-    return;
   
-  if( m_steps && !m_steps->empty() )
+  m_current_specs[type_index] = meas;
+  m_current_samples[type_index] = sample_nums;
+  m_current_detectors[type_index] = detector_names;
+  
+  const weak_ptr<SpecMeas> current_weak = meas;
+  
+  const bool was_valid = !!prev_meas;
+  const bool is_valid = !!meas;
+  
+  
+  if( type == SpecUtils::SpectrumType::Foreground )
   {
-    std::weak_ptr<SpecMeas> prev = m_current_spec;
-    const spec_key_t key{prev,m_current_samples};
-    m_prev[key] = m_steps;
-  }//if( !m_steps.empty() )
-  
-  // TODO: go through and cleanup files we are holding undo/redo for
-  
-  m_step_offset = 0;
-  m_steps.reset();
-  
-  m_current_spec = meas;
-  m_current_samples = sample_nums;
-  
-  if( meas && sample_nums.size() )
-  {
-    std::weak_ptr<SpecMeas> current = m_current_spec;
-    const spec_key_t key{current,m_current_samples};
-    const auto pos = m_prev.find( key );
+    // TODO: go through and cleanup files we are holding undo/redo for
     
-    if( pos != end(m_prev) )
+    if( m_steps && !m_steps->empty() )
     {
-      m_steps = pos->second;
-      m_prev.erase( pos );
-    }//if( pos != end(m_prev) )
+      const spec_key_t key{ prev_weak, prev_samples };
+      m_prev[key] = m_steps;
+    }//if( !m_steps.empty() )
     
-    if( !m_steps )
-      m_steps = make_shared<deque<UndoRedoStep>>();
-  }//if( meas && sample_nums.size() )
-  
-  // TODO: we could insert an undo/redo step here to change back to the previous spectrum
+    m_step_offset = 0;
+    m_steps.reset();
+    
+    if( meas && sample_nums.size() )
+    {
+      const spec_key_t key{ current_weak, sample_nums };
+      const auto pos = m_prev.find( key );
+      
+      if( pos != end(m_prev) )
+      {
+        m_steps = pos->second;
+        m_prev.erase( pos );
+      }//if( pos != end(m_prev) )
+      
+      if( !m_steps )
+        m_steps = make_shared<deque<UndoRedoStep>>();
+    }//if( meas && sample_nums.size() )
+    
+    // TODO: we could insert an undo/redo step here to change back to the previous spectrum
+  }else
+  {
+    auto undo = [prev_weak,prev_samples,prev_dets,type,was_valid](){
+      InterSpec *viewer = InterSpec::instance();
+      const shared_ptr<SpecMeas> prev_meas = prev_weak.lock();
+      
+      if( !viewer || (was_valid && !prev_meas) )
+      {
+        Wt::log("error") << "Previous back/second meas no longer in memory for undo.";
+        return;
+      }
+      
+      Wt::WFlags<InterSpec::SetSpectrumOptions> options;
+      options |= InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal;
+      options |= InterSpec::SetSpectrumOptions::CheckForRiidResults;
+      options |= InterSpec::SetSpectrumOptions::SkipParseWarnings;
+      
+      viewer->setSpectrum( prev_meas, prev_samples, type, options );
+    };//undo lamda
+    
+    auto redo = [current_weak,sample_nums,detector_names,type,is_valid](){
+      InterSpec *viewer = InterSpec::instance();
+      const shared_ptr<SpecMeas> current = current_weak.lock();
+      
+      if( !viewer || (is_valid && !current) )
+      {
+        Wt::log("error") << "Previous back/second meas no longer in memory for redo.";
+        return;
+      }
+      
+      Wt::WFlags<InterSpec::SetSpectrumOptions> options;
+      options |= InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal;
+      options |= InterSpec::SetSpectrumOptions::CheckForRiidResults;
+      options |= InterSpec::SetSpectrumOptions::SkipParseWarnings;
+      
+      viewer->setSpectrum( current, sample_nums, type, options );
+    };//redo lamda
+    
+    const string spec_type = (type == SpecUtils::SpectrumType::Background)
+                              ? "background" : "secondary";
+    
+    addUndoRedoStep( undo, redo, "Change " + spec_type + " spectrum"  );
+  }//if( type != SpecUtils::SpectrumType::Foreground )
 }//void handleSpectrumChange( SpecUtils::SpectrumType type )
 
 

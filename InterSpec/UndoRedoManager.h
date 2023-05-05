@@ -98,9 +98,8 @@ public:
   /** Clears all undo/redo history. */
   void clearUndoRedu();
   
-  /**
-   
-   TODO: add constructor with a function call for before applying changes, and after applying changes
+  /** A struct that will insert a single peak-change undo/redo step, for all changes between the construction of
+   the first `PeakModelChange` and the  last `PeakModelChange` destructed, for an InterSpec session.
    */
   struct PeakModelChange
   {
@@ -110,6 +109,22 @@ public:
     PeakModelChange( const PeakModelChange& ) = delete; // non construction-copyable
     PeakModelChange &operator=( const PeakModelChange & ) = delete; // non copyable
   };//struct PeakModelChange
+  
+  
+  /** A struct that as long as it is in scope, all calls to #addUndoRedoStep will result in the undo/redo step NOT being
+   added.
+   
+   \sa m_BlockUndoRedoInserts_counter
+   */
+  struct BlockUndoRedoInserts
+  {
+    BlockUndoRedoInserts();
+    ~BlockUndoRedoInserts();
+    
+    BlockUndoRedoInserts( const BlockUndoRedoInserts& ) = delete; // non construction-copyable
+    BlockUndoRedoInserts &operator=( const BlockUndoRedoInserts & ) = delete; // non copyable
+  };//BlockUndoRedoInserts
+  
   
   enum class State : int
   {
@@ -145,8 +160,10 @@ protected:
    So if we havent done any undoes, this value will be zero. */
   size_t m_step_offset;
   
-  std::shared_ptr<SpecMeas> m_current_spec;
-  std::set<int> m_current_samples;
+  /** Track current SpecMeas and sample numbers; indexed by SpecUtils::SpectrumType enum. */
+  std::shared_ptr<SpecMeas> m_current_specs[3];
+  std::set<int> m_current_samples[3];
+  std::vector<std::string> m_current_detectors[3];
   
   /** Eventually we want to have `SpecMeas` itself track its history, but for the moment we'll just track it here. */
   typedef std::tuple<std::weak_ptr<SpecMeas>,std::set<int> > spec_key_t;
@@ -162,6 +179,13 @@ protected:
   
   size_t m_PeakModelChange_counter;
   std::vector<std::shared_ptr<const PeakDef>> m_PeakModelChange_starting_peaks;
+  
+  /** A counter, only ever changed by #BlockUndoRedoInserts, that if it is not zero, then no undo/redo steps
+   will be added by #addUndoRedoStep.
+   
+   \sa BlockUndoRedoInserts
+   */
+  size_t m_BlockUndoRedoInserts_counter;
   
   friend class PeakModelChange;
 };//class UndoRedoManager

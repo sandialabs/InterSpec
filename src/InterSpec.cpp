@@ -1355,30 +1355,36 @@ D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
   
   if( m_referencePhotopeakLines )
     referc_line_json = m_referencePhotopeakLines->jsonReferenceLinesMap();
+
+  const char * const title = "Interactive Spectrum Development";
+  const char * const xAxisTitle = "Energy";
+  const char * const yAxisTitle = "Counts";
+  const string dataTitle = (m_spectrum->data() ? m_spectrum->data()->title() :
+                            m_spectrum->background() ? m_spectrum->background()->title() :
+                            m_spectrum->secondData() ? m_spectrum->secondData()->title() :
+                            "Foreground");
+  const bool useLogYAxis = m_spectrum->yAxisIsLog();
+  const bool showVerticalGridLines = m_spectrum->verticalLinesShowing();
+  const bool showHorizontalGridLines = m_spectrum->horizontalLinesShowing();
+  const bool legendEnabled = m_spectrum->legendIsEnabled();
+  const bool compactXAxis = m_spectrum->isAxisCompacted();
+  const bool showPeakUserLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakUserLabel );
+  const bool showPeakEnergyLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakEnergyLabel );
+  const bool showPeakNuclideLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideLabel );
+  const bool showPeakNuclideEnergyLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideEnergies );
+  const bool showEscapePeakMarker = (m_featureMarkers && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::EscapePeakMarker)]);
+  const bool showComptonPeakMarker = (m_featureMarkers && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonPeakMarker)]);
+  const bool showComptonEdgeMarker = (m_featureMarkers && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonEdgeMarker)]);
+  const bool showSumPeakMarker = (m_featureMarkers && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::SumPeakMarker)]);
+  const bool backgroundSubtract = m_spectrum->backgroundSubtract();
   
-  D3SpectrumExport::D3SpectrumChartOptions options(
-                                 /* title: */"Interactive Spectrum Development",
-                                 /* xAxisTitle: */"Energy", /* yAxisTitle: */"Counts",
-                                 /* dataTitle: */(m_spectrum->data() ? m_spectrum->data()->title() :
-                                                  m_spectrum->background() ? m_spectrum->background()->title() :
-                                                  m_spectrum->secondData() ? m_spectrum->secondData()->title() :
-                                                  "Foreground"),
-                                 /* useLogYAxis: */m_spectrum->yAxisIsLog(),
-                                 /* showVerticalGridLines: */m_spectrum->verticalLinesShowing(),
-                                 /* showHorizontalGridLines: */m_spectrum->horizontalLinesShowing(),
-                                 /* legendEnabled: */m_spectrum->legendIsEnabled(),
-                                 /* compactXAxis: */m_spectrum->isAxisCompacted(),
-                                 /* showPeakUserLabels: */m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakUserLabel ),
-                                 /* showPeakEnergyLabels: */m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakEnergyLabel ),
-                                 /* showPeakNuclideLabels: */m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideLabel ),
-                                 /* showPeakNuclideEnergyLabels: */ m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideEnergies ),
-                                 /* showEscapePeakMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::EscapePeakMarker)],
-                                 /* showComptonPeakMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonPeakMarker)],
-                                 /* showComptonEdgeMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonEdgeMarker)],
-                                 /* showSumPeakMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::SumPeakMarker)],
-                                 /* backgroundSubtract: */m_spectrum->backgroundSubtract(),
-                                 /* xMin: */xMin, /* xMax: */xMax,
-                                 referc_line_json
+  
+  D3SpectrumExport::D3SpectrumChartOptions options( title, xAxisTitle, yAxisTitle, dataTitle,
+      useLogYAxis, showVerticalGridLines, showHorizontalGridLines, legendEnabled, compactXAxis,
+      showPeakUserLabels, showPeakEnergyLabels, showPeakNuclideLabels, showPeakNuclideEnergyLabels,
+      showEscapePeakMarker, showComptonPeakMarker, showComptonEdgeMarker, showSumPeakMarker,
+      backgroundSubtract, xMin, xMax,
+      referc_line_json
   );
   
 
@@ -2666,9 +2672,26 @@ void InterSpec::setIsotopeSearchEnergy( double energy )
 
 void InterSpec::setFeatureMarkerOption( const FeatureMarkerType option, const bool show )
 {
-  m_featureMarkersShown[static_cast<int>(option)] = show;
+  const bool wasShown = m_featureMarkersShown[static_cast<int>(option)];
   
+  m_featureMarkersShown[static_cast<int>(option)] = show;
   m_spectrum->setFeatureMarkerOption( option, show );
+  
+  if( m_featureMarkers && m_undo && !m_undo->isInUndoOrRedo() && (show != wasShown) )
+  {
+    auto undo = [this,option,show](){
+      if( m_featureMarkers )
+        m_featureMarkers->setFeatureMarkerChecked( option, !show );
+      setFeatureMarkerOption( option, !show );
+    };
+    auto redo = [this,option,show](){
+      if( m_featureMarkers )
+        m_featureMarkers->setFeatureMarkerChecked( option, show );
+      setFeatureMarkerOption( option, show );
+    };
+    
+    m_undo->addUndoRedoStep( undo, redo, "Toggle feature marker" );
+  }//if( m_undo && (show != wasShown) )
 }//setFeatureMarkerOption(...)
 
 
@@ -2680,11 +2703,34 @@ bool InterSpec::showingFeatureMarker( const FeatureMarkerType option )
 
 void InterSpec::setComptonPeakAngle( const int angle )
 {
+  const int prev_angle = m_spectrum->comptonPeakAngle();
   m_spectrum->setComptonPeakAngle( angle );
+  
+  if( m_featureMarkers && m_undo && !m_undo->isInUndoOrRedo() && (prev_angle != angle) )
+  {
+    auto undo = [this,prev_angle](){
+      if( m_featureMarkers )
+        m_featureMarkers->setDisplayedComptonPeakAngle( prev_angle );
+      m_spectrum->setComptonPeakAngle( prev_angle );
+    };
+    auto redo = [this,angle](){
+      if( m_featureMarkers )
+        m_featureMarkers->setDisplayedComptonPeakAngle( angle );
+      m_spectrum->setComptonPeakAngle( angle );
+    };
+    
+    m_undo->addUndoRedoStep( undo, redo, "Change Compton angle" );
+  }//if( m_undo && (show != wasShown) )
 }//void setComptonPeakAngle( const float angle );
+
 
 void InterSpec::toggleFeatureMarkerWindow()
 {
+  if( m_undo )
+    m_undo->addUndoRedoStep( [this](){ toggleFeatureMarkerWindow(); },
+                            [this](){ toggleFeatureMarkerWindow(); },
+                            "Show feature marker window" );
+  
   if( m_featureMarkers )
   {
     deleteFeatureMarkerWindow();
@@ -2692,9 +2738,19 @@ void InterSpec::toggleFeatureMarkerWindow()
   }//if( m_featureMarkers )
 
   m_featureMarkers = new FeatureMarkerWindow( this );
-  m_featureMarkers->finished().connect( this, &InterSpec::deleteFeatureMarkerWindow );
+  m_featureMarkers->finished().connect( this, &InterSpec::toggleFeatureMarkerWindow );
   
   m_featureMarkerMenuItem->setText( "Hide Feature Markers" );
+  
+  // Restore the widget state to previous opened state.
+  for( FeatureMarkerType i = FeatureMarkerType(0);
+       i < FeatureMarkerType::NumFeatureMarkers;
+       i = FeatureMarkerType(static_cast<int>(i)+1) )
+  {
+    const bool show = m_featureMarkersShown[static_cast<int>(i)];
+    m_spectrum->setFeatureMarkerOption( i, show );
+    m_featureMarkers->setFeatureMarkerChecked( i, show );
+  }//for( set FeatureMarkers to the last state of the window )
 }//void toggleFeatureMarkerWindow()
 
 
@@ -2712,7 +2768,8 @@ void InterSpec::deleteFeatureMarkerWindow()
        i = FeatureMarkerType(static_cast<int>(i)+1) )
   {
     if( m_featureMarkersShown[static_cast<int>(i)] )
-      setFeatureMarkerOption( i, false );
+      m_spectrum->setFeatureMarkerOption( i, false );
+      //setFeatureMarkerOption( i, false );
   }
 }//void deleteFeatureMarkerWindow()
 
@@ -5685,6 +5742,16 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     return;
 #endif
   
+  unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_sentry;
+  if( m_undo )
+  {
+    auto undo = [this, showToolTabs]{ setToolTabsVisible( !showToolTabs ); };
+    auto redo = [this, showToolTabs]{ setToolTabsVisible( showToolTabs ); };
+    m_undo->addUndoRedoStep( undo, redo, "Toggle show tool tabs" );
+    
+    undo_sentry = make_unique<UndoRedoManager::BlockUndoRedoInserts>();
+  }//if( m_undo )
+  
   m_toolTabsVisibleItems[0]->setHidden( showToolTabs );
   m_toolTabsVisibleItems[1]->setHidden( !showToolTabs );
   
@@ -6439,38 +6506,74 @@ void InterSpec::showEnergyCalWindow()
 
 void InterSpec::setLogY( bool logy )
 {
+  const bool wasLogY = m_spectrum->yAxisIsLog();
+  
   InterSpecUser::setPreferenceValue<bool>( m_user, "LogY", logy, this );
   m_logYItems[0]->setHidden( logy );
   m_logYItems[1]->setHidden( !logy );
   m_spectrum->setYAxisLog( logy );
+  
+  if( m_undo && (wasLogY != logy) )
+  {
+    m_undo->addUndoRedoStep( [this,logy](){ setLogY(!logy); },
+                            [this,logy](){ setLogY(logy); },
+                            "Toggle log-y" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setLogY( bool logy )
 
 
 void InterSpec::setBackgroundSub( bool subtract )
 {
+  const bool wasBackSub = m_spectrum->backgroundSubtract();
+  
   m_backgroundSubItems[0]->setHidden( subtract );
   m_backgroundSubItems[1]->setHidden( !subtract );
   m_spectrum->setBackgroundSubtract( subtract );
+  
+  if( m_undo && (wasBackSub != subtract) )
+  {
+    m_undo->addUndoRedoStep( [this,subtract](){ setBackgroundSub(!subtract); },
+                            [this,subtract](){ setBackgroundSub(subtract); },
+                            "Background subtract" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setBackgroundSub( bool sub )
 
 
 void InterSpec::setVerticalLines( bool show )
 {
+  const bool wasShow = m_spectrum->verticalLinesShowing();
+  
   InterSpecUser::setPreferenceValue<bool>( m_user, "ShowVerticalGridlines", show, this );
   m_verticalLinesItems[0]->setHidden( show );
   m_verticalLinesItems[1]->setHidden( !show );
   m_spectrum->showVerticalLines( show );
   m_timeSeries->showVerticalLines( show );
+  
+  if( m_undo && (wasShow != show) )
+  {
+    m_undo->addUndoRedoStep( [this,show](){ setVerticalLines(!show); },
+                            [this,show](){ setVerticalLines(show); },
+                            "Show vertical lines" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setVerticalLines( bool show )
 
 
 void InterSpec::setHorizantalLines( bool show )
 {
+  const bool wasShow = m_spectrum->horizontalLinesShowing();
+  
   InterSpecUser::setPreferenceValue<bool>( m_user, "ShowHorizontalGridlines", show, this );
   m_horizantalLinesItems[0]->setHidden( show );
   m_horizantalLinesItems[1]->setHidden( !show );
   m_spectrum->showHorizontalLines( show );
   m_timeSeries->showHorizontalLines( show );
+  
+  if( m_undo && (wasShow != show) )
+  {
+    m_undo->addUndoRedoStep( [this,show](){ setHorizantalLines(!show); },
+                            [this,show](){ setHorizantalLines(show); },
+                            "Show horizantal lines" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setHorizantalLines( bool show )
 
 
@@ -6682,6 +6785,8 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
 
 void InterSpec::setXAxisSlider( bool show )
 {
+  const bool wasShowing = m_spectrum->xAxisSliderChartIsVisible();
+  
   InterSpecUser::setPreferenceValue<bool>( m_user, "ShowXAxisSlider", show, this );
   m_showXAxisSliderItems[0]->setHidden( show );
   m_showXAxisSliderItems[1]->setHidden( !show );
@@ -6711,11 +6816,21 @@ void InterSpec::setXAxisSlider( bool show )
   }//show /hide
   
   m_spectrum->showXAxisSliderChart( show );
+  
+  
+  if( m_undo && (wasShowing != show) )
+  {
+    m_undo->addUndoRedoStep( [this,show](){ setXAxisSlider(!show); },
+                            [this,show](){ setXAxisSlider(show); },
+                            "Show x-axis slider" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setXAxisSlider( bool show )
 
 
 void InterSpec::setXAxisCompact( bool compact )
 {
+  const bool wasCompact = m_spectrum->isAxisCompacted();
+  
   InterSpecUser::setPreferenceValue<bool>( m_user, "CompactXAxis", compact, this );
   
   if( m_compactXAxisItems[0] )
@@ -6725,6 +6840,13 @@ void InterSpec::setXAxisCompact( bool compact )
   
   m_spectrum->setCompactAxis( compact );
   m_timeSeries->setCompactAxis( compact );
+  
+  if( m_undo && (wasCompact != compact) )
+  {
+    m_undo->addUndoRedoStep( [this,compact](){ setXAxisCompact(!compact); },
+                            [this,compact](){ setXAxisCompact(compact); },
+                            "Set x-axis compact" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setXAxisCompact( bool compact )
 
 
@@ -6741,6 +6863,7 @@ void InterSpec::setShowYAxisScalers( bool show )
   m_showYAxisScalerItems[1]->setHidden( !show );
   m_showYAxisScalerItems[1]->setDisabled( show && !hasSecond );
   
+  const bool wasShowing = m_spectrum->yAxisScalersIsVisible();
   m_spectrum->showYAxisScalers( show );
   
   try
@@ -6750,6 +6873,13 @@ void InterSpec::setShowYAxisScalers( bool show )
   {
     cerr << "InterSpec::setShowYAxisScalers: Got exception setting pref: " << e.what() << endl;
   }
+  
+  if( m_undo && (wasShowing != show) )
+  {
+    m_undo->addUndoRedoStep( [this,show](){ setShowYAxisScalers(!show); },
+                            [this,show](){ setShowYAxisScalers(show); },
+                            "Show y-axis scalers" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setShowYAxisScalers( bool show )
 
 
@@ -6795,46 +6925,57 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
 {
   PopupDivMenu *menu = parentWidget->addPopupMenuItem( "Peak Labels",  "InterSpec_resources/images/tag.svg" );
   
+  // Make a lamda to do work of connecting signals, and undo/redo
+  auto setupLabelCbCallbacks = [this]( const SpectrumChart::PeakLabels label, WCheckBox *cb ){
+    
+    cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setShowPeakLabel,
+            m_spectrum, label, true
+    ) );
+    cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setShowPeakLabel,
+            m_spectrum, label, false
+    ) );
+    
+    // FIXME: for some reason undoing things wont change the checkbox state, for first undo, but if you undo/redo/undo it does/  Not totally sure why.
+    const auto set_checked = [this,label,cb](){
+      cb->setChecked( true );
+      // emitting checked() signal, instead of calling `m_spectrum->setShowPeakLabel(label,true);`
+      //  to keep `nuc_energy_cb` state consistent.
+      cb->checked().emit();
+    };
+    
+    const auto set_unchecked = [this,label,cb](){
+      cb->setChecked( false );
+      cb->unChecked().emit(); //See comment in `set_checked`
+    };
+    
+    const auto undo_uncheck = [this,set_checked,set_unchecked](){
+      if( m_undo )
+        m_undo->addUndoRedoStep( set_checked, set_unchecked, "Hide peak label" );
+    };
+    const auto undo_check = [this,set_checked,set_unchecked](){
+      if( m_undo )
+        m_undo->addUndoRedoStep( set_unchecked, set_checked, "Show peak label" );
+    };
+    
+    cb->checked().connect( std::bind( undo_check ) );
+    cb->unChecked().connect( std::bind( undo_uncheck ) );
+  };//auto setupLabelCbCallbacks
   
-//  PopupDivMenuItem *item = menu->addMenuItem( "Show User Labels", "", false );
-  //
+
   WCheckBox *cb = new WCheckBox( "Show User Labels" );
   cb->setChecked(false);
   PopupDivMenuItem *item = menu->addWidget( cb );
-  
-  cb->checked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakUserLabel, true
-  ) );
-  cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakUserLabel, false
-  ) );
+  setupLabelCbCallbacks( SpectrumChart::kShowPeakUserLabel, cb );
   
   cb = new WCheckBox( "Show Peak Energies" );
   cb->setChecked(false);
   item = menu->addWidget( cb );
-  
-  cb->checked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakEnergyLabel, true
-  ) );
-  cb->unChecked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakEnergyLabel, false
-  ) );
+  setupLabelCbCallbacks( SpectrumChart::kShowPeakEnergyLabel, cb );
   
   cb = new WCheckBox( "Show Nuclide Names" );
   cb->setChecked(false);
   item = menu->addWidget( cb );
-  
-  cb->checked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakNuclideLabel, true
-  ) );
-  cb->unChecked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakNuclideLabel, false
-  ) );
+  setupLabelCbCallbacks( SpectrumChart::kShowPeakNuclideLabel, cb );
   
   WCheckBox *nuc_energy_cb = new WCheckBox( "Show Nuclide Energies" );
   nuc_energy_cb->setChecked(false);
@@ -6844,16 +6985,7 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
   cb->checked().connect( nuc_energy_cb, &WCheckBox::enable );
   cb->unChecked().connect( nuc_energy_cb, &WCheckBox::disable );
   cb->unChecked().connect( nuc_energy_cb, &WCheckBox::setUnChecked );
-  
-  nuc_energy_cb->checked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakNuclideEnergies, true
-  ) );
-  
-  nuc_energy_cb->unChecked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakNuclideEnergies,  false
-  ) );
+  setupLabelCbCallbacks( SpectrumChart::kShowPeakNuclideEnergies, nuc_energy_cb );
 }//void addPeakLabelMenu( Wt::WContainerWidget *menuDiv )
 
 
@@ -8612,68 +8744,9 @@ float InterSpec::sample_real_time_increment( const std::shared_ptr<const SpecMea
     if( pos != end(detector_names) )
       realtime = std::max( realtime, m->real_time() );
   }
+  
   return realtime;
-  
-  
-/*
-  int nback = 0, nnonback = 0;
-  double backtime = 0.0, nonbacktime = 0.0;
-  for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurement )
-  {
-    if( m->source_type() == SpecUtils::SourceType::Background )
-    {
-      ++nback;
-      backtime += m->real_time();
-    }else
-    {
-      ++nnonback;
-      nonbacktime += m->real_time();
-    }
-  }//for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurement )
-  
-  if( nnonback )
-    return nonbacktime/nnonback;
-  if( nback )
-    return backtime/nback;
-  return 0.0;
-*/
 }//double sample_real_time_increment()
-
-
-/*
-double InterSpec::liveTime( const std::set<int> &samplenums ) const
-{
-  double time = 0.0;
-  
-  if( !m_dataMeasurement )
-    return 0.0;
-  
-  const vector<bool> det_use = detectorsToDisplay();
-  const set<int> sample_numbers = validForegroundSamples();
-  
-  const vector<int> &detnums = m_dataMeasurement->detector_numbers();
-  const vector<int>::const_iterator detnumbegin = detnums.begin();
-  const vector<int>::const_iterator detnumend = detnums.end();
-  
-  for( int sample : samplenums )
-  {
-    const vector<std::shared_ptr<const SpecUtils::Measurement>> measurement
-    = m_dataMeasurement->sample_measurements( sample );
-    
-    for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurement )
-    {
-      const int detn = m->detector_number();
-      const size_t detpos = std::find(detnumbegin,detnumend,detn) - detnumbegin;
-      
-      if( detpos < det_use.size() && det_use[detpos] )
-        time += m->live_time();
-    }//for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurement )
-  }//for( int sample : prev_displayed_samples )
-
-  return time;
-}//double liveTime( const std::set<int> &samplenums );
-*/
-
 
 
 void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
@@ -10153,7 +10226,7 @@ void InterSpec::detectorsToDisplayChanged()
   displaySecondForegroundData();
   displayForegroundData( true );
   displayTimeSeriesData();
- 
+  
   // \TODO: The foreground may be pass-through, but the user could have just de-selected a detector
   //        so that none of the currently selected sample numbers have gamma/neutron data, and in
   //        this case we should fix things up.  Or it could be the case that the remaining detectors
@@ -10168,6 +10241,55 @@ void InterSpec::detectorsToDisplayChanged()
   const auto &samples = displayedSamples(type);
   const auto detectors = detectorsToDisplay(type);
   m_displayedSpectrumChangedSignal.emit(type,meas,samples,detectors);
+  
+  
+  if( !m_undo )
+    return;
+  
+  int menu_num_changed = -1;
+  bool checked = false;
+  WObject *caller = WObject::sender();
+  const vector<WMenuItem *> items = m_detectorToShowMenu->items();
+  
+  for( size_t i = 0; i < items.size(); ++i )
+  {
+    if( items[i]->hasStyleClass("PhoneMenuBack") )
+      continue;
+    
+    PopupDivMenuItem *item = dynamic_cast<PopupDivMenuItem *>( items[i] );
+    WCheckBox *cb = (item ? item->checkBox() : (WCheckBox *)0);
+    
+    if( cb && ((caller == cb) || (caller == item)) )
+    {
+      menu_num_changed = static_cast<int>( i );
+      assert( cb );
+      checked = cb ? cb->isChecked() : false;
+      break;
+    }
+  }//for( size_t i = 0; i < items.size(); ++i )
+  
+  if( menu_num_changed >= 0 )
+  {
+    auto undo_redo = [this,menu_num_changed]( const bool set_checked ){
+      const vector<WMenuItem *> items = m_detectorToShowMenu->items();
+      if( menu_num_changed >= static_cast<int>(items.size()) )
+        return;
+      
+      PopupDivMenuItem *item = dynamic_cast<PopupDivMenuItem *>( items[menu_num_changed] );
+      assert( item );
+      WCheckBox *cb = (item ? item->checkBox() : (WCheckBox *)0);
+      assert( cb );
+      if( cb )
+      {
+        cb->setChecked( set_checked );
+        detectorsToDisplayChanged();
+      }
+    };//auto undo_redo = [...
+    
+    m_undo->addUndoRedoStep( [undo_redo,checked](){ undo_redo( !checked ); },
+                             [undo_redo,checked](){ undo_redo( checked ); },
+                            "Toggle display detector" );
+  }//if( menu_num_changed >= 0 )
 }//void detectorsToDisplayChanged()
 
 
@@ -10242,7 +10364,6 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
 
     if( m_detectorToShowMenu )
     {
-#if( WT_VERSION>=0x3030300 )
 #if( USE_OSX_NATIVE_MENU  || USING_ELECTRON_NATIVE_MENU )
       WCheckBox *cb = new WCheckBox( title );
       cb->setChecked( true );
@@ -10254,17 +10375,6 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
       Wt::WCheckBox *cb = item->checkBox();
       if( !cb )
         throw runtime_error( "Serious error creating checkbox in menu item" );
-#endif
-      
-#else
-      WCheckBox *cb = new WCheckBox( title );
-      cb->setChecked(true);
-      
-      //NOTE: this is necessary to prevent problems in menu state
-      //cb->checked().connect( boost::bind(&WCheckBox::setChecked, cb, true) );
-      //cb->unChecked().connect( boost::bind(&WCheckBox::setChecked, cb, false) );
-      
-      PopupDivMenuItem *item = m_detectorToShowMenu->addWidget( cb, false );
 #endif
       
       if( isneut )
@@ -11159,14 +11269,8 @@ vector<string> InterSpec::detectorsToDisplay( const SpecUtils::SpectrumType type
     if( items[i]->hasStyleClass("PhoneMenuBack") )
       continue;
     
-#if( WT_VERSION>=0x3030300 )
     PopupDivMenuItem *item = dynamic_cast<PopupDivMenuItem *>( items[i] );
     WCheckBox *cb = (item ? item->checkBox() : (WCheckBox *)0);
-#else
-    WCheckBox *cb = 0;
-    for( int j = 0; !cb && (j < items[i]->count()); ++j )
-      cb = dynamic_cast<WCheckBox *>(items[i]->widget(j));
-#endif
     
     if( cb && detnum < all_det_names.size() )
     {
