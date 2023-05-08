@@ -74,6 +74,9 @@ namespace
  as a trace source, through a 1m radius soil sphere.
  
  Since this computation takes ~0.15 seconds, the results are cached and returned on subsequent calls.
+ 
+ 
+ TODO: Return #ReferenceLineInfo::RefLine instead, and completely get rid of #OtherRefLine, since it is no longer needed.
  */
 const vector<OtherRefLine> &getBackgroundRefLines()
 {
@@ -82,11 +85,14 @@ const vector<OtherRefLine> &getBackgroundRefLines()
   const float lower_photon_energy = 10.0f;
   
   static std::mutex answer_mutex;
+  static bool have_computed = false;
   static vector<OtherRefLine> answer;
   
   std::lock_guard<std::mutex> lock( answer_mutex );
-  if( !answer.empty() )
+  if( have_computed )
     return answer;
+  
+  have_computed = true;
   
   try
   {
@@ -113,16 +119,26 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     prelim_answer.resize( 3000 ); //we actually need 2890
     answer.reserve( 2100 ); //we actaully need 2062, when rel_threshold==1.0E-17;
     
-    // Computation timings on M1 macbook:
+    
+// Pre-computing transport just prints out `integral_energies` and `integral_values` to stdout
+//  Only used for development purposes to get the aformentioned arrays.
+#define PRE_COMPUTE_BACKGROUND_TRANSPORT 0
+    
+#define USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT 1
+    
+    //const double start_wall = SpecUtils::get_wall_time();
+    //const double start_cpu = SpecUtils::get_cpu_time();
+    
+#if( PRE_COMPUTE_BACKGROUND_TRANSPORT || !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+    // Computation timings on M1 macbook, for integrating each background line:
     // - Single threaded, epsrel = 1e-5: wall=0.789006, cpu=0.787189
     // - Single threaded, epsrel = 1e-4: wall=0.593146, cpu=0.59266
     // - Single threaded, epsrel = 1e-3: wall=0.465307, cpu=0.464454
     // - Multithreaded (nthreads=10, batching in groups of 10), epsrel = 1e-4: wall=0.131257, cpu=0.669642
     // - Multithreaded (nthreads=10, batching in groups of 100), epsrel = 1e-4: wall=0.087524, cpu=0.72624
     // - Multithreaded (nthreads=10, no batching), epsrel = 1e-4: wall=0.09096, cpu=0.710744
-    
-    //const double start_wall = SpecUtils::get_wall_time();
-    //const double start_cpu = SpecUtils::get_cpu_time();
+    //
+    // - Using precomputed transport, and single thread: wall=0.010582, cpu=0.009713
     
     DistributedSrcCalc soil_sphere;
     soil_sphere.m_geometry = GeometryType::Spherical;
@@ -140,6 +156,123 @@ const vector<OtherRefLine> &getBackgroundRefLines()
       0.0,
       DistributedSrcCalc::ShellType::Material
     } );
+#endif // !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT
+  
+#if( USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+    const array<double, 220> integral_energies{
+           0,        5,        6,        7,        8,        9,       10,       11,       12,       13,       14,       15,       16,       17,
+          18,       19,       20,       21,       22,       23,       24,       25,       26,       27,       28,       29,       30,       31,       32,
+          33,       34,       35,       36,       37,       38,       39,       40,       41,       42,       43,       44,       45,       46,       47,
+          48,       49,       50,       51,       52,       53,       54,       55,       56,       57,       58,       59,       60,       61,       62,
+          63,       64,       65,       66,       67,       68,       69,       70,       71,       72,       73,       74,       75,       77,       79,
+          81,       83,       85,       87,       89,       91,       93,       95,       97,       99,      102,      105,      108,      111,      114,
+         117,      120,      124,      128,      132,      136,      140,      144,      149,      154,      159,      164,      169,      174,      180,
+         186,      192,      198,      205,      215,      225,      235,      245,      255,      265,      275,      285,      295,      305,      315,
+         325,      335,      345,      355,      365,      375,      385,      400,      410,      425,      440,      455,      470,      485,      500,
+         515,      530,      545,      560,      575,      590,      605,      620,      635,      650,      665,      680,      700,      720,      740,
+         760,      780,      800,      820,      840,      860,      880,      900,      920,      940,      965,      990,     1015,     1040,     1065,
+        1090,     1115,     1140,     1165,     1190,     1215,     1240,     1270,     1295,     1325,     1355,     1385,     1415,     1445,     1475,
+        1505,     1540,     1575,     1610,     1645,     1680,     1715,     1750,     1785,     1825,     1865,     1905,     1945,     1985,     2025,
+        2065,     2110,     2155,     2200,     2245,     2290,     2340,     2390,     2440,     2490,     2540,     2595,     2650,     2705,     2760,
+        2820,     2880,     2940,     3005,     3070,     3135,     3200,     3270,     3340,     3415,     3490};
+    
+    const array<double, 220> integral_values{
+            0, 14.134587, 37.955691, 61.053456, 81.553097, 106.44044, 146.33149, 195.13829, 253.84184, 323.29028, 404.16482, 497.45935, 603.72919, 723.53085,
+    857.62272, 1006.3214, 1169.7335, 1348.316, 1542.3132, 1751.454, 1975.4162, 2213.6208, 2466.3235, 2733.6567, 3014.2296, 3306.6471, 3610.0513, 3923.602, 4246.7122,
+    4579.8723, 4921.6507, 5269.3928, 5621.8764, 5977.892, 6336.2679, 6696.0448, 7057.1923, 7420.2084, 7783.9253, 8146.2877, 8505.9111, 8861.7795, 9213.1772, 9559.4574,
+    9900.0845, 10234.865, 10563.582, 10888.434, 11209.571, 11524.162, 11831.569, 12131.616, 12424.397, 12710.119, 12988.515, 13259.309, 13522.553, 13778.266, 14026.609,
+    14267.881, 14505.645, 14740.374, 14968.793, 15190.695, 15406.222, 15615.472, 15818.601, 16015.768, 16207.127, 16392.842, 16573.098, 16748.05, 16999.027, 17319.145,
+    17627.432, 17927.34, 18213.695,  18485.5, 18743.677, 18989.13, 19222.717, 19445.229, 19657.408, 19859.946, 20106.772, 20397.573, 20675.541, 20938.468, 21187.707,
+    21424.455, 21649.762, 21898.576, 22175.379, 22450.301, 22717.998, 22973.563, 23218.067, 23480.578, 23759.766, 24027.788, 24297.555, 24568.681, 24830.316, 25107.653,
+    25399.905,    25682, 25954.813, 26251.616, 26642.112, 27088.381, 27516.833, 27929.463, 28333.777, 28740.83, 29145.616, 29539.17, 29922.264, 30295.645, 30660.013,
+    31027.158, 31399.069, 31764.893, 32123.481, 32475.234,  32820.5, 33159.572, 33576.174, 33995.696,  34418.2, 34915.801, 35402.684, 35879.466, 36346.686, 36804.84,
+    37266.512, 37733.084, 38192.789, 38644.971, 39089.931, 39527.976, 39959.416, 40384.528, 40806.642, 41234.388, 41664.859, 42089.819, 42578.421, 43128.911, 43670.708,
+    44204.202, 44729.725, 45251.585, 45780.138, 46311.632, 46836.248, 47354.257, 47865.884, 48371.341, 48870.845, 49425.509, 50034.01, 50643.808, 51261.626, 51877.974,
+    52486.515, 53087.301, 53680.377, 54265.847, 54843.807, 55414.404, 55977.748, 56595.304, 57219.765, 57846.156, 58520.698, 59185.681, 59841.292, 60487.865, 61125.588,
+    61754.475, 62425.916, 63138.406, 63852.858, 64575.719, 65293.349, 65999.372, 66695.524, 67382.016, 68106.916, 68868.824, 69617.361, 70354.821, 71080.753, 71808.509,
+    72545.04, 73321.576, 74129.992, 74926.528, 75712.654, 76485.167, 77284.546, 78111.513, 78928.337, 79733.538, 80534.094, 81378.643, 82254.629, 83120.668, 83977.388,
+    84854.37, 85750.145, 86625.844, 87517.263, 88433.815, 89339.424, 90237.042, 91169.853, 92123.699, 93086.383, 94066.595
+    };
+
+    /* const array<double, 220> integral_differences{
+           0,        1,  0.40664,   0.3602,  0.15993,  0.28653,  0.26234,  0.24083,  0.22383,  0.20768,    0.194,  0.18226,  0.17085,  0.16116,
+     0.15228,   0.1439,  0.13607,  0.12929,   0.1227,   0.1165,   0.1106,  0.10494,  0.10024, 0.095584, 0.090808, 0.086263, 0.082007, 0.077984, 0.074327,
+    0.071275, 0.067737, 0.064361, 0.061138, 0.058065, 0.055137, 0.052396, 0.050014, 0.047884, 0.045622, 0.043391, 0.041213, 0.039143, 0.037176, 0.035306,
+    0.033537, 0.031909, 0.030351, 0.029333, 0.027983, 0.026632, 0.025348, 0.024132, 0.023011,  0.02196, 0.020919, 0.019937, 0.019006,  0.01812, 0.017297,
+     0.01653, 0.016255, 0.015599, 0.014926, 0.014294, 0.013689, 0.013115, 0.012571, 0.012054, 0.011563, 0.011098, 0.010657, 0.010237, 0.019204, 0.017776,
+    0.017207, 0.016259, 0.015194, 0.014221, 0.013333, 0.012524, 0.011784, 0.011106, 0.010485, 0.0099147, 0.014602, 0.013916, 0.012979, 0.012141, 0.011391,
+    0.010714, 0.010103, 0.012605, 0.012361, 0.012132, 0.011439, 0.010813, 0.010251, 0.012097, 0.011408, 0.010904, 0.011299, 0.010775, 0.010301, 0.011782,
+    0.011233, 0.010738, 0.010287, 0.012313, 0.016961, 0.015995, 0.015152, 0.014401,  0.01414, 0.014186, 0.013595, 0.013054, 0.012555, 0.012097, 0.011673,
+    0.011991,   0.0117, 0.011335, 0.010993, 0.010672, 0.010369, 0.010083, 0.014698, 0.010006, 0.014512, 0.013995, 0.013514, 0.013066, 0.012646, 0.012253,
+    0.012522,  0.01221, 0.011865, 0.011539, 0.011229, 0.010936, 0.010659, 0.010396, 0.010293, 0.010453, 0.010212, 0.0099823, 0.012949, 0.012581, 0.012234,
+    0.011906, 0.011594, 0.011472, 0.011618, 0.011336, 0.011067, 0.010812, 0.010567, 0.010333,  0.01011, 0.012321, 0.012004, 0.012077, 0.012028, 0.011736,
+    0.011454, 0.011181, 0.010917, 0.010662, 0.010416, 0.010179, 0.0099493, 0.011863, 0.0099733, 0.011674, 0.011381, 0.011092, 0.010821, 0.010558, 0.010309,
+     0.01006, 0.011444, 0.011127,  0.01125, 0.011138, 0.010845, 0.010551, 0.010325, 0.010052, 0.011228,   0.0109, 0.010606, 0.010359, 0.010068, 0.010201,
+    0.010105, 0.011071, 0.010741, 0.010522, 0.010246, 0.009956, 0.010727, 0.010449,  0.01025, 0.0099488, 0.0099325, 0.010819, 0.010482, 0.010356, 0.010049,
+    0.010619, 0.010276, 0.0099437, 0.010425, 0.010304, 0.009971, 0.0099239, 0.010536, 0.010174, 0.010508, 0.010334
+    };
+    */
+#endif
+
+    
+#if( PRE_COMPUTE_BACKGROUND_TRANSPORT )
+#warning "You probably dont mean to have PRE_COMPUTE_BACKGROUND_TRANSPORT enabled"
+    
+    // Pre-compute the transport through soil sphere, defining energy bounds so that the
+    //  difference between lower and upper energy bounds, is 1% (arbitrarily chosen);
+    //  For energies, below about 75 keV our error is larger due to stepping size
+    const double allowed_error_fraction = 0.01;
+    double prev_integral = 0.0, prev_energy = 0.0;
+    vector<double> energies(1,0.0), integrals(1,0.0), errors(1,0.0);
+    for( double energy = 5; energy < 3500; energy += (energy < 200 ? 1 : 5) )
+    {
+      DistributedSrcCalc sphere = soil_sphere;
+      double transLenCoef = GammaInteractionCalc::transmition_length_coefficient( soil, energy );
+      get<1>( sphere.m_dimensionsTransLenAndType[0] ) = transLenCoef;
+      
+      int nregions, neval, fail;
+      double integral, error, prob;
+      void *userdata = (void *)&sphere;
+      
+      const int ndim = 2;  //the number of dimensions of the integral.
+      const double epsrel = 1e-8, epsabs = -1.0; //the requested relative and absolute accuracies
+      const int mineval = 0, maxeval = 5000000;   //the min and (approx) max number of integrand evaluations allowed.
+      
+      
+      Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
+                                Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
+                                fail, integral, error, prob );
+      
+      if( fabs(integral - prev_integral) > allowed_error_fraction*prev_integral )
+      {
+        energies.push_back( energy );
+        integrals.push_back( 0.5*(prev_integral + integral) );
+        errors.push_back( fabs(integral - prev_integral)/integral );
+        //cout << interval_num << ": energy=" << energy << "] keV" << ", diff="
+        //     << (100*fabs(integral - prev_integral)/integral) << endl;
+        prev_energy = energy;
+        prev_integral = integral;
+      }//if( integral at `energy` is more than `allowed_error_fraction` different from previous )
+    }//for( loop over energies )
+    
+    cout << "const std::array<double, " << energies.size() << "> integral_energies{\n";
+    for( size_t i = 0; i < energies.size(); ++i )
+      cout << (i ? ", " : " ") << ((((i+1) % 15) == 0) ? "\n" : "")
+           << std::setw(8) << std::setprecision(6) << energies[i];
+    cout << "};" << endl;
+    
+    cout << "const std::array<double, " << energies.size() << "> integral_values{\n";
+    for( size_t i = 0; i < integrals.size(); ++i )
+      cout << (i ? ", " : " ") << ((((i+1) % 15) == 0) ? "\n" : "")
+           << std::setw(8) << std::setprecision(8) << integrals[i];
+    cout << "\n};\n" << endl;
+    
+    cout << "/* const std::array<double, " << energies.size() << "> integral_differences{\n";
+    for( size_t i = 0; i < errors.size(); ++i )
+      cout << (i ? ", " : " ") << ((((i+1) % 15) == 0) ? "\n" : "")
+           << std::setw(8) << std::setprecision(5) << errors[i];
+    cout << "\n};\n*/" << endl;
+#endif //PRE_COMPUTE_BACKGROUND_TRANSPORT
     
     
     // The rel-activities below were just adjusted to match a representative background
@@ -156,7 +289,7 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     //  a 1 m radius sphere
     // TODO: figure out the constants so components can be set as PPM, or % of soil, so it can be changed by looking up in a DB easily for a given location
     const vector<tuple<const SandiaDecay::Nuclide *,double,OtherRefLineType, double>> nuc_activity{
-      //make the 1001 keV have amp 0.0004653, before norm
+      //make the 1001 keV have amp 0.0004653, before norm; the denom is integral at 1001 keV times BR of 1001.
       { u238,   0.0004653/410.2892, OtherRefLineType::U238Series, 5.0*u238->promptEquilibriumHalfLife() },
       
       //make 609 keV have amp 0.02515, before norm
@@ -187,7 +320,9 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity( 0.0 );
     
     size_t calc_index = 0;
+#if( !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
     SpecUtilsAsync::ThreadPool pool;
+#endif
     
     for( const SandiaDecay::NuclideActivityPair &nap : activities )
     {
@@ -220,15 +355,32 @@ const vector<OtherRefLine> &getBackgroundRefLines()
           const double energy = particle.energy;
           const SandiaDecay::ProductType part_type = particle.type;
           
+#if( !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
           // Creating a `DistributedSrcCalc` here doesnt seem any slower than trying to share them
           //  between threads and such; so we'll just make a copy for each thread.
           DistributedSrcCalc sphere = soil_sphere;
           const double transLenCoef = GammaInteractionCalc::transmition_length_coefficient( soil, energy );
           get<1>( sphere.m_dimensionsTransLenAndType[0] ) = transLenCoef;
+#endif
           
-          auto do_calc = [soil, energy, calc_index, transition, part_type, br, sphere,
+          auto do_calc = [soil, energy, calc_index, transition, part_type, br,
+#if( USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+                          &integral_energies, &integral_values,
+#else
+                          sphere,
+#endif
                           k40, ra226, th232, u238, u235, &prelim_answer]() {
             
+#if( USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+            auto pos = std::lower_bound( begin(integral_energies), end(integral_energies), energy );
+            const auto index = pos - begin(integral_energies);
+            const double integral = (pos == end(integral_energies)) ? integral_values.back() : integral_values[index];
+
+//            cout << "Energy=" << energy << " is in bucket ["
+//            << (index ? integral_energies[index-1] : integral_energies[index]) << " to "
+//            << (index >= integral_energies.size() ? integral_energies[index-1] : integral_energies[index])
+//            << "] keV, with value integral=" << integral << endl;
+#else
             int nregions, neval, fail;
             double integral, error, prob;
             void *userdata = (void *)&sphere;
@@ -238,12 +390,11 @@ const vector<OtherRefLine> &getBackgroundRefLines()
             const double epsrel = 1e-4, epsabs = -1.0; //the requested relative and absolute accuracies
             const int mineval = 0, maxeval = 500000;   //the min and (approx) max number of integrand evaluations allowed.
             
-            
             Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
                                       Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
                                       fail, integral, error, prob );
-            
             //printf("%s: %.1f keV -> br=%.4f.\n", nuc->symbol.c_str(), energy, br*integral );
+#endif // USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT / else
             
             string desc;
             if( transition->parent )
@@ -275,7 +426,9 @@ const vector<OtherRefLine> &getBackgroundRefLines()
             prelim_answer[calc_index] = { static_cast<float>(energy), amplitude, desc, type, "" };
           };//do_calc
                     
-          
+#if( USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+          do_calc();
+#else
           // We dont want to bog the thread pool down with ~2k jobs, so we'll batch things in
           //  groups of an arbitrarily selected number of 100
           const size_t batch_size = 100;
@@ -289,13 +442,16 @@ const vector<OtherRefLine> &getBackgroundRefLines()
           }//if( (calc_index % 100) == 0 )
           
           pool.post( do_calc );
+#endif //USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT / else
           
           calc_index += 1;
         }//for( const SandiaDecay::RadParticle &particle : transition->products )
       }//for( const SandiaDecay::Transition *transition : nuclide->decaysToChildren )
     }//for( const SandiaDecay::NuclideActivityPair &nap : activities )
     
+#if( !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
     pool.join();
+#endif
     
     assert( prelim_answer.size() >= calc_index );
     prelim_answer.resize( calc_index );
@@ -309,7 +465,7 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     float max_br = 0.0f;
     for( const auto &i : prelim_answer )
     {
-      // printf("prenorm %s: %.1f keV -> br=%.4f.\n", get<2>(i).c_str(), get<0>(i), get<1>(i) );
+      //printf("prenorm %s: %.1f keV -> br=%.4f.\n", get<2>(i).c_str(), get<0>(i), get<1>(i) );
       max_br = std::max( max_br, get<1>(i) );
     }
     
@@ -347,6 +503,7 @@ const vector<OtherRefLine> &getBackgroundRefLines()
                         OtherRefLineType::OtherBackground, "Annihilation radiation (beta+)" );
     
     // TODO: Do we want to add in extra x-rays or anything?
+    // TODO: Do we group lines together later on, or should we do it now.
     
     std::sort( begin(answer), end(answer), []( const OtherRefLine &lhs, const OtherRefLine &rhs ) -> bool {
       return get<0>(lhs) < get<0>(rhs);
