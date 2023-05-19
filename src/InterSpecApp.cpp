@@ -354,8 +354,7 @@ void InterSpecApp::setupDomEnvironment()
   }//if (isPrimaryWindowInstance())
 #endif
   
-  //cout << "wApp->javaScriptClass()='" << wApp->javaScriptClass() << "'" << endl; //Prints "Wt"
-  
+
   //Now setup a listener for the user to press Control + another button
   //We are specifying for the javascript to not be collected since the response
   //  will change if the tools tabs is shown or not.
@@ -363,11 +362,16 @@ void InterSpecApp::setupDomEnvironment()
   //sender.id was undefined in the following js, so had to work around this a bit
   const char *hotkey_js = INLINE_JAVASCRIPT(
   function(id,e){
-    if( !e || !e.key || e.metaKey || e.altKey || (e.shiftKey && (e.key != 'Z')) || (typeof e.keyCode === 'undefined') )
+    
+    // On macOS, the cloverleaf "command" key is e.metaKey - we will treat ctrl and meta
+    //  as equivalent because of this.  We _could_ try to detect Apple and only allow meta.
+    //    const isApple = (Wt.WT.isIOS || (navigator.appVersion.indexOf("Mac") != -1));
+    //  Note, at least on mac: ctrl+shift+z gives e.key=='Z', where meta+shift+z gives e.key=='z'.
+    if( !e || !e.key || e.altKey || (e.shiftKey && ((e.key != 'Z') && (e.key != 'z'))) || (typeof e.keyCode === 'undefined') )
       return;
     
     let code = 0;
-    if( e.ctrlKey )
+    if( e.ctrlKey || e.metaKey )
     {
       switch( e.key ){
         case '1': case '2': case '3': case '4': case '5': case '6': case '7': //Shortcuts to switch to the various tabs
@@ -381,7 +385,7 @@ void InterSpecApp::setupDomEnvironment()
           code = e.key.charCodeAt(0);
           break;
         case 'z': case 'Z': //undo/redo
-          code = e.key.charCodeAt(0);
+          code = (e.shiftKey ? 'Z' : 'z').charCodeAt(0);
           break;
           
         default:  //Unused - nothing to see here - let the event propagate up
