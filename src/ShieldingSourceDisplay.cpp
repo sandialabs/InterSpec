@@ -1311,10 +1311,10 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       const double act = isof.activity * GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
       string ans = PhysicalUnits::printToBestActivityUnits( act, 2, m_displayCurries );
       
-      // We'll require the uncertainty to be non-zero to show it - 5bq is an arbitrary cutoff to
+      // We'll require the uncertainty to be non-zero to show it - 1 micro-bq is an arbitrary cutoff to
       //  consider anything below it zero.
       const double uncert = isof.activityUncertainty * GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
-      if( uncert > 5.0*PhysicalUnits::bq )
+      if( (uncert > 1.0E-6*PhysicalUnits::bq) || ((uncert > 0.0) && (uncert > 1.0E-6*fabs(act)) ) )
         ans += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( uncert, 1, m_displayCurries );
       
       return boost::any( WString(ans) );
