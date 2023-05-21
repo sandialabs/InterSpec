@@ -3532,6 +3532,57 @@ void DrfSelect::setDefineDetector()
 //  }//if(...)
   
   string fcn = m_detectorManualFunctionText->text().narrow();
+  
+  // Check if someone is copy-pasting in coefficiecnts from a spreadsheet
+  //  We will allow space tab, comma, semicolon, newline seperators, but each entry
+  //  must be
+  vector<string> potential_coefs;
+  SpecUtils::split( potential_coefs, fcn, ",\t; \n\r" );
+  vector<double> potential_coef_values;
+  size_t last_non_zero_coef = 0;
+  try
+  {
+    for( size_t i = 0; i < potential_coefs.size(); ++i )
+    {
+      const string &txt = potential_coefs[i];
+      size_t idx = 0;
+      const double val = stod( txt, &idx ); //throws exception if invalid float
+      
+      // Dont accept inf, NaN, or allow trailing characters
+      if( IsInf(val) || IsNan(val) || (idx != txt.size()) )
+        throw exception();
+      potential_coef_values.push_back( val );
+      if( val != 0.0 )
+        last_non_zero_coef = i;
+    }//
+  }catch( std::exception & )
+  {
+    // If we're here, its an invalid double, or there where characters after the number
+    potential_coef_values.clear();
+  }//try catch to parse entered text as exactly a list of coefficecnts
+  
+  if( (potential_coef_values.size() > 1) && (last_non_zero_coef > 1) )
+  {
+    assert( potential_coefs.size() == potential_coef_values.size() );
+    assert( !potential_coefs.empty() && (last_non_zero_coef < potential_coefs.size()) );
+    
+    fcn = "";
+    
+    for( size_t i = 0; i < potential_coefs.size(); ++i )
+    {
+      if( potential_coef_values[i] == 0.0 )
+        continue;
+      
+      const string mfunc = (i > 0) ? "*log(x)" : "";
+      const string power = (i > 1) ? ("^" + to_string(i)) : string();
+      fcn += (fcn.empty() ? "exp( " : " + ") + potential_coefs[i] + mfunc + power;
+    }
+    fcn += fcn.empty() ? "" : " )";
+    
+    m_detectorManualFunctionText->setText( WString::fromUTF8(fcn) );
+  }//if( is_all_coeffs )
+  
+  
   const string name = m_detectorManualFunctionName->text().toUTF8();
   string descr = m_detectorManualDescription->text().toUTF8();
   if( descr.empty() )

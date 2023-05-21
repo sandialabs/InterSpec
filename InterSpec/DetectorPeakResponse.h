@@ -63,80 +63,15 @@ namespace rapidxml
   template<class Ch> class xml_document;
 }//namespace rapidxml
 
-//Three expression evaluators have been tried; all have benefits and drawbacks.
-//  CLHEP/Evaluator: only added 21 kb to final binary size, but slowest option
-//  exprtk.hpp: added 5.3 Mb to final binary size, but 30x faster than CLHEP
-//  muparserx: adds 430 kb to binary size, and about 10x faster than CLHEP
-//
-// Since muparserx is what TerminalWidget uses, it was decided on 20180408 to
-// only use muparserx.
+/** TODO:
+ - Add a "fixed" geometry option - then distances in like shielding/source display are not shown/used
+ - Add a "setback" option
+ */
 
-//100000 evaluations of:
-//  exp(-343.6330974237 + 269.1023287277*log(x) + -83.8077567526*log(x)^2
-//  + 12.9980559362*log(x)^3 + -1.0068649823*log(x)^4 + 0.0311640084*log(x)^5)
-//  muparser x took:  cpu=0.143294s, wall=0.14341s  (1.4 us/eval)
-//  evaluator x took: cpu=1.10172s, wall=1.10209s   (11 us/eval)
 
 //Forward declarations
-namespace mup
-{
-  class Value;
-  class ParserX;
-}
+struct FormulaWrapper;
 
-struct FormulaWrapper
-{
-  /** Constructor that takes an equation as a string, and creates a callable
-   object to evaluate that equation.
-   
-   \param fcnstr The function to use.  Ex: "exp(-1.2 + 3*lox(x) + ...)"
-   \param isMeV Only used to determine which energy value to use to test if the
-   function is valid or not;  If isMeV is true, uses 0.1, else 100.
-   */
-  FormulaWrapper( const std::string &fcnstr, const bool isMev );
-  ~FormulaWrapper();
-  
-  float efficiency( const float x );
-  double operator()( const float x );
-  
-  /** Finds the variable the user most likely intended to be the energy variable
-   for detector response functions, by looking for arguments inside
-   paranthesis.
-   Returned answer is always lower case.  Spaces, tabs, and newlines are all
-   removed from input string before searching.
-   Returns "x" if it doesnt find any other candidates.
-   
-   e.x., assert(find_variable_name("exp(2.0*log(x) - 1.1*log(x)^2)") == "x");
-   assert(find_variable_name("exp(2.0*log(E) - 1.1*log(E)^2)") == "e");
-   assert(find_variable_name("3.2*exp(energy)") == "energy");
-   assert(find_variable_name("") == "x");
-   assert(find_variable_name("1-energy") == "x"); //no (...), so defaults to "x"
-   */
-  static std::string find_variable_name( std::string eqn );
-  
-  std::mutex m_mutex;
-  std::string m_fcnstr;
-  std::string m_var_name;
-  
-  std::unique_ptr<mup::ParserX> m_parser;
-  std::unique_ptr<mup::Value> m_value;
-};//struct FormulaWrapper
-
-
-/*
- //ToDo: Add table to database to track which DRF to use for a given detector
- //      model, or serial number,
- struct DrfToUsePreference
- {
- Wt::Dbo::ptr<InterSpecUser> user;
- long int / <DetectorPeakResponse>  //Dbo::weak_ptr<DetectorPeakResponse>
- enum MatchType{ MatchByDetectorModel, MatchBySerialNumber };
- MatchType match_type;
- string detector_dentifier;
- 
- //could add info such as detector name, or whatever
- }
- */
 
 class DetectorPeakResponse
 {
@@ -163,8 +98,6 @@ class DetectorPeakResponse
    std::cout << det.intrinsicEfficiency(700.0f) << std::endl;    //0.219004
    std::cout << det.intrinsicEfficiency(800.0f) << std::endl;    //0.197117
   */
-
-  
   
 public:
   enum ResolutionFnctForm
@@ -316,6 +249,16 @@ public:
                                       const float eqnEnergyUnits,
                                       const float lowerEnergy,
                                       const float upperEnergy );
+  
+  /** Makes a callable funtion from the provided mathematical formula
+   
+   @param fcn Mathematical formula to evaluate.  Example: "exp( 1.2 + 3.2*ln(x) + -2.1*ln(x)^2 )"
+   @param isMeV Whether units are in MeV, or keV
+   
+   Throws exception if formula is invalid.
+   */
+  static std::function<float(float)> makeEfficiencyFunctionFromFormula( const std::string &formula,
+                                                                       const bool isMeV );
   
   //fromGadrasDefinition(...): accepts the Efficiency.csv and Detector.dat
   //  files from GADRAS to define the detector.
@@ -819,10 +762,11 @@ public:
     if( (a.setsValue() || a.isSchema()) && m_efficiencyFormula.size() )
     {
       const bool isMeV = (m_efficiencyEnergyUnits > 10.0f);
+      
       try
       {
-        std::shared_ptr<FormulaWrapper> expression = std::make_shared<FormulaWrapper>(m_efficiencyFormula,isMeV);
-        m_efficiencyFcn = [expression](float a) -> float { return expression->efficiency(a); };
+        m_efficiencyFcn
+            = DetectorPeakResponse::makeEfficiencyFunctionFromFormula( m_efficiencyFormula, isMeV);
       }catch( std::exception & )
       {
         //In principle this shouldnt happen - in practice it might

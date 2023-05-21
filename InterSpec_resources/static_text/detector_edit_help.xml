@@ -271,7 +271,27 @@ everywhere else.
                         An example input formula could be:
                         <div style="color:grey;margin-left:10px;">exp(-343.63 + 269.10*log(x) -83.80*ln(x)^2 + 13.00*pow(log(x),3) -1.01*log(x)^4)</div>
                      </div>
-                     <div style="margin-top:10px;">
+
+                     <div style="margin-top:20px;">
+                        As a shortcut, for efficiencies of the form
+                          <div style="color:grey;margin-left:10px;">exp(C<sub>0</sub> + C<sub>1</sub>*log(x) + C<sub>2</sub>*log(x)^2 + ... )</div>
+                        you can enter just the coefficients, and when you click the <b>Set</b> button, the equation will be tranformed for you.  This is useful when copy-pasting the coefficients from a spreadsheet.  The numbers can be seperated by commas, spaces, tabs, newlines, or semi-colons.  For example, if you enter
+<code>
+<pre>
+    -9.811E+00
+    -7.99E-01
+    4.618E-02
+    2.81E-03
+    -1.9432E-02
+    0.000E+00
+    0.000E+00
+</pre>
+</code>
+Then once you click the <b>Set</b> button, the text will be transformed into:
+<div style="color:grey;margin-left:10px;">exp( -9.811E+00 + -7.99E-01*log(x) + 4.618E-02*log(x)^2 + 2.81E-03*log(x)^3 + -1.9432E-02*log(x)^4 )</div>
+                     </div>
+
+                     <div style="margin-top:20px;">
                         After a formula is entered you may <u>click</u> the <b>Set</b> button to display the
 function on the chart to ensure the function is reasonable; the y-axis
 of this chart will always be set to display form 0 to 1.
