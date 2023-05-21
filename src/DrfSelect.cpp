@@ -2565,14 +2565,17 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //--- 4)  Manual
   //-------------------------------------
 
-  const char * const fcn = "exp(-343.63 + 269.10*log(x) -83.80*log(x)^2 "
-                          "+ 13.00*log(x)^3 -1.01*log(x)^4 + 0.03*log(x)^5)";
+  //const char * const fcn = "exp(-343.63 + 269.10*log(x) -83.80*log(x)^2 "
+  //"+ 13.00*log(x)^3 -1.01*log(x)^4 + 0.03*log(x)^5)";
+  
+  const char * const fcn = "Example: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n"
+  "Or equivalently: -9.8 -8.1 4.62E-02 ...";
+  
   const char *const manualdetname = "User Defined Detector";
   const char *const diamtxt = "2.2 cm";
-  const char *txt = "Manually define the efficiency of the detector,"
-                    " given the energy x.  The efficiency values should stay"
-                    " within 0.0~1.0 for the energy range of interest."
-                    " Click the question mark icon for more info.";
+  const char *txt = "Detector efficiency defined by a mathematical formula, given the energy x;"
+  " or you can enter the coefficients for the standard equation form."
+  " Click the question mark icon for more info.";
     
   WContainerWidget *formulaDiv = new WContainerWidget();
   WText *selfDefineLabel = new WText( txt, formulaDiv );
@@ -2609,7 +2612,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_detectorManualFunctionText->setRows(3);
   m_detectorManualFunctionText->setStyleClass("DrfSelectFunctionalFormText");
-  m_detectorManualFunctionText->setText(fcn);
+  //m_detectorManualFunctionText->setText(fcn);
   m_detectorManualFunctionText->setEmptyText(fcn);
   m_detectorManualFunctionText->setInline(false);
   m_detectorManualFunctionText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
@@ -2650,7 +2653,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDiameterText = new WLineEdit( cell );
   label->setBuddy( m_detectorManualDiameterText );
   m_detectorManualDiameterText->setValidator( distValidator );
-  m_detectorManualDiameterText->setText( diamtxt );
+  //m_detectorManualDiameterText->setText( diamtxt );
   m_detectorManualDiameterText->setEmptyText( diamtxt );
   m_detectorManualDiameterText->setValidator( distValidator );
   m_detectorManualDiameterText->blurred().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
