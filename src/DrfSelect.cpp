@@ -368,8 +368,8 @@ namespace
     assert( potential_coefs.size() == potential_coef_values.size() );
     assert( !potential_coefs.empty() && (last_non_zero_coef < potential_coefs.size()) );
       
-    potential_coefs.resize( last_non_zero_coef );
-    potential_coef_values.resize( last_non_zero_coef );
+    potential_coefs.resize( last_non_zero_coef + 1 );
+    potential_coef_values.resize( last_non_zero_coef + 1 );
     
     results.m_coefficients = potential_coef_values;
     
