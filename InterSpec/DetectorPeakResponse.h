@@ -66,6 +66,11 @@ namespace rapidxml
 /** TODO:
  - Add a "fixed" geometry option - then distances in like shielding/source display are not shown/used
  - Add a "setback" option
+    - There are a couple commented-out functions where this is started, but will need to
+      - Add `m_setback` member variable
+      - Modify the "DetectorPeakResponse" DB class - need to use DB upgrade mechanism
+      - Make sure that everywhere that gets a fractional solid angle, accounts for the setback.
+      - At the same time, add a "fixed geometry" option, where distances then disapear everywhere
  */
 
 
@@ -404,18 +409,31 @@ public:
   */
   std::function<float( float )> intrinsicEfficiencyFcn() const;
 
-  //fractionalSolidAngle(...) returns the fraction of gamma rays from a point
-  //  source that would strike the detector face of a detector with diameter
-  //  'detectorDiameter' at a distance from source of distance.
-  //  Note: For a detector diameter of 5cm, you might start running into numerical accuracy
-  //        issues for distances around 100 km.
+  /** Gives the fraction of gammas or x-rays from a point source that would strike the detector crystal.
+   
+   @param detector_diameter The diameter of the detector, in units of PhysicalUnits.
+   @param observation_distance The distance from the face of the detector, to the point source.
+          if the detector has a setback, you should add this to the distance of the detector face to
+          the point source
+   
+   Note: For a detector diameter of 5cm, you might start running into numerical accuracy
+   issues for distances around 100 km.
+   */
   static double fractionalSolidAngle( const double detector_diameter,
                                      const double observation_distance ) noexcept;
 
-
-  //fractionalSolidAngle(...): similar to the above, but takes into account
-  //  the source radius (assumed to be flat round plane); see pg 119 in Knoll
-  //  for details on approxiation used.
+  /** Returns approximate fraction of gammas or x-rays from a extended disk-source, that would strick
+   the detector crystal.
+ 
+   @param detector_diameter The diameter of the detector, in units of PhysicalUnits.
+   @param observation_distance The distance from the face of the detector, to the point source.
+          if the detector has a setback, you should add this to the distance of the detector face to
+          the point source
+   @param source_radius The radius of the flat, round plane, source, in units of PhysicalUnits.
+   
+   Note: Source is assumed to be flat round plane.
+   Note: see pg 119 in Knoll for details on approxiation used.
+   */
   static double fractionalSolidAngle( const double detector_diameter,
                                      const double observation_distance,
                                      const double source_radius );
@@ -475,6 +493,19 @@ public:
    Note: this limit is not currently enforced/used anywhere in InterSpec.
    */
   double upperEnergy() const;
+  
+  /** The distance the detector crystal is setback from the face of the detector.
+   
+   Must be zero, or a positive number.
+   */
+  //void setDetectorSetback( const double distance );
+  
+  /** The setback distance of the detector.
+   Distances are usually given from the face of the detector, to the item of interest,
+   however, there is typically a small distance between the face of the detector, and
+   the detection element surface - this is the setback distance.
+   */
+  //double detectorSetback() const;
   
   /** Updated the #m_lastUsedUtc member variable to current time.  Does not
       save to database.

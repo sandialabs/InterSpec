@@ -95,6 +95,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -131,6 +132,8 @@ const char * const DetectorDisplay::sm_noDetectorTxtMbl
 
 namespace
 {
+  const char * const ns_default_manual_det_name = "User Defined Detector";
+  
   void right_select_item( WMenu *menu, WMenuItem *item )
   {
     menu->select( item );
@@ -194,6 +197,199 @@ namespace
       return widget;
     }
   };//class UtcToLocalTimeDelegate
+  
+  
+  /** A struct to hold the info a user may copy/paste into formula field. */
+  struct CoefToFormulaInfo
+  {
+    bool m_valid_coefficients = false;   // Wether input is valid-ish user-specified coeficient list
+    string m_fcn;                        // Will be empty if `m_valid_coefficients` is false
+    vector<double> m_coefficients;
+    string m_det_name;                   // Empty if not user specified
+    double m_energy_units = 0.0;         // Will be zero if not specified, otherwise keV or MeV
+    string m_detector_setback;           // Empty if not user specified
+    string m_det_diam;                   // Empty if not user specified
+    string m_source_to_crystal_distance; // Empty if not user specified
+    float m_lower_energy = 0.0f;         // Will be zero if not user-specified
+    float m_upper_energy = 0.0f;         // Will be zero if not user-specified
+    bool m_fixed_geom = false;           // Currently not used, but set if known
+  };//struct CoefToFormulaInfo
+  
+  
+  /** Function to check if someone copy-pasted in coefficiecnts from a spreadsheet, instead
+   of entering a mathematical formula.  If this is the case, we will assume the standard functional form
+   f(x) = exp( C_0 + C_1*log(x)  + C_2*log(x)^2 + ... ).
+   
+   Returns true if coefficents were entered, and also changes the input string to have the proper
+   mathematical function.
+   */
+  CoefToFormulaInfo check_if_coef_for_formula( const string &fcn )
+  {
+    CoefToFormulaInfo results;
+    
+    //  We will allow space tab, comma, semicolon, newline seperators
+    vector<string> potential_coefs;
+    SpecUtils::split( potential_coefs, fcn, ",\t; \n\r" );
+    
+    // There is an Excell sheet that users could copy-paste an entire column of
+    //  data from, that would like like:
+    //  { `visible?`, `Det. Name`, `cal. desc`, `Comment`, `far-field/fixed-geom`, `Det Rad(cm)`,
+    //    `Source to det dist (cm)`, `Det Setback (cm)`, `Det Area`, `Source to crystal face`,
+    //   `Lower Energy`, `Upper Energy`, `keV/MeV`, coefficients... }
+    
+    vector<string> add_info;
+    for( size_t i = 0; i < potential_coefs.size(); ++i )
+    {
+      const bool is_keV = SpecUtils::iequals_ascii(potential_coefs[i], "keV");
+      const bool is_MeV = SpecUtils::iequals_ascii(potential_coefs[i], "MeV");
+      
+      if( is_keV || is_MeV )
+      {
+        const auto first_coef_iter = begin(potential_coefs) + i;
+        add_info.insert( end(add_info), begin(potential_coefs), first_coef_iter );
+        potential_coefs.erase( begin(potential_coefs), first_coef_iter );
+        
+        // We *could* have the first entry as Yes/No, to indicate if DRF is visible or not;
+        //  we will discard this entry.
+        if( !add_info.empty()
+            && (SpecUtils::iequals_ascii(add_info[0], "Yes")
+                || SpecUtils::iequals_ascii(add_info[0], "No")) )
+        {
+          add_info.erase( begin(add_info) );
+        }//
+        
+        // Now find the next "Yes" or "No" - which indicates if it is a far-field point source
+        //   calibration, or if "No", then a fixed geometery DRF
+        //  Before it, the name, source description, or comments can all have delimeters in them,
+        //  or be empty, so we dont know how to use this info super easily.
+        for( size_t i = 0; i < add_info.size(); ++i )
+        {
+          if( (SpecUtils::iequals_ascii(add_info[i], "Yes")
+               || SpecUtils::iequals_ascii(add_info[i], "No")) )
+          {
+            float dummy;
+            if( (i > 0) && !add_info[0].empty() &&
+               !SpecUtils::parse_float(add_info[0].c_str(), add_info[0].size(), dummy) )
+            {
+              results.m_det_name = add_info[0];
+            }
+            
+            add_info.erase( begin(add_info), begin(add_info) + i );
+            break;
+          }//
+        }
+        
+        break;
+      }//if( is_keV || is_MeV )
+    }//for( int i = 0; i < static_cast<int>(potential_coefs.size()); ++i )
+    
+    
+    if( (add_info.size() == 9)
+       && (SpecUtils::iequals_ascii( add_info[0], "No" )
+           || SpecUtils::iequals_ascii( add_info[0], "Yes" )) )
+    {
+      results.m_fixed_geom = SpecUtils::iequals_ascii( add_info[0], "No" );
+      
+      double det_radius = 0, src_to_det_face = 0, det_setback = 0;
+      double src_to_crystal = 0, low_energy = 0, up_energy = 0;
+      
+      if( SpecUtils::parse_double(add_info[1].c_str(), add_info[1].size(), det_radius) )
+        results.m_det_diam = PhysicalUnits::printToBestLengthUnits( 2.0 * det_radius * PhysicalUnits::cm, 5 );
+      
+      if( SpecUtils::parse_double(add_info[2].c_str(), add_info[2].size(), src_to_det_face) )
+        src_to_det_face *= PhysicalUnits::cm;
+      
+      // 3 - source radius
+      
+      if( SpecUtils::parse_double(add_info[4].c_str(), add_info[4].size(), det_setback) )
+        results.m_detector_setback = add_info[4] + " cm";
+      
+      // 5 - Detector Area
+      
+      if( SpecUtils::parse_double(add_info[6].c_str(), add_info[6].size(), src_to_crystal) )
+        results.m_source_to_crystal_distance = add_info[6] + " cm";
+      
+      if( SpecUtils::parse_double(add_info[7].c_str(), add_info[7].size(), low_energy) )
+        results.m_lower_energy = low_energy * PhysicalUnits::keV;
+      
+      if( SpecUtils::parse_double(add_info[8].c_str(), add_info[8].size(), up_energy) )
+        results.m_upper_energy = up_energy * PhysicalUnits::keV;
+      
+      if( low_energy >= up_energy )
+        results.m_lower_energy = results.m_upper_energy = 0.0;
+    }//if( add_info_fields.size() == 12 )
+    
+    size_t last_non_zero_coef = 0;
+    vector<double> potential_coef_values;
+    try
+    {
+      for( auto iter = begin(potential_coefs); iter != end(potential_coefs); ++iter )
+      {
+        const bool is_keV = SpecUtils::iequals_ascii(*iter, "keV");
+        const bool is_MeV = SpecUtils::iequals_ascii(*iter, "MeV");
+        if( is_keV || is_MeV )
+        {
+          results.m_energy_units = is_keV ? PhysicalUnits::keV : PhysicalUnits::MeV;
+          potential_coefs.erase( iter );
+          break;
+        }
+      }//for( size_t i = 0; i < potential_coefs.size(); ++i )
+      
+      
+      for( size_t i = 0; i < potential_coefs.size(); ++i )
+      {
+        const string &txt = potential_coefs[i];
+        size_t idx = 0;
+        const double val = stod( txt, &idx ); //throws exception if invalid float
+        
+        // Dont accept inf, NaN, or allow trailing characters
+        if( IsInf(val) || IsNan(val) || (idx != txt.size()) )
+          throw exception();
+        
+        potential_coef_values.push_back( val );
+        if( val != 0.0 )
+          last_non_zero_coef = i;
+      }//
+    }catch( std::exception & )
+    {
+      // If we're here, its an invalid double, or there where characters after the number
+      results.m_valid_coefficients = false;
+      return results;
+    }//try catch to parse entered text as exactly a list of coefficecnts
+    
+    
+    if( (potential_coef_values.size() <= 1) || (last_non_zero_coef <= 1) )
+    {
+      results.m_valid_coefficients = false;
+      return results;
+    }
+    
+    // If we are here, we are quite confident the user entered a series of coeficients.
+    assert( potential_coefs.size() == potential_coef_values.size() );
+    assert( !potential_coefs.empty() && (last_non_zero_coef < potential_coefs.size()) );
+      
+    potential_coefs.resize( last_non_zero_coef );
+    potential_coef_values.resize( last_non_zero_coef );
+    
+    results.m_coefficients = potential_coef_values;
+    
+    results.m_fcn = "";
+    
+    for( size_t i = 0; i < potential_coefs.size(); ++i )
+    {
+      if( potential_coef_values[i] == 0.0 )
+        continue;
+        
+      const string mfunc = (i > 0) ? "*log(x)" : "";
+      const string power = (i > 1) ? ("^" + to_string(i)) : string();
+      results.m_fcn += (results.m_fcn.empty() ? "exp( " : " + ") + potential_coefs[i] + mfunc + power;
+    }
+    results.m_fcn += results.m_fcn.empty() ? "" : " )";
+    
+    results.m_valid_coefficients = true;
+    
+    return results;
+  }//bool check_if_coef_for_formula( string &fcn )
 
   
   //Allow the file to be comma or tab delimited, but if an individual field
@@ -2365,6 +2561,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_detectorManualDiameterText( nullptr ),
     m_detectorManualDistText( nullptr ),
     m_detectorManualDistLabel( nullptr ),
+    m_detectorManualMinEnergy( nullptr ),
+    m_detectorManualMaxEnergy( nullptr ),
     m_manualSetButton( nullptr ),
     m_gadrasDetSelect( nullptr ),
     m_relEffSelect( nullptr ),
@@ -2429,6 +2627,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
   distValidator->setInvalidBlankText( "0.0 cm" );
+  distValidator->setMandatory( true );
   
   WContainerWidget *lowerContent = new WContainerWidget();
   mainLayout->addWidget( lowerContent, 1, 0 );
@@ -2565,13 +2764,9 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //--- 4)  Manual
   //-------------------------------------
 
-  //const char * const fcn = "exp(-343.63 + 269.10*log(x) -83.80*log(x)^2 "
-  //"+ 13.00*log(x)^3 -1.01*log(x)^4 + 0.03*log(x)^5)";
-  
   const char * const fcn = "Example: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n"
   "Or equivalently: -9.8 -8.1 4.62E-02 ...";
   
-  const char *const manualdetname = "User Defined Detector";
   const char *const diamtxt = "2.2 cm";
   const char *txt = "Detector efficiency defined by a mathematical formula, given the energy x;"
   " or you can enter the coefficients for the standard equation form."
@@ -2597,7 +2792,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 #endif
   
   m_detectorManualFunctionName->setStyleClass("DrfSelectFunctionalFormText");
-  m_detectorManualFunctionName->setText( manualdetname );
+  m_detectorManualFunctionName->setText( ns_default_manual_det_name );
   m_detectorManualFunctionName->setEmptyText("Unique Detector Name");
   m_detectorManualFunctionName->setInline(false);
   m_detectorManualFunctionName->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
@@ -2648,7 +2843,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 #endif
   
   cell = formulaTable->elementAt( 4, 0 );
-  label = new WLabel("Detector diameter ", cell );
+  label = new WLabel("Detector diam.", cell );
   cell = formulaTable->elementAt( 4, 1 );
   m_detectorManualDiameterText = new WLineEdit( cell );
   label->setBuddy( m_detectorManualDiameterText );
@@ -2658,6 +2853,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDiameterText->setValidator( distValidator );
   m_detectorManualDiameterText->blurred().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_detectorManualDiameterText->enterPressed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualDiameterText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
   m_detectorManualDiameterText->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -2665,7 +2861,38 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDiameterText->setAttributeValue( "spellcheck", "off" );
 #endif
   
+  
   cell = formulaTable->elementAt( 5, 0 );
+  label = new WLabel("Energy Range", cell );
+  
+  cell = formulaTable->elementAt( 5, 1 );
+  label = new WLabel("Min.", cell );
+  m_detectorManualMinEnergy = new NativeFloatSpinBox( cell );
+  m_detectorManualMinEnergy->setPlaceholderText( "(optional)" );
+  m_detectorManualMinEnergy->setRange( 0, 15000 );
+  m_detectorManualMinEnergy->setSpinnerHidden( true );
+  m_detectorManualMinEnergy->setWidth( WLength(9,Wt::WLength::FontEx) );
+  m_detectorManualMinEnergy->setText( "" );
+  label->setBuddy( m_detectorManualMinEnergy );
+  m_detectorManualMinEnergy->valueChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  
+  
+  label = new WLabel("Max.", cell );
+  label->setMargin( 20, Wt::Side::Left );
+  m_detectorManualMaxEnergy = new NativeFloatSpinBox( cell );
+  m_detectorManualMaxEnergy->setPlaceholderText( "(optional)" );
+  m_detectorManualMaxEnergy->setRange( 0, 15000 );
+  m_detectorManualMaxEnergy->setSpinnerHidden( true );
+  m_detectorManualMaxEnergy->setWidth( WLength(9,Wt::WLength::FontEx) );
+  m_detectorManualMaxEnergy->setText( "" );
+  label->setBuddy( m_detectorManualMaxEnergy );
+  label = new WLabel("(keV)", cell );
+  label->setMargin( 10, Wt::Side::Left );
+  
+  m_detectorManualMaxEnergy->valueChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  
+  
+  cell = formulaTable->elementAt( 6, 0 );
   cell->setColumnSpan( 2 );
   m_absOrIntrinsicGroup = new WButtonGroup( cell );
   button = new WRadioButton( "Intrinsic", cell );
@@ -2687,11 +2914,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDistText->hide();
   m_detectorManualDistText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
+  
   m_manualSetButton = new WPushButton( "Set", cell );
   //m_manualSetButton->setInline(false);
   m_manualSetButton->setFloatSide( Wt::Right );
   //selfDefineLayout->setColumnStretch( 1, 1 );
-  m_manualSetButton->clicked().connect(boost::bind(&DrfSelect::setDefineDetector, this));
+  m_manualSetButton->clicked().connect(boost::bind(&DrfSelect::setFormulaDefineDetector, this));
     
   //-------------------------------------
   //--- 5)  Recent
@@ -3484,107 +3712,166 @@ void DrfSelect::setDetector( std::shared_ptr<DetectorPeakResponse> det )
 void DrfSelect::verifyManualDefinition()
 { //if we change anything in the text fields, we should disable Accept
   setAcceptButtonEnabled( false );
-  m_manualSetButton->enable();
+  
+  bool valid = true;
+  float lowerEnergy = 0.0f, upperEnergy = 0.0f;
+  
+  if( !m_detectorManualMinEnergy->text().empty()
+     && (m_detectorManualMinEnergy->validate() == WValidator::State::Valid) )
+  {
+    lowerEnergy = m_detectorManualMinEnergy->value();
+  }else if( !m_detectorManualMinEnergy->text().empty() )
+  {
+    valid = false;
+  }
+  
+  if( !m_detectorManualMaxEnergy->text().empty()
+     && (m_detectorManualMaxEnergy->validate() == WValidator::State::Valid) )
+  {
+    upperEnergy = m_detectorManualMaxEnergy->value();
+  }else if( !m_detectorManualMaxEnergy->text().empty() )
+  {
+    valid = false;
+  }
+  
+  
+  string fcn_txt = m_detectorManualFunctionText->text().toUTF8();
+  
+  const CoefToFormulaInfo coef_formula_info = check_if_coef_for_formula( fcn_txt );
+  if( coef_formula_info.m_valid_coefficients )
+  {
+    fcn_txt = coef_formula_info.m_fcn;
+    
+    if( coef_formula_info.m_energy_units == PhysicalUnits::keV )
+      m_eqnEnergyGroup->setSelectedButtonIndex( 0 );
+    else if( coef_formula_info.m_energy_units == PhysicalUnits::MeV )
+      m_eqnEnergyGroup->setSelectedButtonIndex( 1 );
+    
+    if( coef_formula_info.m_upper_energy > coef_formula_info.m_lower_energy )
+    {
+      if( m_detectorManualMinEnergy->text().empty() )
+        m_detectorManualMinEnergy->setValue( coef_formula_info.m_lower_energy );
+      
+      if( m_detectorManualMaxEnergy->text().empty() )
+        m_detectorManualMaxEnergy->setValue( coef_formula_info.m_upper_energy );
+    }//if( coef_formula_info.m_upper_energy > coef_formula_info.m_lower_energy )
+    
+    if( !coef_formula_info.m_det_diam.empty()
+       && (m_detectorManualDiameterText->text().empty()
+           || (m_detectorManualDiameterText->text().toUTF8() == "2.2 cm") ) )
+    {
+      m_detectorManualDiameterText->setText( coef_formula_info.m_det_diam );
+    }
+    
+    if( !coef_formula_info.m_source_to_crystal_distance.empty()
+       && (m_detectorManualDistText->isHidden() || m_detectorManualDistText->text().empty() ) )
+    {
+      m_absOrIntrinsicGroup->setSelectedButtonIndex(1);
+      m_detectorManualDistText->setText( coef_formula_info.m_source_to_crystal_distance );
+    }
+    
+    const string prev_det_name = m_detectorManualFunctionName->text().toUTF8();
+    if( !coef_formula_info.m_det_name.empty()
+       && (prev_det_name.empty() || (prev_det_name == ns_default_manual_det_name)) )
+    {
+      m_detectorManualFunctionName->setText( coef_formula_info.m_det_name );
+    }
+  }//if( user_entered_coefs )
+  
   
   const bool hideAbs = (m_absOrIntrinsicGroup->checkedId() == 0);
   m_detectorManualDistLabel->setHidden( hideAbs );
   m_detectorManualDistText->setHidden( hideAbs );
-
-/*
+  
+  if( !hideAbs )
+  {
+    if( m_detectorManualDistText->text().empty()
+       || (m_detectorManualDistText->validate() != WValidator::State::Valid) )
+      valid = false;
+  }//if( !hideAbs )
+  
+  if( m_detectorManualDiameterText->validate() != WValidator::State::Valid )
+    valid = false;
+  
+  
+  double det_diam = 5.08*PhysicalUnits::cm;
+  
   try
   {
-    string txt = m_detectorManualDiameterText->text().toUTF8();
-    const float diam = (float)PhysicalUnits::stringToDistance( txt );
-    if( m_absOrIntrinsicGroup->checkedId() != 0 )
-      PhysicalUnits::stringToDistance( m_detectorManualDistText->text().toUTF8() );
-    txt = m_detectorManualFunctionText->text().toUTF8();
-    
-    std::shared_ptr<DetectorPeakResponse> detec
-                  = std::make_shared<DetectorPeakResponse>(
-                                  new DetectorPeakResponse( "temp", "temp ") );
-    
-    detec->setIntrinsicEfficiencyFormula( txt, diam, 1.0f );
+    const string diamtxt = m_detectorManualDiameterText->text().toUTF8();
+    det_diam = PhysicalUnits::stringToDistance( diamtxt );
   }catch( std::exception & )
   {
-    m_manualSetButton->disable();
-  }//try / catch
-*/
-} //verifyManualDefinition
-
-
-void DrfSelect::setDefineDetector()
-{
-  std::shared_ptr<DetectorPeakResponse> detec = detector();
-//  if( !!detec &&
-//      detec->efficiencySource()==DetectorPeakResponse::kUserEfficiencyEquationSpecified )
-//  {
-//    m_absOrIntrinsicGroup->setSelectedButtonIndex( 0 );
-//    m_detectorManualDistLabel->hide();
-//    m_detectorManualDistText->hide();
-//    detec->description();
-//    const float diam = detec->detectorDiameter();
-//    const string diamstr = PhysicalUnits::printToBestLengthUnits( diam );
-//    m_detectorManualFunctionText->setText( detec->efficiencyFormula() );
-//    m_detectorManualFunctionName->setText( detec->name() );
-//    m_detectorManualDiameterText->setText( diamstr );
-//    m_detectorManualDistText->setText( "0" );
-//  
-//    setAcceptButtonEnabled( true );
-//    m_manualSetButton->disable();
-//    return;
-//  }//if(...)
+    valid = false;
+  }
   
+  if( m_absOrIntrinsicGroup->checkedId() != 0 )
+  {
+    double dist = 1*PhysicalUnits::meter;
+    try
+    {
+      const string disttxt = m_detectorManualDistText->text().narrow();
+      dist = static_cast<float>( PhysicalUnits::stringToDistance( disttxt ) );
+      if( dist < 0.001*PhysicalUnits::cm )
+        throw exception();
+    }catch( std::exception & )
+    {
+      valid = false;
+      if( !m_detectorManualDistText->hasStyleClass( "Wt-invalid" ) )
+        m_detectorManualDistText->addStyleClass( "Wt-invalid" );
+    }//try / catch
+    
+    const double gfactor = DetectorPeakResponse::fractionalSolidAngle( det_diam, dist );
+    if( !fcn_txt.empty() )
+      fcn_txt = std::to_string(1.0/gfactor) + "*(" + fcn_txt + ")";
+  }//if( absolute eff )
+  
+  const float energyUnits = static_cast<float>( m_eqnEnergyGroup->checkedId()==0
+                                               ? PhysicalUnits::keV : PhysicalUnits::MeV);
+  
+  if( upperEnergy <= lowerEnergy )
+    lowerEnergy = upperEnergy = 0.0f;
+
+  try
+  {
+    if( fcn_txt.empty() )
+      throw exception();
+    
+    DetectorPeakResponse detec( "temp", "temp " );
+    detec.setIntrinsicEfficiencyFormula( fcn_txt, static_cast<float>(det_diam),
+                                        energyUnits, lowerEnergy, upperEnergy );
+    
+    if( m_detectorManualFunctionText->hasStyleClass("Wt-invalid") )
+      m_detectorManualFunctionText->removeStyleClass( "Wt-invalid" );
+  }catch( std::exception & )
+  {
+    valid = false;
+    if( m_detectorManualFunctionText->text().empty() )
+    {
+      if( m_detectorManualFunctionText->hasStyleClass("Wt-invalid") )
+        m_detectorManualFunctionText->removeStyleClass( "Wt-invalid" );
+    }else
+    {
+      if( !m_detectorManualFunctionText->hasStyleClass("Wt-invalid") )
+        m_detectorManualFunctionText->addStyleClass( "Wt-invalid" );
+    }
+  }//try / catch
+
+  m_manualSetButton->setEnabled( valid );
+}//verifyManualDefinition()
+
+
+void DrfSelect::setFormulaDefineDetector()
+{
   string fcn = m_detectorManualFunctionText->text().narrow();
   
-  // Check if someone is copy-pasting in coefficiecnts from a spreadsheet
-  //  We will allow space tab, comma, semicolon, newline seperators, but each entry
-  //  must be
-  vector<string> potential_coefs;
-  SpecUtils::split( potential_coefs, fcn, ",\t; \n\r" );
-  vector<double> potential_coef_values;
-  size_t last_non_zero_coef = 0;
-  try
+  float coef_units = 0.0;
+  const CoefToFormulaInfo coef_formula_info = check_if_coef_for_formula( fcn );
+  if( coef_formula_info.m_valid_coefficients )
   {
-    for( size_t i = 0; i < potential_coefs.size(); ++i )
-    {
-      const string &txt = potential_coefs[i];
-      size_t idx = 0;
-      const double val = stod( txt, &idx ); //throws exception if invalid float
-      
-      // Dont accept inf, NaN, or allow trailing characters
-      if( IsInf(val) || IsNan(val) || (idx != txt.size()) )
-        throw exception();
-      potential_coef_values.push_back( val );
-      if( val != 0.0 )
-        last_non_zero_coef = i;
-    }//
-  }catch( std::exception & )
-  {
-    // If we're here, its an invalid double, or there where characters after the number
-    potential_coef_values.clear();
-  }//try catch to parse entered text as exactly a list of coefficecnts
-  
-  if( (potential_coef_values.size() > 1) && (last_non_zero_coef > 1) )
-  {
-    assert( potential_coefs.size() == potential_coef_values.size() );
-    assert( !potential_coefs.empty() && (last_non_zero_coef < potential_coefs.size()) );
-    
-    fcn = "";
-    
-    for( size_t i = 0; i < potential_coefs.size(); ++i )
-    {
-      if( potential_coef_values[i] == 0.0 )
-        continue;
-      
-      const string mfunc = (i > 0) ? "*log(x)" : "";
-      const string power = (i > 1) ? ("^" + to_string(i)) : string();
-      fcn += (fcn.empty() ? "exp( " : " + ") + potential_coefs[i] + mfunc + power;
-    }
-    fcn += fcn.empty() ? "" : " )";
-    
+    fcn = coef_formula_info.m_fcn;
     m_detectorManualFunctionText->setText( WString::fromUTF8(fcn) );
-  }//if( is_all_coeffs )
-  
+  }//if( check_if_coef_for_formula(fcn, coef_units) )
   
   const string name = m_detectorManualFunctionName->text().toUTF8();
   string descr = m_detectorManualDescription->text().toUTF8();
@@ -3596,12 +3883,12 @@ void DrfSelect::setDefineDetector()
     m_detectorManualDescription->setText( descr );
   }//if( descr.empty() )
 
-  detec.reset( new DetectorPeakResponse( name, descr ) );
-
+  shared_ptr<DetectorPeakResponse> detec = make_shared<DetectorPeakResponse>( name, descr );
+  
   try
   {
     const string diamtxt = m_detectorManualDiameterText->text().narrow();
-    const float det_diam = (float)PhysicalUnits::stringToDistance( diamtxt );
+    const double det_diam = PhysicalUnits::stringToDistance( diamtxt );
     if( det_diam < 0.0001f )
       throw runtime_error( "Detector diameters must be positive" );
     
@@ -3613,7 +3900,7 @@ void DrfSelect::setDefineDetector()
         throw runtime_error( "Distance must be positive for absolute efficiencies" );
       
       
-      const float gfactor = DetectorPeakResponse::fractionalSolidAngle(
+      const double gfactor = DetectorPeakResponse::fractionalSolidAngle(
                                                               det_diam, dist );
         
       fcn = std::to_string(1.0/gfactor) + "*(" + fcn + ")";
@@ -3623,7 +3910,37 @@ void DrfSelect::setDefineDetector()
               = static_cast<float>(m_eqnEnergyGroup->checkedId()==0
                                     ? PhysicalUnits::keV : PhysicalUnits::MeV);
     
-    detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits, 0.0f, 0.0f );
+    float minEnergy = 0.0f, maxEnergy = 0.0f;
+    if( !m_detectorManualMinEnergy->text().empty()
+        && (m_detectorManualMinEnergy->validate() == WValidator::State::Valid) )
+      minEnergy = m_detectorManualMinEnergy->value();
+    
+    if( !m_detectorManualMaxEnergy->text().empty()
+        && (m_detectorManualMaxEnergy->validate() == WValidator::State::Valid) )
+      maxEnergy = m_detectorManualMaxEnergy->value();
+    
+    if( maxEnergy < minEnergy )
+    {
+      minEnergy = maxEnergy = 0.0f;
+      m_detectorManualMinEnergy->setValueText( "" );
+      m_detectorManualMaxEnergy->setValueText( "" );
+      passMessage( "Detector min. energy was greater than max. energy; ignoring energy range.",
+                  WarningWidget::WarningMsgHigh );
+    }//if( maxEnergy < minEnergy )
+    
+    if( m_detectorManualDiameterText->hasStyleClass("Wt-invalid") )
+      m_detectorManualDiameterText->removeStyleClass( "Wt-invalid" );
+    
+    try
+    {
+      detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits, minEnergy, maxEnergy );
+    }catch( std::exception &e )
+    {
+      if( !fcn.empty() && !m_detectorManualDiameterText->hasStyleClass("Wt-invalid") )
+        m_detectorManualDiameterText->addStyleClass( "Wt-invalid" );
+      throw;
+    }
+    
     detec->setDrfSource( DetectorPeakResponse::DrfSource::UserSpecifiedFormulaDrf );
     
 //#if( PERFORM_DEVELOPER_CHECKS )
@@ -3646,7 +3963,7 @@ void DrfSelect::setDefineDetector()
   setAcceptButtonEnabled( true );
 
   emitChangedSignal();
-} // setDefineDetector(const std::string fcn)
+}//setFormulaDefineDetector(const std::string fcn)
 
 
 
@@ -3680,7 +3997,7 @@ void DrfSelect::selectButton( WStackedWidget *stack,
         break;
         
       case 3:
-        setDefineDetector();
+        setFormulaDefineDetector();
         break;
         
       case 4:
