@@ -476,7 +476,14 @@ public:
   //This will make it so the effective live time of the spectrum will be
   //  'sf' times the original live time of the spectrum.
   void setDisplayScaleFactor( const double sf,
-                              const SpecUtils::SpectrumType spectrum_type );
+                              const SpecUtils::SpectrumType spectrum_type,
+                             const bool addUndoRedoStep );
+  
+  /** This function is called when the user slides the slider on the spectrum, through the
+   D3SpectrumDisplayDiv::yAxisScaled() signal.
+   */
+  void handleDisplayScaleFactorChangeFromSpectrum( const double sf, const double prevSF,
+                                                  const SpecUtils::SpectrumType spec_type );
   
   //changeDisplayedSampleNums(...): called by both changeTimeRange() and
   //  sampleNumbersAddded() when the user wants to change displayed sample numbers
@@ -948,8 +955,13 @@ public:
   int getCurrentStateID() { return m_currentStateID; }
 #endif
   
+  /** Function to add undo/redo step for when the user changes x-axis range of spectrum. */
+  void handleSpectrumChartXRangeChange( const double xmin, const double xmax,
+                                       const double oldXmin, const double oldXmax );
+  
   //Peak finding functions
   void searchForSinglePeak( const double x );
+  
   
   /** Function to call when the automated search for peaks (throughout the
       entire spectrum) begins.  Currently all this function does is disable the

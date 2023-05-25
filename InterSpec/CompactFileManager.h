@@ -88,7 +88,9 @@ public:
   /** Function called when the user scales a chart.  Updates displayed numbers,
    and shows "Normalize" button.
    */
-  void handleSpectrumScale( const double scale, SpecUtils::SpectrumType spectrum_type );
+  void handleSpectrumScale( const double scale,
+                           const double prev_scale,
+                           SpecUtils::SpectrumType spectrum_type );
   
 protected:
   

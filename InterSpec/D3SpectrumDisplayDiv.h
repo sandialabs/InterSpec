@@ -105,7 +105,7 @@ public:
              double /*window_xpx*/,
              double /*window_ypx*/> &dragCreateRoiUpdate();
   
-  Wt::Signal<double,SpecUtils::SpectrumType> &yAxisScaled();
+  Wt::Signal<double/*new SF*/, double/*old SF*/, SpecUtils::SpectrumType> &yAxisScaled();
   
   
   /** Performs the work for the primary spectrum display in InterSpec that causes the peaks
@@ -208,7 +208,7 @@ public:
   void showHistogramIntegralsInLegend( const bool show );
 
   
-  Wt::Signal<double,double> &xRangeChanged();
+  Wt::Signal<double,double,double,double> &xRangeChanged();
   Wt::Signal<double,double> &rightMouseDragg();
   
   Wt::Signal<double,double> &shiftAltKeyDragged();
@@ -399,7 +399,7 @@ protected:
   //  where x is in energy, and y is in counts.
   Wt::Signal<> m_legendEnabledSignal;
   Wt::Signal<> m_legendDisabledSignal;
-  Wt::Signal<double/*xlow*/,double/*xhigh*/> m_xRangeChanged;
+  Wt::Signal<double/*xlow*/,double/*xhigh*/,double/*old low*/,double/*old high*/> m_xRangeChanged;
   Wt::Signal<double,double> m_controlKeyDragg;
   Wt::Signal<double,double> m_shiftKeyDragg;
   Wt::Signal<double,double> m_shiftAltKeyDragg;
@@ -422,7 +422,7 @@ protected:
              double /*window_xpx*/,
              double /*window_ypx*/> m_dragCreateRoi;
   
-  Wt::Signal<double,SpecUtils::SpectrumType> m_yAxisScaled;
+  Wt::Signal<double /*new SF*/, double /*prev SF*/,SpecUtils::SpectrumType> m_yAxisScaled;
   
   // Signal Callbacks
   void chartShiftKeyDragCallback( double x0, double x1 );

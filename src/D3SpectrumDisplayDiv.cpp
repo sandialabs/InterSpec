@@ -571,7 +571,7 @@ Wt::Signal<double, double, int, bool, double, double> &D3SpectrumDisplayDiv::dra
 }
 
 
-Wt::Signal<double,SpecUtils::SpectrumType> &D3SpectrumDisplayDiv::yAxisScaled()
+Wt::Signal<double,double,SpecUtils::SpectrumType> &D3SpectrumDisplayDiv::yAxisScaled()
 {
   return m_yAxisScaled;
 }
@@ -1122,7 +1122,7 @@ void D3SpectrumDisplayDiv::setYAxisTitle( const std::string &title )
 
 
 
-Wt::Signal<double,double> &D3SpectrumDisplayDiv::xRangeChanged()
+Wt::Signal<double,double,double,double> &D3SpectrumDisplayDiv::xRangeChanged()
 {
   return m_xRangeChanged;
 }//xRangeChanged()
@@ -2255,17 +2255,20 @@ void D3SpectrumDisplayDiv::yAxisScaled( const double scale, const std::string &s
 
   //Dont call D3SpectrumDisplayDiv::setDisplayScaleFactor(...) since we dont
   //  have to re-load data to client, but we should keep all the c++ up to date.
-  
+  double previous_scale = 1.0;
   if( spectrum == "FOREGROUND" )
   {
     type = SpecUtils::SpectrumType::Foreground;
+    previous_scale = 1.0;
   }else if( spectrum == "BACKGROUND" )
   {
     type = SpecUtils::SpectrumType::Background;
+    previous_scale = m_model->backgroundScaledBy();
     m_model->setBackgroundDataScaleFactor( scale );
   }else if( spectrum == "SECONDARY" )
   {
     type = SpecUtils::SpectrumType::SecondForeground;
+    previous_scale = m_model->secondDataScaledBy();
     m_model->setSecondDataScaleFactor( scale );
   }else
   {
@@ -2274,19 +2277,25 @@ void D3SpectrumDisplayDiv::yAxisScaled( const double scale, const std::string &s
     return;
   }
   
-  m_yAxisScaled.emit(scale,type);
+  // Add Undo/Redo step here.
+  
+  m_yAxisScaled.emit( scale, previous_scale, type );
 }//void yAxisScaled( const double scale, const std::string &spectrum )
 
 
 
 void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1, double chart_width_px, double chart_height_px )
 {
-  if( fabs(m_xAxisMinimum-x0)<0.0001 && fabs(m_xAxisMaximum-x1)<0.0001
-      && fabs(m_chartWidthPx-chart_width_px)<0.0001 && fabs(m_chartHeightPx-chart_height_px)<0.0001 )
+  if( (fabs(m_xAxisMinimum - x0) < 0.001)
+     && (fabs(m_xAxisMaximum - x1) < 0.001)
+     && (fabs(m_chartWidthPx - chart_width_px) < 0.001)
+     && (fabs(m_chartHeightPx - chart_height_px) < 0.001) )
   {
     cout << "No appreciable change in x-range or chart pixel, not emitting" << endl;
     return;
   }
+  
+  const double oldXmin = m_xAxisMinimum, oldXmax = m_xAxisMaximum;
   
   // cout << "chartXRangeChangedCallback{" << x0 << "," << x1 << "," << chart_width_px << "," << chart_height_px << "}" << endl;
   m_xAxisMinimum = x0;
@@ -2294,7 +2303,7 @@ void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1, dou
   m_chartWidthPx = chart_width_px;
   m_chartHeightPx = chart_height_px;
   
-  m_xRangeChanged.emit( x0, x1 );
+  m_xRangeChanged.emit( x0, x1, oldXmin, oldXmax );
 }//void D3SpectrumDisplayDiv::chartXRangeChangedCallback(...)
 
 D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()

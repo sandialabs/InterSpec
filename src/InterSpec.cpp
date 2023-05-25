@@ -836,7 +836,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
     
     m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
-                                                   boost::placeholders::_1, boost::placeholders::_2 ) );
+                                                   boost::placeholders::_1,
+                                                   boost::placeholders::_2,
+                                                   boost::placeholders::_3 ) );
     
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
     
@@ -1072,7 +1074,29 @@ InterSpec::InterSpec( WContainerWidget *parent )
                                                      boost::placeholders::_2 ) );
   m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this,
                                                      boost::placeholders::_1 ) );
-
+  m_spectrum->xRangeChanged().connect( boost::bind( &InterSpec::handleSpectrumChartXRangeChange, this,
+                                                     boost::placeholders::_1,
+                                                   boost::placeholders::_2,
+                                                   boost::placeholders::_3,
+                                                   boost::placeholders::_4) );
+      
+  m_spectrum->yAxisScaled().connect(
+          boost::bind( &InterSpec::handleDisplayScaleFactorChangeFromSpectrum, this,
+                      boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3 ) );
+    
+  m_spectrum->legendDisabled().connect( std::bind([this](){
+    if( m_undo && !m_undo->isInUndoOrRedo() )
+      m_undo->addUndoRedoStep( [this](){ m_spectrum->enableLegend(); },
+                               [this](){ m_spectrum->disableLegend(); }, "Hide spectrum legend." );
+    } ) );
+    
+  m_spectrum->legendEnabled().connect( std::bind([this](){
+    if( m_undo && !m_undo->isInUndoOrRedo() )
+      m_undo->addUndoRedoStep( [this](){ m_spectrum->disableLegend(); },
+                               [this](){ m_spectrum->enableLegend(); }, "Show spectrum legend." );
+    } ) );
+    
+    
   m_timeSeries->setHidden( true );
   m_chartResizer->setHidden( m_timeSeries->isHidden() );
   
@@ -1106,7 +1130,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   applyColorTheme( nullptr );
 
   m_undo = new UndoRedoManager( this );
-    
+  
 #if( APP_MENU_STATELESS_FIX )
   // Make sure the menus get pre-loaded
   PopupDivMenu::pre_render(m_fileMenuPopup);
@@ -5815,7 +5839,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
     
     m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
-                                                   boost::placeholders::_1, boost::placeholders::_2 ) );
+                                                   boost::placeholders::_1,
+                                                   boost::placeholders::_2,
+                                                   boost::placeholders::_3 ) );
     
     //WMenuItem * peakManTab =
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
@@ -7381,11 +7407,53 @@ double InterSpec::displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) co
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const
 
 
-void InterSpec::setDisplayScaleFactor( const double sf, const SpecUtils::SpectrumType spec_type )
+void InterSpec::setDisplayScaleFactor( const double sf,
+                                      const SpecUtils::SpectrumType spec_type,
+                                      const bool addUndoRedoStep )
 {
+  const double prevSF = m_spectrum->displayScaleFactor( spec_type );
+  
   m_spectrum->setDisplayScaleFactor( sf, spec_type );
   m_spectrumScaleFactorChanged.emit( spec_type, sf );
+  
+  if( !addUndoRedoStep || !m_undo || m_undo->isInUndoOrRedo() )
+    return;
+  
+  auto undo = [this, prevSF, spec_type, sf](){
+    setDisplayScaleFactor( prevSF, spec_type, false );
+    m_spectrum->yAxisScaled().emit( prevSF, sf, spec_type ); // To update the compact file manager
+  };
+    
+  auto redo = [this, sf, spec_type, prevSF](){
+    setDisplayScaleFactor( sf, spec_type, false );
+    m_spectrum->yAxisScaled().emit( sf, prevSF, spec_type ); // To update the compact file manager
+  };
+    
+  m_undo->addUndoRedoStep( undo, redo, "Change y-axis scale factor" );
 }//void setDisplayScaleFactor( const double sf, SpecUtils::SpectrumType spectrum_type );
+
+
+void InterSpec::handleDisplayScaleFactorChangeFromSpectrum( const double sf, const double prevSF,
+                                                           const SpecUtils::SpectrumType spec_type )
+{
+  // This function is called when the user slides the slider on the spectrum, through the
+  //  D3SpectrumDisplayDiv::yAxisScaled() signal.
+  
+  if( !m_undo || m_undo->isInUndoOrRedo() )
+    return;
+  
+  auto undo = [this, prevSF, spec_type, sf](){
+    setDisplayScaleFactor( prevSF, spec_type, false );
+    m_spectrum->yAxisScaled().emit( prevSF, sf, spec_type ); // To update the compact file manager
+  };
+  
+  auto redo = [this, sf, spec_type, prevSF](){
+    setDisplayScaleFactor( sf, spec_type, false );
+    m_spectrum->yAxisScaled().emit( sf, prevSF, spec_type ); // To update the compact file manager
+  };
+  
+  m_undo->addUndoRedoStep( undo, redo, "Change y-axis scale factor" );
+}//void handleDisplayScaleFactorChangeFromSpectrum(...)
 
 
 float InterSpec::liveTime( SpecUtils::SpectrumType type ) const
@@ -8335,7 +8403,9 @@ void InterSpec::showCompactFileManagerWindow()
  auto *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::Tabbed );
 
   m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
-                                                 boost::placeholders::_1, boost::placeholders::_2 ) );
+                                                 boost::placeholders::_1,
+                                                 boost::placeholders::_2,
+                                                 boost::placeholders::_3 ) );
   
   AuxWindow *window = new AuxWindow( "Select Opened Spectra to Display", (AuxWindowProperties::TabletNotFullScreen) );
   window->disableCollapse();
@@ -10457,6 +10527,19 @@ void InterSpec::handleShiftAltDrag( double lowEnergy, double upperEnergy )
   m_gammaCountDialog->setEnergyRange( lowEnergy, upperEnergy );
 }//void InterSpec::handleShiftAltDrag( double lowEnergy, double upperEnergy )
 
+
+void InterSpec::handleSpectrumChartXRangeChange( const double xmin, const double xmax,
+                                     const double oldXmin, const double oldXmax )
+{
+  // Add Undo/Redo step here.
+  if( !m_undo )
+    return;
+  
+  auto undo = [oldXmin, oldXmax, this](){ m_spectrum->setXAxisRange( oldXmin, oldXmax ); };
+  auto redo = [xmin, xmax, this](){ m_spectrum->setXAxisRange( xmin, xmax ); };
+    
+  m_undo->addUndoRedoStep( undo, redo );
+}//void handleSpectrumChartXRangeChange(...);
 
 
 void InterSpec::searchForSinglePeak( const double x )
