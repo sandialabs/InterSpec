@@ -82,7 +82,7 @@ public:
    */
   void addUndoRedoStep( std::function<void()> undo,
                         std::function<void()> redo,
-                        const std::string &description = "" );
+                        const std::string &description );
   
   bool canUndo() const;
   bool canRedo() const;

@@ -1087,13 +1087,15 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->legendDisabled().connect( std::bind([this](){
     if( m_undo && !m_undo->isInUndoOrRedo() )
       m_undo->addUndoRedoStep( [this](){ m_spectrum->enableLegend(); },
-                               [this](){ m_spectrum->disableLegend(); }, "Hide spectrum legend." );
+                               [this](){ m_spectrum->disableLegend(); },
+                              "Hide spectrum legend." );
     } ) );
     
   m_spectrum->legendEnabled().connect( std::bind([this](){
     if( m_undo && !m_undo->isInUndoOrRedo() )
       m_undo->addUndoRedoStep( [this](){ m_spectrum->disableLegend(); },
-                               [this](){ m_spectrum->enableLegend(); }, "Show spectrum legend." );
+                               [this](){ m_spectrum->enableLegend(); },
+                              "Show spectrum legend." );
     } ) );
     
     
@@ -10538,7 +10540,7 @@ void InterSpec::handleSpectrumChartXRangeChange( const double xmin, const double
   auto undo = [oldXmin, oldXmax, this](){ m_spectrum->setXAxisRange( oldXmin, oldXmax ); };
   auto redo = [xmin, xmax, this](){ m_spectrum->setXAxisRange( xmin, xmax ); };
     
-  m_undo->addUndoRedoStep( undo, redo );
+  m_undo->addUndoRedoStep( undo, redo, "Spectrum energy range change." );
 }//void handleSpectrumChartXRangeChange(...);
 
 
