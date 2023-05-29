@@ -975,7 +975,11 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_textColor( 0x00, 0x00, 0x00 ),
   m_axisColor( 0x00, 0x00, 0x00 ),
   m_chartMarginColor( 0x00, 0x00, 0x00 ),
-  m_chartBackgroundColor( 0x00, 0x00, 0x00 )
+  m_chartBackgroundColor( 0x00, 0x00, 0x00 ),
+  m_cssRules{},
+  m_pendingJs{},
+  m_displayedSampleNumbers{-1,-1},
+  m_displayedTimes{ 0.0, 0.0 }
 {
   addStyleClass( "D3TimeChartParent" );
     
@@ -1051,8 +1055,8 @@ void D3TimeChart::defineJavaScript()
   {
     m_chartClickedJS.reset( new Wt::JSignal<int,int>(m_chart, "timeclicked", false) );
     m_chartDraggedJS.reset( new Wt::JSignal<int,int,int>(m_chart, "timedragged", false) );
-    m_displayedXRangeChangeJS.reset( new Wt::JSignal<int,int,int>(m_chart,"timerangechange",false) );
-    
+    m_displayedXRangeChangeJS.reset( new Wt::JSignal<int,int,int,double,double,bool>(m_chart,"timerangechange",false) );
+  
     m_chartClickedJS->connect( this, &D3TimeChart::chartClickedCallback );
     m_chartDraggedJS->connect( this, &D3TimeChart::chartDraggedCallback );
     m_displayedXRangeChangeJS->connect( this, &D3TimeChart::displayedXRangeChangeCallback );
@@ -2389,7 +2393,41 @@ void D3TimeChart::chartDraggedCallback( int first_sample_number, int last_sample
 }//chartDraggedCallback(...)
 
 
-void D3TimeChart::displayedXRangeChangeCallback( int first_sample_number, int last_sample_number, int samples_per_channel )
+void D3TimeChart::displayedXRangeChangeCallback( const int first_sample_number,
+                                                const int last_sample_number,
+                                                const int compression_index,
+                                                const double start_time,
+                                                const double end_time,
+                                                const bool is_user_action )
 {
-  m_displayedXRangeChange.emit( first_sample_number, last_sample_number, samples_per_channel );
+  const int samples_per_channel = std::pow( 2, compression_index );
+  
+  if( is_user_action )
+  {
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo )
+    {
+      // Note: currently just rounding display to whole sample numbers, not the exact limits the
+      //       user; close-enough for now.
+      const array<int,2> prevSampleNumbers = m_displayedSampleNumbers;
+      
+      auto undo = [prevSampleNumbers,this](){
+        setXAxisRangeSamples( prevSampleNumbers[0], prevSampleNumbers[1] );
+      };
+      
+      auto redo = [first_sample_number, last_sample_number,this](){
+        setXAxisRangeSamples( first_sample_number, last_sample_number );
+      };
+      
+      undoRedo->addUndoRedoStep( undo, redo, "Change time-chart time-range." );
+    }//if( undoRedo )
+    
+    m_displayedXRangeChange.emit( first_sample_number, last_sample_number, samples_per_channel  );
+  }//if( is_user_action )
+  
+  
+  m_displayedSampleNumbers[0] = first_sample_number;
+  m_displayedSampleNumbers[1] = last_sample_number;
+  m_displayedTimes[0] = start_time;
+  m_displayedTimes[1] = end_time;
 }//displayedXRangeChangeCallback(...)
