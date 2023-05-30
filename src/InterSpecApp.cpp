@@ -412,7 +412,11 @@ void InterSpecApp::setupDomEnvironment()
   } );
   
   const string jsfcfn = string("function(e){var f=") + hotkey_js + ";f('" + domRoot()->id() + "',e);}";
-  wApp->declareJavaScriptFunction( "appKeyDown", jsfcfn );
+  declareJavaScriptFunction( "appKeyDown", jsfcfn );
+  
+  // TODO: switch to using WT_DECLARE_WT_MEMBER to define above JS, and then use the below to get Wt root id
+  //"const root = document.querySelector('.Wt-domRoot');"
+  //"root.id"
   
   const string jsfcn = "document.addEventListener('keydown'," + wApp->javaScriptClass() + ".appKeyDown);";
   doJavaScript( jsfcn );
