@@ -82,12 +82,6 @@ OtherRefLineType other_ref_line_type_from_str( const std::string &str );
 */
 typedef std::tuple<float,float,std::string, OtherRefLineType,std::string> OtherRefLine;
 
-//BackgroundLines and BackgroundReactionLines need to be renamed; however, I'm
-//  expecting to switch to a different mechanism to suppliment the nuclide and
-//  reaction databases, so I'll leave these alone for now.
-extern const OtherRefLine BackgroundLines[89];
-extern const OtherRefLine BackgroundReactionLines[28];
-
 
 /** A struct that contains all the information needed to generate reference photopeak
  lines (i.e. the #ReferenceLineInfo information) from.

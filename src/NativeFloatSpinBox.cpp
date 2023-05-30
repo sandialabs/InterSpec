@@ -74,7 +74,7 @@ NativeFloatSpinBox::~NativeFloatSpinBox()
 }
   
 
-void NativeFloatSpinBox:: setValue( const float value )
+void NativeFloatSpinBox::setValue( const float value )
 {
   m_value = value;
   char buffer[64];

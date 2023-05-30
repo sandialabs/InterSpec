@@ -62,6 +62,7 @@ class InterSpecUser;
 class RelEffDetSelect;
 class GadrasDetSelect;
 class SpectraFileModel;
+class NativeFloatSpinBox;
 class DetectorPeakResponse;
 namespace DataBaseUtils
 {
@@ -142,7 +143,7 @@ public:
   void verifyManualDefinition();
   
   //User defined detector in functional form
-  void setDefineDetector();
+  void setFormulaDefineDetector();
   
   //Action when the user clicks on the ButtonGroup to select
   //defined/upload/functional form definition for the detector
@@ -367,6 +368,8 @@ protected:
   Wt::WLineEdit    *m_detectorManualDiameterText;
   Wt::WLineEdit    *m_detectorManualDistText;
   Wt::WLabel       *m_detectorManualDistLabel;
+  NativeFloatSpinBox *m_detectorManualMinEnergy;
+  NativeFloatSpinBox *m_detectorManualMaxEnergy;
   Wt::WPushButton  *m_manualSetButton;
   
   GadrasDetSelect *m_gadrasDetSelect;

@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <mutex>
 #include <vector>
 #include <string>
 #include <stdexcept>
@@ -35,9 +36,12 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "SpecUtils/DateTime.h" //only for debug timing
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/SpecUtilsAsync.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/Integrate.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -66,138 +70,459 @@ namespace
 }//namespace
 
 
-//I need practice/help memorizing background lines, so I typed the following in
-//  from "Practical gamma-ray spectrometry" pg 361
-const OtherRefLine BackgroundReactionLines[28] =
+/** Computes background lines by ageing K40, Th232, U235, U238, and Ra226, and then transporting,
+ as a trace source, through a 1m radius soil sphere.
+ 
+ Since this computation takes ~0.15 seconds, the results are cached and returned on subsequent calls.
+ 
+ 
+ TODO: Return #ReferenceLineInfo::RefLine instead, and completely get rid of #OtherRefLine, since it is no longer needed.
+ */
+const vector<OtherRefLine> &getBackgroundRefLines()
 {
-  OtherRefLine( 53.44f,   0.1034f, "Ge(n,g)", OtherRefLineType::BackgroundReaction, "Ge72(n,g), Ge74(n,2n)" ),
-  OtherRefLine( 68.75f,   0.001f,   "Ge(n,n)", OtherRefLineType::BackgroundReaction, "Ge73(n,n) broad antisymetric peak" ),
-  OtherRefLine( 139.68f,  0.390f,  "Ge75m", OtherRefLineType::BackgroundReaction, "Ge74(n,g), Ge76(n,2n)" ),
-  OtherRefLine( 159.7f,   0.1033f, "Ge(n,g)", OtherRefLineType::BackgroundReaction, "Ge76(n,g)" ),
-  OtherRefLine( 174.95f,  0.0f,   "Ge(n,g)", OtherRefLineType::BackgroundReaction, "Ge70(n,g) activation" ),
-  OtherRefLine( 198.39f,  0.0f,   "Ge71m", OtherRefLineType::BackgroundReaction, "Sum peak Ge70(n,g)" ),
-  OtherRefLine( 278.26f,  0.0f,   "Cu64", OtherRefLineType::BackgroundReaction, "Cu63(n,g), Cu65(n,2n) prompt gamma" ),
-  OtherRefLine( 336.24f,  0.459f,  "Cd115m,In115m", OtherRefLineType::BackgroundReaction, "Activation of Cd (descendant of Cd115)" ),
-  OtherRefLine( 416.86f,  0.277f,  "In116m", OtherRefLineType::BackgroundReaction, "In115(n,g) activation of In metal seal" ),
-  OtherRefLine( 527.90f,  0.275f,  "Cd115", OtherRefLineType::BackgroundReaction, "Cd114(n,g) activation" ),
-  OtherRefLine( 558.46f,  0.0f,   "Cd114", OtherRefLineType::BackgroundReaction, "Cd113(n,g) prompt gamma" ),
-  OtherRefLine( 569.7f,   0.9789f, "Pb207m", OtherRefLineType::BackgroundReaction, "Pb207(n,n)" ),
-  OtherRefLine( 579.2f,   0.0f,   "Pb207", OtherRefLineType::BackgroundReaction, "Pb207(n,n) prompt gamma" ),
-  OtherRefLine( 595.85f,  0.0f,   "Ge74", OtherRefLineType::BackgroundReaction, "Ge74(n,n) broad asymmetric peak" ),
-  OtherRefLine( 669.62f,  0.0f,   "Cu63", OtherRefLineType::BackgroundReaction, "Cu63(n,n) prompt gamma" ),
-  OtherRefLine( 689.6f,   0.0f,   "Ge72", OtherRefLineType::BackgroundReaction, "Ge72(n,n) broad asymetric peak" ),
-  OtherRefLine( 803.06f,  0.0f,   "Pb206", OtherRefLineType::BackgroundReaction, "Pb206(n,n) prompt gamma" ),
-  OtherRefLine( 843.76f,  0.718f,  "Mg27", OtherRefLineType::BackgroundReaction, "Mg26(n,g) or Al27(n,p) of encapsilation" ),
-  OtherRefLine( 846.77f,  0.0f,   "Fe56", OtherRefLineType::BackgroundReaction, "Fe56(n,n)" ),
-  OtherRefLine( 962.06f,  0.0f,   "Cu63", OtherRefLineType::BackgroundReaction, "Cu63(n,n) prompt gamma" ),
-  OtherRefLine( 1014.44f, 0.280f,  "Mg27", OtherRefLineType::BackgroundReaction, "Mg26(n,g) or Al27(n,p) of encapsilation" ),
-  OtherRefLine( 1063.66f, 0.885f,  "Pb207m", OtherRefLineType::BackgroundReaction, "Pb207(n,n)" ),
-  OtherRefLine( 1097.3f,  0.562f,  "In116", OtherRefLineType::BackgroundReaction, "In115(n,g) activation of In metal seal" ),
-  OtherRefLine( 1115.56f, 0.0f,   "Cu65", OtherRefLineType::BackgroundReaction, "Cu65(n,n)" ),
-  OtherRefLine( 1173.23f, 0.9985f, "Co60", OtherRefLineType::BackgroundReaction, "Activation" ),
-  OtherRefLine( 1293.54f, 0.844f,  "In116", OtherRefLineType::BackgroundReaction, "In115(n,g) activation of In metal seal" ),
-  OtherRefLine( 1332.49f, 0.9998f, "Co60", OtherRefLineType::BackgroundReaction, "Activation" ),
-  OtherRefLine( 2224.57f, 0.0f,   "H2", OtherRefLineType::BackgroundReaction, "H(n,g)" )
-};//BackgroundReactionLines[]
+  using namespace GammaInteractionCalc;
+  
+  const float lower_photon_energy = 10.0f;
+  
+  static std::mutex answer_mutex;
+  static bool have_computed = false;
+  static vector<OtherRefLine> answer;
+  
+  std::lock_guard<std::mutex> lock( answer_mutex );
+  if( have_computed )
+    return answer;
+  
+  have_computed = true;
+  
+  try
+  {
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    assert( db );
+    if( !db )
+      return answer;
+    
+    // The threshold, relative to most intense line, to not include intensities below.
+    //  1.0E-17 gives 2064 lines
+    //  1.0E-16 gives 1927 lines
+    //  1.0E-15 gives 1851 lines
+    const double rel_threshold = 1.0E-17;
+    
+    const char *soil_chem_formula = "H0.022019C0.009009O0.593577Al0.066067Si0.272289K0.01001Fe0.027029 d=1.6";
+    
+    const Material soilobj = MaterialDB::materialFromChemicalFormula( soil_chem_formula, db );
+    const Material * const soil = &soilobj;
+    
+    assert( soilobj.elements.size() == 7 );
+    assert( fabs(soilobj.density - 1.6*PhysicalUnits::g/PhysicalUnits::cm3) < 0.001*soilobj.density );
+    
+    vector<OtherRefLine> prelim_answer;
+    prelim_answer.resize( 3000 ); //we actually need 2890
+    answer.reserve( 2100 ); //we actaully need 2062, when rel_threshold==1.0E-17;
+    
+    
+// Pre-computing transport just prints out `integral_energies` and `integral_values` to stdout
+//  Only used for development purposes to get the aformentioned arrays.
+#define PRE_COMPUTE_BACKGROUND_TRANSPORT 0
+    
+#define USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT 1
+    
+    //const double start_wall = SpecUtils::get_wall_time();
+    //const double start_cpu = SpecUtils::get_cpu_time();
+    
+#if( PRE_COMPUTE_BACKGROUND_TRANSPORT || !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+    // Computation timings on M1 macbook, for integrating each background line:
+    // - Single threaded, epsrel = 1e-5: wall=0.789006, cpu=0.787189
+    // - Single threaded, epsrel = 1e-4: wall=0.593146, cpu=0.59266
+    // - Single threaded, epsrel = 1e-3: wall=0.465307, cpu=0.464454
+    // - Multithreaded (nthreads=10, batching in groups of 10), epsrel = 1e-4: wall=0.131257, cpu=0.669642
+    // - Multithreaded (nthreads=10, batching in groups of 100), epsrel = 1e-4: wall=0.087524, cpu=0.72624
+    // - Multithreaded (nthreads=10, no batching), epsrel = 1e-4: wall=0.09096, cpu=0.710744
+    //
+    // - Using precomputed transport, and single thread: wall=0.010582, cpu=0.009713
+    
+    DistributedSrcCalc soil_sphere;
+    soil_sphere.m_geometry = GeometryType::Spherical;
+    soil_sphere.m_sourceIndex = 0;
+    soil_sphere.m_attenuateForAir = false;
+    soil_sphere.m_airTransLenCoef = 0.0;
+    soil_sphere.m_isInSituExponential = false;
+    soil_sphere.m_inSituRelaxationLength = 0.0;
+    soil_sphere.m_detectorRadius  = 5.0 * PhysicalUnits::cm;
+    soil_sphere.m_observationDist = 200.0 * PhysicalUnits::cm;
+    
+    const double sphereRad = 100.0 * PhysicalUnits::cm;
+    soil_sphere.m_dimensionsTransLenAndType.push_back( {
+      {sphereRad,0.0,0.0},
+      0.0,
+      DistributedSrcCalc::ShellType::Material
+    } );
+#endif // !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT
+  
+#if( USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+    const array<double, 220> integral_energies{
+           0,        5,        6,        7,        8,        9,       10,       11,       12,       13,       14,       15,       16,       17,
+          18,       19,       20,       21,       22,       23,       24,       25,       26,       27,       28,       29,       30,       31,       32,
+          33,       34,       35,       36,       37,       38,       39,       40,       41,       42,       43,       44,       45,       46,       47,
+          48,       49,       50,       51,       52,       53,       54,       55,       56,       57,       58,       59,       60,       61,       62,
+          63,       64,       65,       66,       67,       68,       69,       70,       71,       72,       73,       74,       75,       77,       79,
+          81,       83,       85,       87,       89,       91,       93,       95,       97,       99,      102,      105,      108,      111,      114,
+         117,      120,      124,      128,      132,      136,      140,      144,      149,      154,      159,      164,      169,      174,      180,
+         186,      192,      198,      205,      215,      225,      235,      245,      255,      265,      275,      285,      295,      305,      315,
+         325,      335,      345,      355,      365,      375,      385,      400,      410,      425,      440,      455,      470,      485,      500,
+         515,      530,      545,      560,      575,      590,      605,      620,      635,      650,      665,      680,      700,      720,      740,
+         760,      780,      800,      820,      840,      860,      880,      900,      920,      940,      965,      990,     1015,     1040,     1065,
+        1090,     1115,     1140,     1165,     1190,     1215,     1240,     1270,     1295,     1325,     1355,     1385,     1415,     1445,     1475,
+        1505,     1540,     1575,     1610,     1645,     1680,     1715,     1750,     1785,     1825,     1865,     1905,     1945,     1985,     2025,
+        2065,     2110,     2155,     2200,     2245,     2290,     2340,     2390,     2440,     2490,     2540,     2595,     2650,     2705,     2760,
+        2820,     2880,     2940,     3005,     3070,     3135,     3200,     3270,     3340,     3415,     3490};
+    
+    const array<double, 220> integral_values{
+            0, 14.134587, 37.955691, 61.053456, 81.553097, 106.44044, 146.33149, 195.13829, 253.84184, 323.29028, 404.16482, 497.45935, 603.72919, 723.53085,
+    857.62272, 1006.3214, 1169.7335, 1348.316, 1542.3132, 1751.454, 1975.4162, 2213.6208, 2466.3235, 2733.6567, 3014.2296, 3306.6471, 3610.0513, 3923.602, 4246.7122,
+    4579.8723, 4921.6507, 5269.3928, 5621.8764, 5977.892, 6336.2679, 6696.0448, 7057.1923, 7420.2084, 7783.9253, 8146.2877, 8505.9111, 8861.7795, 9213.1772, 9559.4574,
+    9900.0845, 10234.865, 10563.582, 10888.434, 11209.571, 11524.162, 11831.569, 12131.616, 12424.397, 12710.119, 12988.515, 13259.309, 13522.553, 13778.266, 14026.609,
+    14267.881, 14505.645, 14740.374, 14968.793, 15190.695, 15406.222, 15615.472, 15818.601, 16015.768, 16207.127, 16392.842, 16573.098, 16748.05, 16999.027, 17319.145,
+    17627.432, 17927.34, 18213.695,  18485.5, 18743.677, 18989.13, 19222.717, 19445.229, 19657.408, 19859.946, 20106.772, 20397.573, 20675.541, 20938.468, 21187.707,
+    21424.455, 21649.762, 21898.576, 22175.379, 22450.301, 22717.998, 22973.563, 23218.067, 23480.578, 23759.766, 24027.788, 24297.555, 24568.681, 24830.316, 25107.653,
+    25399.905,    25682, 25954.813, 26251.616, 26642.112, 27088.381, 27516.833, 27929.463, 28333.777, 28740.83, 29145.616, 29539.17, 29922.264, 30295.645, 30660.013,
+    31027.158, 31399.069, 31764.893, 32123.481, 32475.234,  32820.5, 33159.572, 33576.174, 33995.696,  34418.2, 34915.801, 35402.684, 35879.466, 36346.686, 36804.84,
+    37266.512, 37733.084, 38192.789, 38644.971, 39089.931, 39527.976, 39959.416, 40384.528, 40806.642, 41234.388, 41664.859, 42089.819, 42578.421, 43128.911, 43670.708,
+    44204.202, 44729.725, 45251.585, 45780.138, 46311.632, 46836.248, 47354.257, 47865.884, 48371.341, 48870.845, 49425.509, 50034.01, 50643.808, 51261.626, 51877.974,
+    52486.515, 53087.301, 53680.377, 54265.847, 54843.807, 55414.404, 55977.748, 56595.304, 57219.765, 57846.156, 58520.698, 59185.681, 59841.292, 60487.865, 61125.588,
+    61754.475, 62425.916, 63138.406, 63852.858, 64575.719, 65293.349, 65999.372, 66695.524, 67382.016, 68106.916, 68868.824, 69617.361, 70354.821, 71080.753, 71808.509,
+    72545.04, 73321.576, 74129.992, 74926.528, 75712.654, 76485.167, 77284.546, 78111.513, 78928.337, 79733.538, 80534.094, 81378.643, 82254.629, 83120.668, 83977.388,
+    84854.37, 85750.145, 86625.844, 87517.263, 88433.815, 89339.424, 90237.042, 91169.853, 92123.699, 93086.383, 94066.595
+    };
 
+    /* const array<double, 220> integral_differences{
+           0,        1,  0.40664,   0.3602,  0.15993,  0.28653,  0.26234,  0.24083,  0.22383,  0.20768,    0.194,  0.18226,  0.17085,  0.16116,
+     0.15228,   0.1439,  0.13607,  0.12929,   0.1227,   0.1165,   0.1106,  0.10494,  0.10024, 0.095584, 0.090808, 0.086263, 0.082007, 0.077984, 0.074327,
+    0.071275, 0.067737, 0.064361, 0.061138, 0.058065, 0.055137, 0.052396, 0.050014, 0.047884, 0.045622, 0.043391, 0.041213, 0.039143, 0.037176, 0.035306,
+    0.033537, 0.031909, 0.030351, 0.029333, 0.027983, 0.026632, 0.025348, 0.024132, 0.023011,  0.02196, 0.020919, 0.019937, 0.019006,  0.01812, 0.017297,
+     0.01653, 0.016255, 0.015599, 0.014926, 0.014294, 0.013689, 0.013115, 0.012571, 0.012054, 0.011563, 0.011098, 0.010657, 0.010237, 0.019204, 0.017776,
+    0.017207, 0.016259, 0.015194, 0.014221, 0.013333, 0.012524, 0.011784, 0.011106, 0.010485, 0.0099147, 0.014602, 0.013916, 0.012979, 0.012141, 0.011391,
+    0.010714, 0.010103, 0.012605, 0.012361, 0.012132, 0.011439, 0.010813, 0.010251, 0.012097, 0.011408, 0.010904, 0.011299, 0.010775, 0.010301, 0.011782,
+    0.011233, 0.010738, 0.010287, 0.012313, 0.016961, 0.015995, 0.015152, 0.014401,  0.01414, 0.014186, 0.013595, 0.013054, 0.012555, 0.012097, 0.011673,
+    0.011991,   0.0117, 0.011335, 0.010993, 0.010672, 0.010369, 0.010083, 0.014698, 0.010006, 0.014512, 0.013995, 0.013514, 0.013066, 0.012646, 0.012253,
+    0.012522,  0.01221, 0.011865, 0.011539, 0.011229, 0.010936, 0.010659, 0.010396, 0.010293, 0.010453, 0.010212, 0.0099823, 0.012949, 0.012581, 0.012234,
+    0.011906, 0.011594, 0.011472, 0.011618, 0.011336, 0.011067, 0.010812, 0.010567, 0.010333,  0.01011, 0.012321, 0.012004, 0.012077, 0.012028, 0.011736,
+    0.011454, 0.011181, 0.010917, 0.010662, 0.010416, 0.010179, 0.0099493, 0.011863, 0.0099733, 0.011674, 0.011381, 0.011092, 0.010821, 0.010558, 0.010309,
+     0.01006, 0.011444, 0.011127,  0.01125, 0.011138, 0.010845, 0.010551, 0.010325, 0.010052, 0.011228,   0.0109, 0.010606, 0.010359, 0.010068, 0.010201,
+    0.010105, 0.011071, 0.010741, 0.010522, 0.010246, 0.009956, 0.010727, 0.010449,  0.01025, 0.0099488, 0.0099325, 0.010819, 0.010482, 0.010356, 0.010049,
+    0.010619, 0.010276, 0.0099437, 0.010425, 0.010304, 0.009971, 0.0099239, 0.010536, 0.010174, 0.010508, 0.010334
+    };
+    */
+#endif
 
-//BackgroundLines looks to be taking up ~14 kb of executable size on Win7
-const OtherRefLine BackgroundLines[89] =
-{
-  /*xrays below 46 keV not inserted*/
-  OtherRefLine( 46.54f,   0.0425f,  "Pb210", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 53.23f,   0.01060f, "Pb214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 63.28f,   0.048f,   "Th234", OtherRefLineType::U238Series,         "" ),
-  OtherRefLine( 72.81f,   0.277f,   "Pb xray", OtherRefLineType::BackgroundXRay,     "Flourescence and Tl208 decay" ),
-  OtherRefLine( 74.82f,   0.277f,   "Bi xray", OtherRefLineType::BackgroundXRay,     "Pb212, Pb214 decay" ),
-  OtherRefLine( 74.97f,   0.462f,   "Pb xray", OtherRefLineType::BackgroundXRay,     "Flourescence and Tl208 decay" ),
-  OtherRefLine( 77.11f,   0.462f,   "Bi xray", OtherRefLineType::BackgroundXRay,     "Pb212, Pb214 decay" ),
-  OtherRefLine( 79.29f,   0.461f,   "Po xray", OtherRefLineType::BackgroundXRay,     "Fluorescence and Bi212, Bi214 decay" ),
-  OtherRefLine( 81.23f,   0.009f,   "Th231", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 84.94f,   0.107f,   "Pb xray", OtherRefLineType::BackgroundXRay,     "Flourescence and Tl208 decay" ),
-  OtherRefLine( 87.3f,    0.0391f,  "Pb xray", OtherRefLineType::BackgroundXRay,     "Flourescence and Tl208 decay" ),
-  OtherRefLine( 87.35f,   0.107f,   "Bi xray", OtherRefLineType::BackgroundXRay,     "Pb212, Pb214 decay" ),
-  OtherRefLine( 89.78f,   0.0393f,  "Bi xray", OtherRefLineType::BackgroundXRay,     "Pb212, Pb214 decay" ),
-  OtherRefLine( 89.96f,   0.281f,   "Th xray", OtherRefLineType::BackgroundXRay,     "U235 and Ac228 decay" ),
-  OtherRefLine( 92.58f,   0.0558f,  "Th234", OtherRefLineType::U238Series,         " - doublet" ),
-  OtherRefLine( 93.35f,   0.454f,   "Th xray", OtherRefLineType::BackgroundXRay,     "U235 and Ac228 decay" ),
-  OtherRefLine( 105.6f,   0.107f,   "Th xray", OtherRefLineType::BackgroundXRay,     "U235 and Ac228 decay" ),
-  OtherRefLine( 109.16f,  0.0154f,  "U235", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 112.81f,  0.0028f,  "Th234", OtherRefLineType::U238Series,         "" ),
-  OtherRefLine( 122.32f,  0.01192f, "Ra223", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 129.06f,  0.0242f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 143.76f,  0.1096f,  "U235", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 163.33f,  0.0508f,  "U235", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 185.72f,  0.572f,   "U235", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 186.21f,  0.03555f, "Ra226", OtherRefLineType::U238Series,         "" ),
-  OtherRefLine( 205.31f,  0.0501f,  "U235", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 209.26f,  0.0389f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 238.63f,  0.436f,   "Pb212", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 240.89f,  0.0412f,  "Ra224", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 242.0f,   0.07268f, "Pb214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 269.49f,  0.137f,   "Ra223", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 270.24f,  0.0346f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 277.37f,  0.0237f,  "Tl208", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 295.22f,  0.185f,   "Pb214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 299.98f,  0.0216f,  "Th227", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 300.07f,  0.0247f,  "Pa231", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 300.09f,  0.0318f,  "Pb212", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 328.0f,   0.0295f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 338.28f,  0.0279f,  "Ra223", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 338.32f,  0.1127f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 351.06f,  0.1291f,  "Bi211", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 351.93f,  0.3560f,  "Pb214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 409.46f,  0.0192f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 447.6f,   0.1044f,  "Be7", OtherRefLineType::OtherBackground,    "Cosmic" ),
-  OtherRefLine( 462.0f,   0.00213f, "Pb214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 463.0f,   0.0440f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 510.7f,   0.0629f,  "Tl208", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 511.0f,   0.010f,   "", OtherRefLineType::OtherBackground,    "Annihilation radiation (beta+)" ),
-  OtherRefLine( 570.82f,  0.00182f, "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 583.19f,  0.306f,   "Tl208", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 609.31f,  0.4549f,  "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 661.66f,  0.400f,   "Cs137", OtherRefLineType::OtherBackground,    "Fission" ),
-  OtherRefLine( 726.86f,  0.0062f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 727.33f,  0.0674f,  "Bi212", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 755.31f,  0.010f,   "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 768.36f,  0.04891f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 794.95f,  0.0425f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 806.17f,  0.01262f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 832.01f,  0.0352f,  "Pb211", OtherRefLineType::U235Series,         "" ),
-  OtherRefLine( 835.71f,  0.0161f,  "AC228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 839.04f,  0.00587f, "Pb214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 860.56f,  0.0448f,  "Tl208", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 911.20f,  0.258f,   "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 934.06f,  0.03096f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 964.77f,  0.0499f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 968.97f,  0.158f,   "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 1001.03f, 0.01021f, "Pa234m", OtherRefLineType::U238Series,         "..." ),
-  OtherRefLine( 1120.29f, 0.1491f,  "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1155.19f, 0.01635f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1238.11f, 0.05827f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1377.67f, 0.03967f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1407.98f, 0.02389f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1459.14f, 0.0083f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 1460.82f, 0.1066f,  "K40", OtherRefLineType::K40Background,      "" ),
-  OtherRefLine( 1588.2f,  0.0322f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  //TODO: do some better way of indicating D.E. than a string match
-  OtherRefLine( 1592.51f, 0.010f,   "Th232 D.E. 2614 keV", OtherRefLineType::OtherBackground,    "" ),
-  OtherRefLine( 1620.74f, 0.0151f,  "Bi212", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 1630.63f, 0.0151f,  "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 1686.09f, 0.00095f, "Ac228", OtherRefLineType::Th232Series,        "" ),
-  OtherRefLine( 1661.28f, 0.0112f,  "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1729.6f,  0.02843f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1764.49f, 0.1528f,  "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1838.36f, 0.00346f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 1847.42f, 0.02023f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  //TODO: do some better way of indicating S.E. than a string match
-  OtherRefLine( 2103.51f, 0.020f,   "Th232 S.E. 2614 keV", OtherRefLineType::OtherBackground,    "" ),
-  OtherRefLine( 2118.55f, 0.00454f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 2204.21f, 0.04913f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 2447.86f, 0.01518f, "Bi214", OtherRefLineType::Ra226Series,        "" ),
-  OtherRefLine( 2614.51f, 0.3585f,  "Tl208", OtherRefLineType::Th232Series,        "Th232 series; Pb208(n,p)" ),
-};//BackgroundLines
+    
+#if( PRE_COMPUTE_BACKGROUND_TRANSPORT )
+#warning "You probably dont mean to have PRE_COMPUTE_BACKGROUND_TRANSPORT enabled"
+    
+    // Pre-compute the transport through soil sphere, defining energy bounds so that the
+    //  difference between lower and upper energy bounds, is 1% (arbitrarily chosen);
+    //  For energies, below about 75 keV our error is larger due to stepping size
+    const double allowed_error_fraction = 0.01;
+    double prev_integral = 0.0, prev_energy = 0.0;
+    vector<double> energies(1,0.0), integrals(1,0.0), errors(1,0.0);
+    for( double energy = 5; energy < 3500; energy += (energy < 200 ? 1 : 5) )
+    {
+      DistributedSrcCalc sphere = soil_sphere;
+      double transLenCoef = GammaInteractionCalc::transmition_length_coefficient( soil, energy );
+      get<1>( sphere.m_dimensionsTransLenAndType[0] ) = transLenCoef;
+      
+      int nregions, neval, fail;
+      double integral, error, prob;
+      void *userdata = (void *)&sphere;
+      
+      const int ndim = 2;  //the number of dimensions of the integral.
+      const double epsrel = 1e-8, epsabs = -1.0; //the requested relative and absolute accuracies
+      const int mineval = 0, maxeval = 5000000;   //the min and (approx) max number of integrand evaluations allowed.
+      
+      
+      Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
+                                Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
+                                fail, integral, error, prob );
+      
+      if( fabs(integral - prev_integral) > allowed_error_fraction*prev_integral )
+      {
+        energies.push_back( energy );
+        integrals.push_back( 0.5*(prev_integral + integral) );
+        errors.push_back( fabs(integral - prev_integral)/integral );
+        //cout << interval_num << ": energy=" << energy << "] keV" << ", diff="
+        //     << (100*fabs(integral - prev_integral)/integral) << endl;
+        prev_energy = energy;
+        prev_integral = integral;
+      }//if( integral at `energy` is more than `allowed_error_fraction` different from previous )
+    }//for( loop over energies )
+    
+    cout << "const std::array<double, " << energies.size() << "> integral_energies{\n";
+    for( size_t i = 0; i < energies.size(); ++i )
+      cout << (i ? ", " : " ") << ((((i+1) % 15) == 0) ? "\n" : "")
+           << std::setw(8) << std::setprecision(6) << energies[i];
+    cout << "};" << endl;
+    
+    cout << "const std::array<double, " << energies.size() << "> integral_values{\n";
+    for( size_t i = 0; i < integrals.size(); ++i )
+      cout << (i ? ", " : " ") << ((((i+1) % 15) == 0) ? "\n" : "")
+           << std::setw(8) << std::setprecision(8) << integrals[i];
+    cout << "\n};\n" << endl;
+    
+    cout << "/* const std::array<double, " << energies.size() << "> integral_differences{\n";
+    for( size_t i = 0; i < errors.size(); ++i )
+      cout << (i ? ", " : " ") << ((((i+1) % 15) == 0) ? "\n" : "")
+           << std::setw(8) << std::setprecision(5) << errors[i];
+    cout << "\n};\n*/" << endl;
+#endif //PRE_COMPUTE_BACKGROUND_TRANSPORT
+    
+    
+    // The rel-activities below were just adjusted to match a representative background
+    //  and are otherwise arbitrary.
+    const SandiaDecay::Nuclide * const u238 = db->nuclide( "U238" );
+    const SandiaDecay::Nuclide * const ra226 = db->nuclide( "Ra226" );
+    const SandiaDecay::Nuclide * const u235 = db->nuclide( "U235" );
+    const SandiaDecay::Nuclide * const th232 = db->nuclide( "Th232" );
+    const SandiaDecay::Nuclide * const k40 = db->nuclide( "K40" );
+    
+    assert( u238 && ra226 && u235 && th232 && k40 );
+    
+    // All the denominators below were for observation distance of 200cm, 5cm detector radius, and
+    //  a 1 m radius sphere
+    // TODO: figure out the constants so components can be set as PPM, or % of soil, so it can be changed by looking up in a DB easily for a given location
+    const vector<tuple<const SandiaDecay::Nuclide *,double,OtherRefLineType, double>> nuc_activity{
+      //make the 1001 keV have amp 0.0004653, before norm; the denom is integral at 1001 keV times BR of 1001.
+      { u238,   0.0004653/410.2892, OtherRefLineType::U238Series, 5.0*u238->promptEquilibriumHalfLife() },
+      
+      //make 609 keV have amp 0.02515, before norm
+      { ra226,  0.02515/17990.5430, OtherRefLineType::Ra226Series, 5.0*ra226->promptEquilibriumHalfLife() },
+      
+      //make 185 keV have amp 0.001482, before norm
+      { u235,   0.001482/14603.0156, OtherRefLineType::U235Series, 5.0*u235->promptEquilibriumHalfLife() },
+      
+      //make 2614 keV have amp 0.02038, before norm
+      { th232,  0.02038/27897.2617, OtherRefLineType::Th232Series, 5.0*th232->secularEquilibriumHalfLife() },
+      
+      //make 1460 keV have amp 0.1066, before norm
+      { k40,    0.1066/6523.8994, OtherRefLineType::K40Background, 0.0 }
+    };//nuc_activity
+    
+    
+    SandiaDecay::NuclideMixture mixture;
+    for( const auto &src : nuc_activity )
+    {
+      const SandiaDecay::Nuclide * const nuc = get<0>(src);
+      const double parent_activity = get<1>(src);
+      const double age = get<3>(src);
+      
+      mixture.addAgedNuclideByActivity( nuc, parent_activity, age );
+    }//for( const auto &src : nuc_activity )
+    
+    
+    const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity( 0.0 );
+    
+    size_t calc_index = 0;
+#if( !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+    SpecUtilsAsync::ThreadPool pool;
+#endif
+    
+    for( const SandiaDecay::NuclideActivityPair &nap : activities )
+    {
+      const SandiaDecay::Nuclide *nuclide = nap.nuclide;
+      const double activity = nap.activity;
+      
+      for( const SandiaDecay::Transition *transition : nuclide->decaysToChildren )
+      {
+        for( const SandiaDecay::RadParticle &particle : transition->products )
+        {
+          // For the moment we'll keep gammas and x-rays only - but should
+          switch( particle.type )
+          {
+            case SandiaDecay::BetaParticle:
+            case SandiaDecay::AlphaParticle:
+            case SandiaDecay::CaptureElectronParticle:
+            case SandiaDecay::PositronParticle: //Posititrons are super-small, and not worth adding in here
+              continue;
+              break;
+              
+            case SandiaDecay::GammaParticle:
+            case SandiaDecay::XrayParticle:
+              if( particle.energy < lower_photon_energy )
+                continue;
+              break;
+          };//switch( particle.type )
+          
+          
+          const double br = activity * particle.intensity * transition->branchRatio;
+          const double energy = particle.energy;
+          const SandiaDecay::ProductType part_type = particle.type;
+          
+#if( !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+          // Creating a `DistributedSrcCalc` here doesnt seem any slower than trying to share them
+          //  between threads and such; so we'll just make a copy for each thread.
+          DistributedSrcCalc sphere = soil_sphere;
+          const double transLenCoef = GammaInteractionCalc::transmition_length_coefficient( soil, energy );
+          get<1>( sphere.m_dimensionsTransLenAndType[0] ) = transLenCoef;
+#endif
+          
+          auto do_calc = [soil, energy, calc_index, transition, part_type, br,
+#if( USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+                          &integral_energies, &integral_values,
+#else
+                          sphere,
+#endif
+                          k40, ra226, th232, u238, u235, &prelim_answer]() {
+            
+#if( USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+            auto pos = std::lower_bound( begin(integral_energies), end(integral_energies), energy );
+            const auto index = pos - begin(integral_energies);
+            const double integral = (pos == end(integral_energies)) ? integral_values.back() : integral_values[index];
 
+//            cout << "Energy=" << energy << " is in bucket ["
+//            << (index ? integral_energies[index-1] : integral_energies[index]) << " to "
+//            << (index >= integral_energies.size() ? integral_energies[index-1] : integral_energies[index])
+//            << "] keV, with value integral=" << integral << endl;
+#else
+            int nregions, neval, fail;
+            double integral, error, prob;
+            void *userdata = (void *)&sphere;
+            
+            // Some constants for integration
+            const int ndim = 2;  //the number of dimensions of the integral.
+            const double epsrel = 1e-4, epsabs = -1.0; //the requested relative and absolute accuracies
+            const int mineval = 0, maxeval = 500000;   //the min and (approx) max number of integrand evaluations allowed.
+            
+            Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
+                                      Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
+                                      fail, integral, error, prob );
+            //printf("%s: %.1f keV -> br=%.4f.\n", nuc->symbol.c_str(), energy, br*integral );
+#endif // USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT / else
+            
+            string desc;
+            if( transition->parent )
+              desc = transition->parent->symbol;
+            if( part_type == SandiaDecay::XrayParticle )
+              desc += " x-ray";
+            
+            OtherRefLineType type = OtherRefLineType::BackgroundXRay;
+            if( part_type == SandiaDecay::XrayParticle )
+            {
+              type = OtherRefLineType::BackgroundXRay;
+            }else if( transition->parent )
+            {
+              if( k40->branchRatioToDecendant(transition->parent) > 0 )
+                type = OtherRefLineType::K40Background;
+              else if( ra226->branchRatioToDecendant(transition->parent) > 0 )
+                type = OtherRefLineType::Ra226Series;
+              else if( th232->branchRatioToDecendant(transition->parent) > 0 )
+                type = OtherRefLineType::Th232Series;
+              else if( u238->branchRatioToDecendant(transition->parent) > 0 )
+                type = OtherRefLineType::U238Series;
+              else if( u235->branchRatioToDecendant(transition->parent) > 0 )
+                type = OtherRefLineType::U235Series;
+              else{ assert( 0 ); }
+            }
+            
+            const float amplitude = static_cast<float>( br * integral );
+             
+            prelim_answer[calc_index] = { static_cast<float>(energy), amplitude, desc, type, "" };
+          };//do_calc
+                    
+#if( USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+          do_calc();
+#else
+          // We dont want to bog the thread pool down with ~2k jobs, so we'll batch things in
+          //  groups of an arbitrarily selected number of 100
+          const size_t batch_size = 100;
+          if( (calc_index % batch_size) == 0 )
+          {
+            pool.join();
+          
+            assert( prelim_answer.size() > calc_index );
+            if( prelim_answer.size() < (calc_index + batch_size) )
+              prelim_answer.resize( calc_index + batch_size );
+          }//if( (calc_index % 100) == 0 )
+          
+          pool.post( do_calc );
+#endif //USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT / else
+          
+          calc_index += 1;
+        }//for( const SandiaDecay::RadParticle &particle : transition->products )
+      }//for( const SandiaDecay::Transition *transition : nuclide->decaysToChildren )
+    }//for( const SandiaDecay::NuclideActivityPair &nap : activities )
+    
+#if( !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+    pool.join();
+#endif
+    
+    assert( prelim_answer.size() >= calc_index );
+    prelim_answer.resize( calc_index );
+    
+    //const double end_wall = SpecUtils::get_wall_time();
+    //const double end_cpu = SpecUtils::get_cpu_time();
+    
+    //cout << "Background line computation took: wall=" << (end_wall - start_wall) << ", cpu=" << (end_cpu - start_cpu) << endl;
+    //cout << "prelim_answer.size=" << prelim_answer.size() << endl;
+    
+    float max_br = 0.0f;
+    for( const auto &i : prelim_answer )
+    {
+      //printf("prenorm %s: %.1f keV -> br=%.4f.\n", get<2>(i).c_str(), get<0>(i), get<1>(i) );
+      max_br = std::max( max_br, get<1>(i) );
+    }
+    
+    // Lets grab the amplitude of the 2614.5330 keV Th232 line
+    double th232_2614_amp = 0;
+    
+    for( auto &i : prelim_answer )
+    {
+      get<1>(i) /= max_br;
+      if( get<1>(i) > rel_threshold )
+        answer.push_back( i );
+      
+      if( (get<0>(i) > 2614.52)
+         && (get<0>(i) < 2614.55)
+         && (get<3>(i) == OtherRefLineType::Th232Series) )
+      {
+        th232_2614_amp += get<1>(i);
+      }
+      
+      // printf("%s: %.1f keV -> br=%.4f.\n", get<2>(i).c_str(), get<0>(i), get<1>(i) );
+    }//for( auto &i : prelim_answer )
+    
+    // th232_2614_amp should be 0.19118185341358185 );
+    assert( (th232_2614_amp > 0.05) && (th232_2614_amp < 0.5) );
+    
+    // Use S.E. and D.E. numbers from a 40% HPGe detector
+    answer.emplace_back( 2614.533f - 510.9989f,      0.144*th232_2614_amp,
+                         "Th232 S.E. 2614 keV", OtherRefLineType::OtherBackground, "" );
+    answer.emplace_back( 2614.533f - 2.0f*510.9989f, 0.082*th232_2614_amp,
+                        "Th232 D.E. 2614 keV", OtherRefLineType::OtherBackground, "" );
+    
+    // Now take care of annihilation; for a single background spectrum I looked at, it was about 5%
+    //  the amplitude of the K40 line; didnt correct for DRF
+    answer.emplace_back( 510.9989f, 0.052f, "",
+                        OtherRefLineType::OtherBackground, "Annihilation radiation (beta+)" );
+    
+    // TODO: Do we want to add in extra x-rays or anything?
+    // TODO: Do we group lines together later on, or should we do it now.
+    
+    std::sort( begin(answer), end(answer), []( const OtherRefLine &lhs, const OtherRefLine &rhs ) -> bool {
+      return get<0>(lhs) < get<0>(rhs);
+    });
+    
+    //cout << "answer.size=" << answer.size() << endl;
+    //size_t nbelow = 0, nabove = 0;
+    //for( auto &i : answer )
+    //  (get<1>(i) > rel_threshold ? nabove : nbelow) += 1;
+    //cout << "Got nabove=" << nabove << ", nbelow=" << nbelow << endl;
+    //for 1.-E17, get: "Got nabove=2062, nbelow=829"
+  }catch( std::exception &e )
+  {
+    assert( 0 );
+    answer.clear();
+  }//try / catc
+  
+  return answer;
+}//vector<OtherRefLine> getBackgroundRefLines()
 
 
 const char *to_str( const OtherRefLineType type )
@@ -1137,12 +1462,12 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   {
     input.m_input_txt = "background";
     
-    for( const OtherRefLine &bl : BackgroundLines )
+    for( const OtherRefLine &bl : getBackgroundRefLines() )
     {
       const bool isXray = (std::get<3>(bl) == OtherRefLineType::BackgroundXRay);
       if( (isXray && input.m_showXrays) || (!isXray && input.m_showGammas) )
         otherRefLinesToShow.push_back( bl );
-    }//for( const BackgroundLine &bl : BackgroundLines )
+    }//for( const BackgroundLine &bl : getBackgroundRefLines() )
     
     input.m_age = "";
   }//if( is_background )
@@ -1529,9 +1854,24 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         case OtherRefLineType::OtherBackground:
         case OtherRefLineType::BackgroundReaction:
         {
-          line.m_decaystr = std::get<2>( bl );
+          const string &nucstr = std::get<2>( bl );
           
-          line.m_parent_nuclide = db->nuclide( std::get<2>( bl ) );
+          line.m_decaystr = nucstr;
+          
+          line.m_parent_nuclide = db->nuclide( nucstr );
+          
+          //A string like "Th232 S.E. 2614 keV" wont return a valid nuclide, so we'll fix this up
+          const size_t single_escape_pos = nucstr.find("S.E.");
+          const size_t double_escape_pos = nucstr.find("D.E.");
+          
+          if( !line.m_parent_nuclide )
+          {
+            const size_t pos = std::min( single_escape_pos, double_escape_pos );
+            if( pos != string::npos )
+              line.m_parent_nuclide = db->nuclide( nucstr.substr(0,pos) ); // Make like "Th232"
+          }//if( !line.m_parent_nuclide )
+          
+          
           // TODO: try to get reaction if didnt get nuclide - also, nuclide list may be CSV, could split that
           //const ReactionGamma *rctnDb = ReactionGammaServer::database();
           //if( rctnDb )
@@ -1544,10 +1884,13 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
             line.m_decaystr += (line.m_decaystr.empty() ? "" : ", ") + std::get<4>( bl );
           
           // TODO: We should probably do a little better than string matching to define as a single/double escape peak.
-          if( line.m_decaystr.find("S.E.") != string::npos )
+          if( single_escape_pos != string::npos )
+          {
             line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::SingleEscape;
-          else if( line.m_decaystr.find("D.E.") != string::npos )
+          }else if( double_escape_pos != string::npos )
+          {
             line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape;
+          }
           
           break;
         }
