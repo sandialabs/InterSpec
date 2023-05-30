@@ -99,7 +99,8 @@ LeafletRadMap = function (elem,options) {
     cutPolygon: true,
     removalMode: true,
   });
-
+  
+  L.control.scale({metric: true, imperial: false, position: 'bottomleft'}).addTo(this.map);
   
   this.markerGradientStops = {
     0.4: 'blue',

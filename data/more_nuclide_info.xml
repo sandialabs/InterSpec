@@ -1,0 +1,1191 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<AddNucInfo>
+  <!-- UUR SAND2023-02430O
+
+This file is adapted from:
+  - 'GS_NuclidesToConsider_2022-09-30_PrgRvwApp_1641834' document by Michael Enghauser, 
+  - Enghauser, Michael. 2019. "FRMAC Gamma Spectroscopist Knowledge Guide.". United States. 
+    https://doi.org/10.2172/1763003 
+    https://www.osti.gov/servlets/purl/1763003
+    https://www.nnss.gov/docs/docs_FRMAC/_FRMAC_GammaSpec_KnowledgeGuide_2019-08_UUR.pdf
+    
+
+TODO: Need to incorporate the following from FRMAC Spectroscopists guide:
+    # Table 8-3. Typical nuclear reactor coolant activation products. 
+      Cr51,Mn54,Mn56,Fe55,Fe59,Co58,Co60,Ni63,Ni65,Cu64,Zn65,As76,Zr95,Ag110m,Sn113 
+
+    # Short-lived fission product(s) detected
+      Zr95,Nb95,Zr97,Nb97,Mo99,Tc-99m,Ru103,Rh103,Ru106,Rh106,Sb125,Te125m,Te127m,Te129m,I131,Xe-131,Te132,I132,I133,Cs134,Cs137,Ba140,La140,Ce141,Ce143,Pr143,Ce144,Pr144,Nd147,Pm-147,Pm151,Sm151,Eu154,Eu-155
+-->
+
+  <!-- 
+    References to quotes and information in this document.  
+    InterSpec will replace instances like "[xxx]", with the information below for the <Ref> element that has a attribute "key"
+    with value "xxx".
+  -->
+  <References>
+    <Ref key="GNRIM">
+      <desc>General Notes RADIOISOTOPES IN MEDICINE (WORLD NUCLEAR ASSOCIATION)</desc>
+      <url>https://www.world-nuclear.org/information-library/non-power-nuclear-applications/radioisotopes-research/radioisotopes-in-medicine.aspx</url>
+    </Ref>
+
+    <Ref key="MRARII">
+      <desc>MEDICAL RADIOISOTOPES AND APPLICATIONS RADIOISOTOPES IN INDUSTRY (WORLD NUCLEAR ASSOCIATION)</desc>
+      <url>http://www.radiochemistry.org/nuclearmedicine/frames/medical_radioisotopes/index.html</url>
+      <date>20230311</date>
+    </Ref>
+
+    <Ref key="RII">
+      <desc>Radioisotopes in Industry (WORLD NUCLEAR ASSOCIATION)</desc>
+      <url>https://world-nuclear.org/information-library/non-power-nuclear-applications/radioisotopes-research/radioisotopes-in-industry.aspx</url>
+      <date>20230311</date>
+    </Ref>
+
+    <Ref key="WITNRM">
+      <desc>Worldwide Illicit Trafficking of Nuclear and Radiological Materials - February 2021, December 2021</desc>
+    </Ref>
+
+    <Ref key="NIDC">
+      <desc>National Isotope Development Center website. Information from the "Product Information" link of specific isotope.</desc>
+      <url>https://isotopes.gov</url>
+      <date>20230311</date>
+    </Ref>
+
+    <Ref key="NIDC-Ac-225">
+      <desc>National Isotope Development Center - Actinium-225 information</desc>
+      <url>https://isotopes.gov/information/actinium-225</url>
+      <date>20230311</date>
+    </Ref>
+
+    <Ref key="WIKIPEDIA-TAT">
+      <desc>Targeted alpha-particle therapy, Wikipedia</desc>
+      <url>https://en.wikipedia.org/wiki/Targeted_alpha-particle_therapy</url>
+      <date>20230311</date>
+    </Ref>
+
+    <Ref key="HAMAMATSU">
+      <desc>PHOTOMULTIPLIER TUBES.  Basics and Applications. Edition 3a. 2007 HAMAMATSU PHOTONICS K. K.</desc>
+      <url>https://www.osti.gov/biblio/1763003</url>
+      <date>20230311</date>
+    </Ref>
+
+    <Ref key="FRMAC">
+      <desc>FRMAC Gamma Spectroscopist Knowledge Guide. Revision 0., by Michael Enghauser. Sandia National Lab. (SNL-NM), Albuquerque, NM (United States).</desc>
+      <url>https://www.osti.gov/servlets/purl/1763003</url>
+      <date>20230311</date>
+    </Ref>
+
+    <Ref key="WIKIPEDIA-CRS">
+      <desc>Wikipedia: Cosmic ray spallation</desc>
+      <url>https://en.wikipedia.org/wiki/Cosmic_ray_spallation</url>
+      <date>20230316</date>
+    </Ref>
+
+    <Ref key="LENNTECH-KR">
+      <desc>Lenntech: Krypton</desc>
+      <url>https://www.lenntech.com/periodic/elements/kr.htm</url>
+      <date>20230401</date>
+    </Ref>
+
+    <Ref key="TSI-KR">
+      <desc>TSA: AEROSOL NEUTRALIZERS</desc>
+      <url>https://tsi.com/getmedia/1497a311-7e97-4270-a353-36febc1bdac9/Neutralizers2980230_5_20_03Web?ext=.pdf</url>
+      <date>20230401</date>
+    </Ref>
+
+    <Ref key="MADEHOW-KR">
+      <desc>TSA: AEROSOL NEUTRALIZERS</desc>
+      <url>http://www.madehow.com/Volume-4/Krypton.html</url>
+      <date>20230401</date>
+    </Ref>
+
+    <Ref key="LINDE-GAS-KR">
+      <desc>Linde Gas: KRYPTON-85</desc>
+      <url>http://hiq.linde-gas.com/en/images/Rare%20Gas%20Krypton-85_tcm899-90088.pdf</url>
+      <date>20230401</date>
+    </Ref>
+
+    <Ref key="HEALTH-PHYSICS-DEC-2011">
+      <desc>Health Physics December 2011, Volume 101, Number 6, Radiation background in a LaBr3(Ce) gamma-ray scintillation detector.</desc>
+      <url>https://www.researchgate.net/publication/51765486_Radiation_background_in_a_LABR_3CE_gamma-ray_scintillation_detector</url>
+      <date>20230401</date>
+    </Ref>
+
+    <Ref key="WIKI-OIL">
+      <desc>IAEA: Radiation Protection and the Management of Radioactive Waste in the Oil and Gas Industry</desc>
+      <url>https://en.wikipedia.org/wiki/Uses_of_radioactivity_in_oil_and_gas_wells#cite_note-IAEA_2003-3</url>
+      <date>20230401</date>
+    </Ref>
+
+    <Ref key="ORAU-TH232">
+      <desc>ORAU Museum of Radiation and Radioactivity: Magnesium-Thorium Alloy (ca. 1980s)</desc>
+      <url>https://www.orau.org/health-physics-museum/collection/consumer/products-containing-thorium/magnesium-thorium-alloy.html</url>
+      <date>20230401</date>
+    </Ref>
+
+  </References>
+
+  <Nuclides>
+    <!-- Common nuclide pairs with no associated notes -->
+    <Nuc name="Ba-140"><Associated>La-140</Associated><Notes></Notes></Nuc>
+    <Nuc name="La-140"><Associated>Ba-140</Associated><Notes></Notes></Nuc>
+    <Nuc name="Ce-144"><Associated>Pr-144</Associated><Notes></Notes></Nuc>
+    <Nuc name="Pr-144"><Associated>Ce-144</Associated><Notes></Notes></Nuc>
+    <Nuc name="Nd-147"><Associated>Pm-147</Associated><Notes></Notes></Nuc>
+    <Nuc name="Pm-147"><Associated>Nd-147</Associated><Notes></Notes></Nuc>
+
+    <!-- Nuclides with relevant notes on production mechanism, impurities, uses, etc. -->
+    <Nuc name="Ac-225">
+      <Associated>Th-229;Ac-227</Associated>
+      <Notes>
+Uses include as a Targeted alpha-particle therapy [WIKIPEDIA-TAT]. 
+
+Per the National Isotope Development Center, Ac-225 may be produced through either decay of Th-229 or through the DOE Isotope Program's high-energy accelerators at both LANL and BNL through the proton bombardment of natural thorium targets, then separated and purified at ORNL [NIDC-Ac-225]. 
+
+Can be found with Ac-227 (21.7 y) [FRMAC].
+
+Cyclotron radioisotope [MRARII]. 
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Ag-110m">
+      <Associated>Co-60;La-140;Sc-46;Au-198;Zn-65;Mn-54</Associated>
+      <Notes>
+Production mode: Ag-109(n,g)Ag-110m, Thermal X-Section: 4.7 barns, Natural Abundance: 48.17%
+
+"Cobalt-60 (5.27 yr), lanthanum-140 (1.68 d), scandium-46 (83.8 d), silver-110m (250 d), gold-198 (2.7 d):
+Used together in blast furnaces to determine resident times and to quantify yields to measure the furnace performance."-[RII]
+
+When detected as suspected long-lived activation product, also check for Co-60, Zn-65, Mn-54.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Am-241">
+      <Associated>Be(a,n);Li(n,n);Np-237;Pa-233;Am-243;Np-239;Mn-56;Eu-154;Eu-152;Cs-137;Na-24;Cr-51;Co-58;Fe-59</Associated>
+      <Notes>
+Uses: density-thickness gauges, static eliminators, lightning preventers, industrial neutron sources (with beryllium, lithium, or other light nuclei), smoke detectors,
+Osteoporosis detection, heart imaging, fill height detectors, measuring ash content of coal, oil and gas exploration, various industrial processes, and moisture gauges.
+
+&lt;ul&gt;
+  &lt;li&gt;Check for the presence of Np-237/Pa-233.&lt;/li&gt;
+  &lt;li&gt;Can be found with Am-243 (7.4 ky) / Np-239 (2.4 d).&lt;/li&gt;
+  &lt;li&gt;Consider Am-241:Be, Am-241:Li&lt;/li&gt;
+  &lt;li&gt;For Am-241 neutron sources, check for peaks from (n,γ) and (n,n'γ) neutron reactions.&lt;/li&gt;
+&lt;/ul&gt;
+
+Am-241 Neutron Source Info:
+&lt;ul&gt;
+  &lt;li&gt;Am-241:Be - Check for a Doppler broadened peak at 4438.9 keV from Be-9(α,n)C-12. 
+      If the 4438.9 keV peak is very weakly present or difficult to ID, consider double binning the data.&lt;br/&gt;
+      Check for Mn-56 (2.6 h) from neutron activation of minor/trace amounts of Mn in alloys.  
+      Due to interference, Mn-56 can be hard to confirm when strong Fe(n,n') emissions are also present.&lt;br/&gt;
+      Average neutron energy = 4.5 MeV.&lt;br/&gt;
+      Yield = 2.2E+06 n/s per Ci.&lt;br/&gt;
+      Gammas per source neutron ≈ 0.557.
+  &lt;/li&gt;
+  &lt;li&gt;Am-241:Li - Check for a Doppler broadened “triangular” peak at 477.6 keV from Li-7(α,α')Li-7.&lt;br/&gt;
+    Check for Eu-154 (8.6 y) + Eu-152 (13.5 y) from neutron activation of minor/trace amounts of Eu in alloys. &lt;br/&gt;
+    Average neutron energy = 0.54 MeV.&lt;br/&gt;
+    Yield = 6.0E+04 n/s per Ci.&lt;br/&gt;
+    Gammas per source neutron ≈ 21.1.
+  &lt;/li&gt;
+  &lt;li&gt;Check for Doppler broadened “square” peak at 477.6 keV from B-10(n,α)Li-7.&lt;br/&gt;
+    If present with H-1(n,γ) peak at 2223.3 keV, consider presence of borated polyethylene (an effective and common neutron shield).  &lt;br/&gt;
+    Note: Borosilicate glass is the most commonly used window material used in photomultiplier tubes [HAMAMATSU].
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+If a portable Am-241:Be nuclear gauge is suspected, check for Cs-137. 
+A typical portable nuclear gauge source initially contains 8 mCi of Cs-137 (30.2 y) 
+and 40 mCi (8.80E+04 n/sec) of Am-241:Be (432.2 y) or 60 µCi (2.64E+05 n/sec) of Cf-252 (2.6 y).
+      </Notes>
+    </Nuc>
+
+    <Nuc name="As-72">
+      <Associated>Se-72</Associated>
+      <Notes>
+Uses: Planar imaging, Single Photon Emission Computed Tomography (SPECT) or Positron Emission Tomography (PET) medical imaging [MRARII].
+
+Se-72 (8.4 d) is used to generate As-72.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Se-72">
+      <Associated>As-72</Associated>
+      <Notes>
+Uses: "Brain imaging, generator system with As-72, monoclonal antibody immunotherapy." [MRARII]
+      </Notes>
+    </Nuc>
+
+    <Nuc name="At-211">
+      <Associated>F-18</Associated>
+      <Notes>
+Uses: targeted alpha therapy (TAT) cancer treatment [MRARII].
+      
+Cyclotron radioisotope [WIKIPEDIA-TAT].
+
+May be used with F-18 for in vivo studies [MRARII]. 
+      </Notes>
+    </Nuc>
+
+    
+    <Nuc name="Au-198">
+      <Associated>Co-60;La-140;Sc-46;Ag-110m</Associated>
+      <Notes>
+Uses:&lt;ul&gt;
+  &lt;li&gt;"Cancer treatment using mini-gun (B), treating ovarian, prostate, and brain cancer."-[MRARII]&lt;/li&gt;
+  &lt;li&gt;"Used to label sand to study coastal erosion."-[RII]&lt;/li&gt;
+  &lt;li&gt;"Used to study sewage and liquid waste movements, as well as tracing factory waste causing ocean pollution, and to trace sand movement in river beds and ocean floors."-[RII]&lt;/li&gt;
+  &lt;li&gt;"Cobalt-60 (5.27 yr), lanthanum-140 (1.68 d), scandium-46 (83.8 d), silver-110m (250 d), gold-198 (2.7 d):
+Used together in blast furnaces to determine resident times and to quantify yields to measure the furnace performance."-[RII]&lt;/li&gt;
+&lt;/ul&gt;
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Ba-133">
+      <Associated></Associated>
+      <Notes>
+Uses: &lt;ul&gt;
+  &lt;li&gt;Commmonly used as a radiation detector calibration source.&lt;/li&gt;
+  &lt;li&gt;As a x-ray radiocontrast agent [NIDC].&lt;/li&gt;
+  &lt;li&gt;As a dose calibration source for medical isotopes such as I-131 used in heart and thyroid diagnostics [NIDC].&lt;/li&gt;
+  &lt;li&gt;Off-shore oil and gas platforms utilize Ba-133 sources in multiphase flow meters to monitor and control pipe flow of oil, gas, and water during production [NIDC].&lt;/li&gt;
+  &lt;li&gt;Quantum computing research [NIDC].&lt;/li&gt;
+  &lt;li&gt;A common sealed source in laboratories.&lt;/li&gt;
+  &lt;li&gt;Various other purposes.&lt;/li&gt;
+&lt;/ul&gt;
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="Be-7">
+      <Associated></Associated>
+      <Notes>
+Can be detected when large quantities of air are passed through filters.  
+
+Produced in the upper atmosphere by cosmic ray spallation of nitrogen and oxygen [WIKIPEDIA-CRS].
+      </Notes>
+    </Nuc>
+
+    <!--
+    <Nuc name="Bi-207">
+      <Associated></Associated>
+      <Notes></Notes>
+    </Nuc>
+    -->
+
+    <Nuc name="Bi-213">
+      <Associated>Ac-225;Bi-213</Associated>
+      <Notes>
+Uses: "Used for targeted alpha therapy (TAT), especially cancers, as it has a high energy (8.4 MeV)." [GNRIM]
+
+Reactor radioisotope. Produces from Ac-225 (10.0 d) based generators [GNRIM].
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Br-76">
+      <Associated></Associated>
+      <Notes>
+Positron emitter with 57% positron emission and 43% electron capture.  
+
+Has been used to label antibodies and small molecules for PET imaging [https://www.sciencedirect.com/topics/medicine-and-dentistry/bromine-76].
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Br-82">
+      <Associated>k-42;Na-24</Associated>
+      <Notes>
+May be produces though activated potassium bromide (KBr), which may also have K-42 (12.4 h) and Na-24 (15.0 h).
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Na-24">
+      <Associated>k-42;Na-24;Np-239</Associated>
+      <Notes>
+May be produces though activated potassium bromide (KBr), which may also have K-42 (12.4 h) and Br-82 (35.3 h).
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Ca-47">
+      <Associated></Associated>
+      <Notes>
+Study of the functions of calcium within the body [https://www.sciencedirect.com/topics/nursing-and-health-professions/calcium-47].
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Cd-109">
+      <Associated></Associated>
+      <Notes>
+Uses: &lt;ul&gt;
+  &lt;li&gt;Cancer detection, pediatric imaging [MRARII].&lt;/li&gt;
+  &lt;li&gt;Cd-109 is most commonly used as a source for x-ray fluorescence imaging and in environmental research. National Isotope Development Center [NIDC].  Can be used to determine sulfur content of coal, presence of lead in paint, and for qualitative analysis of metal alloys.&lt;/li&gt;
+&lt;/ul&gt;
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Cf-252">
+      <Associated>Cs-137;H(n,g);Cf-249;Cf-251;SF Products</Associated>
+      <Notes>
+Uses: &lt;ul&gt;
+  &lt;li&gt;Spontaneous-fission neutron sources, Moisture gauges, Inspection of airline luggage for hidden explosives.&lt;/li&gt;
+  &lt;li&gt;Cervical, melanoma, brain cancer treatment [MRARII].&lt;/li&gt;
+  &lt;li&gt;Cf-252 used in several specialized applications, including nuclear-reactor startup, detection instrumentation, neutron radiography, material scanners, certain types of cancer treatment, and well-logging by the oil industry.&lt;/li&gt;
+&lt;/ul&gt;
+
+Check for peaks from (n,g) and (n,n'g) neutron reactions, Can be found with Cf-249 (351.0 y), Cf-251 (900.0 y), Spontaneous fission products.
+
+Cf-252 is typically encapsulated in welded, stainless-steel capsules, which are then often surrounded by neutron-shielding materials such as polyethylene, paraffin, boron, and cadmium.
+
+Average neutron energy = 2.35 MeV.  Specific Activity = 536.3 Ci/g.  SF Rate = 4.4E+09 n/s per Ci or 2.34E+12 n/s per gram.
+
+Neutron dose rate (mrem/hr per Ci at 1-m) = 4.10E+03 mrem/hr per Ci at 1-m
+
+Gamma dose rate (mrem/hr per Ci at 1-m) = 3.00E+02 mrem/hr per Ci at 1-m
+
+
+Check for Doppler broadened “square” peak at 477.6 keV from B-10(n,α)Li-7.  If present with H-1(n,γ) peak at 2223.3 keV, consider presence of borated polyethylene (an effective and common neutron shield)
+
+For NaI, check for common spontaneous FPs (e.g. Cs-137, 661.7 keV) and neutron interactions (e.g. H‐1(n,γ), 2223.3 keV).  For HPGe, also check for Cf-249 impurity (388.2 and 333.4 keV) and Cf-251 impurity (176.6 keV).
+
+A typical portable nuclear gauge source initially contains 8 mCi of Cs-137 (30.2 y) and 40 mCi (8.80E+04 n/sec) of Am-241:Be (432.2 y) or 60 µCi (2.64E+05 n/sec) of Cf-252 (2.6 y).
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="Co-56">
+      <Associated>Co-57;Co-58;Mn-52;Mn-54;V-48;Re-183;Re-184;Np-239</Associated>
+      <Notes>
+Can be found with Co-57 (217.7 d), Co-58 (70.9 d), Mn-52 (5.6 d), Mn-54 (312.0 d), V-48 (16.0 d), Re-183 (70.0 d), Re-184 (38.0 d)
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Co-57">
+      <Associated>Co-56;Co-58</Associated>
+      <Notes>
+Uses: &lt;ul&gt;
+  &lt;li&gt;Calibration sources for gamma cameras [MRARII].&lt;/li&gt;
+  &lt;li&gt;X-ray fluorescence source.&lt;/li&gt;
+  &lt;li&gt;Used as a marker to estimate organ size and for in-vitro diagnostic kits [GNRIM].&lt;/li&gt;
+  &lt;li&gt;Common laboratory source.&lt;/li&gt;
+&lt;/ul&gt;
+
+Cyclotron radioisotope.
+
+Can be found with Co-56 (77.2 d), Co-58 (70.9 d).
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Co-58">
+      <Associated>Co-57;Co-60</Associated>
+      <Notes>
+Can be found with Co-57 (217.7 d), Co-60 (5.3 y)
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Co-60">
+      <Associated>La-140;Sc-46;Ag-110m;Au-198;Mn-54;Zn-65</Associated>
+      <Notes>
+Uses: &lt;ul&gt;
+  &lt;li&gt;Calibration sources.&lt;/li&gt;
+  &lt;li&gt;Industrial radiography devices and gauges.&lt;/li&gt;
+  &lt;li&gt;Fluid processing/level gauges.&lt;/li&gt;
+  &lt;li&gt;Food sterilization/irradiation devices.&lt;/li&gt;
+  &lt;li&gt;Gamma sterilization.&lt;/li&gt;
+  &lt;li&gt;Formerly used for external beam radiotherapy, now almost universally used for sterilizing.&lt;/li&gt;
+  &lt;li&gt;High-specific-activity Co-60 is used for brain cancer treatment.&lt;/li&gt;
+  &lt;li&gt;"Cobalt-60 (5.27 yr), lanthanum-140 (1.68 d), scandium-46 (83.8 d), silver-110m (250 d), gold-198 (2.7 d):
+Used together in blast furnaces to determine resident times and to quantify yields to measure the furnace performance."-[RII]&lt;/li&gt;
+&lt;/ul&gt;
+
+Reactor radioisotope.  Production Mode: Co-59(n,g)Co-60, Thermal X-Section: 37.5 barns, Natural Abundance: 100%
+
+When detected as suspected long-lived activation product, also check for Mn-54, Zn-65, and Ag-110m.
+      </Notes>
+    </Nuc>
+
+
+    <Nuc name="Cr-51">
+      <Associated>Na-24;Cr-51;Co-58;Fe-59;Np-239</Associated>
+      <Notes>
+Uses: &lt;ul&gt;
+  &lt;li&gt;Labeling red blood cells for monitoring, and to quantify gastro-intestinal protein loss or bleeding [GNRIM].&lt;/li&gt;
+  &lt;li&gt;Labeling sand to study coastal erosion [RII].&lt;/li&gt;
+&lt;/ul&gt;
+
+Reactor radioisotope. Production Mode: Cr-50(n,g)Cr-51, Thermal X-Section: 16 barns, Natural Abundance: 4.35%.
+      </Notes>
+    </Nuc>
+
+    
+    <Nuc name="Cs-131">
+      <Associated>Cs-132;Cs-136;Zn-65</Associated>
+      <Notes>
+Uses: &lt;ul&gt;
+  &lt;li&gt;Prostate cancer seeds.&lt;/li&gt;
+  &lt;li&gt;Used for brachytherapy, emits soft x-rays [GNRIM].&lt;/li&gt;
+&lt;/ul&gt;
+
+Reactor radioisotope.
+
+Can be found with Cs-132 (6.5 d), Cs-136 (13.2 d), Zn-65 (244.1 d)
+      </Notes>
+    </Nuc>
+
+    
+    <Nuc name="Cs-134">
+      <Associated>Cs-137</Associated>
+      <Notes>
+Common nuclear reactor product found with Cs-137.
+
+Cs‐134 is produced from long nuclear reactor irradiations: Xe‐133 (Half‐life = 5.2 d, 6.70 FP‐yield) → Cs‐133(n,γ)Cs‐134.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Cs-137">
+      <Associated>Cs-134;</Associated>
+      <Notes>
+Common fission product
+
+Industrial radiography devices and gauges, fluid processing/level gauges
+
+Used for low-intensity sterilization of blood.  Reactor radioisotope. [GNRIM]
+
+"Used for radiotracer technique for identification of sources of soil erosion and deposition, as well as in density and fill height level switches. Also for low-intensity gamma sterilization."-[RII]
+
+Background from world-wide fallout deposition.
+      </Notes>
+    </Nuc>
+
+
+    <Nuc name="Cu-64">
+      <Associated>Cu-62</Associated>
+      <Notes>
+Used to study genetic diseases affecting copper metabolism, such as Wilson's and Menke's diseases, for PET imaging of tumors, and also cancer therapy.
+
+PET scanning (C), planar imaging (C), SPECT imaging (C) dosimetry studies (C), cerebral and myocardial blood flow (C), used with Cu-62 (C), treating of colorectal cancer.
+      </Notes>
+    </Nuc>
+
+
+    <Nuc name="Cu-67">
+      <Associated>Na-24;U-235</Associated>
+      <Notes>
+"Cancer treatment/diagnostics, monoclonal antibodies, radioimmunotherapy, planar imaging, SPECT or PET."-[MRARII]
+
+Per the National Isotope Development Center, Cu-67 has garnered considerable attention in the medical community for its “theranostic” properties, meaning it has emissions suitable for both diagnostic imaging and targeted cancer therapy.  Cu-67 is produced at Argonne National Laboratory via a photonuclear reaction at its Low-Energy Accelerator Facility (LEAF).
+
+Production mode: Photonuclear, Zn-68(γ,p)Cu-67
+
+May be found with Na-24 (15.0 h).
+      </Notes>
+    </Nuc>
+
+
+    <Nuc name="Eu-152">
+      <Associated>Eu-154;Eu-155</Associated>
+      <Notes>
+Can be found with Eu-154 (8.6 y), Eu-155 (4.8 y)
+      </Notes>
+    </Nuc>
+
+
+    <Nuc name="Eu-154">
+      <Associated>Eu-152;Eu-155</Associated>
+      <Notes>
+Can be found with Eu-152 (13.5 y), Eu-155 (4.8 y)
+      </Notes>
+    </Nuc>
+
+
+    <Nuc name="F-18">
+      <Associated>Kr-85</Associated>
+      <Notes>
+Pure positron emitter, Consider likelihood based on half-life
+
+It decays with positron emission. Used as tracer with PET imaging.  
+
+Kr-85 has a gamma at 514 keV that low-resolution nuclide ID algorirms may incorrectly attribute to F-18.
+
+Cyclotron radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Fe-59">
+      <Associated>Na-24;Cr-51;Co-58;Fe-59;Np-239</Associated>
+      <Notes>
+"Used in studies of iron metabolism in the spleen."-[GNRIM]
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Ga-67">
+      <Associated>In-111</Associated>
+      <Notes>
+"Used for tumor imaging and locating inflammatory lesions (infections)."-[GNRIM]  
+
+"Imaging of abdominal infections (C), detect Hodgkins/non-Hodgkins lymphoma (C), used with In-111 for soft tissue infections and osteomyelitis detection (C), evaluate sarcoidiodis and other granulomaous diseases, particularly in lungs and mediastiusim (C)."-[MRARII]
+
+Cyclotron radioisotope.
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="Gd-153">
+      <Associated></Associated>
+      <Notes>
+"Dual photon source, osteoporosis detection, SPECT imaging."-[MRARII]
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Ga-68">
+      <Associated>Ge-68</Associated>
+      <Notes>
+Ge-68 (271.0 d)/Ga-68 generator
+
+"Positron emitter used in PET and PET-CT units. Derived from germanium-68 in a generator."-[GNRIM]
+
+Cyclotron radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Ho-166m">
+      <Associated>Eu-154;U-235</Associated>
+      <Notes>
+Can be found with Eu-154 (8.6 y).
+      </Notes>
+    </Nuc>
+
+    <Nuc name="I-123">
+      <Associated>Te-121;I-124;I-125</Associated>
+      <Notes>
+Can be found with Te-121 (19.2 d), I-124 (4.2 d), I-125 (59.4 d)
+
+"Increasingly used for diagnosis of thyroid function, it is a gamma emitter without the beta radiation of I-131."-[GNRIM]
+
+Cyclotron radioisotope
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="I-124">
+      <Associated></Associated>
+      <Notes>
+I-124 production routes include Te-124(p,n)I-124, Te-124(d,2n)I-124, and many others.  For I-124 production routes and potential impurities which include various iodine isotopes, see Molecules. 2010 Apr; 15(4): 2686–2718. ""Iodine-124: A Promising Positron Emitter for Organic PET Chemistry""
+
+"Tracer, with longer life than F-18, one-quarter of decays are positron emission so used with PET. Also used to image the thyroid using PET."-[GNRIM]
+
+Cyclotron radioisotope
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="I-125">
+      <Associated>I-126</Associated>
+      <Notes>
+Prostate cancer seeds, Can be found with I-126 (12.93 d).
+
+"Used in cancer brachytherapy (prostate and brain), also diagnostically to evaluate the filtration rate of kidneys and to diagnose deep vein thrombosis in the leg. It is also widely used in radioimmuno-assays to show the presence of hormones in tiny quantities."-[GNRIM]
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="I-131">
+      <Associated>Xe-131m;Ba-133;Pd-103;I-132;Xe-133;Kr-85</Associated>
+      <Notes>
+"Widely used in treating thyroid cancer and in imaging the thyroid; also in diagnosis of abnormal liver function, renal (kidney) blood flow, and urinary tract obstruction. A strong gamma emitter, but used for beta therapy."-[GNRIM]
+
+Treatment may involve significant radioactivity (e.g. 4.4 GBq is quoted as an average dose of I-131 for thyroid ablation, and up to 11 GBq for patients with advanced metastatic disease). According to US regulatory guidelines for I-131, the patient can be released if the activity is below 1.2 GBq, or 0.07 mSv/hr at 1 metre. Meanwhile a lot of I-131 is flushed down the hospital toilet and plumbing needs to be shielded accordingly [GNRIM].
+
+Has spectral similarities with Ba-133 and Pd-103 dependent on shielding.
+
+Gaseous or volatile fission product(s) detected: Check for krypton, xenon, and iodine isotopes such as Kr85,Xe133,I131,I132,Te132 [FRMAC].
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="I-132">
+      <Associated>Te-132;Xe-131m;Ba-133;Pd-103;I-132;Xe-133;Kr-85</Associated>
+      <Notes>
+      Gaseous or volatile fission product(s) detected: Check for krypton, xenon, and iodine isotopes such as Kr85,Xe133,I131,I132,Te132 [FRMAC].
+      </Notes>
+    </Nuc>
+
+    <Nuc name="In-111">
+      <Associated>In-114m</Associated>
+      <Notes>
+Can be found with In-114m (49.5 d)
+
+"Used for specialist diagnostic studies, e.g. brain studies, infection and colon transit studies. Also for locating blood clots, inflammation and rare cancers."-[GNRIM]
+
+"Detection of heart transplant rejection, imaging of abdominal infections, antibody labeling cellular immunology, used with Ga-67 for soft tissue infection detection and ostemyelitis detection, concentrates in liver, kidneys, high specific activity, white blood cell imaging, cellular dosimetry, myocardial scans, treatment of leukemia, imaging tumors."-[MRARII]
+
+Cyclotron radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Ir-192">
+      <Associated>Ir-194m2;U-238</Associated>
+      <Notes>
+Common radiography source.  May be placed in a depleted uranium (DU) shield/pig for transport, 10s of Curies or more.  Can be found with Ir-194m2 (171.0 d).
+
+"Supplied in wire form for use as an internal radiotherapy source for cancer treatment (used then removed), e.g. for prostate cancer. Strong beta emitter for high dose-rate brachytherapy."-[GNRIM]
+
+"Iridium-192 implants are used especially in the head and breast. They are produced in wire form and are introduced through a catheter to the target area. After administering the correct dose, the implant wire is removed to shielded storage."-[GNRIM]
+
+"Used in gamma radiography to locate flaws in metal components."-[RII]
+
+Radiography and nondestructive testing devices. [NIDC]
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="K-40">
+      <Associated></Associated>
+      <Notes>
+NORM, 11.0 pCi/g soil, 836.9 pCi/g in K, 448.6 pCi/g in KCl, Nat. abundance 0.0117%
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="Kr-85">
+      <Associated>F-18;Xe-133;I-131;I-132;Te-132</Associated>
+      <Notes>
+Kr-85 has a single gamma emission at 514.0 keV that is commonly identified (incorrectly) as F-18 by nuclide ID algorithms when low-resolution (NaI) detectors are used.
+
+"Krypton-85 is usually produced in gas mixtures with argon or xenon to improve the ionization in light bulbs by reducing their starting voltage. It also is used in plasma displays, spark gaps and for leak detection."-[LINDE-GAS-KR]
+
+Thickness gauges (paper, plastic, rubber), Backscatter gauges, Leak testing of vacuum equipment, Self-luminous/ luminescent dials
+
+"Used for industrial gauging."-[RII]
+
+"Radioactive Kr-85 can be used to locate small flaws in metal surfaces. The gas tends to collect in these flaws and its radioactivity can be detected."-[MADEHOW-KR]
+
+Aerosol neutralizers [TSI-KR].
+
+"It is used to detect leaks in sealed containers, to excite phosphors in light sources with no external source of energy, and in medicine to detect abnormal heart openings."-[LENNTECH-KR]
+
+Gaseous or volatile fission product(s) detected: Check for krypton, xenon, and iodine isotopes such as Kr85, Xe133, I131, I132, Te132 [FRMAC].
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="La-138">
+      <Associated></Associated>
+      <Notes>
+22.9 pCi/g in La, 19.4 pCi/g in La2O3, Nat. abundance 0.090%, Bulk Density ~ 0.4 g/cm3, True Density: 6.51 g/cm3
+
+Notes about intrinsic radioactivity in LaBr3:Ce detectors.
+&lt;ul&gt;
+  &lt;li&gt; Intrinsic background present in 1500-2800 keV ROI due to Ac-227 decay product alphas.  Lower pulse heights are expected for alpha particles because light emission by their interaction in the detector is less than for electrons generated by gamma rays (the pulse height of alpha particles is reduced to 0.35 relative to gamma rays); &lt;/li&gt;
+  &lt;li&gt; Peak at 37 keV = K-shell x-ray from electron-capture decay of La-138 (32.9 keV) in coincidence with a L-shell Auger electron (3.67 keV).  &lt;/li&gt; 
+  &lt;li&gt; Peak at 1461.8 - 1467.8 keV = 1435.8 keV gamma in coincidence with K x-rays (32-37 keV, Sum = 1467.8 keV) and Auger electrons (26.4 keV, Sum = 1462.2 keV).  &lt;/li&gt; 
+&lt;/ul&gt;
+[HEALTH-PHYSICS-DEC-2011]
+      </Notes>
+    </Nuc>
+
+    <Nuc name="La-140">
+      <Associated>Co-60;La-140;Sc-46;Ag-110m;Au-198</Associated>
+      <Notes>
+"Cobalt-60 (5.27 yr), lanthanum-140 (1.68 d), scandium-46 (83.8 d), silver-110m (250 d), gold-198 (2.7 d):
+Used together in blast furnaces to determine resident times and to quantify yields to measure the furnace performance."-[RII]
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Lu-176">
+      <Associated></Associated>
+      <Notes>
+1367.1 pCi/g in Lu, 1208.9 pCi/g in Lu2O3, Nat. abundance 2.59%, True Density: 9.42 g/cm3
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Lu-177">
+      <Associated>Lu-177m</Associated>
+      <Notes>
+Can be found with Lu-177m
+
+Lu-177m becomes more dominant with time.
+ 
+Production mode: Neutron capture on enriched Lu-176 target.  Other companies are investigating the ytterbium production route which does not produce the Lu-177m impurity.
+
+"Lu-177 is increasingly important as it emits just enough gamma for imaging while the beta radiation does the therapy on small (e.g. endocrine) tumors. Its half-life is long enough to allow sophisticated preparation for use.  It is usually produced by neutron activation of natural or enriched lutetium-176 targets."-[GNRIM]  
+
+"Lu-177 dotatate or octreotate is used to treat tumors such as neuroendocrine ones, and is effective where other treatments fail. A series of four treatments delivers 32 GBq. After about four to six hours, the exposure rate of the patient has fallen to less than 25 microsieverts per hour at one metre and the patients can be discharged from hospital. Lu-177 is essentially a low-energy beta-emitter (with some gamma) and the carrier attaches to the surface of the tumor."-[GNRIM]  
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Lu-177m">
+      <Associated>Lu-177</Associated>
+      <Notes>
+Can be found with Lu-177.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Mn-54">
+      <Associated>Co-60;Zn-65;Ag-110m</Associated>
+      <Notes>
+"Used to predict the behavior of heavy metal components in effluents from mining waste water."-[RII]
+
+When detected as suspected long-lived activation product, also check for Co-60, Zn-65, and Ag-110m.
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="Mn-56">
+      <Associated>Am-241</Associated>
+      <Notes>
+Can be found with Am-241:Be sources due to neutron activation of minor/trace amounts of Mn in alloys
+
+Production Mode: Mn-55(n,g)Mn-56, Thermal X-Section: 13.3 barns, Natural Abundance: 100%
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Mo-99">
+      <Associated>Tc-99m;Ru-103;Rh-103;Ru-106;Rh-106;Sb-125;Te-125m;W-181;W-185;W-188</Associated>
+      <Notes>
+Mo-99 (65.94 h)/Tc-99m generator.  
+
+Long lived impurities associated with spent Mo-99/Tc-99m generators include: Ru-103 (39.3 d)/Rh-103, Ru-106 (373.6 d)/Rh-106, Sb-125 (2.8 y)/Te-125m (57.40 d), W-181 (121.2 d), W-185 (75.1 d), W-188 (69.8 d).  
+Sb‐125 → Te‐125m activity ratio at transient equilibrium equals 1/0.245
+
+"Used as the 'parent' in a generator to produce technetium-99m."-[GNRIM]
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="Na-22">
+      <Associated></Associated>
+      <Notes>
+"For studies of electrolytes within the body."-[GNRIM]
+
+Per National Isotope Development Center, Na-22 is mostly used in nuclear medicine imaging for PET scans.
+
+Common radioactive gamma check source.  Also used for detector gain 'stabilization' of gamma spectra.
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+<!--
+    <Nuc name="Nb-94">
+      <Associated></Associated>
+      <Notes>
+      </Notes>
+    </Nuc>
+-->
+
+    <Nuc name="Np-237">
+      <Associated>Np-237;Pa-233;Pu-239;Am-241;Pu-241</Associated>
+      <Notes>
+Np-237/Pa-233 (27.4 d)
+      </Notes>
+    </Nuc>
+
+    <Nuc name="P-32">
+      <Associated></Associated>
+      <Notes>
+Pure beta, β- max 1.709 MeV.
+
+"Used in the treatment of polycythemia vera (excess red blood cells). Beta emitter."-[GNRIM]  
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Pd-103">
+      <Associated></Associated>
+      <Notes>
+Prostate cancer seeds
+
+"Used to make brachytherapy permanent implant seeds for early stage prostate cancer. Emits soft x-rays."-[GNRIM]  
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Po-210">
+      <Associated></Associated>
+      <Notes>
+Commonly used in static eliminators
+
+Static eliminators, Ion “air guns”, Ionizing brushes.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Pu-238">
+      <Associated></Associated>
+      <Notes>
+Heat source Pu
+
+Radioisotope thermoelectric generators, Radioisotope heater units, Smoke detectors
+
+Pu-238:Be = Average neutron energy = 4.5 MeV.  Yield = 2.3E+06 n/s per Ci.  Gammas per source neutron ≈ 0.56.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Pu-239">
+      <Associated>Pu-236;Pu-238;Pu-240;Pu-241;Pu-242;Am-241;Np-237;Pa-233</Associated>
+      <Notes>
+WGPu and/or RGPu
+
+Pu-239:Be = Average neutron energy = 3.2 MeV.  Yield = 1.7E+06 n/s per Ci.  Gammas per source neutron ≈ 0.56.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Ra-223">
+      <Associated>Ac-227;Th-227;Ra-223</Associated>
+      <Notes>
+Ac-227 (21.8 y)-Th-227 (18.7 d)/Ra-223 generator
+
+"Used for TAT brachytherapy, lodges in bone, emits soft X-rays."-[GNRIM]
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="Ra-226">
+      <Associated>U-xray;U-235;U-238;Rn-222</Associated>
+      <Notes>
+Luminescent dials.
+
+1.3 pCi/g soil (average), Consider Ra-226:Be neutron source if neutrons are present
+
+Ra-226:Be - Check for a Doppler broadened peak at 4438.9 keV from Be-9(α,n)C-
+12. If the 4438.9 keV peak is very weakly present or difficult to ID, consider double binning the data.  
+ Average neutron energy = 5 MeV.  Yield = 1.7E+07 n/s per Ci.  Per ICRU26 (1977).
+
+U-Ore and Ra-226 decay chain gamma spectra are similar.  
+
+U-Ore versus Ra-226: U-Ore spectra may contain detectable U x-rays (98.4 and 94.6 keV), U-238 decay product emissions (92.6, 63.3, 1001.0 keV), or U-235 emissions (143.8, 163.3, 205.3 keV) that are not present in Ra-226 decay chain spectra.
+
+Ra-226 can be detectable at a higher activity than its decay products (Pb-214/Bi-214) due to diffusion/escape of the noble gas radon (Rn-222).
+
+Liquefied petroleum gas: The radioactive noble gas, Rn-222 (half-life = 3.8 days), is commonly concentrated during the production and storage of liquefied petroleum gas.  Accordingly, Rn-222 decay products (effective half-life is approximately 30 minutes) can be readily detected via gamma spectroscopy during storage and transport.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Rb-82">
+      <Associated>Sr-82;Sr-85</Associated>
+      <Notes>
+Sr-82 (25.36 d)/Rb-82 generator, Sr-82 can be found with Sr-85 (64.9 d), Rb-82 β+ max 3356 keV (83.3%) and β+ max 2580 keV (11.7%)
+
+"Convenient PET agent in myocardial perfusion imaging."-[GNRIM]
+
+Cyclotron radioisotope.
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="Rb-86">
+      <Associated>Cs-134</Associated>
+      <Notes>
+Can be found with Cs-134 (2.1 y)
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Re-186">
+      <Associated></Associated>
+      <Notes>
+"Used for pain relief in bone cancer. Beta emitter with weak gamma for imaging."-[GNRIM]  
+
+"Sr-89 and (increasingly) Sm-153 are used for the relief of cancer-induced bone pain. Re-186 is a newer product for this."-[GNRIM]  
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Re-188">
+      <Associated>W-188;Re-188</Associated>
+      <Notes>
+"Used to beta irradiate coronary arteries from an angioplasty balloon."-[GNRIM]
+
+W-188 (69.8 d) is the 'parent' isotope in Re-188 generators.
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Sb-124">
+      <Associated>Ar-41;Co-60;I-131;Ir-192;La-140;Mn-56;Sc-46;Na-24;Ag-110m;Br-82;C-14;I-125;Co-60;La-140;Sc-46;Ag-110m;Au-198</Associated>
+      <Notes>
+Used as a radiotracer and marker in the oil and gas industry.  The oil and gas industry in general uses unsealed radioactive solids (powder and granular forms), liquids and gases to investigate or trace the movement of materials.  The most commonly used tracers include Sb-124, Ar-41, Co-60, I-131, Ir-192, La-140, Mn-56, Sc-46, Na-24, and Ag-110m.  Br-82, C-14, H-3, and I-125 are also used. [WIKI-OIL]
+
+Tracers in solid-state and pipeline flow studies
+Beryl mineral prospecting (when combined with beryllium)
+
+Consider Sb-124:Be photoneutron source (3.2E+06 n/s per Ci) if neutrons are present.  Average neutron energy = 0.024 MeV.  Yield = 1.9E+05 n/s per Ci.  Per ICRU26 (1977).
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Sc-46">
+      <Associated>Sb-124;Ar-41;Co-60;I-131;Ir-192;La-140;Mn-56;Sc-46;Na-24;Ag-110m;Br-82;C-14;I-125;Co-60;La-140;Sc-46;Ag-110m;Au-198</Associated>
+      <Notes>
+Used as a radiotracer and marker in the oil and gas industry.  The oil and gas industry in general uses unsealed radioactive solids (powder and granular forms), liquids and gases to investigate or trace the movement of materials.  The most commonly used tracers include Sb-124, Ar-41, Co-60, I-131, Ir-192, La-140, Mn-56, Sc-46, Na-24, and Ag-110m.  Br-82, C-14, H-3, and I-125 are also used. [WIKI-OIL]
+
+"Regional blood flow studies, PET imaging."-[MRARII]
+
+"Cobalt-60 (5.27 yr), lanthanum-140 (1.68 d), scandium-46 (83.8 d), silver-110m (250 d), gold-198 (2.7 d):
+Used together in blast furnaces to determine resident times and to quantify yields to measure the furnace performance."-[RII]
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Se-75">
+      <Associated>U-238</Associated>
+      <Notes>
+Common radiography source.  May be placed in a depleted uranium (DU) shield/pig for transport, 10s of Curies or more.
+
+"Used in the form of seleno-methionine to study the production of digestive enzymes."-[GNRIM]
+
+"Used in gamma radiography and non-destructive testing."-[RII]
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Sm-153">
+      <Associated>Eu-152;Eu-154;Eu-156;Eu-152m;Eu-155;Na-24</Associated>
+      <Notes>
+Can be found with Eu-152 (13.5 y), Eu-154 (8.6 y), Eu-156 (15.2 d), Eu-152m (9.3 h), Eu-155 (4.8 y) and possibly Na-24 (15.0 h)
+
+Sm-153 is very effective in relieving the pain of secondary cancers lodged in the bone, sold as Quadramet. Also very effective for prostate and breast cancer. Beta emitter.  Reactor radioisotope
+
+Sr-89 and (increasingly) Sm-153 are used for the relief of cancer-induced bone pain. Re-186 is a newer product for this.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Sn-117m">
+      <Associated>Sn-113</Associated>
+      <Notes>
+Can be found with Sn-113 (115.1 d)
+
+Used to treat canine elbow osteoarthritis (arthritis)
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Sr-90">
+      <Associated>Y-90</Associated>
+      <Notes>
+Sr-90/Y-90 (64.0 h), Pure beta, β- max 546/2284 keV.
+
+"Used for industrial gauging."-[RII]
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Ta-182">
+      <Associated></Associated>
+      <Notes>
+"Bladder cancer treatment, internal implants."-[MRARII]
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Tc-99m">
+      <Associated>Mo-99;Tl-201;Tc-99</Associated>
+      <Notes>
+Mo-99 (65.94 h) is the 'parent' isotope used in Tc-99m generators. Used for cardiac-stress tests.
+
+"Used in to image the skeleton and heart muscle in particular, but also for brain, thyroid, lungs (perfusion and ventilation), liver, spleen, kidney (structure and filtration rate), gall bladder, bone marrow, salivary and lacrimal glands, heart blood pool, infection, and numerous specialized medical studies. Produced from Mo-99 in a generator. The most common radioisotope for diagnosis, accounting for over 80% of scans."-[GNRIM]
+
+"Myocardial perfusion imaging (MPI) uses Tl-201 chloride or Tc-99 and is important for detection and prognosis of coronary artery disease."-[GNRIM]
+
+"Used to study sewage and liquid waste movements, as well as tracing factory waste causing ocean pollution, and to trace sand movement in river beds and ocean floors."-[RII]
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Th-228">
+      <Associated>U-232;Th-228;Th-232</Associated>
+      <Notes>
+U-232 (68.9 y)/Th-228 (1.91 y)
+
+Th-232 and U-232/Th-228 decay chain gamma spectra are similar.  
+
+Th-232 versus U-232/Th-228: Th-232 decay chain spectra generally contain readily detectable Ac-228 emissions (338.3, 911.2, and 969.0 keV).
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Th-229">
+      <Associated>Ac-225</Associated>
+      <Notes>
+Uses include as a generator for Ac-225 [NIDC-Ac-225], and has also been used to increase the lifetime of fluorescent bulbs [FRMAC].
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Th-232">
+      <Associated>U-232;Th-228;Ra-226</Associated>
+      <Notes>
+Used in electric arc welding rods in construction, aircraft, petrochemical and food processing equipment industries. They produce easier starting, greater arc stability and less metal contamination.  (NUREG/BR-0217, Rev. 1)
+
+"Mag-Thor is a common name for magnesium alloys containing thorium.", "Mag-thor has had a variety of applications (e.g., in missiles, spacecraft, tanks), but its primary use is in the manufacture of aircraft parts, especially engines.", "Notable properties of magnesium-thorium alloys include high strength, creep resistance at high temperatures, and light weight."-[ORAU-TH232]
+
+1.1 pCi/g soil (average).  
+
+Th-232 and U-232/Th-228 decay chain gamma spectra are similar.  
+
+Th-232 versus U-232/Th-228: Th-232 decay chain spectra generally contain readily detectable Ac-228 emissions (338.3, 911.2, and 969.0 keV).
+
+If significant quantities of aged, chemically processed natural thorium are present, Ra-226 decay products from Th-230 decay may be detectable.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Tl-200">
+      <Associated>Tl-201;Tl-202</Associated>
+      <Notes>
+Can be found with Tl-201 (72.91 h), Tl-202 (12.2 d).
+
+When Tl-201 medical shipments are made, the Tl can be heavily shielded resulting in the primary gamma signature being from high energy Tl-200 gamma emissions.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Tl-201">
+      <Associated>Tl-202;Tl-200</Associated>
+      <Notes>
+Can be found with Tl-202 (12.2 d), Tl-200 (26.1 h).  
+
+Tl-202 becomes more dominant with time.
+
+When Tl-201 medical shipments are made, the Tl can be heavily shielded resulting in the primary gamma signature being from high energy Tl-200 gamma emissions.
+
+Production mode: Tl-203(p,3n) Pb-201 -> Tl-201
+
+Tl-201 X-rays combined with scatter and/or a gain shift in a NaI detector can generate a peak near 59.5 keV causing misidentification as Am-241.
+
+"Used for diagnosis of coronary artery disease other heart conditions such as heart muscle death and for location of low-grade lymphomas. It is the most commonly used substitute for technetium-99 in cardiac-stress tests."-[GNRIM]
+
+"Myocardial perfusion imaging (MPI) uses thallium-201 chloride or Tc-99 and is important for detection and prognosis of coronary artery disease."-[GNRIM]
+
+Cyclotron radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Tl-204">
+      <Associated></Associated>
+      <Notes>
+"Used for industrial gauging."-[RII]
+
+Beta sources (calibration and check),  Contamination (dust, pollen) gauges for filter paper, Thickness gauges.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="U-233">
+      <Associated>U-232;Th-229</Associated>
+      <Notes>
+Can be found with U-232 (68.9 y), Th-229 (7.34 ky).
+
+U-233 is difficult to detect via gamma spectroscopy. However, when U-233 is aged and U-232 is present at lower levels, U-233 may be identified via primary Th-229 decay product emissions at 440.5 and 1567.1 keV.
+      </Notes>
+
+    </Nuc>
+    <Nuc name="U-235">
+      <Associated>U-232;U-234;U-238;U-233</Associated>
+      <Notes>
+Low enriched uranium (LEU), High enriched uranium (HEU)
+
+If equilibrium is assumed yet U-238 decay series equilibrium has not been reached following chemical separation, the assessed uranium enrichment will be biased high.
+
+If shield and/or self-attenuation corrections are not made for uranium samples experiencing attenuation, the high energy gamma emissions from U-238 decay chain products can dominate and the assessed uranium enrichment will be biased low.
+
+UF6 cylinder notes
+Neutron count rates may be elevated due to U-238 spontaneous fission (13.60 neutrons/s per kg) and F-19(α,n)Na-22 reactions.
+For HPGe, check for 1274.5 keV peak from F-19(α,pg)Ne-22 and F-19(α,n)Na-22.
+For large UF6 cylinders, isotopic analysis may be difficult due to non-volatile UF6 decay products (heels) concentrated on the UF6 cylinder walls.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="U-238">
+      <Associated>U-232;U-233;U-235;U-236</Associated>
+      <Notes>
+Depleted uranium, Natural uranium with chemical separation
+
+If equilibrium is assumed yet U-238 decay series equilibrium has not been reached following chemical separation, the assessed uranium enrichment will be biased high.
+
+If shield and/or self-attenuation corrections are not made for uranium samples experiencing attenuation, the high energy gamma emissions from U-238 decay chain products can dominate and the assessed uranium enrichment will be biased low.
+      </Notes>
+    </Nuc>
+    <Nuc name="U-Ore">
+      <Associated>U-xray,Ra-226,U-235,U-238</Associated>
+      <Notes>
+Uranium ore, uranium that has not been chemically processed, will contain U-238 and Ra-226 decay chain emissions. 
+
+U-Ore and Ra-226 decay chain gamma spectra are similar.  
+
+U-Ore versus Ra-226: U-Ore spectra may contain detectable U x-rays (98.4 and 94.6 keV), U-238 decay product emissions (92.6, 63.3, 1001.0 keV), or U-235 emissions (143.8, 163.3, 205.3 keV) that are not present in Ra-226 decay chain spectra.
+      </Notes>
+    </Nuc>
+
+<!--
+    <Nuc name="W-187">
+      <Associated></Associated>
+      <Notes>
+      </Notes>
+    </Nuc>
+-->
+    <Nuc name="Xe-133">
+      <Associated>Xe-133m;Xe-131m;Kr-85;Xe-133;I-131;I-132;Te-132</Associated>
+      <Notes>
+Can be found with Xe-133m (2.19 d), Xe-131m (11.8 d).
+
+"Used for pulmonary (lung) ventilation studies."-[GNRIM]  
+
+Gaseous or volatile fission product(s) detected: Check for krypton, xenon, and iodine isotopes such as Kr85, Xe133, I131, I132, Te132 [FRMAC].
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Y-88">
+      <Associated>Y-90</Associated>
+      <Notes>
+Can be found with Y-90 (64.0 h)
+
+"Substituted for Y-90 in development of cancer tumor therapy."-[MRARII]
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Y-90">
+      <Associated>Y-88;Eu-152;Eu-154;Co-57;Co-60</Associated>
+      <Notes>
+Pure beta, β- max 2284 keV, Can be found with Y-88 (106.7 d), Eu-152 (13.5 y), Eu-154 (8.6 y), Co-57 (217.7 d), Co-60 (5.3 y).
+
+"Used for cancer brachytherapy and as silicate colloid for the relieving the pain of arthritis in larger synovial joints. Pure beta emitter and of growing significance in therapy, especially liver cancer."-[GNRIM]
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Yb-169">
+      <Associated></Associated>
+      <Notes>
+"Used for cerebrospinal fluid studies in the brain."-[GNRIM]
+
+"Used in gamma radiography and non-destructive testing."-[RII]
+
+Reactor radioisotope.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Zn-65">
+      <Associated>Co-60;Mn-54;Ag-110m</Associated>
+      <Notes>
+"Used to predict the behaviour of heavy metal components in effluents from mining wastewater."-[RII]
+
+When detected as suspected long-lived activation product, also check for Co-60, Mn-54, and Ag-110m.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Zr-89">
+      <Associated></Associated>
+      <Notes>
+Decays by positron emission (23%) and electron capture (77%), Attractive characteristics for immunoPET applications
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Zr-95">
+      <Associated>Nb-95;Hf-181</Associated>
+      <Notes>
+Zr-95/Nb-95 (34.99 d), Can be found with Hf-181 (42.4 d).
+
+Zr-95 → Nb-95 activity ratio at transient equilibrium equals 1/2.205.
+      </Notes>
+    </Nuc>
+
+  </Nuclides>
+</AddNucInfo>

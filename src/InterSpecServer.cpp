@@ -907,6 +907,15 @@ std::string file_to_open_on_load( const std::string &session_token )
 }//file_to_open_on_load(...)
 
 
+void clear_file_to_open_on_load( const std::string &session_token )
+{
+  lock_guard<mutex> lock( ns_sessions_mutex );
+  auto pos = ns_sessions.find( session_token );
+  if( pos != end(ns_sessions) )
+    ns_sessions.erase( pos );
+}//void clear_file_to_open_on_load( const std::string &session_token )
+  
+  
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
 
   
