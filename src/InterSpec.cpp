@@ -8119,13 +8119,7 @@ void InterSpec::showMakeDrfWindow()
 
 void InterSpec::showDrfSelectWindow()
 {
-  std::shared_ptr<DetectorPeakResponse> currentDet;
-  if( m_dataMeasurement )
-    currentDet = m_dataMeasurement->detector();
-  InterSpec *specViewer = this;
-  SpectraFileModel *fileModel = m_fileManager->model();
-
-  new DrfSelectWindow( currentDet, specViewer, fileModel );
+  new DrfSelectWindow( this );
 }//void showDrfSelectWindow()
 
 

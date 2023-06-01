@@ -657,6 +657,7 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
 : WPopupMenu(),
   m_parentItem( 0 ),
   m_menuParent( menuParent ),
+  m_menuParentID( menuParent ? menuParent->id() : string() ),
 #if(USE_OSX_NATIVE_MENU)
   m_nsmenu( 0 ),
 #endif
@@ -1018,9 +1019,9 @@ void PopupDivMenu::parentClicked()
   //  we `implementJavaScript(...)` for this function (maybe Wt is catching that its not
   //  stateless somewhere?)
   
-  doJavaScript("Wt.WT.ParentClickedCleanupFromCpp('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");");
+  doJavaScript("Wt.WT.ParentClickedCleanupFromCpp('" + id() + "','" + m_menuParentID + "'," WT_CLASS ");");
 #else
-  doJavaScript("Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");");
+  doJavaScript("Wt.WT.ParentClicked('" + id() + "','" + m_menuParentID + "'," WT_CLASS ");");
 #endif
 }//void parentClicked()
 
@@ -1032,7 +1033,7 @@ void PopupDivMenu::parentMouseWentOver()
   show();
 #else
   popup( WPoint(-10000,-10000) );
-  doJavaScript("Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");");
+  doJavaScript("Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParentID + "'," WT_CLASS ");");
 #endif
 }//void parentHoveredOver()
 
@@ -1046,11 +1047,11 @@ void PopupDivMenu::parentTouchStarted()
   popup( WPoint( -10000, -10000 ) );
     
   const string parent_clicked_js =
-    "const btn = $('#" + m_menuParent->id() + "');"
+    "const btn = $('#" + m_menuParentID + "');"
     "const wasActive = btn.hasClass('active');"
-    "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
-    "if( !wasActive) $('#" + m_menuParent->id() + "').removeClass('active');"
-    "Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
+    "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParentID + "'," WT_CLASS ");"
+    "if( !wasActive) $('#" + m_menuParentID + "').removeClass('active');"
+    "Wt.WT.ParentClicked('" + id() + "','" + m_menuParentID + "'," WT_CLASS ");"
     ;
   doJavaScript( parent_clicked_js );
 }
@@ -1133,8 +1134,8 @@ void PopupDivMenu::setupDesktopMenuStuff()
 #if( APP_MENU_STATELESS_FIX )
   // We could probably directly do the following JS from the clicked().connect( js here ), but the
   //  below seems to work, so I'll leave it alone for them moment
-  implementJavaScript(&PopupDivMenu::parentClicked, "Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");");
-  implementJavaScript(&PopupDivMenu::parentMouseWentOver, "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");");
+  implementJavaScript(&PopupDivMenu::parentClicked, "Wt.WT.ParentClicked('" + id() + "','" + m_menuParentID + "'," WT_CLASS ");");
+  implementJavaScript(&PopupDivMenu::parentMouseWentOver, "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParentID + "'," WT_CLASS ");");
 
   // We need to 'popup' this menu before the user opens it, so the menu will be fully loaded
   // and jsObj set and stuff - however, we dont want to just call 'popup' now, because then
@@ -1327,8 +1328,8 @@ void PopupDivMenu::desktopDoHide()
   assert( m_menuParent );
   
   string js = "$('#" + id() + "').removeClass('current');";
-  if( m_menuParent )
-    js += "$('#" + m_menuParent->id() + "').removeClass('active');";
+  if( !m_menuParentID.empty() )
+    js += "$('#" + m_menuParentID + "').removeClass('active');";
   
   doJavaScript( js );
 }//void PopupDivMenu::desktopDoHide()
@@ -1387,6 +1388,7 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
   if( m_mobile )
   {
     menu->m_menuParent = m_menuParent;
+    menu->m_menuParentID = (m_menuParent ? m_menuParent->id() : string());
     menu->m_parentItem = addItem( text );
     menu->m_parentItem->clicked().preventPropagation();
     menu->m_parentItem->clicked().preventDefaultAction();

@@ -9,19 +9,29 @@
     overflow-y: auto;
 }
 
-.FormulaDrfTbl {
+table.FormulaDrfTbl {
     width: 95%;
 }
 
-.FormulaDrfTbl td
+table.FormulaDrfTbl tr > td
 {
   white-space: nowrap;
+  vertical-align: middle;
+  padding-top: 3px;
 }
 
+table.FormulaDrfTbl tr
+{
+}
 
 table.FormulaDrfTbl tr td:first-child
 {
   width: 1%;
+}
+
+table.FormulaDrfTbl label
+{
+  padding-right: 4px;
 }
 
 
@@ -90,6 +100,13 @@ table.FormulaDrfTbl tr td:first-child
   border: 1px solid #A7A7A7;
   padding: 4px;
   margin-bottom: 3px;
+}
+
+div.RelEffFile select
+{
+  margin-top: 5px;
+  margin-bottom: 2px;
+  margin-left: 10px;
 }
 
 .NoDrfBtn

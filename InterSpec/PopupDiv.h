@@ -232,6 +232,7 @@ protected:
   
   Wt::WMenuItem *m_parentItem;
   Wt::WPushButton *m_menuParent;
+  std::string m_menuParentID;
   
 #if( USE_OSX_NATIVE_MENU )
   void *m_nsmenu;

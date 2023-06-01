@@ -62,6 +62,7 @@ class InterSpecUser;
 class RelEffDetSelect;
 class GadrasDetSelect;
 class SpectraFileModel;
+class NativeFloatSpinBox;
 class DetectorPeakResponse;
 namespace DataBaseUtils
 {
@@ -142,7 +143,7 @@ public:
   void verifyManualDefinition();
   
   //User defined detector in functional form
-  void setDefineDetector();
+  void setFormulaDefineDetector();
   
   //Action when the user clicks on the ButtonGroup to select
   //defined/upload/functional form definition for the detector
@@ -163,7 +164,7 @@ public:
   //emitModifiedSignal(): causes the detectorModified signal to be emitted only
   //  if it is necessary (eg if the current detector does not equal previously
   //  emitted detector)
-  void emitModifiedSignal();
+  //void emitModifiedSignal();
 
 
   /** Searches the database for DRFs from the specified user with hashes
@@ -280,7 +281,11 @@ public:
   void setDetector( std::shared_ptr<DetectorPeakResponse> det );
  
   //initializes the dialog with appropriate detector selected
-  void init();
+  void setGuiToCurrentDetector();
+  
+  /** Some of the DRFs from disk are initialized off the main thread, so calling this function lets
+   this widget know more DRFs are avaiable to try and check #m_detector, to see if it matches.*/
+  void detectorsWereInited();
   
   //detector(): returns m_detector.
   std::shared_ptr<DetectorPeakResponse> detector();
@@ -290,7 +295,6 @@ public:
   
   //a row is selected, so update det and charts
   void dbTableSelectionChanged();
-
   
 protected:
   void setAcceptButtonEnabled( const bool enable );
@@ -310,6 +314,8 @@ protected:
   //  the appropriate detectorChanged or detectorModified signal.
   std::shared_ptr<DetectorPeakResponse> m_detector;
 
+  bool m_gui_select_matches_det;
+  
   //m_previousDetectorDef: this is equal to the previously emmitted detector
   //  so that the detectorModified signals wont be emitted when its not
   //  necessary (prob faster to check this, than push updates to clients -
@@ -362,6 +368,8 @@ protected:
   Wt::WLineEdit    *m_detectorManualDiameterText;
   Wt::WLineEdit    *m_detectorManualDistText;
   Wt::WLabel       *m_detectorManualDistLabel;
+  NativeFloatSpinBox *m_detectorManualMinEnergy;
+  NativeFloatSpinBox *m_detectorManualMaxEnergy;
   Wt::WPushButton  *m_manualSetButton;
   
   GadrasDetSelect *m_gadrasDetSelect;
@@ -387,15 +395,15 @@ class DrfSelectWindow : public AuxWindow
   Provides a window that contains a DrfSelect
 */
 public:
-  DrfSelectWindow( std::shared_ptr<DetectorPeakResponse> currentDet,
-                InterSpec *specViewer,
-                SpectraFileModel *fileModel );
+  DrfSelectWindow( InterSpec *viewer );
   virtual ~DrfSelectWindow();
 
+  DrfSelect *widget();
 protected:
   static void acceptAndDelete( DrfSelectWindow *window );
 
   DrfSelect *m_edit;
+  InterSpec *m_interspec;
 };//class DrfSelectWindow
 
 

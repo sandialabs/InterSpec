@@ -124,7 +124,7 @@ void Material::parseChemicalFormula( string text,
   {
     densitystr = text.substr( densitypos + 2 );
     text = text.substr( 0, densitypos );
-    cerr << "densitystr=\"" << densitystr << "\", text=\"" << text << "\"" << endl;
+    //cerr << "densitystr=\"" << densitystr << "\", text=\"" << text << "\"" << endl;
   }//if( densitypos != string::npos )
 
   float totalfraction = 0.0;
@@ -901,6 +901,14 @@ const Material *MaterialDB::parseChemicalFormula( string text,
   return material;
 }//const Material *parseChemicalFormula(  )
 
+
+Material MaterialDB::materialFromChemicalFormula( const std::string &formula,
+                                            const SandiaDecay::SandiaDecayDataBase *db )
+{
+  Material answer;
+  answer.parseChemicalFormula( formula, db );
+  return answer;
+}
 
 
 

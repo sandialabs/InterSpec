@@ -56,6 +56,7 @@ class UseInfoWindow;
 class WarningWidget;
 class WarningMessage;
 class PeakEditWindow;
+class DrfSelectWindow;
 class PeakInfoDisplay;
 class SpecMeasManager;
 class GammaCountDialog;
@@ -568,6 +569,7 @@ public:
   
   void showMakeDrfWindow();
   void showDrfSelectWindow();
+  
   void showCompactFileManagerWindow();
   
   //Nuclide Search

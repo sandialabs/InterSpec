@@ -1311,10 +1311,28 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       const double act = isof.activity * GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
       string ans = PhysicalUnits::printToBestActivityUnits( act, 2, m_displayCurries );
       
-      // We'll require the uncertainty to be non-zero to show it - 5bq is an arbitrary cutoff to
+      // We'll require the uncertainty to be non-zero to show it - 1 micro-bq is an arbitrary cutoff to
       //  consider anything below it zero.
       const double uncert = isof.activityUncertainty * GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
-      if( uncert > 5.0*PhysicalUnits::bq )
+      
+      bool shouldHaveUncert = ( (uncert > 1.0E-6*PhysicalUnits::bq)
+                               || ((uncert > 0.0) && (uncert > 1.0E-6*fabs(act)) ) );
+      
+      switch( isof.sourceType )
+      {
+        case ModelSourceType::Intrinsic:
+          // TODO: check if dimensions are being fit
+          break;
+          
+        case ModelSourceType::Point:
+        case ModelSourceType::Trace:
+          // Dont show uncertainty unless we fit for it - although in principle it should be zero, right
+          if( !fitActivity(row) )
+            shouldHaveUncert = false;
+          break;
+      }//switch( iso.sourceType )
+      
+      if( shouldHaveUncert )
         ans += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( uncert, 1, m_displayCurries );
       
       return boost::any( WString(ans) );
@@ -1554,7 +1572,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
     const WString txt_val = asString( value );
     string utf_str = txt_val.toUTF8();
 
-    if( (column != kFitActivity) && (column != kFitAge) && txt_val.empty() )
+    if( (column != kFitActivity) && (column != kFitAge) && (column != kActivityUncertainty) && txt_val.empty() )
       return false;
 
     // filter out the +- and everything after.
@@ -8002,7 +8020,7 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
         if( gui_progress_info )
         {
           results->edm = -1.0;
-          results->num_fcn_calls = nFunctionCallsSoFar;
+          results->num_fcn_calls = static_cast<int>( nFunctionCallsSoFar );
           results->chi2 = bestChi2SoFar;
           results->paramValues = bestParsSoFar;
           results->paramErrors.clear();
