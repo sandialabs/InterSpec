@@ -410,6 +410,21 @@ bool UndoRedoManager::isInUndoOrRedo() const
 }
 
 
+bool UndoRedoManager::canAddUndoRedoNow() const
+{
+  if( !m_steps )
+    return false;
+  
+  if( m_state != State::Neither )
+    return false;
+  
+  if( m_BlockUndoRedoInserts_counter > 0 )
+    return false;
+  
+  return true;
+}//bool canAddUndoRedoNow() const
+
+
 void UndoRedoManager::clearUndoRedu()
 {
   if( m_steps )

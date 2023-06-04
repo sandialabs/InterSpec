@@ -276,6 +276,14 @@ public:
   //removingIsotopeAsSource(): Signal emitted when isotope is unchecked
   Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &removingIsotopeAsSource();
 
+  /** Signal to indicate when the user has chnaged any of the values displayed.
+   Used for undo/redo support.
+   */
+  Wt::Signal<ShieldingSelect *,
+              std::shared_ptr<const std::string> /* Previous state xml */,
+              std::shared_ptr<const std::string> /* New state */>
+             &userChangedStateSignal();
+  
   //Will un-check the checkbox for the nuclide to be a self-attenuating source, or a trace source.
   //  Does nothing if there is no isotope cb, or trace source with the nuclide.
   //Note: does not emit the removingIsotopeAsSource() signal
@@ -495,6 +503,10 @@ protected:
   //  Emits either the materialChanged() or materialModified() signals depending
   //  on what has been done.
   void handleMaterialChange();
+  
+  /** Handles updating #m_prevState, and emitting userChangedStateSignal(). */
+  void handleUserChangeForUndoRedo();
+  void handleUserChangeForUndoRedoWorker();
 
   /** Removes uncertainty number from a distance edit text; useful when user changes text of a WLineEdit that is also fit for, so may
    have an uncertainty value in it
@@ -534,6 +546,12 @@ protected:
   
   /** Non-const version of #traceSourceWidgetForNuclide */
   TraceSrcDisplay *traceSourceWidgetForNuclide( const SandiaDecay::Nuclide *nuc );
+  
+  /** Serializes the widgets state to a #rapidxml::xml_document object.
+   
+   Intended to update #m_prevState during the undo/redo step stuff.
+   */
+  std::shared_ptr<const std::string> getStateAsXml() const;
   
 protected:
   /** Pointer to the ShieldingSourceDisplay this ShieldingSelect belongs to - if it belongs to this tool, otherwise will be nullptr. */
@@ -612,6 +630,12 @@ protected:
   Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> m_removingIsotopeAsSource;
   Wt::Signal<ShieldingSelect *,const SandiaDecay::Nuclide *>
                                             m_activityFromVolumeNeedUpdating;
+  
+  //To add undo/redo support, I think we need to add:
+  Wt::Signal<ShieldingSelect *,
+             std::shared_ptr<const std::string>,
+             std::shared_ptr<const std::string>> m_userChangedStateSignal;
+  std::shared_ptr<const std::string> m_prevState;
   
   static const int sm_xmlSerializationMajorVersion;
   static const int sm_xmlSerializationMinorVersion;

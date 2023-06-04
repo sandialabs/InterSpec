@@ -94,6 +94,11 @@ public:
   bool isInRedu() const;
   bool isInUndoOrRedo() const;
   
+  /** Returns if a call to #addUndoRedoStep will actually add an undo/redo step.
+   i.e., if not currently executing a undo/redo, and there are no currently active #BlockUndoRedoInserts.
+   */
+  bool canAddUndoRedoNow() const;
+  
   
   /** Clears all undo/redo history. */
   void clearUndoRedu();

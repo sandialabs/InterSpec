@@ -473,6 +473,9 @@ public:
   /** Causes exception to be thrown if DoEval() is called afterwards. */
   void cancelFit();
   
+  /** Similar to #cancelFit, but status will be set to #CalcStatus::CanceledNoUpdate */
+  void cancelFitWithNoUpdate();
+  
 
   
   /** Information tracked during test evaluation of the Chi2.  Set this object
@@ -587,7 +590,8 @@ public:
   {
     NotCanceled = 0,
     UserCanceled = 1,
-    Timeout = 2
+    Timeout = 2,
+    CanceledNoUpdate = 3
   };//enum class CalcStatus : int
   
   

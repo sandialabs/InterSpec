@@ -433,10 +433,14 @@ public:
   //add generic shielding
   void addGenericShielding();
   
-  //addShielding(): creates a new shielding, and hooks up all the necessary
-  //  signals.  It will be added before the specified current ShieldingSelect,
-  //  or if NULL is specified, will be added after last ShieldingSelect.
-  ShieldingSelect *addShielding( ShieldingSelect *before, const bool updateChiChart );
+  /** Creates a new shielding, and hooks up all the necessary signals.
+   
+   @param before If nullptr, the shielding will be added after the last ShieldingSelect; if non-null, the new ShieldingSelect will be added
+                before the specified ShieldingSelect.
+   @param updateChiChartAndAddUndoRedo If true, the Chi2 chart will be updated after adding, AND a undo/redo point will be
+                added.
+  */
+  ShieldingSelect *addShielding( ShieldingSelect *before, const bool updateChiChartAndAddUndoRedo );
   
   //doAddShielding(), doAddShieldingBefore(), doAddShieldingAfter:
   //  convience functions that calls addShielding(...) appropriately.
@@ -457,6 +461,20 @@ public:
                                              const SandiaDecay::Nuclide *nuc,
                                              const ModelSourceType type );
   
+  /** Function called whenever a ShieldingSelect is changed by the user.
+   
+   This function is not called when values are changed programatically (e.g., as a side-effect of another setting being changed).
+   
+   Storing the XML for the ShieldingSelect, as apposed to the whole ShieldingSourceDisplay, takes up only about 3% as much
+   memmory, but at the cost of not currently getting things exactly right for trace and self-atten sources.
+   
+   @param select The ShieldingSelect that was changed.
+   @param prev_state The XML represetntation of the ShieldingSelect before it was changed.
+   @param current_state The XML represetntation of the updated ShieldingSelect state.
+   */
+  void handleShieldingUndoRedoPoint( const ShieldingSelect * const select,
+                                    const std::shared_ptr<const std::string> &prev_state,
+                                    const std::shared_ptr<const std::string> &current_state );
   
   
   struct ModelFitProgress
@@ -525,6 +543,13 @@ public:
   
   /** Cancels the current model fit happening */
   void cancelModelFit();
+  
+  /** Cancels the current model fit happening, and will make it so the `gui_updater` argument of #doModelFittingWork
+   will not be called, but the GUI will be put back into a state that the user can use it.
+   
+   This method is intended for the undo/redo mechanism, in case a user hits undo while a fit is happening.
+   */
+  void cancelModelFitWithNoUpdate();
   
   /** Function that must be called from within the main Wt event loop thread,
    that updates the GUI with the fit progress.
@@ -695,7 +720,15 @@ public:
     
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
 
+  
+  SourceFitModel *sourceFitModel();
 protected:
+  /** Disables fit button and other elements, and hides some stuff, etc. */
+  void setWidgetStateForFitStarting();
+  
+  /** Undoes the changes from #setWidgetStateForFitStarting */
+  void setWidgetStateForFitBeingDone();
+  
   void updateChi2ChartActual();
   virtual void layoutSizeChanged( int width, int height ) override;
   
@@ -744,6 +777,7 @@ protected:
   //m_shieldingSelects: contains objects of class ShieldingSelect
   Wt::WContainerWidget *m_shieldingSelects;
 
+  GammaInteractionCalc::GeometryType m_prevGeometry;
   Wt::WComboBox *m_geometrySelect;
 
   Wt::WText *m_showChi2Text;

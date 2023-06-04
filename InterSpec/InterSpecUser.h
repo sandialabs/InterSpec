@@ -952,6 +952,8 @@ struct UserState
   double energyAxisMinimum, energyAxisMaximum;
   double countsAxisMinimum, countsAxisMaximum;
   
+  // TODO: should add time chart limits here - if showing
+  
   /** deprecated */
   int displayBinFactor;
   

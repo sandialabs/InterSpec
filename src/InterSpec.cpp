@@ -1241,7 +1241,7 @@ InterSpec::~InterSpec() noexcept(true)
   
   try
   {
-    closeShieldingSourceFitWindow();
+    closeShieldingSourceFit();
   }catch(...)
   {
     cerr << "Caught exception closing shielding source window - shouldnt have happened" << endl;
@@ -3009,6 +3009,8 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     entry.modify()->countsAxisMaximum = m_spectrum->yAxisMaximum();
     entry.modify()->displayBinFactor = 0;
     
+    // TODO: should add time chart limits here - if showing
+    
     entry.modify()->shownDisplayFeatures = 0x0;
     if( toolTabsVisible() )
       entry.modify()->shownDisplayFeatures |= UserState::kDockedWindows;
@@ -3277,7 +3279,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   
   try
   {
-    closeShieldingSourceFitWindow();
+    closeShieldingSourceFit();
     
     switch( entry->stateType )
     {
@@ -3544,7 +3546,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       cerr << "When loading state from DB, not loading Shielding/Source Fit"
       << " model, due to lame GUI ish" << endl;
 //      if( !m_shieldingSourceFit )
-//        showShieldingSourceFitWindow();
+//        shieldingSourceFit();
       if( m_shieldingSourceFit )
         m_shieldingSourceFit->loadModelFromDb( fitmodel );
     }//if( fitmodel )
@@ -3614,7 +3616,17 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 //  SpectrumSubtractMode backgroundSubMode;
     
     if( (entry->shownDisplayFeatures & UserState::kShowingShieldSourceFit) )
-      showShieldingSourceFitWindow();
+    {
+      shieldingSourceFit();
+      
+      const double windowWidth = 0.95 * renderedWidth();
+      const double windowHeight = 0.95 * renderedHeight();
+      m_shieldingSourceFitWindow->resizeWindow( windowWidth, windowHeight );
+      
+      m_shieldingSourceFitWindow->resizeToFitOnScreen();
+      m_shieldingSourceFitWindow->show();
+      m_shieldingSourceFitWindow->centerWindow();
+    }
     
 #if( USE_TERMINAL_WIDGET )
     if( (entry->shownDisplayFeatures & UserState::kShowingTerminalWidget) )
@@ -4771,9 +4783,9 @@ void InterSpec::loadTestStateFromN42( const std::string filename )
     const xml_node<char> *sourcefit = InterSpecNode->first_node( "ShieldingSourceFit" );
     if( sourcefit )
     {
-      showShieldingSourceFitWindow();
+      shieldingSourceFit();
       m_shieldingSourceFit->deSerialize( sourcefit );
-      closeShieldingSourceFitWindow();
+      closeShieldingSourceFit();
     }//if( sourcefit )
     
     stringstream msg;
@@ -8138,7 +8150,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
                               "Tool to fit for the activity and shielding of nuclides in the spectrum.<br />"
                               "Also contains capabilities to determine nuclide ages, contamination"
                               " concentrations, or enrichments.", showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::showShieldingSourceFitWindow, this ) );
+  item->triggered().connect( boost::bind( &InterSpec::shieldingSourceFit, this ) );
  
 #if( USE_REL_ACT_TOOL )
   // The Relative Efficiency tools are not specialized to display on phones yet.
@@ -8510,26 +8522,28 @@ void InterSpec::showNuclideSearchWindow()
 }//void showNuclideSearchWindow()
 
 
-void InterSpec::showShieldingSourceFitWindow()
+ShieldingSourceDisplay *InterSpec::shieldingSourceFit()
 {
-  if( !m_shieldingSourceFit )
+  if( m_shieldingSourceFit )
+    return m_shieldingSourceFit;
+  
+  assert( !m_shieldingSourceFitWindow );
+  
+  assert( m_peakInfoDisplay );
+  auto widgets = ShieldingSourceDisplay::createWindow( this );
+  
+  m_shieldingSourceFit = widgets.first;
+  m_shieldingSourceFitWindow = widgets.second;
+  
+  if( m_undo && !m_undo->isInUndoOrRedo() )
   {
-    assert( m_peakInfoDisplay );
-    auto widgets = ShieldingSourceDisplay::createWindow( this );
-    
-    m_shieldingSourceFit = widgets.first;
-    m_shieldingSourceFitWindow  = widgets.second;
-  }else
-  {
-    const double windowWidth = 0.95 * renderedWidth();
-    const double windowHeight = 0.95 * renderedHeight();
-    m_shieldingSourceFitWindow->resizeWindow( windowWidth, windowHeight );
-    
-    m_shieldingSourceFitWindow->resizeToFitOnScreen();
-    m_shieldingSourceFitWindow->show();
-    m_shieldingSourceFitWindow->centerWindow();
-  }//if( !m_shieldingSourceFit )
-}//void showShieldingSourceFitWindow()
+    auto undo = [this](){ closeShieldingSourceFit(); };
+    auto redo = [this](){ shieldingSourceFit(); };
+    m_undo->addUndoRedoStep( undo, redo, "Open Activity/Shielding Fit tool" );
+  }
+  
+  return m_shieldingSourceFit;
+}//ShieldingSourceDisplay *shieldingSourceFit()
 
 
 void InterSpec::saveShieldingSourceModelToForegroundSpecMeas()
@@ -8547,7 +8561,7 @@ void InterSpec::saveShieldingSourceModelToForegroundSpecMeas()
 
 
 
-void InterSpec::closeShieldingSourceFitWindow()
+void InterSpec::closeShieldingSourceFit()
 {
   if( !m_shieldingSourceFitWindow || !m_shieldingSourceFit )
     return;
@@ -8561,7 +8575,14 @@ void InterSpec::closeShieldingSourceFitWindow()
   delete m_shieldingSourceFitWindow;
   m_shieldingSourceFitWindow = nullptr;
   m_shieldingSourceFit = nullptr;
-}//void closeShieldingSourceFitWindow()
+  
+  if( m_undo && !m_undo->isInUndoOrRedo() )
+  {
+    auto undo = [this](){ shieldingSourceFit(); };
+    auto redo = [this](){ closeShieldingSourceFit(); };
+    m_undo->addUndoRedoStep( undo, redo, "Close Activity/Shielding Fit tool" );
+  }
+}//void closeShieldingSourceFit()
 
 
 void InterSpec::showGammaLinesWindow()
@@ -9390,7 +9411,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
   if( (spec_type == SpecUtils::SpectrumType::Foreground) && previous && (previous != meas) )
   {
-    closeShieldingSourceFitWindow();
+    closeShieldingSourceFit();
     
 #if( USE_DB_TO_STORE_SPECTRA )
     //if( m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ) )

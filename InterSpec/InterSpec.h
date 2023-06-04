@@ -609,8 +609,13 @@ public:
   
   void showGammaXsTool();
   void showDoseTool();
-  void showShieldingSourceFitWindow();
-  void closeShieldingSourceFitWindow();
+  
+  /** If "Activity/Shielding Fit" window is not showing, creates the tool/window, and returns the tool.
+   If it is already showing, no changes are made, and a pointer to the tool is returned.
+   When the window shown to the user is closed, the #closeShieldingSourceFit function will automatically be called, and tool deleted.
+   */
+  ShieldingSourceDisplay *shieldingSourceFit();
+  void closeShieldingSourceFit();
   void saveShieldingSourceModelToForegroundSpecMeas();
   
 

@@ -215,6 +215,123 @@ namespace
     }
   };//class PeakCsvResource : public Wt::WResource
   
+  
+  /** Struct that saves the ShieldingSourceDisplay state to XML, when this struct is first constructed, and then again
+   when the struct destructs; it then uses these two XML states to create a undo/redo point.
+   If blocks all other undo/redo step insertions until this object is destructed.
+   
+   You are looking at at least about 15 kb memory for each undo/redo step, just for the XML; for small things, it may be more
+   efficient to not use this mecahnism.
+   */
+  struct ShieldSourceChange
+  {
+    ShieldingSourceDisplay *m_display;
+    string m_description;
+    string m_pre_doc;
+    
+    // Make sure we dont insert multiple undo/redo steps, so using a BlockUndoRedoInserts.
+    unique_ptr<UndoRedoManager::BlockUndoRedoInserts> m_block;
+    
+    ShieldSourceChange( ShieldingSourceDisplay *display, const string &descrip )
+      : m_display( display ),
+        m_description( descrip ),
+        m_pre_doc{},
+        m_block( make_unique<UndoRedoManager::BlockUndoRedoInserts>() )
+    {
+      UndoRedoManager *undoRedo = UndoRedoManager::instance();
+      if( !undoRedo || undoRedo->isInUndoOrRedo() )
+        return;
+      
+      try
+      {
+        rapidxml::xml_document<char> doc;
+        m_display->serialize( &doc );
+        rapidxml::print( std::back_inserter(m_pre_doc), doc, rapidxml::print_no_indenting );
+      }catch( std::exception &e )
+      {
+        passMessage( "Error adding undo step for " + m_description + ": "
+                    + string(e.what()), WarningWidget::WarningMsgHigh );
+        m_pre_doc.clear(); //jic
+        return;
+      }
+    }//ShieldSourceChange
+    
+    
+    ~ShieldSourceChange()
+    {
+      UndoRedoManager *undoRedo = UndoRedoManager::instance();
+      if( !m_display || m_pre_doc.empty() || !undoRedo )
+        return;
+      
+      string post_doc;
+      try
+      {
+        rapidxml::xml_document<char> doc;
+        m_display->serialize( &doc );
+        rapidxml::print( std::back_inserter(post_doc), doc, rapidxml::print_no_indenting );
+      }catch( std::exception &e )
+      {
+        passMessage( "Error adding undo/redo step for " + m_description + ": "
+                    + string(e.what()), WarningWidget::WarningMsgHigh );
+        return;
+      }
+      
+      const string descrip = std::move( m_description );
+      const string pre_doc = std::move( m_pre_doc );
+      
+      // Now need to remove the block to inserting undo/redo steps
+      m_block.reset();
+      
+      cout << "Adding undo/redo step will take approx " << (m_description.size() + pre_doc.size() + post_doc.size()) << " bytes of memory" << endl;
+      
+      auto undo = [pre_doc, descrip](){
+        ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+        if( !display || pre_doc.empty() )
+          return;
+        
+        try
+        {
+          display->cancelModelFitWithNoUpdate();
+          
+          rapidxml::xml_document<char> new_doc;
+          const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
+          string pre_doc_cpy = pre_doc;
+          new_doc.parse<flags>( &(pre_doc_cpy[0]) );
+          display->deSerialize( new_doc.first_node() );
+        }catch( std::exception &e )
+        {
+          passMessage( "Error undoing " + descrip + ": " + string(e.what()),
+                      WarningWidget::WarningMsgHigh );
+        }
+      };
+      
+      auto redo = [post_doc, descrip](){
+        ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+        if( !display || post_doc.empty() )
+          return;
+        
+        try
+        {
+          display->cancelModelFitWithNoUpdate();
+          
+          rapidxml::xml_document<char> new_doc;
+          const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
+          string post_doc_cpy = post_doc;
+          new_doc.parse<flags>( &(post_doc_cpy[0]) );
+          display->deSerialize( new_doc.first_node() );
+        }catch( std::exception &e )
+        {
+          passMessage( "Error redoing" + descrip + ": " + string(e.what()),
+                      WarningWidget::WarningMsgHigh );
+        }
+      };
+      
+      undoRedo->addUndoRedoStep( undo, redo, descrip );
+    }//~ShieldSourceChange()
+    
+    ShieldSourceChange( const ShieldSourceChange & ) = delete; // non construction-copyable
+    ShieldSourceChange &operator=( const ShieldSourceChange & ) = delete; // non copyable
+  };//struct PeakModelChange
 }//namespace
 
 
@@ -1272,12 +1389,14 @@ Wt::WModelIndex SourceFitModel::parent( const Wt::WModelIndex &index ) const
 boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
 {
   //should consider impementing ToolTipRole
-  if( role != Wt::DisplayRole && role != Wt::EditRole && role != Wt::ToolTipRole
-      && !((role==Wt::CheckStateRole) && ((index.column()==kFitActivity) || (index.column()==kFitAge)))
-      )
+  if( (role != Wt::DisplayRole) && (role != Wt::EditRole) && (role != Wt::ToolTipRole)
+     && (role != (Wt::ItemDataRole::UserRole + 10))
+    && !((role==Wt::CheckStateRole) && ((index.column()==kFitActivity) || (index.column()==kFitAge))) )
+  {
     return boost::any();
+  }
 
-
+  
   const int row = index.row();
   const int column = index.column();
   const int nrows = static_cast<int>( m_nuclides.size() );
@@ -1285,6 +1404,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
   if( row<0 || column<0 || column>=kNumColumns || row>=nrows )
     return boost::any();
 
+  const bool extra_precision = (role == (Wt::ItemDataRole::UserRole + 10));
   const IsoFitStruct &isof = m_nuclides[row];
 
   if( role == Wt::ToolTipRole )
@@ -1312,7 +1432,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     case kActivity:
     {
       const double act = isof.activity * GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
-      string ans = PhysicalUnits::printToBestActivityUnits( act, 2, m_displayCurries );
+      string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 3), m_displayCurries );
       
       // We'll require the uncertainty to be non-zero to show it - 1 micro-bq is an arbitrary cutoff to
       //  consider anything below it zero.
@@ -1336,7 +1456,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       }//switch( iso.sourceType )
       
       if( shouldHaveUncert )
-        ans += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( uncert, 1, m_displayCurries );
+        ans += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( uncert, (extra_precision ? 5 : 2), m_displayCurries );
       
       return boost::any( WString(ans) );
     }//case kActivity:
@@ -1390,9 +1510,9 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       if( !isof.ageIsFittable )
         return boost::any( WString("NA") );
       
-      string ans = PhysicalUnits::printToBestTimeUnits( age, 2 );
+      string ans = PhysicalUnits::printToBestTimeUnits( age, (extra_precision ? 8 : 2) );
       if( uncert > 0.0 )
-        ans += " \xC2\xB1 " + PhysicalUnits::printToBestTimeUnits( uncert, 1 );
+        ans += " \xC2\xB1 " + PhysicalUnits::printToBestTimeUnits( uncert, (extra_precision ? 8 : 1) );
       
       return boost::any( WString(ans) );
     }//case kAge:
@@ -1425,7 +1545,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       if( IsInf(mass_grams) || IsNan(mass_grams) )
         return boost::any();
 
-      return boost::any( WString(PhysicalUnits::printToBestMassUnits(mass_grams,3,1.0)) );
+      return boost::any( WString(PhysicalUnits::printToBestMassUnits(mass_grams,(extra_precision ? 8 : 3),1.0)) );
     }//case kIsotopeMass:
 
     case kActivityUncertainty:
@@ -1434,7 +1554,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
         return boost::any();
       
       double act = isof.activityUncertainty * GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits;
-      const string ans = PhysicalUnits::printToBestActivityUnits( act, 2, m_displayCurries );
+      const string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 2), m_displayCurries );
       return boost::any( WString(ans) );
     }//case kActivityUncertainty:
 
@@ -1442,7 +1562,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( (!isof.ageIsFittable) || isof.ageUncertainty < 0.0 )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestTimeUnits( isof.ageUncertainty, 2 );
+      const string ans = PhysicalUnits::printToBestTimeUnits( isof.ageUncertainty, (extra_precision ? 8 : 2) );
       return boost::any( WString(ans) );
     }//case kAgeUncertainty:
 
@@ -1451,7 +1571,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthActivity )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivity, 4, m_displayCurries );
+      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivity, (extra_precision ? 8 : 4), m_displayCurries );
       return boost::any( WString(ans) );
     }
       
@@ -1459,7 +1579,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthActivityTolerance )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivityTolerance, 4, m_displayCurries );
+      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivityTolerance, (extra_precision ? 8 : 4), m_displayCurries );
       return boost::any( WString(ans) );
     }
       
@@ -1467,7 +1587,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthAge )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestTimeUnits( *isof.truthAge, 4 );
+      const string ans = PhysicalUnits::printToBestTimeUnits( *isof.truthAge, (extra_precision ? 8 : 4) );
       return boost::any( WString(ans) );
     }
       
@@ -1475,7 +1595,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthAgeTolerance )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestTimeUnits( *isof.truthAgeTolerance, 4 );
+      const string ans = PhysicalUnits::printToBestTimeUnits( *isof.truthAgeTolerance, (extra_precision ? 8 : 4) );
       return boost::any( WString(ans) );
     }
 #endif  //#if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -1587,6 +1707,19 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
     }//if( we might have the +- )
     
     IsoFitStruct &iso = m_nuclides[row];
+    
+    
+    // To facilitate undo/redo we could grab value for the row/column we are changing, and then
+    //  set things back, but if we do this we will lose uncertainty, and maybe other stuff; we
+    //  could work around this, but instead for the moment we will just copy all the data
+#define SOURCE_FIT_MODEL_FULL_COPY_UNDO_REDO 1
+#if( SOURCE_FIT_MODEL_FULL_COPY_UNDO_REDO )
+    const auto prev_data = make_shared<const vector<IsoFitStruct>>( m_nuclides );
+#else
+    const boost::any prev_value = SourceFitModel::data( index, Wt::ItemDataRole::UserRole + 10 );
+    const boost::any new_value = value;
+#endif
+    
 
     //If were here, all is fine
     switch( column )
@@ -1750,13 +1883,60 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
 
     // We will emit that all columns have been updated, since setting activity uncert will mean
     //  we have to set activity text again (since it might have a +- entry), and similar
-    dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,kNumColumns-1,nullptr) );
+    {
+      UndoRedoManager::BlockUndoRedoInserts block;
+      dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,kNumColumns-1,nullptr) );
+    }
     //
     // We could be more selective and do something like:
     //if( column == kActivity )
     //  dataChanged().emit( createIndex(row,0,nullptr), createIndex(row,kNumColumns-1,nullptr) );
     //else
     //  dataChanged().emit( index, index );
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    {
+#if( SOURCE_FIT_MODEL_FULL_COPY_UNDO_REDO )
+      const auto current_data = make_shared<const vector<IsoFitStruct>>( m_nuclides );
+      auto undo_redo = [prev_data, current_data]( const bool is_undo ){
+        InterSpec *viewer = InterSpec::instance();
+        ShieldingSourceDisplay *srcfit = viewer ? viewer->shieldingSourceFit() : nullptr;
+        SourceFitModel *srcmodel = srcfit ? srcfit->sourceFitModel() : nullptr;
+        if( !srcmodel )
+          return;
+        
+        srcmodel->layoutAboutToBeChanged().emit();
+        srcmodel->m_nuclides = *(is_undo ? prev_data : current_data);
+        std::sort( begin(srcmodel->m_nuclides), end(srcmodel->m_nuclides),
+                   boost::bind( &SourceFitModel::compare,
+                              boost::placeholders::_1, boost::placeholders::_2,
+                               srcmodel->m_sortColumn, srcmodel->m_sortOrder ) );
+        srcmodel->layoutChanged().emit();
+      };
+      undoRedo->addUndoRedoStep( [=](){ undo_redo(true); }, [=](){ undo_redo(false); },
+                                "Set Shielding/Source nuclide info" );
+#else
+      auto undo = [prev_value,index,role](){
+        InterSpec *viewer = InterSpec::instance();
+        ShieldingSourceDisplay *srcfit = viewer ? viewer->shieldingSourceFit() : nullptr;
+        SourceFitModel *srcmodel = srcfit ? srcfit->sourceFitModel() : nullptr;
+        if( srcmodel )
+          srcmodel->setData( index, prev_value, role );
+      };
+      
+      auto redo = [new_value,index,role](){
+        InterSpec *viewer = InterSpec::instance();
+        ShieldingSourceDisplay *srcfit = viewer ? viewer->shieldingSourceFit() : nullptr;
+        SourceFitModel *srcmodel = srcfit ? srcfit->sourceFitModel() : nullptr;
+        if( srcmodel )
+          srcmodel->setData( index, new_value, role );
+      };
+      
+      undoRedo->addUndoRedoStep( undo, redo, "Set Shielding/Source nuclide info" );
+  #endif
+    }//if( undoRedo && !undoRedo->isInUndoOrRedo() )
+    
   }catch( exception &e )
   {
     cerr << "SourceFitModel::setData(...)\n\tWarning: exception caught; what="
@@ -2263,9 +2443,8 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
     WPointF left = mapToDevice( xAxisMin, 1.0 );
     WPointF right = mapToDevice( xAxisMax, 1.0 );
     
-    cout << "xAxisMin=" << xAxisMin << ", xAxisMax=" << xAxisMax << ", yAxisMin=" << yAxisMin << ", yAxisMax=" << yAxisMax << endl;
-    cout << "left={" << left.x() << "," << left.y() << "}, right={" << right.x() << "," << right.y() << "}" << endl;
-    
+    //cout << "xAxisMin=" << xAxisMin << ", xAxisMax=" << xAxisMax << ", yAxisMin=" << yAxisMin << ", yAxisMax=" << yAxisMax << endl;
+    //cout << "left={" << left.x() << "," << left.y() << "}, right={" << right.x() << "," << right.y() << "}" << endl;
     
     left.setY( left.y() + 0.5 );
     right.setY( right.y() + 0.5 );
@@ -2422,7 +2601,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     
     window->centerWindow();
   //   m_shieldingSourceFitWindow->contents()->  setHeight(WLength(windowHeight));
-    window->finished().connect( viewer, &InterSpec::closeShieldingSourceFitWindow );
+    window->finished().connect( viewer, &InterSpec::closeShieldingSourceFit );
       
     window->WDialog::setHidden(false);
     window->show();
@@ -2474,6 +2653,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 #endif
     m_materialSuggest( matSuggest ),
     m_shieldingSelects( nullptr ),
+    m_prevGeometry( GammaInteractionCalc::GeometryType::Spherical ),
     m_geometrySelect( nullptr ),
     m_showChi2Text( nullptr ),
     m_chi2Model( nullptr ),
@@ -2652,6 +2832,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_geometrySelect->addItem( lbl );
   }//for( int type = 0; type < 10; ++type )
   
+  m_prevGeometry = GeometryType::Spherical;
   m_geometrySelect->setCurrentIndex( static_cast<int>(GeometryType::Spherical) );
   m_geometrySelect->changed().connect( this, &ShieldingSourceDisplay::handleGeometryTypeChange );
 
@@ -2807,6 +2988,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_sourceModel->rowsInserted().connect( this, &ShieldingSourceDisplay::addSourceIsotopesToShieldings );
   m_sourceModel->rowsAboutToBeRemoved().connect( this, &ShieldingSourceDisplay::removeSourceIsotopesFromShieldings );
 
+  m_sourceModel->layoutChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
+  
   m_distanceEdit->changed().connect( this, &ShieldingSourceDisplay::handleUserDistanceChange );
   m_distanceEdit->enterPressed().connect( this, &ShieldingSourceDisplay::handleUserDistanceChange );
   
@@ -3151,6 +3334,11 @@ void ShieldingSourceDisplay::render( Wt::WFlags<Wt::RenderFlag> flags )
   WContainerWidget::render( flags );
 }//void render( Wt::WFlags<Wt::RenderFlag> flags )
 
+
+SourceFitModel *ShieldingSourceDisplay::sourceFitModel()
+{
+  return m_sourceModel;
+}
 
 ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
 {
@@ -3960,18 +4148,65 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
 
 void ShieldingSourceDisplay::multiNucsPerPeakChanged()
 {
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    auto undo_redo = [](){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_multiIsoPerPeak->setChecked( !display->m_multiIsoPerPeak->isChecked() );
+        display->multiNucsPerPeakChanged();
+      }
+    };
+    
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Multiple nuclides per peak changed" );
+  }//if( undoRedo )
+  
+  
   updateChi2Chart();
 }//void multiNucsPerPeakChanged()
 
 
 void ShieldingSourceDisplay::attenuateForAirChanged()
 {
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    auto undo_redo = [](){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_attenForAir->setChecked( !display->m_attenForAir->isChecked() );
+        display->attenuateForAirChanged();
+      }
+    };
+    
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Attenuate for air changed" );
+  }//if( undoRedo )
+  
   updateChi2Chart();
 }
 
 
 void ShieldingSourceDisplay::backgroundPeakSubChanged()
 {
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    auto undo_redo = [](){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_backgroundPeakSub->setChecked( !display->m_backgroundPeakSub->isChecked() );
+        display->backgroundPeakSubChanged();
+      }
+    };
+    
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Background peak subtraction changed." );
+  }//if( undoRedo )
+  
+  
   if( m_backgroundPeakSub->isChecked() )
   {
     std::shared_ptr<const SpecMeas> back = m_specViewer->measurment(SpecUtils::SpectrumType::Background);
@@ -4009,12 +4244,44 @@ void ShieldingSourceDisplay::backgroundPeakSubChanged()
 
 void ShieldingSourceDisplay::sameIsotopesAgeChanged()
 {
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    auto undo_redo = [](){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_sameIsotopesAge->setChecked( !display->m_sameIsotopesAge->isChecked() );
+        display->sameIsotopesAgeChanged();
+      }
+    };
+    
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Isotope age grouping changed." );
+  }//if( undoRedo )
+  
+  
   m_sourceModel->setUseSameAgeForIsotopes( m_sameIsotopesAge->isChecked() );
   updateChi2Chart();
 }//void sameIsotopesAgeChanged()
 
 void ShieldingSourceDisplay::showGraphicTypeChanged()
 {
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    auto undo_redo = [](){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_showChiOnChart->setChecked( !display->m_showChiOnChart->isChecked() );
+        display->showGraphicTypeChanged();
+      }
+    };
+    
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Isotope age grouping changed." );
+  }//if( undoRedo )
+  
+  
   const bool chi = m_showChiOnChart->isChecked();
   m_chi2Graphic->setShowChiOnChart( chi );
   updateChi2Chart();
@@ -4037,6 +4304,25 @@ void ShieldingSourceDisplay::handleUserDistanceChange()
     const double distance = PhysicalUnits::stringToDistance( distanceStr );
     if( distance <= 0.0 )
       throw runtime_error( "Must have a non-zero distance" );
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && !undoRedo->isInUndoOrRedo() )
+    {
+      const string prevValue = m_prevDistStr;
+      auto undo_redo = [prevValue, distanceStr](){
+        UndoRedoManager *undoRedo = UndoRedoManager::instance();
+        ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+        if( display && undoRedo )
+        {
+          const string &value = undoRedo->isInUndo() ? prevValue : distanceStr;
+          display->m_distanceEdit->setText( WString::fromUTF8(value) );
+          display->handleUserDistanceChange();
+        }
+      };
+      
+      undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Change source distance." );
+    }//if( undoRedo )
+    
     m_prevDistStr = distanceStr;
   }catch(...)
   {
@@ -4062,8 +4348,19 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
 {
   const GeometryType type = geometry();
   
-  cout << "ShieldingSourceDisplay::handleGeometryTypeChange(): Changing to "
-       << GammaInteractionCalc::to_str(type) << endl;
+  //cout << "ShieldingSourceDisplay::handleGeometryTypeChange(): Changing to "
+  //     << GammaInteractionCalc::to_str(type) << endl;
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  unique_ptr<ShieldSourceChange> state_undo_creator;
+  if( (type != m_prevGeometry) && undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    m_geometrySelect->setCurrentIndex( static_cast<int>(m_prevGeometry) );
+    
+    state_undo_creator = make_unique<ShieldSourceChange>( this, "Change geometry" );
+    
+    m_geometrySelect->setCurrentIndex( static_cast<int>(type) );
+  }//if( (type != m_prevGeometry) && undoRedo && !undoRedo->isInUndoOrRedo() )
   
   
   for( WWidget *widget : m_shieldingSelects->children() )
@@ -4389,6 +4686,8 @@ void ShieldingSourceDisplay::checkAndWarnZeroMassFraction()
 
 void ShieldingSourceDisplay::handleShieldingChange()
 {
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   // A radius inside a trace or self-attenuating source could have changed, potentially changing
   //  the trace/intrinsic activity, so we'll go through and update every shielding widget, on every
   //  change to any of them
@@ -5727,6 +6026,8 @@ bool ShieldingSourceDisplay::userChangedDuringCurrentForeground() const
 
 void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   const rapidxml::xml_node<char> *geom_node, *muti_iso_node, *atten_air_node, *back_sub_node,
                                  *peaks_node, *isotope_nodes, *shieldings_node,
                                  *dist_node, *same_age_node, *chart_disp_node;
@@ -5817,6 +6118,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   //clear out the GUI
   reset();
   
+  m_prevGeometry = geom_type;
   m_geometrySelect->setCurrentIndex( static_cast<int>(geom_type) );
   
   m_multiIsoPerPeak->setChecked( muti_iso );
@@ -6260,15 +6562,26 @@ size_t ShieldingSourceDisplay::numberShieldings() const
 
 void ShieldingSourceDisplay::addGenericShielding()
 {
-  ShieldingSelect *temp = addShielding( nullptr, true );
+  ShieldSourceChange state_undo_creator( this, "Add generic shielding" );
+  
+  ShieldingSelect *temp = addShielding( nullptr, false );
   if( !temp->isGenericMaterial() )
     temp->handleToggleGeneric();
+  updateChi2Chart();
 }//void addGenericShielding()
 
 
 
-ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, const bool doUpdateChiChart )
+ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
+                                                       const bool updateChiChartAndAddUndoRedo )
 {
+  // Handle undo/redo if the user clicked a button to add a shielding (all paths to here
+  //  will have `updateChiChartAndAddUndoRedo == true` in this case, and all paths to here
+  //  not from a user explicitly clicking a button, will have this as false).
+  unique_ptr<ShieldSourceChange> state_undo_creator;
+  if( updateChiChartAndAddUndoRedo )
+    state_undo_creator = make_unique<ShieldSourceChange>( this, "Add Shielding" );
+  
   m_modifiedThisForeground = true;
   
   ShieldingSelect *select = new ShieldingSelect( m_materialDB, m_sourceModel, m_materialSuggest, this );
@@ -6284,6 +6597,12 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
                                                     this, boost::placeholders::_1 ) );
   select->addShieldingAfter().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingAfter,
                                                    this, boost::placeholders::_1 ) );
+  
+  select->userChangedStateSignal().connect( boost::bind(
+          &ShieldingSourceDisplay::handleShieldingUndoRedoPoint,
+          this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3
+  ) );
+  
   
   //connect up signals of select and such
   select->m_arealDensityEdit->valueChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
@@ -6306,6 +6625,15 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
       &ShieldingSourceDisplay::updateActivityOfShieldingIsotope, this,
       boost::placeholders::_1, boost::placeholders::_2 ) );
 
+  
+  Signal<ShieldingSelect *, shared_ptr<const string>, shared_ptr<const string>> &
+      undoSignal = select->userChangedStateSignal();
+  undoSignal.connect( boost::bind(
+              &ShieldingSourceDisplay::handleShieldingUndoRedoPoint, this,
+              boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3 ) );
+  
+  
+  
   try
   {
     checkDistanceAndThicknessConsistent();
@@ -6318,7 +6646,7 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before, 
   handleShieldingChange();
   select->setTraceSourceMenuItemStatus();
   
-  if( doUpdateChiChart )
+  if( updateChiChartAndAddUndoRedo )
     updateChi2Chart();
   
   return select;
@@ -6544,6 +6872,8 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
   if( !caller )
     return;
   
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   const vector<WWidget *> &children = m_shieldingSelects->children();
   
   if( !caller->material() )
@@ -6637,11 +6967,129 @@ void ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback(
 }//isotopeRemovedAsVolumetricSourceCallback(...)
 
 
+void ShieldingSourceDisplay::handleShieldingUndoRedoPoint( const ShieldingSelect * const select,
+                                  const shared_ptr<const string> &prev_state,
+                                  const shared_ptr<const string> &current_state )
+{
+  if( !select )
+    return;
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
+    return;
+  
+  //Find index of the select
+  const vector<WWidget *> &kids = m_shieldingSelects->children();
+  size_t index = 0;
+  for( ; index < kids.size(); ++index )
+  {
+    if( select == dynamic_cast<ShieldingSelect *>( kids[index] ) )
+      break;
+  }
+  
+  if( index >= kids.size() )
+  {
+    Wt::log("error") << "ShieldingSourceDisplay::handleShieldingUndoRedoPoint: couldnt find passed in ShieldingSelect.";
+    return;
+  }
+  
+  auto undo_redo = [prev_state, current_state, index]( const bool is_undo ){
+    
+    // TODO: We arent totally getting things right for trace and self-attenuating sources.
+    // TODO: I think we are getting multiple undo/redo steps for a single user action for some things related to trace and self-attenuating sources.
+    
+    try
+    {
+      const auto xml_state = is_undo ? prev_state : current_state;
+      
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( !xml_state || xml_state->empty() || !display || !display->m_shieldingSelects )
+      {
+        Wt::log("error") << "ShieldingSourceDisplay undo/redo - invalid step???";
+        return;
+      }
+      
+      const vector<WWidget *> &kids = display->m_shieldingSelects->children();
+      
+      ShieldingSelect * const select = (index < kids.size())
+      ? dynamic_cast<ShieldingSelect *>( kids[index] ) : nullptr;
+      
+      if( !select )
+      {
+        Wt::log("error") << "ShieldingSourceDisplay undo/redo - not enough shieldings???";
+        return;
+      }
+      
+      const vector<const SandiaDecay::Nuclide *> pre_trace_nucs = select->traceSourceNuclides();
+      const vector<const SandiaDecay::Nuclide *> pre_self_att_nucs = select->selfAttenNuclides();
+      
+      string xml_state_cpy = *xml_state;
+      
+      rapidxml::xml_document<char> doc;
+      const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
+      doc.parse<flags>( &(xml_state_cpy[0]) );
+      select->deSerialize( doc.first_node() );
+      
+      const vector<const SandiaDecay::Nuclide *> post_trace_nucs = select->traceSourceNuclides();
+      const vector<const SandiaDecay::Nuclide *> post_self_att_nucs = select->selfAttenNuclides();
+      
+      for( auto *pre_nuc : pre_trace_nucs )
+      {
+        if( std::find(begin(post_trace_nucs), end(post_trace_nucs), pre_nuc) == end(post_trace_nucs) )
+        {
+          // Somehow maybe things have already been in display->m_sourceModel...
+          const auto nuc_index = display->m_sourceModel->nuclideIndex(pre_nuc);
+          const ModelSourceType type = display->m_sourceModel->sourceType( nuc_index );
+          if( type != ModelSourceType::Point )
+            display->isotopeRemovedAsVolumetricSourceCallback( select, pre_nuc, ModelSourceType::Trace );
+        }
+      }//for( auto *pre_nuc : pre_trace_nucs )
+      
+      for( auto *post_nuc : post_trace_nucs )
+      {
+        if( std::find(begin(pre_trace_nucs), end(pre_trace_nucs), post_nuc) == end(pre_trace_nucs) )
+          display->isotopeIsBecomingVolumetricSourceCallback( select, post_nuc, ModelSourceType::Trace );
+      }
+      
+      for( auto *pre_nuc : pre_self_att_nucs )
+      {
+        if( std::find(begin(post_self_att_nucs), end(post_self_att_nucs), pre_nuc) == end(post_self_att_nucs) )
+        {
+          // Somehow maybe things have already been in display->m_sourceModel...
+          const auto nuc_index = display->m_sourceModel->nuclideIndex(pre_nuc);
+          const ModelSourceType type = display->m_sourceModel->sourceType( nuc_index );
+          if( type != ModelSourceType::Point )
+            display->isotopeRemovedAsVolumetricSourceCallback( select, pre_nuc, ModelSourceType::Intrinsic );
+        }
+      }//for( auto *pre_nuc : pre_self_att_nucs )
+      
+      for( auto *post_nuc : post_self_att_nucs )
+      {
+        if( std::find(begin(pre_self_att_nucs), end(pre_self_att_nucs), post_nuc) == end(pre_self_att_nucs) )
+          display->isotopeIsBecomingVolumetricSourceCallback( select, post_nuc, ModelSourceType::Intrinsic );
+      }
+
+      display->handleShieldingChange();
+    }catch( std::exception &e )
+    {
+      Wt::log("error") << "Error executing ShieldingSelect undo/redo: " << e.what();
+    }//try / catch
+  };//auto undo_redo
+  
+  auto undo = [undo_redo](){ undo_redo(true); };
+  auto redo = [undo_redo](){ undo_redo(false); };
+  
+  undoRedo->addUndoRedoStep( undo, redo, "Update shielding" );
+}//void handleShieldingUndoRedoPoint(...)
+
+
 void ShieldingSourceDisplay::removeShielding( ShieldingSelect *select )
 {
   if( !select )
     return;
 
+  ShieldSourceChange state_undo_creator( this, "Remove Shielding" );
+  
   m_modifiedThisForeground = true;
   
   bool foundShielding = false;
@@ -7229,12 +7677,70 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
 }//shared_ptr<ShieldingSourceChi2Fcn> shieldingFitnessFcn()
 
 
+void ShieldingSourceDisplay::setWidgetStateForFitStarting()
+{
+  m_fitModelButton->hide();
+  m_fitProgressTxt->show();
+  m_fitProgressTxt->setText("");
+  m_cancelfitModelButton->show();
+  
+  m_peakView->disable();
+  m_sourceView->disable();
+  m_optionsDiv->disable();
+  m_addItemMenu->disable();
+  m_distanceEdit->disable();
+  m_detectorDisplay->disable();
+  m_shieldingSelects->disable();
+  m_addGenericShielding->disable();
+  m_addMaterialShielding->disable();
+#if( USE_DB_TO_STORE_SPECTRA )
+  m_saveAsNewModelInDb->disable();
+#endif
+}//void setWidgetStateForFitStarting()
+
+
+void ShieldingSourceDisplay::setWidgetStateForFitBeingDone()
+{
+  m_fitModelButton->show();
+  m_fitProgressTxt->setText("");
+  m_fitProgressTxt->hide();
+  m_cancelfitModelButton->hide();
+  
+  m_peakView->enable();
+  m_sourceView->enable();
+  m_optionsDiv->enable();
+  m_addItemMenu->enable();
+  m_distanceEdit->enable();
+  m_detectorDisplay->enable();
+  m_shieldingSelects->enable();
+  m_addGenericShielding->enable();
+  m_addMaterialShielding->enable();
+#if( USE_DB_TO_STORE_SPECTRA )
+  m_saveAsNewModelInDb->enable();
+#endif
+}//void setWidgetStateForFitBeingDone();
+
+
+
 void ShieldingSourceDisplay::cancelModelFit()
 {
   std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
   if( m_currentFitFcn )
     m_currentFitFcn->cancelFit();
 }//void cancelModelFit()
+
+
+void ShieldingSourceDisplay::cancelModelFitWithNoUpdate()
+{
+  std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
+  if( m_currentFitFcn )
+  {
+    m_currentFitFcn->cancelFit();
+    m_currentFitFcn = nullptr;
+    
+    setWidgetStateForFitBeingDone();
+  }//if( m_currentFitFcn )
+}//void cancelModelFitWithNoUpdate()
 
 
 void ShieldingSourceDisplay::updateGuiWithModelFitProgress( std::shared_ptr<ModelFitProgress> progress )
@@ -7280,7 +7786,8 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
     if( app )
       app->triggerUpdate();
   } BOOST_SCOPE_EXIT_END
-  
+ 
+  ShieldSourceChange state_undo_creator( this, "Fit activity/shielding" );
   
   assert( results );
   const ModelFitResults::FitStatus status = results->succesful;
@@ -7289,23 +7796,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
   const vector<double> &paramErrors = results->paramErrors;
   const vector<string> &errormsgs = results->errormsgs;
   
-  m_fitModelButton->show();
-  m_fitProgressTxt->setText("");
-  m_fitProgressTxt->hide();
-  m_cancelfitModelButton->hide();
-  
-  m_peakView->enable();
-  m_sourceView->enable();
-  m_optionsDiv->enable();
-  m_addItemMenu->enable();
-  m_distanceEdit->enable();
-  m_detectorDisplay->enable();
-  m_shieldingSelects->enable();
-  m_addGenericShielding->enable();
-  m_addMaterialShielding->enable();
-#if( USE_DB_TO_STORE_SPECTRA )
-  m_saveAsNewModelInDb->enable();
-#endif
+  setWidgetStateForFitBeingDone();
   
   std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
   if( !m_currentFitFcn )
@@ -7730,6 +8221,9 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     chi2Fcn->setGuiProgressUpdater( gui_progress_info );
   }//if( progress_fcn && progress )
   
+  // We will update the GUI with results, unless the status code is
+  //  #GammaInteractionCalc::ShieldingSourceChi2Fcn::CalcStatus::CanceledNoUpdate
+  bool update_gui = true;
   
   try
   {
@@ -8032,6 +8526,10 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
         }//if( gui_progress_info )
         break;
         
+      case GammaInteractionCalc::ShieldingSourceChi2Fcn::CalcStatus::CanceledNoUpdate:
+        update_gui = false;
+        break;
+        
       default:
         results->succesful = ModelFitResults::FitStatus::InvalidOther;
         results->errormsgs.push_back( "Fit not performed: " + string(e.what()) );
@@ -8047,7 +8545,7 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
   
   chi2Fcn->fittingIsFinished();
   
-  if( update_fcn )
+  if( update_fcn && update_gui )
   {
     WApplication *app = WApplication::instance();
     if( app && (app->sessionId() == wtsession) )
@@ -8106,23 +8604,7 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
     return nullptr;
   }//try / catch
   
-  m_fitModelButton->hide();
-  m_fitProgressTxt->show();
-  m_fitProgressTxt->setText("");
-  m_cancelfitModelButton->show();
-  
-  m_peakView->disable();
-  m_sourceView->disable();
-  m_optionsDiv->disable();
-  m_addItemMenu->disable();
-  m_distanceEdit->disable();
-  m_detectorDisplay->disable();
-  m_shieldingSelects->disable();
-  m_addGenericShielding->disable();
-  m_addMaterialShielding->disable();
-#if( USE_DB_TO_STORE_SPECTRA )
-  m_saveAsNewModelInDb->disable();
-#endif
+  setWidgetStateForFitStarting();
 
   //Need to disable "All Peaks", Detector, Distance, and "Material", and "Generic"
   

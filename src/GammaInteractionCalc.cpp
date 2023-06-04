@@ -2653,6 +2653,13 @@ void ShieldingSourceChi2Fcn::cancelFit()
 {
   m_cancel = CalcStatus::UserCanceled;
 }
+  
+  
+void ShieldingSourceChi2Fcn::cancelFitWithNoUpdate()
+{
+  m_cancel = CalcStatus::CanceledNoUpdate;
+}
+  
 
 
 void ShieldingSourceChi2Fcn::setGuiProgressUpdater( std::shared_ptr<GuiProgressUpdateInfo> updateInfo )
@@ -3976,10 +3983,8 @@ double ShieldingSourceChi2Fcn::DoEval( const std::vector<double> &x ) const
       break;
       
     case ShieldingSourceChi2Fcn::CalcStatus::UserCanceled:
-      throw CancelException( cancelCode );
-      break;
-      
     case ShieldingSourceChi2Fcn::CalcStatus::Timeout:
+    case ShieldingSourceChi2Fcn::CalcStatus::CanceledNoUpdate:
       throw CancelException( cancelCode );
       break;
   }//switch( m_cancel.load() )

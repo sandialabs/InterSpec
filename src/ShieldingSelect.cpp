@@ -32,6 +32,7 @@
 #include <Wt/WText>
 #include <Wt/WLabel>
 #include <Wt/WImage>
+#include <Wt/WServer>
 #include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WCheckBox>
@@ -43,24 +44,25 @@
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
 
-
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
-#include "SpecUtils/RapidXmlUtils.hpp"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -122,6 +124,7 @@ class TraceSrcDisplay : public WGroupBox
   Wt::WLineEdit *m_relaxationDistance;
   Wt::WText *m_relaxationDescription;
   
+  Wt::Signal<> m_userChanged;
   Wt::Signal<const SandiaDecay::Nuclide *,double> m_activityUpdated;
   Wt::Signal<TraceSrcDisplay *, const SandiaDecay::Nuclide * /* old nuclide */> m_nucChangedSignal;
   
@@ -140,6 +143,7 @@ public:
     m_relaxationDiv( nullptr ),
     m_relaxationDistance( nullptr ),
     m_relaxationDescription( nullptr ),
+    m_userChanged( this ),
     m_activityUpdated( this ),
     m_nucChangedSignal( this )
   {
@@ -229,6 +233,15 @@ public:
     //m_allowFitting->changed().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
     m_allowFitting->checked().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
     m_allowFitting->unChecked().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
+    
+    
+    m_allowFitting->checked().connect( this, &TraceSrcDisplay::emitUserChaged );
+    m_allowFitting->unChecked().connect( this, &TraceSrcDisplay::emitUserChaged );
+    m_activityType->activated().connect( this, &TraceSrcDisplay::emitUserChaged );
+    m_relaxationDistance->changed().connect( this, &TraceSrcDisplay::emitUserChaged );
+    m_activityInput->changed().connect( this, &TraceSrcDisplay::emitUserChaged );
+    m_isoSelect->activated().connect( this, &TraceSrcDisplay::emitUserChaged );
+    
       
     updateAvailableActivityTypes();
     updateAvailableIsotopes();
@@ -911,6 +924,16 @@ public:
     return m_nucChangedSignal;
   }
   
+  void emitUserChaged()
+  {
+    m_userChanged.emit();
+  }
+  
+  Wt::Signal<> &userChanged()
+  {
+    return m_userChanged;
+  }
+  
   const SandiaDecay::Nuclide *nuclide() const
   {
     return m_currentNuclide;
@@ -941,6 +964,8 @@ public:
   
   void handleUserNuclideChange()
   {
+    UndoRedoManager::BlockUndoRedoInserts block;
+    
     const SandiaDecay::Nuclide * const oldNuc = m_currentNuclide;
     
     const string nuctxt = m_isoSelect->currentText().toUTF8();
@@ -959,6 +984,7 @@ public:
       //  but that should never happen, right?
       const int nucnum = srcmodel->nuclideIndex(m_currentNuclide);
       double act = srcmodel->activity(nucnum);
+      const bool fitAct = srcmodel->fitActivity(nucnum);
       const TraceActivityType type = TraceActivityType( m_activityType->currentIndex() );
       
       switch( type )
@@ -988,6 +1014,8 @@ public:
       const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const string actstr = PhysicalUnits::printToBestActivityUnits(act,4,useCi);
       m_activityInput->setValueText( WString::fromUTF8(actstr) );
+      
+      m_allowFitting->setChecked( fitAct );
       
       updateTotalActivityFromDisplayActivity();
     }//if( srcmodel )
@@ -1401,6 +1429,7 @@ void ShieldingSelect::setClosableAndAddable( bool closeable , WGridLayout* layou
     item->triggered().connect( this, &ShieldingSelect::emitAddAfterSignal );
     m_addTraceSourceItem = popup->addMenuItem( "Add Trace Source" );
     m_addTraceSourceItem->triggered().connect( this, &ShieldingSelect::addTraceSource );
+    m_addTraceSourceItem->triggered().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     
     layout->addWidget( m_closeIcon, 0, 2, AlignMiddle | AlignRight );
     layout->addWidget( m_addIcon, 1, 2, AlignTop | AlignRight );
@@ -1852,6 +1881,25 @@ TraceSrcDisplay *ShieldingSelect::traceSourceWidgetForNuclide( const SandiaDecay
 }//traceSourceWidgetForNuclide(...) non-const
 
 
+shared_ptr<const string> ShieldingSelect::getStateAsXml() const
+{
+  try
+  {
+    rapidxml::xml_document<char> doc;
+    serialize( &doc );
+    auto xml_data = make_shared<string>();
+    rapidxml::print( std::back_inserter(*xml_data), doc, rapidxml::print_no_indenting );
+    
+    return xml_data;
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "Failed to serialize ShieldingSelect during undo/redo step: " << e.what();
+  }
+  
+  return nullptr;
+}//ShieldingSelect::getStateAsXml()
+
+
 void ShieldingSelect::init()
 {
   wApp->useStyleSheet( "InterSpec_resources/ShieldingSelect.css" );
@@ -1878,6 +1926,8 @@ void ShieldingSelect::init()
   m_toggleImage->decorationStyle().setCursor(PointingHandCursor);
   m_toggleImage->addStyleClass( "Wt-icon" );
  
+  m_toggleImage->clicked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  
   HelpSystem::attachToolTipOn( m_toggleImage,
     "Toggle between material and generic shielding",
                               showToolTips, HelpSystem::ToolTipPosition::Top );
@@ -1897,6 +1947,8 @@ void ShieldingSelect::init()
   m_materialEdit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
   //m_materialEdit->blurred().connect( this, &ShieldingSelect::handleMaterialChange );
 
+  // We will only insert an undo/redo step when the field losses focus.
+  m_materialEdit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   
   if( m_forFitting )
   {
@@ -2026,6 +2078,9 @@ void ShieldingSelect::init()
   m_atomicNumberEdit->valueChanged().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
   m_arealDensityEdit->valueChanged().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
   
+  m_atomicNumberEdit->valueChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  m_arealDensityEdit->valueChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  
   // A validator for the various geometry distances
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
@@ -2065,6 +2120,9 @@ void ShieldingSelect::init()
     edit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
     //edit->blurred().connect( this, &ShieldingSelect::handleMaterialChange );
     
+    edit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+    edit->enterPressed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+    
     if( m_forFitting )
     {
       //edit->setWidth( 150 );
@@ -2073,6 +2131,9 @@ void ShieldingSelect::init()
       fitCb = new WCheckBox( "Fit" );
       fitCb->setChecked( false );
       grid->addWidget( fitCb, row, 2, AlignMiddle | AlignRight );
+      
+      fitCb->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+      fitCb->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     }else
     {
       grid->addWidget( edit, row, 1 );
@@ -2290,6 +2351,8 @@ void ShieldingSelect::checkIsCorrectCurrentGeometry( const GeometryType wanted, 
 
 void ShieldingSelect::addTraceSource()
 {
+  UndoRedoManager::BlockUndoRedoInserts block;
+  
   // TODO: maybe we shouldnt add a trace source if material() is nullptr; also when material()
   //       becomes nullptr maybe we should remove trace sources
   if( !m_traceSources )
@@ -2301,6 +2364,8 @@ void ShieldingSelect::addTraceSource()
   TraceSrcDisplay *src = new TraceSrcDisplay( this );
   src->nucChangedSignal().connect( this, &ShieldingSelect::handleTraceSourceNuclideChange );
   src->activityUpdated().connect( this, &ShieldingSelect::handleTraceSourceActivityChange );
+  
+  src->userChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   
   // Check how many nuclides arent already volumetric sources, and if exactly one, just select it
   const SandiaDecay::Nuclide *nuc = nullptr;
@@ -2330,6 +2395,8 @@ void ShieldingSelect::removeTraceSourceWidget( TraceSrcDisplay *toRemove )
   if( !toRemove )
     return;
   
+  UndoRedoManager::BlockUndoRedoInserts block;
+  
   for( WWidget *w : m_traceSources->children() )
   {
     TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
@@ -2344,6 +2411,8 @@ void ShieldingSelect::removeTraceSourceWidget( TraceSrcDisplay *toRemove )
       delete src;
       
       setTraceSourceMenuItemStatus();
+      
+      handleUserChangeForUndoRedo();
       
       return;
     }//if( src == toRemove )
@@ -2704,6 +2773,17 @@ Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &ShieldingSelect::remov
 {
   return m_removingIsotopeAsSource;
 }
+
+
+Wt::Signal<ShieldingSelect *, shared_ptr<const string>, shared_ptr<const string>>
+           &ShieldingSelect::userChangedStateSignal()
+{
+  if( !m_prevState )
+    m_prevState = getStateAsXml();
+    
+  return m_userChangedStateSignal;
+}
+
 
 void ShieldingSelect::setGeometry( GammaInteractionCalc::GeometryType type )
 {
@@ -3441,6 +3521,10 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
 
   handleIsotopicChange( static_cast<float>(massFrac), iso );
   
+  cb->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  cb->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  cb->massFractionChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+
 
 /*  //Commenting out since I'm guessing most elements have at least 2 isotopes
   //Make sure the material has the isotope reequested to add
@@ -4355,6 +4439,50 @@ void ShieldingSelect::handleMaterialChange()
 }//void handleMaterialChange()
 
 
+void ShieldingSelect::handleUserChangeForUndoRedoWorker()
+{
+  auto xml_data = make_shared<string>();
+  try
+  {
+    rapidxml::xml_document<char> doc;
+    serialize( &doc );
+    rapidxml::print( std::back_inserter(*xml_data), doc, rapidxml::print_no_indenting );
+    
+    if( !m_prevState || ((*m_prevState) != (*xml_data)) )
+    {
+      m_userChangedStateSignal.emit( this, m_prevState, xml_data );
+      m_prevState = xml_data;
+      //cout << "Storing ShieldingSelect taking " << xml_data->size() << " bytes mem" << endl;
+    }else
+    {
+      cerr << "ShieldingSelect::handleUserChangeForUndoRedo(): identical state" << endl;
+    }
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "Failed to serialize in ShieldingSelect::handleUserChangeForUndoRedo().";
+    // m_prevState = nullptr;
+  }//try / catch
+}//void handleUserChangeForUndoRedoWorker();
+
+
+void ShieldingSelect::handleUserChangeForUndoRedo()
+{
+  if( !m_userChangedStateSignal.isConnected() )
+    return;
+  
+  // We'll wait until after the current event loop to grab this widgets state;
+  //  we could be here before all the changes have taken effect (e.g., I havent
+  //  taken the care to make sure this function is called last in signal slots).
+
+  Wt::WServer *server = Wt::WServer::instance();
+  assert( server && wApp );
+  if( server )
+  {
+    auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this) );
+    server->post( wApp->sessionId(), worker );
+  }
+}//void handleUserChangeForUndoRedo()
+
 
 void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
 {
@@ -4558,7 +4686,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
       {
         const TraceSrcDisplay *src = dynamic_cast<const TraceSrcDisplay *>( w );
         assert( src );
-        if( src && src->nuclide() )
+        if( src /* && src->nuclide() */ )
           src->serialize( material_node );
       }//for( WWidget *w : m_traceSources->children() )
     }//if( m_traceSources )
