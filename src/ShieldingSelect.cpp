@@ -4599,7 +4599,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     {
       case GeometryType::Spherical:
         node = addDimensionNode( "Thickness", m_thicknessEdit, m_fitThicknessCB );
-        node->append_attribute( doc->allocate_attribute( "Remark", "CylinderRadiusThickness" ) );
+        node->append_attribute( doc->allocate_attribute( "Remark", "SphericalThickness" ) );
         break;
         
       case GeometryType::CylinderEndOn:
@@ -4653,8 +4653,11 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     {
       name = "FitMassFraction";
       value = (m_fitMassFrac && m_fitMassFrac->isChecked()) ? "1" : "0";
-      mass_frac_node = doc->allocate_node( rapidxml::node_element, name, value );
-      material_node->append_node( mass_frac_node );
+      if( m_fitMassFrac && !m_fitMassFrac->isHidden() )
+      {
+        mass_frac_node = doc->allocate_node( rapidxml::node_element, name, value );
+        material_node->append_node( mass_frac_node );
+      }
     }//if( m_forFitting )
     
     for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )

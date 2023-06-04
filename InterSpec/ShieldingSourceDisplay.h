@@ -600,6 +600,7 @@ public:
   void updateChi2Chart();
   
   void showCalcLog();
+  void closeCalcLogWindow();
   
   /** Returns the inner ShieldingSelect of the one passed in; e.g., returns the ShieldingSelect that is contained by the one passed in.
    
@@ -631,11 +632,13 @@ public:
   void deSerializeShieldings( const ::rapidxml::xml_node<char> *shiledings );
   
   void startModelUpload();
-  void modelUploadError( const ::int64_t size_tried, AuxWindow *window );
-  void finishModelUpload( AuxWindow *window, Wt::WFileUpload *upload );
+  void modelUploadError( const ::int64_t size_tried );
+  void finishModelUpload( Wt::WFileUpload *upload );
+  void closeModelUploadWindow();
   
 #if( USE_DB_TO_STORE_SPECTRA )
   void startSaveModelToDatabase( bool promptNewTitleOnExistingEntry );
+  void closeSaveModelToDatabaseWindow();
   
   //finishSaveModelToDatabase(...): Wont throw exception, and instead returns
   //  the success status.
@@ -643,8 +646,7 @@ public:
   //  set to NULL.
   bool finishSaveModelToDatabase( const Wt::WString &name,
                                   const Wt::WString &desc );
-  void finishSaveModelToDatabase( AuxWindow *window,
-                                  Wt::WLineEdit *name_edit,
+  void finishGuiSaveModelToDatabase( Wt::WLineEdit *name_edit,
                                   Wt::WLineEdit *desc_edit );
   void saveCloneModelToDatabase();
   
@@ -657,8 +659,8 @@ public:
   
 #if( USE_DB_TO_STORE_SPECTRA )
   void startBrowseDatabaseModels();
-  void finishLoadModelFromDatabase( AuxWindow *window,
-                                    Wt::WSelectionBox *selected,
+  void closeBrowseDatabaseModelsWindow();
+  void finishLoadModelFromDatabase( Wt::WSelectionBox *selected,
                                     Wt::WSelectionBox *other_select );
   
   //loadModelFromDb(...):  deserializes the model passed in.
@@ -796,6 +798,12 @@ protected:
   
   AuxWindow *m_logDiv;
   std::vector<std::string> m_calcLog;
+  
+  AuxWindow *m_modelUploadWindow;
+#if( USE_DB_TO_STORE_SPECTRA )
+  AuxWindow *m_modelDbBrowseWindow;
+  AuxWindow *m_modelDbSaveWindow;
+#endif
   
   //m_materialDB: not owned by this object, but passed in at construction.
   MaterialDB *m_materialDB;

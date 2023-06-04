@@ -227,7 +227,7 @@ namespace
   {
     ShieldingSourceDisplay *m_display;
     string m_description;
-    string m_pre_doc;
+    shared_ptr<const string> m_pre_doc;
     
     // Make sure we dont insert multiple undo/redo steps, so using a BlockUndoRedoInserts.
     unique_ptr<UndoRedoManager::BlockUndoRedoInserts> m_block;
@@ -235,40 +235,63 @@ namespace
     ShieldSourceChange( ShieldingSourceDisplay *display, const string &descrip )
       : m_display( display ),
         m_description( descrip ),
-        m_pre_doc{},
+        m_pre_doc( nullptr ),
         m_block( make_unique<UndoRedoManager::BlockUndoRedoInserts>() )
     {
       UndoRedoManager *undoRedo = UndoRedoManager::instance();
-      if( !undoRedo || undoRedo->isInUndoOrRedo() )
-        return;
-      
+      if( undoRedo && undoRedo->canAddUndoRedoNow() )
+      {
+        shared_ptr<string> doc_xml = make_shared<string>();
+        doSerialization( *doc_xml );
+        m_pre_doc = doc_xml;
+      }
+    }//ShieldSourceChange
+    
+    
+    void doSerialization( std::string &xmldoc )
+    {
       try
       {
         rapidxml::xml_document<char> doc;
         m_display->serialize( &doc );
-        rapidxml::print( std::back_inserter(m_pre_doc), doc, rapidxml::print_no_indenting );
+        rapidxml::print( std::back_inserter(xmldoc), doc, rapidxml::print_no_indenting );
       }catch( std::exception &e )
       {
         passMessage( "Error adding undo step for " + m_description + ": "
                     + string(e.what()), WarningWidget::WarningMsgHigh );
-        m_pre_doc.clear(); //jic
-        return;
+        xmldoc.clear(); //jic
       }
-    }//ShieldSourceChange
+    }//void doSerialization( std::string &xmldoc )
+    
+    
+    static void doDeSerialization( ShieldingSourceDisplay *display,
+                                   const shared_ptr<const string> xml_doc )
+    {
+      if( !display || !xml_doc || xml_doc->empty() )
+        throw logic_error( "Error with input logic" );
+      
+      display->cancelModelFitWithNoUpdate();
+      
+      rapidxml::xml_document<char> new_doc;
+      const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
+      string pre_doc_cpy = *xml_doc;
+      new_doc.parse<flags>( &(pre_doc_cpy[0]) );
+      display->deSerialize( new_doc.first_node() );
+    }//static void doDeSerialization( ShieldingSourceDisplay *display, const shared_ptr<const string> xml_doc )
     
     
     ~ShieldSourceChange()
     {
       UndoRedoManager *undoRedo = UndoRedoManager::instance();
-      if( !m_display || m_pre_doc.empty() || !undoRedo )
+      if( !m_display || !m_pre_doc || m_pre_doc->empty() || !undoRedo )
         return;
       
-      string post_doc;
+      shared_ptr<string> post_doc_xml = make_shared<string>();
       try
       {
         rapidxml::xml_document<char> doc;
         m_display->serialize( &doc );
-        rapidxml::print( std::back_inserter(post_doc), doc, rapidxml::print_no_indenting );
+        rapidxml::print( std::back_inserter(*post_doc_xml), doc, rapidxml::print_no_indenting );
       }catch( std::exception &e )
       {
         passMessage( "Error adding undo/redo step for " + m_description + ": "
@@ -277,27 +300,24 @@ namespace
       }
       
       const string descrip = std::move( m_description );
-      const string pre_doc = std::move( m_pre_doc );
+      const shared_ptr<const string> post_doc = post_doc_xml;
+      const shared_ptr<const string> pre_doc = m_pre_doc;
       
       // Now need to remove the block to inserting undo/redo steps
       m_block.reset();
       
-      cout << "Adding undo/redo step will take approx " << (m_description.size() + pre_doc.size() + post_doc.size()) << " bytes of memory" << endl;
+      cout << "Adding undo/redo step will take approx "
+           << (m_description.size() + pre_doc->size() + post_doc->size())
+           << " bytes of memory" << endl;
       
       auto undo = [pre_doc, descrip](){
         ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
-        if( !display || pre_doc.empty() )
+        if( !display || !pre_doc || pre_doc->empty() )
           return;
         
         try
         {
-          display->cancelModelFitWithNoUpdate();
-          
-          rapidxml::xml_document<char> new_doc;
-          const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
-          string pre_doc_cpy = pre_doc;
-          new_doc.parse<flags>( &(pre_doc_cpy[0]) );
-          display->deSerialize( new_doc.first_node() );
+          doDeSerialization( display, pre_doc );
         }catch( std::exception &e )
         {
           passMessage( "Error undoing " + descrip + ": " + string(e.what()),
@@ -307,18 +327,12 @@ namespace
       
       auto redo = [post_doc, descrip](){
         ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
-        if( !display || post_doc.empty() )
+        if( !display || !post_doc || !post_doc->empty() )
           return;
         
         try
         {
-          display->cancelModelFitWithNoUpdate();
-          
-          rapidxml::xml_document<char> new_doc;
-          const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
-          string post_doc_cpy = post_doc;
-          new_doc.parse<flags>( &(post_doc_cpy[0]) );
-          display->deSerialize( new_doc.first_node() );
+          doDeSerialization( display, post_doc );
         }catch( std::exception &e )
         {
           passMessage( "Error redoing" + descrip + ": " + string(e.what()),
@@ -2666,6 +2680,12 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_optionsDiv( nullptr ),
     m_showLog( nullptr ),
     m_logDiv( nullptr ),
+    m_calcLog{},
+    m_modelUploadWindow( nullptr ),
+#if( USE_DB_TO_STORE_SPECTRA )
+    m_modelDbBrowseWindow( nullptr ),
+    m_modelDbSaveWindow( nullptr ),
+#endif
     m_materialDB( materialDB ),
     m_fitModelButton( nullptr ),
     m_fitProgressTxt( nullptr ),
@@ -3361,6 +3381,12 @@ ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
     delete m_addItemMenu;
     m_addItemMenu = NULL;
   }//if( m_addItemMenu )
+  
+  closeModelUploadWindow();
+#if( USE_DB_TO_STORE_SPECTRA )
+  closeBrowseDatabaseModelsWindow();
+  closeSaveModelToDatabaseWindow();
+#endif
 }//ShieldingSourceDisplay destructor constructor
 
 
@@ -4931,14 +4957,61 @@ void ShieldingSourceDisplay::showCalcLog()
   
   WPushButton *close = m_logDiv->addCloseButtonToFooter();
   close->clicked().connect( boost::bind( &AuxWindow::hide, m_logDiv ) );
-  
+  m_logDiv->finished().connect( this, &ShieldingSourceDisplay::closeCalcLogWindow );
   
   const int wwidth = m_specViewer->renderedWidth();
   const int wheight = m_specViewer->renderedHeight();
   m_logDiv->setMaximumSize( 0.8*wwidth, 0.8*wheight );
   m_logDiv->resizeToFitOnScreen();
   m_logDiv->centerWindow();
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->closeCalcLogWindow();
+    };
+    
+    auto redo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->showCalcLog();
+    };
+    
+    undoRedo->addUndoRedoStep( undo, redo, "Show calculation log." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
 }//void showCalcLog()
+
+
+void ShieldingSourceDisplay::closeCalcLogWindow()
+{
+  assert( m_logDiv );
+  if( !m_logDiv )
+    return;
+  
+  AuxWindow::deleteAuxWindow( m_logDiv );
+  m_logDiv = nullptr;
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->showCalcLog();
+    };
+    
+    auto redo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->closeCalcLogWindow();
+    };
+    
+    undoRedo->addUndoRedoStep( undo, redo, "Close calculation log." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+}//void closeCalcLogWindow()
 
 
 const ShieldingSelect *ShieldingSourceDisplay::innerShielding( const ShieldingSelect * const select ) const
@@ -4962,15 +5035,30 @@ const ShieldingSelect *ShieldingSourceDisplay::innerShielding( const ShieldingSe
 }//const ShieldingSelect *innerShielding( const ShieldingSelect * const select ) const
 
 
-void ShieldingSourceDisplay::finishModelUpload( AuxWindow *window,
-                                                WFileUpload *upload )
+void ShieldingSourceDisplay::closeModelUploadWindow()
 {
-  rapidxml::xml_document<char> original_doc;
+  AuxWindow::deleteAuxWindow( m_modelUploadWindow );
+  m_modelUploadWindow = nullptr;
+}//void closeModelUploadWindow()
+
+
+void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
+{
+  ShieldSourceChange change( this, "Upload Activity/Shielding fit model." );
+  
+  shared_ptr<const string> pre_doc;
+  if( change.m_pre_doc && !change.m_pre_doc->empty() )
+  {
+    pre_doc = change.m_pre_doc;
+  }else
+  {
+    shared_ptr<string> xmldoc = make_shared<string>();
+    change.doSerialization( *xmldoc );
+    pre_doc = xmldoc;
+  }
   
   try
   {
-    serialize( &original_doc );
-    
     const std::string filename = upload->spoolFileName();
     
     std::vector<char> data;
@@ -4985,26 +5073,30 @@ void ShieldingSourceDisplay::finishModelUpload( AuxWindow *window,
     m_modifiedThisForeground = true;
   }catch( std::exception &e )
   {
-    stringstream msg;
-    msg << "Error opening uploaded Source Shielding Fit Model: " << e.what();
-    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
+    const string msg = "Error opening uploaded Source Shielding Fit Model: " + string(e.what());
+    passMessage( msg, WarningWidget::WarningMsgHigh );
     
     try
     {
-      deSerialize( &original_doc );
+      ShieldSourceChange::doDeSerialization( this, pre_doc );
     }catch( std::exception & )
     {
       passMessage( "Even worse, there was an error trying to recover",
                    WarningWidget::WarningMsgHigh );
     }//try / catch
+    
+    // We wont insert an undo/redo step here, but this means if the user does an undo, then
+    //  there will be a blank step (i.e., will try to close the upload window when there is
+    //  none to close)
+    // lets keep the ShieldSourceChange from inserting a undo/redo step.
+    change.m_pre_doc.reset();
   }//try / catch
   
-  delete window;
-}//void startModelUpload()
+  closeModelUploadWindow();
+}//void finishModelUpload(...)
 
 
-void ShieldingSourceDisplay::modelUploadError( const ::int64_t size_tried,
-                                               AuxWindow *window )
+void ShieldingSourceDisplay::modelUploadError( const ::int64_t size_tried )
 {
   stringstream msg;
   const int max_size = static_cast<int>( wApp->maximumRequestSize() );
@@ -5012,40 +5104,59 @@ void ShieldingSourceDisplay::modelUploadError( const ::int64_t size_tried,
       << size_tried << " (max size " << max_size << ")";
   passMessage( msg.str(), WarningWidget::WarningMsgHigh );
   
-  AuxWindow::deleteAuxWindow( window );
+  closeModelUploadWindow();
 }//void modelUploadError( const ::int64_t size_tried );
 
 
 void ShieldingSourceDisplay::startModelUpload()
 {
-  AuxWindow *window = new AuxWindow( "Import Source Shielding XML Model",
+  if( m_modelUploadWindow )
+    return;
+  
+  m_modelUploadWindow = new AuxWindow( "Import Source Shielding XML Model",
                       (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                         | AuxWindowProperties::TabletNotFullScreen) );
   
-  WContainerWidget *contents = window->contents();
+  WContainerWidget *contents = m_modelUploadWindow->contents();
   WFileUpload *upload = new WFileUpload( contents );
   upload->setInline( false );
   
-  upload->uploaded().connect( boost::bind( &ShieldingSourceDisplay::finishModelUpload, this, window,
-                                          upload ) );
+  upload->uploaded().connect( boost::bind( &ShieldingSourceDisplay::finishModelUpload, this, upload ) );
   upload->fileTooLarge().connect( boost::bind( &ShieldingSourceDisplay::modelUploadError, this,
-                                              boost::placeholders::_1, window ) );
+                                              boost::placeholders::_1 ) );
   upload->changed().connect( upload, &WFileUpload::upload );
   
-    
-    
-  WPushButton *button = window->addCloseButtonToFooter("Cancel");
-  button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
-  window->centerWindow();
-  window->disableCollapse();
-//  window->hidden().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  WPushButton *button = m_modelUploadWindow->addCloseButtonToFooter("Cancel");
+  button->clicked().connect( m_modelUploadWindow, &AuxWindow::hide );
   
-  window->rejectWhenEscapePressed();
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  m_modelUploadWindow->centerWindow();
+  m_modelUploadWindow->disableCollapse();
+  
+  m_modelUploadWindow->rejectWhenEscapePressed();
+  m_modelUploadWindow->finished().connect( this, &ShieldingSourceDisplay::closeModelUploadWindow );
 
-  window->show();
+  m_modelUploadWindow->show();
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+        display->closeModelUploadWindow();
+    };
+    
+    auto redo = [](){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+        display->startModelUpload();
+    };
+    
+    undoRedo->addUndoRedoStep( undo, redo, "Open model upload window." );
+  }//if( can insert undo/redo step )
 }//void startModelUpload()
+
 
 #if( USE_DB_TO_STORE_SPECTRA )
 typedef Dbo::QueryModel< Dbo::ptr<ShieldingSourceModel> > QueryModel_t;
@@ -5197,10 +5308,11 @@ bool ShieldingSourceDisplay::loadModelFromDb( Dbo::ptr<ShieldingSourceModel> shi
   return true;
 }//void loadModelFromDb( Wt::Dbo::ptr<ShieldingSourceModel> entry )
 
-void ShieldingSourceDisplay::finishLoadModelFromDatabase( AuxWindow *window,
-                                                  WSelectionBox *first_selct,
-                                                  WSelectionBox *other_select )
+void ShieldingSourceDisplay::finishLoadModelFromDatabase( WSelectionBox *first_selct,
+                                                          WSelectionBox *other_select )
 {
+  ShieldSourceChange change( this, "Load model from database." );
+  
   WSelectionBox *selec = first_selct;
   int row = selec ? selec->currentIndex() : -1;
   if( row < 0 )
@@ -5226,10 +5338,18 @@ void ShieldingSourceDisplay::finishLoadModelFromDatabase( AuxWindow *window,
     return;
   }//if( !shieldmodel )
   
-  loadModelFromDb( shieldmodel );
+  if( !loadModelFromDb( shieldmodel ) )
+    change.m_pre_doc.reset(); //keep ShieldSourceChange from inserting undo/redo step
   
-  delete window;
+  closeBrowseDatabaseModelsWindow();
 }//void finishLoadModelFromDatabase()
+
+
+void ShieldingSourceDisplay::closeBrowseDatabaseModelsWindow()
+{
+  AuxWindow::deleteAuxWindow( m_modelDbBrowseWindow );
+  m_modelDbBrowseWindow = nullptr;
+}//void closeBrowseDatabaseModelsWindow();
 
 
 void ShieldingSourceDisplay::startBrowseDatabaseModels()
@@ -5237,14 +5357,18 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
   if( !m_specViewer || !m_specViewer->m_user )
     throw runtime_error( "startBrowseDatabaseModels(): invalid user" );
   
+  if( m_modelDbBrowseWindow )
+    return;
+  
   WTextArea *summary = NULL;
   WPushButton *accept = NULL, *cancel = NULL, *del = NULL;
-  AuxWindow *window = new AuxWindow( "Previously Saved Models",
+  m_modelDbBrowseWindow = new AuxWindow( "Previously Saved Models",
               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen) );
+  m_modelDbBrowseWindow->finished().connect( this, &ShieldingSourceDisplay::closeBrowseDatabaseModelsWindow );
   
   try
   {
-    WContainerWidget *contents = window->contents();
+    WContainerWidget *contents = m_modelDbBrowseWindow->contents();
     summary = new WTextArea();
 //    summary->setColumns( 30 );
     summary->setWidth( 316 );
@@ -5254,7 +5378,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     accept->disable();
   
     cancel = new WPushButton( "Cancel" );
-    cancel->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+    cancel->clicked().connect( m_modelDbBrowseWindow, &AuxWindow::hide );
   
     del = new WPushButton( "Delete" );
     del->setIcon( "InterSpec_resources/images/minus_min_white.png" );
@@ -5313,10 +5437,10 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
                 selections[0], selections[1], summary, accept, m_specViewer ) );
       selections[0]->doubleClicked().connect(
             boost::bind( &ShieldingSourceDisplay::finishLoadModelFromDatabase,
-                         this, window, selections[0], selections[1] ) );
+                         this, selections[0], selections[1] ) );
       accept->clicked().connect(
               boost::bind( &ShieldingSourceDisplay::finishLoadModelFromDatabase,
-                           this, window, selections[0], selections[1] ) );
+                           this, selections[0], selections[1] ) );
     }//if( selections[0] )
     
     if( selections[1] )
@@ -5325,10 +5449,10 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
                 selections[1], selections[0], summary, accept, m_specViewer ) );
       selections[1]->doubleClicked().connect(
              boost::bind( &ShieldingSourceDisplay::finishLoadModelFromDatabase,
-                          this, window, selections[1], selections[0] ) );
+                          this, selections[1], selections[0] ) );
       accept->clicked().connect(
              boost::bind( &ShieldingSourceDisplay::finishLoadModelFromDatabase,
-                          this, window, selections[1], selections[0] ) );
+                          this, selections[1], selections[0] ) );
     }//if( selections[1] )
     
     del->clicked().connect(
@@ -5342,7 +5466,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
 
       WCheckBox *cb = new WCheckBox( "Allow delete" );
       
-      window->footer()->addWidget( cb );
+      m_modelDbBrowseWindow->footer()->addWidget( cb );
       
       if( !m_specViewer->isMobile() )
       {
@@ -5350,13 +5474,13 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
         del->setFloatSide(Left);
       }
         
-      window->footer()->addWidget( del );
+      m_modelDbBrowseWindow->footer()->addWidget( del );
         
       cb->checked().connect( del, &WPushButton::enable );
       cb->unChecked().connect( del, &WPushButton::disable );
-      window->footer()->addWidget( cancel );
+      m_modelDbBrowseWindow->footer()->addWidget( cancel );
 
-      window->footer()->addWidget( accept );
+      m_modelDbBrowseWindow->footer()->addWidget( accept );
 
       title->setInline( false );
       summary->setInline( false );
@@ -5384,12 +5508,30 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
       }
     }//if( nfileprev[0] || nfileprev[1] )
     
-    window->rejectWhenEscapePressed();
-    window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    window->setWidth( 350 );
-    window->disableCollapse();
-    window->centerWindow();
-    window->show();
+    m_modelDbBrowseWindow->rejectWhenEscapePressed();
+    
+    m_modelDbBrowseWindow->setWidth( 350 );
+    m_modelDbBrowseWindow->disableCollapse();
+    m_modelDbBrowseWindow->centerWindow();
+    m_modelDbBrowseWindow->show();
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    {
+      auto undo = [](){
+        ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+        if( display )
+          display->closeBrowseDatabaseModelsWindow();
+      };
+      
+      auto redo = [](){
+        ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+        if( display )
+          display->startBrowseDatabaseModels();
+      };
+      
+      undoRedo->addUndoRedoStep( undo, redo, "Show Activity/Shielding fit model browser." );
+    }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
   }catch( std::exception &e )
   {
     if( accept )
@@ -5400,7 +5542,10 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
      delete summary;
     if( del )
       delete del;
-    delete window;
+    
+    AuxWindow::deleteAuxWindow( m_modelDbBrowseWindow );
+    m_modelDbBrowseWindow = nullptr;
+    
     passMessage( "Error creating database model browser", WarningWidget::WarningMsgHigh );
     cerr << "\n\nShieldingSourceDisplay::startBrowseDatabaseModels() caught: "
          << e.what() << endl << endl;
@@ -5471,24 +5616,34 @@ std::string ShieldingSourceDisplay::defaultModelDescription() const
 }//std::string ShieldingSourceDisplay::defaultModelDescription() 
 
 #if( USE_DB_TO_STORE_SPECTRA )
+void ShieldingSourceDisplay::closeSaveModelToDatabaseWindow()
+{
+  AuxWindow::deleteAuxWindow( m_modelDbSaveWindow );
+  m_modelDbSaveWindow = nullptr;
+}//void closeSaveModelToDatabaseWindow()
+
+
 void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
 {
   if( m_modelInDb && !prompt )
   {
-    finishSaveModelToDatabase( NULL, NULL, NULL );
+    finishGuiSaveModelToDatabase( nullptr, nullptr );
     return;
   }//if( m_modelInDb && !prompt )
   
-  AuxWindow *window = new AuxWindow( "Import Source Shielding XML Model",
+  if( m_modelDbSaveWindow )
+    return;
+  
+  m_modelDbSaveWindow = new AuxWindow( "Save Activity/Shielding model to database",
                   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse) );
-  WContainerWidget *contents = window->contents();
-  window->centerWindow();
+  WContainerWidget *contents = m_modelDbSaveWindow->contents();
+  m_modelDbSaveWindow->centerWindow();
   
-  window->rejectWhenEscapePressed();
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  window->show();
+  m_modelDbSaveWindow->rejectWhenEscapePressed();
+  m_modelDbSaveWindow->finished().connect( this, &ShieldingSourceDisplay::closeSaveModelToDatabaseWindow );
+  m_modelDbSaveWindow->show();
  
   WLabel *label = new WLabel( "Enter model name:", contents );
   label->setInline( false );
@@ -5521,23 +5676,45 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
 
  
 
-  WPushButton *button = new WPushButton( "Save", window->footer() );
+  WPushButton *button = new WPushButton( "Save", m_modelDbSaveWindow->footer() );
   button->setIcon( "InterSpec_resources/images/disk2.png" );
   
   button->clicked().connect(
-              boost::bind( &ShieldingSourceDisplay::finishSaveModelToDatabase,
-                           this, window, nameEdit, descEdit ) );
+              boost::bind( &ShieldingSourceDisplay::finishGuiSaveModelToDatabase,
+                           this, nameEdit, descEdit ) );
   descEdit->enterPressed().connect( boost::bind( &WFormWidget::setFocus, button, true ) );
+  
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->closeSaveModelToDatabaseWindow();
+    };
+    
+    auto redo = [prompt](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->startSaveModelToDatabase(prompt);
+    };
+    
+    undoRedo->addUndoRedoStep( undo, redo, "Show model save to database dialog." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  
 }//void startSaveModelToDatabase()
 
 
-void ShieldingSourceDisplay::finishSaveModelToDatabase( AuxWindow *window,
-                                                        WLineEdit *name_edit,
+void ShieldingSourceDisplay::finishGuiSaveModelToDatabase( WLineEdit *name_edit,
                                                         WLineEdit *desc_edit )
 {
+  if( !m_modelDbSaveWindow )
+    return;
+  
   if( name_edit && name_edit->valueText().empty() )
   {
-    WText *txt = new WText( "You must enter a name", window->contents() );
+    WText *txt = new WText( "You must enter a name", m_modelDbSaveWindow->contents() );
     txt->setInline( false );
     txt->setAttributeValue( "style", "color:red;" );
     return;
@@ -5577,9 +5754,8 @@ void ShieldingSourceDisplay::finishSaveModelToDatabase( AuxWindow *window,
   
   finishSaveModelToDatabase( name, description );
   
-  if( window )
-    delete window;
-}//finishSaveModelToDatabase(...)
+  closeSaveModelToDatabaseWindow();
+}//finishGuiSaveModelToDatabase(...)
 
 
 bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
