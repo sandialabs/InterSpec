@@ -91,15 +91,14 @@ using namespace std;
 //Or could just use: __DATE__
 
 
-LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int screen_width, int screen_height )
+LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int screen_height )
 : AuxWindow("Disclaimers, Licenses, Credit, and Contact",
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) ),
   m_menu( nullptr )
 {
-  setClosable( !is_awk );
-  if( !is_awk )
-    rejectWhenEscapePressed();
+  setClosable( true );
+  rejectWhenEscapePressed();
   
   const string docroot = wApp->docRoot();
   m_resourceBundle.use( SpecUtils::append_path(docroot,"InterSpec_resources/static_text/copyright_and_about") ,false);
@@ -182,19 +181,8 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   layout->setColumnStretch( 1, 1 );
 
   //Put in a footer with an Acknowledge that will accept this dialog
-  WContainerWidget *bottom = footer();
-  
-  
-  if( phone || (tablet && !is_awk) )
-  {
-    WPushButton *close = addCloseButtonToFooter();
-    close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
-  }else
-  {
-    WPushButton *close = new WPushButton( (is_awk ? "Acknowledge" : "Close"), bottom );
-    close->addStyleClass( "CenterBtnInMblAuxWindowHeader" );
-    close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
-  }
+  WPushButton *close = addCloseButtonToFooter();
+  close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
   
   resizeToFitOnScreen(); //jic
   centerWindow();

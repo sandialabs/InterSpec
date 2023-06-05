@@ -437,6 +437,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_clientDeviceType( 0x0 ),
   m_referencePhotopeakLines( 0 ),
   m_referencePhotopeakLinesWindow( 0 ),
+  m_helpWindow( nullptr ),
   m_licenseWindow( nullptr ),
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
@@ -1231,8 +1232,15 @@ InterSpec::~InterSpec() noexcept(true)
   //  some manual cleanup here (as of 20220917 when AuxWindow and SimpleDialog where explicitly
   //  parented by the current InterSpec instance, we are doing much more cleanup than necessary).
 
-  cerr << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'" << endl;
+  Wt::log("info") << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'";
 
+  // Get rid of undo/redo, so we dont insert anything into them
+  if( m_undo )
+  {
+    delete m_undo;
+    m_undo = nullptr;
+  }
+  
   if( m_licenseWindow )
   {
     delete m_licenseWindow;
@@ -1312,19 +1320,13 @@ InterSpec::~InterSpec() noexcept(true)
     m_referencePhotopeakLinesWindow = nullptr;
   }//if( m_referencePhotopeakLinesWindow )
   
+  handleWarningsWindowClose();
   if( m_warnings )  //WarningWidget isnt necessarily parented, so we do have to manually delete it
   {
-    if( m_warningsWindow )
-      m_warningsWindow->stretcher()->removeWidget( m_warnings );
     delete m_warnings;
     m_warnings = nullptr;
   }//if( m_warnings )
 
-  if( m_warningsWindow )
-  {
-    delete m_warningsWindow;
-    m_warningsWindow = nullptr;
-  }//if( m_warningsWindow )
   
   deletePeakEdit();
   deleteGammaCountDialog();
@@ -4069,8 +4071,7 @@ AuxWindow *InterSpec::showIEWarningDialog()
 } // AuxWindow *showIEWarningDialog()
 
 
-void InterSpec::showLicenseAndDisclaimersWindow( const bool is_awk,
-                                      std::function<void()> finished_callback )
+void InterSpec::showLicenseAndDisclaimersWindow()
 {
   if( m_licenseWindow )
   {
@@ -4078,15 +4079,19 @@ void InterSpec::showLicenseAndDisclaimersWindow( const bool is_awk,
     return;
   }
   
-  m_licenseWindow = new LicenseAndDisclaimersWindow( is_awk, renderedWidth(), renderedHeight() );
+  m_licenseWindow = new LicenseAndDisclaimersWindow( renderedWidth(), renderedHeight() );
   
-  m_licenseWindow->finished().connect( std::bind([this,finished_callback](){
-    deleteLicenseAndDisclaimersWindow();
-    
-    if( finished_callback )
-      finished_callback();
-  }) );
+  m_licenseWindow->finished().connect( this, &InterSpec::deleteLicenseAndDisclaimersWindow );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ deleteLicenseAndDisclaimersWindow(); };
+    auto redo = [this](){ showLicenseAndDisclaimersWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo),
+                            "Show disclaimers, credits, and contact window." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void showLicenseAndDisclaimersWindow()
+
 
 void InterSpec::startClearSession()
 {
@@ -4115,16 +4120,48 @@ void InterSpec::deleteLicenseAndDisclaimersWindow()
 }//void deleteLicenseAndDisclaimersWindow()
 
 
-void InterSpec::showWelcomeDialog( bool force )
+void InterSpec::showWelcomeDialogWorker( const bool force )
 {
-  cout << "In showWelcomeDialog" << endl;
+  if( m_useInfoWindow )
+    return;
+  
+  std::function<void(bool)> dontShowAgainCallback;
+  if( !force )
+  {
+    dontShowAgainCallback = [this](bool value){
+      InterSpecUser::setPreferenceValue<bool>( m_user, "ShowSplashScreen", value, this );
+    };
+  }//if( !force )
+  
+  m_useInfoWindow = new UseInfoWindow( dontShowAgainCallback , this );
+
+  m_useInfoWindow->finished().connect( boost::bind( &InterSpec::deleteWelcomeDialog, this, force ) );
+  
+  if( force && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ deleteWelcomeDialog(false); };
+    auto redo = [this,force](){ showWelcomeDialog(true); };
+    m_undo->addUndoRedoStep( undo, redo, "Show welcome dialog." );
+  }//if( force && m_undo && m_undo->canAddUndoRedoNow() )
+  
+  wApp->triggerUpdate();
+}//void showWelcomeDialogWorker( bool force );
+
+
+void InterSpec::showWelcomeDialog( const bool force )
+{
+  if( m_useInfoWindow )
+  {
+    m_useInfoWindow->show();
+    m_useInfoWindow->resizeToFitOnScreen();
+    m_useInfoWindow->centerWindowHeavyHanded();
+    return;
+  }//if( m_useInfoWindow )
+  
   try
   {
-    if (!force && !m_user->preferenceValue<bool>("ShowSplashScreen"))
-    {
-      cout << "showWelcomeDialog: user doesnt want us to show screen; returning." << endl;
+    if( !force && !m_user->preferenceValue<bool>("ShowSplashScreen") )
       return;
-    }
   }catch(...)
   {
     assert(0);
@@ -4133,15 +4170,11 @@ void InterSpec::showWelcomeDialog( bool force )
       return;
   }
   
-  if( m_useInfoWindow )
+  if( force )
   {
-    cout << "showWelcomeDialog: window already showing." << endl;
-    m_useInfoWindow->show();
-    return;
-  }
-  
-  cout << "showWelcomeDialog: will post to show." << endl;
-  WServer::instance()->post( wApp->sessionId(), std::bind( [this](){
+    showWelcomeDialogWorker( force );
+  }else
+  {
     /*
      For Android, showing this useInfoWindow at startup causes some exceptions
      in the JavaScript whenever the loading indicator is shown.  I'm pretty
@@ -4150,31 +4183,25 @@ void InterSpec::showWelcomeDialog( bool force )
      
      Havent checked if creating this window via "posting" helps
      */
-
-    cout << "Now finally in function to showWelcomeDialog." << endl;
-
-    if( m_useInfoWindow )
-      return;
-    
-    std::function<void(bool)> dontShowAgainCallback = [this](bool value){
-      InterSpecUser::setPreferenceValue<bool>( m_user, "ShowSplashScreen", value, this );
-    };
-    m_useInfoWindow = new UseInfoWindow( dontShowAgainCallback , this );
-  
-    m_useInfoWindow->finished().connect( this, &InterSpec::deleteWelcomeDialog );
-    
-    wApp->triggerUpdate();
-  } ) );
+    WServer::instance()->post( wApp->sessionId(), std::bind(&InterSpec::showWelcomeDialogWorker, this, force ) );
+  }
 }//void showWelcomeDialog()
 
 
-void InterSpec::deleteWelcomeDialog()
+void InterSpec::deleteWelcomeDialog( const bool addUndoRedoStep )
 {
   if( !m_useInfoWindow )
     return;
   
   AuxWindow::deleteAuxWindow( m_useInfoWindow );
   m_useInfoWindow = nullptr;
+  
+  if( addUndoRedoStep && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ showWelcomeDialog(true); };
+    auto redo = [this](){ deleteWelcomeDialog(false); };
+    m_undo->addUndoRedoStep( undo, redo, "Close welcome dialog." );
+  }//if( force && m_undo && m_undo->canAddUndoRedoNow() )
 }//void deleteWelcomeDialog()
 
 
@@ -4330,9 +4357,9 @@ void InterSpec::showWarningsWindow()
   
   if( !m_warningsWindow )
   {
-    m_warningsWindow = new AuxWindow( "Notification/Logs",
+    m_warningsWindow = new AuxWindow( "Notification Log",
                   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
-                   | AuxWindowProperties::IsModal
+                   | AuxWindowProperties::DisableCollapse
                    | AuxWindowProperties::EnableResize) );
     m_warningsWindow->contents()->setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
     m_warningsWindow->rejectWhenEscapePressed();
@@ -4341,32 +4368,46 @@ void InterSpec::showWarningsWindow()
     //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
     //  size to be the min-size
     m_warningsWindow->setMinimumSize( 640, 480 );
-    m_warningsWindow->resizeScaledWindow(0.75, 0.75);
-    m_warningsWindow->centerWindow();
-    m_warningsWindow->finished().connect( boost::bind( &InterSpec::handleWarningsWindowClose, this, false ) );
+    m_warningsWindow->finished().connect( boost::bind( &InterSpec::handleWarningsWindowClose, this ) );
         
       
-    WPushButton *clearButton = new WPushButton( "Delete Logs", m_warningsWindow->footer() );
+    WPushButton *clearButton = new WPushButton( "Clear Notifications", m_warningsWindow->footer() );
     clearButton->clicked().connect( boost::bind( &WarningWidget::clearMessages, m_warnings ) );
     clearButton->addStyleClass( "BinIcon" );
-      if (isMobile())
-      {
-          clearButton->setFloatSide( Right );
-      }
-      WPushButton *closeButton = m_warningsWindow->addCloseButtonToFooter();
-      closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_warningsWindow ) );
-
+    if( isMobile() )
+      clearButton->setFloatSide( Right );
+    WPushButton *closeButton = m_warningsWindow->addCloseButtonToFooter();
+    closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_warningsWindow ) );
   }//if( !m_warningsWindow )
   
   m_warningsWindow->show();
+  m_warningsWindow->resizeScaledWindow(0.75, 0.75);
+  m_warningsWindow->centerWindow();
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ handleWarningsWindowClose(); };
+    auto redo = [this](){ showWarningsWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show notifications window" );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void showWarningsWindow()
 
 
-void InterSpec::handleWarningsWindowClose( bool close )
+void InterSpec::handleWarningsWindowClose()
 {
+  if( m_warningsWindow )
+  {
     m_warningsWindow->stretcher()->removeWidget( m_warnings );
     AuxWindow::deleteAuxWindow( m_warningsWindow );
-    m_warningsWindow = 0;
+    m_warningsWindow = nullptr;
+    
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this](){ showWarningsWindow(); };
+      auto redo = [this](){ handleWarningsWindowClose(); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close notifications window" );
+    }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  }//if( m_warningsWindow )
 }//void handleWarningsWindowClose( bool )
 
 
@@ -5281,7 +5322,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   PopupDivMenuItem *aboutitem = m_fileMenuPopup->createAboutThisAppItem();
   
   if( aboutitem )
-    aboutitem->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+    aboutitem->triggered().connect( this, &InterSpec::showLicenseAndDisclaimersWindow );
   
   m_fileMenuPopup->addSeparator();
   m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Hide );
@@ -5293,7 +5334,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
     item = m_fileMenuPopup->addMenuItem( "About InterSpec" );
-    item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+    item->triggered().connect( this, &InterSpec::showLicenseAndDisclaimersWindow );
     m_fileMenuPopup->addSeparator();  //doesnt seem to be showing up for some reason... owe well.
   }//if( InterSpecApp::isPrimaryWindowInstance() )
 #endif
@@ -7060,7 +7101,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   
   item->triggered().connect( boost::bind( &HelpSystem::createHelpWindow, string("getting-started") ) );
 
-  Wt::WMenuItem *notifications = m_helpMenuPopup->addMenuItem( "Notification Logs..." , "InterSpec_resources/images/log_file_small.png");
+  Wt::WMenuItem *notifications = m_helpMenuPopup->addMenuItem( "Notification Log" , "InterSpec_resources/images/log_file_small.png");
   notifications->triggered().connect( this, &InterSpec::showWarningsWindow );
 
   m_helpMenuPopup->addSeparator();
@@ -7210,7 +7251,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     m_helpMenuPopup->addSeparator();
     
     item = m_helpMenuPopup->addMenuItem( "About InterSpec..." );
-    item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+    item->triggered().connect( this, &InterSpec::showLicenseAndDisclaimersWindow );
   }
 
 }//void addAboutMenu( Wt::WContainerWidget *menuDiv )
@@ -8585,6 +8626,52 @@ void InterSpec::closeShieldingSourceFit()
 }//void closeShieldingSourceFit()
 
 
+
+void InterSpec::showHelpWindow( const std::string &preselect )
+{
+  if( m_helpWindow )
+  {
+    m_helpWindow->show();
+    m_helpWindow->centerWindow();
+    m_helpWindow->setTopic( preselect );
+    return;
+  }//if( m_helpWindow )
+  
+  m_helpWindow = new HelpSystem::HelpWindow( preselect );
+  m_helpWindow->finished().connect( this, &InterSpec::closeHelpWindow );
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ closeHelpWindow(); };
+    auto redo = [this,preselect](){ showHelpWindow(preselect);};
+    
+    undoRedo->addUndoRedoStep( undo, redo, "Show help window" );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+}//void InterSpec::showHelpWindow( const std::string &preselect )
+
+
+void InterSpec::closeHelpWindow()
+{
+  if( !m_helpWindow )
+    return;
+  
+  const string topic = m_helpWindow->currentTopic();
+  
+  AuxWindow::deleteAuxWindow( m_helpWindow );
+  m_helpWindow = nullptr;
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [this, topic](){ showHelpWindow( topic ); };
+    auto redo = [this](){ closeHelpWindow(); };
+    
+    undoRedo->addUndoRedoStep( undo, redo, "Close help window" );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+}//void closeHelpWindow()
+
+
 void InterSpec::showGammaLinesWindow()
 {
   if( m_referencePhotopeakLinesWindow )
@@ -9395,7 +9482,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       WApplication *app = wApp;
       if( !app )
         return;
-      deleteWelcomeDialog();
+      deleteWelcomeDialog( false );
       app->triggerUpdate();
     }) );
       
@@ -10279,7 +10366,7 @@ void InterSpec::handleAppUrl( std::string url )
   if( url.find(q_end_pos, 'q') != string::npos )
     throw runtime_error( "App URL contained more than one '?' character, which isnt allowed" );
     
-  deleteWelcomeDialog();
+  deleteWelcomeDialog( false );
   deleteEnergyCalPreserveWindow();
   deleteLicenseAndDisclaimersWindow();
   

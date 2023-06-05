@@ -72,6 +72,7 @@ class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
 class ReferencePhotopeakDisplay;
 class LicenseAndDisclaimersWindow;
+namespace HelpSystem{ class HelpWindow; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
 
 #if( USE_TERMINAL_WIDGET )
@@ -618,7 +619,13 @@ public:
   void closeShieldingSourceFit();
   void saveShieldingSourceModelToForegroundSpecMeas();
   
+  /** Shows the help window; if a preselect (ex., "energy-calibration", or "getting-started"), then that topic will be set to be selected.
+   */
+  void showHelpWindow( const std::string &preselect = "" );
 
+  /** Closes the help window. */
+  void closeHelpWindow();
+  
   //Note: I am not a big fan of how I treat m_referencePhotopeakLines in this class,
   //      but it is how it is due to technical difficulties that I dont want
   //      to figure out how to fix - right now I'm willing to accept the
@@ -676,7 +683,7 @@ public:
   PeakEditWindow *peakEdit();
   
   void showWarningsWindow();
-  void handleWarningsWindowClose( bool closeWindowTo );
+  void handleWarningsWindowClose();
 
   void showPeakInfoWindow();
   void handlePeakInfoClose();
@@ -732,12 +739,8 @@ public:
 
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
-      If is_awk is true, the confirm button will say "Awcknowledge" and the
-      window wont be otherwise closeable; if false button will say "close" and
-      the close icon in top bar will be avaialble.
    */
-  void showLicenseAndDisclaimersWindow( const bool is_awk,
-                                      std::function<void()> finished_callback );
+  void showLicenseAndDisclaimersWindow();
   
   /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
   void startClearSession();
@@ -747,17 +750,21 @@ public:
    */
   void deleteLicenseAndDisclaimersWindow();
   
-  //showWelcomeDialog(...): shows the welcome dialog.  If force==false, and the
-  //  user has opted to not show the dialog in a previous display, then it
-  //  wont be shown; if force==true, than it is shown no matter what and the
-  //  "do not show again" check box wont be shown to effect users prefference.
-  //  After creation m_useInfoWindow will point to the dialog.
-  void showWelcomeDialog( bool force = false );
-
-  /** Deletes the currently showing dialog (if its showing), and
-   sets m_useInfoWindow to null
+  /** Shows the welcome dialog.
+   
+   @param force If true, the window is shown immediately, and regardless of the "ShowSplashScreen" user preference, and also
+          an undo/redo step will be attempted to be added.  If false then window will only be shown if "ShowSplashScreen"
+          user preference is true, and wont be shown immediately, but rather posted to be shown next event loop, and with a
+          "do not show again" checkbox.
    */
-  void deleteWelcomeDialog();
+  void showWelcomeDialog( const bool force );
+  void showWelcomeDialogWorker( const bool force );
+
+  /** Deletes the currently showing dialog (if its showing), and sets m_useInfoWindow to null.
+   
+   @param addUndoRedoStep If true, will attempt to add an undo step to re-open the Welcome dialog
+   */
+  void deleteWelcomeDialog( const bool addUndoRedoStep );
   
   //deleteEnergyCalPreserveWindow(): deletes the currently showing dialog (if its
   //  showing), and sets m_preserveCalibWindow to null
@@ -1416,6 +1423,8 @@ protected:
   ReferencePhotopeakDisplay *m_referencePhotopeakLines;
   AuxWindow                 *m_referencePhotopeakLinesWindow;
 
+  HelpSystem::HelpWindow *m_helpWindow;
+  
   /** m_licenseWindow: pointer to window showing disclaimers, licenses, and
       other statements.  Will be nullptr if not showing.
    */

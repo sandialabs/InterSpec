@@ -44,11 +44,13 @@
 #include <Wt/WMessageResourceBundle>
 
 #include "SpecUtils/DateTime.h"
-#include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
+
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/UndoRedoManager.h"
 
 #if( USE_OSX_NATIVE_MENU )
 #include "InterSpec/PopupDiv.h"
@@ -98,8 +100,8 @@ namespace HelpSystem
 {
   void createHelpWindow( const std::string &preselect )
   {
-    new HelpWindow( preselect );
-  }
+    InterSpec::instance()->showHelpWindow( preselect );
+  }//void createHelpWindow( const std::string &preselect )
   
   HelpWindow::HelpWindow(std::string preselect)
    : AuxWindow( "InterSpec Help",
@@ -109,6 +111,8 @@ namespace HelpSystem
      m_tree ( new Wt::WTree() ),
      m_searchText( new Wt::WLineEdit() )
   {
+    UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+    
     wApp->useStyleSheet( "InterSpec_resources/HelpWindow.css" );
     
     m_tree->setSelectionMode(Wt::SingleSelection);
@@ -150,16 +154,7 @@ namespace HelpSystem
     m_helpWindowContent->addStyleClass("helpTree"); //both need to scroll
     m_tree->itemSelectionChanged().connect(boost::bind( &HelpWindow::selectHelpToShow, this ) );
     
-    const bool hasinfo = !preselect.empty() && (m_treeLookup.find(preselect)!=m_treeLookup.end());
-    
-    if( hasinfo )
-    {
-      m_tree->select( m_treeLookup[preselect] );
-    }else if( !preselect.empty() )
-    {
-      passMessage( "The help instructions appears to not have an entry for "
-                  + preselect, 2 );
-    }//!hasinfo
+    setTopic( preselect );
     
     //contents()->setMargin(0);
     //contents()->setPadding(0);
@@ -222,21 +217,39 @@ namespace HelpSystem
     if( !preselect.empty() || (app && app->isMobile()) )  //Keep keyboard from popping up
       ok->setFocus();
     
-    finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
     rejectWhenEscapePressed();
-    setMinimumSize(500,400);
-    resizeScaledWindow(0.85, 0.85);
-    centerWindow();
-    //centerWindowHeavyHanded();  //why not?
     
     show();
+    setMinimumSize(500,400);
+    resizeScaledWindow(0.85, 0.85);
     resizeToFitOnScreen();
+    centerWindow();
+    //centerWindowHeavyHanded();  //why not?
   } //void HelpSystem::showHelpDialog()
   
   
   HelpWindow::~HelpWindow()
   {
   }
+  
+  void HelpWindow::setTopic( const std::string &preselect )
+  {
+    if( preselect.empty() )
+      return;
+    
+    const auto pos = m_treeLookup.find(preselect);
+    if( pos != end(m_treeLookup) )
+      m_tree->select( pos->second ); // This will trigger the call to #HelpWindow::selectHelpToShow
+    else
+      passMessage( "The help instructions does not have an entry for " + preselect, 2 );
+  }//void setTopic( const std::string &preselect )
+  
+  
+  const std::string &HelpWindow::currentTopic() const
+  {
+    return m_displayedTopicName;
+  }//const std::string &currentTopic() const;
+  
   
   WTreeNode *first_child( WTreeNode *node )
   {
@@ -397,21 +410,26 @@ namespace HelpSystem
     
     WTreeNode * node = *(m_tree->selectedNodes().begin());
     
-    std::map <string, Wt::WTreeNode*>::iterator iter;
-    std::string strToReturn;
-    
     m_helpWindowContent->clear();
     
+    string topic_name;
     Wt::WTemplate *content = nullptr;
     
     for( const auto &nameToNode : m_treeLookup )
     {
       if( nameToNode.second == node )
       {
+        topic_name = nameToNode.first;
+        if( topic_name == m_displayedTopicName )
+        {
+          cout << "Help content for '" << topic_name << "' should already be displayed." << endl;
+          return;
+        }
+        
         content = getContentToDisplay( nameToNode.first );
         break;
-      } //((iter->second))==(node)
-    } //for (iter = treeLookup.begin(); iter != treeLookup.end(); ++iter)
+      }//if( nameToNode.second == node )
+    }//for( const auto &nameToNode : m_treeLookup )
     
     if( !content )
       content = new WTemplate( WString("Help Page Not Found") );
@@ -420,6 +438,22 @@ namespace HelpSystem
     
     //Note: this keeps the new pages scrolled to the top.
     doJavaScript("document.body.scrollTop = document.documentElement.scrollTop = 0;");
+    
+    const string prevTopic = m_displayedTopicName;
+    m_displayedTopicName = topic_name;
+    
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && undoRedo->canAddUndoRedoNow() && !prevTopic.empty() )
+    {
+      auto undo = [prevTopic](){
+        InterSpec::instance()->showHelpWindow(prevTopic);
+      };
+      auto redo = [topic_name](){
+        InterSpec::instance()->showHelpWindow(topic_name);
+      };
+      undoRedo->addUndoRedoStep( undo, redo, "Change help topic." );
+    }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
   }//void selectHelpToShow()
   
   

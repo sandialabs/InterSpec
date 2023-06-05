@@ -861,7 +861,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       if( dialog )
         dialog->finished().connect( boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false ) );
       else
-        m_viewer->showWelcomeDialog();
+        m_viewer->showWelcomeDialog( false );
     }// if( not in IE ) / else
   };//auto showWelcomeCallback
   

@@ -61,7 +61,7 @@ namespace HelpSystem
     Wt::WContainerWidget* m_helpWindowContent;
     Wt::WTree* m_tree;
     Wt::WLineEdit *m_searchText;
-    
+    std::string m_displayedTopicName;
     
     std::string m_helpLookupTable;
     
@@ -83,6 +83,9 @@ namespace HelpSystem
     void initialize();
     void handleArrowPress( const Wt::WKeyEvent e );
     void handleKeyPressInSearch( const Wt::WKeyEvent e );
+    
+    void setTopic( const std::string &preselect );
+    const std::string &currentTopic() const;
   }; //class HelpWindow
   
   //createHelpWindow(...): just a convience function that creates a new
