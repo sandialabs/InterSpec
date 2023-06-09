@@ -1426,7 +1426,7 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
     else if( SpecUtils::icontains(signal, "secondary") )  //SpecUtils::descriptionText(SpecUtils::SpectrumType::SecondForeground)
       type = SpecUtils::SpectrumType::SecondForeground;
     
-    showRiidInstrumentsAna( m_viewer->measurment(type) );
+    m_viewer->showRiidResults( type );
     return;
   }
   
@@ -1439,7 +1439,11 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
     else if( SpecUtils::icontains(signal, "secondary") )
       type = SpecUtils::SpectrumType::SecondForeground;
     
+#if( USE_GOOGLE_MAP )
     m_viewer->createMapWindow( type );
+#else
+    m_viewer->createMapWindow( type, false );
+#endif
     return;
   }//if( SpecUtils::istarts_with( signal, "showMap-" ) )
 #endif //#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )

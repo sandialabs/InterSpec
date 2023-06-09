@@ -2772,7 +2772,6 @@ void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peak
   if( !peaks )
     throw runtime_error( "DetectorPeakResponse::fitResolution(...): invalid input" );
   
-  const size_t numchan = meas ? meas->num_gamma_channels() : 0;
   int sqrtEqnOrder = peaks->size() / 2;
   if( sqrtEqnOrder > 6 )
     sqrtEqnOrder = 6;

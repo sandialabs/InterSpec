@@ -87,13 +87,14 @@ namespace
 SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const SpecMeas> meas,
                                                  const set<int> &sample_numbers,
                                                  const vector<string> &detector_names,
-                                                 function<void(LeafletRadMapWindow *)> on_create )
+                                                 function<void(LeafletRadMapWindow *)> on_create,
+                                                 const bool forceNoWarning )
 {
   InterSpec *viewer = InterSpec::instance();
   
   const bool showWarning = InterSpecUser::preferenceValue<bool>( "ShowMapDataWarning", viewer );
   
-  if( !showWarning )
+  if( forceNoWarning || !showWarning )
   {
     showMapWindow( meas, sample_numbers, detector_names, on_create );
     return nullptr;

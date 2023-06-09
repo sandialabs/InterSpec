@@ -375,7 +375,7 @@ std::string riidAnaSummary( const std::shared_ptr<const SpecMeas> &spec )
 }//riidAnaSummary(...)
 
 
-void showRiidInstrumentsAna( const std::shared_ptr<const SpecMeas> &spec )
+SimpleDialog *showRiidInstrumentsAna( const std::shared_ptr<const SpecMeas> &spec )
 {
   auto dialog = new SimpleDialog();
   //dialog->setModal( false ); //doesnt seem to have any effect
@@ -388,4 +388,6 @@ void showRiidInstrumentsAna( const std::shared_ptr<const SpecMeas> &spec )
   
   AnaResultDisplay *display = new AnaResultDisplay( contents );
   display->updateDisplay( spec );
+  
+  return dialog;
 }//void showRiidInstrumentsAna( const std::shared_ptr<const SpecMeas> &spec )

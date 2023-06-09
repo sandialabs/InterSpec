@@ -62,7 +62,8 @@ public:
   static SimpleDialog *showForMeasurement( const std::shared_ptr<const SpecMeas> meas,
                                           const std::set<int> &sample_numbers,
                                           const std::vector<std::string> &detector_names,
-                                  std::function<void(LeafletRadMapWindow *)> on_create = nullptr );
+                                    std::function<void(LeafletRadMapWindow *)> on_create = nullptr,
+                                          const bool forceNoWarning = false );
   
   LeafletRadMap( Wt::WContainerWidget *parent = nullptr );
   virtual ~LeafletRadMap();
@@ -108,6 +109,9 @@ public:
    */
   static std::string get_user_arcgis_key();
 #endif
+  
+  /** Returns the measurment this map is for. */
+  std::shared_ptr<const SpecMeas> measurement() const { return m_meas; };
   
 protected:
   void defineJavaScript();

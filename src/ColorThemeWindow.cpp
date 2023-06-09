@@ -281,11 +281,11 @@ m_apply( nullptr )
   
   ThemeMenuItem *currentItem = nullptr;
   const shared_ptr<const ColorTheme> currentColorTheme = m_interspec->getColorTheme();
-  long long colorThemeIndex = -1;
-  if( currentColorTheme )
-    colorThemeIndex = currentColorTheme->dbIndex;
-  else
-    colorThemeIndex = InterSpecUser::preferenceValue<int>("ColorThemeIndex", m_interspec);
+  //long long colorThemeIndex = -1;
+  //if( currentColorTheme )
+  //  colorThemeIndex = currentColorTheme->dbIndex;
+  //else
+  //  colorThemeIndex = InterSpecUser::preferenceValue<int>("ColorThemeIndex", m_interspec);
   
   for( unique_ptr<ColorTheme> &p : defaultThemes )
   {
@@ -305,7 +305,7 @@ m_apply( nullptr )
   
   for( unique_ptr<ColorTheme> &p : dbThemes )
   {
-    const auto dbindex = p->dbIndex;
+    //const auto dbindex = p->dbIndex;
     const WString name = p->theme_name;
     
     ThemeMenuItem *item = new ThemeMenuItem(name, std::move(p), true );

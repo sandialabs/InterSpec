@@ -119,6 +119,7 @@
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
@@ -774,6 +775,10 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_destructMutex( new std::mutex() ),
     m_destructed( new bool(false) )
 {
+  std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
+  if( viewer && viewer->undoRedoManager() )
+    undo_blocker.reset( new UndoRedoManager::BlockUndoRedoInserts() );
+  
   wApp->useStyleSheet( "InterSpec_resources/SpecMeasManager.css" );
   
   for( SpecUtils::SaveSpectrumAsType type = SpecUtils::SaveSpectrumAsType(0);
@@ -816,11 +821,22 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
 void  SpecMeasManager::startSpectrumManager()
 {
-    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
 
+  if( m_spectrumManagerWindow )
+  {
+    m_spectrumManagerWindow->show();
+    m_spectrumManagerWindow->centerWindow();
+    m_spectrumManagerWindow->resizeToFitOnScreen();
+    
+    return;
+  }//if( m_spectrumManagerWindow )
+  
     m_spectrumManagerWindow = new AuxWindow( "Spectrum Manager",
                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                     | AuxWindowProperties::TabletNotFullScreen) );
+                     | AuxWindowProperties::TabletNotFullScreen
+                     | AuxWindowProperties::DisableCollapse
+                     ) );
     m_spectrumManagerWindow->addStyleClass( "SpecMeasManager" );
     
     WContainerWidget *title = m_spectrumManagerWindow->titleBar();
@@ -885,6 +901,25 @@ void  SpecMeasManager::startSpectrumManager()
     m_spectrumManagerWindow->centerWindow();
     
     selectionChanged();
+  
+  UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      SpecMeasManager *manager = viewer->fileManager();
+      if( manager )
+        manager->deleteSpectrumManager();
+    };
+    auto redo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      SpecMeasManager *manager = viewer->fileManager();
+      if( manager )
+        manager->startSpectrumManager();
+    };
+    
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Open Spectrum Manager.");
+  }//if( undo )
 } //startSpectrumManager()
 
 
@@ -2637,7 +2672,15 @@ void SpecMeasManager::loadSelected( const SpecUtils::SpectrumType type,
 
 void SpecMeasManager::startQuickUpload()
 {
-  new FileUploadDialog( m_viewer, this );
+  auto window = new FileUploadDialog( m_viewer, this );
+  UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
+  
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto closer = wApp->bind( boost::bind(&AuxWindow::hide, window) );
+    // We wont use a redo step, because this would be a bit weird to redo.
+    undoRedo->addUndoRedoStep( closer, nullptr, "Show file upload dialog" );
+  }
 }//void startQuickUpload( SpecUtils::SpectrumType type )
 
 
@@ -4162,9 +4205,31 @@ void SpecMeasManager::selectionChanged()
 
 void SpecMeasManager::deleteSpectrumManager()
 {
-    m_spectrumManagertreeDiv->removeWidget(m_treeView);
-    AuxWindow::deleteAuxWindow(m_spectrumManagerWindow);
-    m_spectrumManagerWindow = NULL;
+  if( !m_spectrumManagerWindow )
+    return;
+  
+  m_spectrumManagertreeDiv->removeWidget(m_treeView);
+  AuxWindow::deleteAuxWindow(m_spectrumManagerWindow);
+  m_spectrumManagerWindow = nullptr;
+  
+  UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      SpecMeasManager *manager = viewer->fileManager();
+      if( manager )
+        manager->startSpectrumManager();
+    };
+    auto redo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      SpecMeasManager *manager = viewer->fileManager();
+      if( manager )
+        manager->deleteSpectrumManager();
+    };
+    
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Spectrum Manager.");
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
 }//deleteSpectrumManager()
 
 
@@ -5069,7 +5134,14 @@ void SpecMeasManager::uploadSpectrum() {
 void SpecMeasManager::browsePrevSpectraAndStatesDb()
 {
   // TODO: Make this be the same implementation as SpecMeasManager::showPreviousSpecFileUsesDialog; but to do that, need to make AutosavedSpectrumBrowser be a MVC widget so we dont put like a million elements into the DOM
-  new DbFileBrowser( this, m_viewer, nullptr );
+  DbFileBrowser *browser = new DbFileBrowser( this, m_viewer, nullptr );
+  
+  UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto closer = wApp->bind( boost::bind( &AuxWindow::hide, browser ) );
+    undoRedo->addUndoRedoStep( closer, nullptr, "Show browse previous spectra." );
+  }//if( add undo )
 }//void browsePrevSpectraAndStatesDb()
 
 

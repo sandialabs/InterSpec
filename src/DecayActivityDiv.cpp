@@ -806,7 +806,6 @@ class DateLengthCalculator : public WContainerWidget
         continue;
       
       double entered_activity = nucinfo.activity;
-      double initial_activity = entered_activity;
       const bool useCurrie = nucinfo.useCurrie;
       //const bool useCurrie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       
@@ -814,7 +813,7 @@ class DateLengthCalculator : public WContainerWidget
       {
         // TODO: estimate how many half-lives is reasonable to calculate this initial activity for.
         const double decrease_factor = std::exp( timeSpan * nuc->decayConstant() );
-        initial_activity = entered_activity / decrease_factor;
+        double initial_activity = entered_activity / decrease_factor;
         
         if( IsNan(initial_activity)
             || IsInf(initial_activity)
@@ -856,7 +855,6 @@ class DateLengthCalculator : public WContainerWidget
       WTable *nuctbl = new WTable( m_info );
       nuctbl->setMargin( 10, Wt::Side::Top );
       
-      WLabel *celltxt = nullptr;
       WTableCell *cell = nullptr;
       
       const bool showNucHeader = (nucs.size() > 1);
@@ -866,14 +864,14 @@ class DateLengthCalculator : public WContainerWidget
       {
         nuctbl->setHeaderCount( 1 );
         cell = nuctbl->elementAt(0, 0);
-        celltxt = new WLabel( "For " + nuc->symbol + ":", cell );
+        new WLabel( "For " + nuc->symbol + ":", cell );
         cell->setColumnSpan( 2 );
         cell->setAttributeValue( "style", "text-align: left;" + cell->attributeValue("style") );
       }//if( showNucHeader )
       
       cell = nuctbl->elementAt(1 + rowOffset, 0);
       cell->setVerticalAlignment( AlignmentFlag::AlignMiddle );
-      celltxt = new WLabel( ((timeSpan < 0.0) ? "Final Activity&nbsp;" : "Initial Activity&nbsp;"), cell );
+      new WLabel( ((timeSpan < 0.0) ? "Final Activity&nbsp;" : "Initial Activity&nbsp;"), cell );
       
       cell = nuctbl->elementAt(1 + rowOffset, 1);
       WLineEdit *activityEdit = new WLineEdit(cell);
@@ -943,7 +941,7 @@ class DateLengthCalculator : public WContainerWidget
       const string ageTxt = PhysicalUnits::printToBestTimeUnits( nucinfo.age );
       cell = nuctbl->elementAt(2 + rowOffset, 0);
       cell->setVerticalAlignment( AlignmentFlag::AlignMiddle );
-      celltxt = new WLabel( "Initial Age&nbsp;", cell );
+      new WLabel( "Initial Age&nbsp;", cell );
       
       cell = nuctbl->elementAt(2 + rowOffset, 1);
       WLineEdit *ageEdit = new WLineEdit(cell);
@@ -2226,7 +2224,6 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   m_yAxisType->setCurrentIndex( ActivityAxis );
   m_yAxisType->activated().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
   
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
   if( !m_viewer->isPhone() )
   {
     WPushButton *csvButton = new WPushButton( displOptLower );

@@ -64,8 +64,8 @@ class GammaCountDialog;
 class PopupDivMenuItem;
 class SpectraFileHeader;
 class PopupWarningWidget;
-class D3SpectrumDisplayDiv;
 class FeatureMarkerWindow;
+class D3SpectrumDisplayDiv;
 class DetectorPeakResponse;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
@@ -90,6 +90,10 @@ class SpectrumViewerTester;
 #if( USE_REL_ACT_TOOL )
 class RelActAutoGui;
 class RelActManualGui;
+#endif
+
+#if( USE_LEAFLET_MAP )
+class LeafletRadMapWindow;
 #endif
 
 namespace SpecUtils{ class SpecFile; }
@@ -694,20 +698,50 @@ public:
                                      const SpecUtils::SpectrumType targetSamples,
                                      const SpecUtils::SpectrumType fromSamples );
 #elif( USE_LEAFLET_MAP )
-  void createMapWindow( SpecUtils::SpectrumType spectrum_type );
+  /** Create a Leaflet map window - first showing a warning to users about fetching data from arbgis, if they havent said
+   to not show that warning.
+   @param spectrum_type Which spectrum file to display GPS coordinates for.
+   @param noWarning If true, the warning dialog will not be shown - should be true only for executing undo/redo.
+   */
+  void createMapWindow( const SpecUtils::SpectrumType spectrum_type, const bool noWarning );
+  
+  /** Handles the closing of the Leaflet map warning window (sets `m_leafletWarning` to nullptr). */
+  void handleLeafletWarningWindowClose();
+  
+  
+  void handleLeafletMapOpen( LeafletRadMapWindow *window );
+  
+  /** Handles the closing of the Leaflet map window (when the AuxWIndow gets hidden), and inserts a undo/redo step. */
+  void handleLeafletMapClosed();
+  
+  /** Closes the Leaflet map warning window, without creating an undo/redo step. */
+  void programaticallyCloseLeafletWarning();
+  
+  /** Closes the Leaflet map window, without inserting undo/redo step. */
+  void programaticallyCloseLeafletMap();
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
   void create3DSearchModeChart();
+  void programaticallyClose3DSearchModeChart();
+  void handle3DSearchModeChartClose();
 #endif
 
-  /** Show the RIID results included in the spectrum file. */
+  /** Show the RIID results included in the spectrum file; and sets `m_riidDisplay` to window pointer */
   void showRiidResults( const SpecUtils::SpectrumType type );
+  
+  /** Handles the user closing the RIID Display; sets `m_riidDisplay` to nullptr, and tries adds undo/redo step. . */
+  void handleRiidResultsClose();
+  
+  /** Closes the RIID Display, without setting undo/redo step. */
+  void programaticallyCloseRiidResults();
   
   /** Show images included in the spectrum file. */
   void showMultimedia( const SpecUtils::SpectrumType type );
   
   void handleMultimediaClose( SimpleDialog *dialog );
+  
+  void programaticallyCloseMultimediaWindow();
   
 #if( USE_TERMINAL_WIDGET )
   void createTerminalWidget();
@@ -1373,6 +1407,11 @@ protected:
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   PopupDivMenuItem *m_mapMenuItem;
+  
+#if( USE_LEAFLET_MAP )
+  SimpleDialog *m_leafletWarning;
+  LeafletRadMapWindow *m_leafletWindow;
+#endif
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
@@ -1447,6 +1486,13 @@ protected:
   //  they just uploaded is from the same detector as the previous one.
   EnergyCalPreserveWindow *m_preserveCalibWindow;
   
+#if( USE_SEARCH_MODE_3D_CHART )
+  /** Pointer to window showing the Search Mode 3D data view. */
+  AuxWindow *m_3dViewWindow;
+#endif
+  
+  /** Pointer to window created by the #showRiidResults function. */
+  SimpleDialog *m_riidDisplay;
   
   DrfSelectWindow *m_drfSelectWindow;
   

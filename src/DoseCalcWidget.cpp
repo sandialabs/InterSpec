@@ -1685,11 +1685,9 @@ void DoseCalcWidget::updateResultForGammaSource()
       
     case Dose:
     {
-      double srcactivity = 0.0;
-      
       try
       {
-        srcactivity = enteredActivity();
+        enteredActivity();
       }catch(...)
       {
         m_issueTxt->setText( "Invalid source activity." );
@@ -1719,7 +1717,6 @@ void DoseCalcWidget::updateResultForGammaSource()
       const double ratio = dose_from_source / user_entered_dose;
       const double dist_guess = distance * sqrt(ratio);
       
-      distance = -1.0;
       try
       {
         // Choose the accuracy we want to find the answer to; we could probably loosen this up a bit
@@ -1786,6 +1783,9 @@ void DoseCalcWidget::updateResultForGammaSource()
         //     << "," << PhysicalUnits::printToBestLengthUnits(bracketing_dists.second) << "]"
         //     << " for a dose of " << PhysicalUnits::printToBestEquivalentDoseRateUnits(final_dose)
         //     << endl;
+        
+        assert( distance > 0.0 );
+        m_distanceAnswer->setText( PhysicalUnits::printToBestLengthUnits(distance) );
       }catch( std::exception &e )
       {
         m_issueTxt->setText( "Error calculating dose while searching for distance, sorry :{" );
@@ -1793,8 +1793,6 @@ void DoseCalcWidget::updateResultForGammaSource()
         return;
       }//try / catch
       
-      assert( distance > 0.0 );
-      m_distanceAnswer->setText( PhysicalUnits::printToBestLengthUnits(distance) );
       break;
     }//case Distance:
       

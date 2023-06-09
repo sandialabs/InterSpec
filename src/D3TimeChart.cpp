@@ -262,7 +262,7 @@ public:
     
     WContainerWidget *filterContents = new WContainerWidget();
     filterContents->addStyleClass( "D3TimeFilterTab" );
-    WMenuItem *filterTabItem = m_tabs->addTab(filterContents, "Filt");
+    m_tabs->addTab(filterContents, "Filt");
     
     WText *filterTitle = new WText("Filter energy range:", filterContents);
     filterTitle->addStyleClass("FilterTitle");
@@ -342,7 +342,7 @@ public:
 
     WContainerWidget* optContents = new WContainerWidget();
     optContents->addStyleClass("D3TimeOptTab");
-    WMenuItem* optTabItem = m_tabs->addTab(optContents, "Opt");
+    m_tabs->addTab(optContents, "Opt");
 
     
     m_dontRebin = new WCheckBox( "Don't rebin", optContents);

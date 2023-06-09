@@ -417,7 +417,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_featureMarkerMenuItem( nullptr ),
   m_multimedia( nullptr ),
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
-  m_mapMenuItem( 0 ),
+  m_mapMenuItem( nullptr ),
+#if( USE_LEAFLET_MAP )
+  m_leafletWarning( nullptr ),
+  m_leafletWindow( nullptr ),
+#endif
 #endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_searchMode3DChart( 0 ),
@@ -442,6 +446,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
   m_preserveCalibWindow( 0 ),
+#if( USE_SEARCH_MODE_3D_CHART )
+  m_3dViewWindow( nullptr ),
+#endif
+  m_riidDisplay( nullptr ),
   m_drfSelectWindow( nullptr ),
   m_undo( nullptr ),
   m_renderedWidth( 0 ),
@@ -3581,7 +3589,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         
     
     if( m_multimedia )
-      m_multimedia->done( Wt::WDialog::DialogCode::Accepted );
+      programaticallyCloseMultimediaWindow();
     assert( !m_multimedia );
     
     if( foreground )
@@ -4107,6 +4115,14 @@ void InterSpec::startClearSession()
   
   button = window->addButton( "No" );
   button->setFocus();
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto closer = wApp->bind( boost::bind(&WDialog::accept, window) );
+    // We wont have redo show the dialog again, because then the closer functionoid wont work, and
+    //  it isnt worth making the SimpleDialog a member variable of the InterSpec class.
+    m_undo->addUndoRedoStep( closer, nullptr, "Show clear session dialog" );
+  }//if( undo )
 }//void startClearSession()
 
 
@@ -4117,6 +4133,14 @@ void InterSpec::deleteLicenseAndDisclaimersWindow()
   
   AuxWindow::deleteAuxWindow( m_licenseWindow );
   m_licenseWindow = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ showLicenseAndDisclaimersWindow(); };
+    auto redo = [this](){ deleteLicenseAndDisclaimersWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo),
+                            "Close disclaimers, credits, and contact window." );
+  }//if( add undo step )
 }//void deleteLicenseAndDisclaimersWindow()
 
 
@@ -5021,6 +5045,12 @@ void InterSpec::stateSaveAs()
     
   window->centerWindow();
   window->show();
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto closer = wApp->bind( boost::bind( &AuxWindow::hide, window ) );
+    m_undo->addUndoRedoStep( closer, nullptr, "Show save-as dialog." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void stateSaveAs()
 
 
@@ -5065,6 +5095,12 @@ void InterSpec::stateSaveTag()
     
   window->centerWindow();
   window->show();
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto closer = wApp->bind( boost::bind( &AuxWindow::hide, window ) );
+    m_undo->addUndoRedoStep( closer, nullptr, "Show save-tag dialog." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void stateSaveTag()
 
 
@@ -6273,7 +6309,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   m_mapMenuItem = m_displayOptionsPopupDiv->addMenuItem( "Map","InterSpec_resources/images/map_small.png" );
-  m_mapMenuItem->triggered().connect( boost::bind( &InterSpec::createMapWindow, this, SpecUtils::SpectrumType::Foreground ) );
+  m_mapMenuItem->triggered().connect( boost::bind( &InterSpec::createMapWindow, this, SpecUtils::SpectrumType::Foreground, false ) );
   m_mapMenuItem->disable();
   HelpSystem::attachToolTipOn( m_mapMenuItem,
                     "Show measurement(s) location on a map. Only enabled"
@@ -7748,17 +7784,145 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
   
 //  window->resizeToFitOnScreen();
 }//void createMapWindow()
+
 #elif( USE_LEAFLET_MAP )
-void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
+
+void InterSpec::createMapWindow( const SpecUtils::SpectrumType spectrum_type, const bool noWarning )
 {
   // We will display for all sample numbers, but only include the displayed detectors
   
   const shared_ptr<const SpecMeas> meas = measurment( spectrum_type );
   const vector<string> detectors = detectorsToDisplay( spectrum_type );
   
-  LeafletRadMap::showForMeasurement( meas, {}, detectors );
+  if( m_leafletWarning )
+    programaticallyCloseLeafletWarning();
+  
+  if( m_leafletWindow )
+    programaticallyCloseLeafletMap();
+  
+  auto onMapCreate = boost::bind( &InterSpec::handleLeafletMapOpen, this, boost::placeholders::_1 );
+  
+  m_leafletWarning = LeafletRadMap::showForMeasurement( meas, {}, detectors, onMapCreate, noWarning );
+    
+  if( !m_leafletWarning )
+    return;
+    
+  m_leafletWarning->finished().connect( this, &InterSpec::handleLeafletWarningWindowClose );
+    
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    // Note: If the user clicks cancel on the warning screen, hitting undo will then be a blank
+    //  step, and it wont bring back up the warning dialog.  We could add another callback to
+    //  #LeafletRadMap::showForMeasurement, or have the above case be called with just a nullptr,
+    //  but this all is adding more complexity than its worth.
+    
+    auto undo = [this](){ programaticallyCloseLeafletWarning(); };
+    auto redo = [this, spectrum_type, noWarning](){ createMapWindow( spectrum_type, noWarning ); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show map." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void createMapWindow( SpecUtils::SpectrumType spectrum_type )
-#endif //#if( USE_GOOGLE_MAP )
+
+
+void InterSpec::handleLeafletWarningWindowClose()
+{
+  WObject *signalSender = WObject::sender();
+  SimpleDialog *dialogSender = dynamic_cast<SimpleDialog *>( signalSender );
+  assert( dialogSender );
+  assert( !m_leafletWarning || (dialogSender == m_leafletWarning) );
+  
+  if( dialogSender == m_leafletWarning )
+    m_leafletWarning = nullptr;
+}//void handleLeafletWarningWindowClose()
+
+
+void InterSpec::handleLeafletMapOpen( LeafletRadMapWindow *window )
+{
+  if( m_leafletWindow )
+  {
+    AuxWindow::deleteAuxWindow( m_leafletWindow );
+    m_leafletWindow = nullptr;
+  }
+  
+  m_leafletWindow = window;
+  if( !m_leafletWindow )
+    return;
+  
+  m_leafletWindow->finished().connect( this, &InterSpec::handleLeafletMapClosed );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    using SpecUtils::SpectrumType;
+    const shared_ptr<const SpecMeas> meas = m_leafletWindow->map()->measurement();
+    SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
+    for( auto i : {SpectrumType::Foreground, SpectrumType::Background, SpectrumType::SecondForeground} )
+    {
+      if( meas == measurment(i) )
+      {
+        type = i;
+        break;
+      }
+    }
+    
+    auto undo = [this](){ programaticallyCloseLeafletMap(); };
+    auto redo = [this, type](){ createMapWindow( type, true ); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show map." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+}//void handleLeafletMapOpen()
+
+
+void InterSpec::programaticallyCloseLeafletMap()
+{
+  if( !m_leafletWindow )
+    return;
+  
+  LeafletRadMapWindow *dialog = m_leafletWindow;
+  m_leafletWindow = nullptr;
+  AuxWindow::deleteAuxWindow( dialog );
+}//void programaticallyCloseLeafletMap();
+
+
+void InterSpec::programaticallyCloseLeafletWarning()
+{
+  if( !m_leafletWarning )
+    return;
+  
+  SimpleDialog *dialog = m_leafletWarning;
+  m_leafletWarning = nullptr;
+  dialog->done( WDialog::DialogCode::Accepted );
+}//void programaticallyCloseLeafletWarning();
+
+
+void InterSpec::handleLeafletMapClosed()
+{
+  WObject *signalSender = WObject::sender();
+  LeafletRadMapWindow *mapSender = dynamic_cast<LeafletRadMapWindow *>( signalSender );
+  
+  assert( mapSender );
+  assert( !m_leafletWindow || (m_leafletWindow == mapSender) );
+  
+  if( m_leafletWindow && (mapSender == m_leafletWindow) && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    using SpecUtils::SpectrumType;
+    const shared_ptr<const SpecMeas> meas = m_leafletWindow->map()->measurement();
+    SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
+    for( auto i : {SpectrumType::Foreground, SpectrumType::Background, SpectrumType::SecondForeground} )
+    {
+      if( meas == measurment(i) )
+      {
+        type = i;
+        break;
+      }
+    }
+    
+    auto undo = [this,type](){ createMapWindow(type, true); };
+    auto redo = [this](){ programaticallyCloseLeafletMap(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show map." );
+  }//if( we want to add undo/redo step )
+  
+  m_leafletWindow = nullptr;
+}//void handleLeafletMapClosed();
+
+#endif //#if( USE_GOOGLE_MAP ) / #elif( USE_LEAFLET_MAP )
 
 
 #if( USE_SEARCH_MODE_3D_CHART )
@@ -7771,42 +7935,124 @@ void InterSpec::create3DSearchModeChart()
     return;
   }//if( we dont have the proper data to make a 3D chart )
   
-  AuxWindow *dialog = new AuxWindow( "3D Data View" );
-  dialog->disableCollapse();
-  dialog->Wt::WDialog::rejectWhenEscapePressed();
+  if( m_3dViewWindow )
+    programaticallyClose3DSearchModeChart();
   
-  WGridLayout *layout = dialog->stretcher();
+  m_3dViewWindow = new AuxWindow( "3D Data View" );
+  m_3dViewWindow->disableCollapse();
+  m_3dViewWindow->Wt::WDialog::rejectWhenEscapePressed();
+  
+  WGridLayout *layout = m_3dViewWindow->stretcher();
   layout->setHorizontalSpacing( 0 );
   layout->setVerticalSpacing( 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
   SearchMode3DChart *chart = new SearchMode3DChart( this );
   layout->addWidget( chart, 0, 0 );
   
-  dialog->show();
-  dialog->setClosable( true );
-  dialog->resizeScaledWindow( 0.95, 0.95 );
-  dialog->centerWindow();
-  dialog->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
+  Wt::WPushButton *closeButton = m_3dViewWindow->addCloseButtonToFooter("Close",true);
+  closeButton->clicked().connect( m_3dViewWindow, &AuxWindow::hide );
+  
+  m_3dViewWindow->show();
+  m_3dViewWindow->setClosable( true );
+  m_3dViewWindow->resizeScaledWindow( 0.95, 0.95 );
+  m_3dViewWindow->centerWindow();
+  m_3dViewWindow->finished().connect( this, &InterSpec::handle3DSearchModeChartClose );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ programaticallyClose3DSearchModeChart(); };
+    auto redo = [this](){ create3DSearchModeChart(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 3D view" );
+  }//
 }//void create3DSearchModeChart()
+
+
+void InterSpec::programaticallyClose3DSearchModeChart()
+{
+  if( !m_3dViewWindow )
+    return;
+  
+  AuxWindow *dialog = m_3dViewWindow;
+  m_3dViewWindow = nullptr;
+  AuxWindow::deleteAuxWindow( dialog );
+}//void programaticallyClose3DSearchModeChart()
+
+
+void InterSpec::handle3DSearchModeChartClose()
+{
+  m_3dViewWindow = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ create3DSearchModeChart(); };
+    auto redo = [this](){ programaticallyClose3DSearchModeChart(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close 3D view" );
+  }//
+}//void handle3DSearchModeChartClose()
 #endif
 
 
 void InterSpec::showRiidResults( const SpecUtils::SpectrumType type )
 {
-  showRiidInstrumentsAna( measurment(type) );
+  if( m_riidDisplay )
+    programaticallyCloseRiidResults();
+  
+  m_riidDisplay = showRiidInstrumentsAna( measurment(type) );
+  m_riidDisplay->finished().connect( this, &InterSpec::handleRiidResultsClose );
+  
+  if( m_riidDisplay && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ programaticallyCloseRiidResults(); };
+    auto redo = [this,type](){ showRiidResults(type); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show ID Results" );
+  }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
 }//void showRiidResults( const SpecUtils::SpectrumType type )
+
+
+void InterSpec::handleRiidResultsClose()
+{
+  SimpleDialog *caller = dynamic_cast<SimpleDialog *>( WObject::sender() );
+  
+  if( !m_riidDisplay || (caller != m_riidDisplay) )
+    return;
+  
+  m_riidDisplay = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    // We'll just assume results for the foreground was showing, so we dont have to pass this around
+    auto undo = [this](){ showRiidResults(SpecUtils::SpectrumType::Foreground); };
+    auto redo = [this](){ programaticallyCloseRiidResults(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close ID Results" );
+  }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
+}//void handleRiidResultsClose()
+
+
+void InterSpec::programaticallyCloseRiidResults()
+{
+  if( !m_riidDisplay )
+    return;
+  
+  SimpleDialog *dialog = m_riidDisplay;
+  m_riidDisplay = nullptr;
+  dialog->done( WDialog::DialogCode::Accepted );
+}//void programaticallyCloseRiidResults()
 
 
 void InterSpec::showMultimedia( const SpecUtils::SpectrumType type )
 {
   if( m_multimedia )
-  {
-    m_multimedia->done( Wt::WDialog::DialogCode::Accepted );
-    m_multimedia = nullptr;
-  }
+    programaticallyCloseMultimediaWindow();
   
   m_multimedia = displayMultimedia( measurment(type) );
-  m_multimedia->finished().connect( boost::bind( &InterSpec::handleMultimediaClose, this, m_multimedia) );
+  m_multimedia->finished().connect( boost::bind( &InterSpec::handleMultimediaClose, this, m_multimedia ) );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ programaticallyCloseMultimediaWindow(); };
+    auto redo = [this, type](){ showMultimedia(type); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Multimedia" );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void showMultimedia( const SpecUtils::SpectrumType type )
 
 
@@ -7815,12 +8061,29 @@ void InterSpec::handleMultimediaClose( SimpleDialog *dialog )
   if( dialog != m_multimedia )
   {
     cerr << "InterSpec::handleMultimediaClose: dialog being closed is not m_multimedia; not doing anything" << endl;
-    assert( 0 );
+    assert( !m_multimedia );
     return;
   }
   
   m_multimedia = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    // Just assume Foreground so we dont need to copy this info all around
+    auto undo = [this](){ showMultimedia(SpecUtils::SpectrumType::Foreground); };
+    auto redo = [this](){ programaticallyCloseMultimediaWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Multimedia" );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleMultimediaClose( SimpleDialog *dialog )
+
+
+void InterSpec::programaticallyCloseMultimediaWindow()
+{
+  SimpleDialog *dialog = m_multimedia;
+  m_multimedia = nullptr; //Set m_multimedia to nullptr so #handleMultimediaClose wont add undo/redo step
+  if( dialog )
+    dialog->done( Wt::WDialog::DialogCode::Accepted );
+}//void programaticallyCloseMultimediaWindow()
 
 
 #if( USE_TERMINAL_WIDGET )
@@ -9515,6 +9778,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     //  }
     //}
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
+    
+    if( m_riidDisplay )
+      programaticallyCloseRiidResults();
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible()
@@ -10109,7 +10375,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   {
     // Close the multimedia dialog if we open a new spectrum file
     if( m_multimedia )
-      m_multimedia->done( Wt::WDialog::DialogCode::Accepted );
+      programaticallyCloseMultimediaWindow();
     assert( !m_multimedia );
     
     bool show_notification = false;

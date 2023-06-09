@@ -29,6 +29,7 @@
 #include <memory>
 
 class SpecMeas;
+class SimpleDialog;
 
 /** Gives a short HTML string summarizing results of the RIID analysis results in 'spec'.
  This is used to place RIID summary information into the application notifications when you open a file.
@@ -40,8 +41,9 @@ std::string riidAnaSummary( const std::shared_ptr<const SpecMeas> &spec );
 
 /** Creates a popup containing the RIID analysis information.
  
+ @returns The dialog that is created.
  */
-void showRiidInstrumentsAna( const std::shared_ptr<const SpecMeas> &spec );
+SimpleDialog *showRiidInstrumentsAna( const std::shared_ptr<const SpecMeas> &spec );
 
 #endif //SHOW_RIID_INSTRUMENTS_ANA_h
 
