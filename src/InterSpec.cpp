@@ -8268,13 +8268,15 @@ void InterSpec::handleRelActAutoClose()
 }//void handleRelActAutoClose()
 
 
-void InterSpec::createRelActManualWidget()
+RelActManualGui *InterSpec::createRelActManualWidget()
 {
   assert( m_relActManualMenuItem );
   m_relActManualMenuItem->disable();
   
   if( m_relActManualGui )
-    return;
+    return m_relActManualGui;
+ 
+  const int origTab = m_toolsTabs ? m_toolsTabs->currentIndex() : -1;
   
   m_relActManualGui = new RelActManualGui( this );
   
@@ -8284,7 +8286,7 @@ void InterSpec::createRelActManualWidget()
     item->setCloseable( true );
     m_toolsTabs->setCurrentWidget( m_relActManualGui );
     const int index = m_toolsTabs->currentIndex();
-    m_toolsTabs->setTabToolTip( index, "Numeric, algebraic, and text-based spectrum interaction terminal." );
+    m_toolsTabs->setTabToolTip( index, "Relative Efficiency analysis, from peaks you have fit." );
     
     // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
     //  handleToolTabClosed(), which will delete m_relActManualGui when the user closes the tab.
@@ -8332,7 +8334,25 @@ void InterSpec::createRelActManualWidget()
     
     assert( 0 );
   }//try / catch
-}//void InterSpec::createRelActManualWidget()
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this, origTab](){
+      if( !m_relActManualWindow && m_relActManualGui )
+        m_toolsTabs->removeTab( m_relActManualGui );
+      
+      handleRelActManualClose();
+      
+      if( (origTab >= 0) && m_toolsTabs )
+        m_toolsTabs->setCurrentIndex( origTab );
+    };
+    
+    auto redo = [this](){ createRelActManualWidget(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 'Isotopics from peaks' tool" );
+  }//if( m_undo && !m_undo->canAddUndoRedoNow() )
+  
+  return m_relActManualGui;
+}//RelActManualGui *createRelActManualWidget()
 
 
 void InterSpec::handleRelActManualClose()

@@ -759,7 +759,7 @@ public:
   RelActAutoGui *showRelActAutoWindow();
   void handleRelActAutoClose();
   
-  void createRelActManualWidget();
+  RelActManualGui *createRelActManualWidget();
   void handleRelActManualClose();
   
   void saveRelActManualStateToForegroundSpecMeas();

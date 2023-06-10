@@ -70,6 +70,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/RelActManualGui.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/RelActCalcManual.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -396,6 +397,17 @@ public:
       m_age_row->setHidden( hidden );
   }
   
+  void setAge( const double age )
+  {
+    assert( m_nuc );
+    if( !m_nuc || !m_age_edit  || (age < 0) || IsInf(age) || IsNan(age) )
+      return;
+    
+    const string agestr = PhysicalUnits::printToBestTimeUnits( age );
+    m_age_edit->setText( WString::fromUTF8(agestr) );
+    m_current_age = age;
+    setCollapsed( false );
+  }//void setAge( const double age )
 };//class ManRelEffNucDisp
 
 }//namespace
@@ -837,20 +849,161 @@ void RelActManualGui::init()
     m_resultMenu->select( item );
     item->triggered().emit( item );
   }) );
+  // We wont have an undo/redo for changing results tabs, because sometimes we programitcally
+  //  set to a specific tab, like if there is an error, and this can create an infinite cycle
+  //  that will block previous undo/redo's
+  //item->triggered().connect( this, &RelActManualGui::resultTabChanged );
   
   m_chart = new RelEffChart();
   item = new WMenuItem( "Chart", m_chart );
-  
+  m_resultMenu->addItem( item );
   item->clicked().connect( std::bind([this,item](){
     m_resultMenu->select( item );
     item->triggered().emit( item );
   }) );
-  
-  m_resultMenu->addItem( item );
+  //item->triggered().connect( this, &RelActManualGui::resultTabChanged );
   
   displayedSpectrumChanged();
 }//void init()
 
+
+shared_ptr<const RelActManualGui::GuiState> RelActManualGui::getGuiState() const
+{
+  shared_ptr<GuiState> state = make_shared<GuiState>();
+  
+  state->m_relEffEqnFormIndex = m_relEffEqnForm->currentIndex();
+  state->m_relEffEqnOrderIndex = m_relEffEqnOrder->currentIndex();
+  state->m_nucDataSrcIndex = m_nucDataSrc->currentIndex();
+  state->m_matchToleranceValue = m_matchTolerance->value();
+  state->m_addUncertIndex = m_addUncertainty->currentIndex();
+  state->m_backgroundSubtract = m_backgroundSubtract->isChecked();
+  state->m_resultTab = m_resultMenu->currentIndex();
+  
+  for( auto w : m_nuclidesDisp->children() )
+  {
+    ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
+    if( rr && rr->m_nuc )
+      state->m_nucAges.emplace_back( rr->m_nuc->symbol, rr->m_current_age );
+  }//for( auto w : m_nuclidesDisp->children() )
+  
+  return state;
+}//std::shared_ptr<const GuiState> getGuiState() const
+
+
+void RelActManualGui::setGuiState( const GuiState &state )
+{
+  bool updateCalc = false;
+  if( m_relEffEqnForm->currentIndex() != state.m_relEffEqnFormIndex )
+  {
+    updateCalc = true;
+    m_relEffEqnForm->setCurrentIndex( state.m_relEffEqnFormIndex );
+  }
+  
+  if( m_relEffEqnOrder->currentIndex() != state.m_relEffEqnOrderIndex )
+  {
+    updateCalc = true;
+    m_relEffEqnOrder->setCurrentIndex( state.m_relEffEqnOrderIndex );
+  }
+  
+  if( m_nucDataSrc->currentIndex() != state.m_nucDataSrcIndex )
+  {
+    updateCalc = true;
+    m_nucDataSrc->setCurrentIndex( state.m_nucDataSrcIndex );
+  }
+
+  if( m_matchTolerance->value() != state.m_matchToleranceValue )
+  {
+    updateCalc = true;
+    m_matchTolerance->setValue( state.m_matchToleranceValue );
+  }
+  
+  if( m_addUncertainty->currentIndex() != state.m_addUncertIndex )
+  {
+    updateCalc = true;
+    m_addUncertainty->setCurrentIndex( state.m_addUncertIndex );
+  }
+  
+  if( m_backgroundSubtract->isChecked() != state.m_backgroundSubtract )
+  {
+    updateCalc = true;
+    m_backgroundSubtract->setChecked( state.m_backgroundSubtract );
+  }
+  
+  if( m_resultMenu->currentIndex() != state.m_resultTab )
+    m_resultMenu->select( state.m_resultTab );
+  
+  
+  for( auto w : m_nuclidesDisp->children() )
+  {
+    ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
+    if( !rr || !rr->m_nuc )
+      continue;
+    
+    for( const auto &i : state.m_nucAges )
+    {
+      if( i.first == rr->m_nuc->symbol )
+      {
+        if( i.second != rr->m_current_age )
+        {
+          rr->setAge( i.second );
+          m_nucAge[i.first] = i.second;
+          m_renderFlags |= RenderActions::UpdateNuclides;
+          updateCalc = true;
+        }//if( i.second != rr->m_current_age )
+        
+        break;
+      }//if( i.first == rr->m_nuc->symbol )
+    }//for( loop over previous ages )
+  }//for( auto w : m_nuclidesDisp->children() )
+  
+  if( updateCalc )
+  {
+    m_renderFlags |= RenderActions::UpdateCalc;
+    scheduleRender();
+  }
+}//void setGuiState( const GuiState &state )
+
+
+bool RelActManualGui::GuiState::operator==( const RelActManualGui::GuiState &rhs ) const
+{
+  return (m_relEffEqnFormIndex == rhs.m_relEffEqnFormIndex)
+    && (m_relEffEqnOrderIndex == rhs.m_relEffEqnOrderIndex)
+    && (m_nucDataSrcIndex == rhs.m_nucDataSrcIndex)
+    && (m_matchToleranceValue == rhs.m_matchToleranceValue)
+    && (m_addUncertIndex == rhs.m_addUncertIndex)
+    && (m_backgroundSubtract == rhs.m_backgroundSubtract)
+    && (m_resultTab == rhs.m_resultTab)
+    && (m_nucAges == rhs.m_nucAges);
+}//RelActManualGui::GuiState::operator==
+
+
+void RelActManualGui::addUndoRedoStep( const shared_ptr<const RelActManualGui::GuiState> &state )
+{
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !undoRedo->canAddUndoRedoNow() || !state || !m_currentGuiState )
+    return;
+  
+  if( (*state) == (*m_currentGuiState) )
+    return;
+  
+  const shared_ptr<const GuiState> prev_state = m_currentGuiState;
+  
+  auto undo = [prev_state](){
+    InterSpec *viewer = InterSpec::instance();
+    RelActManualGui *gui = viewer->createRelActManualWidget();
+    if( gui && prev_state )
+      gui->setGuiState( *prev_state );
+  };//undo
+    
+  auto redo = [state](){
+    InterSpec *viewer = InterSpec::instance();
+    RelActManualGui *gui = viewer->createRelActManualWidget();
+    if( gui && state )
+      gui->setGuiState( *state );
+  };//redo
+    
+  undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Isotopics from peaks change." );
+}//void addUndoRedoStep( const std::shared_ptr<const GuiState> &state )
 
 
 void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
@@ -858,7 +1011,6 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
   //const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
   //if( renderFull )
   //  defineJavaScript();
-  
   
   if( m_renderFlags.testFlag(RelActManualGui::RenderActions::UpdateSpectrumOptions) )
   {
@@ -879,10 +1031,19 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
     calculateSolution();
   }
   
+  
+  const shared_ptr<const GuiState> current_gui_state = getGuiState();
+  if( m_renderFlags.testFlag(RelActManualGui::RenderActions::AddUndoRedoStep ) )
+  {
+    addUndoRedoStep( current_gui_state );
+  }
+  m_currentGuiState = current_gui_state;
+  
+  
   m_renderFlags = 0;
   
   WContainerWidget::render( flags );
-}
+}//render( Wt::WFlags<Wt::RenderFlag> )
 
 
 void RelActManualGui::calculateSolution()
@@ -1464,6 +1625,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
 void RelActManualGui::relEffEqnFormChanged()
 {
   m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void relEffEqnFormChanged()
 
@@ -1471,6 +1633,7 @@ void RelActManualGui::relEffEqnFormChanged()
 void RelActManualGui::relEffEqnOrderChanged()
 {
   m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
 
@@ -1478,6 +1641,7 @@ void RelActManualGui::relEffEqnOrderChanged()
 void RelActManualGui::nucDataSrcChanged()
 {
   m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
 
@@ -1485,6 +1649,7 @@ void RelActManualGui::nucDataSrcChanged()
 void RelActManualGui::matchToleranceChanged()
 {
   m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void matchToleranceChanged();
 
@@ -1492,23 +1657,33 @@ void RelActManualGui::matchToleranceChanged()
 void RelActManualGui::addUncertChanged()
 {
   m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
+
 
 void RelActManualGui::backgroundSubtractChanged()
 {
   m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
+
+
+//void RelActManualGui::resultTabChanged()
+//{
+//  m_renderFlags |= RenderActions::AddUndoRedoStep;
+//  scheduleRender();
+//}
 
 
 void RelActManualGui::handlePeaksChanged()
 {
   m_renderFlags |= RenderActions::UpdateCalc;
   m_renderFlags |= RenderActions::UpdateNuclides;
+  m_renderFlags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
-
 
 
 void RelActManualGui::updateNuclides()
@@ -1995,7 +2170,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
     throw runtime_error( "RelActManualGui::deSerialize: '" + rel_eff_eqn_form_str + "' is invalid RelEffEqnForm" );
   
   
-  size_t eqn_order;
+  int eqn_order = -1;
   const string rel_eff_order_str = SpecUtils::xml_value_str(RelEffEqnOrder_node);
   if( !(stringstream(rel_eff_order_str) >> eqn_order)
      || (eqn_order <= 0)
