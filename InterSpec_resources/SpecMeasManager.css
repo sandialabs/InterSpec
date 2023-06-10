@@ -73,3 +73,10 @@
 {
   margin-left: 20px;
 }
+
+
+.NonSpecImgFile
+{
+  max-width: 45vw;
+  max-height: calc(95vh - 140px);
+}

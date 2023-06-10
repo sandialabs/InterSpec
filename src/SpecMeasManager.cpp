@@ -1330,7 +1330,20 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   title->addStyleClass( "title" );
   stretcher->addWidget( title, 0, 0 );
   
-  // const string filename = SpecUtils::filename(displayName);
+  auto add_undo_redo = [dialog](){
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( !undoRedo )
+      return;
+    
+    const string dialog_id = dialog->id();
+    auto closer = wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) );
+    auto undo = [dialog_id,closer](){
+      wApp->doJavaScript( "$('#" + dialog_id + "').hide(); $('.Wt-dialogcover').hide();" );
+      closer();
+    };
+    
+    undoRedo->addUndoRedoStep( std::move(undo), nullptr, "Open non-spectrum file dialog." );
+  };//add_undo_redo
   
   //Check if ICD2 file
   if( std::find( boost::begin(data), boost::end(data), uint8_t(60)) != boost::end(data) )
@@ -1352,6 +1365,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       t->setTextAlignment( Wt::AlignCenter );
       dialog->show();
       
+      add_undo_redo();
       return true;
     }
   }//if( might be ICD2 )
@@ -1415,6 +1429,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
     
+    add_undo_redo();
     return true;
   }//if( iszip )
   
@@ -1429,6 +1444,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
     
+    add_undo_redo();
+    
     return true;
   }//if( israr || istar || iszip7 || isgz )
   
@@ -1439,6 +1456,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     WText *t = new WText( msg );
     stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
+    
+    add_undo_redo();
     
     return true;
   }//if( ispdf | isps | istif )
@@ -1472,11 +1491,59 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       {
         resource->setData( totaldata );
         image->setImageLink( WLink(resource) );
-        const int ww = m_viewer->renderedWidth();
-        const int wh = m_viewer->renderedHeight();
-        if( (ww > 120) && (wh > 120) )
-          image->setMaximumSize( WLength(0.45*ww,WLength::Unit::Pixel), WLength(wh - 120, WLength::Unit::Pixel) );
+        image->addStyleClass( "NonSpecImgFile" );
+        // The below was moved into CSS, and can likely be deleted next time I come up on this.
+        //const int ww = m_viewer->renderedWidth();
+        //const int wh = m_viewer->renderedHeight();
+        //if( (ww > 120) && (wh > 120) )
+        //  image->setMaximumSize( WLength(0.45*ww,WLength::Unit::Pixel), WLength(wh - 120, WLength::Unit::Pixel) );
         stretcher->addWidget( image.release(), stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+        
+        if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
+        {
+          WPushButton *embedbtn = new WPushButton( "Embed image in spectrum file" );
+          embedbtn->setStyleClass( "LinkBtn" );
+          stretcher->addWidget( embedbtn, stretcher->rowCount(), 0, AlignRight );
+          
+          embedbtn->clicked().connect( std::bind([this,resource,displayName,mimetype,dialog](){
+            const vector<unsigned char> data = resource->data();
+            if( data.empty() )
+            {
+              passMessage( "Error retirieving data to embed - not embeding image.", WarningWidget::WarningMsgHigh );
+              return;
+            }
+            
+            shared_ptr<SpecMeas> meas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+            if( !meas )
+            {
+              passMessage( "No foreground loaded - not embeding image.", WarningWidget::WarningMsgHigh );
+              return;
+            }
+            
+            SpecUtils::MultimediaData multi;
+            multi.remark_ = "Image file embeded using InterSpec.";
+            multi.descriptions_= "filename: " + displayName;
+            
+            string data_str;
+            data_str.resize( data.size() );
+            memcpy( &(data_str[0]), data.data(), data.size() );
+            const string base_64_encoded = Wt::Utils::base64Encode( data_str );
+            multi.data_.resize( base_64_encoded.size() );
+            memcpy( multi.data_.data(), base_64_encoded.data(), base_64_encoded.size() );
+            multi.data_encoding_ = SpecUtils::MultimediaData::EncodingType::BinaryBase64;
+            multi.capture_start_time_ = SpecUtils::time_point_t{};
+            multi.file_uri_ = displayName;
+            multi.mime_type_ = mimetype;
+            
+            meas->add_multimedia_data( multi );
+            passMessage( "Image has been embeded in the foreground spectrum file; only exporting in"
+                      " N42-2012 file format will preserve this.", WarningWidget::WarningMsgInfo );
+            
+            wApp->doJavaScript( "$('#" + dialog->id() + "').hide(); $('.Wt-dialogcover').hide();" );
+            dialog->done( Wt::WDialog::DialogCode::Accepted );
+          }));
+          
+        }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
       }else
       {
         WText *errort = new WText( "Couldn't read uploaded file." );
@@ -1490,6 +1557,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     }//if( filesize < max_disp_size ) / else
         
+    add_undo_redo();
+    
     return true;
   }//if( isgif || isjpg || ispng || isbmp )
 
@@ -1554,6 +1623,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       errort->setAttributeValue( "style", "color: red; font-weight: bold; font-family: monospace; " );
       errort->setTextAlignment( Wt::AlignCenter );
       stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+      
+      add_undo_redo();
       
       return true;
     }//try / catch get candidate peaks )
@@ -1773,6 +1844,7 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
 
 bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog, bool autoApply )
 {
+  // Blah blah blah Add undo/redo support
   WGridLayout *stretcher = nullptr;
   WPushButton *closeButton = nullptr;
   
@@ -2138,6 +2210,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
 #if( USE_REL_ACT_TOOL )
 bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog *dialog )
 {
+  // blah blah blah add undo/redo support
   string error_msg;
   try
   {
