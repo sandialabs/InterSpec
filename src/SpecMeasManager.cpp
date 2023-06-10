@@ -1322,13 +1322,10 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   SimpleDialog *dialog = new SimpleDialog();
   WPushButton *closeButton = dialog->addButton( "Close" );
-  WGridLayout *stretcher = new WGridLayout();
-  stretcher->setContentsMargins( 0, 0, 0, 0 );
-  dialog->contents()->setLayout( stretcher );
-  dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
-  WText *title = new WText( "Not a spectrum file" );
+  WContainerWidget *contents = dialog->contents();
+  contents->addStyleClass( "NonSpecDialogBody" );
+  WText *title = new WText( "Not a spectrum file", contents );
   title->addStyleClass( "title" );
-  stretcher->addWidget( title, 0, 0 );
   
   auto add_undo_redo = [dialog](){
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
@@ -1359,12 +1356,13 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
        || SpecUtils::icontains( datastr, "DNDOEWSchema" )
        || SpecUtils::icontains( datastr, "DNDOARSchema" ) )
     {
-      WText *t = new WText( "This looks to be an N42 ICD2 file that contains analysis results rather than raw spectra.<br />"
-                            "If you believe this to be a legitimate spectrum file, please email it to <a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a> to support this file type." );
-      stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-      t->setTextAlignment( Wt::AlignCenter );
-      dialog->show();
-      
+      WText *t = new WText( "This looks to be an N42 ICD2 file that contains analysis results"
+                            " rather than raw spectra.<br />"
+                            "If you believe this to be a legitimate spectrum file, please email it"
+                            " to <a href=\"mailto:interspec@sandia.gov\" "
+                            "target=\"_blank\">interspec@sandia.gov</a> "
+                            "to support this file type.", contents );
+      t->addStyleClass( "NonSpecOtherFile" );
       add_undo_redo();
       return true;
     }
@@ -1425,9 +1423,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   //zip (but can be xlsx, pptx, docx, odp, jar, apk) 50 4B 03 04
     msg = "This file appears to be an invalid ZIP file (or xlsx, pptx, <br />"
           "docx, odp, jar, apk, etc), sorry I cant open it :(";
-    WText *t = new WText( msg );
-    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-    t->setTextAlignment( Wt::AlignCenter );
+    WText *t = new WText( msg, contents );
+    t->addStyleClass( "NonSpecOtherFile" );
     
     add_undo_redo();
     return true;
@@ -1440,9 +1437,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                       "<a href=\"mailto:wcjohns@sandia.gov\" target=\"_blank\">wcjohns@sandia.gov</a> "
                       "if you would like support for this archive type added.";
     
-    WText *t = new WText( msg );
-    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-    t->setTextAlignment( Wt::AlignCenter );
+    WText *t = new WText( msg, contents );
+    t->addStyleClass( "NonSpecOtherFile" );
     
     add_undo_redo();
     
@@ -1453,9 +1449,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   if( ispdf | isps | istif )
   {
     const char *msg = "This file looks to be a document file, and not supported by InterSpec.";
-    WText *t = new WText( msg );
-    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-    t->setTextAlignment( Wt::AlignCenter );
+    WText *t = new WText( msg, contents );
+    t->addStyleClass( "NonSpecOtherFile" );
     
     add_undo_redo();
     
@@ -1466,9 +1461,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   if( isgif || isjpg || ispng || isbmp || issvg )
   {
     const char *msg = "This file looks to be an image, and not a spectrum file.";
-    WText *t = new WText( msg );
-    t->setTextAlignment( Wt::AlignCenter );
-    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+    WText *t = new WText( msg, contents );
+    t->addStyleClass( "NonSpecOtherFile" );
    
     const size_t max_disp_size = 16*1024*1024;
     
@@ -1492,18 +1486,12 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         resource->setData( totaldata );
         image->setImageLink( WLink(resource) );
         image->addStyleClass( "NonSpecImgFile" );
-        // The below was moved into CSS, and can likely be deleted next time I come up on this.
-        //const int ww = m_viewer->renderedWidth();
-        //const int wh = m_viewer->renderedHeight();
-        //if( (ww > 120) && (wh > 120) )
-        //  image->setMaximumSize( WLength(0.45*ww,WLength::Unit::Pixel), WLength(wh - 120, WLength::Unit::Pixel) );
-        stretcher->addWidget( image.release(), stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+        contents->addWidget( image.release() );
         
         if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
         {
-          WPushButton *embedbtn = new WPushButton( "Embed image in spectrum file" );
-          embedbtn->setStyleClass( "LinkBtn" );
-          stretcher->addWidget( embedbtn, stretcher->rowCount(), 0, AlignRight );
+          WPushButton *embedbtn = new WPushButton( "Embed image in spectrum file", contents );
+          embedbtn->setStyleClass( "LinkBtn NonSpecEmbedBtn" );
           
           embedbtn->clicked().connect( std::bind([this,resource,displayName,mimetype,dialog](){
             const vector<unsigned char> data = resource->data();
@@ -1546,15 +1534,13 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
       }else
       {
-        WText *errort = new WText( "Couldn't read uploaded file." );
-        errort->setTextAlignment( Wt::AlignCenter );
-        stretcher->addWidget( errort, stretcher->rowCount(), 0 );
+        WText *errort = new WText( "Couldn't read uploaded file.", contents );
+        errort->addStyleClass( "NonSpecError" );
       }
     }else
     {
-      WText *errort = new WText( "Uploaded file was too large to try and display." );
-      errort->setTextAlignment( Wt::AlignCenter );
-      stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+      WText *errort = new WText( "Uploaded file was too large to try and display.", contents );
+      errort->addStyleClass( "NonSpecError" );
     }//if( filesize < max_disp_size ) / else
         
     add_undo_redo();
@@ -1615,14 +1601,11 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       return true;
     }catch( exception &e )
     {
-      WText *errort = new WText( "Uploaded file looked like a Peak CSV file, but was invalid." );
-      errort->setTextAlignment( Wt::AlignCenter );
-      stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+      WText *errort = new WText( "Uploaded file looked like a Peak CSV file, but was invalid.", contents );
+      errort->addStyleClass( "NonSpecError" );
       
-      errort = new WText( string(e.what()) );
-      errort->setAttributeValue( "style", "color: red; font-weight: bold; font-family: monospace; " );
-      errort->setTextAlignment( Wt::AlignCenter );
-      stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+      errort = new WText( string(e.what()), contents );
+      errort->setAttributeValue( "style", "color: red; " );
       
       add_undo_redo();
       
