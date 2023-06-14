@@ -179,11 +179,11 @@ string convertDistance( string val )
       // Already taken care of
     }else if( unitval < 12*5280 )
     {
-      unitval = dbvalue / 12;
+      unitval = unitval / 12;
       unit = "feet";
     }else
     {
-      unitval = dbvalue / (12*5280);
+      unitval = unitval / (12*5280);
       unit = "miles";
     }
     
