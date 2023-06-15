@@ -51,9 +51,13 @@ class UserFileInDb;
 class PopupDivMenu;
 class SimpleDialog;
 class EnergyCalTool;
+class GammaXsWindow;
+class OneOverR2Calc;
 class SpectrumChart;
 class UseInfoWindow;
 class WarningWidget;
+class DoseCalcWindow;
+class FluxToolWindow;
 class WarningMessage;
 class PeakEditWindow;
 class DrfSelectWindow;
@@ -64,6 +68,7 @@ class GammaCountDialog;
 class PopupDivMenuItem;
 class SpectraFileHeader;
 class PopupWarningWidget;
+class UnitsConverterTool;
 class FeatureMarkerWindow;
 class D3SpectrumDisplayDiv;
 class DetectorPeakResponse;
@@ -313,9 +318,11 @@ public:
    
    An example URL is "interspec://drf/specify?v=1"
    
+   The passed in string is assumed to be url-encoded.
+   
    Throws std::exception if url cant be used.
    */
-  void handleAppUrl( std::string url );
+  void handleAppUrl( const std::string &url_encoded_url );
   
   
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
@@ -612,8 +619,11 @@ public:
   //  fill m_shieldingSuggestion (from m_materialDB) and then push to the user.
   void pushMaterialSuggestionsToUsers();
   
-  void showGammaXsTool();
-  void showDoseTool();
+  GammaXsWindow *showGammaXsTool();
+  void handleGammaXsToolClose();
+  
+  DoseCalcWindow *showDoseTool();
+  void handleDoseToolClose();
   
   /** If "Activity/Shielding Fit" window is not showing, creates the tool/window, and returns the tool.
    If it is already showing, no changes are made, and a pointer to the tool is returned.
@@ -692,6 +702,9 @@ public:
   void showPeakInfoWindow();
   void handlePeakInfoClose();
 
+  GammaCountDialog *showGammaCountDialog();
+  void deleteGammaCountDialog();
+  
 #if( USE_GOOGLE_MAP )
   void createMapWindow( SpecUtils::SpectrumType spectrum_type );
   void displayOnlySamplesWithinView( GoogleMap *map,
@@ -770,6 +783,15 @@ public:
   void handleToolTabClosed( const int tabnum );
 #endif
   
+  
+  OneOverR2Calc *createOneOverR2Calculator();
+  void deleteOneOverR2Calc();
+  UnitsConverterTool *createUnitsConverterTool();
+  void deleteUnitsConverterTool();
+  FluxToolWindow *createFluxTool();
+  void deleteFluxTool();
+  DecayWindow *createDecayInfoWindow();
+  void deleteDecayInfoWindow();
 
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
@@ -845,11 +867,6 @@ protected:
   void doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
                             std::vector<boost::function<void(void)> > workers );
   
-  void createOneOverR2Calculator();
-  void createUnitsConverterTool();
-  void createFluxTool();
-  void createDecayInfoWindow();
-  void deleteDecayInfoWindow();
   void createFileParameterWindow();
   
 #if( USE_DETECTION_LIMIT_TOOL )
@@ -939,8 +956,6 @@ protected:
    */
   void removeToolsTabToMenuItems();
   
-  void showGammaCountDialog();
-  void deleteGammaCountDialog();
 
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   void showFileQueryDialog();
@@ -1404,6 +1419,13 @@ protected:
   PopupDivMenuItem *m_featureMarkerMenuItem;
 
   SimpleDialog *m_multimedia;
+  
+  GammaXsWindow *m_gammaXsToolWindow;
+  DoseCalcWindow *m_doseCalcWindow;
+  OneOverR2Calc *m_1overR2Calc;
+  UnitsConverterTool *m_unitsConverter;
+  FluxToolWindow *m_fluxTool;
+  
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   PopupDivMenuItem *m_mapMenuItem;

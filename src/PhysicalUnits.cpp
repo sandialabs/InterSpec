@@ -937,7 +937,6 @@ double stringToActivity( std::string str, double bq_def )
     {
       std::string msg = "didnt contain unit specification (bq or ci) in '";
       msg += letters + "'";
-      std::cerr << msg << endl;
       throw runtime_error( msg );
     }
 

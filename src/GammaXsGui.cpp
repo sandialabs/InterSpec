@@ -36,6 +36,7 @@
 #include <Wt/WSuggestionPopup>
 #include <Wt/WRegExpValidator>
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
@@ -45,6 +46,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -70,7 +72,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
     m_photoElectric( NULL ),
     m_conversion( NULL ),
     m_density( NULL ),
-    m_distance( NULL ),
+    m_thickness( NULL ),
     m_transmissionFraction( NULL ),
     m_transmissionFractionVal( -1.0f ),
     m_layout( NULL ),
@@ -81,6 +83,8 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
     m_totalEfficiency( NULL ),
     m_fractionalAngle( NULL )
 {
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   m_layout = new WGridLayout();
   setLayout( m_layout );
 
@@ -247,28 +251,26 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   ++row;
   label = new WLabel( "Thickness:" );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
-  m_distance = new WLineEdit( "1 cm" );
+  m_thickness = new WLineEdit( "1 cm" );
   
-  m_distance->setAutoComplete( false );
-  m_distance->setAttributeValue( "ondragstart", "return false" );
+  m_thickness->setAutoComplete( false );
+  m_thickness->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
-  m_distance->setAttributeValue( "autocorrect", "off" );
-  m_distance->setAttributeValue( "spellcheck", "off" );
+  m_thickness->setAttributeValue( "autocorrect", "off" );
+  m_thickness->setAttributeValue( "spellcheck", "off" );
 #endif
     
   WRegExpValidator *distValidator
                 = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
-  m_distance->setValidator( distValidator );
+  m_thickness->setValidator( distValidator );
     
-  m_layout->addWidget( m_distance, row, 1, 1, 1 );
-//  label = new WLabel( "cm" );
-//  m_layout->addWidget( label, row, 2, 1, 1, AlignLeft );
-  m_distance->changed().connect( this, &GammaXsGui::calculateCrossSections );
-  m_distance->enterPressed().connect( this, &GammaXsGui::calculateCrossSections );
-  m_distance->focussed().connect( this, &GammaXsGui::calculateCrossSections );
-  m_distance->blurred().connect( this, &GammaXsGui::calculateCrossSections );
-  HelpSystem::attachToolTipOn( m_distance, "Thickness of the attenuator.", showToolTips );
+  m_layout->addWidget( m_thickness, row, 1, 1, 1 );
+  m_thickness->changed().connect( this, &GammaXsGui::calculateCrossSections );
+  m_thickness->enterPressed().connect( this, &GammaXsGui::calculateCrossSections );
+  m_thickness->focussed().connect( this, &GammaXsGui::calculateCrossSections );
+  m_thickness->blurred().connect( this, &GammaXsGui::calculateCrossSections );
+  HelpSystem::attachToolTipOn( m_thickness, "Thickness of the attenuator.", showToolTips );
   
   ++row;
   label = new WLabel( "Trans. Frac." );
@@ -507,6 +509,80 @@ vector<pair<const SandiaDecay::Element *, float> > GammaXsGui::parseMaterial()
 
 
 
+void GammaXsGui::handleAppUrl( std::string query_str )
+{
+  // Do we want to add an undo/redo step here?
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
+  const map<string,string> values = AppUtils::query_str_key_values( query_str );
+  
+  // Check version is appropriate
+  const auto ver_iter = values.find( "V" );
+  if( (ver_iter == end(values))
+     || ((ver_iter->second != "1") && !SpecUtils::istarts_with(ver_iter->second, "1.")) )
+    throw runtime_error( "Gamma XS Calc: URI not compatible version" );
+  
+  // A boilerplate lambda for grapping and validating the fields
+  auto getField = [&]( const string &name, const int type, Wt::WLineEdit *edit ){
+    const auto i = values.find( name );
+    if( i == end(values) )
+      throw runtime_error( "Gamma XS Calc: missing field '" + name + "' in URI." );
+    string value = i->second;
+    SpecUtils::ireplace_all( value, "%23", "#" );
+    SpecUtils::ireplace_all( value, "%26", "&" );
+    
+    // Let the value be empty,
+    if( !value.empty() )
+    {
+      try
+      {
+        switch( type )
+        {
+          case 0: break;
+          case 1: std::stod(value); break;
+          case 2: PhysicalUnits::stringToDistance(value); break;
+        }
+      }catch( std::exception & )
+      {
+        throw runtime_error( "Gamma XS Calc: invalid field '" + name + "' value '" + value + "' in URI." );
+      }// try / catch
+    }//if( !value.empty() )
+    
+    edit->setValueText( WString::fromUTF8(value) );
+  };//getField(...)
+  
+  getField( "E", 1, m_energyEdit );
+  getField( "M", 0, m_materialEdit );
+  getField( "D", 1, m_density );
+  getField( "T", 2, m_thickness );
+  getField( "R", 2, m_detectorDistance );
+  
+  handleMaterialChange();
+}//void handleAppUrl( std::string query_str )
+
+
+string GammaXsGui::encodeStateToUrl() const
+{
+  // "interspec://gammaxs?e=1001&m=Fe&d=1.2&t=0.1cm&r=1.2m"
+  string answer = "V=1";
+  
+  auto addField = [&answer]( const string &name, Wt::WLineEdit *edit ){
+    string val = edit->text().toUTF8();
+    SpecUtils::ireplace_all(val, "#", "%23" );
+    SpecUtils::ireplace_all(val, "&", "%26" );
+    answer += "&" + name + "=" + val;
+  };
+  
+  addField( "E", m_energyEdit );
+  addField( "M", m_materialEdit );
+  addField( "D", m_density );
+  addField( "T", m_thickness );
+  addField( "R", m_detectorDistance );
+  
+  return answer;
+}//string GammaXsGui::encodeStateToUrl() const
+
+
 void GammaXsGui::resetAnserFields()
 {
   m_effectiveZ->setText( "---" );
@@ -548,6 +624,8 @@ void GammaXsGui::handleMaterialChange()
 
 void GammaXsGui::calculateCrossSections()
 {
+  checkAndAddUndoRedo();
+  
   float energy = -999.0;
   vector<pair<const SandiaDecay::Element *, float> > chemFormula;
 
@@ -665,11 +743,11 @@ void GammaXsGui::calculateCrossSections()
   try
   {
     const string densitystr = m_density->text().narrow();
-    const string distancestr = m_distance->text().narrow();
+    const string thicknessstr = m_thickness->text().narrow();
 
     const double density = std::stod(densitystr)
                            * PhysicalUnits::g / PhysicalUnits::cm3;
-    const double distance = PhysicalUnits::stringToDistance( distancestr );
+    const double distance = PhysicalUnits::stringToDistance( thicknessstr );
     totalMu *= PhysicalUnits::cm2 / PhysicalUnits::g;
     const double transmittion = exp( -totalMu * density * distance );
     m_transmissionFractionVal = static_cast<float>( transmittion );
@@ -685,6 +763,64 @@ void GammaXsGui::calculateCrossSections()
 }//void GammaXsGui::calculateCrossSections()
 
 
+std::array<Wt::WString,4> GammaXsGui::inputs() const
+{
+  return array<Wt::WString,4>{
+    m_energyEdit->text(), m_materialEdit->text(), m_density->text(), m_thickness->text(),
+  };
+}//std::array<Wt::WString,4> GammaXsWindow::inputs() const
+
+
+void GammaXsGui::fromInputs( const std::array<Wt::WString,4> &inputs )
+{
+  m_energyEdit->setText( inputs[0] );
+  m_materialEdit->setText( inputs[1] );
+  m_density->setText( inputs[2] );
+  m_thickness->setText( inputs[3] );
+  
+  m_prevInputs = inputs;
+  
+  calculateCrossSections();
+}//void fromInputs( const std::array<Wt::WString,4> &inputs );
+
+
+void GammaXsGui::checkAndAddUndoRedo()
+{
+  array<Wt::WString,4> current = inputs();
+  
+  bool match = true;
+  for( size_t i = 0; match && (i < m_prevInputs.size()); ++i )
+    match = (match && (current[i] == m_prevInputs[i]));
+  
+  if( match )
+    return;
+  
+  array<Wt::WString,4> prev = std::move(m_prevInputs);
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [prev](){
+      InterSpec *viewer = InterSpec::instance();
+      GammaXsWindow *xswin = viewer ? viewer->showGammaXsTool() : nullptr;
+      GammaXsGui *tool = xswin ? xswin->xstool() : nullptr;
+      if( tool )
+        tool->fromInputs( prev );
+    };
+    
+    auto redo = [current](){
+      InterSpec *viewer = InterSpec::instance();
+      GammaXsWindow *xswin = viewer ? viewer->showGammaXsTool() : nullptr;
+      GammaXsGui *tool = xswin ? xswin->xstool() : nullptr;
+      if( tool )
+        tool->fromInputs( current );
+    };
+    
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Change XS tool value." );
+  }//if( can add undo )
+  
+  m_prevInputs = std::move( current );
+}//void checkAndAddUndoRedo();
+
 
 GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
                               Wt::WSuggestionPopup *materialSuggestion ,
@@ -692,19 +828,19 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
   : AuxWindow( "Gamma XS Calc",
               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
                | AuxWindowProperties::SetCloseable
-               | AuxWindowProperties::DisableCollapse) )
+               | AuxWindowProperties::DisableCollapse) ),
+  m_tool( nullptr )
 {
   rejectWhenEscapePressed( true );
 
   contents()->setOverflow( Wt::WContainerWidget::OverflowAuto, Wt::Orientation::Vertical );
   
-  new GammaXsGui( materialDB, materialSuggestion, viewer, contents() );
+  m_tool = new GammaXsGui( materialDB, materialSuggestion, viewer, contents() );
   
   AuxWindow::addHelpInFooter( footer(), "gamma-xs-dialog" );
   
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
-  finished().connect( boost::bind( &GammaXsWindow::deleteWindow, this ) );
   
   if( viewer->isPhone() )
     titleBar()->hide();
@@ -743,9 +879,7 @@ GammaXsWindow::~GammaXsWindow()
 {
 }
 
-
-void GammaXsWindow::deleteWindow( GammaXsWindow *window )
+GammaXsGui *GammaXsWindow::xstool()
 {
-  if( window )
-    delete window;
+  return m_tool;
 }

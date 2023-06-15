@@ -95,41 +95,42 @@
 
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/PeakFit.h"
-#include "SpecUtils/SpecFile.h"
+#include "InterSpec/AppUtils.h"
 #include "SpecUtils/DateTime.h"
-#include "InterSpec/PopupDiv.h"
 #include "InterSpec/FluxTool.h"
 #include "InterSpec/PeakEdit.h"
+#include "InterSpec/PopupDiv.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
-#include "InterSpec/InterSpec.h"
-#include "InterSpec/DrfSelect.h"
-#include "InterSpec/IsotopeId.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/DrfSelect.h"
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/IsotopeId.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/ColorTheme.h"
-#include "InterSpec/MaterialDB.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/GammaXsGui.h"
 #include "InterSpec/HelpSystem.h"
-#include "SpecUtils/Filesystem.h"
+#include "InterSpec/MaterialDB.h"
 #include "SpecUtils/StringAlgo.h"
-#include "InterSpec/DecayWindow.h"
 #include "InterSpec/ColorSelect.h"
-#include "InterSpec/SimpleDialog.h"
+#include "InterSpec/DecayWindow.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PeakFitUtils.h"
-#include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/DataBaseUtils.h"
-#include "InterSpec/UseInfoWindow.h"
-#include "InterSpec/OneOverR2Calc.h"
-#include "InterSpec/WarningWidget.h"
-#include "InterSpec/SpectrumChart.h"
-#include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/InterSpecUser.h"
+#include "InterSpec/OneOverR2Calc.h"
+#include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/SpectrumChart.h"
+#include "InterSpec/UseInfoWindow.h"
+#include "InterSpec/WarningWidget.h"
 #include "InterSpec/DoseCalcWidget.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
-#include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/PeakInfoDisplay.h"
+#include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpecFileSummary.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/ColorThemeWindow.h"
@@ -137,8 +138,8 @@
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/MultimediaDisplay.h"
-#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/CompactFileManager.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/UnitsConverterTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/FeatureMarkerWidget.h"
@@ -416,6 +417,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_featureMarkers( nullptr ),
   m_featureMarkerMenuItem( nullptr ),
   m_multimedia( nullptr ),
+  m_gammaXsToolWindow( nullptr ),
+  m_doseCalcWindow( nullptr ),
+  m_1overR2Calc( nullptr ),
+  m_unitsConverter( nullptr ),
+  m_fluxTool( nullptr ),
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   m_mapMenuItem( nullptr ),
 #if( USE_LEAFLET_MAP )
@@ -3067,6 +3073,49 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     if( m_multimedia )
       entry.modify()->shownDisplayFeatures |= UserState::kShowingMultimedia;
     
+    if( m_gammaXsToolWindow && m_gammaXsToolWindow->xstool() )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingGammaXsTool;
+      entry.modify()->gammaXsToolUri = m_gammaXsToolWindow->xstool()->encodeStateToUrl();
+    }
+    
+    if( m_doseCalcWindow && m_doseCalcWindow->tool() )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingDoseCalcTool;
+      entry.modify()->doseCalcToolUri = m_doseCalcWindow->tool()->encodeStateToUrl();
+    }
+    
+    if( m_1overR2Calc )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowing1OverR2Tool;
+      entry.modify()->oneOverR2ToolUri = m_1overR2Calc->encodeStateToUrl();
+    }
+    
+    if( m_fluxTool )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingFluxTool;
+      entry.modify()->fluxToolUri = m_fluxTool->encodeStateToUrl();
+    }//if( m_fluxTool )
+    
+    if( m_unitsConverter )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingUnitConvertTool;
+      entry.modify()->fluxToolUri = m_unitsConverter->encodeStateToUrl();
+    }
+    
+    if( m_decayInfoWindow )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingNucDecayInfo;
+      entry.modify()->nucDecayInfoUri = m_decayInfoWindow->encodeStateToUrl();
+    }
+    
+    if( m_gammaCountDialog )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingEnergyRangeSum;
+      entry.modify()->energyRangeSumUri = m_gammaCountDialog->encodeStateToUrl();
+    }
+    
+    
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
       entry.modify()->backgroundSubMode = UserState::kBackgorundSubtract;
@@ -3654,6 +3703,64 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
       showMultimedia( SpecUtils::SpectrumType::Foreground );
     
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingDoseCalcTool)
+       && !entry->doseCalcToolUri.empty() )
+    {
+      DoseCalcWindow *w = showDoseTool();
+      DoseCalcWidget *tool = w ? w->tool() : nullptr;
+      if( tool )
+      {
+        string path, uri = entry->doseCalcToolUri;
+        const auto pos = uri.find('/');
+        if( pos != string::npos )
+        {
+          path = uri.substr(0,pos);
+          uri = uri.substr(pos+1);
+        }
+        tool->handleAppUrl( path, uri );
+      }//if( tool )
+    }
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowing1OverR2Tool)
+       && !entry->oneOverR2ToolUri.empty() )
+    {
+      OneOverR2Calc *calc = createOneOverR2Calculator();
+      if( calc )
+        calc->handleAppUrl( entry->oneOverR2ToolUri );
+    }
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingFluxTool)
+       && !entry->fluxToolUri.empty() )
+    {
+      FluxToolWindow *tool = createFluxTool();
+      if( tool )
+        tool->handleAppUrl( entry->fluxToolUri );
+    }//if( m_fluxTool )
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingUnitConvertTool)
+       && !entry->fluxToolUri.empty() )
+    {
+      UnitsConverterTool *converter = createUnitsConverterTool();
+      if( converter )
+        converter->handleAppUrl( entry->fluxToolUri );
+    }
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingNucDecayInfo)
+       && !entry->nucDecayInfoUri.empty() )
+    {
+      DecayWindow *decay = createDecayInfoWindow();
+      if( decay )
+        decay->handleAppUrl( entry->nucDecayInfoUri );
+    }
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingEnergyRangeSum)
+       && !entry->energyRangeSumUri.empty() )
+    {
+      GammaCountDialog *dialog = showGammaCountDialog();
+      if( dialog )
+        dialog->handleAppUrl( entry->energyRangeSumUri );
+    }
     
     if( wasDocked )
     {
@@ -4249,27 +4356,44 @@ void InterSpec::setShowIEWarningDialogCookie( bool show )
 
 
 
-void InterSpec::showGammaCountDialog()
+GammaCountDialog *InterSpec::showGammaCountDialog()
 {
   if( m_gammaCountDialog )
-  {
-//    m_gammaCountDialog->show();
-//    m_gammaCountDialog->expand();
-    return;
-  }//if( m_gammaCountDialog )
+    return m_gammaCountDialog;
 
   m_gammaCountDialog = new GammaCountDialog( this );
-//  m_gammaCountDialog->rejectWhenEscapePressed();
   m_gammaCountDialog->finished().connect( this, &InterSpec::deleteGammaCountDialog );
-//  m_gammaCountDialog->resizeToFitOnScreen();
-}//void showGammaCountDialog()
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    m_undo->addUndoRedoStep( [=](){deleteGammaCountDialog();},
+                            [=](){showGammaCountDialog();},
+                            "Show Energy Range Sum." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  
+  return m_gammaCountDialog;
+}//GammaCountDialog *showGammaCountDialog()
 
 
 void InterSpec::deleteGammaCountDialog()
 {
-  if( m_gammaCountDialog )
-    delete m_gammaCountDialog;
-
+  if( !m_gammaCountDialog )
+    return;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    const string uri = m_gammaCountDialog->encodeStateToUrl();
+    auto undo = [this,uri](){
+      GammaCountDialog *dialog = showGammaCountDialog();
+      if( dialog )
+        dialog->handleAppUrl( uri );
+    };
+    
+    auto redo = [this](){ deleteGammaCountDialog(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Energy Range Sum." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  
+  AuxWindow::deleteAuxWindow( m_gammaCountDialog );
   m_gammaCountDialog = nullptr;
 }//void deleteGammaCountDialog()
 
@@ -7571,40 +7695,155 @@ int InterSpec::renderedWidth() const
   return m_renderedWidth;
 }
 
+
 int InterSpec::renderedHeight() const
 {
   return m_renderedHeight;
 }
 
 
-void InterSpec::createOneOverR2Calculator()
+OneOverR2Calc *InterSpec::createOneOverR2Calculator()
 {
-//  OneOverR2Calc *calc =
-  new OneOverR2Calc();
+  if( !m_1overR2Calc )
+  {
+    m_1overR2Calc = new OneOverR2Calc();
+    m_1overR2Calc->finished().connect( boost::bind( &InterSpec::deleteOneOverR2Calc, this ) );
+    
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this](){ deleteOneOverR2Calc(); };
+      auto redo = [this](){ createOneOverR2Calculator(); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 1/r2 calculator" );
+    }
+  }//if( !m_1overR2Calc )
   
-//  if( !toolTabsVisible() )
-//  {
-//    const int maxHeight = static_cast<int>(0.95*paintedHeight());
-//    const int maxWidth = static_cast<int>(0.95*paintedWidth());
-//    calc->setMaximumSize( maxWidth, maxHeight );
-//    calc->contents()->setOverflow( WContainerWidget::OverflowAuto );
-//  }//if( !toolTabsVisible() )
+  m_1overR2Calc->show();
+  m_1overR2Calc->resizeToFitOnScreen();
+  m_1overR2Calc->centerWindowHeavyHanded();
+  
+  return m_1overR2Calc;
 }//void createOneOverR2Calculator()
 
 
-void InterSpec::createUnitsConverterTool()
+void InterSpec::deleteOneOverR2Calc()
 {
-  new UnitsConverterTool();
+  if( !m_1overR2Calc )
+    return;
+  
+  const bool do_undo = (m_undo && m_undo->canAddUndoRedoNow());
+  const string state_uri = do_undo ? m_1overR2Calc->encodeStateToUrl() : string();
+  
+  AuxWindow::deleteAuxWindow( m_1overR2Calc );
+  m_1overR2Calc = nullptr;
+  
+  if( do_undo )
+  {
+    auto undo = [this,state_uri](){
+      OneOverR2Calc *calc = createOneOverR2Calculator();
+      if( calc )
+        calc->handleAppUrl( state_uri );
+    };
+    auto redo = [this](){ deleteOneOverR2Calc(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Hide 1/r2 calculator" );
+  }//if( do_undo )
+}//void deleteOneOverR2Calc()
+
+
+UnitsConverterTool *InterSpec::createUnitsConverterTool()
+{
+  if( !m_unitsConverter )
+  {
+    m_unitsConverter = new UnitsConverterTool();
+    m_unitsConverter->finished().connect( boost::bind( &InterSpec::deleteUnitsConverterTool, this ) );
+    
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this](){ deleteUnitsConverterTool(); };
+      auto redo = [this](){ createUnitsConverterTool(); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show units converter" );
+    }//if( undo )
+  }//if( !m_unitsConverter )
+  
+  m_unitsConverter->show();
+  m_unitsConverter->resizeToFitOnScreen();
+  m_unitsConverter->centerWindowHeavyHanded();
+  
+  return m_unitsConverter;
 }//void createUnitsConverterTool()
 
 
-void InterSpec::createFluxTool()
+void InterSpec::deleteUnitsConverterTool()
 {
-  new FluxToolWindow( this );
+  if( !m_unitsConverter )
+    return;
+  
+  const bool do_undo = (m_undo && m_undo->canAddUndoRedoNow());
+  const string state_uri = do_undo ? m_unitsConverter->encodeStateToUrl() : string();
+  
+  AuxWindow::deleteAuxWindow( m_unitsConverter );
+  m_unitsConverter = nullptr;
+  
+  if( do_undo )
+  {
+    auto undo = [this,state_uri](){
+      UnitsConverterTool *tool = createUnitsConverterTool();
+      if( tool )
+        tool->handleAppUrl( state_uri );
+    };
+    auto redo = [this](){ deleteUnitsConverterTool(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Hide units converter" );
+  }//if( do_undo )
+}//void deleteUnitsConverterTool()
+
+
+FluxToolWindow *InterSpec::createFluxTool()
+{
+  if( !m_fluxTool )
+  {
+    m_fluxTool = new FluxToolWindow( this );
+    m_fluxTool->finished().connect( boost::bind( &InterSpec::deleteFluxTool, this ) );
+  }
+  
+  m_fluxTool->show();
+  m_fluxTool->resizeToFitOnScreen();
+  m_fluxTool->centerWindowHeavyHanded();
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ deleteFluxTool(); };
+    auto redo = [this](){ createFluxTool(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show flux tool" );
+  }//if( undo )
+  
+  return m_fluxTool;
 }//void createFluxTool()
 
 
-void InterSpec::createDecayInfoWindow()
+void InterSpec::deleteFluxTool()
+{
+  if( !m_fluxTool )
+    return;
+  
+  const bool do_undo = (m_undo && m_undo->canAddUndoRedoNow());
+  const string state_uri = do_undo ? m_fluxTool->encodeStateToUrl() : string();
+  
+  AuxWindow::deleteAuxWindow( m_fluxTool );
+  m_fluxTool = nullptr;
+  
+  if( do_undo )
+  {
+    auto undo = [this,state_uri](){
+      FluxToolWindow *flux = createFluxTool();
+      if( flux )
+        flux->handleAppUrl( state_uri );
+    };
+    auto redo = [this](){ deleteFluxTool(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Hide flux tool" );
+  }//if( do_undo )
+}//void deleteFluxTool();
+
+
+DecayWindow *InterSpec::createDecayInfoWindow()
 {
   if( !m_decayInfoWindow )
   {
@@ -7634,6 +7873,8 @@ void InterSpec::createDecayInfoWindow()
                          0.0, actStr, 5.0*age );
     }//if( nuc.nuclide )
   }//if( m_referencePhotopeakLines )
+  
+  return m_decayInfoWindow;
 }//void createDecayInfoWindow()
 
 
@@ -8519,19 +8760,19 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   
   HelpSystem::attachToolTipOn( item,"Allows user to use two dose measurements taken at different distances from a source to determine the absolute distance to the source from the nearer measurement.", showToolTips );
   
-  item->triggered().connect( this, &InterSpec::createOneOverR2Calculator );
+  item->triggered().connect( boost::bind( &InterSpec::createOneOverR2Calculator, this ) );
 
   item = popup->addMenuItem( "Units Converter" );
   HelpSystem::attachToolTipOn( item, "Convert radiation-related units.", showToolTips );
-  item->triggered().connect( this, &InterSpec::createUnitsConverterTool );
+  item->triggered().connect( boost::bind( &InterSpec::createUnitsConverterTool, this ) );
   
   item = popup->addMenuItem( "Flux Tool" );
   HelpSystem::attachToolTipOn( item,"Converts detected peak counts to gammas emitted by the source.", showToolTips );
-  item->triggered().connect( this, &InterSpec::createFluxTool );
+  item->triggered().connect( boost::bind( &InterSpec::createFluxTool, this ) );
   
   item = popup->addMenuItem( "Nuclide Decay Info" );
   HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and descendant nuclides." , showToolTips );
-  item->triggered().connect( this, &InterSpec::createDecayInfoWindow );
+  item->triggered().connect( boost::bind( &InterSpec::createDecayInfoWindow, this ) );
 
 #if( USE_DETECTION_LIMIT_TOOL )
   item = popup->addMenuItem( "Detection Confidence Tool" );
@@ -8554,7 +8795,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 
   item = popup->addMenuItem( "Energy Range Sum" );
   HelpSystem::attachToolTipOn( item, "Sums the number of gammas in region of interest (ROI). Can also be accessed by left-click dragging over the ROI while holding both the <kbd><b>ALT</b></kbd> and <kbd><b>SHIFT</b></kbd> keys.", showToolTips );
-  item->triggered().connect( this, &InterSpec::showGammaCountDialog );
+  item->triggered().connect( boost::bind( &InterSpec::showGammaCountDialog, this ) );
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   
@@ -8666,16 +8907,124 @@ void InterSpec::initMaterialDbAndSuggestions()
 }//void InterSpec::initMaterialDbAndSuggestions()
 
 
-void InterSpec::showGammaXsTool()
+GammaXsWindow *InterSpec::showGammaXsTool()
 {
-  new GammaXsWindow( m_materialDB.get(), m_shieldingSuggestion, this );
-} //showGammaXsTool()
+  if( !m_gammaXsToolWindow )
+  {
+    m_gammaXsToolWindow = new GammaXsWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+    m_gammaXsToolWindow->finished().connect( this, &InterSpec::handleGammaXsToolClose );
+    
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this](){ handleGammaXsToolClose(); };
+      auto redo = [this](){ showGammaXsTool(); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Gamma XS Tool." );
+    }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  }else
+  {
+    m_gammaXsToolWindow->show();
+    m_gammaXsToolWindow->centerWindowHeavyHanded();
+  }
+  
+  return m_gammaXsToolWindow;
+}//showGammaXsTool()
 
 
-void InterSpec::showDoseTool()
+void InterSpec::handleGammaXsToolClose()
 {
-  new DoseCalcWindow( m_materialDB.get(), m_shieldingSuggestion, this );
-}
+  if( m_gammaXsToolWindow )
+  {
+    GammaXsGui *tool = m_gammaXsToolWindow->xstool();
+    
+    if( m_undo && tool )
+    {
+      const string uri_query = tool->encodeStateToUrl();
+      
+      auto undo = [this,uri_query](){
+        try
+        {
+          GammaXsWindow *xswindow = showGammaXsTool();
+          GammaXsGui *tool = xswindow ? xswindow->xstool() : nullptr;
+          if( tool )
+            tool->handleAppUrl( uri_query );
+        }catch( std::exception &e )
+        {
+          Wt::log("error") << "Error restoring gamma XS tool state: '"
+                           << e.what() << "', from URI='" << uri_query << "'";
+          passMessage( "Error restoring Gamma XS Tool State", WarningWidget::WarningMsgInfo );
+        }//try /catch
+      };//undo
+      
+      auto redo = [this](){ handleGammaXsToolClose(); };
+      
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close XS Tool" );
+    }//if( m_undo && tool )
+    
+    AuxWindow::deleteAuxWindow( m_gammaXsToolWindow );
+  }//if( m_gammaXsToolWindow )
+  
+  m_gammaXsToolWindow = nullptr;
+}//void handleGammaXsToolClose();
+
+
+DoseCalcWindow *InterSpec::showDoseTool()
+{
+  if( !m_doseCalcWindow )
+  {
+    m_doseCalcWindow = new DoseCalcWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+    m_doseCalcWindow->finished().connect( this, &InterSpec::handleDoseToolClose );
+    
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this](){ handleDoseToolClose(); };
+      auto redo = [this](){ showDoseTool(); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Dose Tool." );
+    }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  }else
+  {
+    m_doseCalcWindow->show();
+    m_doseCalcWindow->centerWindowHeavyHanded();
+  }
+  
+  return m_doseCalcWindow;
+}//DoseCalcWindow *showDoseTool()
+
+
+void InterSpec::handleDoseToolClose()
+{
+  if( m_doseCalcWindow )
+  {
+    DoseCalcWidget *tool = m_doseCalcWindow->tool();
+    string uri = tool ? tool->encodeStateToUrl() : string();
+    auto undo = [this,uri](){
+      // TODO: the GUI layout can be a bit messed up when undoing the close - not totally sure why.
+      DoseCalcWindow *dosewin = showDoseTool();
+      DoseCalcWidget *tool = dosewin ? dosewin->tool() : nullptr;
+      if( !tool )
+        return;
+      try
+      {
+        const size_t pos = uri.find('?');
+        if( pos == string::npos )
+          throw runtime_error( "Couldnt find path and query components of uri." );
+        string path = uri.substr(0, pos);
+        string query = uri.substr( pos + 1 );
+        tool->handleAppUrl( path, query );
+      }catch( std::exception &e )
+      {
+        passMessage( "Error re-opening Dose Calc tool: " + string(e.what()),
+                    WarningWidget::WarningMsgHigh );
+      }
+      
+    };//undo
+    auto redo = [this](){ handleGammaXsToolClose(); };
+    
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Dose Tool" );
+    
+    AuxWindow::deleteAuxWindow( m_doseCalcWindow );
+  }
+  m_doseCalcWindow = nullptr;
+}//void handleDoseToolClose();
 
 
 void InterSpec::showMakeDrfWindow()
@@ -10616,8 +10965,10 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
 }//bool userOpenFileFromFilesystem( const std::string filepath )
 
 
-void InterSpec::handleAppUrl( std::string url )
+void InterSpec::handleAppUrl( const std::string &url_encoded_url )
 {
+  const string url = Wt::Utils::urlDecode( url_encoded_url );
+    
   if( SpecUtils::istarts_with(url, "RADDATA://G0/")
      || SpecUtils::istarts_with(url, "interspec://G0/") )
   {
@@ -10625,44 +10976,22 @@ void InterSpec::handleAppUrl( std::string url )
     return;
   }
   
-  //Get rid of (optional) leading "interspec://", so URL will look like: 'drf/specify?v=1&n=MyName&"My other Par"'
-  const string scheme = "interspec://";
-  if( SpecUtils::istarts_with(url, scheme) )
-    url = url.substr(scheme.size());
+  string host, path, query_str, frag;
+  AppUtils::split_uri( url, host, path, query_str, frag );
   
-  // For the moment, we will require there to be a query string, even if its empty.
-  string::size_type q_start_pos = url.find( '?' );
-  string::size_type q_end_pos = q_start_pos + 1;
-  if( q_start_pos == string::npos )
-  {
-    // Since '?' isnt a QR alphanumeric code also allow the URL encoded value of it, "%3F"
-    q_start_pos = url.find( "%3F" );
-    if( q_start_pos == string::npos )
-      q_start_pos = url.find( "%3f" );
-    
-    if( q_start_pos != string::npos )
-      q_end_pos = q_start_pos + 3;
-  }//
-    
-  if( q_start_pos == string::npos )
-    throw runtime_error( "App URL did not contain the host/path component that specifies the intent"
-                         " of the URL (e.g., what tool to use, or what info is contained in the URL)." );
+  if( query_str.empty() )
+    throw runtime_error( "No query string found in URI to specify DRF." );
   
-  // the q_pos+1 should be safe, even if q_pos is last character in string.
-  if( url.find(q_end_pos, 'q') != string::npos )
-    throw runtime_error( "App URL contained more than one '?' character, which isnt allowed" );
-    
+  // I dont think we use the fragment component of URLs anywhere, but maybe we accidentally
+  //  included a '#' character somwhere when we shouldnt have.
+  if( !frag.empty() )
+    query_str += "#" + frag;
+  
+  cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
+  
   deleteWelcomeDialog( false );
   deleteEnergyCalPreserveWindow();
   deleteLicenseAndDisclaimersWindow();
-  
-  const string host_path = url.substr( 0, q_start_pos );
-  const string::size_type host_end = host_path.find( '/' );
-  const string host = (host_end == string::npos) ? host_path : host_path.substr(0,host_end);
-  const string path = (host_end == string::npos) ? string("") : host_path.substr(host_end+1);
-  const string query_str = url.substr( q_end_pos );
-  
-  cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
   
   if( SpecUtils::iequals_ascii(host,"drf") )
   {
@@ -10672,13 +11001,9 @@ void InterSpec::handleAppUrl( std::string url )
     DrfSelect::handle_app_url_drf( query_str );
   }else if( SpecUtils::iequals_ascii(host,"decay") )
   {
-    if( !m_decayInfoWindow )
-    {
-      m_decayInfoWindow = new DecayWindow( this );
-      m_decayInfoWindow->finished().connect( boost::bind( &InterSpec::deleteDecayInfoWindow, this ) );
-    }
-    
-    m_decayInfoWindow->handleAppUrl( path, query_str );
+    DecayWindow *decay = InterSpec::createDecayInfoWindow();
+    if( decay )
+      decay->handleAppUrl( path, query_str );
   }else
   {
     throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );
@@ -10916,11 +11241,42 @@ void InterSpec::displayedSpectrumRange( double &xmin, double &xmax, double &ymin
 
 void InterSpec::handleShiftAltDrag( double lowEnergy, double upperEnergy )
 {
-  if( !m_gammaCountDialog && upperEnergy<=lowEnergy )
-    return;
-
-  showGammaCountDialog();
-  m_gammaCountDialog->setEnergyRange( lowEnergy, upperEnergy );
+  string prev_uri;
+  if( m_gammaCountDialog )
+    prev_uri = m_gammaCountDialog->encodeStateToUrl();
+  
+  {
+    //Keep showing dialog and `setEnergyRange` from adding seperate undo states
+    UndoRedoManager::BlockUndoRedoInserts blocker;
+    
+    GammaCountDialog *dialog = showGammaCountDialog();
+    if( dialog )
+      dialog->setEnergyRange( lowEnergy, upperEnergy );
+  }
+   
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [prev_uri,this](){
+      if( prev_uri.empty() )
+      {
+        deleteGammaCountDialog();
+      }else
+      {
+        GammaCountDialog *dialog = showGammaCountDialog();
+        if( dialog )
+          dialog->handleAppUrl( prev_uri );
+      }
+    };
+    
+    auto redo = [this,lowEnergy,upperEnergy](){
+      GammaCountDialog *dialog = showGammaCountDialog();
+      if( dialog )
+        dialog->setEnergyRange( lowEnergy, upperEnergy );
+    };
+    
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Set energy range to sum." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  
 }//void InterSpec::handleShiftAltDrag( double lowEnergy, double upperEnergy )
 
 

@@ -461,11 +461,13 @@ void InterSpecApp::setupDomEnvironment()
 #endif
   
   // Pre-load some CSS we will likely encounter anyway; avoids some glitching when loading new
-  //  widgets.
+  //  widgets, especially if they are in a AuxWindow.
   //  (The CSS wont be re-loaded later, so maybe we dont hurt anything doing it here too - maybe)
-  WServer::instance()->schedule( 100, sessionId(), [](){
+  WServer::instance()->schedule( 500, sessionId(), [](){
     wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
+    wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
+    wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
     
     // anything else relevant?
     wApp->triggerUpdate();

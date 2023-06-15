@@ -2366,12 +2366,10 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
 
 
 #if( USE_QR_CODES )
-void SpecMeasManager::handleSpectrumUrl( const std::string &url_encoded_url )
+void SpecMeasManager::handleSpectrumUrl( const std::string &unencoded )
 {
   try
   {
-    const string unencoded = Wt::Utils::urlDecode( url_encoded_url );
-    
     const QRSpectrum::EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( unencoded );
     if( info.m_number_urls == 1 )
     {

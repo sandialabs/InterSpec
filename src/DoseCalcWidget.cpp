@@ -62,20 +62,23 @@
 #include "Minuit2/MnMinimize.h"
 #include "Minuit2/CombinedMinimizer.h"
 
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/DoseCalc.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/GammaXsGui.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
-#include "SpecUtils/Filesystem.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/GadrasSpecFunc.h"
 #include "InterSpec/ShieldingSelect.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -201,25 +204,33 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
 {
   rejectWhenEscapePressed( true );
   
-  DoseCalcWidget *w = new DoseCalcWidget( materialDB, materialSuggestion, viewer, contents() );
-  w->setHeight( WLength(100,WLength::Percentage) );
+  m_dose = new DoseCalcWidget( materialDB, materialSuggestion, viewer, contents() );
+  m_dose->setHeight( WLength(100,WLength::Percentage) );
   
   AuxWindow::addHelpInFooter( footer(), "dose-dialog" );
   
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
   
-  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
-  
   show();
   
+  // If we are loading this widget, as we  are creating the InterSpec session,
+  //  the screen width and height wont be avaiable, so we'll just assume its
+  //  big enough, which it should be.
   const int screenW = viewer->renderedWidth();
   const int screenH = viewer->renderedHeight();
-  const int width = ((screenW < 625) ? screenW : 625);
-  const int height = ((screenH < 435) ? screenH : 435);
+  int width = 625, height = 435;
+  if( (screenW > 100) && (screenW < width) )
+    width = screenW;
+  if( (screenH > 100) && (screenH < height) )
+    height = screenH;
+  
   resizeWindow( width, height );
   
-  centerWindow();
+  // But I think this next call should fix things up, even if we do have a tiny screen
+  resizeToFitOnScreen();
+  
+  centerWindowHeavyHanded();
 }//GammaXsWindow(...) constrctor
 
 
@@ -227,6 +238,11 @@ DoseCalcWindow::~DoseCalcWindow()
 {
 }
 
+
+DoseCalcWidget *DoseCalcWindow::tool()
+{
+  return m_dose;
+}
 
 class GammaSourceEnter : public Wt::WContainerWidget
 {
@@ -259,12 +275,14 @@ public:
     layout->addWidget( m_nuclideEdit, 0, 1 );
     m_nuclideEdit->addStyleClass( "DoseEnterTxt" );
     m_nuclideEdit->setAttributeValue( "spellcheck", "false" );
+    m_nuclideEdit->setMinimumSize( 30, WLength::Auto );
     label->setBuddy( m_nuclideEdit );
     
     label = new WLabel( "Age:" );
     layout->addWidget( label, 1, 0, AlignMiddle );
     label->addStyleClass( "DoseFieldLabel" );
     m_nuclideAgeEdit = new WLineEdit();
+    m_nuclideAgeEdit->setMinimumSize( 30, WLength::Auto );
     
     m_nuclideAgeEdit->setAutoComplete( false );
     m_nuclideAgeEdit->setAttributeValue( "ondragstart", "return false" );
@@ -353,6 +371,17 @@ public:
   {
   }
   
+  void setNuclideText( const string &txt )
+  {
+    m_nuclideEdit->setText( WString::fromUTF8(txt) );
+    handleNuclideUserInput();
+  }
+  
+  void setNuclideAgeTxt( const string &txt )
+  {
+    m_nuclideAgeEdit->setText( txt );
+    handleAgeUserChange();
+  }
   
   void handleNuclideUserInput()
   {
@@ -659,6 +688,12 @@ public:
     }
   }
   
+  Wt::WString nuclideAgeStr() const
+  {
+    if( m_nuclideAgeEdit->isDisabled() )
+      return WString();
+    return m_nuclideAgeEdit->text();
+  }
   
   double nuclideAge() const
   {
@@ -775,7 +810,8 @@ DoseCalcWidget::DoseCalcWidget( MaterialDB *materialDB,
    m_layout( NULL ),
    m_currentCalcQuantity( DoseCalcWidget::NumQuantity ),
    m_stack( NULL ),
-   m_menu( nullptr )
+   m_menu( nullptr ),
+   m_stateUri()
 {
   init();
 }//DoseCalcWidget constructor
@@ -783,6 +819,8 @@ DoseCalcWidget::DoseCalcWidget( MaterialDB *materialDB,
 
 void DoseCalcWidget::init()
 {
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   wApp->useStyleSheet( "InterSpec_resources/DoseCalcWidget.css" );
   
   addStyleClass( "DoseCalcWidget" );
@@ -1230,6 +1268,203 @@ DoseCalcWidget::~DoseCalcWidget()
 }//~DoseCalcWidget()
 
 
+void DoseCalcWidget::handleAppUrl( std::string path, std::string query_str )
+{
+#if( PERFORM_DEVELOPER_CHECKS )
+  const string expected_uri = path + "?" + query_str;
+#endif
+  
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
+  Quantity calcQuantity;
+  if( SpecUtils::iequals_ascii(path, "dose") )
+    calcQuantity = Quantity::Dose;
+  else if( SpecUtils::iequals_ascii(path, "act") )
+    calcQuantity = Quantity::Activity;
+  else if( SpecUtils::iequals_ascii(path, "dist") )
+    calcQuantity = Quantity::Distance;
+  else if( SpecUtils::iequals_ascii(path, "shield") )
+    calcQuantity = Quantity::Shielding;
+  else if( SpecUtils::iequals_ascii(path, "intro") )
+  {
+    handleQuantityClick( Quantity::NumQuantity );
+    return;
+  }else
+    throw runtime_error( "Dose Calc tool: invalid URI path." );
+  
+    
+  string inshielduri, outshielduri;
+  const size_t shieldpos = query_str.find( "&INSHIELD=&" );
+  if( shieldpos != string::npos );
+  {
+    inshielduri = query_str.substr(shieldpos + 11);
+    query_str = query_str.substr(0, shieldpos);
+  }
+  
+  size_t outshieldpos = inshielduri.find("&OUTSHIELD=&");
+  if( outshieldpos != string::npos )
+  {
+    outshielduri = inshielduri.substr(outshieldpos + 12);
+    inshielduri = inshielduri.substr(0, outshieldpos);
+  }else if( (outshieldpos = query_str.find("&OUTSHIELD=&")) != string::npos )
+  {
+    outshielduri = query_str.substr(outshieldpos + 12);
+    query_str = query_str.substr(0, outshieldpos);
+  }
+  
+  if( inshielduri.empty() )
+    m_enterShieldingSelect->setToNoShielding();
+  else
+    m_enterShieldingSelect->handleAppUrl( inshielduri );
+  
+  if( outshielduri.empty() )
+    m_answerShieldingSelect->setToNoShielding();
+  else
+    m_answerShieldingSelect->handleAppUrl( outshielduri );
+  
+  SpecUtils::ireplace_all( query_str, "%23", "#" );
+  SpecUtils::ireplace_all( query_str, "%26", "&" );
+  
+  const map<string,string> parts = AppUtils::query_str_key_values( query_str );
+  
+  
+  const auto ver_iter = parts.find( "VER" );
+  if( ver_iter == end(parts) )
+    Wt::log("warn") << "No 'VER' field in Dose Calc tool URI.";
+  else if( ver_iter->second != "1" && !SpecUtils::starts_with(ver_iter->second, "1.") )
+    throw runtime_error( "Can not read Dose Calc tool URI version '" + ver_iter->second + "'" );
+  
+  auto findUnitIndex = [&parts]( const string &key, Wt::WComboBox *combo ) -> int {
+    const auto act_unit_iter = parts.find(key);
+    if( act_unit_iter == end(parts) )
+      return -1;
+    
+    for( int i = 0; i < combo->count(); ++i )
+    {
+      if( SpecUtils::iequals_ascii( combo->itemText(i).toUTF8(), act_unit_iter->second ) )
+        return i;
+    }
+    assert( 0 );
+    return -1;
+  };//findUnitIndex
+  
+  const int act_in_unit_index = findUnitIndex( "ACTINUNIT", m_activityEnterUnits );
+  const int act_out_unit_index = findUnitIndex( "ACTOUTUNIT", m_activityAnswerUnits );
+  const int dose_in_unit_index = findUnitIndex( "DOSEINUNIT", m_doseEnterUnits );
+  const int dose_out_unit_index = findUnitIndex( "DOSEOUTUNIT", m_doseAnswerUnits );
+  
+  const auto act_iter = parts.find("ACT");
+  if( act_iter != end(parts) && !act_iter->second.empty() && (act_in_unit_index < 0) )
+    throw runtime_error( "Dose Calc tool URI does not contain activity unit info." );
+  
+  const auto dose_iter = parts.find("DOSE");
+  if( dose_iter != end(parts) && !dose_iter->second.empty() && (dose_in_unit_index < 0) )
+    throw runtime_error( "Dose Calc tool URI does not contain dose unit info." );
+  
+  m_menu->select( static_cast<int>(calcQuantity) );
+  handleQuantityClick( calcQuantity );
+  
+  if( act_in_unit_index >= 0 )
+    m_activityEnterUnits->setCurrentIndex( act_in_unit_index );
+  if( act_out_unit_index >= 0 )
+    m_activityAnswerUnits->setCurrentIndex( act_out_unit_index );
+  if( dose_in_unit_index >= 0 )
+    m_doseEnterUnits->setCurrentIndex( dose_in_unit_index );
+  if( dose_out_unit_index >= 0 )
+    m_doseAnswerUnits->setCurrentIndex( dose_out_unit_index );
+  
+  const auto nuc_iter = parts.find("NUC");
+  if( nuc_iter != end(parts) )
+    m_gammaSource->setNuclideText( nuc_iter->second );
+  
+  const auto age_iter = parts.find("AGE");
+  if( age_iter != end(parts) )
+    m_gammaSource->setNuclideAgeTxt( age_iter->second );
+  
+  if( act_iter != end(parts) )
+    m_activityEnter->setText( WString::fromUTF8(act_iter->second) );
+  else
+    m_activityEnter->setText( "" );
+  
+  if( dose_iter != end(parts) )
+    m_doseEnter->setText( WString::fromUTF8(dose_iter->second) );
+  else
+    m_doseEnter->setText( "" );
+  
+  const auto dist_iter = parts.find("DIST");
+  if( dist_iter != end(parts) )
+    m_distanceEnter->setText( WString::fromUTF8(dist_iter->second) );
+  else
+    m_distanceEnter->setText( "" );
+  
+  updateResult();
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  if( m_stateUri != expected_uri )
+  {
+    Wt::log("warn") << "DoseCalcWidget::handleAppUrl: input URI doesnt match current URI.\n\t input: '"
+                    << expected_uri.c_str() << "'\n\tresult: '" << m_stateUri.c_str() << "'";
+  }
+#endif
+}//void handleAppUrl( std::string uri )
+
+
+std::string DoseCalcWidget::encodeStateToUrl() const
+{
+  // "interspec://dose/act?nuc=u238&dose=1.1ur/h&dist=100cm&..."
+  
+  string answer;
+  
+  switch( m_currentCalcQuantity )
+  {
+    case Dose:        answer += "dose";   break;
+    case Activity:    answer += "act";    break;
+    case Distance:    answer += "dist";   break;
+    case Shielding:   answer += "shield"; break;
+    case NumQuantity: answer += "intro"; break;
+  }//switch( m_currentCalcQuantity )
+  
+  answer += "?VER=1";
+
+  if( m_currentCalcQuantity == NumQuantity )
+    return answer;
+  
+  // We could limit what info we put in the URL, based on current m_currentCalcQuantity,
+  //  but we might as well put the full state into the URI.
+  
+  auto addTxtField = [&answer]( const string &key, Wt::WLineEdit *edit ){
+    string txt = edit->text().toUTF8();
+    SpecUtils::ireplace_all( txt, "#", "%23" );
+    SpecUtils::ireplace_all( txt, "&", "%26" );
+    answer += "&" + key + "=" + txt;
+  };
+
+  const SandiaDecay::Nuclide *nuc = m_gammaSource->nuclide();
+  if( nuc )
+    answer += "&NUC=" + nuc->symbol;
+  
+  if( nuc && !PeakDef::ageFitNotAllowed(nuc) )
+    answer += "&AGE=" + m_gammaSource->nuclideAgeStr().toUTF8();
+  
+  addTxtField( "ACT", m_activityEnter );
+  answer += "&ACTINUNIT=" + m_activityEnterUnits->currentText().toUTF8();
+  answer += "&ACTOUTUNIT=" + m_activityAnswerUnits->currentText().toUTF8();
+  
+  addTxtField( "DOSE", m_doseEnter );
+  answer += "&DOSEINUNIT=" + m_doseEnterUnits->currentText().toUTF8();
+  answer += "&DOSEOUTUNIT=" + m_doseAnswerUnits->currentText().toUTF8();
+  
+  addTxtField( "DIST", m_distanceEnter );
+  
+  // We'll mark shielding URL starting with the below, and everything after this is the shielding.
+  //  Having an order-independant method would be better, but for the moment...
+  answer += "&INSHIELD=&" + m_enterShieldingSelect->encodeStateToUrl();
+  answer += "&OUTSHIELD=&" + m_answerShieldingSelect->encodeStateToUrl();
+  
+  return answer;
+}//std::string encodeStateToUrl() const;
+
+
 void DoseCalcWidget::runtime_sanity_checks( const GadrasScatterTable * const scatter )
 {
   if( !scatter )
@@ -1385,7 +1620,7 @@ void DoseCalcWidget::handleQuantityClick( const DoseCalcWidget::Quantity q )
   
   m_currentCalcQuantity = q;
   
-  m_stack->setCurrentIndex( 1 );
+  m_stack->setCurrentIndex( (q == NumQuantity) ? 0 : 1 );
   
   for( Quantity i = Quantity(0); i < NumQuantity; i = Quantity(i+1) )
   {
@@ -1843,6 +2078,7 @@ void DoseCalcWidget::updateResultForGammaSource()
       }catch( std::exception &e )
       {
         m_issueTxt->setText( e.what() );
+        return;
       }//try / catch
   
       break;
@@ -1854,6 +2090,43 @@ void DoseCalcWidget::updateResultForGammaSource()
   }//switch( m_sourceType->checkedId() )
   
   checkAndWarnForBrehmSource();
+  
+  try
+  {
+    string uri = encodeStateToUrl();
+    const bool sameAsPrev = (uri == m_stateUri);
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && undoRedo->canAddUndoRedoNow() && !sameAsPrev )
+    {
+      const shared_ptr<const string> prev = make_shared<string>( m_stateUri );
+      const shared_ptr<const string> current = make_shared<string>( uri );
+      
+      auto undo_redo = [prev, current]( bool is_undo ){
+        DoseCalcWindow *dosewin = InterSpec::instance()->showDoseTool();
+        DoseCalcWidget *tool = dosewin ? dosewin->tool() : nullptr;
+        const string &uri = is_undo ? *prev : *current;
+        if( tool && !uri.empty() )
+        {
+          const size_t pos = uri.find('?');
+          string path = (pos == string::npos) ? string() : uri.substr(0,pos);
+          string query = (pos == string::npos) ? uri : uri.substr(pos+1);
+          tool->handleAppUrl(path, query);
+        }//
+      };//undo_redo
+      
+      auto undo = [undo_redo](){ undo_redo(true); };
+      auto redo = [undo_redo](){ undo_redo(false); };
+      
+      undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Update Dose Calc values." );
+    }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    
+    if( !sameAsPrev )
+      m_stateUri = std::move(uri);
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "DoseCalcWidget::updateResultForGammaSource:"
+                        " error trying to make undo/redo step: " << e.what();
+  }//try / catch
 }//void updateResultForGammaSource()
 
 

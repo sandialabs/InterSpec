@@ -34,7 +34,6 @@
 #include <boost/any.hpp>
 
 #include <Wt/WPen>
-#include <Wt/Utils>
 #include <Wt/WText>
 #include <Wt/WDate>
 #include <Wt/WTable>
@@ -1880,8 +1879,6 @@ void DecayActivityDiv::handleAppUrl( std::string path, std::string query_str )
   if( !query_str.empty() && (query_str[0] == '?') )
     query_str = query_str.substr(1);
   
-  query_str = Wt::Utils::urlDecode( query_str );
-  
   vector<string> query_args;
   SpecUtils::split( query_args, query_str, "&" );
   
@@ -2111,8 +2108,6 @@ std::string DecayActivityDiv::encodeStateToUrl()
     if( nucinfo.age > FLT_EPSILON )
       query_str += "&initialage="  + PhysicalUnits::printToBestTimeUnits(nucinfo.age,6);
   }//for( const Nuclide &nucinfo : m_nuclides )
-  
-  query_str = Wt::Utils::urlEncode(query_str);
   
   return path + "?" + query_str;
 }//std::string encodeStateToUrl()

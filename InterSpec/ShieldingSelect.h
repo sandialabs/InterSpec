@@ -442,6 +442,14 @@ public:
   //  Throws exception on invalid XML or m_forFitting mismatch
   void deSerialize( const rapidxml::xml_node<char> *shielding_node );
   
+  /** Encodes current tool state to app-url format.  Returned string is just the query portion of URL;
+   so will look something like "V=1&G=S&D1=1.2cm", and it will not be url-encoded.
+   
+   TODO: Currently does not encode self-attenuating source, trace-source information, or "truth" values.
+   */
+  std::string encodeStateToUrl() const;
+
+  void handleAppUrl( std::string query_str );
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   boost::optional<double> truthThickness;

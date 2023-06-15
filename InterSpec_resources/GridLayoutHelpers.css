@@ -13,6 +13,21 @@
   justify-self: stretch;
 }
 
+.GridJustifyCenter
+{
+  justify-self: center;
+}
+
+.GridJustifyEnd
+{
+  justify-self: end;
+}
+
+.GridJustifyStart
+{
+  justify-self: start;
+}
+
 .GridThirdCol
 {
   grid-column-start: 3;
@@ -67,6 +82,12 @@
 {
   grid-row-start: 5;
 }
+
+.GridSixthRow
+{
+  grid-row-start: 6;
+}
+
 
 .GridSpanTwoCol
 {
