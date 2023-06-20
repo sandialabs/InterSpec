@@ -2745,7 +2745,7 @@ void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peak
   if( !peaks )
     throw runtime_error( "DetectorPeakResponse::fitResolution(...): invalid input" );
   
-  int sqrtEqnOrder = peaks->size() / 2;
+  int sqrtEqnOrder = static_cast<int>(peaks->size()) / 2;
   if( sqrtEqnOrder > 6 )
     sqrtEqnOrder = 6;
   else if( peaks->size() < 3 )

@@ -1340,7 +1340,7 @@ protected:
   //m_currentStateID: if the user has saved a state, this will be the database
   //  ID of that state.  If there is no saved state, this variable will be -1.
   //  It will also be reset to -1 when a new foreground is loaded.
-  int m_currentStateID;
+  long long m_currentStateID;
 #endif
   
   enum RightClickItems
@@ -1522,8 +1522,6 @@ protected:
   DrfSelectWindow *m_drfSelectWindow;
   
   UndoRedoManager *m_undo;
-  PopupDivMenuItem *m_undoMenuItem;
-  PopupDivMenuItem *m_redoMenuItem;
   
   //Current width and height are set in layoutSizeChanged(...).
   int m_renderedWidth;

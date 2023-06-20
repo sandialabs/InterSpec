@@ -236,11 +236,12 @@ namespace
       : m_display( display ),
         m_description( descrip ),
         m_pre_doc( nullptr ),
-        m_block( make_unique<UndoRedoManager::BlockUndoRedoInserts>() )
+        m_block( nullptr )
     {
       UndoRedoManager *undoRedo = UndoRedoManager::instance();
       if( undoRedo && undoRedo->canAddUndoRedoNow() )
       {
+        m_block = make_unique<UndoRedoManager::BlockUndoRedoInserts>();
         shared_ptr<string> doc_xml = make_shared<string>();
         doSerialization( *doc_xml );
         m_pre_doc = doc_xml;
@@ -303,12 +304,18 @@ namespace
       const shared_ptr<const string> post_doc = post_doc_xml;
       const shared_ptr<const string> pre_doc = m_pre_doc;
       
+      if( (*post_doc) == (*pre_doc) )
+      {
+        Wt::log("debug") << "ShieldSourceChange: no changes found; not inserting undo/redo step";
+        return;
+      }
+      
       // Now need to remove the block to inserting undo/redo steps
       m_block.reset();
       
-      cout << "Adding undo/redo step will take approx "
-           << (m_description.size() + pre_doc->size() + post_doc->size())
-           << " bytes of memory" << endl;
+      //cout << "Adding undo/redo step will take approx "
+      //     << (m_description.size() + pre_doc->size() + post_doc->size())
+      //     << " bytes of memory" << endl;
       
       auto undo = [pre_doc, descrip](){
         ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
@@ -327,7 +334,7 @@ namespace
       
       auto redo = [post_doc, descrip](){
         ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
-        if( !display || !post_doc || !post_doc->empty() )
+        if( !display || !post_doc || post_doc->empty() )
           return;
         
         try
@@ -340,7 +347,7 @@ namespace
         }
       };
       
-      undoRedo->addUndoRedoStep( undo, redo, descrip );
+      undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), descrip );
     }//~ShieldSourceChange()
     
     ShieldSourceChange( const ShieldSourceChange & ) = delete; // non construction-copyable
@@ -6774,12 +6781,6 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
   select->addShieldingAfter().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingAfter,
                                                    this, boost::placeholders::_1 ) );
   
-  select->userChangedStateSignal().connect( boost::bind(
-          &ShieldingSourceDisplay::handleShieldingUndoRedoPoint,
-          this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3
-  ) );
-  
-  
   //connect up signals of select and such
   select->m_arealDensityEdit->valueChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
   select->m_atomicNumberEdit->valueChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
@@ -6807,7 +6808,6 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
   undoSignal.connect( boost::bind(
               &ShieldingSourceDisplay::handleShieldingUndoRedoPoint, this,
               boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3 ) );
-  
   
   
   try

@@ -1361,7 +1361,7 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
 ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
                                   SourceFitModel *sourceModel,
                                   Wt::WSuggestionPopup *materialSuggest,
-                                  ShieldingSourceDisplay *shieldSource,
+                                  const ShieldingSourceDisplay *shieldSource,
                                   Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
     m_toggleImage( nullptr ),
@@ -4720,7 +4720,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
   {
     const string uri = encodeStateToUrl();
     
-    ShieldingSelect test( m_materialDB, m_materialSuggest, nullptr );
+    ShieldingSelect test( m_materialDB, m_sourceModel, m_materialSuggest, m_shieldSrcDisp  );
     test.handleAppUrl( uri );
     
     if( test.m_isGenericMaterial != m_isGenericMaterial )

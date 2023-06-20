@@ -145,7 +145,7 @@ public:
   ShieldingSelect( MaterialDB *materialDB,
                    SourceFitModel *sourceModel,
                    Wt::WSuggestionPopup *materialSuggest,
-                   ShieldingSourceDisplay *shieldSource,
+                   const ShieldingSourceDisplay *shieldSource,
                    Wt::WContainerWidget *parent = 0 );
   
   virtual ~ShieldingSelect();

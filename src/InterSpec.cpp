@@ -459,8 +459,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_riidDisplay( nullptr ),
   m_drfSelectWindow( nullptr ),
   m_undo( nullptr ),
-  m_undoMenuItem( nullptr ),
-  m_redoMenuItem( nullptr ),
   m_renderedWidth( 0 ),
   m_renderedHeight( 0 ),
   m_colorPeaksBasedOnReferenceLines( true ),
@@ -5921,18 +5919,18 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
   
   if( m_undo )
   {
-    m_undoMenuItem = m_editMenuPopup->insertMenuItem( 0, "Undo", "", true );
-    m_undoMenuItem->setDisabled( true );
-    m_undoMenuItem->triggered().connect( m_undo, &UndoRedoManager::executeUndo );
+    PopupDivMenuItem *undoMenu = m_editMenuPopup->insertMenuItem( 0, "Undo", "", true );
+    undoMenu->setDisabled( true );
+    undoMenu->triggered().connect( m_undo, &UndoRedoManager::executeUndo );
     
-    m_redoMenuItem = m_editMenuPopup->insertMenuItem( 1, "Redo", "", true );
-    m_redoMenuItem->setDisabled( true );
-    m_redoMenuItem->triggered().connect( m_undo, &UndoRedoManager::executeRedo );
+    PopupDivMenuItem *redoMenu = m_editMenuPopup->insertMenuItem( 1, "Redo", "", true );
+    redoMenu->setDisabled( true );
+    redoMenu->triggered().connect( m_undo, &UndoRedoManager::executeRedo );
     
-    m_undo->undoMenuDisableUpdate().connect( boost::bind(&PopupDivMenuItem::setDisabled, m_undoMenuItem, boost::placeholders::_1) );
-    m_undo->redoMenuDisableUpdate().connect( boost::bind(&PopupDivMenuItem::setDisabled, m_redoMenuItem, boost::placeholders::_1) );
-    m_undo->undoMenuToolTipUpdate().connect( boost::bind(&PopupDivMenuItem::setToolTip, m_undoMenuItem, boost::placeholders::_1, TextFormat::PlainText) );
-    m_undo->redoMenuToolTipUpdate().connect( boost::bind(&PopupDivMenuItem::setToolTip, m_redoMenuItem, boost::placeholders::_1, TextFormat::PlainText) );
+    m_undo->undoMenuDisableUpdate().connect( boost::bind(&PopupDivMenuItem::setDisabled, undoMenu, boost::placeholders::_1) );
+    m_undo->redoMenuDisableUpdate().connect( boost::bind(&PopupDivMenuItem::setDisabled, redoMenu, boost::placeholders::_1) );
+    m_undo->undoMenuToolTipUpdate().connect( boost::bind(&PopupDivMenuItem::setToolTip, undoMenu, boost::placeholders::_1, TextFormat::PlainText) );
+    m_undo->redoMenuToolTipUpdate().connect( boost::bind(&PopupDivMenuItem::setToolTip, redoMenu, boost::placeholders::_1, TextFormat::PlainText) );
   }//if( m_undo )
   
 #if( !ANDROID )

@@ -1051,10 +1051,10 @@ class DateLengthCalculator : public WContainerWidget
         //Figure out if user inputed activity in Ci or Bq for this nuclide
         const bool useCurries = checkUseCurries( nap );
         
-        beforeTable->elementAt(row_num,0)->addWidget( new WText(nap.nuclide->symbol) );
+        beforeTable->elementAt(static_cast<int>(row_num),0)->addWidget( new WText(nap.nuclide->symbol) );
         
         const string actstr = PhysicalUnits::printToBestActivityUnits( nap.activity, 3, useCurries, SandiaDecay::becquerel );
-        beforeTable->elementAt(row_num,1)->addWidget( new WText(actstr) );
+        beforeTable->elementAt(static_cast<int>(row_num),1)->addWidget( new WText(actstr) );
         
         const SandiaDecay::NuclideNumAtomsPair *natomp = NULL;
         for( size_t a = 0; !natomp && a < numatoms.size(); ++a )
@@ -1127,7 +1127,7 @@ class DateLengthCalculator : public WContainerWidget
         const double num_atoms_in_gram = nap.nuclide->atomsPerGram();
         const double ngrams = natomp->numAtoms / num_atoms_in_gram;
         const string massstr = PhysicalUnits::printToBestMassUnits( ngrams*PhysicalUnits::gram, maxDecimal);
-        infotable->elementAt(row_num,2)->addWidget( new WText(massstr) );
+        infotable->elementAt(static_cast<int>(row_num),2)->addWidget( new WText(massstr) );
       }
       
       row_num += 1;

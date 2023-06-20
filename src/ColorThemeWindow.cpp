@@ -763,7 +763,7 @@ void ColorThemeWindow::applyCallback()
   assert( theme ); //def shouldnt ever happen
   
   Dbo::ptr<InterSpecUser> &user = m_interspec->m_user;
-  InterSpecUser::setPreferenceValue<int>( user, "ColorThemeIndex", theme->dbIndex, m_interspec );
+  InterSpecUser::setPreferenceValue<int>( user, "ColorThemeIndex", static_cast<int>(theme->dbIndex), m_interspec );
   
   m_interspec->applyColorTheme( make_shared<ColorTheme>(*theme) );
   
