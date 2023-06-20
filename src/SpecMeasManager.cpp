@@ -505,7 +505,7 @@ public:
     assert( manager );
     assert( viewer );
     
-    Wt::WPushButton *btn = addButton( "Cancel" );
+    addButton( "Cancel" );
     finished().connect( m_manager, &SpecMeasManager::multiSpectrumDialogDone );
     
 #if( IOS || ANDROID )
@@ -901,6 +901,9 @@ void  SpecMeasManager::startSpectrumManager()
     m_spectrumManagerWindow->centerWindow();
     
     selectionChanged();
+  
+  if( m_viewer && m_viewer->undoRedoManager() && m_viewer->undoRedoManager()->canAddUndoRedoNow() )
+    new UndoRedoManager::BlockGuiUndoRedo( m_spectrumManagerWindow ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
   
   UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
@@ -1321,7 +1324,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   
   SimpleDialog *dialog = new SimpleDialog();
-  WPushButton *closeButton = dialog->addButton( "Close" );
+  dialog->addButton( "Close" );
   WContainerWidget *contents = dialog->contents();
   contents->addStyleClass( "NonSpecDialogBody" );
   WText *title = new WText( "Not a spectrum file", contents );

@@ -299,6 +299,14 @@ namespace InterSpecServer
     std::string m_arcgis_key;
 #endif
     
+    /** The maximum number of undo/redo steps to keep.
+     
+     A value of zero indicates unlimited, and a negative value disables undo/redo.
+     
+     Default value is 250, however, for mobile interface this feature will be disabled anyway.
+     */
+    int m_max_undo_steps;
+    
     /** Returns application config, as determined from defaults and then 
     InterSpec_app_settings.json files.
 

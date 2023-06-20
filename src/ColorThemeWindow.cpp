@@ -45,6 +45,7 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/ColorThemeWidget.h"
 #include "InterSpec/ColorThemeWindow.h"
@@ -576,51 +577,27 @@ void ColorThemeWindow::checkForSavesAndCleanUp()
   if( !m_edit->m_currentTheme )
   {
     AuxWindow::deleteAuxWindow( this );
-    //WServer::instance()->post( wApp->sessionId(), boost::bind( &AuxWindow::deleteAuxWindow, this ) );
     return;
   }
   
-  AuxWindow *dialog = new AuxWindow( "Save Changes?",
-                                    WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::DisableCollapse );
-
-  auto content = dialog->contents();
-  WText *txt = new WText( content );
-  txt->setText( "<span style=\"white-space: nowrap;\">Save changes to <em>" + m_edit->m_currentTheme->theme_name.toUTF8() + "</em>?</span>" );
-  content->setMargin( 15 );
+  string content = "<span style=\"white-space: nowrap;\">Save changes to <em>"
+                + m_edit->m_currentTheme->theme_name.toUTF8() + "</em>?</span>";
+  SimpleDialog *dialog = new SimpleDialog( "Save Changes?", content );
   
-  auto foot = dialog->footer();
   
-  WPushButton *discard = new WPushButton( "Discard", foot );
-  discard->setWidth( WLength(47.5,WLength::Percentage) );
-  discard->setFloatSide( Wt::Left );
-  discard->clicked().connect( std::bind( [=](){
-    AuxWindow::deleteAuxWindow( this );
-    dialog->hide();
-  }) );
+  WPushButton *discard = dialog->addButton( "Discard" );
+  discard->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
   
-  //WPushButton *cancel = new WPushButton( "Cancel", foot );
-  //cancel->setWidth( WLength(32,WLength::Percentage) );
-  ////cancel->clicked().connect( std::bind( [=](){ AuxWindow::deleteAuxWindow( dialog ); } ) );
-  //cancel->clicked().connect( std::bind( [=](){
-  //  this->show();
-  //  AuxWindow::deleteAuxWindow( dialog );
-  //}) );
-  
-  WPushButton *save = new WPushButton( "Save", foot );
-  save->setFloatSide( Wt::Left );
-  save->setWidth( WLength(47.5,WLength::Percentage) );
-  save->clicked().connect( std::bind( [=](){
-    saveThemeToDb( m_edit->m_currentTheme.get() );
-    AuxWindow::deleteAuxWindow( this );
-    dialog->hide();
-  } ) );
-  
-  dialog->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
-  
-  dialog->setClosable( false );
-  dialog->show();
-  dialog->centerWindow();
+  WPushButton *save = dialog->addButton( "Save" );
+  save->clicked().connect( boost::bind( &ColorThemeWindow::saveAndDelete, this ) );
 }//void checkForSavesAndCleanUp()
+
+
+void ColorThemeWindow::saveAndDelete()
+{
+  saveThemeToDb( m_edit->m_currentTheme.get() );
+  AuxWindow::deleteAuxWindow( this );
+}
 
 
 unique_ptr<ColorTheme> ColorThemeWindow::saveThemeToDb( const ColorTheme *theme )

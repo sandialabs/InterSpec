@@ -386,6 +386,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_nuclideSearchContainer(0),
     m_nuclideSearch( 0 ),
     m_fileMenuPopup( 0 ),
+    m_editMenuPopup( nullptr ),
     m_toolsMenuPopup( 0 ),
     m_helpMenuPopup( 0 ),
     m_displayOptionsPopupDiv( 0 ),
@@ -458,6 +459,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_riidDisplay( nullptr ),
   m_drfSelectWindow( nullptr ),
   m_undo( nullptr ),
+  m_undoMenuItem( nullptr ),
+  m_redoMenuItem( nullptr ),
   m_renderedWidth( 0 ),
   m_renderedHeight( 0 ),
   m_colorPeaksBasedOnReferenceLines( true ),
@@ -477,6 +480,18 @@ InterSpec::InterSpec( WContainerWidget *parent )
   assert( app );
   //make it so InterSpec::instance() wont return nullptr for calls from within this constructor
   app->m_viewer = this;
+    
+
+  // We wont enable undo/redo when we are using mobile-menu (i.e., phones, or tablets that dont
+  //  have desktop interface enabled).
+  std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
+  if( (UndoRedoManager::maxUndoRedoSteps() >= 0)
+     && !app->isPhone()
+     && (!app->isTablet() || InterSpecUser::preferenceValue<bool>("TabletUseDesktopMenus", this)) )
+  {
+    m_undo = new UndoRedoManager( this );
+    undo_blocker = std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts>();
+  }//if( desktop interface )
   
   //for notification div
   m_notificationDiv = new WContainerWidget();
@@ -610,10 +625,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   
   WWidget *menuWidget = NULL;
-  if( isMobile() )
-  {
-    
-  }
     
   if( isMobile() )
   {
@@ -810,8 +821,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
   }//if( isMobile() ) / else
 
   addFileMenu( menuWidget, isAppTitlebar );
+  addEditMenu( menuWidget );
   addDisplayMenu( menuWidget );
-  
   addToolsMenu( menuWidget );
   addAboutMenu( menuWidget );
 
@@ -1093,7 +1104,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
                                                      boost::placeholders::_1,
                                                    boost::placeholders::_2,
                                                    boost::placeholders::_3,
-                                                   boost::placeholders::_4) );
+                                                   boost::placeholders::_4,
+                                                   boost::placeholders::_5) );
       
   m_spectrum->yAxisScaled().connect(
           boost::bind( &InterSpec::handleDisplayScaleFactorChangeFromSpectrum, this,
@@ -1145,17 +1157,17 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #endif
   
   applyColorTheme( nullptr );
-
-  m_undo = new UndoRedoManager( this );
   
 #if( APP_MENU_STATELESS_FIX )
   // Make sure the menus get pre-loaded
   PopupDivMenu::pre_render(m_fileMenuPopup);
+  PopupDivMenu::pre_render(m_editMenuPopup);
   PopupDivMenu::pre_render(m_toolsMenuPopup);
   PopupDivMenu::pre_render(m_helpMenuPopup);
   PopupDivMenu::pre_render(m_displayOptionsPopupDiv);
 #endif
 }//InterSpec( constructor )
+
 
 InterSpec *InterSpec::instance()
 {
@@ -1164,6 +1176,7 @@ InterSpec *InterSpec::instance()
     return nullptr;
   return app->viewer();
 }//instance()
+
 
 void InterSpec::setStaticDataDirectory( const std::string &dir )
 {
@@ -1681,7 +1694,7 @@ void InterSpec::arrowKeyPressed( const unsigned int value )
     return;
   
   const vector<PopupDivMenu *> menus{
-    m_fileMenuPopup, m_displayOptionsPopupDiv, m_toolsMenuPopup, m_helpMenuPopup
+    m_fileMenuPopup, m_editMenuPopup, m_displayOptionsPopupDiv, m_toolsMenuPopup, m_helpMenuPopup
   };
   
   bool foundActive = false;
@@ -1706,11 +1719,14 @@ void InterSpec::arrowKeyPressed( const unsigned int value )
   
   if( leftArrow || rightArrow )
   {
-    size_t nextActiveIndex;
-    if( leftArrow )
-      nextActiveIndex = (activeIndex == 0) ? (menus.size() - 1) : (activeIndex - 1);
-    else
-      nextActiveIndex = ((activeIndex + 1) % menus.size());
+    size_t nextActiveIndex = activeIndex;
+    do
+    {
+      if( leftArrow )
+        nextActiveIndex = (nextActiveIndex == 0) ? (menus.size() - 1) : (nextActiveIndex - 1);
+      else
+        nextActiveIndex = ((nextActiveIndex + 1) % menus.size());
+    }while( !menus[nextActiveIndex] );
     
     menus[activeIndex]->hide();
     menus[nextActiveIndex]->parentClicked();
@@ -3334,6 +3350,8 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   if( !entry )
     throw runtime_error( "UserState was invalid" );
 
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   Wt::Dbo::ptr<UserState> parent = entry->snapshotTagParent;
   
   try
@@ -3712,7 +3730,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       if( tool )
       {
         string path, uri = entry->doseCalcToolUri;
-        const auto pos = uri.find('/');
+        const auto pos = uri.find('?');
         if( pos != string::npos )
         {
           path = uri.substr(0,pos);
@@ -4143,7 +4161,9 @@ void InterSpec::osThemeChange( std::string name )
 void InterSpec::showColorThemeWindow()
 {
   //Takes ~5ms (on the server) to create a ColorThemeWindow.
-	new ColorThemeWindow(this);
+	ColorThemeWindow *window = new ColorThemeWindow(this);
+  
+  new UndoRedoManager::BlockGuiUndoRedo( window ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void showColorThemeWindow()
 
 
@@ -5850,12 +5870,12 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 #endif //#if( INCLUDE_ANALYSIS_TEST_SUITE )
 
 
-#if(USE_OSX_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU )
     //Add a separtor before Quit InterSpec
     m_fileMenuPopup->addSeparator();
 #endif
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP)
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
 #if( USING_ELECTRON_NATIVE_MENU )
@@ -5876,7 +5896,60 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 #endif
   }//if( InterSpecApp::isPrimaryWindowInstance() )
 #endif //  || BUILD_AS_WX_WIDGETS_APP
-} // void InterSpec::addFileMenu( WContainerWidget *menuDiv, bool show_examples )
+}//void addFileMenu( WContainerWidget *menuDiv, bool show_examples )
+
+
+void InterSpec::addEditMenu( Wt::WWidget *parent )
+{
+  PopupDivMenu *parentMenu = dynamic_cast<PopupDivMenu *>( parent );
+  WContainerWidget *menuDiv = dynamic_cast<WContainerWidget *>( parent );
+  if( !parentMenu && !menuDiv )
+    throw runtime_error( "InterSpec::addEditMenu(): parent passed in must"
+                         " be a PopupDivMenu or WContainerWidget" );
+
+  const WString menuname = WString::fromUTF8( "Edit" );
+  
+  if( menuDiv )
+  {
+    WPushButton *button = new WPushButton( menuname, menuDiv );
+    button->addStyleClass( "MenuLabel" );
+    m_editMenuPopup = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
+  }else
+  {
+    m_editMenuPopup = parentMenu->addPopupMenuItem( menuname );
+  }//if( menuDiv ) / else
+  
+  if( m_undo )
+  {
+    m_undoMenuItem = m_editMenuPopup->insertMenuItem( 0, "Undo", "", true );
+    m_undoMenuItem->setDisabled( true );
+    m_undoMenuItem->triggered().connect( m_undo, &UndoRedoManager::executeUndo );
+    
+    m_redoMenuItem = m_editMenuPopup->insertMenuItem( 1, "Redo", "", true );
+    m_redoMenuItem->setDisabled( true );
+    m_redoMenuItem->triggered().connect( m_undo, &UndoRedoManager::executeRedo );
+    
+    m_undo->undoMenuDisableUpdate().connect( boost::bind(&PopupDivMenuItem::setDisabled, m_undoMenuItem, boost::placeholders::_1) );
+    m_undo->redoMenuDisableUpdate().connect( boost::bind(&PopupDivMenuItem::setDisabled, m_redoMenuItem, boost::placeholders::_1) );
+    m_undo->undoMenuToolTipUpdate().connect( boost::bind(&PopupDivMenuItem::setToolTip, m_undoMenuItem, boost::placeholders::_1, TextFormat::PlainText) );
+    m_undo->redoMenuToolTipUpdate().connect( boost::bind(&PopupDivMenuItem::setToolTip, m_redoMenuItem, boost::placeholders::_1, TextFormat::PlainText) );
+  }//if( m_undo )
+  
+#if( !ANDROID )
+    // TODO: On Android we dont currently catch the download for these downloads with the content encoded in the URI, so we will just disable these for now there.
+  m_editMenuPopup->addSeparatorAt( 2 );
+  auto saveitem = m_editMenuPopup->insertMenuItem( 3, "Save Spectrum as PNG", "", true );
+  saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, true) );
+  saveitem = m_editMenuPopup->insertMenuItem( 4, "Save Spectrum as SVG", "", true );
+  saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
+#endif
+  
+#if( BUILD_AS_OSX_APP )
+  // All the macOS native menu stuff (copy/paste/select/etc) will be below our stuff
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    m_editMenuPopup->addSeparatorAt( 5 );
+#endif
+}//void addEditMenu( Wt::WWidget *menuDiv )
 
 
 bool InterSpec::toolTabsVisible() const
@@ -6498,15 +6571,6 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     //If didnt want to use JSlot, could do...
     //    js = can + ".data('compangle',null);";
     //    checkbox->checked().connect( boost::bind( &WApplication::doJavaScript, wApp, js, true ) );
-    
-#if( !ANDROID )
-    // TODO: On Android we dont currently catch the download for these downloads with the content encoded in the URI, so we will just disable these for now there.
-    m_displayOptionsPopupDiv->addSeparator();
-    auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
-    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, true) );
-    saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as SVG" );
-    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
-#endif
   }//if( overlay )
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
@@ -7895,7 +7959,8 @@ void InterSpec::deleteDecayInfoWindow()
 
 void InterSpec::createFileParameterWindow()
 {
-  new SpecFileSummary( this );
+  SpecFileSummary *window = new SpecFileSummary( this );
+  new UndoRedoManager::BlockGuiUndoRedo( window ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void createFileParameterWindow()
 
 
@@ -8368,6 +8433,8 @@ void InterSpec::createTerminalWidget()
     }
     
     m_terminalWindow->stretcher()->addWidget( m_terminal, 0, 0 );
+    
+    new UndoRedoManager::BlockGuiUndoRedo( m_terminalWindow ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
   }//if( toolTabsVisible() )
   
   m_terminalMenuItem->disable();
@@ -8912,11 +8979,11 @@ GammaXsWindow *InterSpec::showGammaXsTool()
   if( !m_gammaXsToolWindow )
   {
     m_gammaXsToolWindow = new GammaXsWindow( m_materialDB.get(), m_shieldingSuggestion, this );
-    m_gammaXsToolWindow->finished().connect( this, &InterSpec::handleGammaXsToolClose );
+    m_gammaXsToolWindow->finished().connect( this, &InterSpec::deleteGammaXsTool );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
     {
-      auto undo = [this](){ handleGammaXsToolClose(); };
+      auto undo = [this](){ deleteGammaXsTool(); };
       auto redo = [this](){ showGammaXsTool(); };
       m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Gamma XS Tool." );
     }//if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -8930,7 +8997,7 @@ GammaXsWindow *InterSpec::showGammaXsTool()
 }//showGammaXsTool()
 
 
-void InterSpec::handleGammaXsToolClose()
+void InterSpec::deleteGammaXsTool()
 {
   if( m_gammaXsToolWindow )
   {
@@ -8955,7 +9022,7 @@ void InterSpec::handleGammaXsToolClose()
         }//try /catch
       };//undo
       
-      auto redo = [this](){ handleGammaXsToolClose(); };
+      auto redo = [this](){ deleteGammaXsTool(); };
       
       m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close XS Tool" );
     }//if( m_undo && tool )
@@ -8964,7 +9031,7 @@ void InterSpec::handleGammaXsToolClose()
   }//if( m_gammaXsToolWindow )
   
   m_gammaXsToolWindow = nullptr;
-}//void handleGammaXsToolClose();
+}//void deleteGammaXsTool()
 
 
 DoseCalcWindow *InterSpec::showDoseTool()
@@ -8972,11 +9039,11 @@ DoseCalcWindow *InterSpec::showDoseTool()
   if( !m_doseCalcWindow )
   {
     m_doseCalcWindow = new DoseCalcWindow( m_materialDB.get(), m_shieldingSuggestion, this );
-    m_doseCalcWindow->finished().connect( this, &InterSpec::handleDoseToolClose );
+    m_doseCalcWindow->finished().connect( this, &InterSpec::deleteDoseCalcTool );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
     {
-      auto undo = [this](){ handleDoseToolClose(); };
+      auto undo = [this](){ deleteDoseCalcTool(); };
       auto redo = [this](){ showDoseTool(); };
       m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Dose Tool." );
     }//if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -8990,7 +9057,7 @@ DoseCalcWindow *InterSpec::showDoseTool()
 }//DoseCalcWindow *showDoseTool()
 
 
-void InterSpec::handleDoseToolClose()
+void InterSpec::deleteDoseCalcTool()
 {
   if( m_doseCalcWindow )
   {
@@ -9017,19 +9084,20 @@ void InterSpec::handleDoseToolClose()
       }
       
     };//undo
-    auto redo = [this](){ handleGammaXsToolClose(); };
+    auto redo = [this](){ deleteDoseCalcTool(); };
     
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Dose Tool" );
     
     AuxWindow::deleteAuxWindow( m_doseCalcWindow );
   }
   m_doseCalcWindow = nullptr;
-}//void handleDoseToolClose();
+}//void deleteDoseCalcTool();
 
 
 void InterSpec::showMakeDrfWindow()
 {
-  MakeDrf::makeDrfWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+  AuxWindow *window = MakeDrf::makeDrfWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+  new UndoRedoManager::BlockGuiUndoRedo( window ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void showDrfSelectWindow()
 
 
@@ -10098,6 +10166,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
                              const SpecUtils::SpectrumType spec_type,
                              const Wt::WFlags<SetSpectrumOptions> options )
 {
+  UndoRedoManager::BlockUndoRedoInserts blocker;
+  
   const int spectypeindex = static_cast<int>( spec_type );
   
   vector< boost::function<void(void)> > furtherworkers;
@@ -11281,10 +11351,12 @@ void InterSpec::handleShiftAltDrag( double lowEnergy, double upperEnergy )
 
 
 void InterSpec::handleSpectrumChartXRangeChange( const double xmin, const double xmax,
-                                     const double oldXmin, const double oldXmax )
+                                                 const double oldXmin, const double oldXmax,
+                                                 const bool user_interaction )
 {
   // Add Undo/Redo step here.
-  if( !m_undo )
+  if( !m_undo || !user_interaction
+     || ((fabs(xmin - oldXmin) < 0.5) && (fabs(xmax - oldXmax) < 0.5)) )
     return;
   
   auto undo = [oldXmin, oldXmax, this](){ m_spectrum->setXAxisRange( oldXmin, oldXmax ); };
@@ -12402,9 +12474,6 @@ void InterSpec::displayBackgroundData()
   if( backgroundH )
     backgroundH->set_title( "Background" );
     
-  const float lt = backgroundH ? backgroundH->live_time() : -1.0f;
-  const float rt = backgroundH ? backgroundH->real_time() : -1.0f;
-  const float neutronCounts = backgroundH ? backgroundH->neutron_counts_sum() : -1.0f;
   m_spectrum->setBackground( backgroundH );
   
   if( !m_timeSeries->isHidden() )

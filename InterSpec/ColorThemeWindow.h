@@ -89,6 +89,7 @@ protected:
    should be prompted to save anything.
    */
   void checkForSavesAndCleanUp();
+  void saveAndDelete();
   
   void saveCallback();
   void applyCallback();

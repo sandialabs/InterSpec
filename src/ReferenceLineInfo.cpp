@@ -1372,7 +1372,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       age = PeakDef::defaultDecayTime( nuc, &input.m_age );
     }else if( nuc->isStable() )
     {
-      age = 0;
+      // age = 0;
       input.m_age = "";
       answer.m_input_warnings.push_back( nuc->symbol + " is a stable isotope." );
       answer.m_validity = ReferenceLineInfo::InputValidity::InvalidSource;

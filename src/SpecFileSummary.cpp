@@ -167,7 +167,7 @@ namespace
 
 
 SpecFileSummary::SpecFileSummary( InterSpec *specViewer )
-  : AuxWindow( "File Parameters" ),
+  : AuxWindow( "File Parameters", AuxWindowProperties::IsModal ),
     m_specViewer( specViewer ),
     m_allowEditGroup( NULL ),
     m_displaySampleDiv( NULL ),

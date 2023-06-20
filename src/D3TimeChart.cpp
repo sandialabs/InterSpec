@@ -1060,7 +1060,7 @@ void D3TimeChart::defineJavaScript()
     m_chartClickedJS->connect( this, &D3TimeChart::chartClickedCallback );
     m_chartDraggedJS->connect( this, &D3TimeChart::chartDraggedCallback );
     m_displayedXRangeChangeJS->connect( this, &D3TimeChart::displayedXRangeChangeCallback );
-  }//if( !m_xRangeChangedJS )
+  }//if( !m_chartClickedJS )
   
   for( const string &js : m_pendingJs )
     doJavaScript( js );

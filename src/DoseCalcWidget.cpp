@@ -2178,7 +2178,6 @@ void DoseCalcWidget::checkAndWarnForBrehmSource()
   }
   
   //P32, S35, Sr90, and Y90 are the main isotopes we want to catch
-  cerr << "gammaIntensity=" << gammaIntensity << ", betaIntensity=" << betaIntensity << endl;
 
   if( betas.empty() )
     return;

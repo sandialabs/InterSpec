@@ -328,6 +328,7 @@ public:
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
   //  WContainerWidget or a PopupDivMenu
   void addFileMenu( Wt::WWidget *menuDiv, const bool isAppTitlebar );
+  void addEditMenu( Wt::WWidget *menuDiv );
   void addDisplayMenu( Wt::WWidget *menuDiv );
   void addDetectorMenu( Wt::WWidget *menuDiv );
   void addToolsMenu( Wt::WWidget *menuDiv );
@@ -620,10 +621,10 @@ public:
   void pushMaterialSuggestionsToUsers();
   
   GammaXsWindow *showGammaXsTool();
-  void handleGammaXsToolClose();
+  void deleteGammaXsTool();
   
   DoseCalcWindow *showDoseTool();
-  void handleDoseToolClose();
+  void deleteDoseCalcTool();
   
   /** If "Activity/Shielding Fit" window is not showing, creates the tool/window, and returns the tool.
    If it is already showing, no changes are made, and a pointer to the tool is returned.
@@ -1018,7 +1019,8 @@ public:
   
   /** Function to add undo/redo step for when the user changes x-axis range of spectrum. */
   void handleSpectrumChartXRangeChange( const double xmin, const double xmax,
-                                       const double oldXmin, const double oldXmax );
+                                       const double oldXmin, const double oldXmax,
+                                       const bool user_interaction);
   
   //Peak finding functions
   void searchForSinglePeak( const double x );
@@ -1325,6 +1327,7 @@ protected:
   
   //This menu implementation uses somethng that visually looks like a WPopupMenuItem.
   PopupDivMenu         *m_fileMenuPopup;
+  PopupDivMenu         *m_editMenuPopup;
   PopupDivMenu         *m_toolsMenuPopup;
   PopupDivMenu         *m_helpMenuPopup;
   PopupDivMenu         *m_displayOptionsPopupDiv;
@@ -1519,6 +1522,8 @@ protected:
   DrfSelectWindow *m_drfSelectWindow;
   
   UndoRedoManager *m_undo;
+  PopupDivMenuItem *m_undoMenuItem;
+  PopupDivMenuItem *m_redoMenuItem;
   
   //Current width and height are set in layoutSizeChanged(...).
   int m_renderedWidth;

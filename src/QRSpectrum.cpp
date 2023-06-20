@@ -1322,7 +1322,7 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
   const bool use_deflate = !(encode_options & EncodeOptions::NoDeflate);
   const bool use_base45 = !(encode_options & EncodeOptions::NoBase45);
   const bool use_bin_chan_data = !(encode_options & EncodeOptions::CsvChannelData);
-  const bool zero_compress = !(encode_options & EncodeOptions::NoZeroCompressCounts);
+  //const bool zero_compress = !(encode_options & EncodeOptions::NoZeroCompressCounts);
   
   const bool alpha_num_qr_encode = (use_base45 || (!use_deflate && !use_bin_chan_data));
   

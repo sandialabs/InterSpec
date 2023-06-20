@@ -851,8 +851,8 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
   {
     float safeAreas[4] = { 0.0f };
     
-    InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
 #if( IOS )
+    InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
     if( app )
     {
       InterSpecApp::DeviceOrientation orientation = InterSpecApp::DeviceOrientation::Unknown;

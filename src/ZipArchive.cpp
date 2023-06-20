@@ -249,13 +249,11 @@ std::map<std::string, std::shared_ptr<const ZipFileHeader> >
   
   instrm.read( buf.get(),read_start);
   
-  bool foundheader = false;
   size_t headerstart = -1;
   for( size_t i = 0; static_cast<std::streamoff>(i) < read_start-3; i++)
   {
     if( buf[i]==0x50 && buf[i+1]==0x4b && buf[i+2]==0x05 && buf[i+3]==0x06 )
     {
-      foundheader = true;
       headerstart = i;
       break;
     }

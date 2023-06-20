@@ -35,6 +35,8 @@
 #include <functional>
 
 #include <Wt/WObject>
+#include <Wt/WSignal>
+#include <Wt/WString>
 
 class PeakDef;
 class SpecMeas;
@@ -49,10 +51,7 @@ namespace SpecUtils
  TODO items:
  - Have the SpecMeas hold the history for itself
  - Be able to insert, or maybe just modify, an undo/redo step from within a undo/redo step
- - Add undo/redo menu items to the app
- - Add in support a ton more places
- - Add ability to remove a step later on (e.g., the close a one-off dialog via "undo", we should remove this step once
-    the dialog is closed otherwise).  We could add a helper function to this class to close one-off dialogs.
+ - Add a "blocker" to block undo/redo while tools, like File Parameters, Istopics by nuclides, or File Manager, tool is open
  */
 class UndoRedoManager : public Wt::WObject
 {
@@ -61,7 +60,24 @@ public:
   
   virtual ~UndoRedoManager();
 
+  /** Get the UndoRedoManager for this wApp instance.
+   
+   Useful if you do not want to include InterSpec.h.
+   */
   static UndoRedoManager *instance();
+  
+  /** The approximate maximum number of undo/redo steps that should be kept in memory.
+   
+   A value of zero indicates unlimited, a negative value indicates disabled.
+   Default value is 250, but may be set be the `DesktopAppConfig` mechanism
+   */
+  static int maxUndoRedoSteps();
+  
+  /** Sets the approximate maximum number of undo/redo steps to be kept in memory.
+   
+   Set to `0` for unlimited, or a negative value to disable.
+   */
+  static void setMaxUndoRedoSteps( const int steps );
   
   /** Adds an undo/redo step.
    
@@ -99,6 +115,17 @@ public:
    */
   bool canAddUndoRedoNow() const;
   
+  /** Signal to update the "undo" menu item.  Emitted argument is wether item should be disabled. */
+  Wt::Signal<bool> &undoMenuDisableUpdate();
+  
+  /** Signal to update the "redo" menu item.  Emitted argument is wether item should be disabled. */
+  Wt::Signal<bool> &redoMenuDisableUpdate();
+  
+  /** Updates the tool tip for the undo menu item, based on `description` passed into #addUndoRedoStep. */
+  Wt::Signal<Wt::WString> &undoMenuToolTipUpdate();
+  
+  /** Updates the tool tip for the redo menu item, based on `description` passed into #addUndoRedoStep. */
+  Wt::Signal<Wt::WString> &redoMenuToolTipUpdate();
   
   /** Clears all undo/redo history. */
   void clearUndoRedu();
@@ -130,6 +157,24 @@ public:
     BlockUndoRedoInserts &operator=( const BlockUndoRedoInserts & ) = delete; // non copyable
   };//BlockUndoRedoInserts
   
+  /** A struct that blocks the GUI from allowing undo/redo (disables menu items), as well as blocks undo/redo*/
+  struct BlockGuiUndoRedo : public Wt::WObject
+  {
+    BlockGuiUndoRedo( Wt::WObject *parent );
+    ~BlockGuiUndoRedo();
+    
+    BlockGuiUndoRedo( const BlockGuiUndoRedo & ) = delete; // non construction-copyable
+    BlockGuiUndoRedo &operator=( const BlockGuiUndoRedo & ) = delete; // non copyable
+    
+  private:
+    bool m_valid;
+    
+    /** We will save any peak changes between construction and destruction of this object - but that is currently the
+     only items that will be saved.
+     */
+    std::unique_ptr<PeakModelChange> m_peak_change;
+  };//BlockGuiUndoRedo
+  
   
   enum class State : int
   {
@@ -139,10 +184,20 @@ public:
   };//enum class State
   
 protected:
+  /** Emits `m_[undo|redo]MenuDisableUpdate` and `m_[undo|redo|MenuToolTipUpdate` signals
+   to set the state that the menu items should be in.
+   
+   Currently we have things hooked up so values will be updated to the WWidget, even if they dont need to be.
+   */
+  void updateMenuItemStates();
+  
   void handleSpectrumChange( const SpecUtils::SpectrumType type,
                             const std::shared_ptr<SpecMeas> &meas,
                             const std::set<int> &sample_nums,
                             const std::vector<std::string> &detector_names );
+  
+  /** Limits total number of steps held in #m_steps plus #m_prev to be less than that retunred by #maxUndoRedoSteps */
+  void limitTotalStepsInMemory();
   
 protected:
   
@@ -170,17 +225,25 @@ protected:
   std::set<int> m_current_samples[3];
   std::vector<std::string> m_current_detectors[3];
   
+  /** The total number of undo/redo steps in memory, for all spectrum files (i.e., for all entries in #m_prev).*/
+  size_t m_num_steps_in_mem;
+  
   /** Eventually we want to have `SpecMeas` itself track its history, but for the moment we'll just track it here. */
   typedef std::tuple<std::weak_ptr<SpecMeas>,std::set<int> > spec_key_t;
-  struct SpecKeyLess
-  {
-    bool operator()( const spec_key_t &lhs, const spec_key_t &rhs ) const noexcept;
-  };//struct SpecKeyLess
-  
-  std::map< spec_key_t, std::shared_ptr<std::deque<UndoRedoStep>>, SpecKeyLess > m_prev;
+  static bool spec_key_equal( const spec_key_t &lhs, const spec_key_t &rhs );
+    
+  /** The most recent spectrum-file/sample-numbers undo/redo items will be in the front.
+   
+   The current spectrum-file/sample-numbers will not be in this deque.
+   */
+  std::deque< std::tuple<spec_key_t, std::shared_ptr<std::deque<UndoRedoStep>>> > m_prev;
   
   InterSpec *m_interspec;
   
+  Wt::Signal<bool> m_undoMenuDisableUpdate;
+  Wt::Signal<bool> m_redoMenuDisableUpdate;
+  Wt::Signal<Wt::WString> m_undoMenuToolTipUpdate;
+  Wt::Signal<Wt::WString> m_redoMenuToolTipUpdate;
   
   size_t m_PeakModelChange_counter;
   std::vector<std::shared_ptr<const PeakDef>> m_PeakModelChange_starting_peaks;
@@ -191,6 +254,11 @@ protected:
    \sa BlockUndoRedoInserts
    */
   size_t m_BlockUndoRedoInserts_counter;
+  
+  /** A counter, only changed by #BlockGuiUndoRedo, that if is not zero, then no undo/redo steps will
+   be added or executed; also menu items should be disabled.
+   */
+  size_t m_BlockGuiUndoRedo_counter;
   
   friend class PeakModelChange;
 };//class UndoRedoManager

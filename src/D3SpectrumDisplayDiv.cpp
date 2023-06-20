@@ -355,10 +355,11 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   
   if( !m_xRangeChangedJS )
   {
-    m_xRangeChangedJS.reset( new JSignal<double,double,double,double>( this, "xrangechanged", true ) );
+    m_xRangeChangedJS.reset( new JSignal<double,double,double,double,bool>( this, "xrangechanged", true ) );
     m_xRangeChangedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartXRangeChangedCallback, this,
                                             boost::placeholders::_1, boost::placeholders::_2,
-                                            boost::placeholders::_3, boost::placeholders::_4 ) );
+                                            boost::placeholders::_3, boost::placeholders::_4,
+                                            boost::placeholders::_5) );
     
     m_shiftKeyDraggJS.reset( new JSignal<double,double>( this, "shiftkeydragged", true ) );
     m_shiftKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftKeyDragCallback, this,
@@ -1122,7 +1123,7 @@ void D3SpectrumDisplayDiv::setYAxisTitle( const std::string &title )
 
 
 
-Wt::Signal<double,double,double,double> &D3SpectrumDisplayDiv::xRangeChanged()
+Wt::Signal<double,double,double,double,bool> &D3SpectrumDisplayDiv::xRangeChanged()
 {
   return m_xRangeChanged;
 }//xRangeChanged()
@@ -2284,7 +2285,9 @@ void D3SpectrumDisplayDiv::yAxisScaled( const double scale, const std::string &s
 
 
 
-void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1, double chart_width_px, double chart_height_px )
+void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1,
+                                                      double chart_width_px, double chart_height_px,
+                                                      bool user_action )
 {
   if( (fabs(m_xAxisMinimum - x0) < 0.001)
      && (fabs(m_xAxisMaximum - x1) < 0.001)
@@ -2303,7 +2306,7 @@ void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1, dou
   m_chartWidthPx = chart_width_px;
   m_chartHeightPx = chart_height_px;
   
-  m_xRangeChanged.emit( x0, x1, oldXmin, oldXmax );
+  m_xRangeChanged.emit( x0, x1, oldXmin, oldXmax, user_action );
 }//void D3SpectrumDisplayDiv::chartXRangeChangedCallback(...)
 
 D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()

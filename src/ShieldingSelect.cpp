@@ -4428,8 +4428,10 @@ void ShieldingSelect::handleMaterialChange()
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
 #endif
   
-  cerr << "\nShieldingSelect::handleMaterialChange()\n\tShould remove this call to "
-       << "updateMassFractionDisplays(...) its verified the developer checks always pass\n" << endl;
+  // I dont think this next call to #updateMassFractionDisplays is technically necassary,
+  //  but we'll leave it in as a "JIC"
+  //cerr << "\nShieldingSelect::handleMaterialChange()\n\tShould remove this call to "
+  //     << "updateMassFractionDisplays(...) its verified the developer checks always pass\n" << endl;
   updateMassFractionDisplays( newMaterial );
 
   

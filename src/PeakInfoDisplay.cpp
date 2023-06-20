@@ -323,8 +323,6 @@ protected:
   
   void closeOnBlur( WWidget *editor, WLineEdit *lineEdit, const string &lineEditID, shared_ptr<bool> changed ) const
   {
-    // We'll
-    auto app = wApp;
     if( !checkWidgetInDom(lineEditID) )
     {
       closeEditor().emit(editor, false);
@@ -448,7 +446,7 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
   
   SimpleDialog *window = new SimpleDialog( "Erase All Peaks?", "" );
   WPushButton *yes_button = window->addButton( "Yes" );
-  WPushButton *no_button = window->addButton( "No" );
+  window->addButton( "No" );
   
   yes_button->clicked().connect( boost::bind( &PeakInfoDisplay::removeAllPeaks, this ) );
   

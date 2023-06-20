@@ -1620,7 +1620,8 @@ AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt
                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
                                      | AuxWindowProperties::SetCloseable
                                      | AuxWindowProperties::DisableCollapse
-                                     | AuxWindowProperties::EnableResize) );
+                                     | AuxWindowProperties::EnableResize
+                                     | AuxWindowProperties::IsModal) );
   
   const int ww = viewer->renderedWidth();
   const int wh = viewer->renderedHeight();
