@@ -1150,14 +1150,14 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       
       WStandardItem *item = new WStandardItem();
       item->setText( n );
-      model->setItem( i, 0, item );
+      model->setItem( static_cast<int>(i), 0, item );
       item = new WStandardItem();
       
       const double sizekb = uncompresssize[i]/1024.0;
       
       //item->setText( buff );
       item->setData( sizekb, DisplayRole );
-      model->setItem( i, 1, item );
+      model->setItem( static_cast<int>(i), 1, item );
     }//for( size_t i = 0; i < filenames.size(); ++i )
     
     //if( selection->count() == 0 )

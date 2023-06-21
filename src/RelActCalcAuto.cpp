@@ -2107,7 +2107,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const bool success = (solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success);
     
-    solution.m_num_function_eval_solution = cost_functor->m_ncalls;
+    solution.m_num_function_eval_solution = static_cast<int>( cost_functor->m_ncalls );
     
     ceres::Covariance::Options cov_options;
     cov_options.algorithm_type = ceres::CovarianceAlgorithmType::SPARSE_QR; //

@@ -3982,7 +3982,7 @@ void InterSpec::updateSaveWorkspaceMenu()
 }//void updateSaveWorkspaceMenu()
 
 
-int InterSpec::currentAppStateDbId()
+long long int InterSpec::currentAppStateDbId()
 {
   return m_currentStateID;
 }//int currentAppStateDbId()

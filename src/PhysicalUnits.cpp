@@ -697,6 +697,7 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
     boost::regex expression( ISO_8601_DURATION_REGEX );
     if( boost::regex_search( str, matches, expression ) )
     {
+      assert( matches.size() == 9 );
       //for( size_t i = 0; i < matches.size(); ++i )
       //  cout << "Match[" << i << "] = '" << matches[i] << "'" << endl;
       //For: 'P1Y2M2W3DT10H30M10.1S'
@@ -710,10 +711,11 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
       //matches[7] = '30m'
       //matches[8] = '10.1s'
       double iso_dur = 0.0;
-      for( size_t i = 1; i < 9; ++i )
+      const int nfields = std::min( 9, static_cast<int>(matches.size()) );
+      for( int i = 1; i < nfields; ++i )
       {
         string valstr = matches[i].str();
-        if( i==5 || valstr.size()<=1 )
+        if( i==5 || (valstr.size() <= 1) )
           continue;
         
         valstr = valstr.substr(0,valstr.size()-1);

@@ -7453,7 +7453,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
             
             // Even though it doesnt really matter, lets try to keep the model in sync with trace
             //  widget, so we'll toss in a development check for it
-            if( fitAct != m_sourceModel->fitActivity(nucn) )
+            if( fitAct != m_sourceModel->fitActivity(static_cast<int>(nucn)) )
             {
               cerr << "\n\n\n\nTemporarily disabling assert 'fitAct=" << fitAct << "'- reaenable\n\n\n" << endl;
 //            assert( fitAct == m_sourceModel->fitActivity(nucn) );

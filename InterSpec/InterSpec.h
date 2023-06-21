@@ -1014,7 +1014,7 @@ public:
 
 #if( USE_DB_TO_STORE_SPECTRA )
   //getCurrentStateID() open access to the current state ID
-  int getCurrentStateID() { return m_currentStateID; }
+  long long getCurrentStateID() { return m_currentStateID; }
 #endif
   
   /** Function to add undo/redo step for when the user changes x-axis range of spectrum. */
@@ -1185,7 +1185,7 @@ public:
    (e.g., user has not loaded current app state form database, and has not
    selected "Store As...").
    */
-  int currentAppStateDbId();
+  long long int currentAppStateDbId();
   
   /** Disasociates apps current state from any state saved to the database.
    Doesnt remove state from database, or change the spectrum or any thing, just
