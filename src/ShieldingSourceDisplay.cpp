@@ -2683,6 +2683,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_attenForAir( nullptr ),
     m_backgroundPeakSub( nullptr ),
     m_sameIsotopesAge( nullptr ),
+    m_decayCorrect( nullptr ),
     m_showChiOnChart( nullptr ),
     m_optionsDiv( nullptr ),
     m_showLog( nullptr ),
@@ -3096,6 +3097,18 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_sameIsotopesAge->checked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
   m_sameIsotopesAge->unChecked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
 
+      
+  lineDiv = new WContainerWidget();
+  optionsLayout->addWidget( lineDiv, 4, 0 );
+  m_decayCorrect = new WCheckBox( "Correct for decay during meas.", lineDiv );
+  tooltip = "Corrects for decay and in-growth effects that happen during the time the measurement"
+            " is being taken.  Resulting activities coorespond to the start time of the"
+            " measurement.";
+  lineDiv->setToolTip( tooltip );
+  m_decayCorrect->setChecked( isotopesHaveSameAge );
+  m_decayCorrect->checked().connect( this, &ShieldingSourceDisplay::decayCorrectChanged );
+  m_decayCorrect->unChecked().connect( this, &ShieldingSourceDisplay::decayCorrectChanged );
+      
   
   WContainerWidget *detectorDiv = new WContainerWidget();
   detectorDiv->setOverflow(WContainerWidget::OverflowHidden);
@@ -4297,6 +4310,28 @@ void ShieldingSourceDisplay::sameIsotopesAgeChanged()
   updateChi2Chart();
 }//void sameIsotopesAgeChanged()
 
+
+void ShieldingSourceDisplay::decayCorrectChanged()
+{
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    auto undo_redo = [](){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_decayCorrect->setChecked( !display->m_decayCorrect->isChecked() );
+        display->decayCorrectChanged();
+      }
+    };
+    
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Decay coorect activity changed." );
+  }//if( undoRedo )
+  
+  updateChi2Chart();
+}//void decayCorrectChanged()
+
+
 void ShieldingSourceDisplay::showGraphicTypeChanged()
 {
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
@@ -4361,7 +4396,6 @@ void ShieldingSourceDisplay::handleUserDistanceChange()
   {
     m_distanceEdit->setText( m_prevDistStr );
   }
-  
   
   updateChi2Chart();
 }//void ShieldingSourceDisplay::handleUserDistanceChange()
@@ -6213,7 +6247,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   
   const rapidxml::xml_node<char> *geom_node, *muti_iso_node, *atten_air_node, *back_sub_node,
                                  *peaks_node, *isotope_nodes, *shieldings_node,
-                                 *dist_node, *same_age_node, *chart_disp_node;
+                                 *dist_node, *same_age_node, *decay_corr_node, *chart_disp_node;
   const rapidxml::xml_attribute<char> *attr;
   
   if( !base_node )
@@ -6228,6 +6262,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   atten_air_node  = base_node->first_node( "AttenuateForAir", 15 );
   back_sub_node   = base_node->first_node( "BackgroundPeakSubtraction", 25 );
   same_age_node   = base_node->first_node( "SameAgeIsotopes", 15 );
+  decay_corr_node = base_node->first_node( "DecayCorrect", 12 );
   chart_disp_node = base_node->first_node( "ShowChiOnChart", 14 );
   peaks_node      = base_node->first_node( "Peaks", 5 );
   isotope_nodes   = base_node->first_node( "Nuclides", 8 );
@@ -6238,7 +6273,8 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     throw runtime_error( "Missing necessary XML node" );
   
   int version;
-  bool muti_iso, back_sub, air_atten = true, same_age = false, show_chi_on_chart = true;
+  bool muti_iso, back_sub;
+  bool air_atten = true, same_age = false, decay_corr = false, show_chi_on_chart = true;
   
   attr = base_node->first_attribute( "version", 7 );
   if( !attr || !attr->value() || !(stringstream(attr->value())>>version) )
@@ -6284,6 +6320,12 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
       throw runtime_error( "Invalid SameAgeIsotopes node" );
   }//if( same_age_node && same_age_node->value() )
 
+  if( decay_corr_node && decay_corr_node->value() ) //not a mandatory element
+  {
+    if( !(stringstream(decay_corr_node->value()) >> decay_corr) )
+      throw runtime_error( "Invalid DecayCorrect node" );
+  }//if( same_age_node && same_age_node->value() )
+  
   if( chart_disp_node && chart_disp_node->value() )
   {
     if( !(stringstream(chart_disp_node->value()) >> show_chi_on_chart) )
@@ -6308,6 +6350,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   m_attenForAir->setChecked( air_atten );
   m_backgroundPeakSub->setChecked( back_sub );
   m_sameIsotopesAge->setChecked( same_age );
+  m_decayCorrect->setChecked( decay_corr );
   m_showChiOnChart->setChecked( show_chi_on_chart );
   m_chi2Graphic->setShowChiOnChart( show_chi_on_chart );
   m_distanceEdit->setValueText( WString::fromUTF8(dist_node->value()) );
@@ -6368,6 +6411,11 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   node = doc->allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( node );
 
+  name = "DecayCorrect";
+  value = m_decayCorrect->isChecked() ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  base_node->append_node( node );
+  
   name = "ShowChiOnChart";
   value = m_showChiOnChart->isChecked() ? "1" : "0";
   node = doc->allocate_node( rapidxml::node_element, name, value );
@@ -7318,7 +7366,8 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   if( peaks.empty() )
     throw runtime_error( "There are not peaks selected for the fit" );
   
-
+  const auto foreground = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  
   using GammaInteractionCalc::ShieldingSourceChi2Fcn;
   double liveTime = m_specViewer->liveTime(SpecUtils::SpectrumType::Foreground) * PhysicalUnits::second;
 
@@ -7380,9 +7429,12 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   const GeometryType geom = geometry();
   const bool multiIsoPerPeak = m_multiIsoPerPeak->isChecked();
   const bool attenForAir = m_attenForAir->isChecked();
+  const bool correctForDecay = m_decayCorrect->isChecked();
+  const double realTime = foreground ? foreground->live_time() : 0.0f;
   
   auto answer = std::make_shared<GammaInteractionCalc::ShieldingSourceChi2Fcn>( distance,
-                        liveTime, peaks, detector, materials, geom, multiIsoPerPeak, attenForAir );
+                        liveTime, peaks, detector, materials, geom, multiIsoPerPeak, attenForAir,
+                        correctForDecay, realTime );
 
   //I think num_fit_params will end up same as inputPrams.VariableParameters()
   size_t num_fit_params = 0;

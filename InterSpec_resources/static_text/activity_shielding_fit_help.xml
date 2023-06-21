@@ -236,6 +236,14 @@ are concave upwards or downwards after fitting).
    this option will constrain the ages of the nuclides for the same element to all
    have the same age in the fit.
   </li>
+  <li><b>Correct for decay during meas.</b>: When selected, the contributions of each
+   gamma line are averaged over the measurement dwell interval, with the decay and
+   in-growth of nuclides being accounted for.  The resulting fit activities are the
+   activities at the start of the measurement interval.  The method used does not account
+   for dead-time effects, or summing effects.  The downside to enabling this option is
+   an increase in computation time, and it is not usually necassary for life-times much
+   greater than the measurement innterval.
+  </li>
 </ul>
 
 <h2>Fitting the Model</h2>

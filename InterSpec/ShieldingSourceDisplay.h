@@ -709,6 +709,7 @@ public:
   void attenuateForAirChanged();
   void backgroundPeakSubChanged();
   void sameIsotopesAgeChanged();
+  void decayCorrectChanged();
   void showGraphicTypeChanged();
   
 
@@ -787,10 +788,11 @@ protected:
   Chi2Graphic *m_chi2Graphic;
   
 
-  Wt::WCheckBox *m_multiIsoPerPeak;
-  Wt::WCheckBox *m_attenForAir;
-  Wt::WCheckBox *m_backgroundPeakSub;
-  Wt::WCheckBox *m_sameIsotopesAge;
+  Wt::WCheckBox  *m_multiIsoPerPeak;
+  Wt::WCheckBox  *m_attenForAir;
+  Wt::WCheckBox  *m_backgroundPeakSub;
+  Wt::WCheckBox  *m_sameIsotopesAge;
+  Wt::WCheckBox  *m_decayCorrect;
   SwitchCheckbox *m_showChiOnChart;
   Wt::WContainerWidget *m_optionsDiv;
   

@@ -153,6 +153,16 @@ BOOST_AUTO_TEST_CASE( SplitUri )
   BOOST_CHECK( path == "" );
   BOOST_CHECK( query_str == "p=1" );
   BOOST_CHECK( fragment == "frag" );
+
+
+  url = "interspec://decay/?p=1#frag";
+  AppUtils::split_uri( url, host, path, query_str, fragment );
+  BOOST_CHECK( host == "decay" );
+  BOOST_CHECK( path == "" );
+  BOOST_CHECK( query_str == "p=1" );
+  BOOST_CHECK( fragment == "frag" );
+
+
 /*
   url = "";
   AppUtils::split_uri( url, host, path, query_str );

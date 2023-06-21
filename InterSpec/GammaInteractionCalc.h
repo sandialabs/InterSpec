@@ -464,7 +464,9 @@ public:
                       const std::vector<ShieldingInfo> &materials,
                       const GeometryType geometry,
                       const bool allowMultipleNucsContribToPeaks,
-                      const bool attenuateForAir );
+                      const bool attenuateForAir,
+                      const bool accountForDecayDuringMeas,
+                      const double realTime );
   virtual ~ShieldingSourceChi2Fcn();
 
   /** Returns the geometry of this ShieldingSourceChi2Fcn */
@@ -765,6 +767,14 @@ public:
   //  photopeakClusterSigma in mixture will be clustered and added to
   //  energy_count_map.  If energyToCluster <= 0.0, then all photopeaks in
   //  mixture will be clustered and added to energy_count_map.
+  // @param accountForDecayDuringMeas If true, a correction will be made for the decay
+  //        of the nuclides during the measurement (i.e., for nuclides without prodginy,
+  //        the total counts for each energy that are output will be lower than without
+  //        this correction, causing data to fit a higher activity; if prodginy are
+  //        involved, the correction could go in either direction), with the specified
+  //        activity cooresponding to the begining of the measurement.
+  // @param measDuration The duration of the measurement, in seconds; only used if
+  //        `accountForDecayDuringMeas` is also used.
   static void cluster_peak_activities( std::map<double,double> &energy_count_map,
                   const std::vector< std::pair<double,double> > &energie_widths,
                   SandiaDecay::NuclideMixture &mixture,
@@ -772,6 +782,8 @@ public:
                   const double thisAge,
                   const double photopeakClusterSigma,
                   const double energyToCluster,
+                  const bool accountForDecayDuringMeas,
+                  const double measDuration,
                   std::vector<std::string> *info
               );
 
@@ -839,6 +851,11 @@ protected:
    */
   bool m_self_att_multithread;
   
+  /** If true, account for decay of nuclide during measurement - see #cluster_peak_activities */
+  bool m_accountForDecayDuringMeas;
+  
+  /** The real-time of the measurement; only used if decay during measurement is being accounted for. */
+  double m_realTime;
   
   //A cache of nuclide mixtures to
   mutable NucMixtureCache m_mixtureCache;
