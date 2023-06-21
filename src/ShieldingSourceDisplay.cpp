@@ -3103,7 +3103,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_decayCorrect = new WCheckBox( "Correct for decay during meas.", lineDiv );
   tooltip = "Corrects for decay and in-growth effects that happen during the time the measurement"
             " is being taken.  Resulting activities coorespond to the start time of the"
-            " measurement.";
+            " measurement. May take take additional compuatation time to find solution.";
   lineDiv->setToolTip( tooltip );
   m_decayCorrect->setChecked( isotopesHaveSameAge );
   m_decayCorrect->checked().connect( this, &ShieldingSourceDisplay::decayCorrectChanged );

@@ -4075,10 +4075,6 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
     info->push_back( msg.str() );
   }//if( info )
 
-  //The problem we have is that 'gammas' have the activity of the original
-  //  parent ('nuclide') decreased by agining by 'age', however we want the
-  //  parent to have 'sm_activityUnits' activity at 'age', so we we'll add a
-  //  correction factor.
   if( mixture.numInitialNuclides() != 1 )
     throw runtime_error( "ShieldingSourceChi2Fcn::cluster_peak_activities():"
                          " passed in mixture must have exactly one parent nuclide" );
@@ -4097,7 +4093,7 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
   {
     // This section of code takes up a good amount of CPU time, and is really begging for optimizations
     //
-    // TODO: if nuclide decays to stable children, then just use standard formula to correct for decay
+    // TODO: if nuclide decays to stable children, then just use standard formula to correct for decay (see below developer check for this)
     //
     // We want to get the activity at the beggining of the measurement, but we want
     //  to account for decay (or build up!) throughout the measurement; rather than
@@ -4173,10 +4169,9 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
       if( nuclide->decaysToStableChildren() )
       {
         const double lambda = nuclide->decayConstant();
-        const double counts = measDuration;
-        const double corr_factor = (1.0 - exp(-1.0*lambda*measDuration)) / (lambda * counts);
+        const double corr_factor = (1.0 - exp(-1.0*lambda*measDuration)) / (lambda * measDuration);
         
-        //cout << "corr_factor=" << (1.0/corr_factor) << endl;
+        //cout << "corr_factor=" << corr_factor << endl;
         assert( gammas.size() == corrected_gammas.size() );
         for( size_t i = 0; i < corrected_gammas.size(); ++i )
         {
@@ -4212,6 +4207,10 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
   }//if( accountForDecayDuringMeas )
   
   
+  //The problem we have is that 'gammas' have the activity of the original
+  //  parent ('nuclide') decreased by agining by 'age', however we want the
+  //  parent to have 'sm_activityUnits' activity at 'age', so we we'll add a
+  //  correction factor.
   const vector<SandiaDecay::NuclideActivityPair> aged_activities
                                                       = mixture.activity( age );
 
@@ -4663,7 +4662,10 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     else
       info->push_back( "Not allowing multiple nuclides being fit for to contribute to the same photopeak" );
     
-    //SHould put in information about the shielding here
+    if( m_accountForDecayDuringMeas )
+      info->push_back( "Branching ratios are being corrected for nuclide decay during measurment" );
+    
+    //Should put in information about the shielding here
   }//if( info )
   
   

@@ -242,7 +242,7 @@ are concave upwards or downwards after fitting).
    activities at the start of the measurement interval.  The method used does not account
    for dead-time effects, or summing effects.  The downside to enabling this option is
    an increase in computation time, and it is not usually necassary for life-times much
-   greater than the measurement innterval.
+   greater than the measurement interval.
   </li>
 </ul>
 
