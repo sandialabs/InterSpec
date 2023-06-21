@@ -749,7 +749,7 @@ InterSpecWxApp::InterSpecWxApp() :
 
     if( sm_test_load_only )
     {
-     // Right now we'll just wait 15 seconds, and if things havent loaded, decleare failure.
+     // Right now we'll just wait 45 seconds, and if things havent loaded, declare failure.
      // When things load, we'll stop this timer and clear it.
      // 
      //  However, there are some hooks we could probably use to fail faster - see:
@@ -757,7 +757,7 @@ InterSpecWxApp::InterSpecWxApp() :
      //   void InterSpecApp::prepareForEndOfSession()
      //   void InterSpecApp::finalize()
      //   for possible hooks to check failure.
-      sm_check_load_timer.reset( new CheckLoadTimer( this, 30 ) );
+      sm_check_load_timer.reset( new CheckLoadTimer( this, 45 ) );
     }//if( sm_test_load_only )
 
     InterSpecWebFrame* frame = new InterSpecWebFrame(m_url, no_restore, file_to_open);
