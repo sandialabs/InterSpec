@@ -4432,6 +4432,7 @@ void InterSpec::showFileQueryDialog()
   //m_specFileQueryDialog->disableCollapse();
   
   SpecFileQueryWidget *qw = new SpecFileQueryWidget( this );
+  
   WGridLayout *stretcher = m_specFileQueryDialog->stretcher();
   stretcher->addWidget( qw, 0, 0 );
   stretcher->setContentsMargins( 0, 0, 0, 0 );
@@ -4450,6 +4451,8 @@ void InterSpec::showFileQueryDialog()
   }
   
   AuxWindow::addHelpInFooter( m_specFileQueryDialog->footer(), "spectrum-file-query" );
+  
+  new UndoRedoManager::BlockGuiUndoRedo( m_specFileQueryDialog ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void showFileQueryDialog()
 
 

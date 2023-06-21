@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <stdexcept>
 
 #include "SpecUtils/StringAlgo.h"
 
