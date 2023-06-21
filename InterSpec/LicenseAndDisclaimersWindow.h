@@ -49,14 +49,12 @@ namespace Wt
 class LicenseAndDisclaimersWindow : public AuxWindow
 {
 public:
-  /**
-     \param is_awk If true then button on bottom will say "Acknowledge" and
-                   there wont be close icon.  If false, then button will say
-                   "Close", and the normal close icon will be visisble.
+  /** Constructor; meant to only be called from the InterSpec class, due to undo/redo actions assuming this.
+   
    \param screen_width width in pixels of the screen
    \param screen_height height in pixels of the screen
    */
-  LicenseAndDisclaimersWindow( const bool is_awk, int screen_width, int screen_height );
+  LicenseAndDisclaimersWindow( int screen_width, int screen_height );
   ~LicenseAndDisclaimersWindow();
   
 protected:

@@ -314,6 +314,11 @@ D3TimeChart = function (elem, options) {
     brush: new BrushX(),
     height: null,
     width: null,
+    toServer: {  //Tracks the state sent to the server to avoid duplicate states sent; see D3TimeChart.prototype.emitTimeRangeChanged
+      compressionIndex: 0,
+      xdomain: [0,0],
+      displayedSamples: [0,0]
+    }
   };
 
   /** SVG COMPONENT REFERENCES */
@@ -529,6 +534,9 @@ D3TimeChart.prototype.handleResize = function () {
  * Renders/re-initializes the D3TimeChart to be set up for plotting data and interaction. Compresses data for purposes of displaying, updates dimensions of svg element, updates dimensions of clip-path, and defines drag behavior over the figure
  * depends on data and chart size being already defined
  * @param {Object} options : Optional argument to specify render options
+ 
+ 
+ TODO: 20230529 This function never seems to be called with `options`, and the only member variable checked for in options, `options.touch`.  Not removing this code, because perhaps it is useful for improving touch interactions, but should be considered for removal in the future after verifying touch interactions work well.  Also, if touch-based interactions is the only reason for using, this should be detected in this function, and not passed in.
  */
 D3TimeChart.prototype.reinitializeChart = function (options) {
   if (!this.state.data.formatted) {
@@ -993,32 +1001,111 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   // Finally, initialization finished-- update chart
   this.updateFilterInfo();
+  options = options ? options : {};
+  options.notUserAction = true;
   this.updateChart(scales, compressionIndex, options);
-};
+};//D3TimeChart.prototype.reinitializeChart
+
+
+/** Emits the "timerangechange" signal to notify the server of the currently viewed time-range.
+ Keeps note of previous values emitted, and only emits if the values have changed.
+ 
+ @param {Array} xdomain : the `scales.xScale.domain()` array with two numbers giving the beggining and end of the time frames being shown
+ @param {Number} compressionIndex : Positive integer specifying data compression level.
+ @param {Boolean} isUserAction : Whether this emit is from a user action like zoom in/out, or from some other action like setting data, reformatting the chart, etc.
+ */
+D3TimeChart.prototype.emitTimeRangeChanged = function( xdomain, compressionIndex, isUserAction ){
+  try{
+    
+    if( !xdomain || (xdomain.length !== 2) || (typeof compressionIndex !== "number") ){
+      console.error( 'emitTimeRangeChanged called with invalid arguments')
+      return;
+    }
+    
+    isUserAction = (typeof isUserAction === "boolean") ? isUserAction : false;
+  
+////// Begin code to check wcjohns understanding of the logic
+    //When zoomed all-the way out, `this.state.selection` will be null, otherwise,
+    // this.state.selection.domain, and this.state.selection.compressionIndex should
+    // same as what is passed in
+    // TODO: maybe just always use the below logic to get info to send server, so we dont have to pass things around, and emitting from timeOut in handleMouseWheel will always be up to date
+    let state_compressionIndex = 0, state_ltime = 0, state_rtime = 0;
+    if( this.state.selection ){
+      state_compressionIndex = this.state.selection.compressionIndex;
+      state_ltime = this.state.selection.domain[0];
+      state_rtime = this.state.selection.domain[1];
+    }else{
+      state_compressionIndex = this.state.data.unzoomedCompressionIndex;
+      const formatted = this.state.data.formatted[state_compressionIndex];
+      state_ltime = formatted.domains.x[0];
+      state_rtime = formatted.domains.x[1];
+    }
+    
+    console.assert( state_compressionIndex === compressionIndex );
+    // This next assert will fail when you have clicked, and are dragging to the left to zoom-out,
+    //  or when you are dragging to pan, but these actions shouldnt make it to here anyway
+    //  (we only emit at the end of these action).
+    console.assert( ((state_ltime === xdomain[0]) && (state_rtime === xdomain[1])) );
+////// end code to check wcjohns understanding of the logic
+    
+    const lowerTime = xdomain[0];
+    const upperTime = xdomain[1];
+      
+    const lIdx = this.findDataIndex(lowerTime, compressionIndex);
+    const rIdx = this.findDataIndex(upperTime, compressionIndex);
+    
+    const formatted = this.state.data.formatted[compressionIndex];
+    const firstsample = formatted.sampleNumbers[lIdx];
+    const lastsample = formatted.sampleNumbers[rIdx];
+    
+    const server = this.state.toServer;
+    const same_samples = (firstsample === server.displayedSamples[0])
+                              && (lastsample === server.displayedSamples[1]);
+    const same_times = (lowerTime === server.xdomain[0])
+                              && (upperTime === server.xdomain[1]);
+    const same_compression = (compressionIndex == server.compressionIndex);
+    
+    server.compressionIndex = compressionIndex;
+    server.xdomain = [lowerTime, upperTime],
+    server.displayedSamples = [firstsample, lastsample];
+    
+    if( !same_samples || !same_times || !same_compression ){
+      //console.log( 'Emitting: xScale: domain: [' + lowerTime + ',' + upperTime + '], sampleNumbers: [' + firstsample + ',' + lastsample + '], compressionIndex: ' + compressionIndex );
+      
+      this.WtEmit( this.chart.id, { name: "timerangechange" },
+                  firstsample, lastsample, compressionIndex, lowerTime, upperTime, isUserAction );
+    }//else{
+      //console.log( 'No changes, not emmitting timerangechange' );
+    //}
+  }catch(err){
+    console.error( "Error emiting 'timerangechange' signal: ", err );
+  }// try / catch
+}//D3TimeChart.prototype.emitTimeRangeChanged
 
 /**
  * Draws or updates plots and axes
  * @param {Object} scales : Object of scales with properties xScale, yScaleGamma, yScaleNeutron
  * @param {Number} compressionIndex : Positive integer specifying data compression level to use for redrawing the chart. Compressed data are calculated during render() and cached inside this.state.data.formatted
  * @param {Object} options : Optional argument to specify additional render options if any
+ 
+ The `option` object may have the following options:
+  - options.touch: seems to not actually be used
+  - options.notUserAction: Set to true when data is being loaded, or geometery reconfigured, etc
+  - options.noEmit: set to true during mouse-wheel event
  */
-D3TimeChart.prototype.updateChart = function (
-  scales,
-  compressionIndex,
-  options
-) {
-  var dontRebin = (this.options.dontRebin && (Number(compressionIndex) > 0));
-  var xScale = scales.xScale;
-  var yScaleGamma = scales.yScaleGamma;
-  var yScaleNeutron = scales.yScaleNeutron;
+D3TimeChart.prototype.updateChart = function( scales, compressionIndex, options ) {
+  
+  const dontRebin = (this.options.dontRebin && (Number(compressionIndex) > 0));
+  const xScale = scales.xScale;
+  const chartDomain = xScale.domain();
+  const yScaleGamma = scales.yScaleGamma;
+  const yScaleNeutron = scales.yScaleNeutron;
+  
+  let HAS_GAMMA = true;
+  let HAS_NEUTRON = false;
 
-  var HAS_GAMMA = true;
-  var HAS_NEUTRON = false;
-
-  var plotWidth = this.state.width - this.margin.left - this.margin.right;
-  var plotHeight = this.state.height - this.margin.top - this.margin.bottom;
-
-  var chartDomain = scales.xScale.domain();
+  const plotWidth = this.state.width - this.margin.left - this.margin.right;
+  const plotHeight = this.state.height - this.margin.top - this.margin.bottom;
 
   // add/update hover interaction based on current scale (or zoom)
   this.rect
@@ -1705,6 +1792,12 @@ D3TimeChart.prototype.updateChart = function (
     this.horizontalRightGridG.selectAll("*").remove();
     this.svg.select("#th_label_y2").remove();
   } // if (HAS_NEUTRON)
+  
+  
+  if( !options || !options.noEmit ){
+    const isUserAction = !options || !options.notUserAction;
+    this.emitTimeRangeChanged( chartDomain, compressionIndex, isUserAction );
+  }
 };
 
 /**
@@ -2506,6 +2599,7 @@ D3TimeChart.prototype.shiftSelection = function (n) {
  * @param {Number} mouseX : integer x-coordinates of pointer in pixels relative to the containing element
  */
 D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
+  const self = this;
   var brush = this.state.brush;
   var xScale = brush.getScale();
   var focalPoint = xScale.invert(mouseX);
@@ -2634,8 +2728,17 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
   var scales = this.getScales(fullDomain);
   brush.setScale(scales.xScale);
 
-  // update chart
-  this.updateChart(scales, compressionIndex);
+  // update chart.  Dont emit the `timerangechange` signal, until mouse wheel action is over
+  this.updateChart(scales, compressionIndex, {noEmit: true} );
+  
+  // Set a timer to emit `timerangechange` signal, after user stops doing the mouse-wheel for half
+  //  a second (arbitrarily chosen).
+  clearTimeout( this.zoomEmitTimeout );
+  this.zoomEmitTimeout = setTimeout( function(){
+    // Note: `scales` could be out of date; see D3TimeChart.prototype.emitTimeRangeChanged, for note on how we avoid passing things into that functions
+    self.zoomEmitTimeout = null;
+    self.emitTimeRangeChanged( scales.xScale.domain(), compressionIndex, true );
+  }, 500 );
 };
 
 /**
@@ -2649,11 +2752,16 @@ D3TimeChart.prototype.handleBrushZoom = function () {
   }
   // handle dragback (zoom out). Must update selection and brush scale upon mouseup event.
   // For dragback, handleDragBackZoom already handles chart updating--handleBrushZoom only updates selection and mouseup
+  //console.log( "D3TimeChart.prototype.handleBrushZoom" );
+  
   if (!this.draggedForward) {
+    
     // if no selection (not already zoomed in), dragback does nothing.
     if (!this.state.selection) {
+      this.emitXAxisRangeChanged();
       return;
     }
+    console.log( "handleBrushZoom: this.state.selection==true" );
 
     // calculate new extent if it is same as extent when all the way zoomed out, set selection to null.
     // naturalXScale is the xScale used when all the way zoomed out (using all data points).
@@ -2890,7 +2998,8 @@ D3TimeChart.prototype.handleDragBackZoom = function () {
 
   var scales = this.getScales(fullDomain);
 
-  this.updateChart(scales, compressionIndex);
+  // We dont need to emit the `timerangechange`; will be done when the user lets up on the mouse
+  this.updateChart(scales, compressionIndex, {noEmit: true} );
 };
 
 /**
@@ -3030,7 +3139,8 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
 
   var scales = this.getScales(fullDomain);
 
-  this.updateChart(scales, compressionIndex);
+  // update chart.  Dont emit the `timerangechange` signal, until panning action is over
+  this.updateChart(scales, compressionIndex, {noEmit: true} );
 
   // return new selection and new scale so can later update when drag ends
   return {
@@ -3893,20 +4003,60 @@ D3TimeChart.prototype.setNeutronsHidden = function (hide) {
 
 
 
-// Unimplemented
+/** Sets the displayed sample numbers.
+ 
+ If first and last samples are equal, will display full data range.
+ If no data set, no action will be taken.
+ 
+ @param {Number} firstsample : First sample number to display. If to small, or not a number, will use datas first sample.
+ @param {Number} lastsample : Last sample number to display.  If to large, or not a number, will use datas last sample.
+ 
+ */
 D3TimeChart.prototype.setXAxisZoomSamples = function (firstsample, lastsample) {
-  //Set it so only firstsample through lastsample sampels are visible
-  //...
-  //...
+  if( !this.state.data || !this.state.data.formatted || !this.state.data.formatted.length
+      || !this.state.width || !this.state.height)
+    return;
+  
+  const equalsamples = (firstsample === lastsample);
+  const uncompData = this.state.data.formatted[0];
+  const dataFirstSample = uncompData.sampleNumbers[0];
+  const dataLastSample = uncompData.sampleNumbers[uncompData.sampleNumbers.length - 1];
+  
+  if( (typeof firstsample !== "number" ) || (firstsample < dataFirstSample) || (firstsample > dataLastSample) || equalsamples )
+    firstsample = dataFirstSample;
+  if( (typeof lastsample !== "number" ) || (lastsample < dataFirstSample) || (lastsample > dataLastSample) || equalsamples )
+    lastsample = dataLastSample;
+  
+  if( firstsample > lastsample )
+    lastsample = [firstsample, firstsample = lastsample][0];
+  
+  if( (firstsample === dataFirstSample) && (lastsample == dataLastSample) ){
+    // Set this.state.selection to null, so reinitializeChart() will plot full data range.
+    this.state.selection = null;
+  }else{
+    const nPoints = lastsample - firstsample + 1;
+    const plotWidth = this.state.width - this.margin.left - this.margin.right;
+    const compressionIndex = Math.ceil( Math.log2(Math.ceil(nPoints / plotWidth)));
+    console.assert( compressionIndex < this.state.data.formatted.length );
+    const data = this.state.data.formatted[compressionIndex];
+    let startTime = 0, endTime = 0;
+    for(let i = 0; i < data.sampleNumbers.length; i++) {
+      if( data.sampleNumbers[i] === firstsample )
+        startTime = data.realTimeIntervals[i][0];
+      if( data.sampleNumbers[i] === lastsample )
+        endTime = data.realTimeIntervals[i][1];
+    }
+  
+    // Set the selection state, so reinitializeChart() will plot the specified data range.
+    this.state.selection = {
+      domain: [startTime, endTime],
+      compressionIndex: compressionIndex,
+    };
+  }
 
-  //An example of using WtEmit:
-  this.WtEmit(
-    this.chart.id,
-    { name: "timerangechange" },
-    firstsample,
-    lastsample
-  );
-};
+  this.reinitializeChart();
+};//D3TimeChart.prototype.setXAxisZoomSamples
+
 
 /**
  * Handles setting/enabling specific interaction modes for the time chart, disabling others.

@@ -103,6 +103,8 @@ public:
   //  a valid peak
   void changePeak( const double energy );
 
+  double currentPeakEnergy() const;
+  
   Wt::Signal<> &done();
 
   //isEditingValidPeak(): is the editor actually editing a valid peak, or blank

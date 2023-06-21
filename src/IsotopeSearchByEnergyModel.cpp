@@ -1418,8 +1418,7 @@ WModelIndex IsotopeSearchByEnergyModel::parent( const WModelIndex & ) const
 }//WModelIndex parent( const Wt::WModelIndex &index ) const;
 
 
-const SandiaDecay::Nuclide *IsotopeSearchByEnergyModel::nuclide(
-                                                                const Wt::WModelIndex &index ) const
+const SandiaDecay::Nuclide *IsotopeSearchByEnergyModel::nuclide( const WModelIndex &index ) const
 {
   const int row = index.row();
   const size_t matchNum = static_cast<size_t>( row / m_energies.size() );
@@ -1431,8 +1430,7 @@ const SandiaDecay::Nuclide *IsotopeSearchByEnergyModel::nuclide(
 }//const SandiaDecay::Nuclide *nuclide( const Wt::WModelIndex &index ) const
 
 
-const SandiaDecay::Element *IsotopeSearchByEnergyModel::xrayElement(
-                                                                    const Wt::WModelIndex &index ) const
+const SandiaDecay::Element *IsotopeSearchByEnergyModel::xrayElement( const WModelIndex &index ) const
 {
   const int row = index.row();
   const size_t matchNum = static_cast<size_t>( row / m_energies.size() );
@@ -1444,8 +1442,7 @@ const SandiaDecay::Element *IsotopeSearchByEnergyModel::xrayElement(
 }//xrayElement( const Wt::WModelIndex &index ) const
 
 
-const ReactionGamma::Reaction *IsotopeSearchByEnergyModel::reaction(
-                                                                    const Wt::WModelIndex &index ) const
+const ReactionGamma::Reaction *IsotopeSearchByEnergyModel::reaction( const WModelIndex &index ) const
 {
   const int row = index.row();
   const size_t matchNum = static_cast<size_t>( row / m_energies.size() );
@@ -1457,8 +1454,7 @@ const ReactionGamma::Reaction *IsotopeSearchByEnergyModel::reaction(
 }//reaction( const Wt::WModelIndex &index ) const
 
 
-double IsotopeSearchByEnergyModel::assumedAge(
-                                              const Wt::WModelIndex &index ) const
+double IsotopeSearchByEnergyModel::assumedAge( const Wt::WModelIndex &index ) const
 {
   const int row = index.row();
   const size_t matchNum = static_cast<size_t>( row / m_energies.size() );
@@ -1470,8 +1466,7 @@ double IsotopeSearchByEnergyModel::assumedAge(
 }//double assumedAge( const Wt::WModelIndex &index ) const;
 
 
-boost::any IsotopeSearchByEnergyModel::data( const WModelIndex &index,
-                                            int role ) const
+boost::any IsotopeSearchByEnergyModel::data( const WModelIndex &index, int role ) const
 {
   const int row = index.row();
   const Column col = Column( index.column() );

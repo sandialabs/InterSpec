@@ -44,6 +44,8 @@
 #include "rapidxml/rapidxml_utils.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
+#include "SandiaDecay/SandiaDecay.h"
+
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
@@ -52,7 +54,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SandiaDecay/SandiaDecay.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -284,11 +286,16 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_xrays( NULL ),
   m_reactions( NULL ),
   m_nextSearchEnergy( 0 ),
-  m_minBr( 0.0 ), m_minHl( 6000.0 * PhysicalUnits::second )
+  m_minBr( 0.0 ), m_minHl( 6000.0 * PhysicalUnits::second ),
+  m_undo_redo_sentry{},
+  m_state{},
+  m_selected_row( -1 )
 {
   wApp->useStyleSheet( "InterSpec_resources/IsotopeSearchByEnergy.css" );
   
   addStyleClass( "IsotopeSearchByEnergy" );
+  
+  shared_ptr<void> undo_sentry = getDisableUndoRedoSentry();
   
   WContainerWidget *searchConditions = new WContainerWidget( this );
   searchConditions->setStyleClass( "IsotopeSearchConditions" );
@@ -349,7 +356,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   label->setBuddy( m_minBranchRatio );
   
   optionDiv = new WContainerWidget( searchOptions );
-  label = new WLabel( "Min. HL", optionDiv );
+  label = new WLabel( "Min. T\xc2\xbd", optionDiv );
  
   tip = "Minimum half life of nuclides to be searched.<br />"
     "<div>Age can be specified using a combination of time units, "
@@ -481,9 +488,9 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   if( display )
   {
     m_refLineUpdateConnection
-      = display->displayingNuclide().connect( this, &IsotopeSearchByEnergy::updateClearSelectionButton );
+      = display->displayingNuclide().connect( this, &IsotopeSearchByEnergy::handleRefLinesUpdated );
     m_refLineClearConnection
-      = display->nuclidesCleared().connect( this, &IsotopeSearchByEnergy::updateClearSelectionButton );
+      = display->nuclidesCleared().connect( this, &IsotopeSearchByEnergy::handleRefLinesUpdated );
   }//if( display )
 }//IsotopeSearchByEnergy constuctor
 
@@ -549,6 +556,9 @@ IsotopeSearchByEnergy::SearchEnergy *IsotopeSearchByEnergy::addNewSearchEnergy()
 void IsotopeSearchByEnergy::addSearchEnergy()
 {
   addNewSearchEnergy();
+  
+  //For sake of undo/redo
+  addUndoRedoPoint();
 }//void addSearchEnergy()
 
 
@@ -566,6 +576,25 @@ vector<IsotopeSearchByEnergy::SearchEnergy *> IsotopeSearchByEnergy::searches()
   
   return searchEnergies;
 }//vector<SearchEnergy *> searches()
+
+
+std::shared_ptr<void> IsotopeSearchByEnergy::getDisableUndoRedoSentry()
+{
+  shared_ptr<void> answer = m_undo_redo_sentry.lock();
+  if( answer )
+    return answer;
+  
+  int *dummy = new int(0);
+  auto deleter = []( void *obj ){
+    int *sentry = (int *)obj;
+    if( sentry )
+      delete sentry;
+  };
+  
+  answer = shared_ptr<void>( dummy, deleter );
+  m_undo_redo_sentry = answer;
+  return answer;
+}//std::shared_ptr<void> getDisableUndoRedoSentry()
 
 
 void IsotopeSearchByEnergy::loadSearchEnergiesToClient()
@@ -591,10 +620,10 @@ void IsotopeSearchByEnergy::loadSearchEnergiesToClient()
   {
     if( !m_refLineUpdateConnection.connected() )
       m_refLineUpdateConnection
-        = display->displayingNuclide().connect( this, &IsotopeSearchByEnergy::updateClearSelectionButton );
+        = display->displayingNuclide().connect( this, &IsotopeSearchByEnergy::handleRefLinesUpdated );
     if( !m_refLineClearConnection.connected() )
       m_refLineClearConnection
-        = display->nuclidesCleared().connect( this, &IsotopeSearchByEnergy::updateClearSelectionButton );
+        = display->nuclidesCleared().connect( this, &IsotopeSearchByEnergy::handleRefLinesUpdated );
   }//if( display )
 }//void loadSearchEnergiesToClient()
 
@@ -727,22 +756,82 @@ void IsotopeSearchByEnergy::resultSelectionChanged()
     display = m_viewer->referenceLinesWidget();
   }
   
+  shared_ptr<void> ref_line_undo_sentry = display ? display->getDisableUndoRedoSentry() : nullptr;
+  
+  string orig_state_xml;
+  if( display )
+    display->serialize( orig_state_xml );
+  
+  const int orig_selected_row = m_selected_row;
+  
   const int nPeaksSearched = numSearchEnergiesOnPeaks();
  
+  UndoRedoManager *undoManager = m_viewer->undoRedoManager();
+  auto undo = [orig_state_xml, orig_selected_row](){
+    InterSpec *viewer = InterSpec::instance();
+    ReferencePhotopeakDisplay *display = viewer ? viewer->referenceLinesWidget() : nullptr;
+    IsotopeSearchByEnergy *search = viewer ? viewer->nuclideSearch() : nullptr;
+    assert( display && search );
+    if( !display || !search )
+      return;
+    
+    shared_ptr<void> ref_line_undo_sentry = display->getDisableUndoRedoSentry();
+    shared_ptr<void> search_undo_sentry = search->getDisableUndoRedoSentry();
+    
+    search->m_selected_row = orig_selected_row;
+    if( orig_selected_row >= 0 )
+      search->m_results->setSelectedIndexes( {search->m_model->index(orig_selected_row, 0)} );
+    else
+      search->m_results->setSelectedIndexes( {} );
+    search->resultSelectionChanged();
+    
+    try
+    {
+      string orig_state_xml_copy = orig_state_xml;
+      display->deSerialize( orig_state_xml_copy );
+    }catch( std::exception & )
+    {
+      assert( 0 );
+    }
+  };//undo
+  
+  
   WModelIndexSet selected = m_results->selectedIndexes();
   if( selected.empty() )
   {
+    m_selected_row = -1;
+    
     updateClearSelectionButton();
     
     m_assignPeakToSelected->hide();
     
     if( display )
-      display->setIsotope( NULL );
+      display->setIsotope( nullptr );
+    
+    auto redo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      ReferencePhotopeakDisplay *display = viewer ? viewer->referenceLinesWidget() : nullptr;
+      IsotopeSearchByEnergy *search = viewer ? viewer->nuclideSearch() : nullptr;
+      assert( display && search );
+      if( !display || !search )
+        return;
+      
+      shared_ptr<void> ref_line_undo_sentry = display->getDisableUndoRedoSentry();
+      shared_ptr<void> search_undo_sentry = search->getDisableUndoRedoSentry();
+      display->setIsotope( nullptr );
+      search->m_results->setSelectedIndexes( {} );
+      search->m_selected_row = -1;
+      search->resultSelectionChanged();
+    };
+    
+    if( undoManager && (orig_selected_row >= 0) && !m_undo_redo_sentry.lock() )
+      undoManager->addUndoRedoStep( undo, redo, "Clear nuclide search selection." );
     
     return;
   }//if( selected.empty() )
   
   const WModelIndex index = *selected.begin();
+  m_selected_row = index.row();
   
   const SandiaDecay::Nuclide *nuc = m_model->nuclide( index );
   const SandiaDecay::Element *el = m_model->xrayElement( index );
@@ -768,6 +857,37 @@ void IsotopeSearchByEnergy::resultSelectionChanged()
       display->setElement( el );
     else if( rctn )
       display->setReaction( rctn );
+    
+    string final_state_xml;
+    display->serialize( final_state_xml );
+    
+    auto redo = [final_state_xml, index](){
+      InterSpec *viewer = InterSpec::instance();
+      ReferencePhotopeakDisplay *display = viewer ? viewer->referenceLinesWidget() : nullptr;
+      IsotopeSearchByEnergy *search = viewer ? viewer->nuclideSearch() : nullptr;
+      assert( display && search );
+      if( !display || !search )
+        return;
+      
+      shared_ptr<void> ref_line_undo_sentry = display->getDisableUndoRedoSentry();
+      shared_ptr<void> search_undo_sentry = search->getDisableUndoRedoSentry();
+      
+      search->m_results->setSelectedIndexes( {index} );
+      search->resultSelectionChanged();
+      
+      //try
+      //{
+      //  string final_state_xml_copy = final_state_xml;
+      //  display->deSerialize( final_state_xml_copy );
+      //}catch( std::exception & )
+      //{
+      //  assert( 0 );
+      //}
+    };//redo
+    
+    
+    if( undoManager && !m_undo_redo_sentry.lock() )
+      undoManager->addUndoRedoStep( undo, redo, "Change search row" );
   }//if( display )
   
   updateClearSelectionButton();
@@ -787,6 +907,8 @@ int IsotopeSearchByEnergy::numSearchEnergiesOnPeaks()
 
 void IsotopeSearchByEnergy::assignPeaksToSelectedNuclide()
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   PeakModel *pmodel = m_viewer ? m_viewer->peakModel() : nullptr;
   assert( pmodel );
   if( !pmodel )
@@ -903,8 +1025,100 @@ void IsotopeSearchByEnergy::updateClearSelectionButton()
 }//void updateClearSelectionButton();
 
 
-void IsotopeSearchByEnergy::deSerialize( std::string &xml_data,
-                                         const bool renderOnChart )
+
+void IsotopeSearchByEnergy::handleRefLinesUpdated()
+{
+  updateClearSelectionButton();
+  
+  /*
+  ReferencePhotopeakDisplay *refLines = m_viewer->referenceLinesWidget();
+  if( !refLines )
+  {
+    updateClearSelectionButton();
+    return;
+  }
+  
+  const ReferenceLineInfo &current = refLines->currentlyShowingNuclide();
+  
+  if( current.m_validity != ReferenceLineInfo::InputValidity::Valid )
+  {
+    m_results->setSelectedIndexes( {} );
+    updateClearSelectionButton();
+    return;
+  }
+  
+  const WModelIndexSet selected = m_results->selectedIndexes();
+  
+  if( !selected.empty() )
+  {
+    const WModelIndex row_index = *selected.begin();
+    
+    const SandiaDecay::Nuclide *nuc = m_model->nuclide( row_index );
+    const SandiaDecay::Element *el = m_model->xrayElement( row_index );
+    const ReactionGamma::Reaction *rctn = m_model->reaction( row_index );
+    
+    assert( nuc || el || rctn );
+    
+    if( (nuc && (current.m_nuclide == nuc))
+         || (el && (current.m_element == el))
+         || (rctn && current.m_reactions.count(rctn)) )
+    {
+      updateClearSelectionButton();
+      return;
+    }
+  }//if( !selected.empty() )
+  
+  const int nrows = m_model->rowCount();
+  for( int row = 0; row < nrows; ++row )
+  {
+    const auto row_index = m_model->index(row, 0);
+    const SandiaDecay::Nuclide *nuc = m_model->nuclide( row_index );
+    const SandiaDecay::Element *el = m_model->xrayElement( row_index );
+    const ReactionGamma::Reaction *rctn = m_model->reaction( row_index );
+    
+    if( (nuc && (current.m_nuclide == nuc))
+         || (el && (current.m_element == el))
+         || (rctn && current.m_reactions.count(rctn)) )
+    {
+      m_results->setSelectedIndexes( {row_index} );
+      updateClearSelectionButton();
+      return;
+    }
+  }//for( int row = 0; row < nrows; ++row )
+  
+  m_results->setSelectedIndexes( {} );
+  updateClearSelectionButton();
+   */
+}//void IsotopeSearchByEnergy::handleRefLinesUpdated()
+
+
+
+IsotopeSearchByEnergy::WidgetState IsotopeSearchByEnergy::guiState() const
+{
+  WidgetState state;
+  
+  state.MinBranchRatio = m_minBranchRatio->valueText();
+  state.MinHalfLife = m_minHalfLife->valueText();
+  state.NextSearchEnergy = m_nextSearchEnergy;
+  
+  state.IncludeGammas = m_gammas->isChecked();
+  state.IncludeXRays = m_xrays->isChecked();
+  state.IncludeReactions = m_reactions->isChecked();
+  
+  const vector<WWidget *> children = m_searchEnergies->children();
+  
+  for( const WWidget *w : children )
+  {
+    const SearchEnergy *ww = dynamic_cast<const SearchEnergy *>( w );
+    //if( ww && (ww->energy() > 0.000001) )
+    state.SearchEnergies.push_back( {ww->energy(), ww->window()} );
+  }//for( const WWebWidget *w : children )
+  
+  return state;
+}//guiState()
+
+
+void IsotopeSearchByEnergy::setGuiState( const WidgetState &state, const bool renderOnChart )
 {
   vector<SearchEnergy *> origSearches;
   for( WWidget *w : m_searchEnergies->children() )
@@ -917,126 +1131,55 @@ void IsotopeSearchByEnergy::deSerialize( std::string &xml_data,
   for( size_t i = 1; i < origSearches.size(); ++i )
     removeSearchEnergy( origSearches[i] );
   
-  try
+  m_minBranchRatio->setValueText( state.MinBranchRatio );
+  m_minHalfLife->setValueText( state.MinHalfLife );
+  m_nextSearchEnergy = state.NextSearchEnergy;
+  m_gammas->setChecked( state.IncludeGammas );
+  m_xrays->setChecked( state.IncludeXRays );
+  m_reactions->setChecked( state.IncludeReactions );
+  
+  int nnode = 0;
+  for( const pair<double,double> &ene : state.SearchEnergies )
   {
-    rapidxml::xml_document<char> doc;
-    const int flags = rapidxml::parse_normalize_whitespace
-    | rapidxml::parse_trim_whitespace;
-    if( xml_data.size() )
-      doc.parse<flags>( &(xml_data[0]) );
-    
-    rapidxml::xml_attribute<char> *attr;
-    rapidxml::xml_node<char> *base_node, *node, *search_nodes, *value_node;
-    
-    base_node = doc.first_node( "IsotopeSearchByEnergy", 21 );
-    if( !base_node )
-      throw runtime_error( "Couldnt get base node, IsotopeSearchByEnergy" );
-    
-    int version = 0;
-    attr = base_node->first_attribute( "version", 7 );
-    if( !attr || !attr->value()
-       || !(stringstream(attr->value()) >> version)
-       || (version != sm_xmlSerializationVersion) )
-      throw runtime_error( "Mising or invalid NuclideSearchByEnergy version" );
-
-    node = base_node->first_node( "MinBranchRatio", 14 );
-    if( !node || !node->value() )
-      throw runtime_error( "Missing MinBranchRatio node" );
-    m_minBranchRatio->setValueText( node->value() );
-    
-    node = base_node->first_node( "MinHalfLife", 11 );
-    if( !node || !node->value() )
-      throw runtime_error( "Missing MinHalfLife node" );
-    m_minHalfLife->setValueText( node->value() );
-    
-    node = base_node->first_node( "NextSearchEnergy", 16 );
-    if( !node || !node->value()
-        || !(stringstream(node->value()) >> m_nextSearchEnergy) )
-      throw runtime_error( "Missing/invalid NextSearchEnergy node" );
-
-    node = base_node->first_node( "IncludeGammas", 13 );
-    if( node && node->value() && strlen(node->value()))
-      m_gammas->setChecked( (node->value()[0] != '0') );
-    else
-      throw runtime_error( "Missing/invalid IncludeGammas node" );
-
-    node = base_node->first_node( "IncludeXRays", 12 );
-    if( node && node->value() && strlen(node->value()))
-      m_xrays->setChecked( (node->value()[0] != '0') );
-    else
-      throw runtime_error( "Missing/invalid IncludeXRays node" );
-    
-    node = base_node->first_node( "IncludeReactions", 16 );
-    if( node && node->value() && strlen(node->value()))
-      m_reactions->setChecked( (node->value()[0] != '0') );
-    else
-      throw runtime_error( "Missing/invalid IncludeXRays node" );
-    
-    search_nodes = base_node->first_node( "SearchEnergies", 14 );
-    if( !search_nodes )
-      throw runtime_error( "Missing SearchEnergies node" );
-
-    int nnode = 0;
-    for( node = search_nodes->first_node( "SearchEnergy", 12 );
-         node; node = node->next_sibling( "SearchEnergy", 12 ) )
+    SearchEnergy *searcher = (SearchEnergy *)0;
+    if( nnode++ )
     {
-      double energy, window;
-
-      value_node = node->first_node( "Energy", 6 );
-      if( !value_node || !value_node->value()
-          || !(stringstream(value_node->value()) >> energy) )
-        throw runtime_error( "Missing/invalid SearchEnergy energy entry" );
-      
-      value_node = node->first_node( "Window", 6 );
-      if( !value_node || !value_node->value()
-         || !(stringstream(value_node->value()) >> window) )
-        throw runtime_error( "Missing/invalid SearchEnergy window entry" );
-      
-      SearchEnergy *searcher = (SearchEnergy *)0;
-      if( nnode++ )
-      {
-        searcher = addNewSearchEnergy();
-      }else
-      {
-        for( WWidget *w : m_searchEnergies->children() )
-        {
-          searcher = dynamic_cast<SearchEnergy *>( w );
-          if( searcher )
-            break;
-        }//for( WWidget *w : m_searchEnergies->children() )
-        
-        if( !searcher )
-          throw runtime_error( "Serious logic error in "
-                               "IsotopeSearchByEnergy::deSerialize(...)" );
-      }//if( nnode++ ) / else
-      
-      searcher->setEnergy( energy );
-      searcher->setWindow( window );
-    }//for( loop over nodes )
-    
-    if( renderOnChart )
-    {
-      const vector<SearchEnergy *> vals = searches();
-      if( vals.size() && (fabs(vals[0]->energy())>0.01 || vals.size()>2) )
-        startSearch( true );
-      loadSearchEnergiesToClient();
+      searcher = addNewSearchEnergy();
     }else
     {
-      //This next call appears to be necassary or else search energies will show
-      //  but I'm not certain why...
-      clearSearchEnergiesOnClient();
-    }//if( renderOnChart )
-  }catch( std::exception &e )
+      for( WWidget *w : m_searchEnergies->children() )
+      {
+        searcher = dynamic_cast<SearchEnergy *>( w );
+        if( searcher )
+          break;
+      }//for( WWidget *w : m_searchEnergies->children() )
+      
+      assert( searcher );
+      if( !searcher )
+        searcher = addNewSearchEnergy();
+    }//if( nnode++ ) / else
+    
+    searcher->setEnergy( ene.first );
+    searcher->setWindow( ene.second );
+  }//for( const pair<double,double> &ene : state.SearchEnergies )
+  
+  
+  if( renderOnChart )
   {
-    cerr << "IsotopeSearchByEnergy::deSerialize(...) caught: " << e.what() << endl;
-    stringstream msg;
-    msg << "Error opening displayed photopeaks from database for search: " << e.what();
-    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
-  }//try / catch
-}//void IsotopeSearchByEnergy::deSerialize( std::string &xml_data )
+    const vector<SearchEnergy *> vals = searches();
+    if( vals.size() && (fabs(vals[0]->energy())>0.01 || vals.size()>2) )
+      startSearch( true );
+    loadSearchEnergiesToClient();
+  }else
+  {
+    //This next call appears to be necassary or else search energies will show
+    //  but I'm not certain why...
+    clearSearchEnergiesOnClient();
+  }//if( renderOnChart )
+}//void setGuiState( const WidgetState &state );
 
 
-void IsotopeSearchByEnergy::serialize( std::string &xml_data  ) const
+void IsotopeSearchByEnergy::WidgetState::serialize( std::string &xml_data ) const
 {
   rapidxml::xml_document<char> doc;
   const char *name, *value;
@@ -1054,32 +1197,32 @@ void IsotopeSearchByEnergy::serialize( std::string &xml_data  ) const
   base_node->append_attribute( attr );
   
   name = "MinBranchRatio";
-  value = doc.allocate_string( m_minBranchRatio->valueText().toUTF8().c_str() );
+  value = doc.allocate_string( MinBranchRatio.toUTF8().c_str() );
   node = doc.allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( node );
   
   name = "MinHalfLife";
-  value = doc.allocate_string( m_minHalfLife->valueText().toUTF8().c_str() );
+  value = doc.allocate_string( MinHalfLife.toUTF8().c_str() );
   node = doc.allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( node );
 
   name = "NextSearchEnergy";
-  value = doc.allocate_string( std::to_string(m_nextSearchEnergy).c_str() );
+  value = doc.allocate_string( std::to_string(NextSearchEnergy).c_str() );
   node = doc.allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( node );
 
   name = "IncludeGammas";
-  value = (m_gammas->isChecked() ? "1": "0");
+  value = (IncludeGammas ? "1": "0");
   node = doc.allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( node );
 
   name = "IncludeXRays";
-  value = (m_xrays->isChecked() ? "1": "0");
+  value = (IncludeXRays ? "1": "0");
   node = doc.allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( node );
 
   name = "IncludeReactions";
-  value = (m_reactions->isChecked() ? "1": "0");
+  value = (IncludeReactions ? "1": "0");
   node = doc.allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( node );
 
@@ -1087,21 +1230,22 @@ void IsotopeSearchByEnergy::serialize( std::string &xml_data  ) const
   searchEnergiesNode = doc.allocate_node( rapidxml::node_element, name );
   base_node->append_node( searchEnergiesNode );
   
-  const vector<WWidget *> children = m_searchEnergies->children();
   
-  for( const WWidget *w : children )
+  for( const std::pair<double,double> &w : SearchEnergies )
   {
-    const SearchEnergy *ww = dynamic_cast<const SearchEnergy *>( w );
-    if( ww && (ww->energy() > 0.000001) )
+    const double &energy = w.first;
+    const double &window = w.second;
+    
+    if( energy > 0.000001 )
     {
       searchnode = doc.allocate_node( rapidxml::node_element, "SearchEnergy" );
       searchEnergiesNode->append_node( searchnode );
       
-      value = doc.allocate_string( std::to_string(ww->energy()).c_str() );
+      value = doc.allocate_string( std::to_string(energy).c_str() );
       node = doc.allocate_node( rapidxml::node_element, "Energy", value );
       searchnode->append_node( node );
       
-      value = doc.allocate_string( std::to_string(ww->window()).c_str() );
+      value = doc.allocate_string( std::to_string(window).c_str() );
       node = doc.allocate_node( rapidxml::node_element, "Window", value );
       searchnode->append_node( node );
     }//if( ww && (ww->energy() > 0.000001) )
@@ -1109,11 +1253,189 @@ void IsotopeSearchByEnergy::serialize( std::string &xml_data  ) const
   
   xml_data.clear();
   rapidxml::print(std::back_inserter(xml_data), doc, 0);
+}//void IsotopeSearchByEnergy::WidgetState::serialize( std::string &xml_data ) const
+
+
+void IsotopeSearchByEnergy::WidgetState::deSerialize( std::string &xml_data )
+{
+  rapidxml::xml_document<char> doc;
+  const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
+  if( xml_data.size() )
+    doc.parse<flags>( &(xml_data[0]) );
+    
+  rapidxml::xml_attribute<char> *attr;
+  rapidxml::xml_node<char> *base_node, *node, *search_nodes, *value_node;
+    
+  base_node = doc.first_node( "IsotopeSearchByEnergy", 21 );
+  if( !base_node )
+    throw runtime_error( "Couldnt get base node, IsotopeSearchByEnergy" );
+    
+  int version = 0;
+  attr = base_node->first_attribute( "version", 7 );
+  if( !attr || !attr->value()
+      || !(stringstream(attr->value()) >> version)
+      || (version != sm_xmlSerializationVersion) )
+    throw runtime_error( "Mising or invalid NuclideSearchByEnergy version" );
+
+  node = base_node->first_node( "MinBranchRatio", 14 );
+  if( !node || !node->value() )
+    throw runtime_error( "Missing MinBranchRatio node" );
+  MinBranchRatio = node->value();
+    
+  node = base_node->first_node( "MinHalfLife", 11 );
+  if( !node || !node->value() )
+    throw runtime_error( "Missing MinHalfLife node" );
+  MinHalfLife = node->value();
+    
+  node = base_node->first_node( "NextSearchEnergy", 16 );
+  if( !node || !node->value()
+      || !(stringstream(node->value()) >> NextSearchEnergy) )
+    throw runtime_error( "Missing/invalid NextSearchEnergy node" );
+
+  node = base_node->first_node( "IncludeGammas", 13 );
+  if( node && node->value() && strlen(node->value()))
+    IncludeGammas = (node->value()[0] != '0');
+  else
+    throw runtime_error( "Missing/invalid IncludeGammas node" );
+
+  node = base_node->first_node( "IncludeXRays", 12 );
+  if( node && node->value() && strlen(node->value()))
+    IncludeXRays = (node->value()[0] != '0');
+  else
+    throw runtime_error( "Missing/invalid IncludeXRays node" );
+    
+  node = base_node->first_node( "IncludeReactions", 16 );
+  if( node && node->value() && strlen(node->value()))
+    IncludeReactions = (node->value()[0] != '0');
+  else
+    throw runtime_error( "Missing/invalid IncludeXRays node" );
+    
+  search_nodes = base_node->first_node( "SearchEnergies", 14 );
+  if( !search_nodes )
+    throw runtime_error( "Missing SearchEnergies node" );
+
+  SearchEnergies.clear();
+  for( node = search_nodes->first_node( "SearchEnergy", 12 );
+        node; node = node->next_sibling( "SearchEnergy", 12 ) )
+  {
+    double energy, window;
+
+    value_node = node->first_node( "Energy", 6 );
+    if( !value_node || !value_node->value()
+        || !(stringstream(value_node->value()) >> energy) )
+      throw runtime_error( "Missing/invalid SearchEnergy energy entry" );
+      
+    value_node = node->first_node( "Window", 6 );
+    if( !value_node || !value_node->value()
+        || !(stringstream(value_node->value()) >> window) )
+      throw runtime_error( "Missing/invalid SearchEnergy window entry" );
+      
+    SearchEnergies.push_back( {energy, window} );
+  }//for( loop over nodes )
+}//void IsotopeSearchByEnergy::WidgetState::deSerialize( std::string &xml_data )
+
+
+bool IsotopeSearchByEnergy::WidgetState::operator==(const WidgetState &rhs) const
+{
+  return ((MinBranchRatio == rhs.MinBranchRatio)
+          && (MinHalfLife == rhs.MinHalfLife)
+          && (NextSearchEnergy == rhs.NextSearchEnergy)
+          && (IncludeGammas == rhs.IncludeGammas)
+          && (IncludeXRays == rhs.IncludeXRays)
+          && (IncludeReactions == rhs.IncludeReactions)
+          && (SearchEnergies == rhs.SearchEnergies)
+  );
+}//bool WidgetState::operator==(const WidgetState &rhs) const;
+
+
+void IsotopeSearchByEnergy::serialize( std::string &xml_data ) const
+{
+  const WidgetState state = guiState();
+  state.serialize( xml_data );
 }//void serialize( std::string &xmlOutput ) const
+
+
+void IsotopeSearchByEnergy::deSerialize( std::string &xml_data,
+                                         const bool renderOnChart )
+{
+  std::shared_ptr<void> search_undo_sentry = getDisableUndoRedoSentry();
+  
+  try
+  {
+    WidgetState state;
+    state.deSerialize( xml_data );
+    setGuiState( state, renderOnChart );
+  }catch( std::exception &e )
+  {
+    cerr << "IsotopeSearchByEnergy::deSerialize(...) caught: " << e.what() << endl;
+    stringstream msg;
+    msg << "Error opening displayed photopeaks from database for search: " << e.what();
+    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
+  }// try / catch
+}//void IsotopeSearchByEnergy::deSerialize(...)
+
+
+void IsotopeSearchByEnergy::addUndoRedoPoint()
+{
+  const WidgetState prev_state = m_state;
+  m_state = guiState();
+  
+  if( !m_undo_redo_sentry.lock() )
+  {
+    UndoRedoManager *undoManager = m_viewer->undoRedoManager();
+    if( undoManager && !(m_state == prev_state) )
+    {
+      auto undo = [prev_state](){
+        InterSpec *viewer = InterSpec::instance();
+        ReferencePhotopeakDisplay *display = viewer ? viewer->referenceLinesWidget() : nullptr;
+        IsotopeSearchByEnergy *search = viewer ? viewer->nuclideSearch() : nullptr;
+        assert( display && search );
+        if( !display || !search )
+          return;
+        
+        shared_ptr<void> ref_line_undo_sentry = display->getDisableUndoRedoSentry();
+        shared_ptr<void> search_undo_sentry = search->getDisableUndoRedoSentry();
+        
+        try
+        {
+          search->setGuiState( prev_state, true );
+        }catch(std::exception &)
+        {
+          assert(0);
+        }
+      };//undo
+      
+      const WidgetState current_state = m_state;
+      auto redo = [current_state](){
+        InterSpec *viewer = InterSpec::instance();
+        ReferencePhotopeakDisplay *display = viewer ? viewer->referenceLinesWidget() : nullptr;
+        IsotopeSearchByEnergy *search = viewer ? viewer->nuclideSearch() : nullptr;
+        assert( display && search );
+        if( !display || !search )
+          return;
+        
+        shared_ptr<void> ref_line_undo_sentry = display->getDisableUndoRedoSentry();
+        shared_ptr<void> search_undo_sentry = search->getDisableUndoRedoSentry();
+        
+        try
+        {
+          search->setGuiState( current_state, true );
+        }catch( std::exception &)
+        {
+          assert(0);
+        }
+      };//redo
+      
+      undoManager->addUndoRedoStep( undo, redo, "Update nuclide search." );
+    }//if( undoManager )
+  }//if( !m_undo_redo_sentry.lock() )
+}//void addUndoRedoPoint()
 
 
 void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
 {
+  addUndoRedoPoint();
+  
   if( refreshBr )
     EnergyToNuclideServer::setLowerLimits( m_minHl, m_minBr );
   
@@ -1132,7 +1454,6 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
     }
   }//for( const WWebWidget *w : children )
   
-  
   WFlags<IsotopeSearchByEnergyModel::RadSource> srcs;
   
   if( m_gammas->isChecked() )
@@ -1149,6 +1470,7 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   workingspace->windows = windows;
   workingspace->sortColumn = m_model->sortColumn();
   workingspace->sortOrder = m_model->sortOrder();
+  workingspace->undoSentry = getDisableUndoRedoSentry(); //m_undo_redo_sentry.lock();
   
   std::shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
   if( foreground )

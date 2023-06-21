@@ -18,5 +18,8 @@
   "OpenDevTools_Documentation": "Enables right-clicking on an element to open the WebView Dev Tools to allow debugging JavaScript errors you may run into (please report to InterSpec@sandia.gov if you find any).  On macOS you will still need to select 'Edit' -> 'Enable Web Inspector'.",
 
   "ArcGisKey": "",
-  "ArcGisKey_Documentation": "If specified (i.e., non-empty string), this key will be used to use to access the https://arcgis.com server to get map tiles from, when you invoke invoke the map tool."
+  "ArcGisKey_Documentation": "If specified (i.e., non-empty string), this key will be used to use to access the https://arcgis.com server to get map tiles from, when you invoke invoke the map tool.",
+
+  "MaxUndoSteps": 250,
+  "MaxUndoSteps_Documentation": "The maximum number of undo/redo steps to track in memory.  A negative value disables undo/redo, and a value of zero indicates no limit.  Undo/redo is not enabled for the mobile interface (phone, or tablet with the mobile menu)."
 }

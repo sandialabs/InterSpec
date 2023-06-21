@@ -578,7 +578,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   typedef int indexing_t;
   //  typedef size_t indexing_t;
   
-  const indexing_t nchannel = (!dataH ? size_t(0): dataH->num_gamma_channels());
+  const indexing_t nchannel = (!dataH ? indexing_t(0): static_cast<indexing_t>(dataH->num_gamma_channels()));
   
   if( nchannel<128 )
     throw runtime_error( "findROILimit(...): Invalid input" );
@@ -610,7 +610,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   
   const indexing_t nSideChannel = 1;
   
-  indexing_t startchannel = dataH->find_gamma_channel( mean + direction*1.5*sigma );
+  indexing_t startchannel = static_cast<indexing_t>( dataH->find_gamma_channel( mean + direction*1.5*sigma ) );
   if( !high && startchannel < nSideChannel )
     startchannel = nSideChannel;
   
@@ -621,8 +621,8 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
                                              startchannel + nSideChannel );
   backval = std::max( backval, static_cast<float>(nbackbin) );
   
-  const indexing_t meanchannel = dataH->find_gamma_channel( mean );
-  indexing_t lastchannel  = dataH->find_gamma_channel( lowxrange + direction*0.0001 );
+  const indexing_t meanchannel = static_cast<indexing_t>( dataH->find_gamma_channel( mean ) );
+  indexing_t lastchannel  = static_cast<indexing_t>( dataH->find_gamma_channel( lowxrange + direction*0.0001 ) );
   
   //Make sure were not looking to far and that loop will terminate
   if( high ) lastchannel = std::min( lastchannel, nchannel-2 );

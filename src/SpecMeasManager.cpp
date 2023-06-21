@@ -119,6 +119,7 @@
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
@@ -504,7 +505,7 @@ public:
     assert( manager );
     assert( viewer );
     
-    Wt::WPushButton *btn = addButton( "Cancel" );
+    addButton( "Cancel" );
     finished().connect( m_manager, &SpecMeasManager::multiSpectrumDialogDone );
     
 #if( IOS || ANDROID )
@@ -774,6 +775,10 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_destructMutex( new std::mutex() ),
     m_destructed( new bool(false) )
 {
+  std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
+  if( viewer && viewer->undoRedoManager() )
+    undo_blocker.reset( new UndoRedoManager::BlockUndoRedoInserts() );
+  
   wApp->useStyleSheet( "InterSpec_resources/SpecMeasManager.css" );
   
   for( SpecUtils::SaveSpectrumAsType type = SpecUtils::SaveSpectrumAsType(0);
@@ -816,11 +821,22 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
 void  SpecMeasManager::startSpectrumManager()
 {
-    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
 
+  if( m_spectrumManagerWindow )
+  {
+    m_spectrumManagerWindow->show();
+    m_spectrumManagerWindow->centerWindow();
+    m_spectrumManagerWindow->resizeToFitOnScreen();
+    
+    return;
+  }//if( m_spectrumManagerWindow )
+  
     m_spectrumManagerWindow = new AuxWindow( "Spectrum Manager",
                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                     | AuxWindowProperties::TabletNotFullScreen) );
+                     | AuxWindowProperties::TabletNotFullScreen
+                     | AuxWindowProperties::DisableCollapse
+                     ) );
     m_spectrumManagerWindow->addStyleClass( "SpecMeasManager" );
     
     WContainerWidget *title = m_spectrumManagerWindow->titleBar();
@@ -885,6 +901,28 @@ void  SpecMeasManager::startSpectrumManager()
     m_spectrumManagerWindow->centerWindow();
     
     selectionChanged();
+  
+  if( m_viewer && m_viewer->undoRedoManager() && m_viewer->undoRedoManager()->canAddUndoRedoNow() )
+    new UndoRedoManager::BlockGuiUndoRedo( m_spectrumManagerWindow ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
+  
+  UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      SpecMeasManager *manager = viewer->fileManager();
+      if( manager )
+        manager->deleteSpectrumManager();
+    };
+    auto redo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      SpecMeasManager *manager = viewer->fileManager();
+      if( manager )
+        manager->startSpectrumManager();
+    };
+    
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Open Spectrum Manager.");
+  }//if( undo )
 } //startSpectrumManager()
 
 
@@ -1112,14 +1150,14 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       
       WStandardItem *item = new WStandardItem();
       item->setText( n );
-      model->setItem( i, 0, item );
+      model->setItem( static_cast<int>(i), 0, item );
       item = new WStandardItem();
       
       const double sizekb = uncompresssize[i]/1024.0;
       
       //item->setText( buff );
       item->setData( sizekb, DisplayRole );
-      model->setItem( i, 1, item );
+      model->setItem( static_cast<int>(i), 1, item );
     }//for( size_t i = 0; i < filenames.size(); ++i )
     
     //if( selection->count() == 0 )
@@ -1286,16 +1324,26 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   
   SimpleDialog *dialog = new SimpleDialog();
-  WPushButton *closeButton = dialog->addButton( "Close" );
-  WGridLayout *stretcher = new WGridLayout();
-  stretcher->setContentsMargins( 0, 0, 0, 0 );
-  dialog->contents()->setLayout( stretcher );
-  dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
-  WText *title = new WText( "Not a spectrum file" );
+  dialog->addButton( "Close" );
+  WContainerWidget *contents = dialog->contents();
+  contents->addStyleClass( "NonSpecDialogBody" );
+  WText *title = new WText( "Not a spectrum file", contents );
   title->addStyleClass( "title" );
-  stretcher->addWidget( title, 0, 0 );
   
-  // const string filename = SpecUtils::filename(displayName);
+  auto add_undo_redo = [dialog](){
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( !undoRedo )
+      return;
+    
+    const string dialog_id = dialog->id();
+    auto closer = wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) );
+    auto undo = [dialog_id,closer](){
+      wApp->doJavaScript( "$('#" + dialog_id + "').hide(); $('.Wt-dialogcover').hide();" );
+      closer();
+    };
+    
+    undoRedo->addUndoRedoStep( std::move(undo), nullptr, "Open non-spectrum file dialog." );
+  };//add_undo_redo
   
   //Check if ICD2 file
   if( std::find( boost::begin(data), boost::end(data), uint8_t(60)) != boost::end(data) )
@@ -1311,12 +1359,14 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
        || SpecUtils::icontains( datastr, "DNDOEWSchema" )
        || SpecUtils::icontains( datastr, "DNDOARSchema" ) )
     {
-      WText *t = new WText( "This looks to be an N42 ICD2 file that contains analysis results rather than raw spectra.<br />"
-                            "If you believe this to be a legitimate spectrum file, please email it to <a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a> to support this file type." );
-      stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-      t->setTextAlignment( Wt::AlignCenter );
-      dialog->show();
-      
+      WText *t = new WText( "This looks to be an N42 ICD2 file that contains analysis results"
+                            " rather than raw spectra.<br />"
+                            "If you believe this to be a legitimate spectrum file, please email it"
+                            " to <a href=\"mailto:interspec@sandia.gov\" "
+                            "target=\"_blank\">interspec@sandia.gov</a> "
+                            "to support this file type.", contents );
+      t->addStyleClass( "NonSpecOtherFile" );
+      add_undo_redo();
       return true;
     }
   }//if( might be ICD2 )
@@ -1376,10 +1426,10 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   //zip (but can be xlsx, pptx, docx, odp, jar, apk) 50 4B 03 04
     msg = "This file appears to be an invalid ZIP file (or xlsx, pptx, <br />"
           "docx, odp, jar, apk, etc), sorry I cant open it :(";
-    WText *t = new WText( msg );
-    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-    t->setTextAlignment( Wt::AlignCenter );
+    WText *t = new WText( msg, contents );
+    t->addStyleClass( "NonSpecOtherFile" );
     
+    add_undo_redo();
     return true;
   }//if( iszip )
   
@@ -1390,9 +1440,10 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                       "<a href=\"mailto:wcjohns@sandia.gov\" target=\"_blank\">wcjohns@sandia.gov</a> "
                       "if you would like support for this archive type added.";
     
-    WText *t = new WText( msg );
-    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-    t->setTextAlignment( Wt::AlignCenter );
+    WText *t = new WText( msg, contents );
+    t->addStyleClass( "NonSpecOtherFile" );
+    
+    add_undo_redo();
     
     return true;
   }//if( israr || istar || iszip7 || isgz )
@@ -1401,9 +1452,10 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   if( ispdf | isps | istif )
   {
     const char *msg = "This file looks to be a document file, and not supported by InterSpec.";
-    WText *t = new WText( msg );
-    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-    t->setTextAlignment( Wt::AlignCenter );
+    WText *t = new WText( msg, contents );
+    t->addStyleClass( "NonSpecOtherFile" );
+    
+    add_undo_redo();
     
     return true;
   }//if( ispdf | isps | istif )
@@ -1412,9 +1464,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   if( isgif || isjpg || ispng || isbmp || issvg )
   {
     const char *msg = "This file looks to be an image, and not a spectrum file.";
-    WText *t = new WText( msg );
-    t->setTextAlignment( Wt::AlignCenter );
-    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+    WText *t = new WText( msg, contents );
+    t->addStyleClass( "NonSpecOtherFile" );
    
     const size_t max_disp_size = 16*1024*1024;
     
@@ -1437,24 +1488,66 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       {
         resource->setData( totaldata );
         image->setImageLink( WLink(resource) );
-        const int ww = m_viewer->renderedWidth();
-        const int wh = m_viewer->renderedHeight();
-        if( (ww > 120) && (wh > 120) )
-          image->setMaximumSize( WLength(0.45*ww,WLength::Unit::Pixel), WLength(wh - 120, WLength::Unit::Pixel) );
-        stretcher->addWidget( image.release(), stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+        image->addStyleClass( "NonSpecImgFile" );
+        contents->addWidget( image.release() );
+        
+        if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
+        {
+          WPushButton *embedbtn = new WPushButton( "Embed image in spectrum file", contents );
+          embedbtn->setStyleClass( "LinkBtn NonSpecEmbedBtn" );
+          
+          embedbtn->clicked().connect( std::bind([this,resource,displayName,mimetype,dialog](){
+            const vector<unsigned char> data = resource->data();
+            if( data.empty() )
+            {
+              passMessage( "Error retirieving data to embed - not embeding image.", WarningWidget::WarningMsgHigh );
+              return;
+            }
+            
+            shared_ptr<SpecMeas> meas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+            if( !meas )
+            {
+              passMessage( "No foreground loaded - not embeding image.", WarningWidget::WarningMsgHigh );
+              return;
+            }
+            
+            SpecUtils::MultimediaData multi;
+            multi.remark_ = "Image file embeded using InterSpec.";
+            multi.descriptions_= "filename: " + displayName;
+            
+            string data_str;
+            data_str.resize( data.size() );
+            memcpy( &(data_str[0]), data.data(), data.size() );
+            const string base_64_encoded = Wt::Utils::base64Encode( data_str );
+            multi.data_.resize( base_64_encoded.size() );
+            memcpy( multi.data_.data(), base_64_encoded.data(), base_64_encoded.size() );
+            multi.data_encoding_ = SpecUtils::MultimediaData::EncodingType::BinaryBase64;
+            multi.capture_start_time_ = SpecUtils::time_point_t{};
+            multi.file_uri_ = displayName;
+            multi.mime_type_ = mimetype;
+            
+            meas->add_multimedia_data( multi );
+            passMessage( "Image has been embeded in the foreground spectrum file; only exporting in"
+                      " N42-2012 file format will preserve this.", WarningWidget::WarningMsgInfo );
+            
+            wApp->doJavaScript( "$('#" + dialog->id() + "').hide(); $('.Wt-dialogcover').hide();" );
+            dialog->done( Wt::WDialog::DialogCode::Accepted );
+          }));
+          
+        }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
       }else
       {
-        WText *errort = new WText( "Couldn't read uploaded file." );
-        errort->setTextAlignment( Wt::AlignCenter );
-        stretcher->addWidget( errort, stretcher->rowCount(), 0 );
+        WText *errort = new WText( "Couldn't read uploaded file.", contents );
+        errort->addStyleClass( "NonSpecError" );
       }
     }else
     {
-      WText *errort = new WText( "Uploaded file was too large to try and display." );
-      errort->setTextAlignment( Wt::AlignCenter );
-      stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+      WText *errort = new WText( "Uploaded file was too large to try and display.", contents );
+      errort->addStyleClass( "NonSpecError" );
     }//if( filesize < max_disp_size ) / else
         
+    add_undo_redo();
+    
     return true;
   }//if( isgif || isjpg || ispng || isbmp )
 
@@ -1511,14 +1604,13 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       return true;
     }catch( exception &e )
     {
-      WText *errort = new WText( "Uploaded file looked like a Peak CSV file, but was invalid." );
-      errort->setTextAlignment( Wt::AlignCenter );
-      stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+      WText *errort = new WText( "Uploaded file looked like a Peak CSV file, but was invalid.", contents );
+      errort->addStyleClass( "NonSpecError" );
       
-      errort = new WText( string(e.what()) );
-      errort->setAttributeValue( "style", "color: red; font-weight: bold; font-family: monospace; " );
-      errort->setTextAlignment( Wt::AlignCenter );
-      stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+      errort = new WText( string(e.what()), contents );
+      errort->setAttributeValue( "style", "color: red; " );
+      
+      add_undo_redo();
       
       return true;
     }//try / catch get candidate peaks )
@@ -1738,6 +1830,7 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
 
 bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog, bool autoApply )
 {
+  // Blah blah blah Add undo/redo support
   WGridLayout *stretcher = nullptr;
   WPushButton *closeButton = nullptr;
   
@@ -2103,6 +2196,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
 #if( USE_REL_ACT_TOOL )
 bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog *dialog )
 {
+  // blah blah blah add undo/redo support
   string error_msg;
   try
   {
@@ -2275,12 +2369,10 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
 
 
 #if( USE_QR_CODES )
-void SpecMeasManager::handleSpectrumUrl( const std::string &url_encoded_url )
+void SpecMeasManager::handleSpectrumUrl( const std::string &unencoded )
 {
   try
   {
-    const string unencoded = Wt::Utils::urlDecode( url_encoded_url );
-    
     const QRSpectrum::EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( unencoded );
     if( info.m_number_urls == 1 )
     {
@@ -2637,7 +2729,15 @@ void SpecMeasManager::loadSelected( const SpecUtils::SpectrumType type,
 
 void SpecMeasManager::startQuickUpload()
 {
-  new FileUploadDialog( m_viewer, this );
+  auto window = new FileUploadDialog( m_viewer, this );
+  UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
+  
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto closer = wApp->bind( boost::bind(&AuxWindow::hide, window) );
+    // We wont use a redo step, because this would be a bit weird to redo.
+    undoRedo->addUndoRedoStep( closer, nullptr, "Show file upload dialog" );
+  }
 }//void startQuickUpload( SpecUtils::SpectrumType type )
 
 
@@ -4162,9 +4262,31 @@ void SpecMeasManager::selectionChanged()
 
 void SpecMeasManager::deleteSpectrumManager()
 {
-    m_spectrumManagertreeDiv->removeWidget(m_treeView);
-    AuxWindow::deleteAuxWindow(m_spectrumManagerWindow);
-    m_spectrumManagerWindow = NULL;
+  if( !m_spectrumManagerWindow )
+    return;
+  
+  m_spectrumManagertreeDiv->removeWidget(m_treeView);
+  AuxWindow::deleteAuxWindow(m_spectrumManagerWindow);
+  m_spectrumManagerWindow = nullptr;
+  
+  UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      SpecMeasManager *manager = viewer->fileManager();
+      if( manager )
+        manager->startSpectrumManager();
+    };
+    auto redo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      SpecMeasManager *manager = viewer->fileManager();
+      if( manager )
+        manager->deleteSpectrumManager();
+    };
+    
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Spectrum Manager.");
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
 }//deleteSpectrumManager()
 
 
@@ -5069,7 +5191,14 @@ void SpecMeasManager::uploadSpectrum() {
 void SpecMeasManager::browsePrevSpectraAndStatesDb()
 {
   // TODO: Make this be the same implementation as SpecMeasManager::showPreviousSpecFileUsesDialog; but to do that, need to make AutosavedSpectrumBrowser be a MVC widget so we dont put like a million elements into the DOM
-  new DbFileBrowser( this, m_viewer, nullptr );
+  DbFileBrowser *browser = new DbFileBrowser( this, m_viewer, nullptr );
+  
+  UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto closer = wApp->bind( boost::bind( &AuxWindow::hide, browser ) );
+    undoRedo->addUndoRedoStep( closer, nullptr, "Show browse previous spectra." );
+  }//if( add undo )
 }//void browsePrevSpectraAndStatesDb()
 
 

@@ -165,6 +165,8 @@ public:
   static void osThemeChange( std::string name );
 #endif
   
+  Wt::JSignal<unsigned int> &hotkeySignal();
+  
 #if( IOS )
   /** Function called from objective-c to update the safe areas defined in iOS
       (e.g., the area for the notch).
@@ -311,6 +313,10 @@ protected:
    \sa #miscSignalHandler
    */
   std::unique_ptr<Wt::JSignal<std::string> > m_miscSignal;
+  
+  /** Signal triggered when user presses control + another button  */
+  Wt::JSignal<unsigned int> m_hotkeySignal;
+  
   
 #if( IOS )
   /* Note that we could setup a JS based 'orientationchange' JSignal to let us know

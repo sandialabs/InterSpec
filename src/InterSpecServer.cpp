@@ -932,6 +932,7 @@ void clear_file_to_open_on_load( const std::string &session_token )
 #if( USE_LEAFLET_MAP )
     , m_arcgis_key("")
 #endif
+    , m_max_undo_steps( 250 )
   {
   }
 
@@ -1027,6 +1028,14 @@ void clear_file_to_open_on_load( const std::string &session_token )
       }
 #endif //USE_LEAFLET_MAP
       
+      if( base.contains( "MaxUndoSteps" ) )
+      {
+        const Wt::Json::Value &val = base.get( "MaxUndoSteps" );
+        if( val.type() != Wt::Json::Type::NumberType )
+          throw runtime_error( "MaxUndoSteps must be a number" );
+       
+        config.m_max_undo_steps = val.toNumber();
+      }
     };// update_config_from_json_file lamda
 
 

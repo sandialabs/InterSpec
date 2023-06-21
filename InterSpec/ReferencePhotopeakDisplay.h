@@ -256,6 +256,12 @@ public:
   
   /** Return the material database this widget uses */
   const MaterialDB *materialDB() const;
+  
+  /** Returns a shared pointer to `m_undo_redo_sentry` - as long as there are any shared ptrs to
+   the sentry alive, an undo/redo step wont be inserted.
+   */
+  std::shared_ptr<void> getDisableUndoRedoSentry();
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -284,20 +290,6 @@ protected:
   
   void toggleShowOptions();
 
-  /** A simple struct to store previous, or other nuclides to 
-  potentially show if the user clicks on them.
-
-The other options would be to keep a copy of ReferenceLineInfo around
-or to go all-in and keep a XML state of widget via
-ReferencePhotopeakDisplay::serialize(...) - but for now we'll just keep
-things simple
-*/
-  struct OtherNuc
-  {
-    std::string m_nuclide;
-    RefLineInput m_input;
-  };//struct OtherNuc
-
   void updateOtherNucsDisplay();
   void updateAssociatedNuclides();
   void showMoreInfoWindow();
@@ -311,8 +303,6 @@ things simple
   */
   void handleSpectrumChange(SpecUtils::SpectrumType type);
 
-  void setFromOtherNuc( const OtherNuc &nuc );
-
   D3SpectrumDisplayDiv *m_chart;
 
   InterSpec *m_spectrumViewer;
@@ -322,6 +312,11 @@ things simple
    have changed, otherwise we can get into an infinite recursive state.
    */
   bool m_currently_updating;
+  
+  /** if `m_undo_redo_sentry.lock()` yeilds a valid pointer, than an undo/redo step wont be inserted.
+   \sa getDisableUndoRedoSentry();
+   */
+  std::weak_ptr<void> m_undo_redo_sentry;
   
   Wt::WLineEdit *m_nuclideEdit;
   Wt::WSuggestionPopup *m_nuclideSuggest;
@@ -357,7 +352,7 @@ things simple
 
   const size_t m_max_prev_nucs = 8; //arbitrary
   
-  std::deque<OtherNuc> m_prevNucs;
+  std::deque<RefLineInput> m_prevNucs;
 
   DetectorDisplay *m_detectorDisplay;
   MaterialDB *m_materialDB;                 //not owned by this object

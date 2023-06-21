@@ -45,6 +45,7 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/ColorThemeWidget.h"
 #include "InterSpec/ColorThemeWindow.h"
@@ -281,11 +282,11 @@ m_apply( nullptr )
   
   ThemeMenuItem *currentItem = nullptr;
   const shared_ptr<const ColorTheme> currentColorTheme = m_interspec->getColorTheme();
-  long long colorThemeIndex = -1;
-  if( currentColorTheme )
-    colorThemeIndex = currentColorTheme->dbIndex;
-  else
-    colorThemeIndex = InterSpecUser::preferenceValue<int>("ColorThemeIndex", m_interspec);
+  //long long colorThemeIndex = -1;
+  //if( currentColorTheme )
+  //  colorThemeIndex = currentColorTheme->dbIndex;
+  //else
+  //  colorThemeIndex = InterSpecUser::preferenceValue<int>("ColorThemeIndex", m_interspec);
   
   for( unique_ptr<ColorTheme> &p : defaultThemes )
   {
@@ -305,7 +306,7 @@ m_apply( nullptr )
   
   for( unique_ptr<ColorTheme> &p : dbThemes )
   {
-    const auto dbindex = p->dbIndex;
+    //const auto dbindex = p->dbIndex;
     const WString name = p->theme_name;
     
     ThemeMenuItem *item = new ThemeMenuItem(name, std::move(p), true );
@@ -576,51 +577,27 @@ void ColorThemeWindow::checkForSavesAndCleanUp()
   if( !m_edit->m_currentTheme )
   {
     AuxWindow::deleteAuxWindow( this );
-    //WServer::instance()->post( wApp->sessionId(), boost::bind( &AuxWindow::deleteAuxWindow, this ) );
     return;
   }
   
-  AuxWindow *dialog = new AuxWindow( "Save Changes?",
-                                    WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::DisableCollapse );
-
-  auto content = dialog->contents();
-  WText *txt = new WText( content );
-  txt->setText( "<span style=\"white-space: nowrap;\">Save changes to <em>" + m_edit->m_currentTheme->theme_name.toUTF8() + "</em>?</span>" );
-  content->setMargin( 15 );
+  string content = "<span style=\"white-space: nowrap;\">Save changes to <em>"
+                + m_edit->m_currentTheme->theme_name.toUTF8() + "</em>?</span>";
+  SimpleDialog *dialog = new SimpleDialog( "Save Changes?", content );
   
-  auto foot = dialog->footer();
   
-  WPushButton *discard = new WPushButton( "Discard", foot );
-  discard->setWidth( WLength(47.5,WLength::Percentage) );
-  discard->setFloatSide( Wt::Left );
-  discard->clicked().connect( std::bind( [=](){
-    AuxWindow::deleteAuxWindow( this );
-    dialog->hide();
-  }) );
+  WPushButton *discard = dialog->addButton( "Discard" );
+  discard->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
   
-  //WPushButton *cancel = new WPushButton( "Cancel", foot );
-  //cancel->setWidth( WLength(32,WLength::Percentage) );
-  ////cancel->clicked().connect( std::bind( [=](){ AuxWindow::deleteAuxWindow( dialog ); } ) );
-  //cancel->clicked().connect( std::bind( [=](){
-  //  this->show();
-  //  AuxWindow::deleteAuxWindow( dialog );
-  //}) );
-  
-  WPushButton *save = new WPushButton( "Save", foot );
-  save->setFloatSide( Wt::Left );
-  save->setWidth( WLength(47.5,WLength::Percentage) );
-  save->clicked().connect( std::bind( [=](){
-    saveThemeToDb( m_edit->m_currentTheme.get() );
-    AuxWindow::deleteAuxWindow( this );
-    dialog->hide();
-  } ) );
-  
-  dialog->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
-  
-  dialog->setClosable( false );
-  dialog->show();
-  dialog->centerWindow();
+  WPushButton *save = dialog->addButton( "Save" );
+  save->clicked().connect( boost::bind( &ColorThemeWindow::saveAndDelete, this ) );
 }//void checkForSavesAndCleanUp()
+
+
+void ColorThemeWindow::saveAndDelete()
+{
+  saveThemeToDb( m_edit->m_currentTheme.get() );
+  AuxWindow::deleteAuxWindow( this );
+}
 
 
 unique_ptr<ColorTheme> ColorThemeWindow::saveThemeToDb( const ColorTheme *theme )
@@ -786,7 +763,7 @@ void ColorThemeWindow::applyCallback()
   assert( theme ); //def shouldnt ever happen
   
   Dbo::ptr<InterSpecUser> &user = m_interspec->m_user;
-  InterSpecUser::setPreferenceValue<int>( user, "ColorThemeIndex", theme->dbIndex, m_interspec );
+  InterSpecUser::setPreferenceValue<int>( user, "ColorThemeIndex", static_cast<int>(theme->dbIndex), m_interspec );
   
   m_interspec->applyColorTheme( make_shared<ColorTheme>(*theme) );
   

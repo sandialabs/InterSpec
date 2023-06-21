@@ -1151,7 +1151,7 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     }
     
     window->centerWindow();
-    window->finished().connect( viewer, &InterSpec::closeShieldingSourceFitWindow );
+    window->finished().connect( viewer, &InterSpec::closeShieldingSourceFit );
     
     window->WDialog::setHidden(false);
     window->show();

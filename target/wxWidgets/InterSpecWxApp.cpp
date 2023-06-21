@@ -54,6 +54,7 @@
 #include "SpecUtils/Filesystem.h"
 
 #include "InterSpec/InterSpecServer.h"
+#include "InterSpec/UndoRedoManager.h"
 
 namespace 
 {
@@ -646,6 +647,8 @@ InterSpecWxApp::InterSpecWxApp() :
       sm_try_restore = app_file_config.m_allow_restore;
       sm_open_dev_console = app_file_config.m_open_dev_tools;
       sm_require_session_token = app_file_config.m_require_token;
+      
+      UndoRedoManager::setMaxUndoRedoSteps( app_file_config.m_max_undo_steps );
     }catch( std::exception &e )
     {
       wxLogMessage( "Error parsing app configuration file: %s", e.what() );

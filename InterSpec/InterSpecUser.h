@@ -72,7 +72,7 @@ namespace rapidxml
 //The database this Interspec is using; if higher than database registry, will
 //  automatically update tables at next execution
 //  See DataBaseVersionUpgrade.cpp/.h
-#define DB_SCHEMA_VERSION 10
+#define DB_SCHEMA_VERSION 11
 
 
 namespace Wt
@@ -901,7 +901,14 @@ struct UserState
   , kShowingRelActManual    = 0x0200
   , kShowingRelActAuto      = 0x0400
 #endif
-  , kShowingMultimedia      = 0x0800
+  , kShowingMultimedia      = 0x000800
+  , kShowingGammaXsTool     = 0x001000
+  , kShowingDoseCalcTool    = 0x002000
+  , kShowing1OverR2Tool     = 0x004000
+  , kShowingUnitConvertTool = 0x008000
+  , kShowingNucDecayInfo    = 0x010000
+  , kShowingEnergyRangeSum  = 0x020000
+  , kShowingFluxTool        = 0x040000
   };//enum ShownDisplayFeatures
   
   //UserState(): default constructor, initializes values to reasonable defaults
@@ -952,6 +959,8 @@ struct UserState
   double energyAxisMinimum, energyAxisMaximum;
   double countsAxisMinimum, countsAxisMaximum;
   
+  // TODO: should add time chart limits here - if showing
+  
   /** deprecated */
   int displayBinFactor;
   
@@ -961,6 +970,14 @@ struct UserState
   CurrentTab currentTab;
   std::string gammaLinesXml;
   std::string isotopeSearchEnergiesXml;
+  
+  std::string gammaXsToolUri;
+  std::string doseCalcToolUri;
+  std::string oneOverR2ToolUri;
+  std::string unitsConverterToolUri;
+  std::string nucDecayInfoUri;
+  std::string energyRangeSumUri;
+  std::string fluxToolUri;
   
   int showingMarkers;        //bitwise or of FeatureMarkers (not implemented yet)
   int disabledNotifications; //bitwise or of (0x1<<WarningWidget::WarningMsgLevel)
@@ -1020,6 +1037,14 @@ struct UserState
     Wt::Dbo::field( a, showingWindows, "ShowingWindows" );
     Wt::Dbo::field( a, userOptionsJson, "UserOptions" );
     Wt::Dbo::field( a, colorThemeJson, "ColorThemeJson" );
+    
+    Wt::Dbo::field( a, gammaXsToolUri, "GammaXsToolUri" );
+    Wt::Dbo::field( a, doseCalcToolUri, "DoseCalcToolUri" );
+    Wt::Dbo::field( a, oneOverR2ToolUri, "OneOverR2ToolUri" );
+    Wt::Dbo::field( a, unitsConverterToolUri, "UnitsConverterToolUri" );
+    Wt::Dbo::field( a, nucDecayInfoUri, "NucDecayInfoUri" );
+    Wt::Dbo::field( a, energyRangeSumUri, "EnergyRangeSumUri" );
+    Wt::Dbo::field( a, fluxToolUri, "FluxToolUri" );
   }//void persist( Action &a )
 
 private:

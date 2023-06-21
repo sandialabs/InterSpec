@@ -439,8 +439,13 @@ void CompactFileManager::handleSampleNumEditBlur( SpecUtils::SpectrumType type )
 }//void handleSampleNumEditBlur( SpecUtils::SpectrumType spectrum_type )
 
 
-void CompactFileManager::handleSpectrumScale( const double scale, SpecUtils::SpectrumType type )
+void CompactFileManager::handleSpectrumScale( const double scale,
+                                             const double /*prev_scale*/,
+                                             SpecUtils::SpectrumType type )
 {
+  // This function is called when the user slides the slider on the spectrum, through the
+  //  D3SpectrumDisplayDiv::yAxisScaled() signal.
+  
   const int typeindex = static_cast<int>( type );
   switch( type )
   {
@@ -450,7 +455,7 @@ void CompactFileManager::handleSpectrumScale( const double scale, SpecUtils::Spe
       
     case SpecUtils::SpectrumType::Background:
     case SpecUtils::SpectrumType::SecondForeground:
-      m_interspec->setDisplayScaleFactor( scale, type );
+      m_interspec->setDisplayScaleFactor( scale, type, false );
       updateDisplayedScaleFactorNumbers( scale, type );
       if( m_rescaleByLiveTime[typeindex] )
         m_rescaleByLiveTime[typeindex]->show();
@@ -879,7 +884,7 @@ void CompactFileManager::updateDisplayedScaleFactorNumbers( const double sf,
 //  updateDisplayedScaleFactorNumbers( sf, type );
 //  
 //  if( update )
-//    m_interspec->setDisplayScaleFactor( sf, type );
+//    m_interspec->setDisplayScaleFactor( sf, type, false );
 //}//void handleSliderChanged(...);
 
 
@@ -915,8 +920,9 @@ void CompactFileManager::handleUserEnterdScaleFactor( const SpecUtils::SpectrumT
   {
     if( m_rescaleByLiveTime[typeindex] )
       m_rescaleByLiveTime[typeindex]->show();
-    m_interspec->setDisplayScaleFactor( sf, type );
-  }
+    
+    m_interspec->setDisplayScaleFactor( sf, type, true );
+  }//if( update )
 }//void handleUserEnterdScaleFactor( const SpecUtils::SpectrumType type )
 
 
@@ -942,6 +948,6 @@ void CompactFileManager::handleRenormalizeByLIveTime( const SpecUtils::SpectrumT
   updateDisplayedScaleFactorNumbers( sf, type );
   if( m_rescaleByLiveTime[typeindex] )
     m_rescaleByLiveTime[typeindex]->hide();
-  m_interspec->setDisplayScaleFactor( sf, type );
+  m_interspec->setDisplayScaleFactor( sf, type, true );
 }//void handleRenormalizeByLIveTime( const SpecUtils::SpectrumType type )
 

@@ -51,16 +51,20 @@
 #include <Wt/WAbstractItemModel>
 #include <Wt/WAbstractItemDelegate>
 
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/Filesystem.h"
+
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/FluxTool.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/HelpSystem.h"
-#include "SpecUtils/Filesystem.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RowStretchTreeView.h"
 
@@ -809,10 +813,6 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   m_fluxTool->m_tableUpdated.connect( std::bind(enableDisableCsv) );
   csvButton->disable();
   
-
-  
-  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
-  
   show();
   
   const int screenW = viewer->renderedWidth();
@@ -831,12 +831,25 @@ FluxToolWindow::~FluxToolWindow()
 }
 
 
+void FluxToolWindow::handleAppUrl( const std::string &query_str )
+{
+  m_fluxTool->handleAppUrl( query_str );
+}//void handleAppUrl( std::string query_str )
+
+
+std::string FluxToolWindow::encodeStateToUrl() const
+{
+  return m_fluxTool->encodeStateToUrl();
+}
+
+
 FluxToolWidget::FluxToolWidget( InterSpec *viewer, Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
     m_interspec( viewer ),
     m_detector( nullptr ),
     m_msg( nullptr ),
     m_distance( nullptr ),
+    m_prevDistance(),
     m_table( nullptr ),
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
     m_copyBtn( nullptr ),
@@ -844,6 +857,7 @@ FluxToolWidget::FluxToolWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
 #endif
     m_needsTableRefresh( true ),
     m_displayInfoLevel( DisplayInfoLevel::Normal ),
+    m_displayLevelButtons( nullptr ),
     m_tableUpdated( this )
 {
   init();
@@ -865,8 +879,86 @@ FluxToolWidget::DisplayInfoLevel FluxToolWidget::displayInfoLevel() const
   return m_displayInfoLevel;
 }
 
+
+void FluxToolWidget::handleAppUrl( std::string query_str )
+{
+  // Do we want to add an undo/redo step here?
+  const map<string,string> parts = AppUtils::query_str_key_values( query_str );
+  
+  const auto ver_iter = parts.find( "VER" );
+  if( ver_iter == end(parts) )
+    Wt::log("warn") << "No 'VER' field in Flux Tool URI.";
+  else if( ver_iter->second != "1" && !SpecUtils::starts_with(ver_iter->second, "1.") )
+    throw runtime_error( "Can not read Flux Tool URI version '" + ver_iter->second + "'" );
+  
+  const auto dist_iter = parts.find( "DIST" );
+  if( dist_iter == end(parts) )
+    throw runtime_error( "URL is invalid Flux Tool URI = no 'DIST' component" );
+  
+  string dist = dist_iter->second;
+  try
+  {
+    PhysicalUnits::stringToDistance( dist );
+  }catch( std::exception & )
+  {
+    Wt::log("warn") << "FluxToolWidget URI had invalid distance: '" << dist << "'";
+    throw std::runtime_error( "Invalid Flux Tool distance specified in URI" );
+  }
+  
+  
+  DisplayInfoLevel level = DisplayInfoLevel::Normal;
+  string disp_str = "NORMAL";
+  const auto disp_iter = parts.find( "DISPLAY" );
+  if( disp_iter != end(parts) )
+    disp_str = disp_iter->second;
+  if( SpecUtils::iequals_ascii(disp_str, "SIMPLE") )
+    level = DisplayInfoLevel::Simple;
+  else if( SpecUtils::iequals_ascii(disp_str, "NORMAL") )
+    level = DisplayInfoLevel::Normal;
+  else if( SpecUtils::iequals_ascii(disp_str, "EXTENDED") )
+    level = DisplayInfoLevel::Extended;
+  else
+    Wt::log("warn") << "FluxToolWidget URI had invalid display type: '" << disp_str << "'";
+  
+  setDisplayInfoLevel( level );
+  m_prevDistance = WString::fromUTF8(dist);
+  m_distance->setText( m_prevDistance );
+  setTableNeedsUpdating();
+}//void handleAppUrl( std::string query_str )
+
+
+std::string FluxToolWidget::encodeStateToUrl() const
+{
+  // "dist=1.2m&display=low&ver=1"
+  
+  string dist = m_distance->text().toUTF8();
+  try
+  {
+    PhysicalUnits::stringToDistance(dist);
+  }catch( std::exception & )
+  {
+    dist = "";
+  }
+  
+  string answer = "VER=1&DIST=" + dist + "&DISPLAY=";
+  
+  switch( displayInfoLevel() )
+  {
+    case DisplayInfoLevel::Simple:   answer += "SIMPLE";   break;
+    case DisplayInfoLevel::Normal:   answer += "NORMAL";   break;
+    case DisplayInfoLevel::Extended: answer += "EXTENDED"; break;
+  }//switch( displayInfoLevel() )
+  
+  //SpecUtils::erase_any_character( answer, " \t\n\r" );
+  
+  return answer;
+}//std::string encodeStateToUrl() const
+
+
 void FluxToolWidget::init()
 {
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   assert( m_interspec );
   assert( !m_detector );
   
@@ -941,7 +1033,8 @@ void FluxToolWidget::init()
   WLabel *label = new WLabel( "Distance:", distCell );
   label->addStyleClass( "FluxDistLabel" );
   
-  m_distance = new WLineEdit( "100 cm", distCell );
+  m_prevDistance = "100 cm";
+  m_distance = new WLineEdit( m_prevDistance, distCell );
   m_distance->addStyleClass( "FluxDistanceEnter" );
   label->setBuddy(m_distance);
   
@@ -960,8 +1053,8 @@ void FluxToolWidget::init()
                               " ft, ', in, inches, or \".  You may also add multiple distances,"
                               " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
                               " 40inches and 15.6cm respectively.", showToolTips );
-  m_distance->changed().connect( this, &FluxToolWidget::setTableNeedsUpdating );
-  m_distance->enterPressed().connect( this, &FluxToolWidget::setTableNeedsUpdating );
+  m_distance->changed().connect( this, &FluxToolWidget::distanceUpdated );
+  m_distance->enterPressed().connect( this, &FluxToolWidget::distanceUpdated );
   
   
   PeakModel *peakmodel = m_interspec->peakModel();
@@ -1011,14 +1104,14 @@ void FluxToolWidget::init()
   WRadioButton *standardInfo = new WRadioButton( "Standard", buttonBox );
   WRadioButton *moreInfo = new WRadioButton( "More", buttonBox );
   
-  WButtonGroup *btnGrp = new WButtonGroup( buttonBox );
-  btnGrp->addButton( simpleInfo, static_cast<int>(DisplayInfoLevel::Simple) );
-  btnGrp->addButton( standardInfo, static_cast<int>(DisplayInfoLevel::Normal) );
-  btnGrp->addButton( moreInfo, static_cast<int>(DisplayInfoLevel::Extended) );
-  btnGrp->setCheckedButton( standardInfo );
+  m_displayLevelButtons = new WButtonGroup( buttonBox );
+  m_displayLevelButtons->addButton( simpleInfo, static_cast<int>(DisplayInfoLevel::Simple) );
+  m_displayLevelButtons->addButton( standardInfo, static_cast<int>(DisplayInfoLevel::Normal) );
+  m_displayLevelButtons->addButton( moreInfo, static_cast<int>(DisplayInfoLevel::Extended) );
+  m_displayLevelButtons->setCheckedButton( standardInfo );
 
-  btnGrp->checkedChanged().connect( std::bind( [this,btnGrp](){
-    const auto level = static_cast<DisplayInfoLevel>( btnGrp->checkedId() );
+  m_displayLevelButtons->checkedChanged().connect( std::bind( [this](){
+    const auto level = static_cast<DisplayInfoLevel>( m_displayLevelButtons->checkedId() );
     
     assert( (level == DisplayInfoLevel::Simple)
            || (level == DisplayInfoLevel::Normal)
@@ -1065,6 +1158,42 @@ void FluxToolWidget::render( Wt::WFlags<Wt::RenderFlag> flags )
   WContainerWidget::render( flags );
 }//void render( Wt::WFlags<Wt::RenderFlag> flags );
 
+
+void FluxToolWidget::distanceUpdated()
+{
+  const WString dist = m_distance->text();
+  
+  if( dist != m_prevDistance )
+  {
+    const WString prev = m_prevDistance;
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    {
+      auto undo_redo = [dist, prev]( const bool is_undo ){
+        InterSpec *viewer = InterSpec::instance();
+        FluxToolWindow *fluxwin = viewer ? viewer->createFluxTool() : nullptr;
+        FluxToolWidget *tool = fluxwin ? fluxwin->m_fluxTool : nullptr;
+        if( tool )
+        {
+          tool->m_prevDistance = is_undo ? prev : dist;
+          tool->m_distance->setText( tool->m_prevDistance );
+          tool->m_needsTableRefresh = true;
+          tool->scheduleRender();
+        }//if( tool )
+      };
+      
+      auto undo = [=](){ undo_redo(true); };
+      auto redo = [=](){ undo_redo(false); };
+      undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Change flux tool distance." );
+    }//if( add undo/redo )
+    
+    m_prevDistance = dist;
+  }//if( dist != m_prevDistance )
+  
+  m_needsTableRefresh = true;
+  scheduleRender();
+}
 
 void FluxToolWidget::setTableNeedsUpdating()
 {
@@ -1205,6 +1334,24 @@ void FluxToolWidget::setDisplayInfoLevel( const DisplayInfoLevel disptype )
 {
   if( disptype == m_displayInfoLevel )
     return;
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    const DisplayInfoLevel prev = m_displayInfoLevel;
+    auto undo_redo = [prev, disptype]( const bool is_undo ){
+      InterSpec *viewer = InterSpec::instance();
+      FluxToolWindow *fluxwin = viewer ? viewer->createFluxTool() : nullptr;
+      FluxToolWidget *tool = fluxwin ? fluxwin->m_fluxTool : nullptr;
+      if( tool )
+        tool->setDisplayInfoLevel( is_undo ? prev : disptype );
+    };
+    auto undo = [=](){ undo_redo(true); };
+    auto redo = [=](){ undo_redo(false); };
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Change flux tool display level." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  
+  m_displayLevelButtons->setSelectedButtonIndex( static_cast<int>(disptype) );
   
   m_displayInfoLevel = disptype;
   

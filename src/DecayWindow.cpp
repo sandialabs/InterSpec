@@ -28,16 +28,21 @@
 #include <math.h>
 #include <iostream>
 
+#include <Wt/Utils>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/StringAlgo.h"
+
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -85,7 +90,8 @@ DecayWindow::DecayWindow( InterSpec *viewer )
   qr_btn->clicked().connect( std::bind( [this](){
     try
     {
-      const string url = "interspec://decay/" + m_activityDiv->encodeStateToUrl();
+      const string url = "interspec://decay/"
+                                     + Wt::Utils::urlEncode(m_activityDiv->encodeStateToUrl());
       QrCode::displayTxtAsQrCode( url, "Decay Tool State", "Current State of decay tool state." );
     }catch( std::exception &e )
     {
@@ -171,7 +177,22 @@ void DecayWindow::addNuclide( const int z, const int a, const int iso,
 }//void addNuclide(...)
 
 
+void DecayWindow::handleAppUrl( std::string url )
+{
+  std::string host, path, query, frag;
+  AppUtils::split_uri( url, host, path, query, frag );
+  
+  handleAppUrl( path.empty() ? host : path, query );
+}//handleAppUrl( std::string url )
+
+
 void DecayWindow::handleAppUrl( const std::string &path, const std::string &query_str )
 {
   m_activityDiv->handleAppUrl( path, query_str );
 }//void handleAppUrl( std::string path, std::string query_str )
+
+
+std::string DecayWindow::encodeStateToUrl()
+{
+  return m_activityDiv->encodeStateToUrl();
+}

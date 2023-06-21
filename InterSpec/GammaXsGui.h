@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <array>
 #include <vector>
 #include <utility>
 
@@ -77,8 +78,34 @@ public:
 
   //parseMaterial(): throws on error
   std::vector<std::pair<const SandiaDecay::Element *, float> > parseMaterial();
-
+  
+  
+  /** Handles receiving a "deep-link" url starting with "interspec://gammaxs?e=1001&m=Fe&d=1.2&t=0.1cm&r=1.2m".
+   
+   Example URIs:
+   - "interspec://gammaxs?e=1001&m=Fe&d=1.2&t=0.1cm&r=1.2m"
+   
+   @param query_str The query portion of the URI.  So for example, if the URI has a value of
+          "interspec://gammaxs?e=1001&m=...", then this string would be "e=1001keV&m=...".
+          This string is in standard URL format of "key1=value1&key2=value2&..." with ordering not mattering.
+          Capitalization is not important.
+          Assumes the string passed in has already been url-decoded.
+          If not a valid query_str, throws exception.
+   */
+  void handleAppUrl( std::string query_str );
+  
+  /** Encodes current tool state to app-url format.  Returned string is just the query portion of URL;
+   so will look something like "e=1001&m=....", and it will not be url-encoded.
+   */
+  std::string encodeStateToUrl() const;
+  
+  
 protected:
+  
+  std::array<Wt::WString,4> inputs() const;
+  void fromInputs( const std::array<Wt::WString,4> &inputs );
+  void checkAndAddUndoRedo();
+  
   Wt::WLineEdit *m_energyEdit;
   Wt::WDoubleValidator *m_energyValidator;
   Wt::WLineEdit *m_materialEdit;
@@ -94,7 +121,7 @@ protected:
   Wt::WText *m_conversion;
 
   Wt::WLineEdit *m_density;
-  Wt::WLineEdit *m_distance;
+  Wt::WLineEdit *m_thickness;
   Wt::WText *m_transmissionFraction;  //labeled "Trans. Frac."
   float m_transmissionFractionVal;  //will be negative if not defined
 
@@ -112,6 +139,8 @@ protected:
   Wt::WLabel *m_detectorLabel[5] ; //labels for detector if defined
   
   std::shared_ptr<const DetectorPeakResponse> m_detector;
+  
+  std::array<Wt::WString,4> m_prevInputs;
 };//class GammaXsGui
 
 
@@ -126,8 +155,11 @@ public:
                  Wt::WSuggestionPopup *materialSuggestion,
                  InterSpec* viewer );
   virtual ~GammaXsWindow();
-  static void deleteWindow( GammaXsWindow *window );
+  
+  GammaXsGui *xstool();
 protected:
+  
+  GammaXsGui *m_tool;
 };//class GammaXsWindow
 
 

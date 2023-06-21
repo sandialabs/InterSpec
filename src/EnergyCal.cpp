@@ -1026,7 +1026,7 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
     case SpecUtils::EnergyCalType::Polynomial:
     case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
     {
-      const vector<float> new_other_coefs = fit_for_poly_coefs( channels_energies, order );
+      const vector<float> new_other_coefs = fit_for_poly_coefs( channels_energies, static_cast<int>(order) );
       answer->set_polynomial( other_num_channel, new_other_coefs, dev_pairs );
       break;
     }
@@ -1034,7 +1034,7 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
     case SpecUtils::EnergyCalType::FullRangeFraction:
     {
       const vector<float> new_other_coefs = fit_for_fullrangefraction_coefs( channels_energies,
-                                                                        other_num_channel, order );
+                                                                        other_num_channel, static_cast<int>(order) );
       answer->set_full_range_fraction( other_num_channel, new_other_coefs, dev_pairs );
       break;
     }

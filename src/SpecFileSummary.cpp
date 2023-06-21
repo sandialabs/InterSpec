@@ -167,7 +167,7 @@ namespace
 
 
 SpecFileSummary::SpecFileSummary( InterSpec *specViewer )
-  : AuxWindow( "File Parameters" ),
+  : AuxWindow( "File Parameters", AuxWindowProperties::IsModal ),
     m_specViewer( specViewer ),
     m_allowEditGroup( NULL ),
     m_displaySampleDiv( NULL ),
@@ -580,7 +580,6 @@ SpecFileSummary::~SpecFileSummary()
 void SpecFileSummary::showRiidAnalysis()
 {
   const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
-  std::shared_ptr<const SpecMeas> meas = m_specViewer->measurment( type );
   
   // The SimpleDialog containing the RIID results will be behind this SpecFileSummary, if we create
   //  it here (I assume do to the mouse click bringing *this to front), so we will create it in the
@@ -588,7 +587,7 @@ void SpecFileSummary::showRiidAnalysis()
   WServer::instance()->post( wApp->sessionId(), std::bind([=](){
     auto app = WApplication::instance();
     if( app ){
-      showRiidInstrumentsAna( meas );
+      InterSpec::instance()->showRiidResults( type );
       app->triggerUpdate();
     }
   }) );
