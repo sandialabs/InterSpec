@@ -1043,8 +1043,11 @@ void D3TimeChart::defineJavaScript()
   setJavaScriptMember( "resizeObserver",
     "new ResizeObserver(entries => {"
       "for (let entry of entries) {"
-        "if( entry.target && (entry.target.id === '" + m_chart->id() + "') )"
-          + m_jsgraph + ".handleResize();"
+        "if( entry.target && (entry.target.id === '" + m_chart->id() + "') ){"
+          "const c=" + jsRef() + ";"
+          "if(c && c.chart)"
+            "c.chart.handleResize();"
+        "}"
       "}"
     "});"
   );
