@@ -86,10 +86,10 @@ namespace AppUtils
     path = (host_end == string::npos) ? string("") : host_path.substr(host_end+1);
     
     if( (q_pos != string::npos) && (q_pos < hash_pos) )
-      query = url.substr( q_pos+1, (hash_pos==string::npos) ? string::npos : (hash_pos - q_pos) );
+      query = url.substr( q_pos+1, (hash_pos==string::npos) ? string::npos : (hash_pos - q_pos - 1) );
       
     if( hash_pos != string::npos )
-      fragment = query.substr( hash_pos + 1 );
+      fragment = url.substr( hash_pos + 1 );
   }//void split_uri( string url, string &host, string &path, string &query )
 
   
