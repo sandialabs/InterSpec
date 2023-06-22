@@ -2234,8 +2234,9 @@ ShieldingSelect::~ShieldingSelect()
       }else
       {
         // I dont think we get here - but I'll leave the assert in, just to see
+        //  -- we get here sometimes if DoseCalc tool is showing and we clear the session
         cerr << "~ShieldingSelect(): Suggest not in DOM, not removing edit from suggestion" << endl;
-        assert( 0 );
+//        assert( 0 );
       }
     }else
     {

@@ -696,14 +696,26 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   if( renderFull )
     defineJavaScript();
   
-  if( m_renderFlags.testFlag(UpdateForegroundSpectrum) )
-    renderForegroundToClient();
+  // We will render background and secondary spectra first; this way
+  //  if we are loading a new foreground, and unloading the background
+  //  (e.g., its a different detector type), and the new energy range
+  //  is less/different than previous, we will update the viewable
+  //  range correctly.  This is because:
+  //    - The energy range is only adjusted by `renderForegroundToClient`
+  //    - The x-range bounds are set by largest loaded spectra in JS
+  //    - If we load foreground first, then background will still be
+  //      loaded in JS, so the adjusted energy range will reflect
+  //      background, which may go to like 12 MeV, while new foreground
+  //      only goes to like 3 MeV
   
   if( m_renderFlags.testFlag(UpdateBackgroundSpectrum) )
     renderBackgroundToClient();
   
   if( m_renderFlags.testFlag(UpdateSecondarySpectrum) )
     renderSecondDataToClient();
+  
+  if( m_renderFlags.testFlag(UpdateForegroundSpectrum) )
+    renderForegroundToClient();
   
   if( m_renderFlags.testFlag(UpdateForegroundPeaks) )
     setForegroundPeaksToClient();
