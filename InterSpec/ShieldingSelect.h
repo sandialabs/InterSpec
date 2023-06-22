@@ -452,12 +452,17 @@ public:
   void handleAppUrl( std::string query_str );
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
-  boost::optional<double> truthThickness;
+  boost::optional<double> truthThickness; //Shperical thickness, radial thickness (cylindrical), or rectagular width
   boost::optional<double> truthThicknessTolerance;
   boost::optional<double> truthAD;
   boost::optional<double> truthADTolerance;
   boost::optional<double> truthAN;
   boost::optional<double> truthANTolerance;
+  
+  boost::optional<double> truthThicknessD2;  //Cylinder length, or rectangular height
+  boost::optional<double> truthThicknessD2Tolerance;
+  boost::optional<double> truthThicknessD3;  //Rectangular depth
+  boost::optional<double> truthThicknessD3Tolerance;
 #endif
 
   

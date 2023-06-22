@@ -441,6 +441,7 @@ endif(USE_DB_TO_STORE_SPECTRA)
 
 
 if(INCLUDE_ANALYSIS_TEST_SUITE)
+    set(TEST_SUITE_BASE_DIR "." CACHE STRING "Directory containing a 'analysis_tests' directory containing N42 analyst test files.")
     list(APPEND sources src/SpectrumViewerTester.cpp)
     list(APPEND headers InterSpec/SpectrumViewerTester.h)
 endif(INCLUDE_ANALYSIS_TEST_SUITE)
@@ -898,12 +899,12 @@ endforeach()
 # TODO: I think we can get rid of this next part, but need to modify in the code a little bit probably
 if(INCLUDE_ANALYSIS_TEST_SUITE)
     if(WIN32)
-        #        file(COPY ${PROJECT_SOURCE_DIR}/testing/analysis_tests DESTINATION ${PROJECT_BINARY_DIR}/analysis_tests )
+        #        file(COPY ${PROJECT_SOURCE_DIR}/target/testing/analysis_tests DESTINATION ${PROJECT_BINARY_DIR}/analysis_tests )
     else(WIN32)
         execute_process(
             COMMAND
                 ${CMAKE_COMMAND} -E create_symlink
-                ${PROJECT_SOURCE_DIR}/testing/analysis_tests
+                ${PROJECT_SOURCE_DIR}/target/testing/analysis_tests
                 ${PROJECT_BINARY_DIR}/analysis_tests
         )
     endif(WIN32)

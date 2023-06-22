@@ -4699,20 +4699,25 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     }//if( m_traceSources )
     
     
-    #if( INCLUDE_ANALYSIS_TEST_SUITE )
-        auto addTruth = [doc,material_node]( const char *truthName, const boost::optional<double> &value ){
-          if( value )
-          {
-            const string strval = PhysicalUnits::printToBestLengthUnits(*value,6);
-            const char *value = doc->allocate_string( strval.c_str() );
-            rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, truthName, value );
-            material_node->append_node( node );
-          }
-        };//addTruth(...)
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    auto addTruth = [doc,material_node]( const char *truthName, const boost::optional<double> &value ){
+      if( value )
+      {
+        const string strval = PhysicalUnits::printToBestLengthUnits(*value,6);
+        const char *value = doc->allocate_string( strval.c_str() );
+        rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, truthName, value );
+        material_node->append_node( node );
+      }
+    };//addTruth(...)
     
-        addTruth( "TruthThickness", truthThickness );
-        addTruth( "TruthThicknessTolerance", truthThicknessTolerance );
-    #endif
+    addTruth( "TruthThickness", truthThickness );
+    addTruth( "TruthThicknessTolerance", truthThicknessTolerance );
+    addTruth( "TruthThicknessD2", truthThicknessD2 );
+    addTruth( "TruthThicknessD2Tolerance", truthThicknessD2Tolerance );
+    addTruth( "TruthThicknessD3", truthThicknessD3 );
+    addTruth( "TruthThicknessD3Tolerance", truthThicknessD3Tolerance );
+#endif
+    
   }//if( m_isGenericMaterial ) / else
   
   
@@ -5155,6 +5160,10 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
     
     getTruth( "TruthThickness", truthThickness );
     getTruth( "TruthThicknessTolerance", truthThicknessTolerance );
+    getTruth( "TruthThicknessD2", truthThicknessD2 );
+    getTruth( "TruthThicknessD2Tolerance", truthThicknessD2Tolerance );
+    getTruth( "TruthThicknessD3", truthThicknessD3 );
+    getTruth( "TruthThicknessD3Tolerance", truthThicknessD3Tolerance );
 #endif
     
     
@@ -5235,7 +5244,7 @@ std::string ShieldingSelect::encodeStateToUrl() const
         if( m_forFitting && m_fitRectHeightCB->isChecked() )
           answer += "&FD2=1";
         if( m_forFitting && m_fitRectDepthCB->isChecked() )
-          answer += "&FD2=1";
+          answer += "&FD3=1";
         break;
         
       case GammaInteractionCalc::GeometryType::NumGeometryType:
@@ -5387,8 +5396,8 @@ void ShieldingSelect::handleAppUrl( std::string query_str )
         // drop-through intentional
       case GammaInteractionCalc::GeometryType::Spherical:
         getDim("D1", d1str, fitD1);
-
         break;
+        
       case GammaInteractionCalc::GeometryType::NumGeometryType:
         assert( 0 );
         break;

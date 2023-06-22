@@ -3714,10 +3714,90 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
 //        if( !srcnucs.empty() )
 //          throw runtime_error( "A shieldings used as sources is not yet implemented" );
         
-        if( select->fitThickness() )
-        {
+        const auto geom = geometry();
+        
+        auto setupLength = [this, select, table, geom]( const int dim ){
+          assert( (dim >= 0) && (dim <= 2) );
+          
+          const char *labeltxt = "Thickness";
+          
+          switch( geom )
+          {
+            case GammaInteractionCalc::GeometryType::Spherical:
+              assert( dim == 0 );
+              labeltxt = "Thickness";
+              if( (dim != 0) || !select->fitThickness() )
+                return;
+              break;
+              
+            case GammaInteractionCalc::GeometryType::CylinderEndOn:
+            case GammaInteractionCalc::GeometryType::CylinderSideOn:
+              assert( (dim == 0) || (dim == 1) );
+              if( (dim != 0) && (dim != 1) )
+                return;
+              
+              if( (dim == 0) && !select->fitCylindricalRadiusThickness() )
+                return;
+              
+              if( (dim == 1) && !select->fitCylindricalLengthThickness() )
+                return;
+              
+              labeltxt = (dim == 0) ? "Rad. Thick." : "Cyl. Len.";
+              break;
+              
+            case GammaInteractionCalc::GeometryType::Rectangular:
+              assert( (dim == 0) || (dim == 1) || (dim == 2) );
+              if( (dim != 0) && (dim != 1) && (dim != 2) )
+                return;
+              
+              if( (dim == 0) && !select->fitRectangularWidthThickness() )
+                return;
+              
+              if( (dim == 1) && !select->fitRectangularHeightThickness() )
+                return;
+              
+              if( (dim == 2) && !select->fitRectangularDepthThickness() )
+                return;
+              
+              labeltxt = (dim == 0) ? "Width" : ((dim == 1) ? "Height" : "Depth");
+              break;
+              
+            case GammaInteractionCalc::GeometryType::NumGeometryType:
+              assert( 0 );
+              return;
+              break;
+          }//switch( geom )
+      
+          
+          boost::optional<double> *thicknessVal = nullptr;
+          boost::optional<double> *toleranceVal = nullptr;
+          
+          
+          switch( dim )
+          {
+            case 0:
+              thicknessVal = &(select->truthThickness);
+              toleranceVal = &(select->truthThicknessTolerance);
+              break;
+              
+            case 1:
+              thicknessVal = &(select->truthThicknessD2);
+              toleranceVal = &(select->truthThicknessD2Tolerance);
+              break;
+              
+            case 2:
+              thicknessVal = &(select->truthThicknessD3);
+              toleranceVal = &(select->truthThicknessD3Tolerance);
+              break;
+              
+            default:
+              throw std::logic_error( "Invalid truth dim" );
+          }//switch( dim )
+          
+          assert( thicknessVal && toleranceVal );
+          
           const int row = table->rowCount();
-          WLabel *label = new WLabel( "Thickness", table->elementAt(row, 0) );
+          WLabel *label = new WLabel( labeltxt, table->elementAt(row, 0) );
           WLineEdit *value = new WLineEdit( table->elementAt(row, 1) );
           
           value->setAutoComplete( false );
@@ -3731,24 +3811,24 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           value->setValidator( validator );
           label->setBuddy( value );
           
-          if( select->truthThickness )
-            value->setText( PhysicalUnits::printToBestLengthUnits( *select->truthThickness, 2 ) );
+          if( *thicknessVal )
+            value->setText( PhysicalUnits::printToBestLengthUnits( **thicknessVal, 4 ) );
           
-          auto updateVal = [select,value](){
+          auto updateVal = [value,thicknessVal](){
             const string txt = value->text().toUTF8();
             if( txt.empty() )
             {
-              select->truthThickness.reset();
+              thicknessVal->reset();
               return;
             }
             
             try
             {
-              select->truthThickness = PhysicalUnits::stringToDistance( txt );
+              (*thicknessVal) = PhysicalUnits::stringToDistance( txt );
             }catch( ... )
             {
-              if( select->truthThickness )
-                value->setText( PhysicalUnits::printToBestLengthUnits(*select->truthThickness,2) );
+              if( *thicknessVal )
+                value->setText( PhysicalUnits::printToBestLengthUnits( **thicknessVal, 4) );
               else
                 value->setText( "" );
             }//try / catch
@@ -3765,37 +3845,60 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           tolerance->setAttributeValue( "autocorrect", "off" );
           tolerance->setAttributeValue( "spellcheck", "off" );
 #endif
-
+          
           validator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, tolerance );
           validator->setFlags( Wt::MatchCaseInsensitive );
           tolerance->setValidator( validator );
           
-          auto updateTolerance = [select,tolerance](){
+          auto updateTolerance = [tolerance,toleranceVal](){
             const string txt = tolerance->text().toUTF8();
             if( txt.empty() )
             {
-              select->truthThicknessTolerance.reset();
+              toleranceVal->reset();
               return;
             }
             
             try
             {
-              select->truthThicknessTolerance = PhysicalUnits::stringToDistance( txt );
+              (*toleranceVal) = PhysicalUnits::stringToDistance( txt );
             }catch( ... )
             {
-              if( select->truthThicknessTolerance )
-                tolerance->setText( PhysicalUnits::printToBestLengthUnits(*select->truthThicknessTolerance,2) );
+              if( *toleranceVal )
+                tolerance->setText( PhysicalUnits::printToBestLengthUnits( **toleranceVal,4) );
               else
                 tolerance->setText( "" );
             }//try / catch
           };//updateVal(...)
           
-          if( select->truthThicknessTolerance )
-            tolerance->setText( PhysicalUnits::printToBestLengthUnits(*select->truthThicknessTolerance) );
+          if( *toleranceVal )
+            tolerance->setText( PhysicalUnits::printToBestLengthUnits( **toleranceVal ) );
           
           tolerance->changed().connect( std::bind(updateTolerance) );
           tolerance->enterPressed().connect( std::bind(updateTolerance) );
-        }//if( fit thickness )
+        };//setupLength lamda
+        
+        switch( geom )
+        {
+          case GammaInteractionCalc::GeometryType::Spherical:
+            setupLength(0);
+            break;
+            
+          case GammaInteractionCalc::GeometryType::CylinderEndOn:
+          case GammaInteractionCalc::GeometryType::CylinderSideOn:
+            setupLength(0);
+            setupLength(1);
+            break;
+            
+          case GammaInteractionCalc::GeometryType::Rectangular:
+            setupLength(0);
+            setupLength(1);
+            setupLength(2);
+            break;
+            
+          case GammaInteractionCalc::GeometryType::NumGeometryType:
+            assert( 0 );
+            break;
+        }//switch( geometry() )
       }//if( generic material ) / else
     }//for( WWidget *widget : m_shieldingSelects->children() )
   }catch( std::exception &e )
@@ -3872,8 +3975,35 @@ void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
       shared_ptr<Material> mat = select->material();
       if( !mat || select->fitForMassFractions() )
         continue;
-      if( select->fitThickness() )
-        select->setSphericalThickness( 1.0*PhysicalUnits::cm );
+      
+      switch( geometry() )
+      {
+        case GammaInteractionCalc::GeometryType::Spherical:
+          if( select->fitThickness() )
+            select->setSphericalThickness( 1.0*PhysicalUnits::cm );
+          break;
+          
+        case GammaInteractionCalc::GeometryType::CylinderEndOn:
+        case GammaInteractionCalc::GeometryType::CylinderSideOn:
+          if( select->fitCylindricalRadiusThickness() )
+            select->setCylindricalRadiusThickness( 0.5*PhysicalUnits::cm );
+          if( select->fitCylindricalLengthThickness() )
+            select->setCylindricalLengthThickness( 0.5*PhysicalUnits::cm );
+          break;
+          
+        case GammaInteractionCalc::GeometryType::Rectangular:
+          if( select->fitRectangularWidthThickness() )
+            select->setRectangularWidthThickness( 0.5*PhysicalUnits::cm );
+          if( select->fitRectangularHeightThickness() )
+            select->setRectangularHeightThickness( 0.5*PhysicalUnits::cm );
+          if( select->fitRectangularDepthThickness() )
+            select->setRectangularDepthThickness( 0.5*PhysicalUnits::cm );
+          break;
+          
+        case GammaInteractionCalc::GeometryType::NumGeometryType:
+          assert( 0 );
+          break;
+      }//switch( geometry() )
     }//if( generic material ) / else
   }//for( WWidget *widget : m_shieldingSelects->children() )
 }//void setFitQuantitiesToDefaultValues()
@@ -3966,12 +4096,63 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
         continue;
       }
       
-      if( select->fitThickness() )
+      switch( geometry() )
       {
-        if( select->truthThickness && select->truthThicknessTolerance )
-          nQuantitiesCan += 1;
-        nFitQuantities += 1;
-      }//if( fit thickness )
+        case GammaInteractionCalc::GeometryType::Spherical:
+          if( select->fitThickness() )
+          {
+            if( select->truthThickness && select->truthThicknessTolerance )
+              nQuantitiesCan += 1;
+            nFitQuantities += 1;
+          }//if( fit thickness )
+          break;
+          
+        case GammaInteractionCalc::GeometryType::CylinderEndOn:
+        case GammaInteractionCalc::GeometryType::CylinderSideOn:
+          if( select->fitCylindricalRadiusThickness() )
+          {
+            if( select->truthThickness && select->truthThicknessTolerance )
+              nQuantitiesCan += 1;
+            nFitQuantities += 1;
+          }//if( fit thickness )
+          
+          if( select->fitCylindricalLengthThickness() )
+          {
+            if( select->truthThicknessD2 && select->truthThicknessD2Tolerance )
+              nQuantitiesCan += 1;
+            nFitQuantities += 1;
+          }//if( fit thickness )
+          break;
+          
+          
+        case GammaInteractionCalc::GeometryType::Rectangular:
+          if( select->fitRectangularWidthThickness() )
+          {
+            if( select->truthThickness && select->truthThicknessTolerance )
+              nQuantitiesCan += 1;
+            nFitQuantities += 1;
+          }
+          
+          if( select->fitRectangularHeightThickness() )
+          {
+            if( select->truthThicknessD2 && select->truthThicknessD2Tolerance )
+              nQuantitiesCan += 1;
+            nFitQuantities += 1;
+          }
+          
+          if( select->fitRectangularDepthThickness() )
+          {
+            if( select->truthThicknessD3 && select->truthThicknessD3Tolerance )
+              nQuantitiesCan += 1;
+            nFitQuantities += 1;
+          }
+          break;
+          
+        case GammaInteractionCalc::GeometryType::NumGeometryType:
+          assert( 0 );
+          break;
+      }//switch( geometry() )
+      
     }//if( generic material ) / else
   }//for( WWidget *widget : m_shieldingSelects->children() )
   
@@ -4149,30 +4330,131 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
           continue;
         }
         
-        if( select->fitThickness() )
-        {
-          if( !select->truthThickness || !select->truthThicknessTolerance )
+        const auto geom = geometry();
+        auto checkDimension = [select, geom, mat, &successful, &textInfoLines, &numTested, &numCorrect]( const int dim ){
+          
+          string labeltxt;
+          bool fitdim = false;
+          double fitValue = 0.0;
+          boost::optional<double> *thicknessVal = nullptr;
+          boost::optional<double> *toleranceVal = nullptr;
+          
+          switch( geom )
+          {
+            case GammaInteractionCalc::GeometryType::Spherical:
+              labeltxt = "thickness";
+              fitdim = select->fitThickness();
+              fitValue = select->thickness();
+              thicknessVal = &(select->truthThickness);
+              toleranceVal = &(select->truthThicknessTolerance);
+              break;
+              
+            case GammaInteractionCalc::GeometryType::CylinderEndOn:
+            case GammaInteractionCalc::GeometryType::CylinderSideOn:
+              if( dim == 0 )
+              {
+                labeltxt = "cyl. radius";
+                fitdim = select->fitCylindricalRadiusThickness();
+                fitValue = select->cylindricalRadiusThickness();
+                thicknessVal = &(select->truthThickness);
+                toleranceVal = &(select->truthThicknessTolerance);
+              }else if( dim == 1 )
+              {
+                labeltxt = "cyl. length";
+                fitdim = select->fitCylindricalLengthThickness();
+                fitValue = select->cylindricalLengthThickness();
+                thicknessVal = &(select->truthThicknessD2);
+                toleranceVal = &(select->truthThicknessD2Tolerance);
+              }else
+              {
+                assert( 0 );
+                throw std::logic_error( "invalid dim" );
+              }
+              break;
+              
+            case GammaInteractionCalc::GeometryType::Rectangular:
+              if( dim == 0 )
+              {
+                labeltxt = "rect. width";
+                fitdim = select->fitRectangularWidthThickness();
+                fitValue = select->rectangularWidthThickness();
+                thicknessVal = &(select->truthThickness);
+                toleranceVal = &(select->truthThicknessTolerance);
+              }else if( dim == 1 )
+              {
+                labeltxt = "rect. height";
+                fitdim = select->fitRectangularHeightThickness();
+                fitValue = select->rectangularHeightThickness();
+                thicknessVal = &(select->truthThicknessD2);
+                toleranceVal = &(select->truthThicknessD2Tolerance);
+              }else if( dim == 2 )
+              {
+                labeltxt = "rect. depth";
+                fitdim = select->fitRectangularDepthThickness();
+                fitValue = select->rectangularDepthThickness();
+                thicknessVal = &(select->truthThicknessD3);
+                toleranceVal = &(select->truthThicknessD3Tolerance);
+              }else
+              {
+                assert( 0 );
+                throw std::logic_error( "invalid dim" );
+              }
+              break;
+              
+            case GammaInteractionCalc::GeometryType::NumGeometryType:
+              assert( 0 );
+              break;
+          }//switch( geometry() )
+          
+          assert( thicknessVal && toleranceVal );
+          
+          if( !fitdim || !thicknessVal || !toleranceVal )
+            return;
+          
+          if( !(*thicknessVal) || !(*toleranceVal) )
           {
             successful = false;
-            textInfoLines.push_back( "Missing truth thickness for shielding '" + mat->name + "'" );
-            continue;
+            textInfoLines.push_back( "Missing truth " + labeltxt + " for shielding '" + mat->name + "'" );
+            return;
           }
           
-          const double fitThickness = select->thickness();
-          const bool closeEnough = (fabs(*select->truthThickness - fitThickness) < *select->truthThicknessTolerance);
+          const bool closeEnough = (fabs((**thicknessVal) - fitValue) < (**toleranceVal));
           
           numTested += 1;
           numCorrect += closeEnough;
           
-          textInfoLines.push_back( "For shielding '" + mat->name + "' fit thickness "
-                                  + PhysicalUnits::printToBestLengthUnits(fitThickness,4)
+          textInfoLines.push_back( "For shielding '" + mat->name + "' fit " + labeltxt + " "
+                                  + PhysicalUnits::printToBestLengthUnits(fitValue,4)
                                   + " with the truth value of "
-                                  + PhysicalUnits::printToBestLengthUnits(*select->truthThickness,4)
+                                  + PhysicalUnits::printToBestLengthUnits(**thicknessVal,4)
                                   + " and tolerance "
-                                  + PhysicalUnits::printToBestLengthUnits(*select->truthThicknessTolerance)
+                                  + PhysicalUnits::printToBestLengthUnits(**toleranceVal)
                                   + (closeEnough ? " - within tolerance." : " - out of tolerance." )
                                   );
-        }//if( fit thickness )
+        };//auto checkDimension
+        
+        
+        switch( geometry() )
+        {
+          case GammaInteractionCalc::GeometryType::Spherical:
+            checkDimension(0);
+            break;
+            
+          case GammaInteractionCalc::GeometryType::CylinderEndOn:
+          case GammaInteractionCalc::GeometryType::CylinderSideOn:
+            checkDimension(0);
+            checkDimension(1);
+            break;
+            
+          case GammaInteractionCalc::GeometryType::Rectangular:
+            checkDimension(0);
+            checkDimension(1);
+            checkDimension(2);
+            break;
+            
+          case GammaInteractionCalc::GeometryType::NumGeometryType:
+            break;
+        }//switch( geometry() )
       }//if( generic material ) / else
     }//for( WWidget *widget : m_shieldingSelects->children() )
     
