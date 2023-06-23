@@ -10751,6 +10751,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         if( lock )
         {
           Wt::WFlags<RemoteRid::AnaFileOptions> flags;
+          
+          // When a search or portal file is loaded as foreground we could be a little smarter
+          //  in deciding if we should submit the whole file, or just the displayed sample
           if( sameSpecFile )
             flags |= RemoteRid::AnaFileOptions::OnlyDisplayedSearchSamples;
           

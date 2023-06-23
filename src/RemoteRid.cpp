@@ -876,6 +876,7 @@ public:
     if( code == 0 )
     {
       vector<string> nuclides;
+      vector<pair<string,string>> iso_descrips;
       
       try
       {
@@ -904,7 +905,26 @@ public:
           const SandiaDecay::Nuclide *nuc = db->nuclide(iso.name);
           if( nuc )
             nuclides.push_back( nuc->symbol );
+          
+          // ReferencePhotopeakDisplay::updateOtherNucsDisplay() uses following convention
+          //  to decide if a user should be able to click on a result
+          if( nuc )
+            iso_descrips.emplace_back( nuc->symbol, iso.type );
+          else
+            iso_descrips.emplace_back( iso.name, "" );
         }
+        
+        // We should set the results to ReferencePhotopeakDisplay, and then in
+        //  ReferencePhotopeakDisplay::handleSpectrumChange clear out the old results
+        //  when the file changes.  Also, should modify the auto submital to submit
+        //  the file only if all samples are displayed, and otherwise just the
+        //  displayed spectra, and do this when the sample numbers change.
+        //
+        //  TODO: the results we just got might be for the previous file
+        InterSpec *interspec = InterSpec::instance();
+        ReferencePhotopeakDisplay *reflines = interspec ? interspec->referenceLinesWidget() : nullptr;
+        if( reflines )
+          reflines->setExternalRidResults( "GADRAS", iso_descrips );
       }catch( std::exception &e )
       {
         message = "Failed to parse GADRAS RID results.";

@@ -1483,9 +1483,14 @@ void ReferencePhotopeakDisplay::handleSpectrumChange(SpecUtils::SpectrumType typ
 {
   // For simplicity we'll update the suggested nuclides whenever foreground gets
   //  changed, even if its only because of sample number change (which will have
-  //  same RIID results, as they are file-spoecific, not sample specific)
+  //  same RIID results, as they are file-specific, not sample specific).
+  //  We will also clear external RID results (e.g., if user has setup to
+  //  automatically use a web-service on spectrum load).
   if( type == SpecUtils::SpectrumType::Foreground )
+  {
+    m_external_ids.clear();
     updateOtherNucsDisplay();
+  }
 }//handleSpectrumChange();
 
 
@@ -1701,17 +1706,19 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
   // TODO: Need to deal the "more info" button
 
-  if( !riid_nucs.empty() )
-  {
+  auto displayDetectorOrExternal = [=]( string title, vector<pair<string,string>> nucs ){
+    if( nucs.empty() )
+      return;
+    
     // Protect against a detector having a ton of results
     const size_t max_riid_res = 10;
-    if( riid_nucs.size() > max_riid_res )
-      riid_nucs.resize( max_riid_res );
+    if( nucs.size() > max_riid_res )
+      nucs.resize( max_riid_res );
 
-    WText *header = new WText("Detector ID", m_otherNucs);
+    WText *header = new WText( WString::fromUTF8(title), m_otherNucs);
     header->addStyleClass("OtherNucTypeHeader");
     
-    for( const auto &riid : riid_nucs )
+    for( const auto &riid : nucs )
     {
       WPushButton *btn = new WPushButton(riid.first, m_otherNucs);
       btn->addStyleClass( "LinkBtn" );
@@ -1722,14 +1729,23 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
         input.m_input_txt = riid.first;
         
         btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::updateDisplayFromInput, this, input));
-      } else
+      }else
       {
         btn->disable();
       }
-    }//for( const auto &riid : riid_nucs )
-  }//if( !prev_nucs.empty() )
+    }//for( const auto &riid : nucs )
+  };//displayDetectorOrExternal lamda
 
-
+  if( !riid_nucs.empty() )
+    displayDetectorOrExternal( "Detector ID", riid_nucs );
+  
+  if( !m_external_ids.empty() )
+  {
+    string name = m_external_algo_name.empty() ? string("External RID") : m_external_algo_name;
+    displayDetectorOrExternal( name, m_external_ids );
+  }//if( !m_external_ids.empty() )
+  
+  
   if( !prev_nucs.empty() )
   {
     WText *header = new WText("Previous", m_otherNucs);
@@ -2424,6 +2440,17 @@ void ReferencePhotopeakDisplay::setPeaksGetAssignedRefLineColor( const bool they
 {
   m_peaksGetAssignedRefLineColor = theydo;
 }
+
+
+void ReferencePhotopeakDisplay::setExternalRidResults( const string &algo_name,
+                                                      const vector<pair<string,string>> &nucs )
+{
+  const bool is_diff = (nucs != m_external_ids);
+  m_external_ids = nucs;
+  m_external_algo_name = algo_name;
+  if( is_diff )
+    updateOtherNucsDisplay();
+}//void setExternalRidResults( const std::vector<std::string> &isotopes );
 
 
 Wt::Signal<> &ReferencePhotopeakDisplay::displayingNuclide()

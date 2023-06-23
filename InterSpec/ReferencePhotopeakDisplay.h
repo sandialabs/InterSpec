@@ -246,6 +246,24 @@ public:
    */
   void setPeaksGetAssignedRefLineColor( const bool theydo );
   
+  /** Sets the nuclide ID from an external service (a seperate exectuable or web-service); e.g.
+   if user has it setup to automatically get nuclide ID on file load.
+   
+   @param algo_name The name to display as the header under "Suggestions" for these results.
+          Should be short (less than ~12 characters); if empty will use "External RID".
+   @param iso_descrips The pairs of nuclide names, and thier descriptions.  For each pair,
+          if the name is a valid nuclide (or rather reference line that can be displayed), then
+          the first element should be nuclide name, and second element its description
+          (e.g., "Industrial", "SNM", etc).  If not a nuclide, then the second element should
+          be empty, which will make it so user cant click on this result to show ref. lines.
+          (I know, not a great system, but it will probably need re-vamped anyway once
+          we get a little more use-cases and experience).
+   
+   \sa RemoteRid::startAutomatedOnLoadAnalysis
+   */
+  void setExternalRidResults( const std::string &algo_name,
+                             const std::vector<std::pair<std::string,std::string>> &iso_descrips );
+  
   /** Signal emmitted whenever the user selects a new nuclide to be shown. */
   Wt::Signal<> &displayingNuclide();
   
@@ -353,7 +371,12 @@ protected:
   const size_t m_max_prev_nucs = 8; //arbitrary
   
   std::deque<RefLineInput> m_prevNucs;
-
+  
+  /** Name of "external" RID algorithm used, as set by #setExternalRidResults. */
+  std::string m_external_algo_name;
+  /** "External" RID results, as set by #setExternalRidResults. */
+  std::vector<std::pair<std::string,std::string>> m_external_ids;
+  
   DetectorDisplay *m_detectorDisplay;
   MaterialDB *m_materialDB;                 //not owned by this object
   Wt::WSuggestionPopup *m_materialSuggest;  //not owned by this object
