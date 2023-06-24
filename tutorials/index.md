@@ -73,8 +73,10 @@ Further information (also available within InterSpec in its help system) is in [
   * Problem Solution: [uranium_problem_one_solution.pdf](example_problems/uranium_enrichment/problem_1/uranium_problem_one_solution.pdf)
   * Spectrum file with data: [uranium_40%_HPGe_15cm.n42](example_problems/uranium_enrichment/problem_1/uranium_40%_HPGe_15cm.n42)
 
+
 # Other useful resources
 - **FRMAC Gamma Spectroscopist Knowledge Guide.**: an freely available, extensive, and excellent, guide to gamma spectroscopy; available [here (osti.gov)](https://www.osti.gov/biblio/1763003-frmac-gamma-spectroscopist-knowledge-guide-revision) and [here (nnss.gov)](https://www.nnss.gov/docs/docs_FRMAC/_FRMAC_GammaSpec_KnowledgeGuide_2019-08_UUR.pdf)
 - **High Resolution Gamma-Ray Spectrometry Analyses For Normal Operations and Radiological Incident Response**: available [here (epa.gov)](https://www.epa.gov/sites/default/files/2020-07/documents/guide_for_high_resolution_gamma_spectrometry_analyses_camera_ready.pdf)
 - The **Passive Nondestructive Assay of Nuclear Materials**: freely available, extensive, and deep gamma spectroscopy and theory guide, available [here (lanl.gov)](https://www.lanl.gov/orgs/n/n1/FMTTD/neut_mc/pdfs/LA_UR_90_0732.pdf).  Its 2007 addendum, available [here (lanl.gov)](https://www.lanl.gov/org/ddste/aldgs/sst-training/_assets/docs/PANDA%202007%20Addendum/PANDA%202007%20Addendum.pdf), contains a plethora of additional information and analysis techniques.
 - [IAEA Nuclear Security Detection Sciences and Technology Webinars](https://elearning.iaea.org/m2/course/index.php?categoryid=248), which include a couple presentation on using InterSpec, with some further videos [here](https://nucleus.iaea.org/sites/nuclear-instrumentation/Pages/Portable-detectors_videos.aspx) (requires IAEA NUCLEUS account to access).
+- Draft specification for representing spectra in a QR code or URI: [spectrum_in_a_qr_code_uur_SAND2023-00005.pdf](spectrum_in_a_qr_code_uur_SAND2023-00005.pdf) (implemented in InterSpec as of v1.0.11).
