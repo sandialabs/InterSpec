@@ -203,11 +203,16 @@ OneOverR2Calc::OneOverR2Calc()
       InterSpecApp::DeviceOrientation orientation = InterSpecApp::DeviceOrientation::Unknown;
       app->getSafeAreaInsets( orientation, safeAreas[0], safeAreas[1], safeAreas[2], safeAreas[3] );
 #endif
-      repositionWindow( -32768, static_cast<int>(std::max(3.0f,0.5f*safeAreas[0])) );
-      setMaximumSize( WLength::Auto, viewer->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f) );
+      //repositionWindow( -32768, static_cast<int>(std::max(3.0f,0.5f*safeAreas[0])) );
+      
+      // TODO: right now hardcoding width because otherwise width will go to like full-screen
+      const double width = 325;
+      const double height = viewer->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f);
+      setMaximumSize( width, height );
       
       /* ToDo: get safe offsets in c++ land, and then also convert other AuxWindows that are modal on phone to resize correctly. */
       /* Do same for Gamma XS Calc. And Energy Range Sum*/
+      centerWindowHeavyHanded();
     }
   }else
   {

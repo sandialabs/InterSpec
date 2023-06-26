@@ -858,17 +858,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   inputDiv->setLayout( inputLayout );
     
     
-  const bool isPhone = m_spectrumViewer->isPhone();
-    
-  if( isPhone )
-  {
-    addStyleClass( "ReferencePhotopeakDisplayMobile" );
-    //m_layout->setHorizontalSpacing( 5 );
-  }else
-  {
-    addStyleClass( "ReferencePhotopeakDisplay" );
-  }//if( specViewer->isPhone() ) / else
+  addStyleClass( "ReferencePhotopeakDisplay" );
   
+  const bool isPhone = m_spectrumViewer->isPhone();
+  if( isPhone )
+    addStyleClass( "ReferencePhotopeakDisplayMobile" );
   
   const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
   const WLength optionWidth(5.25,WLength::FontEm), buttonWidth(5.25,WLength::FontEm);

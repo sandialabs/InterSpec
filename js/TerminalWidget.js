@@ -299,7 +299,9 @@ WT_DECLARE_WT_MEMBER
  function( edit, command ){
      edit.focus();
      
-     if( $(edit).hasClass("Wt-edit-emptyText") ) {
+     if( $(edit).hasClass("Wt-edit-emptyText")
+         || command.toUpperCase().startsWith(edit.value.toUpperCase()) )
+    {
          edit.value = command;
          return;
      }

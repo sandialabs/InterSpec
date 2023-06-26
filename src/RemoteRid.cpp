@@ -1690,7 +1690,7 @@ void RestRidInterface::startRestAnalysis( const string ana_service_url )
   
   WStringStream js;
   js <<
-  "\n"
+  "\n(function(){"
   "let sendAnaRequest = function(formData){\n"
   "  fetch('" << ana_service_url << "/analysis', {method: 'POST', body: formData})\n"
   "    .then(response => response.json() )\n"
@@ -1718,7 +1718,7 @@ void RestRidInterface::startRestAnalysis( const string ana_service_url )
   "    console.error( 'Error getting analysis input:', error);\n"
   "    const error_str = 'Error getting analysis input:' + error.toString();\n"
   "    " << m_analysis_error_signal.createCall( "error_str" ) << ";\n"
-  "});\n";
+  "});\n})();";
   
   doJavaScript( js.str() );
 }//void startRestAnalysis()

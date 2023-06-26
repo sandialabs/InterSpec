@@ -504,8 +504,13 @@ public:
   {
     assert( manager );
     assert( viewer );
-    
+
+#if( IOS || ANDROID )
+    WPushButton *btn = addButton( "Cancel" );
+#else
     addButton( "Cancel" );
+#endif
+    
     finished().connect( m_manager, &SpecMeasManager::multiSpectrumDialogDone );
     
 #if( IOS || ANDROID )

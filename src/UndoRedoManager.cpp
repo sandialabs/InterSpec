@@ -145,7 +145,6 @@ UndoRedoManager::~UndoRedoManager()
 UndoRedoManager::PeakModelChange::PeakModelChange()
 {
   UndoRedoManager *manager = UndoRedoManager::instance();
-  assert( manager );
   if( !manager || !manager->m_interspec )
     return;
   
@@ -172,7 +171,6 @@ UndoRedoManager::PeakModelChange::PeakModelChange()
 UndoRedoManager::PeakModelChange::~PeakModelChange()
 {
   UndoRedoManager *manager = UndoRedoManager::instance();
-  assert( manager );
   if( !manager || !manager->m_interspec )
     return;
   
@@ -229,7 +227,6 @@ UndoRedoManager::PeakModelChange::~PeakModelChange()
 UndoRedoManager::BlockUndoRedoInserts::BlockUndoRedoInserts()
 {
   UndoRedoManager *manager = UndoRedoManager::instance();
-  assert( manager );
   if( manager )
     manager->m_BlockUndoRedoInserts_counter += 1;
 }//BlockUndoRedoInserts constructor
@@ -298,7 +295,6 @@ UndoRedoManager *UndoRedoManager::instance()
     return nullptr;
   
   UndoRedoManager *manager = viewer->undoRedoManager();
-  assert( manager );
   return manager;
 }//UndoRedoManager::instance()
 

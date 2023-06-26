@@ -148,14 +148,6 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
 #endif
  
   enableUpdates( true );
-  
-  // Lets get a jump on initializing DecayDataBaseServer.
-  // Note however, in InterSpecServer::startServer and InterSpecServer::startWebServer we have
-  //  already called DecayDataBaseServer::initialize() as soon as the thread pool was available, so
-  //  this call will be a waste.
-  //  TODO: once the localhost server is converted to using InterSpecServer, remove this next line
-  WServer::instance()->ioService().boost::asio::io_service::post( &DecayDataBaseServer::initialize );
-   
   setupDomEnvironment();
   setupWidgets( true );
 
@@ -541,9 +533,10 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   }catch( std::exception &e )
   {
 #if( BUILD_AS_UNIT_TEST_SUITE )
-    cerr << "There was an exception initializing a InterSpec: " << e.what() << endl;
     throw e;
 #endif //#if( BUILD_AS_UNIT_TEST_SUITE )
+    
+    Wt::log("error") << "There was an exception initializing a InterSpec: " << e.what();
     
     string msg = "There was a problem initializing a necessary resource for InterSpec";
     WText *errorText = new WText( msg, root() );

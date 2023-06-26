@@ -478,18 +478,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   assert( app );
   //make it so InterSpec::instance() wont return nullptr for calls from within this constructor
   app->m_viewer = this;
-    
-
-  // We wont enable undo/redo when we are using mobile-menu (i.e., phones, or tablets that dont
-  //  have desktop interface enabled).
-  std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
-  if( (UndoRedoManager::maxUndoRedoSteps() >= 0)
-     && !app->isPhone()
-     && (!app->isTablet() || InterSpecUser::preferenceValue<bool>("TabletUseDesktopMenus", this)) )
-  {
-    m_undo = new UndoRedoManager( this );
-    undo_blocker = std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts>();
-  }//if( desktop interface )
   
   //for notification div
   m_notificationDiv = new WContainerWidget();
@@ -567,6 +555,21 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   detectClientDeviceType();
 
+    
+  // Now that we have m_sql and m_user setup, we can create the undo/redo manager, if we
+  //  are using the desktop interface.  We will create this manager before any our widgets
+  //
+  // We wont enable undo/redo when we are using mobile-menu (i.e., phones, or tablets that dont
+  //  have desktop interface enabled).
+  std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
+  if( (UndoRedoManager::maxUndoRedoSteps() >= 0)
+      /* && !app->isPhone()
+      && (!app->isTablet() || InterSpecUser::preferenceValue<bool>("TabletUseDesktopMenus", this)) */ )
+  {
+    m_undo = new UndoRedoManager( this );
+    undo_blocker = std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts>();
+  }//if( desktop interface )
+    
   m_peakModel = new PeakModel( this );
   m_spectrum   = new D3SpectrumDisplayDiv();
   m_timeSeries = new D3TimeChart();
@@ -5938,17 +5941,18 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
   
 #if( !ANDROID )
     // TODO: On Android we dont currently catch the download for these downloads with the content encoded in the URI, so we will just disable these for now there.
-  m_editMenuPopup->addSeparatorAt( 2 );
-  auto saveitem = m_editMenuPopup->insertMenuItem( 3, "Save Spectrum as PNG", "", true );
+  m_editMenuPopup->addSeparatorAt( (m_undo ? 2 : -1) );
+  
+  auto saveitem = m_editMenuPopup->insertMenuItem( (m_undo ? 3 : -1), "Save Spectrum as PNG", "", true );
   saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, true) );
-  saveitem = m_editMenuPopup->insertMenuItem( 4, "Save Spectrum as SVG", "", true );
+  saveitem = m_editMenuPopup->insertMenuItem( (m_undo ? 4 : -1), "Save Spectrum as SVG", "", true );
   saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
 #endif
   
 #if( BUILD_AS_OSX_APP )
   // All the macOS native menu stuff (copy/paste/select/etc) will be below our stuff
   if( InterSpecApp::isPrimaryWindowInstance() )
-    m_editMenuPopup->addSeparatorAt( 5 );
+    m_editMenuPopup->addSeparatorAt( (m_undo ? 5 : -1) );
 #endif
 }//void addEditMenu( Wt::WWidget *menuDiv )
 
@@ -6013,7 +6017,7 @@ void InterSpec::addToolsTabToMenuItems()
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NuclideSearch)] = item;
 
   
-  icon = "InterSpec_resources/images/auto_peak_search.svg";
+  icon = "InterSpec_resources/images/auto_peak_search.png";
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 4, "Auto Peak Search", icon, true );
   item->triggered().connect( boost::bind( &PeakSearchGuiUtils::automated_search_for_peaks, this, true ) );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::AutoPeakSearch)] = item;
@@ -8472,6 +8476,8 @@ void InterSpec::createRemoteRidWindow()
     return;
   
   m_remoteRidMenuItem->disable();
+  
+  // Need to add undo/redo here, and for RemoteRid
   
   RemoteRid::startRemoteRidDialog( this, [this](AuxWindow *window, RemoteRid *rid ){
     assert( (!window) == (!rid) );

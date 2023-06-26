@@ -1169,6 +1169,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testManualPeakClicking()
     }//try / catch
     
     int nsuccess = 0, nfailures = 0, neffectOtherPeaks = 0, nnofit = 0, nnotsimilar = 0;
+    double notSimilarMeanOffNumFwhm = 0.0, notSimilarAmpOffPercent = 0.0, notSimilarWidthOffPercent = 0.0;
     
     int meanNotCompat = 0, ampNotCompat = 0,
         lowerRoiNotCompat = 0, upperRoiNotCompat = 0,
@@ -1185,14 +1186,14 @@ SpectrumViewerTester::Score SpectrumViewerTester::testManualPeakClicking()
     const double targetEnergyRange = chartWidthPx * targetKevPerPx;
     const double targetDisplayLowerEnergy = peak->mean() - 0.5*targetEnergyRange;
     const double targetDisplayUpperEnergy = peak->mean() + 0.5*targetEnergyRange;
-    cout << "targetDisplayLowerEnergy=" << targetDisplayLowerEnergy << ", targetDisplayUpperEnergy=" << targetDisplayUpperEnergy << ", peak->mean()=" << peak->mean() << ", chartWidthPx=" << chartWidthPx << ", roiWidth=" << roiWidth << endl;
+    //cout << "targetDisplayLowerEnergy=" << targetDisplayLowerEnergy << ", targetDisplayUpperEnergy=" << targetDisplayUpperEnergy << ", peak->mean()=" << peak->mean() << ", chartWidthPx=" << chartWidthPx << ", roiWidth=" << roiWidth << endl;
     
     m_viewer->setDisplayedEnergyRange( targetDisplayLowerEnergy, targetDisplayUpperEnergy );
     
     for( int attempt = 0; attempt < sm_num_manual_click; ++attempt )
     {
       peakModel->setPeaks( truthpeaks );
-      peakModel->removePeak( peakn );
+      //peakModel->removePeak( peakn );
       
       const double frac = double(attempt) / sm_num_manual_click;
       const double x = peak->mean() + (2.0*frac-1.0)*sm_nfwhm_manually_click*peak->fwhm();
@@ -1234,11 +1235,26 @@ SpectrumViewerTester::Score SpectrumViewerTester::testManualPeakClicking()
           upperRoiNotCompat += !compatibleUpperRoi( &(*peak), &(*nearestLook) );
           widthsNotCompat   += !compatibleWidths( &(*peak), &(*nearestLook) );
           
-          //Could add in the average percentage off here
           
+          notSimilarMeanOffNumFwhm += fabs(peak->mean() - nearestLook->mean()) / peak->fwhm();
+          notSimilarAmpOffPercent += 100.0*fabs(peak->amplitude() - nearestLook->amplitude()) / peak->amplitude();
+          notSimilarWidthOffPercent += 100.0*fabs(peak->sigma() - nearestLook->sigma()) / peak->sigma();
         }else if( (nextPeak && !peaksAreSimilar( &(*nextPeak), &(*nextLook) ))
                   || (prevPeak && !peaksAreSimilar( &(*prevPeak), &(*prevLook) )) )
         {
+          // We get here a lot...
+          cout << "---------------------------" << endl;
+          if( prevPeak )
+            cout << "prevPeak: " << setw(10) << prevPeak->mean() << ", " << setw(10) << prevPeak->fwhm() << endl
+                 << "prevLook: " << setw(10) << prevLook->mean() << ", " << setw(10) << prevLook->fwhm() << endl;
+          
+          if( peak )
+            cout << "peak    : " << setw(10) << peak->mean() << ", " << setw(10) << peak->fwhm() << endl;
+          
+          if( nextPeak )
+            cout << "nextPeak: " << setw(10) << nextPeak->mean() << ", " << setw(10) << nextPeak->fwhm() << endl
+                 << "nextLook: " << setw(10) <<nextLook->mean() << ", " << setw(10) << nextLook->fwhm() << endl;
+          
           ++neffectOtherPeaks;
         }else
         {
@@ -1296,11 +1312,14 @@ SpectrumViewerTester::Score SpectrumViewerTester::testManualPeakClicking()
          msg << "<div>Fit, but not in tolerances " << nnotsimilar << " times; "
              << 100.0*notsimilarFrac << "% of the time"
               << "<div style=\"margin-left: 20px;\">Caused by mean being off: "
-              << 100.0*double(meanNotCompat)/nnotsimilar << "% of these times</div>"
+              << 100.0*double(meanNotCompat)/nnotsimilar << "% of these times, by average "
+                << (notSimilarMeanOffNumFwhm/nnotsimilar) <<  " FWHM.</div>"
               << "<div style=\"margin-left: 20px;\">Caused by width being off: "
-              << 100.0*double(widthsNotCompat)/nnotsimilar << "% of these times</div>"
+              << 100.0*double(widthsNotCompat)/nnotsimilar << "% of these times by avrg "
+                << (notSimilarWidthOffPercent/nnotsimilar) << "%</div>"
               << "<div style=\"margin-left: 20px;\">Caused by amplitude being off: "
-              << 100.0*double(ampNotCompat)/nnotsimilar << "% of these times</div>"
+              << 100.0*double(ampNotCompat)/nnotsimilar << "% of these times by avrg "
+                << (notSimilarAmpOffPercent/nnotsimilar) << "%</div>"
 //              << "<div style=\"margin-left: 20px;\">Caused by ROI start being off: "
 //              << 100.0*double(lowerRoiNotCompat)/nnotsimilar << "% of these times</div>"
 //              << "<div style=\"margin-left: 20px;\">Caused by ROI end off: "

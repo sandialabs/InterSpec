@@ -2019,6 +2019,8 @@ void PeakEdit::apply()
   if( !isDirty() )
     return;
   
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   const PeakDef revertPeak = *m_peakModel->peak( m_peakIndex ); //used to restore peak if catches an exception.
   
   // Grab a few things for undo/redo
@@ -2193,9 +2195,6 @@ void PeakEdit::apply()
                     if( peakindex.isValid() )
                     {
                       Wt::WModelIndex index = m_peakModel->index( peakindex.row(), PeakModel::kPeakLineColor );
-                      
-                      //blah blah blah, need to make undo/redo work with this
-                      
                       m_peakModel->setData( index, WString(newColor.isDefault() ? "none" : newColor.cssText(false)) );
                     }
                   }//if( this is the same nuclide/element/reaction )

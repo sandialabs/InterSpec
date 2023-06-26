@@ -88,18 +88,18 @@
     flex-direction: column;
 }
 
-    .ReferencePhotopeakDisplay .OtherNucs .OtherNucsHeader {
-        flex: 0 0 content;
-    }
+.ReferencePhotopeakDisplay .OtherNucs .OtherNucsHeader {
+  flex: 0 0 content;
+}
 
-    .ReferencePhotopeakDisplay .OtherNucs .OtherNucsContent {
-        margin-top: 0px;
-        flex: 1 0;
-        overflow-y: auto;
-        overflow-x: hidden;
-        display: flex;
-        flex-direction: column;
-    }
+.ReferencePhotopeakDisplay .OtherNucs .OtherNucsContent {
+  margin-top: 0px;
+  flex: 1 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
 
     .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
         margin-top: 5px;

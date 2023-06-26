@@ -256,10 +256,14 @@ m_apply( nullptr )
   WContainerWidget *foot = footer();
   AuxWindow::addHelpInFooter( foot, "color-theme-dialog" );
   
-  WCheckBox *autoDarkCb = new WCheckBox( "Auto apply \"Dark\" from OS", foot );
+  const bool phone = isPhone();
+  WCheckBox *autoDarkCb = new WCheckBox( "Auto apply \"Dark\" from OS" );
   autoDarkCb->setFloatSide( Wt::Side::Left );
   autoDarkCb->setToolTip( "Apply the \"Dark\" color theme automatically according to"
                           " the operating systems current value, or when it transisitions." );
+  
+  if( !phone )
+    foot->addWidget( autoDarkCb );
   
   InterSpecUser::associateWidget(m_interspec->m_user, "AutoDarkFromOs", autoDarkCb, m_interspec);
   
@@ -273,6 +277,9 @@ m_apply( nullptr )
   
   m_close = AuxWindow::addCloseButtonToFooter( "Close", true, foot );
   m_close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+  
+  if( phone ) //Keep "Close" the left most item
+    foot->addWidget( autoDarkCb );
   
   //To the menu add
   vector<unique_ptr<ColorTheme>> defaultThemes = ColorTheme::predefinedThemes();
