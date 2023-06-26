@@ -764,8 +764,9 @@ public:
   
 
 #if( USE_REMOTE_RID )
+  RemoteRid *remoteRid();
   void createRemoteRidWindow();
-  void handleRemoteRidClose();
+  void deleteRemoteRidWindow();
 #endif
 
 

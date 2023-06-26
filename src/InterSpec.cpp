@@ -8470,6 +8470,11 @@ void InterSpec::handleTerminalWindowClose()
 
 
 #if( USE_REMOTE_RID )
+RemoteRid *InterSpec::remoteRid()
+{
+  return m_remoteRid;
+}
+
 void InterSpec::createRemoteRidWindow()
 {
   if( m_remoteRid )
@@ -8477,9 +8482,10 @@ void InterSpec::createRemoteRidWindow()
   
   m_remoteRidMenuItem->disable();
   
-  // Need to add undo/redo here, and for RemoteRid
+  auto closeTool = wApp->bind( boost::bind(&InterSpec::deleteRemoteRidWindow, this) );
+  auto openTool = wApp->bind( boost::bind(&InterSpec::createRemoteRidWindow, this) );
   
-  RemoteRid::startRemoteRidDialog( this, [this](AuxWindow *window, RemoteRid *rid ){
+  SimpleDialog *warning = RemoteRid::startRemoteRidDialog( this, [this,closeTool,openTool](AuxWindow *window, RemoteRid *rid ){
     assert( (!window) == (!rid) );
     
     // `window` and `rid` will be nullptr if user canceled the operation
@@ -8491,13 +8497,36 @@ void InterSpec::createRemoteRidWindow()
     {
       m_remoteRid = rid;
       m_remoteRidWindow = window;
-      window->finished().connect( this, &InterSpec::handleRemoteRidClose );
+      window->finished().connect( this, &InterSpec::deleteRemoteRidWindow );
+      
+      if( m_undo && m_undo->canAddUndoRedoNow() )
+      {
+        auto redo = [this](){
+          if( m_remoteRid )
+            deleteRemoteRidWindow();
+          pair<AuxWindow *, RemoteRid *> res = RemoteRid::createDialog( this );
+          if( !res.first )
+            return;
+          m_remoteRid = res.second;
+          m_remoteRidWindow = res.first;
+          res.first->finished().connect( this, &InterSpec::deleteRemoteRidWindow );
+        };
+        
+        m_undo->addUndoRedoStep( closeTool, redo, "Show remote RID tool" );
+      }//if( undo )
     }
   } );
+  
+  
+  if( warning && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = wApp->bind( boost::bind(&WDialog::accept, warning) );
+    m_undo->addUndoRedoStep( std::move(undo), openTool, "Show remote RID tool" );
+  }//if( undo warning )
 }//void createRemoteRidWindow()
 
 
-void InterSpec::handleRemoteRidClose()
+void InterSpec::deleteRemoteRidWindow()
 {
   assert( m_remoteRid );
   if( !m_remoteRid )
@@ -8505,8 +8534,28 @@ void InterSpec::handleRemoteRidClose()
   
   m_remoteRidMenuItem->enable();
   
+  AuxWindow::deleteAuxWindow( m_remoteRidWindow );
+  
   m_remoteRid = nullptr;
   m_remoteRidWindow = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){
+      if( m_remoteRid )
+        deleteRemoteRidWindow();
+      pair<AuxWindow *, RemoteRid *> res = RemoteRid::createDialog( this );
+      if( !res.first )
+        return;
+      m_remoteRid = res.second;
+      m_remoteRidWindow = res.first;
+      res.first->finished().connect( this, &InterSpec::deleteRemoteRidWindow );
+    };
+    auto redo = wApp->bind( boost::bind(&InterSpec::deleteRemoteRidWindow, this) );
+    
+    auto openTool = wApp->bind( boost::bind(&InterSpec::createRemoteRidWindow, this) );
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close remote RID tool" );
+  }
 }//void handleRemoteRidClose()
 #endif  //#if( USE_REMOTE_RID )
 
@@ -10187,14 +10236,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     // If we are loading a state from the "Welcome To InterSpec" screen, we dont want to delete
     //  m_useInfoWindow because we will still use it, so instead we'll try deleting the window on
     //  the next go around of the event loop.
-    auto doDelete = wApp->bind( std::bind([this](){
-      WApplication *app = wApp;
-      if( !app )
-        return;
-      deleteWelcomeDialog( false );
-      app->triggerUpdate();
-    }) );
-      
+    auto deleter = wApp->bind( boost::bind( &InterSpec::deleteWelcomeDialog, this, false) );
+    auto doDelete = [deleter](){ deleter(); wApp->triggerUpdate(); };
     WServer::instance()->post( wApp->sessionId(), doDelete );
   }//if( meas )
   
