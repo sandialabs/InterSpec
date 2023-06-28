@@ -264,6 +264,9 @@ public:
     CheckToPreservePreviousEnergyCal = 0x01,
     CheckForRiidResults = 0x02,
     SkipParseWarnings = 0x04
+#if( USE_REMOTE_RID )
+    , SkipExternalRid = 0x08
+#endif
   };//SetSpectrumOptions
   
   

@@ -222,8 +222,7 @@ void DecaySelectNuclide::init()
   m_massSelection            = new WSelectionBox();
   m_nuclideActivityEdit      = new WLineEdit();
   m_nuclideAgeEdit           = new WLineEdit();
-  m_selectedIsotopeHalfLife  = new WText( "&lambda;<sub>&frac12;</sub>=",
-                                          Wt::XHTMLUnsafeText );
+  m_selectedIsotopeHalfLife  = new WText( "T&frac12;=", Wt::TextFormat::XHTMLText );
   m_isotopeSearch            = new WLineEdit();
 
   m_nuclideActivityEdit->setAttributeValue( "ondragstart", "return false" );
@@ -586,7 +585,7 @@ void DecaySelectNuclide::updateSelectedHalfLife()
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   
-  m_selectedIsotopeHalfLife->setText( "&lambda;<sub>&frac12;</sub>=" );
+  m_selectedIsotopeHalfLife->setText( "T&frac12;=" );
 
   int a, z, meta;
   currentlySelectedIsotope( a, z, meta );
@@ -603,7 +602,7 @@ void DecaySelectNuclide::updateSelectedHalfLife()
     return;
   }//if( !nuclide )
 
-  const string text = "&lambda;<sub>&frac12;</sub>="
+  const string text = "T&frac12;="
                        + PhysicalUnits::printToBestTimeUnits(nuclide->halfLife,2);
   m_selectedIsotopeHalfLife->setText( text );
 }//void updateSelectedHalfLife()

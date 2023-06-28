@@ -3352,6 +3352,9 @@ void SpecMeasManager::displayFile( int row,
       options |= InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal;
       options |= InterSpec::SetSpectrumOptions::CheckForRiidResults;
       options |= InterSpec::SetSpectrumOptions::SkipParseWarnings;
+#if( USE_REMOTE_RID )
+      options |= InterSpec::SetSpectrumOptions::SkipExternalRid;
+#endif
     }
     
     m_viewer->setSpectrum( measement_ptr, background_sample_numbers,

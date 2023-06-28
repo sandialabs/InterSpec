@@ -139,7 +139,7 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
   if( nuc )
   {
     const string label = "<span class=\"SrcTitleNuc\">" + nuc->symbol + "</span>,"
-                         " <span class=\"SrcTitleHl\">&lambda;<sub>&frac12;</sub>="
+                         " <span class=\"SrcTitleHl\">T&frac12;="
                          + PhysicalUnits::printToBestTimeUnits(nuc->halfLife) + "</span>";
     m_nuclideLabel->setText( WString::fromUTF8(label) );
     m_useAgeInfo->show();

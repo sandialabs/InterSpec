@@ -3587,14 +3587,30 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     const set<int> backgroundNums = csvToInts( entry->backgroundSampleNumsCsvIds );
     const set<int> otherSamples   = csvToInts( entry->otherSpectraCsvIds );
     
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
     
-    setSpectrum( foreground, foregroundNums, SpecUtils::SpectrumType::Foreground, 0 );
+    Wt::WFlags<SetSpectrumOptions> options;
+#if( USE_REMOTE_RID )
+    if( background || second )
+      options |= SetSpectrumOptions::SkipExternalRid;
+#endif
+    
+    setSpectrum( foreground, foregroundNums, SpecUtils::SpectrumType::Foreground, options );
     if( foreground )
     {
       //If we dont have a foreground, we probably shouldnt be loading the state, but...
-      setSpectrum( background, backgroundNums, SpecUtils::SpectrumType::Background, 0 );
-      setSpectrum( second, secondNums, SpecUtils::SpectrumType::SecondForeground, 0 );
-    }
+#if( USE_REMOTE_RID )
+      if( !second )
+        options.clear( SetSpectrumOptions::SkipExternalRid );
+#endif
+      setSpectrum( background, backgroundNums, SpecUtils::SpectrumType::Background, options );
+      
+#if( USE_REMOTE_RID )
+      options.clear( SetSpectrumOptions::SkipExternalRid );
+#endif
+      setSpectrum( second, secondNums, SpecUtils::SpectrumType::SecondForeground, options );
+    }//if( foreground )
     
     
     //Load the other spectra the user had opened.  Note that they were not
@@ -5923,13 +5939,24 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
     m_editMenuPopup = parentMenu->addPopupMenuItem( menuname );
   }//if( menuDiv ) / else
   
+  int menuindex = -1;
   if( m_undo )
   {
-    PopupDivMenuItem *undoMenu = m_editMenuPopup->insertMenuItem( 0, "Undo", "", true );
+#if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 0;
+#endif
+    
+    PopupDivMenuItem *undoMenu = m_editMenuPopup->insertMenuItem( menuindex, "Undo", "", true );
     undoMenu->setDisabled( true );
     undoMenu->triggered().connect( m_undo, &UndoRedoManager::executeUndo );
+
+#if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 1;
+#endif
     
-    PopupDivMenuItem *redoMenu = m_editMenuPopup->insertMenuItem( 1, "Redo", "", true );
+    PopupDivMenuItem *redoMenu = m_editMenuPopup->insertMenuItem( menuindex, "Redo", "", true );
     redoMenu->setDisabled( true );
     redoMenu->triggered().connect( m_undo, &UndoRedoManager::executeRedo );
     
@@ -5941,10 +5968,26 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
   
 #if( !ANDROID )
     // TODO: On Android we dont currently catch the download for these downloads with the content encoded in the URI, so we will just disable these for now there.
-  m_editMenuPopup->addSeparatorAt( (m_undo ? 2 : -1) );
+  
+#if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 2;
+#endif
+  m_editMenuPopup->addSeparatorAt( (m_undo ? menuindex : -1) );
+
+#if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 3;
+#endif
   
   auto saveitem = m_editMenuPopup->insertMenuItem( (m_undo ? 3 : -1), "Save Spectrum as PNG", "", true );
   saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, true) );
+  
+#if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 4;
+#endif
+  
   saveitem = m_editMenuPopup->insertMenuItem( (m_undo ? 4 : -1), "Save Spectrum as SVG", "", true );
   saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
 #endif
@@ -10789,7 +10832,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   }//if( meas && !sameSpecFile )
   
 #if( USE_REMOTE_RID )
-  if( meas )
+  if( meas && !options.testFlag(SetSpectrumOptions::SkipExternalRid) )
   {
     const int call_ext_rid = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", this );
     if( (call_ext_rid == 1) || (call_ext_rid == 2) )

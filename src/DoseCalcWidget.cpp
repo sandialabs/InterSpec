@@ -396,13 +396,8 @@ public:
     
     WString hlstr;
     if( nuc )
-      hlstr = PhysicalUnits::printToBestTimeUnits( nuc->halfLife,
-                                                        2, SandiaDecay::second );
-#ifndef WT_NO_STD_WSTRING
-    hlstr = L" \x03BB=" + hlstr;
-#else
-    hlstr = " &lambda;=" + hlstr;
-#endif
+      hlstr = PhysicalUnits::printToBestTimeUnits( nuc->halfLife, 2, SandiaDecay::second );
+    hlstr = " T&frac12;=" + hlstr;
     m_halfLifeTxt->setText( hlstr );
 
     bool useCurrentAge = false;

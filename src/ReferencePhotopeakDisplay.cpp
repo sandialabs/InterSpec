@@ -2128,7 +2128,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   m_ageEdit->setEnabled( enable_aging );
   
   const string hlstr = !nuclide ? string()
-  : ("&lambda;<sub>&frac12;</sub>="
+  : ("T&frac12;="  //&lambda;<sub>&frac12;</sub>
      +  PhysicalUnits::printToBestTimeUnits( nuclide->halfLife, 2 ));
   m_halflife->setText( WString::fromUTF8(hlstr) );
   

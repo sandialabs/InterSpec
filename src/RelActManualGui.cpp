@@ -305,7 +305,7 @@ public:
       
       cell = content->elementAt(1, 0);
       //label = new WLabel( "Half Life", cell );
-      label = new WLabel( "<span style=\"font-size: small;\">&lambda;<sub>&frac12;</sub></span>", cell );
+      label = new WLabel( "<span style=\"font-size: small;\">T&frac12;</span>", cell );
       
       cell = content->elementAt(1, 1);
       WText *txt = new WText( PhysicalUnits::printToBestTimeUnits(nuc->halfLife), cell );
