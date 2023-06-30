@@ -164,15 +164,14 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
   raiseToFront();
 #endif
   
-  InterSpec *viewer = InterSpec::instance();
-  const bool isPhone = viewer && viewer->isPhone();
-  
-  if( isPhone )
+  //InterSpec *viewer = InterSpec::instance();
+  //if( viewer && viewer->isPhone() )
   {
     // On mobile, it seems Wt.WT.AuxWindowBringToFront(...) may get called after this window is
     //  created (happens on the "QR code" link on Nuclide Decay Tool - since the user clicks
     //  a button in the titlebar), which will bring that dialog above this one - which isnt wanted,
-    //  so we'll manually bring this dialog to the top on a delay
+    //  so we'll manually bring this dialog to the top on a delay.
+    //  We'll add this JS, even on non-mobile, JIC
     LOAD_JAVASCRIPT(wApp, "SimpleDialog.cpp", "SimpleDialog", wtjsSimpleDialogBringToFront);
     doJavaScript( "for( const d of [5,100,500]){"
                    "setTimeout( function(){ Wt.WT.SimpleDialogBringToFront('" + id() + "');}, d);"
