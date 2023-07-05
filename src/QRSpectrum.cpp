@@ -434,7 +434,6 @@ string to_hex_bytes_str( const string &input )
   return answer;
 }
 
-  /*
   void make_example_qr_codes()
   {
    // This function recursively looks for N42 files in a given directory, and then encodes
@@ -451,7 +450,7 @@ string to_hex_bytes_str( const string &input )
    
     using namespace QRSpectrum;
     
-    const char *base_dir = "/path/to/data/files";
+    const char *base_dir = "/Volumes/Fortress/Datasets/NSDD/RID_XIV/Symetrica - DISCO data/Symetrica SN20 Verifinder";
     const size_t wanted_num_files = 100;
     const auto wanted_ecl = QrErrorCorrection::Low;
     
@@ -525,6 +524,63 @@ string to_hex_bytes_str( const string &input )
       std::vector<UrlSpectrum> back_url_spec = to_url_spectra( {background}, spec.instrument_model() );
       std::vector<UrlSpectrum> both_url_spec = to_url_spectra( {foreground, background}, spec.instrument_model() );
       
+      auto doEncode = [wanted_ecl,filename,ecl_str]( const vector<UrlSpectrum> &url_spec ) -> vector<UrlEncodedSpec> {
+#if( !EMAIL_QR_OPTION )
+        return url_encode_spectra( url_spec, wanted_ecl, 0 );
+
+#else
+        
+#warning "Doing sanity check on what encoded best"
+        static int ntimes = 0;
+        if( ntimes++ < 4 )
+          cout << "Doing sanity check on what encoded best" << endl;
+        
+        const uint8_t encode_options[] {
+          0x0,
+          static_cast<uint8_t>(EncodeOptions::NoBase45),
+          static_cast<uint8_t>(EncodeOptions::CsvChannelData),
+          static_cast<uint8_t>(EncodeOptions::CsvChannelData | EncodeOptions::NoBase45),
+          static_cast<uint8_t>(EncodeOptions::NoZeroCompressCounts),
+          static_cast<uint8_t>(EncodeOptions::NoZeroCompressCounts | EncodeOptions::NoBase45)
+        };
+        
+        uint8_t used_option = 0x0;
+        int min_qr_size = 10000000;
+        vector<UrlEncodedSpec> encoded;
+        for( uint8_t option : encode_options )
+        {
+          try
+          {
+            vector<UrlEncodedSpec> this_try = url_encode_spectra( url_spec, wanted_ecl, option );
+            if( this_try.size() == 1 )
+            {
+              if( this_try[0].m_qr_size < min_qr_size )
+              {
+                encoded = this_try;
+                used_option = option;
+              }
+            }else if( encoded.empty() )
+            {
+              encoded = this_try;
+              used_option = option;
+            }
+          }catch( std::exception & )
+          {
+            
+          }
+        }//for( uint8_t option : encode_options )
+        
+        if( encoded.size() == 1 )
+        {
+          cout << "For " << SpecUtils::filename(filename) << " encode_options="
+          << static_cast<int>(used_option) << " with size QR " << encoded[0].m_qr_size
+          << " and EC=" << ecl_str(encoded[0].m_error_level) << endl;
+        }
+        
+        return encoded;
+#endif
+      };//doEncode
+      
       auto toHtml = [&output_html,ecl_str,filename,base_dir,wanted_ecl]( const UrlEncodedSpec &urlspec, string tag ){
         output_html << "<div style=\"width: 350px; height: 350px;\">\n" << urlspec.m_qr_svg << "\n</div>\n";
         output_html << "Num elements: " << urlspec.m_qr_size << "x" << urlspec.m_qr_size << " (version " << urlspec.m_qr_version << ").<br />\n";
@@ -538,11 +594,13 @@ string to_hex_bytes_str( const string &input )
         ofstream svg( svg_name.c_str(), ios::out | ios:: binary );
         svg << urlspec.m_qr_svg << endl;
       };
-      
+    
       try
       {
         output_html << "<h3>Foreground</h3>\n";
-        const vector<UrlEncodedSpec> encoded = url_encode_spectra( fore_url_spec, wanted_ecl, 0 );
+        //const vector<UrlEncodedSpec> encoded = url_encode_spectra( fore_url_spec, wanted_ecl, 0 );
+        const vector<UrlEncodedSpec> encoded = doEncode( fore_url_spec );
+        
         
         if( encoded.size() != 1 )
         {
@@ -561,7 +619,8 @@ string to_hex_bytes_str( const string &input )
       try
       {
         output_html << "<h3>Background</h3>\n";
-        const vector<UrlEncodedSpec> encoded = url_encode_spectra( back_url_spec, wanted_ecl, 0 );
+        //const vector<UrlEncodedSpec> encoded = url_encode_spectra( back_url_spec, wanted_ecl, 0 );
+        const vector<UrlEncodedSpec> encoded = doEncode( back_url_spec );
         
         if( encoded.size() != 1 )
         {
@@ -580,11 +639,12 @@ string to_hex_bytes_str( const string &input )
       try
       {
         output_html << "<h3>Foreground + Background</h3>\n";
-        const vector<UrlEncodedSpec> encoded = url_encode_spectra( both_url_spec, wanted_ecl, 0 );
+        //const vector<UrlEncodedSpec> encoded = url_encode_spectra( both_url_spec, wanted_ecl, 0 );
+        const vector<UrlEncodedSpec> encoded = doEncode( both_url_spec );
         
         if( encoded.size() != 1 )
         {
-          cout << "Foreground + Background larger than 1" << endl;
+          cout << "For " << SpecUtils::filename(filename) << ", Foreground + Background larger than 1" << endl;
           output_html << "Encoded to " << encoded.size() << " URLS - skipping\n<br />";
         }else
         {
@@ -607,7 +667,6 @@ string to_hex_bytes_str( const string &input )
     
     cout << "Done" << endl;
   }//void make_example_qr_codes()
-  */
 }//namespace
 
 
@@ -1324,7 +1383,30 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
   const bool use_bin_chan_data = !(encode_options & EncodeOptions::CsvChannelData);
   const bool zero_compress = !(encode_options & EncodeOptions::NoZeroCompressCounts);
   
+#define EMAIL_QR_OPTION 0
+  //Experimentation for having the QR code create an email, that will then put the URL info into the
+  //  message body.  E.g., something like:
+  //  "mailto:user@example.com?subject=spectrum&body=..."
+  //
+  //  Pending things to check out, or consider:
+  //  - To have the body be a proper URL, need to double-encode the URL.
+  //  - The mailto RFC (RFC 6068), I think specifies only the characters "%&;=/?#[]" need to be
+  //    URL encoded; this could save us some space over " $&+,:;=?@'\"<>#%{}|\\^~[]`/".
+  //  - It looks like 'NoZeroCompressCounts' option alone usually produces shortest results,
+  //    although sometimes adding 'NoBase45' to this helps.
+  //  - We need an email address (user@example.com in above), or else iOS inteprets as a contact
+  //  - Maybe we should NOT base-45 encode the URL, afterall the ?, &, and = characters will cause
+  //    the QR to be encoded as binary anyway, so the base-45 is just adding length, however a first
+  //    go at trying the different options didnt show this - perhaps base45 is better then just
+  //    straight URL encoding.
+  //  - Doesnt seem like can make an HTML formmated email, with a simple link to click-on
+  
+  
+#if( EMAIL_QR_OPTION )
+  const bool alpha_num_qr_encode = false;
+#else
   const bool alpha_num_qr_encode = (use_base45 || (!use_deflate && !use_bin_chan_data));
+#endif
   
   qrcodegen::QrCode::Ecc ecc = qrcodegen::QrCode::Ecc::LOW;
   switch( minErrorCorrection )
@@ -1338,7 +1420,11 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
   vector<string> urls;
   vector<qrcodegen::QrCode> qrs;
   
+#if( EMAIL_QR_OPTION )
+  const string url_start = string("mailto:user@example.com?subject=spectrum&body=Copy%20Paste%20to%20InterSpec:%0D%0Araddata://G0/") + sm_hex_digits[encode_options & 0x0F];
+#else
   const string url_start = string("RADDATA://G0/") + sm_hex_digits[encode_options & 0x0F];
+#endif
   
   const unsigned int skip_encode_options = 0x00;
   
@@ -1380,7 +1466,11 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
         
         url = url_start + std::to_string(num_parts - 1)
         + std::to_string(url_num) + "/" + crc16
+#if( EMAIL_QR_OPTION )
+        + url_encode( trial_urls[url_num] );
+#else
         + trial_urls[url_num];
+#endif
         
         try
         {
@@ -1487,6 +1577,10 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
     assert( Wt::Utils::urlDecode(urlencoded) == url );
     url.swap( urlencoded );
 #else
+    url = url_encode( url );
+#endif
+    
+#if( EMAIL_QR_OPTION )
     url = url_encode( url );
 #endif
     
@@ -2093,8 +2187,8 @@ std::shared_ptr<SpecMeas> to_spec_file( const std::vector<UrlSpectrum> &spec_inf
 
 int dev_code()
 {
-  //make_example_qr_codes();
-  //return;
+  make_example_qr_codes();
+  return;
   
   // Now that URL encoding has solidified - this function should be cleaned up to use that code
   //  to compute statistics of how many QR codes it typically takes and such.

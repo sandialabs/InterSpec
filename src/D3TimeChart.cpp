@@ -288,7 +288,7 @@ public:
 
     const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
     const char* tooltip = "Allows you to select an energy to normalize the filtered energy range of interest to. <br />"
-      "i.e., the sum of gammas in the filtered range becomes the numerator, and the sum of gammas in"
+      "i.e., for each time slice, the sum of gammas in the filtered energy range becomes the numerator, and the sum of gammas in"
       " the normalize range becomes the denominator.</br />"
       "Usually you will select the normalization range to be energies above the range of interest."
       ;
