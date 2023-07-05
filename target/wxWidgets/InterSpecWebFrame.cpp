@@ -318,6 +318,8 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
     user_agent += " --proxy-server=\"" + rule + "\"";
     wxLogMessage( "Setting option --proxy-server=\"%s\"", rule.c_str() );
   }
+
+  user_agent += " --no-sandbox";
 #endif
 
   m_browser->SetUserAgent(user_agent);
