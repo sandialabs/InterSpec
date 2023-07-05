@@ -87,13 +87,14 @@ namespace
 SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const SpecMeas> meas,
                                                  const set<int> &sample_numbers,
                                                  const vector<string> &detector_names,
-                                                 function<void(LeafletRadMapWindow *)> on_create )
+                                                 function<void(LeafletRadMapWindow *)> on_create,
+                                                 const bool forceNoWarning )
 {
   InterSpec *viewer = InterSpec::instance();
   
   const bool showWarning = InterSpecUser::preferenceValue<bool>( "ShowMapDataWarning", viewer );
   
-  if( !showWarning )
+  if( forceNoWarning || !showWarning )
   {
     showMapWindow( meas, sample_numbers, detector_names, on_create );
     return nullptr;
@@ -110,7 +111,7 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
   if( user_key.length() > 6 )
   {
     msg += "<p>Your custom arcgis key starting with '" + user_key.substr(0,6) + "' will be used"
-    "to request map tiles.</p>";
+    " to request map tiles.</p>";
   }else if( !user_key.empty() )
   {
     msg += "<p>An invalid arcgis key was specified in arcgis_key.txt, so the built-in key will"

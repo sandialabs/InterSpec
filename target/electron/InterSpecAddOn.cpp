@@ -288,6 +288,23 @@ namespace InterSpecAddOn
     return Napi::Boolean::New( env, true );
   }
 
+  Napi::Boolean setMaxUndoRedoSteps(const Napi::CallbackInfo& info)
+  {
+    Napi::Env env = info.Env();
+  
+    if (info.Length() < 1 || !info[0].IsNumber() )
+    {
+      Napi::TypeError::New(env, "setMaxUndoRedoSteps: Expected one int").ThrowAsJavaScriptException();
+      return Napi::Boolean();
+    }
+  
+    const int max_items = info[0].ToNumber().Int32Value();
+  
+    interspec_set_max_undo_steps( max_items );
+  
+    return Napi::Boolean::New( env, true );
+  }
+
   Napi::Boolean addPrimarySessionToken(const Napi::CallbackInfo& info)
   {
     Napi::Env env = info.Env();

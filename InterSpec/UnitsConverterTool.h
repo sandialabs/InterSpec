@@ -47,12 +47,34 @@ public:
    */
   static std::string convert( std::string input );
   
+  /** Handles receiving a "deep-link" url starting with "interspec://unit?input=1.2m".
+   
+   Example URIs:
+   - "interspec://unit?input=1.2m"
+   
+   @param query_str The query portion of the URI.  So for example, if the URI has a value of
+          "interspec://unit?input=1.2m", then this string would be "input=1.2m".
+          Capitalization is not important.
+          Assumes the string passed in has already been url-decoded.
+          If not a valid query_str, throws exception.
+   */
+  void handleAppUrl( std::string query_str );
+  
+  /** Encodes current tool state to app-url format.  Returned string does not include the
+   "interspec://" protocol, or "unit" authority; so will look something like "input=1.2m",
+   The path part of the URI specifies tab the tool is on.
+   and it will not be url-encoded.
+   */
+  std::string encodeStateToUrl() const;
+  
 protected:
   void convert();
   
   Wt::WLineEdit *m_input;
   Wt::WLineEdit *m_output;
   Wt::WText *m_message;
+  Wt::WString m_prevInput;  // For tracking undo/redo
+  std::string m_prevAnswer; // For tracking undo/redo
 };//class UnitsConverterTool
 
 

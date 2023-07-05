@@ -47,6 +47,7 @@ class InterSpec;
 namespace Wt
 {
   class WLineEdit;
+  class WMenuItem;
 }
 
 
@@ -61,7 +62,7 @@ class TerminalWidget : public Wt::WContainerWidget
   protected:
   void handleEnterKey(); //an example function that gets called when user pressed the enter key
   void handleButtonClickedSignal( std::string argument );  //example function that gets called via m_buttonClickedSignal with the psosible JS filtered input text
-  void commandMenuItemSelected();
+  void commandMenuItemSelected( Wt::WMenuItem *item );
   void commandMenuSearchInput();
   void handleTextInput();
   void textAdded();

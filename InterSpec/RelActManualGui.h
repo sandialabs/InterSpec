@@ -121,6 +121,7 @@ protected:
   void matchToleranceChanged();
   void addUncertChanged();
   void backgroundSubtractChanged();
+  //void resultTabChanged(); //Creates a undo/redo cycle, so not currently tracking
   
   /** Marks that nuclides needs to be updated, and schedules rending; but doesnt do any real work */
   void handlePeaksChanged();
@@ -141,11 +142,20 @@ protected:
   RelActCalcManual::PeakCsvInput::NucDataSrc nucDataSrc() const;
   
 protected:
+  
+  // Some items for adding undo/redo steps
+  struct GuiState; //Forward declaration
+  std::shared_ptr<const GuiState> getGuiState() const;
+  void setGuiState( const GuiState &state );
+  void addUndoRedoStep( const std::shared_ptr<const GuiState> &state );
+  
+  /** An enum to list action items we may need to take inside the #render function.  \sa m_renderFlags */
   enum RenderActions
   {
     UpdateNuclides = 0x01,
     UpdateCalc = 0x02,
-    UpdateSpectrumOptions = 0x04
+    UpdateSpectrumOptions = 0x04,
+    AddUndoRedoStep = 0x08
   };//enum D3RenderActions
   
   Wt::WFlags<RelActManualGui::RenderActions> m_renderFlags;
@@ -203,6 +213,28 @@ protected:
   RelEffChart *m_chart;
   Wt::WContainerWidget *m_results;
   
+  /** The GUI state that is updated inside each call to #render. Will be used to add an undo/redo step
+   if the #RenderActions::AddUndoRedoStep flag is set.
+   */
+  std::shared_ptr<const GuiState> m_currentGuiState;
+  
+  /** A "lightweight" GUI state, for undo/redo steps, to keep in memory. */
+  struct GuiState
+  {
+    int m_relEffEqnFormIndex = -1;
+    int m_relEffEqnOrderIndex = -1;
+    int m_nucDataSrcIndex = -1;
+    float m_matchToleranceValue = -1.0f;
+    int m_addUncertIndex = -1;
+    bool m_backgroundSubtract = false;
+    std::vector<std::pair<std::string,double>> m_nucAges;
+    // TODO: could track nuclide WPanel collapse un-collapse
+    int m_resultTab = 0; //Not currently having in for undo/redo steps, but will track
+    
+    bool operator==( const GuiState &rhs ) const;
+  };//struct GuiState
+  
+
   static const int sm_xmlSerializationMajorVersion;
   static const int sm_xmlSerializationMinorVersion;
 };//class RelActManualGui

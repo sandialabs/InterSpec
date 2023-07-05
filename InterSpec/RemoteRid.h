@@ -46,6 +46,8 @@ public:
   /** Starts a remote RID dialog sequence.
    
    @param callback Function called once the Remote RID tool is created, optional.
+   @returns Returns pointer to the "warning" dialog (about information being sent from your device),
+            if it was created; will be nullptr if user has opted out of this.
    
    Checks if user has previously asked to never warn about remote RID capabilities, and if not
    will present a dialog to the user warning them about information leaving the application;
@@ -53,9 +55,12 @@ public:
    If they accept, a AuxWindow with a RemoteRid widget will be created, and the callback will be
    called with relevant pointers.
    */
-  static void startRemoteRidDialog( InterSpec *viewer, std::function<void(AuxWindow *, RemoteRid *)> callback );
+  static SimpleDialog *startRemoteRidDialog( InterSpec *viewer, std::function<void(AuxWindow *, RemoteRid *)> callback );
   
-  /** Immediately creates a RemoteRid dialog, without asking the user, etc. */
+  /** Immediately creates a RemoteRid dialog, without asking the user, etc.
+   
+   The dialog will emit the `finished()` signal when done, and then you will need to delete it.
+   */
   static std::pair<AuxWindow *, RemoteRid *> createDialog( InterSpec *viewer );
   
 public:
@@ -75,6 +80,11 @@ public:
   void alwaysCallExeAnaChecked();
 #endif
   
+  RestRidImp::ExternalRidWidget *restRidTool();
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+  RestRidImp::ExternalRidWidget *exeRidTool();
+#endif
+  
   static void startAutomatedOnLoadAnalysis( InterSpec *interspec,
                                             const Wt::WFlags<AnaFileOptions> flags = 0 );
   
@@ -88,6 +98,7 @@ protected:
   RestRidImp::ExternalRidWidget *m_rest_rid;
   
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+  Wt::WMenu *m_menu;
   RestRidImp::ExternalRidWidget *m_exe_rid;
 #endif
 

@@ -43,7 +43,6 @@ using namespace Wt;
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
-/*
 WT_DECLARE_WT_MEMBER
  (SimpleDialogBringToFront, Wt::JavaScriptFunction, "SimpleDialogBringToFront",
   function( id )
@@ -56,13 +55,13 @@ WT_DECLARE_WT_MEMBER
    
    const z = parseInt( $('#'+id).css('z-index') );
    
-   if( isNaN(z) || maxz > z )
+   if( isNaN(z) || maxz >= z )
      $('#'+id).css('z-index', maxz+1);
    $('.window-controls-container').css('z-index', maxz + 2); //for wxWidgets and Electron builds
    $('.suggestion').css('z-index', maxz+2);
  }
 );
-*/
+
 
 SimpleDialog::SimpleDialog()
 : Wt::WDialog( InterSpec::instance() ),  //for lifetime purposes
@@ -127,8 +126,6 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
 {
   wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
   
-  //LOAD_JAVASCRIPT(wApp, "SimpleDialog.cpp", "SimpleDialog", wtjsSimpleDialogBringToFront);
-  
   addStyleClass( "simple-dialog" );
   
   setModal( true );
@@ -165,9 +162,21 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
 #if( WT_VERSION > 0x3040000 )
   // I havent checked version of Wt that does include `raiseToFront()`, but 3.3.4 doesnt.
   raiseToFront();
-  
-  //This didnt appear to always work, at least on iOS.  See SimpleDialogBringToFront
 #endif
+  
+  //InterSpec *viewer = InterSpec::instance();
+  //if( viewer && viewer->isPhone() )
+  {
+    // On mobile, it seems Wt.WT.AuxWindowBringToFront(...) may get called after this window is
+    //  created (happens on the "QR code" link on Nuclide Decay Tool - since the user clicks
+    //  a button in the titlebar), which will bring that dialog above this one - which isnt wanted,
+    //  so we'll manually bring this dialog to the top on a delay.
+    //  We'll add this JS, even on non-mobile, JIC
+    LOAD_JAVASCRIPT(wApp, "SimpleDialog.cpp", "SimpleDialog", wtjsSimpleDialogBringToFront);
+    doJavaScript( "for( const d of [5,100,500]){"
+                   "setTimeout( function(){ Wt.WT.SimpleDialogBringToFront('" + id() + "');}, d);"
+                 "}");
+  }//if( isPhone )
 }//init(...)
 
 

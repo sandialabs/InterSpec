@@ -47,6 +47,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/RowStretchTreeView.h"
 
 using namespace Wt;
@@ -174,6 +175,8 @@ WarningWidget::WarningWidget( InterSpec *hostViewer,
 : WContainerWidget( parent ),
   m_hostViewer( hostViewer ),
   m_totalMessages(0),
+  m_popupActive{ false },
+  m_active{ false },
   m_layout(NULL),
   m_messageModel(NULL),
   m_tableView(NULL),
@@ -302,18 +305,18 @@ void WarningWidget::createContent()
         level = WarningWidget::WarningMsgLevel(level+1) )
     {
       WCheckBox *warnToggle = new WCheckBox();
-      m_layout->addWidget(warnToggle,3,i++, AlignCenter);
+      m_layout->addWidget( warnToggle, 3, i++, AlignCenter);
       
       const char *str = tostr( level );
       InterSpecUser::associateWidget( m_user, str, warnToggle, m_hostViewer );
       
-      warnToggle->checked().connect( boost::bind( &WarningWidget::setActivity, this,  level, true ) );
-      warnToggle->unChecked().connect( boost::bind( &WarningWidget::setActivity, this,  level, false ) );
+      warnToggle->checked().connect( boost::bind( &WarningWidget::setActivity, this,  level, false ) );
+      warnToggle->unChecked().connect( boost::bind( &WarningWidget::setActivity, this,  level, true ) );
     }//for( loop over
     
     label = new WLabel("Hide notifications:");
     
-    m_layout->addWidget(label,4,1, AlignRight);
+    m_layout->addWidget( label, 4, 1, AlignRight);
     
     i = 2;
     for( WarningWidget::WarningMsgLevel level = WarningWidget::WarningMsgLevel(0);
@@ -321,13 +324,13 @@ void WarningWidget::createContent()
         level = WarningWidget::WarningMsgLevel(level+1) )
     {
       WCheckBox *warnToggle = new Wt::WCheckBox();
-      m_layout->addWidget(warnToggle,4,i++, AlignCenter);
+      m_layout->addWidget( warnToggle, 4, i++, AlignCenter );
       
       const char *str  = popupToStr( level );
       InterSpecUser::associateWidget( m_user, str, warnToggle, m_hostViewer );
       
-      warnToggle->checked().connect( boost::bind( &WarningWidget::setPopupActivity, this,  level, true ) );
-      warnToggle->unChecked().connect( boost::bind( &WarningWidget::setPopupActivity, this,  level, false ) );
+      warnToggle->checked().connect( boost::bind( &WarningWidget::setPopupActivity, this,  level, false ) );
+      warnToggle->unChecked().connect( boost::bind( &WarningWidget::setPopupActivity, this,  level, true ) );
     }//for( loop over
   } //!m_layout //Create UI for first time
 }//void WarningWidget::createContent()
@@ -353,7 +356,6 @@ void WarningWidget::resultSelectionChanged()
 void WarningWidget::clearMessages()
 {
   m_messageModel->removeRows(0, m_messageModel->rowCount());
-
 }//void WarningWidget::clearMessages()
 
 
@@ -560,13 +562,63 @@ void WarningWidget::addMessageUnsafe( const Wt::WString &msg,
 }//addMessageUnsafe(...)
 
 
-void WarningWidget::setActivity( WarningWidget::WarningMsgLevel priority, bool allowed )
+void WarningWidget::setActivity( WarningWidget::WarningMsgLevel priority, bool active )
 {
-  m_active[ priority ] = allowed;
-} // WarningWidget::setActivity( WarningWidget::WarningMsgLevel priority, bool allowed )
+  m_active[priority] = active;
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo_redo = [priority,active]( const bool isUndo ){
+      InterSpec *viewer = InterSpec::instance();
+      WarningWidget *warn = viewer->warningWidget();
+      if( !warn )
+        return;
+    
+      try
+      {
+        const bool value = isUndo ? active : !active;
+        InterSpecUser::setBoolPreferenceValue( viewer->m_user, tostr(priority), value, viewer );
+        warn->m_active[priority] = isUndo ? !active : active;
+      }catch( std::exception &e )
+      {
+        Wt::log("error") << "Caught exception setting logging value for " << tostr(priority);
+      }
+    };//undo_redo
+    
+    auto undo = [undo_redo](){ undo_redo(true); };
+    auto redo = [undo_redo](){ undo_redo(false); };
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Set logging preference" );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+}//WarningWidget::setActivity( WarningWidget::WarningMsgLevel priority, bool allowed )
 
 
-void WarningWidget::setPopupActivity( WarningWidget::WarningMsgLevel priority, bool allowed )
+void WarningWidget::setPopupActivity( WarningWidget::WarningMsgLevel priority, bool showPopup )
 {
-  m_popupActive[ priority ] = allowed;
-} //WarningWidget::setPopupActivity( WarningWidget::WarningMsgLevel priority, bool allowed )
+  m_popupActive[priority] = showPopup;
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo_redo = [priority,showPopup]( const bool isUndo ){
+      InterSpec *viewer = InterSpec::instance();
+      WarningWidget *warn = viewer->warningWidget();
+      if( !warn )
+        return;
+    
+      try
+      {
+        const bool value = isUndo ? showPopup : !showPopup;
+        InterSpecUser::setBoolPreferenceValue( viewer->m_user, popupToStr(priority), value, viewer );
+        warn->m_popupActive[priority] = isUndo ? !showPopup : showPopup;
+      }catch( std::exception &e )
+      {
+        Wt::log("error") << "Caught exception setting logging value for " << popupToStr(priority);
+      }
+    };//undo_redo
+    
+    auto undo = [undo_redo](){ undo_redo(true); };
+    auto redo = [undo_redo](){ undo_redo(false); };
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Set logging preference" );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+}//setPopupActivity( WarningWidget::WarningMsgLevel priority, bool allowed )

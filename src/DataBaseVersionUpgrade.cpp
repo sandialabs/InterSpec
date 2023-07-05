@@ -263,8 +263,33 @@ namespace DataBaseVersionUpgrade
     }//if( version<6 && version<DB_SCHEMA_VERSION )
     
     
+    if( version<11 && version<DB_SCHEMA_VERSION )
+    {
+      std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
+      
+      //The following has only been checked for SQLite3.  Positions 'ColorThemeJson'
+      //  after the previous last column, witch I think Dbo needs.
+      const char *sql_statement = "ALTER TABLE UserState ADD COLUMN GammaXsToolUri text;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE UserState ADD COLUMN DoseCalcToolUri text;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE UserState ADD COLUMN OneOverR2ToolUri text;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE UserState ADD COLUMN UnitsConverterToolUri text;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE UserState ADD COLUMN NucDecayInfoUri text;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE UserState ADD COLUMN EnergyRangeSumUri text;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE UserState ADD COLUMN FluxToolUri text;";
+      executeSQL( sql_statement, sqlSession );
+      
+      version = 11;
+      setDBVersion( version, sqlSession );
+    }//if( version<11 && version<DB_SCHEMA_VERSION )
+    
     /// ******************************************************************
-    /// DB_SCHEMA_VERSION is at 10.  Add Version 11 here.  Update InterSpecUser.h!
+    /// DB_SCHEMA_VERSION is at 11.  Add Version 12 here.  Update InterSpecUser.h!
     /// ******************************************************************
   }//void checkAndUpgradeVersion()
   

@@ -789,8 +789,12 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
     map<double,double> energy_gammas_map;
     
     const double activity = 1.0;
+    // TODO: we could account for decays during the measurement, but would need realTime here
+    const bool accountForDecayDuringMeas = false;
+    const double realTime = -1;
     GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
-                            energy_widths, mixture, activity, n.age, cluster_sigma, -1, nullptr );
+                            energy_widths, mixture, activity, n.age, cluster_sigma, -1,
+                            accountForDecayDuringMeas, realTime, nullptr );
     
     // Convert energy_gammas_map to a vector for convenience
     vector<pair<double,double>> energy_gammas;
@@ -896,9 +900,13 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
     mixture.addNuclideByActivity(n.nuclide, GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits);
     
     const double energyToCluster = -1;
+    // TODO: we could account for decays during the measurement, but would need realTime here
+    const bool accountForDecayDuringMeas = false;
+    const double realTime = -1;
     GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
                                             energy_widths, mixture, n.rel_activity, n.age,
-                                            photopeakClusterSigma, energyToCluster, nullptr );
+                                            photopeakClusterSigma, energyToCluster,
+                                            accountForDecayDuringMeas, realTime, nullptr );
   }//for( const auto &n : nuclides )
   
   // Convert energy_gammas_map to a vector for convenience

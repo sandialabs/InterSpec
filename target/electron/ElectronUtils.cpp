@@ -37,16 +37,20 @@
 #include <Wt/WIOService>
 #include <Wt/WApplication>
 
-#include "InterSpec/InterSpec.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/SerialToDetectorModel.h"
+
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecServer.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/MassAttenuationTool.h"
+#include "InterSpec/DataBaseVersionUpgrade.h"
+
 #include "target/electron/ElectronUtils.h"
 #include "target/electron/InterSpecAddOn.h"
-#include "SpecUtils/SerialToDetectorModel.h"
-#include "InterSpec/DataBaseVersionUpgrade.h"
+
 
 using namespace std;
 
@@ -258,6 +262,13 @@ void interspec_set_require_session_token( const bool require_token )
 {
   InterSpecServer::set_require_tokened_sessions( require_token );
 }
+
+
+void interspec_set_max_undo_steps( const int max_items )
+{
+  UndoRedoManager::setMaxUndoRedoSteps( max_items );
+}
+
 
 void interspec_add_allowed_primary_session_token( const char *session_token )
 {

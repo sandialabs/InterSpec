@@ -84,6 +84,19 @@ FeatureMarkerWindow::~FeatureMarkerWindow()
 }
 
 
+void FeatureMarkerWindow::setFeatureMarkerChecked( const FeatureMarkerType option, const bool checked )
+{
+  if( m_feature )
+    m_feature->setFeatureMarkerChecked( option, checked );
+}
+
+
+void FeatureMarkerWindow::setDisplayedComptonPeakAngle( const int angle )
+{
+  if( m_feature )
+    m_feature->setDisplayedComptonPeakAngle( angle );
+}
+
 
 FeatureMarkerWidget::FeatureMarkerWidget( InterSpec* viewer, Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
@@ -99,6 +112,38 @@ FeatureMarkerWidget::FeatureMarkerWidget( InterSpec* viewer, Wt::WContainerWidge
 
 FeatureMarkerWidget::~FeatureMarkerWidget()
 {
+}
+
+
+void FeatureMarkerWidget::setFeatureMarkerChecked( const FeatureMarkerType option, const bool checked )
+{
+  switch( option )
+  {
+    case FeatureMarkerType::EscapePeakMarker:
+      m_escapePeaks->setChecked( checked );
+      break;
+      
+    case FeatureMarkerType::ComptonPeakMarker:
+      m_comptonPeak->setChecked( checked );
+      break;
+      
+    case FeatureMarkerType::ComptonEdgeMarker:
+      m_comptonEdge->setChecked( checked );
+      break;
+      
+    case FeatureMarkerType::SumPeakMarker:
+      m_sumPeaks->setChecked( checked );
+      break;
+      
+    case FeatureMarkerType::NumFeatureMarkers:
+      break;
+  }//switch( option )
+}//setFeatureMarkerChecked(...)
+
+
+void FeatureMarkerWidget::setDisplayedComptonPeakAngle( const int angle )
+{
+  m_comptonAngle->setValue( angle );
 }
 
 void FeatureMarkerWidget::init()

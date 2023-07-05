@@ -46,23 +46,26 @@
 #include <Wt/WStackedWidget>
 #include <Wt/WContainerWidget>
 
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/EnergyCalibration.h"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
-#include "SpecUtils/SpecFile.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
-#include "SpecUtils/StringAlgo.h"
-#include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/EnergyCalTool.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/EnergyCalGraphical.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -90,7 +93,256 @@ template<class T> struct index_compare_assend
   }
   const T arr;
 };//struct index_compare
+  
 }// namepsace
+
+
+namespace
+{
+  // For undo/redo, we will use a `EnergyCalUndoRedoSentry` struct to combine mutliple operations
+  //  (like multiple calls to #EnergyCalTool::setEnergyCal or #EnergyCalTool::addDeviationPair)
+  //  as part of a single user operation.  #EnergyCalUndoRedoSentry is a thread local object that
+  //  allows you to construct as many of them as you would like, and any changes from any of them,
+  //  will be combined together, and when the last #EnergyCalUndoRedoSentry destructs, an undo/redo
+  //  step will be inserted into the history.
+  //
+  
+  // For undo/redo, we will need to store the mappings, for each measurement, from old to new
+  //  energy calibration.  Using weak ptrs for Measurement, although I dont think it is strickly
+  //  necassary.
+  //  TODO: store energy calibration a little more compactly; could store just the coefficients, and not the channel lower-energies
+  typedef vector< tuple<weak_ptr<const SpecUtils::Measurement>, \
+            shared_ptr<const SpecUtils::EnergyCalibration>, \
+            shared_ptr<const SpecUtils::EnergyCalibration>> > \
+          meas_old_new_cal_t;
+  
+  // For undo/redo, keep track of new and old peaks
+  //  TODO: translate peaks on-the-fly, to reduce memory use, but will need to track pre-post energy cal to enable this
+  typedef vector< tuple< set<int>, \
+          deque< std::shared_ptr<const PeakDef> >, \
+          deque< std::shared_ptr<const PeakDef> > > >
+        meas_old_new_peaks_t;
+  
+  /** Function that actually does the work of undo/redo. */
+  void do_undo_or_redo( const bool is_undo,
+                        const SpecUtils::SpectrumType type,
+                        const meas_old_new_peaks_t &meas_old_new_peaks,
+                        const meas_old_new_cal_t &meas_old_new_cal,
+                        const std::weak_ptr<SpecMeas> &specfile_weak )
+  {
+    using namespace SpecUtils;
+    
+    const shared_ptr<SpecMeas> specfile = specfile_weak.lock();
+    assert( specfile );
+    InterSpec * const viewer = InterSpec::instance();
+    assert( viewer );
+    const shared_ptr<SpecMeas> specfile_now = viewer ? viewer->measurment( type ) : nullptr;
+    assert( specfile == specfile_now );
+    if( !specfile || (specfile != specfile_now) )
+    {
+      Wt::log("error") << "SpecFile not same, as was expected during undo/redo.";
+      return;
+    }
+    
+    const shared_ptr<SpecMeas> foreground = viewer->measurment( SpecUtils::SpectrumType::Foreground );
+    const set<int> &foresamples = viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
+    
+  
+    EnergyCalTool *tool = viewer->energyCalTool();
+    PeakModel *peakModel = viewer->peakModel();
+    assert( tool && peakModel );
+    if( !tool || !peakModel )
+    {
+      Wt::log("error") << "Failed to get EnergyCalTool or PeakModel during undo/redo of dev. pairs.";
+      return;
+    }
+    
+    for( const auto &m_o_n : meas_old_new_cal )
+    {
+      const shared_ptr<const Measurement> lm = get<0>(m_o_n).lock();
+      assert( lm );
+      if( !lm )
+      {
+        Wt::log("error") << "Failed to get Measurement during undo/redo of dev. pairs.";
+        continue;
+      }
+      
+      const auto &from_cal = is_undo ? get<2>(m_o_n) : get<1>(m_o_n);
+      const auto &to_cal = is_undo ? get<1>(m_o_n) : get<2>(m_o_n);
+      assert( to_cal );
+      
+      shared_ptr<const Measurement> m = specfile->measurement( lm->sample_number(), lm->detector_name() );
+      assert( m && (lm == m) );
+      
+      if( lm != m )
+      {
+        Wt::log("error") << "Failed to update a Measurement during undo/redo of dev. pairs.";
+        continue;
+      }
+      
+      assert( lm && (lm->energy_calibration() == from_cal) );
+      specfile->set_energy_calibration( to_cal, m );
+    }//for( const auto &m_o_n : meas_old_new_cal )
+      
+    
+    for( const auto &m_o_n : meas_old_new_peaks )
+    {
+      const set<int> &samples = get<0>(m_o_n);
+      const deque<shared_ptr<const PeakDef>> &from_peaks = is_undo ? get<2>(m_o_n) : get<1>(m_o_n);
+      const deque<shared_ptr<const PeakDef>> &to_peaks = is_undo ? get<1>(m_o_n) : get<2>(m_o_n);
+      
+      specfile->setPeaks( to_peaks, samples );
+      if( peakModel && (specfile == foreground) && (samples == foresamples) )
+        peakModel->setPeakFromSpecMeas(foreground, foresamples);
+    }//for( loop over changed peaks )
+    
+    viewer->refreshDisplayedCharts();
+    tool->refreshGuiFromFiles();
+  }//void do_undo_or_redo(...)
+  
+  
+  /** We may make multiple calls to #EnergyCalTool::setEnergyCal and or #EnergyCalTool::addDeviationPair, or other function, for
+   a single user-instigated change.  We want to combine multiple of these calls, so its a single user undo/redo operation, so we'll use
+   thread-local storage, and this `EnergyCalUndoRedoSentry` object to agregate all the changes, for a single user operation,
+   and have the destructor of #EnergyCalUndoRedoSentry actually insert the undo/redo step.
+  */
+  
+  typedef map<weak_ptr<SpecMeas>,meas_old_new_cal_t,owner_less<weak_ptr<SpecMeas>>> SpecMeasToCalHistoryMap;
+  typedef map<weak_ptr<SpecMeas>,meas_old_new_peaks_t,owner_less<weak_ptr<SpecMeas>>> SpecMeasToPeakHistoryMap;
+  
+  // If we were using c++17, we could declare the following as `inline` variables of
+  //  EnergyCalUndoRedoSentry, but for the moment we will just declare outside the class.
+  //  (or instead we could make `cal_info` and `peak_info` static functions, but this defaeats
+  //   thier purpose a bit)
+  thread_local static int sm_undo_redo_level;
+  thread_local static unique_ptr<SpecMeasToCalHistoryMap> sm_meas_old_new_cal_map;
+  thread_local static unique_ptr<SpecMeasToPeakHistoryMap> sm_meas_old_new_peaks_map;
+  
+  struct EnergyCalUndoRedoSentry
+  {
+    EnergyCalUndoRedoSentry()
+    {
+      if( !sm_meas_old_new_cal_map )
+      {
+        sm_undo_redo_level = 1;
+        sm_meas_old_new_cal_map = make_unique<SpecMeasToCalHistoryMap>();
+        sm_meas_old_new_peaks_map = make_unique<SpecMeasToPeakHistoryMap>();
+      }else
+      {
+        sm_undo_redo_level += 1;
+        assert( sm_meas_old_new_peaks_map );
+      }
+    }//EnergyCalUndoRedoSentry()
+      
+    meas_old_new_cal_t &cal_info( const shared_ptr<SpecMeas> &meas )
+    {
+      assert( sm_meas_old_new_cal_map );
+      if( !sm_meas_old_new_cal_map )
+        throw logic_error( "EnergyCalUndoRedoSentry: cal info not initied?" );
+      
+      SpecMeasToCalHistoryMap &m = *sm_meas_old_new_cal_map;
+      return m[meas];
+    }
+    
+    meas_old_new_peaks_t &peak_info( const shared_ptr<SpecMeas> &meas )
+    {
+      assert( sm_meas_old_new_peaks_map );
+      if( !sm_meas_old_new_peaks_map )
+        throw logic_error( "EnergyCalUndoRedoSentry: peak info not initied?" );
+      
+      SpecMeasToPeakHistoryMap &m = *sm_meas_old_new_peaks_map;
+      return m[meas];
+    }
+    
+    
+    ~EnergyCalUndoRedoSentry()
+    {
+      using namespace SpecUtils;
+      
+      sm_undo_redo_level -= 1;
+      assert( sm_meas_old_new_cal_map && sm_meas_old_new_peaks_map );
+      if( !sm_meas_old_new_cal_map || !sm_meas_old_new_peaks_map )
+        return;
+      
+      if( sm_undo_redo_level > 0 )
+        return;
+      
+      assert( sm_undo_redo_level == 0 );
+      
+      // Note, with C++14, we could capture unique_ptr into the lambdas, but we'll worry about that later
+      const SpecMeasToCalHistoryMap meas_old_new_cal_map( std::move(*sm_meas_old_new_cal_map) );
+      const SpecMeasToPeakHistoryMap meas_old_new_peaks_map( std::move(*sm_meas_old_new_peaks_map) );
+      sm_meas_old_new_cal_map.reset();
+      sm_meas_old_new_peaks_map.reset();
+      
+      // No changes regestered.
+      if( meas_old_new_cal_map.empty() && meas_old_new_peaks_map.empty() )
+        return;
+      
+      InterSpec *viewer = InterSpec::instance();
+      assert( viewer );
+      UndoRedoManager *undoManager = viewer ? viewer->undoRedoManager() : nullptr;
+      if( !undoManager )
+        return;
+      
+      
+      // Create a map from SpecMeas to SpectrumType; although this is only used as a check
+      //  in do_undo_or_redo.
+      map<weak_ptr<SpecMeas>,SpecUtils::SpectrumType,std::owner_less<std::weak_ptr<SpecMeas>>> meas_to_type;
+      const SpectrumType types[] = {
+        SpectrumType::SecondForeground,
+        SpectrumType::Background,
+        SpectrumType::Foreground
+      };
+      for( const SpectrumType type : types )
+      {
+        const shared_ptr<SpecMeas> m = viewer->measurment(type);
+        if( m && (meas_old_new_cal_map.count(m) || meas_old_new_peaks_map.count(m)) )
+          meas_to_type[m] = type;
+      }
+      
+      if( meas_to_type.empty() )
+        return;
+      
+      // Lets avoid creating two copies of everything, and create a ptr to the undo/redo fcn
+      auto doUndoOrRedo = make_shared<function<void(bool)>>(
+        [meas_to_type,meas_old_new_peaks_map,meas_old_new_cal_map]( const bool is_undo ){
+          
+          size_t num_peak_sets_used = 0;
+          for( const auto &key : meas_old_new_cal_map )
+          {
+            const weak_ptr<SpecMeas> &specfile_weak = key.first;
+            const meas_old_new_cal_t &meas_old_new_cal = key.second;
+            
+            meas_old_new_peaks_t meas_old_new_peaks;
+            const auto peak_iter = meas_old_new_peaks_map.find(specfile_weak);
+            if( peak_iter != end(meas_old_new_peaks_map) )
+            {
+              num_peak_sets_used += 1;
+              meas_old_new_peaks = peak_iter->second;
+            }
+            
+            SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
+            const auto type_iter = meas_to_type.find(specfile_weak);
+            assert( type_iter != end(meas_to_type) );
+            if( type_iter != end(meas_to_type) )
+              type = type_iter->second;
+            
+            do_undo_or_redo( is_undo, type, meas_old_new_peaks, meas_old_new_cal, specfile_weak );
+          }//for( const meas_old_new_cal_t &meas_old_new_cal : meas_old_new_cal_map )
+          
+          assert( num_peak_sets_used == meas_old_new_peaks_map.size() );
+      } );//create doUndoOrRedo function
+      
+      auto undo = [doUndoOrRedo](){ doUndoOrRedo->operator()( true ); };
+      auto redo = [doUndoOrRedo](){ doUndoOrRedo->operator()( false ); };
+      
+      undoManager->addUndoRedoStep( undo, redo, "Edit energy cal" );
+    }//~EnergyCalUndoRedoSentry()
+  };//struct EnergyCalUndoRedoSentry
+  
+}//namespace
+
 
 namespace EnergyCalImp
 {
@@ -1122,7 +1374,8 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   m_lastGraphicalRecal( 0 ),
   m_lastGraphicalRecalType( EnergyCalGraphicalConfirm::NumRecalTypes ),
   m_lastGraphicalRecalEnergy( -999.0f ),
-  m_graphicalRecal( nullptr )
+  m_graphicalRecal( nullptr ),
+  m_addActionWindow( nullptr )
 {
   wApp->useStyleSheet( "InterSpec_resources/EnergyCalTool.css" );
   
@@ -1786,6 +2039,7 @@ void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<con
                                          const bool all_detectors, const bool all_samples )
 {
   // TODO: add option to not set deviation pairs
+  EnergyCalUndoRedoSentry undo_sentry;
   
   set<string> fore_gamma_dets;
   const shared_ptr<SpecMeas> measurment = m_interspec->measurment( specfile );
@@ -1985,8 +2239,6 @@ void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<con
   
   m_interspec->refreshDisplayedCharts();
   doRefreshFromFiles();
-  
-  cout << "Done in applyCALpEnergyCal" << endl;
 }//void applyCALpEnergyCal(...)
 
 
@@ -2156,10 +2408,17 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
                                     const vector<MeasToApplyCoefChangeTo> &changemeas,
                                     const bool isOffsetOnly )
 {
+  // We get here when:
+  //  - we manually change a coefficiecnt on the GUI
+  //  - we fit calibration coefficients
+  //  - sometimes when we load in a CALp file
+  
   using namespace SpecUtils;
   
   assert( disp_prev_cal && disp_prev_cal->valid() );
   assert( new_disp_cal && new_disp_cal->valid() );
+  
+  EnergyCalUndoRedoSentry undo_sentry;
   
   const auto forgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   const auto backgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Background);
@@ -2190,14 +2449,14 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
   {
     assert( change.meas );
     
-    string dbgmsg = "For '" + change.meas->filename() + "' will apply changes to Detectors: {";
-    for( auto iter = begin(change.detectors); iter != end(change.detectors); ++iter )
-      dbgmsg += (iter==begin(change.detectors) ? "" : ",") + (*iter);
-    dbgmsg += "} and Samples: {";
-    for( auto iter = begin(change.sample_numbers); iter != end(change.sample_numbers); ++iter )
-      dbgmsg += (iter==begin(change.sample_numbers) ? "" : ",") + std::to_string(*iter);
-    dbgmsg += "}";
-    cout << dbgmsg << endl;
+    //string dbgmsg = "For '" + change.meas->filename() + "' will apply changes to Detectors: {";
+    //for( auto iter = begin(change.detectors); iter != end(change.detectors); ++iter )
+    //  dbgmsg += (iter==begin(change.detectors) ? "" : ",") + (*iter);
+    //dbgmsg += "} and Samples: {";
+    //for( auto iter = begin(change.sample_numbers); iter != end(change.sample_numbers); ++iter )
+    //  dbgmsg += (iter==begin(change.sample_numbers) ? "" : ",") + std::to_string(*iter);
+    //dbgmsg += "}";
+    //cout << dbgmsg << endl;
     //wApp->log("app:debug") << dbgmsg;
     
     try
@@ -2385,13 +2644,15 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
 #endif
   }//if( old_to_new_cals.find(disp_prev_cal) == end(old_to_new_cals) )
   
-  
-  
   // Now go through and actually set the energy calibrations; they should all be valid and computed,
   //  as should all the shifted peaks.
   for( const MeasToApplyCoefChangeTo &change : changemeas )
   {
     assert( change.meas );
+    
+    meas_old_new_cal_t &meas_old_new_cal = undo_sentry.cal_info( change.meas );
+    meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info( change.meas );
+    
     for( const int sample : change.sample_numbers )
     {
       for( const string &detname : change.detectors )
@@ -2421,6 +2682,8 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
         assert( iter->second );
         assert( iter->second->num_channels() == m->num_gamma_channels() );
         
+        meas_old_new_cal.emplace_back( m, measoldcal, iter->second );
+        
         change.meas->set_energy_calibration( iter->second, m );
       }//for( loop over detector names )
     }//for( loop over sample numbers )
@@ -2443,14 +2706,13 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
         continue;
       }
       
+      meas_old_new_peaks.emplace_back( samples, *oldpeaks, pos->second );
+      
       change.meas->setPeaks( pos->second, samples );
       if( m_peakModel && (change.meas == forgrnd) && (samples == foresamples) )
         m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
     }//for( const set<int> &samples : peaksampels )
   }//for( loop over SpecFiles for change )
-  
-  
-  // \TODO: Set an undu point for each measurement, etc.
   
   m_interspec->refreshDisplayedCharts();
   doRefreshFromFiles();
@@ -2460,6 +2722,7 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
 void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration> new_cal,
                    const MeasToApplyCoefChangeTo &changemeas, const bool adjust_peaks )
 {
+  // We get here from applying CALp to files, sometimes.
   using namespace SpecUtils;
   
   assert( new_cal && new_cal->valid() );
@@ -2600,11 +2863,15 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
     }//try / catch
   }//for( const set<int> &samples : peaksampels )
     
+  // For undo/redo, store changes to energy cal, and peaks.
+  EnergyCalUndoRedoSentry undo_sentry;
   
   // Now go through and actually set the energy calibrations; they should all be valid and computed,
   //  as should all the shifted peaks
   for( const int sample : changemeas.sample_numbers )
   {
+    meas_old_new_cal_t &meas_old_new_cal = undo_sentry.cal_info(changemeas.meas);
+    
     for( const string &detname : changemeas.detectors )
     {
       auto m = changemeas.meas->measurement( sample, detname );
@@ -2632,6 +2899,8 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
       assert( iter->second );
       assert( iter->second->num_channels() == m->num_gamma_channels() );
         
+      meas_old_new_cal.emplace_back( m, measoldcal, iter->second );
+      
       changemeas.meas->set_energy_calibration( iter->second, m );
     }//for( loop over detector names )
   }//for( loop over sample numbers )
@@ -2653,19 +2922,20 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
       continue;
     }
     
+    meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info( changemeas.meas );
+    meas_old_new_peaks.emplace_back( samples, *oldpeaks, pos->second );
+    
     changemeas.meas->setPeaks( pos->second, samples );
     if( m_peakModel && (changemeas.meas == forgrnd) && (samples == foresamples) )
       m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
   }//for( const set<int> &samples : peaksampels )
-  
-  
-  // \TODO: Set an undo point for each measurement, etc.
-  
 }//void setEnergyCal( new_cal, changemeas )
 
 
 void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
 {
+  // We get here when we graphically (i.e., cntrl+option+drag) add in a deviation pair
+  
   using namespace SpecUtils;
   
   const auto forgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
@@ -2682,10 +2952,15 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
   
   const vector<MeasToApplyCoefChangeTo> changemeas = measurementsToApplyCoeffChangeTo();
   
+  // For undo/redo, store changes to energy cal, and peaks.
+  EnergyCalUndoRedoSentry undo_sentry;
+  
   // Do first loop to calculate new calibrations
   for( const MeasToApplyCoefChangeTo &change : changemeas )
   {
     assert( change.meas );
+    
+    meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info(change.meas);
     
     try
     {
@@ -2801,6 +3076,8 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
       {
         auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldpeaks, oldcal, newcal );
         updated_peaks[oldpeaks] = newpeaks;
+        
+        meas_old_new_peaks.push_back( {samples, *oldpeaks, newpeaks} );
       }catch( std::exception &e )
       {
         string msg = "There was an issue translating peaks for this energy change;"
@@ -2811,7 +3088,6 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
         
         throw runtime_error( msg );
       }//try / catch
-      
     }//for( const set<int> &samples : peaksampels )
   }//for( const MeasToApplyCoefChangeTo &change : changemeas )
   
@@ -2821,6 +3097,8 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
   for( const MeasToApplyCoefChangeTo &change : changemeas )
   {
     assert( change.meas );
+    meas_old_new_cal_t &meas_old_new_cal = undo_sentry.cal_info( change.meas );
+    
     for( const int sample : change.sample_numbers )
     {
       for( const string &detname : change.detectors )
@@ -2851,6 +3129,8 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
         assert( iter->second->num_channels() == m->num_gamma_channels() );
         
         change.meas->set_energy_calibration( iter->second, m );
+        
+        meas_old_new_cal.emplace_back( m, measoldcal, iter->second );
       }//for( loop over detector names )
     }//for( loop over sample numbers )
     
@@ -2878,9 +3158,7 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
     }//for( const set<int> &samples : peaksampels )
   }//for( loop over SpecFiles for change )
   
-  
-  // \TODO: Set an undu point for each measurement, etc.
-  
+
   m_interspec->refreshDisplayedCharts();
   refreshGuiFromFiles();
 }//void addDeviationPair( const std::pair<float,float> &new_pair );
@@ -2889,14 +3167,14 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
 
 void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display )
 {
-  cout << "EnergyCalTool::userChangedCoefficient" << endl;
+  //cout << "EnergyCalTool::userChangedCoefficient" << endl;
   using namespace SpecUtils;
   assert( coefnum < 10 );  //If we ever allow lower channel energy adjustment this will need to be removed
   
   shared_ptr<const EnergyCalibration> disp_prev_cal = display->lastSetCalibration();
   if( !disp_prev_cal )
   {
-    cerr << "unexpected error getting updaettd energy calibration coefficents" << endl;
+    cerr << "unexpected error getting updated energy calibration coefficents" << endl;
     m_interspec->logMessage( "Unexpected error retrieving previous calibration coefficients - not applying changes", 2 );
     doRefreshFromFiles();
     return;
@@ -3036,6 +3314,10 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
   
   const auto forgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   const set<int> &foresamples = m_interspec->displayedSamples( SpectrumType::Foreground );
+  
+  assert( forgrnd );
+  if( !forgrnd )
+    return;
   
   const shared_ptr<const EnergyCalibration> old_cal = display->lastSetCalibration();
   const vector<pair<float,float>> old_dev_pairs = old_cal
@@ -3179,6 +3461,12 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
   
   
   size_t num_updated = 0;
+  
+  // Track some info for Undo/Redo
+  EnergyCalUndoRedoSentry undo_sentry;
+  meas_old_new_cal_t &meas_old_new_cal = undo_sentry.cal_info(forgrnd);
+  meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info(forgrnd);
+  
   for( auto &m : specfile->measurements() )
   {
     // I'm a little torn if we should update just the one energy calibration, or all occurances of
@@ -3201,6 +3489,8 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
 #endif
       continue;
     }//if( sanity check that new calibration is valid - should always be )
+    
+    meas_old_new_cal.emplace_back( m, cal, calpos->second );
     
     specfile->set_energy_calibration( calpos->second, m );
     ++num_updated;
@@ -3229,6 +3519,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
       continue;
     }//if( sanity check that shouldnt ever happen )
       
+    meas_old_new_peaks.emplace_back( samples, *oldpeaks, peakpos->second );
     
     specfile->setPeaks( peakpos->second, samples );
     if( m_peakModel && (specfile == forgrnd) && (samples == foresamples) )
@@ -4475,8 +4766,45 @@ void EnergyCalTool::moreActionBtnClicked( const MoreActionsIndex index )
 {
   const vector<MeasToApplyCoefChangeTo> measToChange = measurementsToApplyCoeffChangeTo();
 
-  new EnergyCalAddActionsWindow( index, measToChange, this );
+  if( m_addActionWindow )
+  {
+    AuxWindow::deleteAuxWindow( m_addActionWindow );
+    m_addActionWindow = nullptr;
+  }
+  
+  m_addActionWindow = new EnergyCalAddActionsWindow( index, measToChange, this );
+  m_addActionWindow->finished().connect( this, &EnergyCalTool::cancelMoreActionWindow );
+  
+  UndoRedoManager *undoManager = m_interspec->undoRedoManager();
+  if( !undoManager )
+    return;
+  
+  auto undo = [](){
+    InterSpec *viewer = InterSpec::instance();
+    EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+    if( tool )
+      tool->cancelMoreActionWindow();
+  };
+  
+  auto redo = [index](){
+    InterSpec *viewer = InterSpec::instance();
+    EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+    if( tool )
+      tool->moreActionBtnClicked(index);
+  };
+  
+  undoManager->addUndoRedoStep( undo, redo, "Show additional energy cal tool.");
 }//void moreActionBtnClicked( const MoreActionsIndex index )
+
+
+void EnergyCalTool::cancelMoreActionWindow()
+{
+  if( m_addActionWindow )
+  {
+    AuxWindow::deleteAuxWindow( m_addActionWindow );
+    m_addActionWindow = nullptr;
+  }
+}//void cancelMoreActionWindow()
 
 
 void EnergyCalTool::render( Wt::WFlags<Wt::RenderFlag> flags)
@@ -4497,9 +4825,23 @@ void EnergyCalTool::render( Wt::WFlags<Wt::RenderFlag> flags)
 
 void EnergyCalTool::applyToCbChanged( const EnergyCalTool::ApplyToCbIndex index )
 {
+  // We only get here if the user checked/unchecked a checkbox, or in a undo/redo step.
   assert( index >= 0 && index <= EnergyCalTool::NumApplyToCbIndex );
   WCheckBox *cb = m_applyToCbs[index];
   const bool isChecked = cb->isChecked();
+  
+  // Grab the starting state of all checkboxed
+  bool startingState[ApplyToCbIndex::NumApplyToCbIndex];
+  for( ApplyToCbIndex i = ApplyToCbIndex(0);
+      i < ApplyToCbIndex::NumApplyToCbIndex;
+      i = ApplyToCbIndex(i + 1) )
+  {
+    startingState[i] = m_applyToCbs[i]->isChecked();
+  }
+  
+  // Assume `index` was actually not what it is now.
+  startingState[index] = !startingState[index];
+  
   
   switch( index )
   {
@@ -4530,4 +4872,53 @@ void EnergyCalTool::applyToCbChanged( const EnergyCalTool::ApplyToCbIndex index 
     case EnergyCalTool::NumApplyToCbIndex:
       break;
   }//switch( index )
+  
+  UndoRedoManager *undoManager = m_interspec->undoRedoManager();
+  if( !undoManager || undoManager->isInUndoOrRedo() )
+    return;
+  
+  
+  bool finalState[ApplyToCbIndex::NumApplyToCbIndex];
+  for( ApplyToCbIndex i = ApplyToCbIndex(0);
+      i < ApplyToCbIndex::NumApplyToCbIndex;
+      i = ApplyToCbIndex(i + 1) )
+  {
+    finalState[i] = m_applyToCbs[i]->isChecked();
+  }
+  
+  
+  auto undo = [index,isChecked,startingState](){
+    InterSpec *viewer = InterSpec::instance();
+    EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+    if( !tool )
+      return;
+    
+    for( ApplyToCbIndex i = ApplyToCbIndex(0);
+        i < ApplyToCbIndex::NumApplyToCbIndex;
+        i = ApplyToCbIndex(i + 1) )
+    {
+      tool->m_applyToCbs[i]->setChecked( startingState[i] );
+    }
+    
+    tool->applyToCbChanged( index );
+  };
+  
+  auto redo = [index,isChecked,finalState](){
+    InterSpec *viewer = InterSpec::instance();
+    EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
+    if( !tool )
+      return;
+    
+    for( ApplyToCbIndex i = ApplyToCbIndex(0);
+        i < ApplyToCbIndex::NumApplyToCbIndex;
+        i = ApplyToCbIndex(i + 1) )
+    {
+      tool->m_applyToCbs[i]->setChecked( finalState[i] );
+    }
+    
+    tool->applyToCbChanged( index );
+  };
+  
+  const string label = cb->text().toUTF8();
+  undoManager->addUndoRedoStep( undo, redo, "Change " + label );
 }//void applyToCbChanged( const ApplyToCbIndex index )

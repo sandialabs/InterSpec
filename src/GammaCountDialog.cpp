@@ -36,20 +36,22 @@
 #include <Wt/WEnvironment>
 #include <Wt/WApplication>
 #include <Wt/WSelectionBox>
-#include <Wt/WDoubleSpinBox>
 #include <Wt/WContainerWidget>
 
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/GammaCountDialog.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 
 using namespace std;
 using namespace Wt;
@@ -67,8 +69,7 @@ GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
     m_primaryGammaCount( NULL ),
     m_secondaryGammaCount( NULL ),
     m_backgroundGammaCount( NULL ),
-    m_secondaryLiveTimeScale( NULL ),
-    m_backgroundLiveTimeScale( NULL ),
+    m_liveTimeScaleNote( NULL ),
     m_sigmaAboveBackground( NULL ),
     m_nsigmaHelp( NULL )
 {
@@ -102,9 +103,8 @@ GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
   }else
   {
     resizeToFitOnScreen();
-    centerWindow();
+    centerWindowHeavyHanded();
   }//if( isPhone ) / else
-  
 }//GammaCountDialog constructor
 
 
@@ -121,83 +121,51 @@ GammaCountDialog::~GammaCountDialog()
 void GammaCountDialog::init()
 {
   wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
+  wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
   
   if( !m_specViewer )
     throw runtime_error( "GammaCountDialog: you must pass in valid InterSpec pointer" );
- 
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
-  
-  WGridLayout *layout = new WGridLayout();
-  contents()->setLayout( layout );
-  contents()->setOverflow( WContainerWidget::OverflowHidden );
 
-  m_lowerEnergy = new WDoubleSpinBox();
-  m_upperEnergy = new WDoubleSpinBox();
-//  if( m_specViewer->isMobile() )
-//  {
-//20150123: on android at least, calling setNativeControl() causes
-//  a javascript exception (having to do with the validate)
-//    m_lowerEnergy->setNativeControl(true); //mobile should not show spinner
-//    m_upperEnergy->setNativeControl(true); //mobile should not show spinner
-//  } //(isMobile())
+  auto hist = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  const double xlow = hist ? std::min( hist->gamma_energy_min() - 10.0, 0.0 ) : 0.0;
+  const double xhigh = hist ? 2.0 * hist->gamma_energy_max() : 15000.0;
   
-  m_primaryGammaCount       = new WText();
-  m_secondaryGammaCount     = new WText();
-  m_backgroundGammaCount    = new WText();
-  m_secondaryLiveTimeScale  = new WText( "", XHTMLUnsafeText );
-  m_backgroundLiveTimeScale = new WText( "", XHTMLUnsafeText );
-  m_sigmaAboveBackground    = new WText( "", XHTMLUnsafeText );
-  m_nsigmaHelp              = new WImage();
-  
-//  m_sigmaAboveBackground->setHiddenKeepsGeometry(true);
-  m_lowerEnergy->setRange( 0.0, 10000.0 );
-  m_upperEnergy->setRange( 0.0, 10000.0 );
+  WContainerWidget *body = contents();
+  body->addStyleClass( "GammaCountDialog" );
 
-  std::shared_ptr<const SpecUtils::Measurement> hist;
-  if( m_specViewer )
-    hist = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
-  if( hist )
+  WText *text = new WText( "Count the number of gammas in the specified energy range.", body );
+  text->setInline( true );
+  text->setStyleClass( "line-below" );
+  
+  WContainerWidget *inputs = new WContainerWidget( body );
+  inputs->addStyleClass( "inputs" );
+
+  WLabel *label = new WLabel( "Lower Energy", inputs );
+  label->addStyleClass( "GridFirstRow GridFirstCol EnergyLabel" );
+  m_lowerEnergy = new NativeFloatSpinBox( inputs );
+  m_lowerEnergy->addStyleClass( "GridFirstRow GridSecondCol" );
+  m_lowerEnergy->setSpinnerHidden();
+  label->setBuddy( m_lowerEnergy );
+  label = new WLabel( "keV", inputs );
+  label->addStyleClass( "GridFirstRow GridThirdCol GridJustifyStart" );
+  m_lowerEnergy->setRange( xlow, xhigh );
+  
+  label = new WLabel( "Upper Energy", inputs );
+  label->addStyleClass( "GridSecondRow GridFirstCol EnergyLabel", inputs );
+  m_upperEnergy = new NativeFloatSpinBox( inputs );
+  label->setBuddy( m_upperEnergy );
+  m_upperEnergy->addStyleClass( "GridSecondRow GridSecondCol" );
+  m_upperEnergy->setSpinnerHidden();
+  label = new WLabel( "keV", inputs );
+  label->addStyleClass( "GridSecondRow GridThirdCol GridJustifyStart" );
+  m_upperEnergy->setRange( xlow, xhigh );
+  
+  
+  if( m_specViewer->isMobile() )
   {
-    const double xlow = std::min( hist->gamma_energy_min() -10.0, 0.0 );
-    const double xhigh = hist->gamma_energy_max();
-    m_lowerEnergy->setRange( xlow, 2.0*xhigh );
-    m_upperEnergy->setRange( xlow, 2.0*xhigh );
-  }//if( hist )
-  
-  m_nsigmaHelp->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
-  m_nsigmaHelp->setStyleClass("Wt-icon");
-  m_nsigmaHelp->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
-  m_nsigmaHelp->setHidden( true );
-  
-  const char *tooltip = "The number of sigma difference is calculated by dividing the"
-                        " difference between the foreground and the (scaled) background,"
-                        " divided by the uncertainty. The uncertainty is calculated by"
-                        " summing the statistical uncertainties of the foreground and background in"
-                        " quadrature, then taking the square root";
-  HelpSystem::attachToolTipOn( m_nsigmaHelp, tooltip, true, HelpSystem::ToolTipPosition::Right );
-
-  WLabel *label = NULL;
-  WText *text = NULL;
-  text = new WText( "Count the number of gammas in the specified energy range." );
-  text->setWordWrap(true);
-  text->setWidth( WLength(10.5, WLength::FontEm) );
-  int row=0;
-  text->setStyleClass("line-below");
-  layout->addWidget( text, row, 0, 1, 3/*, AlignCenter */);
-
-  label = new WLabel( "Lower Energy" );
-  layout->addWidget( label, ++row, 0, 1, 1, AlignLeft );
-  layout->addWidget( m_lowerEnergy, row, 1, 1, 1, AlignLeft );
-  label = new WLabel( "keV" );
-  layout->addWidget( label, row, 2, 1, 1, AlignLeft );
-
-  label = new WLabel( "Upper Energy" );
-  layout->addWidget( label, ++row, 0, 1, 1, AlignLeft );
-  layout->addWidget( m_upperEnergy, row, 1, 1, 1, AlignLeft );
-  label = new WLabel( "keV" );
-  layout->addWidget( label, row, 2, 1, 1, AlignLeft );
-
-  if( m_specViewer && !m_specViewer->isMobile() )
+    inputs->addStyleClass( "line-below" );
+  }else
   {
     string key_sequence = "Shift-Alt-Drag";  // Linux / Windows
     const string &user_agent = wApp->environment().userAgent();
@@ -210,46 +178,61 @@ void GammaCountDialog::init()
       key_sequence = "Shift-Option-Drag"; //Apple
     }
     
-    WLabel* temp = new WLabel("<center><i><small>You can also <b>" + key_sequence + "</b> on the chart"
-                              " to select the energy range</small></i></center>");
-    
-    temp->setWordWrap(true);
-    layout->addWidget(temp,++row, 0 , 1 ,3,AlignCenter);
-    temp->setStyleClass("line-below");
-  }
-    
-  label = new WLabel( "Foreground Counts:" );
-  layout->addWidget( label, ++row, 0, 1, 1, AlignLeft );
-  layout->addWidget( m_primaryGammaCount, row, 1, 1, 2, AlignLeft );
-
-  label = new WLabel( "Secondary Counts:" );
-  layout->addWidget( label, ++row, 0, 1, 1, AlignLeft );
-  layout->addWidget( m_secondaryGammaCount, row, 1, 1, 2, AlignLeft );
-
-  label = new WLabel( "Background Counts:" );
-  layout->addWidget( label, ++row, 0, 1, 1, AlignLeft );
-  layout->addWidget( m_backgroundGammaCount, row, 1, 1, 2, AlignLeft );
-    
-  layout->addWidget( m_sigmaAboveBackground, ++row, 0, 1, 2, AlignCenter );
-  layout->addWidget( m_nsigmaHelp, row, 2, 1, 1, AlignRight | AlignMiddle );
+    text = new WText("You can also <b>" + key_sequence + "</b> on the chart"
+                              " to select the energy range", body);
+    text->setInline( false );
+    text->setStyleClass( "line-below shortcut-info" );
+  }//if( !mobile )
   
-  layout->addWidget( m_backgroundLiveTimeScale, ++row, 0, 1, 3, AlignCenter );
-  m_backgroundLiveTimeScale->setStyleClass("line-above");
     
-  if( m_specViewer && !m_specViewer->isMobile() )
-  {
-    const char *txt = "Press <b>Enter</b> after typing in the energy";
-//    text = new WText( txt, XHTMLText );
-//    layout->addWidget( text, ++row, 0, 1, 3, AlignCenter );
-      HelpSystem::attachToolTipOn(m_lowerEnergy, txt, showToolTips);
-      HelpSystem::attachToolTipOn(m_upperEnergy, txt, showToolTips);
-//    txt = "If you manually type an energy you will need to either press enter,"
-//          " or click another field before changes take effect.";
-//    HelpSystem::attachToolTipOn( contents(), txt, showToolTips );
-  }//if( !ismobile )
+//  if( m_specViewer->isMobile() )
+//  {
+//20150123: on android at least, calling setNativeControl() causes
+//  a javascript exception (having to do with the validate)
+//    m_lowerEnergy->setNativeControl(true); //mobile should not show spinner
+//    m_upperEnergy->setNativeControl(true); //mobile should not show spinner
+//  } //(isMobile())
   
-  layout->setColumnStretch( 1, 1 );
-
+  WContainerWidget *answers = new WContainerWidget( body );
+  answers->addStyleClass( "answers" );
+  
+  label = new WLabel( "Foreground Counts:", answers );
+  label->addStyleClass( "GridFirstRow GridFirstCol" );
+  m_primaryGammaCount = new WText( answers );
+  m_primaryGammaCount->addStyleClass( "GridFirstRow GridSecondCol" );
+  
+  label = new WLabel( "Secondary Counts:", answers );
+  label->addStyleClass( "GridSecondRow GridFirstCol" );
+  m_secondaryGammaCount = new WText( answers );
+  m_secondaryGammaCount->addStyleClass( "GridSecondRow GridSecondCol" );
+  
+  label = new WLabel( "Background Counts:", answers );
+  label->addStyleClass( "GridThirdRow GridFirstCol" );
+  m_backgroundGammaCount = new WText( answers );
+  m_backgroundGammaCount->addStyleClass( "GridThirdRow GridSecondCol" );
+  
+  
+  m_sigmaAboveBackground = new WText( "", XHTMLText, answers );
+  m_sigmaAboveBackground->addStyleClass( "line-above GridFourthRow GridFirstCol GridJustifyCenter GridSpanTwoCol nsigma" );
+  
+  m_nsigmaHelp = new WImage( answers );
+  m_nsigmaHelp->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+  m_nsigmaHelp->setStyleClass("Wt-icon GridFourthRow GridThirdCol GridJustifyEnd");
+  m_nsigmaHelp->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+  m_nsigmaHelp->setHidden( true );
+  
+  const char *tooltip = "The number of sigma difference is calculated by dividing the"
+                        " difference between the foreground and the (scaled) background,"
+                        " divided by the uncertainty. The uncertainty is calculated by"
+                        " summing the statistical uncertainties of the foreground and background in"
+                        " quadrature, then taking the square root";
+  HelpSystem::attachToolTipOn( m_nsigmaHelp, tooltip, true, HelpSystem::ToolTipPosition::Right );
+  
+  m_liveTimeScaleNote = new WText( "", XHTMLText, answers );
+  m_liveTimeScaleNote->addStyleClass( "GridFifthRow GridFirstCol GridJustifyCenter GridSpanThreeCol line-above LiveTimeScaleNote" );  //""
+  m_liveTimeScaleNote->hide();
+  
+  
   m_lowerEnergy->valueChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
   m_upperEnergy->valueChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
   m_specViewer->displayedSpectrumChanged().connect(
@@ -273,26 +256,103 @@ void GammaCountDialog::emitFinished()
   finished().emit( WDialog::Rejected );
 }
 
-void GammaCountDialog::setEnergyRange( double lowEnergy,
-                                       double highEnergy )
+void GammaCountDialog::setEnergyRange( double lowEnergy, double highEnergy )
 {
-
   if( highEnergy <= lowEnergy )
   {
     lowEnergy = 0.0;
     highEnergy = 0.0;
   }//if( highEnergy <= lowEnergy )
 
-  if( lowEnergy < m_lowerEnergy->minimum() )
-    m_lowerEnergy->setMinimum( lowEnergy - 1.0 );
-  if( highEnergy > m_upperEnergy->maximum()  )
-    m_upperEnergy->setMaximum( highEnergy + 1.0 );
-
+  auto hist = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  if( hist && (hist->num_gamma_channels() > 0) )
+  {
+    const double xmin = hist ? std::min( hist->gamma_energy_min(), 0.0f ) : 0.0f;
+    const double xmax = hist ? hist->gamma_energy_max() : 15000.0;
+    if( lowEnergy < xmin )
+      lowEnergy = xmin;
+    if( lowEnergy > xmax )
+      lowEnergy = xmax;
+    if( highEnergy < xmin )
+      highEnergy = xmin;
+    if( highEnergy > xmax )
+      highEnergy = xmax;
+  }//
+  
   m_lowerEnergy->setValue( lowEnergy );
   m_upperEnergy->setValue( highEnergy );
 
+  const WString lowerStrVal = m_lowerEnergy->text();
+  const WString upperStrVal = m_upperEnergy->text();
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    const WString prevLowerEnergy = m_prevLowerEnergy;
+    const WString prevUpperEnergy = m_prevUpperEnergy;
+    
+    auto setRange = [=]( const bool is_undo ){
+      InterSpec *viewer = InterSpec::instance();
+      GammaCountDialog *dialog = viewer ? viewer->showGammaCountDialog() : nullptr;
+      if( dialog )
+      {
+        dialog->m_lowerEnergy->setText( is_undo ? prevLowerEnergy : lowerStrVal );
+        dialog->m_upperEnergy->setText( is_undo ? prevUpperEnergy : upperStrVal );
+        dialog->handleEnergyRangeChange();
+      }
+    };
+    auto undo = [setRange](){ setRange(true); };
+    auto redo = [setRange](){ setRange(false); };
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Set energy range to sum." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  
+  m_prevLowerEnergy = lowerStrVal;
+  m_prevUpperEnergy = upperStrVal;
+  
   handleEnergyRangeChange();
 }//void setEnergyRange( const double lowEnergy, const double highEnergy )
+
+
+void GammaCountDialog::handleAppUrl( std::string query_str )
+{
+  const map<string,string> values = AppUtils::query_str_key_values( query_str );
+  
+  // Check version is appropriate
+  const auto ver_iter = values.find( "V" );
+  if( (ver_iter == end(values))
+     || ((ver_iter->second != "1") && !SpecUtils::istarts_with(ver_iter->second, "1.")) )
+    throw runtime_error( "Energy Range Sum: URI not compatible version." );
+  
+  const auto lower_iter = values.find( "LOW" );
+  const auto upper_iter = values.find( "HIGH" );
+  string lower_str = (lower_iter != end(values)) ? lower_iter->second : string();
+  string upper_str = (upper_iter != end(values)) ? upper_iter->second : string();
+  try{ std::stod(lower_str); }catch(...){ lower_str = ""; }
+  try{ std::stod(upper_str); }catch(...){ upper_str = ""; }
+  
+  auto primary = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  if( lower_str.empty() && primary && (primary->num_gamma_channels() > 0) )
+    lower_str = std::to_string( primary->gamma_channel_lower(0) );
+  if( upper_str.empty() && primary && (primary->num_gamma_channels() > 0) )
+    upper_str = std::to_string( primary->gamma_channel_upper(primary->num_gamma_channels() - 1) );
+  
+  m_lowerEnergy->setText( WString::fromUTF8(lower_str) );
+  m_upperEnergy->setText( WString::fromUTF8(upper_str) );
+    
+  handleEnergyRangeChange();
+}//void handleAppUrl( std::string query_str )
+
+
+std::string GammaCountDialog::encodeStateToUrl() const
+{
+  string low, high;
+  if( m_lowerEnergy->validate() == WValidator::State::Valid )
+    low = m_lowerEnergy->text().toUTF8();
+  if( m_upperEnergy->validate() == WValidator::State::Valid )
+    high = m_upperEnergy->text().toUTF8();
+  
+  return "V=1&LOW=" + low + "&HIGH=" + high;
+}//std::string encodeStateToUrl() const
 
 
 void GammaCountDialog::handleEnergyRangeChange()
@@ -341,47 +401,49 @@ void GammaCountDialog::handleEnergyRangeChange()
     setGammaCountText( m_backgroundGammaCount, background, backgroundSF, low, high );
 
     string secondarySfStr = "--", backgroundSfStr = "--";
-    string livetimescale = "<i>Note: ";
+    string livetimescale = "Note: ";
     char onstack[64];
-//      m_secondaryLiveTimeScale->hide();
-//      m_backgroundLiveTimeScale->hide();
 
     if( background )
     {
-        if( backgroundSF > 0.1 )
-          snprintf( onstack, sizeof(onstack), "%.2f", backgroundSF );
-        else
-          snprintf( onstack, sizeof(onstack), "%.2g", backgroundSF );
-        backgroundSfStr = onstack;
-
-        livetimescale += "Background is being scaled by " + backgroundSfStr ;
-    }//else backgroundSfStrm << "--";
+      if( backgroundSF > 0.1 )
+        snprintf( onstack, sizeof(onstack), "%.2f", backgroundSF );
+      else
+        snprintf( onstack, sizeof(onstack), "%.2g", backgroundSF );
+      backgroundSfStr = onstack;
+      
+      livetimescale += "Background is being scaled by " + backgroundSfStr ;
+    }//if( background )
 
     if( secondary )
     {
-        if( secondarySF > 0.1 )
-            snprintf( onstack, sizeof(onstack), "%.2f", secondarySF );
-        else
-            snprintf( onstack, sizeof(onstack), "%.2g", secondarySF );
-          
-        secondarySfStr = onstack;
-
-        if (background)
-            livetimescale += " and secondary by ";
-        else
-            livetimescale += "Secondary background is being scaled by ";
-        
-        livetimescale += secondarySfStr;
-    }//else secondarySfStrm << "--";
+      if( secondarySF > 0.1 )
+        snprintf( onstack, sizeof(onstack), "%.2f", secondarySF );
+      else
+        snprintf( onstack, sizeof(onstack), "%.2g", secondarySF );
+      
+      secondarySfStr = onstack;
+      
+      if( background )
+        livetimescale += " and secondary by ";
+      else
+        livetimescale += "Secondary background is being scaled by ";
+      
+      livetimescale += secondarySfStr;
+    }//if( secondary )
 
       
-      if (secondary||background) {
-          livetimescale += ".</i>";
-          m_backgroundLiveTimeScale->setText(livetimescale);
-//          m_backgroundLiveTimeScale->show();
-      } else {
-          m_backgroundLiveTimeScale->setText("");
-      }
+    if( secondary || background )
+    {
+      livetimescale += ".";
+      m_liveTimeScaleNote->setText( livetimescale );
+      m_liveTimeScaleNote->show();
+    }else
+    {
+      m_liveTimeScaleNote->setText("");
+      m_liveTimeScaleNote->hide();
+    }
+    
     setUnceraintyText( primary, background, backgroundSF, low, high );
     
     double lowEnergy = 9999999.9, upEnergy = -9999999.9;

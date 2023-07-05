@@ -54,6 +54,7 @@
 #include "SpecUtils/Filesystem.h"
 
 #include "InterSpec/InterSpecServer.h"
+#include "InterSpec/UndoRedoManager.h"
 
 namespace 
 {
@@ -646,6 +647,8 @@ InterSpecWxApp::InterSpecWxApp() :
       sm_try_restore = app_file_config.m_allow_restore;
       sm_open_dev_console = app_file_config.m_open_dev_tools;
       sm_require_session_token = app_file_config.m_require_token;
+      
+      UndoRedoManager::setMaxUndoRedoSteps( app_file_config.m_max_undo_steps );
     }catch( std::exception &e )
     {
       wxLogMessage( "Error parsing app configuration file: %s", e.what() );
@@ -746,7 +749,8 @@ InterSpecWxApp::InterSpecWxApp() :
 
     if( sm_test_load_only )
     {
-     // Right now we'll just wait 15 seconds, and if things havent loaded, decleare failure.
+     // Right now we'll just wait 180 seconds, and if things havent loaded, declare failure.
+     //  Normally shouldnt take very long, but on some test runners it can take a while.
      // When things load, we'll stop this timer and clear it.
      // 
      //  However, there are some hooks we could probably use to fail faster - see:
@@ -754,7 +758,7 @@ InterSpecWxApp::InterSpecWxApp() :
      //   void InterSpecApp::prepareForEndOfSession()
      //   void InterSpecApp::finalize()
      //   for possible hooks to check failure.
-      sm_check_load_timer.reset( new CheckLoadTimer( this, 30 ) );
+      sm_check_load_timer.reset( new CheckLoadTimer( this, 180 ) );
     }//if( sm_test_load_only )
 
     InterSpecWebFrame* frame = new InterSpecWebFrame(m_url, no_restore, file_to_open);

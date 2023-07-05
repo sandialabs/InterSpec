@@ -352,7 +352,8 @@ function get_interspec_options(){
     httpPort: 0,
     restoreSession: true,
     requireToken: true,
-    openDevTools: false
+    openDevTools: false,
+    maxUndoSteps: 250
   };
 
   const getOptionsFromFile = function( filepath ){
@@ -390,6 +391,12 @@ function get_interspec_options(){
         if( typeof config.OpenDevTools !== "boolean" )
           throw new Error("OpenDevTools must be boolean");
         settings.openDevTools = config.OpenDevTools;
+      }
+
+      if( config.hasOwnProperty('MaxUndoSteps') ){
+        if( !Number.isInteger(config.MaxUndoSteps) )
+          throw new Error("MaxUndoSteps must be an integer");
+        settings.maxUndoSteps = config.MaxUndoSteps;
       }
     }catch( error ){
       console.error( 'Error:', error );
@@ -1044,6 +1051,7 @@ app.on('ready', function(){
   console.log( 'basedir="' + basedir + '"');
   
   interspec.setRequireSessionToken( app_options.requireToken );
+  interspec.setMaxUndoRedoSteps( app_options.maxUndoSteps );
   interspec.setMessageToNodeJsCallback( messageToNodeJs );
   interspec.setBrowseForDirectoryCallback( browseForDirectory );
   

@@ -123,13 +123,19 @@ TerminalWidget::TerminalWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
   m_commandsearch->setMinimumSize(Wt::WLength::Auto, WLength(1.5,Wt::WLength::FontEm));
   m_commandsearch->setMargin(WLength(5,WLength::Pixel));
     
-  m_commandmenu = new PopupDivMenu( commandButton, PopupDivMenu::TransientMenu );   // pop-up menu for list of commands
+  const PopupDivMenu::MenuType menutype = (viewer && viewer->isPhone())
+                                        ? PopupDivMenu::MenuType::AppLevelMenu
+                                        : PopupDivMenu::MenuType::TransientMenu;
+  m_commandmenu = new PopupDivMenu( commandButton, menutype );   // pop-up menu for list of commands
   m_commandmenu->addStyleClass( "command-menu" );
   m_commandmenu->addStyleClass( "command-menu-content" );
   m_commandmenu->addStyleClass( "command-menu-content a" );
   m_commandmenu->addStyleClass( "command-menu-content a:hover" );
   m_commandmenu->addStyleClass( "command-menu:hover .command-menu-content" );
-  m_commandmenu->setHeight( 125 );
+  if( menutype == PopupDivMenu::MenuType::TransientMenu )
+    m_commandmenu->setHeight( 250 );
+  
+    
   m_commandmenu->addWidget( m_commandsearch );
     
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
@@ -390,10 +396,16 @@ void TerminalWidget::commandMenuSearchInput()
     }
 }
 
-void TerminalWidget::commandMenuItemSelected()
+void TerminalWidget::commandMenuItemSelected( Wt::WMenuItem *item )
 {
-    const Wt::WString& selectedCommand = m_commandmenu->result()->text();
+  //WMenuItem *item = m_commandmenu->result();
+  
+  if( item )
+  {
+    const Wt::WString& selectedCommand = item->text();
     doJavaScript("Wt.WT.TerminalWidgetCommandMenuItemSelected(" + m_edit->jsRef() + ", " + selectedCommand.jsStringLiteral() + ");");
-//    m_edit->setFocus();
+    m_commandmenu->hide();
+    //    m_edit->setFocus();
+  }
 }//void m_m_commandMenuItemselected()
 

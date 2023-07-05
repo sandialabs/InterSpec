@@ -45,24 +45,26 @@
 #include <boost/tokenizer.hpp>
 
 #include "SandiaDecay/SandiaDecay.h"
-#include "InterSpec/DecayDataBaseServer.h"
 
-#include "InterSpec/PeakDef.h"
-#include "InterSpec/PeakFit.h"
 #include "SpecUtils/DateTime.h"
-#include "InterSpec/SpecMeas.h"
 #include "SpecUtils/SpecFile.h"
-#include "InterSpec/PeakModel.h"
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/EnergyCalibration.h"
+
+#include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
+#include "InterSpec/SpecMeas.h"
+#include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"  //Only for ALLOW_PEAK_COLOR_DELEGATE
-#include "SpecUtils/EnergyCalibration.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectrumDataModel.h"
+#include "InterSpec/DecayDataBaseServer.h"
 
 
 using namespace std;
@@ -1263,6 +1265,8 @@ void PeakModel::definePeakXRange( PeakDef &peak )
 }//void definePeakXRange( PeakDef &peak )
 
 
+/*
+ // This version of function is such that a copy of the peaks are set to the model
 void PeakModel::setPeaks( const std::vector<std::shared_ptr<const PeakDef> > &peaks )
 {
   vector<PeakDef> peakcopies;
@@ -1275,10 +1279,100 @@ void PeakModel::setPeaks( const std::vector<std::shared_ptr<const PeakDef> > &pe
   
   setPeaks( peakcopies );
 }//void PeakModel::setPeaks()
+*/
+
+void PeakModel::setPeaks( vector<shared_ptr<const PeakDef>> peaks )
+{
+  if( !m_peaks )
+    throw runtime_error( "Set a primary spectrum before adding peak" );
+  
+  const bool had_peaks = !m_peaks->empty();
+  if( had_peaks )
+  {
+    beginRemoveRows( WModelIndex(), 0, static_cast<int>(m_peaks->size()-1) );
+    m_peaks->clear();
+    m_sortedPeaks.clear();
+    endRemoveRows();
+  }//if( had_peaks )
+  
+  for( size_t i = 0; i < peaks.size(); ++i )
+  {
+    const shared_ptr<const PeakDef> orig_peak = peaks[i];
+    assert( orig_peak );
+    if( !orig_peak )
+      continue;
+    
+    const auto c = orig_peak->continuum();
+    if( c->energyRangeDefined() )
+      continue;
+    
+    Wt::log("warn") << "PeakModel::setPeaksNoCopy: found peak not energy range defined.";
+    
+    shared_ptr<PeakDef> new_peak = make_shared<PeakDef>( *orig_peak );
+    definePeakXRange( *new_peak );
+    peaks[i] = new_peak;
+    
+    // Go through and replace continuum of any peaks that shared a conitnuum with `orig_peak`
+    for( size_t j = i + 1; j < peaks.size(); ++j )
+    {
+      if( peaks[j] && (peaks[j]->continuum() == c) )
+      {
+        shared_ptr<PeakDef> new_peak_j = make_shared<PeakDef>( *peaks[j] );
+        new_peak_j->setContinuum( new_peak->continuum() );
+        peaks[j] = new_peak_j;
+      }
+    }
+  }//for( size_t i = 0; i < peaks.size(); ++i )
+  
+  // Remove any nullptr peaks, or peaks with means larger/smaller than data
+  const auto peaks_end = remove_if( begin(peaks), end(peaks),
+    [this]( const shared_ptr<const PeakDef> &p ) -> bool {
+       return !p || !isWithinRange( *p );
+    } );
+  
+  const size_t npeaksadd = peaks_end - begin(peaks);
+  
+  if( npeaksadd )
+  {
+    shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+     
+    auto sortfcn = [this, data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ) -> bool {
+      return PeakModel::compare( lhs, rhs, m_sortColumn, m_sortOrder, data );
+    };
+    
+    auto meansort = [this, data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ) -> bool {
+      return PeakModel::compare( lhs, rhs, kMean, Wt::AscendingOrder, data );
+    };
+
+    beginInsertRows( WModelIndex(), 0, int(npeaksadd - 1) );
+    
+    m_peaks->insert( end(*m_peaks), begin(peaks), peaks_end );
+    m_sortedPeaks.insert( end(m_sortedPeaks), begin(peaks), peaks_end );
+
+    std::sort( m_peaks->begin(), m_peaks->end(), meansort );
+    std::stable_sort( m_sortedPeaks.begin(), m_sortedPeaks.end(), sortfcn );
+    
+    endInsertRows();
+    
+    // Trigger a layout change to keep issue with scrolling in table not working from happening.
+    layoutAboutToBeChanged().emit();
+    layoutChanged().emit();
+  }//if( npeaksadd )
+  
+  
+  if( had_peaks || npeaksadd )
+    notifySpecMeasOfPeakChange();
+}//void setPeaks( const std::vector<std::shared_ptr<const PeakDef> > &peaks )
 
 
 void PeakModel::setPeaks( vector<PeakDef> peaks )
 {
+  vector<shared_ptr<const PeakDef>> peak_ptrs;
+  for( const PeakDef &p : peaks )
+    peak_ptrs.push_back( make_shared<PeakDef>( p ) );
+  setPeaks( peak_ptrs );
+  
+  /*
   if( !m_peaks )
     throw runtime_error( "Set a primary spectrum before adding peak" );
 
@@ -1334,6 +1428,7 @@ void PeakModel::setPeaks( vector<PeakDef> peaks )
   }//if( peaks.size() )
   
   notifySpecMeasOfPeakChange();
+   */
 }//void setPeaks( const vector<PeakDef> &peaks )
 
 
@@ -2305,6 +2400,8 @@ bool PeakModel::setData( const WModelIndex &index,
   if( !m_peaks )
     throw runtime_error( "Set a primary spectrum before setting peak data" );
 
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   notifySpecMeasOfPeakChange();
   
   try

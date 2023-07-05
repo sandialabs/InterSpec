@@ -73,6 +73,7 @@
 #include "InterSpec/RemoteRid.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
@@ -500,9 +501,11 @@ protected:
   
   /// m_url is either the REST API URL (minus the "/analysis" or "/info" part), or path to
   /// executable, depending on ServiceType.
+  WString m_prev_url;
   WLineEdit *m_url;
   WStackedWidget *m_drf_stack;
   WPushButton *m_retrieve_drfs_btn;
+  int m_current_drf_index; // For undo/redo
   WComboBox *m_drf_select;
   WCheckBox *m_onlyDisplayedSamples;
   WPushButton *m_submit;
@@ -535,7 +538,7 @@ protected:
       vector<string> prev;
       SpecUtils::split( prev, prev_urls, ";" );
       
-      if( !prev.empty() && (prev.back() == url) )
+      if( !prev.empty() && (prev.front() == url) )
         return;
       
       prev.erase( std::remove_if(begin(prev), end(prev), [&url](const string & a){return a == url;}), end(prev) );
@@ -620,9 +623,11 @@ public:
    m_interspec( interspec ),
    m_remote_rid( remoterid ),
    m_type( type ),
+   m_prev_url(),
    m_url( nullptr ),
    m_drf_stack( nullptr ),
    m_retrieve_drfs_btn( nullptr ),
+   m_current_drf_index( -1 ),
    m_drf_select( nullptr ),
    m_onlyDisplayedSamples( nullptr ),
    m_submit( nullptr ),
@@ -681,7 +686,8 @@ public:
       }//case ServiceType::Exe:
     }//switch( m_type )
     
-    m_url->setText( WString::fromUTF8( mostRecentUserUrl(m_type,m_interspec) ) );
+    m_prev_url = WString::fromUTF8( mostRecentUserUrl(m_type,m_interspec) );
+    m_url->setText( m_prev_url );
     
     layout->addWidget( m_url, 0, 1, AlignMiddle );
     layout->setColumnStretch( 1, 1 );
@@ -706,6 +712,7 @@ public:
     m_drf_select = new WComboBox();
     sub_layout->addWidget( m_drf_select, 0, 1 );
     sub_layout->setColumnStretch( 1, 1 );
+    m_current_drf_index = -1;
     m_drf_select->activated().connect( this, &ExternalRidWidget::handleUserChangedDrf );
     
     m_drf_stack->addWidget( container );
@@ -757,36 +764,8 @@ public:
     if( always_call == always_call_index )
       m_alwaysDoAnalysisCb->setChecked( true );
     
-    m_alwaysDoAnalysisCb->checked().connect( std::bind([this,always_call_index](){
-      try
-      {
-        InterSpecUser::setPreferenceValue(m_interspec->m_user, "AlwaysCallExternalRid", always_call_index, m_interspec);
-        switch( m_type )
-        {
-          case ServiceType::Rest:
-            m_remote_rid->alwaysCallRestAnaChecked();
-            break;
-          case ServiceType::Exe:
-            m_remote_rid->alwaysCallExeAnaChecked();
-            break;
-        }//switch( m_type )
-        
-      }catch( std::exception & )
-      {
-        assert(0);
-      }
-    }) );
-    
-    m_alwaysDoAnalysisCb->unChecked().connect( std::bind([this](){
-      try
-      {
-        InterSpecUser::setPreferenceValue(m_interspec->m_user, "AlwaysCallExternalRid", 0, m_interspec);
-      }catch( std::exception & )
-      {
-        assert(0);
-      }
-    }) );
-    
+    m_alwaysDoAnalysisCb->checked().connect( this, &ExternalRidWidget::handleAlwaysCallCheckChanged );
+    m_alwaysDoAnalysisCb->unChecked().connect( this, &ExternalRidWidget::handleAlwaysCallCheckChanged );
     
     m_interspec->displayedSpectrumChanged().connect( this, &ExternalRidWidget::displayedSpectrumChanged );
     
@@ -808,6 +787,67 @@ public:
   {
     m_alwaysDoAnalysisCb->setChecked( false );
   }
+  
+  void handleAlwaysCallCheckChanged()
+  {
+    const int always_call_index = (m_type == ServiceType::Rest) ? 1 : 2;
+    
+    if( m_alwaysDoAnalysisCb->isChecked() )
+    {
+      try
+      {
+        InterSpecUser::setPreferenceValue(m_interspec->m_user, "AlwaysCallExternalRid", always_call_index, m_interspec);
+        switch( m_type )
+        {
+          case ServiceType::Rest:
+            m_remote_rid->alwaysCallRestAnaChecked();
+            break;
+          case ServiceType::Exe:
+            m_remote_rid->alwaysCallExeAnaChecked();
+            break;
+        }//switch( m_type )
+      }catch( std::exception & )
+      {
+        assert(0);
+      }
+    }else
+    {
+      try
+      {
+        InterSpecUser::setPreferenceValue(m_interspec->m_user, "AlwaysCallExternalRid", 0, m_interspec);
+      }catch( std::exception & )
+      {
+        assert(0);
+      }
+    }
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    {
+      auto undo_redo = [always_call_index](){
+        InterSpec *viewer = InterSpec::instance();
+        RemoteRid *rid = viewer ? viewer->remoteRid() : nullptr;
+        if( !rid )
+          return;
+      
+        RestRidImp::ExternalRidWidget *tool = rid->restRidTool();
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+        if( always_call_index == 2 )
+          tool = rid->exeRidTool();
+#endif
+        WCheckBox *cb = tool ? tool->m_alwaysDoAnalysisCb : nullptr;
+        
+        if( cb )
+          cb->setChecked( !cb->isChecked() );
+        
+        if( tool )
+          tool->handleAlwaysCallCheckChanged();
+      };//undo_redo
+      
+      undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Toggle always do External Rid on spectrum load" );
+    }//if( undo )
+  }//handleAlwaysCallCheckChanged()
+  
   
   Wt::WFlags<RemoteRid::AnaFileOptions> anaFlags() const
   {
@@ -876,6 +916,7 @@ public:
     if( code == 0 )
     {
       vector<string> nuclides;
+      vector<pair<string,string>> iso_descrips;
       
       try
       {
@@ -904,7 +945,26 @@ public:
           const SandiaDecay::Nuclide *nuc = db->nuclide(iso.name);
           if( nuc )
             nuclides.push_back( nuc->symbol );
+          
+          // ReferencePhotopeakDisplay::updateOtherNucsDisplay() uses following convention
+          //  to decide if a user should be able to click on a result
+          if( nuc )
+            iso_descrips.emplace_back( nuc->symbol, iso.type );
+          else
+            iso_descrips.emplace_back( iso.name, "" );
         }
+        
+        // We should set the results to ReferencePhotopeakDisplay, and then in
+        //  ReferencePhotopeakDisplay::handleSpectrumChange clear out the old results
+        //  when the file changes.  Also, should modify the auto submital to submit
+        //  the file only if all samples are displayed, and otherwise just the
+        //  displayed spectra, and do this when the sample numbers change.
+        //
+        //  TODO: the results we just got might be for the previous file
+        InterSpec *interspec = InterSpec::instance();
+        ReferencePhotopeakDisplay *reflines = interspec ? interspec->referenceLinesWidget() : nullptr;
+        if( reflines )
+          reflines->setExternalRidResults( "GADRAS", iso_descrips );
       }catch( std::exception &e )
       {
         message = "Failed to parse GADRAS RID results.";
@@ -1177,6 +1237,7 @@ public:
     m_result->setText( "" );
     m_error->setText( "" );
     m_status->setText( "Requesting service information." );
+    m_current_drf_index = -1;
     m_drf_select->clear();
     
     switch( m_type )
@@ -1194,6 +1255,7 @@ public:
   
   void handleInfoResponse( const std::string &msg )
   {
+    m_current_drf_index = -1;
     m_drf_select->clear();
     
     try
@@ -1300,6 +1362,7 @@ public:
       m_drf_stack->setCurrentIndex( 1 );
     }catch( std::exception &e )
     {
+      m_current_drf_index = -1;
       m_drf_select->clear();
       m_retrieve_drfs_btn->disable();
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
@@ -1312,6 +1375,7 @@ public:
   
   void handleInfoResponseError( const std::string &msg )
   {
+    m_current_drf_index = -1;
     m_drf_select->clear();
     m_drf_stack->setCurrentIndex( 0 );
     m_retrieve_drfs_btn->disable();
@@ -1517,9 +1581,14 @@ public:
     m_result->setText( "" );
     m_error->setText( "" );
     m_status->setText( "" );
+    m_current_drf_index = -1;
     m_drf_select->clear();
     m_drf_stack->setCurrentIndex( 0 );
       
+    const WString new_url = m_url->text();
+    const WString old_url = m_prev_url;
+    m_prev_url = new_url;
+    
     auto spec = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     
     const bool validUrl = isValidUrl();
@@ -1572,6 +1641,34 @@ public:
       m_rest_interface->setAnaFlags( anaFlags() );
       m_rest_interface->setDrf( drf() );
     }
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( (new_url != old_url) && undoRedo && undoRedo->canAddUndoRedoNow() )
+    {
+      const bool isexe = (m_type == ServiceType::Exe);
+      
+      auto undo_redo = [new_url,old_url,isexe]( const bool is_undo ){
+        InterSpec *viewer = InterSpec::instance();
+        RemoteRid *rid = viewer ? viewer->remoteRid() : nullptr;
+        
+        RestRidImp::ExternalRidWidget *tool = rid->restRidTool();
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+        if( isexe )
+          tool = rid->exeRidTool();
+#endif
+        if( !tool )
+          return;
+        
+        const WString &url = is_undo ? old_url : new_url;
+        tool->m_url->setText( url );
+        tool->setMostRecentUrl( url.toUTF8() );
+        tool->urlChanged();
+      };//undo_redo
+      
+      auto undo = [undo_redo](){ undo_redo(true); };
+      auto redo = [undo_redo](){ undo_redo(false); };
+      undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Update External RID URL" );
+    }//if( undo )
   }//urlChanged()
   
   
@@ -1582,6 +1679,38 @@ public:
       m_rest_interface->setAnaFlags( anaFlags() );
       m_rest_interface->setDrf( drf() );
     }//if( m_rest_interface )
+    
+    const int new_drf_index = m_drf_select->currentIndex();
+    const int prev_drf_index = m_current_drf_index;
+    m_current_drf_index = new_drf_index;
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( (new_drf_index != prev_drf_index) && undoRedo && undoRedo->canAddUndoRedoNow() )
+    {
+      const bool isexe = (m_type == ServiceType::Exe);
+      
+      auto undo_redo = [new_drf_index,prev_drf_index,isexe]( const bool is_undo ){
+        InterSpec *viewer = InterSpec::instance();
+        RemoteRid *rid = viewer ? viewer->remoteRid() : nullptr;
+        
+        RestRidImp::ExternalRidWidget *tool = rid->restRidTool();
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+        if( isexe )
+          tool = rid->exeRidTool();
+#endif
+        if( !tool )
+          return;
+        
+        const int nitems = tool->m_drf_select->count();
+        const int index = is_undo ? prev_drf_index : new_drf_index;
+        if( index < nitems )
+          tool->m_drf_select->setCurrentIndex( index );
+      };
+      
+      auto undo = [undo_redo](){ undo_redo(true); };
+      auto redo = [undo_redo](){ undo_redo(false); };
+      undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Change External RID DRF" );
+    }//if( undo )
   }//void handleUserChangedDrf()
   
   
@@ -1670,7 +1799,7 @@ void RestRidInterface::startRestAnalysis( const string ana_service_url )
   
   WStringStream js;
   js <<
-  "\n"
+  "\n(function(){"
   "let sendAnaRequest = function(formData){\n"
   "  fetch('" << ana_service_url << "/analysis', {method: 'POST', body: formData})\n"
   "    .then(response => response.json() )\n"
@@ -1698,7 +1827,7 @@ void RestRidInterface::startRestAnalysis( const string ana_service_url )
   "    console.error( 'Error getting analysis input:', error);\n"
   "    const error_str = 'Error getting analysis input:' + error.toString();\n"
   "    " << m_analysis_error_signal.createCall( "error_str" ) << ";\n"
-  "});\n";
+  "});\n})();";
   
   doJavaScript( js.str() );
 }//void startRestAnalysis()
@@ -1743,11 +1872,11 @@ void RestRidInterface::deleteSelfForToast()
   // I think its fine to just call `delete this`, but we'll do a little delay, "just because"
   WServer::instance()->schedule( 1000, wApp->sessionId(), [rest_id, instance](){
     assert( wApp );
-    WWidget *w = wApp->domRoot()->findById( rest_id );
-    RestRidInterface *ww = dynamic_cast<RestRidInterface *>( w );
-    cout << "When deleting RestRidInterface, got w = " << w << ", ww = " << ww << ", instance = " << instance << endl;
-    
+     WWidget *w = wApp->domRoot()->findById( rest_id );
+     RestRidInterface *ww = dynamic_cast<RestRidInterface *>( w );
+    // cout << "When deleting RestRidInterface, got w = " << w << ", ww = " << ww << ", instance = " << instance << endl;
     assert( w );
+    
     delete instance;
   } );
 }//deleteSelfForToast()
@@ -1865,12 +1994,12 @@ void RestRidInputResource::handleRequest( const Wt::Http::Request &request,
 }//namespace
 
 
-void RemoteRid::startRemoteRidDialog( InterSpec *viewer,
+SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
                                       function<void(AuxWindow *, RemoteRid *)> callback )
 {
   assert( viewer );
   if( !viewer )
-    return;
+    return nullptr;
   
   const bool showWarning = InterSpecUser::preferenceValue<bool>( "ExternalRidWarn", viewer );
   
@@ -1880,7 +2009,7 @@ void RemoteRid::startRemoteRidDialog( InterSpec *viewer,
     if( callback )
       callback( res.first, res.second );
     
-    return;
+    return nullptr;
   }//if( !showWarning )
   
   wApp->useStyleSheet( "InterSpec_resources/RemoteRid.css" );
@@ -1919,6 +2048,8 @@ void RemoteRid::startRemoteRidDialog( InterSpec *viewer,
     if( callback )
       callback( res.first, res.second );
   }) );
+  
+  return dialog;
 }//void startRemoteRidDialog( viewer, callback )
 
 
@@ -1932,7 +2063,6 @@ pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
   
   WPushButton *close = window->addCloseButtonToFooter();
   close->clicked().connect( window, &AuxWindow::hide );
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->addHelpInFooter( window->footer(), "external-rid" );
   
   RemoteRid *w = new RemoteRid( viewer, window->contents() );
@@ -1949,6 +2079,7 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_interspec( viewer ),
   m_rest_rid( nullptr )
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+  , m_menu( nullptr )
   , m_exe_rid( nullptr )
 #endif
 {
@@ -1981,38 +2112,55 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
   WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
   stack->setTransitionAnimation( animation, true );
   
-  WMenu *menu = new WMenu( stack, Wt::Vertical );
+  m_menu = new WMenu( stack, Wt::Vertical );
   const bool is_phone = m_interspec->isPhone();
   const char *style_class = is_phone ? "VerticalNavMenuPhone HeavyNavMenuPhone SideMenuPhone"
                                      : "VerticalNavMenu HeavyNavMenu SideMenu";
-  menu->addStyleClass( style_class );
+  m_menu->addStyleClass( style_class );
   
   
   WMenuItem *item = new WMenuItem( "Remote URL", m_rest_rid );
-  menu->addItem( item );
+  m_menu->addItem( item );
   
-  item->clicked().connect( std::bind([item,menu](){
-    menu->select( item );
+  item->clicked().connect( std::bind([item,this](){
+    m_menu->select( item );
     item->triggered().emit( item );
   }) );
   
   item = new WMenuItem( "Executable", m_exe_rid );
-  menu->addItem( item );
-  item->clicked().connect( std::bind([item,menu](){
-    menu->select( item );
+  m_menu->addItem( item );
+  item->clicked().connect( std::bind([item,this](){
+    m_menu->select( item );
     item->triggered().emit( item );
   }) );
   
   
   layout->setContentsMargins( 9, 0, 9, 0 );
-  layout->addWidget( menu, 0, 0, AlignLeft );
+  layout->addWidget( m_menu, 0, 0, AlignLeft );
   
   layout->addWidget( stack, 0, 1 );
   layout->setColumnStretch( 0, 1 );
   
   // If we have it setup to always call the EXE, then show this tab, otherwise show REST tab.
   const int always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", viewer );
-  menu->select( (always_call == 2) ? 1 : 0 );
+  m_menu->select( (always_call == 2) ? 1 : 0 );
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo )
+  {
+    m_menu->itemSelected().connect( std::bind([](){
+      UndoRedoManager *undoRedo = UndoRedoManager::instance();
+      if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
+        return;
+      auto undo_redo = [](){
+        InterSpec *viewer = InterSpec::instance();
+        RemoteRid *rid = viewer ? viewer->remoteRid() : nullptr;
+        if( rid && rid->m_menu )
+          rid->m_menu->select( rid->m_menu->currentIndex() ? 0 : 1 );
+      };
+      undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Change RID location menu" );
+    }) );
+  }//if( undoRedo )
   
 #else
   layout->setContentsMargins( 0, 0, 0, 0 );
@@ -2082,6 +2230,19 @@ void RemoteRid::alwaysCallExeAnaChecked()
 {
   m_rest_rid->uncheckAlwaysCallAnalysis();
 }//void alwaysCallExeAnaChecked()
+#endif
+
+
+RestRidImp::ExternalRidWidget *RemoteRid::restRidTool()
+{
+  return m_rest_rid;
+}
+
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+RestRidImp::ExternalRidWidget *RemoteRid::exeRidTool()
+{
+  return m_exe_rid;
+}
 #endif
 
 

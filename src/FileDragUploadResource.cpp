@@ -216,7 +216,7 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       spool_file.close();
       const string userName = request.headerValue( "X-File-Name" );
       
-      cerr << "\n\n\nuserName = '" << userName << "'\n\n" << endl;
+      //cerr << "\n\n\nuserName = '" << userName << "'\n\n" << endl;
       
       auto app = WApplication::instance();
       WApplication::UpdateLock lock( app );

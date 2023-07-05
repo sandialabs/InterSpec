@@ -95,49 +95,51 @@
 
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/PeakFit.h"
-#include "SpecUtils/SpecFile.h"
+#include "InterSpec/AppUtils.h"
 #include "SpecUtils/DateTime.h"
-#include "InterSpec/PopupDiv.h"
 #include "InterSpec/FluxTool.h"
 #include "InterSpec/PeakEdit.h"
+#include "InterSpec/PopupDiv.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
-#include "InterSpec/InterSpec.h"
-#include "InterSpec/DrfSelect.h"
-#include "InterSpec/IsotopeId.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/DrfSelect.h"
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/IsotopeId.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/ColorTheme.h"
-#include "InterSpec/MaterialDB.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/GammaXsGui.h"
 #include "InterSpec/HelpSystem.h"
-#include "SpecUtils/Filesystem.h"
+#include "InterSpec/MaterialDB.h"
 #include "SpecUtils/StringAlgo.h"
-#include "InterSpec/DecayWindow.h"
 #include "InterSpec/ColorSelect.h"
-#include "InterSpec/SimpleDialog.h"
+#include "InterSpec/DecayWindow.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PeakFitUtils.h"
-#include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/DataBaseUtils.h"
-#include "InterSpec/UseInfoWindow.h"
-#include "InterSpec/OneOverR2Calc.h"
-#include "InterSpec/WarningWidget.h"
-#include "InterSpec/SpectrumChart.h"
-#include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/InterSpecUser.h"
+#include "InterSpec/OneOverR2Calc.h"
+#include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/SpectrumChart.h"
+#include "InterSpec/UseInfoWindow.h"
+#include "InterSpec/WarningWidget.h"
 #include "InterSpec/DoseCalcWidget.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
-#include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/PeakInfoDisplay.h"
+#include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpecFileSummary.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/MultimediaDisplay.h"
-#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/CompactFileManager.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/UnitsConverterTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/FeatureMarkerWidget.h"
@@ -384,6 +386,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_nuclideSearchContainer(0),
     m_nuclideSearch( 0 ),
     m_fileMenuPopup( 0 ),
+    m_editMenuPopup( nullptr ),
     m_toolsMenuPopup( 0 ),
     m_helpMenuPopup( 0 ),
     m_displayOptionsPopupDiv( 0 ),
@@ -415,8 +418,17 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_featureMarkers( nullptr ),
   m_featureMarkerMenuItem( nullptr ),
   m_multimedia( nullptr ),
+  m_gammaXsToolWindow( nullptr ),
+  m_doseCalcWindow( nullptr ),
+  m_1overR2Calc( nullptr ),
+  m_unitsConverter( nullptr ),
+  m_fluxTool( nullptr ),
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
-  m_mapMenuItem( 0 ),
+  m_mapMenuItem( nullptr ),
+#if( USE_LEAFLET_MAP )
+  m_leafletWarning( nullptr ),
+  m_leafletWindow( nullptr ),
+#endif
 #endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_searchMode3DChart( 0 ),
@@ -436,10 +448,17 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_clientDeviceType( 0x0 ),
   m_referencePhotopeakLines( 0 ),
   m_referencePhotopeakLinesWindow( 0 ),
+  m_helpWindow( nullptr ),
   m_licenseWindow( nullptr ),
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
   m_preserveCalibWindow( 0 ),
+#if( USE_SEARCH_MODE_3D_CHART )
+  m_3dViewWindow( nullptr ),
+#endif
+  m_riidDisplay( nullptr ),
+  m_drfSelectWindow( nullptr ),
+  m_undo( nullptr ),
   m_renderedWidth( 0 ),
   m_renderedHeight( 0 ),
   m_colorPeaksBasedOnReferenceLines( true ),
@@ -471,7 +490,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   app->domRoot()->addWidget( m_notificationDiv );
   
-  initHotkeySignal();
+  app->hotkeySignal().connect( boost::bind( &InterSpec::hotKeyPressed, this, boost::placeholders::_1 ) );
   
   // Try to grab the username.
   string username = app->getUserNameFromEnvironment();
@@ -536,6 +555,21 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   detectClientDeviceType();
 
+    
+  // Now that we have m_sql and m_user setup, we can create the undo/redo manager, if we
+  //  are using the desktop interface.  We will create this manager before any our widgets
+  //
+  // We wont enable undo/redo when we are using mobile-menu (i.e., phones, or tablets that dont
+  //  have desktop interface enabled).
+  std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
+  if( (UndoRedoManager::maxUndoRedoSteps() >= 0)
+      /* && !app->isPhone()
+      && (!app->isTablet() || InterSpecUser::preferenceValue<bool>("TabletUseDesktopMenus", this)) */ )
+  {
+    m_undo = new UndoRedoManager( this );
+    undo_blocker = std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts>();
+  }//if( desktop interface )
+    
   m_peakModel = new PeakModel( this );
   m_spectrum   = new D3SpectrumDisplayDiv();
   m_timeSeries = new D3TimeChart();
@@ -592,10 +626,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   
   WWidget *menuWidget = NULL;
-  if( isMobile() )
-  {
-    
-  }
     
   if( isMobile() )
   {
@@ -792,8 +822,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
   }//if( isMobile() ) / else
 
   addFileMenu( menuWidget, isAppTitlebar );
+  addEditMenu( menuWidget );
   addDisplayMenu( menuWidget );
-  
   addToolsMenu( menuWidget );
   addAboutMenu( menuWidget );
 
@@ -833,7 +863,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
     
     m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
-                                                   boost::placeholders::_1, boost::placeholders::_2 ) );
+                                                   boost::placeholders::_1,
+                                                   boost::placeholders::_2,
+                                                   boost::placeholders::_3 ) );
     
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
     
@@ -1069,7 +1101,32 @@ InterSpec::InterSpec( WContainerWidget *parent )
                                                      boost::placeholders::_2 ) );
   m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this,
                                                      boost::placeholders::_1 ) );
-
+  m_spectrum->xRangeChanged().connect( boost::bind( &InterSpec::handleSpectrumChartXRangeChange, this,
+                                                     boost::placeholders::_1,
+                                                   boost::placeholders::_2,
+                                                   boost::placeholders::_3,
+                                                   boost::placeholders::_4,
+                                                   boost::placeholders::_5) );
+      
+  m_spectrum->yAxisScaled().connect(
+          boost::bind( &InterSpec::handleDisplayScaleFactorChangeFromSpectrum, this,
+                      boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3 ) );
+    
+  m_spectrum->legendDisabled().connect( std::bind([this](){
+    if( m_undo && !m_undo->isInUndoOrRedo() )
+      m_undo->addUndoRedoStep( [this](){ m_spectrum->enableLegend(); },
+                               [this](){ m_spectrum->disableLegend(); },
+                              "Hide spectrum legend." );
+    } ) );
+    
+  m_spectrum->legendEnabled().connect( std::bind([this](){
+    if( m_undo && !m_undo->isInUndoOrRedo() )
+      m_undo->addUndoRedoStep( [this](){ m_spectrum->disableLegend(); },
+                               [this](){ m_spectrum->enableLegend(); },
+                              "Show spectrum legend." );
+    } ) );
+    
+    
   m_timeSeries->setHidden( true );
   m_chartResizer->setHidden( m_timeSeries->isHidden() );
   
@@ -1101,15 +1158,17 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #endif
   
   applyColorTheme( nullptr );
-
+  
 #if( APP_MENU_STATELESS_FIX )
   // Make sure the menus get pre-loaded
   PopupDivMenu::pre_render(m_fileMenuPopup);
+  PopupDivMenu::pre_render(m_editMenuPopup);
   PopupDivMenu::pre_render(m_toolsMenuPopup);
   PopupDivMenu::pre_render(m_helpMenuPopup);
   PopupDivMenu::pre_render(m_displayOptionsPopupDiv);
 #endif
 }//InterSpec( constructor )
+
 
 InterSpec *InterSpec::instance()
 {
@@ -1118,6 +1177,7 @@ InterSpec *InterSpec::instance()
     return nullptr;
   return app->viewer();
 }//instance()
+
 
 void InterSpec::setStaticDataDirectory( const std::string &dir )
 {
@@ -1200,8 +1260,15 @@ InterSpec::~InterSpec() noexcept(true)
   //  some manual cleanup here (as of 20220917 when AuxWindow and SimpleDialog where explicitly
   //  parented by the current InterSpec instance, we are doing much more cleanup than necessary).
 
-  cerr << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'" << endl;
+  Wt::log("info") << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'";
 
+  // Get rid of undo/redo, so we dont insert anything into them
+  if( m_undo )
+  {
+    delete m_undo;
+    m_undo = nullptr;
+  }
+  
   if( m_licenseWindow )
   {
     delete m_licenseWindow;
@@ -1210,7 +1277,7 @@ InterSpec::~InterSpec() noexcept(true)
   
   try
   {
-    closeShieldingSourceFitWindow();
+    closeShieldingSourceFit();
   }catch(...)
   {
     cerr << "Caught exception closing shielding source window - shouldnt have happened" << endl;
@@ -1281,19 +1348,13 @@ InterSpec::~InterSpec() noexcept(true)
     m_referencePhotopeakLinesWindow = nullptr;
   }//if( m_referencePhotopeakLinesWindow )
   
+  handleWarningsWindowClose();
   if( m_warnings )  //WarningWidget isnt necessarily parented, so we do have to manually delete it
   {
-    if( m_warningsWindow )
-      m_warningsWindow->stretcher()->removeWidget( m_warnings );
     delete m_warnings;
     m_warnings = nullptr;
   }//if( m_warnings )
 
-  if( m_warningsWindow )
-  {
-    delete m_warningsWindow;
-    m_warningsWindow = nullptr;
-  }//if( m_warningsWindow )
   
   deletePeakEdit();
   deleteGammaCountDialog();
@@ -1350,30 +1411,36 @@ D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
   
   if( m_referencePhotopeakLines )
     referc_line_json = m_referencePhotopeakLines->jsonReferenceLinesMap();
+
+  const char * const title = "Interactive Spectrum Development";
+  const char * const xAxisTitle = "Energy";
+  const char * const yAxisTitle = "Counts";
+  const string dataTitle = (m_spectrum->data() ? m_spectrum->data()->title() :
+                            m_spectrum->background() ? m_spectrum->background()->title() :
+                            m_spectrum->secondData() ? m_spectrum->secondData()->title() :
+                            "Foreground");
+  const bool useLogYAxis = m_spectrum->yAxisIsLog();
+  const bool showVerticalGridLines = m_spectrum->verticalLinesShowing();
+  const bool showHorizontalGridLines = m_spectrum->horizontalLinesShowing();
+  const bool legendEnabled = m_spectrum->legendIsEnabled();
+  const bool compactXAxis = m_spectrum->isAxisCompacted();
+  const bool showPeakUserLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakUserLabel );
+  const bool showPeakEnergyLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakEnergyLabel );
+  const bool showPeakNuclideLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideLabel );
+  const bool showPeakNuclideEnergyLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideEnergies );
+  const bool showEscapePeakMarker = (m_featureMarkers && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::EscapePeakMarker)]);
+  const bool showComptonPeakMarker = (m_featureMarkers && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonPeakMarker)]);
+  const bool showComptonEdgeMarker = (m_featureMarkers && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonEdgeMarker)]);
+  const bool showSumPeakMarker = (m_featureMarkers && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::SumPeakMarker)]);
+  const bool backgroundSubtract = m_spectrum->backgroundSubtract();
   
-  D3SpectrumExport::D3SpectrumChartOptions options(
-                                 /* title: */"Interactive Spectrum Development",
-                                 /* xAxisTitle: */"Energy", /* yAxisTitle: */"Counts",
-                                 /* dataTitle: */(m_spectrum->data() ? m_spectrum->data()->title() :
-                                                  m_spectrum->background() ? m_spectrum->background()->title() :
-                                                  m_spectrum->secondData() ? m_spectrum->secondData()->title() :
-                                                  "Foreground"),
-                                 /* useLogYAxis: */m_spectrum->yAxisIsLog(),
-                                 /* showVerticalGridLines: */m_spectrum->verticalLinesShowing(),
-                                 /* showHorizontalGridLines: */m_spectrum->horizontalLinesShowing(),
-                                 /* legendEnabled: */m_spectrum->legendIsEnabled(),
-                                 /* compactXAxis: */m_spectrum->isAxisCompacted(),
-                                 /* showPeakUserLabels: */m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakUserLabel ),
-                                 /* showPeakEnergyLabels: */m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakEnergyLabel ),
-                                 /* showPeakNuclideLabels: */m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideLabel ),
-                                 /* showPeakNuclideEnergyLabels: */ m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideEnergies ),
-                                 /* showEscapePeakMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::EscapePeakMarker)],
-                                 /* showComptonPeakMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonPeakMarker)],
-                                 /* showComptonEdgeMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonEdgeMarker)],
-                                 /* showSumPeakMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::SumPeakMarker)],
-                                 /* backgroundSubtract: */m_spectrum->backgroundSubtract(),
-                                 /* xMin: */xMin, /* xMax: */xMax,
-                                 referc_line_json
+  
+  D3SpectrumExport::D3SpectrumChartOptions options( title, xAxisTitle, yAxisTitle, dataTitle,
+      useLogYAxis, showVerticalGridLines, showHorizontalGridLines, legendEnabled, compactXAxis,
+      showPeakUserLabels, showPeakEnergyLabels, showPeakNuclideLabels, showPeakNuclideEnergyLabels,
+      showEscapePeakMarker, showComptonPeakMarker, showComptonEdgeMarker, showSumPeakMarker,
+      backgroundSubtract, xMin, xMax,
+      referc_line_json
   );
   
 
@@ -1524,69 +1591,6 @@ void InterSpec::initDragNDrop()
 }//void InterSpec::initDragNDrop()
 
 
-void InterSpec::initHotkeySignal()
-{
-  if( !!m_hotkeySignal )
-    return;
-  
-  //We are specifying for the javascript to not be collected since the response
-  //  will change if the tools tabs is shown or not.
-  m_hotkeySignal.reset( new JSignal<unsigned int>( this, "hotkey", false ) );
-  
-  //sender.id was undefined in the following js, so had to work around this a bit
-  const char *js = INLINE_JAVASCRIPT(
-  function(id,e){
-    
-    if( !e || !e.key || e.metaKey || e.altKey || e.shiftKey || (typeof e.keyCode === 'undefined') )
-      return;
-    
-    let code = 0;
-    if( e.ctrlKey )
-    {
-      switch( e.key ){
-        case '1': case '2': case '3': case '4': case '5': case '6': case '7': //Shortcuts to switch to the various tabs
-        case 'h': // Help dialog
-        case 'i': // Info about InterSpec
-        case 'k': // Clear showing reference photopeak lines
-        case 's': // Store
-        case 'l': // Log/Linear
-          if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
-            return;
-          code = e.key.charCodeAt(0);
-          break;
-        default:  //Unused - nothing to see here - let the event propagate up
-          return;
-      }//switch( e.key )
-    }else{
-      switch( e.key ){
-        case "Left":  case "ArrowLeft":  code = 37; break;
-        case "Up":    case "ArrowUp":    code = 38; break;
-        case "Right": case "ArrowRight": code = 39; break;
-        case "Down":  case "ArrowDown":  code = 40; break;
-        default:  //Unused - nothing to see here - let the event propagate up
-          return;
-      }//switch( e.key )
-    
-      // No menus are active - dont send the signal
-      if( $(".MenuLabel.PopupMenuParentButton.active").length === 0 )
-        return;
-    }//if( e.ctrlKey ) / else
-    
-    e.preventDefault();
-    e.stopPropagation();
-    Wt.emit( id, {name:'hotkey'}, code );
-  } );
-  
-  const string jsfcfn = string("function(e){var f=") + js + ";f('" + id() + "',e);}";
-  wApp->declareJavaScriptFunction( "appKeyDown", jsfcfn );
-  
-  const string jsfcn = "document.addEventListener('keydown'," + wApp->javaScriptClass() + ".appKeyDown);";
-  doJavaScript( jsfcn );
-  
-  m_hotkeySignal->connect( boost::bind( &InterSpec::hotKeyPressed, this, boost::placeholders::_1 ) );
-}//void initHotkeySignal()
-
-
 void InterSpec::hotKeyPressed( const unsigned int value )
 {
   if( m_toolsTabs )
@@ -1594,27 +1598,6 @@ void InterSpec::hotKeyPressed( const unsigned int value )
     //string expectedTxt;
     switch( value )
     {
-      //case '1': expectedTxt = FileTabTitle;          break;
-      //case '2': expectedTxt = PeakInfoTabTitle;      break;
-      //case '3': expectedTxt = GammaLinesTabTitle;    break;
-      //case '4': expectedTxt = CalibrationTabTitle;   break;
-      //case '5': expectedTxt = NuclideSearchTabTitle; break;
-      //case '6':
-#if( USE_TERMINAL_WIDGET )
-      //  if( m_terminal && !m_terminalWindow )
-      //  {
-      //blah blah blah fix up terminal tab name, etc
-      //  }
-#endif
-#if( USE_REL_ACT_TOOL )
-      //  if( m_relActManualGui && !m_relActManualWindow )
-      //  {
-      //    blah blah blah hcekc if this or terminal tab
-      //    expectedTxt = RelActManualTitle;
-      //  }
-#endif
-      //  break;
-        
       case '1': case '2': case '3': case '4': case '5': case '6': case '7':
       {
         const int tabIndex = value - '1';
@@ -1655,9 +1638,18 @@ void InterSpec::hotKeyPressed( const unsigned int value )
       case 37: case 38: case 39: case 40:
         arrowKeyPressed( value );
         break;
+        
+      case 'z':
+        if( m_undo )
+          m_undo->executeUndo();
+        break;
+        
+      case 'Z':
+        if( m_undo )
+          m_undo->executeRedo();
+        break;
     }//switch( value )
   
-    
     
     /*
     if( expectedTxt.empty() )
@@ -1703,7 +1695,7 @@ void InterSpec::arrowKeyPressed( const unsigned int value )
     return;
   
   const vector<PopupDivMenu *> menus{
-    m_fileMenuPopup, m_displayOptionsPopupDiv, m_toolsMenuPopup, m_helpMenuPopup
+    m_fileMenuPopup, m_editMenuPopup, m_displayOptionsPopupDiv, m_toolsMenuPopup, m_helpMenuPopup
   };
   
   bool foundActive = false;
@@ -1728,11 +1720,14 @@ void InterSpec::arrowKeyPressed( const unsigned int value )
   
   if( leftArrow || rightArrow )
   {
-    size_t nextActiveIndex;
-    if( leftArrow )
-      nextActiveIndex = (activeIndex == 0) ? (menus.size() - 1) : (activeIndex - 1);
-    else
-      nextActiveIndex = ((activeIndex + 1) % menus.size());
+    size_t nextActiveIndex = activeIndex;
+    do
+    {
+      if( leftArrow )
+        nextActiveIndex = (nextActiveIndex == 0) ? (menus.size() - 1) : (nextActiveIndex - 1);
+      else
+        nextActiveIndex = ((nextActiveIndex + 1) % menus.size());
+    }while( !menus[nextActiveIndex] );
     
     menus[activeIndex]->hide();
     menus[nextActiveIndex]->parentClicked();
@@ -1786,12 +1781,16 @@ std::shared_ptr<const PeakDef> InterSpec::nearestPeak( const double energy ) con
 
 void InterSpec::refitPeakFromRightClick()
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   PeakSearchGuiUtils::refit_peaks_from_right_click( this, m_rightClickEnergy );
 }//void refitPeakFromRightClick()
 
 
 void InterSpec::addPeakFromRightClick()
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   std::shared_ptr<const SpecUtils::Measurement> dataH = m_spectrum->data();
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   if( !peak
@@ -1848,7 +1847,8 @@ void InterSpec::addPeakFromRightClick()
   double startingChi2, fitChi2;
   
   {//begin codeblock to evaluate startingChi2
-    MultiPeakFitChi2Fcn chi2fcn( origRoiPeaks.size(), dataH,
+    MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(origRoiPeaks.size()),
+                                dataH,
                                 peak->continuum()->type(),
                                 lower_channel, upper_channel );
     startingChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), origRoiPeaks );
@@ -1906,7 +1906,8 @@ void InterSpec::addPeakFromRightClick()
     for( size_t i = 0; i < answer.size(); ++i )
       newRoiPeaks.push_back( *answer[i] );
     
-    MultiPeakFitChi2Fcn chi2fcn( newRoiPeaks.size(), dataH,
+    MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(newRoiPeaks.size()),
+                                dataH,
                                  peak->continuum()->type(),
                                  lower_channel, upper_channel );
     fitChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), newRoiPeaks );
@@ -1984,6 +1985,8 @@ void InterSpec::addPeakFromRightClick()
 
 void InterSpec::makePeakFromRightClickHaveOwnContinuum()
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   const std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   if( !peak || !data
@@ -2054,6 +2057,8 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
 
 void InterSpec::handleChangeContinuumTypeFromRightClick( const int continuum_type )
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   PeakSearchGuiUtils::change_continuum_type_from_right_click( this, m_rightClickEnergy,
                                                              continuum_type );
 }//InterSpec::handleChangeContinuumTypeFromRightClick(...)
@@ -2061,6 +2066,8 @@ void InterSpec::handleChangeContinuumTypeFromRightClick( const int continuum_typ
 
 void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   if( !peak || m_rightClickEnergy < peak->lowerX() || m_rightClickEnergy > peak->upperX() )
   {
@@ -2168,6 +2175,8 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
 
 void InterSpec::deletePeakFromRightClick()
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   if( !peak )
   {
@@ -2184,6 +2193,8 @@ void InterSpec::deletePeakFromRightClick()
 void InterSpec::setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
                                      std::string nuclide )
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   //TODO: should probably add in some error logging or something
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   
@@ -2581,12 +2592,8 @@ void InterSpec::handleRightClick( double energy, double counts,
 
 void InterSpec::createPeakEdit( double energy )
 {
-  if( m_peakEditWindow )
-  {
-    m_peakEditWindow->peakEditor()->changePeak( energy );
-  }else
-  {
-    m_peakEditWindow = new PeakEditWindow( energy, m_peakModel, this );
+  auto create_editor = [this]( double ene ){
+    m_peakEditWindow = new PeakEditWindow( ene, m_peakModel, this );
     m_peakEditWindow->editingDone().connect( this, &InterSpec::deletePeakEdit );
     m_peakEditWindow->finished().connect( this, &InterSpec::deletePeakEdit );
     m_peakEditWindow->resizeToFitOnScreen();
@@ -2595,18 +2602,86 @@ void InterSpec::createPeakEdit( double energy )
     if( !editor->isEditingValidPeak() )
     {
       delete m_peakEditWindow;
-      m_peakEditWindow = 0;
+      m_peakEditWindow = nullptr;
+      return;
     }//if( !editor->isEditingValidPeak() )
+  };//
+  
+  auto change_peak = [this,create_editor]( double ene ){
+    if( m_peakEditWindow )
+    {
+      PeakEdit *editor = m_peakEditWindow->peakEditor();
+      editor->changePeak( ene );
+    }else
+    {
+      create_editor( ene );
+    }
+  };//change_peak
+  
+  
+  if( m_peakEditWindow )
+  {
+    PeakEdit *editor = m_peakEditWindow->peakEditor();
+    const double prev_energy = editor->currentPeakEnergy();
+    
+    change_peak( energy );
+    
+    auto undo = [prev_energy,change_peak](){ change_peak( prev_energy ); };
+    auto redo = [energy,change_peak](){ change_peak( energy ); };
+    if( m_undo )
+      m_undo->addUndoRedoStep( undo, redo, "Change peak editor peak." );
+  }else
+  {
+    create_editor( energy );
+    
+    auto undo = [this](){
+      if( m_peakEditWindow )
+      {
+        delete m_peakEditWindow;
+        m_peakEditWindow = nullptr;
+      }
+    };
+    
+    auto redo = [energy,change_peak](){ change_peak( energy ); };
+    if( m_undo )
+      m_undo->addUndoRedoStep( undo, redo, "Open peak editor." );
   }//if( m_peakEditWindow ) / else
   
-
 }//void createPeakEdit( Wt::WMouseEvent event )
+
+
+PeakEditWindow *InterSpec::peakEdit()
+{
+  return m_peakEditWindow;
+}
 
 
 void InterSpec::deletePeakEdit()
 {
   if( m_peakEditWindow )
   {
+    PeakEdit *editor = m_peakEditWindow->peakEditor();
+    assert( editor );
+    const double currentEnergy = editor ? editor->currentPeakEnergy() : 0.0;
+    
+    auto doClose = [this](){
+      if( m_peakEditWindow )
+      {
+        delete m_peakEditWindow;
+        m_peakEditWindow = nullptr;
+      }
+    };
+    
+    auto undo = [this, currentEnergy, doClose](){
+      m_peakEditWindow = new PeakEditWindow( currentEnergy, m_peakModel, this );
+      m_peakEditWindow->editingDone().connect( std::bind(doClose) );
+      m_peakEditWindow->finished().connect( std::bind(doClose) );
+      m_peakEditWindow->resizeToFitOnScreen();
+    };//auto undo
+    
+    if( m_undo )
+      m_undo->addUndoRedoStep( undo, doClose, "Close peak editor." );
+    
     delete m_peakEditWindow;
     m_peakEditWindow = nullptr;
   }
@@ -2656,9 +2731,26 @@ void InterSpec::setIsotopeSearchEnergy( double energy )
 
 void InterSpec::setFeatureMarkerOption( const FeatureMarkerType option, const bool show )
 {
-  m_featureMarkersShown[static_cast<int>(option)] = show;
+  const bool wasShown = m_featureMarkersShown[static_cast<int>(option)];
   
+  m_featureMarkersShown[static_cast<int>(option)] = show;
   m_spectrum->setFeatureMarkerOption( option, show );
+  
+  if( m_featureMarkers && m_undo && !m_undo->isInUndoOrRedo() && (show != wasShown) )
+  {
+    auto undo = [this,option,show](){
+      if( m_featureMarkers )
+        m_featureMarkers->setFeatureMarkerChecked( option, !show );
+      setFeatureMarkerOption( option, !show );
+    };
+    auto redo = [this,option,show](){
+      if( m_featureMarkers )
+        m_featureMarkers->setFeatureMarkerChecked( option, show );
+      setFeatureMarkerOption( option, show );
+    };
+    
+    m_undo->addUndoRedoStep( undo, redo, "Toggle feature marker" );
+  }//if( m_undo && (show != wasShown) )
 }//setFeatureMarkerOption(...)
 
 
@@ -2670,11 +2762,34 @@ bool InterSpec::showingFeatureMarker( const FeatureMarkerType option )
 
 void InterSpec::setComptonPeakAngle( const int angle )
 {
+  const int prev_angle = m_spectrum->comptonPeakAngle();
   m_spectrum->setComptonPeakAngle( angle );
+  
+  if( m_featureMarkers && m_undo && !m_undo->isInUndoOrRedo() && (prev_angle != angle) )
+  {
+    auto undo = [this,prev_angle](){
+      if( m_featureMarkers )
+        m_featureMarkers->setDisplayedComptonPeakAngle( prev_angle );
+      m_spectrum->setComptonPeakAngle( prev_angle );
+    };
+    auto redo = [this,angle](){
+      if( m_featureMarkers )
+        m_featureMarkers->setDisplayedComptonPeakAngle( angle );
+      m_spectrum->setComptonPeakAngle( angle );
+    };
+    
+    m_undo->addUndoRedoStep( undo, redo, "Change Compton angle" );
+  }//if( m_undo && (show != wasShown) )
 }//void setComptonPeakAngle( const float angle );
+
 
 void InterSpec::toggleFeatureMarkerWindow()
 {
+  if( m_undo )
+    m_undo->addUndoRedoStep( [this](){ toggleFeatureMarkerWindow(); },
+                            [this](){ toggleFeatureMarkerWindow(); },
+                            "Show feature marker window" );
+  
   if( m_featureMarkers )
   {
     deleteFeatureMarkerWindow();
@@ -2682,9 +2797,19 @@ void InterSpec::toggleFeatureMarkerWindow()
   }//if( m_featureMarkers )
 
   m_featureMarkers = new FeatureMarkerWindow( this );
-  m_featureMarkers->finished().connect( this, &InterSpec::deleteFeatureMarkerWindow );
+  m_featureMarkers->finished().connect( this, &InterSpec::toggleFeatureMarkerWindow );
   
   m_featureMarkerMenuItem->setText( "Hide Feature Markers" );
+  
+  // Restore the widget state to previous opened state.
+  for( FeatureMarkerType i = FeatureMarkerType(0);
+       i < FeatureMarkerType::NumFeatureMarkers;
+       i = FeatureMarkerType(static_cast<int>(i)+1) )
+  {
+    const bool show = m_featureMarkersShown[static_cast<int>(i)];
+    m_spectrum->setFeatureMarkerOption( i, show );
+    m_featureMarkers->setFeatureMarkerChecked( i, show );
+  }//for( set FeatureMarkers to the last state of the window )
 }//void toggleFeatureMarkerWindow()
 
 
@@ -2702,7 +2827,8 @@ void InterSpec::deleteFeatureMarkerWindow()
        i = FeatureMarkerType(static_cast<int>(i)+1) )
   {
     if( m_featureMarkersShown[static_cast<int>(i)] )
-      setFeatureMarkerOption( i, false );
+      m_spectrum->setFeatureMarkerOption( i, false );
+      //setFeatureMarkerOption( i, false );
   }
 }//void deleteFeatureMarkerWindow()
 
@@ -2916,6 +3042,8 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     entry.modify()->countsAxisMaximum = m_spectrum->yAxisMaximum();
     entry.modify()->displayBinFactor = 0;
     
+    // TODO: should add time chart limits here - if showing
+    
     entry.modify()->shownDisplayFeatures = 0x0;
     if( toolTabsVisible() )
       entry.modify()->shownDisplayFeatures |= UserState::kDockedWindows;
@@ -2961,6 +3089,49 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     
     if( m_multimedia )
       entry.modify()->shownDisplayFeatures |= UserState::kShowingMultimedia;
+    
+    if( m_gammaXsToolWindow && m_gammaXsToolWindow->xstool() )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingGammaXsTool;
+      entry.modify()->gammaXsToolUri = m_gammaXsToolWindow->xstool()->encodeStateToUrl();
+    }
+    
+    if( m_doseCalcWindow && m_doseCalcWindow->tool() )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingDoseCalcTool;
+      entry.modify()->doseCalcToolUri = m_doseCalcWindow->tool()->encodeStateToUrl();
+    }
+    
+    if( m_1overR2Calc )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowing1OverR2Tool;
+      entry.modify()->oneOverR2ToolUri = m_1overR2Calc->encodeStateToUrl();
+    }
+    
+    if( m_fluxTool )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingFluxTool;
+      entry.modify()->fluxToolUri = m_fluxTool->encodeStateToUrl();
+    }//if( m_fluxTool )
+    
+    if( m_unitsConverter )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingUnitConvertTool;
+      entry.modify()->fluxToolUri = m_unitsConverter->encodeStateToUrl();
+    }
+    
+    if( m_decayInfoWindow )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingNucDecayInfo;
+      entry.modify()->nucDecayInfoUri = m_decayInfoWindow->encodeStateToUrl();
+    }
+    
+    if( m_gammaCountDialog )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingEnergyRangeSum;
+      entry.modify()->energyRangeSumUri = m_gammaCountDialog->encodeStateToUrl();
+    }
+    
     
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
@@ -3180,11 +3351,13 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   if( !entry )
     throw runtime_error( "UserState was invalid" );
 
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   Wt::Dbo::ptr<UserState> parent = entry->snapshotTagParent;
   
   try
   {
-    closeShieldingSourceFitWindow();
+    closeShieldingSourceFit();
     
     switch( entry->stateType )
     {
@@ -3414,14 +3587,30 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     const set<int> backgroundNums = csvToInts( entry->backgroundSampleNumsCsvIds );
     const set<int> otherSamples   = csvToInts( entry->otherSpectraCsvIds );
     
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
     
-    setSpectrum( foreground, foregroundNums, SpecUtils::SpectrumType::Foreground, 0 );
+    Wt::WFlags<SetSpectrumOptions> options;
+#if( USE_REMOTE_RID )
+    if( background || second )
+      options |= SetSpectrumOptions::SkipExternalRid;
+#endif
+    
+    setSpectrum( foreground, foregroundNums, SpecUtils::SpectrumType::Foreground, options );
     if( foreground )
     {
       //If we dont have a foreground, we probably shouldnt be loading the state, but...
-      setSpectrum( background, backgroundNums, SpecUtils::SpectrumType::Background, 0 );
-      setSpectrum( second, secondNums, SpecUtils::SpectrumType::SecondForeground, 0 );
-    }
+#if( USE_REMOTE_RID )
+      if( !second )
+        options.clear( SetSpectrumOptions::SkipExternalRid );
+#endif
+      setSpectrum( background, backgroundNums, SpecUtils::SpectrumType::Background, options );
+      
+#if( USE_REMOTE_RID )
+      options.clear( SetSpectrumOptions::SkipExternalRid );
+#endif
+      setSpectrum( second, secondNums, SpecUtils::SpectrumType::SecondForeground, options );
+    }//if( foreground )
     
     
     //Load the other spectra the user had opened.  Note that they were not
@@ -3451,7 +3640,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       cerr << "When loading state from DB, not loading Shielding/Source Fit"
       << " model, due to lame GUI ish" << endl;
 //      if( !m_shieldingSourceFit )
-//        showShieldingSourceFitWindow();
+//        shieldingSourceFit();
       if( m_shieldingSourceFit )
         m_shieldingSourceFit->loadModelFromDb( fitmodel );
     }//if( fitmodel )
@@ -3484,7 +3673,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         
     
     if( m_multimedia )
-      m_multimedia->done( Wt::WDialog::DialogCode::Accepted );
+      programaticallyCloseMultimediaWindow();
     assert( !m_multimedia );
     
     if( foreground )
@@ -3521,7 +3710,17 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 //  SpectrumSubtractMode backgroundSubMode;
     
     if( (entry->shownDisplayFeatures & UserState::kShowingShieldSourceFit) )
-      showShieldingSourceFitWindow();
+    {
+      shieldingSourceFit();
+      
+      const double windowWidth = 0.95 * renderedWidth();
+      const double windowHeight = 0.95 * renderedHeight();
+      m_shieldingSourceFitWindow->resizeWindow( windowWidth, windowHeight );
+      
+      m_shieldingSourceFitWindow->resizeToFitOnScreen();
+      m_shieldingSourceFitWindow->show();
+      m_shieldingSourceFitWindow->centerWindow();
+    }
     
 #if( USE_TERMINAL_WIDGET )
     if( (entry->shownDisplayFeatures & UserState::kShowingTerminalWidget) )
@@ -3539,6 +3738,64 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
       showMultimedia( SpecUtils::SpectrumType::Foreground );
     
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingDoseCalcTool)
+       && !entry->doseCalcToolUri.empty() )
+    {
+      DoseCalcWindow *w = showDoseTool();
+      DoseCalcWidget *tool = w ? w->tool() : nullptr;
+      if( tool )
+      {
+        string path, uri = entry->doseCalcToolUri;
+        const auto pos = uri.find('?');
+        if( pos != string::npos )
+        {
+          path = uri.substr(0,pos);
+          uri = uri.substr(pos+1);
+        }
+        tool->handleAppUrl( path, uri );
+      }//if( tool )
+    }
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowing1OverR2Tool)
+       && !entry->oneOverR2ToolUri.empty() )
+    {
+      OneOverR2Calc *calc = createOneOverR2Calculator();
+      if( calc )
+        calc->handleAppUrl( entry->oneOverR2ToolUri );
+    }
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingFluxTool)
+       && !entry->fluxToolUri.empty() )
+    {
+      FluxToolWindow *tool = createFluxTool();
+      if( tool )
+        tool->handleAppUrl( entry->fluxToolUri );
+    }//if( m_fluxTool )
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingUnitConvertTool)
+       && !entry->fluxToolUri.empty() )
+    {
+      UnitsConverterTool *converter = createUnitsConverterTool();
+      if( converter )
+        converter->handleAppUrl( entry->fluxToolUri );
+    }
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingNucDecayInfo)
+       && !entry->nucDecayInfoUri.empty() )
+    {
+      DecayWindow *decay = createDecayInfoWindow();
+      if( decay )
+        decay->handleAppUrl( entry->nucDecayInfoUri );
+    }
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingEnergyRangeSum)
+       && !entry->energyRangeSumUri.empty() )
+    {
+      GammaCountDialog *dialog = showGammaCountDialog();
+      if( dialog )
+        dialog->handleAppUrl( entry->energyRangeSumUri );
+    }
     
     if( wasDocked )
     {
@@ -3744,7 +4001,7 @@ void InterSpec::updateSaveWorkspaceMenu()
 }//void updateSaveWorkspaceMenu()
 
 
-int InterSpec::currentAppStateDbId()
+long long int InterSpec::currentAppStateDbId()
 {
   return m_currentStateID;
 }//int currentAppStateDbId()
@@ -3921,7 +4178,9 @@ void InterSpec::osThemeChange( std::string name )
 void InterSpec::showColorThemeWindow()
 {
   //Takes ~5ms (on the server) to create a ColorThemeWindow.
-	new ColorThemeWindow(this);
+	ColorThemeWindow *window = new ColorThemeWindow(this);
+  
+  new UndoRedoManager::BlockGuiUndoRedo( window ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void showColorThemeWindow()
 
 
@@ -3964,8 +4223,7 @@ AuxWindow *InterSpec::showIEWarningDialog()
 } // AuxWindow *showIEWarningDialog()
 
 
-void InterSpec::showLicenseAndDisclaimersWindow( const bool is_awk,
-                                      std::function<void()> finished_callback )
+void InterSpec::showLicenseAndDisclaimersWindow()
 {
   if( m_licenseWindow )
   {
@@ -3973,15 +4231,19 @@ void InterSpec::showLicenseAndDisclaimersWindow( const bool is_awk,
     return;
   }
   
-  m_licenseWindow = new LicenseAndDisclaimersWindow( is_awk, renderedWidth(), renderedHeight() );
+  m_licenseWindow = new LicenseAndDisclaimersWindow( renderedWidth(), renderedHeight() );
   
-  m_licenseWindow->finished().connect( std::bind([this,finished_callback](){
-    deleteLicenseAndDisclaimersWindow();
-    
-    if( finished_callback )
-      finished_callback();
-  }) );
+  m_licenseWindow->finished().connect( this, &InterSpec::deleteLicenseAndDisclaimersWindow );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ deleteLicenseAndDisclaimersWindow(); };
+    auto redo = [this](){ showLicenseAndDisclaimersWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo),
+                            "Show disclaimers, credits, and contact window." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void showLicenseAndDisclaimersWindow()
+
 
 void InterSpec::startClearSession()
 {
@@ -3997,6 +4259,14 @@ void InterSpec::startClearSession()
   
   button = window->addButton( "No" );
   button->setFocus();
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto closer = wApp->bind( boost::bind(&WDialog::accept, window) );
+    // We wont have redo show the dialog again, because then the closer functionoid wont work, and
+    //  it isnt worth making the SimpleDialog a member variable of the InterSpec class.
+    m_undo->addUndoRedoStep( closer, nullptr, "Show clear session dialog" );
+  }//if( undo )
 }//void startClearSession()
 
 
@@ -4007,19 +4277,59 @@ void InterSpec::deleteLicenseAndDisclaimersWindow()
   
   AuxWindow::deleteAuxWindow( m_licenseWindow );
   m_licenseWindow = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ showLicenseAndDisclaimersWindow(); };
+    auto redo = [this](){ deleteLicenseAndDisclaimersWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo),
+                            "Close disclaimers, credits, and contact window." );
+  }//if( add undo step )
 }//void deleteLicenseAndDisclaimersWindow()
 
 
-void InterSpec::showWelcomeDialog( bool force )
+void InterSpec::showWelcomeDialogWorker( const bool force )
 {
-  cout << "In showWelcomeDialog" << endl;
+  if( m_useInfoWindow )
+    return;
+  
+  std::function<void(bool)> dontShowAgainCallback;
+  if( !force )
+  {
+    dontShowAgainCallback = [this](bool value){
+      InterSpecUser::setPreferenceValue<bool>( m_user, "ShowSplashScreen", value, this );
+    };
+  }//if( !force )
+  
+  m_useInfoWindow = new UseInfoWindow( dontShowAgainCallback , this );
+
+  m_useInfoWindow->finished().connect( boost::bind( &InterSpec::deleteWelcomeDialog, this, force ) );
+  
+  if( force && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ deleteWelcomeDialog(false); };
+    auto redo = [this,force](){ showWelcomeDialog(true); };
+    m_undo->addUndoRedoStep( undo, redo, "Show welcome dialog." );
+  }//if( force && m_undo && m_undo->canAddUndoRedoNow() )
+  
+  wApp->triggerUpdate();
+}//void showWelcomeDialogWorker( bool force );
+
+
+void InterSpec::showWelcomeDialog( const bool force )
+{
+  if( m_useInfoWindow )
+  {
+    m_useInfoWindow->show();
+    m_useInfoWindow->resizeToFitOnScreen();
+    m_useInfoWindow->centerWindowHeavyHanded();
+    return;
+  }//if( m_useInfoWindow )
+  
   try
   {
-    if (!force && !m_user->preferenceValue<bool>("ShowSplashScreen"))
-    {
-      cout << "showWelcomeDialog: user doesnt want us to show screen; returning." << endl;
+    if( !force && !m_user->preferenceValue<bool>("ShowSplashScreen") )
       return;
-    }
   }catch(...)
   {
     assert(0);
@@ -4028,15 +4338,11 @@ void InterSpec::showWelcomeDialog( bool force )
       return;
   }
   
-  if( m_useInfoWindow )
+  if( force )
   {
-    cout << "showWelcomeDialog: window already showing." << endl;
-    m_useInfoWindow->show();
-    return;
-  }
-  
-  cout << "showWelcomeDialog: will post to show." << endl;
-  WServer::instance()->post( wApp->sessionId(), std::bind( [this](){
+    showWelcomeDialogWorker( force );
+  }else
+  {
     /*
      For Android, showing this useInfoWindow at startup causes some exceptions
      in the JavaScript whenever the loading indicator is shown.  I'm pretty
@@ -4045,31 +4351,25 @@ void InterSpec::showWelcomeDialog( bool force )
      
      Havent checked if creating this window via "posting" helps
      */
-
-    cout << "Now finally in function to showWelcomeDialog." << endl;
-
-    if( m_useInfoWindow )
-      return;
-    
-    std::function<void(bool)> dontShowAgainCallback = [this](bool value){
-      InterSpecUser::setPreferenceValue<bool>( m_user, "ShowSplashScreen", value, this );
-    };
-    m_useInfoWindow = new UseInfoWindow( dontShowAgainCallback , this );
-  
-    m_useInfoWindow->finished().connect( this, &InterSpec::deleteWelcomeDialog );
-    
-    wApp->triggerUpdate();
-  } ) );
+    WServer::instance()->post( wApp->sessionId(), std::bind(&InterSpec::showWelcomeDialogWorker, this, force ) );
+  }
 }//void showWelcomeDialog()
 
 
-void InterSpec::deleteWelcomeDialog()
+void InterSpec::deleteWelcomeDialog( const bool addUndoRedoStep )
 {
   if( !m_useInfoWindow )
     return;
   
   AuxWindow::deleteAuxWindow( m_useInfoWindow );
   m_useInfoWindow = nullptr;
+  
+  if( addUndoRedoStep && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ showWelcomeDialog(true); };
+    auto redo = [this](){ deleteWelcomeDialog(false); };
+    m_undo->addUndoRedoStep( undo, redo, "Close welcome dialog." );
+  }//if( force && m_undo && m_undo->canAddUndoRedoNow() )
 }//void deleteWelcomeDialog()
 
 
@@ -4093,27 +4393,44 @@ void InterSpec::setShowIEWarningDialogCookie( bool show )
 
 
 
-void InterSpec::showGammaCountDialog()
+GammaCountDialog *InterSpec::showGammaCountDialog()
 {
   if( m_gammaCountDialog )
-  {
-//    m_gammaCountDialog->show();
-//    m_gammaCountDialog->expand();
-    return;
-  }//if( m_gammaCountDialog )
+    return m_gammaCountDialog;
 
   m_gammaCountDialog = new GammaCountDialog( this );
-//  m_gammaCountDialog->rejectWhenEscapePressed();
   m_gammaCountDialog->finished().connect( this, &InterSpec::deleteGammaCountDialog );
-//  m_gammaCountDialog->resizeToFitOnScreen();
-}//void showGammaCountDialog()
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    m_undo->addUndoRedoStep( [=](){deleteGammaCountDialog();},
+                            [=](){showGammaCountDialog();},
+                            "Show Energy Range Sum." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  
+  return m_gammaCountDialog;
+}//GammaCountDialog *showGammaCountDialog()
 
 
 void InterSpec::deleteGammaCountDialog()
 {
-  if( m_gammaCountDialog )
-    delete m_gammaCountDialog;
-
+  if( !m_gammaCountDialog )
+    return;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    const string uri = m_gammaCountDialog->encodeStateToUrl();
+    auto undo = [this,uri](){
+      GammaCountDialog *dialog = showGammaCountDialog();
+      if( dialog )
+        dialog->handleAppUrl( uri );
+    };
+    
+    auto redo = [this](){ deleteGammaCountDialog(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Energy Range Sum." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  
+  AuxWindow::deleteAuxWindow( m_gammaCountDialog );
   m_gammaCountDialog = nullptr;
 }//void deleteGammaCountDialog()
 
@@ -4134,6 +4451,7 @@ void InterSpec::showFileQueryDialog()
   //m_specFileQueryDialog->disableCollapse();
   
   SpecFileQueryWidget *qw = new SpecFileQueryWidget( this );
+  
   WGridLayout *stretcher = m_specFileQueryDialog->stretcher();
   stretcher->addWidget( qw, 0, 0 );
   stretcher->setContentsMargins( 0, 0, 0, 0 );
@@ -4152,6 +4470,8 @@ void InterSpec::showFileQueryDialog()
   }
   
   AuxWindow::addHelpInFooter( m_specFileQueryDialog->footer(), "spectrum-file-query" );
+  
+  new UndoRedoManager::BlockGuiUndoRedo( m_specFileQueryDialog ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void showFileQueryDialog()
 
 
@@ -4225,9 +4545,9 @@ void InterSpec::showWarningsWindow()
   
   if( !m_warningsWindow )
   {
-    m_warningsWindow = new AuxWindow( "Notification/Logs",
+    m_warningsWindow = new AuxWindow( "Notification Log",
                   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
-                   | AuxWindowProperties::IsModal
+                   | AuxWindowProperties::DisableCollapse
                    | AuxWindowProperties::EnableResize) );
     m_warningsWindow->contents()->setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
     m_warningsWindow->rejectWhenEscapePressed();
@@ -4236,32 +4556,46 @@ void InterSpec::showWarningsWindow()
     //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
     //  size to be the min-size
     m_warningsWindow->setMinimumSize( 640, 480 );
-    m_warningsWindow->resizeScaledWindow(0.75, 0.75);
-    m_warningsWindow->centerWindow();
-    m_warningsWindow->finished().connect( boost::bind( &InterSpec::handleWarningsWindowClose, this, false ) );
+    m_warningsWindow->finished().connect( boost::bind( &InterSpec::handleWarningsWindowClose, this ) );
         
       
-    WPushButton *clearButton = new WPushButton( "Delete Logs", m_warningsWindow->footer() );
+    WPushButton *clearButton = new WPushButton( "Clear Notifications", m_warningsWindow->footer() );
     clearButton->clicked().connect( boost::bind( &WarningWidget::clearMessages, m_warnings ) );
     clearButton->addStyleClass( "BinIcon" );
-      if (isMobile())
-      {
-          clearButton->setFloatSide( Right );
-      }
-      WPushButton *closeButton = m_warningsWindow->addCloseButtonToFooter();
-      closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_warningsWindow ) );
-
+    if( isMobile() )
+      clearButton->setFloatSide( Right );
+    WPushButton *closeButton = m_warningsWindow->addCloseButtonToFooter();
+    closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_warningsWindow ) );
   }//if( !m_warningsWindow )
   
   m_warningsWindow->show();
+  m_warningsWindow->resizeScaledWindow(0.75, 0.75);
+  m_warningsWindow->centerWindow();
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ handleWarningsWindowClose(); };
+    auto redo = [this](){ showWarningsWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show notifications window" );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void showWarningsWindow()
 
 
-void InterSpec::handleWarningsWindowClose( bool close )
+void InterSpec::handleWarningsWindowClose()
 {
+  if( m_warningsWindow )
+  {
     m_warningsWindow->stretcher()->removeWidget( m_warnings );
     AuxWindow::deleteAuxWindow( m_warningsWindow );
-    m_warningsWindow = 0;
+    m_warningsWindow = nullptr;
+    
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this](){ showWarningsWindow(); };
+      auto redo = [this](){ handleWarningsWindowClose(); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close notifications window" );
+    }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  }//if( m_warningsWindow )
 }//void handleWarningsWindowClose( bool )
 
 
@@ -4678,9 +5012,9 @@ void InterSpec::loadTestStateFromN42( const std::string filename )
     const xml_node<char> *sourcefit = InterSpecNode->first_node( "ShieldingSourceFit" );
     if( sourcefit )
     {
-      showShieldingSourceFitWindow();
+      shieldingSourceFit();
       m_shieldingSourceFit->deSerialize( sourcefit );
-      closeShieldingSourceFitWindow();
+      closeShieldingSourceFit();
     }//if( sourcefit )
     
     stringstream msg;
@@ -4875,6 +5209,12 @@ void InterSpec::stateSaveAs()
     
   window->centerWindow();
   window->show();
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto closer = wApp->bind( boost::bind( &AuxWindow::hide, window ) );
+    m_undo->addUndoRedoStep( closer, nullptr, "Show save-as dialog." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void stateSaveAs()
 
 
@@ -4919,6 +5259,12 @@ void InterSpec::stateSaveTag()
     
   window->centerWindow();
   window->show();
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto closer = wApp->bind( boost::bind( &AuxWindow::hide, window ) );
+    m_undo->addUndoRedoStep( closer, nullptr, "Show save-tag dialog." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void stateSaveTag()
 
 
@@ -5176,7 +5522,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   PopupDivMenuItem *aboutitem = m_fileMenuPopup->createAboutThisAppItem();
   
   if( aboutitem )
-    aboutitem->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+    aboutitem->triggered().connect( this, &InterSpec::showLicenseAndDisclaimersWindow );
   
   m_fileMenuPopup->addSeparator();
   m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Hide );
@@ -5188,7 +5534,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
     item = m_fileMenuPopup->addMenuItem( "About InterSpec" );
-    item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+    item->triggered().connect( this, &InterSpec::showLicenseAndDisclaimersWindow );
     m_fileMenuPopup->addSeparator();  //doesnt seem to be showing up for some reason... owe well.
   }//if( InterSpecApp::isPrimaryWindowInstance() )
 #endif
@@ -5544,12 +5890,12 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 #endif //#if( INCLUDE_ANALYSIS_TEST_SUITE )
 
 
-#if(USE_OSX_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU )
     //Add a separtor before Quit InterSpec
     m_fileMenuPopup->addSeparator();
 #endif
 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP)
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
 #if( USING_ELECTRON_NATIVE_MENU )
@@ -5570,7 +5916,88 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 #endif
   }//if( InterSpecApp::isPrimaryWindowInstance() )
 #endif //  || BUILD_AS_WX_WIDGETS_APP
-} // void InterSpec::addFileMenu( WContainerWidget *menuDiv, bool show_examples )
+}//void addFileMenu( WContainerWidget *menuDiv, bool show_examples )
+
+
+void InterSpec::addEditMenu( Wt::WWidget *parent )
+{
+  PopupDivMenu *parentMenu = dynamic_cast<PopupDivMenu *>( parent );
+  WContainerWidget *menuDiv = dynamic_cast<WContainerWidget *>( parent );
+  if( !parentMenu && !menuDiv )
+    throw runtime_error( "InterSpec::addEditMenu(): parent passed in must"
+                         " be a PopupDivMenu or WContainerWidget" );
+
+  const WString menuname = WString::fromUTF8( "Edit" );
+  
+  if( menuDiv )
+  {
+    WPushButton *button = new WPushButton( menuname, menuDiv );
+    button->addStyleClass( "MenuLabel" );
+    m_editMenuPopup = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
+  }else
+  {
+    m_editMenuPopup = parentMenu->addPopupMenuItem( menuname );
+  }//if( menuDiv ) / else
+  
+  int menuindex = -1;
+  if( m_undo )
+  {
+#if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 0;
+#endif
+    
+    PopupDivMenuItem *undoMenu = m_editMenuPopup->insertMenuItem( menuindex, "Undo", "", true );
+    undoMenu->setDisabled( true );
+    undoMenu->triggered().connect( m_undo, &UndoRedoManager::executeUndo );
+
+#if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 1;
+#endif
+    
+    PopupDivMenuItem *redoMenu = m_editMenuPopup->insertMenuItem( menuindex, "Redo", "", true );
+    redoMenu->setDisabled( true );
+    redoMenu->triggered().connect( m_undo, &UndoRedoManager::executeRedo );
+    
+    m_undo->undoMenuDisableUpdate().connect( boost::bind(&PopupDivMenuItem::setDisabled, undoMenu, boost::placeholders::_1) );
+    m_undo->redoMenuDisableUpdate().connect( boost::bind(&PopupDivMenuItem::setDisabled, redoMenu, boost::placeholders::_1) );
+    m_undo->undoMenuToolTipUpdate().connect( boost::bind(&PopupDivMenuItem::setToolTip, undoMenu, boost::placeholders::_1, TextFormat::PlainText) );
+    m_undo->redoMenuToolTipUpdate().connect( boost::bind(&PopupDivMenuItem::setToolTip, redoMenu, boost::placeholders::_1, TextFormat::PlainText) );
+  }//if( m_undo )
+  
+#if( !ANDROID )
+    // TODO: On Android we dont currently catch the download for these downloads with the content encoded in the URI, so we will just disable these for now there.
+  
+#if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 2;
+#endif
+  m_editMenuPopup->addSeparatorAt( (m_undo ? menuindex : -1) );
+
+#if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 3;
+#endif
+  
+  auto saveitem = m_editMenuPopup->insertMenuItem( (m_undo ? 3 : -1), "Save Spectrum as PNG", "", true );
+  saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, true) );
+  
+#if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 4;
+#endif
+  
+  saveitem = m_editMenuPopup->insertMenuItem( (m_undo ? 4 : -1), "Save Spectrum as SVG", "", true );
+  saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
+#endif
+  
+#if( BUILD_AS_OSX_APP )
+  // All the macOS native menu stuff (copy/paste/select/etc) will be below our stuff
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    m_editMenuPopup->addSeparatorAt( (m_undo ? 5 : -1) );
+#endif
+}//void addEditMenu( Wt::WWidget *menuDiv )
 
 
 bool InterSpec::toolTabsVisible() const
@@ -5633,7 +6060,7 @@ void InterSpec::addToolsTabToMenuItems()
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NuclideSearch)] = item;
 
   
-  icon = "InterSpec_resources/images/auto_peak_search.svg";
+  icon = "InterSpec_resources/images/auto_peak_search.png";
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 4, "Auto Peak Search", icon, true );
   item->triggered().connect( boost::bind( &PeakSearchGuiUtils::automated_search_for_peaks, this, true ) );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::AutoPeakSearch)] = item;
@@ -5674,6 +6101,16 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   if( static_cast<bool>(m_toolsTabs) == showToolTabs )
     return;
 #endif
+  
+  unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_sentry;
+  if( m_undo )
+  {
+    auto undo = [this, showToolTabs]{ setToolTabsVisible( !showToolTabs ); };
+    auto redo = [this, showToolTabs]{ setToolTabsVisible( showToolTabs ); };
+    m_undo->addUndoRedoStep( undo, redo, "Toggle show tool tabs" );
+    
+    undo_sentry = make_unique<UndoRedoManager::BlockUndoRedoInserts>();
+  }//if( m_undo )
   
   m_toolTabsVisibleItems[0]->setHidden( showToolTabs );
   m_toolTabsVisibleItems[1]->setHidden( !showToolTabs );
@@ -5738,7 +6175,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
     
     m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
-                                                   boost::placeholders::_1, boost::placeholders::_2 ) );
+                                                   boost::placeholders::_1,
+                                                   boost::placeholders::_2,
+                                                   boost::placeholders::_3 ) );
     
     //WMenuItem * peakManTab =
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
@@ -6115,7 +6554,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   m_mapMenuItem = m_displayOptionsPopupDiv->addMenuItem( "Map","InterSpec_resources/images/map_small.png" );
-  m_mapMenuItem->triggered().connect( boost::bind( &InterSpec::createMapWindow, this, SpecUtils::SpectrumType::Foreground ) );
+  m_mapMenuItem->triggered().connect( boost::bind( &InterSpec::createMapWindow, this, SpecUtils::SpectrumType::Foreground, false ) );
   m_mapMenuItem->disable();
   HelpSystem::attachToolTipOn( m_mapMenuItem,
                     "Show measurement(s) location on a map. Only enabled"
@@ -6180,15 +6619,6 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     //If didnt want to use JSlot, could do...
     //    js = can + ".data('compangle',null);";
     //    checkbox->checked().connect( boost::bind( &WApplication::doJavaScript, wApp, js, true ) );
-    
-#if( !ANDROID )
-    // TODO: On Android we dont currently catch the download for these downloads with the content encoded in the URI, so we will just disable these for now there.
-    m_displayOptionsPopupDiv->addSeparator();
-    auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
-    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, true) );
-    saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as SVG" );
-    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
-#endif
   }//if( overlay )
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
@@ -6371,6 +6801,13 @@ EnergyCalTool *InterSpec::energyCalTool()
   return m_energyCalTool;
 }
 
+
+UndoRedoManager *InterSpec::undoRedoManager()
+{
+  return m_undo;
+}//UndoRedoManager *undoRedoManager();
+
+
 void InterSpec::showEnergyCalWindow()
 {
   if( m_energyCalWindow && !m_toolsTabs )
@@ -6422,38 +6859,74 @@ void InterSpec::showEnergyCalWindow()
 
 void InterSpec::setLogY( bool logy )
 {
+  const bool wasLogY = m_spectrum->yAxisIsLog();
+  
   InterSpecUser::setPreferenceValue<bool>( m_user, "LogY", logy, this );
   m_logYItems[0]->setHidden( logy );
   m_logYItems[1]->setHidden( !logy );
   m_spectrum->setYAxisLog( logy );
+  
+  if( m_undo && (wasLogY != logy) )
+  {
+    m_undo->addUndoRedoStep( [this,logy](){ setLogY(!logy); },
+                            [this,logy](){ setLogY(logy); },
+                            "Toggle log-y" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setLogY( bool logy )
 
 
 void InterSpec::setBackgroundSub( bool subtract )
 {
+  const bool wasBackSub = m_spectrum->backgroundSubtract();
+  
   m_backgroundSubItems[0]->setHidden( subtract );
   m_backgroundSubItems[1]->setHidden( !subtract );
   m_spectrum->setBackgroundSubtract( subtract );
+  
+  if( m_undo && (wasBackSub != subtract) )
+  {
+    m_undo->addUndoRedoStep( [this,subtract](){ setBackgroundSub(!subtract); },
+                            [this,subtract](){ setBackgroundSub(subtract); },
+                            "Background subtract" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setBackgroundSub( bool sub )
 
 
 void InterSpec::setVerticalLines( bool show )
 {
+  const bool wasShow = m_spectrum->verticalLinesShowing();
+  
   InterSpecUser::setPreferenceValue<bool>( m_user, "ShowVerticalGridlines", show, this );
   m_verticalLinesItems[0]->setHidden( show );
   m_verticalLinesItems[1]->setHidden( !show );
   m_spectrum->showVerticalLines( show );
   m_timeSeries->showVerticalLines( show );
+  
+  if( m_undo && (wasShow != show) )
+  {
+    m_undo->addUndoRedoStep( [this,show](){ setVerticalLines(!show); },
+                            [this,show](){ setVerticalLines(show); },
+                            "Show vertical lines" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setVerticalLines( bool show )
 
 
 void InterSpec::setHorizantalLines( bool show )
 {
+  const bool wasShow = m_spectrum->horizontalLinesShowing();
+  
   InterSpecUser::setPreferenceValue<bool>( m_user, "ShowHorizontalGridlines", show, this );
   m_horizantalLinesItems[0]->setHidden( show );
   m_horizantalLinesItems[1]->setHidden( !show );
   m_spectrum->showHorizontalLines( show );
   m_timeSeries->showHorizontalLines( show );
+  
+  if( m_undo && (wasShow != show) )
+  {
+    m_undo->addUndoRedoStep( [this,show](){ setHorizantalLines(!show); },
+                            [this,show](){ setHorizantalLines(show); },
+                            "Show horizantal lines" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setHorizantalLines( bool show )
 
 
@@ -6665,6 +7138,8 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
 
 void InterSpec::setXAxisSlider( bool show )
 {
+  const bool wasShowing = m_spectrum->xAxisSliderChartIsVisible();
+  
   InterSpecUser::setPreferenceValue<bool>( m_user, "ShowXAxisSlider", show, this );
   m_showXAxisSliderItems[0]->setHidden( show );
   m_showXAxisSliderItems[1]->setHidden( !show );
@@ -6694,11 +7169,21 @@ void InterSpec::setXAxisSlider( bool show )
   }//show /hide
   
   m_spectrum->showXAxisSliderChart( show );
+  
+  
+  if( m_undo && (wasShowing != show) )
+  {
+    m_undo->addUndoRedoStep( [this,show](){ setXAxisSlider(!show); },
+                            [this,show](){ setXAxisSlider(show); },
+                            "Show x-axis slider" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setXAxisSlider( bool show )
 
 
 void InterSpec::setXAxisCompact( bool compact )
 {
+  const bool wasCompact = m_spectrum->isAxisCompacted();
+  
   InterSpecUser::setPreferenceValue<bool>( m_user, "CompactXAxis", compact, this );
   
   if( m_compactXAxisItems[0] )
@@ -6708,6 +7193,13 @@ void InterSpec::setXAxisCompact( bool compact )
   
   m_spectrum->setCompactAxis( compact );
   m_timeSeries->setCompactAxis( compact );
+  
+  if( m_undo && (wasCompact != compact) )
+  {
+    m_undo->addUndoRedoStep( [this,compact](){ setXAxisCompact(!compact); },
+                            [this,compact](){ setXAxisCompact(compact); },
+                            "Set x-axis compact" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setXAxisCompact( bool compact )
 
 
@@ -6724,6 +7216,7 @@ void InterSpec::setShowYAxisScalers( bool show )
   m_showYAxisScalerItems[1]->setHidden( !show );
   m_showYAxisScalerItems[1]->setDisabled( show && !hasSecond );
   
+  const bool wasShowing = m_spectrum->yAxisScalersIsVisible();
   m_spectrum->showYAxisScalers( show );
   
   try
@@ -6733,6 +7226,13 @@ void InterSpec::setShowYAxisScalers( bool show )
   {
     cerr << "InterSpec::setShowYAxisScalers: Got exception setting pref: " << e.what() << endl;
   }
+  
+  if( m_undo && (wasShowing != show) )
+  {
+    m_undo->addUndoRedoStep( [this,show](){ setShowYAxisScalers(!show); },
+                            [this,show](){ setShowYAxisScalers(show); },
+                            "Show y-axis scalers" );
+  }//if( m_undo && (wasLogY != logy) )
 }//void setShowYAxisScalers( bool show )
 
 
@@ -6741,6 +7241,18 @@ ReferencePhotopeakDisplay *InterSpec::referenceLinesWidget()
 {
   return m_referencePhotopeakLines;
 }
+
+IsotopeSearchByEnergy *InterSpec::nuclideSearch()
+{
+  return m_nuclideSearch;
+}//IsotopeSearchByEnergy *nuclideSearch();
+
+
+PeakInfoDisplay *InterSpec::peakInfoDisplay()
+{
+  return m_peakInfoDisplay;
+}//PeakInfoDisplay *peakInfoDisplay();
+
 
 #if( defined(WIN32) && BUILD_AS_ELECTRON_APP )
   //When users drag files from Outlook on windows into the app
@@ -6766,46 +7278,57 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
 {
   PopupDivMenu *menu = parentWidget->addPopupMenuItem( "Peak Labels",  "InterSpec_resources/images/tag.svg" );
   
+  // Make a lamda to do work of connecting signals, and undo/redo
+  auto setupLabelCbCallbacks = [this]( const SpectrumChart::PeakLabels label, WCheckBox *cb ){
+    
+    cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setShowPeakLabel,
+            m_spectrum, label, true
+    ) );
+    cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setShowPeakLabel,
+            m_spectrum, label, false
+    ) );
+    
+    // FIXME: for some reason undoing things wont change the checkbox state, for first undo, but if you undo/redo/undo it does/  Not totally sure why.
+    const auto set_checked = [this,label,cb](){
+      cb->setChecked( true );
+      // emitting checked() signal, instead of calling `m_spectrum->setShowPeakLabel(label,true);`
+      //  to keep `nuc_energy_cb` state consistent.
+      cb->checked().emit();
+    };
+    
+    const auto set_unchecked = [this,label,cb](){
+      cb->setChecked( false );
+      cb->unChecked().emit(); //See comment in `set_checked`
+    };
+    
+    const auto undo_uncheck = [this,set_checked,set_unchecked](){
+      if( m_undo )
+        m_undo->addUndoRedoStep( set_checked, set_unchecked, "Hide peak label" );
+    };
+    const auto undo_check = [this,set_checked,set_unchecked](){
+      if( m_undo )
+        m_undo->addUndoRedoStep( set_unchecked, set_checked, "Show peak label" );
+    };
+    
+    cb->checked().connect( std::bind( undo_check ) );
+    cb->unChecked().connect( std::bind( undo_uncheck ) );
+  };//auto setupLabelCbCallbacks
   
-//  PopupDivMenuItem *item = menu->addMenuItem( "Show User Labels", "", false );
-  //
+
   WCheckBox *cb = new WCheckBox( "Show User Labels" );
   cb->setChecked(false);
   PopupDivMenuItem *item = menu->addWidget( cb );
-  
-  cb->checked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakUserLabel, true
-  ) );
-  cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakUserLabel, false
-  ) );
+  setupLabelCbCallbacks( SpectrumChart::kShowPeakUserLabel, cb );
   
   cb = new WCheckBox( "Show Peak Energies" );
   cb->setChecked(false);
   item = menu->addWidget( cb );
-  
-  cb->checked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakEnergyLabel, true
-  ) );
-  cb->unChecked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakEnergyLabel, false
-  ) );
+  setupLabelCbCallbacks( SpectrumChart::kShowPeakEnergyLabel, cb );
   
   cb = new WCheckBox( "Show Nuclide Names" );
   cb->setChecked(false);
   item = menu->addWidget( cb );
-  
-  cb->checked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakNuclideLabel, true
-  ) );
-  cb->unChecked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakNuclideLabel, false
-  ) );
+  setupLabelCbCallbacks( SpectrumChart::kShowPeakNuclideLabel, cb );
   
   WCheckBox *nuc_energy_cb = new WCheckBox( "Show Nuclide Energies" );
   nuc_energy_cb->setChecked(false);
@@ -6815,16 +7338,7 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
   cb->checked().connect( nuc_energy_cb, &WCheckBox::enable );
   cb->unChecked().connect( nuc_energy_cb, &WCheckBox::disable );
   cb->unChecked().connect( nuc_energy_cb, &WCheckBox::setUnChecked );
-  
-  nuc_energy_cb->checked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakNuclideEnergies, true
-  ) );
-  
-  nuc_energy_cb->unChecked().connect( boost::bind(
-          &D3SpectrumDisplayDiv::setShowPeakLabel,
-          m_spectrum, SpectrumChart::kShowPeakNuclideEnergies,  false
-  ) );
+  setupLabelCbCallbacks( SpectrumChart::kShowPeakNuclideEnergies, nuc_energy_cb );
 }//void addPeakLabelMenu( Wt::WContainerWidget *menuDiv )
 
 
@@ -6859,7 +7373,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   
   item->triggered().connect( boost::bind( &HelpSystem::createHelpWindow, string("getting-started") ) );
 
-  Wt::WMenuItem *notifications = m_helpMenuPopup->addMenuItem( "Notification Logs..." , "InterSpec_resources/images/log_file_small.png");
+  Wt::WMenuItem *notifications = m_helpMenuPopup->addMenuItem( "Notification Log" , "InterSpec_resources/images/log_file_small.png");
   notifications->triggered().connect( this, &InterSpec::showWarningsWindow );
 
   m_helpMenuPopup->addSeparator();
@@ -7009,7 +7523,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     m_helpMenuPopup->addSeparator();
     
     item = m_helpMenuPopup->addMenuItem( "About InterSpec..." );
-    item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+    item->triggered().connect( this, &InterSpec::showLicenseAndDisclaimersWindow );
   }
 
 }//void addAboutMenu( Wt::WContainerWidget *menuDiv )
@@ -7220,11 +7734,53 @@ double InterSpec::displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) co
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const
 
 
-void InterSpec::setDisplayScaleFactor( const double sf, const SpecUtils::SpectrumType spec_type )
+void InterSpec::setDisplayScaleFactor( const double sf,
+                                      const SpecUtils::SpectrumType spec_type,
+                                      const bool addUndoRedoStep )
 {
+  const double prevSF = m_spectrum->displayScaleFactor( spec_type );
+  
   m_spectrum->setDisplayScaleFactor( sf, spec_type );
   m_spectrumScaleFactorChanged.emit( spec_type, sf );
+  
+  if( !addUndoRedoStep || !m_undo || m_undo->isInUndoOrRedo() )
+    return;
+  
+  auto undo = [this, prevSF, spec_type, sf](){
+    setDisplayScaleFactor( prevSF, spec_type, false );
+    m_spectrum->yAxisScaled().emit( prevSF, sf, spec_type ); // To update the compact file manager
+  };
+    
+  auto redo = [this, sf, spec_type, prevSF](){
+    setDisplayScaleFactor( sf, spec_type, false );
+    m_spectrum->yAxisScaled().emit( sf, prevSF, spec_type ); // To update the compact file manager
+  };
+    
+  m_undo->addUndoRedoStep( undo, redo, "Change y-axis scale factor" );
 }//void setDisplayScaleFactor( const double sf, SpecUtils::SpectrumType spectrum_type );
+
+
+void InterSpec::handleDisplayScaleFactorChangeFromSpectrum( const double sf, const double prevSF,
+                                                           const SpecUtils::SpectrumType spec_type )
+{
+  // This function is called when the user slides the slider on the spectrum, through the
+  //  D3SpectrumDisplayDiv::yAxisScaled() signal.
+  
+  if( !m_undo || m_undo->isInUndoOrRedo() )
+    return;
+  
+  auto undo = [this, prevSF, spec_type, sf](){
+    setDisplayScaleFactor( prevSF, spec_type, false );
+    m_spectrum->yAxisScaled().emit( prevSF, sf, spec_type ); // To update the compact file manager
+  };
+  
+  auto redo = [this, sf, spec_type, prevSF](){
+    setDisplayScaleFactor( sf, spec_type, false );
+    m_spectrum->yAxisScaled().emit( sf, prevSF, spec_type ); // To update the compact file manager
+  };
+  
+  m_undo->addUndoRedoStep( undo, redo, "Change y-axis scale factor" );
+}//void handleDisplayScaleFactorChangeFromSpectrum(...)
 
 
 float InterSpec::liveTime( SpecUtils::SpectrumType type ) const
@@ -7251,40 +7807,155 @@ int InterSpec::renderedWidth() const
   return m_renderedWidth;
 }
 
+
 int InterSpec::renderedHeight() const
 {
   return m_renderedHeight;
 }
 
 
-void InterSpec::createOneOverR2Calculator()
+OneOverR2Calc *InterSpec::createOneOverR2Calculator()
 {
-//  OneOverR2Calc *calc =
-  new OneOverR2Calc();
+  if( !m_1overR2Calc )
+  {
+    m_1overR2Calc = new OneOverR2Calc();
+    m_1overR2Calc->finished().connect( boost::bind( &InterSpec::deleteOneOverR2Calc, this ) );
+    
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this](){ deleteOneOverR2Calc(); };
+      auto redo = [this](){ createOneOverR2Calculator(); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 1/r2 calculator" );
+    }
+  }//if( !m_1overR2Calc )
   
-//  if( !toolTabsVisible() )
-//  {
-//    const int maxHeight = static_cast<int>(0.95*paintedHeight());
-//    const int maxWidth = static_cast<int>(0.95*paintedWidth());
-//    calc->setMaximumSize( maxWidth, maxHeight );
-//    calc->contents()->setOverflow( WContainerWidget::OverflowAuto );
-//  }//if( !toolTabsVisible() )
+  m_1overR2Calc->show();
+  m_1overR2Calc->resizeToFitOnScreen();
+  m_1overR2Calc->centerWindowHeavyHanded();
+  
+  return m_1overR2Calc;
 }//void createOneOverR2Calculator()
 
 
-void InterSpec::createUnitsConverterTool()
+void InterSpec::deleteOneOverR2Calc()
 {
-  new UnitsConverterTool();
+  if( !m_1overR2Calc )
+    return;
+  
+  const bool do_undo = (m_undo && m_undo->canAddUndoRedoNow());
+  const string state_uri = do_undo ? m_1overR2Calc->encodeStateToUrl() : string();
+  
+  AuxWindow::deleteAuxWindow( m_1overR2Calc );
+  m_1overR2Calc = nullptr;
+  
+  if( do_undo )
+  {
+    auto undo = [this,state_uri](){
+      OneOverR2Calc *calc = createOneOverR2Calculator();
+      if( calc )
+        calc->handleAppUrl( state_uri );
+    };
+    auto redo = [this](){ deleteOneOverR2Calc(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Hide 1/r2 calculator" );
+  }//if( do_undo )
+}//void deleteOneOverR2Calc()
+
+
+UnitsConverterTool *InterSpec::createUnitsConverterTool()
+{
+  if( !m_unitsConverter )
+  {
+    m_unitsConverter = new UnitsConverterTool();
+    m_unitsConverter->finished().connect( boost::bind( &InterSpec::deleteUnitsConverterTool, this ) );
+    
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this](){ deleteUnitsConverterTool(); };
+      auto redo = [this](){ createUnitsConverterTool(); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show units converter" );
+    }//if( undo )
+  }//if( !m_unitsConverter )
+  
+  m_unitsConverter->show();
+  m_unitsConverter->resizeToFitOnScreen();
+  m_unitsConverter->centerWindowHeavyHanded();
+  
+  return m_unitsConverter;
 }//void createUnitsConverterTool()
 
 
-void InterSpec::createFluxTool()
+void InterSpec::deleteUnitsConverterTool()
 {
-  new FluxToolWindow( this );
+  if( !m_unitsConverter )
+    return;
+  
+  const bool do_undo = (m_undo && m_undo->canAddUndoRedoNow());
+  const string state_uri = do_undo ? m_unitsConverter->encodeStateToUrl() : string();
+  
+  AuxWindow::deleteAuxWindow( m_unitsConverter );
+  m_unitsConverter = nullptr;
+  
+  if( do_undo )
+  {
+    auto undo = [this,state_uri](){
+      UnitsConverterTool *tool = createUnitsConverterTool();
+      if( tool )
+        tool->handleAppUrl( state_uri );
+    };
+    auto redo = [this](){ deleteUnitsConverterTool(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Hide units converter" );
+  }//if( do_undo )
+}//void deleteUnitsConverterTool()
+
+
+FluxToolWindow *InterSpec::createFluxTool()
+{
+  if( !m_fluxTool )
+  {
+    m_fluxTool = new FluxToolWindow( this );
+    m_fluxTool->finished().connect( boost::bind( &InterSpec::deleteFluxTool, this ) );
+  }
+  
+  m_fluxTool->show();
+  m_fluxTool->resizeToFitOnScreen();
+  m_fluxTool->centerWindowHeavyHanded();
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ deleteFluxTool(); };
+    auto redo = [this](){ createFluxTool(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show flux tool" );
+  }//if( undo )
+  
+  return m_fluxTool;
 }//void createFluxTool()
 
 
-void InterSpec::createDecayInfoWindow()
+void InterSpec::deleteFluxTool()
+{
+  if( !m_fluxTool )
+    return;
+  
+  const bool do_undo = (m_undo && m_undo->canAddUndoRedoNow());
+  const string state_uri = do_undo ? m_fluxTool->encodeStateToUrl() : string();
+  
+  AuxWindow::deleteAuxWindow( m_fluxTool );
+  m_fluxTool = nullptr;
+  
+  if( do_undo )
+  {
+    auto undo = [this,state_uri](){
+      FluxToolWindow *flux = createFluxTool();
+      if( flux )
+        flux->handleAppUrl( state_uri );
+    };
+    auto redo = [this](){ deleteFluxTool(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Hide flux tool" );
+  }//if( do_undo )
+}//void deleteFluxTool();
+
+
+DecayWindow *InterSpec::createDecayInfoWindow()
 {
   if( !m_decayInfoWindow )
   {
@@ -7314,6 +7985,8 @@ void InterSpec::createDecayInfoWindow()
                          0.0, actStr, 5.0*age );
     }//if( nuc.nuclide )
   }//if( m_referencePhotopeakLines )
+  
+  return m_decayInfoWindow;
 }//void createDecayInfoWindow()
 
 
@@ -7334,7 +8007,8 @@ void InterSpec::deleteDecayInfoWindow()
 
 void InterSpec::createFileParameterWindow()
 {
-  new SpecFileSummary( this );
+  SpecFileSummary *window = new SpecFileSummary( this );
+  new UndoRedoManager::BlockGuiUndoRedo( window ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void createFileParameterWindow()
 
 
@@ -7464,17 +8138,145 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
   
 //  window->resizeToFitOnScreen();
 }//void createMapWindow()
+
 #elif( USE_LEAFLET_MAP )
-void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
+
+void InterSpec::createMapWindow( const SpecUtils::SpectrumType spectrum_type, const bool noWarning )
 {
   // We will display for all sample numbers, but only include the displayed detectors
   
   const shared_ptr<const SpecMeas> meas = measurment( spectrum_type );
   const vector<string> detectors = detectorsToDisplay( spectrum_type );
   
-  LeafletRadMap::showForMeasurement( meas, {}, detectors );
+  if( m_leafletWarning )
+    programaticallyCloseLeafletWarning();
+  
+  if( m_leafletWindow )
+    programaticallyCloseLeafletMap();
+  
+  auto onMapCreate = boost::bind( &InterSpec::handleLeafletMapOpen, this, boost::placeholders::_1 );
+  
+  m_leafletWarning = LeafletRadMap::showForMeasurement( meas, {}, detectors, onMapCreate, noWarning );
+    
+  if( !m_leafletWarning )
+    return;
+    
+  m_leafletWarning->finished().connect( this, &InterSpec::handleLeafletWarningWindowClose );
+    
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    // Note: If the user clicks cancel on the warning screen, hitting undo will then be a blank
+    //  step, and it wont bring back up the warning dialog.  We could add another callback to
+    //  #LeafletRadMap::showForMeasurement, or have the above case be called with just a nullptr,
+    //  but this all is adding more complexity than its worth.
+    
+    auto undo = [this](){ programaticallyCloseLeafletWarning(); };
+    auto redo = [this, spectrum_type, noWarning](){ createMapWindow( spectrum_type, noWarning ); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show map." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void createMapWindow( SpecUtils::SpectrumType spectrum_type )
-#endif //#if( USE_GOOGLE_MAP )
+
+
+void InterSpec::handleLeafletWarningWindowClose()
+{
+  WObject *signalSender = WObject::sender();
+  SimpleDialog *dialogSender = dynamic_cast<SimpleDialog *>( signalSender );
+  assert( dialogSender );
+  assert( !m_leafletWarning || (dialogSender == m_leafletWarning) );
+  
+  if( dialogSender == m_leafletWarning )
+    m_leafletWarning = nullptr;
+}//void handleLeafletWarningWindowClose()
+
+
+void InterSpec::handleLeafletMapOpen( LeafletRadMapWindow *window )
+{
+  if( m_leafletWindow )
+  {
+    AuxWindow::deleteAuxWindow( m_leafletWindow );
+    m_leafletWindow = nullptr;
+  }
+  
+  m_leafletWindow = window;
+  if( !m_leafletWindow )
+    return;
+  
+  m_leafletWindow->finished().connect( this, &InterSpec::handleLeafletMapClosed );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    using SpecUtils::SpectrumType;
+    const shared_ptr<const SpecMeas> meas = m_leafletWindow->map()->measurement();
+    SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
+    for( auto i : {SpectrumType::Foreground, SpectrumType::Background, SpectrumType::SecondForeground} )
+    {
+      if( meas == measurment(i) )
+      {
+        type = i;
+        break;
+      }
+    }
+    
+    auto undo = [this](){ programaticallyCloseLeafletMap(); };
+    auto redo = [this, type](){ createMapWindow( type, true ); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show map." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+}//void handleLeafletMapOpen()
+
+
+void InterSpec::programaticallyCloseLeafletMap()
+{
+  if( !m_leafletWindow )
+    return;
+  
+  LeafletRadMapWindow *dialog = m_leafletWindow;
+  m_leafletWindow = nullptr;
+  AuxWindow::deleteAuxWindow( dialog );
+}//void programaticallyCloseLeafletMap();
+
+
+void InterSpec::programaticallyCloseLeafletWarning()
+{
+  if( !m_leafletWarning )
+    return;
+  
+  SimpleDialog *dialog = m_leafletWarning;
+  m_leafletWarning = nullptr;
+  dialog->done( WDialog::DialogCode::Accepted );
+}//void programaticallyCloseLeafletWarning();
+
+
+void InterSpec::handleLeafletMapClosed()
+{
+  WObject *signalSender = WObject::sender();
+  LeafletRadMapWindow *mapSender = dynamic_cast<LeafletRadMapWindow *>( signalSender );
+  
+  assert( mapSender );
+  assert( !m_leafletWindow || (m_leafletWindow == mapSender) );
+  
+  if( m_leafletWindow && (mapSender == m_leafletWindow) && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    using SpecUtils::SpectrumType;
+    const shared_ptr<const SpecMeas> meas = m_leafletWindow->map()->measurement();
+    SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
+    for( auto i : {SpectrumType::Foreground, SpectrumType::Background, SpectrumType::SecondForeground} )
+    {
+      if( meas == measurment(i) )
+      {
+        type = i;
+        break;
+      }
+    }
+    
+    auto undo = [this,type](){ createMapWindow(type, true); };
+    auto redo = [this](){ programaticallyCloseLeafletMap(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show map." );
+  }//if( we want to add undo/redo step )
+  
+  m_leafletWindow = nullptr;
+}//void handleLeafletMapClosed();
+
+#endif //#if( USE_GOOGLE_MAP ) / #elif( USE_LEAFLET_MAP )
 
 
 #if( USE_SEARCH_MODE_3D_CHART )
@@ -7487,42 +8289,124 @@ void InterSpec::create3DSearchModeChart()
     return;
   }//if( we dont have the proper data to make a 3D chart )
   
-  AuxWindow *dialog = new AuxWindow( "3D Data View" );
-  dialog->disableCollapse();
-  dialog->Wt::WDialog::rejectWhenEscapePressed();
+  if( m_3dViewWindow )
+    programaticallyClose3DSearchModeChart();
   
-  WGridLayout *layout = dialog->stretcher();
+  m_3dViewWindow = new AuxWindow( "3D Data View" );
+  m_3dViewWindow->disableCollapse();
+  m_3dViewWindow->Wt::WDialog::rejectWhenEscapePressed();
+  
+  WGridLayout *layout = m_3dViewWindow->stretcher();
   layout->setHorizontalSpacing( 0 );
   layout->setVerticalSpacing( 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
   SearchMode3DChart *chart = new SearchMode3DChart( this );
   layout->addWidget( chart, 0, 0 );
   
-  dialog->show();
-  dialog->setClosable( true );
-  dialog->resizeScaledWindow( 0.95, 0.95 );
-  dialog->centerWindow();
-  dialog->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
+  Wt::WPushButton *closeButton = m_3dViewWindow->addCloseButtonToFooter("Close",true);
+  closeButton->clicked().connect( m_3dViewWindow, &AuxWindow::hide );
+  
+  m_3dViewWindow->show();
+  m_3dViewWindow->setClosable( true );
+  m_3dViewWindow->resizeScaledWindow( 0.95, 0.95 );
+  m_3dViewWindow->centerWindow();
+  m_3dViewWindow->finished().connect( this, &InterSpec::handle3DSearchModeChartClose );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ programaticallyClose3DSearchModeChart(); };
+    auto redo = [this](){ create3DSearchModeChart(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 3D view" );
+  }//
 }//void create3DSearchModeChart()
+
+
+void InterSpec::programaticallyClose3DSearchModeChart()
+{
+  if( !m_3dViewWindow )
+    return;
+  
+  AuxWindow *dialog = m_3dViewWindow;
+  m_3dViewWindow = nullptr;
+  AuxWindow::deleteAuxWindow( dialog );
+}//void programaticallyClose3DSearchModeChart()
+
+
+void InterSpec::handle3DSearchModeChartClose()
+{
+  m_3dViewWindow = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ create3DSearchModeChart(); };
+    auto redo = [this](){ programaticallyClose3DSearchModeChart(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close 3D view" );
+  }//
+}//void handle3DSearchModeChartClose()
 #endif
 
 
 void InterSpec::showRiidResults( const SpecUtils::SpectrumType type )
 {
-  showRiidInstrumentsAna( measurment(type) );
+  if( m_riidDisplay )
+    programaticallyCloseRiidResults();
+  
+  m_riidDisplay = showRiidInstrumentsAna( measurment(type) );
+  m_riidDisplay->finished().connect( this, &InterSpec::handleRiidResultsClose );
+  
+  if( m_riidDisplay && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ programaticallyCloseRiidResults(); };
+    auto redo = [this,type](){ showRiidResults(type); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show ID Results" );
+  }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
 }//void showRiidResults( const SpecUtils::SpectrumType type )
+
+
+void InterSpec::handleRiidResultsClose()
+{
+  SimpleDialog *caller = dynamic_cast<SimpleDialog *>( WObject::sender() );
+  
+  if( !m_riidDisplay || (caller != m_riidDisplay) )
+    return;
+  
+  m_riidDisplay = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    // We'll just assume results for the foreground was showing, so we dont have to pass this around
+    auto undo = [this](){ showRiidResults(SpecUtils::SpectrumType::Foreground); };
+    auto redo = [this](){ programaticallyCloseRiidResults(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close ID Results" );
+  }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
+}//void handleRiidResultsClose()
+
+
+void InterSpec::programaticallyCloseRiidResults()
+{
+  if( !m_riidDisplay )
+    return;
+  
+  SimpleDialog *dialog = m_riidDisplay;
+  m_riidDisplay = nullptr;
+  dialog->done( WDialog::DialogCode::Accepted );
+}//void programaticallyCloseRiidResults()
 
 
 void InterSpec::showMultimedia( const SpecUtils::SpectrumType type )
 {
   if( m_multimedia )
-  {
-    m_multimedia->done( Wt::WDialog::DialogCode::Accepted );
-    m_multimedia = nullptr;
-  }
+    programaticallyCloseMultimediaWindow();
   
   m_multimedia = displayMultimedia( measurment(type) );
-  m_multimedia->finished().connect( boost::bind( &InterSpec::handleMultimediaClose, this, m_multimedia) );
+  m_multimedia->finished().connect( boost::bind( &InterSpec::handleMultimediaClose, this, m_multimedia ) );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ programaticallyCloseMultimediaWindow(); };
+    auto redo = [this, type](){ showMultimedia(type); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Multimedia" );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void showMultimedia( const SpecUtils::SpectrumType type )
 
 
@@ -7531,12 +8415,29 @@ void InterSpec::handleMultimediaClose( SimpleDialog *dialog )
   if( dialog != m_multimedia )
   {
     cerr << "InterSpec::handleMultimediaClose: dialog being closed is not m_multimedia; not doing anything" << endl;
-    assert( 0 );
+    assert( !m_multimedia );
     return;
   }
   
   m_multimedia = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    // Just assume Foreground so we dont need to copy this info all around
+    auto undo = [this](){ showMultimedia(SpecUtils::SpectrumType::Foreground); };
+    auto redo = [this](){ programaticallyCloseMultimediaWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Multimedia" );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleMultimediaClose( SimpleDialog *dialog )
+
+
+void InterSpec::programaticallyCloseMultimediaWindow()
+{
+  SimpleDialog *dialog = m_multimedia;
+  m_multimedia = nullptr; //Set m_multimedia to nullptr so #handleMultimediaClose wont add undo/redo step
+  if( dialog )
+    dialog->done( Wt::WDialog::DialogCode::Accepted );
+}//void programaticallyCloseMultimediaWindow()
 
 
 #if( USE_TERMINAL_WIDGET )
@@ -7580,6 +8481,8 @@ void InterSpec::createTerminalWidget()
     }
     
     m_terminalWindow->stretcher()->addWidget( m_terminal, 0, 0 );
+    
+    new UndoRedoManager::BlockGuiUndoRedo( m_terminalWindow ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
   }//if( toolTabsVisible() )
   
   m_terminalMenuItem->disable();
@@ -7610,6 +8513,11 @@ void InterSpec::handleTerminalWindowClose()
 
 
 #if( USE_REMOTE_RID )
+RemoteRid *InterSpec::remoteRid()
+{
+  return m_remoteRid;
+}
+
 void InterSpec::createRemoteRidWindow()
 {
   if( m_remoteRid )
@@ -7617,7 +8525,10 @@ void InterSpec::createRemoteRidWindow()
   
   m_remoteRidMenuItem->disable();
   
-  RemoteRid::startRemoteRidDialog( this, [this](AuxWindow *window, RemoteRid *rid ){
+  auto closeTool = wApp->bind( boost::bind(&InterSpec::deleteRemoteRidWindow, this) );
+  auto openTool = wApp->bind( boost::bind(&InterSpec::createRemoteRidWindow, this) );
+  
+  SimpleDialog *warning = RemoteRid::startRemoteRidDialog( this, [this,closeTool,openTool](AuxWindow *window, RemoteRid *rid ){
     assert( (!window) == (!rid) );
     
     // `window` and `rid` will be nullptr if user canceled the operation
@@ -7629,13 +8540,36 @@ void InterSpec::createRemoteRidWindow()
     {
       m_remoteRid = rid;
       m_remoteRidWindow = window;
-      window->finished().connect( this, &InterSpec::handleRemoteRidClose );
+      window->finished().connect( this, &InterSpec::deleteRemoteRidWindow );
+      
+      if( m_undo && m_undo->canAddUndoRedoNow() )
+      {
+        auto redo = [this](){
+          if( m_remoteRid )
+            deleteRemoteRidWindow();
+          pair<AuxWindow *, RemoteRid *> res = RemoteRid::createDialog( this );
+          if( !res.first )
+            return;
+          m_remoteRid = res.second;
+          m_remoteRidWindow = res.first;
+          res.first->finished().connect( this, &InterSpec::deleteRemoteRidWindow );
+        };
+        
+        m_undo->addUndoRedoStep( closeTool, redo, "Show remote RID tool" );
+      }//if( undo )
     }
   } );
+  
+  
+  if( warning && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = wApp->bind( boost::bind(&WDialog::accept, warning) );
+    m_undo->addUndoRedoStep( std::move(undo), openTool, "Show remote RID tool" );
+  }//if( undo warning )
 }//void createRemoteRidWindow()
 
 
-void InterSpec::handleRemoteRidClose()
+void InterSpec::deleteRemoteRidWindow()
 {
   assert( m_remoteRid );
   if( !m_remoteRid )
@@ -7643,8 +8577,28 @@ void InterSpec::handleRemoteRidClose()
   
   m_remoteRidMenuItem->enable();
   
+  AuxWindow::deleteAuxWindow( m_remoteRidWindow );
+  
   m_remoteRid = nullptr;
   m_remoteRidWindow = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){
+      if( m_remoteRid )
+        deleteRemoteRidWindow();
+      pair<AuxWindow *, RemoteRid *> res = RemoteRid::createDialog( this );
+      if( !res.first )
+        return;
+      m_remoteRid = res.second;
+      m_remoteRidWindow = res.first;
+      res.first->finished().connect( this, &InterSpec::deleteRemoteRidWindow );
+    };
+    auto redo = wApp->bind( boost::bind(&InterSpec::deleteRemoteRidWindow, this) );
+    
+    auto openTool = wApp->bind( boost::bind(&InterSpec::createRemoteRidWindow, this) );
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close remote RID tool" );
+  }
 }//void handleRemoteRidClose()
 #endif  //#if( USE_REMOTE_RID )
 
@@ -7721,13 +8675,15 @@ void InterSpec::handleRelActAutoClose()
 }//void handleRelActAutoClose()
 
 
-void InterSpec::createRelActManualWidget()
+RelActManualGui *InterSpec::createRelActManualWidget()
 {
   assert( m_relActManualMenuItem );
   m_relActManualMenuItem->disable();
   
   if( m_relActManualGui )
-    return;
+    return m_relActManualGui;
+ 
+  const int origTab = m_toolsTabs ? m_toolsTabs->currentIndex() : -1;
   
   m_relActManualGui = new RelActManualGui( this );
   
@@ -7737,7 +8693,7 @@ void InterSpec::createRelActManualWidget()
     item->setCloseable( true );
     m_toolsTabs->setCurrentWidget( m_relActManualGui );
     const int index = m_toolsTabs->currentIndex();
-    m_toolsTabs->setTabToolTip( index, "Numeric, algebraic, and text-based spectrum interaction terminal." );
+    m_toolsTabs->setTabToolTip( index, "Relative Efficiency analysis, from peaks you have fit." );
     
     // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
     //  handleToolTabClosed(), which will delete m_relActManualGui when the user closes the tab.
@@ -7785,7 +8741,25 @@ void InterSpec::createRelActManualWidget()
     
     assert( 0 );
   }//try / catch
-}//void InterSpec::createRelActManualWidget()
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this, origTab](){
+      if( !m_relActManualWindow && m_relActManualGui )
+        m_toolsTabs->removeTab( m_relActManualGui );
+      
+      handleRelActManualClose();
+      
+      if( (origTab >= 0) && m_toolsTabs )
+        m_toolsTabs->setCurrentIndex( origTab );
+    };
+    
+    auto redo = [this](){ createRelActManualWidget(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 'Isotopics from peaks' tool" );
+  }//if( m_undo && !m_undo->canAddUndoRedoNow() )
+  
+  return m_relActManualGui;
+}//RelActManualGui *createRelActManualWidget()
 
 
 void InterSpec::handleRelActManualClose()
@@ -7907,7 +8881,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
                               "Tool to fit for the activity and shielding of nuclides in the spectrum.<br />"
                               "Also contains capabilities to determine nuclide ages, contamination"
                               " concentrations, or enrichments.", showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::showShieldingSourceFitWindow, this ) );
+  item->triggered().connect( boost::bind( &InterSpec::shieldingSourceFit, this ) );
  
 #if( USE_REL_ACT_TOOL )
   // The Relative Efficiency tools are not specialized to display on phones yet.
@@ -7952,19 +8926,19 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   
   HelpSystem::attachToolTipOn( item,"Allows user to use two dose measurements taken at different distances from a source to determine the absolute distance to the source from the nearer measurement.", showToolTips );
   
-  item->triggered().connect( this, &InterSpec::createOneOverR2Calculator );
+  item->triggered().connect( boost::bind( &InterSpec::createOneOverR2Calculator, this ) );
 
   item = popup->addMenuItem( "Units Converter" );
   HelpSystem::attachToolTipOn( item, "Convert radiation-related units.", showToolTips );
-  item->triggered().connect( this, &InterSpec::createUnitsConverterTool );
+  item->triggered().connect( boost::bind( &InterSpec::createUnitsConverterTool, this ) );
   
   item = popup->addMenuItem( "Flux Tool" );
   HelpSystem::attachToolTipOn( item,"Converts detected peak counts to gammas emitted by the source.", showToolTips );
-  item->triggered().connect( this, &InterSpec::createFluxTool );
+  item->triggered().connect( boost::bind( &InterSpec::createFluxTool, this ) );
   
   item = popup->addMenuItem( "Nuclide Decay Info" );
   HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and descendant nuclides." , showToolTips );
-  item->triggered().connect( this, &InterSpec::createDecayInfoWindow );
+  item->triggered().connect( boost::bind( &InterSpec::createDecayInfoWindow, this ) );
 
 #if( USE_DETECTION_LIMIT_TOOL )
   item = popup->addMenuItem( "Detection Confidence Tool" );
@@ -7987,7 +8961,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 
   item = popup->addMenuItem( "Energy Range Sum" );
   HelpSystem::attachToolTipOn( item, "Sums the number of gammas in region of interest (ROI). Can also be accessed by left-click dragging over the ROI while holding both the <kbd><b>ALT</b></kbd> and <kbd><b>SHIFT</b></kbd> keys.", showToolTips );
-  item->triggered().connect( this, &InterSpec::showGammaCountDialog );
+  item->triggered().connect( boost::bind( &InterSpec::showGammaCountDialog, this ) );
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   
@@ -8099,28 +9073,183 @@ void InterSpec::initMaterialDbAndSuggestions()
 }//void InterSpec::initMaterialDbAndSuggestions()
 
 
-void InterSpec::showGammaXsTool()
+GammaXsWindow *InterSpec::showGammaXsTool()
 {
-  new GammaXsWindow( m_materialDB.get(), m_shieldingSuggestion, this );
-} //showGammaXsTool()
+  if( !m_gammaXsToolWindow )
+  {
+    m_gammaXsToolWindow = new GammaXsWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+    m_gammaXsToolWindow->finished().connect( this, &InterSpec::deleteGammaXsTool );
+    
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this](){ deleteGammaXsTool(); };
+      auto redo = [this](){ showGammaXsTool(); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Gamma XS Tool." );
+    }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  }else
+  {
+    m_gammaXsToolWindow->show();
+    m_gammaXsToolWindow->centerWindowHeavyHanded();
+  }
+  
+  return m_gammaXsToolWindow;
+}//showGammaXsTool()
 
 
-void InterSpec::showDoseTool()
+void InterSpec::deleteGammaXsTool()
 {
-  new DoseCalcWindow( m_materialDB.get(), m_shieldingSuggestion, this );
-}
+  if( m_gammaXsToolWindow )
+  {
+    GammaXsGui *tool = m_gammaXsToolWindow->xstool();
+    
+    if( m_undo && tool )
+    {
+      const string uri_query = tool->encodeStateToUrl();
+      
+      auto undo = [this,uri_query](){
+        try
+        {
+          GammaXsWindow *xswindow = showGammaXsTool();
+          GammaXsGui *tool = xswindow ? xswindow->xstool() : nullptr;
+          if( tool )
+            tool->handleAppUrl( uri_query );
+        }catch( std::exception &e )
+        {
+          Wt::log("error") << "Error restoring gamma XS tool state: '"
+                           << e.what() << "', from URI='" << uri_query << "'";
+          passMessage( "Error restoring Gamma XS Tool State", WarningWidget::WarningMsgInfo );
+        }//try /catch
+      };//undo
+      
+      auto redo = [this](){ deleteGammaXsTool(); };
+      
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close XS Tool" );
+    }//if( m_undo && tool )
+    
+    AuxWindow::deleteAuxWindow( m_gammaXsToolWindow );
+  }//if( m_gammaXsToolWindow )
+  
+  m_gammaXsToolWindow = nullptr;
+}//void deleteGammaXsTool()
+
+
+DoseCalcWindow *InterSpec::showDoseTool()
+{
+  if( !m_doseCalcWindow )
+  {
+    m_doseCalcWindow = new DoseCalcWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+    m_doseCalcWindow->finished().connect( this, &InterSpec::deleteDoseCalcTool );
+    
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this](){ deleteDoseCalcTool(); };
+      auto redo = [this](){ showDoseTool(); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Dose Tool." );
+    }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  }else
+  {
+    m_doseCalcWindow->show();
+    m_doseCalcWindow->centerWindowHeavyHanded();
+  }
+  
+  return m_doseCalcWindow;
+}//DoseCalcWindow *showDoseTool()
+
+
+void InterSpec::deleteDoseCalcTool()
+{
+  if( m_doseCalcWindow )
+  {
+    DoseCalcWidget *tool = m_doseCalcWindow->tool();
+    string uri = tool ? tool->encodeStateToUrl() : string();
+    auto undo = [this,uri](){
+      // TODO: the GUI layout can be a bit messed up when undoing the close - not totally sure why.
+      DoseCalcWindow *dosewin = showDoseTool();
+      DoseCalcWidget *tool = dosewin ? dosewin->tool() : nullptr;
+      if( !tool )
+        return;
+      try
+      {
+        const size_t pos = uri.find('?');
+        if( pos == string::npos )
+          throw runtime_error( "Couldnt find path and query components of uri." );
+        string path = uri.substr(0, pos);
+        string query = uri.substr( pos + 1 );
+        tool->handleAppUrl( path, query );
+      }catch( std::exception &e )
+      {
+        passMessage( "Error re-opening Dose Calc tool: " + string(e.what()),
+                    WarningWidget::WarningMsgHigh );
+      }
+      
+    };//undo
+    auto redo = [this](){ deleteDoseCalcTool(); };
+    
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Dose Tool" );
+    
+    AuxWindow::deleteAuxWindow( m_doseCalcWindow );
+  }
+  m_doseCalcWindow = nullptr;
+}//void deleteDoseCalcTool();
 
 
 void InterSpec::showMakeDrfWindow()
 {
-  MakeDrf::makeDrfWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+  AuxWindow *window = MakeDrf::makeDrfWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+  new UndoRedoManager::BlockGuiUndoRedo( window ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void showDrfSelectWindow()
 
 
-void InterSpec::showDrfSelectWindow()
+DrfSelectWindow *InterSpec::showDrfSelectWindow()
 {
-  new DrfSelectWindow( this );
+  auto redu = [this](){
+    if( !m_drfSelectWindow )
+      m_drfSelectWindow = new DrfSelectWindow( this );
+    else
+      m_drfSelectWindow->show();
+  };
+  
+  auto undo = [this](){
+    if( m_drfSelectWindow )
+    {
+      DrfSelectWindow *window = m_drfSelectWindow;
+      m_drfSelectWindow = nullptr;
+      AuxWindow::deleteAuxWindow( window );
+    }
+  };
+  
+  redu();
+  
+  if( m_undo )
+    m_undo->addUndoRedoStep( undo, redu, "Show DRF Select Window" );
+  
+  return m_drfSelectWindow;
 }//void showDrfSelectWindow()
+
+
+void InterSpec::closeDrfSelectWindow()
+{
+  auto undo = [this](){
+    if( !m_drfSelectWindow )
+      m_drfSelectWindow = new DrfSelectWindow( this );
+    else
+      m_drfSelectWindow->show();
+  };
+  
+  auto redo = [this](){
+    if( m_drfSelectWindow )
+    {
+      DrfSelectWindow *window = m_drfSelectWindow;
+      m_drfSelectWindow = nullptr;
+      AuxWindow::deleteAuxWindow( window );
+    }
+  };
+  
+  redo();
+  
+  if( m_undo )
+    m_undo->addUndoRedoStep( undo, redo, "Close DRF Select Window" );
+}//void closeDrfSelectWindow()
 
 
 void InterSpec::showCompactFileManagerWindow()
@@ -8128,7 +9257,9 @@ void InterSpec::showCompactFileManagerWindow()
  auto *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::Tabbed );
 
   m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
-                                                 boost::placeholders::_1, boost::placeholders::_2 ) );
+                                                 boost::placeholders::_1,
+                                                 boost::placeholders::_2,
+                                                 boost::placeholders::_3 ) );
   
   AuxWindow *window = new AuxWindow( "Select Opened Spectra to Display", (AuxWindowProperties::TabletNotFullScreen) );
   window->disableCollapse();
@@ -8231,26 +9362,28 @@ void InterSpec::showNuclideSearchWindow()
 }//void showNuclideSearchWindow()
 
 
-void InterSpec::showShieldingSourceFitWindow()
+ShieldingSourceDisplay *InterSpec::shieldingSourceFit()
 {
-  if( !m_shieldingSourceFit )
+  if( m_shieldingSourceFit )
+    return m_shieldingSourceFit;
+  
+  assert( !m_shieldingSourceFitWindow );
+  
+  assert( m_peakInfoDisplay );
+  auto widgets = ShieldingSourceDisplay::createWindow( this );
+  
+  m_shieldingSourceFit = widgets.first;
+  m_shieldingSourceFitWindow = widgets.second;
+  
+  if( m_undo && !m_undo->isInUndoOrRedo() )
   {
-    assert( m_peakInfoDisplay );
-    auto widgets = ShieldingSourceDisplay::createWindow( this );
-    
-    m_shieldingSourceFit = widgets.first;
-    m_shieldingSourceFitWindow  = widgets.second;
-  }else
-  {
-    const double windowWidth = 0.95 * renderedWidth();
-    const double windowHeight = 0.95 * renderedHeight();
-    m_shieldingSourceFitWindow->resizeWindow( windowWidth, windowHeight );
-    
-    m_shieldingSourceFitWindow->resizeToFitOnScreen();
-    m_shieldingSourceFitWindow->show();
-    m_shieldingSourceFitWindow->centerWindow();
-  }//if( !m_shieldingSourceFit )
-}//void showShieldingSourceFitWindow()
+    auto undo = [this](){ closeShieldingSourceFit(); };
+    auto redo = [this](){ shieldingSourceFit(); };
+    m_undo->addUndoRedoStep( undo, redo, "Open Activity/Shielding Fit tool" );
+  }
+  
+  return m_shieldingSourceFit;
+}//ShieldingSourceDisplay *shieldingSourceFit()
 
 
 void InterSpec::saveShieldingSourceModelToForegroundSpecMeas()
@@ -8268,7 +9401,7 @@ void InterSpec::saveShieldingSourceModelToForegroundSpecMeas()
 
 
 
-void InterSpec::closeShieldingSourceFitWindow()
+void InterSpec::closeShieldingSourceFit()
 {
   if( !m_shieldingSourceFitWindow || !m_shieldingSourceFit )
     return;
@@ -8282,7 +9415,60 @@ void InterSpec::closeShieldingSourceFitWindow()
   delete m_shieldingSourceFitWindow;
   m_shieldingSourceFitWindow = nullptr;
   m_shieldingSourceFit = nullptr;
-}//void closeShieldingSourceFitWindow()
+  
+  if( m_undo && !m_undo->isInUndoOrRedo() )
+  {
+    auto undo = [this](){ shieldingSourceFit(); };
+    auto redo = [this](){ closeShieldingSourceFit(); };
+    m_undo->addUndoRedoStep( undo, redo, "Close Activity/Shielding Fit tool" );
+  }
+}//void closeShieldingSourceFit()
+
+
+
+void InterSpec::showHelpWindow( const std::string &preselect )
+{
+  if( m_helpWindow )
+  {
+    m_helpWindow->show();
+    m_helpWindow->centerWindow();
+    m_helpWindow->setTopic( preselect );
+    return;
+  }//if( m_helpWindow )
+  
+  m_helpWindow = new HelpSystem::HelpWindow( preselect );
+  m_helpWindow->finished().connect( this, &InterSpec::closeHelpWindow );
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ closeHelpWindow(); };
+    auto redo = [this,preselect](){ showHelpWindow(preselect);};
+    
+    undoRedo->addUndoRedoStep( undo, redo, "Show help window" );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+}//void InterSpec::showHelpWindow( const std::string &preselect )
+
+
+void InterSpec::closeHelpWindow()
+{
+  if( !m_helpWindow )
+    return;
+  
+  const string topic = m_helpWindow->currentTopic();
+  
+  AuxWindow::deleteAuxWindow( m_helpWindow );
+  m_helpWindow = nullptr;
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [this, topic](){ showHelpWindow( topic ); };
+    auto redo = [this](){ closeHelpWindow(); };
+    
+    undoRedo->addUndoRedoStep( undo, redo, "Close help window" );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+}//void closeHelpWindow()
 
 
 void InterSpec::showGammaLinesWindow()
@@ -8420,30 +9606,67 @@ void InterSpec::handleToolTabChanged( int tab )
   if( !m_toolsTabs )
     return;
   
-  const int refTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
-  const int calibtab = m_toolsTabs->indexOf(m_energyCalTool);
-  const int searchTab = m_toolsTabs->indexOf(m_nuclideSearchContainer);
+  const int prev_tab = m_currentToolsTab;
   
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
-  
-  if( m_referencePhotopeakLines && (tab == refTab) && app && !app->isMobile() )
-    m_referencePhotopeakLines->setFocusToIsotopeEdit();
+  auto handle_change = [this]( const int current_tab, const bool focus  ){
+    const int refTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
+    const int calibtab = m_toolsTabs->indexOf(m_energyCalTool);
+    const int searchTab = m_toolsTabs->indexOf(m_nuclideSearchContainer);
     
-  if( m_nuclideSearch && (m_currentToolsTab==searchTab) )
-    m_nuclideSearch->clearSearchEnergiesOnClient();
+    InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+    
+    if( m_referencePhotopeakLines && focus && (current_tab == refTab) && app && !app->isMobile() )
+      m_referencePhotopeakLines->setFocusToIsotopeEdit();
+    
+    if( m_nuclideSearch && (m_currentToolsTab==searchTab) )
+      m_nuclideSearch->clearSearchEnergiesOnClient();
+    
+    if( m_nuclideSearch && (current_tab==searchTab) )
+      m_nuclideSearch->loadSearchEnergiesToClient();
+    
+    if( focus && (current_tab == calibtab) )
+    {
+      if( InterSpecUser::preferenceValue<bool>( "ShowTooltips", this ) )
+        passMessage( "You can also recalibrate graphically by right-clicking and "
+                    "dragging the spectrum to where you want",
+                    WarningWidget::WarningMsgInfo );
+    }//if( tab == calibtab )
+    
+    m_currentToolsTab = current_tab;
+  };//handle_change
   
-  if( m_nuclideSearch && (tab==searchTab) )
-    m_nuclideSearch->loadSearchEnergiesToClient();
+  handle_change( tab, true );
   
-  if( tab == calibtab )
-  {
-    if( InterSpecUser::preferenceValue<bool>( "ShowTooltips", this ) )
-      passMessage( "You can also recalibrate graphically by right-clicking and "
-                   "dragging the spectrum to where you want",
-                   WarningWidget::WarningMsgInfo );
-  }//if( tab == calibtab )
+  if( !m_undo )
+    return;
   
-  m_currentToolsTab = tab;
+  auto undo = [this, prev_tab, handle_change](){
+    if( m_toolsTabs && (prev_tab < m_toolsTabs->count()) )
+    {
+      //WTabWidget::currentChanged() is emited even when you programatically change the tab; we
+      //  need to block this here, or else the undo/redo history will get all messed up.
+      const bool orig_state = m_toolsTabs->currentChanged().isBlocked();
+      m_toolsTabs->currentChanged().setBlocked(true);
+      m_toolsTabs->setCurrentIndex(prev_tab);
+      m_toolsTabs->currentChanged().setBlocked(orig_state);
+    }
+    handle_change(prev_tab, false);
+  };//undo
+  
+  auto redo = [this, tab, handle_change](){
+    if( m_toolsTabs && (tab < m_toolsTabs->count()) )
+    {
+      // See note above on blocking the WTabWidget::currentChanged() signal
+      const bool orig_state = m_toolsTabs->currentChanged().isBlocked();
+      m_toolsTabs->currentChanged().setBlocked(true);
+      m_toolsTabs->setCurrentIndex(tab);
+      m_toolsTabs->currentChanged().setBlocked(orig_state);
+    }
+    
+    handle_change(tab, false);
+  };//redo
+  
+  m_undo->addUndoRedoStep( undo, redo, "Change tool tab." );
 }//void InterSpec::handleToolTabChanged( int tabSwitchedTo )
 
 
@@ -8500,68 +9723,9 @@ float InterSpec::sample_real_time_increment( const std::shared_ptr<const SpecMea
     if( pos != end(detector_names) )
       realtime = std::max( realtime, m->real_time() );
   }
+  
   return realtime;
-  
-  
-/*
-  int nback = 0, nnonback = 0;
-  double backtime = 0.0, nonbacktime = 0.0;
-  for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurement )
-  {
-    if( m->source_type() == SpecUtils::SourceType::Background )
-    {
-      ++nback;
-      backtime += m->real_time();
-    }else
-    {
-      ++nnonback;
-      nonbacktime += m->real_time();
-    }
-  }//for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurement )
-  
-  if( nnonback )
-    return nonbacktime/nnonback;
-  if( nback )
-    return backtime/nback;
-  return 0.0;
-*/
 }//double sample_real_time_increment()
-
-
-/*
-double InterSpec::liveTime( const std::set<int> &samplenums ) const
-{
-  double time = 0.0;
-  
-  if( !m_dataMeasurement )
-    return 0.0;
-  
-  const vector<bool> det_use = detectorsToDisplay();
-  const set<int> sample_numbers = validForegroundSamples();
-  
-  const vector<int> &detnums = m_dataMeasurement->detector_numbers();
-  const vector<int>::const_iterator detnumbegin = detnums.begin();
-  const vector<int>::const_iterator detnumend = detnums.end();
-  
-  for( int sample : samplenums )
-  {
-    const vector<std::shared_ptr<const SpecUtils::Measurement>> measurement
-    = m_dataMeasurement->sample_measurements( sample );
-    
-    for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurement )
-    {
-      const int detn = m->detector_number();
-      const size_t detpos = std::find(detnumbegin,detnumend,detn) - detnumbegin;
-      
-      if( detpos < det_use.size() && det_use[detpos] )
-        time += m->live_time();
-    }//for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurement )
-  }//for( int sample : prev_displayed_samples )
-
-  return time;
-}//double liveTime( const std::set<int> &samplenums );
-*/
-
 
 
 void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
@@ -9101,6 +10265,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
                              const SpecUtils::SpectrumType spec_type,
                              const Wt::WFlags<SetSpectrumOptions> options )
 {
+  UndoRedoManager::BlockUndoRedoInserts blocker;
+  
   const int spectypeindex = static_cast<int>( spec_type );
   
   vector< boost::function<void(void)> > furtherworkers;
@@ -9113,14 +10279,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     // If we are loading a state from the "Welcome To InterSpec" screen, we dont want to delete
     //  m_useInfoWindow because we will still use it, so instead we'll try deleting the window on
     //  the next go around of the event loop.
-    auto doDelete = wApp->bind( std::bind([this](){
-      WApplication *app = wApp;
-      if( !app )
-        return;
-      deleteWelcomeDialog();
-      app->triggerUpdate();
-    }) );
-      
+    auto deleter = wApp->bind( boost::bind( &InterSpec::deleteWelcomeDialog, this, false) );
+    auto doDelete = [deleter](){ deleter(); wApp->triggerUpdate(); };
     WServer::instance()->post( wApp->sessionId(), doDelete );
   }//if( meas )
   
@@ -9133,7 +10293,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
   if( (spec_type == SpecUtils::SpectrumType::Foreground) && previous && (previous != meas) )
   {
-    closeShieldingSourceFitWindow();
+    closeShieldingSourceFit();
     
 #if( USE_DB_TO_STORE_SPECTRA )
     //if( m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ) )
@@ -9150,6 +10310,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     //  }
     //}
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
+    
+    if( m_riidDisplay )
+      programaticallyCloseRiidResults();
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible()
@@ -9669,7 +10832,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   }//if( meas && !sameSpecFile )
   
 #if( USE_REMOTE_RID )
-  if( meas )
+  if( meas && !options.testFlag(SetSpectrumOptions::SkipExternalRid) )
   {
     const int call_ext_rid = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", this );
     if( (call_ext_rid == 1) || (call_ext_rid == 2) )
@@ -9680,6 +10843,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         if( lock )
         {
           Wt::WFlags<RemoteRid::AnaFileOptions> flags;
+          
+          // When a search or portal file is loaded as foreground we could be a little smarter
+          //  in deciding if we should submit the whole file, or just the displayed sample
           if( sameSpecFile )
             flags |= RemoteRid::AnaFileOptions::OnlyDisplayedSearchSamples;
           
@@ -9744,7 +10910,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   {
     // Close the multimedia dialog if we open a new spectrum file
     if( m_multimedia )
-      m_multimedia->done( Wt::WDialog::DialogCode::Accepted );
+      programaticallyCloseMultimediaWindow();
     assert( !m_multimedia );
     
     bool show_notification = false;
@@ -9965,8 +11131,10 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
 }//bool userOpenFileFromFilesystem( const std::string filepath )
 
 
-void InterSpec::handleAppUrl( std::string url )
+void InterSpec::handleAppUrl( const std::string &url_encoded_url )
 {
+  const string url = Wt::Utils::urlDecode( url_encoded_url );
+    
   if( SpecUtils::istarts_with(url, "RADDATA://G0/")
      || SpecUtils::istarts_with(url, "interspec://G0/") )
   {
@@ -9974,44 +11142,22 @@ void InterSpec::handleAppUrl( std::string url )
     return;
   }
   
-  //Get rid of (optional) leading "interspec://", so URL will look like: 'drf/specify?v=1&n=MyName&"My other Par"'
-  const string scheme = "interspec://";
-  if( SpecUtils::istarts_with(url, scheme) )
-    url = url.substr(scheme.size());
+  string host, path, query_str, frag;
+  AppUtils::split_uri( url, host, path, query_str, frag );
   
-  // For the moment, we will require there to be a query string, even if its empty.
-  string::size_type q_start_pos = url.find( '?' );
-  string::size_type q_end_pos = q_start_pos + 1;
-  if( q_start_pos == string::npos )
-  {
-    // Since '?' isnt a QR alphanumeric code also allow the URL encoded value of it, "%3F"
-    q_start_pos = url.find( "%3F" );
-    if( q_start_pos == string::npos )
-      q_start_pos = url.find( "%3f" );
-    
-    if( q_start_pos != string::npos )
-      q_end_pos = q_start_pos + 3;
-  }//
-    
-  if( q_start_pos == string::npos )
-    throw runtime_error( "App URL did not contain the host/path component that specifies the intent"
-                         " of the URL (e.g., what tool to use, or what info is contained in the URL)." );
+  if( query_str.empty() )
+    throw runtime_error( "No query string found in URI to specify DRF." );
   
-  // the q_pos+1 should be safe, even if q_pos is last character in string.
-  if( url.find(q_end_pos, 'q') != string::npos )
-    throw runtime_error( "App URL contained more than one '?' character, which isnt allowed" );
-    
-  deleteWelcomeDialog();
-  deleteEnergyCalPreserveWindow();
-  deleteLicenseAndDisclaimersWindow();
-  
-  const string host_path = url.substr( 0, q_start_pos );
-  const string::size_type host_end = host_path.find( '/' );
-  const string host = (host_end == string::npos) ? host_path : host_path.substr(0,host_end);
-  const string path = (host_end == string::npos) ? string("") : host_path.substr(host_end+1);
-  const string query_str = url.substr( q_end_pos );
+  // I dont think we use the fragment component of URLs anywhere, but maybe we accidentally
+  //  included a '#' character somwhere when we shouldnt have.
+  if( !frag.empty() )
+    query_str += "#" + frag;
   
   cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
+  
+  deleteWelcomeDialog( false );
+  deleteEnergyCalPreserveWindow();
+  deleteLicenseAndDisclaimersWindow();
   
   if( SpecUtils::iequals_ascii(host,"drf") )
   {
@@ -10021,13 +11167,9 @@ void InterSpec::handleAppUrl( std::string url )
     DrfSelect::handle_app_url_drf( query_str );
   }else if( SpecUtils::iequals_ascii(host,"decay") )
   {
-    if( !m_decayInfoWindow )
-    {
-      m_decayInfoWindow = new DecayWindow( this );
-      m_decayInfoWindow->finished().connect( boost::bind( &InterSpec::deleteDecayInfoWindow, this ) );
-    }
-    
-    m_decayInfoWindow->handleAppUrl( path, query_str );
+    DecayWindow *decay = InterSpec::createDecayInfoWindow();
+    if( decay )
+      decay->handleAppUrl( path, query_str );
   }else
   {
     throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );
@@ -10041,7 +11183,7 @@ void InterSpec::detectorsToDisplayChanged()
   displaySecondForegroundData();
   displayForegroundData( true );
   displayTimeSeriesData();
- 
+  
   // \TODO: The foreground may be pass-through, but the user could have just de-selected a detector
   //        so that none of the currently selected sample numbers have gamma/neutron data, and in
   //        this case we should fix things up.  Or it could be the case that the remaining detectors
@@ -10056,6 +11198,55 @@ void InterSpec::detectorsToDisplayChanged()
   const auto &samples = displayedSamples(type);
   const auto detectors = detectorsToDisplay(type);
   m_displayedSpectrumChangedSignal.emit(type,meas,samples,detectors);
+  
+  
+  if( !m_undo )
+    return;
+  
+  int menu_num_changed = -1;
+  bool checked = false;
+  WObject *caller = WObject::sender();
+  const vector<WMenuItem *> items = m_detectorToShowMenu->items();
+  
+  for( size_t i = 0; i < items.size(); ++i )
+  {
+    if( items[i]->hasStyleClass("PhoneMenuBack") )
+      continue;
+    
+    PopupDivMenuItem *item = dynamic_cast<PopupDivMenuItem *>( items[i] );
+    WCheckBox *cb = (item ? item->checkBox() : (WCheckBox *)0);
+    
+    if( cb && ((caller == cb) || (caller == item)) )
+    {
+      menu_num_changed = static_cast<int>( i );
+      assert( cb );
+      checked = cb ? cb->isChecked() : false;
+      break;
+    }
+  }//for( size_t i = 0; i < items.size(); ++i )
+  
+  if( menu_num_changed >= 0 )
+  {
+    auto undo_redo = [this,menu_num_changed]( const bool set_checked ){
+      const vector<WMenuItem *> items = m_detectorToShowMenu->items();
+      if( menu_num_changed >= static_cast<int>(items.size()) )
+        return;
+      
+      PopupDivMenuItem *item = dynamic_cast<PopupDivMenuItem *>( items[menu_num_changed] );
+      assert( item );
+      WCheckBox *cb = (item ? item->checkBox() : (WCheckBox *)0);
+      assert( cb );
+      if( cb )
+      {
+        cb->setChecked( set_checked );
+        detectorsToDisplayChanged();
+      }
+    };//auto undo_redo = [...
+    
+    m_undo->addUndoRedoStep( [undo_redo,checked](){ undo_redo( !checked ); },
+                             [undo_redo,checked](){ undo_redo( checked ); },
+                            "Toggle display detector" );
+  }//if( menu_num_changed >= 0 )
 }//void detectorsToDisplayChanged()
 
 
@@ -10130,7 +11321,6 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
 
     if( m_detectorToShowMenu )
     {
-#if( WT_VERSION>=0x3030300 )
 #if( USE_OSX_NATIVE_MENU  || USING_ELECTRON_NATIVE_MENU )
       WCheckBox *cb = new WCheckBox( title );
       cb->setChecked( true );
@@ -10142,17 +11332,6 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
       Wt::WCheckBox *cb = item->checkBox();
       if( !cb )
         throw runtime_error( "Serious error creating checkbox in menu item" );
-#endif
-      
-#else
-      WCheckBox *cb = new WCheckBox( title );
-      cb->setChecked(true);
-      
-      //NOTE: this is necessary to prevent problems in menu state
-      //cb->checked().connect( boost::bind(&WCheckBox::setChecked, cb, true) );
-      //cb->unChecked().connect( boost::bind(&WCheckBox::setChecked, cb, false) );
-      
-      PopupDivMenuItem *item = m_detectorToShowMenu->addWidget( cb, false );
 #endif
       
       if( isneut )
@@ -10228,17 +11407,65 @@ void InterSpec::displayedSpectrumRange( double &xmin, double &xmax, double &ymin
 
 void InterSpec::handleShiftAltDrag( double lowEnergy, double upperEnergy )
 {
-  if( !m_gammaCountDialog && upperEnergy<=lowEnergy )
-    return;
-
-  showGammaCountDialog();
-  m_gammaCountDialog->setEnergyRange( lowEnergy, upperEnergy );
+  string prev_uri;
+  if( m_gammaCountDialog )
+    prev_uri = m_gammaCountDialog->encodeStateToUrl();
+  
+  {
+    //Keep showing dialog and `setEnergyRange` from adding seperate undo states
+    UndoRedoManager::BlockUndoRedoInserts blocker;
+    
+    GammaCountDialog *dialog = showGammaCountDialog();
+    if( dialog )
+      dialog->setEnergyRange( lowEnergy, upperEnergy );
+  }
+   
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [prev_uri,this](){
+      if( prev_uri.empty() )
+      {
+        deleteGammaCountDialog();
+      }else
+      {
+        GammaCountDialog *dialog = showGammaCountDialog();
+        if( dialog )
+          dialog->handleAppUrl( prev_uri );
+      }
+    };
+    
+    auto redo = [this,lowEnergy,upperEnergy](){
+      GammaCountDialog *dialog = showGammaCountDialog();
+      if( dialog )
+        dialog->setEnergyRange( lowEnergy, upperEnergy );
+    };
+    
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Set energy range to sum." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  
 }//void InterSpec::handleShiftAltDrag( double lowEnergy, double upperEnergy )
 
+
+void InterSpec::handleSpectrumChartXRangeChange( const double xmin, const double xmax,
+                                                 const double oldXmin, const double oldXmax,
+                                                 const bool user_interaction )
+{
+  // Add Undo/Redo step here.
+  if( !m_undo || !user_interaction
+     || ((fabs(xmin - oldXmin) < 0.5) && (fabs(xmax - oldXmax) < 0.5)) )
+    return;
+  
+  auto undo = [oldXmin, oldXmax, this](){ m_spectrum->setXAxisRange( oldXmin, oldXmax ); };
+  auto redo = [xmin, xmax, this](){ m_spectrum->setXAxisRange( xmin, xmax ); };
+    
+  m_undo->addUndoRedoStep( undo, redo, "Spectrum energy range change." );
+}//void handleSpectrumChartXRangeChange(...);
 
 
 void InterSpec::searchForSinglePeak( const double x )
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   if( !m_peakModel )
     throw runtime_error( "InterSpec::searchForSinglePeak(...): "
                         "shoudnt be called if peak model isnt set.");
@@ -10521,6 +11748,8 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
 
 void InterSpec::excludePeaksFromRange( double x0, double x1 )
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   if( !m_peakModel )
     throw runtime_error( "InterSpec::excludePeaksFromRange(...): "
                         "shoudnt be called if peak model isnt set.");
@@ -11043,14 +12272,8 @@ vector<string> InterSpec::detectorsToDisplay( const SpecUtils::SpectrumType type
     if( items[i]->hasStyleClass("PhoneMenuBack") )
       continue;
     
-#if( WT_VERSION>=0x3030300 )
     PopupDivMenuItem *item = dynamic_cast<PopupDivMenuItem *>( items[i] );
     WCheckBox *cb = (item ? item->checkBox() : (WCheckBox *)0);
-#else
-    WCheckBox *cb = 0;
-    for( int j = 0; !cb && (j < items[i]->count()); ++j )
-      cb = dynamic_cast<WCheckBox *>(items[i]->widget(j));
-#endif
     
     if( cb && detnum < all_det_names.size() )
     {
@@ -11347,9 +12570,6 @@ void InterSpec::displayBackgroundData()
   if( backgroundH )
     backgroundH->set_title( "Background" );
     
-  const float lt = backgroundH ? backgroundH->live_time() : -1.0f;
-  const float rt = backgroundH ? backgroundH->real_time() : -1.0f;
-  const float neutronCounts = backgroundH ? backgroundH->neutron_counts_sum() : -1.0f;
   m_spectrum->setBackground( backgroundH );
   
   if( !m_timeSeries->isHidden() )

@@ -33,6 +33,7 @@ class RowStretchTreeView;
 namespace Wt
 {
   class WText;
+  class WCheckBox;
   class WGridLayout;
   class WStandardItemModel;
 }//namespace Wt
@@ -111,8 +112,8 @@ protected:
 
   int m_totalMessages;
 
-  bool m_popupActive[int(WarningMsgLevel::NumWarningMsgType)];
-  bool m_active[int(WarningMsgLevel::NumWarningMsgType)];
+  bool m_popupActive[static_cast<int>(WarningMsgLevel::NumWarningMsgType)];
+  bool m_active[static_cast<int>(WarningMsgLevel::NumWarningMsgType)];
 
   Wt::WGridLayout *m_layout;
   Wt::WStandardItemModel *m_messageModel;

@@ -46,13 +46,14 @@
 #include <Wt/WStandardItemModel>
 #include <Wt/Chart/WCartesianChart>
 
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
-#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
@@ -60,6 +61,7 @@
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakInfoDisplay.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -471,25 +473,25 @@ public:
     if( peakEnergyIndex >= 0 )
     {
       cell = m_table->elementAt(0,peakEnergyIndex);
-      txt = new WText( "Energy, FWHM", cell );
+      new WText( "Energy, FWHM", cell );
     }
     
     if( origColumnIndex >= 0 )
     {
       cell = m_table->elementAt(0,origColumnIndex);
-      txt = new WText( "Original Nuclide", cell );
+      new WText( "Original Nuclide", cell );
     }
     
     if( newColumnIndex >= 0 )
     {
       cell = m_table->elementAt(0,newColumnIndex);
-      txt = new WText( "Assigned Nuclide", cell );
+      new WText( "Assigned Nuclide", cell );
     }
     
     if( previewIndex >= 0 )
     {
       cell = m_table->elementAt(0,previewIndex);
-      txt = new WText( "Peak Preview", cell );
+      new WText( "Peak Preview", cell );
     }
     
     
@@ -609,6 +611,27 @@ public:
     WPushButton *acceptButton = addCloseButtonToFooter( "Accept", true );
     acceptButton->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
     
+    acceptButton->clicked().connect( std::bind( [viewer, orig_peaks, final_peaks](){
+      
+      auto undo = [viewer, orig_peaks](){
+        PeakModel *pmodel = viewer->peakModel();
+        if( pmodel )
+          pmodel->setPeaks( orig_peaks );
+      };
+      
+      auto redo = [viewer, final_peaks](){
+        PeakModel *pmodel = viewer->peakModel();
+        if( pmodel )
+          pmodel->setPeaks( final_peaks );
+      };
+      
+      UndoRedoManager *undoManager = viewer->undoRedoManager();
+      if( undoManager )
+        undoManager->addUndoRedoStep( undo, redo, "Accept automated peak search." );
+    } ) );
+                                               
+    
+    
     WPushButton *cancelButton = nullptr;
     if( viewer->isPhone() )
     {
@@ -628,6 +651,24 @@ public:
     resizeToFitOnScreen();
     centerWindow();
     centerWindowHeavyHanded();
+    
+    
+    {// Begin handle undo when the dialog is showing, and the user hasnt accepted it
+      auto cancel = wApp->bind( boost::bind( &PeakSelectorWindow::cancelOperation, this ) );
+      
+      auto undo = [cancel](){
+        cancel();
+      };
+      auto redo = [](){
+        //We just wont do anything - we could create a PeakSelectorWindow, but we will
+        //  have to avoid undo<-->redo cycles, etc, so it makes the most sense to just
+        //  skip redo, and use that effort making other actions better.
+      };
+      
+      UndoRedoManager *undoManager = viewer->undoRedoManager();
+      if( undoManager )
+        undoManager->addUndoRedoStep( undo, redo, "Reject automated peak search." );
+    }// End handle undo when the dialog is showing, and the user hasnt accepted it
   }//PeakSelector constructor
   
   /** The rel eff chart is close, but not fully debugged */
@@ -1289,14 +1330,12 @@ public:
       
       const double peakmean = p->mean();
       double energy = peakmean;
-      PeakDef::SourceGammaType gammatype = PeakDef::SourceGammaType::NormalGamma;
       
       if( p->xrayElement() || p->reaction() )
       {
         energy = p->gammaParticleEnergy();
       }else if( p->parentNuclide() )
       {
-        gammatype = p->sourceGammaType();
         if( p->decayParticle() )
           energy = p->decayParticle()->energy;  // Use this so the 511 or 1022 keV wont be subtracted off for S.E. or D.E.
         else
@@ -1524,8 +1563,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
   if( !data || !previouspeaks || displayed.empty() )
     return other_change;
     
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  
+
   //There is a fairly common situation (especially for HPGe) where there is a
   //  small peak, next to a much larger peak, where if the user first
   //  identifies the large peak, the correct gamma-ray association gets made,
@@ -1909,6 +1947,18 @@ void set_peaks_from_search( InterSpec *viewer,
   
   if( showingRefLines.empty() && viewer->isMobile() )
   {
+    auto undo = [peakModel, originalPeaks](){
+      peakModel->setPeaks(originalPeaks);
+    };
+    auto redo = [peakModel, filtered_peaks](){
+      peakModel->setPeaks(filtered_peaks);
+    };
+    UndoRedoManager *undoManager = viewer->undoRedoManager();
+    
+    if( undoManager )
+      undoManager->addUndoRedoStep( undo, redo, "Automated peak search." );
+    
+    // Add undo/redo point here
     wApp->triggerUpdate();
     return;
   }

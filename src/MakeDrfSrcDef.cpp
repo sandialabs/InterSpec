@@ -139,7 +139,7 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
   if( nuc )
   {
     const string label = "<span class=\"SrcTitleNuc\">" + nuc->symbol + "</span>,"
-                         " <span class=\"SrcTitleHl\">&lambda;<sub>&frac12;</sub>="
+                         " <span class=\"SrcTitleHl\">T&frac12;="
                          + PhysicalUnits::printToBestTimeUnits(nuc->halfLife) + "</span>";
     m_nuclideLabel->setText( WString::fromUTF8(label) );
     m_useAgeInfo->show();
@@ -462,7 +462,7 @@ void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
   string agestr = m_sourceAgeAtAssay->text().toUTF8();
   SpecUtils::trim( agestr );
   
-  double age = 0.0;
+
   if( agestr.empty() || (agestr.find_first_not_of("+-0.")==string::npos) )
   {
     const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
@@ -472,7 +472,7 @@ void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
     try
     {
       const double hl = m_nuclide ? m_nuclide->halfLife : -1.0;
-      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+      PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
       if( m_activityEdit->hasStyleClass( "SrcInputError" ) )
         m_activityEdit->removeStyleClass( "SrcInputError" );
     }catch( std::exception &e )

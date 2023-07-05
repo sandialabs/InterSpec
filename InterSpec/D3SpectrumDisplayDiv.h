@@ -105,7 +105,7 @@ public:
              double /*window_xpx*/,
              double /*window_ypx*/> &dragCreateRoiUpdate();
   
-  Wt::Signal<double,SpecUtils::SpectrumType> &yAxisScaled();
+  Wt::Signal<double/*new SF*/, double/*old SF*/, SpecUtils::SpectrumType> &yAxisScaled();
   
   
   /** Performs the work for the primary spectrum display in InterSpec that causes the peaks
@@ -208,7 +208,7 @@ public:
   void showHistogramIntegralsInLegend( const bool show );
 
   
-  Wt::Signal<double,double> &xRangeChanged();
+  Wt::Signal<double,double,double,double,bool> &xRangeChanged();
   Wt::Signal<double,double> &rightMouseDragg();
   
   Wt::Signal<double,double> &shiftAltKeyDragged();
@@ -250,6 +250,7 @@ public:
   
   void setFeatureMarkerOption( FeatureMarkerType option, bool show );
   void setComptonPeakAngle( int angle );
+  int comptonPeakAngle() const;
   
   void showXAxisSliderChart( const bool show );
   bool xAxisSliderChartIsVisible() const;
@@ -291,8 +292,6 @@ public:
   void highlightPeakAtEnergy( const double energy );
   
   void updateRoiBeingDragged( const std::vector<std::shared_ptr<const PeakDef> > &roiBeingDragged );
-  
-  void removeAllPeaks();
   
   
   /** Executes appropriate javascript to generate and download a PNG or SVG based on
@@ -388,7 +387,7 @@ protected:
       and rendered when this signal was emmitted.
    ToDo: Should create dedicated signals for chart size in pixel, and also Y-range.
    */
-  std::unique_ptr<Wt::JSignal<double,double,double,double> > m_xRangeChangedJS;
+  std::unique_ptr<Wt::JSignal<double,double,double,double,bool> > m_xRangeChangedJS;
   std::unique_ptr<Wt::JSignal<double,double,double,double,double,bool> > m_existingRoiEdgeDragJS;
   std::unique_ptr<Wt::JSignal<double,double,int,bool,double,double> > m_dragCreateRoiJS;
   std::unique_ptr<Wt::JSignal<double,std::string> > m_yAxisDraggedJS;
@@ -400,7 +399,7 @@ protected:
   //  where x is in energy, and y is in counts.
   Wt::Signal<> m_legendEnabledSignal;
   Wt::Signal<> m_legendDisabledSignal;
-  Wt::Signal<double/*xlow*/,double/*xhigh*/> m_xRangeChanged;
+  Wt::Signal<double/*xlow*/,double/*xhigh*/,double/*old low*/,double/*old high*/,bool /*user interaction*/> m_xRangeChanged;
   Wt::Signal<double,double> m_controlKeyDragg;
   Wt::Signal<double,double> m_shiftKeyDragg;
   Wt::Signal<double,double> m_shiftAltKeyDragg;
@@ -423,7 +422,7 @@ protected:
              double /*window_xpx*/,
              double /*window_ypx*/> m_dragCreateRoi;
   
-  Wt::Signal<double,SpecUtils::SpectrumType> m_yAxisScaled;
+  Wt::Signal<double /*new SF*/, double /*prev SF*/,SpecUtils::SpectrumType> m_yAxisScaled;
   
   // Signal Callbacks
   void chartShiftKeyDragCallback( double x0, double x1 );
@@ -447,7 +446,8 @@ protected:
   
   //chartXRangeChangedCallback(...): rebins the displayed data, and sets the
   //  y-axis to be auto-range
-  void chartXRangeChangedCallback( double x, double y, double chart_width_px, double chart_height_px );
+  void chartXRangeChangedCallback( double x, double y, double chart_width_px, double chart_height_px,
+                                   bool user_action );
   
   /** The javascript variable name used to refer to the SpecrtumChartD3 object.
       Currently is `jsRef() + ".chart"`.

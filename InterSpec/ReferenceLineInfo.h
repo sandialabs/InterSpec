@@ -94,6 +94,8 @@ struct RefLineInput
   RefLineInput();
   void reset();
   
+  bool operator==(const RefLineInput &rhs) const;
+  
   /** The text that defines the source, ex., "U238", "Pb", "background", "511 keV".
    */
   std::string m_input_txt;
@@ -363,7 +365,7 @@ struct ReferenceLineInfo
     None
   };//enum class SourceType : int
 
-  /** THe status of generating reference lines from the given input. */
+  /** The status of generating reference lines from the given input. */
   InputValidity m_validity;
   
   /** The input used to generate the reference lines.
@@ -419,6 +421,7 @@ struct ReferenceLineInfo
   ReferenceLineInfo();
   void reset();
   
+  bool operator==(const ReferenceLineInfo &rhs) const;
   
   //toJson(...): appends the JS object necessary to draw this to 'json'.
   //  number_lines cooresponds to the which color series to draw.

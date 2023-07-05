@@ -70,6 +70,8 @@ public:
                   InterSpec* viewer );
   
   virtual ~DoseCalcWindow();
+
+  DoseCalcWidget *tool();
   
 protected:
   DoseCalcWidget *m_dose;
@@ -95,13 +97,32 @@ public:
   
   virtual ~DoseCalcWidget();
   
-  
   /** Performs some very basic runtime checks to make sure calculations are
    half-way reasonable.
    Throws exception with a descriptive message if there is an issue.
    */
   static void runtime_sanity_checks( const GadrasScatterTable * const scatter );
   
+  /** Handles receiving a "deep-link" url starting with "interspec://dose/act?...".
+   
+   Example URIs:
+   - "interspec://dose/act?ver=1&nuc=u238&dose=1.1ur/h&dist=100cm&..."
+   
+   @param query_str The query portion of the URI.  So for example, if the URI has a value of
+          "interspec://dose/act?nuc=u238...", then this string would be "nuc=u238...".
+          This string is is in standard URL format of "key1=value1&key2=value2&..." with ordering not mattering.
+          Capitalization is not important.
+          Assumes the string passed in has alaready been url-decoded.
+          If not a valid path or query_str, throws exception.
+   */
+  void handleAppUrl( std::string path, std::string query_str );
+  
+  /** Encodes current tool state to app-url format.  Returned string does not include the
+   "interspec://" protocol, or "dose" authority; so will look something like "dist?tab=act&nuc=u238&dose=1.1ur/h&dist=100cm&...",
+   The path part of the URI specifies tab the tool is on.
+   and it will not be url-encoded.
+   */
+  std::string encodeStateToUrl() const;
 protected:
   
   enum Quantity{ Dose, Activity, Distance, Shielding, NumQuantity };
@@ -177,6 +198,11 @@ protected:
   Wt::WContainerWidget *m_enterWidgets[NumQuantity];
   Wt::WContainerWidget *m_answerWidgets[NumQuantity];
   
+  /** For tracking undo/redo, we will keep track of the widgets state, as a URI.
+   \sa encodeStateToUrl
+   \sa handleAppUrl
+   */
+  std::string m_stateUri;
 };//class DoseCalcWidget
 
 #endif //DoseCalc_h

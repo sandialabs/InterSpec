@@ -2542,7 +2542,9 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
                                  const std::vector<ShieldingSourceChi2Fcn::ShieldingInfo> &materials,
                                  const GeometryType geometry,
                                  const bool allowMultipleNucsContribToPeaks,
-                                 const bool attenuateForAir )
+                                 const bool attenuateForAir,
+                                 const bool accountForDecayDuringMeas,
+                                 const double realTime )
   : ROOT::Minuit2::FCNBase(),
     m_cancel( CalcStatus::NotCanceled ),
     m_isFitting( false ),
@@ -2556,7 +2558,9 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
     m_geometry( geometry ),
     m_allowMultipleNucsContribToPeaks( allowMultipleNucsContribToPeaks ),
     m_attenuateForAir( attenuateForAir ),
-    m_self_att_multithread( true )
+    m_self_att_multithread( true ),
+    m_accountForDecayDuringMeas( accountForDecayDuringMeas ),
+    m_realTime( realTime )
 {
   set<const SandiaDecay::Nuclide *> nucs;
   for( const PeakDef &p : m_peaks )
@@ -2653,6 +2657,13 @@ void ShieldingSourceChi2Fcn::cancelFit()
 {
   m_cancel = CalcStatus::UserCanceled;
 }
+  
+  
+void ShieldingSourceChi2Fcn::cancelFitWithNoUpdate()
+{
+  m_cancel = CalcStatus::CanceledNoUpdate;
+}
+  
 
 
 void ShieldingSourceChi2Fcn::setGuiProgressUpdater( std::shared_ptr<GuiProgressUpdateInfo> updateInfo )
@@ -3976,10 +3987,8 @@ double ShieldingSourceChi2Fcn::DoEval( const std::vector<double> &x ) const
       break;
       
     case ShieldingSourceChi2Fcn::CalcStatus::UserCanceled:
-      throw CancelException( cancelCode );
-      break;
-      
     case ShieldingSourceChi2Fcn::CalcStatus::Timeout:
+    case ShieldingSourceChi2Fcn::CalcStatus::CanceledNoUpdate:
       throw CancelException( cancelCode );
       break;
   }//switch( m_cancel.load() )
@@ -4041,6 +4050,8 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
                                                            const double age,
                                                            const double photopeakClusterSigma,
                                                            const double energyToCluster,
+                                                           const bool accountForDecayDuringMeas,
+                                                           const double measDuration,
                                                            vector<string> *info )
 {
   typedef pair<double,double> DoublePair;
@@ -4064,20 +4075,145 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
     info->push_back( msg.str() );
   }//if( info )
 
-  const vector<SandiaDecay::EnergyRatePair> gammas
-                = mixture.photons( age, SandiaDecay::NuclideMixture::OrderByEnergy );
-  
-  const vector<SandiaDecay::NuclideActivityPair> aged_activities
-                                                      = mixture.activity( age );
-
-  //The problem we have is that 'gammas' have the activity of the original
-  //  parent ('nuclide') decreased by agining by 'age', however we want the
-  //  parent to have 'sm_activityUnits' activity at 'age', so we we'll add a
-  //  correction factor.
   if( mixture.numInitialNuclides() != 1 )
     throw runtime_error( "ShieldingSourceChi2Fcn::cluster_peak_activities():"
                          " passed in mixture must have exactly one parent nuclide" );
   const SandiaDecay::Nuclide *nuclide = mixture.initialNuclide(0);
+  assert( nuclide );
+  if( !nuclide )
+    throw std::logic_error( "nullptr nuc" );
+  
+  vector<SandiaDecay::EnergyRatePair> gammas
+                = mixture.photons( age, SandiaDecay::NuclideMixture::OrderByEnergy );
+  
+  assert( !accountForDecayDuringMeas || (measDuration > 0.0) );  //This could happen, I guess if foreground real-time is zero, but it shouldnt, so I'll leave this assert in to check for things.
+  
+  if( accountForDecayDuringMeas && (measDuration > 0.0)
+     && !IsNan(measDuration) && !IsInf(measDuration) )
+  {
+    // This section of code takes up a good amount of CPU time, and is really begging for optimizations
+    //
+    // TODO: if nuclide decays to stable children, then just use standard formula to correct for decay (see below developer check for this)
+    //
+    // We want to get the activity at the beggining of the measurement, but we want
+    //  to account for decay (or build up!) throughout the measurement; rather than
+    //  being intelligent about it, we'll just average throughout the dwell time
+    //
+    // TODO: figure out how many time slices are needed for reasonable accuracy.
+    //       A first quick go at this, for In110 (hl=4.9h), over a 2.8 hour measurement,
+    //       gave corrections of
+    //            For 250: 0.826922  (which matches analytical answer of 0.826922)
+    //            For 50:  0.82692
+    //            For 25:  0.826913
+    //            For 10:  0.826869
+    const size_t characteristic_time_slices = 50; // Maybe at least ~5 sig figs
+    
+    // TODO: the parent half-life may not be the relevant one; should check down the chain
+    const double halflife = std::max( nuclide->halfLife, 0.01*PhysicalUnits::second );
+    const double characteristicTime = std::min( measDuration, halflife );
+    const double dt = characteristicTime / characteristic_time_slices;
+    
+    const int num_time_slices = std::max( 50, static_cast<int>( std::ceil( measDuration / dt ) ) );
+    const int nthread = SpecUtilsAsync::num_logical_cpu_cores();
+    
+    vector<vector<SandiaDecay::EnergyRatePair>> energy_rate_pairs( nthread,
+                                  vector<SandiaDecay::EnergyRatePair>(gammas.size(), {0.0,0.0}) );
+
+    
+    SpecUtilsAsync::ThreadPool pool;
+
+    for( int threadnum = 0; threadnum < nthread; ++threadnum )
+    {
+      pool.post( [threadnum, nthread, &energy_rate_pairs, num_time_slices, measDuration, age, &mixture](){
+        
+        vector<SandiaDecay::EnergyRatePair> &result = energy_rate_pairs[threadnum];
+        
+        // TODO: right now using simple midpoint integration; should boost::math::quadrature::trapezoidal, or boost::math::quadrature::gauss::integrate, or something, but then evaluating things becomes a little tricky (I think we need to decay to the set number of points beforehand, and then make a function to retireve these inside the boost integration routine
+        for( int timeslice = threadnum; timeslice < num_time_slices; timeslice += nthread )
+        {
+          const double this_age = age + measDuration*(2.0*timeslice + 1.0)/(2.0*num_time_slices);
+          vector<SandiaDecay::EnergyRatePair> these_gammas
+                        = mixture.photons( this_age, SandiaDecay::NuclideMixture::OrderByEnergy );
+          
+          assert( these_gammas.size() == result.size() );
+          if( these_gammas.size() != result.size() )
+            throw std::logic_error( "gamma result size doesnt match expected." );
+          
+          for( size_t i = 0; i < these_gammas.size(); ++i )
+            result[i].numPerSecond += these_gammas[i].numPerSecond;
+        }//for( loop over timeslices )
+        
+        for( size_t i = 0; i < result.size(); ++i )
+          result[i].numPerSecond /= num_time_slices;
+      } );
+    }//for( int threadnum = 0; threadnum < nthread; ++threadnum )
+    
+    pool.join();
+    
+    vector<SandiaDecay::EnergyRatePair> corrected_gammas = gammas;
+    for( size_t i = 0; i < corrected_gammas.size(); ++i )
+    {
+      corrected_gammas[i].numPerSecond = 0.0;
+      for( size_t threadnum = 0; threadnum < nthread; ++threadnum )
+        corrected_gammas[i].numPerSecond += energy_rate_pairs[threadnum][i].numPerSecond;
+    }//for( size_t i = 0; i < corrected_gammas.size(); ++i )
+    
+    //cout << "For " << nuclide->symbol << " the time corrections are:" << endl;
+    //for( size_t i = 0; i < corrected_gammas.size(); ++i )
+    //  cout << std::setw(15) << corrected_gammas[i].energy << ": "
+    //       << corrected_gammas[i].numPerSecond/gammas[i].numPerSecond
+    //       << " (" << corrected_gammas[i].numPerSecond << " vs orig "
+    //       << gammas[i].numPerSecond << ")" << endl;
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+      if( nuclide->decaysToStableChildren() )
+      {
+        const double lambda = nuclide->decayConstant();
+        const double corr_factor = (1.0 - exp(-1.0*lambda*measDuration)) / (lambda * measDuration);
+        
+        //cout << "corr_factor=" << corr_factor << endl;
+        assert( gammas.size() == corrected_gammas.size() );
+        for( size_t i = 0; i < corrected_gammas.size(); ++i )
+        {
+          const double numerical_answer = corrected_gammas[i].numPerSecond;
+          const double uncorrected_answer = gammas[i].numPerSecond;
+          if( (uncorrected_answer > DBL_EPSILON) && (uncorrected_answer > DBL_EPSILON) )
+          {
+            const double numerical_corr_factor = numerical_answer / uncorrected_answer;
+            if( fabs(numerical_corr_factor - corr_factor) > 0.001 )
+            {
+              string msg = "Found decay correction value of "
+                           + std::to_string(numerical_corr_factor) + ", when a true value of "
+                           + std::to_string(corr_factor) + " was expected for " + nuclide->symbol
+                           + " with half life "
+                           + PhysicalUnits::printToBestTimeUnits(nuclide->halfLife,6)
+                           + " and a measurement time "
+                           + PhysicalUnits::printToBestTimeUnits(measDuration,6)
+                           + " (at energy " + std::to_string(corrected_gammas[i].energy) + " keV)";
+              log_developer_error( __func__, msg.c_str() );
+            }//if( error is larger than expected )
+          }//if( not a zero BR gamma )
+        }//for( loop over gammas )
+      }//if( we can use standard formula to correct )
+#endif //#if( PERFORM_DEVELOPER_CHECKS )
+    //cout << endl << endl << endl;
+    
+    if( info )
+    {
+      // TODO: we could add something about effect of accounting for nuclide aging
+    }//if( info )
+    
+    gammas = std::move( corrected_gammas );
+  }//if( accountForDecayDuringMeas )
+  
+  
+  //The problem we have is that 'gammas' have the activity of the original
+  //  parent ('nuclide') decreased by agining by 'age', however we want the
+  //  parent to have 'sm_activityUnits' activity at 'age', so we we'll add a
+  //  correction factor.
+  const vector<SandiaDecay::NuclideActivityPair> aged_activities
+                                                      = mixture.activity( age );
+
   
   double age_sf = 1.0;
   for( const SandiaDecay::NuclideActivityPair &red : aged_activities )
@@ -4526,7 +4662,10 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     else
       info->push_back( "Not allowing multiple nuclides being fit for to contribute to the same photopeak" );
     
-    //SHould put in information about the shielding here
+    if( m_accountForDecayDuringMeas )
+      info->push_back( "Branching ratios are being corrected for nuclide decay during measurment" );
+    
+    //Should put in information about the shielding here
   }//if( info )
   
   
@@ -4558,7 +4697,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       
       cluster_peak_activities( energy_count_map, energie_widths,
                                mixturecache[nuclide], act, thisage,
-                               m_photopeakClusterSigma, -1.0, info );
+                               m_photopeakClusterSigma, -1.0,
+                               m_accountForDecayDuringMeas, m_realTime,
+                               info );
     }//for( const SandiaDecay::Nuclide *nuclide : m_nuclides )
   }else
   {
@@ -4581,7 +4722,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       const float energy = peak.gammaParticleEnergy();
       cluster_peak_activities( energy_count_map, energie_widths,
                                mixturecache[nuclide], act, thisage,
-                               m_photopeakClusterSigma, energy, info);
+                               m_photopeakClusterSigma, energy,
+                               m_accountForDecayDuringMeas, m_realTime,
+                               info );
     }//for( const PeakDef &peak : m_peaks )
   }//if( m_allowMultipleNucsContribToPeaks )
 
@@ -5036,7 +5179,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       {
         cluster_peak_activities( local_energy_count_map, energie_widths,
                                  mixturecache[src], actPerVol, thisage,
-                                 m_photopeakClusterSigma, -1.0, info );
+                                 m_photopeakClusterSigma, -1.0,
+                                 m_accountForDecayDuringMeas, m_realTime,
+                                 info );
       }else
       {
         for( const PeakDef &peak : m_peaks )
@@ -5046,7 +5191,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
             cluster_peak_activities( local_energy_count_map, energie_widths,
                                      mixturecache[src], actPerVol, thisage,
                                       m_photopeakClusterSigma,
-                                     peak.gammaParticleEnergy(), info );
+                                     peak.gammaParticleEnergy(),
+                                     m_accountForDecayDuringMeas, m_realTime,
+                                     info );
         }//for( const PeakDef &peak : m_peaks )
       }//if( m_allowMultipleNucsContribToPeaks ) / else
 

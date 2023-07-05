@@ -35,7 +35,7 @@
 
 class InterSpec;
 class FeatureMarkerWidget;
-
+enum class FeatureMarkerType : int;
 
 namespace Wt
 {
@@ -51,6 +51,11 @@ public:
   
   virtual ~FeatureMarkerWindow();
   
+  /** Sets the display checkbox to specified state - does not emit signals, or propogate changes to the GUI. */
+  void setFeatureMarkerChecked( const FeatureMarkerType option, const bool checked );
+  
+  /** Sets the display angle to specified value - does not emit signals, or propogate changes to the GUI. */
+  void setDisplayedComptonPeakAngle( const int angle );
 protected:
   FeatureMarkerWidget *m_feature;
 };//class FeatureMarkerWindow
@@ -64,6 +69,11 @@ public:
   
   virtual ~FeatureMarkerWidget();
   
+  /** Sets the display checkbox to specified state - does not emit signals, or propogate changes to the GUI. */
+  void setFeatureMarkerChecked( const FeatureMarkerType option, const bool checked );
+  
+  /** Sets the display angle to specified value - does not emit signals, or propogate changes to the GUI. */
+  void setDisplayedComptonPeakAngle( const int angle );
 protected:
   void init();
   

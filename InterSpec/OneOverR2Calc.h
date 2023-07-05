@@ -44,6 +44,27 @@ public:
 
   void doCalc();
 
+  
+  /** Handles receiving a "deep-link" url starting with "interspec://1overr2/...".
+   
+   Example URIs:
+   - "interspec://1overr2?near=3.5&far=1.1&back=2&dist=1.9&power=1.75"
+   
+   @param query_str The query portion of the URI.  So for example, if the URI has a value of
+          "interspec://1overr2?near=3.5&far=1.1&b...", then this string would be "near=3.5&far=1.1&b...".
+          This string is is in standard URL format of "key1=value1&key2=value2&..." with ordering not mattering.
+          Capitalization is not important.
+          Assumes the string passed in has alaready been url-decoded.
+          If not a valid query_str, throws exception.
+   */
+  void handleAppUrl( std::string query_str );
+  
+  /** Encodes current tool state to app-url format.  Returned string does not include the
+   "interspec://" protocol, or "1overr2" path; so will look something like "near=3.5&far=1.1&back=2&dit=1.9&power=1.75",
+   and it will not be url-encoded.
+   */
+  std::string encodeStateToUrl() const;
+  
 protected:
   void powerLawSelected();
   
@@ -57,6 +78,9 @@ protected:
   
   Wt::WLineEdit *m_answer;
   Wt::WText *m_message;
+  
+  /** For tracking of undo/redo, we will store all all the values, and power law index (as a float). */
+  std::array<float,5> m_prevValues;
 };//class OneOverR2Calc
 
 

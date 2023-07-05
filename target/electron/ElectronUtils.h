@@ -67,6 +67,12 @@ extern "C"
    */
   LIB_INTERFACE(void) interspec_set_require_session_token( const bool require_token );
 
+  /** Sets the max number of undo/redo steps. 
+  A value of zero sets unlimited, and a negative value disables undo/redo.
+  Default number of items is 250, but for phone/mobile-tablet interface its disabled.
+  */
+  LIB_INTERFACE(void) interspec_set_max_undo_steps( const int max_items );
+
   /** Sets token of a primary window session to allow.
    */
   LIB_INTERFACE(void) interspec_add_allowed_primary_session_token( const char *session_token );

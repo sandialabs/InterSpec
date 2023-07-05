@@ -94,6 +94,7 @@
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -3155,7 +3156,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
     try
     {
-      const string url = "interspec://drf/specify?" + m_detector->toAppUrl();
+      const string url = "interspec://drf/specify?" + Wt::Utils::urlEncode(m_detector->toAppUrl());
       QrCode::displayTxtAsQrCode( url, m_detector->name(), m_detector->description() );
     }catch( std::exception &e )
     {
@@ -5226,6 +5227,27 @@ void DrfSelect::emitChangedSignal()
   setAcceptButtonEnabled( !!m_detector );
   
   updateChart();
+  
+  
+  auto undo = [prev](){
+    InterSpec *viewer = InterSpec::instance();
+    
+    // This widget *should* (but as of 20230428, this looks broke) hear the
+    //  detectorChanged() signal, and update its state based on this; see
+    //  #DrfSelect::setDetector.
+    if( viewer )
+      viewer->detectorChanged().emit( prev );
+  };
+  
+  auto redo = [current](){
+    InterSpec *viewer = InterSpec::instance();
+    if( viewer )
+      viewer->detectorChanged().emit( current );
+  };
+  
+  UndoRedoManager *undoManager = m_interspec->undoRedoManager();
+  if( undoManager )
+    undoManager->addUndoRedoStep( undo, redo, "Change DRF" );
 }//void emitChangedSignal()
 
 
@@ -5317,5 +5339,8 @@ void DrfSelectWindow::acceptAndDelete( DrfSelectWindow *window )
   window->m_edit->emitChangedSignal();  //will only emit if necessary
   //window->m_edit->emitModifiedSignal(); //will only emit if necessary
   
-  AuxWindow::deleteAuxWindow( window );
+  if( window->m_interspec )
+    window->m_interspec->closeDrfSelectWindow();
+  else
+    AuxWindow::deleteAuxWindow( window );
 }//void acceptAndDelete( DrfSelectWindow *window )
