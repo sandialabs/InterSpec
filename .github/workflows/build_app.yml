@@ -112,7 +112,7 @@ jobs:
         run: |
           $p = Start-Process .\InterSpec.exe -ArgumentList @("--test-load", "--mult-instance", "--no-restore") -PassThru
           $errTimedOut = $null
-          $p | Wait-Process -Timeout 240 -ErrorAction SilentlyContinue -ErrorVariable errTimedOut
+          $p | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue -ErrorVariable errTimedOut
           if ($errTimedOut) { Stop-Process -InputObject $p -Force }
           echo "Exit code of InterSpec test load was was" $p.ExitCode
           $rval = $p.ExitCode
@@ -140,6 +140,7 @@ jobs:
           replacesArtifacts: true
           tag: 'latest'
           commit: ${{ github.sha }}
+          makeLatest: true
 
 
       - name: "Cleanup and finish"

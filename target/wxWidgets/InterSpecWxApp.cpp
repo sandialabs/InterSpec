@@ -749,7 +749,7 @@ InterSpecWxApp::InterSpecWxApp() :
 
     if( sm_test_load_only )
     {
-     // Right now we'll just wait 180 seconds, and if things havent loaded, declare failure.
+     // Right now we'll just wait 90 seconds, and if things havent loaded, declare failure.
      //  Normally shouldnt take very long, but on some test runners it can take a while.
      // When things load, we'll stop this timer and clear it.
      // 
@@ -758,7 +758,7 @@ InterSpecWxApp::InterSpecWxApp() :
      //   void InterSpecApp::prepareForEndOfSession()
      //   void InterSpecApp::finalize()
      //   for possible hooks to check failure.
-      sm_check_load_timer.reset( new CheckLoadTimer( this, 180 ) );
+      sm_check_load_timer.reset( new CheckLoadTimer( this, 90 ) );
     }//if( sm_test_load_only )
 
     InterSpecWebFrame* frame = new InterSpecWebFrame(m_url, no_restore, file_to_open);
