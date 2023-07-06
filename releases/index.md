@@ -1,4 +1,205 @@
-<div style="text-align: right;">SAND2023-12207O</div>
+<div style="text-align: right;">SAND2023-XXXXX</div>
+
+# v1.0.11 (June 01, 2023)
+InterSpec version 1.0.11 adds a number of new features and capabilities, many improvements, and a good amount of bug fixes.
+
+Most of the added features were user requested, as were many of the improvements and bug fixes - thank you for these!
+
+Questions, bug reports, suggestions, and feature requests are very welcome at <a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a>.
+
+## New Features
+- On the "Reference Photopeaks" tab, a "more info" link has been added, that when clicked, will give you additional information about the nuclide.  
+  About one hundred common nuclides include relevant analyst notes providing information on common uses of the nuclide, common contaminants, medical radioisotope doses, as well as suggestions on other related nuclides to check for in the spectrum.  These notes are thanks to Mike Enghauser, as well as his excellent "FRMAC Gamma Spectroscopist Knowledge Guide" available at https://www.osti.gov/biblio/1763003
+  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px;">
+    <div style="display: inline-block;">
+      <a href='v1.0.11/more_info_link.jpg'>
+        <img alt='Reference Photopeaks more info link' src='v1.0.11/more_info_link.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 450px;"/>
+      </a>
+      <div style="width: 450px;">Link to click if you would like to see more information about the nuclide you have entered.</div>
+    </div>
+    <div style="display: inline-block;">
+      <a href='v1.0.11/more_info_dialog_1.jpg'>
+        <img alt='Example more info dialog, part 1' src='v1.0.11/more_info_dialog_1.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 450px;"/>
+      </a>
+      <div style="width: 250px;">Example information displayed in the more info dialog - part 1.</div>
+    </div>
+    <div style="display: inline-block;">
+      <a href='v1.0.11/more_info_dialog_2.jpg'>
+        <img alt='Example more info dialog, part 2' src='v1.0.11/more_info_dialog_2.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 450px;"/>
+      </a>
+      <div style="width: 250px;">Example information displayed in the more info dialog - part 2.</div>
+    </div>
+  </div>
+- The map tool has been re-written and improved, especially for search data.  When the radiation data includes GPS coordinates you can display them on a map or satellite imagery.  The color and shape of the markers on the map convey information, as well as if you click the markers then additional details will be shown.  You can also select the markers on the map that you would like to be summed into your foreground or background spectra.
+  - Currently on Windows and Linux builds of InterSpec, if you are behind a corporate proxy, the map tiles may not load; see the maps "Help" documentation in the application for a fix.
+  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px;">
+    <div style="display: inline-block;">
+      <a href='v1.0.11/leaflet_map_overview.png'>
+        <img alt='Example "search" data displayed on the map' src='v1.0.11/leaflet_map_overview.png' style="display: block; height: 350px;"/>
+      </a>
+      <div style="">Example "search" data displayed on the map.</div>
+    </div>
+    <div style="display: inline-block;">
+      <a href='v1.0.11/leaflet_map_marker.png'>
+        <img alt='More information shown when a marker is clicked on' src='v1.0.11/leaflet_map_marker.png' style="display: block; height: 250px;"/>
+      </a>
+      <div style="">More information shown when a marker is clicked on.</div>
+    </div>
+    <div style="display: inline-block;">
+      <a href='v1.0.11/leaflet_map_select.png'>
+        <img alt='Example more info dialog, part 2' src='v1.0.11/leaflet_map_select.png' style="display: block; height: 300px;"/>
+      </a>
+      <div style="">Example of selecting markers for their corresponding spectra to be summed together for the foreground/background/secondary spectra.</div>
+    </div>
+  </div>
+  <div style="display: inline-block; width: 450px; float: right; padding-left: 10px; padding-bottom: 10px;">
+    <a href="v1.0.11/ref_photopeak_options.jpg">
+      <img alt="Reference Photopeaks more info link" src="v1.0.11/ref_photopeak_options.jpg" style="width: 100%; margin: 10px" />
+    </a>
+    <div>Menu item, circled in red, that shows new reference line options.  Also shown is the "Suggestions" column showing nuclides identified by the detector, nuclides associated with the currently input nuclide, as well as the nuclides of previous reference photopeaks shown (for quick access).</div>
+  </div>
+- The Reference Photopeaks tool has been improved to show more options, that can be accessed using a menu button circled in red, as shown on the right.  Some of the additions include:
+  - Showing alpha and beta particle endpoint energies
+  - Showing gamma cascade sums - i.e., gammas emitted within a short time of each other, that may be detected as the same event in the detector, at the summed energy; this is especially useful for measurements with the source near the detector where the effect of true coincidence is larger.  
+    - Only cascades gamma are summed; x-rays and gammas are not summed together, although this may be seen in data
+    - The required coincidence information was added to the sandia.decay.xml distributed with InterSpec, which to avoid slowing down application startup, some optimizations were made
+  - Entering specific energies, for example entering the text "511 keV" for the nuclide will show a reference line at 511 keV.
+  - A new column has been added to the tool that potentially shows you associated nuclides to the currently input nuclide, previous nuclides you have inputted, as well as nuclides that were identified by the detection system itself (if this information was included in the spectrum file).
+  - Previously the reference line heights were scaled based on the FWHM at the given energy, if the detector response function contained this information; this has now been removed, as well as a few other improvements and corrections added.
+  <div style="display: inline-block; width: 250px; float: right;">
+    <a href="v1.0.11/qr.svg">
+      <img alt="Example spectrum QR code" src="v1.0.11/qr.svg" style="width: 100%; margin: 10px" />
+    </a>
+    <div style="text-align: center; width: 250px;">Example QR-code.</div>
+  </div>
+- A new method of representing spectra as URLs or QR-codes has been introduced; the spectrum data is represented entirely by the URL or QR-code (i.e., no web/cloud/external services are used - the QR-code or URL themselves hold the spectrum data).  
+  - QR codes for spectra can be created by "<b>InterSpec</b>" &rarr; "<b>Export File</b>" &rarr; "<b>Foreground</b>" &rarr; "<b>QR Code / URL</b>". <br />HPGe spectra may take multiple QR codes to represent thier data.
+  - Full draft-specifications of the encoding can be found in <a href='../tutorials/spectrum_in_a_qr_code_uur_SAND2023-00005.pdf'>spectrum_in_a_qr_code_uur_SAND2023-00005.pdf</a>.
+  - For example, if you have already downloaded and run InterSpec v1.0.11, then clicking on the following link will open a spectrum in InterSpec:
+    - <a href="RADDATA://G0/000/NCFQ%2FQW%3ARYTAC52VM60%2F7%3A%3AR04F%20VDUTHDXRU8N%25PD6ZPY0J.NTPY0GPT0*D5Y6POVAG90PN8%3A2TJ9VLH%252WK%208T.FSQ6RYKTZ5CUAWDLNT8R12USKS23.*89%2BV%3AP2E-V9I6XMU0DFAJOC6FP37650*%24RVEVQ6ERDVXD7%3AMNJUDKLB14L*LL0JLLQMJSKDM2QN6FXB**34O7U26SU3L26FWUIPBPY0TSG0UCANQP.43-NNSJP0LGZ4JWQDT0S*DMWCJCVL7HFG5UYVISI52W%2B%249%251B%25MCP52WUOM43*F2UDGBKS4GVMSNBK5GVKDFTMMFN3JSF659HDSSCFFYBO3VFNKV2KJ6%3A13%258WII3GI%24OK85O-1ATY02GU3%2B3EDD5ZUC12%25FVR%2B77093%3ABXTI%25VNPBON8HCA0%2BXSKUFSBTZQ2YB6%25FBCJSNDI4YA7V8QTLCQGG2MSFW.ESVU5QS5R7E.2LEO1MIOWYVO43QE8GA1%3ABCS%2BSEL3%24IK.CV%20BMWKD3%24E*232%2BB312.A1XFS%2020Z6WFOO%3ABR%244WUZQBESY9EJ2T2SPXASZQV0WR9P9N4KS%2FVXVUUTU1P9918P9U%2FP790K%24W6B4FTNT%3A*GE7K2PU9NRN%2FHOTJ02GZ.UY%3A8.7KQE50%2B590L.4P%24WF%25-T7WS%208IJN3%204GMAF.KMNPCJDTCLKD0OPJH35BH2IK6Q52OM7G*%2BR6OTN6HRAJX%202%2F%3AG%2B.S9JF.TVZLF1OEKAV46TZ2E66AJ6EP%3AB8YA%2BRRN39%2068JPE4NQ-EEV0BN3S-3EDFBSJ7%25135CP5%2FL78V%203LAPJWCF7STCV7FXBWZNXE29DL2S1L-O5%249J4NE-R%2BMIWC94TRR2M%207C%255FMAO0DTW3MYCV81FU3K2IQ*2R.1MBPBIYP2-EGJKHJD2AM5RE1TRJMLO%25G4EFS191%3ABJ2VA13RZKN%24DR%2F00-JTSKDV23RR45MRKN3X91PBJAP*2NI.I8I6H%2BKB%24SIMI%24A1%2BOP8PBU*9RU4QRJLPQE%3AM569ELA%3AC07C6Z%2BOQC8IY3%2571YSJ%25K95%256*PA0T2094UKIAIDDZORGLNT2AAKZK1CI02OMW13K40%2BG87O0TH2YHVD367LGJGESYKRW62VJV01I%250NF8QKPQM0V83AUH3%242FS2IK0KE6W5BM%3AI%3ASU6CUS-81-J0INQ4J281*WSX1JXRO3WTC8S6TOP%2FVKVI%20%2FDS*S%20IPO%2FUPF0OB4.U90QUA5DMW9EXMOASP.F%3AAC92BUCGTQ54*6-6Q404LROKH6CIM2%3A7WN08P1DQGK13%3A.0G7T*0">Example hyperlink with spectrum data embeded</a>
+  - Or if your operating system decodes QR codes (e.g., iOS, Android, macOS), you can scan the QR-code to the right.
+- Added a new "Isotopics by peaks" tool, that uses Relative Efficiency analysis to help determine the activity ratio of nuclides, without requiring detector response, geometry, or shielding knowledge.
+  - Information about using this tool to determine Uranium enrichment can be found in <a href="https://sandialabs.github.io/InterSpec/tutorials/rel_eff_peaks/20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf">20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf</a>, however the tool works with all nuclides, subject to limitations of the method (e.g., at least one nuclide should have multiple peaks, and energy ranges of peaks for different nuclides should be near by), and can work with any number of nuclides at a time.
+  - In addition to finding ratios of nuclides, this tool can also be helpful to make sure there are not any unaccounted for interferences in the fit peaks.
+  - Some great references to learn Relative Efficiency analysis are [Relative Efficiency Curves Demystified](https://www.osti.gov/servlets/purl/1399186) and section 14 of [FRMAC Gamma Spectroscopist Knowledge Guide](https://www.osti.gov/biblio/1763003), both by Mike Enghauser of Sandia National Laboratories.  For a thorough description of the Relative Efficiency analysis methodology, especially as its related to Uranium and Plutonium analysis, see [Application Guide to Gamma-Ray Isotopic Analysis Using the FRAM Software](https://www.lanl.gov/orgs/n/n1/appnotes/LA-14018-M.pdf).
+  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px;">
+    <div style="display: inline-block;">
+      <a href='v1.0.11/isotopics_by_peaks_1.jpg'>
+        <img alt='Example of Isotopics by peaks tool' src='v1.0.11/isotopics_by_peaks_1.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 700px;"/>
+      </a>
+      <div style="width: 700px;">Example use of the "Isotopics by peaks" tool to determine the activity ratio of Eu152 and Eu154, without knowing the detector response, shielding, or distance information of the measurement.</div>
+    </div>
+    <div style="display: inline-block;">
+      <a href='v1.0.11/isotopics_by_peaks_2.jpg'>
+        <img alt='Textual results' src='v1.0.11/isotopics_by_peaks_2.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 300px;"/>
+      </a>
+      <div style="width: 300px;">Part of the textual results of the tool.</div>
+    </div>
+  </div>
+- <div style="display: inline-block; width: 500px; float: right; padding-left: 10px; padding-bottom: 10px; padding-top: 10px">
+    <a href='v1.0.11/isotopics_by_nuclides.png'>
+      <img alt='Screenshot of Isotopics by nuclides tool' src='v1.0.11/isotopics_by_nuclides.png' style="display: block; width: 500px;"/>
+    </a>
+    <div style="width: 500px;">Example of determining Plutonium enrichment using the "Isotopics by nuclides" tool.</div>
+  </div>
+  A very <em>early alpha</em> version of a new tool, "Isotopics by nuclides", is also included, which uses Relative Efficiency analysis (like the "Isotopics by peaks" tool), but this tool fits the peaks of the nuclides you specify, enforcing constraints between branching ratios, FWHM, and similar.  <b>The tool is not ready for general use</b>, and has only been included in this release for early feedback.
+- The possibility to specify some advanced application options has been added by having a file named 'desktop_app_settings.json' in InterSpec user data directory (see <b>Help</b> &rarr; <b>About InterSpec...</b> &rarr; <b>Data</b> for this directory, but on Windows its usually something like "<code>C:\Users\&lt;username&gt;\AppData\Roaming\InterSpec</code>").  An example file, with documentation is distrbuted with InterSpec, or can be viewed at <a href="https://github.com/sandialabs/InterSpec/blob/7a91ece87ab87e932b9a98fd8380cec2f485e6fd/data/config/example_InterSpec_app_settings.json">example_InterSpec_app_settings.json</a>. The primary use of this file will probably be to specify proxy settings, for users who want to use the mapping features behind a corporate proxy, but there are a few other advanced options available.
+- Previously on Windows, [Electron](http://electronjs.org) (basically a dedicated version of the Chrome web browser) was used to render the application (InterSpec is displayed using HTML and JavaScript).  However, a new "<code>WebView2</code>" version of InterSpec is avaiable that uses the HTML renderer built into Windows (i.e., the Edge browser WebView); this allows reducing the InterSpec distribution size, memory consumption, and application startup time.  The Electron version of the application will continue to be maintained, but the "<code>WebView2</code>" version is recomended for Windows 10 and 11 users.  Using the WebView built into the operating system is how the iOS, Android, and macOS ports of InterSpec also work.
+- Added option to allow displaying the time-history chart as a sum of a user specified energy range.  You can specify to display the ratio of energy ranges.  This can be especially useful for search data, as shown by the below example where the default time history chart amplitude (full energy range sum) shows various increases due to the environment changing as the detection system moves around, but these increases have little or nothing to do with the signal that wants to be detected.  In the second image that uses the ratio of energy ranges, the signal can clearly be distinguished.
+<div style="display: flex; justify-content: center; align-items: center; column-gap: 20px;">
+  <div style="display: inline-block; width: 40%">
+    <a href='v1.0.11/time_history_full_energy_range.jpg'>
+      <img alt='Example of Isotopics by peaks tool' src='v1.0.11/time_history_full_energy_range.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 100%;"/>
+    </a>
+    <div style="width: 100%">Time chart of the full energy range summed.</div>
+  </div>
+  <div style="display: inline-block; width: 40%">
+    <a href='v1.0.11/time_history_u235_energy_range.jpg'>
+      <img alt='Textual results' src='v1.0.11/time_history_u235_energy_range.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 100%;"/>
+    </a>
+    <div style="width: 100%">The 170 keV to 190 keV range ratioed with 220 keV and above.</div>
+  </div>
+</div>
+
+- Kazuyoshi Furutaka (@furutaka) greatly improved the information and number of fast-neutrons reactions in sandia.reactiongamma.xml using data from https://nucleardata.berkeley.edu/atlas/intro.html (e.g., data from "Atlas of Gamma-Ray Spectra from the Inelastic Scattering of Reactor Fast Neutrons", A.M. Demidov et al.).  Dr Furutaka also contributed a few other fixes, and many great suggestions and bug reports.
+- Add HTML export link was added to the "Decay Chain" tab in the "Nuclide Decay Info" tool.  This link produces a standalone HTML file that displays the decay chain, and information about the nuclides, but also has a few options to help make graphic suitable for inclusion in other resources.
+  - Also added showing nuclide half-life on the decay chart.
+- Add option in the <b>Help</b> &rarr; <b>Options</b> &rarr; <b>Color Themes...</b>  dialog to control wether or not InterSpec will transition to the "dark" color theme when the OS does.
+- <div style="display: inline-block; width: 450px; float: right;">
+    <a href="v1.0.11/enery_search_btns.jpg">
+      <img alt="Example spectrum QR code" src="v1.0.11/enery_search_btns.jpg" style="width: 100%; margin: 10px" />
+    </a>
+    <div style="text-align: center; width: 450px;">Buttons added to the Nuclide Search tool.</div>
+  </div>
+  On the "Nuclide Search" tab, if you search on an energy corresponding to a peak, when you select a result row (e.g., U238 on the image on the right), an "Assign peak to &lt;Nuclide&gt;" will appear, allowing you to assign that nuclide to the peak.  Also added a convenient button to clear current selection/reference-lines.
+
+
+- Add continuum type to peaks CSV. Added peak color, as well as "(S.E.)", "(D.E.)", or "(x-ray)" indications to peak CSV export.
+- The preference to automatically save spectra when you close the program, and check to see if you had previously done work on a spectrum, when you load a spectrum file, has been split up into two separate preferences.
+- Improved nuclide suggestions for peaks, including allowing for single and double escape peaks.
+- Add converting mass, as well as mass+nuclide to unit convert tool, as well as output SAE (feet, inch, mile) length units when input is metric 
+  - <b>Please note</b>: in v1.0.11 this conversion is incorrect for inches and feet!
+- Check for sandia.decay.xml and reaction xml in the applications user data directory, and if present, use these files instead of the ones distributed with InterSpec.  This is to allow, especially macOS, iOS, and Android users the ability to edit branching ratios, energies, or life-times; Windows and Linux users could already directly edit the data that came with the application, but this is a little more consistent.
+- Improve centering/sizing of some dialogs when the InterSpec window is resized.
+- Added option for tablets to use Desktop style interface.
+- Added displaying of images embedded into N42.42-2012 files; when N42 files are loaded with embedded images, a notification will be displayed that will allow you to click it to show the image, or the <b>View</b> menu has a <b>Show Images</b> entry that can be set to show the image(s).
+- Improved operations on iOS and Android, including fixing UI element, opening and saving of spectrum file, and interacting with the operating system better.
+    
+
+
+## Bug Fixes
+- A few various potential crashes were fixed
+- Various display issues were fixed.
+- Before, sometimes selected text in input fields could be "dragged", which could then trigger the file upload; this has been fixed.
+- Limited showing duplicate spectrum file parse warnings on file load.
+- Fix issue where peaks would be corrected multiple times when applying CALp files to spectra with multiple detectors.
+- Fix up loading CALp files for spectrum files that have detectors with different number of channels.
+- Fix issues where if "Peak Editor" is open, and peaks are modified outside of it, odd things could happen.
+- Fix unexpected exception when downloading reference peak CSV.
+- Fix time chart issue of not finding proper extents - sometimes leading to exceptions and crash.
+- Workaround an issue where if a context sub-menu is taller than the application window, the menu would be rendered inside parent menu.
+- Make so "Use Prev Energy Cal" window will only show up to 10 coefficients, rather than potentially thousands.
+- Fix "Search for Peaks" nuclide selection not working correctly
+- Fix issue assigning annihilation gamma with peaks.  The issue manifested, for example, with the 511 keV gamma of Na22 - after assigning the peak to the nuclide, in some places in the app it would still look not-assigned.
+- Improve number of significant figures displayed on Decay Calc; will now try to match number of sig. figs, entered by user.
+- Skip statistical significance test for refitting peaks with fixed mean and width.
+- Fix, for example, `stringToActivity( "5 cm" )` from returning an activity.
+- Fixup a number of issues for displaying on phone, and a few other general improvements.
+- Fix so all dialogs are deleted when the user clears the session.
+- Modify the default ColorTheme so the first reference line color isn't so close to the default color for peaks without nuclide/color assigned.
+- Turned off the macOS/iOS provided suggestions/fixes to text input, hopefully everywhere.
+- Fixed some issues with the time-chart that could cause a crash in the JavaScript
+- Fix issue fitting rectangular geometry dimensions.
+- Fixed the material suggestions popup, to now not be case-sensitive, and work a little better.
+- Fix incorrect index in GADRAS GAM file parser.
+
+
+## Code development related items
+- Update dependency build instructions
+- Some minor macOS build updates, including now using more common code with other targets, related to starting and stopping Wt.
+- Fix issue in ShieldingSourceChi2Fcn::cluster_peak_activities with accessing undefined elements of vector if no input peaks are provided.
+- Update version of Electron.
+- Add some automated unit tests run on every push to the primary branch of the repository.  Currently these tests are mostly for sections of code recently modified, although there are further tests previously written that have not yet been added.
+- Added an automated Windows app build, which is run on the github infrastructure, and triggered on every push to the primary branch.  A rolling release of the application is also made on every successful build.
+- Cleanup Xcode IDE file groupings
+- Update libraries credited in the app and NOTICE.html.
+- Added ability to package the app through CMake, at least for the Windows build.
+- Some minor updates to in-app help
+- Improved some regex and quantity-parsing functions in PhysicalUnits.
+- Updated iOS build instructions.
+- Added instructions for using the python "manylinux" Docker images for compiling the Linux Electron version of the app.
+- cmake Fetch dependencies options
+
+## Known Issues
+Issues reported on v1.0.11:
+- Viewing the <em>help</em> page for "Isotopics by nuclides" may crash the renderer process and necessitate restarting the application; there are no contents for that help page anyway (fixed in commit https://github.com/sandialabs/InterSpec/commit/f61a00ffc8bfc0b61543bf6e96023dd99e4af0bd).
+- When opening the "Make Detector Response" tool, the application <em>may</em> crash; most commonly happens the <em>second</em> time you open the tool in a session (fixed in commit https://github.com/sandialabs/InterSpec/commit/0d1b823c61bd4af28a36beecc935e5dd729b565e).
+- In the "Unit Converter" tool, when converting metric distances (meters, cm, etc) to SAE distances (inches, feet, miles), results in feet and miles are in-correct (fixed in commit https://github.com/sandialabs/InterSpec/commit/eb218a752f335a7e17f292668325351ae26b47bf).
+
+
+<div style="color: red; font-weight: bold; font-size: 22px;">
+Note to Sandia Reiviewer: all contents below here have been through R&A, is UUR, and assigned SAND2023-12207O
+</div>
 
 # v1.0.10 (Aug 07, 2022)
 InterSpec [version 1.0.10](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.10-1) fixes a number of smaller issues, improves some interfaces, makes using pre-defined detector response functions (DRFs) easier, adds a number of default DRFs for common portable detection systems, reduced app memory usage, and upgraded some underlying libraries.
