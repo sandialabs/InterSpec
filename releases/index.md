@@ -1,4 +1,4 @@
-<div style="text-align: right;">SAND2023-XXXXX</div>
+<div style="text-align: right;">SAND2023-05961O</div>
 
 # v1.0.11 (June 01, 2023)
 InterSpec version 1.0.11 adds a number of new features and capabilities, many improvements, and a good amount of bug fixes.
@@ -9,7 +9,7 @@ Questions, bug reports, suggestions, and feature requests are very welcome at <a
 
 ## New Features
 - On the "Reference Photopeaks" tab, a "more info" link has been added, that when clicked, will give you additional information about the nuclide.  
-  About one hundred common nuclides include relevant analyst notes providing information on common uses of the nuclide, common contaminants, medical radioisotope doses, as well as suggestions on other related nuclides to check for in the spectrum.  These notes are thanks to Mike Enghauser, as well as his excellent "FRMAC Gamma Spectroscopist Knowledge Guide" available at https://www.osti.gov/biblio/1763003
+  About one hundred common nuclides include relevant analyst notes providing information on common uses of the nuclide, common contaminants, medical radioisotope doses, as well as suggestions on other related nuclides to check for in the spectrum.  These notes are thanks to Michael Enghauser, as well as his excellent "FRMAC Gamma Spectroscopist Knowledge Guide" available at https://www.osti.gov/biblio/1763003
   <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px;">
     <div style="display: inline-block;">
       <a href='v1.0.11/more_info_link.jpg'>
@@ -81,7 +81,7 @@ Questions, bug reports, suggestions, and feature requests are very welcome at <a
 - Added a new "Isotopics by peaks" tool, that uses Relative Efficiency analysis to help determine the activity ratio of nuclides, without requiring detector response, geometry, or shielding knowledge.
   - Information about using this tool to determine Uranium enrichment can be found in <a href="https://sandialabs.github.io/InterSpec/tutorials/rel_eff_peaks/20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf">20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf</a>, however the tool works with all nuclides, subject to limitations of the method (e.g., at least one nuclide should have multiple peaks, and energy ranges of peaks for different nuclides should be near by), and can work with any number of nuclides at a time.
   - In addition to finding ratios of nuclides, this tool can also be helpful to make sure there are not any unaccounted for interferences in the fit peaks.
-  - Some great references to learn Relative Efficiency analysis are [Relative Efficiency Curves Demystified](https://www.osti.gov/servlets/purl/1399186) and section 14 of [FRMAC Gamma Spectroscopist Knowledge Guide](https://www.osti.gov/biblio/1763003), both by Mike Enghauser of Sandia National Laboratories.  For a thorough description of the Relative Efficiency analysis methodology, especially as its related to Uranium and Plutonium analysis, see [Application Guide to Gamma-Ray Isotopic Analysis Using the FRAM Software](https://www.lanl.gov/orgs/n/n1/appnotes/LA-14018-M.pdf).
+  - Some great references to learn Relative Efficiency analysis are [Relative Efficiency Curves Demystified](https://www.osti.gov/servlets/purl/1399186) and section 14 of [FRMAC Gamma Spectroscopist Knowledge Guide](https://www.osti.gov/biblio/1763003), both by Michael Enghauser of Sandia National Laboratories.  For a thorough description of the Relative Efficiency analysis methodology, especially as its related to Uranium and Plutonium analysis, see [Application Guide to Gamma-Ray Isotopic Analysis Using the FRAM Software](https://www.lanl.gov/orgs/n/n1/appnotes/LA-14018-M.pdf).
   <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px;">
     <div style="display: inline-block;">
       <a href='v1.0.11/isotopics_by_peaks_1.jpg'>
@@ -197,9 +197,6 @@ Issues reported on v1.0.11:
 - In the "Unit Converter" tool, when converting metric distances (meters, cm, etc) to SAE distances (inches, feet, miles), results in feet and miles are in-correct (fixed in commit https://github.com/sandialabs/InterSpec/commit/eb218a752f335a7e17f292668325351ae26b47bf).
 
 
-<div style="color: red; font-weight: bold; font-size: 22px;">
-Note to Sandia Reiviewer: all contents below here have been through R&A, is UUR, and assigned SAND2023-12207O
-</div>
 
 # v1.0.10 (Aug 07, 2022)
 InterSpec [version 1.0.10](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.10-1) fixes a number of smaller issues, improves some interfaces, makes using pre-defined detector response functions (DRFs) easier, adds a number of default DRFs for common portable detection systems, reduced app memory usage, and upgraded some underlying libraries.
