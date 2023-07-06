@@ -10,44 +10,46 @@ Questions, bug reports, suggestions, and feature requests are very welcome at <a
 ## New Features
 - On the "Reference Photopeaks" tab, a "more info" link has been added, that when clicked, will give you additional information about the nuclide.  
   About one hundred common nuclides include relevant analyst notes providing information on common uses of the nuclide, common contaminants, medical radioisotope doses, as well as suggestions on other related nuclides to check for in the spectrum.  These notes are thanks to Michael Enghauser, as well as his excellent "FRMAC Gamma Spectroscopist Knowledge Guide" available at https://www.osti.gov/biblio/1763003
-  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px;">
-    <div style="display: inline-block;">
+  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px; margin-bottom: 10px;">
+    <div style="display: inline-block; width: 100%">
       <a href='v1.0.11/more_info_link.jpg'>
-        <img alt='Reference Photopeaks more info link' src='v1.0.11/more_info_link.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 450px;"/>
+        <img alt='Reference Photopeaks more info link' src='v1.0.11/more_info_link.jpg' style="display: block; width: 100%;"/>
       </a>
-      <div style="width: 450px;">Link to click if you would like to see more information about the nuclide you have entered.</div>
+      <div style="width: 100%; text-align: center">Link to click if you would like to see more information about the nuclide you have entered.</div>
     </div>
+  </div>
+  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px; width: 100%; margin-bottom: 10px;">
     <div style="display: inline-block;">
       <a href='v1.0.11/more_info_dialog_1.jpg'>
-        <img alt='Example more info dialog, part 1' src='v1.0.11/more_info_dialog_1.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 450px;"/>
+        <img alt='Example more info dialog, part 1' src='v1.0.11/more_info_dialog_1.jpg' style="display: block;"/>
       </a>
-      <div style="width: 250px;">Example information displayed in the more info dialog - part 1.</div>
+      <div style="width: 100%; text-align: center">Example information displayed in the more info dialog - part 1.</div>
     </div>
     <div style="display: inline-block;">
       <a href='v1.0.11/more_info_dialog_2.jpg'>
-        <img alt='Example more info dialog, part 2' src='v1.0.11/more_info_dialog_2.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 450px;"/>
+        <img alt='Example more info dialog, part 2' src='v1.0.11/more_info_dialog_2.jpg' style="display: block;"/>
       </a>
-      <div style="width: 250px;">Example information displayed in the more info dialog - part 2.</div>
+      <div style="width: 100%; text-align: center">Example information displayed in the more info dialog - part 2.</div>
     </div>
   </div>
 - The map tool has been re-written and improved, especially for search data.  When the radiation data includes GPS coordinates you can display them on a map or satellite imagery.  The color and shape of the markers on the map convey information, as well as if you click the markers then additional details will be shown.  You can also select the markers on the map that you would like to be summed into your foreground or background spectra.
   - Currently on Windows and Linux builds of InterSpec, if you are behind a corporate proxy, the map tiles may not load; see the maps "Help" documentation in the application for a fix.
-  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px;">
-    <div style="display: inline-block;">
+  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px; width: 100%">
+    <div style="display: inline-block; width: 30%">
       <a href='v1.0.11/leaflet_map_overview.png'>
-        <img alt='Example "search" data displayed on the map' src='v1.0.11/leaflet_map_overview.png' style="display: block; height: 350px;"/>
+        <img alt='Example "search" data displayed on the map' src='v1.0.11/leaflet_map_overview.png' style="display: block;"/>
       </a>
       <div style="">Example "search" data displayed on the map.</div>
     </div>
-    <div style="display: inline-block;">
+    <div style="display: inline-block; width: 30%">
       <a href='v1.0.11/leaflet_map_marker.png'>
-        <img alt='More information shown when a marker is clicked on' src='v1.0.11/leaflet_map_marker.png' style="display: block; height: 250px;"/>
+        <img alt='More information shown when a marker is clicked on' src='v1.0.11/leaflet_map_marker.png' style="display: block;"/>
       </a>
       <div style="">More information shown when a marker is clicked on.</div>
     </div>
-    <div style="display: inline-block;">
+    <div style="display: inline-block; width: 30%">
       <a href='v1.0.11/leaflet_map_select.png'>
-        <img alt='Example more info dialog, part 2' src='v1.0.11/leaflet_map_select.png' style="display: block; height: 300px;"/>
+        <img alt='Example more info dialog, part 2' src='v1.0.11/leaflet_map_select.png' style="display: block;"/>
       </a>
       <div style="">Example of selecting markers for their corresponding spectra to be summed together for the foreground/background/secondary spectra.</div>
     </div>
@@ -82,18 +84,20 @@ Questions, bug reports, suggestions, and feature requests are very welcome at <a
   - Information about using this tool to determine Uranium enrichment can be found in <a href="https://sandialabs.github.io/InterSpec/tutorials/rel_eff_peaks/20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf">20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf</a>, however the tool works with all nuclides, subject to limitations of the method (e.g., at least one nuclide should have multiple peaks, and energy ranges of peaks for different nuclides should be near by), and can work with any number of nuclides at a time.
   - In addition to finding ratios of nuclides, this tool can also be helpful to make sure there are not any unaccounted for interferences in the fit peaks.
   - Some great references to learn Relative Efficiency analysis are [Relative Efficiency Curves Demystified](https://www.osti.gov/servlets/purl/1399186) and section 14 of [FRMAC Gamma Spectroscopist Knowledge Guide](https://www.osti.gov/biblio/1763003), both by Michael Enghauser of Sandia National Laboratories.  For a thorough description of the Relative Efficiency analysis methodology, especially as its related to Uranium and Plutonium analysis, see [Application Guide to Gamma-Ray Isotopic Analysis Using the FRAM Software](https://www.lanl.gov/orgs/n/n1/appnotes/LA-14018-M.pdf).
-  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px;">
+  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px; width: 100%">
     <div style="display: inline-block;">
       <a href='v1.0.11/isotopics_by_peaks_1.jpg'>
-        <img alt='Example of Isotopics by peaks tool' src='v1.0.11/isotopics_by_peaks_1.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 700px;"/>
+        <img alt='Example of Isotopics by peaks tool' src='v1.0.11/isotopics_by_peaks_1.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 80%;"/>
       </a>
-      <div style="width: 700px;">Example use of the "Isotopics by peaks" tool to determine the activity ratio of Eu152 and Eu154, without knowing the detector response, shielding, or distance information of the measurement.</div>
+      <div style="width: 80%; margin-left: auto; margin-right: auto; ">Example use of the "Isotopics by peaks" tool to determine the activity ratio of Eu152 and Eu154, without knowing the detector response, shielding, or distance information of the measurement.</div>
     </div>
+  </div>
+  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px; width: 100%">
     <div style="display: inline-block;">
       <a href='v1.0.11/isotopics_by_peaks_2.jpg'>
-        <img alt='Textual results' src='v1.0.11/isotopics_by_peaks_2.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 300px;"/>
+        <img alt='Textual results' src='v1.0.11/isotopics_by_peaks_2.jpg' style="display: block; margin-left: auto; margin-right: auto; width: 30%;"/>
       </a>
-      <div style="width: 300px;">Part of the textual results of the tool.</div>
+      <div style="width: 30%; margin-left: auto; margin-right: auto; ">Part of the textual results of the tool.</div>
     </div>
   </div>
 - <div style="display: inline-block; width: 500px; float: right; padding-left: 10px; padding-bottom: 10px; padding-top: 10px">
