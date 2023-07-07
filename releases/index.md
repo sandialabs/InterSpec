@@ -18,14 +18,14 @@ Questions, bug reports, suggestions, and feature requests are very welcome at <a
       <div style="width: 100%; text-align: center">Link to click if you would like to see more information about the nuclide you have entered.</div>
     </div>
   </div>
-  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px; width: 100%; margin-bottom: 10px;">
-    <div style="display: inline-block;">
+  <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px; width: 95%; margin-bottom: 10px;">
+    <div style="display: inline-block; width: 45%;">
       <a href='v1.0.11/more_info_dialog_1.jpg'>
         <img alt='Example more info dialog, part 1' src='v1.0.11/more_info_dialog_1.jpg' style="display: block;"/>
       </a>
       <div style="width: 100%; text-align: center">Example information displayed in the more info dialog - part 1.</div>
     </div>
-    <div style="display: inline-block;">
+    <div style="display: inline-block; width: 45%;">
       <a href='v1.0.11/more_info_dialog_2.jpg'>
         <img alt='Example more info dialog, part 2' src='v1.0.11/more_info_dialog_2.jpg' style="display: block;"/>
       </a>
