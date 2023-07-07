@@ -116,7 +116,6 @@ jobs:
           if ($errTimedOut) { Stop-Process -InputObject $p -Force }
           echo "Exit code of InterSpec test load was was" $p.ExitCode
           $rval = $p.ExitCode
-          if($rval -eq -11){ $rval = 0; echo "Loading InterSpec timed-out, but accepting this for the moment, since it seems to work";  }
           exit $rval
           
 #  If Stop-Process had to be used, the exit code will be -1.  If resources didnt load -12.  If timed out inside InterSpec -11. If all was okay, 0
