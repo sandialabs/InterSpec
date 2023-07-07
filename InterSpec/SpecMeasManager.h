@@ -457,14 +457,13 @@ protected:
   
   
 private:
-  AuxWindow* m_spectrumManagerWindow;
   Wt::WContainerWidget *createButtonBar();
   void deleteSpectrumManager();
   Wt::WContainerWidget *createTreeViewDiv();
 
   
 protected:
-    
+  AuxWindow *m_spectrumManagerWindow;
   RowStretchTreeView    *m_treeView;
   SpectraFileModel *m_fileModel;
   Wt::WFileUpload  *m_fileUpload;

@@ -327,8 +327,24 @@ void GammaCountDialog::handleAppUrl( std::string query_str )
   const auto upper_iter = values.find( "HIGH" );
   string lower_str = (lower_iter != end(values)) ? lower_iter->second : string();
   string upper_str = (upper_iter != end(values)) ? upper_iter->second : string();
-  try{ std::stod(lower_str); }catch(...){ lower_str = ""; }
-  try{ std::stod(upper_str); }catch(...){ upper_str = ""; }
+  try
+  { 
+    const double val = std::stod(lower_str);
+    if( IsInf( val ) || IsNan( val ) )
+      throw runtime_error( "" );
+  }catch(...)
+  { 
+    lower_str = ""; 
+  }
+  try
+  { 
+    const double val = std::stod(upper_str);
+    if( IsInf( val ) || IsNan( val ) )
+      throw runtime_error( "" );
+  }catch(...)
+  { 
+    upper_str = ""; 
+  }
   
   auto primary = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   if( lower_str.empty() && primary && (primary->num_gamma_channels() > 0) )

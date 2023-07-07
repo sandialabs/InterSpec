@@ -2188,7 +2188,7 @@ std::shared_ptr<SpecMeas> to_spec_file( const std::vector<UrlSpectrum> &spec_inf
 int dev_code()
 {
   make_example_qr_codes();
-  return;
+  return 0;
   
   // Now that URL encoding has solidified - this function should be cleaned up to use that code
   //  to compute statistics of how many QR codes it typically takes and such.

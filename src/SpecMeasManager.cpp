@@ -757,6 +757,7 @@ protected:
 
 SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   : WObject(),
+    m_spectrumManagerWindow( nullptr ),
     m_treeView( NULL ),
     m_fileModel( NULL ),
     m_fileUpload( NULL ),
