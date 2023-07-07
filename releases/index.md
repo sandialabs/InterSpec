@@ -43,15 +43,15 @@ Questions, bug reports, suggestions, and feature requests are very welcome at <a
     </div>
     <div style="display: inline-block; width: 30%">
       <a href='v1.0.11/leaflet_map_marker.png'>
-        <img alt='More information shown when a marker is clicked on' src='v1.0.11/leaflet_map_marker.png' style="display: block;"/>
+        <img alt='More information shown when a marker is clicked on' src='v1.0.11/leaflet_map_marker.png' style="display: block; width: 100%;"/>
       </a>
-      <div style="">More information shown when a marker is clicked on.</div>
+      <div style="width: 100%;">More information shown when a marker is clicked on.</div>
     </div>
     <div style="display: inline-block; width: 30%">
       <a href='v1.0.11/leaflet_map_select.png'>
-        <img alt='Example more info dialog, part 2' src='v1.0.11/leaflet_map_select.png' style="display: block;"/>
+        <img alt='Example more info dialog, part 2' src='v1.0.11/leaflet_map_select.png' style="display: block; width: 100%;"/>
       </a>
-      <div style="">Example of selecting markers for their corresponding spectra to be summed together for the foreground/background/secondary spectra.</div>
+      <div style="width: 100%;">Example of selecting markers for their corresponding spectra to be summed together for the foreground/background/secondary spectra.</div>
     </div>
   </div>
   <div style="display: inline-block; width: 450px; float: right; padding-left: 10px; padding-bottom: 10px;">
