@@ -43,6 +43,7 @@
 #include <Wt/WAbstractItemModel>
 #include <Wt/Chart/WCartesianChart>
 
+#include "InterSpec/ShieldingSourceFitCalc.h"
 
 //Forward declarations
 class PeakDef;
@@ -229,7 +230,7 @@ public:
   //  memmorry will be returned - unmodified.  Call handleMaterialChange() and
   //  handleIsotopicChange(...) to deal with modifying materials.
   // TODO: should the returned pointer be made const, or maybe unique?
-  std::shared_ptr<Material> material();
+  std::shared_ptr<const Material> material();
   
   /** Returns the current m_currentMaterial.
    
@@ -293,17 +294,24 @@ public:
   //  given isotope, and updates possible trace source options.
   void sourceRemovedFromModel( const SandiaDecay::Nuclide *nuc );
 
-  //updateMassFractionDisplays(): updates displayed mass fractions to that of
+  //setMassFractionDisplaysToMaterial(): updates displayed mass fractions to that of
   //  the Material passed in.
-  void updateMassFractionDisplays( std::shared_ptr<const Material> mat );
+  void setMassFractionDisplaysToMaterial( std::shared_ptr<const Material> mat );
 
-  /** Returns the isotopes currently checked for use as self-attenuating sources. */
-  std::vector<const SandiaDecay::Nuclide *> selfAttenNuclides();
+  /** Sets the "Assuming X% other Y isos" text for self-attenuating sources.
+   */
+  void updateSelfAttenOtherNucFractionTxt();
   
-  //sourceNuclideMassFractions(): returns both the nuclides and their respective
-  //  mass fractions in the current material
+  /** Returns the isotopes currently checked for use as self-attenuating sources. */
+  std::vector<const SandiaDecay::Nuclide *> selfAttenNuclides() const;
+  
+  /** Gets the (self-attenuating) source nuclides (not trace nuclides), and thier respective mass fractions.
+   
+   Mass-fractions are for the entire material, not just the fraction of the element.
+   Note: mass-fractions are retrieved from the GUI state - they are not the values in `m_currentMaterial`.
+   */
   typedef std::pair<const SandiaDecay::Nuclide *,double> NucMasFrac;
-  std::vector< NucMasFrac > sourceNuclideMassFractions();
+  std::vector< NucMasFrac > sourceNuclideMassFractions() const;
 
   //setClosableAndAddable(...): by default widget will have close icon and emit
   //  the remove() signal, but setClosable() lets you change this
@@ -319,6 +327,11 @@ public:
   //  This function does not check if all mass fractions add up to 1.0, or
   //  anything else like that, so be careful
   void setMassFraction( const SandiaDecay::Nuclide *nuc, double fraction );
+  
+  /** Sets all the source mass fractions at once; will normalize total mass fractions for each element to 1.0.
+   If mass fractions are less than zero, or if no current material, will through exception.
+   */
+  void setMassFractions( std::map<const SandiaDecay::Nuclide *,double> fractions );
   
   //setMaterialNameAndThickness(...): sets the current material name and
   //  thickness to the specified strings.  If necessary will make it so this is
@@ -451,6 +464,9 @@ public:
 
   void handleAppUrl( std::string query_str );
   
+  ShieldingSourceFitCalc::ShieldingInfo toShieldingInfo() const;
+  void fromShieldingInfo( const ShieldingSourceFitCalc::ShieldingInfo &info );
+  
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   boost::optional<double> truthThickness; //Shperical thickness, radial thickness (cylindrical), or rectagular width
   boost::optional<double> truthThicknessTolerance;
@@ -517,6 +533,9 @@ protected:
   //  on what has been done.
   void handleMaterialChange();
   
+  /** Updates #m_currentMaterial if `m_materialEdit->text() != m_currentMaterialDescrip` */
+  void updateMaterialFromUserInputTxt();
+  
   /** Handles updating #m_prevState, and emitting userChangedStateSignal(). */
   void handleUserChangeForUndoRedo();
   void handleUserChangeForUndoRedoWorker();
@@ -526,23 +545,41 @@ protected:
    */
   void removeUncertFromDistanceEdit( Wt::WLineEdit *edit );
   
-  //handleIsotopicChange(...): changes the mass fraction of 'nuc'. The fraction
-  //  should be between 0.0 and 1.0, and is the mass-fraction of 'nuc' for its
-  //  respective element.  This function tries to adjust the other isotope
-  //  fractions in a way that is kinda intuitive to the user, while enforcing
-  //  consitency.  The overal mass-fraction for the respective element stays
-  //  the same.
-  void handleIsotopicChange( float fraction, const SandiaDecay::Nuclide *nuc );
+  /** Changes the mass fraction of 'nuclide'.
+   
+   @param fraction The fraction of the element, the specified nuclide, accounts for.
+          Value should be between 0.0, and 1.0.
+   @param nuclide The nuclide to set the mass-fraction for.
+  
+   
+  This function tries to adjust the other isotope fractions in a way that is kinda intuitive to
+  the user, while enforcing consitency.
+   
+   The overal mass-fraction for the respective element stays the same, this function just
+   changes the isotopic composition of the element.  (i.e. the mass-fraction of the element
+   will stay the same).
+   */
+  void handleIsotopicChange( const float fraction, const SandiaDecay::Nuclide * const nuclide );
 
   //modelNuclideAdded(...): adds a checkbox for Nuclide and connects
   //  appropriate signals, and updates trace sources
   void modelNuclideAdded( const SandiaDecay::Nuclide *iso );
 
   
-  //massFractionOfElement(...): returns the fraction, by mass, that the isotope
-  //  takes up for the element it belongs to
-  static double massFractionOfElement( const SandiaDecay::Nuclide *iso,
-                                       std::shared_ptr<const Material> mat );
+  /** Returns the mass-fraction of the material a certain element is.
+   */
+  static double massFractionOfElementInMaterial( const SandiaDecay::Element * const element,
+                                                const std::shared_ptr<const Material> &mat );
+  
+  /** Returns the fraction of the element, a nuclide is in a material.
+ 
+   If the material specifies the isotopic fractions, that value will be returned.
+   If the material specifies just the element, and the nuclide is a naturally present nuclide, then returns its natural abundance.
+   If the material is specified, but not a naturally present nuclide, returns 1 over the total number of nuclides in element (this
+   is a fairly arbitrary behaviour).
+   */
+  static double nuclidesFractionOfElementInMaterial( const SandiaDecay::Nuclide * const iso,
+                                       const std::shared_ptr<const Material> &mat );
 
   //isotopeCheckedCallback(...): emits the addingIsotopeAsSource() signal
   void isotopeCheckedCallback( const SandiaDecay::Nuclide *iso );
@@ -632,7 +669,7 @@ protected:
   std::string m_currentMaterialDescrip;
   
   // TODO: should m_currentMaterial be made a const pointer?
-  std::shared_ptr<Material> m_currentMaterial;
+  std::shared_ptr<const Material> m_currentMaterial;
 
   Wt::Signal<ShieldingSelect *> m_removeSignal;
   Wt::Signal<ShieldingSelect *> m_addShieldingBefore;
@@ -649,9 +686,6 @@ protected:
              std::shared_ptr<const std::string>,
              std::shared_ptr<const std::string>> m_userChangedStateSignal;
   std::shared_ptr<const std::string> m_prevState;
-  
-  static const int sm_xmlSerializationMajorVersion;
-  static const int sm_xmlSerializationMinorVersion;
 
   friend class TraceSrcDisplay;
   friend class ShieldingSourceDisplay;

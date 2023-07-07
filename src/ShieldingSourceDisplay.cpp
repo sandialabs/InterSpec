@@ -3703,7 +3703,7 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         }//if( fit AN )
       }else
       {
-        shared_ptr<Material> mat = select->material();
+        shared_ptr<const Material> mat = select->material();
         if( !mat )
           throw runtime_error( "There is a non-generic material that is blank" );
   
@@ -3972,7 +3972,7 @@ void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
         select->atomicNumberEdit()->setText( "26" );
     }else
     {
-      shared_ptr<Material> mat = select->material();
+      shared_ptr<const Material> mat = select->material();
       if( !mat || select->fitForMassFractions() )
         continue;
       
@@ -4081,7 +4081,7 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
       }//if( fit AN )
     }else
     {
-      shared_ptr<Material> mat = select->material();
+      shared_ptr<const Material> mat = select->material();
       if( !mat )
       {
         cerr << "Dont have: Coultn get material" << endl;
@@ -4315,7 +4315,7 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
         }//if( fit AN )
       }else
       {
-        shared_ptr<Material> mat = select->material();
+        shared_ptr<const Material> mat = select->material();
         if( !mat )
         {
           successful = false;
@@ -6663,8 +6663,8 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   
   //If you change the available options or formatting or whatever, increment the
   //  version field of the XML!
-  const string versionstr = std::to_string(ShieldingSelect::sm_xmlSerializationMajorVersion)
-                          + "." + std::to_string(ShieldingSelect::sm_xmlSerializationMinorVersion);
+  const string versionstr = std::to_string(ShieldingSourceDisplay::sm_xmlSerializationMajorVersion)
+                          + "." + std::to_string(ShieldingSourceDisplay::sm_xmlSerializationMinorVersion);
   value = doc->allocate_string( versionstr.c_str() );
   attr = doc->allocate_attribute( "version", value );
   base_node->append_attribute( attr );
@@ -7985,7 +7985,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       inputPrams.Add( name + "_dummyshielding2", 0.0 );
     }else
     {
-      std::shared_ptr<Material> mat = select->material();
+      std::shared_ptr<const Material> mat = select->material();
       string name;
       if( mat )
         name = mat->name + std::to_string(i);
@@ -8122,7 +8122,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
                                          = select->sourceNuclideMassFractions();
       vector<const SandiaDecay::Nuclide *> nucstofit = select->selfAttenNuclides();
       
-      std::shared_ptr<Material> mat = select->material();
+      std::shared_ptr<const Material> mat = select->material();
       if( !mat )
         throw runtime_error( "ShieldingSourceDisplay::shieldingFitnessFcn(...)"
                              " serious logic error when fitting for mass frac");
@@ -8138,7 +8138,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       {
         passMessage( "When fitting for mass fractions of source nuclides, the "
                     "sum of the fit for mass fractions equal the sum of the "
-                    "inital values, therefore the initial sum of mass "
+                    "initial values, therefore the initial sum of mass "
                     "fractions must be greater than 0.0",
                     WarningWidget::WarningMsgHigh );
         throw runtime_error( "Error fitting mass fraction" );
@@ -8378,7 +8378,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
       ShieldingSelect *select = shieldings[i];
       if( select->fitForMassFractions() )
       {
-        std::shared_ptr<Material> usrmaterial = select->material();
+        std::shared_ptr<const Material> usrmaterial = select->material();
         
         //Find this material in massfracFitMaterials
         const Material *origMaterial = NULL;
@@ -8408,35 +8408,18 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
           throw runtime_error( "ShieldingSourceDisplay::doModelFit(): logic "
                               "error completing mass fraction fit :(" );
         
-        //        std::shared_ptr<Material> newmaterial
-        //                = m_currentFitFcn->variedMassFracMaterial( origMaterial, paramValues );
-        //        select->updateMassFractionDisplays( newmaterial );
-        
         const vector<const SandiaDecay::Nuclide *> &fitnucs
-        = m_currentFitFcn->nuclideFittingMassFracFor( origMaterial );
-        vector<double> massfracs;
+                                      = m_currentFitFcn->nuclideFittingMassFracFor( origMaterial );
         
-        //XXX
         for( const SandiaDecay::Nuclide *nuc : fitnucs )
         {
-          double frac = m_currentFitFcn->massFraction( origMaterial, nuc, paramValues );
-          massfracs.push_back( frac );
+          const double frac = m_currentFitFcn->massFraction( origMaterial, nuc, paramValues );
+          select->setMassFraction( nuc, frac );
         }//for( const SandiaDecay::Nuclide *nuc : fitnucs )
         
-        for( size_t i = 0; i < massfracs.size(); ++i )
-        {
-          select->setMassFraction( fitnucs[i], massfracs[i] );
-          //          cerr << "Setting " << fitnucs[i]->symbol << " mass fraction to "
-          //               << massfracs[i] << endl;
-        }
-        
-        select->updateMassFractionDisplays( usrmaterial );
-        
-        cerr << "ShieldingSourceDisplay::updateGuiWithModelFitResults(...)\n\tThis whole fitting for mass fractions of "
-        << "nuclides is sketch: for one thing, I dont like that the "
-        << "Material object of ShieldingSourceDisplay is mutable, and it "
-        << "appears this is necessary; for another, I feel like just "
-        << "everything to do with this is brittle, and it scares me."
+        cerr << "ShieldingSourceDisplay::updateGuiWithModelFitResults(...)\n\t"
+        << "This whole fitting for mass fractions of nuclides is sketch:"
+        << "I feel like everything to do with this is brittle, and it scares me."
         << " Please consider really cleaning this stuff up!"
         << endl << endl;
       }//if( select->fitForMassFractions() )

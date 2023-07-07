@@ -2218,7 +2218,7 @@ void MakeDrf::handleSourcesUpdates()
             }
           }else
           {
-            std::shared_ptr<Material> mat = shield->material();
+            std::shared_ptr<const Material> mat = shield->material();
             if( mat )
             {
               an = mat->massWeightedAtomicNumber();

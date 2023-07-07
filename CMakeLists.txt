@@ -119,6 +119,7 @@ option(
 
 option(USE_REMOTE_RID "Enables using remote RID tool" OFF)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
+option(USE_BATCH_TOOLS "Enables (command line for now) batch processing." OFF )
 
 if(MSVC)
   option(${PROJECT_NAME}_USE_MSVC_MultiThreadDLL "Use dynamically-link runtime library." OFF)
@@ -256,6 +257,7 @@ set(sources
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
     src/ShieldingSourceDisplay.cpp
+    src/ShieldingSourceFitCalc.cpp
     src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
     src/ReferenceLineInfo.cpp
@@ -353,6 +355,7 @@ set(headers
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h
     InterSpec/ShieldingSourceDisplay.h
+    InterSpec/ShieldingSourceFitCalc.h
     InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
     InterSpec/ReferenceLineInfo.h
@@ -534,8 +537,20 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActTxtResults.h
         InterSpec/RelEffChart.h
   )
-
 endif( USE_REL_ACT_TOOL )
+
+
+if( USE_BATCH_TOOLS )
+  list( APPEND sources
+        src/BatchCommandLine.cpp
+        src/BatchPeak.cpp
+  )
+  
+  list( APPEND headers
+        InterSpec/BatchPeak.h
+        InterSpec/BatchCommandLine.h
+  )
+endif( USE_BATCH_TOOLS )
 
 
 #Copy D3 resources into InterSpec_resources directory at compile time

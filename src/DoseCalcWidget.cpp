@@ -1816,7 +1816,7 @@ void DoseCalcWidget::updateResultForGammaSource()
       }
     }else
     {
-      std::shared_ptr<Material> mat = m_enterShieldingSelect->material();
+      std::shared_ptr<const Material> mat = m_enterShieldingSelect->material();
       if( mat )
       {
         shielding_an = mat->massWeightedAtomicNumber();
@@ -2030,7 +2030,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     {
       try
       {
-        std::shared_ptr<Material> mat;
+        std::shared_ptr<const Material> mat;
         const bool isGeneric = m_answerShieldingSelect->isGenericMaterial();
       
         if( isGeneric )

@@ -815,7 +815,7 @@ std::string MakeDrfSrcDef::toGadrasLikeSourceString() const
       }
     }else
     {
-      std::shared_ptr<Material> mat = m_shieldingSelect->material();
+      std::shared_ptr<const Material> mat = m_shieldingSelect->material();
       if( mat )
       {
         an = mat->massWeightedAtomicNumber();

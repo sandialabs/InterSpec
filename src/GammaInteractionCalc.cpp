@@ -4964,7 +4964,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   
   // We'll make a copy of materials since we may mass-fraction vary the isotopics
   vector<ShieldingInfo> materials = m_materials;
+#if( !TEST_NOT_CREATING_NEW_MATERIAL_FOR_FITTING_ISOTOPICS )
   vector<std::shared_ptr<Material> > customMaterials;
+#endif
   
   if( info )
   {
@@ -4989,6 +4991,13 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   {
     const ShieldingInfo &shield = materials[materialN];
     const Material *material = shield.material;
+    
+#define TEST_NOT_CREATING_NEW_MATERIAL_FOR_FITTING_ISOTOPICS 1
+#if( TEST_NOT_CREATING_NEW_MATERIAL_FOR_FITTING_ISOTOPICS )
+#warning "You can probably remove everything in these sections - assuming things have been tested"
+    const Material *orig_material = nullptr; //wont be needed after testing
+#endif
+    
     if( !material )
       continue;
     
@@ -5008,12 +5017,14 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     if( srcs.empty() )
       continue;
 
+#if( !TEST_NOT_CREATING_NEW_MATERIAL_FOR_FITTING_ISOTOPICS )
     if( !self_atten_srcs.empty() && hasVariableMassFraction(material) )
     {
       std::shared_ptr<Material> mat = variedMassFracMaterial(material, x );
       customMaterials.push_back( mat );
       materials[materialN].material = material = mat.get();
     }//if( hasVariableMassFraction( material ) )
+#endif
     
     DistributedSrcCalc baseCalculator;
     baseCalculator.m_geometry = m_geometry;
@@ -5154,11 +5165,40 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         const double actPerMass = src->activityPerGram() / PhysicalUnits::gram;
         double massFract = 0.0;
         
+#if( !TEST_NOT_CREATING_NEW_MATERIAL_FOR_FITTING_ISOTOPICS )
         for( const Material::NuclideFractionPair &nfp : material->nuclides )
         {
           if( nfp.first == src )
             massFract += nfp.second;
         }//for( nuclide in this material )
+#else
+        const auto mat_nuc_pos = m_nuclidesToFitMassFractionFor.find(material);
+        if( (mat_nuc_pos != end(m_nuclidesToFitMassFractionFor))
+           && std::count(begin(mat_nuc_pos->second), end(mat_nuc_pos->second), src) )
+        {
+          assert( material );
+          massFract = massFraction( material, src, x );
+        }else
+        {
+          for( const Material::NuclideFractionPair &nfp : material->nuclides )
+          {
+            if( nfp.first == src )
+              massFract += nfp.second;
+          }//for( nuclide in this material )
+        }
+        
+        //Lets test against the old way...
+        std::shared_ptr<Material> test_mat = variedMassFracMaterial(material, x );
+        assert( test_mat );
+        double test_frac = 0.0;
+        for( const Material::NuclideFractionPair &nfp : test_mat->nuclides )
+        {
+          if( nfp.first == src )
+            test_frac += nfp.second;
+        }//for( nuclide in this material )
+        
+        assert( test_frac == massFract );
+#endif
         
         actPerVol = actPerMass * massFract * material->density;
       }//if( is_trace ) / else

@@ -2252,7 +2252,7 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   
   const double brCutoff = 0.0;
   double shielding_an = 0.0, shielding_ad = 0.0, shielding_thickness = 0.0;
-  std::shared_ptr<Material> shielding_material;
+  std::shared_ptr<const Material> shielding_material;
   const bool generic_shielding = m_shieldingSelect->isGenericMaterial();
   if( generic_shielding )
   {

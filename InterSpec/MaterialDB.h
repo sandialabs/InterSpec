@@ -92,10 +92,21 @@ struct Material
   float density;  //in units of PhysicalUnits
   MaterialDefintionsSrc source;
 
-  //nuclides and their fractions by weight
+  /** Nuclides and their fractions, by weight.
+   
+   The fraction is the fraction of the entire materials density, not just the element.
+   
+   The nuclides here are independent from the elements in #elements; normally if an
+   isotope is specified here, then the other isotopes of that element will also be given,
+   and the element will not be in #elements (but if it is, then you would add the
+   mass-fractions).
+   */
   std::vector< NuclideFractionPair >  nuclides;
 
-  //elements and their fractions by weight
+  /** Elements and their fractions by weight.
+   
+   Isotopic compositions should be assumed to be natural.
+   */
   std::vector< ElementFractionPair >  elements;
 
 

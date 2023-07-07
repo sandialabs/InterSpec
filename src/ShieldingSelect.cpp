@@ -77,8 +77,6 @@ using namespace std;
 using GammaInteractionCalc::GeometryType;
 using GammaInteractionCalc::TraceActivityType;
 
-const int ShieldingSelect::sm_xmlSerializationMajorVersion = 0;
-const int ShieldingSelect::sm_xmlSerializationMinorVersion = 1;
 
 
 namespace
@@ -248,162 +246,117 @@ public:
     updateAvailableIsotopes();
   }//TraceSrcDisplay constructor
   
+  
   void serialize( rapidxml::xml_node<char> * const parent_node ) const
   {
-    rapidxml::xml_document<char> *doc = parent_node->document();
-    
-    rapidxml::xml_node<char> * const base_node
-                                      = doc->allocate_node( rapidxml::node_element, "TraceSource" );
-    parent_node->append_node( base_node );
-    
-    const char *value = m_currentNuclide ? m_currentNuclide->symbol.c_str() : "None";
-    rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, "Nuclide", value );
-    base_node->append_node( node );
-    
-    
-    value = doc->allocate_string( m_activityInput->text().toUTF8().c_str() );
-    node = doc->allocate_node( rapidxml::node_element, "DisplayActivity", value );
-    base_node->append_node( node );
-    
-    // Put the total activity as an attribute, just to make a little more human readable/checkable
-    const string total_act = PhysicalUnits::printToBestActivityUnits( m_currentTotalActivity );
-    value = doc->allocate_string( total_act.c_str() );
-    rapidxml::xml_attribute<char> *attr = doc->allocate_attribute( "TotalActivity", value );
-    node->append_attribute( attr );
-    
-    const TraceActivityType type = TraceActivityType( m_activityType->currentIndex() );
-    value = GammaInteractionCalc::to_str( type );
-    
-    node = doc->allocate_node( rapidxml::node_element, "TraceActivityType", value );
-    base_node->append_node( node );
-      
-    value = m_allowFitting->isChecked() ? "1" : "0";
-    node = doc->allocate_node( rapidxml::node_element, "AllowFitting", value );
-    base_node->append_node( node );
-    
-    if( type == TraceActivityType::ExponentialDistribution )
-    {
-      const string relax_dist = m_relaxationDistance->text().toUTF8();
-      value = doc->allocate_string( relax_dist.c_str() );
-      node = doc->allocate_node( rapidxml::node_element, "RelaxationDistance", value );
-      base_node->append_node( node );
-    }
+    const ShieldingSourceFitCalc::TraceSourceInfo trace = toTraceSourceInfo();
+    trace.serialize( parent_node );
   }//void serialize( rapidxml::xml_node<> *parent )
   
   
-  void deSerialize( const rapidxml::xml_node<char> * const trace_node )
+  void deSerialize( const rapidxml::xml_node<char> *shielding_node )
+  {
+    ShieldingSourceFitCalc::TraceSourceInfo trace;
+    trace.deSerialize( shielding_node );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    const ShieldingSourceFitCalc::TraceSourceInfo checktrace = toTraceSourceInfo();
+    
+    try
+    {
+      ShieldingSourceFitCalc::TraceSourceInfo::equalEnough( trace, checktrace );
+    }catch( std::exception &e )
+    {
+      cerr << "Failed to roundtrip TraceSrcDisplay to TraceSourceInfo: " << e.what() << endl;
+      assert( 0 );
+    }
+#endif
+  }//void deSerialize( const rapidxml::xml_node<char> *shielding_node )
+  
+  
+  ShieldingSourceFitCalc::TraceSourceInfo toTraceSourceInfo() const
+  {
+    ShieldingSourceFitCalc::TraceSourceInfo trace;
+    trace.m_type = activityType();
+    trace.m_fitActivity = allowFittingActivity();
+    trace.m_nuclide = nuclide();
+    trace.m_activity = displayActivity();
+    if( trace.m_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
+      trace.m_relaxationDistance = relaxationLength();
+    
+    return trace;
+  }//ShieldingSourceFitCalc::TraceSourceInfo toTraceSourceInfo() const
+  
+  
+  void fromTraceSourceInfo( const ShieldingSourceFitCalc::TraceSourceInfo &trace )
   {
     //Should check that the model has the nuclide, otherwise dont select a nuclide
     //For development builds should check nuclide is already marked as a trace source in the source fitting model.activityUpdated()
-    
-    if( !trace_node || !trace_node->value()
-       || rapidxml::internal::compare(trace_node->value(), trace_node->value_size(),"TraceSource", 11, true) )
-      throw runtime_error( "TraceSrcDisplay::deSerialize: called with invalid node" );
-      
-    const rapidxml::xml_node<char> *nuc_node = trace_node->first_node( "Nuclide" );
-    const rapidxml::xml_node<char> *disp_act_node = trace_node->first_node( "DisplayActivity" );
-    const rapidxml::xml_node<char> *act_type_node = trace_node->first_node( "TraceActivityType" );
-    const rapidxml::xml_node<char> *allow_fit_node = trace_node->first_node( "AllowFitting" );
-    const rapidxml::xml_node<char> *relax_node = trace_node->first_node( "RelaxationDistance" );
-    
-    if( !nuc_node || !disp_act_node || !act_type_node || !allow_fit_node )
-      throw runtime_error( "TraceSrcDisplay::deSerialize: missing node" );
-
-    const string act_type = SpecUtils::xml_value_str(act_type_node);
-    
-    TraceActivityType type = TraceActivityType::NumTraceActivityType;
-    for( TraceActivityType t = TraceActivityType(0);
-        t != TraceActivityType::NumTraceActivityType;
-        t = TraceActivityType(static_cast<int>(t) + 1) )
-    {
-      if( act_type == GammaInteractionCalc::to_str(t) )
-      {
-        type = t;
-        break;
-      }
-    }//for( loop over TraceActivityTypes )
-    
+    TraceActivityType type = trace.m_type;
     if( type == TraceActivityType::NumTraceActivityType )
     {
-      cerr << "TraceSrcDisplay::deSerialize: Trace activity type in XML ('" << act_type << "'),"
+      cerr << "TraceSrcDisplay::deSerialize: Trace activity type in XML ('" << to_str(type) << "'),"
       << " is invalid, setting to total activity." << endl;
       type = TraceActivityType::TotalActivity;
     }
     
-    // TODO: uncomment out the below after initial development
-    //if( (type == TraceActivityType::ExponentialDistribution)
-    //   && (!relax_node || !relax_node->value_size()) )
-    //{
-    //  throw runtime_error( "TraceSrcDisplay::deSerialize: missing required RelaxationDistance node" );
-    //}
-    
-    
-    
     updateAvailableIsotopes();
     updateAvailableActivityTypes();
     
-    const string nuclide = SpecUtils::xml_value_str(nuc_node);
-    
-    int nucSelectIndex = -1;
-    for( int i = 0; i < m_isoSelect->count(); ++i )
+    m_isoSelect->setCurrentIndex(0); //"Select"
+    if( trace.m_nuclide )
     {
-      const string nuctxt = m_isoSelect->itemText(i).toUTF8();
-      if( nuctxt == nuclide )
+      bool found = false;
+      for( int i = 0; !found && (i < m_isoSelect->count()); ++i )
       {
-        nucSelectIndex = i;
-        break;
+        const string nuctxt = m_isoSelect->itemText(i).toUTF8();
+        if( nuctxt == trace.m_nuclide->symbol )
+        {
+          found = true;
+          m_isoSelect->setCurrentIndex(i);
+        }
+      }//for( int i = 0; i < m_isoSelect->count(); ++i )
+      
+      if( !found )
+      {
+        cerr << "TraceSrcDisplay::deSerialize: Failed to match the expected nuclide ('"
+             << trace.m_nuclide->symbol << "') to avaiable ones."
+             << endl;
+        // Should we throw an error here or something???
       }
-    }//for( int i = 0; i < m_isoSelect->count(); ++i )
-    
-    if( nucSelectIndex < 0 )
-    {
-      m_isoSelect->setCurrentIndex(0); //"Select"
-      cerr << "TraceSrcDisplay::deSerialize: Failed to match the expected nuclide ('"
-           << nuclide << "') to avaiable ones."
-           << endl;
-      // Should we throw an error here or something???
-    }else
-    {
-      m_isoSelect->setCurrentIndex(nucSelectIndex);
-    }
+    }//if( trace.m_nuclide )
     
     handleUserNuclideChange();
     
     const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
-    string acttxt = SpecUtils::xml_value_str(disp_act_node);
-    
-    // Check activity text is actually valid, and convert to users current prefered units
-    try
-    {
-      const double activity = PhysicalUnits::stringToActivity(acttxt);
-      const bool isInBq = SpecUtils::icontains(acttxt, "bq");
-      if( isInBq == useCi )
-        acttxt = PhysicalUnits::printToBestActivityUnits( activity, 6, useCi );
-    }catch(...)
-    {
-      cerr << "TraceSrcDisplay::deSerialize: Activity from XML ('" << acttxt << "') is invalid.\n";
-      acttxt = (useCi ? "0 uCi" : "0 bq");
-      // Should we throw an error here or something???
-    }
-    
+    const string acttxt = PhysicalUnits::printToBestActivityUnits( trace.m_activity, 6, useCi );
     m_activityInput->setText( WString::fromUTF8(acttxt) );
-    
     
     m_activityType->setCurrentIndex( static_cast<int>(type) );
     
-    //if( type == TraceActivityType::ExponentialDistribution )
-    if( relax_node && relax_node->value_size() )
-      m_relaxationDistance->setValueText( SpecUtils::xml_value_str(relax_node) );
+    if( type == TraceActivityType::ExponentialDistribution )
+      m_relaxationDistance->setValueText( PhysicalUnits::printToBestLengthUnits(trace.m_relaxationDistance) );
     
-    const string do_fit_xml = SpecUtils::xml_value_str(allow_fit_node);
-    const bool allow_fit = ((do_fit_xml == "1") || SpecUtils::iequals_ascii(do_fit_xml,"true"));
-    m_allowFitting->setChecked( allow_fit );
+    m_allowFitting->setChecked( trace.m_fitActivity );
     
     updateRelaxationDisplay();
     updateTotalActivityFromDisplayActivity();
     handleUserActivityChange();
     handleUserChangeAllowFit();
-  }//void deSerialize( rapidxml::xml_node<> *trace_src_node )
+    
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    const ShieldingSourceFitCalc::TraceSourceInfo roundtrip = toTraceSourceInfo();
+    try
+    {
+      ShieldingSourceFitCalc::TraceSourceInfo::equalEnough( trace, roundtrip );
+    }catch( std::exception &e )
+    {
+      cerr << "Failed to rount-trip TraceSrcDisplay: " << e.what() << endl;
+      assert( 0 );
+    }
+#endif
+  }// void fromTraceSourceInfo( const ShieldingSourceFitCalc::TraceSourceInfo &trace )
   
   
   bool allowFittingActivity() const
@@ -679,7 +632,7 @@ public:
     if( m_parent->isGenericMaterial() )
       return; //Probably wont ever get here
     
-    std::shared_ptr<Material> material = m_parent->material();
+    std::shared_ptr<const Material> material = m_parent->material();
     
     // If less dense than 1% of nominal air, then dont allow activity per gram
     const double minDensity = 0.000013*PhysicalUnits::g/PhysicalUnits::cm3;
@@ -882,7 +835,7 @@ public:
   
   void updateForMaterialChange()
   {
-    shared_ptr<Material> mat = m_parent->material();
+    shared_ptr<const Material> mat = m_parent->material();
     if( !mat )
     {
       const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
@@ -1475,6 +1428,76 @@ bool ShieldingSelect::fitForMassFractions() const
 }//bool fitForMassFractions() const
 
 
+void ShieldingSelect::setMassFractions( std::map<const SandiaDecay::Nuclide *,double> fractions )
+{
+  if( !m_currentMaterial )
+  {
+    if( !fractions.empty() )
+      throw runtime_error( "setMassFractions: no current material" );
+    return;
+  }//if( !m_currentMaterial )
+    
+  set<const SandiaDecay::Nuclide *> used_input_nuclides;
+  map<short,double> frac_sums;
+  for( const auto &i : fractions )
+  {
+    if( !i.first )
+      throw runtime_error( "setMassFractions: null nuclide" );
+    
+    used_input_nuclides.insert( i.first );
+    
+    if( !frac_sums.count(i.first->atomicNumber) )
+      frac_sums[i.first->atomicNumber] = 0.0;
+    
+    frac_sums[i.first->atomicNumber] += i.second;
+  }//for( const auto &i : fractions )
+  
+  // If a sum of nuclides for an element is more than one, normalize it down to 1.
+  for( const auto &s : frac_sums )
+  {
+    if( s.second < 0.0 )
+      throw runtime_error( "setMassFractions: negative fraction sum" );
+    
+    if( s.second > 1.0 )
+    {
+      for( auto &i : fractions )
+      {
+        if( i.first->atomicNumber == s.first )
+          i.second /= s.second;
+      }
+    }//if( s.second > 1.0 )
+  }//for( const auto &s : frac_sums )
+  
+  
+  for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
+  {
+    const SandiaDecay::Element * const element = elDiv.first;
+    assert( element );
+    if( !element )
+      continue;
+    
+    const vector<WWidget *> &children = elDiv.second->children();
+    for( WWidget *child : children )
+    {
+      SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+      if( !cb )
+        continue;
+      
+      const SandiaDecay::Nuclide * const nuc = cb->isotope();
+      used_input_nuclides.erase( nuc );
+      const auto pos = fractions.find( nuc );
+      const bool source_nuc = (pos != end(fractions));
+      cb->setUseAsSource( source_nuc );
+      if( source_nuc )
+        cb->setMassFraction( pos->second );
+    }//for( WWidget *child : children )
+  }//for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
+  
+  if( !used_input_nuclides.empty() )
+    throw runtime_error( "ShieldingSelect::setMassFractions: didnt set all the input mass-fractions." );
+}//void setMassFractions( std::map<const SandiaDecay::Nuclide *,double> fractions )
+
+
 void ShieldingSelect::setMassFraction( const SandiaDecay::Nuclide *nuc,
                                        double fraction )
 {
@@ -1486,19 +1509,11 @@ void ShieldingSelect::setMassFraction( const SandiaDecay::Nuclide *nuc,
       if( src && (nuc == src->isotope()) )
       {
         src->setMassFraction( fraction );
-        std::shared_ptr<Material> mat = material();
-        
-        for( Material::NuclideFractionPair &nfp : mat->nuclides )
-        {
-          if( nfp.first == nuc )
-            nfp.second = fraction;
-        }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
-
+        updateSelfAttenOtherNucFractionTxt();
         return;
       }//if( nuc == src )
     }//for( WWidget *widget : isotopeDiv->children() )
   }//for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
- 
   
   throw runtime_error( "ShieldingSelect::setMassFraction(...): could not"
                        " match a source isotope with nuclide passed in." );
@@ -3098,33 +3113,12 @@ const Material *ShieldingSelect::material( const std::string &text )
 }//std::shared_ptr<Material> material( const std::string &text )
 
 
-std::shared_ptr<Material> ShieldingSelect::material()
+std::shared_ptr<const Material> ShieldingSelect::material()
 {
   if( m_isGenericMaterial )
     return nullptr;
 
-  const string text = SpecUtils::trim_copy( m_materialEdit->text().toUTF8() );
-  if( m_currentMaterial && (text == m_currentMaterialDescrip) )
-    return m_currentMaterial;
-
-  if( text.empty() )
-  {
-    m_currentMaterial.reset();
-    m_currentMaterialDescrip = "";
-    return m_currentMaterial;
-  }
-  
-  const Material *mat = material( text );
-  
-  if( mat )
-  {
-    m_currentMaterialDescrip = text;
-    m_currentMaterial = std::make_shared<Material>( *mat );
-  }else
-  {
-    m_currentMaterial.reset();
-    m_currentMaterialDescrip = "";
-  }
+  updateMaterialFromUserInputTxt();
 
   return m_currentMaterial;
 }//const Material *material() const;
@@ -3301,37 +3295,51 @@ void ShieldingSelect::sourceRemovedFromModel( const SandiaDecay::Nuclide *nuc )
   
   updateIfMassFractionCanFit();
   setTraceSourceMenuItemStatus();
-  
-  //call updateMassFractionDisplays() to update the "Assuming XX% other U isos"
-  updateMassFractionDisplays( m_currentMaterial );
+  updateSelfAttenOtherNucFractionTxt();
 }//void sourceRemovedFromModel( const std::string &symbol )
 
 
-vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFractions()
+vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFractions() const
 {
   vector< ShieldingSelect::NucMasFrac > answer;
   
   const vector<const SandiaDecay::Nuclide *> nucs = selfAttenNuclides();
-  std::shared_ptr<const Material> mat = material();
+  std::shared_ptr<const Material> mat = m_currentMaterial;
   
   if( !mat || nucs.empty() )
     return answer;
   
-  for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+  for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
   {
-    if( std::find( nucs.begin(), nucs.end(), nfp.first ) != nucs.end() )
-      answer.push_back( nfp );
-  }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+    const SandiaDecay::Element * const element = elDiv.first;
+    assert( element );
+    if( !element )
+      continue;
+    
+    const double elementFraction = massFractionOfElementInMaterial( element, mat );
+    
+    const vector<WWidget *> &children = elDiv.second->children();
+    for( WWidget *child : children )
+    {
+      SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+      if( !cb || !cb->useAsSource() )
+        continue;
+
+      const SandiaDecay::Nuclide *iso = cb->isotope();
+      if( iso )
+        answer.emplace_back( iso, elementFraction * cb->massFraction() );
+    }//for( WWidget *child : children )
+  }//for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
   
   return answer;
 }//std::vector< NucMasFrac > sourceNuclideMassFractions()
 
 
-vector<const SandiaDecay::Nuclide *> ShieldingSelect::selfAttenNuclides()
+vector<const SandiaDecay::Nuclide *> ShieldingSelect::selfAttenNuclides() const
 {
   set<const SandiaDecay::Nuclide *> answer;
 
-  std::shared_ptr<const Material> mat = material();
+  std::shared_ptr<const Material> mat = m_currentMaterial;
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
 
   if( !mat || !db )
@@ -3374,81 +3382,96 @@ vector<const SandiaDecay::Nuclide *> ShieldingSelect::selfAttenNuclides()
 }//std::vector<const SandiaDecay::Nuclide *> selfAttenNuclides() const
 
 
-double ShieldingSelect::massFractionOfElement( const SandiaDecay::Nuclide *iso,
-                                               std::shared_ptr<const Material> mat )
+double ShieldingSelect::nuclidesFractionOfElementInMaterial( const SandiaDecay::Nuclide * const iso,
+                                                        const std::shared_ptr<const Material> &mat )
 {
-  if( !mat )
+  if( !mat || !iso )
     return 0.0;
-
-  //Make sure the material has the isotope reequested to add
-  const vector< Material::NuclideFractionPair >  &nuclides = mat->nuclides;
-  const vector< Material::ElementFractionPair > &elements = mat->elements;
 
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-
-  if( !db || !iso )
-    return 0.0;
-
   const SandiaDecay::Element *element = db->element( iso->atomicNumber );
+  
+  //Make sure the material has the isotope requested to add
+  const vector< Material::NuclideFractionPair > &nuclides = mat->nuclides;
+  const vector< Material::ElementFractionPair > &elements = mat->elements;
 
-  double massFracFromNuclide = 0.0, massFracOfElement = 0.0, sumMassFrac = 0.0;
+  double nuclidesMassFraction = 0.0;
+  double elementsMassFraction = 0.0;
+  
   bool hasNuclide = false, hasElement = false;
   for( const Material::ElementFractionPair &efp : elements )
   {
     if( efp.first == element )
     {
       hasElement = true;
-      massFracOfElement += efp.second;
+      elementsMassFraction += efp.second;
     }//if( efp.first == element )
   }//for( const Material::ElementFractionPair &efp : elements )
 
   for( const Material::NuclideFractionPair &efp : nuclides )
   {
     if( efp.first->atomicNumber == iso->atomicNumber )
-      sumMassFrac += efp.second;
+      elementsMassFraction += efp.second;
 
     if( efp.first == iso )
     {
       hasNuclide = true;
-      massFracFromNuclide += efp.second;
+      nuclidesMassFraction += efp.second;
     }//if( efp.first == iso )
   }//for( const Material::NuclideFractionPair &efp : nuclides )
 
   if( !hasNuclide && !hasElement )
-    throw runtime_error( "Material Doesnt Contain Isotope" );
+    throw runtime_error( "Material doesnt Contain Isotope" );
 
   if( hasElement && !hasNuclide )
   {
-    sumMassFrac += 1.0;
+    bool hasNaturalAbundance = false;
     const vector<SandiaDecay::NuclideAbundancePair> &isos = element->isotopes;
 
-    bool hasNaturalAbundance = false;
     for( const SandiaDecay::NuclideAbundancePair &i : isos )
     {
-      hasNaturalAbundance |= (i.abundance!=0.0);
+      hasNaturalAbundance |= (i.abundance != 0.0);
       if( i.nuclide == iso )
-        massFracFromNuclide += i.abundance;
+        nuclidesMassFraction += i.abundance * elementsMassFraction;
     }
 
+    // If no natural abundance, then assign to 
     if( !hasNaturalAbundance )
-    {
-      for( const SandiaDecay::NuclideAbundancePair &i : isos )
-      {
-        if( i.nuclide == iso )
-          massFracFromNuclide += 1.0/isos.size();
-      }
-    }//if( !hasNaturalAbundance )
-
-
+      nuclidesMassFraction = 1.0 / isos.size();
   }//if( hasElement )
 
-
-  if( sumMassFrac == 0.0 )
+  if( elementsMassFraction == 0.0 )
     return 0.0;
 
-  return massFracFromNuclide/sumMassFrac;
-}//double massFractionOfElement( const SandiaDecay::Nuclide *iso )
+  return nuclidesMassFraction / elementsMassFraction;
+}//double massFractionOfElementInMaterial( const SandiaDecay::Nuclide *iso )
 
+
+double ShieldingSelect::massFractionOfElementInMaterial( const SandiaDecay::Element * const element,
+                                              const std::shared_ptr<const Material> &mat )
+
+{
+  if( !mat || !element )
+    return 0.0;
+  
+  const vector< Material::NuclideFractionPair > &nuclides = mat->nuclides;
+  const vector< Material::ElementFractionPair > &elements = mat->elements;
+  
+  double elementsMassFraction = 0.0;
+  for( const Material::ElementFractionPair &efp : elements )
+  {
+    if( efp.first == element )
+      elementsMassFraction += efp.second;
+  }//for( const Material::ElementFractionPair &efp : elements )
+
+  for( const Material::NuclideFractionPair &efp : nuclides )
+  {
+    if( efp.first->atomicNumber == element->atomicNumber )
+      elementsMassFraction += efp.second;
+  }//for( const Material::NuclideFractionPair &efp : nuclides )
+
+  return elementsMassFraction;
+}//double massFractionOfElementInMaterial( const SandiaDecay::Nuclide *iso )
 
 
 void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
@@ -3471,7 +3494,7 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   if( !m_asSourceCBs )
     return;
 
-  std::shared_ptr<const Material> mat = material();
+  std::shared_ptr<const Material> mat = m_currentMaterial;
 
   if( !mat )
     return;
@@ -3497,7 +3520,7 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   double massFrac = 0.0;
   try
   {
-    massFrac = massFractionOfElement( iso, mat );
+    massFrac = nuclidesFractionOfElementInMaterial( iso, mat );
   }catch(...)
   {
     return;
@@ -3553,25 +3576,16 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
 }//void modelNuclideAdded( const std::string &symol )
 
 
-void ShieldingSelect::handleIsotopicChange( float fraction, const SandiaDecay::Nuclide *nuc )
+void ShieldingSelect::handleIsotopicChange( const float input_fraction,
+                                           const SandiaDecay::Nuclide * const nuc )
 {
-/*
- *handleIsotopicChange(...): This functions is a bit long-winded, and should
- *  probably be refactored or re-gone-through at some point.  Its fairly
- *  computationally inefiecient (_lots_ of loops), but I'm _guessing_ that
- *  this function still isnt the bottleneck in changing mass fractions, but
- *  instead its probably the bandwidth and user rendering, but I still havent
- *  benchmarked this funtion.
-*/
-
+  if( !nuc )
+    throw runtime_error( "ShieldingSelect::handleIsotopicChange: invalid nuclide." );
   
+  // Clamp the fraction to be between 0, and 1
+  const float fraction = std::min( std::max( input_fraction, 0.0f ), 1.0f );
   
-  if( fraction < 0.0f )
-    fraction = 0.0f;
-  else if( fraction > 1.0f )
-    fraction = 1.0f;
-
-  std::shared_ptr<Material> mat = material();
+  std::shared_ptr<const Material> mat = m_currentMaterial;
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
 
   if( !mat || !nuc || !db )
@@ -3581,310 +3595,60 @@ void ShieldingSelect::handleIsotopicChange( float fraction, const SandiaDecay::N
 
   ElementToNuclideMap::iterator isos = m_sourceIsotopes.find(element);
   if( isos == m_sourceIsotopes.end() )
-  {
-    cerr << "\nShieldingSelect::handleIsotopicChange(...)\n\tSerious programming error I will ignore"  << endl;
-    return;
-  }//if( isos == m_sourceIsotopes.end() )
+    throw runtime_error( "Nuclide '" + nuc->symbol + "' is not in material '" + mat->name + "'" );
 
-  vector< Material::NuclideFractionPair > &nuclides = mat->nuclides;
-  vector< Material::ElementFractionPair > &elements = mat->elements;
-
-  //First, go through and make sure that the material specifiecs the nuclide in
-  //  its formula.  If not, make sure its element is specified in the formula,
-  //  and then change from specifieng the the element to each of its individual
-  //  isotopes, according to its natural composition - we will insert all
-  //  isotopes into the 'nuclides' vector, even if its mass fraction will be 0.0
-  bool hasIsotope = false, hasElement = false;
-  for( const Material::NuclideFractionPair &nfp : nuclides )
-    hasIsotope |= (nfp.first==nuc);
-  for( const Material::ElementFractionPair &efp : elements )
-    hasElement |= (efp.first==element);
-
-  if( !hasIsotope && !hasElement )
-    throw runtime_error( "ShieldingSelect::handleIsotopicChange(...): ran into"
-                         " unexpected error" );
-
-  //If the material has the element coorespoding to 'nuc', we'll transfer all
-  //  that material to isotopes, so we can vary the mass fractions of the
-  //  isotopes - and stuff
-  if( hasElement )
-  {
-    double elMassFrac = 0.0;
-    vector< Material::ElementFractionPair > newElements;
-    for( const Material::ElementFractionPair &efp : elements )
-    {
-      if(efp.first==element)
-        elMassFrac += efp.second;
-      else
-        newElements.push_back( efp );
-    }//for(...)
-
-    newElements.swap( elements );
-
-    //Now get the natural abundance of the isotopes, and for all other isotopes
-    //  set there mass fraction as 0.0
-    typedef map<const SandiaDecay::Nuclide *, double> NucToAbundanceMap;
-    NucToAbundanceMap nucAbunMap;
-    const vector<const SandiaDecay::Nuclide *> nucs = db->nuclides( element );
-    for( const SandiaDecay::Nuclide *n : nucs )
-      nucAbunMap[n] = 0.0;
-
-    bool hasNaturalAbundance = false;
-    for( const SandiaDecay::NuclideAbundancePair &nap : element->isotopes )
-    {
-      hasNaturalAbundance |= (nap.abundance!=0.0);
-      nucAbunMap[nap.nuclide] = nap.abundance*elMassFrac;
-    }
-
-    //If we didnt have a natural abundance, then just assume all isotopes are
-    //  equally probable
-    if( !hasNaturalAbundance )
-    {
-      const vector<const SandiaDecay::Nuclide *> nucs = db->nuclides( element );
-
-      for( const SandiaDecay::Nuclide *nuc : nucs )
-        nucAbunMap[nuc] = elMassFrac / nucs.size();
-    }//if( !hasNaturalAbundance )
-
-    //Now add to 'nuclides' all the isotopes for element
-    for( const NucToAbundanceMap::value_type &vt : nucAbunMap )
-      nuclides.push_back( make_pair(vt.first, static_cast<float>(vt.second)) );
-
-    //Now we'll go through and consolidate all same isotopes.
-    //  We could probably skip this, but I'll leave in - for the edge case
-    //  were a user defines a material with both the element, and one or more
-    //  of its isotopes.
-    typedef map<const SandiaDecay::Nuclide *,float> NucToCoefMap;
-    NucToCoefMap nucCoefs;
-    for( const Material::NuclideFractionPair &nfp : nuclides )
-    {
-      NucToCoefMap::iterator pos = nucCoefs.find(nfp.first);
-      if( pos == nucCoefs.end() )
-        nucCoefs[nfp.first] = nfp.second;
-      else
-        pos->second += nfp.second;
-    }//for( const Material::NuclideFractionPair &nfp : nuclides )
-
-    if( nucCoefs.size() != nuclides.size() )
-    {
-      nuclides.clear();
-      for( const NucToCoefMap::value_type &vt : nucCoefs )
-      {
-        nuclides.push_back( make_pair(vt.first,vt.second) );
-      }
-    }//if( nucCoefs.size() != nuclides.size() )
-  }//if( hasElement )
-
-  //Now that were here, we are garunteed that 'nuc' is somewhere in 'nuclides'
-  bool nucIsSrc = false;
-  set<const SandiaDecay::Nuclide *> srcNucs, visibleNucs, allNucs;
-  for( WWidget *child : isos->second->children() )
+  bool setNucFraction = false, useNuclideAsSrc = false;
+  double total_other_in_el = 0.0;
+  const vector<WWidget *> children = isos->second->children();
+  for( WWidget *child : children )
   {
     SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
-    if( !cb )
-      continue;
-
-    if( cb->isotope() )
-      visibleNucs.insert( cb->isotope() );
-
-    if( cb->useAsSource() && cb->isotope() )
-      srcNucs.insert( cb->isotope() );
-    if( cb->isotope() == nuc )
-      nucIsSrc |= cb->useAsSource();
-  }//for( WWidget *child : children )
-
-
-  double elMassFrac = 0.0, origNucFrac = 0.0,
-      srcNucsFrac = 0.0, visibleNucFrac = 0.0;
-  for( const Material::NuclideFractionPair &nfp : nuclides )
-  {
-    if( nfp.first && (nfp.first->atomicNumber==nuc->atomicNumber) )
-      allNucs.insert( nfp.first );
-
-    if( nfp.first==nuc )
-      origNucFrac += nfp.second;
-    if( nfp.first && (nfp.first->atomicNumber==nuc->atomicNumber) )
-      elMassFrac += nfp.second;
-    if( srcNucs.count(nfp.first) )
-      srcNucsFrac += nfp.second;
-    if( visibleNucs.count(nfp.first) )
-      visibleNucFrac += nfp.second;
-  }//for( const Material::NuclideFractionPair &nfp : nuclides )
-
-  origNucFrac /= elMassFrac;
-  srcNucsFrac /= elMassFrac;
-  visibleNucFrac /= elMassFrac;
-
-  const double nonVisibleFrac = 1.0 - visibleNucFrac;
-  const double nonSrcFrac = 1.0 - srcNucsFrac - (nucIsSrc ? 0.0 : origNucFrac);
-  const double fracDiff = fraction - origNucFrac;
-
-  if( fabs(origNucFrac-fraction) < 0.000001 )
-  {
-    updateMassFractionDisplays( mat );
-    return;
-  }//if( fabs(origNucFrac-fraction) < 0.00001 )
-
-  //Alright, were gonna go through a bunch of logic so that when the user
-  //  changes mass fractions, the other mass fractions adjust roughly as I would
-  //  like them to, and remain consistent (e.g. total mass fraction is 1.0)
-  if( (fracDiff < 0.0) && fabs(nonVisibleFrac)>0.0001 )
-  {
-    //User lowered mass fraction, and there are some isotopes for this element
-    //  which are not visible to the user (e.g. they are not fitting for these
-    //  isotopes, at all).
-    const double nonVisibleSF = 1.0 - fracDiff/nonVisibleFrac;
-
-    for( Material::NuclideFractionPair &nfp : nuclides )
+    if( cb )
     {
-      if( nfp.first==nuc )
-        nfp.second = elMassFrac*fraction;
-      else if( !visibleNucs.count(nfp.first)
-               && nfp.first && (nfp.first->atomicNumber==nuc->atomicNumber) )
-        nfp.second *= nonVisibleSF;
-    }//for( const Material::NuclideFractionPair &nfp : nuclides )
-  }else if( fracDiff < 0.0 && allNucs.size()!=visibleNucs.size() )
-  {
-    //User lowered mass fraction, but there is some isotopes for this element
-    //  that are not visible, but have (at least near) zero contibution to the
-    //  element.
-    if( visibleNucs.size() > allNucs.size() )
-      throw runtime_error( "ShieldingSelect::handleIsotopicChange():"
-                           " Invalid material nuclide state." );
-
-    const size_t nNonVisible = allNucs.size() - visibleNucs.size();
-    const double nonVisibleFrac = -fracDiff/nNonVisible;
-
-    for( Material::NuclideFractionPair &nfp : nuclides )
-    {
-      if( nfp.first==nuc )
-        nfp.second = elMassFrac*fraction;
-      else if( !visibleNucs.count(nfp.first)
-               && nfp.first && (nfp.first->atomicNumber==nuc->atomicNumber) )
-        nfp.second += elMassFrac*nonVisibleFrac;
-    }//for( const Material::NuclideFractionPair &nfp : nuclides )
-  }else if( fracDiff < 0.0 )
-  {
-    //User lowered mass fraction, and all isotopes for this element are visible
-    double origFrac = 1.0 - srcNucsFrac;
-    if( nucIsSrc )
-      origFrac -= origNucFrac;
-    const double wantedFrac = 1.0 - fraction;
-
-    for( Material::NuclideFractionPair &nfp : nuclides )
-    {
-      if( nfp.first==nuc )
-        nfp.second = elMassFrac*fraction;
-      else if( srcNucs.count(nfp.first) )
-        nfp.second *= wantedFrac/origFrac;
-    }//for( const Material::NuclideFractionPair &nfp : nuclides )
-  }else if( fracDiff < nonVisibleFrac )
-  {
-    //User increased mass fraction, but small enough so we can take this from
-    //  the isotopes not visible to the user
-    const double nonVisibleSF = (nonVisibleFrac - fracDiff) / nonVisibleFrac;
-
-    for( Material::NuclideFractionPair &nfp : nuclides )
-    {
-      if( nfp.first==nuc )
-        nfp.second = elMassFrac*fraction;
-      else if( !visibleNucs.count(nfp.first)
-               && nfp.first && (nfp.first->atomicNumber==nuc->atomicNumber) )
-        nfp.second *= nonVisibleSF;
-    }//for( const Material::NuclideFractionPair &nfp : nuclides )
-  }else if( fracDiff < (nonVisibleFrac+nonSrcFrac) )
-  {
-    //User increased mass fraction, but enough so we have to both take this from
-    //  the isotopes not visible, as well as the non-source visible isotopes
-//    const double diffNeeded = fracDiff - nonVisibleFrac;
-//    const double srcFracMult = (nonSrcFrac - diffNeeded) / nonSrcFrac;
-
-    double nonNucSrcFrac = 0.0;
-    for( Material::NuclideFractionPair &nfp : nuclides )
-    {
-      if( nfp.first!=nuc && !srcNucs.count(nfp.first)
-          && (nfp.first->atomicNumber==nuc->atomicNumber) )
-        nonNucSrcFrac += nfp.second;
-      else if( nfp.first==nuc )
-        nonNucSrcFrac -= (elMassFrac*fraction-nfp.second);
-    }//for( Material::NuclideFractionPair &nfp : nuclides )
-    
-    //nonNucSrcFrac may be slightly below zero here - it might just be due to
-    //  float roundoff, but I'm not entirely sure
-    
-    for( Material::NuclideFractionPair &nfp : nuclides )
-    {
-      if( nfp.first==nuc )
-        nfp.second = elMassFrac*fraction;
-      else if( !srcNucs.count(nfp.first) && nfp.second!=0.0
-               && nfp.first && (nfp.first->atomicNumber==nuc->atomicNumber) )
+      const SandiaDecay::Nuclide * const this_nuc = cb->isotope();
+      if( this_nuc == nuc )
       {
-        if( nonNucSrcFrac > 0.0 )
-        {
-          cerr << "ShieldingSelect::handleIsotopicChange(...): I dont thing the mass fraction statment is corect!" << endl;
-          nfp.second = elMassFrac*(1.0-fraction)*nfp.second/nonNucSrcFrac;
-        }else
-          nfp.second = 0.0;
-      }else if( !visibleNucs.count(nfp.first)
-               && nfp.first && (nfp.first->atomicNumber==nuc->atomicNumber) )
-        nfp.second = 0.0;
-    }//for( const Material::NuclideFractionPair &nfp : nuclides )
-  }else
-  {
-    //User increased mass fraction, but enough so we have to both take this from
-    //  the isotopes not visible, as well as the non-source visible isotopes,
-    //  as well as the other source isotopes
-    const double diffNeeded = fracDiff - nonVisibleFrac - nonSrcFrac;
-
-    double otherSrcFrac = srcNucsFrac;
-    if( nucIsSrc )
-      otherSrcFrac -= origNucFrac;
-
-    const double srcFracMult = (otherSrcFrac - diffNeeded) / otherSrcFrac;
-
-    for( Material::NuclideFractionPair &nfp : nuclides )
-    {
-      if( nfp.first==nuc )
-        nfp.second = elMassFrac*fraction;
-      else if( srcNucs.count(nfp.first) )
-        nfp.second *= srcFracMult;
-      else if( !srcNucs.count(nfp.first)
-               && nfp.first && (nfp.first->atomicNumber==nuc->atomicNumber) )
-        nfp.second = 0.0;
-      else if( !visibleNucs.count(nfp.first)
-               && nfp.first && (nfp.first->atomicNumber==nuc->atomicNumber) )
-        nfp.second = 0.0;
-    }//for( const Material::NuclideFractionPair &nfp : nuclides )
-  }//if() / else to figure out how to deal with mass fraction change.
-
-
-/*
-  //Code to test that the total mass fraction still adds up to 1.0.
-  //  I have noticed a _small_ amount of leaking (ex 1.00366 instead of 1.0).
-  double totalMassFrac = 0.0;
-  for( Material::NuclideFractionPair &nfp : nuclides )
-    totalMassFrac += nfp.second;
-  for( const Material::ElementFractionPair &efp : elements )
-    totalMassFrac += efp.second;
-  cerr << "totalMassFrac=" << totalMassFrac << endl;
-*/
-
-  updateMassFractionDisplays( mat );
+        setNucFraction = true;
+        useNuclideAsSrc = cb->useAsSource();
+        cb->setMassFraction( fraction );
+      }else if( cb->useAsSource() )
+      {
+        total_other_in_el += cb->massFraction();
+      }
+    }//if( cb && cb->useAsSource() )
+  }//
   
-  //Need to make sure mass fraction for the element passed in is at most 1.0
+  assert( setNucFraction );
+  if( !setNucFraction )
+    throw std::logic_error( "Failed to set mass fraction for " + nuc->symbol + " - shouldnt have happened" );
+  
+  if( !useNuclideAsSrc )
+    return;
+  
+  const double total_in_el = fraction + total_other_in_el;
+  if( total_in_el >= 1.0 )
+  {
+    const double multiple = (fraction == 1.0) ? 0.0 : ((1.0 - fraction) / total_other_in_el);
+    for( WWidget *child : children )
+    {
+      SourceCheckbox * const cb = dynamic_cast<SourceCheckbox *>( child );
+      if( cb && cb->useAsSource() )
+      {
+        const SandiaDecay::Nuclide * const this_nuc = cb->isotope();
+        if( this_nuc != nuc )
+          cb->setMassFraction( multiple * cb->massFraction() );
+      }//if( cb && cb->useAsSource() )
+    }//
+  }//if( total_in_el >= 1.0 )
+  
+  updateSelfAttenOtherNucFractionTxt();
 
   materialModified().emit( this );
 }//void handleIsotopicChange( double fraction, const SandiaDecay::Nuclide *nuc )
 
 
-
-void ShieldingSelect::updateMassFractionDisplays( std::shared_ptr<const Material> mat )
+void ShieldingSelect::updateSelfAttenOtherNucFractionTxt()
 {
-  if( !mat )
-    return;
-
-  //Lets go through and update the values displayed to the user of the
-  //  isotopics
   for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
   {
     int nisos = 0;
@@ -3895,41 +3659,26 @@ void ShieldingSelect::updateMassFractionDisplays( std::shared_ptr<const Material
     for( WWidget *child : children )
     {
       SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
-      if( !cb )
+      if( cb )
+      {
+        if( cb->useAsSource() )
+        {
+          ++nisos;
+          frac_accounted_for += cb->massFraction();
+        }
+      }else
       {
         if( child->hasStyleClass( "MassFracNoFit" ) )
           otherfractxt = dynamic_cast<WText *>( child );
-        continue;
-      }//if( !cb )
-
-      double massFrac = 0.0;
-      try
-      {
-        massFrac = massFractionOfElement( cb->isotope(), mat );
-        ++nisos;
-      }catch(...)  //hopefully this never happens
-      {
-        passMessage( "There has been an unexpected internal error in"
-                     " dealing with the material change, you may want to"
-                     " try re-selecting the material, as well as checking the"
-                     " calculation log before trusting the results.",
-                     WarningWidget::WarningMsgHigh );
-        cerr << endl << "ShieldingSelect::updateMassFractionDisplays(...)\n\tSerious programming error here"
-             << endl << endl;
-      }//try/catch
-
-      frac_accounted_for += massFrac;
-      
-      if( fabs(cb->massFraction()-massFrac) > 0.000001 )
-        cb->setMassFraction( massFrac );
+      }//if( !cb ) / else
     }//for( WWidget *child : children )
     
     if( !nisos || (otherfractxt != children.back()) )
     {
       if( otherfractxt )
         delete otherfractxt;
-      otherfractxt = 0;
-    }
+      otherfractxt = nullptr;
+    }//if( not using any source isotopes OR text isnt at bottom of div )
     
     if( nisos && !otherfractxt )
     {
@@ -3937,7 +3686,7 @@ void ShieldingSelect::updateMassFractionDisplays( std::shared_ptr<const Material
       otherfractxt->addStyleClass( "MassFracNoFit" );
       otherfractxt->setToolTip( "If mass fractions are fit for, their fractional"
                                 " sum will remain constant in the fit." );
-    }
+    }//if( we have source isotopes, but no text )
     
     if( otherfractxt )
     {
@@ -3946,7 +3695,7 @@ void ShieldingSelect::updateMassFractionDisplays( std::shared_ptr<const Material
         //Pretty much all the mass of this element is accounted for, so dont
         //  display this text
         delete otherfractxt;
-        otherfractxt = 0;
+        otherfractxt = nullptr;
       }else
       {
         char buffer[128];
@@ -3960,9 +3709,52 @@ void ShieldingSelect::updateMassFractionDisplays( std::shared_ptr<const Material
       }
     }//if( otherfractxt )
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
+}//void updateSelfAttenOtherNucFractionTxt();
+
+
+void ShieldingSelect::setMassFractionDisplaysToMaterial( std::shared_ptr<const Material> mat )
+{
+  if( !mat )
+    return;
+
+  //Lets go through and update the values displayed to the user of the
+  //  isotopics
+  for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
+  {
+    double frac_accounted_for = 0.0;
+    
+    const vector<WWidget *> children = vt.second->children();
+    for( WWidget *child : children )
+    {
+      SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+      if( !cb )
+        continue;
+
+      double massFrac = 0.0;
+      try
+      {
+        massFrac = nuclidesFractionOfElementInMaterial( cb->isotope(), mat ); //
+      }catch(...)  //hopefully this never happens
+      {
+        passMessage( "There has been an unexpected internal error in"
+                     " dealing with the material change, you may want to"
+                     " try re-selecting the material, as well as checking the"
+                     " calculation log before trusting the results.",
+                     WarningWidget::WarningMsgHigh );
+        cerr << endl << "ShieldingSelect::setMassFractionDisplaysToMaterial(...)\n\tSerious programming error here"
+             << endl << endl;
+      }//try/catch
+
+      frac_accounted_for += massFrac;
+      
+      if( fabs(cb->massFraction() - massFrac) > 0.000001 )
+        cb->setMassFraction( massFrac );
+    }//for( WWidget *child : children )
+  }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
   
   updateIfMassFractionCanFit();
-}//void updateMassFractionDisplays()
+  updateSelfAttenOtherNucFractionTxt();
+}//void setMassFractionDisplaysToMaterial()
 
 
 void ShieldingSelect::removeUncertFromDistanceEdit( Wt::WLineEdit *edit )
@@ -4181,13 +3973,55 @@ void ShieldingSelect::displayInputsForCurrentGeometry()
 }//void displayInputsForCurrentGeometry()
 
 
+void ShieldingSelect::updateMaterialFromUserInputTxt()
+{
+  if( m_isGenericMaterial )
+  {
+    if( m_currentMaterial || !m_currentMaterialDescrip.empty() )
+    {
+      m_currentMaterial.reset();
+      m_currentMaterialDescrip = "";
+    }
+    
+    return;
+  }//if( m_isGenericMaterial )
+  
+  const string text = SpecUtils::trim_copy( m_materialEdit->text().toUTF8() );
+  if( m_currentMaterial && (text == m_currentMaterialDescrip) )
+    return m_currentMaterial;
+
+  if( text.empty() )
+  {
+    if( m_currentMaterial || !m_currentMaterialDescrip.empty() )
+    {
+      m_currentMaterial.reset();
+      m_currentMaterialDescrip = "";
+    }
+    
+    return;
+  }//if( text.empty() )
+  
+  const Material *mat = material( text );
+  
+  if( mat )
+  {
+    m_currentMaterialDescrip = text;
+    m_currentMaterial = std::make_shared<Material>( *mat );
+  }else
+  {
+    m_currentMaterial.reset();
+    m_currentMaterialDescrip = "";
+  }
+}//void updateMaterialFromUserInputTxt()
+
+
 void ShieldingSelect::handleMaterialChange()
 {
   typedef pair<const SandiaDecay::Element *,float> ElementFrac;
   typedef pair<const SandiaDecay::Nuclide *,float> NuclideFrac;
 
-  std::shared_ptr<Material> newMaterial;
-  std::shared_ptr<Material> previousMaterial = m_currentMaterial;
+  std::shared_ptr<const Material> newMaterial;
+  std::shared_ptr<const Material> previousMaterial = m_currentMaterial;
   
   displayInputsForCurrentGeometry();
   setTraceSourceMenuItemStatus();
@@ -4216,14 +4050,15 @@ void ShieldingSelect::handleMaterialChange()
     m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/shield.png") );
     m_materialEdit->enable();
     
-    
     string tooltip = "nothing";
     char summary[128];
     summary[0] = '\0';
+   
+    updateMaterialFromUserInputTxt();
     
-    newMaterial = material();
+    newMaterial = m_currentMaterial;
     
-    if( !!newMaterial )
+    if( newMaterial )
     {
 //      if( SpecUtils::iequals_ascii(newMaterial->name, "void") )
 //      {
@@ -4346,7 +4181,7 @@ void ShieldingSelect::handleMaterialChange()
   //Now we need to update the activities for any isotopes that are
   if( !!newMaterial && m_asSourceCBs && (previousMaterial == newMaterial) )
   {
-    updateMassFractionDisplays( newMaterial );
+    setMassFractionDisplaysToMaterial( newMaterial );
 
     for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
     {
@@ -4408,11 +4243,11 @@ void ShieldingSelect::handleMaterialChange()
       double massFrac = 0.0;
       try
       {
-        massFrac = massFractionOfElement( cb->isotope(), newMaterial );
+        massFrac = nuclidesFractionOfElementInMaterial( cb->isotope(), newMaterial );
       }catch(...)  //hopefully this never happens
       {
         stringstream msg;
-        msg << "Failed to get massFractionOfElement " << cb->isotope()->symbol
+        msg << "Failed to get nuclidesFractionOfElementInMaterial " << cb->isotope()->symbol
             << " from " << newMaterial->name;
         log_developer_error( __func__, msg.str().c_str() );
       }//try/catch
@@ -4429,11 +4264,9 @@ void ShieldingSelect::handleMaterialChange()
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
 #endif
   
-  // I dont think this next call to #updateMassFractionDisplays is technically necassary,
+  // I dont think this next call to #setMassFractionDisplaysToMaterial is technically necassary,
   //  but we'll leave it in as a "JIC"
-  //cerr << "\nShieldingSelect::handleMaterialChange()\n\tShould remove this call to "
-  //     << "updateMassFractionDisplays(...) its verified the developer checks always pass\n" << endl;
-  updateMassFractionDisplays( newMaterial );
+  setMassFractionDisplaysToMaterial( newMaterial );
 
   
   if( previousMaterial != newMaterial )
@@ -4488,34 +4321,349 @@ void ShieldingSelect::handleUserChangeForUndoRedo()
 }//void handleUserChangeForUndoRedo()
 
 
+ShieldingSourceFitCalc::ShieldingInfo ShieldingSelect::toShieldingInfo() const
+{
+  ShieldingSourceFitCalc::ShieldingInfo answer;
+  
+  answer.m_isGenericMaterial = m_isGenericMaterial;
+  answer.m_forFitting = m_forFitting;
+  
+  if( m_isGenericMaterial )
+  {
+    answer.m_geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+    
+    answer.m_dimensions[0] = atomicNumber();
+    answer.m_dimensions[1] = arealDensity();
+
+    if( m_forFitting )
+    {
+      answer.m_fitDimensions[0] = fitAtomicNumber();
+      answer.m_fitDimensions[1] = fitArealDensity();
+    }
+    
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    answer.m_truthDimensions[0] = truthAN;
+    answer.m_truthDimensionsTolerances[0] = truthANTolerance;
+    answer.m_truthDimensions[1] = truthAD;
+    answer.m_truthDimensionsTolerances[1] = truthADTolerance;
+#endif
+  }else
+  {
+    answer.m_geometry = m_geometry;
+    answer.m_material = m_currentMaterial;
+    
+    // Note: not calling `bool ShieldingSelect::fitThickness() const`, and similar, below, because
+    //       some of these check if the checkbox is visible as well, which wont be the case if
+    //       we are doing the sanity check of round tripping without the widget in the DOM
+    switch( m_geometry )
+    {
+      case GammaInteractionCalc::GeometryType::Spherical:
+        answer.m_dimensions[0] = thickness();
+        if( m_forFitting )
+          answer.m_fitDimensions[0] = (m_fitThicknessCB && m_fitThicknessCB->isChecked());  //fitThickness();
+        break;
+        
+      case GammaInteractionCalc::GeometryType::CylinderEndOn:
+      case GammaInteractionCalc::GeometryType::CylinderSideOn:
+        answer.m_dimensions[0] = cylindricalRadiusThickness();
+        answer.m_dimensions[1] = cylindricalLengthThickness();
+        if( m_forFitting )
+        {
+          answer.m_fitDimensions[0] = (m_fitCylRadiusCB && m_fitCylRadiusCB->isChecked()); //fitCylindricalRadiusThickness();
+          answer.m_fitDimensions[1] = (m_fitCylLengthCB && m_fitCylLengthCB->isChecked()); //fitCylindricalLengthThickness();
+        }
+        break;
+        
+      case GammaInteractionCalc::GeometryType::Rectangular:
+        answer.m_dimensions[0] = rectangularWidthThickness();
+        answer.m_dimensions[1] = rectangularHeightThickness();
+        answer.m_dimensions[2] = rectangularDepthThickness();
+        if( m_forFitting )
+        {
+          answer.m_fitDimensions[0] = (m_fitRectWidthCB && m_fitRectWidthCB->isChecked());   //fitRectangularWidthThickness();
+          answer.m_fitDimensions[1] = (m_fitRectHeightCB && m_fitRectHeightCB->isChecked()); //fitRectangularHeightThickness();
+          answer.m_fitDimensions[2] = (m_fitRectDepthCB && m_fitRectDepthCB->isChecked());   //fitRectangularDepthThickness();
+        }
+        break;
+        
+      case GammaInteractionCalc::GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    answer.m_truthDimensions[0] = truthThickness;
+    answer.m_truthDimensionsTolerances[0] = truthThicknessTolerance;
+    answer.m_truthDimensions[1] = truthThicknessD2;
+    answer.m_truthDimensionsTolerances[1] = truthThicknessD2Tolerance;
+    answer.m_truthDimensions[2] = truthThicknessD3;
+    answer.m_truthDimensionsTolerances[2] = truthThicknessD3Tolerance;
+#endif
+  }//if( m_isGenericMaterial ) / else
+  
+  
+  // Self-atten source stuff
+  answer.m_fitMassFrac = false;
+  
+  const vector<NucMasFrac> selfAttens = sourceNuclideMassFractions();
+  if( !selfAttens.empty() )
+  {
+    answer.m_fitMassFrac = fitForMassFractions();
+    
+    for( const NucMasFrac &nmf : selfAttens )
+    {
+      const SandiaDecay::Nuclide * const nuc = nmf.first;
+      const double fraction = nmf.second;
+      
+      answer.m_nuclideFractions[nuc] = fraction;
+    }
+  }//if( !selfAttens.empty() )
+  
+  // Trace source stuff
+  if( m_traceSources )
+  {
+    for( WWidget *w : m_traceSources->children() )
+    {
+      const TraceSrcDisplay *src = dynamic_cast<const TraceSrcDisplay *>( w );
+      assert( src );
+      
+      if( src && src->nuclide() )
+        answer.m_traceSources.push_back( src->toTraceSourceInfo() );
+    }//for( WWidget *w : m_traceSources->children() )
+  }//if( m_traceSources )
+  
+  return answer;
+}//ShieldingSourceFitCalc::ShieldingInfo toShieldingInfo() const
+
+
+void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::ShieldingInfo &info )
+{
+  
+  if( m_forFitting != info.m_forFitting )
+    throw runtime_error( "ShieldingSelect m_forFitting must be same as XML being deserialized" );
+  
+  
+  if( info.m_isGenericMaterial )
+  {
+    m_geometry = GeometryType::Spherical;
+    
+    if( !m_isGenericMaterial )
+      handleToggleGeneric();
+    
+    m_atomicNumberEdit->setValue( info.m_dimensions[0] );
+    m_arealDensityEdit->setValue( info.m_dimensions[1] );
+    
+    if( m_forFitting && m_fitArealDensityCB && m_fitAtomicNumberCB )
+    {
+      m_fitAtomicNumberCB->setChecked( info.m_fitDimensions[0] );
+      m_fitArealDensityCB->setChecked( info.m_fitDimensions[1] );
+    }//if( m_fitArealDensityCB )
+    
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    truthAN  = info.m_truthDimensions[0];
+    truthANTolerance = info.m_truthDimensionsTolerances[0];
+    truthAD  = info.m_truthDimensions[1];
+    truthADTolerance = info.m_truthDimensionsTolerances[1];
+#endif
+  }else
+  {
+    const bool wasGeneric = m_isGenericMaterial;
+    const bool geom_changed = (m_geometry != info.m_geometry);
+    if( info.m_geometry == GeometryType::NumGeometryType )
+      throw runtime_error( "Invalid geometry type." );
+    
+    m_geometry = info.m_geometry;
+
+    if( m_isGenericMaterial )
+      handleToggleGeneric();
+
+    if( geom_changed || wasGeneric )
+      displayInputsForCurrentGeometry();
+    
+    // TODO: we could maually go in and get thickness text into the XML, so it is exact same as the user entered
+    WLineEdit *dim_edits[3] = { nullptr, nullptr, nullptr };
+    WCheckBox *dim_cb[3] = { nullptr, nullptr, nullptr };
+    
+    
+    int required_dim = 0;
+    switch( info.m_geometry )
+    {
+      case GeometryType::Spherical:
+        required_dim = 1;
+        dim_edits[0] = m_thicknessEdit;
+        dim_cb[0] = m_fitThicknessCB;
+        break;
+        
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+        required_dim = 2;
+        dim_edits[0] = m_cylRadiusEdit;
+        dim_edits[1] = m_cylLengthEdit;
+        dim_cb[0]    = m_fitCylRadiusCB;
+        dim_cb[1]    = m_fitCylLengthCB;
+        break;
+        
+      case GeometryType::Rectangular:
+        required_dim = 3;
+        dim_edits[0] = m_rectWidthEdit;
+        dim_edits[1] = m_rectHeightEdit;
+        dim_edits[2] = m_rectDepthEdit;
+        dim_cb[0]    = m_fitRectWidthCB;
+        dim_cb[1]    = m_fitRectHeightCB;
+        dim_cb[2]    = m_fitRectDepthCB;
+        break;
+        
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+    
+    // Check and make sure all the dimension node values are valid
+    for( int i = 0; i < required_dim; ++i )
+    {
+      assert( dim_edits[i] );
+      assert( !m_forFitting || dim_cb[i] );
+      
+      const string valstr = PhysicalUnits::printToBestLengthUnits( info.m_dimensions[i], 4 );
+      dim_edits[i]->setText( WString::fromUTF8(valstr) );
+      if( m_forFitting )
+        dim_cb[i]->setChecked( info.m_fitDimensions[i] );
+    }//for( int i = 0; i < required_dim; ++i )
+    
+      
+    const string material_name = info.m_material ? info.m_material->name : string();
+    m_materialEdit->setValueText( WString::fromUTF8(material_name) );
+    
+    handleMaterialChange();
+    
+    setMassFractions( info.m_nuclideFractions );
+    
+    //Now set the check boxes to make all the source nuclides called out in the
+    //  XML as actual src nuclides, since we only saved nuclides we actually
+    //  wanted to use as source nuclides.
+    if( m_currentMaterial )
+    {
+      for( const auto &nucfrac : info.m_nuclideFractions )
+      {
+        const SandiaDecay::Nuclide * const nuc = nucfrac.first;
+        
+        for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
+        {
+          for( WWidget *widget : etnm.second->children() )
+          {
+            SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
+            if( src && (nuc == src->isotope()) )
+              src->setUseAsSource( true );
+          }
+        }//for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
+      }//for( const SandiaDecay::Nuclide *nuc : srcnuclides )
+      
+      
+      // Get rid of all the trace sources - I dont *think* we need to emit signals and all that
+      if( m_traceSources )
+        m_traceSources->clear();
+      
+      for( const ShieldingSourceFitCalc::TraceSourceInfo &trace : info.m_traceSources )
+      {
+        addTraceSource();
+        assert( m_traceSources );
+        
+        TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( m_traceSources->children().back() );
+        assert( src );
+        
+        // When we de-serialize we assume the source fitting model already has the nuclides
+        //  available to become trace sources
+        if( src )  //JIC
+          src->fromTraceSourceInfo( trace );
+      }//for( const TraceSourceInfo &trace : info.m_traceSources )
+    }//if( m_currentMaterial )
+    
+    if( m_forFitting && m_fitMassFrac )
+      m_fitMassFrac->setChecked( info.m_fitMassFrac );
+    
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    truthThickness = info.m_truthDimensions[0];
+    truthThicknessTolerance = info.m_truthDimensionsTolerances[0];
+    truthThicknessD2 = info.m_truthDimensions[1];
+    truthThicknessD2Tolerance = info.m_truthDimensionsTolerances[1];
+    truthThicknessD3 = info.m_truthDimensions[2];
+    truthThicknessD3Tolerance = info.m_truthDimensionsTolerances[2];
+#endif
+  }//if( info.m_isGenericMaterial ) / else
+}//void fromShieldingInfo( const ShieldingSourceFitCalc::ShieldingInfo &info )
+
+
 void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
 {
-  rapidxml::xml_document<char> *doc = parent_node->document();
+  const ShieldingSourceFitCalc::ShieldingInfo info = toShieldingInfo();
+  rapidxml::xml_node<char> * const added_node = info.serialize( parent_node );
+  
+  // Lets update the XML to have the user inputted text, to help exactly round-trip things
+  if( !m_isGenericMaterial )
+  {
+    rapidxml::xml_node<char> * const material_node = XML_FIRST_NODE(added_node, "Material");
+    
+    auto setval = [material_node]( const char *name, Wt::WLineEdit *edit ){
+      assert( material_node && name && edit );
+      rapidxml::xml_node<char> *node = material_node ? material_node->first_node(name) : nullptr;
+      assert( node );
+      if( node )
+      {
+        const string valstr = edit->text().toUTF8();
+        char *val = node->document()->allocate_string( valstr.c_str(), valstr.size() + 1 );
+        node->value( val, valstr.size() );
+      }
+    };
+    
+    switch( m_geometry )
+    {
+      case GeometryType::Spherical:
+        setval( "Thickness", m_thicknessEdit );
+        setval( "SphericalThickness", m_thicknessEdit );
+        break;
+        
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+        setval( "CylinderRadiusThickness", m_cylRadiusEdit );
+        setval( "CylinderLengthThickness", m_cylLengthEdit );
+        break;
+        
+      case GeometryType::Rectangular:
+        setval( "RectangularWidthThickness", m_rectWidthEdit );
+        setval( "RectangularHeightThickness", m_rectHeightEdit );
+        setval( "RectangularDepthThickness", m_rectDepthEdit );
+        break;
+        
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+  }//if( !m_isGenericMaterial )
+  
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  // TODO: All this stuff in this section can be removed after initial testing.
+  rapidxml::xml_document<char> old_doc;
   
   const char *name, *value;
   rapidxml::xml_node<char> *base_node, *node;
   rapidxml::xml_attribute<char> *attr;
   
   name = "Shielding";
-  base_node = doc->allocate_node( rapidxml::node_element, name );
-  parent_node->append_node( base_node );
+  base_node = old_doc.allocate_node( rapidxml::node_element, name );
+  old_doc.append_node( base_node );
   
   //If you change the available options or formatting or whatever, increment the
   //  version field of the XML!
-  string versionstr = std::to_string(ShieldingSelect::sm_xmlSerializationMajorVersion)
-                      + "." + std::to_string(ShieldingSelect::sm_xmlSerializationMinorVersion);
-  value = doc->allocate_string( versionstr.c_str() );
-  attr = doc->allocate_attribute( "version", value );
+  string versionstr = std::to_string(ShieldingSourceFitCalc::ShieldingInfo::sm_xmlSerializationMajorVersion)
+                      + "." + std::to_string(ShieldingSourceFitCalc::ShieldingInfo::sm_xmlSerializationMinorVersion);
+  value = old_doc.allocate_string( versionstr.c_str() );
+  attr = old_doc.allocate_attribute( "version", value );
   base_node->append_attribute( attr );
-
-  name = "Geometry";
-  value = GammaInteractionCalc::to_str(m_geometry);
-  node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( node );
   
   name = "ForFitting";
   value = m_forFitting ? "1" : "0";
-  node = doc->allocate_node( rapidxml::node_element, name, value );
+  node = old_doc.allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( node );
 
   if( m_isGenericMaterial )
@@ -4525,40 +4673,40 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     rapidxml::xml_node<> *generic_node;
     
     name = "Generic";
-    generic_node = doc->allocate_node( rapidxml::node_element, name );
+    generic_node = old_doc.allocate_node( rapidxml::node_element, name );
     base_node->append_node( generic_node );
     
     name = "ArealDensity";
     snprintf( buffer, sizeof(buffer), "%.9g", m_arealDensityEdit->value() );
-    value = doc->allocate_string( buffer );
-    node = doc->allocate_node( rapidxml::node_element, name, value );
+    value = old_doc.allocate_string( buffer );
+    node = old_doc.allocate_node( rapidxml::node_element, name, value );
     generic_node->append_node( node );
     if( m_forFitting )
     {
       value = m_fitArealDensityCB->isChecked() ? "1" : "0";
-      attr = doc->allocate_attribute( "Fit", value );
+      attr = old_doc.allocate_attribute( "Fit", value );
       node->append_attribute( attr );
     }//if( m_fitArealDensityCB )
     
     name = "AtomicNumber";
     snprintf( buffer, sizeof(buffer), "%.9g", m_atomicNumberEdit->value() );
-    value = doc->allocate_string( buffer );
-    node = doc->allocate_node( rapidxml::node_element, name, value );
+    value = old_doc.allocate_string( buffer );
+    node = old_doc.allocate_node( rapidxml::node_element, name, value );
     generic_node->append_node( node );
     if( m_forFitting )
     {
       value = m_fitAtomicNumberCB->isChecked() ? "1" : "0";
-      attr = doc->allocate_attribute( "Fit", value );
+      attr = old_doc.allocate_attribute( "Fit", value );
       node->append_attribute( attr );
     }//if( m_fitAtomicNumberCB )
     
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
-    auto addTruth = [doc,generic_node]( const char *truthName, const boost::optional<double> &value ){
+    auto addTruth = [&old_doc,generic_node]( const char *truthName, const boost::optional<double> &value ){
       if( value )
       {
         const string strval = std::to_string(*value);
-        const char *value = doc->allocate_string( strval.c_str() );
-        rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, truthName, value );
+        const char *value = old_doc.allocate_string( strval.c_str() );
+        rapidxml::xml_node<char> *node = old_doc.allocate_node( rapidxml::node_element, truthName, value );
         generic_node->append_node( node );
       }
     };//addTruth(...)
@@ -4569,27 +4717,32 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
 #endif
   }else
   {
+    name = "Geometry";
+    value = GammaInteractionCalc::to_str(m_geometry);
+    node = old_doc.allocate_node( rapidxml::node_element, name, value );
+    base_node->append_node( node );
+    
     rapidxml::xml_node<> *material_node, *mass_frac_node, *iso_node;
     
     name = "Material";
-    material_node = doc->allocate_node( rapidxml::node_element, name );
+    material_node = old_doc.allocate_node( rapidxml::node_element, name );
     base_node->append_node( material_node );
     
     name = "Name";
-    value = doc->allocate_string( m_materialEdit->valueText().toUTF8().c_str() );
-    node = doc->allocate_node( rapidxml::node_element, name, value );
+    value = old_doc.allocate_string( m_materialEdit->valueText().toUTF8().c_str() );
+    node = old_doc.allocate_node( rapidxml::node_element, name, value );
     material_node->append_node( node );
     
     //Lambda to add in dimension elements
-    auto addDimensionNode = [this,doc,material_node]( const char *name, WLineEdit *edit, WCheckBox *cb )
+    auto addDimensionNode = [this,&old_doc,material_node]( const char *name, WLineEdit *edit, WCheckBox *cb )
                                                      -> rapidxml::xml_node<char> * {
-      const char *value = doc->allocate_string( edit->valueText().toUTF8().c_str() );
-      auto node = doc->allocate_node( rapidxml::node_element, name, value );
+      const char *value = old_doc.allocate_string( edit->valueText().toUTF8().c_str() );
+      auto node = old_doc.allocate_node( rapidxml::node_element, name, value );
       material_node->append_node( node );
       if( m_forFitting )
       {
         value = cb->isChecked() ? "1" : "0";
-        auto attr = doc->allocate_attribute( "Fit", value );
+        auto attr = old_doc.allocate_attribute( "Fit", value );
         node->append_attribute( attr );
       }//if( m_forFitting )
       
@@ -4603,22 +4756,22 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     {
       case GeometryType::Spherical:
         node = addDimensionNode( "Thickness", m_thicknessEdit, m_fitThicknessCB );
-        node->append_attribute( doc->allocate_attribute( "Remark", "SphericalThickness" ) );
+        node->append_attribute( old_doc.allocate_attribute( "Remark", "SphericalThickness" ) );
         break;
         
       case GeometryType::CylinderEndOn:
         node = addDimensionNode( "Thickness", m_cylLengthEdit, m_fitCylLengthCB );
-        node->append_attribute( doc->allocate_attribute( "Remark", "CylinderLengthThickness" ) );
+        node->append_attribute( old_doc.allocate_attribute( "Remark", "CylinderLengthThickness" ) );
         break;
         
       case GeometryType::CylinderSideOn:
         node = addDimensionNode( "Thickness", m_cylRadiusEdit, m_fitCylRadiusCB );
-        node->append_attribute( doc->allocate_attribute( "Remark", "CylinderRadiusThickness" ) );
+        node->append_attribute( old_doc.allocate_attribute( "Remark", "CylinderRadiusThickness" ) );
         break;
         
       case GeometryType::Rectangular:
         node = addDimensionNode( "Thickness", m_rectDepthEdit, m_fitRectDepthCB );
-        node->append_attribute( doc->allocate_attribute( "Remark", "RectangularDepthThickness" ) );
+        node->append_attribute( old_doc.allocate_attribute( "Remark", "RectangularDepthThickness" ) );
         break;
         
       case GeometryType::NumGeometryType:
@@ -4659,7 +4812,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
       value = (m_fitMassFrac && m_fitMassFrac->isChecked()) ? "1" : "0";
       if( m_fitMassFrac && !m_fitMassFrac->isHidden() )
       {
-        mass_frac_node = doc->allocate_node( rapidxml::node_element, name, value );
+        mass_frac_node = old_doc.allocate_node( rapidxml::node_element, name, value );
         material_node->append_node( mass_frac_node );
       }
     }//if( m_forFitting )
@@ -4672,15 +4825,15 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
         
         if( src && src->useAsSource() && src->isotope() )
         {
-          iso_node = doc->allocate_node( rapidxml::node_element, "Nuclide" );
+          iso_node = old_doc.allocate_node( rapidxml::node_element, "Nuclide" );
           material_node->append_node( iso_node );
           
-          value = doc->allocate_string( src->isotope()->symbol.c_str() );
-          node = doc->allocate_node( rapidxml::node_element, "Name", value );
+          value = old_doc.allocate_string( src->isotope()->symbol.c_str() );
+          node = old_doc.allocate_node( rapidxml::node_element, "Name", value );
           iso_node->append_node( node );
           
-          value = doc->allocate_string( std::to_string(src->massFraction()).c_str() );
-          node = doc->allocate_node( rapidxml::node_element, "MassFrac", value );
+          value = old_doc.allocate_string( std::to_string(src->massFraction()).c_str() );
+          node = old_doc.allocate_node( rapidxml::node_element, "MassFrac", value );
           iso_node->append_node( node );
         }//if( src && src->useAsSource() )
       }//for( WWidget *widget : isotopeDiv->children() )
@@ -4700,12 +4853,12 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     
     
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
-    auto addTruth = [doc,material_node]( const char *truthName, const boost::optional<double> &value ){
+    auto addTruth = [&old_doc,material_node]( const char *truthName, const boost::optional<double> &value ){
       if( value )
       {
         const string strval = PhysicalUnits::printToBestLengthUnits(*value,6);
-        const char *value = doc->allocate_string( strval.c_str() );
-        rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, truthName, value );
+        const char *value = old_doc.allocate_string( strval.c_str() );
+        rapidxml::xml_node<char> *node = old_doc.allocate_node( rapidxml::node_element, truthName, value );
         material_node->append_node( node );
       }
     };//addTruth(...)
@@ -4717,8 +4870,16 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     addTruth( "TruthThicknessD3", truthThicknessD3 );
     addTruth( "TruthThicknessD3Tolerance", truthThicknessD3Tolerance );
 #endif
-    
   }//if( m_isGenericMaterial ) / else
+  
+  string new_xml, old_xml;
+  rapidxml::print( std::back_inserter(new_xml), *added_node, 0 );
+  rapidxml::print( std::back_inserter(old_xml), old_doc, 0 );
+  if( new_xml != old_xml )
+  {
+    cerr << "New ShieldingSelect XML is not equal to old:\nNew XML:\n" << new_xml << "\n\n\nOld XML:\n" << old_xml << "\n" << endl;
+  }
+#endif //#if( PERFORM_DEVELOPER_CHECKS ) / else
   
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -4822,169 +4983,43 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
 
 void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
 {
-  rapidxml::xml_attribute<char> *attr;
-  rapidxml::xml_node<char> *node, *geom_node, *generic_node, *material_node;
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
- 
-  if( shield_node->name() != string("Shielding") )
-    throw runtime_error( "ShieldingSelects XML node should be 'Shielding'" );
+  ShieldingSourceFitCalc::ShieldingInfo info;
+  info.deSerialize( shield_node, m_materialDB );
+  fromShieldingInfo( info );
   
-  attr = shield_node->first_attribute( "version", 7 );
-  int version;
-  if( !attr || !attr->value() || !(stringstream(attr->value())>>version) )
-    throw runtime_error( "ShieldingSelects should be versioned" );
-  
-  if( version != sm_xmlSerializationMajorVersion )
-    throw runtime_error( "Invalid XML version for ShieldingSelect" );
-  
-  // Note that version is either "0" (implied minor version 0), or "0.1" or something; we could read
-  //  in the minor version to sm_xmlSerializationMinorVersion and use it, but theres really no need.
-  
-  GeometryType geometry = GeometryType::Spherical;
-  geom_node = shield_node->first_node( "Geometry", 8 );
-  if( geom_node && geom_node->value() )
+  // Reachinto the XML and set distances exactly equal to user input text
+  if( !m_isGenericMaterial )
   {
-    bool matched = false;
-    const string geomstr( geom_node->value(), geom_node->value() + geom_node->value_size() );
-    for( GeometryType type = GeometryType(0);
-        !matched && (type != GeometryType::NumGeometryType);
-        type = GeometryType( static_cast<int>(type) + 1 ) )
-    {
-      matched = (geomstr == GammaInteractionCalc::to_str(type));
-      if( matched )
-        geometry = type;
-    }//for( loop over GeometryTypes )
+    rapidxml::xml_node<char> * const material_node = XML_FIRST_NODE(shield_node, "Material");
+    assert( material_node );
     
-    if( !matched )
-      throw runtime_error( "Invalid geometry type: '" + geomstr + "'" );
-  }//if( geom_node )
-  
-  
-  bool forFitting;
-  node = shield_node->first_node( "ForFitting", 10 );
-  if( !node || !node->value() || !(stringstream(node->value())>>forFitting) )
-    throw runtime_error( "Missing/invalid for fitting node" );
-
-  if( m_forFitting != forFitting )
-    throw runtime_error( "ShieldingSelect m_forFitting must be same as "
-                         "XML being deserialized" );
-  
-  generic_node = shield_node->first_node( "Generic", 7 );
-  material_node = shield_node->first_node( "Material", 8 );
-  
-  if( generic_node )
-  {
-    const rapidxml::xml_node<char> *ad_node, *an_node;
-    ad_node = generic_node->first_node( "ArealDensity", 12 );
-    an_node = generic_node->first_node( "AtomicNumber", 12 );
+    auto getval = [material_node]( const char *name, Wt::WLineEdit *edit ){
+      assert( material_node && name && edit );
+      rapidxml::xml_node<char> *node = material_node ? material_node->first_node(name) : nullptr;
+      assert( node );
+      if( node && edit )
+      {
+        const string valstr = SpecUtils::xml_value_str( node );
+        edit->setText( WString::fromUTF8(valstr) );
+      }
+    };
     
-    if( !ad_node || !ad_node->value() || !an_node || !an_node->value() )
-      throw runtime_error( "Generic material must have ArealDensity and"
-                           " AtomicNumber nodes" );
-    
-    m_geometry = geometry;
-    
-    if( !m_isGenericMaterial )
-      handleToggleGeneric();
-    
-    float ad, an;
-    if( !(std::stringstream(ad_node->value()) >> ad) )
-      throw runtime_error( "Invalid areal density - not a floating point" );
-    
-    if( !(std::stringstream(an_node->value()) >> an) )
-      throw runtime_error( "Invalid atomic number specified - not a floating point" );
-    
-    m_arealDensityEdit->setValue( ad );
-    m_atomicNumberEdit->setValue( an );
-    
-    if( m_forFitting && m_fitArealDensityCB && m_fitAtomicNumberCB )
-    {
-      bool fit;
-      attr = ad_node->first_attribute( "Fit", 3 );
-      if( attr && attr->value() && (stringstream(attr->value())>>fit) )
-        m_fitArealDensityCB->setChecked( fit );
-      
-      attr = an_node->first_attribute( "Fit", 3 );
-      if( attr && attr->value() && (stringstream(attr->value())>>fit) )
-        m_fitAtomicNumberCB->setChecked( fit );
-    }//if( m_fitArealDensityCB )
-    
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-    auto getTruth = [generic_node]( const char *truthName, boost::optional<double> &value ){
-      value.reset();
-      auto node = generic_node->first_node( truthName );
-      if( !node || !node->value() )
-        return;
-      
-      double dblvalue;
-      if( (stringstream(node->value()) >> dblvalue) )
-        value = dblvalue;
-      else
-        cerr << "\n\nFailed to deserialize shielding " << truthName << " from " << node->value()
-        << "\n\n" << endl;
-    };//getTruth(...)
-    
-    getTruth( "TruthAD", truthAD );
-    getTruth( "TruthADTolerance", truthADTolerance );
-    getTruth( "TruthAN", truthAN );
-    getTruth( "TruthANTolerance", truthANTolerance );
-#endif
-  }//if( generic_node )
-  
-  if( material_node )
-  {
-    bool fitMassFrac = false;
-    vector<const SandiaDecay::Nuclide *> srcnuclides;
-    const rapidxml::xml_node<> *frac_node, *iso_node, *name_node;
-    const rapidxml::xml_node<> *dim_nodes[3] = { nullptr, nullptr, nullptr };
-    WLineEdit *dim_edits[3] = { nullptr, nullptr, nullptr };
-    WCheckBox *dim_cb[3] = { nullptr, nullptr, nullptr };
-    
-    
-    name_node = material_node->first_node( "Name", 4 );
-    if( !name_node || !name_node->value() )
-      throw runtime_error( "Material node didnt have name node" );
-    
-    int required_dim = 0;
     switch( m_geometry )
     {
       case GeometryType::Spherical:
-        required_dim = 1;
-        
-        dim_nodes[0] = XML_FIRST_NODE(material_node, "SphericalThickness");
-        if( !dim_nodes[0] )
-          dim_nodes[0] = XML_FIRST_NODE(material_node, "Thickness");
-        
-        dim_edits[0] = m_thicknessEdit;
-        dim_cb[0] = m_fitThicknessCB;
+        getval( "SphericalThickness", m_thicknessEdit );
         break;
         
       case GeometryType::CylinderEndOn:
       case GeometryType::CylinderSideOn:
-        required_dim = 2;
-        
-        dim_nodes[0] = XML_FIRST_NODE(material_node, "CylinderRadiusThickness");
-        dim_nodes[1] = XML_FIRST_NODE(material_node, "CylinderLengthThickness");
-        
-        dim_edits[0] = m_cylRadiusEdit;
-        dim_edits[1] = m_cylLengthEdit;
-        dim_cb[0]    = m_fitCylRadiusCB;
-        dim_cb[1]    = m_fitCylLengthCB;
+        getval( "CylinderRadiusThickness", m_cylRadiusEdit );
+        getval( "CylinderLengthThickness", m_cylLengthEdit );
         break;
         
       case GeometryType::Rectangular:
-        required_dim = 3;
-        
-        dim_nodes[0] = XML_FIRST_NODE(material_node, "RectangularWidthThickness");
-        dim_nodes[1] = XML_FIRST_NODE(material_node, "RectangularHeightThickness");
-        dim_nodes[2] = XML_FIRST_NODE(material_node, "RectangularDepthThickness");
-        
-        dim_edits[0] = m_rectWidthEdit;
-        dim_edits[1] = m_rectHeightEdit;
-        dim_edits[2] = m_rectDepthEdit;
-        dim_cb[0]    = m_fitRectWidthCB;
-        dim_cb[1]    = m_fitRectHeightCB;
-        dim_cb[2]    = m_fitRectDepthCB;
+        getval( "RectangularWidthThickness", m_rectWidthEdit );
+        getval( "RectangularHeightThickness", m_rectHeightEdit );
+        getval( "RectangularDepthThickness", m_rectDepthEdit );
         break;
         
       case GeometryType::NumGeometryType:
@@ -4992,191 +5027,72 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
         break;
     }//switch( m_geometry )
     
-    // Check and make sure all the dimension node values are valid
-    bool fit_dim[3] = { false, false, false };
-    for( int i = 0; i < required_dim; ++i )
-    {
-      if( !dim_nodes[i] || !dim_nodes[i]->value() )
-        throw runtime_error( "Missing required dimension node" );
-      
-      const string val( dim_nodes[i]->value(), dim_nodes[i]->value() + dim_nodes[i]->value_size() );
-      try
-      {
-        const double dist = PhysicalUnits::stringToDistance(val);
-        if( dist < 0.0 )
-          throw runtime_error( "" );
-      }catch( std::exception & )
-      {
-        throw runtime_error( "Invalid dimension given '" + val + "'" );
-      }
-      
-      if( m_forFitting )
-      {
-        const auto attr = dim_nodes[i]->first_attribute( "Fit", 3 );
-        
-        if( !attr || !(stringstream(attr->value()) >> fit_dim[i]) )
-          throw runtime_error( "Material node expected thickness Fit attribute" );
-      }
-    }//for( int i = 0; i < required_dim; ++i )
-    
-    
-    const bool geom_changed = (m_geometry != geometry);
-    
-    // Now that we've mostly validated the XML, start actually changing the widgets values.
-    m_geometry = geometry;
-    
-    if( m_isGenericMaterial )
-      handleToggleGeneric();
-    
-    if( geom_changed )
-      displayInputsForCurrentGeometry();
-    
-    const string material_name( name_node->value(), name_node->value() + name_node->value_size() );
-    m_materialEdit->setValueText( WString::fromUTF8(material_name) );
-    
-    for( int i = 0; i < required_dim; ++i )
-    {
-      assert( dim_nodes[i] );
-      assert( dim_edits[i] );
-      
-      const string val( dim_nodes[i]->value(), dim_nodes[i]->value() + dim_nodes[i]->value_size() );
-      dim_edits[i]->setValueText( WString::fromUTF8(val) );
-      if( m_forFitting )
-      {
-        assert( dim_cb[i] );
-        dim_cb[i]->setChecked( fit_dim[i] );
-      }
-    }//for( int i = 0; i < required_dim; ++i )
-    
     handleMaterialChange();
-    
-    if( m_forFitting )
-    {
-      const rapidxml::xml_node<> *fitmassfrac_node = XML_FIRST_NODE(material_node, "FitMassFraction");
-      if( fitmassfrac_node && fitmassfrac_node->value() )
-      {
-        stringstream(fitmassfrac_node->value()) >> fitMassFrac;
-      }//if( m_forFitting )
-    }//if( m_forFitting )
-
-    double last_frac = 0.0;
-    const SandiaDecay::Nuclide *last_nuc = NULL;
-    
-    for( iso_node = material_node->first_node( "Nuclide", 7 );
-        iso_node; iso_node = iso_node->next_sibling( "Nuclide", 7 ) )
-    {
-      name_node = iso_node->first_node( "Name", 4 );
-      frac_node = iso_node->first_node( "MassFrac", 8 );
-      
-      if( !name_node || !name_node->value()
-          || !frac_node || !frac_node->value() )
-        throw runtime_error( "Missing invalid name/mass frac node form iso" );
-      
-      const SandiaDecay::Nuclide *nuc = db->nuclide( name_node->value() );
-      if( !nuc )
-        throw runtime_error( string(name_node->value()) + " is not a valid isotope" );
-      
-      srcnuclides.push_back( nuc );
-      
-      double fraction;
-      if( !(stringstream(frac_node->value()) >> fraction) )
-        throw runtime_error( "Invalid mass fraction: " + string(frac_node->value()) );
-      
-//      modelNuclideAdded( nuc );
-//      const SandiaDecay::Element *el = db->element( nuc->atomicNumber );
-//      if( m_sourceIsotopes.find( el ) == m_sourceIsotopes.end() )
-//      {
-//      }//if(...)
-      try
-      {
-        setMassFraction( nuc, fraction );
-        
-        last_nuc = nuc;
-        last_frac = fraction;
-      }catch( std::exception &e )
-      {
-        cerr << "ShieldingSelect::deSerialize(...)\n\tCaught: " << e.what()
-             << " but continuuing anyway" << endl;
-      }//try / catch
-    }//for( loop over isotope nodes )
-    
-    //Now set the check boxes to make all the source nuclides called out in the
-    //  XML as actual src nuclides, since we only saved nuclides we actually
-    //  wanted to use as source nuclides.
-    if( m_currentMaterial )
-    {
-      for( const SandiaDecay::Nuclide *nuc : srcnuclides )
-      {
-        for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
-        {
-          for( WWidget *widget : etnm.second->children() )
-          {
-            SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
-            if( src && (nuc == src->isotope()) )
-              src->setUseAsSource( true );
-          }
-        }
-      }//for( const SandiaDecay::Nuclide *nuc : srcnuclides )
-      
-      
-      // Get rid of all the trace sources - I dont *think* we need to emit signals and all that since
-      if( m_traceSources )
-        m_traceSources->clear();
-      
-      for( auto trace_node = XML_FIRST_NODE(material_node, "TraceSource");
-          trace_node; trace_node = XML_NEXT_TWIN(trace_node) )
-      {
-        addTraceSource();
-        assert( m_traceSources );
-        
-        TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( m_traceSources->children().back() );
-        assert( src );
-        
-        // When we de-serialize we assume the source fitting model already has the nuclides
-        //  available to become trace sources
-        if( src )  //JIC
-          src->deSerialize( trace_node );
-      }//for( loop over trace nodes )
-    }//if( m_currentMaterial )
-    
-    if( m_fitMassFrac )
-      m_fitMassFrac->setChecked( fitMassFrac );
-    
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-    auto getTruth = [material_node]( const char *truthName, boost::optional<double> &value ){
-      value.reset();
-      auto node = material_node->first_node( truthName );
-      if( !node || !node->value() )
-        return;
-      
-      try
-      {
-        value = PhysicalUnits::stringToDistance( node->value() );
-      }catch( std::exception &e )
-      {
-        cerr << "\n\nFailed to deserialize a shielding " << truthName << ": " << e.what() << "\n\n";
-      }
-    };//getTruth(...)
-    
-    getTruth( "TruthThickness", truthThickness );
-    getTruth( "TruthThicknessTolerance", truthThicknessTolerance );
-    getTruth( "TruthThicknessD2", truthThicknessD2 );
-    getTruth( "TruthThicknessD2Tolerance", truthThicknessD2Tolerance );
-    getTruth( "TruthThicknessD3", truthThicknessD3 );
-    getTruth( "TruthThicknessD3Tolerance", truthThicknessD3Tolerance );
+  }//if( !m_isGenericMaterial )
+  
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  const ShieldingSourceFitCalc::ShieldingInfo roundtripped = toShieldingInfo();
+  try
+  {
+    ShieldingSourceFitCalc::ShieldingInfo::equalEnough( info, roundtripped );
+  }catch( std::exception &e )
+  {
+    cerr << "ShieldingSelect::deSerialize - Failed to round-trip setting/getting: " << e.what() << endl;
+    assert( 0 );
+  }
 #endif
-    
-    
-    //Calling handleIsotopicChange(...) will perform some normailizations
-    //  and stuff (I think), that setMassFraction(...) doesnt do
-    if( last_nuc )
-      handleIsotopicChange( static_cast<float>(last_frac), last_nuc );
-  }//if( material_node )
 }//void deSerialize( const rapidxml::xml_node<char> *shielding_node ) const
 
 
 std::string ShieldingSelect::encodeStateToUrl() const
 {
+  const ShieldingSourceFitCalc::ShieldingInfo info = toShieldingInfo();
+  string uri = info.encodeStateToUrl();
+  
+  // Update distances to exactly match user input for roundtripping
+  auto updateval = [&uri]( const string name, WLineEdit *edit ){
+    assert( edit );
+    const auto pos = uri.find( "&" + name + "=" );
+    assert( pos != string::npos );
+    if( pos == string::npos )
+      return;
+    const string newval = edit ? edit->text().toUTF8() : string();
+    
+    const string pre = uri.substr(0, pos + 2 + name.size() );
+    const auto nextstart = uri.find( "&", pos + 2 + name.size() );
+    const string post = (nextstart == string::npos) ? string() : uri.substr(nextstart);
+    
+    uri = pre + newval + post;
+  };//updateval...
+  
+  switch( m_geometry )
+  {
+    case GammaInteractionCalc::GeometryType::Spherical:
+      updateval( "D1", m_thicknessEdit );
+      break;
+      
+    case GammaInteractionCalc::GeometryType::CylinderEndOn:
+    case GammaInteractionCalc::GeometryType::CylinderSideOn:
+      updateval( "D1", m_cylRadiusEdit );
+      updateval( "D2", m_cylLengthEdit );
+      break;
+      
+    case GammaInteractionCalc::GeometryType::Rectangular:
+      updateval( "D1", m_rectWidthEdit );
+      updateval( "D2", m_rectHeightEdit );
+      updateval( "D3", m_rectDepthEdit );
+      break;
+      
+    case GammaInteractionCalc::GeometryType::NumGeometryType:
+      assert( 0 );
+      break;
+  }//switch( m_geometry )
+  
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  // TODO: 20230705: remove this section of code after initial testing
+  
   // "V=1&G=S&D1=1.2cm&N=Fe&NTRACE=3&TRACEN=1&V=1&N=U238&A=1.2uCi&T=total&F=1"
   // "V": version
   // "G": geometry
@@ -5255,207 +5171,66 @@ std::string ShieldingSelect::encodeStateToUrl() const
     // TODO: encode self-attenuating and trace sources, and maybe "truth" value; with a string like "NTRACE=3&TRACEN=1&V=1&N=U238&A=1.2uCi&T=total&F=1"
   }//if( m_isGenericMaterial ) / else
   
-  return answer;
+  assert( uri == answer );
+#endif
+  
+  return uri;
 }//std::string encodeStateToUrl() const
 
 
 void ShieldingSelect::handleAppUrl( std::string query_str )
 {
-  // "V=1&G=S&D1=1.2cm&N=Fe"
-  // "V": version
-  // "G": geometry
-  // "F": for fitting; if not specified than false
-  // "D1": "D2": Thickness, depth, etc
-  // "FD1": "FD2": fit the cooresponding dimensions
-  // "N": material name
-  // "AN": atomic number
-  // "FAN": fit atomic number - if not specified than false
-  // "AD": areal density
-  // "FAD": fit areal density - if not specified than false
-  // ...
+  ShieldingSourceFitCalc::ShieldingInfo info;
+  info.handleAppUrl( query_str, m_materialDB );
+  fromShieldingInfo( info );
   
-  const map<string,string> values = AppUtils::query_str_key_values( query_str );
+  // Update distances to exactly match user input for roundtripping
+  auto updateval = [&query_str]( const string name, WLineEdit *edit ){
+    assert( edit );
+    const auto pos = query_str.find( "&" + name + "=" );
+    assert( pos != string::npos );
+    if( pos == string::npos )
+      return;
+    
+    string val = query_str.substr( pos + 2 + name.size() );
+    val = val.substr( 0, val.find( "&" ) );
+    if( edit )
+      edit->setText( WString::fromUTF8(val) );
+  };//updateval...
   
-  auto iter = values.find( "V" );
-  if( (iter == end(values)) || ((iter->second != "1") && !SpecUtils::istarts_with(iter->second, "1.")) )
-    throw runtime_error( "ShieldingSelect URI not compatible version" );
-  
-  iter = values.find( "F" );
-  const bool forFitting = (iter == end(values)) ? false : (iter->second == "1");
-  
-  if( m_forFitting != forFitting )
-    throw runtime_error( "ShieldingSelect m_forFitting must be same as "
-                         "URI being deserialized" );
-  
-  const bool generic = values.count( "AN" );
-  
-  
-  if( generic )
+  switch( m_geometry )
   {
-    // Get all the values, and validate, before setting valus
-    iter = values.find( "AN" );
-    assert( iter != end(values) ); //If we are here, we know `values` cintains 'AN'
-    const string an_str = iter->second;
-    
-    if( (iter = values.find( "AD" )) == end(values) )
-      throw runtime_error( "ShieldingSelect missing AD in URI." );
-    
-    const string ad_str = iter->second;
-    
-    // Validate AN and AD are numbers, within acceptable range
-    try
-    {
-      float an, ad;
-      if( !SpecUtils::parse_float( an_str.c_str(), an_str.size(), an) )
-        throw runtime_error( "AN '" + an_str + "' not float" );
-      if( !SpecUtils::parse_float( ad_str.c_str(), ad_str.size(), ad) )
-        throw runtime_error( "AD '" + ad_str + "' not float" );
+    case GammaInteractionCalc::GeometryType::Spherical:
+      updateval( "D1", m_thicknessEdit );
+      break;
       
-      if( (an < MassAttenuation::sm_min_xs_atomic_number)
-         || (an > MassAttenuation::sm_max_xs_atomic_number) )
-        throw runtime_error( "AN '" + an_str + "' is out of range" );
+    case GammaInteractionCalc::GeometryType::CylinderEndOn:
+    case GammaInteractionCalc::GeometryType::CylinderSideOn:
+      updateval( "D1", m_cylRadiusEdit );
+      updateval( "D2", m_cylLengthEdit );
+      break;
       
-      if( (ad < 0.0f)
-         || (ad > static_cast<float>(GammaInteractionCalc::sm_max_areal_density_g_cm2)) )
-        throw runtime_error( "AD '" + ad_str + "' is out of range" );
-    }catch( std::exception &e )
-    {
-      throw runtime_error( "ShieldingSelect invalid AN or AD in URI: " + string(e.what()) );
-    }
-    
-    iter = values.find( "FAN" );
-    const bool fitAN = (!forFitting || (iter == end(values))) ? false : (iter->second == "1");
-    
-    iter = values.find( "FAD" );
-    const bool fitAD = (!forFitting || (iter == end(values))) ? false : (iter->second == "1");
-    
-    
-    if( generic != m_isGenericMaterial )
-      handleToggleGeneric();
-    setGeometry( GammaInteractionCalc::GeometryType::Spherical );
-    
-    m_atomicNumberEdit->setText( WString::fromUTF8(an_str) );
-    m_arealDensityEdit->setText( WString::fromUTF8(ad_str) );
-    if( m_fitArealDensityCB )
-      m_fitArealDensityCB->setChecked( fitAD );
-    if( m_fitAtomicNumberCB )
-      m_fitAtomicNumberCB->setChecked( fitAN );
-  }else
-  {
-    if( (iter = values.find( "G" )) == end(values) )
-      throw runtime_error( "ShieldingSelect missing geometry in URI." );
-    
-    const string &geom_str = iter->second;
-    GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::Spherical;
-    
-    if( SpecUtils::iequals_ascii(geom_str, "S") )
-      geometry = GammaInteractionCalc::GeometryType::Spherical;
-    else if( SpecUtils::iequals_ascii(geom_str, "CE") )
-      geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
-    else if( SpecUtils::iequals_ascii(geom_str, "CS") )
-      geometry = GammaInteractionCalc::GeometryType::CylinderSideOn;
-    else if( SpecUtils::iequals_ascii(geom_str, "R") )
-      geometry = GammaInteractionCalc::GeometryType::Rectangular;
-    else
-      throw runtime_error( "ShieldingSelect invalid geometry '" + geom_str + "' in URI" );
-    
-    string d1str, d2str, d3str;
-    bool fitD1 = false, fitD2 = false, fitD3 = false;
-    
-    auto getDim = [&]( const string &key, string &valstr, bool &fit ) {
-      if( (iter = values.find(key)) == end(values) )
-        throw runtime_error( "ShieldingSelect missing dimiension '" + key + "' in URI." );
-
-      valstr = iter->second;
-      if( !valstr.empty() )
-      {
-        try
-        {
-          const double val = static_cast<float>( PhysicalUnits::stringToDistance(valstr) );
-          if( val < 0.0 )
-            throw runtime_error( "Distance must be positive." );
-        }catch( std::exception & )
-        {
-          throw runtime_error( "ShieldingSelect invalid dimension '" + valstr + "' for '" + key + "'" );
-        }
-      }//if( !valstr.empty() )
+    case GammaInteractionCalc::GeometryType::Rectangular:
+      updateval( "D1", m_rectWidthEdit );
+      updateval( "D2", m_rectHeightEdit );
+      updateval( "D3", m_rectDepthEdit );
+      break;
       
-      iter = values.find( "F" + key );
-      fit = (!forFitting || (iter == end(values))) ? false : (iter->second == "1");
-    };//getDim
-    
-    
-    switch( geometry )
-    {
-      case GammaInteractionCalc::GeometryType::Rectangular:
-         getDim("D3", d3str, fitD3);
-        // drop-through intentional
-      case GammaInteractionCalc::GeometryType::CylinderEndOn:
-      case GammaInteractionCalc::GeometryType::CylinderSideOn:
-         getDim("D2", d2str, fitD2);
-        // drop-through intentional
-      case GammaInteractionCalc::GeometryType::Spherical:
-        getDim("D1", d1str, fitD1);
-        break;
-        
-      case GammaInteractionCalc::GeometryType::NumGeometryType:
-        assert( 0 );
-        break;
-    }//switch( geometry )
-    
-    if( (iter = values.find( "N" )) == end(values) )
-      throw runtime_error( "ShieldingSelect missing material name in URI." );
-    
-    string material = iter->second;
-    SpecUtils::ireplace_all(material, "%23", "#" );
-    SpecUtils::ireplace_all(material, "%26", "&" );
-    
-    if( generic != m_isGenericMaterial )
-      handleToggleGeneric();
-    
-    setGeometry( geometry );
-    
-    m_materialEdit->setText( WString::fromUTF8(material) );
-    
-    switch( geometry )
-    {
-      case GammaInteractionCalc::GeometryType::Spherical:
-        m_thicknessEdit->setValueText( WString::fromUTF8(d1str) );
-        if( m_fitThicknessCB )
-          m_fitThicknessCB->setChecked( fitD1 );
-        break;
-        
-      case GammaInteractionCalc::GeometryType::CylinderEndOn:
-      case GammaInteractionCalc::GeometryType::CylinderSideOn:
-        m_cylRadiusEdit->setValueText( WString::fromUTF8(d1str) );
-        if( m_fitCylRadiusCB )
-          m_fitCylRadiusCB->setChecked( fitD1 );
-        
-        m_cylLengthEdit->setValueText( WString::fromUTF8(d2str) );
-        if( m_fitCylLengthCB )
-          m_fitCylLengthCB->setChecked( fitD2 );
-        break;
-        
-      case GammaInteractionCalc::GeometryType::Rectangular:
-        m_rectWidthEdit->setValueText( WString::fromUTF8(d1str) );
-        if( m_fitRectWidthCB )
-          m_fitRectWidthCB->setChecked( fitD1 );
-        
-        m_rectHeightEdit->setValueText( WString::fromUTF8(d2str) );
-        if( m_fitRectHeightCB )
-          m_fitRectHeightCB->setChecked( fitD2 );
-        
-        m_rectDepthEdit->setValueText( WString::fromUTF8(d3str) );
-        if( m_fitRectDepthCB )
-          m_fitRectDepthCB->setChecked( fitD3 );
-        break;
-        
-      case GammaInteractionCalc::GeometryType::NumGeometryType:
-        assert( 0 );
-        break;
-    }//switch( m_geometry )
-    
-  }//if( generic ) / else
+    case GammaInteractionCalc::GeometryType::NumGeometryType:
+      assert( 0 );
+      break;
+  }//switch( m_geometry )
   
-  handleMaterialChange();
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  ShieldingSourceFitCalc::ShieldingInfo roundtrip = toShieldingInfo();
+  try
+  {
+    ShieldingSourceFitCalc::ShieldingInfo::equalEnough( info, roundtrip );
+  }catch( std::exception &e )
+  {
+    cerr << "ShieldingSelect::handleAppUrl: failed to roundtrip: " << e.what() << endl;
+    //assert( 0 );
+  }
+#endif //#if( PERFORM_DEVELOPER_CHECKS )
 }//void handleAppUrl( std::string query_str )
