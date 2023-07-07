@@ -51,6 +51,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/D3TimeChart.h"
+#include "InterSpec/UndoRedoManager.h"
 
 using namespace Wt;
 using namespace std;
@@ -86,12 +87,16 @@ class D3TimeChartFilters : public WContainerWidget
 {
   D3TimeChart *m_parentChart;
   
+  WTabWidget *m_tabs;
+  int m_currentTab;                                    // Tracking for undo/redo support
+  
   enum InteracModeIndex
   {
     IM_Normal, IM_Zoom, IM_Pan, IM_Select, IM_Add, IM_Remove, IM_NumMode
   };
   
   WMenu *m_interactModeMenu;
+  D3TimeChart::UserInteractionMode m_currentInteractionMode;
   
   WContainerWidget *m_specTypeDiv;
   WMenu *m_specTypeSelect;
@@ -102,17 +107,22 @@ class D3TimeChartFilters : public WContainerWidget
   WCheckBox *m_dontRebin;
   WCheckBox *m_hideNeutrons;
   NativeFloatSpinBox *m_gammaNeutRelEmphasis;
+  float m_gammaNeutRelEmphasisValue;                      // Tracking for undo/redo support
   WCheckBox* m_normalizeCb;
   WContainerWidget *m_normBox;
   NativeFloatSpinBox *m_normLowerEnergy;
   NativeFloatSpinBox* m_normUpperEnergy;
+  array<boost::optional<float>, 4> m_currentEnergyFilters; // Tracking for undo/redo support
   
 
 public:
   D3TimeChartFilters( D3TimeChart *parent )
     : WContainerWidget( parent ),
       m_parentChart( parent ),
+      m_tabs( nullptr ),
+      m_currentTab( 0 ),
       m_interactModeMenu( nullptr ),
+      m_currentInteractionMode( D3TimeChart::UserInteractionMode::Default ),
       m_specTypeDiv( nullptr ),
       m_specTypeSelect( nullptr ),
       m_lowerEnergy( nullptr ),
@@ -121,10 +131,12 @@ public:
       m_dontRebin( nullptr ),
       m_hideNeutrons( nullptr ),
       m_gammaNeutRelEmphasis( nullptr ),
+      m_gammaNeutRelEmphasisValue( 1.0f ),
       m_normalizeCb(nullptr),
       m_normBox(nullptr),
       m_normLowerEnergy(nullptr),
-      m_normUpperEnergy(nullptr)
+      m_normUpperEnergy(nullptr),
+      m_currentEnergyFilters{}
   {
     assert( parent );
     
@@ -136,14 +148,16 @@ public:
     closeIcon->clicked().connect( boost::bind( &D3TimeChart::showFilters, parent, false ) );
     
     
-    WTabWidget *tabs = new WTabWidget( this );
-    tabs->addStyleClass( "D3TimeFiltersTab" );
+    m_tabs = new WTabWidget( this );
+    m_currentTab = 0;
+    m_tabs->addStyleClass( "D3TimeFiltersTab" );
+    m_tabs->currentChanged().connect( boost::bind( &D3TimeChartFilters::userChangedTab, this, boost::placeholders::_1 ) );
     
     WContainerWidget *interact = new WContainerWidget();
     interact->addStyleClass( "D3TimeInteractTab" );
-    tabs->addTab(interact, "Int"); //Returns a
+    m_tabs->addTab(interact, "Int"); //Returns a
     // If we want to add an icon, we could:
-    //WMenuItem* tab = tabs->addTab(interact, "");
+    //WMenuItem* tab = m_tabs->addTab(interact, "");
     //tab->setIcon("InterSpec_resources/images/interact.svg");
     //  But then we need to adjust the ".D3TimeChartFilters .Wt-tabs li.item .Wt-icon" CSS selector to make thigns look okay
 
@@ -248,7 +262,7 @@ public:
     
     WContainerWidget *filterContents = new WContainerWidget();
     filterContents->addStyleClass( "D3TimeFilterTab" );
-    WMenuItem *filterTabItem = tabs->addTab(filterContents, "Filt");
+    m_tabs->addTab(filterContents, "Filt");
     
     WText *filterTitle = new WText("Filter energy range:", filterContents);
     filterTitle->addStyleClass("FilterTitle");
@@ -273,22 +287,17 @@ public:
     m_lowerEnergy->setText( "" );
     m_upperEnergy->setText( "" );
     
-    //m_lowerEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChanged );
-    //m_upperEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChanged );
-    
-    m_lowerEnergy->valueChanged().connect( m_parentChart, &D3TimeChart::userChangedEnergyRangeFilterCallback );
     m_lowerEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChangedCallback );
-    
-    m_upperEnergy->valueChanged().connect( m_parentChart, &D3TimeChart::userChangedEnergyRangeFilterCallback );
     m_upperEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChangedCallback );
     
     // Add a checkbox, and additional energy ranges, etc
     m_normalizeCb = new WCheckBox("Normalize to energy range", filterContents);
     m_normalizeCb->addStyleClass("DoNormCb");
+    m_normalizeCb->hide();
 
     const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
     const char* tooltip = "Allows you to select an energy to normalize the filtered energy range of interest to. <br />"
-      "i.e., the sum of gammas in the filtered range becomes the numerator, and the sum of gammas in"
+      "i.e., for each time slice, the sum of gammas in the filtered energy range becomes the numerator, and the sum of gammas in"
       " the normalize range becomes the denominator.</br />"
       "Usually you will select the normalization range to be energies above the range of interest."
       ;
@@ -331,10 +340,9 @@ public:
     m_clearEnergyFilterBtn->setHiddenKeepsGeometry( true );
     
 
-
     WContainerWidget* optContents = new WContainerWidget();
     optContents->addStyleClass("D3TimeOptTab");
-    WMenuItem* optTabItem = tabs->addTab(optContents, "Opt");
+    m_tabs->addTab(optContents, "Opt");
 
     
     m_dontRebin = new WCheckBox( "Don't rebin", optContents);
@@ -342,7 +350,6 @@ public:
     m_dontRebin->setToolTip( "Disable combining time samples on the chart when there are more time samples than pixels." );
     m_dontRebin->checked().connect( this, &D3TimeChartFilters::dontRebinChanged );
     m_dontRebin->unChecked().connect( this, &D3TimeChartFilters::dontRebinChanged );
-    
     
     m_hideNeutrons = new WCheckBox( "Hide neutrons", optContents);
     m_hideNeutrons->addStyleClass( "D3TimeHideNeutrons" );
@@ -368,7 +375,108 @@ public:
     m_gammaNeutRelEmphasis->setText( "1.0" );
     m_gammaNeutRelEmphasis->setSingleStep( 0.2f );
     m_gammaNeutRelEmphasis->valueChanged().connect( this, &D3TimeChartFilters::handleGammaNeutRelEmphasisChanged );
+    m_gammaNeutRelEmphasisValue = 1.0f;
   }//D3TimeChartFilters
+  
+  
+  void userChangedTab( const int index )
+  {
+    if( m_currentTab == index )
+      return;
+    
+    const int prev_index = m_currentTab;
+    m_currentTab = index;
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( !undoRedo || undoRedo->isInUndoOrRedo() )
+      return;
+    
+    auto undoTab = wApp->bind( boost::bind( &WTabWidget::setCurrentIndex, m_tabs, prev_index ) );
+    auto undoSetTab = wApp->bind( boost::bind( &D3TimeChartFilters::userChangedTab, this, prev_index ) );
+    
+    auto redoTab = wApp->bind( boost::bind( &WTabWidget::setCurrentIndex, m_tabs, index ) );
+    auto redoSetTab = wApp->bind( boost::bind( &D3TimeChartFilters::userChangedTab, this, index ) );
+    
+    auto undo = [=](){ undoTab(); undoSetTab(); };
+    auto redo = [=](){ redoTab(); redoSetTab(); };
+    
+    undoRedo->addUndoRedoStep( undo, redo, "Change time filter tab." );
+  }//void userChangedTab( int )
+  
+  
+  void setInteractionMode( const D3TimeChart::UserInteractionMode mode )
+  {
+    int interact_index = -1, type_index = -1;
+    switch( mode )
+    {
+      case D3TimeChart::UserInteractionMode::Default:
+        interact_index = static_cast<int>(InteracModeIndex::IM_Normal);
+        break;
+        
+      case D3TimeChart::UserInteractionMode::Zoom:
+        interact_index = static_cast<int>(InteracModeIndex::IM_Zoom);
+        break;
+        
+      case D3TimeChart::UserInteractionMode::Pan:
+        interact_index = static_cast<int>(InteracModeIndex::IM_Pan);
+        break;
+        
+      case D3TimeChart::UserInteractionMode::SelectForeground:
+        interact_index = static_cast<int>(InteracModeIndex::IM_Select);
+        type_index = 0;
+        break;
+        
+      case D3TimeChart::UserInteractionMode::SelectBackground:
+        interact_index = static_cast<int>(InteracModeIndex::IM_Select);
+        type_index = 1;
+        break;
+        
+      case D3TimeChart::UserInteractionMode::SelectSecondary:
+        interact_index = static_cast<int>(InteracModeIndex::IM_Select);
+        type_index = 2;
+        break;
+        
+      case D3TimeChart::UserInteractionMode::AddForeground:
+        interact_index = static_cast<int>(InteracModeIndex::IM_Add);
+        type_index = 0;
+        break;
+        
+      case D3TimeChart::UserInteractionMode::AddBackground:
+        interact_index = static_cast<int>(InteracModeIndex::IM_Add);
+        type_index = 1;
+        break;
+        
+      case D3TimeChart::UserInteractionMode::AddSecondary:
+        interact_index = static_cast<int>(InteracModeIndex::IM_Add);
+        type_index = 2;
+        break;
+        
+      case D3TimeChart::UserInteractionMode::RemoveForeground:
+        interact_index = static_cast<int>(InteracModeIndex::IM_Remove);
+        type_index = 0;
+        break;
+        
+      case D3TimeChart::UserInteractionMode::RemoveBackground:
+        interact_index = static_cast<int>(InteracModeIndex::IM_Remove);
+        type_index = 1;
+        break;
+        
+      case D3TimeChart::UserInteractionMode::RemoveSecondary:
+        interact_index = static_cast<int>(InteracModeIndex::IM_Remove);
+        type_index = 2;
+        break;
+    }//switch( mode )
+    
+    assert( interact_index >= 0 );
+    if( interact_index >= 0 )
+      m_interactModeMenu->select( interact_index );
+    
+    m_specTypeDiv->setHidden( (type_index < 0) );
+    if( type_index >= 0 )
+      m_specTypeSelect->select( type_index );
+
+    m_currentInteractionMode = mode;
+  }//void setInteractionMode( D3TimeChart::UserInteractionMode mode )
   
   
   void handleInteractionModeChange()
@@ -409,8 +517,21 @@ public:
     if( hideSpecTypeMenu != m_specTypeDiv->isHidden() )
       m_specTypeDiv->setHidden( hideSpecTypeMenu );
     
+    const D3TimeChart::UserInteractionMode prevIntMode = m_currentInteractionMode;
+    const D3TimeChart::UserInteractionMode newIntMode = interactionMode();
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( (prevIntMode != newIntMode) && undoRedo && !undoRedo->isInUndoOrRedo() )
+    {
+      auto undo = wApp->bind( boost::bind( &D3TimeChartFilters::setInteractionMode, this, prevIntMode ) );
+      auto redo = wApp->bind( boost::bind( &D3TimeChartFilters::setInteractionMode, this, newIntMode ) );
+      undoRedo->addUndoRedoStep( undo, redo, "Change time-chart interaction mode." );
+    }//if( prevIntMode != newIntMode )
+    
+    m_currentInteractionMode = newIntMode;
+    
     if( m_parentChart )
-      m_parentChart->setUserInteractionMode( interactionMode() );
+      m_parentChart->setUserInteractionMode( newIntMode );
   }//void handleInteractionModeChange()
   
   
@@ -476,9 +597,87 @@ public:
     return D3TimeChart::UserInteractionMode::Default;
   }//D3TimeChart::UserInteractionMode interactionMode()
   
+  
+  void setEnergyRangeFilters( const array<boost::optional<float>,4> &value )
+  {
+    // Does not add undo/redo step, because this function is only called when
+    //  doing undo/redo, right now at least.
+    
+    if( value[0].has_value() )
+      m_lowerEnergy->setValue( *value[0] );
+    else
+      m_lowerEnergy->setText( "" );
+    
+    if( value[1].has_value() )
+      m_upperEnergy->setValue( *value[1] );
+    else
+      m_upperEnergy->setText( "" );
+    
+    const bool emptyInput = (m_lowerEnergy->text().empty() && m_upperEnergy->text().empty());
+    if( emptyInput )
+      m_normalizeCb->setUnChecked();
+    m_normalizeCb->setHidden( emptyInput );
+    m_clearEnergyFilterBtn->setHidden( emptyInput );
+    
+    if( !value[2].has_value() && !value[3].has_value() )
+    {
+      m_normLowerEnergy->setText( "" );
+      m_normUpperEnergy->setText( "" );
+      m_normBox->setDisabled( true );
+      m_normalizeCb->setChecked( false );
+    }else
+    {
+      m_normBox->setDisabled( false );
+      m_normalizeCb->setChecked( true );
+      
+      if( value[2].has_value() )
+        m_normLowerEnergy->setValue( *value[2] );
+      else
+        m_normLowerEnergy->setText( "" );
+      
+      if( value[3].has_value() )
+        m_normUpperEnergy->setValue( *value[3] );
+      else
+        m_normUpperEnergy->setText( "" );
+    }//if( norm range not enabled ) / else
+    
+    m_currentEnergyFilters = value;
+    
+    m_parentChart->userChangedEnergyRangeFilterCallback();
+  }//void setEnergyRangeFilters( const array<boost::optional<float>,4> &value )
+  
+  
+  void addFilterChangeUndoRedo()
+  {
+    const array<boost::optional<float>,4> old_filters = m_currentEnergyFilters;
+    const array<boost::optional<float>,4> new_filters = energyRangeFilters();
+    
+    if( old_filters == new_filters )
+      return;
+    
+    m_currentEnergyFilters = new_filters;
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( !undoRedo || undoRedo->isInUndoOrRedo() )
+      return;
+    
+    auto undo = wApp->bind( boost::bind( &D3TimeChartFilters::setEnergyRangeFilters, this, old_filters ) );
+    auto redo = wApp->bind( boost::bind( &D3TimeChartFilters::setEnergyRangeFilters, this, new_filters ) );
+    undoRedo->addUndoRedoStep( undo, redo, "Change time-chart energy filter." );
+  }//void addFilterChangeUndoRedo()
+  
+  
   void clearFilterEnergiesCallback()
   {
     m_clearEnergyFilterBtn->hide();
+    
+    if( m_normalizeCb->isChecked() )
+    {
+      m_normalizeCb->setUnChecked();
+      m_normBox->setDisabled( true );
+    }
+    
+    m_normalizeCb->hide();
     
     if( m_lowerEnergy->text().empty() && m_upperEnergy->text().empty() )
       return;
@@ -488,12 +687,8 @@ public:
     
     m_normLowerEnergy->setText("");
     m_normUpperEnergy->setText("");
-    if( m_normalizeCb->isChecked() )
-    {
-      m_normalizeCb->setUnChecked();
-      m_normBox->setDisabled( true );
-    }
 
+    addFilterChangeUndoRedo();
     m_parentChart->userChangedEnergyRangeFilterCallback();
   }//void clearFilterEnergiesCallback()
 
@@ -505,8 +700,11 @@ public:
     m_normLowerEnergy->setText("");
     m_normUpperEnergy->setText("");
     m_clearEnergyFilterBtn->hide();
+    m_normalizeCb->hide();
     m_normalizeCb->setUnChecked();
+    m_normalizeCb->hide();
     m_normBox->setDisabled(true);
+    m_parentChart->userChangedEnergyRangeFilterCallback(); //JIC, but prob not necassary
   }
   
 
@@ -514,25 +712,37 @@ public:
   {
     m_normBox->setDisabled(!m_normalizeCb->isChecked());
 
-    if (m_normalizeCb->isChecked())
+    if( m_normalizeCb->isChecked() )
     {
-      if (m_normLowerEnergy->text().empty())
+      if( m_normLowerEnergy->text().empty() )
       {
-        if (!m_upperEnergy->text().empty())
+        if( !m_upperEnergy->text().empty() )
           m_normLowerEnergy->setValue( m_upperEnergy->value() );
       }
-    }
+    }//if( m_normalizeCb->isChecked() )
 
+    addFilterChangeUndoRedo();
     m_parentChart->userChangedEnergyRangeFilterCallback();
   }//void normRangeEnabledChange()
   
 
   void userChangedNormEnergyRange()
   {
-   //blah blah blah, do some stuff like in energyFilterChangedCallback
-
-     //And then also implement stuff in userChangedEnergyRangeFilterCallback
-
+    if( !m_normLowerEnergy->text().empty() && !m_normUpperEnergy->text().empty() )
+    {
+      if( fabs(m_normLowerEnergy->value() - m_normUpperEnergy->value()) < 0.1 )
+      {
+        m_normLowerEnergy->setText( "" );
+        m_normUpperEnergy->setText( "" );
+        
+        auto interspec = InterSpec::instance();
+        const char *msg = "Energy sum normalization range must be larger than 0.1 keV.";
+        if( interspec )
+          interspec->logMessage( msg, 3 );
+      }//
+    }//if( both lower and upper energies are specified )
+    
+    addFilterChangeUndoRedo();
     m_parentChart->userChangedEnergyRangeFilterCallback();
   }//void userChangedNormEnergyRange()
 
@@ -555,17 +765,20 @@ public:
     }//if( both lower and upper energies are specified )
     
     const bool emptyInput = (m_lowerEnergy->text().empty() && m_upperEnergy->text().empty());
-    //m_clearEnergyFilterBtn->setEnabled( notEmpty );
+    if( emptyInput )
+      m_normalizeCb->setUnChecked();
+    m_normalizeCb->setHidden( emptyInput );
     m_clearEnergyFilterBtn->setHidden( emptyInput );
     
-    //const auto ranges = energyRangeFilters();
-    //m_parentChart->userChangedEnergyRangeFilterCallback( ranges.first, ranges.second );
+    addFilterChangeUndoRedo();
+    m_parentChart->userChangedEnergyRangeFilterCallback();
   }//void energyFilterChanged()
   
   
   std::array<boost::optional<float>,4> energyRangeFilters() const
   {
     array<boost::optional<float>, 4> answer;
+    
     if( !m_lowerEnergy->text().empty() )
       answer[0] = m_lowerEnergy->value();
     
@@ -575,17 +788,17 @@ public:
     if( answer[0] && answer[1] && ((*answer[0]) > (*answer[1])) )
       std::swap( answer[0], answer[1]);
     
-    if (m_normalizeCb->isChecked())
+    if( m_normalizeCb->isChecked() )
     {
       if( !m_normLowerEnergy->text().empty() )
         answer[2] = m_normLowerEnergy->value();
 
-      if (!m_normUpperEnergy->text().empty())
+      if( !m_normUpperEnergy->text().empty() )
         answer[3] = m_normUpperEnergy->value();
 
-      if (answer[2] && answer[3] && ((*answer[2]) > (*answer[3])))
+      if( answer[2] && answer[3] && ((*answer[2]) > (*answer[3])) )
         std::swap(answer[2], answer[3]);
-    }//if (m_normalizeCb->isChecked())
+    }//if( m_normalizeCb->isChecked() )
 
     return answer;
   }//energyRangeFilters()
@@ -595,12 +808,58 @@ public:
   {
     const bool dontRebin = m_dontRebin->isChecked();
     m_parentChart->setDontRebin( dontRebin );
-  }
+    
+    // Take care of undo/redo
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && !undoRedo->isInUndoOrRedo() )
+    {
+      auto togleDontRebinCB = wApp->bind( boost::bind( &WCheckBox::setChecked, m_dontRebin, !dontRebin ) );
+      auto unTogleDontRebinCB = wApp->bind( boost::bind( &WCheckBox::setChecked, m_dontRebin, dontRebin ) );
+      auto callDonRebinChanged = wApp->bind( boost::bind( &D3TimeChartFilters::dontRebinChanged, this ) );
+      // We could make sure filter widget is showing, like with the next line, but instead we'll
+      //  just relly on tracking its visibility state correctly
+      //auto showFilters = wApp->bind( boost::bind( &D3TimeChart::showFilters, m_parentChart, true) );
+      
+      auto undo = [togleDontRebinCB, callDonRebinChanged](){
+        togleDontRebinCB();
+        callDonRebinChanged();
+      };
+      
+      auto redo = [unTogleDontRebinCB, callDonRebinChanged](){
+        unTogleDontRebinCB();
+        callDonRebinChanged();
+      };
+      
+      undoRedo->addUndoRedoStep( undo, redo, "Toggle dont-rebin time chart" );
+    }//if( undoRedo )
+  }//void dontRebinChanged()
   
   void hideNeutronsChanged()
   {
-    m_parentChart->setNeutronsHidden( m_hideNeutrons->isChecked() );
-  }
+    const bool hideNuetrons = m_hideNeutrons->isChecked();
+    m_parentChart->setNeutronsHidden( hideNuetrons );
+    
+    // Take care of undo/redo
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && !undoRedo->isInUndoOrRedo() )
+    {
+      auto togleHideNeutronsCB = wApp->bind( boost::bind( &WCheckBox::setChecked, m_hideNeutrons, !hideNuetrons ) );
+      auto unTogleHideNeutronsCB = wApp->bind( boost::bind( &WCheckBox::setChecked, m_hideNeutrons, hideNuetrons ) );
+      auto callHideNeutChanged = wApp->bind( boost::bind( &D3TimeChartFilters::hideNeutronsChanged, this ) );
+      
+      auto undo = [togleHideNeutronsCB, callHideNeutChanged](){
+        togleHideNeutronsCB();
+        callHideNeutChanged();
+      };
+      
+      auto redo = [unTogleHideNeutronsCB, callHideNeutChanged](){
+        unTogleHideNeutronsCB();
+        callHideNeutChanged();
+      };
+      
+      undoRedo->addUndoRedoStep( undo, redo, "Toggle showing neutrons on time chart" );
+    }//if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  }//void hideNeutronsChanged()
   
   
   void handleGammaNeutRelEmphasisChanged()
@@ -632,6 +891,30 @@ public:
     const string js = m_parentChart->m_jsgraph
                       +  ".setYAxisGammaNeutronRelMaxSf(" + std::to_string(value) + ");";
     m_parentChart->doJavaScript( js );
+    
+    const float prevValue = m_gammaNeutRelEmphasisValue;
+    m_gammaNeutRelEmphasisValue = value;
+    
+    // Take care of undo/redo
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && !undoRedo->isInUndoOrRedo() )
+    {
+      auto undoSet = wApp->bind( boost::bind( &NativeFloatSpinBox::setValue, m_gammaNeutRelEmphasis, prevValue) );
+      auto redoSet = wApp->bind( boost::bind( &NativeFloatSpinBox::setValue, m_gammaNeutRelEmphasis, value) );
+      auto callHandleChange = wApp->bind( boost::bind( &D3TimeChartFilters::handleGammaNeutRelEmphasisChanged, this ) );
+      
+      auto undo = [undoSet, callHandleChange](){
+        undoSet();
+        callHandleChange();
+      };
+      
+      auto redo = [redoSet, callHandleChange](){
+        redoSet();
+        callHandleChange();
+      };
+      
+      undoRedo->addUndoRedoStep( undo, redo, "Change Rel. y-max" );
+    }//if( undoRedo && !undoRedo->isInUndoOrRedo() )
   }//handleGammaNeutRelEmphasisChanged()
   
   
@@ -651,7 +934,7 @@ public:
     m_gammaNeutRelEmphasis->setHidden( !visible );
     // Should we also reset m_gammaNeutRelEmphasis to 1.0 if we are hiding the option?
   }
-};//class D3TimeChartOptions
+};//class D3TimeChartFilters
 
 
 D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
@@ -692,7 +975,11 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_textColor( 0x00, 0x00, 0x00 ),
   m_axisColor( 0x00, 0x00, 0x00 ),
   m_chartMarginColor( 0x00, 0x00, 0x00 ),
-  m_chartBackgroundColor( 0x00, 0x00, 0x00 )
+  m_chartBackgroundColor( 0x00, 0x00, 0x00 ),
+  m_cssRules{},
+  m_pendingJs{},
+  m_displayedSampleNumbers{-1,-1},
+  m_displayedTimes{ 0.0, 0.0 }
 {
   addStyleClass( "D3TimeChartParent" );
     
@@ -756,8 +1043,11 @@ void D3TimeChart::defineJavaScript()
   setJavaScriptMember( "resizeObserver",
     "new ResizeObserver(entries => {"
       "for (let entry of entries) {"
-        "if( entry.target && (entry.target.id === '" + m_chart->id() + "') )"
-          + m_jsgraph + ".handleResize();"
+        "if( entry.target && (entry.target.id === '" + m_chart->id() + "') ){"
+          "const c=" + jsRef() + ";"
+          "if(c && c.chart)"
+            "c.chart.handleResize();"
+        "}"
       "}"
     "});"
   );
@@ -768,12 +1058,12 @@ void D3TimeChart::defineJavaScript()
   {
     m_chartClickedJS.reset( new Wt::JSignal<int,int>(m_chart, "timeclicked", false) );
     m_chartDraggedJS.reset( new Wt::JSignal<int,int,int>(m_chart, "timedragged", false) );
-    m_displayedXRangeChangeJS.reset( new Wt::JSignal<int,int,int>(m_chart,"timerangechange",false) );
-    
+    m_displayedXRangeChangeJS.reset( new Wt::JSignal<int,int,int,double,double,bool>(m_chart,"timerangechange",false) );
+  
     m_chartClickedJS->connect( this, &D3TimeChart::chartClickedCallback );
     m_chartDraggedJS->connect( this, &D3TimeChart::chartDraggedCallback );
     m_displayedXRangeChangeJS->connect( this, &D3TimeChart::displayedXRangeChangeCallback );
-  }//if( !m_xRangeChangedJS )
+  }//if( !m_chartClickedJS )
   
   for( const string &js : m_pendingJs )
     doJavaScript( js );
@@ -1920,6 +2210,15 @@ void D3TimeChart::showFilters( const bool show )
   
   const auto mode = show ? m_options->interactionMode() : UserInteractionMode::Default;
   setUserInteractionMode( mode );
+  
+  // Take care of undo/redo
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    auto undo = wApp->bind( boost::bind( &D3TimeChart::showFilters, this, !show ) );
+    auto redo = wApp->bind( boost::bind( &D3TimeChart::showFilters, this, show ) );
+    undoRedo->addUndoRedoStep( undo, redo, (show ? "Show" : "Hide") + string(" time-chart options") );
+  }
 }//void showFilters( const bool show )
 
 
@@ -2097,7 +2396,41 @@ void D3TimeChart::chartDraggedCallback( int first_sample_number, int last_sample
 }//chartDraggedCallback(...)
 
 
-void D3TimeChart::displayedXRangeChangeCallback( int first_sample_number, int last_sample_number, int samples_per_channel )
+void D3TimeChart::displayedXRangeChangeCallback( const int first_sample_number,
+                                                const int last_sample_number,
+                                                const int compression_index,
+                                                const double start_time,
+                                                const double end_time,
+                                                const bool is_user_action )
 {
-  m_displayedXRangeChange.emit( first_sample_number, last_sample_number, samples_per_channel );
+  const int samples_per_channel = std::pow( 2, compression_index );
+  
+  if( is_user_action )
+  {
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo )
+    {
+      // Note: currently just rounding display to whole sample numbers, not the exact limits the
+      //       user; close-enough for now.
+      const array<int,2> prevSampleNumbers = m_displayedSampleNumbers;
+      
+      auto undo = [prevSampleNumbers,this](){
+        setXAxisRangeSamples( prevSampleNumbers[0], prevSampleNumbers[1] );
+      };
+      
+      auto redo = [first_sample_number, last_sample_number,this](){
+        setXAxisRangeSamples( first_sample_number, last_sample_number );
+      };
+      
+      undoRedo->addUndoRedoStep( undo, redo, "Change time-chart time-range." );
+    }//if( undoRedo )
+    
+    m_displayedXRangeChange.emit( first_sample_number, last_sample_number, samples_per_channel  );
+  }//if( is_user_action )
+  
+  
+  m_displayedSampleNumbers[0] = first_sample_number;
+  m_displayedSampleNumbers[1] = last_sample_number;
+  m_displayedTimes[0] = start_time;
+  m_displayedTimes[1] = end_time;
 }//displayedXRangeChangeCallback(...)

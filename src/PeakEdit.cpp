@@ -38,16 +38,18 @@
 #include <Wt/WDoubleValidator>
 #include <Wt/WContainerWidget>
 
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PeakEdit.h"
-#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -77,6 +79,21 @@ static_assert( int(PeakEdit::LandauSigma)     == int(PeakDef::LandauSigma),
                "PeakEdit::LandauSigma and PeakDef::LandauSigma are not equal as expected" );
 static_assert( int(PeakEdit::Chi2DOF)         == int(PeakDef::Chi2DOF),
                "PeakEdit::Chi2DOF and PeakDef::Chi2DOF are not equal as expected" );
+
+
+namespace
+{
+  
+  PeakEdit *get_session_peak_editor()
+  {
+    InterSpec *viewer = InterSpec::instance();
+    PeakEditWindow *editWindow = viewer ? viewer->peakEdit() : nullptr;
+    PeakEdit *edit = editWindow ? editWindow->peakEditor() : nullptr;
+    assert( edit );
+    return edit;
+  }//PeakEdit *get_session_peak_editor()
+  
+}//namespace
 
 
 PeakEditWindow::PeakEditWindow( const double energy,
@@ -632,6 +649,12 @@ void PeakEdit::changePeak( const double energy )
 }//void changePeak( double energy )
 
 
+double PeakEdit::currentPeakEnergy() const
+{
+  return m_energy;
+}//double currentPeakEnergy() const;
+
+
 void PeakEdit::isotopeChanged()
 {
   m_photoPeakEnergy->clear();
@@ -1086,6 +1109,7 @@ void PeakEdit::refreshPeakInfo()
   
   m_apply->disable();
 //  m_accept->disable();
+  m_accept->enable();
   m_cancel->enable();
   m_refit->setEnabled( m_currentPeak.type() == PeakDef::GaussianDefined );
 }//void refreshPeakInfo()
@@ -1833,7 +1857,6 @@ void PeakEdit::refit()
     passMessage( e.what(), WarningWidget::WarningMsgHigh );
     return;
   }
-
   
   vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
   vector< std::shared_ptr<const PeakDef> > inpkptrs;
@@ -1899,22 +1922,56 @@ void PeakEdit::refit()
     return;
   }//if( outputPeak.size() != inputPeak.size() )
   
+  
+  const double origEnergy = m_energy;
+  const double newEnergy = (inputPeak.size() > 1) ? m_currentPeak.mean() : outputPeak[0].mean();
+  vector<PeakModel::PeakShrdPtr> prev_peaks;
+  shared_ptr<const deque< PeakModel::PeakShrdPtr > > prev_peaks_ptr = m_peakModel->peaks();
+  if( prev_peaks_ptr )
+    prev_peaks.insert( end(prev_peaks), begin(*prev_peaks_ptr), end(*prev_peaks_ptr) );
+  
+  /*
   if( inputPeak.size() > 1 )
   {
-    m_energy = m_currentPeak.mean();
+   */
     fixedPeaks.insert( fixedPeaks.end(), outputPeak.begin(), outputPeak.end() );
     std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
-    m_peakModel->setPeaks( fixedPeaks );
     
+    m_energy = newEnergy;
+    m_peakModel->setPeaks( fixedPeaks );
     changePeak( m_energy );
+    
+    auto undo = [prev_peaks,origEnergy](){
+      PeakEdit *edit = get_session_peak_editor();
+      if( !edit )
+        return;
+      edit->m_peakModel->setPeaks( prev_peaks );
+      edit->changePeak( origEnergy );
+    };//undo
+    
+    auto redo = [newEnergy,fixedPeaks](){
+      PeakEdit *edit = get_session_peak_editor();
+      if( !edit )
+        return;
+      
+      edit->m_energy = newEnergy;
+      edit->m_peakModel->setPeaks( fixedPeaks );
+      edit->changePeak( newEnergy );
+    };
+    
+    UndoRedoManager *undo_manager = m_viewer->undoRedoManager();
+    if( undo_manager )
+      undo_manager->addUndoRedoStep( undo, redo, "Peak refit." );
+  /*
   }else
   {
-    for( PeakDef::CoefficientType t = PeakDef::CoefficientType(0);
-        t < PeakDef::NumCoefficientTypes;
-        t = PeakDef::CoefficientType(t+1) )
-    {
-      outputPeak[0].setFitFor(t, m_currentPeak.fitFor(t));
-    }//for( loop over PeakDef::CoefficientType )
+    // 20230423: This should have already been taken care of by PeakDef::inheritUserSelectedOptions
+    //for( PeakDef::CoefficientType t = PeakDef::CoefficientType(0);
+    //    t < PeakDef::NumCoefficientTypes;
+    //    t = PeakDef::CoefficientType(t+1) )
+    //{
+    //  outputPeak[0].setFitFor(t, m_currentPeak.fitFor(t));
+    //}//for( loop over PeakDef::CoefficientType )
     
     m_currentPeak = outputPeak[0];
     m_energy = m_currentPeak.mean();
@@ -1926,6 +1983,7 @@ void PeakEdit::refit()
     
     refreshPeakInfo();
   }//if( inputPeak.size() > 1 )
+   */
 }//void refit()
 
 void PeakEdit::setAmplitudeForDataDefinedPeak()
@@ -1961,7 +2019,17 @@ void PeakEdit::apply()
   if( !isDirty() )
     return;
   
-  PeakDef revertPeak = *m_peakModel->peak( m_peakIndex ); //used to restore peak if catches an exception.
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
+  const PeakDef revertPeak = *m_peakModel->peak( m_peakIndex ); //used to restore peak if catches an exception.
+  
+  // Grab a few things for undo/redo
+  const double starting_energy = m_energy;
+  const PeakDef starting_current_peak = m_currentPeak;
+  vector<PeakModel::PeakShrdPtr> starting_peaks;
+  const auto start_peaks_ptr = m_peakModel->peaks();
+  if( start_peaks_ptr )
+    starting_peaks.insert( end(starting_peaks), begin(*start_peaks_ptr), end(*start_peaks_ptr) );
     
   try
   {
@@ -2348,9 +2416,39 @@ void PeakEdit::apply()
     m_peakModel->removePeak( m_peakIndex );
     m_peakIndex = m_viewer->addPeak( m_currentPeak, false );
     m_currentPeak = *m_peakModel->peak( m_peakIndex );
+    m_energy = m_currentPeak.mean();
     m_blockInfoRefresh = false;
     
     refreshPeakInfo();
+    
+    const double ending_energy = m_energy;
+    vector<PeakModel::PeakShrdPtr> ending_peaks;
+    const auto ending_peaks_ptr = m_peakModel->peaks();
+    if( ending_peaks_ptr )
+      ending_peaks.insert( end(ending_peaks), begin(*ending_peaks_ptr), end(*ending_peaks_ptr) );
+    
+  
+    auto redo = [this, ending_peaks, ending_energy](){
+      PeakEdit *editor = get_session_peak_editor();
+      if( !editor )
+        return;
+      
+      editor->m_peakModel->setPeaks( ending_peaks );
+      editor->changePeak( ending_energy );
+    };//redo
+    
+    auto undo = [starting_peaks, starting_energy](){
+      PeakEdit *editor = get_session_peak_editor();
+      if( !editor )
+        return;
+      
+      editor->m_peakModel->setPeaks( starting_peaks );
+      editor->changePeak( starting_energy );
+    };//undo
+    
+    UndoRedoManager *undo_manager = m_viewer->undoRedoManager();
+    if( undo_manager )
+      undo_manager->addUndoRedoStep( undo, redo, "Peak edit." );
   }catch ( std::exception &e)
   {
     if( m_peakIndex.isValid() )
@@ -2396,6 +2494,8 @@ void PeakEdit::cancel()
 
 void PeakEdit::deletePeak()
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
   if( m_peakIndex.isValid() )
     m_peakModel->removePeak( m_peakIndex );
   m_peakIndex = WModelIndex();

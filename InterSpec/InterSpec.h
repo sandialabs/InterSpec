@@ -51,26 +51,33 @@ class UserFileInDb;
 class PopupDivMenu;
 class SimpleDialog;
 class EnergyCalTool;
+class GammaXsWindow;
+class OneOverR2Calc;
 class SpectrumChart;
 class UseInfoWindow;
 class WarningWidget;
+class DoseCalcWindow;
+class FluxToolWindow;
 class WarningMessage;
 class PeakEditWindow;
 class DrfSelectWindow;
 class PeakInfoDisplay;
 class SpecMeasManager;
+class UndoRedoManager;
 class GammaCountDialog;
 class PopupDivMenuItem;
 class SpectraFileHeader;
 class PopupWarningWidget;
-class D3SpectrumDisplayDiv;
+class UnitsConverterTool;
 class FeatureMarkerWindow;
+class D3SpectrumDisplayDiv;
 class DetectorPeakResponse;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
 class ReferencePhotopeakDisplay;
 class LicenseAndDisclaimersWindow;
+namespace HelpSystem{ class HelpWindow; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
 
 #if( USE_TERMINAL_WIDGET )
@@ -88,6 +95,10 @@ class SpectrumViewerTester;
 #if( USE_REL_ACT_TOOL )
 class RelActAutoGui;
 class RelActManualGui;
+#endif
+
+#if( USE_LEAFLET_MAP )
+class LeafletRadMapWindow;
 #endif
 
 namespace SpecUtils{ class SpecFile; }
@@ -253,6 +264,9 @@ public:
     CheckToPreservePreviousEnergyCal = 0x01,
     CheckForRiidResults = 0x02,
     SkipParseWarnings = 0x04
+#if( USE_REMOTE_RID )
+    , SkipExternalRid = 0x08
+#endif
   };//SetSpectrumOptions
   
   
@@ -307,14 +321,17 @@ public:
    
    An example URL is "interspec://drf/specify?v=1"
    
+   The passed in string is assumed to be url-encoded.
+   
    Throws std::exception if url cant be used.
    */
-  void handleAppUrl( std::string url );
+  void handleAppUrl( const std::string &url_encoded_url );
   
   
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
   //  WContainerWidget or a PopupDivMenu
   void addFileMenu( Wt::WWidget *menuDiv, const bool isAppTitlebar );
+  void addEditMenu( Wt::WWidget *menuDiv );
   void addDisplayMenu( Wt::WWidget *menuDiv );
   void addDetectorMenu( Wt::WWidget *menuDiv );
   void addToolsMenu( Wt::WWidget *menuDiv );
@@ -475,7 +492,14 @@ public:
   //This will make it so the effective live time of the spectrum will be
   //  'sf' times the original live time of the spectrum.
   void setDisplayScaleFactor( const double sf,
-                              const SpecUtils::SpectrumType spectrum_type );
+                              const SpecUtils::SpectrumType spectrum_type,
+                             const bool addUndoRedoStep );
+  
+  /** This function is called when the user slides the slider on the spectrum, through the
+   D3SpectrumDisplayDiv::yAxisScaled() signal.
+   */
+  void handleDisplayScaleFactorChangeFromSpectrum( const double sf, const double prevSF,
+                                                  const SpecUtils::SpectrumType spec_type );
   
   //changeDisplayedSampleNums(...): called by both changeTimeRange() and
   //  sampleNumbersAddded() when the user wants to change displayed sample numbers
@@ -568,7 +592,8 @@ public:
   bool toolTabsVisible() const;
   
   void showMakeDrfWindow();
-  void showDrfSelectWindow();
+  DrfSelectWindow *showDrfSelectWindow();
+  void closeDrfSelectWindow();
   
   void showCompactFileManagerWindow();
   
@@ -598,13 +623,27 @@ public:
   //  fill m_shieldingSuggestion (from m_materialDB) and then push to the user.
   void pushMaterialSuggestionsToUsers();
   
-  void showGammaXsTool();
-  void showDoseTool();
-  void showShieldingSourceFitWindow();
-  void closeShieldingSourceFitWindow();
+  GammaXsWindow *showGammaXsTool();
+  void deleteGammaXsTool();
+  
+  DoseCalcWindow *showDoseTool();
+  void deleteDoseCalcTool();
+  
+  /** If "Activity/Shielding Fit" window is not showing, creates the tool/window, and returns the tool.
+   If it is already showing, no changes are made, and a pointer to the tool is returned.
+   When the window shown to the user is closed, the #closeShieldingSourceFit function will automatically be called, and tool deleted.
+   */
+  ShieldingSourceDisplay *shieldingSourceFit();
+  void closeShieldingSourceFit();
   void saveShieldingSourceModelToForegroundSpecMeas();
   
+  /** Shows the help window; if a preselect (ex., "energy-calibration", or "getting-started"), then that topic will be set to be selected.
+   */
+  void showHelpWindow( const std::string &preselect = "" );
 
+  /** Closes the help window. */
+  void closeHelpWindow();
+  
   //Note: I am not a big fan of how I treat m_referencePhotopeakLines in this class,
   //      but it is how it is due to technical difficulties that I dont want
   //      to figure out how to fix - right now I'm willing to accept the
@@ -657,33 +696,69 @@ public:
 
   EnergyCalTool *energyCalTool();
   
+  UndoRedoManager *undoRedoManager();
+  
+  PeakEditWindow *peakEdit();
   
   void showWarningsWindow();
-  void handleWarningsWindowClose( bool closeWindowTo );
+  void handleWarningsWindowClose();
 
   void showPeakInfoWindow();
   void handlePeakInfoClose();
 
+  GammaCountDialog *showGammaCountDialog();
+  void deleteGammaCountDialog();
+  
 #if( USE_GOOGLE_MAP )
   void createMapWindow( SpecUtils::SpectrumType spectrum_type );
   void displayOnlySamplesWithinView( GoogleMap *map,
                                      const SpecUtils::SpectrumType targetSamples,
                                      const SpecUtils::SpectrumType fromSamples );
 #elif( USE_LEAFLET_MAP )
-  void createMapWindow( SpecUtils::SpectrumType spectrum_type );
+  /** Create a Leaflet map window - first showing a warning to users about fetching data from arbgis, if they havent said
+   to not show that warning.
+   @param spectrum_type Which spectrum file to display GPS coordinates for.
+   @param noWarning If true, the warning dialog will not be shown - should be true only for executing undo/redo.
+   */
+  void createMapWindow( const SpecUtils::SpectrumType spectrum_type, const bool noWarning );
+  
+  /** Handles the closing of the Leaflet map warning window (sets `m_leafletWarning` to nullptr). */
+  void handleLeafletWarningWindowClose();
+  
+  
+  void handleLeafletMapOpen( LeafletRadMapWindow *window );
+  
+  /** Handles the closing of the Leaflet map window (when the AuxWIndow gets hidden), and inserts a undo/redo step. */
+  void handleLeafletMapClosed();
+  
+  /** Closes the Leaflet map warning window, without creating an undo/redo step. */
+  void programaticallyCloseLeafletWarning();
+  
+  /** Closes the Leaflet map window, without inserting undo/redo step. */
+  void programaticallyCloseLeafletMap();
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
   void create3DSearchModeChart();
+  void programaticallyClose3DSearchModeChart();
+  void handle3DSearchModeChartClose();
 #endif
 
-  /** Show the RIID results included in the spectrum file. */
+  /** Show the RIID results included in the spectrum file; and sets `m_riidDisplay` to window pointer */
   void showRiidResults( const SpecUtils::SpectrumType type );
+  
+  /** Handles the user closing the RIID Display; sets `m_riidDisplay` to nullptr, and tries adds undo/redo step. . */
+  void handleRiidResultsClose();
+  
+  /** Closes the RIID Display, without setting undo/redo step. */
+  void programaticallyCloseRiidResults();
   
   /** Show images included in the spectrum file. */
   void showMultimedia( const SpecUtils::SpectrumType type );
   
   void handleMultimediaClose( SimpleDialog *dialog );
+  
+  void programaticallyCloseMultimediaWindow();
   
 #if( USE_TERMINAL_WIDGET )
   void createTerminalWidget();
@@ -692,8 +767,9 @@ public:
   
 
 #if( USE_REMOTE_RID )
+  RemoteRid *remoteRid();
   void createRemoteRidWindow();
-  void handleRemoteRidClose();
+  void deleteRemoteRidWindow();
 #endif
 
 
@@ -701,7 +777,7 @@ public:
   RelActAutoGui *showRelActAutoWindow();
   void handleRelActAutoClose();
   
-  void createRelActManualWidget();
+  RelActManualGui *createRelActManualWidget();
   void handleRelActManualClose();
   
   void saveRelActManualStateToForegroundSpecMeas();
@@ -712,15 +788,20 @@ public:
   void handleToolTabClosed( const int tabnum );
 #endif
   
+  
+  OneOverR2Calc *createOneOverR2Calculator();
+  void deleteOneOverR2Calc();
+  UnitsConverterTool *createUnitsConverterTool();
+  void deleteUnitsConverterTool();
+  FluxToolWindow *createFluxTool();
+  void deleteFluxTool();
+  DecayWindow *createDecayInfoWindow();
+  void deleteDecayInfoWindow();
 
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
-      If is_awk is true, the confirm button will say "Awcknowledge" and the
-      window wont be otherwise closeable; if false button will say "close" and
-      the close icon in top bar will be avaialble.
    */
-  void showLicenseAndDisclaimersWindow( const bool is_awk,
-                                      std::function<void()> finished_callback );
+  void showLicenseAndDisclaimersWindow();
   
   /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
   void startClearSession();
@@ -730,17 +811,21 @@ public:
    */
   void deleteLicenseAndDisclaimersWindow();
   
-  //showWelcomeDialog(...): shows the welcome dialog.  If force==false, and the
-  //  user has opted to not show the dialog in a previous display, then it
-  //  wont be shown; if force==true, than it is shown no matter what and the
-  //  "do not show again" check box wont be shown to effect users prefference.
-  //  After creation m_useInfoWindow will point to the dialog.
-  void showWelcomeDialog( bool force = false );
-
-  /** Deletes the currently showing dialog (if its showing), and
-   sets m_useInfoWindow to null
+  /** Shows the welcome dialog.
+   
+   @param force If true, the window is shown immediately, and regardless of the "ShowSplashScreen" user preference, and also
+          an undo/redo step will be attempted to be added.  If false then window will only be shown if "ShowSplashScreen"
+          user preference is true, and wont be shown immediately, but rather posted to be shown next event loop, and with a
+          "do not show again" checkbox.
    */
-  void deleteWelcomeDialog();
+  void showWelcomeDialog( const bool force );
+  void showWelcomeDialogWorker( const bool force );
+
+  /** Deletes the currently showing dialog (if its showing), and sets m_useInfoWindow to null.
+   
+   @param addUndoRedoStep If true, will attempt to add an undo step to re-open the Welcome dialog
+   */
+  void deleteWelcomeDialog( const bool addUndoRedoStep );
   
   //deleteEnergyCalPreserveWindow(): deletes the currently showing dialog (if its
   //  showing), and sets m_preserveCalibWindow to null
@@ -787,11 +872,6 @@ protected:
   void doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
                             std::vector<boost::function<void(void)> > workers );
   
-  void createOneOverR2Calculator();
-  void createUnitsConverterTool();
-  void createFluxTool();
-  void createDecayInfoWindow();
-  void deleteDecayInfoWindow();
   void createFileParameterWindow();
   
 #if( USE_DETECTION_LIMIT_TOOL )
@@ -881,8 +961,6 @@ protected:
    */
   void removeToolsTabToMenuItems();
   
-  void showGammaCountDialog();
-  void deleteGammaCountDialog();
 
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   void showFileQueryDialog();
@@ -891,6 +969,8 @@ protected:
   
   void deletePeakEdit();
   void createPeakEdit( double energy );
+  
+  
   void handleRightClick( const double energy, const double counts,
                          const double pageX, const double pageY );
   void handleLeftClick( const double energy, const double counts,
@@ -938,11 +1018,17 @@ public:
 
 #if( USE_DB_TO_STORE_SPECTRA )
   //getCurrentStateID() open access to the current state ID
-  int getCurrentStateID() { return m_currentStateID; }
+  long long getCurrentStateID() { return m_currentStateID; }
 #endif
+  
+  /** Function to add undo/redo step for when the user changes x-axis range of spectrum. */
+  void handleSpectrumChartXRangeChange( const double xmin, const double xmax,
+                                       const double oldXmin, const double oldXmax,
+                                       const bool user_interaction);
   
   //Peak finding functions
   void searchForSinglePeak( const double x );
+  
   
   /** Function to call when the automated search for peaks (throughout the
       entire spectrum) begins.  Currently all this function does is disable the
@@ -1036,6 +1122,10 @@ public:
   void setShowYAxisScalers( bool show );
   
   ReferencePhotopeakDisplay *referenceLinesWidget();
+  
+  IsotopeSearchByEnergy *nuclideSearch();
+  
+  PeakInfoDisplay *peakInfoDisplay();
 
 #if( defined(WIN32) && BUILD_AS_ELECTRON_APP )
   //When users drag files from Outlook on windows into the app
@@ -1099,7 +1189,7 @@ public:
    (e.g., user has not loaded current app state form database, and has not
    selected "Store As...").
    */
-  int currentAppStateDbId();
+  long long int currentAppStateDbId();
   
   /** Disasociates apps current state from any state saved to the database.
    Doesnt remove state from database, or change the spectrum or any thing, just
@@ -1127,7 +1217,6 @@ protected:
   
   void initDragNDrop();
   
-  void initHotkeySignal();
   void hotKeyPressed( const unsigned int value );
   void arrowKeyPressed( const unsigned int value );
   
@@ -1242,6 +1331,7 @@ protected:
   
   //This menu implementation uses somethng that visually looks like a WPopupMenuItem.
   PopupDivMenu         *m_fileMenuPopup;
+  PopupDivMenu         *m_editMenuPopup;
   PopupDivMenu         *m_toolsMenuPopup;
   PopupDivMenu         *m_helpMenuPopup;
   PopupDivMenu         *m_displayOptionsPopupDiv;
@@ -1254,7 +1344,7 @@ protected:
   //m_currentStateID: if the user has saved a state, this will be the database
   //  ID of that state.  If there is no saved state, this variable will be -1.
   //  It will also be reset to -1 when a new foreground is loaded.
-  int m_currentStateID;
+  long long m_currentStateID;
 #endif
   
   enum RightClickItems
@@ -1337,8 +1427,20 @@ protected:
 
   SimpleDialog *m_multimedia;
   
+  GammaXsWindow *m_gammaXsToolWindow;
+  DoseCalcWindow *m_doseCalcWindow;
+  OneOverR2Calc *m_1overR2Calc;
+  UnitsConverterTool *m_unitsConverter;
+  FluxToolWindow *m_fluxTool;
+  
+  
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   PopupDivMenuItem *m_mapMenuItem;
+  
+#if( USE_LEAFLET_MAP )
+  SimpleDialog *m_leafletWarning;
+  LeafletRadMapWindow *m_leafletWindow;
+#endif
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
@@ -1389,6 +1491,8 @@ protected:
   ReferencePhotopeakDisplay *m_referencePhotopeakLines;
   AuxWindow                 *m_referencePhotopeakLinesWindow;
 
+  HelpSystem::HelpWindow *m_helpWindow;
+  
   /** m_licenseWindow: pointer to window showing disclaimers, licenses, and
       other statements.  Will be nullptr if not showing.
    */
@@ -1411,6 +1515,17 @@ protected:
   //  they just uploaded is from the same detector as the previous one.
   EnergyCalPreserveWindow *m_preserveCalibWindow;
   
+#if( USE_SEARCH_MODE_3D_CHART )
+  /** Pointer to window showing the Search Mode 3D data view. */
+  AuxWindow *m_3dViewWindow;
+#endif
+  
+  /** Pointer to window created by the #showRiidResults function. */
+  SimpleDialog *m_riidDisplay;
+  
+  DrfSelectWindow *m_drfSelectWindow;
+  
+  UndoRedoManager *m_undo;
   
   //Current width and height are set in layoutSizeChanged(...).
   int m_renderedWidth;
@@ -1456,8 +1571,6 @@ protected:
   //  dont care enough to make them member variables so we can be sure to delete
   //  them eventually.
   std::vector< std::shared_ptr<Wt::JSlot> > m_unNamedJSlots;
-
-  std::unique_ptr< Wt::JSignal<unsigned int> > m_hotkeySignal;
   
 #if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP )
   /** Signal emitted from JS when the operating systems color theme changes, or

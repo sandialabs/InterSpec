@@ -163,6 +163,17 @@ public:
   /** Shows/hides the clear Ref Lines/selection button. */
   void updateClearSelectionButton();
   
+  /** Currently just calls updateClearSelectionButton(); the below describes some commented out cuntionality that can likely be removed.
+   
+   Makes sure the highlighted row in the results matches the displayed reference lines,
+   and also calls #updateClearSelectionButton.  If the selected row didnt previously match
+   the ref. lines, then the first matching result will be selected.
+   
+   This function is primarily to facilitate the undo/redo functionality (not perfectly, but close-enough
+   to allow us to rely on the ref line widget to handle changing selection rows).
+   */
+  void handleRefLinesUpdated();
+  
   //serialize(): serializes current search energies to xml
   void serialize( std::string &xml_data ) const;
   
@@ -173,6 +184,11 @@ public:
   
   //searches(): returns the current search widgets
   std::vector<SearchEnergy *> searches();
+  
+  /** Returns a shared pointer to `m_undo_redo_sentry` - as long as there are any shared ptrs to
+   the sentry alive, an undo/redo step wont be inserted.
+   */
+  std::shared_ptr<void> getDisableUndoRedoSentry();
   
 protected:
   //hideSearchingTxt(): hides the searching text only if
@@ -201,6 +217,44 @@ protected:
   
   size_t m_nextSearchEnergy;
   double m_minBr, m_minHl;
+  
+  /** A struct that represents the GUI state, using basic types.
+   
+   We will use this struct as an intermediary to/from XML, as well as for undo/redo state.
+   */
+  struct WidgetState
+  {
+    Wt::WString MinBranchRatio;
+    Wt::WString MinHalfLife;
+    
+    size_t NextSearchEnergy;
+    bool IncludeGammas;
+    bool IncludeXRays;
+    bool IncludeReactions;
+    std::vector<std::pair<double,double>> SearchEnergies;
+    
+    void serialize( std::string &xml_data ) const;
+    
+    /** Throws exception on error. */
+    void deSerialize( std::string &xml_data );
+    
+    bool operator==(const WidgetState &rhs) const;
+  };//struct WidgetState
+
+  WidgetState guiState() const;
+  void setGuiState( const WidgetState &state, const bool renderOnChart );
+  
+  /** Updates #m_state (based on actual GUI), and adds a undo/redo point, if necassary and appropriate. */
+  void addUndoRedoPoint();
+  
+  
+  /** if `m_undo_redo_sentry.lock()` yeilds a valid pointer, than an undo/redo step wont be inserted.
+   \sa getDisableUndoRedoSentry();
+   */
+  std::weak_ptr<void> m_undo_redo_sentry;
+  
+  WidgetState m_state;
+  int m_selected_row;
   
   static const int sm_xmlSerializationVersion;
 };//class IsotopeSearchByEnergy

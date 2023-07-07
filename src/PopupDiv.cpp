@@ -672,10 +672,8 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
   setJavaScriptMember("wtNoReparent", "true");
 #endif
   
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
   InterSpec *viewer = InterSpec::instance();
   
-  //m_mobile = (app && app->isMobile());
   m_mobile = (viewer && viewer->isMobile());
   
   if( m_mobile )
@@ -800,9 +798,9 @@ PopupDivMenu::~PopupDivMenu()
 }
 
 #if( APP_MENU_STATELESS_FIX )
-void PopupDivMenu::pre_render(PopupDivMenu* menu)
+void PopupDivMenu::pre_render( PopupDivMenu *menu )
 {
-  if( !menu->m_mobile )
+  if( menu && !menu->m_mobile )
     menu->popup(WPoint(-10000, -10000));
 
   /*

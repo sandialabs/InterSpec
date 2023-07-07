@@ -433,10 +433,14 @@ public:
   //add generic shielding
   void addGenericShielding();
   
-  //addShielding(): creates a new shielding, and hooks up all the necessary
-  //  signals.  It will be added before the specified current ShieldingSelect,
-  //  or if NULL is specified, will be added after last ShieldingSelect.
-  ShieldingSelect *addShielding( ShieldingSelect *before, const bool updateChiChart );
+  /** Creates a new shielding, and hooks up all the necessary signals.
+   
+   @param before If nullptr, the shielding will be added after the last ShieldingSelect; if non-null, the new ShieldingSelect will be added
+                before the specified ShieldingSelect.
+   @param updateChiChartAndAddUndoRedo If true, the Chi2 chart will be updated after adding, AND a undo/redo point will be
+                added.
+  */
+  ShieldingSelect *addShielding( ShieldingSelect *before, const bool updateChiChartAndAddUndoRedo );
   
   //doAddShielding(), doAddShieldingBefore(), doAddShieldingAfter:
   //  convience functions that calls addShielding(...) appropriately.
@@ -457,6 +461,20 @@ public:
                                              const SandiaDecay::Nuclide *nuc,
                                              const ModelSourceType type );
   
+  /** Function called whenever a ShieldingSelect is changed by the user.
+   
+   This function is not called when values are changed programatically (e.g., as a side-effect of another setting being changed).
+   
+   Storing the XML for the ShieldingSelect, as apposed to the whole ShieldingSourceDisplay, takes up only about 3% as much
+   memmory, but at the cost of not currently getting things exactly right for trace and self-atten sources.
+   
+   @param select The ShieldingSelect that was changed.
+   @param prev_state The XML represetntation of the ShieldingSelect before it was changed.
+   @param current_state The XML represetntation of the updated ShieldingSelect state.
+   */
+  void handleShieldingUndoRedoPoint( const ShieldingSelect * const select,
+                                    const std::shared_ptr<const std::string> &prev_state,
+                                    const std::shared_ptr<const std::string> &current_state );
   
   
   struct ModelFitProgress
@@ -526,6 +544,13 @@ public:
   /** Cancels the current model fit happening */
   void cancelModelFit();
   
+  /** Cancels the current model fit happening, and will make it so the `gui_updater` argument of #doModelFittingWork
+   will not be called, but the GUI will be put back into a state that the user can use it.
+   
+   This method is intended for the undo/redo mechanism, in case a user hits undo while a fit is happening.
+   */
+  void cancelModelFitWithNoUpdate();
+  
   /** Function that must be called from within the main Wt event loop thread,
    that updates the GUI with the fit progress.
    */
@@ -575,6 +600,7 @@ public:
   void updateChi2Chart();
   
   void showCalcLog();
+  void closeCalcLogWindow();
   
   /** Returns the inner ShieldingSelect of the one passed in; e.g., returns the ShieldingSelect that is contained by the one passed in.
    
@@ -606,11 +632,13 @@ public:
   void deSerializeShieldings( const ::rapidxml::xml_node<char> *shiledings );
   
   void startModelUpload();
-  void modelUploadError( const ::int64_t size_tried, AuxWindow *window );
-  void finishModelUpload( AuxWindow *window, Wt::WFileUpload *upload );
+  void modelUploadError( const ::int64_t size_tried );
+  void finishModelUpload( Wt::WFileUpload *upload );
+  void closeModelUploadWindow();
   
 #if( USE_DB_TO_STORE_SPECTRA )
   void startSaveModelToDatabase( bool promptNewTitleOnExistingEntry );
+  void closeSaveModelToDatabaseWindow();
   
   //finishSaveModelToDatabase(...): Wont throw exception, and instead returns
   //  the success status.
@@ -618,8 +646,7 @@ public:
   //  set to NULL.
   bool finishSaveModelToDatabase( const Wt::WString &name,
                                   const Wt::WString &desc );
-  void finishSaveModelToDatabase( AuxWindow *window,
-                                  Wt::WLineEdit *name_edit,
+  void finishGuiSaveModelToDatabase( Wt::WLineEdit *name_edit,
                                   Wt::WLineEdit *desc_edit );
   void saveCloneModelToDatabase();
   
@@ -632,8 +659,8 @@ public:
   
 #if( USE_DB_TO_STORE_SPECTRA )
   void startBrowseDatabaseModels();
-  void finishLoadModelFromDatabase( AuxWindow *window,
-                                    Wt::WSelectionBox *selected,
+  void closeBrowseDatabaseModelsWindow();
+  void finishLoadModelFromDatabase( Wt::WSelectionBox *selected,
                                     Wt::WSelectionBox *other_select );
   
   //loadModelFromDb(...):  deserializes the model passed in.
@@ -682,6 +709,7 @@ public:
   void attenuateForAirChanged();
   void backgroundPeakSubChanged();
   void sameIsotopesAgeChanged();
+  void decayCorrectChanged();
   void showGraphicTypeChanged();
   
 
@@ -695,7 +723,15 @@ public:
     
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
 
+  
+  SourceFitModel *sourceFitModel();
 protected:
+  /** Disables fit button and other elements, and hides some stuff, etc. */
+  void setWidgetStateForFitStarting();
+  
+  /** Undoes the changes from #setWidgetStateForFitStarting */
+  void setWidgetStateForFitBeingDone();
+  
   void updateChi2ChartActual();
   virtual void layoutSizeChanged( int width, int height ) override;
   
@@ -744,6 +780,7 @@ protected:
   //m_shieldingSelects: contains objects of class ShieldingSelect
   Wt::WContainerWidget *m_shieldingSelects;
 
+  GammaInteractionCalc::GeometryType m_prevGeometry;
   Wt::WComboBox *m_geometrySelect;
 
   Wt::WText *m_showChi2Text;
@@ -751,10 +788,11 @@ protected:
   Chi2Graphic *m_chi2Graphic;
   
 
-  Wt::WCheckBox *m_multiIsoPerPeak;
-  Wt::WCheckBox *m_attenForAir;
-  Wt::WCheckBox *m_backgroundPeakSub;
-  Wt::WCheckBox *m_sameIsotopesAge;
+  Wt::WCheckBox  *m_multiIsoPerPeak;
+  Wt::WCheckBox  *m_attenForAir;
+  Wt::WCheckBox  *m_backgroundPeakSub;
+  Wt::WCheckBox  *m_sameIsotopesAge;
+  Wt::WCheckBox  *m_decayCorrect;
   SwitchCheckbox *m_showChiOnChart;
   Wt::WContainerWidget *m_optionsDiv;
   
@@ -762,6 +800,12 @@ protected:
   
   AuxWindow *m_logDiv;
   std::vector<std::string> m_calcLog;
+  
+  AuxWindow *m_modelUploadWindow;
+#if( USE_DB_TO_STORE_SPECTRA )
+  AuxWindow *m_modelDbBrowseWindow;
+  AuxWindow *m_modelDbSaveWindow;
+#endif
   
   //m_materialDB: not owned by this object, but passed in at construction.
   MaterialDB *m_materialDB;

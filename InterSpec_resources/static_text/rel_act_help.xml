@@ -1,4 +1,3 @@
-<!-- SAND2021-1543 O -->
 <div align="center">
   <h1 id="rel-act-dialog">
     <b>Relative Activity Isotopics Tool</b>
@@ -9,14 +8,6 @@
 
 <div style="display:table-row">
 <h4>Overview</h4>
-The <em>Relative Activity Isotopics Tool</em> allows ...
-<br />
-...
-
-
-<div style="padding-top: 10px; text-align: center;">
-<img src="InterSpec_resources/static_text/images/peak_manager.jpg"  class="imageBorder" style="width: 85%" align="middle" />
-<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
-An example screenshot of the <em>Relative Activity Isotopics Tool</em> that needs updating.
+The <em>Relative Activity Isotopics Tool</em> is under active development, and is not suitable for general use yet, and documentation or use instructions has not been created.
 </div>
-</div>
+

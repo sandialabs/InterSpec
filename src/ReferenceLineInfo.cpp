@@ -584,6 +584,30 @@ void RefLineInput::reset()
   *this = RefLineInput{};
 }
 
+
+bool RefLineInput::operator==(const RefLineInput &rhs) const
+{
+  return ((m_input_txt == rhs.m_input_txt)
+  && (m_age == rhs.m_age)
+  && (m_color == rhs.m_color)
+  && (m_lower_br_cutt_off == rhs.m_lower_br_cutt_off)
+  && (m_promptLinesOnly == rhs.m_promptLinesOnly)
+  && (m_showGammas == rhs.m_showGammas)
+  && (m_showXrays == rhs.m_showXrays)
+  && (m_showAlphas == rhs.m_showAlphas)
+  && (m_showBetas == rhs.m_showBetas)
+  && (m_showCascades == rhs.m_showCascades)
+  && (m_detector_name == rhs.m_detector_name)
+  //&& (m_det_intrinsic_eff == rhs.)
+  && (m_shielding_name == rhs.m_shielding_name)
+  && (m_shielding_thickness == rhs.m_shielding_thickness)
+  && (m_shielding_an == rhs.m_shielding_an)
+  && (m_shielding_ad == rhs.m_shielding_ad)
+  //&& (m_shielding_att == rhs.m_shielding_att)
+  );
+}//bool operator==(const RefLineInput &rhs) const
+
+
 ReferenceLineInfo::RefLine::RefLine()
   : m_energy( 0.0 ),
   m_normalized_intensity( 0.0 ),
@@ -660,6 +684,17 @@ void ReferenceLineInfo::reset()
   m_reactions.clear();
 }//void ReferenceLineInfo::reset()	  
 
+
+bool ReferenceLineInfo::operator==(const ReferenceLineInfo &rhs) const
+{
+  return ((m_validity == rhs.m_validity)
+          && (m_has_coincidences == rhs.m_has_coincidences)
+          && (m_input == rhs.m_input)
+          && (m_source_type == rhs.m_source_type)
+          && (m_nuclide == rhs.m_nuclide)
+          && (m_element == rhs.m_element)
+          && (m_reactions == rhs.m_reactions));
+}//bool operator==(const ReferenceLineInfo &rhs) const
 
 void ReferenceLineInfo::toJson( string &json ) const
 {
@@ -1337,7 +1372,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       age = PeakDef::defaultDecayTime( nuc, &input.m_age );
     }else if( nuc->isStable() )
     {
-      age = 0;
+      // age = 0;
       input.m_age = "";
       answer.m_input_warnings.push_back( nuc->symbol + " is a stable isotope." );
       answer.m_validity = ReferenceLineInfo::InputValidity::InvalidSource;

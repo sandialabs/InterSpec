@@ -106,7 +106,9 @@ public:
           "interspec://decay/chain?nuclide=U238&...", then this string would be "nuclide=U238&...".
           This string is is in standard URL format of "key1=value1&key2=value2&..." with the
           ordering only mattering if there is more than one nuclide specified.  Possible key values
-          are listed below.  Capitalization is not important.
+          are listed below.
+          Capitalization is not important.
+          Assumes the string passed in has alaready been url-decoded.
    
    Possible url key-value values:
    - "time", "timespan": The timespan fo display on the chart or calculator.  The value may be
@@ -135,7 +137,11 @@ public:
   void handleAppUrl( std::string path, std::string query_str );
   
   /** Encodes current tool state to app-url format.  Returned string does not include the
-   "interspec://" protocol, or "decay" path; so will look something like "chart?nuc=Ba133&ac..."
+   "interspec://" protocol, or "decay" path; so will look something like "chart?nuc=Ba133&ac...".
+   
+   The returned value has not been url-encoded.
+   
+   Currently not a `const` method because it calls `timeToDisplayTill()`.
    */
   std::string encodeStateToUrl();
   

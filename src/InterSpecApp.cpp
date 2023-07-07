@@ -130,7 +130,8 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
      m_viewer( 0 ),
      m_layout( nullptr ),
      m_lastAccessTime( std::chrono::steady_clock::now() ),
-     m_activeTimeInSession{ std::chrono::seconds(0) }
+     m_activeTimeInSession{ std::chrono::seconds(0) },
+     m_hotkeySignal( domRoot(), "hotkey", false )
 #if( IOS )
     , m_orientation( InterSpecApp::DeviceOrientation::Unknown )
     , m_safeAreas{ 0.0f }
@@ -147,14 +148,6 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
 #endif
  
   enableUpdates( true );
-  
-  // Lets get a jump on initializing DecayDataBaseServer.
-  // Note however, in InterSpecServer::startServer and InterSpecServer::startWebServer we have
-  //  already called DecayDataBaseServer::initialize() as soon as the thread pool was available, so
-  //  this call will be a waste.
-  //  TODO: once the localhost server is converted to using InterSpecServer, remove this next line
-  WServer::instance()->ioService().boost::asio::io_service::post( &DecayDataBaseServer::initialize );
-   
   setupDomEnvironment();
   setupWidgets( true );
 
@@ -353,7 +346,73 @@ void InterSpecApp::setupDomEnvironment()
   }//if (isPrimaryWindowInstance())
 #endif
   
-  //cout << "wApp->javaScriptClass()='" << wApp->javaScriptClass() << "'" << endl; //Prints "Wt"
+
+  //Now setup a listener for the user to press Control + another button
+  //We are specifying for the javascript to not be collected since the response
+  //  will change if the tools tabs is shown or not.
+  
+  //sender.id was undefined in the following js, so had to work around this a bit
+  const char *hotkey_js = INLINE_JAVASCRIPT(
+  function(id,e){
+    
+    // On macOS, the cloverleaf "command" key is e.metaKey - we will treat ctrl and meta
+    //  as equivalent because of this.  We _could_ try to detect Apple and only allow meta.
+    //    const isApple = (Wt.WT.isIOS || (navigator.appVersion.indexOf("Mac") != -1));
+    //  Note, at least on mac: ctrl+shift+z gives e.key=='Z', where meta+shift+z gives e.key=='z'.
+    if( !e || !e.key || e.altKey || (e.shiftKey && ((e.key != 'Z') && (e.key != 'z'))) || (typeof e.keyCode === 'undefined') )
+      return;
+    
+    let code = 0;
+    if( e.ctrlKey || e.metaKey )
+    {
+      switch( e.key ){
+        case '1': case '2': case '3': case '4': case '5': case '6': case '7': //Shortcuts to switch to the various tabs
+        case 'h': // Help dialog
+        case 'i': // Info about InterSpec
+        case 'k': // Clear showing reference photopeak lines
+        case 's': // Store
+        case 'l': // Log/Linear
+          if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
+            return;
+          code = e.key.charCodeAt(0);
+          break;
+        case 'z': case 'Z': //undo/redo
+          code = (e.shiftKey ? 'Z' : 'z').charCodeAt(0);
+          break;
+          
+        default:  //Unused - nothing to see here - let the event propagate up
+          return;
+      }//switch( e.key )
+    }else{
+      switch( e.key ){
+        case "Left":  case "ArrowLeft":  code = 37; break;
+        case "Up":    case "ArrowUp":    code = 38; break;
+        case "Right": case "ArrowRight": code = 39; break;
+        case "Down":  case "ArrowDown":  code = 40; break;
+        default:  //Unused - nothing to see here - let the event propagate up
+          return;
+      }//switch( e.key )
+    
+      // No menus are active - dont send the signal
+      if( $(".MenuLabel.PopupMenuParentButton.active").length === 0 )
+        return;
+    }//if( e.ctrlKey ) / else
+    
+    e.preventDefault();
+    e.stopPropagation();
+    Wt.emit( id, {name:'hotkey'}, code );
+  } );
+  
+  const string jsfcfn = string("function(e){var f=") + hotkey_js + ";f('" + domRoot()->id() + "',e);}";
+  declareJavaScriptFunction( "appKeyDown", jsfcfn );
+  
+  // TODO: switch to using WT_DECLARE_WT_MEMBER to define above JS, and then use the below to get Wt root id
+  //"const root = document.querySelector('.Wt-domRoot');"
+  //"root.id"
+  
+  const string jsfcn = "document.addEventListener('keydown'," + wApp->javaScriptClass() + ".appKeyDown);";
+  doJavaScript( jsfcn );
+  
   
   
   if( isMobile() )
@@ -394,11 +453,13 @@ void InterSpecApp::setupDomEnvironment()
 #endif
   
   // Pre-load some CSS we will likely encounter anyway; avoids some glitching when loading new
-  //  widgets.
+  //  widgets, especially if they are in a AuxWindow.
   //  (The CSS wont be re-loaded later, so maybe we dont hurt anything doing it here too - maybe)
-  WServer::instance()->schedule( 100, sessionId(), [](){
+  WServer::instance()->schedule( 500, sessionId(), [](){
     wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
+    wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
+    wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
     
     // anything else relevant?
     wApp->triggerUpdate();
@@ -472,9 +533,10 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   }catch( std::exception &e )
   {
 #if( BUILD_AS_UNIT_TEST_SUITE )
-    cerr << "There was an exception initializing a InterSpec: " << e.what() << endl;
     throw e;
 #endif //#if( BUILD_AS_UNIT_TEST_SUITE )
+    
+    Wt::log("error") << "There was an exception initializing a InterSpec: " << e.what();
     
     string msg = "There was a problem initializing a necessary resource for InterSpec";
     WText *errorText = new WText( msg, root() );
@@ -794,7 +856,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       if( dialog )
         dialog->finished().connect( boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false ) );
       else
-        m_viewer->showWelcomeDialog();
+        m_viewer->showWelcomeDialog( false );
     }// if( not in IE ) / else
   };//auto showWelcomeCallback
   
@@ -1089,6 +1151,11 @@ void InterSpecApp::osThemeChange( std::string name )
 #endif
 
 
+Wt::JSignal<unsigned int> &InterSpecApp::hotkeySignal()
+{
+  return m_hotkeySignal;
+}
+
 #if( IOS )
 void InterSpecApp::setSafeAreaInsets( const int orientation, const float top,
                        const float right, const float bottom,
@@ -1354,7 +1421,7 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
     else if( SpecUtils::icontains(signal, "secondary") )  //SpecUtils::descriptionText(SpecUtils::SpectrumType::SecondForeground)
       type = SpecUtils::SpectrumType::SecondForeground;
     
-    showRiidInstrumentsAna( m_viewer->measurment(type) );
+    m_viewer->showRiidResults( type );
     return;
   }
   
@@ -1367,7 +1434,11 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
     else if( SpecUtils::icontains(signal, "secondary") )
       type = SpecUtils::SpectrumType::SecondForeground;
     
+#if( USE_GOOGLE_MAP )
     m_viewer->createMapWindow( type );
+#else
+    m_viewer->createMapWindow( type, false );
+#endif
     return;
   }//if( SpecUtils::istarts_with( signal, "showMap-" ) )
 #endif //#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )

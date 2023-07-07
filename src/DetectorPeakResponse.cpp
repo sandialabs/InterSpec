@@ -49,14 +49,16 @@
 #include "Wt/Utils"
 
 #include "SpecUtils/SpecFile.h"
-#include "InterSpec/PeakModel.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
+
+#include "InterSpec/AppUtils.h"
+#include "InterSpec/PeakModel.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SpecUtils/RapidXmlUtils.hpp"
 #include "InterSpec/DetectorPeakResponse.h"
 
 
@@ -1124,7 +1126,8 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
   {
     try
     {
-      return parseFromAppUrl( fields[3] );
+      const string unencoded = Wt::Utils::urlDecode( fields[3] );
+      return parseFromAppUrl( unencoded );
     } catch( std::exception &e )
     {
       cerr << "Failed to parse 'UrlEncoded' DRF: " << e.what() << endl;
@@ -1448,37 +1451,7 @@ std::string DetectorPeakResponse::toAppUrl() const
 
 void DetectorPeakResponse::fromAppUrl( std::string url_query )
 {
-  map<string,string> parts;
-  vector<string> components;
-  SpecUtils::split( components, url_query, "&/" );
-  
-  for( string comp : components )
-  {
-    SpecUtils::trim( comp );
-    if( comp.empty() )
-      continue;
-    
-    auto pos = comp.find('=');
-    if( pos == string::npos )
-      pos = comp.find(':');
-    
-    if( pos == string::npos )
-      throw runtime_error( "fromAppUrl: query portion '" + comp + "' missing a = or : character" );
-    
-    string key = comp.substr(0,pos);
-    string value = comp.substr(pos+1);
-    SpecUtils::trim(key);
-    SpecUtils::trim(value);
-    SpecUtils::to_upper_ascii(key);
-    
-    if( key.empty() )
-      throw runtime_error( "fromAppUrl: query portion '" + comp + "' has empty name" );
-    
-    if( value.empty() )
-      throw runtime_error( "fromAppUrl: query portion '" + comp + "' has empty value" );
-    
-    parts[key] = value;
-  }//for( string comp : components )
+  map<string,string> parts = AppUtils::query_str_key_values( url_query );
   
   if( !parts.count("VER") || (parts["VER"] != "1") )
     throw runtime_error( "fromAppUrl: missing or invalid 'VER'" );
@@ -1497,10 +1470,10 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   double lowerEnergy = 0.0, upperEnergy = 0.0;
   
   if( parts.count("NAME") )
-    name = Wt::Utils::urlDecode( parts["NAME"] );
+    name = parts["NAME"];
   
   if( parts.count("DESC") )
-    desc = Wt::Utils::urlDecode( parts["DESC"] );
+    desc = parts["DESC"];
   
   if( !parts.count("DIAM") )
     throw runtime_error( "fromAppUrl: missing required DIAM component" );
@@ -1546,7 +1519,7 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     if( !parts.count("EFFE") )
       throw runtime_error( "fromAppUrl: missing required EFFE component for Eff Eqn" );
     
-    eqn = Wt::Utils::urlDecode( parts["EFFE"] );
+    eqn = parts["EFFE"];
     
     try
     {
@@ -2772,8 +2745,7 @@ void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peak
   if( !peaks )
     throw runtime_error( "DetectorPeakResponse::fitResolution(...): invalid input" );
   
-  const size_t numchan = meas ? meas->num_gamma_channels() : 0;
-  int sqrtEqnOrder = peaks->size() / 2;
+  int sqrtEqnOrder = static_cast<int>(peaks->size()) / 2;
   if( sqrtEqnOrder > 6 )
     sqrtEqnOrder = 6;
   else if( peaks->size() < 3 )

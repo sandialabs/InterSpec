@@ -281,12 +281,26 @@ protected:
   // Signals called from JS to propogate infromation to the C++
   std::unique_ptr<Wt::JSignal<int,int>>       m_chartClickedJS;
   std::unique_ptr<Wt::JSignal<int,int,int>>   m_chartDraggedJS;
-  std::unique_ptr<Wt::JSignal<int,int,int>>   m_displayedXRangeChangeJS;
+  std::unique_ptr<Wt::JSignal<int,int,int,double,double,bool>>   m_displayedXRangeChangeJS;
   
   // Functions connected to the JSignal's
   void chartClickedCallback( int sample_number, int modifier_keys );
   void chartDraggedCallback( int first_sample_number, int last_sample_number, int modifier_keys );
-  void displayedXRangeChangeCallback( int first_sample_number, int last_sample_number, int samples_per_channel );
+  
+  /** Callback to handle signal from JS whenever the displayed time-range is changed.
+   @param first_sample_number The first sample number that is displayed (i.e., on far left of chart).
+   @param last_sample_number The last sample number that is displayed (i.e., on far right of chart).
+   @param compression_index Givens how many samples per display bin are used, via  `pow(2,compression_index)`
+   @param start_time The starting time of the charted data (i.e., the left-most value of the chart x-axis); I think this is sum,med real-time.
+   @param end_time The ending time of the charted data (i.e., the right-most value of the chart x-axis); I think this is sum,med real-time.
+   @param is_user_action If this signal was emitted due to the user explicitly changing the time range, then will be true.  If the change is from setting the data, or being resized, or whatever, this will be false.
+   */
+  void displayedXRangeChangeCallback( const int first_sample_number,
+                                     const int last_sample_number,
+                                     const int compression_index,
+                                     const double start_time,
+                                     const double end_time,
+                                     const bool is_user_action );
   
   /** The javascript variable name used to refer to the SpecrtumChartD3 object.
       Currently is `jsRef() + ".chart"`.
@@ -317,6 +331,10 @@ protected:
      here as they will be options set to the D3 chart during first rendering.
    */
   std::vector<std::string> m_pendingJs;
+  
+  /** We will track the displayed sample number range, as well as real-time range, for undo/redo purposes. */
+  std::array<int,2> m_displayedSampleNumbers;
+  std::array<double,2> m_displayedTimes;
   
   friend class D3TimeChartFilters;
 };//class D3TimeChart_h

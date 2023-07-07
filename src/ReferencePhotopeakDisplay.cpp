@@ -68,6 +68,7 @@
 #include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -800,6 +801,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_chart( chart ),
     m_spectrumViewer( specViewer ),
     m_currently_updating( false ),
+    m_undo_redo_sentry(),
     m_nuclideEdit( NULL ),
     m_nuclideSuggest( NULL ),
     m_ageEdit( NULL ),
@@ -856,17 +858,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   inputDiv->setLayout( inputLayout );
     
     
-  const bool isPhone = m_spectrumViewer->isPhone();
-    
-  if( isPhone )
-  {
-    addStyleClass( "ReferencePhotopeakDisplayMobile" );
-    //m_layout->setHorizontalSpacing( 5 );
-  }else
-  {
-    addStyleClass( "ReferencePhotopeakDisplay" );
-  }//if( specViewer->isPhone() ) / else
+  addStyleClass( "ReferencePhotopeakDisplay" );
   
+  const bool isPhone = m_spectrumViewer->isPhone();
+  if( isPhone )
+    addStyleClass( "ReferencePhotopeakDisplayMobile" );
   
   const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
   const WLength optionWidth(5.25,WLength::FontEm), buttonWidth(5.25,WLength::FontEm);
@@ -1481,9 +1477,14 @@ void ReferencePhotopeakDisplay::handleSpectrumChange(SpecUtils::SpectrumType typ
 {
   // For simplicity we'll update the suggested nuclides whenever foreground gets
   //  changed, even if its only because of sample number change (which will have
-  //  same RIID results, as they are file-spoecific, not sample specific)
+  //  same RIID results, as they are file-specific, not sample specific).
+  //  We will also clear external RID results (e.g., if user has setup to
+  //  automatically use a web-service on spectrum load).
   if( type == SpecUtils::SpectrumType::Foreground )
+  {
+    m_external_ids.clear();
     updateOtherNucsDisplay();
+  }
 }//handleSpectrumChange();
 
 
@@ -1554,12 +1555,10 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
 
     if( nuc || el || !reactions.empty() )
     {
-      OtherNuc nuc;
-      nuc.m_input = userInput();
-      nuc.m_input.m_input_txt = nucstr;
-      nuc.m_nuclide = nucstr;
+      RefLineInput input = userInput();
+      input.m_input_txt = nucstr;
       
-      btn->clicked().connect( boost::bind( &ReferencePhotopeakDisplay::setFromOtherNuc, this, nuc ) );
+      btn->clicked().connect( boost::bind( &ReferencePhotopeakDisplay::updateDisplayFromInput, this, input ) );
     }else
     {
       btn->disable();
@@ -1595,14 +1594,14 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
   m_otherNucsColumn->show();
 
-  vector<OtherNuc> prev_nucs;
+  vector<RefLineInput> prev_nucs;
   const string &currentInput = m_currentlyShowingNuclide.m_input.m_input_txt;
 
   if( showPrev )
   {
     for( const auto &prev : m_prevNucs )
     {
-      if( prev.m_input.m_input_txt != currentInput )
+      if( prev.m_input_txt != currentInput )
         prev_nucs.push_back(prev);
     }
   }//if( showPrev )
@@ -1701,56 +1700,59 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
   // TODO: Need to deal the "more info" button
 
-  if( !riid_nucs.empty() )
-  {
+  auto displayDetectorOrExternal = [=]( string title, vector<pair<string,string>> nucs ){
+    if( nucs.empty() )
+      return;
+    
     // Protect against a detector having a ton of results
     const size_t max_riid_res = 10;
-    if( riid_nucs.size() > max_riid_res )
-      riid_nucs.resize( max_riid_res );
+    if( nucs.size() > max_riid_res )
+      nucs.resize( max_riid_res );
 
-    WText *header = new WText("Detector ID", m_otherNucs);
+    WText *header = new WText( WString::fromUTF8(title), m_otherNucs);
     header->addStyleClass("OtherNucTypeHeader");
     
-    for( const auto &riid : riid_nucs )
+    for( const auto &riid : nucs )
     {
       WPushButton *btn = new WPushButton(riid.first, m_otherNucs);
       btn->addStyleClass( "LinkBtn" );
       
       if( !riid.second.empty() )
       {
-        OtherNuc nuc;
-        nuc.m_nuclide = riid.second;
-        nuc.m_input = userInput();
-        nuc.m_input.m_input_txt = riid.first;
-        btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::setFromOtherNuc, this, nuc));
-      } else
+        RefLineInput input = userInput();
+        input.m_input_txt = riid.first;
+        
+        btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::updateDisplayFromInput, this, input));
+      }else
       {
         btn->disable();
       }
-    }//for( const auto &riid : riid_nucs )
-  }//if( !prev_nucs.empty() )
+    }//for( const auto &riid : nucs )
+  };//displayDetectorOrExternal lamda
 
-
+  if( !riid_nucs.empty() )
+    displayDetectorOrExternal( "Detector ID", riid_nucs );
+  
+  if( !m_external_ids.empty() )
+  {
+    string name = m_external_algo_name.empty() ? string("External RID") : m_external_algo_name;
+    displayDetectorOrExternal( name, m_external_ids );
+  }//if( !m_external_ids.empty() )
+  
+  
   if( !prev_nucs.empty() )
   {
     WText *header = new WText("Previous", m_otherNucs);
     header->addStyleClass("OtherNucTypeHeader");
     for( const auto &prev : prev_nucs )
     {
-      WPushButton *btn = new WPushButton(prev.m_nuclide, m_otherNucs);
+      WPushButton *btn = new WPushButton(prev.m_input_txt, m_otherNucs);
       btn->addStyleClass( "LinkBtn" );
 
-      btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::setFromOtherNuc, this, prev));
+      btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::updateDisplayFromInput, this, prev));
     }
   }//if( !prev_nucs.empty() )
 }//void updateOtherNucsDisplay()
-
-
-void ReferencePhotopeakDisplay::setFromOtherNuc(const ReferencePhotopeakDisplay::OtherNuc &nuc)
-{
-  updateDisplayFromInput( nuc.m_input );
-}//void setFromOtherNuc(const OtherNuc &nuc)
-
 
 
 RefLineInput ReferencePhotopeakDisplay::userInput() const
@@ -2004,14 +2006,67 @@ void ReferencePhotopeakDisplay::render( Wt::WFlags<Wt::RenderFlag> flags )
 }
 
 
+std::shared_ptr<void> ReferencePhotopeakDisplay::getDisableUndoRedoSentry()
+{
+  shared_ptr<void> answer = m_undo_redo_sentry.lock();
+  if( answer )
+    return answer;
+  
+  int *dummy = new int(0);
+  auto deleter = []( void *obj ){
+    int *sentry = (int *)obj;
+    if( sentry )
+      delete sentry;
+  };
+  
+  answer = shared_ptr<void>( dummy, deleter );
+  m_undo_redo_sentry = answer;
+  return answer;
+}//std::shared_ptr<void> getDisableUndoRedoSentry()
+
+
 void ReferencePhotopeakDisplay::updateDisplayChange()
 {
   if( m_currently_updating )
     return;
   
-  RefLineInput user_input = userInput();
+  const ReferenceLineInfo starting_showing = m_currentlyShowingNuclide;
+  const vector<ReferenceLineInfo> starting_persisted = m_persisted;
+  const deque<RefLineInput> starting_prev_nucs = m_prevNucs;
+  const bool starting_user_color = m_userHasPickedColor;
+  
+  const RefLineInput user_input = userInput();
   updateDisplayFromInput( user_input );
-}
+  
+  const bool ending_user_color = m_userHasPickedColor;
+  
+  
+  UndoRedoManager *undo_manager = UndoRedoManager::instance();
+  if( undo_manager
+     && !(starting_showing == m_currentlyShowingNuclide)
+     && !m_undo_redo_sentry.lock() )
+  {
+    auto undo = [this, starting_showing, starting_persisted, starting_prev_nucs](){
+      m_currentlyShowingNuclide = starting_showing;
+      m_persisted = starting_persisted;
+      m_prevNucs = starting_prev_nucs;
+      
+      updateDisplayFromInput( starting_showing.m_input );
+    };//undo
+    
+    auto redo = [this, starting_showing, starting_persisted, starting_prev_nucs, user_input, ending_user_color](){
+      m_currentlyShowingNuclide = starting_showing;
+      m_persisted = starting_persisted;
+      m_prevNucs = starting_prev_nucs;
+      
+      updateDisplayFromInput( user_input );
+      m_userHasPickedColor = ending_user_color;
+    };//undo
+    
+    
+    undo_manager->addUndoRedoStep( undo, redo, "Update ref-lines." );
+  }//if( undo_manager )
+}//void updateDisplayChange()
 
 
 void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input )
@@ -2055,6 +2110,9 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
      && (m_nuclideEdit->text().toUTF8() != ref_lines->m_input.m_input_txt ) )
   {
     m_nuclideEdit->setText( WString::fromUTF8(ref_lines->m_input.m_input_txt) );
+  }else if( validity == ReferenceLineInfo::InputValidity::Blank )
+  {
+    m_nuclideEdit->setText( "" );
   }
   
   const bool hasPromptEquilib = (nuclide && nuclide->canObtainPromptEquilibrium());
@@ -2070,7 +2128,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   m_ageEdit->setEnabled( enable_aging );
   
   const string hlstr = !nuclide ? string()
-  : ("&lambda;<sub>&frac12;</sub>="
+  : ("T&frac12;="  //&lambda;<sub>&frac12;</sub>
      +  PhysicalUnits::printToBestTimeUnits( nuclide->halfLife, 2 ));
   m_halflife->setText( WString::fromUTF8(hlstr) );
   
@@ -2139,15 +2197,13 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   // Add current nuclide to lis of previous nuclides
   if( m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
   {
-    OtherNuc prev;
-    prev.m_input = m_currentlyShowingNuclide.m_input;
-    prev.m_nuclide = m_currentlyShowingNuclide.m_input.m_input_txt;
+    RefLineInput prev = m_currentlyShowingNuclide.m_input;
     
     // Remove any other previous nuclides that have same `prev.m_nuclide` as what
     //  we are about to push on
     m_prevNucs.erase(std::remove_if(begin(m_prevNucs), end(m_prevNucs),
-                                    [&prev](const OtherNuc &val) -> bool {
-      return (val.m_input.m_input_txt == prev.m_input.m_input_txt);
+                                    [&prev](const RefLineInput &val) -> bool {
+      return (val.m_input_txt == prev.m_input_txt);
     }), end(m_prevNucs));
     
     // Push new value onto front of history
@@ -2378,6 +2434,17 @@ void ReferencePhotopeakDisplay::setPeaksGetAssignedRefLineColor( const bool they
 {
   m_peaksGetAssignedRefLineColor = theydo;
 }
+
+
+void ReferencePhotopeakDisplay::setExternalRidResults( const string &algo_name,
+                                                      const vector<pair<string,string>> &nucs )
+{
+  const bool is_diff = (nucs != m_external_ids);
+  m_external_ids = nucs;
+  m_external_algo_name = algo_name;
+  if( is_diff )
+    updateOtherNucsDisplay();
+}//void setExternalRidResults( const std::vector<std::string> &isotopes );
 
 
 Wt::Signal<> &ReferencePhotopeakDisplay::displayingNuclide()
@@ -2715,7 +2782,13 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
     
     node = base_node->first_node( "Shielding", 9 );
     if( node )
+    {
+      m_shieldingSelect->materialChanged().setBlocked( true );
+      m_shieldingSelect->materialModified().setBlocked( true );
       m_shieldingSelect->deSerialize( node );
+      m_shieldingSelect->materialChanged().setBlocked( false );
+      m_shieldingSelect->materialModified().setBlocked( false );
+    }
 //    else
 //      m_shieldingSelect-reset();
     
@@ -2827,6 +2900,9 @@ void ReferencePhotopeakDisplay::setIsotope( const SandiaDecay::Nuclide *nuc,
       m_ageEdit->setText( PhysicalUnits::printToBestTimeUnits(age) );
   }else
   {
+    if( m_nuclideEdit->valueText().empty() )
+      return;
+    
     m_nuclideEdit->setText( "" );
   }//if( nuc ) / else
   

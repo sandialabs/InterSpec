@@ -246,6 +246,24 @@ public:
    */
   void setPeaksGetAssignedRefLineColor( const bool theydo );
   
+  /** Sets the nuclide ID from an external service (a seperate exectuable or web-service); e.g.
+   if user has it setup to automatically get nuclide ID on file load.
+   
+   @param algo_name The name to display as the header under "Suggestions" for these results.
+          Should be short (less than ~12 characters); if empty will use "External RID".
+   @param iso_descrips The pairs of nuclide names, and thier descriptions.  For each pair,
+          if the name is a valid nuclide (or rather reference line that can be displayed), then
+          the first element should be nuclide name, and second element its description
+          (e.g., "Industrial", "SNM", etc).  If not a nuclide, then the second element should
+          be empty, which will make it so user cant click on this result to show ref. lines.
+          (I know, not a great system, but it will probably need re-vamped anyway once
+          we get a little more use-cases and experience).
+   
+   \sa RemoteRid::startAutomatedOnLoadAnalysis
+   */
+  void setExternalRidResults( const std::string &algo_name,
+                             const std::vector<std::pair<std::string,std::string>> &iso_descrips );
+  
   /** Signal emmitted whenever the user selects a new nuclide to be shown. */
   Wt::Signal<> &displayingNuclide();
   
@@ -256,6 +274,12 @@ public:
   
   /** Return the material database this widget uses */
   const MaterialDB *materialDB() const;
+  
+  /** Returns a shared pointer to `m_undo_redo_sentry` - as long as there are any shared ptrs to
+   the sentry alive, an undo/redo step wont be inserted.
+   */
+  std::shared_ptr<void> getDisableUndoRedoSentry();
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -284,20 +308,6 @@ protected:
   
   void toggleShowOptions();
 
-  /** A simple struct to store previous, or other nuclides to 
-  potentially show if the user clicks on them.
-
-The other options would be to keep a copy of ReferenceLineInfo around
-or to go all-in and keep a XML state of widget via
-ReferencePhotopeakDisplay::serialize(...) - but for now we'll just keep
-things simple
-*/
-  struct OtherNuc
-  {
-    std::string m_nuclide;
-    RefLineInput m_input;
-  };//struct OtherNuc
-
   void updateOtherNucsDisplay();
   void updateAssociatedNuclides();
   void showMoreInfoWindow();
@@ -311,8 +321,6 @@ things simple
   */
   void handleSpectrumChange(SpecUtils::SpectrumType type);
 
-  void setFromOtherNuc( const OtherNuc &nuc );
-
   D3SpectrumDisplayDiv *m_chart;
 
   InterSpec *m_spectrumViewer;
@@ -322,6 +330,11 @@ things simple
    have changed, otherwise we can get into an infinite recursive state.
    */
   bool m_currently_updating;
+  
+  /** if `m_undo_redo_sentry.lock()` yeilds a valid pointer, than an undo/redo step wont be inserted.
+   \sa getDisableUndoRedoSentry();
+   */
+  std::weak_ptr<void> m_undo_redo_sentry;
   
   Wt::WLineEdit *m_nuclideEdit;
   Wt::WSuggestionPopup *m_nuclideSuggest;
@@ -357,8 +370,13 @@ things simple
 
   const size_t m_max_prev_nucs = 8; //arbitrary
   
-  std::deque<OtherNuc> m_prevNucs;
-
+  std::deque<RefLineInput> m_prevNucs;
+  
+  /** Name of "external" RID algorithm used, as set by #setExternalRidResults. */
+  std::string m_external_algo_name;
+  /** "External" RID results, as set by #setExternalRidResults. */
+  std::vector<std::pair<std::string,std::string>> m_external_ids;
+  
   DetectorDisplay *m_detectorDisplay;
   MaterialDB *m_materialDB;                 //not owned by this object
   Wt::WSuggestionPopup *m_materialSuggest;  //not owned by this object

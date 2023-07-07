@@ -45,6 +45,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecServer.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
@@ -350,6 +351,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     allow_dev_tools = (allow_dev_tools || app_config.m_open_dev_tools);
     server_port = app_config.m_http_port;
     require_token = app_config.m_require_token;
+    UndoRedoManager::setMaxUndoRedoSteps( app_config.m_max_undo_steps );
   }catch( std::exception &e )
   {
     NSString *error = [NSString stringWithUTF8String:e.what()];

@@ -188,4 +188,11 @@ IT "AS IS."
 This InterSpec Software was developed with funds from the Science and Technology Directorate of the Department of Homeland Security.
 
  ## Privacy Policy
-InterSpec apps built by Sandia National Laboratories, do not collect any personal information or send or store data external to your device.  InterSpec locally stores preferences you may change in the app as well as spectra you load, explicitly saved states, and the app state when it is exited. This information does not leave your device, and can be deleted by removing the application data folder in the operating system's standard location for the app.
+InterSpec apps built by Sandia National Laboratories, do not collect any personal information.
+
+
+InterSpec locally stores preferences you may change in the app as well as spectra you load, explicitly saved states, and the app state when it is exited. This information does not leave your device, and can be deleted by removing the application data folder in the operating system's standard location for the app.
+
+
+The only time external network communications is used by InterSpec is when the Map Tool is used, in which case it is only used to request map tiles from https://arcgisonline.com.  Users will be warned before doing this, and there is an option to use your own arcgisonline.com account to request the the map tiles under (see the in-app Map Tools help for more information).
+

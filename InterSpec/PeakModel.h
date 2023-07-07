@@ -161,11 +161,19 @@ public:
   //setPeaks(...): removes all old peaks and adds peaks passed in
   void setPeaks( std::vector<PeakDef> peaks );
 
+  
   //setPeaks(...): a convience function that calls the setPeaks(vector<PeakDef>)
   //  function.
   //  Note, the PeakDef objects pointed to in 'peaks' are not what are added
   //  to the model, but rather copies of them.
-  void setPeaks( const std::vector<std::shared_ptr<const PeakDef> > &peaks );
+  //void setPeaks( const std::vector<std::shared_ptr<const PeakDef> > &peaks );
+  
+  /** Sets the models current peaks to what is passed in, trying to not make a copy of the peaks.
+   
+   If a peak (or rather its PeakContinuum), doesnt have energy range defined, then a copy of the peak will
+   be made, and energy range defined.
+   */
+  void setPeaks( std::vector<std::shared_ptr<const PeakDef>> peaks );
   
   //removePeak( size_t ):  removes the specified `peakn`, where the peakn refers
   //  to the peak at position `peakn` when sorted by peak means (similar

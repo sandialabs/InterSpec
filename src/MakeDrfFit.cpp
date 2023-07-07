@@ -212,7 +212,7 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
     throw runtime_error( "MakeDrfFit::performResolutionFit(...): no input peaks" );
   
   bool fit_using_lls = false;
-  double a_initial, b_initial, c_initial, d_initial;
+  double a_initial, b_initial, c_initial;
   double lowerA, upperA, lowerB, upperB, lowerC, upperC;
   
   switch( fnctnlForm )
@@ -310,7 +310,6 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
         
       }//try / catch
       
-      d_initial = 0.0;
       break;
     }//case DetectorPeakResponse::kSqrtEnergyPlusInverse:
       
@@ -368,7 +367,6 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
         
       }//try / catch
       
-      d_initial = 0.0;
       break;
     }//case kSqrtPolynomial:
       

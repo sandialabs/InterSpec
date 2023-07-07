@@ -889,7 +889,12 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   m_closedSignal->connect(boost::bind(&AuxWindow::setHidden, this, true, WAnimation()));
   m_openedSignal->connect(boost::bind(&AuxWindow::setHidden, this, false, WAnimation()));
 
-  const string bringToFront = "function(){Wt.WT.AuxWindowBringToFront('" + id() + "');}";
+  // We wont bring dialog to top, if the user clicked a button on the title (primarily
+  //  for mobile, where we might have buttons in the title)
+  const string bringToFront = "function(el){"
+    "if( el && el.target && !$(el.target).hasClass('Wt-btn') && !$(el.target).hasClass('FooterHelpBtn'))"
+      "Wt.WT.AuxWindowBringToFront('" + id() + "');"
+  "}";
   title->clicked().connect(bringToFront);
   title->mouseWentDown().connect(bringToFront); //XXX - doesnt seem to work
   doJavaScript("$('#" + title->id() + "').mousedown(" + bringToFront + ");");

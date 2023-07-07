@@ -41,11 +41,13 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"      // Only for preferenceValue<bool>("DisplayBecquerel")
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"  // Only for preferenceValue<bool>("DisplayBecquerel")
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UnitsConverterTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -179,11 +181,11 @@ string convertDistance( string val )
       // Already taken care of
     }else if( unitval < 12*5280 )
     {
-      unitval = dbvalue / 12;
+      unitval = unitval / 12;
       unit = "feet";
     }else
     {
-      unitval = dbvalue / (12*5280);
+      unitval = unitval / (12*5280);
       unit = "miles";
     }
     
@@ -556,10 +558,9 @@ UnitsConverterTool::UnitsConverterTool()
   layout->setRowStretch(3, 1);
     
   WPushButton *closeButton = addCloseButtonToFooter();
-  closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
+  closeButton->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
 
   rejectWhenEscapePressed();
-  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
   
   convert();
   
@@ -684,7 +685,8 @@ void UnitsConverterTool::convert()
     
     // TODO: make this function static, so we can call from terminal widget, and then add in converting mass, and detecting if a nulcide was specified, and if so, if alone print out summary, but if with another quantity convert for that
       
-    std::string val = m_input->text().toUTF8();
+    WString current = m_input->text();
+    std::string val = current.toUTF8();
     std::string ans = convert( val );
     
     m_output->setText( Wt::WString::fromUTF8(ans) );
@@ -693,6 +695,43 @@ void UnitsConverterTool::convert()
     m_message->removeStyleClass("line-above");
     m_message->setText( "&nbsp" );
     m_message->hide();
+    
+    // We will only add an undo/redo step if the input validated, and both the input
+    //  and output have changed (i.e., we convert as the user types, so we dont want
+    //  the users typing in "5 meters" to be like three seperate steps).
+    if( (m_input->text() != m_prevInput) && (ans != m_prevAnswer) )
+    {
+      UndoRedoManager *undoRedo = UndoRedoManager::instance();
+      if( undoRedo && undoRedo->canAddUndoRedoNow() )
+      {
+        const WString prev = m_prevInput;
+        const string prev_ans = m_prevAnswer;
+        auto undo = [prev,prev_ans](){
+          UnitsConverterTool *tool = InterSpec::instance()->createUnitsConverterTool();
+          if( !tool )
+            return;
+          tool->m_prevInput = prev;
+          tool->m_prevAnswer = prev_ans;
+          tool->m_input->setText( prev );
+          tool->convert();
+        };
+        
+        auto redo = [current,ans](){
+          UnitsConverterTool *tool = InterSpec::instance()->createUnitsConverterTool();
+          if( !tool )
+            return;
+          tool->m_prevInput = current;
+          tool->m_prevAnswer = ans;
+          tool->m_input->setText( current );
+          tool->convert();
+        };
+        
+        undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Update units converter value." );
+      }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    }//if( m_input->text() != m_prevInput )
+    
+    m_prevInput = std::move(current);
+    m_prevAnswer = std::move(ans);
   }catch( std::exception &e )
   {
     string errmsg = e.what();
@@ -709,3 +748,39 @@ void UnitsConverterTool::convert()
     m_message->show();
   }//try / catch
 }//void UnitsConverterTool::convert()
+
+
+void UnitsConverterTool::handleAppUrl( std::string query_str )
+{
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
+  const map<string,string> values = AppUtils::query_str_key_values( query_str );
+  
+  // Check version is appropriate
+  const auto ver_iter = values.find( "V" );
+  if( (ver_iter == end(values))
+     || ((ver_iter->second != "1") && !SpecUtils::istarts_with(ver_iter->second, "1.")) )
+    throw runtime_error( "Units Converter: URI not compatible version." );
+  
+  const auto iter = values.find( "INPUT" );
+  if( iter == end(values) )
+    throw runtime_error( "Units Converter: no input value specified." );
+  
+  string value = iter->second;
+  SpecUtils::ireplace_all( value, "%23", "#" );
+  SpecUtils::ireplace_all( value, "%26", "&" );
+  m_prevInput = WString::fromUTF8(value);
+  m_input->setValueText( m_prevInput );
+  
+  convert();
+}//void handleAppUrl( std::string query_str )
+
+
+std::string UnitsConverterTool::encodeStateToUrl() const
+{
+  string val = m_input->text().toUTF8();
+  SpecUtils::ireplace_all( val, "#", "%23" );
+  SpecUtils::ireplace_all( val, "&", "%26" );
+  
+  return "V=1&INPUT=" + val;
+}//std::string encodeStateToUrl() const

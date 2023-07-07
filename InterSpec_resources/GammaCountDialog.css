@@ -1,13 +1,61 @@
-.line-below
+.AuxWindow-content.GammaCountDialog
+{
+  display: flex;
+  flex-direction: column;
+  width: 285px;
+  margin-left: 5px;
+  margin-right: 5px;
+  margin-top: 5px;
+}
+
+.GammaCountDialog .inputs, .GammaCountDialog .answers
+{
+  display: grid;
+  column-gap: 2px;
+  row-gap: 5px;
+  align-items: center; /* Aligns grid items along the vertical axis */
+  justify-content: stretch; /* resizes the grid items to allow the grid to fill the full width of the grid container */
+}
+
+.GammaCountDialog .EnergyLabel
+{
+  
+}
+
+.GammaCountDialog .nsigma
+{
+  display: inline-block;
+  padding-left: 15px;
+}
+
+.GammaCountDialog .line-below
 {
     border-bottom: 1px solid #ddd;
     padding-bottom: 7px;
     margin-bottom: 5px;
 }
 
-.line-above
+.GammaCountDialog .line-above
 {
     border-top: 1px solid #ddd;
     padding-top: 7px;
     margin-top: 5px;
+}
+
+.GammaCountDialog .shortcut-info
+{
+  font-size: small;
+  text-align: center;
+  font-style: italic;
+  margin-top: 5px;
+}
+
+.GammaCountDialog .LiveTimeScaleNote
+{
+  font-style: italic;
+}
+
+.GammaCountDialog .inputs > input
+{
+  width: 80px;
 }

@@ -52,16 +52,17 @@
 #include <Wt/WStandardItemModel>
 #include <Wt/WAbstractItemDelegate>
 
+#include "SpecUtils/Filesystem.h"
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
-#include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DbFileBrowser.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/RowStretchTreeView.h"
 
 
@@ -727,17 +728,75 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     AuxWindow::addHelpInFooter(bottom, "");
   }else
   {
+    // Note that clicking on either link below deletes this window, and creates a new window, which
+    //  will be captured as two seperate undo steps, even though it is a single user action.
+    //  Not worth the effort to fix this, atm.
+    
     //Add link for license and terms
     WAnchor *more = new WAnchor( WLink(), "License and Terms" );
-    more->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
-    more->clicked().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, m_viewer, false, std::function<void()>() ) );
+    
+    auto showLicenceAndTerms = [](){
+      // We'll keep from capturing closing the window and opening the new window as two
+      //  seperate undo/redo events.
+      {
+        UndoRedoManager::BlockUndoRedoInserts blocker;
+        InterSpec *viewer = InterSpec::instance();
+        viewer->deleteWelcomeDialog(false);
+        viewer->showLicenseAndDisclaimersWindow();
+      }
+      
+      UndoRedoManager *undoRedo = UndoRedoManager::instance();
+      if( undoRedo && undoRedo->canAddUndoRedoNow() )
+      {
+        auto undo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          viewer->deleteLicenseAndDisclaimersWindow();
+          viewer->showWelcomeDialogWorker( true );
+        };
+        auto redo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          viewer->deleteWelcomeDialog(false);
+          viewer->showLicenseAndDisclaimersWindow();
+        };
+        undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Show License and Terms" );
+      }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    };//showLicenceAndTerms
+    
+    more->clicked().connect( std::bind(showLicenceAndTerms) );
     more->addStyleClass("InfoLink");
     layout->addWidget( more, 1, 0 );
     
     //regular locations
     more = new WAnchor( WLink(), "More in depth information" );
-    more->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
-    more->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, string("getting-started") ) );
+    
+    auto showMoreInDepth = [](){
+      // We'll keep from capturing closing the window and opening the new window as two
+      //  seperate undo/redo events.  And instead make them a single step below
+      {
+        UndoRedoManager::BlockUndoRedoInserts blocker;
+        InterSpec *viewer = InterSpec::instance();
+        viewer->deleteWelcomeDialog( false );
+        viewer->showHelpWindow( "getting-started" );
+      }
+      
+      UndoRedoManager *undoRedo = UndoRedoManager::instance();
+      if( undoRedo && undoRedo->canAddUndoRedoNow() )
+      {
+        auto undo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          viewer->closeHelpWindow();
+          viewer->showWelcomeDialogWorker( true );
+        };
+        auto redo = [](){
+          InterSpec *viewer = InterSpec::instance();
+          viewer->deleteWelcomeDialog( false );
+          viewer->showHelpWindow( "getting-started" );
+        };
+        undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Show help window." );
+      }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    };//auto showMoreInDepth
+    
+    more->clicked().connect( std::bind(showMoreInDepth) );
     more->addStyleClass("InfoLink");
     layout->addWidget( more, 2, 0 );
   }

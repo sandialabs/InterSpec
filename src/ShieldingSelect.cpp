@@ -32,6 +32,7 @@
 #include <Wt/WText>
 #include <Wt/WLabel>
 #include <Wt/WImage>
+#include <Wt/WServer>
 #include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WCheckBox>
@@ -43,24 +44,26 @@
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
 
-
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
+#include "SandiaDecay/SandiaDecay.h"
 
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
+
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
-#include "SpecUtils/RapidXmlUtils.hpp"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -122,6 +125,7 @@ class TraceSrcDisplay : public WGroupBox
   Wt::WLineEdit *m_relaxationDistance;
   Wt::WText *m_relaxationDescription;
   
+  Wt::Signal<> m_userChanged;
   Wt::Signal<const SandiaDecay::Nuclide *,double> m_activityUpdated;
   Wt::Signal<TraceSrcDisplay *, const SandiaDecay::Nuclide * /* old nuclide */> m_nucChangedSignal;
   
@@ -140,6 +144,7 @@ public:
     m_relaxationDiv( nullptr ),
     m_relaxationDistance( nullptr ),
     m_relaxationDescription( nullptr ),
+    m_userChanged( this ),
     m_activityUpdated( this ),
     m_nucChangedSignal( this )
   {
@@ -229,6 +234,15 @@ public:
     //m_allowFitting->changed().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
     m_allowFitting->checked().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
     m_allowFitting->unChecked().connect( this, &TraceSrcDisplay::handleUserChangeAllowFit );
+    
+    
+    m_allowFitting->checked().connect( this, &TraceSrcDisplay::emitUserChaged );
+    m_allowFitting->unChecked().connect( this, &TraceSrcDisplay::emitUserChaged );
+    m_activityType->activated().connect( this, &TraceSrcDisplay::emitUserChaged );
+    m_relaxationDistance->changed().connect( this, &TraceSrcDisplay::emitUserChaged );
+    m_activityInput->changed().connect( this, &TraceSrcDisplay::emitUserChaged );
+    m_isoSelect->activated().connect( this, &TraceSrcDisplay::emitUserChaged );
+    
       
     updateAvailableActivityTypes();
     updateAvailableIsotopes();
@@ -911,6 +925,16 @@ public:
     return m_nucChangedSignal;
   }
   
+  void emitUserChaged()
+  {
+    m_userChanged.emit();
+  }
+  
+  Wt::Signal<> &userChanged()
+  {
+    return m_userChanged;
+  }
+  
   const SandiaDecay::Nuclide *nuclide() const
   {
     return m_currentNuclide;
@@ -941,6 +965,8 @@ public:
   
   void handleUserNuclideChange()
   {
+    UndoRedoManager::BlockUndoRedoInserts block;
+    
     const SandiaDecay::Nuclide * const oldNuc = m_currentNuclide;
     
     const string nuctxt = m_isoSelect->currentText().toUTF8();
@@ -959,6 +985,7 @@ public:
       //  but that should never happen, right?
       const int nucnum = srcmodel->nuclideIndex(m_currentNuclide);
       double act = srcmodel->activity(nucnum);
+      const bool fitAct = srcmodel->fitActivity(nucnum);
       const TraceActivityType type = TraceActivityType( m_activityType->currentIndex() );
       
       switch( type )
@@ -988,6 +1015,8 @@ public:
       const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const string actstr = PhysicalUnits::printToBestActivityUnits(act,4,useCi);
       m_activityInput->setValueText( WString::fromUTF8(actstr) );
+      
+      m_allowFitting->setChecked( fitAct );
       
       updateTotalActivityFromDisplayActivity();
     }//if( srcmodel )
@@ -1332,7 +1361,7 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
 ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
                                   SourceFitModel *sourceModel,
                                   Wt::WSuggestionPopup *materialSuggest,
-                                  ShieldingSourceDisplay *shieldSource,
+                                  const ShieldingSourceDisplay *shieldSource,
                                   Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
     m_toggleImage( nullptr ),
@@ -1401,6 +1430,7 @@ void ShieldingSelect::setClosableAndAddable( bool closeable , WGridLayout* layou
     item->triggered().connect( this, &ShieldingSelect::emitAddAfterSignal );
     m_addTraceSourceItem = popup->addMenuItem( "Add Trace Source" );
     m_addTraceSourceItem->triggered().connect( this, &ShieldingSelect::addTraceSource );
+    m_addTraceSourceItem->triggered().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     
     layout->addWidget( m_closeIcon, 0, 2, AlignMiddle | AlignRight );
     layout->addWidget( m_addIcon, 1, 2, AlignTop | AlignRight );
@@ -1852,6 +1882,25 @@ TraceSrcDisplay *ShieldingSelect::traceSourceWidgetForNuclide( const SandiaDecay
 }//traceSourceWidgetForNuclide(...) non-const
 
 
+shared_ptr<const string> ShieldingSelect::getStateAsXml() const
+{
+  try
+  {
+    rapidxml::xml_document<char> doc;
+    serialize( &doc );
+    auto xml_data = make_shared<string>();
+    rapidxml::print( std::back_inserter(*xml_data), doc, rapidxml::print_no_indenting );
+    
+    return xml_data;
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "Failed to serialize ShieldingSelect during undo/redo step: " << e.what();
+  }
+  
+  return nullptr;
+}//ShieldingSelect::getStateAsXml()
+
+
 void ShieldingSelect::init()
 {
   wApp->useStyleSheet( "InterSpec_resources/ShieldingSelect.css" );
@@ -1878,6 +1927,8 @@ void ShieldingSelect::init()
   m_toggleImage->decorationStyle().setCursor(PointingHandCursor);
   m_toggleImage->addStyleClass( "Wt-icon" );
  
+  m_toggleImage->clicked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  
   HelpSystem::attachToolTipOn( m_toggleImage,
     "Toggle between material and generic shielding",
                               showToolTips, HelpSystem::ToolTipPosition::Top );
@@ -1897,6 +1948,8 @@ void ShieldingSelect::init()
   m_materialEdit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
   //m_materialEdit->blurred().connect( this, &ShieldingSelect::handleMaterialChange );
 
+  // We will only insert an undo/redo step when the field losses focus.
+  m_materialEdit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   
   if( m_forFitting )
   {
@@ -2026,6 +2079,9 @@ void ShieldingSelect::init()
   m_atomicNumberEdit->valueChanged().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
   m_arealDensityEdit->valueChanged().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
   
+  m_atomicNumberEdit->valueChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  m_arealDensityEdit->valueChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  
   // A validator for the various geometry distances
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
@@ -2065,6 +2121,9 @@ void ShieldingSelect::init()
     edit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
     //edit->blurred().connect( this, &ShieldingSelect::handleMaterialChange );
     
+    edit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+    edit->enterPressed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+    
     if( m_forFitting )
     {
       //edit->setWidth( 150 );
@@ -2073,6 +2132,9 @@ void ShieldingSelect::init()
       fitCb = new WCheckBox( "Fit" );
       fitCb->setChecked( false );
       grid->addWidget( fitCb, row, 2, AlignMiddle | AlignRight );
+      
+      fitCb->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+      fitCb->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     }else
     {
       grid->addWidget( edit, row, 1 );
@@ -2172,8 +2234,9 @@ ShieldingSelect::~ShieldingSelect()
       }else
       {
         // I dont think we get here - but I'll leave the assert in, just to see
+        //  -- we get here sometimes if DoseCalc tool is showing and we clear the session
         cerr << "~ShieldingSelect(): Suggest not in DOM, not removing edit from suggestion" << endl;
-        assert( 0 );
+//        assert( 0 );
       }
     }else
     {
@@ -2290,6 +2353,8 @@ void ShieldingSelect::checkIsCorrectCurrentGeometry( const GeometryType wanted, 
 
 void ShieldingSelect::addTraceSource()
 {
+  UndoRedoManager::BlockUndoRedoInserts block;
+  
   // TODO: maybe we shouldnt add a trace source if material() is nullptr; also when material()
   //       becomes nullptr maybe we should remove trace sources
   if( !m_traceSources )
@@ -2301,6 +2366,8 @@ void ShieldingSelect::addTraceSource()
   TraceSrcDisplay *src = new TraceSrcDisplay( this );
   src->nucChangedSignal().connect( this, &ShieldingSelect::handleTraceSourceNuclideChange );
   src->activityUpdated().connect( this, &ShieldingSelect::handleTraceSourceActivityChange );
+  
+  src->userChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   
   // Check how many nuclides arent already volumetric sources, and if exactly one, just select it
   const SandiaDecay::Nuclide *nuc = nullptr;
@@ -2330,6 +2397,8 @@ void ShieldingSelect::removeTraceSourceWidget( TraceSrcDisplay *toRemove )
   if( !toRemove )
     return;
   
+  UndoRedoManager::BlockUndoRedoInserts block;
+  
   for( WWidget *w : m_traceSources->children() )
   {
     TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
@@ -2344,6 +2413,8 @@ void ShieldingSelect::removeTraceSourceWidget( TraceSrcDisplay *toRemove )
       delete src;
       
       setTraceSourceMenuItemStatus();
+      
+      handleUserChangeForUndoRedo();
       
       return;
     }//if( src == toRemove )
@@ -2704,6 +2775,17 @@ Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &ShieldingSelect::remov
 {
   return m_removingIsotopeAsSource;
 }
+
+
+Wt::Signal<ShieldingSelect *, shared_ptr<const string>, shared_ptr<const string>>
+           &ShieldingSelect::userChangedStateSignal()
+{
+  if( !m_prevState )
+    m_prevState = getStateAsXml();
+    
+  return m_userChangedStateSignal;
+}
+
 
 void ShieldingSelect::setGeometry( GammaInteractionCalc::GeometryType type )
 {
@@ -3441,6 +3523,10 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
 
   handleIsotopicChange( static_cast<float>(massFrac), iso );
   
+  cb->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  cb->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  cb->massFractionChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+
 
 /*  //Commenting out since I'm guessing most elements have at least 2 isotopes
   //Make sure the material has the isotope reequested to add
@@ -4343,8 +4429,10 @@ void ShieldingSelect::handleMaterialChange()
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
 #endif
   
-  cerr << "\nShieldingSelect::handleMaterialChange()\n\tShould remove this call to "
-       << "updateMassFractionDisplays(...) its verified the developer checks always pass\n" << endl;
+  // I dont think this next call to #updateMassFractionDisplays is technically necassary,
+  //  but we'll leave it in as a "JIC"
+  //cerr << "\nShieldingSelect::handleMaterialChange()\n\tShould remove this call to "
+  //     << "updateMassFractionDisplays(...) its verified the developer checks always pass\n" << endl;
   updateMassFractionDisplays( newMaterial );
 
   
@@ -4354,6 +4442,50 @@ void ShieldingSelect::handleMaterialChange()
     m_materialChangedSignal.emit( this );
 }//void handleMaterialChange()
 
+
+void ShieldingSelect::handleUserChangeForUndoRedoWorker()
+{
+  auto xml_data = make_shared<string>();
+  try
+  {
+    rapidxml::xml_document<char> doc;
+    serialize( &doc );
+    rapidxml::print( std::back_inserter(*xml_data), doc, rapidxml::print_no_indenting );
+    
+    if( !m_prevState || ((*m_prevState) != (*xml_data)) )
+    {
+      m_userChangedStateSignal.emit( this, m_prevState, xml_data );
+      m_prevState = xml_data;
+      //cout << "Storing ShieldingSelect taking " << xml_data->size() << " bytes mem" << endl;
+    }else
+    {
+      cerr << "ShieldingSelect::handleUserChangeForUndoRedo(): identical state" << endl;
+    }
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "Failed to serialize in ShieldingSelect::handleUserChangeForUndoRedo().";
+    // m_prevState = nullptr;
+  }//try / catch
+}//void handleUserChangeForUndoRedoWorker();
+
+
+void ShieldingSelect::handleUserChangeForUndoRedo()
+{
+  if( !m_userChangedStateSignal.isConnected() )
+    return;
+  
+  // We'll wait until after the current event loop to grab this widgets state;
+  //  we could be here before all the changes have taken effect (e.g., I havent
+  //  taken the care to make sure this function is called last in signal slots).
+
+  Wt::WServer *server = Wt::WServer::instance();
+  assert( server && wApp );
+  if( server )
+  {
+    auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this) );
+    server->post( wApp->sessionId(), worker );
+  }
+}//void handleUserChangeForUndoRedo()
 
 
 void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
@@ -4471,7 +4603,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     {
       case GeometryType::Spherical:
         node = addDimensionNode( "Thickness", m_thicknessEdit, m_fitThicknessCB );
-        node->append_attribute( doc->allocate_attribute( "Remark", "CylinderRadiusThickness" ) );
+        node->append_attribute( doc->allocate_attribute( "Remark", "SphericalThickness" ) );
         break;
         
       case GeometryType::CylinderEndOn:
@@ -4525,8 +4657,11 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     {
       name = "FitMassFraction";
       value = (m_fitMassFrac && m_fitMassFrac->isChecked()) ? "1" : "0";
-      mass_frac_node = doc->allocate_node( rapidxml::node_element, name, value );
-      material_node->append_node( mass_frac_node );
+      if( m_fitMassFrac && !m_fitMassFrac->isHidden() )
+      {
+        mass_frac_node = doc->allocate_node( rapidxml::node_element, name, value );
+        material_node->append_node( mass_frac_node );
+      }
     }//if( m_forFitting )
     
     for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
@@ -4558,27 +4693,130 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
       {
         const TraceSrcDisplay *src = dynamic_cast<const TraceSrcDisplay *>( w );
         assert( src );
-        if( src && src->nuclide() )
+        if( src /* && src->nuclide() */ )
           src->serialize( material_node );
       }//for( WWidget *w : m_traceSources->children() )
     }//if( m_traceSources )
     
     
-    #if( INCLUDE_ANALYSIS_TEST_SUITE )
-        auto addTruth = [doc,material_node]( const char *truthName, const boost::optional<double> &value ){
-          if( value )
-          {
-            const string strval = PhysicalUnits::printToBestLengthUnits(*value,6);
-            const char *value = doc->allocate_string( strval.c_str() );
-            rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, truthName, value );
-            material_node->append_node( node );
-          }
-        };//addTruth(...)
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    auto addTruth = [doc,material_node]( const char *truthName, const boost::optional<double> &value ){
+      if( value )
+      {
+        const string strval = PhysicalUnits::printToBestLengthUnits(*value,6);
+        const char *value = doc->allocate_string( strval.c_str() );
+        rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, truthName, value );
+        material_node->append_node( node );
+      }
+    };//addTruth(...)
     
-        addTruth( "TruthThickness", truthThickness );
-        addTruth( "TruthThicknessTolerance", truthThicknessTolerance );
-    #endif
+    addTruth( "TruthThickness", truthThickness );
+    addTruth( "TruthThicknessTolerance", truthThicknessTolerance );
+    addTruth( "TruthThicknessD2", truthThicknessD2 );
+    addTruth( "TruthThicknessD2Tolerance", truthThicknessD2Tolerance );
+    addTruth( "TruthThicknessD3", truthThicknessD3 );
+    addTruth( "TruthThicknessD3Tolerance", truthThicknessD3Tolerance );
+#endif
+    
   }//if( m_isGenericMaterial ) / else
+  
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  try
+  {
+    const string uri = encodeStateToUrl();
+    
+    ShieldingSelect test( m_materialDB, m_sourceModel, m_materialSuggest, m_shieldSrcDisp  );
+    test.handleAppUrl( uri );
+    
+    if( test.m_isGenericMaterial != m_isGenericMaterial )
+      throw runtime_error( "Generic vs Material doesnt match" );
+    
+    if( test.m_forFitting != m_forFitting )
+      throw runtime_error( "For fitting indicator doesnt match" );
+    
+    if( m_isGenericMaterial )
+    {
+      if( test.m_arealDensityEdit->text() != m_arealDensityEdit->text() )
+        throw runtime_error( "Areal Density text doesnt match" );
+      
+      if( test.m_atomicNumberEdit->text() != m_atomicNumberEdit->text() )
+        throw runtime_error( "Atomic number text doesnt match" );
+      
+      if( m_forFitting && test.m_fitArealDensityCB->isChecked() != m_fitArealDensityCB->isChecked() )
+        throw runtime_error( "Fitting for areal density doesnt match" );
+      
+      if( m_forFitting && test.m_fitAtomicNumberCB->isChecked() != m_fitAtomicNumberCB->isChecked() )
+        throw runtime_error( "Fitting for atomic number doesnt match" );
+    }else
+    {
+      const string test_material = test.m_materialEdit->text().toUTF8();
+      const string orig_material = m_materialEdit->text().toUTF8();
+      
+      if( test_material != orig_material )
+        throw runtime_error( "Material name text doesnt match" );
+      
+      if( test.m_geometry != m_geometry )
+        throw runtime_error( "geometries dont match" );
+      
+      switch( m_geometry )
+      {
+        case GammaInteractionCalc::GeometryType::Spherical:
+          if( test.m_thicknessEdit->text() != m_thicknessEdit->text() )
+            throw runtime_error( "Thickness text doesnt match" );
+          if( m_forFitting && (test.m_fitThicknessCB->isChecked() != m_fitThicknessCB->isChecked()) )
+            throw runtime_error( "Fitting for thickness doesnt match" );
+          break;
+          
+        case GammaInteractionCalc::GeometryType::CylinderEndOn:
+        case GammaInteractionCalc::GeometryType::CylinderSideOn:
+          if( test.m_cylRadiusEdit->text() != m_cylRadiusEdit->text() )
+            throw runtime_error( "Cyl Rad text doesnt match" );
+          if( test.m_cylLengthEdit->text() != m_cylLengthEdit->text() )
+            throw runtime_error( "Cyl Len text doesnt match" );
+          if( m_forFitting && test.m_fitCylRadiusCB->isChecked() != m_fitCylRadiusCB->isChecked() )
+            throw runtime_error( "Fitting for Cyl Rad doesnt match" );
+          if( m_forFitting && test.m_fitCylLengthCB->isChecked() != m_fitCylLengthCB->isChecked() )
+            throw runtime_error( "Fitting for Cyl Len doesnt match" );
+          break;
+          
+        case GammaInteractionCalc::GeometryType::Rectangular:
+          if( test.m_rectWidthEdit->text() != m_rectWidthEdit->text() )
+            throw runtime_error( "Rect width text doesnt match" );
+          if( test.m_rectHeightEdit->text() != m_rectHeightEdit->text() )
+            throw runtime_error( "Rect height text doesnt match" );
+          if( test.m_rectDepthEdit->text() != m_rectDepthEdit->text() )
+            throw runtime_error( "Rect depth text doesnt match" );
+          if( m_forFitting && test.m_fitRectWidthCB->isChecked() != m_fitRectWidthCB->isChecked() )
+            throw runtime_error( "Fitting for Rect width doesnt match" );
+          if( m_forFitting && test.m_fitRectHeightCB->isChecked() != m_fitRectHeightCB->isChecked() )
+            throw runtime_error( "Fitting for Rect Height doesnt match" );
+          if( m_forFitting && test.m_fitRectDepthCB->isChecked() != m_fitRectDepthCB->isChecked() )
+            throw runtime_error( "Fitting for Rect Depth doesnt match" );
+          break;
+          
+        case GammaInteractionCalc::GeometryType::NumGeometryType:
+          assert( 0 );
+          break;
+      }//switch( m_geometry )
+    }//if( m_isGenericMaterial ) / else
+    
+
+    /*
+     // We dont currently encode trace or self-attenuating source info
+    Wt::WCheckBox *m_fitMassFrac;
+    Wt::WContainerWidget *m_asSourceCBs;
+    ElementToNuclideMap m_sourceIsotopes;
+    Wt::WContainerWidget *m_traceSources;
+    */
+  }catch( std::exception &e )
+  {
+    const string msg = "Error roundtripping ShieldingSelect to URI and back: " + string(e.what());
+    log_developer_error( __func__, msg.c_str() );
+    assert( 0 );
+  }//try
+#endif  //PERFORM_DEVELOPER_CHECKS
+  
 }//void serialize( rapidxml::xml_document<> &doc ) const;
 
 
@@ -4922,6 +5160,10 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
     
     getTruth( "TruthThickness", truthThickness );
     getTruth( "TruthThicknessTolerance", truthThicknessTolerance );
+    getTruth( "TruthThicknessD2", truthThicknessD2 );
+    getTruth( "TruthThicknessD2Tolerance", truthThicknessD2Tolerance );
+    getTruth( "TruthThicknessD3", truthThicknessD3 );
+    getTruth( "TruthThicknessD3Tolerance", truthThicknessD3Tolerance );
 #endif
     
     
@@ -4933,3 +5175,287 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
 }//void deSerialize( const rapidxml::xml_node<char> *shielding_node ) const
 
 
+std::string ShieldingSelect::encodeStateToUrl() const
+{
+  // "V=1&G=S&D1=1.2cm&N=Fe&NTRACE=3&TRACEN=1&V=1&N=U238&A=1.2uCi&T=total&F=1"
+  // "V": version
+  // "G": geometry
+  // "F": for fitting; if not specified than false
+  // "D1": "D2": Thickness, depth, etc
+  // "FD1": "FD2": fit the cooresponding dimensions
+  // "N": material name
+  // "AN": atomic number
+  // "FAN": fit atomic number - if not specified than false
+  // "AD": areal density
+  // "FAD": fit areal density - if not specified than false
+  // ...
+  
+  string answer = "V=1";
+  
+  if( m_forFitting )
+    answer += "&F=1";
+  
+  if( m_isGenericMaterial )
+  {
+    answer += "&AD=" + m_arealDensityEdit->text().toUTF8();
+    answer += "&AN=" + m_atomicNumberEdit->text().toUTF8();
+    
+    if( m_forFitting && m_fitArealDensityCB->isChecked() )
+      answer += "FAN=1";
+    if( m_forFitting && m_fitAtomicNumberCB->isChecked() )
+      answer += "FAD=1";
+  }else
+  {
+    std::string material = m_materialEdit->text().toUTF8();
+    SpecUtils::ireplace_all(material, "#", "%23" );
+    SpecUtils::ireplace_all(material, "&", "%26" );
+    
+    answer += "&N=" + material;
+      
+    switch( m_geometry )
+    {
+      case GammaInteractionCalc::GeometryType::Spherical:
+        answer += "&G=S&D1=" + m_thicknessEdit->text().toUTF8();
+        if( m_forFitting && m_fitThicknessCB->isChecked() )
+          answer += "&FD1=1";
+        break;
+        
+      case GammaInteractionCalc::GeometryType::CylinderEndOn:
+      case GammaInteractionCalc::GeometryType::CylinderSideOn:
+        if( m_geometry == GammaInteractionCalc::GeometryType::CylinderEndOn )
+          answer += "&G=CE";
+        else
+          answer += "&G=CS";
+        answer += "&D1=" + m_cylRadiusEdit->text().toUTF8();
+        answer += "&D2=" + m_cylLengthEdit->text().toUTF8();
+        if( m_forFitting && m_fitCylRadiusCB->isChecked() )
+          answer += "&FD1=1";
+        if( m_forFitting && m_fitCylLengthCB->isChecked() )
+          answer += "&FD2=1";
+        break;
+        
+      case GammaInteractionCalc::GeometryType::Rectangular:
+        answer += "&G=R";
+        answer += "&D1=" + m_rectWidthEdit->text().toUTF8();
+        answer += "&D2=" + m_rectHeightEdit->text().toUTF8();
+        answer += "&D3=" + m_rectDepthEdit->text().toUTF8();
+        if( m_forFitting && m_fitRectWidthCB->isChecked() )
+          answer += "&FD1=1";
+        if( m_forFitting && m_fitRectHeightCB->isChecked() )
+          answer += "&FD2=1";
+        if( m_forFitting && m_fitRectDepthCB->isChecked() )
+          answer += "&FD3=1";
+        break;
+        
+      case GammaInteractionCalc::GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+    
+    // TODO: encode self-attenuating and trace sources, and maybe "truth" value; with a string like "NTRACE=3&TRACEN=1&V=1&N=U238&A=1.2uCi&T=total&F=1"
+  }//if( m_isGenericMaterial ) / else
+  
+  return answer;
+}//std::string encodeStateToUrl() const
+
+
+void ShieldingSelect::handleAppUrl( std::string query_str )
+{
+  // "V=1&G=S&D1=1.2cm&N=Fe"
+  // "V": version
+  // "G": geometry
+  // "F": for fitting; if not specified than false
+  // "D1": "D2": Thickness, depth, etc
+  // "FD1": "FD2": fit the cooresponding dimensions
+  // "N": material name
+  // "AN": atomic number
+  // "FAN": fit atomic number - if not specified than false
+  // "AD": areal density
+  // "FAD": fit areal density - if not specified than false
+  // ...
+  
+  const map<string,string> values = AppUtils::query_str_key_values( query_str );
+  
+  auto iter = values.find( "V" );
+  if( (iter == end(values)) || ((iter->second != "1") && !SpecUtils::istarts_with(iter->second, "1.")) )
+    throw runtime_error( "ShieldingSelect URI not compatible version" );
+  
+  iter = values.find( "F" );
+  const bool forFitting = (iter == end(values)) ? false : (iter->second == "1");
+  
+  if( m_forFitting != forFitting )
+    throw runtime_error( "ShieldingSelect m_forFitting must be same as "
+                         "URI being deserialized" );
+  
+  const bool generic = values.count( "AN" );
+  
+  
+  if( generic )
+  {
+    // Get all the values, and validate, before setting valus
+    iter = values.find( "AN" );
+    assert( iter != end(values) ); //If we are here, we know `values` cintains 'AN'
+    const string an_str = iter->second;
+    
+    if( (iter = values.find( "AD" )) == end(values) )
+      throw runtime_error( "ShieldingSelect missing AD in URI." );
+    
+    const string ad_str = iter->second;
+    
+    // Validate AN and AD are numbers, within acceptable range
+    try
+    {
+      float an, ad;
+      if( !SpecUtils::parse_float( an_str.c_str(), an_str.size(), an) )
+        throw runtime_error( "AN '" + an_str + "' not float" );
+      if( !SpecUtils::parse_float( ad_str.c_str(), ad_str.size(), ad) )
+        throw runtime_error( "AD '" + ad_str + "' not float" );
+      
+      if( (an < MassAttenuation::sm_min_xs_atomic_number)
+         || (an > MassAttenuation::sm_max_xs_atomic_number) )
+        throw runtime_error( "AN '" + an_str + "' is out of range" );
+      
+      if( (ad < 0.0f)
+         || (ad > static_cast<float>(GammaInteractionCalc::sm_max_areal_density_g_cm2)) )
+        throw runtime_error( "AD '" + ad_str + "' is out of range" );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "ShieldingSelect invalid AN or AD in URI: " + string(e.what()) );
+    }
+    
+    iter = values.find( "FAN" );
+    const bool fitAN = (!forFitting || (iter == end(values))) ? false : (iter->second == "1");
+    
+    iter = values.find( "FAD" );
+    const bool fitAD = (!forFitting || (iter == end(values))) ? false : (iter->second == "1");
+    
+    
+    if( generic != m_isGenericMaterial )
+      handleToggleGeneric();
+    setGeometry( GammaInteractionCalc::GeometryType::Spherical );
+    
+    m_atomicNumberEdit->setText( WString::fromUTF8(an_str) );
+    m_arealDensityEdit->setText( WString::fromUTF8(ad_str) );
+    if( m_fitArealDensityCB )
+      m_fitArealDensityCB->setChecked( fitAD );
+    if( m_fitAtomicNumberCB )
+      m_fitAtomicNumberCB->setChecked( fitAN );
+  }else
+  {
+    if( (iter = values.find( "G" )) == end(values) )
+      throw runtime_error( "ShieldingSelect missing geometry in URI." );
+    
+    const string &geom_str = iter->second;
+    GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::Spherical;
+    
+    if( SpecUtils::iequals_ascii(geom_str, "S") )
+      geometry = GammaInteractionCalc::GeometryType::Spherical;
+    else if( SpecUtils::iequals_ascii(geom_str, "CE") )
+      geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+    else if( SpecUtils::iequals_ascii(geom_str, "CS") )
+      geometry = GammaInteractionCalc::GeometryType::CylinderSideOn;
+    else if( SpecUtils::iequals_ascii(geom_str, "R") )
+      geometry = GammaInteractionCalc::GeometryType::Rectangular;
+    else
+      throw runtime_error( "ShieldingSelect invalid geometry '" + geom_str + "' in URI" );
+    
+    string d1str, d2str, d3str;
+    bool fitD1 = false, fitD2 = false, fitD3 = false;
+    
+    auto getDim = [&]( const string &key, string &valstr, bool &fit ) {
+      if( (iter = values.find(key)) == end(values) )
+        throw runtime_error( "ShieldingSelect missing dimiension '" + key + "' in URI." );
+
+      valstr = iter->second;
+      if( !valstr.empty() )
+      {
+        try
+        {
+          const double val = static_cast<float>( PhysicalUnits::stringToDistance(valstr) );
+          if( val < 0.0 )
+            throw runtime_error( "Distance must be positive." );
+        }catch( std::exception & )
+        {
+          throw runtime_error( "ShieldingSelect invalid dimension '" + valstr + "' for '" + key + "'" );
+        }
+      }//if( !valstr.empty() )
+      
+      iter = values.find( "F" + key );
+      fit = (!forFitting || (iter == end(values))) ? false : (iter->second == "1");
+    };//getDim
+    
+    
+    switch( geometry )
+    {
+      case GammaInteractionCalc::GeometryType::Rectangular:
+         getDim("D3", d3str, fitD3);
+        // drop-through intentional
+      case GammaInteractionCalc::GeometryType::CylinderEndOn:
+      case GammaInteractionCalc::GeometryType::CylinderSideOn:
+         getDim("D2", d2str, fitD2);
+        // drop-through intentional
+      case GammaInteractionCalc::GeometryType::Spherical:
+        getDim("D1", d1str, fitD1);
+        break;
+        
+      case GammaInteractionCalc::GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( geometry )
+    
+    if( (iter = values.find( "N" )) == end(values) )
+      throw runtime_error( "ShieldingSelect missing material name in URI." );
+    
+    string material = iter->second;
+    SpecUtils::ireplace_all(material, "%23", "#" );
+    SpecUtils::ireplace_all(material, "%26", "&" );
+    
+    if( generic != m_isGenericMaterial )
+      handleToggleGeneric();
+    
+    setGeometry( geometry );
+    
+    m_materialEdit->setText( WString::fromUTF8(material) );
+    
+    switch( geometry )
+    {
+      case GammaInteractionCalc::GeometryType::Spherical:
+        m_thicknessEdit->setValueText( WString::fromUTF8(d1str) );
+        if( m_fitThicknessCB )
+          m_fitThicknessCB->setChecked( fitD1 );
+        break;
+        
+      case GammaInteractionCalc::GeometryType::CylinderEndOn:
+      case GammaInteractionCalc::GeometryType::CylinderSideOn:
+        m_cylRadiusEdit->setValueText( WString::fromUTF8(d1str) );
+        if( m_fitCylRadiusCB )
+          m_fitCylRadiusCB->setChecked( fitD1 );
+        
+        m_cylLengthEdit->setValueText( WString::fromUTF8(d2str) );
+        if( m_fitCylLengthCB )
+          m_fitCylLengthCB->setChecked( fitD2 );
+        break;
+        
+      case GammaInteractionCalc::GeometryType::Rectangular:
+        m_rectWidthEdit->setValueText( WString::fromUTF8(d1str) );
+        if( m_fitRectWidthCB )
+          m_fitRectWidthCB->setChecked( fitD1 );
+        
+        m_rectHeightEdit->setValueText( WString::fromUTF8(d2str) );
+        if( m_fitRectHeightCB )
+          m_fitRectHeightCB->setChecked( fitD2 );
+        
+        m_rectDepthEdit->setValueText( WString::fromUTF8(d3str) );
+        if( m_fitRectDepthCB )
+          m_fitRectDepthCB->setChecked( fitD3 );
+        break;
+        
+      case GammaInteractionCalc::GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+    
+  }//if( generic ) / else
+  
+  handleMaterialChange();
+}//void handleAppUrl( std::string query_str )

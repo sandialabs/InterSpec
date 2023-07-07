@@ -351,6 +351,8 @@ public:
    Takes in just the "query" portion of the URL (i.e., the data after the '?' character), that
    comes from, say, a QR code.
    
+   String passed ins is assumed to have already been url-decoded.
+   
    Throws exception on failure, otherwise returns a valid DRF.
    */
   static std::shared_ptr<DetectorPeakResponse> parseFromAppUrl( const std::string &url_query );
@@ -366,11 +368,16 @@ public:
    In the future it may be implemented that the description is only cut down as much as needed,
    or all characters converted to QR-ascii so the available number of characters is larger.
    
+   The returned string is url-encoded - unlike the `toAppUrl()` function of other classes; this
+   is to allow the resturned string to be represented as a ASCII-mode QR code.
+   
    If this DRF is not valid, will throw an exception.
    */
   std::string toAppUrl() const;
   
   /** Decodes the "query" portion of a URL to form the DRF.
+   
+   String passed in is assumed to have already been url decoded.
    
    If URL is not a valid DRF, throws exception.
    */

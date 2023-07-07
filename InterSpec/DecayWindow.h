@@ -42,7 +42,9 @@ public:
                   const double age, std::string activityStr, 
                   const double maxtime = -1.0 );
   
+  void handleAppUrl( std::string url );
   void handleAppUrl( const std::string &path, const std::string &query_str );
+  std::string encodeStateToUrl();
   
  protected:
   DecayActivityDiv *m_activityDiv;

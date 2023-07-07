@@ -37,11 +37,15 @@
 #include <Wt/WDoubleSpinBox>
 #include <Wt/WContainerWidget>
 
+#include "SpecUtils/StringAlgo.h"
+
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/OneOverR2Calc.h"
+#include "InterSpec/UndoRedoManager.h"
 
 using namespace Wt;
 using namespace std;
@@ -56,7 +60,8 @@ OneOverR2Calc::OneOverR2Calc()
     m_backgroundMeasurment( NULL ),
     m_distance( NULL ),
     m_answer( NULL ),
-    m_message( NULL )
+    m_message( NULL ),
+    m_prevValues{ 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 {
   wApp->useStyleSheet( "InterSpec_resources/OneOverR2Calc.css" );
   
@@ -176,11 +181,9 @@ OneOverR2Calc::OneOverR2Calc()
   AuxWindow::addHelpInFooter( footer(), "1/r2-calc-dialog" );
   
   WPushButton *closeButton = addCloseButtonToFooter();
-  closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
+  closeButton->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
   
   rejectWhenEscapePressed();
-  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
-  
   show();
   
   InterSpec *viewer = InterSpec::instance();
@@ -200,11 +203,16 @@ OneOverR2Calc::OneOverR2Calc()
       InterSpecApp::DeviceOrientation orientation = InterSpecApp::DeviceOrientation::Unknown;
       app->getSafeAreaInsets( orientation, safeAreas[0], safeAreas[1], safeAreas[2], safeAreas[3] );
 #endif
-      repositionWindow( -32768, static_cast<int>(std::max(3.0f,0.5f*safeAreas[0])) );
-      setMaximumSize( WLength::Auto, viewer->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f) );
+      //repositionWindow( -32768, static_cast<int>(std::max(3.0f,0.5f*safeAreas[0])) );
+      
+      // TODO: right now hardcoding width because otherwise width will go to like full-screen
+      const double width = 325;
+      const double height = viewer->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f);
+      setMaximumSize( width, height );
       
       /* ToDo: get safe offsets in c++ land, and then also convert other AuxWindows that are modal on phone to resize correctly. */
       /* Do same for Gamma XS Calc. And Energy Range Sum*/
+      centerWindowHeavyHanded();
     }
   }else
   {
@@ -347,4 +355,127 @@ void OneOverR2Calc::doCalc()
   char answerStr[64];
   snprintf( answerStr, sizeof(answerStr), ("%." + std::to_string(nsigfigs) + "g").c_str(), r );
   m_answer->setText( answerStr );
+  
+  // Now deal with undo/redo
+  std::array<float,5> currentValues{
+    static_cast<float>( m_nearMeasurement->value() ),
+    static_cast<float>( m_farMeasurement->value() ),
+    static_cast<float>( m_backgroundMeasurment->value() ),
+    static_cast<float>( m_distance->value() ),
+    static_cast<float>( m_powerLawSelect->currentIndex() )
+  };
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() && (currentValues != m_prevValues) )
+  {
+    std::array<float,5> prevValues = m_prevValues;
+    auto undo_redo = [currentValues,prevValues]( const bool is_undo ){
+      OneOverR2Calc *tool = InterSpec::instance()->createOneOverR2Calculator();
+      if( !tool )
+        return;
+      const std::array<float,5> &val = is_undo ? prevValues : currentValues;
+      tool->m_prevValues = val;
+      tool->m_nearMeasurement->setValue( val[0] );
+      tool->m_farMeasurement->setValue( val[1] );
+      tool->m_backgroundMeasurment->setValue( val[2] );
+      tool->m_distance->setValue( val[3] );
+      tool->m_powerLawSelect->setCurrentIndex( static_cast<int>(val[4]) );
+      tool->doCalc();
+    };
+    
+    auto undo = [undo_redo](){ undo_redo(true); };
+    auto redo = [undo_redo](){ undo_redo(false); };
+    
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "1/r2 value change." );
+  }//if( value != m_prevValues )
+  
+  m_prevValues = std::move(currentValues);
 }//void doCalc()
+
+
+void OneOverR2Calc::handleAppUrl( std::string query_str )
+{
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
+  const map<string,string> values = AppUtils::query_str_key_values( query_str );
+  
+  // Check version is appropriate
+  const auto ver_iter = values.find( "V" );
+  if( (ver_iter == end(values))
+     || ((ver_iter->second != "1") && !SpecUtils::istarts_with(ver_iter->second, "1.")) )
+    throw runtime_error( "1/r2 Calc.: URI not compatible version." );
+  
+  
+  
+  // A boilerplate lambda for grapping and validating the fields
+  auto getField = [&]( const string &name, Wt::WLineEdit *edit ){
+    const auto i = values.find( name );
+    string value = (i == end(values)) ? string() : i->second;
+    SpecUtils::ireplace_all( value, "%23", "#" );  //Shouldnt be an issue, but jic
+    SpecUtils::ireplace_all( value, "%26", "&" ); //Shouldnt be an issue, but jic
+    
+    // Let the value be empty,
+    if( !value.empty() )
+    {
+      try
+      {
+        std::stod(value);
+      }catch( std::exception & )
+      {
+        throw runtime_error( "1/r2 Calc.: invalid '" + name + "' value '" + value + "' in URI." );
+      }// try / catch
+    }//if( !value.empty() )
+    
+    edit->setValueText( WString::fromUTF8(value) );
+  };//getField(...)
+  
+  
+  getField( "NEAR", m_nearMeasurement );
+  getField( "FAR", m_farMeasurement );
+  getField( "BACK", m_backgroundMeasurment );
+  getField( "DIST", m_distance );
+  
+  int power_index = 0;
+  const auto pow_iter = values.find( "POW" );
+  if( pow_iter != end(values) )
+  {
+    if( pow_iter->second == "1.85" )
+      power_index = 1;
+    else if( pow_iter->second == "1.65" )
+      power_index = 2;
+  }//if( pow_iter != end(values) )
+  
+  m_powerLawSelect->setCurrentIndex( power_index );
+  
+  doCalc();
+}//void handleAppUrl( std::string query_str )
+
+
+std::string OneOverR2Calc::encodeStateToUrl() const
+{
+  // "near=3.5&far=1.1&back=2&dit=1.9&power=1.75"
+  string answer = "V=1";
+  
+  auto addField = [&answer]( const string &name, Wt::WLineEdit *edit ){
+    string val = edit->text().toUTF8();
+    SpecUtils::ireplace_all(val, "#", "%23" ); //Shouldnt be an issue, but JIC
+    SpecUtils::ireplace_all(val, "&", "%26" ); //Shouldnt be an issue, but JIC
+    answer += "&" + name + "=" + val;
+  };
+  
+  addField( "NEAR", m_nearMeasurement );
+  addField( "FAR", m_farMeasurement );
+  addField( "BACK", m_backgroundMeasurment );
+  addField( "DIST", m_distance );
+
+  string power = "2";
+  switch( m_powerLawSelect->currentIndex() )
+  {
+    case 1: power = "1.85"; break;
+    case 2: power = "1.65"; break;
+    default: break;
+  }//switch( m_powerLawSelect->currentIndex() )
+  answer += "&POW=" + power;
+  
+  return answer;
+}//string encodeStateToUrl() const

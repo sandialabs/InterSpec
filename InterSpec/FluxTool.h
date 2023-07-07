@@ -59,6 +59,7 @@ namespace Wt
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
   class WPushButton;
 #endif
+  class WButtonGroup;
 }//namespace Wt
 
 namespace FluxToolImp
@@ -75,8 +76,16 @@ public:
   
   virtual ~FluxToolWindow();
   
+  /** See #FluxToolWidget::handleAppUrl */
+  void handleAppUrl( const std::string &query_str );
+  
+  /** See #FluxToolWidget::encodeStateToUrl */
+  std::string encodeStateToUrl() const;
+  
 protected:
   FluxToolWidget *m_fluxTool;
+  
+  friend class FluxToolWidget;
 };//class FluxToolWindow
 
 
@@ -128,8 +137,29 @@ public:
   
   DisplayInfoLevel displayInfoLevel() const;
   
+  
+  /** Handles receiving a "deep-link" url starting with "interspec://flux?dist=1.2m&display=low".
+   
+   Example URIs:
+   - "interspec://flux?VER=1&dist=1.2m&display=low"
+   
+   @param query_str The query portion of the URI.  So for example, if the URI has a value of
+          "interspec://flux?dist=1.2m&display=low", then this string would be "dist=1.2m&display=low".
+          This string is in standard URL format of "key1=value1&key2=value2&..." with ordering not mattering.
+          Capitalization is not important.
+          Assumes the string passed in has already been url-decoded.
+          If not a valid query_str, throws exception.
+   */
+  void handleAppUrl( std::string query_str );
+  
+  /** Encodes current tool state to app-url format.  Returned string is just query portion of of URL,
+   so will look something like "dist=1.2m&display=low", and it will not be url-encoded.
+   */
+  std::string encodeStateToUrl() const;
+  
 protected:
   void init();
+  void distanceUpdated();
   void setTableNeedsUpdating();
   void refreshPeakTable();
   
@@ -145,6 +175,7 @@ protected:
   
   Wt::WText *m_msg;
   Wt::WLineEdit *m_distance;
+  Wt::WString m_prevDistance; // For undo/redo
   RowStretchTreeView *m_table;
   
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
@@ -160,6 +191,7 @@ protected:
   
   /** What columns to show. */
   DisplayInfoLevel m_displayInfoLevel;
+  Wt::WButtonGroup *m_displayLevelButtons;
   
   Wt::Signal<> m_tableUpdated;
   

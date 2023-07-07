@@ -455,7 +455,7 @@ namespace
       m_useForEffCb = new WCheckBox( "Use", this );
       m_useForEffCb->addStyleClass( "DrfPeakUseCb" );
       
-      char buffer[512];
+      char buffer[256];
       if( peak && peak->parentNuclide() && peak->nuclearTransition() )
       {
         const bool use = peak->useForDrfIntrinsicEffFit();
@@ -508,6 +508,15 @@ namespace
       }
       
       m_descTxt = new WText( WString::fromUTF8(buffer), this );
+      // This is totally bizarre, but Safari (version 16.5 at least), and Chrome, will crash
+      //  (the rendering process for the tab, by running up huge amounts of memory), the
+      //  second time we create the "Make Detector Response" window, under some
+      //  circumstances (seems to happen most reliably with multiple spectrum files open
+      //  with lots of peaks).  If we either limit the text length of `m_descTxt`, or
+      //  explicitly set its width to be less than 100%, then this crash doesnt happen.
+      //  Again, totally bizarre, and took quiet a while to pin down.
+      //  Perhaps there is something else going on???  Has to be, right?
+      m_descTxt->setWidth( WLength(80,WLength::Percentage) );
       m_descTxt->addStyleClass( "DrfPeakInfoTxt" );
       m_backSubTxt = new WText( "", this );
       m_backSubTxt->addStyleClass( "DrfPeakBackSubTxt" );
@@ -1620,7 +1629,8 @@ AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt
                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
                                      | AuxWindowProperties::SetCloseable
                                      | AuxWindowProperties::DisableCollapse
-                                     | AuxWindowProperties::EnableResize) );
+                                     | AuxWindowProperties::EnableResize
+                                     | AuxWindowProperties::IsModal) );
   
   const int ww = viewer->renderedWidth();
   const int wh = viewer->renderedHeight();
@@ -2438,6 +2448,8 @@ void MakeDrf::handleSourcesUpdates()
   
   fitEffEqn( effpoints );
   fitFwhmEqn( peaks, highres );
+  
+  wApp->triggerUpdate();
 }//void handleSourcesUpdates()
 
 
@@ -3042,8 +3054,8 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   
   const vector<MakeDrfChart::DataPoint> data = m_chart->currentDataPoints();
   
-  const int effDof = static_cast<int>(data.size()) - effEqnCoefs.size();
-  const int fwhmDof = static_cast<int>(data.size()) - fwhmCoefs.size();
+  const int effDof = static_cast<int>(data.size()) - static_cast<int>(effEqnCoefs.size());
+  const int fwhmDof = static_cast<int>(data.size()) - static_cast<int>(fwhmCoefs.size());
   
   const bool effInMeV = isEffEqnInMeV();
   const auto resFcnForm = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );

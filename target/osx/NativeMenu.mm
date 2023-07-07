@@ -159,9 +159,16 @@ void *addOsxMenu( PopupDivMenu *menu, const char *name  )
     {
       NSMenu* menu = [[[NSApp mainMenu] itemAtIndex: i] submenu];
       //Checks the name, but also make sure it's not the main "InterSpec" menu
-      if ([menu.title isEqualToString:nsname] && ![[menu title] isEqualToString:@"InterSpec"])
+      if( [menu.title isEqualToString:nsname] )
       {
-        [rootMenu removeItemAtIndex:[rootMenu indexOfItemWithSubmenu:menu]];
+        if( [[menu title] isEqualToString:@"Edit"] )
+        {
+          newMenu = menu;
+          return;
+        }else if( ![[menu title] isEqualToString:@"InterSpec"] )
+        {
+          [rootMenu removeItemAtIndex:[rootMenu indexOfItemWithSubmenu:menu]];
+        }
       }
     }
     
