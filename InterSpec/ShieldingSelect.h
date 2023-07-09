@@ -564,12 +564,6 @@ protected:
   //modelNuclideAdded(...): adds a checkbox for Nuclide and connects
   //  appropriate signals, and updates trace sources
   void modelNuclideAdded( const SandiaDecay::Nuclide *iso );
-
-  
-  /** Returns the mass-fraction of the material a certain element is.
-   */
-  static double massFractionOfElementInMaterial( const SandiaDecay::Element * const element,
-                                                const std::shared_ptr<const Material> &mat );
   
   /** Returns the fraction of the element, a nuclide is in a material.
  

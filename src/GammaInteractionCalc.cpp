@@ -2588,15 +2588,23 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
     {
       if( !info.self_atten_sources.empty() || !info.trace_sources.empty() )
         throw runtime_error( "ShieldingSourceChi2Fcn: Self attenuating and trace sources must"
-                             " be empty for generic shieldings" );
+                             " be empty for a generic shielding" );
       continue;
     }//if( !material )
     
-    for( const SandiaDecay::Nuclide *nuc : info.self_atten_sources )
+    std::map<short,double> self_atten_mass_fracs;
+    for( const pair<const SandiaDecay::Nuclide *,double> &nuc_frac : info.self_atten_sources )
     {
+      const SandiaDecay::Nuclide * const nuc = nuc_frac.first;
+      const double mass_frac = nuc_frac.second;
+      
       if( !nucs.count(nuc) )
         throw runtime_error( "ShieldingSourceChi2Fcn: self attenuating nuclide "
                             + nuc->symbol + " doesnt have a peak with that as an assigned nuclide" );
+      
+      if( !self_atten_mass_fracs.count(nuc->atomicNumber) )
+        self_atten_mass_fracs[nuc->atomicNumber] = 0.0;
+      self_atten_mass_fracs[nuc->atomicNumber] += mass_frac;
       
       int hasElement = 0;
       for( const auto &p : material->elements )
@@ -2610,6 +2618,26 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
                             + nuc->symbol + " not in shielding " + material->name );
     }//for( const SandiaDecay::Nuclide *nuc : info.self_atten_sources )
     
+    // Check source nuclides dont add up to a larger fraction of the material, then
+    //  the individual element of the nuclide should.
+    if( !self_atten_mass_fracs.empty() )
+    {
+      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+      for( const auto &i : self_atten_mass_fracs )
+      {
+        const SandiaDecay::Element * const el = db->element( i.first );
+        assert( el );
+        if( el )
+        {
+          const double elFrac = material->massFractionOfElementInMaterial(el);
+          assert( i.second <= (elFrac + 1.0E-12) );
+          if( i.second > (elFrac + 1.0E-12) )
+            throw runtime_error( el->symbol + " has source-nuclide fraction (" + to_string(elFrac)
+                                + ") greater than elements fraction (" + to_string(i.second)
+                                + ")in material " + material->name  );
+        }//if( el )
+      }//for( const auto &i : self_atten_mass_fracs )
+    }//if( !self_atten_mass_fracs.empty() )
     
     for( const tuple<const SandiaDecay::Nuclide *,TraceActivityType,double> &trace : info.trace_sources )
     {
@@ -2750,7 +2778,6 @@ ShieldingSourceChi2Fcn &ShieldingSourceChi2Fcn::operator=( const ShieldingSource
   m_materials = rhs.m_materials;
   m_nuclides = rhs.m_nuclides;
   m_allowMultipleNucsContribToPeaks = rhs.m_allowMultipleNucsContribToPeaks;
-  m_nuclidesToFitMassFractionFor    = rhs.m_nuclidesToFitMassFractionFor;
   m_self_att_multithread = rhs.m_self_att_multithread;
   
   //m_isFitting
@@ -2770,71 +2797,32 @@ double ShieldingSourceChi2Fcn::Up() const
 bool ShieldingSourceChi2Fcn::isVariableMassFraction( const Material *mat,
                                         const SandiaDecay::Nuclide *nuc ) const 
 {
-  MaterialToNucsMap::const_iterator pos
-                                   = m_nuclidesToFitMassFractionFor.find( mat );
-  if( pos == m_nuclidesToFitMassFractionFor.end() )
-    return false;
-  const vector<const SandiaDecay::Nuclide *> &nucs = pos->second;
-  return ( std::find( nucs.begin(), nucs.end(), nuc) != nucs.end() );
+  for( const ShieldingInfo &shield : m_materials )
+  {
+    if( shield.material == mat )
+    {
+      const vector<const SandiaDecay::Nuclide *> &nucs = shield.nucs_to_fit_mass_fraction_for;
+      return (std::find( begin(nucs), end(nucs), nuc) != end(nucs));
+    }
+  }
+  
+  return false;
 }//isVariableMassFraction(...)
   
   
-bool ShieldingSourceChi2Fcn::hasVariableMassFraction(
-                                                const Material *mat ) const
+bool ShieldingSourceChi2Fcn::hasVariableMassFraction( const Material *mat ) const
 {
-  const auto pos = m_nuclidesToFitMassFractionFor.find( mat );
-  return (pos != m_nuclidesToFitMassFractionFor.end());
-}//bool hasVariableMassFraction( const Material *material ) const
-
-
-
-std::shared_ptr<Material> ShieldingSourceChi2Fcn::variedMassFracMaterial(
-                                          const Material *material,
-                                          const std::vector<double> &x ) const
-{
-  if( !material )
-    throw runtime_error( "variedMassFracMaterial(): invalid input material" );
-  
-  if( !hasVariableMassFraction(material) )
-    throw runtime_error( "variedMassFracMaterial(): " + material->name
-                         + " does not have a variable mass fraction nuclide" );
-  
-  std::shared_ptr<Material> answer = std::make_shared<Material>( *material );
-  MaterialToNucsMap::const_iterator iter = m_nuclidesToFitMassFractionFor.find( material );
-  
-  if( iter == end(m_nuclidesToFitMassFractionFor) )
-    throw runtime_error( "variedMassFracMaterial(): material not found in m_nuclidesToFitMassFractionFor" );
-  
-  const vector<const SandiaDecay::Nuclide *> &nucs = iter->second;
-  
-  double prefrac = 0.0, postfrac = 0.0;
-  for( const SandiaDecay::Nuclide *nuc : nucs )
+  for( const ShieldingInfo &shield : m_materials )
   {
-    const double frac = massFraction( material, nuc, x );
-    
-    for( Material::NuclideFractionPair &nfp : answer->nuclides )
+    if( shield.material == mat )
     {
-      if( nfp.first == nuc )
-      {
-        prefrac += nfp.second;
-        postfrac += frac;
-        nfp.second = frac;
-      }//if( nfp.first == nuc )
-    }//for( Material::NuclideFractionPair &nfp : answer->nuclides )
-  }//for( const SandiaDecay::Nuclide *nuc : nucs )
+      const vector<const SandiaDecay::Nuclide *> &nucs = shield.nucs_to_fit_mass_fraction_for;
+      return !nucs.empty();
+    }
+  }
   
-  if( IsNan(postfrac) || IsInf(postfrac)
-      || ((fabs(prefrac-postfrac)/max(prefrac,postfrac)) > 0.01) )
-  {
-    cerr << "ShieldingSourceChi2Fcn::variedMassFracMaterial: prefrac="
-          << prefrac << ", postfrac=" << postfrac << endl;
-
-    throw runtime_error( "ShieldingSourceChi2Fcn::variedMassFracMaterial(...)"
-                         " prefrac did not match postfrac" );
-  }//if( invalid results )
-  
-  return answer;
-}//variedMassFracMaterial(...)
+  return false;
+}//bool hasVariableMassFraction( const Material *material ) const
 
 
 void ShieldingSourceChi2Fcn::setNuclidesToFitMassFractionFor(
@@ -2844,13 +2832,29 @@ void ShieldingSourceChi2Fcn::setNuclidesToFitMassFractionFor(
   if( !material )
     throw runtime_error( "setNuclidesToFitMassFractionFor(...): "
                          "invalid material" );
-  bool validMaterial = false;
-  for( const ShieldingInfo &ms : m_materials )
-    validMaterial |= (ms.material == material);
   
-  if( !validMaterial )
+  ShieldingInfo *shielding = nullptr;
+  
+  for( ShieldingInfo &ms : m_materials )
+  {
+    if( ms.material == material )
+    {
+      shielding = &ms;
+      break;
+    }
+  }
+  
+  if( !shielding )
     throw runtime_error( "setNuclidesToFitMassFractionFor(...): "
                         "material passed in is not a shielding material" );
+  
+  // TODO: 20230708 for the moment, our logic is that we fit the fractions for all self-attenuating sources... we could change this
+  // Currently, our logic has it so, no matter what, all self-attenuating nuclides will be
+  // fit for their fractions, or none.  In principal we could allow something different,
+  // but this hasn't been tested.
+  assert( nuclides.size() == shielding->self_atten_sources.size() );
+  
+  auto &curr_var_srcs = shielding->nucs_to_fit_mass_fraction_for;
   
   for( const SandiaDecay::Nuclide *nuc : nuclides )
   {
@@ -2860,27 +2864,39 @@ void ShieldingSourceChi2Fcn::setNuclidesToFitMassFractionFor(
     int innuc = 0;
     for( const Material::NuclideFractionPair &nfp : material->nuclides )
       innuc += int(nfp.first == nuc);
+    
+    for( const auto &efp : material->elements )
+      innuc += int(efp.first->atomicNumber == nuc->atomicNumber);
+    
     if( !innuc )
       throw runtime_error( "setNuclidesToFitMassFractionFor(...): passed in"
                            " nuclide " + nuc->symbol + " not in material "
                            + material->name );
-    if( std::count( nuclides.begin(), nuclides.end(), nuc ) != 1 )
-      throw runtime_error( "setNuclidesToFitMassFractionFor(...): input must"
-                          " only be unique nuclides" );
+    
     if( std::count( m_nuclides.begin(), m_nuclides.end(), nuc ) != 1 )
       throw runtime_error( "setNuclidesToFitMassFractionFor(...): input must "
                            "be in source m_nuclides" );
-    if( !isSelfAttenSource( nuc ) )
+    
+    const auto &self_atten_srcs = shielding->self_atten_sources;
+    
+    bool srcIsSelfAtten = false;
+    for( size_t i = 0; !srcIsSelfAtten && (i < self_atten_srcs.size()); ++i )
+      srcIsSelfAtten = (self_atten_srcs[i].first == nuc);
+    
+    if( !srcIsSelfAtten )
       throw runtime_error( "setNuclidesToFitMassFractionFor(...): "
                            + nuc->symbol
                            + " is not in a self-attenuating shielding" );
     
+    if( std::find(begin(curr_var_srcs), end(curr_var_srcs), nuc) != end(curr_var_srcs) )
+      throw runtime_error( "setNuclidesToFitMassFractionFor(...): "
+                           + nuc->symbol
+                           + " is already a variable mass-fraction self-attenuating nuclide" );
   }//for( const SandiaDecay::Nuclide *nuc : nuclides )
   
-  m_nuclidesToFitMassFractionFor[material] = nuclides;
+  curr_var_srcs.insert( end(curr_var_srcs), begin(nuclides), end(nuclides) );
   
-  std::sort( m_nuclidesToFitMassFractionFor[material].begin(),
-             m_nuclidesToFitMassFractionFor[material].end(),
+  std::sort( begin(curr_var_srcs), end(curr_var_srcs),
     []( const SandiaDecay::Nuclide *lhs, const SandiaDecay::Nuclide *rhs ) -> bool {
       if( !lhs ) return false;
       if( !rhs ) return true;
@@ -2888,36 +2904,39 @@ void ShieldingSourceChi2Fcn::setNuclidesToFitMassFractionFor(
     } );
 }//setNuclidesToFitMassFractionFor(...)
   
-vector<const Material *>
-               ShieldingSourceChi2Fcn::materialsFittingMassFracsFor() const
+vector<const Material *> ShieldingSourceChi2Fcn::materialsFittingMassFracsFor() const
 {
   vector<const Material *> answer;
-  for( const MaterialToNucsMap::value_type &n : m_nuclidesToFitMassFractionFor )
+  
+  for( const ShieldingInfo &ms : m_materials )
   {
-    if( !n.second.empty() )
-      answer.push_back( n.first );
-  }
+    if( !ms.nucs_to_fit_mass_fraction_for.empty() )
+      answer.push_back( ms.material );
+  }//for( ShieldingInfo &ms : m_materials )
+  
   return answer;
 }//vector<const Material *material> materialsFittingMassFracsFor() const
   
   
 const std::vector<const SandiaDecay::Nuclide *> &
-ShieldingSourceChi2Fcn::nuclideFittingMassFracFor( const Material *material ) const
+        ShieldingSourceChi2Fcn::nuclideFittingMassFracFor( const Material *material ) const
 {
   if( !material )
     throw runtime_error( "ShieldingSourceChi2Fcn::nuclideFittingMassFracFor():"
                         " invalid input" );
 
-  typedef MaterialToNucsMap::const_iterator MaterialToNucsMapIter;
-  MaterialToNucsMapIter matpos = m_nuclidesToFitMassFractionFor.find(material);
-    
-  if( matpos == m_nuclidesToFitMassFractionFor.end() )
-    throw runtime_error( "ShieldingSourceChi2Fcn::nuclideFittingMassFracFor(): "
+  for( const ShieldingInfo &ms : m_materials )
+  {
+    if( ms.material == material )
+      return ms.nucs_to_fit_mass_fraction_for;
+  }//for( ShieldingInfo &ms : m_materials )
+  
+  throw runtime_error( "ShieldingSourceChi2Fcn::nuclideFittingMassFracFor(): "
                         + material->name + " is not a material with a variable"
                         " mass fraction" );
-  return matpos->second;
 }//nuclideFittingMassFracFor(...)
 
+  
 double ShieldingSourceChi2Fcn::massFraction( const Material *material,
                       const SandiaDecay::Nuclide *nuc,
                       const std::vector<double> &pars ) const
@@ -2926,6 +2945,7 @@ double ShieldingSourceChi2Fcn::massFraction( const Material *material,
   massFraction( massfrac, uncert, material, nuc, pars, vector<double>() );
   return massfrac;
 }
+  
   
 void ShieldingSourceChi2Fcn::massFraction( double &massFrac,
                                                    double &uncert,
@@ -2939,14 +2959,25 @@ void ShieldingSourceChi2Fcn::massFraction( double &massFrac,
   if( !material || !nuc )
     throw runtime_error( "ShieldingSourceChi2Fcn::massFraction(): invalid input" );
   
-  const auto matpos = m_nuclidesToFitMassFractionFor.find(material);
+  const ShieldingInfo *shielding = nullptr;
+  for( const ShieldingInfo &info : m_materials )
+  {
+    if( info.material == material )
+    {
+      shielding = &info;
+      break;
+    }
+  }//for( const ShieldingInfo &info : m_materials )
   
-  if( matpos == end(m_nuclidesToFitMassFractionFor) )
+  if( !shielding )
+    throw runtime_error( "ShieldingSourceChi2Fcn::massFraction(): unknown material passed in." );
+
+  if( shielding->nucs_to_fit_mass_fraction_for.empty() )
     throw runtime_error( "ShieldingSourceChi2Fcn::massFraction(): "
                          + material->name + " is not a material with a variable"
                          " mass fraction" );
   
-  const std::vector<const SandiaDecay::Nuclide *> &nucs = matpos->second;
+  const vector<const SandiaDecay::Nuclide *> &nucs = shielding->nucs_to_fit_mass_fraction_for;
   
   //nucs is actually sorted by symbol name, could do better than linear search
   const auto pos = std::find( begin(nucs), end(nucs), nuc );
@@ -2956,22 +2987,22 @@ void ShieldingSourceChi2Fcn::massFraction( double &massFrac,
                          " in " + material->name );
   
   double totalfrac = 0.0;
-  for( const SandiaDecay::Nuclide *n : nucs )
+  for( const pair<const SandiaDecay::Nuclide *,double> &i : shielding->self_atten_sources )
   {
-    for( const Material::NuclideFractionPair &nfp : material->nuclides )
-    {
-      if( nfp.first == n )
-      {
-        totalfrac += nfp.second;
-      }//if( nfp.first == src )
-    }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
-  }//for( const SandiaDecay::Nuclide *n : nucs )
-  
+    const SandiaDecay::Nuclide * const this_nuc = i.first;
+    const auto this_pos = std::find( begin(nucs), end(nucs), this_nuc );
+    if( this_pos != end(nucs) )
+      totalfrac += i.second;
+  }
+
   size_t matmassfracstart = 0;
-  for( auto iter = begin(m_nuclidesToFitMassFractionFor); iter != matpos; ++iter )
+  for( const ShieldingInfo &info : m_materials )
   {
-    if( iter->second.size() )
-      matmassfracstart += (iter->second.size()-1);
+    if( &info == shielding )
+      break;
+    
+    if( !info.nucs_to_fit_mass_fraction_for.empty() )
+      matmassfracstart += (info.nucs_to_fit_mass_fraction_for.size() - 1);
   }
   
   matmassfracstart += 2 * m_nuclides.size();
@@ -3038,8 +3069,9 @@ size_t ShieldingSourceChi2Fcn::numExpectedFitParameters() const
   
   npar += 3 * m_materials.size();
   
-  for( const MaterialToNucsMap::value_type &vt : m_nuclidesToFitMassFractionFor )
-    npar += ( vt.second.empty() ? size_t(0) : size_t(vt.second.size()-1) );
+  for( const ShieldingInfo &info : m_materials )
+    npar += (info.nucs_to_fit_mass_fraction_for.empty() ? size_t(0) : size_t(info.nucs_to_fit_mass_fraction_for.size() - 1) );
+  
   
   return npar;
 }//int numExpectedFitParameters() const
@@ -3059,9 +3091,9 @@ bool ShieldingSourceChi2Fcn::isSelfAttenSource( const SandiaDecay::Nuclide *nucl
 
   for( const ShieldingInfo &shield : m_materials )
   {
-    for( const SandiaDecay::Nuclide *nuc : shield.self_atten_sources )
+    for( const auto &nuc_frac : shield.self_atten_sources )
     {
-      if( nuc == nuclide )
+      if( nuc_frac.first == nuclide )
         return true;
     }
   }//for( const ShieldingInfo &material : m_materials )
@@ -3388,7 +3420,12 @@ double ShieldingSourceChi2Fcn::activityOfSelfAttenSource(
     
     // Determine if nuclide is a self-attenuating source of this shielding
     const auto &self_atten_srcs = shield.self_atten_sources;
-    const auto self_att_pos = std::find( begin(self_atten_srcs), end(self_atten_srcs), nuclide);
+    vector<pair<const SandiaDecay::Nuclide *,double>>::const_iterator self_att_pos;
+    for( self_att_pos = begin(self_atten_srcs); self_att_pos != end(self_atten_srcs); ++self_att_pos )
+    {
+      if( self_att_pos->first == nuclide )
+        break;
+    }
     
     // Check that nuclide is a self-atten source of this shielding, if not lets keep looking.
     if(self_att_pos == end(self_atten_srcs) )
@@ -3403,11 +3440,7 @@ double ShieldingSourceChi2Fcn::activityOfSelfAttenSource(
       massFrac = ShieldingSourceChi2Fcn::massFraction( mat, nuclide, params );
     }else
     {
-      for( const Material::NuclideFractionPair &nfp : mat->nuclides )
-      {
-        if( nfp.first == nuclide )
-          massFrac += nfp.second;
-      }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+      massFrac = self_att_pos->second;
     }//if( hasVariableMassFraction(mat) ) / else
     
     const double vol = volumeOfMaterial( matn, params );
@@ -3657,8 +3690,10 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
     const double volUncert = volumeUncertaintyOfMaterial(material_index, params, errors);
   
     // Add in uncertainty contributions if this is a self attenuating source
-    for( const SandiaDecay::Nuclide *src : shield.self_atten_sources )
+    for( const auto &src_frac : shield.self_atten_sources )
     {
+      const SandiaDecay::Nuclide *src = src_frac.first;
+      
       if( src != nuclide )
         continue;
       
@@ -3669,11 +3704,7 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
         massFraction( massFrac, massFracUncert, mat, src, params, errors );
       }else
       {
-        for( const Material::NuclideFractionPair &nfp : mat->nuclides )
-        {
-          if( nfp.first == src )
-            massFrac += nfp.second;
-        }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+        massFrac = src_frac.second;
       }//if( hasVariableMassFraction(mat) ) / else
       
       
@@ -4964,9 +4995,6 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   
   // We'll make a copy of materials since we may mass-fraction vary the isotopics
   vector<ShieldingInfo> materials = m_materials;
-#if( !TEST_NOT_CREATING_NEW_MATERIAL_FOR_FITTING_ISOTOPICS )
-  vector<std::shared_ptr<Material> > customMaterials;
-#endif
   
   if( info )
   {
@@ -4992,39 +5020,23 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     const ShieldingInfo &shield = materials[materialN];
     const Material *material = shield.material;
     
-#define TEST_NOT_CREATING_NEW_MATERIAL_FOR_FITTING_ISOTOPICS 1
-#if( TEST_NOT_CREATING_NEW_MATERIAL_FOR_FITTING_ISOTOPICS )
-#warning "You can probably remove everything in these sections - assuming things have been tested"
-    const Material *orig_material = nullptr; //wont be needed after testing
-#endif
-    
     if( !material )
       continue;
     
-    vector<const SandiaDecay::Nuclide *> combined_srcs;
-    const vector<const SandiaDecay::Nuclide *> &self_atten_srcs = shield.self_atten_sources;
+    
+    const vector<pair<const SandiaDecay::Nuclide *,double>> &self_atten_srcs = shield.self_atten_sources;
     const auto &trace_srcs = shield.trace_sources;
     
-    if( !trace_srcs.empty() )
-    {
-      combined_srcs = self_atten_srcs;
-      for( const auto &p : trace_srcs )
-        combined_srcs.push_back( std::get<0>(p) );
-    }
+    vector<const SandiaDecay::Nuclide *> combined_srcs;
+    for( const auto &p : self_atten_srcs )
+      combined_srcs.push_back( p.first );
+    for( const auto &p : trace_srcs )
+      combined_srcs.push_back( std::get<0>(p) );
     
-    const auto &srcs = combined_srcs.empty() ? self_atten_srcs : combined_srcs;
+    const auto &srcs = combined_srcs;
     
     if( srcs.empty() )
       continue;
-
-#if( !TEST_NOT_CREATING_NEW_MATERIAL_FOR_FITTING_ISOTOPICS )
-    if( !self_atten_srcs.empty() && hasVariableMassFraction(material) )
-    {
-      std::shared_ptr<Material> mat = variedMassFracMaterial(material, x );
-      customMaterials.push_back( mat );
-      materials[materialN].material = material = mat.get();
-    }//if( hasVariableMassFraction( material ) )
-#endif
     
     DistributedSrcCalc baseCalculator;
     baseCalculator.m_geometry = m_geometry;
@@ -5165,40 +5177,31 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         const double actPerMass = src->activityPerGram() / PhysicalUnits::gram;
         double massFract = 0.0;
         
-#if( !TEST_NOT_CREATING_NEW_MATERIAL_FOR_FITTING_ISOTOPICS )
-        for( const Material::NuclideFractionPair &nfp : material->nuclides )
+        
+        const ShieldingInfo *shielding = nullptr;
+        for( const ShieldingInfo &info : m_materials )
         {
-          if( nfp.first == src )
-            massFract += nfp.second;
-        }//for( nuclide in this material )
-#else
-        const auto mat_nuc_pos = m_nuclidesToFitMassFractionFor.find(material);
-        if( (mat_nuc_pos != end(m_nuclidesToFitMassFractionFor))
-           && std::count(begin(mat_nuc_pos->second), end(mat_nuc_pos->second), src) )
+          if( info.material == material )
+          {
+            shielding = &info;
+            break;
+          }
+        }//for( const ShieldingInfo &info : m_materials )
+        assert( shielding );
+        
+        if( shielding
+           && std::count(begin(shielding->nucs_to_fit_mass_fraction_for), end(shielding->nucs_to_fit_mass_fraction_for), src) )
         {
           assert( material );
           massFract = massFraction( material, src, x );
         }else
         {
-          for( const Material::NuclideFractionPair &nfp : material->nuclides )
+          for( const auto &src_frac : self_atten_srcs )
           {
-            if( nfp.first == src )
-              massFract += nfp.second;
-          }//for( nuclide in this material )
+            if( src_frac.first == src )
+              massFract += src_frac.second;
+          }
         }
-        
-        //Lets test against the old way...
-        std::shared_ptr<Material> test_mat = variedMassFracMaterial(material, x );
-        assert( test_mat );
-        double test_frac = 0.0;
-        for( const Material::NuclideFractionPair &nfp : test_mat->nuclides )
-        {
-          if( nfp.first == src )
-            test_frac += nfp.second;
-        }//for( nuclide in this material )
-        
-        assert( test_frac == massFract );
-#endif
         
         actPerVol = actPerMass * massFract * material->density;
       }//if( is_trace ) / else

@@ -1054,6 +1054,8 @@ namespace ShieldingSourceFitCalc
     if( lhs.m_material && (lhs.m_material->name != rhs.m_material->name) )
       throw runtime_error( "ShieldingInfo LHS material name != RHS material name" );
     
+    
+    
     int ndim = 0;
     switch( lhs.m_geometry )
     {
@@ -1144,7 +1146,8 @@ namespace ShieldingSourceFitCalc
       if( (mval > 1.0E-9) && (fabs(dval) > 1.0E-6*mval) )
         throw runtime_error( "ShieldingInfo LHS MassFraction for "
                             + (nucFrac.first ? nucFrac.first->symbol : string(""))
-                            + " != RHS MassFraction" );
+                            + " != RHS MassFraction ("
+                            + std::to_string(lval) + " vs " + std::to_string(rval) + ")" );
     }//for( const auto &nucFrac : lmfrac )
     
     // Trace-source stuff

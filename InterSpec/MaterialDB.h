@@ -84,6 +84,9 @@ struct Material
   //  line endings.
   void writeGadrasStyleMaterialFile( std::ostream &file ) const;
 
+  /** Returns the mass-fraction of the material a certain element is.
+   */
+  double massFractionOfElementInMaterial( const SandiaDecay::Element * const element ) const;
   
   float massWeightedAtomicNumber() const;
 

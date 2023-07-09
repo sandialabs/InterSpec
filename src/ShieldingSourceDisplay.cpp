@@ -7288,9 +7288,10 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
                                        const SandiaDecay::Nuclide *nuc )
 {
   // This function gets called when shielding changes for either self-attenuating or trace sources.
-  typedef pair<const SandiaDecay::Nuclide *,float> NuclideFrac;
 
-  if( !select || select->isGenericMaterial() || !select->material() || !nuc )
+  shared_ptr<const Material> material = select ? select->material() : nullptr;
+  
+  if( !select || select->isGenericMaterial() || !material || !nuc )
   {
     assert(0);
     cerr << "updateActivityOfShieldingIsotope()\n\tShould not be here!" << endl;
@@ -7313,25 +7314,25 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
     return;
   }//if( select->isTraceSourceForNuclide(nuc) )
   
-
-  const double volume = select->shieldingVolume();
-
-  std::shared_ptr<const Material> material = select->material();
   const double density = material->density;
-
-  double weight = density * volume;
-  const SandiaDecay::Nuclide *nuclide = NULL;
-
-  for( const NuclideFrac &ef : material->nuclides )
-  {
-    if( ef.first && (ef.first==nuc) )
-    {
-      nuclide = ef.first;
-      weight *= ef.second;
-    }
-  }//for( const NuclideFrac &ef : material->nuclides )
+  const double volume = select->shieldingVolume();
   
-  if( !nuclide )
+  bool foundNucInMaterial = false;
+  double weight = density * volume;
+  
+  const vector<pair<const SandiaDecay::Nuclide *,double>> srcNucFracs
+                                               = select->sourceNuclideMassFractions();
+  for( const auto &nuc_frac : srcNucFracs )
+  {
+    if( nuc_frac.first == nuc )
+    {
+      foundNucInMaterial = true;
+      weight *= nuc_frac.second;
+      break;
+    }
+  }//for( const auto &nuc_frac : srcNucFracs )
+  
+  if( !foundNucInMaterial )
   {
     const string msg = "ShieldingSourceDisplay::updateActivityOfShieldingIsotope(...)\n"
                        "\tShould not be here! nuc=" + nuc->symbol
@@ -7340,7 +7341,7 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   }//if( !nuclide )
 
   const double weight_in_grams = weight / PhysicalUnits::gram;
-  const double activity_per_gram = nuclide->activityPerGram();
+  const double activity_per_gram = nuc->activityPerGram();
   const double activity = activity_per_gram * weight_in_grams / PhysicalUnits::curie;
 
 //  cerr << "updateActivityOfShieldingIsotope: weight_in_grams=" << weight_in_grams
@@ -7356,7 +7357,7 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   
   if( IsNan(activity) || IsInf(activity) )
   {
-    string msg = "An invalid activity was calculated for " + nuclide->symbol
+    string msg = "An invalid activity was calculated for " + nuc->symbol
                  + ", other results may be invalid";
     passMessage( msg, WarningWidget::WarningMsgHigh );
     return;
@@ -7684,7 +7685,17 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       
       ShieldingSourceChi2Fcn::ShieldingInfo materialAndSrc;
       materialAndSrc.material = mat;
-      materialAndSrc.self_atten_sources = select->selfAttenNuclides();
+      materialAndSrc.self_atten_sources = select->sourceNuclideMassFractions();
+      
+      // TODO: We'll set `nucs_to_fit_mass_fraction_for` via `ShieldingSourceChi2Fcn::setNuclidesToFitMassFractionFor` - below - should/could we clean this up?
+      //if( !materialAndSrc.self_atten_sources.empty() && select->fitForMassFractions() )
+      //{
+      //  materialAndSrc.nucs_to_fit_mass_fraction_for = select->selfAttenNuclides();
+      //  std::sort( begin(materialAndSrc.nucs_to_fit_mass_fraction_for), end(materialAndSrc.nucs_to_fit_mass_fraction_for),
+      //    []( const SandiaDecay::Nuclide *lhs, const SandiaDecay::Nuclide *rhs ) -> bool {
+      //      return (lhs && rhs) ? (lhs->symbol < rhs->symbol) : (lhs <= rhs);
+      //     } );
+      //}
       
       for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
       {
@@ -8126,6 +8137,8 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       if( !mat )
         throw runtime_error( "ShieldingSourceDisplay::shieldingFitnessFcn(...)"
                              " serious logic error when fitting for mass frac");
+      
+      // TODO: we could/should replace the below call to `setNuclidesToFitMassFractionFor`, with setting this directorly to `ShieldingSourceChi2Fcn::ShieldingInfo::nucs_to_fit_mass_fraction_for` above - and then adding the paramters here...
       answer->setNuclidesToFitMassFractionFor( mat.get(), nucstofit );
       
       nucstofit = answer->nuclideFittingMassFracFor( mat.get() );
@@ -8376,46 +8389,57 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
     for( int i = 0; i < nshieldings; ++i )
     {
       ShieldingSelect *select = shieldings[i];
-      if( select->fitForMassFractions() )
+      assert( select );
+      shared_ptr<const Material> usrmaterial = select->material();
+      assert( usrmaterial );
+      if( !usrmaterial )
+        continue;
+      
+      const bool calcFitMasFrac = std::count(begin(massfracFitMaterials), end(massfracFitMaterials), usrmaterial.get());
+      if( calcFitMasFrac != select->fitForMassFractions() )
       {
-        std::shared_ptr<const Material> usrmaterial = select->material();
-        
-        //Find this material in massfracFitMaterials
-        const Material *origMaterial = NULL;
-        for( const Material *m : massfracFitMaterials )
-        {
-          if( m == usrmaterial.get() )
-          {
-            origMaterial = m;
-            break;
-          }
-        }//for( const Material *m : massfracFitMaterials )
-        
-        if( !origMaterial )
-        {
-          cerr << "ShieldingSourceDisplay::updateGuiWithModelFitResults(...)\n\tNo match for usrmaterial in origMaterial" << endl;
-          for( const Material *m : massfracFitMaterials )
-          {
-            if( m->name == usrmaterial->name )
-            {
-              origMaterial = m;
-              break;
-            }
-          }//for( const Material *m : massfracFitMaterials )
-        }//if( !origMaterial )
-        
-        if( !origMaterial )
-          throw runtime_error( "ShieldingSourceDisplay::doModelFit(): logic "
-                              "error completing mass fraction fit :(" );
-        
+        throw logic_error( "GUI fit mass fraction for material '" + usrmaterial->name
+                                 + "' doesn't match calculation fit mass fraction status." );
+      }
+      
+      if( calcFitMasFrac )
+      {
         const vector<const SandiaDecay::Nuclide *> &fitnucs
-                                      = m_currentFitFcn->nuclideFittingMassFracFor( origMaterial );
+                                  = m_currentFitFcn->nuclideFittingMassFracFor( usrmaterial.get() );
         
+        const vector<const SandiaDecay::Nuclide *> guiNucs = select->selfAttenNuclides();
+        if( fitnucs.size() != guiNucs.size() )
+          throw logic_error( "Number of calc self-atten nuclides does not equal num GUI self-atten nucs." );
+        
+        
+        map<short,double> sumfracs;
         for( const SandiaDecay::Nuclide *nuc : fitnucs )
         {
-          const double frac = m_currentFitFcn->massFraction( origMaterial, nuc, paramValues );
+          const double frac = m_currentFitFcn->massFraction( usrmaterial.get(), nuc, paramValues );
           select->setMassFraction( nuc, frac );
+          
+          if( !sumfracs.count(nuc->atomicNumber) )
+            sumfracs[nuc->atomicNumber] = 0.0;
+          sumfracs[nuc->atomicNumber] += frac;
         }//for( const SandiaDecay::Nuclide *nuc : fitnucs )
+        
+        
+        const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+        for( const auto &i : sumfracs )
+        {
+          const SandiaDecay::Element * const el = db->element(i.first);
+          assert( el );
+          if( !el )
+            continue;
+          
+          const double fractionEl = usrmaterial->massFractionOfElementInMaterial( el );
+          
+          const double diff = fabs(fractionEl - i.second);
+          if( (diff > 1.0E-12) && ((diff/std::max(fractionEl,i.second)) > 1.0E-5) ) //limits chosen arbitrarily
+            throw logic_error( "Mass fraction for " + el->name + " should be "
+                              + to_string(fractionEl) + " but calculation yielded "
+                              + to_string(i.second) );
+        }//for( const auto &i : sumfracs )
         
         cerr << "ShieldingSourceDisplay::updateGuiWithModelFitResults(...)\n\t"
         << "This whole fitting for mass fractions of nuclides is sketch:"
@@ -8966,22 +8990,21 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     
     if( !minimum.IsValid() )
     {
-      stringstream msg;
-      msg << "Fit status is not valid:";
+      string msg = "Fit status is not valid:";
       if( minimum.HasMadePosDefCovar() )
-        msg << "<br />&nbsp;&nbsp;-Covariance matrix forced positive-definit";
+        msg += "<br />&nbsp;&nbsp;- Covariance matrix forced positive-definite";
       if( !minimum.HasAccurateCovar() )
-        msg << "<br />&nbsp;&nbsp;-Does not have accurate covariance matrix";
+        msg += "<br />&nbsp;&nbsp;- Does not have accurate covariance matrix";
       if( minimum.HasReachedCallLimit() )
-        msg << "<br />&nbsp;&nbsp;-Optimization reached call limit.";
+        msg += "<br />&nbsp;&nbsp;- Optimization reached call limit.";
       if( !minimum.HasValidCovariance() )
-        msg << "<br />&nbsp;&nbsp;-Did not have valid covariance,";
+        msg += "<br />&nbsp;&nbsp;- Did not have valid covariance,";
       if( !minimum.HasValidParameters() )
-        msg << "<br />&nbsp;&nbsp;-Invalid fit parameters.";
+        msg += "<br />&nbsp;&nbsp;- Invalid fit parameters.";
       if( minimum.IsAboveMaxEdm() )
-        msg << "<br />&nbsp;&nbsp;-The estimated distance to minimum too large.";
+        msg += "<br />&nbsp;&nbsp;- The estimated distance to minimum too large.";
       
-      results->errormsgs.push_back( msg.str() );
+      results->errormsgs.push_back( msg );
     }//if( !minimum.IsValid() )
     
     results->succesful = ModelFitResults::FitStatus::Final;

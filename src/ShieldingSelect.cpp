@@ -3087,9 +3087,6 @@ const Material *ShieldingSelect::material( const std::string &text )
   {
     const Material *answer = m_materialDB->material( text );
     
-    cerr << "ShieldingSelect::material(...)\n\tPotential err here, should account for"
-         << " possibly varied mass fractions!" << endl;
-    
     return answer;
   }catch(...)
   {
@@ -3303,10 +3300,9 @@ vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFraction
 {
   vector< ShieldingSelect::NucMasFrac > answer;
   
-  const vector<const SandiaDecay::Nuclide *> nucs = selfAttenNuclides();
   std::shared_ptr<const Material> mat = m_currentMaterial;
   
-  if( !mat || nucs.empty() )
+  if( !mat )
     return answer;
   
   for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
@@ -3316,7 +3312,7 @@ vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFraction
     if( !element )
       continue;
     
-    const double elementFraction = massFractionOfElementInMaterial( element, mat );
+    const double elementFraction = mat->massFractionOfElementInMaterial( element );
     
     const vector<WWidget *> &children = elDiv.second->children();
     for( WWidget *child : children )
@@ -3444,34 +3440,7 @@ double ShieldingSelect::nuclidesFractionOfElementInMaterial( const SandiaDecay::
     return 0.0;
 
   return nuclidesMassFraction / elementsMassFraction;
-}//double massFractionOfElementInMaterial( const SandiaDecay::Nuclide *iso )
-
-
-double ShieldingSelect::massFractionOfElementInMaterial( const SandiaDecay::Element * const element,
-                                              const std::shared_ptr<const Material> &mat )
-
-{
-  if( !mat || !element )
-    return 0.0;
-  
-  const vector< Material::NuclideFractionPair > &nuclides = mat->nuclides;
-  const vector< Material::ElementFractionPair > &elements = mat->elements;
-  
-  double elementsMassFraction = 0.0;
-  for( const Material::ElementFractionPair &efp : elements )
-  {
-    if( efp.first == element )
-      elementsMassFraction += efp.second;
-  }//for( const Material::ElementFractionPair &efp : elements )
-
-  for( const Material::NuclideFractionPair &efp : nuclides )
-  {
-    if( efp.first->atomicNumber == element->atomicNumber )
-      elementsMassFraction += efp.second;
-  }//for( const Material::NuclideFractionPair &efp : nuclides )
-
-  return elementsMassFraction;
-}//double massFractionOfElementInMaterial( const SandiaDecay::Nuclide *iso )
+}//double nuclidesFractionOfElementInMaterial( const SandiaDecay::Nuclide *iso )
 
 
 void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
@@ -4033,7 +4002,6 @@ void ShieldingSelect::handleMaterialChange()
     m_materialEdit->disable();
     m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/atom_black.png") );
     
-    
     if( m_traceSources )
     {
       for( WWidget *w : m_traceSources->children() )
@@ -4181,7 +4149,7 @@ void ShieldingSelect::handleMaterialChange()
   //Now we need to update the activities for any isotopes that are
   if( !!newMaterial && m_asSourceCBs && (previousMaterial == newMaterial) )
   {
-    setMassFractionDisplaysToMaterial( newMaterial );
+    //setMassFractionDisplaysToMaterial( newMaterial );
 
     for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
     {
@@ -4263,11 +4231,6 @@ void ShieldingSelect::handleMaterialChange()
     }//for( WWidget *child : children )
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
 #endif
-  
-  // I dont think this next call to #setMassFractionDisplaysToMaterial is technically necassary,
-  //  but we'll leave it in as a "JIC"
-  setMassFractionDisplaysToMaterial( newMaterial );
-
   
   if( previousMaterial != newMaterial )
     m_materialModifiedSignal.emit( this );
@@ -4543,21 +4506,45 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
     //  wanted to use as source nuclides.
     if( m_currentMaterial )
     {
+      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+      set<SourceCheckbox *> setSources, allSources;
       for( const auto &nucfrac : info.m_nuclideFractions )
       {
         const SandiaDecay::Nuclide * const nuc = nucfrac.first;
+        assert( nuc );
+        if( !nuc )
+          continue;
+        
+        //const SandiaDecay::Element * const el = db->element( nuc->atomicNumber );
+        //const double fracOfEl = m_currentMaterial->massFractionOfElementInMaterial(el);
+        //assert( fracOfEl > 0.0 );
+        //const double massFrac = (fracOfEl > 0.0) ? (nucfrac.second) / fracOfEl : 0.0;
+        const double massFrac = nucfrac.second;
         
         for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
         {
           for( WWidget *widget : etnm.second->children() )
           {
             SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
+            if( src )
+              allSources.insert( src );
+            
             if( src && (nuc == src->isotope()) )
+            {
+              setSources.insert( src );
               src->setUseAsSource( true );
+              src->setMassFraction( massFrac );
+            }
           }
         }//for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
       }//for( const SandiaDecay::Nuclide *nuc : srcnuclides )
       
+      // Make sure SourceCheckbox present, that havent been set, are all set to not-sources.
+      for( SourceCheckbox *src : allSources )
+      {
+        if( !setSources.count(src) )
+          src->setUseAsSource( false );
+      }
       
       // Get rid of all the trace sources - I dont *think* we need to emit signals and all that
       if( m_traceSources )
@@ -4924,7 +4911,9 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
       {
         case GammaInteractionCalc::GeometryType::Spherical:
           if( test.m_thicknessEdit->text() != m_thicknessEdit->text() )
-            throw runtime_error( "Thickness text doesnt match" );
+            throw runtime_error( "Thickness text doesnt match ('"
+                                + test.m_thicknessEdit->text().toUTF8() + "' vs '"
+                                + m_thicknessEdit->text().toUTF8() + "'" );
           if( m_forFitting && (test.m_fitThicknessCB->isChecked() != m_fitThicknessCB->isChecked()) )
             throw runtime_error( "Fitting for thickness doesnt match" );
           break;

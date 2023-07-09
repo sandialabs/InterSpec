@@ -281,6 +281,28 @@ void Material::writeGadrasStyleMaterialFile( ostream &file ) const
 }//void writeGadrasStyleMaterialFile( std::ostream file )
 
 
+double Material::massFractionOfElementInMaterial( const SandiaDecay::Element * const element ) const
+{
+  if( !element )
+    return 0.0;
+  
+  double elementsMassFraction = 0.0;
+  for( const Material::ElementFractionPair &efp : elements )
+  {
+    if( efp.first == element )
+      elementsMassFraction += efp.second;
+  }//for( const Material::ElementFractionPair &efp : elements )
+
+  for( const Material::NuclideFractionPair &efp : nuclides )
+  {
+    if( efp.first->atomicNumber == element->atomicNumber )
+      elementsMassFraction += efp.second;
+  }//for( const Material::NuclideFractionPair &efp : nuclides )
+
+  return elementsMassFraction;
+}//double massFractionOfElementInMaterial( const SandiaDecay::Nuclide *iso )
+
+
 float Material::massWeightedAtomicNumber() const
 {
   float totalFraction = 0.0f, massAnTotalFrac = 0.0f;

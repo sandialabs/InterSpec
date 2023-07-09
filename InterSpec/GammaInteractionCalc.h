@@ -442,10 +442,22 @@ public:
      */
     const Material *material;
     
-    /** The nuclides which act as self-attenuating sources within the material.  The Material object must contain these nuclides
-     as components, as well as at least one peak being used have this nuclide as its assigned nuclide.
+    /** The nuclides which act as self-attenuating sources within the material, and their mass-fraction of the material.
+     The Material object must contain these nuclides as components, as well as at least one peak being used have this
+     nuclide as its assigned nuclide.  Note that some of these nuclides may also be in `nucs_to_fit_mass_fraction_for`
+     (via setNuclidesToFitMassFractionFor(...)).
      */
-    std::vector<const SandiaDecay::Nuclide *> self_atten_sources;
+    std::vector<std::pair<const SandiaDecay::Nuclide *,double>> self_atten_sources;
+    
+    /** Nuclides to fit mass fractions for; the sum of the mass fraction of all these nuclides will remain constant in the fit.
+     
+     Currently, our logic has it so, no matter what, all self-attenuating nuclides will be
+     fit for their fractions, or none.  In principal we could allow something different,
+     but this hasn't been tested.
+     
+     Nuclides will stored sorted alphabetically
+     */
+    std::vector<const SandiaDecay::Nuclide *> nucs_to_fit_mass_fraction_for;
     
     /** The trace sources info within this shielding.
      
@@ -570,8 +582,6 @@ public:
   bool isVariableMassFraction( const Material *material,
                                const SandiaDecay::Nuclide *nuc ) const;
   bool hasVariableMassFraction( const Material *material ) const;
-  std::shared_ptr<Material> variedMassFracMaterial( const Material *material,
-                                        const std::vector<double> &x ) const;
   void setNuclidesToFitMassFractionFor( const Material *material,
                    const std::vector<const SandiaDecay::Nuclide *> &nuclides );
   std::vector<const Material *> materialsFittingMassFracsFor() const;
@@ -828,12 +838,10 @@ protected:
   std::vector<PeakDef> m_peaks;
   std::vector<PeakDef> m_backgroundPeaks;
   std::shared_ptr<const DetectorPeakResponse> m_detector;
+  /** TODO: 20230708 We currently assume the Material pointer is unique per ShieldingInfo, in order to distinguish between the shieldings
+   */
   std::vector<ShieldingInfo> m_materials;
-  std::vector<const SandiaDecay::Nuclide *> m_nuclides; //sorted alphebetically and unique
-  
-  typedef std::map<const Material *,std::vector<const SandiaDecay::Nuclide *> > MaterialToNucsMap;
-  //Nuclides will stored sorted alphebetically
-  MaterialToNucsMap m_nuclidesToFitMassFractionFor;
+  std::vector<const SandiaDecay::Nuclide *> m_nuclides; //sorted alphabetically and unique
   
   const GeometryType m_geometry;
   
