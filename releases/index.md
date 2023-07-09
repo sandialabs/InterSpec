@@ -37,9 +37,9 @@ Questions, bug reports, suggestions, and feature requests are very welcome at <a
   <div style="display: flex; justify-content: center; align-items: center; column-gap: 20px; width: 100%">
     <div style="display: inline-block; width: 30%">
       <a href='v1.0.11/leaflet_map_overview.png'>
-        <img alt='Example "search" data displayed on the map' src='v1.0.11/leaflet_map_overview.png' style="display: block;"/>
+        <img alt='Example "search" data displayed on the map' src='v1.0.11/leaflet_map_overview.png' style="display: block; width: 100%"/>
       </a>
-      <div style="">Example "search" data displayed on the map.</div>
+      <div style="width: 100%">Example "search" data displayed on the map.</div>
     </div>
     <div style="display: inline-block; width: 30%">
       <a href='v1.0.11/leaflet_map_marker.png'>
@@ -54,7 +54,7 @@ Questions, bug reports, suggestions, and feature requests are very welcome at <a
       <div style="width: 100%;">Example of selecting markers for their corresponding spectra to be summed together for the foreground/background/secondary spectra.</div>
     </div>
   </div>
-  <div style="display: inline-block; width: 450px; float: right; padding-left: 10px; padding-bottom: 10px;">
+  <div style="display: inline-block; width: 400px; float: right; padding-left: 10px; padding-bottom: 10px;">
     <a href="v1.0.11/ref_photopeak_options.jpg">
       <img alt="Reference Photopeaks more info link" src="v1.0.11/ref_photopeak_options.jpg" style="width: 100%; margin: 10px" />
     </a>
@@ -194,7 +194,7 @@ Questions, bug reports, suggestions, and feature requests are very welcome at <a
 - Added instructions for using the python "manylinux" Docker images for compiling the Linux Electron version of the app.
 - cmake Fetch dependencies options
 
-## Known Issues
+## Known Issues for v1.0.11
 Issues reported on v1.0.11:
 - Viewing the <em>help</em> page for "Isotopics by nuclides" may crash the renderer process and necessitate restarting the application; there are no contents for that help page anyway (fixed in commit https://github.com/sandialabs/InterSpec/commit/f61a00ffc8bfc0b61543bf6e96023dd99e4af0bd).
 - When opening the "Make Detector Response" tool, the application <em>may</em> crash; most commonly happens the <em>second</em> time you open the tool in a session (fixed in commit https://github.com/sandialabs/InterSpec/commit/0d1b823c61bd4af28a36beecc935e5dd729b565e).
