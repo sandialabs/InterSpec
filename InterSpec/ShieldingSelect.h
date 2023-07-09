@@ -79,6 +79,7 @@ namespace rapidxml
 namespace Wt
 {
   class WText;
+  class WLabel;
   class WCheckBox;
   class WLineEdit;
   class WGridLayout;
@@ -120,7 +121,10 @@ public:
   Wt::Signal<float> &massFractionChanged();
 
 protected:
+  void handleUseCbChange();
+  
   Wt::WCheckBox *m_useAsSourceCb;
+  Wt::WLabel *m_label;
   NativeFloatSpinBox *m_massFraction;
   const SandiaDecay::Nuclide *m_nuclide;
 };//class SourceCheckbox

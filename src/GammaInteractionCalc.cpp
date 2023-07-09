@@ -2630,11 +2630,11 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
         if( el )
         {
           const double elFrac = material->massFractionOfElementInMaterial(el);
-          assert( i.second <= (elFrac + 1.0E-12) );
-          if( i.second > (elFrac + 1.0E-12) )
+          assert( i.second <= (elFrac + 1.0E-6) );
+          if( i.second > (elFrac + 1.0E-6) )
             throw runtime_error( el->symbol + " has source-nuclide fraction (" + to_string(elFrac)
                                 + ") greater than elements fraction (" + to_string(i.second)
-                                + ")in material " + material->name  );
+                                + ") in material " + material->name  );
         }//if( el )
       }//for( const auto &i : self_atten_mass_fracs )
     }//if( !self_atten_mass_fracs.empty() )

@@ -1164,6 +1164,7 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
                                double massFrac, Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
     m_useAsSourceCb( NULL ),
+    m_label( nullptr ),
     m_massFraction( NULL ),
     m_nuclide( nuclide )
 {
@@ -1171,39 +1172,21 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
   
   new WText( "&nbsp;&nbsp;&nbsp;", Wt::XHTMLText, this );
 
-  if( nuclide )
-    m_useAsSourceCb = new WCheckBox( nuclide->symbol, this );
-  else
-    m_useAsSourceCb = new WCheckBox( "Non Source Frac", this );
-
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  if(!db)
-    return;
-
-  string labeltxt = " - ";
-  if( nuclide )
-    labeltxt += db->element(nuclide->atomicNumber)->symbol;
-  labeltxt += " Mass Frac:";
-
-  WLabel *label = new WLabel( labeltxt, this );
+  m_useAsSourceCb = new WCheckBox( nuclide ? nuclide->symbol : string("Non Source Frac"), this );
+  m_label = new WLabel( "--", this );
   
   m_massFraction = new NativeFloatSpinBox( this );
-  label->setBuddy( m_massFraction );
+  m_label->setBuddy( m_massFraction );
   m_massFraction->setAutoComplete( false );
 #if( BUILD_AS_OSX_APP || IOS )
   m_massFraction->setAttributeValue( "autocorrect", "off" );
   m_massFraction->setAttributeValue( "spellcheck", "off" );
 #endif
-  //m_massFraction->setDecimals( 3 );
-  //m_massFraction->setSingleStep( 0.01 );
   m_massFraction->setRange( 0.0, 1.0 );
-  //m_massFraction->setTextSize( 5 );
   m_massFraction->setWidth( 80 );
   m_massFraction->setMargin( 3, Wt::Left );
   m_massFraction->setSpinnerHidden( true );
   m_massFraction->setValue( massFrac );
-
-//  m_massFraction->disable();
 
   if( !nuclide )
   {
@@ -1211,11 +1194,38 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
     m_useAsSourceCb->hide();
     m_useAsSourceCb->disable();
   }//if( !nuclide )
+  
+  m_useAsSourceCb->checked().connect( this, &SourceCheckbox::handleUseCbChange );
+  m_useAsSourceCb->unChecked().connect( this, &SourceCheckbox::handleUseCbChange );
+  
+  handleUseCbChange();
 }//SourceCheckbox constructor
 
 SourceCheckbox::~SourceCheckbox()
 {
 }
+
+void SourceCheckbox::handleUseCbChange()
+{
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  assert( db );
+
+  if( m_useAsSourceCb->isChecked() )
+  {
+    m_massFraction->show();
+    
+    string labeltxt = " - ";
+    if( m_nuclide )
+      labeltxt += db->element(m_nuclide->atomicNumber)->symbol;
+    labeltxt += " Mass Frac:";
+    
+    m_label->setText( WString::fromUTF8(labeltxt) );
+  }else
+  {
+    m_massFraction->hide();
+    m_label->setText( "" );
+  }
+}//void handleUseCbChange()
 
 double SourceCheckbox::massFraction() const
 {
@@ -1227,8 +1237,6 @@ void SourceCheckbox::setMassFraction( double frac )
   m_massFraction->setValue( frac );
 }
 
-
-
 bool SourceCheckbox::useAsSource() const
 {
   return m_useAsSourceCb->isChecked();
@@ -1237,6 +1245,7 @@ bool SourceCheckbox::useAsSource() const
 void SourceCheckbox::setUseAsSource( bool use )
 {
   m_useAsSourceCb->setChecked( use );
+  handleUseCbChange();
 }
 
 const SandiaDecay::Nuclide *SourceCheckbox::isotope() const
@@ -3160,6 +3169,49 @@ void ShieldingSelect::updateIfMassFractionCanFit()
 void ShieldingSelect::isotopeCheckedCallback( const SandiaDecay::Nuclide *nuc )
 {
   updateIfMassFractionCanFit();
+  
+  // Make sure sum of source isotopes are not above 1.0;
+  if( nuc )
+  {
+    SourceCheckbox *this_src_cb = nullptr;
+    double other_nuc_of_el_sum = 0.0;
+    
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    const SandiaDecay::Element * const el = db->element( nuc->atomicNumber );
+    const auto pos = m_sourceIsotopes.find( el );
+    assert( pos != end(m_sourceIsotopes) );
+    
+    if( pos != end(m_sourceIsotopes) )
+    {
+      for( WWidget *child : pos->second->children() )
+      {
+        SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+        if( cb && (cb->isotope() == nuc) )
+          this_src_cb = cb;
+        else if( cb && cb->useAsSource() )
+          other_nuc_of_el_sum += cb->massFraction();
+      }//for( WWidget *child : pos->second->children() )
+    }//if( pos != end(m_sourceIsotopes) )
+    
+    assert( this_src_cb );
+    if( this_src_cb )
+    {
+      if( other_nuc_of_el_sum > 1.0 )
+      {
+        this_src_cb->setMassFraction( 0.0 );
+        for( WWidget *child : pos->second->children() )
+        {
+          SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+          if( cb && cb->useAsSource() && (cb->isotope() != nuc) )
+            cb->setMassFraction( cb->massFraction() / other_nuc_of_el_sum );
+        }//for( WWidget *child : pos->second->children() )
+      }else if( (other_nuc_of_el_sum + this_src_cb->massFraction()) > 1.0 )
+      {
+        this_src_cb->setMassFraction( 1.0 - other_nuc_of_el_sum );
+      }
+    }//if( this_src_cb )
+  }//if( nuc )
+  
   m_addingIsotopeAsSource.emit( nuc, ModelSourceType::Intrinsic );
 }//void isotopeCheckedCallback( const std::string symbol )
 
