@@ -8123,9 +8123,9 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   }//if( m_backgroundPeakSub->isChecked() )
   
   
-  for( size_t i = 0; i < shieldings.size(); ++i )
+  for( size_t shielding_index = 0; shielding_index < shieldings.size(); ++shielding_index )
   {
-    ShieldingSelect *select = shieldings[i];
+    ShieldingSelect *select = shieldings[shielding_index];
     if( select->fitForMassFractions() )
     {
       //Get the isotopes to fit mass fractions of
@@ -8139,9 +8139,9 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
                              " serious logic error when fitting for mass frac");
       
       // TODO: we could/should replace the below call to `setNuclidesToFitMassFractionFor`, with setting this directorly to `ShieldingSourceChi2Fcn::ShieldingInfo::nucs_to_fit_mass_fraction_for` above - and then adding the paramters here...
-      answer->setNuclidesToFitMassFractionFor( mat.get(), nucstofit );
+      answer->setNuclidesToFitMassFractionFor( shielding_index, nucstofit );
       
-      nucstofit = answer->nuclideFittingMassFracFor( mat.get() );
+      nucstofit = answer->nuclideFittingMassFracFor( shielding_index );
       
       double fracmaterial = 0.0;
       for( const ShieldingSelect::NucMasFrac &nmf : massfracs )
@@ -8176,7 +8176,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       {
         const ShieldingSelect::NucMasFrac &nmf = orderedmassfracs[j];
         string name = mat->name + "_" + nmf.first->symbol
-                      + "_" + std::to_string(i);
+                      + "_" + std::to_string(shielding_index);
         double val = 0.0;
         const double remaining_frac = (fracmaterial - usedmassfrac);
         if( remaining_frac > nmf.second )
@@ -8379,16 +8379,16 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
   
   try
   {
-    const int nshieldings = static_cast<int>(shieldings.size());
+    const size_t nshieldings = shieldings.size();
     
     
     // First we'll update mass-fractions of self-attenuating sources, if we were fitting any of them
     const vector<const Material *> massfracFitMaterials
                                            = m_currentFitFcn->materialsFittingMassFracsFor();
     
-    for( int i = 0; i < nshieldings; ++i )
+    for( size_t shielding_index = 0; shielding_index < nshieldings; ++shielding_index )
     {
-      ShieldingSelect *select = shieldings[i];
+      ShieldingSelect *select = shieldings[shielding_index];
       assert( select );
       shared_ptr<const Material> usrmaterial = select->material();
       assert( usrmaterial );
@@ -8405,7 +8405,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
       if( calcFitMasFrac )
       {
         const vector<const SandiaDecay::Nuclide *> &fitnucs
-                                  = m_currentFitFcn->nuclideFittingMassFracFor( usrmaterial.get() );
+                                  = m_currentFitFcn->nuclideFittingMassFracFor( shielding_index );
         
         const vector<const SandiaDecay::Nuclide *> guiNucs = select->selfAttenNuclides();
         if( fitnucs.size() != guiNucs.size() )
@@ -8415,7 +8415,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         map<short,double> sumfracs;
         for( const SandiaDecay::Nuclide *nuc : fitnucs )
         {
-          const double frac = m_currentFitFcn->massFraction( usrmaterial.get(), nuc, paramValues );
+          const double frac = m_currentFitFcn->massFraction( shielding_index, nuc, paramValues );
           select->setMassFraction( nuc, frac );
           
           if( !sumfracs.count(nuc->atomicNumber) )
@@ -9172,24 +9172,29 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
   
   try
   {
-    
-  for( const Material *mat : chi2Fcn->materialsFittingMassFracsFor() )
-  {
-    stringstream msg;
-    msg << "Shielding material " << mat->name << " fit mass fractions for "
-    << "isotopes:";
-    const vector<const SandiaDecay::Nuclide *> &nucs
-    = chi2Fcn->nuclideFittingMassFracFor( mat );
-    for( const SandiaDecay::Nuclide *n : nucs )
+    for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
     {
-      const double frac = chi2Fcn->massFraction( mat, n, params );
-      const double df = chi2Fcn->massFractionUncert( mat, n, params, errors );
+      if( !chi2Fcn->hasVariableMassFraction(shielding_index) )
+        continue;
       
-      msg << " " << n->symbol << "(massfrac=" << frac << "+-" << df << "),";
-    }//for( const SandiaDecay::Nuclide *n : nucs )
-    
-    m_calcLog.push_back( msg.str() );
-  }//for( const Material *mat : chi2Fcn->materialsFittingMassFracsFor() )
+      const Material *mat = chi2Fcn->material(shielding_index);
+      assert( mat );
+      if( !mat )
+        continue;
+      
+      stringstream msg;
+      msg << "Shielding material " << mat->name << " fit mass fractions for isotopes:";
+      const vector<const SandiaDecay::Nuclide *> &nucs = chi2Fcn->nuclideFittingMassFracFor( shielding_index );
+      for( const SandiaDecay::Nuclide *n : nucs )
+      {
+        const double frac = chi2Fcn->massFraction( shielding_index, n, params );
+        const double df = chi2Fcn->massFractionUncert( shielding_index, n, params, errors );
+        
+        msg << " " << n->symbol << "(massfrac=" << frac << "+-" << df << "),";
+      }//for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
+        
+      m_calcLog.push_back( msg.str() );
+    }//for( const Material *mat : chi2Fcn->materialsFittingMassFracsFor() )
     
   {//begin add chi2 line
     stringstream msg;

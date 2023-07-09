@@ -438,7 +438,7 @@ public:
   struct ShieldingInfo
   {
     /** The material this struct holds info for.
-     If nullptr it represents generic shielding (e.g., AN/AD), and niether #self_atten_sources or #trace_sources may have entries.
+     If nullptr it represents generic shielding (e.g., AN/AD), and neither #self_atten_sources or #trace_sources may have entries.
      */
     const Material *material;
     
@@ -566,27 +566,27 @@ public:
      --Anywhere that references m_materials
 */
   void massFraction( double &massFrac, double &uncert,
-                     const Material *material,
+                     const size_t material_index,
                      const SandiaDecay::Nuclide *nuc,
                      const std::vector<double> &pars,
                      const std::vector<double> &errors ) const;
   
-  double massFraction( const Material *material,
+  double massFraction( const size_t material_index,
                           const SandiaDecay::Nuclide *nuc,
                           const std::vector<double> &pars ) const;
-  double massFractionUncert( const Material *material,
+  double massFractionUncert( const size_t material_index,
                              const SandiaDecay::Nuclide *nuc,
                              const std::vector<double> &pars,
                              const std::vector<double> &error ) const;
   
-  bool isVariableMassFraction( const Material *material,
+  bool isVariableMassFraction( const size_t material_index,
                                const SandiaDecay::Nuclide *nuc ) const;
-  bool hasVariableMassFraction( const Material *material ) const;
-  void setNuclidesToFitMassFractionFor( const Material *material,
+  bool hasVariableMassFraction( const size_t material_index ) const;
+  void setNuclidesToFitMassFractionFor( const size_t material_index,
                    const std::vector<const SandiaDecay::Nuclide *> &nuclides );
   std::vector<const Material *> materialsFittingMassFracsFor() const;
   const std::vector<const SandiaDecay::Nuclide *> &nuclideFittingMassFracFor(
-                                              const Material *material ) const;
+                                                                const size_t material_index ) const;
   
 
   
@@ -652,7 +652,7 @@ public:
   size_t numExpectedFitParameters() const;
 
   //nuclide(...) throws std::runtime_error if an invalid number is passed in
-  const SandiaDecay::Nuclide *nuclide( const int nucN ) const;
+  const SandiaDecay::Nuclide *nuclide( const size_t nuclide_index ) const;
 
   //activity(...) and age(...) will throw runtime_exception if params is wrong
   //  size or invalid nuclide passed in
@@ -688,7 +688,7 @@ public:
   bool isVolumetricSource( const SandiaDecay::Nuclide *nuc ) const;
   
   /** Returns the volume of a material; note does not include the volume of inner shieldings. */
-  double volumeOfMaterial( const int materialN, const std::vector<double> &params ) const;
+  double volumeOfMaterial( const size_t materialN, const std::vector<double> &params ) const;
   
   /** Returns the uncertainty on the volume, taking inner dimensions, outer dimensions, and all dimensions to be independent.  */
   double volumeUncertaintyOfMaterial( const int materialN, const std::vector<double> &params,
@@ -718,38 +718,38 @@ public:
   size_t numNuclides() const;
   size_t numMaterials() const;
   
-  bool isSpecificMaterial( int materialNum ) const;
-  bool isGenericMaterial( int materialNum ) const;
+  bool isSpecificMaterial( const size_t materialNum ) const;
+  bool isGenericMaterial( const size_t materialNum ) const;
   
   //material(): will throw exception if invalid materialNum, and will return
   //  NULL if a generic material.
-  const Material *material( int materialNum ) const;
+  const Material *material( const size_t materialNum ) const;
   
   //sphericalThickness(...): will throw std::runtime_exception if material is a generic
   //  material
-  double sphericalThickness( int materialNum,
+  double sphericalThickness( const size_t materialNum,
                     const std::vector<double> &params ) const;
 
-  double cylindricalRadiusThickness( int materialNum,
+  double cylindricalRadiusThickness( const size_t materialNum,
                             const std::vector<double> &params ) const;
-  double cylindricalLengthThickness( int materialNum,
+  double cylindricalLengthThickness( const size_t materialNum,
                                     const std::vector<double> &params ) const;
-  double rectangularWidthThickness( int materialNum,
+  double rectangularWidthThickness( const size_t materialNum,
                                     const std::vector<double> &params ) const;
-  double rectangularHeightThickness( int materialNum,
+  double rectangularHeightThickness( const size_t materialNum,
                                    const std::vector<double> &params ) const;
-  double rectangularDepthThickness( int materialNum,
+  double rectangularDepthThickness( const size_t materialNum,
                                     const std::vector<double> &params ) const;
   
   
   //arealDensity(...): will throw std::runtime_exception if material is a
   //  specific material
-  double arealDensity( int materialNum,
+  double arealDensity( const size_t materialNum,
                        const std::vector<double> &params ) const;
 
   //atomicNumber(...): will throw std::runtime_exception if material is a
   //  specific material
-  double atomicNumber( int materialNum,
+  double atomicNumber( const size_t materialNum,
                        const std::vector<double> &params ) const;
 
   const std::vector<PeakDef> &peaks() const;

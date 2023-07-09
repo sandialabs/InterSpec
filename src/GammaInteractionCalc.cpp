@@ -2753,11 +2753,11 @@ void ShieldingSourceChi2Fcn::setSelfAttMultiThread( const bool do_multithread )
   m_self_att_multithread = do_multithread;
 }
   
-const SandiaDecay::Nuclide *ShieldingSourceChi2Fcn::nuclide( const int nuc ) const
+const SandiaDecay::Nuclide *ShieldingSourceChi2Fcn::nuclide( const size_t nuc_index ) const
 {
-  if( nuc < 0 || nuc > static_cast<int>(m_nuclides.size()) )
+  if( nuc_index >= m_nuclides.size() )
     throw std::runtime_error( "ShieldingSourceChi2Fcn::nuclide(int): invalid index" );
-  return m_nuclides[nuc];
+  return m_nuclides[nuc_index];
 }//const Nuclide *nuclide( const int nucN ) const
 
 
@@ -2794,67 +2794,44 @@ double ShieldingSourceChi2Fcn::Up() const
 }//double Up();
 
   
-bool ShieldingSourceChi2Fcn::isVariableMassFraction( const Material *mat,
+bool ShieldingSourceChi2Fcn::isVariableMassFraction( const size_t material_index,
                                         const SandiaDecay::Nuclide *nuc ) const 
 {
-  for( const ShieldingInfo &shield : m_materials )
-  {
-    if( shield.material == mat )
-    {
-      const vector<const SandiaDecay::Nuclide *> &nucs = shield.nucs_to_fit_mass_fraction_for;
-      return (std::find( begin(nucs), end(nucs), nuc) != end(nucs));
-    }
-  }
+  if( material_index >= m_materials.size() )
+    throw std::logic_error( "ShieldingSourceChi2Fcn::isVariableMassFraction: invalid material index" );
   
-  return false;
+  const ShieldingInfo &shield = m_materials[material_index];
+  const vector<const SandiaDecay::Nuclide *> &nucs = shield.nucs_to_fit_mass_fraction_for;
+  return (std::find( begin(nucs), end(nucs), nuc) != end(nucs));
 }//isVariableMassFraction(...)
   
   
-bool ShieldingSourceChi2Fcn::hasVariableMassFraction( const Material *mat ) const
+bool ShieldingSourceChi2Fcn::hasVariableMassFraction( const size_t material_index ) const
 {
-  for( const ShieldingInfo &shield : m_materials )
-  {
-    if( shield.material == mat )
-    {
-      const vector<const SandiaDecay::Nuclide *> &nucs = shield.nucs_to_fit_mass_fraction_for;
-      return !nucs.empty();
-    }
-  }
+  if( material_index >= m_materials.size() )
+    throw std::logic_error( "ShieldingSourceChi2Fcn::hasVariableMassFraction: invalid material index" );
   
-  return false;
+  const vector<const SandiaDecay::Nuclide *> &nucs = m_materials[material_index].nucs_to_fit_mass_fraction_for;
+  return !nucs.empty();
 }//bool hasVariableMassFraction( const Material *material ) const
 
 
-void ShieldingSourceChi2Fcn::setNuclidesToFitMassFractionFor(
-                          const Material *material,
+void ShieldingSourceChi2Fcn::setNuclidesToFitMassFractionFor( const size_t material_index,
                           const vector<const SandiaDecay::Nuclide *> &nuclides )
 {
+  if( material_index >= m_materials.size() )
+    throw std::logic_error( "ShieldingSourceChi2Fcn::setNuclidesToFitMassFractionFor: invalid material index" );
+  
+  ShieldingInfo &shielding = m_materials[material_index];
+  const Material *material = shielding.material;
+  
   if( !material )
-    throw runtime_error( "setNuclidesToFitMassFractionFor(...): "
-                         "invalid material" );
+    throw std::logic_error( "ShieldingSourceChi2Fcn::setNuclidesToFitMassFractionFor: material index points to generic shielding" );
   
-  ShieldingInfo *shielding = nullptr;
+  // TODO: 20230708 for the moment, our logic is that we fit the fractions for all self-attenuating sources... we could change this - I think things are all in place, but it is untested.
+  assert( nuclides.size() == shielding.self_atten_sources.size() );
   
-  for( ShieldingInfo &ms : m_materials )
-  {
-    if( ms.material == material )
-    {
-      shielding = &ms;
-      break;
-    }
-  }
-  
-  if( !shielding )
-    throw runtime_error( "setNuclidesToFitMassFractionFor(...): "
-                        "material passed in is not a shielding material" );
-  
-  // TODO: 20230708 for the moment, our logic is that we fit the fractions for all self-attenuating sources... we could change this
-  // Currently, our logic has it so, no matter what, all self-attenuating nuclides will be
-  // fit for their fractions, or none.  In principal we could allow something different,
-  // but this hasn't been tested.
-  assert( nuclides.size() == shielding->self_atten_sources.size() );
-  
-  auto &curr_var_srcs = shielding->nucs_to_fit_mass_fraction_for;
+  auto &curr_var_srcs = shielding.nucs_to_fit_mass_fraction_for;
   
   for( const SandiaDecay::Nuclide *nuc : nuclides )
   {
@@ -2877,7 +2854,7 @@ void ShieldingSourceChi2Fcn::setNuclidesToFitMassFractionFor(
       throw runtime_error( "setNuclidesToFitMassFractionFor(...): input must "
                            "be in source m_nuclides" );
     
-    const auto &self_atten_srcs = shielding->self_atten_sources;
+    const auto &self_atten_srcs = shielding.self_atten_sources;
     
     bool srcIsSelfAtten = false;
     for( size_t i = 0; !srcIsSelfAtten && (i < self_atten_srcs.size()); ++i )
@@ -2919,75 +2896,61 @@ vector<const Material *> ShieldingSourceChi2Fcn::materialsFittingMassFracsFor() 
   
   
 const std::vector<const SandiaDecay::Nuclide *> &
-        ShieldingSourceChi2Fcn::nuclideFittingMassFracFor( const Material *material ) const
+        ShieldingSourceChi2Fcn::nuclideFittingMassFracFor( const size_t material_index ) const
 {
-  if( !material )
-    throw runtime_error( "ShieldingSourceChi2Fcn::nuclideFittingMassFracFor():"
-                        " invalid input" );
-
-  for( const ShieldingInfo &ms : m_materials )
-  {
-    if( ms.material == material )
-      return ms.nucs_to_fit_mass_fraction_for;
-  }//for( ShieldingInfo &ms : m_materials )
+  if( material_index >= m_materials.size() )
+    throw logic_error( "ShieldingSourceChi2Fcn::nuclideFittingMassFracFor: invalid material index" );
   
-  throw runtime_error( "ShieldingSourceChi2Fcn::nuclideFittingMassFracFor(): "
-                        + material->name + " is not a material with a variable"
-                        " mass fraction" );
+  const ShieldingInfo &ms = m_materials[material_index];
+  
+  if( !ms.material ) // JIC
+    throw logic_error( "ShieldingSourceChi2Fcn::nuclideFittingMassFracFor():"
+                        " material index points to generic shielding" );
+
+  return ms.nucs_to_fit_mass_fraction_for;
 }//nuclideFittingMassFracFor(...)
 
   
-double ShieldingSourceChi2Fcn::massFraction( const Material *material,
+double ShieldingSourceChi2Fcn::massFraction( const size_t material_index,
                       const SandiaDecay::Nuclide *nuc,
                       const std::vector<double> &pars ) const
 {
   double massfrac = 0.0, uncert = 0.0;
-  massFraction( massfrac, uncert, material, nuc, pars, vector<double>() );
+  massFraction( massfrac, uncert, material_index, nuc, pars, vector<double>() );
   return massfrac;
 }
   
   
-void ShieldingSourceChi2Fcn::massFraction( double &massFrac,
-                                                   double &uncert,
-                                                  const Material *material,
-                                        const SandiaDecay::Nuclide *nuc,
-                                        const std::vector<double> &pars,
-                                        const std::vector<double> &errors ) const
+void ShieldingSourceChi2Fcn::massFraction( double &massFrac, double &uncert,
+                                  const size_t material_index, const SandiaDecay::Nuclide *nuc,
+                                  const vector<double> &pars, const vector<double> &errors ) const
 {
   massFrac = uncert = 0.0;
   
-  if( !material || !nuc )
+  if( material_index >= m_materials.size() )
+    throw logic_error( "ShieldingSourceChi2Fcn::massFraction: invalid material index" );
+  
+  const ShieldingInfo &shielding = m_materials[material_index];
+  
+  if( !shielding.material || !nuc )
     throw runtime_error( "ShieldingSourceChi2Fcn::massFraction(): invalid input" );
   
-  const ShieldingInfo *shielding = nullptr;
-  for( const ShieldingInfo &info : m_materials )
-  {
-    if( info.material == material )
-    {
-      shielding = &info;
-      break;
-    }
-  }//for( const ShieldingInfo &info : m_materials )
-  
-  if( !shielding )
-    throw runtime_error( "ShieldingSourceChi2Fcn::massFraction(): unknown material passed in." );
-
-  if( shielding->nucs_to_fit_mass_fraction_for.empty() )
+  if( shielding.nucs_to_fit_mass_fraction_for.empty() )
     throw runtime_error( "ShieldingSourceChi2Fcn::massFraction(): "
-                         + material->name + " is not a material with a variable"
+                         + shielding.material->name + " is not a material with a variable"
                          " mass fraction" );
   
-  const vector<const SandiaDecay::Nuclide *> &nucs = shielding->nucs_to_fit_mass_fraction_for;
+  const vector<const SandiaDecay::Nuclide *> &nucs = shielding.nucs_to_fit_mass_fraction_for;
   
   //nucs is actually sorted by symbol name, could do better than linear search
   const auto pos = std::find( begin(nucs), end(nucs), nuc );
   if( pos == end(nucs) )
     throw runtime_error( "ShieldingSourceChi2Fcn::massFraction(): "
                          + nuc->symbol + " was not a nuc fit for mass fraction"
-                         " in " + material->name );
+                         " in " + shielding.material->name );
   
   double totalfrac = 0.0;
-  for( const pair<const SandiaDecay::Nuclide *,double> &i : shielding->self_atten_sources )
+  for( const pair<const SandiaDecay::Nuclide *,double> &i : shielding.self_atten_sources )
   {
     const SandiaDecay::Nuclide * const this_nuc = i.first;
     const auto this_pos = std::find( begin(nucs), end(nucs), this_nuc );
@@ -2996,11 +2959,9 @@ void ShieldingSourceChi2Fcn::massFraction( double &massFrac,
   }
 
   size_t matmassfracstart = 0;
-  for( const ShieldingInfo &info : m_materials )
+  for( size_t index = 0; index < material_index; ++index )
   {
-    if( &info == shielding )
-      break;
-    
+    const ShieldingInfo &info = m_materials[index];
     if( !info.nucs_to_fit_mass_fraction_for.empty() )
       matmassfracstart += (info.nucs_to_fit_mass_fraction_for.size() - 1);
   }
@@ -3051,16 +3012,15 @@ void ShieldingSourceChi2Fcn::massFraction( double &massFrac,
 }//double massFraction(...) const
 
   
-double ShieldingSourceChi2Fcn::massFractionUncert( const Material *material,
+double ShieldingSourceChi2Fcn::massFractionUncert( const size_t material_index,
                             const SandiaDecay::Nuclide *nuc,
                             const std::vector<double> &pars,
                             const std::vector<double> &error ) const
 {
   double massfrac = 0.0, uncert = 0.0;
-  massFraction( massfrac, uncert, material, nuc, pars, error );
+  massFraction( massfrac, uncert, material_index, nuc, pars, error );
   return uncert;
-}//massFractionUncert(...)(
-  
+}//massFractionUncert(...)
   
 
 size_t ShieldingSourceChi2Fcn::numExpectedFitParameters() const
@@ -3171,9 +3131,9 @@ double ShieldingSourceChi2Fcn::relaxationLength( const SandiaDecay::Nuclide *nuc
 }//double relaxationLength( const SandiaDecay::Nuclide *nuc ) const;
 
 
-double ShieldingSourceChi2Fcn::volumeOfMaterial( const int matn, const vector<double> &params ) const
+double ShieldingSourceChi2Fcn::volumeOfMaterial( const size_t matn, const vector<double> &params ) const
 {
-  if( (matn < 0) || (matn >= m_materials.size()) )
+  if( matn >= m_materials.size() )
     throw runtime_error( "volumeOfMaterial: invalid material index" );
   
   if( !m_materials[matn].material )
@@ -3409,10 +3369,10 @@ double ShieldingSourceChi2Fcn::activityOfSelfAttenSource(
   bool foundSrc = false;
   double activity = 0.0;
 
-  const int nmat = static_cast<int>( numMaterials() );
-  for( int matn = 0; matn < nmat; ++matn )
+  const size_t num_mataterials = m_materials.size();
+  for( size_t material_index = 0; material_index < num_mataterials; ++material_index )
   {
-    const ShieldingInfo &shield = m_materials[matn];
+    const ShieldingInfo &shield = m_materials[material_index];
     
     const Material *mat = shield.material;
     if( !mat )  //if a generic shielding
@@ -3435,20 +3395,20 @@ double ShieldingSourceChi2Fcn::activityOfSelfAttenSource(
     
     double massFrac = 0.0;
     
-    if( hasVariableMassFraction(mat) )
+    if( hasVariableMassFraction(material_index) )
     {
-      massFrac = ShieldingSourceChi2Fcn::massFraction( mat, nuclide, params );
+      massFrac = ShieldingSourceChi2Fcn::massFraction( material_index, nuclide, params );
     }else
     {
       massFrac = self_att_pos->second;
     }//if( hasVariableMassFraction(mat) ) / else
     
-    const double vol = volumeOfMaterial( matn, params );
+    const double vol = volumeOfMaterial( material_index, params );
     const double mass_grams = massFrac * mat->density * vol / PhysicalUnits::gram;
     const double activity_per_gram = nuclide->activityPerGram();
     activity += mass_grams * activity_per_gram;
     
-    //        cerr << "activityOfSelfAttenSource: " << nuclide->symbol << " (matn=" << matn
+    //        cerr << "activityOfSelfAttenSource: " << nuclide->symbol << " (material_index=" << material_index
     //         << "), mat=" << mat->name
     //        << ", thick=" << thick/PhysicalUnits::cm
     //            << " cm, inner_rad=" << (radius-thick)/PhysicalUnits::cm
@@ -3459,7 +3419,7 @@ double ShieldingSourceChi2Fcn::activityOfSelfAttenSource(
     
     // We could probably break the loop here, but I guess JIC there are multiple objects using this
     //  nuclide as a self-attenuating source we will keep going.
-  }//for( int matn = 0; matn < nmat; ++matn )
+  }//for( int material_index = 0; material_index < num_mataterials; ++material_index )
   
   if( !foundSrc )
     throw runtime_error( "ShieldingSourceChi2Fcn::activityOfSelfAttenSource: "
@@ -3699,13 +3659,13 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
       
       double massFrac = 0.0, massFracUncert = 0.0;
       
-      if( hasVariableMassFraction(mat) )
+      if( hasVariableMassFraction(material_index) )
       {
-        massFraction( massFrac, massFracUncert, mat, src, params, errors );
+        massFraction( massFrac, massFracUncert, material_index, src, params, errors );
       }else
       {
         massFrac = src_frac.second;
-      }//if( hasVariableMassFraction(mat) ) / else
+      }//if( hasVariableMassFraction(material_index) ) / else
       
       
       const double iso_density = massFrac * mat->density / PhysicalUnits::gram;
@@ -3901,24 +3861,24 @@ size_t ShieldingSourceChi2Fcn::numMaterials() const
 }//int numMaterials() const
 
 
-const Material *ShieldingSourceChi2Fcn::material( int materialNum ) const
+const Material *ShieldingSourceChi2Fcn::material( const size_t materialNum ) const
 {
   return m_materials.at(materialNum).material;
 }
 
-bool ShieldingSourceChi2Fcn::isSpecificMaterial( int materialNum ) const
+bool ShieldingSourceChi2Fcn::isSpecificMaterial( const size_t materialNum ) const
 {
   return (m_materials.at(materialNum).material != nullptr );
 }//bool isSpecificMaterial( int materialNum ) const
 
 
-bool ShieldingSourceChi2Fcn::isGenericMaterial( int materialNum ) const
+bool ShieldingSourceChi2Fcn::isGenericMaterial( const size_t materialNum ) const
 {
   return (m_materials.at(materialNum).material == nullptr );
 }//bool isGenericMaterial( int materialNum ) const
   
 
-double ShieldingSourceChi2Fcn::sphericalThickness( int materialNum, const vector<double> &params ) const
+double ShieldingSourceChi2Fcn::sphericalThickness( const size_t materialNum, const vector<double> &params ) const
 {
   if( isGenericMaterial( materialNum ) )
     throw std::runtime_error( "ShieldingSourceChi2Fcn::sphericalThickness(...): "
@@ -3929,7 +3889,7 @@ double ShieldingSourceChi2Fcn::sphericalThickness( int materialNum, const vector
 }//double sphericalThickness(...)
 
 
-double ShieldingSourceChi2Fcn::cylindricalRadiusThickness( int materialNum, const std::vector<double> &params ) const
+double ShieldingSourceChi2Fcn::cylindricalRadiusThickness( const size_t materialNum, const std::vector<double> &params ) const
 {
   assert( !isGenericMaterial( materialNum ) );
   
@@ -3937,7 +3897,7 @@ double ShieldingSourceChi2Fcn::cylindricalRadiusThickness( int materialNum, cons
 }//double cylindricalRadiusThickness(...)
 
 
-double ShieldingSourceChi2Fcn::cylindricalLengthThickness( int materialNum, const std::vector<double> &params ) const
+double ShieldingSourceChi2Fcn::cylindricalLengthThickness( const size_t materialNum, const std::vector<double> &params ) const
 {
   assert( !isGenericMaterial( materialNum ) );
   
@@ -3945,7 +3905,7 @@ double ShieldingSourceChi2Fcn::cylindricalLengthThickness( int materialNum, cons
 }//double cylindricalLengthThickness(...)
 
 
-double ShieldingSourceChi2Fcn::rectangularWidthThickness( int materialNum, const std::vector<double> &params ) const
+double ShieldingSourceChi2Fcn::rectangularWidthThickness( const size_t materialNum, const std::vector<double> &params ) const
 {
   assert( !isGenericMaterial( materialNum ) );
   
@@ -3953,7 +3913,7 @@ double ShieldingSourceChi2Fcn::rectangularWidthThickness( int materialNum, const
 }//double rectangularWidthThickness(...)
 
 
-double ShieldingSourceChi2Fcn::rectangularHeightThickness( int materialNum, const std::vector<double> &params ) const
+double ShieldingSourceChi2Fcn::rectangularHeightThickness( const size_t materialNum, const std::vector<double> &params ) const
 {
   assert( !isGenericMaterial( materialNum ) );
   
@@ -3961,7 +3921,7 @@ double ShieldingSourceChi2Fcn::rectangularHeightThickness( int materialNum, cons
 }//double rectangularHeightThickness(...)
 
 
-double ShieldingSourceChi2Fcn::rectangularDepthThickness( int materialNum, const std::vector<double> &params ) const
+double ShieldingSourceChi2Fcn::rectangularDepthThickness( const size_t materialNum, const std::vector<double> &params ) const
 {
   assert( !isGenericMaterial( materialNum ) );
   
@@ -3971,7 +3931,7 @@ double ShieldingSourceChi2Fcn::rectangularDepthThickness( int materialNum, const
 
 //arealDensity(...): will throw std::runtime_exception if material is a
 //  specific material
-double ShieldingSourceChi2Fcn::arealDensity( int materialNum,
+double ShieldingSourceChi2Fcn::arealDensity( const size_t materialNum,
                        const std::vector<double> &params ) const
 {
   if( !isGenericMaterial( materialNum ) )
@@ -3984,7 +3944,7 @@ double ShieldingSourceChi2Fcn::arealDensity( int materialNum,
 
 //atomicNumber(...): will throw std::runtime_exception if material is a
 //  specific material
-double ShieldingSourceChi2Fcn::atomicNumber( int materialNum,
+double ShieldingSourceChi2Fcn::atomicNumber( const size_t materialNum,
                        const std::vector<double> &params ) const
 {
   if( !isGenericMaterial( materialNum ) )
@@ -4762,8 +4722,8 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   //Propagate the gammas through each material - note we are using the fit peak
   //  mean here, and not the (pre-cluster) photopeak energy
   double shield_outer_rad = 0.0;
-  const int nMaterials = static_cast<int>( m_materials.size() );
-  for( int materialN = 0; materialN < nMaterials; ++materialN )
+  const size_t nMaterials = m_materials.size();
+  for( size_t materialN = 0; materialN < nMaterials; ++materialN )
   {
     boost::function<double(float)> att_coef_fcn;
     const ShieldingInfo &shielding = m_materials[materialN];
@@ -4849,7 +4809,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         
         char buffer[256];
         snprintf( buffer, sizeof(buffer),
-                 "Shielding %i: AN=%.2f, AD=%.3f g/cm2", materialN, an, ad );
+                 "Shielding %i: AN=%.2f, AD=%.3f g/cm2", static_cast<int>(materialN), an, ad );
         info->push_back( buffer );
       }else
       {
@@ -5015,9 +4975,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   bool has_trace = false, has_self_atten = false;
   
   
-  for( int materialN = 0; materialN < nMaterials; ++materialN )
+  for( size_t material_index = 0; material_index < nMaterials; ++material_index )
   {
-    const ShieldingInfo &shield = materials[materialN];
+    const ShieldingInfo &shield = materials[material_index];
     const Material *material = shield.material;
     
     if( !material )
@@ -5048,7 +5008,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 
     baseCalculator.m_observationDist = m_distance;
     baseCalculator.m_attenuateForAir = m_attenuateForAir;
-    baseCalculator.m_sourceIndex = materialN;
+    baseCalculator.m_sourceIndex = material_index;
     
     baseCalculator.m_isInSituExponential = false;
     baseCalculator.m_inSituRelaxationLength = -1.0;
@@ -5082,8 +5042,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         {
           case TraceActivityType::TotalActivity:
           {
-            const double vol = volumeOfMaterial(materialN, x);
-            
+            const double vol = volumeOfMaterial(material_index, x);
             actPerVol = act / vol;
             break;
           }
@@ -5117,7 +5076,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
                 
                 //4 π integral_0^R e^(-(R - ρ)/L) ρ^2 dρ = 4 π L (L^2 (2 - 2 e^(-R/L)) - 2 L R + R^2)
                 
-                const double R = sphericalThickness(materialN, x);
+                const double R = sphericalThickness(material_index, x);
                 const double L = relaxation_len;
                 const double norm = 4*PhysicalUnits::pi * L * (L*L*(2 - 2*exp(-R/L)) - 2*L*R + R*R);
                 actPerVol /= norm;
@@ -5134,9 +5093,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
                 
                 double R = -1.0;
                 if( m_geometry == GeometryType::Rectangular )
-                  R = 2.0 * rectangularDepthThickness(materialN, x);
+                  R = 2.0 * rectangularDepthThickness(material_index, x);
                 else
-                  R = 2.0 * cylindricalLengthThickness(materialN, x);
+                  R = 2.0 * cylindricalLengthThickness(material_index, x);
 
                 assert( R >= 0.0 );
                 
@@ -5149,7 +5108,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
               case GeometryType::CylinderSideOn:
               {
                 //integrate 2*pi*r*exp(-(R-r)/L) wrt r, from 0 to R
-                const double R = cylindricalRadiusThickness(materialN, x);
+                const double R = cylindricalRadiusThickness(material_index, x);
                 const double L = relaxation_len;
                 
                 const double norm = 2 * L * PhysicalUnits::pi * (L*(exp(-R/L) - 1) + R);
@@ -5178,22 +5137,13 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         double massFract = 0.0;
         
         
-        const ShieldingInfo *shielding = nullptr;
-        for( const ShieldingInfo &info : m_materials )
-        {
-          if( info.material == material )
-          {
-            shielding = &info;
-            break;
-          }
-        }//for( const ShieldingInfo &info : m_materials )
-        assert( shielding );
+        const ShieldingInfo &shielding = m_materials[material_index];
+        const vector<const SandiaDecay::Nuclide *> &mass_frac_nucs = shielding.nucs_to_fit_mass_fraction_for;
         
-        if( shielding
-           && std::count(begin(shielding->nucs_to_fit_mass_fraction_for), end(shielding->nucs_to_fit_mass_fraction_for), src) )
+        if( std::count(begin(mass_frac_nucs), end(mass_frac_nucs), src) )
         {
-          assert( material );
-          massFract = massFraction( material, src, x );
+          assert( shielding.material );
+          massFract = massFraction( material_index, src, x );
         }else
         {
           for( const auto &src_frac : self_atten_srcs )
@@ -5359,7 +5309,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         calculators.push_back( calculator );
       }//for( const EnergyCountMap::value_type &energy_count : local_energy_count_map )
     }//for( const SandiaDecay::Nuclide *src : self_atten_srcs )
-  }//for( int materialN = 0; materialN < nMaterials; ++materialN )
+  }//for( int material_index = 0; material_index < nMaterials; ++material_index )
 
   if( calculators.size() )
   {
