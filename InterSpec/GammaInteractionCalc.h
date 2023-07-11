@@ -435,7 +435,7 @@ public:
    
    Thicknesses and activity levels are specified by the fitting parameters, so not tracked in this struct.
    */
-  struct ShieldingInfo
+  struct ShieldLayerInfo
   {
     /** The material this struct holds info for.
      If nullptr it represents generic shielding (e.g., AN/AD), and neither #self_atten_sources or #trace_sources may have entries.
@@ -466,14 +466,14 @@ public:
      At least one peak being used have this nuclide as its assigned nuclide.
      */
     std::vector<std::tuple<const SandiaDecay::Nuclide *,TraceActivityType,double>> trace_sources;
-  };//struct ShieldingInfo
+  };//struct ShieldLayerInfo
   
   
   ShieldingSourceChi2Fcn(
                       double distance, double liveTime,
                       const std::vector<PeakDef> &peaks,
                       std::shared_ptr<const DetectorPeakResponse> detector,
-                      const std::vector<ShieldingInfo> &materials,
+                      const std::vector<ShieldLayerInfo> &materials,
                       const GeometryType geometry,
                       const bool allowMultipleNucsContribToPeaks,
                       const bool attenuateForAir,
@@ -582,6 +582,13 @@ public:
   bool isVariableMassFraction( const size_t material_index,
                                const SandiaDecay::Nuclide *nuc ) const;
   bool hasVariableMassFraction( const size_t material_index ) const;
+  
+  /** Returns a Material, with the elemental composition set to account for the mass-varied amounts,
+   so that the attenuation cross-sections will be as expected.
+   */
+  std::shared_ptr<Material> variedMassFracMaterial( const size_t material_index,
+                                          const std::vector<double> &x ) const;
+  
   void setNuclidesToFitMassFractionFor( const size_t material_index,
                    const std::vector<const SandiaDecay::Nuclide *> &nuclides );
   std::vector<const Material *> materialsFittingMassFracsFor() const;
@@ -838,9 +845,7 @@ protected:
   std::vector<PeakDef> m_peaks;
   std::vector<PeakDef> m_backgroundPeaks;
   std::shared_ptr<const DetectorPeakResponse> m_detector;
-  /** TODO: 20230708 We currently assume the Material pointer is unique per ShieldingInfo, in order to distinguish between the shieldings
-   */
-  std::vector<ShieldingInfo> m_materials;
+  std::vector<ShieldLayerInfo> m_materials;
   std::vector<const SandiaDecay::Nuclide *> m_nuclides; //sorted alphabetically and unique
   
   const GeometryType m_geometry;

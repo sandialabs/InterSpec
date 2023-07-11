@@ -7668,7 +7668,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
 
   //Get the shieldings and materials
   shieldings.clear();
-  vector<ShieldingSourceChi2Fcn::ShieldingInfo> materials;
+  vector<ShieldingSourceChi2Fcn::ShieldLayerInfo> materials;
 
   for( WWidget *widget : m_shieldingSelects->children() )
   {
@@ -7683,7 +7683,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
         mat = m_materialDB->material( "void" );
 
       
-      ShieldingSourceChi2Fcn::ShieldingInfo materialAndSrc;
+      ShieldingSourceChi2Fcn::ShieldLayerInfo materialAndSrc;
       materialAndSrc.material = mat;
       materialAndSrc.self_atten_sources = select->sourceNuclideMassFractions();
       
@@ -8138,7 +8138,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
         throw runtime_error( "ShieldingSourceDisplay::shieldingFitnessFcn(...)"
                              " serious logic error when fitting for mass frac");
       
-      // TODO: we could/should replace the below call to `setNuclidesToFitMassFractionFor`, with setting this directorly to `ShieldingSourceChi2Fcn::ShieldingInfo::nucs_to_fit_mass_fraction_for` above - and then adding the paramters here...
+      // TODO: we could/should replace the below call to `setNuclidesToFitMassFractionFor`, with setting this directorly to `ShieldingSourceChi2Fcn::ShieldLayerInfo::nucs_to_fit_mass_fraction_for` above - and then adding the paramters here...
       answer->setNuclidesToFitMassFractionFor( shielding_index, nucstofit );
       
       nucstofit = answer->nuclideFittingMassFracFor( shielding_index );
@@ -8408,44 +8408,37 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
                                   = m_currentFitFcn->nuclideFittingMassFracFor( shielding_index );
         
         const vector<const SandiaDecay::Nuclide *> guiNucs = select->selfAttenNuclides();
+        
         if( fitnucs.size() != guiNucs.size() )
           throw logic_error( "Number of calc self-atten nuclides does not equal num GUI self-atten nucs." );
         
+        double prefitsum = 0.0;
+        const vector<pair<const SandiaDecay::Nuclide *,double>> guiMassFracs = select->sourceNuclideMassFractions();
+        for( const SandiaDecay::Nuclide * const n : guiNucs )
+        {
+          for( const auto &i : guiMassFracs )
+          {
+            if( i.first == n )
+              prefitsum += i.second;
+          }
+        }
         
-        map<short,double> sumfracs;
+        double sumfracs = 0.0;
         for( const SandiaDecay::Nuclide *nuc : fitnucs )
         {
           const double frac = m_currentFitFcn->massFraction( shielding_index, nuc, paramValues );
           select->setMassFraction( nuc, frac );
           
-          if( !sumfracs.count(nuc->atomicNumber) )
-            sumfracs[nuc->atomicNumber] = 0.0;
-          sumfracs[nuc->atomicNumber] += frac;
+          sumfracs += frac;
         }//for( const SandiaDecay::Nuclide *nuc : fitnucs )
         
+        const double frac_diff = fabs(sumfracs - prefitsum);
+        assert( fabs(frac_diff) < 1.0E-5*std::max(sumfracs,prefitsum) );
         
-        const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-        for( const auto &i : sumfracs )
-        {
-          const SandiaDecay::Element * const el = db->element(i.first);
-          assert( el );
-          if( !el )
-            continue;
-          
-          const double fractionEl = usrmaterial->massFractionOfElementInMaterial( el );
-          
-          const double diff = fabs(fractionEl - i.second);
-          if( (diff > 1.0E-12) && ((diff/std::max(fractionEl,i.second)) > 1.0E-5) ) //limits chosen arbitrarily
-            throw logic_error( "Mass fraction for " + el->name + " should be "
-                              + to_string(fractionEl) + " but calculation yielded "
-                              + to_string(i.second) );
-        }//for( const auto &i : sumfracs )
-        
-        cerr << "ShieldingSourceDisplay::updateGuiWithModelFitResults(...)\n\t"
-        << "This whole fitting for mass fractions of nuclides is sketch:"
-        << "I feel like everything to do with this is brittle, and it scares me."
-        << " Please consider really cleaning this stuff up!"
-        << endl << endl;
+        if( (frac_diff > 1.0E-12) && ((frac_diff/std::max(sumfracs,prefitsum)) > 1.0E-5) ) //limits chosen arbitrarily
+          throw logic_error( "Mass fraction for of self-atten src elements should be "
+                            + to_string(prefitsum) + " but calculation yielded "
+                            + to_string(sumfracs) );
       }//if( select->fitForMassFractions() )
     }//for( int i = 0; i < nshieldings; ++i )
     

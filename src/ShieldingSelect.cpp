@@ -3375,7 +3375,7 @@ vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFraction
 
       const SandiaDecay::Nuclide *iso = cb->isotope();
       if( iso )
-        answer.emplace_back( iso, elementFraction * cb->massFraction() );
+        answer.emplace_back( iso, cb->massFraction() );
     }//for( WWidget *child : children )
   }//for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
   
