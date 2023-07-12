@@ -471,11 +471,11 @@ bool SourceFitModel::fitActivity( int nuc ) const
   
   switch( m_nuclides[nuc].sourceType )
   {
-    case ModelSourceType::Point:
-    case ModelSourceType::Trace:
+    case GammaInteractionCalc::ModelSourceType::Point:
+    case GammaInteractionCalc::ModelSourceType::Trace:
       return m_nuclides[nuc].fitActivity;
       
-    case ModelSourceType::Intrinsic:
+    case GammaInteractionCalc::ModelSourceType::Intrinsic:
       return false;
   }//switch( m_nuclides[nuc].sourceType )
   
@@ -554,7 +554,7 @@ const SandiaDecay::Nuclide *SourceFitModel::ageDefiningNuclide(
 }//bool ageDefiningNuclide( int nuc ) const
 
 
-ModelSourceType SourceFitModel::sourceType( int nuc ) const
+GammaInteractionCalc::ModelSourceType SourceFitModel::sourceType( int nuc ) const
 {
   if( nuc<0 || nuc>=static_cast<int>(m_nuclides.size()) )
     throw std::runtime_error( "SourceFitModel: called with invalid index" );
@@ -571,11 +571,11 @@ bool SourceFitModel::isVolumetricSource( int nuc ) const
   
   switch( m_nuclides[nuc].sourceType )
   {
-    case ModelSourceType::Point:
+    case GammaInteractionCalc::ModelSourceType::Point:
       return false;
       
-    case ModelSourceType::Intrinsic:
-    case ModelSourceType::Trace:
+    case GammaInteractionCalc::ModelSourceType::Intrinsic:
+    case GammaInteractionCalc::ModelSourceType::Trace:
       return true;
   }//switch( m_nuclides[nuc].sourceType )
   
@@ -619,7 +619,7 @@ void SourceFitModel::setSharredAgeNuclide( const SandiaDecay::Nuclide *dependant
 }//void makeAgeFitable( const SandiaDecay::Nuclide *nuc, bool fit )
 
 
-void SourceFitModel::setSourceType( const SandiaDecay::Nuclide *nuc, ModelSourceType type )
+void SourceFitModel::setSourceType( const SandiaDecay::Nuclide *nuc, GammaInteractionCalc::ModelSourceType type )
 {
   const int nrows = static_cast<int>( m_nuclides.size() );
 
@@ -637,7 +637,7 @@ void SourceFitModel::setSourceType( const SandiaDecay::Nuclide *nuc, ModelSource
       }
     }//if( this is the nuclide we want )
   }//for( const IsoFitStruct &iso : m_nuclides )
-}//void setSourceType( const SandiaDecay::Nuclide *nuc, ModelSourceType type )
+}//void setSourceType( const SandiaDecay::Nuclide *nuc, GammaInteractionCalc::ModelSourceType type )
 
 
 void SourceFitModel::setUseSameAgeForIsotopes( bool useSame )
@@ -1241,11 +1241,11 @@ Wt::WFlags<Wt::ItemFlag> SourceFitModel::flags( const Wt::WModelIndex &index ) c
     case kActivity:
       switch( iso.sourceType )
       {
-        case ModelSourceType::Point:
+        case GammaInteractionCalc::ModelSourceType::Point:
           return WFlags<ItemFlag>(Wt::ItemIsEditable);
           
-        case ModelSourceType::Intrinsic:
-        case ModelSourceType::Trace:
+        case GammaInteractionCalc::ModelSourceType::Intrinsic:
+        case GammaInteractionCalc::ModelSourceType::Trace:
           return WFlags<ItemFlag>();
       }//switch( iso.sourceType )
       break;
@@ -1253,11 +1253,11 @@ Wt::WFlags<Wt::ItemFlag> SourceFitModel::flags( const Wt::WModelIndex &index ) c
     case kFitActivity:
       switch( iso.sourceType )
       {
-        case ModelSourceType::Point:
+        case GammaInteractionCalc::ModelSourceType::Point:
           return WFlags<ItemFlag>(ItemIsUserCheckable);
           
-        case ModelSourceType::Intrinsic:
-        case ModelSourceType::Trace:
+        case GammaInteractionCalc::ModelSourceType::Intrinsic:
+        case GammaInteractionCalc::ModelSourceType::Trace:
           return WFlags<ItemFlag>();
       }//switch( iso.sourceType )
       break;
@@ -1464,12 +1464,12 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       
       switch( isof.sourceType )
       {
-        case ModelSourceType::Intrinsic:
+        case GammaInteractionCalc::ModelSourceType::Intrinsic:
           // TODO: check if dimensions are being fit
           break;
           
-        case ModelSourceType::Point:
-        case ModelSourceType::Trace:
+        case GammaInteractionCalc::ModelSourceType::Point:
+        case GammaInteractionCalc::ModelSourceType::Trace:
           // Dont show uncertainty unless we fit for it - although in principle it should be zero, right
           if( !fitActivity(row) )
             shouldHaveUncert = false;
@@ -1486,11 +1486,11 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       switch( isof.sourceType )
       {
-        case ModelSourceType::Point:
+        case GammaInteractionCalc::ModelSourceType::Point:
           return boost::any( isof.fitActivity );
           
-        case ModelSourceType::Intrinsic:
-        case ModelSourceType::Trace:
+        case GammaInteractionCalc::ModelSourceType::Intrinsic:
+        case GammaInteractionCalc::ModelSourceType::Trace:
           return boost::any();
       }//switch( iso.sourceType )
     }//case kFitActivity:
@@ -3410,6 +3410,133 @@ ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
 }//ShieldingSourceDisplay destructor constructor
 
 
+pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+                                                      ShieldingSourceDisplay::shieldingFitnessFcn()
+{
+  //make sure fitting for at least one nuclide:
+  std::vector<ShieldingSourceFitCalc::ShieldingInfo> initial_shieldings;
+  
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
+    if( select )
+    {
+      ShieldingSourceFitCalc::ShieldingInfo info = select->toShieldingInfo();
+      
+      if( !info.m_isGenericMaterial && !info.m_material )
+        info.m_material = make_shared<Material>( *m_materialDB->material( "void" ) );
+      
+      initial_shieldings.push_back( info );
+    }//if( select )
+  }//for( WWidget *widget : m_shieldingSelects->children() )
+    
+  const GeometryType geom = geometry();
+  const string distanceStr = m_distanceEdit->text().toUTF8();
+  const double distance = PhysicalUnits::stringToDistance( distanceStr );
+  shared_ptr<SpecMeas> meas_file = m_specViewer->measurment(SpecUtils::SpectrumType::Foreground);
+  shared_ptr<const SpecUtils::Measurement> foreground = m_specViewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  shared_ptr<const SpecUtils::Measurement> background = m_specViewer->displayedHistogram(SpecUtils::SpectrumType::Background);
+  shared_ptr<const DetectorPeakResponse> detector = meas_file ? meas_file->detector() : nullptr;
+  shared_ptr<const deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
+  if( !peaks )
+    throw runtime_error( "No peaks." );
+    
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> background_peaks;
+    
+  if( m_backgroundPeakSub->isChecked() )
+  {
+    shared_ptr<const SpecMeas> back = m_specViewer->measurment(SpecUtils::SpectrumType::Background);
+      
+    if( back && background )
+    {
+      const auto &displayed = m_specViewer->displayedSamples(SpecUtils::SpectrumType::Background);
+      background_peaks = back->peaks( displayed );
+    }//if( back )
+      
+    if( !background_peaks || background_peaks->empty() )
+    {
+      m_backgroundPeakSub->setUnChecked();
+      passMessage( "There are no background peaks defined, not subtracting them",
+                     WarningWidget::WarningMsgInfo );
+    }//if( !peaks || peaks->empty() )
+  }//if( m_backgroundPeakSub->isChecked() )
+    
+  vector<GammaInteractionCalc::SourceDefinitions> src_definitions;
+  for( int ison = 0; ison < m_sourceModel->numNuclides(); ++ison )
+  {
+    const SandiaDecay::Nuclide * const nuclide = m_sourceModel->nuclide(ison);
+    assert( nuclide );
+    if( !nuclide )
+      throw runtime_error( "Invalid source file nuclide" );
+      
+    GammaInteractionCalc::SourceDefinitions srcdef;
+    srcdef.nuclide = nuclide;
+    srcdef.age = m_sourceModel->age( ison );
+    srcdef.fit_age = m_sourceModel->fitAge( ison );
+    srcdef.activity = m_sourceModel->activity( ison );
+    srcdef.age_defining_nuc = m_sourceModel->ageDefiningNuclide( nuclide );
+    srcdef.source_type = m_sourceModel->sourceType(ison);
+      
+    switch( srcdef.source_type )
+    {
+      case GammaInteractionCalc::ModelSourceType::Point:
+        srcdef.fit_activity = m_sourceModel->fitActivity( ison );
+        break;
+          
+      case GammaInteractionCalc::ModelSourceType::Intrinsic:
+        srcdef.fit_activity = false;
+        break;
+        
+      case GammaInteractionCalc::ModelSourceType::Trace:
+      {
+        // Go through shieldings and get display activity, so we can fit for that.
+        int numShieldingsTraceSrcFor = 0;
+        for( const ShieldingSourceFitCalc::ShieldingInfo &shield : initial_shieldings )
+        {
+          const ShieldingSourceFitCalc::TraceSourceInfo *trace_info = nullptr;
+          for( size_t i = 0; !trace_info && (i < shield.m_traceSources.size()); ++i )
+            trace_info = (shield.m_traceSources[i].m_nuclide == srcdef.nuclide) ? &(shield.m_traceSources[i]) : nullptr;
+          
+          if( trace_info )
+          {
+            numShieldingsTraceSrcFor += 1;
+            srcdef.activity = trace_info->m_activity;
+            srcdef.fit_activity = trace_info->m_fitActivity;
+            
+            // Even though it doesnt really matter, lets try to keep the model in sync with trace
+            //  widget, so we'll toss in a development check for it
+            if( srcdef.fit_activity != m_sourceModel->fitActivity(static_cast<int>(ison)) )
+            {
+              cerr << "\n\n\n\nTemporarily disabling assert 'fitAct=" << srcdef.fit_activity << "'- reaenable\n\n\n" << endl;
+  //           assert( fitAct == m_sourceModel->fitActivity(nucn) );
+            }
+          }//if( this shielding has the nuclide as a trace source )
+        }//for( WWidget *w : m_shieldingSelects->children() )
+          
+        assert( numShieldingsTraceSrcFor == 1 );
+          
+        if( numShieldingsTraceSrcFor != 1 )
+          throw runtime_error( "Unexpected inconsistent state - couldnt find trace source widget for " + nuclide->symbol );
+        break;
+      }//case GammaInteractionCalc::ModelSourceType::Trace:
+    }//switch( m_sourceModel->sourceType(ison) )
+      
+    src_definitions.push_back( srcdef );
+  }//for( const SandiaDecay::Nuclide *nuc : nuclides )
+    
+    
+  GammaInteractionCalc::ShieldingSourceFitOptions options;
+  options.multiple_nucs_contribute_to_peaks = m_multiIsoPerPeak->isChecked();
+  options.attenuate_for_air = m_attenForAir->isChecked();
+  options.account_for_decay_during_meas = m_decayCorrect->isChecked();
+    
+  return GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geom,
+                                  initial_shieldings, src_definitions,
+                                  detector, foreground, background, *peaks,
+                                  background_peaks, options );
+}//pair<ShieldingSourceChi2Fcn,ROOT::Minuit2::MnUserParameters> shieldingFitnessFcn()
+
+  
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 void ShieldingSourceDisplay::showInputTruthValuesWindow()
 {
@@ -3438,8 +3565,8 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
       assert( nuc );
       
       const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuc );
-      const ModelSourceType sourceType = m_sourceModel->sourceType( i );
-      const bool selfAttNuc = (sourceType == ModelSourceType::Intrinsic);
+      const GammaInteractionCalc::ModelSourceType sourceType = m_sourceModel->sourceType( i );
+      const bool selfAttNuc = (sourceType == GammaInteractionCalc::ModelSourceType::Intrinsic);
       
 //      if( selfAttNuc )
 //        throw runtime_error( "Model is not candidate for truth-level info<br />"
@@ -3930,8 +4057,8 @@ void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
     assert( nuc );
     
     const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuc );
-    const ModelSourceType sourceType = m_sourceModel->sourceType( i );
-    const bool selfAttNuc = (sourceType == ModelSourceType::Intrinsic);
+    const GammaInteractionCalc::ModelSourceType sourceType = m_sourceModel->sourceType( i );
+    const bool selfAttNuc = (sourceType == GammaInteractionCalc::ModelSourceType::Intrinsic);
     
     // For self-attenuating shieldings, we'll just test the shielding thickness
     // For nuclides whose age is controlled by another nuclide, we dont need to test age.
@@ -4022,8 +4149,8 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
     assert( nuc );
     
     const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuc );
-    const ModelSourceType sourceType = m_sourceModel->sourceType( i );
-    const bool selfAttNuc = (sourceType == ModelSourceType::Intrinsic);
+    const GammaInteractionCalc::ModelSourceType sourceType = m_sourceModel->sourceType( i );
+    const bool selfAttNuc = (sourceType == GammaInteractionCalc::ModelSourceType::Intrinsic);
     
     // For self-attenuating shieldings, we'll just test the shielding thickness
     // For nuclides whose age is controlled by another nuclide, we dont need to test age.
@@ -4196,8 +4323,8 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
       assert( nuc );
       
       const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageDefiningNuclide( nuc );
-      const ModelSourceType sourceType = m_sourceModel->sourceType( i );
-      const bool selfAttNuc = (sourceType == ModelSourceType::Intrinsic);
+      const GammaInteractionCalc::ModelSourceType sourceType = m_sourceModel->sourceType( i );
+      const bool selfAttNuc = (sourceType == GammaInteractionCalc::ModelSourceType::Intrinsic);
       
       // For self-attenuating shieldings, we'll just test the shielding thickness
       // For nuclides whose age is controlled by another nuclide, we dont need to test age.
@@ -5079,10 +5206,11 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
   
   try
   {
-    vector<ShieldingSelect *> shieldings;
-    ROOT::Minuit2::MnUserParameters inputPrams;
-
-    Chi2FcnShrdPtr chi2Fcn = shieldingFitnessFcn( shieldings, inputPrams );
+    auto fcnAndPars = shieldingFitnessFcn();
+    
+    std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
+    ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
+    
     const unsigned int ndof = inputPrams.VariableParameters();
     
     const vector<double> params = inputPrams.Params();
@@ -6364,18 +6492,18 @@ void ShieldingSourceDisplay::deSerializeSourcesToFitFor( const rapidxml::xml_nod
       bool selfAtten = false;
       if( !(stringstream(self_atten_value) >> selfAtten) )
         throw runtime_error( "Failed to read shieldingIsSource" );
-      row.sourceType = selfAtten ? ModelSourceType::Intrinsic : ModelSourceType::Point;
+      row.sourceType = selfAtten ? GammaInteractionCalc::ModelSourceType::Intrinsic : GammaInteractionCalc::ModelSourceType::Point;
     }//if( self_atten_value )
     
     if( src_type_value )
     {
       // XML version >= 0.1
       if( SpecUtils::iequals_ascii(src_type_value, "Point") )
-        row.sourceType = ModelSourceType::Point;
+        row.sourceType = GammaInteractionCalc::ModelSourceType::Point;
       else if( SpecUtils::iequals_ascii(src_type_value, "Intrinsic") )
-        row.sourceType = ModelSourceType::Intrinsic;
+        row.sourceType = GammaInteractionCalc::ModelSourceType::Intrinsic;
       else if( SpecUtils::iequals_ascii(src_type_value, "Trace") )
-        row.sourceType = ModelSourceType::Trace;
+        row.sourceType = GammaInteractionCalc::ModelSourceType::Trace;
       else
         throw runtime_error( "Invalid value of 'SourceType'" );
     }//if( src_type_value )
@@ -6781,17 +6909,17 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     const char *srctype = "";
     switch( m_sourceModel->sourceType(nuc) )
     {
-      case ModelSourceType::Point:
+      case GammaInteractionCalc::ModelSourceType::Point:
         srctype = "Point";
         value = "0";
         break;
         
-      case ModelSourceType::Intrinsic:
+      case GammaInteractionCalc::ModelSourceType::Intrinsic:
         srctype = "Intrinsic";
         value = "1";
         break;
         
-      case ModelSourceType::Trace:
+      case GammaInteractionCalc::ModelSourceType::Trace:
         srctype = "Trace";
         value = "0";
         break;
@@ -6883,9 +7011,11 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   
   try
   {
-    vector<ShieldingSelect *> shieldings;
-    ROOT::Minuit2::MnUserParameters inputPrams;
-    Chi2FcnShrdPtr chi2Fcn = shieldingFitnessFcn( shieldings, inputPrams );
+    auto fcnAndPars = shieldingFitnessFcn();
+    
+    std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
+    ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
+    
     const unsigned int ndof = inputPrams.VariableParameters();
     const vector<double> params = inputPrams.Params();
     const vector<double> errors = inputPrams.Errors();
@@ -7372,7 +7502,7 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
 void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
                                                 ShieldingSelect *caller,
                                                 const SandiaDecay::Nuclide *nuc,
-                                                const ModelSourceType type )
+                                                const GammaInteractionCalc::ModelSourceType type )
 {
   assert( nuc );
   assert( caller );
@@ -7403,13 +7533,13 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
   
   switch( type )
   {
-    case ModelSourceType::Point:
+    case GammaInteractionCalc::ModelSourceType::Point:
       break;
       
-    case ModelSourceType::Intrinsic:
+    case GammaInteractionCalc::ModelSourceType::Intrinsic:
       break;
       
-    case ModelSourceType::Trace:
+    case GammaInteractionCalc::ModelSourceType::Trace:
     {
       // Sync the model up so fitting activity is same as trace-source widget
       const bool fitAct = caller->fitTraceSourceActivity(nuc);
@@ -7453,13 +7583,13 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
 void ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback(
                                             ShieldingSelect *select,
                                             const SandiaDecay::Nuclide *nuc,
-                                            const ModelSourceType type )
+                                            const GammaInteractionCalc::ModelSourceType type )
 {
   //Set appropriate flags in the SourceFitModel so activity will be editiable
   
   assert( m_sourceModel->sourceType(m_sourceModel->nuclideIndex(nuc)) == type );
 
-  m_sourceModel->setSourceType( nuc, ModelSourceType::Point );
+  m_sourceModel->setSourceType( nuc, GammaInteractionCalc::ModelSourceType::Point );
   
   const vector<WWidget *> &children = m_shieldingSelects->children();
   for( WWidget *widget : children )
@@ -7546,16 +7676,16 @@ void ShieldingSourceDisplay::handleShieldingUndoRedoPoint( const ShieldingSelect
         {
           // Somehow maybe things have already been in display->m_sourceModel...
           const auto nuc_index = display->m_sourceModel->nuclideIndex(pre_nuc);
-          const ModelSourceType type = display->m_sourceModel->sourceType( nuc_index );
-          if( type != ModelSourceType::Point )
-            display->isotopeRemovedAsVolumetricSourceCallback( select, pre_nuc, ModelSourceType::Trace );
+          const GammaInteractionCalc::ModelSourceType type = display->m_sourceModel->sourceType( nuc_index );
+          if( type != GammaInteractionCalc::ModelSourceType::Point )
+            display->isotopeRemovedAsVolumetricSourceCallback( select, pre_nuc, GammaInteractionCalc::ModelSourceType::Trace );
         }
       }//for( auto *pre_nuc : pre_trace_nucs )
       
       for( auto *post_nuc : post_trace_nucs )
       {
         if( std::find(begin(pre_trace_nucs), end(pre_trace_nucs), post_nuc) == end(pre_trace_nucs) )
-          display->isotopeIsBecomingVolumetricSourceCallback( select, post_nuc, ModelSourceType::Trace );
+          display->isotopeIsBecomingVolumetricSourceCallback( select, post_nuc, GammaInteractionCalc::ModelSourceType::Trace );
       }
       
       for( auto *pre_nuc : pre_self_att_nucs )
@@ -7564,16 +7694,16 @@ void ShieldingSourceDisplay::handleShieldingUndoRedoPoint( const ShieldingSelect
         {
           // Somehow maybe things have already been in display->m_sourceModel...
           const auto nuc_index = display->m_sourceModel->nuclideIndex(pre_nuc);
-          const ModelSourceType type = display->m_sourceModel->sourceType( nuc_index );
-          if( type != ModelSourceType::Point )
-            display->isotopeRemovedAsVolumetricSourceCallback( select, pre_nuc, ModelSourceType::Intrinsic );
+          const GammaInteractionCalc::ModelSourceType type = display->m_sourceModel->sourceType( nuc_index );
+          if( type != GammaInteractionCalc::ModelSourceType::Point )
+            display->isotopeRemovedAsVolumetricSourceCallback( select, pre_nuc, GammaInteractionCalc::ModelSourceType::Intrinsic );
         }
       }//for( auto *pre_nuc : pre_self_att_nucs )
       
       for( auto *post_nuc : post_self_att_nucs )
       {
         if( std::find(begin(pre_self_att_nucs), end(pre_self_att_nucs), post_nuc) == end(pre_self_att_nucs) )
-          display->isotopeIsBecomingVolumetricSourceCallback( select, post_nuc, ModelSourceType::Intrinsic );
+          display->isotopeIsBecomingVolumetricSourceCallback( select, post_nuc, GammaInteractionCalc::ModelSourceType::Intrinsic );
       }
 
       display->handleShieldingChange();
@@ -7630,574 +7760,7 @@ void ShieldingSourceDisplay::removeShielding( ShieldingSelect *select )
 
 
 
-ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessFcn(
-                                       vector<ShieldingSelect *> &shieldings,
-                                       ROOT::Minuit2::MnUserParameters &inputPrams )
-{
-  //Get the peaks we'll be using in the fit
-  vector<PeakDef> peaks;
-  std::shared_ptr< const std::deque<PeakShrdPtr> > all_peaks = m_peakModel->peaks();
-  if( all_peaks )
-  {
-    for( const PeakShrdPtr &peak : *all_peaks )
-    {
-      if( peak && peak->useForShieldingSourceFit() )
-        peaks.push_back( *peak );
-    }//for(...)
-  }//if( all_peaks )
 
-  if( peaks.empty() )
-    throw runtime_error( "There are not peaks selected for the fit" );
-  
-  const auto foreground = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
-  
-  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
-  double liveTime = m_specViewer->liveTime(SpecUtils::SpectrumType::Foreground) * PhysicalUnits::second;
-
-  if( liveTime <= 0.0 )
-  {
-    if( m_sourceModel->numNuclides() )
-      passMessage( "There was no defined detector live time, so assuming 300 seconds",
-                  WarningWidget::WarningMsgHigh );
-    liveTime = 300.0 * PhysicalUnits::second;
-  }//if( liveTime <= 0.0 )
-
-  //Get the distance to the object
-  const string distanceStr = m_distanceEdit->text().toUTF8();
-  const double distance = PhysicalUnits::stringToDistance( distanceStr );
-
-  //Get the shieldings and materials
-  shieldings.clear();
-  vector<ShieldingSourceChi2Fcn::ShieldLayerInfo> materials;
-
-  for( WWidget *widget : m_shieldingSelects->children() )
-  {
-    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
-    if( select )
-    {
-      shieldings.push_back( select );
-
-      std::shared_ptr<const Material> matSPtr = select->material();
-      const Material *mat = matSPtr.get();
-      if( !mat && !select->isGenericMaterial() )
-        mat = m_materialDB->material( "void" );
-
-      
-      ShieldingSourceChi2Fcn::ShieldLayerInfo materialAndSrc;
-      materialAndSrc.material = mat;
-      materialAndSrc.self_atten_sources = select->sourceNuclideMassFractions();
-      
-      // TODO: We'll set `nucs_to_fit_mass_fraction_for` via `ShieldingSourceChi2Fcn::setNuclidesToFitMassFractionFor` - below - should/could we clean this up?
-      //if( !materialAndSrc.self_atten_sources.empty() && select->fitForMassFractions() )
-      //{
-      //  materialAndSrc.nucs_to_fit_mass_fraction_for = select->selfAttenNuclides();
-      //  std::sort( begin(materialAndSrc.nucs_to_fit_mass_fraction_for), end(materialAndSrc.nucs_to_fit_mass_fraction_for),
-      //    []( const SandiaDecay::Nuclide *lhs, const SandiaDecay::Nuclide *rhs ) -> bool {
-      //      return (lhs && rhs) ? (lhs->symbol < rhs->symbol) : (lhs <= rhs);
-      //     } );
-      //}
-      
-      for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
-      {
-        const TraceActivityType type = select->traceSourceType(nuc);
-        const double relax_len = (type == TraceActivityType::ExponentialDistribution)
-                                ? select->relaxationLength(nuc)
-                                : -1.0;
-#if( defined(__GNUC__) && __GNUC__ < 5 )
-        materialAndSrc.trace_sources.push_back( tuple<const SandiaDecay::Nuclide *,TraceActivityType,double>{nuc, type, relax_len} );
-#else
-        materialAndSrc.trace_sources.push_back( {nuc, type, relax_len} );
-#endif
-      }//for( loop over trace source nuclides )
-
-      materials.push_back( materialAndSrc );
-    }//if( select )
-  }//for( WWidget *widget : m_shieldingSelects->children() )
-  
-
-  std::shared_ptr<const DetectorPeakResponse> detector;
-  if( m_specViewer->measurment(SpecUtils::SpectrumType::Foreground) )
-    detector = m_specViewer->measurment(SpecUtils::SpectrumType::Foreground)->detector();
-  
-  const GeometryType geom = geometry();
-  const bool multiIsoPerPeak = m_multiIsoPerPeak->isChecked();
-  const bool attenForAir = m_attenForAir->isChecked();
-  const bool correctForDecay = m_decayCorrect->isChecked();
-  const double realTime = foreground ? foreground->live_time() : 0.0f;
-  
-  auto answer = std::make_shared<GammaInteractionCalc::ShieldingSourceChi2Fcn>( distance,
-                        liveTime, peaks, detector, materials, geom, multiIsoPerPeak, attenForAir,
-                        correctForDecay, realTime );
-
-  //I think num_fit_params will end up same as inputPrams.VariableParameters()
-  size_t num_fit_params = 0;
-
-  //Setup the parameters from the sources
-  const int niso = m_sourceModel->numNuclides();
-
-  if( niso < 1 )
-    throw runtime_error( "There are no isotopes being fit for" );
-  
-  //XXX - need to check that if we are fitting a shielding thickness we have an
-  //  isotope that has more than one peak in the fit, and if it is also fitting
-  //  age should have more than two peaks.  There are probably a few more things
-  //  to check here...
-  
-  for( size_t nucn = 0; nucn < answer->numNuclides(); ++nucn )
-  {
-    const SandiaDecay::Nuclide *nuclide = answer->nuclide( int(nucn) );
-    assert( nuclide );
-    
-    const int ison = m_sourceModel->nuclideIndex( nuclide );
-    double activity = m_sourceModel->activity( ison );
-    
-    //We could do a lot better here by estimating the activity of the sources
-    //  the first time they are fit for
-    //XXX - should make better guesses for source activity the first time a fit
-    //      is performed
-    
-//    cerr << "Initial activity is " << m_sourceModel->activity( ison )/PhysicalUnits::curie
-//         << " which is a minuit value of " << activity << endl;
-//    activity = 10.0*PhysicalUnits::curie*(1.0E-6) / ShieldingSourceChi2Fcn::sm_activityUnits;
-    
-    bool fitAct = false;
-    const bool fitAge = m_sourceModel->fitAge( ison );
-    
-    const SandiaDecay::Nuclide *ageDefiningNuc = m_sourceModel->ageDefiningNuclide( nuclide );
-    const bool hasOwnAge = (!ageDefiningNuc || (ageDefiningNuc == nuclide));
-    
-    
-    switch( m_sourceModel->sourceType(ison) )
-    {
-      case ModelSourceType::Point:
-        fitAct = m_sourceModel->fitActivity( ison );
-        break;
-        
-      case ModelSourceType::Intrinsic:
-        fitAct = false;
-        break;
-        
-      case ModelSourceType::Trace:
-      {
-        // Go through shieldings and get display activity, so we can fit for that.
-        int numShieldingsTraceSrcFor = 0;
-        for( WWidget *w : m_shieldingSelects->children() )
-        {
-          ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( w );
-          assert( select );
-          
-          if( !select ) //JIC
-            continue;
-          
-          if( select->isTraceSourceForNuclide(nuclide) )
-          {
-            activity = select->traceSourceDisplayActivity(nuclide);
-            numShieldingsTraceSrcFor += 1;
-            
-            fitAct = select->fitTraceSourceActivity(nuclide);
-            
-            // Even though it doesnt really matter, lets try to keep the model in sync with trace
-            //  widget, so we'll toss in a development check for it
-            if( fitAct != m_sourceModel->fitActivity(static_cast<int>(nucn)) )
-            {
-              cerr << "\n\n\n\nTemporarily disabling assert 'fitAct=" << fitAct << "'- reaenable\n\n\n" << endl;
-//            assert( fitAct == m_sourceModel->fitActivity(nucn) );
-            }
-          }//if( this shielding has the nuclide as a trace source )
-        }//for( WWidget *w : m_shieldingSelects->children() )
-        
-        assert( numShieldingsTraceSrcFor == 1 );
-        
-        if( numShieldingsTraceSrcFor != 1 )
-          throw runtime_error( "Unexpected inconsistent state - couldnt find trace source widget for " + nuclide->symbol );
-        
-        break;
-      }//case ModelSourceType::Trace:
-    }//switch( m_sourceModel->sourceType(ison) )
-    
-    //cout << "For nuc=" << nuclide->symbol << " age=" << PhysicalUnits::printToBestTimeUnits(age)
-    //     << ", fitage=" << PhysicalUnits::printToBestTimeUnits(fitAge)
-    //     << ", hasOwnAge=" << hasOwnAge
-    //     << ", ageDefiningNuc=" << (ageDefiningNuc ? ageDefiningNuc->symbol : string("null"))
-    //     << endl;
-    
-    num_fit_params += fitAct + (fitAge && hasOwnAge);
-
-    // Put activity into units of ShieldingSourceChi2Fcn
-    activity /= ShieldingSourceChi2Fcn::sm_activityUnits;
-    
-    if( fitAct )
-    {
-      //We cant have both a specified lower and upper limit on activity, or
-      //  such a large range will make Minuit2 choke and give a completely
-      //  in-accurate answer (returns not even the best chi2 it found), if only
-      //  one fit parameter.
-      //      inputPrams.Add( nuclide->symbol + "Strength", activity, activityStep, 0.0,
-      //                     10000.0*PhysicalUnits::curie/ShieldingSourceChi2Fcn::sm_activityUnits );
-      const string name = nuclide->symbol + "Strength";
-      const double activityStep = (activity < 0.0001 ? 0.0001 : 0.1*activity);
-      inputPrams.Add( name, activity, activityStep );
-      inputPrams.SetLowerLimit( name, 0.0 );
-    }else
-    {
-      inputPrams.Add( nuclide->symbol + "Strength", activity );
-    }
-
-    
-    if( fitAge && hasOwnAge )
-    {
-      //We could do a lot better on creating the age range - there must be some way to easily
-      //  determine how old an isotope has to get before it essentially doesn't change any more
-      //  (prompt HL, etc.).  I guess we could look at the peaks being used to fit for and age them
-      //  until their ratios don't change within the available statistical precision.
-      //  But for the moment, we'll do something much simpler and use the maximum of either the
-      //  longest progenies half-life, or the sum half life of all progeny
-      //  \TODO: improve this max decay time estimate; some possibilities are:
-      //    - Could probably ignore the parents half-life, or only partially take into account
-      //    - For common nuclides could define reasonable fixed values
-      //    - Could look at gamma spectrum produced over time, and pick the time when the selected
-      //      photopeak ratios change little enough as to not be statistically significant to the
-      //      observed data (or even just hard-coded limits).
-      auto maxNuclideDecayHL = []( const SandiaDecay::Nuclide * const nuc ) -> double {
-        double maxhl = 0.0, sumhlfs = 0.0;
-        
-        for( auto n : nuc->descendants() )
-        {
-          if( !n->isStable() )
-          {
-            sumhlfs += n->halfLife;
-            maxhl = std::max( maxhl, n->halfLife );
-          }
-        }//for( auto n : nuc->descendants() )
-        
-        //cout << "For nuc=" << nuc->symbol << " maxhl=" << PhysicalUnits::printToBestTimeUnits(maxhl)
-        //     << ", sumhlfs=" << PhysicalUnits::printToBestTimeUnits(sumhlfs)
-        //     << " - will set max age to " << PhysicalUnits::printToBestTimeUnits(std::max( 7*maxhl, 4*sumhlfs ))
-        //     << endl;
-        
-        //return 100.0*nuc->halfLife;
-        return std::max( 7*maxhl, 4*sumhlfs );
-      };//maxNuclideDecayHL
-      
-      double maxAge = -1.0;
-      if( ageDefiningNuc == nuclide )
-      {
-        //We are
-        
-        for( size_t trialInd = 0; trialInd < answer->numNuclides(); ++trialInd )
-        {
-          const SandiaDecay::Nuclide *trialNuc = answer->nuclide( int(trialInd) );
-          if( trialNuc->atomicNumber == nuclide->atomicNumber )
-          {
-            const double thisMaxAge = maxNuclideDecayHL( nuclide );
-            maxAge = std::max( maxAge, thisMaxAge );
-          }
-        }//for( loop over all nuclides being fit for )
-      }else
-      {
-        maxAge = maxNuclideDecayHL( nuclide );
-      }
-      assert( maxAge > 0.0 );
-      
-      double age = m_sourceModel->age( ison );
-      double ageStep = 0.25 * nuclide->halfLife;
-      
-      // Limit the maximum age to be the larger of ten times the current age, or 200 years.  This
-      //  is both to be reasonable in terms of answers we get, and because for really long-lived
-      //  isotopes, we could have a max age at this point so large it will cause Minuit to give
-      //  NaNs for age, even on first iteration.
-      maxAge = std::min( maxAge, std::max(10.0*age, 200.0*PhysicalUnits::year) );
-      
-      // If the age is currently over 10000 years, it is just really getting unreasonable, so
-      //  larger than Minuit can handle, so will impose a tougher 100k year limit, but let grow past
-      //  this, but require the user to hit "fit" over and over again.
-      if( maxAge > 10000.0*PhysicalUnits::year )
-        maxAge = std::max(2.0*age, 10000.0*PhysicalUnits::year);
-      
-      // But no matter what we'll limit to the age of earth, which at least for a few select
-      //  examples tried, Minuit was okay with (it wasnt okay with like 1.2E20 years that some of
-      //  the uraniums would give)
-      age = std::min( age, 4.543e+9 * PhysicalUnits::year );
-      maxAge = std::min( maxAge, 4.543e+9 * PhysicalUnits::year );
-      
-      ageStep = std::min( ageStep, 0.1*maxAge );
-      if( age > 0 )
-        ageStep = std::min( 0.1*age, ageStep );
-      
-      //cout << "For nuclide " << nuclide->symbol << " adding age=" << age << ", with step " << ageStep << " and max age " << maxAge << endl;
-      
-      inputPrams.Add( nuclide->symbol + "Age", age, ageStep, 0, maxAge  );
-    }else if( hasOwnAge )
-    {
-      const double age = m_sourceModel->age( ison );
-      //cout << nuclide->symbol << " has own non-fitting age going in as param " << inputPrams.Parameters().size() << endl;
-      inputPrams.Add( nuclide->symbol + "Age", age );
-    }else  //see if defining nuclide age is fixed, if so use it, else put in negative integer of index of age...
-    {
-      assert( ageDefiningNuc );
-      
-      // Previous to 20210825, we were doing the next commented-out line, which is not correct; we
-      //  want the relative nuclide index to be for the order nuclides are added into 'inputPrams',
-      //  which may be different m_sourceModel->m_nuclides.
-      //const int age_defining_index = m_sourceModel->nuclideIndex( ageDefiningNuc );
-      
-      int age_defining_index = -1;
-      for( size_t ansnucn = 0; ansnucn < answer->numNuclides(); ++ansnucn )
-      {
-        const SandiaDecay::Nuclide *answnuclide = answer->nuclide( static_cast<int>(ansnucn) );
-        if( answnuclide == ageDefiningNuc )
-        {
-          age_defining_index = static_cast<int>(ansnucn);
-          break;
-        }
-      }//for( size_t ansnucn = 0; ansnucn < answer->numNuclides(); ++ansnucn )
-      
-      //assert( age_defining_index >= 0 );
-      if( age_defining_index < 0 )  //shouldnt ever happen, but JIC
-        throw runtime_error( "Error finding age defining nuclide for " + nuclide->symbol
-                             + " (should have been " + ageDefiningNuc->symbol + ")" );
-      
-      const double ageIndexVal = -1.0*(age_defining_index + 1);
-      //cout << nuclide->symbol << ": ageIndexVal=" << ageIndexVal
-      //<< " going in as param " << inputPrams.Parameters().size() << endl;
-      inputPrams.Add( nuclide->symbol + "Age", ageIndexVal );
-    }
-  }//for( int ison = 0; ison < niso; ++ison )
-  
-  
-  //setup the parameters for the shieldings
-  for( size_t i = 0; i < shieldings.size(); ++i )
-  {
-    ShieldingSelect *select = shieldings[i];
-    if( select->isGenericMaterial() )
-    {
-      const double an = select->atomicNumber();
-      const double ad = select->arealDensity();
-      const bool fitAn = select->fitAtomicNumber();
-      const bool fitAD = select->fitArealDensity();
-
-      const string name = "Generic_" + std::to_string(i);
-      const double adUnits = PhysicalUnits::g/PhysicalUnits::cm2;
-
-      num_fit_params += fitAn + fitAD;
-
-      if( fitAn )
-        inputPrams.Add( name + "_AN", an, std::max(0.1*an,2.5),
-                        1.0*MassAttenuation::sm_min_xs_atomic_number,
-                        1.0*MassAttenuation::sm_max_xs_atomic_number );
-      else
-        inputPrams.Add( name + "_AN_FIXED", an );
-
-      if( fitAD )
-        inputPrams.Add( name + "_AD", ad, std::max(5.0*adUnits, 0.1*ad), 0.0, 400.0*adUnits );  //400g/cm2 is about 35cm Pb
-      else
-        inputPrams.Add( name + "_AD", ad );
-      
-      inputPrams.Add( name + "_dummyshielding2", 0.0 );
-    }else
-    {
-      std::shared_ptr<const Material> mat = select->material();
-      string name;
-      if( mat )
-        name = mat->name + std::to_string(i);
-      else
-        name = "unspecifiedmat_" + std::to_string(i);
-      
-      switch( geometry() )
-      {
-        case GeometryType::Spherical:
-        {
-          const double thickness = select->thickness();
-          const bool fitThickness = mat ? select->fitThickness() : false;
-          
-          num_fit_params += fitThickness;
-          
-          if( fitThickness )
-            inputPrams.Add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), 0, 1000.0*PhysicalUnits::m );
-          else
-            inputPrams.Add( name + "_thickness", thickness );
-          
-          inputPrams.Add( name + "_dummyshielding1", 0.0 );
-          inputPrams.Add( name + "_dummyshielding2", 0.0 );
-          
-          break;
-        }//case GeometryType::Spherical:
-          
-        case GeometryType::CylinderEndOn:
-        case GeometryType::CylinderSideOn:
-        {
-          const double rad = select->cylindricalRadiusThickness();
-          const double len = select->cylindricalLengthThickness();
-          
-          const bool fitRad = mat ? select->fitCylindricalRadiusThickness() : false;
-          const bool fitLen = mat ? select->fitCylindricalLengthThickness() : false;
-          
-          num_fit_params += fitRad;
-          num_fit_params += fitLen;
-          
-          if( fitRad )
-            inputPrams.Add( name + "_dr", rad, std::max(2.5*PhysicalUnits::mm,0.25*rad), 0, 1000.0*PhysicalUnits::m );
-          else
-            inputPrams.Add( name + "_dr", rad );
-          
-          if( fitLen )
-            inputPrams.Add( name + "_dz", len, std::max(2.5*PhysicalUnits::mm,0.25*len), 0, 1000.0*PhysicalUnits::m );
-          else
-            inputPrams.Add( name + "_dz", len );
-          
-          inputPrams.Add( name + "_dummyshielding2", 0.0 );
-          
-          break;
-        }//case GeometryType::CylinderEndOn and CylinderSideOn:
-          
-          
-        case GeometryType::Rectangular:
-        {
-          const double width = select->rectangularWidthThickness();
-          const double height = select->rectangularHeightThickness();
-          const double depth = select->rectangularDepthThickness();
-         
-          const bool fitWidth = mat ? select->fitRectangularWidthThickness() : false;
-          const bool fitHeight = mat ? select->fitRectangularHeightThickness() : false;
-          const bool fitDepth = mat ? select->fitRectangularDepthThickness() : false;
-          
-          num_fit_params += fitWidth;
-          num_fit_params += fitHeight;
-          num_fit_params += fitDepth;
-          
-          if( fitWidth )
-            inputPrams.Add( name + "_dx", width, std::max(2.5*PhysicalUnits::mm,0.25*width), 0, 1000.0*PhysicalUnits::m );
-          else
-            inputPrams.Add( name + "_dx", width );
-          
-          if( fitHeight )
-            inputPrams.Add( name + "_dy", height, std::max(2.5*PhysicalUnits::mm,0.25*height), 0, 1000.0*PhysicalUnits::m );
-          else
-            inputPrams.Add( name + "_dy", height );
-          
-          if( fitDepth )
-            inputPrams.Add( name + "_dz", depth, std::max(2.5*PhysicalUnits::mm,0.25*depth), 0, 1000.0*PhysicalUnits::m );
-          else
-            inputPrams.Add( name + "_dz", depth );
-          
-          break;
-        }//case GeometryType::Rectangular:
-          
-        case GeometryType::NumGeometryType:
-        {
-          assert( 0 );
-          break;
-        }//case GeometryType::NumGeometryType:
-      }//switch( geometry() )
-    }//if( generic material ) / else
-  }//for( size_t i = 0; i < shieldings.size(); ++i )
-
-//  if( num_fit_params < 1 )
-//    throw runtime_error( "There is nothing being fit for" );
-  
-  if( m_backgroundPeakSub->isChecked() )
-  {
-    std::shared_ptr<const SpecMeas> back = m_specViewer->measurment(SpecUtils::SpectrumType::Background);
-    typedef std::shared_ptr<const PeakDef> PeakPtr;
-    typedef std::deque< std::shared_ptr<const PeakDef> > PeakDeque;
-    std::shared_ptr<const PeakDeque > backpeaks;
-    
-    if( back )
-    {
-      const auto &displayed = m_specViewer->displayedSamples(SpecUtils::SpectrumType::Background);
-      backpeaks = back->peaks( displayed );
-    }//if( back )
-    
-    if( backpeaks && !backpeaks->empty() )
-    {
-      vector<PeakDef> backgroundpeaks;
-      for( const PeakPtr &p : *backpeaks )
-        backgroundpeaks.push_back( *p );
-      answer->setBackgroundPeaks( backgroundpeaks, back->gamma_live_time() );
-    }else
-    {
-      m_backgroundPeakSub->setUnChecked();
-      passMessage( "There are no background peaks defined, not subtracting them",
-                   WarningWidget::WarningMsgInfo );
-    }//if( !peaks || peaks->empty() )
-  }//if( m_backgroundPeakSub->isChecked() )
-  
-  
-  for( size_t shielding_index = 0; shielding_index < shieldings.size(); ++shielding_index )
-  {
-    ShieldingSelect *select = shieldings[shielding_index];
-    if( select->fitForMassFractions() )
-    {
-      //Get the isotopes to fit mass fractions of
-      const vector<ShieldingSelect::NucMasFrac> massfracs
-                                         = select->sourceNuclideMassFractions();
-      vector<const SandiaDecay::Nuclide *> nucstofit = select->selfAttenNuclides();
-      
-      std::shared_ptr<const Material> mat = select->material();
-      if( !mat )
-        throw runtime_error( "ShieldingSourceDisplay::shieldingFitnessFcn(...)"
-                             " serious logic error when fitting for mass frac");
-      
-      // TODO: we could/should replace the below call to `setNuclidesToFitMassFractionFor`, with setting this directorly to `ShieldingSourceChi2Fcn::ShieldLayerInfo::nucs_to_fit_mass_fraction_for` above - and then adding the paramters here...
-      answer->setNuclidesToFitMassFractionFor( shielding_index, nucstofit );
-      
-      nucstofit = answer->nuclideFittingMassFracFor( shielding_index );
-      
-      double fracmaterial = 0.0;
-      for( const ShieldingSelect::NucMasFrac &nmf : massfracs )
-        fracmaterial += nmf.second;
-      
-      if( fracmaterial <= 0.0 )
-      {
-        passMessage( "When fitting for mass fractions of source nuclides, the "
-                    "sum of the fit for mass fractions equal the sum of the "
-                    "initial values, therefore the initial sum of mass "
-                    "fractions must be greater than 0.0",
-                    WarningWidget::WarningMsgHigh );
-        throw runtime_error( "Error fitting mass fraction" );
-      }//if( fracmaterial <= 0.0 )
-      
-      
-      vector<ShieldingSelect::NucMasFrac> orderedmassfracs;
-      const size_t nfitnucs = (nucstofit.empty() ? 0 : nucstofit.size()-1);
-      for( size_t j = 0; j < nfitnucs; ++j )
-      {
-        const SandiaDecay::Nuclide *nuc = nucstofit[j];
-        for( size_t k = 0; k < nfitnucs; ++k )
-          if( massfracs[k].first == nuc )
-            orderedmassfracs.push_back( massfracs[k] );
-      }//for( size_t j = 0; i < nfitnucs; ++j )
-      
-      if( nfitnucs != orderedmassfracs.size() )
-        throw runtime_error( "nfitnucs != orderedmassfracs.size()" );
-      
-      double usedmassfrac = 0.0;
-      for( size_t j = 0; j < nfitnucs; ++j )
-      {
-        const ShieldingSelect::NucMasFrac &nmf = orderedmassfracs[j];
-        string name = mat->name + "_" + nmf.first->symbol
-                      + "_" + std::to_string(shielding_index);
-        double val = 0.0;
-        const double remaining_frac = (fracmaterial - usedmassfrac);
-        if( remaining_frac > nmf.second )
-          val = nmf.second / remaining_frac;
-        
-        usedmassfrac += nmf.second;
-        inputPrams.Add( name, val, max(0.1*val,0.01), 0, 1.0 );
-        ++num_fit_params;
-      }//for( size_t j = 0; i < nmassfrac; ++j )
-    }//if( fit for mass fractions to )
-  }//for( WWidget *widget : m_shieldingSelects->children() )
-  
-  
-  if( num_fit_params != inputPrams.VariableParameters() )
-    throw runtime_error( "ShieldingSourceDisplay::shieldingFitnessFcn(...): "
-                        "there is a serious logic error in this function, "
-                        "please let wcjohns@sandia.gov know about this." );
-  
-
-  return answer;
-}//shared_ptr<ShieldingSourceChi2Fcn> shieldingFitnessFcn()
 
 
 void ShieldingSourceDisplay::setWidgetStateForFitStarting()
@@ -8314,10 +7877,14 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
   
   assert( results );
   const ModelFitResults::FitStatus status = results->succesful;
-  const vector<ShieldingSelect *> &shieldings = results->shieldings;
+  const vector<ShieldingSourceFitCalc::ShieldingInfo> &initial_shieldings = results->initial_shieldings;
+  const vector<ShieldingSourceFitCalc::ShieldingInfo> &final_shieldings = results->final_shieldings;
   const vector<double> &paramValues = results->paramValues;
   const vector<double> &paramErrors = results->paramErrors;
   const vector<string> &errormsgs = results->errormsgs;
+  
+  assert( (status != ModelFitResults::FitStatus::Final)
+         || (initial_shieldings.size() == final_shieldings.size()) );
   
   setWidgetStateForFitBeingDone();
   
@@ -8331,18 +7898,45 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
     return;
   }//if( !m_currentFitFcn )
   
-  for( auto shielding : shieldings )
+  vector<ShieldingSelect *> gui_shieldings;
+  for( WWidget *widget : m_shieldingSelects->children() )
   {
-    if( m_shieldingSelects->indexOf(shielding) < 0 )
-    {
-      passMessage( "Programming Logic Error - shieldings have changed.", WarningWidget::WarningMsgHigh );
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
+    if( select )
+      gui_shieldings.push_back( select );
+  }//for( WWidget *widget : m_shieldingSelects->children() )
+  
+  
+  if( initial_shieldings.size() != gui_shieldings.size() )
+  {
+    passMessage( "Programming Logic Error - number of shieldings have changed.", WarningWidget::WarningMsgHigh );
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, "Programming Logic Error - received fit results when model was no longer valid." );
+    log_developer_error( __func__, "Programming Logic Error - number of shieldings changed - fit results when model was no longer valid." );
 #endif
-      m_currentFitFcn.reset();
-      return;
-    }
-  }//for( auto shielding : shieldings )
+    m_currentFitFcn.reset();
+    return;
+  }//if( initial_shieldings.size() != gui_shieldings.size() )
+  
+#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+  for( size_t i = 0; i < initial_shieldings.size(); ++i )
+  {
+    const ShieldingSourceFitCalc::ShieldingInfo now_info = gui_shieldings[i]->toShieldingInfo();
+    const ShieldingSourceFitCalc::ShieldingInfo orig_info = initial_shieldings[i];
+    
+    try
+    {
+      ShieldingSourceFitCalc::ShieldingInfo::equalEnough( now_info, orig_info );
+    }catch( std::exception &e )
+    {
+      cerr << "shieldings changed: " << e.what() << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "Programming Logic Error - shieldings changed - fit results when model was no longer valid." );
+#endif
+      assert( 0 );
+    }//try / catch
+  }//for( size_t i = 0; i < initial_shieldings.size(); ++i )
+#endif
+  
   
   switch( status )
   {
@@ -8379,8 +7973,8 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
   
   try
   {
-    const size_t nshieldings = shieldings.size();
-    
+    const size_t nshieldings = gui_shieldings.size();
+    assert( gui_shieldings.size() == final_shieldings.size() );
     
     // First we'll update mass-fractions of self-attenuating sources, if we were fitting any of them
     const vector<const Material *> massfracFitMaterials
@@ -8388,7 +7982,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
     
     for( size_t shielding_index = 0; shielding_index < nshieldings; ++shielding_index )
     {
-      ShieldingSelect *select = shieldings[shielding_index];
+      ShieldingSelect *select = gui_shieldings[shielding_index];
       assert( select );
       shared_ptr<const Material> usrmaterial = select->material();
       assert( usrmaterial );
@@ -8446,7 +8040,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
     // Next we'll update shielding thicknesses, as this could affect setting trace source values
     for( int i = 0; i < nshieldings; ++i )
     {
-      ShieldingSelect *select = shieldings[i];
+      ShieldingSelect *select = gui_shieldings[i];
       if( select->isGenericMaterial() )
       {
         const double adUnits = PhysicalUnits::gram / PhysicalUnits::cm2;
@@ -8547,7 +8141,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
       snprintf( actStr, sizeof(actStr), "%f bq", (total_activity/PhysicalUnits::becquerel) );
       snprintf( ageStr, sizeof(ageStr), "%f s", (age/PhysicalUnits::second) );
       
-      //      cerr << "activity=" << total_activity << "-->" << actStr << "-->" << PhysicalUnits::stringToActivity(actStr) << endl;
+      cerr << "Nuc: " << nuc->symbol << ", activity=" << total_activity << "-->" << actStr << "-->" << PhysicalUnits::stringToActivity(actStr) << endl;
       
       const int ison = m_sourceModel->row( nuc );
       WModelIndex ageIndex = m_sourceModel->index( ison, SourceFitModel::kAge );
@@ -8576,7 +8170,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
       }//fit( age ) / else
       
       
-      const ModelSourceType sourceType = m_sourceModel->sourceType(ison);
+      const GammaInteractionCalc::ModelSourceType sourceType = m_sourceModel->sourceType(ison);
       
       //Even if we didnt explicitly fit for the activity parameter, we may still have effectively
       //  fit for the activity if we fit for any shielding dimensions, so rather than trying to
@@ -8585,12 +8179,12 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
       bool effectivelyFitActivity = true;
       switch( sourceType )
       {
-        case ModelSourceType::Point:
+        case GammaInteractionCalc::ModelSourceType::Point:
           effectivelyFitActivity = m_sourceModel->fitActivity(ison);
           break;
           
-        case ModelSourceType::Intrinsic:
-        case ModelSourceType::Trace:
+        case GammaInteractionCalc::ModelSourceType::Intrinsic:
+        case GammaInteractionCalc::ModelSourceType::Trace:
           break;
       }//switch( sourceType )
           
@@ -8600,11 +8194,11 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         
         switch( sourceType )
         {
-          case ModelSourceType::Point:
-          case ModelSourceType::Intrinsic:
+          case GammaInteractionCalc::ModelSourceType::Point:
+          case GammaInteractionCalc::ModelSourceType::Intrinsic:
             break;
             
-          case ModelSourceType::Trace:
+          case GammaInteractionCalc::ModelSourceType::Trace:
           {
             success = false;
             for( WWidget *widget : m_shieldingSelects->children() )
@@ -8618,7 +8212,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
               }
             }//for( WWidget *widget : m_shieldingSelects->children() )
             break;
-          }//case ModelSourceType::Trace:
+          }//case GammaInteractionCalc::ModelSourceType::Trace:
         }//switch( m_sourceModel->sourceType(ison) )
         
         if( !success )
@@ -8680,6 +8274,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
 
 
 void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
+                                          std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                                           std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
                                           std::shared_ptr<ModelFitProgress> progress,
                                           boost::function<void()> progress_fcn,
@@ -8691,13 +8286,6 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
   assert( results );
   
   results->succesful = ModelFitResults::FitStatus::InvalidOther;
-  
-  Chi2FcnShrdPtr chi2Fcn;
-  
-  {
-    std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
-    chi2Fcn = m_currentFitFcn;
-  }
   
   shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn::GuiProgressUpdateInfo> gui_progress_info;
   
@@ -9006,6 +8594,134 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     results->edm = minimum.Edm();
     results->num_fcn_calls = minimum.NFcn();
     results->chi2 = minimum.Fval();  //chi2Fcn->DoEval( results->paramValues );
+    
+    
+    /////////////////////////
+    results->final_shieldings.clear();
+    assert( results->initial_shieldings.size() == chi2Fcn->numMaterials() );
+    if( results->initial_shieldings.size() != chi2Fcn->numMaterials() )
+      throw std::logic_error( "Pre/Post fit number of shieldings not equal" );
+    
+    for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
+    {
+      const ShieldingSourceFitCalc::ShieldingInfo &initial_shield = results->initial_shieldings[shielding_index];
+      
+      ShieldingSourceFitCalc::ShieldingInfo shield;
+      shield.m_forFitting = true;
+      shield.m_geometry = chi2Fcn->geometry();
+      shield.m_isGenericMaterial = chi2Fcn->isGenericMaterial(shielding_index);
+      assert( shield.m_isGenericMaterial == initial_shield.m_isGenericMaterial );
+      shield.m_material = initial_shield.m_material;
+      assert( shield.m_material.get() == chi2Fcn->material(shielding_index) );
+      
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+      for( size_t i = 0; i < 3; ++i )
+      {
+        shield.m_truthDimensions[i] = initial_shield.m_truthDimensions[i];
+        shield.m_truthDimensionsTolerances[i] = initial_shield.m_truthDimensionsTolerances[i];
+      }
+#endif
+
+      shield.m_fitMassFrac = false;
+      for( size_t i = 0; i < 3; ++i )
+      {
+        shield.m_dimensions[i] = 0.0;
+        shield.m_fitDimensions[i] = false;
+      }
+      
+    
+      if( shield.m_isGenericMaterial )
+      {
+        const double adUnits = PhysicalUnits::gram / PhysicalUnits::cm2;
+        const double an = chi2Fcn->atomicNumber( shielding_index, results->paramValues );
+        const double ad = chi2Fcn->arealDensity( shielding_index, results->paramValues ) / adUnits;
+        
+        shield.m_dimensions[0] = an;
+        shield.m_dimensions[1] = ad;
+        shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
+        shield.m_fitDimensions[1] = initial_shield.m_fitDimensions[1];
+        assert( shield.m_fitDimensions[0] != fitParams.Parameter(2*chi2Fcn->numNuclides() + 3*shielding_index).IsFixed() );
+        assert( shield.m_fitDimensions[1] != fitParams.Parameter(2*chi2Fcn->numNuclides() + 3*shielding_index + 1).IsFixed() );
+      }else
+      {
+        const vector<const SandiaDecay::Nuclide *> &nucsFittingFracs = chi2Fcn->nuclideFittingMassFracFor( shielding_index );
+        const vector<const SandiaDecay::Nuclide *> self_atten_nucs = chi2Fcn->selfAttenuatingNuclides( shielding_index );
+        const vector<const SandiaDecay::Nuclide *> trace_nucs = chi2Fcn->traceNuclidesForMaterial( shielding_index );
+        
+        shield.m_fitMassFrac = !nucsFittingFracs.empty();
+        
+        double post_fit_frac = 0.0;
+        for( const SandiaDecay::Nuclide * const nuc : self_atten_nucs )
+        {
+          const double mass_frac = chi2Fcn->massFraction( shielding_index, nuc, results->paramValues );
+          shield.m_nuclideFractions[nuc] = mass_frac;
+          post_fit_frac += mass_frac;
+        }
+        
+        
+        for( const SandiaDecay::Nuclide * const nuc : trace_nucs )
+        {
+          ShieldingSourceFitCalc::TraceSourceInfo trace;
+          trace.m_nuclide = nuc;
+          trace.m_type = chi2Fcn->traceSourceActivityType( nuc );
+          const size_t ind = chi2Fcn->nuclideIndex( nuc );
+          trace.m_fitActivity = !fitParams.Parameter(2*ind).IsFixed();
+          trace.m_activity = chi2Fcn->activity( nuc, results->paramValues );
+          
+          if( trace.m_type == TraceActivityType::ExponentialDistribution )
+            trace.m_relaxationDistance = chi2Fcn->relaxationLength( nuc );
+          
+          shield.m_traceSources.push_back( trace );
+        }//for( const SandiaDecay::Nuclide * const nuc : trace_nucs )
+          
+        
+        switch( shield.m_geometry )
+        {
+          case GammaInteractionCalc::GeometryType::Spherical:
+            shield.m_dimensions[0] = chi2Fcn->sphericalThickness( shielding_index, results->paramValues );
+            shield.m_fitDimensions[0] = !fitParams.Parameter(2*chi2Fcn->numNuclides() + 3*shielding_index ).IsFixed();
+            break;
+            
+          case GammaInteractionCalc::GeometryType::CylinderEndOn:
+          case GammaInteractionCalc::GeometryType::CylinderSideOn:
+            shield.m_dimensions[0] = chi2Fcn->cylindricalRadiusThickness( shielding_index, results->paramValues );
+            shield.m_dimensions[1] = chi2Fcn->cylindricalLengthThickness( shielding_index, results->paramValues );
+            shield.m_fitDimensions[0] = !fitParams.Parameter(2*chi2Fcn->numNuclides() + 3*shielding_index ).IsFixed();
+            shield.m_fitDimensions[1] = !fitParams.Parameter(2*chi2Fcn->numNuclides() + 3*shielding_index + 1 ).IsFixed();
+            break;
+            
+          case GammaInteractionCalc::GeometryType::Rectangular:
+            shield.m_dimensions[0] = chi2Fcn->rectangularWidthThickness( shielding_index, results->paramValues );
+            shield.m_dimensions[1] = chi2Fcn->rectangularHeightThickness( shielding_index, results->paramValues );
+            shield.m_dimensions[2] = chi2Fcn->rectangularDepthThickness( shielding_index, results->paramValues );
+            shield.m_fitDimensions[0] = !fitParams.Parameter(2*chi2Fcn->numNuclides() + 3*shielding_index ).IsFixed();
+            shield.m_fitDimensions[1] = !fitParams.Parameter(2*chi2Fcn->numNuclides() + 3*shielding_index + 1 ).IsFixed();
+            shield.m_fitDimensions[2] = !fitParams.Parameter(2*chi2Fcn->numNuclides() + 3*shielding_index + 2 ).IsFixed();
+            break;
+            
+          case GammaInteractionCalc::GeometryType::NumGeometryType:
+            assert( 0 );
+            break;
+        }//switch( shield.m_geometry )
+        
+      
+        double pre_fit_frac = 0.0;
+        for( const auto &i : initial_shield.m_nuclideFractions )
+          pre_fit_frac += i.second;
+        
+        const double frac_diff = fabs(pre_fit_frac - post_fit_frac);
+        assert( (frac_diff < 1.0E-12) || (frac_diff < 1.0E-5*std::max(pre_fit_frac,post_fit_frac)) );
+        
+        if( (frac_diff > 1.0E-12) && ((frac_diff/std::max(pre_fit_frac,post_fit_frac)) > 1.0E-5) ) //limits chosen arbitrarily
+          throw logic_error( "Mass fraction for of self-atten src elements should be "
+                            + to_string(pre_fit_frac) + " but calculation yielded "
+                            + to_string(post_fit_frac) );
+  
+      }//if( shield.m_isGenericMaterial ) / else
+      
+      results->final_shieldings.push_back( shield );
+    }//for( int i = 0; i < nshieldings; ++i )
+    
   }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
   {
     const size_t nFunctionCallsSoFar = gui_progress_info->numFunctionCallsSoFar();
@@ -9095,17 +8811,28 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
     passMessage( e.what() + string("<br />Before the fit."), WarningWidget::WarningMsgHigh );
   }//try / catch
   
-  Chi2FcnShrdPtr chi2Fcn;
+  shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn;
   vector<string> errormsgs;
   vector<ShieldingSelect *> shieldings;
   
   //make sure fitting for at least one nuclide:
   
   auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  std::vector<ShieldingSourceFitCalc::ShieldingInfo> initial_shieldings;
   
   try
   {
-    chi2Fcn = shieldingFitnessFcn( shieldings, *inputPrams );
+    for( WWidget *widget : m_shieldingSelects->children() )
+    {
+      ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
+      if( select )
+        initial_shieldings.push_back( select->toShieldingInfo() );
+    }//for( WWidget *widget : m_shieldingSelects->children() )
+    
+    auto fcnAndPars = shieldingFitnessFcn();
+    
+    chi2Fcn = fcnAndPars.first;
+    *inputPrams = fcnAndPars.second;
   }catch( std::exception &e )
   {
     passMessage( e.what() + string("<br />Fit not performed (couldnt make Chi2Fcn)."),
@@ -9124,7 +8851,8 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
   
   auto results = make_shared<ModelFitResults>();
   results->succesful = ModelFitResults::FitStatus::InvalidOther;
-  results->shieldings = shieldings;
+  
+  results->initial_shieldings = initial_shieldings;
   
   auto progress = std::make_shared<ModelFitProgress>();
   progress->chi2 = std::numeric_limits<double>::max();
@@ -9141,10 +8869,10 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
   {
     Wt::WServer *server = Wt::WServer::instance();
     server->ioService().boost::asio::io_service::post( boost::bind( &ShieldingSourceDisplay::doModelFittingWork,
-                            this, sessionid, inputPrams, progress, progress_updater, results, gui_updater ) );
+                            this, sessionid, chi2Fcn, inputPrams, progress, progress_updater, results, gui_updater ) );
   }else
   {
-    doModelFittingWork( sessionid, inputPrams, progress, progress_updater, results, gui_updater );
+    doModelFittingWork( sessionid, chi2Fcn, inputPrams, progress, progress_updater, results, gui_updater );
   }
   
   return results;
@@ -9153,7 +8881,7 @@ std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay:
 
 
 void ShieldingSourceDisplay::updateCalcLogWithFitResults(
-                                 ShieldingSourceDisplay::Chi2FcnShrdPtr chi2Fcn,
+                                  shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                                     std::shared_ptr<ModelFitResults> results )
 {
   assert( results );

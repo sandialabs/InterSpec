@@ -1144,7 +1144,7 @@ public:
       {
         // Next line checks for self-attenuating source - should we extend to trace sources? If we
         //  do we need to modify our serialization logic a bit.
-        if( model->sourceType(index) == ModelSourceType::Intrinsic )
+        if( model->sourceType(index) == GammaInteractionCalc::ModelSourceType::Intrinsic )
           continue;
       }
       
@@ -2290,7 +2290,7 @@ void ShieldingSelect::emitRemoveSignal()
         if( cb->useAsSource() && cb->isotope() )
         {
           cb->setUseAsSource( false );
-          removingIsotopeAsSource().emit( cb->isotope(), ModelSourceType::Intrinsic );
+          removingIsotopeAsSource().emit( cb->isotope(), GammaInteractionCalc::ModelSourceType::Intrinsic );
         }//if( cb->useAsSource() )
       }//for( WWidget *child : children )
     }//for(...)
@@ -2488,10 +2488,10 @@ void ShieldingSelect::handleTraceSourceNuclideChange( TraceSrcDisplay *changedSr
     return;
   
   if( oldNuc )
-    removingIsotopeAsSource().emit( oldNuc, ModelSourceType::Trace );
+    removingIsotopeAsSource().emit( oldNuc, GammaInteractionCalc::ModelSourceType::Trace );
   
   if( changedSrc && changedSrc->nuclide() )
-    addingIsotopeAsSource().emit( changedSrc->nuclide(), ModelSourceType::Trace );
+    addingIsotopeAsSource().emit( changedSrc->nuclide(), GammaInteractionCalc::ModelSourceType::Trace );
   
   vector<pair<const SandiaDecay::Nuclide *,double>> traceNucs;
   
@@ -2530,7 +2530,7 @@ void ShieldingSelect::handleTraceSourceWidgetAboutToBeRemoved( TraceSrcDisplay *
   if( !src || !src->nuclide() )
     return;
     
-  removingIsotopeAsSource().emit( src->nuclide(), ModelSourceType::Trace );
+  removingIsotopeAsSource().emit( src->nuclide(), GammaInteractionCalc::ModelSourceType::Trace );
 }//handleTraceSourceWidgetAboutToBeRemoved(...)
 
 
@@ -2789,13 +2789,13 @@ Wt::Signal<ShieldingSelect *,const SandiaDecay::Nuclide *> &ShieldingSelect::act
 }
 
 
-Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &ShieldingSelect::addingIsotopeAsSource()
+Wt::Signal<const SandiaDecay::Nuclide *,GammaInteractionCalc::ModelSourceType> &ShieldingSelect::addingIsotopeAsSource()
 {
   return m_addingIsotopeAsSource;
 }
 
 
-Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &ShieldingSelect::removingIsotopeAsSource()
+Wt::Signal<const SandiaDecay::Nuclide *,GammaInteractionCalc::ModelSourceType> &ShieldingSelect::removingIsotopeAsSource()
 {
   return m_removingIsotopeAsSource;
 }
@@ -3212,7 +3212,7 @@ void ShieldingSelect::isotopeCheckedCallback( const SandiaDecay::Nuclide *nuc )
     }//if( this_src_cb )
   }//if( nuc )
   
-  m_addingIsotopeAsSource.emit( nuc, ModelSourceType::Intrinsic );
+  m_addingIsotopeAsSource.emit( nuc, GammaInteractionCalc::ModelSourceType::Intrinsic );
 }//void isotopeCheckedCallback( const std::string symbol )
 
 
@@ -3221,7 +3221,7 @@ void ShieldingSelect::isotopeUnCheckedCallback( const SandiaDecay::Nuclide *iso 
 {
   updateIfMassFractionCanFit();
   setTraceSourceMenuItemStatus();
-  m_removingIsotopeAsSource.emit( iso, ModelSourceType::Intrinsic );
+  m_removingIsotopeAsSource.emit( iso, GammaInteractionCalc::ModelSourceType::Intrinsic );
 }//void isotopeUnCheckedCallback( const std::string symbol )
 
 
@@ -3262,7 +3262,7 @@ void ShieldingSelect::uncheckSourceIsotopeCheckBox( const SandiaDecay::Nuclide *
 
     if( cb->useAsSource() )
     {
-//      removingIsotopeAsSource().emit( symbol, ModelSourceType::Intrinsic );
+//      removingIsotopeAsSource().emit( symbol, GammaInteractionCalc::ModelSourceType::Intrinsic );
       cb->setUseAsSource( false );
     }//if( cb->isChecked() )
   }//for( WWidget *child : children )
@@ -4225,7 +4225,7 @@ void ShieldingSelect::handleMaterialChange()
       {
         SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
         if( cb && cb->useAsSource() )
-          removingIsotopeAsSource().emit( cb->isotope(), ModelSourceType::Intrinsic );
+          removingIsotopeAsSource().emit( cb->isotope(), GammaInteractionCalc::ModelSourceType::Intrinsic );
       }//for( WWidget *child : children )
 
       delete vt.second;

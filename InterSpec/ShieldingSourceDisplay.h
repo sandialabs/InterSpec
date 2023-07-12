@@ -43,6 +43,7 @@
 #include <Wt/WAbstractItemModel>
 #include <Wt/Chart/WCartesianChart>
 
+#include "InterSpec/ShieldingSourceFitCalc.h"
 
 //Forward declarations
 class PeakDef;
@@ -107,7 +108,10 @@ namespace Wt
 namespace GammaInteractionCalc
 {
   enum class GeometryType : int;
+  enum class ModelSourceType : int;
   class ShieldingSourceChi2Fcn;
+  struct SourceDefinitions;
+  struct ShieldingSourceFitOptions;
 }//namespace GammaInteractionCalc
 
 class InterSpec;
@@ -135,17 +139,6 @@ protected:
 */
 
 
-enum class ModelSourceType : int
-{
-  /** A point source at the center of the shielding. */
-  Point,
-  
-  /** A nuclide in the material itself is the source; e.g., a self-attenuating source like U, Pu, Th, etc. */
-  Intrinsic,
-  
-  /** A trace source in a shielding.  Does not effect transport of gammas through the material, but is just a source term. */
-  Trace
-};//enum class ModelSourceType
 
 
 
@@ -180,7 +173,7 @@ protected:
     //ageDefiningNuc: specifies if the age of nuclide should be tied to the age
     //  a different nuclide instead.  Will be NULL if this is not the case.
     const SandiaDecay::Nuclide *ageDefiningNuc;
-    ModelSourceType sourceType;
+    GammaInteractionCalc::ModelSourceType sourceType;
     double activityUncertainty;
     double ageUncertainty;
 
@@ -192,7 +185,7 @@ protected:
     IsoFitStruct()
       : nuclide(NULL), numProgenyPeaksSelected(0), activity(0.0), fitActivity(false),
         age(0.0), fitAge(false), ageIsFittable(true), ageDefiningNuc(NULL),
-        sourceType(ModelSourceType::Point),
+        sourceType( static_cast<GammaInteractionCalc::ModelSourceType>(0) ),
         activityUncertainty(-1.0), ageUncertainty(-1.0)
     #if( INCLUDE_ANALYSIS_TEST_SUITE )
         , truthActivity(), truthActivityTolerance(),
@@ -261,7 +254,7 @@ public:
   bool fitAge( int nuc ) const;
   
   
-  ModelSourceType sourceType( int nuc ) const;
+  GammaInteractionCalc::ModelSourceType sourceType( int nuc ) const;
   
   /** Returns true if a shielding determined source, or a trace source. */
   bool isVolumetricSource( int nuc ) const;
@@ -286,12 +279,12 @@ public:
   
   
   /** Sets the source type for a nuclide.
-   Sources default to ModelSourceType::Point, which lets the user edit the activity and whether or not to fit the activity in the table.
+   Sources default to GammaInteractionCalc::ModelSourceType::Point, which lets the user edit the activity and whether or not to fit the activity in the table.
    
-   For ModelSourceType::Intrinsic or ModelSourceType::Trace the activity field in the table will become non-editable, and the option to
+   For GammaInteractionCalc::ModelSourceType::Intrinsic or GammaInteractionCalc::ModelSourceType::Trace the activity field in the table will become non-editable, and the option to
    fit this quantity will become non-visible, as the ShieldingSelect controls this option via fitting for thickness and/or trace activity.
    */
-  void setSourceType( const SandiaDecay::Nuclide *nuc, ModelSourceType type );
+  void setSourceType( const SandiaDecay::Nuclide *nuc, GammaInteractionCalc::ModelSourceType type );
   
   void makeActivityNonEditable( const SandiaDecay::Nuclide *nuc );
 
@@ -371,7 +364,6 @@ protected:
 class ShieldingSourceDisplay : public Wt::WContainerWidget
 {
 public:
-  typedef std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> Chi2FcnShrdPtr;
 
   /** The maximum time (in milliseconds) a model fit can take before the fit is
       aborted.  This generally will only ever be applicable to fits with
@@ -456,10 +448,10 @@ public:
                                          const SandiaDecay::Nuclide *nuc );
   void isotopeIsBecomingVolumetricSourceCallback( ShieldingSelect *select,
                                            const SandiaDecay::Nuclide *nuc,
-                                           const ModelSourceType type );
+                                           const GammaInteractionCalc::ModelSourceType type );
   void isotopeRemovedAsVolumetricSourceCallback( ShieldingSelect *select,
                                              const SandiaDecay::Nuclide *nuc,
-                                             const ModelSourceType type );
+                                             const GammaInteractionCalc::ModelSourceType type );
   
   /** Function called whenever a ShieldingSelect is changed by the user.
    
@@ -492,7 +484,6 @@ public:
     
     enum class FitStatus{ UserCancelled, TimedOut, InvalidOther, InterMediate, Final };
     FitStatus succesful;
-    std::vector<ShieldingSelect *> shieldings;  //I dont think we strickly need, but more as a sanity check
     
     double edm;  //estimated distance to minumum.
     double chi2;
@@ -500,6 +491,9 @@ public:
     std::vector<double> paramValues;
     std::vector<double> paramErrors;
     std::vector<std::string> errormsgs;
+    
+    std::vector<ShieldingSourceFitCalc::ShieldingInfo> initial_shieldings;
+    std::vector<ShieldingSourceFitCalc::ShieldingInfo> final_shieldings;
   };//struct ModelFitResults
   
   /** Performs the actual fit of shielding, activities, and ages;
@@ -517,6 +511,7 @@ public:
   
   /** Function that does the actual model fitting, not on the main GUI thread.
       \param wtsession The Wt session id of the current WApplication
+      \param chi2Fcn The initialized ShieldingSourceChi2Fcn objec
       \param inputPrams The fit input paramters as filled out by #shieldingFitnessFcn
       \param progress Pointer to location to put the intermediate status of the
              fit (if desired)
@@ -535,6 +530,7 @@ public:
              (the wrapped call is #updateGuiWithModelFitResults)
    */
   void doModelFittingWork( const std::string wtsession,
+                           std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                            std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
                            std::shared_ptr<ModelFitProgress> progress,
                            boost::function<void()> progress_fcn,
@@ -564,7 +560,7 @@ public:
   
   //updateCalcLogWithFitResults(): adds in fit for values and their
   //  uncertainties in the calculation log.
-  void updateCalcLogWithFitResults( Chi2FcnShrdPtr chi2,
+  void updateCalcLogWithFitResults( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2,
                                     std::shared_ptr<ModelFitResults> results );
   
   //initialSizeHint(...) gives the initial hint about the size so which widgets
@@ -713,9 +709,9 @@ public:
   void showGraphicTypeChanged();
   
 
+  std::pair<std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>,
+            ROOT::Minuit2::MnUserParameters> shieldingFitnessFcn();
   
-  Chi2FcnShrdPtr shieldingFitnessFcn( std::vector<ShieldingSelect *> &shieldngs,
-                                  ROOT::Minuit2::MnUserParameters &inputPrams );
 
   //toggle checkbox/chart
   void toggleUseAll(Wt::WCheckBox* button);

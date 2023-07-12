@@ -39,6 +39,7 @@
 
 #include "Minuit2/FCNBase.h"
 
+#include "InterSpec/ShieldingSourceFitCalc.h"
 
 class PeakDef;
 struct Material;
@@ -92,6 +93,35 @@ enum class GeometryType : int
 /** Gives string representation to a GeometryType value. */
 const char *to_str( const GeometryType type );
 
+
+/** Enum that classifies the type of source. */
+enum class ModelSourceType : int
+{
+  /** A point source at the center of the shielding. */
+  Point,
+    
+  /** A nuclide in the material itself is the source; e.g., a self-attenuating source like U, Pu, Th, etc. */
+  Intrinsic,
+    
+  /** A trace source in a shielding.  Does not effect transport of gammas through the material, but is just a source term. */
+  Trace
+};//enum class ModelSourceType
+
+  
+struct SourceDefinitions
+{
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+    
+  double age = -1.0;
+  bool fit_age = false;
+  const SandiaDecay::Nuclide *age_defining_nuc = nullptr;
+    
+  double activity = 0.0;
+  bool fit_activity = false;
+    
+  GammaInteractionCalc::ModelSourceType source_type = GammaInteractionCalc::ModelSourceType::Point;
+};//struct SourceDefinitions
+  
 
 //Returned in units of 1.0/[Length], so that
 //  exp( -transmition_length_coefficient(...) * thickness)
@@ -384,6 +414,16 @@ struct DistributedSrcCalc
 };//struct DistributedSrcCalc
 
 
+struct ShieldingSourceFitOptions
+{
+  bool multiple_nucs_contribute_to_peaks = true;
+  bool attenuate_for_air = true;
+  bool account_for_decay_during_meas = false;
+  bool multithread_self_atten = true;
+    
+  double photopeak_cluster_sigma = 1.25;
+};//struct ShieldingSourceFitOptions
+  
 
 class ShieldingSourceChi2Fcn
     : public ROOT::Minuit2::FCNBase
@@ -440,7 +480,7 @@ public:
     /** The material this struct holds info for.
      If nullptr it represents generic shielding (e.g., AN/AD), and neither #self_atten_sources or #trace_sources may have entries.
      */
-    const Material *material;
+    std::shared_ptr<const Material> material;
     
     /** The nuclides which act as self-attenuating sources within the material, and their mass-fraction of the material.
      The Material object must contain these nuclides as components, as well as at least one peak being used have this
@@ -467,18 +507,28 @@ public:
      */
     std::vector<std::tuple<const SandiaDecay::Nuclide *,TraceActivityType,double>> trace_sources;
   };//struct ShieldLayerInfo
-  
+
+  static std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> create(
+                                     const double distance,
+                                     const GammaInteractionCalc::GeometryType geometry,
+                                     const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
+                                     const std::vector<GammaInteractionCalc::SourceDefinitions> &src_definitions,
+                                     std::shared_ptr<const DetectorPeakResponse> detector,
+                                     std::shared_ptr<const SpecUtils::Measurement> foreground,
+                                     std::shared_ptr<const SpecUtils::Measurement> background,
+                                     std::deque<std::shared_ptr<const PeakDef>> foreground_peaks,
+                                     std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> background_peaks,
+                                     const GammaInteractionCalc::ShieldingSourceFitOptions &options );
   
   ShieldingSourceChi2Fcn(
-                      double distance, double liveTime,
+                      const double distance,
+                      const double liveTime,
+                      const double realTime,
                       const std::vector<PeakDef> &peaks,
                       std::shared_ptr<const DetectorPeakResponse> detector,
                       const std::vector<ShieldLayerInfo> &materials,
                       const GeometryType geometry,
-                      const bool allowMultipleNucsContribToPeaks,
-                      const bool attenuateForAir,
-                      const bool accountForDecayDuringMeas,
-                      const double realTime );
+                      const ShieldingSourceFitOptions &options );
   virtual ~ShieldingSourceChi2Fcn();
 
   /** Returns the geometry of this ShieldingSourceChi2Fcn */
@@ -592,6 +642,7 @@ public:
   void setNuclidesToFitMassFractionFor( const size_t material_index,
                    const std::vector<const SandiaDecay::Nuclide *> &nuclides );
   std::vector<const Material *> materialsFittingMassFracsFor() const;
+  std::vector<const SandiaDecay::Nuclide *> selfAttenuatingNuclides( const size_t material_index ) const;
   const std::vector<const SandiaDecay::Nuclide *> &nuclideFittingMassFracFor(
                                                                 const size_t material_index ) const;
   
@@ -677,6 +728,8 @@ public:
   
   /** Returns whether or not the nuclide is a trace source. */
   bool isTraceSource( const SandiaDecay::Nuclide *nuc ) const;
+  
+  std::vector<const SandiaDecay::Nuclide *> traceNuclidesForMaterial( const size_t material_index ) const;
   
   /** Returns the trace source activity type for a nuc.
    

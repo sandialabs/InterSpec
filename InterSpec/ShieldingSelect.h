@@ -93,7 +93,10 @@ class TraceSrcDisplay;
 class NativeFloatSpinBox;
 class ShieldingSourceDisplay;
 
-enum class ModelSourceType : int;
+namespace GammaInteractionCalc
+{
+  enum class ModelSourceType : int;
+}
 
 namespace GammaInteractionCalc
 {
@@ -276,10 +279,10 @@ public:
                                            &activityFromVolumeNeedUpdating();
 
   //addingIsotopeAsSource(): Signal emitted when isotope is checked
-  Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &addingIsotopeAsSource();
+  Wt::Signal<const SandiaDecay::Nuclide *,GammaInteractionCalc::ModelSourceType> &addingIsotopeAsSource();
 
   //removingIsotopeAsSource(): Signal emitted when isotope is unchecked
-  Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> &removingIsotopeAsSource();
+  Wt::Signal<const SandiaDecay::Nuclide *,GammaInteractionCalc::ModelSourceType> &removingIsotopeAsSource();
 
   /** Signal to indicate when the user has chnaged any of the values displayed.
    Used for undo/redo support.
@@ -674,8 +677,8 @@ protected:
   Wt::Signal<ShieldingSelect *> m_addShieldingAfter;
   Wt::Signal<ShieldingSelect *> m_materialModifiedSignal;
   Wt::Signal<ShieldingSelect *> m_materialChangedSignal;
-  Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> m_addingIsotopeAsSource;
-  Wt::Signal<const SandiaDecay::Nuclide *,ModelSourceType> m_removingIsotopeAsSource;
+  Wt::Signal<const SandiaDecay::Nuclide *,GammaInteractionCalc::ModelSourceType> m_addingIsotopeAsSource;
+  Wt::Signal<const SandiaDecay::Nuclide *,GammaInteractionCalc::ModelSourceType> m_removingIsotopeAsSource;
   Wt::Signal<ShieldingSelect *,const SandiaDecay::Nuclide *>
                                             m_activityFromVolumeNeedUpdating;
   
