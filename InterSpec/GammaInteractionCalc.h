@@ -93,34 +93,6 @@ enum class GeometryType : int
 /** Gives string representation to a GeometryType value. */
 const char *to_str( const GeometryType type );
 
-
-/** Enum that classifies the type of source. */
-enum class ModelSourceType : int
-{
-  /** A point source at the center of the shielding. */
-  Point,
-    
-  /** A nuclide in the material itself is the source; e.g., a self-attenuating source like U, Pu, Th, etc. */
-  Intrinsic,
-    
-  /** A trace source in a shielding.  Does not effect transport of gammas through the material, but is just a source term. */
-  Trace
-};//enum class ModelSourceType
-
-  
-struct SourceDefinitions
-{
-  const SandiaDecay::Nuclide *nuclide = nullptr;
-    
-  double age = -1.0;
-  bool fit_age = false;
-  const SandiaDecay::Nuclide *age_defining_nuc = nullptr;
-    
-  double activity = 0.0;
-  bool fit_activity = false;
-    
-  GammaInteractionCalc::ModelSourceType source_type = GammaInteractionCalc::ModelSourceType::Point;
-};//struct SourceDefinitions
   
 
 //Returned in units of 1.0/[Length], so that
@@ -512,7 +484,7 @@ public:
                                      const double distance,
                                      const GammaInteractionCalc::GeometryType geometry,
                                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                     const std::vector<GammaInteractionCalc::SourceDefinitions> &src_definitions,
+                                     const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
                                      std::shared_ptr<const DetectorPeakResponse> detector,
                                      std::shared_ptr<const SpecUtils::Measurement> foreground,
                                      std::shared_ptr<const SpecUtils::Measurement> background,
@@ -607,7 +579,15 @@ public:
    */
   void setSelfAttMultiThread( const bool do_multithread );
   
-
+  /** Used to set initial source definitions, and add the needed fitting parameters.
+   
+   Returns number of fitting parameters added.
+   */
+  size_t setInitialSourceDefinitions( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
+                                     ROOT::Minuit2::MnUserParameters &inputPrams );
+  
+  const std::vector<ShieldingSourceFitCalc::SourceFitDef> &initialSourceDefinitions() const;
+  
 /*
    Need to add method to extract mass fraction for isotopes fitting for the mass
    fraction
@@ -813,6 +793,7 @@ public:
                        const std::vector<double> &params ) const;
 
   const std::vector<PeakDef> &peaks() const;
+  const std::vector<PeakDef> &backgroundPeaks() const;
 
   static void selfShieldingIntegration( DistributedSrcCalc &calculator );
 
@@ -922,6 +903,8 @@ protected:
   
   /** The real-time of the measurement; only used if decay during measurement is being accounted for. */
   double m_realTime;
+  
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> m_initialSrcDefinitions;
   
   //A cache of nuclide mixtures to
   mutable NucMixtureCache m_mixtureCache;

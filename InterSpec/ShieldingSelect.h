@@ -279,10 +279,10 @@ public:
                                            &activityFromVolumeNeedUpdating();
 
   //addingIsotopeAsSource(): Signal emitted when isotope is checked
-  Wt::Signal<const SandiaDecay::Nuclide *,GammaInteractionCalc::ModelSourceType> &addingIsotopeAsSource();
+  Wt::Signal<const SandiaDecay::Nuclide *,ShieldingSourceFitCalc::ModelSourceType> &addingIsotopeAsSource();
 
   //removingIsotopeAsSource(): Signal emitted when isotope is unchecked
-  Wt::Signal<const SandiaDecay::Nuclide *,GammaInteractionCalc::ModelSourceType> &removingIsotopeAsSource();
+  Wt::Signal<const SandiaDecay::Nuclide *,ShieldingSourceFitCalc::ModelSourceType> &removingIsotopeAsSource();
 
   /** Signal to indicate when the user has chnaged any of the values displayed.
    Used for undo/redo support.
@@ -312,7 +312,7 @@ public:
   /** Returns the isotopes currently checked for use as self-attenuating sources. */
   std::vector<const SandiaDecay::Nuclide *> selfAttenNuclides() const;
   
-  /** Gets the (self-attenuating) source nuclides (not trace nuclides), and thier respective mass fractions.
+  /** Gets the (self-attenuating) source nuclides (not trace nuclides), and their respective mass fractions.
    
    Mass-fractions are for the entire material, not just the fraction of the element.
    Note: mass-fractions are retrieved from the GUI state - they are not the values in `m_currentMaterial`.
@@ -475,7 +475,7 @@ public:
   void fromShieldingInfo( const ShieldingSourceFitCalc::ShieldingInfo &info );
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
-  boost::optional<double> truthThickness; //Shperical thickness, radial thickness (cylindrical), or rectagular width
+  boost::optional<double> truthThickness; //Spherical thickness, radial thickness (cylindrical), or rectagular width
   boost::optional<double> truthThicknessTolerance;
   boost::optional<double> truthAD;
   boost::optional<double> truthADTolerance;
@@ -486,6 +486,8 @@ public:
   boost::optional<double> truthThicknessD2Tolerance;
   boost::optional<double> truthThicknessD3;  //Rectangular depth
   boost::optional<double> truthThicknessD3Tolerance;
+  
+  std::map<const SandiaDecay::Nuclide *,std::pair<double,double>> truthFitMassFractions;
 #endif
 
   
@@ -545,7 +547,7 @@ protected:
   
   /** Handles updating #m_prevState, and emitting userChangedStateSignal(). */
   void handleUserChangeForUndoRedo();
-  void handleUserChangeForUndoRedoWorker();
+  void handleUserChangeForUndoRedoWorker( const bool emit_change );
 
   /** Removes uncertainty number from a distance edit text; useful when user changes text of a WLineEdit that is also fit for, so may
    have an uncertainty value in it
@@ -677,8 +679,8 @@ protected:
   Wt::Signal<ShieldingSelect *> m_addShieldingAfter;
   Wt::Signal<ShieldingSelect *> m_materialModifiedSignal;
   Wt::Signal<ShieldingSelect *> m_materialChangedSignal;
-  Wt::Signal<const SandiaDecay::Nuclide *,GammaInteractionCalc::ModelSourceType> m_addingIsotopeAsSource;
-  Wt::Signal<const SandiaDecay::Nuclide *,GammaInteractionCalc::ModelSourceType> m_removingIsotopeAsSource;
+  Wt::Signal<const SandiaDecay::Nuclide *,ShieldingSourceFitCalc::ModelSourceType> m_addingIsotopeAsSource;
+  Wt::Signal<const SandiaDecay::Nuclide *,ShieldingSourceFitCalc::ModelSourceType> m_removingIsotopeAsSource;
   Wt::Signal<ShieldingSelect *,const SandiaDecay::Nuclide *>
                                             m_activityFromVolumeNeedUpdating;
   

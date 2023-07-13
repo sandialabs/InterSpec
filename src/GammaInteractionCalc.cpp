@@ -140,6 +140,7 @@ const char *to_str( const GeometryType type )
 
 const double ShieldingSourceChi2Fcn::sm_activityUnits = SandiaDecay::MBq;
 
+  
 //Returned in units of 1.0/[Length], so that
 //  exp( -transmition_length_coefficient(...) * thickness)
 //  gives you the probability a gamma of given energy will go through the
@@ -2518,7 +2519,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
                                 const double distance,
                                 const GeometryType geom,
                                 const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                const std::vector<GammaInteractionCalc::SourceDefinitions> &src_definitions,
+                                const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
                                 std::shared_ptr<const DetectorPeakResponse> detector,
                                 std::shared_ptr<const SpecUtils::Measurement> foreground,
                                 std::shared_ptr<const SpecUtils::Measurement> background,
@@ -2601,213 +2602,13 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   //I think num_fit_params will end up same as inputPrams.VariableParameters()
   size_t num_fit_params = 0;
   
-  //Setup the parameters from the sources
-  const size_t niso = src_definitions.size();
-  if( niso < 1 )
-    throw runtime_error( "There are no isotopes being fit for" );
-  
-  set<const SandiaDecay::Nuclide *> unique_nucs;
-  for( const auto &i : src_definitions )
-  {
-    if( !i.nuclide || i.nuclide->isStable() )
-      throw runtime_error( "Invalid input nuclide set as source" );
-    unique_nucs.insert( i.nuclide );
-  }
-  
-  // We _could_ support having a nuclide as a point source + volumetric source, or
-  //  even as a volumetric source in multiple shieldings, but we wont for now.
-  if( unique_nucs.size() != src_definitions.size() )
-    throw runtime_error( "Source nuclide specified more than once as source" );
-  
-  
   // TODO: need to check that if we are fitting a shielding thickness we have an
   //  isotope that has more than one peak in the fit, and if it is also fitting
   //  age should have more than two peaks.  There are probably a few more things
   //  to check here...
   
-  for( size_t i = 0; i < answer->numNuclides(); ++i )
-  {
-    const SandiaDecay::Nuclide * const nuclide = answer->nuclide(i);
-    assert( nuclide );
-    if( !nuclide )
-      throw std::logic_error( "Invalid nuclide in ShieldingSourceChi2Fcn" );
-    
-    const GammaInteractionCalc::SourceDefinitions *srcdef = nullptr;
-    for( const auto &src : src_definitions )
-    {
-      if( src.nuclide == nuclide )
-      {
-        srcdef = &src;
-        break;
-      }
-    }//for( const auto &src : src_definitions )
-    
-    if( !srcdef )
-      throw runtime_error( "There was a peak with nuclide " + nuclide->symbol
-                          + " but no SourceDefinitions for this nuclide" );
-    
-    double activity = srcdef->activity;
-    
-    //We could do a lot better here by estimating the activity of the sources
-    //  the first time they are fit for
-    //XXX - should make better guesses for source activity the first time a fit
-    //      is performed
-    
-    //    cerr << "Initial activity is " << m_sourceModel->activity( ison )/PhysicalUnits::curie
-    //         << " which is a minuit value of " << activity << endl;
-    //    activity = 10.0*PhysicalUnits::curie*(1.0E-6) / ShieldingSourceChi2Fcn::sm_activityUnits;
-    
-    assert( !srcdef->fit_activity
-           || (srcdef->source_type != GammaInteractionCalc::ModelSourceType::Intrinsic) );
-    
-    const bool fitAct = srcdef->fit_activity && (srcdef->source_type != GammaInteractionCalc::ModelSourceType::Intrinsic);
-    const bool fitAge = srcdef->fit_age;
-    
-    const SandiaDecay::Nuclide *ageDefiningNuc = srcdef->age_defining_nuc;
-    const bool hasOwnAge = (!ageDefiningNuc || (ageDefiningNuc == nuclide));
-    
-    num_fit_params += fitAct + (fitAge && hasOwnAge);
-    
-    // Put activity into units of ShieldingSourceChi2Fcn
-    activity /= ShieldingSourceChi2Fcn::sm_activityUnits;
-    
-    if( fitAct )
-    {
-      //We cant have both a specified lower and upper limit on activity, or
-      //  such a large range will make Minuit2 choke and give a completely
-      //  in-accurate answer (returns not even the best chi2 it found), if only
-      //  one fit parameter.
-      //      inputPrams.Add( nuclide->symbol + "Strength", activity, activityStep, 0.0,
-      //                     10000.0*PhysicalUnits::curie/ShieldingSourceChi2Fcn::sm_activityUnits );
-      const string name = nuclide->symbol + "Strength";
-      const double activityStep = (activity < 0.0001 ? 0.0001 : 0.1*activity);
-      inputPrams.Add( name, activity, activityStep );
-      inputPrams.SetLowerLimit( name, 0.0 );
-    }else
-    {
-      inputPrams.Add( nuclide->symbol + "Strength", activity );
-    }
-    
-    
-    if( fitAge && hasOwnAge )
-    {
-      //We could do a lot better on creating the age range - there must be some way to easily
-      //  determine how old an isotope has to get before it essentially doesn't change any more
-      //  (prompt HL, etc.).  I guess we could look at the peaks being used to fit for and age them
-      //  until their ratios don't change within the available statistical precision.
-      //  But for the moment, we'll do something much simpler and use the maximum of either the
-      //  longest progenies half-life, or the sum half life of all progeny
-      //  \TODO: improve this max decay time estimate; some possibilities are:
-      //    - Could probably ignore the parents half-life, or only partially take into account
-      //    - For common nuclides could define reasonable fixed values
-      //    - Could look at gamma spectrum produced over time, and pick the time when the selected
-      //      photopeak ratios change little enough as to not be statistically significant to the
-      //      observed data (or even just hard-coded limits).
-      auto maxNuclideDecayHL = []( const SandiaDecay::Nuclide * const nuc ) -> double {
-        double maxhl = 0.0, sumhlfs = 0.0;
-        
-        for( auto n : nuc->descendants() )
-        {
-          if( !n->isStable() )
-          {
-            sumhlfs += n->halfLife;
-            maxhl = std::max( maxhl, n->halfLife );
-          }
-        }//for( auto n : nuc->descendants() )
-        
-        //cout << "For nuc=" << nuc->symbol << " maxhl=" << PhysicalUnits::printToBestTimeUnits(maxhl)
-        //     << ", sumhlfs=" << PhysicalUnits::printToBestTimeUnits(sumhlfs)
-        //     << " - will set max age to " << PhysicalUnits::printToBestTimeUnits(std::max( 7*maxhl, 4*sumhlfs ))
-        //     << endl;
-        
-        //return 100.0*nuc->halfLife;
-        return std::max( 7*maxhl, 4*sumhlfs );
-      };//maxNuclideDecayHL
-      
-      double maxAge = -1.0;
-      if( ageDefiningNuc == nuclide )
-      {
-        //We are
-        
-        for( size_t trialInd = 0; trialInd < answer->numNuclides(); ++trialInd )
-        {
-          const SandiaDecay::Nuclide *trialNuc = answer->nuclide( int(trialInd) );
-          if( trialNuc->atomicNumber == nuclide->atomicNumber )
-          {
-            const double thisMaxAge = maxNuclideDecayHL( nuclide );
-            maxAge = std::max( maxAge, thisMaxAge );
-          }
-        }//for( loop over all nuclides being fit for )
-      }else
-      {
-        maxAge = maxNuclideDecayHL( nuclide );
-      }
-      assert( maxAge > 0.0 );
-      
-      double age = srcdef->age;
-      double ageStep = 0.25 * nuclide->halfLife;
-      
-      // Limit the maximum age to be the larger of ten times the current age, or 200 years.  This
-      //  is both to be reasonable in terms of answers we get, and because for really long-lived
-      //  isotopes, we could have a max age at this point so large it will cause Minuit to give
-      //  NaNs for age, even on first iteration.
-      maxAge = std::min( maxAge, std::max(10.0*age, 200.0*PhysicalUnits::year) );
-      
-      // If the age is currently over 10000 years, it is just really getting unreasonable, so
-      //  larger than Minuit can handle, so will impose a tougher 100k year limit, but let grow past
-      //  this, but require the user to hit "fit" over and over again.
-      if( maxAge > 10000.0*PhysicalUnits::year )
-        maxAge = std::max(2.0*age, 10000.0*PhysicalUnits::year);
-      
-      // But no matter what we'll limit to the age of earth, which at least for a few select
-      //  examples tried, Minuit was okay with (it wasnt okay with like 1.2E20 years that some of
-      //  the uraniums would give)
-      age = std::min( age, 4.543e+9 * PhysicalUnits::year );
-      maxAge = std::min( maxAge, 4.543e+9 * PhysicalUnits::year );
-      
-      ageStep = std::min( ageStep, 0.1*maxAge );
-      if( age > 0 )
-        ageStep = std::min( 0.1*age, ageStep );
-      
-      //cout << "For nuclide " << nuclide->symbol << " adding age=" << age << ", with step " << ageStep << " and max age " << maxAge << endl;
-      
-      inputPrams.Add( nuclide->symbol + "Age", age, ageStep, 0, maxAge  );
-    }else if( hasOwnAge )
-    {
-      const double age = srcdef->age;
-      //cout << nuclide->symbol << " has own non-fitting age going in as param " << inputPrams.Parameters().size() << endl;
-      inputPrams.Add( nuclide->symbol + "Age", age );
-    }else  //see if defining nuclide age is fixed, if so use it, else put in negative integer of index of age...
-    {
-      assert( ageDefiningNuc );
-      
-      // Previous to 20210825, we were doing the next commented-out line, which is not correct; we
-      //  want the relative nuclide index to be for the order nuclides are added into 'inputPrams',
-      //  which may be different m_sourceModel->m_nuclides.
-      //const int age_defining_index = m_sourceModel->nuclideIndex( ageDefiningNuc );
-      
-      int age_defining_index = -1;
-      for( size_t ansnucn = 0; ansnucn < answer->numNuclides(); ++ansnucn )
-      {
-        const SandiaDecay::Nuclide *answnuclide = answer->nuclide( static_cast<int>(ansnucn) );
-        if( answnuclide == ageDefiningNuc )
-        {
-          age_defining_index = static_cast<int>(ansnucn);
-          break;
-        }
-      }//for( size_t ansnucn = 0; ansnucn < answer->numNuclides(); ++ansnucn )
-      
-      //assert( age_defining_index >= 0 );
-      if( age_defining_index < 0 )  //shouldnt ever happen, but JIC
-        throw runtime_error( "Error finding age defining nuclide for " + nuclide->symbol
-                            + " (should have been " + ageDefiningNuc->symbol + ")" );
-      
-      const double ageIndexVal = -1.0*(age_defining_index + 1);
-      //cout << nuclide->symbol << ": ageIndexVal=" << ageIndexVal
-      //<< " going in as param " << inputPrams.Parameters().size() << endl;
-      inputPrams.Add( nuclide->symbol + "Age", ageIndexVal );
-    }
-  }//for( size_t src_index = 0; src_index < src_definitions.size(); ++src_index )
+  //Setup the parameters from the sources
+  num_fit_params += answer->setInitialSourceDefinitions( src_definitions, inputPrams );
   
   
   //setup the parameters for the shieldings
@@ -3271,6 +3072,236 @@ void ShieldingSourceChi2Fcn::setSelfAttMultiThread( const bool do_multithread )
 {
   m_self_att_multithread = do_multithread;
 }
+  
+  
+size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
+                        const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
+                        ROOT::Minuit2::MnUserParameters &inputPrams )
+{
+  assert( m_initialSrcDefinitions.empty() );
+  if( !m_initialSrcDefinitions.empty() )
+    throw runtime_error( "ShieldingSourceChi2Fcn::setInitialSourceDefinitions: already called." );
+ 
+  const size_t niso = src_definitions.size();
+  if( niso < 1 )
+    throw runtime_error( "There are no isotopes being fit for" );
+  
+  
+  set<const SandiaDecay::Nuclide *> unique_nucs;
+  for( const auto &i : src_definitions )
+  {
+    if( !i.nuclide || i.nuclide->isStable() )
+      throw runtime_error( "Invalid input nuclide set as source" );
+    unique_nucs.insert( i.nuclide );
+  }
+  
+  // We _could_ support having a nuclide as a point source + volumetric source, or
+  //  even as a volumetric source in multiple shieldings, but we wont for now.
+  if( unique_nucs.size() != src_definitions.size() )
+    throw runtime_error( "Source nuclide specified more than once as source" );
+  
+  
+  if( src_definitions.size() != numNuclides() )
+    throw runtime_error( "There are not the same number of source definitions as nuclides in peaks being used." );
+  
+  
+  size_t num_fit_params = 0;
+  
+  for( size_t i = 0; i < src_definitions.size(); ++i )
+  {
+    const SandiaDecay::Nuclide * const nuclide = this->nuclide(i);
+    assert( nuclide );
+    if( !nuclide )
+      throw std::logic_error( "Invalid nuclide in ShieldingSourceChi2Fcn" );
+    
+    const ShieldingSourceFitCalc::SourceFitDef *srcdef = nullptr;
+    for( const auto &src : src_definitions )
+    {
+      if( src.nuclide == nuclide )
+      {
+        srcdef = &src;
+        break;
+      }
+    }//for( const auto &src : src_definitions )
+    
+    if( !srcdef )
+      throw runtime_error( "There was a peak with nuclide " + nuclide->symbol
+                          + " but no SourceFitDef for this nuclide" );
+    
+    double activity = srcdef->activity;
+    
+    //We could do a lot better here by estimating the activity of the sources
+    //  the first time they are fit for
+    //XXX - should make better guesses for source activity the first time a fit
+    //      is performed
+    
+    //    cerr << "Initial activity is " << m_sourceModel->activity( ison )/PhysicalUnits::curie
+    //         << " which is a minuit value of " << activity << endl;
+    //    activity = 10.0*PhysicalUnits::curie*(1.0E-6) / ShieldingSourceChi2Fcn::sm_activityUnits;
+    
+    assert( !srcdef->fitActivity
+           || (srcdef->sourceType != ShieldingSourceFitCalc::ModelSourceType::Intrinsic) );
+    
+    const bool fitAct = srcdef->fitActivity && (srcdef->sourceType != ShieldingSourceFitCalc::ModelSourceType::Intrinsic);
+    const bool fitAge = srcdef->fitAge;
+    
+    const SandiaDecay::Nuclide *ageDefiningNuc = srcdef->ageDefiningNuc;
+    const bool hasOwnAge = (!ageDefiningNuc || (ageDefiningNuc == nuclide));
+    
+    num_fit_params += fitAct + (fitAge && hasOwnAge);
+    
+    // Put activity into units of ShieldingSourceChi2Fcn
+    activity /= ShieldingSourceChi2Fcn::sm_activityUnits;
+    
+    if( fitAct )
+    {
+      //We cant have both a specified lower and upper limit on activity, or
+      //  such a large range will make Minuit2 choke and give a completely
+      //  in-accurate answer (returns not even the best chi2 it found), if only
+      //  one fit parameter.
+      //      inputPrams.Add( nuclide->symbol + "Strength", activity, activityStep, 0.0,
+      //                     10000.0*PhysicalUnits::curie/ShieldingSourceChi2Fcn::sm_activityUnits );
+      const string name = nuclide->symbol + "Strength";
+      const double activityStep = (activity < 0.0001 ? 0.0001 : 0.1*activity);
+      inputPrams.Add( name, activity, activityStep );
+      inputPrams.SetLowerLimit( name, 0.0 );
+    }else
+    {
+      inputPrams.Add( nuclide->symbol + "Strength", activity );
+    }
+    
+    
+    if( fitAge && hasOwnAge )
+    {
+      //We could do a lot better on creating the age range - there must be some way to easily
+      //  determine how old an isotope has to get before it essentially doesn't change any more
+      //  (prompt HL, etc.).  I guess we could look at the peaks being used to fit for and age them
+      //  until their ratios don't change within the available statistical precision.
+      //  But for the moment, we'll do something much simpler and use the maximum of either the
+      //  longest progenies half-life, or the sum half life of all progeny
+      //  \TODO: improve this max decay time estimate; some possibilities are:
+      //    - Could probably ignore the parents half-life, or only partially take into account
+      //    - For common nuclides could define reasonable fixed values
+      //    - Could look at gamma spectrum produced over time, and pick the time when the selected
+      //      photopeak ratios change little enough as to not be statistically significant to the
+      //      observed data (or even just hard-coded limits).
+      auto maxNuclideDecayHL = []( const SandiaDecay::Nuclide * const nuc ) -> double {
+        double maxhl = 0.0, sumhlfs = 0.0;
+        
+        for( auto n : nuc->descendants() )
+        {
+          if( !n->isStable() )
+          {
+            sumhlfs += n->halfLife;
+            maxhl = std::max( maxhl, n->halfLife );
+          }
+        }//for( auto n : nuc->descendants() )
+        
+        //cout << "For nuc=" << nuc->symbol << " maxhl=" << PhysicalUnits::printToBestTimeUnits(maxhl)
+        //     << ", sumhlfs=" << PhysicalUnits::printToBestTimeUnits(sumhlfs)
+        //     << " - will set max age to " << PhysicalUnits::printToBestTimeUnits(std::max( 7*maxhl, 4*sumhlfs ))
+        //     << endl;
+        
+        //return 100.0*nuc->halfLife;
+        return std::max( 7*maxhl, 4*sumhlfs );
+      };//maxNuclideDecayHL
+      
+      double maxAge = -1.0;
+      if( ageDefiningNuc == nuclide )
+      {
+        //We are
+        
+        for( size_t trialInd = 0; trialInd < this->numNuclides(); ++trialInd )
+        {
+          const SandiaDecay::Nuclide *trialNuc = this->nuclide( int(trialInd) );
+          if( trialNuc->atomicNumber == nuclide->atomicNumber )
+          {
+            const double thisMaxAge = maxNuclideDecayHL( nuclide );
+            maxAge = std::max( maxAge, thisMaxAge );
+          }
+        }//for( loop over all nuclides being fit for )
+      }else
+      {
+        maxAge = maxNuclideDecayHL( nuclide );
+      }
+      assert( maxAge > 0.0 );
+      
+      double age = srcdef->age;
+      double ageStep = 0.25 * nuclide->halfLife;
+      
+      // Limit the maximum age to be the larger of ten times the current age, or 200 years.  This
+      //  is both to be reasonable in terms of answers we get, and because for really long-lived
+      //  isotopes, we could have a max age at this point so large it will cause Minuit to give
+      //  NaNs for age, even on first iteration.
+      maxAge = std::min( maxAge, std::max(10.0*age, 200.0*PhysicalUnits::year) );
+      
+      // If the age is currently over 10000 years, it is just really getting unreasonable, so
+      //  larger than Minuit can handle, so will impose a tougher 100k year limit, but let grow past
+      //  this, but require the user to hit "fit" over and over again.
+      if( maxAge > 10000.0*PhysicalUnits::year )
+        maxAge = std::max(2.0*age, 10000.0*PhysicalUnits::year);
+      
+      // But no matter what we'll limit to the age of earth, which at least for a few select
+      //  examples tried, Minuit was okay with (it wasnt okay with like 1.2E20 years that some of
+      //  the uraniums would give)
+      age = std::min( age, 4.543e+9 * PhysicalUnits::year );
+      maxAge = std::min( maxAge, 4.543e+9 * PhysicalUnits::year );
+      
+      ageStep = std::min( ageStep, 0.1*maxAge );
+      if( age > 0 )
+        ageStep = std::min( 0.1*age, ageStep );
+      
+      //cout << "For nuclide " << nuclide->symbol << " adding age=" << age << ", with step " << ageStep << " and max age " << maxAge << endl;
+      
+      inputPrams.Add( nuclide->symbol + "Age", age, ageStep, 0, maxAge  );
+    }else if( hasOwnAge )
+    {
+      const double age = srcdef->age;
+      //cout << nuclide->symbol << " has own non-fitting age going in as param " << inputPrams.Parameters().size() << endl;
+      inputPrams.Add( nuclide->symbol + "Age", age );
+    }else  //see if defining nuclide age is fixed, if so use it, else put in negative integer of index of age...
+    {
+      assert( ageDefiningNuc );
+      
+      // Previous to 20210825, we were doing the next commented-out line, which is not correct; we
+      //  want the relative nuclide index to be for the order nuclides are added into 'inputPrams',
+      //  which may be different m_sourceModel->m_nuclides.
+      //const int age_defining_index = m_sourceModel->nuclideIndex( ageDefiningNuc );
+      
+      int age_defining_index = -1;
+      for( size_t ansnucn = 0; ansnucn < this->numNuclides(); ++ansnucn )
+      {
+        const SandiaDecay::Nuclide *answnuclide = this->nuclide( static_cast<int>(ansnucn) );
+        if( answnuclide == ageDefiningNuc )
+        {
+          age_defining_index = static_cast<int>(ansnucn);
+          break;
+        }
+      }//for( size_t ansnucn = 0; ansnucn < answer->numNuclides(); ++ansnucn )
+      
+      //assert( age_defining_index >= 0 );
+      if( age_defining_index < 0 )  //shouldnt ever happen, but JIC
+        throw runtime_error( "Error finding age defining nuclide for " + nuclide->symbol
+                            + " (should have been " + ageDefiningNuc->symbol + ")" );
+      
+      const double ageIndexVal = -1.0*(age_defining_index + 1);
+      //cout << nuclide->symbol << ": ageIndexVal=" << ageIndexVal
+      //<< " going in as param " << inputPrams.Parameters().size() << endl;
+      inputPrams.Add( nuclide->symbol + "Age", ageIndexVal );
+    }
+  }//for( size_t src_index = 0; src_index < src_definitions.size(); ++src_index )
+  
+  m_initialSrcDefinitions = src_definitions;
+  
+  return num_fit_params;
+}//size_t setInitialSourceDefinitions(...)
+  
+  
+const std::vector<ShieldingSourceFitCalc::SourceFitDef> &ShieldingSourceChi2Fcn::initialSourceDefinitions() const
+{
+  return m_initialSrcDefinitions;
+}
+  
   
 const SandiaDecay::Nuclide *ShieldingSourceChi2Fcn::nuclide( const size_t nuc_index ) const
 {
@@ -4699,6 +4730,11 @@ const std::vector<PeakDef> &ShieldingSourceChi2Fcn::peaks() const
   return m_peaks;
 }
 
+const std::vector<PeakDef> &ShieldingSourceChi2Fcn::backgroundPeaks() const
+{
+  return m_backgroundPeaks;
+}
+  
 
 ShieldingSourceChi2Fcn::CancelException::CancelException( const ShieldingSourceChi2Fcn::CalcStatus cancel_code )
  : std::exception(),
@@ -5413,13 +5449,13 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       const double act = activity( nuclide, x );
       const double thisage = age( nuclide, x );
       
-      {
-        static std::mutex s_debug_mutex;
-        std::lock_guard<std::mutex> lock( s_debug_mutex );
-        cout << "\tActivity of " << nuclide->symbol << " is "
-             << PhysicalUnits::printToBestActivityUnits(act)
-             << " with age " << PhysicalUnits::printToBestTimeUnits(thisage) << endl;
-      }
+      //{
+      //  static std::mutex s_debug_mutex;
+      //  std::lock_guard<std::mutex> lock( s_debug_mutex );
+      //  cout << "\tActivity of " << nuclide->symbol << " is "
+      //       << PhysicalUnits::printToBestActivityUnits(act)
+      //       << " with age " << PhysicalUnits::printToBestTimeUnits(thisage) << endl;
+      //}
       
       
       if( mixturecache.find(nuclide) == mixturecache.end() )

@@ -64,151 +64,480 @@ namespace ShieldingSourceFitCalc
   const int ShieldingInfo::sm_xmlSerializationMinorVersion = 1;
 
   
-  TraceSourceInfo::TraceSourceInfo()
-   : m_type( GammaInteractionCalc::TraceActivityType::NumTraceActivityType ),
+  /** Change log:
+   - 20230712, no version change: split this out from ShieldingSourceDisplay::sm_xmlSerializationMajorVersion
+   */
+  const int SourceFitDef::sm_xmlSerializationMajorVersion = 0;
+  
+  /** Change log:
+   - 20211031, Version 1: added "SourceType" node under the <Nuclide> to say whether its a point, intrinsic, or trace source.
+                    added "Geometry" node under the "ShieldingSourceFit" node
+   - 20230712, no version change: split this out from ShieldingSourceDisplay::sm_xmlSerializationMinorVersion
+   */
+  const int SourceFitDef::sm_xmlSerializationMinorVersion = 1;
+
+  
+  
+  
+SourceFitDef::SourceFitDef()
+    : nuclide( nullptr ), activity(0.0), fitActivity(false),
+      age(0.0), fitAge(false), ageDefiningNuc( nullptr ),
+      sourceType( ShieldingSourceFitCalc::ModelSourceType::Point )
+  #if( INCLUDE_ANALYSIS_TEST_SUITE )
+      , truthActivity(), truthActivityTolerance(),
+      truthAge(), truthAgeTolerance()
+  #endif
+{
+}
+
+    
+IsoFitStruct::IsoFitStruct()
+  : SourceFitDef(),
+      numProgenyPeaksSelected(0),
+      ageIsFittable(true),
+      activityUncertainty(-1.0),
+      ageUncertainty(-1.0)
+{
+}
+  
+  
+TraceSourceInfo::TraceSourceInfo()
+  : m_type( GammaInteractionCalc::TraceActivityType::NumTraceActivityType ),
     m_fitActivity( false ),
     m_nuclide( nullptr ),
     m_activity( 0.0 ),
     m_relaxationDistance( 0.0f )
-  {
-  }
+{
+}
    
-  
-  void TraceSourceInfo::serialize( rapidxml::xml_node<char> *parent_node ) const
-  {
-    rapidxml::xml_document<char> *doc = parent_node->document();
-    
-    rapidxml::xml_node<char> * const base_node
-                                      = doc->allocate_node( rapidxml::node_element, "TraceSource" );
-    parent_node->append_node( base_node );
-    
-    const char *value = m_nuclide ? m_nuclide->symbol.c_str() : "None";
-    rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, "Nuclide", value );
-    base_node->append_node( node );
-    
-    const string actstr = PhysicalUnits::printToBestActivityUnits(m_activity,12);
-    value = doc->allocate_string( actstr.c_str() );
-    node = doc->allocate_node( rapidxml::node_element, "DisplayActivity", value );
-    base_node->append_node( node );
-    
-    //// Put the total activity as an attribute, just to make a little more human readable/checkable
-    //const string total_act = PhysicalUnits::printToBestActivityUnits( m_currentTotalActivity );
-    //value = doc->allocate_string( total_act.c_str() );
-    //rapidxml::xml_attribute<char> *attr = doc->allocate_attribute( "TotalActivity", value );
-    //node->append_attribute( attr );
-    
-    value = GammaInteractionCalc::to_str( m_type );
-    node = doc->allocate_node( rapidxml::node_element, "TraceActivityType", value );
-    base_node->append_node( node );
-      
-    value = m_fitActivity ? "1" : "0";
-    node = doc->allocate_node( rapidxml::node_element, "AllowFitting", value );
-    base_node->append_node( node );
-    
-    if( m_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
-    {
-      const string relax_dist = PhysicalUnits::printToBestLengthUnits(m_relaxationDistance,7);
-      value = doc->allocate_string( relax_dist.c_str() );
-      node = doc->allocate_node( rapidxml::node_element, "RelaxationDistance", value );
-      base_node->append_node( node );
-    }
-  }//void serialize( rapidxml::xml_node<char> *parent_node ) const
-  
-  
-  void TraceSourceInfo::deSerialize( const rapidxml::xml_node<char> *trace_node )
-  {
-    using GammaInteractionCalc::TraceActivityType;
-    
-    if( !trace_node || !trace_node->value()
-       || rapidxml::internal::compare(trace_node->value(), trace_node->value_size(),"TraceSource", 11, true) )
-      throw runtime_error( "TraceSourceInfo::deSerialize: called with invalid node" );
-      
-    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-    
-    const rapidxml::xml_node<char> *nuc_node = trace_node->first_node( "Nuclide" );
-    const rapidxml::xml_node<char> *disp_act_node = trace_node->first_node( "DisplayActivity" );
-    const rapidxml::xml_node<char> *act_type_node = trace_node->first_node( "TraceActivityType" );
-    const rapidxml::xml_node<char> *allow_fit_node = trace_node->first_node( "AllowFitting" );
-    const rapidxml::xml_node<char> *relax_node = trace_node->first_node( "RelaxationDistance" );
-    
-    if( !nuc_node || !disp_act_node || !act_type_node || !allow_fit_node )
-      throw runtime_error( "TraceSrcDisplay::deSerialize: missing node" );
 
-    const string act_type = SpecUtils::xml_value_str(act_type_node);
+void SourceFitDef::deSerialize( const ::rapidxml::xml_node<char> *src_node )
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
+  const rapidxml::xml_node<> *name_node = src_node->first_node( "Name", 4 );
+  const rapidxml::xml_node<> *activity_node = src_node->first_node( "Activity", 8 );
+  const rapidxml::xml_node<> *self_atten_node = src_node->first_node( "ShieldingDeterminedActivity", 27 ); //XML version 1.0
+  const rapidxml::xml_node<> *src_type_node = src_node->first_node( "SourceType", 10 ); //XML version 1.1
+  
+  const char *self_atten_value = self_atten_node ? self_atten_node->value() : nullptr;
+  const char *src_type_value = src_type_node ? src_type_node->value() : nullptr;
+  
+  if( !name_node || !name_node->value() || !activity_node
+     || (!self_atten_value && !src_type_value)  )
+    throw runtime_error( "Missing necessary element for sources XML" );
+  
+  const rapidxml::xml_node<> *activity_value_node = activity_node->first_node( "Value", 5 );
+  
+  if( !activity_value_node )
+    throw runtime_error( "No activity value node" );
+  const rapidxml::xml_attribute<char> *fit_activity_attr = activity_value_node->first_attribute( "Fit", 3 );
+  
+  const rapidxml::xml_node<> *age_node = src_node->first_node( "Age", 3 );
+  if( !age_node )
+    throw runtime_error( "Missing necessary age element for sources XML" );
+  
+  const rapidxml::xml_node<> *age_value_node = age_node->first_node( "Value", 5 );
+  const rapidxml::xml_attribute<char> *fit_age_attr = age_value_node->first_attribute( "Fit", 3 );
+  const rapidxml::xml_attribute<char> *age_defining_attr = age_value_node->first_attribute( "AgeDefiningNuclide", 18 );
+  if( !age_defining_attr )
+    age_defining_attr = age_value_node->first_attribute( "AgeMaster", 9 ); //sm_xmlSerializationVersion
+  
+  
+  if( !activity_value_node || !activity_value_node->value()
+      || !age_value_node || !age_value_node->value()
+      || !fit_activity_attr || !fit_activity_attr->value()
+      || !age_value_node || !age_value_node->value()
+      || !fit_age_attr || !fit_age_attr->value() )
+    throw runtime_error( "Missing/invalid node for sources XML" );
+  
+  SourceFitDef &row = *this;
+  row.nuclide = db->nuclide( name_node->value() );
+  if( !row.nuclide )
+    throw runtime_error( "Invalid nuclide for sources XML" );
+  if( !(stringstream(activity_value_node->value()) >> row.activity) )
+    throw runtime_error( "Failed to read activity" );
+  
+  if( !(stringstream(age_value_node->value()) >> row.age) )
+    throw runtime_error( "Failed to read age" );
+  if( !(stringstream(fit_activity_attr->value()) >> row.fitActivity) )
+    throw runtime_error( "Failed to read fit_act" );
+  if( !(stringstream(fit_age_attr->value()) >> row.fitAge) )
+    throw runtime_error( "Failed to read fit_age" );
+  
+  if( self_atten_value )
+  {
+    // Depreciated as of XML version 0.1
+    bool selfAtten = false;
+    if( !(stringstream(self_atten_value) >> selfAtten) )
+      throw runtime_error( "Failed to read shieldingIsSource" );
+    row.sourceType = selfAtten ? ShieldingSourceFitCalc::ModelSourceType::Intrinsic : ShieldingSourceFitCalc::ModelSourceType::Point;
+  }//if( self_atten_value )
+  
+  if( src_type_value )
+  {
+    // XML version >= 0.1
+    if( SpecUtils::iequals_ascii(src_type_value, "Point") )
+      row.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+    else if( SpecUtils::iequals_ascii(src_type_value, "Intrinsic") )
+      row.sourceType = ShieldingSourceFitCalc::ModelSourceType::Intrinsic;
+    else if( SpecUtils::iequals_ascii(src_type_value, "Trace") )
+      row.sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
+    else
+      throw runtime_error( "Invalid value of 'SourceType'" );
+  }//if( src_type_value )
+
+  if( !age_defining_attr || !age_defining_attr->value() )
+    row.ageDefiningNuc = nullptr;
+  else
+    row.ageDefiningNuc = db->nuclide( age_defining_attr->value() );
+  
+  
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+  auto getTruth = [src_node]( const char *truthName, const bool isActivity,
+                              boost::optional<double> &value ){
+    value.reset();
     
-    m_type = TraceActivityType::NumTraceActivityType;
-    for( TraceActivityType t = TraceActivityType(0);
-        t != TraceActivityType::NumTraceActivityType;
-        t = TraceActivityType(static_cast<int>(t) + 1) )
-    {
-      if( act_type == GammaInteractionCalc::to_str(t) )
-      {
-        m_type = t;
-        break;
-      }
-    }//for( loop over TraceActivityTypes )
+    auto node = src_node->first_node( truthName );
+    if( !node )
+      return;
     
-    if( m_type == TraceActivityType::NumTraceActivityType )
-      throw runtime_error( "TraceSrcDisplay::deSerialize: Trace activity type in XML"
-                          " ('" + act_type + "'), is invalid." );
-    
-    const string nuclidestr = SpecUtils::xml_value_str(nuc_node);
-    m_nuclide = db->nuclide( nuclidestr );
-    
-    string acttxt = SpecUtils::xml_value_str(disp_act_node);
-    
-    // Check activity text is actually valid, and convert to users current prefered units
     try
     {
-      m_activity = PhysicalUnits::stringToActivity(acttxt);
+      if( isActivity )
+        value = PhysicalUnits::stringToActivity( node->value() );
+      else
+        value = PhysicalUnits::stringToTimeDuration( node->value() );
+      
+      cout << "Set '" << truthName << "' to value " << *value << " from '" << node->value() <<  "' while deserializing" << endl;
     }catch(...)
     {
-      throw runtime_error( "TraceSrcDisplay::deSerialize: invalid activity: " + acttxt );
+      cerr << "Failed to read back in " << truthName << " from " << node->value() << endl;
+    }
+  };//getTruth(...)
+  
+  getTruth( "TruthActivity", true, row.truthActivity );
+  getTruth( "TruthActivityTolerance", true, row.truthActivityTolerance );
+  getTruth( "TruthAge", false, row.truthAge );
+  getTruth( "TruthAgeTolerance", false, row.truthAgeTolerance );
+#endif
+}//void SourceFitDef::deSerialize( const ::rapidxml::xml_node<char> *parent_node )
+  
+  
+::rapidxml::xml_node<char> *SourceFitDef::serialize( rapidxml::xml_node<char> *isotope_nodes ) const
+{
+  if( !isotope_nodes )
+    throw runtime_error( "SourceFitDef::serialize: invalid parent" );
+  
+  rapidxml::xml_document<char> *doc = isotope_nodes->document();
+  if( !doc )
+    throw runtime_error( "SourceFitDef::serialize: couldnt get document" );
+  
+  
+  rapidxml::xml_node<char> *nuclide_node = doc->allocate_node( rapidxml::node_element, "Nuclide" );
+  isotope_nodes->append_node( nuclide_node );
+  
+  const char *value = doc->allocate_string( nuclide->symbol.c_str() );
+  rapidxml::xml_node<char> *name_node = doc->allocate_node( rapidxml::node_element, "Name", value );
+  nuclide_node->append_node( name_node );
+  
+  value = "";
+  const char *srctype = "";
+  switch( sourceType )
+  {
+    case ShieldingSourceFitCalc::ModelSourceType::Point:
+      srctype = "Point";
+      value = "0";
+      break;
+      
+    case ShieldingSourceFitCalc::ModelSourceType::Intrinsic:
+      srctype = "Intrinsic";
+      value = "1";
+      break;
+      
+    case ShieldingSourceFitCalc::ModelSourceType::Trace:
+      srctype = "Trace";
+      value = "0";
+      break;
+  }//switch( sourceType )
+  
+  // <ShieldingDeterminedActivity> is depreciated as of XML version 0.1, but leaving in to be
+  //   backward compatible with version 0.0 (trace sources will be treated as point sources)
+  rapidxml::xml_node<char> *determined_note = doc->allocate_node( rapidxml::node_element, "ShieldingDeterminedActivity", value );
+  nuclide_node->append_node( determined_note );
+  
+  // I dont think we actually need to note the source type here, because the ShieldingSelects
+  //  already have this info, but when we deSerialize, we'll note
+  //  SourceFitModel::IsoFitStruct::sourceType - which is maybe not the best because it creates
+  //  a condition for the XML to become inconsistent with itself
+  value = srctype;
+  determined_note = doc->allocate_node( rapidxml::node_element, "SourceType", value );
+  nuclide_node->append_node( determined_note );
+  
+  rapidxml::xml_node<char> *activity_node = doc->allocate_node( rapidxml::node_element, "Activity" );
+  nuclide_node->append_node( activity_node );
+  
+  value = doc->allocate_string( std::to_string(activity).c_str() );
+  rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, "Value", value );
+  activity_node->append_node( node );
+  
+  value = fitActivity ? "1" : "0";
+  rapidxml::xml_attribute<char> *attr = doc->allocate_attribute( "Fit", value );
+  node->append_attribute( attr );
+  
+  
+  rapidxml::xml_node<char> *age_node = doc->allocate_node( rapidxml::node_element, "Age" );
+  nuclide_node->append_node( age_node );
+  
+  value = doc->allocate_string( std::to_string(age).c_str() );
+  node = doc->allocate_node( rapidxml::node_element, "Value", value );
+  age_node->append_node( node );
+  
+  value = fitAge ? "1" : "0";
+  attr = doc->allocate_attribute( "Fit", value );
+  node->append_attribute( attr );
+  
+  if( ageDefiningNuc && (ageDefiningNuc != nuclide) )
+  {
+    value = ageDefiningNuc->symbol.c_str();
+    
+    if( SourceFitDef::sm_xmlSerializationMajorVersion == 0 )
+    {
+      //Depreciating tag 20201201, will remove when XML serialization is updated
+      attr = doc->allocate_attribute( "AgeMaster", value );
+      node->append_attribute( attr );
     }
     
-    if( m_type == TraceActivityType::ExponentialDistribution )
-    {
-      if( !relax_node || !relax_node->value_size() )
-        throw runtime_error( "TraceSrcDisplay::deSerialize: relaxation distance not specified." );
-      
-      try
-      {
-        const string relaxstr = SpecUtils::xml_value_str(relax_node);
-        m_relaxationDistance = PhysicalUnits::stringToDistance( relaxstr );
-      }catch( std::exception & )
-      {
-        throw runtime_error( "TraceSrcDisplay::deSerialize: relaxation distance invalid distance." );
-      }
-    }//if( m_type == TraceActivityType::ExponentialDistribution )
+    attr = doc->allocate_attribute( "AgeDefiningNuclide", value );
+    node->append_attribute( attr );
+  }//if( ageDefiningNuc && (ageDefiningNuc != nuclide) )
+  
+  
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+  auto addTruth = [doc,nuclide_node]( const char *truthName, const bool isActivity,
+                                     const boost::optional<double> &value ){
+    if( !value )
+      return;
+    string strval;
+    const bool useCurries = true;
+    if( isActivity )
+      strval = PhysicalUnits::printToBestActivityUnits( *value, 6, useCurries );
+    else
+      strval = PhysicalUnits::printToBestTimeUnits( *value, 6 );
     
-    const string do_fit_xml = SpecUtils::xml_value_str(allow_fit_node);
-    m_fitActivity = ((do_fit_xml == "1") || SpecUtils::iequals_ascii(do_fit_xml,"true"));
-  }//void TraceSourceInfo::deSerialize( const rapidxml::xml_node<char> *trace_node )
+    const char *txtvalue = doc->allocate_string( strval.c_str() );
+    rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, truthName, txtvalue );
+    nuclide_node->append_node( node );
+  };//addTruth(...)
+  
+  addTruth( "TruthActivity", true, truthActivity );
+  addTruth( "TruthActivityTolerance", true, truthActivityTolerance );
+  addTruth( "TruthAge", false, truthAge );
+  addTruth( "TruthAgeTolerance", false, truthAgeTolerance );
+#endif
+  
+  return nuclide_node;
+}//::rapidxml::xml_node<char> *SourceFitDef::serialize( rapidxml::xml_node<char> *parent_node )
+  
+  
+  
+void IsoFitStruct::deSerialize( const ::rapidxml::xml_node<char> *src_node )
+{
+  SourceFitDef::deSerialize( src_node );
+  
+  const rapidxml::xml_node<> *age_node = src_node->first_node( "Age", 3 );
+  const rapidxml::xml_node<> *activity_node = src_node->first_node( "Activity", 8 );
+  
+  if( !age_node || !activity_node )
+    throw runtime_error( "Missing necessary age or activity element for sources XML" );
+  
+  const rapidxml::xml_node<> *age_uncert_node = age_node->first_node( "Uncertainty", 11 );
+  const rapidxml::xml_node<> *activity_uncert_node = activity_node->first_node( "Uncertainty", 11 );
+  
+  
+  if( !activity_uncert_node || !activity_uncert_node->value()
+     || !age_uncert_node || !age_uncert_node->value() )
+    throw runtime_error( "Missing/invalid node for sources XML" );
+  
+  IsoFitStruct &row = *this;
+  
+  if( !(stringstream(activity_uncert_node->value()) >> row.activityUncertainty) )
+    throw runtime_error( "Failed to read activity_uncer" );
+  
+  if( !(stringstream(age_uncert_node->value()) >> row.ageUncertainty) )
+    throw runtime_error( "Failed to read age_uncert" );
+  
+  row.ageIsFittable = !PeakDef::ageFitNotAllowed( row.nuclide );
+}//void IsoFitStruct::deSerialize( const ::rapidxml::xml_node<char> *parent_node )
+  
+  
+::rapidxml::xml_node<char> *IsoFitStruct::serialize( rapidxml::xml_node<char> *isotope_nodes ) const
+{
+  rapidxml::xml_node<char> *nuclide_node = SourceFitDef::serialize( isotope_nodes );
+  if( !nuclide_node )
+    throw runtime_error( "IsoFitStruct::serialize: null nuclide node?" );
+  
+  rapidxml::xml_document<char> *doc = isotope_nodes->document();
+  if( !doc )
+    throw runtime_error( "IsoFitStruct::serialize: couldnt get document" );
+  
+  rapidxml::xml_node<char> *activity_node = nuclide_node->first_node("Activity");
+  assert( activity_node );
+  if( !activity_node )
+    throw runtime_error( "IsoFitStruct::serialize: null Activity node?" );
+  
+  const char *value = doc->allocate_string( std::to_string(activityUncertainty).c_str() );
+  rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, "Uncertainty", value );
+  activity_node->append_node( node );
+  
+  rapidxml::xml_node<char> *age_node = nuclide_node->first_node("Age");
+  assert( age_node );
+  if( !age_node )
+    throw runtime_error( "IsoFitStruct::serialize: null Age node?" );
+  
+  value = doc->allocate_string( std::to_string(ageUncertainty).c_str() );
+  node = doc->allocate_node( rapidxml::node_element, "Uncertainty", value );
+  age_node->append_node( node );
+  
+  return nuclide_node;
+}//::rapidxml::xml_node<char> *IsoFitStruct::serialize( rapidxml::xml_node<char> *parent_node )
+  
+  
+void TraceSourceInfo::serialize( rapidxml::xml_node<char> *parent_node ) const
+{
+  rapidxml::xml_document<char> *doc = parent_node->document();
+  
+  rapidxml::xml_node<char> * const base_node
+  = doc->allocate_node( rapidxml::node_element, "TraceSource" );
+  parent_node->append_node( base_node );
+  
+  const char *value = m_nuclide ? m_nuclide->symbol.c_str() : "None";
+  rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, "Nuclide", value );
+  base_node->append_node( node );
+  
+  const string actstr = PhysicalUnits::printToBestActivityUnits(m_activity,12);
+  value = doc->allocate_string( actstr.c_str() );
+  node = doc->allocate_node( rapidxml::node_element, "DisplayActivity", value );
+  base_node->append_node( node );
+  
+  //// Put the total activity as an attribute, just to make a little more human readable/checkable
+  //const string total_act = PhysicalUnits::printToBestActivityUnits( m_currentTotalActivity );
+  //value = doc->allocate_string( total_act.c_str() );
+  //rapidxml::xml_attribute<char> *attr = doc->allocate_attribute( "TotalActivity", value );
+  //node->append_attribute( attr );
+  
+  value = GammaInteractionCalc::to_str( m_type );
+  node = doc->allocate_node( rapidxml::node_element, "TraceActivityType", value );
+  base_node->append_node( node );
+  
+  value = m_fitActivity ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, "AllowFitting", value );
+  base_node->append_node( node );
+  
+  if( m_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
+  {
+    const string relax_dist = PhysicalUnits::printToBestLengthUnits(m_relaxationDistance,7);
+    value = doc->allocate_string( relax_dist.c_str() );
+    node = doc->allocate_node( rapidxml::node_element, "RelaxationDistance", value );
+    base_node->append_node( node );
+  }
+}//void serialize( rapidxml::xml_node<char> *parent_node ) const
+  
+  
+void TraceSourceInfo::deSerialize( const rapidxml::xml_node<char> *trace_node )
+{
+  using GammaInteractionCalc::TraceActivityType;
+  
+  if( !trace_node || !trace_node->value()
+     || rapidxml::internal::compare(trace_node->value(), trace_node->value_size(),"TraceSource", 11, true) )
+    throw runtime_error( "TraceSourceInfo::deSerialize: called with invalid node" );
+  
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
+  const rapidxml::xml_node<char> *nuc_node = trace_node->first_node( "Nuclide" );
+  const rapidxml::xml_node<char> *disp_act_node = trace_node->first_node( "DisplayActivity" );
+  const rapidxml::xml_node<char> *act_type_node = trace_node->first_node( "TraceActivityType" );
+  const rapidxml::xml_node<char> *allow_fit_node = trace_node->first_node( "AllowFitting" );
+  const rapidxml::xml_node<char> *relax_node = trace_node->first_node( "RelaxationDistance" );
+  
+  if( !nuc_node || !disp_act_node || !act_type_node || !allow_fit_node )
+    throw runtime_error( "TraceSrcDisplay::deSerialize: missing node" );
+  
+  const string act_type = SpecUtils::xml_value_str(act_type_node);
+  
+  m_type = TraceActivityType::NumTraceActivityType;
+  for( TraceActivityType t = TraceActivityType(0);
+      t != TraceActivityType::NumTraceActivityType;
+      t = TraceActivityType(static_cast<int>(t) + 1) )
+  {
+    if( act_type == GammaInteractionCalc::to_str(t) )
+    {
+      m_type = t;
+      break;
+    }
+  }//for( loop over TraceActivityTypes )
+  
+  if( m_type == TraceActivityType::NumTraceActivityType )
+    throw runtime_error( "TraceSrcDisplay::deSerialize: Trace activity type in XML"
+                        " ('" + act_type + "'), is invalid." );
+  
+  const string nuclidestr = SpecUtils::xml_value_str(nuc_node);
+  m_nuclide = db->nuclide( nuclidestr );
+  
+  string acttxt = SpecUtils::xml_value_str(disp_act_node);
+  
+  // Check activity text is actually valid, and convert to users current prefered units
+  try
+  {
+    m_activity = PhysicalUnits::stringToActivity(acttxt);
+  }catch(...)
+  {
+    throw runtime_error( "TraceSrcDisplay::deSerialize: invalid activity: " + acttxt );
+  }
+  
+  if( m_type == TraceActivityType::ExponentialDistribution )
+  {
+    if( !relax_node || !relax_node->value_size() )
+      throw runtime_error( "TraceSrcDisplay::deSerialize: relaxation distance not specified." );
+    
+    try
+    {
+      const string relaxstr = SpecUtils::xml_value_str(relax_node);
+      m_relaxationDistance = PhysicalUnits::stringToDistance( relaxstr );
+    }catch( std::exception & )
+    {
+      throw runtime_error( "TraceSrcDisplay::deSerialize: relaxation distance invalid distance." );
+    }
+  }//if( m_type == TraceActivityType::ExponentialDistribution )
+  
+  const string do_fit_xml = SpecUtils::xml_value_str(allow_fit_node);
+  m_fitActivity = ((do_fit_xml == "1") || SpecUtils::iequals_ascii(do_fit_xml,"true"));
+}//void TraceSourceInfo::deSerialize( const rapidxml::xml_node<char> *trace_node )
     
   
 #if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
-  void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSourceInfo &rhs )
+void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSourceInfo &rhs )
+{
+  if( lhs.m_type != rhs.m_type )
+    throw runtime_error( "TraceSourceInfo LHS Type != RHS Type" );
+  
+  if( lhs.m_fitActivity != rhs.m_fitActivity )
+    throw runtime_error( "TraceSourceInfo LHS FitActivity != RHS FitActivity" );
+  
+  if( lhs.m_nuclide != rhs.m_nuclide )
+    throw runtime_error( "TraceSourceInfo LHS Nuclide != RHS Nuclide" );
+  
+  const double act_diff = fabs( lhs.m_activity - rhs.m_activity );
+  if( (act_diff > 1.0E-14) && (act_diff > 1.0E-8*max(fabs(lhs.m_activity), fabs(rhs.m_activity)) ) )
+    throw runtime_error( "TraceSourceInfo LHS Activity != RHS Activity" );
+  
+  if( lhs.m_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
   {
-    if( lhs.m_type != rhs.m_type )
-      throw runtime_error( "TraceSourceInfo LHS Type != RHS Type" );
-    
-    if( lhs.m_fitActivity != rhs.m_fitActivity )
-      throw runtime_error( "TraceSourceInfo LHS FitActivity != RHS FitActivity" );
-    
-    if( lhs.m_nuclide != rhs.m_nuclide )
-      throw runtime_error( "TraceSourceInfo LHS Nuclide != RHS Nuclide" );
-    
-    const double act_diff = fabs( lhs.m_activity - rhs.m_activity );
-    if( (act_diff > 1.0E-14) && (act_diff > 1.0E-8*max(fabs(lhs.m_activity), fabs(rhs.m_activity)) ) )
-      throw runtime_error( "TraceSourceInfo LHS Activity != RHS Activity" );
-    
-    if( lhs.m_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
-    {
-      const float act_diff = fabs( lhs.m_relaxationDistance - rhs.m_relaxationDistance );
-      if( (act_diff > 1.0E-7) && (act_diff > 1.0E-6*max(fabs(lhs.m_activity), fabs(rhs.m_activity)) ) )
-        throw runtime_error( "TraceSourceInfo LHS RelaxationDistance != RHS RelaxationDistance" );
-    }
-  }//void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSourceInfo &rhs )
+    const float act_diff = fabs( lhs.m_relaxationDistance - rhs.m_relaxationDistance );
+    if( (act_diff > 1.0E-7) && (act_diff > 1.0E-6*max(fabs(lhs.m_activity), fabs(rhs.m_activity)) ) )
+      throw runtime_error( "TraceSourceInfo LHS RelaxationDistance != RHS RelaxationDistance" );
+  }
+}//void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSourceInfo &rhs )
 #endif //#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
   
 
@@ -452,6 +781,43 @@ namespace ShieldingSourceFitCalc
       addTruth( "TruthThicknessD2Tolerance", m_truthDimensionsTolerances[1] );
       addTruth( "TruthThicknessD3", m_truthDimensions[2] );
       addTruth( "TruthThicknessD3Tolerance", m_truthDimensionsTolerances[2] );
+      
+      if( !m_truthFitMassFractions.empty() )
+      {
+        char buffer[32] = { '\0' };
+        
+        name = "TruthMassFractions";
+        rapidxml::xml_node<char> *mass_frac_node = doc->allocate_node( rapidxml::node_element, name );
+        material_node->append_node( mass_frac_node );
+        
+        for( const auto &nuc_val_tol : m_truthFitMassFractions )
+        {
+          assert( nuc_val_tol.first );
+          if( !nuc_val_tol.first )
+            continue;
+          
+          name = "SelfAttenSrc";
+          rapidxml::xml_node<char> *src_node = doc->allocate_node( rapidxml::node_element, name );
+          mass_frac_node->append_node( src_node );
+          
+          name = "Nuclide";
+          value = doc->allocate_string( nuc_val_tol.first->symbol.c_str() );
+          node = doc->allocate_node( rapidxml::node_element, name, value );
+          src_node->append_node( node );
+          
+          name = "Value";
+          snprintf( buffer, sizeof(buffer), "%.9g", nuc_val_tol.second.first );
+          value = doc->allocate_string( buffer );
+          node = doc->allocate_node( rapidxml::node_element, name, value );
+          src_node->append_node( node );
+          
+          name = "Tolerance";
+          snprintf( buffer, sizeof(buffer), "%.9g", nuc_val_tol.second.second );
+          value = doc->allocate_string( buffer );
+          node = doc->allocate_node( rapidxml::node_element, name, value );
+          src_node->append_node( node );
+        }//for( const auto &nuc_val_tol : m_truthFitMassFractions )
+      }//if( !m_truthFitMassFractions.empty() )
   #endif
     }//if( m_isGenericMaterial ) / else
     
@@ -465,7 +831,7 @@ namespace ShieldingSourceFitCalc
     
     rapidxml::xml_attribute<char> *attr;
     rapidxml::xml_node<char> *node, *geom_node, *generic_node, *material_node;
-    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
    
     if( shield_node->name() != string("Shielding") )
       throw runtime_error( "ShieldingSelects XML node should be 'Shielding'" );
@@ -690,6 +1056,34 @@ namespace ShieldingSourceFitCalc
       getTruth( "TruthThicknessD2Tolerance", m_truthDimensionsTolerances[1] );
       getTruth( "TruthThicknessD3", m_truthDimensions[2] );
       getTruth( "TruthThicknessD3Tolerance", m_truthDimensionsTolerances[2] );
+      
+      m_truthFitMassFractions.clear();
+      const rapidxml::xml_node<> *mass_frac_node = XML_FIRST_NODE(material_node, "TruthMassFractions");
+      XML_FOREACH_CHILD( src_node, mass_frac_node, "SelfAttenSrc" )
+      {
+        const string nuc_str = SpecUtils::xml_value_str( XML_FIRST_NODE(src_node, "Nuclide") );
+        const string val_str = SpecUtils::xml_value_str( XML_FIRST_NODE(src_node, "Value") );
+        const string tol_str = SpecUtils::xml_value_str( XML_FIRST_NODE(src_node, "Tolerance") );
+        
+        assert( !nuc_str.empty() && !val_str.empty() && !tol_str.empty() );
+        if( nuc_str.empty() || val_str.empty() || tol_str.empty() )
+          continue;
+        
+        const SandiaDecay::Nuclide * const nuc =  db->nuclide( nuc_str );
+        assert( nuc );
+        if( !nuc )
+          continue;
+        
+        double value, tolerance;
+        if( !(stringstream(val_str) >> value) || !(stringstream(tol_str) >> tolerance)
+           || (value < 0.0) || (value > 1.0) || (tolerance < 0.0) || (tolerance > 1.0) )
+        {
+          assert( 0 );
+          continue;
+        }
+        
+        m_truthFitMassFractions[nuc] = make_pair( value, tolerance );
+      }//XML_FOREACH_CHILD( src_node, mass_frac_node, "SelfAttenSrc" )
 #endif //INCLUDE_ANALYSIS_TEST_SUITE
       
       if( m_forFitting )

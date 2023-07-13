@@ -110,7 +110,7 @@ namespace GammaInteractionCalc
   enum class GeometryType : int;
   enum class ModelSourceType : int;
   class ShieldingSourceChi2Fcn;
-  struct SourceDefinitions;
+  struct SourceFitDef;
   struct ShieldingSourceFitOptions;
 }//namespace GammaInteractionCalc
 
@@ -146,56 +146,6 @@ protected:
 
 class SourceFitModel: public Wt::WAbstractItemModel
 {
-protected:
-  struct IsoFitStruct
-  {
-    const SandiaDecay::Nuclide *nuclide;
-    
-    //numProdigenyPeaksSelected: The number of different progeny selected to be included in the fit
-    //  through all the peaks with the parent nuclide as assigned.
-    size_t numProgenyPeaksSelected;
-    
-    //activity: in units of ShieldingSourceChi2Fcn::sm_activityUnits
-    double activity;
-    bool fitActivity;
-    
-    //age: in units of PhysicalUnits::second
-    double age;
-    bool fitAge;
-   
-    
-    //ageIsNotFittable: update this whenever you set the nuclide.  Intended to
-    //  indicate nuclides where the spectrum doesnt change with time (ex Cs137,
-    //  W187, etc).  Not rock solid yet (not set true as often as could be), but
-    //  getting there.  See also PeakDef::ageFitNotAllowed(...).
-    bool ageIsFittable;
-    
-    //ageDefiningNuc: specifies if the age of nuclide should be tied to the age
-    //  a different nuclide instead.  Will be NULL if this is not the case.
-    const SandiaDecay::Nuclide *ageDefiningNuc;
-    GammaInteractionCalc::ModelSourceType sourceType;
-    double activityUncertainty;
-    double ageUncertainty;
-
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-    boost::optional<double> truthActivity, truthActivityTolerance;
-    boost::optional<double> truthAge, truthAgeTolerance;
-#endif
-    
-    IsoFitStruct()
-      : nuclide(NULL), numProgenyPeaksSelected(0), activity(0.0), fitActivity(false),
-        age(0.0), fitAge(false), ageIsFittable(true), ageDefiningNuc(NULL),
-        sourceType( static_cast<GammaInteractionCalc::ModelSourceType>(0) ),
-        activityUncertainty(-1.0), ageUncertainty(-1.0)
-    #if( INCLUDE_ANALYSIS_TEST_SUITE )
-        , truthActivity(), truthActivityTolerance(),
-        truthAge(), truthAgeTolerance()
-    #endif
-    {
-    }
-  };//struct IsoFitStruct
-
-
 public:
   enum Columns
   {
@@ -254,7 +204,7 @@ public:
   bool fitAge( int nuc ) const;
   
   
-  GammaInteractionCalc::ModelSourceType sourceType( int nuc ) const;
+  ShieldingSourceFitCalc::ModelSourceType sourceType( int nuc ) const;
   
   /** Returns true if a shielding determined source, or a trace source. */
   bool isVolumetricSource( int nuc ) const;
@@ -279,12 +229,12 @@ public:
   
   
   /** Sets the source type for a nuclide.
-   Sources default to GammaInteractionCalc::ModelSourceType::Point, which lets the user edit the activity and whether or not to fit the activity in the table.
+   Sources default to ShieldingSourceFitCalc::ModelSourceType::Point, which lets the user edit the activity and whether or not to fit the activity in the table.
    
-   For GammaInteractionCalc::ModelSourceType::Intrinsic or GammaInteractionCalc::ModelSourceType::Trace the activity field in the table will become non-editable, and the option to
+   For ShieldingSourceFitCalc::ModelSourceType::Intrinsic or ShieldingSourceFitCalc::ModelSourceType::Trace the activity field in the table will become non-editable, and the option to
    fit this quantity will become non-visible, as the ShieldingSelect controls this option via fitting for thickness and/or trace activity.
    */
-  void setSourceType( const SandiaDecay::Nuclide *nuc, GammaInteractionCalc::ModelSourceType type );
+  void setSourceType( const SandiaDecay::Nuclide *nuc, ShieldingSourceFitCalc::ModelSourceType type );
   
   void makeActivityNonEditable( const SandiaDecay::Nuclide *nuc );
 
@@ -339,23 +289,28 @@ public:
 
   //compare(...): function to compare IsoFitStruct according to relevant Column;
   //  functions similar to operator<
-  static bool compare( const IsoFitStruct &lhs, const IsoFitStruct &rhs,
+  static bool compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs,
+                      const ShieldingSourceFitCalc::IsoFitStruct &rhs,
                        Columns sortColumn, Wt::SortOrder order );
 
   void displayUnitsChanged( bool displayBq );
+  
+  const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &underlyingData() const;
+  
+  void setUnderlyingData( const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &data );
   
 protected:
   Wt::SortOrder m_sortOrder;
   Columns m_sortColumn;
   bool m_displayCurries;
   PeakModel *m_peakModel;
-  std::vector<IsoFitStruct> m_nuclides;
+  std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_nuclides;
   bool m_sameAgeForIsotopes;
   
   //m_previousResults: when a isotope gets removed from this model, we'll cache
   //  its current value, since it will often times get added again and be
   //  intended to be the same value
-  std::map<const SandiaDecay::Nuclide *, IsoFitStruct> m_previousResults;
+  std::map<const SandiaDecay::Nuclide *, ShieldingSourceFitCalc::IsoFitStruct> m_previousResults;
   
   friend class ShieldingSourceDisplay;
 };//class SourceFitModel
@@ -448,10 +403,10 @@ public:
                                          const SandiaDecay::Nuclide *nuc );
   void isotopeIsBecomingVolumetricSourceCallback( ShieldingSelect *select,
                                            const SandiaDecay::Nuclide *nuc,
-                                           const GammaInteractionCalc::ModelSourceType type );
+                                           const ShieldingSourceFitCalc::ModelSourceType type );
   void isotopeRemovedAsVolumetricSourceCallback( ShieldingSelect *select,
                                              const SandiaDecay::Nuclide *nuc,
-                                             const GammaInteractionCalc::ModelSourceType type );
+                                             const ShieldingSourceFitCalc::ModelSourceType type );
   
   /** Function called whenever a ShieldingSelect is changed by the user.
    
@@ -485,15 +440,19 @@ public:
     enum class FitStatus{ UserCancelled, TimedOut, InvalidOther, InterMediate, Final };
     FitStatus succesful;
     
-    double edm;  //estimated distance to minumum.
+    double edm;  //estimated distance to minimum.
     double chi2;
     int num_fcn_calls;
     std::vector<double> paramValues;
     std::vector<double> paramErrors;
     std::vector<std::string> errormsgs;
     
+    std::vector<PeakDef> foreground_peaks;
+    std::vector<PeakDef> background_peaks;
     std::vector<ShieldingSourceFitCalc::ShieldingInfo> initial_shieldings;
     std::vector<ShieldingSourceFitCalc::ShieldingInfo> final_shieldings;
+    
+    std::vector<ShieldingSourceFitCalc::IsoFitStruct> fit_src_info;
   };//struct ModelFitResults
   
   /** Performs the actual fit of shielding, activities, and ages;

@@ -1144,7 +1144,7 @@ public:
       {
         // Next line checks for self-attenuating source - should we extend to trace sources? If we
         //  do we need to modify our serialization logic a bit.
-        if( model->sourceType(index) == GammaInteractionCalc::ModelSourceType::Intrinsic )
+        if( model->sourceType(index) == ShieldingSourceFitCalc::ModelSourceType::Intrinsic )
           continue;
       }
       
@@ -1501,6 +1501,9 @@ void ShieldingSelect::setMassFractions( std::map<const SandiaDecay::Nuclide *,do
         cb->setMassFraction( pos->second );
     }//for( WWidget *child : children )
   }//for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
+  
+  updateIfMassFractionCanFit();
+  updateSelfAttenOtherNucFractionTxt();
   
   if( !used_input_nuclides.empty() )
     throw runtime_error( "ShieldingSelect::setMassFractions: didnt set all the input mass-fractions." );
@@ -2097,6 +2100,8 @@ void ShieldingSelect::init()
     m_fitMassFrac = new WCheckBox( "Fit Mass Fractions", m_asSourceCBs );
     m_fitMassFrac->hide();
     m_fitMassFrac->setInline( false );
+    m_fitMassFrac->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+    m_fitMassFrac->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   }//if( m_forFitting )
   
   
@@ -2290,7 +2295,7 @@ void ShieldingSelect::emitRemoveSignal()
         if( cb->useAsSource() && cb->isotope() )
         {
           cb->setUseAsSource( false );
-          removingIsotopeAsSource().emit( cb->isotope(), GammaInteractionCalc::ModelSourceType::Intrinsic );
+          removingIsotopeAsSource().emit( cb->isotope(), ShieldingSourceFitCalc::ModelSourceType::Intrinsic );
         }//if( cb->useAsSource() )
       }//for( WWidget *child : children )
     }//for(...)
@@ -2488,10 +2493,10 @@ void ShieldingSelect::handleTraceSourceNuclideChange( TraceSrcDisplay *changedSr
     return;
   
   if( oldNuc )
-    removingIsotopeAsSource().emit( oldNuc, GammaInteractionCalc::ModelSourceType::Trace );
+    removingIsotopeAsSource().emit( oldNuc, ShieldingSourceFitCalc::ModelSourceType::Trace );
   
   if( changedSrc && changedSrc->nuclide() )
-    addingIsotopeAsSource().emit( changedSrc->nuclide(), GammaInteractionCalc::ModelSourceType::Trace );
+    addingIsotopeAsSource().emit( changedSrc->nuclide(), ShieldingSourceFitCalc::ModelSourceType::Trace );
   
   vector<pair<const SandiaDecay::Nuclide *,double>> traceNucs;
   
@@ -2530,7 +2535,7 @@ void ShieldingSelect::handleTraceSourceWidgetAboutToBeRemoved( TraceSrcDisplay *
   if( !src || !src->nuclide() )
     return;
     
-  removingIsotopeAsSource().emit( src->nuclide(), GammaInteractionCalc::ModelSourceType::Trace );
+  removingIsotopeAsSource().emit( src->nuclide(), ShieldingSourceFitCalc::ModelSourceType::Trace );
 }//handleTraceSourceWidgetAboutToBeRemoved(...)
 
 
@@ -2789,13 +2794,13 @@ Wt::Signal<ShieldingSelect *,const SandiaDecay::Nuclide *> &ShieldingSelect::act
 }
 
 
-Wt::Signal<const SandiaDecay::Nuclide *,GammaInteractionCalc::ModelSourceType> &ShieldingSelect::addingIsotopeAsSource()
+Wt::Signal<const SandiaDecay::Nuclide *,ShieldingSourceFitCalc::ModelSourceType> &ShieldingSelect::addingIsotopeAsSource()
 {
   return m_addingIsotopeAsSource;
 }
 
 
-Wt::Signal<const SandiaDecay::Nuclide *,GammaInteractionCalc::ModelSourceType> &ShieldingSelect::removingIsotopeAsSource()
+Wt::Signal<const SandiaDecay::Nuclide *,ShieldingSourceFitCalc::ModelSourceType> &ShieldingSelect::removingIsotopeAsSource()
 {
   return m_removingIsotopeAsSource;
 }
@@ -3212,7 +3217,7 @@ void ShieldingSelect::isotopeCheckedCallback( const SandiaDecay::Nuclide *nuc )
     }//if( this_src_cb )
   }//if( nuc )
   
-  m_addingIsotopeAsSource.emit( nuc, GammaInteractionCalc::ModelSourceType::Intrinsic );
+  m_addingIsotopeAsSource.emit( nuc, ShieldingSourceFitCalc::ModelSourceType::Intrinsic );
 }//void isotopeCheckedCallback( const std::string symbol )
 
 
@@ -3221,7 +3226,7 @@ void ShieldingSelect::isotopeUnCheckedCallback( const SandiaDecay::Nuclide *iso 
 {
   updateIfMassFractionCanFit();
   setTraceSourceMenuItemStatus();
-  m_removingIsotopeAsSource.emit( iso, GammaInteractionCalc::ModelSourceType::Intrinsic );
+  m_removingIsotopeAsSource.emit( iso, ShieldingSourceFitCalc::ModelSourceType::Intrinsic );
 }//void isotopeUnCheckedCallback( const std::string symbol )
 
 
@@ -3262,7 +3267,7 @@ void ShieldingSelect::uncheckSourceIsotopeCheckBox( const SandiaDecay::Nuclide *
 
     if( cb->useAsSource() )
     {
-//      removingIsotopeAsSource().emit( symbol, GammaInteractionCalc::ModelSourceType::Intrinsic );
+//      removingIsotopeAsSource().emit( symbol, ShieldingSourceFitCalc::ModelSourceType::Intrinsic );
       cb->setUseAsSource( false );
     }//if( cb->isChecked() )
   }//for( WWidget *child : children )
@@ -4225,7 +4230,7 @@ void ShieldingSelect::handleMaterialChange()
       {
         SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
         if( cb && cb->useAsSource() )
-          removingIsotopeAsSource().emit( cb->isotope(), GammaInteractionCalc::ModelSourceType::Intrinsic );
+          removingIsotopeAsSource().emit( cb->isotope(), ShieldingSourceFitCalc::ModelSourceType::Intrinsic );
       }//for( WWidget *child : children )
 
       delete vt.second;
@@ -4251,6 +4256,8 @@ void ShieldingSelect::handleMaterialChange()
 
   
 #if( PERFORM_DEVELOPER_CHECKS )
+  /*
+   // This check is outdated - we no longer use the Material to track mass-fractions.
   for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
   {
     const vector<WWidget *> children = vt.second->children();
@@ -4282,6 +4289,7 @@ void ShieldingSelect::handleMaterialChange()
       }
     }//for( WWidget *child : children )
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
+   */
 #endif
   
   if( previousMaterial != newMaterial )
@@ -4291,7 +4299,7 @@ void ShieldingSelect::handleMaterialChange()
 }//void handleMaterialChange()
 
 
-void ShieldingSelect::handleUserChangeForUndoRedoWorker()
+void ShieldingSelect::handleUserChangeForUndoRedoWorker( const bool emit_change )
 {
   auto xml_data = make_shared<string>();
   try
@@ -4302,7 +4310,8 @@ void ShieldingSelect::handleUserChangeForUndoRedoWorker()
     
     if( !m_prevState || ((*m_prevState) != (*xml_data)) )
     {
-      m_userChangedStateSignal.emit( this, m_prevState, xml_data );
+      if( emit_change )
+        m_userChangedStateSignal.emit( this, m_prevState, xml_data );
       m_prevState = xml_data;
       //cout << "Storing ShieldingSelect taking " << xml_data->size() << " bytes mem" << endl;
     }else
@@ -4330,7 +4339,7 @@ void ShieldingSelect::handleUserChangeForUndoRedo()
   assert( server && wApp );
   if( server )
   {
-    auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this) );
+    auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this, true) );
     server->post( wApp->sessionId(), worker );
   }
 }//void handleUserChangeForUndoRedo()
@@ -4413,6 +4422,7 @@ ShieldingSourceFitCalc::ShieldingInfo ShieldingSelect::toShieldingInfo() const
     answer.m_truthDimensionsTolerances[1] = truthThicknessD2Tolerance;
     answer.m_truthDimensions[2] = truthThicknessD3;
     answer.m_truthDimensionsTolerances[2] = truthThicknessD3Tolerance;
+    answer.m_truthFitMassFractions = truthFitMassFractions;
 #endif
   }//if( m_isGenericMaterial ) / else
   
@@ -4627,6 +4637,7 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
     truthThicknessD2Tolerance = info.m_truthDimensionsTolerances[1];
     truthThicknessD3 = info.m_truthDimensions[2];
     truthThicknessD3Tolerance = info.m_truthDimensionsTolerances[2];
+    truthFitMassFractions = info.m_truthFitMassFractions;
 #endif
   }//if( info.m_isGenericMaterial ) / else
 }//void fromShieldingInfo( const ShieldingSourceFitCalc::ShieldingInfo &info )
@@ -4680,254 +4691,28 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
   }//if( !m_isGenericMaterial )
   
   
-#if( PERFORM_DEVELOPER_CHECKS )
-  // TODO: All this stuff in this section can be removed after initial testing.
-  rapidxml::xml_document<char> old_doc;
-  
-  const char *name, *value;
-  rapidxml::xml_node<char> *base_node, *node;
-  rapidxml::xml_attribute<char> *attr;
-  
-  name = "Shielding";
-  base_node = old_doc.allocate_node( rapidxml::node_element, name );
-  old_doc.append_node( base_node );
-  
-  //If you change the available options or formatting or whatever, increment the
-  //  version field of the XML!
-  string versionstr = std::to_string(ShieldingSourceFitCalc::ShieldingInfo::sm_xmlSerializationMajorVersion)
-                      + "." + std::to_string(ShieldingSourceFitCalc::ShieldingInfo::sm_xmlSerializationMinorVersion);
-  value = old_doc.allocate_string( versionstr.c_str() );
-  attr = old_doc.allocate_attribute( "version", value );
-  base_node->append_attribute( attr );
-  
-  name = "ForFitting";
-  value = m_forFitting ? "1" : "0";
-  node = old_doc.allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( node );
-
-  if( m_isGenericMaterial )
-  {
-    char buffer[32] = { '\0' };
-    
-    rapidxml::xml_node<> *generic_node;
-    
-    name = "Generic";
-    generic_node = old_doc.allocate_node( rapidxml::node_element, name );
-    base_node->append_node( generic_node );
-    
-    name = "ArealDensity";
-    snprintf( buffer, sizeof(buffer), "%.9g", m_arealDensityEdit->value() );
-    value = old_doc.allocate_string( buffer );
-    node = old_doc.allocate_node( rapidxml::node_element, name, value );
-    generic_node->append_node( node );
-    if( m_forFitting )
-    {
-      value = m_fitArealDensityCB->isChecked() ? "1" : "0";
-      attr = old_doc.allocate_attribute( "Fit", value );
-      node->append_attribute( attr );
-    }//if( m_fitArealDensityCB )
-    
-    name = "AtomicNumber";
-    snprintf( buffer, sizeof(buffer), "%.9g", m_atomicNumberEdit->value() );
-    value = old_doc.allocate_string( buffer );
-    node = old_doc.allocate_node( rapidxml::node_element, name, value );
-    generic_node->append_node( node );
-    if( m_forFitting )
-    {
-      value = m_fitAtomicNumberCB->isChecked() ? "1" : "0";
-      attr = old_doc.allocate_attribute( "Fit", value );
-      node->append_attribute( attr );
-    }//if( m_fitAtomicNumberCB )
-    
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-    auto addTruth = [&old_doc,generic_node]( const char *truthName, const boost::optional<double> &value ){
-      if( value )
-      {
-        const string strval = std::to_string(*value);
-        const char *value = old_doc.allocate_string( strval.c_str() );
-        rapidxml::xml_node<char> *node = old_doc.allocate_node( rapidxml::node_element, truthName, value );
-        generic_node->append_node( node );
-      }
-    };//addTruth(...)
-    addTruth( "TruthAD", truthAD );
-    addTruth( "TruthADTolerance", truthADTolerance );
-    addTruth( "TruthAN", truthAN );
-    addTruth( "TruthANTolerance", truthANTolerance );
-#endif
-  }else
-  {
-    name = "Geometry";
-    value = GammaInteractionCalc::to_str(m_geometry);
-    node = old_doc.allocate_node( rapidxml::node_element, name, value );
-    base_node->append_node( node );
-    
-    rapidxml::xml_node<> *material_node, *mass_frac_node, *iso_node;
-    
-    name = "Material";
-    material_node = old_doc.allocate_node( rapidxml::node_element, name );
-    base_node->append_node( material_node );
-    
-    name = "Name";
-    value = old_doc.allocate_string( m_materialEdit->valueText().toUTF8().c_str() );
-    node = old_doc.allocate_node( rapidxml::node_element, name, value );
-    material_node->append_node( node );
-    
-    //Lambda to add in dimension elements
-    auto addDimensionNode = [this,&old_doc,material_node]( const char *name, WLineEdit *edit, WCheckBox *cb )
-                                                     -> rapidxml::xml_node<char> * {
-      const char *value = old_doc.allocate_string( edit->valueText().toUTF8().c_str() );
-      auto node = old_doc.allocate_node( rapidxml::node_element, name, value );
-      material_node->append_node( node );
-      if( m_forFitting )
-      {
-        value = cb->isChecked() ? "1" : "0";
-        auto attr = old_doc.allocate_attribute( "Fit", value );
-        node->append_attribute( attr );
-      }//if( m_forFitting )
-      
-      return node;
-    };//addDimensionNode lambda
-    
-    
-    // For backward compatibility with XML serialization version 0.0, we will add in a <Thickness>
-    //  element, corresponding to dimension along detector axis
-    switch( m_geometry )
-    {
-      case GeometryType::Spherical:
-        node = addDimensionNode( "Thickness", m_thicknessEdit, m_fitThicknessCB );
-        node->append_attribute( old_doc.allocate_attribute( "Remark", "SphericalThickness" ) );
-        break;
-        
-      case GeometryType::CylinderEndOn:
-        node = addDimensionNode( "Thickness", m_cylLengthEdit, m_fitCylLengthCB );
-        node->append_attribute( old_doc.allocate_attribute( "Remark", "CylinderLengthThickness" ) );
-        break;
-        
-      case GeometryType::CylinderSideOn:
-        node = addDimensionNode( "Thickness", m_cylRadiusEdit, m_fitCylRadiusCB );
-        node->append_attribute( old_doc.allocate_attribute( "Remark", "CylinderRadiusThickness" ) );
-        break;
-        
-      case GeometryType::Rectangular:
-        node = addDimensionNode( "Thickness", m_rectDepthEdit, m_fitRectDepthCB );
-        node->append_attribute( old_doc.allocate_attribute( "Remark", "RectangularDepthThickness" ) );
-        break;
-        
-      case GeometryType::NumGeometryType:
-        assert( 0 );
-        break;
-    }//switch( m_geometry )
-    
-    // We could write dimensions from all the WLineEdits into the XML, which would kinda keep state
-    //  across changing geometries, but maybe for the moment we'll just write the relevant
-    //  dimensions.  TODO: think about this a little more
-    switch( m_geometry )
-    {
-      case GeometryType::Spherical:
-        addDimensionNode( "SphericalThickness", m_thicknessEdit, m_fitThicknessCB );
-        break;
-        
-      case GeometryType::CylinderEndOn:
-      case GeometryType::CylinderSideOn:
-        addDimensionNode( "CylinderRadiusThickness", m_cylRadiusEdit, m_fitCylRadiusCB );
-        addDimensionNode( "CylinderLengthThickness", m_cylLengthEdit, m_fitCylLengthCB );
-        break;
-        
-      case GeometryType::Rectangular:
-        addDimensionNode( "RectangularWidthThickness",  m_rectWidthEdit,  m_fitRectWidthCB );
-        addDimensionNode( "RectangularHeightThickness", m_rectHeightEdit, m_fitRectHeightCB );
-        addDimensionNode( "RectangularDepthThickness",  m_rectDepthEdit,  m_fitRectDepthCB );
-        break;
-        
-      case GeometryType::NumGeometryType:
-        assert( 0 );
-        break;
-    }//switch( m_geometry )
-    
-    
-    if( m_forFitting )
-    {
-      name = "FitMassFraction";
-      value = (m_fitMassFrac && m_fitMassFrac->isChecked()) ? "1" : "0";
-      if( m_fitMassFrac && !m_fitMassFrac->isHidden() )
-      {
-        mass_frac_node = old_doc.allocate_node( rapidxml::node_element, name, value );
-        material_node->append_node( mass_frac_node );
-      }
-    }//if( m_forFitting )
-    
-    for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
-    {
-      for( WWidget *widget : etnm.second->children() )
-      {
-        SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
-        
-        if( src && src->useAsSource() && src->isotope() )
-        {
-          iso_node = old_doc.allocate_node( rapidxml::node_element, "Nuclide" );
-          material_node->append_node( iso_node );
-          
-          value = old_doc.allocate_string( src->isotope()->symbol.c_str() );
-          node = old_doc.allocate_node( rapidxml::node_element, "Name", value );
-          iso_node->append_node( node );
-          
-          value = old_doc.allocate_string( std::to_string(src->massFraction()).c_str() );
-          node = old_doc.allocate_node( rapidxml::node_element, "MassFrac", value );
-          iso_node->append_node( node );
-        }//if( src && src->useAsSource() )
-      }//for( WWidget *widget : isotopeDiv->children() )
-    }//for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
-    
-    
-    if( m_traceSources )
-    {
-      for( WWidget *w : m_traceSources->children() )
-      {
-        const TraceSrcDisplay *src = dynamic_cast<const TraceSrcDisplay *>( w );
-        assert( src );
-        if( src /* && src->nuclide() */ )
-          src->serialize( material_node );
-      }//for( WWidget *w : m_traceSources->children() )
-    }//if( m_traceSources )
-    
-    
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-    auto addTruth = [&old_doc,material_node]( const char *truthName, const boost::optional<double> &value ){
-      if( value )
-      {
-        const string strval = PhysicalUnits::printToBestLengthUnits(*value,6);
-        const char *value = old_doc.allocate_string( strval.c_str() );
-        rapidxml::xml_node<char> *node = old_doc.allocate_node( rapidxml::node_element, truthName, value );
-        material_node->append_node( node );
-      }
-    };//addTruth(...)
-    
-    addTruth( "TruthThickness", truthThickness );
-    addTruth( "TruthThicknessTolerance", truthThicknessTolerance );
-    addTruth( "TruthThicknessD2", truthThicknessD2 );
-    addTruth( "TruthThicknessD2Tolerance", truthThicknessD2Tolerance );
-    addTruth( "TruthThicknessD3", truthThicknessD3 );
-    addTruth( "TruthThicknessD3Tolerance", truthThicknessD3Tolerance );
-#endif
-  }//if( m_isGenericMaterial ) / else
-  
-  string new_xml, old_xml;
-  rapidxml::print( std::back_inserter(new_xml), *added_node, 0 );
-  rapidxml::print( std::back_inserter(old_xml), old_doc, 0 );
-  if( new_xml != old_xml )
-  {
-    cerr << "New ShieldingSelect XML is not equal to old:\nNew XML:\n" << new_xml << "\n\n\nOld XML:\n" << old_xml << "\n" << endl;
-  }
-#endif //#if( PERFORM_DEVELOPER_CHECKS ) / else
-  
   
 #if( PERFORM_DEVELOPER_CHECKS )
   try
   {
-    const string uri = encodeStateToUrl();
-    
-    ShieldingSelect test( m_materialDB, m_sourceModel, m_materialSuggest, m_shieldSrcDisp  );
-    test.handleAppUrl( uri );
+    ShieldingSourceFitCalc::ShieldingInfo decoded_info;
+    decoded_info.deSerialize( added_node, m_materialDB );
+    ShieldingSourceFitCalc::ShieldingInfo::equalEnough( info, decoded_info );
+  }catch( std::exception &e )
+  {
+    const string msg = "Error roundtripping ShieldingSelect to XML and back: " + string(e.what());
+    log_developer_error( __func__, msg.c_str() );
+    assert( 0 );
+  }//try / catch
+  
+  /** Function to test that a ShieldingSelect is same as *this* - at least the components that get encoded to a URL. */
+  auto testShieldingSelectPartiallySameAsOrig = [this]( const ShieldingSelect &test ){
+    // We dont currently encode trace or self-attenuating source info
+    //  Wt::WCheckBox *m_fitMassFrac;
+    //  Wt::WContainerWidget *m_asSourceCBs;
+    //  ElementToNuclideMap m_sourceIsotopes;
+    //  Wt::WContainerWidget *m_traceSources;
+    // So we wont test for, ATM
     
     if( test.m_isGenericMaterial != m_isGenericMaterial )
       throw runtime_error( "Generic vs Material doesnt match" );
@@ -5001,19 +4786,31 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
           assert( 0 );
           break;
       }//switch( m_geometry )
-    }//if( m_isGenericMaterial ) / else
+    }//}//if( m_isGenericMaterial ) / else
+  };//testShieldingSelectPartiallySameAsOrig
     
-
-    /*
-     // We dont currently encode trace or self-attenuating source info
-    Wt::WCheckBox *m_fitMassFrac;
-    Wt::WContainerWidget *m_asSourceCBs;
-    ElementToNuclideMap m_sourceIsotopes;
-    Wt::WContainerWidget *m_traceSources;
-    */
+  try
+  {
+    const string uri = encodeStateToUrl();
+    
+    ShieldingSelect test( m_materialDB, m_sourceModel, m_materialSuggest, m_shieldSrcDisp  );
+    test.handleAppUrl( uri );
+    testShieldingSelectPartiallySameAsOrig( test );
   }catch( std::exception &e )
   {
     const string msg = "Error roundtripping ShieldingSelect to URI and back: " + string(e.what());
+    log_developer_error( __func__, msg.c_str() );
+    assert( 0 );
+  }//try
+  
+  try
+  {
+    ShieldingSelect test( m_materialDB, m_sourceModel, m_materialSuggest, m_shieldSrcDisp  );
+    test.deSerialize(added_node);
+    testShieldingSelectPartiallySameAsOrig( test );
+  }catch( std::exception &e )
+  {
+    const string msg = "Error roundtripping ShieldingSelect to XML and back: " + string(e.what());
     log_developer_error( __func__, msg.c_str() );
     assert( 0 );
   }//try
@@ -5083,6 +4880,15 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
     assert( 0 );
   }
 #endif
+  
+  // Make sure the `m_prevState` will get updated
+  Wt::WServer *server = Wt::WServer::instance();
+  assert( server && wApp );
+  if( m_userChangedStateSignal.isConnected() && server )
+  {
+    auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this, false) );
+    server->post( wApp->sessionId(), worker );
+  }//if( m_userChangedStateSignal.isConnected() && server )
 }//void deSerialize( const rapidxml::xml_node<char> *shielding_node ) const
 
 

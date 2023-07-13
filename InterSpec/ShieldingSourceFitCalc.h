@@ -69,6 +69,77 @@ namespace GammaInteractionCalc
  */
 namespace ShieldingSourceFitCalc
 {
+  /** Enum that classifies the type of source. */
+  enum class ModelSourceType : int
+  {
+    /** A point source at the center of the shielding. */
+    Point,
+      
+    /** A nuclide in the material itself is the source; e.g., a self-attenuating source like U, Pu, Th, etc. */
+    Intrinsic,
+      
+    /** A trace source in a shielding.  Does not effect transport of gammas through the material, but is just a source term. */
+    Trace
+  };//enum class ModelSourceType
+  
+  
+  struct SourceFitDef
+  {
+    const SandiaDecay::Nuclide *nuclide = nullptr;
+    
+    //activity: in units of PhysicalUnits
+    double activity;
+    bool fitActivity;
+    
+    //age: in units of PhysicalUnits::second
+    double age;
+    bool fitAge;
+    
+    //ageDefiningNuc: specifies if the age of nuclide should be tied to the age
+    //  a different nuclide instead.  Will be NULL if this is not the case.
+    const SandiaDecay::Nuclide *ageDefiningNuc;
+        
+    ModelSourceType sourceType;
+    
+  #if( INCLUDE_ANALYSIS_TEST_SUITE )
+      boost::optional<double> truthActivity, truthActivityTolerance;
+      boost::optional<double> truthAge, truthAgeTolerance;
+  #endif
+    
+    SourceFitDef();
+    
+    virtual void deSerialize( const ::rapidxml::xml_node<char> *parent_node );
+    virtual ::rapidxml::xml_node<char> *serialize( rapidxml::xml_node<char> *parent_node ) const;
+    
+    static const int sm_xmlSerializationMajorVersion;
+    static const int sm_xmlSerializationMinorVersion;
+  };//struct SourceFitDef
+    
+    
+    
+  struct IsoFitStruct : public SourceFitDef
+  {
+    //numProdigenyPeaksSelected: The number of different progeny selected to be included in the fit
+    //  through all the peaks with the parent nuclide as assigned.
+    size_t numProgenyPeaksSelected;
+      
+    //ageIsNotFittable: update this whenever you set the nuclide.  Intended to
+    //  indicate nuclides where the spectrum doesnt change with time (ex Cs137,
+    //  W187, etc).  Not rock solid yet (not set true as often as could be), but
+    //  getting there.  See also PeakDef::ageFitNotAllowed(...).
+    bool ageIsFittable;
+      
+    double activityUncertainty;
+    double ageUncertainty;
+      
+    IsoFitStruct();
+    
+    virtual void deSerialize( const ::rapidxml::xml_node<char> *parent_node );
+    virtual ::rapidxml::xml_node<char> *serialize( rapidxml::xml_node<char> *parent_node ) const;
+  };//struct IsoFitStruct
+    
+  
+  
   /** Struct holding information cooresponding to the `TraceSrcDisplay` class defined in ShieldingSelect.cpp;
    represents information about a trace-source in a shielding (e.g., a volumetric source distributed unifrmly in a shielding
    material, but does not effect the attenuation or density of that material.
@@ -91,7 +162,7 @@ namespace ShieldingSourceFitCalc
   };//struct TraceSourceInfo
 
   
-  /** Holds the information cooresponding to the `ShieldingSelect` widget. */
+  /** Holds the information corresponding to the `ShieldingSelect` widget. */
   struct ShieldingInfo
   {
     /** The geometry of the shielding.
@@ -99,7 +170,7 @@ namespace ShieldingSourceFitCalc
      */
     GammaInteractionCalc::GeometryType m_geometry;
     
-    /** Wether is a generic shieelding (i.e., no physical extent, but specified by atomic number and areal density),
+    /** Wether is a generic shielding (i.e., no physical extent, but specified by atomic number and areal density),
      or a physical shielding, that should have a valid material.
      */
     bool m_isGenericMaterial;
@@ -126,6 +197,7 @@ namespace ShieldingSourceFitCalc
 #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     boost::optional<double> m_truthDimensions[3];
     boost::optional<double> m_truthDimensionsTolerances[3];
+    std::map<const SandiaDecay::Nuclide *,std::pair<double,double>> m_truthFitMassFractions;
 #endif
     
     // Self-atten source stuff
