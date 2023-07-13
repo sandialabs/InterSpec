@@ -103,12 +103,16 @@ namespace ShieldingSourceFitCalc
         
     ModelSourceType sourceType;
     
-  #if( INCLUDE_ANALYSIS_TEST_SUITE )
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
       boost::optional<double> truthActivity, truthActivityTolerance;
       boost::optional<double> truthAge, truthAgeTolerance;
-  #endif
+#endif
     
     SourceFitDef();
+    
+#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+    static void equalEnough( const SourceFitDef &lhs, const SourceFitDef &rhs );
+#endif
     
     virtual void deSerialize( const ::rapidxml::xml_node<char> *parent_node );
     virtual ::rapidxml::xml_node<char> *serialize( rapidxml::xml_node<char> *parent_node ) const;
@@ -135,6 +139,10 @@ namespace ShieldingSourceFitCalc
     double ageUncertainty;
       
     IsoFitStruct();
+    
+#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+    static void equalEnough( const IsoFitStruct &lhs, const IsoFitStruct &rhs );
+#endif
     
     virtual void deSerialize( const ::rapidxml::xml_node<char> *parent_node );
     virtual ::rapidxml::xml_node<char> *serialize( rapidxml::xml_node<char> *parent_node ) const;

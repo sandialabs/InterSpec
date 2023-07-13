@@ -34,6 +34,11 @@
 
 #include "rapidxml/rapidxml.hpp"
 
+//Roots Minuit2 includes
+#include "Minuit2/MnUserParameters.h"
+#include "Minuit2/MnUserParameterState.h"
+
+
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
@@ -306,3 +311,162 @@ BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
 }//BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
 
 
+BOOST_AUTO_TEST_CASE( IsoFitStructSerialization )
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  
+  ShieldingSourceFitCalc::IsoFitStruct test;
+  
+  test.nuclide = db->nuclide( "U238" );
+  test.activity = 1.1*PhysicalUnits::curie;
+  test.fitActivity = true;
+  test.age = 20*PhysicalUnits::year;
+  test.fitAge = false;
+  test.ageDefiningNuc = db->nuclide( "U235" );
+  test.sourceType = ShieldingSourceFitCalc::ModelSourceType::Intrinsic;
+  test.numProgenyPeaksSelected = 2;
+  test.ageIsFittable = !PeakDef::ageFitNotAllowed( test.ageDefiningNuc ) ;
+  test.activityUncertainty = 0.1*test.activity;
+  test.ageUncertainty = 0.0;
+  
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+  test.truthActivity = 1.0*PhysicalUnits::curie;
+  test.truthActivityTolerance = 0.15*PhysicalUnits::curie;
+  test.truthAge = 21.5*PhysicalUnits::year;
+  test.truthAgeTolerance = 1.05*PhysicalUnits::year;
+#endif
+  
+  rapidxml::xml_document<char> doc;
+  BOOST_REQUIRE_NO_THROW( test.serialize( &doc ) );
+  
+  ShieldingSourceFitCalc::IsoFitStruct from_xml;
+  BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( doc.first_node() ) );
+  BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::IsoFitStruct::equalEnough( test, from_xml ) );
+}//BOOST_AUTO_TEST_CASE( IsoFitStructSerialization )
+
+
+// A simple, fully programmatically defined case of fitting a source/shielding model
+BOOST_AUTO_TEST_CASE( SimpleSourceFit )
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  
+  const double distance = 100*PhysicalUnits::cm;
+  const float live_time = 100*PhysicalUnits::second;
+  const float peak_area = PhysicalUnits::microCi;
+  
+  const GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::Spherical;
+  vector<ShieldingSourceFitCalc::ShieldingInfo> shieldings;
+  vector<ShieldingSourceFitCalc::SourceFitDef> src_definitions;
+  
+  {
+    ShieldingSourceFitCalc::SourceFitDef cs137_src;
+    cs137_src.nuclide = db->nuclide( "Cs137" );
+    cs137_src.activity = 2.0*peak_area;
+    cs137_src.fitActivity = true;
+    cs137_src.age = 180*PhysicalUnits::day;
+    cs137_src.fitAge = false;
+    cs137_src.ageDefiningNuc = nullptr;
+    cs137_src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+    
+    src_definitions.push_back(cs137_src);
+  }
+  
+  // Create a 100% efficient detector at our test distance.
+  auto detector = make_shared<DetectorPeakResponse>();
+  detector->fromExpOfLogPowerSeriesAbsEff( {0.0f, 0.0f}, {}, distance,
+                                          5*PhysicalUnits::cm, PhysicalUnits::keV, 0, 3000*PhysicalUnits::keV );
+  
+  auto foreground = make_shared<SpecUtils::Measurement>();
+  
+  auto spec = make_shared<vector<float>>();
+  *spec = {0.0f, 1.0f, 5.0f, 2.0f, 3.5f};
+  foreground->set_gamma_counts( spec, live_time, live_time );
+  
+  std::deque<std::shared_ptr<const PeakDef>> foreground_peaks;
+  
+  {// Begin create peak for 661 keV in Cs137
+    auto peak = make_shared<PeakDef>();
+    peak->setMean( 661 );
+    peak->setSigma( 10.0 );
+    peak->setPeakArea( peak_area );
+    peak->setPeakAreaUncert( sqrt(peak_area) );
+    
+    const auto cs137 = db->nuclide( "Cs137" );
+    BOOST_REQUIRE( cs137 );
+    const auto ba137m = db->nuclide( "Ba137m" ); //The 661 keV actually comes from Ba137m
+    BOOST_REQUIRE( ba137m );
+    int radParticle = -1;
+    const SandiaDecay::Transition *transition = nullptr;
+    
+    for( size_t i = 0; !transition && (i < ba137m->decaysToChildren.size()); ++i )
+    {
+      const SandiaDecay::Transition *trans = ba137m->decaysToChildren[i];
+      for( size_t j = 0; !transition && (j < trans->products.size()); ++j )
+      {
+        if( (trans->products[j].type == SandiaDecay::GammaParticle)
+           && fabs(trans->products[j].energy - 661.657) < 1.0)
+        {
+          transition = trans;
+          radParticle = static_cast<int>(j);
+        }
+      }
+    }//
+    
+    BOOST_REQUIRE( transition && (radParticle >= 0) );
+    
+    peak->setNuclearTransition( cs137, transition, radParticle, PeakDef::SourceGammaType::NormalGamma );
+    peak->useForShieldingSourceFit( true );
+    
+    foreground_peaks.push_back( peak );
+  }// End create peak for 661 keV in Cs137
+  
+  
+  GammaInteractionCalc::ShieldingSourceFitOptions options;
+  options.attenuate_for_air = false;
+  
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+                GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geometry,
+                                  shieldings, src_definitions, detector,
+                                  foreground, nullptr, foreground_peaks, nullptr, options );
+ 
+  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  *inputPrams = fcn_pars.second;
+  
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+  
+  
+  auto progress_fcn = [progress](){
+    // Probably wont get called, since its a simple fit
+  };
+  
+  bool finished_fit_called = false;
+  auto finished_fcn = [results, &finished_fit_called](){
+    finished_fit_called = true;
+  };
+  
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn, results, finished_fcn );
+  
+  BOOST_CHECK( finished_fit_called );
+  
+  BOOST_REQUIRE( results->fit_src_info.size() == 1 );
+  
+  const ShieldingSourceFitCalc::IsoFitStruct &fit_src_info = results->fit_src_info[0];
+  BOOST_REQUIRE( results->fit_src_info.size() == 1 );
+  BOOST_CHECK( fit_src_info.nuclide == db->nuclide( "Cs137" ) );
+  BOOST_CHECK( !fit_src_info.ageDefiningNuc );
+  BOOST_CHECK( fit_src_info.sourceType == ShieldingSourceFitCalc::ModelSourceType::Point );
+  
+  const double activity = results->fit_src_info[0].activity;
+  
+  const double br = 0.8533;
+  const double drf_eff = detector->efficiency( 661.657, distance );
+  
+  const double expected_activity = peak_area / (live_time * br * drf_eff);
+
+  BOOST_CHECK_MESSAGE( fabs(activity - expected_activity) < 1.0E-4*expected_activity,
+                       "Fit activity (" << PhysicalUnits::printToBestActivityUnits(activity,10)
+                       << ") didnt match expected (" << PhysicalUnits::printToBestActivityUnits(expected_activity,10) << ")" );
+}//BOOST_AUTO_TEST_CASE( SimpleSourceFit )

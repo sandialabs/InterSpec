@@ -3035,10 +3035,11 @@ void ShieldingSourceChi2Fcn::fittingIsStarting( const size_t deadlineMs )
 {
   m_isFitting = true;
   
-  if( deadlineMs )
+  Wt::WServer *server = Wt::WServer::instance();
+  if( deadlineMs && server )
   {
     std::lock_guard<std::mutex> scoped_lock( m_zombieCheckTimerMutex );
-    m_zombieCheckTimer = make_shared<boost::asio::deadline_timer>( Wt::WServer::instance()->ioService() );
+    m_zombieCheckTimer = make_shared<boost::asio::deadline_timer>( server->ioService() );
     m_zombieCheckTimer->expires_from_now( boost::posix_time::milliseconds(deadlineMs) );
     m_zombieCheckTimer->async_wait( [this](const boost::system::error_code &ec){ zombieCallback(ec); } );
   }//if( deadlineMs )
