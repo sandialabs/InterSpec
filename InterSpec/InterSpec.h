@@ -563,8 +563,8 @@ public:
   size_t addHighlightedEnergyRange( const float lowerEnergy,
                                    const float upperEnergy,
                                    const Wt::WColor &color );
-  //removeHighlightedEnergyRange(): removes the region cooresponding to the ID
-  //  passed in from the energy chart.  Returns succesfulness of the removing
+  //removeHighlightedEnergyRange(): removes the region corresponding to the ID
+  //  passed in from the energy chart.  Returns successfulness of the removing
   //  the region.
   bool removeHighlightedEnergyRange( const size_t regionid );
   

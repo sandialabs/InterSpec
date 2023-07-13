@@ -29,6 +29,7 @@
 #include <memory>
 #include <vector>
 
+#include <boost/function.hpp>
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
 #include <boost/optional.hpp>
@@ -61,6 +62,7 @@ namespace GammaInteractionCalc
 {
   enum class GeometryType : int;
   enum class TraceActivityType : int;
+  class ShieldingSourceChi2Fcn;
 };
 
 
@@ -183,7 +185,7 @@ namespace ShieldingSourceFitCalc
     /** Material shielding is made out of; will be nullptr if generic material. */
     std::shared_ptr<const Material> m_material;
     
-    /** Dimesnisons of this shielding; the meaning of the entries differs depending on the geometry,
+    /** Dimensions of this shielding; the meaning of the entries differs depending on the geometry,
      or if a generic material.
      
      Spherical: ['Thickness', n/a, n/a]
@@ -238,6 +240,124 @@ namespace ShieldingSourceFitCalc
     static const int sm_xmlSerializationMinorVersion;
   };//struct ShieldingInfo
   
+  
+  /** Struct to capture uncertainties associated with fi*/
+  struct FitShieldingInfo : ShieldingInfo
+  {
+    /** 1-sigma uncertainties of fit dimensions or AN/AD. */
+    double m_dimensionUncerts[3];
+    
+    /** 1-sigma uncertainties for fit mass fractions. */
+    std::map<const SandiaDecay::Nuclide *,double> m_nuclideFractionUncerts;
+    
+    /** 1-sigma uncertainties for fit trace source activities (duplicate information available in #IsoFitStruct) */
+    std::map<const SandiaDecay::Nuclide *,double> m_traceSourceActivityUncerts;
+    
+    FitShieldingInfo();
+  };//struct FitShieldingInfo : ShieldingInfo
+  
+  
+  /** A struct to share progress of fitting a model; gives current best chi2 (and parameters giving that),
+   as well as  elapsed time, and number of function calls.
+   
+   Use the mutex to access any member variables.
+   
+   You will usually create a shared pointer to this object, and pass it to the `fit_model` function, as
+   capture the pointer for your `progress_fcn` passed to `fit_model`.
+   */
+  struct ModelFitProgress
+  {
+    std::mutex m_mutex;
+    double chi2;
+    double elapsedTime;
+    size_t numFcnCalls;
+    std::vector<double> parameters;
+    
+    ModelFitProgress();
+  };//struct ModelFitProgress
+  
+  
+  /** A struct to store the results of the model fit.
+   
+   */
+  struct ModelFitResults
+  {
+    std::mutex m_mutex;
+    
+    enum class FitStatus{ UserCancelled, TimedOut, InvalidOther, InterMediate, Final };
+    FitStatus successful;
+    
+    double edm;  //estimated distance to minimum.
+    double chi2;
+    int num_fcn_calls;
+    std::vector<double> paramValues;
+    std::vector<double> paramErrors;
+    std::vector<std::string> errormsgs;
+    
+    std::vector<PeakDef> foreground_peaks;
+    std::vector<PeakDef> background_peaks;
+    std::vector<ShieldingSourceFitCalc::ShieldingInfo> initial_shieldings;
+    std::vector<ShieldingSourceFitCalc::FitShieldingInfo> final_shieldings;
+    
+    std::vector<ShieldingSourceFitCalc::IsoFitStruct> fit_src_info;
+  };//struct ModelFitResults
+    
+  
+  /** Function that does the actual model fitting; does not need to be in the main GUI thread.
+   
+      \param wtsession The Wt session id of the current WApplication.
+             If an empty string, then the `progress_fcn` and `finished_fcn`
+             function will be called from the current thread; otherwise will
+             post the calls of these functions to the Wt a
+      \param chi2Fcn The initialized ShieldingSourceChi2Fcn object
+      \param inputPrams The fit input parameters as filled out by #shieldingFitnessFcn
+      \param progress Pointer to location to put the intermediate status of the
+             fit (if desired)
+      \param progress_fcn The function that will get called roughly every `sm_model_update_frequency_ms`
+             milliseconds.  The `progress` object will be updated, then this function will be called, according to
+             `wtsession`.  If using with the Wt GUI, you should wrap this function by WApplication::bind() in case this
+             widget gets deleted (and hence why the pointer to ModelFitProgress
+             must be passed separately, so you can have that in the WApplication
+             bind call which must be done before calling this function).
+      \param Pointer to location to put the results.  Should have
+             #ModelFitResults::shieldings shielding already filled out
+      \param finished_fcn Function to call to post to the WServer so the GUI can
+             be updated in the main thread; should be wrapped by
+             WApplication::bind() in case this widget gets deleted
+             (the wrapped call is #updateGuiWithModelFitResults).
+             If the fit is canceled via #ShieldingSourceChi2Fcn::cancelFitWithNoUpdate, then
+             this function wont be called.
+   */
+  void fit_model( const std::string wtsession,
+                  std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
+                  std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
+                  std::shared_ptr<ModelFitProgress> progress,
+                  boost::function<void()> progress_fcn,
+                  std::shared_ptr<ModelFitResults> results,
+                  boost::function<void()> finished_fcn );
+  
+  /** The maximum time (in milliseconds) a model fit can take before the fit is
+      aborted.  This generally will only ever be applicable to fits with
+      self-attenuators, where there is a ton of peaks, or things go really
+      haywire.
+   
+      Initialized to 120 seconds (e.g., 120*1000)
+   */
+#ifdef NDEBUG
+  // Give up after two minutes for release builds
+  const size_t sm_max_model_fit_time_ms = 120*1000;
+#else
+  // For debug builds we'll let it go 7 times longer, which is about the debug slow down
+  const size_t sm_max_model_fit_time_ms = 7*120*1000;
+#endif
+
+  
+  /** How often (in milliseconds) to update the GUI during a model fit.
+      This generally will only ever be applicable to fits with self-attenuators.
+      
+      Initialized to 2000 (e.g., every two seconds)
+   */
+  const size_t sm_model_update_frequency_ms = 2000;
 }//namespace ShieldingSourceFitCalc
 
 #endif //ShieldingSourceFitCalc_h

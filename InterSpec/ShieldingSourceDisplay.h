@@ -319,24 +319,6 @@ protected:
 class ShieldingSourceDisplay : public Wt::WContainerWidget
 {
 public:
-
-  /** The maximum time (in milliseconds) a model fit can take before the fit is
-      aborted.  This generally will only ever be applicable to fits with
-      self-attenuators, where there is a ton of peaks, or things go really
-      haywire.
-   
-      Initialized to 120 seconds (e.g., 120*1000)
-   */
-  const static size_t sm_max_model_fit_time_ms;
-  
-  /** How often (in milliseconds) to update the GUI during a model fit.
-      This generally will only ever be applicable to fits with self-attenuators.
-      
-      Initialized to 2000 (e.g., every two seconds)
-   */
-  const static size_t sm_model_update_frequency_ms;
-  
-public:
   ShieldingSourceDisplay( PeakModel *peakModel,
                           InterSpec *specViewer,
                           Wt::WSuggestionPopup *materialSuggest,
@@ -423,38 +405,6 @@ public:
                                     const std::shared_ptr<const std::string> &prev_state,
                                     const std::shared_ptr<const std::string> &current_state );
   
-  
-  struct ModelFitProgress
-  {
-    std::mutex m;
-    double chi2;
-    double elapsedTime;
-    size_t numFcnCalls;
-    std::vector<double> parameters;
-  };//struct ModelFitProgress
-  
-  struct ModelFitResults
-  {
-    std::mutex m_mutex;
-    
-    enum class FitStatus{ UserCancelled, TimedOut, InvalidOther, InterMediate, Final };
-    FitStatus succesful;
-    
-    double edm;  //estimated distance to minimum.
-    double chi2;
-    int num_fcn_calls;
-    std::vector<double> paramValues;
-    std::vector<double> paramErrors;
-    std::vector<std::string> errormsgs;
-    
-    std::vector<PeakDef> foreground_peaks;
-    std::vector<PeakDef> background_peaks;
-    std::vector<ShieldingSourceFitCalc::ShieldingInfo> initial_shieldings;
-    std::vector<ShieldingSourceFitCalc::ShieldingInfo> final_shieldings;
-    
-    std::vector<ShieldingSourceFitCalc::IsoFitStruct> fit_src_info;
-  };//struct ModelFitResults
-  
   /** Performs the actual fit of shielding, activities, and ages;
    called when user clicks "Perform Model Fit" button.
    
@@ -465,42 +415,14 @@ public:
             if fitting is being performed in the background, the returned object will be updated as
             fitting is being performed (use m_mutex to ensure safe access).
    */
-  std::shared_ptr<ModelFitResults> doModelFit( const bool fitInBackground );
-    
-  
-  /** Function that does the actual model fitting, not on the main GUI thread.
-      \param wtsession The Wt session id of the current WApplication
-      \param chi2Fcn The initialized ShieldingSourceChi2Fcn objec
-      \param inputPrams The fit input paramters as filled out by #shieldingFitnessFcn
-      \param progress Pointer to location to put the intermediate status of the
-             fit (if desired)
-      \param progress_fcn The function to post to the WServer (using
-             wtsession) so the GUI can be updatedin the main thread to show the
-             progress. Should be wrapped by WApplication::bind() in case this
-             widget gets deleted (and hence why the pointer to ModelFitProgress
-             must be passed seperately, so you can have that in the WApplication
-             bind call which must be done before calling this function).
-             (the wrapped call is #updateGuiWithModelFitProgress)
-      \param Pointer to location to put the results.  Should have
-             #ModelFitResults::shieldings shieldings already filled out
-      \param gui_updater Function to call to post to the WServer so the GUI can
-             be updated in the main thread; should be wrapped by
-             WApplication::bind() in case this widget gets deleted
-             (the wrapped call is #updateGuiWithModelFitResults)
-   */
-  void doModelFittingWork( const std::string wtsession,
-                           std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                           std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
-                           std::shared_ptr<ModelFitProgress> progress,
-                           boost::function<void()> progress_fcn,
-                           std::shared_ptr<ModelFitResults> results,
-                           boost::function<void()> gui_updater );
+  std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> doModelFit( const bool fitInBackground );
   
   /** Cancels the current model fit happening */
   void cancelModelFit();
   
-  /** Cancels the current model fit happening, and will make it so the `gui_updater` argument of #doModelFittingWork
-   will not be called, but the GUI will be put back into a state that the user can use it.
+  /** Cancels the current model fit happening, and will make it so the `gui_updater` argument of
+   `ShieldingSourceFitCalc::fit_model` will not be called, but the GUI will be put back into
+   a state that the user can use it.
    
    This method is intended for the undo/redo mechanism, in case a user hits undo while a fit is happening.
    */
@@ -509,18 +431,17 @@ public:
   /** Function that must be called from within the main Wt event loop thread,
    that updates the GUI with the fit progress.
    */
-  void updateGuiWithModelFitProgress( std::shared_ptr<ModelFitProgress> progress );
+  void updateGuiWithModelFitProgress( std::shared_ptr<ShieldingSourceFitCalc::ModelFitProgress> progress );
   
   /** Function that must be called from within the main Wt event loop thread,
       that updates the GUI with the fit results.
    */
-  void updateGuiWithModelFitResults( std::shared_ptr<ModelFitResults> results );
-  
+  void updateGuiWithModelFitResults( std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results );
   
   //updateCalcLogWithFitResults(): adds in fit for values and their
   //  uncertainties in the calculation log.
   void updateCalcLogWithFitResults( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2,
-                                    std::shared_ptr<ModelFitResults> results );
+                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results );
   
   //initialSizeHint(...) gives the initial hint about the size so which widgets
   //  should be shown can be decided on.  Furthermore, calling this function
