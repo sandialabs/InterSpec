@@ -111,7 +111,6 @@ namespace GammaInteractionCalc
   enum class ModelSourceType : int;
   class ShieldingSourceChi2Fcn;
   struct SourceFitDef;
-  struct ShieldingSourceFitOptions;
 }//namespace GammaInteractionCalc
 
 class InterSpec;
@@ -601,6 +600,8 @@ public:
 
   
   SourceFitModel *sourceFitModel();
+  
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions fitOptions() const;
 protected:
   /** Disables fit button and other elements, and hides some stuff, etc. */
   void setWidgetStateForFitStarting();
@@ -671,6 +672,8 @@ protected:
   Wt::WCheckBox  *m_decayCorrect;
   SwitchCheckbox *m_showChiOnChart;
   Wt::WContainerWidget *m_optionsDiv;
+  double m_photopeak_cluster_sigma;
+  bool m_multithread_computation;
   
   PopupDivMenuItem *m_showLog;
   

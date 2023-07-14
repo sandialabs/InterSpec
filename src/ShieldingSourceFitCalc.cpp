@@ -1669,6 +1669,136 @@ FitShieldingInfo::FitShieldingInfo()
 }
   
   
+void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node ) const
+{
+  // For backwards compatibility, we wont create a <ShieldingSourceFitOptions> node,
+  //  but just put values directly under `parent_node`.
+  if( !parent_node )
+    throw runtime_error( "ShieldingSourceFitOptions::serialize: invalid parent" );
+  
+  rapidxml::xml_document<char> *doc = parent_node->document();
+  if( !doc )
+    throw runtime_error( "ShieldingSourceFitOptions::serialize: couldnt get document" );
+  
+  const char *name = "MultipleIsotopesPerPeak";
+  const char *value = multiple_nucs_contribute_to_peaks ? "1" : "0";
+  rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+  
+  name = "AttenuateForAir";
+  value = attenuate_for_air ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+  
+  name = "DecayCorrect";
+  value = account_for_decay_during_meas ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+  
+  name = "MultithreadComputation";
+  value = multithread_self_atten ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+  
+  
+  name = "BackgroundPeakSubtraction";
+  value = background_peak_subtract ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+  
+  name = "SameAgeIsotopes";
+  value = same_age_isotopes ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+  
+  name = "PhotopeakClusterSigma";
+  char buffer[64] = { '\0' };
+  snprintf( buffer, sizeof(buffer), "%.9g", photopeak_cluster_sigma );
+  value = doc->allocate_string( buffer );
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+}//void serialize( rapidxml::xml_node<char> *parent_node ) const
+  
+  
+void ShieldingSourceFitOptions::deSerialize( const rapidxml::xml_node<char> *parent_node )
+{
+  if( !parent_node )
+    throw runtime_error( "ShieldingSourceFitOptions::deSerialize: invalid parent" );
+  
+  // Reset values
+  *this = ShieldingSourceFitOptions();
+  
+  auto boolval = []( const rapidxml::xml_node<char> *n ) -> bool {
+    const string val = SpecUtils::xml_value_str( n );
+    if( val.empty() )
+      throw runtime_error( "ShieldingSourceFitOptions node " + SpecUtils::xml_name_str(n) + " missing value" );
+    return (val == "1") || SpecUtils::iequals_ascii(val, "true")  || SpecUtils::iequals_ascii(val, "yes");
+  };
+  
+  const rapidxml::xml_node<char> *node = XML_FIRST_NODE( parent_node, "MultipleIsotopesPerPeak" );
+  if( !node )
+    throw runtime_error( "ShieldingSourceFitOptions missing MultipleIsotopesPerPeak node" );
+  
+  multiple_nucs_contribute_to_peaks = boolval( node );
+  
+  node = XML_FIRST_NODE( parent_node, "AttenuateForAir" );
+  if( node )
+    attenuate_for_air = boolval( node );
+  
+  node = XML_FIRST_NODE( parent_node, "DecayCorrect" );
+  if( node )
+    account_for_decay_during_meas = boolval( node );
+  
+  node = XML_FIRST_NODE( parent_node, "MultithreadComputation" );
+  if( node )
+    multithread_self_atten = boolval( node );
+  
+  node = XML_FIRST_NODE( parent_node, "BackgroundPeakSubtraction" );
+  if( node )
+    background_peak_subtract = boolval( node );
+  
+  node = XML_FIRST_NODE( parent_node, "SameAgeIsotopes" );
+  if( node )
+    same_age_isotopes = boolval( node );
+  
+  node = XML_FIRST_NODE( parent_node, "PhotopeakClusterSigma" );
+  if( node )
+  {
+    const string clusterstr = SpecUtils::xml_value_str(node);
+    if( !(stringstream(clusterstr) >> photopeak_cluster_sigma) )
+      throw runtime_error( "ShieldingSourceFitOptions invalid cluster sigma: '" + clusterstr + "'" );
+  }//if( node )
+}//void deSerialize( const rapidxml::xml_node<char> *parent_node )
+  
+  
+#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+void ShieldingSourceFitOptions::equalEnough( const ShieldingSourceFitOptions &lhs, const ShieldingSourceFitOptions &rhs )
+{
+  if( lhs.multiple_nucs_contribute_to_peaks != rhs.multiple_nucs_contribute_to_peaks )
+    throw runtime_error( "ShieldingSourceFitOptions LHS multiple_nucs_contribute_to_peaks != RHS multiple_nucs_contribute_to_peaks" );
+  
+  if( lhs.attenuate_for_air != rhs.attenuate_for_air )
+    throw runtime_error( "ShieldingSourceFitOptions LHS attenuate_for_air != RHS attenuate_for_air" );
+  
+  if( lhs.account_for_decay_during_meas != rhs.account_for_decay_during_meas )
+    throw runtime_error( "ShieldingSourceFitOptions LHS account_for_decay_during_meas != RHS account_for_decay_during_meas" );
+  
+  if( lhs.multithread_self_atten != rhs.multithread_self_atten )
+    throw runtime_error( "ShieldingSourceFitOptions LHS multithread_self_atten != RHS multithread_self_atten" );
+  
+  if( fabs(lhs.photopeak_cluster_sigma - rhs.photopeak_cluster_sigma) > 1.0E-8
+     && fabs(lhs.photopeak_cluster_sigma - rhs.photopeak_cluster_sigma) > 1.0E-6*std::max(lhs.photopeak_cluster_sigma,rhs.photopeak_cluster_sigma) )
+    throw runtime_error( "ShieldingSourceFitOptions LHS photopeak_cluster_sigma != RHS photopeak_cluster_sigma" );
+  
+  if( lhs.background_peak_subtract != rhs.background_peak_subtract )
+    throw runtime_error( "ShieldingSourceFitOptions LHS background_peak_subtract != RHS background_peak_subtract" );
+  
+  if( lhs.same_age_isotopes != rhs.same_age_isotopes )
+    throw runtime_error( "ShieldingSourceFitOptions LHS same_age_isotopes != RHS same_age_isotopes" );
+}//void equalEnough( const ShieldingSourceFitOptions &lhs, const ShieldingSourceFitOptions &rhs )
+#endif
+  
+  
 ModelFitProgress::ModelFitProgress()
   : m_mutex{},
   chi2( std::numeric_limits<double>::max() ),
@@ -1873,6 +2003,7 @@ void fit_model( const std::string wtsession,
         };//calc_for_an lambda
         
         
+        const bool origMultithread = chi2Fcn->options().multithread_self_atten;
         chi2Fcn->setSelfAttMultiThread( false ); //shouldnt affect anything, but JIC
         
         
@@ -1969,7 +2100,7 @@ void fit_model( const std::string wtsession,
           fitParams.SetError( parname, error );
         }// end lock on best_an_mutex
         
-        chi2Fcn->setSelfAttMultiThread( true ); //shouldnt affect anything, but JIC
+        chi2Fcn->setSelfAttMultiThread( origMultithread ); //shouldnt affect anything, but JIC
       }//for( const auto &parname : fit_generic_an )
       
     }//if( !fit_generic_an.empty() )
@@ -2002,8 +2133,12 @@ void fit_model( const std::string wtsession,
     results->edm = minimum.Edm();
     results->num_fcn_calls = minimum.NFcn();
     results->chi2 = minimum.Fval();  //chi2Fcn->DoEval( results->paramValues );
+    results->distance = chi2Fcn->distance();
+    results->geometry = chi2Fcn->geometry();
     results->foreground_peaks = chi2Fcn->peaks();
     results->background_peaks = chi2Fcn->backgroundPeaks();
+    results->options = chi2Fcn->options();
+    results->initial_shieldings = chi2Fcn->initialShieldings();
     
     
     const vector<double> &params = results->paramValues;
@@ -2154,8 +2289,9 @@ void fit_model( const std::string wtsession,
         if( shield.m_fitDimensions[1] )
           shield.m_dimensionUncerts[1] = chi2Fcn->arealDensity( shielding_index, errors ) / adUnits;
         
-        assert( shield.m_fitDimensions[0] != fitParams.Parameter(shield_start_par).IsFixed() );
-        assert( shield.m_fitDimensions[1] != fitParams.Parameter(shield_start_par + 1).IsFixed() );
+        // There looks to be a bug in Minuit that IsFixed() doesnt work
+        //assert( shield.m_fitDimensions[0] != fitParams.Parameter(shield_start_par).IsFixed() );
+        //assert( shield.m_fitDimensions[1] != fitParams.Parameter(shield_start_par + 1).IsFixed() );
       }else
       {
         const vector<const SandiaDecay::Nuclide *> &nucsFittingFracs = chi2Fcn->nuclideFittingMassFracFor( shielding_index );
@@ -2178,7 +2314,17 @@ void fit_model( const std::string wtsession,
           trace.m_nuclide = nuc;
           trace.m_type = chi2Fcn->traceSourceActivityType( nuc );
           const int ind = static_cast<int>( chi2Fcn->nuclideIndex( nuc ) );
-          trace.m_fitActivity = !fitParams.Parameter(2*ind).IsFixed();
+          
+          // There looks to be a bug in Minuit that IsFixed() doesnt work
+          //trace.m_fitActivity = !fitParams.Parameter(2*ind).IsFixed();
+          bool foundTrace = false;
+          for( size_t i = 0; !foundTrace && (i < initial_shield.m_traceSources.size()); ++i )
+          {
+            foundTrace = (initial_shield.m_traceSources[i].m_nuclide == nuc);
+            if( foundTrace )
+              trace.m_fitActivity = initial_shield.m_traceSources[i].m_fitActivity;
+          }//
+          
           trace.m_activity = chi2Fcn->activity( nuc, params );
           
           if( trace.m_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
@@ -2194,7 +2340,11 @@ void fit_model( const std::string wtsession,
         {
           case GammaInteractionCalc::GeometryType::Spherical:
             shield.m_dimensions[0] = chi2Fcn->sphericalThickness( shielding_index, params );
-            shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par).IsFixed();
+            // There looks to be a bug in Minuit that IsFixed() doesnt work
+            //shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par).IsFixed();
+            //assert( shield.m_fitDimensions[0] == initial_shield.m_fitDimensions[0] );
+            shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
+            
             if( shield.m_fitDimensions[0] )
               shield.m_dimensionUncerts[0] = chi2Fcn->sphericalThickness( shielding_index, errors );
             break;
@@ -2203,8 +2353,14 @@ void fit_model( const std::string wtsession,
           case GammaInteractionCalc::GeometryType::CylinderSideOn:
             shield.m_dimensions[0] = chi2Fcn->cylindricalRadiusThickness( shielding_index, params );
             shield.m_dimensions[1] = chi2Fcn->cylindricalLengthThickness( shielding_index, params );
-            shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par).IsFixed();
-            shield.m_fitDimensions[1] = !fitParams.Parameter(shield_start_par + 1 ).IsFixed();
+            // There looks to be a bug in Minuit that IsFixed() doesnt work
+            //shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par).IsFixed();
+            //shield.m_fitDimensions[1] = !fitParams.Parameter(shield_start_par + 1 ).IsFixed();
+            //assert( shield.m_fitDimensions[0] == initial_shield.m_fitDimensions[0] );
+            //assert( shield.m_fitDimensions[1] == initial_shield.m_fitDimensions[1] );
+            shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
+            shield.m_fitDimensions[1] = initial_shield.m_fitDimensions[1];
+            
             if( shield.m_fitDimensions[0] )
               shield.m_dimensionUncerts[0] = chi2Fcn->cylindricalRadiusThickness( shielding_index, errors );
             if( shield.m_fitDimensions[1] )
@@ -2215,9 +2371,17 @@ void fit_model( const std::string wtsession,
             shield.m_dimensions[0] = chi2Fcn->rectangularWidthThickness( shielding_index, params );
             shield.m_dimensions[1] = chi2Fcn->rectangularHeightThickness( shielding_index, params );
             shield.m_dimensions[2] = chi2Fcn->rectangularDepthThickness( shielding_index, params );
-            shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par ).IsFixed();
-            shield.m_fitDimensions[1] = !fitParams.Parameter(shield_start_par + 1 ).IsFixed();
-            shield.m_fitDimensions[2] = !fitParams.Parameter(shield_start_par + 2 ).IsFixed();
+            // There looks to be a bug in Minuit that IsFixed() doesnt work
+            //shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par ).IsFixed();
+            //shield.m_fitDimensions[1] = !fitParams.Parameter(shield_start_par + 1 ).IsFixed();
+            //shield.m_fitDimensions[2] = !fitParams.Parameter(shield_start_par + 2 ).IsFixed();
+            //assert( shield.m_fitDimensions[0] == initial_shield.m_fitDimensions[0] );
+            //assert( shield.m_fitDimensions[1] == initial_shield.m_fitDimensions[1] );
+            //assert( shield.m_fitDimensions[2] == initial_shield.m_fitDimensions[2] );
+            shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
+            shield.m_fitDimensions[1] = initial_shield.m_fitDimensions[1];
+            shield.m_fitDimensions[2] = initial_shield.m_fitDimensions[2];
+            
             if( shield.m_fitDimensions[0] )
               shield.m_dimensionUncerts[0] = chi2Fcn->rectangularWidthThickness( shielding_index, errors );
             if( shield.m_fitDimensions[1] )

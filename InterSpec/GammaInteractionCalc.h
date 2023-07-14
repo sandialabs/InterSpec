@@ -384,17 +384,6 @@ struct DistributedSrcCalc
   /** TODO: Setting the integral value as part of the DistributedSrcCalc is poor form - need to fix */
   double integral;
 };//struct DistributedSrcCalc
-
-
-struct ShieldingSourceFitOptions
-{
-  bool multiple_nucs_contribute_to_peaks = true;
-  bool attenuate_for_air = true;
-  bool account_for_decay_during_meas = false;
-  bool multithread_self_atten = true;
-    
-  double photopeak_cluster_sigma = 1.25;
-};//struct ShieldingSourceFitOptions
   
 
 class ShieldingSourceChi2Fcn
@@ -446,6 +435,11 @@ public:
   /** A struct to hold information about the material shieldings are made out of, and their respective self-attenuating and trace sources.
    
    Thicknesses and activity levels are specified by the fitting parameters, so not tracked in this struct.
+   
+   TODO: We could *almost* switch to using ShieldingSourceFitCalc::ShieldingInfo instead of ShieldLayerInfo,
+         but this would remove our logic to use `nucs_to_fit_mass_fraction_for`, since ShieldingInfo fits all mass-fractions, or none
+         (but since we only always do all or nothing, we arent actually losing much) - so we could upgrade ShieldingInfo to return mass-fractions
+         to fit, and just always have it return all self-atten sources, if fitting for them is selected.
    */
   struct ShieldLayerInfo
   {
@@ -490,17 +484,20 @@ public:
                                      std::shared_ptr<const SpecUtils::Measurement> background,
                                      std::deque<std::shared_ptr<const PeakDef>> foreground_peaks,
                                      std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> background_peaks,
-                                     const GammaInteractionCalc::ShieldingSourceFitOptions &options );
+                                     const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options );
   
+protected:
   ShieldingSourceChi2Fcn(
                       const double distance,
                       const double liveTime,
                       const double realTime,
                       const std::vector<PeakDef> &peaks,
                       std::shared_ptr<const DetectorPeakResponse> detector,
-                      const std::vector<ShieldLayerInfo> &materials,
+                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                       const GeometryType geometry,
-                      const ShieldingSourceFitOptions &options );
+                      const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options );
+
+public:
   virtual ~ShieldingSourceChi2Fcn();
 
   /** Returns the geometry of this ShieldingSourceChi2Fcn */
@@ -575,7 +572,7 @@ public:
    
    Default is true.
    
-   \sa m_self_att_multithread
+   \sa ShieldingSourceFitCalc::ShieldingSourceFitOptions::multithread_self_atten
    */
   void setSelfAttMultiThread( const bool do_multithread );
   
@@ -795,6 +792,12 @@ public:
   const std::vector<PeakDef> &peaks() const;
   const std::vector<PeakDef> &backgroundPeaks() const;
 
+  double distance() const;
+  
+  const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options() const;
+  
+  const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &initialShieldings() const;
+  
   static void selfShieldingIntegration( DistributedSrcCalc &calculator );
 
   //observedPeakEnergyWidths(): get energy sorted pairs of peak means and widths
@@ -868,38 +871,19 @@ protected:
   double m_distance;
   double m_liveTime;
 
-  //m_photopeakClusterSigma: if >=0.0 then not just the photpeak the fit peak
-  //  is assigned to will be used, but also other photopeaks within
-  //  m_photopeakClusterSigma of the fit peaks sigma will be used to calc
-  //  expected as well.  The only place this variable is currently referenced is
-  //  in energy_chi_contributions(...).  Note that if this value is large then
-  //  there is the possibility of double counting the expected contributions
-  //  from
-  double m_photopeakClusterSigma;
   std::vector<PeakDef> m_peaks;
   std::vector<PeakDef> m_backgroundPeaks;
   std::shared_ptr<const DetectorPeakResponse> m_detector;
+  
+  // TODO: we could probably eliminate m_materials, and just use m_initial_shieldings
   std::vector<ShieldLayerInfo> m_materials;
+  const std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_initial_shieldings;
+  
   std::vector<const SandiaDecay::Nuclide *> m_nuclides; //sorted alphabetically and unique
   
   const GeometryType m_geometry;
   
-  bool m_allowMultipleNucsContribToPeaks;
-  
-  bool m_attenuateForAir;
-  
-  /** Wether to use SpecUtilsAsync::ThreadPool to calculate self-attenuation peak values.
-   
-   TODO: Figure out if this should be an std::atomic
-   
-   Default is true.
-   
-   \sa setSelfAttMultiThread
-   */
-  bool m_self_att_multithread;
-  
-  /** If true, account for decay of nuclide during measurement - see #cluster_peak_activities */
-  bool m_accountForDecayDuringMeas;
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions m_options;
   
   /** The real-time of the measurement; only used if decay during measurement is being accounted for. */
   double m_realTime;

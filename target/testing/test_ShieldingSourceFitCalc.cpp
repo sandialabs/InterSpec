@@ -33,6 +33,8 @@
 #include <boost/test/included/unit_test.hpp>
 
 #include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_utils.hpp"
+#include "rapidxml/rapidxml_print.hpp"
 
 //Roots Minuit2 includes
 #include "Minuit2/MnUserParameters.h"
@@ -41,6 +43,7 @@
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
@@ -307,12 +310,13 @@ BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
       BOOST_REQUIRE_NO_THROW( ShieldingInfo::equalEnough( info, from_xml ) );
     }
   }// End test ShieldingInfo encode/decode from URI
-  
 }//BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
 
 
 BOOST_AUTO_TEST_CASE( IsoFitStructSerialization )
 {
+  set_data_dir();
+  
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
   
@@ -343,6 +347,33 @@ BOOST_AUTO_TEST_CASE( IsoFitStructSerialization )
   ShieldingSourceFitCalc::IsoFitStruct from_xml;
   BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( doc.first_node() ) );
   BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::IsoFitStruct::equalEnough( test, from_xml ) );
+}//BOOST_AUTO_TEST_CASE( IsoFitStructSerialization )
+
+
+
+BOOST_AUTO_TEST_CASE( SrcFitOptionsSerialization )
+{
+  set_data_dir();
+  
+  for( size_t i = 0; i < 20; ++i )
+  {
+    ShieldingSourceFitCalc::ShieldingSourceFitOptions test;
+    
+    test.multiple_nucs_contribute_to_peaks = (rand() % 2);
+    test.attenuate_for_air = (rand() % 2);
+    test.account_for_decay_during_meas = (rand() % 2);
+    test.multithread_self_atten = (rand() % 2);
+    test.photopeak_cluster_sigma = ((10.0*rand()) / RAND_MAX);
+    test.background_peak_subtract = (rand() % 2);
+    test.same_age_isotopes = (rand() % 2);
+    
+    rapidxml::xml_document<char> doc;
+    BOOST_REQUIRE_NO_THROW( test.serialize( &doc ) );
+    
+    ShieldingSourceFitCalc::ShieldingSourceFitOptions from_xml;
+    BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( &doc ) );
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( test, from_xml ) );
+  }//for( size_t i = 0; i < 20; ++i )
 }//BOOST_AUTO_TEST_CASE( IsoFitStructSerialization )
 
 
@@ -423,7 +454,7 @@ BOOST_AUTO_TEST_CASE( SimpleSourceFit )
   }// End create peak for 661 keV in Cs137
   
   
-  GammaInteractionCalc::ShieldingSourceFitOptions options;
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
   options.attenuate_for_air = false;
   
   pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
@@ -470,3 +501,472 @@ BOOST_AUTO_TEST_CASE( SimpleSourceFit )
                        "Fit activity (" << PhysicalUnits::printToBestActivityUnits(activity,10)
                        << ") didnt match expected (" << PhysicalUnits::printToBestActivityUnits(expected_activity,10) << ")" );
 }//BOOST_AUTO_TEST_CASE( SimpleSourceFit )
+
+
+
+std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingSourceFitCalc::ModelFitResults &results )
+{
+  bool successful = true;
+  int numCorrect = 0, numTested = 0;
+  vector<string> textInfoLines;
+
+  try
+  {
+    for( int i = 0; i < results.fit_src_info.size(); ++i )
+    {
+      const ShieldingSourceFitCalc::IsoFitStruct &src = results.fit_src_info[i];
+      const SandiaDecay::Nuclide *nuc = src.nuclide;
+      BOOST_REQUIRE( nuc );
+      
+      const SandiaDecay::Nuclide *ageNuc = src.ageDefiningNuc;
+      const ShieldingSourceFitCalc::ModelSourceType sourceType = src.sourceType;
+      const bool selfAttNuc = (sourceType == ShieldingSourceFitCalc::ModelSourceType::Intrinsic);
+      
+      // For self-attenuating shieldings, we'll just test the shielding thickness
+      // For nuclides whose age is controlled by another nuclide, we dont need to test age.
+      if( selfAttNuc || (ageNuc && (ageNuc != nuc)) )
+        continue;
+      
+      if( src.fitActivity )
+      {
+        const boost::optional<double> &truthAct = src.truthActivity;
+        const boost::optional<double> &tolerance = src.truthActivityTolerance;
+        
+        BOOST_CHECK_MESSAGE( truthAct.has_value(), "Did not have truth activity value for " + nuc->symbol + " age." );
+        BOOST_CHECK_MESSAGE( tolerance.has_value(), "Did not have truth activity tolerance for " + nuc->symbol + " age." );
+        
+        
+        if( !truthAct || !tolerance )
+        {
+          successful = false;
+          textInfoLines.push_back( "Did not have truth value for " + nuc->symbol + " activity." );
+          continue;
+        }
+        
+        const bool closeEnough = (fabs(*truthAct - src.activity) < *tolerance);
+        
+        numTested += 1;
+        numCorrect += closeEnough;
+        
+        textInfoLines.push_back( "For " + nuc->symbol + " fit activity "
+                                + PhysicalUnits::printToBestActivityUnits(src.activity) + " with the"
+                                " truth value of "
+                                + PhysicalUnits::printToBestActivityUnits(*truthAct)
+                                + " and tolerance "
+                                + PhysicalUnits::printToBestActivityUnits(*tolerance)
+                                + (closeEnough ? " - within tolerance." : " - out of tolerance." )
+                                );
+        
+        BOOST_CHECK_MESSAGE( fabs(*truthAct - src.activity) < *tolerance, textInfoLines.back() );
+      }//if( fit activity )
+      
+      if( src.fitAge )
+      {
+        const boost::optional<double> &truthAge = src.truthAge;
+        const boost::optional<double> &tolerance = src.truthAgeTolerance;
+        
+        BOOST_CHECK_MESSAGE( truthAge.has_value(), "Did not have truth age value for " + nuc->symbol + " age." );
+        BOOST_CHECK_MESSAGE( tolerance.has_value(), "Did not have truth age tolerance for " + nuc->symbol + " age." );
+      
+        
+        if( !truthAge || !tolerance )
+        {
+          successful = false;
+          textInfoLines.push_back( "Did not have truth value for " + nuc->symbol + " age." );
+          continue;
+        }
+        
+        const bool closeEnough = (fabs(*truthAge - src.age) < *tolerance);
+        
+        numTested += 1;
+        numCorrect += closeEnough;
+        
+        textInfoLines.push_back( "For " + nuc->symbol + " fit age "
+                                + PhysicalUnits::printToBestTimeUnits(src.age) + " with the"
+                                " truth value of "
+                                + PhysicalUnits::printToBestTimeUnits(*truthAge)
+                                + " and tolerance "
+                                + PhysicalUnits::printToBestTimeUnits(*tolerance)
+                                + (closeEnough ? " - within tolerance." : " - out of tolerance." )
+                                );
+        
+        BOOST_CHECK_MESSAGE( fabs(*truthAge - src.age) < *tolerance, textInfoLines.back() );
+      }//if( fit age )
+    }//for( int i = 0; i < nnuc; ++i )
+    
+    for( const ShieldingSourceFitCalc::FitShieldingInfo &shield : results.final_shieldings )
+    {
+      if( shield.m_isGenericMaterial )
+      {
+        if( shield.m_fitDimensions[1] )
+        {
+          const boost::optional<double> &truth = shield.m_truthDimensions[1];
+          const boost::optional<double> &tolerance = shield.m_truthDimensionsTolerances[1];
+          
+          BOOST_CHECK_MESSAGE( truth.has_value(), "Did not have truth value AD for generic shielding" );
+          BOOST_CHECK_MESSAGE( tolerance.has_value(), "Did not have truth tolerance AD for generic shielding" );
+          
+          if( !truth || !tolerance )
+          {
+            successful = false;
+            textInfoLines.push_back( "Did not have truth AD for generic shielding" );
+            continue;
+          }
+          
+          const double fitAD = shield.m_dimensions[1];
+          const bool closeEnough = (fabs(*truth - fitAD) < *tolerance);
+          
+          numTested += 1;
+          numCorrect += closeEnough;
+          
+          textInfoLines.push_back( "For Generic Shielding fit AN " + std::to_string(fitAD)
+                                  + " with the truth value of " + std::to_string(*truth)
+                                  + " and tolerance " + std::to_string(*tolerance)
+                                  + (closeEnough ? " - within tolerance." : " - out of tolerance." )
+                                  );
+          
+          BOOST_CHECK_MESSAGE( fabs(*truth - fitAD) < *tolerance, textInfoLines.back() );
+        }//if( fit AD )
+        
+        if( shield.m_fitDimensions[0] )
+        {
+          const boost::optional<double> &truth = shield.m_truthDimensions[0];
+          const boost::optional<double> &tolerance = shield.m_truthDimensionsTolerances[0];
+          
+          BOOST_CHECK_MESSAGE( truth.has_value(), "Did not have truth value AN for generic shielding" );
+          BOOST_CHECK_MESSAGE( tolerance.has_value(), "Did not have truth tolerance AN for generic shielding" );
+          
+          if( !truth || !tolerance )
+          {
+            successful = false;
+            textInfoLines.push_back( "Did not have truth AN for generic shielding" );
+            continue;
+          }
+          
+          const double fitAN = shield.m_dimensions[0];
+          const bool closeEnough = (fabs(*truth - fitAN) < *tolerance);
+          
+          numTested += 1;
+          numCorrect += closeEnough;
+          
+          textInfoLines.push_back( "For Generic Shielding fit AN " + std::to_string(fitAN)
+                                  + " with the truth value of " + std::to_string(*truth)
+                                  + " and tolerance " + std::to_string(*tolerance)
+                                  + (closeEnough ? " - within tolerance." : " - out of tolerance." )
+                                  );
+          
+          BOOST_CHECK_MESSAGE( fabs(*truth - fitAN) < *tolerance, textInfoLines.back() );
+        }//if( fit AN )
+      }else
+      {
+        shared_ptr<const Material> mat = shield.m_material;
+        
+        BOOST_CHECK( results.geometry == shield.m_geometry );
+        
+        BOOST_CHECK( mat );
+        if( !mat )
+        {
+          successful = false;
+          textInfoLines.push_back( "There was an invalid material." );
+          continue;
+        }
+        
+        const auto geom = shield.m_geometry;
+        auto checkDimension = [shield, geom, mat, &successful, &textInfoLines, &numTested, &numCorrect]( const int dim ){
+          
+          if( !shield.m_fitDimensions[dim] )
+            return;
+          
+          string labeltxt;
+          const double fitValue = shield.m_dimensions[dim];
+          const boost::optional<double> &thicknessVal = shield.m_truthDimensions[dim];
+          const boost::optional<double> &toleranceVal = shield.m_truthDimensionsTolerances[dim];
+          
+          switch( geom )
+          {
+            case GammaInteractionCalc::GeometryType::Spherical:
+              BOOST_REQUIRE( dim < 1 );
+              labeltxt = "thickness";
+              break;
+              
+            case GammaInteractionCalc::GeometryType::CylinderEndOn:
+            case GammaInteractionCalc::GeometryType::CylinderSideOn:
+              BOOST_REQUIRE( dim < 2 );
+              if( dim == 0 )
+                labeltxt = "cyl. radius";
+              else if( dim == 1 )
+                labeltxt = "cyl. length";
+              break;
+              
+            case GammaInteractionCalc::GeometryType::Rectangular:
+              BOOST_REQUIRE( dim < 3 );
+              if( dim == 0 )
+                labeltxt = "rect. width";
+              else if( dim == 1 )
+                labeltxt = "rect. height";
+              else if( dim == 2 )
+                labeltxt = "rect. depth";
+              
+              break;
+              
+            case GammaInteractionCalc::GeometryType::NumGeometryType:
+              assert( 0 );
+              break;
+          }//switch( geometry() )
+          
+          
+          BOOST_CHECK_MESSAGE( thicknessVal.has_value() && toleranceVal.has_value(),
+                              "Missing truth " + labeltxt + " for shielding '" + mat->name + "'" );
+          
+          if( !thicknessVal.has_value() || !toleranceVal.has_value() )
+          {
+            successful = false;
+            textInfoLines.push_back( "Missing truth " + labeltxt + " for shielding '" + mat->name + "'" );
+            return;
+          }
+          
+          const bool closeEnough = (fabs((*thicknessVal) - fitValue) < (*toleranceVal));
+          
+          numTested += 1;
+          numCorrect += closeEnough;
+          
+          textInfoLines.push_back( "For shielding '" + mat->name + "' fit " + labeltxt + " "
+                                  + PhysicalUnits::printToBestLengthUnits(fitValue,4)
+                                  + " with the truth value of "
+                                  + PhysicalUnits::printToBestLengthUnits(*thicknessVal,4)
+                                  + " and tolerance "
+                                  + PhysicalUnits::printToBestLengthUnits(*toleranceVal)
+                                  + (closeEnough ? " - within tolerance." : " - out of tolerance." )
+                                  );
+          
+          BOOST_CHECK_MESSAGE( fabs((*thicknessVal) - fitValue) < (*toleranceVal), textInfoLines.back() );
+        };//auto checkDimension
+        
+        
+        switch( geom )
+        {
+          case GammaInteractionCalc::GeometryType::Spherical:
+            checkDimension(0);
+            break;
+            
+          case GammaInteractionCalc::GeometryType::CylinderEndOn:
+          case GammaInteractionCalc::GeometryType::CylinderSideOn:
+            checkDimension(0);
+            checkDimension(1);
+            break;
+            
+          case GammaInteractionCalc::GeometryType::Rectangular:
+            checkDimension(0);
+            checkDimension(1);
+            checkDimension(2);
+            break;
+            
+          case GammaInteractionCalc::GeometryType::NumGeometryType:
+            break;
+        }//switch( geom )
+        
+        
+        if( shield.m_fitMassFrac )
+        {
+          auto checkMassFrac = [shield, mat, &successful, &textInfoLines, &numTested, &numCorrect](
+                                    const SandiaDecay::Nuclide * const nuc, const double value ){
+            BOOST_REQUIRE( nuc );
+            const auto truth_pos = shield.m_truthFitMassFractions.find(nuc);
+            BOOST_CHECK_MESSAGE( truth_pos != end(shield.m_truthFitMassFractions),
+                                "Missing truth mass-fraction for " + nuc->symbol );
+                                      
+            if( truth_pos == end(shield.m_truthFitMassFractions) )
+            {
+              successful = false;
+              textInfoLines.push_back( "Missing truth mass-fraction for " + nuc->symbol );
+              return;
+            }
+                                  
+            const double truthval = truth_pos->second.first;
+            const double truthtol = truth_pos->second.second;
+            BOOST_CHECK_MESSAGE( (truthval >= 0.0) && (truthval >= 1.0) && (truthtol >= 0.0) && (truthtol >= 1.0),
+                                "Invalid truth mass-fraction for " + nuc->symbol );
+                                      
+            if( (truthval < 0.0) || (truthval > 1.0) || (truthtol < 0.0) || (truthtol > 1.0) )
+            {
+              successful = false;
+              textInfoLines.push_back( "Invalid truth mass-fraction for " + nuc->symbol );
+              return;
+            }
+            
+            numTested += 1;
+            const bool closeEnough = ((value >= (truthval - truthtol)) && (value <= (truthval + truthtol)));
+            numCorrect += closeEnough;
+            
+            textInfoLines.push_back( "For shielding '" + mat->name + "' fit " + nuc->symbol
+                                     + " to have mass fraction " + PhysicalUnits::printCompact(value, 5)
+                                     + " with the truth value of " + PhysicalUnits::printCompact(truthval,5)
+                                     + " and tolerance " + PhysicalUnits::printCompact(truthtol,5)
+                                     + (closeEnough ? " - within tolerance." : " - out of tolerance." ) );
+                                      
+            BOOST_CHECK_MESSAGE( (value >= (truthval - truthtol)) && (value <= (truthval + truthtol)),
+                                textInfoLines.back() );
+          };//checkMassFrac( ... )
+          
+          for( const auto &nuc_frac : shield.m_nuclideFractionUncerts )
+          {
+            checkMassFrac( nuc_frac.first, nuc_frac.second );
+          }//for( const auto &prev_nuc_frac : shield.m_nuclideFractionUncerts )
+        }//if( select->fitForMassFractions() )
+        
+      }//if( generic material ) / else
+    }//for( WWidget *widget : m_shieldingSelects->children() )
+    
+    successful = (successful && numTested);
+  }catch( std::exception &e )
+  {
+    successful = false;
+    textInfoLines.push_back( "Caught exception during testing: " + string(e.what()) );
+  }//try / catch
+  
+  return tuple<bool,int,int,vector<string>>( successful, numCorrect, numTested, textInfoLines );
+}//std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingSourceFitCalc::ModelFitResults &results )
+
+
+
+BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
+{
+  set_data_dir();
+  
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+ 
+  MaterialDB matdb;
+  
+  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
+  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
+  
+  const Material * const iron = matdb.material("Fe (iron)");
+  BOOST_REQUIRE( iron );
+  
+  const string test_n42_file = SpecUtils::append_path(g_test_file_dir, "../analysis_tests/AEGIS_Eu152_surface_contamination.n42_20230622T113239.276178.n42");
+  BOOST_REQUIRE( SpecUtils::is_file(test_n42_file) );
+  
+  
+  
+  SpecMeas specfile;
+  BOOST_REQUIRE( specfile.load_N42_file( test_n42_file ) );
+  BOOST_REQUIRE( specfile.sample_numbers().size() == 1 );
+  BOOST_REQUIRE( specfile.num_measurements() == 1 );
+  
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = specfile.peaks( specfile.sample_numbers() );
+  BOOST_REQUIRE( peaks && (peaks->size() > 10) );
+  
+  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( size_t(0) );
+  BOOST_REQUIRE( foreground );
+  
+  shared_ptr<const DetectorPeakResponse> detector = specfile.detector();
+  BOOST_REQUIRE( detector && detector->isValid() );
+  
+  rapidxml::xml_document<char> *model_xml = specfile.shieldingSourceModel();
+  BOOST_REQUIRE( model_xml );
+  rapidxml::xml_node<char> *base_node = model_xml->first_node();
+  BOOST_REQUIRE( base_node );
+  
+  //string xml;
+  //rapidxml::print(std::back_inserter(xml), *model_xml, 0);
+  //cout << "XML: " << xml << endl;
+  
+  const rapidxml::xml_node<char> *geom_node = base_node->first_node( "Geometry" );
+  BOOST_REQUIRE( geom_node );
+  const rapidxml::xml_node<char> *dist_node = base_node->first_node( "Distance" );
+  BOOST_REQUIRE( dist_node );
+  
+  const string diststr = SpecUtils::xml_value_str( dist_node );
+  double distance;
+  BOOST_REQUIRE_NO_THROW( distance = PhysicalUnits::stringToDistance( diststr ) );
+  
+  const string geomstr = SpecUtils::xml_value_str( geom_node );
+  GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+  for( GammaInteractionCalc::GeometryType type = GammaInteractionCalc::GeometryType(0);
+      type != GammaInteractionCalc::GeometryType::NumGeometryType;
+      type = GammaInteractionCalc::GeometryType(static_cast<int>(type) + 1) )
+  {
+    if( SpecUtils::iequals_ascii(geomstr, GammaInteractionCalc::to_str(type)) )
+    {
+      geometry = type;
+      break;
+    }
+  }
+  
+  BOOST_REQUIRE( geometry != GammaInteractionCalc::GeometryType::NumGeometryType );
+  
+  vector<ShieldingSourceFitCalc::ShieldingInfo> shield_definitions;
+  vector<ShieldingSourceFitCalc::SourceFitDef> src_definitions;
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  BOOST_REQUIRE_NO_THROW( options.deSerialize( base_node ) );
+  
+  const rapidxml::xml_node<char> *shieldings_node = base_node->first_node( "Shieldings" );
+  BOOST_REQUIRE( shieldings_node );
+  
+  for( const rapidxml::xml_node<char> *shield_node = shieldings_node->first_node("Shielding");
+      shield_node;
+      shield_node = shield_node->next_sibling("Shielding") )
+  {
+    ShieldingSourceFitCalc::ShieldingInfo info;
+    BOOST_REQUIRE_NO_THROW( info.deSerialize( shield_node, &matdb ) );
+    shield_definitions.push_back( info );
+  }
+  
+  BOOST_REQUIRE( shield_definitions.size() == 1 );
+  
+  const rapidxml::xml_node<char> *srcs_node = base_node->first_node( "Nuclides" );
+  BOOST_REQUIRE( srcs_node );
+  
+  for( const rapidxml::xml_node<char> *src_node = srcs_node->first_node("Nuclide");
+      src_node;
+      src_node = src_node->next_sibling("Nuclide") )
+  {
+    ShieldingSourceFitCalc::SourceFitDef info;
+    BOOST_REQUIRE_NO_THROW( info.deSerialize( src_node ) );
+    src_definitions.push_back( info );
+  }
+  BOOST_REQUIRE( src_definitions.size() == 1 );
+  
+  // We have all the parts, lets do the computation:
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+                GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geometry,
+                                  shield_definitions, src_definitions, detector,
+                                  foreground, nullptr, *peaks, nullptr, options );
+ 
+  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  *inputPrams = fcn_pars.second;
+  
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+  
+  
+  auto progress_fcn = [progress](){
+    // Probably wont get called, since its a simple fit
+  };
+  
+  bool finished_fit_called = false;
+  auto finished_fcn = [results, &finished_fit_called](){
+    finished_fit_called = true;
+  };
+  
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn, results, finished_fcn );
+  
+  BOOST_CHECK( finished_fit_called );
+  
+  BOOST_CHECK_MESSAGE( results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final,
+                      "Fit status was not successful" );
+  
+  BOOST_REQUIRE( results->fit_src_info.size() >= 1 );
+  
+  tuple<bool,int,int,vector<string>> test_results = test_fit_against_truth( *results );
+  const bool successful = get<0>(test_results);
+  const int numCorrect = get<1>(test_results);
+  const int numTested = get<2>(test_results);
+  const vector<string> &textInfoLines = get<3>(test_results);
+  
+  cout << (successful ? "Successfully" : "Unsuccessfully") << " checked against truth values with "
+       << numCorrect << " tests passing, out of " << numTested << ".\nNotes:" << endl;
+  for( const auto &msg : textInfoLines )
+    cout << "\t" << msg << endl;
+}//BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )

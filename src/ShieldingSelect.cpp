@@ -4803,9 +4803,12 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     assert( 0 );
   }//try
   
+  /*
+   //This test will fail for trace-sources, as getting their total activity depends
+   //  on them being inserted into m_shieldSrcDisp
   try
   {
-    ShieldingSelect test( m_materialDB, m_sourceModel, m_materialSuggest, m_shieldSrcDisp  );
+    ShieldingSelect test( m_materialDB, m_sourceModel, m_materialSuggest, m_shieldSrcDisp );
     test.deSerialize(added_node);
     testShieldingSelectPartiallySameAsOrig( test );
   }catch( std::exception &e )
@@ -4814,6 +4817,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     log_developer_error( __func__, msg.c_str() );
     assert( 0 );
   }//try
+   */
 #endif  //PERFORM_DEVELOPER_CHECKS
   
 }//void serialize( rapidxml::xml_document<> &doc ) const;

@@ -265,6 +265,44 @@ namespace ShieldingSourceFitCalc
   };//struct FitShieldingInfo : ShieldingInfo
   
   
+  struct ShieldingSourceFitOptions
+  {
+    bool multiple_nucs_contribute_to_peaks = true;
+    bool attenuate_for_air = true;
+    
+    /** If true, account for decay of nuclide during measurement - see `ShieldingSourceChi2Fcn::cluster_peak_activities` */
+    bool account_for_decay_during_meas = false;
+    
+    /** Wether to use SpecUtilsAsync::ThreadPool to calculate self-attenuation peak values.
+     
+     \sa GammaInteractionCalc::ShieldingSourceChi2Fcn::setSelfAttMultiThread
+     */
+    bool multithread_self_atten = true;
+    
+    /** if >=0.0 then not just the photpeak the fit peak is assigned to will be used, but also other photopeaks within
+     `photopeak_cluster_sigma` of the fit peaks sigma will be used to calc expected as well.
+     The only place this variable is currently referenced is in `ShieldingSourceChi2Fcn::energy_chi_contributions`.
+     
+     Note that if this value is large then there is the possibility of double counting the expected contributions from neighboring peaks.
+     */
+    double photopeak_cluster_sigma = 1.25;
+    
+    /** Background peaks will only be subtracted if present. */
+    bool background_peak_subtract = true;
+    
+    /** If nuclides of the same element, should all have the same age.  */
+    bool same_age_isotopes = true;
+
+    
+    void serialize( rapidxml::xml_node<char> *parent_node ) const;
+    void deSerialize( const rapidxml::xml_node<char> *parent_node );
+    
+#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+    static void equalEnough( const ShieldingSourceFitOptions &lhs, const ShieldingSourceFitOptions &rhs );
+#endif
+  };//struct ShieldingSourceFitOptions
+  
+  
   /** A struct to share progress of fitting a model; gives current best chi2 (and parameters giving that),
    as well as  elapsed time, and number of function calls.
    
@@ -302,12 +340,18 @@ namespace ShieldingSourceFitCalc
     std::vector<double> paramErrors;
     std::vector<std::string> errormsgs;
     
+    double distance;
+    GammaInteractionCalc::GeometryType geometry;
     std::vector<PeakDef> foreground_peaks;
     std::vector<PeakDef> background_peaks;
     std::vector<ShieldingSourceFitCalc::ShieldingInfo> initial_shieldings;
     std::vector<ShieldingSourceFitCalc::FitShieldingInfo> final_shieldings;
     
+    // Need to add: foreground spectrum, background spectrum,
+    
     std::vector<ShieldingSourceFitCalc::IsoFitStruct> fit_src_info;
+    
+    ShieldingSourceFitOptions options;
   };//struct ModelFitResults
     
   

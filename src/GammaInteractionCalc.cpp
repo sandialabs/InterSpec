@@ -2525,7 +2525,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
                                 std::shared_ptr<const SpecUtils::Measurement> background,
                                 std::deque<std::shared_ptr<const PeakDef>> foreground_peaks,
                                 std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> background_peaks,
-                                const GammaInteractionCalc::ShieldingSourceFitOptions &options )
+                                const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options )
 {
   using GammaInteractionCalc::ShieldingSourceChi2Fcn;
     
@@ -2555,49 +2555,11 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
                 WarningWidget::WarningMsgHigh );
     realTime = liveTime = 300.0 * PhysicalUnits::second;
   }//if( liveTime <= 0.0 )
-  
-  
-  //Get the shieldings and materials
-  vector<ShieldingSourceChi2Fcn::ShieldLayerInfo> materials;
-  
-  for( const ShieldingSourceFitCalc::ShieldingInfo &info : shieldings )
-  {
-    std::shared_ptr<const Material> matSPtr = info.m_material;
-    const Material *mat = matSPtr.get();
     
-    ShieldingSourceChi2Fcn::ShieldLayerInfo materialAndSrc;
-    materialAndSrc.material = matSPtr;
-    for( const pair<const SandiaDecay::Nuclide *,double> &nf : info.m_nuclideFractions )
-      materialAndSrc.self_atten_sources.emplace_back( nf.first, nf.second );
-    
-    // We'll set nuclides to fit mass-fractions for below.
-    //if( info.m_fitMassFrac )
-    //{
-    //  for( const pair<const SandiaDecay::Nuclide *,double> &nf : info.m_nuclideFractions )
-    //    materialAndSrc.nucs_to_fit_mass_fraction_for.push_back( nf.first );
-    //}
-    
-    for( const ShieldingSourceFitCalc::TraceSourceInfo &trace : info.m_traceSources )
-    {
-      const SandiaDecay::Nuclide * const nuc = trace.m_nuclide;
-      GammaInteractionCalc::TraceActivityType type = trace.m_type;
-      
-      const double relax_len = (type == TraceActivityType::ExponentialDistribution)
-      ? trace.m_relaxationDistance
-      : -1.0;
-#if( defined(__GNUC__) && __GNUC__ < 5 )
-      materialAndSrc.trace_sources.push_back( tuple<const SandiaDecay::Nuclide *,TraceActivityType,double>{nuc, type, relax_len} );
-#else
-      materialAndSrc.trace_sources.push_back( {nuc, type, relax_len} );
-#endif
-    }//for( loop over trace source nuclides )
-    
-    materials.push_back( materialAndSrc );
-  }//for( WWidget *widget : m_shieldingSelects->children() )
   
-  
-  auto answer = std::make_shared<GammaInteractionCalc::ShieldingSourceChi2Fcn>( distance,
-                                                                               liveTime, realTime, peaks, detector, materials, geom, options );
+  shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> answer;
+  answer.reset( new GammaInteractionCalc::ShieldingSourceChi2Fcn( distance, liveTime, realTime,
+                                                    peaks, detector, shieldings, geom, options ) );
   
   //I think num_fit_params will end up same as inputPrams.VariableParameters()
   size_t num_fit_params = 0;
@@ -2860,24 +2822,21 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
                                  const double distance, const double liveTime, const double realTime,
                                  const std::vector<PeakDef> &peaks,
                                  std::shared_ptr<const DetectorPeakResponse> detector,
-                                 const std::vector<ShieldingSourceChi2Fcn::ShieldLayerInfo> &materials,
+                                 const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                                  const GeometryType geometry,
-                                 const ShieldingSourceFitOptions &options )
+                                 const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options )
   : ROOT::Minuit2::FCNBase(),
     m_cancel( CalcStatus::NotCanceled ),
     m_isFitting( false ),
     m_distance( distance ),
     m_liveTime( liveTime ),
-    m_photopeakClusterSigma( options.photopeak_cluster_sigma ),
     m_peaks( peaks ),
     m_detector( detector ),
-    m_materials( materials ),
+    m_materials{},
+    m_initial_shieldings( shieldings ),
     m_nuclides( 0, (const SandiaDecay::Nuclide *)NULL ),
     m_geometry( geometry ),
-    m_allowMultipleNucsContribToPeaks( options.multiple_nucs_contribute_to_peaks ),
-    m_attenuateForAir( options.attenuate_for_air ),
-    m_self_att_multithread( options.multithread_self_atten ),
-    m_accountForDecayDuringMeas( options.account_for_decay_during_meas ),
+    m_options( options ),
     m_realTime( realTime )
 {
   set<const SandiaDecay::Nuclide *> nucs;
@@ -2886,7 +2845,7 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
     if( p.parentNuclide() )
       nucs.insert( p.parentNuclide() );
   }
-  
+      
   for( const SandiaDecay::Nuclide *n : nucs )
     m_nuclides.push_back( n );
 
@@ -2895,10 +2854,49 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
               if( !lhs ) return false;
               if( !rhs ) return true;
               return (lhs->symbol < rhs->symbol);
-            }  );
-  
+  } );
+
+      
+      
+  // Convert from input shieldings to what we use internally
+  for( const ShieldingSourceFitCalc::ShieldingInfo &info : shieldings )
+  {
+    ShieldingSourceChi2Fcn::ShieldLayerInfo materialAndSrc;
+    materialAndSrc.material = info.m_material;
+    
+    for( const pair<const SandiaDecay::Nuclide *,double> &nf : info.m_nuclideFractions )
+      materialAndSrc.self_atten_sources.emplace_back( nf.first, nf.second );
+    
+    //if( info.m_fitMassFrac )
+    //{
+    // TODO: / NOTE: In `create(...)`, we will call `setNuclidesToFitMassFractionFor(...)`,
+    //               but we could do that here instead, which would make more sense, but would
+    //               also need to make sure the logic worked out.
+    //}
+    
+    for( const ShieldingSourceFitCalc::TraceSourceInfo &trace : info.m_traceSources )
+    {
+      const SandiaDecay::Nuclide * const nuc = trace.m_nuclide;
+      GammaInteractionCalc::TraceActivityType type = trace.m_type;
+      
+      const double relax_len = (type == TraceActivityType::ExponentialDistribution)
+                                ? trace.m_relaxationDistance : -1.0;
+      
+#if( defined(__GNUC__) && __GNUC__ < 5 )
+      materialAndSrc.trace_sources.push_back( tuple<const SandiaDecay::Nuclide *,TraceActivityType,double>{nuc, type, relax_len} );
+#else
+      materialAndSrc.trace_sources.push_back( {nuc, type, relax_len} );
+#endif
+    }//for( loop over trace source nuclides )
+    
+    m_materials.push_back( materialAndSrc );
+  }//for( const ShieldingSourceFitCalc::ShieldingInfo &info : shieldings )
+      
+  assert( m_materials.size() == shieldings.size() );
+
+    
   // Go through and sanity-check traceSources
-  for( const ShieldingSourceChi2Fcn::ShieldLayerInfo &info : materials )
+  for( const ShieldingSourceChi2Fcn::ShieldLayerInfo &info : m_materials )
   {
     const shared_ptr<const Material> &material = info.material;
     
@@ -3071,7 +3069,7 @@ void ShieldingSourceChi2Fcn::fittingIsFinished()
 
 void ShieldingSourceChi2Fcn::setSelfAttMultiThread( const bool do_multithread )
 {
-  m_self_att_multithread = do_multithread;
+  m_options.multithread_self_atten = do_multithread;
 }
   
   
@@ -3323,13 +3321,11 @@ ShieldingSourceChi2Fcn &ShieldingSourceChi2Fcn::operator=( const ShieldingSource
   m_cancel = rhs.m_cancel.load();
   m_distance = rhs.m_distance;
   m_liveTime = rhs.m_liveTime;
-  m_photopeakClusterSigma = rhs.m_photopeakClusterSigma;
   m_peaks = rhs.m_peaks;
   m_detector = rhs.m_detector;
   m_materials = rhs.m_materials;
   m_nuclides = rhs.m_nuclides;
-  m_allowMultipleNucsContribToPeaks = rhs.m_allowMultipleNucsContribToPeaks;
-  m_self_att_multithread = rhs.m_self_att_multithread;
+  m_options = rhs.m_options;
   
   //m_isFitting
   //m_guiUpdateInfo
@@ -4731,10 +4727,28 @@ const std::vector<PeakDef> &ShieldingSourceChi2Fcn::peaks() const
   return m_peaks;
 }
 
+
 const std::vector<PeakDef> &ShieldingSourceChi2Fcn::backgroundPeaks() const
 {
   return m_backgroundPeaks;
 }
+  
+
+double ShieldingSourceChi2Fcn::distance() const
+{
+  return m_distance;
+}
+  
+  
+const ShieldingSourceFitCalc::ShieldingSourceFitOptions &ShieldingSourceChi2Fcn::options() const
+{
+  return m_options;
+}
+  
+const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &ShieldingSourceChi2Fcn::initialShieldings() const
+{
+  return m_initial_shieldings;
+}//const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &initialShieldings() const
   
 
 ShieldingSourceChi2Fcn::CancelException::CancelException( const ShieldingSourceChi2Fcn::CalcStatus cancel_code )
@@ -5032,7 +5046,7 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
            << ", next_width=" << next_width << ", prev_energy="
            << prev_energy << ", prev_width=" << prev_width << endl
            << "prev_sigma=" << prev_sigma << ", next_sigma=" << next_sigma
-           << " m_photopeakClusterSigma=" << photopeakClusterSigma << endl;
+           << " m_options.photopeak_cluster_sigma=" << photopeakClusterSigma << endl;
 */
       
       if( prev_sigma < next_sigma && prev_sigma < photopeakClusterSigma )
@@ -5424,12 +5438,12 @@ vector< tuple<double,double,double,Wt::WColor,double> >
                         + m_detector->name() + " radius "
                         + std::to_string( 0.5*m_detector->detectorDiameter()/PhysicalUnits::cm )
                       + " cm" );
-    if( m_allowMultipleNucsContribToPeaks )
+    if( m_options.multiple_nucs_contribute_to_peaks )
       info->push_back( "Allowing multiple nuclides being fit for to potentially contribute to the same photopeak" );
     else
       info->push_back( "Not allowing multiple nuclides being fit for to contribute to the same photopeak" );
     
-    if( m_accountForDecayDuringMeas )
+    if( m_options.account_for_decay_during_meas )
       info->push_back( "Branching ratios are being corrected for nuclide decay during measurment" );
     
     //Should put in information about the shielding here
@@ -5439,7 +5453,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   EnergyCountMap energy_count_map;
   const vector<pair<double,double> > energie_widths = observedPeakEnergyWidths( m_peaks );
   
-  if( m_allowMultipleNucsContribToPeaks )
+  if( m_options.multiple_nucs_contribute_to_peaks )
   {
     //Get the number of source gammas from each nuclide
     for( const SandiaDecay::Nuclide *nuclide : m_nuclides )
@@ -5464,8 +5478,8 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       
       cluster_peak_activities( energy_count_map, energie_widths,
                                mixturecache[nuclide], act, thisage,
-                               m_photopeakClusterSigma, -1.0,
-                               m_accountForDecayDuringMeas, m_realTime,
+                               m_options.photopeak_cluster_sigma, -1.0,
+                               m_options.account_for_decay_during_meas, m_realTime,
                                info );
     }//for( const SandiaDecay::Nuclide *nuclide : m_nuclides )
   }else
@@ -5489,11 +5503,11 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       const float energy = peak.gammaParticleEnergy();
       cluster_peak_activities( energy_count_map, energie_widths,
                                mixturecache[nuclide], act, thisage,
-                               m_photopeakClusterSigma, energy,
-                               m_accountForDecayDuringMeas, m_realTime,
+                               m_options.photopeak_cluster_sigma, energy,
+                               m_options.account_for_decay_during_meas, m_realTime,
                                info );
     }//for( const PeakDef &peak : m_peaks )
-  }//if( m_allowMultipleNucsContribToPeaks )
+  }//if( m_options.multiple_nucs_contribute_to_peaks )
 
   //Propagate the gammas through each material - note we are using the fit peak
   //  mean here, and not the (pre-cluster) photopeak energy
@@ -5663,7 +5677,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   }//for( int materialN = 0; materialN < nMaterials; ++materialN )
 
   
-  if( m_attenuateForAir )
+  if( m_options.attenuate_for_air )
   {
     const double air_dist = std::max( 0.0, m_distance - shield_outer_rad );
     
@@ -5672,7 +5686,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       const double coef = transmission_length_coefficient_air( energy_count.first );
       energy_count.second *= exp( -1.0 * coef * air_dist );
     }
-  }//if( m_attenuateForAir )
+  }//if( m_options.attenuate_for_air )
   
   
   //Fold in the detector response
@@ -5795,7 +5809,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       baseCalculator.m_detectorRadius = 0.5 * PhysicalUnits::cm;
 
     baseCalculator.m_observationDist = m_distance;
-    baseCalculator.m_attenuateForAir = m_attenuateForAir;
+    baseCalculator.m_attenuateForAir = m_options.attenuate_for_air;
     baseCalculator.m_sourceIndex = material_index;
     
     baseCalculator.m_isInSituExponential = false;
@@ -5956,12 +5970,12 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       if( mixturecache.find(src) == mixturecache.end() )
         mixturecache[src].addNuclideByActivity( src, sm_activityUnits );
       
-      if( m_allowMultipleNucsContribToPeaks )
+      if( m_options.multiple_nucs_contribute_to_peaks )
       {
         cluster_peak_activities( local_energy_count_map, energie_widths,
                                  mixturecache[src], actPerVol, thisage,
-                                 m_photopeakClusterSigma, -1.0,
-                                 m_accountForDecayDuringMeas, m_realTime,
+                                 m_options.photopeak_cluster_sigma, -1.0,
+                                 m_options.account_for_decay_during_meas, m_realTime,
                                  info );
       }else
       {
@@ -5971,12 +5985,12 @@ vector< tuple<double,double,double,Wt::WColor,double> >
              && (peak.decayParticle() || (peak.sourceGammaType()==PeakDef::AnnihilationGamma)) )
             cluster_peak_activities( local_energy_count_map, energie_widths,
                                      mixturecache[src], actPerVol, thisage,
-                                      m_photopeakClusterSigma,
+                                     m_options.photopeak_cluster_sigma,
                                      peak.gammaParticleEnergy(),
-                                     m_accountForDecayDuringMeas, m_realTime,
+                                     m_options.account_for_decay_during_meas, m_realTime,
                                      info );
         }//for( const PeakDef &peak : m_peaks )
-      }//if( m_allowMultipleNucsContribToPeaks ) / else
+      }//if( m_options.multiple_nucs_contribute_to_peaks ) / else
 
       for( const EnergyCountMap::value_type &energy_count : local_energy_count_map )
       {
@@ -5986,7 +6000,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
         calculator.m_energy = energy_count.first;
         calculator.m_srcVolumetricActivity = energy_count.second;
         
-        if( m_attenuateForAir )
+        if( m_options.attenuate_for_air )
           calculator.m_airTransLenCoef = transmission_length_coefficient_air( energy_count.first );
         else
           calculator.m_airTransLenCoef = 0.0;
@@ -6101,7 +6115,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 
   if( calculators.size() )
   {
-    if( m_self_att_multithread )
+    if( m_options.multithread_self_atten )
     {
       SpecUtilsAsync::ThreadPool pool;
       for( DistributedSrcCalc &calculator : calculators )

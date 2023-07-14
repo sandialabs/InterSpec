@@ -2764,6 +2764,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_decayCorrect( nullptr ),
     m_showChiOnChart( nullptr ),
     m_optionsDiv( nullptr ),
+    m_photopeak_cluster_sigma( 1.25 ),
+    m_multithread_computation( true ),
     m_showLog( nullptr ),
     m_logDiv( nullptr ),
     m_calcLog{},
@@ -3458,6 +3460,23 @@ SourceFitModel *ShieldingSourceDisplay::sourceFitModel()
   return m_sourceModel;
 }
 
+
+ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOptions() const
+{
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  options.multiple_nucs_contribute_to_peaks = m_multiIsoPerPeak->isChecked();
+  options.attenuate_for_air = m_attenForAir->isChecked();
+  options.account_for_decay_during_meas = m_decayCorrect->isChecked();
+  options.multithread_self_atten = m_multithread_computation;
+  options.photopeak_cluster_sigma = m_photopeak_cluster_sigma;
+  options.background_peak_subtract = m_backgroundPeakSub->isChecked();
+  options.same_age_isotopes = m_sameIsotopesAge->isChecked();
+  
+  return options;
+}//ShieldingSourceFitOptions fitOptions() const
+
+
+
 ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
 {
   {//begin make sure calculation is cancelled
@@ -3540,6 +3559,8 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
   }//if( m_backgroundPeakSub->isChecked() )
     
   vector<ShieldingSourceFitCalc::SourceFitDef> src_definitions;
+  // Could we instead just directly use m_sourceModel->underlyingData()?
+  //  Maybe with trace sources getting slightly modified to be quantity being fit, and not total activity
   for( int ison = 0; ison < m_sourceModel->numNuclides(); ++ison )
   {
     const SandiaDecay::Nuclide * const nuclide = m_sourceModel->nuclide(ison);
@@ -3555,6 +3576,21 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
     srcdef.ageDefiningNuc = m_sourceModel->ageDefiningNuclide( nuclide );
     srcdef.sourceType = m_sourceModel->sourceType(ison);
       
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+    for( const ShieldingSourceFitCalc::IsoFitStruct &underdata : m_sourceModel->underlyingData() )
+    {
+      if( underdata.nuclide == nuclide )
+      {
+        srcdef.truthActivity = underdata.truthActivity;
+        srcdef.truthActivityTolerance = underdata.truthActivityTolerance;
+        srcdef.truthAge = underdata.truthAge;
+        srcdef.truthAgeTolerance = underdata.truthAgeTolerance;
+        break;
+      }
+    }//for( const ShieldingSourceFitCalc::IsoFitStruct &underdata : m_sourceModel->underlyingData() )
+#endif
+    
+    
     switch( srcdef.sourceType )
     {
       case ShieldingSourceFitCalc::ModelSourceType::Point:
@@ -3602,11 +3638,7 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
     src_definitions.push_back( srcdef );
   }//for( const SandiaDecay::Nuclide *nuc : nuclides )
     
-    
-  GammaInteractionCalc::ShieldingSourceFitOptions options;
-  options.multiple_nucs_contribute_to_peaks = m_multiIsoPerPeak->isChecked();
-  options.attenuate_for_air = m_attenForAir->isChecked();
-  options.account_for_decay_during_meas = m_decayCorrect->isChecked();
+  const ShieldingSourceFitCalc::ShieldingSourceFitOptions options = fitOptions();
     
   return GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geom,
                                   initial_shieldings, src_definitions,
@@ -6754,8 +6786,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     throw runtime_error( "Missing necessary XML node" );
   
   int version;
-  bool muti_iso, back_sub;
-  bool air_atten = true, same_age = false, decay_corr = false, show_chi_on_chart = true;
+  bool show_chi_on_chart = true;
   
   attr = base_node->first_attribute( "version", 7 );
   if( !attr || !attr->value() || !(stringstream(attr->value())>>version) )
@@ -6785,38 +6816,21 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
       throw runtime_error( "Invalid geometry specified in XML: " + val );
   }//if( geom_node )
   
-  if( !muti_iso_node || !muti_iso_node->value()
-      || !(stringstream(muti_iso_node->value()) >> muti_iso) )
-    throw runtime_error( "Invalid or missing MultipleIsotopesPerPeak node" );
   
-  if( atten_air_node && atten_air_node->value() ) //not a mandatory element
-  {
-    if( !(stringstream(atten_air_node->value()) >> air_atten) )
-      throw runtime_error( "Invalid AttenuateForAir node" );
-  }//if( atten_air_node && atten_air_node->value() )
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  options.deSerialize( base_node );
   
-  if( same_age_node && same_age_node->value() ) //not a mandatory element
-  {
-    if( !(stringstream(same_age_node->value()) >> same_age) )
-      throw runtime_error( "Invalid SameAgeIsotopes node" );
-  }//if( same_age_node && same_age_node->value() )
-
-  if( decay_corr_node && decay_corr_node->value() ) //not a mandatory element
-  {
-    if( !(stringstream(decay_corr_node->value()) >> decay_corr) )
-      throw runtime_error( "Invalid DecayCorrect node" );
-  }//if( same_age_node && same_age_node->value() )
+  options.background_peak_subtract = (options.background_peak_subtract
+                                 && m_specViewer->measurment(SpecUtils::SpectrumType::Background));
+  
+  m_multithread_computation = options.multithread_self_atten;
+  m_photopeak_cluster_sigma = options.photopeak_cluster_sigma;
   
   if( chart_disp_node && chart_disp_node->value() )
   {
     if( !(stringstream(chart_disp_node->value()) >> show_chi_on_chart) )
       throw runtime_error( "Invalid ShowChiOnChart node" );
   }
-  
-  if( !back_sub_node || !back_sub_node->value()
-     || !(stringstream(back_sub_node->value()) >> back_sub) )
-    throw runtime_error( "Invalid or missing BackgroundPeakSubtraction node" );
-  back_sub = (back_sub && m_specViewer->measurment(SpecUtils::SpectrumType::Background));
   
   if( !dist_node || !dist_node->value() )
     throw runtime_error( "Invalid or missing Distance node" );
@@ -6827,11 +6841,11 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   m_prevGeometry = geom_type;
   m_geometrySelect->setCurrentIndex( static_cast<int>(geom_type) );
   
-  m_multiIsoPerPeak->setChecked( muti_iso );
-  m_attenForAir->setChecked( air_atten );
-  m_backgroundPeakSub->setChecked( back_sub );
-  m_sameIsotopesAge->setChecked( same_age );
-  m_decayCorrect->setChecked( decay_corr );
+  m_multiIsoPerPeak->setChecked( options.multiple_nucs_contribute_to_peaks );
+  m_attenForAir->setChecked( options.attenuate_for_air );
+  m_backgroundPeakSub->setChecked( options.background_peak_subtract );
+  m_sameIsotopesAge->setChecked( options.same_age_isotopes );
+  m_decayCorrect->setChecked( options.account_for_decay_during_meas );
   m_showChiOnChart->setChecked( show_chi_on_chart );
   m_chi2Graphic->setShowChiOnChart( show_chi_on_chart );
   m_distanceEdit->setValueText( WString::fromUTF8(dist_node->value()) );
@@ -6872,30 +6886,8 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   node = doc->allocate_node( rapidxml::node_element, "Geometry", value );
   base_node->append_node( node );
   
-  name = "MultipleIsotopesPerPeak";
-  value = m_multiIsoPerPeak->isChecked() ? "1" : "0";
-  node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( node );
-
-  name = "AttenuateForAir";
-  value = m_attenForAir->isChecked() ? "1" : "0";
-  node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( node );
-  
-  name = "BackgroundPeakSubtraction";
-  value = m_backgroundPeakSub->isChecked() ? "1" : "0";
-  node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( node );
-  
-  name = "SameAgeIsotopes";
-  value = m_sameIsotopesAge->isChecked() ? "1" : "0";
-  node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( node );
-
-  name = "DecayCorrect";
-  value = m_decayCorrect->isChecked() ? "1" : "0";
-  node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( node );
+  const ShieldingSourceFitCalc::ShieldingSourceFitOptions options = fitOptions();
+  options.serialize( base_node );
   
   name = "ShowChiOnChart";
   value = m_showChiOnChart->isChecked() ? "1" : "0";
@@ -8116,6 +8108,24 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
     
     const size_t nnucs = m_currentFitFcn->numNuclides();
     
+    // Go through and update trace source activities displayed in the shieldings
+    for( const ShieldingSourceFitCalc::IsoFitStruct &src : results->fit_src_info )
+    {
+      if( src.sourceType != ShieldingSourceFitCalc::ModelSourceType::Trace )
+        continue;
+      
+      for( WWidget *widget : m_shieldingSelects->children() )
+      {
+        ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
+        if( select && select->isTraceSourceForNuclide(src.nuclide) )
+        {
+          select->setTraceSourceTotalActivity( src.nuclide, src.activity );
+          break;
+        }
+      }//for( WWidget *widget : m_shieldingSelects->children() )
+    }//for( const ShieldingSourceFitCalc::IsoFitStruct &src : results->fit_src_info )
+    
+    
     /*
     //Go through and set the ages and activities fit for
     for( int nucn = 0; nucn < static_cast<int>(nnucs); ++nucn )
@@ -8299,8 +8309,6 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
   
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
   results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::InvalidOther;
-  
-  results->initial_shieldings = initial_shieldings;
   
   auto progress = std::make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   boost::function<void()> progress_updater = wApp->bind( boost::bind( &ShieldingSourceDisplay::updateGuiWithModelFitProgress, this, progress ) );
