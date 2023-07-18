@@ -29,11 +29,27 @@
 
 #include <boost/math/distributions/normal.hpp>
 
+//Roots Minuit2 includes
+#include "Minuit2/FCNBase.h"
+#include "Minuit2/FunctionMinimum.h"
+#include "Minuit2/MnMigrad.h"
+#include "Minuit2/MnScan.h"
+#include "Minuit2/MnMinos.h"
+#include "Minuit2/MnSimplex.h"
+#include "Minuit2/MinosError.h"
+#include "Minuit2/MnUserParameters.h"
+#include "Minuit2/MnUserParameterState.h"
+#include "Minuit2/CombinedMinimizer.h"
+#include "Minuit2/SimplexMinimizer.h"
+
+
+
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -581,11 +597,11 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   result.num_degree_of_freedom = 0;
   
   // Lets sanity check input
-  if( (input.distance <= 0.0) || IsNan(input.distance) || IsInf(input.distance) )
+  if( (input.distance < 0.0) || IsNan(input.distance) || IsInf(input.distance) )
     throw runtime_error( "decon_compute_peaks: invalid input distance" );
   
   // Lets sanity check input
-  if( (input.activity <= 0.0) || IsNan(input.activity) || IsInf(input.activity) )
+  if( (input.activity < 0.0) || IsNan(input.activity) || IsInf(input.activity) )
     throw runtime_error( "decon_compute_peaks: invalid input activity" );
   
   if( input.include_air_attenuation
@@ -671,37 +687,27 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
                                                   num_lower_side_channels,
                                                   num_upper_side_channels );
         
+        peak_continuum->setType( PeakContinuum::OffsetType::Linear );
+        
         for( size_t order = 0; order < 2; ++order )  //peak_continuum->parameters().size()
           peak_continuum->setPolynomialCoefFitFor( order, !fix_continuum );
         
+        peak_continuum->setType( continuum_type );
+        
         switch( continuum_type )
         {
-          case PeakContinuum::NoOffset:
-            break;
-            
-          case PeakContinuum::Constant:
-          
-            
-            break;
-            
           case PeakContinuum::Linear:
-          case PeakContinuum::FlatStep:
-          {
-            
-            
-            
-            
-            
-            
-            break;
-          }//
-            
           case PeakContinuum::Quadratic:
+            break;
+          
+          case PeakContinuum::NoOffset:
+          case PeakContinuum::Constant:
           case PeakContinuum::Cubic:
+          case PeakContinuum::FlatStep:
           case PeakContinuum::LinearStep:
           case PeakContinuum::BiLinearStep:
+            assert( 0 );
             break;
-            
             
           case PeakContinuum::External:
             if( !computed_global_cont )
@@ -717,17 +723,30 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   
   if( inputPeaks.empty() )
     throw runtime_error( "decon_compute_peaks: No peaks given in ROI(s)" );
-    
-#warning "Totally not computing things yet"
-  throw runtime_error( "decon_compute_peaks: computations not implemented" );
-  
-  /*
+
   ROOT::Minuit2::MnUserParameters inputFitPars;
-  PeakFitChi2Fcn::addPeaksToFitter( inputFitPars, inputPeaks, spec, PeakFitChi2Fcn::kFitForPeakParameters );
+  PeakFitChi2Fcn::addPeaksToFitter( inputFitPars, inputPeaks, input.measurement, PeakFitChi2Fcn::kFitForPeakParameters );
   
   const int npeaks = static_cast<int>( inputPeaks.size() );
-  PeakFitChi2Fcn chi2Fcn( npeaks, spec, nullptr );
+  PeakFitChi2Fcn chi2Fcn( npeaks, input.measurement, nullptr );
   chi2Fcn.useReducedChi2( false );
+  
+  if( inputFitPars.VariableParameters() == 0 )
+  {
+    // If we choose to "Fix continuum" we can get here
+    result.chi2 = chi2Fcn.chi2( inputFitPars.Params().data() );
+    result.num_degree_of_freedom = 0;
+    
+    for( auto &peak : inputPeaks )
+    {
+      peak.setFitFor( PeakDef::CoefficientType::Mean, false );
+      peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
+    }
+    
+    result.fit_peaks = inputPeaks;
+    
+    return result;
+  }//if( inputFitPars.VariableParameters() == 0 )
   
   assert( inputFitPars.VariableParameters() != 0 );
   
@@ -783,10 +802,10 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   //for( size_t i = 0; i < fixedpeaks.size(); ++i )
   //  fitpeaks[i+near_peaks.size()].inheritUserSelectedOptions( fixedpeaks[i], true );
   
-  const double totalNDF = set_chi2_dof( spec, fitPeaks, 0, fitPeaks.size() );
+  const double totalNDF = set_chi2_dof( input.measurement, fitPeaks, 0, fitPeaks.size() );
   
-  chi2 = initialChi2;
-  numDOF = static_cast<int>( std::round(totalNDF) );
+  result.chi2 = initialChi2;
+  result.num_degree_of_freedom = static_cast<int>( std::round(totalNDF) );
   
   for( auto &peak : fitPeaks )
   {
@@ -794,8 +813,9 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
     peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
   }
   
-  peaks.swap( fitPeaks );
-   */
+  result.fit_peaks = fitPeaks;
+  
+  return result;
 }//DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
 
 

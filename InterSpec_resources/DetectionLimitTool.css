@@ -37,73 +37,6 @@
 }
 
 
-.DetectionLimitTool .Inputs .FirstCol
-{
-  grid-column-start: 1;
-  width: 3.5em;
-}
-
-.DetectionLimitTool .Inputs .SecondCol
-{
-  grid-column-start: 2;
-}
-
-.DetectionLimitTool .Inputs .ThirdCol
-{
-  grid-column-start: 3;
-}
-
-.DetectionLimitTool .Inputs .FourthCol
-{
-  grid-column-start: 4;
-}
-
-.DetectionLimitTool .Inputs .FifthCol
-{
-  grid-column-start: 5;
-}
-
-.DetectionLimitTool .Inputs .SixthCol
-{
-  grid-column-start: 6;
-}
-
-.DetectionLimitTool .Inputs .SeventhCol
-{
-  grid-column-start: 7;
-}
-
-
-.DetectionLimitTool .Inputs .FirstRow
-{
-  grid-row-start: 1;
-}
-
-.DetectionLimitTool .Inputs .SecondRow
-{
-  grid-row-start: 2;
-}
-
-.DetectionLimitTool .Inputs .ThirdRow
-{
-  grid-row-start: 3;
-}
-
-.DetectionLimitTool .Inputs .FourthRow
-{
-  grid-row-start: 4;
-}
-
-.DetectionLimitTool .Inputs .SpanTwoRows
-{
-  grid-row-end: span 2;
-}
-
-.DetectionLimitTool .Inputs .SpanTwoCol
-{
-  grid-column-end: span 2;
-}
-
 .DetectionLimitTool .MdaResults
 {
   display: flex;
@@ -120,7 +53,7 @@
   flex: 1 1 auto;
 }
 
-.MdaCharts .SpectrumDisplayDiv
+.MdaCharts .D3SpectrumDisplayDiv
 {
   flex: 1 1 auto;
   overflow: hidden;
@@ -164,30 +97,141 @@
   color: red;
 }
 
-
-.MdaPeaks
+.DetectionLimitTool .MdaChartLogLin
 {
-  margin-top: 10px;
-  border: 1px solid #d1d1d1;
-  overflow-y: auto;
+  justify-self: end;
+  margin-right: 10px;
 }
 
-.MdaPeakRow
+.MdaPeaksArea
 {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  
+  border: 1px solid #d1d1d1;
+  overflow: hidden;
+}
+
+.MdaPeaksTitleBar
+{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #d1d1d1;
+  
+  padding-left: 5px;
+  padding-right: 2px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+.DetectionLimitTool .MdaPeaksTitleBar .MdaPeaksTitle
+{
+  font-weight:bold;
+}
+
+.DetectionLimitTool .MdaPeaksFilter
+{
+  display: flex;
+  align-items: center;
+}
+
+.MdaPeaksFilter > input
+{
+  width: 50px;
+}
+
+.DetectionLimitTool .MdaPeaks
+{
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.DetectionLimitTool .MdaPeaks .MdaPeakRow
+{
+  width: 400px;
+  display: flex;
+  flex-direction: row;
+  column-gap: 5px;
+  
+  padding: 3px;
+  margin: 5px;
+  
+  justify-content: space-around;
+  
+  border: 1px solid #d1d1d1;
+}
+
+.MdaRowSettings .MdaRoiInput
+{
+  width: 80px;
+}
+
+.MdaRowSettings .SwitchCheckbox.UseForLiklihood
+{
+  justify-content: left;
+}
+
+.MdaPeakRow .MdaRowCurrieLimitContent
+{
+  display: flex;
+  flex-direction: column;
   padding: 3px;
   margin: 5px;
   border: 1px solid #d1d1d1;
+  row-gap: 2.5px;
 }
 
+.MdaPeakRow .MdaRowSettings
+{
+  display: grid;
+  grid-column-gap: 5px;
+  row-gap: 2.5px;
+}
+
+.MdaPeakRow .MdaRowCurrieMda
+{
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  row-gap: 2.5px;
+}
+
+.MdaPeakRow .MdaRowCurrieMda .MdaCurrieLimitTitle
+{
+  text-align: center;
+  font-size: small;
+  font-weight: bold;
+}
+
+.MdaPeakRow .MdaRowCurrieMda .CurrieNSideChanRow
+{
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  column-gap: 5px;
+}
+
+
+.MdaPeakRow .MdaRowCurrieMda .CurrieMoreInfoBtn
+{
+  text-align: right;
+  font-size: small;
+}
+
+/*
 .MdaPeakRow .FixedInfo
 {
   display: inline-block;
   width: 300px;
 }
+ */
 
-.MdaPeakRow .Poisson
+.MdaPeakRow .CurrieTxt
 {
-  margin-left: 10px;
+  text-align: left;
 }
 
 
@@ -203,4 +247,12 @@
 .MdaResultTxt
 {
   white-space: nowrap;
+}
+
+
+.MdaCurrieMoreInfoTable
+{
+  white-space: nowrap;
+  border-collapse: separate;
+  border-spacing: 5px 5px;
 }

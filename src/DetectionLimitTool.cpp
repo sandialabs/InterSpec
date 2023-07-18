@@ -30,6 +30,7 @@
 #include <boost/math/distributions/chi_squared.hpp>
 
 #include <Wt/WText>
+#include <Wt/WImage>
 #include <Wt/WLabel>
 #include <Wt/WTable>
 #include <Wt/WComboBox>
@@ -64,21 +65,25 @@
 #include "Minuit2/MnMinimize.h"
 
 
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/D3SpectrumExport.h"
+
 
 #include "InterSpec/PeakFit.h"
-#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
-#include "InterSpec/MaterialDB.h"
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/HelpSystem.h"
+#include "InterSpec/MaterialDB.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/SwitchCheckbox.h"
+#include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/ShieldingSelect.h"
-#include "SpecUtils/D3SpectrumExport.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/DetectionLimitTool.h"
@@ -118,7 +123,12 @@ class MdaPeakRow : public WContainerWidget
 public:
   DetectionLimitTool::MdaPeakRowInput m_input;
   
-  WCheckBox *m_use_for_likelihood;
+  const SandiaDecay::Nuclide *const m_nuclide;
+  
+  WText *m_title;
+  WText *m_title_info;
+  
+  SwitchCheckbox *m_use_for_likelihood;
   
   /** The energy, in keV that the ROI starts at.
    When the user enters a value, it will be rounded to cover a whole channel; however, even if this wasnt done, I *think* things would
@@ -150,40 +160,50 @@ public:
   
   void handleUseForLikelihoodChanged()
   {
-    m_input.use_for_likelihood = m_use_for_likelihood->isChecked();
+    const bool use = m_use_for_likelihood->isChecked();
+    m_continuum->setEnabled( use && !m_fix_decon_continuum->isChecked() );
+    
+    m_input.use_for_likelihood = use;
     emitChanged();
   }
+  
+  DetectionLimitCalc::CurieMdaInput currieInput() const
+  {
+    auto m = m_input.measurement;
+    if( !m || (m->num_gamma_channels() < 16) )
+      throw runtime_error( "No measurement." );
+    
+    const float roi_lower_energy = m_roi_start->value();
+    const float roi_upper_energy = m_roi_end->value();
+    
+    const size_t nsidebin = static_cast<size_t>( std::round( std::max( 1.0f, m_num_side_channels->value() ) ) );
+    const size_t nchannels = m->num_gamma_channels();
+    
+    DetectionLimitCalc::CurieMdaInput input;
+    input.spectrum = m;
+    input.gamma_energy = m_input.energy;
+    input.roi_lower_energy = m_roi_start->value();
+    input.roi_upper_energy = m_roi_end->value();
+    input.num_lower_side_channels = nsidebin;
+    input.num_upper_side_channels = nsidebin;
+    input.detection_probability = m_input.confidence_level;
+    input.additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
+    
+    return input;
+  }//DetectionLimitCalc::CurieMdaInput currieInput() const
+  
   
   void setSimplePoisonTxt()
   {
     try
     {
       const bool useCuries = use_curie_units();
-      auto m = m_input.measurement;
-      if( !m || (m->num_gamma_channels() < 16) )
-        return;
-     
-      
-      const float roi_lower_energy = m_roi_start->value();
-      const float roi_upper_energy = m_roi_end->value();
-      
-      const size_t nsidebin = static_cast<size_t>( std::round( std::max( 1.0f, m_num_side_channels->value() ) ) );
-      const size_t nchannels = m->num_gamma_channels();
-      
-      DetectionLimitCalc::CurieMdaInput input;
-      input.spectrum = m;
-      input.gamma_energy = m_input.energy;
-      input.roi_lower_energy = m_roi_start->value();
-      input.roi_upper_energy = m_roi_end->value();
-      input.num_lower_side_channels = nsidebin;
-      input.num_upper_side_channels = nsidebin;
-      input.detection_probability = m_input.confidence_level;
-      input.additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
-      
       const double det_eff = m_input.drf->efficiency(m_input.energy, m_input.distance);
       const double counts_4pi = (m_input.do_air_attenuation ? m_input.counts_per_bq_into_4pi_with_air
                                  : m_input.counts_per_bq_into_4pi);
       const double gammas_per_bq = counts_4pi * det_eff;
+      
+      const DetectionLimitCalc::CurieMdaInput input = currieInput();
       
       const DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
       
@@ -213,18 +233,27 @@ public:
             //     << ", leading to nominal activity " << nomstr
             //     << endl;
             
-            m_poisonLimit->setText( "Observed " + nomstr + " with range [" + lowerstr + ", " + upperstr + "]" );
+            m_poisonLimit->setText( "Observed " + nomstr + "<br />"
+                                    "Range [" + lowerstr + ", " + upperstr + "]" );
+            m_poisonLimit->setToolTip( "Detected activity, using just this Region Of Interests,"
+                                      " and the observed excess of counts, as well as the"
+                                      " statistical confidence interval." );
           }else if( result.upper_limit < 0 )
           {
             // This can happen when there are a lot fewer counts in the peak region than predicted
             //  from the sides - since this is non-sensical, we'll just say zero.
             const string unitstr = useCuries ? "Ci" : "Bq";
-            m_poisonLimit->setText( "Currie MDA: < 0" + unitstr + " (sig. fewer counts in ROI than predicted)" );
+            m_poisonLimit->setText( "MDA: < 0" + unitstr + "<br />(sig. fewer counts in ROI than predicted)" );
+            m_poisonLimit->setToolTip( "Significantly fewer counts were observed in the"
+                                       " Region Of Interest, than predicted by the neighboring channels." );
           }else
           {
             // We will provide the upper bound on activity.
             const string mdastr = PhysicalUnits::printToBestActivityUnits( m_simple_mda, 2, useCuries );
-            m_poisonLimit->setText( "Currie MDA: " + mdastr );
+            m_poisonLimit->setText( "MDA: " + mdastr );
+            m_poisonLimit->setToolTip( "Minimum Detectable Activity, using just this Region Of"
+                                      " Interests, assuming no signal is present.\n"
+                                      "Basically uses the Currie method of calculating." );
           }
           
           break;
@@ -236,7 +265,7 @@ public:
           //  If we arent taking into account attenuation in the air, its easy to solve for the
           //  distance.
           //  But, even if taking into account the air attenuation, the distance is still solvable
-          //  in something like Mathemeatica, but the equation is like
+          //  in something like Mathematica, but the equation is like
           //   x^{-2}*exp(-0.000942*x) = A_{lim}  (where exp(-0.000942*x) is attenuation in air
           //    for 661 keV, and A_{lim} is for at one meter, and x is meters)
           //  so, for the moment its easier to just be consistent and use an iterative approach
@@ -373,7 +402,7 @@ public:
             
             char buffer[256];
             snprintf( buffer, sizeof(buffer),
-                      "Distance to source is nominally %s, with %.1f%% CL range [%s, %s]",
+                      "Nominal distance %s<br />%.1f%% CL range [%s, %s]",
                       nomstr.c_str(), rnd_cl_percent, upperstr.c_str(), lowerstr.c_str() );
             
             m_poisonLimit->setText( buffer );
@@ -444,6 +473,16 @@ public:
     m_changed.emit();
   }
   
+  void handleFixContinuumChange()
+  {
+    m_continuum->setEnabled( !m_fix_decon_continuum->isChecked() );
+    
+    if( m_fix_decon_continuum->isChecked() )
+      m_continuum->setCurrentIndex( 0 );
+    
+    emitChanged();
+  }//void handleFixContinuumChange()
+  
   
   void roiChanged()
   {
@@ -504,9 +543,14 @@ public:
   }//void setRoiEnd( float energy )
   
 public:
-  MdaPeakRow( const DetectionLimitTool::MdaPeakRowInput &input, WContainerWidget *parent = nullptr )
+  MdaPeakRow( const DetectionLimitTool::MdaPeakRowInput &input,
+             const SandiaDecay::Nuclide *nuclide,
+             WContainerWidget *parent = nullptr )
   : WContainerWidget( parent ),
   m_input( input ),
+  m_nuclide( nuclide ),
+  m_title( nullptr ),
+  m_title_info( nullptr ),
   m_use_for_likelihood( nullptr ),
   m_roi_start( nullptr ),
   m_roi_end( nullptr ),
@@ -531,47 +575,105 @@ public:
     const double counts_4pi = (input.do_air_attenuation ? input.counts_per_bq_into_4pi_with_air
                                : input.counts_per_bq_into_4pi);
     
-    m_use_for_likelihood = new WCheckBox( "", this );
+    char buffer[64] = { '\0' };
+    
+    WContainerWidget *leftColumn = new WContainerWidget( this );
+    leftColumn->addStyleClass( "MdaRowSettings" );
+    
+    WContainerWidget *rightColumn = new WContainerWidget( this );
+    rightColumn->addStyleClass( "MdaRowCurrieMda" );
+    
+    const string br_str = PhysicalUnits::printCompact(input.branch_ratio, 3);
+    snprintf( buffer, sizeof(buffer), "%.2f keV, br=%s", input.energy, br_str.c_str() );
+    m_title = new WText( buffer, leftColumn );
+    m_title->addStyleClass( "MdaRowTitle GridFirstCol GridFirstRow GridSpanTwoCol" );
+    
+    
+    const string fwhm_str = PhysicalUnits::printCompact(fwhm,3);
+    const string cnts_per_bq_str = PhysicalUnits::printCompact(counts_4pi*det_eff, 3);
+    snprintf( buffer, sizeof(buffer), "FWHM=%s, %s cnts/bq", fwhm_str.c_str(), cnts_per_bq_str.c_str() );
+    m_title_info = new WText( buffer, rightColumn );
+    m_title_info->addStyleClass( "MdaRowDetInfo" );
+    
+    
+    m_use_for_likelihood = new SwitchCheckbox( "Use for multi-peak", leftColumn );
     m_use_for_likelihood->setChecked( input.use_for_likelihood );
-    char buffer[64];
-    snprintf( buffer, sizeof(buffer), "&nbsp;%.2f keV, FWHM=%.2f, Eff=%.2g/bq&nbsp;",
-              input.energy, fwhm, input.counts_per_bq_into_4pi*counts_4pi );
-    auto label = new WLabel( buffer, this );
-    label->addStyleClass( "FixedInfo" );
+    m_use_for_likelihood->addStyleClass( "GridFirstCol GridSecondRow GridSpanTwoCol UseForLiklihood" );
     
     
-    label = new WLabel( "&nbsp;ROI Start:", this );
-    m_roi_start = new NativeFloatSpinBox( this );
+    WLabel *label = new WLabel( "ROI Lower:", leftColumn );
+    label->addStyleClass( "GridFirstCol GridThirdRow" );
+    m_roi_start = new NativeFloatSpinBox( leftColumn );
+    m_roi_start->addStyleClass( "GridSecondCol GridThirdRow MdaRoiInput" );
     m_roi_start->setSpinnerHidden( true );
     m_roi_start->setFormatString( "%.2f" );
-    m_roi_start->setWidth(75);
     label->setBuddy( m_roi_start );
     
-    label = new WLabel( "keV, &nbsp;ROI End:", this );
-    m_roi_end = new NativeFloatSpinBox( this );
+    label = new WLabel( "ROI Upper:", leftColumn );
+    label->addStyleClass( "GridFirstCol GridFourthRow" );
+    m_roi_end = new NativeFloatSpinBox( leftColumn );
+    m_roi_end->addStyleClass( "GridSecondCol GridFourthRow MdaRoiInput" );
     m_roi_end->setSpinnerHidden( true );
     m_roi_end->setFormatString( "%.2f" );
-    m_roi_end->setWidth(75);
     label->setBuddy( m_roi_end );
     
     
-    label = new WLabel( "keV,&nbsp;Continuum", this );
-    m_continuum = new WComboBox( this );
+    label = new WLabel( "Continuum", leftColumn );
+    label->addStyleClass( "GridFirstCol GridFifthRow" );
+    m_continuum = new WComboBox( leftColumn );
+    m_continuum->addStyleClass( "GridSecondCol GridFifthRow" );
     m_continuum->addItem( "Linear" );
     m_continuum->addItem( "Quadratic" );
     m_continuum->setCurrentIndex( 0 );
     label->setBuddy( m_continuum );
     
-    label = new WLabel( "keV,&nbsp;Num Side Channels", this );
-    m_num_side_channels = new NativeFloatSpinBox( this );
+    WContainerWidget *currieLimitContent = new WContainerWidget( rightColumn );
+    currieLimitContent->addStyleClass( "MdaRowCurrieLimitContent" );
+    
+    WText *currie_label = new WText( "Single peak Limit", currieLimitContent );
+    currie_label->addStyleClass( "MdaCurrieLimitTitle" );
+    
+    m_poisonLimit = new WText( "&nbsp;", currieLimitContent );
+    m_poisonLimit->addStyleClass( "CurrieTxt");
+    
+    WContainerWidget *num_side_chan_row = new WContainerWidget( currieLimitContent );
+    num_side_chan_row->addStyleClass( "CurrieNSideChanRow" );
+    label = new WLabel( "Num Side Channels", num_side_chan_row );
+    m_num_side_channels = new NativeFloatSpinBox( num_side_chan_row );
     m_num_side_channels->setFormatString( "%.0f" );
     m_num_side_channels->setSingleStep( 1.0 );
     m_num_side_channels->setRange( 1.0f, 50.0f );
     m_num_side_channels->setValue( input.num_side_channels );
     label->setBuddy( m_continuum );
     
-
+  
+    switch( m_input.limit_type )
+    {
+      case DetectionLimitTool::LimitType::Activity:
+      {
+        WPushButton *moreInfoButton = new WPushButton( currieLimitContent );
+        moreInfoButton->setText( "further details..." );
+        moreInfoButton->setStyleClass( "LinkBtn CurrieMoreInfoBtn" );
+        moreInfoButton->clicked().connect( this, &MdaPeakRow::createMoreInfoWindow );
+        
+        break;
+      }//case DetectionLimitTool::LimitType::Activity:
+        
+      case DetectionLimitTool::LimitType::Distance:
+        // Not implemented
+        break;
+    }//switch( m_input.limit_type )
     
+    
+    setRoiStart( input.roi_start );
+    setRoiEnd( input.roi_end );
+    
+    m_fix_decon_continuum = new WCheckBox( "Fixed continuum", leftColumn );
+    m_fix_decon_continuum->addStyleClass( "GridFirstCol GridFithRow GridSpanTwoCol" );
+    
+    m_fix_decon_continuum->checked().connect( this, &MdaPeakRow::handleFixContinuumChange );
+    m_fix_decon_continuum->unChecked().connect( this, &MdaPeakRow::handleFixContinuumChange );
+
     m_use_for_likelihood->checked().connect( this, &MdaPeakRow::handleUseForLikelihoodChanged );
     m_use_for_likelihood->unChecked().connect( this, &MdaPeakRow::handleUseForLikelihoodChanged );
     m_roi_start->valueChanged().connect( this, &MdaPeakRow::roiChanged );
@@ -580,20 +682,282 @@ public:
     m_continuum->activated().connect( this, &MdaPeakRow::emitChanged );
     m_continuum->changed().connect( this, &MdaPeakRow::emitChanged );
     
-    
-    m_poisonLimit = new WText( "&nbsp;", this );
-    m_poisonLimit->addStyleClass( "Poisson");
-    
-    setRoiStart( input.roi_start );
-    setRoiEnd( input.roi_end );
-    
-    
-    m_fix_decon_continuum = new WCheckBox( "Fix continuum", this );
+    m_continuum->disable();
+    m_fix_decon_continuum->disable();
     
     setSimplePoisonTxt();
   }
   
   
+  void createMoreInfoWindow()
+  {
+    char buffer[256];
+    snprintf( buffer, sizeof(buffer), "%s %.2f keV Info",
+             (m_nuclide ? m_nuclide->symbol.c_str() : "null"), m_input.energy );
+    
+    SimpleDialog *dialog = new SimpleDialog( buffer );
+    dialog->addButton( "Close" );
+    
+    try
+    {
+      if( !m_input.measurement )
+        throw runtime_error( "No measurement" );
+        
+      const bool useCuries = use_curie_units();
+      const double intrinsic_eff = m_input.drf->intrinsicEfficiency( m_input.energy );
+      const double geom_eff = m_input.drf->fractionalSolidAngle( m_input.drf->detectorDiameter(), m_input.distance );
+      const double det_eff = m_input.drf->efficiency(m_input.energy, m_input.distance);
+      const double counts_4pi = (m_input.do_air_attenuation ? m_input.counts_per_bq_into_4pi_with_air
+                                 : m_input.counts_per_bq_into_4pi);
+      const double gammas_per_bq = counts_4pi * det_eff;
+      
+      snprintf( buffer, sizeof(buffer), "%.1f%%", 100.0*m_input.confidence_level );
+      const string confidence_level = buffer;
+      
+      const DetectionLimitCalc::CurieMdaInput input = currieInput();
+      const DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
+      
+
+      //Gross Counts in Peak Foreground: 1389.813
+      WTable *table = new WTable( dialog->contents() );
+      table->addStyleClass( "MdaCurrieMoreInfoTable" );
+      
+      WTableCell *cell = nullptr;
+      
+      /** A helper lambda to add tool tips to both columns of the most recently created row of the table */
+      auto addTooltipToRow = [table]( const string &tt ){
+        WTableCell *cell = table->elementAt( table->rowCount() - 1, 2 );
+        
+        WImage *img = new WImage( cell );
+        img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+        img->setStyleClass("Wt-icon GridFourthRow GridThirdCol GridJustifyEnd");
+        img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+        
+        HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
+                                    HelpSystem::ToolTipPrefOverride::AlwaysShow );
+      };//addTooltipToRow
+      
+      
+      switch( m_input.limit_type )
+      {
+        case DetectionLimitTool::LimitType::Activity:
+        {
+          if( result.source_counts > result.decision_threshold )
+          {
+            // There is enough excess counts that we would reliably detect this activity, so we will
+            //  give the activity range.
+            const float lower_act = result.lower_limit / gammas_per_bq;
+            const float upper_act = result.upper_limit / gammas_per_bq;
+            const float nominal_act = result.source_counts / gammas_per_bq;
+            
+            const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries );
+            const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries );
+            const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries );
+            
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( "Observed activity", cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( nomstr, cell );
+            addTooltipToRow( "Greater than the &quot;critical level&quot;, L<sub>c</sub>,"
+                            " counts were observed in the peak region." );
+            
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( "Activity range", cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
+            addTooltipToRow( "The activity range estimate, to the " + confidence_level + " confidence level." );
+          }else if( result.upper_limit < 0 )
+          {
+            // This can happen when there are a lot fewer counts in the peak region than predicted
+            //  from the sides - since this is non-sensical, we'll just say zero.
+            const string unitstr = useCuries ? "Ci" : "Bq";
+            cell = table->elementAt( table->rowCount(), 1 );
+            cell->setColumnSpan( 2 );
+            new WText( "Activity &le; 0 " + unitstr, cell );
+            addTooltipToRow( "Significantly fewer counts in peak region were observed,"
+                            " than predicted by the neighboring regions." );
+          }else
+          {
+            // We will provide the upper bound on activity.
+            const string mdastr = PhysicalUnits::printToBestActivityUnits( m_simple_mda, 2, useCuries );
+            
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( "Activity upper bound", cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( mdastr , cell);
+            
+            addTooltipToRow( "The upper limit on how much activity could be present, to the "
+                            + confidence_level + " confidence level." );
+          }
+          
+          break;
+        }//case DetectionLimitTool::LimitType::Activity:
+          
+        case DetectionLimitTool::LimitType::Distance:
+        {
+          WText *msg = new WText( "Distance not supported for additional info yet", dialog->contents() );
+          msg->addStyleClass( "content" );
+          msg->setInline( false );
+          break;
+        }
+      }//switch( m_input.limit_type )
+      
+      // Add a blank row
+      cell = table->elementAt( table->rowCount(), 0 );
+      WText *txt = new WText( "&nbsp;", TextFormat::XHTMLText, cell );
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Lower region channels", cell );
+      string val = "[" + std::to_string(result.first_lower_continuum_channel) + ", "
+                    + std::to_string(result.last_lower_continuum_channel) + "]";
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      
+      const double lower_lower_energy = m_input.measurement->gamma_channel_lower( result.first_lower_continuum_channel );
+      const double lower_upper_energy = m_input.measurement->gamma_channel_lower( result.last_lower_continuum_channel );
+      snprintf( buffer, sizeof(buffer), "The region above the peak in energy, that is being used"
+               " to estimate the expected continuum counts in the peak region;"
+               " corresponds to %.2f to %.2f keV", lower_lower_energy, lower_upper_energy );
+      addTooltipToRow( buffer );
+      
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Lower region counts", cell );
+      val = PhysicalUnits::printCompact( result.lower_continuum_counts_sum, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The number of counts observed in the region below the peak region,"
+                      " that is being used to estimate expected peak-region expected counts" );
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Upper region channels", cell );
+      val = "[" + std::to_string(result.first_upper_continuum_channel) + ", "
+                    + std::to_string(result.last_lower_continuum_channel) + "]";
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      const double upper_lower_energy = m_input.measurement->gamma_channel_lower( result.first_upper_continuum_channel );
+      const double upper_upper_energy = m_input.measurement->gamma_channel_lower( result.last_lower_continuum_channel );
+      snprintf( buffer, sizeof(buffer), "The region above the peak in energy, that is being used"
+               " to estimate the expected continuum counts in the peak region;"
+               " corresponds to %.2f to %.2f keV", upper_lower_energy, upper_upper_energy );
+      addTooltipToRow( buffer );
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Upper region counts", cell );
+      val = PhysicalUnits::printCompact( result.upper_continuum_counts_sum, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The number of counts observed in the region above the peak region,"
+                      " that is being used to estimate expected peak-region expected counts" );
+      
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Peak area channels", cell );
+      val = "[" + std::to_string(result.last_lower_continuum_channel + 1) + ", "
+                    + std::to_string(result.first_upper_continuum_channel - 1) + "]";
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      
+      const double peak_lower_energy = m_input.measurement->gamma_channel_lower( result.last_lower_continuum_channel + 1 );
+      const double peak_upper_energy = m_input.measurement->gamma_channel_lower( result.first_upper_continuum_channel - 1 );
+      snprintf( buffer, sizeof(buffer), "The region the peak is being assumed to be within;"
+               " corresponds to %.2f to %.2f keV", peak_lower_energy, peak_upper_energy );
+      addTooltipToRow( buffer );
+      
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Peak region counts", cell );
+      val = PhysicalUnits::printCompact( result.peak_region_counts_sum, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The observed number of counts in the peak region" );
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Peak region null est.", cell );
+      val = PhysicalUnits::printCompact( result.estimated_peak_continuum_counts, 5 )
+            + " &plusmn; " + PhysicalUnits::printCompact( result.estimated_peak_continuum_uncert, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, TextFormat::XHTMLText, cell );
+      addTooltipToRow( "An estimate of the expected number of counts, in the peak region, if it"
+                      " is assumed that no signal is present.");
+      
+      // I believe this quantity corresponds to Currie's "critical level" ( L_c ),
+      //   the net signal level (instrument response) above which an observed signal may be
+      //   reliably recognized as "detected"
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Peak critical limit", cell );
+      val = PhysicalUnits::printCompact( result.decision_threshold, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "Corresponds to Currie's &quot;critical level&quot;, L<sub>c</sub>,"
+                      " that is the net signal level (instrument response) above which an"
+                      " observed signal may be reliably recognized as &quot;detected&quot;." );
+      
+      
+      // Note: I believe this quantity corresponds to Currie's "detection limit" (L_d) that
+      //       is the “true” net signal level which may be a priori expected to lead to detection.
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Peak detection limit", cell );
+      val = PhysicalUnits::printCompact( result.detection_limit, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "Corresponds to Currie's &quot;detection limit&quot;, L<sub>d</sub>,"
+                      " that is the &quot;true&quot; net signal level which may be, <i>a priori</i>."
+                      " expected to lead to detection." );
+      
+      
+      // Add a blank row
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "&nbsp;", TextFormat::XHTMLText, cell );
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Detector Intrinsic Eff.", cell );
+      val = PhysicalUnits::printCompact( intrinsic_eff, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The efficiency for a gamma hitting the detector face,"
+                      " to be detected in the full-energy peak." );
+      
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Solid angle fraction", cell );
+      val = PhysicalUnits::printCompact( geom_eff, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The fraction of the solid angle, the detector face takes up, at the specified distance." );
+      
+      const double shield_trans = m_input.counts_per_bq_into_4pi / m_input.branch_ratio / m_input.measurement->live_time();
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Shielding transmission", cell );
+      val = PhysicalUnits::printCompact( shield_trans, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The fraction of gammas, at this energy, that will make it through the shielding without interacting." );
+      
+      const double air_trans = m_input.counts_per_bq_into_4pi_with_air / m_input.counts_per_bq_into_4pi;
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Air transmission", cell );
+      val = PhysicalUnits::printCompact( air_trans, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The fraction of gammas, at this energy, that will make it through the air (assuming sea level) without interacting." );
+      
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Nuclide branching ratio", cell );
+      val = PhysicalUnits::printCompact( m_input.branch_ratio, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The number of gamma rays emitted at this energy, from the radioactive"
+                      " source before any shielding, but accounting for nuclide age,"
+                      " per decay of the parent nuclide." );
+    }catch( std::exception &e )
+    {
+      WText *msg = new WText( "Error computing Currie limit information", dialog->contents() );
+      msg->addStyleClass( "content" );
+      msg->setInline( false );
+    }//try / catch
+  }//void createMoreInfoWindow()
   
 };//class MdaPeakRow
 
@@ -737,8 +1101,6 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_peakModel = new PeakModel( this );
   m_chart->setPeakModel( m_peakModel );
 
-  
-  
   // Create the user-input area under the spectrum and liklihood chart
   WContainerWidget *inputTable = new WContainerWidget( this );
   inputTable->addStyleClass( "Inputs" );
@@ -746,12 +1108,12 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   // Create nuclide label and input
   WLabel *label = new WLabel( "Nuclide:", inputTable );
-  label->addStyleClass( "FirstCol FirstRow" );
+  label->addStyleClass( "GridFirstCol GridFirstRow" );
   
   
   m_nuclideEdit = new WLineEdit( "", inputTable );
   m_nuclideEdit->setMargin( 1 );
-  m_nuclideEdit->addStyleClass( "SecondCol FirstRow" );
+  m_nuclideEdit->addStyleClass( "GridSecondCol GridFirstRow" );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
   m_nuclideEdit->setAutoComplete( false );
   m_nuclideEdit->changed().connect( this, &DetectionLimitTool::handleUserNuclideChange );
@@ -782,10 +1144,10 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   // Create age input and time input validator
   label = new WLabel( "Age:", inputTable );
-  label->addStyleClass( "FirstCol SecondRow" );
+  label->addStyleClass( "GridFirstCol GridSecondRow" );
   
   m_ageEdit = new WLineEdit( "", inputTable );
-  m_ageEdit->addStyleClass( "SecondCol SecondRow" );
+  m_ageEdit->addStyleClass( "GridSecondCol GridSecondRow" );
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_ageEdit );
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_ageEdit->setValidator(validator);
@@ -800,11 +1162,11 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   // Create distance input
   label = new WLabel( "Distance:", inputTable );
-  label->addStyleClass( "FirstCol ThirdRow" );
+  label->addStyleClass( "GridFirstCol GridThirdRow" );
   m_distanceLabel = label;
 
   m_distanceForActivityLimit = new WLineEdit( "100 cm", inputTable );
-  m_distanceForActivityLimit->addStyleClass( "SecondCol ThirdRow" );
+  m_distanceForActivityLimit->addStyleClass( "GridSecondCol GridThirdRow" );
   label->setBuddy( m_distanceForActivityLimit );
   m_distanceForActivityLimit->changed().connect( this, &DetectionLimitTool::handleInputChange );
   m_distanceForActivityLimit->enterPressed().connect( this, &DetectionLimitTool::handleInputChange );
@@ -817,12 +1179,12 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   // We will but the activity label/input right next to the distance stuff, but since we default to
   //  calculating activity limit, we'll hide the activity stuff.
   label = new WLabel( "Activity:", inputTable );
-  label->addStyleClass( "FirstCol ThirdRow" );
+  label->addStyleClass( "GridFirstCol GridThirdRow" );
   m_activityLabel = label;
   label->hide();
   
   m_activityForDistanceLimit = new WLineEdit( "0 uCi", inputTable );
-  m_activityForDistanceLimit->addStyleClass( "SecondCol ThirdRow" );
+  m_activityForDistanceLimit->addStyleClass( "GridSecondCol GridThirdRow" );
   label->setBuddy( m_activityForDistanceLimit );
   m_activityForDistanceLimit->changed().connect( this, &DetectionLimitTool::handleInputChange );
   m_activityForDistanceLimit->enterPressed().connect( this, &DetectionLimitTool::handleInputChange );
@@ -836,51 +1198,46 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   SpectraFileModel *specFileModel = viewer->fileManager()->model();
   m_detectorDisplay = new DetectorDisplay( viewer, specFileModel, inputTable );
-  m_detectorDisplay->addStyleClass( "ThirdCol FirstRow" );
-  viewer->detectorChanged().connect( boost::bind( &DetectionLimitTool::handleInputChange, this ) );
-  viewer->detectorModified().connect( boost::bind( &DetectionLimitTool::handleInputChange, this ) );
+  m_detectorDisplay->addStyleClass( "GridThirdCol GridFirstRow" );
+  viewer->detectorChanged().connect( boost::bind( &DetectionLimitTool::handleDrfSelected, this, boost::placeholders::_1 ) );
+  viewer->detectorModified().connect( boost::bind( &DetectionLimitTool::handleDrfSelected, this, boost::placeholders::_1 ) );
   
   
   m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest, inputTable );
-  m_shieldingSelect->addStyleClass( "ThirdCol SecondRow SpanTwoRows" );
+  m_shieldingSelect->addStyleClass( "GridThirdCol GridSecondRow GridSpanTwoRows" );
   m_shieldingSelect->materialEdit()->setEmptyText( "<shielding material>" );
   m_shieldingSelect->materialChanged().connect( this, &DetectionLimitTool::handleInputChange );
   m_shieldingSelect->materialModified().connect( this, &DetectionLimitTool::handleInputChange );
   m_shieldingSelect->setMinimumSize( WLength(250), WLength::Auto );
   
   
-  m_distOrActivity = new SwitchCheckbox( "Activity Limit", "Distance Limit", inputTable );
-  m_distOrActivity->addStyleClass( "FourthCol FirstRow SpanTwoCol" );
-
-  m_distOrActivity->checked().connect( this, &DetectionLimitTool::handleUserChangedToComputeActOrDist );
-  m_distOrActivity->unChecked().connect( this, &DetectionLimitTool::handleUserChangedToComputeActOrDist );
-  
-  
-  label = new WLabel( "Min rel. inten:", inputTable );
-  label->addStyleClass( "FourthCol SecondRow" );
-  m_minRelIntensity = new NativeFloatSpinBox( inputTable );
-  m_minRelIntensity->addStyleClass( "FifthCol SecondRow" );
-  m_minRelIntensity->setMinimum( 0.0f );
-  m_minRelIntensity->setMaximum( 0.999f );
-  m_minRelIntensity->setSpinnerHidden( true );
-  //m_minRelIntensity->setFormatString( "" );
-  label->setBuddy( m_minRelIntensity );
-  m_minRelIntensity->valueChanged().connect(this, &DetectionLimitTool::handleUserMinRelativeIntensityChange );
+  SwitchCheckbox *loglin = new SwitchCheckbox( "Log", "Lin", inputTable );
+  loglin->addStyleClass( "MdaChartLogLin GridFourthCol GridFirstRow GridSpanTwoCol" );
+  loglin->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_chart, true ) );
+  loglin->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_chart, false ) );
   
   
   m_attenuateForAir = new WCheckBox( "Attenuate for air", inputTable );
-  m_attenuateForAir->addStyleClass( "FourthCol ThirdRow SpanTwoCol" );
+  m_attenuateForAir->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );
   m_attenuateForAir->setChecked( true );
   m_attenuateForAir->checked().connect(this, &DetectionLimitTool::handleUserChangedUseAirAttenuate );
   m_attenuateForAir->unChecked().connect(this, &DetectionLimitTool::handleUserChangedUseAirAttenuate );
   
   
+  m_distOrActivity = new SwitchCheckbox( "Activity Limit", "Distance Limit", inputTable );
+  m_distOrActivity->addStyleClass( "GridFourthCol GridThirdRow GridSpanTwoCol" );
+
+  m_distOrActivity->checked().connect( this, &DetectionLimitTool::handleUserChangedToComputeActOrDist );
+  m_distOrActivity->unChecked().connect( this, &DetectionLimitTool::handleUserChangedToComputeActOrDist );
+  
+  
+  
   label = new WLabel( "Peaks disp. act.:", inputTable );
-  label->addStyleClass( "SixthCol FirstRow" );
+  label->addStyleClass( "GridSixthCol GridFirstRow" );
   m_displayActivityLabel = label;
   
   m_displayActivity = new WLineEdit( inputTable );
-  m_displayActivity->addStyleClass( "SeventhCol FirstRow" );
+  m_displayActivity->addStyleClass( "GridSeventhCol GridFirstRow" );
   label->setBuddy( m_displayActivity );
   
   m_displayActivity->setValidator( actvalidator );
@@ -893,11 +1250,11 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   // Like with user input, we will put the put the display distance stuff right next to activity,
   //  and hide the display distance stuff
   label = new WLabel( "Peaks disp. dist.:", inputTable );
-  label->addStyleClass( "SixthCol FirstRow" );
+  label->addStyleClass( "GridSixthCol GridFirstRow" );
   m_displayDistanceLabel = label;
   
   m_displayDistance = new WLineEdit( inputTable );
-  m_displayDistance->addStyleClass( "SeventhCol FirstRow" );
+  m_displayDistance->addStyleClass( "GridSeventhCol GridFirstRow" );
   label->setBuddy( m_displayDistance );
   
   m_displayDistance->setValidator( distValidator );
@@ -910,12 +1267,10 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_displayDistance->hide();
   
   
-  
-  
   label = new WLabel( "Confidence Level:", inputTable );
-  label->addStyleClass( "SixthCol SecondRow" );
+  label->addStyleClass( "GridSixthCol GridSecondRow" );
   m_confidenceLevel = new WComboBox( inputTable );
-  m_confidenceLevel->addStyleClass( "SeventhCol SecondRow" );
+  m_confidenceLevel->addStyleClass( "GridSeventhCol GridSecondRow" );
   
   for( auto cl = ConfidenceLevel(0); cl < NumConfidenceLevel; cl = ConfidenceLevel(cl+1) )
   {
@@ -975,7 +1330,30 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_errorMsg->addStyleClass( "MdaErrMsg" );
   m_errorMsg->hide();
   
-  m_peaks = new WContainerWidget( this );
+  WContainerWidget *peaksHolder = new WContainerWidget( this );
+  peaksHolder->addStyleClass( "MdaPeaksArea" );
+  
+  WContainerWidget *titleBar = new WContainerWidget( peaksHolder );
+  titleBar->addStyleClass( "MdaPeaksTitleBar" );
+  
+  WText *peaksTitle = new WText( "Gamma lines to use", titleBar );
+  peaksTitle->addStyleClass( "MdaPeaksTitle" );
+  
+  WContainerWidget *filterDiv = new WContainerWidget( titleBar );
+  filterDiv->addStyleClass( "MdaPeaksFilter" );
+  label = new WLabel( "Min relative intensity:", filterDiv );
+  label->addStyleClass( "GridFourthCol GridSecondRow" );
+  m_minRelIntensity = new NativeFloatSpinBox( filterDiv );
+  m_minRelIntensity->addStyleClass( "GridFifthCol GridSecondRow" );
+  m_minRelIntensity->setMinimum( 0.0f );
+  m_minRelIntensity->setMaximum( 0.999f );
+  m_minRelIntensity->setSpinnerHidden( true );
+  label->setBuddy( m_minRelIntensity );
+  m_minRelIntensity->valueChanged().connect(this, &DetectionLimitTool::handleUserMinRelativeIntensityChange );
+  
+  
+  
+  m_peaks = new WContainerWidget( peaksHolder );
   m_peaks->addStyleClass( "MdaPeaks" );
   
   
@@ -1080,7 +1458,8 @@ void DetectionLimitTool::initChi2Chart()
   m_chi2Chart->setJavaScriptMember( "resizeObserver",
     "new ResizeObserver(entries => {"
       "for (let entry of entries) {"
-        "if( entry.target && (entry.target.id === '" + m_chi2Chart->id() + "') )"
+        "if( entry.target && (entry.target.id === '" + m_chi2Chart->id() + "') && "
+             + m_chi2Chart->jsRef() + " && " + jsgraph + " )"
           + jsgraph + ".redraw();"
         "}"
       "});"
@@ -1317,10 +1696,17 @@ void DetectionLimitTool::handleUserChangedToComputeActOrDist()
 }//void handleUserChangedToComputeActOrDist()
 
 
+void DetectionLimitTool::handleDrfSelected( std::shared_ptr<DetectorPeakResponse> new_drf )
+{
+  m_drf_cache = new_drf;
+  
+  handleInputChange();
+}//void handleDrfChange()
+
 
 void DetectionLimitTool::calcAndSetDefaultMinRelativeIntensity()
 {
-  vector<tuple<double,double,double>> lines;
+  vector<GammaLineInfo> lines;
   
   try
   {
@@ -1339,7 +1725,7 @@ void DetectionLimitTool::calcAndSetDefaultMinRelativeIntensity()
   }
   
   
-  const shared_ptr<const DetectorPeakResponse> drf = m_our_meas ? m_our_meas->detector() : nullptr;
+  const shared_ptr<const DetectorPeakResponse> drf = detector();
   
   if( !drf || !drf->isValid() )
   {
@@ -1359,22 +1745,22 @@ void DetectionLimitTool::calcAndSetDefaultMinRelativeIntensity()
   
   if( distance > 0.0 )
   {
-    for( tuple<double,double,double> &line : lines )
+    for( GammaLineInfo &line : lines )
     {
       if( air_atten )
-        get<1>(line) = get<2>(line);
-      get<1>(line) *= drf->efficiency( get<0>(line), distance );
+        line.gammas_into_4pi = line.gammas_4pi_after_air_attenuation;
+      line.gammas_into_4pi *= drf->efficiency( line.energy, distance );
     }
   }//if( distance > 0.0 )
   
   // Sort 'lines' so the largest intensities come first
   std::sort( begin(lines), end(lines),
-    []( const tuple<double,double,double> &lhs, const tuple<double,double,double> &rhs ) -> bool {
-    return get<1>(lhs) > get<1>(rhs);
+    []( const GammaLineInfo &lhs, const GammaLineInfo &rhs ) -> bool {
+    return lhs.gammas_into_4pi > rhs.gammas_into_4pi;
   } );
   
-  const double maxLineIntensity = get<1>( lines.front() );
-  const double minWantedIntensity = get<1>( lines[max_wanted_lines-1] );
+  const double maxLineIntensity = lines.front().gammas_into_4pi;
+  const double minWantedIntensity = lines[max_wanted_lines-1].gammas_into_4pi;
   
   // maxLineIntensity should always be valid, but jic
   if( IsInf(maxLineIntensity)
@@ -1399,7 +1785,7 @@ void DetectionLimitTool::updateShownGammaLinesFromMinIntensity()
 }//void updateShownGammaLinesFromMinIntensity()
 
 
-vector<tuple<double,double,double>> DetectionLimitTool::gammaLines() const
+vector<DetectionLimitTool::GammaLineInfo> DetectionLimitTool::gammaLines() const
 {
   if( !m_currentNuclide )
     throw runtime_error( "No nuclide specified" );
@@ -1459,26 +1845,29 @@ vector<tuple<double,double,double>> DetectionLimitTool::gammaLines() const
     air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, air_distance );
   
   
-  std::vector<std::tuple<double,double,double>> lines;
+  vector<GammaLineInfo> lines;
   for( const auto &erp : gammas )
   {
     const double energy = erp.energy;
-    double br = erp.numPerSecond / parent_activity;
+    const double decay_br = erp.numPerSecond / parent_activity;
     
     //br *= drf->efficiency( static_cast<float>(energy), static_cast<float>(distance) );
+    const double shield_transmission = att_coef_fcn.empty() ? 1.0 : exp( -1.0*att_coef_fcn(energy) );
+    const double air_transmission = air_atten_fcn.empty() ? 1.0 : exp( -1.0*air_atten_fcn(energy) );
+      
+    GammaLineInfo info;
+    info.energy = energy;
+    info.branching_ratio = decay_br;
+    info.gammas_into_4pi = decay_br * shield_transmission;
+    info.gammas_4pi_after_air_attenuation = decay_br * shield_transmission * air_transmission;
+    info.air_transmission = air_transmission;
+    info.shield_transmission = shield_transmission;
     
-    if( !att_coef_fcn.empty() )
-      br *= exp( -1.0 * att_coef_fcn( energy ) );
-     
-    double br_air = br;
-    if( !air_atten_fcn.empty() )
-      br_air *= exp( -1.0 * air_atten_fcn( energy ) );
-    
-    lines.push_back( {energy, br, br_air} );
+    lines.push_back( std::move(info) );
   }//for( const auto &erp : gammas )
   
   return lines;
-}//vector<tuple<double,double,double>> gammaLines() const
+}//vector<GammaLineInfo> gammaLines() const
 
 
 void DetectionLimitTool::handleInputChange()
@@ -1506,7 +1895,9 @@ void DetectionLimitTool::handleInputChange()
     return;
   }
   
-  std::shared_ptr<DetectorPeakResponse> drf = m_our_meas->detector();
+  
+  std::shared_ptr<const DetectorPeakResponse> drf = detector();
+  
   if( !drf )
   {
     m_errorMsg->setText( "No DRF Loaded" );
@@ -1592,7 +1983,7 @@ void DetectionLimitTool::handleInputChange()
   
   setRefLinesAndGetLineInfo();
   
-  std::vector<std::tuple<double,double,double>> lines;
+  vector<GammaLineInfo> lines; //{energy, br, gammas_into_4pi, gammas_4pi_after_air_attenuation, air_transmission, shield_transmission}
 
   try
   {
@@ -1607,12 +1998,14 @@ void DetectionLimitTool::handleInputChange()
   double maxLineIntensity = 0.0;
   for( const auto &line : lines )
   {
-    const double energy = get<0>(line);
-    const double det_eff = drf->efficiency( energy, distance);
-    const double intensity = det_eff * (do_air_atten ? get<2>(line) : get<1>(line));
+    const double det_eff = drf->efficiency( line.energy, distance);
+    
+    // Note that line.gammas_into_4pi and line.gammas_4pi_after_air_attenuation already have
+    //  shielding attenuation accounted for.
+    const double intensity = det_eff * (do_air_atten ? line.gammas_4pi_after_air_attenuation : line.gammas_into_4pi);
     
     maxLineIntensity = std::max( maxLineIntensity, intensity );
-  }
+  }//for( const auto &line : lines )
   
   if( maxLineIntensity <= 0.0 || IsInf(maxLineIntensity) || IsNan(maxLineIntensity) )
   {
@@ -1625,9 +2018,10 @@ void DetectionLimitTool::handleInputChange()
   
   for( const auto &line : lines )
   {
-    const float energy = get<0>(line);
+    const double energy = line.energy;
+    const double br = line.branching_ratio;
     const double det_eff = drf->efficiency( energy, distance);
-    const double intensity = det_eff * (do_air_atten ? get<2>(line) : get<1>(line));
+    const double intensity = det_eff * (do_air_atten ? line.gammas_4pi_after_air_attenuation : line.gammas_into_4pi);
     
     const double relIntensity = intensity / maxLineIntensity;
     
@@ -1646,14 +2040,17 @@ void DetectionLimitTool::handleInputChange()
     input.drf = drf;
     
     input.energy = energy;
-    input.counts_per_bq_into_4pi = get<1>(line)*spec->live_time();
-    input.counts_per_bq_into_4pi_with_air = get<2>(line)*spec->live_time();
+    input.branch_ratio = br;
+    input.counts_per_bq_into_4pi = line.gammas_into_4pi*spec->live_time();
+    input.counts_per_bq_into_4pi_with_air = line.gammas_4pi_after_air_attenuation*spec->live_time();
     input.distance = distance;
     input.activity = activity;
     input.roi_start = energy - 1.19*fwhm; //Could alternatively use 1.125;
     input.roi_end = energy + 1.19*fwhm;
     input.num_side_channels = 4;
     input.confidence_level = confLevel;
+    input.trans_through_air = line.air_transmission;
+    input.trans_through_shielding = line.shield_transmission;
     
     
     const auto oldValPos = m_previousRoiValues.find( energy );
@@ -1667,12 +2064,16 @@ void DetectionLimitTool::handleInputChange()
       input.roi_start = oldval.roi_start;
       input.roi_end = oldval.roi_end;
       input.num_side_channels = oldval.num_side_channels;
+      
+      // TODO: we should try to preserve continuum type
     }//if( we have seen this energy before )
     
-    auto row = new MdaPeakRow( input, m_peaks );
+    auto row = new MdaPeakRow( input, m_currentNuclide, m_peaks );
     
     row->m_changed.connect( this, &DetectionLimitTool::scheduleCalcUpdate );
   }//for( const auto &line : lines )
+  
+  m_results->show();
   
   scheduleCalcUpdate();
 }//void handleInputChange()
@@ -1780,14 +2181,23 @@ void DetectionLimitTool::doCalc()
     return;
   }//if( !nused )
   
-  if( IsInf(minSearchActivity) || maxSearchActivity==0.0 )
+  // A one week measurement, with a fully efficient detector, would be 0.6 counts
+  //  for a uBq - a limit low enough its not likely to ever be encountered
+  //const double min_allowed_activity = 1.0E-6*PhysicalUnits::bq;
+  const double min_allowed_activity = 0.0;
+  
+  if( minSearchActivity < min_allowed_activity )
+    minSearchActivity = min_allowed_activity;
+  
+  if( IsInf(minSearchActivity) || (maxSearchActivity == 0.0) )
   {
-    minSearchActivity = 0.0;
-    maxSearchActivity = PhysicalUnits::curie;
+    minSearchActivity = min_allowed_activity;
+    maxSearchActivity = 1000.0*PhysicalUnits::curie;
   }else
   {
-    //minSearchActivity *= 0.25;
-    minSearchActivity = 0.0;
+    // I *think* if we are here, there is a nominal activity
+    minSearchActivity *= 0.25;
+    //minSearchActivity = min_allowed_activity;
     maxSearchActivity *= 10.0;
   }
   
@@ -1836,6 +2246,9 @@ void DetectionLimitTool::doCalc()
       if( pos != end(chi2cache) )
         return pos->second;
       
+      if( activity <= 0.0 )
+        return std::numeric_limits<double>::max();
+      
       int numDOF = 0;
       double chi2;
       vector<PeakDef> peaks;
@@ -1862,7 +2275,7 @@ void DetectionLimitTool::doCalc()
     overallBestActivity = r.first;
     
     cout << "Found min X2=" << overallBestChi2 << " with activity "
-         << PhysicalUnits::printToBestActivityUnits(overallBestActivity)
+         << PhysicalUnits::printToBestActivityUnits(overallBestActivity,4,false)
          << " and it took " << std::dec << num_iterations << " iterations" << endl;
     
     //boost::math::tools::bracket_and_solve_root(...)
@@ -1879,9 +2292,9 @@ void DetectionLimitTool::doCalc()
       const double chi2_1 = chi2ForCL(act1);
       const double chi2_2 = chi2ForCL(act2);
       
-      // \TODO: make sure tolerance is being used correctly - when pringting info out for every call I'm not sure it is being used right... (but answers seem reasonable, so...)
-      //cout << "Tolerance called with act1=" << PhysicalUnits::printToBestActivityUnits(act1)
-      //     << ", act2=" << PhysicalUnits::printToBestActivityUnits(act2)
+      // \TODO: make sure tolerance is being used correctly - when printing info out for every call I'm not sure it is being used right... (but answers seem reasonable, so...)
+      //cout << "Tolerance called with act1=" << PhysicalUnits::printToBestActivityUnits(act1,4,false)
+      //     << ", act2=" << PhysicalUnits::printToBestActivityUnits(act2,4,false)
       //     << " ---> chi2_1=" << chi2_1 << ", chi2_2=" << chi2_2 << endl;
       
       return fabs(chi2_1 - chi2_2) < 0.025;
@@ -1892,7 +2305,7 @@ void DetectionLimitTool::doCalc()
     //Before trying to find lower-bounding activity, make sure the best value isnt the lowest
     //  possible value (i.e., zero in this case), and that if we go to the lowest possible value,
     //  that the chi2 will increase at least by cl_chi2_delta
-    if( (fabs(minSearchActivity - overallBestActivity) > PhysicalUnits::nCi)
+    if( (fabs(minSearchActivity - overallBestActivity) > 0.001*PhysicalUnits::bq)
        && (chi2ForCL(minSearchActivity) > 0.0) )
     {
       pair<double,double> lower_val;
@@ -1901,34 +2314,57 @@ void DetectionLimitTool::doCalc()
       lower_val = boost::math::tools::bisect( chi2ForCL, minSearchActivity, overallBestActivity, tolerance, max_iter );
       lowerLimit = 0.5*(lower_val.first + lower_val.second);
       foundLowerCl = true;
-      cout << "lower_val CL activity=" << PhysicalUnits::printToBestActivityUnits(lower_val.first)
-           << " wih chi2=" << chi2ForAct(lowerLimit) << ", num_iterations=" << std::dec << num_iterations
-           << " and search range from " << PhysicalUnits::printToBestActivityUnits(minSearchActivity) << " to "
-           << PhysicalUnits::printToBestActivityUnits(overallBestActivity)
+      cout << "lower_val CL activity="
+           << PhysicalUnits::printToBestActivityUnits(lowerLimit,4,false)
+           << " with Chi2(" << lowerLimit << ")=" << chi2ForAct(lowerLimit)
+           << " (Best Chi2(" << overallBestActivity << ")=" << overallBestChi2
+           << "), num_iterations=" << std::dec << num_iterations << " and search range from "
+           << PhysicalUnits::printToBestActivityUnits(minSearchActivity,4,false) << " to "
+           << PhysicalUnits::printToBestActivityUnits(overallBestActivity,4,false)
            << endl;
       
-      const double lowerLimitChi2 = chi2ForRangeLimit(lowerLimit);
-      if( lowerLimitChi2 < 0.0 )
+      const double minActChi2 = chi2ForRangeLimit(minSearchActivity);
+      if( minActChi2 < 0.0 )
       {
         activityRangeMin = minSearchActivity;
-        cout << "lower_val display activity being set to minSearchActivity (" << minSearchActivity << "): lowerLimitChi2=" << lowerLimitChi2 << endl;
+        cout << "lower_val display activity being set to minSearchActivity (" << minSearchActivity << "): minActChi2=" << minActChi2
+        << ", with Chi2(" << activityRangeMin << ")=" << chi2ForAct(activityRangeMin) << endl;
       }else
       {
-        max_iter = 100;
-        lower_val = boost::math::tools::bisect( chi2ForRangeLimit, minSearchActivity, lowerLimit, tolerance, max_iter );
-        activityRangeMin = 0.5*(lower_val.first + lower_val.second);
-        foundLowerDisplay = true;
-        cout << "lower_val display activity=" << PhysicalUnits::printToBestActivityUnits(activityRangeMin)
-             << " wih chi2=" << chi2ForAct(activityRangeMin) << ", num_iterations=" << std::dec << num_iterations << endl;
-      }
+        try
+        {
+          max_iter = 100;
+          lower_val = boost::math::tools::bisect( chi2ForRangeLimit, minSearchActivity, lowerLimit, tolerance, max_iter );
+          activityRangeMin = 0.5*(lower_val.first + lower_val.second);
+          foundLowerDisplay = true;
+          cout << "lower_val display activity=" << PhysicalUnits::printToBestActivityUnits(activityRangeMin,4,false)
+          << " wih chi2=" << chi2ForAct(activityRangeMin) << ", num_iterations=" << std::dec << num_iterations << endl;
+        }catch( std::exception &e )
+        {
+          const double delta_act = 0.1*(lowerLimit - activityRangeMin);
+          for( activityRangeMin = lowerLimit; activityRangeMin > 0; activityRangeMin -= delta_act )
+          {
+            const double this_chi2 = chi2ForAct(activityRangeMin);
+            if( this_chi2 >= (overallBestChi2 + yrange) )
+              break;
+          }
+          
+          cout << "Couldnt find lower-limit of display range properly, so scanned down and found "
+               << PhysicalUnits::printToBestActivityUnits(activityRangeMin,4,false)
+               << " where LowerLimit=" << PhysicalUnits::printToBestActivityUnits(lowerLimit,4,false)
+               << " and ActRangeMin=" << PhysicalUnits::printToBestActivityUnits(activityRangeMin,4,false)
+               << " and BestActivity" << PhysicalUnits::printToBestActivityUnits(overallBestActivity,4,false)
+          << endl;
+        }//try / catch
+      }//
     }else
     {
       lowerLimit = 0.0;
       activityRangeMin = overallBestActivity;
       cout << "lower_val activity already at min" << endl;
-    }//if( fabs(minSearchActivity - overallBestActivity) > PhysicalUnits::nCi )
+    }//if( fabs(minSearchActivity - overallBestActivity) > 0.001*PhysicalUnits::bq ) / else
     
-    if( (fabs(maxSearchActivity - overallBestActivity) > PhysicalUnits::nCi)
+    if( (fabs(maxSearchActivity - overallBestActivity) > 0.001*PhysicalUnits::bq)
          && (chi2ForCL(maxSearchActivity) > 0.0)  )
     {
       pair<double,double> upper_val;
@@ -1936,10 +2372,10 @@ void DetectionLimitTool::doCalc()
       upper_val = boost::math::tools::bisect( chi2ForCL, overallBestActivity, maxSearchActivity, tolerance, max_iter );
       upperLimit = 0.5*(upper_val.first + upper_val.second);
       foundUpperCl = true;
-      cout << "upper_val CL activity=" << PhysicalUnits::printToBestActivityUnits(upperLimit)
+      cout << "upper_val CL activity=" << PhysicalUnits::printToBestActivityUnits(upperLimit,4,false)
            << " wih chi2=" << chi2ForAct(upperLimit) << ", num_iterations=" << std::dec << num_iterations
-           << " and search range from " << PhysicalUnits::printToBestActivityUnits(overallBestActivity) << " to "
-           << PhysicalUnits::printToBestActivityUnits(maxSearchActivity)
+           << " and search range from " << PhysicalUnits::printToBestActivityUnits(overallBestActivity,4,false) << " to "
+           << PhysicalUnits::printToBestActivityUnits(maxSearchActivity,4,false)
            << endl;
       
       const double maxSearchChi2 = chi2ForRangeLimit(maxSearchActivity);
@@ -1949,12 +2385,31 @@ void DetectionLimitTool::doCalc()
         cout << "upper_val display activity being set to maxSearchActivity (" << maxSearchActivity << "): maxSearchChi2=" << maxSearchChi2 << endl;
       }else
       {
-        max_iter = 100;
-        upper_val = boost::math::tools::bisect( chi2ForRangeLimit, upperLimit, maxSearchActivity, tolerance, max_iter );
-        activityRangeMax = 0.5*(upper_val.first + upper_val.second);
-        foundUpperDisplay = true;
-        cout << "upper_val display activity=" << PhysicalUnits::printToBestActivityUnits(activityRangeMax)
-             << " wih chi2=" << chi2ForAct(activityRangeMax) << ", num_iterations=" << std::dec << num_iterations << endl;
+        try
+        {
+          max_iter = 100;
+          upper_val = boost::math::tools::bisect( chi2ForRangeLimit, upperLimit, maxSearchActivity, tolerance, max_iter );
+          activityRangeMax = 0.5*(upper_val.first + upper_val.second);
+          foundUpperDisplay = true;
+          cout << "upper_val display activity=" << PhysicalUnits::printToBestActivityUnits(activityRangeMax,4,false)
+          << " wih chi2=" << chi2ForAct(activityRangeMax) << ", num_iterations=" << std::dec << num_iterations << endl;
+        }catch( std::exception &e )
+        {
+          const double delta_act = std::max( 0.1*fabs(upperLimit - lowerLimit), 0.001*fabs(maxSearchActivity - upperLimit) );
+          for( activityRangeMax = upperLimit; activityRangeMax < maxSearchActivity; activityRangeMax -= delta_act )
+          {
+            const double this_chi2 = chi2ForAct(activityRangeMax);
+            if( this_chi2 >= (overallBestChi2 + yrange) )
+              break;
+          }
+          
+          cout << "Couldnt find upper-limit of display range properly, so scanned up and found "
+               << PhysicalUnits::printToBestActivityUnits(activityRangeMax,4,false)
+               << " where UpperLimit Chi2(" << upperLimit << ")=" << PhysicalUnits::printToBestActivityUnits(upperLimit,4,false)
+               << " and ActRangeMax Chi2(" << activityRangeMax << ")=" << PhysicalUnits::printToBestActivityUnits(activityRangeMax,4,false)
+               << " and BestActivity Chi2(" << overallBestActivity << ")=" << PhysicalUnits::printToBestActivityUnits(overallBestActivity,4,false)
+          << endl;
+        }//try / catch
       }
     }else
     {
@@ -2086,13 +2541,27 @@ void DetectionLimitTool::updateShownPeaks()
 {
   cout << "Need to upgrade DetectionLimitTool::updateShownPeaks() for toggle between activity and distance" << endl;
 #warning "Need to upgrade DetectionLimitTool::updateShownPeaks() for toggle between activity and distance"
+  
   m_peakModel->removeAllPeaks();
   
-  string actStr = m_displayActivity->text().toUTF8();
+  const bool distanceLimit = (limitType() == DetectionLimitTool::LimitType::Distance);
+  
+  string actStr;
+  if( distanceLimit )
+  {
+    actStr = m_activityForDistanceLimit->text().toUTF8();
+  }else
+  {
+    actStr = m_displayActivity->text().toUTF8();
+  }
+  
   double activity = 0;
   try
   {
     activity = PhysicalUnits::stringToActivity(actStr);
+    
+    if( activity <= 0.0 )
+      throw runtime_error( "zero or negative activity." );
   }catch(...)
   {
     return;
@@ -2142,7 +2611,8 @@ void DetectionLimitTool::computeForActivity( const double activity,
   
   DetectionLimitCalc::DeconComputeInput input;
   input.measurement = spec;
-  input.drf = m_detectorDisplay->detector();
+  input.drf = detector();
+  
   input.include_air_attenuation = m_attenuateForAir->isChecked();
   input.distance = distance;
   input.activity = activity;
@@ -2221,6 +2691,30 @@ void DetectionLimitTool::computeForActivity( const double activity,
 }//void DetectionLimitTool::computeForActivity(...)
 
 
+std::shared_ptr<const DetectorPeakResponse> DetectionLimitTool::detector()
+{
+  std::shared_ptr<DetectorPeakResponse> drf = m_detectorDisplay->detector();
+  if( drf && drf->isValid() && drf->hasResolutionInfo() )
+    return drf;
+  
+  if( !m_our_meas )
+    return drf;
+  
+  
+  if( m_our_meas->detector()
+     && m_our_meas->detector()->isValid()
+     && m_our_meas->detector()->hasResolutionInfo() )
+  {
+    drf = m_our_meas->detector();
+    m_detectorDisplay->setDetector( drf );
+    return drf;
+  }
+  
+  //m_detectorDisplay->setDetector( nullptr );
+  return drf;
+}//detector()
+
+
 void DetectionLimitTool::setRefLinesAndGetLineInfo()
 {
   if( !m_currentNuclide )
@@ -2230,7 +2724,7 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   if( !m_our_meas || !spec )
     return;
     
-  std::shared_ptr<DetectorPeakResponse> drf = m_our_meas->detector();
+  std::shared_ptr<const DetectorPeakResponse> drf = detector();
   if( !drf || !drf->hasResolutionInfo() || !drf->isValid() )
     return;
 
