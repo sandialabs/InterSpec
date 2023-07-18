@@ -161,6 +161,7 @@ public:
   void handleUseForLikelihoodChanged()
   {
     const bool use = m_use_for_likelihood->isChecked();
+    m_fix_decon_continuum->setEnabled( use );
     m_continuum->setEnabled( use && !m_fix_decon_continuum->isChecked() );
     
     m_input.use_for_likelihood = use;
@@ -233,8 +234,8 @@ public:
             //     << ", leading to nominal activity " << nomstr
             //     << endl;
             
-            m_poisonLimit->setText( "Observed " + nomstr + "<br />"
-                                    "Range [" + lowerstr + ", " + upperstr + "]" );
+            m_poisonLimit->setText( "<div>Observed " + nomstr + "</div>"
+                                    "<div>Range [" + lowerstr + ", " + upperstr + "]</div>" );
             m_poisonLimit->setToolTip( "Detected activity, using just this Region Of Interests,"
                                       " and the observed excess of counts, as well as the"
                                       " statistical confidence interval." );
@@ -243,7 +244,7 @@ public:
             // This can happen when there are a lot fewer counts in the peak region than predicted
             //  from the sides - since this is non-sensical, we'll just say zero.
             const string unitstr = useCuries ? "Ci" : "Bq";
-            m_poisonLimit->setText( "MDA: < 0" + unitstr + "<br />(sig. fewer counts in ROI than predicted)" );
+            m_poisonLimit->setText( "<div>MDA: &lt; 0" + unitstr + "</div><div>(sig. fewer counts in ROI than predicted)</div>" );
             m_poisonLimit->setToolTip( "Significantly fewer counts were observed in the"
                                        " Region Of Interest, than predicted by the neighboring channels." );
           }else
@@ -402,7 +403,7 @@ public:
             
             char buffer[256];
             snprintf( buffer, sizeof(buffer),
-                      "Nominal distance %s<br />%.1f%% CL range [%s, %s]",
+                      "<div>Nominal distance %s</div><div>%.1f%% CL range [%s, %s]</div>",
                       nomstr.c_str(), rnd_cl_percent, upperstr.c_str(), lowerstr.c_str() );
             
             m_poisonLimit->setText( buffer );
@@ -2403,7 +2404,7 @@ void DetectionLimitTool::doCalc()
               break;
           }
           
-          cout << "Couldnt find upper-limit of display range properly, so scanned up and found "
+          cout << "Couldn't find upper-limit of display range properly, so scanned up and found "
                << PhysicalUnits::printToBestActivityUnits(activityRangeMax,4,false)
                << " where UpperLimit Chi2(" << upperLimit << ")=" << PhysicalUnits::printToBestActivityUnits(upperLimit,4,false)
                << " and ActRangeMax Chi2(" << activityRangeMax << ")=" << PhysicalUnits::printToBestActivityUnits(activityRangeMax,4,false)
@@ -2457,7 +2458,7 @@ void DetectionLimitTool::doCalc()
   if( foundUpperCl )
     m_upperLimit->setText( buffer );
   else
-    m_upperLimit->setText( "Error: Didnt find upper 95%% limit" );
+    m_upperLimit->setText( "Error: Didn't find upper 95%% limit" );
   
   if( foundLowerCl && (lowerLimit > 0.0) )
   {
