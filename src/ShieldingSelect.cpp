@@ -1619,6 +1619,54 @@ void ShieldingSelect::setToNoShielding()
 }//void setToNoShielding()
 
 
+bool ShieldingSelect::isNoShielding()
+{
+  if( m_isGenericMaterial )
+  {
+    if( m_arealDensityEdit->text().empty() || m_atomicNumberEdit->text().empty() )
+      return true;
+    if( arealDensity() <= 0.0 )
+      return true;
+  
+    return false;
+  }//if( m_isGenericMaterial )
+  
+  if( m_materialEdit->text().empty() )
+    return true;
+  
+  if( !m_currentMaterial )
+    return true;
+  
+  switch( m_geometry )
+  {
+    case GammaInteractionCalc::GeometryType::Spherical:
+      if( m_thicknessEdit->text().empty() || (thickness() <= 0.0) )
+        return true;
+      break;
+      
+    case GammaInteractionCalc::GeometryType::CylinderEndOn:
+      if( m_cylLengthEdit->text().empty() || (cylindricalLengthThickness() <= 0.0) )
+        return true;
+      break;
+      
+    case GammaInteractionCalc::GeometryType::CylinderSideOn:
+      if( m_cylRadiusEdit->text().empty() || (cylindricalRadiusThickness() <= 0.0) )
+        return true;
+      break;
+      
+    case GammaInteractionCalc::GeometryType::Rectangular:
+      if( m_rectDepthEdit->text().empty() || (rectangularDepthThickness() <= 0.0) )
+        return true;
+      break;
+      
+    case GammaInteractionCalc::GeometryType::NumGeometryType:
+      break;
+  }//switch( m_geometry )
+  
+  return false;
+}//bool isNoShielding();
+
+
 WLineEdit *ShieldingSelect::materialEdit()
 {
   return m_materialEdit;

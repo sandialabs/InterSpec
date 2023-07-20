@@ -85,7 +85,7 @@ DecayWindow::DecayWindow( InterSpec *viewer )
   WPushButton *qr_btn = new WPushButton( footer() );
   qr_btn->setText( "QR Code" );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
-  qr_btn->setStyleClass( "LinkBtn DownloadBtn DecayToolQrBtn" );
+  qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
   qr_btn->clicked().connect( std::bind( [this](){
     try

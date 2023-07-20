@@ -327,6 +327,8 @@ public:
    */
   void handleAppUrl( const std::string &url_encoded_url );
   
+  /** Creates a window users can copy/paste a URL into; just passes the URL to #handleAppUrl */
+  void makeEnterAppUrlWindow();
   
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
   //  WContainerWidget or a PopupDivMenu
@@ -732,15 +734,15 @@ public:
   void handleLeafletMapClosed();
   
   /** Closes the Leaflet map warning window, without creating an undo/redo step. */
-  void programaticallyCloseLeafletWarning();
+  void programmaticallyCloseLeafletWarning();
   
   /** Closes the Leaflet map window, without inserting undo/redo step. */
-  void programaticallyCloseLeafletMap();
+  void programmaticallyCloseLeafletMap();
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
   void create3DSearchModeChart();
-  void programaticallyClose3DSearchModeChart();
+  void programmaticallyClose3DSearchModeChart();
   void handle3DSearchModeChartClose();
 #endif
 
@@ -751,14 +753,14 @@ public:
   void handleRiidResultsClose();
   
   /** Closes the RIID Display, without setting undo/redo step. */
-  void programaticallyCloseRiidResults();
+  void programmaticallyCloseRiidResults();
   
   /** Show images included in the spectrum file. */
   void showMultimedia( const SpecUtils::SpectrumType type );
   
   void handleMultimediaClose( SimpleDialog *dialog );
   
-  void programaticallyCloseMultimediaWindow();
+  void programmaticallyCloseMultimediaWindow();
   
 #if( USE_TERMINAL_WIDGET )
   void createTerminalWidget();
@@ -1442,6 +1444,8 @@ protected:
   LeafletRadMapWindow *m_leafletWindow;
 #endif
 #endif
+  
+  SimpleDialog *m_enterUri;
   
 #if( USE_SEARCH_MODE_3D_CHART )
   PopupDivMenuItem *m_searchMode3DChart;

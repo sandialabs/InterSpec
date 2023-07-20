@@ -391,7 +391,7 @@ public:
   
   /** Function called whenever a ShieldingSelect is changed by the user.
    
-   This function is not called when values are changed programatically (e.g., as a side-effect of another setting being changed).
+   This function is not called when values are changed programmatically (e.g., as a side-effect of another setting being changed).
    
    Storing the XML for the ShieldingSelect, as apposed to the whole ShieldingSourceDisplay, takes up only about 3% as much
    memmory, but at the cost of not currently getting things exactly right for trace and self-atten sources.

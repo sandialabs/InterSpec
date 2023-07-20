@@ -67,7 +67,7 @@ unsigned terminal_width();
 void getUtf8Args( int &argc, char ** &argv );
 #endif
 
-
+#include "InterSpec/DetectionLimitCalc.h"
 
 int main( int argc, char **argv )
 {
@@ -78,6 +78,18 @@ int main( int argc, char **argv )
 #if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
   return developcode::run_development_code();
 #endif
+  
+  /*
+  try
+  {
+    DetectionLimitCalc::batch_test();
+    std::cout << "Finished running batch_test()" << std::endl;
+  }catch( std::exception &e )
+  {
+    std::cerr << "Error running batch_test(): " << e.what() << std::endl;
+  }
+  return 1;
+   */
   
   std::cout << std::showbase << std::hex << "Running with Wt version "
   << WT_VERSION << std::dec << ", from executable compiled on "

@@ -687,7 +687,13 @@ public:
     m_fix_decon_continuum->disable();
     
     setSimplePoisonTxt();
-  }
+    
+    //Right now we are just having DetectionLimitTool completely refresh on activity units change,
+    //  but we could be a little more fine-grained about this.
+    //InterSpec *viewer = InterSpec::instance();
+    //InterSpecUser::addCallbackWhenChanged( viewer->m_user, "DisplayBecquerel",
+    //                                      boost::bind(&MdaPeakRow::setSimplePoisonTxt, this) );
+  }//MdaPeakRow constructor
   
   
   void createMoreInfoWindow()
@@ -833,7 +839,7 @@ public:
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Upper region channels", cell );
       val = "[" + std::to_string(result.first_upper_continuum_channel) + ", "
-                    + std::to_string(result.last_lower_continuum_channel) + "]";
+                    + std::to_string(result.last_upper_continuum_channel) + "]";
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       const double upper_lower_energy = m_input.measurement->gamma_channel_lower( result.first_upper_continuum_channel );
@@ -887,7 +893,11 @@ public:
       //   reliably recognized as "detected"
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Peak critical limit", cell );
-      val = PhysicalUnits::printCompact( result.decision_threshold, 5 );
+      const double decision_threshold_act = result.decision_threshold / gammas_per_bq;
+      val = PhysicalUnits::printCompact( result.decision_threshold, 4 )
+            + " <span style=\"font-size: smaller;\">("
+            + PhysicalUnits::printToBestActivityUnits( decision_threshold_act, 2, useCuries )
+            + ")</span>";
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       addTooltipToRow( "Corresponds to Currie's &quot;critical level&quot;, L<sub>c</sub>,"
@@ -899,7 +909,12 @@ public:
       //       is the “true” net signal level which may be a priori expected to lead to detection.
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Peak detection limit", cell );
-      val = PhysicalUnits::printCompact( result.detection_limit, 5 );
+      const double detection_limit_act = result.detection_limit / gammas_per_bq;
+      val = PhysicalUnits::printCompact( result.detection_limit, 4 )
+            + " <span style=\"font-size: smaller;\">("
+            + PhysicalUnits::printToBestActivityUnits( detection_limit_act, 2, useCuries )
+            + ")</span>";
+      
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       addTooltipToRow( "Corresponds to Currie's &quot;detection limit&quot;, L<sub>d</sub>,"
@@ -1393,6 +1408,10 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   // Incase we do have an initial nuclide set, treat as if user entered new info.
   handleUserNuclideChange();
+  
+  // Update the displayed activity units, when the user changes this preference.
+  InterSpecUser::addCallbackWhenChanged( viewer->m_user, "DisplayBecquerel",
+                                        boost::bind(&DetectionLimitTool::handleInputChange, this) );
   
   
 #if( PERFORM_DEVELOPER_CHECKS )

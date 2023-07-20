@@ -51,6 +51,15 @@
 #include "InterSpec/UnitsConverterTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
+
+#if( USE_QR_CODES )
+#include <Wt/Utils>
+
+#include "InterSpec/QrCode.h"
+#include "InterSpec/WarningWidget.h"
+#endif
+
+
 using namespace Wt;
 using namespace std;
 
@@ -557,6 +566,25 @@ UnitsConverterTool::UnitsConverterTool()
   layout->setColumnStretch(1, 1);
   layout->setRowStretch(3, 1);
     
+  
+#if( USE_QR_CODES )
+  WPushButton *qr_btn = new WPushButton( footer() );
+  qr_btn->setText( "QR Code" );
+  qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
+  qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
+  qr_btn->clicked().preventPropagation();
+  qr_btn->clicked().connect( std::bind( [this](){
+    try
+    {
+      const string url = "interspec://unit/?" + Wt::Utils::urlEncode(encodeStateToUrl());
+      QrCode::displayTxtAsQrCode( url, "Unit Converter State", "Current state of the unit converter tool." );
+    }catch( std::exception &e )
+    {
+      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+    }
+  }) );
+#endif //USE_QR_CODES
+  
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
 

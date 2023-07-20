@@ -365,6 +365,12 @@ public:
   
   void setToNoShielding();
   
+  /** Returns true if material field is empty, or [thickness|AD] is empty or zero.
+   
+   For cylindrical and rectangular geometries, only checks dimension is empty or zero, for the one between center and detector.
+   */
+  bool isNoShielding();
+  
   //Simple accessors
   Wt::WLineEdit *materialEdit();
   Wt::WLineEdit *thicknessEdit();
