@@ -22,13 +22,232 @@
  */
 #include "InterSpec_config.h"
 
-#include "InterSpec/BatchCommandLine.h"
-
+#include <regex>
 #include <iostream>
+
+#include <boost/program_options.hpp>
+
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+
+#include "InterSpec/AppUtils.h"
+#include "InterSpec/BatchPeak.h"
+#include "InterSpec/BatchCommandLine.h"
 
 using namespace std;
 
+
+namespace
+{
+  set<int> sequenceStrToSampleNums( string fulltxt )
+  {
+    //Lets replace numbers seperated by spaces, to be seperated by commas.
+    //  We cant do a simple replace of spaces to commas, and using a regex would
+    //  require using a lookahead or behind, and I dont think boost supports that
+    //  always.  Note that below while loop is a little ineficient, but whatever
+    std::smatch mtch;
+    std::regex expr( ".*(\\d\\s+\\d).*" );
+    while( std::regex_match( fulltxt, mtch, expr ) )
+      fulltxt[mtch[1].first - fulltxt.begin() + 1] = ',';
+    
+    //Using a sregex_token_iterator doesnt work for single digit numbers, ex
+    //  '1 2 3 45 983 193'  will go to '1,2 3,45,983,193'
+    //  std::regex expr( "\\d\\s+\\d" );
+    //  for( std::sregex_token_iterator iter(fulltxt.begin(),fulltxt.end(),expr,0);
+    //      iter != std::sregex_token_iterator(); ++iter )
+    //    fulltxt[iter->first - fulltxt.begin()+1] = ',';
+      
+    vector<string> sampleranges;
+    SpecUtils::split( sampleranges, fulltxt, "," );
+
+    set<int> sampleNumToLoad;
+    
+    for( string textStr : sampleranges )
+    {
+      SpecUtils::trim( textStr );
+      if( textStr.empty() )
+        continue;
+
+      std::smatch matches;
+      std::regex range_expression( "(\\d+)\\s*(\\-|to|through)\\s*(\\d+)",
+                                  std::regex::ECMAScript | std::regex::icase );
+      if( std::regex_match( textStr, matches, range_expression ) )
+      {
+        string firstStr = string( matches[1].first, matches[1].second );
+        string lastStr = string( matches[3].first, matches[3].second );
+
+        int first = std::stoi( firstStr );
+        int last = std::stoi( lastStr );
+        if( last < first )
+          std::swap( last, first );
+
+        for( int i = first; i <= last; ++i )
+          sampleNumToLoad.insert( i );
+      }else
+      {
+        const int sample = std::stoi( textStr );
+
+        sampleNumToLoad.insert( sample );
+      }//if( is sample range ) / else
+    }//for( string textStr : sampleranges )
+    
+    return sampleNumToLoad;
+  }//set<int> sequenceStrToSampleNums( string fulltxt )
+  
+}//namespace
+
 namespace BatchCommandLine
 {
+
+int run_batch_command( int argc, char **argv )
+{
+  namespace po = boost::program_options;
+  
+  unsigned term_width = AppUtils::terminal_width();
+  unsigned min_description_length = ((term_width < 80u) ? term_width/2u : 40u);
+  
+  po::options_description cl_desc("Allowed batch options", term_width, min_description_length);
+  cl_desc.add_options()
+  ("batch-peak-fit", "Batch-fit peaks.")
+  ("batch-act-fit", "Batch shielding/source fit.")
+  ;
+  
+  po::variables_map cl_vm;
+  try
+  {
+    po::parsed_options parsed_opts
+    = po::command_line_parser(argc,argv)
+      .allow_unregistered()
+      .options(cl_desc)
+      .run();
+    
+    po::store( parsed_opts, cl_vm );
+    po::notify( cl_vm );
+  }catch( std::exception &e )
+  {
+    std::cerr << "Command line argument error: " << e.what() << std::endl << std::endl;
+    std::cout << cl_desc << std::endl;
+    return 1;
+  }//try catch
+  
+  bool successful = true;
+  
+  if( cl_vm.count("batch-peak-fit") )
+  {
+    try
+    {
+      bool output_stdout, refit_energy_cal, use_exemplar_energy_cal, write_n42_with_peaks;
+      vector<std::string> input_files;
+      string exemplar_path, output_path, exemplar_samples;
+      
+      po::options_description peak_cl_desc("Allowed batch peak-fit options", term_width, min_description_length);
+      peak_cl_desc.add_options()
+      ("help,h",  "Produce help message")
+      ("exemplar", po::value<std::string>(&exemplar_path),
+       "File containing exemplar peaks, that will try to be fitted in the input spectra."
+       " Can be a N42-2012 file save from InterSpec that contains peaks, or a peaks CSV file"
+       " exported from the \"Peak Manager\" tab."
+       )
+      ("exemplar-sample-nums", po::value<std::string>(&exemplar_samples),
+       "Only applicable if the exemplar file is an N42 file, and there are peaks for multiple"
+       " sample numbers.  This string is interpreted similar to on the \"Spectrum Files\" tab,"
+       " where a value such as \"1-3,8\" would use the peaks that were fit when samples 1,2,3, and 8"
+       " where shown (e.g. summed for display), and peaks fit; usually you will just specify a"
+       " single sample number though."
+       )
+      ("input-file", po::value<vector<std::string>>(&input_files)->multitoken(),
+       "One or more spectrum files to fit peaks for.  If a directory, all files in it, recursively,"
+       " will attempt to be used."
+       )
+      ("refit-energy-cal", po::value<bool>(&refit_energy_cal)->default_value(false),
+       "After initial peak fit, uses the those peaks (and their assigned nuclides) to adjust energy"
+       " gain, then refits the peaks with the updated energy calibration."
+       )
+      ("use-exemplar-energy-cal", po::value<bool>(&use_exemplar_energy_cal)->default_value(false),
+       "Use the exemplar N42 energy calibration with the input files."
+       " If refit-energy-cal is specified true, then the exemplar energy cal will be used for"
+       " initial fit, and then refined and peaks refit.\n"
+       "Only applicable if N42 file is used for exemplar."
+       )
+      ("write-n42-with-peaks", po::value<bool>(&write_n42_with_peaks)->default_value(false),
+       "Adds the fit peaks to the input spectrum file , and then saves as a N42."
+       " You must specify 'output_path' if you specify this option; also, will refuse to overwrite"
+       " existing files."
+       )
+      ("print", po::value<bool>(&output_stdout)->default_value(true),
+       "Print peak-fits to stdout."
+       )
+      ("out-dir", po::value<string>(&output_path)->default_value(""),
+       "The directory to write peak CSV files (and optionally) N42 files to; if empty, CSV files will not be written.")
+      ;
+      
+      po::variables_map cl_vm;
+      try
+      {
+        po::parsed_options parsed_opts
+        = po::command_line_parser(argc,argv)
+          .allow_unregistered()
+          .options(peak_cl_desc)
+          .run();
+        
+        po::store( parsed_opts, cl_vm );
+        po::notify( cl_vm );
+      }catch( std::exception &e )
+      {
+        std::cerr << "Command line argument error: " << e.what() << std::endl << std::endl;
+        std::cout << peak_cl_desc << std::endl;
+        return 1;
+      }//try catch
+      
+      if( cl_vm.count("help") )
+      {
+        std::cout << "Available command-line options for batch peak-fitting are:\n";
+        std::cout << peak_cl_desc << std::endl;
+        return 0;
+      }//if( cl_vm.count("help") )
+      
+      set<int> exemplar_sample_nums;
+      if( !exemplar_samples.empty() )
+        exemplar_sample_nums = sequenceStrToSampleNums( exemplar_samples );
+      
+      // Expand directories to be files
+      vector<string> expanded_input_files;
+      for( const string &filename : input_files )
+      {
+        if( SpecUtils::is_directory(filename) )
+        {
+          const vector<string> subfiles = SpecUtils::recursive_ls(filename);
+          expanded_input_files.insert( end(expanded_input_files), begin(subfiles), end(subfiles) );
+        }else
+        {
+          expanded_input_files.push_back( filename );
+        }
+      }//for( string filename : input_files )
+      
+      BatchPeak::BatchPeakFitOptions options;
+      options.to_stdout = output_stdout;
+      options.refit_energy_cal = refit_energy_cal;
+      options.use_exemplar_energy_cal = use_exemplar_energy_cal;
+      options.write_n42_with_peaks = write_n42_with_peaks;
+      options.output_dir = output_path;
+      
+      BatchPeak::fit_peaks_in_files( exemplar_path, exemplar_sample_nums, expanded_input_files, options );
+    }catch( std::exception &e )
+    {
+      successful = false;
+      cerr << "Error batch-fitting peaks: " << e.what() << endl;
+    }
+  }//if( cl_vm.count("help") )
+  
+  
+  if( cl_vm.count("batch-act-fit") )
+  {
+    throw runtime_error( "Not implemented yet" );
+    return 0;
+  }//if( cl_vm.count("help") )
+  
+  return successful ? EXIT_SUCCESS : EXIT_FAILURE;
+}//int run_batch_command( int argc, const char **argv )
+  
   
 }//namespace BatchCommandLine

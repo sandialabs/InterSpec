@@ -6011,11 +6011,10 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
   PopupDivMenuItem *uriItem = m_editMenuPopup->insertMenuItem( (m_undo ? 6 : -1), "Enter URL", "", true );
   uriItem->triggered().connect( this, &InterSpec::makeEnterAppUrlWindow );
   
-  
 #if( BUILD_AS_OSX_APP )
   // All the macOS native menu stuff (copy/paste/select/etc) will be below our stuff
   if( InterSpecApp::isPrimaryWindowInstance() )
-    m_editMenuPopup->addSeparatorAt( (m_undo ? 5 : -1) );
+    m_editMenuPopup->addSeparatorAt( (m_undo ? 7 : -1) );
 #endif
 }//void addEditMenu( Wt::WWidget *menuDiv )
 
@@ -11173,7 +11172,7 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
   if( !frag.empty() )
     query_str += "#" + frag;
   
-  cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
+  //cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
   
   deleteWelcomeDialog( false );
   deleteEnergyCalPreserveWindow();

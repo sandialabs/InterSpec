@@ -39,6 +39,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecServer.h"
 
@@ -46,25 +47,8 @@
 #include "testing/developcode.h"
 #endif
 
-
-// Some includes to get terminal width (and UTF-8 cl arguments on WIndows)
-#if defined(__APPLE__) || defined(linux) || defined(unix) || defined(__unix) || defined(__unix__)
-#include <sys/ioctl.h>
-#include <unistd.h>
-#elif defined(_WIN32)
-#define NOMINMAX
-#define WIN32_LEAN_AND_MEAN 1
-#include <Windows.h>
-#include <stdio.h>
-#include <direct.h>
-#include <shellapi.h>
-#endif
-
-
-//Forward declaration
-unsigned terminal_width();
-#ifdef _WIN32
-void getUtf8Args( int &argc, char ** &argv );
+#if( USE_BATCH_TOOLS )
+#include "InterSpec/BatchCommandLine.h"
 #endif
 
 #include "InterSpec/DetectionLimitCalc.h"
@@ -72,7 +56,7 @@ void getUtf8Args( int &argc, char ** &argv );
 int main( int argc, char **argv )
 {
 #ifdef _WIN32
-  getUtf8Args( argc, argv );
+  AppUtils::getUtf8Args( argc, argv );
 #endif
   
 #if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
@@ -111,7 +95,7 @@ int main( int argc, char **argv )
   
   namespace po = boost::program_options;
   
-  unsigned term_width = terminal_width();
+  unsigned term_width = AppUtils::terminal_width();
   unsigned min_description_length = ((term_width < 80u) ? term_width/2u : 40u);
   
   po::options_description cl_desc("Allowed options", term_width, min_description_length);
@@ -140,16 +124,22 @@ int main( int argc, char **argv )
   ("static-data-dir", "The static data directory (e.g., 'data' dir that holds cross-sections, "
    "nuclear-data, etc) to use.  If not specified, uses 'data' in the `docroot` directory."
    )
+#if( USE_BATCH_TOOLS )
+  ("batch-peak-fit", "Batch-fit peaks.")
+  ("batch-act-fit", "Batch shielding/source fit.")
+#endif
   ;
   
   po::variables_map cl_vm;
   try
   {
     po::parsed_options parsed_opts
-    = po::command_line_parser(argc,argv)
-      //.allow_unregistered()
-      .options(cl_desc)
-      .run();
+      = po::command_line_parser(argc,argv)
+#if( USE_BATCH_TOOLS )
+       .allow_unregistered()
+#endif
+       .options(cl_desc)
+       .run();
     
     po::store( parsed_opts, cl_vm );
     po::notify( cl_vm );
@@ -161,7 +151,13 @@ int main( int argc, char **argv )
   }//try catch
   
   
-  if( cl_vm.count("help") )
+#if( USE_BATCH_TOOLS )
+  const bool is_batch = (cl_vm.count("batch-peak-fit") || cl_vm.count("batch-act-fit"));
+#else
+  const bool is_batch = false;
+#endif
+  
+  if( cl_vm.count("help") && !is_batch )
   {
     std::cout << "Available command-line options for starting the InterSpec web-server are:\n";
     std::cout << cl_desc << std::endl;
@@ -291,6 +287,12 @@ int main( int argc, char **argv )
   }//if( cl_vm.count("static-data-dir") )
   
   
+#if( USE_BATCH_TOOLS )
+  if( is_batch )
+    return BatchCommandLine::run_batch_command( argc, argv );
+#endif
+  
+  
   // Start the InterSpec server
   const int rval = InterSpecServer::start_server( argv[0], user_data_dir.c_str(),
                                                  docroot.c_str(),
@@ -309,65 +311,3 @@ int main( int argc, char **argv )
 }//int main( int argc, const char * argv[] )
 
 
-#ifdef _WIN32
-/** Get command line arguments encoded as UTF-8.
-    This function just leaks the memory
- 
- Note that environment variables are not in UTF-8, we could account for this
- similar to:
- wchar_t *wenvstrings = GetEnvironmentStringsW();
- ...
- */
-void getUtf8Args( int &argc, char ** &argv )
-{
-  LPWSTR *argvw = CommandLineToArgvW( GetCommandLineW(), &argc );
-  if( !argvw )
-  {
-    std::cout << "CommandLineToArgvW failed - good luck" << std::endl;
-    return ;
-  }
-  
-  argv = (char **)malloc(sizeof(char *)*argc);
-    
-  for( int i = 0; i < argc; ++i)
-  {
-    printf("Argument: %d: %ws\n", i, argvw[i]);
-  
-    const std::string asutf8 = SpecUtils::convert_from_utf16_to_utf8( argvw[i] );
-    argv[i] = (char *)malloc( sizeof(char)*(asutf8.size()+1) );
-    strcpy( argv[i], asutf8.c_str() );
-  }//for( int i = 0; i < argc; ++i)
-
-  // Free memory allocated for CommandLineToArgvW arguments.
-  LocalFree(argvw);
-}//void getUtf8Args()
-#endif
-
-
-
-
-#if defined(__APPLE__) || defined(unix) || defined(__unix) || defined(__unix__)
-unsigned terminal_width()
-{
-  winsize ws = {};
-  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) <= -1)
-    return 80;
-  unsigned w = (ws.ws_col);
-  return std::max( 40u, w );
-}
-#elif defined(_WIN32)
-unsigned terminal_width()
-{
-  HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
-  if( handle == INVALID_HANDLE_VALUE )
-    return 80;
-  
-  CONSOLE_SCREEN_BUFFER_INFO info;
-  if( !GetConsoleScreenBufferInfo(handle, &info) )
-    return 80;
-  
-  return unsigned(info.srWindow.Right - info.srWindow.Left);
-}
-#else
-static_assert( 0, "Not unix and not win32?  Unsupported getting terminal width" );
-#endif
