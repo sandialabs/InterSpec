@@ -76,8 +76,10 @@ class Measurement;
 
 namespace DetectionLimitCalc
 {
-
-
+#if( PERFORM_DEVELOPER_CHECKS )
+void batch_test();
+#endif
+  
 /** The input to a simple "Currie" style minimum detectable activity and detection confidence interval calculation.
  
  */

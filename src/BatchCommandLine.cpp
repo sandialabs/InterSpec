@@ -242,6 +242,7 @@ int run_batch_command( int argc, char **argv )
   
   if( cl_vm.count("batch-act-fit") )
   {
+    cerr << "batch-act-fit no implemented yet" << endl;
     throw runtime_error( "Not implemented yet" );
     return 0;
   }//if( cl_vm.count("help") )

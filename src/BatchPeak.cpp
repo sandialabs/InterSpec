@@ -637,9 +637,8 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         // We will require the fit peak to be within 0.25 FWHM (arbitrarily chosen distance)
         //  of the exemplar peak, and we will use the exemplar peak closest in energy to the
         //  fit peak
-        if( (energy_diff < 0.25*p.fwhm())
-           && (!exemplar_parent
-               || (energy_diff < fabs(exemplar_parent->mean() - fit_mean))) )
+        if( (energy_diff < 0.5*p.fwhm())
+           && (!exemplar_parent || (energy_diff < fabs(exemplar_parent->mean() - fit_mean))) )
         {
           exemplar_parent = make_shared<PeakDef>( exemplar );
         }
@@ -649,8 +648,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         p.inheritUserSelectedOptions( *exemplar_parent, false );
       else
         results.warnings.push_back( "In '" + filename + "', failed to find exemplar peak"
-          " corresponding to peak fit with mean=" + std::to_string( p.mean() )
-        + " - will not set parent nuclide/color/etc of fit peak." );
+          " corresponding to peak fit with mean=" + std::to_string( p.mean() ) + " keV." );
       //cout << "\tmean=" << p.mean() << ", FWHM=" << p.fwhm() << ", area=" << p.amplitude() << endl;
     }
     

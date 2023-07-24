@@ -54,10 +54,406 @@
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
+#if( PERFORM_DEVELOPER_CHECKS )
+#include <boost/tokenizer.hpp>
+
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/ParseUtils.h"
+#include "SpecUtils/StringAlgo.h"
+
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "InterSpec/SpecMeas.h"
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/MaterialDB.h"
+#include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DetectorPeakResponse.h"
+#endif //PERFORM_DEVELOPER_CHECKS
+
 using namespace std;
 
 namespace DetectionLimitCalc
 {
+ 
+#if( PERFORM_DEVELOPER_CHECKS )
+  
+float round_to_nearest_channel_edge( const float energy, const shared_ptr<const SpecUtils::Measurement> &m )
+{
+  if( !m )
+    return energy;
+    
+  auto cal = m->energy_calibration();
+    
+  if( !cal || !cal->valid() )
+    return energy;
+    
+  const double channel = std::max( 0.0, cal->channel_for_energy(energy) ); //std::max isnt necessary, but JIC
+  const double whole = std::floor(channel);
+  const double frac = channel - whole;
+  
+  if( (frac >= 0.5) && ((whole+1) < cal->num_channels()) )
+    return static_cast<float>( cal->energy_for_channel(whole + 1.0) );
+  
+  return static_cast<float>( cal->energy_for_channel(whole) );
+}//float round_to_nearest_channel_edge( float energy )
+  
+  
+DetectionLimitCalc::CurieMdaInput currie_input( const float energy,
+                                                const shared_ptr<const SpecUtils::Measurement> &m,
+                                                shared_ptr<const DetectorPeakResponse> &det,
+                                               const double detection_probability )
+{
+  if( !m || (m->num_gamma_channels() < 16) || !det || !det->isValid() || !det->hasResolutionInfo() )
+    throw runtime_error( "No measurement or no DRF." );
+  
+  const size_t nsidebin = 4;
+  //const float num_fwhm = 2.5;
+  const float nfwhm = 1.19f;
+  const double confidence_level = detection_probability;
+  
+  const float fwhm = det->peakResolutionFWHM( energy );
+  const float roi_lower_energy = round_to_nearest_channel_edge( energy - nfwhm*fwhm, m ) + 0.0001f;
+  const float roi_upper_energy = round_to_nearest_channel_edge( energy + nfwhm*fwhm, m ) - 0.0001f;
+  
+  DetectionLimitCalc::CurieMdaInput input;
+  input.spectrum = m;
+  input.gamma_energy = energy;
+  input.roi_lower_energy = roi_lower_energy;
+  input.roi_upper_energy = roi_upper_energy;
+  input.num_lower_side_channels = nsidebin;
+  input.num_upper_side_channels = nsidebin;
+  input.detection_probability = confidence_level;
+  input.additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
+  
+  return input;
+}//CurieMdaInput currie_input(...)
+  
+  
+void batch_test()
+{
+  const string base_dir = "/Users/wcjohns/Library/CloudStorage/OneDrive-SandiaNationalLaboratories/NonNucComponentLDRD/MDA_calc_20230718/";
+  const string spec_file = SpecUtils::append_path( base_dir, "Livermore_48_hour background 5-26-23.n42" );
+  
+  SpecMeas meas;
+  if( !meas.load_N42_file( spec_file ) )
+    throw runtime_error( "Couldn't open '" + spec_file + "'" );
+  
+  if( meas.num_measurements() != 1 )
+    throw runtime_error( "Not exactly one measurement in the file" );
+  
+  const shared_ptr<const SpecUtils::Measurement> spectrum = meas.measurement( size_t(0) );
+  if( !spectrum || (spectrum->num_gamma_channels() < 128) )
+    throw runtime_error( "No spectrum" );
+  
+  if( !spectrum->energy_calibration() || !spectrum->energy_calibration()->valid() )
+    throw runtime_error( "No energy calibration" );
+  
+  shared_ptr<const DetectorPeakResponse> det = meas.detector();
+  if( !det || !det->isValid() || !det->hasResolutionInfo() )
+    throw runtime_error( "Invalid detector, or missing resolution information" );
+  
+  const double detection_probability = 0.95;
+  const bool useCuries = false;
+  const double distance = 2.54*PhysicalUnits::cm;
+  const double shielding_thickness = 2.5*PhysicalUnits::mm;
+  const double live_time = spectrum->live_time();
+  
+  typedef boost::math::policies::policy<boost::math::policies::digits10<6> > my_pol_6;
+  const boost::math::normal_distribution<float,my_pol_6> gaus_dist( 0.0f, 1.0f );
+  // Will map 0.8414->1.00023, 0.95->1.64485, 0.975->1.95996, 0.995->2.57583, ...
+  const float k = boost::math::quantile( gaus_dist, detection_probability );
+  
+  /* const string test_nucs[] = { "Co-60" }; */
+  
+  const string test_nucs[] = {
+    "Ag-106", "Ag-106m", "Ag-108", "Ag-108m", "Ag-110", "Ag-110m", "Ag-111", "Al-28", "Al-29",
+    "Ar-37", "Ar-41", "Ar-42", "As-74", "As-76", "As-77", "Au-196", "Au-197m", "Au-198", "B-12",
+    "Be-10", "Bi-210m", "Bi-210", "Bi-211", "Br-83", "C-11", "C-14", "Ca-41", "Ca-45", "Ca-47",
+    "Ca-49", "Cd-107", "Cd-109", "Cd-111", "Cd-113", "Cd-113", "Cd-115", "Cd-115", "Cd-117",
+    "Cd-117", "Cl-36", "Cl-38", "Cl-38m", "Co-58", "Co-58m", "Co-60", "Co-60m", "Co-61", "Cr-49",
+    "Cr-51", "Cr-55", "Cu-62", "Cu-64", "Cu-66", "Cu-67", "F-18", "F-20", "Fe-53", "Fe-55", "Fe-59",
+    "Ge-75", "H-3", "He-6", "Hf-181", "Hf-182", "Hg-197", "Hg-197m", "Hg-199m", "Hg-203", "Hg-205",
+    "I-129", "I-131", "K-40", "K-42", "K-43", "Li-8", "Lu-178", "Mg-27", "Mg-28", "Mn-54", "Mn-56",
+    "Mo-101", "Mo-93", "Mo-93m", "Mo-99", "N-16", "N-17", "Na-22", "Na-24", "Na-24m", "Na-25",
+    "Nb-92", "Nb-92m", "Nb-93m", "Nb-94", "Nb-94m", "Nb-95", "Nb-96", "Ne-23", "Ni-57", "Ni-59",
+    "Ni-63", "Ni-65", "Ni-66", "O-15", "O-19", "P-32", "P-33", "P-34", "Pb-203", "Pb-204m",
+    "Pb-205", "Pb-209", "Pd-103", "Pd-107", "Pd-107m", "Pd-109", "Pd-109m", "Pd-111m", "Pd-111t",
+    "Po-210", "S-35", "S-37", "Sb-122", "Sb-122m", "Sb-124", "Sb-124m1", "Sb-124m2", "Sb-125",
+    "Sc-46", "Sc-47", "Sc-48", "Sc-49", "Se-75", "Se-77m", "Se-79", "Se-79m", "Se-81", "Se-81m",
+    "Se-83m", "Se-83", "Si-31", "Si-32", "Sn-113", "Sn-113m", "Sn-117m", "Sn-119m", "Sn-121",
+    "Sn-121m", "Sn-123", "Sn-123m", "Sn-125m", "Sn-125", "Sn-126", "Sr-89", "Sr-90", "Ta-182",
+    "Ta-182m", "Ta-183", "Tc-99", "Te-121", "Te-121m", "Te-123", "Te-123m", "Te-125m", "Te-127",
+    "Te-127m", "Te-129m", "Te-129", "Te-131m", "Te-131", "Te-132", "Ti-45", "Ti-51", "V-52",
+    "V-53", "W-181", "W-185", "W-185m", "W-187", "W-188", "Y-90", "Y-91", "Zn-65", "Zn-69",
+    "Zn-69m", "Zn-71", "Zn-71m", "Zr-89", "Zr-93", "Zr-95", "Zr-95", "Zr-97"
+  };
+  
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  assert( db );
+  
+  MaterialDB matdb;
+  
+  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
+  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  
+  const Material * const stainless = matdb.material("stainless-steel NIST");
+  assert( stainless );
+  
+  const auto shield_transmission = [stainless, shielding_thickness]( const double energy ) -> double {
+    const double atten_coef = GammaInteractionCalc::transmition_coefficient_material( stainless, energy, shielding_thickness );
+    return exp( -1.0*atten_coef );
+  };
+  
+  map<const SandiaDecay::Nuclide *,double> single_peak_sensitivity;
+  
+  for( const string &nuc_str : test_nucs )
+  {
+    const SandiaDecay::Nuclide * const nuc = db->nuclide( nuc_str );
+    if( !nuc || nuc->isStable() )
+    {
+      cerr << "Warning: '" << nuc_str << "' is not a valid nuclide - skipping" << endl;
+      continue;
+    }
+    
+    // TODO: we could integrate over activation time-frame - the code is probably similar to
+    //       nuclide decay during measurement, but we wont for the moment.
+    double age = 5.0*nuc->halfLife;
+    if( age > 10*SandiaDecay::year )
+      age = 10*SandiaDecay::year;
+    
+    const bool parent_act = 1.0E-3*SandiaDecay::curie; //Will get divided out, doesnt matter, as long as not too small.
+    
+    SandiaDecay::NuclideMixture mix;
+    mix.addAgedNuclideByActivity( nuc, parent_act, age );
+    
+    const vector<SandiaDecay::EnergyRatePair> gammas
+                  = mix.gammas( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
+    
+    vector<pair<double,double>> energy_activities;
+    
+    for( const SandiaDecay::EnergyRatePair &erp : gammas )
+    {
+      if( erp.energy < 10 )
+        continue;
+      
+      try
+      {
+      const double det_eff = det->efficiency( erp.energy, distance );
+      const double shield_trans = shield_transmission( erp.energy );
+      const double gammas_per_bq_per_sec = erp.numPerSecond / parent_act;
+      if( gammas_per_bq_per_sec < 1.0E-16 )
+        continue;
+      
+      const CurieMdaInput mda_input = currie_input( erp.energy, spectrum, det, detection_probability );
+      
+      const CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( mda_input );
+      
+      const double counts_per_bq = det_eff * shield_trans * gammas_per_bq_per_sec * live_time;
+      
+      // result.detection_limit is: Estimate of the true number of signal counts, where we would
+      //  reliably detect a signal above the decision threshold.
+      const double det_limit_act = result.detection_limit / counts_per_bq;
+      
+      // result.detection_limit: This is the number of counts in the peak region, _above_ the
+      //  predicted continuum number of counts, at which point we will consider signal to be present.
+      const double decision_threshold_act = result.detection_limit / counts_per_bq;
+      
+      // Since we dont know if we are right next to, or overlapping, a peak or something, we'll
+      //  just require an excess of observed counts in the region
+      const double decision_excess_counts = k * sqrt( result.peak_region_counts_sum );
+      const double decision_act = decision_excess_counts / counts_per_bq;
+      
+      energy_activities.push_back( {erp.energy, decision_act} );
+      
+      /*
+      const int label_width = 26;
+      cout << "For " << nuc->symbol << ", at " << erp.energy << " keV:" << endl;
+      
+      cout << "\tdecision_act: " << PhysicalUnits::printToBestActivityUnits(decision_act, 4, useCuries) << endl;
+      cout << endl;
+      
+      cout << std::left << std::setw(label_width) << "\tLower region channels:"
+           << "[" << result.first_lower_continuum_channel << ", "
+           << result.last_lower_continuum_channel << "]"
+           << endl;
+      cout << std::left << std::setw(label_width) << "\tLower region counts:"
+           << PhysicalUnits::printCompact( result.lower_continuum_counts_sum, 5 )
+           << endl;
+      cout << std::left << std::setw(label_width) << "\tUpper region channels:"
+           << "[" << result.first_upper_continuum_channel << ", "
+           << result.last_upper_continuum_channel << "]"
+           << endl;
+      cout << std::left << std::setw(label_width) << "\tUpper region counts:"
+           << PhysicalUnits::printCompact( result.upper_continuum_counts_sum, 5 ) << endl;
+      cout << std::left << std::setw(label_width) << "\tPeak area channels:"
+           << "[" << (result.last_lower_continuum_channel + 1) << ", "
+           << (result.first_upper_continuum_channel - 1) << "]"
+           << endl;
+      cout << std::left << std::setw(label_width) << "\tPeak region counts:"
+           << PhysicalUnits::printCompact( result.peak_region_counts_sum, 5 )
+           << endl;
+      cout << std::left << std::setw(label_width) << "\tPeak region null est.:"
+           << PhysicalUnits::printCompact( result.estimated_peak_continuum_counts, 5 )
+           << " +- " << PhysicalUnits::printCompact( result.estimated_peak_continuum_uncert, 5 )
+           << endl;
+      cout << std::left << std::setw(label_width) << "\tPeak critical limit:"
+           << PhysicalUnits::printCompact( result.decision_threshold, 5 )
+           << endl;
+      cout << std::left << std::setw(label_width) << "\tPeak detection limit:"
+           << PhysicalUnits::printCompact( result.detection_limit, 5 )
+           << endl;
+      cout << endl;
+      const double intrinsic_eff = det->intrinsicEfficiency( erp.energy );
+      const double geom_eff = det->fractionalSolidAngle( det->detectorDiameter(), distance );
+      cout << std::left << std::setw(label_width) << "\tDetector Intrinsic Eff.:"
+           << PhysicalUnits::printCompact( intrinsic_eff, 5 )
+           << endl;
+      cout << std::left << std::setw(label_width) << "\tSolid angle fraction:"
+           << PhysicalUnits::printCompact( geom_eff, 5 )
+           << endl;
+      cout << std::left << std::setw(label_width) << "\tShielding transmission:"
+           << PhysicalUnits::printCompact( shield_trans, 5 )
+           << endl;
+      cout << std::left << std::setw(label_width) << "\tNuclide branching ratio:"
+           << PhysicalUnits::printCompact( gammas_per_bq_per_sec, 5 )
+           << endl;
+      cout << endl;
+      */
+        
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to calc limit for " << nuc_str << " at " << erp.energy << " keV: "
+             << e.what() << endl;
+      }// try / catch - for an energy
+    }//for( const SandiaDecay::EnergyRatePair &erp : gammas )
+    
+    std::sort( begin(energy_activities), end(energy_activities),
+      []( const pair<double,double> &lhs, const pair<double,double> &rhs ) -> bool {
+        return lhs.second < rhs.second;
+    } );
+    
+    // We could go through and use multi-peak MDA for the top ~3 or 5 peaks...
+    if( !energy_activities.empty() )
+    {
+      cout << nuc_str << ", "
+      << PhysicalUnits::printToBestActivityUnits(energy_activities.front().second, 4, useCuries)
+      << ", " << energy_activities.front().first << " keV,"
+      << PhysicalUnits::printToBestTimeUnits(nuc->halfLife,4)
+      << endl;
+      
+      single_peak_sensitivity[nuc] = energy_activities.front().second;
+    }//if( !energy_activities.empty() )
+  }//for( const string &nuc_str : test_nucs )
+  
+  
+  const double wanted_grams = 10;
+  const double input_data_mass_grams = 35771;
+  const string csv_dir = SpecUtils::append_path( base_dir, "csv_out_all_mats_fluence_318_fast_2" );
+  const vector<string> csv_files = SpecUtils::recursive_ls( csv_dir, "35_years_exp.csv" );
+  
+  cout << "Nuclide, HalfLife (days), MinDetectableAct (bq), Expected Act (bq) per " << wanted_grams << " grams, Timespan detectable for (days), Material" << endl;
+  
+  for( const string csv_filename : csv_files )
+  {
+    ifstream file( csv_filename.c_str(), ios::in | ios::binary );
+    assert( file.is_open() );
+    
+    string line;
+    while( SpecUtils::safe_get_line( file, line ) )
+    {
+      if( SpecUtils::istarts_with(line, "CSV") )
+      {
+        assert( SpecUtils::icontains(line, "(in uCi)") );
+      }
+      
+      if( SpecUtils::istarts_with(line, "Target") || SpecUtils::istarts_with(line, "CSV") )
+        continue;
+      
+      vector<string> fields;
+      
+      // The reactions have a comma in them, but those fields are quoted, so we'll parse
+      //  with just a little bit of care
+      typedef boost::tokenizer<boost::escaped_list_separator<char> > Tokeniser;
+      boost::escaped_list_separator<char> separator("\\",",", "\"");
+      Tokeniser t( line, separator );
+      for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
+      {
+          fields.push_back( *it );
+      }
+      
+      if( fields.empty() )
+        continue;
+      
+      if( fields.size() != 8 )
+      {
+        cout << "Line contains " << fields.size() << " fields: " << line << endl;
+        continue;
+      }
+      
+      string nuc_str = fields[1];
+      SpecUtils::ireplace_all(nuc_str, "+", "" );
+      SpecUtils::ireplace_all(nuc_str, "*", "" );
+      if( SpecUtils::iends_with(nuc_str, "t") )
+        nuc_str = nuc_str.substr(0, nuc_str.size() - 1);
+      if( SpecUtils::iends_with(nuc_str, "s") )
+        nuc_str = nuc_str.substr(0, nuc_str.size() - 1);
+      
+      const SandiaDecay::Nuclide * const nuc = db->nuclide( nuc_str );
+      if( !nuc )
+      {
+        cerr << "Failed to get nuc from '" << nuc_str << "'" << endl;
+        continue;
+      }
+      
+      const string act_str_uci = fields[4];
+      if( act_str_uci == "--" )
+        continue;
+      
+      float activity_uci;
+      if( !SpecUtils::parse_float( act_str_uci.c_str(), act_str_uci.size(), activity_uci) )
+      {
+        cerr << "Failed to parse activity '" << act_str_uci << "'" << endl;
+        continue;
+      }
+      
+      activity_uci *= PhysicalUnits::microCi;
+      
+      const double wanted_mass_activity = wanted_grams * activity_uci / input_data_mass_grams;
+      
+      if( !single_peak_sensitivity.count(nuc) )
+      {
+        // Happens if there isnt a gamma
+        //cerr << "No activity limit available for " << nuc->symbol << endl;
+        continue;
+      }
+      
+      
+      /** The decay constant that is defined as
+          0.5 = exp( -decay_const*halfLife ), or put another way ln(0.5)/halfLife.
+       */
+      //min_det_act = activity_uci * exp(-nuc->decayConstant() * X )
+      //min_det_act/activity_uci = exp(-nuc->decayConstant() * X )
+      //ln( min_det_act/activity_uci ) = -nuc->decayConstant() * X
+      //X = ln( min_det_act/activity_uci ) / -nuc->decayConstant()
+      
+      const double min_det_act = single_peak_sensitivity[nuc];
+      if( activity_uci > min_det_act )
+      {
+        const double time_til_min_det = - std::log( min_det_act/activity_uci ) / nuc->decayConstant();
+        
+        cout << nuc->symbol << ","
+             << (nuc->halfLife / PhysicalUnits::day) << ","
+             << min_det_act << ","
+             << activity_uci << ","
+             << (time_til_min_det / PhysicalUnits::day) << ","
+             << SpecUtils::filename(csv_filename)
+             << endl;
+      }
+    }//while( SpecUtils::safe_get_line( file, line ) )
+  }//for( const string csv_filename : csv_files )
+  
+}//void batch_test()
+#endif
 
 CurieMdaInput::CurieMdaInput()
   : spectrum(nullptr),

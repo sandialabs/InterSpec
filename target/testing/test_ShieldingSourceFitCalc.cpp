@@ -527,13 +527,18 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
       if( selfAttNuc || (ageNuc && (ageNuc != nuc)) )
         continue;
       
-      if( src.fitActivity )
+      bool isSelfAtten = false;
+      
+      for( const auto &shield : results.initial_shieldings )
+        isSelfAtten |= shield.m_nuclideFractions.count(nuc);
+      
+      if( src.fitActivity && !isSelfAtten )
       {
         const boost::optional<double> &truthAct = src.truthActivity;
         const boost::optional<double> &tolerance = src.truthActivityTolerance;
         
-        BOOST_CHECK_MESSAGE( truthAct.has_value(), "Did not have truth activity value for " + nuc->symbol + " age." );
-        BOOST_CHECK_MESSAGE( tolerance.has_value(), "Did not have truth activity tolerance for " + nuc->symbol + " age." );
+        BOOST_CHECK_MESSAGE( truthAct.has_value(), "Did not have truth activity value for " + nuc->symbol + "." );
+        BOOST_CHECK_MESSAGE( tolerance.has_value(), "Did not have truth activity tolerance for " + nuc->symbol + "." );
         
         
         if( !truthAct || !tolerance )
@@ -784,7 +789,7 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
                                   
             const double truthval = truth_pos->second.first;
             const double truthtol = truth_pos->second.second;
-            BOOST_CHECK_MESSAGE( (truthval >= 0.0) && (truthval >= 1.0) && (truthtol >= 0.0) && (truthtol >= 1.0),
+            BOOST_CHECK_MESSAGE( (truthval >= 0.0) && (truthval <= 1.0) && (truthtol >= 0.0) && (truthtol <= 1.0),
                                 "Invalid truth mass-fraction for " + nuc->symbol );
                                       
             if( (truthval < 0.0) || (truthval > 1.0) || (truthtol < 0.0) || (truthtol > 1.0) )
@@ -808,7 +813,7 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
                                 textInfoLines.back() );
           };//checkMassFrac( ... )
           
-          for( const auto &nuc_frac : shield.m_nuclideFractionUncerts )
+          for( const auto &nuc_frac : shield.m_nuclideFractions )
           {
             checkMassFrac( nuc_frac.first, nuc_frac.second );
           }//for( const auto &prev_nuc_frac : shield.m_nuclideFractionUncerts )
@@ -827,6 +832,112 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
   return tuple<bool,int,int,vector<string>>( successful, numCorrect, numTested, textInfoLines );
 }//std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingSourceFitCalc::ModelFitResults &results )
 
+
+
+void set_fit_quantities_to_default_values( vector<ShieldingSourceFitCalc::ShieldingInfo> &shield_definitions,
+                                     vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions )
+{
+  for( ShieldingSourceFitCalc::SourceFitDef &src : src_definitions )
+  {
+    const SandiaDecay::Nuclide *nuc = src.nuclide;
+    BOOST_REQUIRE( nuc );
+    
+    const SandiaDecay::Nuclide *ageNuc = src.ageDefiningNuc;
+    const ShieldingSourceFitCalc::ModelSourceType sourceType = src.sourceType;
+    const bool selfAttNuc = (sourceType == ShieldingSourceFitCalc::ModelSourceType::Intrinsic);
+    
+    // For self-attenuating shieldings, we'll just test the shielding thickness
+    // For nuclides whose age is controlled by another nuclide, we dont need to test age.
+    if( selfAttNuc || (ageNuc && (ageNuc != nuc)) )
+      continue;
+    
+    if( src.fitActivity )
+      src.activity = 0.001*PhysicalUnits::curie;
+    
+    if( src.fitAge )
+      src.age = PeakDef::defaultDecayTime( nuc, nullptr );
+  }//for( int i = 0; i < nnuc; ++i )
+  
+  
+  for( ShieldingSourceFitCalc::ShieldingInfo &shield : shield_definitions )
+  {
+    if( shield.m_isGenericMaterial )
+    {
+      if( shield.m_fitDimensions[0] )
+        shield.m_dimensions[0] = 26; // Atomic Number
+      
+      if( shield.m_fitDimensions[1] )
+        shield.m_dimensions[1] = 0;  // Areal Density
+    }else
+    {
+      shared_ptr<const Material> mat = shield.m_material;
+      if( !mat )
+        continue;
+      
+      // Set mass-fractions to all be even, if we are fitting for them
+      if( shield.m_nuclideFractions.size() && shield.m_fitMassFrac )
+      {
+        double frac_sum = 0.0;
+        for( const auto &nuc : shield.m_nuclideFractions )
+          frac_sum += nuc.second;
+        
+        for( auto &nuc : shield.m_nuclideFractions )
+          nuc.second = (frac_sum / shield.m_nuclideFractions.size());
+      }//if( shield.m_nuclideFractions.size() && shield.m_fitMassFrac )
+      
+      switch( shield.m_geometry )
+      {
+        case GammaInteractionCalc::GeometryType::Spherical:
+          if( shield.m_fitDimensions[0] )
+            shield.m_dimensions[0] = 1.0*PhysicalUnits::cm;
+          break;
+          
+        case GammaInteractionCalc::GeometryType::CylinderEndOn:
+        case GammaInteractionCalc::GeometryType::CylinderSideOn:
+          if( shield.m_fitDimensions[0] )
+            shield.m_dimensions[0] = 0.5*PhysicalUnits::cm;
+          if( shield.m_fitDimensions[1] )
+            shield.m_dimensions[1] = 0.5*PhysicalUnits::cm;
+          break;
+          
+        case GammaInteractionCalc::GeometryType::Rectangular:
+          if( shield.m_fitDimensions[0] )
+            shield.m_dimensions[0] = 0.5*PhysicalUnits::cm;
+          if( shield.m_fitDimensions[1] )
+            shield.m_dimensions[1] = 0.5*PhysicalUnits::cm;
+          if( shield.m_fitDimensions[2] )
+            shield.m_dimensions[2] = 0.5*PhysicalUnits::cm;
+          break;
+          
+        case GammaInteractionCalc::GeometryType::NumGeometryType:
+          assert( 0 );
+          break;
+      }//switch( geometry() )
+      
+      for( ShieldingSourceFitCalc::TraceSourceInfo &trace : shield.m_traceSources )
+      {
+        if( !trace.m_fitActivity )
+          continue;
+        
+        switch( trace.m_type )
+        {
+          case GammaInteractionCalc::TraceActivityType::TotalActivity:
+            trace.m_activity = 0.001*PhysicalUnits::curie;;
+            break;
+          case GammaInteractionCalc::TraceActivityType::ActivityPerCm3:
+          case GammaInteractionCalc::TraceActivityType::ExponentialDistribution:
+          case GammaInteractionCalc::TraceActivityType::ActivityPerGram:
+            trace.m_activity = 1.0E-6*PhysicalUnits::curie;;
+            break;
+            
+          case GammaInteractionCalc::TraceActivityType::NumTraceActivityType:
+            assert( 0 );
+            break;
+        }//switch( trace.m_type )
+      }//switch( trace.m_type )
+    }//if( generic material ) / else
+  }//for( WWidget *widget : m_shieldingSelects->children() )
+}//void set_fit_quantities_to_default_values(...)
 
 
 BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
@@ -904,9 +1015,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   const rapidxml::xml_node<char> *shieldings_node = base_node->first_node( "Shieldings" );
   BOOST_REQUIRE( shieldings_node );
   
-  for( const rapidxml::xml_node<char> *shield_node = shieldings_node->first_node("Shielding");
-      shield_node;
-      shield_node = shield_node->next_sibling("Shielding") )
+  XML_FOREACH_CHILD(shield_node, shieldings_node, "Shielding")
   {
     ShieldingSourceFitCalc::ShieldingInfo info;
     BOOST_REQUIRE_NO_THROW( info.deSerialize( shield_node, &matdb ) );
@@ -918,15 +1027,15 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   const rapidxml::xml_node<char> *srcs_node = base_node->first_node( "Nuclides" );
   BOOST_REQUIRE( srcs_node );
   
-  for( const rapidxml::xml_node<char> *src_node = srcs_node->first_node("Nuclide");
-      src_node;
-      src_node = src_node->next_sibling("Nuclide") )
+  XML_FOREACH_CHILD( src_node, srcs_node, "Nuclide" )
   {
     ShieldingSourceFitCalc::SourceFitDef info;
     BOOST_REQUIRE_NO_THROW( info.deSerialize( src_node ) );
     src_definitions.push_back( info );
   }
   BOOST_REQUIRE( src_definitions.size() == 1 );
+  
+  set_fit_quantities_to_default_values( shield_definitions, src_definitions );
   
   // We have all the parts, lets do the computation:
   pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
@@ -969,4 +1078,327 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
        << numCorrect << " tests passing, out of " << numTested << ".\nNotes:" << endl;
   for( const auto &msg : textInfoLines )
     cout << "\t" << msg << endl;
+}//BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
+
+
+BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
+{
+  set_data_dir();
+  
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+ 
+  MaterialDB matdb;
+  
+  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
+  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
+  
+  const Material * const iron = matdb.material("Fe (iron)");
+  BOOST_REQUIRE( iron );
+  
+  const string base_dir = SpecUtils::append_path(g_test_file_dir, "../analysis_tests");
+  BOOST_REQUIRE( SpecUtils::is_directory(base_dir) );
+  
+  const vector<string> files = SpecUtils::recursive_ls( base_dir, ".n42" );
+  
+  // Make sure we found some files
+  BOOST_REQUIRE( files.size() >= 1 );
+  
+  for( const string n42_filename : files )
+  {
+    SpecMeas specfile;
+    const bool loaded = specfile.load_N42_file( n42_filename );
+    BOOST_CHECK_MESSAGE( loaded, "Analyst file '" << n42_filename << "' couldnt be loaded - skipping testing." );
+    if( !loaded )
+      continue;
+    
+    rapidxml::xml_document<char> *model_xml = specfile.shieldingSourceModel();
+    BOOST_CHECK_MESSAGE( model_xml, "Analyst file '" << n42_filename << "' doesnt have a ShieldingSourceModel - skipping test." );
+    if( !model_xml )
+      continue;
+    
+    rapidxml::xml_node<char> *base_node = model_xml->first_node();
+    BOOST_CHECK_MESSAGE( base_node, "Analyst file '" << n42_filename << "' has invalid ShieldingSourceModel - skipping test." );
+    if( !base_node )
+      continue;
+    
+    // We will go through and try to figure out what the "foreground" should be.
+    //  Note: we could probably just call `specfile.displayedSampleNumbers()`, but we'll
+    //        be hard on ourselves
+    const vector<string> &detectors = specfile.detector_names();
+    const set<set<int>> samplesWithPeaks = specfile.sampleNumsWithPeaks();
+    size_t num_foreground = 0, num_background = 0;
+    set<int> foreground_samples, background_samples;
+    
+    for( const set<int> &samples : samplesWithPeaks )
+    {
+      bool classified_sample_nums = false;
+      for( const int sample : samples )
+      {
+        for( const string &det : detectors )
+        {
+          auto m = specfile.measurement( sample, det );
+          if( !m )
+            continue;
+          
+          switch( m->source_type() )
+          {
+            case SpecUtils::SourceType::IntrinsicActivity:
+            case SpecUtils::SourceType::Calibration:
+              break;
+              
+            case SpecUtils::SourceType::Background:
+              classified_sample_nums = true;
+              num_background += 1;
+              background_samples = samples;
+              break;
+            
+            case SpecUtils::SourceType::Foreground:
+            case SpecUtils::SourceType::Unknown:
+              classified_sample_nums = true;
+              num_foreground += 1;
+              foreground_samples = samples;
+              break;
+          }//switch( m->source_type() )
+          
+          if( classified_sample_nums )
+            break;
+        }//for( const string &det : detectors )
+        
+        if( classified_sample_nums )
+          break;
+      }//for( const int sample : samples )
+      
+      assert( !classified_sample_nums || ((num_foreground >= 1) || (num_background >= 1)) );
+    }//for( const set<int> &samples : samplesWithPeaks )
+    
+    if( (num_background == 1) && (num_foreground == 0) )
+    {
+      std::swap( num_background, num_foreground );
+      std::swap( foreground_samples, background_samples );
+    }
+    
+    // Check that it is unambiguous what foreground the model file is to
+    BOOST_CHECK_MESSAGE( num_foreground == 1,
+                        "Analyst file '" << n42_filename << "' does not have exactly one foreground"
+                        " - skipping test." );
+    if( num_foreground != 1 )
+      continue;
+    
+    const shared_ptr<const SpecUtils::Measurement> foreground
+                 = ((foreground_samples.size() == 1) && (detectors.size() == 1))
+                   ? specfile.measurement( *begin(foreground_samples), detectors.front() )
+                   : specfile.sum_measurements( foreground_samples, detectors,  nullptr );
+    
+    BOOST_CHECK_MESSAGE( foreground,
+                        "Analyst file '" << n42_filename << "' failed to extract foreground"
+                        " - skipping test." );
+    if( !foreground )
+      continue;
+    
+    
+    // Find foreground that has act/shielding fit associated
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> foreground_peaks = specfile.peaks( foreground_samples );
+    BOOST_CHECK_MESSAGE( foreground_peaks && (foreground_peaks->size() >= 1),
+                         "Analyst file '" << n42_filename << "' didnt have peaks for the"
+                         " identified foreground - skipping test." );
+    if( !foreground_peaks || foreground_peaks->empty() )
+      continue;
+        
+    shared_ptr<const DetectorPeakResponse> detector = specfile.detector();
+    BOOST_CHECK_MESSAGE( detector && detector->isValid(),
+                        "Analyst file '" << n42_filename << "' didnt have a DRF - skipping test." );
+    
+    if( !detector || !detector->isValid() )
+      continue;
+    
+    
+    //string xml;
+    //rapidxml::print(std::back_inserter(xml), *model_xml, 0);
+    //cout << "XML: " << xml << endl;
+    
+    double distance;
+    try
+    {
+      const rapidxml::xml_node<char> *dist_node = base_node->first_node( "Distance" );
+      const string diststr = SpecUtils::xml_value_str( dist_node );
+      distance = PhysicalUnits::stringToDistance( diststr );
+    }catch( std::exception &e )
+    {
+      BOOST_CHECK_MESSAGE( false,
+                          "Analyst file '" << n42_filename << "' <Distance> node invalid: "
+                          << e.what() << " - skipping test." );
+      continue;
+    }//try / catch to get distance
+    
+    GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+    
+    const rapidxml::xml_node<char> *geom_node = base_node->first_node( "Geometry" );
+    const string geomstr = SpecUtils::xml_value_str( geom_node );
+    
+    for( GammaInteractionCalc::GeometryType type = GammaInteractionCalc::GeometryType(0);
+        type != GammaInteractionCalc::GeometryType::NumGeometryType;
+        type = GammaInteractionCalc::GeometryType(static_cast<int>(type) + 1) )
+    {
+      if( SpecUtils::iequals_ascii(geomstr, GammaInteractionCalc::to_str(type)) )
+      {
+        geometry = type;
+        break;
+      }
+    }
+    
+    BOOST_CHECK_MESSAGE( geometry != GammaInteractionCalc::GeometryType::NumGeometryType,
+                        "Analyst file '" << n42_filename << "' <Geometry> node missing or invalid"
+                        " - skipping test.");
+    if( geometry == GammaInteractionCalc::GeometryType::NumGeometryType )
+      continue;
+    
+    
+    vector<ShieldingSourceFitCalc::ShieldingInfo> shield_definitions;
+    vector<ShieldingSourceFitCalc::SourceFitDef> src_definitions;
+    ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+    try
+    {
+      options.deSerialize( base_node );
+    }catch( std::exception &e )
+    {
+      BOOST_CHECK_MESSAGE( false,
+                          "Analyst file '" << n42_filename << "' Options invalid: "
+                          << e.what()
+                          << " - skipping test.");
+      continue;
+    }
+
+    
+    BOOST_CHECK_MESSAGE( !options.background_peak_subtract || (num_background <= 1),
+                        "Analyst file '" << n42_filename << "' Options indicated"
+                        " background-subtract, but background is ambiguous. - skipping test.");
+    if( options.background_peak_subtract && (num_background > 1) )
+      continue;
+    
+    // It looks like background subtract _could_ be set to true, even if we didnt have any
+    //  background peaks for the fit - at least if things are defined not using the GUI (the
+    //  GUI enforces background peaks must be present to have this option checked) so I guess
+    //  we'll just be a bit loose around this for now, but we probably dont have to be.
+    shared_ptr<const SpecUtils::Measurement> background;
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> background_peaks;
+    if( options.background_peak_subtract && (num_background == 1) )
+    {
+      background = specfile.sum_measurements( background_samples, detectors, nullptr );
+      BOOST_CHECK_MESSAGE( background && (background->num_gamma_channels() > 16),
+                          "Analyst file '" << n42_filename << "' Options indicated"
+                          " background-subtract, but background couldnt be extracted - skipping test.");
+      if( !background || (background->num_gamma_channels() <= 16) )
+        continue;
+      
+      background_peaks = specfile.peaks( background_samples );
+      
+      if( background_peaks && background_peaks->empty() )
+      {
+        background = nullptr;
+        background_peaks.reset();
+      }
+      
+      BOOST_WARN_MESSAGE( background_peaks, "Analyst file '" + n42_filename + "' Options indicated"
+                   " background-subtract, but no background peaks found - continuing anyway." );
+    }//if( options.background_peak_subtract && (num_background == 1) )
+    
+    
+    const rapidxml::xml_node<char> *shieldings_node = base_node->first_node( "Shieldings" );
+    BOOST_REQUIRE( shieldings_node );
+    
+    bool success_parsing = true;
+    XML_FOREACH_CHILD(shield_node, shieldings_node, "Shielding")
+    {
+      try
+      {
+        ShieldingSourceFitCalc::ShieldingInfo info;
+        info.deSerialize( shield_node, &matdb );
+        shield_definitions.push_back( std::move(info) );
+      }catch( std::exception &e )
+      {
+        success_parsing = false;
+        BOOST_CHECK_MESSAGE( false,
+                            "Analyst file '" << n42_filename << "' <Shielding> node invalid: "
+                             << e.what() << " - skipping test.");
+      }
+    }//XML_FOREACH_CHILD(shield_node, shieldings_node, "Shielding")
+    
+    if( !success_parsing )
+      continue;
+    
+    
+    const rapidxml::xml_node<char> *srcs_node = base_node->first_node( "Nuclides" );
+    BOOST_CHECK_MESSAGE( srcs_node,
+                        "Analyst file '" << n42_filename << "' missing <Nuclides> node: "
+                         " - skipping test.");
+    
+    XML_FOREACH_CHILD( src_node, srcs_node, "Nuclide" )
+    {
+      try
+      {
+        ShieldingSourceFitCalc::SourceFitDef info;
+        info.deSerialize( src_node );
+        src_definitions.push_back( std::move(info) );
+      }catch( std::exception &e )
+      {
+        success_parsing = false;
+        BOOST_CHECK_MESSAGE( false,
+                            "Analyst file '" << n42_filename << "' <Nuclide> node invalid: "
+                             << e.what() << " - skipping test.");
+      }// try / catch
+    }//XML_FOREACH_CHILD( src_node, srcs_node, "Nuclide" )
+    
+    if( !success_parsing )
+      continue;
+    
+    BOOST_CHECK_MESSAGE( src_definitions.size() >= 1,
+                        "Analyst file '" << n42_filename << "' no sources defined." );
+    
+    
+    set_fit_quantities_to_default_values( shield_definitions, src_definitions );
+    
+    // We have all the parts, lets do the computation:
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geometry,
+                                                         shield_definitions, src_definitions, detector,
+                                                         foreground, background, *foreground_peaks, background_peaks, options );
+    
+    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+    *inputPrams = fcn_pars.second;
+    
+    auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+    auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+    
+    
+    auto progress_fcn = [progress](){
+      // Probably wont get called, since its a simple fit
+    };
+    
+    bool finished_fit_called = false;
+    auto finished_fcn = [results, &finished_fit_called](){
+      finished_fit_called = true;
+    };
+    
+    ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn, results, finished_fcn );
+    
+    BOOST_CHECK( finished_fit_called );
+    
+    BOOST_CHECK_MESSAGE( results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final,
+                        "Analyst file '" << n42_filename << "': Fit status was not successful" );
+    
+    BOOST_CHECK_MESSAGE( results->fit_src_info.size() == src_definitions.size(),
+                        "Analyst file '" << n42_filename << "': Fit sources size not equal to input." );
+    
+    tuple<bool,int,int,vector<string>> test_results = test_fit_against_truth( *results );
+    const bool successful = get<0>(test_results);
+    const int numCorrect = get<1>(test_results);
+    const int numTested = get<2>(test_results);
+    const vector<string> &textInfoLines = get<3>(test_results);
+    
+    cout << (successful ? "Successfully" : "Unsuccessfully") << " checked against truth values with "
+    << numCorrect << " tests passing, out of " << numTested << ".\nNotes:" << endl;
+    for( const auto &msg : textInfoLines )
+      cout << "\t" << msg << endl;
+  }//for( const string n42_filename : files )
 }//BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )

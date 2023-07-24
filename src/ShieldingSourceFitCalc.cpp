@@ -2256,6 +2256,8 @@ void fit_model( const std::string wtsession,
       assert( shield.m_material.get() == chi2Fcn->material(shielding_index) );
       
 #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+      shield.m_truthFitMassFractions = initial_shield.m_truthFitMassFractions;
+      
       for( size_t i = 0; i < 3; ++i )
       {
         shield.m_truthDimensions[i] = initial_shield.m_truthDimensions[i];

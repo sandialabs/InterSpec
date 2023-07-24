@@ -6882,6 +6882,11 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   attr = doc->allocate_attribute( "version", value );
   base_node->append_attribute( attr );
   
+  // TODO: maybe add detector names, and sample numbers being used, for both the foeground
+  //       and background - this will make it easier to extract the model out of the N42 file.
+  //       Or rather, could associate the shield/source model with foreground sample
+  //       numbers/detector, like peaks (but then would still need background info).
+  
   value = GammaInteractionCalc::to_str( geometry() );
   node = doc->allocate_node( rapidxml::node_element, "Geometry", value );
   base_node->append_node( node );

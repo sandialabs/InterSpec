@@ -56,7 +56,7 @@ namespace BatchPeak
    TODO:
    - specify a struct that contains all the options for the fit - we will likely be adding more options, like statistical significance
    - have a .ini file able to back the command line options, so users can specify their own default options
-   - Break this function up to doing one file at a time, so it 
+   - When peaks are not fit for, print out their Currie detection limit
    */
   
   struct BatchPeakFitOptions
