@@ -118,6 +118,7 @@
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -787,29 +788,16 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   
   wApp->useStyleSheet( "InterSpec_resources/SpecMeasManager.css" );
   
-  for( SpecUtils::SaveSpectrumAsType type = SpecUtils::SaveSpectrumAsType(0);
-      type < SpecUtils::SaveSpectrumAsType::NumTypes;
-      type = SpecUtils::SaveSpectrumAsType(static_cast<int>(type)+1) )
-  {
-    m_downloadResources[static_cast<int>(type)] = new DownloadSpectrumResource(type, this, this);
-  }
-  
-//
-    m_treeView = new RowStretchTreeView();
-    m_fileModel = new SpectraFileModel( m_treeView );
-    m_treeView->setModel( m_fileModel );
-    m_treeView->selectionChanged().connect( boost::bind( &SpecMeasManager::selectionChanged, this ) );
+  m_treeView = new RowStretchTreeView();
+  m_fileModel = new SpectraFileModel( m_treeView );
+  m_treeView->setModel( m_fileModel );
+  m_treeView->selectionChanged().connect( boost::bind( &SpecMeasManager::selectionChanged, this ) );
 
-    startSpectrumManager(); //initializes
-    deleteSpectrumManager(); //deletes instance
+  startSpectrumManager(); //initializes
+  deleteSpectrumManager(); //deletes instance
     
   m_sql = viewer->sql();
 
-  for( SpecUtils::SaveSpectrumAsType i = SpecUtils::SaveSpectrumAsType(0);
-      i < SpecUtils::SaveSpectrumAsType::NumTypes;
-       i = SpecUtils::SaveSpectrumAsType(static_cast<int>(i)+1) )
-    m_specificResources[static_cast<int>(i)] = (SpecificSpectrumResource *)0;
-  
   m_foregroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this,
                                                          boost::placeholders::_1,
                                                          boost::placeholders::_2,
@@ -3382,191 +3370,6 @@ void SpecMeasManager::setDisplayedToSelected()
 }//void SpecMeasManager::setDisplayedToSelected()
 
 
-void SpecMeasManager::displayQuickSaveAsDialog()
-{
-  AuxWindow *dialog = new AuxWindow( "Save As...",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-               | AuxWindowProperties::TabletNotFullScreen
-               | AuxWindowProperties::DisableCollapse) );
-  
-  dialog->centerWindow();
-  dialog->addStyleClass( "QuickSaveAsDialog" );
-
-  std::shared_ptr<const SpecMeas> data, second, background, initial;
-  data       = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
-  second     = m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
-  background = m_viewer->measurment(SpecUtils::SpectrumType::Background);
-
-  initial = data;
-  if( !initial )
-    initial = second;
-  if( !initial )
-    initial = background;
-
-  if( !initial )
-  {
-    const string msgstr = "There are no spectrums loaded into the viewer<br />"
-                          "Please use the <b>File Manager</b> for more options.";
-
-    WText *msg = new WText( msgstr, XHTMLUnsafeText, dialog->contents() );
-    msg->setInline( false );
-    WPushButton *ok = new WPushButton( "Ok", dialog->contents() );
-    ok->clicked().connect( dialog, &AuxWindow::hide );
-    dialog->show();
-    return;
-  } // if( !initial )
-
-
-  WModelIndex fileIndex = m_fileModel->index( initial );
-  std::shared_ptr<const SpectraFileHeader> fileHeader
-                                  = m_fileModel->fileHeader( fileIndex.row() );
-  
-  const vector<string> detnames = m_viewer->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
-  set<int> samplenums;
-  if( data == initial )
-    samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
-  
-  for( SpecUtils::SaveSpectrumAsType i = SpecUtils::SaveSpectrumAsType(0);
-      i < SpecUtils::SaveSpectrumAsType::NumTypes;
-      i = SpecUtils::SaveSpectrumAsType(static_cast<int>(i)+1) )
-  {
-    SpecificSpectrumResource *&resource = m_specificResources[toint(i)];
-    if( !resource )
-    {
-      resource = new SpecificSpectrumResource(i, this);
-      resource->setTakesUpdateLock( true );
-    }
-
-    resource->setSpectrum( initial, samplenums, detnames );
-  }//loop over save as types
-  
-  const string msgstr = "Please select the file format:";
-
-  WText *msg = new WText( msgstr, XHTMLUnsafeText, dialog->contents() );
-  msg->setInline( false );
-
-  int nspecs = 0;
-  if( data ) ++nspecs;
-  if( second ) ++nspecs;
-  if( background ) ++nspecs;
-
-  WButtonGroup *group = nullptr;
-  if( nspecs > 1 )
-  {
-    WGroupBox *buttons = new WGroupBox( "Which file to save:",
-                                        dialog->contents() );
-    group = new WButtonGroup( dialog->contents() );
-    if( data )
-    {
-      WRadioButton *button = new WRadioButton( "Foreground", buttons );
-      button->setInline( false );
-      button->setChecked( true );
-      
-      samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
-      
-      for( SpecUtils::SaveSpectrumAsType i = SpecUtils::SaveSpectrumAsType(0);
-           i < SpecUtils::SaveSpectrumAsType::NumTypes;
-           i = SpecUtils::SaveSpectrumAsType(static_cast<int>(i)+1) )
-      {
-        button->clicked().connect(
-                          boost::bind( &SpecificSpectrumResource::setSpectrum,
-                                       m_specificResources[static_cast<int>(i)], data,
-                                       samplenums, detnames ) );
-      }
-      
-      group->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Foreground) );
-    }//if( data )
-
-    if( background )
-    {
-      WRadioButton *button = new WRadioButton( "Background", buttons );
-      button->setInline( false );
-      group->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Background) );
-      if( !data )
-        button->setChecked();
-      
-      samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::SecondForeground );
-      for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-          i < SaveSpectrumAsType::NumTypes;
-          i = SaveSpectrumAsType(toint(i)+1) )
-      {
-        button->clicked().connect(
-                          boost::bind( &SpecificSpectrumResource::setSpectrum,
-                                       m_specificResources[toint(i)], background,
-                                       samplenums, detnames ) );
-      }
-    } // if( background )
-    
-    if( second )
-    {
-      WRadioButton *button = new WRadioButton( "Secondary", buttons );
-      button->setInline( false );
-      group->addButton( button, static_cast<int>(SpecUtils::SpectrumType::SecondForeground) );
-      
-      samplenums = m_viewer->displayedSamples( SpectrumType::SecondForeground );
-      for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-          i < SaveSpectrumAsType::NumTypes;
-          i = SaveSpectrumAsType(static_cast<int>(i)+1) )
-      {
-        button->clicked().connect(
-                                  boost::bind( &SpecificSpectrumResource::setSpectrum,
-                                              m_specificResources[toint(i)], second,
-                                              samplenums, detnames ) );
-      }
-    }//if( second )
-  } // if( nspecs > 1 )
-
-  WContainerWidget *linkDiv = new WContainerWidget( dialog->contents() );
-  linkDiv->setList( true, false );
-
-  for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-      i < SaveSpectrumAsType::NumTypes;
-      i = SaveSpectrumAsType(toint(i)+1) )
-  {
-    const string linktitle = string("As ") + descriptionText(i) + " File";
-    SpecificSpectrumResource *resource = m_specificResources[toint(i)];
-    WAnchor *a = new WAnchor( resource, linktitle, linkDiv );
-    a->setTarget( TargetNewWindow );
-    a->setInline( false );
-    a->setStyleClass( "LoadSpectrumSaveAsLink" );
-    
-#if( ANDROID )
-    // Using hacked saving to temporary file in Android, instead of via network download of file.
-    a->clicked().connect( std::bind([resource,dialog](){
-      android_download_workaround(resource, "spec_file_export");
-      dialog->hide();
-    }) );
-#else
-    a->clicked().connect( dialog, &AuxWindow::hide );
-#endif
-  }//for( SaveSpectrumAsType i = ... )
-  
-  
-#if( USE_QR_CODES )
-  {// begin add QR code display link
-    const string linktitle = "As QR code / URL";
-    WAnchor *a = new WAnchor( linktitle, linkDiv );
-    a->setInline( false );
-    a->setStyleClass( "LoadSpectrumSaveAsLink" );
-    
-    auto displayQr = [=](){
-      const int selindex = group ? group->checkedId() : static_cast<int>(SpecUtils::SpectrumType::Foreground);
-      SpecUtils::SpectrumType type = selindex >= 0 ? SpecUtils::SpectrumType(selindex) : SpecUtils::SpectrumType::Foreground;
-      displaySpectrumQrCode( type );
-      dialog->hide();
-    };
-    a->clicked().connect( std::bind( displayQr ) );
-  }// begin add QR code display link
-#endif
-
-  WPushButton *cancel = new WPushButton( "Cancel", dialog->contents() );
-  cancel->setInline( false );
-  cancel->clicked().connect( dialog, &AuxWindow::hide );
-  dialog->finished().connect( boost::bind( &SpecMeasManager::cleanupQuickSaveAsDialog, this, dialog, wApp ) );
-  
-  dialog->show();
-} // void SpecMeasManager::displayQuickSaveAsDialog();
-
 
 void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas, const bool undisplay )
 {
@@ -3695,75 +3498,6 @@ void SpecMeasManager::removeAllFiles()
   
   m_fileModel->removeRows( 0, m_fileModel->rowCount() );
 }//void removeAllFiles()
-
-
-void SpecMeasManager::renameSaveAsFile()
-{
-  //if multiple files
-  string origName;
-  
-  set< std::shared_ptr<SpectraFileHeader> > headers;
-  const WModelIndexSet selected = m_treeView->selectedIndexes();
-  
-  for( const WModelIndex &index : selected )
-  {
-    std::shared_ptr<SpectraFileHeader> header;
-    const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
-    
-    switch( indexLevel )
-    {
-      case SpectraFileModel::FileHeaderLevel:
-        header = m_fileModel->fileHeader( index.row() );
-        break;
-      
-      case SpectraFileModel::SampleLevel:
-        header = m_fileModel->fileHeader( index.parent().row() );
-        break;
-      
-      case SpectraFileModel::InvalidLevel:
-        break;
-    }// switch( level(index) )
-      
-    if( header )
-      headers.insert( header );
-  }//for( const WModelIndex &index : selected )
-    
-  if( headers.size() > 1 )
-  {
-    origName = "multiple";
-  }else
-  {
-    std::shared_ptr<SpectraFileHeader> selected = selectedFile();
-    if( !selected )
-      return;
-      
-    origName = selected->displayName().toUTF8();
-    
-    const size_t pos = origName.find_last_of( "." );
-    if( pos!=string::npos && ((origName.size()-pos)==4) )
-      origName = origName.substr( 0, pos );
-      
-    std::shared_ptr<SpecMeas> meas = selected->measurementIfInMemory();
-    const std::set<int> selectedSamples = selectedSampleNumbers();
-    if( !!meas && (selectedSamples != meas->sample_numbers()) && selectedSamples.size() )
-    {
-      if( selectedSamples.size() == 1 )
-        origName += "_sample" + std::to_string( *selectedSamples.begin() );
-      else
-        origName += "_" + std::to_string( selectedSamples.size() ) + "subsamples";
-    }//
-  }//if( headers.size() > 1 )
-  
-  
-  
-  for( SaveSpectrumAsType type = SaveSpectrumAsType(0);
-      type < SaveSpectrumAsType::NumTypes;
-      type = SaveSpectrumAsType(static_cast<int>(type)+1) )
-  {
-    const string name = origName + "." + suggestedNameEnding( type );
-    m_downloadResources[toint(type)]->suggestFileName( name, WResource::Attachment );
-  }
-} // void SpecMeasManager::renameSaveAsFile()
 
 
 std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
@@ -4391,31 +4125,8 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   m_sumSpectraButton->hide();
   
   
-  m_saveButton = new Wt::WPushButton("Export",m_newDiv);
-  m_saveButton->setIcon( "InterSpec_resources/images/bullet_arrow_down.png" );
-  Wt::WPopupMenu *setPopup2 = new Wt::WPopupMenu();
-  
-  m_saveButton->mouseWentOver().connect( boost::bind( &SpecMeasManager::renameSaveAsFile, this ) );
-  
-  for( SpecUtils::SaveSpectrumAsType type = SpecUtils::SaveSpectrumAsType(0);
-      type < SpecUtils::SaveSpectrumAsType::NumTypes;
-      type = SpecUtils::SaveSpectrumAsType(static_cast<int>(type)+1) )
-  {
-    const string descrip = string("As ") + descriptionText(type) + " File";
-    WMenuItem *temp = setPopup2->addItem( descrip );
-    DownloadSpectrumResource *resource = m_downloadResources[toint(type)];
-    temp->setLink( resource );
-    temp->setLinkTarget( TargetNewWindow );
-    
-#if( ANDROID )
-    // Using hacked saving to temporary file in Android, instead of via network download of file.
-    temp->clicked().connect( std::bind([resource](){
-      android_download_workaround(resource, "spec_download");
-    }) );
-#endif //ANDROID
-  }//for( loop over save-as spectrum file types )
-  
-  m_saveButton->setMenu( setPopup2 );
+  m_saveButton = new Wt::WPushButton( "Export...", m_newDiv );
+  m_saveButton->clicked().connect( this, &SpecMeasManager::startSaveSelected );
   m_saveButton->hide();
   
   
@@ -5151,36 +4862,6 @@ void SpecMeasManager::addToTempSpectrumInfoCache( std::shared_ptr<const SpecMeas
 } // void SpecMeasManager::addToTempSpectrumInfoCache()
 
 
-
-void SpecMeasManager::cleanupQuickSaveAsDialog( AuxWindow *dialog, WApplication *app )
-{
-  if( !dialog || !app )
-    return;
-
-  WApplication::UpdateLock lock( app );
-
-  if( !lock )
-  {
-    //Probably wont ever happen, and if it does, we want to end things anyway.
-    cerr << "\nSpecMeasManager::cleanupQuickSaveAsDialog(...)\n\tFailed to get app lock - not doing anything!\n\n" << endl;
-    return;
-  }
-  
-  
-  //dialog->accept();
-  delete dialog;
-    
-  for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-      i < SaveSpectrumAsType::NumTypes;
-      i = SaveSpectrumAsType(static_cast<int>(i)+1) )
-  {
-    m_specificResources[toint(i)]->setSpectrum( nullptr, {}, {} );
-  }
-    
-  app->triggerUpdate();
-}//void cleanupQuickSaveAsDialog(...)
-
-
 void SpecMeasManager::fileTooLarge( const ::int64_t size_tried )
 {
   const int max_size = static_cast<int>( WApplication::instance()->maximumRequestSize() );
@@ -5194,6 +4875,56 @@ void SpecMeasManager::fileTooLarge( const ::int64_t size_tried )
 void SpecMeasManager::uploadSpectrum() {
   new UploadBrowser(this/*, m_viewer*/);
 }
+
+
+void SpecMeasManager::startSaveSelected()
+{
+  if (!m_spectrumManagerWindow || m_spectrumManagerWindow->isHidden())
+    return;
+  
+  vector<shared_ptr<SpectraFileHeader>> files = getSelectedFiles();
+  if( files.empty() )
+  {
+    passMessage( "No files selected for export.", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  if( files.size() > 1 )
+  {
+    passMessage( "More than one files selected for export; not allowed.", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  shared_ptr<SpectraFileHeader> header = files.front();
+  
+  
+  shared_ptr<SpecMeas> spec = header ? header->parseFile() : nullptr;
+  if( !spec )
+  {
+    passMessage( "Programming logic error: couldn't locate spectrum file to export.", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  const set<int> sample_numbers = selectedSampleNumbers();
+  if( sample_numbers.empty() )
+  {
+    passMessage( "Error determining sample numbers to export.", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  // The undo/redo wont be perfect, because if the user does undo, and then redo, the dialog
+  //  wont have the specific spectrum file we want.
+  //  We could do things properly, but then we have to trac the created ExportSpecFileWindow
+  //  window in this class; for a first go this added complexity isnt worth it for the edge-case.
+  ExportSpecFileWindow *window = m_viewer->createExportSpectrumFileDialog();
+  if( !window )
+  {
+    passMessage( "Programming logic error creating export dialog", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  window->setSpecificSpectrum( spec, sample_numbers, spec->detector_names(), m_viewer );
+}//void startSaveSelected()
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
