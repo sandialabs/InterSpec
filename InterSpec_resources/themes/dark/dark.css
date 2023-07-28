@@ -68,6 +68,10 @@ a:hover, .InfoLink:hover {
   color: rgb(99, 161, 236);
 }
 
+.InfoLink, .InfoLink:hover {
+  border: none;
+}
+
 .Wt-icon, .InvertInDark {
   filter: invert(100%);
 }
@@ -165,7 +169,7 @@ ul.Wt-tv-root > li:nth-child(odd) {
   color: rgb(197,198,201);
 }
 
-.Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th, .DevPairTitle, .CalDisplay .CalType, .DetHdr {
+.Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th, .DevPairTitle, .CalDisplay .CalType, .DetHdr, .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
   background-color: rgb( 80, 81, 94 );
 }
 
@@ -212,7 +216,7 @@ ul.HeavyNavMenu > li.item:hover  {
     border-color: rgb(136, 136, 136);
 }
 
-.DevPairTitle, .DevPairEnergyHeader, .DevPairOffsetHeader {
+.DevPairTitle, .DevPairEnergyHeader, .DevPairOffsetHeader, .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
   color: rgb(197,198,201);
 }
 
