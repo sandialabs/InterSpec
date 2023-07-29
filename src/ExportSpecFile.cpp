@@ -28,7 +28,9 @@
 #include <vector>
 #include <iostream>
 
+#include <Wt/WPushButton>
 #include <Wt/WApplication>
+#include <Wt/WContainerWidget>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
@@ -52,7 +54,8 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
   m_is_specific_file( false ),
   m_specific_spectrum( nullptr ),
   m_specific_samples{},
-  m_specific_detectors{}
+  m_specific_detectors{},
+  m_done( this )
 {
   init();
 }//ExportSpecFileTool()
@@ -68,7 +71,8 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
   m_is_specific_file( false ),
   m_specific_spectrum( spectrum ),
   m_specific_samples{ samples },
-  m_specific_detectors{ detectors }
+  m_specific_detectors{ detectors },
+  m_done( this )
 {
   init();
 }//
@@ -76,9 +80,30 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
 
 void ExportSpecFileTool::init()
 {
+  addStyleClass( "ExportSpecFileTool" );
   
+  WContainerWidget *body = new WContainerWidget( this );
+  body->addStyleClass( "ExportSpecFileBody" );
+  
+  
+  WContainerWidget *footer = new WContainerWidget( this );
+  footer->addStyleClass( "ExportSpecFileFooter" );
+  WPushButton *cancel_btn = new WPushButton( "Cancel", footer );
+  cancel_btn->clicked().connect( boost::bind( &ExportSpecFileTool::emitDone, this, false) );
+  
+  WPushButton *export_btn = new WPushButton( "Export", footer );
 }//void init()
 
+
+Wt::Signal<bool> &ExportSpecFileTool::done()
+{
+  return m_done;
+}
+
+void ExportSpecFileTool::emitDone( const bool exported )
+{
+  m_done.emit(exported);
+}
 
 void ExportSpecFileTool::handleAppUrl( std::string query_str )
 {
@@ -96,9 +121,16 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   : SimpleDialog( "Spectrum File Export", "" ),
   m_tool( nullptr )
 {
-    
-  addButton( "Cancel" );
-}
+  wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
+  
+  addStyleClass( "export-spec-file" );
+  
+  const int w = viewer->renderedWidth();
+  setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 640.0) : 640.0 ,WLength::Pixel), WLength::Auto );
+  
+  m_tool = new ExportSpecFileTool( viewer, contents() );
+  m_tool->done().connect( boost::bind(&ExportSpecFileWindow::accept, this) );
+}//ExportSpecFileWindow( constructor )
 
 
 void ExportSpecFileWindow::setSpecificSpectrum( const std::shared_ptr<const SpecMeas> &spectrum,
@@ -106,7 +138,9 @@ void ExportSpecFileWindow::setSpecificSpectrum( const std::shared_ptr<const Spec
                          const std::vector<std::string> &detectors,
                          InterSpec *viewer )
 {
-  
+  delete m_tool;
+  m_tool = new ExportSpecFileTool( spectrum, samples, detectors, viewer, contents() );
+  m_tool->done().connect( boost::bind(&ExportSpecFileWindow::accept, this) );
 }//void setSpecificSpectrum(...)
 
 

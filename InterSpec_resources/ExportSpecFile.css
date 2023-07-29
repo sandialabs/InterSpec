@@ -1,0 +1,43 @@
+
+
+.simple-dialog.export-spec-file
+{
+  font-size: 16px;
+  max-width: 95vw;
+  max-height: 95vh;
+  width: min(95vw, 640px);
+  height: min(95vh, 480px);
+}
+
+.simple-dialog.export-spec-file .body
+{
+  width: min(calc(95vw - 30px), 610px);
+  height: min(calc(95vw - 90px), 370px);
+  
+  max-width: min(calc(95vw - 30px), 610px);
+  max-height: min(calc(95vw - 90px), 370px);
+}
+
+
+.ExportSpecFileTool
+{
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.ExportSpecFileTool .ExportSpecFileBody
+{
+  flex-grow: 2;
+  border: 1px solid red;
+}
+
+.ExportSpecFileTool .ExportSpecFileFooter
+{
+  height: 40px;
+  display: flex;
+  border: 1px solid green;
+  justify-content: flex-end;
+  align-items: center;
+  column-gap: 20px;
+}

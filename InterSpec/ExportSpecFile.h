@@ -50,7 +50,7 @@ namespace SpecUtils
 }
 
 
-class ExportSpecFileTool : Wt::WContainerWidget
+class ExportSpecFileTool : public Wt::WContainerWidget
 {
 public:
   /** Constructor to create tool to select from any currently loaded spectrum files. */
@@ -67,6 +67,10 @@ public:
                       const std::vector<std::string> &detectors,
                       InterSpec *viewer,
                       Wt::WContainerWidget *parent );
+  
+  Wt::Signal<bool> &done();
+  
+  void emitDone( const bool exported );
   
   /** Handles receiving a "deep-link" url starting with "interspec://specsum/...".
    
@@ -97,6 +101,9 @@ protected:
   std::shared_ptr<const SpecMeas> m_specific_spectrum;
   std::set<int> m_specific_samples;
   std::vector<std::string> m_specific_detectors;
+  
+  
+  Wt::Signal<bool> m_done;
 };//class ExportSpecFileTool
 
 
