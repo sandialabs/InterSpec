@@ -4062,7 +4062,7 @@ void ShieldingSelect::updateMaterialFromUserInputTxt()
   
   const string text = SpecUtils::trim_copy( m_materialEdit->text().toUTF8() );
   if( m_currentMaterial && (text == m_currentMaterialDescrip) )
-    return m_currentMaterial;
+    return;
 
   if( text.empty() )
   {

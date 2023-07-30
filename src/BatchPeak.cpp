@@ -232,8 +232,6 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     cerr << endl << endl;
   for( const auto warn : warnings )
     cerr << warn << endl;
-  
-  return EXIT_SUCCESS;
 }//fit_peaks_in_files(...)
   
   

@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <iostream>
 #include <stdexcept>
 
 // Some includes to get terminal width (and UTF-8 cl arguments on WIndows)

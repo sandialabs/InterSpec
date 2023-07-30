@@ -79,7 +79,7 @@ namespace AppUtils
  wchar_t *wenvstrings = GetEnvironmentStringsW();
  ...
  */
-void getUtf8Args( int &argc, char ** &argv )
+void getUtf8Args( int &argc, char **&argv );
 #endif
 }//namespace AppUtils
 
