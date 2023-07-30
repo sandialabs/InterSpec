@@ -268,13 +268,16 @@ InterSpecWxApp::InterSpecWxApp() :
     parser.AddSwitch( "l", "test-load", 
       "Test that the applicaiton successfully loads and then exits.", 
       wxCMD_LINE_PARAM_OPTIONAL );
+    parser.AddSwitch( "d", "dev", 
+      "Opens html/js developer console.", 
+      wxCMD_LINE_PARAM_OPTIONAL );
 
     parser.AddLongOption( "proxy",
       "Proxy configuration to use (only applicable to maps tool); valid values are:"
       " empty (defualt), 'direct', 'auto_detect', 'system', "
       "or any other string any other string will be interpreted as the 'proxyRules'.",
       wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL );
-
+    
     parser.AddParam("File or URI to open", wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL | wxCMD_LINE_PARAM_MULTIPLE);
   }
 
@@ -317,6 +320,9 @@ InterSpecWxApp::InterSpecWxApp() :
 
     if( parser.Found( "max-run-time", &sm_max_runtime_seconds ) && (sm_max_runtime_seconds > 0) )
       sm_max_runtime_timer.reset( new MaxRuntimeTimer( this, sm_max_runtime_seconds ) );
+
+    if( parser.FoundSwitch( "dev" ) == wxCMD_SWITCH_ON )
+      sm_open_dev_console = true;
 
     sm_command_line_parsed = true;
 
@@ -464,6 +470,8 @@ InterSpecWxApp::InterSpecWxApp() :
 
   void InterSpecWxApp::handle_javascript_error_internal( const std::string &error_msg, const std::string &app_token )
   {
+    wxLogMessage( "Have JS Error; msg='%s', session='%s'", error_msg, app_token );
+
     std::cout << "JS Error: " << error_msg << std::endl;
     if( sm_test_load_only )
     {
@@ -514,9 +522,6 @@ InterSpecWxApp::InterSpecWxApp() :
       frame->Close();
     else
       close_all_windows_and_exit();
-
-
-    wxLogMessage( "Have JS Error; msg='%s', session='%s'", error_msg, app_token );
   }//void handle_javascript_error_internal( const std::string &error_msg, const std::string &app_token );
 
 
@@ -749,7 +754,7 @@ InterSpecWxApp::InterSpecWxApp() :
 
     if( sm_test_load_only )
     {
-     // Right now we'll just wait 180 seconds, and if things havent loaded, declare failure.
+     // Right now we'll just wait 90 seconds, and if things havent loaded, declare failure.
      //  Normally shouldnt take very long, but on some test runners it can take a while.
      // When things load, we'll stop this timer and clear it.
      // 
@@ -758,7 +763,7 @@ InterSpecWxApp::InterSpecWxApp() :
      //   void InterSpecApp::prepareForEndOfSession()
      //   void InterSpecApp::finalize()
      //   for possible hooks to check failure.
-      sm_check_load_timer.reset( new CheckLoadTimer( this, 180 ) );
+      sm_check_load_timer.reset( new CheckLoadTimer( this, 90 ) );
     }//if( sm_test_load_only )
 
     InterSpecWebFrame* frame = new InterSpecWebFrame(m_url, no_restore, file_to_open);

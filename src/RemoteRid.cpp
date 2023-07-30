@@ -43,6 +43,9 @@
 
 #include <boost/process.hpp>
 #include <boost/filesystem.hpp>
+#if( defined(_WIN32) )
+#include <boost/process/windows.hpp>
+#endif
 
 #include <Wt/Utils>
 #include <Wt/WMenu>
