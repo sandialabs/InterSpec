@@ -119,7 +119,12 @@ option(
 
 option(USE_REMOTE_RID "Enables using remote RID tool" OFF)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
-option(USE_BATCH_TOOLS "Enables (command line for now) batch processing." OFF )
+
+if( IOS OR ANDROID OR BUILD_AS_OSX_APP )
+  set( USE_BATCH_TOOLS OFF CACHE INTERNAL "")
+else()
+  option(USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
+endif()
 
 if(MSVC)
   option(${PROJECT_NAME}_USE_MSVC_MultiThreadDLL "Use dynamically-link runtime library." OFF)
