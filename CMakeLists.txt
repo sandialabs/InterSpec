@@ -474,6 +474,7 @@ endif(USE_GOOGLE_MAP)
 if(USE_LEAFLET_MAP)
     list(APPEND sources src/LeafletRadMap.cpp)
     list(APPEND headers InterSpec/LeafletRadMap.h)
+    list(APPEND OTHER_InterSpec_SUPPORT_FILES InterSpec_resources/LeafletRadMap.js)
 endif(USE_LEAFLET_MAP)
 
 if(USE_SEARCH_MODE_3D_CHART)
@@ -568,7 +569,7 @@ deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resou
 
 
 
-list( APPEND OTHER_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js )
+list( APPEND OTHER_InterSpec_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js )
 
 deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
          "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js"
@@ -841,7 +842,7 @@ endif( WIN32 )
 #endif()
 
 
-list( APPEND OTHER_SUPPORT_FILES
+list( APPEND OTHER_InterSpec_SUPPORT_FILES
      ${CMAKE_CURRENT_SOURCE_DIR}/README.md
      ${CMAKE_CURRENT_SOURCE_DIR}/data/default_preferences.xml
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/themes/dark/dark.css
@@ -851,11 +852,11 @@ list( APPEND OTHER_SUPPORT_FILES
 
 FILE(GLOB CSS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*.css )
 list(FILTER CSS_FILES EXCLUDE REGEX ".*SpectrumChartD3.*css")
-list(APPEND OTHER_SUPPORT_FILES ${CSS_FILES})
+list(APPEND OTHER_InterSpec_SUPPORT_FILES ${CSS_FILES})
 
 list(
     APPEND
-    OTHER_SUPPORT_FILES
+    OTHER_InterSpec_SUPPORT_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DecayChainChart.js
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/RelEffPlot.js
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DetectionLimitTool.js
@@ -864,12 +865,12 @@ list(
 FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml)
 list(
     APPEND
-    OTHER_SUPPORT_FILES
+    OTHER_InterSpec_SUPPORT_FILES
     ${HELP_FILES}
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/help.json
 )
 
-add_custom_target(interspec_resources SOURCES ${OTHER_SUPPORT_FILES})
+add_custom_target(interspec_resources SOURCES ${OTHER_InterSpec_SUPPORT_FILES})
 
 
 #Copy files to the install directory
