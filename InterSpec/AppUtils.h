@@ -72,7 +72,7 @@ namespace AppUtils
   
 #ifdef _WIN32
 /** Get command line arguments encoded as UTF-8.
-    This function just leaks the memory
+    This function just leaks the memory, unless you call #cleanupUtf8Args.
  
  Note that environment variables are not in UTF-8, we could account for this
  similar to:
@@ -80,6 +80,10 @@ namespace AppUtils
  ...
  */
 void getUtf8Args( int &argc, char **&argv );
+
+
+/** Frees the memory allopcated by #getUtf8Args */
+void cleanupUtf8Args( int &argc, char **&argv );
 #endif
 }//namespace AppUtils
 

@@ -235,5 +235,14 @@ void getUtf8Args( int &argc, char ** &argv )
   // Free memory allocated for CommandLineToArgvW arguments.
   LocalFree(argvw);
 }//void getUtf8Args()
+
+void cleanupUtf8Args( int &argc, char **&argv )
+{
+  for( int i = 0; i < argc; ++i )
+    free( argv[i] );
+  free( argv );
+  argc = 0;
+  argv = nullptr;
+}//void cleanupUtf8Args( int &argc, char **&argv )
 #endif
 }//namespace AppUtils
