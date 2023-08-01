@@ -1,5 +1,5 @@
-#ifndef AuxWindow_H
-#define AuxWindow_H
+#ifndef AuxWindow_h
+#define AuxWindow_h
 /* InterSpec: an application to analyze spectral gamma radiation data.
  
  Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
@@ -323,5 +323,5 @@ protected:
   Wt::WContainerWidget* m_footer;
 };//class AuxWindow
 
-#endif // AuxWindow_H
+#endif // AuxWindow_h
 

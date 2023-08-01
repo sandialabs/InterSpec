@@ -1991,7 +1991,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
     //  unfairly close to the real answer.
     disp->setFitQuantitiesToDefaultValues();
     
-    shared_ptr<ShieldingSourceDisplay::ModelFitResults> result = disp->doModelFit( false );
+    shared_ptr<ShieldingSourceFitCalc::ModelFitResults> result = disp->doModelFit( false );
     
     // Uhg, sometimes users have to hit  a couple times right now - this should be fixed
     result = disp->doModelFit( false );
@@ -2000,11 +2000,11 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
     disp->renderChi2Chart( *note.m_testImage );
     answer.m_notes.push_back( note );
     
-    switch( result->succesful )
+    switch( result->successful )
     {
-      case ShieldingSourceDisplay::ModelFitResults::FitStatus::TimedOut:
-      case ShieldingSourceDisplay::ModelFitResults::FitStatus::UserCancelled:
-      case ShieldingSourceDisplay::ModelFitResults::FitStatus::InvalidOther:
+      case ShieldingSourceFitCalc::ModelFitResults::FitStatus::TimedOut:
+      case ShieldingSourceFitCalc::ModelFitResults::FitStatus::UserCancelled:
+      case ShieldingSourceFitCalc::ModelFitResults::FitStatus::InvalidOther:
       {
         answer.m_ntest += std::get<1>(nfitpars);
         answer.m_nwrong += std::get<1>(nfitpars);
@@ -2025,13 +2025,13 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
         break;
       }//invalid fit result
         
-      case ShieldingSourceDisplay::ModelFitResults::FitStatus::InterMediate:
+      case ShieldingSourceFitCalc::ModelFitResults::FitStatus::InterMediate:
         assert( 0 );
         break;
         
-      case ShieldingSourceDisplay::ModelFitResults::FitStatus::Final:
+      case ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final:
         break;
-    }//switch( result->succesful )
+    }//switch( result->successful )
     
     const tuple<bool,int,int,vector<string>> testres = disp->testCurrentFitAgainstTruth();
     assert( get<0>(testres) );

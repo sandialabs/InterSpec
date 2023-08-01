@@ -47,6 +47,13 @@
 #include "InterSpec/OneOverR2Calc.h"
 #include "InterSpec/UndoRedoManager.h"
 
+#if( USE_QR_CODES )
+#include <Wt/Utils>
+
+#include "InterSpec/QrCode.h"
+#include "InterSpec/WarningWidget.h"
+#endif
+
 using namespace Wt;
 using namespace std;
 
@@ -179,6 +186,24 @@ OneOverR2Calc::OneOverR2Calc()
   m_message->setHiddenKeepsGeometry( true );
   
   AuxWindow::addHelpInFooter( footer(), "1/r2-calc-dialog" );
+  
+#if( USE_QR_CODES )
+  WPushButton *qr_btn = new WPushButton( footer() );
+  qr_btn->setText( "QR Code" );
+  qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
+  qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
+  qr_btn->clicked().preventPropagation();
+  qr_btn->clicked().connect( std::bind( [this](){
+    try
+    {
+      const string url = "interspec://1overr2/?" + Wt::Utils::urlEncode(encodeStateToUrl());
+      QrCode::displayTxtAsQrCode( url, "1/r2 Calculator State", "Current state of 1/r<sup>2</sup> calculator tool." );
+    }catch( std::exception &e )
+    {
+      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+    }
+  }) );
+#endif //USE_QR_CODES
   
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( boost::bind( &AuxWindow::hide, this ) );

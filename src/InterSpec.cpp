@@ -429,6 +429,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_leafletWindow( nullptr ),
 #endif
 #endif
+  m_enterUri( nullptr ),
 #if( USE_SEARCH_MODE_3D_CHART )
   m_searchMode3DChart( 0 ),
 #endif
@@ -3653,7 +3654,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         
     
     if( m_multimedia )
-      programaticallyCloseMultimediaWindow();
+      programmaticallyCloseMultimediaWindow();
     assert( !m_multimedia );
     
     if( foreground )
@@ -3717,6 +3718,15 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
       showMultimedia( SpecUtils::SpectrumType::Foreground );
+    
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingGammaXsTool)
+       && !entry->gammaXsToolUri.empty() )
+    {
+      GammaXsWindow *w = showGammaXsTool();
+      if( w && w->xstool() )
+        w->xstool()->handleAppUrl( entry->gammaXsToolUri );
+    }
     
     
     if( (entry->shownDisplayFeatures & UserState::kShowingDoseCalcTool)
@@ -5849,9 +5859,18 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
 #endif
   
 #if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 5;
+#endif
+  m_editMenuPopup->addSeparatorAt( (m_undo ? menuindex : -1) );
+  
+  PopupDivMenuItem *uriItem = m_editMenuPopup->insertMenuItem( (m_undo ? 6 : -1), "Enter URL", "", true );
+  uriItem->triggered().connect( this, &InterSpec::makeEnterAppUrlWindow );
+  
+#if( BUILD_AS_OSX_APP )
   // All the macOS native menu stuff (copy/paste/select/etc) will be below our stuff
   if( InterSpecApp::isPrimaryWindowInstance() )
-    m_editMenuPopup->addSeparatorAt( (m_undo ? 5 : -1) );
+    m_editMenuPopup->addSeparatorAt( (m_undo ? 7 : -1) );
 #endif
 }//void addEditMenu( Wt::WWidget *menuDiv )
 
@@ -8005,10 +8024,10 @@ void InterSpec::createMapWindow( const SpecUtils::SpectrumType spectrum_type, co
   const vector<string> detectors = detectorsToDisplay( spectrum_type );
   
   if( m_leafletWarning )
-    programaticallyCloseLeafletWarning();
+    programmaticallyCloseLeafletWarning();
   
   if( m_leafletWindow )
-    programaticallyCloseLeafletMap();
+    programmaticallyCloseLeafletMap();
   
   auto onMapCreate = boost::bind( &InterSpec::handleLeafletMapOpen, this, boost::placeholders::_1 );
   
@@ -8026,7 +8045,7 @@ void InterSpec::createMapWindow( const SpecUtils::SpectrumType spectrum_type, co
     //  #LeafletRadMap::showForMeasurement, or have the above case be called with just a nullptr,
     //  but this all is adding more complexity than its worth.
     
-    auto undo = [this](){ programaticallyCloseLeafletWarning(); };
+    auto undo = [this](){ programmaticallyCloseLeafletWarning(); };
     auto redo = [this, spectrum_type, noWarning](){ createMapWindow( spectrum_type, noWarning ); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show map." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -8073,14 +8092,14 @@ void InterSpec::handleLeafletMapOpen( LeafletRadMapWindow *window )
       }
     }
     
-    auto undo = [this](){ programaticallyCloseLeafletMap(); };
+    auto undo = [this](){ programmaticallyCloseLeafletMap(); };
     auto redo = [this, type](){ createMapWindow( type, true ); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show map." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleLeafletMapOpen()
 
 
-void InterSpec::programaticallyCloseLeafletMap()
+void InterSpec::programmaticallyCloseLeafletMap()
 {
   if( !m_leafletWindow )
     return;
@@ -8088,10 +8107,10 @@ void InterSpec::programaticallyCloseLeafletMap()
   LeafletRadMapWindow *dialog = m_leafletWindow;
   m_leafletWindow = nullptr;
   AuxWindow::deleteAuxWindow( dialog );
-}//void programaticallyCloseLeafletMap();
+}//void programmaticallyCloseLeafletMap();
 
 
-void InterSpec::programaticallyCloseLeafletWarning()
+void InterSpec::programmaticallyCloseLeafletWarning()
 {
   if( !m_leafletWarning )
     return;
@@ -8099,7 +8118,7 @@ void InterSpec::programaticallyCloseLeafletWarning()
   SimpleDialog *dialog = m_leafletWarning;
   m_leafletWarning = nullptr;
   dialog->done( WDialog::DialogCode::Accepted );
-}//void programaticallyCloseLeafletWarning();
+}//void programmaticallyCloseLeafletWarning();
 
 
 void InterSpec::handleLeafletMapClosed()
@@ -8125,7 +8144,7 @@ void InterSpec::handleLeafletMapClosed()
     }
     
     auto undo = [this,type](){ createMapWindow(type, true); };
-    auto redo = [this](){ programaticallyCloseLeafletMap(); };
+    auto redo = [this](){ programmaticallyCloseLeafletMap(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show map." );
   }//if( we want to add undo/redo step )
   
@@ -8146,7 +8165,7 @@ void InterSpec::create3DSearchModeChart()
   }//if( we dont have the proper data to make a 3D chart )
   
   if( m_3dViewWindow )
-    programaticallyClose3DSearchModeChart();
+    programmaticallyClose3DSearchModeChart();
   
   m_3dViewWindow = new AuxWindow( "3D Data View" );
   m_3dViewWindow->disableCollapse();
@@ -8170,14 +8189,14 @@ void InterSpec::create3DSearchModeChart()
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [this](){ programaticallyClose3DSearchModeChart(); };
+    auto undo = [this](){ programmaticallyClose3DSearchModeChart(); };
     auto redo = [this](){ create3DSearchModeChart(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 3D view" );
   }//
 }//void create3DSearchModeChart()
 
 
-void InterSpec::programaticallyClose3DSearchModeChart()
+void InterSpec::programmaticallyClose3DSearchModeChart()
 {
   if( !m_3dViewWindow )
     return;
@@ -8185,7 +8204,7 @@ void InterSpec::programaticallyClose3DSearchModeChart()
   AuxWindow *dialog = m_3dViewWindow;
   m_3dViewWindow = nullptr;
   AuxWindow::deleteAuxWindow( dialog );
-}//void programaticallyClose3DSearchModeChart()
+}//void programmaticallyClose3DSearchModeChart()
 
 
 void InterSpec::handle3DSearchModeChartClose()
@@ -8195,7 +8214,7 @@ void InterSpec::handle3DSearchModeChartClose()
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto undo = [this](){ create3DSearchModeChart(); };
-    auto redo = [this](){ programaticallyClose3DSearchModeChart(); };
+    auto redo = [this](){ programmaticallyClose3DSearchModeChart(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close 3D view" );
   }//
 }//void handle3DSearchModeChartClose()
@@ -8205,14 +8224,14 @@ void InterSpec::handle3DSearchModeChartClose()
 void InterSpec::showRiidResults( const SpecUtils::SpectrumType type )
 {
   if( m_riidDisplay )
-    programaticallyCloseRiidResults();
+    programmaticallyCloseRiidResults();
   
   m_riidDisplay = showRiidInstrumentsAna( measurment(type) );
   m_riidDisplay->finished().connect( this, &InterSpec::handleRiidResultsClose );
   
   if( m_riidDisplay && m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [this](){ programaticallyCloseRiidResults(); };
+    auto undo = [this](){ programmaticallyCloseRiidResults(); };
     auto redo = [this,type](){ showRiidResults(type); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show ID Results" );
   }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
@@ -8232,13 +8251,13 @@ void InterSpec::handleRiidResultsClose()
   {
     // We'll just assume results for the foreground was showing, so we dont have to pass this around
     auto undo = [this](){ showRiidResults(SpecUtils::SpectrumType::Foreground); };
-    auto redo = [this](){ programaticallyCloseRiidResults(); };
+    auto redo = [this](){ programmaticallyCloseRiidResults(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close ID Results" );
   }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleRiidResultsClose()
 
 
-void InterSpec::programaticallyCloseRiidResults()
+void InterSpec::programmaticallyCloseRiidResults()
 {
   if( !m_riidDisplay )
     return;
@@ -8246,20 +8265,20 @@ void InterSpec::programaticallyCloseRiidResults()
   SimpleDialog *dialog = m_riidDisplay;
   m_riidDisplay = nullptr;
   dialog->done( WDialog::DialogCode::Accepted );
-}//void programaticallyCloseRiidResults()
+}//void programmaticallyCloseRiidResults()
 
 
 void InterSpec::showMultimedia( const SpecUtils::SpectrumType type )
 {
   if( m_multimedia )
-    programaticallyCloseMultimediaWindow();
+    programmaticallyCloseMultimediaWindow();
   
   m_multimedia = displayMultimedia( measurment(type) );
   m_multimedia->finished().connect( boost::bind( &InterSpec::handleMultimediaClose, this, m_multimedia ) );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [this](){ programaticallyCloseMultimediaWindow(); };
+    auto undo = [this](){ programmaticallyCloseMultimediaWindow(); };
     auto redo = [this, type](){ showMultimedia(type); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Multimedia" );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -8281,19 +8300,19 @@ void InterSpec::handleMultimediaClose( SimpleDialog *dialog )
   {
     // Just assume Foreground so we dont need to copy this info all around
     auto undo = [this](){ showMultimedia(SpecUtils::SpectrumType::Foreground); };
-    auto redo = [this](){ programaticallyCloseMultimediaWindow(); };
+    auto redo = [this](){ programmaticallyCloseMultimediaWindow(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Multimedia" );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleMultimediaClose( SimpleDialog *dialog )
 
 
-void InterSpec::programaticallyCloseMultimediaWindow()
+void InterSpec::programmaticallyCloseMultimediaWindow()
 {
   SimpleDialog *dialog = m_multimedia;
   m_multimedia = nullptr; //Set m_multimedia to nullptr so #handleMultimediaClose wont add undo/redo step
   if( dialog )
     dialog->done( Wt::WDialog::DialogCode::Accepted );
-}//void programaticallyCloseMultimediaWindow()
+}//void programmaticallyCloseMultimediaWindow()
 
 
 #if( USE_TERMINAL_WIDGET )
@@ -9499,7 +9518,7 @@ void InterSpec::handleToolTabChanged( int tab )
   auto undo = [this, prev_tab, handle_change](){
     if( m_toolsTabs && (prev_tab < m_toolsTabs->count()) )
     {
-      //WTabWidget::currentChanged() is emited even when you programatically change the tab; we
+      //WTabWidget::currentChanged() is emited even when you programmatically change the tab; we
       //  need to block this here, or else the undo/redo history will get all messed up.
       const bool orig_state = m_toolsTabs->currentChanged().isBlocked();
       m_toolsTabs->currentChanged().setBlocked(true);
@@ -10168,7 +10187,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
     
     if( m_riidDisplay )
-      programaticallyCloseRiidResults();
+      programmaticallyCloseRiidResults();
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible()
@@ -10730,7 +10749,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   {
     // Close the multimedia dialog if we open a new spectrum file
     if( m_multimedia )
-      programaticallyCloseMultimediaWindow();
+      programmaticallyCloseMultimediaWindow();
     assert( !m_multimedia );
     
     bool show_notification = false;
@@ -10966,14 +10985,14 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
   AppUtils::split_uri( url, host, path, query_str, frag );
   
   if( query_str.empty() )
-    throw runtime_error( "No query string found in URI to specify DRF." );
+    throw runtime_error( "No query string found in URI." );
   
   // I dont think we use the fragment component of URLs anywhere, but maybe we accidentally
-  //  included a '#' character somwhere when we shouldnt have.
+  //  included a '#' character somewhere when we shouldnt have.
   if( !frag.empty() )
     query_str += "#" + frag;
   
-  cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
+  //cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
   
   deleteWelcomeDialog( false );
   deleteEnergyCalPreserveWindow();
@@ -10995,11 +11014,165 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     ExportSpecFileWindow *w = createExportSpectrumFileDialog();
     if( w )
       w->handleAppUrl( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"dose") )
+  {
+    DoseCalcWindow *dose = showDoseTool();
+    if( dose && dose->tool() )
+      dose->tool()->handleAppUrl( path, query_str );
+  }else if( SpecUtils::iequals_ascii(host,"flux") )
+  {
+    FluxToolWindow *flux = createFluxTool();
+    if( flux )
+      flux->handleAppUrl( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"specsum") )
+  {
+    GammaCountDialog *gammasum = showGammaCountDialog();
+    if( gammasum )
+      gammasum->handleAppUrl( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"gammaxs") )
+  {
+    GammaXsWindow *xs = showGammaXsTool();
+    if( xs && xs->xstool() )
+      xs->xstool()->handleAppUrl( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"1overr2") )
+  {
+    OneOverR2Calc *calc = createOneOverR2Calculator();
+    if( calc )
+      calc->handleAppUrl( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"unit") )
+  {
+    UnitsConverterTool *converter = createUnitsConverterTool();
+    if( converter )
+      converter->handleAppUrl( query_str );
   }else
   {
     throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );
   }
 }//void handleAppUrl( std::string url )
+
+
+void InterSpec::makeEnterAppUrlWindow()
+{
+  if( m_enterUri )
+    return;
+  
+  m_enterUri = new SimpleDialog( "Enter URL", "" );
+  m_enterUri->finished().connect( std::bind( [this](){ m_enterUri = nullptr; } ) );
+  
+  WTextArea *text = new WTextArea( m_enterUri->contents() );
+  text->setObjectName( "txtarea" );
+  text->setInline( false );
+  text->setWidth( 450 );
+  
+  const char *desctxt = "<div style=\"margin-top: 10px;\">Enter, usually through copy/paste, InterSpec URLs.</div>"
+                        "<div>These URLs start with either <code>interspec://</code>, or <code>raddata://</code>.</div>";
+  WText *desc = new WText( desctxt, m_enterUri->contents() );
+  desc->addStyleClass( "content" );
+  desc->setInline( false );
+  
+  WPushButton *cancel = m_enterUri->addButton( "Cancel" );
+  WPushButton *okay = m_enterUri->addButton( "Okay" );
+  
+  // We will validate the URL starts with 'interspec://' or 'raddata://', end enable/disable the
+  //  "Okay" button in javascript
+  const string jsokay = okay->jsRef();
+  const string validate_js = "function(textarea,event){ "
+    "const matches = /^((interspec)|(raddata)):\\/\\/.+/i.test(textarea.value);"
+    "$(" + jsokay + ").prop('disabled', !matches);"
+  " }";
+  text->keyWentUp().connect( validate_js );
+  
+  // Dont disable okay button during undo/redo - would be better to validate after we might put text
+  //  into the textarea - but not bothering to do it correctly, at the moment.
+  if( !m_undo || !m_undo->isInUndoOrRedo() )
+    okay->doJavaScript( "$(" + jsokay + ").prop('disabled', true);" );
+  
+  // TODO: All this undo/redo stuff is still probably not quite right - could use a little more work
+  
+  okay->clicked().connect( std::bind([this, text](){
+    string uri = text->text().toUTF8();
+    SpecUtils::trim( uri );
+    m_enterUri = nullptr;
+    
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this,uri](){
+        makeEnterAppUrlWindow();
+        if( !m_enterUri )
+          return;
+        WTextArea *t = dynamic_cast<WTextArea *>( m_enterUri->contents()->find( "txtarea" ) );
+        if( t )
+          t->setText( WString::fromUTF8(uri) );
+      };
+      
+      auto redo = [this,uri](){
+        if( m_enterUri )
+          m_enterUri->accept();
+        m_enterUri = nullptr;
+        
+        try
+        {
+          handleAppUrl( uri );
+        }catch( std::exception &e )
+        {
+          passMessage( "Error handling URL: " + string(e.what()), WarningWidget::WarningMsgHigh );
+        }
+      };//redu lamda
+      
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Enter URL Window" );
+    }//if( m_undo && m_undo->canAddUndoRedoNow() )
+    
+    try
+    {
+      if( !SpecUtils::istarts_with(uri, "interspec://")
+         && !SpecUtils::istarts_with(uri, "raddata://") )
+        throw runtime_error( "URL must start with 'interspec://' or 'raddata://'." );
+      handleAppUrl( uri );
+    }catch( std::exception &e )
+    {
+      SimpleDialog *errdialog = new SimpleDialog( "Error with entered URL", e.what() );
+      errdialog->addButton( "Okay" );
+    }
+  }) );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    cancel->clicked().connect( std::bind([this,text](){
+      m_enterUri = nullptr;
+      
+      if( !m_undo || !m_undo->canAddUndoRedoNow() )
+        return;
+      
+      const string txtval = text->text().toUTF8();
+      auto undo = [this,txtval](){
+        makeEnterAppUrlWindow();
+        if( !m_enterUri )
+          return;
+        
+        WTextArea *t = dynamic_cast<WTextArea *>( m_enterUri->contents()->find( "txtarea" ) );
+        if( t )
+          t->setText( WString::fromUTF8(txtval) );
+      };
+      auto redo = [this](){
+        if( m_enterUri )
+          m_enterUri->accept();
+        m_enterUri = nullptr;
+      };
+      
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Enter URL" );
+    }) );
+    
+    auto undo = [this](){
+      SimpleDialog *dialog = m_enterUri;
+      m_enterUri = nullptr;
+      if( dialog )
+        dialog->accept();
+    };
+    
+    auto redo = [this](){ makeEnterAppUrlWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Enter URL Window" );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+}//void makeEnterAppUrlWindow()
 
 
 void InterSpec::detectorsToDisplayChanged()

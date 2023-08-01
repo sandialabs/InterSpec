@@ -56,6 +56,17 @@
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/UndoRedoManager.h"
 
+/*
+// Running batch commands not finished being implemented 
+//  to work reasonably within wxWidgets.
+#if( USE_BATCH_TOOLS )
+#include "wx/textctrl.h"
+
+#include "InterSpec/AppUtils.h"
+#include "InterSpec/BatchCommandLine.h"
+#endif
+*/
+
 namespace 
 {
   bool sm_command_line_parsed = false;  //just for debugging to make sure I understand program flow
@@ -71,6 +82,11 @@ namespace
   std::string sm_proxy_config;
   long sm_server_port = 0;
   long sm_max_runtime_seconds = 0;
+/*
+#if( USE_BATCH_TOOLS )
+  bool sm_run_batch_command = false;
+#endif
+*/
 
   std::string sm_base_dir = ".";
   std::string sm_user_data_dir;
@@ -279,7 +295,15 @@ InterSpecWxApp::InterSpecWxApp() :
       wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL );
     
     parser.AddParam("File or URI to open", wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL | wxCMD_LINE_PARAM_MULTIPLE);
+
+/*
+#if( USE_BATCH_TOOLS )
+    parser.AddLongSwitch( "batch-peak-fit", "Batch-fit peaks.", wxCMD_LINE_PARAM_OPTIONAL );
+    parser.AddLongSwitch( "batch-act-fit", "Batch shielding/source fit.", wxCMD_LINE_PARAM_OPTIONAL );
+#endif
+*/
   }
+
 
   bool InterSpecWxApp::OnCmdLineParsed(wxCmdLineParser& parser)
   {
@@ -323,6 +347,16 @@ InterSpecWxApp::InterSpecWxApp() :
 
     if( parser.FoundSwitch( "dev" ) == wxCMD_SWITCH_ON )
       sm_open_dev_console = true;
+
+/*
+#if( USE_BATCH_TOOLS )
+    if( (parser.FoundSwitch( "batch-peak-fit" ) == wxCMD_SWITCH_ON )
+      || (parser.FoundSwitch( "batch-act-fit" ) == wxCMD_SWITCH_ON) )
+    {
+      sm_run_batch_command = true;
+    }//if( a command-line batch run )
+#endif
+*/
 
     sm_command_line_parsed = true;
 
@@ -681,6 +715,38 @@ InterSpecWxApp::InterSpecWxApp() :
     {
       wxLog::EnableLogging( false );
     }
+
+  /*
+  // None of the methods I niavely tried to get the stdout and/or stderr to show up
+  //  to the user works; should be able to use either wxLogStream or wxStreamToTextRedirector
+  //  but neither works.  It should maybe also be possible to get the original console the
+  //  app was launched from, and output the text there, but this looks more involved (modifying
+  //  linking and such), and I'm not sure if its even doable.
+  //  Perhaps there is a better way to do this, like start using libInterSpec as a shared library
+  //  and just creating a script to run batch stuff.
+#if( USE_BATCH_TOOLS )
+    if( sm_run_batch_command )
+    {
+      int utf8_argc = 0;
+      char **utf8_argv = nullptr;
+      AppUtils::getUtf8Args( utf8_argc, utf8_argv );
+
+      //wxLogWindow *batchLogger = new wxLogWindow( nullptr, _( "Batch" ), true, true );
+      //wxLog *cout_logger = new wxLogStream( &std::cout );
+      //batchLogger->SetActiveTarget( cout_logger );
+      
+      //wxTextCtrl *text = new wxTextCtrl( nullptr, -1, "Running batch command \n", wxDefaultPosition, wxSize(640,480), wxTE_MULTILINE | wxTE_READONLY | wxTE_NOHIDESEL );
+      //wxStreamToTextRedirector redirect_cout( text, &std::cout );
+      //new wxLogTextCtrl( text );
+
+      const int rcode = BatchCommandLine::run_batch_command( utf8_argc, utf8_argv );
+
+      AppUtils::cleanupUtf8Args( utf8_argc, utf8_argv );
+
+      return true;
+    }//if( a command-line batch run )
+#endif
+*/
 
 
 #ifndef __APPLE__

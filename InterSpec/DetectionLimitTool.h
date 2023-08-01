@@ -44,6 +44,7 @@
  - [x] Add a drop-box to allow selecting confidence for limit (e.g., 80%, 90%, 95%, 99%, etc)
  - [ ] Allow asserting you know there isnt a peak in the spectrum, and affix the peak continuums to the observed spectrum
  - [x] Allow adjusting the simple MDA side-widths
+ - [ ] Allow fitting for energy calibration, or accounting for it anyway
  - [ ] If spectrum already has a peak defined for a gamma, re-use its definition of roi lower and upper energies
  - [ ] When deconvolution method is used along with continuum determined from channels above/below the ROI, need to probably take into account the stat uncertainty of the channels...
  - [ ] Check numerical accuracies of calculations
@@ -193,7 +194,12 @@ protected:
   
   void handleUserChangedToComputeActOrDist();
   
+  void handleDrfSelected( std::shared_ptr<DetectorPeakResponse> new_drf );
+  
   void handleInputChange();
+  
+  /** Gets DRF from GUI widget, and if that isnt valid, gets it from the spectrum. */
+  std::shared_ptr<const DetectorPeakResponse> detector();
   
   float currentConfidenceLevel();
   
@@ -209,14 +215,33 @@ protected:
   /** Returns the type of limit, either activity or distance, the user currently has selected t determine. */
   LimitType limitType() const;
   
-  /** Returns the current {energy, gammas_into_4pi, gammas_4pi_after_air_attenuation}.
-   Where gammas_into_4pi accounts for B.R. after aging and attenuation through shielding, but not attenuation in the air.
-   gammas_4pi_after_air_attenuation adds in attenuation in the air, at the currently specified distance (if distance input is invalid, will
-   use 1m).
-   
+  /** A struct to hold a little information about gamma lines for a nuclide. */
+  struct GammaLineInfo
+  {
+    /** Energy of the gamma line this information is for. */
+    double energy;
+    
+    /** The branching ratio of the gamma, per decay of the parent isotope. */
+    double branching_ratio;
+    
+    /** Accounts for B.R. after aging and attenuation through shielding, but not attenuation in the air. */
+    double gammas_into_4pi;
+    
+    /** Adds in attenuation in the air, at the currently specified distance (if distance input is invalid, will use 1m) */
+    double gammas_4pi_after_air_attenuation;
+    
+    /** The fraction of gammas that make it through the air without interacting; e.g. near 1.0 for short distances. */
+    double air_transmission;
+    
+    /** The fraction of gammas that make it through the specified shielding without interacting. Will 1.0 if no shielding. */
+    double shield_transmission;
+  };//struct GammaLineInfo
+  
+  /** Returns the current gamma lines information.
+
    May throw exception if error calculating attenuation, or no current valid nuclide.
    */
-  std::vector<std::tuple<double,double,double>> gammaLines() const;
+  std::vector<GammaLineInfo> gammaLines() const;
   
   
   InterSpec *m_interspec;
@@ -236,6 +261,12 @@ protected:
   double m_currentAge;
   Wt::WSuggestionPopup *m_nuclideSuggest;
   DetectorDisplay *m_detectorDisplay;
+  
+  /** The `DetectorDisplay` only holds a weak pointer to the selected DRF; and when the user selects
+   the DRF in this widget, we dont assign it to the foreground, so we will keep the selected detector alive
+   using this shared pointer.
+   */
+  std::shared_ptr<DetectorPeakResponse> m_drf_cache;
   
   /** The switch to toggle if the user wants to compute activity limit, or distance limit.
    m_distOrActivity->isChecked() indicates compute distance.
@@ -293,8 +324,11 @@ public:
     bool do_air_attenuation;
     
     float energy;
+    double branch_ratio; //!< Decay branching ratio of nuclide
     double counts_per_bq_into_4pi; //!< This includes spectrum live time, shielding, and gamma BR.  This will need to be turned into some vector to cover multiple gamma lines
     double counts_per_bq_into_4pi_with_air;
+    double trans_through_air;
+    double trans_through_shielding;
     double distance;
     double activity;
     float roi_start;

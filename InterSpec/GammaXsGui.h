@@ -95,7 +95,7 @@ public:
   void handleAppUrl( std::string query_str );
   
   /** Encodes current tool state to app-url format.  Returned string is just the query portion of URL;
-   so will look something like "e=1001&m=....", and it will not be url-encoded.
+   so will look something like "e=1001&m=....", and it will not be url-encoded, and does not contain the leading '?'.
    */
   std::string encodeStateToUrl() const;
   

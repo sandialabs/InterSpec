@@ -39,6 +39,7 @@
 
 #include "Minuit2/FCNBase.h"
 
+#include "InterSpec/ShieldingSourceFitCalc.h"
 
 class PeakDef;
 struct Material;
@@ -92,6 +93,7 @@ enum class GeometryType : int
 /** Gives string representation to a GeometryType value. */
 const char *to_str( const GeometryType type );
 
+  
 
 //Returned in units of 1.0/[Length], so that
 //  exp( -transmition_length_coefficient(...) * thickness)
@@ -382,8 +384,7 @@ struct DistributedSrcCalc
   /** TODO: Setting the integral value as part of the DistributedSrcCalc is poor form - need to fix */
   double integral;
 };//struct DistributedSrcCalc
-
-
+  
 
 class ShieldingSourceChi2Fcn
     : public ROOT::Minuit2::FCNBase
@@ -434,18 +435,35 @@ public:
   /** A struct to hold information about the material shieldings are made out of, and their respective self-attenuating and trace sources.
    
    Thicknesses and activity levels are specified by the fitting parameters, so not tracked in this struct.
+   
+   TODO: We could *almost* switch to using ShieldingSourceFitCalc::ShieldingInfo instead of ShieldLayerInfo,
+         but this would remove our logic to use `nucs_to_fit_mass_fraction_for`, since ShieldingInfo fits all mass-fractions, or none
+         (but since we only always do all or nothing, we arent actually losing much) - so we could upgrade ShieldingInfo to return mass-fractions
+         to fit, and just always have it return all self-atten sources, if fitting for them is selected.
    */
-  struct ShieldingInfo
+  struct ShieldLayerInfo
   {
     /** The material this struct holds info for.
-     If nullptr it represents generic shielding (e.g., AN/AD), and niether #self_atten_sources or #trace_sources may have entries.
+     If nullptr it represents generic shielding (e.g., AN/AD), and neither #self_atten_sources or #trace_sources may have entries.
      */
-    const Material *material;
+    std::shared_ptr<const Material> material;
     
-    /** The nuclides which act as self-attenuating sources within the material.  The Material object must contain these nuclides
-     as components, as well as at least one peak being used have this nuclide as its assigned nuclide.
+    /** The nuclides which act as self-attenuating sources within the material, and their mass-fraction of the material.
+     The Material object must contain these nuclides as components, as well as at least one peak being used have this
+     nuclide as its assigned nuclide.  Note that some of these nuclides may also be in `nucs_to_fit_mass_fraction_for`
+     (via setNuclidesToFitMassFractionFor(...)).
      */
-    std::vector<const SandiaDecay::Nuclide *> self_atten_sources;
+    std::vector<std::pair<const SandiaDecay::Nuclide *,double>> self_atten_sources;
+    
+    /** Nuclides to fit mass fractions for; the sum of the mass fraction of all these nuclides will remain constant in the fit.
+     
+     Currently, our logic has it so, no matter what, all self-attenuating nuclides will be
+     fit for their fractions, or none.  In principal we could allow something different,
+     but this hasn't been tested.
+     
+     Nuclides will stored sorted alphabetically
+     */
+    std::vector<const SandiaDecay::Nuclide *> nucs_to_fit_mass_fraction_for;
     
     /** The trace sources info within this shielding.
      
@@ -454,19 +472,32 @@ public:
      At least one peak being used have this nuclide as its assigned nuclide.
      */
     std::vector<std::tuple<const SandiaDecay::Nuclide *,TraceActivityType,double>> trace_sources;
-  };//struct ShieldingInfo
+  };//struct ShieldLayerInfo
+
+  static std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> create(
+                                     const double distance,
+                                     const GammaInteractionCalc::GeometryType geometry,
+                                     const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
+                                     const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
+                                     std::shared_ptr<const DetectorPeakResponse> detector,
+                                     std::shared_ptr<const SpecUtils::Measurement> foreground,
+                                     std::shared_ptr<const SpecUtils::Measurement> background,
+                                     std::deque<std::shared_ptr<const PeakDef>> foreground_peaks,
+                                     std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> background_peaks,
+                                     const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options );
   
-  
+protected:
   ShieldingSourceChi2Fcn(
-                      double distance, double liveTime,
+                      const double distance,
+                      const double liveTime,
+                      const double realTime,
                       const std::vector<PeakDef> &peaks,
                       std::shared_ptr<const DetectorPeakResponse> detector,
-                      const std::vector<ShieldingInfo> &materials,
+                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                       const GeometryType geometry,
-                      const bool allowMultipleNucsContribToPeaks,
-                      const bool attenuateForAir,
-                      const bool accountForDecayDuringMeas,
-                      const double realTime );
+                      const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options );
+
+public:
   virtual ~ShieldingSourceChi2Fcn();
 
   /** Returns the geometry of this ShieldingSourceChi2Fcn */
@@ -541,11 +572,19 @@ public:
    
    Default is true.
    
-   \sa m_self_att_multithread
+   \sa ShieldingSourceFitCalc::ShieldingSourceFitOptions::multithread_self_atten
    */
   void setSelfAttMultiThread( const bool do_multithread );
   
-
+  /** Used to set initial source definitions, and add the needed fitting parameters.
+   
+   Returns number of fitting parameters added.
+   */
+  size_t setInitialSourceDefinitions( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
+                                     ROOT::Minuit2::MnUserParameters &inputPrams );
+  
+  const std::vector<ShieldingSourceFitCalc::SourceFitDef> &initialSourceDefinitions() const;
+  
 /*
    Need to add method to extract mass fraction for isotopes fitting for the mass
    fraction
@@ -554,29 +593,35 @@ public:
      --Anywhere that references m_materials
 */
   void massFraction( double &massFrac, double &uncert,
-                     const Material *material,
+                     const size_t material_index,
                      const SandiaDecay::Nuclide *nuc,
                      const std::vector<double> &pars,
                      const std::vector<double> &errors ) const;
   
-  double massFraction( const Material *material,
+  double massFraction( const size_t material_index,
                           const SandiaDecay::Nuclide *nuc,
                           const std::vector<double> &pars ) const;
-  double massFractionUncert( const Material *material,
+  double massFractionUncert( const size_t material_index,
                              const SandiaDecay::Nuclide *nuc,
                              const std::vector<double> &pars,
                              const std::vector<double> &error ) const;
   
-  bool isVariableMassFraction( const Material *material,
+  bool isVariableMassFraction( const size_t material_index,
                                const SandiaDecay::Nuclide *nuc ) const;
-  bool hasVariableMassFraction( const Material *material ) const;
-  std::shared_ptr<Material> variedMassFracMaterial( const Material *material,
-                                        const std::vector<double> &x ) const;
-  void setNuclidesToFitMassFractionFor( const Material *material,
+  bool hasVariableMassFraction( const size_t material_index ) const;
+  
+  /** Returns a Material, with the elemental composition set to account for the mass-varied amounts,
+   so that the attenuation cross-sections will be as expected.
+   */
+  std::shared_ptr<Material> variedMassFracMaterial( const size_t material_index,
+                                          const std::vector<double> &x ) const;
+  
+  void setNuclidesToFitMassFractionFor( const size_t material_index,
                    const std::vector<const SandiaDecay::Nuclide *> &nuclides );
   std::vector<const Material *> materialsFittingMassFracsFor() const;
+  std::vector<const SandiaDecay::Nuclide *> selfAttenuatingNuclides( const size_t material_index ) const;
   const std::vector<const SandiaDecay::Nuclide *> &nuclideFittingMassFracFor(
-                                              const Material *material ) const;
+                                                                const size_t material_index ) const;
   
 
   
@@ -642,7 +687,7 @@ public:
   size_t numExpectedFitParameters() const;
 
   //nuclide(...) throws std::runtime_error if an invalid number is passed in
-  const SandiaDecay::Nuclide *nuclide( const int nucN ) const;
+  const SandiaDecay::Nuclide *nuclide( const size_t nuclide_index ) const;
 
   //activity(...) and age(...) will throw runtime_exception if params is wrong
   //  size or invalid nuclide passed in
@@ -661,6 +706,8 @@ public:
   /** Returns whether or not the nuclide is a trace source. */
   bool isTraceSource( const SandiaDecay::Nuclide *nuc ) const;
   
+  std::vector<const SandiaDecay::Nuclide *> traceNuclidesForMaterial( const size_t material_index ) const;
+  
   /** Returns the trace source activity type for a nuc.
    
    Throws exception if nuc is not a trace source.
@@ -678,7 +725,7 @@ public:
   bool isVolumetricSource( const SandiaDecay::Nuclide *nuc ) const;
   
   /** Returns the volume of a material; note does not include the volume of inner shieldings. */
-  double volumeOfMaterial( const int materialN, const std::vector<double> &params ) const;
+  double volumeOfMaterial( const size_t materialN, const std::vector<double> &params ) const;
   
   /** Returns the uncertainty on the volume, taking inner dimensions, outer dimensions, and all dimensions to be independent.  */
   double volumeUncertaintyOfMaterial( const int materialN, const std::vector<double> &params,
@@ -708,42 +755,49 @@ public:
   size_t numNuclides() const;
   size_t numMaterials() const;
   
-  bool isSpecificMaterial( int materialNum ) const;
-  bool isGenericMaterial( int materialNum ) const;
+  bool isSpecificMaterial( const size_t materialNum ) const;
+  bool isGenericMaterial( const size_t materialNum ) const;
   
   //material(): will throw exception if invalid materialNum, and will return
   //  NULL if a generic material.
-  const Material *material( int materialNum ) const;
+  const Material *material( const size_t materialNum ) const;
   
   //sphericalThickness(...): will throw std::runtime_exception if material is a generic
   //  material
-  double sphericalThickness( int materialNum,
+  double sphericalThickness( const size_t materialNum,
                     const std::vector<double> &params ) const;
 
-  double cylindricalRadiusThickness( int materialNum,
+  double cylindricalRadiusThickness( const size_t materialNum,
                             const std::vector<double> &params ) const;
-  double cylindricalLengthThickness( int materialNum,
+  double cylindricalLengthThickness( const size_t materialNum,
                                     const std::vector<double> &params ) const;
-  double rectangularWidthThickness( int materialNum,
+  double rectangularWidthThickness( const size_t materialNum,
                                     const std::vector<double> &params ) const;
-  double rectangularHeightThickness( int materialNum,
+  double rectangularHeightThickness( const size_t materialNum,
                                    const std::vector<double> &params ) const;
-  double rectangularDepthThickness( int materialNum,
+  double rectangularDepthThickness( const size_t materialNum,
                                     const std::vector<double> &params ) const;
   
   
   //arealDensity(...): will throw std::runtime_exception if material is a
   //  specific material
-  double arealDensity( int materialNum,
+  double arealDensity( const size_t materialNum,
                        const std::vector<double> &params ) const;
 
   //atomicNumber(...): will throw std::runtime_exception if material is a
   //  specific material
-  double atomicNumber( int materialNum,
+  double atomicNumber( const size_t materialNum,
                        const std::vector<double> &params ) const;
 
   const std::vector<PeakDef> &peaks() const;
+  const std::vector<PeakDef> &backgroundPeaks() const;
 
+  double distance() const;
+  
+  const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options() const;
+  
+  const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &initialShieldings() const;
+  
   static void selfShieldingIntegration( DistributedSrcCalc &calculator );
 
   //observedPeakEnergyWidths(): get energy sorted pairs of peak means and widths
@@ -817,45 +871,24 @@ protected:
   double m_distance;
   double m_liveTime;
 
-  //m_photopeakClusterSigma: if >=0.0 then not just the photpeak the fit peak
-  //  is assigned to will be used, but also other photopeaks within
-  //  m_photopeakClusterSigma of the fit peaks sigma will be used to calc
-  //  expected as well.  The only place this variable is currently referenced is
-  //  in energy_chi_contributions(...).  Note that if this value is large then
-  //  there is the possibility of double counting the expected contributions
-  //  from
-  double m_photopeakClusterSigma;
   std::vector<PeakDef> m_peaks;
   std::vector<PeakDef> m_backgroundPeaks;
   std::shared_ptr<const DetectorPeakResponse> m_detector;
-  std::vector<ShieldingInfo> m_materials;
-  std::vector<const SandiaDecay::Nuclide *> m_nuclides; //sorted alphebetically and unique
   
-  typedef std::map<const Material *,std::vector<const SandiaDecay::Nuclide *> > MaterialToNucsMap;
-  //Nuclides will stored sorted alphebetically
-  MaterialToNucsMap m_nuclidesToFitMassFractionFor;
+  // TODO: we could probably eliminate m_materials, and just use m_initial_shieldings
+  std::vector<ShieldLayerInfo> m_materials;
+  const std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_initial_shieldings;
+  
+  std::vector<const SandiaDecay::Nuclide *> m_nuclides; //sorted alphabetically and unique
   
   const GeometryType m_geometry;
   
-  bool m_allowMultipleNucsContribToPeaks;
-  
-  bool m_attenuateForAir;
-  
-  /** Wether to use SpecUtilsAsync::ThreadPool to calculate self-attenuation peak values.
-   
-   TODO: Figure out if this should be an std::atomic
-   
-   Default is true.
-   
-   \sa setSelfAttMultiThread
-   */
-  bool m_self_att_multithread;
-  
-  /** If true, account for decay of nuclide during measurement - see #cluster_peak_activities */
-  bool m_accountForDecayDuringMeas;
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions m_options;
   
   /** The real-time of the measurement; only used if decay during measurement is being accounted for. */
   double m_realTime;
+  
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> m_initialSrcDefinitions;
   
   //A cache of nuclide mixtures to
   mutable NucMixtureCache m_mixtureCache;
