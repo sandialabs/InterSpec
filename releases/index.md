@@ -196,10 +196,10 @@ Questions, bug reports, suggestions, and feature requests are very welcome at <a
 
 ## Known Issues for v1.0.11
 Issues reported on v1.0.11:
-- Viewing the <em>help</em> page for "Isotopics by nuclides" may crash the renderer process and necessitate restarting the application; there are no contents for that help page anyway (fixed in commit https://github.com/sandialabs/InterSpec/commit/f61a00ffc8bfc0b61543bf6e96023dd99e4af0bd).
-- When opening the "Make Detector Response" tool, the application <em>may</em> crash; most commonly happens the <em>second</em> time you open the tool in a session (fixed in commit https://github.com/sandialabs/InterSpec/commit/0d1b823c61bd4af28a36beecc935e5dd729b565e).
-- In the "Unit Converter" tool, when converting metric distances (meters, cm, etc) to SAE distances (inches, feet, miles), results in feet and miles are in-correct (fixed in commit https://github.com/sandialabs/InterSpec/commit/eb218a752f335a7e17f292668325351ae26b47bf).
-
+- Viewing the <em>help</em> page for "Isotopics by nuclides" may crash the renderer process and necessitate restarting the application; there are no contents for that help page anyway (fixed in commit [f61a00f](https://github.com/sandialabs/InterSpec/commit/f61a00ffc8bfc0b61543bf6e96023dd99e4af0bd)).
+- When opening the "Make Detector Response" tool, the application <em>may</em> crash; most commonly happens the <em>second</em> time you open the tool in a session (fixed in commit [0d1b823](https://github.com/sandialabs/InterSpec/commit/0d1b823c61bd4af28a36beecc935e5dd729b565e)).
+- In the "Unit Converter" tool, when converting metric distances (meters, cm, etc) to SAE distances (inches, feet, miles), results in feet and miles are in-correct (fixed in commit [eb218a7](https://github.com/sandialabs/InterSpec/commit/eb218a752f335a7e17f292668325351ae26b47bf)).
+- On the &quot;Maps&quot; tool, the time displayed in the mouse-over popup is incorrect for all but the first measurement in the file (fixed in commit [b6a707d](https://github.com/sandialabs/InterSpec/commit/b6a707d2a851c3b55be928541d1c16d18fe3cbed)).
 
 
 # v1.0.10 (Aug 07, 2022)
