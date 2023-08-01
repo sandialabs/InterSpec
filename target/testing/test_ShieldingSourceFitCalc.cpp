@@ -27,6 +27,14 @@
 
 #include <Wt/Utils>
 
+#ifdef _WIN32
+// For some reason, we need to include the following includes, before unit_test.hpp,
+//  or we get a bunch of errors relating to winsock.k being included multiple times,
+//  or something
+#include "winsock2.h"
+#include "Windows.h"
+#endif
+
 //#define BOOST_TEST_DYN_LINK
 #define BOOST_TEST_MODULE ShieldingSourceFitCalc_suite
 //#include <boost/test/unit_test.hpp>
@@ -530,7 +538,7 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
       bool isSelfAtten = false;
       
       for( const auto &shield : results.initial_shieldings )
-        isSelfAtten |= shield.m_nuclideFractions.count(nuc);
+        isSelfAtten = (isSelfAtten || (shield.m_nuclideFractions.count(nuc) != 0));
       
       if( src.fitActivity && !isSelfAtten )
       {
@@ -968,7 +976,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = specfile.peaks( specfile.sample_numbers() );
   BOOST_REQUIRE( peaks && (peaks->size() > 10) );
   
-  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( size_t(0) );
+  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurements()[0];
   BOOST_REQUIRE( foreground );
   
   shared_ptr<const DetectorPeakResponse> detector = specfile.detector();
