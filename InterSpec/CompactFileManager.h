@@ -108,7 +108,7 @@ protected:
   
 private:
   Wt::WComboBox *m_selects[3];
-  Wt::WText *m_displayedPreTexts[3];
+  Wt::WText *m_displayedPreTexts[3]; //Doesnt look to be used anymore
   Wt::WText *m_displayedPostTexts[3];
   Wt::WContainerWidget *m_sampleDivs[3];
   Wt::WLineEdit *m_displaySampleNumEdits[3];

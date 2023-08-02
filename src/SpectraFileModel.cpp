@@ -1833,17 +1833,17 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
 
 std::shared_ptr<const SpectraFileHeader> SpectraFileModel::fileHeader( int row ) const
 {
-  if( row < static_cast<int>(m_spectra.size()) )
+  if( (row >= 0) && (row < static_cast<int>(m_spectra.size())) )
     return m_spectra[row];
-  return std::shared_ptr<const SpectraFileHeader>();
+  return nullptr;
 }
 
 
 std::shared_ptr<SpectraFileHeader> SpectraFileModel::fileHeader( int row )
 {
-  if( row < static_cast<int>(m_spectra.size()) )
+  if( (row >= 0) && (row < static_cast<int>(m_spectra.size())) )
     return m_spectra[row];
-  return std::shared_ptr<SpectraFileHeader>();
+  return nullptr;
 }
 
 std::shared_ptr<SpectraFileHeader> SpectraFileModel::fileHeader(
@@ -2039,7 +2039,7 @@ boost::any SpectraFileModel::headerData( int section, Orientation orientation, i
       case kNeutronCounts:   return boost::any( WString("Neut. Count") );
       case kSpectrumTime:    return boost::any( WString("Time Taken") );
       case kNumDetectors:    return boost::any( WString("N-Dets.") );
-      case kUploadTime:      return boost::any( WString("Uploaded") );
+      case kUploadTime:      return boost::any( WString("Loaded") );
       case NumDisplayFields: break;
     };//switch( field )
 

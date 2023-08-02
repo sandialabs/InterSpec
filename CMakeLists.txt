@@ -850,6 +850,7 @@ list( APPEND OTHER_InterSpec_SUPPORT_FILES
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/themes/dark/dark.css
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/copyright_and_about.xml
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/use_instructions.xml
+     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/spectrum_file_format_descriptions.xml
   )
 
 FILE(GLOB CSS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*.css )

@@ -42,11 +42,18 @@ namespace Wt
 {
   class WText;
   class WMenu;
+  class WCheckBox;
+  class WLineEdit;
 }//namespace Wt
 
 namespace SpecUtils
 {
   enum class SpectrumType : int;
+}
+
+namespace ExportSpecFileTool_imp
+{
+  class DownloadSpectrumResource;
 }
 
 
@@ -72,6 +79,9 @@ public:
   
   void emitDone( const bool exported );
   
+  /** Returns the currently selected file - as held in memory; i.e., the full file, not just selected samples or whatever. */
+  std::shared_ptr<const SpecMeas> currentlySelectedFile() const;
+  
   /** Handles receiving a "deep-link" url starting with "interspec://specsum/...".
    
    Example URIs:
@@ -90,8 +100,25 @@ public:
    */
   std::string encodeStateToUrl() const;
   
+  
+  /** Converts texts ranges like "1-5,8-9,11,12" into the numerical sample numbers. */
+  static std::pair<std::set<int>,std::string> sampleNumbersFromTxtRange( std::string txt,
+                                                 std::shared_ptr<const SpecMeas> meas,
+                                                 const bool quiet );
+  
 protected:
   void init();
+  void updateExportEnabled();
+  void handleFileSelectionChanged();
+  void updateInfoAboutSelectedFile();
+  void refreshSampleAndDetectorOptions();
+  void selectDisplayedFile( const SpecUtils::SpectrumType type );
+  void handleAllSampleChanged();
+  void handleCustomSampleChanged();
+  void handleCustomSampleTxtChanged();
+  void handleDisplaySampleChanged( const SpecUtils::SpectrumType type );
+  void handleSamplesChanged();
+  void handleFormatChange();
   
   InterSpec *m_interspec;
   
@@ -102,8 +129,26 @@ protected:
   std::set<int> m_specific_samples;
   std::vector<std::string> m_specific_detectors;
   
+  std::weak_ptr<const SpecMeas> m_current_file;
   
   Wt::Signal<bool> m_done;
+  
+  Wt::WComboBox *m_fileSelect;
+  Wt::WText *m_fileInfo;
+  
+  Wt::WMenu *m_formatMenu;
+  
+  Wt::WContainerWidget *m_samplesHolder;
+  Wt::WCheckBox *m_dispForeSamples;
+  Wt::WCheckBox *m_dispBackSamples;
+  Wt::WCheckBox *m_dispSecondSamples;
+  Wt::WCheckBox *m_allSamples;
+  Wt::WCheckBox *m_customSamples;
+  Wt::WLineEdit *m_customSamplesEdit;
+  Wt::WContainerWidget *m_optionsHolder;
+  
+  ExportSpecFileTool_imp::DownloadSpectrumResource *m_resource;
+  Wt::WPushButton *m_export_btn;
 };//class ExportSpecFileTool
 
 

@@ -16,6 +16,8 @@
   
   max-width: min(calc(95vw - 30px), 610px);
   max-height: min(calc(95vw - 90px), 370px);
+  
+  padding-bottom: 10px;
 }
 
 
@@ -30,7 +32,84 @@
 {
   flex-grow: 2;
   border: 1px solid red;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
 }
+
+.ExportSpecFileTool .ExportSpecFileBody .ExportColTitle
+{
+  display: block;
+  white-space: nowrap;
+  font-size: 10pt;
+  text-align: center;
+  font-weight: bold;
+  padding-top: 4px;
+  padding-bottom: 1px;
+  padding-left: 3px;
+  padding-right: 3px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid #e1e1e1;
+}
+
+.ExportSpecFileTool .ExportSpecSelect,
+.ExportSpecFileTool .ExportSpecFormat,
+.ExportSpecFileTool .ExportSpecSamples,
+.ExportSpecFileTool .ExportSpecOptions
+{
+  border: 1px solid yellow;
+  
+  display: flex;
+  flex-direction: column;
+}
+
+
+.ExportSpecFileTool .ExportSpecFileBody .ExportSpecSelect .ExportSpecInfo
+{
+  display: inline-block;
+  overflow-y: auto;
+}
+
+.ExportSpecInfo .ExportSpecInfoTable
+{
+  margin: 5px;
+}
+
+.ExportSpecInfo .ExportSpecInfoTable th, .ExportSpecInfo .ExportSpecInfoTable td
+{
+  text-align: left;
+  font-weight: normal;
+  padding: 4px;
+  padding-bottom: 1px;
+}
+
+.ExportSpecInfo .ExportSpecInfoTable td
+{
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  width: 100px;
+}
+
+
+.ExportSpecFileTool div.ExportSpecFormat
+{
+  height: 100%;
+}
+
+
+.ExportSpecFileTool .ExportSpecFormat .ExportSpecFormatMenu.SideMenu
+{
+  overflow-y: auto;
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+
+.ExportSpecFileTool .ExportSpecFormat .ExportSpecFormatMenu.SideMenu li
+{
+  height: 1.25em;
+}
+
 
 .ExportSpecFileTool .ExportSpecFileFooter
 {
