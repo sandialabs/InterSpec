@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <regex>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -444,6 +445,7 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
   m_current_file(),
   m_done( this ),
   m_fileSelect( nullptr ),
+  m_forePlusBack( nullptr ),
   m_fileInfo( nullptr ),
   m_formatMenu( nullptr ),
   m_samplesHolder( nullptr ),
@@ -453,7 +455,17 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
   m_allSamples( nullptr ),
   m_customSamples( nullptr ),
   m_customSamplesEdit( nullptr ),
+  m_filterDetector( nullptr ),
+  m_detectorFilterCbs( nullptr ),
   m_optionsHolder( nullptr ),
+  m_sumAllToSingleRecord( nullptr ),
+  m_sumForeToSingleRecord( nullptr ),
+  m_sumBackToSingleRecord( nullptr ),
+  m_sumSecoToSingleRecord( nullptr ),
+  m_backSubFore( nullptr ),
+  m_sumDetsPerSample( nullptr ),
+  m_includeInterSpecInfo( nullptr ),
+  m_msg( nullptr ),
   m_export_btn( nullptr ),
   m_resource( nullptr )
 {
@@ -475,6 +487,7 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
   m_current_file( spectrum ),
   m_done( this ),
   m_fileSelect( nullptr ),
+  m_forePlusBack( nullptr ),
   m_fileInfo( nullptr ),
   m_formatMenu( nullptr ),
   m_samplesHolder( nullptr ),
@@ -484,7 +497,17 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
   m_allSamples( nullptr ),
   m_customSamples( nullptr ),
   m_customSamplesEdit( nullptr ),
+  m_filterDetector( nullptr ),
+  m_detectorFilterCbs( nullptr ),
   m_optionsHolder( nullptr ),
+  m_sumAllToSingleRecord( nullptr ),
+  m_sumForeToSingleRecord( nullptr ),
+  m_sumBackToSingleRecord( nullptr ),
+  m_sumSecoToSingleRecord( nullptr ),
+  m_backSubFore( nullptr ),
+  m_sumDetsPerSample( nullptr ),
+  m_includeInterSpecInfo( nullptr ),
+  m_msg( nullptr ),
   m_export_btn( nullptr ),
   m_resource( nullptr )
 {
@@ -523,8 +546,28 @@ void ExportSpecFileTool::init()
     
     m_fileSelect->setModel( fileModel );
     m_fileSelect->setModelColumn( SpectraFileModel::DisplayFields::kDisplayName );
-    
     m_fileSelect->activated().connect( this, &ExportSpecFileTool::handleFileSelectionChanged );
+    
+    
+    const auto fore = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    const auto back = m_interspec->measurment(SpecUtils::SpectrumType::Background);
+    const auto secondary = m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground);
+    
+    const bool unique_back = (back && (back != fore));
+    const bool unique_seco = (secondary && ((secondary != fore) || (back && (back != secondary))));
+                        
+    
+    if( fore && (unique_back || unique_seco) )
+    {
+      string title = "For." + string(back ? " + Back." : "") + string(secondary ? " + Secon." : "");
+      
+      m_forePlusBack = new WCheckBox( title, fileSelectDiv );
+      m_forePlusBack->addStyleClass( "ExportForPlusBack" );
+      m_forePlusBack->checked().connect( this, &ExportSpecFileTool::handleForePlusBackChanged );
+      m_forePlusBack->unChecked().connect( this, &ExportSpecFileTool::handleForePlusBackChanged );
+      m_forePlusBack->setToolTip( "Export the foreground and background and/or secondary"
+                                 " spectra together into the same file." );
+    }
   }//if( !m_specific_spectrum )
   
   m_fileInfo = new WText( fileSelectDiv );
@@ -540,6 +583,8 @@ void ExportSpecFileTool::init()
   m_formatMenu = new WMenu( menuHolder );
   m_formatMenu->itemSelected().connect( this, &ExportSpecFileTool::handleFormatChange );
   m_formatMenu->addStyleClass( "SideMenu VerticalNavMenu LightNavMenu ExportSpecFormatMenu" );
+  
+  
   
   
   const string docroot = wApp->docRoot();
@@ -598,21 +643,20 @@ void ExportSpecFileTool::init()
   m_dispForeSamples   = new WCheckBox( "Disp. Foreground", m_samplesHolder );
   m_dispForeSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Foreground ) );
   m_dispForeSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Foreground ) );
-  m_dispForeSamples->setWordWrap( false );
+  
   m_dispBackSamples   = new WCheckBox( "Disp. Background", m_samplesHolder );
   m_dispBackSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Background ) );
   m_dispBackSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Background ) );
-  m_dispBackSamples->setWordWrap( false );
+  
   m_dispSecondSamples = new WCheckBox( "Disp. Secondary", m_samplesHolder );
   m_dispSecondSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::SecondForeground ) );
   m_dispSecondSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::SecondForeground ) );
-  m_dispSecondSamples->setWordWrap( false );
+  
   m_allSamples = new WCheckBox( "All Samples", m_samplesHolder );
-  m_allSamples->setWordWrap( false );
   m_allSamples->checked().connect( this, &ExportSpecFileTool::handleAllSampleChanged );
   m_allSamples->unChecked().connect( this, &ExportSpecFileTool::handleAllSampleChanged );
+  
   m_customSamples = new WCheckBox( "Custom Samples", m_samplesHolder );
-  m_customSamples->setWordWrap( false );
   m_customSamples->checked().connect( this, &ExportSpecFileTool::handleCustomSampleChanged );
   m_customSamples->unChecked().connect( this, &ExportSpecFileTool::handleCustomSampleChanged );
   
@@ -638,25 +682,70 @@ void ExportSpecFileTool::init()
   
   const char *tooltip = "Enter the sample number you'de like displayed here"
   ". You may enter a range of sample numbers similar"
-  " to '33-39' or '33 to 39'; or CSV sample numbers"
+  " to '33-39' or '33 to 39', or CSV sample numbers"
   " like '34,39,84'";
   HelpSystem::attachToolTipOn( m_customSamplesEdit, tooltip, showToolTips, HelpSystem::ToolTipPosition::Right );
   
   m_customSamplesEdit->hide();
 
+  m_filterDetector = new WCheckBox( "Filter Dets.", m_samplesHolder );
+  m_filterDetector->checked().connect( this, &ExportSpecFileTool::handleFilterDetectorCbChanged );
+  m_filterDetector->unChecked().connect( this, &ExportSpecFileTool::handleFilterDetectorCbChanged );
   
-
+  m_detectorFilterCbs = new WContainerWidget( m_samplesHolder );
+  m_detectorFilterCbs->addStyleClass( "ExportDetsToFilter" );
+  m_filterDetector->hide();
+  m_detectorFilterCbs->hide();
   
   // Options
-  m_optionsHolder = new WContainerWidget( body );
+  m_optionsHolder = new WContainerWidget( m_samplesHolder );
   m_optionsHolder->addStyleClass( "ExportSpecOptions" );
   title = new WText( "Options", m_optionsHolder );
   title->addStyleClass( "ExportColTitle" );
   
   
+  m_sumAllToSingleRecord = new WCheckBox( "Sum to single record", m_optionsHolder );
+  m_sumAllToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumToSingleRecordChanged );
+  m_sumAllToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumToSingleRecordChanged );
+  
+  m_sumForeToSingleRecord = new WCheckBox( "Sum Fore to single record", m_optionsHolder );
+  m_sumForeToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
+  m_sumForeToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
+  
+  m_sumBackToSingleRecord = new WCheckBox( "Sum Back to single record", m_optionsHolder );
+  m_sumBackToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
+  m_sumBackToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
+  
+  m_sumSecoToSingleRecord = new WCheckBox( "Sum Sec to single record", m_optionsHolder );
+  m_sumSecoToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
+  m_sumSecoToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
+  
+  m_backSubFore = new WCheckBox( "Back. sub. Fore/Back", m_optionsHolder );
+  m_backSubFore->checked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
+  m_backSubFore->unChecked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
+  
+  m_sumDetsPerSample = new WCheckBox( "Sum Detectors per sample", m_optionsHolder );
+  m_sumDetsPerSample->checked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
+  m_sumDetsPerSample->unChecked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
+  
+  m_includeInterSpecInfo = new WCheckBox( "Include InterSpec info", m_optionsHolder );
+  m_includeInterSpecInfo->checked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
+  m_includeInterSpecInfo->unChecked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
+  
+  
+  
   WContainerWidget *footer = new WContainerWidget( this );
   footer->addStyleClass( "ExportSpecFileFooter" );
-  WPushButton *cancel_btn = new WPushButton( "Cancel", footer );
+  
+  
+  m_msg = new WText( "Some msg to be updated later", footer );
+  m_msg->addStyleClass( "ExportSpecMsg" );
+  
+  WContainerWidget *btnsDiv = new WContainerWidget( footer );
+  btnsDiv->addStyleClass( "ExportSpecBtns" );
+  
+  
+  WPushButton *cancel_btn = new WPushButton( "Cancel", btnsDiv );
   cancel_btn->clicked().connect( boost::bind(&ExportSpecFileTool::emitDone, this, false) );
   
   if( !m_resource )
@@ -666,7 +755,7 @@ void ExportSpecFileTool::init()
     m_resource->downloadFinished().connect( boost::bind(&ExportSpecFileTool::emitDone, this, true) );
   }//if( !m_resource )
   
-  m_export_btn = new WPushButton( "Export", footer );
+  m_export_btn = new WPushButton( "Export", btnsDiv );
   m_export_btn->setLink( WLink(m_resource) );
   m_export_btn->disable();
   
@@ -702,31 +791,18 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
 {
   assert( (!m_specific_spectrum) != (!m_fileSelect) );
   
-  shared_ptr<const SpecMeas> meas;
-  if( m_specific_spectrum )
-  {
-    meas = m_specific_spectrum;
-  }else
-  {
-    const int selected = m_fileSelect->currentIndex();
-    SpecMeasManager * const measManager = m_interspec->fileManager();
-    SpectraFileModel * const fileModel = measManager ? measManager->model() : nullptr;
-    
-    if( fileModel && (selected >= 0) )
-    {
-      shared_ptr<SpectraFileHeader> header = fileModel->fileHeader( selected );
-      if( header )
-        meas = header->parseFile();
-    }//if( fileModel && (selected >= 0) )
-  }//if( m_specific_spectrum ) / else
+  shared_ptr<const SpecMeas> meas = currentlySelectedFile();
   
   if( !meas )
   {
-    m_fileInfo->setText( "" );
+    // Put a empty table in - just to keep column width
+    const char *dummy_tbl = "<table class=\"ExportSpecInfoTable\">\n"
+                            "<tr><th>&nbsp;</th><td>&nbsp;</td></tr>\n"
+                            "</table>";
+    m_fileInfo->setText( dummy_tbl );
     return;
   }
   
-  char buffer[256]= { '\0' };
   double min_gamma_cps = 0.0, max_gamma_cps = 0.0, min_neutron_cps = 0.0, max_neutron_cps = 0.0;
   SpecUtils::time_point_t start_time = SpecUtils::time_point_t{} + SpecUtils::time_point_t::duration::max();
   SpecUtils::time_point_t end_time = SpecUtils::time_point_t{} + SpecUtils::time_point_t::duration::min();
@@ -774,6 +850,51 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
   WStringStream tabletxt;
   tabletxt << "<table class=\"ExportSpecInfoTable\">\n";
   
+  // If the file is a foreground / background type file - let the user know
+  const bool is_fore = (meas && (meas == m_interspec->measurment(SpecUtils::SpectrumType::Foreground)));
+  const bool is_back = (meas && (meas == m_interspec->measurment(SpecUtils::SpectrumType::Background)));
+  const bool is_sec  = (meas && (meas == m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground)));
+  
+  if( is_fore || is_back || is_sec )
+  {
+    // We will only show Displayed Sample Numbers if the spectrum is loaded for only one type
+    set<int> samples;
+    
+    tabletxt << "<tr><th>Displayed As</th><td>";
+    if( is_fore && !is_back && !is_sec )
+    {
+      tabletxt << "Foreground";
+      samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+    }else if( !is_fore && is_back && !is_sec )
+    {
+      tabletxt << "Background";
+      samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+    }else if( !is_fore && !is_back && is_sec )
+    {
+      tabletxt << "Secondary";
+      samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
+    }else
+    {
+      string types;
+      if( is_fore )
+        types += string(types.empty() ? "" : "/") + "Fore";
+      if( is_back )
+        types += string(types.empty() ? "" : "/") + "Back";
+      if( is_sec )
+        types += string(types.empty() ? "" : "/") + "Sec";
+      tabletxt << types;
+    }
+    
+    tabletxt << "</td></tr>\n";
+    
+    
+    if( !samples.empty() )
+      tabletxt << "<tr><th>Disp.&nbsp;Sample" << string((samples.size() > 1) ? "s" : "")
+               << "</th><td>" << SpecUtils::sequencesToBriefString( samples )
+               << "</td></tr>\n";
+  }//if( is_fore || is_back || is_sec )
+  
+  
   if( !SpecUtils::is_special(start_time) )
   {
     const string start_str = SpecUtils::to_vax_string( start_time );
@@ -809,25 +930,32 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
   
   if( meas->contained_neutron() )
   {
-    tabletxt << "<tr><th>Neut. Dets</th><td>" << static_cast<int>(meas->neutron_detector_names().size()) << "</td></tr>\n";
-    tabletxt << "<tr><th>Gamma Dets</th><td>" << static_cast<int>(meas->gamma_detector_names().size()) << "</td></tr>\n";
+    tabletxt << "<tr><th>Neut. Dets</th><td>"
+             << static_cast<int>(meas->neutron_detector_names().size()) << "</td></tr>\n";
+    tabletxt << "<tr><th>Gamma Dets</th><td>"
+            << static_cast<int>(meas->gamma_detector_names().size()) << "</td></tr>\n";
   }else
   {
-    tabletxt << "<tr><th>Num Dets</th><td>" << static_cast<int>(meas->detector_names().size()) << "</td></tr>\n";
+    tabletxt << "<tr><th>Num Dets</th><td>"
+             << static_cast<int>(meas->detector_names().size()) << "</td></tr>\n";
   }
   
   if( meas->has_gps_info() )
   {
-    snprintf( buffer, sizeof(buffer), "%.7f,%.7f", meas->mean_latitude(), meas->mean_longitude() );
-    tabletxt << "<tr><th>GPS</th><td>" << buffer << "</td></tr>\n";
-  }
+    tabletxt << "<tr><th>Latitude</th><td>"
+             << PhysicalUnits::printCompact( meas->mean_latitude(), 7 ) << "</td></tr>\n";
+    tabletxt << "<tr><th>Longitude</th><td>"
+             << PhysicalUnits::printCompact( meas->mean_longitude(), 7 ) << "</td></tr>\n";
+  }//if( meas->has_gps_info() )
   
   const string total_time = PhysicalUnits::printToBestTimeUnits( meas->gamma_real_time() );
   tabletxt << "<tr><th>Total Time</th><td>" << total_time << "</td></tr>\n";
   
-  tabletxt << "<tr><th>Sum Gamma</th><td>" << PhysicalUnits::printCompact( meas->gamma_count_sum(), 5) << "</td></tr>\n";
+  tabletxt << "<tr><th>Sum Gamma</th><td>"
+           << PhysicalUnits::printCompact( meas->gamma_count_sum(), 5) << "</td></tr>\n";
   if( meas->contained_neutron() )
-    tabletxt << "<tr><th>Sum Neut.</th><td>" << PhysicalUnits::printCompact( meas->neutron_counts_sum(), 5) << "</td></tr>\n";
+    tabletxt << "<tr><th>Sum Neut.</th><td>"
+             << PhysicalUnits::printCompact( meas->neutron_counts_sum(), 5) << "</td></tr>\n";
   
   //const string &instrument_type = meas->instrument_type();
   const string &manufacturer = meas->manufacturer();
@@ -835,17 +963,18 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
   const string &instrument_id = meas->instrument_id();
   
   if( !manufacturer.empty() )
-    tabletxt << "<tr><th>Manufacturer</th><td>" << Wt::Utils::htmlEncode(manufacturer) << "</td></tr>\n";
+    tabletxt << "<tr><th>Manufacturer</th><td>"
+             << Wt::Utils::htmlEncode(manufacturer) << "</td></tr>\n";
   
   if( meas->detector_type() != SpecUtils::DetectorType::Unknown )
-    tabletxt << "<tr><th>Model</th><td>" << SpecUtils::detectorTypeToString(meas->detector_type()) << "</td></tr>\n";
+    tabletxt << "<tr><th>Model</th><td>"
+             << SpecUtils::detectorTypeToString(meas->detector_type()) << "</td></tr>\n";
   else if( !instrument_model.empty() )
-    tabletxt << "<tr><th>Model</th><td>" << Wt::Utils::htmlEncode(instrument_model) << "</td></tr>\n";
+    tabletxt << "<tr><th>Model</th><td>"
+             << Wt::Utils::htmlEncode(instrument_model) << "</td></tr>\n";
   
   if( !instrument_id.empty() )
     tabletxt << "<tr><th>Serial</th><td>" << Wt::Utils::htmlEncode(instrument_id) << "</td></tr>\n";
-  
-  // TODO: If the file is a foreground / background type file - put that info here.
   
   tabletxt << "</table>\n";
   
@@ -859,25 +988,9 @@ void ExportSpecFileTool::handleFileSelectionChanged()
   
   shared_ptr<const SpecMeas> prev = m_current_file.lock();
   
-  shared_ptr<const SpecMeas> current;
-  if( m_specific_spectrum )
-  {
-    current = m_specific_spectrum;
-  }else
-  {
-    const int selected = m_fileSelect->currentIndex();
-    const SpecMeasManager * const measManager = m_interspec->fileManager();
-    const SpectraFileModel * const fileModel = measManager ? measManager->model() : nullptr;
-    
-    if( fileModel && (selected >= 0) )
-    {
-      shared_ptr<const SpectraFileHeader> header = fileModel->fileHeader( selected );
-      if( header )
-        current = header->parseFile();
-    }
-  }//if( m_specific_spectrum ) / else
+  shared_ptr<const SpecMeas> current = currentlySelectedFile();
   
-  if( prev != current )
+  if( prev != current && (!m_forePlusBack || !m_forePlusBack->isChecked()) )
   {
     m_current_file = current;
     
@@ -1040,6 +1153,95 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::currentlySelectedFile() cons
 {
   if( m_specific_spectrum )
     return m_specific_spectrum;
+  
+  
+  if( m_forePlusBack && m_forePlusBack->isChecked() )
+  {
+    shared_ptr<const SpecMeas> fore = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    shared_ptr<const SpecMeas> back = m_interspec->measurment(SpecUtils::SpectrumType::Background);
+    shared_ptr<const SpecMeas> seco = m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground);
+    
+    assert( fore );
+    if( !fore )
+      return nullptr;
+    
+    shared_ptr<SpecMeas> result = make_shared<SpecMeas>();
+    result->uniqueCopyContents( *fore );
+    result->remove_measurements( result->measurements() );
+    
+    for( const set<int> &samples : result->sampleNumsWithPeaks() )
+      result->setPeaks( {}, samples );
+    
+    const set<int> &fore_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+    const set<int> &back_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+    const set<int> &seco_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
+    
+    const vector<string> fore_dets = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+    const vector<string> back_dets = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Background);
+    const vector<string> seco_dets = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::SecondForeground);
+    
+    const auto add_meas = [&result]( const shared_ptr<const SpecMeas> &meas,
+                                                    const set<int> &samples,
+                                                    const vector<string> &dets,
+                                                    const SpecUtils::SpectrumType type ){
+      if( !meas )
+        return;
+      
+      int current_sample = result->sample_numbers().empty() ? 0 : (*result->sample_numbers().rbegin());
+      set<int> used_samples, added_samples;
+      
+      for( const int sample : samples )
+      {
+        for( const string &det : dets )
+        {
+          const shared_ptr<const SpecUtils::Measurement> m = meas->measurement( sample, det );
+          if( !m )
+            continue;
+          
+          if( !used_samples.count(m->sample_number()) )
+          {
+            current_sample += 1;
+            used_samples.insert( m->sample_number() );
+          }
+          
+          added_samples.insert( current_sample );
+          shared_ptr<SpecUtils::Measurement> new_m = make_shared<SpecUtils::Measurement>( *m );
+          new_m->set_sample_number( current_sample );
+          
+          switch( type )
+          {
+            case SpecUtils::SpectrumType::Foreground:
+              new_m->set_source_type( SpecUtils::SourceType::Foreground );
+              break;
+              
+            case SpecUtils::SpectrumType::SecondForeground:
+              new_m->set_source_type( SpecUtils::SourceType::Unknown );
+              break;
+              
+            case SpecUtils::SpectrumType::Background:
+              new_m->set_source_type( SpecUtils::SourceType::Background );
+              break;
+          }//switch( type )
+          
+          result->add_measurement( new_m, false );
+        }//for( const string &det : dets )
+      }//for( const int sample : fore_samples )
+      
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = meas->peaks( samples );
+      if( peaks )
+        result->setPeaks( *peaks, added_samples );
+    };//add_meas lamda
+    
+    add_meas( fore, fore_samples, fore_dets, SpecUtils::SpectrumType::Foreground );
+    add_meas( back, back_samples, back_dets, SpecUtils::SpectrumType::Background );
+    add_meas( seco, seco_samples, seco_dets, SpecUtils::SpectrumType::SecondForeground );
+    
+    result->cleanup_after_load( SpecUtils::SpecFile::CleanupAfterLoadFlags::DontChangeOrReorderSamples );
+    
+    return result;
+  }//if( m_forePlusBack && m_forePlusBack->isChecked() )
+  
+  
   const int index = m_fileSelect->currentIndex();
   const SpecMeasManager * const measManager = m_interspec->fileManager();
   const SpectraFileModel * const fileModel = measManager ? measManager->model() : nullptr;
@@ -1050,13 +1252,161 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::currentlySelectedFile() cons
 }//std::shared_ptr<const SpecMeas> currentlySelectedFile() const
 
 
+SpecUtils::SaveSpectrumAsType ExportSpecFileTool::currentSaveType() const
+{
+  const WMenuItem * const currentFormatItem = m_formatMenu->currentItem();
+  assert( currentFormatItem );
+  
+  if( currentFormatItem )
+  {
+    const uint64_t data = reinterpret_cast<uint64_t>( currentFormatItem->data() );
+    assert( data <= static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes) );
+    return SpecUtils::SaveSpectrumAsType( data );
+  }//if( currentFormatItem )
+  
+  return SpecUtils::SaveSpectrumAsType::N42_2012;
+}//SpecUtils::SaveSpectrumAsType currentSaveType() const;
+
+
+uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType() const
+{
+  const SpecUtils::SaveSpectrumAsType save_format = currentSaveType();
+  
+  switch( save_format )
+  {
+    // Spectrum file types that can have many spectra in them
+    case SpecUtils::SaveSpectrumAsType::Txt:
+    case SpecUtils::SaveSpectrumAsType::Csv:
+    case SpecUtils::SaveSpectrumAsType::Pcf:
+    case SpecUtils::SaveSpectrumAsType::N42_2006:
+    case SpecUtils::SaveSpectrumAsType::N42_2012:
+    case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
+    case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
+      return std::numeric_limits<uint16_t>::max();
+      break;
+    
+    // Spectrum file types that can have two spectra in them (foreground + background)
+    case SpecUtils::SaveSpectrumAsType::NumTypes:
+#if( SpecUtils_ENABLE_D3_CHART )
+    case SpecUtils::SaveSpectrumAsType::HtmlD3:
+#endif
+      return 2;
+      break;
+      
+    // Spectrum file types that can have a single spectra in them
+    case SpecUtils::SaveSpectrumAsType::Chn:
+    case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
+    case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
+    case SpecUtils::SaveSpectrumAsType::SpcAscii:
+    case SpecUtils::SaveSpectrumAsType::SpeIaea:
+    case SpecUtils::SaveSpectrumAsType::Cnf:
+    case SpecUtils::SaveSpectrumAsType::Tka:
+      return 1;
+      break;
+    
+#if( SpecUtils_INJA_TEMPLATES )
+    case SpecUtils::SaveSpectrumAsType::Template:
+      assert( 0 );
+      break;
+#endif
+  }//switch( save_format )
+  
+  assert( 0 );
+  
+  return 0;
+}//uint16_t maxRecordsInCurrentSaveType() const
+
+
 void ExportSpecFileTool::refreshSampleAndDetectorOptions()
 {
   const shared_ptr<const SpecMeas> spec = currentlySelectedFile();
+  const uint16_t max_records = maxRecordsInCurrentSaveType();
+  const SpecUtils::SaveSpectrumAsType save_type = currentSaveType();
+  
+  if( !spec || (spec->gamma_detector_names().size() <= 1) )
+  {
+    m_filterDetector->setChecked( false );
+    m_detectorFilterCbs->clear();
+    m_filterDetector->hide();
+    m_detectorFilterCbs->hide();
+    
+    m_sumAllToSingleRecord->hide();
+    m_sumForeToSingleRecord->hide();
+    m_sumBackToSingleRecord->hide();
+    m_sumSecoToSingleRecord->hide();
+  }else
+  {
+    map<string,bool> prev_check;
+    for( const auto w : m_detectorFilterCbs->children() )
+    {
+      WCheckBox *cb = dynamic_cast<WCheckBox *>( w );
+      if( cb )
+        prev_check[cb->text().toUTF8()] = cb->isChecked();
+    }
+    
+    m_filterDetector->show();
+    m_detectorFilterCbs->setHidden( !m_filterDetector->isChecked() );
+    
+    m_detectorFilterCbs->clear();
+    for( const string &name : spec->detector_names() )
+    {
+      WCheckBox *cb = new WCheckBox( name, m_detectorFilterCbs );
+      if( prev_check.count(cb->text().toUTF8()) )
+        cb->setChecked( prev_check[cb->text().toUTF8()] );
+      else
+        cb->setChecked( true );  //Could check if spectrum is displayed, and if so if the det is displayed
+    }//
+    
+    if( (max_records <= 1) || (max_records == 2) )
+    {
+      m_sumAllToSingleRecord->hide();
+      m_sumForeToSingleRecord->hide();
+      m_sumBackToSingleRecord->hide();
+      m_sumSecoToSingleRecord->hide();
+    }else
+    {
+      m_sumAllToSingleRecord->show();
+      m_sumForeToSingleRecord->setHidden( !(m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked()) );
+      m_sumBackToSingleRecord->setHidden( !(m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked()) );
+      m_sumSecoToSingleRecord->setHidden( !(m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked()) );
+    }
+  }//if( spec->gamma_detector_names().size() <= 1 ) / else
+  
+  
+  const bool use_fore_disp = (m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked());
+  const bool use_seco_disp = (m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked());
+  const bool use_back_disp = (m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked());
+  
+  if( (use_fore_disp || use_seco_disp) && use_back_disp )
+  {
+    m_backSubFore->show();
+    if( use_fore_disp && use_seco_disp )
+      m_backSubFore->setText( "Back. Sub. For./Sec." );
+    else if( use_fore_disp )
+      m_backSubFore->setText( "Back. Sub. For." );
+    else
+      m_backSubFore->setText( "Back. Sub. Sec." );
+  }else
+  {
+    m_backSubFore->hide();
+  }
+  
+  const bool can_save_interspec_info = ((save_type == SpecUtils::SaveSpectrumAsType::N42_2012)
+                                        || (save_type == SpecUtils::SaveSpectrumAsType::N42_2006));
+  m_includeInterSpecInfo->setHidden( !can_save_interspec_info );
+  
+  if( !spec || (max_records <= 2) || (spec->gamma_detector_names().size() <= 1) )
+  {
+    m_sumDetsPerSample->hide();
+  }else
+  {
+    m_sumDetsPerSample->show();
+  }
+  
   
   if( !spec || (spec->sample_numbers().size() <= 1) )
   {
-    m_samplesHolder->setHidden(true);
+    m_samplesHolder->setHidden( (m_detectorFilterCbs->children().size() == 0) );
     
     m_dispForeSamples->setChecked(false);
     m_dispBackSamples->setChecked(false);
@@ -1066,6 +1416,18 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     m_customSamplesEdit->hide();
     m_customSamplesEdit->setText( "" );
     
+    m_dispForeSamples->hide();
+    m_dispBackSamples->hide();
+    m_dispSecondSamples->hide();
+    m_allSamples->hide();
+    m_customSamples->hide();
+    m_customSamplesEdit->hide();
+    
+    m_backSubFore->hide();
+    m_sumDetsPerSample->hide();
+    m_includeInterSpecInfo->hide();
+    
+    handleSamplesChanged();
     return;
   }//if( no reason to show selecting samples )
   
@@ -1079,6 +1441,16 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   const bool is_back = (spec && (spec == background));
   const bool is_second = (spec && (spec == secondary));
   
+  
+  const vector<string> fore_dets = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+  const vector<string> back_dets = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Background);
+  const vector<string> sec_dets = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::SecondForeground);
+  
+  const set<int> &fore_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  const set<int> &back_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+  const set<int> &sec_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
+  
+  
   m_dispForeSamples->setHidden( !is_for );
   m_dispForeSamples->setChecked( m_dispForeSamples->isChecked() && is_for );
   
@@ -1088,12 +1460,20 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   m_dispSecondSamples->setHidden( !is_second );
   m_dispSecondSamples->setChecked( m_dispSecondSamples->isChecked() && is_second );
   
+  
   const set<int> &sample = spec->sample_numbers();
-  if( sample.size() <= 1 )
+  
+  if( (sample.size() <= 1) || (m_forePlusBack && m_forePlusBack->isChecked()) )
   {
     m_allSamples->setChecked( true );
+    m_allSamples->setHidden( true );
     m_customSamples->setChecked( false );
     m_customSamplesEdit->setHidden( true );
+  }else
+  {
+    m_allSamples->setHidden( false );
+    m_customSamples->setHidden( false );
+    m_customSamplesEdit->setHidden( !m_customSamples->isChecked() );
   }
   
   if( m_customSamples->isChecked() )
@@ -1117,10 +1497,6 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   {
     m_allSamples->setChecked( false );
   }
-  
-  
-  // TODO: "All Detector"
-  // TODO: "Specify Detectors"
   
   handleSamplesChanged();
 }//void ExportSpecFileTool::refreshSampleAndDetectorOptions()
@@ -1154,18 +1530,18 @@ void ExportSpecFileTool::handleDisplaySampleChanged( const SpecUtils::SpectrumTy
       break;
       
     case SpecUtils::SpectrumType::SecondForeground:
-      cb = m_dispBackSamples;
+      cb = m_dispSecondSamples;
       break;
       
     case SpecUtils::SpectrumType::Background:
-      cb = m_dispSecondSamples;
+      cb = m_dispBackSamples;
       break;
   }//switch( type )
   
   if( cb && cb->isChecked() )
   {
-    m_allSamples->setUnChecked();
-    m_customSamples->setUnChecked();
+    m_allSamples->setChecked( false );
+    m_customSamples->setChecked( false );
     m_customSamplesEdit->hide();
   }
   
@@ -1237,16 +1613,127 @@ void ExportSpecFileTool::handleFormatChange()
   refreshSampleAndDetectorOptions();
 }//void handleFormatChange();
   
+
+void ExportSpecFileTool::handleForePlusBackChanged()
+{
+  assert( m_forePlusBack && m_fileSelect );
+  if( !m_forePlusBack || !m_fileSelect )
+    return;
   
+  if( m_forePlusBack->isChecked() )
+  {
+    m_fileSelect->setCurrentIndex( -1 );
+    m_fileSelect->disable();
+  }else
+  {
+    m_fileSelect->enable();
+  }
+  
+  handleFileSelectionChanged();
+}//void ExportSpecFileTool::handleForePlusBackChanged()
+
+
+void ExportSpecFileTool::handleFilterDetectorCbChanged()
+{
+  assert( m_filterDetector );
+  assert( m_detectorFilterCbs );
+  if( !m_filterDetector || !m_detectorFilterCbs )
+    return;
+  
+  if( m_filterDetector->isChecked() )
+  {
+    m_detectorFilterCbs->show();
+  }else
+  {
+    m_detectorFilterCbs->hide();
+    for( const auto w : m_detectorFilterCbs->children() )
+    {
+      WCheckBox *cb = dynamic_cast<WCheckBox *>( w );
+      if( cb )
+        cb->setChecked( true );
+    }
+  }//if( !m_filterDetector->isChecked() )
+  
+  // TODO: update options
+}//void handleFilterDetectorCbChanged()
+
+
+void ExportSpecFileTool::handleSumToSingleRecordChanged()
+{
+  if( m_sumAllToSingleRecord->isChecked() )
+  {
+    m_sumForeToSingleRecord->setChecked( false );
+    m_sumBackToSingleRecord->setChecked( false );
+    m_sumSecoToSingleRecord->setChecked( false );
+    m_backSubFore->setChecked( false );
+    m_sumDetsPerSample->setChecked( false );
+  }//if( m_sumAllToSingleRecord->isChecked() )
+  
+  refreshSampleAndDetectorOptions();
+}//void handleSumToSingleRecordChanged()
+
+
+void ExportSpecFileTool::handleSumTypeToSingleRecordChanged()
+{
+  if( m_sumForeToSingleRecord->isChecked()
+     || m_sumBackToSingleRecord->isChecked()
+     || m_sumSecoToSingleRecord->isChecked() )
+  {
+    m_sumAllToSingleRecord->setChecked( false );
+    m_backSubFore->setChecked( false );
+    m_sumDetsPerSample->setChecked( false );
+  }
+  
+  refreshSampleAndDetectorOptions();
+}//void handleSumTypeToSingleRecordChanged()
+
+
+void ExportSpecFileTool::handleBackSubForeChanged()
+{
+  if( m_backSubFore->isChecked() )
+  {
+    m_sumAllToSingleRecord->setChecked( false );
+    m_sumForeToSingleRecord->setChecked( false );
+    m_sumBackToSingleRecord->setChecked( false );
+    m_sumSecoToSingleRecord->setChecked( false );
+    m_sumDetsPerSample->setChecked( false );
+  }//if( m_backSubFore->isChecked() )
+  
+  refreshSampleAndDetectorOptions();
+}//void handleBackSubForeChanged()
+
+
+void ExportSpecFileTool::handleSumDetPerSampleChanged()
+{
+  if( m_sumDetsPerSample->isChecked() )
+  {
+    m_sumAllToSingleRecord->setChecked( false );
+    m_sumForeToSingleRecord->setChecked( false );
+    m_sumBackToSingleRecord->setChecked( false );
+    m_sumSecoToSingleRecord->setChecked( false );
+    m_backSubFore->setChecked( false );
+  }//if( m_sumDetsPerSample->isChecked() )
+  
+  refreshSampleAndDetectorOptions();
+}//void handleSumDetPerSampleChanged()
+
+
+void ExportSpecFileTool::handleIncludeInterSpecInfoChanged()
+{
+  // Nothing to do here I think
+}//void handleIncludeInterSpecInfoChanged()
+
+
 void ExportSpecFileTool::handleAppUrl( std::string query_str )
 {
-  throw runtime_error( "ExportSpecFileTool::handleAppUrl not implemented yet" );
+  passMessage( "ExportSpecFileTool::handleAppUrl not implemented yet", WarningWidget::WarningMsgHigh );
 }//void handleAppUrl( std::string query_str )
 
 
 std::string ExportSpecFileTool::encodeStateToUrl() const
 {
-  throw runtime_error( "ExportSpecFileTool::encodeStateToUrl not implemented yet" );
+  passMessage( "ExportSpecFileTool::encodeStateToUrl not implemented yet", WarningWidget::WarningMsgHigh );
+  return "";
 }//std::string encodeStateToUrl() const
 
 
@@ -1259,7 +1746,7 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   addStyleClass( "export-spec-file" );
   
   const int w = viewer->renderedWidth();
-  setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 640.0) : 640.0 ,WLength::Pixel), WLength::Auto );
+  setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 800.0) : 800.0 ,WLength::Pixel), WLength::Auto );
   
   m_tool = new ExportSpecFileTool( viewer, contents() );
   m_tool->done().connect( boost::bind(&ExportSpecFileWindow::accept, this) );

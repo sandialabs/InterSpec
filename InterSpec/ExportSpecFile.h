@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <cstdint>
 
 #include <Wt/WContainerWidget>
 
@@ -49,6 +50,7 @@ namespace Wt
 namespace SpecUtils
 {
   enum class SpectrumType : int;
+  enum class SaveSpectrumAsType : int;
 }
 
 namespace ExportSpecFileTool_imp
@@ -81,6 +83,20 @@ public:
   
   /** Returns the currently selected file - as held in memory; i.e., the full file, not just selected samples or whatever. */
   std::shared_ptr<const SpecMeas> currentlySelectedFile() const;
+  
+  
+  /** Returns the currently selected save-as file type.
+   
+   If QR-codes are enabled, returns SpecUtils::SaveSpectrumAsType::NumTypes for it.
+   */
+  SpecUtils::SaveSpectrumAsType currentSaveType() const;
+  
+  
+  /** Returns 1 (ex., SPE, CHN, etc), 2 (QR-code), or `numeric_limits<uint16_t>::max()` (N42, PCF, etc),
+   depending on the currently selected save-as type.
+   */
+  uint16_t maxRecordsInCurrentSaveType() const;
+  
   
   /** Handles receiving a "deep-link" url starting with "interspec://specsum/...".
    
@@ -119,6 +135,14 @@ protected:
   void handleDisplaySampleChanged( const SpecUtils::SpectrumType type );
   void handleSamplesChanged();
   void handleFormatChange();
+  void handleForePlusBackChanged();
+  void handleFilterDetectorCbChanged();
+  
+  void handleSumToSingleRecordChanged();
+  void handleSumTypeToSingleRecordChanged();
+  void handleBackSubForeChanged();
+  void handleSumDetPerSampleChanged();
+  void handleIncludeInterSpecInfoChanged();
   
   InterSpec *m_interspec;
   
@@ -134,6 +158,8 @@ protected:
   Wt::Signal<bool> m_done;
   
   Wt::WComboBox *m_fileSelect;
+  Wt::WCheckBox *m_forePlusBack;
+  
   Wt::WText *m_fileInfo;
   
   Wt::WMenu *m_formatMenu;
@@ -145,7 +171,20 @@ protected:
   Wt::WCheckBox *m_allSamples;
   Wt::WCheckBox *m_customSamples;
   Wt::WLineEdit *m_customSamplesEdit;
+  Wt::WCheckBox *m_filterDetector;
+  /** A <div /> that will only contain WCheckBox's, where the label of each CB will be the detectors name. */
+  Wt::WContainerWidget *m_detectorFilterCbs;
+  
   Wt::WContainerWidget *m_optionsHolder;
+  Wt::WCheckBox *m_sumAllToSingleRecord;
+  Wt::WCheckBox *m_sumForeToSingleRecord;
+  Wt::WCheckBox *m_sumBackToSingleRecord;
+  Wt::WCheckBox *m_sumSecoToSingleRecord;
+  Wt::WCheckBox *m_backSubFore;
+  Wt::WCheckBox *m_sumDetsPerSample;
+  Wt::WCheckBox *m_includeInterSpecInfo;
+  
+  Wt::WText *m_msg;
   
   ExportSpecFileTool_imp::DownloadSpectrumResource *m_resource;
   Wt::WPushButton *m_export_btn;
