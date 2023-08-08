@@ -48,6 +48,11 @@
 #include <Wt/WRegExpValidator>
 #include <Wt/WMessageResourceBundle>
 
+//Following include only needed for lines:
+//  answer->setShieldingSourceModel(...);
+//  answer->setRelActManualGuiState(...);
+#include "external_libs/SpecUtils/3rdparty/rapidxml/rapidxml.hpp"
+
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -65,6 +70,10 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
 
+#if( USE_QR_CODES )
+#include "InterSpec/QrCode.h"
+#include "InterSpec/QRSpectrum.h"
+#endif
 
 using namespace std;
 using namespace Wt;
@@ -82,6 +91,55 @@ namespace
     item->triggered().emit( item ); //
   }
 }//namespace
+
+#if( USE_QR_CODES )
+namespace
+{
+  void displayQrDialog( const vector<QRSpectrum::UrlEncodedSpec> urls,
+                       const size_t index,
+                       boost::function<void()> successfullyDone )
+  {
+    string seqnum = "QR Code";
+    if( urls.size() > 1 )
+      seqnum += " " + to_string(index + 1) + " of " + to_string( urls.size() );
+    
+    string title = "Spectrum File " + seqnum;
+    if( urls.size() == 1 )
+      title = "";
+    
+    string desc = seqnum;
+    SimpleDialog *dialog = QrCode::displayTxtAsQrCode( urls[index].m_url, title, desc );
+    
+    if( (index + 1) < urls.size() )
+    {
+      WPushButton *btn = dialog->addButton( "Next QR code" );
+      btn->clicked().connect( std::bind([=](){
+        displayQrDialog( urls, index + 1, successfullyDone );
+      }) );
+    }else if( successfullyDone )
+    {
+      // We need to find the "Close" button here
+      WPushButton *close = nullptr;
+      
+      WContainerWidget *foot = dialog->footer();
+      if( foot )
+      {
+        for( auto w : foot->children() )
+        {
+          auto btn = dynamic_cast<WPushButton *>(w);
+          close = btn;
+          if( close )
+            break;
+        }//for( auto w : foot->children() )
+      }//if( foot )
+      assert( close );
+      if( close )
+        close->clicked().connect( std::bind(successfullyDone) );
+    }//if( (index + 1) < urls.size() )
+  }//void displayQr( vector<QRSpectrum::UrlEncodedSpec> urls )
+}//namespace
+#endif //USE_QR_CODES
+
 
 namespace ExportSpecFileTool_imp
 {
@@ -109,24 +167,7 @@ namespace ExportSpecFileTool_imp
                             const SpecUtils::SaveSpectrumAsType type,
                             const std::shared_ptr<const SpecMeas> Measurement,
                             const std::set<int> &samplenums,
-                            const std::vector<std::string> &detectornums,
-                            const InterSpec *viewer );
-    
-    //handle_resource_request(): does the actual streaming of the SpecMeas.
-    //  'samplenums' and 'detectornums' are only used for file formats where SpecMeas must be
-    //  collapsed down into a single spectrum (i.e., Chn, IntegerSpcType, SpcBinaryFloat, SpcAscii,
-    //  SpeIaea, Cnf, Tka, will have all the spectra summed into a single spectrum); for other formats
-    //  the entire SpecMeas is written out.
-    //
-    //  Specifying empty detector and sample numbers will default to all samples/detectors.
-    static void handle_resource_request(
-                                  SpecUtils::SaveSpectrumAsType type,
-                                  std::shared_ptr<const SpecMeas> Measurement,
-                                  const std::set<int> &samplenums,
-                                  const std::vector<std::string> &detectornums,
-                                  const InterSpec *viewer,
-                                  const Wt::Http::Request& request,
-                                  Wt::Http::Response& response );
+                            const std::vector<std::string> &detectornums );
   };// class DownloadSpectrumResource
 
 
@@ -155,75 +196,98 @@ namespace ExportSpecFileTool_imp
   {
     WApplication::UpdateLock lock( m_app );
     
-    if( !lock )
-    {
-      log("error") << "Failed to WApplication::UpdateLock in DownloadSpectrumResource.";
-      response.out() << "Error grabbing application lock to form DownloadSpectrumResource resource; please report to InterSpec@sandia.gov.";
-      response.setStatus(500);
-      assert( 0 );
-      return;
-    }//if( !lock )
-    
     assert( m_tool );
     if( !m_tool )
       return;
-
-    /*
-    const WModelIndexSet selected = m_display->treeView()->selectedIndexes();
-
-    if( selected.empty() )
-      return;
-    
-    vector<shared_ptr<const SpectraFileHeader> > headers;
-
-
-    for( const WModelIndex &index : selected )
-    {
-      if( m_display->model()->level(index) != SpectraFileModel::FileHeaderLevel )
-        continue;
-      shared_ptr<const SpectraFileHeader> header;
-      header = m_display->model()->fileHeader( index.row() );
-
-      if( header )
-        headers.push_back( header );
-    }//for( const WModelIndex &index : selected )
-
-    const set<int> samplenums;
-    const vector<string> detectornames;
     
     try
     {
-      shared_ptr<const SpecMeas> measurement;
-      if( headers.size() > 1 || headers.empty() )
+      if( !lock )
       {
-        measurement = m_display->selectedToSpecMeas();
-        handle_resource_request( m_type, measurement, samplenums,
-                                detectornames, m_display->viewer(), request, response );
-      }else if( headers.size() == 1 )
+        log("error") << "Failed to WApplication::UpdateLock in DownloadSpectrumResource.";
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__, "Failed to WApplication::UpdateLock in DownloadSpectrumResource." );
+#endif
+        assert( 0 );
+        
+        throw runtime_error( "Error grabbing application lock to form DownloadSpectrumResource resource; please report to InterSpec@sandia.gov." );
+      }//if( !lock )
+    
+      const SpecUtils::SaveSpectrumAsType save_type = m_tool->currentSaveType();
+      const shared_ptr<const SpecMeas> output = m_tool->generateFileToSave();
+      
+      assert( output );
+      if( !output )
+        throw runtime_error( "could not generate file." );
+      
+      switch( save_type )
       {
-        shared_ptr<const SpectraFileHeader> header = headers[0];
-        measurement = header->parseFile();
-        if( measurement )
-          handle_resource_request( m_type, measurement, samplenums,
-                                  detectornames, m_display->viewer(), request, response );
-      }
+        case SpecUtils::SaveSpectrumAsType::Txt:
+          response.setMimeType( "application/octet-stream" );
+    //      response.setMimeType( "text/plain" );
+        break;
+
+        case SpecUtils::SaveSpectrumAsType::Csv:
+          response.setMimeType( "application/octet-stream" );
+    //      response.setMimeType( "text/csv" );
+        break;
+
+        case SpecUtils::SaveSpectrumAsType::Pcf:
+          response.setMimeType( "application/octet-stream" );
+        break;
+
+        case SpecUtils::SaveSpectrumAsType::N42_2006:
+          response.setMimeType( "application/octet-stream" );
+    //      response.setMimeType( "application/xml" );
+        break;
+
+        case SpecUtils::SaveSpectrumAsType::N42_2012:
+          response.setMimeType( "application/octet-stream" );
+          //      response.setMimeType( "application/xml" );
+        break;
+          
+        case SpecUtils::SaveSpectrumAsType::Chn:
+        case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
+        case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
+        case SpecUtils::SaveSpectrumAsType::SpcAscii:
+        case SpecUtils::SaveSpectrumAsType::SpeIaea:
+        case SpecUtils::SaveSpectrumAsType::Cnf:
+        case SpecUtils::SaveSpectrumAsType::Tka:
+          response.setMimeType( "application/octet-stream" );
+        break;
+          
+        case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
+        case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
+          response.setMimeType( "application/octet-stream" );
+        break;
+          
+    #if( SpecUtils_ENABLE_D3_CHART )
+        case SpecUtils::SaveSpectrumAsType::HtmlD3:
+          response.setMimeType( "text/html" );
+        break;
+    #endif //#if( USE_D3_EXPORTING )
+          
+        case SpecUtils::SaveSpectrumAsType::NumTypes:
+        break;
+      }//switch( type )
+      
+      
+      write_file( response.out(), save_type, output,
+                 output->sample_numbers(), output->detector_names() );
+      
+      m_download_finished.emit();
     }catch( std::exception &e )
     {
-      stringstream msg;
-      msg << "Failed in creating resource to export: " << e.what();
-      passMessage( msg.str(), WarningWidget::WarningMsgHigh );
+      const string msg = "Failed to prepare spectrum file for export: " + string(e.what());
       
-  #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, msg.str().c_str() );
-  #endif
-    }
-     */
-    
-    suggestFileName( "SomeDumbName.txt" );
-    response.out() << "Hello dude.";
-    response.setMimeType( "text/plain" );
-    
-    m_download_finished.emit();
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, msg.c_str() );
+#endif
+      
+      passMessage( msg, WarningWidget::WarningMsgHigh );
+      
+      response.setStatus(500);
+    }//try / catch
   }//void DownloadSpectrumResource::handleRequest(...)
 
 
@@ -231,8 +295,7 @@ namespace ExportSpecFileTool_imp
                          const SpecUtils::SaveSpectrumAsType type,
                          const std::shared_ptr<const SpecMeas> measurement,
                          const std::set<int> &samplenums,
-                         const std::vector<std::string> &detectornames,
-                         const InterSpec *viewer )
+                         const std::vector<std::string> &detectornames )
   {
     //Convert detector names to detector numbers.
     set<int> detectornums;
@@ -314,6 +377,7 @@ namespace ExportSpecFileTool_imp
   #if( SpecUtils_ENABLE_D3_CHART )
       case SpecUtils::SaveSpectrumAsType::HtmlD3:
       {
+        InterSpec *viewer = InterSpec::instance();
         //For purposes of development, lets cheat and export everything as it is now
         if( viewer )
         {
@@ -366,72 +430,6 @@ namespace ExportSpecFileTool_imp
     }//switch( type )
   }//DownloadSpectrumResource::write_file(...)
 
-
-  void DownloadSpectrumResource::handle_resource_request(
-                                SpecUtils::SaveSpectrumAsType type,
-                                std::shared_ptr<const SpecMeas> measurement,
-                                const std::set<int> &samplenums,
-                                const std::vector<std::string> &detectornames,
-                                const InterSpec *viewer,
-                                const Wt::Http::Request& /*request*/,
-                                Wt::Http::Response& response )
-  {
-    switch( type )
-    {
-      case SpecUtils::SaveSpectrumAsType::Txt:
-        response.setMimeType( "application/octet-stream" );
-  //      response.setMimeType( "text/plain" );
-      break;
-
-      case SpecUtils::SaveSpectrumAsType::Csv:
-        response.setMimeType( "application/octet-stream" );
-  //      response.setMimeType( "text/csv" );
-      break;
-
-      case SpecUtils::SaveSpectrumAsType::Pcf:
-        response.setMimeType( "application/octet-stream" );
-      break;
-
-      case SpecUtils::SaveSpectrumAsType::N42_2006:
-        response.setMimeType( "application/octet-stream" );
-  //      response.setMimeType( "application/xml" );
-      break;
-
-      case SpecUtils::SaveSpectrumAsType::N42_2012:
-        response.setMimeType( "application/octet-stream" );
-        //      response.setMimeType( "application/xml" );
-      break;
-        
-      case SpecUtils::SaveSpectrumAsType::Chn:
-      case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
-      case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
-      case SpecUtils::SaveSpectrumAsType::SpcAscii:
-      case SpecUtils::SaveSpectrumAsType::SpeIaea:
-      case SpecUtils::SaveSpectrumAsType::Cnf:
-      case SpecUtils::SaveSpectrumAsType::Tka:
-        response.setMimeType( "application/octet-stream" );
-      break;
-        
-      case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
-      case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
-        response.setMimeType( "application/octet-stream" );
-      break;
-        
-  #if( SpecUtils_ENABLE_D3_CHART )
-      case SpecUtils::SaveSpectrumAsType::HtmlD3:
-        response.setMimeType( "text/html" );
-      break;
-  #endif //#if( USE_D3_EXPORTING )
-        
-      case SpecUtils::SaveSpectrumAsType::NumTypes:
-      break;
-    }//switch( type )
-
-    if( !measurement )
-      return;
-    
-    DownloadSpectrumResource::write_file( response.out(), type, measurement, samplenums, detectornames, viewer );
-  }//void handle_resource_request(...)
 }//namespace ExportSpecFileTool_imp
 
 
@@ -466,7 +464,12 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
   m_sumDetsPerSample( nullptr ),
   m_includeInterSpecInfo( nullptr ),
   m_msg( nullptr ),
+  m_sampleSelectNotAppTxt( nullptr ),
+  m_optionsNotAppTxt( nullptr ),
   m_export_btn( nullptr ),
+#if( USE_QR_CODES )
+  m_show_qr_btn( nullptr ),
+#endif
   m_resource( nullptr )
 {
   init();
@@ -508,7 +511,12 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
   m_sumDetsPerSample( nullptr ),
   m_includeInterSpecInfo( nullptr ),
   m_msg( nullptr ),
+  m_sampleSelectNotAppTxt( nullptr ),
+  m_optionsNotAppTxt( nullptr ),
   m_export_btn( nullptr ),
+#if( USE_QR_CODES )
+  m_show_qr_btn( nullptr ),
+#endif
   m_resource( nullptr )
 {
   init();
@@ -632,7 +640,9 @@ void ExportSpecFileTool::init()
 #if( SpecUtils_ENABLE_D3_CHART )
   addFormatItem( "HTML", SpecUtils::SaveSpectrumAsType::HtmlD3 );
 #endif
+#if( USE_QR_CODES )
   addFormatItem( "QR-code/URL", SpecUtils::SaveSpectrumAsType::NumTypes );
+#endif
   
   // Meas/samples to include
   m_samplesHolder = new WContainerWidget( body );
@@ -688,7 +698,7 @@ void ExportSpecFileTool::init()
   
   m_customSamplesEdit->hide();
 
-  m_filterDetector = new WCheckBox( "Filter Dets.", m_samplesHolder );
+  m_filterDetector = new WCheckBox( "Filter Detectors", m_samplesHolder );
   m_filterDetector->checked().connect( this, &ExportSpecFileTool::handleFilterDetectorCbChanged );
   m_filterDetector->unChecked().connect( this, &ExportSpecFileTool::handleFilterDetectorCbChanged );
   
@@ -733,12 +743,19 @@ void ExportSpecFileTool::init()
   m_includeInterSpecInfo->unChecked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   
   
+  m_sampleSelectNotAppTxt = new WText( "Not Applicable" );
+  m_sampleSelectNotAppTxt->addStyleClass( "ExportNotAppTxt" );
+  m_samplesHolder->insertWidget( 1, m_sampleSelectNotAppTxt ); // Put right below title
+  
+  m_optionsNotAppTxt = new WText( "None Available" );
+  m_optionsNotAppTxt->addStyleClass( "ExportNotAppTxt" );
+  m_optionsHolder->insertWidget( 1, m_optionsNotAppTxt );      // Put right below title
   
   WContainerWidget *footer = new WContainerWidget( this );
   footer->addStyleClass( "ExportSpecFileFooter" );
   
   
-  m_msg = new WText( "Some msg to be updated later", footer );
+  m_msg = new WText( "&nbsp;", footer );
   m_msg->addStyleClass( "ExportSpecMsg" );
   
   WContainerWidget *btnsDiv = new WContainerWidget( footer );
@@ -758,6 +775,13 @@ void ExportSpecFileTool::init()
   m_export_btn = new WPushButton( "Export", btnsDiv );
   m_export_btn->setLink( WLink(m_resource) );
   m_export_btn->disable();
+  
+#if( USE_QR_CODES )
+  m_show_qr_btn = new WPushButton( "Show QR-code", btnsDiv );
+  m_show_qr_btn->clicked().connect( this, &ExportSpecFileTool::handleGenerateQrCode );
+  m_show_qr_btn->disable();
+  m_show_qr_btn->hide();
+#endif
   
   m_formatMenu->select( 0 );
   
@@ -782,8 +806,12 @@ void ExportSpecFileTool::emitDone( const bool exported )
 
 void ExportSpecFileTool::updateExportEnabled()
 {
-  const bool disable = (m_fileSelect && (m_fileSelect->currentIndex() < 0));
+  const bool disable = ((m_fileSelect && (m_fileSelect->currentIndex() < 0))
+                        && (!m_forePlusBack || m_forePlusBack->isHidden() || !m_forePlusBack->isChecked()));
   m_export_btn->setDisabled( disable );
+#if( USE_QR_CODES )
+  m_show_qr_btn->setDisabled( disable );
+#endif
 }//void updateExportEnabled()
 
 
@@ -1252,6 +1280,109 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::currentlySelectedFile() cons
 }//std::shared_ptr<const SpecMeas> currentlySelectedFile() const
 
 
+set<int> ExportSpecFileTool::currentlySelectedSamples() const
+{
+  shared_ptr<const SpecMeas> spec = currentlySelectedFile();
+  if( !spec )
+    return set<int>{};
+  
+  if( m_specific_spectrum )
+    return m_specific_samples.empty() ? m_specific_spectrum->sample_numbers() : m_specific_samples;
+  
+  const set<int> &samples = spec->sample_numbers();
+  if( (samples.size() == 1) || (m_allSamples->isVisible() && m_allSamples->isChecked()) )
+    return samples;
+  
+  if( m_customSamples->isVisible() && m_customSamples->isChecked() )
+  {
+    const string txt = m_customSamplesEdit->text().toUTF8();
+    pair<set<int>,string> samplenums = sampleNumbersFromTxtRange( txt, spec, true );
+    return samplenums.first;
+  }
+  
+  if( m_forePlusBack && m_forePlusBack->isVisible() && m_forePlusBack->isChecked() )
+    return spec->sample_numbers();
+  
+  const bool disp_fore = (m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked());
+  const bool disp_back = (m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked());
+  const bool disp_seco = (m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked());
+  
+  assert( disp_fore || disp_back || disp_seco );
+  if( !disp_fore && !disp_back && !disp_seco )
+  {
+    passMessage( "ExportSpecFileTool::encodeStateToUrl: logic error - will use all sample numbers", WarningWidget::WarningMsgHigh );
+    return spec->sample_numbers();
+  }
+  
+  set<int> answer;
+  if( disp_fore )
+  {
+    const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+    answer.insert( begin(samples), end(samples) );
+  }
+  
+  if( disp_back )
+  {
+    const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+    answer.insert( begin(samples), end(samples) );
+  }
+  
+  if( disp_seco )
+  {
+    const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
+    answer.insert( begin(samples), end(samples) );
+  }
+  
+  assert( !answer.empty() );
+  
+  return answer;
+}//std::set<int> currentlySelectedSamples() const;
+
+
+vector<string> ExportSpecFileTool::currentlySelectedDetectors() const
+{
+  const shared_ptr<const SpecMeas> spec = currentlySelectedFile();
+  if( !spec )
+    return vector<string>{};
+  
+  if( m_specific_spectrum )
+    return m_specific_detectors.empty() ? m_specific_spectrum->detector_names() : m_specific_detectors;
+  
+  if( spec->gamma_detector_names().size() <= 1 )
+    return spec->detector_names();
+  
+  if( !m_filterDetector || m_filterDetector->isHidden() || !m_filterDetector->isChecked() )
+    return spec->detector_names();
+  
+  map<string,string> label_to_orig;
+  for( const string &name : spec->detector_names() )
+  {
+    // TODO: use Wt::Utils::htmlEncode, if that is what happens in WCheckBox, instead of creating a WCheckBox
+    WCheckBox cb( name );
+    label_to_orig[cb.text().toUTF8()] = name;
+  }
+  
+  vector<string> answer;
+  for( const auto w : m_detectorFilterCbs->children() )
+  {
+    WCheckBox *cb = dynamic_cast<WCheckBox *>( w );
+    
+    if( !cb || !cb->isChecked() )
+      continue;
+    
+    const auto pos = label_to_orig.find( cb->text().toUTF8() );
+    assert( pos != end(label_to_orig) );
+    if( pos != end(label_to_orig) )
+      answer.push_back( pos->second );
+    else
+      throw runtime_error( "ExportSpecFileTool::currentlySelectedDetectors:"
+                          " Error matching detector names." );
+  }//for( const auto w : m_detectorFilterCbs->children() )
+  
+  return answer;
+}//vector<string> currentlySelectedDetectors() const
+
+
 SpecUtils::SaveSpectrumAsType ExportSpecFileTool::currentSaveType() const
 {
   const WMenuItem * const currentFormatItem = m_formatMenu->currentItem();
@@ -1260,7 +1391,11 @@ SpecUtils::SaveSpectrumAsType ExportSpecFileTool::currentSaveType() const
   if( currentFormatItem )
   {
     const uint64_t data = reinterpret_cast<uint64_t>( currentFormatItem->data() );
+#if( USE_QR_CODES )
     assert( data <= static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes) );
+#else
+    assert( data < static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes) );
+#endif
     return SpecUtils::SaveSpectrumAsType( data );
   }//if( currentFormatItem )
   
@@ -1268,7 +1403,7 @@ SpecUtils::SaveSpectrumAsType ExportSpecFileTool::currentSaveType() const
 }//SpecUtils::SaveSpectrumAsType currentSaveType() const;
 
 
-uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType() const
+uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecMeas> spec ) const
 {
   const SpecUtils::SaveSpectrumAsType save_format = currentSaveType();
   
@@ -1283,15 +1418,19 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType() const
     case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
     case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
       return std::numeric_limits<uint16_t>::max();
-      break;
     
+#if( USE_QR_CODES )
     // Spectrum file types that can have two spectra in them (foreground + background)
     case SpecUtils::SaveSpectrumAsType::NumTypes:
+      if( !spec )
+        spec = currentlySelectedFile();
+      return (spec && (spec->num_gamma_channels() < 2075)) ? 2 : 1;
+#endif
+      
 #if( SpecUtils_ENABLE_D3_CHART )
     case SpecUtils::SaveSpectrumAsType::HtmlD3:
-#endif
       return 2;
-      break;
+#endif
       
     // Spectrum file types that can have a single spectra in them
     case SpecUtils::SaveSpectrumAsType::Chn:
@@ -1302,7 +1441,6 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType() const
     case SpecUtils::SaveSpectrumAsType::Cnf:
     case SpecUtils::SaveSpectrumAsType::Tka:
       return 1;
-      break;
     
 #if( SpecUtils_INJA_TEMPLATES )
     case SpecUtils::SaveSpectrumAsType::Template:
@@ -1320,8 +1458,19 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType() const
 void ExportSpecFileTool::refreshSampleAndDetectorOptions()
 {
   const shared_ptr<const SpecMeas> spec = currentlySelectedFile();
-  const uint16_t max_records = maxRecordsInCurrentSaveType();
+  const uint16_t max_records = maxRecordsInCurrentSaveType( spec );
   const SpecUtils::SaveSpectrumAsType save_type = currentSaveType();
+  
+  
+  {// Begin update suggested spectrum file name
+    string filename = spec ? SpecUtils::filename( spec->filename() ) : string("spectrum");
+    const string orig_ext = SpecUtils::file_extension(filename);
+    if( (orig_ext.size() > 0) && (orig_ext.size() <= 4) && (orig_ext.size() < filename.size()) )
+      filename = filename.substr( 0, filename.size() - orig_ext.size() );
+    filename += string(".") + SpecUtils::suggestedNameEnding(save_type);
+    m_resource->suggestFileName( filename );
+  }// End update suggested spectrum file name
+  
   
   if( !spec || (spec->gamma_detector_names().size() <= 1) )
   {
@@ -1395,6 +1544,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
                                         || (save_type == SpecUtils::SaveSpectrumAsType::N42_2006));
   m_includeInterSpecInfo->setHidden( !can_save_interspec_info );
   
+  
   if( !spec || (max_records <= 2) || (spec->gamma_detector_names().size() <= 1) )
   {
     m_sumDetsPerSample->hide();
@@ -1406,8 +1556,6 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   
   if( !spec || (spec->sample_numbers().size() <= 1) )
   {
-    m_samplesHolder->setHidden( (m_detectorFilterCbs->children().size() == 0) );
-    
     m_dispForeSamples->setChecked(false);
     m_dispBackSamples->setChecked(false);
     m_dispSecondSamples->setChecked(false);
@@ -1427,11 +1575,21 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     m_sumDetsPerSample->hide();
     m_includeInterSpecInfo->hide();
     
+    m_sampleSelectNotAppTxt->show();
+    m_optionsNotAppTxt->show();
+    
+    if( spec && (spec->gamma_detector_names().size() > 1) && (max_records < 2) )
+    {
+      m_msg->setText( "Detectors will be summed together." );
+    }else
+    {
+      m_msg->setText( "&nbsp;" );
+    }
+    
     handleSamplesChanged();
     return;
   }//if( no reason to show selecting samples )
   
-  m_samplesHolder->setHidden(false);
   
   const shared_ptr<const SpecMeas> foreground = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   const shared_ptr<const SpecMeas> background = m_interspec->measurment(SpecUtils::SpectrumType::Background);
@@ -1459,8 +1617,8 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   
   m_dispSecondSamples->setHidden( !is_second );
   m_dispSecondSamples->setChecked( m_dispSecondSamples->isChecked() && is_second );
-  
-  
+
+    
   const set<int> &sample = spec->sample_numbers();
   
   if( (sample.size() <= 1) || (m_forePlusBack && m_forePlusBack->isChecked()) )
@@ -1496,6 +1654,79 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
      || m_customSamples->isChecked() )
   {
     m_allSamples->setChecked( false );
+  }
+  
+  
+  const set<int> samplesToUse = currentlySelectedSamples();
+  const vector<string> detsToUse = currentlySelectedDetectors();
+  
+  if( (max_records >= 2) && ((samplesToUse.size() > 1) || (spec->gamma_detector_names().size() > 1)) )
+  {
+    m_sumAllToSingleRecord->show();
+  }else
+  {
+    m_sumAllToSingleRecord->hide();
+  }
+  
+  // Loop over sample numbers, and see if there is more than one detector for any sample number,
+  //  and use this info to show/hide m_sumDetsPerSample
+  bool mult_dets_per_sample = false;
+  for( const int sample : samplesToUse )
+  {
+    size_t num_dets = 0;
+    for( const string &det : detsToUse )
+      num_dets += !!spec->measurement( sample, det );
+    mult_dets_per_sample = ( num_dets > 1 );
+    if( mult_dets_per_sample )
+      break;
+  }//for( const int sample : samplesToUse )
+  
+  m_sumDetsPerSample->setHidden( (max_records <= 2) || !mult_dets_per_sample );
+  if( !mult_dets_per_sample )
+    m_filterDetector->hide();
+  
+  size_t num_sample_showing = 0, num_option_showing = 0;
+  for( const auto w : m_samplesHolder->children() )
+  {
+    auto cb = dynamic_cast<WCheckBox *>( w );
+    num_sample_showing += (cb && cb->isVisible());
+  }
+  
+  for( const auto w : m_optionsHolder->children() )
+  {
+    auto cb = dynamic_cast<WCheckBox *>( w );
+    num_option_showing += (cb && cb->isVisible());
+  }
+  
+  m_sampleSelectNotAppTxt->setHidden( num_sample_showing );
+  m_optionsNotAppTxt->setHidden( num_option_showing );
+  
+  
+  
+  if( (max_records < 2)
+     && ( (spec->gamma_detector_names().size() > 1) || (samplesToUse.size() > 1 ) ) )
+  {
+    m_msg->setText( "Records will be summed together." );
+  }else if( max_records == 2 )
+  {
+    // QR code here
+    if( use_fore_disp && use_seco_disp && use_back_disp )
+    {
+      m_msg->setText( "Will be summed to single spec." );
+    }else if( (use_fore_disp || use_seco_disp) && use_back_disp
+       && (!m_sumAllToSingleRecord->isVisible() || !m_sumAllToSingleRecord->isChecked()) )
+    {
+      m_msg->setText( "QR will have 2 spectrum" );
+    }else if( (samplesToUse.size() > 1) || (spec->gamma_detector_names().size() > 1) )
+    {
+      m_msg->setText( "Records will be summed together." );
+    }else
+    {
+      m_msg->setText( "&nbsp;" );
+    }
+  }else
+  {
+    m_msg->setText( "&nbsp;" );
   }
   
   handleSamplesChanged();
@@ -1610,6 +1841,16 @@ void ExportSpecFileTool::handleSamplesChanged()
 
 void ExportSpecFileTool::handleFormatChange()
 {
+  const SpecUtils::SaveSpectrumAsType save_format = currentSaveType();
+  
+#if( USE_QR_CODES )
+  const bool is_qr = (save_format == SpecUtils::SaveSpectrumAsType::NumTypes);
+  m_export_btn->setHidden( is_qr );
+  m_show_qr_btn->setHidden( !is_qr );
+#else
+  m_export_btn->show();
+#endif
+  
   refreshSampleAndDetectorOptions();
 }//void handleFormatChange();
   
@@ -1724,6 +1965,506 @@ void ExportSpecFileTool::handleIncludeInterSpecInfoChanged()
 }//void handleIncludeInterSpecInfoChanged()
 
 
+std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
+{
+  const shared_ptr<const SpecMeas> start_spec = currentlySelectedFile();
+  const SpecUtils::SaveSpectrumAsType save_type = currentSaveType();
+  const uint16_t max_records = maxRecordsInCurrentSaveType( start_spec );
+  
+  
+  if( !start_spec )
+    throw runtime_error( "No file selected for export." );
+  
+  // First we'll check for all the cases where we want the whole file
+  
+  if( start_spec->num_measurements() == 1 )
+    return start_spec;
+  
+  const bool backgroundSub = (m_backSubFore && m_backSubFore->isVisible() && m_backSubFore->isChecked());
+  const bool sumAll = (m_sumAllToSingleRecord->isVisible() && m_sumAllToSingleRecord->isChecked());
+  const bool foreToSingleRecord = (m_sumForeToSingleRecord->isVisible() && m_sumForeToSingleRecord->isChecked());
+  const bool backToSingleRecord = (m_sumBackToSingleRecord->isVisible() && m_sumBackToSingleRecord->isChecked());
+  const bool secoToSingleRecord = (m_sumSecoToSingleRecord->isVisible() && m_sumSecoToSingleRecord->isChecked());
+  const bool filterDets = (m_filterDetector && m_filterDetector->isVisible() && m_filterDetector->isChecked());
+  
+  /*
+  if( !m_specific_spectrum
+     && m_forePlusBack && m_forePlusBack->isChecked()
+     && !backgroundSub
+     && !sumAll
+     && !foreToSingleRecord
+     && !backToSingleRecord
+     && !secoToSingleRecord
+     && filterDets )
+  {
+    return start_spec;
+  }
+  
+  if( !m_specific_spectrum
+     && (m_allSamples && m_allSamples->isVisible() && m_allSamples->isChecked())
+     && !filterDets
+  )
+  {
+    return start_spec;
+  }
+  */
+  
+  set<int> samples = currentlySelectedSamples();
+  vector<string> detectors = currentlySelectedDetectors();
+  
+  shared_ptr<SpecMeas> answer = make_shared<SpecMeas>();
+  answer->uniqueCopyContents( *start_spec );
+
+  answer->set_uuid( "" );
+  
+  set<set<int>> samplesToSum;
+  if( m_sumDetsPerSample->isVisible() && m_sumDetsPerSample->isChecked() )
+  {
+    for( const int sample : answer->sample_numbers() )
+      samplesToSum.insert( set<int>{sample} );
+  }//if( sum detectors per sample )
+  
+
+  if( m_sumForeToSingleRecord->isVisible() && m_sumForeToSingleRecord->isChecked() )
+  {
+    assert( m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked() );
+    const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+    samplesToSum.insert( samples );
+  }//if( foreground to single record )
+  
+  
+  if( m_sumBackToSingleRecord->isVisible() && m_sumBackToSingleRecord->isChecked() )
+  {
+    assert( m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked() );
+    const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+    samplesToSum.insert( samples );
+  }//if( background to single record )
+  
+  
+  if( m_sumSecoToSingleRecord->isVisible() && m_sumSecoToSingleRecord->isChecked() )
+  {
+    assert( m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked() );
+    const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
+    samplesToSum.insert( samples );
+  }//if( secondary to single record )
+  
+  
+  set<set<int>> peaks_to_remove;
+  map<set<int>,shared_ptr<const deque<shared_ptr<const PeakDef>>>> peaks_to_set;
+  set<shared_ptr<const SpecUtils::Measurement>> meas_to_remove;
+  vector<shared_ptr<SpecUtils::Measurement>> meas_to_add;
+  
+  if( m_backSubFore->isVisible() && m_backSubFore->isChecked() )
+  {
+    // We'll check if the foreground and background have the same detectors
+    //  for foreground and background, and if so, subtract on a detector by
+    //  detector basis; if not we'll sum things, and do that.
+    assert( m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked() );
+    assert( (m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked())
+           || (m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked()) );
+    
+    auto get_dets = [this,detectors,answer]( const SpecUtils::SpectrumType type ) -> set<string> {
+      set<string> dets;
+      
+      for( int sample : m_interspec->displayedSamples(type) )
+      {
+        for( const string &det : detectors )
+        {
+          const auto m = answer->measurement( sample, det );
+          if( m )
+            dets.insert( det );
+        }
+      }//for( int sample : fore_samples )
+      
+      return dets;
+    };//auto get_dets lamda
+    
+    
+    const set<string> seco_dets = get_dets( SpecUtils::SpectrumType::SecondForeground );
+    
+    
+    if( (m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked())
+       || (m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked()) )
+    {
+      auto make_subtracted = [&]( const SpecUtils::SpectrumType type ){
+      
+        assert( (type == SpecUtils::SpectrumType::Foreground)
+               || (type == SpecUtils::SpectrumType::SecondForeground) );
+        
+        bool summed_det_by_det = false;
+    
+        const double fore_sf = m_interspec->displayScaleFactor( type );
+        const double back_sf = m_interspec->displayScaleFactor( SpecUtils::SpectrumType::Background );
+        
+        // In the context of this lamda, we'll call either foreground or secondary spectra, foreground
+        const set<string> fore_dets = get_dets( type );
+        const set<string> back_dets = get_dets( SpecUtils::SpectrumType::Background );
+        const vector<string> fore_dets_vec( begin(fore_dets), end(fore_dets) );
+        const vector<string> back_dets_vec( begin(back_dets), end(back_dets) );
+        
+        const set<int> disp_fore_samples = m_interspec->displayedSamples(type);
+        const set<int> disp_back_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+        
+        if( disp_fore_samples.empty() || disp_back_samples.empty() )
+          return;
+        
+        auto do_sub = [&]( const set<int> &fore_samples, const vector<string> &fore_dets,
+                            const set<int> &back_samples, const vector<string> &back_dets ){
+          auto foreground = answer->sum_measurements( fore_samples, fore_dets, nullptr );
+          auto background = answer->sum_measurements( back_samples, back_dets, nullptr );
+          assert( foreground && background );
+          if( !foreground || !background )
+            throw runtime_error( "Failed to sum foreground or background." );
+          
+          try
+          {
+            shared_ptr<const deque<shared_ptr<const PeakDef>>> orig_peaks = answer->peaks(fore_samples);
+            shared_ptr<const vector<float>> fore_counts = foreground->gamma_counts();
+            shared_ptr<const vector<float>> back_counts = background->gamma_counts();
+            
+            // Make sure back_counts has the same energy calibration and fore_counts, so we can subtract
+            //  on a bin-by-bin basis
+            if( background->energy_calibration() != foreground->energy_calibration()
+               && (*background->energy_calibration()) != (*foreground->energy_calibration()) )
+            {
+              auto new_backchan = make_shared<vector<float>>( fore_counts->size(), 0.0f );
+              SpecUtils::rebin_by_lower_edge( *background->channel_energies(), *back_counts,
+                                             *foreground->channel_energies(), *new_backchan );
+              back_counts = new_backchan;
+            }
+            
+            // Create what will be the background subtracted foreground
+            auto back_sub_counts = make_shared<vector<float>>( *fore_counts );
+            
+            //back_counts and fore_counts should always be the same size, but we'll be a bit verbose anyway
+            assert( back_counts->size() == fore_counts->size() );
+            const size_t nchann = std::min( back_counts->size(), fore_counts->size() );
+            
+            // Do the actual background subtraction
+            for( size_t i = 0; i < nchann; ++i )
+            {
+              float &val = (*back_sub_counts)[i];
+              val *= fore_sf;
+              val -= back_sf*(*back_counts)[i];
+            }//for( size_t i = 0; i < nchann; ++i )
+            
+            // Create a new Measurement object, based on the old foreground
+            auto newspec = make_shared<SpecUtils::Measurement>( *foreground );
+            newspec->set_gamma_counts( back_sub_counts, foreground->live_time(), foreground->real_time() );
+            vector<string> remarks = foreground->remarks();
+            remarks.push_back( "This spectrum has been background subtracted in InterSpec" );
+            newspec->set_remarks( remarks );
+            newspec->set_sample_number( *begin(fore_samples) );
+            if( fore_dets.size() == 1 )
+              newspec->set_detector_name( fore_dets.front() );
+            else
+              newspec->set_detector_name( "bkg_sub" );
+            
+            switch( type )
+            {
+              case SpecUtils::SpectrumType::Foreground:
+                newspec->set_source_type( SpecUtils::SourceType::Foreground );
+                break;
+                
+              case SpecUtils::SpectrumType::SecondForeground:
+                newspec->set_source_type( SpecUtils::SourceType::Unknown );
+                break;
+                
+              case SpecUtils::SpectrumType::Background:
+                assert( 0 );
+                break;
+            }//switch( type )
+            
+            meas_to_add.push_back( newspec );
+            
+            for( const int sample : fore_samples )
+            {
+              for( const string &det : fore_dets )
+              {
+                const auto m = answer->measurement( sample, det );
+                if( m )
+                  meas_to_remove.insert( m );
+              }
+            }//for( const int sample : fore_samples )
+            
+            for( const int sample : back_samples )
+            {
+              for( const string &det : back_dets )
+              {
+                const auto m = answer->measurement( sample, det );
+                if( m )
+                  meas_to_remove.insert( m );
+              }
+            }//for( const int sample : back_samples )
+            
+            // TODO: refit peaks and then put those into the file - for the moment we'll just leave the original peaks
+            if( orig_peaks && orig_peaks->size() )
+            {
+              peaks_to_set[set<int>{newspec->sample_number()}] = orig_peaks;
+              peaks_to_remove.insert( fore_samples );
+              peaks_to_remove.insert( back_samples );
+            }
+            
+            /*
+             // Re-fit peaks for now being background subtracted
+             std::vector<PeakDef> refit_peaks;
+             if( orig_peaks && orig_peaks->size() )
+             {
+             try
+             {
+             vector<PeakDef> input_peaks;
+             for( const auto &i : *orig_peaks )
+             input_peaks.push_back( *i );
+             
+             const double lowE = newspec->gamma_energy_min();
+             const double upE = newspec->gamma_energy_max();
+             
+             refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, {}, true );
+             
+             std::deque<std::shared_ptr<const PeakDef> > peakdeque;
+             for( const auto &p : refit_peaks )
+             peakdeque.push_back( std::make_shared<const PeakDef>(p) );
+             
+             newmeas->setPeaks( peakdeque, {newspec->sample_number()} );
+             }catch( std::exception &e )
+             {
+             summed_det_by_det = false;
+             assert( 0 );
+             break;
+             }//try / catch to fit peaks
+             }//if( we need to refit peaks )
+             */
+          }catch( std::exception &e )
+          {
+            cerr << "Error subtracting background from foreground on det-by-det basis: " << e.what() << endl;
+            summed_det_by_det = false;
+            assert( 0 );
+          }//try / catch
+         };//auto do_sub lamda
+        
+        
+        if( fore_dets == back_dets )
+        {
+          summed_det_by_det = true;
+          for( const string &det : fore_dets )
+          {
+            do_sub( disp_fore_samples, {det}, disp_back_samples, {det} );
+          }//for( const string &det : fore_dets )
+        }//if( fore_dets == back_dets )
+        
+        
+        if( !summed_det_by_det )
+        {
+          //sum all foreground/background, and then subtract
+          do_sub( disp_fore_samples, fore_dets_vec, disp_back_samples, back_dets_vec );
+        }//if( !summed_det_by_det )
+      };//make_subtracted lamda
+      
+      
+      if( (m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked()) )
+        make_subtracted( SpecUtils::SpectrumType::Foreground );
+      
+      if( m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked() )
+        make_subtracted( SpecUtils::SpectrumType::SecondForeground );
+    }//if( create background subtracted foreground )
+  }//if( background subtract )
+  
+  
+  for( const set<int> &sum_samples : samplesToSum )
+  {
+    bool single_meas = false;
+    
+    if( sum_samples.size() == 1 )
+    {
+      // We'll try to just use a copy of the measurement, instead of the sum of a single measurement
+      //  (I dont fully trust we copy all meta-info over perfectly when doing a sum).
+      size_t ndet = 0;
+      shared_ptr<const SpecUtils::Measurement> single_record;
+      for( const string &det : detectors )
+      {
+        auto m = answer->measurement( *begin(sum_samples), det );
+        if( m )
+        {
+          ndet += 1;
+          if( ndet > 1 )
+            break;
+          
+          single_record = m;
+        }
+      }//for( const string &det : detectors )
+      
+      if( ndet == 1 )
+      {
+        assert( single_record );
+        single_meas = true;
+        meas_to_add.push_back( make_shared<SpecUtils::Measurement>(*single_record) );
+        meas_to_remove.insert( single_record );
+      }
+    }//if( sum_samples.size() == 1 )
+    
+    if( !single_meas )
+    {
+      assert( !sum_samples.empty() );
+      shared_ptr<SpecUtils::Measurement> m = answer->sum_measurements( sum_samples, detectors, nullptr );
+      m->set_sample_number( *begin(sum_samples) );
+      meas_to_add.push_back( m );
+      
+      for( const int sample : sum_samples )
+      {
+        for( const string &det : detectors )
+        {
+          auto m = answer->measurement( sample, det );
+          if( m )
+            meas_to_remove.insert( m );
+        }
+      }
+    }//if( !single_meas )
+  }//for( const set<int> &samples : samplesToSum )
+  
+  
+  if( !meas_to_remove.empty() )
+  {
+    vector<shared_ptr<const SpecUtils::Measurement>> to_remove( begin(meas_to_remove), end(meas_to_remove) );
+    answer->remove_measurements( to_remove );
+  }
+  
+  if( !meas_to_add.empty() )
+  {
+    for( const shared_ptr<SpecUtils::Measurement> &i : meas_to_add )
+      answer->add_measurement( i, false );
+    answer->cleanup_after_load();
+  }
+  
+  
+  if( m_sumAllToSingleRecord->isVisible() && m_sumAllToSingleRecord->isChecked() )
+  {
+    const vector<shared_ptr<const SpecUtils::Measurement>> orig_meass = answer->measurements();
+    
+    // Next call throws exception if invalid sample number, detector name, or cant find energy
+    //  binning to use.  And returns nullptr if emty sample numbers or detector names.
+    shared_ptr<SpecUtils::Measurement> sum_meas = answer->sum_measurements( samples, detectors, nullptr );
+    assert( sum_meas );
+    if( !sum_meas )
+      throw runtime_error( "Error summing records - perhaps empty sample numbers or detector names." );
+    
+    answer->remove_measurements( orig_meass );
+    answer->add_measurement( sum_meas, true );
+  }//if( sum to single record )
+  
+  
+  // We will check for this later as well, but we'll remove as much of the InterSpec info
+  //  here as well (the displayed sample numbers and wont be removed though).
+  if( m_includeInterSpecInfo->isVisible() && m_includeInterSpecInfo->isChecked() )
+  {
+    answer->removeAllPeaks();
+    answer->setShieldingSourceModel( std::unique_ptr<rapidxml::xml_document<char>>{} );
+#if( USE_REL_ACT_TOOL )
+    answer->setRelActManualGuiState( std::unique_ptr<rapidxml::xml_document<char>>{} );
+#endif
+    answer->setDetector( nullptr );
+  }//if( get rid of InterSpec info )
+  
+  
+  return answer;
+}//std::shared_ptr<const SpecMeas> generateFileToSave()
+
+
+#if( USE_QR_CODES )
+void ExportSpecFileTool::handleGenerateQrCode()
+{
+  shared_ptr<const SpecMeas> spec;
+  
+  try
+  {
+    spec = ExportSpecFileTool::generateFileToSave();
+  }catch( std::exception &e )
+  {
+    passMessage( "Sorry, there was an issue preparing the file for saving: " + string(e.what()),
+                WarningWidget::WarningMsgHigh );
+  }//try / catch
+  
+  assert( spec );
+  if( !spec )
+    return;
+  
+  assert( (spec->num_measurements() == 1) || (spec->num_measurements() == 2) );
+  if( (spec->num_measurements() != 1) && (spec->num_measurements() != 2) )
+  {
+    passMessage( "Sorry, there was an internal logic error preparing file for saving.",
+                WarningWidget::WarningMsgHigh );
+    return;
+  }//if( something bad that shouldnt happen )
+  
+ 
+  try
+  {
+    string model;
+    if( spec->detector_type() != SpecUtils::DetectorType::Unknown )
+      model = detectorTypeToString( spec->detector_type() );
+    if( model.empty() )
+      model = spec->instrument_model();
+  
+    vector<QRSpectrum::UrlSpectrum> urlspec = QRSpectrum::to_url_spectra( spec->measurements(), model );
+    
+    const uint8_t encode_options = 0;
+    vector<QRSpectrum::UrlEncodedSpec> urls;
+    QRSpectrum::QrErrorCorrection ecc = QRSpectrum::QrErrorCorrection::High;
+    
+    // We'll try to only use a single QR-code, but also use highest error-correction we can.
+    //  I'm sure this trade-off can be better handled in some way.
+    if( spec->num_gamma_channels() < 2075 )
+    {
+      try
+      {
+        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+      }catch( std::exception & )
+      {
+      }//try / catch
+    }//if( spec->num_gamma_channels() < 2075 )
+    
+    if( urls.empty() || (urls.size() > 1) )
+    {
+      try
+      {
+        ecc = QRSpectrum::QrErrorCorrection::Medium;
+        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+      }catch( std::exception & )
+      {
+      }//try / catch
+    }//if( urls.empty() )
+    
+    if( urls.empty() || (urls.size() > 1) )
+    {
+      try
+      {
+        ecc = QRSpectrum::QrErrorCorrection::Low;
+        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+      }catch( std::exception & )
+      {
+      }//try / catch
+    }//if( urls.empty() )
+    
+    if( urls.empty() )
+    {
+      auto dialog = new SimpleDialog( "Error",
+                                     "Spectrum could not be encoded to a QR code.<br />"
+                                     "Likely due to requiring more than 9 QR codes." );
+      dialog->addButton( "Ok" );
+      return;
+    }//if( urls.empty() )
+    
+    auto successfullyDone = wApp->bind( boost::bind( &ExportSpecFileTool::emitDone, this, true ) );
+    
+    displayQrDialog( urls, 0, successfullyDone );
+  }catch( std::exception &e )
+  {
+    auto dialog = new SimpleDialog( "Error", "Failed to encoded spectrum to a QR code: " + string(e.what()) );
+    dialog->addButton( "Ok" );
+  }//try catch
+}//void handleGenerateQrCode()
+#endif
+
+
 void ExportSpecFileTool::handleAppUrl( std::string query_str )
 {
   passMessage( "ExportSpecFileTool::handleAppUrl not implemented yet", WarningWidget::WarningMsgHigh );
@@ -1746,7 +2487,8 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   addStyleClass( "export-spec-file" );
   
   const int w = viewer->renderedWidth();
-  setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 800.0) : 800.0 ,WLength::Pixel), WLength::Auto );
+  //setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 800.0) : 800.0 ,WLength::Pixel), WLength::Auto );
+  setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 600.0) : 600.0 ,WLength::Pixel), WLength::Auto );
   
   m_tool = new ExportSpecFileTool( viewer, contents() );
   m_tool->done().connect( boost::bind(&ExportSpecFileWindow::accept, this) );

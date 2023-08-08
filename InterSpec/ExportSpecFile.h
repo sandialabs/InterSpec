@@ -58,6 +58,12 @@ namespace ExportSpecFileTool_imp
   class DownloadSpectrumResource;
 }
 
+/**
+ TODO:
+  - Add a checkbox for excluding GPS, serial number, or other sensitive info
+  - Fix up displaying for undersized displays
+  - Peaks aren't re-fit if background subtracted is selected - skeleton code is in there for this.
+ */
 
 class ExportSpecFileTool : public Wt::WContainerWidget
 {
@@ -84,6 +90,11 @@ public:
   /** Returns the currently selected file - as held in memory; i.e., the full file, not just selected samples or whatever. */
   std::shared_ptr<const SpecMeas> currentlySelectedFile() const;
   
+  /** Returns sample numbers from `currentlySelectedFile()` that will be placed in the output. */
+  std::set<int> currentlySelectedSamples() const;
+  
+  /** Returns detector names from `currentlySelectedFile()` that will be placed in the output. */
+  std::vector<std::string> currentlySelectedDetectors() const;
   
   /** Returns the currently selected save-as file type.
    
@@ -94,8 +105,20 @@ public:
   
   /** Returns 1 (ex., SPE, CHN, etc), 2 (QR-code), or `numeric_limits<uint16_t>::max()` (N42, PCF, etc),
    depending on the currently selected save-as type.
+   
+   @param spec The spectrum file to be saved; optional (but saves a call to `currentlySelectedFile`),
+          and only used for QR-code format to determine one or two spectra
    */
-  uint16_t maxRecordsInCurrentSaveType() const;
+  uint16_t maxRecordsInCurrentSaveType( std::shared_ptr<const SpecMeas> spec ) const;
+  
+  
+  /** Generates the final spectrums file, ready to be given to the user.
+   
+   E.g., if user selected, all detectors will be summed, or samples numbers, etc.
+   
+   Throws exception if there is issue generating the file.
+   */
+  std::shared_ptr<const SpecMeas> generateFileToSave();
   
   
   /** Handles receiving a "deep-link" url starting with "interspec://specsum/...".
@@ -144,6 +167,11 @@ protected:
   void handleSumDetPerSampleChanged();
   void handleIncludeInterSpecInfoChanged();
   
+#if( USE_QR_CODES )
+  void handleGenerateQrCode();
+#endif
+  
+  
   InterSpec *m_interspec;
   
   /** Wether or not the dialog is for a specific file, or any loaded file. */
@@ -184,10 +212,16 @@ protected:
   Wt::WCheckBox *m_sumDetsPerSample;
   Wt::WCheckBox *m_includeInterSpecInfo;
   
+  Wt::WText *m_sampleSelectNotAppTxt;
+  Wt::WText *m_optionsNotAppTxt;
+  
   Wt::WText *m_msg;
   
   ExportSpecFileTool_imp::DownloadSpectrumResource *m_resource;
   Wt::WPushButton *m_export_btn;
+#if( USE_QR_CODES )
+  Wt::WPushButton *m_show_qr_btn;
+#endif
 };//class ExportSpecFileTool
 
 

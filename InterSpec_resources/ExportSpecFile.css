@@ -5,17 +5,27 @@
   font-size: 16px;
   max-width: 95vw;
   max-height: 95vh;
+  
+  /*
   width: min(95vw, 800px);
   height: min(95vh, 480px);
+   */
 }
 
 .simple-dialog.export-spec-file .body
 {
+  /*
   width: min(calc(95vw - 30px), 770px);
   height: min(calc(95vw - 90px), 370px);
   
   max-width: min(calc(95vw - 30px), 770px);
   max-height: min(calc(95vw - 90px), 370px);
+  */
+  
+  height: min(calc(95vw - 90px), 400px);
+  
+  max-width: calc(95vw - 30px);
+  max-height: calc(95vw - 90px);
   
   padding-bottom: 10px;
 }
@@ -69,6 +79,11 @@
   row-gap: 5px;
 }
 
+
+.ExportSpecFileTool .ExportSpecSamples
+{
+  width: 200px;
+}
 
 /* The checkboxes in the "Samples to include" column. Keep them from wrapping lines - maybe (untested) */
 .ExportSpecSamples label
@@ -149,6 +164,12 @@
   padding-left: 15px;
 }
 
+.ExportSpecFileTool .ExportSpecCustomSamples
+{
+  margin-left: 25px;
+  margin-right: 20px;
+}
+
 .ExportSpecFileTool .ExportSpecOptions
 {
   margin-top: 10px;
@@ -160,6 +181,14 @@
 
 .ExportSpecFileTool .ExportSpecFileBody .ExportSpecOptions .ExportColTitle
 {
+}
+
+.ExportSpecFileTool .ExportNotAppTxt
+{
+  text-align: center;
+  margin-top: 10px;
+  margin-bottom: 5px;
+  font-size: small;
 }
 
 .ExportSpecFileTool .ExportSpecFileFooter
