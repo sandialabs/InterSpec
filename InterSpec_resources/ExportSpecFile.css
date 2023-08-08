@@ -124,10 +124,15 @@
 
 .ExportSpecInfo .ExportSpecInfoTable td
 {
+  white-space: nowrap;
+}
+
+.ExportSpecInfo .ExportSpecInfoTable td > div
+{
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;
-  width: 100px;
+  width: 110px;
 }
 
 .ExportSpecInfo .ExportSpecInfoTable th

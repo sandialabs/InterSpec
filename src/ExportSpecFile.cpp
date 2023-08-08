@@ -930,8 +930,8 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
     const string start_date = start_str.substr(0, pos);
     const string start_tod = (pos == string::npos) ? string() : start_str.substr(pos+1);
     
-    tabletxt << "<tr><th>Start Time</th><td>" << start_date << "</td></tr>\n"
-                "<tr><th></th><td>" << start_tod << "</td></tr>\n";
+    tabletxt << "<tr><th>Start Time</th><td><div>" << start_date << "</div></td></tr>\n"
+                "<tr><th></th><td><div>" << start_tod << "</div></td></tr>\n";
     
     if( (end_time - start_time) > 2*std::chrono::minutes(15) )
     {
@@ -940,8 +940,8 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
       const string end_date = end_str.substr(0, pos);
       const string end_tod = (pos == string::npos) ? string() : end_str.substr(pos+1);
       
-      tabletxt << "<tr><th>End Time</th><td>" << end_date << "</td></tr>\n"
-                  "<tr><th></th><td>" << end_tod << "</td></tr>\n";
+      tabletxt << "<tr><th>End Time</th><td><div>" << end_date << "</div></td></tr>\n"
+                  "<tr><th></th><td><div>" << end_tod << "</div></td></tr>\n";
     }
   }//if( !SpecUtils::is_special(start_time) )
   
@@ -958,32 +958,32 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
   
   if( meas->contained_neutron() )
   {
-    tabletxt << "<tr><th>Neut. Dets</th><td>"
-             << static_cast<int>(meas->neutron_detector_names().size()) << "</td></tr>\n";
-    tabletxt << "<tr><th>Gamma Dets</th><td>"
-            << static_cast<int>(meas->gamma_detector_names().size()) << "</td></tr>\n";
+    tabletxt << "<tr><th>Neut. Dets</th><td><div>"
+             << static_cast<int>(meas->neutron_detector_names().size()) << "</div></td></tr>\n";
+    tabletxt << "<tr><th>Gamma Dets</th><td><div>"
+            << static_cast<int>(meas->gamma_detector_names().size()) << "</div></td></tr>\n";
   }else
   {
-    tabletxt << "<tr><th>Num Dets</th><td>"
-             << static_cast<int>(meas->detector_names().size()) << "</td></tr>\n";
+    tabletxt << "<tr><th>Num Dets</th><td><div>"
+             << static_cast<int>(meas->detector_names().size()) << "</div></td></tr>\n";
   }
   
   if( meas->has_gps_info() )
   {
-    tabletxt << "<tr><th>Latitude</th><td>"
-             << PhysicalUnits::printCompact( meas->mean_latitude(), 7 ) << "</td></tr>\n";
-    tabletxt << "<tr><th>Longitude</th><td>"
-             << PhysicalUnits::printCompact( meas->mean_longitude(), 7 ) << "</td></tr>\n";
+    tabletxt << "<tr><th>Latitude</th><td><div>"
+             << PhysicalUnits::printCompact( meas->mean_latitude(), 7 ) << "</div></td></tr>\n";
+    tabletxt << "<tr><th>Longitude</th><td><div>"
+             << PhysicalUnits::printCompact( meas->mean_longitude(), 7 ) << "</div></td></tr>\n";
   }//if( meas->has_gps_info() )
   
   const string total_time = PhysicalUnits::printToBestTimeUnits( meas->gamma_real_time() );
-  tabletxt << "<tr><th>Total Time</th><td>" << total_time << "</td></tr>\n";
+  tabletxt << "<tr><th>Total Time</th><td><div>" << total_time << "</div></td></tr>\n";
   
-  tabletxt << "<tr><th>Sum Gamma</th><td>"
-           << PhysicalUnits::printCompact( meas->gamma_count_sum(), 5) << "</td></tr>\n";
+  tabletxt << "<tr><th>Sum Gamma</th><td><div>"
+           << PhysicalUnits::printCompact( meas->gamma_count_sum(), 5) << "</div></td></tr>\n";
   if( meas->contained_neutron() )
-    tabletxt << "<tr><th>Sum Neut.</th><td>"
-             << PhysicalUnits::printCompact( meas->neutron_counts_sum(), 5) << "</td></tr>\n";
+    tabletxt << "<tr><th>Sum Neut.</th><td><div>"
+             << PhysicalUnits::printCompact( meas->neutron_counts_sum(), 5) << "</div></td></tr>\n";
   
   //const string &instrument_type = meas->instrument_type();
   const string &manufacturer = meas->manufacturer();
@@ -991,18 +991,18 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
   const string &instrument_id = meas->instrument_id();
   
   if( !manufacturer.empty() )
-    tabletxt << "<tr><th>Manufacturer</th><td>"
-             << Wt::Utils::htmlEncode(manufacturer) << "</td></tr>\n";
+    tabletxt << "<tr><th>Manufacturer</th><td><div>"
+             << Wt::Utils::htmlEncode(manufacturer) << "</div></td></tr>\n";
   
   if( meas->detector_type() != SpecUtils::DetectorType::Unknown )
-    tabletxt << "<tr><th>Model</th><td>"
-             << SpecUtils::detectorTypeToString(meas->detector_type()) << "</td></tr>\n";
+    tabletxt << "<tr><th>Model</th><td><div>"
+             << SpecUtils::detectorTypeToString(meas->detector_type()) << "</div></td></tr>\n";
   else if( !instrument_model.empty() )
-    tabletxt << "<tr><th>Model</th><td>"
-             << Wt::Utils::htmlEncode(instrument_model) << "</td></tr>\n";
+    tabletxt << "<tr><th>Model</th><td><div>"
+             << Wt::Utils::htmlEncode(instrument_model) << "</div></td></tr>\n";
   
   if( !instrument_id.empty() )
-    tabletxt << "<tr><th>Serial</th><td>" << Wt::Utils::htmlEncode(instrument_id) << "</td></tr>\n";
+    tabletxt << "<tr><th>Serial</th><td><div>" << Wt::Utils::htmlEncode(instrument_id) << "</div></td></tr>\n";
   
   tabletxt << "</table>\n";
   
