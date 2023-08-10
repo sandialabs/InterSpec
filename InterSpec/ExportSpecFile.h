@@ -60,7 +60,7 @@ namespace ExportSpecFileTool_imp
 
 /**
  TODO:
-  - Add a checkbox for excluding GPS, serial number, or other sensitive info
+  - Add a checkbox for excluding serial number, or other sensitive info
   - Fix up displaying for undersized displays
   - Peaks aren't re-fit if background subtracted is selected - skeleton code is in there for this.
  */
@@ -111,6 +111,10 @@ public:
    */
   uint16_t maxRecordsInCurrentSaveType( std::shared_ptr<const SpecMeas> spec ) const;
   
+  /** Returns if this option is selected in the GUI; the `generateFileToSave()` function will have removed
+   most info, but if we are saving to N42, then we'll be a bit more careful and remove more at export time.
+   */
+  bool removeInterSpecInfo() const;
   
   /** Generates the final spectrums file, ready to be given to the user.
    
@@ -210,7 +214,8 @@ protected:
   Wt::WCheckBox *m_sumSecoToSingleRecord;
   Wt::WCheckBox *m_backSubFore;
   Wt::WCheckBox *m_sumDetsPerSample;
-  Wt::WCheckBox *m_includeInterSpecInfo;
+  Wt::WCheckBox *m_excludeInterSpecInfo;
+  Wt::WCheckBox *m_excludeGpsInfo;
   
   Wt::WText *m_sampleSelectNotAppTxt;
   Wt::WText *m_optionsNotAppTxt;

@@ -52,6 +52,7 @@
 //  answer->setShieldingSourceModel(...);
 //  answer->setRelActManualGuiState(...);
 #include "external_libs/SpecUtils/3rdparty/rapidxml/rapidxml.hpp"
+#include "external_libs/SpecUtils/3rdparty/rapidxml/rapidxml_print.hpp"
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
@@ -167,7 +168,8 @@ namespace ExportSpecFileTool_imp
                             const SpecUtils::SaveSpectrumAsType type,
                             const std::shared_ptr<const SpecMeas> Measurement,
                             const std::set<int> &samplenums,
-                            const std::vector<std::string> &detectornums );
+                            const std::vector<std::string> &detectornums,
+                            const bool strip_interspec_info );
   };// class DownloadSpectrumResource
 
 
@@ -215,6 +217,7 @@ namespace ExportSpecFileTool_imp
     
       const SpecUtils::SaveSpectrumAsType save_type = m_tool->currentSaveType();
       const shared_ptr<const SpecMeas> output = m_tool->generateFileToSave();
+      const bool strip_interspec_info = m_tool->removeInterSpecInfo();
       
       assert( output );
       if( !output )
@@ -273,7 +276,7 @@ namespace ExportSpecFileTool_imp
       
       
       write_file( response.out(), save_type, output,
-                 output->sample_numbers(), output->detector_names() );
+                 output->sample_numbers(), output->detector_names(), strip_interspec_info );
       
       m_download_finished.emit();
     }catch( std::exception &e )
@@ -295,7 +298,8 @@ namespace ExportSpecFileTool_imp
                          const SpecUtils::SaveSpectrumAsType type,
                          const std::shared_ptr<const SpecMeas> measurement,
                          const std::set<int> &samplenums,
-                         const std::vector<std::string> &detectornames )
+                         const std::vector<std::string> &detectornames,
+                         const bool strip_interspec_info )
   {
     //Convert detector names to detector numbers.
     set<int> detectornums;
@@ -326,12 +330,40 @@ namespace ExportSpecFileTool_imp
         break;
         
       case SpecUtils::SaveSpectrumAsType::N42_2006:
-        measurement->write_2006_N42( output );
+        if( strip_interspec_info )
+          measurement->SpecUtils::SpecFile::write_2006_N42( output );
+        else
+          measurement->write_2006_N42( output );
         break;
         
       case SpecUtils::SaveSpectrumAsType::N42_2012:
-        measurement->write_2012_N42( output );
+      {
+        shared_ptr<rapidxml::xml_document<char>> doc = strip_interspec_info
+             ? measurement->SpecUtils::SpecFile::create_2012_N42_xml()
+             : measurement->create_2012_N42_xml();
+        
+        if( doc )
+        {
+          // We currently put in a node like:
+          //  <RadInstrumentInformationExtension>
+          //    <InterSpec:DetectorType>IdentiFINDER-NG</InterSpec:DetectorType>
+          //  </RadInstrumentInformationExtension>
+          // Lets get rid of it.
+          rapidxml::xml_node<char> *data_node = doc->first_node("RadInstrumentData");
+          rapidxml::xml_node<char> *inst_info_node = data_node
+                                    ? data_node->first_node( "RadInstrumentInformation" )
+                                    : nullptr;
+          rapidxml::xml_node<char> *ext_node = inst_info_node
+                                    ? inst_info_node->first_node( "RadInstrumentInformationExtension" )
+                                    : nullptr;
+          if( ext_node )
+            inst_info_node->remove_node( ext_node );
+            
+          rapidxml::print( output, *doc );
+        }//if( doc )
+        
         break;
+      }//case SpecUtils::SaveSpectrumAsType::N42_2012:
         
       case SpecUtils::SaveSpectrumAsType::Chn:
         measurement->write_integer_chn( output, samplenums, detectornums );
@@ -362,7 +394,10 @@ namespace ExportSpecFileTool_imp
         break;
         
       case SpecUtils::SaveSpectrumAsType::SpeIaea:
-        measurement->write_iaea_spe( output, samplenums, detectornums );
+        if( strip_interspec_info )
+          measurement->SpecUtils::SpecFile::write_iaea_spe( output, samplenums, detectornums );
+        else
+          measurement->write_iaea_spe( output, samplenums, detectornums );
         break;
         
       case SpecUtils::SaveSpectrumAsType::Cnf:
@@ -462,7 +497,8 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
   m_sumSecoToSingleRecord( nullptr ),
   m_backSubFore( nullptr ),
   m_sumDetsPerSample( nullptr ),
-  m_includeInterSpecInfo( nullptr ),
+  m_excludeInterSpecInfo( nullptr ),
+  m_excludeGpsInfo( nullptr ),
   m_msg( nullptr ),
   m_sampleSelectNotAppTxt( nullptr ),
   m_optionsNotAppTxt( nullptr ),
@@ -509,7 +545,8 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
   m_sumSecoToSingleRecord( nullptr ),
   m_backSubFore( nullptr ),
   m_sumDetsPerSample( nullptr ),
-  m_includeInterSpecInfo( nullptr ),
+  m_excludeInterSpecInfo( nullptr ),
+  m_excludeGpsInfo( nullptr ),
   m_msg( nullptr ),
   m_sampleSelectNotAppTxt( nullptr ),
   m_optionsNotAppTxt( nullptr ),
@@ -738,10 +775,14 @@ void ExportSpecFileTool::init()
   m_sumDetsPerSample->checked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
   m_sumDetsPerSample->unChecked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
   
-  m_includeInterSpecInfo = new WCheckBox( "Include InterSpec info", m_optionsHolder );
-  m_includeInterSpecInfo->checked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
-  m_includeInterSpecInfo->unChecked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
+  m_excludeInterSpecInfo = new WCheckBox( "Remove InterSpec info", m_optionsHolder );
+  m_excludeInterSpecInfo->setToolTip( "Removes detector response, peaks, and other analysis"
+                                      " results you may have added in InterSpec." );
+  m_excludeInterSpecInfo->setChecked( true );
+  m_excludeInterSpecInfo->checked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
+  m_excludeInterSpecInfo->unChecked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   
+  m_excludeGpsInfo = new WCheckBox( "Remove GPS", m_optionsHolder );
   
   m_sampleSelectNotAppTxt = new WText( "Not Applicable" );
   m_sampleSelectNotAppTxt->addStyleClass( "ExportNotAppTxt" );
@@ -1455,6 +1496,12 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
 }//uint16_t maxRecordsInCurrentSaveType() const
 
 
+bool ExportSpecFileTool::removeInterSpecInfo() const
+{
+  return (m_excludeInterSpecInfo->isVisible() && m_excludeInterSpecInfo->isChecked());
+}//bool removeInterSpecInfo() const
+
+
 void ExportSpecFileTool::refreshSampleAndDetectorOptions()
 {
   const shared_ptr<const SpecMeas> spec = currentlySelectedFile();
@@ -1470,6 +1517,15 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     filename += string(".") + SpecUtils::suggestedNameEnding(save_type);
     m_resource->suggestFileName( filename );
   }// End update suggested spectrum file name
+  
+  if( !m_dispForeSamples->isChecked()
+     && !m_dispBackSamples->isChecked()
+     && !m_dispSecondSamples->isChecked()
+     && !m_customSamples->isChecked()
+     && !m_allSamples->isChecked() )
+  {
+    m_allSamples->setChecked( true );
+  }
   
   
   if( !spec || (spec->gamma_detector_names().size() <= 1) )
@@ -1542,7 +1598,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   
   const bool can_save_interspec_info = ((save_type == SpecUtils::SaveSpectrumAsType::N42_2012)
                                         || (save_type == SpecUtils::SaveSpectrumAsType::N42_2006));
-  m_includeInterSpecInfo->setHidden( !can_save_interspec_info );
+  m_excludeInterSpecInfo->setHidden( !can_save_interspec_info );
   
   
   if( !spec || (max_records <= 2) || (spec->gamma_detector_names().size() <= 1) )
@@ -1553,6 +1609,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     m_sumDetsPerSample->show();
   }
   
+  m_excludeGpsInfo->setHidden( !spec || !spec->has_gps_info() );
   
   if( !spec || (spec->sample_numbers().size() <= 1) )
   {
@@ -1573,7 +1630,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     
     m_backSubFore->hide();
     m_sumDetsPerSample->hide();
-    m_includeInterSpecInfo->hide();
+    m_excludeInterSpecInfo->hide();
     
     m_sampleSelectNotAppTxt->show();
     m_optionsNotAppTxt->show();
@@ -1586,7 +1643,6 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
       m_msg->setText( "&nbsp;" );
     }
     
-    handleSamplesChanged();
     return;
   }//if( no reason to show selecting samples )
   
@@ -1728,9 +1784,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   {
     m_msg->setText( "&nbsp;" );
   }
-  
-  handleSamplesChanged();
-}//void ExportSpecFileTool::refreshSampleAndDetectorOptions()
+}//void refreshSampleAndDetectorOptions()
 
 
 void ExportSpecFileTool::handleAllSampleChanged()
@@ -1828,14 +1882,7 @@ void ExportSpecFileTool::handleCustomSampleTxtChanged()
 
 void ExportSpecFileTool::handleSamplesChanged()
 {
-  if( !m_dispForeSamples->isChecked()
-     && !m_dispBackSamples->isChecked()
-     && !m_dispSecondSamples->isChecked()
-     && !m_customSamples->isChecked()
-     && !m_allSamples->isChecked() )
-  {
-    m_allSamples->setChecked( true );
-  }
+  refreshSampleAndDetectorOptions();
 }//void handleSamplesChanged()
 
 
@@ -1976,8 +2023,8 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     throw runtime_error( "No file selected for export." );
   
   // First we'll check for all the cases where we want the whole file
-  
-  if( start_spec->num_measurements() == 1 )
+  if( (start_spec->num_measurements() == 1)
+     && (m_excludeGpsInfo->isHidden() || !m_excludeGpsInfo->isChecked()) )
     return start_spec;
   
   const bool backgroundSub = (m_backSubFore && m_backSubFore->isVisible() && m_backSubFore->isChecked());
@@ -1987,28 +2034,6 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   const bool secoToSingleRecord = (m_sumSecoToSingleRecord->isVisible() && m_sumSecoToSingleRecord->isChecked());
   const bool filterDets = (m_filterDetector && m_filterDetector->isVisible() && m_filterDetector->isChecked());
   
-  /*
-  if( !m_specific_spectrum
-     && m_forePlusBack && m_forePlusBack->isChecked()
-     && !backgroundSub
-     && !sumAll
-     && !foreToSingleRecord
-     && !backToSingleRecord
-     && !secoToSingleRecord
-     && filterDets )
-  {
-    return start_spec;
-  }
-  
-  if( !m_specific_spectrum
-     && (m_allSamples && m_allSamples->isVisible() && m_allSamples->isChecked())
-     && !filterDets
-  )
-  {
-    return start_spec;
-  }
-  */
-  
   set<int> samples = currentlySelectedSamples();
   vector<string> detectors = currentlySelectedDetectors();
   
@@ -2016,6 +2041,13 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   answer->uniqueCopyContents( *start_spec );
 
   answer->set_uuid( "" );
+  
+  if( m_excludeGpsInfo->isVisible() && m_excludeGpsInfo->isChecked() )
+  {
+    // TODO: the below causes mean lat/lon to be recalculated after each call should just add a SpecMeas::clear_gps_coordinates() function
+    for( const auto &m : answer->measurements() )
+      answer->set_position( -999.9, -999.9, SpecUtils::time_point_t{}, m );
+  }//if( m_excludeGpsInfo->isVisible() && m_excludeGpsInfo->isChecked() )
   
   set<set<int>> samplesToSum;
   if( m_sumDetsPerSample->isVisible() && m_sumDetsPerSample->isChecked() )
@@ -2354,7 +2386,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   
   // We will check for this later as well, but we'll remove as much of the InterSpec info
   //  here as well (the displayed sample numbers and wont be removed though).
-  if( m_includeInterSpecInfo->isVisible() && m_includeInterSpecInfo->isChecked() )
+  if( m_excludeInterSpecInfo->isVisible() && m_excludeInterSpecInfo->isChecked() )
   {
     answer->removeAllPeaks();
     answer->setShieldingSourceModel( std::unique_ptr<rapidxml::xml_document<char>>{} );
