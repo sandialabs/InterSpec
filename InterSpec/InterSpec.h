@@ -72,6 +72,7 @@ class UnitsConverterTool;
 class FeatureMarkerWindow;
 class D3SpectrumDisplayDiv;
 class DetectorPeakResponse;
+class ExportSpecFileWindow;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
@@ -377,9 +378,6 @@ public:
   std::set<int> sampleNumbersForTypeFromForegroundFile(
                                                 const SpecUtils::SpectrumType spec_type ) const;
   
-#if( IOS )
-  void exportSpecFile();
-#endif
   
 #if( USE_DB_TO_STORE_SPECTRA )
   //measurmentFromDb(...): returns the measurment that has been, or will be
@@ -805,11 +803,8 @@ public:
    */
   void showLicenseAndDisclaimersWindow();
   
-  /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
-  void startClearSession();
-    
   /** Deletes disclaimer, license, and statment window and sets m_licenseWindow
-      to nullptr;
+   to nullptr;
    */
   void deleteLicenseAndDisclaimersWindow();
   
@@ -832,6 +827,22 @@ public:
   //deleteEnergyCalPreserveWindow(): deletes the currently showing dialog (if its
   //  showing), and sets m_preserveCalibWindow to null
   void deleteEnergyCalPreserveWindow();
+  
+  /** Shows the spectrum file export dialog.
+   
+   Sets the `m_exportSpecFileWindow` member variable to the created window.
+   */
+  ExportSpecFileWindow *createExportSpectrumFileDialog();
+  
+  /** Deletes the spectrum file export dialog.
+   
+   Sets the `m_exportSpecFileWindow` member variable to nullptr.
+   */
+  void handleExportSpectrumFileDialogClose();
+  
+  /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
+  void startClearSession();
+  
   
   //showIEWarningDialog(): returns NULL if user previously specified to not show
   //  again, otherwise it returns the AuxWIndow it is displaying.  The dialog
@@ -1371,17 +1382,9 @@ protected:
   PopupDivMenu         *m_rightClickChangeContinuumMenu;
   
   Wt::WMenuItem        *m_showPeakManager;
-  
-#if( !IOS && !ANDROID )
-#define USE_SAVEAS_FROM_MENU 1
-  //m_downloadMenu:
-  PopupDivMenu *m_downloadMenu;
-  //m_downloadMenus: menu items that allow user to download current showing
-  //  spectrums (SpecUtils::SpectrumType::Foreground, SpecUtils::SpectrumType::SecondForeground, SpecUtils::SpectrumType::Background)
-  PopupDivMenu *m_downloadMenus[3];
-#else
-#define USE_SAVEAS_FROM_MENU 0
-#endif
+    
+  PopupDivMenuItem *m_exportSpecFileMenu;
+  ExportSpecFileWindow *m_exportSpecFileWindow;
   
   //If I ever get the preference tracking stuff working better, I could probably
   //  eliminate the following variables

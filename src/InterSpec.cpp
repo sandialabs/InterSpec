@@ -127,6 +127,7 @@
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/DoseCalcWidget.h"
+#include "InterSpec/ExportSpecFile.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"
@@ -400,10 +401,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_rightClickEnergy( -DBL_MAX ),
     m_rightClickNuclideSuggestMenu( nullptr ),
     m_rightClickChangeContinuumMenu( nullptr ),
-#if( USE_SAVEAS_FROM_MENU )
-    m_downloadMenu( 0 ),
-  m_downloadMenus{0},
-#endif
+    m_exportSpecFileMenu{ nullptr },
+    m_exportSpecFileWindow{ nullptr },
   m_logYItems{0},
   m_toolTabsVisibleItems{0},
   m_backgroundSubItems{0},
@@ -2874,25 +2873,6 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
 }//WModelIndex addPeak( PeakDef peak )
 
 
-
-#if( IOS )
-void InterSpec::exportSpecFile()
-{
-  //Need to:
-  //  -Build gui to allow selecting foreground/background/secondary as well
-  //   selecting which samples/detectors/etc is wanted; this can be made general
-  //   for all operating systems or deployments.
-  //  -Enable/disable "Export Spectrum" menu item as a spectrum is avaialble or not
-
-  if( !m_dataMeasurement )
-    return;
-  
-  hand_spectrum_to_other_app( m_dataMeasurement );
-}//void exportSpecFile()
-#endif
-
-
-
 #if( USE_DB_TO_STORE_SPECTRA )
 void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 {
@@ -4393,6 +4373,60 @@ void InterSpec::deleteEnergyCalPreserveWindow()
 }//void deleteEnergyCalPreserveWindow()
 
 
+
+ExportSpecFileWindow *InterSpec::createExportSpectrumFileDialog()
+{
+  assert( !m_exportSpecFileWindow );
+  if( m_exportSpecFileWindow )
+    return m_exportSpecFileWindow;
+  
+  m_exportSpecFileWindow = new ExportSpecFileWindow( this );
+  m_exportSpecFileWindow->finished().connect( this, &InterSpec::handleExportSpectrumFileDialogClose );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){
+      if( m_exportSpecFileWindow )
+        m_exportSpecFileWindow->accept();
+    };
+    
+    auto redo = [this](){
+      createExportSpectrumFileDialog();
+    };
+    
+    m_undo->addUndoRedoStep( undo, redo, "Show spectrum file export tool." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  
+  return m_exportSpecFileWindow;
+}//void createExportSpectrumFileDialog()
+
+
+void InterSpec::handleExportSpectrumFileDialogClose()
+{
+  assert( m_exportSpecFileWindow );
+  if( !m_exportSpecFileWindow )
+    return;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    const string uri = m_exportSpecFileWindow->encodeStateToUrl();
+    auto undo = [this,uri](){
+      createExportSpectrumFileDialog();
+      if( m_exportSpecFileWindow )
+        m_exportSpecFileWindow->handleAppUrl( uri );
+    };
+    
+    auto redo = [this](){
+      if( m_exportSpecFileWindow )
+        m_exportSpecFileWindow->accept();
+    };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close spectrum file export tool." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  
+  m_exportSpecFileWindow = nullptr;
+}
+
+
 void InterSpec::setShowIEWarningDialogCookie( bool show )
 {
   if( show )
@@ -5689,187 +5723,9 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 #endif
   }//if( !mobile )
   
-
-#if( USE_SAVEAS_FROM_MENU )
-  //only display when not on desktop.
-  m_downloadMenu = m_fileMenuPopup->addPopupMenuItem( "Export File" );
-  
-  for( SpecUtils::SpectrumType i = SpecUtils::SpectrumType(0);
-      i <= SpecUtils::SpectrumType::Background;
-      i = SpecUtils::SpectrumType(static_cast<int>(i)+1) )
-  {
-    m_downloadMenus[static_cast<int>(i)] = m_downloadMenu->addPopupMenuItem( descriptionText( i ) );
-    
-    for( SpecUtils::SaveSpectrumAsType j = SpecUtils::SaveSpectrumAsType(0);
-        j < SpecUtils::SaveSpectrumAsType::NumTypes;
-        j = SpecUtils::SaveSpectrumAsType(static_cast<int>(j)+1) )
-    {
-      const string desc = descriptionText( j );
-      item = m_downloadMenus[static_cast<int>(i)]->addMenuItem( desc + " File" );
-      DownloadCurrentSpectrumResource *resource
-      = new DownloadCurrentSpectrumResource( i, j, this, item );
-      
-#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
-      //If were using OS X native menus, we obviously cant relly on the
-      //  browser responding to a click on an anchor; we also cant click the
-      //  link of the PopupDivMenuItem itself in javascript, or we get a
-      //  cycle of the server telling the browser to click the link again,
-      //  each time it tells it to do it in javascript.  So we will introduce
-      //  a false menu item that will actually have the URL of the download
-      //  associated with its anchor, and not connect any server side
-      //  triggered() events to it, thus breaking the infiinite cycle - blarg.
-      PopupDivMenuItem *fakeitem = new PopupDivMenuItem( "", "" );
-      m_downloadMenus[static_cast<int>(i)]->WPopupMenu::addItem( fakeitem );
-      fakeitem->setLink( WLink( resource ) );
-      fakeitem->setLinkTarget( TargetNewWindow );
-      
-      if( fakeitem->anchor() )
-      {
-        const string jsclick = "try{document.getElementById('"
-        + fakeitem->anchor()->id()
-        + "').click();}catch(e){}";
-        item->triggered().connect( boost::bind( &WApplication::doJavaScript, wApp, jsclick, true ) );
-      }else
-      {
-        cerr << "Unexpected error accessing the anchor for file downloading" << endl;
-      }
-#else
-      item->setLink( WLink( resource ) );
-      item->setLinkTarget( TargetNewWindow );
-      
-#if( ANDROID )
-      // Using hacked saving to temporary file in Android, instead of via network download of file.
-      item->clicked().connect( std::bind([resource](){
-        android_download_workaround(resource, "spectrum_download");
-      }) );
-#endif //ANDROID
-      
-#endif
-      
-      const char *tooltip = nullptr;
-      switch( j )
-      {
-        case SpecUtils::SaveSpectrumAsType::Txt:
-          tooltip = "A space delimited file will be created with a header of"
-          " things like live time, followed by three columns"
-          " (channel number, lower channel energy, counts). Each"
-          " record in the file will be sequentially recorded with"
-          " three line breaks between records.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::Csv:
-          tooltip = "A comma delimietd file will be created with a channel"
-          " lower energy and a counts column.  All records in the"
-          " current spectrum file will be written sequentially,"
-          " with an extra line break and &quot;<b>Energy, Data</b>"
-          "&quot; header between subsequent records.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::Pcf:
-          tooltip = "A binary PCF file will be created which contains all"
-          " records of the current file.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::N42_2006:
-          tooltip = "A simple spectrometer style 2006 N42 XML file will be"
-          " produced which contains all records in the current file.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::N42_2012:
-          tooltip = "A 2012 N42 XML document will be produced which contains"
-          " all samples of the current spectrum file, as well as"
-          " some additional <code>InterSpec</code> information"
-          " such as the identified peaks and detector response.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::Chn:
-          tooltip = "A binary integer CHN file will be produced containing a"
-          " single spectrum matching what is currently shown.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
-          tooltip = "A binary floating point SPC file will be produced containing a"
-          " single spectrum matching what is currently shown.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
-          tooltip = "A binary integer SPC file will be produced containing a"
-          " single spectrum matching what is currently shown.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::SpcAscii:
-          tooltip = "A ascii based SPC file will be produced containing a"
-          " single spectrum matching what is currently shown.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
-          tooltip = "A binary Exploranium GR130 file will be produced with"
-          " each record (spectrum) containing 256 channels.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
-          tooltip = "A binary Exploranium GR135v2 file (includes neutron info)"
-          " will be produced with each record (spectrum) containing"
-          " 1024 channels.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::SpeIaea:
-          tooltip = "A ASCII based standard file format that will contain a"
-          " single spectrum only.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::Cnf:
-          tooltip = "A binary Canberra file format that contains only a single spectrum.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::Tka:
-          tooltip = "A text based format that provides real time and channel counts only.";
-          break;
-          
-#if( SpecUtils_ENABLE_D3_CHART )
-        case SpecUtils::SaveSpectrumAsType::HtmlD3:
-          tooltip = "An HTML file using D3.js to generate a spectrum chart"
-          " that you can optionally interact with and view offline.";
-          break;
-#endif //#if( SpecUtils_ENABLE_D3_CHART )
-        case SpecUtils::SaveSpectrumAsType::NumTypes:
-          break;
-      }//switch( j )
-      
-      assert( tooltip );
-      
-      const bool showInstantly = true;
-      if( tooltip )
-        HelpSystem::attachToolTipOn( item, tooltip, showInstantly,
-                                    HelpSystem::ToolTipPosition::Right );
-    }//for( loop over file types )
-    
-#if( USE_QR_CODES )
-    item = m_downloadMenus[static_cast<int>(i)]->addMenuItem( "QR Code / URL" );
-    item->triggered().connect( boost::bind( &SpecMeasManager::displaySpectrumQrCode, m_fileManager, i ) );
-#endif
-    
-    m_downloadMenus[static_cast<int>(i)]->disable();
-    if( m_downloadMenus[static_cast<int>(i)]->parentItem() )
-      m_downloadMenu->setItemHidden( m_downloadMenus[static_cast<int>(i)]->parentItem(), true );
-  }//for( loop over spectrums )
-  
-  m_fileMenuPopup->setItemHidden(m_downloadMenu->parentItem(),true); //set as hidden first, will be visible when spectrum is added
-#elif( IOS ) // #if( USE_SAVEAS_FROM_MENU )
-  PopupDivMenuItem *exportFile = m_fileMenuPopup->addMenuItem( "Export Spectrum..." );
-  exportFile->triggered().connect( this, &InterSpec::exportSpecFile );
-
-#if( USE_QR_CODES )
-  PopupDivMenuItem *makeQr = m_fileMenuPopup->addMenuItem( "Spectrum as QR-code" );
-  makeQr->triggered().connect( boost::bind( &SpecMeasManager::displaySpectrumQrCode, m_fileManager, SpecUtils::SpectrumType::Foreground ) );
-#endif
-  
-#else        // #if( USE_SAVEAS_FROM_MENU ) / else IOS
-  item = m_fileMenuPopup->addMenuItem( "Export..." );
-  item->triggered().connect( m_fileManager, &SpecMeasManager::displayQuickSaveAsDialog );
-#endif //#if( USE_SAVEAS_FROM_MENU )
-  
-
+  m_exportSpecFileMenu = m_fileMenuPopup->addMenuItem( "Export File..." );
+  m_exportSpecFileMenu->triggered().connect( boost::bind( &InterSpec::createExportSpectrumFileDialog, this ) );
+  m_exportSpecFileMenu->disable();
   
 #if( USE_DB_TO_STORE_SPECTRA )
   assert( !m_fileManager || m_saveStateAs );
@@ -10351,6 +10207,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       if( !sameSpecFile )
         deletePeakEdit();
+      
+      m_exportSpecFileMenu->setDisabled( !meas );
     break;
     
     case SpecUtils::SpectrumType::SecondForeground:
@@ -10366,30 +10224,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   {
     sample_numbers = meas->displayedSampleNumbers();
   }
-
-#if( USE_SAVEAS_FROM_MENU )
-  if( m_downloadMenu && m_downloadMenus[spectypeindex] )
-  {
-    m_downloadMenus[spectypeindex]->setDisabled( !meas );
-    WMenuItem *item = m_downloadMenus[spectypeindex]->parentItem();
-    if( item )
-      m_downloadMenu->setItemHidden( item, !meas );
-      
-    bool allhidden=true;
-    for( SpecUtils::SpectrumType i = SpecUtils::SpectrumType(0);
-         i <= SpecUtils::SpectrumType::Background;
-         i = SpecUtils::SpectrumType(static_cast<int>(i)+1) )
-    {
-      if (!m_downloadMenu->isItemHidden( m_downloadMenus[static_cast<int>(i)]->parentItem()))
-      {
-        allhidden=false;
-        break;
-      }//if (!m_downloadMenus[i]->isHidden())
-    }//    for( SpecUtils::SpectrumType i = SpecUtils::SpectrumType(0); i<=SpecUtils::SpectrumType::Background; i = SpecUtils::SpectrumType(i+1) )
-      
-    m_fileMenuPopup->setItemHidden(m_downloadMenu->parentItem(),allhidden);
-  }//if( m_downloadMenu && m_downloadMenus[spec_type] )
-#endif
   
   
   switch( spec_type )
@@ -10513,13 +10347,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
     if( diff_fore_nchan && num_sec_channel && (num_sec_channel != num_foreground_channels) )
     {
-#if( USE_SAVEAS_FROM_MENU )
-      m_downloadMenus[static_cast<int>(SpecUtils::SpectrumType::SecondForeground)]->setDisabled( true );
-      WMenuItem *item = m_downloadMenus[static_cast<int>(SpecUtils::SpectrumType::SecondForeground)]->parentItem();
-      if( item )
-        m_downloadMenu->setItemHidden( item, true );
-#endif
-      
       m_secondDataMeasurement = nullptr;
       m_spectrum->setSecondData( nullptr );
       
@@ -10529,13 +10356,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
     if( diff_fore_nchan && num_back_channel && num_foreground_channels && (num_back_channel != num_foreground_channels) )
     {
-#if( USE_SAVEAS_FROM_MENU )
-      m_downloadMenus[static_cast<int>(SpecUtils::SpectrumType::Background)]->setDisabled( true );
-      WMenuItem *item = m_downloadMenus[static_cast<int>(SpecUtils::SpectrumType::Background)]->parentItem();
-      if( item )
-        m_downloadMenu->setItemHidden( item, true );
-#endif
-      
       m_backgroundMeasurement = nullptr;
       m_spectrum->setBackground( nullptr );
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::Background, nullptr, {}, {} );
@@ -11189,6 +11009,11 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     DecayWindow *decay = InterSpec::createDecayInfoWindow();
     if( decay )
       decay->handleAppUrl( path, query_str );
+  }else if( SpecUtils::iequals_ascii(host,"specexport") )
+  {
+    ExportSpecFileWindow *w = createExportSpectrumFileDialog();
+    if( w )
+      w->handleAppUrl( query_str );
   }else if( SpecUtils::iequals_ascii(host,"dose") )
   {
     DoseCalcWindow *dose = showDoseTool();

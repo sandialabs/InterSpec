@@ -96,7 +96,7 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   if( flags & RenderFull )
   {
-    // WDialog::setMaximumSize will silently not use dimensions if WLength::Percentage
+    // WDialog::setMaximumSize will silently not use dimensions if WLength::Percentage, so we use CSS.
     //  Note that page dimensions wont be available during initial rendering of the webapp
     
     // The below seems to be necessary or else sometimes the window doesnt resize to fit its content
@@ -153,8 +153,8 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
     m_msgContents->setInline( false );
   }
   
+  // We need to set the minimum size in C++; the maximum size is set in CSS.
   setMinimumSize( WLength(260,WLength::Pixel), WLength::Auto );
-  // We will set maximum size in a hacky way in SimpleDialog::render(...)
   
   show();
   finished().connect( this, &SimpleDialog::startDeleteSelf );
@@ -164,19 +164,15 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
   raiseToFront();
 #endif
   
-  //InterSpec *viewer = InterSpec::instance();
-  //if( viewer && viewer->isPhone() )
-  {
-    // On mobile, it seems Wt.WT.AuxWindowBringToFront(...) may get called after this window is
-    //  created (happens on the "QR code" link on Nuclide Decay Tool - since the user clicks
-    //  a button in the titlebar), which will bring that dialog above this one - which isnt wanted,
-    //  so we'll manually bring this dialog to the top on a delay.
-    //  We'll add this JS, even on non-mobile, JIC
-    LOAD_JAVASCRIPT(wApp, "SimpleDialog.cpp", "SimpleDialog", wtjsSimpleDialogBringToFront);
-    doJavaScript( "for( const d of [5,100,500]){"
-                   "setTimeout( function(){ Wt.WT.SimpleDialogBringToFront('" + id() + "');}, d);"
-                 "}");
-  }//if( isPhone )
+  // On mobile, it seems Wt.WT.AuxWindowBringToFront(...) may get called after this window is
+  //  created (happens on the "QR code" link on Nuclide Decay Tool - since the user clicks
+  //  a button in the titlebar), which will bring that dialog above this one - which isnt wanted,
+  //  so we'll manually bring this dialog to the top on a delay.
+  //  We'll add this JS, even on non-mobile, JIC
+  LOAD_JAVASCRIPT(wApp, "SimpleDialog.cpp", "SimpleDialog", wtjsSimpleDialogBringToFront);
+  doJavaScript( "for( const d of [5,100,500]){"
+                  "setTimeout( function(){ Wt.WT.SimpleDialogBringToFront('" + id() + "');}, d);"
+                "}");
 }//init(...)
 
 

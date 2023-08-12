@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="N42-2012">
+ Some N42-2012 description
+  </message>
+
+  <message id="N42-2006">
+    Some N42-2006 description
+  </message>
+
+  <message id="CHN">
+    Some CHN description
+  </message>
+
+  <message id="IAEA SPE">
+    Some IAEA SPE description
+  </message>
+
+  <message id="CSV">
+    Some CSV description
+  </message>
+
+  <message id="TXT">
+    Some TXT description
+  </message>
+
+  <message id="PCF">
+    Some PCF description
+  </message>
+
+  <message id="CNF">
+    Some CNF description
+  </message>
+
+  <message id="SPC (int)">
+    Some SPC (int) description
+  </message>
+
+  <message id="SPC (float)">
+    Some SPC (float) description
+  </message>
+
+  <message id="SPC (ascii)">
+    Some SPC (ascii) description
+  </message>
+
+  <message id="TKA">
+    Some TKA description
+  </message>
+
+  <message id="GR-130">
+    Some GR-130 description
+  </message>
+
+  <message id="GR-135">
+    Some  description
+  </message>
+
+  <message id="HTML">
+    Some  description
+  </message>
+
+  <message id="QR-code/URL">
+    Some "QR-code/URL description
+  </message>
+</messages>
