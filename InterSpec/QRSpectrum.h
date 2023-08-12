@@ -73,7 +73,7 @@ namespace SpecUtils
 
 namespace QRSpectrum
 {
-#define EMAIL_QR_OPTION 1
+#define EMAIL_QR_OPTION 0
   //Experimentation for having the QR code create an email, that will then put the URL info into the
   //  message body.  E.g., something like:
   //  "mailto:user@example.com?subject=spectrum&body=..."
