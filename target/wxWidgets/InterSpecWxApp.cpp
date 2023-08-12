@@ -53,6 +53,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/UndoRedoManager.h"
 
@@ -593,8 +594,12 @@ InterSpecWxApp::InterSpecWxApp() :
 
     // By default wxWidgets uses the name `GetAppName() + '-' + wxGetUserId()` - however, 
     // the Electron version of the app uses the same thing, so we'll modify this one a 
-    //  little by appending "-webview"
-    const bool did_create = m_checker->Create( GetAppName() + '-' + wxGetUserId() + "-webview" );
+    //  little by appending build date, so this way if you want, you can have two different
+    //  builds of InterSpec running
+    const wxString app_name = GetAppName() + '-' + wxGetUserId() 
+                              + "-" + std::to_string(InterSpecApp::compileDateAsInt());
+    const bool did_create = m_checker->Create( app_name );
+
     // `did_create` will be true, even if another instance of the program is running; it only indicated
     //  a failure to allocate a Windows named mutex or whatever (which I assume is excedingly rare to
     //  happen, but I didnt actually check)
