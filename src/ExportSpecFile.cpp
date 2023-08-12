@@ -815,8 +815,15 @@ void ExportSpecFileTool::init()
   
   m_export_btn = new WPushButton( "Export", btnsDiv );
   m_export_btn->setLink( WLink(m_resource) );
+  m_export_btn->setLinkTarget( AnchorTarget::TargetNewWindow );
   m_export_btn->disable();
   
+#if( ANDROID )
+// Using hacked saving to temporary file in Android, instead of via network download of file.
+  m_export_btn->clicked().connect( std::bind( [this](){ android_download_workaround( m_resource, "spectrum_file" ); } ) );
+#endif //ANDROID
+
+
 #if( USE_QR_CODES )
   m_show_qr_btn = new WPushButton( "Show QR-code", btnsDiv );
   m_show_qr_btn->clicked().connect( this, &ExportSpecFileTool::handleGenerateQrCode );

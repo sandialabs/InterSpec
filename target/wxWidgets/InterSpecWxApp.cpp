@@ -53,6 +53,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/UndoRedoManager.h"
 
