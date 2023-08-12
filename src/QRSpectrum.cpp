@@ -84,7 +84,7 @@ namespace
 
   // From: https://datatracker.ietf.org/doc/rfc9285/ , table 1
   const char sm_base45_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
-  
+    
   // Implement Table 1 in rfc9285 as a switch; should maybe just switch to using a lookup table
   uint8_t b45_to_dec( const char i )
   {
@@ -165,6 +165,74 @@ namespace
    throw runtime_error( string("Invalid hex-digit '") + v + string("'") );
    return 0;
  }//uint8_t hex_to_dec( char v )
+
+#if( EMAIL_QR_OPTION )
+  // Like base 45, but with the characters " $+%/" removed - this is because
+  //  these characters will get URL-encoded, and take up more space than they
+  //  save (??? this is a question to be answered).
+  //  It would be nice to remove ':' as well, since it has to be URL-encoded
+  //  but then we cant fit two bytes into three characters - e.g.,
+  //    - 65535/(39 * 39) = 43
+  //    - 65535/(40 * 40) = 40
+  //  All these characters are allowed for in the mailto URI of RFC 6068
+  const char sm_base40_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ*-.:";  //+
+  
+  uint8_t b40_to_dec( const char i )
+  {
+    switch( i )
+    {
+      case '0': return 0;
+      case '1': return 1;
+      case '2': return 2;
+      case '3': return 3;
+      case '4': return 4;
+      case '5': return 5;
+      case '6': return 6;
+      case '7': return 7;
+      case '8': return 8;
+      case '9': return 9;
+     
+      // I think the letters should always be uppercase, but we'll allow lower case, jic, for the moment
+      case 'A': case 'a': return 10;
+      case 'B': case 'b': return 11;
+      case 'C': case 'c': return 12;
+      case 'D': case 'd': return 13;
+      case 'E': case 'e': return 14;
+      case 'F': case 'f': return 15;
+      case 'G': case 'g': return 16;
+      case 'H': case 'h': return 17;
+      case 'I': case 'i': return 18;
+      case 'J': case 'j': return 19;
+      case 'K': case 'k': return 20;
+      case 'L': case 'l': return 21;
+      case 'M': case 'm': return 22;
+      case 'N': case 'n': return 23;
+      case 'O': case 'o': return 24;
+      case 'P': case 'p': return 25;
+      case 'Q': case 'q': return 26;
+      case 'R': case 'r': return 27;
+      case 'S': case 's': return 28;
+      case 'T': case 't': return 29;
+      case 'U': case 'u': return 30;
+      case 'V': case 'v': return 31;
+      case 'W': case 'w': return 32;
+      case 'X': case 'x': return 33;
+      case 'Y': case 'y': return 34;
+      case 'Z': case 'z': return 35;
+      case '*': return 36;
+      case '-': return 37;
+      case '.': return 38;
+      case ':': return 39;
+      
+      default:
+        throw std::runtime_error( "Invalid base-40 character with decimal value "
+                               + std::to_string( (int)reinterpret_cast<const uint8_t &>(i) ) );
+    }//switch( i )
+  
+    assert( 0 );
+    return 255;
+  }//int b40_to_dec( char )
+#endif
 
 
 // We cant just use Wt::Utils::urlEncode(...) because it puts hex-values into lower-case, where
@@ -297,6 +365,84 @@ std::string base45_encode_bytes( const T &input )
   return answer;
 }//std::string base45_encode_bytes( const vector<uint8_t> &input )
 
+  
+#if( EMAIL_QR_OPTION )
+template<class T>
+std::string base40_encode_bytes( const T &input )
+{
+  static_assert( sizeof(typename T::value_type) == 1, "Must be byte-based container" );
+  
+  //In analogy with rfc9285:
+  // """For encoding, two bytes [a, b] MUST be interpreted as a number n in
+  // base 256, i.e. as an unsigned integer over 16 bits so that the number
+  // n = (a * 256) + b.
+  // This number n is converted to base 40 [c, d, e] so that n = c + (d *
+  // 40) + (e * 40 * 40).  Note the order of c, d and e which are chosen
+  // so that the left-most [c] is the least significant."""
+  
+  const size_t input_size = input.size();
+  const size_t dest_bytes = 3 * (input_size / 2) + ((input_size % 2) ? 2 : 0);
+  string answer( dest_bytes, ' ' );
+  
+  size_t out_pos = 0;
+  for( size_t i = 0; i < input_size; i += 2 )
+  {
+    if( (i + 1) < input_size )
+    {
+      // We will process two bytes, storing them into three base-40 letters
+      // n = c + (d * 40) + (e * 40 * 40)
+      const uint16_t val_0 = reinterpret_cast<const uint8_t &>( input[i] );
+      const uint16_t val_1 = reinterpret_cast<const uint8_t &>( input[i+1] );
+      
+      uint16_t n = (val_0 << 8) + val_1;
+      
+      //n may be 65535.   65535/(39 * 39)=43
+      
+      const uint8_t e = n / (40 * 40);
+      n %= (40 * 40);
+      const uint8_t d = n / 40;
+      const uint8_t c = n % 40;
+      
+      assert( e < sizeof(sm_base40_chars) );
+      assert( c < sizeof(sm_base40_chars) );
+      assert( d < sizeof(sm_base40_chars) );
+      
+      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base40_chars[c] );
+      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base40_chars[d] );
+      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base40_chars[e] );
+      assert( out_pos <= dest_bytes );
+    }else
+    {
+      // We have one last dangling byte
+      // a = c + (40 * d)
+      const uint8_t a = reinterpret_cast<const uint8_t &>( input[i] );
+      const uint8_t d = a / 40;
+      const uint8_t c = a % 40;
+      
+      assert( c < sizeof(sm_base40_chars) );
+      assert( d < sizeof(sm_base40_chars) );
+      
+      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base40_chars[c] );
+      answer[out_pos++] = reinterpret_cast<const typename T::value_type &>( sm_base40_chars[d] );
+      assert( out_pos <= dest_bytes );
+    }
+  }//for( size_t i = 0; i < input_size; i += 2 )
+  
+  assert( out_pos == dest_bytes );
+  
+#ifndef NDEBUG
+  for( const auto val : answer )
+  {
+    const char c = static_cast<char>( val );
+    assert( std::find( begin(sm_base40_chars), end(sm_base40_chars), c ) != end(sm_base40_chars) );
+  }
+#endif
+  
+  return answer;
+}//std::string base40_encode_bytes( const vector<uint8_t> &input )
+#endif //#if( EMAIL_QR_OPTION )
+  
+  
 
 template<class T>
 void deflate_compress_internal( const void *in_data, size_t in_data_size, T &out_data)
@@ -450,7 +596,7 @@ string to_hex_bytes_str( const string &input )
    
     using namespace QRSpectrum;
     
-    const char *base_dir = "/Volumes/Fortress/Datasets/NSDD/RID_XIV/Symetrica - DISCO data/Symetrica SN20 Verifinder";
+    const char *base_dir = "/Users/wcjohns/Datasets/NSDD/RID_XIV/Symetrica - DISCO data/Symetrica SN20 Verifinder/";
     const size_t wanted_num_files = 100;
     const auto wanted_ecl = QrErrorCorrection::Low;
     
@@ -724,6 +870,63 @@ vector<uint8_t> base45_decode( const string &input )
   return answer;
 }//vector<uint8_t> base45_decode( const string &input )
 
+
+#if( EMAIL_QR_OPTION )
+std::string base40_encode( const std::vector<uint8_t> &input )
+{
+  return base40_encode_bytes( input );
+}
+
+  
+std::string base40_encode( const std::string &input )
+{
+  return base40_encode_bytes( input );
+}
+
+
+vector<uint8_t> base40_decode( const string &input )
+{
+  const size_t input_size = input.size();
+  
+  if( (input_size == 1) || ((input_size % 3) && ((input_size - 2) % 3)) )
+    throw runtime_error( "base40_decode: invalid input size (" + std::to_string(input_size) + ")" );
+  
+  const size_t output_size = ( 2*(input_size / 3) + ((input_size % 3) ? 1 : 0) );
+  vector<uint8_t> answer( output_size );
+  
+  for( size_t i = 0, output_pos = 0; i < input_size; i += 3 )
+  {
+    assert( (i + 2) <= input_size );
+    
+    const uint32_t c = b40_to_dec( input[i] );
+    const uint32_t d = b40_to_dec( input[i+1] );
+    uint32_t n = c + 40 * d;
+    
+    if( (i + 2) < input_size )
+    {
+      uint32_t e = b40_to_dec( input[i+2] );
+      
+      n += e * 40 * 40;
+      
+      if( n >= 65536 )
+        throw runtime_error( "base40_decode: Invalid three character sequence ("
+                            + input.substr(i,3) + " -> " + std::to_string(n) + ")" );
+      
+      assert( (n / 256) <= 255 );
+      
+      answer[output_pos++] = static_cast<uint8_t>( n / 256 );
+      n %= 256;
+    }//if( (i + 2) < input_size )
+    
+    assert( n <= 255 );
+    answer[output_pos++] = static_cast<uint8_t>( n );
+  }//for( size_t i = 0, output_pos = 0; i < input_size; i+=3 )
+  
+  return answer;
+}//vector<uint8_t> base40_decode( const string &input )
+#endif
+  
+  
 /** Performs the same encoding as `streamvbyte_encode` from https://github.com/lemire/streamvbyte,
  but pre-pended with a uint16_t to give number of integer entries, has a c++ interface, and is way,
  way slower.
@@ -886,7 +1089,16 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
   //  creating a multi-spectrum QR code, which means we dont want to do deflate, base45, or URL
   //  encoding yet
   const bool use_deflate = !(encode_options & EncodeOptions::NoDeflate);
+#if( EMAIL_QR_OPTION )
+  if( (encode_options & EncodeOptions::NoBase45) && (encode_options & EncodeOptions::UseBase40) )
+    throw runtime_error( "url_encode_spectrum: cant specify NoBase45 and UseBase40" );
+  
+  const bool use_base45 = (!(encode_options & EncodeOptions::NoBase45)
+                           && !(encode_options & EncodeOptions::UseBase40) );
+  const bool use_base40 = (encode_options & EncodeOptions::UseBase40);
+#else
   const bool use_base45 = !(encode_options & EncodeOptions::NoBase45);
+#endif
   const bool use_bin_chan_data = !(encode_options & EncodeOptions::CsvChannelData);
   const bool zero_compress = !(encode_options & EncodeOptions::NoZeroCompressCounts);
   
@@ -897,8 +1109,11 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
   const bool skip_title    = (skip_encode_options & SkipForEncoding::Title);
   
   assert( !skip_encoding || (num_parts == 1) );
+#if( EMAIL_QR_OPTION )
+  const char *comma = (use_deflate || use_base40 || use_base45 || use_bin_chan_data) ? "," : "$";
+#else
   const char *comma = (use_deflate || use_base45 || use_bin_chan_data) ? "," : "$";
-  
+#endif
   vector<string> answer( num_parts );
   
   string &first_url = answer[0];
@@ -973,8 +1188,13 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     SpecUtils::trim( det_model );
     if( !det_model.empty() )
     {
+#if( EMAIL_QR_OPTION )
+      if( !use_deflate && !use_base45 && !use_base40 && !use_bin_chan_data )
+        det_model = url_encode_non_base45( det_model );
+#else
       if( !use_deflate && !use_base45 && !use_bin_chan_data )
         det_model = url_encode_non_base45( det_model );
+#endif
       
       first_url += "M:" + det_model + " ";
     }
@@ -1010,8 +1230,13 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     string remark;
     remark = operator_notes;
     
+#if( EMAIL_QR_OPTION )
+    if( !use_deflate && !use_base45 && !use_base40 && !use_bin_chan_data )
+      remark = url_encode_non_base45( operator_notes );
+#else
     if( !use_deflate && !use_base45 && !use_bin_chan_data )
       remark = url_encode_non_base45( operator_notes );
+#endif
     
     first_url += "O:" + remark + " ";
   }//if( !skip_title && !m->title().empty() )
@@ -1125,12 +1350,59 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
         cerr << "\n\nNot matching:\n\tOrig='" << to_hex_bytes_str(orig) << "'" << endl
         << "\tDecs='" << to_hex_bytes_str(decoded) << "'\n\n";
       assert( decoded == orig );
+      
+#if( EMAIL_QR_OPTION )
+      {
+        const string b40_encoded = base40_encode( answer[msg_num] );
+        
+        vector<uint8_t> b40_decoded_bytes = base40_decode( b40_encoded );
+        assert( !b40_decoded_bytes.empty() );
+        string b40_decoded( b40_decoded_bytes.size(), 0x0 );
+        for( size_t i = 0; i < b40_decoded_bytes.size(); ++i )
+          b40_decoded[i] = b40_decoded_bytes[i];
+        
+        if( b40_decoded != orig )
+          cerr << "\n\nBase-40 Not matching:\n\tOrig='" << to_hex_bytes_str(orig) << "'" << endl
+               << "\tDecs='" << to_hex_bytes_str(decoded) << "'\n\n";
+        assert( b40_decoded == orig );
+      }
+#endif  // EMAIL_QR_OPTION
+      
 #else
       answer[msg_num] = base45_encode( answer[msg_num] );
 #endif
       //cout << "During encoding, after  base-45: '" << to_hex_bytes_str(answer[msg_num].substr(0,60)) << "'" << endl << endl;
     }
   }//if( use_base45 )
+  
+  
+#if( EMAIL_QR_OPTION )
+  if( use_base40 && !skip_encoding )
+  {
+    for( size_t msg_num = 0; msg_num < num_parts; ++msg_num )
+    {
+#ifndef NDEBUG
+      const string orig = answer[msg_num];
+      const string b40_encoded = base40_encode( answer[msg_num] );
+      
+      answer[msg_num] = b40_encoded;
+      
+      vector<uint8_t> b40_decoded_bytes = base40_decode( b40_encoded );
+      assert( !b40_decoded_bytes.empty() );
+      string b40_decoded( b40_decoded_bytes.size(), 0x0 );
+      for( size_t i = 0; i < b40_decoded_bytes.size(); ++i )
+        b40_decoded[i] = b40_decoded_bytes[i];
+      
+      if( b40_decoded != orig )
+        cerr << "\n\nBase-40 Not matching:\n\tOrig='" << to_hex_bytes_str(orig) << "'" << endl
+        << "\tDecs='" << to_hex_bytes_str(b40_decoded) << "'\n\n";
+      assert( b40_decoded == orig );
+#else
+      answer[msg_num] = base40_encode( answer[msg_num] );
+#endif
+    }//for( size_t msg_num = 0; msg_num < num_parts; ++msg_num )
+  }//if( use_base40 )
+#endif //EMAIL_QR_OPTION
   
 #if( LOG_URL_ENCODING )
   const vector<string> after_base45 = answer;
@@ -1166,7 +1438,21 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
       }
     }
   }//if( use_base45 || (!use_deflate && !use_bin_chan_data) )
-#endif
+  
+#if( EMAIL_QR_OPTION )
+  if( !skip_encoding && (use_base40 || (!use_deflate && !use_bin_chan_data)) )
+  {
+    for( const string &url : answer )
+    {
+      for( const char val : url )
+      {
+        assert( std::find( begin(sm_base40_chars), end(sm_base40_chars), val ) != end(sm_base40_chars) );
+      }
+    }
+  }//if( use_base40 || (!use_deflate && !use_bin_chan_data) )
+#endif  //#if( EMAIL_QR_OPTION )
+  
+#endif  //#ifndef NDEBUG
   
   
 #if( LOG_URL_ENCODING )
@@ -1313,11 +1599,19 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     cout << "--------------------------------------------------------------------------------\n";
   }//if( use_deflate )
   
+#if( EMAIL_QR_OPTION )
+  if( use_base45 || use_base40 )
+#else
   if( use_base45 )
+#endif
   {
     cout << endl << endl;
     cout << "--------------------------------------------------------------------------------\n";
+#if( EMAIL_QR_OPTION )
+    cout << "After base-40/45 encoding:\n\t";
+#else
     cout << "After base-45 encoding:\n\t";
+#endif
     for( size_t url_index = 0; url_index < after_base45.size(); ++url_index )
     {
       const string &url = after_base45[url_index];
@@ -1373,37 +1667,33 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
   if( measurements.size() > 9 )
     throw runtime_error( "url_encode_spectra: to many measurements passed in." );
   
+  
+  
+#if( EMAIL_QR_OPTION )
+  if( encode_options & ~(EncodeOptions::NoDeflate | EncodeOptions::NoBase45 | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts | EncodeOptions::UseBase40) )
+    throw runtime_error( "url_encode_spectra: invalid option passed in - see EncodeOptions." );
+  
+  assert( encode_options < 32 );
+#else
   if( encode_options & ~(EncodeOptions::NoDeflate | EncodeOptions::NoBase45 | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts) )
     throw runtime_error( "url_encode_spectra: invalid option passed in - see EncodeOptions." );
   
   assert( encode_options < 16 );
+#endif
   
   const bool use_deflate = !(encode_options & EncodeOptions::NoDeflate);
   const bool use_base45 = !(encode_options & EncodeOptions::NoBase45);
   const bool use_bin_chan_data = !(encode_options & EncodeOptions::CsvChannelData);
   //const bool zero_compress = !(encode_options & EncodeOptions::NoZeroCompressCounts);
-  
-#define EMAIL_QR_OPTION 0
-  //Experimentation for having the QR code create an email, that will then put the URL info into the
-  //  message body.  E.g., something like:
-  //  "mailto:user@example.com?subject=spectrum&body=..."
-  //
-  //  Pending things to check out, or consider:
-  //  - To have the body be a proper URL, need to double-encode the URL.
-  //  - The mailto RFC (RFC 6068), I think specifies only the characters "%&;=/?#[]" need to be
-  //    URL encoded; this could save us some space over " $&+,:;=?@'\"<>#%{}|\\^~[]`/".
-  //  - It looks like 'NoZeroCompressCounts' option alone usually produces shortest results,
-  //    although sometimes adding 'NoBase45' to this helps.
-  //  - We need an email address (user@example.com in above), or else iOS inteprets as a contact
-  //  - Maybe we should NOT base-45 encode the URL, afterall the ?, &, and = characters will cause
-  //    the QR to be encoded as binary anyway, so the base-45 is just adding length, however a first
-  //    go at trying the different options didnt show this - perhaps base45 is better then just
-  //    straight URL encoding.
-  //  - Doesnt seem like can make an HTML formmated email, with a simple link to click-on
-  
+#if( EMAIL_QR_OPTION )
+  const bool use_base40 = (encode_options & EncodeOptions::UseBase40);
+  if( (encode_options & EncodeOptions::NoBase45) && (encode_options & EncodeOptions::UseBase40) )
+    throw runtime_error( "url_encode_spectra: invalid option passed in - cant specify NoBase45 and UseBase40." );
+#endif
+
   
 #if( EMAIL_QR_OPTION )
-  const bool alpha_num_qr_encode = false;
+  const bool alpha_num_qr_encode = (use_base45 || use_base40 || (!use_deflate && !use_bin_chan_data));
 #else
   const bool alpha_num_qr_encode = (use_base45 || (!use_deflate && !use_bin_chan_data));
 #endif
@@ -1421,7 +1711,9 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
   vector<qrcodegen::QrCode> qrs;
   
 #if( EMAIL_QR_OPTION )
-  const string url_start = string("mailto:user@example.com?subject=spectrum&body=Copy%20Paste%20to%20InterSpec:%0D%0Araddata://G0/") + sm_hex_digits[encode_options & 0x0F];
+  const string url_start = string("mailto:user@example.com?subject=spectrum&body=Copy%20Paste%20to%20InterSpec:%0D%0Araddata://G0/")
+  + string(use_base40 ? "1" : "")
+  + sm_hex_digits[encode_options & 0x0F];
 #else
   const string url_start = string("RADDATA://G0/") + sm_hex_digits[encode_options & 0x0F];
 #endif

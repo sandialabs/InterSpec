@@ -73,6 +73,28 @@ namespace SpecUtils
 
 namespace QRSpectrum
 {
+#define EMAIL_QR_OPTION 1
+  //Experimentation for having the QR code create an email, that will then put the URL info into the
+  //  message body.  E.g., something like:
+  //  "mailto:user@example.com?subject=spectrum&body=..."
+  //
+  //  Pending things to check out, or consider:
+  //  - To have the body be a proper URL, need to double-encode the URL.
+  //  - The mailto RFC (RFC 6068), I think specifies only the characters "%&;=/?#[]" need to be
+  //    URL encoded; this could save us some space over " $&+,:;=?@'\"<>#%{}|\\^~[]`/".
+  //  - It looks like 'NoZeroCompressCounts' option alone usually produces shortest results,
+  //    although sometimes adding 'NoBase45' to this helps.
+  //  - We need an email address (user@example.com in above), or else iOS interprets as a contact
+  //  - Maybe we should NOT base-45 encode the URL, after all the ?, &, and = characters will cause
+  //    the QR to be encoded as binary anyway, so the base-45 is just adding length, however a first
+  //    go at trying the different options didnt show this - perhaps base45 is better then just
+  //    straight URL encoding.
+  //  - Doesnt seem like can make an HTML formmated email, with a simple link to click-on
+  //
+  // 20230804: I think the thing to do is base-85 encode (or rather The Z85 encoding) the compressed part of the URL, then escape the characters not allowed in mailto URI (e.g., "%&;=/?#[]", which only a couple are in base-85) - then encode as binary QR code
+  //
+  
+  
   int dev_code();
 
   std::string base45_encode( const std::string &input );
@@ -80,6 +102,13 @@ namespace QRSpectrum
 
   std::vector<uint8_t> base45_decode( const std::string &input );
 
+#if( EMAIL_QR_OPTION )
+  std::string base40_encode( const std::string &input );
+  std::string base40_encode( const std::vector<uint8_t> &input );
+
+  std::vector<uint8_t> base40_decode( const std::string &input );
+#endif
+  
   void deflate_compress( const void *in_data, size_t in_data_size, std::string &out_data );
   void deflate_compress( const void *in_data, size_t in_data_size, std::vector<uint8_t> &out_data );
   
@@ -113,6 +142,10 @@ enum EncodeOptions
   
   /** Do not zero-compress channel data. */
   NoZeroCompressCounts = 0x08
+  
+#if( EMAIL_QR_OPTION )
+  , UseBase40 = 0x10
+#endif
 };//enum EncodeOptions
 
 

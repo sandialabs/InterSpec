@@ -1533,7 +1533,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
             multi.mime_type_ = mimetype;
             
             meas->add_multimedia_data( multi );
-            passMessage( "Image has been embeded in the foreground spectrum file; only exporting in"
+            passMessage( "Image has been embedded in the foreground spectrum file; only exporting in"
                       " N42-2012 file format will preserve this.", WarningWidget::WarningMsgInfo );
             
             wApp->doJavaScript( "$('#" + dialog->id() + "').hide(); $('.Wt-dialogcover').hide();" );
