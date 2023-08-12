@@ -767,11 +767,11 @@ void ExportSpecFileTool::init()
   m_sumSecoToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumSecoToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
-  m_backSubFore = new WCheckBox( "Back. sub. Fore/Back", m_optionsHolder );
+  m_backSubFore = new WCheckBox( "Background subtract", m_optionsHolder );
   m_backSubFore->checked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   m_backSubFore->unChecked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   
-  m_sumDetsPerSample = new WCheckBox( "Sum Detectors per sample", m_optionsHolder );
+  m_sumDetsPerSample = new WCheckBox( "Sum Det. per sample", m_optionsHolder );
   m_sumDetsPerSample->checked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
   m_sumDetsPerSample->unChecked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
   
@@ -1585,12 +1585,12 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   if( (use_fore_disp || use_seco_disp) && use_back_disp )
   {
     m_backSubFore->show();
-    if( use_fore_disp && use_seco_disp )
-      m_backSubFore->setText( "Back. Sub. For./Sec." );
-    else if( use_fore_disp )
-      m_backSubFore->setText( "Back. Sub. For." );
-    else
-      m_backSubFore->setText( "Back. Sub. Sec." );
+    //if( use_fore_disp && use_seco_disp )
+    //  m_backSubFore->setText( "Back. sub. For./Sec." );
+    //else if( use_fore_disp )
+    //  m_backSubFore->setText( "Back. Sub. For." );
+    //else
+    //  m_backSubFore->setText( "Back. Sub. Sec." );
   }else
   {
     m_backSubFore->hide();
@@ -2018,13 +2018,18 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   const SpecUtils::SaveSpectrumAsType save_type = currentSaveType();
   const uint16_t max_records = maxRecordsInCurrentSaveType( start_spec );
   
+  const bool remove_gps = (m_excludeGpsInfo->isVisible() && m_excludeGpsInfo->isChecked());
+  const bool sum_per_sample = (m_sumDetsPerSample->isVisible() && m_sumDetsPerSample->isChecked());
+  const bool use_disp_fore = (m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked());
+  const bool use_disp_back = (m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked());
+  const bool use_disp_seco = (m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked());
+  
   
   if( !start_spec )
     throw runtime_error( "No file selected for export." );
   
   // First we'll check for all the cases where we want the whole file
-  if( (start_spec->num_measurements() == 1)
-     && (m_excludeGpsInfo->isHidden() || !m_excludeGpsInfo->isChecked()) )
+  if( (start_spec->num_measurements() == 1) && !remove_gps )
     return start_spec;
   
   const bool backgroundSub = (m_backSubFore && m_backSubFore->isVisible() && m_backSubFore->isChecked());
@@ -2042,40 +2047,44 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
 
   answer->set_uuid( "" );
   
-  if( m_excludeGpsInfo->isVisible() && m_excludeGpsInfo->isChecked() )
+  if( remove_gps )
   {
     // TODO: the below causes mean lat/lon to be recalculated after each call should just add a SpecMeas::clear_gps_coordinates() function
     for( const auto &m : answer->measurements() )
       answer->set_position( -999.9, -999.9, SpecUtils::time_point_t{}, m );
-  }//if( m_excludeGpsInfo->isVisible() && m_excludeGpsInfo->isChecked() )
+  }//if( remove_gps )
+  
+  
+  if( start_spec->num_measurements() == 1 )
+    return answer;
   
   set<set<int>> samplesToSum;
-  if( m_sumDetsPerSample->isVisible() && m_sumDetsPerSample->isChecked() )
+  if( sum_per_sample )
   {
     for( const int sample : answer->sample_numbers() )
       samplesToSum.insert( set<int>{sample} );
   }//if( sum detectors per sample )
   
 
-  if( m_sumForeToSingleRecord->isVisible() && m_sumForeToSingleRecord->isChecked() )
+  if( foreToSingleRecord )
   {
-    assert( m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked() );
+    assert( use_disp_fore );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
     samplesToSum.insert( samples );
   }//if( foreground to single record )
   
   
-  if( m_sumBackToSingleRecord->isVisible() && m_sumBackToSingleRecord->isChecked() )
+  if( backToSingleRecord )
   {
-    assert( m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked() );
+    assert( use_disp_back );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
     samplesToSum.insert( samples );
   }//if( background to single record )
   
   
-  if( m_sumSecoToSingleRecord->isVisible() && m_sumSecoToSingleRecord->isChecked() )
+  if( secoToSingleRecord || (use_disp_seco && (max_records <= 2)) )
   {
-    assert( m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked() );
+    assert( use_disp_seco );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
     samplesToSum.insert( samples );
   }//if( secondary to single record )
@@ -2086,7 +2095,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   set<shared_ptr<const SpecUtils::Measurement>> meas_to_remove;
   vector<shared_ptr<SpecUtils::Measurement>> meas_to_add;
   
-  if( m_backSubFore->isVisible() && m_backSubFore->isChecked() )
+  if( backgroundSub )
   {
     // We'll check if the foreground and background have the same detectors
     //  for foreground and background, and if so, subtract on a detector by
@@ -2115,8 +2124,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     const set<string> seco_dets = get_dets( SpecUtils::SpectrumType::SecondForeground );
     
     
-    if( (m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked())
-       || (m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked()) )
+    if( use_disp_fore || use_disp_seco )
     {
       auto make_subtracted = [&]( const SpecUtils::SpectrumType type ){
       

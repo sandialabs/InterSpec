@@ -109,9 +109,16 @@
 }
 
 
+.ExportSpecFileTool .ExportSpecSelect
+{
+  width: 250px;
+  margin-left: 5px;
+  margin-right: 5px;
+  font-size: 14px;
+}
+
 .ExportSpecInfo .ExportSpecInfoTable
 {
-  margin: 5px;
 }
 
 .ExportSpecInfo .ExportSpecInfoTable th, .ExportSpecInfo .ExportSpecInfoTable td
@@ -137,7 +144,7 @@
 
 .ExportSpecInfo .ExportSpecInfoTable th
 {
-  width: 105px;
+  width: 100px;
   display: block;
   overflow: hidden;
 }
