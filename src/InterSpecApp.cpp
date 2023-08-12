@@ -460,6 +460,7 @@ void InterSpecApp::setupDomEnvironment()
     wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
     wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
+    wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
     
     // anything else relevant?
     wApp->triggerUpdate();

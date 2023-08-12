@@ -82,7 +82,7 @@
 
 .ExportSpecFileTool .ExportSpecSamples
 {
-  width: 200px;
+  min-width: 200px;
 }
 
 /* The checkboxes in the "Samples to include" column. Keep them from wrapping lines - maybe (untested) */

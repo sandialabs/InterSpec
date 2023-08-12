@@ -2529,6 +2529,9 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   : SimpleDialog( "Spectrum File Export", "" ),
   m_tool( nullptr )
 {
+  // If the CSS isnt avaiable to set widths and stuff when HTML is first formed
+  //  then the window wont be sized properly, so we have actually already loaded
+  //  ExportSpecFile.css in InterSpecApp
   wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
   
   addStyleClass( "export-spec-file" );
