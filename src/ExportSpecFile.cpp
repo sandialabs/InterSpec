@@ -820,6 +820,7 @@ void ExportSpecFileTool::init()
   
 #if( ANDROID )
 // Using hacked saving to temporary file in Android, instead of via network download of file.
+  TODO: have the click call a member function that calls the ansdroid download workaraound with the proper filename.
   m_export_btn->clicked().connect( std::bind( [this](){ android_download_workaround( m_resource, "spectrum_file" ); } ) );
 #endif //ANDROID
 
