@@ -389,10 +389,10 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     copyBtn->setFloatSide( Wt::Side::Left );
     
     // TODO: there is probably a way to get wApp->root()->id() directly in the JS
+    const string escaped_url = WString(url).jsStringLiteral();
     copyBtn->clicked().connect( "function(s,e){ "
-                                 "Wt.WT.CopyUrlToClipboard(s,e,'" + copyBtn->id() + "','" + wApp->root()->id() + "','" + url + "');"
+                                 "Wt.WT.CopyUrlToClipboard(s,e,'" + copyBtn->id() + "','" + wApp->root()->id() + "'," + escaped_url + ");"
                                  "}" );
-    
     
     return window;
   }catch( std::exception &e )
