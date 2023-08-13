@@ -2047,8 +2047,8 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   const bool secoToSingleRecord = (m_sumSecoToSingleRecord->isVisible() && m_sumSecoToSingleRecord->isChecked());
   const bool filterDets = (m_filterDetector && m_filterDetector->isVisible() && m_filterDetector->isChecked());
   
-  set<int> samples = currentlySelectedSamples();
-  vector<string> detectors = currentlySelectedDetectors();
+  const set<int> samples = currentlySelectedSamples();
+  const vector<string> detectors = currentlySelectedDetectors();
   
   shared_ptr<SpecMeas> answer = make_shared<SpecMeas>();
   answer->uniqueCopyContents( *start_spec );
@@ -2369,6 +2369,19 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     }//if( !single_meas )
   }//for( const set<int> &samples : samplesToSum )
   
+
+  for( const auto &m : answer->measurements() )
+  {
+    assert( m );
+    if( !m )
+      continue;
+    const bool is_wanted_sample = samples.count( m->sample_number() );
+    const auto det_pos = std::find( begin(detectors), end(detectors), m->detector_name() );
+    const bool is_wanted_det = (det_pos != end(detectors));
+    if( !is_wanted_sample || !is_wanted_det )
+      meas_to_remove.insert( m );
+  }//for( const auto &m : answer->measurements() )
+  
   
   if( !meas_to_remove.empty() )
   {
@@ -2454,7 +2467,14 @@ void ExportSpecFileTool::handleGenerateQrCode()
   
     vector<QRSpectrum::UrlSpectrum> urlspec = QRSpectrum::to_url_spectra( spec->measurements(), model );
     
+#if( EMAIL_QR_OPTION )
+    const uint8_t encode_options = QRSpectrum::EncodeOptions::UseBase85
+                                   | QRSpectrum::EncodeOptions::AsMailToUri
+                                   | QRSpectrum::EncodeOptions::EmailBodyNotUri;
+#else
     const uint8_t encode_options = 0;
+#endif
+    
     vector<QRSpectrum::UrlEncodedSpec> urls;
     QRSpectrum::QrErrorCorrection ecc = QRSpectrum::QrErrorCorrection::High;
     
