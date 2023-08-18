@@ -125,10 +125,10 @@ public:
   std::shared_ptr<const SpecMeas> generateFileToSave();
   
   
-  /** Handles receiving a "deep-link" url starting with "interspec://specsum/...".
+  /** Handles receiving a "deep-link" url starting with "interspec://specexport/...".
    
    Example URIs:
-   - "interspec://specsum?V=1&LOW=180&HIGH=190"
+   - "interspec://specexport?V=1&..."
    
    @param query_str The query portion of the URI.  So for example, if the URI has a value of
    "interspec://specexport?V=1&FORMAT=N42-2012&Samples=1,2&...", then this string would be "V=1&FORMAT=N42-2012&Samples=1,2&...".

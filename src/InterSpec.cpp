@@ -1635,6 +1635,10 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         stateSave();
         break;
         
+      case 'e': case 'E':
+        createExportSpectrumFileDialog();
+        break;
+        
       case 37: case 38: case 39: case 40:
         arrowKeyPressed( value );
         break;
@@ -11077,7 +11081,7 @@ void InterSpec::makeEnterAppUrlWindow()
   //  "Okay" button in javascript
   const string jsokay = okay->jsRef();
   const string validate_js = "function(textarea,event){ "
-    "const matches = /^((interspec)|(raddata)):\\/\\/.+/i.test(textarea.value);"
+    "const matches = /^((interspec:\\/\\/)|(raddata:)).+/i.test(textarea.value);"
     "$(" + jsokay + ").prop('disabled', !matches);"
   " }";
   text->keyWentUp().connect( validate_js );
@@ -11124,10 +11128,21 @@ void InterSpec::makeEnterAppUrlWindow()
     
     try
     {
-      if( !SpecUtils::istarts_with(uri, "interspec://")
-         && !SpecUtils::istarts_with(uri, "raddata://") )
-        throw runtime_error( "URL must start with 'interspec://' or 'raddata://'." );
-      handleAppUrl( uri );
+      if( SpecUtils::istarts_with(uri, "interspec://") )
+      {
+        handleAppUrl( uri );
+      }else if( SpecUtils::istarts_with(uri, "raddata://") )
+      {
+        // TODO: check options following "G0/" to see if QRSpectrum::EncodeOptions::EmailBodyNotUri is set, and if do just call straigt into file manager
+        handleAppUrl( uri );
+      }else if( SpecUtils::istarts_with(uri, "raddata:G0/") )
+      {
+        m_fileManager->handleSpectrumUrl( uri );
+      }else
+      {
+        throw runtime_error( "URL must start with 'interspec://' or 'raddata:'." );
+      }
+      
     }catch( std::exception &e )
     {
       SimpleDialog *errdialog = new SimpleDialog( "Error with entered URL", e.what() );

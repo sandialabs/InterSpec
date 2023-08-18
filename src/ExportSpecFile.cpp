@@ -91,6 +91,29 @@ namespace
     menu->select( item );
     item->triggered().emit( item ); //
   }
+
+const std::vector<std::pair<SpecUtils::SaveSpectrumAsType,std::string>> sm_file_type_to_uri_name = {
+  { SpecUtils::SaveSpectrumAsType::N42_2012, "N42-2012"},
+  { SpecUtils::SaveSpectrumAsType::N42_2006, "N42-2006"},
+  { SpecUtils::SaveSpectrumAsType::Chn, "CHN" },
+  { SpecUtils::SaveSpectrumAsType::SpeIaea, "IAEA SPE" },
+  { SpecUtils::SaveSpectrumAsType::Csv, "CSV" },
+  { SpecUtils::SaveSpectrumAsType::Txt, "TXT" },
+  { SpecUtils::SaveSpectrumAsType::Pcf, "PCF" },
+  { SpecUtils::SaveSpectrumAsType::Cnf, "CNF" },
+  { SpecUtils::SaveSpectrumAsType::SpcBinaryInt, "SPC (int)" },
+  { SpecUtils::SaveSpectrumAsType::SpcBinaryFloat, "SPC (float)" },
+  { SpecUtils::SaveSpectrumAsType::SpcAscii, "SPC (ascii)" },
+  { SpecUtils::SaveSpectrumAsType::Tka, "TKA" },
+  { SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0, "GR-130" },
+  { SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2, "GR-135" },
+#if( SpecUtils_ENABLE_D3_CHART )
+  { SpecUtils::SaveSpectrumAsType::HtmlD3, "HTML" },
+#endif
+#if( USE_QR_CODES )
+  { SpecUtils::SaveSpectrumAsType::NumTypes, "QR-code/URL" },
+#endif
+};//sm_file_type_to_uri_name
 }//namespace
 
 #if( USE_QR_CODES )
@@ -98,11 +121,13 @@ namespace
 {
   void displayQrDialog( const vector<QRSpectrum::UrlEncodedSpec> urls,
                        const size_t index,
-                       boost::function<void()> successfullyDone )
+                       boost::function<void()> successfullyDone,
+                       const bool as_emailto,
+                       boost::function<void()> toogleEmailVsUri )
   {
-    string seqnum = "QR Code";
+    string seqnum = as_emailto ? "QR-code to create email" : "QR-code of spectrum URL";
     if( urls.size() > 1 )
-      seqnum += " " + to_string(index + 1) + " of " + to_string( urls.size() );
+      seqnum += ", " + to_string(index + 1) + " of " + to_string( urls.size() );
     
     string title = "Spectrum File " + seqnum;
     if( urls.size() == 1 )
@@ -115,7 +140,7 @@ namespace
     {
       WPushButton *btn = dialog->addButton( "Next QR code" );
       btn->clicked().connect( std::bind([=](){
-        displayQrDialog( urls, index + 1, successfullyDone );
+        displayQrDialog( urls, index + 1, successfullyDone, as_emailto, toogleEmailVsUri );
       }) );
     }else if( successfullyDone )
     {
@@ -137,7 +162,106 @@ namespace
       if( close )
         close->clicked().connect( std::bind(successfullyDone) );
     }//if( (index + 1) < urls.size() )
+    
+    if( toogleEmailVsUri )
+    {
+      const char *btn_txt = as_emailto ? "URL Link" : "Email Link";
+      WPushButton *btn = dialog->addButton( btn_txt );
+      dialog->footer()->removeWidget( btn );
+      dialog->footer()->insertWidget( 0, btn );
+      btn->clicked().connect( std::bind(toogleEmailVsUri) );
+    }//if( toogleEmailVsUri )
   }//void displayQr( vector<QRSpectrum::UrlEncodedSpec> urls )
+
+
+void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
+                   shared_ptr<const SpecMeas> spec,
+                   boost::function<void()> successfullyDone,
+                   const bool as_emailto )
+{
+  try
+  {
+#if( EMAIL_QR_OPTION )
+    uint8_t encode_options = 0;
+    if( as_emailto )
+      encode_options = QRSpectrum::EncodeOptions::UseBase85
+                        | QRSpectrum::EncodeOptions::AsMailToUri;
+#else
+    const uint8_t encode_options = 0;
+#endif
+    
+    vector<QRSpectrum::UrlEncodedSpec> urls;
+    QRSpectrum::QrErrorCorrection ecc = QRSpectrum::QrErrorCorrection::High;
+    
+    auto do_encode = [&](){
+      // We'll try to only use a single QR-code, but also use highest error-correction we can.
+      //  I'm sure this trade-off can be better handled in some way.
+      if( spec->num_gamma_channels() < 2075 )
+      {
+        try
+        {
+          urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+        }catch( std::exception & )
+        {
+        }//try / catch
+      }//if( spec->num_gamma_channels() < 2075 )
+      
+      if( urls.empty() || (urls.size() > 1) )
+      {
+        try
+        {
+          ecc = QRSpectrum::QrErrorCorrection::Medium;
+          urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+        }catch( std::exception & )
+        {
+        }//try / catch
+      }//if( urls.empty() )
+      
+      if( urls.empty() || (urls.size() > 1) )
+      {
+        try
+        {
+          ecc = QRSpectrum::QrErrorCorrection::Low;
+          urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+        }catch( std::exception & )
+        {
+        }//try / catch
+      }//if( urls.empty() )
+    };//do_encode lamda
+    
+    do_encode();
+    
+#if( EMAIL_QR_OPTION )
+    // We first tried to encode as a proper URI inside the email, but if
+    //  that didnt work, we'll do it as just data text.
+    if( as_emailto && (urls.empty() || (urls.size() > 1)) )
+    {
+      encode_options |= QRSpectrum::EncodeOptions::EmailBodyNotUri;
+      do_encode();
+    }
+#endif
+    
+    if( urls.empty() )
+    {
+      auto dialog = new SimpleDialog( "Error",
+                                     "Spectrum could not be encoded to a QR code.<br />"
+                                     "Likely due to requiring more than 9 QR codes." );
+      dialog->addButton( "Ok" );
+      return;
+    }//if( urls.empty() )
+    
+    
+    boost::function<void()> toogleEmailVsUri = [=](){
+      displayQrCode( urlspec, spec, successfullyDone, !as_emailto );
+    };
+    
+    displayQrDialog( urls, 0, successfullyDone, as_emailto, toogleEmailVsUri );
+  }catch( std::exception &e )
+  {
+    auto dialog = new SimpleDialog( "Error", "Failed to display spectrum as a QR code: " + string(e.what()) );
+    dialog->addButton( "Ok" );
+  }//try catch
+}//void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec, const bool as_emailto )
 }//namespace
 #endif //USE_QR_CODES
 
@@ -778,7 +902,6 @@ void ExportSpecFileTool::init()
   m_excludeInterSpecInfo = new WCheckBox( "Remove InterSpec info", m_optionsHolder );
   m_excludeInterSpecInfo->setToolTip( "Removes detector response, peaks, and other analysis"
                                       " results you may have added in InterSpec." );
-  m_excludeInterSpecInfo->setChecked( true );
   m_excludeInterSpecInfo->checked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   m_excludeInterSpecInfo->unChecked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   
@@ -2465,65 +2588,11 @@ void ExportSpecFileTool::handleGenerateQrCode()
     if( model.empty() )
       model = spec->instrument_model();
   
-    vector<QRSpectrum::UrlSpectrum> urlspec = QRSpectrum::to_url_spectra( spec->measurements(), model );
-    
-#if( EMAIL_QR_OPTION )
-    const uint8_t encode_options = QRSpectrum::EncodeOptions::UseBase85
-                                   | QRSpectrum::EncodeOptions::AsMailToUri
-                                   | QRSpectrum::EncodeOptions::EmailBodyNotUri;
-#else
-    const uint8_t encode_options = 0;
-#endif
-    
-    vector<QRSpectrum::UrlEncodedSpec> urls;
-    QRSpectrum::QrErrorCorrection ecc = QRSpectrum::QrErrorCorrection::High;
-    
-    // We'll try to only use a single QR-code, but also use highest error-correction we can.
-    //  I'm sure this trade-off can be better handled in some way.
-    if( spec->num_gamma_channels() < 2075 )
-    {
-      try
-      {
-        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
-      }catch( std::exception & )
-      {
-      }//try / catch
-    }//if( spec->num_gamma_channels() < 2075 )
-    
-    if( urls.empty() || (urls.size() > 1) )
-    {
-      try
-      {
-        ecc = QRSpectrum::QrErrorCorrection::Medium;
-        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
-      }catch( std::exception & )
-      {
-      }//try / catch
-    }//if( urls.empty() )
-    
-    if( urls.empty() || (urls.size() > 1) )
-    {
-      try
-      {
-        ecc = QRSpectrum::QrErrorCorrection::Low;
-        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
-      }catch( std::exception & )
-      {
-      }//try / catch
-    }//if( urls.empty() )
-    
-    if( urls.empty() )
-    {
-      auto dialog = new SimpleDialog( "Error",
-                                     "Spectrum could not be encoded to a QR code.<br />"
-                                     "Likely due to requiring more than 9 QR codes." );
-      dialog->addButton( "Ok" );
-      return;
-    }//if( urls.empty() )
+    const vector<QRSpectrum::UrlSpectrum> urlspec = QRSpectrum::to_url_spectra( spec->measurements(), model );
     
     auto successfullyDone = wApp->bind( boost::bind( &ExportSpecFileTool::emitDone, this, true ) );
     
-    displayQrDialog( urls, 0, successfullyDone );
+    displayQrCode( urlspec, spec, successfullyDone, false );
   }catch( std::exception &e )
   {
     auto dialog = new SimpleDialog( "Error", "Failed to encoded spectrum to a QR code: " + string(e.what()) );
@@ -2532,7 +2601,7 @@ void ExportSpecFileTool::handleGenerateQrCode()
 }//void handleGenerateQrCode()
 #endif
 
-
+              
 void ExportSpecFileTool::handleAppUrl( std::string query_str )
 {
   passMessage( "ExportSpecFileTool::handleAppUrl not implemented yet", WarningWidget::WarningMsgHigh );
@@ -2541,7 +2610,76 @@ void ExportSpecFileTool::handleAppUrl( std::string query_str )
 
 std::string ExportSpecFileTool::encodeStateToUrl() const
 {
+  // Returns something like "V=1&FORMAT=N42-2012&Samples=1,2&..", and it will not be url-encoded.
+  
   passMessage( "ExportSpecFileTool::encodeStateToUrl not implemented yet", WarningWidget::WarningMsgHigh );
+  
+  string answer = "V=1";
+  
+  if( m_is_specific_file )
+    answer += "&SpecificFile=1";
+  
+  if( m_forePlusBack && m_forePlusBack->isVisible() && m_forePlusBack->isChecked() )
+  {
+    
+  }else
+  {
+    shared_ptr<const SpecMeas> spec = currentlySelectedFile();
+    if( spec )
+    {
+      
+    }
+  }//if( fore + back ) / else
+  
+  const SpecUtils::SaveSpectrumAsType file_type = currentSaveType();
+  
+  /*
+  const auto type_pos = std::find( begin(sm_file_type_to_uri_name), end(sm_file_type_to_uri_name),
+            [file_type]( const pair<SpecUtils::SaveSpectrumAsType,string> &lhs ) -> bool {
+    return lhs.first == file_type;
+  } );
+  */
+  
+  /*
+  m_specific_spectrum;
+  m_specific_samples;
+  m_specific_detectors;
+  m_current_file;
+  m_fileSelect;
+  m_forePlusBack;
+  
+  Wt::WContainerWidget *m_samplesHolder;
+  Wt::WCheckBox *m_dispForeSamples;
+  Wt::WCheckBox *m_dispBackSamples;
+  Wt::WCheckBox *m_dispSecondSamples;
+  Wt::WCheckBox *m_allSamples;
+  Wt::WCheckBox *m_customSamples;
+  Wt::WLineEdit *m_customSamplesEdit;
+  Wt::WCheckBox *m_filterDetector;
+  std::vector<std::string> currentlySelectedDetectors();
+  
+  Wt::WContainerWidget *m_optionsHolder;
+  Wt::WCheckBox *m_sumAllToSingleRecord;
+  Wt::WCheckBox *m_sumForeToSingleRecord;
+  Wt::WCheckBox *m_sumBackToSingleRecord;
+  Wt::WCheckBox *m_sumSecoToSingleRecord;
+  Wt::WCheckBox *m_backSubFore;
+  Wt::WCheckBox *m_sumDetsPerSample;
+  Wt::WCheckBox *m_excludeInterSpecInfo;
+  Wt::WCheckBox *m_excludeGpsInfo;
+  
+  Wt::WText *m_sampleSelectNotAppTxt;
+  Wt::WText *m_optionsNotAppTxt;
+  
+  Wt::WText *m_msg;
+  
+  ExportSpecFileTool_imp::DownloadSpectrumResource *m_resource;
+  Wt::WPushButton *m_export_btn;
+#if( USE_QR_CODES )
+  Wt::WPushButton *m_show_qr_btn;
+#endif
+  */
+  
   return "";
 }//std::string encodeStateToUrl() const
 
@@ -2563,6 +2701,8 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   
   m_tool = new ExportSpecFileTool( viewer, contents() );
   m_tool->done().connect( boost::bind(&ExportSpecFileWindow::accept, this) );
+  
+  rejectWhenEscapePressed();
 }//ExportSpecFileWindow( constructor )
 
 
