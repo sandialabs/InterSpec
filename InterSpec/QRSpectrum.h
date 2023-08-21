@@ -73,28 +73,6 @@ namespace SpecUtils
 
 namespace QRSpectrum
 {
-#define EMAIL_QR_OPTION 1
-  //Experimentation for having the QR code create an email, that will then put the URL info into the
-  //  message body.  E.g., something like:
-  //  "mailto:user@example.com?subject=spectrum&body=..."
-  //
-  //  Pending things to check out, or consider:
-  //  - To have the body be a proper URL, need to double-encode the URL.
-  //  - The mailto RFC (RFC 6068), I think specifies only the characters "%&;=/?#[]" need to be
-  //    URL encoded; this could save us some space over " $&+,:;=?@'\"<>#%{}|\\^~[]`/".
-  //  - It looks like 'NoZeroCompressCounts' option alone usually produces shortest results,
-  //    although sometimes adding 'NoBase45' to this helps.
-  //  - We need an email address (user@example.com in above), or else iOS interprets as a contact
-  //  - Maybe we should NOT base-45 encode the URL, after all the ?, &, and = characters will cause
-  //    the QR to be encoded as binary anyway, so the base-45 is just adding length, however a first
-  //    go at trying the different options didnt show this - perhaps base45 is better then just
-  //    straight URL encoding.
-  //  - Doesnt seem like can make an HTML formmated email, with a simple link to click-on
-  //
-  // 20230804: I think the thing to do is base-85 encode (or rather The Z85 encoding) the compressed part of the URL, then escape the characters not allowed in mailto URI (e.g., "%&;=/?#[]", which only a couple are in base-85) - then encode as binary QR code
-  //
-  
-  
   int dev_code();
 
   std::string base45_encode( const std::string &input );
@@ -102,13 +80,14 @@ namespace QRSpectrum
 
   std::vector<uint8_t> base45_decode( const std::string &input );
 
-#if( EMAIL_QR_OPTION )
-// TODO: need to make tests for base85 encode/decode!
-  std::string base85_encode( const std::string &input );
-  std::string base85_encode( const std::vector<uint8_t> &input );
-
-  std::vector<uint8_t> base85_decode( const std::string &input );
-#endif
+// TODO: need to make tests for url_safe_base64 encode/decode!
+  /** base64url is a URL and filename safe variant of base64 encoding.
+   See: https://datatracker.ietf.org/doc/html/rfc4648#section-5
+   and: https://en.wikipedia.org/wiki/Base64#Implementations_and_history
+   */
+  std::string base64url_encode( const std::string &input, const bool use_padding );
+  std::string base64url_encode( const std::vector<uint8_t> &input, const bool use_padding );
+  std::vector<uint8_t> base64url_decode( const std::string &input );
   
   void deflate_compress( const void *in_data, size_t in_data_size, std::string &out_data );
   void deflate_compress( const void *in_data, size_t in_data_size, std::vector<uint8_t> &out_data );
@@ -130,10 +109,11 @@ enum EncodeOptions
   /** Do not apply zlib based DEFLATE compression. */
   NoDeflate = 0x01,
   
-  /** Do not encode data (after optional DEFLATE) as base-45.
-   E.g., for clickable URLs, or if you will encode to a binary QR-code).
+  /** Do not encode data (after optional DEFLATE) as base-45 or as url-safe-base-64.
+   E.g., for clickable URLs you may do this, or if you will encode to a binary QR-code, but
+   will generally lead to longer URIs or larger QR codes.
    */
-  NoBase45 = 0x02,
+  NoBaseXEncoding = 0x02,
   
   /** Keep channel data as text-based numbers.  Will actually be separated by the '$'
    sign, since this is a base-45 character and commas arent - but commas would be valid
@@ -142,19 +122,16 @@ enum EncodeOptions
   CsvChannelData = 0x04,
   
   /** Do not zero-compress channel data. */
-  NoZeroCompressCounts = 0x08
+  NoZeroCompressCounts = 0x08,
   
-#if( EMAIL_QR_OPTION )
-  ,
-  
-  /** Use base-85 encoding, instead of base-45.
+  /** Use a modified version of base-64 encoding (that doesnt have and invalid URL characters), instead of base-45.
    
-   If this option is specified, then #NoBase45 must not be specified.
+   If this option is specified, then #NoBaseXEncoding must not be specified.
    
    This option is useful if you are generating a binary QR code, but want all printable characters; e.g.,
    when you create a QR code with a 'mailto:'.
    */
-  UseBase85 = 0x10,
+  UseUrlSafeBase64 = 0x10,
   
   /** If specified, the URI will be one to generate a email (i.e., a 'mailto:...' URI), instead of a 'raddata://' URI.
    This effects both the begining of the URI starting with 'mailto:', but also the URL data is email encoded
@@ -166,16 +143,6 @@ enum EncodeOptions
    and it will not be stricktly URL encoded.
    */
   AsMailToUri = 0x20,
-  
-  /** Creates an email body whose contents are not a valid URI.
-   
-   When creating a 'mailto:' URI, in order for the email body to contain a valid URI, the URI data must
-   be URL encoded, and then email encoded again, which greatly increases the URI length, so to allow embedding
-   almost as much info in the email body as a regular raddata:// QR-code URI, this option skips the inital URI encoding,
-   which then causes the email body to not have a valid URI.
-   */
-  EmailBodyNotUri = 0x40
-#endif
 };//enum EncodeOptions
 
 
@@ -252,14 +219,12 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
  */
 enum SkipForEncoding
 {
-  Encoding = 0x01,      ///< Skip DEFLATE, base-45/base-85, and URL encoding (e.g., for placing multiple spectra in a URL, where you will do this after combination)
+  Encoding = 0x01,      ///< Skip DEFLATE, base-45/url-safe-base-64, and URL encoding (e.g., for placing multiple spectra in a URL, where you will do this after combination)
   EnergyCal = 0x02,
   DetectorModel = 0x04,
   Gps = 0x08,
-  Title = 0x10
-#if( EMAIL_QR_OPTION )
-  , UrlEncoding = 0x20   ///< Skip just URL encoding (e.g., for when you are making a 'mailto:' uri with an invalid-uri body
-#endif
+  Title = 0x10,
+  UrlEncoding = 0x20   ///< Skip just URL encoding (e.g., for when you are making a 'mailto:' uri with an invalid-uri body
 };//enum SkipForEncoding
 
 /** Puts the specified spectrum into `num_parts` URLs.

@@ -82,12 +82,20 @@ namespace
   
   const char * const sm_hex_digits = "0123456789ABCDEF";
 
-  const bool sm_base85_z_as_zero = true;
-  const char sm_base85_start_char = '!';
-
   // From: https://datatracker.ietf.org/doc/rfc9285/ , table 1
   const char sm_base45_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
-    
+
+  // Here we replace the '+' and '/' characters with '-' and '_', respectively.
+  //  See https://datatracker.ietf.org/doc/html/rfc4648#section-5
+  //  Note: if we want to avoid URL encoding the padding character, we could replace the padding character of '=' with '.'
+  const char sm_base64url_padding = '=';
+  const char sm_base64url_chars[64 + 1] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+/*
+  const char sm_base64url_padding = '=';
+  const char sm_base64url_chars[64 + 1] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+ */
+
   // Implement Table 1 in rfc9285 as a switch; should maybe just switch to using a lookup table
   uint8_t b45_to_dec( const char i )
   {
@@ -314,60 +322,55 @@ std::string base45_encode_bytes( const T &input )
   return answer;
 }//std::string base45_encode_bytes( const vector<uint8_t> &input )
 
-  
-#if( EMAIL_QR_OPTION )
 
 template<class T>
-std::string base85_encode_bytes( const T &input )
+std::string base64url_encode_bytes( const T &input, const bool use_padding )
 {
-  static_assert( sizeof(typename T::value_type) == 1, "Must be byte-based container" );
-  if( input.empty() )
-    throw runtime_error( "base85_encode_bytes: empty input." );
+  // The bitshifting logic of this function taken from
+  //  https://github.com/emweb/wt/blob/3.7-release/src/web/base64.h
+  const size_t num_out_bytes = 4 * ((input.size()+2) / 3);
   
+  size_t out_pos = 0;
+  string answer( num_out_bytes, '\0' );
   
-  // See https://en.wikipedia.org/wiki/Ascii85#btoa_version
-  // The adobe version ignroes whitespace and uses delimeter "~>" to mark end of string; we wont do this,
-  //  but stick to the btoa version
-  const size_t input_len = input.size();
-  const size_t out_max_length = ((input_len + 3) / 4) * 5;
-  
-  string answer( out_max_length, '\0' );
-  
-  size_t out_index = 0;
-
-  for( size_t in_index = 0; in_index < input_len; in_index += 4 )
+  for( size_t index = 0; index < input.size(); )
   {
-    const size_t segment_len = std::min( input_len - in_index, size_t(4) );
+    uint32_t value = 0;
+
+    const size_t bytes_read = std::min( size_t(3), (input.size() - index) );
     
-    uint32_t four_bytes = 0;
-    for( size_t i = 0; i < 4 && (in_index + i) < input_len; ++i )
+    for( size_t i = 0; i < bytes_read; ++i )
     {
-      const uint32_t byte = reinterpret_cast<const uint8_t&>( input[in_index + i] );
-      four_bytes |= (byte << (8*(3-i)));
+      value <<= 8;
+      value += static_cast<uint8_t>( input[index+i] );
     }
     
-    if( sm_base85_z_as_zero && !four_bytes && (segment_len == 4) )
+    index += bytes_read;
+    
+    // convert to base64
+    int bits = static_cast<int>( bytes_read*8 );
+    while( bits > 0 )
     {
-      answer[out_index++] = 'z';
-    }else
-    {
-      for( size_t i = 0; i < 5; ++i )
-      {
-        answer[out_index + (4 - i)] = (four_bytes % 85) + sm_base85_start_char;
-        four_bytes /= 85;
-      }
-      
-      out_index += (segment_len + 1);
-      assert( out_index <= out_max_length );
-    }//
-  }//for( size_t in_index = 0; in_index < input_len; in_index += 4 )
-  
-  answer.resize( out_index );
+      bits -= 6;
+      const uint8_t index = ((bits < 0) ? value << -bits : value >> bits) & 0x3F;
+      answer[out_pos++] = sm_base64url_chars[index];
+    }
+  }
+
+  // add pad characters
+  if( use_padding )
+  {
+    while( (out_pos % 4) != 0 )
+      answer[out_pos++] = sm_base64url_padding;
+    assert( out_pos == num_out_bytes );
+  }else
+  {
+    assert( out_pos <= num_out_bytes );
+    answer.resize( out_pos );
+  }
   
   return answer;
-}//std::string base85_encode_bytes( const vector<uint8_t> &input )
-#endif //#if( EMAIL_QR_OPTION )
-  
+}//std::string base64url_encode_bytes( const T &input )
   
 
 template<class T>
@@ -539,8 +542,6 @@ string to_hex_bytes_str( const string &input )
     
     const vector<string> files = SpecUtils::recursive_ls(base_dir, ".n42");
     
-
-    
     set<int> files_tried;
     size_t num_succes_files = 0;
     
@@ -558,11 +559,18 @@ string to_hex_bytes_str( const string &input )
     output_html << "Target error correction level: " << ecl_str(wanted_ecl) << "<br />";
     output_html << "Quite area, num elements: " << sm_qr_quite_area << "<br />";
     
+    int index = 0;
     while( (files_tried.size() != files.size()) && (num_succes_files < wanted_num_files) )
     {
-      int index = rand() % files.size();
-      while( files_tried.count(index) )
+      if( wanted_num_files > files.size() )
+      {
+        index += 1;
+      }else
+      {
         index = rand() % files.size();
+        while( files_tried.count(index) )
+          index = rand() % files.size();
+      }
       
       files_tried.insert( index );
       const string filename = files[index];
@@ -599,57 +607,51 @@ string to_hex_bytes_str( const string &input )
       std::vector<UrlSpectrum> both_url_spec = to_url_spectra( {foreground, background}, spec.instrument_model() );
       
       auto doEncode = [wanted_ecl,filename,ecl_str]( const vector<UrlSpectrum> &url_spec ) -> vector<UrlEncodedSpec> {
-#if( !EMAIL_QR_OPTION )
-        return url_encode_spectra( url_spec, wanted_ecl, 0 );
 
-#else
+        return url_encode_spectra( url_spec, wanted_ecl, 0 );
         
+        /*
 #warning "Doing sanity check on what encoded best"
         static int ntimes = 0;
         if( ntimes++ < 4 )
           cout << "Doing sanity check on what encoded best" << endl;
         
         const uint8_t encode_options[] {
-          //0x0,
-          //static_cast<uint8_t>(EncodeOptions::NoBase45),
+          0x0,
+          //static_cast<uint8_t>(EncodeOptions::NoBaseXEncoding),
           //static_cast<uint8_t>(EncodeOptions::CsvChannelData),
-          //static_cast<uint8_t>(EncodeOptions::CsvChannelData | EncodeOptions::NoBase45),
+          //static_cast<uint8_t>(EncodeOptions::CsvChannelData | EncodeOptions::NoBaseXEncoding),
           //static_cast<uint8_t>(EncodeOptions::NoZeroCompressCounts),
-          //static_cast<uint8_t>(EncodeOptions::NoZeroCompressCounts | EncodeOptions::NoBase45)
+          //static_cast<uint8_t>(EncodeOptions::NoZeroCompressCounts | EncodeOptions::NoBaseXEncoding),
 
-          //static_cast<uint8_t>(EncodeOptions::NoZeroCompressCounts | EncodeOptions::NoBase45),
-          //static_cast<uint8_t>(EncodeOptions::CsvChannelData | EncodeOptions::NoBase45),
-          // static_cast<uint8_t>(EncodeOptions::NoZeroCompressCounts),
-          //static_cast<uint8_t>(EncodeOptions::CsvChannelData | EncodeOptions::UseBase85),
-          //static_cast<uint8_t>(EncodeOptions::NoZeroCompressCounts | EncodeOptions::UseBase85),
-          static_cast<uint8_t>(EncodeOptions::UseBase85 | EncodeOptions::AsMailToUri),
-          //static_cast<uint8_t>(EncodeOptions::UseBase85 | EncodeOptions::AsMailToUri | EncodeOptions::EmailBodyNotUri),
+          //static_cast<uint8_t>(EncodeOptions::CsvChannelData | EncodeOptions::NoBaseXEncoding),
+          //static_cast<uint8_t>(EncodeOptions::NoZeroCompressCounts),
+          //static_cast<uint8_t>(EncodeOptions::CsvChannelData | EncodeOptions::UseUrlSafeBase64),
+          //static_cast<uint8_t>(EncodeOptions::NoZeroCompressCounts | EncodeOptions::UseUrlSafeBase64),
+          static_cast<uint8_t>(EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri),
         };
         
         const auto option_to_str = []( uint8_t options ) -> string {
           string answer;
           if( options & EncodeOptions::NoDeflate )
             answer += (answer.empty() ? "" : " | ") + string("NoDeflate");
-          if( options & EncodeOptions::NoBase45 )
-            answer += (answer.empty() ? "" : " | ") + string("NoBase45");
+          if( options & EncodeOptions::NoBaseXEncoding )
+            answer += (answer.empty() ? "" : " | ") + string("NoBaseXEncoding");
           if( options & EncodeOptions::CsvChannelData )
             answer += (answer.empty() ? "" : " | ") + string("CsvChannelData");
           if( options & EncodeOptions::NoZeroCompressCounts )
             answer += (answer.empty() ? "" : " | ") + string("NoZeroCompressCounts");
-#if( EMAIL_QR_OPTION )
-          if( options & EncodeOptions::UseBase85 )
-            answer += (answer.empty() ? "" : " | ") + string("UseBase85");
+          if( options & EncodeOptions::UseUrlSafeBase64 )
+            answer += (answer.empty() ? "" : " | ") + string("UseUrlSafeBase64");
           if( options & EncodeOptions::AsMailToUri )
             answer += (answer.empty() ? "" : " | ") + string("AsMailToUri");
-          if( options & EncodeOptions::EmailBodyNotUri )
-            answer += (answer.empty() ? "" : " | ") + string("EmailBodyNotUri");
-#endif
           return answer;
         };//option_to_str lamda
         
         
         uint8_t used_option = 0x0;
         int min_qr_size = 10000000;
+        size_t min_uri_size = 100000000;
         vector<UrlEncodedSpec> encoded;
         for( uint8_t option : encode_options )
         {
@@ -658,10 +660,23 @@ string to_hex_bytes_str( const string &input )
             vector<UrlEncodedSpec> this_try = url_encode_spectra( url_spec, wanted_ecl, option );
             if( this_try.size() == 1 )
             {
-              if( this_try[0].m_qr_size <= min_qr_size )
+              if( this_try[0].m_qr_size < min_qr_size )
               {
                 encoded = this_try;
                 used_option = option;
+                min_qr_size = this_try[0].m_qr_size;
+                min_uri_size = this_try[0].m_url.size();
+              }else if( (this_try[0].m_qr_size == min_qr_size)
+                       && (this_try[0].m_url.size() < min_uri_size) )
+              {
+                encoded = this_try;
+                used_option = option;
+                min_qr_size = this_try[0].m_qr_size;
+                min_uri_size = this_try[0].m_url.size();
+              }else
+              {
+                //cout << "  It was " << this_try[0].m_qr_size << " vs best of " << min_qr_size
+                //<< " (URI size " << this_try[0].m_url.size() << " vs " << min_uri_size << ")" << endl;
               }
             }else if( encoded.empty() )
             {
@@ -691,7 +706,7 @@ string to_hex_bytes_str( const string &input )
         }
         
         return encoded;
-#endif
+         */
       };//doEncode
       
       auto toHtml = [&output_html,ecl_str,filename,base_dir,wanted_ecl]( const UrlEncodedSpec &urlspec, string tag ){
@@ -840,91 +855,88 @@ vector<uint8_t> base45_decode( const string &input )
 }//vector<uint8_t> base45_decode( const string &input )
 
 
-#if( EMAIL_QR_OPTION )
-std::string base85_encode( const std::vector<uint8_t> &input )
+std::string base64url_encode( const std::string &input, const bool use_padding )
 {
-  return base85_encode_bytes( input );
+  return base64url_encode_bytes( input, use_padding );
 }
 
-  
-std::string base85_encode( const std::string &input )
+std::string base64url_encode( const std::vector<uint8_t> &input, const bool use_padding )
 {
-  return base85_encode_bytes( input );
+  return base64url_encode_bytes( input, use_padding );
 }
 
-
-vector<uint8_t> base85_decode( const string &input )
+vector<uint8_t> base64url_decode( const std::string &input )
 {
-  if( input.empty() )
-    throw runtime_error( "base85_decode: empty input." );
+  // The bitshifting logic of this function taken from
+  //  https://github.com/emweb/wt/blob/3.7-release/src/web/base64.h
   
-  const size_t in_length = input.size();
+  const char * const alphabet_start = sm_base64url_chars;
+  const char * const alphabet_end   = sm_base64url_chars + 64;
   
-  // We could have input of all 'z', which are 4 bytes of 0x00; otherwise we expect
-  //  to output 4 bytes for every 5 in-put characters, rounded up.
-  const size_t max_out_length = sm_base85_z_as_zero ? (4*in_length) : (((in_length + 4) / 5) * 4);
+  size_t output_len = 0;
   
-  vector<uint8_t> answer( max_out_length, 0x0 );
-  const auto valid_base85_char = [](char c){ return ((c >= '!') && (c <= 117u)); };
-    
-  size_t out_length = 0;
-
-  for( size_t in_index = 0; in_index < in_length; /* in_index += 5*/ )
+  // If we require padding, I think the length would be `1 + 3*(input.size()/4)`,
+  //  but we wont do this, so its `2 + 3*(input.size()/4)`.  For example
+  //  (ex. "MTIzNDU" --decode--> "12345", but with padding the input would have
+  //  been "MTIzNDU=")
+  vector<uint8_t> answer( 2 + 3*(input.size()/4), 0x0 );
+  
+  for( size_t index = 0; index < input.size(); )
   {
-    const size_t segment_len = std::min( in_length - in_index, size_t(5));
-    
-    if( sm_base85_z_as_zero && ('z' == input[in_index]) )
+    uint8_t input_bytes[4] = {0, 0, 0, 0};
+
+    size_t num_chars = 0;
+    while( (num_chars < 4) && (index < input.size()) )
     {
-      in_index += 1;
-      out_length += 4;
-      // We dont need to write zeros to `answer`, because we initialized it to zero
+      const char character = static_cast<char>( input[index++] );
+      if( character == sm_base64url_padding )
+      {
+        index = input.size();
+        break;
+      }
+      
+      const auto pos = std::find( alphabet_start, alphabet_end, character );
+      if( pos != alphabet_end )
+      {
+        input_bytes[num_chars++] = (pos - alphabet_start);
+        assert( (input_bytes[num_chars-1] < 128) && (input_bytes[num_chars-1] >= 0) );
+      }else
+      {
+        // rfc4648 says we can choose to ignore characters out of the alphabet
+        // as long as our specification says to do this, e.g.
+        //  "be liberal in what you accept"
+      }
+    }//while( (num_chars < 4) && (index < input.size()) )
+
+    // output the binary data
+    if( num_chars >= 2 )
+    {
+      assert( output_len < answer.size() );
+      answer[output_len++] = static_cast<uint8_t>((input_bytes[0] << 2) + (input_bytes[1] >> 4));
+      if( num_chars >= 3 )
+      {
+        assert( output_len < answer.size() );
+        answer[output_len++] = static_cast<uint8_t>((input_bytes[1] << 4) + (input_bytes[2] >> 2));
+        if( num_chars >= 4 )
+        {
+          assert( output_len < answer.size() );
+          answer[output_len++] = static_cast<uint8_t>((input_bytes[2] << 6) + input_bytes[3]);
+        }//if( num_chars >= 4 )
+      }//if( num_chars >= 3 )
     }else
     {
-      uint32_t four_bytes = 0;
-      for( size_t i = 0; i < segment_len; ++in_index, ++i )
-      {
-        assert( in_index < in_length );
-        
-        if( !valid_base85_char( input[in_index] ) )
-          throw runtime_error( "base-85 invalid input char" );
-        
-        if( four_bytes > (std::numeric_limits<uint32_t>::max() / 85) )
-          throw runtime_error( "base-85 overflow" );
-        
-        four_bytes *= 85;
-        four_bytes += static_cast<uint8_t>( input[in_index] - sm_base85_start_char );
-      }//for( size_t i = 0; i < segment_len; ++in_index, ++i )
-      
-      for( size_t i = segment_len; i < 5; ++i )
-      {
-        if( four_bytes > (std::numeric_limits<uint32_t>::max() / 85) )
-          throw runtime_error( "base-85 overflow" );
-        
-        four_bytes *= 85;
-        
-        if( four_bytes > (std::numeric_limits<uint32_t>::max() - 85) )
-          throw runtime_error( "base-85 overflow" );
-        
-        four_bytes += 84u;
-      }
-      
-      for( size_t i = 0; i < 4; ++i )
-      {
-        answer[out_length + (3-i)] = (four_bytes % 256);
-        four_bytes /= 256;
-      }
-      
-      out_length += (segment_len - 1);
-    }//if( input was 'z' ) / else
-  }//for( size_t in_index = 0; in_index < in_length; /* in_index += 5*/ )
-    
-  assert( out_length <= max_out_length );
-  answer.resize( out_length );
+      // In principle we should maybe throw exception here; each char represents 6 bits,
+      //  so we need at least two chars to represent a byte.
+      // But I guess we'll just ignore when this happens
+    }//if( num_chars >= 2 ) / else
+  }//for( size_t index = 0; index < input.size(); )
+
+  assert( output_len <= answer.size() );
+  answer.resize( output_len );
   
   return answer;
-}//vector<uint8_t> base85_decode( const string &input )
-#endif
-  
+}//std::vector<uint8_t> base64url_decode( const std::string &input )
+
   
 /** Performs the same encoding as `streamvbyte_encode` from https://github.com/lemire/streamvbyte,
  but pre-pended with a uint16_t to give number of integer entries, has a c++ interface, and is way,
@@ -1088,18 +1100,15 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
   //  creating a multi-spectrum QR code, which means we dont want to do deflate, base45, or URL
   //  encoding yet
   const bool use_deflate = !(encode_options & EncodeOptions::NoDeflate);
-#if( EMAIL_QR_OPTION )
-  if( (encode_options & EncodeOptions::NoBase45) && (encode_options & EncodeOptions::UseBase85) )
-    throw runtime_error( "url_encode_spectrum: cant specify NoBase45 and UseBase85" );
+  if( (encode_options & EncodeOptions::NoBaseXEncoding) && (encode_options & EncodeOptions::UseUrlSafeBase64) )
+    throw runtime_error( "url_encode_spectrum: cant specify NoBaseXEncoding and UseUrlSafeBase64" );
   
-  const bool use_base45 = (!(encode_options & EncodeOptions::NoBase45)
-                           && !(encode_options & EncodeOptions::UseBase85) );
-  const bool use_base85 = (encode_options & EncodeOptions::UseBase85);
+  const bool use_baseX_encoding = (!(encode_options & EncodeOptions::NoBaseXEncoding)
+                           && !(encode_options & EncodeOptions::UseUrlSafeBase64) );
+  const bool use_url_safe_base64 = (encode_options & EncodeOptions::UseUrlSafeBase64);
   
   const bool skip_url_encode = (skip_encode_options & SkipForEncoding::UrlEncoding);
-#else
-  const bool use_base45 = !(encode_options & EncodeOptions::NoBase45);
-#endif
+
   const bool use_bin_chan_data = !(encode_options & EncodeOptions::CsvChannelData);
   const bool zero_compress = !(encode_options & EncodeOptions::NoZeroCompressCounts);
   
@@ -1110,11 +1119,7 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
   const bool skip_title    = (skip_encode_options & SkipForEncoding::Title);
   
   assert( !skip_encoding || (num_parts == 1) );
-#if( EMAIL_QR_OPTION )
-  const char *comma = (use_deflate || use_base85 || use_base45 || use_bin_chan_data) ? "," : "$";
-#else
-  const char *comma = (use_deflate || use_base45 || use_bin_chan_data) ? "," : "$";
-#endif
+  const char *comma = (use_deflate || use_url_safe_base64 || use_baseX_encoding || use_bin_chan_data) ? "," : "$";
   vector<string> answer( num_parts );
   
   string &first_url = answer[0];
@@ -1189,14 +1194,8 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     SpecUtils::trim( det_model );
     if( !det_model.empty() )
     {
-#if( EMAIL_QR_OPTION )
-      if( !use_deflate && !use_base45 && !use_base85 && !use_bin_chan_data )
+      if( !use_deflate && !use_baseX_encoding && !use_url_safe_base64 && !use_bin_chan_data )
         det_model = url_encode_non_base45( det_model );
-#else
-      if( !use_deflate && !use_base45 && !use_bin_chan_data )
-        det_model = url_encode_non_base45( det_model );
-#endif
-      
       first_url += "M:" + det_model + " ";
     }
   }//if( !skip_model )
@@ -1231,13 +1230,8 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     string remark;
     remark = operator_notes;
     
-#if( EMAIL_QR_OPTION )
-    if( !use_deflate && !use_base45 && !use_base85 && !use_bin_chan_data )
+    if( !use_deflate && !use_baseX_encoding && !use_url_safe_base64 && !use_bin_chan_data )
       remark = url_encode_non_base45( operator_notes );
-#else
-    if( !use_deflate && !use_base45 && !use_bin_chan_data )
-      remark = url_encode_non_base45( operator_notes );
-#endif
     
     first_url += "O:" + remark + " ";
   }//if( !skip_title && !m->title().empty() )
@@ -1333,31 +1327,30 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
 #endif //#if( LOG_URL_ENCODING )
   
   // We have just gzipped the URIs, if wanted (e.g., we have what comes "RADDATA://G0/xxx/")
-  if( use_base45 && !skip_encoding )
+  if( use_baseX_encoding && !skip_encoding )
   {
     for( size_t msg_num = 0; msg_num < num_parts; ++msg_num )
     {
 #ifndef NDEBUG
       const string orig = answer[msg_num];
-#if( EMAIL_QR_OPTION )
-      if( use_base85 )
+
+      if( use_url_safe_base64 )
       {
-        const string b85_encoded = base85_encode( answer[msg_num] );
+        const string sub64_encoded = base64url_encode( answer[msg_num], false );
         
-        answer[msg_num] = b85_encoded;
+        answer[msg_num] = sub64_encoded;
         
-        vector<uint8_t> b85_decoded_bytes = base85_decode( b85_encoded );
-        assert( !b85_decoded_bytes.empty() );
-        string b85_decoded( b85_decoded_bytes.size(), 0x0 );
-        for( size_t i = 0; i < b85_decoded_bytes.size(); ++i )
-          b85_decoded[i] = b85_decoded_bytes[i];
+        vector<uint8_t> sb64_decoded_bytes = base64url_decode( sub64_encoded );
+        assert( !sb64_decoded_bytes.empty() );
+        string sub64_decoded( sb64_decoded_bytes.size(), 0x0 );
+        for( size_t i = 0; i < sb64_decoded_bytes.size(); ++i )
+          sub64_decoded[i] = sb64_decoded_bytes[i];
         
-        if( b85_decoded != orig )
-          cerr << "\n\nBase-85 Not matching:\n\tOrig='" << to_hex_bytes_str(orig) << "'" << endl
-               << "\tDecs='" << to_hex_bytes_str(b85_decoded) << "'\n\n";
-        assert( b85_decoded == orig );
+        if( sub64_decoded != orig )
+          cerr << "\n\nSafe-Url-Base-64 Not matching:\n\tOrig='" << to_hex_bytes_str(orig) << "'" << endl
+               << "\tDecs='" << to_hex_bytes_str(sub64_decoded) << "'\n\n";
+        assert( sub64_decoded == orig );
       }else
-#endif
       {
         answer[msg_num] = base45_encode( answer[msg_num] );
         
@@ -1375,58 +1368,52 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
       }
 
 #else
-#if( EMAIL_QR_OPTION )
-      if( use_base85 )
+      if( use_url_safe_base64 )
       {
-        answer[msg_num] = base85_encode( answer[msg_num] );
+        answer[msg_num] = base64url_encode( answer[msg_num], false );
       }else
-#endif
       {
-        answer[msg_num] = base45_encode( answer[msg_num] );
+        answer[msg_num] = base45_encode( answer[msg_num], false );
       }
 #endif
       //cout << "During encoding, after  base-45: '" << to_hex_bytes_str(answer[msg_num].substr(0,60)) << "'" << endl << endl;
     }
-  }//if( use_base45 )
+  }//if( use_baseX_encoding )
   
   
-#if( EMAIL_QR_OPTION )
-  if( use_base85 && !skip_encoding )
+
+  if( use_url_safe_base64 && !skip_encoding )
   {
     for( size_t msg_num = 0; msg_num < num_parts; ++msg_num )
     {
 #ifndef NDEBUG
       const string orig = answer[msg_num];
-      const string b85_encoded = base85_encode( answer[msg_num] );
+      const string sub64_encoded = base64url_encode( answer[msg_num], false );
       
-      answer[msg_num] = b85_encoded;
+      answer[msg_num] = sub64_encoded;
       
-      vector<uint8_t> b85_decoded_bytes = base85_decode( b85_encoded );
-      assert( !b85_decoded_bytes.empty() );
-      string b85_decoded( b85_decoded_bytes.size(), 0x0 );
-      for( size_t i = 0; i < b85_decoded_bytes.size(); ++i )
-        b85_decoded[i] = b85_decoded_bytes[i];
+      vector<uint8_t> sb64_decoded_bytes = base64url_decode( sub64_encoded );
+      assert( !sb64_decoded_bytes.empty() );
+      string sub64_decoded( sb64_decoded_bytes.size(), 0x0 );
+      for( size_t i = 0; i < sb64_decoded_bytes.size(); ++i )
+        sub64_decoded[i] = sb64_decoded_bytes[i];
       
-      if( b85_decoded != orig )
-        cerr << "\n\nBase-85 Not matching:\n\tOrig='" << to_hex_bytes_str(orig) << "'" << endl
-        << "\tDecs='" << to_hex_bytes_str(b85_decoded) << "'\n\n";
-      assert( b85_decoded == orig );
+      if( sub64_decoded != orig )
+        cerr << "\n\nSafe-Url-Base-64 Not matching:\n\tOrig='" << to_hex_bytes_str(orig) << "'" << endl
+        << "\tDecs='" << to_hex_bytes_str(sub64_decoded) << "'\n\n";
+      assert( sub64_decoded == orig );
 #else
-      answer[msg_num] = base85_encode( answer[msg_num] );
+      answer[msg_num] = base64url_encode( answer[msg_num], false );
 #endif
     }//for( size_t msg_num = 0; msg_num < num_parts; ++msg_num )
-  }//if( use_base85 )
-#endif //EMAIL_QR_OPTION
+  }//if( use_url_safe_base64 )
+
   
 #if( LOG_URL_ENCODING )
   const vector<string> after_base45 = answer;
 #endif //#if( LOG_URL_ENCODING )
   
-#if( EMAIL_QR_OPTION )
   if( !skip_encoding && !skip_url_encode )
-#else
-  if( !skip_encoding )
-#endif
   {
     for( size_t msg_num = 0; msg_num < num_parts; ++msg_num )
     {
@@ -1446,7 +1433,7 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
 #endif //#if( LOG_URL_ENCODING )
   
 #ifndef NDEBUG
-  if( !skip_encoding && (use_base45 || (!use_deflate && !use_bin_chan_data)) )
+  if( !skip_encoding && (use_baseX_encoding || (!use_deflate && !use_bin_chan_data)) )
   {
     for( const string &url : answer )
     {
@@ -1455,20 +1442,20 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
         assert( std::find( begin(sm_base45_chars), end(sm_base45_chars), val ) != end(sm_base45_chars) );
       }
     }
-  }//if( use_base45 || (!use_deflate && !use_bin_chan_data) )
+  }//if( use_baseX_encoding || (!use_deflate && !use_bin_chan_data) )
   
-#if( EMAIL_QR_OPTION )
-  //if( !skip_encoding && (use_base85 || (!use_deflate && !use_bin_chan_data)) )
-  //{
-  //  for( const string &url : answer )
-  //  {
-  //    for( const char val : url )
-  //    {
-  //      assert( std::find( begin(sm_base85_chars), end(sm_base85_chars), val ) != end(sm_base85_chars) );
-  //    }
-  //  }
-  //}//if( use_base85 || (!use_deflate && !use_bin_chan_data) )
-#endif  //#if( EMAIL_QR_OPTION )
+
+  if( !skip_encoding && (use_url_safe_base64 || (!use_deflate && !use_bin_chan_data)) )
+  {
+    for( const string &url : answer )
+    {
+      for( const char val : url )
+      {
+        assert( std::find( begin(sm_base64url_chars), end(sm_base64url_chars), val ) != end(sm_base64url_chars)
+               || (val == sm_base64url_padding) );
+      }
+    }
+  }//if( use_url_safe_base64 || (!use_deflate && !use_bin_chan_data) )
   
 #endif  //#ifndef NDEBUG
   
@@ -1617,19 +1604,12 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     cout << "--------------------------------------------------------------------------------\n";
   }//if( use_deflate )
   
-#if( EMAIL_QR_OPTION )
-  if( use_base45 || use_base85 )
-#else
-  if( use_base45 )
-#endif
+  if( use_baseX_encoding || use_url_safe_base64 )
   {
     cout << endl << endl;
     cout << "--------------------------------------------------------------------------------\n";
-#if( EMAIL_QR_OPTION )
-    cout << "After base-85/45 encoding:\n\t";
-#else
-    cout << "After base-45 encoding:\n\t";
-#endif
+    cout << "After base-45/url-safe-64 encoding:\n\t";
+
     for( size_t url_index = 0; url_index < after_base45.size(); ++url_index )
     {
       const string &url = after_base45[url_index];
@@ -1645,7 +1625,7 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
       cout << endl;
     }//for( size_t url_index = 0; url_index < after_base45.size(); ++url_index )
     cout << "--------------------------------------------------------------------------------\n";
-  }//if( use_base45 )
+  }//if( use_baseX_encoding )
   
   if( !skip_encoding )
   {
@@ -1685,48 +1665,25 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
   if( measurements.size() > 9 )
     throw runtime_error( "url_encode_spectra: to many measurements passed in." );
   
-  
-  
-#if( EMAIL_QR_OPTION )
-  if( encode_options & ~(EncodeOptions::NoDeflate | EncodeOptions::NoBase45 | EncodeOptions::CsvChannelData
-                         | EncodeOptions::NoZeroCompressCounts | EncodeOptions::UseBase85 | EncodeOptions::AsMailToUri
-                         | EncodeOptions::EmailBodyNotUri) )
+
+  if( encode_options & ~(EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding | EncodeOptions::CsvChannelData
+                         | EncodeOptions::NoZeroCompressCounts | EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri) )
     throw runtime_error( "url_encode_spectra: invalid option passed in - see EncodeOptions." );
   
   assert( encode_options < 0x80 );
-#else
-  if( encode_options & ~(EncodeOptions::NoDeflate | EncodeOptions::NoBase45 | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts) )
-    throw runtime_error( "url_encode_spectra: invalid option passed in - see EncodeOptions." );
-  
-  assert( encode_options < 16 );
-#endif
   
   const bool use_deflate = !(encode_options & EncodeOptions::NoDeflate);
-  const bool use_base45 = !(encode_options & EncodeOptions::NoBase45);
+  const bool use_baseX_encoding = !(encode_options & EncodeOptions::NoBaseXEncoding);
   const bool use_bin_chan_data = !(encode_options & EncodeOptions::CsvChannelData);
   //const bool zero_compress = !(encode_options & EncodeOptions::NoZeroCompressCounts);
-#if( EMAIL_QR_OPTION )
-  const bool use_base85 = (encode_options & EncodeOptions::UseBase85);
+  const bool use_url_safe_base64 = (encode_options & EncodeOptions::UseUrlSafeBase64);
   const bool use_mailto = (encode_options & EncodeOptions::AsMailToUri);
-  const bool use_nonuri_email = (use_mailto && (encode_options & EncodeOptions::EmailBodyNotUri));
   
-  if( (encode_options & EncodeOptions::NoBase45) && (encode_options & EncodeOptions::UseBase85) )
-    throw runtime_error( "url_encode_spectra: invalid option passed in - cant specify NoBase45 and UseBase85." );
-  
-  if( !(use_base45 || use_base85) && (encode_options & EncodeOptions::EmailBodyNotUri) )
-    throw runtime_error( "url_encode_spectra: invalid option passed in - cant specify EmailBodyNotUri and not base-45 or base-85 encoding." );
-  
-  if( !use_mailto && (encode_options & EncodeOptions::EmailBodyNotUri) )
-    throw runtime_error( "url_encode_spectra: invalid option passed in - cant specify mailto and EmailBodyNotUri." );
-#endif
-
+  if( (encode_options & EncodeOptions::NoBaseXEncoding) && (encode_options & EncodeOptions::UseUrlSafeBase64) )
+    throw runtime_error( "url_encode_spectra: invalid option passed in - cant specify NoBaseXEncoding and UseUrlSafeBase64." );
   
 // It looks like qrcodegen::QrCode::encodeText(...) will default to binary if the input isnt text
-//#if( EMAIL_QR_OPTION )
-//  const bool alpha_num_qr_encode = ((!use_base85) && (use_base45 || (!use_deflate && !use_bin_chan_data)));
-//#else
-//  const bool alpha_num_qr_encode = (use_base45 || (!use_deflate && !use_bin_chan_data));
-//#endif
+//  const bool alpha_num_qr_encode = ((!use_url_safe_base64) && (use_baseX_encoding || (!use_deflate && !use_bin_chan_data)));
   
   qrcodegen::QrCode::Ecc ecc = qrcodegen::QrCode::Ecc::LOW;
   switch( minErrorCorrection )
@@ -1742,7 +1699,6 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
   
 
   auto make_url_start = [=]( const size_t url_num, const size_t num_parts ) -> string {
-#if( EMAIL_QR_OPTION )
     string url_start;
     if( use_mailto )
     {
@@ -1750,17 +1706,12 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
       if( num_parts > 1 )
         title_postfix += "%20" + std::to_string(url_num) + "-" + std::to_string(num_parts);
       
-      if( use_nonuri_email )
-      {
-        //InterSpec>Edit>Enter URL
-        // Will purposely use "raddata:G0" instead of "raddata://G0" so it isnt accidentally confused as URI
-        url_start = string("mailto:user@example.com?subject=spectrum" + title_postfix
-                          + "&body=Paste%20to%20InterSpec%0D%0Araddata:G0/");
-      }else
-      {
-        url_start = string("mailto:user@example.com?subject=spectrum" + title_postfix
+      url_start = string("mailto:user@example.com?subject=spectrum" + title_postfix
                            + "&body=Spectrum%20URI%0D%0Araddata://G0/");
-      }
+      //static int warn_int = 0;
+      //if( warn_int++ < 4 )
+      //  cerr << "Warning: not using correct email uri stuff." << endl;
+      //url_start = string("RADDATA://G0/");
     }else
     {
       url_start = string("RADDATA://G0/");
@@ -1774,22 +1725,12 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
                  + std::to_string(num_parts - 1) + std::to_string(url_num) + "/";
     
     return url_start;
-#else
-    return string("RADDATA://G0/") + sm_hex_digits[encode_options & 0x0F]
-           + std::to_string(num_parts - 1) + std::to_string(url_num) + "/";
-#endif
   };//auto make_url_start lamda
 
   
   if( measurements.size() == 1 )
   {
-#if( EMAIL_QR_OPTION )
-    unsigned int skip_encode_options = 0x00;
-    if( use_mailto && use_nonuri_email )
-      skip_encode_options |= SkipForEncoding::UrlEncoding;
-#else
     const unsigned int skip_encode_options = 0x00;
-#endif
     
     const UrlSpectrum &m = measurements[0];
     
@@ -1827,14 +1768,10 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
         
         url = make_url_start(url_num,num_parts) + crc16;
         
-#if( EMAIL_QR_OPTION )
         if( use_mailto )
           url += email_encode( trial_urls[url_num] );
         else
           url += trial_urls[url_num];
-#else
-        url += trial_urls[url_num];
-#endif
         
         try
         {
@@ -1921,19 +1858,18 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
     if( use_deflate )
       deflate_compress( &(url[0]), url.size(), url );
     
-    if( use_base45 )
+    if( use_baseX_encoding )
     {
       //cout << "During encoding, before base-45 encoded: '" << to_hex_bytes_str(url.substr(0,60)) << "'" << endl << endl;
       
-#if( EMAIL_QR_OPTION )
-      if( use_base85 )
+      if( use_url_safe_base64 )
       {
 #ifndef NDEBUG
         const auto orig_url = url;
 #endif
-        //cout << "Pre base85:\n" << url << endl << endl << endl;
+        //cout << "Pre url_safe_base64:\n" << url << endl << endl << endl;
         
-        //printf( "Pre  base85:\n\"" );
+        //printf( "Pre  url_safe_base64:\n\"" );
         //for(size_t j = 0; j < url.size(); j++)
         //{
         //  unsigned int v = reinterpret_cast<uint8_t &>( url[j] );
@@ -1941,33 +1877,32 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
         //}
         //printf( "\"\n\n" );
         
-        url = base85_encode( url );
+        url = base64url_encode( url, false );
         
     
-        //cout << "Post base85:\n\"" << url << "\"" << endl << endl;
+        //cout << "Post UseUrlSafeBase64:\n\"" << url << "\"" << endl << endl;
         
 #ifndef NDEBUG
-        vector<uint8_t> b85_decoded_bytes = base85_decode( url );
-        assert( !b85_decoded_bytes.empty() );
-        string b85_decoded( b85_decoded_bytes.size(), 0x0 );
-        for( size_t i = 0; i < b85_decoded_bytes.size(); ++i )
-          b85_decoded[i] = b85_decoded_bytes[i];
+        vector<uint8_t> sb64_decoded_bytes = base64url_decode( url );
+        assert( !sb64_decoded_bytes.empty() );
+        string sub64_decoded( sb64_decoded_bytes.size(), 0x0 );
+        for( size_t i = 0; i < sb64_decoded_bytes.size(); ++i )
+          sub64_decoded[i] = sb64_decoded_bytes[i];
         const size_t orig_size = orig_url.size();
         const size_t decoded_size = orig_url.size();
         assert( orig_size == decoded_size );
         for( size_t i = 0; i < orig_size && i < decoded_size; ++i )
         {
-          assert( b85_decoded[i] == orig_url[i] );
+          uint8_t decoded = sub64_decoded[i];
+          uint8_t orig = orig_url[i];
+          assert( decoded == orig );
         }
-        assert( b85_decoded == orig_url );
+        assert( sub64_decoded == orig_url );
 #endif
       }else
       {
         url = base45_encode( url );
       }
-#else
-      url = base45_encode( url );
-#endif
       
       //cout << "During encoding, after base-45, before url-encoding: '" << to_hex_bytes_str(url.substr(0,60)) << "'" << endl << endl;
       
@@ -1978,36 +1913,24 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
 //      memcpy( &(decoded[0]), &(raw[0]), raw.size() );
 //      assert( decoded == url );
 //#endif
-    }//if( use_base45 )
+    }//if( use_baseX_encoding )
     
-#if( EMAIL_QR_OPTION )
     if( use_mailto )
     {
-      if( !use_nonuri_email )
-      {
-        cout << "Pre(url_encode)=" << url.size();
-        url = url_encode( url );
-        cout << ", Post(url_encode)=" << url.size();
-      }
+      //cout << "Base-x encoded:\n" << url << "\n\n\n";
+      //cout << "Pre(url_encode)=" << url.size();
+      //cout << "\n\t" << url << endl << endl;
+      url = url_encode( url );
+      //cout << ", Post(url_encode)=" << url.size();
+      //cout << "\n\t" << url << endl << endl;
+     
       url = email_encode( url );
-      cout << ", Post email encode=" << url.size() << endl;
+      //cout << ", Post email encode=" << url.size() << endl;
     }else
     {
       url = url_encode( url );
     }
-    
-#else //EMAIL_QR_OPTION
-    
-#ifndef NDEBUG
-    string urlencoded = url_encode( url );
-    assert( Wt::Utils::urlDecode(urlencoded) == url );
-    url.swap( urlencoded );
-#else
-    url = url_encode( url );
-#endif
-    
-#endif //#if( EMAIL_QR_OPTION ) / else
-    
+        
     // cout << "During encoding, after URL encode: '" << to_hex_bytes_str(url.substr(0,60)) << "'" << endl;
     url = make_url_start(0,1) + url;
     
@@ -2080,7 +2003,6 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
   
   try
   {
-#if( EMAIL_QR_OPTION )
     const bool has_email_opt = (url[3] != '/');
     if( has_email_opt )
     {
@@ -2098,23 +2020,13 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
     }
     
     if( answer.m_encode_options
-       & ~(EncodeOptions::NoDeflate | EncodeOptions::NoBase45
+       & ~(EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding
            | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts
-           | EncodeOptions::UseBase85 | EncodeOptions::AsMailToUri
-           | EncodeOptions::EmailBodyNotUri ) )
+           | EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri) )
     {
       throw runtime_error( string("Encoding option had invalid bit set (hex digit ") + url[0] + ")" );
     }
-#else
-    answer.m_encode_options = hex_to_dec( url[0] );
-    if( answer.m_encode_options
-       & ~(EncodeOptions::NoDeflate | EncodeOptions::NoBase45
-           | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts) )
-    {
-      throw runtime_error( string("Encoding option had invalid bit set (hex digit ") + url[0] + ")" );
-    }
-#endif
-    
+   
     answer.m_number_urls = hex_to_dec( url[1] ) + 1;
     if( answer.m_number_urls > 10 )
       throw std::runtime_error( "Invalid number of total URLs specified" );
@@ -2131,11 +2043,7 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
         throw std::runtime_error( "Invalid number of spectra in URL." );
     }
     
-#if( EMAIL_QR_OPTION )
     url = url.substr( has_email_opt ? 5 : 4 );
-#else
-    url = url.substr( 4 );
-#endif
   }catch( std::exception &e )
   {
     throw runtime_error( "get_spectrum_url_info: options portion (three hex digits after"
@@ -2166,22 +2074,19 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
   //cout << "Before being URL decoded: '" << to_hex_bytes_str(url.substr(0,60)) << "'" << endl << endl;
   //url = Wt::Utils::urlDecode( url );
   
-  if( !(answer.m_encode_options & EncodeOptions::NoBase45) )
+  if( !(answer.m_encode_options & EncodeOptions::NoBaseXEncoding) )
   {
     //cout << "Before being base-45 decoded: '" << to_hex_bytes_str(url.substr(0,60)) << "'" << endl << endl;
-#if( EMAIL_QR_OPTION )
     vector<uint8_t> raw;
-    if( answer.m_encode_options & EncodeOptions::UseBase85 )
-      raw = base85_decode( url );
+    if( answer.m_encode_options & EncodeOptions::UseUrlSafeBase64 )
+      raw = base64url_decode( url );
     else
       raw = base45_decode( url );
-#else
-    const vector<uint8_t> raw = base45_decode( url );
-#endif
+
     assert( !raw.empty() );
     url.resize( raw.size() );
     memcpy( &(url[0]), &(raw[0]), raw.size() );
-  }//if( use_base45 )
+  }//if( use_baseX_encoding )
   
   if( !(answer.m_encode_options & EncodeOptions::NoDeflate) )
   {
@@ -2285,7 +2190,7 @@ std::vector<UrlSpectrum> spectrum_decode_first_url( const std::string &url, cons
   spec.m_title = get_str_field( 'O' );
   
   if( (info.m_encode_options & EncodeOptions::NoDeflate)
-     && (info.m_encode_options & EncodeOptions::NoBase45)
+     && (info.m_encode_options & EncodeOptions::NoBaseXEncoding)
      && (info.m_encode_options & EncodeOptions::CsvChannelData) )
   {
     spec.m_model = Wt::Utils::urlDecode( spec.m_model );
@@ -2848,22 +2753,11 @@ int dev_code()
       }//for( shared_ptr<const SpecUtils::Measurement> m : usable_spectra )
       
       
-      //EncodeOptions::NoDeflate
-      //EncodeOptions::NoBase45
-      //EncodeOptions::CsvChannelData
-      //EncodeOptions::NoZeroCompressCounts
-      //SkipForEncoding::Encoding
-      //SkipForEncoding::EnergyCal
-      //SkipForEncoding::DetectorModel
-      //SkipForEncoding::Gps
-      //SkipForEncoding::Title
-      
       for( shared_ptr<const SpecUtils::Measurement> m : usable_spectra )
       {
 
         const vector<UrlSpectrum> url_specs = to_url_spectra( {m}, model );
         assert( url_specs.size() == 1 );
-        
         
         uint8_t encode_options = 0;
         const size_t num_urls = 1;
@@ -2894,7 +2788,7 @@ int dev_code()
         
         try
         {
-          encode_options = (EncodeOptions::NoDeflate | EncodeOptions::NoBase45);
+          encode_options = (EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding);
           const vector<string> bin_urls = url_encode_spectrum( url_specs[0], encode_options, num_urls, skip_encode_options );
           
           std::lock_guard<std::mutex> lock( result_mutex );
@@ -2906,7 +2800,7 @@ int dev_code()
         
         try
         {
-          encode_options = (EncodeOptions::NoDeflate | EncodeOptions::NoBase45 | EncodeOptions::CsvChannelData);
+          encode_options = (EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding | EncodeOptions::CsvChannelData);
           const vector<string> csv_urls = url_encode_spectrum( url_specs[0], encode_options, num_urls, skip_encode_options );
           
           std::lock_guard<std::mutex> lock( result_mutex );
@@ -2918,7 +2812,7 @@ int dev_code()
         
         try
         {
-          encode_options = EncodeOptions::NoBase45;
+          encode_options = EncodeOptions::NoBaseXEncoding;
           const vector<string> bin_zlib_urls = url_encode_spectrum( url_specs[0], encode_options, num_urls, skip_encode_options );
           
           std::lock_guard<std::mutex> lock( result_mutex );
