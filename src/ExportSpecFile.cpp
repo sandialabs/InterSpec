@@ -35,6 +35,7 @@
 #include <Wt/WMenu>
 #include <Wt/WText>
 #include <Wt/WImage>
+#include <Wt/WServer>
 #include <Wt/WCheckBox>
 #include <Wt/WComboBox>
 #include <Wt/WLineEdit>
@@ -61,6 +62,7 @@
 #include "SpecUtils/D3SpectrumExport.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
@@ -69,6 +71,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
 
 #if( USE_QR_CODES )
@@ -96,14 +99,14 @@ const std::vector<std::pair<SpecUtils::SaveSpectrumAsType,std::string>> sm_file_
   { SpecUtils::SaveSpectrumAsType::N42_2012, "N42-2012"},
   { SpecUtils::SaveSpectrumAsType::N42_2006, "N42-2006"},
   { SpecUtils::SaveSpectrumAsType::Chn, "CHN" },
-  { SpecUtils::SaveSpectrumAsType::SpeIaea, "IAEA SPE" },
+  { SpecUtils::SaveSpectrumAsType::SpeIaea, "IAEA-SPE" },
   { SpecUtils::SaveSpectrumAsType::Csv, "CSV" },
   { SpecUtils::SaveSpectrumAsType::Txt, "TXT" },
   { SpecUtils::SaveSpectrumAsType::Pcf, "PCF" },
   { SpecUtils::SaveSpectrumAsType::Cnf, "CNF" },
-  { SpecUtils::SaveSpectrumAsType::SpcBinaryInt, "SPC (int)" },
-  { SpecUtils::SaveSpectrumAsType::SpcBinaryFloat, "SPC (float)" },
-  { SpecUtils::SaveSpectrumAsType::SpcAscii, "SPC (ascii)" },
+  { SpecUtils::SaveSpectrumAsType::SpcBinaryInt, "SPC-int" },
+  { SpecUtils::SaveSpectrumAsType::SpcBinaryFloat, "SPC-float" },
+  { SpecUtils::SaveSpectrumAsType::SpcAscii, "SPC-ascii" },
   { SpecUtils::SaveSpectrumAsType::Tka, "TKA" },
   { SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0, "GR-130" },
   { SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2, "GR-135" },
@@ -111,7 +114,7 @@ const std::vector<std::pair<SpecUtils::SaveSpectrumAsType,std::string>> sm_file_
   { SpecUtils::SaveSpectrumAsType::HtmlD3, "HTML" },
 #endif
 #if( USE_QR_CODES )
-  { SpecUtils::SaveSpectrumAsType::NumTypes, "QR-code/URL" },
+  { SpecUtils::SaveSpectrumAsType::NumTypes, "QR-code" },
 #endif
 };//sm_file_type_to_uri_name
 }//namespace
@@ -119,6 +122,27 @@ const std::vector<std::pair<SpecUtils::SaveSpectrumAsType,std::string>> sm_file_
 #if( USE_QR_CODES )
 namespace
 {
+std::string clean_uuid( string uuid )
+{
+  SpecUtils::trim(uuid);
+  for( size_t i = 0; i < uuid.size(); ++i )
+  {
+    if( !std::isalpha( (int)uuid[i] ) && !std::isalnum( (int)uuid[i] ) )
+      uuid[i] = ' ';
+  }
+  
+  SpecUtils::erase_any_character( uuid, " $&+,:;=?@'\"<>#%{}|\\^~[]`/" );
+  
+  for( size_t i = 0; i < uuid.size(); ++i )
+  {
+    if( !std::isalpha( (int)uuid[i] ) && !std::isalnum( (int)uuid[i] ) )
+      uuid[i] = '-';
+  }
+  
+  return uuid;
+}//std::string clean_uuid( string uuid )
+
+
   void displayQrDialog( const vector<QRSpectrum::UrlEncodedSpec> urls,
                        const size_t index,
                        boost::function<void()> successfullyDone,
@@ -181,14 +205,10 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
 {
   try
   {
-#if( EMAIL_QR_OPTION )
     uint8_t encode_options = 0;
     if( as_emailto )
-      encode_options = QRSpectrum::EncodeOptions::UseBase85
+      encode_options = QRSpectrum::EncodeOptions::UseUrlSafeBase64
                         | QRSpectrum::EncodeOptions::AsMailToUri;
-#else
-    const uint8_t encode_options = 0;
-#endif
     
     vector<QRSpectrum::UrlEncodedSpec> urls;
     QRSpectrum::QrErrorCorrection ecc = QRSpectrum::QrErrorCorrection::High;
@@ -230,16 +250,6 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
     };//do_encode lamda
     
     do_encode();
-    
-#if( EMAIL_QR_OPTION )
-    // We first tried to encode as a proper URI inside the email, but if
-    //  that didnt work, we'll do it as just data text.
-    if( as_emailto && (urls.empty() || (urls.size() > 1)) )
-    {
-      encode_options |= QRSpectrum::EncodeOptions::EmailBodyNotUri;
-      do_encode();
-    }
-#endif
     
     if( urls.empty() )
     {
@@ -630,7 +640,8 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
 #if( USE_QR_CODES )
   m_show_qr_btn( nullptr ),
 #endif
-  m_resource( nullptr )
+  m_resource( nullptr ),
+  m_last_state_uri{}
 {
   init();
 }//ExportSpecFileTool()
@@ -678,7 +689,8 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
 #if( USE_QR_CODES )
   m_show_qr_btn( nullptr ),
 #endif
-  m_resource( nullptr )
+  m_resource( nullptr ),
+  m_last_state_uri{}
 {
   init();
 }//
@@ -984,6 +996,8 @@ void ExportSpecFileTool::updateExportEnabled()
 #if( USE_QR_CODES )
   m_show_qr_btn->setDisabled( disable );
 #endif
+  
+  scheduleAddingUndoRedo();
 }//void updateExportEnabled()
 
 
@@ -1635,6 +1649,8 @@ bool ExportSpecFileTool::removeInterSpecInfo() const
 
 void ExportSpecFileTool::refreshSampleAndDetectorOptions()
 {
+  scheduleAddingUndoRedo();
+  
   const shared_ptr<const SpecMeas> spec = currentlySelectedFile();
   const uint16_t max_records = maxRecordsInCurrentSaveType( spec );
   const SpecUtils::SaveSpectrumAsType save_type = currentSaveType();
@@ -1915,6 +1931,8 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   {
     m_msg->setText( "&nbsp;" );
   }
+  
+  scheduleAddingUndoRedo();
 }//void refreshSampleAndDetectorOptions()
 
 
@@ -1938,6 +1956,8 @@ void ExportSpecFileTool::handleAllSampleChanged()
 
 void ExportSpecFileTool::handleDisplaySampleChanged( const SpecUtils::SpectrumType type )
 {
+  scheduleAddingUndoRedo();
+  
   Wt::WCheckBox *cb = nullptr;
   switch( type )
   {
@@ -1967,6 +1987,8 @@ void ExportSpecFileTool::handleDisplaySampleChanged( const SpecUtils::SpectrumTy
 
 void ExportSpecFileTool::handleCustomSampleChanged()
 {
+  scheduleAddingUndoRedo();
+  
   if( m_customSamples->isChecked() )
   {
     m_customSamplesEdit->show();
@@ -2001,6 +2023,8 @@ void ExportSpecFileTool::handleCustomSampleChanged()
 
 void ExportSpecFileTool::handleCustomSampleTxtChanged()
 {
+  scheduleAddingUndoRedo();
+  
   const string txt = m_customSamplesEdit->text().toUTF8();
   
   const shared_ptr<const SpecMeas> spec = currentlySelectedFile();
@@ -2013,12 +2037,15 @@ void ExportSpecFileTool::handleCustomSampleTxtChanged()
 
 void ExportSpecFileTool::handleSamplesChanged()
 {
+  scheduleAddingUndoRedo();
   refreshSampleAndDetectorOptions();
 }//void handleSamplesChanged()
 
 
 void ExportSpecFileTool::handleFormatChange()
 {
+  scheduleAddingUndoRedo();
+  
   const SpecUtils::SaveSpectrumAsType save_format = currentSaveType();
   
 #if( USE_QR_CODES )
@@ -2035,6 +2062,8 @@ void ExportSpecFileTool::handleFormatChange()
 
 void ExportSpecFileTool::handleForePlusBackChanged()
 {
+  scheduleAddingUndoRedo();
+  
   assert( m_forePlusBack && m_fileSelect );
   if( !m_forePlusBack || !m_fileSelect )
     return;
@@ -2054,6 +2083,8 @@ void ExportSpecFileTool::handleForePlusBackChanged()
 
 void ExportSpecFileTool::handleFilterDetectorCbChanged()
 {
+  scheduleAddingUndoRedo();
+  
   assert( m_filterDetector );
   assert( m_detectorFilterCbs );
   if( !m_filterDetector || !m_detectorFilterCbs )
@@ -2079,6 +2110,8 @@ void ExportSpecFileTool::handleFilterDetectorCbChanged()
 
 void ExportSpecFileTool::handleSumToSingleRecordChanged()
 {
+  scheduleAddingUndoRedo();
+  
   if( m_sumAllToSingleRecord->isChecked() )
   {
     m_sumForeToSingleRecord->setChecked( false );
@@ -2094,6 +2127,8 @@ void ExportSpecFileTool::handleSumToSingleRecordChanged()
 
 void ExportSpecFileTool::handleSumTypeToSingleRecordChanged()
 {
+  scheduleAddingUndoRedo();
+  
   if( m_sumForeToSingleRecord->isChecked()
      || m_sumBackToSingleRecord->isChecked()
      || m_sumSecoToSingleRecord->isChecked() )
@@ -2109,6 +2144,8 @@ void ExportSpecFileTool::handleSumTypeToSingleRecordChanged()
 
 void ExportSpecFileTool::handleBackSubForeChanged()
 {
+  scheduleAddingUndoRedo();
+  
   if( m_backSubFore->isChecked() )
   {
     m_sumAllToSingleRecord->setChecked( false );
@@ -2124,6 +2161,8 @@ void ExportSpecFileTool::handleBackSubForeChanged()
 
 void ExportSpecFileTool::handleSumDetPerSampleChanged()
 {
+  scheduleAddingUndoRedo();
+  
   if( m_sumDetsPerSample->isChecked() )
   {
     m_sumAllToSingleRecord->setChecked( false );
@@ -2140,6 +2179,7 @@ void ExportSpecFileTool::handleSumDetPerSampleChanged()
 void ExportSpecFileTool::handleIncludeInterSpecInfoChanged()
 {
   // Nothing to do here I think
+  scheduleAddingUndoRedo();
 }//void handleIncludeInterSpecInfoChanged()
 
 
@@ -2601,10 +2641,332 @@ void ExportSpecFileTool::handleGenerateQrCode()
 }//void handleGenerateQrCode()
 #endif
 
+
+void ExportSpecFileTool::scheduleAddingUndoRedo()
+{
+  // We will actually just mark that the widget will should be rendered,
+  //  so this way we will only try to add a undo/redo once per event loop.
+  //  (and we will only schedule this if we are not in a undo/redo step)
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+    scheduleRender();
+}//void scheduleAddingUndoRedo()
+
+
+void ExportSpecFileTool::updateUndoRedo()
+{
+  try
+  {
+    string appurl = encodeStateToUrl();
+    if( m_last_state_uri && ((*m_last_state_uri) == appurl) )
+      return;
+    
+    shared_ptr<const string> curr_state = make_shared<string>( std::move(appurl) );
+    shared_ptr<const string> prev_state = m_last_state_uri;
+    
+    m_last_state_uri = curr_state;
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    
+    // We shouldnt be in a undo/redo state, if we are here, but we'll check, jic
+    if( !prev_state || !undoRedo || undoRedo->isInUndoOrRedo() )
+      return;
+    
+    //cout << "ExportSpecFileTool::updateUndoRedo(): am adding undo/redo step" << endl;
+    
+    auto undo_redo = [prev_state,curr_state]( const bool undo ){
+      try
+      {
+        InterSpec *interspec = InterSpec::instance();
+        ExportSpecFileWindow *export_window = interspec ? interspec->createExportSpectrumFileDialog() : nullptr;
+        shared_ptr<const string> state_str = undo ? prev_state : curr_state;
+        if( !export_window || !state_str || state_str->empty() )
+          throw runtime_error( "No export dialog, or no state avaialable" );
+        export_window->handleAppUrl( *prev_state );
+      }catch( std::exception &e )
+      {
+        string msg = "Error executing undo/redo step for Spectrum File Export tool: " + string(e.what());
+        passMessage( msg, WarningWidget::WarningMsgHigh );
+      }
+    };//undo_redo lambda
+    
+    auto undo = [undo_redo](){ undo_redo(true); };
+    auto redo = [undo_redo](){ undo_redo(false); };
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Change spectrum file export tool." );
+  }catch( std::exception &e )
+  {
+    const string msg = "Error adding undo/redo step for Spectrum File Export tool: " + string(e.what());
+    log("error") << msg;
+    passMessage( msg, WarningWidget::WarningMsgHigh );
+  }//try / catch
+}//void updateUndoRedo()
+
+  
+void ExportSpecFileTool::render( Wt::WFlags<Wt::RenderFlag> flags )
+{
+  WContainerWidget::render( flags );
+  
+  // Add the undo/redo step, not from the current event loop, so we dont cause delays
+  //  Also, we'll check, JIC, to make sure we arent in an undo/redo step execution,
+  //   but this is likely not the case anyway.
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    WServer *server = WServer::instance();
+    auto worker = wApp->bind( boost::bind(&ExportSpecFileTool::updateUndoRedo, this) );
+    server->schedule( 25, wApp->sessionId(), worker );
+  }
+}//void render( Wt::WFlags<Wt::RenderFlag> flags )
+
               
 void ExportSpecFileTool::handleAppUrl( std::string query_str )
 {
-  passMessage( "ExportSpecFileTool::handleAppUrl not implemented yet", WarningWidget::WarningMsgHigh );
+  //Example: query_str="V=1&Fore=1&Format=CSV&Samples=1-5&SumAllToSingleRecord=1"
+  
+  //cout << "query_str=\"" << query_str << "\"" << endl;
+  
+  map<string,string> parts = AppUtils::query_str_key_values( query_str );
+  if( !parts.count("V") || (parts["V"] != "1") )
+    throw runtime_error( "fromAppUrl: missing or invalid 'V'" );
+  
+  
+  auto find_spec = [this]( SpecUtils::SpectrumType type ) -> int {
+    auto spec = m_interspec->measurment(type);
+    if( !spec )
+      return -1;
+    
+    const SpecMeasManager * const measManager = m_interspec->fileManager();
+    const SpectraFileModel * const fileModel = measManager ? measManager->model() : nullptr;
+    if( !fileModel )
+      return -1;
+    
+    for( int index = 0; index < fileModel->rowCount(); ++index )
+    {
+      const shared_ptr<const SpectraFileHeader> header = fileModel->fileHeader(index);
+      const shared_ptr<const SpecMeas> this_spec = header ? header->parseFile() : nullptr;
+      if( this_spec == spec )
+        return index;
+    }
+    
+    assert( 0 );
+    return -1;
+  };
+  
+  
+  if( parts.count("FOREPLUSBACK") )
+  {
+    if( m_forePlusBack )
+    {
+      m_forePlusBack->setChecked( true );
+      handleForePlusBackChanged();
+    }
+    
+  }else
+  {
+    if( m_forePlusBack )
+    {
+      m_forePlusBack->setChecked( false );
+      handleForePlusBackChanged();
+    }
+    
+    if( m_fileSelect && m_fileSelect->isHidden() )
+      m_fileSelect->show();
+    
+    int index = -1;
+    if( parts.count("FORE") )
+      index = find_spec( SpecUtils::SpectrumType::Foreground );
+    else if( parts.count("BACK") )
+      index = find_spec( SpecUtils::SpectrumType::Background );
+    else if( parts.count("SECO") )
+      index = find_spec( SpecUtils::SpectrumType::SecondForeground );
+    else if( parts.count("FILEUUID") )
+    {
+      const string wanted_uuid = parts["FILEUUID"];
+      
+      const SpecMeasManager * const measManager = m_interspec->fileManager();
+      const SpectraFileModel * const fileModel = measManager ? measManager->model() : nullptr;
+      
+      if( fileModel )
+      {
+        for( int row = 0; row < fileModel->rowCount(); ++row )
+        {
+          const shared_ptr<const SpectraFileHeader> header = fileModel->fileHeader(row);
+          const shared_ptr<const SpecMeas> this_spec = header ? header->parseFile() : nullptr;
+          if( this_spec )
+          {
+            const string this_uuid = clean_uuid( this_spec->uuid() );
+            if( SpecUtils::iequals_ascii(this_uuid, wanted_uuid) )
+            {
+              index = row;
+              break;
+            }
+          }//if( this_spec )
+        }//for( int row = 0; row < fileModel->rowCount(); ++row )
+      }//if( fileModel )
+    }else if( parts.count("FILEINDEX") )
+    {
+      string str = parts["FILEINDEX"];
+      int val;
+      if( SpecUtils::parse_int(str.c_str(), str.size(), val) )
+        index = val;
+    }
+    
+    if( m_fileSelect && (index < m_fileSelect->count()) )
+      m_fileSelect->setCurrentIndex( index );
+  }//if( parts.count("FOREPLUSBACK") ) / else
+  
+  
+  handleFileSelectionChanged();
+  
+  
+  SpecUtils::SaveSpectrumAsType file_type = SpecUtils::SaveSpectrumAsType::N42_2012;
+  const shared_ptr<const SpecMeas> spec = currentlySelectedFile();
+  
+  if( parts.count("FORMAT") )
+  {
+    for( size_t i = 0;  i < sm_file_type_to_uri_name.size(); ++i )
+    {
+      const string &file_type_str = sm_file_type_to_uri_name[i].second;
+      
+      if( SpecUtils::iequals_ascii( parts["FORMAT"], file_type_str ) )
+      {
+        file_type = sm_file_type_to_uri_name[i].first;
+        break;
+      }
+    }//for( size_t i = 0;  i < sm_file_type_to_uri_name.size(); ++i )
+
+    for( WMenuItem *item : m_formatMenu->items() )
+    {
+      const void *data = item->data();
+      const SpecUtils::SaveSpectrumAsType t = reinterpret_cast<SpecUtils::SaveSpectrumAsType&>( data );
+      if( t == file_type )
+      {
+        m_formatMenu->select( item );
+        break;
+      }
+    }
+  }//if( parts.count("FORMAT") )
+  
+  handleFormatChange();
+  
+  const bool all = parts.count("ALLSAMPLES");
+  if( m_dispForeSamples )
+    m_dispForeSamples->setChecked( !all && parts.count("DISPFORE") );
+  if( m_dispBackSamples )
+    m_dispBackSamples->setChecked( !all && parts.count("DISPBACK") );
+  if( m_dispSecondSamples )
+    m_dispSecondSamples->setChecked( !all && parts.count("DISPSECO") );
+  if( m_allSamples )
+    m_allSamples->setChecked( all );
+
+  if( m_customSamples && parts.count("SAMPLES") )
+  {
+    m_customSamples->setChecked( true );
+    const string txt = parts["SAMPLES"];
+    const pair<set<int>,string> samplenums = sampleNumbersFromTxtRange( txt, spec, true );
+    m_customSamplesEdit->setText( samplenums.second );
+  }else if( m_customSamples )
+  {
+    m_customSamples->setChecked( false );
+    m_customSamplesEdit->hide();
+    m_customSamplesEdit->setText( "" );
+  }
+
+  handleSamplesChanged();
+  
+  vector<string> dets;
+  if( m_is_specific_file )
+    dets = m_specific_detectors;
+  else if( m_filterDetector && m_filterDetector->isVisible() && m_filterDetector->isChecked() )
+    dets = currentlySelectedDetectors();
+  
+  if( parts.count("DETECTORS") )
+  {
+    if( m_filterDetector )
+      m_filterDetector->setChecked( true );
+    
+    handleFilterDetectorCbChanged();
+    
+    vector<string> dets_in_url;
+    SpecUtils::split( dets_in_url, parts["DETECTORS"], "-" );
+    
+    map<string,pair<string,bool>> label_to_orig;
+    if( spec )
+    {
+      for( const string &name : spec->detector_names() )
+      {
+        const string clean_name = clean_uuid( name );
+        const bool use = (std::find(begin(dets_in_url), end(dets_in_url), clean_name) != end(dets_in_url));
+        
+        // TODO: use Wt::Utils::htmlEncode, if that is what happens in WCheckBox, instead of creating a WCheckBox
+        WCheckBox cb( name );
+        label_to_orig[cb.text().toUTF8()] = {name, use};
+      }
+    }//if( spec )
+    
+    vector<string> answer;
+    for( const auto w : m_detectorFilterCbs->children() )
+    {
+      WCheckBox *cb = dynamic_cast<WCheckBox *>( w );
+      if( !cb )
+        continue;
+      
+      const string label_txt = cb->text().toUTF8();
+      const auto pos = label_to_orig.find( label_txt );
+      assert( pos != end(label_to_orig) );
+      if( pos != end(label_to_orig) )
+        cb->setChecked( pos->second.second );
+      else
+        cb->setChecked( false );
+    }//for( const auto w : m_detectorFilterCbs->children() )
+  }else
+  {
+    if( m_filterDetector )
+      m_filterDetector->setChecked( false );
+    
+    handleFilterDetectorCbChanged();
+    
+    if( m_detectorFilterCbs )
+    {
+      for( const auto w : m_detectorFilterCbs->children() )
+      {
+        WCheckBox *cb = dynamic_cast<WCheckBox *>( w );
+        if( cb )
+          cb->setChecked( true );
+      }//for( const auto w : m_detectorFilterCbs->children() )
+    }//if( m_detectorFilterCbs )
+  }//if( parts.count("DETECTORS") ) / else
+  
+  if( m_sumAllToSingleRecord )
+    m_sumAllToSingleRecord->setChecked( parts.count("SUMALLTOSINGLERECORD") );
+  handleSumToSingleRecordChanged();
+  
+  if( m_sumForeToSingleRecord )
+    m_sumForeToSingleRecord->setChecked( parts.count("SUMFORETOSINGLERECORD") );
+  
+  if( m_sumBackToSingleRecord )
+    m_sumBackToSingleRecord->setChecked( parts.count("SUMBACKTOSINGLERECORD") );
+  
+  if( m_sumSecoToSingleRecord )
+    m_sumSecoToSingleRecord->setChecked( parts.count("SUMSECOTOSINGLERECORD") );
+
+  handleSumTypeToSingleRecordChanged();
+  
+  if( m_backSubFore )
+    m_backSubFore->setChecked( parts.count("BACKSUBFORE") );
+
+  handleBackSubForeChanged();
+  
+  if( m_sumDetsPerSample )
+    m_sumDetsPerSample->setChecked( parts.count("SUMDETSPERSAMPLE") );
+  
+  handleSumDetPerSampleChanged();
+  
+  if( m_excludeInterSpecInfo )
+    m_excludeInterSpecInfo->setChecked( parts.count("NOINTERSPECINFO") );
+  
+  if( m_excludeGpsInfo )
+    m_excludeGpsInfo->setChecked( parts.count("NOGPS") );
 }//void handleAppUrl( std::string query_str )
 
 
@@ -2612,75 +2974,122 @@ std::string ExportSpecFileTool::encodeStateToUrl() const
 {
   // Returns something like "V=1&FORMAT=N42-2012&Samples=1,2&..", and it will not be url-encoded.
   
-  passMessage( "ExportSpecFileTool::encodeStateToUrl not implemented yet", WarningWidget::WarningMsgHigh );
-  
   string answer = "V=1";
   
-  if( m_is_specific_file )
-    answer += "&SpecificFile=1";
+  shared_ptr<const SpecMeas> spec = currentlySelectedFile();
   
   if( m_forePlusBack && m_forePlusBack->isVisible() && m_forePlusBack->isChecked() )
   {
-    
+    answer += "&ForePlusBack=1";
+  }else if( spec )
+  {
+    if( spec == m_interspec->measurment(SpecUtils::SpectrumType::Foreground) )
+      answer += "&Fore=1";
+    else if( spec == m_interspec->measurment(SpecUtils::SpectrumType::Background) )
+      answer += "&Back=1";
+    else if( spec == m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground) )
+      answer += "&Seco=1";
+    else
+    {
+      string uuid = clean_uuid( spec->uuid() );
+      if( !uuid.empty() )
+        answer += "&FileUuid=" + uuid;
+      else
+        answer += "&FileIndex=" + std::to_string( m_fileSelect->currentIndex() );
+    }
   }else
   {
-    shared_ptr<const SpecMeas> spec = currentlySelectedFile();
-    if( spec )
-    {
-      
-    }
-  }//if( fore + back ) / else
+    answer += "&NoFile=1";
+  }//if( fore + back ) / else if( spec ) / else
+  
   
   const SpecUtils::SaveSpectrumAsType file_type = currentSaveType();
   
-  /*
-  const auto type_pos = std::find( begin(sm_file_type_to_uri_name), end(sm_file_type_to_uri_name),
-            [file_type]( const pair<SpecUtils::SaveSpectrumAsType,string> &lhs ) -> bool {
-    return lhs.first == file_type;
-  } );
-  */
+  string file_type_str;
+  for( size_t i = 0; file_type_str.empty() && i < sm_file_type_to_uri_name.size(); ++i )
+  {
+    if( sm_file_type_to_uri_name[i].first == file_type )
+      file_type_str = sm_file_type_to_uri_name[i].second;
+  }
   
-  /*
-  m_specific_spectrum;
-  m_specific_samples;
-  m_specific_detectors;
-  m_current_file;
-  m_fileSelect;
-  m_forePlusBack;
+  answer += "&Format=" + file_type_str;
   
-  Wt::WContainerWidget *m_samplesHolder;
-  Wt::WCheckBox *m_dispForeSamples;
-  Wt::WCheckBox *m_dispBackSamples;
-  Wt::WCheckBox *m_dispSecondSamples;
-  Wt::WCheckBox *m_allSamples;
-  Wt::WCheckBox *m_customSamples;
-  Wt::WLineEdit *m_customSamplesEdit;
-  Wt::WCheckBox *m_filterDetector;
-  std::vector<std::string> currentlySelectedDetectors();
+  if( m_dispForeSamples && m_dispForeSamples->isChecked() )
+    answer += "&DispFore=1";
+  if( m_dispBackSamples && m_dispBackSamples->isChecked() )
+    answer += "&DispBack=1";
+  if( m_dispSecondSamples && m_dispSecondSamples->isChecked() )
+    answer += "&DispSeco=1";
   
-  Wt::WContainerWidget *m_optionsHolder;
-  Wt::WCheckBox *m_sumAllToSingleRecord;
-  Wt::WCheckBox *m_sumForeToSingleRecord;
-  Wt::WCheckBox *m_sumBackToSingleRecord;
-  Wt::WCheckBox *m_sumSecoToSingleRecord;
-  Wt::WCheckBox *m_backSubFore;
-  Wt::WCheckBox *m_sumDetsPerSample;
-  Wt::WCheckBox *m_excludeInterSpecInfo;
-  Wt::WCheckBox *m_excludeGpsInfo;
+  if( m_allSamples && m_allSamples->isChecked() )
+    answer += "&AllSamples=1";
   
-  Wt::WText *m_sampleSelectNotAppTxt;
-  Wt::WText *m_optionsNotAppTxt;
+  if( m_is_specific_file )
+  {
+    //m_specific_samples
+    //m_specific_detectors
+  }else //if( m_is_specific_file )
+  {
+    if( m_customSamples && m_customSamples->isChecked() )
+    {
+      const string txt = m_customSamplesEdit->text().toUTF8();
+      const pair<set<int>,string> samplenums = sampleNumbersFromTxtRange( txt, spec, true );
+      answer += "&Samples=" + samplenums.second;
+    }
+  }//if( m_is_specific_file ) / else
   
-  Wt::WText *m_msg;
+  vector<string> dets;
+  if( m_is_specific_file )
+    dets = m_specific_detectors;
+  else if( m_filterDetector && m_filterDetector->isChecked() )
+    dets = currentlySelectedDetectors();
   
-  ExportSpecFileTool_imp::DownloadSpectrumResource *m_resource;
-  Wt::WPushButton *m_export_btn;
-#if( USE_QR_CODES )
-  Wt::WPushButton *m_show_qr_btn;
-#endif
-  */
+  if( dets.size() )
+  {
+    vector<string> all_dets = spec->detector_names();
+    std::sort( begin(all_dets), end(all_dets) );
+    std::sort( begin(dets), end(dets) );
+    if( all_dets != dets )
+    {
+      answer += "&Detectors=";
+      
+      for( size_t i = 0; i < dets.size(); ++i )
+      {
+        if( i )
+          answer += "-";
+        answer += clean_uuid( dets[i] );
+      }
+    }//if( all_dets != dets )
+  }//if( dets.size() )
   
-  return "";
+  
+  if( m_sumAllToSingleRecord && m_sumAllToSingleRecord->isChecked() )
+    answer += "&SumAllToSingleRecord=1";
+  
+  if( m_sumForeToSingleRecord && m_sumForeToSingleRecord->isChecked() )
+    answer += "&SumForeToSingleRecord=1";
+  
+  if( m_sumBackToSingleRecord && m_sumBackToSingleRecord->isChecked() )
+    answer += "&SumBackToSingleRecord=1";
+  
+  if( m_sumSecoToSingleRecord && m_sumSecoToSingleRecord->isChecked() )
+    answer += "&SumSecoToSingleRecord=1";
+  
+  if( m_backSubFore && m_backSubFore->isChecked() )
+    answer += "&BackSubFore=1";
+  
+  if( m_sumDetsPerSample && m_sumDetsPerSample->isChecked() )
+    answer += "&SumDetsPerSample=1";
+  
+  if( m_excludeInterSpecInfo && m_excludeInterSpecInfo->isChecked() )
+    answer += "&NoInterSpecInfo=1";
+  
+  if( m_excludeGpsInfo && m_excludeGpsInfo->isChecked() )
+    answer += "&NoGps=1";
+  
+  //cout << "URL Query string='" << answer << "'" << endl;
+  
+  return answer;
 }//std::string encodeStateToUrl() const
 
 

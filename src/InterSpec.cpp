@@ -4380,7 +4380,8 @@ void InterSpec::deleteEnergyCalPreserveWindow()
 
 ExportSpecFileWindow *InterSpec::createExportSpectrumFileDialog()
 {
-  assert( !m_exportSpecFileWindow );
+  assert( !m_exportSpecFileWindow || (m_undo && m_undo->isInUndoOrRedo()) );
+  
   if( m_exportSpecFileWindow )
     return m_exportSpecFileWindow;
   
@@ -11133,11 +11134,7 @@ void InterSpec::makeEnterAppUrlWindow()
         handleAppUrl( uri );
       }else if( SpecUtils::istarts_with(uri, "raddata://") )
       {
-        // TODO: check options following "G0/" to see if QRSpectrum::EncodeOptions::EmailBodyNotUri is set, and if do just call straigt into file manager
         handleAppUrl( uri );
-      }else if( SpecUtils::istarts_with(uri, "raddata:G0/") )
-      {
-        m_fileManager->handleSpectrumUrl( uri );
       }else
       {
         throw runtime_error( "URL must start with 'interspec://' or 'raddata:'." );

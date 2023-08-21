@@ -131,7 +131,7 @@ public:
    - "interspec://specexport?V=1&..."
    
    @param query_str The query portion of the URI.  So for example, if the URI has a value of
-   "interspec://specexport?V=1&FORMAT=N42-2012&Samples=1,2&...", then this string would be "V=1&FORMAT=N42-2012&Samples=1,2&...".
+   "interspec://specexport?V=1&FORMAT=N42-2012&Samples=1-2&...", then this string would be "V=1&FORMAT=N42-2012&Samples=1-2&...".
    Assumes the string passed in has alaready been url-decoded.
    If not a valid query_str, throws exception.
    */
@@ -175,6 +175,9 @@ protected:
   void handleGenerateQrCode();
 #endif
   
+  void updateUndoRedo();
+  void scheduleAddingUndoRedo();
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
   
   InterSpec *m_interspec;
   
@@ -222,11 +225,15 @@ protected:
   
   Wt::WText *m_msg;
   
-  ExportSpecFileTool_imp::DownloadSpectrumResource *m_resource;
   Wt::WPushButton *m_export_btn;
 #if( USE_QR_CODES )
   Wt::WPushButton *m_show_qr_btn;
 #endif
+  
+  ExportSpecFileTool_imp::DownloadSpectrumResource *m_resource;
+  
+  /** For undo/redo purposes, we will keep track of last state as a URL. */
+  std::shared_ptr<const std::string> m_last_state_uri;
 };//class ExportSpecFileTool
 
 
