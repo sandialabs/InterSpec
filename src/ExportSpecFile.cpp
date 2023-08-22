@@ -939,6 +939,7 @@ void ExportSpecFileTool::init()
   
   
   WPushButton *cancel_btn = new WPushButton( "Cancel", btnsDiv );
+  cancel_btn->addStyleClass( "LightButton" );
   cancel_btn->clicked().connect( boost::bind(&ExportSpecFileTool::emitDone, this, false) );
   
   if( !m_resource )
@@ -948,16 +949,30 @@ void ExportSpecFileTool::init()
     m_resource->downloadFinished().connect( boost::bind(&ExportSpecFileTool::emitDone, this, true) );
   }//if( !m_resource )
   
-  m_export_btn = new WPushButton( "Export", btnsDiv );
+  
+#if( BUILD_AS_OSX_APP || IOS )
+  m_export_btn = new WAnchor( WLink(m_resource), btnsDiv );
+  m_export_btn->setTarget( AnchorTarget::TargetNewWindow );
+  m_export_btn->setStyleClass( "DownloadLink ExportSpecExportBtn" );
+#else
+  m_export_btn = new WPushButton( btnsDiv );
   m_export_btn->setLink( WLink(m_resource) );
   m_export_btn->setLinkTarget( AnchorTarget::TargetNewWindow );
-  m_export_btn->disable();
-  
+  m_export_btn->setStyleClass( "LinkBtn DownloadBtn ExportSpecExportBtn" );
+    
 #if( ANDROID )
-// Using hacked saving to temporary file in Android, instead of via network download of file.
-  TODO: have the click call a member function that calls the ansdroid download workaraound with the proper filename.
-  m_export_btn->clicked().connect( std::bind( [this](){ android_download_workaround( m_resource, "spectrum_file" ); } ) );
+  // Using hacked saving to temporary file in Android, instead of via network download of file.
+  m_export_btn->clicked().connect( std::bind( [this](){
+    string filename = m_resource->suggestedFileName().toUTF8();
+    if( filename.empty() )
+      filename = "spectrum_file";
+    android_download_workaround( m_resource, filename );
+  } ) );
 #endif //ANDROID
+#endif
+  
+  m_export_btn->setText( "Export" );
+  m_export_btn->disable();
 
 
 #if( USE_QR_CODES )

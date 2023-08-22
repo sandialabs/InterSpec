@@ -229,3 +229,10 @@
   text-overflow: ellipsis;
   margin-left: 10px;
 }
+
+
+.ExportSpecFileTool .LinkBtn.ExportSpecExportBtn
+{
+  float: none;
+  border: 1px solid blue !important;
+}

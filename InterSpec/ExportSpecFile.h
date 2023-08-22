@@ -45,6 +45,10 @@ namespace Wt
   class WMenu;
   class WCheckBox;
   class WLineEdit;
+  
+#if( BUILD_AS_OSX_APP || IOS )
+  class WAnchor;
+#endif
 }//namespace Wt
 
 namespace SpecUtils
@@ -225,7 +229,12 @@ protected:
   
   Wt::WText *m_msg;
   
+#if( BUILD_AS_OSX_APP || IOS )
+  Wt::WAnchor *m_export_btn;
+#else
   Wt::WPushButton *m_export_btn;
+#endif
+  
 #if( USE_QR_CODES )
   Wt::WPushButton *m_show_qr_btn;
 #endif
