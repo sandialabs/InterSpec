@@ -140,7 +140,7 @@ enum EncodeOptions
    
    For example, a returned URI will start with:
    "mailto:user@example.com?subject=spectrum&body=Spectrum%20URI%0D%0Araddata:..."
-   and it will not be stricktly URL encoded.
+   and it will not be strictly URL encoded.
    */
   AsMailToUri = 0x20,
 };//enum EncodeOptions

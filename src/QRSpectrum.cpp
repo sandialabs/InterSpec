@@ -1445,7 +1445,7 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
   }//if( use_baseX_encoding || (!use_deflate && !use_bin_chan_data) )
   
 
-  if( !skip_encoding && (use_url_safe_base64 || (!use_deflate && !use_bin_chan_data)) )
+  if( !skip_encoding && use_url_safe_base64 )
   {
     for( const string &url : answer )
     {
@@ -2024,21 +2024,22 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
            | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts
            | EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri) )
     {
-      throw runtime_error( string("Encoding option had invalid bit set (hex digit ") + url[0] + ")" );
+      throw runtime_error( string("Encoding option had invalid bit set (hex digit ")
+                           + url[0] + (has_email_opt ? (string() + url[1]) : string()) + ")" );
     }
    
-    answer.m_number_urls = hex_to_dec( url[1] ) + 1;
+    answer.m_number_urls = hex_to_dec( url[(has_email_opt ? 2 : 1)] ) + 1;
     if( answer.m_number_urls > 10 )
       throw std::runtime_error( "Invalid number of total URLs specified" );
     
     if( answer.m_number_urls > 1 )
     {
-      answer.m_spectrum_number = hex_to_dec( url[2] );
+      answer.m_spectrum_number = hex_to_dec( url[(has_email_opt ? 3 : 2)] );
       if( answer.m_spectrum_number >= answer.m_number_urls )
         throw runtime_error( "Spectrum number larger than total number URLs" );
     }else
     {
-      answer.m_num_spectra = hex_to_dec( url[2] ) + 1;
+      answer.m_num_spectra = hex_to_dec( url[(has_email_opt ? 3 : 2)] ) + 1;
       if( answer.m_num_spectra > 10 )
         throw std::runtime_error( "Invalid number of spectra in URL." );
     }
