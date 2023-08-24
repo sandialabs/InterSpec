@@ -148,7 +148,7 @@ BOOST_AUTO_TEST_CASE( TestEncodeOptions )
     EncodeOptions::CsvChannelData | EncodeOptions::UseUrlSafeBase64,
     EncodeOptions::NoZeroCompressCounts | EncodeOptions::CsvChannelData | EncodeOptions::UseUrlSafeBase64,
     EncodeOptions::AsMailToUri,
-    //EncodeOptions::AsMailToUri | EncodeOptions::UseUrlSafeBase64,
+    EncodeOptions::AsMailToUri | EncodeOptions::UseUrlSafeBase64,
   };
   
   for( const uint8_t encode_options : encode_opts )
