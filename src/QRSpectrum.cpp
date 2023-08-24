@@ -1225,7 +1225,7 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
   {
     string operator_notes = remove_field_delimiters( m.m_title );
     if( operator_notes.size() > 60 )
-      operator_notes.substr(0, 60);
+      operator_notes = operator_notes.substr(0, 60);
     
     string remark;
     remark = operator_notes;
@@ -1373,7 +1373,7 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
         answer[msg_num] = base64url_encode( answer[msg_num], false );
       }else
       {
-        answer[msg_num] = base45_encode( answer[msg_num], false );
+        answer[msg_num] = base45_encode( answer[msg_num] );
       }
 #endif
       //cout << "During encoding, after  base-45: '" << to_hex_bytes_str(answer[msg_num].substr(0,60)) << "'" << endl << endl;
@@ -2462,7 +2462,7 @@ vector<UrlSpectrum> to_url_spectra( vector<shared_ptr<const SpecUtils::Measureme
     string operator_notes = spec->title();
     SpecUtils::ireplace_all( operator_notes, ":", " " );
     if( operator_notes.size() > 60 )
-      operator_notes.substr(0, 60);
+      operator_notes = operator_notes.substr(0, 60);
     
     // TODO: look for this info in the "Remarks" - I think Ortec Detectives and some other models will end up getting user input to there maybe?
     urlspec.m_title = operator_notes;
