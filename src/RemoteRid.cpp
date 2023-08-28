@@ -70,6 +70,7 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
@@ -178,130 +179,6 @@ std::string run_external_command( const string &exe, const vector<string> &args 
    */
 }
 
-
-/** Looks at the file path passed in to try and find the file wether it is a relative path, or
- an absolute path.
- 
- Returns if the path could be found, and modifies the filename passed in such that you can open that
- path as an ifstream or something.
- */
-bool locate_file( string &filename, const bool is_dir )
-{
-  auto check_exists = [is_dir]( const string &name ) -> bool {
-    return is_dir ? SpecUtils::is_directory(name) : SpecUtils::is_file(name);
-  };//auto check_exists
-  
-  if( SpecUtils::is_absolute_path(filename) )
-    return check_exists(filename);
-  
-  // Check if path is there, relative to CWD
-  if( check_exists(filename) )
-    return true;
-  
-  // We'll look relative to the executables path, but note that if we started from a symlink, I
-  //  think it will resolve relative to actual executable
-  try
-  {
-#ifdef __APPLE__
-    char path_buffer[PATH_MAX + 1] = { '\0' };
-    uint32_t size = PATH_MAX + 1;
-    
-    if (_NSGetExecutablePath(path_buffer, &size) != 0) {
-      return false;
-    }
-    
-    path_buffer[PATH_MAX] = '\0'; // JIC
-    const string exe_path = path_buffer;
-#elif( defined(_WIN32) )
-    //static_assert( 0, "Need to test this EXE path stuff on Windows..." );
-    wchar_t wbuffer[2*MAX_PATH];
-    const DWORD len = GetModuleFileNameW( NULL, wbuffer, 2*MAX_PATH );
-    if( len <= 0 )
-      throw runtime_error( "Call to GetModuleFileName falied" );
-    
-    const string exe_path = SpecUtils::convert_from_utf16_to_utf8( wbuffer );
-#else // if __APPLE__ / Win32 / else
-    
-    char path_buffer[PATH_MAX + 1] = { '\0' };
-    const ssize_t ret = readlink("/proc/self/exe", path_buffer, PATH_MAX);
-    
-    if( (ret == -1) || (ret > PATH_MAX) )
-      throw runtime_error( "Failed to read line" );
-    
-    assert( ret < PATH_MAX );
-    path_buffer[ret] = '\0';
-    path_buffer[PATH_MAX] = '\0'; // JIC
-    const string exe_path = path_buffer;
-#endif // else not __APPLE__
-    
-    string trial_parent_path = exe_path;
-    if( !SpecUtils::make_canonical_path(trial_parent_path) )
-      throw runtime_error( "Failed to make trial_parent_path canonical" );
-    
-    trial_parent_path = SpecUtils::parent_path(trial_parent_path);
-    
-    string trialpath = SpecUtils::append_path( trial_parent_path, filename );
-    
-    if( check_exists(trialpath) )
-    {
-      filename = trialpath;
-      return true;
-    }
-    
-    if( boost::filesystem::is_symlink(trialpath) )
-    {
-      trialpath = boost::filesystem::read_symlink(trialpath).string<string>();
-      if( check_exists(trialpath) )
-      {
-        filename = trialpath;
-        return true;
-      }
-    }//if( is symlink )
-    
-    // We could try again, going up one more directory, incase executable is in "Debug" directory
-    //  or something, but we'll skip this for the moment
-    //trial_parent_path = SpecUtils::parent_path(trial_parent_path);
-    //trialpath = SpecUtils::append_path( trial_parent_path, filename );
-    //if( check_exists(trialpath) )
-    //{
-    //  filename = trialpath;
-    //  return true;
-    //}
-  }catch( std::exception &e )
-  {
-    //cerr << "Caught exception: " << e.what() << endl;
-  }
-  
-  
-  // Check relative to environments "PATH"
-  const char *env_path = std::getenv("PATH");
-  if( !env_path )
-    return false;
-  
-  // grab the PATH system variable, and check if the input path is relative to any of those
-  vector<string> paths;
-#if( defined(_WIN32) )
-  const char *delims = ";";
-#else
-  const char *delims = ":";
-#endif
-  SpecUtils::split( paths, env_path, ";" );
-  
-  for( string base : paths )
-  {
-    const string trialpath = SpecUtils::append_path( base, filename );
-    
-    if( check_exists(filename) )
-    {
-      filename = trialpath;
-      return true;
-    }
-  }//for( string base : paths )
-  
-  // Out of luck, we failed if we're here.
-
-  return false;
-}//bool locate_file( ... )
 #endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
 }//namespace
 
@@ -595,7 +472,7 @@ public:
       string exe_name = "resources/app/FullSpectrum/full-spec";
 #endif
       
-      if( locate_file( exe_name, false ) )
+      if( AppUtils::locate_file( exe_name, false, 0, true ) )
         return exe_name;
       
       return "";
@@ -1038,7 +915,7 @@ public:
     if( spec_file->num_measurements() < 2 )
       arguments.push_back( "--synthesize-background=1" );
     
-    if( !locate_file(exe_path, false) )
+    if( !AppUtils::locate_file(exe_path, false, 0, true ) )
     {
       if( parent )
       {
@@ -1050,7 +927,7 @@ public:
       }
       
       return;
-    }//if( !locate_file(exe_path, false) )
+    }//if( !AppUtils::locate_file(exe_path, false, 0, true ) )
     
     
     const string tmpfilename = SpecUtils::temp_file_name( "interspec_ana_" + wApp->sessionId(),
@@ -1538,7 +1415,7 @@ public:
         string url = m_url->text().toUTF8();
         try
         {
-          if( !locate_file(url, false) )
+          if( !AppUtils::locate_file(url, false, 0, true) )
             return false;
           
           const boost::filesystem::file_status status = boost::filesystem::status(url);

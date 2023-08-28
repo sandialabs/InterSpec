@@ -195,31 +195,21 @@ int main( int argc, char **argv )
   }//if( server_port_num <= 1024 )
   
   
-#if( _WIN32 && !BUILD_FOR_WEB_DEPLOYMENT && BUILD_AS_LOCAL_SERVER )
+#if( !BUILD_FOR_WEB_DEPLOYMENT && BUILD_AS_LOCAL_SERVER )
   if( docroot.empty() )
   {
     // I cant get MSVC to set CWD to anywhere besides InterSpec/out/build/x64-Debug/,
     //  so we'll look for our resources up to three levels up.
     //  However, we def dont want to do this for anything other than localhost development
-    const std::string targetfile = "InterSpec_resources/InterSpec.css";
-    std::string pardir = "";
-    while( pardir.size() < 9 )
-    {
-      const std::string testfile = SpecUtils::append_path(pardir, targetfile);
-      if( SpecUtils::is_file(testfile) )
-      {
-        docroot = pardir;
-        break;
-      }//if( SpecUtils::is_file(testfile) )
-      pardir = SpecUtils::append_path(pardir, "..");
-    }//while (pardir.size() < 6)
-    
-    if( !SpecUtils::is_file( SpecUtils::append_path(docroot, targetfile) ) )
+    std::string targetfile = "InterSpec_resources/InterSpec.css";
+    if( !AppUtils::locate_file( targetfile, false, 3, false ) )
     {
       std::cerr << "Unable to find base directory that contains 'InterSpec_resources' directory."
       << std::endl;
       return -24;
     }
+    
+    docroot = SpecUtils::parent_path( SpecUtils::parent_path( targetfile ) );
   }//if( docroot.empty() )
 #endif //_WIN32 && !BUILD_FOR_WEB_DEPLOYMENT
   
@@ -228,18 +218,16 @@ int main( int argc, char **argv )
 #if( BUILD_AS_LOCAL_SERVER )
     // If there is a "user_data" directory in the CWD, we'll set this as the writeable data
     //  directory to simulate desktop app behavior of saving DRFs and similar
-    const std::string cwd = SpecUtils::get_working_path();
-    const std::string dev_user_data = SpecUtils::append_path( cwd, "user_data" );
-    if( SpecUtils::is_directory( dev_user_data ) )
-    {
-      user_data_dir = dev_user_data;
-    }else
+    std::string dev_user_data = "user_data";
+    if( !AppUtils::locate_file( dev_user_data, true, 3, false ) )
     {
       std::cerr << "No '" << dev_user_data << "' - you must specify writeable data directory,"
                 << " or there must be a 'user_data' directory in the current working directory."
                 << std::endl;
       return -25;
     }
+    
+    user_data_dir = dev_user_data;
 #else
     std::cerr << "You must specify the directory to store user data to (the 'userdatadir' option)."
               << std::endl;
@@ -274,7 +262,20 @@ int main( int argc, char **argv )
     //datadir = SpecUtils::make_canonical_path(datadir);
     
     InterSpec::setStaticDataDirectory( datadir );
-  }//if( cl_vm.count("static-data-dir") )
+  }
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  else
+  {
+    const std::string datadir = SpecUtils::append_path( docroot, "data" );
+    if( !SpecUtils::is_directory(datadir) )
+    {
+      std::cerr << "No 'data' directory in docroot-'" << docroot << "';"
+                << " please specify the '--static-data-dir' argument." << std::endl;
+      return -26;
+    }
+    InterSpec::setStaticDataDirectory( datadir );
+  }//if( cl_vm.count("static-data-dir") ) / else
+#endif
   
   
 #if( USE_BATCH_TOOLS )

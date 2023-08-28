@@ -27,7 +27,22 @@
 #include <iostream>
 #include <stdexcept>
 
-// Some includes to get terminal width (and UTF-8 cl arguments on WIndows)
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+#ifdef __APPLE__
+#include <mach-o/dyld.h>  //for _NSGetExecutablePath
+#elif( defined(_WIN32) )
+#define WIN32_LEAN_AND_MEAN
+#include <libloaderapi.h>  //for GetModuleFileNameW
+#else
+#include <limits.h>  //for PATH_MAX
+#endif
+#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+
+#include <boost/filesystem.hpp>  //for boost::filesystem::is_symlink and read_symlink
+
+
+
+// Some includes to get terminal width (and UTF-8 cl arguments on Windows)
 #if defined(__APPLE__) || defined(linux) || defined(unix) || defined(__unix) || defined(__unix__)
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -41,6 +56,7 @@
 #endif
 
 
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/AppUtils.h"
@@ -202,6 +218,131 @@ static_assert( 0, "Not unix and not win32?  Unsupported getting terminal width" 
 #endif
 #endif //#if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER )
   
+  
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+bool locate_file( string &filename, const bool is_dir,
+                 size_t max_levels_up, const bool include_path )
+{
+  auto check_exists = [is_dir]( const string &name ) -> bool {
+    return is_dir ? SpecUtils::is_directory(name) : SpecUtils::is_file(name);
+  };//auto check_exists
+  
+  if( SpecUtils::is_absolute_path(filename) )
+    return check_exists(filename);
+  
+  // Check if path is there, relative to CWD
+  if( check_exists(filename) )
+    return true;
+  
+  // We'll look relative to the executables path, but note that if we started from a symlink, I
+  //  think it will resolve relative to actual executable
+  try
+  {
+#ifdef __APPLE__
+    char path_buffer[PATH_MAX + 1] = { '\0' };
+    uint32_t size = PATH_MAX + 1;
+    
+    if (_NSGetExecutablePath(path_buffer, &size) != 0) {
+      return false;
+    }
+    
+    path_buffer[PATH_MAX] = '\0'; // JIC
+    const string exe_path = path_buffer;
+#elif( defined(_WIN32) )
+    //static_assert( 0, "Need to test this EXE path stuff on Windows..." );
+    wchar_t wbuffer[2*MAX_PATH];
+    const DWORD len = GetModuleFileNameW( NULL, wbuffer, 2*MAX_PATH );
+    if( len <= 0 )
+      throw runtime_error( "Call to GetModuleFileName falied" );
+    
+    const string exe_path = SpecUtils::convert_from_utf16_to_utf8( wbuffer );
+#else // if __APPLE__ / Win32 / else
+    
+    char path_buffer[PATH_MAX + 1] = { '\0' };
+    const ssize_t ret = readlink("/proc/self/exe", path_buffer, PATH_MAX);
+    
+    if( (ret == -1) || (ret > PATH_MAX) )
+      throw runtime_error( "Failed to read line" );
+    
+    assert( ret < PATH_MAX );
+    path_buffer[ret] = '\0';
+    path_buffer[PATH_MAX] = '\0'; // JIC
+    const string exe_path = path_buffer;
+#endif // else not __APPLE__
+    
+    string canonical_exe_path = exe_path;
+    if( !SpecUtils::make_canonical_path(canonical_exe_path) )
+      throw runtime_error( "Failed to make trial_parent_path canonical" );
+    
+    string trial_parent_path = canonical_exe_path;
+    
+    try
+    {
+      do
+      {
+        trial_parent_path = SpecUtils::parent_path( trial_parent_path );
+        const string trialpath = SpecUtils::append_path( trial_parent_path, filename );
+        
+        if( check_exists(trialpath) )
+        {
+          filename = trialpath;
+          return true;
+        }
+        
+        if( boost::filesystem::is_symlink(trialpath) )
+        {
+          const string unsym_trialpath = boost::filesystem::read_symlink(trialpath).string<string>();
+          if( check_exists(unsym_trialpath) )
+          {
+            filename = unsym_trialpath;
+            return true;
+          }
+        }//if( is symlink )
+        
+        max_levels_up = (max_levels_up > 0) ? (max_levels_up - 1) : 0;
+      }while( max_levels_up > 0 );
+    }catch( std::exception & )
+    {
+      //cerr << "Caught exception searching exe's parent dirs: " << e.what() << endl;
+    }//try / catch
+  }catch( std::exception & )
+  {
+    //cerr << "Caught exception: " << e.what() << endl;
+  }
+  
+  if( !include_path )
+    return false;
+  
+  // Check relative to environments "PATH"
+  const char *env_path = std::getenv("PATH");
+  if( !env_path )
+    return false;
+  
+  // grab the PATH system variable, and check if the input path is relative to any of those
+  vector<string> paths;
+#if( defined(_WIN32) )
+  const char *delims = ";";
+#else
+  const char *delims = ":";
+#endif
+  SpecUtils::split( paths, env_path, ";" );
+  
+  for( string base : paths )
+  {
+    const string trialpath = SpecUtils::append_path( base, filename );
+    
+    if( check_exists(filename) )
+    {
+      filename = trialpath;
+      return true;
+    }
+  }//for( string base : paths )
+  
+  // Out of luck, we failed if we're here.
+  
+  return false;
+}//bool locate_file( ... )
+#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
 #ifdef _WIN32
 /** Get command line arguments encoded as UTF-8.

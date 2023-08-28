@@ -136,9 +136,9 @@ int run_batch_command( int argc, char **argv )
   {
     try
     {
-      bool output_stdout, refit_energy_cal, use_exemplar_energy_cal, write_n42_with_peaks;
+      bool output_stdout, refit_energy_cal, use_exemplar_energy_cal, write_n42_with_peaks, show_nonfit_peaks;
       vector<std::string> input_files;
-      string exemplar_path, output_path, exemplar_samples;
+      string exemplar_path, output_path, exemplar_samples, background_sub_file;
       
       po::options_description peak_cl_desc("Allowed batch peak-fit options", term_width, min_description_length);
       peak_cl_desc.add_options()
@@ -179,6 +179,11 @@ int run_batch_command( int argc, char **argv )
        )
       ("out-dir", po::value<string>(&output_path)->default_value(""),
        "The directory to write peak CSV files (and optionally) N42 files to; if empty, CSV files will not be written.")
+      ("back-sub-file", po::value<string>(&background_sub_file)->default_value(""),
+       "File to use as the background, to perform a live-time-normalized, hard-background-subtraction with (currently must be single record).")
+      ("include-nonfit-peaks", po::value<bool>(&show_nonfit_peaks)->default_value(false),
+       "Include peaks that are not fit into the output CSV peak results."
+       )
       ;
       
       po::variables_map cl_vm;
@@ -229,7 +234,9 @@ int run_batch_command( int argc, char **argv )
       options.refit_energy_cal = refit_energy_cal;
       options.use_exemplar_energy_cal = use_exemplar_energy_cal;
       options.write_n42_with_peaks = write_n42_with_peaks;
+      options.show_nonfit_peaks = show_nonfit_peaks;
       options.output_dir = output_path;
+      options.background_subtract_file = background_sub_file;
       
       BatchPeak::fit_peaks_in_files( exemplar_path, exemplar_sample_nums, expanded_input_files, options );
     }catch( std::exception &e )

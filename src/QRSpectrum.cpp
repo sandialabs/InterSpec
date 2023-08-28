@@ -2515,8 +2515,11 @@ std::shared_ptr<SpecMeas> to_spec_file( const std::vector<UrlSpectrum> &spec_inf
     if( spec.m_neut_sum >= 0 )
       m->set_neutron_counts( { static_cast<float>(spec.m_neut_sum) } );
     
-    auto counts = make_shared<vector<float>>();
-    counts->insert( end(*counts), begin(spec.m_channel_data), end(spec.m_channel_data) );
+    const size_t num_channels = spec.m_channel_data.size();
+    auto counts = make_shared<vector<float>>( num_channels );
+    vector<float> &counts_ref = *counts;
+    for( size_t i = 0; i < num_channels; ++i )
+      counts_ref[i] = static_cast<float>( spec.m_channel_data[i] );
     
     m->set_gamma_counts( counts, spec.m_live_time, spec.m_real_time );
     

@@ -191,6 +191,30 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
       }
     }//if( options.write_n42_with_peaks )
     
+    deque<shared_ptr<const PeakDef>> fit_peaks = fit_results.fit_peaks;
+    if( options.show_nonfit_peaks )
+    {
+      for( const auto p : fit_results.unfit_exemplar_peaks )
+      {
+        auto np = make_shared<PeakDef>(*p);
+        np->setAmplitude( 0.0 );
+        np->setAmplitudeUncert( 0.0 );
+        np->setSigmaUncert( 0.0 );
+        auto cont = make_shared<PeakContinuum>( *np->continuum() );
+        const size_t num_cont_pars = PeakContinuum::num_parameters(cont->type());
+        for( size_t i = 0; i < num_cont_pars; ++i )
+        {
+          cont->setPolynomialCoef( i, 0.0 );
+          cont->setPolynomialUncert( i, -1.0 );
+        }
+        np->setContinuum( cont );
+        np->set_coefficient( -1.0, PeakDef::Chi2DOF );
+        fit_peaks.push_back(np);
+      }
+      std::sort( begin(fit_peaks), end(fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
+    }//if( make_nonfit_peaks_zero )
+    
+    
     if( !options.output_dir.empty() )
     {
       const string leaf_name = SpecUtils::filename(filename);
@@ -213,7 +237,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
           warnings.push_back( "Failed to open '" + outcsv + "', for writing.");
         }else
         {
-          PeakModel::write_peak_csv( output_csv, leaf_name, fit_results.fit_peaks, fit_results.spectrum );
+          PeakModel::write_peak_csv( output_csv, leaf_name, fit_peaks, fit_results.spectrum );
           cout << "Have written '" << outcsv << "'" << endl;
         }
       }//if( SpecUtils::is_file( outcsv ) ) / else
@@ -223,7 +247,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     {
       const string leaf_name = SpecUtils::filename(filename);
       cout << "peaks for '" << leaf_name << "':" << endl;
-      PeakModel::write_peak_csv( cout, leaf_name, fit_results.fit_peaks, fit_results.spectrum );
+      PeakModel::write_peak_csv( cout, leaf_name, fit_peaks, fit_results.spectrum );
       cout << endl;
     }
   }//for( const string filename : files )
@@ -509,6 +533,117 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       return results;
     }
     
+    shared_ptr<const SpecMeas> background_n42;
+    if( !options.background_subtract_file.empty() )
+    {
+      auto background = make_shared<SpecMeas>();
+      if( !background->load_file( options.background_subtract_file, SpecUtils::ParserType::Auto ) )
+        throw runtime_error( "Couldnt open background file '" + options.background_subtract_file + "'" );
+      
+      if( background->sample_numbers().size() != 1 )
+        throw runtime_error( "There should only be a single sample in background subtract file." );
+      
+      background_n42 = background;
+      
+      if( background->num_measurements() == 1 )
+      {
+        results.background = background->measurements()[0];
+      }else
+      {
+        try
+        {
+          results.background = background->sum_measurements( background->sample_numbers(), background->detector_names(), nullptr );
+        }catch( std::exception &e )
+        {
+          results.warnings.push_back( "Failed to sum spectrum from background '"
+                                     + options.background_subtract_file + "' -- skipping '"
+                                     + filename + "'." );
+          return results;
+        }//try / catch to sum background
+        
+        if( !results.background->energy_calibration()
+           || !results.background->energy_calibration()->valid()
+           || (results.background->num_gamma_channels() < 16)
+           || (results.background->live_time() <= 1.0E-3) )
+        {
+          results.warnings.push_back( "Background '"
+                                     + options.background_subtract_file
+                                     + "' didnt have energy calibration, too few channels, or no live-time"
+                                     " -- skipping '" + filename + "'." );
+          return results;
+        }//
+        
+        if( options.use_exemplar_energy_cal )
+        {
+          cerr << "Warning: applying exemplar energy cal to background file not implemented!" << endl;
+          results.warnings.push_back( "applying exemplar energy cal to background file not implemented!" );
+        }
+      }//if( background->num_measurements() == 1 ) / else
+      
+      
+      try
+      {
+        const bool no_neg = true;
+        const bool do_round = false;
+        
+        const bool sf = spec->live_time() / results.background->live_time();
+        
+        shared_ptr<const vector<float>> fore_counts = spec->gamma_counts();
+        shared_ptr<const vector<float>> back_counts = results.background->gamma_counts();
+        
+        // Make sure back_counts has the same energy calibration and fore_counts, so we can subtract
+        //  on a bin-by-bin basis
+        if( results.background->energy_calibration() != spec->energy_calibration()
+           && (*results.background->energy_calibration()) != (*spec->energy_calibration()) )
+        {
+          auto new_backchan = make_shared<vector<float>>( fore_counts->size(), 0.0f );
+          SpecUtils::rebin_by_lower_edge( *results.background->channel_energies(), *back_counts,
+                                         *spec->channel_energies(), *new_backchan );
+          back_counts = new_backchan;
+        }
+        
+        // Create what will be the background subtracted foreground
+        auto back_sub_counts = make_shared<vector<float>>( *fore_counts );
+        
+        //back_counts and fore_counts should always be the same size, but we'll be a bit verbose anyway
+        assert( back_counts->size() == fore_counts->size() );
+        const size_t nchann = std::min( back_counts->size(), fore_counts->size() );
+        
+        // Do the actual background subtraction
+        for( size_t i = 0; i < nchann; ++i )
+        {
+          float &val = (*back_sub_counts)[i];
+          val -= sf*(*back_counts)[i];
+          
+          if( no_neg )
+            val = std::max( 0.0f, val );
+          
+          if( do_round )
+            val = std::round( val );
+        }//for( size_t i = 0; i < nchann; ++i )
+        
+        // Create a new Measurement object, based on the old foreground
+        auto newspec = make_shared<SpecUtils::Measurement>( *spec );
+        newspec->set_gamma_counts( back_sub_counts, spec->live_time(), spec->real_time() );
+        vector<string> remarks = spec->remarks();
+        remarks.push_back( "This spectrum has been background subtracted in InterSpec" );
+        newspec->set_remarks( remarks );
+        newspec->set_sample_number( 1 );
+        
+        spec = newspec;
+        
+        results.measurement->removeAllPeaks();
+        results.measurement->remove_measurements( results.measurement->measurements() );
+        results.measurement->add_measurement( spec, true );
+      }catch( std::exception &e )
+      {
+        results.warnings.push_back( "Error background subtracting: '" + string(e.what())
+                                   + "' -- skipping '" + filename + "'." );
+        return results;
+      }//try / catch
+    }//if( !options.background_subtract_file.empty() )
+    
+    
     results.sample_numbers = used_sample_nums;
     results.spectrum = spec;
     
@@ -561,8 +696,16 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     std::sort( begin(starting_peaks), end(starting_peaks), &PeakDef::lessThanByMean );
     
     results.exemplar_peaks.clear();
+    vector<shared_ptr<const PeakDef>> exemplar_peaks;
+    set<shared_ptr<const PeakDef>> unused_exemplar_peaks;
     for( const auto &p : starting_peaks )
-      results.exemplar_peaks.push_back( make_shared<PeakDef>(p) );
+    {
+      auto ep = make_shared<PeakDef>(p);
+      results.exemplar_peaks.push_back( ep );
+      exemplar_peaks.push_back( ep );
+      unused_exemplar_peaks.insert( ep );
+      results.unfit_exemplar_peaks.push_back( ep ); //We will clear this later on if unsuccessful
+    }
     
     //  We are re-using functions called by the GUI InterSpec, so there are some extra arguments
     //  that arent totally applicable to us right now.
@@ -627,28 +770,35 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     for( PeakDef &p: fit_peaks )
     {
       // Find nearest exemplar peak, and we'll use this to set nuclides, colors, and such
-      shared_ptr<PeakDef> exemplar_parent;
-      for( const auto &exemplar : starting_peaks )
+      const double fit_mean = p.mean();
+      
+      shared_ptr<const PeakDef> exemplar_parent;
+      for( const auto &exemplar : exemplar_peaks )
       {
-        const double fit_mean = p.mean();
-        const double energy_diff = fabs( fit_mean - exemplar.mean() );
+        const double exemplar_mean = exemplar->mean();
+        
+        const double energy_diff = fabs( fit_mean - exemplar_mean );
         // We will require the fit peak to be within 0.25 FWHM (arbitrarily chosen distance)
         //  of the exemplar peak, and we will use the exemplar peak closest in energy to the
         //  fit peak
         if( (energy_diff < 0.5*p.fwhm())
            && (!exemplar_parent || (energy_diff < fabs(exemplar_parent->mean() - fit_mean))) )
         {
-          exemplar_parent = make_shared<PeakDef>( exemplar );
+          exemplar_parent = exemplar;
         }
       }//for( loop over exemplars to find original peak corresponding to the fit peak 'p' )
       
       if( exemplar_parent )
+      {
+        unused_exemplar_peaks.erase( exemplar_parent );
         p.inheritUserSelectedOptions( *exemplar_parent, false );
-      else
+      }else
+      {
         results.warnings.push_back( "In '" + filename + "', failed to find exemplar peak"
-          " corresponding to peak fit with mean=" + std::to_string( p.mean() ) + " keV." );
-      //cout << "\tmean=" << p.mean() << ", FWHM=" << p.fwhm() << ", area=" << p.amplitude() << endl;
-    }
+                                   " corresponding to peak fit with mean=" + std::to_string( p.mean() ) + " keV." );
+        //cout << "\tmean=" << p.mean() << ", FWHM=" << p.fwhm() << ", area=" << p.amplitude() << endl;
+      }//if( exemplar_parent ) / else
+    }//for( PeakDef &p: fit_peaks )
     
     //cout << endl << endl;
     
@@ -659,13 +809,25 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     for( const auto &p: fit_peaks )
       fit_peaks_ptrs.push_back( make_shared<const PeakDef>(p) );
     
-    specfile->setPeaks( fit_peaks_ptrs, used_sample_nums );
+    if( options.background_subtract_file.empty() )
+    {
+      specfile->setPeaks( fit_peaks_ptrs, used_sample_nums );
+    }else
+    {
+      assert( specfile->num_measurements() == 1 );
+      specfile->setPeaks( fit_peaks_ptrs, specfile->sample_numbers() );
+    }
    
     results.success = true;
     results.measurement = specfile;
     results.spectrum = spec;
     results.sample_numbers = used_sample_nums;
     results.fit_peaks = fit_peaks_ptrs;
+    results.unfit_exemplar_peaks.clear();
+    results.unfit_exemplar_peaks.insert( end(results.unfit_exemplar_peaks),
+                                        begin(unused_exemplar_peaks), end(unused_exemplar_peaks) );
+    std::sort( begin(results.unfit_exemplar_peaks), end(results.unfit_exemplar_peaks),
+              &PeakDef::lessThanByMeanShrdPtr );
   }
   
   return results;

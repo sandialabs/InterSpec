@@ -65,7 +65,9 @@ namespace BatchPeak
     bool refit_energy_cal;
     bool use_exemplar_energy_cal;
     bool write_n42_with_peaks;
+    bool show_nonfit_peaks;
     std::string output_dir;
+    std::string background_subtract_file;
   };//struct BatchPeakFitOptions
   
   
@@ -83,11 +85,15 @@ namespace BatchPeak
     std::set<int> exemplar_sample_nums;
     std::deque<std::shared_ptr<const PeakDef>> exemplar_peaks;
     std::shared_ptr<const SpecUtils::Measurement> exemplar_spectrum;
+    std::vector<std::shared_ptr<const PeakDef>> unfit_exemplar_peaks;  //Exemplar peaks not found in the spectrum
     
     std::shared_ptr<SpecMeas> measurement;
     std::shared_ptr<SpecUtils::Measurement> spectrum;
     std::set<int> sample_numbers;
     std::deque<std::shared_ptr<const PeakDef>> fit_peaks;
+    
+    /** Background spectrum that was subtracted from the foreground, to make `spectrum`, if any. */
+    std::shared_ptr<const SpecUtils::Measurement> background;
     
     bool success;
     std::vector<std::string> warnings;
