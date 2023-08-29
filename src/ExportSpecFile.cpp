@@ -153,11 +153,19 @@ std::string clean_uuid( string uuid )
     if( urls.size() > 1 )
       seqnum += ", " + to_string(index + 1) + " of " + to_string( urls.size() );
     
+    string desc = seqnum;
     string title = "Spectrum File " + seqnum;
     if( urls.size() == 1 )
+    {
       title = "";
+      
+      // If a single URL, and on a phone, save screen space by skipping the description
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer && viewer->isPhone() )
+        desc = "";
+    }//if( urls.size() == 1 )
     
-    string desc = seqnum;
+    
     SimpleDialog *dialog = QrCode::displayTxtAsQrCode( urls[index].m_url, title, desc );
     
     if( (index + 1) < urls.size() )

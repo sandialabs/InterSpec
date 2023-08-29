@@ -111,7 +111,7 @@ namespace AppUtils
     const string host_path = url.substr( 0, path_end );
     const string::size_type host_end = host_path.find( '/' );
     
-    // If "host/path" is only one compnent (i.e., no slash), then populate host,
+    // If "host/path" is only one component (i.e., no slash), then populate host,
     //  and have path be empty
     host = (host_end == string::npos) ? host_path : host_path.substr(0,host_end);
     path = (host_end == string::npos) ? string("") : host_path.substr(host_end+1);

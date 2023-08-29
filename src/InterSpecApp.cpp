@@ -636,6 +636,29 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   }//if( !m_externalToken.empty() )
 #endif
   
+#if( USE_QR_CODES  && (BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_LOCAL_SERVER) )
+  // Allow having an "internal" path where URI data is represented as part of the URL, for
+  //   example https://interspec.example.com/?_=/G0/3000/eNrV...
+  //  It probably doesnt make sense to support "drf", "specsum", "flux", and "specexport" here.
+  const string &internal_path = environment().internalPath();
+  if( !loadedSpecFile
+     && (SpecUtils::istarts_with(internal_path, "/G0/")
+         || SpecUtils::istarts_with(internal_path, "/decay/")
+         || SpecUtils::istarts_with(internal_path, "/dose/")
+         || SpecUtils::istarts_with(internal_path, "/gammaxs/")
+         || SpecUtils::istarts_with(internal_path, "/1overr2/")
+         || SpecUtils::istarts_with(internal_path, "/unit/") ) )
+  {
+    try
+    {
+      m_viewer->handleAppUrl( "interspec:/" + internal_path );
+      loadedSpecFile = true;
+    }catch( std::exception & )
+    {
+    }
+  }//
+#endif // #if( USE_QR_CODES  && (BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_LOCAL_SERVER) )
+  
 
 #if( USE_DB_TO_STORE_SPECTRA )
   //Check to see if we should load the apps last saved state

@@ -336,6 +336,17 @@ namespace
     
     return false;
   }//try_update_hint_peak(...)
+  
+  template<typename charT>
+  struct char_iequal
+  {
+    char_iequal( const std::locale &loc ) : m_loc(loc) {}
+    bool operator()(charT ch1, charT ch2) {
+      return std::toupper(ch1, m_loc) == std::toupper(ch2, m_loc);
+    }
+  private:
+    const std::locale &m_loc;
+  };
 }//namespace
 
 
@@ -11058,6 +11069,7 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
 
 void InterSpec::makeEnterAppUrlWindow()
 {
+  // TODO: could probably put this functions implementation into its own source file.
   if( m_enterUri )
     return;
   
@@ -11078,14 +11090,25 @@ void InterSpec::makeEnterAppUrlWindow()
   WPushButton *cancel = m_enterUri->addButton( "Cancel" );
   WPushButton *okay = m_enterUri->addButton( "Okay" );
   
+  const string acceptable_paths[] = {
+    "G0", "drf", "specsum", "flux", "specexport", "decay", "dose", "gammaxs", "1overr2", "unit"
+  };//acceptable_paths[]
+    
+  
   // We will validate the URL starts with 'interspec://' or 'raddata://', end enable/disable the
   //  "Okay" button in javascript
   const string jsokay = okay->jsRef();
-  const string validate_js = "function(textarea,event){ "
-    "const matches = /^((interspec:\\/\\/)|(raddata:)).+/i.test(textarea.value);"
+  string validate_js = "function(textarea,event){ "
+  "const matches = /^((interspec:\\/\\/)|(raddata:\\/\\/))";
+  
+  for( const string &path : acceptable_paths )
+    validate_js += "|(.*\\/" + path + "\\/)";
+  
+  validate_js += ".+/i.test(textarea.value);"
     "$(" + jsokay + ").prop('disabled', !matches);"
   " }";
   text->keyWentUp().connect( validate_js );
+  
   
   // Dont disable okay button during undo/redo - would be better to validate after we might put text
   //  into the textarea - but not bothering to do it correctly, at the moment.
@@ -11094,7 +11117,7 @@ void InterSpec::makeEnterAppUrlWindow()
   
   // TODO: All this undo/redo stuff is still probably not quite right - could use a little more work
   
-  okay->clicked().connect( std::bind([this, text](){
+  okay->clicked().connect( std::bind([this, text, acceptable_paths](){
     string uri = text->text().toUTF8();
     SpecUtils::trim( uri );
     m_enterUri = nullptr;
@@ -11137,9 +11160,24 @@ void InterSpec::makeEnterAppUrlWindow()
         handleAppUrl( uri );
       }else
       {
-        throw runtime_error( "URL must start with 'interspec://' or 'raddata:'." );
-      }
-      
+        bool found_sub = false;
+        for( const string &path : acceptable_paths )
+        {
+          const string key = "/" + path + "/";
+          const auto it = std::search( begin(uri), end(uri), begin(key), end(key),
+                                       char_iequal<char>(std::locale()) );
+          if( it != end(uri) )
+          {
+            const string sub_uri = "interspec:/" + string(it, end(uri));
+            handleAppUrl( sub_uri );
+            found_sub = true;
+            break;
+          }//if( it != end(uri) )
+        }//for( const string &path : acceptable_paths )
+       
+        if( !found_sub )
+          throw runtime_error( "URL must start with 'interspec://', 'raddata://', or have a /G0/ component." );
+      }//
     }catch( std::exception &e )
     {
       SimpleDialog *errdialog = new SimpleDialog( "Error with entered URL", e.what() );
