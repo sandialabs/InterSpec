@@ -27,21 +27,6 @@
 #include <iostream>
 #include <stdexcept>
 
-#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
-#ifdef __APPLE__
-#include <mach-o/dyld.h>  //for _NSGetExecutablePath
-#elif( defined(_WIN32) )
-#define WIN32_LEAN_AND_MEAN
-#include <libloaderapi.h>  //for GetModuleFileNameW
-#else
-#include <limits.h>  //for PATH_MAX
-#endif
-#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
-
-#include <boost/filesystem.hpp>  //for boost::filesystem::is_symlink and read_symlink
-
-
-
 // Some includes to get terminal width (and UTF-8 cl arguments on Windows)
 #if defined(__APPLE__) || defined(linux) || defined(unix) || defined(__unix) || defined(__unix__)
 #include <sys/ioctl.h>
@@ -54,6 +39,19 @@
 #include <direct.h>
 #include <shellapi.h>
 #endif
+
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+#ifdef __APPLE__
+#include <mach-o/dyld.h>  //for _NSGetExecutablePath
+#elif( defined(_WIN32) )
+#define WIN32_LEAN_AND_MEAN
+#include <libloaderapi.h>  //for GetModuleFileNameW
+#else
+#include <limits.h>  //for PATH_MAX
+#endif
+#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+
+#include <boost/filesystem.hpp>  //for boost::filesystem::is_symlink and read_symlink
 
 
 #include "SpecUtils/Filesystem.h"
