@@ -137,6 +137,7 @@
 #include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
+#include "InterSpec/EnterAppUrlWindow.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/MultimediaDisplay.h"
 #include "InterSpec/CompactFileManager.h"
@@ -336,17 +337,6 @@ namespace
     
     return false;
   }//try_update_hint_peak(...)
-  
-  template<typename charT>
-  struct char_iequal
-  {
-    char_iequal( const std::locale &loc ) : m_loc(loc) {}
-    bool operator()(charT ch1, charT ch2) {
-      return std::toupper(ch1, m_loc) == std::toupper(ch2, m_loc);
-    }
-  private:
-    const std::locale &m_loc;
-  };
 }//namespace
 
 
@@ -5881,7 +5871,7 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
   m_editMenuPopup->addSeparatorAt( (m_undo ? menuindex : -1) );
   
   PopupDivMenuItem *uriItem = m_editMenuPopup->insertMenuItem( (m_undo ? 6 : -1), "Enter URL", "", true );
-  uriItem->triggered().connect( this, &InterSpec::makeEnterAppUrlWindow );
+  uriItem->triggered().connect( boost::bind(&InterSpec::makeEnterAppUrlWindow, this) );
   
 #if( BUILD_AS_OSX_APP )
   // All the macOS native menu stuff (copy/paste/select/etc) will be below our stuff
@@ -7848,7 +7838,12 @@ void InterSpec::deleteFluxTool()
 
 DecayWindow *InterSpec::createDecayInfoWindow()
 {
-  if( !m_decayInfoWindow )
+  string initial_uri;
+  
+  if( m_decayInfoWindow )
+  {
+    initial_uri = m_decayInfoWindow->encodeStateToUrl();
+  }else
   {
     m_decayInfoWindow = new DecayWindow( this );
     m_decayInfoWindow->finished().connect( boost::bind( &InterSpec::deleteDecayInfoWindow, this ) );
@@ -7877,6 +7872,23 @@ DecayWindow *InterSpec::createDecayInfoWindow()
     }//if( nuc.nuclide )
   }//if( m_referencePhotopeakLines )
   
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this,initial_uri](){
+      if( initial_uri.empty() )
+      {
+        deleteDecayInfoWindow();
+      }else
+      {
+        DecayWindow *dialog = createDecayInfoWindow();
+        if( dialog )
+          dialog->handleAppUrl( initial_uri );
+      }
+    };
+    auto redo = [this](){ createDecayInfoWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show decay tool" );
+  }//if( undo )
+  
   return m_decayInfoWindow;
 }//void createDecayInfoWindow()
 
@@ -7890,6 +7902,20 @@ void InterSpec::createDetectionLimitTool()
 
 void InterSpec::deleteDecayInfoWindow()
 {
+  if( m_decayInfoWindow && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    const string initial_uri = m_decayInfoWindow->encodeStateToUrl();
+    
+    auto undo = [this,initial_uri](){
+      DecayWindow *dialog = createDecayInfoWindow();
+      if( dialog )
+        dialog->handleAppUrl( initial_uri );
+    };
+    auto redo = [this](){ deleteDecayInfoWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close decay tool" );
+  }//if( m_decayInfoWindow && m_undo && m_undo->canAddUndoRedoNow() )
+  
+  
   if( m_decayInfoWindow )
     AuxWindow::deleteAuxWindow( m_decayInfoWindow );
   m_decayInfoWindow = nullptr;
@@ -11067,162 +11093,24 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
 }//void handleAppUrl( std::string url )
 
 
-void InterSpec::makeEnterAppUrlWindow()
+SimpleDialog *InterSpec::makeEnterAppUrlWindow()
 {
-  // TODO: could probably put this functions implementation into its own source file.
   if( m_enterUri )
-    return;
+    return m_enterUri;
   
-  m_enterUri = new SimpleDialog( "Enter URL", "" );
-  m_enterUri->finished().connect( std::bind( [this](){ m_enterUri = nullptr; } ) );
+  m_enterUri = EnterAppUrlWindow::createEntryWindow( this );
+  assert( m_enterUri );
+  if( m_enterUri )
+    m_enterUri->finished().connect( this, &InterSpec::handleAppUrlClosed );
   
-  WTextArea *text = new WTextArea( m_enterUri->contents() );
-  text->setObjectName( "txtarea" );
-  text->setInline( false );
-  text->setWidth( 450 );
-  
-  const char *desctxt = "<div style=\"margin-top: 10px;\">Enter, usually through copy/paste, InterSpec URLs.</div>"
-                        "<div>These URLs start with either <code>interspec://</code>, or <code>raddata://</code>.</div>";
-  WText *desc = new WText( desctxt, m_enterUri->contents() );
-  desc->addStyleClass( "content" );
-  desc->setInline( false );
-  
-  WPushButton *cancel = m_enterUri->addButton( "Cancel" );
-  WPushButton *okay = m_enterUri->addButton( "Okay" );
-  
-  const string acceptable_paths[] = {
-    "G0", "drf", "specsum", "flux", "specexport", "decay", "dose", "gammaxs", "1overr2", "unit"
-  };//acceptable_paths[]
-    
-  
-  // We will validate the URL starts with 'interspec://' or 'raddata://', end enable/disable the
-  //  "Okay" button in javascript
-  const string jsokay = okay->jsRef();
-  string validate_js = "function(textarea,event){ "
-  "const matches = /^((interspec:\\/\\/)|(raddata:\\/\\/))";
-  
-  for( const string &path : acceptable_paths )
-    validate_js += "|(.*\\/" + path + "\\/)";
-  
-  validate_js += ".+/i.test(textarea.value);"
-    "$(" + jsokay + ").prop('disabled', !matches);"
-  " }";
-  text->keyWentUp().connect( validate_js );
-  
-  
-  // Dont disable okay button during undo/redo - would be better to validate after we might put text
-  //  into the textarea - but not bothering to do it correctly, at the moment.
-  if( !m_undo || !m_undo->isInUndoOrRedo() )
-    okay->doJavaScript( "$(" + jsokay + ").prop('disabled', true);" );
-  
-  // TODO: All this undo/redo stuff is still probably not quite right - could use a little more work
-  
-  okay->clicked().connect( std::bind([this, text, acceptable_paths](){
-    string uri = text->text().toUTF8();
-    SpecUtils::trim( uri );
-    m_enterUri = nullptr;
-    
-    if( m_undo && m_undo->canAddUndoRedoNow() )
-    {
-      auto undo = [this,uri](){
-        makeEnterAppUrlWindow();
-        if( !m_enterUri )
-          return;
-        WTextArea *t = dynamic_cast<WTextArea *>( m_enterUri->contents()->find( "txtarea" ) );
-        if( t )
-          t->setText( WString::fromUTF8(uri) );
-      };
-      
-      auto redo = [this,uri](){
-        if( m_enterUri )
-          m_enterUri->accept();
-        m_enterUri = nullptr;
-        
-        try
-        {
-          handleAppUrl( uri );
-        }catch( std::exception &e )
-        {
-          passMessage( "Error handling URL: " + string(e.what()), WarningWidget::WarningMsgHigh );
-        }
-      };//redu lamda
-      
-      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Enter URL Window" );
-    }//if( m_undo && m_undo->canAddUndoRedoNow() )
-    
-    try
-    {
-      if( SpecUtils::istarts_with(uri, "interspec://") )
-      {
-        handleAppUrl( uri );
-      }else if( SpecUtils::istarts_with(uri, "raddata://") )
-      {
-        handleAppUrl( uri );
-      }else
-      {
-        bool found_sub = false;
-        for( const string &path : acceptable_paths )
-        {
-          const string key = "/" + path + "/";
-          const auto it = std::search( begin(uri), end(uri), begin(key), end(key),
-                                       char_iequal<char>(std::locale()) );
-          if( it != end(uri) )
-          {
-            const string sub_uri = "interspec:/" + string(it, end(uri));
-            handleAppUrl( sub_uri );
-            found_sub = true;
-            break;
-          }//if( it != end(uri) )
-        }//for( const string &path : acceptable_paths )
-       
-        if( !found_sub )
-          throw runtime_error( "URL must start with 'interspec://', 'raddata://', or have a /G0/ component." );
-      }//
-    }catch( std::exception &e )
-    {
-      SimpleDialog *errdialog = new SimpleDialog( "Error with entered URL", e.what() );
-      errdialog->addButton( "Okay" );
-    }
-  }) );
-  
-  if( m_undo && m_undo->canAddUndoRedoNow() )
-  {
-    cancel->clicked().connect( std::bind([this,text](){
-      m_enterUri = nullptr;
-      
-      if( !m_undo || !m_undo->canAddUndoRedoNow() )
-        return;
-      
-      const string txtval = text->text().toUTF8();
-      auto undo = [this,txtval](){
-        makeEnterAppUrlWindow();
-        if( !m_enterUri )
-          return;
-        
-        WTextArea *t = dynamic_cast<WTextArea *>( m_enterUri->contents()->find( "txtarea" ) );
-        if( t )
-          t->setText( WString::fromUTF8(txtval) );
-      };
-      auto redo = [this](){
-        if( m_enterUri )
-          m_enterUri->accept();
-        m_enterUri = nullptr;
-      };
-      
-      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Enter URL" );
-    }) );
-    
-    auto undo = [this](){
-      SimpleDialog *dialog = m_enterUri;
-      m_enterUri = nullptr;
-      if( dialog )
-        dialog->accept();
-    };
-    
-    auto redo = [this](){ makeEnterAppUrlWindow(); };
-    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Enter URL Window" );
-  }//if( m_undo && m_undo->canAddUndoRedoNow() )
-}//void makeEnterAppUrlWindow()
+  return m_enterUri;
+}//SimpleDialog *makeEnterAppUrlWindow()
+
+
+void InterSpec::handleAppUrlClosed()
+{
+  m_enterUri = nullptr;
+}//void handleAppUrlClosed()
 
 
 void InterSpec::detectorsToDisplayChanged()

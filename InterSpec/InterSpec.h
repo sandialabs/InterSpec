@@ -329,7 +329,8 @@ public:
   void handleAppUrl( const std::string &url_encoded_url );
   
   /** Creates a window users can copy/paste a URL into; just passes the URL to #handleAppUrl */
-  void makeEnterAppUrlWindow();
+  SimpleDialog *makeEnterAppUrlWindow();
+  void handleAppUrlClosed();
   
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
   //  WContainerWidget or a PopupDivMenu

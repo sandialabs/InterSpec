@@ -345,6 +345,7 @@ set(sources
     src/UndoRedoManager.cpp
     src/AppUtils.cpp
     src/ExportSpecFile.cpp
+    src/EnterAppUrlWindow.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -441,6 +442,7 @@ set(headers
     InterSpec/UndoRedoManager.h
     InterSpec/AppUtils.h
     InterSpec/ExportSpecFile.h
+    InterSpec/EnterAppUrlWindow.h
 )
 
 
