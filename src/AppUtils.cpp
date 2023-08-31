@@ -44,7 +44,6 @@
 #ifdef __APPLE__
 #include <mach-o/dyld.h>  //for _NSGetExecutablePath
 #elif( defined(_WIN32) )
-#define WIN32_LEAN_AND_MEAN
 #include <libloaderapi.h>  //for GetModuleFileNameW
 #else
 #include <limits.h>  //for PATH_MAX

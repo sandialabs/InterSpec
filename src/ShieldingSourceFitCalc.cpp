@@ -132,7 +132,8 @@ void SourceFitDef::equalEnough( const SourceFitDef &lhs, const SourceFitDef &rhs
     throw runtime_error( "SourceFitDef LHS nuclide != RHS nuclide" );
   
   if( !close_enough(lhs.activity, rhs.activity) )
-    throw runtime_error( "SourceFitDef LHS activity != RHS activity" );
+    throw runtime_error( "SourceFitDef LHS activity (" + std::to_string(lhs.activity) + ") "
+                         "!= RHS activity (" + std::to_string(rhs.activity) + ")" );
   
   if( lhs.fitActivity != rhs.fitActivity )
     throw runtime_error( "SourceFitDef LHS fitActivity != RHS fitActivity" );
@@ -635,7 +636,8 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
   
   const double act_diff = fabs( lhs.m_activity - rhs.m_activity );
   if( (act_diff > 1.0E-14) && (act_diff > 1.0E-8*max(fabs(lhs.m_activity), fabs(rhs.m_activity)) ) )
-    throw runtime_error( "TraceSourceInfo LHS Activity != RHS Activity" );
+    throw runtime_error( "TraceSourceInfo LHS activity (" + std::to_string(lhs.m_activity) + ") "
+                         "!= RHS activity (" + std::to_string(rhs.m_activity) + ")" );
   
   if( lhs.m_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
   {

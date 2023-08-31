@@ -149,12 +149,12 @@ std::string clean_uuid( string uuid )
                        const bool as_emailto,
                        boost::function<void()> toogleEmailVsUri )
   {
-    string seqnum = as_emailto ? "QR-code to create email" : "QR-code of spectrum URL";
+    string seqnum = as_emailto ? "QR-code to create email" : "QR-code of spectrum";
     if( urls.size() > 1 )
       seqnum += ", " + to_string(index + 1) + " of " + to_string( urls.size() );
     
     string desc = seqnum;
-    string title = "Spectrum File " + seqnum;
+    string title = seqnum;
     if( urls.size() == 1 )
     {
       title = "";
@@ -1698,7 +1698,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   }
   
   
-  if( !spec || (spec->gamma_detector_names().size() <= 1) )
+  if( !spec || ((spec->gamma_detector_names().size() <= 1) && (spec->sample_numbers().size() <= 1)) )
   {
     m_filterDetector->setChecked( false );
     m_detectorFilterCbs->clear();
