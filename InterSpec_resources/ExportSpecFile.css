@@ -1,0 +1,238 @@
+
+
+.simple-dialog.export-spec-file
+{
+  font-size: 16px;
+  max-width: 95vw;
+  max-height: 95vh;
+  
+  /*
+  width: min(95vw, 800px);
+  height: min(95vh, 480px);
+   */
+}
+
+.simple-dialog.export-spec-file .body
+{
+  /*
+  width: min(calc(95vw - 30px), 770px);
+  height: min(calc(95vw - 90px), 370px);
+  
+  max-width: min(calc(95vw - 30px), 770px);
+  max-height: min(calc(95vw - 90px), 370px);
+  */
+  
+  height: min(calc(95vw - 90px), 400px);
+  
+  max-width: calc(95vw - 30px);
+  max-height: calc(95vw - 90px);
+  
+  padding-bottom: 10px;
+}
+
+
+.ExportSpecFileTool
+{
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 2px);
+  border: 1px solid #e1e1e1;
+  border-radius: 3px;
+}
+
+.ExportSpecFileTool .ExportSpecFileBody
+{
+  flex-grow: 2;
+  display: flex;
+  flex-direction: row;
+  column-gap: 10px;
+  overflow: hidden;
+  padding-top: 10px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.ExportSpecFileTool .ExportSpecFileBody .ExportColTitle
+{
+  display: block;
+  white-space: nowrap;
+  font-size: 10pt;
+  text-align: center;
+  font-weight: bold;
+  padding-top: 4px;
+  padding-bottom: 1px;
+  padding-left: 3px;
+  padding-right: 3px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid #e1e1e1;
+}
+
+.ExportSpecFileTool .ExportSpecSelect,
+.ExportSpecFileTool .ExportSpecFormat,
+.ExportSpecFileTool .ExportSpecSamples,
+.ExportSpecFileTool .ExportSpecOptions
+{
+  border: 1px solid #e1e1e1;
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+  row-gap: 5px;
+}
+
+
+.ExportSpecFileTool .ExportSpecSamples
+{
+  min-width: 200px;
+}
+
+/* The checkboxes in the "Samples to include" column. Keep them from wrapping lines - maybe (untested) */
+.ExportSpecSamples label
+{
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  white-space: nowrap;
+  margin-left: 5px;
+  margin-right: 5px;
+}
+
+.ExportSpecFileTool .ExportSpecFileBody .ExportSpecSelect .ExportSpecInfo
+{
+  display: inline-block;
+  overflow-y: auto;
+}
+
+
+.ExportSpecFileTool .ExportForPlusBack
+{
+  align-self: flex-end;
+}
+
+
+.ExportSpecFileTool .ExportSpecSelect
+{
+  width: 250px;
+  margin-left: 5px;
+  margin-right: 5px;
+  font-size: 14px;
+}
+
+.ExportSpecInfo .ExportSpecInfoTable
+{
+}
+
+.ExportSpecInfo .ExportSpecInfoTable th, .ExportSpecInfo .ExportSpecInfoTable td
+{
+  text-align: left;
+  font-weight: normal;
+  padding: 4px;
+  padding-bottom: 1px;
+}
+
+.ExportSpecInfo .ExportSpecInfoTable td
+{
+  white-space: nowrap;
+}
+
+.ExportSpecInfo .ExportSpecInfoTable td > div
+{
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  width: 110px;
+}
+
+.ExportSpecInfo .ExportSpecInfoTable th
+{
+  width: 100px;
+  display: block;
+  overflow: hidden;
+}
+
+.ExportSpecFileTool div.ExportSpecFormat
+{
+  height: 100%;
+}
+
+
+.ExportSpecFileTool .ExportSpecFormat .ExportSpecFormatMenu.SideMenu
+{
+  overflow-y: auto;
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+
+.ExportSpecFileTool .ExportSpecFormat .ExportSpecFormatMenu.SideMenu li
+{
+  height: 1.25em;
+}
+
+
+
+.ExportSpecFileTool .ExportSpecSamples div.ExportDetsToFilter
+{
+  display: flex;
+  flex-direction: column;
+  padding-left: 15px;
+}
+
+.ExportSpecFileTool .ExportSpecCustomSamples
+{
+  margin-left: 25px;
+  margin-right: 20px;
+}
+
+.ExportSpecFileTool .ExportSpecOptions
+{
+  margin-top: 10px;
+  border-radius: 0px;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+}
+
+.ExportSpecFileTool .ExportSpecFileBody .ExportSpecOptions .ExportColTitle
+{
+}
+
+.ExportSpecFileTool .ExportNotAppTxt
+{
+  text-align: center;
+  margin-top: 10px;
+  margin-bottom: 5px;
+  font-size: small;
+}
+
+.ExportSpecFileTool .ExportSpecFileFooter
+{
+  height: 40px;
+  display: flex;
+  margin-top: 10px;
+  border-top: 1px solid #e1e1e1;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ExportSpecFileTool .ExportSpecFileFooter .ExportSpecBtns
+{
+  height: 100%;
+  display: flex;
+  align-items: center;
+  column-gap: 20px;
+  margin-left: 10px;
+  margin-right: 10px;
+  align-items: center;
+}
+
+.ExportSpecFileTool .ExportSpecMsg
+{
+  text-overflow: ellipsis;
+  margin-left: 10px;
+}
+
+
+.ExportSpecFileTool .LinkBtn.ExportSpecExportBtn
+{
+  float: none;
+  border: 1px solid blue !important;
+}

@@ -103,7 +103,7 @@ curl -L https://github.com/emweb/wt/archive/3.7.1.tar.gz --output wt-3.7.1.tar.g
 tar -xzvf wt-3.7.1.tar.gz
 
 cd wt-3.7.1
-patch -u src/Wt/Render/CssParser.C -i ${PATCH_DIR}/wt/3.7.1/CssParser.C.patch
+patch -u src/Wt/Render/CssParser.C -i ${PATCH_DIR}/wt/3.7.1/NormalBuild/CssParser.C.patch
 mkdir build
 cd build
 
@@ -181,6 +181,9 @@ cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DCMAKE_OSX_DEPLOYMENT_TARGET="10.13" 
 cd external_libs/SpecUtils
 ln -s ../../../external_libs/SpecUtils/d3_resources .
 cd ../..
+
+# Make the directory user settings and such will be saved to
+mkdir user_data
 
 # Open the generated project in Xcode
 open InterSpec.xcodeproj

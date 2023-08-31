@@ -43,6 +43,7 @@
 #include <Wt/WAbstractItemModel>
 #include <Wt/Chart/WCartesianChart>
 
+#include "InterSpec/ShieldingSourceFitCalc.h"
 
 //Forward declarations
 class PeakDef;
@@ -107,7 +108,9 @@ namespace Wt
 namespace GammaInteractionCalc
 {
   enum class GeometryType : int;
+  enum class ModelSourceType : int;
   class ShieldingSourceChi2Fcn;
+  struct SourceFitDef;
 }//namespace GammaInteractionCalc
 
 class InterSpec;
@@ -135,17 +138,6 @@ protected:
 */
 
 
-enum class ModelSourceType : int
-{
-  /** A point source at the center of the shielding. */
-  Point,
-  
-  /** A nuclide in the material itself is the source; e.g., a self-attenuating source like U, Pu, Th, etc. */
-  Intrinsic,
-  
-  /** A trace source in a shielding.  Does not effect transport of gammas through the material, but is just a source term. */
-  Trace
-};//enum class ModelSourceType
 
 
 
@@ -153,56 +145,6 @@ enum class ModelSourceType : int
 
 class SourceFitModel: public Wt::WAbstractItemModel
 {
-protected:
-  struct IsoFitStruct
-  {
-    const SandiaDecay::Nuclide *nuclide;
-    
-    //numProdigenyPeaksSelected: The number of different progeny selected to be included in the fit
-    //  through all the peaks with the parent nuclide as assigned.
-    size_t numProgenyPeaksSelected;
-    
-    //activity: in units of ShieldingSourceChi2Fcn::sm_activityUnits
-    double activity;
-    bool fitActivity;
-    
-    //age: in units of PhysicalUnits::second
-    double age;
-    bool fitAge;
-   
-    
-    //ageIsNotFittable: update this whenever you set the nuclide.  Intended to
-    //  indicate nuclides where the spectrum doesnt change with time (ex Cs137,
-    //  W187, etc).  Not rock solid yet (not set true as often as could be), but
-    //  getting there.  See also PeakDef::ageFitNotAllowed(...).
-    bool ageIsFittable;
-    
-    //ageDefiningNuc: specifies if the age of nuclide should be tied to the age
-    //  a different nuclide instead.  Will be NULL if this is not the case.
-    const SandiaDecay::Nuclide *ageDefiningNuc;
-    ModelSourceType sourceType;
-    double activityUncertainty;
-    double ageUncertainty;
-
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-    boost::optional<double> truthActivity, truthActivityTolerance;
-    boost::optional<double> truthAge, truthAgeTolerance;
-#endif
-    
-    IsoFitStruct()
-      : nuclide(NULL), numProgenyPeaksSelected(0), activity(0.0), fitActivity(false),
-        age(0.0), fitAge(false), ageIsFittable(true), ageDefiningNuc(NULL),
-        sourceType(ModelSourceType::Point),
-        activityUncertainty(-1.0), ageUncertainty(-1.0)
-    #if( INCLUDE_ANALYSIS_TEST_SUITE )
-        , truthActivity(), truthActivityTolerance(),
-        truthAge(), truthAgeTolerance()
-    #endif
-    {
-    }
-  };//struct IsoFitStruct
-
-
 public:
   enum Columns
   {
@@ -261,7 +203,7 @@ public:
   bool fitAge( int nuc ) const;
   
   
-  ModelSourceType sourceType( int nuc ) const;
+  ShieldingSourceFitCalc::ModelSourceType sourceType( int nuc ) const;
   
   /** Returns true if a shielding determined source, or a trace source. */
   bool isVolumetricSource( int nuc ) const;
@@ -286,12 +228,12 @@ public:
   
   
   /** Sets the source type for a nuclide.
-   Sources default to ModelSourceType::Point, which lets the user edit the activity and whether or not to fit the activity in the table.
+   Sources default to ShieldingSourceFitCalc::ModelSourceType::Point, which lets the user edit the activity and whether or not to fit the activity in the table.
    
-   For ModelSourceType::Intrinsic or ModelSourceType::Trace the activity field in the table will become non-editable, and the option to
+   For ShieldingSourceFitCalc::ModelSourceType::Intrinsic or ShieldingSourceFitCalc::ModelSourceType::Trace the activity field in the table will become non-editable, and the option to
    fit this quantity will become non-visible, as the ShieldingSelect controls this option via fitting for thickness and/or trace activity.
    */
-  void setSourceType( const SandiaDecay::Nuclide *nuc, ModelSourceType type );
+  void setSourceType( const SandiaDecay::Nuclide *nuc, ShieldingSourceFitCalc::ModelSourceType type );
   
   void makeActivityNonEditable( const SandiaDecay::Nuclide *nuc );
 
@@ -346,23 +288,28 @@ public:
 
   //compare(...): function to compare IsoFitStruct according to relevant Column;
   //  functions similar to operator<
-  static bool compare( const IsoFitStruct &lhs, const IsoFitStruct &rhs,
+  static bool compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs,
+                      const ShieldingSourceFitCalc::IsoFitStruct &rhs,
                        Columns sortColumn, Wt::SortOrder order );
 
   void displayUnitsChanged( bool displayBq );
+  
+  const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &underlyingData() const;
+  
+  void setUnderlyingData( const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &data );
   
 protected:
   Wt::SortOrder m_sortOrder;
   Columns m_sortColumn;
   bool m_displayCurries;
   PeakModel *m_peakModel;
-  std::vector<IsoFitStruct> m_nuclides;
+  std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_nuclides;
   bool m_sameAgeForIsotopes;
   
   //m_previousResults: when a isotope gets removed from this model, we'll cache
   //  its current value, since it will often times get added again and be
   //  intended to be the same value
-  std::map<const SandiaDecay::Nuclide *, IsoFitStruct> m_previousResults;
+  std::map<const SandiaDecay::Nuclide *, ShieldingSourceFitCalc::IsoFitStruct> m_previousResults;
   
   friend class ShieldingSourceDisplay;
 };//class SourceFitModel
@@ -370,25 +317,6 @@ protected:
 
 class ShieldingSourceDisplay : public Wt::WContainerWidget
 {
-public:
-  typedef std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> Chi2FcnShrdPtr;
-
-  /** The maximum time (in milliseconds) a model fit can take before the fit is
-      aborted.  This generally will only ever be applicable to fits with
-      self-attenuators, where there is a ton of peaks, or things go really
-      haywire.
-   
-      Initialized to 120 seconds (e.g., 120*1000)
-   */
-  const static size_t sm_max_model_fit_time_ms;
-  
-  /** How often (in milliseconds) to update the GUI during a model fit.
-      This generally will only ever be applicable to fits with self-attenuators.
-      
-      Initialized to 2000 (e.g., every two seconds)
-   */
-  const static size_t sm_model_update_frequency_ms;
-  
 public:
   ShieldingSourceDisplay( PeakModel *peakModel,
                           InterSpec *specViewer,
@@ -456,14 +384,14 @@ public:
                                          const SandiaDecay::Nuclide *nuc );
   void isotopeIsBecomingVolumetricSourceCallback( ShieldingSelect *select,
                                            const SandiaDecay::Nuclide *nuc,
-                                           const ModelSourceType type );
+                                           const ShieldingSourceFitCalc::ModelSourceType type );
   void isotopeRemovedAsVolumetricSourceCallback( ShieldingSelect *select,
                                              const SandiaDecay::Nuclide *nuc,
-                                             const ModelSourceType type );
+                                             const ShieldingSourceFitCalc::ModelSourceType type );
   
   /** Function called whenever a ShieldingSelect is changed by the user.
    
-   This function is not called when values are changed programatically (e.g., as a side-effect of another setting being changed).
+   This function is not called when values are changed programmatically (e.g., as a side-effect of another setting being changed).
    
    Storing the XML for the ShieldingSelect, as apposed to the whole ShieldingSourceDisplay, takes up only about 3% as much
    memmory, but at the cost of not currently getting things exactly right for trace and self-atten sources.
@@ -476,32 +404,6 @@ public:
                                     const std::shared_ptr<const std::string> &prev_state,
                                     const std::shared_ptr<const std::string> &current_state );
   
-  
-  struct ModelFitProgress
-  {
-    std::mutex m;
-    double chi2;
-    double elapsedTime;
-    size_t numFcnCalls;
-    std::vector<double> parameters;
-  };//struct ModelFitProgress
-  
-  struct ModelFitResults
-  {
-    std::mutex m_mutex;
-    
-    enum class FitStatus{ UserCancelled, TimedOut, InvalidOther, InterMediate, Final };
-    FitStatus succesful;
-    std::vector<ShieldingSelect *> shieldings;  //I dont think we strickly need, but more as a sanity check
-    
-    double edm;  //estimated distance to minumum.
-    double chi2;
-    int num_fcn_calls;
-    std::vector<double> paramValues;
-    std::vector<double> paramErrors;
-    std::vector<std::string> errormsgs;
-  };//struct ModelFitResults
-  
   /** Performs the actual fit of shielding, activities, and ages;
    called when user clicks "Perform Model Fit" button.
    
@@ -512,40 +414,14 @@ public:
             if fitting is being performed in the background, the returned object will be updated as
             fitting is being performed (use m_mutex to ensure safe access).
    */
-  std::shared_ptr<ModelFitResults> doModelFit( const bool fitInBackground );
-    
-  
-  /** Function that does the actual model fitting, not on the main GUI thread.
-      \param wtsession The Wt session id of the current WApplication
-      \param inputPrams The fit input paramters as filled out by #shieldingFitnessFcn
-      \param progress Pointer to location to put the intermediate status of the
-             fit (if desired)
-      \param progress_fcn The function to post to the WServer (using
-             wtsession) so the GUI can be updatedin the main thread to show the
-             progress. Should be wrapped by WApplication::bind() in case this
-             widget gets deleted (and hence why the pointer to ModelFitProgress
-             must be passed seperately, so you can have that in the WApplication
-             bind call which must be done before calling this function).
-             (the wrapped call is #updateGuiWithModelFitProgress)
-      \param Pointer to location to put the results.  Should have
-             #ModelFitResults::shieldings shieldings already filled out
-      \param gui_updater Function to call to post to the WServer so the GUI can
-             be updated in the main thread; should be wrapped by
-             WApplication::bind() in case this widget gets deleted
-             (the wrapped call is #updateGuiWithModelFitResults)
-   */
-  void doModelFittingWork( const std::string wtsession,
-                           std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
-                           std::shared_ptr<ModelFitProgress> progress,
-                           boost::function<void()> progress_fcn,
-                           std::shared_ptr<ModelFitResults> results,
-                           boost::function<void()> gui_updater );
+  std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> doModelFit( const bool fitInBackground );
   
   /** Cancels the current model fit happening */
   void cancelModelFit();
   
-  /** Cancels the current model fit happening, and will make it so the `gui_updater` argument of #doModelFittingWork
-   will not be called, but the GUI will be put back into a state that the user can use it.
+  /** Cancels the current model fit happening, and will make it so the `gui_updater` argument of
+   `ShieldingSourceFitCalc::fit_model` will not be called, but the GUI will be put back into
+   a state that the user can use it.
    
    This method is intended for the undo/redo mechanism, in case a user hits undo while a fit is happening.
    */
@@ -554,18 +430,17 @@ public:
   /** Function that must be called from within the main Wt event loop thread,
    that updates the GUI with the fit progress.
    */
-  void updateGuiWithModelFitProgress( std::shared_ptr<ModelFitProgress> progress );
+  void updateGuiWithModelFitProgress( std::shared_ptr<ShieldingSourceFitCalc::ModelFitProgress> progress );
   
   /** Function that must be called from within the main Wt event loop thread,
       that updates the GUI with the fit results.
    */
-  void updateGuiWithModelFitResults( std::shared_ptr<ModelFitResults> results );
-  
+  void updateGuiWithModelFitResults( std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results );
   
   //updateCalcLogWithFitResults(): adds in fit for values and their
   //  uncertainties in the calculation log.
-  void updateCalcLogWithFitResults( Chi2FcnShrdPtr chi2,
-                                    std::shared_ptr<ModelFitResults> results );
+  void updateCalcLogWithFitResults( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2,
+                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results );
   
   //initialSizeHint(...) gives the initial hint about the size so which widgets
   //  should be shown can be decided on.  Furthermore, calling this function
@@ -713,9 +588,9 @@ public:
   void showGraphicTypeChanged();
   
 
+  std::pair<std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>,
+            ROOT::Minuit2::MnUserParameters> shieldingFitnessFcn();
   
-  Chi2FcnShrdPtr shieldingFitnessFcn( std::vector<ShieldingSelect *> &shieldngs,
-                                  ROOT::Minuit2::MnUserParameters &inputPrams );
 
   //toggle checkbox/chart
   void toggleUseAll(Wt::WCheckBox* button);
@@ -725,6 +600,8 @@ public:
 
   
   SourceFitModel *sourceFitModel();
+  
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions fitOptions() const;
 protected:
   /** Disables fit button and other elements, and hides some stuff, etc. */
   void setWidgetStateForFitStarting();
@@ -795,6 +672,8 @@ protected:
   Wt::WCheckBox  *m_decayCorrect;
   SwitchCheckbox *m_showChiOnChart;
   Wt::WContainerWidget *m_optionsDiv;
+  double m_photopeak_cluster_sigma;
+  bool m_multithread_computation;
   
   PopupDivMenuItem *m_showLog;
   

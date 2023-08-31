@@ -42,8 +42,8 @@ namespace qrcodegen
 namespace QrCode
 {
   /** The approximate error correction level to try for, or the actual level that was used.
-   The name of the enum gives the approcimate number of erroneous codewords the QR
-   code can tollerate.
+   The name of the enum gives the approximate number of erroneous codewords the QR
+   code can tolerate.
    */
   enum class ErrorCorrLevel
   {
@@ -53,7 +53,7 @@ namespace QrCode
     About30Percent,
   };//enum class ErrorCorrLevel
   
-  /** Encordes the given UTF-8 string into a SVG image.
+  /** Encodes the given UTF-8 string into a SVG image.
    
    Will succeed for strings that have 2953 or fewer UTF-8 code units.
    

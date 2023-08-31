@@ -44,7 +44,7 @@ namespace PhysicalUnits
 #define DECIMAL_REGEX "\\s*[\\+\\-]?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
 #define POS_DECIMAL_REGEX "\\s*\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
 #define DIST_UNITS_REGEX "(meter|cm|km|mm|um|nm|m|ft|feet|'|inches|inch|in|\")"
-#define METRIC_PREFIX_UNITS "m|M|k|g|G|t|T|u|" MU_CHARACTER_1 "|" MU_CHARACTER_2 "|p|n|milli|micro|pico|nano|kilo|mega|giga|terra"
+#define METRIC_PREFIX_UNITS "m|M|k|g|G|t|T|u|" MU_CHARACTER_1 "|" MU_CHARACTER_2 "|p|n|f|milli|micro|pico|nano|femto|kilo|mega|giga|terra"
 
 #define PLUS_MINUS_REGEX "(\\xC2?\\xB1|\\+\\-\\s*|\\-\\+\\s*)"
 #define TIME_UNIT_REGEX "(year|yr|y|day|d|hrs|hour|h|minutes|min|m|second|s|ms|microseconds|us|nanoseconds|ns)"
@@ -83,7 +83,7 @@ const char * const sm_distanceUncertaintyUnitsOptionalRegex
   "|(" POS_DECIMAL_REGEX DIST_UNITS_REGEX "?\\s*(" PLUS_MINUS_REGEX POS_DECIMAL_REGEX "\\s*" DIST_UNITS_REGEX "?\\s*)?)"
   ")+\\s*$";
   
-  //Non escaped version of regex is: "^(\s*\+?\d+(\.\d*)?(?:[Ee][+-]?\d+)?\s*(?:m|M|k|g|G|t|T|u|p|n|milli|micro|pico|nano|kilo|mega|giga|terra)?[\s-]*([Bb][Qq]|[Bb][Ee][Cc][Qq][Uu][Ee][Rr][Ee][Ll]|[Cc][Ii]|[Cc][Uu]|[Cc][Uu][Rr][Ii][Ee]))?\s*$"
+  //Non escaped version of regex is: "^(\s*\+?\d+(\.\d*)?(?:[Ee][+-]?\d+)?\s*(?:m|M|k|g|G|t|T|u|p|n|f|milli|micro|pico|nano|femto|kilo|mega|giga|terra)?[\s-]*([Bb][Qq]|[Bb][Ee][Cc][Qq][Uu][Ee][Rr][Ee][Ll]|[Cc][Ii]|[Cc][Uu]|[Cc][Uu][Rr][Ii][Ee]))?\s*$"
 const char * const sm_activityRegex = "^(\\s*" POS_DECIMAL_REGEX "\\s*(?:(?:" METRIC_PREFIX_UNITS ")?[\\s-]*" ACTIVITY_UNIT_REGEX "))?\\s*$";
                                        
 
@@ -122,11 +122,15 @@ const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex
 const char * const sm_positiveDecimalRegex = POS_DECIMAL_REGEX;
 
 const UnitNameValuePairV sm_activityUnitNameValues{
+  {"uBq", 1.0E-6*bq},
+  {"mBq", 1.0E-3*bq},
   {"bq", bq},
   {"kBq", kBq},
   {"MBq", MBq},
   {"GBq", GBq},
   {"TBq", TBq},
+  {"fCi", fCi},
+  {"pCi", pCi},
   {"nCi", nCi},
   {"microCi", microCi},
   {"mCi", mCi},
@@ -134,11 +138,15 @@ const UnitNameValuePairV sm_activityUnitNameValues{
 };
 
 const UnitNameValuePairV sm_activityUnitHtmlNameValues{
+  {"&mu;Bq", 1.0E-6*bq},
+  {"mBq", 0.001*bq},
   {"bq", bq},
   {"kBq", kBq},
   {"MBq", MBq},
   {"GBq", GBq},
   {"TBq", TBq},
+  {"fCi", fCi},
+  {"pCi", pCi},
   {"nCi", nCi},
   {"&mu;Ci", microCi},
   {"mCi", mCi},
@@ -273,7 +281,13 @@ std::string printToBestActivityUnits( double activity,
   else
     activity /= becquerel;
 
-  if( activity < 1.0E-6 )
+  if( activity == 0 )
+    snprintf(buffer, sizeof(buffer), "0 %s", unitstr );
+  else if( activity < 1.0E-12 )
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E15), "f" );
+  else if( activity < 1.0E-9 )
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E12), "p" );
+  else if( activity < 1.0E-6 )
     snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E9), "n" );
   else if( activity < 1.0E-3 )
     snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E6), "u" );
@@ -891,7 +905,11 @@ double stringToActivity( std::string str, double bq_def )
     const double value = std::stod( number );
     double unit = 0.0;
     
-    if( SpecUtils::istarts_with(letters, "n" ) )
+    if( SpecUtils::istarts_with(letters, "f" ) )
+      unit = 1.0E-15;
+    else if( SpecUtils::istarts_with(letters, "p" ) )
+      unit = 1.0E-12;
+    else if( SpecUtils::istarts_with(letters, "n" ) )
       unit = 1.0E-9;
     else if( SpecUtils::istarts_with(letters, "u" )
              || SpecUtils::istarts_with(letters, "micro" )
@@ -1609,18 +1627,24 @@ string printCompact( const double val, const size_t precision )
 const UnitNameValuePair &bestActivityUnit( const double activity,
                                            bool useCurries )
 {
-  assert( sm_activityUnitNameValues.size() == 9 );
+  assert( sm_activityUnitNameValues.size() == 13 );
   
   UnitNameValuePairV::const_iterator begin, end, iter;
   
   if( useCurries )
   {
-    begin = sm_activityUnitNameValues.begin() + 5;
+    begin = sm_activityUnitNameValues.begin() + 7;
     end = sm_activityUnitNameValues.end();
+    
+    if( activity == 0.0 )
+      return sm_activityUnitNameValues[12];  // return just "ci", no prefix
   }else
   {
     begin = sm_activityUnitNameValues.begin();
-    end = begin + 5;
+    end = begin + 7;
+    
+    if( activity == 0.0 )
+      return sm_activityUnitNameValues[2];  // return just "bq", no prefix
   }//if( useCurries ) / else
 
 
@@ -1670,9 +1694,15 @@ const UnitNameValuePair &bestActivityUnitHtml( const double activity,
   const auto begin = sm_activityUnitNameValues.begin();
   const auto end = sm_activityUnitNameValues.end();
   
+  assert( sm_activityUnitHtmlNameValues.size() == sm_activityUnitNameValues.size() );
+  assert( sm_activityUnitHtmlNameValues.front().second == sm_activityUnitNameValues.front().second );
+  assert( sm_activityUnitHtmlNameValues.back().second == sm_activityUnitNameValues.back().second );
+  assert( sm_activityUnitHtmlNameValues[sm_activityUnitHtmlNameValues.size()/2].second
+                  == sm_activityUnitNameValues[sm_activityUnitNameValues.size()/2].second );
+  
   for( auto iter = begin; iter != end; ++iter )
   {
-    if( a.first == iter->first )
+    if( a.second == iter->second )
       return sm_activityUnitHtmlNameValues[iter-begin];
   }
   

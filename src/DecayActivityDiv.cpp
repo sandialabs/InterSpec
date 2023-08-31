@@ -64,16 +64,18 @@
 #include <Wt/WStandardItemModel>
 #include <Wt/Chart/WCartesianChart>
 
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/StringAlgo.h"
+
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorTheme.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayChainChart.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"

@@ -80,6 +80,15 @@ namespace QRSpectrum
 
   std::vector<uint8_t> base45_decode( const std::string &input );
 
+// TODO: need to make tests for url_safe_base64 encode/decode!
+  /** base64url is a URL and filename safe variant of base64 encoding.
+   See: https://datatracker.ietf.org/doc/html/rfc4648#section-5
+   and: https://en.wikipedia.org/wiki/Base64#Implementations_and_history
+   */
+  std::string base64url_encode( const std::string &input, const bool use_padding );
+  std::string base64url_encode( const std::vector<uint8_t> &input, const bool use_padding );
+  std::vector<uint8_t> base64url_decode( const std::string &input );
+  
   void deflate_compress( const void *in_data, size_t in_data_size, std::string &out_data );
   void deflate_compress( const void *in_data, size_t in_data_size, std::vector<uint8_t> &out_data );
   
@@ -100,10 +109,11 @@ enum EncodeOptions
   /** Do not apply zlib based DEFLATE compression. */
   NoDeflate = 0x01,
   
-  /** Do not encode data (after optional DEFLATE) as base-45.
-   E.g., for clickable URLs, or if you will encode to a binary QR-code).
+  /** Do not encode data (after optional DEFLATE) as base-45 or as url-safe-base-64.
+   E.g., for clickable URLs you may do this, or if you will encode to a binary QR-code, but
+   will generally lead to longer URIs or larger QR codes.
    */
-  NoBase45 = 0x02,
+  NoBaseXEncoding = 0x02,
   
   /** Keep channel data as text-based numbers.  Will actually be separated by the '$'
    sign, since this is a base-45 character and commas arent - but commas would be valid
@@ -112,7 +122,27 @@ enum EncodeOptions
   CsvChannelData = 0x04,
   
   /** Do not zero-compress channel data. */
-  NoZeroCompressCounts = 0x08
+  NoZeroCompressCounts = 0x08,
+  
+  /** Use a modified version of base-64 encoding (that doesnt have and invalid URL characters), instead of base-45.
+   
+   If this option is specified, then #NoBaseXEncoding must not be specified.
+   
+   This option is useful if you are generating a binary QR code, but want all printable characters; e.g.,
+   when you create a QR code with a 'mailto:'.
+   */
+  UseUrlSafeBase64 = 0x10,
+  
+  /** If specified, the URI will be one to generate a email (i.e., a 'mailto:...' URI), instead of a 'raddata://' URI.
+   This effects both the begining of the URI starting with 'mailto:', but also the URL data is email encoded
+   according to RFC 6068, (i.e., only the "%&;=/?#[]" characters are escaped), instead of total URL
+   encoding (i.e., the " $&+,:;=?@'\"<>#%{}|\\^~[]`/" characters escaped).
+   
+   For example, a returned URI will start with:
+   "mailto:user@example.com?subject=spectrum&body=Spectrum%20URI%0D%0Araddata:..."
+   and it will not be strictly URL encoded.
+   */
+  AsMailToUri = 0x20,
 };//enum EncodeOptions
 
 
@@ -189,11 +219,12 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
  */
 enum SkipForEncoding
 {
-  Encoding = 0x01,      ///< Skip DEFLATE, base-45, and URL encoding (e.g., for placing multiple spectra in a URL, where you will do this after combination)
+  Encoding = 0x01,      ///< Skip DEFLATE, base-45/url-safe-base-64, and URL encoding (e.g., for placing multiple spectra in a URL, where you will do this after combination)
   EnergyCal = 0x02,
   DetectorModel = 0x04,
   Gps = 0x08,
-  Title = 0x10
+  Title = 0x10,
+  UrlEncoding = 0x20   ///< Skip just URL encoding (e.g., for when you are making a 'mailto:' uri with an invalid-uri body
 };//enum SkipForEncoding
 
 /** Puts the specified spectrum into `num_parts` URLs.
@@ -242,7 +273,7 @@ struct EncodedSpectraInfo
    */
   std::string m_raw_data;
   
-  /** The spectrum relevant data, after un-base-45 encoded, and un-Deflated, if applicable.
+  /** The spectrum relevant data, after un-base-45/un-base-85 encoded, and un-Deflated, if applicable.
    */
   std::string m_data;
 };//struct EncodedSpectraInfo

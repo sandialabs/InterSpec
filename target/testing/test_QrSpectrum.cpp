@@ -136,13 +136,19 @@ BOOST_AUTO_TEST_CASE( TestEncodeOptions )
   const uint8_t encode_opts[] = {
     0x00,
     EncodeOptions::NoDeflate,
-    EncodeOptions::NoBase45,
+    EncodeOptions::NoBaseXEncoding,
     EncodeOptions::CsvChannelData,
     EncodeOptions::NoZeroCompressCounts,
     EncodeOptions::NoZeroCompressCounts | EncodeOptions::CsvChannelData,
-    EncodeOptions::NoDeflate | EncodeOptions::NoBase45,
-    EncodeOptions::NoDeflate | EncodeOptions::NoBase45 | EncodeOptions::CsvChannelData,
-    EncodeOptions::NoDeflate | EncodeOptions::NoBase45 | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts,
+    EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding,
+    EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding | EncodeOptions::CsvChannelData,
+    EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts,
+    EncodeOptions::UseUrlSafeBase64,
+    EncodeOptions::NoDeflate | EncodeOptions::UseUrlSafeBase64,
+    EncodeOptions::CsvChannelData | EncodeOptions::UseUrlSafeBase64,
+    EncodeOptions::NoZeroCompressCounts | EncodeOptions::CsvChannelData | EncodeOptions::UseUrlSafeBase64,
+    EncodeOptions::AsMailToUri,
+    EncodeOptions::AsMailToUri | EncodeOptions::UseUrlSafeBase64,
   };
   
   for( const uint8_t encode_options : encode_opts )
@@ -150,7 +156,19 @@ BOOST_AUTO_TEST_CASE( TestEncodeOptions )
     const vector<UrlEncodedSpec> encoded = url_encode_spectra( {spec}, QrErrorCorrection::High, encode_options);
     BOOST_REQUIRE( encoded.size() == 1 );
     
-    const vector<UrlSpectrum> decoded = decode_spectrum_urls( { Wt::Utils::urlDecode( encoded[0].m_url ) } );
+    string uri = encoded[0].m_url;
+    
+    if( encode_options & EncodeOptions::AsMailToUri )
+    {
+      size_t pos = uri.find( "raddata://" );
+      if( pos == string::npos )
+        pos = uri.find( "RADDATA://" );
+      BOOST_REQUIRE( pos != string::npos );
+      uri = uri.substr( pos );
+      uri = Wt::Utils::urlDecode( uri );
+    }
+    
+    const vector<UrlSpectrum> decoded = decode_spectrum_urls( { Wt::Utils::urlDecode( uri ) } );
     BOOST_REQUIRE( decoded.size() == 1 );
     
     test_equalish( spec, decoded[0], true );
@@ -172,7 +190,7 @@ BOOST_AUTO_TEST_CASE( TestNonAsciiTitleAndModelStrings )
   // Check standard encoding, and also when the strings should be URL encoded at time of forming URL (which will then be encoded again)
   const uint8_t encode_opts[] = {
     0x0,
-    EncodeOptions::NoDeflate | EncodeOptions::NoBase45 | EncodeOptions::CsvChannelData
+    EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding | EncodeOptions::CsvChannelData
   };
   
   for( const uint8_t encode_options : encode_opts )
@@ -276,6 +294,45 @@ BOOST_AUTO_TEST_CASE( TwoSpectrumEncode )
   test_equalish( expected_back, decoded[1], false );
 }//BOOST_AUTO_TEST_CASE( TwoSpectrumEncode )
 
+
+BOOST_AUTO_TEST_CASE( base64url_encoding )
+{
+  BOOST_CHECK( base64url_encode("HelloWorld",true) == "SGVsbG9Xb3JsZA==" );
+  BOOST_CHECK( base64url_encode("HelloWorld",false) == "SGVsbG9Xb3JsZA" );
+
+  BOOST_CHECK( base64url_encode("0/?",false) == "MC8_" );
+  BOOST_CHECK( base64url_encode("0/?/\\}{_=+,",false) == "MC8_L1x9e189Kyw" );
+  BOOST_CHECK( base64url_encode("",false) == "" );
+  
+  
+  for( uint8_t i = 0x00; true ; ++i )
+  {
+    const char val = reinterpret_cast<char &>( i );
+    const string input( 3, val );
+    const string encode_output = base64url_encode( input, false );
+    BOOST_CHECK( encode_output.size() == 4 );
+    const vector<uint8_t> decode_output_bytes = base64url_decode( encode_output );
+    string decode_output( decode_output_bytes.size(), '\0' );
+    memcpy( &(decode_output[0]), &(decode_output_bytes[0]), decode_output_bytes.size() );
+    BOOST_CHECK( decode_output == input );
+    
+    if( i == 255 )
+      break;
+  }//for( uint8_t i = 0x00; true ; ++i )
+  
+  for( size_t trial = 0; trial < 1000; ++trial )
+  {
+    const size_t len = size_t(rand()) % 65535;
+    std::vector<uint8_t> input( len );
+    for( size_t i = 0; i < len; ++i )
+      input[i] = static_cast<uint8_t>( (rand() % 255) );
+    
+    const string encode_output = base64url_encode( input, (rand() % 2) );
+    const vector<uint8_t> decode_output_bytes = base64url_decode( encode_output );
+    BOOST_CHECK( decode_output_bytes == input );
+  }//for( size_t i = 0; i < 1000; ++i )
+  
+}//BOOST_AUTO_TEST_CASE( base64url_encoding )
 
 
 BOOST_AUTO_TEST_CASE( base45Encoding )

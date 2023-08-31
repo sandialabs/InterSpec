@@ -127,6 +127,7 @@
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/DoseCalcWidget.h"
+#include "InterSpec/ExportSpecFile.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"
@@ -136,6 +137,7 @@
 #include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
+#include "InterSpec/EnterAppUrlWindow.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/MultimediaDisplay.h"
 #include "InterSpec/CompactFileManager.h"
@@ -400,10 +402,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_rightClickEnergy( -DBL_MAX ),
     m_rightClickNuclideSuggestMenu( nullptr ),
     m_rightClickChangeContinuumMenu( nullptr ),
-#if( USE_SAVEAS_FROM_MENU )
-    m_downloadMenu( 0 ),
-  m_downloadMenus{0},
-#endif
+    m_exportSpecFileMenu{ nullptr },
+    m_exportSpecFileWindow{ nullptr },
   m_logYItems{0},
   m_toolTabsVisibleItems{0},
   m_backgroundSubItems{0},
@@ -430,6 +430,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_leafletWindow( nullptr ),
 #endif
 #endif
+  m_enterUri( nullptr ),
 #if( USE_SEARCH_MODE_3D_CHART )
   m_searchMode3DChart( 0 ),
 #endif
@@ -1633,6 +1634,10 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         
       case 's': case 'S':
         stateSave();
+        break;
+        
+      case 'e': case 'E':
+        createExportSpectrumFileDialog();
         break;
         
       case 37: case 38: case 39: case 40:
@@ -2873,25 +2878,6 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
 }//WModelIndex addPeak( PeakDef peak )
 
 
-
-#if( IOS )
-void InterSpec::exportSpecFile()
-{
-  //Need to:
-  //  -Build gui to allow selecting foreground/background/secondary as well
-  //   selecting which samples/detectors/etc is wanted; this can be made general
-  //   for all operating systems or deployments.
-  //  -Enable/disable "Export Spectrum" menu item as a spectrum is avaialble or not
-
-  if( !m_dataMeasurement )
-    return;
-  
-  hand_spectrum_to_other_app( m_dataMeasurement );
-}//void exportSpecFile()
-#endif
-
-
-
 #if( USE_DB_TO_STORE_SPECTRA )
 void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 {
@@ -3673,7 +3659,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         
     
     if( m_multimedia )
-      programaticallyCloseMultimediaWindow();
+      programmaticallyCloseMultimediaWindow();
     assert( !m_multimedia );
     
     if( foreground )
@@ -3737,6 +3723,15 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
       showMultimedia( SpecUtils::SpectrumType::Foreground );
+    
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingGammaXsTool)
+       && !entry->gammaXsToolUri.empty() )
+    {
+      GammaXsWindow *w = showGammaXsTool();
+      if( w && w->xstool() )
+        w->xstool()->handleAppUrl( entry->gammaXsToolUri );
+    }
     
     
     if( (entry->shownDisplayFeatures & UserState::kShowingDoseCalcTool)
@@ -4381,6 +4376,61 @@ void InterSpec::deleteEnergyCalPreserveWindow()
     m_preserveCalibWindow = nullptr;
   }
 }//void deleteEnergyCalPreserveWindow()
+
+
+
+ExportSpecFileWindow *InterSpec::createExportSpectrumFileDialog()
+{
+  assert( !m_exportSpecFileWindow || (m_undo && m_undo->isInUndoOrRedo()) );
+  
+  if( m_exportSpecFileWindow )
+    return m_exportSpecFileWindow;
+  
+  m_exportSpecFileWindow = new ExportSpecFileWindow( this );
+  m_exportSpecFileWindow->finished().connect( this, &InterSpec::handleExportSpectrumFileDialogClose );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){
+      if( m_exportSpecFileWindow )
+        m_exportSpecFileWindow->accept();
+    };
+    
+    auto redo = [this](){
+      createExportSpectrumFileDialog();
+    };
+    
+    m_undo->addUndoRedoStep( undo, redo, "Show spectrum file export tool." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  
+  return m_exportSpecFileWindow;
+}//void createExportSpectrumFileDialog()
+
+
+void InterSpec::handleExportSpectrumFileDialogClose()
+{
+  assert( m_exportSpecFileWindow );
+  if( !m_exportSpecFileWindow )
+    return;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    const string uri = m_exportSpecFileWindow->encodeStateToUrl();
+    auto undo = [this,uri](){
+      createExportSpectrumFileDialog();
+      if( m_exportSpecFileWindow )
+        m_exportSpecFileWindow->handleAppUrl( uri );
+    };
+    
+    auto redo = [this](){
+      if( m_exportSpecFileWindow )
+        m_exportSpecFileWindow->accept();
+    };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close spectrum file export tool." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  
+  m_exportSpecFileWindow = nullptr;
+}
 
 
 void InterSpec::setShowIEWarningDialogCookie( bool show )
@@ -5679,187 +5729,9 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 #endif
   }//if( !mobile )
   
-
-#if( USE_SAVEAS_FROM_MENU )
-  //only display when not on desktop.
-  m_downloadMenu = m_fileMenuPopup->addPopupMenuItem( "Export File" );
-  
-  for( SpecUtils::SpectrumType i = SpecUtils::SpectrumType(0);
-      i <= SpecUtils::SpectrumType::Background;
-      i = SpecUtils::SpectrumType(static_cast<int>(i)+1) )
-  {
-    m_downloadMenus[static_cast<int>(i)] = m_downloadMenu->addPopupMenuItem( descriptionText( i ) );
-    
-    for( SpecUtils::SaveSpectrumAsType j = SpecUtils::SaveSpectrumAsType(0);
-        j < SpecUtils::SaveSpectrumAsType::NumTypes;
-        j = SpecUtils::SaveSpectrumAsType(static_cast<int>(j)+1) )
-    {
-      const string desc = descriptionText( j );
-      item = m_downloadMenus[static_cast<int>(i)]->addMenuItem( desc + " File" );
-      DownloadCurrentSpectrumResource *resource
-      = new DownloadCurrentSpectrumResource( i, j, this, item );
-      
-#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
-      //If were using OS X native menus, we obviously cant relly on the
-      //  browser responding to a click on an anchor; we also cant click the
-      //  link of the PopupDivMenuItem itself in javascript, or we get a
-      //  cycle of the server telling the browser to click the link again,
-      //  each time it tells it to do it in javascript.  So we will introduce
-      //  a false menu item that will actually have the URL of the download
-      //  associated with its anchor, and not connect any server side
-      //  triggered() events to it, thus breaking the infiinite cycle - blarg.
-      PopupDivMenuItem *fakeitem = new PopupDivMenuItem( "", "" );
-      m_downloadMenus[static_cast<int>(i)]->WPopupMenu::addItem( fakeitem );
-      fakeitem->setLink( WLink( resource ) );
-      fakeitem->setLinkTarget( TargetNewWindow );
-      
-      if( fakeitem->anchor() )
-      {
-        const string jsclick = "try{document.getElementById('"
-        + fakeitem->anchor()->id()
-        + "').click();}catch(e){}";
-        item->triggered().connect( boost::bind( &WApplication::doJavaScript, wApp, jsclick, true ) );
-      }else
-      {
-        cerr << "Unexpected error accessing the anchor for file downloading" << endl;
-      }
-#else
-      item->setLink( WLink( resource ) );
-      item->setLinkTarget( TargetNewWindow );
-      
-#if( ANDROID )
-      // Using hacked saving to temporary file in Android, instead of via network download of file.
-      item->clicked().connect( std::bind([resource](){
-        android_download_workaround(resource, "spectrum_download");
-      }) );
-#endif //ANDROID
-      
-#endif
-      
-      const char *tooltip = nullptr;
-      switch( j )
-      {
-        case SpecUtils::SaveSpectrumAsType::Txt:
-          tooltip = "A space delimited file will be created with a header of"
-          " things like live time, followed by three columns"
-          " (channel number, lower channel energy, counts). Each"
-          " record in the file will be sequentially recorded with"
-          " three line breaks between records.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::Csv:
-          tooltip = "A comma delimietd file will be created with a channel"
-          " lower energy and a counts column.  All records in the"
-          " current spectrum file will be written sequentially,"
-          " with an extra line break and &quot;<b>Energy, Data</b>"
-          "&quot; header between subsequent records.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::Pcf:
-          tooltip = "A binary PCF file will be created which contains all"
-          " records of the current file.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::N42_2006:
-          tooltip = "A simple spectrometer style 2006 N42 XML file will be"
-          " produced which contains all records in the current file.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::N42_2012:
-          tooltip = "A 2012 N42 XML document will be produced which contains"
-          " all samples of the current spectrum file, as well as"
-          " some additional <code>InterSpec</code> information"
-          " such as the identified peaks and detector response.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::Chn:
-          tooltip = "A binary integer CHN file will be produced containing a"
-          " single spectrum matching what is currently shown.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
-          tooltip = "A binary floating point SPC file will be produced containing a"
-          " single spectrum matching what is currently shown.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
-          tooltip = "A binary integer SPC file will be produced containing a"
-          " single spectrum matching what is currently shown.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::SpcAscii:
-          tooltip = "A ascii based SPC file will be produced containing a"
-          " single spectrum matching what is currently shown.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
-          tooltip = "A binary Exploranium GR130 file will be produced with"
-          " each record (spectrum) containing 256 channels.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
-          tooltip = "A binary Exploranium GR135v2 file (includes neutron info)"
-          " will be produced with each record (spectrum) containing"
-          " 1024 channels.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::SpeIaea:
-          tooltip = "A ASCII based standard file format that will contain a"
-          " single spectrum only.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::Cnf:
-          tooltip = "A binary Canberra file format that contains only a single spectrum.";
-          break;
-          
-        case SpecUtils::SaveSpectrumAsType::Tka:
-          tooltip = "A text based format that provides real time and channel counts only.";
-          break;
-          
-#if( SpecUtils_ENABLE_D3_CHART )
-        case SpecUtils::SaveSpectrumAsType::HtmlD3:
-          tooltip = "An HTML file using D3.js to generate a spectrum chart"
-          " that you can optionally interact with and view offline.";
-          break;
-#endif //#if( SpecUtils_ENABLE_D3_CHART )
-        case SpecUtils::SaveSpectrumAsType::NumTypes:
-          break;
-      }//switch( j )
-      
-      assert( tooltip );
-      
-      const bool showInstantly = true;
-      if( tooltip )
-        HelpSystem::attachToolTipOn( item, tooltip, showInstantly,
-                                    HelpSystem::ToolTipPosition::Right );
-    }//for( loop over file types )
-    
-#if( USE_QR_CODES )
-    item = m_downloadMenus[static_cast<int>(i)]->addMenuItem( "QR Code / URL" );
-    item->triggered().connect( boost::bind( &SpecMeasManager::displaySpectrumQrCode, m_fileManager, i ) );
-#endif
-    
-    m_downloadMenus[static_cast<int>(i)]->disable();
-    if( m_downloadMenus[static_cast<int>(i)]->parentItem() )
-      m_downloadMenu->setItemHidden( m_downloadMenus[static_cast<int>(i)]->parentItem(), true );
-  }//for( loop over spectrums )
-  
-  m_fileMenuPopup->setItemHidden(m_downloadMenu->parentItem(),true); //set as hidden first, will be visible when spectrum is added
-#elif( IOS ) // #if( USE_SAVEAS_FROM_MENU )
-  PopupDivMenuItem *exportFile = m_fileMenuPopup->addMenuItem( "Export Spectrum..." );
-  exportFile->triggered().connect( this, &InterSpec::exportSpecFile );
-
-#if( USE_QR_CODES )
-  PopupDivMenuItem *makeQr = m_fileMenuPopup->addMenuItem( "Spectrum as QR-code" );
-  makeQr->triggered().connect( boost::bind( &SpecMeasManager::displaySpectrumQrCode, m_fileManager, SpecUtils::SpectrumType::Foreground ) );
-#endif
-  
-#else        // #if( USE_SAVEAS_FROM_MENU ) / else IOS
-  item = m_fileMenuPopup->addMenuItem( "Export..." );
-  item->triggered().connect( m_fileManager, &SpecMeasManager::displayQuickSaveAsDialog );
-#endif //#if( USE_SAVEAS_FROM_MENU )
-  
-
+  m_exportSpecFileMenu = m_fileMenuPopup->addMenuItem( "Export File..." );
+  m_exportSpecFileMenu->triggered().connect( boost::bind( &InterSpec::createExportSpectrumFileDialog, this ) );
+  m_exportSpecFileMenu->disable();
   
 #if( USE_DB_TO_STORE_SPECTRA )
   assert( !m_fileManager || m_saveStateAs );
@@ -5993,9 +5865,18 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
 #endif
   
 #if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 5;
+#endif
+  m_editMenuPopup->addSeparatorAt( (m_undo ? menuindex : -1) );
+  
+  PopupDivMenuItem *uriItem = m_editMenuPopup->insertMenuItem( (m_undo ? 6 : -1), "Enter URL", "", true );
+  uriItem->triggered().connect( boost::bind(&InterSpec::makeEnterAppUrlWindow, this) );
+  
+#if( BUILD_AS_OSX_APP )
   // All the macOS native menu stuff (copy/paste/select/etc) will be below our stuff
   if( InterSpecApp::isPrimaryWindowInstance() )
-    m_editMenuPopup->addSeparatorAt( (m_undo ? 5 : -1) );
+    m_editMenuPopup->addSeparatorAt( (m_undo ? 7 : -1) );
 #endif
 }//void addEditMenu( Wt::WWidget *menuDiv )
 
@@ -7957,7 +7838,12 @@ void InterSpec::deleteFluxTool()
 
 DecayWindow *InterSpec::createDecayInfoWindow()
 {
-  if( !m_decayInfoWindow )
+  string initial_uri;
+  
+  if( m_decayInfoWindow )
+  {
+    initial_uri = m_decayInfoWindow->encodeStateToUrl();
+  }else
   {
     m_decayInfoWindow = new DecayWindow( this );
     m_decayInfoWindow->finished().connect( boost::bind( &InterSpec::deleteDecayInfoWindow, this ) );
@@ -7986,6 +7872,23 @@ DecayWindow *InterSpec::createDecayInfoWindow()
     }//if( nuc.nuclide )
   }//if( m_referencePhotopeakLines )
   
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this,initial_uri](){
+      if( initial_uri.empty() )
+      {
+        deleteDecayInfoWindow();
+      }else
+      {
+        DecayWindow *dialog = createDecayInfoWindow();
+        if( dialog )
+          dialog->handleAppUrl( initial_uri );
+      }
+    };
+    auto redo = [this](){ createDecayInfoWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show decay tool" );
+  }//if( undo )
+  
   return m_decayInfoWindow;
 }//void createDecayInfoWindow()
 
@@ -7999,6 +7902,20 @@ void InterSpec::createDetectionLimitTool()
 
 void InterSpec::deleteDecayInfoWindow()
 {
+  if( m_decayInfoWindow && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    const string initial_uri = m_decayInfoWindow->encodeStateToUrl();
+    
+    auto undo = [this,initial_uri](){
+      DecayWindow *dialog = createDecayInfoWindow();
+      if( dialog )
+        dialog->handleAppUrl( initial_uri );
+    };
+    auto redo = [this](){ deleteDecayInfoWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close decay tool" );
+  }//if( m_decayInfoWindow && m_undo && m_undo->canAddUndoRedoNow() )
+  
+  
   if( m_decayInfoWindow )
     AuxWindow::deleteAuxWindow( m_decayInfoWindow );
   m_decayInfoWindow = nullptr;
@@ -8149,10 +8066,10 @@ void InterSpec::createMapWindow( const SpecUtils::SpectrumType spectrum_type, co
   const vector<string> detectors = detectorsToDisplay( spectrum_type );
   
   if( m_leafletWarning )
-    programaticallyCloseLeafletWarning();
+    programmaticallyCloseLeafletWarning();
   
   if( m_leafletWindow )
-    programaticallyCloseLeafletMap();
+    programmaticallyCloseLeafletMap();
   
   auto onMapCreate = boost::bind( &InterSpec::handleLeafletMapOpen, this, boost::placeholders::_1 );
   
@@ -8170,7 +8087,7 @@ void InterSpec::createMapWindow( const SpecUtils::SpectrumType spectrum_type, co
     //  #LeafletRadMap::showForMeasurement, or have the above case be called with just a nullptr,
     //  but this all is adding more complexity than its worth.
     
-    auto undo = [this](){ programaticallyCloseLeafletWarning(); };
+    auto undo = [this](){ programmaticallyCloseLeafletWarning(); };
     auto redo = [this, spectrum_type, noWarning](){ createMapWindow( spectrum_type, noWarning ); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show map." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -8217,14 +8134,14 @@ void InterSpec::handleLeafletMapOpen( LeafletRadMapWindow *window )
       }
     }
     
-    auto undo = [this](){ programaticallyCloseLeafletMap(); };
+    auto undo = [this](){ programmaticallyCloseLeafletMap(); };
     auto redo = [this, type](){ createMapWindow( type, true ); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show map." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleLeafletMapOpen()
 
 
-void InterSpec::programaticallyCloseLeafletMap()
+void InterSpec::programmaticallyCloseLeafletMap()
 {
   if( !m_leafletWindow )
     return;
@@ -8232,10 +8149,10 @@ void InterSpec::programaticallyCloseLeafletMap()
   LeafletRadMapWindow *dialog = m_leafletWindow;
   m_leafletWindow = nullptr;
   AuxWindow::deleteAuxWindow( dialog );
-}//void programaticallyCloseLeafletMap();
+}//void programmaticallyCloseLeafletMap();
 
 
-void InterSpec::programaticallyCloseLeafletWarning()
+void InterSpec::programmaticallyCloseLeafletWarning()
 {
   if( !m_leafletWarning )
     return;
@@ -8243,7 +8160,7 @@ void InterSpec::programaticallyCloseLeafletWarning()
   SimpleDialog *dialog = m_leafletWarning;
   m_leafletWarning = nullptr;
   dialog->done( WDialog::DialogCode::Accepted );
-}//void programaticallyCloseLeafletWarning();
+}//void programmaticallyCloseLeafletWarning();
 
 
 void InterSpec::handleLeafletMapClosed()
@@ -8269,7 +8186,7 @@ void InterSpec::handleLeafletMapClosed()
     }
     
     auto undo = [this,type](){ createMapWindow(type, true); };
-    auto redo = [this](){ programaticallyCloseLeafletMap(); };
+    auto redo = [this](){ programmaticallyCloseLeafletMap(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show map." );
   }//if( we want to add undo/redo step )
   
@@ -8290,7 +8207,7 @@ void InterSpec::create3DSearchModeChart()
   }//if( we dont have the proper data to make a 3D chart )
   
   if( m_3dViewWindow )
-    programaticallyClose3DSearchModeChart();
+    programmaticallyClose3DSearchModeChart();
   
   m_3dViewWindow = new AuxWindow( "3D Data View" );
   m_3dViewWindow->disableCollapse();
@@ -8314,14 +8231,14 @@ void InterSpec::create3DSearchModeChart()
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [this](){ programaticallyClose3DSearchModeChart(); };
+    auto undo = [this](){ programmaticallyClose3DSearchModeChart(); };
     auto redo = [this](){ create3DSearchModeChart(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 3D view" );
   }//
 }//void create3DSearchModeChart()
 
 
-void InterSpec::programaticallyClose3DSearchModeChart()
+void InterSpec::programmaticallyClose3DSearchModeChart()
 {
   if( !m_3dViewWindow )
     return;
@@ -8329,7 +8246,7 @@ void InterSpec::programaticallyClose3DSearchModeChart()
   AuxWindow *dialog = m_3dViewWindow;
   m_3dViewWindow = nullptr;
   AuxWindow::deleteAuxWindow( dialog );
-}//void programaticallyClose3DSearchModeChart()
+}//void programmaticallyClose3DSearchModeChart()
 
 
 void InterSpec::handle3DSearchModeChartClose()
@@ -8339,7 +8256,7 @@ void InterSpec::handle3DSearchModeChartClose()
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto undo = [this](){ create3DSearchModeChart(); };
-    auto redo = [this](){ programaticallyClose3DSearchModeChart(); };
+    auto redo = [this](){ programmaticallyClose3DSearchModeChart(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close 3D view" );
   }//
 }//void handle3DSearchModeChartClose()
@@ -8349,14 +8266,14 @@ void InterSpec::handle3DSearchModeChartClose()
 void InterSpec::showRiidResults( const SpecUtils::SpectrumType type )
 {
   if( m_riidDisplay )
-    programaticallyCloseRiidResults();
+    programmaticallyCloseRiidResults();
   
   m_riidDisplay = showRiidInstrumentsAna( measurment(type) );
   m_riidDisplay->finished().connect( this, &InterSpec::handleRiidResultsClose );
   
   if( m_riidDisplay && m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [this](){ programaticallyCloseRiidResults(); };
+    auto undo = [this](){ programmaticallyCloseRiidResults(); };
     auto redo = [this,type](){ showRiidResults(type); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show ID Results" );
   }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
@@ -8376,13 +8293,13 @@ void InterSpec::handleRiidResultsClose()
   {
     // We'll just assume results for the foreground was showing, so we dont have to pass this around
     auto undo = [this](){ showRiidResults(SpecUtils::SpectrumType::Foreground); };
-    auto redo = [this](){ programaticallyCloseRiidResults(); };
+    auto redo = [this](){ programmaticallyCloseRiidResults(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close ID Results" );
   }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleRiidResultsClose()
 
 
-void InterSpec::programaticallyCloseRiidResults()
+void InterSpec::programmaticallyCloseRiidResults()
 {
   if( !m_riidDisplay )
     return;
@@ -8390,20 +8307,20 @@ void InterSpec::programaticallyCloseRiidResults()
   SimpleDialog *dialog = m_riidDisplay;
   m_riidDisplay = nullptr;
   dialog->done( WDialog::DialogCode::Accepted );
-}//void programaticallyCloseRiidResults()
+}//void programmaticallyCloseRiidResults()
 
 
 void InterSpec::showMultimedia( const SpecUtils::SpectrumType type )
 {
   if( m_multimedia )
-    programaticallyCloseMultimediaWindow();
+    programmaticallyCloseMultimediaWindow();
   
   m_multimedia = displayMultimedia( measurment(type) );
   m_multimedia->finished().connect( boost::bind( &InterSpec::handleMultimediaClose, this, m_multimedia ) );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [this](){ programaticallyCloseMultimediaWindow(); };
+    auto undo = [this](){ programmaticallyCloseMultimediaWindow(); };
     auto redo = [this, type](){ showMultimedia(type); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Multimedia" );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -8425,19 +8342,19 @@ void InterSpec::handleMultimediaClose( SimpleDialog *dialog )
   {
     // Just assume Foreground so we dont need to copy this info all around
     auto undo = [this](){ showMultimedia(SpecUtils::SpectrumType::Foreground); };
-    auto redo = [this](){ programaticallyCloseMultimediaWindow(); };
+    auto redo = [this](){ programmaticallyCloseMultimediaWindow(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Multimedia" );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleMultimediaClose( SimpleDialog *dialog )
 
 
-void InterSpec::programaticallyCloseMultimediaWindow()
+void InterSpec::programmaticallyCloseMultimediaWindow()
 {
   SimpleDialog *dialog = m_multimedia;
   m_multimedia = nullptr; //Set m_multimedia to nullptr so #handleMultimediaClose wont add undo/redo step
   if( dialog )
     dialog->done( Wt::WDialog::DialogCode::Accepted );
-}//void programaticallyCloseMultimediaWindow()
+}//void programmaticallyCloseMultimediaWindow()
 
 
 #if( USE_TERMINAL_WIDGET )
@@ -9643,7 +9560,7 @@ void InterSpec::handleToolTabChanged( int tab )
   auto undo = [this, prev_tab, handle_change](){
     if( m_toolsTabs && (prev_tab < m_toolsTabs->count()) )
     {
-      //WTabWidget::currentChanged() is emited even when you programatically change the tab; we
+      //WTabWidget::currentChanged() is emited even when you programmatically change the tab; we
       //  need to block this here, or else the undo/redo history will get all messed up.
       const bool orig_state = m_toolsTabs->currentChanged().isBlocked();
       m_toolsTabs->currentChanged().setBlocked(true);
@@ -10312,7 +10229,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
     
     if( m_riidDisplay )
-      programaticallyCloseRiidResults();
+      programmaticallyCloseRiidResults();
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible()
@@ -10332,6 +10249,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       if( !sameSpecFile )
         deletePeakEdit();
+      
+      m_exportSpecFileMenu->setDisabled( !meas );
     break;
     
     case SpecUtils::SpectrumType::SecondForeground:
@@ -10347,30 +10266,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   {
     sample_numbers = meas->displayedSampleNumbers();
   }
-
-#if( USE_SAVEAS_FROM_MENU )
-  if( m_downloadMenu && m_downloadMenus[spectypeindex] )
-  {
-    m_downloadMenus[spectypeindex]->setDisabled( !meas );
-    WMenuItem *item = m_downloadMenus[spectypeindex]->parentItem();
-    if( item )
-      m_downloadMenu->setItemHidden( item, !meas );
-      
-    bool allhidden=true;
-    for( SpecUtils::SpectrumType i = SpecUtils::SpectrumType(0);
-         i <= SpecUtils::SpectrumType::Background;
-         i = SpecUtils::SpectrumType(static_cast<int>(i)+1) )
-    {
-      if (!m_downloadMenu->isItemHidden( m_downloadMenus[static_cast<int>(i)]->parentItem()))
-      {
-        allhidden=false;
-        break;
-      }//if (!m_downloadMenus[i]->isHidden())
-    }//    for( SpecUtils::SpectrumType i = SpecUtils::SpectrumType(0); i<=SpecUtils::SpectrumType::Background; i = SpecUtils::SpectrumType(i+1) )
-      
-    m_fileMenuPopup->setItemHidden(m_downloadMenu->parentItem(),allhidden);
-  }//if( m_downloadMenu && m_downloadMenus[spec_type] )
-#endif
   
   
   switch( spec_type )
@@ -10494,13 +10389,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
     if( diff_fore_nchan && num_sec_channel && (num_sec_channel != num_foreground_channels) )
     {
-#if( USE_SAVEAS_FROM_MENU )
-      m_downloadMenus[static_cast<int>(SpecUtils::SpectrumType::SecondForeground)]->setDisabled( true );
-      WMenuItem *item = m_downloadMenus[static_cast<int>(SpecUtils::SpectrumType::SecondForeground)]->parentItem();
-      if( item )
-        m_downloadMenu->setItemHidden( item, true );
-#endif
-      
       m_secondDataMeasurement = nullptr;
       m_spectrum->setSecondData( nullptr );
       
@@ -10510,13 +10398,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
     if( diff_fore_nchan && num_back_channel && num_foreground_channels && (num_back_channel != num_foreground_channels) )
     {
-#if( USE_SAVEAS_FROM_MENU )
-      m_downloadMenus[static_cast<int>(SpecUtils::SpectrumType::Background)]->setDisabled( true );
-      WMenuItem *item = m_downloadMenus[static_cast<int>(SpecUtils::SpectrumType::Background)]->parentItem();
-      if( item )
-        m_downloadMenu->setItemHidden( item, true );
-#endif
-      
       m_backgroundMeasurement = nullptr;
       m_spectrum->setBackground( nullptr );
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::Background, nullptr, {}, {} );
@@ -10910,7 +10791,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   {
     // Close the multimedia dialog if we open a new spectrum file
     if( m_multimedia )
-      programaticallyCloseMultimediaWindow();
+      programmaticallyCloseMultimediaWindow();
     assert( !m_multimedia );
     
     bool show_notification = false;
@@ -11146,14 +11027,14 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
   AppUtils::split_uri( url, host, path, query_str, frag );
   
   if( query_str.empty() )
-    throw runtime_error( "No query string found in URI to specify DRF." );
+    throw runtime_error( "No query string found in URI." );
   
   // I dont think we use the fragment component of URLs anywhere, but maybe we accidentally
-  //  included a '#' character somwhere when we shouldnt have.
+  //  included a '#' character somewhere when we shouldnt have.
   if( !frag.empty() )
     query_str += "#" + frag;
   
-  cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
+  //cout << "host='" << host << "' and path='" << path << "' and query_str='" << query_str << "'" << endl;
   
   deleteWelcomeDialog( false );
   deleteEnergyCalPreserveWindow();
@@ -11170,11 +11051,66 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     DecayWindow *decay = InterSpec::createDecayInfoWindow();
     if( decay )
       decay->handleAppUrl( path, query_str );
+  }else if( SpecUtils::iequals_ascii(host,"specexport") )
+  {
+    ExportSpecFileWindow *w = createExportSpectrumFileDialog();
+    if( w )
+      w->handleAppUrl( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"dose") )
+  {
+    DoseCalcWindow *dose = showDoseTool();
+    if( dose && dose->tool() )
+      dose->tool()->handleAppUrl( path, query_str );
+  }else if( SpecUtils::iequals_ascii(host,"flux") )
+  {
+    FluxToolWindow *flux = createFluxTool();
+    if( flux )
+      flux->handleAppUrl( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"specsum") )
+  {
+    GammaCountDialog *gammasum = showGammaCountDialog();
+    if( gammasum )
+      gammasum->handleAppUrl( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"gammaxs") )
+  {
+    GammaXsWindow *xs = showGammaXsTool();
+    if( xs && xs->xstool() )
+      xs->xstool()->handleAppUrl( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"1overr2") )
+  {
+    OneOverR2Calc *calc = createOneOverR2Calculator();
+    if( calc )
+      calc->handleAppUrl( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"unit") )
+  {
+    UnitsConverterTool *converter = createUnitsConverterTool();
+    if( converter )
+      converter->handleAppUrl( query_str );
   }else
   {
     throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );
   }
 }//void handleAppUrl( std::string url )
+
+
+SimpleDialog *InterSpec::makeEnterAppUrlWindow()
+{
+  if( m_enterUri )
+    return m_enterUri;
+  
+  m_enterUri = EnterAppUrlWindow::createEntryWindow( this );
+  assert( m_enterUri );
+  if( m_enterUri )
+    m_enterUri->finished().connect( this, &InterSpec::handleAppUrlClosed );
+  
+  return m_enterUri;
+}//SimpleDialog *makeEnterAppUrlWindow()
+
+
+void InterSpec::handleAppUrlClosed()
+{
+  m_enterUri = nullptr;
+}//void handleAppUrlClosed()
 
 
 void InterSpec::detectorsToDisplayChanged()

@@ -68,6 +68,12 @@
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RowStretchTreeView.h"
 
+#if( USE_QR_CODES )
+#include <Wt/Utils>
+
+#include "InterSpec/QrCode.h"
+#endif
+
 using namespace std;
 using namespace Wt;
 
@@ -775,6 +781,23 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   
   AuxWindow::addHelpInFooter( footer(), "flux-tool" );
   
+#if( USE_QR_CODES )
+  WPushButton *qr_btn = new WPushButton( footer() );
+  qr_btn->setText( "QR Code" );
+  qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
+  qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
+  qr_btn->clicked().preventPropagation();
+  qr_btn->clicked().connect( std::bind( [this](){
+    try
+    {
+      const string url = "interspec://flux/?" + Wt::Utils::urlEncode(m_fluxTool->encodeStateToUrl());
+      QrCode::displayTxtAsQrCode( url, "Flux Tool State", "Current state of flux tool." );
+    }catch( std::exception &e )
+    {
+      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+    }
+  }) );
+#endif //USE_QR_CODES
   
   WContainerWidget *buttonDiv = footer();
   

@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <cctype>
 #include <string>
 #include <sstream>
 #include <iostream>
@@ -106,6 +107,23 @@ WT_DECLARE_WT_MEMBER
 }
   );
 
+  
+bool starts_with( const std::string &line, const char *label )
+{
+  const size_t len1 = line.size();
+  const size_t len2 = strlen(label);
+  
+  if( len1 < len2 )
+    return false;
+  
+  for( size_t i = 0; i < len2; ++i )
+  {
+    if( std::toupper( (int)line[i] ) != std::toupper( (int)label[i] ) )
+      return false;
+  }
+  
+  return true;
+}//bool starts_with( const std::string &line, const char *label )
 }//namespace
 
 
@@ -236,8 +254,14 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
 {
   try
   {
-    const tuple<string,int,ErrorCorrLevel> qr_svg
-                                = utf8_string_to_svg_qr( url, ErrorCorrLevel::About30Percent, 3 );
+    // If its a "mailto:" URI, then put error correction to lowest level, to make the QR code
+    //  as small as possible, since user will most likely be directly reading the QR code onto
+    //  their phone.
+    QrCode::ErrorCorrLevel wanted_ecl = ErrorCorrLevel::About30Percent;
+    if( starts_with( url, "mailto:") )
+      wanted_ecl = ErrorCorrLevel::About7Percent;
+    
+    const tuple<string,int,ErrorCorrLevel> qr_svg = utf8_string_to_svg_qr( url, wanted_ecl, 3 );
     const string &qr_svg_str = get<0>(qr_svg);
     const int qr_size = get<1>(qr_svg);  //A simple DRF is like 70, or so
     const ErrorCorrLevel ecl = get<2>(qr_svg);
@@ -389,10 +413,10 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     copyBtn->setFloatSide( Wt::Side::Left );
     
     // TODO: there is probably a way to get wApp->root()->id() directly in the JS
+    const string escaped_url = WString(url).jsStringLiteral();
     copyBtn->clicked().connect( "function(s,e){ "
-                                 "Wt.WT.CopyUrlToClipboard(s,e,'" + copyBtn->id() + "','" + wApp->root()->id() + "','" + url + "');"
+                                 "Wt.WT.CopyUrlToClipboard(s,e,'" + copyBtn->id() + "','" + wApp->root()->id() + "'," + escaped_url + ");"
                                  "}" );
-    
     
     return window;
   }catch( std::exception &e )

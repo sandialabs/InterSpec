@@ -101,6 +101,8 @@ namespace PhysicalUnits
   static const double MBq = 1.0e+6 * becquerel;
   static const double GBq = 1.0e+9 * becquerel;
   static const double TBq = 1.0e+12 * becquerel;
+  static const double fCi = 1.0e-15 * curie;
+  static const double pCi = 1.0e-12 * curie;
   static const double nCi = 1.0e-9 * curie;
   static const double microCi = 1.0e-6 * curie;
   static const double mCi = 1.0e-3 * curie;

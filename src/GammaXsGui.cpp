@@ -50,6 +50,13 @@
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
+
+#if( USE_QR_CODES )
+#include <Wt/Utils>
+
+#include "InterSpec/QrCode.h"
+#endif
+
 using namespace Wt;
 using namespace std;
 
@@ -514,6 +521,9 @@ void GammaXsGui::handleAppUrl( std::string query_str )
   // Do we want to add an undo/redo step here?
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
   
+  if( query_str.size() && query_str[0] == '?' )
+    query_str = query_str.substr(1);
+  
   const map<string,string> values = AppUtils::query_str_key_values( query_str );
   
   // Check version is appropriate
@@ -838,6 +848,24 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
   m_tool = new GammaXsGui( materialDB, materialSuggestion, viewer, contents() );
   
   AuxWindow::addHelpInFooter( footer(), "gamma-xs-dialog" );
+  
+#if( USE_QR_CODES )
+  WPushButton *qr_btn = new WPushButton( footer() );
+  qr_btn->setText( "QR Code" );
+  qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
+  qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
+  qr_btn->clicked().preventPropagation();
+  qr_btn->clicked().connect( std::bind( [this](){
+    try
+    {
+      const string url = "interspec://gammaxs/?" + Wt::Utils::urlEncode(m_tool->encodeStateToUrl());
+      QrCode::displayTxtAsQrCode( url, "Gamma XS Tool State", "Current state of xs tool." );
+    }catch( std::exception &e )
+    {
+      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+    }
+  }) );
+#endif //USE_QR_CODES
   
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );

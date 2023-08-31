@@ -1847,7 +1847,8 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         assert( thisGammaType == PeakDef::NormalGamma
                || thisGammaType == PeakDef::SingleEscapeGamma
                || thisGammaType == PeakDef::DoubleEscapeGamma
-               || thisGammaType == PeakDef::XrayGamma );
+               || thisGammaType == PeakDef::XrayGamma
+               || thisGammaType == PeakDef::AnnihilationGamma );
         
         src = nuclide->symbol;
       }else if( reaction )

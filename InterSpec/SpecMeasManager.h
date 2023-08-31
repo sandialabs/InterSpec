@@ -77,7 +77,6 @@ class PopupDivMenuItem;
 class SpectraFileHeader;
 class RowStretchTreeView;
 class FileDragUploadResource;
-class DownloadSpectrumResource;
 class SpecificSpectrumResource;
 
 namespace SpecUtils{ enum class SpectrumType : int; }
@@ -116,10 +115,6 @@ public:
   //  calibrations are not checked for.
   std::shared_ptr<SpectraFileHeader> addFile( const std::string &displayName,
                                       std::shared_ptr<SpecMeas> measurement );
-  
-  //cleanupQuickSaveAsDialog deletes the dialog and sets the m_specificResources
-  //  data to null
-  void cleanupQuickSaveAsDialog( AuxWindow *dialog, Wt::WApplication *app );
 
   static void fileTooLarge( const ::int64_t size_tried );
 
@@ -161,7 +156,6 @@ public:
   void removeSpecMeas( Wt::Dbo::ptr<UserFileInDb> row );
 #endif
   void removeAllFiles();
-  void renameSaveAsFile();
   void newFileFromSelection();
   void sumSelectedSpectra();
   std::shared_ptr<SpecMeas> selectedToSpecMeas() const;
@@ -275,15 +269,6 @@ public:
   std::vector<std::shared_ptr<SpectraFileHeader> > getSelectedFiles() const; //returns all selected
   std::set<int> selectedSampleNumbers() const;
   void setDisplayedToSelected();
-  
-  
-  // TODO There may be a race condition in the displayQuickSaveAsDialog()
-  // ... I think its fine now, but could use some more double checking
-
-  //  displayQuickSaveAsDialog() will eventually become depreciated I think
-  //  after testing USE_SAVEAS_FROM_MENU section of code from InterSpec
-  void displayQuickSaveAsDialog();
-
 
   void displayIsBeingShown();
   void displayIsBeingHidden();
@@ -313,6 +298,9 @@ public:
   //  efficient and to happen in a seperate thread.
   void serializeToTempFile( std::shared_ptr<const SpecMeas> meas ) const;
   void uploadSpectrum();
+  
+  
+  void startSaveSelected();
   
 #if( USE_DB_TO_STORE_SPECTRA )
   //setDbEntry(...): analagous to setFile(...)
@@ -457,14 +445,13 @@ protected:
   
   
 private:
-  AuxWindow* m_spectrumManagerWindow;
   Wt::WContainerWidget *createButtonBar();
   void deleteSpectrumManager();
   Wt::WContainerWidget *createTreeViewDiv();
 
   
 protected:
-    
+  AuxWindow *m_spectrumManagerWindow;
   RowStretchTreeView    *m_treeView;
   SpectraFileModel *m_fileModel;
   Wt::WFileUpload  *m_fileUpload;
@@ -486,9 +473,6 @@ protected:
   
   Wt::WContainerWidget *m_infoHandler;
   std::vector< std::string > m_labelTags;
-  
-  DownloadSpectrumResource *m_downloadResources[static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes)];
-  SpecificSpectrumResource *m_specificResources[static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes)];
   
   FileDragUploadResource *m_foregroundDragNDrop;
   FileDragUploadResource *m_secondForegroundDragNDrop;

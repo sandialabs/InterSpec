@@ -98,3 +98,8 @@
 {
   grid-column-end: span 3;
 }
+
+.GridSpanTwoRows
+{
+  grid-row-end: span 2;
+}

@@ -120,6 +120,12 @@ option(
 option(USE_REMOTE_RID "Enables using remote RID tool" OFF)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
+if( IOS OR ANDROID OR BUILD_AS_OSX_APP )
+  set( USE_BATCH_TOOLS OFF CACHE INTERNAL "")
+else()
+  option(USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
+endif()
+
 if(MSVC)
   option(${PROJECT_NAME}_USE_MSVC_MultiThreadDLL "Use dynamically-link runtime library." OFF)
 
@@ -256,6 +262,7 @@ set(sources
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
     src/ShieldingSourceDisplay.cpp
+    src/ShieldingSourceFitCalc.cpp
     src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
     src/ReferenceLineInfo.cpp
@@ -337,6 +344,8 @@ set(sources
     src/MoreNuclideInfoDisplay.cpp
     src/UndoRedoManager.cpp
     src/AppUtils.cpp
+    src/ExportSpecFile.cpp
+    src/EnterAppUrlWindow.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -353,6 +362,7 @@ set(headers
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h
     InterSpec/ShieldingSourceDisplay.h
+    InterSpec/ShieldingSourceFitCalc.h
     InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
     InterSpec/ReferenceLineInfo.h
@@ -431,6 +441,8 @@ set(headers
     InterSpec/MoreNuclideInfoDisplay.h
     InterSpec/UndoRedoManager.h
     InterSpec/AppUtils.h
+    InterSpec/ExportSpecFile.h
+    InterSpec/EnterAppUrlWindow.h
 )
 
 
@@ -466,6 +478,7 @@ endif(USE_GOOGLE_MAP)
 if(USE_LEAFLET_MAP)
     list(APPEND sources src/LeafletRadMap.cpp)
     list(APPEND headers InterSpec/LeafletRadMap.h)
+    list(APPEND OTHER_InterSpec_SUPPORT_FILES InterSpec_resources/LeafletRadMap.js)
 endif(USE_LEAFLET_MAP)
 
 if(USE_SEARCH_MODE_3D_CHART)
@@ -534,8 +547,20 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActTxtResults.h
         InterSpec/RelEffChart.h
   )
-
 endif( USE_REL_ACT_TOOL )
+
+
+if( USE_BATCH_TOOLS )
+  list( APPEND sources
+        src/BatchCommandLine.cpp
+        src/BatchPeak.cpp
+  )
+  
+  list( APPEND headers
+        InterSpec/BatchPeak.h
+        InterSpec/BatchCommandLine.h
+  )
+endif( USE_BATCH_TOOLS )
 
 
 #Copy D3 resources into InterSpec_resources directory at compile time
@@ -548,7 +573,7 @@ deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resou
 
 
 
-list( APPEND OTHER_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js )
+list( APPEND OTHER_InterSpec_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js )
 
 deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
          "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js"
@@ -821,21 +846,22 @@ endif( WIN32 )
 #endif()
 
 
-list( APPEND OTHER_SUPPORT_FILES
+list( APPEND OTHER_InterSpec_SUPPORT_FILES
      ${CMAKE_CURRENT_SOURCE_DIR}/README.md
      ${CMAKE_CURRENT_SOURCE_DIR}/data/default_preferences.xml
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/themes/dark/dark.css
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/copyright_and_about.xml
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/use_instructions.xml
+     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/spectrum_file_format_descriptions.xml
   )
 
 FILE(GLOB CSS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*.css )
 list(FILTER CSS_FILES EXCLUDE REGEX ".*SpectrumChartD3.*css")
-list(APPEND OTHER_SUPPORT_FILES ${CSS_FILES})
+list(APPEND OTHER_InterSpec_SUPPORT_FILES ${CSS_FILES})
 
 list(
     APPEND
-    OTHER_SUPPORT_FILES
+    OTHER_InterSpec_SUPPORT_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DecayChainChart.js
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/RelEffPlot.js
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DetectionLimitTool.js
@@ -844,12 +870,12 @@ list(
 FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml)
 list(
     APPEND
-    OTHER_SUPPORT_FILES
+    OTHER_InterSpec_SUPPORT_FILES
     ${HELP_FILES}
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/help.json
 )
 
-add_custom_target(interspec_resources SOURCES ${OTHER_SUPPORT_FILES})
+add_custom_target(interspec_resources SOURCES ${OTHER_InterSpec_SUPPORT_FILES})
 
 
 #Copy files to the install directory

@@ -75,6 +75,7 @@ class ChartToImageResource;
 struct NuclideSelectedInfo;
 class DateLengthCalculator;
 
+// TODO: need to implement undo/redo in DecayActivityDiv as the user changes things.
 
 class DecayActivityDiv : public Wt::WContainerWidget
 {

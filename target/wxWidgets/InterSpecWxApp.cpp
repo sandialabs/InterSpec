@@ -53,8 +53,20 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/UndoRedoManager.h"
+
+/*
+// Running batch commands not finished being implemented 
+//  to work reasonably within wxWidgets.
+#if( USE_BATCH_TOOLS )
+#include "wx/textctrl.h"
+
+#include "InterSpec/AppUtils.h"
+#include "InterSpec/BatchCommandLine.h"
+#endif
+*/
 
 namespace 
 {
@@ -71,6 +83,11 @@ namespace
   std::string sm_proxy_config;
   long sm_server_port = 0;
   long sm_max_runtime_seconds = 0;
+/*
+#if( USE_BATCH_TOOLS )
+  bool sm_run_batch_command = false;
+#endif
+*/
 
   std::string sm_base_dir = ".";
   std::string sm_user_data_dir;
@@ -268,15 +285,26 @@ InterSpecWxApp::InterSpecWxApp() :
     parser.AddSwitch( "l", "test-load", 
       "Test that the applicaiton successfully loads and then exits.", 
       wxCMD_LINE_PARAM_OPTIONAL );
+    parser.AddSwitch( "d", "dev", 
+      "Opens html/js developer console.", 
+      wxCMD_LINE_PARAM_OPTIONAL );
 
     parser.AddLongOption( "proxy",
       "Proxy configuration to use (only applicable to maps tool); valid values are:"
       " empty (defualt), 'direct', 'auto_detect', 'system', "
       "or any other string any other string will be interpreted as the 'proxyRules'.",
       wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL );
-
+    
     parser.AddParam("File or URI to open", wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL | wxCMD_LINE_PARAM_MULTIPLE);
+
+/*
+#if( USE_BATCH_TOOLS )
+    parser.AddLongSwitch( "batch-peak-fit", "Batch-fit peaks.", wxCMD_LINE_PARAM_OPTIONAL );
+    parser.AddLongSwitch( "batch-act-fit", "Batch shielding/source fit.", wxCMD_LINE_PARAM_OPTIONAL );
+#endif
+*/
   }
+
 
   bool InterSpecWxApp::OnCmdLineParsed(wxCmdLineParser& parser)
   {
@@ -317,6 +345,19 @@ InterSpecWxApp::InterSpecWxApp() :
 
     if( parser.Found( "max-run-time", &sm_max_runtime_seconds ) && (sm_max_runtime_seconds > 0) )
       sm_max_runtime_timer.reset( new MaxRuntimeTimer( this, sm_max_runtime_seconds ) );
+
+    if( parser.FoundSwitch( "dev" ) == wxCMD_SWITCH_ON )
+      sm_open_dev_console = true;
+
+/*
+#if( USE_BATCH_TOOLS )
+    if( (parser.FoundSwitch( "batch-peak-fit" ) == wxCMD_SWITCH_ON )
+      || (parser.FoundSwitch( "batch-act-fit" ) == wxCMD_SWITCH_ON) )
+    {
+      sm_run_batch_command = true;
+    }//if( a command-line batch run )
+#endif
+*/
 
     sm_command_line_parsed = true;
 
@@ -464,6 +505,8 @@ InterSpecWxApp::InterSpecWxApp() :
 
   void InterSpecWxApp::handle_javascript_error_internal( const std::string &error_msg, const std::string &app_token )
   {
+    wxLogMessage( "Have JS Error; msg='%s', session='%s'", error_msg, app_token );
+
     std::cout << "JS Error: " << error_msg << std::endl;
     if( sm_test_load_only )
     {
@@ -514,9 +557,6 @@ InterSpecWxApp::InterSpecWxApp() :
       frame->Close();
     else
       close_all_windows_and_exit();
-
-
-    wxLogMessage( "Have JS Error; msg='%s', session='%s'", error_msg, app_token );
   }//void handle_javascript_error_internal( const std::string &error_msg, const std::string &app_token );
 
 
@@ -554,8 +594,12 @@ InterSpecWxApp::InterSpecWxApp() :
 
     // By default wxWidgets uses the name `GetAppName() + '-' + wxGetUserId()` - however, 
     // the Electron version of the app uses the same thing, so we'll modify this one a 
-    //  little by appending "-webview"
-    const bool did_create = m_checker->Create( GetAppName() + '-' + wxGetUserId() + "-webview" );
+    //  little by appending build date, so this way if you want, you can have two different
+    //  builds of InterSpec running
+    const wxString app_name = GetAppName() + '-' + wxGetUserId() 
+                              + "-" + std::to_string(InterSpecApp::compileDateAsInt());
+    const bool did_create = m_checker->Create( app_name );
+
     // `did_create` will be true, even if another instance of the program is running; it only indicated
     //  a failure to allocate a Windows named mutex or whatever (which I assume is excedingly rare to
     //  happen, but I didnt actually check)
@@ -677,6 +721,38 @@ InterSpecWxApp::InterSpecWxApp() :
       wxLog::EnableLogging( false );
     }
 
+  /*
+  // None of the methods I niavely tried to get the stdout and/or stderr to show up
+  //  to the user works; should be able to use either wxLogStream or wxStreamToTextRedirector
+  //  but neither works.  It should maybe also be possible to get the original console the
+  //  app was launched from, and output the text there, but this looks more involved (modifying
+  //  linking and such), and I'm not sure if its even doable.
+  //  Perhaps there is a better way to do this, like start using libInterSpec as a shared library
+  //  and just creating a script to run batch stuff.
+#if( USE_BATCH_TOOLS )
+    if( sm_run_batch_command )
+    {
+      int utf8_argc = 0;
+      char **utf8_argv = nullptr;
+      AppUtils::getUtf8Args( utf8_argc, utf8_argv );
+
+      //wxLogWindow *batchLogger = new wxLogWindow( nullptr, _( "Batch" ), true, true );
+      //wxLog *cout_logger = new wxLogStream( &std::cout );
+      //batchLogger->SetActiveTarget( cout_logger );
+      
+      //wxTextCtrl *text = new wxTextCtrl( nullptr, -1, "Running batch command \n", wxDefaultPosition, wxSize(640,480), wxTE_MULTILINE | wxTE_READONLY | wxTE_NOHIDESEL );
+      //wxStreamToTextRedirector redirect_cout( text, &std::cout );
+      //new wxLogTextCtrl( text );
+
+      const int rcode = BatchCommandLine::run_batch_command( utf8_argc, utf8_argv );
+
+      AppUtils::cleanupUtf8Args( utf8_argc, utf8_argv );
+
+      return true;
+    }//if( a command-line batch run )
+#endif
+*/
+
 
 #ifndef __APPLE__
     // Check if any other instance is running.  
@@ -749,7 +825,7 @@ InterSpecWxApp::InterSpecWxApp() :
 
     if( sm_test_load_only )
     {
-     // Right now we'll just wait 180 seconds, and if things havent loaded, declare failure.
+     // Right now we'll just wait 90 seconds, and if things havent loaded, declare failure.
      //  Normally shouldnt take very long, but on some test runners it can take a while.
      // When things load, we'll stop this timer and clear it.
      // 
@@ -758,7 +834,7 @@ InterSpecWxApp::InterSpecWxApp() :
      //   void InterSpecApp::prepareForEndOfSession()
      //   void InterSpecApp::finalize()
      //   for possible hooks to check failure.
-      sm_check_load_timer.reset( new CheckLoadTimer( this, 180 ) );
+      sm_check_load_timer.reset( new CheckLoadTimer( this, 90 ) );
     }//if( sm_test_load_only )
 
     InterSpecWebFrame* frame = new InterSpecWebFrame(m_url, no_restore, file_to_open);

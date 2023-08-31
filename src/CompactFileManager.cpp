@@ -700,7 +700,7 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
 
   select->setCurrentIndex( index.row() );
 
-  const set<int> total_sample_nums = meas->sample_numbers();
+  const set<int> &total_sample_nums = meas->sample_numbers();
 
   if( sample_numbers.size() == 0 || total_sample_nums.size() == 0 )
   {

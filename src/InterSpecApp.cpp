@@ -372,6 +372,7 @@ void InterSpecApp::setupDomEnvironment()
         case 'k': // Clear showing reference photopeak lines
         case 's': // Store
         case 'l': // Log/Linear
+        case 'e': case 'E': // Export file dialog
           if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
             return;
           code = e.key.charCodeAt(0);
@@ -460,6 +461,7 @@ void InterSpecApp::setupDomEnvironment()
     wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
     wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
+    wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
     
     // anything else relevant?
     wApp->triggerUpdate();
@@ -633,6 +635,29 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     }//if( !initial_file.empty() )
   }//if( !m_externalToken.empty() )
 #endif
+  
+#if( USE_QR_CODES  && (BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_LOCAL_SERVER) )
+  // Allow having an "internal" path where URI data is represented as part of the URL, for
+  //   example https://interspec.example.com/?_=/G0/3000/eNrV...
+  //  It probably doesnt make sense to support "drf", "specsum", "flux", and "specexport" here.
+  const string &internal_path = environment().internalPath();
+  if( !loadedSpecFile
+     && (SpecUtils::istarts_with(internal_path, "/G0/")
+         || SpecUtils::istarts_with(internal_path, "/decay/")
+         || SpecUtils::istarts_with(internal_path, "/dose/")
+         || SpecUtils::istarts_with(internal_path, "/gammaxs/")
+         || SpecUtils::istarts_with(internal_path, "/1overr2/")
+         || SpecUtils::istarts_with(internal_path, "/unit/") ) )
+  {
+    try
+    {
+      m_viewer->handleAppUrl( "interspec:/" + internal_path );
+      loadedSpecFile = true;
+    }catch( std::exception & )
+    {
+    }
+  }//
+#endif // #if( USE_QR_CODES  && (BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_LOCAL_SERVER) )
   
 
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -1006,6 +1031,29 @@ std::string InterSpecApp::tempDirectory()
   
   return SpecUtils::temp_dir();
 }//void tempDirectory()
+
+
+uint32_t InterSpecApp::compileDateAsInt()
+{
+  //The below YEAR MONTH DAY macros are taken from
+  //http://bytes.com/topic/c/answers/215378-convert-__date__-unsigned-int
+  //  and I believe to be public domain code
+  #define YEAR ((((__DATE__ [7] - '0') * 10 + (__DATE__ [8] - '0')) * 10 \
+  + (__DATE__ [9] - '0')) * 10 + (__DATE__ [10] - '0'))
+  #define MONTH (__DATE__ [2] == 'n' && __DATE__ [1] == 'a' ? 0 \
+  : __DATE__ [2] == 'b' ? 1 \
+  : __DATE__ [2] == 'r' ? (__DATE__ [0] == 'M' ? 2 : 3) \
+  : __DATE__ [2] == 'y' ? 4 \
+  : __DATE__ [2] == 'n' ? 5 \
+  : __DATE__ [2] == 'l' ? 6 \
+  : __DATE__ [2] == 'g' ? 7 \
+  : __DATE__ [2] == 'p' ? 8 \
+  : __DATE__ [2] == 't' ? 9 \
+  : __DATE__ [2] == 'v' ? 10 : 11)
+  #define DAY ((__DATE__ [4] == ' ' ? 0 : __DATE__ [4] - '0') * 10 + (__DATE__ [5] - '0'))
+
+  return YEAR*10000 + (MONTH+1)*100 + DAY;
+}//uint32_t InterSpec::compileDateAsInt()
 
 
 std::string InterSpecApp::userNameFromOS()

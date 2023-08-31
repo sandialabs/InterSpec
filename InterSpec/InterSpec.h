@@ -72,6 +72,7 @@ class UnitsConverterTool;
 class FeatureMarkerWindow;
 class D3SpectrumDisplayDiv;
 class DetectorPeakResponse;
+class ExportSpecFileWindow;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
@@ -327,6 +328,9 @@ public:
    */
   void handleAppUrl( const std::string &url_encoded_url );
   
+  /** Creates a window users can copy/paste a URL into; just passes the URL to #handleAppUrl */
+  SimpleDialog *makeEnterAppUrlWindow();
+  void handleAppUrlClosed();
   
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
   //  WContainerWidget or a PopupDivMenu
@@ -375,9 +379,6 @@ public:
   std::set<int> sampleNumbersForTypeFromForegroundFile(
                                                 const SpecUtils::SpectrumType spec_type ) const;
   
-#if( IOS )
-  void exportSpecFile();
-#endif
   
 #if( USE_DB_TO_STORE_SPECTRA )
   //measurmentFromDb(...): returns the measurment that has been, or will be
@@ -563,8 +564,8 @@ public:
   size_t addHighlightedEnergyRange( const float lowerEnergy,
                                    const float upperEnergy,
                                    const Wt::WColor &color );
-  //removeHighlightedEnergyRange(): removes the region cooresponding to the ID
-  //  passed in from the energy chart.  Returns succesfulness of the removing
+  //removeHighlightedEnergyRange(): removes the region corresponding to the ID
+  //  passed in from the energy chart.  Returns successfulness of the removing
   //  the region.
   bool removeHighlightedEnergyRange( const size_t regionid );
   
@@ -732,15 +733,15 @@ public:
   void handleLeafletMapClosed();
   
   /** Closes the Leaflet map warning window, without creating an undo/redo step. */
-  void programaticallyCloseLeafletWarning();
+  void programmaticallyCloseLeafletWarning();
   
   /** Closes the Leaflet map window, without inserting undo/redo step. */
-  void programaticallyCloseLeafletMap();
+  void programmaticallyCloseLeafletMap();
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
   void create3DSearchModeChart();
-  void programaticallyClose3DSearchModeChart();
+  void programmaticallyClose3DSearchModeChart();
   void handle3DSearchModeChartClose();
 #endif
 
@@ -751,14 +752,14 @@ public:
   void handleRiidResultsClose();
   
   /** Closes the RIID Display, without setting undo/redo step. */
-  void programaticallyCloseRiidResults();
+  void programmaticallyCloseRiidResults();
   
   /** Show images included in the spectrum file. */
   void showMultimedia( const SpecUtils::SpectrumType type );
   
   void handleMultimediaClose( SimpleDialog *dialog );
   
-  void programaticallyCloseMultimediaWindow();
+  void programmaticallyCloseMultimediaWindow();
   
 #if( USE_TERMINAL_WIDGET )
   void createTerminalWidget();
@@ -803,11 +804,8 @@ public:
    */
   void showLicenseAndDisclaimersWindow();
   
-  /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
-  void startClearSession();
-    
   /** Deletes disclaimer, license, and statment window and sets m_licenseWindow
-      to nullptr;
+   to nullptr;
    */
   void deleteLicenseAndDisclaimersWindow();
   
@@ -830,6 +828,22 @@ public:
   //deleteEnergyCalPreserveWindow(): deletes the currently showing dialog (if its
   //  showing), and sets m_preserveCalibWindow to null
   void deleteEnergyCalPreserveWindow();
+  
+  /** Shows the spectrum file export dialog.
+   
+   Sets the `m_exportSpecFileWindow` member variable to the created window.
+   */
+  ExportSpecFileWindow *createExportSpectrumFileDialog();
+  
+  /** Deletes the spectrum file export dialog.
+   
+   Sets the `m_exportSpecFileWindow` member variable to nullptr.
+   */
+  void handleExportSpectrumFileDialogClose();
+  
+  /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
+  void startClearSession();
+  
   
   //showIEWarningDialog(): returns NULL if user previously specified to not show
   //  again, otherwise it returns the AuxWIndow it is displaying.  The dialog
@@ -1369,17 +1383,9 @@ protected:
   PopupDivMenu         *m_rightClickChangeContinuumMenu;
   
   Wt::WMenuItem        *m_showPeakManager;
-  
-#if( !IOS && !ANDROID )
-#define USE_SAVEAS_FROM_MENU 1
-  //m_downloadMenu:
-  PopupDivMenu *m_downloadMenu;
-  //m_downloadMenus: menu items that allow user to download current showing
-  //  spectrums (SpecUtils::SpectrumType::Foreground, SpecUtils::SpectrumType::SecondForeground, SpecUtils::SpectrumType::Background)
-  PopupDivMenu *m_downloadMenus[3];
-#else
-#define USE_SAVEAS_FROM_MENU 0
-#endif
+    
+  PopupDivMenuItem *m_exportSpecFileMenu;
+  ExportSpecFileWindow *m_exportSpecFileWindow;
   
   //If I ever get the preference tracking stuff working better, I could probably
   //  eliminate the following variables
@@ -1442,6 +1448,8 @@ protected:
   LeafletRadMapWindow *m_leafletWindow;
 #endif
 #endif
+  
+  SimpleDialog *m_enterUri;
   
 #if( USE_SEARCH_MODE_3D_CHART )
   PopupDivMenuItem *m_searchMode3DChart;

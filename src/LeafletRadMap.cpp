@@ -490,7 +490,7 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
     Wt::Json::Object sample_json;
     if( !SpecUtils::is_special(meas_start_time) )
     {
-      const auto duration = start_times_offset - meas_start_time;
+      const auto duration = meas_start_time - start_times_offset;
       const auto millisecs = chrono::duration_cast<chrono::milliseconds>(duration);
       sample_json["timeOffset"] = static_cast<long long int>( millisecs.count() );
     }//if( SpecUtils::is_special(meas_start_time) )

@@ -74,3 +74,9 @@
   top: 0px;
   left: 75px;
 }
+
+table.TruthValueTable
+{
+  border-collapse: separate;
+  border-spacing: 5px 5px;
+}

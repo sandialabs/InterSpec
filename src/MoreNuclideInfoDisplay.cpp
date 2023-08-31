@@ -466,13 +466,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
 
       const auto more_info_db = MoreNucInfoDb::instance();
       if( more_info_db )
-      {
-#ifndef NDEBUG
-#warning "Reseting MoreNucInfoDb for iterating purposes - remove this!"
-        cerr << "Reseting MoreNucInfoDb for iterating purposes - remove this!" << endl;
-        MoreNucInfoDb::remove_global_instance();
-#endif
-        
+      { 
         const NucInfo *const more_info = more_info_db->info( nuc );
 
         if( !more_info )

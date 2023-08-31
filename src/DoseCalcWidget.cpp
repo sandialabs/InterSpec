@@ -75,6 +75,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/WarningWidget.h"
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/GadrasSpecFunc.h"
 #include "InterSpec/ShieldingSelect.h"
@@ -85,6 +86,12 @@
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
+
+#if( USE_QR_CODES )
+#include <Wt/Utils>
+
+#include "InterSpec/QrCode.h"
+#endif
 
 using namespace Wt;
 using namespace std;
@@ -208,6 +215,26 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
   m_dose->setHeight( WLength(100,WLength::Percentage) );
   
   AuxWindow::addHelpInFooter( footer(), "dose-dialog" );
+  
+  
+#if( USE_QR_CODES )
+  WPushButton *qr_btn = new WPushButton( footer() );
+  qr_btn->setText( "QR Code" );
+  qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
+  qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
+  qr_btn->clicked().preventPropagation();
+  qr_btn->clicked().connect( std::bind( [this](){
+    try
+    {
+      const string url = "interspec://dose/" + Wt::Utils::urlEncode(m_dose->encodeStateToUrl());
+      QrCode::displayTxtAsQrCode( url, "Dose Tool State", "Current state of dose tool." );
+    }catch( std::exception &e )
+    {
+      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+    }
+  }) );
+#endif //USE_QR_CODES
+
   
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
@@ -1290,7 +1317,8 @@ void DoseCalcWidget::handleAppUrl( std::string path, std::string query_str )
     
   string inshielduri, outshielduri;
   const size_t shieldpos = query_str.find( "&INSHIELD=&" );
-  if( shieldpos != string::npos );
+  
+  if( shieldpos != string::npos )
   {
     inshielduri = query_str.substr(shieldpos + 11);
     query_str = query_str.substr(0, shieldpos);
@@ -1452,9 +1480,26 @@ std::string DoseCalcWidget::encodeStateToUrl() const
   addTxtField( "DIST", m_distanceEnter );
   
   // We'll mark shielding URL starting with the below, and everything after this is the shielding.
-  //  Having an order-independant method would be better, but for the moment...
-  answer += "&INSHIELD=&" + m_enterShieldingSelect->encodeStateToUrl();
-  answer += "&OUTSHIELD=&" + m_answerShieldingSelect->encodeStateToUrl();
+  //  Having an order-independent method would be better, but for the moment...
+  switch( m_currentCalcQuantity )
+  {
+    case Dose:
+    case Activity:
+    case Distance:
+      if( !m_enterShieldingSelect->isNoShielding() )
+        answer += "&INSHIELD=&" + m_enterShieldingSelect->encodeStateToUrl();
+      break;
+      
+    case Shielding:
+      if( !m_answerShieldingSelect->isNoShielding() )
+        answer += "&OUTSHIELD=&" + m_answerShieldingSelect->encodeStateToUrl();
+      break;
+      
+    case NumQuantity:
+      break;
+  }//switch( m_currentCalcQuantity )
+  
+  
   
   return answer;
 }//std::string encodeStateToUrl() const;
@@ -1816,7 +1861,7 @@ void DoseCalcWidget::updateResultForGammaSource()
       }
     }else
     {
-      std::shared_ptr<Material> mat = m_enterShieldingSelect->material();
+      std::shared_ptr<const Material> mat = m_enterShieldingSelect->material();
       if( mat )
       {
         shielding_an = mat->massWeightedAtomicNumber();
@@ -2030,7 +2075,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     {
       try
       {
-        std::shared_ptr<Material> mat;
+        std::shared_ptr<const Material> mat;
         const bool isGeneric = m_answerShieldingSelect->isGenericMaterial();
       
         if( isGeneric )

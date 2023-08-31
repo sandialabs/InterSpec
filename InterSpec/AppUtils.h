@@ -63,6 +63,50 @@ namespace AppUtils
   
   /** Similar to #query_str_key_values, but keeps key-value pairs in original order, allows duplicates, and empty values. */
   // std::vector<std::pair<std::string,std::string>> query_key_values( const std::string &query );
+  
+  
+#if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER )
+  /** Returns the terminal character width */
+  unsigned terminal_width();
+#endif
+  
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+  /** Looks at the file path passed and searches around to try and find that file, if it is a relative path.
+   
+   If an absolute path is passed in, will return true only if it is a valid file.
+   
+   Otherwise, will first look relative to the current working directory, then the executables directory,
+   then up to `max_levels_up` directories above executables directory, then will look relative to
+   the "PATH" environment variable.
+   
+   @param filename  [in/out]The (likely relative) file path to search for.
+   @param is_dir [in] Wether you are searching for a directory, or a file.
+   @param max_levels_up [in] The maximum levels up from the executable directory to search for the specified file.
+          A value of zero means to only search in the same directory as the executable.
+   @param include_path [in] If the "PATH" environment variable should be searched.
+   */
+  bool locate_file( std::string &filename,
+                   const bool is_dir,
+                   size_t max_levels_up,
+                   const bool include_path );
+#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+  
+  
+#ifdef _WIN32
+/** Get command line arguments encoded as UTF-8.
+    This function just leaks the memory, unless you call #cleanupUtf8Args.
+ 
+ Note that environment variables are not in UTF-8, we could account for this
+ similar to:
+ wchar_t *wenvstrings = GetEnvironmentStringsW();
+ ...
+ */
+void getUtf8Args( int &argc, char **&argv );
+
+
+/** Frees the memory allopcated by #getUtf8Args */
+void cleanupUtf8Args( int &argc, char **&argv );
+#endif
 }//namespace AppUtils
 
 #endif //AppUtils_h

@@ -53,6 +53,13 @@
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 
+#if( USE_QR_CODES )
+#include <Wt/Utils>
+
+#include "InterSpec/QrCode.h"
+#include "InterSpec/WarningWidget.h"
+#endif
+
 using namespace std;
 using namespace Wt;
 
@@ -240,6 +247,23 @@ void GammaCountDialog::init()
                             boost::placeholders::_1, boost::placeholders::_2,
                             boost::placeholders::_3, boost::placeholders::_4) );
   
+#if( USE_QR_CODES )
+  WPushButton *qr_btn = new WPushButton( footer() );
+  qr_btn->setText( "QR Code" );
+  qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
+  qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
+  qr_btn->clicked().preventPropagation();
+  qr_btn->clicked().connect( std::bind( [this](){
+    try
+    {
+      const string url = "interspec://specsum/?" + Wt::Utils::urlEncode(encodeStateToUrl());
+      QrCode::displayTxtAsQrCode( url, "Energy Range Sum State", "Current state of energy range sum tool." );
+    }catch( std::exception &e )
+    {
+      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+    }
+  }) );
+#endif //USE_QR_CODES
  
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &GammaCountDialog::emitFinished );
@@ -327,8 +351,24 @@ void GammaCountDialog::handleAppUrl( std::string query_str )
   const auto upper_iter = values.find( "HIGH" );
   string lower_str = (lower_iter != end(values)) ? lower_iter->second : string();
   string upper_str = (upper_iter != end(values)) ? upper_iter->second : string();
-  try{ std::stod(lower_str); }catch(...){ lower_str = ""; }
-  try{ std::stod(upper_str); }catch(...){ upper_str = ""; }
+  try
+  { 
+    const double val = std::stod(lower_str);
+    if( IsInf( val ) || IsNan( val ) )
+      throw runtime_error( "" );
+  }catch(...)
+  { 
+    lower_str = ""; 
+  }
+  try
+  { 
+    const double val = std::stod(upper_str);
+    if( IsInf( val ) || IsNan( val ) )
+      throw runtime_error( "" );
+  }catch(...)
+  { 
+    upper_str = ""; 
+  }
   
   auto primary = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   if( lower_str.empty() && primary && (primary->num_gamma_channels() > 0) )
