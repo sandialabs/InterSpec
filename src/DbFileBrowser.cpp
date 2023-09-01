@@ -337,6 +337,8 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   if( !footer )
     footer = new WContainerWidget();
   
+  footer->addStyleClass( "SnapshotBrowserFooter" );
+  
   WGridLayout *layout = new WGridLayout();
   layout->setContentsMargins( 0, 0, 0, 0 );
   layout->setVerticalSpacing( 0 );

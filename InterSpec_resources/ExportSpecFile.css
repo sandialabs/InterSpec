@@ -5,29 +5,36 @@
   font-size: 16px;
   max-width: 95vw;
   max-height: 95vh;
-  
-  /*
-  width: min(95vw, 800px);
-  height: min(95vh, 480px);
-   */
 }
 
 .simple-dialog.export-spec-file .body
 {
-  /*
-  width: min(calc(95vw - 30px), 770px);
-  height: min(calc(95vw - 90px), 370px);
-  
-  max-width: min(calc(95vw - 30px), 770px);
-  max-height: min(calc(95vw - 90px), 370px);
-  */
-  
-  height: min(calc(95vw - 90px), 400px);
+  height: min(calc(95vh - 90px), 400px);
   
   max-width: calc(95vw - 30px);
-  max-height: calc(95vw - 90px);
+  max-height: calc(95vh - 90px);
   
   padding-bottom: 10px;
+}
+
+.simple-dialog.export-spec-file.export-spec-phone
+{
+}
+
+.simple-dialog.export-spec-file.export-spec-phone.export-spec-iphone .body
+{
+  /* Not sure why the extra 10 px are needed on iPhone, but seems to be (havent tested on Android phone - just Chrome device sim.)*/
+  padding-bottom: 20px;
+}
+
+.simple-dialog.export-spec-file.export-spec-phone .body
+{
+  margin-top: 10px;
+  margin-left: 10px;
+  margin-right: 10px;
+  margin-bottom: 10px;
+  height: min(calc(95vh - 20px), 400px);
+  max-height: calc(95vh - 20px);
 }
 
 
@@ -205,7 +212,9 @@
 
 .ExportSpecFileTool .ExportSpecFileFooter
 {
-  height: 40px;
+  /* height: 40px; */
+  padding-top: 5px;
+  padding-bottom: 5px;
   display: flex;
   margin-top: 10px;
   border-top: 1px solid #e1e1e1;

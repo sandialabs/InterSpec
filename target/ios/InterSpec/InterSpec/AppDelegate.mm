@@ -221,7 +221,7 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
   self.isInBackground = NO;
   self.backgroundTask = UIBackgroundTaskInvalid;
   
-  //Nesary for iOS 9, when keyboard hides, need to re-align the app
+  //Necessary for iOS 9, when keyboard hides, need to re-align the app
   NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
   //  [center addObserver:self selector:@selector(didShowKeyboard) name:UIKeyboardDidShowNotification object:nil];
   [center addObserver:_viewController selector:@selector(onKeyboardHide) name:UIKeyboardDidHideNotification object:nil]; //UIKeyboardWillHideNotification
@@ -286,7 +286,7 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
   self.isInBackground = YES;
   
   //If we can run a background thread (typically for at most 180 seconds), lets
-  //  not kill the Wt server immediately, and instead waite untill we're almost
+  //  not kill the Wt server immediately, and instead wait until we're almost
   //  out of time to do this
   //Code modified from http://hayageek.com/ios-background-task/
   if([[UIDevice currentDevice] respondsToSelector:@selector(isMultitaskingSupported)])

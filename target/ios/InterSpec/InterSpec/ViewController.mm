@@ -509,8 +509,6 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //self.edgesForExtendedLayout = UIRectEdgeNone;
   [super viewDidLoad];
   
-  //For some reason we still dont fill the space on iPhoneXs... maybe we need
-  //  to do something in JavaScript... maybe try css-tricks.com/the-notch-and-css and then probably convert to WkWebView...
   WKWebViewConfiguration *wvconfig = [[WKWebViewConfiguration alloc] init];
   //[wvconfig setApplicationNameForUserAgent:<#(NSString * _Nullable)#>]
   _webView = [[WKWebView alloc] initWithFrame: CGRectZero configuration: wvconfig];
@@ -522,6 +520,9 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   [[[_webView topAnchor] constraintEqualToAnchor: self.view.topAnchor constant: 0.0] setActive: YES];
   [[[_webView bottomAnchor] constraintEqualToAnchor: self.view.bottomAnchor constant: 0.0] setActive: YES];
 
+  //WKPreferences *prefs = [wvconfig preferences];
+  //[prefs setValue:@YES forKey:@"developerExtrasEnabled"];
+  
   UIScrollView *view = [_webView scrollView];
   [view setScrollEnabled: NO];
   

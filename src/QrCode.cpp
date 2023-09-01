@@ -254,11 +254,15 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
 {
   try
   {
+    InterSpec *interspec = InterSpec::instance();
+    const bool is_phone = (interspec && interspec->isPhone());
+    
     // If its a "mailto:" URI, then put error correction to lowest level, to make the QR code
     //  as small as possible, since user will most likely be directly reading the QR code onto
     //  their phone.
+    // For phones with a small screen, prefer fewer elements
     QrCode::ErrorCorrLevel wanted_ecl = ErrorCorrLevel::About30Percent;
-    if( starts_with( url, "mailto:") )
+    if( starts_with( url, "mailto:") || is_phone )
       wanted_ecl = ErrorCorrLevel::About7Percent;
     
     const tuple<string,int,ErrorCorrLevel> qr_svg = utf8_string_to_svg_qr( url, wanted_ecl, 3 );
@@ -267,13 +271,14 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     const ErrorCorrLevel ecl = get<2>(qr_svg);
     
     int svg_size = 5*(qr_size+1);
-    InterSpec *interspec = InterSpec::instance();
     if( interspec && (interspec->renderedWidth() > 100) && (interspec->renderedHeight() > 100) )
     {
-      const int otherVertSpace = 205 + (title.empty() ? 0 : 15) + (description.empty() ? 0 : 20);
+      const int h = interspec->renderedHeight();
       
-      int wdim = interspec->renderedWidth() / 3;
-      wdim = std::min( wdim, (interspec->renderedHeight() - otherVertSpace) );
+      const int otherVertSpace = (is_phone ? ((h/20) + 95) : 205) + (title.empty() ? 0 : 15) + (description.empty() ? 0 : 20);
+      
+      int wdim = interspec->renderedWidth() / (is_phone ? 2 : 3);
+      wdim = std::min( wdim, (h - otherVertSpace) );
       wdim = std::max( wdim, 125 );
       svg_size = std::min( wdim, svg_size );
     }//if( InterSpec knows the window size )
@@ -282,13 +287,16 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     
     if( qr_svg_str.empty() )
     {
-      passMessage( "Sorry, couldnt create QR code", 3 );
+      passMessage( "Sorry, couldn't create QR code", 3 );
       return nullptr;
     }
     
     SimpleDialog *window = new SimpleDialog( title, "" );
     window->rejectWhenEscapePressed();
     window->addButton( "Close" );
+    
+    if( is_phone )
+      window->setAttributeValue( "style", "max-width: 95vw; " + window->attributeValue("style") );
     
     const unsigned char *svg_begin = (unsigned char *) &(qr_svg_str[0]);
     const unsigned char *svg_end = svg_begin + qr_svg_str.size();
@@ -299,9 +307,15 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     else
       svgResource->suggestFileName( "qr.svg", WResource::Attachment );
     
+    if( is_phone )
+      window->contents()->setAttributeValue( "style",
+                                            "display: flex; "
+                                            "flex-direction: row; "
+                                            "column-gap: 10px; "
+                                            "max-width: calc(95vw - 30px); "
+                                            "max-height: calc(95vh - 65px); ");
     
     WImage *qrImage = new WImage( WLink(svgResource), window->contents() );
-    //WText *qrImage = new WText( qr_svg.first, window->contents() );
     qrImage->setInline( false );
     qrImage->resize( svg_size, svg_size );
     qrImage->setMargin( 5, Wt::Side::Bottom );
@@ -311,16 +325,37 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     qrImage->setMargin( WLength::Auto, Wt::Side::Right );
     
     WContainerWidget *eclRow = new WContainerWidget( window->contents() );
-    eclRow->setAttributeValue( "style",
-                              "margin-bottom: 10px;"
-                              " display: flex;"
-                              " flex-wrap: nowrap;"
-                              " align-items: center;"
-                              " gap: 3px;"
-                              " margin-left: 10px;"
-                              " margin-right: 10px;");
-    WLabel *eclLabel = new WLabel( "Error Tolerance:", eclRow );
-    WComboBox *eclSelect = new WComboBox( eclRow );
+    const char *ecl_style = is_phone
+      ? "margin: 10px;"
+        " display: flex;"
+        " flex-direction: column;"
+        " align-items: center;"
+        " flex-wrap: nowrap;"
+        " justify-content: space-between;"
+      : "margin-bottom: 10px;"
+        " display: flex;"
+        " flex-wrap: nowrap;"
+        " align-items: center;"
+        " gap: 3px;"
+        " margin-left: 10px;"
+        " margin-right: 10px;";
+    
+    
+    WContainerWidget *tol_sel = eclRow;
+    if( is_phone )
+    {
+      tol_sel = new WContainerWidget( eclRow );
+      tol_sel->setAttributeValue( "style",
+                                 "display: flex;"
+                                 " flex-direction: column;"
+                                 " flex-wrap: nowrap;"
+                                 " align-items: center;"
+                                 " margin-top: 15px" );
+    }
+    
+    eclRow->setAttributeValue( "style", ecl_style );
+    WLabel *eclLabel = new WLabel( "Error Tolerance:", tol_sel );
+    WComboBox *eclSelect = new WComboBox( tol_sel );
     eclLabel->setBuddy( eclSelect );
     eclSelect->setNoSelectionEnabled( false );
     eclSelect->addItem( "Approx. 7% Loss" );
@@ -329,8 +364,11 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     eclSelect->addItem( "Approx. 30% Loss" );
     eclSelect->setCurrentIndex( static_cast<int>(ecl) );
     
-    WText *spacer = new WText( "&nbsp;", eclRow );
-    spacer->setAttributeValue( "style", "flex: 1 1;" );
+    if( !is_phone )
+    {
+      WText *spacer = new WText( "&nbsp;", eclRow );
+      spacer->setAttributeValue( "style", "flex: 1 1;" );
+    }
     const string sizeDesc = to_string(qr_size) + "x" + to_string(qr_size) + " elements";
     WText *sizeTxt = new WText( sizeDesc, eclRow );
     
@@ -382,10 +420,17 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
       message->setAttributeValue( "style", "padding-bottom: 5px;" );
     }
     
-    WContainerWidget *btndiv = new WContainerWidget( window->contents() );
+    WContainerWidget *btndiv = new WContainerWidget( is_phone ? eclRow : window->contents() );
+    if( is_phone )
+      btndiv->setAttributeValue( "style",
+                                "display: flex; "
+                                "flex-direction: column; "
+                                "flex-wrap: nowrap; "
+                                "align-items: center; "
+                                "row-gap: 10px;" );
     
 #if( BUILD_AS_OSX_APP || IOS )
-    WAnchor *svgDownload = new WAnchor( WLink(svgResource), btndiv );
+    WAnchor *svgDownload = new WAnchor( WLink(svgResource) );
     svgDownload->setTarget( AnchorTarget::TargetNewWindow );
     svgDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );
 #else
@@ -417,6 +462,15 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     copyBtn->clicked().connect( "function(s,e){ "
                                  "Wt.WT.CopyUrlToClipboard(s,e,'" + copyBtn->id() + "','" + wApp->root()->id() + "'," + escaped_url + ");"
                                  "}" );
+    if( is_phone )
+    {
+      btndiv->addWidget( svgDownload );
+      btndiv->addWidget( copyBtn );
+    }else
+    {
+      btndiv->addWidget( copyBtn );
+      btndiv->addWidget( svgDownload );
+    }
     
     return window;
   }catch( std::exception &e )

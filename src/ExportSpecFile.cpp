@@ -1803,7 +1803,8 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     m_excludeInterSpecInfo->hide();
     
     m_sampleSelectNotAppTxt->show();
-    m_optionsNotAppTxt->show();
+    m_optionsNotAppTxt->setHidden( m_excludeGpsInfo->isVisible()
+                                  || m_excludeInterSpecInfo->isVisible() );
     
     if( spec && (spec->gamma_detector_names().size() > 1) && (max_records < 2) )
     {
@@ -2260,7 +2261,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   }//if( sum detectors per sample )
   
 
-  if( foreToSingleRecord )
+  if( foreToSingleRecord || (use_disp_fore && (max_records <= 2)) )
   {
     assert( use_disp_fore );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
@@ -2268,7 +2269,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   }//if( foreground to single record )
   
   
-  if( backToSingleRecord )
+  if( backToSingleRecord || (use_disp_back && (max_records <= 2)) )
   {
     assert( use_disp_back );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
@@ -3117,10 +3118,10 @@ std::string ExportSpecFileTool::encodeStateToUrl() const
 
 
 ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
-  : SimpleDialog( "Spectrum File Export", "" ),
+  : SimpleDialog( ((viewer && !viewer->isPhone()) ? "Spectrum File Export" : ""), "" ),
   m_tool( nullptr )
 {
-  // If the CSS isnt avaiable to set widths and stuff when HTML is first formed
+  // If the CSS isnt available to set widths and stuff when HTML is first formed
   //  then the window wont be sized properly, so we have actually already loaded
   //  ExportSpecFile.css in InterSpecApp
   wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
@@ -3133,6 +3134,14 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   
   m_tool = new ExportSpecFileTool( viewer, contents() );
   m_tool->done().connect( boost::bind(&ExportSpecFileWindow::accept, this) );
+  
+  if( viewer && viewer->isPhone() )
+  {
+    addStyleClass( "export-spec-phone" );
+#if( IOS )
+    addStyleClass( "export-spec-iphone" );
+#endif
+  }
   
   rejectWhenEscapePressed();
 }//ExportSpecFileWindow( constructor )
