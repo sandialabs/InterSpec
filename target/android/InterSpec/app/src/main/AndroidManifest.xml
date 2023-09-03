@@ -132,7 +132,14 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
                 <data android:scheme="file" android:pathPattern="*.zip" />
                 <data android:scheme="content" android:pathPattern="*.zip" />
             </intent-filter>
-
+<!--
+            <intent-filter android:label="InterSpec peak detector response">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="interspec" android:host="drf" />
+            </intent-filter>
+-->
             <intent-filter
                 android:icon='@mipmap/ic_launcher'
                 android:label='InterSpec data URI'

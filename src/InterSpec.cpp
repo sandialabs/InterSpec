@@ -5870,7 +5870,12 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
 #endif
   m_editMenuPopup->addSeparatorAt( (m_undo ? menuindex : -1) );
   
-  PopupDivMenuItem *uriItem = m_editMenuPopup->insertMenuItem( (m_undo ? 6 : -1), "Enter URL", "", true );
+#if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 6;
+#endif
+  
+  PopupDivMenuItem *uriItem = m_editMenuPopup->insertMenuItem( (m_undo ? menuindex : -1), "Enter URL", "", true );
   uriItem->triggered().connect( boost::bind(&InterSpec::makeEnterAppUrlWindow, this) );
   
 #if( BUILD_AS_OSX_APP )
