@@ -8908,7 +8908,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 #endif
   
 #if( USE_REMOTE_RID )
-  m_remoteRidMenuItem = popup->addMenuItem( "External RIID" );
+  m_remoteRidMenuItem = popup->addMenuItem( "External RID" );
   HelpSystem::attachToolTipOn( m_terminalMenuItem, "Uses a"
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
                               " external program or"
@@ -11091,7 +11091,14 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     UnitsConverterTool *converter = createUnitsConverterTool();
     if( converter )
       converter->handleAppUrl( query_str );
-  }else
+  }
+#if( USE_REMOTE_RID )
+  else if( SpecUtils::iequals_ascii(host,"remoterid") )
+  {
+    RemoteRid::handleAppUrl( query_str );
+  }
+#endif
+  else
   {
     throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );
   }

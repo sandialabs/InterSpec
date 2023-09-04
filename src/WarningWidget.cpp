@@ -158,7 +158,7 @@ const char *WarningWidget::description( const WarningMsgLevel level )
       
 #if( USE_REMOTE_RID )
     case WarningWidget::WarningMsgLevel::WarningMsgExternalRiid:
-      return "External RIID";
+      return "External RID";
 #endif
       
     case WarningWidget::NumWarningMsgType:
@@ -414,7 +414,7 @@ void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
     
 #if( USE_REMOTE_RID )
     case WarningMsgExternalRiid:
-      header = "External RIID Results";
+      header = "External RID Results";
       style = "qtip-blue qtip-ext-riid";
       // remove all the other external RID results
       strm << "$('.qtip.qtip-ext-riid').remove();";

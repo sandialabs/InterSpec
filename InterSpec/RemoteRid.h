@@ -92,6 +92,27 @@ public:
   static void disableAutoRemoteRid( InterSpec *interspec );
   static void handleShowingRemoteRidRefLines( InterSpec *interspec, std::string signal);
   
+  /** Handles receiving a "deep-link" url starting with "interspec://remoterid?ver=1&url=...&always=1".
+   
+   Example URIs:
+   - "interspec://remoterid?ver=1&url=https%3A%2F%2Ffull-spectrum.sandia.gov%2Fapi%2Fv1%2Finfo&always=1"
+   - "interspec://remoterid?ver=1&path=C%3A%5Csome%5Cpath%5Cto%5Ca.exe&always=0"
+   - "interspec://remoterid?ver=1&none=1"
+   
+   @param query_str The query portion of the URI.
+   This string is is in standard URL format of "key1=value1&key2=value2&..." with ordering not mattering.
+   Assumes the string passed in has alaready been url-decoded, but the url or path fields are URL encoded..
+   If not a valid path or query_str, throws exception.
+   */
+  static void handleAppUrl( std::string query_str );
+  
+  /** Encodes current tool state to app-url format.
+   
+   Returned string is just query portion of of URL, so will look something like:
+    "ver=1&url=https%3A%2F%2Ffull-spectrum.sandia.gov%2Fapi%2Fv1%2Finfo&always=1",
+   and should be url-encoded again before put in a URL or QR-code.
+   */
+  std::string encodeStateToUrl() const;
 protected:
   InterSpec *m_interspec;
   

@@ -712,6 +712,7 @@ void ExportSpecFileTool::init()
   addStyleClass( "ExportSpecFileTool" );
   
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool isMobile = m_interspec && m_interspec->isMobile();
   
   WContainerWidget *body = new WContainerWidget( this );
   body->addStyleClass( "ExportSpecFileBody" );
@@ -773,34 +774,38 @@ void ExportSpecFileTool::init()
   m_formatMenu->itemSelected().connect( this, &ExportSpecFileTool::handleFormatChange );
   m_formatMenu->addStyleClass( "SideMenu VerticalNavMenu LightNavMenu ExportSpecFormatMenu" );
   
-  
-  
-  
-  const string docroot = wApp->docRoot();
-  const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/static_text/spectrum_file_format_descriptions" );
   Wt::WMessageResourceBundle descrip_bundle;
-  descrip_bundle.use(bundle_file,true);
+  if( !isMobile )
+  {
+    const string docroot = wApp->docRoot();
+    const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/static_text/spectrum_file_format_descriptions" );
+    descrip_bundle.use(bundle_file,true);
+  }//if( !isMobile )
   
-  auto addFormatItem = [this, &descrip_bundle]( const char *label, SpecUtils::SaveSpectrumAsType type ){
+  
+  auto addFormatItem = [this, &descrip_bundle, isMobile]( const char *label, SpecUtils::SaveSpectrumAsType type ){
     WMenuItem *item = m_formatMenu->addItem( label );
     item->clicked().connect( boost::bind(&right_select_item, m_formatMenu, item) );
     item->setData( reinterpret_cast<void *>(type) );
     
-    string description;
-    if( descrip_bundle.resolveKey(label, description) )
+    if( !isMobile )
     {
-      SpecUtils::trim( description );
-      
-      WImage *img = new WImage( item );
-      img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
-      img->setStyleClass("Wt-icon");
-      img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
-      img->setFloatSide( Wt::Side::Right );
-      
-      HelpSystem::attachToolTipOn( img, description, true,
-                                  HelpSystem::ToolTipPosition::Right,
-                                  HelpSystem::ToolTipPrefOverride::AlwaysShow );
-    }//if( we have the description of the file )
+      string description;
+      if( descrip_bundle.resolveKey(label, description) )
+      {
+        SpecUtils::trim( description );
+        
+        WImage *img = new WImage( item );
+        img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+        img->setStyleClass("Wt-icon");
+        img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+        img->setFloatSide( Wt::Side::Right );
+        
+        HelpSystem::attachToolTipOn( img, description, true,
+                                    HelpSystem::ToolTipPosition::Right,
+                                    HelpSystem::ToolTipPrefOverride::AlwaysShow );
+      }//if( we have the description of the file )
+    }//if( !isMobile )
   };//addFormatItem lambda
   
   
