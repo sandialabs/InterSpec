@@ -110,7 +110,7 @@ I dont think we need below here
    building and loading to device from the command line tends to be much quicker.
    - ```bash
      cd target/android/InterSpec
-     export JAVA_HOME="/path/to/jdk-10.0.2.jdk/Contents/Home/"
+     export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home/"
      ./gradlew assembleUniversal
      ./gradlew installUniversalRelease
      #or to make iterating a little faster (min of1.5 minutes instead of 5 minutes), use just the ARM release

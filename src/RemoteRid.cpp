@@ -39,13 +39,14 @@
 #include <windows.h>
 #include <libloaderapi.h>
 #endif
-#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
 
 #include <boost/process.hpp>
 #include <boost/filesystem.hpp>
 #if( defined(_WIN32) )
 #include <boost/process/windows.hpp>
 #endif
+#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+
 
 #include <Wt/Utils>
 #include <Wt/WMenu>
@@ -75,12 +76,16 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/RemoteRid.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
+#if( USE_QR_CODES )
+#include "InterSpec/QrCode.h"
+#endif
 
 using namespace std;
 using namespace Wt;
@@ -455,7 +460,8 @@ public:
         prefname = "ExternalRidExe";
         break;
     }//switch( m_type )
-    
+
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
     // Make option to just copy FullSpectrum into InterSpecs directory for easy access
     auto check_for_default = [type]() -> string {
       if( type == ServiceType::Rest )
@@ -471,21 +477,26 @@ public:
       // Assumes Electron build
       string exe_name = "resources/app/FullSpectrum/full-spec";
 #endif
-      
+
       if( AppUtils::locate_file( exe_name, false, 0, true ) )
         return exe_name;
       
       return "";
     };//check_for_default() lamda
-    
+#endif // !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT
     
     try
     {
       const string prev_urls = InterSpecUser::preferenceValue<string>( prefname, interspec );
       vector<string> prev;
       SpecUtils::split( prev, prev_urls, ";" );
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
       if( prev.empty() )
         return check_for_default();
+#else
+      if( prev.empty() )
+        return "";
+#endif
       
       return prev.front();
     }catch( std::exception &e )
@@ -677,6 +688,9 @@ public:
       try
       {
         InterSpecUser::setPreferenceValue(m_interspec->m_user, "AlwaysCallExternalRid", always_call_index, m_interspec);
+#if( ANDROID || IOS || BUILD_FOR_WEB_DEPLOYMENT )
+        m_remote_rid->alwaysCallRestAnaChecked();
+#else
         switch( m_type )
         {
           case ServiceType::Rest:
@@ -686,6 +700,7 @@ public:
             m_remote_rid->alwaysCallExeAnaChecked();
             break;
         }//switch( m_type )
+#endif
       }catch( std::exception & )
       {
         assert(0);
@@ -757,8 +772,8 @@ protected:
     if( m_rest_interface )
       m_rest_interface->requestRestServiceInfo( m_url->text().toUTF8() );
   }//void requestRestServiceInfo()
-  
-  
+
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   void receiveExeAnalysis( std::shared_ptr<int> rcode, std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
   {
     assert( rcode && result && m );
@@ -778,7 +793,8 @@ protected:
     
     wApp->triggerUpdate();
   }//void receiveExeAnalysis( std::shared_ptr<string> result )
-  
+#endif  //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+
 public:
   static void makeToastNotificationForAnaResult( std::shared_ptr<int> rcode, std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
   {
@@ -904,6 +920,8 @@ public:
   }//void makeToastNotificationForAnaResult( std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
 
 public:
+
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   static void startExeAnalysis( string exe_path, ExternalRidWidget *parent, string drf, shared_ptr<SpecUtils::SpecFile> spec_file )
   {
     vector<string> arguments;
@@ -1013,13 +1031,16 @@ public:
     
     WServer::instance()->ioService().boost::asio::io_service::post( commandRunner );
   }//void startExeAnalysis()
-  
+#endif
   
   void submitForAnalysis()
   {
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_status) );
     m_status->setText( "Requesting analysis" );
-    
+
+#if( ANDROID || IOS || BUILD_FOR_WEB_DEPLOYMENT )
+    startRestAnalysis();
+#else
     switch( m_type )
     {
       case ServiceType::Rest:
@@ -1045,9 +1066,11 @@ public:
         break;
       }//case ServiceType::Exe:
     }//switch( m_type )
+#endif //#if( ANDROID || IOS || BUILD_FOR_WEB_DEPLOYMENT ) / else
   }//void submitForAnalysis()
-  
-  
+
+
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   void receiveExeDrfInfo( std::shared_ptr<int> success, std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
   {
     assert( success && result && m );
@@ -1108,7 +1131,7 @@ public:
     
     WServer::instance()->ioService().boost::asio::io_service::post( commandRunner );
   }//void requestExeInfo()
-    
+#endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
   void requestServiceInfo()
   {
@@ -1119,7 +1142,8 @@ public:
     m_status->setText( "Requesting service information." );
     m_current_drf_index = -1;
     m_drf_select->clear();
-    
+
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
     switch( m_type )
     {
       case ServiceType::Rest:
@@ -1130,6 +1154,9 @@ public:
         requestExeInfo();
         break;
     }//switch( m_type )
+#else
+    requestRestServiceInfo();
+#endif
   }//void requestServiceInfo()
   
   
@@ -1389,9 +1416,24 @@ public:
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
   }//void handleResultResponseError()
   
+  ServiceType serviceType() const
+  {
+    return m_type;
+  }
+  
+  string url() const
+  {
+    return m_url->text().toUTF8();
+  }
+  
+  bool alwaysFoAnalysis() const
+  {
+    return m_alwaysDoAnalysisCb->isChecked();
+  }
   
   bool isValidUrl()
   {
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
     switch( m_type )
     {
       case ServiceType::Rest:
@@ -1445,10 +1487,20 @@ public:
         }
 
         assert( 0 );
-        //blah blah blah
         break;
       }//case ServiceType::Exe:
     }//switch( m_type )
+#else
+    switch( m_url->validate() )
+    {
+      case Wt::WValidator::Invalid:
+      case Wt::WValidator::InvalidEmpty:
+        return false;
+
+      case Wt::WValidator::Valid:
+        return true;
+    }//switch( m_url->validate() )
+#endif
 
     assert( 0 );
     return false;
@@ -1935,7 +1987,7 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
 
 pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
 {
-  AuxWindow *window = new AuxWindow( WString::fromUTF8("External RIID"),
+  AuxWindow *window = new AuxWindow( WString::fromUTF8("External RID"),
                                     (Wt::WFlags<AuxWindowProperties> (AuxWindowProperties::DisableCollapse)
                                      | AuxWindowProperties::SetCloseable
                                      | AuxWindowProperties::TabletNotFullScreen)
@@ -1949,6 +2001,25 @@ pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
   
   window->resizeToFitOnScreen();
   window->centerWindowHeavyHanded();
+  
+  
+#if( USE_QR_CODES )
+  WPushButton *qr_btn = new WPushButton( window->footer() );
+  qr_btn->setText( "QR Code" );
+  qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
+  qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
+  qr_btn->clicked().preventPropagation();
+  qr_btn->clicked().connect( std::bind( [w](){
+    try
+    {
+      const string url = "interspec://remoterid/?" + Wt::Utils::urlEncode(w->encodeStateToUrl());
+      QrCode::displayTxtAsQrCode( url, "Remote-RID State", "Current Remote-RID state." );
+    }catch( std::exception &e )
+    {
+      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+    }
+  }) );
+#endif //USE_QR_CODES
   
   return { window, w };
 }//RemoteRid::createDialog(...)
@@ -2162,7 +2233,12 @@ void RemoteRid::startAutomatedOnLoadAnalysis( InterSpec *interspec,
     }//case RestRidImp::ExternalRidWidget::ServiceType::Rest:
       
     case RestRidImp::ExternalRidWidget::ServiceType::Exe:
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
       RestRidImp::ExternalRidWidget::startExeAnalysis( uri, nullptr, "auto", meas );
+#else
+      assert( 0 );
+      throw runtime_error( "Cannot execute EXE analysis." );
+#endif
       break;
   }//switch( service_type )
 }//void startAutomatedOnLoadAnalysis( InterSpec *interspec )
@@ -2246,3 +2322,142 @@ void RemoteRid::handleShowingRemoteRidRefLines( InterSpec *interspec, std::strin
   if( app )
     app->triggerUpdate();
 }//void handleShowingRemoteRidRefLines( InterSpec *interspec, std::string signal)
+
+
+void RemoteRid::handleAppUrl( std::string query_str )
+{
+  {// Begin remove leading protocal/path from query_str
+    const string path = "remoterid?";
+    const char * const str_start = query_str.c_str();
+    const char * const str_end = str_start + query_str.size();
+    const auto pos = std::search( str_start, str_end, begin(path), end(path),
+                                 [](unsigned char a, unsigned char b) -> bool {
+      return (std::tolower(a) == std::tolower(b));
+    } );
+    
+    if( pos != str_end )
+      query_str = query_str.substr( (pos - str_start) + path.size() );
+  }// End remove leading protocal/path from query_str
+  
+  map<string,string> parts = AppUtils::query_str_key_values( query_str );
+  
+  if( !parts.count("VER") || (parts["VER"] != "1") )
+    throw runtime_error( "RemoteRid::handleAppUrl: missing or invalid 'VER'" );
+  
+  // This is kinda arbitrary, but we wont support setting both a EXE and URL; doing both might be confusing to the
+  //  user, and we dont want to take any chances, since this involves potentually sending data off the
+  //  users device.
+  if( parts.count("PATH") && parts.count("URL") )
+    throw runtime_error( "interspec://remoterid?... URI can not contain both PATH and URL parameters." );
+  
+  if( !parts.count("PATH") && !parts.count("URL") )
+    throw runtime_error( "interspec://remoterid?... URI must contain either PATH or URL parameters." );
+  
+  const bool always_call = parts.count("ALWAYS")
+  ? ((parts["ALWAYS"] == "1") || SpecUtils::iequals_ascii(parts["ALWAYS"], "true"))
+  : false;
+  
+  string exe_path = parts.count("PATH") ? Wt::Utils::urlDecode(parts["PATH"]) : string();
+  const string url_path = parts.count("URL") ? Wt::Utils::urlDecode(parts["URL"]) : string();
+  
+  // No matter what value is given for "&none=...", or what other parameters are specified, we will try to reset things
+  if( parts.count("NONE") || (url_path.empty() && exe_path.empty()) )
+  {
+    SimpleDialog *dialog = new SimpleDialog( "Stop using External-RID?",
+                                            "This will reset you External-RID preferences.<br />"
+                                            "Any URL"
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+                                            " or EXE's"
+#endif
+                                            " you have entered will be removed, and the External-RID"
+                                            " service will no longer be used." );
+    WPushButton *cont = dialog->addButton( "Continue" );
+    cont->clicked().connect( std::bind([](){
+      InterSpec *interspec = InterSpec::instance();
+      assert( interspec );
+      if( !interspec )
+        return;
+      InterSpecUser::setPreferenceValue( interspec->m_user, "AlwaysCallExternalRid", static_cast<int>(0), interspec );
+      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidWarn", true, interspec );
+      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidUrl", string(), interspec );
+      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidExe", string(), interspec );
+      passMessage( "External-RID preferences have been reset.", WarningWidget::WarningMsgInfo );
+    }) );
+    dialog->addButton( "Cancel" );
+    
+    return;
+  }//if( parts.count("NONE") )
+  
+#if( ANDROID || IOS || BUILD_FOR_WEB_DEPLOYMENT )
+  if( !exe_path.empty() )
+    throw runtime_error( "This build of InterSpec does not support PATH in a interspec://remoterid?... URI." );
+#else
+  if( !exe_path.empty() )
+  {
+    if( SpecUtils::icontains(exe_path,"http")
+       || (exe_path.find(",;#<$+%>!`&*'\"|{?\"=}@") != string::npos) )
+      throw runtime_error( "Filename contained invalid characters." );
+    
+    if( !AppUtils::locate_file(exe_path, false, 0, true) )
+      throw runtime_error( "Could not find the '" + exe_path + "' executable asked for on your system." );
+  }//if( !exe_path.empty() )
+#endif
+  
+  const string title = "Use External-RID Service?";
+  const string desc = "Are you sure you would like to use the '"
+  + (exe_path.empty() ? url_path : exe_path) + "' service to call"
+  + (always_call ? " whenever spectrum files are loaded" : " when the External-RID tool is used")
+  + "?"
+  "<br />Your spectrum data will be sent to this "
+  + (exe_path.empty() ? "service." : "executable.")
+  + "<br /><em>InterSpec</em> does not check the validity, trustworthness, or anything else about this "
+  + (exe_path.empty() ? "service" : "executable") + " - it just blindly sends it your spectroscopy data."
+  "<br />If you are unsure, select <b>No</b>.";
+  
+  SimpleDialog *dialog = new SimpleDialog( title, desc );
+  WPushButton *btn = dialog->addButton( "Yes" );
+  btn->clicked().connect( std::bind([exe_path,url_path,always_call](){
+    InterSpec *interspec = InterSpec::instance();
+    assert( interspec );
+    
+#if( ANDROID || IOS || BUILD_FOR_WEB_DEPLOYMENT )
+    const int always_call_index = (always_call ? 1 : 0);
+#else
+    const int always_call_index = always_call ? (!url_path.empty() ? 1 : 2) : 0;
+#endif
+    
+    InterSpecUser::setPreferenceValue( interspec->m_user, "AlwaysCallExternalRid", always_call_index, interspec );
+    //InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidWarn", false, interspec );
+    if( !url_path.empty() )
+      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidUrl", url_path, interspec );
+    if( !exe_path.empty() )
+      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidExe", exe_path, interspec );
+    passMessage( "External-RID preferences have been updated.", WarningWidget::WarningMsgInfo );
+  }) );
+  
+  dialog->addButton( "No" );
+}//void handleAppUrl( std::string query_str )
+
+
+std::string RemoteRid::encodeStateToUrl() const
+{
+  string url = "ver=1";
+  
+  RestRidImp::ExternalRidWidget *w = nullptr;
+#if( ANDROID || IOS || BUILD_FOR_WEB_DEPLOYMENT )
+  w = m_rest_rid;
+#else
+  w = (m_menu->currentIndex() == 0) ? m_rest_rid : m_exe_rid;
+#endif
+  assert( w );
+  if( !w || !w->isValidUrl() )
+    return url + "&none=1";
+  
+  url += ((w->serviceType() == RestRidImp::ExternalRidWidget::ServiceType::Rest) ? "&url=" : "&path=");
+  url += Wt::Utils::urlEncode(w->url());
+  
+  if( w->alwaysFoAnalysis() )
+    url += "&always=1";
+  
+  return url;
+}//std::string encodeStateToUrl() const

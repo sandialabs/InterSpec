@@ -264,11 +264,13 @@ else
 
   sm_jvm->DetachCurrentThread();
 #else
-  std::unique_lock<std::mutex> scoped_lock( sm_interop_mutex );
-  sm_haveSavedFile = success;
-  sm_lastSavedLocation = filepath;
-  sm_lastSavedDisplayName = displayName;
-  sm_saved_condition.notify_all();
+  {
+    std::unique_lock<std::mutex> scoped_lock( sm_interop_mutex );
+    sm_haveSavedFile = success;
+    sm_lastSavedLocation = filepath;
+    sm_lastSavedDisplayName = displayName;
+    sm_saved_condition.notify_all();
+  }
 
   // TODO:
   JNIEnv* env = nullptr;
@@ -628,9 +630,12 @@ jobjectArray
 JNICALL
 Java_gov_sandia_InterSpec_InterSpec_mostRecentSaveLocation( JNIEnv* env, jobject thiz )
 {
+  __android_log_write( ANDROID_LOG_DEBUG, "mostRecentSaveLocation", "In mostRecentSaveLocation");
+
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   bool have_saved = false;
   std::string location, display;
+
 
   {
     std::unique_lock<std::mutex> lock(sm_interop_mutex);
@@ -638,18 +643,24 @@ Java_gov_sandia_InterSpec_InterSpec_mostRecentSaveLocation( JNIEnv* env, jobject
     // Wait for up to 1.5 second to get the location; an arbirary amount of time, but should be good enough to write most files to disk
     if( sm_lastSavedLocation.empty() )
     {
+      __android_log_write( ANDROID_LOG_DEBUG, "mostRecentSaveLocation", "sm_lastSavedLocation was empty.");
+
       // auto pred = [&](){return !sm_lastSavedLocation.empty();};
       sm_saved_condition.wait_for(lock, std::chrono::milliseconds(1500) );
     }
+
     have_saved = sm_haveSavedFile;
     location = sm_lastSavedLocation;
     display = sm_lastSavedDisplayName;
+
+    __android_log_write( ANDROID_LOG_DEBUG, "mostRecentSaveLocation", ("Got sm_lastSavedLocation=" + location).c_str() );
 
     sm_haveSavedFile = false;
     sm_lastSavedLocation = sm_lastSavedDisplayName = "";
   }
 
-  std::cout<< "mostRecentSaveLocation: have_saved=" << have_saved << ", location='" << location << "', display='" << display << "'" << std::endl;
+  std::cout << "mostRecentSaveLocation: have_saved=" << have_saved << ", location='" << location << "', display='" << display << "'" << std::endl;
+  __android_log_write( ANDROID_LOG_DEBUG, "mostRecentSaveLocation", ("have_saved=" + std::string(have_saved ? "true" : "false") + ", location=" + location + ", display=" + display).c_str() );
 
   jobjectArray ret;
   if( have_saved && !location.empty() )

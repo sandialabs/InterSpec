@@ -408,15 +408,18 @@ public class InterSpec extends AppCompatActivity
       try
       {
         // Copy file to URI, then delete temp file
+        Log.d("DD run", "About to open URI to save to" );
         OutputStream output = context.getContentResolver().openOutputStream(uri);
+        Log.d("DD run", "Opened URI to save to; about to open temp file - " + mTempFileToSave );
         FileInputStream is = new FileInputStream(mTempFileToSave);
-
+        Log.d("DD run", "Opened temp file " + mTempFileToSave );
         byte[] buffer = new byte[1024];
         int length, totalBytes = 0;
         while ((length = is.read(buffer)) > 0) {
           output.write(buffer, 0, length);
           totalBytes += length;
         }
+        Log.d("DD run", "Done writing temp file." );
 
         output.flush();
         output.close();
@@ -432,9 +435,9 @@ public class InterSpec extends AppCompatActivity
         //DownloadManager downloadManager=(DownloadManager)getSystemService(DOWNLOAD_SERVICE);
         //downloadManager.addCompletedDownload( uri.getPath(), "Spectrum File", true, "application/octet-stream", mTempFileDisplayName, totalBytes, true);
 
-        Toast.makeText(context, "Done writing file to disk.", Toast.LENGTH_SHORT).show();
+        Toast.makeText(context, "Done writing file.", Toast.LENGTH_SHORT).show();
       } catch (IOException e) {
-        Toast.makeText(context, "Error writing output file", Toast.LENGTH_SHORT).show();
+        Toast.makeText(context, "Error writing output file.", Toast.LENGTH_SHORT).show();
       }
 
       if( !mTempFileToSave.isEmpty() )
@@ -528,9 +531,44 @@ public class InterSpec extends AppCompatActivity
 
       setFileSaveCallback( new CallbackFromNativeInterface() {
         public void callback() {
-          // TODO: in the future we could maybe have this callback (or one that takes a cople string arguments)
-          //       launch the Save As dialog, and then trigger the copying of files
+          // This function is called from the C++ `android_save_file_in_temp` function (which is
+          // called from the `android_download_workaround` function) - we will start the save
+          // process here - eventually it would be better to properly implement
+          // `shouldOverrideUrlLoading` below - but this is above my abilities in Java, atm.
           Log.d("callback", "Being called-back when file is to be saved");
+
+          String[] spoolAndDisplay = mostRecentSaveLocation();
+          if( spoolAndDisplay.length == 0 )
+          {
+            Log.d("callback", "In callback from c++ android hack: no files avaleable.");
+            runOnUiThread(new Runnable() {
+              public void run() {
+                Toast.makeText(getApplicationContext(), "In callback from c++ android save-file hack: no files available - sorry this is an error.", Toast.LENGTH_SHORT).show();
+              }
+            });
+          }else
+          {
+            Log.d("callback", "In callback from c++ android hack: Files Avaiable!");
+
+            // We need to run the save-as dialog from a GUI thread
+            runOnUiThread(new Runnable() {
+              public void run() {
+                //Toast.makeText(getApplicationContext(), "In callback from c++ android hack: Files Avaiable!", Toast.LENGTH_SHORT).show();
+
+                String location = spoolAndDisplay[0];
+                String displayName = spoolAndDisplay[1];
+                mTempFileToSave = location;
+                mTempFileDisplayName = displayName;
+                Log.d("shouldOverrideUrlLoad", "Got location: " + location + " and displayName:" + displayName );
+
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*"); //not needed, but maybe usefull
+                intent.putExtra(Intent.EXTRA_TITLE, displayName); //not needed, but maybe usefull
+                startActivityForResult(intent, SAVE_AS_CODE);
+              }
+            });
+          }
         }
       });
 
@@ -589,8 +627,16 @@ public class InterSpec extends AppCompatActivity
         // you tell the webclient you want to catch when a url is about to load
         @Override
         public boolean shouldOverrideUrlLoading(WebView  view, String  url){
-          Log.d("shouldOverrideUrlLoad", "shouldOverrideUrlLoading: " + url );
+          Log.d("shouldOverrideUrlLoad", "shouldOverrideUrlLoading: " + url + " - currntly bailing from this funciton." );
 
+          // Currently we will just return true that we should override the URL (when user clicks
+          //  on a link do save a file) - right now saving the actual file is done from the
+          //  callback given in `setFileSaveCallback`, but it would eventually be nice to download
+          //  and save the file in this function, so we dont need android-specific hacks everywhere
+          //  in the C++ where a user can download a file.
+          return true;
+
+          /*
           // Using hacked saving to temporary file in Android, instead of via network download of file.
           //  Once we use the callback (set via setFileSaveCallback) to trigger saving of file (after
           //  some more testing), then this function of overriding URL
@@ -609,18 +655,20 @@ public class InterSpec extends AppCompatActivity
 
           Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
           intent.addCategory(Intent.CATEGORY_OPENABLE);
-          intent.setType("*/*"); //not needed, but maybe usefull
+           */
+          //intent.setType("*/*"); //not needed, but maybe usefull
+          /*
           intent.putExtra(Intent.EXTRA_TITLE, displayName); //not needed, but maybe usefull
           mUrlToDownload = url;
           startActivityForResult(intent, SAVE_AS_CODE);
 
-/*
           // Using hacked saving to temporary file in Android, instead of via network download of file.
           //view.loadUrl(url);
           //view.setDownloadListener(ourDownloadListner);
-          ... let user select where to save ... and download file
- */
+          //... let user select where to save ... and download file
+
           return true;
+           */
         }
       };
       webview.setWebViewClient( ourWebClient );

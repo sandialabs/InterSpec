@@ -214,7 +214,7 @@
       },
       {
         "id":"external-rid",
-        "title":"External RIID",
+        "title":"External RID",
         "help-xml":"external_rid_help.xml",
         "keywords":"RID RIID external isotope ID"
       },
