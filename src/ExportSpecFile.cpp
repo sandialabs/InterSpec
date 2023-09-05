@@ -2232,15 +2232,17 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   if( (start_spec->num_measurements() == 1) && !remove_gps )
     return start_spec;
   
+  const set<int> samples = currentlySelectedSamples();
+  const vector<string> detectors = currentlySelectedDetectors();
+  
   const bool backgroundSub = (m_backSubFore && m_backSubFore->isVisible() && m_backSubFore->isChecked());
   const bool sumAll = (m_sumAllToSingleRecord->isVisible() && m_sumAllToSingleRecord->isChecked());
   const bool foreToSingleRecord = (m_sumForeToSingleRecord->isVisible() && m_sumForeToSingleRecord->isChecked());
   const bool backToSingleRecord = (m_sumBackToSingleRecord->isVisible() && m_sumBackToSingleRecord->isChecked());
   const bool secoToSingleRecord = (m_sumSecoToSingleRecord->isVisible() && m_sumSecoToSingleRecord->isChecked());
   const bool filterDets = (m_filterDetector && m_filterDetector->isVisible() && m_filterDetector->isChecked());
+  const bool sumDetectorsPerSample = ((max_records <= 2) && (detectors.size() > 1));
   
-  const set<int> samples = currentlySelectedSamples();
-  const vector<string> detectors = currentlySelectedDetectors();
   
   shared_ptr<SpecMeas> answer = make_shared<SpecMeas>();
   answer->uniqueCopyContents( *start_spec );
@@ -2594,7 +2596,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     const vector<shared_ptr<const SpecUtils::Measurement>> orig_meass = answer->measurements();
     
     // Next call throws exception if invalid sample number, detector name, or cant find energy
-    //  binning to use.  And returns nullptr if emty sample numbers or detector names.
+    //  binning to use.  And returns nullptr if empty sample numbers or detector names.
     shared_ptr<SpecUtils::Measurement> sum_meas = answer->sum_measurements( samples, detectors, nullptr );
     assert( sum_meas );
     if( !sum_meas )
@@ -2602,7 +2604,64 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     
     answer->remove_measurements( orig_meass );
     answer->add_measurement( sum_meas, true );
-  }//if( sum to single record )
+  }else if( sumDetectorsPerSample )
+  {
+    set<int> problem_samples;
+    map<int,vector<shared_ptr<const SpecUtils::Measurement>>> sample_to_meas;
+    for( const auto &m : answer->measurements() )
+      sample_to_meas[m->sample_number()].push_back( m );
+    
+    vector<shared_ptr<SpecUtils::Measurement>> meas_to_add;
+    vector<shared_ptr<const SpecUtils::Measurement>> meas_to_remove;
+    
+    for( const auto &sample_meass : sample_to_meas )
+    {
+      const int sample_num = sample_meass.first;
+      const auto &meass = sample_meass.second;
+      if( meass.size() < 2 )
+        continue;
+      
+      try
+      {
+        shared_ptr<SpecUtils::Measurement> m = answer->sum_measurements( {sample_num}, detectors, nullptr );
+        if( !m )
+          throw runtime_error( "No gamma spectra found" );
+        
+        m->set_sample_number( sample_num );
+        meas_to_add.push_back( m );
+      }catch( exception &e )
+      {
+        problem_samples.insert( sample_num );
+        cerr << "Failed to sum " << meass.size() << " measurements for sample " << sample_num << " to create an output file." << endl;
+      }//try / catch
+      
+      meas_to_remove.insert(end(meas_to_remove), begin(meass), end(meass) );
+    }//for( const auto &sample_meass : sample_to_meas )
+    
+    if( meas_to_add.empty() )
+      throw runtime_error( "Error summing individual detectors together to create single spectrum." );
+    assert( !meas_to_remove.empty() );
+    
+    answer->remove_measurements( meas_to_remove );
+    
+    for( const auto &m : meas_to_add )
+      answer->add_measurement( m, false );
+    answer->cleanup_after_load();
+    
+    if( problem_samples.size() )
+    {
+      const string sample_str = SpecUtils::sequencesToBriefString( problem_samples );
+      
+      string msg = "There was an issue summing detectors together for ";
+      if( sample_str.size() > 20 )
+        msg += std::to_string(problem_samples.size()) + " sample numbers.";
+      else
+        msg += "samples " + sample_str + ".";
+      msg += "<br />A possible cause is if the sample number didn't contain any gamma spectra."
+             "<br />These samples are not included in the output.";
+      passMessage( msg, WarningWidget::WarningMsgHigh );
+    }//if( problem_samples.size() )
+  }//if( sum to single record ) / else if( sumDetectorsPerSample )
   
   
   // We will check for this later as well, but we'll remove as much of the InterSpec info
