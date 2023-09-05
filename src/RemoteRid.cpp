@@ -2417,7 +2417,8 @@ void RemoteRid::handleAppUrl( std::string query_str )
   
   SimpleDialog *dialog = new SimpleDialog( title, desc );
   WPushButton *btn = dialog->addButton( "Yes" );
-  btn->clicked().connect( std::bind([exe_path,url_path,always_call](){
+  
+  const auto set_to_new_prefs = [exe_path,url_path,always_call](){
     InterSpec *interspec = InterSpec::instance();
     assert( interspec );
     
@@ -2434,6 +2435,48 @@ void RemoteRid::handleAppUrl( std::string query_str )
     if( !exe_path.empty() )
       InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidExe", exe_path, interspec );
     passMessage( "External-RID preferences have been updated.", WarningWidget::WarningMsgInfo );
+  };//set_to_new_prefs
+  
+  
+  InterSpec *interspec = InterSpec::instance();
+  assert( interspec );
+  int prev_always_call = 0;
+  string prev_url_path, prev_exe_path;
+  
+  try
+  {
+    prev_always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", interspec );
+  }catch( std::exception & ){ cerr << "Exception getting AlwaysCallExternalRid." << endl; }
+  
+  try
+  {
+    prev_url_path = InterSpecUser::preferenceValue<string>( "ExternalRidUrl", interspec );
+  }catch( std::exception & ){ cerr << "Exception getting ExternalRidUrl" << endl; }
+  
+  try
+  {
+    prev_exe_path = InterSpecUser::preferenceValue<string>( "ExternalRidExe", interspec );
+  }catch( std::exception & ){ cerr << "Exception getting ExternalRidExe." << endl; }
+  
+  const auto set_to_old_prefs = [prev_always_call, prev_url_path, prev_exe_path](){
+    InterSpec *interspec = InterSpec::instance();
+    assert( interspec );
+    
+    InterSpecUser::setPreferenceValue( interspec->m_user, "AlwaysCallExternalRid", prev_always_call, interspec );
+    //InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidWarn", false, interspec );
+    InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidUrl", prev_url_path, interspec );
+    InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidExe", prev_exe_path, interspec );
+    passMessage( "External-RID preferences have been reverted back to original.", WarningWidget::WarningMsgInfo );
+  };//set_to_old_prefs
+  
+  
+  btn->clicked().connect( std::bind([set_to_old_prefs,set_to_new_prefs](){
+    set_to_new_prefs();
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( !undoRedo || undoRedo->isInUndoOrRedo() )
+      return;
+    undoRedo->addUndoRedoStep( set_to_old_prefs, set_to_new_prefs, "Set Remote-RID from URI." );
   }) );
   
   dialog->addButton( "No" );
