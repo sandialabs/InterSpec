@@ -714,6 +714,9 @@ void ExportSpecFileTool::init()
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
   const bool isMobile = m_interspec && m_interspec->isMobile();
   
+  if( isMobile )
+    addStyleClass( "ExportSpecFileToolMobile" );
+  
   WContainerWidget *body = new WContainerWidget( this );
   body->addStyleClass( "ExportSpecFileBody" );
   

@@ -169,6 +169,12 @@
   flex-shrink: 1;
 }
 
+.ExportSpecFileTool.ExportSpecFileToolMobile .ExportSpecFormat .ExportSpecFormatMenu.SideMenu
+{
+  /* On mobile, there is no info/help icon on the menu item, so we can make it narrower. */
+  width: 8.5em;
+}
+
 .ExportSpecFileTool .ExportSpecFormat .ExportSpecFormatMenu.SideMenu li
 {
   height: 1.25em;
