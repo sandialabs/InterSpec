@@ -412,13 +412,20 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     
     if( description.length() )
     {
-      WText *message = new WText( description, window->contents() );
-      message->addStyleClass( "content" );
-      message->setInline( false );
-      // For a WText::setPadding() only supports left/right, so we will manually set bottom padding
-      //  CSS, from the default 20px for .content, to 5px
-      message->setAttributeValue( "style", "padding-bottom: 5px;" );
-    }
+      WText *message = new WText( description );
+      if( is_phone )
+      {
+        eclRow->insertWidget( 0, message );
+      }else
+      {
+        window->contents()->addWidget( message );
+        message->addStyleClass( "content" );
+        message->setInline( false );
+        // For a WText::setPadding() only supports left/right, so we will manually set bottom padding
+        //  CSS, from the default 20px for .content, to 5px
+        message->setAttributeValue( "style", "padding-bottom: 5px;" );
+      }//if( is_phone ) / else
+    }//if( description.length() )
     
     WContainerWidget *btndiv = new WContainerWidget( is_phone ? eclRow : window->contents() );
     if( is_phone )

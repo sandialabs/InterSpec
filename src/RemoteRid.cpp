@@ -2064,9 +2064,10 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
   stack->setTransitionAnimation( animation, true );
   
   m_menu = new WMenu( stack, Wt::Vertical );
-  const bool is_phone = m_interspec->isPhone();
-  const char *style_class = is_phone ? "VerticalNavMenuPhone HeavyNavMenuPhone SideMenuPhone"
-                                     : "VerticalNavMenu HeavyNavMenu SideMenu";
+  //const bool is_phone = m_interspec->isPhone();
+  //const char *style_class = is_phone ? "VerticalNavMenuPhone HeavyNavMenuPhone"
+  //                                   : "VerticalNavMenu HeavyNavMenu SideMenu";
+  const char * const style_class = "VerticalNavMenu HeavyNavMenu SideMenu";
   m_menu->addStyleClass( style_class );
   
   
@@ -2090,7 +2091,7 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
   layout->addWidget( m_menu, 0, 0, AlignLeft );
   
   layout->addWidget( stack, 0, 1 );
-  layout->setColumnStretch( 0, 1 );
+  layout->setColumnStretch( 1, 1 );
   
   // If we have it setup to always call the EXE, then show this tab, otherwise show REST tab.
   const int always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", viewer );
