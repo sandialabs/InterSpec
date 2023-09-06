@@ -5870,7 +5870,12 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
 #endif
   m_editMenuPopup->addSeparatorAt( (m_undo ? menuindex : -1) );
   
-  PopupDivMenuItem *uriItem = m_editMenuPopup->insertMenuItem( (m_undo ? 6 : -1), "Enter URL", "", true );
+#if( BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    menuindex = 6;
+#endif
+  
+  PopupDivMenuItem *uriItem = m_editMenuPopup->insertMenuItem( (m_undo ? menuindex : -1), "Enter URL", "", true );
   uriItem->triggered().connect( boost::bind(&InterSpec::makeEnterAppUrlWindow, this) );
   
 #if( BUILD_AS_OSX_APP )
@@ -8903,7 +8908,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 #endif
   
 #if( USE_REMOTE_RID )
-  m_remoteRidMenuItem = popup->addMenuItem( "External RIID" );
+  m_remoteRidMenuItem = popup->addMenuItem( "External RID" );
   HelpSystem::attachToolTipOn( m_terminalMenuItem, "Uses a"
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
                               " external program or"
@@ -11086,7 +11091,14 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     UnitsConverterTool *converter = createUnitsConverterTool();
     if( converter )
       converter->handleAppUrl( query_str );
-  }else
+  }
+#if( USE_REMOTE_RID )
+  else if( SpecUtils::iequals_ascii(host,"remoterid") )
+  {
+    RemoteRid::handleAppUrl( query_str );
+  }
+#endif
+  else
   {
     throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );
   }

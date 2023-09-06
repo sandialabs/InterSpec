@@ -899,7 +899,9 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #else
   //The below solution of catching onbeforeunload catches navigating to a new
   //  url, or closing a tab - but for refreshes, the ThinkOfLeave signal is
-  //  never transmitted back to the server...
+  //  never transmitted back to the server - I think we need to force an immediate
+  //  transmit back of the data to the server - rather than queueing things up as
+  //  Wt.emit does.
   m_thinkingLeaveSignal.reset( new Wt::JSignal<>( this, "ThinkOfLeave" ) );
   m_thinkingLeaveSignal->connect( this, &InterSpecApp::prepareForEndOfSession );
   
@@ -913,6 +915,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
      //    console.log( 'User tried navigating, refreshing, or closing' );
      //       window.onunload();
      Wt.emit( $(document).data('AppId'),{name:'ThinkOfLeave'} );
+     console.log( "" );
+     window.onunload();
      //       Wt._p_.update( $(document).data('AppId'), 'ThinkOfLeave', {name:'ThinkOfLeave'}, false ); //doesnt seem to help, but I really dont know how to call it
      return txt;
    }
@@ -1405,6 +1409,19 @@ void InterSpecApp::prepareForEndOfSession()
         transaction.commit();
       }//if( saveState )
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
+    
+    /*
+     // TODO: Look into if syncing the database helps us any - maybe in development builds we should just do this for every commit (or turn off WAL (Write Ahead Logging)), or check if this is even enabled (e.g., "PRAGMA journal_mode=WAL;" for the connection).
+    try
+    {
+      DataBaseUtils::DbTransaction transaction( *sql );
+      sql->session()->execute( "PRAGMA wal_checkpoint(FULL);" );
+      transaction.commit();
+    }catch( std::exception &e )
+    {
+      Wt::log("error") << "Got exception running 'PRAGMA wal_checkpoint(FULL);': " << e.what();
+    }
+     */
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpecApp::prepareForEndOfSession() caught: " << e.what();

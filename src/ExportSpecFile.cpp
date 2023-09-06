@@ -712,6 +712,10 @@ void ExportSpecFileTool::init()
   addStyleClass( "ExportSpecFileTool" );
   
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool isMobile = m_interspec && m_interspec->isMobile();
+  
+  if( isMobile )
+    addStyleClass( "ExportSpecFileToolMobile" );
   
   WContainerWidget *body = new WContainerWidget( this );
   body->addStyleClass( "ExportSpecFileBody" );
@@ -773,34 +777,40 @@ void ExportSpecFileTool::init()
   m_formatMenu->itemSelected().connect( this, &ExportSpecFileTool::handleFormatChange );
   m_formatMenu->addStyleClass( "SideMenu VerticalNavMenu LightNavMenu ExportSpecFormatMenu" );
   
-  
-  
-  
-  const string docroot = wApp->docRoot();
-  const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/static_text/spectrum_file_format_descriptions" );
   Wt::WMessageResourceBundle descrip_bundle;
-  descrip_bundle.use(bundle_file,true);
+  if( !isMobile )
+  {
+    const string docroot = wApp->docRoot();
+    const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/static_text/spectrum_file_format_descriptions" );
+    descrip_bundle.use(bundle_file,true);
+  }//if( !isMobile )
   
-  auto addFormatItem = [this, &descrip_bundle]( const char *label, SpecUtils::SaveSpectrumAsType type ){
+  
+  auto addFormatItem = [this, &descrip_bundle, isMobile]( const char *label, SpecUtils::SaveSpectrumAsType type ){
     WMenuItem *item = m_formatMenu->addItem( label );
     item->clicked().connect( boost::bind(&right_select_item, m_formatMenu, item) );
     item->setData( reinterpret_cast<void *>(type) );
     
-    string description;
-    if( descrip_bundle.resolveKey(label, description) )
+    if( !isMobile )
     {
-      SpecUtils::trim( description );
-      
-      WImage *img = new WImage( item );
-      img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
-      img->setStyleClass("Wt-icon");
-      img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
-      img->setFloatSide( Wt::Side::Right );
-      
-      HelpSystem::attachToolTipOn( img, description, true,
-                                  HelpSystem::ToolTipPosition::Right,
-                                  HelpSystem::ToolTipPrefOverride::AlwaysShow );
-    }//if( we have the description of the file )
+      string description;
+      if( descrip_bundle.resolveKey(label, description) )
+      {
+        SpecUtils::trim( description );
+       
+        description = Wt::Utils::htmlEncode( description, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
+        
+        WImage *img = new WImage( item );
+        img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+        img->setStyleClass("Wt-icon");
+        img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+        img->setFloatSide( Wt::Side::Right );
+        
+        HelpSystem::attachToolTipOn( img, description, true,
+                                    HelpSystem::ToolTipPosition::Right,
+                                    HelpSystem::ToolTipPrefOverride::AlwaysShow );
+      }//if( we have the description of the file )
+    }//if( !isMobile )
   };//addFormatItem lambda
   
   
@@ -1803,7 +1813,8 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     m_excludeInterSpecInfo->hide();
     
     m_sampleSelectNotAppTxt->show();
-    m_optionsNotAppTxt->show();
+    m_optionsNotAppTxt->setHidden( m_excludeGpsInfo->isVisible()
+                                  || m_excludeInterSpecInfo->isVisible() );
     
     if( spec && (spec->gamma_detector_names().size() > 1) && (max_records < 2) )
     {
@@ -2226,15 +2237,17 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   if( (start_spec->num_measurements() == 1) && !remove_gps )
     return start_spec;
   
+  const set<int> samples = currentlySelectedSamples();
+  const vector<string> detectors = currentlySelectedDetectors();
+  
   const bool backgroundSub = (m_backSubFore && m_backSubFore->isVisible() && m_backSubFore->isChecked());
   const bool sumAll = (m_sumAllToSingleRecord->isVisible() && m_sumAllToSingleRecord->isChecked());
   const bool foreToSingleRecord = (m_sumForeToSingleRecord->isVisible() && m_sumForeToSingleRecord->isChecked());
   const bool backToSingleRecord = (m_sumBackToSingleRecord->isVisible() && m_sumBackToSingleRecord->isChecked());
   const bool secoToSingleRecord = (m_sumSecoToSingleRecord->isVisible() && m_sumSecoToSingleRecord->isChecked());
   const bool filterDets = (m_filterDetector && m_filterDetector->isVisible() && m_filterDetector->isChecked());
+  const bool sumDetectorsPerSample = ((max_records <= 2) && (detectors.size() > 1));
   
-  const set<int> samples = currentlySelectedSamples();
-  const vector<string> detectors = currentlySelectedDetectors();
   
   shared_ptr<SpecMeas> answer = make_shared<SpecMeas>();
   answer->uniqueCopyContents( *start_spec );
@@ -2260,7 +2273,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   }//if( sum detectors per sample )
   
 
-  if( foreToSingleRecord )
+  if( foreToSingleRecord || (use_disp_fore && (max_records <= 2)) )
   {
     assert( use_disp_fore );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
@@ -2268,7 +2281,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   }//if( foreground to single record )
   
   
-  if( backToSingleRecord )
+  if( backToSingleRecord || (use_disp_back && (max_records <= 2)) )
   {
     assert( use_disp_back );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
@@ -2588,7 +2601,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     const vector<shared_ptr<const SpecUtils::Measurement>> orig_meass = answer->measurements();
     
     // Next call throws exception if invalid sample number, detector name, or cant find energy
-    //  binning to use.  And returns nullptr if emty sample numbers or detector names.
+    //  binning to use.  And returns nullptr if empty sample numbers or detector names.
     shared_ptr<SpecUtils::Measurement> sum_meas = answer->sum_measurements( samples, detectors, nullptr );
     assert( sum_meas );
     if( !sum_meas )
@@ -2596,7 +2609,64 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     
     answer->remove_measurements( orig_meass );
     answer->add_measurement( sum_meas, true );
-  }//if( sum to single record )
+  }else if( sumDetectorsPerSample )
+  {
+    set<int> problem_samples;
+    map<int,vector<shared_ptr<const SpecUtils::Measurement>>> sample_to_meas;
+    for( const auto &m : answer->measurements() )
+      sample_to_meas[m->sample_number()].push_back( m );
+    
+    vector<shared_ptr<SpecUtils::Measurement>> meas_to_add;
+    vector<shared_ptr<const SpecUtils::Measurement>> meas_to_remove;
+    
+    for( const auto &sample_meass : sample_to_meas )
+    {
+      const int sample_num = sample_meass.first;
+      const auto &meass = sample_meass.second;
+      if( meass.size() < 2 )
+        continue;
+      
+      try
+      {
+        shared_ptr<SpecUtils::Measurement> m = answer->sum_measurements( {sample_num}, detectors, nullptr );
+        if( !m )
+          throw runtime_error( "No gamma spectra found" );
+        
+        m->set_sample_number( sample_num );
+        meas_to_add.push_back( m );
+      }catch( exception &e )
+      {
+        problem_samples.insert( sample_num );
+        cerr << "Failed to sum " << meass.size() << " measurements for sample " << sample_num << " to create an output file." << endl;
+      }//try / catch
+      
+      meas_to_remove.insert(end(meas_to_remove), begin(meass), end(meass) );
+    }//for( const auto &sample_meass : sample_to_meas )
+    
+    if( meas_to_add.empty() )
+      throw runtime_error( "Error summing individual detectors together to create single spectrum." );
+    assert( !meas_to_remove.empty() );
+    
+    answer->remove_measurements( meas_to_remove );
+    
+    for( const auto &m : meas_to_add )
+      answer->add_measurement( m, false );
+    answer->cleanup_after_load();
+    
+    if( problem_samples.size() )
+    {
+      const string sample_str = SpecUtils::sequencesToBriefString( problem_samples );
+      
+      string msg = "There was an issue summing detectors together for ";
+      if( sample_str.size() > 20 )
+        msg += std::to_string(problem_samples.size()) + " sample numbers.";
+      else
+        msg += "samples " + sample_str + ".";
+      msg += "<br />A possible cause is if the sample number didn't contain any gamma spectra."
+             "<br />These samples are not included in the output.";
+      passMessage( msg, WarningWidget::WarningMsgHigh );
+    }//if( problem_samples.size() )
+  }//if( sum to single record ) / else if( sumDetectorsPerSample )
   
   
   // We will check for this later as well, but we'll remove as much of the InterSpec info
@@ -3117,10 +3187,10 @@ std::string ExportSpecFileTool::encodeStateToUrl() const
 
 
 ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
-  : SimpleDialog( "Spectrum File Export", "" ),
+  : SimpleDialog( ((viewer && !viewer->isPhone()) ? "Spectrum File Export" : ""), "" ),
   m_tool( nullptr )
 {
-  // If the CSS isnt avaiable to set widths and stuff when HTML is first formed
+  // If the CSS isnt available to set widths and stuff when HTML is first formed
   //  then the window wont be sized properly, so we have actually already loaded
   //  ExportSpecFile.css in InterSpecApp
   wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
@@ -3133,6 +3203,14 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   
   m_tool = new ExportSpecFileTool( viewer, contents() );
   m_tool->done().connect( boost::bind(&ExportSpecFileWindow::accept, this) );
+  
+  if( viewer && viewer->isPhone() )
+  {
+    addStyleClass( "export-spec-phone" );
+#if( IOS )
+    addStyleClass( "export-spec-iphone" );
+#endif
+  }
   
   rejectWhenEscapePressed();
 }//ExportSpecFileWindow( constructor )

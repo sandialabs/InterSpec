@@ -52,8 +52,13 @@ using namespace Wt;
 
 
 // An experiment to handle adjusting window position/size when browser window changes
-//  So far seems to work decently, but still being tested.
-#define AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE 1
+//  So far seems to work well, except it creates problems on Android when the keyboard
+//  shows, which resizes the whole screen, and causes problems, atm.
+#if( ANDROID )
+  #define AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE 0
+#else
+  #define AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE 1
+#endif
 
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__

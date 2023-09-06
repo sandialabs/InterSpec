@@ -231,6 +231,9 @@ bool locate_file( string &filename, const bool is_dir,
   if( check_exists(filename) )
     return true;
   
+  if( SpecUtils::icontains(filename,"http://") || SpecUtils::icontains(filename,"https://") )
+    return false;
+  
   // We'll look relative to the executables path, but note that if we started from a symlink, I
   //  think it will resolve relative to actual executable
   try
@@ -250,7 +253,7 @@ bool locate_file( string &filename, const bool is_dir,
     wchar_t wbuffer[2*MAX_PATH];
     const DWORD len = GetModuleFileNameW( NULL, wbuffer, 2*MAX_PATH );
     if( len <= 0 )
-      throw runtime_error( "Call to GetModuleFileName falied" );
+      throw runtime_error( "Call to GetModuleFileName failed" );
     
     const string exe_path = SpecUtils::convert_from_utf16_to_utf8( wbuffer );
 #else // if __APPLE__ / Win32 / else

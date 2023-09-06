@@ -232,10 +232,12 @@ protected:
   virtual void notify( const Wt::WEvent &event );
 
   //finalize(): called before destruction to take care of things that might
-  //  involove calls to virtial functions.  We use it to record usage statistics
+  //  involve calls to virtual functions.  We use it to record usage statistics
   virtual void finalize();
   
-  //unload(): called when user navigates away from the page (or reloads)
+  /** In principle, called when user navigates away from the page or reloads; however, this appears to happen
+   for Chrome and Firefox, but not Safari.
+   */
   virtual void unload();
   
   //prepareForEndOfSession(): increments users total time in app and saves the
