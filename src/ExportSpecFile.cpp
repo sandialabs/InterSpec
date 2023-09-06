@@ -797,6 +797,8 @@ void ExportSpecFileTool::init()
       if( descrip_bundle.resolveKey(label, description) )
       {
         SpecUtils::trim( description );
+       
+        description = Wt::Utils::htmlEncode( description, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
         
         WImage *img = new WImage( item );
         img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
