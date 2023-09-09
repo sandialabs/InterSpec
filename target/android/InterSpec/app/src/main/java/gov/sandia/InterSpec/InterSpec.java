@@ -203,19 +203,19 @@ public class InterSpec extends AppCompatActivity
 
   public String getDisplayFileName( Uri result ) 
   {
-	  String name = null;
+    String name = null;
     Cursor cursor = InterSpec.this.getContentResolver().query(result, null, null, null, null, null);
     try 
     {
-	  if( cursor != null && cursor.moveToFirst() ) 
-        name = cursor.getString( cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME) );
+	  if( cursor != null && cursor.moveToFirst() )
+        name = cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME));
     }finally
     {
 	  if( cursor != null )
         cursor.close();
     }
 	
-	  return name;
+    return name;
   }//public String getDisplayFileName( Uri result ) 
 
   public String copyUriToTmpDir( Uri result, final String displayName ) 
@@ -267,10 +267,12 @@ public class InterSpec extends AppCompatActivity
   
   public void openFileInInterSpec( Uri result )
   {
-    Log.d("openFileInInterSpec", "Got URI" );
+    Log.d("openFileInInterSpec", "Got URI and interspecID='" + interspecID + "', httpPort=" + httpPort );
 
     if( result == null )
       return;
+
+
 
     String scheme = result.getScheme().toLowerCase();
     if( scheme.contentEquals("interspec") || scheme.contentEquals("raddata") )
@@ -574,7 +576,7 @@ public class InterSpec extends AppCompatActivity
 
       setTempDir( getCacheDir().getPath() );
 
-      Log.d("onCreate", "Starting server");
+      Log.i("onCreate", "Starting server");
       super.onCreate(savedInstanceState);
     
       this.requestWindowFeature( android.view.Window.FEATURE_NO_TITLE );
@@ -688,7 +690,13 @@ public class InterSpec extends AppCompatActivity
         if( fileUri != null )
         {
           String scheme = fileUri.getScheme();
-          if( ContentResolver.SCHEME_CONTENT.equals(scheme) )
+          Log.d("onCreate", "scheme: '" + scheme + "'" );
+
+          if( scheme.equalsIgnoreCase("raddata") || scheme.equalsIgnoreCase("interspec") )
+          {
+            int status = setInitialFileToLoad( interspecID, fileUri.toString() );
+            Log.d("onCreate", "ACTION_VIEW, Will open URI on load; status=" + status );
+          }else if( ContentResolver.SCHEME_CONTENT.equals(scheme) )
           {
             // handle as content uri
             Log.d("onCreate", "ACTION_VIEW, fileUri is a SCHEME_CONTENT" );
@@ -727,7 +735,7 @@ public class InterSpec extends AppCompatActivity
       Log.d("onCreate", "Will load 'http://127.0.0.1:" + httpPort + "/?apptoken=" + interspecID + "'");
       webview.loadUrl("http://127.0.0.1:" + httpPort + "/?apptoken=" + interspecID );
 
-      WebView.setWebContentsDebuggingEnabled(true);
+      // WebView.setWebContentsDebuggingEnabled(true);
     }//if( httpPort == 0 )
 
     Log.d("onCreate", "done starting server ish");
