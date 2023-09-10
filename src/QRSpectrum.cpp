@@ -838,8 +838,8 @@ vector<uint8_t> base45_decode( const string &input )
       n += e * 45 * 45;
       
       if( n >= 65536 )
-        throw runtime_error( "base45_decode: Invalid three character sequence ("
-                             + input.substr(i,3) + " -> " + std::to_string(n) + ")" );
+        throw runtime_error( "base45_decode: Invalid three character sequence ('"
+                             + input.substr(i,3) + "' -> " + std::to_string(n) + ")" );
       
       assert( (n / 256) <= 255 );
       
@@ -2075,23 +2075,66 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
   //cout << "Before being URL decoded: '" << to_hex_bytes_str(url.substr(0,60)) << "'" << endl << endl;
   //url = Wt::Utils::urlDecode( url );
   
-  if( !(answer.m_encode_options & EncodeOptions::NoBaseXEncoding) )
+  const bool base_X_encoded = !(answer.m_encode_options & EncodeOptions::NoBaseXEncoding);
+  const bool base64url_encoded = (answer.m_encode_options & EncodeOptions::UseUrlSafeBase64);
+  const bool base45_encoded = (base_X_encoded && !base64url_encoded);
+  const bool deflate_compressed = !(answer.m_encode_options & EncodeOptions::NoDeflate);
+  
+  if( base_X_encoded )
   {
     //cout << "Before being base-45 decoded: '" << to_hex_bytes_str(url.substr(0,60)) << "'" << endl << endl;
     vector<uint8_t> raw;
-    if( answer.m_encode_options & EncodeOptions::UseUrlSafeBase64 )
+    if( base64url_encoded )
+    {
+      // base64url_decode is reasonably tolerant of invalid characters (e.g., line breaks), and such
       raw = base64url_decode( url );
-    else
-      raw = base45_decode( url );
+    }else
+    {
+      assert( base45_encoded );
+      
+      // base45_decode will throw exception if any invalid characters, so we will clean `url` up a bit
+      //  (e.g., remove line breaks that may have been inserted, etc)
+      url.erase( std::remove_if( begin(url), end(url),
+        [](const char c) -> bool { try{b45_to_dec(c);}catch(exception &){return true;} return false;}
+      ), end(url) );
+      
+      // There has been a report of extra spaces being added to the end of the string on Android, when using
+      //  a third-party QR scanner app; so we'll account for this.
+      bool b45_decoded = false;
+      while( !b45_decoded && !url.empty() )
+      {
+        try
+        {
+          raw = base45_decode( url );
+          
+          if( deflate_compressed )
+          {
+            // Incase two spaces got inserted at the end of the string, also check that we can
+            //  deflate the data; we could do this check a little more CPU efficiecntly, but
+            //  the trade off in logic complexity isnt worth it at the moment.
+            string out_data;
+            deflate_decompress( &(raw[0]), raw.size(), out_data );
+          }//if( deflate_compressed )
+          
+          b45_decoded = true;
+        }catch( std::exception & )
+        {
+          if( url.back() == ' ' )
+            url = url.substr(0, url.size() - 1);
+          else
+            throw;
+        }//try / catch
+      }//while( !b45_decoded && !url.empty() )
+    }//if( base64url_encoded ) / else
 
     assert( !raw.empty() );
     url.resize( raw.size() );
     memcpy( &(url[0]), &(raw[0]), raw.size() );
   }//if( use_baseX_encoding )
   
-  if( !(answer.m_encode_options & EncodeOptions::NoDeflate) )
+  
+  if( deflate_compressed )
   {
-    // cout << "Going into deflate decompress: '" << to_hex_bytes_str(url.substr(0,60)) << "'" << endl << endl;
     deflate_decompress( &(url[0]), url.size(), url );
   }
   
