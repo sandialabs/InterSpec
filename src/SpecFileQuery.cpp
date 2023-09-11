@@ -1112,6 +1112,7 @@ namespace SpecFileQuery
           case SpecUtils::DetectorType::VerifinderNaI:
           case SpecUtils::DetectorType::VerifinderLaBr:
           case SpecUtils::DetectorType::KromekD3S:
+          case SpecUtils::DetectorType::RadiaCode:
             gotit = true;
             break;
         }
