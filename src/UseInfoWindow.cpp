@@ -1073,7 +1073,6 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
   if( !parent )
     return;
   
-  
   try
   {
     const string docroot = wApp->docRoot();
@@ -1134,10 +1133,10 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
     if( topic_keys.empty() )
       throw runtime_error( "Error getting 'message' nodes." );
     
-    
-    if( SpecUtils::is_file(resource_base + ".css") )
+    const bool has_css = SpecUtils::is_file(resource_base + ".css");
+    assert( has_css );
+    if( has_css )
       wApp->useStyleSheet( resource + ".css" ); //resource_base may be absolute filesystem path; resource is
-    
     
     wApp->declareJavaScriptFunction( resource_name + "_scroll_to",
     "function(id){"
@@ -1176,6 +1175,7 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
       WContainerWidget *title = new WContainerWidget( w );
       title->addStyleClass( resource_name + "-subject-title" );
       WPushButton *up_btn = new WPushButton( title );
+      up_btn->setToolTip( "Back to top" );
       up_btn->setIcon( WLink("InterSpec_resources/images/minimal_go_up_arrow.svg") );
       up_btn->clicked().connect( "function(){ document.getElementById('" + parent->id() + "').scrollTop = '0px'; }" );
       WText *title_txt = new WText( key_title.second, title );
@@ -1187,7 +1187,7 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
       sub->addStyleClass( resource_name + "-subject-content" );
       
       
-      // Add to TOC
+      // Add to the TOC
       WContainerWidget *toc_item = new WContainerWidget( into_toc );
       const string this_js_call = "function(){"
         + wApp->javaScriptClass() + "." + resource_name + "_scroll_to('" + w->id() + "');"
@@ -1195,8 +1195,6 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
       toc_item->clicked().connect( this_js_call );
       new WAnchor( WLink("#"), key_title.second, toc_item );
     }//for( const pair<string,string> &key_title : topic_keys )
-    
-    
   }catch( std::exception &e )
   {
     new WText( "Error loading FAQ topics: " + string(e.what()), parent );

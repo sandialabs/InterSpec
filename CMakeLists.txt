@@ -118,7 +118,7 @@ option(
 )
 
 option(USE_REMOTE_RID "Enables using remote RID tool" OFF)
-option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" OFF)
+option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
 if( IOS OR ANDROID OR BUILD_AS_OSX_APP )
   set( USE_BATCH_TOOLS OFF CACHE INTERNAL "")
