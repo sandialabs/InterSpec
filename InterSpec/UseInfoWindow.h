@@ -31,6 +31,7 @@
 #include <Wt/WString>
 #include <Wt/WMenuItem>
 #include <Wt/WContainerWidget>
+#include <Wt/WMessageResourceBundle>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -38,7 +39,6 @@ namespace Wt
 {
   class WMenu;
   class WStandardItemModel;
-  class WMessageResourceBundle;
 }
 
 class InterSpec;
@@ -82,7 +82,26 @@ protected:
   void right_select_item(Wt::WMenuItem *item );
   void tab_select_item(Wt::WMenuItem *item);
   SideMenuItem * makeItem( const Wt::WString &title, const std::string &resource);
-
+  
+  /** Lazily makes a menu-item, whose contents are from a  #Wt::WMessageResourceBundle file.
+   
+   @param title The name to make on the side-menu button
+   @param resource The filesystem path of the XML file that contains the contents for a #Wt::WMessageResourceBundle
+   */
+  SideMenuItem *makeTextItem( const Wt::WString &title, const std::string &resource );
+  
+  /** Creates a widget with the contents of the resource file.
+   
+   This function is called when the user clicks on the side-menu item created by the `makeTextItem` function.
+   Each <message></message> in the resource file will be its own section.
+   
+   @param resource The filesystem path, relative to Wts docroot, to find the resource XML and CSS resources; this
+          path should not have file extension, as the localized ending (e.x., "en-US") will attempt to be added, as well as
+          ".xml", and if ".css" exists, it will be used/loaded as well.
+   @param parent The parent of the WText widget that gets created.
+   */
+  void textItemCreator( const std::string &resource, Wt::WContainerWidget *parent );
+  
 public:
     void loadSample( const Wt::WModelIndex index );
     void loadSampleSelected( );

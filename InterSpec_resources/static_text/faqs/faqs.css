@@ -1,0 +1,48 @@
+.faqs-intro
+{
+
+}
+
+.faqs-intro-txt
+{
+
+}
+
+.faqs-toc
+{
+
+}
+
+.faqs-toc > ul
+{
+
+}
+
+.faqs-subjects
+{
+
+}
+
+.faqs-subject
+{
+  border:1px solid black;
+  margin-top: 15px
+}
+
+.faqs-subject-title
+{
+  text-align: center;
+  font-size: larger;
+  font-weight: bold;
+}
+
+.faqs-subject-title button, .faqs-subject-title button:hover
+{
+  float: right;
+  background: none;
+}
+
+.faqs-subject-content
+{
+  margin-top: 5px
+}

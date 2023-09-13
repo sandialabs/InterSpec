@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="intro">
+    Some intro txt
+  </message>
+
+  <message id='save-work' title="How to save your work">
+    Some text on saving your work
+	  <div style="border:1px solid black">
+	    <div style="padding-top: 10px" align="center">
+	      <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
+	    </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         To zoom in on a specific portion of the spectrum,
+         <u>push</u> two fingers away from each other.
+      </div>
+	  </div>
+  </message>
+
+  <message id='something-else' title="Some other How to save your work">
+    Some text on saving your work
+	  <div style="border:1px solid black">
+	    <div style="padding-top: 10px" align="center">
+	      <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
+	    </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         To zoom in on a specific portion of the spectrum,
+         <u>push</u> two fingers away from each other.
+      </div>
+	  </div>
+  </message>
+
+  <message id='input-formats' title="What input spectrum file formats are accepted?">
+    Some more text on formats
+  </message>
+
+  <message id='multi-iso-peak' title="Contributions to a peak by multiple isotopes?">
+    Some more text on multi-iso peaks
+  </message>
+
+</messages>
