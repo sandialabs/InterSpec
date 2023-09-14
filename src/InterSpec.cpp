@@ -8765,7 +8765,7 @@ void InterSpec::handleToolTabClosed( const int tabnum )
   handleTerminalWindowClose();
 #elif( USE_REL_ACT_TOOL )
   handleRelActManualClose();
-  static_assert( 0, "Need to update handleToolTabClosed logic" );
+  //static_assert( 0, "Need to update handleToolTabClosed logic" );  //20230913 - no updates look to be needed
 #endif
 }//void handleToolTabClosed( const int tabnum )
 #endif

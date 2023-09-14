@@ -307,7 +307,7 @@ namespace InterSpecServer
                              const std::string xml_config_path,
                              unsigned short int server_port_num
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-                             , string http_address = "127.0.0.1"
+                             , string http_address
 #endif
                              )
   {
@@ -390,7 +390,7 @@ int start_server( const char *process_name,
                   const char *xml_config_path,
                   unsigned short int server_port
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-                  , const char *http_address = "127.0.0.1"
+                  , const char *http_address
 #endif
                   )
 {
@@ -464,7 +464,7 @@ int start_server( const char *process_name,
     return -4;
   }
   
-  
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   try
   {
     InterSpec::setWritableDataDirectory( userdatadir );
@@ -473,6 +473,7 @@ int start_server( const char *process_name,
     cerr << e.what() << endl;
     return -5;
   }
+#endif
   
   try
   {
@@ -744,7 +745,8 @@ int start_server( const char *process_name,
     return static_cast<int>( pos->second.current_state );
   }//int session_status( const char *session_token )
 
-
+  
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
   int open_file_in_session( const char *sessionToken, const char *files_json )
   {
     vector<string> files, appurls;
@@ -914,6 +916,7 @@ void clear_file_to_open_on_load( const std::string &session_token )
   if( pos != end(ns_sessions) )
     ns_sessions.erase( pos );
 }//void clear_file_to_open_on_load( const std::string &session_token )
+#endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
   
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )

@@ -178,7 +178,7 @@ namespace InterSpecServer
   /** Sets the session as dead. */
   void set_session_destructing( const char *session_token );
   
-
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
   /** Open one or more files from the filesystem.  For macOS this would be
    dropping a file to the app icon in the Finder.  Or on Windows it would be
    dropping multiple files onto app icon.
@@ -235,7 +235,7 @@ namespace InterSpecServer
    loading the file/url again later
    */
   void clear_file_to_open_on_load( const std::string &session_token );
-
+#endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
 
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
   struct DesktopAppConfig
