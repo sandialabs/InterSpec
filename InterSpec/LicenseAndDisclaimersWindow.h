@@ -57,6 +57,11 @@ public:
   LicenseAndDisclaimersWindow( int screen_width, int screen_height );
   ~LicenseAndDisclaimersWindow();
   
+  /** Handles the "path" component of an app URL.
+   E.g., string should be one of "disclaimer", "license", "credits", "contact", "data"
+   */
+  bool handleAppUrlPath( const std::string &url_path );
+  
 protected:
   void itemCreator( const std::string &resource, Wt::WContainerWidget *parent, Wt::WString title );
   SideMenuItem *makeItem( const Wt::WString &title, const std::string &resource );
@@ -70,6 +75,7 @@ protected:
 #endif
   
   void right_select_item( Wt::WMenuItem *item );
+  
 protected:
   
   Wt::WMessageResourceBundle m_resourceBundle;

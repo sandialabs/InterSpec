@@ -1124,11 +1124,20 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
           string key{id->value(), id->value() + id->value_size()};
           string desc{title->value(), title->value() + title->value_size()};
           
+#if( PERFORM_DEVELOPER_CHECKS )
+          for( const auto &i : topic_keys )
+          {
+            if( i.first == key )
+              log_developer_error( __func__, ("FAQ topic ID " + key + "is non-unique").c_str() );
+            assert( i.first != key );
+          }//for( const auto &i : topic_keys )
+#endif
+          
           if( key != "intro" )
             topic_keys.emplace_back( std::move(key), std::move(desc) );
-        }
+        }//if( we have key and title strings )
       }//for( loop over nodes )
-    }// end scope to manually parse out XML file
+    }// End scope to manually parse out XML file
     
     if( topic_keys.empty() )
       throw runtime_error( "Error getting 'message' nodes." );
@@ -1138,9 +1147,9 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
     if( has_css )
       wApp->useStyleSheet( resource + ".css" ); //resource_base may be absolute filesystem path; resource is
     
+    // Add some JS to scroll to the contents
     wApp->declareJavaScriptFunction( resource_name + "_scroll_to",
     "function(id){"
-      // Write some JS to scroll to the contents
       "const sec_el = document.getElementById(id);"
       "if(!sec_el){console.error('No element with id=', id); return;}"
       "const parent_el = document.getElementById('" + parent->id() + "');"
@@ -1182,6 +1191,8 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
         
       std::string content;
       bundle.resolveKey( key_title.first, content );
+      
+      //cout << "key: " << key_title.first << " --> content: " << content << endl;
       
       WText *sub = new WText( content, w );
       sub->addStyleClass( resource_name + "-subject-content" );

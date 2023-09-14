@@ -46,9 +46,11 @@
 #endif
 
 #include "SpecUtils/DateTime.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
-#include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UseInfoWindow.h"
@@ -181,8 +183,11 @@ void LicenseAndDisclaimersWindow::itemCreator( const string &resource, Wt::WCont
 
 
 
-void LicenseAndDisclaimersWindow::right_select_item(  WMenuItem *item )
+void LicenseAndDisclaimersWindow::right_select_item( WMenuItem *item )
 {
+  if( !item )
+    return;
+  
   m_menu->select( item );
   item->triggered().emit( item ); //doenst look like this is emmitted either
                                   //when body of SideMenuItem is clicked
@@ -190,7 +195,35 @@ void LicenseAndDisclaimersWindow::right_select_item(  WMenuItem *item )
 }//void LicenseAndDisclaimersWindow::select_item(  SideMenuItem *item )
 
 
-SideMenuItem * LicenseAndDisclaimersWindow::makeItem( const WString &title, const string &resource)
+bool LicenseAndDisclaimersWindow::handleAppUrlPath( const std::string &path )
+{
+  int index = -1;
+  if( SpecUtils::istarts_with(path, "discl") )
+    index = 0;
+  else if( SpecUtils::istarts_with(path, "lic") )
+    index = 1;
+  else if( SpecUtils::istarts_with(path, "cred") )
+    index = 2;
+  else if( SpecUtils::istarts_with(path, "cont") )
+    index = 3;
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+  else if( SpecUtils::istarts_with(path, "data") )
+    index = 4;
+#endif
+  
+  if( (index < 0) || (index >= m_menu->count()) )
+  {
+    passMessage( "Appropriate URI path for '" + Wt::Utils::htmlEncode(path) + "' could not be found.", 3 );
+    return false;
+  }
+  
+  right_select_item( m_menu->itemAt(index) );
+  return true;
+}//bool handleAppUrlPath( const std::string &url )
+
+
+
+SideMenuItem *LicenseAndDisclaimersWindow::makeItem( const WString &title, const string &resource)
 {
   std::function<void(WContainerWidget *)> f = boost::bind( &LicenseAndDisclaimersWindow::itemCreator,
                                                           this, resource, boost::placeholders::_1,

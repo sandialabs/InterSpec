@@ -11031,7 +11031,7 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
   string host, path, query_str, frag;
   AppUtils::split_uri( url, host, path, query_str, frag );
   
-  if( query_str.empty() )
+  if( query_str.empty() && !SpecUtils::iequals_ascii(host, "about") )
     throw runtime_error( "No query string found in URI." );
   
   // I dont think we use the fragment component of URLs anywhere, but maybe we accidentally
@@ -11091,6 +11091,11 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     UnitsConverterTool *converter = createUnitsConverterTool();
     if( converter )
       converter->handleAppUrl( query_str );
+  }if( SpecUtils::iequals_ascii(host,"about") )
+  {
+    showLicenseAndDisclaimersWindow();
+    if( m_licenseWindow )
+      m_licenseWindow->handleAppUrlPath( path );
   }
 #if( USE_REMOTE_RID )
   else if( SpecUtils::iequals_ascii(host,"remoterid") )
